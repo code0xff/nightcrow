@@ -30,6 +30,9 @@
 # Test artifacts
 /tmp/
 
+# omc autopilot runtime state (not source)
+.omc/state/
+.omc/plans/
 
 # Added by cargo
 

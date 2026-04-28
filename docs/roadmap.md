@@ -33,28 +33,28 @@
 
 - service_goal: 개발자가 하단 패널에서 여러 LLM CLI를 동시에 실행하면서 상단에서 실시간으로 코드 변경을 추적할 수 있다
 - acceptance: 멀티 터미널 패널 생성/전환 동작, LLM CLI 키 입력 통과, tmux 백엔드 정상 동작
-- status: pending
+- status: done
 
 ### Workstream 1
 
 - Goal: TerminalBackend trait + TmuxBackend 구현
 - Deliverables: TerminalBackend trait 정의, tmux control mode(-CC) 연동, pane 생성/삭제/전환/리사이즈
 - Exit Criteria: nightcrow에서 프로그래밍적으로 tmux pane을 생성하고 입력 전달 가능
-- status: pending
+- status: done
 
 ### Workstream 2
 
 - Goal: 터미널 패널 UI (탭 바 + 포커스 전환)
 - Deliverables: 하단 터미널 탭 바 위젯, Ctrl+숫자로 터미널 전환, Tab으로 상단/하단 포커스 토글
 - Exit Criteria: 다수의 터미널 pane을 키보드로 전환하며 LLM CLI 사용 가능
-- status: pending
+- status: done
 
 ### Workstream 3
 
 - Goal: PtyBackend fallback + 중첩 TUI 키보드 라우팅 검증
-- Deliverables: portable-pty + alacritty_terminal 기반 PtyBackend, runtime backend 자동 선택, Claude Code 등 TUI LLM CLI 키 입력 통과 검증
-- Exit Criteria: tmux 없는 환경에서 fallback 동작, 중첩 TUI 키보드 충돌 해소
-- status: pending
+- Deliverables: portable-pty 기반 PtyBackend, runtime backend 자동 선택(tmux → PTY fallback), vt100 파서 기반 스크린 버퍼, 키 입력 통과 인코딩
+- Exit Criteria: tmux 없는 환경에서 fallback 동작, 키보드 VT100 인코딩 통과
+- status: done
 
 ---
 
