@@ -89,6 +89,13 @@ fn build_screen_lines(app: &App, rows: u16, cols: u16) -> Vec<Line<'static>> {
             for col in 0..render_cols {
                 let (text, style) = match screen.cell(row, col) {
                     Some(cell) => {
+                        // Wide chars (e.g., Hangul) occupy two columns: vt100
+                        // stores the glyph on the first cell and an empty
+                        // continuation on the second. Emitting anything for
+                        // the continuation would shift the row by one column.
+                        if cell.is_wide_continuation() {
+                            continue;
+                        }
                         let t = if cell.contents().is_empty() {
                             " ".to_string()
                         } else {
