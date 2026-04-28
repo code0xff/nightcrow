@@ -47,7 +47,7 @@ nightcrow --help
 | `j` / `k` or `↑` / `↓` | Navigate file list |
 | `PgUp` / `PgDn` | Scroll diff view |
 | `Ctrl+T` | Open new terminal pane |
-| `Alt+1`…`9` | Jump to terminal pane N directly |
+| `F1`…`F9` | Jump to terminal pane N directly |
 | `q` | Quit (from diff/file panel) |
 | `Ctrl+Q` | Quit (from terminal panel) |
 

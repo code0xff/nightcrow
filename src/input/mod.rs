@@ -17,17 +17,12 @@ pub enum Action {
 
 pub fn map_key(event: KeyEvent) -> Action {
     let ctrl = event.modifiers.contains(KeyModifiers::CONTROL);
-    let alt = event.modifiers.contains(KeyModifiers::ALT);
 
     match event.code {
         KeyCode::Char('q') => Action::Quit,
         KeyCode::Char('c') if ctrl => Action::Quit,
         KeyCode::Char('t') if ctrl => Action::NewPane,
-        // Ctrl+digit is unreliable across terminals (Ctrl+2 → NUL, Ctrl+3 → ESC, etc.)
-        // Alt+digit sends ESC+digit which crossterm reliably decodes.
-        KeyCode::Char(c @ '1'..='9') if alt => {
-            Action::SwitchPane((c as usize) - ('1' as usize))
-        }
+        KeyCode::F(n @ 1..=9) => Action::SwitchPane(n as usize - 1),
         KeyCode::Left | KeyCode::Right => Action::UpperFocusToggle,
         KeyCode::Up | KeyCode::Char('k') => Action::Up,
         KeyCode::Down | KeyCode::Char('j') => Action::Down,
@@ -106,10 +101,6 @@ mod tests {
         KeyEvent::new(code, KeyModifiers::CONTROL)
     }
 
-    fn alt(code: KeyCode) -> KeyEvent {
-        KeyEvent::new(code, KeyModifiers::ALT)
-    }
-
     #[test]
     fn maps_quit_shortcuts() {
         assert_eq!(map_key(key(KeyCode::Char('q'))), Action::Quit);
@@ -139,9 +130,9 @@ mod tests {
 
     #[test]
     fn maps_switch_pane() {
-        assert_eq!(map_key(alt(KeyCode::Char('1'))), Action::SwitchPane(0));
-        assert_eq!(map_key(alt(KeyCode::Char('2'))), Action::SwitchPane(1));
-        assert_eq!(map_key(alt(KeyCode::Char('3'))), Action::SwitchPane(2));
+        assert_eq!(map_key(key(KeyCode::F(1))), Action::SwitchPane(0));
+        assert_eq!(map_key(key(KeyCode::F(2))), Action::SwitchPane(1));
+        assert_eq!(map_key(key(KeyCode::F(9))), Action::SwitchPane(8));
     }
 
     #[test]
