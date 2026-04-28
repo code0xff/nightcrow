@@ -4,13 +4,13 @@ pub mod terminal_tab;
 
 use crate::app::App;
 use ratatui::{
-    layout::{Constraint, Direction, Layout},
     Frame,
+    layout::{Constraint, Direction, Layout},
 };
 use syntect::highlighting::ThemeSet;
 use syntect::parsing::SyntaxSet;
 
-pub fn draw(frame: &mut Frame, app: &App, ss: &SyntaxSet, ts: &ThemeSet) {
+pub fn draw(frame: &mut Frame, app: &mut App, ss: &SyntaxSet, ts: &ThemeSet) {
     let status_height: u16 = if app.status.is_some() { 1 } else { 0 };
 
     let root = Layout::default()
@@ -29,7 +29,7 @@ pub fn draw(frame: &mut Frame, app: &App, ss: &SyntaxSet, ts: &ThemeSet) {
 
     file_list::render(frame, app, upper[0]);
     diff_viewer::render(frame, app, upper[1], ss, ts);
-    terminal_tab::render(frame, root[1]);
+    terminal_tab::render(frame, app, root[1]);
 
     if let Some(ref msg) = app.status {
         use ratatui::{
@@ -37,8 +37,8 @@ pub fn draw(frame: &mut Frame, app: &App, ss: &SyntaxSet, ts: &ThemeSet) {
             text::Line,
             widgets::Paragraph,
         };
-        let status_bar = Paragraph::new(Line::from(msg.as_str()))
-            .style(Style::default().fg(Color::Red));
+        let status_bar =
+            Paragraph::new(Line::from(msg.as_str())).style(Style::default().fg(Color::Red));
         frame.render_widget(status_bar, root[2]);
     }
 }

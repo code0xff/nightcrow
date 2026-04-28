@@ -11,6 +11,8 @@ crossterm = "0.28"
 git2 = "0.20"
 syntect = "5.3"
 anyhow = "1"
+portable-pty = "0.8"
+vt100 = "0.15"
 
 [dev-dependencies]
 tempfile = "3"

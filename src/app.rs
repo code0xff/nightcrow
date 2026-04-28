@@ -1,4 +1,7 @@
+use crate::backend::{BackendKind, PaneId, TerminalBackend, select_backend};
+use crate::backend::BackendEvent;
 use crate::git::diff::{ChangedFile, DiffHunk, RepoSnapshot, load_file_diff, load_snapshot};
+use std::collections::HashMap;
 use std::sync::mpsc::{self, Receiver, SyncSender};
 use std::thread;
 use std::time::Duration;
@@ -7,11 +10,17 @@ use std::time::Duration;
 pub enum Focus {
     FileList,
     DiffViewer,
+    Terminal,
 }
 
 pub enum SnapshotMsg {
     Ok(RepoSnapshot),
     Err(String),
+}
+
+pub struct PaneInfo {
+    pub id: PaneId,
+    pub title: String,
 }
 
 pub struct App {
@@ -22,9 +31,15 @@ pub struct App {
     pub focus: Focus,
     pub status: Option<String>,
     pub repo_path: String,
+    pub terminal_panes: Vec<PaneInfo>,
+    pub active_pane: usize,
+    pub backend_kind: Option<BackendKind>,
+    pub terminal_size: (u16, u16),
     rx: Receiver<SnapshotMsg>,
     // Dropping this sender signals the background thread to exit.
     _stop_tx: SyncSender<()>,
+    backend: Option<Box<dyn TerminalBackend>>,
+    parsers: HashMap<PaneId, vt100::Parser>,
 }
 
 impl App {
@@ -50,16 +65,30 @@ impl App {
             }
         });
 
+        let (backend, backend_kind, status) = match select_backend() {
+            Ok(b) => {
+                let kind = b.kind();
+                (Some(b), Some(kind), None)
+            }
+            Err(e) => (None, None, Some(format!("terminal backend error: {e}"))),
+        };
+
         App {
             files: Vec::new(),
             selected: 0,
             hunks: Vec::new(),
             scroll: 0,
             focus: Focus::FileList,
-            status: None,
+            status,
             repo_path,
+            terminal_panes: Vec::new(),
+            active_pane: 0,
+            backend_kind,
+            terminal_size: (22, 78),
             rx,
             _stop_tx: stop_tx,
+            backend,
+            parsers: HashMap::new(),
         }
     }
 
@@ -80,6 +109,94 @@ impl App {
                 }
             }
         }
+    }
+
+    pub fn poll_terminal(&mut self) {
+        let events: Vec<BackendEvent> = self
+            .backend
+            .as_mut()
+            .map(|b| b.drain_events())
+            .unwrap_or_default();
+
+        for event in events {
+            match event {
+                BackendEvent::Output { pane, data } => {
+                    if let Some(parser) = self.parsers.get_mut(&pane) {
+                        parser.process(&data);
+                    }
+                }
+                BackendEvent::Exited { pane } => {
+                    self.parsers.remove(&pane);
+                    self.terminal_panes.retain(|p| p.id != pane);
+                    if self.active_pane >= self.terminal_panes.len()
+                        && !self.terminal_panes.is_empty()
+                    {
+                        self.active_pane = self.terminal_panes.len() - 1;
+                    } else if self.terminal_panes.is_empty() {
+                        self.active_pane = 0;
+                    }
+                }
+            }
+        }
+    }
+
+    pub fn create_terminal_pane(&mut self) -> anyhow::Result<()> {
+        let (rows, cols) = self.terminal_size;
+        let backend = self
+            .backend
+            .as_mut()
+            .ok_or_else(|| anyhow::anyhow!("no terminal backend available"))?;
+
+        let id = backend.create_pane(rows.max(1), cols.max(1))?;
+        let parser = vt100::Parser::new(rows.max(1), cols.max(1), 0);
+        self.parsers.insert(id, parser);
+        self.terminal_panes.push(PaneInfo {
+            id,
+            title: format!("shell {}", self.terminal_panes.len() + 1),
+        });
+        self.active_pane = self.terminal_panes.len() - 1;
+        Ok(())
+    }
+
+    pub fn switch_pane(&mut self, idx: usize) {
+        if idx < self.terminal_panes.len() {
+            self.active_pane = idx;
+        }
+    }
+
+    pub fn send_terminal_input(&mut self, data: &[u8]) {
+        if let Some(info) = self.terminal_panes.get(self.active_pane) {
+            let id = info.id;
+            if let Some(backend) = &mut self.backend {
+                let _ = backend.send_input(id, data);
+            }
+        }
+    }
+
+    pub fn resize_terminal_panes(&mut self, rows: u16, cols: u16) {
+        if self.terminal_size == (rows, cols) {
+            return;
+        }
+        self.terminal_size = (rows, cols);
+        let r = rows.max(1);
+        let c = cols.max(1);
+        for info in &self.terminal_panes {
+            if let Some(backend) = &mut self.backend {
+                backend.resize(info.id, r, c);
+            }
+            if let Some(parser) = self.parsers.get_mut(&info.id) {
+                parser.set_size(r, c);
+            }
+        }
+    }
+
+    pub fn active_pane_id(&self) -> Option<PaneId> {
+        self.terminal_panes.get(self.active_pane).map(|p| p.id)
+    }
+
+    pub fn active_screen(&self) -> Option<&vt100::Screen> {
+        let id = self.active_pane_id()?;
+        self.parsers.get(&id).map(|p| p.screen())
     }
 
     pub fn reload_diff(&mut self) {
@@ -138,6 +255,7 @@ impl App {
             Focus::DiffViewer => {
                 self.scroll = self.scroll.saturating_sub(1);
             }
+            Focus::Terminal => {}
         }
     }
 
@@ -152,6 +270,7 @@ impl App {
             Focus::DiffViewer => {
                 self.scroll += 1;
             }
+            Focus::Terminal => {}
         }
     }
 
@@ -164,6 +283,7 @@ impl App {
             Focus::DiffViewer => {
                 self.scroll = self.scroll.saturating_sub(20);
             }
+            Focus::Terminal => {}
         }
     }
 
@@ -178,13 +298,15 @@ impl App {
             Focus::DiffViewer => {
                 self.scroll += 20;
             }
+            Focus::Terminal => {}
         }
     }
 
     pub fn toggle_focus(&mut self) {
         self.focus = match self.focus {
             Focus::FileList => Focus::DiffViewer,
-            Focus::DiffViewer => Focus::FileList,
+            Focus::DiffViewer => Focus::Terminal,
+            Focus::Terminal => Focus::FileList,
         };
     }
 }
@@ -211,8 +333,14 @@ mod tests {
             focus: Focus::FileList,
             status: None,
             repo_path: ".".to_string(),
+            terminal_panes: Vec::new(),
+            active_pane: 0,
+            backend_kind: None,
+            terminal_size: (22, 78),
             rx,
             _stop_tx,
+            backend: None,
+            parsers: HashMap::new(),
         }
     }
 
@@ -265,5 +393,24 @@ mod tests {
         app.page_up();
 
         assert_eq!(app.scroll, 0);
+    }
+
+    #[test]
+    fn toggle_focus_cycles_through_all_panels() {
+        let mut app = app_with_files(vec![]);
+        assert_eq!(app.focus, Focus::FileList);
+        app.toggle_focus();
+        assert_eq!(app.focus, Focus::DiffViewer);
+        app.toggle_focus();
+        assert_eq!(app.focus, Focus::Terminal);
+        app.toggle_focus();
+        assert_eq!(app.focus, Focus::FileList);
+    }
+
+    #[test]
+    fn switch_pane_ignores_out_of_range() {
+        let mut app = app_with_files(vec![]);
+        app.switch_pane(5);
+        assert_eq!(app.active_pane, 0);
     }
 }

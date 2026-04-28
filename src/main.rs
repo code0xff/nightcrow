@@ -1,17 +1,18 @@
 mod app;
+mod backend;
 mod git;
 mod input;
 mod ui;
 
 use anyhow::Result;
-use app::App;
+use app::{App, Focus};
 use crossterm::{
-    event::{self, Event},
+    event::{self, Event, KeyCode, KeyModifiers},
     execute,
-    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
+    terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
-use input::{map_key, Action};
-use ratatui::{backend::CrosstermBackend, Terminal};
+use input::{Action, encode_key, map_key};
+use ratatui::{Terminal, backend::CrosstermBackend};
 use std::{io, time::Duration};
 use syntect::highlighting::ThemeSet;
 use syntect::parsing::SyntaxSet;
@@ -22,9 +23,7 @@ fn main() -> Result<()> {
         .to_string_lossy()
         .to_string();
 
-    enable_raw_mode()?;
-    let mut stdout = io::stdout();
-    execute!(stdout, EnterAlternateScreen)?;
+    let _guard = TerminalGuard::enter()?;
 
     let original_hook = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {
@@ -36,12 +35,28 @@ fn main() -> Result<()> {
     let backend = CrosstermBackend::new(io::stdout());
     let mut terminal = Terminal::new(backend)?;
 
-    let result = run(&mut terminal, repo_path);
+    run(&mut terminal, repo_path)
+}
 
-    disable_raw_mode()?;
-    execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
+struct TerminalGuard;
 
-    result
+impl TerminalGuard {
+    fn enter() -> Result<Self> {
+        enable_raw_mode()?;
+        if let Err(err) = execute!(io::stdout(), EnterAlternateScreen) {
+            let _ = disable_raw_mode();
+            return Err(err.into());
+        }
+
+        Ok(Self)
+    }
+}
+
+impl Drop for TerminalGuard {
+    fn drop(&mut self) {
+        let _ = disable_raw_mode();
+        let _ = execute!(io::stdout(), LeaveAlternateScreen);
+    }
 }
 
 fn run(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, repo_path: String) -> Result<()> {
@@ -51,22 +66,58 @@ fn run(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, repo_path: String)
 
     loop {
         app.poll_snapshot();
+        app.poll_terminal();
 
         terminal.draw(|frame| {
-            ui::draw(frame, &app, &ss, &ts);
+            ui::draw(frame, &mut app, &ss, &ts);
         })?;
 
         if event::poll(Duration::from_millis(50))?
             && let Event::Key(key) = event::read()?
         {
-            match map_key(key) {
-                Action::Quit => break,
-                Action::Up => app.select_up(),
-                Action::Down => app.select_down(),
-                Action::PageUp => app.page_up(),
-                Action::PageDown => app.page_down(),
-                Action::FocusToggle => app.toggle_focus(),
-                Action::None => {}
+            match app.focus {
+                Focus::Terminal => {
+                    // Only Ctrl+Q quits from terminal focus; all other quit-like keys pass through
+                    if key.code == KeyCode::Char('q')
+                        && key.modifiers.contains(KeyModifiers::CONTROL)
+                    {
+                        break;
+                    }
+
+                    match map_key(key) {
+                        Action::FocusToggle => app.toggle_focus(),
+                        Action::NewPane => {
+                            if let Err(e) = app.create_terminal_pane() {
+                                app.status = Some(format!("terminal error: {e}"));
+                            }
+                        }
+                        Action::SwitchPane(n) => app.switch_pane(n),
+                        // All other keys pass through to the active terminal
+                        _ => {
+                            if let Some(data) = encode_key(key) {
+                                app.send_terminal_input(&data);
+                            }
+                        }
+                    }
+                }
+
+                Focus::FileList | Focus::DiffViewer => {
+                    match map_key(key) {
+                        Action::Quit => break,
+                        Action::Up => app.select_up(),
+                        Action::Down => app.select_down(),
+                        Action::PageUp => app.page_up(),
+                        Action::PageDown => app.page_down(),
+                        Action::FocusToggle => app.toggle_focus(),
+                        Action::NewPane => {
+                            if let Err(e) = app.create_terminal_pane() {
+                                app.status = Some(format!("terminal error: {e}"));
+                            }
+                        }
+                        Action::SwitchPane(n) => app.switch_pane(n),
+                        Action::None => {}
+                    }
+                }
             }
         }
     }
