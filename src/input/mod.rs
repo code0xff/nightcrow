@@ -23,7 +23,9 @@ pub fn map_key(event: KeyEvent) -> Action {
         KeyCode::Char('q') => Action::Quit,
         KeyCode::Char('c') if ctrl => Action::Quit,
         KeyCode::Char('t') if ctrl => Action::NewPane,
-        KeyCode::Char(c @ '1'..='9') if alt || ctrl => {
+        // Ctrl+digit is unreliable across terminals (Ctrl+2 → NUL, Ctrl+3 → ESC, etc.)
+        // Alt+digit sends ESC+digit which crossterm reliably decodes.
+        KeyCode::Char(c @ '1'..='9') if alt => {
             Action::SwitchPane((c as usize) - ('1' as usize))
         }
         KeyCode::Left | KeyCode::Right => Action::UpperFocusToggle,
@@ -138,7 +140,7 @@ mod tests {
     #[test]
     fn maps_switch_pane() {
         assert_eq!(map_key(alt(KeyCode::Char('1'))), Action::SwitchPane(0));
-        assert_eq!(map_key(ctrl(KeyCode::Char('2'))), Action::SwitchPane(1));
+        assert_eq!(map_key(alt(KeyCode::Char('2'))), Action::SwitchPane(1));
         assert_eq!(map_key(alt(KeyCode::Char('3'))), Action::SwitchPane(2));
     }
 

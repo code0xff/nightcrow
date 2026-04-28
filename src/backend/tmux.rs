@@ -100,8 +100,14 @@ impl TmuxBackend {
                         }
                     }
                 } else if let Some(rest) = line.strip_prefix("%pane-exited ") {
-                    let tmux_id = rest.split_whitespace().next().unwrap_or("").to_string();
-                    if notif_tx.send(TmuxNotif::PaneExited { tmux_id }).is_err() {
+                    // Format varies by tmux version: "%pane-exited %1" or "%pane-exited @1 %1 ..."
+                    // The pane ID always starts with '%'; window IDs start with '@'.
+                    let tmux_id = rest
+                        .split_whitespace()
+                        .find(|t| t.starts_with('%'))
+                        .unwrap_or("")
+                        .to_string();
+                    if !tmux_id.is_empty() && notif_tx.send(TmuxNotif::PaneExited { tmux_id }).is_err() {
                         break;
                     }
                 }

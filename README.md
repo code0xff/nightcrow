@@ -41,12 +41,13 @@ nightcrow --help
 
 | Key | Action |
 |-----|--------|
-| `Tab` | Toggle focus: file list ↔ diff viewer ↔ terminal |
-| `←` / `→` / `Shift+Tab` | Switch focus within upper panel |
+| `Tab` | Cycle focus forward: file list → diff viewer → terminal panes → … |
+| `Shift+Tab` | Cycle focus backward |
+| `←` / `→` | Switch between file list and diff viewer |
 | `j` / `k` or `↑` / `↓` | Navigate file list |
 | `PgUp` / `PgDn` | Scroll diff view |
 | `Ctrl+T` | Open new terminal pane |
-| `Ctrl+1`…`9` | Switch to terminal pane N |
+| `Alt+1`…`9` | Jump to terminal pane N directly |
 | `q` | Quit (from diff/file panel) |
 | `Ctrl+Q` | Quit (from terminal panel) |
 
