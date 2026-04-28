@@ -52,7 +52,7 @@ pub fn draw(
     } else {
         let hint = match app.focus {
             Focus::Terminal => " Tab: cycle focus  |  Ctrl+T: new pane  |  F1-F9: switch pane  |  Ctrl+Q: quit ",
-            _ => " Tab: cycle focus  |  j/k: navigate  |  q: quit ",
+            _ => " Tab: cycle focus  |  j/k: navigate  |  Ctrl+Q: quit ",
         };
         Paragraph::new(Line::from(Span::styled(hint, Style::default().fg(Color::DarkGray))))
     };

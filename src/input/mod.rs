@@ -19,8 +19,7 @@ pub fn map_key(event: KeyEvent) -> Action {
     let ctrl = event.modifiers.contains(KeyModifiers::CONTROL);
 
     match event.code {
-        KeyCode::Char('q') => Action::Quit,
-        KeyCode::Char('c') if ctrl => Action::Quit,
+        KeyCode::Char('q') if ctrl => Action::Quit,
         KeyCode::Char('t') if ctrl => Action::NewPane,
         KeyCode::F(n @ 1..=9) => Action::SwitchPane(n as usize - 1),
         KeyCode::Left | KeyCode::Right => Action::UpperFocusToggle,
@@ -103,8 +102,11 @@ mod tests {
 
     #[test]
     fn maps_quit_shortcuts() {
-        assert_eq!(map_key(key(KeyCode::Char('q'))), Action::Quit);
-        assert_eq!(map_key(ctrl(KeyCode::Char('c'))), Action::Quit);
+        assert_eq!(map_key(ctrl(KeyCode::Char('q'))), Action::Quit);
+        // Plain 'q' must pass through (terminal apps like less/vim use it).
+        assert_ne!(map_key(key(KeyCode::Char('q'))), Action::Quit);
+        // Ctrl+C is a terminal signal, not a quit shortcut.
+        assert_ne!(map_key(ctrl(KeyCode::Char('c'))), Action::Quit);
     }
 
     #[test]

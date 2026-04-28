@@ -9,7 +9,7 @@ use anyhow::Result;
 use app::{App, Focus};
 use clap::Parser;
 use crossterm::{
-    event::{self, Event, KeyCode, KeyModifiers},
+    event::{self, Event},
     execute,
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
@@ -98,31 +98,22 @@ fn run(
             && let Event::Key(key) = event::read()?
         {
             match app.focus {
-                Focus::Terminal => {
-                    // Only Ctrl+Q quits from terminal focus; all other quit-like keys pass through
-                    if key.code == KeyCode::Char('q')
-                        && key.modifiers.contains(KeyModifiers::CONTROL)
-                    {
-                        break;
-                    }
-
-                    match map_key(key) {
-                        Action::FocusNext => app.cycle_focus_next(),
-                        Action::FocusPrev => app.cycle_focus_prev(),
-                        Action::NewPane => {
-                            if let Err(e) = app.create_terminal_pane() {
-                                app.status = Some(format!("terminal error: {e}"));
-                            }
-                        }
-                        Action::SwitchPane(n) => app.switch_pane(n),
-                        // All other keys pass through to the active terminal
-                        _ => {
-                            if let Some(data) = encode_key(key) {
-                                app.send_terminal_input(&data);
-                            }
+                Focus::Terminal => match map_key(key) {
+                    Action::Quit => break,
+                    Action::FocusNext => app.cycle_focus_next(),
+                    Action::FocusPrev => app.cycle_focus_prev(),
+                    Action::NewPane => {
+                        if let Err(e) = app.create_terminal_pane() {
+                            app.status = Some(format!("terminal error: {e}"));
                         }
                     }
-                }
+                    Action::SwitchPane(n) => app.switch_pane(n),
+                    _ => {
+                        if let Some(data) = encode_key(key) {
+                            app.send_terminal_input(&data);
+                        }
+                    }
+                },
 
                 Focus::FileList | Focus::DiffViewer => match map_key(key) {
                     Action::Quit => break,
