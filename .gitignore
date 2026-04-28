@@ -1,6 +1,5 @@
 # Rust
 /target/
-Cargo.lock
 
 # Build artifacts
 *.o
@@ -30,3 +29,8 @@ Cargo.lock
 
 # Test artifacts
 /tmp/
+
+
+# Added by cargo
+
+/target
