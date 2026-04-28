@@ -1,4 +1,4 @@
-use super::{BackendEvent, BackendKind, PaneId, TerminalBackend};
+use super::{BackendEvent, PaneId, TerminalBackend};
 use anyhow::Result;
 use portable_pty::{CommandBuilder, NativePtySystem, PtySize, PtySystem};
 use std::collections::HashMap;
@@ -33,10 +33,6 @@ impl PtyBackend {
 }
 
 impl TerminalBackend for PtyBackend {
-    fn kind(&self) -> BackendKind {
-        BackendKind::Pty
-    }
-
     fn create_pane(&mut self, rows: u16, cols: u16) -> Result<PaneId> {
         let id = self.next_id;
         self.next_id += 1;

@@ -1,5 +1,5 @@
 use crate::backend::BackendEvent;
-use crate::backend::{BackendKind, PaneId, PtyBackend, TerminalBackend, select_backend};
+use crate::backend::{PaneId, PtyBackend, TerminalBackend};
 use crate::git::diff::{ChangedFile, DiffHunk, RepoSnapshot, load_file_diff, load_snapshot};
 use std::collections::HashMap;
 use std::sync::mpsc::{self, Receiver, SyncSender};
@@ -34,7 +34,6 @@ pub struct App {
     pub repo_path: String,
     pub terminal_panes: Vec<PaneInfo>,
     pub active_pane: usize,
-    pub backend_kind: Option<BackendKind>,
     pub terminal_size: (u16, u16),
     rx: Receiver<SnapshotMsg>,
     // Dropping this sender signals the background thread to exit.
@@ -66,13 +65,7 @@ impl App {
             }
         });
 
-        let (backend, backend_kind, status) = match select_backend() {
-            Ok(selection) => {
-                let kind = selection.backend.kind();
-                (Some(selection.backend), Some(kind), selection.warning)
-            }
-            Err(e) => (None, None, Some(format!("terminal backend error: {e}"))),
-        };
+        let backend: Box<dyn TerminalBackend> = Box::new(PtyBackend::new());
 
         let mut app = App {
             files: Vec::new(),
@@ -81,15 +74,14 @@ impl App {
             scroll: 0,
             focus: Focus::FileList,
             last_upper_focus: Focus::FileList,
-            status,
+            status: None,
             repo_path,
             terminal_panes: Vec::new(),
             active_pane: 0,
-            backend_kind,
             terminal_size: (22, 78),
             rx,
             _stop_tx: stop_tx,
-            backend,
+            backend: Some(backend),
             parsers: HashMap::new(),
         };
 
@@ -103,26 +95,7 @@ impl App {
         }
 
         if let Err(err) = self.create_terminal_pane() {
-            if self.backend_kind == Some(BackendKind::Tmux) {
-                self.backend = Some(Box::new(PtyBackend::new()));
-                self.backend_kind = Some(BackendKind::Pty);
-                self.terminal_panes.clear();
-                self.parsers.clear();
-                self.active_pane = 0;
-
-                match self.create_terminal_pane() {
-                    Ok(()) => {
-                        self.status = Some(format!("tmux pane error: {err}; using PTY fallback"));
-                    }
-                    Err(fallback_err) => {
-                        self.status = Some(format!(
-                            "terminal backend error: {err}; PTY fallback failed: {fallback_err}"
-                        ));
-                    }
-                }
-            } else {
-                self.status = Some(format!("terminal error: {err}"));
-            }
+            self.status = Some(format!("terminal error: {err}"));
         }
     }
 
@@ -192,7 +165,7 @@ impl App {
         self.parsers.insert(id, parser);
         self.terminal_panes.push(PaneInfo {
             id,
-            title: format!("shell {}", self.terminal_panes.len() + 1),
+            title: "shell".to_string(),
         });
         self.active_pane = self.terminal_panes.len() - 1;
         Ok(())
@@ -434,7 +407,6 @@ mod tests {
             repo_path: ".".to_string(),
             terminal_panes: Vec::new(),
             active_pane: 0,
-            backend_kind: None,
             terminal_size: (22, 78),
             rx,
             _stop_tx,
@@ -567,11 +539,10 @@ mod tests {
             scroll: 0,
             focus: Focus::FileList,
             last_upper_focus: Focus::FileList,
-            status: Some("tmux not found; using PTY fallback".to_string()),
+            status: Some("terminal error: backend unavailable".to_string()),
             repo_path: ".".to_string(),
             terminal_panes: Vec::new(),
             active_pane: 0,
-            backend_kind: None,
             terminal_size: (22, 78),
             rx,
             _stop_tx,
@@ -585,7 +556,7 @@ mod tests {
 
         assert_eq!(
             app.status.as_deref(),
-            Some("tmux not found; using PTY fallback")
+            Some("terminal error: backend unavailable")
         );
     }
 
@@ -604,7 +575,6 @@ mod tests {
             repo_path: ".".to_string(),
             terminal_panes: Vec::new(),
             active_pane: 0,
-            backend_kind: None,
             terminal_size: (22, 78),
             rx,
             _stop_tx,

@@ -76,15 +76,63 @@
   },
   "hotPaths": [
     {
+      "path": "src/backend/tmux.rs",
+      "accessCount": 26,
+      "lastAccessed": 1777387419582,
+      "type": "file"
+    },
+    {
       "path": "src/app.rs",
-      "accessCount": 5,
-      "lastAccessed": 1777367273239,
+      "accessCount": 19,
+      "lastAccessed": 1777388901814,
+      "type": "file"
+    },
+    {
+      "path": "examples/tmux_smoke.rs",
+      "accessCount": 9,
+      "lastAccessed": 1777387193050,
       "type": "file"
     },
     {
       "path": "src/backend/mod.rs",
+      "accessCount": 7,
+      "lastAccessed": 1777388278771,
+      "type": "file"
+    },
+    {
+      "path": "src/ui/terminal_tab.rs",
+      "accessCount": 6,
+      "lastAccessed": 1777388416430,
+      "type": "file"
+    },
+    {
+      "path": "src/input/mod.rs",
+      "accessCount": 6,
+      "lastAccessed": 1777389076946,
+      "type": "file"
+    },
+    {
+      "path": "src/main.rs",
+      "accessCount": 6,
+      "lastAccessed": 1777389095227,
+      "type": "file"
+    },
+    {
+      "path": "Cargo.toml",
       "accessCount": 4,
-      "lastAccessed": 1777367372098,
+      "lastAccessed": 1777385318087,
+      "type": "file"
+    },
+    {
+      "path": "src/backend/pty.rs",
+      "accessCount": 4,
+      "lastAccessed": 1777388287431,
+      "type": "file"
+    },
+    {
+      "path": "src/ui/mod.rs",
+      "accessCount": 3,
+      "lastAccessed": 1777389083428,
       "type": "file"
     },
     {
@@ -97,48 +145,6 @@
       "path": ".claude/state/intents/plan-1777366483-10706.md",
       "accessCount": 2,
       "lastAccessed": 1777366648187,
-      "type": "file"
-    },
-    {
-      "path": "Cargo.toml",
-      "accessCount": 2,
-      "lastAccessed": 1777367135623,
-      "type": "file"
-    },
-    {
-      "path": "src/input/mod.rs",
-      "accessCount": 2,
-      "lastAccessed": 1777367227433,
-      "type": "file"
-    },
-    {
-      "path": "src/ui/terminal_tab.rs",
-      "accessCount": 2,
-      "lastAccessed": 1777367312840,
-      "type": "file"
-    },
-    {
-      "path": "src/backend/pty.rs",
-      "accessCount": 1,
-      "lastAccessed": 1777367156069,
-      "type": "file"
-    },
-    {
-      "path": "src/backend/tmux.rs",
-      "accessCount": 1,
-      "lastAccessed": 1777367183005,
-      "type": "file"
-    },
-    {
-      "path": "src/ui/mod.rs",
-      "accessCount": 1,
-      "lastAccessed": 1777367295868,
-      "type": "file"
-    },
-    {
-      "path": "src/main.rs",
-      "accessCount": 1,
-      "lastAccessed": 1777367328354,
       "type": "file"
     }
   ],

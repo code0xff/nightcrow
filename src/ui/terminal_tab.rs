@@ -1,8 +1,7 @@
 use crate::app::{App, Focus};
-use crate::backend::BackendKind;
 use ratatui::{
     Frame,
-    layout::{Constraint, Direction, Layout, Rect},
+    layout::{Constraint, Direction, Layout, Position, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, Paragraph},
@@ -16,15 +15,9 @@ pub fn render(frame: &mut Frame, app: &mut App, area: Rect) {
         Style::default().fg(Color::DarkGray)
     };
 
-    let backend_label = match app.backend_kind {
-        Some(BackendKind::Tmux) => "tmux",
-        Some(BackendKind::Pty) => "pty",
-        None => "none",
-    };
-
     let block = Block::default()
         .borders(Borders::ALL)
-        .title(format!(" Terminal [{backend_label}] "))
+        .title(" Terminal ")
         .border_style(border_style);
 
     let inner = block.inner(area);
@@ -72,6 +65,7 @@ pub fn render(frame: &mut Frame, app: &mut App, area: Rect) {
     // ── Terminal screen ───────────────────────────────────────
     let screen_lines = build_screen_lines(app, content_area.height, content_area.width);
     frame.render_widget(Paragraph::new(screen_lines), content_area);
+    render_cursor(frame, app, content_area);
 }
 
 fn build_screen_lines(app: &App, rows: u16, cols: u16) -> Vec<Line<'static>> {
@@ -124,6 +118,37 @@ fn build_screen_lines(app: &App, rows: u16, cols: u16) -> Vec<Line<'static>> {
         .collect()
 }
 
+fn render_cursor(frame: &mut Frame, app: &App, area: Rect) {
+    if app.focus != Focus::Terminal {
+        return;
+    }
+
+    let Some(screen) = app.active_screen() else {
+        return;
+    };
+    let Some(position) = screen_cursor_position(screen, area) else {
+        return;
+    };
+
+    frame.set_cursor_position(position);
+}
+
+fn screen_cursor_position(screen: &vt100::Screen, area: Rect) -> Option<Position> {
+    if area.height == 0 || area.width == 0 {
+        return None;
+    }
+
+    // Embedded CLIs such as Claude can leave DECTCEM hide-cursor mode enabled
+    // while still expecting an outer terminal host to expose the input point.
+    // For the focused terminal pane, keep the host cursor visible at vt100's
+    // tracked cursor position instead of honoring the inner app's hide flag.
+    let (row, col) = screen.cursor_position();
+    Some(Position::new(
+        area.x + col.min(area.width - 1),
+        area.y + row.min(area.height - 1),
+    ))
+}
+
 fn cell_to_style(cell: &vt100::Cell) -> Style {
     let mut style = Style::default()
         .fg(vt100_color(cell.fgcolor()))
@@ -145,5 +170,30 @@ fn vt100_color(c: vt100::Color) -> Color {
         vt100::Color::Default => Color::Reset,
         vt100::Color::Idx(i) => Color::Indexed(i),
         vt100::Color::Rgb(r, g, b) => Color::Rgb(r, g, b),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn maps_screen_cursor_to_render_area() {
+        let mut parser = vt100::Parser::new(3, 10, 0);
+        parser.process(b"\x1b[2;4H");
+
+        let position = screen_cursor_position(parser.screen(), Rect::new(20, 10, 10, 3)).unwrap();
+
+        assert_eq!(position, Position::new(23, 11));
+    }
+
+    #[test]
+    fn keeps_cursor_visible_when_terminal_requests_hide() {
+        let mut parser = vt100::Parser::new(3, 10, 0);
+        parser.process(b"\x1b[?25l\x1b[2;4H");
+
+        let position = screen_cursor_position(parser.screen(), Rect::new(20, 10, 10, 3)).unwrap();
+
+        assert_eq!(position, Position::new(23, 11));
     }
 }
