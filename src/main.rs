@@ -1,11 +1,13 @@
 mod app;
 mod backend;
+mod config;
 mod git;
 mod input;
 mod ui;
 
 use anyhow::Result;
 use app::{App, Focus};
+use clap::Parser;
 use crossterm::{
     event::{self, Event, KeyCode, KeyModifiers},
     execute,
@@ -17,9 +19,25 @@ use std::{io, time::Duration};
 use syntect::highlighting::ThemeSet;
 use syntect::parsing::SyntaxSet;
 
+/// nightcrow — TUI for Agentic Coding
+///
+/// Opens a git diff viewer (top) and multi-terminal panes (bottom)
+/// in the current directory.
+#[derive(Parser)]
+#[command(version, about, long_about = None)]
+struct Cli {
+    /// Path to the git repository (defaults to current directory)
+    #[arg(short, long)]
+    repo: Option<std::path::PathBuf>,
+}
+
 fn main() -> Result<()> {
-    let repo_path = std::env::current_dir()
-        .unwrap_or_else(|_| std::path::PathBuf::from("."))
+    let cli = Cli::parse();
+    let cfg = config::load_config()?;
+
+    let repo_path = cli
+        .repo
+        .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| ".".into()))
         .to_string_lossy()
         .to_string();
 
@@ -35,7 +53,7 @@ fn main() -> Result<()> {
     let backend = CrosstermBackend::new(io::stdout());
     let mut terminal = Terminal::new(backend)?;
 
-    run(&mut terminal, repo_path)
+    run(&mut terminal, repo_path, cfg)
 }
 
 struct TerminalGuard;
@@ -59,7 +77,11 @@ impl Drop for TerminalGuard {
     }
 }
 
-fn run(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, repo_path: String) -> Result<()> {
+fn run(
+    terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
+    repo_path: String,
+    cfg: config::Config,
+) -> Result<()> {
     let ss = SyntaxSet::load_defaults_newlines();
     let ts = ThemeSet::load_defaults();
     let mut app = App::new(repo_path);
@@ -69,7 +91,7 @@ fn run(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, repo_path: String)
         app.poll_terminal();
 
         terminal.draw(|frame| {
-            ui::draw(frame, &mut app, &ss, &ts);
+            ui::draw(frame, &mut app, &ss, &ts, &cfg.layout);
         })?;
 
         if event::poll(Duration::from_millis(50))?

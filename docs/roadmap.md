@@ -62,18 +62,18 @@
 
 - service_goal: macOS + Linux에서 설치하고 즉시 사용할 수 있는 안정적인 릴리스 바이너리를 제공한다
 - acceptance: `cargo install nightcrow` 또는 바이너리로 설치 가능, --help 동작, 모든 gate 통과
-- status: pending
+- status: done
 
 ### Workstream 1
 
 - Goal: 설정 시스템 (키바인딩, 레이아웃 비율)
 - Deliverables: `~/.config/nightcrow/config.toml` 지원, 키바인딩 커스터마이징, 패널 비율 설정
 - Exit Criteria: 설정 파일로 주요 단축키와 패널 비율 변경 가능
-- status: pending
+- status: done
 
 ### Workstream 2
 
 - Goal: 릴리스 준비
 - Deliverables: cargo clippy clean, cargo audit clean, README 완성, cargo-release 설정, GitHub Actions CI
 - Exit Criteria: 모든 gate 통과, 바이너리 배포 가능 상태
-- status: pending
+- status: done
