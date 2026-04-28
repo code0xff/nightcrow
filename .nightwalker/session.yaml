@@ -1,0 +1,16 @@
+schema_version: 1
+status: ready
+project_name: nightcrow
+project_goal: "AI Agentic Coding을 위한 Rust TUI 앱. 상단: git diff 기반 코드 변경 추적 뷰어(좌: 변경 파일 리스트, 우: diff 뷰어). 하단: 멀티 터미널 패널로 여러 LLM CLI를 동시에 실행. 인간은 변경점을 추적하고 LLM이 코딩을 담당하는 워크플로우."
+target_users: "AI/LLM CLI 도구(Claude Code, Codex 등)로 코딩하면서 코드 변경점을 실시간으로 추적·확인하려는 터미널 중심 개발자"
+core_features: "변경 파일 리스트(좌측/키보드 네비게이션), git diff 뷰어(우측/문법 하이라이팅), 멀티 터미널 패널(하단/단축키 전환), LLM CLI 독립 실행, tmux 백엔드 + PTY fallback"
+constraints: "Rust, ratatui 0.29 + crossterm, tmux(선택/없으면 fallback), macOS+Linux"
+project_archetype: service-app
+stack_candidates: "A안(ratatui+vt100), B안(ratatui+alacritty_terminal), C안(notcurses), D안(tmux 백엔드), E안(tmux 1순위+PTY fallback)"
+recommended_stack: E안
+selected_stack: "E안: ratatui+crossterm, git2, syntect+syntect-tui, TmuxBackend(tmux control mode)+PtyBackend(portable-pty+alacritty_terminal)"
+open_questions: "중첩 TUI 키보드 라우팅 early prototype 검증 필요, tmux 정적 번들링 v2 이후 고려, Windows는 PtyBackend fallback만 가능"
+decisions: "2026-04-28: 프로젝트명 nightcrow 확정, project_archetype=service-app, E안 스택 확정, 실용성 7/10 평가"
+current_increment: 1
+increment_status: unset
+last_delivered_at: unset

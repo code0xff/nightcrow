@@ -1,0 +1,32 @@
+# Rust
+/target/
+Cargo.lock
+
+# Build artifacts
+*.o
+*.so
+*.dylib
+*.rlib
+*.d
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Logs
+*.log
+
+# Test artifacts
+/tmp/

@@ -1,0 +1,9 @@
+autopilot-state.json
+intents/*.md
+unset-config-report.txt
+policy-warnings.log
+done-check-report.txt
+qa-report.md
+build-steps.log
+final-report.md
+qa-registry.json
