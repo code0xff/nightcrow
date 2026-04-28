@@ -4,28 +4,28 @@
 
 - service_goal: 개발자가 nightcrow를 실행하면 변경된 파일 목록과 선택한 파일의 git diff를 키보드로 탐색할 수 있다
 - acceptance: 파일 리스트 네비게이션 동작, diff 뷰어에 syntect 하이라이팅 렌더링, 기본 키보드 단축키 동작
-- status: active
+- status: done
 
 ### Workstream 1
 
 - Goal: 프로젝트 골격 및 기본 TUI 레이아웃
 - Deliverables: cargo 프로젝트 초기화, 의존성 설정(ratatui/crossterm/git2/syntect), 상단/하단 2-pane 레이아웃 skeleton, 더미 데이터 렌더링
 - Exit Criteria: `cargo build` 통과, 빈 레이아웃이 터미널에 렌더링됨
-- status: pending
+- status: done
 
 ### Workstream 2
 
 - Goal: git2 기반 변경 파일 감지 및 diff 데이터 파이프라인
 - Deliverables: git2로 변경 파일 목록 조회, hunk/line diff 데이터 구조, 백그라운드 polling 스레드 + mpsc channel
 - Exit Criteria: 실제 git repo에서 변경 파일 목록과 diff 데이터를 정확히 읽어옴
-- status: pending
+- status: done
 
 ### Workstream 3
 
 - Goal: 파일 리스트 + diff 뷰어 UI 완성
 - Deliverables: 방향키 파일 선택, 선택 시 우측 syntect 하이라이팅 diff 렌더링, j/k/PgUp/PgDn 스크롤
 - Exit Criteria: 실제 git 변경 사항을 문법 하이라이팅과 함께 탐색 가능
-- status: pending
+- status: done
 
 ---
 
