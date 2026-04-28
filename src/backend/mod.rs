@@ -30,9 +30,33 @@ pub trait TerminalBackend {
     fn drain_events(&mut self) -> Vec<BackendEvent>;
 }
 
-pub fn select_backend() -> Result<Box<dyn TerminalBackend>> {
-    if tmux::is_available() && let Ok(b) = TmuxBackend::new() {
-        return Ok(Box::new(b));
+pub struct BackendSelection {
+    pub backend: Box<dyn TerminalBackend>,
+    pub warning: Option<String>,
+}
+
+pub fn select_backend() -> Result<BackendSelection> {
+    if tmux::is_available() {
+        match TmuxBackend::new() {
+            Ok(backend) => {
+                return Ok(BackendSelection {
+                    backend: Box::new(backend),
+                    warning: None,
+                });
+            }
+            Err(err) => {
+                return Ok(BackendSelection {
+                    backend: Box::new(PtyBackend::new()),
+                    warning: Some(format!(
+                        "tmux backend unavailable: {err}; using PTY fallback"
+                    )),
+                });
+            }
+        }
     }
-    Ok(Box::new(PtyBackend::new()))
+
+    Ok(BackendSelection {
+        backend: Box::new(PtyBackend::new()),
+        warning: Some("tmux not found; using PTY fallback".to_string()),
+    })
 }

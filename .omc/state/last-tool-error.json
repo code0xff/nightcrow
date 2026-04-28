@@ -1,0 +1,7 @@
+{
+  "tool_name": "Bash",
+  "tool_input_preview": "{\"command\":\"cargo test 2>&1 && cargo clippy -- -D warnings 2>&1\",\"timeout\":60000,\"description\":\"Run tests and clippy after fixes\"}",
+  "error": "Exit code 101\n   Compiling nightcrow v0.1.0 (/Users/lt-164/workspace/agentic-coding)\n    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.46s\n     Running unittests src/main.rs (target/debug/deps/nightcrow-4049cf0fa204aee6)\n\nrunning 25 tests\ntest backend::tmux::tests::decode_output_handles_backslash_escape ... ok\ntest backend::tmux::tests::decode_output_handles_octal_escape ... ok\ntest app::tests::switch_pane_ignores_out_of_range ... ok\ntest app::tests::selection_clamps_when_file...",
+  "timestamp": "2026-04-28T09:09:27.891Z",
+  "retry_count": 2
+}

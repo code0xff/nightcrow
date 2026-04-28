@@ -6,10 +6,16 @@ use std::io::{Read, Write};
 use std::sync::mpsc::{self, Receiver};
 use std::thread;
 
+enum PtyEvent {
+    Output(Vec<u8>),
+    Exited,
+}
+
 struct PtyPane {
     master: Box<dyn portable_pty::MasterPty>,
     writer: Box<dyn Write + Send>,
-    rx: Receiver<Vec<u8>>,
+    killer: Box<dyn portable_pty::ChildKiller + Send + Sync>,
+    rx: Receiver<PtyEvent>,
 }
 
 pub struct PtyBackend {
@@ -46,20 +52,22 @@ impl TerminalBackend for PtyBackend {
         let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".to_string());
         let mut cmd = CommandBuilder::new(&shell);
         cmd.env("TERM", "xterm-256color");
-        let _child = pair.slave.spawn_command(cmd)?;
+        let mut child = pair.slave.spawn_command(cmd)?;
+        let killer = child.clone_killer();
         drop(pair.slave);
 
         let mut reader = pair.master.try_clone_reader()?;
         let writer = pair.master.take_writer()?;
 
         let (tx, rx) = mpsc::channel();
+        let output_tx = tx.clone();
         thread::spawn(move || {
             let mut buf = [0u8; 4096];
             loop {
                 match reader.read(&mut buf) {
                     Ok(0) | Err(_) => break,
                     Ok(n) => {
-                        if tx.send(buf[..n].to_vec()).is_err() {
+                        if output_tx.send(PtyEvent::Output(buf[..n].to_vec())).is_err() {
                             break;
                         }
                     }
@@ -67,12 +75,27 @@ impl TerminalBackend for PtyBackend {
             }
         });
 
-        self.panes.insert(id, PtyPane { master: pair.master, writer, rx });
+        thread::spawn(move || {
+            let _ = child.wait();
+            let _ = tx.send(PtyEvent::Exited);
+        });
+
+        self.panes.insert(
+            id,
+            PtyPane {
+                master: pair.master,
+                writer,
+                killer,
+                rx,
+            },
+        );
         Ok(id)
     }
 
     fn destroy_pane(&mut self, id: PaneId) {
-        self.panes.remove(&id);
+        if let Some(mut pane) = self.panes.remove(&id) {
+            let _ = pane.killer.kill();
+        }
     }
 
     fn send_input(&mut self, id: PaneId, data: &[u8]) -> Result<()> {
@@ -95,10 +118,20 @@ impl TerminalBackend for PtyBackend {
 
     fn drain_events(&mut self) -> Vec<BackendEvent> {
         let mut events = Vec::new();
+        let mut exited = Vec::new();
         for (id, pane) in &self.panes {
-            while let Ok(data) = pane.rx.try_recv() {
-                events.push(BackendEvent::Output { pane: *id, data });
+            while let Ok(event) = pane.rx.try_recv() {
+                match event {
+                    PtyEvent::Output(data) => events.push(BackendEvent::Output { pane: *id, data }),
+                    PtyEvent::Exited => {
+                        events.push(BackendEvent::Exited { pane: *id });
+                        exited.push(*id);
+                    }
+                }
             }
+        }
+        for id in exited {
+            self.panes.remove(&id);
         }
         events
     }

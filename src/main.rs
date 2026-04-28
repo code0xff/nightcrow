@@ -101,23 +101,22 @@ fn run(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, repo_path: String)
                     }
                 }
 
-                Focus::FileList | Focus::DiffViewer => {
-                    match map_key(key) {
-                        Action::Quit => break,
-                        Action::Up => app.select_up(),
-                        Action::Down => app.select_down(),
-                        Action::PageUp => app.page_up(),
-                        Action::PageDown => app.page_down(),
-                        Action::FocusToggle => app.toggle_focus(),
-                        Action::NewPane => {
-                            if let Err(e) = app.create_terminal_pane() {
-                                app.status = Some(format!("terminal error: {e}"));
-                            }
+                Focus::FileList | Focus::DiffViewer => match map_key(key) {
+                    Action::Quit => break,
+                    Action::Up => app.select_up(),
+                    Action::Down => app.select_down(),
+                    Action::PageUp => app.page_up(),
+                    Action::PageDown => app.page_down(),
+                    Action::FocusToggle => app.toggle_focus(),
+                    Action::UpperFocusToggle => app.toggle_upper_focus(),
+                    Action::NewPane => {
+                        if let Err(e) = app.create_terminal_pane() {
+                            app.status = Some(format!("terminal error: {e}"));
                         }
-                        Action::SwitchPane(n) => app.switch_pane(n),
-                        Action::None => {}
                     }
-                }
+                    Action::SwitchPane(n) => app.switch_pane(n),
+                    Action::None => {}
+                },
             }
         }
     }

@@ -1,11 +1,11 @@
 use crate::app::{App, Focus};
 use crate::git::diff::LineKind;
 use ratatui::{
+    Frame,
     layout::Rect,
     style::{Color, Style},
     text::{Line, Span},
     widgets::{Block, Borders, Paragraph},
-    Frame,
 };
 use syntect::easy::HighlightLines;
 use syntect::highlighting::{Color as SColor, ThemeSet};
@@ -28,7 +28,11 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect, ss: &SyntaxSet, ts: &The
         Style::default().fg(Color::DarkGray)
     };
 
-    let file_path = app.files.get(app.selected).map(|f| f.path.as_str()).unwrap_or("");
+    let file_path = app
+        .files
+        .get(app.selected)
+        .map(|f| f.path.as_str())
+        .unwrap_or("");
     let ext = extension(file_path);
     let syntax = ss
         .find_syntax_by_extension(ext)

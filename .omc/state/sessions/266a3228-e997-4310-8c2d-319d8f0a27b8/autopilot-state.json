@@ -1,0 +1,10 @@
+{
+  "active": true,
+  "started_at": "2026-04-28T08:31:04.433Z",
+  "original_prompt": "git@github-code0xff:code0xff/nightcrow.git로 git을 initialize하고 autopilot 진행해줘",
+  "session_id": "266a3228-e997-4310-8c2d-319d8f0a27b8",
+  "project_path": "/Users/lt-164/workspace/agentic-coding",
+  "reinforcement_count": 2,
+  "awaiting_confirmation": true,
+  "last_checked_at": "2026-04-28T08:54:09.287Z"
+}

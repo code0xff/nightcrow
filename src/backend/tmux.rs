@@ -45,7 +45,7 @@ impl TmuxBackend {
         let session = format!("nc-{pid}");
 
         let mut child = Command::new("tmux")
-            .args(["-CC", "-u", "new-session", "-d", "-s", &session])
+            .args(["-CC", "-u", "new-session", "-A", "-s", &session])
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::null())
@@ -77,7 +77,10 @@ impl TmuxBackend {
                     if let Some((tmux_id, encoded)) = rest.split_once(' ') {
                         let data = decode_output(encoded);
                         if notif_tx
-                            .send(TmuxNotif::Output { tmux_id: tmux_id.to_string(), data })
+                            .send(TmuxNotif::Output {
+                                tmux_id: tmux_id.to_string(),
+                                data,
+                            })
                             .is_err()
                         {
                             break;
@@ -104,8 +107,9 @@ impl TmuxBackend {
             pending_events: Vec::new(),
         };
 
-        // Drain initial startup response
-        let _ = backend.wait_response(Duration::from_secs(5));
+        backend
+            .wait_response(Duration::from_secs(5))
+            .context("tmux control mode did not become ready")?;
 
         Ok(backend)
     }
@@ -136,12 +140,17 @@ impl TmuxBackend {
         match notif {
             TmuxNotif::Output { tmux_id, data } => {
                 if let Some(&local_id) = self.tmux_to_local.get(&tmux_id) {
-                    self.pending_events.push(BackendEvent::Output { pane: local_id, data });
+                    self.pending_events.push(BackendEvent::Output {
+                        pane: local_id,
+                        data,
+                    });
                 }
             }
             TmuxNotif::PaneExited { tmux_id } => {
-                if let Some(&local_id) = self.tmux_to_local.get(&tmux_id) {
-                    self.pending_events.push(BackendEvent::Exited { pane: local_id });
+                if let Some(local_id) = self.tmux_to_local.remove(&tmux_id) {
+                    self.panes.remove(&local_id);
+                    self.pending_events
+                        .push(BackendEvent::Exited { pane: local_id });
                 }
             }
             TmuxNotif::CommandResponse(_) => {}
@@ -204,7 +213,11 @@ impl TerminalBackend for TmuxBackend {
         let tty_path = parts.next().context("missing pane_tty")?.trim().to_string();
 
         // Resize the pane to requested dimensions
-        writeln!(self.stdin, "resize-pane -t {} -x {} -y {}", tmux_id, cols, rows)?;
+        writeln!(
+            self.stdin,
+            "resize-pane -t {} -x {} -y {}",
+            tmux_id, cols, rows
+        )?;
         self.stdin.flush()?;
         let _ = self.wait_response(Duration::from_secs(2));
 
@@ -217,7 +230,13 @@ impl TerminalBackend for TmuxBackend {
         self.next_id += 1;
 
         self.tmux_to_local.insert(tmux_id.clone(), local_id);
-        self.panes.insert(local_id, TmuxPane { tmux_id, tty_writer });
+        self.panes.insert(
+            local_id,
+            TmuxPane {
+                tmux_id,
+                tty_writer,
+            },
+        );
 
         self.flush_buffered();
         Ok(local_id)
@@ -242,7 +261,11 @@ impl TerminalBackend for TmuxBackend {
     fn resize(&mut self, id: PaneId, rows: u16, cols: u16) {
         if let Some(pane) = self.panes.get(&id) {
             let tmux_id = pane.tmux_id.clone();
-            let _ = writeln!(self.stdin, "resize-pane -t {} -x {} -y {}", tmux_id, cols, rows);
+            let _ = writeln!(
+                self.stdin,
+                "resize-pane -t {} -x {} -y {}",
+                tmux_id, cols, rows
+            );
             let _ = self.stdin.flush();
         }
     }
@@ -253,6 +276,14 @@ impl TerminalBackend for TmuxBackend {
         }
         self.flush_buffered();
         std::mem::take(&mut self.pending_events)
+    }
+}
+
+impl Drop for TmuxBackend {
+    fn drop(&mut self) {
+        let _ = writeln!(self.stdin, "kill-session -t {}", self.session);
+        let _ = self.stdin.flush();
+        let _ = self._child.kill();
     }
 }
 

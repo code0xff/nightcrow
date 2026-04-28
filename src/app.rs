@@ -1,12 +1,12 @@
-use crate::backend::{BackendKind, PaneId, TerminalBackend, select_backend};
 use crate::backend::BackendEvent;
+use crate::backend::{BackendKind, PaneId, PtyBackend, TerminalBackend, select_backend};
 use crate::git::diff::{ChangedFile, DiffHunk, RepoSnapshot, load_file_diff, load_snapshot};
 use std::collections::HashMap;
 use std::sync::mpsc::{self, Receiver, SyncSender};
 use std::thread;
 use std::time::Duration;
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Focus {
     FileList,
     DiffViewer,
@@ -29,6 +29,7 @@ pub struct App {
     pub hunks: Vec<DiffHunk>,
     pub scroll: usize,
     pub focus: Focus,
+    pub last_upper_focus: Focus,
     pub status: Option<String>,
     pub repo_path: String,
     pub terminal_panes: Vec<PaneInfo>,
@@ -66,19 +67,20 @@ impl App {
         });
 
         let (backend, backend_kind, status) = match select_backend() {
-            Ok(b) => {
-                let kind = b.kind();
-                (Some(b), Some(kind), None)
+            Ok(selection) => {
+                let kind = selection.backend.kind();
+                (Some(selection.backend), Some(kind), selection.warning)
             }
             Err(e) => (None, None, Some(format!("terminal backend error: {e}"))),
         };
 
-        App {
+        let mut app = App {
             files: Vec::new(),
             selected: 0,
             hunks: Vec::new(),
             scroll: 0,
             focus: Focus::FileList,
+            last_upper_focus: Focus::FileList,
             status,
             repo_path,
             terminal_panes: Vec::new(),
@@ -89,6 +91,38 @@ impl App {
             _stop_tx: stop_tx,
             backend,
             parsers: HashMap::new(),
+        };
+
+        app.ensure_initial_terminal();
+        app
+    }
+
+    fn ensure_initial_terminal(&mut self) {
+        if self.backend.is_none() {
+            return;
+        }
+
+        if let Err(err) = self.create_terminal_pane() {
+            if self.backend_kind == Some(BackendKind::Tmux) {
+                self.backend = Some(Box::new(PtyBackend::new()));
+                self.backend_kind = Some(BackendKind::Pty);
+                self.terminal_panes.clear();
+                self.parsers.clear();
+                self.active_pane = 0;
+
+                match self.create_terminal_pane() {
+                    Ok(()) => {
+                        self.status = Some(format!("tmux pane error: {err}; using PTY fallback"));
+                    }
+                    Err(fallback_err) => {
+                        self.status = Some(format!(
+                            "terminal backend error: {err}; PTY fallback failed: {fallback_err}"
+                        ));
+                    }
+                }
+            } else {
+                self.status = Some(format!("terminal error: {err}"));
+            }
         }
     }
 
@@ -303,11 +337,27 @@ impl App {
     }
 
     pub fn toggle_focus(&mut self) {
+        match self.focus {
+            Focus::FileList | Focus::DiffViewer => {
+                self.last_upper_focus = self.focus;
+                self.focus = Focus::Terminal;
+            }
+            Focus::Terminal => {
+                self.focus = self.last_upper_focus;
+            }
+        }
+    }
+
+    pub fn toggle_upper_focus(&mut self) {
         self.focus = match self.focus {
             Focus::FileList => Focus::DiffViewer,
-            Focus::DiffViewer => Focus::Terminal,
-            Focus::Terminal => Focus::FileList,
+            Focus::DiffViewer => Focus::FileList,
+            Focus::Terminal => self.last_upper_focus,
         };
+
+        if self.focus != Focus::Terminal {
+            self.last_upper_focus = self.focus;
+        }
     }
 }
 
@@ -331,6 +381,7 @@ mod tests {
             hunks: Vec::new(),
             scroll: 0,
             focus: Focus::FileList,
+            last_upper_focus: Focus::FileList,
             status: None,
             repo_path: ".".to_string(),
             terminal_panes: Vec::new(),
@@ -396,15 +447,32 @@ mod tests {
     }
 
     #[test]
-    fn toggle_focus_cycles_through_all_panels() {
+    fn toggle_focus_switches_between_upper_and_terminal() {
         let mut app = app_with_files(vec![]);
         assert_eq!(app.focus, Focus::FileList);
-        app.toggle_focus();
-        assert_eq!(app.focus, Focus::DiffViewer);
         app.toggle_focus();
         assert_eq!(app.focus, Focus::Terminal);
         app.toggle_focus();
         assert_eq!(app.focus, Focus::FileList);
+
+        app.focus = Focus::DiffViewer;
+        app.toggle_focus();
+        assert_eq!(app.focus, Focus::Terminal);
+        app.toggle_focus();
+        assert_eq!(app.focus, Focus::DiffViewer);
+    }
+
+    #[test]
+    fn toggle_upper_focus_switches_file_list_and_diff_viewer() {
+        let mut app = app_with_files(vec![]);
+
+        app.toggle_upper_focus();
+        assert_eq!(app.focus, Focus::DiffViewer);
+        assert_eq!(app.last_upper_focus, Focus::DiffViewer);
+
+        app.toggle_upper_focus();
+        assert_eq!(app.focus, Focus::FileList);
+        assert_eq!(app.last_upper_focus, Focus::FileList);
     }
 
     #[test]
