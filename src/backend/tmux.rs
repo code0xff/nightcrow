@@ -127,6 +127,12 @@ impl TmuxBackend {
             pending_events: Vec::new(),
         };
 
+        // tmux does not send %begin/%end automatically on startup — it only
+        // sends them in response to a command. Send a no-op command to trigger
+        // the initial handshake that confirms control mode is ready.
+        writeln!(backend.writer, "list-sessions").context("failed to write to tmux")?;
+        backend.writer.flush().context("failed to flush tmux writer")?;
+
         backend
             .wait_response(Duration::from_secs(5))
             .context("tmux control mode did not become ready")?;
