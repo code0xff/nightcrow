@@ -480,8 +480,14 @@ mod tests {
     fn tab_cycles_through_terminal_panes() {
         let mut app = app_with_files(vec![]);
         app.terminal_panes = vec![
-            PaneInfo { id: 1, title: "shell 1".into() },
-            PaneInfo { id: 2, title: "shell 2".into() },
+            PaneInfo {
+                id: 1,
+                title: "shell 1".into(),
+            },
+            PaneInfo {
+                id: 2,
+                title: "shell 2".into(),
+            },
         ];
         app.cycle_focus_next();
         assert_eq!(app.focus, Focus::DiffViewer);
@@ -498,7 +504,10 @@ mod tests {
     #[test]
     fn backtab_cycles_focus_in_reverse() {
         let mut app = app_with_files(vec![]);
-        app.terminal_panes = vec![PaneInfo { id: 1, title: "shell 1".into() }];
+        app.terminal_panes = vec![PaneInfo {
+            id: 1,
+            title: "shell 1".into(),
+        }];
         app.cycle_focus_prev();
         assert_eq!(app.focus, Focus::Terminal);
         assert_eq!(app.active_pane, 0);

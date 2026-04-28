@@ -51,10 +51,15 @@ pub fn draw(
         Paragraph::new(Line::from(msg.as_str())).style(Style::default().fg(Color::Red))
     } else {
         let hint = match app.focus {
-            Focus::Terminal => " Tab: cycle focus  |  Ctrl+T: new pane  |  F1-F9: switch pane  |  Ctrl+Q: quit ",
+            Focus::Terminal => {
+                " Tab: cycle focus  |  Ctrl+T: new pane  |  F1-F9: switch pane  |  Ctrl+Q: quit "
+            }
             _ => " Tab: cycle focus  |  j/k: navigate  |  Ctrl+Q: quit ",
         };
-        Paragraph::new(Line::from(Span::styled(hint, Style::default().fg(Color::DarkGray))))
+        Paragraph::new(Line::from(Span::styled(
+            hint,
+            Style::default().fg(Color::DarkGray),
+        )))
     };
     frame.render_widget(hint_bar, root[2]);
 }
