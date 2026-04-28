@@ -3,6 +3,7 @@ use anyhow::Result;
 use portable_pty::{CommandBuilder, NativePtySystem, PtySize, PtySystem};
 use std::collections::HashMap;
 use std::io::{Read, Write};
+use std::path::{Path, PathBuf};
 use std::sync::mpsc::{self, Receiver};
 use std::thread;
 
@@ -21,13 +22,17 @@ struct PtyPane {
 pub struct PtyBackend {
     panes: HashMap<PaneId, PtyPane>,
     next_id: PaneId,
+    // Each new pane spawns the shell here so its cwd matches the repo
+    // nightcrow is tracking, even when the binary was launched elsewhere.
+    cwd: PathBuf,
 }
 
 impl PtyBackend {
-    pub fn new() -> Self {
+    pub fn new(cwd: impl AsRef<Path>) -> Self {
         Self {
             panes: HashMap::new(),
             next_id: 1,
+            cwd: cwd.as_ref().to_path_buf(),
         }
     }
 }
@@ -48,6 +53,12 @@ impl TerminalBackend for PtyBackend {
         let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".to_string());
         let mut cmd = CommandBuilder::new(&shell);
         cmd.env("TERM", "xterm-256color");
+        // Only set cwd if the directory actually exists; otherwise inherit
+        // ours so spawn does not fail outright (matters for unit tests that
+        // pass placeholder paths).
+        if let Ok(canonical) = self.cwd.canonicalize() {
+            cmd.cwd(canonical);
+        }
         let mut child = pair.slave.spawn_command(cmd)?;
         let killer = child.clone_killer();
         drop(pair.slave);
@@ -140,7 +151,7 @@ mod tests {
 
     #[test]
     fn pty_backend_create_and_destroy_pane() {
-        let mut backend = PtyBackend::new();
+        let mut backend = PtyBackend::new(".");
         let id = backend.create_pane(24, 80).expect("create_pane failed");
         assert_eq!(id, 1);
         backend.destroy_pane(id);

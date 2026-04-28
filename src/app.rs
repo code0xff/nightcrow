@@ -65,7 +65,7 @@ impl App {
             }
         });
 
-        let backend: Box<dyn TerminalBackend> = Box::new(PtyBackend::new());
+        let backend: Box<dyn TerminalBackend> = Box::new(PtyBackend::new(&repo_path));
 
         let mut app = App {
             files: Vec::new(),
