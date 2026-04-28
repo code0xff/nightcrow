@@ -47,7 +47,7 @@ pub fn render(frame: &mut Frame, app: &mut App, area: Rect) {
     // ── Tab bar ──────────────────────────────────────────────
     let tab_spans: Vec<Span> = if app.terminal_panes.is_empty() {
         vec![Span::styled(
-            " Ctrl+T: new terminal | Ctrl/Alt+1-9: switch ",
+            " Ctrl+T: new terminal ",
             Style::default().fg(Color::DarkGray),
         )]
     } else {

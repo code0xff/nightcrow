@@ -101,6 +101,7 @@ impl TerminalBackend for PtyBackend {
     fn send_input(&mut self, id: PaneId, data: &[u8]) -> Result<()> {
         if let Some(pane) = self.panes.get_mut(&id) {
             pane.writer.write_all(data)?;
+            pane.writer.flush()?;
         }
         Ok(())
     }

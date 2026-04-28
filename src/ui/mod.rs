@@ -2,11 +2,14 @@ pub mod diff_viewer;
 pub mod file_list;
 pub mod terminal_tab;
 
-use crate::app::App;
+use crate::app::{App, Focus};
 use crate::config::LayoutConfig;
 use ratatui::{
     Frame,
     layout::{Constraint, Direction, Layout},
+    style::{Color, Style},
+    text::{Line, Span},
+    widgets::Paragraph,
 };
 use syntect::highlighting::ThemeSet;
 use syntect::parsing::SyntaxSet;
@@ -18,17 +21,15 @@ pub fn draw(
     ts: &ThemeSet,
     layout: &LayoutConfig,
 ) {
-    let status_height: u16 = if app.status.is_some() { 1 } else { 0 };
-    let lower_pct = 100u16
-        .saturating_sub(layout.upper_pct)
-        .saturating_sub(status_height);
+    // Always reserve 1 row for the status/hint bar.
+    let lower_pct = 100u16.saturating_sub(layout.upper_pct).saturating_sub(1);
 
     let root = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
             Constraint::Percentage(layout.upper_pct),
             Constraint::Percentage(lower_pct),
-            Constraint::Length(status_height),
+            Constraint::Length(1),
         ])
         .split(frame.area());
 
@@ -46,14 +47,14 @@ pub fn draw(
     diff_viewer::render(frame, app, upper[1], ss, ts);
     terminal_tab::render(frame, app, root[1]);
 
-    if let Some(ref msg) = app.status {
-        use ratatui::{
-            style::{Color, Style},
-            text::Line,
-            widgets::Paragraph,
+    let hint_bar = if let Some(ref msg) = app.status {
+        Paragraph::new(Line::from(msg.as_str())).style(Style::default().fg(Color::Red))
+    } else {
+        let hint = match app.focus {
+            Focus::Terminal => " Tab: cycle focus  |  Ctrl+T: new pane  |  F1-F9: switch pane  |  Ctrl+Q: quit ",
+            _ => " Tab: cycle focus  |  j/k: navigate  |  q: quit ",
         };
-        let status_bar =
-            Paragraph::new(Line::from(msg.as_str())).style(Style::default().fg(Color::Red));
-        frame.render_widget(status_bar, root[2]);
-    }
+        Paragraph::new(Line::from(Span::styled(hint, Style::default().fg(Color::DarkGray))))
+    };
+    frame.render_widget(hint_bar, root[2]);
 }
