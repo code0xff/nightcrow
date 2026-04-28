@@ -7,7 +7,8 @@ pub enum Action {
     Down,
     PageUp,
     PageDown,
-    FocusToggle,
+    FocusNext,
+    FocusPrev,
     UpperFocusToggle,
     NewPane,
     SwitchPane(usize),
@@ -25,12 +26,13 @@ pub fn map_key(event: KeyEvent) -> Action {
         KeyCode::Char(c @ '1'..='9') if alt || ctrl => {
             Action::SwitchPane((c as usize) - ('1' as usize))
         }
-        KeyCode::Left | KeyCode::Right | KeyCode::BackTab => Action::UpperFocusToggle,
+        KeyCode::Left | KeyCode::Right => Action::UpperFocusToggle,
         KeyCode::Up | KeyCode::Char('k') => Action::Up,
         KeyCode::Down | KeyCode::Char('j') => Action::Down,
         KeyCode::PageUp => Action::PageUp,
         KeyCode::PageDown => Action::PageDown,
-        KeyCode::Tab => Action::FocusToggle,
+        KeyCode::Tab => Action::FocusNext,
+        KeyCode::BackTab => Action::FocusPrev,
         _ => Action::None,
     }
 }
@@ -123,8 +125,9 @@ mod tests {
     }
 
     #[test]
-    fn maps_focus_toggle() {
-        assert_eq!(map_key(key(KeyCode::Tab)), Action::FocusToggle);
+    fn maps_focus_cycle() {
+        assert_eq!(map_key(key(KeyCode::Tab)), Action::FocusNext);
+        assert_eq!(map_key(key(KeyCode::BackTab)), Action::FocusPrev);
     }
 
     #[test]
@@ -143,7 +146,6 @@ mod tests {
     fn maps_upper_focus_toggle() {
         assert_eq!(map_key(key(KeyCode::Left)), Action::UpperFocusToggle);
         assert_eq!(map_key(key(KeyCode::Right)), Action::UpperFocusToggle);
-        assert_eq!(map_key(key(KeyCode::BackTab)), Action::UpperFocusToggle);
     }
 
     #[test]

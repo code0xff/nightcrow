@@ -107,7 +107,8 @@ fn run(
                     }
 
                     match map_key(key) {
-                        Action::FocusToggle => app.toggle_focus(),
+                        Action::FocusNext => app.cycle_focus_next(),
+                        Action::FocusPrev => app.cycle_focus_prev(),
                         Action::NewPane => {
                             if let Err(e) = app.create_terminal_pane() {
                                 app.status = Some(format!("terminal error: {e}"));
@@ -129,7 +130,8 @@ fn run(
                     Action::Down => app.select_down(),
                     Action::PageUp => app.page_up(),
                     Action::PageDown => app.page_down(),
-                    Action::FocusToggle => app.toggle_focus(),
+                    Action::FocusNext => app.cycle_focus_next(),
+                    Action::FocusPrev => app.cycle_focus_prev(),
                     Action::UpperFocusToggle => app.toggle_upper_focus(),
                     Action::NewPane => {
                         if let Err(e) = app.create_terminal_pane() {

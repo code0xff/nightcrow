@@ -136,7 +136,13 @@ impl App {
                     let selected_path_changed =
                         self.restore_selection(previous_path.as_deref()) != previous_path;
                     self.refresh_diff(selected_path_changed);
-                    self.status = None;
+                    if self
+                        .status
+                        .as_deref()
+                        .is_some_and(|msg| msg.starts_with("git error:"))
+                    {
+                        self.status = None;
+                    }
                 }
                 SnapshotMsg::Err(e) => {
                     self.status = Some(format!("git error: {e}"));
@@ -336,14 +342,56 @@ impl App {
         }
     }
 
-    pub fn toggle_focus(&mut self) {
+    /// Tab: cycle forward FileList → DiffViewer → Terminal[0] → Terminal[1] → … → FileList
+    pub fn cycle_focus_next(&mut self) {
+        let pane_count = self.terminal_panes.len();
         match self.focus {
-            Focus::FileList | Focus::DiffViewer => {
-                self.last_upper_focus = self.focus;
-                self.focus = Focus::Terminal;
+            Focus::FileList => {
+                self.last_upper_focus = Focus::FileList;
+                self.focus = Focus::DiffViewer;
+            }
+            Focus::DiffViewer => {
+                self.last_upper_focus = Focus::DiffViewer;
+                if pane_count > 0 {
+                    self.active_pane = 0;
+                    self.focus = Focus::Terminal;
+                } else {
+                    self.focus = Focus::FileList;
+                }
             }
             Focus::Terminal => {
-                self.focus = self.last_upper_focus;
+                if self.active_pane + 1 < pane_count {
+                    self.active_pane += 1;
+                } else {
+                    self.focus = Focus::FileList;
+                }
+            }
+        }
+    }
+
+    /// BackTab: cycle backward FileList → Terminal[last] → … → Terminal[0] → DiffViewer → FileList
+    pub fn cycle_focus_prev(&mut self) {
+        let pane_count = self.terminal_panes.len();
+        match self.focus {
+            Focus::FileList => {
+                if pane_count > 0 {
+                    self.active_pane = pane_count - 1;
+                    self.last_upper_focus = Focus::FileList;
+                    self.focus = Focus::Terminal;
+                } else {
+                    self.focus = Focus::DiffViewer;
+                }
+            }
+            Focus::DiffViewer => {
+                self.focus = Focus::FileList;
+            }
+            Focus::Terminal => {
+                if self.active_pane > 0 {
+                    self.active_pane -= 1;
+                } else {
+                    self.last_upper_focus = Focus::DiffViewer;
+                    self.focus = Focus::DiffViewer;
+                }
             }
         }
     }
@@ -447,19 +495,45 @@ mod tests {
     }
 
     #[test]
-    fn toggle_focus_switches_between_upper_and_terminal() {
+    fn tab_cycles_panels_without_terminal_panes() {
         let mut app = app_with_files(vec![]);
         assert_eq!(app.focus, Focus::FileList);
-        app.toggle_focus();
-        assert_eq!(app.focus, Focus::Terminal);
-        app.toggle_focus();
-        assert_eq!(app.focus, Focus::FileList);
-
-        app.focus = Focus::DiffViewer;
-        app.toggle_focus();
-        assert_eq!(app.focus, Focus::Terminal);
-        app.toggle_focus();
+        app.cycle_focus_next();
         assert_eq!(app.focus, Focus::DiffViewer);
+        app.cycle_focus_next();
+        assert_eq!(app.focus, Focus::FileList);
+    }
+
+    #[test]
+    fn tab_cycles_through_terminal_panes() {
+        let mut app = app_with_files(vec![]);
+        app.terminal_panes = vec![
+            PaneInfo { id: 1, title: "shell 1".into() },
+            PaneInfo { id: 2, title: "shell 2".into() },
+        ];
+        app.cycle_focus_next();
+        assert_eq!(app.focus, Focus::DiffViewer);
+        app.cycle_focus_next();
+        assert_eq!(app.focus, Focus::Terminal);
+        assert_eq!(app.active_pane, 0);
+        app.cycle_focus_next();
+        assert_eq!(app.focus, Focus::Terminal);
+        assert_eq!(app.active_pane, 1);
+        app.cycle_focus_next();
+        assert_eq!(app.focus, Focus::FileList);
+    }
+
+    #[test]
+    fn backtab_cycles_focus_in_reverse() {
+        let mut app = app_with_files(vec![]);
+        app.terminal_panes = vec![PaneInfo { id: 1, title: "shell 1".into() }];
+        app.cycle_focus_prev();
+        assert_eq!(app.focus, Focus::Terminal);
+        assert_eq!(app.active_pane, 0);
+        app.cycle_focus_prev();
+        assert_eq!(app.focus, Focus::DiffViewer);
+        app.cycle_focus_prev();
+        assert_eq!(app.focus, Focus::FileList);
     }
 
     #[test]
@@ -480,5 +554,68 @@ mod tests {
         let mut app = app_with_files(vec![]);
         app.switch_pane(5);
         assert_eq!(app.active_pane, 0);
+    }
+
+    #[test]
+    fn successful_snapshot_preserves_terminal_status() {
+        let (tx, rx) = mpsc::channel::<SnapshotMsg>();
+        let (_stop_tx, _stop_rx) = mpsc::sync_channel::<()>(0);
+        let mut app = App {
+            files: Vec::new(),
+            selected: 0,
+            hunks: Vec::new(),
+            scroll: 0,
+            focus: Focus::FileList,
+            last_upper_focus: Focus::FileList,
+            status: Some("tmux not found; using PTY fallback".to_string()),
+            repo_path: ".".to_string(),
+            terminal_panes: Vec::new(),
+            active_pane: 0,
+            backend_kind: None,
+            terminal_size: (22, 78),
+            rx,
+            _stop_tx,
+            backend: None,
+            parsers: HashMap::new(),
+        };
+
+        tx.send(SnapshotMsg::Ok(RepoSnapshot { files: Vec::new() }))
+            .unwrap();
+        app.poll_snapshot();
+
+        assert_eq!(
+            app.status.as_deref(),
+            Some("tmux not found; using PTY fallback")
+        );
+    }
+
+    #[test]
+    fn successful_snapshot_clears_git_status() {
+        let (tx, rx) = mpsc::channel::<SnapshotMsg>();
+        let (_stop_tx, _stop_rx) = mpsc::sync_channel::<()>(0);
+        let mut app = App {
+            files: Vec::new(),
+            selected: 0,
+            hunks: Vec::new(),
+            scroll: 0,
+            focus: Focus::FileList,
+            last_upper_focus: Focus::FileList,
+            status: Some("git error: not a repo".to_string()),
+            repo_path: ".".to_string(),
+            terminal_panes: Vec::new(),
+            active_pane: 0,
+            backend_kind: None,
+            terminal_size: (22, 78),
+            rx,
+            _stop_tx,
+            backend: None,
+            parsers: HashMap::new(),
+        };
+
+        tx.send(SnapshotMsg::Ok(RepoSnapshot { files: Vec::new() }))
+            .unwrap();
+        app.poll_snapshot();
+
+        assert_eq!(app.status, None);
     }
 }
