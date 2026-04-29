@@ -61,7 +61,7 @@ fn strip_escape_sequences(data: &[u8]) -> String {
     result
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum Focus {
     FileList,
     DiffViewer,
@@ -104,6 +104,7 @@ pub struct App {
     parsers: HashMap<PaneId, vt100::Parser>,
     prompt_log_enabled: bool,
     prompt_bufs: HashMap<PaneId, String>,
+    pending_session: Option<crate::session::SessionState>,
 }
 
 impl App {
@@ -156,9 +157,11 @@ impl App {
             parsers: HashMap::new(),
             prompt_log_enabled: prompt_log,
             prompt_bufs: HashMap::new(),
+            pending_session: None,
         };
 
         app.ensure_initial_terminal();
+        tracing::info!(repo = %app.repo_path, "nightcrow started");
         app
     }
 
@@ -189,8 +192,12 @@ impl App {
                     {
                         self.status = None;
                     }
+                    if let Some(state) = self.pending_session.take() {
+                        self.restore_session(&state);
+                    }
                 }
                 SnapshotMsg::Err(e) => {
+                    tracing::warn!(error = %e, "git snapshot failed");
                     self.status = Some(format!("git error: {e}"));
                 }
             }
@@ -241,6 +248,7 @@ impl App {
             title: "shell".to_string(),
         });
         self.active_pane = self.terminal_panes.len() - 1;
+        tracing::info!(pane = id, "terminal pane opened");
         Ok(())
     }
 
@@ -249,6 +257,7 @@ impl App {
             return;
         };
         let id = info.id;
+        tracing::info!(pane = id, "terminal pane closed");
         if let Some(backend) = &mut self.backend {
             backend.destroy_pane(id);
         }
@@ -289,6 +298,7 @@ impl App {
         if let Some(ref mut backend) = self.backend {
             backend.set_cwd(std::path::Path::new(&new_path));
         }
+        tracing::info!(path = %new_path, "repo changed");
         self.files.clear();
         self.selected = 0;
         self.hunks.clear();
@@ -692,6 +702,48 @@ impl App {
             }
         }
     }
+
+    pub fn set_pending_session(&mut self, state: crate::session::SessionState) {
+        self.pending_session = Some(state);
+    }
+
+    pub fn save_session(&self) -> crate::session::SessionState {
+        crate::session::SessionState {
+            focus: Some(format!("{:?}", self.focus)),
+            selected_file: self.files.get(self.selected).map(|f| f.path.clone()),
+            scroll: self.scroll,
+            active_pane: self.active_pane,
+        }
+    }
+
+    pub fn restore_session(&mut self, state: &crate::session::SessionState) {
+        if let Some(path) = &state.selected_file {
+            if let Some(idx) = self.files.iter().position(|f| &f.path == path) {
+                self.selected = idx;
+                self.refresh_diff(true);
+            }
+        }
+        self.scroll = state.scroll;
+        self.active_pane = self.active_pane.min(
+            self.terminal_panes.len().saturating_sub(1),
+        );
+        if let Some(focus_str) = &state.focus {
+            match focus_str.as_str() {
+                "DiffViewer" => self.focus = Focus::DiffViewer,
+                "Terminal" if !self.terminal_panes.is_empty() => {
+                    self.focus = Focus::Terminal;
+                    self.active_pane = state.active_pane.min(self.terminal_panes.len() - 1);
+                }
+                _ => self.focus = Focus::FileList,
+            }
+        }
+        tracing::debug!(
+            focus = ?state.focus,
+            file = ?state.selected_file,
+            scroll = state.scroll,
+            "session restored"
+        );
+    }
 }
 
 #[cfg(test)]
@@ -734,6 +786,7 @@ mod tests {
             parsers: HashMap::new(),
             prompt_log_enabled: false,
             prompt_bufs: HashMap::new(),
+            pending_session: None,
         }
     }
 
@@ -838,6 +891,7 @@ mod tests {
             parsers: HashMap::new(),
             prompt_log_enabled: false,
             prompt_bufs: HashMap::new(),
+            pending_session: None,
         };
 
         tx.send(SnapshotMsg::Ok(RepoSnapshot { files: Vec::new() }))
@@ -876,6 +930,7 @@ mod tests {
             diff_search_cursor: 0,
             rx,
             _stop_tx,
+            pending_session: None,
             backend: None,
             parsers: HashMap::new(),
             prompt_log_enabled: false,

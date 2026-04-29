@@ -37,7 +37,7 @@ impl Default for LogConfig {
             max_size_mb: 10,
             max_days: 7,
             prompt_log: false,
-            level: "warn".to_string(),
+            level: "info".to_string(),
         }
     }
 }
@@ -126,7 +126,7 @@ file_list_pct = 30
         assert!(cfg.enabled);
         assert!(!cfg.prompt_log);
         assert_eq!(cfg.rotation, "daily");
-        assert_eq!(cfg.level, "warn");
+        assert_eq!(cfg.level, "info");
         assert_eq!(cfg.max_days, 7);
     }
 

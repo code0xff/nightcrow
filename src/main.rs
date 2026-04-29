@@ -4,6 +4,7 @@ mod config;
 mod git;
 mod input;
 mod logging;
+mod session;
 mod ui;
 
 use anyhow::Result;
@@ -88,7 +89,9 @@ fn run(
 ) -> Result<()> {
     let ss = SyntaxSet::load_defaults_newlines();
     let ts = ThemeSet::load_defaults();
+    let saved_session = session::load_session(&repo_path);
     let mut app = App::new(repo_path, cfg.log.prompt_log);
+    app.set_pending_session(saved_session);
 
     loop {
         app.poll_snapshot();
@@ -214,5 +217,6 @@ fn run(
         }
     }
 
+    session::save_session(&app.repo_path, &app.save_session());
     Ok(())
 }
