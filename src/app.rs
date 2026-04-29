@@ -233,6 +233,10 @@ impl App {
     pub fn switch_pane(&mut self, idx: usize) {
         if idx < self.terminal_panes.len() {
             self.active_pane = idx;
+            if self.focus != Focus::Terminal {
+                self.last_upper_focus = self.focus;
+            }
+            self.focus = Focus::Terminal;
         }
     }
 
@@ -392,20 +396,6 @@ impl App {
         }
     }
 
-    pub fn toggle_panel(&mut self) {
-        match self.focus {
-            Focus::Terminal => {
-                self.focus = self.last_upper_focus;
-            }
-            Focus::FileList | Focus::DiffViewer => {
-                if !self.terminal_panes.is_empty() {
-                    self.last_upper_focus = self.focus;
-                    self.focus = Focus::Terminal;
-                }
-            }
-        }
-    }
-
     pub fn toggle_upper_focus(&mut self) {
         self.focus = match self.focus {
             Focus::FileList => Focus::DiffViewer,
@@ -506,33 +496,17 @@ mod tests {
     }
 
     #[test]
-    fn panel_toggle_switches_between_upper_and_terminal() {
+    fn switch_pane_moves_focus_to_terminal() {
         let mut app = app_with_files(vec![]);
-        app.terminal_panes = vec![PaneInfo { id: 1, title: "shell".into() }];
+        app.terminal_panes = vec![
+            PaneInfo { id: 1, title: "shell 1".into() },
+            PaneInfo { id: 2, title: "shell 2".into() },
+        ];
         assert_eq!(app.focus, Focus::FileList);
-        app.toggle_panel();
+        app.switch_pane(1);
         assert_eq!(app.focus, Focus::Terminal);
-        app.toggle_panel();
-        assert_eq!(app.focus, Focus::FileList);
-    }
-
-    #[test]
-    fn panel_toggle_does_nothing_without_terminal_panes() {
-        let mut app = app_with_files(vec![]);
-        app.toggle_panel();
-        assert_eq!(app.focus, Focus::FileList);
-    }
-
-    #[test]
-    fn panel_toggle_restores_last_upper_focus() {
-        let mut app = app_with_files(vec![]);
-        app.terminal_panes = vec![PaneInfo { id: 1, title: "shell".into() }];
-        app.focus = Focus::DiffViewer;
-        app.last_upper_focus = Focus::DiffViewer;
-        app.toggle_panel();
-        assert_eq!(app.focus, Focus::Terminal);
-        app.toggle_panel();
-        assert_eq!(app.focus, Focus::DiffViewer);
+        assert_eq!(app.active_pane, 1);
+        assert_eq!(app.last_upper_focus, Focus::FileList);
     }
 
     #[test]
