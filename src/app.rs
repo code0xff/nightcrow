@@ -90,6 +90,8 @@ pub struct App {
     pub terminal_panes: Vec<PaneInfo>,
     pub active_pane: usize,
     pub terminal_size: (u16, u16),
+    pub search_query: String,
+    pub search_active: bool,
     rx: Receiver<SnapshotMsg>,
     // Dropping this sender signals the background thread to exit.
     _stop_tx: SyncSender<()>,
@@ -136,6 +138,8 @@ impl App {
             terminal_panes: Vec::new(),
             active_pane: 0,
             terminal_size: (22, 78),
+            search_query: String::new(),
+            search_active: false,
             rx,
             _stop_tx: stop_tx,
             backend: Some(backend),
@@ -356,10 +360,64 @@ impl App {
         self.files.get(self.selected).map(|file| file.path.clone())
     }
 
+    pub fn filtered_indices(&self) -> Vec<usize> {
+        if self.search_query.is_empty() {
+            return (0..self.files.len()).collect();
+        }
+        let q = self.search_query.to_lowercase();
+        self.files
+            .iter()
+            .enumerate()
+            .filter(|(_, f)| f.path.to_lowercase().contains(&q))
+            .map(|(i, _)| i)
+            .collect()
+    }
+
+    pub fn start_search(&mut self) {
+        self.search_active = true;
+    }
+
+    pub fn cancel_search(&mut self) {
+        self.search_active = false;
+        self.search_query.clear();
+    }
+
+    pub fn confirm_search(&mut self) {
+        self.search_active = false;
+    }
+
+    pub fn search_push(&mut self, ch: char) {
+        self.search_query.push(ch);
+        self.clamp_to_filtered();
+    }
+
+    pub fn search_pop(&mut self) {
+        self.search_query.pop();
+        self.clamp_to_filtered();
+    }
+
+    fn clamp_to_filtered(&mut self) {
+        let indices = self.filtered_indices();
+        if !indices.contains(&self.selected) {
+            if let Some(&first) = indices.first() {
+                self.selected = first;
+                self.reload_diff();
+            }
+        }
+    }
+
     pub fn select_up(&mut self) {
         match self.focus {
             Focus::FileList => {
-                if self.selected > 0 {
+                if !self.search_query.is_empty() {
+                    let indices = self.filtered_indices();
+                    if let Some(pos) = indices.iter().position(|&i| i == self.selected) {
+                        if pos > 0 {
+                            self.selected = indices[pos - 1];
+                            self.reload_diff();
+                        }
+                    }
+                } else if self.selected > 0 {
                     self.selected -= 1;
                     self.reload_diff();
                 }
@@ -374,7 +432,15 @@ impl App {
     pub fn select_down(&mut self) {
         match self.focus {
             Focus::FileList => {
-                if !self.files.is_empty() && self.selected < self.files.len() - 1 {
+                if !self.search_query.is_empty() {
+                    let indices = self.filtered_indices();
+                    if let Some(pos) = indices.iter().position(|&i| i == self.selected) {
+                        if pos + 1 < indices.len() {
+                            self.selected = indices[pos + 1];
+                            self.reload_diff();
+                        }
+                    }
+                } else if !self.files.is_empty() && self.selected < self.files.len() - 1 {
                     self.selected += 1;
                     self.reload_diff();
                 }
@@ -389,8 +455,16 @@ impl App {
     pub fn page_up(&mut self) {
         match self.focus {
             Focus::FileList => {
-                self.selected = self.selected.saturating_sub(10);
-                self.reload_diff();
+                if !self.search_query.is_empty() {
+                    let indices = self.filtered_indices();
+                    if let Some(pos) = indices.iter().position(|&i| i == self.selected) {
+                        self.selected = indices[pos.saturating_sub(10)];
+                        self.reload_diff();
+                    }
+                } else {
+                    self.selected = self.selected.saturating_sub(10);
+                    self.reload_diff();
+                }
             }
             Focus::DiffViewer => {
                 self.scroll = self.scroll.saturating_sub(20);
@@ -402,7 +476,13 @@ impl App {
     pub fn page_down(&mut self) {
         match self.focus {
             Focus::FileList => {
-                if !self.files.is_empty() {
+                if !self.search_query.is_empty() {
+                    let indices = self.filtered_indices();
+                    if let Some(pos) = indices.iter().position(|&i| i == self.selected) {
+                        self.selected = indices[(pos + 10).min(indices.len() - 1)];
+                        self.reload_diff();
+                    }
+                } else if !self.files.is_empty() {
                     self.selected = (self.selected + 10).min(self.files.len() - 1);
                     self.reload_diff();
                 }
@@ -466,6 +546,8 @@ mod tests {
             terminal_panes: Vec::new(),
             active_pane: 0,
             terminal_size: (22, 78),
+            search_query: String::new(),
+            search_active: false,
             rx,
             _stop_tx,
             backend: None,
@@ -576,6 +658,8 @@ mod tests {
             terminal_panes: Vec::new(),
             active_pane: 0,
             terminal_size: (22, 78),
+            search_query: String::new(),
+            search_active: false,
             rx,
             _stop_tx,
             backend: None,
@@ -610,6 +694,8 @@ mod tests {
             terminal_panes: Vec::new(),
             active_pane: 0,
             terminal_size: (22, 78),
+            search_query: String::new(),
+            search_active: false,
             rx,
             _stop_tx,
             backend: None,

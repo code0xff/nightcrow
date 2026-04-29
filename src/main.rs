@@ -14,6 +14,7 @@ use crossterm::{
     execute,
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
+use crossterm::event::KeyCode;
 use input::{Action, encode_key, map_key};
 use ratatui::{Terminal, backend::CrosstermBackend};
 use std::{io, time::Duration};
@@ -120,23 +121,47 @@ fn run(
                     }
                 },
 
-                Focus::FileList | Focus::DiffViewer => match map_key(key) {
-                    Action::Quit => break,
-                    Action::Up => app.select_up(),
-                    Action::Down => app.select_down(),
-                    Action::PageUp => app.page_up(),
-                    Action::PageDown => app.page_down(),
-                    Action::Left | Action::Right => app.toggle_upper_focus(),
-                    Action::NewPane => {
-                        if let Err(e) = app.create_terminal_pane() {
-                            tracing::error!("create_terminal_pane failed: {e}");
-                            app.status = Some(format!("terminal error: {e}"));
+                Focus::FileList | Focus::DiffViewer => {
+                    if app.focus == Focus::FileList && app.search_active {
+                        match key.code {
+                            KeyCode::Esc => app.cancel_search(),
+                            KeyCode::Enter => app.confirm_search(),
+                            KeyCode::Backspace => app.search_pop(),
+                            KeyCode::Up => app.select_up(),
+                            KeyCode::Down => app.select_down(),
+                            KeyCode::Char(c) => app.search_push(c),
+                            _ => {}
+                        }
+                    } else {
+                        match map_key(key) {
+                            Action::Quit => break,
+                            Action::Up => app.select_up(),
+                            Action::Down => app.select_down(),
+                            Action::PageUp => app.page_up(),
+                            Action::PageDown => app.page_down(),
+                            Action::Left | Action::Right => app.toggle_upper_focus(),
+                            Action::NewPane => {
+                                if let Err(e) = app.create_terminal_pane() {
+                                    tracing::error!("create_terminal_pane failed: {e}");
+                                    app.status = Some(format!("terminal error: {e}"));
+                                }
+                            }
+                            Action::SwitchPane(n) => app.switch_pane(n),
+                            Action::TogglePanel => app.focus_lower(),
+                            Action::None => {
+                                if app.focus == Focus::FileList {
+                                    match key.code {
+                                        KeyCode::Char('/') => app.start_search(),
+                                        KeyCode::Esc if !app.search_query.is_empty() => {
+                                            app.cancel_search()
+                                        }
+                                        _ => {}
+                                    }
+                                }
+                            }
                         }
                     }
-                    Action::SwitchPane(n) => app.switch_pane(n),
-                    Action::TogglePanel => app.focus_lower(),
-                    Action::None => {}
-                },
+                }
             }
         }
     }
