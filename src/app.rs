@@ -494,16 +494,51 @@ impl App {
         }
     }
 
-    pub fn focus_upper(&mut self) {
-        if self.focus == Focus::Terminal {
-            self.focus = self.last_upper_focus;
+    pub fn cycle_focus_forward(&mut self) {
+        match self.focus {
+            Focus::FileList => {
+                self.last_upper_focus = Focus::FileList;
+                self.focus = Focus::DiffViewer;
+            }
+            Focus::DiffViewer => {
+                self.last_upper_focus = Focus::DiffViewer;
+                if !self.terminal_panes.is_empty() {
+                    self.active_pane = 0;
+                    self.focus = Focus::Terminal;
+                } else {
+                    self.focus = Focus::FileList;
+                }
+            }
+            Focus::Terminal => {
+                if self.active_pane + 1 < self.terminal_panes.len() {
+                    self.active_pane += 1;
+                } else {
+                    self.focus = Focus::FileList;
+                }
+            }
         }
     }
 
-    pub fn focus_lower(&mut self) {
-        if self.focus != Focus::Terminal && !self.terminal_panes.is_empty() {
-            self.last_upper_focus = self.focus;
-            self.focus = Focus::Terminal;
+    pub fn cycle_focus_backward(&mut self) {
+        match self.focus {
+            Focus::FileList => {
+                if !self.terminal_panes.is_empty() {
+                    self.active_pane = self.terminal_panes.len() - 1;
+                    self.focus = Focus::Terminal;
+                } else {
+                    self.focus = Focus::DiffViewer;
+                }
+            }
+            Focus::DiffViewer => {
+                self.focus = Focus::FileList;
+            }
+            Focus::Terminal => {
+                if self.active_pane > 0 {
+                    self.active_pane -= 1;
+                } else {
+                    self.focus = Focus::DiffViewer;
+                }
+            }
         }
     }
 

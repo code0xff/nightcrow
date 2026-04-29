@@ -113,7 +113,8 @@ fn run(
                     Action::SwitchPane(n) => app.switch_pane(n),
                     Action::Left => app.prev_pane(),
                     Action::Right => app.next_pane(),
-                    Action::TogglePanel => app.focus_upper(),
+                    Action::CycleForward => app.cycle_focus_forward(),
+                    Action::CycleBackward => app.cycle_focus_backward(),
                     _ => {
                         if let Some(data) = encode_key(key) {
                             app.send_terminal_input(&data);
@@ -147,7 +148,8 @@ fn run(
                                 }
                             }
                             Action::SwitchPane(n) => app.switch_pane(n),
-                            Action::TogglePanel => app.focus_lower(),
+                            Action::CycleForward => app.cycle_focus_forward(),
+                            Action::CycleBackward => app.cycle_focus_backward(),
                             Action::None => {
                                 if app.focus == Focus::FileList {
                                     match key.code {

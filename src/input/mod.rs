@@ -11,17 +11,20 @@ pub enum Action {
     PageDown,
     NewPane,
     SwitchPane(usize),
-    TogglePanel,
+    CycleForward,
+    CycleBackward,
     None,
 }
 
 pub fn map_key(event: KeyEvent) -> Action {
     let ctrl = event.modifiers.contains(KeyModifiers::CONTROL);
+    let shift = event.modifiers.contains(KeyModifiers::SHIFT);
 
     match event.code {
         KeyCode::Char('q') if ctrl => Action::Quit,
         KeyCode::Char('t') if ctrl => Action::NewPane,
-        KeyCode::BackTab => Action::TogglePanel,
+        KeyCode::BackTab => Action::CycleForward,
+        KeyCode::Backspace if shift => Action::CycleBackward,
         KeyCode::F(n @ 1..=9) => Action::SwitchPane(n as usize - 1),
         KeyCode::Left => Action::Left,
         KeyCode::Right => Action::Right,
