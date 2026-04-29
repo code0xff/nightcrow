@@ -67,7 +67,7 @@ pub fn draw(
                 if app.diff_search_active {
                     " type to search  |  enter: confirm  |  esc: cancel"
                 } else if !app.diff_search_query.is_empty() {
-                    " n: next match  |  N: prev match  |  /: new search  |  esc: clear"
+                    " n: next match  |  shift+n: prev match  |  /: new search  |  esc: clear"
                 } else {
                     " shift+←/→: cycle  |  j/k: scroll  |  /: search  |  pgup/pgdn: scroll  |  F1-F9: switch pane  |  ctrl+o: repo  |  ctrl+q: quit"
                 }
