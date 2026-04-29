@@ -3,6 +3,7 @@ mod backend;
 mod config;
 mod git;
 mod input;
+mod logging;
 mod ui;
 
 use anyhow::Result;
@@ -40,6 +41,8 @@ fn main() -> Result<()> {
         .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| ".".into()))
         .to_string_lossy()
         .to_string();
+
+    let _log_guard = logging::init_logging(&cfg.log, &repo_path);
 
     let _guard = TerminalGuard::enter()?;
 
@@ -84,7 +87,7 @@ fn run(
 ) -> Result<()> {
     let ss = SyntaxSet::load_defaults_newlines();
     let ts = ThemeSet::load_defaults();
-    let mut app = App::new(repo_path);
+    let mut app = App::new(repo_path, cfg.log.prompt_log);
 
     loop {
         app.poll_snapshot();

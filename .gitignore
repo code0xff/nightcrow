@@ -26,6 +26,7 @@
 
 # Logs
 *.log
+.nightcrow/
 
 # Test artifacts
 /tmp/
