@@ -396,6 +396,20 @@ impl App {
         }
     }
 
+    pub fn toggle_panel(&mut self) {
+        match self.focus {
+            Focus::Terminal => {
+                self.focus = self.last_upper_focus;
+            }
+            Focus::FileList | Focus::DiffViewer => {
+                if !self.terminal_panes.is_empty() {
+                    self.last_upper_focus = self.focus;
+                    self.focus = Focus::Terminal;
+                }
+            }
+        }
+    }
+
     pub fn toggle_upper_focus(&mut self) {
         self.focus = match self.focus {
             Focus::FileList => Focus::DiffViewer,

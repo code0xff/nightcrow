@@ -103,7 +103,7 @@ fn run(
             match app.focus {
                 Focus::Terminal => match map_key(key) {
                     Action::Quit => break,
-                    Action::UpperFocusToggle => app.toggle_upper_focus(),
+                    Action::PanelToggle => app.toggle_panel(),
                     Action::NewPane => {
                         if let Err(e) = app.create_terminal_pane() {
                             app.status = Some(format!("terminal error: {e}"));
@@ -123,6 +123,7 @@ fn run(
                     Action::Down => app.select_down(),
                     Action::PageUp => app.page_up(),
                     Action::PageDown => app.page_down(),
+                    Action::PanelToggle => app.toggle_panel(),
                     Action::UpperFocusToggle => app.toggle_upper_focus(),
                     Action::NewPane => {
                         if let Err(e) = app.create_terminal_pane() {

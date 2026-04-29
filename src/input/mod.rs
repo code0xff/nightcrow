@@ -7,6 +7,7 @@ pub enum Action {
     Down,
     PageUp,
     PageDown,
+    PanelToggle,
     UpperFocusToggle,
     NewPane,
     SwitchPane(usize),
@@ -20,7 +21,8 @@ pub fn map_key(event: KeyEvent) -> Action {
         KeyCode::Char('q') if ctrl => Action::Quit,
         KeyCode::Char('t') if ctrl => Action::NewPane,
         KeyCode::F(n @ 1..=9) => Action::SwitchPane(n as usize - 1),
-        KeyCode::Left | KeyCode::Right | KeyCode::Tab | KeyCode::BackTab => Action::UpperFocusToggle,
+        KeyCode::Left | KeyCode::Right | KeyCode::Tab => Action::UpperFocusToggle,
+        KeyCode::BackTab => Action::PanelToggle,
         KeyCode::Up | KeyCode::Char('k') => Action::Up,
         KeyCode::Down | KeyCode::Char('j') => Action::Down,
         KeyCode::PageUp => Action::PageUp,
@@ -118,7 +120,11 @@ mod tests {
     #[test]
     fn maps_tab_as_upper_focus_toggle() {
         assert_eq!(map_key(key(KeyCode::Tab)), Action::UpperFocusToggle);
-        assert_eq!(map_key(key(KeyCode::BackTab)), Action::UpperFocusToggle);
+    }
+
+    #[test]
+    fn maps_backtab_as_panel_toggle() {
+        assert_eq!(map_key(key(KeyCode::BackTab)), Action::PanelToggle);
     }
 
     #[test]
