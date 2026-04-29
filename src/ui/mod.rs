@@ -47,7 +47,13 @@ pub fn draw(
     diff_viewer::render(frame, app, upper[1], ss, ts);
     terminal_tab::render(frame, app, root[1]);
 
-    let hint_bar = if let Some(ref msg) = app.status {
+    let hint_bar = if app.repo_input_active {
+        Paragraph::new(Line::from(vec![
+            Span::styled("repo: ", Style::default().fg(Color::Yellow)),
+            Span::raw(app.repo_input_buf.as_str()),
+            Span::styled("█", Style::default().fg(Color::Yellow)),
+        ]))
+    } else if let Some(ref msg) = app.status {
         Paragraph::new(Line::from(msg.as_str())).style(Style::default().fg(Color::Red))
     } else {
         let hint = match app.focus {

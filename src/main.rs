@@ -101,6 +101,23 @@ fn run(
         if event::poll(Duration::from_millis(50))?
             && let Event::Key(key) = event::read()?
         {
+            if app.repo_input_active {
+                match key.code {
+                    KeyCode::Esc => app.cancel_repo_input(),
+                    KeyCode::Enter => app.confirm_repo_input(),
+                    KeyCode::Backspace => {
+                        if app.repo_input_buf.is_empty() {
+                            app.cancel_repo_input();
+                        } else {
+                            app.repo_input_pop();
+                        }
+                    }
+                    KeyCode::Char(c) => app.repo_input_push(c),
+                    _ => {}
+                }
+                continue;
+            }
+
             match app.focus {
                 Focus::Terminal => match map_key(key) {
                     Action::Quit => break,
@@ -111,6 +128,7 @@ fn run(
                         }
                     }
                     Action::ClosePane => app.close_active_pane(),
+                    Action::ChangeRepo => app.start_repo_input(),
                     Action::SwitchPane(n) => app.switch_pane(n),
                     Action::CycleForward => app.cycle_focus_forward(),
                     Action::CycleBackward => app.cycle_focus_backward(),
@@ -152,6 +170,7 @@ fn run(
                                 }
                             }
                             Action::ClosePane => app.close_active_pane(),
+                            Action::ChangeRepo => app.start_repo_input(),
                             Action::SwitchPane(n) => app.switch_pane(n),
                             Action::CycleForward => app.cycle_focus_forward(),
                             Action::CycleBackward => app.cycle_focus_backward(),

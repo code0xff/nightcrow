@@ -9,6 +9,7 @@ pub enum Action {
     PageDown,
     NewPane,
     ClosePane,
+    ChangeRepo,
     SwitchPane(usize),
     CycleForward,
     CycleBackward,
@@ -23,6 +24,7 @@ pub fn map_key(event: KeyEvent) -> Action {
         KeyCode::Char('q') if ctrl => Action::Quit,
         KeyCode::Char('t') if ctrl => Action::NewPane,
         KeyCode::Char('w') if ctrl => Action::ClosePane,
+        KeyCode::Char('o') if ctrl => Action::ChangeRepo,
         KeyCode::Left if shift => Action::CycleBackward,
         KeyCode::Right if shift => Action::CycleForward,
         KeyCode::F(n @ 1..=9) => Action::SwitchPane(n as usize - 1),
@@ -136,6 +138,11 @@ mod tests {
     #[test]
     fn maps_close_pane() {
         assert_eq!(map_key(ctrl(KeyCode::Char('w'))), Action::ClosePane);
+    }
+
+    #[test]
+    fn maps_change_repo() {
+        assert_eq!(map_key(ctrl(KeyCode::Char('o'))), Action::ChangeRepo);
     }
 
     #[test]

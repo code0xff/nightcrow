@@ -124,6 +124,10 @@ impl TerminalBackend for PtyBackend {
         }
     }
 
+    fn set_cwd(&mut self, path: &std::path::Path) {
+        self.cwd = path.to_path_buf();
+    }
+
     fn drain_events(&mut self) -> Vec<BackendEvent> {
         let mut events = Vec::new();
         let mut exited = Vec::new();

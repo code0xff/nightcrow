@@ -91,6 +91,8 @@ pub struct App {
     pub terminal_size: (u16, u16),
     pub search_query: String,
     pub search_active: bool,
+    pub repo_input_active: bool,
+    pub repo_input_buf: String,
     rx: Receiver<SnapshotMsg>,
     // Dropping this sender signals the background thread to exit.
     _stop_tx: SyncSender<()>,
@@ -138,6 +140,8 @@ impl App {
             terminal_size: (22, 78),
             search_query: String::new(),
             search_active: false,
+            repo_input_active: false,
+            repo_input_buf: String::new(),
             rx,
             _stop_tx: stop_tx,
             backend: Some(backend),
@@ -249,6 +253,65 @@ impl App {
         } else {
             self.active_pane = self.active_pane.min(self.terminal_panes.len() - 1);
         }
+    }
+
+    pub fn change_repo(&mut self, new_path: String) {
+        let (tx, rx) = mpsc::channel::<SnapshotMsg>();
+        let (stop_tx, stop_rx) = mpsc::sync_channel::<()>(0);
+        let path = new_path.clone();
+        thread::spawn(move || {
+            loop {
+                let msg = match load_snapshot(&path) {
+                    Ok(s) => SnapshotMsg::Ok(s),
+                    Err(e) => SnapshotMsg::Err(e.to_string()),
+                };
+                if tx.send(msg).is_err() {
+                    break;
+                }
+                match stop_rx.recv_timeout(Duration::from_millis(1000)) {
+                    Ok(()) | Err(mpsc::RecvTimeoutError::Disconnected) => break,
+                    Err(mpsc::RecvTimeoutError::Timeout) => {}
+                }
+            }
+        });
+        // Replacing _stop_tx drops the old sender, signaling the old thread to exit.
+        self._stop_tx = stop_tx;
+        self.rx = rx;
+        self.repo_path = new_path.clone();
+        if let Some(ref mut backend) = self.backend {
+            backend.set_cwd(std::path::Path::new(&new_path));
+        }
+        self.files.clear();
+        self.selected = 0;
+        self.hunks.clear();
+        self.scroll = 0;
+        self.search_query.clear();
+        self.search_active = false;
+        self.status = None;
+    }
+
+    pub fn start_repo_input(&mut self) {
+        self.repo_input_buf = self.repo_path.clone();
+        self.repo_input_active = true;
+    }
+
+    pub fn cancel_repo_input(&mut self) {
+        self.repo_input_active = false;
+        self.repo_input_buf.clear();
+    }
+
+    pub fn confirm_repo_input(&mut self) {
+        self.repo_input_active = false;
+        let path = std::mem::take(&mut self.repo_input_buf);
+        self.change_repo(path);
+    }
+
+    pub fn repo_input_push(&mut self, ch: char) {
+        self.repo_input_buf.push(ch);
+    }
+
+    pub fn repo_input_pop(&mut self) {
+        self.repo_input_buf.pop();
     }
 
     pub fn switch_pane(&mut self, idx: usize) {
@@ -566,6 +629,8 @@ mod tests {
             terminal_size: (22, 78),
             search_query: String::new(),
             search_active: false,
+            repo_input_active: false,
+            repo_input_buf: String::new(),
             rx,
             _stop_tx,
             backend: None,
@@ -664,6 +729,8 @@ mod tests {
             terminal_size: (22, 78),
             search_query: String::new(),
             search_active: false,
+            repo_input_active: false,
+            repo_input_buf: String::new(),
             rx,
             _stop_tx,
             backend: None,
@@ -700,6 +767,8 @@ mod tests {
             terminal_size: (22, 78),
             search_query: String::new(),
             search_active: false,
+            repo_input_active: false,
+            repo_input_buf: String::new(),
             rx,
             _stop_tx,
             backend: None,
