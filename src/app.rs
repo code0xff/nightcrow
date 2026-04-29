@@ -392,55 +392,15 @@ impl App {
         }
     }
 
-    /// Tab: cycle forward FileList → DiffViewer → Terminal[0] → Terminal[1] → … → FileList
-    pub fn cycle_focus_next(&mut self) {
-        let pane_count = self.terminal_panes.len();
+    pub fn toggle_panel(&mut self) {
         match self.focus {
-            Focus::FileList => {
-                self.last_upper_focus = Focus::FileList;
-                self.focus = Focus::DiffViewer;
-            }
-            Focus::DiffViewer => {
-                self.last_upper_focus = Focus::DiffViewer;
-                if pane_count > 0 {
-                    self.active_pane = 0;
-                    self.focus = Focus::Terminal;
-                } else {
-                    self.focus = Focus::FileList;
-                }
-            }
             Focus::Terminal => {
-                if self.active_pane + 1 < pane_count {
-                    self.active_pane += 1;
-                } else {
-                    self.focus = Focus::FileList;
-                }
+                self.focus = self.last_upper_focus;
             }
-        }
-    }
-
-    /// BackTab: cycle backward FileList → Terminal[last] → … → Terminal[0] → DiffViewer → FileList
-    pub fn cycle_focus_prev(&mut self) {
-        let pane_count = self.terminal_panes.len();
-        match self.focus {
-            Focus::FileList => {
-                if pane_count > 0 {
-                    self.active_pane = pane_count - 1;
-                    self.last_upper_focus = Focus::FileList;
+            Focus::FileList | Focus::DiffViewer => {
+                if !self.terminal_panes.is_empty() {
+                    self.last_upper_focus = self.focus;
                     self.focus = Focus::Terminal;
-                } else {
-                    self.focus = Focus::DiffViewer;
-                }
-            }
-            Focus::DiffViewer => {
-                self.focus = Focus::FileList;
-            }
-            Focus::Terminal => {
-                if self.active_pane > 0 {
-                    self.active_pane -= 1;
-                } else {
-                    self.last_upper_focus = Focus::DiffViewer;
-                    self.focus = Focus::DiffViewer;
                 }
             }
         }
@@ -546,54 +506,39 @@ mod tests {
     }
 
     #[test]
-    fn tab_cycles_panels_without_terminal_panes() {
-        let mut app = app_with_files(vec![]);
-        assert_eq!(app.focus, Focus::FileList);
-        app.cycle_focus_next();
-        assert_eq!(app.focus, Focus::DiffViewer);
-        app.cycle_focus_next();
-        assert_eq!(app.focus, Focus::FileList);
-    }
-
-    #[test]
-    fn tab_cycles_through_terminal_panes() {
-        let mut app = app_with_files(vec![]);
-        app.terminal_panes = vec![
-            PaneInfo {
-                id: 1,
-                title: "shell 1".into(),
-            },
-            PaneInfo {
-                id: 2,
-                title: "shell 2".into(),
-            },
-        ];
-        app.cycle_focus_next();
-        assert_eq!(app.focus, Focus::DiffViewer);
-        app.cycle_focus_next();
-        assert_eq!(app.focus, Focus::Terminal);
-        assert_eq!(app.active_pane, 0);
-        app.cycle_focus_next();
-        assert_eq!(app.focus, Focus::Terminal);
-        assert_eq!(app.active_pane, 1);
-        app.cycle_focus_next();
-        assert_eq!(app.focus, Focus::FileList);
-    }
-
-    #[test]
-    fn backtab_cycles_focus_in_reverse() {
+    fn panel_toggle_switches_between_upper_and_terminal() {
         let mut app = app_with_files(vec![]);
         app.terminal_panes = vec![PaneInfo {
             id: 1,
-            title: "shell 1".into(),
+            title: "shell".into(),
         }];
-        app.cycle_focus_prev();
-        assert_eq!(app.focus, Focus::Terminal);
-        assert_eq!(app.active_pane, 0);
-        app.cycle_focus_prev();
-        assert_eq!(app.focus, Focus::DiffViewer);
-        app.cycle_focus_prev();
         assert_eq!(app.focus, Focus::FileList);
+        app.toggle_panel();
+        assert_eq!(app.focus, Focus::Terminal);
+        app.toggle_panel();
+        assert_eq!(app.focus, Focus::FileList);
+    }
+
+    #[test]
+    fn panel_toggle_does_nothing_without_terminal_panes() {
+        let mut app = app_with_files(vec![]);
+        app.toggle_panel();
+        assert_eq!(app.focus, Focus::FileList);
+    }
+
+    #[test]
+    fn panel_toggle_restores_last_upper_focus() {
+        let mut app = app_with_files(vec![]);
+        app.terminal_panes = vec![PaneInfo {
+            id: 1,
+            title: "shell".into(),
+        }];
+        app.focus = Focus::DiffViewer;
+        app.last_upper_focus = Focus::DiffViewer;
+        app.toggle_panel();
+        assert_eq!(app.focus, Focus::Terminal);
+        app.toggle_panel();
+        assert_eq!(app.focus, Focus::DiffViewer);
     }
 
     #[test]

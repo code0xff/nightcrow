@@ -7,8 +7,9 @@ pub enum Action {
     Down,
     PageUp,
     PageDown,
-    FocusNext,
-    FocusPrev,
+    /// Ctrl+\: toggle between upper panel and terminal panel
+    PanelToggle,
+    /// Tab/BackTab within upper panel: cycle FileList ↔ DiffViewer
     UpperFocusToggle,
     NewPane,
     SwitchPane(usize),
@@ -21,14 +22,16 @@ pub fn map_key(event: KeyEvent) -> Action {
     match event.code {
         KeyCode::Char('q') if ctrl => Action::Quit,
         KeyCode::Char('t') if ctrl => Action::NewPane,
+        // Ctrl+\ toggles between upper panel and terminal panel
+        KeyCode::Char('\\') if ctrl => Action::PanelToggle,
         KeyCode::F(n @ 1..=9) => Action::SwitchPane(n as usize - 1),
-        KeyCode::Left | KeyCode::Right => Action::UpperFocusToggle,
+        KeyCode::Left | KeyCode::Right | KeyCode::Tab | KeyCode::BackTab => {
+            Action::UpperFocusToggle
+        }
         KeyCode::Up | KeyCode::Char('k') => Action::Up,
         KeyCode::Down | KeyCode::Char('j') => Action::Down,
         KeyCode::PageUp => Action::PageUp,
         KeyCode::PageDown => Action::PageDown,
-        KeyCode::Tab => Action::FocusNext,
-        KeyCode::BackTab => Action::FocusPrev,
         _ => Action::None,
     }
 }
@@ -120,9 +123,16 @@ mod tests {
     }
 
     #[test]
-    fn maps_focus_cycle() {
-        assert_eq!(map_key(key(KeyCode::Tab)), Action::FocusNext);
-        assert_eq!(map_key(key(KeyCode::BackTab)), Action::FocusPrev);
+    fn maps_panel_toggle() {
+        assert_eq!(map_key(ctrl(KeyCode::Char('\\'))), Action::PanelToggle);
+    }
+
+    #[test]
+    fn maps_upper_focus_toggle_keys() {
+        assert_eq!(map_key(key(KeyCode::Tab)), Action::UpperFocusToggle);
+        assert_eq!(map_key(key(KeyCode::BackTab)), Action::UpperFocusToggle);
+        assert_eq!(map_key(key(KeyCode::Left)), Action::UpperFocusToggle);
+        assert_eq!(map_key(key(KeyCode::Right)), Action::UpperFocusToggle);
     }
 
     #[test]
@@ -135,12 +145,6 @@ mod tests {
         assert_eq!(map_key(key(KeyCode::F(1))), Action::SwitchPane(0));
         assert_eq!(map_key(key(KeyCode::F(2))), Action::SwitchPane(1));
         assert_eq!(map_key(key(KeyCode::F(9))), Action::SwitchPane(8));
-    }
-
-    #[test]
-    fn maps_upper_focus_toggle() {
-        assert_eq!(map_key(key(KeyCode::Left)), Action::UpperFocusToggle);
-        assert_eq!(map_key(key(KeyCode::Right)), Action::UpperFocusToggle);
     }
 
     #[test]
