@@ -34,8 +34,12 @@ pub fn init_logging(config: &LogConfig, repo_path: &str) -> Option<LogGuard> {
         }
         "size" => {
             let max_bytes = config.max_size_mb.saturating_mul(1024 * 1024);
-            let appender = SizeRollingAppender::new(&log_dir, "nightcrow.log", max_bytes);
-            tracing_appender::non_blocking(appender)
+            if let Some(appender) = SizeRollingAppender::new(&log_dir, "nightcrow.log", max_bytes) {
+                tracing_appender::non_blocking(appender)
+            } else {
+                let appender = tracing_appender::rolling::daily(&log_dir, "nightcrow.log");
+                tracing_appender::non_blocking(appender)
+            }
         }
         _ => {
             // default: daily
@@ -78,7 +82,7 @@ fn parse_level(level: &str) -> &str {
     }
 }
 
-pub fn cleanup_old_logs(log_dir: &Path, max_days: u32) {
+fn cleanup_old_logs(log_dir: &Path, max_days: u32) {
     if max_days == 0 {
         return;
     }
@@ -95,15 +99,13 @@ pub fn cleanup_old_logs(log_dir: &Path, max_days: u32) {
         let is_log = path
             .file_name()
             .and_then(|n| n.to_str())
-            .map_or(false, |n| n.starts_with("nightcrow") && n.ends_with(".log"));
-        if is_log {
-            if let Ok(meta) = fs::metadata(&path) {
-                if let Ok(modified) = meta.modified() {
-                    if modified < cutoff {
-                        let _ = fs::remove_file(&path);
-                    }
-                }
-            }
+            .is_some_and(|n| n.starts_with("nightcrow") && n.ends_with(".log"));
+        if is_log
+            && let Ok(meta) = fs::metadata(&path)
+            && let Ok(modified) = meta.modified()
+            && modified < cutoff
+        {
+            let _ = fs::remove_file(&path);
         }
     }
 }
@@ -123,15 +125,15 @@ struct SizeRollingInner {
 }
 
 impl SizeRollingAppender {
-    fn new(dir: &Path, prefix: &str, max_bytes: u64) -> Self {
+    fn new(dir: &Path, prefix: &str, max_bytes: u64) -> Option<Self> {
         let path = dir.join(format!("{prefix}.0"));
         let current = OpenOptions::new()
             .create(true)
             .append(true)
             .open(&path)
-            .expect("failed to open log file");
+            .ok()?;
         let current_size = current.metadata().map(|m| m.len()).unwrap_or(0);
-        Self {
+        Some(Self {
             inner: Arc::new(Mutex::new(SizeRollingInner {
                 dir: dir.to_path_buf(),
                 prefix: prefix.to_string(),
@@ -140,13 +142,13 @@ impl SizeRollingAppender {
                 current_size,
                 index: 0,
             })),
-        }
+        })
     }
 }
 
 impl Write for SizeRollingAppender {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        let mut inner = self.inner.lock().unwrap();
+        let mut inner = self.inner.lock().unwrap_or_else(|e| e.into_inner());
         if inner.max_bytes > 0 && inner.current_size + buf.len() as u64 > inner.max_bytes {
             inner.index += 1;
             let path = inner
@@ -161,7 +163,7 @@ impl Write for SizeRollingAppender {
     }
 
     fn flush(&mut self) -> io::Result<()> {
-        self.inner.lock().unwrap().current.flush()
+        self.inner.lock().unwrap_or_else(|e| e.into_inner()).current.flush()
     }
 }
 
@@ -198,7 +200,7 @@ mod tests {
     #[test]
     fn size_rolling_appender_rotates_on_overflow() {
         let dir = tempdir().unwrap();
-        let mut appender = SizeRollingAppender::new(dir.path(), "test.log", 10);
+        let mut appender = SizeRollingAppender::new(dir.path(), "test.log", 10).unwrap();
         appender.write_all(b"hello12345").unwrap(); // exactly 10 bytes → no rotate yet
         appender.write_all(b"x").unwrap(); // 11th byte triggers rotate
         let inner = appender.inner.lock().unwrap();

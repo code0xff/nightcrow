@@ -84,7 +84,6 @@ pub struct App {
     pub hunks: Vec<DiffHunk>,
     pub scroll: usize,
     pub focus: Focus,
-    pub last_upper_focus: Focus,
     pub status: Option<String>,
     pub repo_path: String,
     pub terminal_panes: Vec<PaneInfo>,
@@ -132,7 +131,6 @@ impl App {
             hunks: Vec::new(),
             scroll: 0,
             focus: Focus::FileList,
-            last_upper_focus: Focus::FileList,
             status: None,
             repo_path,
             terminal_panes: Vec::new(),
@@ -234,12 +232,28 @@ impl App {
         Ok(())
     }
 
+    pub fn close_active_pane(&mut self) {
+        let Some(info) = self.terminal_panes.get(self.active_pane) else {
+            return;
+        };
+        let id = info.id;
+        if let Some(backend) = &mut self.backend {
+            backend.destroy_pane(id);
+        }
+        self.parsers.remove(&id);
+        self.prompt_bufs.remove(&id);
+        self.terminal_panes.remove(self.active_pane);
+        if self.terminal_panes.is_empty() {
+            self.active_pane = 0;
+            self.focus = Focus::DiffViewer;
+        } else {
+            self.active_pane = self.active_pane.min(self.terminal_panes.len() - 1);
+        }
+    }
+
     pub fn switch_pane(&mut self, idx: usize) {
         if idx < self.terminal_panes.len() {
             self.active_pane = idx;
-            if self.focus != Focus::Terminal {
-                self.last_upper_focus = self.focus;
-            }
             self.focus = Focus::Terminal;
         }
     }
@@ -286,24 +300,6 @@ impl App {
                 parser.set_size(r, c);
             }
         }
-    }
-
-    pub fn next_pane(&mut self) {
-        if self.terminal_panes.is_empty() {
-            return;
-        }
-        self.active_pane = (self.active_pane + 1) % self.terminal_panes.len();
-    }
-
-    pub fn prev_pane(&mut self) {
-        if self.terminal_panes.is_empty() {
-            return;
-        }
-        self.active_pane = if self.active_pane == 0 {
-            self.terminal_panes.len() - 1
-        } else {
-            self.active_pane - 1
-        };
     }
 
     pub fn active_pane_id(&self) -> Option<PaneId> {
@@ -398,11 +394,9 @@ impl App {
 
     fn clamp_to_filtered(&mut self) {
         let indices = self.filtered_indices();
-        if !indices.contains(&self.selected) {
-            if let Some(&first) = indices.first() {
-                self.selected = first;
-                self.reload_diff();
-            }
+        if !indices.contains(&self.selected) && let Some(&first) = indices.first() {
+            self.selected = first;
+            self.reload_diff();
         }
     }
 
@@ -411,11 +405,11 @@ impl App {
             Focus::FileList => {
                 if !self.search_query.is_empty() {
                     let indices = self.filtered_indices();
-                    if let Some(pos) = indices.iter().position(|&i| i == self.selected) {
-                        if pos > 0 {
-                            self.selected = indices[pos - 1];
-                            self.reload_diff();
-                        }
+                    if let Some(pos) = indices.iter().position(|&i| i == self.selected)
+                        && pos > 0
+                    {
+                        self.selected = indices[pos - 1];
+                        self.reload_diff();
                     }
                 } else if self.selected > 0 {
                     self.selected -= 1;
@@ -434,11 +428,11 @@ impl App {
             Focus::FileList => {
                 if !self.search_query.is_empty() {
                     let indices = self.filtered_indices();
-                    if let Some(pos) = indices.iter().position(|&i| i == self.selected) {
-                        if pos + 1 < indices.len() {
-                            self.selected = indices[pos + 1];
-                            self.reload_diff();
-                        }
+                    if let Some(pos) = indices.iter().position(|&i| i == self.selected)
+                        && pos + 1 < indices.len()
+                    {
+                        self.selected = indices[pos + 1];
+                        self.reload_diff();
                     }
                 } else if !self.files.is_empty() && self.selected < self.files.len() - 1 {
                     self.selected += 1;
@@ -478,6 +472,9 @@ impl App {
             Focus::FileList => {
                 if !self.search_query.is_empty() {
                     let indices = self.filtered_indices();
+                    if indices.is_empty() {
+                        return;
+                    }
                     if let Some(pos) = indices.iter().position(|&i| i == self.selected) {
                         self.selected = indices[(pos + 10).min(indices.len() - 1)];
                         self.reload_diff();
@@ -497,11 +494,9 @@ impl App {
     pub fn cycle_focus_forward(&mut self) {
         match self.focus {
             Focus::FileList => {
-                self.last_upper_focus = Focus::FileList;
                 self.focus = Focus::DiffViewer;
             }
             Focus::DiffViewer => {
-                self.last_upper_focus = Focus::DiffViewer;
                 if !self.terminal_panes.is_empty() {
                     self.active_pane = 0;
                     self.focus = Focus::Terminal;
@@ -541,18 +536,6 @@ impl App {
             }
         }
     }
-
-    pub fn toggle_upper_focus(&mut self) {
-        self.focus = match self.focus {
-            Focus::FileList => Focus::DiffViewer,
-            Focus::DiffViewer => Focus::FileList,
-            Focus::Terminal => self.last_upper_focus,
-        };
-
-        if self.focus != Focus::Terminal {
-            self.last_upper_focus = self.focus;
-        }
-    }
 }
 
 #[cfg(test)]
@@ -575,7 +558,7 @@ mod tests {
             hunks: Vec::new(),
             scroll: 0,
             focus: Focus::FileList,
-            last_upper_focus: Focus::FileList,
+
             status: None,
             repo_path: ".".to_string(),
             terminal_panes: Vec::new(),
@@ -654,20 +637,6 @@ mod tests {
         app.switch_pane(1);
         assert_eq!(app.focus, Focus::Terminal);
         assert_eq!(app.active_pane, 1);
-        assert_eq!(app.last_upper_focus, Focus::FileList);
-    }
-
-    #[test]
-    fn toggle_upper_focus_switches_file_list_and_diff_viewer() {
-        let mut app = app_with_files(vec![]);
-
-        app.toggle_upper_focus();
-        assert_eq!(app.focus, Focus::DiffViewer);
-        assert_eq!(app.last_upper_focus, Focus::DiffViewer);
-
-        app.toggle_upper_focus();
-        assert_eq!(app.focus, Focus::FileList);
-        assert_eq!(app.last_upper_focus, Focus::FileList);
     }
 
     #[test]
@@ -687,7 +656,7 @@ mod tests {
             hunks: Vec::new(),
             scroll: 0,
             focus: Focus::FileList,
-            last_upper_focus: Focus::FileList,
+
             status: Some("terminal error: backend unavailable".to_string()),
             repo_path: ".".to_string(),
             terminal_panes: Vec::new(),
@@ -723,7 +692,7 @@ mod tests {
             hunks: Vec::new(),
             scroll: 0,
             focus: Focus::FileList,
-            last_upper_focus: Focus::FileList,
+
             status: Some("git error: not a repo".to_string()),
             repo_path: ".".to_string(),
             terminal_panes: Vec::new(),

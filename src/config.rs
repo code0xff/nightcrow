@@ -6,7 +6,6 @@ use std::path::PathBuf;
 #[serde(default)]
 pub struct Config {
     pub layout: LayoutConfig,
-    pub keys: KeybindingsConfig,
     pub log: LogConfig,
 }
 
@@ -52,13 +51,6 @@ pub struct LayoutConfig {
     pub file_list_pct: u16,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(default)]
-pub struct KeybindingsConfig {
-    pub quit: String,
-    pub new_pane: String,
-}
-
 impl Default for LayoutConfig {
     fn default() -> Self {
         Self {
@@ -68,16 +60,7 @@ impl Default for LayoutConfig {
     }
 }
 
-impl Default for KeybindingsConfig {
-    fn default() -> Self {
-        Self {
-            quit: "q".into(),
-            new_pane: "ctrl-t".into(),
-        }
-    }
-}
-
-pub fn default_config_path() -> Option<PathBuf> {
+fn default_config_path() -> Option<PathBuf> {
     dirs::config_dir().map(|d| d.join("nightcrow").join("config.toml"))
 }
 
@@ -126,7 +109,6 @@ file_list_pct = 30
         let cfg: Config = toml::from_str(toml).unwrap();
         assert_eq!(cfg.layout.upper_pct, 60);
         assert_eq!(cfg.layout.file_list_pct, 30);
-        assert_eq!(cfg.keys.quit, "q");
     }
 
     #[test]

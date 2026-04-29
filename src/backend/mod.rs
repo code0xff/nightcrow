@@ -14,7 +14,6 @@ pub enum BackendEvent {
 
 pub trait TerminalBackend {
     fn create_pane(&mut self, rows: u16, cols: u16) -> Result<PaneId>;
-    #[allow(dead_code)]
     fn destroy_pane(&mut self, id: PaneId);
     fn send_input(&mut self, id: PaneId, data: &[u8]) -> Result<()>;
     fn resize(&mut self, id: PaneId, rows: u16, cols: u16);

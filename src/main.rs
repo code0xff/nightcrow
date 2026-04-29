@@ -110,9 +110,8 @@ fn run(
                             app.status = Some(format!("terminal error: {e}"));
                         }
                     }
+                    Action::ClosePane => app.close_active_pane(),
                     Action::SwitchPane(n) => app.switch_pane(n),
-                    Action::Left => app.prev_pane(),
-                    Action::Right => app.next_pane(),
                     Action::CycleForward => app.cycle_focus_forward(),
                     Action::CycleBackward => app.cycle_focus_backward(),
                     _ => {
@@ -127,7 +126,13 @@ fn run(
                         match key.code {
                             KeyCode::Esc => app.cancel_search(),
                             KeyCode::Enter => app.confirm_search(),
-                            KeyCode::Backspace => app.search_pop(),
+                            KeyCode::Backspace => {
+                                if app.search_query.is_empty() {
+                                    app.cancel_search();
+                                } else {
+                                    app.search_pop();
+                                }
+                            }
                             KeyCode::Up => app.select_up(),
                             KeyCode::Down => app.select_down(),
                             KeyCode::Char(c) => app.search_push(c),
@@ -140,13 +145,13 @@ fn run(
                             Action::Down => app.select_down(),
                             Action::PageUp => app.page_up(),
                             Action::PageDown => app.page_down(),
-                            Action::Left | Action::Right => app.toggle_upper_focus(),
                             Action::NewPane => {
                                 if let Err(e) = app.create_terminal_pane() {
                                     tracing::error!("create_terminal_pane failed: {e}");
                                     app.status = Some(format!("terminal error: {e}"));
                                 }
                             }
+                            Action::ClosePane => app.close_active_pane(),
                             Action::SwitchPane(n) => app.switch_pane(n),
                             Action::CycleForward => app.cycle_focus_forward(),
                             Action::CycleBackward => app.cycle_focus_backward(),

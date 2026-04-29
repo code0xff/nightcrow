@@ -52,9 +52,9 @@ pub fn draw(
     } else {
         let hint = match app.focus {
             Focus::Terminal => {
-                " shift+tab: upper panel  |  ctrl+t: new pane  |  F1-F9: switch pane  |  ctrl+q: quit"
+                " shift+←/→: cycle panel  |  ctrl+t: new pane  |  ctrl+w: close pane  |  F1-F9: switch pane  |  ctrl+q: quit"
             }
-            _ => " ←/→: Files↔Diff  |  shift+tab: terminal  |  F1-F9: switch pane  |  j/k: navigate  |  ctrl+q: quit",
+            _ => " shift+←/→: cycle panel  |  F1-F9: switch pane  |  j/k: navigate  |  ctrl+q: quit",
         };
         Paragraph::new(Line::from(Span::styled(
             hint,

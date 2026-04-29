@@ -5,11 +5,10 @@ pub enum Action {
     Quit,
     Up,
     Down,
-    Left,
-    Right,
     PageUp,
     PageDown,
     NewPane,
+    ClosePane,
     SwitchPane(usize),
     CycleForward,
     CycleBackward,
@@ -23,11 +22,10 @@ pub fn map_key(event: KeyEvent) -> Action {
     match event.code {
         KeyCode::Char('q') if ctrl => Action::Quit,
         KeyCode::Char('t') if ctrl => Action::NewPane,
-        KeyCode::BackTab => Action::CycleForward,
-        KeyCode::Backspace if shift => Action::CycleBackward,
+        KeyCode::Char('w') if ctrl => Action::ClosePane,
+        KeyCode::Left if shift => Action::CycleBackward,
+        KeyCode::Right if shift => Action::CycleForward,
         KeyCode::F(n @ 1..=9) => Action::SwitchPane(n as usize - 1),
-        KeyCode::Left => Action::Left,
-        KeyCode::Right => Action::Right,
         KeyCode::Up | KeyCode::Char('k') => Action::Up,
         KeyCode::Down | KeyCode::Char('j') => Action::Down,
         KeyCode::PageUp => Action::PageUp,
@@ -123,14 +121,21 @@ mod tests {
     }
 
     #[test]
-    fn maps_left_right_as_distinct_actions() {
-        assert_eq!(map_key(key(KeyCode::Left)), Action::Left);
-        assert_eq!(map_key(key(KeyCode::Right)), Action::Right);
+    fn maps_cycle_pane_shortcuts() {
+        let shift_right = KeyEvent::new(KeyCode::Right, KeyModifiers::SHIFT);
+        let shift_left = KeyEvent::new(KeyCode::Left, KeyModifiers::SHIFT);
+        assert_eq!(map_key(shift_right), Action::CycleForward);
+        assert_eq!(map_key(shift_left), Action::CycleBackward);
     }
 
     #[test]
     fn maps_new_pane() {
         assert_eq!(map_key(ctrl(KeyCode::Char('t'))), Action::NewPane);
+    }
+
+    #[test]
+    fn maps_close_pane() {
+        assert_eq!(map_key(ctrl(KeyCode::Char('w'))), Action::ClosePane);
     }
 
     #[test]

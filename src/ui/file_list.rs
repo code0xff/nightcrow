@@ -74,10 +74,10 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect) {
         .highlight_symbol("> ");
 
     let mut state = ListState::default();
-    if !filtered_indices.is_empty() {
-        if let Some(pos) = filtered_indices.iter().position(|&i| i == app.selected) {
-            state.select(Some(pos));
-        }
+    if !filtered_indices.is_empty()
+        && let Some(pos) = filtered_indices.iter().position(|&i| i == app.selected)
+    {
+        state.select(Some(pos));
     }
 
     frame.render_stateful_widget(list, list_area, &mut state);

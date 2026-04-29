@@ -109,7 +109,7 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect, ss: &SyntaxSet, ts: &The
 
     // Clamp scroll
     let max_scroll = lines.len().saturating_sub(1);
-    let scroll = app.scroll.min(max_scroll) as u16;
+    let scroll = app.scroll.min(max_scroll).min(u16::MAX as usize) as u16;
 
     let para = Paragraph::new(lines)
         .block(
