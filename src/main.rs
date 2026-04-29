@@ -103,7 +103,6 @@ fn run(
             match app.focus {
                 Focus::Terminal => match map_key(key) {
                     Action::Quit => break,
-                    Action::FocusNext => app.cycle_focus_next(),
                     Action::FocusPrev => app.cycle_focus_prev(),
                     Action::NewPane => {
                         if let Err(e) = app.create_terminal_pane() {
