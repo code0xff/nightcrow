@@ -6,6 +6,61 @@ use std::sync::mpsc::{self, Receiver, SyncSender};
 use std::thread;
 use std::time::Duration;
 
+fn strip_escape_sequences(data: &[u8]) -> String {
+    let mut result = String::new();
+    let mut i = 0;
+    while i < data.len() {
+        match data[i] {
+            0x1b => {
+                i += 1;
+                if i >= data.len() {
+                    break;
+                }
+                match data[i] {
+                    b'[' => {
+                        // CSI: skip until final byte 0x40–0x7e
+                        i += 1;
+                        while i < data.len() && !(0x40..=0x7e).contains(&data[i]) {
+                            i += 1;
+                        }
+                        i += 1;
+                    }
+                    b']' => {
+                        // OSC: skip until BEL or ST
+                        i += 1;
+                        while i < data.len() {
+                            if data[i] == 0x07 {
+                                i += 1;
+                                break;
+                            }
+                            if data[i] == 0x1b && i + 1 < data.len() && data[i + 1] == b'\\' {
+                                i += 2;
+                                break;
+                            }
+                            i += 1;
+                        }
+                    }
+                    _ => {
+                        i += 1;
+                    }
+                }
+            }
+            b'\r' | b'\n' => {
+                result.push(data[i] as char);
+                i += 1;
+            }
+            0x20..=0x7e => {
+                result.push(data[i] as char);
+                i += 1;
+            }
+            _ => {
+                i += 1;
+            }
+        }
+    }
+    result
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Focus {
     FileList,
@@ -40,10 +95,12 @@ pub struct App {
     _stop_tx: SyncSender<()>,
     backend: Option<Box<dyn TerminalBackend>>,
     parsers: HashMap<PaneId, vt100::Parser>,
+    prompt_log_enabled: bool,
+    prompt_bufs: HashMap<PaneId, String>,
 }
 
 impl App {
-    pub fn new(repo_path: String) -> Self {
+    pub fn new(repo_path: String, prompt_log: bool) -> Self {
         let (tx, rx) = mpsc::channel::<SnapshotMsg>();
         let (stop_tx, stop_rx) = mpsc::sync_channel::<()>(0);
         let path = repo_path.clone();
@@ -83,6 +140,8 @@ impl App {
             _stop_tx: stop_tx,
             backend: Some(backend),
             parsers: HashMap::new(),
+            prompt_log_enabled: prompt_log,
+            prompt_bufs: HashMap::new(),
         };
 
         app.ensure_initial_terminal();
@@ -182,6 +241,24 @@ impl App {
             let id = info.id;
             if let Some(backend) = &mut self.backend {
                 let _ = backend.send_input(id, data);
+            }
+            if self.prompt_log_enabled {
+                self.buffer_prompt_input(id, data);
+            }
+        }
+    }
+
+    fn buffer_prompt_input(&mut self, pane_id: PaneId, data: &[u8]) {
+        let text = strip_escape_sequences(data);
+        let buf = self.prompt_bufs.entry(pane_id).or_default();
+        for ch in text.chars() {
+            if ch == '\r' || ch == '\n' {
+                if !buf.is_empty() {
+                    tracing::info!(target: "prompt", pane = pane_id, text = %buf);
+                    buf.clear();
+                }
+            } else {
+                buf.push(ch);
             }
         }
     }
@@ -412,6 +489,8 @@ mod tests {
             _stop_tx,
             backend: None,
             parsers: HashMap::new(),
+            prompt_log_enabled: false,
+            prompt_bufs: HashMap::new(),
         }
     }
 
@@ -557,6 +636,8 @@ mod tests {
             _stop_tx,
             backend: None,
             parsers: HashMap::new(),
+            prompt_log_enabled: false,
+            prompt_bufs: HashMap::new(),
         };
 
         tx.send(SnapshotMsg::Ok(RepoSnapshot { files: Vec::new() }))
@@ -589,6 +670,8 @@ mod tests {
             _stop_tx,
             backend: None,
             parsers: HashMap::new(),
+            prompt_log_enabled: false,
+            prompt_bufs: HashMap::new(),
         };
 
         tx.send(SnapshotMsg::Ok(RepoSnapshot { files: Vec::new() }))
