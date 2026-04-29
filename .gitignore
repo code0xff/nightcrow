@@ -31,8 +31,7 @@
 /tmp/
 
 # omc autopilot runtime state (not source)
-.omc/state/
-.omc/plans/
+.omc/
 
 # Added by cargo
 
