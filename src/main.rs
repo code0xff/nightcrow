@@ -105,6 +105,7 @@ fn run(
                     Action::Quit => break,
                     Action::NewPane => {
                         if let Err(e) = app.create_terminal_pane() {
+                            tracing::error!("create_terminal_pane failed: {e}");
                             app.status = Some(format!("terminal error: {e}"));
                         }
                     }
@@ -128,6 +129,7 @@ fn run(
                     Action::Left | Action::Right => app.toggle_upper_focus(),
                     Action::NewPane => {
                         if let Err(e) = app.create_terminal_pane() {
+                            tracing::error!("create_terminal_pane failed: {e}");
                             app.status = Some(format!("terminal error: {e}"));
                         }
                     }

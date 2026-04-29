@@ -21,6 +21,11 @@ pub fn init_logging(config: &LogConfig, repo_path: &str) -> Option<LogGuard> {
     cleanup_old_logs(&log_dir, config.max_days);
 
     let level = parse_level(&config.level);
+    let filter_str = if config.prompt_log {
+        format!("{level},prompt=info")
+    } else {
+        level.to_string()
+    };
 
     let (writer, guard) = match config.rotation.as_str() {
         "hourly" => {
@@ -39,7 +44,7 @@ pub fn init_logging(config: &LogConfig, repo_path: &str) -> Option<LogGuard> {
         }
     };
 
-    let filter = EnvFilter::try_new(level).unwrap_or_else(|_| EnvFilter::new("warn"));
+    let filter = EnvFilter::try_new(&filter_str).unwrap_or_else(|_| EnvFilter::new("warn"));
 
     let file_layer = fmt::layer()
         .with_writer(writer)
