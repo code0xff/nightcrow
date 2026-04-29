@@ -73,7 +73,7 @@ impl Default for KeybindingsConfig {
     fn default() -> Self {
         Self {
             quit: "q".into(),
-            focus_toggle: "Tab".into(),
+            focus_toggle: "shift-tab".into(),
             new_pane: "ctrl-t".into(),
         }
     }
