@@ -31,8 +31,10 @@
 # Test artifacts
 /tmp/
 
-# omc autopilot runtime state (not source)
+# omc runtime state (not source)
 .omc/
+.codex
+.codex/
 
 # Added by cargo
 
