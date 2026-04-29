@@ -7,6 +7,40 @@ use std::path::PathBuf;
 pub struct Config {
     pub layout: LayoutConfig,
     pub keys: KeybindingsConfig,
+    pub log: LogConfig,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct LogConfig {
+    /// Enable file-based logging
+    pub enabled: bool,
+    /// Log directory — relative paths are resolved from the repo root
+    pub dir: String,
+    /// Rotation policy: "daily" | "hourly" | "size"
+    pub rotation: String,
+    /// Maximum file size in MB before rotating (used when rotation = "size")
+    pub max_size_mb: u64,
+    /// Delete log files older than this many days (0 = keep forever)
+    pub max_days: u32,
+    /// Opt-in: record terminal prompt input line by line
+    pub prompt_log: bool,
+    /// Minimum log level: "error" | "warn" | "info" | "debug" | "trace"
+    pub level: String,
+}
+
+impl Default for LogConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            dir: ".nightcrow/logs".to_string(),
+            rotation: "daily".to_string(),
+            max_size_mb: 10,
+            max_days: 7,
+            prompt_log: false,
+            level: "warn".to_string(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -104,5 +138,37 @@ file_list_pct = 30
         assert!(validate_config(&cfg).is_err());
         cfg.layout.upper_pct = 100;
         assert!(validate_config(&cfg).is_err());
+    }
+
+    #[test]
+    fn log_config_defaults_are_sane() {
+        let cfg = LogConfig::default();
+        assert!(cfg.enabled);
+        assert!(!cfg.prompt_log);
+        assert_eq!(cfg.rotation, "daily");
+        assert_eq!(cfg.level, "warn");
+        assert_eq!(cfg.max_days, 7);
+    }
+
+    #[test]
+    fn log_config_parses_from_toml() {
+        let toml = r#"
+[log]
+enabled = false
+prompt_log = true
+rotation = "size"
+max_size_mb = 5
+max_days = 14
+level = "debug"
+dir = "/tmp/logs"
+"#;
+        let cfg: Config = toml::from_str(toml).unwrap();
+        assert!(!cfg.log.enabled);
+        assert!(cfg.log.prompt_log);
+        assert_eq!(cfg.log.rotation, "size");
+        assert_eq!(cfg.log.max_size_mb, 5);
+        assert_eq!(cfg.log.max_days, 14);
+        assert_eq!(cfg.log.level, "debug");
+        assert_eq!(cfg.log.dir, "/tmp/logs");
     }
 }
