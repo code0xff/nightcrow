@@ -284,6 +284,24 @@ impl App {
         }
     }
 
+    pub fn next_pane(&mut self) {
+        if self.terminal_panes.is_empty() {
+            return;
+        }
+        self.active_pane = (self.active_pane + 1) % self.terminal_panes.len();
+    }
+
+    pub fn prev_pane(&mut self) {
+        if self.terminal_panes.is_empty() {
+            return;
+        }
+        self.active_pane = if self.active_pane == 0 {
+            self.terminal_panes.len() - 1
+        } else {
+            self.active_pane - 1
+        };
+    }
+
     pub fn active_pane_id(&self) -> Option<PaneId> {
         self.terminal_panes.get(self.active_pane).map(|p| p.id)
     }
@@ -396,17 +414,16 @@ impl App {
         }
     }
 
-    pub fn toggle_panel(&mut self) {
-        match self.focus {
-            Focus::Terminal => {
-                self.focus = self.last_upper_focus;
-            }
-            Focus::FileList | Focus::DiffViewer => {
-                if !self.terminal_panes.is_empty() {
-                    self.last_upper_focus = self.focus;
-                    self.focus = Focus::Terminal;
-                }
-            }
+    pub fn focus_upper(&mut self) {
+        if self.focus == Focus::Terminal {
+            self.focus = self.last_upper_focus;
+        }
+    }
+
+    pub fn focus_lower(&mut self) {
+        if self.focus != Focus::Terminal && !self.terminal_panes.is_empty() {
+            self.last_upper_focus = self.focus;
+            self.focus = Focus::Terminal;
         }
     }
 

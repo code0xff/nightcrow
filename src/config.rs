@@ -56,7 +56,6 @@ pub struct LayoutConfig {
 #[serde(default)]
 pub struct KeybindingsConfig {
     pub quit: String,
-    pub focus_toggle: String,
     pub new_pane: String,
 }
 
@@ -73,7 +72,6 @@ impl Default for KeybindingsConfig {
     fn default() -> Self {
         Self {
             quit: "q".into(),
-            focus_toggle: "shift-tab".into(),
             new_pane: "ctrl-t".into(),
         }
     }

@@ -103,13 +103,15 @@ fn run(
             match app.focus {
                 Focus::Terminal => match map_key(key) {
                     Action::Quit => break,
-                    Action::PanelToggle => app.toggle_panel(),
                     Action::NewPane => {
                         if let Err(e) = app.create_terminal_pane() {
                             app.status = Some(format!("terminal error: {e}"));
                         }
                     }
                     Action::SwitchPane(n) => app.switch_pane(n),
+                    Action::Left => app.prev_pane(),
+                    Action::Right => app.next_pane(),
+                    Action::TogglePanel => app.focus_upper(),
                     _ => {
                         if let Some(data) = encode_key(key) {
                             app.send_terminal_input(&data);
@@ -123,14 +125,14 @@ fn run(
                     Action::Down => app.select_down(),
                     Action::PageUp => app.page_up(),
                     Action::PageDown => app.page_down(),
-                    Action::PanelToggle => app.toggle_panel(),
-                    Action::UpperFocusToggle => app.toggle_upper_focus(),
+                    Action::Left | Action::Right => app.toggle_upper_focus(),
                     Action::NewPane => {
                         if let Err(e) = app.create_terminal_pane() {
                             app.status = Some(format!("terminal error: {e}"));
                         }
                     }
                     Action::SwitchPane(n) => app.switch_pane(n),
+                    Action::TogglePanel => app.focus_lower(),
                     Action::None => {}
                 },
             }
