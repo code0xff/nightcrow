@@ -54,7 +54,7 @@ pub fn draw(
             Focus::Terminal => {
                 " Shift+Tab: upper panel  |  Ctrl+T: new pane  |  F1-F9: switch pane  |  Ctrl+Q: quit "
             }
-            _ => " Tab: terminal  |  j/k: navigate  |  Ctrl+Q: quit ",
+            _ => " Tab: FileList↔Diff  |  Shift+Tab: terminal  |  j/k: navigate  |  Ctrl+Q: quit ",
         };
         Paragraph::new(Line::from(Span::styled(
             hint,
