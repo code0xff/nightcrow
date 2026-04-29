@@ -14,7 +14,7 @@
 
 ## Selected
 
-- "E안: ratatui+crossterm, git2, syntect+syntect-tui, TmuxBackend(tmux control mode)+PtyBackend(portable-pty+alacritty_terminal)"
+- "E안: ratatui+crossterm, git2, syntect+syntect-tui, TmuxBackend(tmux control mode)+PtyBackend(portable-pty+vt100)"
 
 ## Open Questions
 

@@ -31,7 +31,7 @@ src/
 ├── backend/
 │   ├── mod.rs            # TerminalBackend trait
 │   ├── tmux.rs           # TmuxBackend (tmux -CC control mode)
-│   └── pty.rs            # PtyBackend (portable-pty + alacritty_terminal)
+│   └── pty.rs            # PtyBackend (portable-pty + vt100)
 ├── git/
 │   └── diff.rs           # git2-based file change detection and diff data
 └── input/
@@ -46,18 +46,17 @@ src/
 
 ```rust
 trait TerminalBackend {
-    fn create_pane(&mut self) -> PaneId;
+    fn create_pane(&mut self, rows: u16, cols: u16) -> PaneId;
     fn destroy_pane(&mut self, id: PaneId);
-    fn focus_pane(&mut self, id: PaneId);
     fn send_input(&mut self, id: PaneId, data: &[u8]);
-    fn get_screen(&self, id: PaneId) -> &TerminalScreen;
     fn resize(&mut self, id: PaneId, rows: u16, cols: u16);
+    fn drain_events(&mut self) -> Vec<BackendEvent>;
 }
 ```
 
 - `TmuxBackend`: tmux control mode(`-CC`)로 pane 생성/제어. LLM CLI 출력 완전 재현.
-- `PtyBackend`: portable-pty로 PTY 생성, alacritty_terminal로 VT 파싱. tmux 없는 환경 fallback.
-- 선택 순서: `which tmux` 성공 → TmuxBackend / 실패 → PtyBackend (경고 출력)
+- `PtyBackend`: portable-pty로 PTY 생성, `vt100`으로 VT 파싱. tmux 없는 환경 fallback.
+- 선택 순서: `tmux -V` 성공 및 control mode 초기화 성공 → TmuxBackend / 실패 → PtyBackend (경고 출력)
 
 ### Git Diff Pipeline
 
@@ -67,9 +66,10 @@ trait TerminalBackend {
 
 ### Keyboard Routing
 
-- **Upper panel focused**: Ratatui app이 모든 키 처리 (파일 탐색, 패널 전환)
+- **Upper panel focused**: Ratatui app이 모든 키 처리 (파일 탐색, diff/file subfocus 전환)
 - **Lower panel focused**: 키 입력을 active backend의 stdin으로 직접 통과
-- **Global shortcuts** (Ctrl+숫자: 터미널 전환, Tab: 상/하단 포커스 전환)는 항상 앱이 먼저 처리
+- **Global shortcuts** (`Tab`: 상/하단 포커스 전환, `Ctrl+T`: 터미널 생성, `Ctrl/Alt+숫자`: 터미널 전환)는 항상 앱이 먼저 처리
+- **Upper subfocus shortcuts** (`Left`/`Right`/`Shift+Tab`: 파일 리스트와 diff 뷰어 전환)는 상단 포커스에서만 앱이 처리한다.
 
 ## Critical Risk
 
@@ -84,6 +84,6 @@ TmuxBackend에서 tmux prefix key와 앱 단축키 충돌을 명시적으로 처
 | TUI 렌더링 | ratatui 0.29 + crossterm |
 | Git diff | git2 0.20 |
 | 문법 하이라이팅 | syntect 5.3 + syntect-tui |
-| PTY 관리 (fallback) | portable-pty 0.9 |
-| VT 파싱 (fallback) | alacritty_terminal |
+| PTY 관리 (fallback) | portable-pty 0.8 |
+| VT 파싱 (fallback) | vt100 |
 | 터미널 백엔드 (1순위) | tmux control mode (-CC) |
