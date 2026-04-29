@@ -77,3 +77,23 @@
 - Deliverables: cargo clippy clean, cargo audit clean, README 완성, cargo-release 설정, GitHub Actions CI
 - Exit Criteria: 모든 gate 통과, 바이너리 배포 가능 상태
 - status: done
+
+---
+
+## Increment 4
+
+- service_goal: 개발자가 nightcrow 사용 중 발생한 에러와 AI 프롬프트 입력 내역을 파일 로그로 추적할 수 있다
+- acceptance: 에러 로그가 `.nightcrow/logs/`에 파일로 기록됨, 설정 파일로 경로/rotation/retention 제어 가능, prompt_log opt-in 시 프롬프트 입력 내역 기록됨
+- status: active
+
+### Workstream 1
+
+- Goal: 로깅 인프라 (의존성 + LogConfig + 파일 appender)
+- Deliverables: tracing/tracing-subscriber/tracing-appender 의존성 추가, `src/logging.rs` 구현 (rotation + retention), `config.toml`의 `[log]` 섹션 지원
+- Exit Criteria: 앱 실행 시 `.nightcrow/logs/`에 로그 파일 생성, daily rotation 및 max_days 초과 파일 자동 삭제 동작
+
+### Workstream 2
+
+- Goal: 프롬프트 입력 로깅 (opt-in)
+- Deliverables: `App`에 pane별 입력 버퍼 추가, escape sequence 필터링, Enter 감지 시 tracing 이벤트 기록, `prompt_log = true` 설정 시에만 활성화
+- Exit Criteria: `prompt_log = true` 설정 시 터미널 입력 줄 단위로 로그 파일에 기록됨, 기본값(false)에서는 기록 없음
