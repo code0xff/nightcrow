@@ -64,7 +64,13 @@ pub fn draw(
                 " shift+←/→: cycle  |  j/k: navigate  |  /: search  |  F1-F9: switch pane  |  ctrl+o: repo  |  ctrl+q: quit"
             }
             Focus::DiffViewer => {
-                " shift+←/→: cycle  |  j/k: scroll  |  pgup/pgdn: scroll  |  F1-F9: switch pane  |  ctrl+o: repo  |  ctrl+q: quit"
+                if app.diff_search_active {
+                    " type to search  |  enter: confirm  |  esc: cancel"
+                } else if !app.diff_search_query.is_empty() {
+                    " n: next match  |  N: prev match  |  /: new search  |  esc: clear"
+                } else {
+                    " shift+←/→: cycle  |  j/k: scroll  |  /: search  |  pgup/pgdn: scroll  |  F1-F9: switch pane  |  ctrl+o: repo  |  ctrl+q: quit"
+                }
             }
         };
         Paragraph::new(Line::from(Span::styled(

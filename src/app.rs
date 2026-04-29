@@ -93,6 +93,10 @@ pub struct App {
     pub search_active: bool,
     pub repo_input_active: bool,
     pub repo_input_buf: String,
+    pub diff_search_active: bool,
+    pub diff_search_query: String,
+    pub diff_search_matches: Vec<usize>,
+    pub diff_search_cursor: usize,
     rx: Receiver<SnapshotMsg>,
     // Dropping this sender signals the background thread to exit.
     _stop_tx: SyncSender<()>,
@@ -142,6 +146,10 @@ impl App {
             search_active: false,
             repo_input_active: false,
             repo_input_buf: String::new(),
+            diff_search_active: false,
+            diff_search_query: String::new(),
+            diff_search_matches: Vec::new(),
+            diff_search_cursor: 0,
             rx,
             _stop_tx: stop_tx,
             backend: Some(backend),
@@ -387,17 +395,25 @@ impl App {
                     self.hunks = hunks;
                     if reset_scroll {
                         self.scroll = 0;
+                        self.diff_search_cursor = 0;
                     } else {
                         self.scroll = previous_scroll;
+                    }
+                    if !self.diff_search_query.is_empty() {
+                        self.recompute_diff_matches();
                     }
                 }
                 Err(_) => {
                     self.hunks = Vec::new();
+                    self.diff_search_matches.clear();
+                    self.diff_search_cursor = 0;
                     self.scroll = 0;
                 }
             }
         } else {
             self.hunks = Vec::new();
+            self.diff_search_matches.clear();
+            self.diff_search_cursor = 0;
             self.scroll = 0;
         }
     }
@@ -453,6 +469,83 @@ impl App {
     pub fn search_pop(&mut self) {
         self.search_query.pop();
         self.clamp_to_filtered();
+    }
+
+    pub fn start_diff_search(&mut self) {
+        self.diff_search_active = true;
+    }
+
+    pub fn cancel_diff_search(&mut self) {
+        self.diff_search_active = false;
+        self.diff_search_query.clear();
+        self.diff_search_matches.clear();
+        self.diff_search_cursor = 0;
+    }
+
+    pub fn confirm_diff_search(&mut self) {
+        self.diff_search_active = false;
+    }
+
+    pub fn diff_search_push(&mut self, ch: char) {
+        self.diff_search_query.push(ch);
+        self.recompute_diff_matches();
+    }
+
+    pub fn diff_search_pop(&mut self) {
+        self.diff_search_query.pop();
+        self.recompute_diff_matches();
+    }
+
+    pub fn next_diff_match(&mut self) {
+        if self.diff_search_matches.is_empty() {
+            return;
+        }
+        self.diff_search_cursor = (self.diff_search_cursor + 1) % self.diff_search_matches.len();
+        self.scroll_to_diff_match();
+    }
+
+    pub fn prev_diff_match(&mut self) {
+        if self.diff_search_matches.is_empty() {
+            return;
+        }
+        if self.diff_search_cursor == 0 {
+            self.diff_search_cursor = self.diff_search_matches.len() - 1;
+        } else {
+            self.diff_search_cursor -= 1;
+        }
+        self.scroll_to_diff_match();
+    }
+
+    fn recompute_diff_matches(&mut self) {
+        self.diff_search_matches.clear();
+        if self.diff_search_query.is_empty() {
+            self.diff_search_cursor = 0;
+            return;
+        }
+        let q = self.diff_search_query.to_lowercase();
+        let mut flat_idx = 0usize;
+        for hunk in &self.hunks {
+            flat_idx += 1; // header line
+            for line in &hunk.lines {
+                if line.content.to_lowercase().contains(&q) {
+                    self.diff_search_matches.push(flat_idx);
+                }
+                flat_idx += 1;
+            }
+        }
+        if !self.diff_search_matches.is_empty() {
+            self.diff_search_cursor =
+                self.diff_search_cursor.min(self.diff_search_matches.len() - 1);
+            self.scroll_to_diff_match();
+        } else {
+            self.diff_search_cursor = 0;
+        }
+    }
+
+    fn scroll_to_diff_match(&mut self) {
+        if let Some(&idx) = self.diff_search_matches.get(self.diff_search_cursor) {
+            self.scroll = idx;
+        }
     }
 
     fn clamp_to_filtered(&mut self) {
@@ -631,6 +724,10 @@ mod tests {
             search_active: false,
             repo_input_active: false,
             repo_input_buf: String::new(),
+            diff_search_active: false,
+            diff_search_query: String::new(),
+            diff_search_matches: Vec::new(),
+            diff_search_cursor: 0,
             rx,
             _stop_tx,
             backend: None,
@@ -731,6 +828,10 @@ mod tests {
             search_active: false,
             repo_input_active: false,
             repo_input_buf: String::new(),
+            diff_search_active: false,
+            diff_search_query: String::new(),
+            diff_search_matches: Vec::new(),
+            diff_search_cursor: 0,
             rx,
             _stop_tx,
             backend: None,
@@ -769,6 +870,10 @@ mod tests {
             search_active: false,
             repo_input_active: false,
             repo_input_buf: String::new(),
+            diff_search_active: false,
+            diff_search_query: String::new(),
+            diff_search_matches: Vec::new(),
+            diff_search_cursor: 0,
             rx,
             _stop_tx,
             backend: None,

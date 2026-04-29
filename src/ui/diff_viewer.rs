@@ -39,7 +39,11 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect, ss: &SyntaxSet, ts: &The
         .unwrap_or_else(|| ss.find_syntax_plain_text());
     let theme = &ts.themes["base16-ocean.dark"];
 
+    let current_match = app.diff_search_matches.get(app.diff_search_cursor).copied();
+    let has_search = !app.diff_search_query.is_empty();
+
     let mut lines: Vec<Line> = Vec::new();
+    let mut flat_idx: usize = 0;
 
     for hunk in &app.hunks {
         // Hunk header
@@ -47,12 +51,32 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect, ss: &SyntaxSet, ts: &The
             hunk.header.clone(),
             Style::default().fg(Color::Cyan),
         )));
+        flat_idx += 1;
 
         for diff_line in &hunk.lines {
-            let (bg, prefix) = match diff_line.kind {
-                LineKind::Added => (Color::Rgb(0, 50, 0), "+"),
-                LineKind::Removed => (Color::Rgb(50, 0, 0), "-"),
-                LineKind::Context => (Color::Reset, " "),
+            let is_current = has_search && current_match == Some(flat_idx);
+            let is_match = has_search
+                && app
+                    .diff_search_matches
+                    .binary_search(&flat_idx)
+                    .is_ok();
+
+            let bg = if is_current {
+                Color::Rgb(100, 80, 0)
+            } else if is_match {
+                Color::Rgb(50, 42, 0)
+            } else {
+                match diff_line.kind {
+                    LineKind::Added => Color::Rgb(0, 50, 0),
+                    LineKind::Removed => Color::Rgb(50, 0, 0),
+                    LineKind::Context => Color::Reset,
+                }
+            };
+
+            let prefix = match diff_line.kind {
+                LineKind::Added => "+",
+                LineKind::Removed => "-",
+                LineKind::Context => " ",
             };
 
             let mut spans = vec![Span::styled(
@@ -84,6 +108,7 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect, ss: &SyntaxSet, ts: &The
             }
 
             lines.push(Line::from(spans));
+            flat_idx += 1;
         }
     }
 
@@ -101,7 +126,21 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect, ss: &SyntaxSet, ts: &The
         }
     }
 
-    let title = if let Some(f) = app.files.get(app.selected) {
+    let title = if has_search {
+        let count = app.diff_search_matches.len();
+        let file = app.files.get(app.selected).map(|f| f.path.as_str()).unwrap_or("Diff");
+        if count == 0 {
+            format!(" {} [no matches: {}] ", file, app.diff_search_query)
+        } else {
+            format!(
+                " {} [{}/{}] {} ",
+                file,
+                app.diff_search_cursor + 1,
+                count,
+                app.diff_search_query
+            )
+        }
+    } else if let Some(f) = app.files.get(app.selected) {
         format!(" {} ", f.path)
     } else {
         " Diff ".to_string()

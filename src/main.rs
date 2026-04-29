@@ -156,6 +156,20 @@ fn run(
                             KeyCode::Char(c) => app.search_push(c),
                             _ => {}
                         }
+                    } else if app.focus == Focus::DiffViewer && app.diff_search_active {
+                        match key.code {
+                            KeyCode::Esc => app.cancel_diff_search(),
+                            KeyCode::Enter => app.confirm_diff_search(),
+                            KeyCode::Backspace => {
+                                if app.diff_search_query.is_empty() {
+                                    app.cancel_diff_search();
+                                } else {
+                                    app.diff_search_pop();
+                                }
+                            }
+                            KeyCode::Char(c) => app.diff_search_push(c),
+                            _ => {}
+                        }
                     } else {
                         match map_key(key) {
                             Action::Quit => break,
@@ -174,17 +188,25 @@ fn run(
                             Action::SwitchPane(n) => app.switch_pane(n),
                             Action::CycleForward => app.cycle_focus_forward(),
                             Action::CycleBackward => app.cycle_focus_backward(),
-                            Action::None => {
-                                if app.focus == Focus::FileList {
-                                    match key.code {
-                                        KeyCode::Char('/') => app.start_search(),
-                                        KeyCode::Esc if !app.search_query.is_empty() => {
-                                            app.cancel_search()
-                                        }
-                                        _ => {}
+                            Action::None => match app.focus {
+                                Focus::FileList => match key.code {
+                                    KeyCode::Char('/') => app.start_search(),
+                                    KeyCode::Esc if !app.search_query.is_empty() => {
+                                        app.cancel_search()
                                     }
-                                }
-                            }
+                                    _ => {}
+                                },
+                                Focus::DiffViewer => match key.code {
+                                    KeyCode::Char('/') => app.start_diff_search(),
+                                    KeyCode::Char('n') => app.next_diff_match(),
+                                    KeyCode::Char('N') => app.prev_diff_match(),
+                                    KeyCode::Esc if !app.diff_search_query.is_empty() => {
+                                        app.cancel_diff_search()
+                                    }
+                                    _ => {}
+                                },
+                                _ => {}
+                            },
                         }
                     }
                 }
