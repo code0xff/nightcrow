@@ -41,15 +41,17 @@ nightcrow --help
 
 | Key | Action |
 |-----|--------|
-| `Tab` | Cycle focus forward: file list → diff viewer → terminal panes → … |
-| `Shift+Tab` | Cycle focus backward |
-| `←` / `→` | Switch between file list and diff viewer |
-| `j` / `k` or `↑` / `↓` | Navigate file list |
-| `PgUp` / `PgDn` | Scroll diff view |
+| `Shift+→` | Cycle focus forward: file list → diff viewer → terminal panes → … |
+| `Shift+←` | Cycle focus backward |
+| `↑` / `↓` or `k` / `j` | Navigate file list; scroll diff view line by line |
+| `PgUp` / `PgDn` | Jump 10 files in file list; scroll diff view 20 lines |
+| `/` | Search files (file list focus) |
+| `Esc` | Cancel search or repo input |
 | `Ctrl+T` | Open new terminal pane |
+| `Ctrl+W` | Close active terminal pane |
 | `F1`…`F9` | Jump to terminal pane N directly |
-| `q` | Quit (from diff/file panel) |
-| `Ctrl+Q` | Quit (from terminal panel) |
+| `Ctrl+O` | Change repo path |
+| `Ctrl+Q` | Quit |
 
 ## Configuration
 
@@ -59,11 +61,6 @@ Create `~/.config/nightcrow/config.toml` to override defaults:
 [layout]
 upper_pct = 55      # percentage of screen for the diff panel
 file_list_pct = 25  # percentage of the upper panel for the file list
-
-[keys]
-quit = "q"
-focus_toggle = "Tab"
-new_pane = "ctrl-t"
 ```
 
 ## License
