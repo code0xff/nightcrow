@@ -6,6 +6,28 @@ use std::sync::mpsc::{self, Receiver, SyncSender};
 use std::thread;
 use std::time::Duration;
 
+fn spawn_snapshot_thread(repo_path: &str) -> (Receiver<SnapshotMsg>, SyncSender<()>) {
+    let (tx, rx) = mpsc::channel::<SnapshotMsg>();
+    let (stop_tx, stop_rx) = mpsc::sync_channel::<()>(0);
+    let path = repo_path.to_string();
+    thread::spawn(move || {
+        loop {
+            let msg = match load_snapshot(&path) {
+                Ok(s) => SnapshotMsg::Ok(s),
+                Err(e) => SnapshotMsg::Err(e.to_string()),
+            };
+            if tx.send(msg).is_err() {
+                break;
+            }
+            match stop_rx.recv_timeout(Duration::from_millis(1000)) {
+                Ok(()) | Err(mpsc::RecvTimeoutError::Disconnected) => break,
+                Err(mpsc::RecvTimeoutError::Timeout) => {}
+            }
+        }
+    });
+    (rx, stop_tx)
+}
+
 fn strip_escape_sequences(data: &[u8]) -> String {
     let mut result = String::new();
     let mut i = 0;
@@ -109,26 +131,7 @@ pub struct App {
 
 impl App {
     pub fn new(repo_path: String, prompt_log: bool) -> Self {
-        let (tx, rx) = mpsc::channel::<SnapshotMsg>();
-        let (stop_tx, stop_rx) = mpsc::sync_channel::<()>(0);
-        let path = repo_path.clone();
-
-        thread::spawn(move || {
-            loop {
-                let msg = match load_snapshot(&path) {
-                    Ok(s) => SnapshotMsg::Ok(s),
-                    Err(e) => SnapshotMsg::Err(e.to_string()),
-                };
-                if tx.send(msg).is_err() {
-                    break;
-                }
-                // Sleep for 1s, but exit immediately if stop signal arrives or sender drops.
-                match stop_rx.recv_timeout(Duration::from_millis(1000)) {
-                    Ok(()) | Err(mpsc::RecvTimeoutError::Disconnected) => break,
-                    Err(mpsc::RecvTimeoutError::Timeout) => {}
-                }
-            }
-        });
+        let (rx, stop_tx) = spawn_snapshot_thread(&repo_path);
 
         let backend: Box<dyn TerminalBackend> = Box::new(PtyBackend::new(&repo_path));
 
@@ -220,13 +223,13 @@ impl App {
                 }
                 BackendEvent::Exited { pane } => {
                     self.parsers.remove(&pane);
+                    self.prompt_bufs.remove(&pane);
                     self.terminal_panes.retain(|p| p.id != pane);
-                    if self.active_pane >= self.terminal_panes.len()
-                        && !self.terminal_panes.is_empty()
-                    {
-                        self.active_pane = self.terminal_panes.len() - 1;
-                    } else if self.terminal_panes.is_empty() {
+                    if self.terminal_panes.is_empty() {
                         self.active_pane = 0;
+                        self.focus = Focus::DiffViewer;
+                    } else if self.active_pane >= self.terminal_panes.len() {
+                        self.active_pane = self.terminal_panes.len() - 1;
                     }
                 }
             }
@@ -273,32 +276,15 @@ impl App {
     }
 
     pub fn change_repo(&mut self, new_path: String) {
-        let (tx, rx) = mpsc::channel::<SnapshotMsg>();
-        let (stop_tx, stop_rx) = mpsc::sync_channel::<()>(0);
-        let path = new_path.clone();
-        thread::spawn(move || {
-            loop {
-                let msg = match load_snapshot(&path) {
-                    Ok(s) => SnapshotMsg::Ok(s),
-                    Err(e) => SnapshotMsg::Err(e.to_string()),
-                };
-                if tx.send(msg).is_err() {
-                    break;
-                }
-                match stop_rx.recv_timeout(Duration::from_millis(1000)) {
-                    Ok(()) | Err(mpsc::RecvTimeoutError::Disconnected) => break,
-                    Err(mpsc::RecvTimeoutError::Timeout) => {}
-                }
-            }
-        });
         // Replacing _stop_tx drops the old sender, signaling the old thread to exit.
+        let (rx, stop_tx) = spawn_snapshot_thread(&new_path);
         self._stop_tx = stop_tx;
         self.rx = rx;
-        self.repo_path = new_path.clone();
         if let Some(ref mut backend) = self.backend {
             backend.set_cwd(std::path::Path::new(&new_path));
         }
         tracing::info!(path = %new_path, "repo changed");
+        self.repo_path = new_path;
         self.files.clear();
         self.selected = 0;
         self.hunks.clear();
@@ -709,7 +695,11 @@ impl App {
 
     pub fn save_session(&self) -> crate::session::SessionState {
         crate::session::SessionState {
-            focus: Some(format!("{:?}", self.focus)),
+            focus: Some(match self.focus {
+                Focus::FileList => "FileList",
+                Focus::DiffViewer => "DiffViewer",
+                Focus::Terminal => "Terminal",
+            }.to_string()),
             selected_file: self.files.get(self.selected).map(|f| f.path.clone()),
             scroll: self.scroll,
             active_pane: self.active_pane,

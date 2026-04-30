@@ -10,7 +10,6 @@ use ratatui::{
 use syntect::easy::HighlightLines;
 use syntect::highlighting::{Color as SColor, ThemeSet};
 use syntect::parsing::SyntaxSet;
-use syntect::util::LinesWithEndings;
 
 fn scolor(c: SColor) -> Color {
     Color::Rgb(c.r, c.g, c.b)
@@ -65,6 +64,8 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect, ss: &SyntaxSet, ts: &The
         )));
         flat_idx += 1;
 
+        // Create once per hunk so syntax state carries across lines within the hunk.
+        let mut hl = HighlightLines::new(syntax, theme);
         for diff_line in &hunk.lines {
             let is_current = has_search && current_match == Some(flat_idx);
             let is_match = has_search
@@ -96,27 +97,24 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect, ss: &SyntaxSet, ts: &The
                 Style::default().fg(Color::DarkGray).bg(bg),
             )];
 
-            // Syntect highlight the content
-            let mut hl = HighlightLines::new(syntax, theme);
             let content_with_newline = format!("{}\n", diff_line.content);
-            for line_str in LinesWithEndings::from(&content_with_newline) {
-                if let Ok(ranges) = hl.highlight_line(line_str, ss) {
-                    for (style, text) in ranges {
-                        if text.is_empty() {
-                            continue;
-                        }
-                        let fg = scolor(style.foreground);
-                        spans.push(Span::styled(
-                            text.trim_end_matches('\n').to_string(),
-                            Style::default().fg(fg).bg(bg),
-                        ));
+            if let Ok(ranges) = hl.highlight_line(&content_with_newline, ss) {
+                for (style, text) in ranges {
+                    let t = text.trim_end_matches('\n');
+                    if t.is_empty() {
+                        continue;
                     }
-                } else {
+                    let fg = scolor(style.foreground);
                     spans.push(Span::styled(
-                        diff_line.content.clone(),
-                        Style::default().bg(bg),
+                        t.to_string(),
+                        Style::default().fg(fg).bg(bg),
                     ));
                 }
+            } else {
+                spans.push(Span::styled(
+                    diff_line.content.clone(),
+                    Style::default().bg(bg),
+                ));
             }
 
             lines.push(Line::from(spans));
