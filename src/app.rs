@@ -79,7 +79,6 @@ pub enum Focus {
     Terminal,
 }
 
-
 pub enum SnapshotMsg {
     Ok(RepoSnapshot),
     Err(String),
@@ -352,10 +351,11 @@ impl App {
 
     pub fn scroll_terminal_down(&mut self, lines: usize) {
         if let Some(id) = self.active_pane_id() {
-            let entry = self.terminal_scroll.entry(id).or_insert(0);
-            *entry = entry.saturating_sub(lines);
-            if *entry == 0 {
-                self.terminal_scroll.remove(&id);
+            if let Some(entry) = self.terminal_scroll.get_mut(&id) {
+                *entry = entry.saturating_sub(lines);
+                if *entry == 0 {
+                    self.terminal_scroll.remove(&id);
+                }
             }
         }
     }
@@ -778,7 +778,7 @@ impl App {
                 self.focus = focus;
             }
         }
-        self.terminal_fullscreen = state.terminal_fullscreen;
+        self.terminal_fullscreen = state.terminal_fullscreen && !self.terminal_panes.is_empty();
         tracing::debug!(
             focus = ?state.focus,
             file = ?state.selected_file,

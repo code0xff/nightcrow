@@ -136,6 +136,11 @@ impl TerminalBackend for PtyBackend {
                 match event {
                     PtyEvent::Output(data) => events.push(BackendEvent::Output { pane: *id, data }),
                     PtyEvent::Exited => {
+                        // Drain any output buffered between the last read and the
+                        // exit signal before advertising the pane as gone.
+                        while let Ok(PtyEvent::Output(data)) = pane.rx.try_recv() {
+                            events.push(BackendEvent::Output { pane: *id, data });
+                        }
                         events.push(BackendEvent::Exited { pane: *id });
                         exited.push(*id);
                         break;
