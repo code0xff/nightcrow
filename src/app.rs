@@ -350,12 +350,12 @@ impl App {
     }
 
     pub fn scroll_terminal_down(&mut self, lines: usize) {
-        if let Some(id) = self.active_pane_id() {
-            if let Some(entry) = self.terminal_scroll.get_mut(&id) {
-                *entry = entry.saturating_sub(lines);
-                if *entry == 0 {
-                    self.terminal_scroll.remove(&id);
-                }
+        if let Some(id) = self.active_pane_id()
+            && let Some(entry) = self.terminal_scroll.get_mut(&id)
+        {
+            *entry = entry.saturating_sub(lines);
+            if *entry == 0 {
+                self.terminal_scroll.remove(&id);
             }
         }
     }
@@ -447,18 +447,19 @@ impl App {
                 }
                 Err(e) => {
                     tracing::debug!(error = %e, file = %path, "failed to load diff");
-                    self.hunks = Vec::new();
-                    self.diff_search_matches.clear();
-                    self.diff_search_cursor = 0;
-                    self.scroll = 0;
+                    self.clear_diff_state();
                 }
             }
         } else {
-            self.hunks = Vec::new();
-            self.diff_search_matches.clear();
-            self.diff_search_cursor = 0;
-            self.scroll = 0;
+            self.clear_diff_state();
         }
+    }
+
+    fn clear_diff_state(&mut self) {
+        self.hunks.clear();
+        self.diff_search_matches.clear();
+        self.diff_search_cursor = 0;
+        self.scroll = 0;
     }
 
     fn restore_selection(&mut self, previous_path: Option<&str>) -> Option<String> {
