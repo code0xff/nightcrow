@@ -1,5 +1,6 @@
 use crate::app::{App, Focus};
 use crate::git::diff::LineKind;
+use std::path::Path;
 use ratatui::{
     Frame,
     layout::{Constraint, Direction, Layout, Rect},
@@ -16,7 +17,10 @@ fn scolor(c: SColor) -> Color {
 }
 
 fn extension(path: &str) -> &str {
-    path.rsplit('.').next().unwrap_or("")
+    Path::new(path)
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("")
 }
 
 pub fn render(frame: &mut Frame, app: &App, area: Rect, ss: &SyntaxSet, ts: &ThemeSet) {

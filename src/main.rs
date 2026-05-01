@@ -124,12 +124,7 @@ fn run(
             match app.focus {
                 Focus::Terminal => match map_key(key) {
                     Action::Quit => break,
-                    Action::NewPane => {
-                        if let Err(e) = app.create_terminal_pane() {
-                            tracing::error!("create_terminal_pane failed: {e}");
-                            app.status = Some(format!("terminal error: {e}"));
-                        }
-                    }
+                    Action::NewPane => app.open_new_pane(),
                     Action::ClosePane => app.close_active_pane(),
                     Action::ChangeRepo => app.start_repo_input(),
                     Action::SwitchPane(n) => app.switch_pane(n),
@@ -180,12 +175,7 @@ fn run(
                             Action::Down => app.select_down(),
                             Action::PageUp => app.page_up(),
                             Action::PageDown => app.page_down(),
-                            Action::NewPane => {
-                                if let Err(e) = app.create_terminal_pane() {
-                                    tracing::error!("create_terminal_pane failed: {e}");
-                                    app.status = Some(format!("terminal error: {e}"));
-                                }
-                            }
+                            Action::NewPane => app.open_new_pane(),
                             Action::ClosePane => app.close_active_pane(),
                             Action::ChangeRepo => app.start_repo_input(),
                             Action::SwitchPane(n) => app.switch_pane(n),

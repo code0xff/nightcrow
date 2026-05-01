@@ -90,6 +90,16 @@ pub enum Focus {
     Terminal,
 }
 
+impl Focus {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::FileList => "FileList",
+            Self::DiffViewer => "DiffViewer",
+            Self::Terminal => "Terminal",
+        }
+    }
+}
+
 pub enum SnapshotMsg {
     Ok(RepoSnapshot),
     Err(String),
@@ -233,6 +243,13 @@ impl App {
                     }
                 }
             }
+        }
+    }
+
+    pub fn open_new_pane(&mut self) {
+        if let Err(e) = self.create_terminal_pane() {
+            tracing::error!("create_terminal_pane failed: {e}");
+            self.status = Some(format!("terminal error: {e}"));
         }
     }
 
@@ -695,11 +712,7 @@ impl App {
 
     pub fn save_session(&self) -> crate::session::SessionState {
         crate::session::SessionState {
-            focus: Some(match self.focus {
-                Focus::FileList => "FileList",
-                Focus::DiffViewer => "DiffViewer",
-                Focus::Terminal => "Terminal",
-            }.to_string()),
+            focus: Some(self.focus.as_str().to_string()),
             selected_file: self.files.get(self.selected).map(|f| f.path.clone()),
             scroll: self.scroll,
             active_pane: self.active_pane,
@@ -707,11 +720,11 @@ impl App {
     }
 
     pub fn restore_session(&mut self, state: &crate::session::SessionState) {
-        if let Some(path) = &state.selected_file {
-            if let Some(idx) = self.files.iter().position(|f| &f.path == path) {
-                self.selected = idx;
-                self.refresh_diff(true);
-            }
+        if let Some(path) = &state.selected_file
+            && let Some(idx) = self.files.iter().position(|f| &f.path == path)
+        {
+            self.selected = idx;
+            self.refresh_diff(true);
         }
         self.scroll = state.scroll;
         self.active_pane = self.active_pane.min(
