@@ -16,6 +16,8 @@ pub enum Action {
     CycleBackward,
     TermScrollUp,
     TermScrollDown,
+    TermScrollLineUp,
+    TermScrollLineDown,
     None,
 }
 
@@ -31,6 +33,8 @@ pub fn map_key(event: KeyEvent) -> Action {
         KeyCode::Char('f') if ctrl => Action::ToggleFullscreen,
         KeyCode::Left if shift => Action::CycleBackward,
         KeyCode::Right if shift => Action::CycleForward,
+        KeyCode::Up if shift => Action::TermScrollLineUp,
+        KeyCode::Down if shift => Action::TermScrollLineDown,
         KeyCode::PageUp if shift => Action::TermScrollUp,
         KeyCode::PageDown if shift => Action::TermScrollDown,
         KeyCode::F(n @ 1..=9) => Action::SwitchPane(n as usize - 1),
@@ -134,6 +138,21 @@ mod tests {
         let shift_left = KeyEvent::new(KeyCode::Left, KeyModifiers::SHIFT);
         assert_eq!(map_key(shift_right), Action::CycleForward);
         assert_eq!(map_key(shift_left), Action::CycleBackward);
+    }
+
+    #[test]
+    fn maps_terminal_scroll_shortcuts() {
+        let shift_pgup = KeyEvent::new(KeyCode::PageUp, KeyModifiers::SHIFT);
+        let shift_pgdn = KeyEvent::new(KeyCode::PageDown, KeyModifiers::SHIFT);
+        let shift_up = KeyEvent::new(KeyCode::Up, KeyModifiers::SHIFT);
+        let shift_down = KeyEvent::new(KeyCode::Down, KeyModifiers::SHIFT);
+        assert_eq!(map_key(shift_pgup), Action::TermScrollUp);
+        assert_eq!(map_key(shift_pgdn), Action::TermScrollDown);
+        assert_eq!(map_key(shift_up), Action::TermScrollLineUp);
+        assert_eq!(map_key(shift_down), Action::TermScrollLineDown);
+        // Plain up/down must not trigger terminal scroll.
+        assert_ne!(map_key(key(KeyCode::Up)), Action::TermScrollLineUp);
+        assert_ne!(map_key(key(KeyCode::Down)), Action::TermScrollLineDown);
     }
 
     #[test]

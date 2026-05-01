@@ -73,13 +73,13 @@ fn render_hint_bar(app: &App) -> Paragraph<'_> {
     }
     if app.terminal_fullscreen {
         return Paragraph::new(Line::from(Span::styled(
-            " shift+pgup/dn: scroll  |  ctrl+f: exit fullscreen  |  ctrl+t: new pane  |  ctrl+w: close pane  |  ctrl+q: quit",
+            " shift+↑/↓: scroll  |  shift+pgup/dn: page scroll  |  ctrl+f: exit fullscreen  |  ctrl+t: new pane  |  ctrl+w: close pane  |  ctrl+q: quit",
             Style::default().fg(Color::DarkGray),
         )));
     }
     let hint = match app.focus {
         Focus::Terminal => {
-            " shift+pgup/dn: scroll  |  shift+←/→: cycle  |  ctrl+t: new pane  |  ctrl+w: close pane  |  F1-F9: switch pane  |  ctrl+f: fullscreen  |  ctrl+o: repo  |  ctrl+q: quit"
+            " shift+↑/↓: scroll  |  shift+pgup/dn: page scroll  |  shift+←/→: cycle  |  ctrl+t: new pane  |  ctrl+w: close pane  |  F1-F9: switch pane  |  ctrl+f: fullscreen  |  ctrl+o: repo  |  ctrl+q: quit"
         }
         Focus::FileList => {
             " shift+←/→: cycle  |  j/k: navigate  |  /: search  |  F1-F9: switch pane  |  ctrl+f: fullscreen  |  ctrl+o: repo  |  ctrl+q: quit"

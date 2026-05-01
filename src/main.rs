@@ -139,6 +139,8 @@ fn run(
                         let lines = app.terminal_size.0 as usize;
                         app.scroll_terminal_down(lines);
                     }
+                    Action::TermScrollLineUp => app.scroll_terminal_up(3),
+                    Action::TermScrollLineDown => app.scroll_terminal_down(3),
                     _ => {
                         if let Some(data) = encode_key(key) {
                             app.send_terminal_input(&data);
@@ -192,7 +194,10 @@ fn run(
                             Action::CycleForward if !app.terminal_fullscreen => app.cycle_focus_forward(),
                             Action::CycleBackward if !app.terminal_fullscreen => app.cycle_focus_backward(),
                             Action::SwitchPane(_) | Action::CycleForward | Action::CycleBackward => {}
-                            Action::TermScrollUp | Action::TermScrollDown => {}
+                            Action::TermScrollUp
+                            | Action::TermScrollDown
+                            | Action::TermScrollLineUp
+                            | Action::TermScrollLineDown => {}
                             Action::None => match app.focus {
                                 Focus::FileList => match key.code {
                                     KeyCode::Char('/') => app.start_search(),
