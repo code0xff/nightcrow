@@ -127,17 +127,15 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect, ss: &SyntaxSet, ts: &The
     }
 
     if lines.is_empty() {
-        if app.files.is_empty() {
-            lines.push(Line::from(Span::styled(
-                "No changes in repository",
-                Style::default().fg(Color::DarkGray),
-            )));
+        let msg = if app.files.is_empty() {
+            "No changes in repository"
         } else {
-            lines.push(Line::from(Span::styled(
-                "Select a file to view diff",
-                Style::default().fg(Color::DarkGray),
-            )));
-        }
+            "No diff for selected file"
+        };
+        lines.push(Line::from(Span::styled(
+            msg,
+            Style::default().fg(Color::DarkGray),
+        )));
     }
 
     let title = if has_search {
