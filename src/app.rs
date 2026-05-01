@@ -6,6 +6,8 @@ use std::sync::mpsc::{self, Receiver, SyncSender};
 use std::thread;
 use std::time::Duration;
 
+const SCROLLBACK_LINES: usize = 1000;
+
 fn spawn_snapshot_thread(repo_path: &str) -> (Receiver<SnapshotMsg>, SyncSender<()>) {
     let (tx, rx) = mpsc::channel::<SnapshotMsg>();
     let (stop_tx, stop_rx) = mpsc::sync_channel::<()>(0);
@@ -108,6 +110,7 @@ pub struct App {
     pub diff_search_matches: Vec<usize>,
     pub diff_search_cursor: usize,
     pub terminal_fullscreen: bool,
+    pub terminal_scroll: HashMap<PaneId, usize>,
     rx: Receiver<SnapshotMsg>,
     // Dropping this sender signals the background thread to exit.
     _stop_tx: SyncSender<()>,
@@ -144,6 +147,7 @@ impl App {
             diff_search_matches: Vec::new(),
             diff_search_cursor: 0,
             terminal_fullscreen: false,
+            terminal_scroll: HashMap::new(),
             rx,
             _stop_tx: stop_tx,
             backend: Some(backend),
@@ -214,6 +218,7 @@ impl App {
                 BackendEvent::Exited { pane } => {
                     self.parsers.remove(&pane);
                     self.prompt_bufs.remove(&pane);
+                    self.terminal_scroll.remove(&pane);
                     self.terminal_panes.retain(|p| p.id != pane);
                     if self.terminal_panes.is_empty() {
                         self.active_pane = 0;
@@ -242,7 +247,7 @@ impl App {
             .ok_or_else(|| anyhow::anyhow!("no terminal backend available"))?;
 
         let id = backend.create_pane(rows.max(1), cols.max(1))?;
-        let parser = vt100::Parser::new(rows.max(1), cols.max(1), 0);
+        let parser = vt100::Parser::new(rows.max(1), cols.max(1), SCROLLBACK_LINES);
         self.parsers.insert(id, parser);
         self.terminal_panes.push(PaneInfo {
             id,
@@ -264,6 +269,7 @@ impl App {
         }
         self.parsers.remove(&id);
         self.prompt_bufs.remove(&id);
+        self.terminal_scroll.remove(&id);
         self.terminal_panes.remove(self.active_pane);
         if self.terminal_panes.is_empty() {
             self.active_pane = 0;
@@ -327,12 +333,53 @@ impl App {
     pub fn send_terminal_input(&mut self, data: &[u8]) {
         if let Some(info) = self.terminal_panes.get(self.active_pane) {
             let id = info.id;
+            self.terminal_scroll.remove(&id);
             if let Some(backend) = &mut self.backend {
                 let _ = backend.send_input(id, data);
             }
             if self.prompt_log_enabled {
                 self.buffer_prompt_input(id, data);
             }
+        }
+    }
+
+    pub fn scroll_terminal_up(&mut self, lines: usize) {
+        if let Some(id) = self.active_pane_id() {
+            let offset = self.terminal_scroll.entry(id).or_insert(0);
+            *offset = offset.saturating_add(lines);
+        }
+    }
+
+    pub fn scroll_terminal_down(&mut self, lines: usize) {
+        if let Some(id) = self.active_pane_id() {
+            let entry = self.terminal_scroll.entry(id).or_insert(0);
+            *entry = entry.saturating_sub(lines);
+            if *entry == 0 {
+                self.terminal_scroll.remove(&id);
+            }
+        }
+    }
+
+    pub fn is_terminal_scrolled(&self) -> bool {
+        self.active_pane_id()
+            .and_then(|id| self.terminal_scroll.get(&id))
+            .is_some_and(|&v| v > 0)
+    }
+
+    pub fn sync_terminal_scroll(&mut self) {
+        let Some(id) = self.active_pane_id() else { return };
+        let offset = self.terminal_scroll.get(&id).copied().unwrap_or(0);
+        let actual = match self.parsers.get_mut(&id) {
+            Some(parser) => {
+                parser.set_scrollback(offset);
+                parser.screen().scrollback()
+            }
+            None => return,
+        };
+        if actual == 0 {
+            self.terminal_scroll.remove(&id);
+        } else {
+            self.terminal_scroll.insert(id, actual);
         }
     }
 
@@ -776,6 +823,7 @@ mod tests {
             diff_search_matches: Vec::new(),
             diff_search_cursor: 0,
             terminal_fullscreen: false,
+            terminal_scroll: HashMap::new(),
             rx,
             _stop_tx,
             backend: None,

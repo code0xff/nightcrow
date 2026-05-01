@@ -14,6 +14,8 @@ pub enum Action {
     SwitchPane(usize),
     CycleForward,
     CycleBackward,
+    TermScrollUp,
+    TermScrollDown,
     None,
 }
 
@@ -29,6 +31,8 @@ pub fn map_key(event: KeyEvent) -> Action {
         KeyCode::Char('f') if ctrl => Action::ToggleFullscreen,
         KeyCode::Left if shift => Action::CycleBackward,
         KeyCode::Right if shift => Action::CycleForward,
+        KeyCode::PageUp if shift => Action::TermScrollUp,
+        KeyCode::PageDown if shift => Action::TermScrollDown,
         KeyCode::F(n @ 1..=9) => Action::SwitchPane(n as usize - 1),
         KeyCode::Up | KeyCode::Char('k') => Action::Up,
         KeyCode::Down | KeyCode::Char('j') => Action::Down,

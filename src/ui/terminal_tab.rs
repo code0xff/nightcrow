@@ -15,9 +15,14 @@ pub fn render(frame: &mut Frame, app: &mut App, area: Rect) {
         Style::default().fg(Color::DarkGray)
     };
 
+    let title = if app.is_terminal_scrolled() {
+        " Terminal [SCROLL — shift+pgdn: down | input: live] "
+    } else {
+        " Terminal "
+    };
     let block = Block::default()
         .borders(Borders::ALL)
-        .title(" Terminal ")
+        .title(title)
         .border_style(border_style);
 
     let inner = block.inner(area);
@@ -63,6 +68,7 @@ pub fn render(frame: &mut Frame, app: &mut App, area: Rect) {
     frame.render_widget(Paragraph::new(Line::from(tab_spans)), chunks[0]);
 
     // ── Terminal screen ───────────────────────────────────────
+    app.sync_terminal_scroll();
     let screen_lines = build_screen_lines(app, content_area.height, content_area.width);
     frame.render_widget(Paragraph::new(screen_lines), content_area);
     render_cursor(frame, app, content_area);
