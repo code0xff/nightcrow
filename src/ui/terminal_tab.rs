@@ -110,8 +110,7 @@ fn build_screen_lines(app: &App, rows: u16, cols: u16) -> Vec<Line<'static>> {
                     run_text.push_str(&text);
                 } else {
                     if !run_text.is_empty() {
-                        spans.push(Span::styled(run_text.clone(), run_style));
-                        run_text.clear();
+                        spans.push(Span::styled(std::mem::take(&mut run_text), run_style));
                     }
                     run_style = style;
                     run_text = text;
