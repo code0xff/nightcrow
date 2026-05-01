@@ -2,7 +2,6 @@ use anyhow::{Context, Result};
 use git2::{Diff, DiffDelta, DiffOptions, Repository, Status, StatusEntry, StatusOptions};
 use std::cell::RefCell;
 use std::collections::BTreeMap;
-use std::path::Path;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ChangeStatus {
@@ -194,13 +193,9 @@ fn path_from_delta(delta: DiffDelta<'_>) -> Option<String> {
         .map(|p| p.to_string_lossy().to_string())
 }
 
-fn display_path(file_path: &str) -> String {
-    Path::new(file_path).display().to_string()
-}
-
 fn binary_diff_hunk(file_path: &str) -> DiffHunk {
     DiffHunk {
-        header: format!("Binary file {} changed", display_path(file_path)),
+        header: format!("Binary file {file_path} changed"),
         lines: vec![DiffLine {
             kind: LineKind::Context,
             content: "Binary files differ".to_string(),

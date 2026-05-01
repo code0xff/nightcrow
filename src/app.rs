@@ -29,55 +29,42 @@ fn spawn_snapshot_thread(repo_path: &str) -> (Receiver<SnapshotMsg>, SyncSender<
 }
 
 fn strip_escape_sequences(data: &[u8]) -> String {
+    let text = String::from_utf8_lossy(data);
     let mut result = String::new();
-    let mut i = 0;
-    while i < data.len() {
-        match data[i] {
-            0x1b => {
-                i += 1;
-                if i >= data.len() {
-                    break;
-                }
-                match data[i] {
-                    b'[' => {
-                        // CSI: skip until final byte 0x40–0x7e
-                        i += 1;
-                        while i < data.len() && !(0x40..=0x7e).contains(&data[i]) {
-                            i += 1;
-                        }
-                        i += 1;
-                    }
-                    b']' => {
-                        // OSC: skip until BEL or ST
-                        i += 1;
-                        while i < data.len() {
-                            if data[i] == 0x07 {
-                                i += 1;
-                                break;
-                            }
-                            if data[i] == 0x1b && i + 1 < data.len() && data[i + 1] == b'\\' {
-                                i += 2;
-                                break;
-                            }
-                            i += 1;
+    let mut chars = text.chars().peekable();
+    while let Some(ch) = chars.next() {
+        match ch {
+            '\x1b' => match chars.peek().copied() {
+                Some('[') => {
+                    // CSI: skip until final byte 0x40–0x7e
+                    chars.next();
+                    for c in chars.by_ref() {
+                        if ('\x40'..='\x7e').contains(&c) {
+                            break;
                         }
                     }
-                    _ => {
-                        i += 1;
+                }
+                Some(']') => {
+                    // OSC: skip until BEL or ST
+                    chars.next();
+                    loop {
+                        match chars.next() {
+                            None | Some('\x07') => break,
+                            Some('\x1b') if chars.peek() == Some(&'\\') => {
+                                chars.next();
+                                break;
+                            }
+                            _ => {}
+                        }
                     }
                 }
-            }
-            b'\r' | b'\n' => {
-                result.push(data[i] as char);
-                i += 1;
-            }
-            0x20..=0x7e => {
-                result.push(data[i] as char);
-                i += 1;
-            }
-            _ => {
-                i += 1;
-            }
+                _ => {
+                    chars.next();
+                }
+            },
+            '\r' | '\n' => result.push(ch),
+            c if !c.is_control() => result.push(c),
+            _ => {}
         }
     }
     result
@@ -90,15 +77,6 @@ pub enum Focus {
     Terminal,
 }
 
-impl Focus {
-    fn as_str(self) -> &'static str {
-        match self {
-            Self::FileList => "FileList",
-            Self::DiffViewer => "DiffViewer",
-            Self::Terminal => "Terminal",
-        }
-    }
-}
 
 pub enum SnapshotMsg {
     Ok(RepoSnapshot),
@@ -416,7 +394,8 @@ impl App {
                         self.recompute_diff_matches();
                     }
                 }
-                Err(_) => {
+                Err(e) => {
+                    tracing::debug!(error = %e, file = %path, "failed to load diff");
                     self.hunks = Vec::new();
                     self.diff_search_matches.clear();
                     self.diff_search_cursor = 0;
@@ -712,7 +691,7 @@ impl App {
 
     pub fn save_session(&self) -> crate::session::SessionState {
         crate::session::SessionState {
-            focus: Some(self.focus.as_str().to_string()),
+            focus: Some(self.focus),
             selected_file: self.files.get(self.selected).map(|f| f.path.clone()),
             scroll: self.scroll,
             active_pane: self.active_pane,
@@ -730,13 +709,11 @@ impl App {
         self.active_pane = state
             .active_pane
             .min(self.terminal_panes.len().saturating_sub(1));
-        if let Some(focus_str) = &state.focus {
-            match focus_str.as_str() {
-                "DiffViewer" => self.focus = Focus::DiffViewer,
-                "Terminal" if !self.terminal_panes.is_empty() => {
-                    self.focus = Focus::Terminal;
-                }
-                _ => self.focus = Focus::FileList,
+        if let Some(focus) = state.focus {
+            if focus == Focus::Terminal && self.terminal_panes.is_empty() {
+                self.focus = Focus::FileList;
+            } else {
+                self.focus = focus;
             }
         }
         tracing::debug!(
@@ -878,7 +855,7 @@ mod tests {
         ];
 
         app.restore_session(&crate::session::SessionState {
-            focus: Some("FileList".to_string()),
+            focus: Some(Focus::FileList),
             active_pane: 1,
             ..Default::default()
         });

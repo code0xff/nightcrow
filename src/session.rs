@@ -1,9 +1,10 @@
+use crate::app::Focus;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct SessionState {
-    pub focus: Option<String>,
+    pub focus: Option<Focus>,
     pub selected_file: Option<String>,
     pub scroll: usize,
     pub active_pane: usize,

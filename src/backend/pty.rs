@@ -138,6 +138,7 @@ impl TerminalBackend for PtyBackend {
                     PtyEvent::Exited => {
                         events.push(BackendEvent::Exited { pane: *id });
                         exited.push(*id);
+                        break;
                     }
                 }
             }
