@@ -107,6 +107,7 @@ pub struct App {
     pub diff_search_query: String,
     pub diff_search_matches: Vec<usize>,
     pub diff_search_cursor: usize,
+    pub terminal_fullscreen: bool,
     rx: Receiver<SnapshotMsg>,
     // Dropping this sender signals the background thread to exit.
     _stop_tx: SyncSender<()>,
@@ -142,6 +143,7 @@ impl App {
             diff_search_query: String::new(),
             diff_search_matches: Vec::new(),
             diff_search_cursor: 0,
+            terminal_fullscreen: false,
             rx,
             _stop_tx: stop_tx,
             backend: Some(backend),
@@ -685,6 +687,10 @@ impl App {
         }
     }
 
+    pub fn toggle_terminal_fullscreen(&mut self) {
+        self.terminal_fullscreen = !self.terminal_fullscreen;
+    }
+
     pub fn set_pending_session(&mut self, state: crate::session::SessionState) {
         self.pending_session = Some(state);
     }
@@ -695,6 +701,7 @@ impl App {
             selected_file: self.files.get(self.selected).map(|f| f.path.clone()),
             scroll: self.scroll,
             active_pane: self.active_pane,
+            terminal_fullscreen: self.terminal_fullscreen,
         }
     }
 
@@ -716,6 +723,7 @@ impl App {
                 self.focus = focus;
             }
         }
+        self.terminal_fullscreen = state.terminal_fullscreen;
         tracing::debug!(
             focus = ?state.focus,
             file = ?state.selected_file,
@@ -759,6 +767,7 @@ mod tests {
             diff_search_query: String::new(),
             diff_search_matches: Vec::new(),
             diff_search_cursor: 0,
+            terminal_fullscreen: false,
             rx,
             _stop_tx,
             backend: None,
@@ -888,6 +897,7 @@ mod tests {
             diff_search_query: String::new(),
             diff_search_matches: Vec::new(),
             diff_search_cursor: 0,
+            terminal_fullscreen: false,
             rx,
             _stop_tx,
             backend: None,
@@ -931,6 +941,7 @@ mod tests {
             diff_search_query: String::new(),
             diff_search_matches: Vec::new(),
             diff_search_cursor: 0,
+            terminal_fullscreen: false,
             rx,
             _stop_tx,
             pending_session: None,

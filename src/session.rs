@@ -8,6 +8,8 @@ pub struct SessionState {
     pub selected_file: Option<String>,
     pub scroll: usize,
     pub active_pane: usize,
+    #[serde(default)]
+    pub terminal_fullscreen: bool,
 }
 
 fn session_path(repo_path: &str) -> std::path::PathBuf {
