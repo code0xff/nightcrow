@@ -128,9 +128,9 @@ fn run(
                     Action::ClosePane => app.close_active_pane(),
                     Action::ChangeRepo => app.start_repo_input(),
                     Action::ToggleFullscreen => app.toggle_terminal_fullscreen(),
-                    Action::SwitchPane(n) => app.switch_pane(n),
-                    Action::CycleForward => app.cycle_focus_forward(),
-                    Action::CycleBackward => app.cycle_focus_backward(),
+                    Action::SwitchPane(n) if !app.terminal_fullscreen => app.switch_pane(n),
+                    Action::CycleForward if !app.terminal_fullscreen => app.cycle_focus_forward(),
+                    Action::CycleBackward if !app.terminal_fullscreen => app.cycle_focus_backward(),
                     _ => {
                         if let Some(data) = encode_key(key) {
                             app.send_terminal_input(&data);
@@ -180,9 +180,10 @@ fn run(
                             Action::ClosePane => app.close_active_pane(),
                             Action::ChangeRepo => app.start_repo_input(),
                             Action::ToggleFullscreen => app.toggle_terminal_fullscreen(),
-                            Action::SwitchPane(n) => app.switch_pane(n),
-                            Action::CycleForward => app.cycle_focus_forward(),
-                            Action::CycleBackward => app.cycle_focus_backward(),
+                            Action::SwitchPane(n) if !app.terminal_fullscreen => app.switch_pane(n),
+                            Action::CycleForward if !app.terminal_fullscreen => app.cycle_focus_forward(),
+                            Action::CycleBackward if !app.terminal_fullscreen => app.cycle_focus_backward(),
+                            Action::SwitchPane(_) | Action::CycleForward | Action::CycleBackward => {}
                             Action::None => match app.focus {
                                 Focus::FileList => match key.code {
                                     KeyCode::Char('/') => app.start_search(),

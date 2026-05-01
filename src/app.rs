@@ -218,6 +218,7 @@ impl App {
                     if self.terminal_panes.is_empty() {
                         self.active_pane = 0;
                         self.focus = Focus::DiffViewer;
+                        self.terminal_fullscreen = false;
                     } else if self.active_pane >= self.terminal_panes.len() {
                         self.active_pane = self.terminal_panes.len() - 1;
                     }
@@ -267,6 +268,7 @@ impl App {
         if self.terminal_panes.is_empty() {
             self.active_pane = 0;
             self.focus = Focus::DiffViewer;
+            self.terminal_fullscreen = false;
         } else {
             self.active_pane = self.active_pane.min(self.terminal_panes.len() - 1);
         }
@@ -688,7 +690,13 @@ impl App {
     }
 
     pub fn toggle_terminal_fullscreen(&mut self) {
+        if !self.terminal_fullscreen && self.terminal_panes.is_empty() {
+            return;
+        }
         self.terminal_fullscreen = !self.terminal_fullscreen;
+        if self.terminal_fullscreen {
+            self.focus = Focus::Terminal;
+        }
     }
 
     pub fn set_pending_session(&mut self, state: crate::session::SessionState) {
@@ -850,6 +858,41 @@ mod tests {
     }
 
     #[test]
+    fn toggle_fullscreen_switches_focus_to_terminal() {
+        let mut app = app_with_files(vec![]);
+        app.terminal_panes = vec![PaneInfo { id: 1, title: "shell".into() }];
+        assert_eq!(app.focus, Focus::FileList);
+
+        app.toggle_terminal_fullscreen();
+
+        assert!(app.terminal_fullscreen);
+        assert_eq!(app.focus, Focus::Terminal);
+    }
+
+    #[test]
+    fn toggle_fullscreen_noop_with_no_panes() {
+        let mut app = app_with_files(vec![]);
+        assert!(app.terminal_panes.is_empty());
+
+        app.toggle_terminal_fullscreen();
+
+        assert!(!app.terminal_fullscreen);
+    }
+
+    #[test]
+    fn close_last_pane_exits_fullscreen() {
+        let mut app = app_with_files(vec![]);
+        app.terminal_panes = vec![PaneInfo { id: 1, title: "shell".into() }];
+        app.terminal_fullscreen = true;
+        app.focus = Focus::Terminal;
+
+        app.close_active_pane();
+
+        assert!(!app.terminal_fullscreen);
+        assert_eq!(app.focus, Focus::DiffViewer);
+    }
+
+    #[test]
     fn restore_session_restores_active_pane_even_when_focus_is_not_terminal() {
         let mut app = app_with_files(vec![]);
         app.terminal_panes = vec![
@@ -878,33 +921,10 @@ mod tests {
         let (tx, rx) = mpsc::channel::<SnapshotMsg>();
         let (_stop_tx, _stop_rx) = mpsc::sync_channel::<()>(0);
         let mut app = App {
-            files: Vec::new(),
-            selected: 0,
-            hunks: Vec::new(),
-            scroll: 0,
-            focus: Focus::FileList,
-
             status: Some("terminal error: backend unavailable".to_string()),
-            repo_path: ".".to_string(),
-            terminal_panes: Vec::new(),
-            active_pane: 0,
-            terminal_size: (22, 78),
-            search_query: String::new(),
-            search_active: false,
-            repo_input_active: false,
-            repo_input_buf: String::new(),
-            diff_search_active: false,
-            diff_search_query: String::new(),
-            diff_search_matches: Vec::new(),
-            diff_search_cursor: 0,
-            terminal_fullscreen: false,
             rx,
             _stop_tx,
-            backend: None,
-            parsers: HashMap::new(),
-            prompt_log_enabled: false,
-            prompt_bufs: HashMap::new(),
-            pending_session: None,
+            ..app_with_files(vec![])
         };
 
         tx.send(SnapshotMsg::Ok(RepoSnapshot { files: Vec::new() }))
@@ -922,33 +942,10 @@ mod tests {
         let (tx, rx) = mpsc::channel::<SnapshotMsg>();
         let (_stop_tx, _stop_rx) = mpsc::sync_channel::<()>(0);
         let mut app = App {
-            files: Vec::new(),
-            selected: 0,
-            hunks: Vec::new(),
-            scroll: 0,
-            focus: Focus::FileList,
-
             status: Some("git error: not a repo".to_string()),
-            repo_path: ".".to_string(),
-            terminal_panes: Vec::new(),
-            active_pane: 0,
-            terminal_size: (22, 78),
-            search_query: String::new(),
-            search_active: false,
-            repo_input_active: false,
-            repo_input_buf: String::new(),
-            diff_search_active: false,
-            diff_search_query: String::new(),
-            diff_search_matches: Vec::new(),
-            diff_search_cursor: 0,
-            terminal_fullscreen: false,
             rx,
             _stop_tx,
-            pending_session: None,
-            backend: None,
-            parsers: HashMap::new(),
-            prompt_log_enabled: false,
-            prompt_bufs: HashMap::new(),
+            ..app_with_files(vec![])
         };
 
         tx.send(SnapshotMsg::Ok(RepoSnapshot { files: Vec::new() }))
