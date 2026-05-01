@@ -692,6 +692,13 @@ impl App {
     }
 
     pub fn cycle_focus_forward(&mut self) {
+        if self.terminal_fullscreen {
+            let len = self.terminal_panes.len();
+            if len > 0 {
+                self.active_pane = (self.active_pane + 1) % len;
+            }
+            return;
+        }
         match self.focus {
             Focus::FileList => {
                 self.focus = Focus::DiffViewer;
@@ -715,6 +722,13 @@ impl App {
     }
 
     pub fn cycle_focus_backward(&mut self) {
+        if self.terminal_fullscreen {
+            let len = self.terminal_panes.len();
+            if len > 0 {
+                self.active_pane = (self.active_pane + len - 1) % len;
+            }
+            return;
+        }
         match self.focus {
             Focus::FileList => {
                 if !self.terminal_panes.is_empty() {

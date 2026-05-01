@@ -73,7 +73,7 @@ fn render_hint_bar(app: &App) -> Paragraph<'_> {
     }
     if app.terminal_fullscreen {
         return Paragraph::new(Line::from(Span::styled(
-            " shift+↑/↓: scroll  |  shift+pgup/dn: page scroll  |  ctrl+f: exit fullscreen  |  ctrl+t: new pane  |  ctrl+w: close pane  |  ctrl+q: quit",
+            " shift+↑/↓: scroll  |  shift+pgup/dn: page scroll  |  shift+←/→: cycle pane  |  ctrl+f: exit fullscreen  |  ctrl+t: new pane  |  ctrl+w: close pane  |  ctrl+q: quit",
             Style::default().fg(Color::DarkGray),
         )));
     }

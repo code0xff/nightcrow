@@ -128,9 +128,9 @@ fn run(
                     Action::ClosePane => app.close_active_pane(),
                     Action::ChangeRepo => app.start_repo_input(),
                     Action::ToggleFullscreen => app.toggle_terminal_fullscreen(),
-                    Action::SwitchPane(n) if !app.terminal_fullscreen => app.switch_pane(n),
-                    Action::CycleForward if !app.terminal_fullscreen => app.cycle_focus_forward(),
-                    Action::CycleBackward if !app.terminal_fullscreen => app.cycle_focus_backward(),
+                    Action::SwitchPane(n) => app.switch_pane(n),
+                    Action::CycleForward => app.cycle_focus_forward(),
+                    Action::CycleBackward => app.cycle_focus_backward(),
                     Action::TermScrollUp => {
                         let lines = app.terminal_size.0 as usize;
                         app.scroll_terminal_up(lines);
