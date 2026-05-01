@@ -371,7 +371,8 @@ impl App {
         let offset = self.terminal_scroll.get(&id).copied().unwrap_or(0);
         let actual = match self.parsers.get_mut(&id) {
             Some(parser) => {
-                parser.set_scrollback(offset);
+                let (rows, _) = parser.screen().size();
+                parser.set_scrollback(offset.min(rows as usize));
                 parser.screen().scrollback()
             }
             None => return,
