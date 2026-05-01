@@ -1,9 +1,10 @@
-use anyhow::{Context, Result, bail};
-use git2::{Delta, Repository};
+use anyhow::{Context, Result};
+use git2::{Diff, DiffDelta, DiffOptions, Repository, Status, StatusEntry, StatusOptions};
 use std::cell::RefCell;
+use std::collections::BTreeMap;
 use std::path::Path;
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ChangeStatus {
     Added,
     Modified,
@@ -56,84 +57,69 @@ pub struct RepoSnapshot {
 
 pub fn load_snapshot(repo_path: &str) -> Result<RepoSnapshot> {
     let repo = Repository::discover(repo_path).context("not a git repository")?;
-    let mut files: Vec<ChangedFile> = Vec::new();
 
-    let diff = repo
-        .diff_index_to_workdir(None, None)
-        .context("failed to get workdir diff")?;
+    let mut opts = StatusOptions::new();
+    opts.include_untracked(true)
+        .recurse_untracked_dirs(true)
+        .renames_head_to_index(true)
+        .renames_index_to_workdir(true);
 
-    diff.foreach(
-        &mut |delta, _| {
-            let path = delta
-                .new_file()
-                .path()
-                .or_else(|| delta.old_file().path())
-                .map(|p| p.to_string_lossy().to_string())
-                .unwrap_or_default();
-
-            let status = match delta.status() {
-                Delta::Added => ChangeStatus::Added,
-                Delta::Deleted => ChangeStatus::Deleted,
-                Delta::Renamed => ChangeStatus::Renamed,
-                _ => ChangeStatus::Modified,
-            };
-
-            files.push(ChangedFile { path, status });
-            true
-        },
-        None,
-        None,
-        None,
-    )?;
-
-    // Untracked files
-    let mut opts = git2::StatusOptions::new();
-    opts.include_untracked(true).recurse_untracked_dirs(true);
     let statuses = repo
         .statuses(Some(&mut opts))
         .context("failed to get repository status")?;
+
+    let mut files = BTreeMap::new();
     for entry in statuses.iter() {
-        if entry.status().contains(git2::Status::WT_NEW) {
-            let path = entry.path().unwrap_or("").to_string();
-            if !path.is_empty() && !files.iter().any(|f| f.path == path) {
-                files.push(ChangedFile {
-                    path,
-                    status: ChangeStatus::Untracked,
-                });
-            }
+        let Some(status) = change_status_from_git_status(entry.status()) else {
+            continue;
+        };
+        if let Some(path) = path_from_status_entry(&entry) && !path.is_empty() {
+            files.entry(path).or_insert(status);
         }
     }
 
-    files.sort_by(|a, b| a.path.cmp(&b.path));
+    let files = files
+        .into_iter()
+        .map(|(path, status)| ChangedFile { path, status })
+        .collect();
 
     Ok(RepoSnapshot { files })
 }
 
 pub fn load_file_diff(repo_path: &str, file_path: &str) -> Result<Vec<DiffHunk>> {
     let repo = Repository::discover(repo_path).context("not a git repository")?;
+    let head_tree = repo.head().ok().and_then(|head| head.peel_to_tree().ok());
+    let mut diff_opts = diff_options(Some(file_path));
 
-    if is_untracked(&repo, file_path)? {
-        return load_untracked_file_diff(&repo, file_path);
-    }
-
-    let mut diff_opts = git2::DiffOptions::new();
-    diff_opts.pathspec(file_path).show_binary(true);
-
-    let diff = repo
-        .diff_index_to_workdir(None, Some(&mut diff_opts))
+    let mut diff = repo
+        .diff_tree_to_workdir_with_index(head_tree.as_ref(), Some(&mut diff_opts))
         .context("failed to get diff")?;
 
+    diff.find_similar(None)
+        .context("failed to detect renamed files")?;
+
+    collect_diff_hunks(&diff, file_path)
+}
+
+fn diff_options(pathspec: Option<&str>) -> DiffOptions {
+    let mut opts = DiffOptions::new();
+    opts.include_untracked(true)
+        .recurse_untracked_dirs(true)
+        .show_untracked_content(true)
+        .show_binary(true);
+    if let Some(pathspec) = pathspec {
+        opts.pathspec(pathspec).disable_pathspec_match(true);
+    }
+    opts
+}
+
+fn collect_diff_hunks(diff: &Diff<'_>, fallback_path: &str) -> Result<Vec<DiffHunk>> {
     let hunks: RefCell<Vec<DiffHunk>> = RefCell::new(Vec::new());
 
     diff.foreach(
         &mut |_, _| true,
         Some(&mut |delta, _| {
-            let path = delta
-                .new_file()
-                .path()
-                .or_else(|| delta.old_file().path())
-                .map(|p| p.to_string_lossy().to_string())
-                .unwrap_or_else(|| file_path.to_string());
+            let path = path_from_delta(delta).unwrap_or_else(|| fallback_path.to_string());
             hunks.borrow_mut().push(binary_diff_hunk(&path));
             true
         }),
@@ -169,51 +155,43 @@ pub fn load_file_diff(repo_path: &str, file_path: &str) -> Result<Vec<DiffHunk>>
     Ok(hunks.into_inner())
 }
 
-fn is_untracked(repo: &Repository, file_path: &str) -> Result<bool> {
-    let mut opts = git2::StatusOptions::new();
-    opts.include_untracked(true)
-        .recurse_untracked_dirs(true)
-        .pathspec(file_path);
-
-    let statuses = repo.statuses(Some(&mut opts))?;
-    Ok(statuses
-        .iter()
-        .any(|entry| entry.status().contains(git2::Status::WT_NEW)))
+fn change_status_from_git_status(status: Status) -> Option<ChangeStatus> {
+    if status.contains(Status::WT_NEW) && !status.contains(Status::INDEX_NEW) {
+        Some(ChangeStatus::Untracked)
+    } else if status.intersects(Status::INDEX_RENAMED | Status::WT_RENAMED) {
+        Some(ChangeStatus::Renamed)
+    } else if status.intersects(Status::INDEX_DELETED | Status::WT_DELETED) {
+        Some(ChangeStatus::Deleted)
+    } else if status.contains(Status::INDEX_NEW) {
+        Some(ChangeStatus::Added)
+    } else if status.intersects(
+        Status::INDEX_MODIFIED
+            | Status::WT_MODIFIED
+            | Status::INDEX_TYPECHANGE
+            | Status::WT_TYPECHANGE
+            | Status::WT_UNREADABLE
+            | Status::CONFLICTED,
+    ) {
+        Some(ChangeStatus::Modified)
+    } else {
+        None
+    }
 }
 
-fn load_untracked_file_diff(repo: &Repository, file_path: &str) -> Result<Vec<DiffHunk>> {
-    let workdir = repo.workdir().context("repository has no workdir")?;
-    let full_path = workdir.join(file_path);
-    let canonical_workdir = workdir
-        .canonicalize()
-        .context("failed to resolve workdir")?;
-    let canonical_file = full_path
-        .canonicalize()
-        .context("failed to resolve untracked file")?;
+fn path_from_status_entry(entry: &StatusEntry<'_>) -> Option<String> {
+    entry
+        .index_to_workdir()
+        .and_then(path_from_delta)
+        .or_else(|| entry.head_to_index().and_then(path_from_delta))
+        .or_else(|| entry.path().map(str::to_string))
+}
 
-    if !canonical_file.starts_with(&canonical_workdir) {
-        bail!("untracked path escapes repository workdir");
-    }
-
-    let bytes = std::fs::read(&canonical_file)
-        .with_context(|| format!("failed to read {}", display_path(file_path)))?;
-    let content = match String::from_utf8(bytes) {
-        Ok(content) => content,
-        Err(_) => return Ok(vec![binary_diff_hunk(file_path)]),
-    };
-    let line_count = content.lines().count();
-    let lines = content
-        .lines()
-        .map(|line| DiffLine {
-            kind: LineKind::Added,
-            content: line.to_string(),
-        })
-        .collect();
-
-    Ok(vec![DiffHunk {
-        header: format!("@@ -0,0 +1,{line_count} @@"),
-        lines,
-    }])
+fn path_from_delta(delta: DiffDelta<'_>) -> Option<String> {
+    delta
+        .new_file()
+        .path()
+        .or_else(|| delta.old_file().path())
+        .map(|p| p.to_string_lossy().to_string())
 }
 
 fn display_path(file_path: &str) -> String {
@@ -282,6 +260,26 @@ mod tests {
     }
 
     #[test]
+    fn snapshot_detects_staged_modified_file() {
+        let (dir, path) = make_repo();
+        let fp = Path::new(&path).join("a.txt");
+        std::fs::write(&fp, "line1\n").unwrap();
+        run_git(&path, &["add", "."]);
+        run_git(&path, &["commit", "-m", "init"]);
+        std::fs::write(&fp, "line1\nline2\n").unwrap();
+        run_git(&path, &["add", "a.txt"]);
+
+        let snap = load_snapshot(&path).unwrap();
+
+        assert!(
+            snap.files
+                .iter()
+                .any(|f| f.path == "a.txt" && matches!(f.status, ChangeStatus::Modified))
+        );
+        drop(dir);
+    }
+
+    #[test]
     fn diff_returns_hunks_for_modified_file() {
         let (dir, path) = make_repo();
         let fp = Path::new(&path).join("b.rs");
@@ -293,6 +291,54 @@ mod tests {
         let hunks = load_file_diff(&path, "b.rs").unwrap();
         assert!(!hunks.is_empty());
         assert!(hunks[0].lines.iter().any(|l| l.kind == LineKind::Added));
+        drop(dir);
+    }
+
+    #[test]
+    fn diff_returns_hunks_for_staged_modified_file() {
+        let (dir, path) = make_repo();
+        let fp = Path::new(&path).join("b.rs");
+        std::fs::write(&fp, "fn main() {}\n").unwrap();
+        run_git(&path, &["add", "."]);
+        run_git(&path, &["commit", "-m", "init"]);
+        std::fs::write(&fp, "fn main() {\n    println!(\"hi\");\n}\n").unwrap();
+        run_git(&path, &["add", "b.rs"]);
+
+        let hunks = load_file_diff(&path, "b.rs").unwrap();
+
+        assert!(!hunks.is_empty());
+        assert!(hunks[0].lines.iter().any(|l| l.kind == LineKind::Added));
+        drop(dir);
+    }
+
+    #[test]
+    fn snapshot_detects_staged_added_file() {
+        let (dir, path) = make_repo();
+        let fp = Path::new(&path).join("new.rs");
+        std::fs::write(&fp, "fn main() {}\n").unwrap();
+        run_git(&path, &["add", "new.rs"]);
+
+        let snap = load_snapshot(&path).unwrap();
+
+        assert!(
+            snap.files
+                .iter()
+                .any(|f| f.path == "new.rs" && matches!(f.status, ChangeStatus::Added))
+        );
+        drop(dir);
+    }
+
+    #[test]
+    fn diff_returns_added_lines_for_staged_added_file() {
+        let (dir, path) = make_repo();
+        let fp = Path::new(&path).join("new.rs");
+        std::fs::write(&fp, "fn main() {}\n").unwrap();
+        run_git(&path, &["add", "new.rs"]);
+
+        let hunks = load_file_diff(&path, "new.rs").unwrap();
+
+        assert_eq!(hunks.len(), 1);
+        assert_eq!(hunks[0].lines[0].kind, LineKind::Added);
         drop(dir);
     }
 

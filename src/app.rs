@@ -727,15 +727,14 @@ impl App {
             self.refresh_diff(true);
         }
         self.scroll = state.scroll;
-        self.active_pane = self.active_pane.min(
-            self.terminal_panes.len().saturating_sub(1),
-        );
+        self.active_pane = state
+            .active_pane
+            .min(self.terminal_panes.len().saturating_sub(1));
         if let Some(focus_str) = &state.focus {
             match focus_str.as_str() {
                 "DiffViewer" => self.focus = Focus::DiffViewer,
                 "Terminal" if !self.terminal_panes.is_empty() => {
                     self.focus = Focus::Terminal;
-                    self.active_pane = state.active_pane.min(self.terminal_panes.len() - 1);
                 }
                 _ => self.focus = Focus::FileList,
             }
@@ -862,6 +861,30 @@ mod tests {
         let mut app = app_with_files(vec![]);
         app.switch_pane(5);
         assert_eq!(app.active_pane, 0);
+    }
+
+    #[test]
+    fn restore_session_restores_active_pane_even_when_focus_is_not_terminal() {
+        let mut app = app_with_files(vec![]);
+        app.terminal_panes = vec![
+            PaneInfo {
+                id: 1,
+                title: "shell 1".into(),
+            },
+            PaneInfo {
+                id: 2,
+                title: "shell 2".into(),
+            },
+        ];
+
+        app.restore_session(&crate::session::SessionState {
+            focus: Some("FileList".to_string()),
+            active_pane: 1,
+            ..Default::default()
+        });
+
+        assert_eq!(app.focus, Focus::FileList);
+        assert_eq!(app.active_pane, 1);
     }
 
     #[test]
