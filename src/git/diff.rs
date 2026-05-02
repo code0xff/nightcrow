@@ -131,19 +131,25 @@ pub fn load_commit_log(repo_path: &str, max_count: usize) -> Result<Vec<CommitEn
     Ok(entries)
 }
 
-pub fn load_commit_files(repo_path: &str, oid: Oid) -> Result<Vec<ChangedFile>> {
-    let repo = Repository::discover(repo_path).context("not a git repository")?;
+fn commit_diff<'repo>(
+    repo: &'repo Repository,
+    oid: Oid,
+    pathspec: Option<&str>,
+) -> Result<git2::Diff<'repo>> {
     let commit = repo.find_commit(oid).context("failed to find commit")?;
     let new_tree = commit.tree().context("failed to get commit tree")?;
     let old_tree = commit.parent(0).ok().and_then(|p| p.tree().ok());
-
-    let mut diff_opts = diff_options(None);
+    let mut diff_opts = diff_options(pathspec);
     let mut diff = repo
         .diff_tree_to_tree(old_tree.as_ref(), Some(&new_tree), Some(&mut diff_opts))
         .context("failed to get commit diff")?;
-    diff.find_similar(None)
-        .context("failed to detect renamed files")?;
+    diff.find_similar(None).context("failed to detect renames")?;
+    Ok(diff)
+}
 
+pub fn load_commit_files(repo_path: &str, oid: Oid) -> Result<Vec<ChangedFile>> {
+    let repo = Repository::discover(repo_path).context("not a git repository")?;
+    let diff = commit_diff(&repo, oid, None)?;
     let mut files = Vec::new();
     for delta in diff.deltas() {
         let status = match delta.status() {
@@ -160,31 +166,13 @@ pub fn load_commit_files(repo_path: &str, oid: Oid) -> Result<Vec<ChangedFile>> 
 
 pub fn load_commit_file_diff(repo_path: &str, oid: Oid, file_path: &str) -> Result<Vec<DiffHunk>> {
     let repo = Repository::discover(repo_path).context("not a git repository")?;
-    let commit = repo.find_commit(oid).context("failed to find commit")?;
-    let new_tree = commit.tree().context("failed to get commit tree")?;
-    let old_tree = commit.parent(0).ok().and_then(|p| p.tree().ok());
-
-    let mut diff_opts = diff_options(Some(file_path));
-    let mut diff = repo
-        .diff_tree_to_tree(old_tree.as_ref(), Some(&new_tree), Some(&mut diff_opts))
-        .context("failed to get commit diff")?;
-    diff.find_similar(None).context("failed to detect renames")?;
-
+    let diff = commit_diff(&repo, oid, Some(file_path))?;
     collect_commit_diff_hunks(&diff)
 }
 
 pub fn load_commit_diff(repo_path: &str, oid: Oid) -> Result<Vec<DiffHunk>> {
     let repo = Repository::discover(repo_path).context("not a git repository")?;
-    let commit = repo.find_commit(oid).context("failed to find commit")?;
-    let new_tree = commit.tree().context("failed to get commit tree")?;
-    let old_tree = commit.parent(0).ok().and_then(|p| p.tree().ok());
-
-    let mut diff_opts = diff_options(None);
-    let mut diff = repo
-        .diff_tree_to_tree(old_tree.as_ref(), Some(&new_tree), Some(&mut diff_opts))
-        .context("failed to get commit diff")?;
-    diff.find_similar(None).context("failed to detect renames")?;
-
+    let diff = commit_diff(&repo, oid, None)?;
     collect_commit_diff_hunks(&diff)
 }
 

@@ -321,9 +321,7 @@ impl App {
         self.commits.clear();
         self.log_selected = 0;
         self.log_diff_title.clear();
-        self.log_drill_down = false;
-        self.log_commit_files.clear();
-        self.log_file_selected = 0;
+        self.reset_drill_down_state();
         self.search_query.clear();
         self.search_active = false;
         self.status = None;
@@ -751,11 +749,17 @@ impl App {
         }
     }
 
+    fn reset_drill_down_state(&mut self) {
+        self.log_drill_down = false;
+        self.log_commit_files.clear();
+        self.log_file_selected = 0;
+    }
+
     pub fn log_drill_in(&mut self) {
-        if self.commits.is_empty() {
+        let Some(entry) = self.commits.get(self.log_selected) else {
             return;
-        }
-        let oid = self.commits[self.log_selected].oid;
+        };
+        let oid = entry.oid;
         match load_commit_files(&self.repo_path, oid) {
             Ok(files) => {
                 self.log_commit_files = files;
@@ -770,9 +774,7 @@ impl App {
     }
 
     pub fn log_drill_out(&mut self) {
-        self.log_drill_down = false;
-        self.log_commit_files.clear();
-        self.log_file_selected = 0;
+        self.reset_drill_down_state();
         self.load_commit_diff_for_selected();
     }
 
@@ -793,8 +795,10 @@ impl App {
     }
 
     pub fn log_file_page_up(&mut self) {
-        self.log_file_selected = self.log_file_selected.saturating_sub(10);
-        self.load_file_diff_for_log_file_selected();
+        if !self.log_commit_files.is_empty() {
+            self.log_file_selected = self.log_file_selected.saturating_sub(10);
+            self.load_file_diff_for_log_file_selected();
+        }
     }
 
     pub fn log_file_page_down(&mut self) {
@@ -853,9 +857,7 @@ impl App {
             }
             ViewMode::Log => {
                 self.mode = ViewMode::Status;
-                self.log_drill_down = false;
-                self.log_commit_files.clear();
-                self.log_file_selected = 0;
+                self.reset_drill_down_state();
                 self.refresh_diff(true);
             }
         }

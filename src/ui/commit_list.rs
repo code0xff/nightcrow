@@ -1,4 +1,5 @@
 use crate::app::{App, Focus};
+use crate::git::diff::ChangeStatus;
 use ratatui::{
     Frame,
     layout::Rect,
@@ -113,11 +114,11 @@ fn render_file_list(frame: &mut Frame, app: &App, area: Rect) {
             let line = Line::from(vec![
                 Span::styled(
                     format!("{} ", f.status.symbol()),
-                    Style::default().fg(match f.status.symbol() {
-                        "A" => Color::Green,
-                        "D" => Color::Red,
-                        "R" => Color::Cyan,
-                        _ => Color::Yellow,
+                    Style::default().fg(match f.status {
+                        ChangeStatus::Added => Color::Green,
+                        ChangeStatus::Deleted => Color::Red,
+                        ChangeStatus::Renamed => Color::Cyan,
+                        ChangeStatus::Modified | ChangeStatus::Untracked => Color::Yellow,
                     }),
                 ),
                 Span::raw(f.path.as_str()),
