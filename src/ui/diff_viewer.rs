@@ -68,8 +68,10 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect, ss: &SyntaxSet, ts: &The
         )));
         flat_idx += 1;
 
-        // Create once per hunk so syntax state carries across lines within the hunk.
-        let mut hl = HighlightLines::new(syntax, theme);
+        // Two separate highlighters per hunk: removed lines must not bleed their
+        // syntax state (e.g. an unclosed string) into the added/context lines.
+        let mut hl_new = HighlightLines::new(syntax, theme);
+        let mut hl_old = HighlightLines::new(syntax, theme);
         for diff_line in &hunk.lines {
             let is_current = has_search && current_match == Some(flat_idx);
             let is_match = has_search
@@ -101,6 +103,10 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect, ss: &SyntaxSet, ts: &The
                 Style::default().fg(Color::DarkGray).bg(bg),
             )];
 
+            let hl = match diff_line.kind {
+                LineKind::Removed => &mut hl_old,
+                _ => &mut hl_new,
+            };
             let content_with_newline = format!("{}\n", diff_line.content);
             if let Ok(ranges) = hl.highlight_line(&content_with_newline, ss) {
                 for (style, text) in ranges {
