@@ -1,4 +1,4 @@
-use crate::app::{App, Focus};
+use crate::app::{App, Focus, ViewMode};
 use crate::git::diff::LineKind;
 use std::path::Path;
 use ratatui::{
@@ -43,11 +43,10 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect, ss: &SyntaxSet, ts: &The
         Style::default().fg(Color::DarkGray)
     };
 
-    let file_path = app
-        .files
-        .get(app.selected)
-        .map(|f| f.path.as_str())
-        .unwrap_or("");
+    let file_path = match app.mode {
+        ViewMode::Log => "",
+        ViewMode::Status => app.files.get(app.selected).map(|f| f.path.as_str()).unwrap_or(""),
+    };
     let ext = extension(file_path);
     let syntax = ss
         .find_syntax_by_extension(ext)
@@ -133,10 +132,13 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect, ss: &SyntaxSet, ts: &The
     }
 
     if lines.is_empty() {
-        let msg = if app.files.is_empty() {
-            "No changes in repository"
-        } else {
-            "No diff for selected file"
+        let msg = match app.mode {
+            ViewMode::Log => {
+                if app.commits.is_empty() { "No commits in repository" } else { "No diff for selected commit" }
+            }
+            ViewMode::Status => {
+                if app.files.is_empty() { "No changes in repository" } else { "No diff for selected file" }
+            }
         };
         lines.push(Line::from(Span::styled(
             msg,
@@ -144,18 +146,35 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect, ss: &SyntaxSet, ts: &The
         )));
     }
 
-    let title = if has_search {
-        let count = app.diff_search_matches.len();
-        let file = app.files.get(app.selected).map(|f| f.path.as_str()).unwrap_or("Diff");
-        if count == 0 {
-            format!(" {} [no matches] ", file)
-        } else {
-            format!(" {} [{}/{}] ", file, app.diff_search_cursor + 1, count)
+    let title = match app.mode {
+        ViewMode::Log => {
+            let label = if app.log_diff_title.is_empty() { "Diff" } else { app.log_diff_title.as_str() };
+            if has_search {
+                let count = app.diff_search_matches.len();
+                if count == 0 {
+                    format!(" {label} [no matches] ")
+                } else {
+                    format!(" {label} [{}/{}] ", app.diff_search_cursor + 1, count)
+                }
+            } else {
+                format!(" {label} ")
+            }
         }
-    } else if let Some(f) = app.files.get(app.selected) {
-        format!(" {} ", f.path)
-    } else {
-        " Diff ".to_string()
+        ViewMode::Status => {
+            if has_search {
+                let count = app.diff_search_matches.len();
+                let file = app.files.get(app.selected).map(|f| f.path.as_str()).unwrap_or("Diff");
+                if count == 0 {
+                    format!(" {file} [no matches] ")
+                } else {
+                    format!(" {file} [{}/{}] ", app.diff_search_cursor + 1, count)
+                }
+            } else if let Some(f) = app.files.get(app.selected) {
+                format!(" {} ", f.path)
+            } else {
+                " Diff ".to_string()
+            }
+        }
     };
 
     // Clamp scroll

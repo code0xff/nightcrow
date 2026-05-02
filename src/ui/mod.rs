@@ -1,8 +1,9 @@
+pub mod commit_list;
 pub mod diff_viewer;
 pub mod file_list;
 pub mod terminal_tab;
 
-use crate::app::{App, Focus};
+use crate::app::{App, Focus, ViewMode};
 use crate::config::LayoutConfig;
 use ratatui::{
     Frame,
@@ -54,7 +55,10 @@ pub fn draw(
         ])
         .split(root[0]);
 
-    file_list::render(frame, app, upper[0]);
+    match app.mode {
+        ViewMode::Status => file_list::render(frame, app, upper[0]),
+        ViewMode::Log => commit_list::render(frame, app, upper[0]),
+    }
     diff_viewer::render(frame, app, upper[1], ss, ts);
     terminal_tab::render(frame, app, root[1]);
     frame.render_widget(render_hint_bar(app), root[2]);
@@ -79,18 +83,23 @@ fn render_hint_bar(app: &App) -> Paragraph<'_> {
     }
     let hint = match app.focus {
         Focus::Terminal => {
-            " shift+↑/↓: scroll  |  shift+pgup/dn: page scroll  |  shift+←/→: cycle  |  ctrl+t: new pane  |  ctrl+w: close pane  |  F1-F9: switch pane  |  ctrl+f: fullscreen  |  ctrl+o: repo  |  ctrl+q: quit"
+            " shift+↑/↓: scroll  |  shift+pgup/dn: page scroll  |  shift+←/→: cycle  |  ctrl+t: new pane  |  ctrl+w: close pane  |  F1-F9: switch pane  |  ctrl+f: fullscreen  |  ctrl+l: log view  |  ctrl+o: repo  |  ctrl+q: quit"
         }
-        Focus::FileList => {
-            " shift+←/→: cycle  |  j/k: navigate  |  /: search  |  F1-F9: switch pane  |  ctrl+f: fullscreen  |  ctrl+o: repo  |  ctrl+q: quit"
-        }
+        Focus::FileList => match app.mode {
+            ViewMode::Log => {
+                " ctrl+l: status view  |  j/k: navigate commits  |  shift+←/→: cycle  |  ctrl+q: quit"
+            }
+            ViewMode::Status => {
+                " shift+←/→: cycle  |  j/k: navigate  |  /: search  |  F1-F9: switch pane  |  ctrl+f: fullscreen  |  ctrl+l: log view  |  ctrl+o: repo  |  ctrl+q: quit"
+            }
+        },
         Focus::DiffViewer => {
             if app.diff_search_active {
                 " type to search  |  enter: confirm  |  esc: cancel"
             } else if !app.diff_search_query.is_empty() {
                 " n: next match  |  shift+n: prev match  |  /: new search  |  esc: clear"
             } else {
-                " shift+←/→: cycle  |  j/k: scroll  |  /: search  |  pgup/pgdn: scroll  |  F1-F9: switch pane  |  ctrl+f: fullscreen  |  ctrl+o: repo  |  ctrl+q: quit"
+                " shift+←/→: cycle  |  j/k: scroll  |  /: search  |  pgup/pgdn: scroll  |  F1-F9: switch pane  |  ctrl+f: fullscreen  |  ctrl+l: log view  |  ctrl+o: repo  |  ctrl+q: quit"
             }
         }
     };

@@ -18,6 +18,7 @@ pub enum Action {
     TermScrollDown,
     TermScrollLineUp,
     TermScrollLineDown,
+    ToggleLogView,
     None,
 }
 
@@ -31,6 +32,7 @@ pub fn map_key(event: KeyEvent) -> Action {
         KeyCode::Char('w') if ctrl => Action::ClosePane,
         KeyCode::Char('o') if ctrl => Action::ChangeRepo,
         KeyCode::Char('f') if ctrl => Action::ToggleFullscreen,
+        KeyCode::Char('l') if ctrl => Action::ToggleLogView,
         KeyCode::Left if shift => Action::CycleBackward,
         KeyCode::Right if shift => Action::CycleForward,
         KeyCode::Up if shift => Action::TermScrollLineUp,

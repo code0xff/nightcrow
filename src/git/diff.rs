@@ -1,5 +1,5 @@
 use anyhow::{Context, Result};
-use git2::{Diff, DiffDelta, DiffOptions, Repository, Status, StatusEntry, StatusOptions};
+use git2::{Diff, DiffDelta, DiffOptions, Oid, Repository, Status, StatusEntry, StatusOptions};
 use std::cell::RefCell;
 use std::collections::BTreeMap;
 
@@ -54,6 +54,15 @@ pub struct RepoSnapshot {
     pub files: Vec<ChangedFile>,
 }
 
+#[derive(Debug, Clone)]
+pub struct CommitEntry {
+    pub oid: Oid,
+    pub short_id: String,
+    pub summary: String,
+    pub author: String,
+    pub time: i64,
+}
+
 pub fn load_snapshot(repo_path: &str) -> Result<RepoSnapshot> {
     let repo = Repository::discover(repo_path).context("not a git repository")?;
 
@@ -100,6 +109,43 @@ pub fn load_file_diff(repo_path: &str, file_path: &str) -> Result<Vec<DiffHunk>>
     collect_diff_hunks(&diff, file_path)
 }
 
+pub fn load_commit_log(repo_path: &str, max_count: usize) -> Result<Vec<CommitEntry>> {
+    let repo = Repository::discover(repo_path).context("not a git repository")?;
+    let mut revwalk = repo.revwalk().context("failed to create revwalk")?;
+    revwalk.push_head().context("failed to push HEAD")?;
+
+    let mut entries = Vec::new();
+    for oid_result in revwalk.take(max_count) {
+        let oid = oid_result.context("revwalk error")?;
+        let commit = repo.find_commit(oid).context("failed to find commit")?;
+        let short_id = repo
+            .find_object(oid, None)
+            .and_then(|obj| obj.short_id())
+            .map(|buf| buf.as_str().unwrap_or("").to_string())
+            .unwrap_or_else(|_| format!("{:.7}", oid));
+        let summary = commit.summary().unwrap_or("").to_string();
+        let author = commit.author().name().unwrap_or("Unknown").to_string();
+        let time = commit.time().seconds();
+        entries.push(CommitEntry { oid, short_id, summary, author, time });
+    }
+    Ok(entries)
+}
+
+pub fn load_commit_diff(repo_path: &str, oid: Oid) -> Result<Vec<DiffHunk>> {
+    let repo = Repository::discover(repo_path).context("not a git repository")?;
+    let commit = repo.find_commit(oid).context("failed to find commit")?;
+    let new_tree = commit.tree().context("failed to get commit tree")?;
+    let old_tree = commit.parent(0).ok().and_then(|p| p.tree().ok());
+
+    let mut diff_opts = diff_options(None);
+    let mut diff = repo
+        .diff_tree_to_tree(old_tree.as_ref(), Some(&new_tree), Some(&mut diff_opts))
+        .context("failed to get commit diff")?;
+    diff.find_similar(None).context("failed to detect renames")?;
+
+    collect_commit_diff_hunks(&diff)
+}
+
 fn diff_options(pathspec: Option<&str>) -> DiffOptions {
     let mut opts = DiffOptions::new();
     opts.include_untracked(true)
@@ -119,6 +165,55 @@ fn collect_diff_hunks(diff: &Diff<'_>, fallback_path: &str) -> Result<Vec<DiffHu
         &mut |_, _| true,
         Some(&mut |delta, _| {
             let path = path_from_delta(delta).unwrap_or_else(|| fallback_path.to_string());
+            hunks.borrow_mut().push(binary_diff_hunk(&path));
+            true
+        }),
+        Some(&mut |_, hunk| {
+            let header = std::str::from_utf8(hunk.header())
+                .unwrap_or("@@")
+                .trim_end_matches('\n')
+                .to_string();
+            hunks.borrow_mut().push(DiffHunk {
+                header,
+                lines: Vec::new(),
+            });
+            true
+        }),
+        Some(&mut |_, _, line| {
+            let content = std::str::from_utf8(line.content())
+                .unwrap_or("")
+                .trim_end_matches('\n')
+                .to_string();
+            let kind = match line.origin() {
+                '+' => LineKind::Added,
+                '-' => LineKind::Removed,
+                '\\' => return true,
+                _ => LineKind::Context,
+            };
+            if let Some(h) = hunks.borrow_mut().last_mut() {
+                h.lines.push(DiffLine { kind, content });
+            }
+            true
+        }),
+    )?;
+
+    Ok(hunks.into_inner())
+}
+
+fn collect_commit_diff_hunks(diff: &Diff<'_>) -> Result<Vec<DiffHunk>> {
+    let hunks: RefCell<Vec<DiffHunk>> = RefCell::new(Vec::new());
+
+    diff.foreach(
+        &mut |delta, _| {
+            let path = path_from_delta(delta).unwrap_or_else(|| "unknown".to_string());
+            hunks.borrow_mut().push(DiffHunk {
+                header: format!("diff {path}"),
+                lines: Vec::new(),
+            });
+            true
+        },
+        Some(&mut |delta, _| {
+            let path = path_from_delta(delta).unwrap_or_else(|| "unknown".to_string());
             hunks.borrow_mut().push(binary_diff_hunk(&path));
             true
         }),

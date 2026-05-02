@@ -1,6 +1,9 @@
 use crate::backend::BackendEvent;
 use crate::backend::{PaneId, PtyBackend, TerminalBackend};
-use crate::git::diff::{ChangedFile, DiffHunk, RepoSnapshot, load_file_diff, load_snapshot};
+use crate::git::diff::{
+    ChangedFile, CommitEntry, DiffHunk, RepoSnapshot, load_commit_diff, load_commit_log,
+    load_file_diff, load_snapshot,
+};
 use std::collections::HashMap;
 use std::sync::mpsc::{self, Receiver, SyncSender};
 use std::thread;
@@ -72,6 +75,13 @@ fn strip_escape_sequences(data: &[u8]) -> String {
     result
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize, Default)]
+pub enum ViewMode {
+    #[default]
+    Status,
+    Log,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum Focus {
     FileList,
@@ -90,6 +100,7 @@ pub struct PaneInfo {
 }
 
 pub struct App {
+    pub mode: ViewMode,
     pub files: Vec<ChangedFile>,
     pub selected: usize,
     pub hunks: Vec<DiffHunk>,
@@ -97,6 +108,9 @@ pub struct App {
     pub focus: Focus,
     pub status: Option<String>,
     pub repo_path: String,
+    pub commits: Vec<CommitEntry>,
+    pub log_selected: usize,
+    pub log_diff_title: String,
     pub terminal_panes: Vec<PaneInfo>,
     pub active_pane: usize,
     pub terminal_size: (u16, u16),
@@ -127,6 +141,7 @@ impl App {
         let backend: Box<dyn TerminalBackend> = Box::new(PtyBackend::new(&repo_path));
 
         let mut app = App {
+            mode: ViewMode::Status,
             files: Vec::new(),
             selected: 0,
             hunks: Vec::new(),
@@ -134,6 +149,9 @@ impl App {
             focus: Focus::FileList,
             status: None,
             repo_path,
+            commits: Vec::new(),
+            log_selected: 0,
+            log_diff_title: String::new(),
             terminal_panes: Vec::new(),
             active_pane: 0,
             terminal_size: (22, 78),
@@ -289,10 +307,14 @@ impl App {
         }
         tracing::info!(path = %new_path, "repo changed");
         self.repo_path = new_path;
+        self.mode = ViewMode::Status;
         self.files.clear();
         self.selected = 0;
         self.hunks.clear();
         self.scroll = 0;
+        self.commits.clear();
+        self.log_selected = 0;
+        self.log_diff_title.clear();
         self.search_query.clear();
         self.search_active = false;
         self.status = None;
@@ -430,6 +452,9 @@ impl App {
     }
 
     fn refresh_diff(&mut self, reset_scroll: bool) {
+        if self.mode == ViewMode::Log {
+            return;
+        }
         let previous_scroll = self.scroll;
         if let Some(file) = self.files.get(self.selected) {
             let path = file.path.clone();
@@ -692,6 +717,83 @@ impl App {
         }
     }
 
+    fn load_commit_diff_for_selected(&mut self) {
+        if let Some(entry) = self.commits.get(self.log_selected) {
+            let oid = entry.oid;
+            let title = format!("{} {}", entry.short_id, entry.summary);
+            match load_commit_diff(&self.repo_path, oid) {
+                Ok(hunks) => {
+                    self.hunks = hunks;
+                    self.scroll = 0;
+                    self.log_diff_title = title;
+                    if !self.diff_search_query.is_empty() {
+                        self.recompute_diff_matches();
+                    }
+                }
+                Err(e) => {
+                    tracing::debug!(error = %e, "failed to load commit diff");
+                    self.clear_diff_state();
+                    self.log_diff_title = title;
+                }
+            }
+        } else {
+            self.clear_diff_state();
+            self.log_diff_title.clear();
+        }
+    }
+
+    pub fn toggle_mode(&mut self) {
+        self.clear_diff_state();
+        match self.mode {
+            ViewMode::Status => {
+                self.mode = ViewMode::Log;
+                match load_commit_log(&self.repo_path, 500) {
+                    Ok(commits) => {
+                        self.commits = commits;
+                        self.log_selected = 0;
+                        self.load_commit_diff_for_selected();
+                    }
+                    Err(e) => {
+                        tracing::warn!(error = %e, "failed to load commit log");
+                        self.commits.clear();
+                        self.log_selected = 0;
+                        self.status = Some(format!("git error: {e}"));
+                    }
+                }
+            }
+            ViewMode::Log => {
+                self.mode = ViewMode::Status;
+                self.refresh_diff(true);
+            }
+        }
+    }
+
+    pub fn log_select_up(&mut self) {
+        if self.log_selected > 0 {
+            self.log_selected -= 1;
+            self.load_commit_diff_for_selected();
+        }
+    }
+
+    pub fn log_select_down(&mut self) {
+        if !self.commits.is_empty() && self.log_selected < self.commits.len() - 1 {
+            self.log_selected += 1;
+            self.load_commit_diff_for_selected();
+        }
+    }
+
+    pub fn log_page_up(&mut self) {
+        self.log_selected = self.log_selected.saturating_sub(10);
+        self.load_commit_diff_for_selected();
+    }
+
+    pub fn log_page_down(&mut self) {
+        if !self.commits.is_empty() {
+            self.log_selected = (self.log_selected + 10).min(self.commits.len() - 1);
+            self.load_commit_diff_for_selected();
+        }
+    }
+
     pub fn cycle_focus_forward(&mut self) {
         if self.terminal_fullscreen {
             let len = self.terminal_panes.len();
@@ -773,6 +875,8 @@ impl App {
             scroll: self.scroll,
             active_pane: self.active_pane,
             terminal_fullscreen: self.terminal_fullscreen,
+            mode: Some(self.mode),
+            log_selected: self.log_selected,
         }
     }
 
@@ -795,6 +899,19 @@ impl App {
             }
         }
         self.terminal_fullscreen = state.terminal_fullscreen && !self.terminal_panes.is_empty();
+        if state.mode == Some(ViewMode::Log) {
+            match load_commit_log(&self.repo_path, 500) {
+                Ok(commits) => {
+                    self.commits = commits;
+                    self.log_selected = state.log_selected.min(self.commits.len().saturating_sub(1));
+                    self.mode = ViewMode::Log;
+                    self.load_commit_diff_for_selected();
+                }
+                Err(e) => {
+                    tracing::warn!(error = %e, "failed to restore commit log");
+                }
+            }
+        }
         tracing::debug!(
             focus = ?state.focus,
             file = ?state.selected_file,
@@ -813,6 +930,7 @@ mod tests {
         let (_tx, rx) = mpsc::channel::<SnapshotMsg>();
         let (_stop_tx, _stop_rx) = mpsc::sync_channel::<()>(0);
         App {
+            mode: ViewMode::Status,
             files: files
                 .into_iter()
                 .map(|path| ChangedFile {
@@ -824,9 +942,11 @@ mod tests {
             hunks: Vec::new(),
             scroll: 0,
             focus: Focus::FileList,
-
             status: None,
             repo_path: ".".to_string(),
+            commits: Vec::new(),
+            log_selected: 0,
+            log_diff_title: String::new(),
             terminal_panes: Vec::new(),
             active_pane: 0,
             terminal_size: (22, 78),

@@ -8,7 +8,7 @@ mod session;
 mod ui;
 
 use anyhow::Result;
-use app::{App, Focus};
+use app::{App, Focus, ViewMode};
 use clap::Parser;
 use crossterm::{
     event::{self, Event},
@@ -128,6 +128,7 @@ fn run(
                     Action::ClosePane => app.close_active_pane(),
                     Action::ChangeRepo => app.start_repo_input(),
                     Action::ToggleFullscreen => app.toggle_terminal_fullscreen(),
+                    Action::ToggleLogView => app.toggle_mode(),
                     Action::SwitchPane(n) => app.switch_pane(n),
                     Action::CycleForward => app.cycle_focus_forward(),
                     Action::CycleBackward => app.cycle_focus_backward(),
@@ -182,14 +183,39 @@ fn run(
                     } else {
                         match map_key(key) {
                             Action::Quit => break,
-                            Action::Up => app.select_up(),
-                            Action::Down => app.select_down(),
-                            Action::PageUp => app.page_up(),
-                            Action::PageDown => app.page_down(),
+                            Action::Up => {
+                                if app.mode == ViewMode::Log && app.focus == Focus::FileList {
+                                    app.log_select_up();
+                                } else {
+                                    app.select_up();
+                                }
+                            }
+                            Action::Down => {
+                                if app.mode == ViewMode::Log && app.focus == Focus::FileList {
+                                    app.log_select_down();
+                                } else {
+                                    app.select_down();
+                                }
+                            }
+                            Action::PageUp => {
+                                if app.mode == ViewMode::Log && app.focus == Focus::FileList {
+                                    app.log_page_up();
+                                } else {
+                                    app.page_up();
+                                }
+                            }
+                            Action::PageDown => {
+                                if app.mode == ViewMode::Log && app.focus == Focus::FileList {
+                                    app.log_page_down();
+                                } else {
+                                    app.page_down();
+                                }
+                            }
                             Action::NewPane => app.open_new_pane(),
                             Action::ClosePane => app.close_active_pane(),
                             Action::ChangeRepo => app.start_repo_input(),
                             Action::ToggleFullscreen => app.toggle_terminal_fullscreen(),
+                            Action::ToggleLogView => app.toggle_mode(),
                             Action::SwitchPane(n) if !app.terminal_fullscreen => app.switch_pane(n),
                             Action::CycleForward if !app.terminal_fullscreen => app.cycle_focus_forward(),
                             Action::CycleBackward if !app.terminal_fullscreen => app.cycle_focus_backward(),
@@ -200,7 +226,9 @@ fn run(
                             | Action::TermScrollLineDown => {}
                             Action::None => match app.focus {
                                 Focus::FileList => match key.code {
-                                    KeyCode::Char('/') => app.start_search(),
+                                    KeyCode::Char('/') if app.mode == ViewMode::Status => {
+                                        app.start_search()
+                                    }
                                     KeyCode::Esc if !app.search_query.is_empty() => {
                                         app.cancel_search()
                                     }

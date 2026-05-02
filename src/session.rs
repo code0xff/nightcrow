@@ -1,4 +1,4 @@
-use crate::app::Focus;
+use crate::app::{Focus, ViewMode};
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 
@@ -10,6 +10,10 @@ pub struct SessionState {
     pub active_pane: usize,
     #[serde(default)]
     pub terminal_fullscreen: bool,
+    #[serde(default)]
+    pub mode: Option<ViewMode>,
+    #[serde(default)]
+    pub log_selected: usize,
 }
 
 fn session_path(repo_path: &str) -> std::path::PathBuf {
