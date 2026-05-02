@@ -23,6 +23,18 @@ fn extension(path: &str) -> &str {
         .unwrap_or("")
 }
 
+fn file_path_for_syntax(app: &App) -> &str {
+    match app.mode {
+        ViewMode::Log if app.log_drill_down => app
+            .log_commit_files
+            .get(app.log_file_selected)
+            .map(|f| f.path.as_str())
+            .unwrap_or(""),
+        ViewMode::Log => "",
+        ViewMode::Status => app.files.get(app.selected).map(|f| f.path.as_str()).unwrap_or(""),
+    }
+}
+
 pub fn render(frame: &mut Frame, app: &App, area: Rect, ss: &SyntaxSet, ts: &ThemeSet) {
     let show_search = app.diff_search_active || !app.diff_search_query.is_empty();
 
@@ -43,10 +55,7 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect, ss: &SyntaxSet, ts: &The
         Style::default().fg(Color::DarkGray)
     };
 
-    let file_path = match app.mode {
-        ViewMode::Log => "",
-        ViewMode::Status => app.files.get(app.selected).map(|f| f.path.as_str()).unwrap_or(""),
-    };
+    let file_path = file_path_for_syntax(app);
     let ext = extension(file_path);
     let syntax = ss
         .find_syntax_by_extension(ext)

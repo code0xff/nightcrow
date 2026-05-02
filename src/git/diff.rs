@@ -138,9 +138,11 @@ pub fn load_commit_files(repo_path: &str, oid: Oid) -> Result<Vec<ChangedFile>> 
     let old_tree = commit.parent(0).ok().and_then(|p| p.tree().ok());
 
     let mut diff_opts = diff_options(None);
-    let diff = repo
+    let mut diff = repo
         .diff_tree_to_tree(old_tree.as_ref(), Some(&new_tree), Some(&mut diff_opts))
         .context("failed to get commit diff")?;
+    diff.find_similar(None)
+        .context("failed to detect renamed files")?;
 
     let mut files = Vec::new();
     for delta in diff.deltas() {
@@ -517,6 +519,54 @@ mod tests {
 
         assert_eq!(hunks.len(), 1);
         assert!(hunks[0].header.contains("Binary file"));
+        drop(dir);
+    }
+
+    #[test]
+    fn commit_files_detects_renamed_file() {
+        let (dir, path) = make_repo();
+        let old_path = Path::new(&path).join("old.rs");
+        std::fs::write(&old_path, "fn main() {}\n").unwrap();
+        run_git(&path, &["add", "."]);
+        run_git(&path, &["commit", "-m", "init"]);
+        run_git(&path, &["mv", "old.rs", "new.rs"]);
+        run_git(&path, &["commit", "-m", "rename"]);
+
+        let commits = load_commit_log(&path, 1).unwrap();
+        let files = load_commit_files(&path, commits[0].oid).unwrap();
+
+        assert_eq!(files.len(), 1);
+        assert_eq!(files[0].path, "new.rs");
+        assert_eq!(files[0].status, ChangeStatus::Renamed);
+        drop(dir);
+    }
+
+    #[test]
+    fn commit_file_diff_returns_renamed_file_diff() {
+        let (dir, path) = make_repo();
+        let old_path = Path::new(&path).join("old.rs");
+        std::fs::write(&old_path, "fn main() {}\n").unwrap();
+        run_git(&path, &["add", "."]);
+        run_git(&path, &["commit", "-m", "init"]);
+        run_git(&path, &["mv", "old.rs", "new.rs"]);
+        std::fs::write(
+            Path::new(&path).join("new.rs"),
+            "fn main() {\n    println!(\"hi\");\n}\n",
+        )
+        .unwrap();
+        run_git(&path, &["add", "."]);
+        run_git(&path, &["commit", "-m", "rename and edit"]);
+
+        let commits = load_commit_log(&path, 1).unwrap();
+        let hunks = load_commit_file_diff(&path, commits[0].oid, "new.rs").unwrap();
+
+        assert!(!hunks.is_empty());
+        assert!(
+            hunks
+                .iter()
+                .flat_map(|h| &h.lines)
+                .any(|l| l.kind == LineKind::Added && l.content.contains("println"))
+        );
         drop(dir);
     }
 }

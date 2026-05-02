@@ -132,11 +132,7 @@ fn render_file_list(frame: &mut Frame, app: &App, area: Rect) {
         .map(|e| format!(" {} {} ", e.short_id, e.summary))
         .unwrap_or_else(|| " Files ".to_string());
 
-    let title = if commit_summary.len() > 30 {
-        format!(" {}… ", &commit_summary[..28])
-    } else {
-        commit_summary
-    };
+    let title = truncate_title(&commit_summary, 30);
 
     let list = List::new(items)
         .block(
@@ -158,4 +154,40 @@ fn render_file_list(frame: &mut Frame, app: &App, area: Rect) {
     }
 
     frame.render_stateful_widget(list, area, &mut state);
+}
+
+fn truncate_title(title: &str, max_chars: usize) -> String {
+    if title.chars().count() > max_chars {
+        format!(
+            "{}...",
+            title
+                .chars()
+                .take(max_chars.saturating_sub(3))
+                .collect::<String>()
+        )
+    } else {
+        title.to_string()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::truncate_title;
+
+    #[test]
+    fn truncate_title_handles_multibyte_text() {
+        let title = " abc1234 한글 커밋 메시지 제목이 꽤 길어서 잘려야 합니다 ";
+
+        let truncated = truncate_title(title, 30);
+
+        assert!(truncated.ends_with("..."));
+        assert!(truncated.chars().count() <= 30);
+    }
+
+    #[test]
+    fn truncate_title_keeps_short_text() {
+        let title = " abc1234 short ";
+
+        assert_eq!(truncate_title(title, 30), title);
+    }
 }
