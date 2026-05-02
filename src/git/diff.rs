@@ -131,6 +131,46 @@ pub fn load_commit_log(repo_path: &str, max_count: usize) -> Result<Vec<CommitEn
     Ok(entries)
 }
 
+pub fn load_commit_files(repo_path: &str, oid: Oid) -> Result<Vec<ChangedFile>> {
+    let repo = Repository::discover(repo_path).context("not a git repository")?;
+    let commit = repo.find_commit(oid).context("failed to find commit")?;
+    let new_tree = commit.tree().context("failed to get commit tree")?;
+    let old_tree = commit.parent(0).ok().and_then(|p| p.tree().ok());
+
+    let mut diff_opts = diff_options(None);
+    let diff = repo
+        .diff_tree_to_tree(old_tree.as_ref(), Some(&new_tree), Some(&mut diff_opts))
+        .context("failed to get commit diff")?;
+
+    let mut files = Vec::new();
+    for delta in diff.deltas() {
+        let status = match delta.status() {
+            git2::Delta::Added => ChangeStatus::Added,
+            git2::Delta::Deleted => ChangeStatus::Deleted,
+            git2::Delta::Renamed => ChangeStatus::Renamed,
+            _ => ChangeStatus::Modified,
+        };
+        let path = path_from_delta(delta).unwrap_or_else(|| "unknown".to_string());
+        files.push(ChangedFile { path, status });
+    }
+    Ok(files)
+}
+
+pub fn load_commit_file_diff(repo_path: &str, oid: Oid, file_path: &str) -> Result<Vec<DiffHunk>> {
+    let repo = Repository::discover(repo_path).context("not a git repository")?;
+    let commit = repo.find_commit(oid).context("failed to find commit")?;
+    let new_tree = commit.tree().context("failed to get commit tree")?;
+    let old_tree = commit.parent(0).ok().and_then(|p| p.tree().ok());
+
+    let mut diff_opts = diff_options(Some(file_path));
+    let mut diff = repo
+        .diff_tree_to_tree(old_tree.as_ref(), Some(&new_tree), Some(&mut diff_opts))
+        .context("failed to get commit diff")?;
+    diff.find_similar(None).context("failed to detect renames")?;
+
+    collect_commit_diff_hunks(&diff)
+}
+
 pub fn load_commit_diff(repo_path: &str, oid: Oid) -> Result<Vec<DiffHunk>> {
     let repo = Repository::discover(repo_path).context("not a git repository")?;
     let commit = repo.find_commit(oid).context("failed to find commit")?;

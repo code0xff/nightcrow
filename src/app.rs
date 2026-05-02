@@ -1,8 +1,8 @@
 use crate::backend::BackendEvent;
 use crate::backend::{PaneId, PtyBackend, TerminalBackend};
 use crate::git::diff::{
-    ChangedFile, CommitEntry, DiffHunk, RepoSnapshot, load_commit_diff, load_commit_log,
-    load_file_diff, load_snapshot,
+    ChangedFile, CommitEntry, DiffHunk, RepoSnapshot, load_commit_diff, load_commit_file_diff,
+    load_commit_files, load_commit_log, load_file_diff, load_snapshot,
 };
 use std::collections::HashMap;
 use std::sync::mpsc::{self, Receiver, SyncSender};
@@ -111,6 +111,9 @@ pub struct App {
     pub commits: Vec<CommitEntry>,
     pub log_selected: usize,
     pub log_diff_title: String,
+    pub log_drill_down: bool,
+    pub log_commit_files: Vec<ChangedFile>,
+    pub log_file_selected: usize,
     pub terminal_panes: Vec<PaneInfo>,
     pub active_pane: usize,
     pub terminal_size: (u16, u16),
@@ -152,6 +155,9 @@ impl App {
             commits: Vec::new(),
             log_selected: 0,
             log_diff_title: String::new(),
+            log_drill_down: false,
+            log_commit_files: Vec::new(),
+            log_file_selected: 0,
             terminal_panes: Vec::new(),
             active_pane: 0,
             terminal_size: (22, 78),
@@ -315,6 +321,9 @@ impl App {
         self.commits.clear();
         self.log_selected = 0;
         self.log_diff_title.clear();
+        self.log_drill_down = false;
+        self.log_commit_files.clear();
+        self.log_file_selected = 0;
         self.search_query.clear();
         self.search_active = false;
         self.status = None;
@@ -742,6 +751,87 @@ impl App {
         }
     }
 
+    pub fn log_drill_in(&mut self) {
+        if self.commits.is_empty() {
+            return;
+        }
+        let oid = self.commits[self.log_selected].oid;
+        match load_commit_files(&self.repo_path, oid) {
+            Ok(files) => {
+                self.log_commit_files = files;
+                self.log_file_selected = 0;
+                self.log_drill_down = true;
+                self.load_file_diff_for_log_file_selected();
+            }
+            Err(e) => {
+                tracing::debug!(error = %e, "failed to load commit files");
+            }
+        }
+    }
+
+    pub fn log_drill_out(&mut self) {
+        self.log_drill_down = false;
+        self.log_commit_files.clear();
+        self.log_file_selected = 0;
+        self.load_commit_diff_for_selected();
+    }
+
+    pub fn log_file_select_up(&mut self) {
+        if self.log_file_selected > 0 {
+            self.log_file_selected -= 1;
+            self.load_file_diff_for_log_file_selected();
+        }
+    }
+
+    pub fn log_file_select_down(&mut self) {
+        if !self.log_commit_files.is_empty()
+            && self.log_file_selected < self.log_commit_files.len() - 1
+        {
+            self.log_file_selected += 1;
+            self.load_file_diff_for_log_file_selected();
+        }
+    }
+
+    pub fn log_file_page_up(&mut self) {
+        self.log_file_selected = self.log_file_selected.saturating_sub(10);
+        self.load_file_diff_for_log_file_selected();
+    }
+
+    pub fn log_file_page_down(&mut self) {
+        if !self.log_commit_files.is_empty() {
+            self.log_file_selected =
+                (self.log_file_selected + 10).min(self.log_commit_files.len() - 1);
+            self.load_file_diff_for_log_file_selected();
+        }
+    }
+
+    fn load_file_diff_for_log_file_selected(&mut self) {
+        let Some(commit_entry) = self.commits.get(self.log_selected) else {
+            return;
+        };
+        let oid = commit_entry.oid;
+        let Some(file) = self.log_commit_files.get(self.log_file_selected) else {
+            return;
+        };
+        let path = file.path.clone();
+        let title = format!("{} {}", commit_entry.short_id, path);
+        match load_commit_file_diff(&self.repo_path, oid, &path) {
+            Ok(hunks) => {
+                self.hunks = hunks;
+                self.scroll = 0;
+                self.log_diff_title = title;
+                if !self.diff_search_query.is_empty() {
+                    self.recompute_diff_matches();
+                }
+            }
+            Err(e) => {
+                tracing::debug!(error = %e, file = %path, "failed to load commit file diff");
+                self.clear_diff_state();
+                self.log_diff_title = title;
+            }
+        }
+    }
+
     pub fn toggle_mode(&mut self) {
         self.clear_diff_state();
         match self.mode {
@@ -763,6 +853,9 @@ impl App {
             }
             ViewMode::Log => {
                 self.mode = ViewMode::Status;
+                self.log_drill_down = false;
+                self.log_commit_files.clear();
+                self.log_file_selected = 0;
                 self.refresh_diff(true);
             }
         }
@@ -947,6 +1040,9 @@ mod tests {
             commits: Vec::new(),
             log_selected: 0,
             log_diff_title: String::new(),
+            log_drill_down: false,
+            log_commit_files: Vec::new(),
+            log_file_selected: 0,
             terminal_panes: Vec::new(),
             active_pane: 0,
             terminal_size: (22, 78),

@@ -87,7 +87,11 @@ fn render_hint_bar(app: &App) -> Paragraph<'_> {
         }
         Focus::FileList => match app.mode {
             ViewMode::Log => {
-                " ctrl+l: status view  |  j/k: navigate commits  |  shift+←/→: cycle  |  ctrl+q: quit"
+                if app.log_drill_down {
+                    " esc: back to commits  |  j/k: navigate files  |  shift+←/→: cycle  |  ctrl+q: quit"
+                } else {
+                    " ctrl+l: status view  |  j/k: navigate commits  |  enter: view files  |  shift+←/→: cycle  |  ctrl+q: quit"
+                }
             }
             ViewMode::Status => {
                 " shift+←/→: cycle  |  j/k: navigate  |  /: search  |  F1-F9: switch pane  |  ctrl+f: fullscreen  |  ctrl+l: log view  |  ctrl+o: repo  |  ctrl+q: quit"

@@ -30,6 +30,14 @@ fn format_relative_time(ts: i64) -> String {
 }
 
 pub fn render(frame: &mut Frame, app: &App, area: Rect) {
+    if app.log_drill_down {
+        render_file_list(frame, app, area);
+    } else {
+        render_commit_list(frame, app, area);
+    }
+}
+
+fn render_commit_list(frame: &mut Frame, app: &App, area: Rect) {
     let focused = app.focus == Focus::FileList;
     let border_style = if focused {
         Style::default().fg(Color::Yellow)
@@ -85,6 +93,68 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect) {
     let mut state = ListState::default();
     if !app.commits.is_empty() {
         state.select(Some(app.log_selected));
+    }
+
+    frame.render_stateful_widget(list, area, &mut state);
+}
+
+fn render_file_list(frame: &mut Frame, app: &App, area: Rect) {
+    let focused = app.focus == Focus::FileList;
+    let border_style = if focused {
+        Style::default().fg(Color::Yellow)
+    } else {
+        Style::default().fg(Color::DarkGray)
+    };
+
+    let items: Vec<ListItem> = app
+        .log_commit_files
+        .iter()
+        .map(|f| {
+            let line = Line::from(vec![
+                Span::styled(
+                    format!("{} ", f.status.symbol()),
+                    Style::default().fg(match f.status.symbol() {
+                        "A" => Color::Green,
+                        "D" => Color::Red,
+                        "R" => Color::Cyan,
+                        _ => Color::Yellow,
+                    }),
+                ),
+                Span::raw(f.path.as_str()),
+            ]);
+            ListItem::new(line)
+        })
+        .collect();
+
+    let commit_summary = app
+        .commits
+        .get(app.log_selected)
+        .map(|e| format!(" {} {} ", e.short_id, e.summary))
+        .unwrap_or_else(|| " Files ".to_string());
+
+    let title = if commit_summary.len() > 30 {
+        format!(" {}… ", &commit_summary[..28])
+    } else {
+        commit_summary
+    };
+
+    let list = List::new(items)
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title(title)
+                .border_style(border_style),
+        )
+        .highlight_style(
+            Style::default()
+                .bg(Color::DarkGray)
+                .add_modifier(Modifier::BOLD),
+        )
+        .highlight_symbol("> ");
+
+    let mut state = ListState::default();
+    if !app.log_commit_files.is_empty() {
+        state.select(Some(app.log_file_selected));
     }
 
     frame.render_stateful_widget(list, area, &mut state);

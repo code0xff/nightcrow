@@ -185,28 +185,44 @@ fn run(
                             Action::Quit => break,
                             Action::Up => {
                                 if app.mode == ViewMode::Log && app.focus == Focus::FileList {
-                                    app.log_select_up();
+                                    if app.log_drill_down {
+                                        app.log_file_select_up();
+                                    } else {
+                                        app.log_select_up();
+                                    }
                                 } else {
                                     app.select_up();
                                 }
                             }
                             Action::Down => {
                                 if app.mode == ViewMode::Log && app.focus == Focus::FileList {
-                                    app.log_select_down();
+                                    if app.log_drill_down {
+                                        app.log_file_select_down();
+                                    } else {
+                                        app.log_select_down();
+                                    }
                                 } else {
                                     app.select_down();
                                 }
                             }
                             Action::PageUp => {
                                 if app.mode == ViewMode::Log && app.focus == Focus::FileList {
-                                    app.log_page_up();
+                                    if app.log_drill_down {
+                                        app.log_file_page_up();
+                                    } else {
+                                        app.log_page_up();
+                                    }
                                 } else {
                                     app.page_up();
                                 }
                             }
                             Action::PageDown => {
                                 if app.mode == ViewMode::Log && app.focus == Focus::FileList {
-                                    app.log_page_down();
+                                    if app.log_drill_down {
+                                        app.log_file_page_down();
+                                    } else {
+                                        app.log_page_down();
+                                    }
                                 } else {
                                     app.page_down();
                                 }
@@ -226,6 +242,13 @@ fn run(
                             | Action::TermScrollLineDown => {}
                             Action::None => match app.focus {
                                 Focus::FileList => match key.code {
+                                    KeyCode::Enter
+                                        if app.mode == ViewMode::Log
+                                            && !app.log_drill_down =>
+                                    {
+                                        app.log_drill_in()
+                                    }
+                                    KeyCode::Esc if app.log_drill_down => app.log_drill_out(),
                                     KeyCode::Char('/') if app.mode == ViewMode::Status => {
                                         app.start_search()
                                     }
