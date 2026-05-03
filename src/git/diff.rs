@@ -81,7 +81,9 @@ pub fn load_snapshot(repo_path: &str) -> Result<RepoSnapshot> {
         let Some(status) = change_status_from_git_status(entry.status()) else {
             continue;
         };
-        if let Some(path) = path_from_status_entry(&entry) && !path.is_empty() {
+        if let Some(path) = path_from_status_entry(&entry)
+            && !path.is_empty()
+        {
             files.entry(path).or_insert(status);
         }
     }
@@ -126,7 +128,13 @@ pub fn load_commit_log(repo_path: &str, max_count: usize) -> Result<Vec<CommitEn
         let summary = commit.summary().unwrap_or("").to_string();
         let author = commit.author().name().unwrap_or("Unknown").to_string();
         let time = commit.time().seconds();
-        entries.push(CommitEntry { oid, short_id, summary, author, time });
+        entries.push(CommitEntry {
+            oid,
+            short_id,
+            summary,
+            author,
+            time,
+        });
     }
     Ok(entries)
 }
@@ -143,7 +151,8 @@ fn commit_diff<'repo>(
     let mut diff = repo
         .diff_tree_to_tree(old_tree.as_ref(), Some(&new_tree), Some(&mut diff_opts))
         .context("failed to get commit diff")?;
-    diff.find_similar(None).context("failed to detect renames")?;
+    diff.find_similar(None)
+        .context("failed to detect renames")?;
     Ok(diff)
 }
 
@@ -214,7 +223,10 @@ fn collect_hunks(
                 .unwrap_or("@@")
                 .trim_end_matches('\n')
                 .to_string();
-            hunks.borrow_mut().push(DiffHunk { header, lines: Vec::new() });
+            hunks.borrow_mut().push(DiffHunk {
+                header,
+                lines: Vec::new(),
+            });
             true
         }),
         Some(&mut |_, _, line| {
@@ -247,7 +259,10 @@ fn collect_commit_diff_hunks(diff: &Diff<'_>) -> Result<Vec<DiffHunk>> {
         diff,
         |delta| {
             let path = path_from_delta(delta).unwrap_or_else(|| "unknown".to_string());
-            Some(DiffHunk { header: format!("diff {path}"), lines: Vec::new() })
+            Some(DiffHunk {
+                header: format!("diff {path}"),
+                lines: Vec::new(),
+            })
         },
         "unknown",
     )

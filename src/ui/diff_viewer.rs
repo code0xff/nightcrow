@@ -1,6 +1,5 @@
 use crate::app::{App, Focus, ViewMode};
 use crate::git::diff::LineKind;
-use std::path::Path;
 use ratatui::{
     Frame,
     layout::{Constraint, Direction, Layout, Rect},
@@ -8,6 +7,7 @@ use ratatui::{
     text::{Line, Span},
     widgets::{Block, Borders, Paragraph},
 };
+use std::path::Path;
 use syntect::easy::HighlightLines;
 use syntect::highlighting::{Color as SColor, ThemeSet};
 use syntect::parsing::SyntaxSet;
@@ -31,7 +31,11 @@ fn file_path_for_syntax(app: &App) -> &str {
             .map(|f| f.path.as_str())
             .unwrap_or(""),
         ViewMode::Log => "",
-        ViewMode::Status => app.files.get(app.selected).map(|f| f.path.as_str()).unwrap_or(""),
+        ViewMode::Status => app
+            .files
+            .get(app.selected)
+            .map(|f| f.path.as_str())
+            .unwrap_or(""),
     }
 }
 
@@ -78,11 +82,7 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect, ss: &SyntaxSet, ts: &The
         let mut hl_old = HighlightLines::new(syntax, theme);
         for diff_line in &hunk.lines {
             let is_current = has_search && current_match == Some(flat_idx);
-            let is_match = has_search
-                && app
-                    .diff_search_matches
-                    .binary_search(&flat_idx)
-                    .is_ok();
+            let is_match = has_search && app.diff_search_matches.binary_search(&flat_idx).is_ok();
 
             let bg = if is_current {
                 Color::Rgb(100, 80, 0)
@@ -119,10 +119,7 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect, ss: &SyntaxSet, ts: &The
                         continue;
                     }
                     let fg = scolor(style.foreground);
-                    spans.push(Span::styled(
-                        t.to_string(),
-                        Style::default().fg(fg).bg(bg),
-                    ));
+                    spans.push(Span::styled(t.to_string(), Style::default().fg(fg).bg(bg)));
                 }
             } else {
                 spans.push(Span::styled(
@@ -139,10 +136,18 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect, ss: &SyntaxSet, ts: &The
     if lines.is_empty() {
         let msg = match app.mode {
             ViewMode::Log => {
-                if app.commits.is_empty() { "No commits in repository" } else { "No diff for selected commit" }
+                if app.commits.is_empty() {
+                    "No commits in repository"
+                } else {
+                    "No diff for selected commit"
+                }
             }
             ViewMode::Status => {
-                if app.files.is_empty() { "No changes in repository" } else { "No diff for selected file" }
+                if app.files.is_empty() {
+                    "No changes in repository"
+                } else {
+                    "No diff for selected file"
+                }
             }
         };
         lines.push(Line::from(Span::styled(
@@ -153,7 +158,11 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect, ss: &SyntaxSet, ts: &The
 
     let title = match app.mode {
         ViewMode::Log => {
-            let label = if app.log_diff_title.is_empty() { "Diff" } else { app.log_diff_title.as_str() };
+            let label = if app.log_diff_title.is_empty() {
+                "Diff"
+            } else {
+                app.log_diff_title.as_str()
+            };
             if has_search {
                 let count = app.diff_search_matches.len();
                 if count == 0 {
@@ -168,7 +177,11 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect, ss: &SyntaxSet, ts: &The
         ViewMode::Status => {
             if has_search {
                 let count = app.diff_search_matches.len();
-                let file = app.files.get(app.selected).map(|f| f.path.as_str()).unwrap_or("Diff");
+                let file = app
+                    .files
+                    .get(app.selected)
+                    .map(|f| f.path.as_str())
+                    .unwrap_or("Diff");
                 if count == 0 {
                     format!(" {file} [no matches] ")
                 } else {
@@ -186,15 +199,18 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect, ss: &SyntaxSet, ts: &The
     let scroll_start = app.scroll.min(max_scroll);
     // Slice the visible window instead of relying on Paragraph::scroll (which is limited to u16).
     let visible_height = (diff_area.height as usize).saturating_sub(2);
-    let visible_lines: Vec<Line> = lines.into_iter().skip(scroll_start).take(visible_height).collect();
+    let visible_lines: Vec<Line> = lines
+        .into_iter()
+        .skip(scroll_start)
+        .take(visible_height)
+        .collect();
 
-    let para = Paragraph::new(visible_lines)
-        .block(
-            Block::default()
-                .borders(Borders::ALL)
-                .title(title)
-                .border_style(border_style),
-        );
+    let para = Paragraph::new(visible_lines).block(
+        Block::default()
+            .borders(Borders::ALL)
+            .title(title)
+            .border_style(border_style),
+    );
 
     frame.render_widget(para, diff_area);
 
@@ -206,8 +222,7 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect, ss: &SyntaxSet, ts: &The
             Style::default().fg(Color::DarkGray)
         };
         frame.render_widget(
-            Paragraph::new(format!("/{}{}", app.diff_search_query, cursor))
-                .style(search_style),
+            Paragraph::new(format!("/{}{}", app.diff_search_query, cursor)).style(search_style),
             sa,
         );
     }

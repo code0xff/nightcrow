@@ -10,12 +10,12 @@ mod ui;
 use anyhow::{Context, Result};
 use app::{App, Focus, ViewMode};
 use clap::Parser;
+use crossterm::event::KeyCode;
 use crossterm::{
     event::{self, Event},
     execute,
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
-use crossterm::event::KeyCode;
 use input::{Action, encode_key, map_key};
 use ratatui::{Terminal, backend::CrosstermBackend};
 use std::{io, time::Duration};
@@ -194,9 +194,15 @@ fn run(
                             Action::ToggleFullscreen => app.toggle_terminal_fullscreen(),
                             Action::ToggleLogView => app.toggle_mode(),
                             Action::SwitchPane(n) if !app.terminal_fullscreen => app.switch_pane(n),
-                            Action::CycleForward if !app.terminal_fullscreen => app.cycle_focus_forward(),
-                            Action::CycleBackward if !app.terminal_fullscreen => app.cycle_focus_backward(),
-                            Action::SwitchPane(_) | Action::CycleForward | Action::CycleBackward => {}
+                            Action::CycleForward if !app.terminal_fullscreen => {
+                                app.cycle_focus_forward()
+                            }
+                            Action::CycleBackward if !app.terminal_fullscreen => {
+                                app.cycle_focus_backward()
+                            }
+                            Action::SwitchPane(_)
+                            | Action::CycleForward
+                            | Action::CycleBackward => {}
                             Action::TermScrollUp
                             | Action::TermScrollDown
                             | Action::TermScrollLineUp
@@ -204,8 +210,7 @@ fn run(
                             Action::None => match app.focus {
                                 Focus::FileList => match key.code {
                                     KeyCode::Enter
-                                        if app.mode == ViewMode::Log
-                                            && !app.log_drill_down =>
+                                        if app.mode == ViewMode::Log && !app.log_drill_down =>
                                     {
                                         app.log_drill_in()
                                     }
