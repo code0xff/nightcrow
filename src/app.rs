@@ -396,12 +396,13 @@ impl App {
     }
 
     pub fn sync_terminal_scroll(&mut self) {
-        let Some(id) = self.active_pane_id() else { return };
+        let Some(id) = self.active_pane_id() else {
+            return;
+        };
         let offset = self.terminal_scroll.get(&id).copied().unwrap_or(0);
         let actual = match self.parsers.get_mut(&id) {
             Some(parser) => {
-                let (rows, _) = parser.screen().size();
-                parser.set_scrollback(offset.min(rows as usize));
+                parser.set_scrollback(offset);
                 parser.screen().scrollback()
             }
             None => return,
@@ -597,6 +598,10 @@ impl App {
         self.hunks.iter().map(|h| 1 + h.lines.len()).sum()
     }
 
+    fn max_diff_scroll(&self) -> usize {
+        self.diff_line_count().saturating_sub(1)
+    }
+
     fn recompute_diff_matches(&mut self) {
         self.diff_search_matches.clear();
         if self.diff_search_query.is_empty() {
@@ -619,8 +624,9 @@ impl App {
             "diff_search_matches must be sorted for binary_search to be correct"
         );
         if !self.diff_search_matches.is_empty() {
-            self.diff_search_cursor =
-                self.diff_search_cursor.min(self.diff_search_matches.len() - 1);
+            self.diff_search_cursor = self
+                .diff_search_cursor
+                .min(self.diff_search_matches.len() - 1);
             self.scroll_to_diff_match();
         } else {
             self.diff_search_cursor = 0;
@@ -635,7 +641,9 @@ impl App {
 
     fn clamp_to_filtered(&mut self) {
         let indices = self.filtered_indices();
-        if !indices.contains(&self.selected) && let Some(&first) = indices.first() {
+        if !indices.contains(&self.selected)
+            && let Some(&first) = indices.first()
+        {
             self.selected = first;
             self.reload_diff();
         }
@@ -697,8 +705,7 @@ impl App {
                 }
             }
             Focus::DiffViewer => {
-                let max = self.diff_line_count().saturating_sub(1);
-                self.scroll = (self.scroll + 1).min(max);
+                self.scroll = self.scroll.saturating_add(1).min(self.max_diff_scroll());
             }
             Focus::Terminal => {}
         }
@@ -759,8 +766,7 @@ impl App {
                 }
             }
             Focus::DiffViewer => {
-                let max = self.diff_line_count().saturating_sub(1);
-                self.scroll = (self.scroll + 20).min(max);
+                self.scroll = self.scroll.saturating_add(20).min(self.max_diff_scroll());
             }
             Focus::Terminal => {}
         }
@@ -1040,7 +1046,8 @@ impl App {
             match load_commit_log(&self.repo_path, 500) {
                 Ok(commits) => {
                     self.commits = commits;
-                    self.log_selected = state.log_selected.min(self.commits.len().saturating_sub(1));
+                    self.log_selected =
+                        state.log_selected.min(self.commits.len().saturating_sub(1));
                     self.mode = ViewMode::Log;
                     self.load_commit_diff_for_selected();
                 }
@@ -1169,7 +1176,10 @@ mod tests {
         // 1 hunk = header + 1 content line = 2 total lines, max_scroll = 1
         app.hunks = vec![DiffHunk {
             header: "@@ -1 +1 @@".to_string(),
-            lines: vec![DiffLine { kind: LineKind::Context, content: "x".to_string() }],
+            lines: vec![DiffLine {
+                kind: LineKind::Context,
+                content: "x".to_string(),
+            }],
         }];
         app.scroll = 1; // already at max
 
@@ -1185,7 +1195,10 @@ mod tests {
         app.focus = Focus::DiffViewer;
         app.hunks = vec![DiffHunk {
             header: "@@ -1 +1 @@".to_string(),
-            lines: vec![DiffLine { kind: LineKind::Context, content: "x".to_string() }],
+            lines: vec![DiffLine {
+                kind: LineKind::Context,
+                content: "x".to_string(),
+            }],
         }];
         app.scroll = 0;
 
@@ -1195,11 +1208,60 @@ mod tests {
     }
 
     #[test]
+    fn diff_scroll_handles_large_restored_offset() {
+        use crate::git::diff::{DiffHunk, DiffLine, LineKind};
+        let mut app = app_with_files(vec!["a.rs"]);
+        app.focus = Focus::DiffViewer;
+        app.hunks = vec![DiffHunk {
+            header: "@@ -1 +1 @@".to_string(),
+            lines: vec![DiffLine {
+                kind: LineKind::Context,
+                content: "x".to_string(),
+            }],
+        }];
+        app.scroll = usize::MAX;
+
+        app.select_down();
+
+        assert_eq!(app.scroll, 1);
+    }
+
+    #[test]
+    fn terminal_scrollback_is_not_limited_to_visible_rows() {
+        let mut app = app_with_files(vec![]);
+        app.terminal_panes = vec![PaneInfo {
+            id: 1,
+            title: "shell".into(),
+        }];
+        app.active_pane = 0;
+        app.terminal_size = (3, 10);
+
+        let mut parser = vt100::Parser::new(3, 10, SCROLLBACK_LINES);
+        parser.process(b"1\r\n2\r\n3\r\n4\r\n5\r\n6\r\n7\r\n8\r\n9\r\n");
+        app.parsers.insert(1, parser);
+        app.terminal_scroll.insert(1, 6);
+
+        app.sync_terminal_scroll();
+
+        let actual = app.parsers.get(&1).unwrap().screen().scrollback();
+        assert!(
+            actual > app.terminal_size.0 as usize,
+            "scrollback should support more than one visible screen, got {actual}"
+        );
+    }
+
+    #[test]
     fn switch_pane_moves_focus_to_terminal() {
         let mut app = app_with_files(vec![]);
         app.terminal_panes = vec![
-            PaneInfo { id: 1, title: "shell 1".into() },
-            PaneInfo { id: 2, title: "shell 2".into() },
+            PaneInfo {
+                id: 1,
+                title: "shell 1".into(),
+            },
+            PaneInfo {
+                id: 2,
+                title: "shell 2".into(),
+            },
         ];
         assert_eq!(app.focus, Focus::FileList);
         app.switch_pane(1);
@@ -1217,7 +1279,10 @@ mod tests {
     #[test]
     fn toggle_fullscreen_switches_focus_to_terminal() {
         let mut app = app_with_files(vec![]);
-        app.terminal_panes = vec![PaneInfo { id: 1, title: "shell".into() }];
+        app.terminal_panes = vec![PaneInfo {
+            id: 1,
+            title: "shell".into(),
+        }];
         assert_eq!(app.focus, Focus::FileList);
 
         app.toggle_terminal_fullscreen();
@@ -1239,7 +1304,10 @@ mod tests {
     #[test]
     fn close_last_pane_exits_fullscreen() {
         let mut app = app_with_files(vec![]);
-        app.terminal_panes = vec![PaneInfo { id: 1, title: "shell".into() }];
+        app.terminal_panes = vec![PaneInfo {
+            id: 1,
+            title: "shell".into(),
+        }];
         app.terminal_fullscreen = true;
         app.focus = Focus::Terminal;
 
