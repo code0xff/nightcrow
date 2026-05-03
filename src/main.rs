@@ -102,141 +102,155 @@ fn run(
             ui::draw(frame, &mut app, &ss, &ts, &cfg.layout);
         })?;
 
-        if event::poll(Duration::from_millis(50))?
-            && let Event::Key(key) = event::read()?
-        {
-            if app.repo_input_active {
-                match key.code {
-                    KeyCode::Esc => app.cancel_repo_input(),
-                    KeyCode::Enter => app.confirm_repo_input(),
-                    KeyCode::Backspace => {
-                        if app.repo_input_buf.is_empty() {
-                            app.cancel_repo_input();
-                        } else {
-                            app.repo_input_pop();
-                        }
-                    }
-                    KeyCode::Char(c) => app.repo_input_push(c),
-                    _ => {}
+        if event::poll(Duration::from_millis(50))? {
+            match event::read()? {
+                Event::Resize(cols, rows) => {
+                    app.resize_terminal_panes(rows, cols);
+                    terminal.clear()?;
                 }
-                continue;
-            }
-
-            match app.focus {
-                Focus::Terminal => match map_key(key) {
-                    Action::Quit => break,
-                    Action::NewPane => app.open_new_pane(),
-                    Action::ClosePane => app.close_active_pane(),
-                    Action::ChangeRepo => app.start_repo_input(),
-                    Action::ToggleFullscreen => app.toggle_terminal_fullscreen(),
-                    Action::ToggleLogView => app.toggle_mode(),
-                    Action::SwitchPane(n) => app.switch_pane(n),
-                    Action::CycleForward => app.cycle_focus_forward(),
-                    Action::CycleBackward => app.cycle_focus_backward(),
-                    Action::TermScrollUp => {
-                        let lines = app.terminal_size.0 as usize;
-                        app.scroll_terminal_up(lines);
-                    }
-                    Action::TermScrollDown => {
-                        let lines = app.terminal_size.0 as usize;
-                        app.scroll_terminal_down(lines);
-                    }
-                    Action::TermScrollLineUp => app.scroll_terminal_up(3),
-                    Action::TermScrollLineDown => app.scroll_terminal_down(3),
-                    _ => {
-                        if let Some(data) = encode_key(key) {
-                            app.send_terminal_input(&data);
-                        }
-                    }
-                },
-
-                Focus::FileList | Focus::DiffViewer => {
-                    if app.focus == Focus::FileList && app.search_active {
+                Event::Key(key) => {
+                    if app.repo_input_active {
                         match key.code {
-                            KeyCode::Esc => app.cancel_search(),
-                            KeyCode::Enter => app.confirm_search(),
+                            KeyCode::Esc => app.cancel_repo_input(),
+                            KeyCode::Enter => app.confirm_repo_input(),
                             KeyCode::Backspace => {
-                                if app.search_query.is_empty() {
-                                    app.cancel_search();
+                                if app.repo_input_buf.is_empty() {
+                                    app.cancel_repo_input();
                                 } else {
-                                    app.search_pop();
+                                    app.repo_input_pop();
                                 }
                             }
-                            KeyCode::Up => app.select_up(),
-                            KeyCode::Down => app.select_down(),
-                            KeyCode::Char(c) => app.search_push(c),
+                            KeyCode::Char(c) => app.repo_input_push(c),
                             _ => {}
                         }
-                    } else if app.focus == Focus::DiffViewer && app.diff_search_active {
-                        match key.code {
-                            KeyCode::Esc => app.cancel_diff_search(),
-                            KeyCode::Enter => app.confirm_diff_search(),
-                            KeyCode::Backspace => {
-                                if app.diff_search_query.is_empty() {
-                                    app.cancel_diff_search();
-                                } else {
-                                    app.diff_search_pop();
-                                }
-                            }
-                            KeyCode::Char(c) => app.diff_search_push(c),
-                            _ => {}
-                        }
-                    } else {
-                        match map_key(key) {
+                        continue;
+                    }
+
+                    match app.focus {
+                        Focus::Terminal => match map_key(key) {
                             Action::Quit => break,
-                            Action::Up => app.select_up(),
-                            Action::Down => app.select_down(),
-                            Action::PageUp => app.page_up(),
-                            Action::PageDown => app.page_down(),
                             Action::NewPane => app.open_new_pane(),
                             Action::ClosePane => app.close_active_pane(),
                             Action::ChangeRepo => app.start_repo_input(),
                             Action::ToggleFullscreen => app.toggle_terminal_fullscreen(),
                             Action::ToggleLogView => app.toggle_mode(),
-                            Action::SwitchPane(n) if !app.terminal_fullscreen => app.switch_pane(n),
-                            Action::CycleForward if !app.terminal_fullscreen => {
-                                app.cycle_focus_forward()
+                            Action::SwitchPane(n) => app.switch_pane(n),
+                            Action::CycleForward => app.cycle_focus_forward(),
+                            Action::CycleBackward => app.cycle_focus_backward(),
+                            Action::TermScrollUp => {
+                                let lines = app.terminal_size.0 as usize;
+                                app.scroll_terminal_up(lines);
                             }
-                            Action::CycleBackward if !app.terminal_fullscreen => {
-                                app.cycle_focus_backward()
+                            Action::TermScrollDown => {
+                                let lines = app.terminal_size.0 as usize;
+                                app.scroll_terminal_down(lines);
                             }
-                            Action::SwitchPane(_)
-                            | Action::CycleForward
-                            | Action::CycleBackward => {}
-                            Action::TermScrollUp
-                            | Action::TermScrollDown
-                            | Action::TermScrollLineUp
-                            | Action::TermScrollLineDown => {}
-                            Action::None => match app.focus {
-                                Focus::FileList => match key.code {
-                                    KeyCode::Enter
-                                        if app.mode == ViewMode::Log && !app.log_drill_down =>
-                                    {
-                                        app.log_drill_in()
+                            Action::TermScrollLineUp => app.scroll_terminal_up(3),
+                            Action::TermScrollLineDown => app.scroll_terminal_down(3),
+                            _ => {
+                                if let Some(data) = encode_key(key) {
+                                    app.send_terminal_input(&data);
+                                }
+                            }
+                        },
+
+                        Focus::FileList | Focus::DiffViewer => {
+                            if app.focus == Focus::FileList && app.search_active {
+                                match key.code {
+                                    KeyCode::Esc => app.cancel_search(),
+                                    KeyCode::Enter => app.confirm_search(),
+                                    KeyCode::Backspace => {
+                                        if app.search_query.is_empty() {
+                                            app.cancel_search();
+                                        } else {
+                                            app.search_pop();
+                                        }
                                     }
-                                    KeyCode::Esc if app.log_drill_down => app.log_drill_out(),
-                                    KeyCode::Char('/') if app.mode == ViewMode::Status => {
-                                        app.start_search()
-                                    }
-                                    KeyCode::Esc if !app.search_query.is_empty() => {
-                                        app.cancel_search()
-                                    }
+                                    KeyCode::Up => app.select_up(),
+                                    KeyCode::Down => app.select_down(),
+                                    KeyCode::Char(c) => app.search_push(c),
                                     _ => {}
-                                },
-                                Focus::DiffViewer => match key.code {
-                                    KeyCode::Char('/') => app.start_diff_search(),
-                                    KeyCode::Char('n') => app.next_diff_match(),
-                                    KeyCode::Char('N') => app.prev_diff_match(),
-                                    KeyCode::Esc if !app.diff_search_query.is_empty() => {
-                                        app.cancel_diff_search()
+                                }
+                            } else if app.focus == Focus::DiffViewer && app.diff_search_active {
+                                match key.code {
+                                    KeyCode::Esc => app.cancel_diff_search(),
+                                    KeyCode::Enter => app.confirm_diff_search(),
+                                    KeyCode::Backspace => {
+                                        if app.diff_search_query.is_empty() {
+                                            app.cancel_diff_search();
+                                        } else {
+                                            app.diff_search_pop();
+                                        }
                                     }
+                                    KeyCode::Char(c) => app.diff_search_push(c),
                                     _ => {}
-                                },
-                                _ => {}
-                            },
+                                }
+                            } else {
+                                match map_key(key) {
+                                    Action::Quit => break,
+                                    Action::Up => app.select_up(),
+                                    Action::Down => app.select_down(),
+                                    Action::PageUp => app.page_up(),
+                                    Action::PageDown => app.page_down(),
+                                    Action::NewPane => app.open_new_pane(),
+                                    Action::ClosePane => app.close_active_pane(),
+                                    Action::ChangeRepo => app.start_repo_input(),
+                                    Action::ToggleFullscreen => app.toggle_terminal_fullscreen(),
+                                    Action::ToggleLogView => app.toggle_mode(),
+                                    Action::SwitchPane(n) if !app.terminal_fullscreen => {
+                                        app.switch_pane(n)
+                                    }
+                                    Action::CycleForward if !app.terminal_fullscreen => {
+                                        app.cycle_focus_forward()
+                                    }
+                                    Action::CycleBackward if !app.terminal_fullscreen => {
+                                        app.cycle_focus_backward()
+                                    }
+                                    Action::SwitchPane(_)
+                                    | Action::CycleForward
+                                    | Action::CycleBackward => {}
+                                    Action::TermScrollUp
+                                    | Action::TermScrollDown
+                                    | Action::TermScrollLineUp
+                                    | Action::TermScrollLineDown => {}
+                                    Action::None => match app.focus {
+                                        Focus::FileList => match key.code {
+                                            KeyCode::Enter
+                                                if app.mode == ViewMode::Log
+                                                    && !app.log_drill_down =>
+                                            {
+                                                app.log_drill_in()
+                                            }
+                                            KeyCode::Esc if app.log_drill_down => {
+                                                app.log_drill_out()
+                                            }
+                                            KeyCode::Char('/') if app.mode == ViewMode::Status => {
+                                                app.start_search()
+                                            }
+                                            KeyCode::Esc if !app.search_query.is_empty() => {
+                                                app.cancel_search()
+                                            }
+                                            _ => {}
+                                        },
+                                        Focus::DiffViewer => match key.code {
+                                            KeyCode::Char('/') => app.start_diff_search(),
+                                            KeyCode::Char('n') => app.next_diff_match(),
+                                            KeyCode::Char('N') => app.prev_diff_match(),
+                                            KeyCode::Esc
+                                                if !app.diff_search_query.is_empty() =>
+                                            {
+                                                app.cancel_diff_search()
+                                            }
+                                            _ => {}
+                                        },
+                                        _ => {}
+                                    },
+                                }
+                            }
                         }
                     }
                 }
+                _ => {}
             }
         }
     }
