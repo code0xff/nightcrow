@@ -55,9 +55,7 @@ pub fn init_logging(config: &LogConfig, repo_path: &str) -> Option<LogGuard> {
         .with_ansi(false)
         .with_target(true);
 
-    let subscriber = tracing_subscriber::registry()
-        .with(filter)
-        .with(file_layer);
+    let subscriber = tracing_subscriber::registry().with(filter).with(file_layer);
 
     if tracing::subscriber::set_global_default(subscriber).is_err() {
         return None;
@@ -151,9 +149,7 @@ impl Write for SizeRollingAppender {
         let mut inner = self.inner.lock().unwrap_or_else(|e| e.into_inner());
         if inner.max_bytes > 0 && inner.current_size + buf.len() as u64 > inner.max_bytes {
             inner.index += 1;
-            let path = inner
-                .dir
-                .join(format!("{}.{}", inner.prefix, inner.index));
+            let path = inner.dir.join(format!("{}.{}", inner.prefix, inner.index));
             inner.current = OpenOptions::new().create(true).append(true).open(path)?;
             inner.current_size = 0;
         }
@@ -163,7 +159,11 @@ impl Write for SizeRollingAppender {
     }
 
     fn flush(&mut self) -> io::Result<()> {
-        self.inner.lock().unwrap_or_else(|e| e.into_inner()).current.flush()
+        self.inner
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .current
+            .flush()
     }
 }
 
