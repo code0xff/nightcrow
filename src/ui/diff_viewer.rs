@@ -49,11 +49,7 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect, ss: &SyntaxSet, ts: &The
     };
 
     let focused = app.focus == Focus::DiffViewer;
-    let border_style = if focused {
-        Style::default().fg(Color::Yellow)
-    } else {
-        Style::default().fg(Color::DarkGray)
-    };
+    let border_style = super::focused_border_style(focused);
 
     let file_path = file_path_for_syntax(app);
     let ext = extension(file_path);
@@ -186,18 +182,19 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect, ss: &SyntaxSet, ts: &The
         }
     };
 
-    // Clamp scroll
     let max_scroll = lines.len().saturating_sub(1);
-    let scroll = app.scroll.min(max_scroll).min(u16::MAX as usize) as u16;
+    let scroll_start = app.scroll.min(max_scroll);
+    // Slice the visible window instead of relying on Paragraph::scroll (which is limited to u16).
+    let visible_height = (diff_area.height as usize).saturating_sub(2);
+    let visible_lines: Vec<Line> = lines.into_iter().skip(scroll_start).take(visible_height).collect();
 
-    let para = Paragraph::new(lines)
+    let para = Paragraph::new(visible_lines)
         .block(
             Block::default()
                 .borders(Borders::ALL)
                 .title(title)
                 .border_style(border_style),
-        )
-        .scroll((scroll, 0));
+        );
 
     frame.render_widget(para, diff_area);
 

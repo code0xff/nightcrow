@@ -40,7 +40,9 @@ impl PtyBackend {
 impl TerminalBackend for PtyBackend {
     fn create_pane(&mut self, rows: u16, cols: u16) -> Result<PaneId> {
         let id = self.next_id;
-        self.next_id += 1;
+        self.next_id = id
+            .checked_add(1)
+            .ok_or_else(|| anyhow::anyhow!("pane id counter overflow"))?;
 
         let pty_system = NativePtySystem::default();
         let pair = pty_system.openpty(PtySize {

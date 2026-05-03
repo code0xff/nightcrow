@@ -593,6 +593,10 @@ impl App {
         self.scroll_to_diff_match();
     }
 
+    fn diff_line_count(&self) -> usize {
+        self.hunks.iter().map(|h| 1 + h.lines.len()).sum()
+    }
+
     fn recompute_diff_matches(&mut self) {
         self.diff_search_matches.clear();
         if self.diff_search_query.is_empty() {
@@ -610,6 +614,10 @@ impl App {
                 flat_idx += 1;
             }
         }
+        debug_assert!(
+            self.diff_search_matches.windows(2).all(|w| w[0] < w[1]),
+            "diff_search_matches must be sorted for binary_search to be correct"
+        );
         if !self.diff_search_matches.is_empty() {
             self.diff_search_cursor =
                 self.diff_search_cursor.min(self.diff_search_matches.len() - 1);
@@ -636,6 +644,14 @@ impl App {
     pub fn select_up(&mut self) {
         match self.focus {
             Focus::FileList => {
+                if self.mode == ViewMode::Log {
+                    if self.log_drill_down {
+                        self.log_file_select_up();
+                    } else {
+                        self.log_select_up();
+                    }
+                    return;
+                }
                 if !self.search_query.is_empty() {
                     let indices = self.filtered_indices();
                     if let Some(pos) = indices.iter().position(|&i| i == self.selected)
@@ -659,6 +675,14 @@ impl App {
     pub fn select_down(&mut self) {
         match self.focus {
             Focus::FileList => {
+                if self.mode == ViewMode::Log {
+                    if self.log_drill_down {
+                        self.log_file_select_down();
+                    } else {
+                        self.log_select_down();
+                    }
+                    return;
+                }
                 if !self.search_query.is_empty() {
                     let indices = self.filtered_indices();
                     if let Some(pos) = indices.iter().position(|&i| i == self.selected)
@@ -673,7 +697,8 @@ impl App {
                 }
             }
             Focus::DiffViewer => {
-                self.scroll += 1;
+                let max = self.diff_line_count().saturating_sub(1);
+                self.scroll = (self.scroll + 1).min(max);
             }
             Focus::Terminal => {}
         }
@@ -682,6 +707,14 @@ impl App {
     pub fn page_up(&mut self) {
         match self.focus {
             Focus::FileList => {
+                if self.mode == ViewMode::Log {
+                    if self.log_drill_down {
+                        self.log_file_page_up();
+                    } else {
+                        self.log_page_up();
+                    }
+                    return;
+                }
                 if !self.search_query.is_empty() {
                     let indices = self.filtered_indices();
                     if let Some(pos) = indices.iter().position(|&i| i == self.selected) {
@@ -703,6 +736,14 @@ impl App {
     pub fn page_down(&mut self) {
         match self.focus {
             Focus::FileList => {
+                if self.mode == ViewMode::Log {
+                    if self.log_drill_down {
+                        self.log_file_page_down();
+                    } else {
+                        self.log_page_down();
+                    }
+                    return;
+                }
                 if !self.search_query.is_empty() {
                     let indices = self.filtered_indices();
                     if indices.is_empty() {
@@ -718,7 +759,8 @@ impl App {
                 }
             }
             Focus::DiffViewer => {
-                self.scroll += 20;
+                let max = self.diff_line_count().saturating_sub(1);
+                self.scroll = (self.scroll + 20).min(max);
             }
             Focus::Terminal => {}
         }
@@ -1117,6 +1159,39 @@ mod tests {
         app.page_up();
 
         assert_eq!(app.scroll, 0);
+    }
+
+    #[test]
+    fn diff_scroll_clamps_at_last_line_on_select_down() {
+        use crate::git::diff::{DiffHunk, DiffLine, LineKind};
+        let mut app = app_with_files(vec!["a.rs"]);
+        app.focus = Focus::DiffViewer;
+        // 1 hunk = header + 1 content line = 2 total lines, max_scroll = 1
+        app.hunks = vec![DiffHunk {
+            header: "@@ -1 +1 @@".to_string(),
+            lines: vec![DiffLine { kind: LineKind::Context, content: "x".to_string() }],
+        }];
+        app.scroll = 1; // already at max
+
+        app.select_down();
+
+        assert_eq!(app.scroll, 1, "scroll must not exceed last line index");
+    }
+
+    #[test]
+    fn diff_scroll_clamps_at_last_line_on_page_down() {
+        use crate::git::diff::{DiffHunk, DiffLine, LineKind};
+        let mut app = app_with_files(vec!["a.rs"]);
+        app.focus = Focus::DiffViewer;
+        app.hunks = vec![DiffHunk {
+            header: "@@ -1 +1 @@".to_string(),
+            lines: vec![DiffLine { kind: LineKind::Context, content: "x".to_string() }],
+        }];
+        app.scroll = 0;
+
+        app.page_down(); // +20, but max is 1
+
+        assert_eq!(app.scroll, 1);
     }
 
     #[test]

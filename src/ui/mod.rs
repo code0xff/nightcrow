@@ -15,6 +15,14 @@ use ratatui::{
 use syntect::highlighting::ThemeSet;
 use syntect::parsing::SyntaxSet;
 
+pub(crate) fn focused_border_style(focused: bool) -> Style {
+    if focused {
+        Style::default().fg(Color::Yellow)
+    } else {
+        Style::default().fg(Color::DarkGray)
+    }
+}
+
 pub fn draw(
     frame: &mut Frame,
     app: &mut App,

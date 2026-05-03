@@ -10,11 +10,7 @@ use ratatui::{
 
 pub fn render(frame: &mut Frame, app: &App, area: Rect) {
     let focused = app.focus == Focus::FileList;
-    let border_style = if focused {
-        Style::default().fg(Color::Yellow)
-    } else {
-        Style::default().fg(Color::DarkGray)
-    };
+    let border_style = super::focused_border_style(focused);
 
     let show_search = app.search_active || !app.search_query.is_empty();
 

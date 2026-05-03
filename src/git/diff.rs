@@ -188,13 +188,24 @@ fn diff_options(pathspec: Option<&str>) -> DiffOptions {
     opts
 }
 
-fn collect_diff_hunks(diff: &Diff<'_>, fallback_path: &str) -> Result<Vec<DiffHunk>> {
+/// Shared hunk/line accumulation logic. `on_file` returns `Some(hunk)` to prepend a
+/// synthetic header entry per file (used by commit diff), or `None` to skip (status diff).
+fn collect_hunks(
+    diff: &Diff<'_>,
+    mut on_file: impl FnMut(DiffDelta<'_>) -> Option<DiffHunk>,
+    binary_fallback: &str,
+) -> Result<Vec<DiffHunk>> {
     let hunks: RefCell<Vec<DiffHunk>> = RefCell::new(Vec::new());
 
     diff.foreach(
-        &mut |_, _| true,
+        &mut |delta, _| {
+            if let Some(h) = on_file(delta) {
+                hunks.borrow_mut().push(h);
+            }
+            true
+        },
         Some(&mut |delta, _| {
-            let path = path_from_delta(delta).unwrap_or_else(|| fallback_path.to_string());
+            let path = path_from_delta(delta).unwrap_or_else(|| binary_fallback.to_string());
             hunks.borrow_mut().push(binary_diff_hunk(&path));
             true
         }),
@@ -203,10 +214,7 @@ fn collect_diff_hunks(diff: &Diff<'_>, fallback_path: &str) -> Result<Vec<DiffHu
                 .unwrap_or("@@")
                 .trim_end_matches('\n')
                 .to_string();
-            hunks.borrow_mut().push(DiffHunk {
-                header,
-                lines: Vec::new(),
-            });
+            hunks.borrow_mut().push(DiffHunk { header, lines: Vec::new() });
             true
         }),
         Some(&mut |_, _, line| {
@@ -230,53 +238,19 @@ fn collect_diff_hunks(diff: &Diff<'_>, fallback_path: &str) -> Result<Vec<DiffHu
     Ok(hunks.into_inner())
 }
 
+fn collect_diff_hunks(diff: &Diff<'_>, fallback_path: &str) -> Result<Vec<DiffHunk>> {
+    collect_hunks(diff, |_| None, fallback_path)
+}
+
 fn collect_commit_diff_hunks(diff: &Diff<'_>) -> Result<Vec<DiffHunk>> {
-    let hunks: RefCell<Vec<DiffHunk>> = RefCell::new(Vec::new());
-
-    diff.foreach(
-        &mut |delta, _| {
+    collect_hunks(
+        diff,
+        |delta| {
             let path = path_from_delta(delta).unwrap_or_else(|| "unknown".to_string());
-            hunks.borrow_mut().push(DiffHunk {
-                header: format!("diff {path}"),
-                lines: Vec::new(),
-            });
-            true
+            Some(DiffHunk { header: format!("diff {path}"), lines: Vec::new() })
         },
-        Some(&mut |delta, _| {
-            let path = path_from_delta(delta).unwrap_or_else(|| "unknown".to_string());
-            hunks.borrow_mut().push(binary_diff_hunk(&path));
-            true
-        }),
-        Some(&mut |_, hunk| {
-            let header = std::str::from_utf8(hunk.header())
-                .unwrap_or("@@")
-                .trim_end_matches('\n')
-                .to_string();
-            hunks.borrow_mut().push(DiffHunk {
-                header,
-                lines: Vec::new(),
-            });
-            true
-        }),
-        Some(&mut |_, _, line| {
-            let content = std::str::from_utf8(line.content())
-                .unwrap_or("")
-                .trim_end_matches('\n')
-                .to_string();
-            let kind = match line.origin() {
-                '+' => LineKind::Added,
-                '-' => LineKind::Removed,
-                '\\' => return true,
-                _ => LineKind::Context,
-            };
-            if let Some(h) = hunks.borrow_mut().last_mut() {
-                h.lines.push(DiffLine { kind, content });
-            }
-            true
-        }),
-    )?;
-
-    Ok(hunks.into_inner())
+        "unknown",
+    )
 }
 
 fn change_status_from_git_status(status: Status) -> Option<ChangeStatus> {

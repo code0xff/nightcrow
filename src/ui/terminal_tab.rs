@@ -9,11 +9,7 @@ use ratatui::{
 
 pub fn render(frame: &mut Frame, app: &mut App, area: Rect) {
     let focused = app.focus == Focus::Terminal;
-    let border_style = if focused {
-        Style::default().fg(Color::Yellow)
-    } else {
-        Style::default().fg(Color::DarkGray)
-    };
+    let border_style = super::focused_border_style(focused);
 
     let title = if app.is_terminal_scrolled() {
         " Terminal [SCROLL — shift+pgdn: down | input: live] "

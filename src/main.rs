@@ -7,7 +7,7 @@ mod logging;
 mod session;
 mod ui;
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use app::{App, Focus, ViewMode};
 use clap::Parser;
 use crossterm::{
@@ -38,11 +38,12 @@ fn main() -> Result<()> {
     let cli = Cli::parse();
     let cfg = config::load_config()?;
 
-    let repo_path = cli
-        .repo
-        .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| ".".into()))
-        .to_string_lossy()
-        .to_string();
+    let repo_path = match cli.repo {
+        Some(p) => p,
+        None => std::env::current_dir().context("cannot determine current directory")?,
+    }
+    .to_string_lossy()
+    .to_string();
 
     let _log_guard = logging::init_logging(&cfg.log, &repo_path);
 
@@ -183,50 +184,10 @@ fn run(
                     } else {
                         match map_key(key) {
                             Action::Quit => break,
-                            Action::Up => {
-                                if app.mode == ViewMode::Log && app.focus == Focus::FileList {
-                                    if app.log_drill_down {
-                                        app.log_file_select_up();
-                                    } else {
-                                        app.log_select_up();
-                                    }
-                                } else {
-                                    app.select_up();
-                                }
-                            }
-                            Action::Down => {
-                                if app.mode == ViewMode::Log && app.focus == Focus::FileList {
-                                    if app.log_drill_down {
-                                        app.log_file_select_down();
-                                    } else {
-                                        app.log_select_down();
-                                    }
-                                } else {
-                                    app.select_down();
-                                }
-                            }
-                            Action::PageUp => {
-                                if app.mode == ViewMode::Log && app.focus == Focus::FileList {
-                                    if app.log_drill_down {
-                                        app.log_file_page_up();
-                                    } else {
-                                        app.log_page_up();
-                                    }
-                                } else {
-                                    app.page_up();
-                                }
-                            }
-                            Action::PageDown => {
-                                if app.mode == ViewMode::Log && app.focus == Focus::FileList {
-                                    if app.log_drill_down {
-                                        app.log_file_page_down();
-                                    } else {
-                                        app.log_page_down();
-                                    }
-                                } else {
-                                    app.page_down();
-                                }
-                            }
+                            Action::Up => app.select_up(),
+                            Action::Down => app.select_down(),
+                            Action::PageUp => app.page_up(),
+                            Action::PageDown => app.page_down(),
                             Action::NewPane => app.open_new_pane(),
                             Action::ClosePane => app.close_active_pane(),
                             Action::ChangeRepo => app.start_repo_input(),
