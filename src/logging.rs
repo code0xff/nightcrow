@@ -7,6 +7,9 @@ use std::time::{Duration, SystemTime};
 use tracing_appender::non_blocking::WorkerGuard;
 use tracing_subscriber::{EnvFilter, fmt, layer::SubscriberExt};
 
+const LOG_FILE_PREFIX: &str = "nightcrow.log";
+const LOG_FILE_PREFIX_WITH_SEPARATOR: &str = "nightcrow.log.";
+
 pub struct LogGuard {
     _guard: WorkerGuard,
 }
@@ -29,21 +32,21 @@ pub fn init_logging(config: &LogConfig, repo_path: &str) -> Option<LogGuard> {
 
     let (writer, guard) = match config.rotation.as_str() {
         "hourly" => {
-            let appender = tracing_appender::rolling::hourly(&log_dir, "nightcrow.log");
+            let appender = tracing_appender::rolling::hourly(&log_dir, LOG_FILE_PREFIX);
             tracing_appender::non_blocking(appender)
         }
         "size" => {
             let max_bytes = config.max_size_mb.saturating_mul(1024 * 1024);
-            if let Some(appender) = SizeRollingAppender::new(&log_dir, "nightcrow.log", max_bytes) {
+            if let Some(appender) = SizeRollingAppender::new(&log_dir, LOG_FILE_PREFIX, max_bytes) {
                 tracing_appender::non_blocking(appender)
             } else {
-                let appender = tracing_appender::rolling::daily(&log_dir, "nightcrow.log");
+                let appender = tracing_appender::rolling::daily(&log_dir, LOG_FILE_PREFIX);
                 tracing_appender::non_blocking(appender)
             }
         }
         _ => {
             // default: daily
-            let appender = tracing_appender::rolling::daily(&log_dir, "nightcrow.log");
+            let appender = tracing_appender::rolling::daily(&log_dir, LOG_FILE_PREFIX);
             tracing_appender::non_blocking(appender)
         }
     };
@@ -94,11 +97,7 @@ fn cleanup_old_logs(log_dir: &Path, max_days: u32) {
 
     for entry in entries.flatten() {
         let path = entry.path();
-        let is_log = path
-            .file_name()
-            .and_then(|n| n.to_str())
-            .is_some_and(|n| n.starts_with("nightcrow") && n.ends_with(".log"));
-        if is_log
+        if is_nightcrow_log_file(&path)
             && let Ok(meta) = fs::metadata(&path)
             && let Ok(modified) = meta.modified()
             && modified < cutoff
@@ -106,6 +105,14 @@ fn cleanup_old_logs(log_dir: &Path, max_days: u32) {
             let _ = fs::remove_file(&path);
         }
     }
+}
+
+fn is_nightcrow_log_file(path: &Path) -> bool {
+    path.file_name()
+        .and_then(|n| n.to_str())
+        .is_some_and(|name| {
+            name == LOG_FILE_PREFIX || name.starts_with(LOG_FILE_PREFIX_WITH_SEPARATOR)
+        })
 }
 
 // Rotates to a new numbered file when the current file exceeds max_bytes.
@@ -195,6 +202,18 @@ mod tests {
         fs::write(&other, b"x").unwrap();
         cleanup_old_logs(dir.path(), 1);
         assert!(other.exists());
+    }
+
+    #[test]
+    fn recognizes_generated_nightcrow_log_names() {
+        assert!(is_nightcrow_log_file(Path::new("nightcrow.log")));
+        assert!(is_nightcrow_log_file(Path::new("nightcrow.log.0")));
+        assert!(is_nightcrow_log_file(Path::new("nightcrow.log.2026-05-03")));
+        assert!(is_nightcrow_log_file(Path::new(
+            "nightcrow.log.2026-05-03-14"
+        )));
+        assert!(!is_nightcrow_log_file(Path::new("nightcrow.old.log")));
+        assert!(!is_nightcrow_log_file(Path::new("other.log")));
     }
 
     #[test]

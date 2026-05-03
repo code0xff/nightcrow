@@ -236,9 +236,7 @@ fn run(
                                             KeyCode::Char('/') => app.start_diff_search(),
                                             KeyCode::Char('n') => app.next_diff_match(),
                                             KeyCode::Char('N') => app.prev_diff_match(),
-                                            KeyCode::Esc
-                                                if !app.diff_search_query.is_empty() =>
-                                            {
+                                            KeyCode::Esc if !app.diff_search_query.is_empty() => {
                                                 app.cancel_diff_search()
                                             }
                                             _ => {}

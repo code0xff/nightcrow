@@ -10,6 +10,9 @@ use std::thread;
 use std::time::Duration;
 
 const SCROLLBACK_LINES: usize = 1000;
+const LIST_PAGE_SIZE: usize = 10;
+const DIFF_PAGE_SIZE: usize = 20;
+const COMMIT_LOG_LIMIT: usize = 500;
 
 fn spawn_snapshot_thread(repo_path: &str) -> (Receiver<SnapshotMsg>, SyncSender<()>) {
     let (tx, rx) = mpsc::channel::<SnapshotMsg>();
@@ -239,17 +242,9 @@ impl App {
                     }
                 }
                 BackendEvent::Exited { pane } => {
-                    self.parsers.remove(&pane);
-                    self.prompt_bufs.remove(&pane);
-                    self.terminal_scroll.remove(&pane);
+                    self.remove_terminal_pane_state(pane);
                     self.terminal_panes.retain(|p| p.id != pane);
-                    if self.terminal_panes.is_empty() {
-                        self.active_pane = 0;
-                        self.focus = Focus::DiffViewer;
-                        self.terminal_fullscreen = false;
-                    } else if self.active_pane >= self.terminal_panes.len() {
-                        self.active_pane = self.terminal_panes.len() - 1;
-                    }
+                    self.clamp_active_pane_after_removal();
                 }
             }
         }
@@ -290,10 +285,18 @@ impl App {
         if let Some(backend) = &mut self.backend {
             backend.destroy_pane(id);
         }
+        self.remove_terminal_pane_state(id);
+        self.terminal_panes.remove(self.active_pane);
+        self.clamp_active_pane_after_removal();
+    }
+
+    fn remove_terminal_pane_state(&mut self, id: PaneId) {
         self.parsers.remove(&id);
         self.prompt_bufs.remove(&id);
         self.terminal_scroll.remove(&id);
-        self.terminal_panes.remove(self.active_pane);
+    }
+
+    fn clamp_active_pane_after_removal(&mut self) {
         if self.terminal_panes.is_empty() {
             self.active_pane = 0;
             self.focus = Focus::DiffViewer;
@@ -476,7 +479,7 @@ impl App {
                         self.scroll = previous_scroll;
                     }
                     if !self.diff_search_query.is_empty() {
-                        self.recompute_diff_matches();
+                        self.recompute_diff_matches(reset_scroll);
                     }
                 }
                 Err(e) => {
@@ -566,12 +569,12 @@ impl App {
 
     pub fn diff_search_push(&mut self, ch: char) {
         self.diff_search_query.push(ch);
-        self.recompute_diff_matches();
+        self.recompute_diff_matches(true);
     }
 
     pub fn diff_search_pop(&mut self) {
         self.diff_search_query.pop();
-        self.recompute_diff_matches();
+        self.recompute_diff_matches(true);
     }
 
     pub fn next_diff_match(&mut self) {
@@ -602,7 +605,7 @@ impl App {
         self.diff_line_count().saturating_sub(1)
     }
 
-    fn recompute_diff_matches(&mut self) {
+    fn recompute_diff_matches(&mut self, scroll_to_match: bool) {
         self.diff_search_matches.clear();
         if self.diff_search_query.is_empty() {
             self.diff_search_cursor = 0;
@@ -627,7 +630,9 @@ impl App {
             self.diff_search_cursor = self
                 .diff_search_cursor
                 .min(self.diff_search_matches.len() - 1);
-            self.scroll_to_diff_match();
+            if scroll_to_match {
+                self.scroll_to_diff_match();
+            }
         } else {
             self.diff_search_cursor = 0;
         }
@@ -725,16 +730,16 @@ impl App {
                 if !self.search_query.is_empty() {
                     let indices = self.filtered_indices();
                     if let Some(pos) = indices.iter().position(|&i| i == self.selected) {
-                        self.selected = indices[pos.saturating_sub(10)];
+                        self.selected = indices[pos.saturating_sub(LIST_PAGE_SIZE)];
                         self.reload_diff();
                     }
                 } else {
-                    self.selected = self.selected.saturating_sub(10);
+                    self.selected = self.selected.saturating_sub(LIST_PAGE_SIZE);
                     self.reload_diff();
                 }
             }
             Focus::DiffViewer => {
-                self.scroll = self.scroll.saturating_sub(20);
+                self.scroll = self.scroll.saturating_sub(DIFF_PAGE_SIZE);
             }
             Focus::Terminal => {}
         }
@@ -757,16 +762,19 @@ impl App {
                         return;
                     }
                     if let Some(pos) = indices.iter().position(|&i| i == self.selected) {
-                        self.selected = indices[(pos + 10).min(indices.len() - 1)];
+                        self.selected = indices[(pos + LIST_PAGE_SIZE).min(indices.len() - 1)];
                         self.reload_diff();
                     }
                 } else if !self.files.is_empty() {
-                    self.selected = (self.selected + 10).min(self.files.len() - 1);
+                    self.selected = (self.selected + LIST_PAGE_SIZE).min(self.files.len() - 1);
                     self.reload_diff();
                 }
             }
             Focus::DiffViewer => {
-                self.scroll = self.scroll.saturating_add(20).min(self.max_diff_scroll());
+                self.scroll = self
+                    .scroll
+                    .saturating_add(DIFF_PAGE_SIZE)
+                    .min(self.max_diff_scroll());
             }
             Focus::Terminal => {}
         }
@@ -782,7 +790,7 @@ impl App {
                     self.scroll = 0;
                     self.log_diff_title = title;
                     if !self.diff_search_query.is_empty() {
-                        self.recompute_diff_matches();
+                        self.recompute_diff_matches(true);
                     }
                 }
                 Err(e) => {
@@ -844,7 +852,7 @@ impl App {
 
     pub fn log_file_page_up(&mut self) {
         if !self.log_commit_files.is_empty() {
-            self.log_file_selected = self.log_file_selected.saturating_sub(10);
+            self.log_file_selected = self.log_file_selected.saturating_sub(LIST_PAGE_SIZE);
             self.load_file_diff_for_log_file_selected();
         }
     }
@@ -852,7 +860,7 @@ impl App {
     pub fn log_file_page_down(&mut self) {
         if !self.log_commit_files.is_empty() {
             self.log_file_selected =
-                (self.log_file_selected + 10).min(self.log_commit_files.len() - 1);
+                (self.log_file_selected + LIST_PAGE_SIZE).min(self.log_commit_files.len() - 1);
             self.load_file_diff_for_log_file_selected();
         }
     }
@@ -873,7 +881,7 @@ impl App {
                 self.scroll = 0;
                 self.log_diff_title = title;
                 if !self.diff_search_query.is_empty() {
-                    self.recompute_diff_matches();
+                    self.recompute_diff_matches(true);
                 }
             }
             Err(e) => {
@@ -889,7 +897,7 @@ impl App {
         match self.mode {
             ViewMode::Status => {
                 self.mode = ViewMode::Log;
-                match load_commit_log(&self.repo_path, 500) {
+                match load_commit_log(&self.repo_path, COMMIT_LOG_LIMIT) {
                     Ok(commits) => {
                         self.commits = commits;
                         self.log_selected = 0;
@@ -926,13 +934,13 @@ impl App {
     }
 
     pub fn log_page_up(&mut self) {
-        self.log_selected = self.log_selected.saturating_sub(10);
+        self.log_selected = self.log_selected.saturating_sub(LIST_PAGE_SIZE);
         self.load_commit_diff_for_selected();
     }
 
     pub fn log_page_down(&mut self) {
         if !self.commits.is_empty() {
-            self.log_selected = (self.log_selected + 10).min(self.commits.len() - 1);
+            self.log_selected = (self.log_selected + LIST_PAGE_SIZE).min(self.commits.len() - 1);
             self.load_commit_diff_for_selected();
         }
     }
@@ -1043,7 +1051,7 @@ impl App {
         }
         self.terminal_fullscreen = state.terminal_fullscreen && !self.terminal_panes.is_empty();
         if state.mode == Some(ViewMode::Log) {
-            match load_commit_log(&self.repo_path, 500) {
+            match load_commit_log(&self.repo_path, COMMIT_LOG_LIMIT) {
                 Ok(commits) => {
                     self.commits = commits;
                     self.log_selected =
@@ -1068,7 +1076,7 @@ impl App {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::git::diff::ChangeStatus;
+    use crate::git::diff::{ChangeStatus, DiffHunk, DiffLine, LineKind};
 
     fn app_with_files(files: Vec<&str>) -> App {
         let (_tx, rx) = mpsc::channel::<SnapshotMsg>();
@@ -1114,6 +1122,19 @@ mod tests {
             prompt_log_enabled: false,
             prompt_bufs: HashMap::new(),
             pending_session: None,
+        }
+    }
+
+    fn context_hunk(lines: &[&str]) -> DiffHunk {
+        DiffHunk {
+            header: "@@ -1 +1 @@".to_string(),
+            lines: lines
+                .iter()
+                .map(|content| DiffLine {
+                    kind: LineKind::Context,
+                    content: (*content).to_string(),
+                })
+                .collect(),
         }
     }
 
@@ -1170,17 +1191,10 @@ mod tests {
 
     #[test]
     fn diff_scroll_clamps_at_last_line_on_select_down() {
-        use crate::git::diff::{DiffHunk, DiffLine, LineKind};
         let mut app = app_with_files(vec!["a.rs"]);
         app.focus = Focus::DiffViewer;
         // 1 hunk = header + 1 content line = 2 total lines, max_scroll = 1
-        app.hunks = vec![DiffHunk {
-            header: "@@ -1 +1 @@".to_string(),
-            lines: vec![DiffLine {
-                kind: LineKind::Context,
-                content: "x".to_string(),
-            }],
-        }];
+        app.hunks = vec![context_hunk(&["x"])];
         app.scroll = 1; // already at max
 
         app.select_down();
@@ -1190,16 +1204,9 @@ mod tests {
 
     #[test]
     fn diff_scroll_clamps_at_last_line_on_page_down() {
-        use crate::git::diff::{DiffHunk, DiffLine, LineKind};
         let mut app = app_with_files(vec!["a.rs"]);
         app.focus = Focus::DiffViewer;
-        app.hunks = vec![DiffHunk {
-            header: "@@ -1 +1 @@".to_string(),
-            lines: vec![DiffLine {
-                kind: LineKind::Context,
-                content: "x".to_string(),
-            }],
-        }];
+        app.hunks = vec![context_hunk(&["x"])];
         app.scroll = 0;
 
         app.page_down(); // +20, but max is 1
@@ -1209,21 +1216,38 @@ mod tests {
 
     #[test]
     fn diff_scroll_handles_large_restored_offset() {
-        use crate::git::diff::{DiffHunk, DiffLine, LineKind};
         let mut app = app_with_files(vec!["a.rs"]);
         app.focus = Focus::DiffViewer;
-        app.hunks = vec![DiffHunk {
-            header: "@@ -1 +1 @@".to_string(),
-            lines: vec![DiffLine {
-                kind: LineKind::Context,
-                content: "x".to_string(),
-            }],
-        }];
+        app.hunks = vec![context_hunk(&["x"])];
         app.scroll = usize::MAX;
 
         app.select_down();
 
         assert_eq!(app.scroll, 1);
+    }
+
+    #[test]
+    fn diff_match_refresh_can_preserve_manual_scroll() {
+        let mut app = app_with_files(vec!["a.rs"]);
+        app.hunks = vec![context_hunk(&["needle"])];
+        app.diff_search_query = "needle".to_string();
+        app.scroll = 7;
+
+        app.recompute_diff_matches(false);
+
+        assert_eq!(app.diff_search_matches, vec![1]);
+        assert_eq!(app.scroll, 7);
+    }
+
+    #[test]
+    fn diff_search_input_scrolls_to_first_match() {
+        let mut app = app_with_files(vec!["a.rs"]);
+        app.hunks = vec![context_hunk(&["alpha", "needle"])];
+
+        app.diff_search_push('n');
+
+        assert_eq!(app.diff_search_matches, vec![2]);
+        assert_eq!(app.scroll, 2);
     }
 
     #[test]
@@ -1310,11 +1334,17 @@ mod tests {
         }];
         app.terminal_fullscreen = true;
         app.focus = Focus::Terminal;
+        app.terminal_scroll.insert(1, 3);
+        app.prompt_bufs.insert(1, "cargo test".to_string());
+        app.parsers.insert(1, vt100::Parser::new(3, 10, 0));
 
         app.close_active_pane();
 
         assert!(!app.terminal_fullscreen);
         assert_eq!(app.focus, Focus::DiffViewer);
+        assert!(!app.terminal_scroll.contains_key(&1));
+        assert!(!app.prompt_bufs.contains_key(&1));
+        assert!(!app.parsers.contains_key(&1));
     }
 
     #[test]

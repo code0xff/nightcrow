@@ -113,8 +113,19 @@ pub fn load_file_diff(repo_path: &str, file_path: &str) -> Result<Vec<DiffHunk>>
 
 pub fn load_commit_log(repo_path: &str, max_count: usize) -> Result<Vec<CommitEntry>> {
     let repo = Repository::discover(repo_path).context("not a git repository")?;
+    if repo
+        .is_empty()
+        .context("failed to inspect repository state")?
+    {
+        return Ok(Vec::new());
+    }
     let mut revwalk = repo.revwalk().context("failed to create revwalk")?;
-    revwalk.push_head().context("failed to push HEAD")?;
+    if let Err(err) = revwalk.push_head() {
+        if is_empty_head(&err) {
+            return Ok(Vec::new());
+        }
+        return Err(err).context("failed to push HEAD");
+    }
 
     let mut entries = Vec::new();
     for oid_result in revwalk.take(max_count) {
@@ -137,6 +148,13 @@ pub fn load_commit_log(repo_path: &str, max_count: usize) -> Result<Vec<CommitEn
         });
     }
     Ok(entries)
+}
+
+fn is_empty_head(err: &git2::Error) -> bool {
+    matches!(
+        err.code(),
+        git2::ErrorCode::UnbornBranch | git2::ErrorCode::NotFound
+    )
 }
 
 fn commit_diff<'repo>(
@@ -351,6 +369,40 @@ mod tests {
     fn snapshot_empty_repo_does_not_panic() {
         let (dir, path) = make_repo();
         let _ = load_snapshot(&path);
+        drop(dir);
+    }
+
+    #[test]
+    fn commit_log_empty_repo_returns_empty() {
+        let (dir, path) = make_repo();
+
+        let commits = load_commit_log(&path, 10).unwrap();
+
+        assert!(commits.is_empty());
+        drop(dir);
+    }
+
+    #[test]
+    fn root_commit_diff_lists_added_files() {
+        let (dir, path) = make_repo();
+        let fp = Path::new(&path).join("first.rs");
+        std::fs::write(&fp, "fn main() {}\n").unwrap();
+        run_git(&path, &["add", "."]);
+        run_git(&path, &["commit", "-m", "init"]);
+
+        let commits = load_commit_log(&path, 1).unwrap();
+        let files = load_commit_files(&path, commits[0].oid).unwrap();
+        let hunks = load_commit_diff(&path, commits[0].oid).unwrap();
+
+        assert_eq!(files.len(), 1);
+        assert_eq!(files[0].path, "first.rs");
+        assert_eq!(files[0].status, ChangeStatus::Added);
+        assert!(
+            hunks
+                .iter()
+                .flat_map(|h| &h.lines)
+                .any(|line| line.kind == LineKind::Added && line.content.contains("fn main"))
+        );
         drop(dir);
     }
 
