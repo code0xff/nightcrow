@@ -31,10 +31,10 @@ pub fn load_session(repo_path: &str) -> SessionState {
 
 pub fn save_session(repo_path: &str, state: &SessionState) {
     let path = session_path(repo_path);
-    if let Some(dir) = path.parent() {
-        if let Err(e) = std::fs::create_dir_all(dir) {
-            tracing::warn!("failed to create session directory: {e}");
-        }
+    if let Some(dir) = path.parent()
+        && let Err(e) = std::fs::create_dir_all(dir)
+    {
+        tracing::warn!("failed to create session directory: {e}");
     }
     match serde_json::to_string(state) {
         Ok(text) => {
