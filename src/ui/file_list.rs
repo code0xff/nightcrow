@@ -5,7 +5,7 @@ use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, List, ListItem, ListState, Paragraph},
+    widgets::{Block, Borders, List, ListItem, ListState},
 };
 
 pub fn render(frame: &mut Frame, app: &App, area: Rect) {
@@ -79,15 +79,6 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect) {
     frame.render_stateful_widget(list, list_area, &mut state);
 
     if let Some(sa) = search_area {
-        let cursor = if app.search_active { "█" } else { "" };
-        let search_style = if app.search_active {
-            Style::default().fg(Color::Yellow)
-        } else {
-            Style::default().fg(Color::DarkGray)
-        };
-        frame.render_widget(
-            Paragraph::new(format!("/{}{}", app.search_query, cursor)).style(search_style),
-            sa,
-        );
+        super::render_search_bar(frame, &app.search_query, app.search_active, sa);
     }
 }

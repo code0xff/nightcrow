@@ -215,15 +215,6 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect, ss: &SyntaxSet, ts: &The
     frame.render_widget(para, diff_area);
 
     if let Some(sa) = search_area {
-        let cursor = if app.diff_search_active { "█" } else { "" };
-        let search_style = if app.diff_search_active {
-            Style::default().fg(Color::Yellow)
-        } else {
-            Style::default().fg(Color::DarkGray)
-        };
-        frame.render_widget(
-            Paragraph::new(format!("/{}{}", app.diff_search_query, cursor)).style(search_style),
-            sa,
-        );
+        super::render_search_bar(frame, &app.diff_search_query, app.diff_search_active, sa);
     }
 }

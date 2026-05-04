@@ -7,7 +7,7 @@ use crate::app::{App, Focus, ViewMode};
 use crate::config::LayoutConfig;
 use ratatui::{
     Frame,
-    layout::{Constraint, Direction, Layout},
+    layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Style},
     text::{Line, Span},
     widgets::Paragraph,
@@ -21,6 +21,19 @@ pub(crate) fn focused_border_style(focused: bool) -> Style {
     } else {
         Style::default().fg(Color::DarkGray)
     }
+}
+
+pub(crate) fn render_search_bar(frame: &mut Frame, query: &str, is_active: bool, area: Rect) {
+    let cursor = if is_active { "█" } else { "" };
+    let style = if is_active {
+        Style::default().fg(Color::Yellow)
+    } else {
+        Style::default().fg(Color::DarkGray)
+    };
+    frame.render_widget(
+        Paragraph::new(format!("/{query}{cursor}")).style(style),
+        area,
+    );
 }
 
 pub fn draw(
