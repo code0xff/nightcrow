@@ -83,6 +83,10 @@ nightcrow --repo ~/projects/myapp
 
 While scrolled, the terminal border title shows `[SCROLL — shift+pgdn: down | input: live]`. Keyboard input is still forwarded to the running process; `Shift+PgDn` to scroll back to the bottom.
 
+## Session persistence
+
+nightcrow saves the current state on exit and restores it on the next launch for the same repo — focus position, scroll offset, active terminal pane, and whether the commit log view was open. The state file is `.nightcrow/session.json` inside the repo directory.
+
 ## Configuration
 
 Config file: `~/.config/nightcrow/config.toml` (all fields optional, defaults shown).
