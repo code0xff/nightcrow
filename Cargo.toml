@@ -26,3 +26,6 @@ tracing-appender = "0.2"
 
 [dev-dependencies]
 tempfile = "3"
+
+[patch.crates-io]
+vt100 = { path = "vendor/vt100" }
