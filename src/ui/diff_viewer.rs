@@ -68,6 +68,13 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect, ss: &SyntaxSet, ts: &The
     let mut lines: Vec<Line> = Vec::new();
     let mut flat_idx: usize = 0;
 
+    // Two separate highlighters for the whole diff: removed lines must not bleed
+    // their syntax state (e.g. an unclosed string) into the added/context lines.
+    // Keeping them alive across hunks lets context carry forward correctly for
+    // multiline constructs (block comments, string literals) that span hunk boundaries.
+    let mut hl_new = HighlightLines::new(syntax, theme);
+    let mut hl_old = HighlightLines::new(syntax, theme);
+
     for hunk in &app.hunks {
         // Hunk header
         lines.push(Line::from(Span::styled(
@@ -76,10 +83,6 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect, ss: &SyntaxSet, ts: &The
         )));
         flat_idx += 1;
 
-        // Two separate highlighters per hunk: removed lines must not bleed their
-        // syntax state (e.g. an unclosed string) into the added/context lines.
-        let mut hl_new = HighlightLines::new(syntax, theme);
-        let mut hl_old = HighlightLines::new(syntax, theme);
         for diff_line in &hunk.lines {
             let is_current = has_search && current_match == Some(flat_idx);
             let is_match = has_search && app.diff_search_matches.binary_search(&flat_idx).is_ok();

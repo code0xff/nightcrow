@@ -382,6 +382,9 @@ impl App {
     }
 
     pub fn scroll_terminal_up(&mut self, lines: usize) {
+        if lines == 0 {
+            return;
+        }
         if let Some(id) = self.active_pane_id() {
             let offset = self.terminal_scroll.entry(id).or_insert(0);
             *offset = offset.saturating_add(lines);
@@ -668,15 +671,28 @@ impl App {
         }
     }
 
+    /// Dispatches a navigation action to the appropriate log list (commit or file).
+    /// Returns `true` if the action was handled (i.e. we are in Log mode).
+    fn navigate_log_list(
+        &mut self,
+        commit_nav: fn(&mut Self),
+        file_nav: fn(&mut Self),
+    ) -> bool {
+        if self.mode != ViewMode::Log {
+            return false;
+        }
+        if self.log_drill_down {
+            file_nav(self);
+        } else {
+            commit_nav(self);
+        }
+        true
+    }
+
     pub fn select_up(&mut self) {
         match self.focus {
             Focus::FileList => {
-                if self.mode == ViewMode::Log {
-                    if self.log_drill_down {
-                        self.log_file_select_up();
-                    } else {
-                        self.log_select_up();
-                    }
+                if self.navigate_log_list(Self::log_select_up, Self::log_file_select_up) {
                     return;
                 }
                 if !self.search_query.is_empty() {
@@ -702,12 +718,7 @@ impl App {
     pub fn select_down(&mut self) {
         match self.focus {
             Focus::FileList => {
-                if self.mode == ViewMode::Log {
-                    if self.log_drill_down {
-                        self.log_file_select_down();
-                    } else {
-                        self.log_select_down();
-                    }
+                if self.navigate_log_list(Self::log_select_down, Self::log_file_select_down) {
                     return;
                 }
                 if !self.search_query.is_empty() {
@@ -733,12 +744,7 @@ impl App {
     pub fn page_up(&mut self) {
         match self.focus {
             Focus::FileList => {
-                if self.mode == ViewMode::Log {
-                    if self.log_drill_down {
-                        self.log_file_page_up();
-                    } else {
-                        self.log_page_up();
-                    }
+                if self.navigate_log_list(Self::log_page_up, Self::log_file_page_up) {
                     return;
                 }
                 if !self.search_query.is_empty() {
@@ -762,12 +768,7 @@ impl App {
     pub fn page_down(&mut self) {
         match self.focus {
             Focus::FileList => {
-                if self.mode == ViewMode::Log {
-                    if self.log_drill_down {
-                        self.log_file_page_down();
-                    } else {
-                        self.log_page_down();
-                    }
+                if self.navigate_log_list(Self::log_page_down, Self::log_file_page_down) {
                     return;
                 }
                 if !self.search_query.is_empty() {

@@ -87,6 +87,17 @@ fn validate_config(cfg: &Config) -> Result<()> {
         cfg.layout.file_list_pct >= 1 && cfg.layout.file_list_pct <= 99,
         "layout.file_list_pct must be between 1 and 99"
     );
+    anyhow::ensure!(
+        matches!(cfg.log.rotation.as_str(), "daily" | "hourly" | "size"),
+        "log.rotation must be \"daily\", \"hourly\", or \"size\""
+    );
+    anyhow::ensure!(
+        matches!(
+            cfg.log.level.as_str(),
+            "error" | "warn" | "info" | "debug" | "trace"
+        ),
+        "log.level must be \"error\", \"warn\", \"info\", \"debug\", or \"trace\""
+    );
     Ok(())
 }
 
@@ -118,6 +129,38 @@ file_list_pct = 30
         assert!(validate_config(&cfg).is_err());
         cfg.layout.upper_pct = 100;
         assert!(validate_config(&cfg).is_err());
+    }
+
+    #[test]
+    fn validation_rejects_invalid_log_rotation() {
+        let mut cfg = Config::default();
+        cfg.log.rotation = "weekly".to_string();
+        assert!(validate_config(&cfg).is_err());
+    }
+
+    #[test]
+    fn validation_rejects_invalid_log_level() {
+        let mut cfg = Config::default();
+        cfg.log.level = "verbose".to_string();
+        assert!(validate_config(&cfg).is_err());
+    }
+
+    #[test]
+    fn validation_accepts_all_valid_rotations() {
+        for rotation in &["daily", "hourly", "size"] {
+            let mut cfg = Config::default();
+            cfg.log.rotation = rotation.to_string();
+            assert!(validate_config(&cfg).is_ok(), "rotation={rotation} should be valid");
+        }
+    }
+
+    #[test]
+    fn validation_accepts_all_valid_levels() {
+        for level in &["error", "warn", "info", "debug", "trace"] {
+            let mut cfg = Config::default();
+            cfg.log.level = level.to_string();
+            assert!(validate_config(&cfg).is_ok(), "level={level} should be valid");
+        }
     }
 
     #[test]
