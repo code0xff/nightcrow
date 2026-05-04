@@ -104,8 +104,7 @@ fn run(
 
         if event::poll(Duration::from_millis(50))? {
             match event::read()? {
-                Event::Resize(cols, rows) => {
-                    app.resize_terminal_panes(rows, cols);
+                Event::Resize(_, _) => {
                     terminal.clear()?;
                 }
                 Event::Key(key) => {
