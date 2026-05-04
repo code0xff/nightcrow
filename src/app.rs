@@ -412,7 +412,10 @@ impl App {
         let offset = self.terminal_scroll.get(&id).copied().unwrap_or(0);
         let actual = match self.parsers.get_mut(&id) {
             Some(parser) => {
-                parser.set_scrollback(offset);
+                // vt100 visible_rows() computes `rows_len - scrollback_offset` without
+                // saturating_sub, panicking when offset exceeds the screen height.
+                let screen_rows = parser.screen().size().0 as usize;
+                parser.set_scrollback(offset.min(screen_rows));
                 parser.screen().scrollback()
             }
             None => return,
@@ -1302,7 +1305,7 @@ mod tests {
     }
 
     #[test]
-    fn terminal_scrollback_is_not_limited_to_visible_rows() {
+    fn terminal_scrollback_is_capped_at_screen_rows() {
         let mut app = app_with_files(vec![]);
         app.terminal_panes = vec![PaneInfo {
             id: 1,
@@ -1318,11 +1321,10 @@ mod tests {
 
         app.sync_terminal_scroll();
 
+        // vt100 visible_rows() panics when scrollback_offset > screen rows, so we
+        // cap offset at screen height to avoid the overflow.
         let actual = app.parsers.get(&1).unwrap().screen().scrollback();
-        assert!(
-            actual > app.terminal_size.0 as usize,
-            "scrollback should support more than one visible screen, got {actual}"
-        );
+        assert_eq!(actual, app.terminal_size.0 as usize);
     }
 
     #[test]
