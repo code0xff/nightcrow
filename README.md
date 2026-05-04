@@ -81,6 +81,8 @@ nightcrow --repo ~/projects/myapp
 | `Shift+↑` / `Shift+↓` | Scroll terminal output 3 lines |
 | `Shift+PgUp` / `Shift+PgDn` | Scroll terminal output one page |
 
+While scrolled, the terminal border title shows `[SCROLL — shift+pgdn: down | input: live]`. Keyboard input is still forwarded to the running process; `Shift+PgDn` to scroll back to the bottom.
+
 ## Configuration
 
 Config file: `~/.config/nightcrow/config.toml` (all fields optional, defaults shown).
