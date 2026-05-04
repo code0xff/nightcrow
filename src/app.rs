@@ -36,6 +36,10 @@ fn spawn_snapshot_thread(repo_path: &str) -> (Receiver<SnapshotMsg>, SyncSender<
     (rx, stop_tx)
 }
 
+fn commit_diff_title(entry: &CommitEntry) -> String {
+    format!("{} {}", entry.short_id, entry.summary)
+}
+
 fn strip_escape_sequences(data: &[u8]) -> String {
     let text = String::from_utf8_lossy(data);
     let mut result = String::new();
@@ -327,6 +331,7 @@ impl App {
         self.reset_drill_down_state();
         self.search_query.clear();
         self.search_active = false;
+        self.clear_diff_search();
         self.status = None;
     }
 
@@ -557,6 +562,10 @@ impl App {
     }
 
     pub fn cancel_diff_search(&mut self) {
+        self.clear_diff_search();
+    }
+
+    fn clear_diff_search(&mut self) {
         self.diff_search_active = false;
         self.diff_search_query.clear();
         self.diff_search_matches.clear();
@@ -783,7 +792,7 @@ impl App {
     fn load_commit_diff_for_selected(&mut self) {
         if let Some(entry) = self.commits.get(self.log_selected) {
             let oid = entry.oid;
-            let title = format!("{} {}", entry.short_id, entry.summary);
+            let title = commit_diff_title(entry);
             match load_commit_diff(&self.repo_path, oid) {
                 Ok(hunks) => {
                     self.hunks = hunks;
@@ -816,12 +825,18 @@ impl App {
             return;
         };
         let oid = entry.oid;
+        let title = commit_diff_title(entry);
         match load_commit_files(&self.repo_path, oid) {
             Ok(files) => {
                 self.log_commit_files = files;
                 self.log_file_selected = 0;
                 self.log_drill_down = true;
-                self.load_file_diff_for_log_file_selected();
+                if self.log_commit_files.is_empty() {
+                    self.clear_diff_state();
+                    self.log_diff_title = title;
+                } else {
+                    self.load_file_diff_for_log_file_selected();
+                }
             }
             Err(e) => {
                 tracing::debug!(error = %e, "failed to load commit files");
@@ -867,10 +882,15 @@ impl App {
 
     fn load_file_diff_for_log_file_selected(&mut self) {
         let Some(commit_entry) = self.commits.get(self.log_selected) else {
+            self.clear_diff_state();
+            self.log_diff_title.clear();
             return;
         };
         let oid = commit_entry.oid;
+        let commit_title = commit_diff_title(commit_entry);
         let Some(file) = self.log_commit_files.get(self.log_file_selected) else {
+            self.clear_diff_state();
+            self.log_diff_title = commit_title;
             return;
         };
         let path = file.path.clone();
@@ -897,6 +917,7 @@ impl App {
         match self.mode {
             ViewMode::Status => {
                 self.mode = ViewMode::Log;
+                self.reset_drill_down_state();
                 match load_commit_log(&self.repo_path, COMMIT_LOG_LIMIT) {
                     Ok(commits) => {
                         self.commits = commits;
@@ -1032,13 +1053,14 @@ impl App {
     }
 
     pub fn restore_session(&mut self, state: &crate::session::SessionState) {
+        let saved_scroll = state.scroll;
         if let Some(path) = &state.selected_file
             && let Some(idx) = self.files.iter().position(|f| &f.path == path)
         {
             self.selected = idx;
             self.refresh_diff(true);
         }
-        self.scroll = state.scroll;
+        self.scroll = saved_scroll.min(self.max_diff_scroll());
         self.active_pane = state
             .active_pane
             .min(self.terminal_panes.len().saturating_sub(1));
@@ -1058,6 +1080,7 @@ impl App {
                         state.log_selected.min(self.commits.len().saturating_sub(1));
                     self.mode = ViewMode::Log;
                     self.load_commit_diff_for_selected();
+                    self.scroll = saved_scroll.min(self.max_diff_scroll());
                 }
                 Err(e) => {
                     tracing::warn!(error = %e, "failed to restore commit log");
@@ -1076,7 +1099,10 @@ impl App {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::git::diff::{ChangeStatus, DiffHunk, DiffLine, LineKind};
+    use crate::git::diff::{ChangeStatus, DiffHunk, DiffLine, LineKind, load_commit_log};
+    use std::path::Path;
+    use std::process::Command;
+    use tempfile::TempDir;
 
     fn app_with_files(files: Vec<&str>) -> App {
         let (_tx, rx) = mpsc::channel::<SnapshotMsg>();
@@ -1136,6 +1162,29 @@ mod tests {
                 })
                 .collect(),
         }
+    }
+
+    fn run_git(repo_path: &str, args: &[&str]) {
+        let output = Command::new("git")
+            .args(args)
+            .current_dir(repo_path)
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "git {} failed: {}",
+            args.join(" "),
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+
+    fn make_repo() -> (TempDir, String) {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().to_string_lossy().to_string();
+        run_git(&path, &["init"]);
+        run_git(&path, &["config", "user.email", "t@t.com"]);
+        run_git(&path, &["config", "user.name", "T"]);
+        (dir, path)
     }
 
     #[test]
@@ -1369,6 +1418,52 @@ mod tests {
 
         assert_eq!(app.focus, Focus::FileList);
         assert_eq!(app.active_pane, 1);
+    }
+
+    #[test]
+    fn restore_session_keeps_log_scroll_after_loading_commit_diff() {
+        let (_dir, path) = make_repo();
+        let file_path = Path::new(&path).join("a.rs");
+        std::fs::write(
+            &file_path,
+            "fn main() {\n    println!(\"one\");\n    println!(\"two\");\n}\n",
+        )
+        .unwrap();
+        run_git(&path, &["add", "."]);
+        run_git(&path, &["commit", "-m", "init"]);
+
+        let mut app = app_with_files(vec![]);
+        app.repo_path = path;
+
+        app.restore_session(&crate::session::SessionState {
+            mode: Some(ViewMode::Log),
+            scroll: 2,
+            ..Default::default()
+        });
+
+        assert_eq!(app.mode, ViewMode::Log);
+        assert!(!app.hunks.is_empty());
+        assert_eq!(app.scroll, 2);
+    }
+
+    #[test]
+    fn log_drill_in_clears_stale_diff_for_empty_commit() {
+        let (_dir, path) = make_repo();
+        run_git(&path, &["commit", "--allow-empty", "-m", "empty"]);
+
+        let mut app = app_with_files(vec![]);
+        app.repo_path = path.clone();
+        app.mode = ViewMode::Log;
+        app.commits = load_commit_log(&path, 1).unwrap();
+        app.hunks = vec![context_hunk(&["stale"])];
+        app.log_diff_title = "stale".to_string();
+
+        app.log_drill_in();
+
+        assert!(app.log_drill_down);
+        assert!(app.log_commit_files.is_empty());
+        assert!(app.hunks.is_empty());
+        assert!(app.log_diff_title.contains("empty"));
     }
 
     #[test]
