@@ -130,6 +130,9 @@ fn render_cursor(frame: &mut Frame, app: &App, area: Rect) {
     if app.focus != Focus::Terminal {
         return;
     }
+    if app.is_terminal_scrolled() {
+        return;
+    }
 
     let Some(screen) = app.active_screen() else {
         return;
