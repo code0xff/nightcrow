@@ -32,9 +32,16 @@ pub fn load_session(repo_path: &str) -> SessionState {
 pub fn save_session(repo_path: &str, state: &SessionState) {
     let path = session_path(repo_path);
     if let Some(dir) = path.parent() {
-        let _ = std::fs::create_dir_all(dir);
+        if let Err(e) = std::fs::create_dir_all(dir) {
+            tracing::warn!("failed to create session directory: {e}");
+        }
     }
-    if let Ok(text) = serde_json::to_string(state) {
-        let _ = std::fs::write(&path, text);
+    match serde_json::to_string(state) {
+        Ok(text) => {
+            if let Err(e) = std::fs::write(&path, text) {
+                tracing::warn!("failed to write session: {e}");
+            }
+        }
+        Err(e) => tracing::warn!("failed to serialize session: {e}"),
     }
 }
