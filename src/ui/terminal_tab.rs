@@ -155,8 +155,8 @@ fn screen_cursor_position(screen: &vt100::Screen, area: Rect) -> Option<Position
     // tracked cursor position instead of honoring the inner app's hide flag.
     let (row, col) = screen.cursor_position();
     Some(Position::new(
-        area.x + col.min(area.width - 1),
-        area.y + row.min(area.height - 1),
+        area.x.saturating_add(col.min(area.width - 1)),
+        area.y.saturating_add(row.min(area.height - 1)),
     ))
 }
 
