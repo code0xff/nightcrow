@@ -371,7 +371,9 @@ impl App {
             let id = info.id;
             self.terminal_scroll.remove(&id);
             if let Some(backend) = &mut self.backend {
-                let _ = backend.send_input(id, data);
+                if let Err(e) = backend.send_input(id, data) {
+                    tracing::warn!("failed to send terminal input to pane {id}: {e}");
+                }
             }
             if self.prompt_log_enabled {
                 self.buffer_prompt_input(id, data);
