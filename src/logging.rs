@@ -131,7 +131,8 @@ struct SizeRollingInner {
 
 impl SizeRollingAppender {
     fn new(dir: &Path, prefix: &str, max_bytes: u64) -> Option<Self> {
-        let path = dir.join(format!("{prefix}.0"));
+        let index = latest_size_log_index(dir, prefix);
+        let path = dir.join(format!("{prefix}.{index}"));
         let current = OpenOptions::new()
             .create(true)
             .append(true)
@@ -145,10 +146,26 @@ impl SizeRollingAppender {
                 max_bytes,
                 current,
                 current_size,
-                index: 0,
+                index,
             })),
         })
     }
+}
+
+fn latest_size_log_index(dir: &Path, prefix: &str) -> u32 {
+    let prefix = format!("{prefix}.");
+    fs::read_dir(dir)
+        .ok()
+        .into_iter()
+        .flat_map(|entries| entries.flatten())
+        .filter_map(|entry| {
+            entry
+                .file_name()
+                .to_str()
+                .and_then(|name| name.strip_prefix(&prefix)?.parse::<u32>().ok())
+        })
+        .max()
+        .unwrap_or(0)
 }
 
 impl Write for SizeRollingAppender {
@@ -224,6 +241,20 @@ mod tests {
         appender.write_all(b"x").unwrap(); // 11th byte triggers rotate
         let inner = appender.inner.lock().unwrap();
         assert_eq!(inner.index, 1);
+    }
+
+    #[test]
+    fn size_rolling_appender_resumes_highest_existing_index() {
+        let dir = tempdir().unwrap();
+        fs::write(dir.path().join("test.log.0"), b"old").unwrap();
+        fs::write(dir.path().join("test.log.2"), b"new").unwrap();
+        fs::write(dir.path().join("test.log.2026-05-03"), b"daily").unwrap();
+
+        let appender = SizeRollingAppender::new(dir.path(), "test.log", 10).unwrap();
+        let inner = appender.inner.lock().unwrap();
+
+        assert_eq!(inner.index, 2);
+        assert_eq!(inner.current_size, 3);
     }
 
     #[test]

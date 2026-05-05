@@ -5,6 +5,7 @@ pub mod terminal_tab;
 
 use crate::app::{App, Focus, ViewMode};
 use crate::config::LayoutConfig;
+use crate::git::diff::ChangeStatus;
 use ratatui::{
     Frame,
     layout::{Constraint, Direction, Layout, Rect},
@@ -23,6 +24,16 @@ pub(crate) fn focused_border_style(focused: bool) -> Style {
     }
 }
 
+pub(crate) fn status_color(status: ChangeStatus) -> Color {
+    match status {
+        ChangeStatus::Added => Color::Green,
+        ChangeStatus::Deleted => Color::Red,
+        ChangeStatus::Renamed => Color::Cyan,
+        ChangeStatus::Untracked => Color::DarkGray,
+        ChangeStatus::Modified => Color::Yellow,
+    }
+}
+
 pub(crate) fn render_search_bar(frame: &mut Frame, query: &str, is_active: bool, area: Rect) {
     let cursor = if is_active { "█" } else { "" };
     let style = if is_active {
@@ -34,6 +45,13 @@ pub(crate) fn render_search_bar(frame: &mut Frame, query: &str, is_active: bool,
         Paragraph::new(format!("/{query}{cursor}")).style(style),
         area,
     );
+}
+
+fn main_content_constraints(layout: &LayoutConfig) -> [Constraint; 2] {
+    [
+        Constraint::Percentage(layout.upper_pct),
+        Constraint::Percentage(100u16.saturating_sub(layout.upper_pct)),
+    ]
 }
 
 pub fn draw(
@@ -54,17 +72,15 @@ pub fn draw(
         return;
     }
 
-    // Always reserve 1 row for the status/hint bar.
-    let lower_pct = 100u16.saturating_sub(layout.upper_pct).saturating_sub(1);
-
     let root = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Percentage(layout.upper_pct),
-            Constraint::Percentage(lower_pct),
-            Constraint::Length(1),
-        ])
+        .constraints([Constraint::Min(0), Constraint::Length(1)])
         .split(frame.area());
+
+    let main = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints(main_content_constraints(layout))
+        .split(root[0]);
 
     let file_list_pct = layout.file_list_pct;
     let diff_pct = 100u16.saturating_sub(file_list_pct);
@@ -74,15 +90,15 @@ pub fn draw(
             Constraint::Percentage(file_list_pct),
             Constraint::Percentage(diff_pct),
         ])
-        .split(root[0]);
+        .split(main[0]);
 
     match app.mode {
         ViewMode::Status => file_list::render(frame, app, upper[0]),
         ViewMode::Log => commit_list::render(frame, app, upper[0]),
     }
     diff_viewer::render(frame, app, upper[1], ss, ts);
-    terminal_tab::render(frame, app, root[1]);
-    frame.render_widget(render_hint_bar(app), root[2]);
+    terminal_tab::render(frame, app, main[1]);
+    frame.render_widget(render_hint_bar(app), root[1]);
 }
 
 fn render_hint_bar(app: &App) -> Paragraph<'_> {
@@ -132,4 +148,22 @@ fn render_hint_bar(app: &App) -> Paragraph<'_> {
         hint,
         Style::default().fg(Color::DarkGray),
     )))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn main_content_split_preserves_lower_panel_at_high_upper_ratio() {
+        let cfg = LayoutConfig {
+            upper_pct: 99,
+            file_list_pct: 25,
+        };
+
+        assert_eq!(
+            main_content_constraints(&cfg),
+            [Constraint::Percentage(99), Constraint::Percentage(1)]
+        );
+    }
 }

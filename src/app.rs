@@ -673,11 +673,7 @@ impl App {
 
     /// Dispatches a navigation action to the appropriate log list (commit or file).
     /// Returns `true` if the action was handled (i.e. we are in Log mode).
-    fn navigate_log_list(
-        &mut self,
-        commit_nav: fn(&mut Self),
-        file_nav: fn(&mut Self),
-    ) -> bool {
+    fn navigate_log_list(&mut self, commit_nav: fn(&mut Self), file_nav: fn(&mut Self)) -> bool {
         if self.mode != ViewMode::Log {
             return false;
         }
@@ -1078,6 +1074,9 @@ impl App {
             }
         }
         self.terminal_fullscreen = state.terminal_fullscreen && !self.terminal_panes.is_empty();
+        if self.terminal_fullscreen {
+            self.focus = Focus::Terminal;
+        }
         if state.mode == Some(ViewMode::Log) {
             match load_commit_log(&self.repo_path, COMMIT_LOG_LIMIT) {
                 Ok(commits) => {
@@ -1423,6 +1422,24 @@ mod tests {
 
         assert_eq!(app.focus, Focus::FileList);
         assert_eq!(app.active_pane, 1);
+    }
+
+    #[test]
+    fn restore_session_fullscreen_forces_terminal_focus() {
+        let mut app = app_with_files(vec![]);
+        app.terminal_panes = vec![PaneInfo {
+            id: 1,
+            title: "shell".into(),
+        }];
+
+        app.restore_session(&crate::session::SessionState {
+            focus: Some(Focus::FileList),
+            terminal_fullscreen: true,
+            ..Default::default()
+        });
+
+        assert!(app.terminal_fullscreen);
+        assert_eq!(app.focus, Focus::Terminal);
     }
 
     #[test]

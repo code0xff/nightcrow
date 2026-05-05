@@ -82,11 +82,11 @@ impl TerminalBackend for PtyBackend {
                     }
                 }
             }
+            let _ = output_tx.send(PtyEvent::Exited);
         });
 
         thread::spawn(move || {
             let _ = child.wait();
-            let _ = tx.send(PtyEvent::Exited);
         });
 
         self.panes.insert(
@@ -160,6 +160,7 @@ impl TerminalBackend for PtyBackend {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::time::{Duration, Instant};
 
     #[test]
     fn pty_backend_create_and_destroy_pane() {
@@ -168,5 +169,38 @@ mod tests {
         assert_eq!(id, 1);
         backend.destroy_pane(id);
         assert!(!backend.panes.contains_key(&id));
+    }
+
+    #[test]
+    fn pty_backend_drains_output_before_exit_event() {
+        let mut backend = PtyBackend::new(".");
+        let id = backend.create_pane(24, 80).expect("create_pane failed");
+
+        backend
+            .send_input(id, b"printf nightcrow-pty-output; exit\n")
+            .expect("send_input failed");
+
+        let deadline = Instant::now() + Duration::from_secs(3);
+        let mut output = Vec::new();
+        let mut saw_exit = false;
+        while Instant::now() < deadline {
+            for event in backend.drain_events() {
+                match event {
+                    BackendEvent::Output { data, .. } => output.extend(data),
+                    BackendEvent::Exited { pane } if pane == id => saw_exit = true,
+                    BackendEvent::Exited { .. } => {}
+                }
+            }
+            if saw_exit {
+                break;
+            }
+            thread::sleep(Duration::from_millis(10));
+        }
+
+        assert!(saw_exit, "PTY did not exit before timeout");
+        assert!(
+            String::from_utf8_lossy(&output).contains("nightcrow-pty-output"),
+            "PTY output was not drained before exit"
+        );
     }
 }

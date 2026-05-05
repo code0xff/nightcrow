@@ -150,7 +150,10 @@ file_list_pct = 30
         for rotation in &["daily", "hourly", "size"] {
             let mut cfg = Config::default();
             cfg.log.rotation = rotation.to_string();
-            assert!(validate_config(&cfg).is_ok(), "rotation={rotation} should be valid");
+            assert!(
+                validate_config(&cfg).is_ok(),
+                "rotation={rotation} should be valid"
+            );
         }
     }
 
@@ -159,7 +162,10 @@ file_list_pct = 30
         for level in &["error", "warn", "info", "debug", "trace"] {
             let mut cfg = Config::default();
             cfg.log.level = level.to_string();
-            assert!(validate_config(&cfg).is_ok(), "level={level} should be valid");
+            assert!(
+                validate_config(&cfg).is_ok(),
+                "level={level} should be valid"
+            );
         }
     }
 

@@ -1,5 +1,4 @@
 use crate::app::{App, Focus};
-use crate::git::diff::ChangeStatus;
 use ratatui::{
     Frame,
     layout::{Constraint, Direction, Layout, Rect},
@@ -32,13 +31,7 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect) {
         .map(|&idx| {
             let f = &app.files[idx];
             let symbol = f.status.symbol();
-            let color = match f.status {
-                ChangeStatus::Added => Color::Green,
-                ChangeStatus::Deleted => Color::Red,
-                ChangeStatus::Renamed => Color::Cyan,
-                ChangeStatus::Untracked => Color::DarkGray,
-                ChangeStatus::Modified => Color::Yellow,
-            };
+            let color = super::status_color(f.status);
             let line = Line::from(vec![
                 Span::styled(format!("{symbol} "), Style::default().fg(color)),
                 Span::raw(&f.path),
