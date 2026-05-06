@@ -1,5 +1,5 @@
 use anyhow::{Context, Result};
-use git2::{Diff, DiffDelta, DiffOptions, Oid, Repository, Status, StatusEntry, StatusOptions};
+use git2::{Branch, Diff, DiffDelta, DiffOptions, Oid, Repository, Status, StatusEntry, StatusOptions};
 use std::cell::RefCell;
 use std::collections::BTreeMap;
 
@@ -50,8 +50,15 @@ pub struct DiffHunk {
 }
 
 #[derive(Debug, Clone)]
+pub struct TrackingStatus {
+    pub ahead: usize,
+    pub behind: usize,
+}
+
+#[derive(Debug, Clone)]
 pub struct RepoSnapshot {
     pub files: Vec<ChangedFile>,
+    pub tracking: Option<TrackingStatus>,
 }
 
 #[derive(Debug, Clone)]
@@ -61,6 +68,19 @@ pub struct CommitEntry {
     pub summary: String,
     pub author: String,
     pub time: i64,
+}
+
+fn load_tracking_status(repo: &Repository) -> Option<TrackingStatus> {
+    let head = repo.head().ok()?;
+    if !head.is_branch() {
+        return None;
+    }
+    let branch = Branch::wrap(head);
+    let upstream = branch.upstream().ok()?;
+    let local_oid = branch.get().target()?;
+    let upstream_oid = upstream.get().target()?;
+    let (ahead, behind) = repo.graph_ahead_behind(local_oid, upstream_oid).ok()?;
+    Some(TrackingStatus { ahead, behind })
 }
 
 pub fn load_snapshot(repo_path: &str) -> Result<RepoSnapshot> {
@@ -93,7 +113,8 @@ pub fn load_snapshot(repo_path: &str) -> Result<RepoSnapshot> {
         .map(|(path, status)| ChangedFile { path, status })
         .collect();
 
-    Ok(RepoSnapshot { files })
+    let tracking = load_tracking_status(&repo);
+    Ok(RepoSnapshot { files, tracking })
 }
 
 pub fn load_file_diff(repo_path: &str, file_path: &str) -> Result<Vec<DiffHunk>> {

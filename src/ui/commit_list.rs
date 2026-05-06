@@ -41,13 +41,18 @@ fn render_commit_list(frame: &mut Frame, app: &App, area: Rect, accent: Color) {
     let focused = app.focus == Focus::FileList;
     let border_style = super::focused_border_style(focused, accent);
 
+    let ahead_count = app.tracking.as_ref().map_or(0, |t| t.ahead);
+
     let items: Vec<ListItem> = app
         .commits
         .iter()
-        .map(|entry| {
+        .enumerate()
+        .map(|(i, entry)| {
             let time_str = format_relative_time(entry.time);
             let author_short: String = entry.author.chars().take(10).collect();
+            let marker = if i < ahead_count { "↑ " } else { "  " };
             let line = Line::from(vec![
+                Span::styled(marker, Style::default().fg(Color::Green)),
                 Span::styled(
                     format!("{} ", entry.short_id),
                     Style::default().fg(accent),
@@ -69,7 +74,12 @@ fn render_commit_list(frame: &mut Frame, app: &App, area: Rect, accent: Color) {
     let title = if app.commits.is_empty() {
         " Log (no commits) ".to_string()
     } else {
-        format!(" Log ({}) ", app.commits.len())
+        match &app.tracking {
+            Some(t) if t.ahead > 0 || t.behind > 0 => {
+                format!(" Log ({})  ↑{} ↓{} ", app.commits.len(), t.ahead, t.behind)
+            }
+            _ => format!(" Log ({}) ", app.commits.len()),
+        }
     };
 
     let list = List::new(items)

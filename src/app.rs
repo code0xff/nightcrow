@@ -1,8 +1,8 @@
 use crate::backend::BackendEvent;
 use crate::backend::{PaneId, PtyBackend, TerminalBackend};
 use crate::git::diff::{
-    ChangedFile, CommitEntry, DiffHunk, RepoSnapshot, load_commit_diff, load_commit_file_diff,
-    load_commit_files, load_commit_log, load_file_diff, load_snapshot,
+    ChangedFile, CommitEntry, DiffHunk, RepoSnapshot, TrackingStatus, load_commit_diff,
+    load_commit_file_diff, load_commit_files, load_commit_log, load_file_diff, load_snapshot,
 };
 use std::collections::HashMap;
 use std::sync::mpsc::{self, Receiver, SyncSender};
@@ -135,6 +135,7 @@ pub struct App {
     pub terminal_fullscreen: bool,
     pub terminal_scroll: HashMap<PaneId, usize>,
     pub accent_idx: usize,
+    pub tracking: Option<TrackingStatus>,
     rx: Receiver<SnapshotMsg>,
     // Dropping this sender signals the background thread to exit.
     _stop_tx: SyncSender<()>,
@@ -180,6 +181,7 @@ impl App {
             terminal_fullscreen: false,
             terminal_scroll: HashMap::new(),
             accent_idx: 0,
+            tracking: None,
             rx,
             _stop_tx: stop_tx,
             backend: Some(backend),
@@ -210,6 +212,7 @@ impl App {
                 SnapshotMsg::Ok(snapshot) => {
                     let previous_path = self.files.get(self.selected).map(|f| f.path.clone());
                     self.files = snapshot.files;
+                    self.tracking = snapshot.tracking;
 
                     let selected_path_changed =
                         self.restore_selection(previous_path.as_deref()) != previous_path;
@@ -335,6 +338,7 @@ impl App {
         self.search_active = false;
         self.clear_diff_search();
         self.status = None;
+        self.tracking = None;
     }
 
     pub fn start_repo_input(&mut self) {
@@ -1162,6 +1166,8 @@ mod tests {
             diff_search_cursor: 0,
             terminal_fullscreen: false,
             terminal_scroll: HashMap::new(),
+            accent_idx: 0,
+            tracking: None,
             rx,
             _stop_tx,
             backend: None,
@@ -1515,7 +1521,7 @@ mod tests {
             ..app_with_files(vec![])
         };
 
-        tx.send(SnapshotMsg::Ok(RepoSnapshot { files: Vec::new() }))
+        tx.send(SnapshotMsg::Ok(RepoSnapshot { files: Vec::new(), tracking: None }))
             .unwrap();
         app.poll_snapshot();
 
@@ -1536,7 +1542,7 @@ mod tests {
             ..app_with_files(vec![])
         };
 
-        tx.send(SnapshotMsg::Ok(RepoSnapshot { files: Vec::new() }))
+        tx.send(SnapshotMsg::Ok(RepoSnapshot { files: Vec::new(), tracking: None }))
             .unwrap();
         app.poll_snapshot();
 
