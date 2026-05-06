@@ -114,33 +114,33 @@ fn render_hint_bar(app: &App) -> Paragraph<'_> {
     }
     if app.terminal_fullscreen {
         return Paragraph::new(Line::from(Span::styled(
-            " shift+↑/↓: scroll  |  shift+pgup/dn: page scroll  |  shift+←/→: cycle pane  |  ctrl+f: exit fullscreen  |  ctrl+t: new pane  |  ctrl+w: close pane  |  ctrl+q: quit",
+            " shift+↑/↓: scroll | shift+pgup/dn: page scroll | shift+←/→: cycle pane | ctrl+f: exit fullscreen | ctrl+t: new pane | ctrl+w: close pane | ctrl+q: quit",
             Style::default().fg(Color::DarkGray),
         )));
     }
     let hint = match app.focus {
         Focus::Terminal => {
-            " shift+↑/↓: scroll  |  shift+pgup/dn: page scroll  |  shift+←/→: cycle  |  ctrl+t: new pane  |  ctrl+w: close pane  |  F1-F9: switch pane  |  ctrl+f: fullscreen  |  ctrl+l: log view  |  ctrl+o: repo  |  ctrl+q: quit"
+            " shift+↑/↓: scroll | shift+pgup/dn: page scroll | shift+←/→: cycle | ctrl+t: new pane | ctrl+w: close pane | F1-F9: switch pane | ctrl+f: fullscreen | ctrl+l: log view | ctrl+o: repo | ctrl+q: quit"
         }
         Focus::FileList => match app.mode {
             ViewMode::Log => {
                 if app.log_drill_down {
-                    " esc: back to commits  |  j/k: navigate files  |  shift+←/→: cycle  |  ctrl+q: quit"
+                    " esc: back to commits | j/k: navigate files | shift+←/→: cycle | ctrl+q: quit"
                 } else {
-                    " ctrl+l: status view  |  j/k: navigate commits  |  enter: view files  |  shift+←/→: cycle  |  ctrl+q: quit"
+                    " ctrl+l: status view | j/k: navigate commits | enter: view files | shift+←/→: cycle | ctrl+q: quit"
                 }
             }
             ViewMode::Status => {
-                " shift+←/→: cycle  |  j/k: navigate  |  /: search  |  F1-F9: switch pane  |  ctrl+f: fullscreen  |  ctrl+l: log view  |  ctrl+o: repo  |  ctrl+q: quit"
+                " shift+←/→: cycle | j/k: navigate | /: search | F1-F9: switch pane | ctrl+f: fullscreen | ctrl+l: log view | ctrl+o: repo | ctrl+q: quit"
             }
         },
         Focus::DiffViewer => {
             if app.diff_search_active {
-                " type to search  |  enter: confirm  |  esc: cancel"
+                " type to search | enter: confirm | esc: cancel"
             } else if !app.diff_search_query.is_empty() {
-                " n: next match  |  shift+n: prev match  |  /: new search  |  esc: clear"
+                " n: next match | shift+n: prev match | /: new search | esc: clear"
             } else {
-                " shift+←/→: cycle  |  j/k: scroll  |  /: search  |  pgup/pgdn: scroll  |  F1-F9: switch pane  |  ctrl+f: fullscreen  |  ctrl+l: log view  |  ctrl+o: repo  |  ctrl+q: quit"
+                " shift+←/→: cycle | j/k: scroll | /: search | pgup/pgdn: scroll | F1-F9: switch pane | ctrl+f: fullscreen | ctrl+l: log view | ctrl+o: repo | ctrl+q: quit"
             }
         }
     };
