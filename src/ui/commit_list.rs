@@ -8,24 +8,30 @@ use ratatui::{
 };
 use std::time::{SystemTime, UNIX_EPOCH};
 
+const SECS_PER_MINUTE: i64 = 60;
+const SECS_PER_HOUR: i64 = 3_600;
+const SECS_PER_DAY: i64 = 86_400;
+const SECS_PER_MONTH: i64 = SECS_PER_DAY * 30;
+const SECS_PER_YEAR: i64 = SECS_PER_DAY * 365;
+
 fn format_relative_time(ts: i64) -> String {
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_secs() as i64)
         .unwrap_or(0);
     let secs = (now - ts).max(0);
-    if secs < 60 {
+    if secs < SECS_PER_MINUTE {
         format!("{secs}s")
-    } else if secs < 3600 {
-        format!("{}m", secs / 60)
-    } else if secs < 86400 {
-        format!("{}h", secs / 3600)
-    } else if secs < 86400 * 30 {
-        format!("{}d", secs / 86400)
-    } else if secs < 86400 * 365 {
-        format!("{}mo", secs / (86400 * 30))
+    } else if secs < SECS_PER_HOUR {
+        format!("{}m", secs / SECS_PER_MINUTE)
+    } else if secs < SECS_PER_DAY {
+        format!("{}h", secs / SECS_PER_HOUR)
+    } else if secs < SECS_PER_MONTH {
+        format!("{}d", secs / SECS_PER_DAY)
+    } else if secs < SECS_PER_YEAR {
+        format!("{}mo", secs / SECS_PER_MONTH)
     } else {
-        format!("{}y", secs / (86400 * 365))
+        format!("{}y", secs / SECS_PER_YEAR)
     }
 }
 

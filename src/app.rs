@@ -48,10 +48,15 @@ fn strip_escape_sequences(data: &[u8]) -> String {
         match ch {
             '\x1b' => match chars.peek().copied() {
                 Some('[') => {
-                    // CSI: skip until final byte 0x40–0x7e
+                    // CSI: consume parameter/intermediate bytes (0x20–0x3f), stop at
+                    // final byte (0x40–0x7e). Break early on control chars to avoid
+                    // consuming content that follows a malformed sequence.
                     chars.next();
                     for c in chars.by_ref() {
                         if ('\x40'..='\x7e').contains(&c) {
+                            break;
+                        }
+                        if c < '\x20' {
                             break;
                         }
                     }
@@ -354,7 +359,17 @@ impl App {
     pub fn confirm_repo_input(&mut self) {
         self.repo_input_active = false;
         let path = std::mem::take(&mut self.repo_input_buf);
-        self.change_repo(path);
+        let trimmed = path.trim();
+        if trimmed.is_empty() {
+            self.status = Some("repo path cannot be empty".to_string());
+            return;
+        }
+        let p = std::path::Path::new(trimmed);
+        if !p.is_dir() {
+            self.status = Some(format!("not a directory: {trimmed}"));
+            return;
+        }
+        self.change_repo(trimmed.to_string());
     }
 
     pub fn repo_input_push(&mut self, ch: char) {
@@ -531,7 +546,7 @@ impl App {
             return Some(path.to_string());
         }
 
-        self.selected = self.selected.min(self.files.len() - 1);
+        self.selected = self.selected.min(self.files.len().saturating_sub(1));
         self.files.get(self.selected).map(|file| file.path.clone())
     }
 
@@ -613,7 +628,7 @@ impl App {
             return;
         }
         if self.diff_search_cursor == 0 {
-            self.diff_search_cursor = self.diff_search_matches.len() - 1;
+            self.diff_search_cursor = self.diff_search_matches.len().saturating_sub(1);
         } else {
             self.diff_search_cursor -= 1;
         }
@@ -652,7 +667,7 @@ impl App {
         if !self.diff_search_matches.is_empty() {
             self.diff_search_cursor = self
                 .diff_search_cursor
-                .min(self.diff_search_matches.len() - 1);
+                .min(self.diff_search_matches.len().saturating_sub(1));
             if scroll_to_match {
                 self.scroll_to_diff_match();
             }
@@ -731,7 +746,7 @@ impl App {
                         self.selected = indices[pos + 1];
                         self.reload_diff();
                     }
-                } else if !self.files.is_empty() && self.selected < self.files.len() - 1 {
+                } else if !self.files.is_empty() && self.selected < self.files.len().saturating_sub(1) {
                     self.selected += 1;
                     self.reload_diff();
                 }
@@ -779,11 +794,11 @@ impl App {
                         return;
                     }
                     if let Some(pos) = indices.iter().position(|&i| i == self.selected) {
-                        self.selected = indices[(pos + LIST_PAGE_SIZE).min(indices.len() - 1)];
+                        self.selected = indices[(pos + LIST_PAGE_SIZE).min(indices.len().saturating_sub(1))];
                         self.reload_diff();
                     }
                 } else if !self.files.is_empty() {
-                    self.selected = (self.selected + LIST_PAGE_SIZE).min(self.files.len() - 1);
+                    self.selected = (self.selected + LIST_PAGE_SIZE).min(self.files.len().saturating_sub(1));
                     self.reload_diff();
                 }
             }
@@ -866,7 +881,7 @@ impl App {
 
     pub fn log_file_select_down(&mut self) {
         if !self.log_commit_files.is_empty()
-            && self.log_file_selected < self.log_commit_files.len() - 1
+            && self.log_file_selected < self.log_commit_files.len().saturating_sub(1)
         {
             self.log_file_selected += 1;
             self.load_file_diff_for_log_file_selected();
@@ -883,7 +898,7 @@ impl App {
     pub fn log_file_page_down(&mut self) {
         if !self.log_commit_files.is_empty() {
             self.log_file_selected =
-                (self.log_file_selected + LIST_PAGE_SIZE).min(self.log_commit_files.len() - 1);
+                (self.log_file_selected + LIST_PAGE_SIZE).min(self.log_commit_files.len().saturating_sub(1));
             self.load_file_diff_for_log_file_selected();
         }
     }
@@ -956,7 +971,7 @@ impl App {
     }
 
     pub fn log_select_down(&mut self) {
-        if !self.commits.is_empty() && self.log_selected < self.commits.len() - 1 {
+        if !self.commits.is_empty() && self.log_selected < self.commits.len().saturating_sub(1) {
             self.log_selected += 1;
             self.load_commit_diff_for_selected();
         }
@@ -969,7 +984,7 @@ impl App {
 
     pub fn log_page_down(&mut self) {
         if !self.commits.is_empty() {
-            self.log_selected = (self.log_selected + LIST_PAGE_SIZE).min(self.commits.len() - 1);
+            self.log_selected = (self.log_selected + LIST_PAGE_SIZE).min(self.commits.len().saturating_sub(1));
             self.load_commit_diff_for_selected();
         }
     }
