@@ -151,10 +151,13 @@ pub fn load_commit_log(repo_path: &str, max_count: usize) -> Result<Vec<CommitEn
 }
 
 fn is_empty_head(err: &git2::Error) -> bool {
+    let missing_head_reference =
+        err.class() == git2::ErrorClass::Reference && err.message().contains("not found");
+
     matches!(
         err.code(),
         git2::ErrorCode::UnbornBranch | git2::ErrorCode::NotFound
-    )
+    ) || missing_head_reference
 }
 
 fn commit_diff<'repo>(

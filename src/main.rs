@@ -10,7 +10,7 @@ mod ui;
 use anyhow::{Context, Result};
 use app::{App, Focus, ViewMode};
 use clap::Parser;
-use crossterm::event::KeyCode;
+use crossterm::event::{KeyCode, KeyEvent};
 use crossterm::{
     event::{self, Event},
     execute,
@@ -83,6 +83,11 @@ impl Drop for TerminalGuard {
     }
 }
 
+enum KeyOutcome {
+    Continue,
+    Quit,
+}
+
 fn run(
     terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
     repo_path: String,
@@ -108,143 +113,8 @@ fn run(
                     terminal.clear()?;
                 }
                 Event::Key(key) => {
-                    if app.repo_input_active {
-                        match key.code {
-                            KeyCode::Esc => app.cancel_repo_input(),
-                            KeyCode::Enter => app.confirm_repo_input(),
-                            KeyCode::Backspace => {
-                                if app.repo_input_buf.is_empty() {
-                                    app.cancel_repo_input();
-                                } else {
-                                    app.repo_input_pop();
-                                }
-                            }
-                            KeyCode::Char(c) => app.repo_input_push(c),
-                            _ => {}
-                        }
-                        continue;
-                    }
-
-                    match app.focus {
-                        Focus::Terminal => match map_key(key) {
-                            Action::Quit => break,
-                            Action::NewPane => app.open_new_pane(),
-                            Action::ClosePane => app.close_active_pane(),
-                            Action::ChangeRepo => app.start_repo_input(),
-                            Action::ToggleFullscreen => app.toggle_terminal_fullscreen(),
-                            Action::ToggleLogView => app.toggle_mode(),
-                            Action::SwitchPane(n) => app.switch_pane(n),
-                            Action::CycleForward => app.cycle_focus_forward(),
-                            Action::CycleBackward => app.cycle_focus_backward(),
-                            Action::TermScrollUp => {
-                                let lines = app.terminal_size.0 as usize;
-                                app.scroll_terminal_up(lines);
-                            }
-                            Action::TermScrollDown => {
-                                let lines = app.terminal_size.0 as usize;
-                                app.scroll_terminal_down(lines);
-                            }
-                            Action::TermScrollLineUp => app.scroll_terminal_up(3),
-                            Action::TermScrollLineDown => app.scroll_terminal_down(3),
-                            _ => {
-                                if let Some(data) = encode_key(key) {
-                                    app.send_terminal_input(&data);
-                                }
-                            }
-                        },
-
-                        Focus::FileList | Focus::DiffViewer => {
-                            if app.focus == Focus::FileList && app.search_active {
-                                match key.code {
-                                    KeyCode::Esc => app.cancel_search(),
-                                    KeyCode::Enter => app.confirm_search(),
-                                    KeyCode::Backspace => {
-                                        if app.search_query.is_empty() {
-                                            app.cancel_search();
-                                        } else {
-                                            app.search_pop();
-                                        }
-                                    }
-                                    KeyCode::Up => app.select_up(),
-                                    KeyCode::Down => app.select_down(),
-                                    KeyCode::Char(c) => app.search_push(c),
-                                    _ => {}
-                                }
-                            } else if app.focus == Focus::DiffViewer && app.diff_search_active {
-                                match key.code {
-                                    KeyCode::Esc => app.cancel_diff_search(),
-                                    KeyCode::Enter => app.confirm_diff_search(),
-                                    KeyCode::Backspace => {
-                                        if app.diff_search_query.is_empty() {
-                                            app.cancel_diff_search();
-                                        } else {
-                                            app.diff_search_pop();
-                                        }
-                                    }
-                                    KeyCode::Char(c) => app.diff_search_push(c),
-                                    _ => {}
-                                }
-                            } else {
-                                match map_key(key) {
-                                    Action::Quit => break,
-                                    Action::Up => app.select_up(),
-                                    Action::Down => app.select_down(),
-                                    Action::PageUp => app.page_up(),
-                                    Action::PageDown => app.page_down(),
-                                    Action::NewPane => app.open_new_pane(),
-                                    Action::ClosePane => app.close_active_pane(),
-                                    Action::ChangeRepo => app.start_repo_input(),
-                                    Action::ToggleFullscreen => app.toggle_terminal_fullscreen(),
-                                    Action::ToggleLogView => app.toggle_mode(),
-                                    Action::SwitchPane(n) if !app.terminal_fullscreen => {
-                                        app.switch_pane(n)
-                                    }
-                                    Action::CycleForward if !app.terminal_fullscreen => {
-                                        app.cycle_focus_forward()
-                                    }
-                                    Action::CycleBackward if !app.terminal_fullscreen => {
-                                        app.cycle_focus_backward()
-                                    }
-                                    Action::SwitchPane(_)
-                                    | Action::CycleForward
-                                    | Action::CycleBackward => {}
-                                    Action::TermScrollUp
-                                    | Action::TermScrollDown
-                                    | Action::TermScrollLineUp
-                                    | Action::TermScrollLineDown => {}
-                                    Action::None => match app.focus {
-                                        Focus::FileList => match key.code {
-                                            KeyCode::Enter
-                                                if app.mode == ViewMode::Log
-                                                    && !app.log_drill_down =>
-                                            {
-                                                app.log_drill_in()
-                                            }
-                                            KeyCode::Esc if app.log_drill_down => {
-                                                app.log_drill_out()
-                                            }
-                                            KeyCode::Char('/') if app.mode == ViewMode::Status => {
-                                                app.start_search()
-                                            }
-                                            KeyCode::Esc if !app.search_query.is_empty() => {
-                                                app.cancel_search()
-                                            }
-                                            _ => {}
-                                        },
-                                        Focus::DiffViewer => match key.code {
-                                            KeyCode::Char('/') => app.start_diff_search(),
-                                            KeyCode::Char('n') => app.next_diff_match(),
-                                            KeyCode::Char('N') => app.prev_diff_match(),
-                                            KeyCode::Esc if !app.diff_search_query.is_empty() => {
-                                                app.cancel_diff_search()
-                                            }
-                                            _ => {}
-                                        },
-                                        _ => {}
-                                    },
-                                }
-                            }
-                        }
+                    if matches!(handle_key(&mut app, key), KeyOutcome::Quit) {
+                        break;
                     }
                 }
                 _ => {}
@@ -254,4 +124,177 @@ fn run(
 
     session::save_session(&app.repo_path, &app.save_session());
     Ok(())
+}
+
+fn handle_key(app: &mut App, key: KeyEvent) -> KeyOutcome {
+    let action = map_key(key);
+    if let Some(outcome) = handle_global_action(app, action) {
+        return outcome;
+    }
+
+    if app.repo_input_active {
+        handle_repo_input_key(app, key);
+        return KeyOutcome::Continue;
+    }
+
+    match app.focus {
+        Focus::Terminal => handle_terminal_key(app, key, action),
+        Focus::FileList | Focus::DiffViewer => handle_upper_key(app, key, action),
+    }
+    KeyOutcome::Continue
+}
+
+fn handle_global_action(app: &mut App, action: Action) -> Option<KeyOutcome> {
+    match action {
+        Action::Quit => Some(KeyOutcome::Quit),
+        Action::NewPane => {
+            app.open_new_pane();
+            Some(KeyOutcome::Continue)
+        }
+        Action::ClosePane => {
+            app.close_active_pane();
+            Some(KeyOutcome::Continue)
+        }
+        Action::ChangeRepo => {
+            app.start_repo_input();
+            Some(KeyOutcome::Continue)
+        }
+        Action::ToggleFullscreen => {
+            app.toggle_terminal_fullscreen();
+            Some(KeyOutcome::Continue)
+        }
+        Action::ToggleLogView => {
+            app.toggle_mode();
+            Some(KeyOutcome::Continue)
+        }
+        Action::SwitchPane(n) => {
+            app.switch_pane(n);
+            Some(KeyOutcome::Continue)
+        }
+        Action::CycleForward => {
+            app.cycle_focus_forward();
+            Some(KeyOutcome::Continue)
+        }
+        Action::CycleBackward => {
+            app.cycle_focus_backward();
+            Some(KeyOutcome::Continue)
+        }
+        _ => None,
+    }
+}
+
+fn handle_repo_input_key(app: &mut App, key: KeyEvent) {
+    match key.code {
+        KeyCode::Esc => app.cancel_repo_input(),
+        KeyCode::Enter => app.confirm_repo_input(),
+        KeyCode::Backspace => {
+            if app.repo_input_buf.is_empty() {
+                app.cancel_repo_input();
+            } else {
+                app.repo_input_pop();
+            }
+        }
+        KeyCode::Char(c) => app.repo_input_push(c),
+        _ => {}
+    }
+}
+
+fn handle_terminal_key(app: &mut App, key: KeyEvent, action: Action) {
+    match action {
+        Action::TermScrollUp => {
+            let lines = app.terminal_size.0 as usize;
+            app.scroll_terminal_up(lines);
+        }
+        Action::TermScrollDown => {
+            let lines = app.terminal_size.0 as usize;
+            app.scroll_terminal_down(lines);
+        }
+        Action::TermScrollLineUp => app.scroll_terminal_up(3),
+        Action::TermScrollLineDown => app.scroll_terminal_down(3),
+        _ => {
+            if let Some(data) = encode_key(key) {
+                app.send_terminal_input(&data);
+            }
+        }
+    }
+}
+
+fn handle_upper_key(app: &mut App, key: KeyEvent, action: Action) {
+    if app.focus == Focus::FileList && app.search_active {
+        handle_file_search_key(app, key);
+        return;
+    }
+    if app.focus == Focus::DiffViewer && app.diff_search_active {
+        handle_diff_search_key(app, key);
+        return;
+    }
+
+    match action {
+        Action::Up => app.select_up(),
+        Action::Down => app.select_down(),
+        Action::PageUp => app.page_up(),
+        Action::PageDown => app.page_down(),
+        Action::TermScrollUp
+        | Action::TermScrollDown
+        | Action::TermScrollLineUp
+        | Action::TermScrollLineDown => {}
+        Action::None => handle_unmapped_upper_key(app, key),
+        _ => {}
+    }
+}
+
+fn handle_file_search_key(app: &mut App, key: KeyEvent) {
+    match key.code {
+        KeyCode::Esc => app.cancel_search(),
+        KeyCode::Enter => app.confirm_search(),
+        KeyCode::Backspace => {
+            if app.search_query.is_empty() {
+                app.cancel_search();
+            } else {
+                app.search_pop();
+            }
+        }
+        KeyCode::Up => app.select_up(),
+        KeyCode::Down => app.select_down(),
+        KeyCode::Char(c) => app.search_push(c),
+        _ => {}
+    }
+}
+
+fn handle_diff_search_key(app: &mut App, key: KeyEvent) {
+    match key.code {
+        KeyCode::Esc => app.cancel_diff_search(),
+        KeyCode::Enter => app.confirm_diff_search(),
+        KeyCode::Backspace => {
+            if app.diff_search_query.is_empty() {
+                app.cancel_diff_search();
+            } else {
+                app.diff_search_pop();
+            }
+        }
+        KeyCode::Char(c) => app.diff_search_push(c),
+        _ => {}
+    }
+}
+
+fn handle_unmapped_upper_key(app: &mut App, key: KeyEvent) {
+    match app.focus {
+        Focus::FileList => match key.code {
+            KeyCode::Enter if app.mode == ViewMode::Log && !app.log_drill_down => {
+                app.log_drill_in()
+            }
+            KeyCode::Esc if app.log_drill_down => app.log_drill_out(),
+            KeyCode::Char('/') if app.mode == ViewMode::Status => app.start_search(),
+            KeyCode::Esc if !app.search_query.is_empty() => app.cancel_search(),
+            _ => {}
+        },
+        Focus::DiffViewer => match key.code {
+            KeyCode::Char('/') => app.start_diff_search(),
+            KeyCode::Char('n') => app.next_diff_match(),
+            KeyCode::Char('N') => app.prev_diff_match(),
+            KeyCode::Esc if !app.diff_search_query.is_empty() => app.cancel_diff_search(),
+            _ => {}
+        },
+        Focus::Terminal => {}
+    }
 }
