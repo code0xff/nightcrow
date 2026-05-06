@@ -97,14 +97,16 @@ fn run(
     let ts = ThemeSet::load_defaults();
     let saved_session = session::load_session(&repo_path);
     let mut app = App::new(repo_path, cfg.log.prompt_log);
+    app.set_accent_index(cfg.theme.preset_index());
     app.set_pending_session(saved_session);
 
     loop {
         app.poll_snapshot();
         app.poll_terminal();
 
+        let accent = app.current_accent();
         terminal.draw(|frame| {
-            ui::draw(frame, &mut app, &ss, &ts, &cfg.layout, &cfg.theme);
+            ui::draw(frame, &mut app, &ss, &ts, &cfg.layout, accent);
         })?;
 
         if event::poll(Duration::from_millis(50))? {
@@ -165,6 +167,10 @@ fn handle_global_action(app: &mut App, action: Action) -> Option<KeyOutcome> {
         }
         Action::ToggleLogView => {
             app.toggle_mode();
+            Some(KeyOutcome::Continue)
+        }
+        Action::CycleTheme => {
+            app.cycle_accent();
             Some(KeyOutcome::Continue)
         }
         Action::SwitchPane(n) => {

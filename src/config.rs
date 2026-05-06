@@ -10,6 +10,8 @@ pub struct Config {
     pub theme: ThemeConfig,
 }
 
+pub const ACCENT_PRESETS: &[&str] = &["yellow", "cyan", "green", "magenta", "blue"];
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct ThemeConfig {
@@ -26,9 +28,16 @@ impl Default for ThemeConfig {
 }
 
 impl ThemeConfig {
-    pub fn accent(&self) -> ratatui::style::Color {
+    pub fn preset_index(&self) -> usize {
+        ACCENT_PRESETS
+            .iter()
+            .position(|&p| p == self.name.as_str())
+            .unwrap_or(0)
+    }
+
+    pub fn accent_for_index(idx: usize) -> ratatui::style::Color {
         use ratatui::style::Color::*;
-        match self.name.as_str() {
+        match ACCENT_PRESETS[idx % ACCENT_PRESETS.len()] {
             "cyan" => Cyan,
             "green" => Green,
             "magenta" => Magenta,

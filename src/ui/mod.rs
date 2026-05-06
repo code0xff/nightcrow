@@ -4,7 +4,7 @@ pub mod file_list;
 pub mod terminal_tab;
 
 use crate::app::{App, Focus, ViewMode};
-use crate::config::{LayoutConfig, ThemeConfig};
+use crate::config::LayoutConfig;
 use crate::git::diff::ChangeStatus;
 use ratatui::{
     Frame,
@@ -66,9 +66,8 @@ pub fn draw(
     ss: &SyntaxSet,
     ts: &ThemeSet,
     layout: &LayoutConfig,
-    theme: &ThemeConfig,
+    accent: Color,
 ) {
-    let accent = theme.accent();
 
     if app.terminal_fullscreen {
         let root = Layout::default()
@@ -129,7 +128,7 @@ fn render_hint_bar(app: &App, accent: Color) -> Paragraph<'_> {
     }
     let hint = match app.focus {
         Focus::Terminal => {
-            " shift+↑/↓: scroll | shift+pgup/dn: page scroll | shift+←/→: cycle | ctrl+t: new pane | ctrl+w: close pane | F1-F9: switch pane | ctrl+f: fullscreen | ctrl+l: log view | ctrl+o: repo | ctrl+q: quit"
+            " shift+↑/↓: scroll | shift+pgup/dn: page scroll | shift+←/→: cycle | ctrl+t: new pane | ctrl+w: close pane | F1-F9: switch pane | ctrl+f: fullscreen | ctrl+l: log view | ctrl+o: repo | ctrl+p: theme | ctrl+q: quit"
         }
         Focus::FileList => match app.mode {
             ViewMode::Log => {
@@ -140,7 +139,7 @@ fn render_hint_bar(app: &App, accent: Color) -> Paragraph<'_> {
                 }
             }
             ViewMode::Status => {
-                " shift+←/→: cycle | j/k: navigate | /: search | F1-F9: switch pane | ctrl+f: fullscreen | ctrl+l: log view | ctrl+o: repo | ctrl+q: quit"
+                " shift+←/→: cycle | j/k: navigate | /: search | F1-F9: switch pane | ctrl+f: fullscreen | ctrl+l: log view | ctrl+o: repo | ctrl+p: theme | ctrl+q: quit"
             }
         },
         Focus::DiffViewer => {
@@ -149,7 +148,7 @@ fn render_hint_bar(app: &App, accent: Color) -> Paragraph<'_> {
             } else if !app.diff_search_query.is_empty() {
                 " n: next match | shift+n: prev match | /: new search | esc: clear"
             } else {
-                " shift+←/→: cycle | j/k: scroll | /: search | pgup/pgdn: scroll | F1-F9: switch pane | ctrl+f: fullscreen | ctrl+l: log view | ctrl+o: repo | ctrl+q: quit"
+                " shift+←/→: cycle | j/k: scroll | /: search | pgup/pgdn: scroll | F1-F9: switch pane | ctrl+f: fullscreen | ctrl+l: log view | ctrl+o: repo | ctrl+p: theme | ctrl+q: quit"
             }
         }
     };

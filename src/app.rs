@@ -134,6 +134,7 @@ pub struct App {
     pub diff_search_cursor: usize,
     pub terminal_fullscreen: bool,
     pub terminal_scroll: HashMap<PaneId, usize>,
+    pub accent_idx: usize,
     rx: Receiver<SnapshotMsg>,
     // Dropping this sender signals the background thread to exit.
     _stop_tx: SyncSender<()>,
@@ -178,6 +179,7 @@ impl App {
             diff_search_cursor: 0,
             terminal_fullscreen: false,
             terminal_scroll: HashMap::new(),
+            accent_idx: 0,
             rx,
             _stop_tx: stop_tx,
             backend: Some(backend),
@@ -968,6 +970,18 @@ impl App {
         }
     }
 
+    pub fn set_accent_index(&mut self, idx: usize) {
+        self.accent_idx = idx;
+    }
+
+    pub fn cycle_accent(&mut self) {
+        self.accent_idx = (self.accent_idx + 1) % crate::config::ACCENT_PRESETS.len();
+    }
+
+    pub fn current_accent(&self) -> ratatui::style::Color {
+        crate::config::ThemeConfig::accent_for_index(self.accent_idx)
+    }
+
     pub fn cycle_focus_forward(&mut self) {
         if self.terminal_fullscreen {
             let len = self.terminal_panes.len();
@@ -1051,6 +1065,7 @@ impl App {
             terminal_fullscreen: self.terminal_fullscreen,
             mode: Some(self.mode),
             log_selected: self.log_selected,
+            accent_idx: self.accent_idx,
         }
     }
 
@@ -1092,6 +1107,7 @@ impl App {
                 }
             }
         }
+        self.accent_idx = state.accent_idx;
         tracing::debug!(
             focus = ?state.focus,
             file = ?state.selected_file,

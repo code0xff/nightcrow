@@ -14,6 +14,8 @@ pub struct SessionState {
     pub mode: Option<ViewMode>,
     #[serde(default)]
     pub log_selected: usize,
+    #[serde(default)]
+    pub accent_idx: usize,
 }
 
 fn session_path(repo_path: &str) -> std::path::PathBuf {

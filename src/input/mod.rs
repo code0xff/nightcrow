@@ -19,6 +19,7 @@ pub enum Action {
     TermScrollLineUp,
     TermScrollLineDown,
     ToggleLogView,
+    CycleTheme,
     None,
 }
 
@@ -33,6 +34,7 @@ pub fn map_key(event: KeyEvent) -> Action {
         KeyCode::Char('o') if ctrl => Action::ChangeRepo,
         KeyCode::Char('f') if ctrl => Action::ToggleFullscreen,
         KeyCode::Char('l') if ctrl => Action::ToggleLogView,
+        KeyCode::Char('p') if ctrl => Action::CycleTheme,
         KeyCode::Left if shift => Action::CycleBackward,
         KeyCode::Right if shift => Action::CycleForward,
         KeyCode::Up if shift => Action::TermScrollLineUp,
