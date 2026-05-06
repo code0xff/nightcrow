@@ -7,9 +7,9 @@ use ratatui::{
     widgets::{Block, Borders, Paragraph},
 };
 
-pub fn render(frame: &mut Frame, app: &mut App, area: Rect) {
+pub fn render(frame: &mut Frame, app: &mut App, area: Rect, accent: Color) {
     let focused = app.focus == Focus::Terminal;
-    let border_style = super::focused_border_style(focused);
+    let border_style = super::focused_border_style(focused, accent);
 
     let title = if app.is_terminal_scrolled() {
         " Terminal [SCROLL — shift+pgdn: down | input: live] "
@@ -52,7 +52,7 @@ pub fn render(frame: &mut Frame, app: &mut App, area: Rect) {
                 let style = if i == app.active_pane {
                     Style::default()
                         .fg(Color::Black)
-                        .bg(Color::Yellow)
+                        .bg(accent)
                         .add_modifier(Modifier::BOLD)
                 } else {
                     Style::default().fg(Color::DarkGray)

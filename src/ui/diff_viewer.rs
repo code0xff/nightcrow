@@ -39,7 +39,7 @@ fn file_path_for_syntax(app: &App) -> &str {
     }
 }
 
-pub fn render(frame: &mut Frame, app: &App, area: Rect, ss: &SyntaxSet, ts: &ThemeSet) {
+pub fn render(frame: &mut Frame, app: &App, area: Rect, ss: &SyntaxSet, ts: &ThemeSet, accent: ratatui::style::Color) {
     let show_search = app.diff_search_active || !app.diff_search_query.is_empty();
 
     let (diff_area, search_area) = if show_search {
@@ -53,7 +53,7 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect, ss: &SyntaxSet, ts: &The
     };
 
     let focused = app.focus == Focus::DiffViewer;
-    let border_style = super::focused_border_style(focused);
+    let border_style = super::focused_border_style(focused, accent);
 
     let file_path = file_path_for_syntax(app);
     let ext = extension(file_path);
@@ -218,6 +218,6 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect, ss: &SyntaxSet, ts: &The
     frame.render_widget(para, diff_area);
 
     if let Some(sa) = search_area {
-        super::render_search_bar(frame, &app.diff_search_query, app.diff_search_active, sa);
+        super::render_search_bar(frame, &app.diff_search_query, app.diff_search_active, sa, accent);
     }
 }

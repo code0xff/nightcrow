@@ -7,9 +7,9 @@ use ratatui::{
     widgets::{Block, Borders, List, ListItem, ListState},
 };
 
-pub fn render(frame: &mut Frame, app: &App, area: Rect) {
+pub fn render(frame: &mut Frame, app: &App, area: Rect, accent: Color) {
     let focused = app.focus == Focus::FileList;
-    let border_style = super::focused_border_style(focused);
+    let border_style = super::focused_border_style(focused, accent);
 
     let show_search = app.search_active || !app.search_query.is_empty();
 
@@ -72,6 +72,6 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect) {
     frame.render_stateful_widget(list, list_area, &mut state);
 
     if let Some(sa) = search_area {
-        super::render_search_bar(frame, &app.search_query, app.search_active, sa);
+        super::render_search_bar(frame, &app.search_query, app.search_active, sa, accent);
     }
 }

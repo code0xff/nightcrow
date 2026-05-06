@@ -7,6 +7,35 @@ use std::path::PathBuf;
 pub struct Config {
     pub layout: LayoutConfig,
     pub log: LogConfig,
+    pub theme: ThemeConfig,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct ThemeConfig {
+    /// Accent color preset: "yellow" (default) | "cyan" | "green" | "magenta" | "blue"
+    pub name: String,
+}
+
+impl Default for ThemeConfig {
+    fn default() -> Self {
+        Self {
+            name: "yellow".to_string(),
+        }
+    }
+}
+
+impl ThemeConfig {
+    pub fn accent(&self) -> ratatui::style::Color {
+        use ratatui::style::Color::*;
+        match self.name.as_str() {
+            "cyan" => Cyan,
+            "green" => Green,
+            "magenta" => Magenta,
+            "blue" => Blue,
+            _ => Yellow,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -97,6 +126,13 @@ fn validate_config(cfg: &Config) -> Result<()> {
             "error" | "warn" | "info" | "debug" | "trace"
         ),
         "log.level must be \"error\", \"warn\", \"info\", \"debug\", or \"trace\""
+    );
+    anyhow::ensure!(
+        matches!(
+            cfg.theme.name.as_str(),
+            "yellow" | "cyan" | "green" | "magenta" | "blue"
+        ),
+        "theme.name must be \"yellow\", \"cyan\", \"green\", \"magenta\", or \"blue\""
     );
     Ok(())
 }

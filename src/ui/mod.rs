@@ -4,7 +4,7 @@ pub mod file_list;
 pub mod terminal_tab;
 
 use crate::app::{App, Focus, ViewMode};
-use crate::config::LayoutConfig;
+use crate::config::{LayoutConfig, ThemeConfig};
 use crate::git::diff::ChangeStatus;
 use ratatui::{
     Frame,
@@ -16,9 +16,9 @@ use ratatui::{
 use syntect::highlighting::ThemeSet;
 use syntect::parsing::SyntaxSet;
 
-pub(crate) fn focused_border_style(focused: bool) -> Style {
+pub(crate) fn focused_border_style(focused: bool, accent: Color) -> Style {
     if focused {
-        Style::default().fg(Color::Yellow)
+        Style::default().fg(accent)
     } else {
         Style::default().fg(Color::DarkGray)
     }
@@ -34,10 +34,16 @@ pub(crate) fn status_color(status: ChangeStatus) -> Color {
     }
 }
 
-pub(crate) fn render_search_bar(frame: &mut Frame, query: &str, is_active: bool, area: Rect) {
+pub(crate) fn render_search_bar(
+    frame: &mut Frame,
+    query: &str,
+    is_active: bool,
+    area: Rect,
+    accent: Color,
+) {
     let cursor = if is_active { "█" } else { "" };
     let style = if is_active {
-        Style::default().fg(Color::Yellow)
+        Style::default().fg(accent)
     } else {
         Style::default().fg(Color::DarkGray)
     };
@@ -60,15 +66,18 @@ pub fn draw(
     ss: &SyntaxSet,
     ts: &ThemeSet,
     layout: &LayoutConfig,
+    theme: &ThemeConfig,
 ) {
+    let accent = theme.accent();
+
     if app.terminal_fullscreen {
         let root = Layout::default()
             .direction(Direction::Vertical)
             .constraints([Constraint::Min(0), Constraint::Length(1)])
             .split(frame.area());
 
-        terminal_tab::render(frame, app, root[0]);
-        frame.render_widget(render_hint_bar(app), root[1]);
+        terminal_tab::render(frame, app, root[0], accent);
+        frame.render_widget(render_hint_bar(app, accent), root[1]);
         return;
     }
 
@@ -93,20 +102,20 @@ pub fn draw(
         .split(main[0]);
 
     match app.mode {
-        ViewMode::Status => file_list::render(frame, app, upper[0]),
-        ViewMode::Log => commit_list::render(frame, app, upper[0]),
+        ViewMode::Status => file_list::render(frame, app, upper[0], accent),
+        ViewMode::Log => commit_list::render(frame, app, upper[0], accent),
     }
-    diff_viewer::render(frame, app, upper[1], ss, ts);
-    terminal_tab::render(frame, app, main[1]);
-    frame.render_widget(render_hint_bar(app), root[1]);
+    diff_viewer::render(frame, app, upper[1], ss, ts, accent);
+    terminal_tab::render(frame, app, main[1], accent);
+    frame.render_widget(render_hint_bar(app, accent), root[1]);
 }
 
-fn render_hint_bar(app: &App) -> Paragraph<'_> {
+fn render_hint_bar(app: &App, accent: Color) -> Paragraph<'_> {
     if app.repo_input_active {
         return Paragraph::new(Line::from(vec![
-            Span::styled("repo: ", Style::default().fg(Color::Yellow)),
+            Span::styled("repo: ", Style::default().fg(accent)),
             Span::raw(app.repo_input_buf.as_str()),
-            Span::styled("█", Style::default().fg(Color::Yellow)),
+            Span::styled("█", Style::default().fg(accent)),
         ]));
     }
     if let Some(ref msg) = app.status {

@@ -104,7 +104,7 @@ fn run(
         app.poll_terminal();
 
         terminal.draw(|frame| {
-            ui::draw(frame, &mut app, &ss, &ts, &cfg.layout);
+            ui::draw(frame, &mut app, &ss, &ts, &cfg.layout, &cfg.theme);
         })?;
 
         if event::poll(Duration::from_millis(50))? {

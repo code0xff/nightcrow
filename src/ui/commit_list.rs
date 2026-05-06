@@ -29,17 +29,17 @@ fn format_relative_time(ts: i64) -> String {
     }
 }
 
-pub fn render(frame: &mut Frame, app: &App, area: Rect) {
+pub fn render(frame: &mut Frame, app: &App, area: Rect, accent: Color) {
     if app.log_drill_down {
-        render_file_list(frame, app, area);
+        render_file_list(frame, app, area, accent);
     } else {
-        render_commit_list(frame, app, area);
+        render_commit_list(frame, app, area, accent);
     }
 }
 
-fn render_commit_list(frame: &mut Frame, app: &App, area: Rect) {
+fn render_commit_list(frame: &mut Frame, app: &App, area: Rect, accent: Color) {
     let focused = app.focus == Focus::FileList;
-    let border_style = super::focused_border_style(focused);
+    let border_style = super::focused_border_style(focused, accent);
 
     let items: Vec<ListItem> = app
         .commits
@@ -50,7 +50,7 @@ fn render_commit_list(frame: &mut Frame, app: &App, area: Rect) {
             let line = Line::from(vec![
                 Span::styled(
                     format!("{} ", entry.short_id),
-                    Style::default().fg(Color::Yellow),
+                    Style::default().fg(accent),
                 ),
                 Span::styled(
                     format!("{:>4} ", time_str),
@@ -94,9 +94,9 @@ fn render_commit_list(frame: &mut Frame, app: &App, area: Rect) {
     frame.render_stateful_widget(list, area, &mut state);
 }
 
-fn render_file_list(frame: &mut Frame, app: &App, area: Rect) {
+fn render_file_list(frame: &mut Frame, app: &App, area: Rect, accent: Color) {
     let focused = app.focus == Focus::FileList;
-    let border_style = super::focused_border_style(focused);
+    let border_style = super::focused_border_style(focused, accent);
 
     let items: Vec<ListItem> = app
         .log_commit_files
