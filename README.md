@@ -36,7 +36,7 @@ nightcrow --repo ~/projects/myapp
 
 **Status view** (default) — lists changed files on the left, syntax-highlighted diff on the right.
 
-**Commit log view** (`Ctrl+L`) — tig-like commit list on the left, full commit diff on the right. Press `Enter` on a commit to drill into its individual files; `Esc` to go back.
+**Commit log view** (`Ctrl+L`) — tig-like commit list on the left, full commit diff on the right. Commits ahead of the upstream are marked with `↑`. Press `Enter` on a commit to drill into its individual files; `Esc` to go back.
 
 ## Keyboard shortcuts
 
@@ -50,6 +50,7 @@ nightcrow --repo ~/projects/myapp
 | `Ctrl+W` | Close active terminal pane |
 | `F1`…`F9` | Jump to terminal pane N |
 | `Ctrl+F` | Toggle terminal fullscreen |
+| `Ctrl+P` | Cycle accent color (yellow → cyan → green → magenta → blue) |
 | `Ctrl+O` | Change repo path |
 | `Ctrl+Q` | Quit |
 
@@ -85,7 +86,7 @@ While scrolled, the terminal border title shows `[SCROLL — shift+pgdn: down | 
 
 ## Session persistence
 
-nightcrow saves the current state on exit and restores it on the next launch for the same repo — focus position, scroll offset, active terminal pane, and whether the commit log view was open. The state file is `.nightcrow/session.json` inside the repo directory.
+nightcrow saves the current state on exit and restores it on the next launch for the same repo — focus position, scroll offset, active terminal pane, commit log view mode, and accent color. The state file is `.nightcrow/session.json` inside the repo directory.
 
 ## Configuration
 
@@ -95,6 +96,9 @@ Config file: `~/.config/nightcrow/config.toml` (all fields optional, defaults sh
 [layout]
 upper_pct = 55       # vertical % for the diff panel (1–99)
 file_list_pct = 25   # horizontal % of upper panel for the file list (1–99)
+
+[theme]
+name = "yellow"      # accent color preset: "yellow" | "cyan" | "green" | "magenta" | "blue"
 
 [log]
 enabled = true

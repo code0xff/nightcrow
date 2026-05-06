@@ -84,16 +84,40 @@
 
 - service_goal: 개발자가 nightcrow 사용 중 발생한 에러와 AI 프롬프트 입력 내역을 파일 로그로 추적할 수 있다
 - acceptance: 에러 로그가 `.nightcrow/logs/`에 파일로 기록됨, 설정 파일로 경로/rotation/retention 제어 가능, prompt_log opt-in 시 프롬프트 입력 내역 기록됨
-- status: active
+- status: done
 
 ### Workstream 1
 
 - Goal: 로깅 인프라 (의존성 + LogConfig + 파일 appender)
 - Deliverables: tracing/tracing-subscriber/tracing-appender 의존성 추가, `src/logging.rs` 구현 (rotation + retention), `config.toml`의 `[log]` 섹션 지원
 - Exit Criteria: 앱 실행 시 `.nightcrow/logs/`에 로그 파일 생성, daily rotation 및 max_days 초과 파일 자동 삭제 동작
+- status: done
 
 ### Workstream 2
 
 - Goal: 프롬프트 입력 로깅 (opt-in)
 - Deliverables: `App`에 pane별 입력 버퍼 추가, escape sequence 필터링, Enter 감지 시 tracing 이벤트 기록, `prompt_log = true` 설정 시에만 활성화
 - Exit Criteria: `prompt_log = true` 설정 시 터미널 입력 줄 단위로 로그 파일에 기록됨, 기본값(false)에서는 기록 없음
+- status: done
+
+---
+
+## Increment 5
+
+- service_goal: 개발자가 UI 테마를 취향에 맞게 바꾸고, commit log에서 upstream 대비 ahead/behind 상태를 한눈에 파악할 수 있다
+- acceptance: `Ctrl+P`로 런타임 accent color 사이클 동작 및 세션 유지, `[theme]` 설정으로 기본 accent 고정, commit log에서 ahead 커밋에 `↑` 마커 표시
+- status: done
+
+### Workstream 1
+
+- Goal: 컬러 테마 시스템 (config + runtime cycling)
+- Deliverables: `[theme] name` config 지원 (yellow/cyan/green/magenta/blue), `Ctrl+P`로 런타임 accent color 사이클, accent_idx 세션 저장/복원
+- Exit Criteria: config에서 기본 테마 설정 가능, 런타임에 `Ctrl+P`로 즉시 전환, 재실행 시 마지막 선택 복원
+- status: done
+
+### Workstream 2
+
+- Goal: commit log ahead/behind 추적 상태 표시
+- Deliverables: `TrackingStatus` (ahead/behind) git2 조회, commit list에서 ahead 커밋에 `↑` 마커 렌더링
+- Exit Criteria: upstream 대비 ahead 커밋이 commit log 좌측 패널에 `↑`로 구분 표시됨
+- status: done
