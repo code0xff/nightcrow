@@ -746,7 +746,9 @@ impl App {
                         self.selected = indices[pos + 1];
                         self.reload_diff();
                     }
-                } else if !self.files.is_empty() && self.selected < self.files.len().saturating_sub(1) {
+                } else if !self.files.is_empty()
+                    && self.selected < self.files.len().saturating_sub(1)
+                {
                     self.selected += 1;
                     self.reload_diff();
                 }
@@ -794,11 +796,13 @@ impl App {
                         return;
                     }
                     if let Some(pos) = indices.iter().position(|&i| i == self.selected) {
-                        self.selected = indices[(pos + LIST_PAGE_SIZE).min(indices.len().saturating_sub(1))];
+                        self.selected =
+                            indices[(pos + LIST_PAGE_SIZE).min(indices.len().saturating_sub(1))];
                         self.reload_diff();
                     }
                 } else if !self.files.is_empty() {
-                    self.selected = (self.selected + LIST_PAGE_SIZE).min(self.files.len().saturating_sub(1));
+                    self.selected =
+                        (self.selected + LIST_PAGE_SIZE).min(self.files.len().saturating_sub(1));
                     self.reload_diff();
                 }
             }
@@ -897,8 +901,8 @@ impl App {
 
     pub fn log_file_page_down(&mut self) {
         if !self.log_commit_files.is_empty() {
-            self.log_file_selected =
-                (self.log_file_selected + LIST_PAGE_SIZE).min(self.log_commit_files.len().saturating_sub(1));
+            self.log_file_selected = (self.log_file_selected + LIST_PAGE_SIZE)
+                .min(self.log_commit_files.len().saturating_sub(1));
             self.load_file_diff_for_log_file_selected();
         }
     }
@@ -984,7 +988,8 @@ impl App {
 
     pub fn log_page_down(&mut self) {
         if !self.commits.is_empty() {
-            self.log_selected = (self.log_selected + LIST_PAGE_SIZE).min(self.commits.len().saturating_sub(1));
+            self.log_selected =
+                (self.log_selected + LIST_PAGE_SIZE).min(self.commits.len().saturating_sub(1));
             self.load_commit_diff_for_selected();
         }
     }

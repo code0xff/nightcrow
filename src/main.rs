@@ -283,8 +283,14 @@ fn handle_search_key(
 
 fn handle_file_search_key(app: &mut App, key: KeyEvent) {
     match key.code {
-        KeyCode::Up => { app.select_up(); return; }
-        KeyCode::Down => { app.select_down(); return; }
+        KeyCode::Up => {
+            app.select_up();
+            return;
+        }
+        KeyCode::Down => {
+            app.select_down();
+            return;
+        }
         _ => {}
     }
     handle_search_key(
