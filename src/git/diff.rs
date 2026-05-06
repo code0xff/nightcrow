@@ -1,5 +1,7 @@
 use anyhow::{Context, Result};
-use git2::{Branch, Diff, DiffDelta, DiffOptions, Oid, Repository, Status, StatusEntry, StatusOptions};
+use git2::{
+    Branch, Diff, DiffDelta, DiffOptions, Oid, Repository, Status, StatusEntry, StatusOptions,
+};
 use std::cell::RefCell;
 use std::collections::BTreeMap;
 

@@ -1521,8 +1521,11 @@ mod tests {
             ..app_with_files(vec![])
         };
 
-        tx.send(SnapshotMsg::Ok(RepoSnapshot { files: Vec::new(), tracking: None }))
-            .unwrap();
+        tx.send(SnapshotMsg::Ok(RepoSnapshot {
+            files: Vec::new(),
+            tracking: None,
+        }))
+        .unwrap();
         app.poll_snapshot();
 
         assert_eq!(
@@ -1542,8 +1545,11 @@ mod tests {
             ..app_with_files(vec![])
         };
 
-        tx.send(SnapshotMsg::Ok(RepoSnapshot { files: Vec::new(), tracking: None }))
-            .unwrap();
+        tx.send(SnapshotMsg::Ok(RepoSnapshot {
+            files: Vec::new(),
+            tracking: None,
+        }))
+        .unwrap();
         app.poll_snapshot();
 
         assert_eq!(app.status, None);

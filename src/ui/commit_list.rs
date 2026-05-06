@@ -53,10 +53,7 @@ fn render_commit_list(frame: &mut Frame, app: &App, area: Rect, accent: Color) {
             let marker = if i < ahead_count { "↑ " } else { "  " };
             let line = Line::from(vec![
                 Span::styled(marker, Style::default().fg(Color::Green)),
-                Span::styled(
-                    format!("{} ", entry.short_id),
-                    Style::default().fg(accent),
-                ),
+                Span::styled(format!("{} ", entry.short_id), Style::default().fg(accent)),
                 Span::styled(
                     format!("{:>4} ", time_str),
                     Style::default().fg(Color::DarkGray),

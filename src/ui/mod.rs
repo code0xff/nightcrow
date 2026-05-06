@@ -68,7 +68,6 @@ pub fn draw(
     layout: &LayoutConfig,
     accent: Color,
 ) {
-
     if app.terminal_fullscreen {
         let root = Layout::default()
             .direction(Direction::Vertical)
