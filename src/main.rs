@@ -100,6 +100,26 @@ fn run(
     app.set_accent_index(cfg.theme.preset_index());
     app.set_pending_session(saved_session);
 
+    // Splash screen
+    let splash = ui::splash::SplashState::new();
+    loop {
+        let accent = app.current_accent();
+        terminal.draw(|frame| {
+            ui::splash::draw(frame, &splash, accent);
+        })?;
+        if splash.is_done() {
+            break;
+        }
+        if event::poll(Duration::from_millis(16))? {
+            match event::read()? {
+                Event::Key(_) => break,
+                Event::Resize(_, _) => terminal.clear()?,
+                _ => {}
+            }
+        }
+    }
+    terminal.clear()?;
+
     loop {
         app.poll_snapshot();
         app.poll_terminal();

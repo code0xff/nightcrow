@@ -1,6 +1,7 @@
 pub mod commit_list;
 pub mod diff_viewer;
 pub mod file_list;
+pub mod splash;
 pub mod terminal_tab;
 
 use crate::app::{App, Focus, ViewMode};
