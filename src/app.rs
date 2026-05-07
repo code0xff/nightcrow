@@ -340,6 +340,7 @@ impl App {
         self.hunks.clear();
         self.scroll = 0;
         self.diff_scroll_x = 0;
+        self.file_scroll_x = 0;
         self.commits.clear();
         self.log_selected = 0;
         self.log_diff_title.clear();
@@ -655,7 +656,7 @@ impl App {
     }
 
     pub fn diff_scroll_right(&mut self) {
-        self.diff_scroll_x = self.diff_scroll_x.saturating_add(4);
+        self.diff_scroll_x = self.diff_scroll_x.saturating_add(4).min(u16::MAX as usize);
     }
 
     pub fn file_scroll_left(&mut self) {

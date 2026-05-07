@@ -307,71 +307,38 @@ fn handle_upper_key(app: &mut App, key: KeyEvent, action: Action) {
     }
 }
 
-fn file_search_query(app: &App) -> &str {
-    &app.search_query
-}
-
-fn diff_search_query(app: &App) -> &str {
-    &app.diff_search_query
-}
-
-fn handle_search_key(
-    app: &mut App,
-    key: KeyEvent,
-    query: fn(&App) -> &str,
-    cancel: fn(&mut App),
-    confirm: fn(&mut App),
-    push: fn(&mut App, char),
-    pop: fn(&mut App),
-) {
-    match key.code {
-        KeyCode::Esc => cancel(app),
-        KeyCode::Enter => confirm(app),
-        KeyCode::Backspace => {
-            if query(app).is_empty() {
-                cancel(app);
-            } else {
-                pop(app);
-            }
-        }
-        KeyCode::Char(c) => push(app, c),
-        _ => {}
-    }
-}
-
 fn handle_file_search_key(app: &mut App, key: KeyEvent) {
     match key.code {
-        KeyCode::Up => {
-            app.select_up();
-            return;
+        KeyCode::Up => app.select_up(),
+        KeyCode::Down => app.select_down(),
+        KeyCode::Esc => app.cancel_search(),
+        KeyCode::Enter => app.confirm_search(),
+        KeyCode::Backspace => {
+            if app.search_query.is_empty() {
+                app.cancel_search();
+            } else {
+                app.search_pop();
+            }
         }
-        KeyCode::Down => {
-            app.select_down();
-            return;
-        }
+        KeyCode::Char(c) => app.search_push(c),
         _ => {}
     }
-    handle_search_key(
-        app,
-        key,
-        file_search_query,
-        App::cancel_search,
-        App::confirm_search,
-        App::search_push,
-        App::search_pop,
-    );
 }
 
 fn handle_diff_search_key(app: &mut App, key: KeyEvent) {
-    handle_search_key(
-        app,
-        key,
-        diff_search_query,
-        App::cancel_diff_search,
-        App::confirm_diff_search,
-        App::diff_search_push,
-        App::diff_search_pop,
-    );
+    match key.code {
+        KeyCode::Esc => app.cancel_diff_search(),
+        KeyCode::Enter => app.confirm_diff_search(),
+        KeyCode::Backspace => {
+            if app.diff_search_query.is_empty() {
+                app.cancel_diff_search();
+            } else {
+                app.diff_search_pop();
+            }
+        }
+        KeyCode::Char(c) => app.diff_search_push(c),
+        _ => {}
+    }
 }
 
 fn handle_unmapped_upper_key(app: &mut App, key: KeyEvent) {
