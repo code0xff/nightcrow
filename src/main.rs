@@ -121,8 +121,10 @@ fn run(
     let saved_session = session::load_session(&repo_path);
     let mut app = App::new(repo_path, cfg.log.prompt_log);
     app.set_accent_index(cfg.theme.preset_index());
-    app.set_accent_index(saved_session.accent_idx);
-    app.set_pending_session(saved_session);
+    if let Some(state) = saved_session {
+        app.set_accent_index(state.accent_idx);
+        app.set_pending_session(state);
+    }
 
     set_cursor_color(app.current_accent());
 
@@ -147,7 +149,6 @@ fn run(
     terminal.clear()?;
 
     let mut prev_accent = app.current_accent();
-    set_cursor_color(prev_accent);
 
     loop {
         app.poll_snapshot();

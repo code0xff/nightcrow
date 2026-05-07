@@ -420,6 +420,9 @@ impl App {
     }
 
     pub fn scroll_terminal_down(&mut self, lines: usize) {
+        if lines == 0 {
+            return;
+        }
         if let Some(id) = self.active_pane_id()
             && let Some(entry) = self.terminal_scroll.get_mut(&id)
         {
@@ -665,7 +668,7 @@ impl App {
     }
 
     pub fn file_scroll_right(&mut self) {
-        self.file_scroll_x = self.file_scroll_x.saturating_add(4).min(u16::MAX as usize);
+        self.file_scroll_x = self.file_scroll_x.saturating_add(4);
     }
 
     fn recompute_diff_matches(&mut self, scroll_to_match: bool) {

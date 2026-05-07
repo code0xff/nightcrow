@@ -22,13 +22,16 @@ fn session_path(repo_path: &str) -> std::path::PathBuf {
     Path::new(repo_path).join(".nightcrow").join("session.json")
 }
 
-pub fn load_session(repo_path: &str) -> SessionState {
+pub fn load_session(repo_path: &str) -> Option<SessionState> {
     let path = session_path(repo_path);
-    let text = match std::fs::read_to_string(&path) {
-        Ok(t) => t,
-        Err(_) => return SessionState::default(),
-    };
-    serde_json::from_str(&text).unwrap_or_default()
+    let text = std::fs::read_to_string(&path).ok()?;
+    match serde_json::from_str(&text) {
+        Ok(state) => Some(state),
+        Err(e) => {
+            tracing::warn!("corrupted session file, ignoring: {e}");
+            None
+        }
+    }
 }
 
 pub fn save_session(repo_path: &str, state: &SessionState) {
