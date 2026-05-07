@@ -22,7 +22,7 @@ pub struct ThemeConfig {
 impl Default for ThemeConfig {
     fn default() -> Self {
         Self {
-            name: "yellow".to_string(),
+            name: "green".to_string(),
         }
     }
 }

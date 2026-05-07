@@ -17,8 +17,8 @@ use crossterm::{
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
 use input::{Action, encode_key, map_key};
-use ratatui::{Terminal, backend::CrosstermBackend};
-use std::{io, time::Duration};
+use ratatui::{Terminal, backend::CrosstermBackend, style::Color};
+use std::{io, io::Write, time::Duration};
 use syntect::highlighting::ThemeSet;
 use syntect::parsing::SyntaxSet;
 
@@ -88,6 +88,29 @@ enum KeyOutcome {
     Quit,
 }
 
+fn accent_osc_color(color: Color) -> Option<&'static str> {
+    match color {
+        Color::Green => Some("green"),
+        Color::Cyan => Some("cyan"),
+        Color::Magenta => Some("magenta"),
+        Color::Blue => Some("blue"),
+        Color::Yellow => Some("yellow"),
+        _ => None,
+    }
+}
+
+fn set_cursor_color(color: Color) {
+    if let Some(name) = accent_osc_color(color) {
+        let _ = write!(io::stdout(), "\x1b]12;{name}\x07");
+        let _ = io::stdout().flush();
+    }
+}
+
+fn reset_cursor_color() {
+    let _ = write!(io::stdout(), "\x1b]112\x07");
+    let _ = io::stdout().flush();
+}
+
 fn run(
     terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
     repo_path: String,
@@ -120,14 +143,28 @@ fn run(
     }
     terminal.clear()?;
 
+    let mut prev_accent = app.current_accent();
+    let mut prev_terminal_focused = app.focus == Focus::Terminal;
+
     loop {
         app.poll_snapshot();
         app.poll_terminal();
 
         let accent = app.current_accent();
+        let terminal_focused = app.focus == Focus::Terminal;
         terminal.draw(|frame| {
             ui::draw(frame, &mut app, &ss, &ts, &cfg.layout, accent);
         })?;
+
+        if accent != prev_accent || terminal_focused != prev_terminal_focused {
+            if terminal_focused {
+                set_cursor_color(accent);
+            } else {
+                reset_cursor_color();
+            }
+            prev_accent = accent;
+            prev_terminal_focused = terminal_focused;
+        }
 
         if event::poll(Duration::from_millis(50))? {
             match event::read()? {
@@ -144,6 +181,7 @@ fn run(
         }
     }
 
+    reset_cursor_color();
     session::save_session(&app.repo_path, &app.save_session());
     Ok(())
 }
