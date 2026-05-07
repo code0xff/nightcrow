@@ -110,24 +110,9 @@ pub fn draw(frame: &mut Frame, state: &SplashState, accent: Color) {
     let empty = BAR_WIDTH - filled;
     let bar = format!("{}{}", "█".repeat(filled), "░".repeat(empty));
 
-    let suffix = if progress >= 1.0 {
-        "  ready ".to_string()
-    } else {
-        let dots = match (state.elapsed_ms() / 300) % 4 {
-            0 => ".  ",
-            1 => ".. ",
-            2 => "...",
-            _ => "   ",
-        };
-        format!("  {dots} ")
-    };
-
     frame.render_widget(
-        Paragraph::new(Line::from(vec![
-            Span::styled(bar, Style::default().fg(accent)),
-            Span::styled(suffix, Style::default().fg(Color::DarkGray)),
-        ]))
-        .alignment(Alignment::Center),
+        Paragraph::new(Line::from(Span::styled(bar, Style::default().fg(accent))))
+            .alignment(Alignment::Center),
         inner[4],
     );
 }
