@@ -222,7 +222,7 @@ pub fn render(
                 .title(title)
                 .border_style(border_style),
         )
-        .scroll((0, app.diff_scroll_x as u16));
+        .scroll((0, app.diff_scroll_x.min(u16::MAX as usize) as u16));
 
     frame.render_widget(para, diff_area);
 

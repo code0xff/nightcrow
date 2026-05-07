@@ -350,6 +350,7 @@ impl App {
         self.clear_diff_search();
         self.status = None;
         self.tracking = None;
+        self.focus = Focus::FileList;
     }
 
     pub fn start_repo_input(&mut self) {
@@ -664,7 +665,7 @@ impl App {
     }
 
     pub fn file_scroll_right(&mut self) {
-        self.file_scroll_x = self.file_scroll_x.saturating_add(4);
+        self.file_scroll_x = self.file_scroll_x.saturating_add(4).min(u16::MAX as usize);
     }
 
     fn recompute_diff_matches(&mut self, scroll_to_match: bool) {

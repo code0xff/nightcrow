@@ -150,7 +150,10 @@ fn render_file_list(frame: &mut Frame, app: &App, area: Rect, accent: Color) {
 
     let mut state = ListState::default();
     if !app.log_commit_files.is_empty() {
-        state.select(Some(app.log_file_selected));
+        state.select(Some(
+            app.log_file_selected
+                .min(app.log_commit_files.len().saturating_sub(1)),
+        ));
     }
 
     frame.render_stateful_widget(list, area, &mut state);

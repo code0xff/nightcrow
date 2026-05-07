@@ -45,7 +45,7 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect, accent: Color) {
             };
             let line = Line::from(vec![
                 Span::styled(format!("{symbol} "), Style::default().fg(color)),
-                Span::raw(path.to_owned()),
+                Span::raw(path),
             ]);
             ListItem::new(line)
         })
