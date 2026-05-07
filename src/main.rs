@@ -121,6 +121,7 @@ fn run(
     let saved_session = session::load_session(&repo_path);
     let mut app = App::new(repo_path, cfg.log.prompt_log);
     app.set_accent_index(cfg.theme.preset_index());
+    app.set_accent_index(saved_session.accent_idx);
     app.set_pending_session(saved_session);
 
     set_cursor_color(app.current_accent());

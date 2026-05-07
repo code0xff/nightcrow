@@ -15,7 +15,7 @@ pub const ACCENT_PRESETS: &[&str] = &["yellow", "cyan", "green", "magenta", "blu
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct ThemeConfig {
-    /// Accent color preset: "yellow" (default) | "cyan" | "green" | "magenta" | "blue"
+    /// Accent color preset: "green" (default) | "yellow" | "cyan" | "magenta" | "blue"
     pub name: String,
 }
 
