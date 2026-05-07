@@ -90,18 +90,18 @@ enum KeyOutcome {
 
 fn accent_osc_color(color: Color) -> Option<&'static str> {
     match color {
-        Color::Green => Some("green"),
-        Color::Cyan => Some("cyan"),
-        Color::Magenta => Some("magenta"),
-        Color::Blue => Some("blue"),
-        Color::Yellow => Some("yellow"),
+        Color::Green => Some("#00ff00"),
+        Color::Cyan => Some("#00ffff"),
+        Color::Magenta => Some("#ff00ff"),
+        Color::Blue => Some("#0000ff"),
+        Color::Yellow => Some("#ffff00"),
         _ => None,
     }
 }
 
 fn set_cursor_color(color: Color) {
-    if let Some(name) = accent_osc_color(color) {
-        let _ = write!(io::stdout(), "\x1b]12;{name}\x07");
+    if let Some(hex) = accent_osc_color(color) {
+        let _ = write!(io::stdout(), "\x1b]12;{hex}\x07");
         let _ = io::stdout().flush();
     }
 }
@@ -122,6 +122,8 @@ fn run(
     let mut app = App::new(repo_path, cfg.log.prompt_log);
     app.set_accent_index(cfg.theme.preset_index());
     app.set_pending_session(saved_session);
+
+    set_cursor_color(app.current_accent());
 
     // Splash screen
     let splash = ui::splash::SplashState::new();
