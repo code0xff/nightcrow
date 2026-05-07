@@ -117,6 +117,8 @@ pub struct App {
     pub selected: usize,
     pub hunks: Vec<DiffHunk>,
     pub scroll: usize,
+    pub diff_scroll_x: usize,
+    pub file_scroll_x: usize,
     pub focus: Focus,
     pub status: Option<String>,
     pub repo_path: String,
@@ -163,6 +165,8 @@ impl App {
             selected: 0,
             hunks: Vec::new(),
             scroll: 0,
+            diff_scroll_x: 0,
+            file_scroll_x: 0,
             focus: Focus::FileList,
             status: None,
             repo_path,
@@ -335,6 +339,7 @@ impl App {
         self.selected = 0;
         self.hunks.clear();
         self.scroll = 0;
+        self.diff_scroll_x = 0;
         self.commits.clear();
         self.log_selected = 0;
         self.log_diff_title.clear();
@@ -508,6 +513,7 @@ impl App {
                     self.hunks = hunks;
                     if reset_scroll {
                         self.scroll = 0;
+                        self.diff_scroll_x = 0;
                         self.diff_search_cursor = 0;
                     } else {
                         self.scroll = previous_scroll;
@@ -531,6 +537,7 @@ impl App {
         self.diff_search_matches.clear();
         self.diff_search_cursor = 0;
         self.scroll = 0;
+        self.diff_scroll_x = 0;
     }
 
     fn restore_selection(&mut self, previous_path: Option<&str>) -> Option<String> {
@@ -641,6 +648,22 @@ impl App {
 
     fn max_diff_scroll(&self) -> usize {
         self.diff_line_count().saturating_sub(1)
+    }
+
+    pub fn diff_scroll_left(&mut self) {
+        self.diff_scroll_x = self.diff_scroll_x.saturating_sub(4);
+    }
+
+    pub fn diff_scroll_right(&mut self) {
+        self.diff_scroll_x = self.diff_scroll_x.saturating_add(4);
+    }
+
+    pub fn file_scroll_left(&mut self) {
+        self.file_scroll_x = self.file_scroll_x.saturating_sub(4);
+    }
+
+    pub fn file_scroll_right(&mut self) {
+        self.file_scroll_x = self.file_scroll_x.saturating_add(4);
     }
 
     fn recompute_diff_matches(&mut self, scroll_to_match: bool) {
@@ -824,6 +847,7 @@ impl App {
                 Ok(hunks) => {
                     self.hunks = hunks;
                     self.scroll = 0;
+                    self.diff_scroll_x = 0;
                     self.log_diff_title = title;
                     if !self.diff_search_query.is_empty() {
                         self.recompute_diff_matches(true);
@@ -926,6 +950,7 @@ impl App {
             Ok(hunks) => {
                 self.hunks = hunks;
                 self.scroll = 0;
+                self.diff_scroll_x = 0;
                 self.log_diff_title = title;
                 if !self.diff_search_query.is_empty() {
                     self.recompute_diff_matches(true);
@@ -1164,6 +1189,8 @@ mod tests {
             selected: 0,
             hunks: Vec::new(),
             scroll: 0,
+            diff_scroll_x: 0,
+            file_scroll_x: 0,
             focus: Focus::FileList,
             status: None,
             repo_path: ".".to_string(),

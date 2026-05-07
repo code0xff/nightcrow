@@ -383,6 +383,8 @@ fn handle_unmapped_upper_key(app: &mut App, key: KeyEvent) {
             KeyCode::Esc if app.log_drill_down => app.log_drill_out(),
             KeyCode::Char('/') if app.mode == ViewMode::Status => app.start_search(),
             KeyCode::Esc if !app.search_query.is_empty() => app.cancel_search(),
+            KeyCode::Left => app.file_scroll_left(),
+            KeyCode::Right => app.file_scroll_right(),
             _ => {}
         },
         Focus::DiffViewer => match key.code {
@@ -390,6 +392,8 @@ fn handle_unmapped_upper_key(app: &mut App, key: KeyEvent) {
             KeyCode::Char('n') => app.next_diff_match(),
             KeyCode::Char('N') => app.prev_diff_match(),
             KeyCode::Esc if !app.diff_search_query.is_empty() => app.cancel_diff_search(),
+            KeyCode::Left => app.diff_scroll_left(),
+            KeyCode::Right => app.diff_scroll_right(),
             _ => {}
         },
         Focus::Terminal => {}

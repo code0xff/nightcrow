@@ -215,12 +215,14 @@ pub fn render(
         .take(visible_height)
         .collect();
 
-    let para = Paragraph::new(visible_lines).block(
-        Block::default()
-            .borders(Borders::ALL)
-            .title(title)
-            .border_style(border_style),
-    );
+    let para = Paragraph::new(visible_lines)
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title(title)
+                .border_style(border_style),
+        )
+        .scroll((0, app.diff_scroll_x as u16));
 
     frame.render_widget(para, diff_area);
 

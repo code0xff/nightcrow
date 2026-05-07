@@ -32,9 +32,20 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect, accent: Color) {
             let f = &app.files[idx];
             let symbol = f.status.symbol();
             let color = super::status_color(f.status);
+            let path: &str = if app.file_scroll_x == 0 {
+                &f.path
+            } else {
+                let byte_off = f
+                    .path
+                    .char_indices()
+                    .nth(app.file_scroll_x)
+                    .map(|(b, _)| b)
+                    .unwrap_or(f.path.len());
+                &f.path[byte_off..]
+            };
             let line = Line::from(vec![
                 Span::styled(format!("{symbol} "), Style::default().fg(color)),
-                Span::raw(&f.path),
+                Span::raw(path.to_owned()),
             ]);
             ListItem::new(line)
         })
