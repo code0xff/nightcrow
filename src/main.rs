@@ -144,26 +144,20 @@ fn run(
     terminal.clear()?;
 
     let mut prev_accent = app.current_accent();
-    let mut prev_terminal_focused = app.focus == Focus::Terminal;
+    set_cursor_color(prev_accent);
 
     loop {
         app.poll_snapshot();
         app.poll_terminal();
 
         let accent = app.current_accent();
-        let terminal_focused = app.focus == Focus::Terminal;
         terminal.draw(|frame| {
             ui::draw(frame, &mut app, &ss, &ts, &cfg.layout, accent);
         })?;
 
-        if accent != prev_accent || terminal_focused != prev_terminal_focused {
-            if terminal_focused {
-                set_cursor_color(accent);
-            } else {
-                reset_cursor_color();
-            }
+        if accent != prev_accent {
+            set_cursor_color(accent);
             prev_accent = accent;
-            prev_terminal_focused = terminal_focused;
         }
 
         if event::poll(Duration::from_millis(50))? {
