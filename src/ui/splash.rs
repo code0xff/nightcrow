@@ -25,7 +25,9 @@ pub struct SplashState {
 
 impl SplashState {
     pub fn new() -> Self {
-        Self { start: Instant::now() }
+        Self {
+            start: Instant::now(),
+        }
     }
 
     pub fn is_done(&self) -> bool {
@@ -93,7 +95,10 @@ pub fn draw(frame: &mut Frame, state: &SplashState, accent: Color) {
     let version = env!("CARGO_PKG_VERSION");
     frame.render_widget(
         Paragraph::new(Line::from(vec![
-            Span::styled("TUI for Agentic Coding", Style::default().fg(Color::DarkGray)),
+            Span::styled(
+                "TUI for Agentic Coding",
+                Style::default().fg(Color::DarkGray),
+            ),
             Span::styled(
                 format!("  v{version}"),
                 Style::default()
