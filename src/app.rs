@@ -523,27 +523,50 @@ impl App {
         let previous_scroll = self.scroll;
         if let Some(file) = self.files.get(self.selected) {
             let path = file.path.clone();
-            match load_file_diff(&self.repo_path, &path) {
-                Ok(hunks) => {
-                    self.hunks = hunks;
-                    if reset_scroll {
-                        self.scroll = 0;
-                        self.diff_scroll_x = 0;
-                        self.diff_search_cursor = 0;
-                    } else {
-                        self.scroll = previous_scroll;
-                    }
-                    if !self.diff_search_query.is_empty() {
-                        self.recompute_diff_matches(reset_scroll);
-                    }
-                }
-                Err(e) => {
-                    tracing::debug!(error = %e, file = %path, "failed to load diff");
-                    self.clear_diff_state();
-                }
+            let result = load_file_diff(&self.repo_path, &path);
+            if let Err(e) = &result {
+                tracing::debug!(error = %e, file = %path, "failed to load diff");
             }
+            self.apply_diff_result(result, None, reset_scroll, Some(previous_scroll));
         } else {
             self.clear_diff_state();
+        }
+    }
+
+    /// Centralizes the post-load shape used by every diff loader: on success
+    /// stash hunks, reset/restore scroll and search cursor, optionally update
+    /// the log title, and recompute diff search matches; on error clear state
+    /// but preserve the title so the user knows what failed.
+    fn apply_diff_result(
+        &mut self,
+        result: anyhow::Result<Vec<DiffHunk>>,
+        title: Option<String>,
+        reset_scroll: bool,
+        keep_scroll: Option<usize>,
+    ) {
+        match result {
+            Ok(hunks) => {
+                self.hunks = hunks;
+                if reset_scroll {
+                    self.scroll = 0;
+                    self.diff_scroll_x = 0;
+                    self.diff_search_cursor = 0;
+                } else if let Some(prev) = keep_scroll {
+                    self.scroll = prev;
+                }
+                if let Some(t) = title {
+                    self.log_diff_title = t;
+                }
+                if !self.diff_search_query.is_empty() {
+                    self.recompute_diff_matches(reset_scroll);
+                }
+            }
+            Err(_) => {
+                self.clear_diff_state();
+                if let Some(t) = title {
+                    self.log_diff_title = t;
+                }
+            }
         }
     }
 
@@ -845,29 +868,18 @@ impl App {
     }
 
     fn load_commit_diff_for_selected(&mut self) {
-        if let Some(entry) = self.commits.get(self.log_selected) {
-            let oid = entry.oid;
-            let title = commit_diff_title(entry);
-            match load_commit_diff(&self.repo_path, oid) {
-                Ok(hunks) => {
-                    self.hunks = hunks;
-                    self.scroll = 0;
-                    self.diff_scroll_x = 0;
-                    self.log_diff_title = title;
-                    if !self.diff_search_query.is_empty() {
-                        self.recompute_diff_matches(true);
-                    }
-                }
-                Err(e) => {
-                    tracing::debug!(error = %e, "failed to load commit diff");
-                    self.clear_diff_state();
-                    self.log_diff_title = title;
-                }
-            }
-        } else {
+        let Some(entry) = self.commits.get(self.log_selected) else {
             self.clear_diff_state();
             self.log_diff_title.clear();
+            return;
+        };
+        let oid = entry.oid;
+        let title = commit_diff_title(entry);
+        let result = load_commit_diff(&self.repo_path, oid);
+        if let Err(e) = &result {
+            tracing::debug!(error = %e, "failed to load commit diff");
         }
+        self.apply_diff_result(result, Some(title), true, None);
     }
 
     fn reset_drill_down_state(&mut self) {
@@ -959,22 +971,11 @@ impl App {
         };
         let path = file.path.clone();
         let title = format!("{} {}", commit_entry.short_id, path);
-        match load_commit_file_diff(&self.repo_path, oid, &path) {
-            Ok(hunks) => {
-                self.hunks = hunks;
-                self.scroll = 0;
-                self.diff_scroll_x = 0;
-                self.log_diff_title = title;
-                if !self.diff_search_query.is_empty() {
-                    self.recompute_diff_matches(true);
-                }
-            }
-            Err(e) => {
-                tracing::debug!(error = %e, file = %path, "failed to load commit file diff");
-                self.clear_diff_state();
-                self.log_diff_title = title;
-            }
+        let result = load_commit_file_diff(&self.repo_path, oid, &path);
+        if let Err(e) = &result {
+            tracing::debug!(error = %e, file = %path, "failed to load commit file diff");
         }
+        self.apply_diff_result(result, Some(title), true, None);
     }
 
     pub fn toggle_mode(&mut self) {
