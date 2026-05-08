@@ -23,6 +23,12 @@ pub struct SplashState {
     start: Instant,
 }
 
+impl Default for SplashState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl SplashState {
     pub fn new() -> Self {
         Self {

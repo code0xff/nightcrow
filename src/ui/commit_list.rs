@@ -101,7 +101,9 @@ fn render_commit_list(frame: &mut Frame, app: &App, area: Rect, accent: Color) {
 
     let mut state = ListState::default();
     if !app.commits.is_empty() {
-        state.select(Some(app.log_selected.min(app.commits.len() - 1)));
+        state.select(Some(
+            app.log_selected.min(app.commits.len().saturating_sub(1)),
+        ));
     }
 
     frame.render_stateful_widget(list, area, &mut state);

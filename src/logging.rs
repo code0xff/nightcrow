@@ -9,6 +9,7 @@ use tracing_subscriber::{EnvFilter, fmt, layer::SubscriberExt};
 
 const LOG_FILE_PREFIX: &str = "nightcrow.log";
 const LOG_FILE_PREFIX_WITH_SEPARATOR: &str = "nightcrow.log.";
+const BYTES_PER_MB: u64 = 1 << 20;
 
 pub struct LogGuard {
     _guard: WorkerGuard,
@@ -24,6 +25,10 @@ pub fn init_logging(config: &LogConfig, repo_path: &str) -> Option<LogGuard> {
     cleanup_old_logs(&log_dir, config.max_days);
 
     let level = parse_level(&config.level);
+    // `prompt` is a dedicated tracing target for terminal prompt capture. We
+    // pin it at info regardless of the global level so that enabling
+    // `prompt_log` always produces output, even when the rest of the app is
+    // restricted to e.g. "warn".
     let filter_str = if config.prompt_log {
         format!("{level},prompt=info")
     } else {
@@ -36,7 +41,7 @@ pub fn init_logging(config: &LogConfig, repo_path: &str) -> Option<LogGuard> {
             tracing_appender::non_blocking(appender)
         }
         "size" => {
-            let max_bytes = config.max_size_mb.saturating_mul(1024 * 1024);
+            let max_bytes = config.max_size_mb.saturating_mul(BYTES_PER_MB);
             if let Some(appender) = SizeRollingAppender::new(&log_dir, LOG_FILE_PREFIX, max_bytes) {
                 tracing_appender::non_blocking(appender)
             } else {
