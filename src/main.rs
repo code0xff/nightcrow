@@ -5,6 +5,8 @@ mod git;
 mod input;
 mod logging;
 mod session;
+#[cfg(test)]
+mod test_util;
 mod ui;
 
 use anyhow::{Context, Result};
@@ -17,8 +19,8 @@ use crossterm::{
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
 use input::{Action, encode_key, map_key};
-use ratatui::{Terminal, backend::CrosstermBackend, style::Color};
-use std::{io, io::Write, time::Duration};
+use ratatui::{Terminal, backend::CrosstermBackend};
+use std::{io, time::Duration};
 use syntect::highlighting::ThemeSet;
 use syntect::parsing::SyntaxSet;
 
@@ -88,29 +90,6 @@ enum KeyOutcome {
     Quit,
 }
 
-fn accent_osc_color(color: Color) -> Option<&'static str> {
-    match color {
-        Color::Green => Some("#00ff00"),
-        Color::Cyan => Some("#00ffff"),
-        Color::Magenta => Some("#ff00ff"),
-        Color::Blue => Some("#0000ff"),
-        Color::Yellow => Some("#ffff00"),
-        _ => None,
-    }
-}
-
-fn set_cursor_color(color: Color) {
-    if let Some(hex) = accent_osc_color(color) {
-        let _ = write!(io::stdout(), "\x1b]12;{hex}\x07");
-        let _ = io::stdout().flush();
-    }
-}
-
-fn reset_cursor_color() {
-    let _ = write!(io::stdout(), "\x1b]112\x07");
-    let _ = io::stdout().flush();
-}
-
 fn run(
     terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
     repo_path: String,
@@ -118,17 +97,27 @@ fn run(
 ) -> Result<()> {
     let ss = SyntaxSet::load_defaults_newlines();
     let ts = ThemeSet::load_defaults();
-    let saved_session = session::load_session(&repo_path);
-    let mut app = App::new(repo_path, cfg.log.prompt_log);
+    let mut app = init_app(&repo_path, &cfg);
+
+    splash_loop(terminal, &app)?;
+    main_loop(terminal, &mut app, &ss, &ts, &cfg)?;
+
+    session::save_session(&app.repo_path, &app.save_session());
+    Ok(())
+}
+
+fn init_app(repo_path: &str, cfg: &config::Config) -> App {
+    let saved_session = session::load_session(repo_path);
+    let mut app = App::new(repo_path.to_string(), cfg.log.prompt_log);
     app.set_accent_index(cfg.theme.preset_index());
     if let Some(state) = saved_session {
         app.set_accent_index(state.accent_idx);
         app.set_pending_session(state);
     }
+    app
+}
 
-    set_cursor_color(app.current_accent());
-
-    // Splash screen
+fn splash_loop(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &App) -> Result<()> {
     let splash = ui::splash::SplashState::new();
     loop {
         let accent = app.current_accent();
@@ -147,22 +136,24 @@ fn run(
         }
     }
     terminal.clear()?;
+    Ok(())
+}
 
-    let mut prev_accent = app.current_accent();
-
+fn main_loop(
+    terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
+    app: &mut App,
+    ss: &SyntaxSet,
+    ts: &ThemeSet,
+    cfg: &config::Config,
+) -> Result<()> {
     loop {
         app.poll_snapshot();
         app.poll_terminal();
 
         let accent = app.current_accent();
         terminal.draw(|frame| {
-            ui::draw(frame, &mut app, &ss, &ts, &cfg.layout, accent);
+            ui::draw(frame, app, ss, ts, &cfg.layout, accent);
         })?;
-
-        if accent != prev_accent {
-            set_cursor_color(accent);
-            prev_accent = accent;
-        }
 
         if event::poll(Duration::from_millis(50))? {
             match event::read()? {
@@ -170,18 +161,14 @@ fn run(
                     terminal.clear()?;
                 }
                 Event::Key(key) => {
-                    if matches!(handle_key(&mut app, key), KeyOutcome::Quit) {
-                        break;
+                    if matches!(handle_key(app, key), KeyOutcome::Quit) {
+                        return Ok(());
                     }
                 }
                 _ => {}
             }
         }
     }
-
-    reset_cursor_color();
-    session::save_session(&app.repo_path, &app.save_session());
-    Ok(())
 }
 
 fn handle_key(app: &mut App, key: KeyEvent) -> KeyOutcome {
