@@ -39,11 +39,8 @@ impl PtyBackend {
 
 impl TerminalBackend for PtyBackend {
     fn create_pane(&mut self, rows: u16, cols: u16) -> Result<PaneId> {
-        let id = self.next_id;
-        self.next_id = id
-            .checked_add(1)
-            .ok_or_else(|| anyhow::anyhow!("pane id counter overflow"))?;
-
+        // Reserve the next id only after every fallible PTY/spawn step succeeds,
+        // so a failure here does not consume an id slot.
         let pty_system = NativePtySystem::default();
         let pair = pty_system.openpty(PtySize {
             rows,
@@ -67,6 +64,12 @@ impl TerminalBackend for PtyBackend {
 
         let mut reader = pair.master.try_clone_reader()?;
         let writer = pair.master.take_writer()?;
+
+        let id = self.next_id;
+        let next = id
+            .checked_add(1)
+            .ok_or_else(|| anyhow::anyhow!("pane id counter overflow"))?;
+        self.next_id = next;
 
         let (tx, rx) = mpsc::channel();
         let output_tx = tx.clone();
