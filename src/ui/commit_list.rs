@@ -62,7 +62,7 @@ fn render_commit_list(frame: &mut Frame, app: &App, area: Rect, accent: Color) {
                 Span::styled(format!("{} ", entry.short_id), Style::default().fg(accent)),
                 Span::styled(
                     format!("{:>4} ", time_str),
-                    Style::default().fg(Color::DarkGray),
+                    Style::default().fg(Color::Gray),
                 ),
                 Span::styled(
                     format!("{:<10} ", author_short),
