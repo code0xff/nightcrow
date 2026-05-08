@@ -922,16 +922,24 @@ impl App {
     }
 
     pub fn log_file_page_up(&mut self) {
-        if !self.log_commit_files.is_empty() {
-            self.log_file_selected = self.log_file_selected.saturating_sub(LIST_PAGE_SIZE);
+        if self.log_commit_files.is_empty() {
+            return;
+        }
+        let next = self.log_file_selected.saturating_sub(LIST_PAGE_SIZE);
+        if next != self.log_file_selected {
+            self.log_file_selected = next;
             self.load_file_diff_for_log_file_selected();
         }
     }
 
     pub fn log_file_page_down(&mut self) {
-        if !self.log_commit_files.is_empty() {
-            self.log_file_selected = (self.log_file_selected + LIST_PAGE_SIZE)
-                .min(self.log_commit_files.len().saturating_sub(1));
+        if self.log_commit_files.is_empty() {
+            return;
+        }
+        let next = (self.log_file_selected + LIST_PAGE_SIZE)
+            .min(self.log_commit_files.len().saturating_sub(1));
+        if next != self.log_file_selected {
+            self.log_file_selected = next;
             self.load_file_diff_for_log_file_selected();
         }
     }
@@ -1012,14 +1020,20 @@ impl App {
     }
 
     pub fn log_page_up(&mut self) {
-        self.log_selected = self.log_selected.saturating_sub(LIST_PAGE_SIZE);
-        self.load_commit_diff_for_selected();
+        let next = self.log_selected.saturating_sub(LIST_PAGE_SIZE);
+        if next != self.log_selected {
+            self.log_selected = next;
+            self.load_commit_diff_for_selected();
+        }
     }
 
     pub fn log_page_down(&mut self) {
-        if !self.commits.is_empty() {
-            self.log_selected =
-                (self.log_selected + LIST_PAGE_SIZE).min(self.commits.len().saturating_sub(1));
+        if self.commits.is_empty() {
+            return;
+        }
+        let next = (self.log_selected + LIST_PAGE_SIZE).min(self.commits.len().saturating_sub(1));
+        if next != self.log_selected {
+            self.log_selected = next;
             self.load_commit_diff_for_selected();
         }
     }

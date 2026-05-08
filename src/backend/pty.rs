@@ -160,6 +160,16 @@ impl TerminalBackend for PtyBackend {
     }
 }
 
+impl Drop for PtyBackend {
+    fn drop(&mut self) {
+        // Ensure child processes are killed even when destroy_pane was never
+        // called — e.g. on panic unwind or normal exit without explicit close.
+        for (_, mut pane) in self.panes.drain() {
+            let _ = pane.killer.kill();
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
