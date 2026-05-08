@@ -16,6 +16,10 @@ pub struct SessionState {
     pub log_selected: usize,
     #[serde(default)]
     pub accent_idx: usize,
+    #[serde(default)]
+    pub log_drill_down: bool,
+    #[serde(default)]
+    pub log_file_selected: usize,
 }
 
 fn session_path(repo_path: &str) -> std::path::PathBuf {
@@ -41,12 +45,22 @@ pub fn save_session(repo_path: &str, state: &SessionState) {
     {
         tracing::warn!("failed to create session directory: {e}");
     }
-    match serde_json::to_string(state) {
-        Ok(text) => {
-            if let Err(e) = std::fs::write(&path, text) {
-                tracing::warn!("failed to write session: {e}");
-            }
+    let text = match serde_json::to_string(state) {
+        Ok(t) => t,
+        Err(e) => {
+            tracing::warn!("failed to serialize session: {e}");
+            return;
         }
-        Err(e) => tracing::warn!("failed to serialize session: {e}"),
+    };
+    // Atomic replace: write to a sibling tmp file then rename. This keeps
+    // session.json intact if the process dies mid-write.
+    let tmp_path = path.with_extension("json.tmp");
+    if let Err(e) = std::fs::write(&tmp_path, &text) {
+        tracing::warn!("failed to write session tmp: {e}");
+        return;
+    }
+    if let Err(e) = std::fs::rename(&tmp_path, &path) {
+        tracing::warn!("failed to rename session tmp into place: {e}");
+        let _ = std::fs::remove_file(&tmp_path);
     }
 }

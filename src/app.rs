@@ -132,11 +132,13 @@ pub struct App {
     pub active_pane: usize,
     pub terminal_size: (u16, u16),
     pub search_query: String,
+    search_query_lower: String,
     pub search_active: bool,
     pub repo_input_active: bool,
     pub repo_input_buf: String,
     pub diff_search_active: bool,
     pub diff_search_query: String,
+    diff_search_query_lower: String,
     pub diff_search_matches: Vec<usize>,
     pub diff_search_cursor: usize,
     pub terminal_fullscreen: bool,
@@ -180,11 +182,13 @@ impl App {
             active_pane: 0,
             terminal_size: (22, 78),
             search_query: String::new(),
+            search_query_lower: String::new(),
             search_active: false,
             repo_input_active: false,
             repo_input_buf: String::new(),
             diff_search_active: false,
             diff_search_query: String::new(),
+            diff_search_query_lower: String::new(),
             diff_search_matches: Vec::new(),
             diff_search_cursor: 0,
             terminal_fullscreen: false,
@@ -310,7 +314,13 @@ impl App {
 
     fn remove_terminal_pane_state(&mut self, id: PaneId) {
         self.parsers.remove(&id);
-        self.prompt_bufs.remove(&id);
+        // Flush any unterminated prompt input so we don't lose the line the
+        // user was composing when the pane closes.
+        if let Some(buf) = self.prompt_bufs.remove(&id)
+            && !buf.is_empty()
+        {
+            tracing::info!(target: "prompt", pane = id, text = %buf);
+        }
         self.terminal_scroll.remove(&id);
     }
 
@@ -566,11 +576,11 @@ impl App {
         if self.search_query.is_empty() {
             return (0..self.files.len()).collect();
         }
-        let q = self.search_query.to_lowercase();
+        let q = self.search_query_lower.as_str();
         self.files
             .iter()
             .enumerate()
-            .filter(|(_, f)| f.path.to_lowercase().contains(&q))
+            .filter(|(_, f)| f.path.to_lowercase().contains(q))
             .map(|(i, _)| i)
             .collect()
     }
@@ -582,6 +592,7 @@ impl App {
     pub fn cancel_search(&mut self) {
         self.search_active = false;
         self.search_query.clear();
+        self.search_query_lower.clear();
     }
 
     pub fn confirm_search(&mut self) {
@@ -590,11 +601,13 @@ impl App {
 
     pub fn search_push(&mut self, ch: char) {
         self.search_query.push(ch);
+        self.search_query_lower = self.search_query.to_lowercase();
         self.clamp_to_filtered();
     }
 
     pub fn search_pop(&mut self) {
         self.search_query.pop();
+        self.search_query_lower = self.search_query.to_lowercase();
         self.clamp_to_filtered();
     }
 
@@ -609,6 +622,7 @@ impl App {
     fn clear_diff_search(&mut self) {
         self.diff_search_active = false;
         self.diff_search_query.clear();
+        self.diff_search_query_lower.clear();
         self.diff_search_matches.clear();
         self.diff_search_cursor = 0;
     }
@@ -619,11 +633,13 @@ impl App {
 
     pub fn diff_search_push(&mut self, ch: char) {
         self.diff_search_query.push(ch);
+        self.diff_search_query_lower = self.diff_search_query.to_lowercase();
         self.recompute_diff_matches(true);
     }
 
     pub fn diff_search_pop(&mut self) {
         self.diff_search_query.pop();
+        self.diff_search_query_lower = self.diff_search_query.to_lowercase();
         self.recompute_diff_matches(true);
     }
 
@@ -668,7 +684,15 @@ impl App {
     }
 
     pub fn file_scroll_right(&mut self) {
-        self.file_scroll_x = self.file_scroll_x.saturating_add(4);
+        // Cap at the longest visible path's char width so we don't drift past
+        // the last column of any rendered entry.
+        let max = self
+            .files
+            .iter()
+            .map(|f| f.path.chars().count())
+            .max()
+            .unwrap_or(0);
+        self.file_scroll_x = self.file_scroll_x.saturating_add(4).min(max);
     }
 
     fn recompute_diff_matches(&mut self, scroll_to_match: bool) {
@@ -677,12 +701,12 @@ impl App {
             self.diff_search_cursor = 0;
             return;
         }
-        let q = self.diff_search_query.to_lowercase();
+        let q = self.diff_search_query_lower.as_str();
         let mut flat_idx = 0usize;
         for hunk in &self.hunks {
             flat_idx += 1; // header line
             for line in &hunk.lines {
-                if line.content.to_lowercase().contains(&q) {
+                if line.content.to_lowercase().contains(q) {
                     self.diff_search_matches.push(flat_idx);
                 }
                 flat_idx += 1;
@@ -734,24 +758,36 @@ impl App {
         true
     }
 
+    /// Move `selected` by `delta` positions within the active filter view.
+    /// Handles both empty-query (full file list) and non-empty (filtered subset)
+    /// cases uniformly.
+    fn move_selected_in_filter(&mut self, delta: isize) {
+        let indices = self.filtered_indices();
+        if indices.is_empty() {
+            return;
+        }
+        let pos = indices.iter().position(|&i| i == self.selected);
+        let new_pos = match pos {
+            Some(p) => {
+                let last = indices.len() as isize - 1;
+                (p as isize + delta).clamp(0, last) as usize
+            }
+            None => 0,
+        };
+        let new_selected = indices[new_pos];
+        if Some(new_pos) != pos || self.selected != new_selected {
+            self.selected = new_selected;
+            self.reload_diff();
+        }
+    }
+
     pub fn select_up(&mut self) {
         match self.focus {
             Focus::FileList => {
                 if self.navigate_log_list(Self::log_select_up, Self::log_file_select_up) {
                     return;
                 }
-                if !self.search_query.is_empty() {
-                    let indices = self.filtered_indices();
-                    if let Some(pos) = indices.iter().position(|&i| i == self.selected)
-                        && pos > 0
-                    {
-                        self.selected = indices[pos - 1];
-                        self.reload_diff();
-                    }
-                } else if self.selected > 0 {
-                    self.selected -= 1;
-                    self.reload_diff();
-                }
+                self.move_selected_in_filter(-1);
             }
             Focus::DiffViewer => {
                 self.scroll = self.scroll.saturating_sub(1);
@@ -766,20 +802,7 @@ impl App {
                 if self.navigate_log_list(Self::log_select_down, Self::log_file_select_down) {
                     return;
                 }
-                if !self.search_query.is_empty() {
-                    let indices = self.filtered_indices();
-                    if let Some(pos) = indices.iter().position(|&i| i == self.selected)
-                        && pos + 1 < indices.len()
-                    {
-                        self.selected = indices[pos + 1];
-                        self.reload_diff();
-                    }
-                } else if !self.files.is_empty()
-                    && self.selected < self.files.len().saturating_sub(1)
-                {
-                    self.selected += 1;
-                    self.reload_diff();
-                }
+                self.move_selected_in_filter(1);
             }
             Focus::DiffViewer => {
                 self.scroll = self.scroll.saturating_add(1).min(self.max_diff_scroll());
@@ -794,16 +817,7 @@ impl App {
                 if self.navigate_log_list(Self::log_page_up, Self::log_file_page_up) {
                     return;
                 }
-                if !self.search_query.is_empty() {
-                    let indices = self.filtered_indices();
-                    if let Some(pos) = indices.iter().position(|&i| i == self.selected) {
-                        self.selected = indices[pos.saturating_sub(LIST_PAGE_SIZE)];
-                        self.reload_diff();
-                    }
-                } else {
-                    self.selected = self.selected.saturating_sub(LIST_PAGE_SIZE);
-                    self.reload_diff();
-                }
+                self.move_selected_in_filter(-(LIST_PAGE_SIZE as isize));
             }
             Focus::DiffViewer => {
                 self.scroll = self.scroll.saturating_sub(DIFF_PAGE_SIZE);
@@ -818,21 +832,7 @@ impl App {
                 if self.navigate_log_list(Self::log_page_down, Self::log_file_page_down) {
                     return;
                 }
-                if !self.search_query.is_empty() {
-                    let indices = self.filtered_indices();
-                    if indices.is_empty() {
-                        return;
-                    }
-                    if let Some(pos) = indices.iter().position(|&i| i == self.selected) {
-                        self.selected =
-                            indices[(pos + LIST_PAGE_SIZE).min(indices.len().saturating_sub(1))];
-                        self.reload_diff();
-                    }
-                } else if !self.files.is_empty() {
-                    self.selected =
-                        (self.selected + LIST_PAGE_SIZE).min(self.files.len().saturating_sub(1));
-                    self.reload_diff();
-                }
+                self.move_selected_in_filter(LIST_PAGE_SIZE as isize);
             }
             Focus::DiffViewer => {
                 self.scroll = self
@@ -1025,7 +1025,9 @@ impl App {
     }
 
     pub fn set_accent_index(&mut self, idx: usize) {
-        self.accent_idx = idx;
+        // Normalize on entry so we never persist out-of-range indices to the
+        // session file, even though `current_accent` would tolerate them.
+        self.accent_idx = idx % crate::config::ACCENT_PRESETS.len();
     }
 
     pub fn cycle_accent(&mut self) {
@@ -1120,18 +1122,13 @@ impl App {
             mode: Some(self.mode),
             log_selected: self.log_selected,
             accent_idx: self.accent_idx,
+            log_drill_down: self.log_drill_down,
+            log_file_selected: self.log_file_selected,
         }
     }
 
     pub fn restore_session(&mut self, state: &crate::session::SessionState) {
-        let saved_scroll = state.scroll;
-        if let Some(path) = &state.selected_file
-            && let Some(idx) = self.files.iter().position(|f| &f.path == path)
-        {
-            self.selected = idx;
-            self.refresh_diff(true);
-        }
-        self.scroll = saved_scroll.min(self.max_diff_scroll());
+        // Pane / focus / fullscreen restoration — independent of view mode.
         self.active_pane = state
             .active_pane
             .min(self.terminal_panes.len().saturating_sub(1));
@@ -1146,28 +1143,86 @@ impl App {
         if self.terminal_fullscreen {
             self.focus = Focus::Terminal;
         }
-        if state.mode == Some(ViewMode::Log) {
-            match load_commit_log(&self.repo_path, COMMIT_LOG_LIMIT) {
-                Ok(commits) => {
-                    self.commits = commits;
-                    self.log_selected =
-                        state.log_selected.min(self.commits.len().saturating_sub(1));
-                    self.mode = ViewMode::Log;
-                    self.load_commit_diff_for_selected();
-                    self.scroll = saved_scroll.min(self.max_diff_scroll());
-                }
-                Err(e) => {
-                    tracing::warn!(error = %e, "failed to restore commit log");
-                }
-            }
-        }
         self.accent_idx = state.accent_idx;
+
+        // Mode-specific diff/scroll restoration. We avoid loading a workdir diff
+        // when the saved mode is Log — otherwise we'd waste a load and clamp the
+        // scroll against the wrong diff length.
+        match state.mode {
+            Some(ViewMode::Log) => self.restore_log_session(state),
+            _ => self.restore_status_session(state),
+        }
+
         tracing::debug!(
             focus = ?state.focus,
             file = ?state.selected_file,
             scroll = state.scroll,
+            mode = ?state.mode,
+            drill = state.log_drill_down,
             "session restored"
         );
+    }
+
+    fn restore_status_session(&mut self, state: &crate::session::SessionState) {
+        if let Some(path) = &state.selected_file
+            && let Some(idx) = self.files.iter().position(|f| &f.path == path)
+        {
+            self.selected = idx;
+            self.refresh_diff(true);
+            self.scroll = state.scroll.min(self.max_diff_scroll());
+        }
+        // If the saved file is no longer present, leave selected/scroll as they
+        // were after the initial snapshot — applying saved_scroll to a different
+        // file would jump the user to an unrelated location.
+    }
+
+    fn restore_log_session(&mut self, state: &crate::session::SessionState) {
+        let commits = match load_commit_log(&self.repo_path, COMMIT_LOG_LIMIT) {
+            Ok(c) => c,
+            Err(e) => {
+                tracing::warn!(error = %e, "failed to restore commit log");
+                return;
+            }
+        };
+        self.commits = commits;
+        self.log_selected = state.log_selected.min(self.commits.len().saturating_sub(1));
+        self.mode = ViewMode::Log;
+
+        if state.log_drill_down {
+            self.restore_log_drill_down(state);
+        } else {
+            self.load_commit_diff_for_selected();
+        }
+        self.scroll = state.scroll.min(self.max_diff_scroll());
+    }
+
+    fn restore_log_drill_down(&mut self, state: &crate::session::SessionState) {
+        let Some(entry) = self.commits.get(self.log_selected) else {
+            self.load_commit_diff_for_selected();
+            return;
+        };
+        let oid = entry.oid;
+        let title = commit_diff_title(entry);
+        match load_commit_files(&self.repo_path, oid) {
+            Ok(files) => {
+                self.log_commit_files = files;
+                self.log_drill_down = true;
+                if self.log_commit_files.is_empty() {
+                    self.log_file_selected = 0;
+                    self.clear_diff_state();
+                    self.log_diff_title = title;
+                } else {
+                    self.log_file_selected = state
+                        .log_file_selected
+                        .min(self.log_commit_files.len().saturating_sub(1));
+                    self.load_file_diff_for_log_file_selected();
+                }
+            }
+            Err(e) => {
+                tracing::debug!(error = %e, "failed to load drill-down commit files");
+                self.load_commit_diff_for_selected();
+            }
+        }
     }
 }
 
@@ -1175,9 +1230,8 @@ impl App {
 mod tests {
     use super::*;
     use crate::git::diff::{ChangeStatus, DiffHunk, DiffLine, LineKind, load_commit_log};
+    use crate::test_util::{make_repo, run_git};
     use std::path::Path;
-    use std::process::Command;
-    use tempfile::TempDir;
 
     fn app_with_files(files: Vec<&str>) -> App {
         let (_tx, rx) = mpsc::channel::<SnapshotMsg>();
@@ -1209,11 +1263,13 @@ mod tests {
             active_pane: 0,
             terminal_size: (22, 78),
             search_query: String::new(),
+            search_query_lower: String::new(),
             search_active: false,
             repo_input_active: false,
             repo_input_buf: String::new(),
             diff_search_active: false,
             diff_search_query: String::new(),
+            diff_search_query_lower: String::new(),
             diff_search_matches: Vec::new(),
             diff_search_cursor: 0,
             terminal_fullscreen: false,
@@ -1241,29 +1297,6 @@ mod tests {
                 })
                 .collect(),
         }
-    }
-
-    fn run_git(repo_path: &str, args: &[&str]) {
-        let output = Command::new("git")
-            .args(args)
-            .current_dir(repo_path)
-            .output()
-            .unwrap();
-        assert!(
-            output.status.success(),
-            "git {} failed: {}",
-            args.join(" "),
-            String::from_utf8_lossy(&output.stderr)
-        );
-    }
-
-    fn make_repo() -> (TempDir, String) {
-        let dir = TempDir::new().unwrap();
-        let path = dir.path().to_string_lossy().to_string();
-        run_git(&path, &["init"]);
-        run_git(&path, &["config", "user.email", "t@t.com"]);
-        run_git(&path, &["config", "user.name", "T"]);
-        (dir, path)
     }
 
     #[test]
@@ -1359,6 +1392,7 @@ mod tests {
         let mut app = app_with_files(vec!["a.rs"]);
         app.hunks = vec![context_hunk(&["needle"])];
         app.diff_search_query = "needle".to_string();
+        app.diff_search_query_lower = "needle".to_string();
         app.scroll = 7;
 
         app.recompute_diff_matches(false);

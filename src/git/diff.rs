@@ -174,6 +174,10 @@ pub fn load_commit_log(repo_path: &str, max_count: usize) -> Result<Vec<CommitEn
 }
 
 fn is_empty_head(err: &git2::Error) -> bool {
+    // libgit2 reports "reference 'refs/heads/<branch>' not found" for empty
+    // repos with a class of Reference but a generic error code, so we keep
+    // the message fallback. libgit2 does not localize internal messages, so
+    // the match is portable.
     let missing_head_reference =
         err.class() == git2::ErrorClass::Reference && err.message().contains("not found");
 
@@ -364,32 +368,8 @@ fn binary_diff_hunk(file_path: &str) -> DiffHunk {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_util::{make_repo, run_git};
     use std::path::Path;
-    use std::process::Command;
-    use tempfile::TempDir;
-
-    fn run_git(repo_path: &str, args: &[&str]) {
-        let output = Command::new("git")
-            .args(args)
-            .current_dir(repo_path)
-            .output()
-            .unwrap();
-        assert!(
-            output.status.success(),
-            "git {} failed: {}",
-            args.join(" "),
-            String::from_utf8_lossy(&output.stderr)
-        );
-    }
-
-    fn make_repo() -> (TempDir, String) {
-        let dir = TempDir::new().unwrap();
-        let p = dir.path().to_string_lossy().to_string();
-        run_git(&p, &["init"]);
-        run_git(&p, &["config", "user.email", "t@t.com"]);
-        run_git(&p, &["config", "user.name", "T"]);
-        (dir, p)
-    }
 
     #[test]
     fn snapshot_empty_repo_does_not_panic() {
