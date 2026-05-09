@@ -46,7 +46,7 @@ pub fn render(
     ts: &ThemeSet,
     accent: ratatui::style::Color,
 ) {
-    let show_search = app.diff_search.active || !app.diff_search.query.is_empty();
+    let show_search = app.diff_search.is_visible();
 
     let (diff_area, search_area) = if show_search {
         let chunks = Layout::default()
@@ -68,8 +68,8 @@ pub fn render(
         .unwrap_or_else(|| ss.find_syntax_plain_text());
     let theme = &ts.themes["base16-ocean.dark"];
 
-    let current_match = app.diff_search.matches.get(app.diff_search.cursor).copied();
-    let has_search = !app.diff_search.query.is_empty();
+    let current_match = app.diff_search.current_match();
+    let has_search = app.diff_search.has_query();
 
     let mut lines: Vec<Line> = Vec::new();
     let mut flat_idx: usize = 0;
@@ -91,7 +91,7 @@ pub fn render(
 
         for diff_line in &hunk.lines {
             let is_current = has_search && current_match == Some(flat_idx);
-            let is_match = has_search && app.diff_search.matches.binary_search(&flat_idx).is_ok();
+            let is_match = has_search && app.diff_search.is_match(flat_idx);
 
             let bg = if is_current {
                 Color::Rgb(100, 80, 0)

@@ -63,10 +63,6 @@ fn spawn_snapshot_thread(repo_path: &str) -> (Receiver<SnapshotMsg>, SyncSender<
     (rx, stop_tx)
 }
 
-fn commit_diff_title(entry: &CommitEntry) -> String {
-    format!("{} {}", entry.short_id, entry.summary)
-}
-
 fn strip_escape_sequences(data: &[u8]) -> String {
     let text = String::from_utf8_lossy(data);
     let mut result = String::new();
@@ -978,7 +974,7 @@ impl App {
             return;
         };
         let oid = entry.oid;
-        let title = commit_diff_title(entry);
+        let title = entry.to_string();
         let result = load_commit_diff(&self.repo_path, oid);
         if let Err(e) = &result {
             tracing::debug!(error = %e, "failed to load commit diff");
@@ -997,7 +993,7 @@ impl App {
             return;
         };
         let oid = entry.oid;
-        let title = commit_diff_title(entry);
+        let title = entry.to_string();
         match load_commit_files(&self.repo_path, oid) {
             Ok(files) => {
                 self.log_view.commit_files = files;
@@ -1056,7 +1052,7 @@ impl App {
             return;
         };
         let oid = commit_entry.oid;
-        let commit_title = commit_diff_title(commit_entry);
+        let commit_title = commit_entry.to_string();
         let Some(file) = self.log_view.commit_files.get(self.log_view.file_selected) else {
             self.clear_diff_state();
             self.log_view.diff_title = commit_title;
@@ -1301,7 +1297,7 @@ impl App {
             return;
         };
         let oid = entry.oid;
-        let title = commit_diff_title(entry);
+        let title = entry.to_string();
         match load_commit_files(&self.repo_path, oid) {
             Ok(files) => {
                 self.log_view.commit_files = files;

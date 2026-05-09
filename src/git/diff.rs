@@ -32,7 +32,7 @@ pub struct ChangedFile {
     pub status: ChangeStatus,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LineKind {
     Added,
     Removed,
@@ -70,6 +70,12 @@ pub struct CommitEntry {
     pub summary: String,
     pub author: String,
     pub time: i64,
+}
+
+impl std::fmt::Display for CommitEntry {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{} {}", self.short_id, self.summary)
+    }
 }
 
 fn load_tracking_status(repo: &Repository) -> Option<TrackingStatus> {
