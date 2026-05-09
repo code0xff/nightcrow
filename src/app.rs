@@ -14,6 +14,33 @@ const LIST_PAGE_SIZE: usize = 10;
 const DIFF_PAGE_SIZE: usize = 20;
 const COMMIT_LOG_LIMIT: usize = 500;
 
+/// Move a list index up by `n`, saturating at 0. Returns `true` when the index
+/// actually changed so callers can decide whether to refresh associated state.
+fn cursor_up(idx: &mut usize, n: usize) -> bool {
+    let next = idx.saturating_sub(n);
+    if next != *idx {
+        *idx = next;
+        true
+    } else {
+        false
+    }
+}
+
+/// Move a list index down by `n`, clamped to `len - 1`. Returns `true` when the
+/// index actually changed. A zero-length list is a no-op.
+fn cursor_down(idx: &mut usize, len: usize, n: usize) -> bool {
+    if len == 0 {
+        return false;
+    }
+    let next = idx.saturating_add(n).min(len - 1);
+    if next != *idx {
+        *idx = next;
+        true
+    } else {
+        false
+    }
+}
+
 fn spawn_snapshot_thread(repo_path: &str) -> (Receiver<SnapshotMsg>, SyncSender<()>) {
     let (tx, rx) = mpsc::channel::<SnapshotMsg>();
     let (stop_tx, stop_rx) = mpsc::sync_channel::<()>(0);
@@ -918,40 +945,29 @@ impl App {
     }
 
     pub fn log_file_select_up(&mut self) {
-        if self.log_file_selected > 0 {
-            self.log_file_selected -= 1;
+        if cursor_up(&mut self.log_file_selected, 1) {
             self.load_file_diff_for_log_file_selected();
         }
     }
 
     pub fn log_file_select_down(&mut self) {
-        if !self.log_commit_files.is_empty()
-            && self.log_file_selected < self.log_commit_files.len().saturating_sub(1)
-        {
-            self.log_file_selected += 1;
+        if cursor_down(&mut self.log_file_selected, self.log_commit_files.len(), 1) {
             self.load_file_diff_for_log_file_selected();
         }
     }
 
     pub fn log_file_page_up(&mut self) {
-        if self.log_commit_files.is_empty() {
-            return;
-        }
-        let next = self.log_file_selected.saturating_sub(LIST_PAGE_SIZE);
-        if next != self.log_file_selected {
-            self.log_file_selected = next;
+        if cursor_up(&mut self.log_file_selected, LIST_PAGE_SIZE) {
             self.load_file_diff_for_log_file_selected();
         }
     }
 
     pub fn log_file_page_down(&mut self) {
-        if self.log_commit_files.is_empty() {
-            return;
-        }
-        let next = (self.log_file_selected + LIST_PAGE_SIZE)
-            .min(self.log_commit_files.len().saturating_sub(1));
-        if next != self.log_file_selected {
-            self.log_file_selected = next;
+        if cursor_down(
+            &mut self.log_file_selected,
+            self.log_commit_files.len(),
+            LIST_PAGE_SIZE,
+        ) {
             self.load_file_diff_for_log_file_selected();
         }
     }
@@ -1007,34 +1023,25 @@ impl App {
     }
 
     pub fn log_select_up(&mut self) {
-        if self.log_selected > 0 {
-            self.log_selected -= 1;
+        if cursor_up(&mut self.log_selected, 1) {
             self.load_commit_diff_for_selected();
         }
     }
 
     pub fn log_select_down(&mut self) {
-        if !self.commits.is_empty() && self.log_selected < self.commits.len().saturating_sub(1) {
-            self.log_selected += 1;
+        if cursor_down(&mut self.log_selected, self.commits.len(), 1) {
             self.load_commit_diff_for_selected();
         }
     }
 
     pub fn log_page_up(&mut self) {
-        let next = self.log_selected.saturating_sub(LIST_PAGE_SIZE);
-        if next != self.log_selected {
-            self.log_selected = next;
+        if cursor_up(&mut self.log_selected, LIST_PAGE_SIZE) {
             self.load_commit_diff_for_selected();
         }
     }
 
     pub fn log_page_down(&mut self) {
-        if self.commits.is_empty() {
-            return;
-        }
-        let next = (self.log_selected + LIST_PAGE_SIZE).min(self.commits.len().saturating_sub(1));
-        if next != self.log_selected {
-            self.log_selected = next;
+        if cursor_down(&mut self.log_selected, self.commits.len(), LIST_PAGE_SIZE) {
             self.load_commit_diff_for_selected();
         }
     }
