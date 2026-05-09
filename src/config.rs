@@ -10,39 +10,109 @@ pub struct Config {
     pub theme: ThemeConfig,
 }
 
-pub const ACCENT_PRESETS: &[&str] = &["yellow", "cyan", "green", "magenta", "blue"];
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(default)]
-pub struct ThemeConfig {
-    /// Accent color preset: "green" (default) | "yellow" | "cyan" | "magenta" | "blue"
-    pub name: String,
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Accent {
+    Yellow,
+    Green,
+    Cyan,
+    Magenta,
+    Blue,
 }
 
-impl Default for ThemeConfig {
+impl Default for Accent {
     fn default() -> Self {
-        Self {
-            name: "green".to_string(),
+        Self::Green
+    }
+}
+
+impl Accent {
+    pub const ALL: &'static [Accent] = &[
+        Accent::Yellow,
+        Accent::Green,
+        Accent::Cyan,
+        Accent::Magenta,
+        Accent::Blue,
+    ];
+
+    pub fn color(self) -> ratatui::style::Color {
+        use ratatui::style::Color::*;
+        match self {
+            Accent::Yellow => Yellow,
+            Accent::Green => Green,
+            Accent::Cyan => Cyan,
+            Accent::Magenta => Magenta,
+            Accent::Blue => Blue,
         }
     }
+
+    pub fn index(self) -> usize {
+        Self::ALL
+            .iter()
+            .position(|&a| a == self)
+            .expect("ALL must contain every variant")
+    }
+
+    pub fn from_index(idx: usize) -> Accent {
+        Self::ALL[idx % Self::ALL.len()]
+    }
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct ThemeConfig {
+    /// Accent color preset.
+    pub name: Accent,
 }
 
 impl ThemeConfig {
     pub fn preset_index(&self) -> usize {
-        ACCENT_PRESETS
-            .iter()
-            .position(|&p| p == self.name.as_str())
-            .unwrap_or(0)
+        self.name.index()
     }
 
     pub fn accent_for_index(idx: usize) -> ratatui::style::Color {
-        use ratatui::style::Color::*;
-        match ACCENT_PRESETS[idx % ACCENT_PRESETS.len()] {
-            "cyan" => Cyan,
-            "green" => Green,
-            "magenta" => Magenta,
-            "blue" => Blue,
-            _ => Yellow,
+        Accent::from_index(idx).color()
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum LogRotation {
+    Daily,
+    Hourly,
+    Size,
+}
+
+impl Default for LogRotation {
+    fn default() -> Self {
+        Self::Daily
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum LogLevel {
+    Error,
+    Warn,
+    Info,
+    Debug,
+    Trace,
+}
+
+impl Default for LogLevel {
+    fn default() -> Self {
+        Self::Info
+    }
+}
+
+impl LogLevel {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            LogLevel::Error => "error",
+            LogLevel::Warn => "warn",
+            LogLevel::Info => "info",
+            LogLevel::Debug => "debug",
+            LogLevel::Trace => "trace",
         }
     }
 }
@@ -54,16 +124,16 @@ pub struct LogConfig {
     pub enabled: bool,
     /// Log directory — relative paths are resolved from the repo root
     pub dir: String,
-    /// Rotation policy: "daily" | "hourly" | "size"
-    pub rotation: String,
-    /// Maximum file size in MB before rotating (used when rotation = "size")
+    /// Rotation policy
+    pub rotation: LogRotation,
+    /// Maximum file size in MB before rotating (used when rotation = Size)
     pub max_size_mb: u64,
     /// Delete log files older than this many days (0 = keep forever)
     pub max_days: u32,
     /// Opt-in: record terminal prompt input line by line
     pub prompt_log: bool,
-    /// Minimum log level: "error" | "warn" | "info" | "debug" | "trace"
-    pub level: String,
+    /// Minimum log level
+    pub level: LogLevel,
 }
 
 impl Default for LogConfig {
@@ -71,11 +141,11 @@ impl Default for LogConfig {
         Self {
             enabled: true,
             dir: ".nightcrow/logs".to_string(),
-            rotation: "daily".to_string(),
+            rotation: LogRotation::default(),
             max_size_mb: 10,
             max_days: 7,
             prompt_log: false,
-            level: "info".to_string(),
+            level: LogLevel::default(),
         }
     }
 }
@@ -125,26 +195,11 @@ fn validate_config(cfg: &Config) -> Result<()> {
         cfg.layout.file_list_pct >= 1 && cfg.layout.file_list_pct <= 99,
         "layout.file_list_pct must be between 1 and 99"
     );
-    anyhow::ensure!(
-        matches!(cfg.log.rotation.as_str(), "daily" | "hourly" | "size"),
-        "log.rotation must be \"daily\", \"hourly\", or \"size\""
-    );
-    anyhow::ensure!(
-        matches!(
-            cfg.log.level.as_str(),
-            "error" | "warn" | "info" | "debug" | "trace"
-        ),
-        "log.level must be \"error\", \"warn\", \"info\", \"debug\", or \"trace\""
-    );
-    anyhow::ensure!(
-        matches!(
-            cfg.theme.name.as_str(),
-            "yellow" | "cyan" | "green" | "magenta" | "blue"
-        ),
-        "theme.name must be \"yellow\", \"cyan\", \"green\", \"magenta\", or \"blue\""
-    );
     Ok(())
 }
+
+// Kept temporarily during migration — most code now uses Accent directly.
+pub const ACCENT_PRESETS: &[&str] = &["yellow", "green", "cyan", "magenta", "blue"];
 
 #[cfg(test)]
 mod tests {
@@ -177,39 +232,41 @@ file_list_pct = 30
     }
 
     #[test]
-    fn validation_rejects_invalid_log_rotation() {
-        let mut cfg = Config::default();
-        cfg.log.rotation = "weekly".to_string();
-        assert!(validate_config(&cfg).is_err());
+    fn parse_rejects_invalid_log_rotation() {
+        let toml = r#"
+[log]
+rotation = "weekly"
+"#;
+        assert!(toml::from_str::<Config>(toml).is_err());
     }
 
     #[test]
-    fn validation_rejects_invalid_log_level() {
-        let mut cfg = Config::default();
-        cfg.log.level = "verbose".to_string();
-        assert!(validate_config(&cfg).is_err());
+    fn parse_rejects_invalid_log_level() {
+        let toml = r#"
+[log]
+level = "verbose"
+"#;
+        assert!(toml::from_str::<Config>(toml).is_err());
     }
 
     #[test]
-    fn validation_accepts_all_valid_rotations() {
+    fn parse_accepts_all_valid_rotations() {
         for rotation in &["daily", "hourly", "size"] {
-            let mut cfg = Config::default();
-            cfg.log.rotation = rotation.to_string();
+            let toml = format!("[log]\nrotation = \"{rotation}\"\n");
             assert!(
-                validate_config(&cfg).is_ok(),
-                "rotation={rotation} should be valid"
+                toml::from_str::<Config>(&toml).is_ok(),
+                "rotation={rotation} should parse"
             );
         }
     }
 
     #[test]
-    fn validation_accepts_all_valid_levels() {
+    fn parse_accepts_all_valid_levels() {
         for level in &["error", "warn", "info", "debug", "trace"] {
-            let mut cfg = Config::default();
-            cfg.log.level = level.to_string();
+            let toml = format!("[log]\nlevel = \"{level}\"\n");
             assert!(
-                validate_config(&cfg).is_ok(),
-                "level={level} should be valid"
+                toml::from_str::<Config>(&toml).is_ok(),
+                "level={level} should parse"
             );
         }
     }
@@ -219,8 +276,8 @@ file_list_pct = 30
         let cfg = LogConfig::default();
         assert!(cfg.enabled);
         assert!(!cfg.prompt_log);
-        assert_eq!(cfg.rotation, "daily");
-        assert_eq!(cfg.level, "info");
+        assert_eq!(cfg.rotation, LogRotation::Daily);
+        assert_eq!(cfg.level, LogLevel::Info);
         assert_eq!(cfg.max_days, 7);
     }
 
@@ -239,10 +296,10 @@ dir = "/tmp/logs"
         let cfg: Config = toml::from_str(toml).unwrap();
         assert!(!cfg.log.enabled);
         assert!(cfg.log.prompt_log);
-        assert_eq!(cfg.log.rotation, "size");
+        assert_eq!(cfg.log.rotation, LogRotation::Size);
         assert_eq!(cfg.log.max_size_mb, 5);
         assert_eq!(cfg.log.max_days, 14);
-        assert_eq!(cfg.log.level, "debug");
+        assert_eq!(cfg.log.level, LogLevel::Debug);
         assert_eq!(cfg.log.dir, "/tmp/logs");
     }
 }

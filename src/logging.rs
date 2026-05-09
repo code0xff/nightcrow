@@ -1,4 +1,4 @@
-use crate::config::LogConfig;
+use crate::config::{LogConfig, LogRotation};
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
@@ -24,7 +24,7 @@ pub fn init_logging(config: &LogConfig, repo_path: &str) -> Option<LogGuard> {
     fs::create_dir_all(&log_dir).ok()?;
     cleanup_old_logs(&log_dir, config.max_days);
 
-    let level = parse_level(&config.level);
+    let level = config.level.as_str();
     // `prompt` is a dedicated tracing target for terminal prompt capture. We
     // pin it at info regardless of the global level so that enabling
     // `prompt_log` always produces output, even when the rest of the app is
@@ -35,12 +35,12 @@ pub fn init_logging(config: &LogConfig, repo_path: &str) -> Option<LogGuard> {
         level.to_string()
     };
 
-    let (writer, guard) = match config.rotation.as_str() {
-        "hourly" => {
+    let (writer, guard) = match config.rotation {
+        LogRotation::Hourly => {
             let appender = tracing_appender::rolling::hourly(&log_dir, LOG_FILE_PREFIX);
             tracing_appender::non_blocking(appender)
         }
-        "size" => {
+        LogRotation::Size => {
             let max_bytes = config.max_size_mb.saturating_mul(BYTES_PER_MB);
             if let Some(appender) = SizeRollingAppender::new(&log_dir, LOG_FILE_PREFIX, max_bytes) {
                 tracing_appender::non_blocking(appender)
@@ -49,8 +49,7 @@ pub fn init_logging(config: &LogConfig, repo_path: &str) -> Option<LogGuard> {
                 tracing_appender::non_blocking(appender)
             }
         }
-        _ => {
-            // default: daily
+        LogRotation::Daily => {
             let appender = tracing_appender::rolling::daily(&log_dir, LOG_FILE_PREFIX);
             tracing_appender::non_blocking(appender)
         }
@@ -78,13 +77,6 @@ fn resolve_log_dir(dir: &str, repo_path: &str) -> PathBuf {
         path
     } else {
         PathBuf::from(repo_path).join(path)
-    }
-}
-
-fn parse_level(level: &str) -> &str {
-    match level {
-        "error" | "warn" | "info" | "debug" | "trace" => level,
-        _ => "warn",
     }
 }
 
