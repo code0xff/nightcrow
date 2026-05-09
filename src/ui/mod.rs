@@ -69,7 +69,7 @@ pub fn draw(
     layout: &LayoutConfig,
     accent: Color,
 ) {
-    if app.terminal_fullscreen {
+    if app.terminal.fullscreen {
         let root = Layout::default()
             .direction(Direction::Vertical)
             .constraints([Constraint::Min(0), Constraint::Length(1)])
@@ -120,7 +120,7 @@ fn render_hint_bar(app: &App, accent: Color) -> Paragraph<'_> {
     if let Some(ref msg) = app.status {
         return Paragraph::new(Line::from(msg.as_str())).style(Style::default().fg(Color::Red));
     }
-    if app.terminal_fullscreen {
+    if app.terminal.fullscreen {
         return Paragraph::new(Line::from(Span::styled(
             " shift+↑/↓: scroll | shift+pgup/dn: page scroll | shift+←/→: cycle pane | ctrl+f: exit fullscreen | ctrl+t: new pane | ctrl+w: close pane | ctrl+q: quit",
             Style::default().fg(Color::DarkGray),

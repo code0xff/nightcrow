@@ -251,11 +251,11 @@ fn handle_repo_input_key(app: &mut App, key: KeyEvent) {
 fn handle_terminal_key(app: &mut App, key: KeyEvent, action: Action) {
     match action {
         Action::TermScrollUp => {
-            let lines = app.terminal_size.0 as usize;
+            let lines = app.terminal.size.0 as usize;
             app.scroll_terminal_up(lines);
         }
         Action::TermScrollDown => {
-            let lines = app.terminal_size.0 as usize;
+            let lines = app.terminal.size.0 as usize;
             app.scroll_terminal_down(lines);
         }
         Action::TermScrollLineUp => app.scroll_terminal_up(3),

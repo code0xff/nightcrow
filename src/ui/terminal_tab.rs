@@ -39,17 +39,17 @@ pub fn render(frame: &mut Frame, app: &mut App, area: Rect, accent: Color) {
     app.resize_terminal_panes(content_area.height, content_area.width);
 
     // ── Tab bar ──────────────────────────────────────────────
-    let tab_spans: Vec<Span> = if app.terminal_panes.is_empty() {
+    let tab_spans: Vec<Span> = if app.terminal.panes.is_empty() {
         vec![Span::styled(
             " ctrl+t: new terminal ",
             Style::default().fg(Color::DarkGray),
         )]
     } else {
-        app.terminal_panes
+        app.terminal.panes
             .iter()
             .enumerate()
             .map(|(i, pane)| {
-                let style = if i == app.active_pane {
+                let style = if i == app.terminal.active {
                     Style::default()
                         .fg(Color::Black)
                         .bg(accent)

@@ -138,6 +138,34 @@ pub struct PaneInfo {
     pub title: String,
 }
 
+pub struct TerminalState {
+    pub panes: Vec<PaneInfo>,
+    pub active: usize,
+    pub size: (u16, u16),
+    pub scroll: HashMap<PaneId, usize>,
+    pub fullscreen: bool,
+    parsers: HashMap<PaneId, vt100::Parser>,
+    prompt_bufs: HashMap<PaneId, String>,
+    prompt_log_enabled: bool,
+    backend: Option<Box<dyn TerminalBackend>>,
+}
+
+impl TerminalState {
+    pub fn new(backend: Option<Box<dyn TerminalBackend>>, prompt_log_enabled: bool) -> Self {
+        Self {
+            panes: Vec::new(),
+            active: 0,
+            size: (22, 78),
+            scroll: HashMap::new(),
+            fullscreen: false,
+            parsers: HashMap::new(),
+            prompt_bufs: HashMap::new(),
+            prompt_log_enabled,
+            backend,
+        }
+    }
+}
+
 #[derive(Default)]
 pub struct LogView {
     pub commits: Vec<CommitEntry>,
@@ -233,26 +261,18 @@ pub struct App {
     pub status: Option<String>,
     pub repo_path: String,
     pub log_view: LogView,
-    pub terminal_panes: Vec<PaneInfo>,
-    pub active_pane: usize,
-    pub terminal_size: (u16, u16),
+    pub terminal: TerminalState,
     pub search_query: String,
     search_query_lower: String,
     pub search_active: bool,
     pub repo_input_active: bool,
     pub repo_input_buf: String,
     pub diff_search: DiffSearch,
-    pub terminal_fullscreen: bool,
-    pub terminal_scroll: HashMap<PaneId, usize>,
     pub accent_idx: usize,
     pub tracking: Option<TrackingStatus>,
     rx: Receiver<SnapshotMsg>,
     // Dropping this sender signals the background thread to exit.
     _stop_tx: SyncSender<()>,
-    backend: Option<Box<dyn TerminalBackend>>,
-    parsers: HashMap<PaneId, vt100::Parser>,
-    prompt_log_enabled: bool,
-    prompt_bufs: HashMap<PaneId, String>,
     pending_session: Option<crate::session::SessionState>,
 }
 
@@ -274,25 +294,17 @@ impl App {
             status: None,
             repo_path,
             log_view: LogView::default(),
-            terminal_panes: Vec::new(),
-            active_pane: 0,
-            terminal_size: (22, 78),
+            terminal: TerminalState::new(Some(backend), prompt_log),
             search_query: String::new(),
             search_query_lower: String::new(),
             search_active: false,
             repo_input_active: false,
             repo_input_buf: String::new(),
             diff_search: DiffSearch::default(),
-            terminal_fullscreen: false,
-            terminal_scroll: HashMap::new(),
             accent_idx: 0,
             tracking: None,
             rx,
             _stop_tx: stop_tx,
-            backend: Some(backend),
-            parsers: HashMap::new(),
-            prompt_log_enabled: prompt_log,
-            prompt_bufs: HashMap::new(),
             pending_session: None,
         };
 
@@ -302,7 +314,7 @@ impl App {
     }
 
     fn ensure_initial_terminal(&mut self) {
-        if self.backend.is_none() {
+        if self.terminal.backend.is_none() {
             return;
         }
 
@@ -342,8 +354,7 @@ impl App {
     }
 
     pub fn poll_terminal(&mut self) {
-        let events: Vec<BackendEvent> = self
-            .backend
+        let events: Vec<BackendEvent> = self.terminal.backend
             .as_mut()
             .map(|b| b.drain_events())
             .unwrap_or_default();
@@ -351,13 +362,13 @@ impl App {
         for event in events {
             match event {
                 BackendEvent::Output { pane, data } => {
-                    if let Some(parser) = self.parsers.get_mut(&pane) {
+                    if let Some(parser) = self.terminal.parsers.get_mut(&pane) {
                         parser.process(&data);
                     }
                 }
                 BackendEvent::Exited { pane } => {
                     self.remove_terminal_pane_state(pane);
-                    self.terminal_panes.retain(|p| p.id != pane);
+                    self.terminal.panes.retain(|p| p.id != pane);
                     self.clamp_active_pane_after_removal();
                 }
             }
@@ -372,57 +383,56 @@ impl App {
     }
 
     pub fn create_terminal_pane(&mut self) -> anyhow::Result<()> {
-        let (rows, cols) = self.terminal_size;
-        let backend = self
-            .backend
+        let (rows, cols) = self.terminal.size;
+        let backend = self.terminal.backend
             .as_mut()
             .ok_or_else(|| anyhow::anyhow!("no terminal backend available"))?;
 
         let id = backend.create_pane(rows.max(1), cols.max(1))?;
         let parser = vt100::Parser::new(rows.max(1), cols.max(1), SCROLLBACK_LINES);
-        self.parsers.insert(id, parser);
-        self.terminal_panes.push(PaneInfo {
+        self.terminal.parsers.insert(id, parser);
+        self.terminal.panes.push(PaneInfo {
             id,
             title: "shell".to_string(),
         });
-        self.active_pane = self.terminal_panes.len() - 1;
+        self.terminal.active = self.terminal.panes.len() - 1;
         tracing::info!(pane = id, "terminal pane opened");
         Ok(())
     }
 
     pub fn close_active_pane(&mut self) {
-        let Some(info) = self.terminal_panes.get(self.active_pane) else {
+        let Some(info) = self.terminal.panes.get(self.terminal.active) else {
             return;
         };
         let id = info.id;
         tracing::info!(pane = id, "terminal pane closed");
-        if let Some(backend) = &mut self.backend {
+        if let Some(backend) = &mut self.terminal.backend {
             backend.destroy_pane(id);
         }
         self.remove_terminal_pane_state(id);
-        self.terminal_panes.remove(self.active_pane);
+        self.terminal.panes.remove(self.terminal.active);
         self.clamp_active_pane_after_removal();
     }
 
     fn remove_terminal_pane_state(&mut self, id: PaneId) {
-        self.parsers.remove(&id);
+        self.terminal.parsers.remove(&id);
         // Flush any unterminated prompt input so we don't lose the line the
         // user was composing when the pane closes.
-        if let Some(buf) = self.prompt_bufs.remove(&id)
+        if let Some(buf) = self.terminal.prompt_bufs.remove(&id)
             && !buf.is_empty()
         {
             tracing::info!(target: "prompt", pane = id, text = %buf);
         }
-        self.terminal_scroll.remove(&id);
+        self.terminal.scroll.remove(&id);
     }
 
     fn clamp_active_pane_after_removal(&mut self) {
-        if self.terminal_panes.is_empty() {
-            self.active_pane = 0;
+        if self.terminal.panes.is_empty() {
+            self.terminal.active = 0;
             self.focus = Focus::DiffViewer;
-            self.terminal_fullscreen = false;
+            self.terminal.fullscreen = false;
         } else {
-            self.active_pane = self.active_pane.min(self.terminal_panes.len() - 1);
+            self.terminal.active = self.terminal.active.min(self.terminal.panes.len() - 1);
         }
     }
 
@@ -431,7 +441,7 @@ impl App {
         let (rx, stop_tx) = spawn_snapshot_thread(&new_path);
         self._stop_tx = stop_tx;
         self.rx = rx;
-        if let Some(ref mut backend) = self.backend {
+        if let Some(ref mut backend) = self.terminal.backend {
             backend.set_cwd(std::path::Path::new(&new_path));
         }
         tracing::info!(path = %new_path, "repo changed");
@@ -490,22 +500,22 @@ impl App {
     }
 
     pub fn switch_pane(&mut self, idx: usize) {
-        if idx < self.terminal_panes.len() {
-            self.active_pane = idx;
+        if idx < self.terminal.panes.len() {
+            self.terminal.active = idx;
             self.focus = Focus::Terminal;
         }
     }
 
     pub fn send_terminal_input(&mut self, data: &[u8]) {
-        if let Some(info) = self.terminal_panes.get(self.active_pane) {
+        if let Some(info) = self.terminal.panes.get(self.terminal.active) {
             let id = info.id;
-            self.terminal_scroll.remove(&id);
-            if let Some(backend) = &mut self.backend
+            self.terminal.scroll.remove(&id);
+            if let Some(backend) = &mut self.terminal.backend
                 && let Err(e) = backend.send_input(id, data)
             {
                 tracing::warn!("failed to send terminal input to pane {id}: {e}");
             }
-            if self.prompt_log_enabled {
+            if self.terminal.prompt_log_enabled {
                 self.buffer_prompt_input(id, data);
             }
         }
@@ -516,7 +526,7 @@ impl App {
             return;
         }
         if let Some(id) = self.active_pane_id() {
-            let offset = self.terminal_scroll.entry(id).or_insert(0);
+            let offset = self.terminal.scroll.entry(id).or_insert(0);
             *offset = offset.saturating_add(lines);
         }
     }
@@ -526,18 +536,18 @@ impl App {
             return;
         }
         if let Some(id) = self.active_pane_id()
-            && let Some(entry) = self.terminal_scroll.get_mut(&id)
+            && let Some(entry) = self.terminal.scroll.get_mut(&id)
         {
             *entry = entry.saturating_sub(lines);
             if *entry == 0 {
-                self.terminal_scroll.remove(&id);
+                self.terminal.scroll.remove(&id);
             }
         }
     }
 
     pub fn is_terminal_scrolled(&self) -> bool {
         self.active_pane_id()
-            .and_then(|id| self.terminal_scroll.get(&id))
+            .and_then(|id| self.terminal.scroll.get(&id))
             .is_some_and(|&v| v > 0)
     }
 
@@ -545,8 +555,8 @@ impl App {
         let Some(id) = self.active_pane_id() else {
             return;
         };
-        let offset = self.terminal_scroll.get(&id).copied().unwrap_or(0);
-        let actual = match self.parsers.get_mut(&id) {
+        let offset = self.terminal.scroll.get(&id).copied().unwrap_or(0);
+        let actual = match self.terminal.parsers.get_mut(&id) {
             Some(parser) => {
                 // vt100 visible_rows() computes `rows_len - scrollback_offset` without
                 // saturating_sub, panicking when offset exceeds the screen height.
@@ -557,15 +567,15 @@ impl App {
             None => return,
         };
         if actual == 0 {
-            self.terminal_scroll.remove(&id);
+            self.terminal.scroll.remove(&id);
         } else {
-            self.terminal_scroll.insert(id, actual);
+            self.terminal.scroll.insert(id, actual);
         }
     }
 
     fn buffer_prompt_input(&mut self, pane_id: PaneId, data: &[u8]) {
         let text = strip_escape_sequences(data);
-        let buf = self.prompt_bufs.entry(pane_id).or_default();
+        let buf = self.terminal.prompt_bufs.entry(pane_id).or_default();
         for ch in text.chars() {
             if ch == '\r' || ch == '\n' {
                 if !buf.is_empty() {
@@ -579,29 +589,29 @@ impl App {
     }
 
     pub fn resize_terminal_panes(&mut self, rows: u16, cols: u16) {
-        if self.terminal_size == (rows, cols) {
+        if self.terminal.size == (rows, cols) {
             return;
         }
-        self.terminal_size = (rows, cols);
+        self.terminal.size = (rows, cols);
         let r = rows.max(1);
         let c = cols.max(1);
-        for info in &self.terminal_panes {
-            if let Some(backend) = &mut self.backend {
+        for info in &self.terminal.panes {
+            if let Some(backend) = &mut self.terminal.backend {
                 backend.resize(info.id, r, c);
             }
-            if let Some(parser) = self.parsers.get_mut(&info.id) {
+            if let Some(parser) = self.terminal.parsers.get_mut(&info.id) {
                 parser.set_size(r, c);
             }
         }
     }
 
     pub fn active_pane_id(&self) -> Option<PaneId> {
-        self.terminal_panes.get(self.active_pane).map(|p| p.id)
+        self.terminal.panes.get(self.terminal.active).map(|p| p.id)
     }
 
     pub fn active_screen(&self) -> Option<&vt100::Screen> {
         let id = self.active_pane_id()?;
-        self.parsers.get(&id).map(|p| p.screen())
+        self.terminal.parsers.get(&id).map(|p| p.screen())
     }
 
     pub fn reload_diff(&mut self) {
@@ -1109,10 +1119,10 @@ impl App {
     }
 
     pub fn cycle_focus_forward(&mut self) {
-        if self.terminal_fullscreen {
-            let len = self.terminal_panes.len();
+        if self.terminal.fullscreen {
+            let len = self.terminal.panes.len();
             if len > 0 {
-                self.active_pane = (self.active_pane + 1) % len;
+                self.terminal.active = (self.terminal.active + 1) % len;
             }
             return;
         }
@@ -1121,16 +1131,16 @@ impl App {
                 self.focus = Focus::DiffViewer;
             }
             Focus::DiffViewer => {
-                if !self.terminal_panes.is_empty() {
-                    self.active_pane = 0;
+                if !self.terminal.panes.is_empty() {
+                    self.terminal.active = 0;
                     self.focus = Focus::Terminal;
                 } else {
                     self.focus = Focus::FileList;
                 }
             }
             Focus::Terminal => {
-                if self.active_pane + 1 < self.terminal_panes.len() {
-                    self.active_pane += 1;
+                if self.terminal.active + 1 < self.terminal.panes.len() {
+                    self.terminal.active += 1;
                 } else {
                     self.focus = Focus::FileList;
                 }
@@ -1139,17 +1149,17 @@ impl App {
     }
 
     pub fn cycle_focus_backward(&mut self) {
-        if self.terminal_fullscreen {
-            let len = self.terminal_panes.len();
+        if self.terminal.fullscreen {
+            let len = self.terminal.panes.len();
             if len > 0 {
-                self.active_pane = (self.active_pane + len - 1) % len;
+                self.terminal.active = (self.terminal.active + len - 1) % len;
             }
             return;
         }
         match self.focus {
             Focus::FileList => {
-                if !self.terminal_panes.is_empty() {
-                    self.active_pane = self.terminal_panes.len() - 1;
+                if !self.terminal.panes.is_empty() {
+                    self.terminal.active = self.terminal.panes.len() - 1;
                     self.focus = Focus::Terminal;
                 } else {
                     self.focus = Focus::DiffViewer;
@@ -1159,8 +1169,8 @@ impl App {
                 self.focus = Focus::FileList;
             }
             Focus::Terminal => {
-                if self.active_pane > 0 {
-                    self.active_pane -= 1;
+                if self.terminal.active > 0 {
+                    self.terminal.active -= 1;
                 } else {
                     self.focus = Focus::DiffViewer;
                 }
@@ -1169,11 +1179,11 @@ impl App {
     }
 
     pub fn toggle_terminal_fullscreen(&mut self) {
-        if !self.terminal_fullscreen && self.terminal_panes.is_empty() {
+        if !self.terminal.fullscreen && self.terminal.panes.is_empty() {
             return;
         }
-        self.terminal_fullscreen = !self.terminal_fullscreen;
-        if self.terminal_fullscreen {
+        self.terminal.fullscreen = !self.terminal.fullscreen;
+        if self.terminal.fullscreen {
             self.focus = Focus::Terminal;
         }
     }
@@ -1187,8 +1197,8 @@ impl App {
             focus: Some(self.focus),
             selected_file: self.files.get(self.selected).map(|f| f.path.clone()),
             scroll: self.scroll,
-            active_pane: self.active_pane,
-            terminal_fullscreen: self.terminal_fullscreen,
+            active_pane: self.terminal.active,
+            terminal_fullscreen: self.terminal.fullscreen,
             mode: Some(self.mode),
             log_selected: self.log_view.selected,
             accent_idx: self.accent_idx,
@@ -1199,18 +1209,18 @@ impl App {
 
     pub fn restore_session(&mut self, state: &crate::session::SessionState) {
         // Pane / focus / fullscreen restoration — independent of view mode.
-        self.active_pane = state
+        self.terminal.active = state
             .active_pane
-            .min(self.terminal_panes.len().saturating_sub(1));
+            .min(self.terminal.panes.len().saturating_sub(1));
         if let Some(focus) = state.focus {
-            if focus == Focus::Terminal && self.terminal_panes.is_empty() {
+            if focus == Focus::Terminal && self.terminal.panes.is_empty() {
                 self.focus = Focus::FileList;
             } else {
                 self.focus = focus;
             }
         }
-        self.terminal_fullscreen = state.terminal_fullscreen && !self.terminal_panes.is_empty();
-        if self.terminal_fullscreen {
+        self.terminal.fullscreen = state.terminal_fullscreen && !self.terminal.panes.is_empty();
+        if self.terminal.fullscreen {
             self.focus = Focus::Terminal;
         }
         self.accent_idx = state.accent_idx;
@@ -1324,25 +1334,17 @@ mod tests {
             status: None,
             repo_path: ".".to_string(),
             log_view: LogView::default(),
-            terminal_panes: Vec::new(),
-            active_pane: 0,
-            terminal_size: (22, 78),
+            terminal: TerminalState::new(None, false),
             search_query: String::new(),
             search_query_lower: String::new(),
             search_active: false,
             repo_input_active: false,
             repo_input_buf: String::new(),
             diff_search: DiffSearch::default(),
-            terminal_fullscreen: false,
-            terminal_scroll: HashMap::new(),
             accent_idx: 0,
             tracking: None,
             rx,
             _stop_tx,
-            backend: None,
-            parsers: HashMap::new(),
-            prompt_log_enabled: false,
-            prompt_bufs: HashMap::new(),
             pending_session: None,
         }
     }
@@ -1476,30 +1478,30 @@ mod tests {
     #[test]
     fn terminal_scrollback_is_capped_at_screen_rows() {
         let mut app = app_with_files(vec![]);
-        app.terminal_panes = vec![PaneInfo {
+        app.terminal.panes = vec![PaneInfo {
             id: 1,
             title: "shell".into(),
         }];
-        app.active_pane = 0;
-        app.terminal_size = (3, 10);
+        app.terminal.active = 0;
+        app.terminal.size = (3, 10);
 
         let mut parser = vt100::Parser::new(3, 10, SCROLLBACK_LINES);
         parser.process(b"1\r\n2\r\n3\r\n4\r\n5\r\n6\r\n7\r\n8\r\n9\r\n");
-        app.parsers.insert(1, parser);
-        app.terminal_scroll.insert(1, 6);
+        app.terminal.parsers.insert(1, parser);
+        app.terminal.scroll.insert(1, 6);
 
         app.sync_terminal_scroll();
 
         // vt100 visible_rows() panics when scrollback_offset > screen rows, so we
         // cap offset at screen height to avoid the overflow.
-        let actual = app.parsers.get(&1).unwrap().screen().scrollback();
-        assert_eq!(actual, app.terminal_size.0 as usize);
+        let actual = app.terminal.parsers.get(&1).unwrap().screen().scrollback();
+        assert_eq!(actual, app.terminal.size.0 as usize);
     }
 
     #[test]
     fn switch_pane_moves_focus_to_terminal() {
         let mut app = app_with_files(vec![]);
-        app.terminal_panes = vec![
+        app.terminal.panes = vec![
             PaneInfo {
                 id: 1,
                 title: "shell 1".into(),
@@ -1512,20 +1514,20 @@ mod tests {
         assert_eq!(app.focus, Focus::FileList);
         app.switch_pane(1);
         assert_eq!(app.focus, Focus::Terminal);
-        assert_eq!(app.active_pane, 1);
+        assert_eq!(app.terminal.active, 1);
     }
 
     #[test]
     fn switch_pane_ignores_out_of_range() {
         let mut app = app_with_files(vec![]);
         app.switch_pane(5);
-        assert_eq!(app.active_pane, 0);
+        assert_eq!(app.terminal.active, 0);
     }
 
     #[test]
     fn toggle_fullscreen_switches_focus_to_terminal() {
         let mut app = app_with_files(vec![]);
-        app.terminal_panes = vec![PaneInfo {
+        app.terminal.panes = vec![PaneInfo {
             id: 1,
             title: "shell".into(),
         }];
@@ -1533,46 +1535,46 @@ mod tests {
 
         app.toggle_terminal_fullscreen();
 
-        assert!(app.terminal_fullscreen);
+        assert!(app.terminal.fullscreen);
         assert_eq!(app.focus, Focus::Terminal);
     }
 
     #[test]
     fn toggle_fullscreen_noop_with_no_panes() {
         let mut app = app_with_files(vec![]);
-        assert!(app.terminal_panes.is_empty());
+        assert!(app.terminal.panes.is_empty());
 
         app.toggle_terminal_fullscreen();
 
-        assert!(!app.terminal_fullscreen);
+        assert!(!app.terminal.fullscreen);
     }
 
     #[test]
     fn close_last_pane_exits_fullscreen() {
         let mut app = app_with_files(vec![]);
-        app.terminal_panes = vec![PaneInfo {
+        app.terminal.panes = vec![PaneInfo {
             id: 1,
             title: "shell".into(),
         }];
-        app.terminal_fullscreen = true;
+        app.terminal.fullscreen = true;
         app.focus = Focus::Terminal;
-        app.terminal_scroll.insert(1, 3);
-        app.prompt_bufs.insert(1, "cargo test".to_string());
-        app.parsers.insert(1, vt100::Parser::new(3, 10, 0));
+        app.terminal.scroll.insert(1, 3);
+        app.terminal.prompt_bufs.insert(1, "cargo test".to_string());
+        app.terminal.parsers.insert(1, vt100::Parser::new(3, 10, 0));
 
         app.close_active_pane();
 
-        assert!(!app.terminal_fullscreen);
+        assert!(!app.terminal.fullscreen);
         assert_eq!(app.focus, Focus::DiffViewer);
-        assert!(!app.terminal_scroll.contains_key(&1));
-        assert!(!app.prompt_bufs.contains_key(&1));
-        assert!(!app.parsers.contains_key(&1));
+        assert!(!app.terminal.scroll.contains_key(&1));
+        assert!(!app.terminal.prompt_bufs.contains_key(&1));
+        assert!(!app.terminal.parsers.contains_key(&1));
     }
 
     #[test]
     fn restore_session_restores_active_pane_even_when_focus_is_not_terminal() {
         let mut app = app_with_files(vec![]);
-        app.terminal_panes = vec![
+        app.terminal.panes = vec![
             PaneInfo {
                 id: 1,
                 title: "shell 1".into(),
@@ -1590,13 +1592,13 @@ mod tests {
         });
 
         assert_eq!(app.focus, Focus::FileList);
-        assert_eq!(app.active_pane, 1);
+        assert_eq!(app.terminal.active, 1);
     }
 
     #[test]
     fn restore_session_fullscreen_forces_terminal_focus() {
         let mut app = app_with_files(vec![]);
-        app.terminal_panes = vec![PaneInfo {
+        app.terminal.panes = vec![PaneInfo {
             id: 1,
             title: "shell".into(),
         }];
@@ -1607,7 +1609,7 @@ mod tests {
             ..Default::default()
         });
 
-        assert!(app.terminal_fullscreen);
+        assert!(app.terminal.fullscreen);
         assert_eq!(app.focus, Focus::Terminal);
     }
 
