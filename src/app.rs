@@ -167,6 +167,24 @@ impl TerminalState {
 }
 
 #[derive(Default)]
+pub struct RepoInput {
+    pub active: bool,
+    pub buf: String,
+}
+
+/// Post-load behaviour for `apply_diff_result`. Replaces the prior 3-flag
+/// signature where the combination of `reset_scroll` and `keep_scroll` was
+/// hard to parse at call sites.
+enum DiffApply<'a> {
+    /// Reset scroll/cursor to top after a successful load.
+    Reset,
+    /// Keep the previous scroll position (for in-place refresh).
+    KeepScroll(usize),
+    /// Reset scroll and additionally update the log diff title.
+    ResetWithTitle(&'a str),
+}
+
+#[derive(Default)]
 pub struct LogView {
     pub commits: Vec<CommitEntry>,
     pub selected: usize,
@@ -265,8 +283,7 @@ pub struct App {
     pub search_query: String,
     search_query_lower: String,
     pub search_active: bool,
-    pub repo_input_active: bool,
-    pub repo_input_buf: String,
+    pub repo_input: RepoInput,
     pub diff_search: DiffSearch,
     pub accent_idx: usize,
     pub tracking: Option<TrackingStatus>,
@@ -298,8 +315,7 @@ impl App {
             search_query: String::new(),
             search_query_lower: String::new(),
             search_active: false,
-            repo_input_active: false,
-            repo_input_buf: String::new(),
+            repo_input: RepoInput::default(),
             diff_search: DiffSearch::default(),
             accent_idx: 0,
             tracking: None,
@@ -466,18 +482,18 @@ impl App {
     }
 
     pub fn start_repo_input(&mut self) {
-        self.repo_input_buf = self.repo_path.clone();
-        self.repo_input_active = true;
+        self.repo_input.buf = self.repo_path.clone();
+        self.repo_input.active = true;
     }
 
     pub fn cancel_repo_input(&mut self) {
-        self.repo_input_active = false;
-        self.repo_input_buf.clear();
+        self.repo_input.active = false;
+        self.repo_input.buf.clear();
     }
 
     pub fn confirm_repo_input(&mut self) {
-        self.repo_input_active = false;
-        let path = std::mem::take(&mut self.repo_input_buf);
+        self.repo_input.active = false;
+        let path = std::mem::take(&mut self.repo_input.buf);
         let trimmed = path.trim();
         if trimmed.is_empty() {
             self.status = Some("repo path cannot be empty".to_string());
@@ -492,11 +508,11 @@ impl App {
     }
 
     pub fn repo_input_push(&mut self, ch: char) {
-        self.repo_input_buf.push(ch);
+        self.repo_input.buf.push(ch);
     }
 
     pub fn repo_input_pop(&mut self) {
-        self.repo_input_buf.pop();
+        self.repo_input.buf.pop();
     }
 
     pub fn switch_pane(&mut self, idx: usize) {
@@ -629,7 +645,12 @@ impl App {
             if let Err(e) = &result {
                 tracing::debug!(error = %e, file = %path, "failed to load diff");
             }
-            self.apply_diff_result(result, None, reset_scroll, Some(previous_scroll));
+            let mode = if reset_scroll {
+                DiffApply::Reset
+            } else {
+                DiffApply::KeepScroll(previous_scroll)
+            };
+            self.apply_diff_result(result, mode);
         } else {
             self.clear_diff_state();
         }
@@ -639,25 +660,23 @@ impl App {
     /// stash hunks, reset/restore scroll and search cursor, optionally update
     /// the log title, and recompute diff search matches; on error clear state
     /// but preserve the title so the user knows what failed.
-    fn apply_diff_result(
-        &mut self,
-        result: anyhow::Result<Vec<DiffHunk>>,
-        title: Option<String>,
-        reset_scroll: bool,
-        keep_scroll: Option<usize>,
-    ) {
+    fn apply_diff_result(&mut self, result: anyhow::Result<Vec<DiffHunk>>, mode: DiffApply<'_>) {
+        let reset_scroll = matches!(mode, DiffApply::Reset | DiffApply::ResetWithTitle(_));
         match result {
             Ok(hunks) => {
                 self.hunks = hunks;
-                if reset_scroll {
-                    self.scroll = 0;
-                    self.diff_scroll_x = 0;
-                    self.diff_search.cursor = 0;
-                } else if let Some(prev) = keep_scroll {
-                    self.scroll = prev;
+                match mode {
+                    DiffApply::Reset | DiffApply::ResetWithTitle(_) => {
+                        self.scroll = 0;
+                        self.diff_scroll_x = 0;
+                        self.diff_search.cursor = 0;
+                    }
+                    DiffApply::KeepScroll(prev) => {
+                        self.scroll = prev;
+                    }
                 }
-                if let Some(t) = title {
-                    self.log_view.diff_title = t;
+                if let DiffApply::ResetWithTitle(title) = mode {
+                    self.log_view.diff_title = title.to_string();
                 }
                 if !self.diff_search.query.is_empty() {
                     self.recompute_diff_matches(reset_scroll);
@@ -665,8 +684,8 @@ impl App {
             }
             Err(_) => {
                 self.clear_diff_state();
-                if let Some(t) = title {
-                    self.log_view.diff_title = t;
+                if let DiffApply::ResetWithTitle(title) = mode {
+                    self.log_view.diff_title = title.to_string();
                 }
             }
         }
@@ -964,7 +983,7 @@ impl App {
         if let Err(e) = &result {
             tracing::debug!(error = %e, "failed to load commit diff");
         }
-        self.apply_diff_result(result, Some(title), true, None);
+        self.apply_diff_result(result, DiffApply::ResetWithTitle(&title));
     }
 
     fn reset_drill_down_state(&mut self) {
@@ -1049,7 +1068,7 @@ impl App {
         if let Err(e) = &result {
             tracing::debug!(error = %e, file = %path, "failed to load commit file diff");
         }
-        self.apply_diff_result(result, Some(title), true, None);
+        self.apply_diff_result(result, DiffApply::ResetWithTitle(&title));
     }
 
     pub fn toggle_mode(&mut self) {
@@ -1338,8 +1357,7 @@ mod tests {
             search_query: String::new(),
             search_query_lower: String::new(),
             search_active: false,
-            repo_input_active: false,
-            repo_input_buf: String::new(),
+            repo_input: RepoInput::default(),
             diff_search: DiffSearch::default(),
             accent_idx: 0,
             tracking: None,

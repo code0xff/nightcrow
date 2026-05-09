@@ -110,10 +110,10 @@ pub fn draw(
 }
 
 fn render_hint_bar(app: &App, accent: Color) -> Paragraph<'_> {
-    if app.repo_input_active {
+    if app.repo_input.active {
         return Paragraph::new(Line::from(vec![
             Span::styled("repo: ", Style::default().fg(accent)),
-            Span::raw(app.repo_input_buf.as_str()),
+            Span::raw(app.repo_input.buf.as_str()),
             Span::styled("█", Style::default().fg(accent)),
         ]));
     }

@@ -177,7 +177,7 @@ fn handle_key(app: &mut App, key: KeyEvent) -> KeyOutcome {
         return outcome;
     }
 
-    if app.repo_input_active {
+    if app.repo_input.active {
         handle_repo_input_key(app, key);
         return KeyOutcome::Continue;
     }
@@ -237,7 +237,7 @@ fn handle_repo_input_key(app: &mut App, key: KeyEvent) {
         KeyCode::Esc => app.cancel_repo_input(),
         KeyCode::Enter => app.confirm_repo_input(),
         KeyCode::Backspace => {
-            if app.repo_input_buf.is_empty() {
+            if app.repo_input.buf.is_empty() {
                 app.cancel_repo_input();
             } else {
                 app.repo_input_pop();
