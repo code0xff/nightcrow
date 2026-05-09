@@ -36,7 +36,7 @@ fn format_relative_time(ts: i64) -> String {
 }
 
 pub fn render(frame: &mut Frame, app: &App, area: Rect, accent: Color) {
-    if app.log_drill_down {
+    if app.log_view.drill_down {
         render_file_list(frame, app, area, accent);
     } else {
         render_commit_list(frame, app, area, accent);
@@ -49,8 +49,7 @@ fn render_commit_list(frame: &mut Frame, app: &App, area: Rect, accent: Color) {
 
     let ahead_count = app.tracking.as_ref().map_or(0, |t| t.ahead);
 
-    let items: Vec<ListItem> = app
-        .commits
+    let items: Vec<ListItem> = app.log_view.commits
         .iter()
         .enumerate()
         .map(|(i, entry)| {
@@ -74,14 +73,14 @@ fn render_commit_list(frame: &mut Frame, app: &App, area: Rect, accent: Color) {
         })
         .collect();
 
-    let title = if app.commits.is_empty() {
+    let title = if app.log_view.commits.is_empty() {
         " Log (no commits) ".to_string()
     } else {
         match &app.tracking {
             Some(t) if t.ahead > 0 || t.behind > 0 => {
-                format!(" Log ({})  ↑{} ↓{} ", app.commits.len(), t.ahead, t.behind)
+                format!(" Log ({})  ↑{} ↓{} ", app.log_view.commits.len(), t.ahead, t.behind)
             }
-            _ => format!(" Log ({}) ", app.commits.len()),
+            _ => format!(" Log ({}) ", app.log_view.commits.len()),
         }
     };
 
@@ -100,9 +99,9 @@ fn render_commit_list(frame: &mut Frame, app: &App, area: Rect, accent: Color) {
         .highlight_symbol("> ");
 
     let mut state = ListState::default();
-    if !app.commits.is_empty() {
+    if !app.log_view.commits.is_empty() {
         state.select(Some(
-            app.log_selected.min(app.commits.len().saturating_sub(1)),
+            app.log_view.selected.min(app.log_view.commits.len().saturating_sub(1)),
         ));
     }
 
@@ -113,8 +112,7 @@ fn render_file_list(frame: &mut Frame, app: &App, area: Rect, accent: Color) {
     let focused = app.focus == Focus::FileList;
     let border_style = super::focused_border_style(focused, accent);
 
-    let items: Vec<ListItem> = app
-        .log_commit_files
+    let items: Vec<ListItem> = app.log_view.commit_files
         .iter()
         .map(|f| {
             let line = Line::from(vec![
@@ -128,9 +126,8 @@ fn render_file_list(frame: &mut Frame, app: &App, area: Rect, accent: Color) {
         })
         .collect();
 
-    let commit_summary = app
-        .commits
-        .get(app.log_selected)
+    let commit_summary = app.log_view.commits
+        .get(app.log_view.selected)
         .map(|e| format!(" {} {} ", e.short_id, e.summary))
         .unwrap_or_else(|| " Files ".to_string());
 
@@ -151,10 +148,10 @@ fn render_file_list(frame: &mut Frame, app: &App, area: Rect, accent: Color) {
         .highlight_symbol("> ");
 
     let mut state = ListState::default();
-    if !app.log_commit_files.is_empty() {
+    if !app.log_view.commit_files.is_empty() {
         state.select(Some(
-            app.log_file_selected
-                .min(app.log_commit_files.len().saturating_sub(1)),
+            app.log_view.file_selected
+                .min(app.log_view.commit_files.len().saturating_sub(1)),
         ));
     }
 

@@ -139,6 +139,16 @@ pub struct PaneInfo {
 }
 
 #[derive(Default)]
+pub struct LogView {
+    pub commits: Vec<CommitEntry>,
+    pub selected: usize,
+    pub diff_title: String,
+    pub drill_down: bool,
+    pub commit_files: Vec<ChangedFile>,
+    pub file_selected: usize,
+}
+
+#[derive(Default)]
 pub struct DiffSearch {
     pub active: bool,
     pub query: String,
@@ -222,12 +232,7 @@ pub struct App {
     pub focus: Focus,
     pub status: Option<String>,
     pub repo_path: String,
-    pub commits: Vec<CommitEntry>,
-    pub log_selected: usize,
-    pub log_diff_title: String,
-    pub log_drill_down: bool,
-    pub log_commit_files: Vec<ChangedFile>,
-    pub log_file_selected: usize,
+    pub log_view: LogView,
     pub terminal_panes: Vec<PaneInfo>,
     pub active_pane: usize,
     pub terminal_size: (u16, u16),
@@ -268,12 +273,7 @@ impl App {
             focus: Focus::FileList,
             status: None,
             repo_path,
-            commits: Vec::new(),
-            log_selected: 0,
-            log_diff_title: String::new(),
-            log_drill_down: false,
-            log_commit_files: Vec::new(),
-            log_file_selected: 0,
+            log_view: LogView::default(),
             terminal_panes: Vec::new(),
             active_pane: 0,
             terminal_size: (22, 78),
@@ -443,9 +443,9 @@ impl App {
         self.scroll = 0;
         self.diff_scroll_x = 0;
         self.file_scroll_x = 0;
-        self.commits.clear();
-        self.log_selected = 0;
-        self.log_diff_title.clear();
+        self.log_view.commits.clear();
+        self.log_view.selected = 0;
+        self.log_view.diff_title.clear();
         self.reset_drill_down_state();
         self.search_query.clear();
         self.search_active = false;
@@ -647,7 +647,7 @@ impl App {
                     self.scroll = prev;
                 }
                 if let Some(t) = title {
-                    self.log_diff_title = t;
+                    self.log_view.diff_title = t;
                 }
                 if !self.diff_search.query.is_empty() {
                     self.recompute_diff_matches(reset_scroll);
@@ -656,7 +656,7 @@ impl App {
             Err(_) => {
                 self.clear_diff_state();
                 if let Some(t) = title {
-                    self.log_diff_title = t;
+                    self.log_view.diff_title = t;
                 }
             }
         }
@@ -848,7 +848,7 @@ impl App {
         if self.mode != ViewMode::Log {
             return false;
         }
-        if self.log_drill_down {
+        if self.log_view.drill_down {
             file_nav(self);
         } else {
             commit_nav(self);
@@ -943,9 +943,9 @@ impl App {
     }
 
     fn load_commit_diff_for_selected(&mut self) {
-        let Some(entry) = self.commits.get(self.log_selected) else {
+        let Some(entry) = self.log_view.commits.get(self.log_view.selected) else {
             self.clear_diff_state();
-            self.log_diff_title.clear();
+            self.log_view.diff_title.clear();
             return;
         };
         let oid = entry.oid;
@@ -958,25 +958,25 @@ impl App {
     }
 
     fn reset_drill_down_state(&mut self) {
-        self.log_drill_down = false;
-        self.log_commit_files.clear();
-        self.log_file_selected = 0;
+        self.log_view.drill_down = false;
+        self.log_view.commit_files.clear();
+        self.log_view.file_selected = 0;
     }
 
     pub fn log_drill_in(&mut self) {
-        let Some(entry) = self.commits.get(self.log_selected) else {
+        let Some(entry) = self.log_view.commits.get(self.log_view.selected) else {
             return;
         };
         let oid = entry.oid;
         let title = commit_diff_title(entry);
         match load_commit_files(&self.repo_path, oid) {
             Ok(files) => {
-                self.log_commit_files = files;
-                self.log_file_selected = 0;
-                self.log_drill_down = true;
-                if self.log_commit_files.is_empty() {
+                self.log_view.commit_files = files;
+                self.log_view.file_selected = 0;
+                self.log_view.drill_down = true;
+                if self.log_view.commit_files.is_empty() {
                     self.clear_diff_state();
-                    self.log_diff_title = title;
+                    self.log_view.diff_title = title;
                 } else {
                     self.load_file_diff_for_log_file_selected();
                 }
@@ -993,27 +993,27 @@ impl App {
     }
 
     pub fn log_file_select_up(&mut self) {
-        if cursor_up(&mut self.log_file_selected, 1) {
+        if cursor_up(&mut self.log_view.file_selected, 1) {
             self.load_file_diff_for_log_file_selected();
         }
     }
 
     pub fn log_file_select_down(&mut self) {
-        if cursor_down(&mut self.log_file_selected, self.log_commit_files.len(), 1) {
+        if cursor_down(&mut self.log_view.file_selected, self.log_view.commit_files.len(), 1) {
             self.load_file_diff_for_log_file_selected();
         }
     }
 
     pub fn log_file_page_up(&mut self) {
-        if cursor_up(&mut self.log_file_selected, LIST_PAGE_SIZE) {
+        if cursor_up(&mut self.log_view.file_selected, LIST_PAGE_SIZE) {
             self.load_file_diff_for_log_file_selected();
         }
     }
 
     pub fn log_file_page_down(&mut self) {
         if cursor_down(
-            &mut self.log_file_selected,
-            self.log_commit_files.len(),
+            &mut self.log_view.file_selected,
+            self.log_view.commit_files.len(),
             LIST_PAGE_SIZE,
         ) {
             self.load_file_diff_for_log_file_selected();
@@ -1021,16 +1021,16 @@ impl App {
     }
 
     fn load_file_diff_for_log_file_selected(&mut self) {
-        let Some(commit_entry) = self.commits.get(self.log_selected) else {
+        let Some(commit_entry) = self.log_view.commits.get(self.log_view.selected) else {
             self.clear_diff_state();
-            self.log_diff_title.clear();
+            self.log_view.diff_title.clear();
             return;
         };
         let oid = commit_entry.oid;
         let commit_title = commit_diff_title(commit_entry);
-        let Some(file) = self.log_commit_files.get(self.log_file_selected) else {
+        let Some(file) = self.log_view.commit_files.get(self.log_view.file_selected) else {
             self.clear_diff_state();
-            self.log_diff_title = commit_title;
+            self.log_view.diff_title = commit_title;
             return;
         };
         let path = file.path.clone();
@@ -1050,14 +1050,14 @@ impl App {
                 self.reset_drill_down_state();
                 match load_commit_log(&self.repo_path, COMMIT_LOG_LIMIT) {
                     Ok(commits) => {
-                        self.commits = commits;
-                        self.log_selected = 0;
+                        self.log_view.commits = commits;
+                        self.log_view.selected = 0;
                         self.load_commit_diff_for_selected();
                     }
                     Err(e) => {
                         tracing::warn!(error = %e, "failed to load commit log");
-                        self.commits.clear();
-                        self.log_selected = 0;
+                        self.log_view.commits.clear();
+                        self.log_view.selected = 0;
                         self.status = Some(format!("git error: {e}"));
                     }
                 }
@@ -1071,25 +1071,25 @@ impl App {
     }
 
     pub fn log_select_up(&mut self) {
-        if cursor_up(&mut self.log_selected, 1) {
+        if cursor_up(&mut self.log_view.selected, 1) {
             self.load_commit_diff_for_selected();
         }
     }
 
     pub fn log_select_down(&mut self) {
-        if cursor_down(&mut self.log_selected, self.commits.len(), 1) {
+        if cursor_down(&mut self.log_view.selected, self.log_view.commits.len(), 1) {
             self.load_commit_diff_for_selected();
         }
     }
 
     pub fn log_page_up(&mut self) {
-        if cursor_up(&mut self.log_selected, LIST_PAGE_SIZE) {
+        if cursor_up(&mut self.log_view.selected, LIST_PAGE_SIZE) {
             self.load_commit_diff_for_selected();
         }
     }
 
     pub fn log_page_down(&mut self) {
-        if cursor_down(&mut self.log_selected, self.commits.len(), LIST_PAGE_SIZE) {
+        if cursor_down(&mut self.log_view.selected, self.log_view.commits.len(), LIST_PAGE_SIZE) {
             self.load_commit_diff_for_selected();
         }
     }
@@ -1190,10 +1190,10 @@ impl App {
             active_pane: self.active_pane,
             terminal_fullscreen: self.terminal_fullscreen,
             mode: Some(self.mode),
-            log_selected: self.log_selected,
+            log_selected: self.log_view.selected,
             accent_idx: self.accent_idx,
-            log_drill_down: self.log_drill_down,
-            log_file_selected: self.log_file_selected,
+            log_drill_down: self.log_view.drill_down,
+            log_file_selected: self.log_view.file_selected,
         }
     }
 
@@ -1254,8 +1254,8 @@ impl App {
                 return;
             }
         };
-        self.commits = commits;
-        self.log_selected = state.log_selected.min(self.commits.len().saturating_sub(1));
+        self.log_view.commits = commits;
+        self.log_view.selected = state.log_selected.min(self.log_view.commits.len().saturating_sub(1));
         self.mode = ViewMode::Log;
 
         if state.log_drill_down {
@@ -1267,7 +1267,7 @@ impl App {
     }
 
     fn restore_log_drill_down(&mut self, state: &crate::session::SessionState) {
-        let Some(entry) = self.commits.get(self.log_selected) else {
+        let Some(entry) = self.log_view.commits.get(self.log_view.selected) else {
             self.load_commit_diff_for_selected();
             return;
         };
@@ -1275,16 +1275,16 @@ impl App {
         let title = commit_diff_title(entry);
         match load_commit_files(&self.repo_path, oid) {
             Ok(files) => {
-                self.log_commit_files = files;
-                self.log_drill_down = true;
-                if self.log_commit_files.is_empty() {
-                    self.log_file_selected = 0;
+                self.log_view.commit_files = files;
+                self.log_view.drill_down = true;
+                if self.log_view.commit_files.is_empty() {
+                    self.log_view.file_selected = 0;
                     self.clear_diff_state();
-                    self.log_diff_title = title;
+                    self.log_view.diff_title = title;
                 } else {
-                    self.log_file_selected = state
+                    self.log_view.file_selected = state
                         .log_file_selected
-                        .min(self.log_commit_files.len().saturating_sub(1));
+                        .min(self.log_view.commit_files.len().saturating_sub(1));
                     self.load_file_diff_for_log_file_selected();
                 }
             }
@@ -1323,12 +1323,7 @@ mod tests {
             focus: Focus::FileList,
             status: None,
             repo_path: ".".to_string(),
-            commits: Vec::new(),
-            log_selected: 0,
-            log_diff_title: String::new(),
-            log_drill_down: false,
-            log_commit_files: Vec::new(),
-            log_file_selected: 0,
+            log_view: LogView::default(),
             terminal_panes: Vec::new(),
             active_pane: 0,
             terminal_size: (22, 78),
@@ -1650,16 +1645,16 @@ mod tests {
         let mut app = app_with_files(vec![]);
         app.repo_path = path.clone();
         app.mode = ViewMode::Log;
-        app.commits = load_commit_log(&path, 1).unwrap();
+        app.log_view.commits = load_commit_log(&path, 1).unwrap();
         app.hunks = vec![context_hunk(&["stale"])];
-        app.log_diff_title = "stale".to_string();
+        app.log_view.diff_title = "stale".to_string();
 
         app.log_drill_in();
 
-        assert!(app.log_drill_down);
-        assert!(app.log_commit_files.is_empty());
+        assert!(app.log_view.drill_down);
+        assert!(app.log_view.commit_files.is_empty());
         assert!(app.hunks.is_empty());
-        assert!(app.log_diff_title.contains("empty"));
+        assert!(app.log_view.diff_title.contains("empty"));
     }
 
     #[test]

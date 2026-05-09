@@ -132,7 +132,7 @@ fn render_hint_bar(app: &App, accent: Color) -> Paragraph<'_> {
         }
         Focus::FileList => match app.mode {
             ViewMode::Log => {
-                if app.log_drill_down {
+                if app.log_view.drill_down {
                     " esc: back to commits | j/k: navigate files | shift+←/→: cycle | ctrl+q: quit"
                 } else {
                     " ctrl+l: status view | j/k: navigate commits | enter: view files | shift+←/→: cycle | ctrl+q: quit"

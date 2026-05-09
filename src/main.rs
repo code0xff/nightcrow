@@ -329,10 +329,10 @@ fn handle_diff_search_key(app: &mut App, key: KeyEvent) {
 fn handle_unmapped_upper_key(app: &mut App, key: KeyEvent) {
     match app.focus {
         Focus::FileList => match key.code {
-            KeyCode::Enter if app.mode == ViewMode::Log && !app.log_drill_down => {
+            KeyCode::Enter if app.mode == ViewMode::Log && !app.log_view.drill_down => {
                 app.log_drill_in()
             }
-            KeyCode::Esc if app.log_drill_down => app.log_drill_out(),
+            KeyCode::Esc if app.log_view.drill_down => app.log_drill_out(),
             KeyCode::Char('/') if app.mode == ViewMode::Status => app.start_search(),
             KeyCode::Esc if !app.search_query.is_empty() => app.cancel_search(),
             KeyCode::Left => app.file_scroll_left(),

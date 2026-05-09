@@ -25,9 +25,8 @@ fn extension(path: &str) -> &str {
 
 fn file_path_for_syntax(app: &App) -> &str {
     match app.mode {
-        ViewMode::Log if app.log_drill_down => app
-            .log_commit_files
-            .get(app.log_file_selected)
+        ViewMode::Log if app.log_view.drill_down => app.log_view.commit_files
+            .get(app.log_view.file_selected)
             .map(|f| f.path.as_str())
             .unwrap_or(""),
         ViewMode::Log => "",
@@ -146,7 +145,7 @@ pub fn render(
     if lines.is_empty() {
         let msg = match app.mode {
             ViewMode::Log => {
-                if app.commits.is_empty() {
+                if app.log_view.commits.is_empty() {
                     "No commits in repository"
                 } else {
                     "No diff for selected commit"
@@ -168,10 +167,10 @@ pub fn render(
 
     let title = match app.mode {
         ViewMode::Log => {
-            let label = if app.log_diff_title.is_empty() {
+            let label = if app.log_view.diff_title.is_empty() {
                 "Diff"
             } else {
-                app.log_diff_title.as_str()
+                app.log_view.diff_title.as_str()
             };
             if has_search {
                 let count = app.diff_search.matches.len();
