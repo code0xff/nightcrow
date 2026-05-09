@@ -39,3 +39,4 @@
 # Added by cargo
 
 /target
+.claude/scheduled_tasks.lock
