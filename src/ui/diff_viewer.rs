@@ -47,7 +47,7 @@ pub fn render(
     ts: &ThemeSet,
     accent: ratatui::style::Color,
 ) {
-    let show_search = app.diff_search_active || !app.diff_search_query.is_empty();
+    let show_search = app.diff_search.active || !app.diff_search.query.is_empty();
 
     let (diff_area, search_area) = if show_search {
         let chunks = Layout::default()
@@ -69,8 +69,8 @@ pub fn render(
         .unwrap_or_else(|| ss.find_syntax_plain_text());
     let theme = &ts.themes["base16-ocean.dark"];
 
-    let current_match = app.diff_search_matches.get(app.diff_search_cursor).copied();
-    let has_search = !app.diff_search_query.is_empty();
+    let current_match = app.diff_search.matches.get(app.diff_search.cursor).copied();
+    let has_search = !app.diff_search.query.is_empty();
 
     let mut lines: Vec<Line> = Vec::new();
     let mut flat_idx: usize = 0;
@@ -92,7 +92,7 @@ pub fn render(
 
         for diff_line in &hunk.lines {
             let is_current = has_search && current_match == Some(flat_idx);
-            let is_match = has_search && app.diff_search_matches.binary_search(&flat_idx).is_ok();
+            let is_match = has_search && app.diff_search.matches.binary_search(&flat_idx).is_ok();
 
             let bg = if is_current {
                 Color::Rgb(100, 80, 0)
@@ -174,11 +174,11 @@ pub fn render(
                 app.log_diff_title.as_str()
             };
             if has_search {
-                let count = app.diff_search_matches.len();
+                let count = app.diff_search.matches.len();
                 if count == 0 {
                     format!(" {label} [no matches] ")
                 } else {
-                    format!(" {label} [{}/{}] ", app.diff_search_cursor + 1, count)
+                    format!(" {label} [{}/{}] ", app.diff_search.cursor + 1, count)
                 }
             } else {
                 format!(" {label} ")
@@ -186,7 +186,7 @@ pub fn render(
         }
         ViewMode::Status => {
             if has_search {
-                let count = app.diff_search_matches.len();
+                let count = app.diff_search.matches.len();
                 let file = app
                     .files
                     .get(app.selected)
@@ -195,7 +195,7 @@ pub fn render(
                 if count == 0 {
                     format!(" {file} [no matches] ")
                 } else {
-                    format!(" {file} [{}/{}] ", app.diff_search_cursor + 1, count)
+                    format!(" {file} [{}/{}] ", app.diff_search.cursor + 1, count)
                 }
             } else if let Some(f) = app.files.get(app.selected) {
                 format!(" {} ", f.path)
@@ -229,8 +229,8 @@ pub fn render(
     if let Some(sa) = search_area {
         super::render_search_bar(
             frame,
-            &app.diff_search_query,
-            app.diff_search_active,
+            &app.diff_search.query,
+            app.diff_search.active,
             sa,
             accent,
         );
