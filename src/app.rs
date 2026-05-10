@@ -189,6 +189,29 @@ pub struct StatusView {
     pub search_query: String,
     search_query_lower: String,
     pub search_active: bool,
+    /// Indices into `files` that match the current `search_query`.
+    /// Recomputed only when `files` or the query changes (see
+    /// `App::recompute_status_filter`). Read-only for renderers.
+    filter_cache: Vec<usize>,
+}
+
+impl StatusView {
+    /// Refresh `filter_cache` from `files` and the current query. Callers must
+    /// invoke this after mutating `files`, `search_query`, or
+    /// `search_query_lower`; otherwise the cache will diverge from state.
+    fn recompute_filter(&mut self) {
+        self.filter_cache.clear();
+        if self.search_query.is_empty() {
+            self.filter_cache.extend(0..self.files.len());
+            return;
+        }
+        let q = self.search_query_lower.as_str();
+        for (i, f) in self.files.iter().enumerate() {
+            if f.path.to_lowercase().contains(q) {
+                self.filter_cache.push(i);
+            }
+        }
+    }
 }
 
 #[derive(Default)]
@@ -397,6 +420,7 @@ impl App {
                         .get(self.status_view.selected)
                         .map(|f| f.path.clone());
                     self.status_view.files = snapshot.files;
+                    self.status_view.recompute_filter();
                     self.tracking = snapshot.tracking;
 
                     let selected_path_changed =
@@ -537,7 +561,9 @@ impl App {
         self.log_view.diff_title.clear();
         self.reset_drill_down_state();
         self.status_view.search_query.clear();
+        self.status_view.search_query_lower.clear();
         self.status_view.search_active = false;
+        self.status_view.recompute_filter();
         self.diff_search.clear();
         self.status = None;
         self.tracking = None;
@@ -881,18 +907,8 @@ impl App {
             .map(|file| file.path.clone())
     }
 
-    pub fn filtered_indices(&self) -> Vec<usize> {
-        if self.status_view.search_query.is_empty() {
-            return (0..self.status_view.files.len()).collect();
-        }
-        let q = self.status_view.search_query_lower.as_str();
-        self.status_view
-            .files
-            .iter()
-            .enumerate()
-            .filter(|(_, f)| f.path.to_lowercase().contains(q))
-            .map(|(i, _)| i)
-            .collect()
+    pub fn filtered_indices(&self) -> &[usize] {
+        &self.status_view.filter_cache
     }
 
     pub fn start_search(&mut self) {
@@ -903,6 +919,7 @@ impl App {
         self.status_view.search_active = false;
         self.status_view.search_query.clear();
         self.status_view.search_query_lower.clear();
+        self.status_view.recompute_filter();
     }
 
     pub fn confirm_search(&mut self) {
@@ -912,12 +929,14 @@ impl App {
     pub fn search_push(&mut self, ch: char) {
         self.status_view.search_query.push(ch);
         self.status_view.search_query_lower = self.status_view.search_query.to_lowercase();
+        self.status_view.recompute_filter();
         self.clamp_to_filtered();
     }
 
     pub fn search_pop(&mut self) {
         self.status_view.search_query.pop();
         self.status_view.search_query_lower = self.status_view.search_query.to_lowercase();
+        self.status_view.recompute_filter();
         self.clamp_to_filtered();
     }
 
@@ -1029,10 +1048,17 @@ impl App {
     }
 
     fn clamp_to_filtered(&mut self) {
-        let indices = self.filtered_indices();
-        if !indices.contains(&self.status_view.selected)
-            && let Some(&first) = indices.first()
-        {
+        // Copy out the data we need so the immutable borrow ends before we
+        // call the mutating reload below.
+        let target = {
+            let indices = self.filtered_indices();
+            if indices.contains(&self.status_view.selected) {
+                None
+            } else {
+                indices.first().copied()
+            }
+        };
+        if let Some(first) = target {
             self.status_view.selected = first;
             self.reload_diff();
         }
@@ -1056,20 +1082,27 @@ impl App {
     /// Handles both empty-query (full file list) and non-empty (filtered subset)
     /// cases uniformly.
     fn move_selected_in_filter(&mut self, delta: isize) {
-        let indices = self.filtered_indices();
-        if indices.is_empty() {
-            return;
-        }
-        let pos = indices.iter().position(|&i| i == self.status_view.selected);
-        let new_pos = match pos {
-            Some(p) => {
-                let last = indices.len() as isize - 1;
-                (p as isize + delta).clamp(0, last) as usize
+        // Resolve the new selection in a scoped block so the borrow on
+        // filtered_indices does not outlive the mutating reload below.
+        let resolved = {
+            let indices = self.filtered_indices();
+            if indices.is_empty() {
+                None
+            } else {
+                let pos = indices.iter().position(|&i| i == self.status_view.selected);
+                let new_pos = match pos {
+                    Some(p) => {
+                        let last = indices.len() as isize - 1;
+                        (p as isize + delta).clamp(0, last) as usize
+                    }
+                    None => 0,
+                };
+                Some((pos, new_pos, indices[new_pos]))
             }
-            None => 0,
         };
-        let new_selected = indices[new_pos];
-        if Some(new_pos) != pos || self.status_view.selected != new_selected {
+        if let Some((pos, new_pos, new_selected)) = resolved
+            && (Some(new_pos) != pos || self.status_view.selected != new_selected)
+        {
             self.status_view.selected = new_selected;
             self.reload_diff();
         }
@@ -1551,18 +1584,20 @@ mod tests {
 
     fn app_with_files(files: Vec<&str>) -> App {
         let (snapshot, _tx) = dummy_snapshot_channel();
+        let mut status_view = StatusView {
+            files: files
+                .into_iter()
+                .map(|path| ChangedFile {
+                    path: path.to_string(),
+                    status: ChangeStatus::Modified,
+                })
+                .collect(),
+            ..Default::default()
+        };
+        status_view.recompute_filter();
         App {
             mode: ViewMode::Status,
-            status_view: StatusView {
-                files: files
-                    .into_iter()
-                    .map(|path| ChangedFile {
-                        path: path.to_string(),
-                        status: ChangeStatus::Modified,
-                    })
-                    .collect(),
-                ..Default::default()
-            },
+            status_view,
             hunks: Vec::new(),
             scroll: 0,
             diff_scroll_x: 0,
