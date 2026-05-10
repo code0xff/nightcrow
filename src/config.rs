@@ -27,10 +27,14 @@ impl Default for Accent {
 }
 
 impl Accent {
+    // Order MUST match the historical ACCENT_PRESETS slice
+    // ["yellow", "cyan", "green", "magenta", "blue"] so that accent_idx
+    // values persisted in pre-existing session.json files keep mapping
+    // to the same color after the strong-enum migration.
     pub const ALL: &'static [Accent] = &[
         Accent::Yellow,
-        Accent::Green,
         Accent::Cyan,
+        Accent::Green,
         Accent::Magenta,
         Accent::Blue,
     ];

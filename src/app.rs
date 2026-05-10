@@ -1379,6 +1379,12 @@ mod tests {
 
     /// Build an inert SnapshotChannel for tests: real receiver, real stop
     /// sender, but no worker thread driving the receiver.
+    ///
+    /// Drops `_stop_rx` immediately on purpose: the only contract of `_stop_tx`
+    /// is "dropped → worker observes disconnect". Since there is no worker
+    /// here, nothing waits on either side, and dropping `_stop_rx` upfront
+    /// keeps the helper's tuple shape minimal. If a future test ever spawns
+    /// a real worker against this channel, it must keep `_stop_rx` alive.
     fn dummy_snapshot_channel() -> (SnapshotChannel, std::sync::mpsc::Sender<SnapshotMsg>) {
         let (tx, rx) = mpsc::channel::<SnapshotMsg>();
         let (stop_tx, _stop_rx) = mpsc::sync_channel::<()>(0);
