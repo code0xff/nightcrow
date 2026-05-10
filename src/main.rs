@@ -157,9 +157,10 @@ fn main_loop(
 
         if event::poll(Duration::from_millis(50))? {
             match event::read()? {
-                Event::Resize(_, _) => {
-                    terminal.clear()?;
-                }
+                // Ratatui's next draw will pick up the new size from
+                // `Frame::area()`. An explicit clear() here only adds a
+                // visible flash on resize without improving correctness.
+                Event::Resize(_, _) => {}
                 Event::Key(key) => {
                     if matches!(handle_key(app, key), KeyOutcome::Quit) {
                         return Ok(());
