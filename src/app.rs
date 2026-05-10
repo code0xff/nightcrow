@@ -135,8 +135,24 @@ fn strip_escape_sequences(data: &[u8]) -> String {
                         }
                     }
                 }
-                _ => {
+                Some('O') => {
+                    // SS3: ESC O <final>. Used by xterm-style application
+                    // keypad for arrow/function keys. Consume the final byte.
                     chars.next();
+                    chars.next();
+                }
+                Some('(') | Some(')') | Some('*') | Some('+') | Some('-') | Some('.')
+                | Some('/') | Some('#') => {
+                    // Charset designators / DEC private 2-byte escapes:
+                    // ESC <intermediate> <final>. Skip both.
+                    chars.next();
+                    chars.next();
+                }
+                _ => {
+                    // Drop the bare ESC and let the next iteration process
+                    // whatever follows as ordinary input. Consuming an extra
+                    // byte here would silently swallow user keystrokes that
+                    // happened to land right after a stray Esc.
                 }
             },
             '\r' | '\n' => result.push(ch),
@@ -287,6 +303,7 @@ pub struct FileViewState {
     pub key: Option<FileViewKey>,
     pub content: String,
     pub scroll: usize,
+    pub scroll_x: usize,
     pub anchor_line: Option<usize>,
     pub error: Option<String>,
     /// Cached syntect highlight output, one entry per `content.lines()` line.
@@ -1275,11 +1292,20 @@ impl App {
     }
 
     pub fn diff_scroll_left(&mut self) {
-        self.diff.scroll_x = self.diff.scroll_x.saturating_sub(4);
+        let target = self.diff_pane_scroll_x_mut();
+        *target = target.saturating_sub(4);
     }
 
     pub fn diff_scroll_right(&mut self) {
-        self.diff.scroll_x = self.diff.scroll_x.saturating_add(4).min(u16::MAX as usize);
+        let target = self.diff_pane_scroll_x_mut();
+        *target = target.saturating_add(4).min(u16::MAX as usize);
+    }
+
+    fn diff_pane_scroll_x_mut(&mut self) -> &mut usize {
+        match self.diff.view {
+            DiffPaneView::File => &mut self.diff.file_view.scroll_x,
+            DiffPaneView::Diff => &mut self.diff.scroll_x,
+        }
     }
 
     pub fn file_scroll_left(&mut self) {
@@ -1377,13 +1403,22 @@ impl App {
     }
 
     fn selected_filtered_status_path(&self) -> Option<String> {
-        if !self.filtered_indices().contains(&self.status_view.selected) {
+        self.selected_filtered_status_file().map(|f| f.path.clone())
+    }
+
+    /// Borrow-only counterpart of `selected_filtered_status_path` so callers
+    /// that just need to read the path don't pay for an allocation. Uses
+    /// `binary_search` since `filter_cache` is built in ascending order by
+    /// `recompute_filter`.
+    pub fn selected_filtered_status_file(&self) -> Option<&ChangedFile> {
+        if self
+            .filtered_indices()
+            .binary_search(&self.status_view.selected)
+            .is_err()
+        {
             return None;
         }
-        self.status_view
-            .files
-            .get(self.status_view.selected)
-            .map(|file| file.path.clone())
+        self.status_view.files.get(self.status_view.selected)
     }
 
     fn sync_selection_to_filter(&mut self) -> bool {
@@ -2489,5 +2524,69 @@ mod tests {
         app.log_file_select_down();
         assert_eq!(app.log_view.file_selected, 1);
         assert_eq!(app.log_view.file_scroll_x, 0);
+    }
+
+    #[test]
+    fn diff_scroll_routes_to_file_view_when_in_file_mode() {
+        let mut app = app_with_files(vec![]);
+        app.diff.scroll_x = 12;
+        app.diff.file_view.scroll_x = 4;
+        app.diff.view = DiffPaneView::File;
+
+        app.diff_scroll_right();
+        assert_eq!(app.diff.scroll_x, 12, "diff scroll_x must not change");
+        assert_eq!(app.diff.file_view.scroll_x, 8);
+
+        app.diff_scroll_left();
+        assert_eq!(app.diff.file_view.scroll_x, 4);
+
+        app.diff.view = DiffPaneView::Diff;
+        app.diff_scroll_right();
+        assert_eq!(app.diff.scroll_x, 16);
+        assert_eq!(
+            app.diff.file_view.scroll_x, 4,
+            "file_view scroll_x must not change in diff mode"
+        );
+    }
+
+    #[test]
+    fn selected_filtered_status_file_returns_none_outside_filter() {
+        let mut app = app_with_files(vec!["alpha.rs", "bravo.rs", "charlie.rs"]);
+        app.status_view.search_query = "alpha".into();
+        app.status_view.search_query_lower = "alpha".into();
+        app.status_view.recompute_filter();
+        // Filter only matches index 0; selecting index 2 must return None.
+        app.status_view.selected = 2;
+        assert!(app.selected_filtered_status_file().is_none());
+
+        app.status_view.selected = 0;
+        assert_eq!(
+            app.selected_filtered_status_file().map(|f| f.path.as_str()),
+            Some("alpha.rs")
+        );
+    }
+
+    #[test]
+    fn strip_escape_sequences_preserves_user_keystroke_after_bare_esc() {
+        // ESC followed by an ordinary character was previously consumed; the
+        // letter must now survive so user input echoed via PTY isn't lost.
+        let out = super::strip_escape_sequences(b"\x1bA");
+        assert_eq!(out, "A");
+    }
+
+    #[test]
+    fn strip_escape_sequences_drops_csi_and_ss3() {
+        // CSI (cursor key), SS3 (alternate keypad), and charset designation
+        // must all be stripped fully without leaving final bytes behind.
+        let out = super::strip_escape_sequences(b"hi\x1b[31mRED\x1b[0m\x1bOA\x1b(Bend");
+        assert_eq!(out, "hiREDend");
+    }
+
+    #[test]
+    fn strip_escape_sequences_drops_osc_until_terminator() {
+        let bel = super::strip_escape_sequences(b"\x1b]0;title\x07ok");
+        assert_eq!(bel, "ok");
+        let st = super::strip_escape_sequences(b"\x1b]0;title\x1b\\ok");
+        assert_eq!(st, "ok");
     }
 }

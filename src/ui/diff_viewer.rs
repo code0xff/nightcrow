@@ -32,9 +32,7 @@ fn file_path_for_syntax(app: &App) -> &str {
             .unwrap_or(""),
         ViewMode::Log => "",
         ViewMode::Status => app
-            .status_view
-            .files
-            .get(app.status_view.selected)
+            .selected_filtered_status_file()
             .map(|f| f.path.as_str())
             .unwrap_or(""),
     }
@@ -313,11 +311,13 @@ fn render_file_view(
             .collect()
     };
 
-    let para = Paragraph::new(lines).block(
-        Block::default()
-            .borders(Borders::ALL)
-            .title(title)
-            .border_style(border_style),
-    );
+    let para = Paragraph::new(lines)
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title(title)
+                .border_style(border_style),
+        )
+        .scroll((0, app.diff.file_view.scroll_x.min(u16::MAX as usize) as u16));
     frame.render_widget(para, area);
 }
