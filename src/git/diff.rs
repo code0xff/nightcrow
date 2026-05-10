@@ -144,7 +144,8 @@ pub const MAX_FILE_VIEW_BYTES: usize = 5 * 1024 * 1024;
 /// `@@ -1,3 +5,7 @@ context`. Returns `None` for synthetic headers
 /// (`diff <path>`, `Binary file ...`) or anything malformed.
 pub fn parse_hunk_new_start(header: &str) -> Option<usize> {
-    let after = header.split_once(" +")?.1;
+    let rest = header.strip_prefix("@@ ")?;
+    let after = rest.split_once(" +")?.1;
     let token: String = after.chars().take_while(|c| c.is_ascii_digit()).collect();
     if token.is_empty() {
         return None;
@@ -154,8 +155,8 @@ pub fn parse_hunk_new_start(header: &str) -> Option<usize> {
 
 fn decode_file_view(bytes: &[u8]) -> Result<String> {
     if bytes.len() > MAX_FILE_VIEW_BYTES {
-        return Ok(format!(
-            "(file too large to preview: {} bytes)",
+        return Err(anyhow::anyhow!(
+            "file too large to preview: {} bytes",
             bytes.len()
         ));
     }
