@@ -145,7 +145,7 @@ fn render_cursor(frame: &mut Frame, app: &App, area: Rect) {
     frame.set_cursor_position(position);
 }
 
-fn screen_cursor_position(screen: &vt100_ctt::Screen, area: Rect) -> Option<Position> {
+fn screen_cursor_position(screen: &vt100::Screen, area: Rect) -> Option<Position> {
     if area.height == 0 || area.width == 0 {
         return None;
     }
@@ -162,7 +162,7 @@ fn screen_cursor_position(screen: &vt100_ctt::Screen, area: Rect) -> Option<Posi
     ))
 }
 
-fn cell_to_style(cell: &vt100_ctt::Cell) -> Style {
+fn cell_to_style(cell: &vt100::Cell) -> Style {
     let mut style = Style::default()
         .fg(vt100_color(cell.fgcolor()))
         .bg(vt100_color(cell.bgcolor()));
@@ -178,11 +178,11 @@ fn cell_to_style(cell: &vt100_ctt::Cell) -> Style {
     style
 }
 
-fn vt100_color(c: vt100_ctt::Color) -> Color {
+fn vt100_color(c: vt100::Color) -> Color {
     match c {
-        vt100_ctt::Color::Default => Color::Reset,
-        vt100_ctt::Color::Idx(i) => Color::Indexed(i),
-        vt100_ctt::Color::Rgb(r, g, b) => Color::Rgb(r, g, b),
+        vt100::Color::Default => Color::Reset,
+        vt100::Color::Idx(i) => Color::Indexed(i),
+        vt100::Color::Rgb(r, g, b) => Color::Rgb(r, g, b),
     }
 }
 
@@ -192,7 +192,7 @@ mod tests {
 
     #[test]
     fn maps_screen_cursor_to_render_area() {
-        let mut parser = vt100_ctt::Parser::new(3, 10, 0);
+        let mut parser = vt100::Parser::new(3, 10, 0);
         parser.process(b"\x1b[2;4H");
 
         let position = screen_cursor_position(parser.screen(), Rect::new(20, 10, 10, 3)).unwrap();
@@ -202,7 +202,7 @@ mod tests {
 
     #[test]
     fn keeps_cursor_visible_when_terminal_requests_hide() {
-        let mut parser = vt100_ctt::Parser::new(3, 10, 0);
+        let mut parser = vt100::Parser::new(3, 10, 0);
         parser.process(b"\x1b[?25l\x1b[2;4H");
 
         let position = screen_cursor_position(parser.screen(), Rect::new(20, 10, 10, 3)).unwrap();
