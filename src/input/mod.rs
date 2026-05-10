@@ -75,7 +75,7 @@ pub fn encode_key(key: KeyEvent) -> Option<Vec<u8>> {
 
     match key.code {
         KeyCode::Char(c) => {
-            if ctrl {
+            if ctrl && c.is_ascii() {
                 let b = (c.to_ascii_uppercase() as u8).wrapping_sub(b'@');
                 if b < 32 {
                     return Some(vec![b]);
@@ -225,6 +225,14 @@ mod tests {
     #[test]
     fn encode_ctrl_c_as_etx() {
         assert_eq!(encode_key(ctrl(KeyCode::Char('c'))), Some(vec![0x03]));
+    }
+
+    #[test]
+    fn encode_ctrl_non_ascii_does_not_truncate_to_control_byte() {
+        assert_eq!(
+            encode_key(ctrl(KeyCode::Char('ŀ'))),
+            Some("ŀ".as_bytes().to_vec())
+        );
     }
 
     #[test]
