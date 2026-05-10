@@ -125,6 +125,53 @@ pub fn load_snapshot(repo_path: &str) -> Result<RepoSnapshot> {
     Ok(RepoSnapshot { files, tracking })
 }
 
+pub const MAX_FILE_VIEW_BYTES: usize = 5 * 1024 * 1024;
+
+/// Parse the new-side starting line from a unified-diff hunk header like
+/// `@@ -1,3 +5,7 @@ context`. Returns `None` for synthetic headers
+/// (`diff <path>`, `Binary file ...`) or anything malformed.
+pub fn parse_hunk_new_start(header: &str) -> Option<usize> {
+    let after = header.split_once(" +")?.1;
+    let token: String = after.chars().take_while(|c| c.is_ascii_digit()).collect();
+    if token.is_empty() {
+        return None;
+    }
+    token.parse().ok()
+}
+
+fn decode_file_view(bytes: &[u8]) -> Result<String> {
+    if bytes.len() > MAX_FILE_VIEW_BYTES {
+        return Ok(format!(
+            "(file too large to preview: {} bytes)",
+            bytes.len()
+        ));
+    }
+    std::str::from_utf8(bytes)
+        .map(|s| s.to_string())
+        .map_err(|_| anyhow::anyhow!("binary or non-utf8 file"))
+}
+
+pub fn load_workdir_file(repo_path: &str, file_path: &str) -> Result<String> {
+    let repo = Repository::discover(repo_path).context("not a git repository")?;
+    let workdir = repo
+        .workdir()
+        .ok_or_else(|| anyhow::anyhow!("bare repository"))?;
+    let full = workdir.join(file_path);
+    let bytes = std::fs::read(&full).with_context(|| format!("failed to read {file_path}"))?;
+    decode_file_view(&bytes)
+}
+
+pub fn load_commit_file_blob(repo_path: &str, oid: Oid, file_path: &str) -> Result<String> {
+    let repo = Repository::discover(repo_path).context("not a git repository")?;
+    let commit = repo.find_commit(oid).context("failed to find commit")?;
+    let tree = commit.tree().context("failed to get commit tree")?;
+    let entry = tree
+        .get_path(std::path::Path::new(file_path))
+        .with_context(|| format!("path not in commit: {file_path}"))?;
+    let blob = repo.find_blob(entry.id()).context("failed to read blob")?;
+    decode_file_view(blob.content())
+}
+
 pub fn load_file_diff(repo_path: &str, file_path: &str) -> Result<Vec<DiffHunk>> {
     let repo = Repository::discover(repo_path).context("not a git repository")?;
     let head_tree = repo.head().ok().and_then(|head| head.peel_to_tree().ok());
@@ -579,6 +626,49 @@ mod tests {
         assert_eq!(files.len(), 1);
         assert_eq!(files[0].path, "new.rs");
         assert_eq!(files[0].status, ChangeStatus::Renamed);
+        drop(dir);
+    }
+
+    #[test]
+    fn parse_hunk_new_start_handles_standard_header() {
+        assert_eq!(parse_hunk_new_start("@@ -1,3 +5,7 @@"), Some(5));
+        assert_eq!(parse_hunk_new_start("@@ -10 +12 @@ ctx"), Some(12));
+        assert_eq!(parse_hunk_new_start("@@ -0,0 +1,4 @@"), Some(1));
+        assert_eq!(parse_hunk_new_start("diff src/foo.rs"), None);
+        assert_eq!(parse_hunk_new_start("Binary file x changed"), None);
+        assert_eq!(parse_hunk_new_start("@@"), None);
+    }
+
+    #[test]
+    fn load_workdir_file_reads_text_file() {
+        let (dir, path) = make_repo();
+        let fp = Path::new(&path).join("hello.txt");
+        std::fs::write(&fp, "hi\nthere\n").unwrap();
+        let content = load_workdir_file(&path, "hello.txt").unwrap();
+        assert_eq!(content, "hi\nthere\n");
+        drop(dir);
+    }
+
+    #[test]
+    fn load_workdir_file_rejects_binary() {
+        let (dir, path) = make_repo();
+        let fp = Path::new(&path).join("bin");
+        std::fs::write(&fp, [0x00, 0xff, 0xfe]).unwrap();
+        assert!(load_workdir_file(&path, "bin").is_err());
+        drop(dir);
+    }
+
+    #[test]
+    fn load_commit_file_blob_reads_committed_text() {
+        let (dir, path) = make_repo();
+        let fp = Path::new(&path).join("a.txt");
+        std::fs::write(&fp, "v1\n").unwrap();
+        run_git(&path, &["add", "."]);
+        run_git(&path, &["commit", "-m", "init"]);
+        std::fs::write(&fp, "v2\n").unwrap();
+        let commits = load_commit_log(&path, 1).unwrap();
+        let content = load_commit_file_blob(&path, commits[0].oid, "a.txt").unwrap();
+        assert_eq!(content, "v1\n");
         drop(dir);
     }
 
