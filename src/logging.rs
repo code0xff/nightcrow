@@ -92,16 +92,45 @@ fn cleanup_old_logs(log_dir: &Path, max_days: u32) {
         return;
     };
 
+    // First pass: collect candidate files with mtimes so we can identify the
+    // newest one and preserve it. SizeRollingAppender resumes its highest
+    // existing index on startup, so the latest log file may itself be older
+    // than the cutoff if write rate is low — deleting it would lose the
+    // active session's tail.
+    let mut candidates: Vec<(PathBuf, SystemTime)> = Vec::new();
     for entry in entries.flatten() {
         let path = entry.path();
-        if is_nightcrow_log_file(&path)
-            && let Ok(meta) = fs::metadata(&path)
-            && let Ok(modified) = meta.modified()
-            && modified < cutoff
-        {
-            let _ = fs::remove_file(&path);
+        if !is_nightcrow_log_file(&path) {
+            continue;
         }
+        let Ok(meta) = fs::metadata(&path) else {
+            continue;
+        };
+        let Ok(modified) = meta.modified() else {
+            continue;
+        };
+        candidates.push((path, modified));
     }
+
+    for path in expired_log_paths(&candidates, cutoff) {
+        let _ = fs::remove_file(path);
+    }
+}
+
+/// Returns paths to delete from a list of candidate `(path, mtime)` entries.
+/// Always preserves the newest entry, even if it is older than the cutoff —
+/// SizeRollingAppender resumes the highest-index file, so deleting it would
+/// drop the active session's tail.
+fn expired_log_paths(
+    candidates: &[(PathBuf, SystemTime)],
+    cutoff: SystemTime,
+) -> Vec<&PathBuf> {
+    let newest = candidates.iter().map(|(_, t)| *t).max();
+    candidates
+        .iter()
+        .filter(|(_, t)| Some(*t) != newest && *t < cutoff)
+        .map(|(p, _)| p)
+        .collect()
 }
 
 fn is_nightcrow_log_file(path: &Path) -> bool {
@@ -207,6 +236,36 @@ mod tests {
         cleanup_old_logs(dir.path(), 0); // max_days=0 means keep all
         assert!(old_file.exists());
         assert!(new_file.exists());
+    }
+
+    #[test]
+    fn expired_log_paths_preserves_newest_even_when_old() {
+        let now = SystemTime::now();
+        let day = Duration::from_secs(86400);
+        let candidates = vec![
+            (PathBuf::from("nightcrow.log.0"), now - day * 30),
+            (PathBuf::from("nightcrow.log.1"), now - day * 20),
+            (PathBuf::from("nightcrow.log.2"), now - day * 10),
+        ];
+        let cutoff = now - day; // anything older than 1 day is expired
+
+        let expired = expired_log_paths(&candidates, cutoff);
+
+        // newest (.2) must be preserved; older two are expired.
+        let names: Vec<_> = expired.iter().map(|p| p.to_str().unwrap()).collect();
+        assert_eq!(names, vec!["nightcrow.log.0", "nightcrow.log.1"]);
+    }
+
+    #[test]
+    fn expired_log_paths_keeps_recent_files() {
+        let now = SystemTime::now();
+        let candidates = vec![
+            (PathBuf::from("nightcrow.log.0"), now - Duration::from_secs(60)),
+            (PathBuf::from("nightcrow.log.1"), now - Duration::from_secs(30)),
+        ];
+        let cutoff = now - Duration::from_secs(86400);
+
+        assert!(expired_log_paths(&candidates, cutoff).is_empty());
     }
 
     #[test]
