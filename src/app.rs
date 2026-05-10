@@ -214,6 +214,13 @@ pub struct StatusView {
 }
 
 impl StatusView {
+    /// Clear the search query and its lowercase cache together so callers
+    /// can't accidentally reset only one and leave the cache stale.
+    pub fn clear_search(&mut self) {
+        self.search_query.clear();
+        self.search_query_lower.clear();
+    }
+
     /// Refresh `filter_cache` from `files` and the current query. Callers must
     /// invoke this after mutating `files`, `search_query`, or
     /// `search_query_lower`; otherwise the cache will diverge from state.
@@ -373,6 +380,8 @@ impl DiffSearch {
     }
 
     pub fn is_match(&self, flat_idx: usize) -> bool {
+        // `matches` is built by `recompute_diff_matches` in flat_idx-ascending
+        // order, so binary_search is always sound here.
         self.matches.binary_search(&flat_idx).is_ok()
     }
 
@@ -755,8 +764,7 @@ impl App {
         self.log_view.diff_title.clear();
         self.log_view.commit_scroll_x = 0;
         self.reset_drill_down_state();
-        self.status_view.search_query.clear();
-        self.status_view.search_query_lower.clear();
+        self.status_view.clear_search();
         self.status_view.search_active = false;
         self.status_view.recompute_filter();
         self.diff.search.clear();
@@ -862,10 +870,10 @@ impl App {
         let offset = self.terminal.scroll.get(&id).copied().unwrap_or(0);
         let actual = match self.terminal.parsers.get_mut(&id) {
             Some(parser) => {
-                // vt100 visible_rows() computes `rows_len - scrollback_offset` without
-                // saturating_sub, panicking when offset exceeds the screen height.
-                let screen_rows = parser.screen().size().0 as usize;
-                parser.set_scrollback(offset.min(screen_rows));
+                // Cap by the parser's scrollback buffer size so vt100 never
+                // sees an offset it can't satisfy; the actual applied offset
+                // is read back below to keep our state in sync.
+                parser.set_scrollback(offset.min(SCROLLBACK_LINES));
                 parser.screen().scrollback()
             }
             None => return,
@@ -944,12 +952,7 @@ impl App {
             return;
         }
         let previous_scroll = self.diff.scroll;
-        let path = self
-            .status_view
-            .files
-            .get(self.status_view.selected)
-            .map(|f| f.path.clone());
-        let Some(path) = path else {
+        let Some(path) = self.selected_filtered_status_path() else {
             self.clear_diff_state();
             return;
         };
@@ -1200,8 +1203,7 @@ impl App {
 
     pub fn cancel_search(&mut self) {
         self.status_view.search_active = false;
-        self.status_view.search_query.clear();
-        self.status_view.search_query_lower.clear();
+        self.status_view.clear_search();
         self.status_view.recompute_filter();
         self.refresh_status_diff_after_filter_change();
     }
@@ -1454,6 +1456,7 @@ impl App {
             && (Some(new_pos) != pos || self.status_view.selected != new_selected)
         {
             self.status_view.selected = new_selected;
+            self.status_view.file_scroll_x = 0;
             self.reload_diff();
         }
     }
@@ -1595,6 +1598,7 @@ impl App {
 
     pub fn log_file_select_up(&mut self) {
         if cursor_up(&mut self.log_view.file_selected, 1) {
+            self.log_view.file_scroll_x = 0;
             self.load_file_diff_for_log_file_selected();
         }
     }
@@ -1605,12 +1609,14 @@ impl App {
             self.log_view.commit_files.len(),
             1,
         ) {
+            self.log_view.file_scroll_x = 0;
             self.load_file_diff_for_log_file_selected();
         }
     }
 
     pub fn log_file_page_up(&mut self) {
         if cursor_up(&mut self.log_view.file_selected, LIST_PAGE_SIZE) {
+            self.log_view.file_scroll_x = 0;
             self.load_file_diff_for_log_file_selected();
         }
     }
@@ -1621,6 +1627,7 @@ impl App {
             self.log_view.commit_files.len(),
             LIST_PAGE_SIZE,
         ) {
+            self.log_view.file_scroll_x = 0;
             self.load_file_diff_for_log_file_selected();
         }
     }
@@ -1685,18 +1692,21 @@ impl App {
 
     pub fn log_select_up(&mut self) {
         if cursor_up(&mut self.log_view.selected, 1) {
+            self.log_view.commit_scroll_x = 0;
             self.load_commit_diff_for_selected();
         }
     }
 
     pub fn log_select_down(&mut self) {
         if cursor_down(&mut self.log_view.selected, self.log_view.commits.len(), 1) {
+            self.log_view.commit_scroll_x = 0;
             self.load_commit_diff_for_selected();
         }
     }
 
     pub fn log_page_up(&mut self) {
         if cursor_up(&mut self.log_view.selected, LIST_PAGE_SIZE) {
+            self.log_view.commit_scroll_x = 0;
             self.load_commit_diff_for_selected();
         }
     }
@@ -1707,6 +1717,7 @@ impl App {
             self.log_view.commits.len(),
             LIST_PAGE_SIZE,
         ) {
+            self.log_view.commit_scroll_x = 0;
             self.load_commit_diff_for_selected();
         }
     }
@@ -1923,7 +1934,9 @@ impl App {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::git::diff::{ChangeStatus, DiffHunk, DiffLine, LineKind, load_commit_log};
+    use crate::git::diff::{
+        ChangeStatus, CommitEntry, DiffHunk, DiffLine, LineKind, load_commit_log,
+    };
     use crate::test_util::{make_repo, open_repo, run_git};
     use std::path::Path;
 
@@ -2101,7 +2114,7 @@ mod tests {
     }
 
     #[test]
-    fn terminal_scrollback_is_capped_at_screen_rows() {
+    fn terminal_scrollback_uses_full_buffer() {
         let mut app = app_with_files(vec![]);
         app.terminal.panes = vec![PaneInfo {
             id: 1,
@@ -2117,10 +2130,11 @@ mod tests {
 
         app.sync_terminal_scroll();
 
-        // vt100 visible_rows() panics when scrollback_offset > screen rows, so we
-        // cap offset at screen height to avoid the overflow.
+        // Offset is now bounded by SCROLLBACK_LINES, not screen height, so the
+        // requested 6-row scrollback is honored end-to-end.
         let actual = app.terminal.parsers.get(&1).unwrap().screen().scrollback();
-        assert_eq!(actual, app.terminal.size.0 as usize);
+        assert_eq!(actual, 6);
+        assert_eq!(app.terminal.scroll.get(&1).copied(), Some(6));
     }
 
     #[test]
@@ -2393,5 +2407,62 @@ mod tests {
 
         assert!(app.filtered_indices().is_empty());
         assert!(app.diff.hunks.is_empty());
+    }
+
+    #[test]
+    fn move_selected_in_filter_resets_horizontal_scroll() {
+        let mut app = app_with_files(vec!["a.rs", "b.rs"]);
+        app.status_view.file_scroll_x = 12;
+        app.move_selected_in_filter(1);
+        assert_eq!(app.status_view.selected, 1);
+        assert_eq!(app.status_view.file_scroll_x, 0);
+    }
+
+    #[test]
+    fn log_select_down_resets_commit_scroll() {
+        let mut app = app_with_files(vec![]);
+        app.mode = ViewMode::Log;
+        app.log_view.commits = vec![
+            CommitEntry {
+                oid: git2::Oid::zero(),
+                short_id: "0000000".into(),
+                summary: "first".into(),
+                author: "T".into(),
+                time: 0,
+            },
+            CommitEntry {
+                oid: git2::Oid::zero(),
+                short_id: "1111111".into(),
+                summary: "second".into(),
+                author: "T".into(),
+                time: 0,
+            },
+        ];
+        app.log_view.commit_scroll_x = 9;
+        app.log_select_down();
+        assert_eq!(app.log_view.selected, 1);
+        assert_eq!(app.log_view.commit_scroll_x, 0);
+    }
+
+    #[test]
+    fn log_file_select_down_resets_file_scroll() {
+        let mut app = app_with_files(vec![]);
+        app.mode = ViewMode::Log;
+        app.log_view.drill_down = true;
+        app.log_view.commits = vec![CommitEntry {
+            oid: git2::Oid::zero(),
+            short_id: "0000000".into(),
+            summary: "first".into(),
+            author: "T".into(),
+            time: 0,
+        }];
+        app.log_view.commit_files = vec![
+            ChangedFile::new("x.rs".into(), ChangeStatus::Modified),
+            ChangedFile::new("y.rs".into(), ChangeStatus::Modified),
+        ];
+        app.log_view.file_scroll_x = 7;
+        app.log_file_select_down();
+        assert_eq!(app.log_view.file_selected, 1);
+        assert_eq!(app.log_view.file_scroll_x, 0);
     }
 }
