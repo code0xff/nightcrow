@@ -437,6 +437,13 @@ impl App {
                     }
                 }
                 BackendEvent::Exited { pane } => {
+                    // Single source of truth for pane removal: drain_events no
+                    // longer touches the backend's pane map, so we drive the
+                    // teardown here. destroy_pane is idempotent against a
+                    // pane that close_active_pane already removed.
+                    if let Some(backend) = &mut self.terminal.backend {
+                        backend.destroy_pane(pane);
+                    }
                     self.remove_terminal_pane_state(pane);
                     self.terminal.panes.retain(|p| p.id != pane);
                     self.clamp_active_pane_after_removal();

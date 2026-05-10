@@ -134,8 +134,11 @@ impl TerminalBackend for PtyBackend {
     }
 
     fn drain_events(&mut self) -> Vec<BackendEvent> {
+        // Pane removal is the caller's responsibility (App::poll_terminal calls
+        // destroy_pane on Exited). Doing it here too created a dual-ownership
+        // race where reader-thread events queued after destroy_pane were
+        // silently dropped, and where Exited could be reported twice.
         let mut events = Vec::new();
-        let mut exited = Vec::new();
         for (id, pane) in &self.panes {
             while let Ok(event) = pane.rx.try_recv() {
                 match event {
@@ -147,14 +150,10 @@ impl TerminalBackend for PtyBackend {
                             events.push(BackendEvent::Output { pane: *id, data });
                         }
                         events.push(BackendEvent::Exited { pane: *id });
-                        exited.push(*id);
                         break;
                     }
                 }
             }
-        }
-        for id in exited {
-            self.panes.remove(&id);
         }
         events
     }
