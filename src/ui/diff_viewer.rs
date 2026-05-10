@@ -305,10 +305,7 @@ fn render_file_view(
                     ));
                 }
             } else {
-                spans.push(Span::styled(
-                    raw_line.to_string(),
-                    Style::default().bg(bg),
-                ));
+                spans.push(Span::styled(raw_line.to_string(), Style::default().bg(bg)));
             }
             lines.push(Line::from(spans));
         }

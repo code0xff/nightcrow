@@ -792,9 +792,7 @@ impl App {
     fn load_file_view(&mut self, key: FileViewKey) {
         let result = match &key {
             FileViewKey::Status(path) => load_workdir_file(&self.repo_path, path),
-            FileViewKey::Commit { oid, path } => {
-                load_commit_file_blob(&self.repo_path, *oid, path)
-            }
+            FileViewKey::Commit { oid, path } => load_commit_file_blob(&self.repo_path, *oid, path),
         };
         let anchor = self
             .hunks
