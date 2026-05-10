@@ -79,25 +79,60 @@ pub fn render(
     let current_match = app.diff_search.current_match();
     let has_search = app.diff_search.has_query();
 
-    let mut lines: Vec<Line> = Vec::new();
+    // Total flat row count = (1 hunk header + N body lines) per hunk. Computing
+    // this up front (cheap: O(n_hunks)) lets us clamp `app.scroll` and emit
+    // only the visible window, instead of building Spans for every diff line
+    // every frame.
+    let total_lines: usize = app.hunks.iter().map(|h| 1 + h.lines.len()).sum();
+    let visible_height = (diff_area.height as usize).saturating_sub(2);
+    let max_scroll = total_lines.saturating_sub(1);
+    let scroll_start = app.scroll.min(max_scroll);
+    let visible_end = scroll_start.saturating_add(visible_height);
+
+    let mut lines: Vec<Line> = Vec::with_capacity(visible_height);
     let mut flat_idx: usize = 0;
 
     // Two separate highlighters for the whole diff: removed lines must not bleed
     // their syntax state (e.g. an unclosed string) into the added/context lines.
     // Keeping them alive across hunks lets context carry forward correctly for
     // multiline constructs (block comments, string literals) that span hunk boundaries.
+    // Lines before the visible window still drive the highlighters so syntax
+    // state stays consistent — we just skip building Spans for them.
     let mut hl_new = HighlightLines::new(syntax, theme);
     let mut hl_old = HighlightLines::new(syntax, theme);
 
-    for hunk in &app.hunks {
+    'outer: for hunk in &app.hunks {
+        if flat_idx >= visible_end {
+            break;
+        }
+
         // Hunk header
-        lines.push(Line::from(Span::styled(
-            hunk.header.clone(),
-            Style::default().fg(Color::Cyan),
-        )));
+        if flat_idx >= scroll_start && flat_idx < visible_end {
+            lines.push(Line::from(Span::styled(
+                hunk.header.clone(),
+                Style::default().fg(Color::Cyan),
+            )));
+        }
         flat_idx += 1;
 
         for diff_line in &hunk.lines {
+            if flat_idx >= visible_end {
+                break 'outer;
+            }
+
+            let hl = match diff_line.kind {
+                LineKind::Removed => &mut hl_old,
+                _ => &mut hl_new,
+            };
+            let content_with_newline = format!("{}\n", diff_line.content);
+            let highlight_result = hl.highlight_line(&content_with_newline, ss);
+
+            if flat_idx < scroll_start {
+                // Outside the visible window — advance highlight state only.
+                flat_idx += 1;
+                continue;
+            }
+
             let is_current = has_search && current_match == Some(flat_idx);
             let is_match = has_search && app.diff_search.is_match(flat_idx);
 
@@ -124,12 +159,7 @@ pub fn render(
                 Style::default().fg(Color::DarkGray).bg(bg),
             )];
 
-            let hl = match diff_line.kind {
-                LineKind::Removed => &mut hl_old,
-                _ => &mut hl_new,
-            };
-            let content_with_newline = format!("{}\n", diff_line.content);
-            if let Ok(ranges) = hl.highlight_line(&content_with_newline, ss) {
+            if let Ok(ranges) = highlight_result {
                 for (style, text) in ranges {
                     let t = text.trim_end_matches('\n');
                     if t.is_empty() {
@@ -150,7 +180,7 @@ pub fn render(
         }
     }
 
-    if lines.is_empty() {
+    if lines.is_empty() && total_lines == 0 {
         let msg = match app.mode {
             ViewMode::Log => {
                 if app.log_view.commits.is_empty() {
@@ -213,17 +243,7 @@ pub fn render(
         }
     };
 
-    let max_scroll = lines.len().saturating_sub(1);
-    let scroll_start = app.scroll.min(max_scroll);
-    // Slice the visible window instead of relying on Paragraph::scroll (which is limited to u16).
-    let visible_height = (diff_area.height as usize).saturating_sub(2);
-    let visible_lines: Vec<Line> = lines
-        .into_iter()
-        .skip(scroll_start)
-        .take(visible_height)
-        .collect();
-
-    let para = Paragraph::new(visible_lines)
+    let para = Paragraph::new(lines)
         .block(
             Block::default()
                 .borders(Borders::ALL)
