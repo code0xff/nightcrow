@@ -777,7 +777,11 @@ impl App {
             self.status = Some(format!("not a directory: {trimmed}"));
             return;
         }
-        self.change_repo(trimmed.to_string());
+        self.change_repo(
+            crate::git::resolve_repo_path(p)
+                .to_string_lossy()
+                .to_string(),
+        );
     }
 
     pub fn repo_input_push(&mut self, ch: char) {

@@ -40,12 +40,13 @@ fn main() -> Result<()> {
     let cli = Cli::parse();
     let cfg = config::load_config()?;
 
-    let repo_path = match cli.repo {
+    let input_path = match cli.repo {
         Some(p) => p,
         None => std::env::current_dir().context("cannot determine current directory")?,
-    }
-    .to_string_lossy()
-    .to_string();
+    };
+    let repo_path = git::resolve_repo_path(input_path)
+        .to_string_lossy()
+        .to_string();
 
     let _log_guard = logging::init_logging(&cfg.log, &repo_path);
 
