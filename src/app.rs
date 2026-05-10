@@ -1003,7 +1003,11 @@ impl App {
                         self.invalidate_file_view();
                     }
                     DiffApply::KeepScroll(prev) => {
-                        self.diff.scroll = prev;
+                        // New hunks may be shorter than the prior load, so
+                        // clamp against the freshly assigned diff to avoid
+                        // leaving an out-of-range scroll that misbehaves on
+                        // the next navigation keystroke.
+                        self.diff.scroll = prev.min(self.max_diff_scroll());
                     }
                 }
                 if let DiffApply::ResetWithTitle(title) = mode {
@@ -1074,12 +1078,7 @@ impl App {
     fn current_file_view_key(&self) -> Option<FileViewKey> {
         match self.mode {
             ViewMode::Status => {
-                let path = self
-                    .status_view
-                    .files
-                    .get(self.status_view.selected)?
-                    .path
-                    .clone();
+                let path = self.selected_filtered_status_file()?.path.clone();
                 Some(FileViewKey::Status(path))
             }
             ViewMode::Log => {
@@ -2588,5 +2587,42 @@ mod tests {
         assert_eq!(bel, "ok");
         let st = super::strip_escape_sequences(b"\x1b]0;title\x1b\\ok");
         assert_eq!(st, "ok");
+    }
+
+    #[test]
+    fn keep_scroll_clamps_when_new_diff_is_shorter() {
+        let mut app = app_with_files(vec!["a.rs"]);
+        // Seed a long diff and put scroll near the bottom.
+        app.diff.hunks = vec![
+            context_hunk(&["l1", "l2", "l3", "l4", "l5"]),
+            context_hunk(&["l6", "l7", "l8"]),
+        ];
+        app.diff.scroll = app.max_diff_scroll();
+        let prev_scroll = app.diff.scroll;
+        assert!(prev_scroll > 1);
+
+        // Apply a much shorter diff with KeepScroll; scroll must clamp.
+        let shorter = vec![context_hunk(&["only"])];
+        app.apply_diff_result(Ok(shorter), DiffApply::KeepScroll(prev_scroll));
+        assert!(
+            app.diff.scroll <= app.max_diff_scroll(),
+            "scroll {} exceeded max {}",
+            app.diff.scroll,
+            app.max_diff_scroll()
+        );
+    }
+
+    #[test]
+    fn toggle_diff_file_view_ignores_selection_outside_filter() {
+        let mut app = app_with_files(vec!["alpha.rs", "bravo.rs"]);
+        app.status_view.search_query = "alpha".into();
+        app.status_view.search_query_lower = "alpha".into();
+        app.status_view.recompute_filter();
+        // selected points outside the filter — toggle must refuse to open
+        // a file view rather than loading the hidden entry.
+        app.status_view.selected = 1;
+        app.toggle_diff_file_view();
+        assert_eq!(app.diff.view, DiffPaneView::Diff);
+        assert!(app.diff.file_view.key.is_none());
     }
 }

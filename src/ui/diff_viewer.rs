@@ -201,20 +201,16 @@ pub fn render(
             }
         }
         ViewMode::Status => {
+            let selected = app.selected_filtered_status_file();
             if has_search {
                 let count = app.diff.search.matches.len();
-                let file = app
-                    .status_view
-                    .files
-                    .get(app.status_view.selected)
-                    .map(|f| f.path.as_str())
-                    .unwrap_or("Diff");
+                let file = selected.map(|f| f.path.as_str()).unwrap_or("Diff");
                 if count == 0 {
                     format!(" {file} [no matches] ")
                 } else {
                     format!(" {file} [{}/{}] ", app.diff.search.cursor + 1, count)
                 }
-            } else if let Some(f) = app.status_view.files.get(app.status_view.selected) {
+            } else if let Some(f) = selected {
                 format!(" {} ", f.path)
             } else {
                 " Diff ".to_string()
