@@ -274,7 +274,7 @@ fn handle_upper_key(app: &mut App, key: KeyEvent, action: Action) {
         handle_file_search_key(app, key);
         return;
     }
-    if app.focus == Focus::DiffViewer && app.diff_search.active {
+    if app.focus == Focus::DiffViewer && app.diff.search.active {
         handle_diff_search_key(app, key);
         return;
     }
@@ -320,7 +320,7 @@ fn handle_diff_search_key(app: &mut App, key: KeyEvent) {
         KeyCode::Esc => app.cancel_diff_search(),
         KeyCode::Enter => app.confirm_diff_search(),
         KeyCode::Backspace => {
-            if app.diff_search.query.is_empty() {
+            if app.diff.search.query.is_empty() {
                 app.cancel_diff_search();
             } else {
                 app.diff_search_pop();
@@ -349,7 +349,7 @@ fn handle_unmapped_upper_key(app: &mut App, key: KeyEvent) {
             KeyCode::Char('/') => app.start_diff_search(),
             KeyCode::Char('n') => app.next_diff_match(),
             KeyCode::Char('N') => app.prev_diff_match(),
-            KeyCode::Esc if !app.diff_search.query.is_empty() => app.cancel_diff_search(),
+            KeyCode::Esc if !app.diff.search.query.is_empty() => app.cancel_diff_search(),
             KeyCode::Left => app.diff_scroll_left(),
             KeyCode::Right => app.diff_scroll_right(),
             _ => {}

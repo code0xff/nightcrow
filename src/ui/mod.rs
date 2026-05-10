@@ -178,11 +178,11 @@ fn render_hint_bar(app: &App, accent: Color) -> Paragraph<'_> {
             }
         },
         Focus::DiffViewer => {
-            if app.diff_pane_view == DiffPaneView::File {
+            if app.diff.view == DiffPaneView::File {
                 " v: back to diff | j/k: scroll | pgup/pgdn: page | shift+←/→: cycle | ctrl+q: quit"
-            } else if app.diff_search.active {
+            } else if app.diff.search.active {
                 " type to search | enter: confirm | esc: cancel"
-            } else if !app.diff_search.query.is_empty() {
+            } else if !app.diff.search.query.is_empty() {
                 " n: next match | shift+n: prev match | /: new search | esc: clear"
             } else {
                 " shift+←/→: cycle | j/k: scroll | v: view file | /: search | pgup/pgdn: scroll | F1-F9: switch pane | ctrl+f: fullscreen | ctrl+l: log view | ctrl+o: repo | ctrl+p: theme | ctrl+q: quit"

@@ -49,12 +49,12 @@ pub fn render(
     ts: &ThemeSet,
     accent: ratatui::style::Color,
 ) {
-    if app.diff_pane_view == DiffPaneView::File {
+    if app.diff.view == DiffPaneView::File {
         render_file_view(frame, app, area, ss, ts, accent);
         return;
     }
 
-    let show_search = app.diff_search.is_visible();
+    let show_search = app.diff.search.is_visible();
 
     let (diff_area, search_area) = if show_search {
         let chunks = Layout::default()
@@ -76,17 +76,17 @@ pub fn render(
         .unwrap_or_else(|| ss.find_syntax_plain_text());
     let theme = &ts.themes["base16-ocean.dark"];
 
-    let current_match = app.diff_search.current_match();
-    let has_search = app.diff_search.has_query();
+    let current_match = app.diff.search.current_match();
+    let has_search = app.diff.search.has_query();
 
     // Total flat row count = (1 hunk header + N body lines) per hunk. Computing
-    // this up front (cheap: O(n_hunks)) lets us clamp `app.scroll` and emit
+    // this up front (cheap: O(n_hunks)) lets us clamp `app.diff.scroll` and emit
     // only the visible window, instead of building Spans for every diff line
     // every frame.
-    let total_lines: usize = app.hunks.iter().map(|h| 1 + h.lines.len()).sum();
+    let total_lines: usize = app.diff.hunks.iter().map(|h| 1 + h.lines.len()).sum();
     let visible_height = (diff_area.height as usize).saturating_sub(2);
     let max_scroll = total_lines.saturating_sub(1);
-    let scroll_start = app.scroll.min(max_scroll);
+    let scroll_start = app.diff.scroll.min(max_scroll);
     let visible_end = scroll_start.saturating_add(visible_height);
 
     let mut lines: Vec<Line> = Vec::with_capacity(visible_height);
@@ -101,7 +101,7 @@ pub fn render(
     let mut hl_new = HighlightLines::new(syntax, theme);
     let mut hl_old = HighlightLines::new(syntax, theme);
 
-    'outer: for hunk in &app.hunks {
+    'outer: for hunk in &app.diff.hunks {
         if flat_idx >= visible_end {
             break;
         }
@@ -134,7 +134,7 @@ pub fn render(
             }
 
             let is_current = has_search && current_match == Some(flat_idx);
-            let is_match = has_search && app.diff_search.is_match(flat_idx);
+            let is_match = has_search && app.diff.search.is_match(flat_idx);
 
             let bg = if is_current {
                 Color::Rgb(100, 80, 0)
@@ -211,11 +211,11 @@ pub fn render(
                 app.log_view.diff_title.as_str()
             };
             if has_search {
-                let count = app.diff_search.matches.len();
+                let count = app.diff.search.matches.len();
                 if count == 0 {
                     format!(" {label} [no matches] ")
                 } else {
-                    format!(" {label} [{}/{}] ", app.diff_search.cursor + 1, count)
+                    format!(" {label} [{}/{}] ", app.diff.search.cursor + 1, count)
                 }
             } else {
                 format!(" {label} ")
@@ -223,7 +223,7 @@ pub fn render(
         }
         ViewMode::Status => {
             if has_search {
-                let count = app.diff_search.matches.len();
+                let count = app.diff.search.matches.len();
                 let file = app
                     .status_view
                     .files
@@ -233,7 +233,7 @@ pub fn render(
                 if count == 0 {
                     format!(" {file} [no matches] ")
                 } else {
-                    format!(" {file} [{}/{}] ", app.diff_search.cursor + 1, count)
+                    format!(" {file} [{}/{}] ", app.diff.search.cursor + 1, count)
                 }
             } else if let Some(f) = app.status_view.files.get(app.status_view.selected) {
                 format!(" {} ", f.path)
@@ -250,15 +250,15 @@ pub fn render(
                 .title(title)
                 .border_style(border_style),
         )
-        .scroll((0, app.diff_scroll_x.min(u16::MAX as usize) as u16));
+        .scroll((0, app.diff.scroll_x.min(u16::MAX as usize) as u16));
 
     frame.render_widget(para, diff_area);
 
     if let Some(sa) = search_area {
         super::render_search_bar(
             frame,
-            &app.diff_search.query,
-            app.diff_search.active,
+            &app.diff.search.query,
+            app.diff.search.active,
             sa,
             accent,
         );
@@ -285,22 +285,22 @@ fn render_file_view(
     let title = format!(" {file_path} [file] ");
 
     let mut lines: Vec<Line> = Vec::new();
-    if let Some(err) = &app.file_view.error {
+    if let Some(err) = &app.diff.file_view.error {
         lines.push(Line::from(Span::styled(
             err.clone(),
             Style::default().fg(Color::Red),
         )));
-    } else if app.file_view.content.is_empty() {
+    } else if app.diff.file_view.content.is_empty() {
         lines.push(Line::from(Span::styled(
             "(empty file)",
             Style::default().fg(Color::DarkGray),
         )));
     } else {
-        let total = app.file_view.line_count();
+        let total = app.diff.file_view.line_count();
         let width = total.to_string().len();
-        let anchor = app.file_view.anchor_line;
+        let anchor = app.diff.file_view.anchor_line;
         let mut hl = HighlightLines::new(syntax, theme);
-        for (idx, raw_line) in app.file_view.content.lines().enumerate() {
+        for (idx, raw_line) in app.diff.file_view.content.lines().enumerate() {
             let line_no = idx + 1;
             let is_anchor = anchor == Some(line_no);
             let bg = if is_anchor {
@@ -332,7 +332,7 @@ fn render_file_view(
     }
 
     let max_scroll = lines.len().saturating_sub(1);
-    let scroll_start = app.file_view.scroll.min(max_scroll);
+    let scroll_start = app.diff.file_view.scroll.min(max_scroll);
     let visible_height = (area.height as usize).saturating_sub(2);
     let visible: Vec<Line> = lines
         .into_iter()

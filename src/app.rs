@@ -370,9 +370,11 @@ impl DiffSearch {
     }
 }
 
-pub struct App {
-    pub mode: ViewMode,
-    pub status_view: StatusView,
+/// All state for the diff viewer pane: the loaded hunks, scroll cursors,
+/// search state, and the optional file-content overlay. Lifted out of App
+/// so renderers and navigation handlers operate on a self-contained value.
+#[derive(Default)]
+pub struct DiffPane {
     pub hunks: Vec<DiffHunk>,
     /// Lowercased copy of each `DiffLine::content` aligned with `hunks`.
     /// `hunks_lines_lower[i][j]` corresponds to `hunks[i].lines[j].content`.
@@ -380,16 +382,22 @@ pub struct App {
     /// the entire diff. Header lines are never searched and are not cached.
     hunks_lines_lower: Vec<Vec<String>>,
     pub scroll: usize,
-    pub diff_scroll_x: usize,
+    pub scroll_x: usize,
+    pub search: DiffSearch,
+    pub view: DiffPaneView,
+    pub file_view: FileViewState,
+}
+
+pub struct App {
+    pub mode: ViewMode,
+    pub status_view: StatusView,
+    pub diff: DiffPane,
     pub focus: Focus,
     pub status: Option<String>,
     pub repo_path: String,
     pub log_view: LogView,
     pub terminal: TerminalState,
     pub repo_input: RepoInput,
-    pub diff_search: DiffSearch,
-    pub diff_pane_view: DiffPaneView,
-    pub file_view: FileViewState,
     pub accent_idx: usize,
     pub tracking: Option<TrackingStatus>,
     snapshot: SnapshotChannel,
@@ -410,19 +418,13 @@ impl App {
         let mut app = App {
             mode: ViewMode::Status,
             status_view: StatusView::default(),
-            hunks: Vec::new(),
-            hunks_lines_lower: Vec::new(),
-            scroll: 0,
-            diff_scroll_x: 0,
+            diff: DiffPane::default(),
             focus: Focus::FileList,
             status: None,
             repo_path,
             log_view: LogView::default(),
             terminal: TerminalState::new(Some(backend), prompt_log),
             repo_input: RepoInput::default(),
-            diff_search: DiffSearch::default(),
-            diff_pane_view: DiffPaneView::default(),
-            file_view: FileViewState::default(),
             accent_idx: 0,
             tracking: None,
             snapshot,
@@ -594,9 +596,9 @@ impl App {
         self.mode = ViewMode::Status;
         self.status_view.files.clear();
         self.status_view.selected = 0;
-        self.hunks.clear();
-        self.scroll = 0;
-        self.diff_scroll_x = 0;
+        self.diff.hunks.clear();
+        self.diff.scroll = 0;
+        self.diff.scroll_x = 0;
         self.status_view.file_scroll_x = 0;
         self.log_view.commits.clear();
         self.log_view.selected = 0;
@@ -606,7 +608,7 @@ impl App {
         self.status_view.search_query_lower.clear();
         self.status_view.search_active = false;
         self.status_view.recompute_filter();
-        self.diff_search.clear();
+        self.diff.search.clear();
         self.status = None;
         self.tracking = None;
         self.focus = Focus::FileList;
@@ -786,7 +788,7 @@ impl App {
         if self.mode == ViewMode::Log {
             return;
         }
-        let previous_scroll = self.scroll;
+        let previous_scroll = self.diff.scroll;
         let path = self
             .status_view
             .files
@@ -816,23 +818,23 @@ impl App {
         let reset_scroll = matches!(mode, DiffApply::Reset | DiffApply::ResetWithTitle(_));
         match result {
             Ok(hunks) => {
-                self.hunks = hunks;
+                self.diff.hunks = hunks;
                 self.rebuild_diff_lower_cache();
                 match mode {
                     DiffApply::Reset | DiffApply::ResetWithTitle(_) => {
-                        self.scroll = 0;
-                        self.diff_scroll_x = 0;
-                        self.diff_search.cursor = 0;
+                        self.diff.scroll = 0;
+                        self.diff.scroll_x = 0;
+                        self.diff.search.cursor = 0;
                         self.invalidate_file_view();
                     }
                     DiffApply::KeepScroll(prev) => {
-                        self.scroll = prev;
+                        self.diff.scroll = prev;
                     }
                 }
                 if let DiffApply::ResetWithTitle(title) = mode {
                     self.log_view.diff_title = title.to_string();
                 }
-                if !self.diff_search.query.is_empty() {
+                if !self.diff.search.query.is_empty() {
                     self.recompute_diff_matches(reset_scroll);
                 }
             }
@@ -846,36 +848,37 @@ impl App {
     }
 
     fn clear_diff_state(&mut self) {
-        self.hunks.clear();
-        self.hunks_lines_lower.clear();
-        self.diff_search.matches.clear();
-        self.diff_search.cursor = 0;
-        self.scroll = 0;
-        self.diff_scroll_x = 0;
+        self.diff.hunks.clear();
+        self.diff.hunks_lines_lower.clear();
+        self.diff.search.matches.clear();
+        self.diff.search.cursor = 0;
+        self.diff.scroll = 0;
+        self.diff.scroll_x = 0;
         self.invalidate_file_view();
     }
 
     /// Rebuild the lowercase cache from current `hunks`. Call after replacing
     /// `hunks` so per-keystroke search does not re-lowercase line content.
     fn rebuild_diff_lower_cache(&mut self) {
-        self.hunks_lines_lower.clear();
-        self.hunks_lines_lower.reserve(self.hunks.len());
-        for hunk in &self.hunks {
+        self.diff.hunks_lines_lower.clear();
+        self.diff.hunks_lines_lower.reserve(self.diff.hunks.len());
+        for hunk in &self.diff.hunks {
             let lines = hunk
                 .lines
                 .iter()
                 .map(|l| l.content.to_lowercase())
                 .collect();
-            self.hunks_lines_lower.push(lines);
+            self.diff.hunks_lines_lower.push(lines);
         }
     }
 
     fn ensure_diff_lower_cache(&mut self) {
-        let shape_matches = self.hunks_lines_lower.len() == self.hunks.len()
+        let shape_matches = self.diff.hunks_lines_lower.len() == self.diff.hunks.len()
             && self
+                .diff
                 .hunks
                 .iter()
-                .zip(self.hunks_lines_lower.iter())
+                .zip(self.diff.hunks_lines_lower.iter())
                 .all(|(h, ll)| ll.len() == h.lines.len());
         if !shape_matches {
             self.rebuild_diff_lower_cache();
@@ -883,8 +886,8 @@ impl App {
     }
 
     fn invalidate_file_view(&mut self) {
-        self.diff_pane_view = DiffPaneView::Diff;
-        self.file_view = FileViewState::default();
+        self.diff.view = DiffPaneView::Diff;
+        self.diff.file_view = FileViewState::default();
     }
 
     fn current_file_view_key(&self) -> Option<FileViewKey> {
@@ -924,6 +927,7 @@ impl App {
             }
         };
         let anchor = self
+            .diff
             .hunks
             .iter()
             .find_map(|h| parse_hunk_new_start(&h.header));
@@ -943,33 +947,34 @@ impl App {
                 fv.error = Some(e.to_string());
             }
         }
-        self.file_view = fv;
+        self.diff.file_view = fv;
     }
 
     pub fn toggle_diff_file_view(&mut self) {
-        if self.diff_pane_view == DiffPaneView::File {
-            self.diff_pane_view = DiffPaneView::Diff;
+        if self.diff.view == DiffPaneView::File {
+            self.diff.view = DiffPaneView::Diff;
             return;
         }
         let Some(key) = self.current_file_view_key() else {
             return;
         };
-        if self.file_view.key.as_ref() != Some(&key) {
+        if self.diff.file_view.key.as_ref() != Some(&key) {
             self.load_file_view(key);
         }
-        self.diff_pane_view = DiffPaneView::File;
+        self.diff.view = DiffPaneView::File;
     }
 
     pub fn file_view_max_scroll(&self) -> usize {
-        self.file_view.line_count().saturating_sub(1)
+        self.diff.file_view.line_count().saturating_sub(1)
     }
 
     pub fn file_view_scroll_up(&mut self, n: usize) {
-        self.file_view.scroll = self.file_view.scroll.saturating_sub(n);
+        self.diff.file_view.scroll = self.diff.file_view.scroll.saturating_sub(n);
     }
 
     pub fn file_view_scroll_down(&mut self, n: usize) {
-        self.file_view.scroll = self
+        self.diff.file_view.scroll = self
+            .diff
             .file_view
             .scroll
             .saturating_add(n)
@@ -1043,41 +1048,41 @@ impl App {
     }
 
     pub fn start_diff_search(&mut self) {
-        self.diff_search.start();
+        self.diff.search.start();
     }
 
     pub fn cancel_diff_search(&mut self) {
-        self.diff_search.clear();
+        self.diff.search.clear();
     }
 
     pub fn confirm_diff_search(&mut self) {
-        self.diff_search.confirm();
+        self.diff.search.confirm();
     }
 
     pub fn diff_search_push(&mut self, ch: char) {
-        self.diff_search.push_char(ch);
+        self.diff.search.push_char(ch);
         self.recompute_diff_matches(true);
     }
 
     pub fn diff_search_pop(&mut self) {
-        self.diff_search.pop_char();
+        self.diff.search.pop_char();
         self.recompute_diff_matches(true);
     }
 
     pub fn next_diff_match(&mut self) {
-        if let Some(idx) = self.diff_search.next() {
-            self.scroll = idx;
+        if let Some(idx) = self.diff.search.next() {
+            self.diff.scroll = idx;
         }
     }
 
     pub fn prev_diff_match(&mut self) {
-        if let Some(idx) = self.diff_search.prev() {
-            self.scroll = idx;
+        if let Some(idx) = self.diff.search.prev() {
+            self.diff.scroll = idx;
         }
     }
 
     fn diff_line_count(&self) -> usize {
-        self.hunks.iter().map(|h| 1 + h.lines.len()).sum()
+        self.diff.hunks.iter().map(|h| 1 + h.lines.len()).sum()
     }
 
     fn max_diff_scroll(&self) -> usize {
@@ -1085,11 +1090,11 @@ impl App {
     }
 
     pub fn diff_scroll_left(&mut self) {
-        self.diff_scroll_x = self.diff_scroll_x.saturating_sub(4);
+        self.diff.scroll_x = self.diff.scroll_x.saturating_sub(4);
     }
 
     pub fn diff_scroll_right(&mut self) {
-        self.diff_scroll_x = self.diff_scroll_x.saturating_add(4).min(u16::MAX as usize);
+        self.diff.scroll_x = self.diff.scroll_x.saturating_add(4).min(u16::MAX as usize);
     }
 
     pub fn file_scroll_left(&mut self) {
@@ -1110,43 +1115,49 @@ impl App {
     }
 
     fn recompute_diff_matches(&mut self, scroll_to_match: bool) {
-        self.diff_search.matches.clear();
-        if self.diff_search.query.is_empty() {
-            self.diff_search.cursor = 0;
+        self.diff.search.matches.clear();
+        if self.diff.search.query.is_empty() {
+            self.diff.search.cursor = 0;
             return;
         }
         self.ensure_diff_lower_cache();
-        let q = self.diff_search.query_lower.as_str();
+        let q = self.diff.search.query_lower.as_str();
         let mut flat_idx = 0usize;
-        for (hunk, lines_lower) in self.hunks.iter().zip(self.hunks_lines_lower.iter()) {
+        for (hunk, lines_lower) in self
+            .diff
+            .hunks
+            .iter()
+            .zip(self.diff.hunks_lines_lower.iter())
+        {
             flat_idx += 1; // header line
             for line_lower in lines_lower.iter().take(hunk.lines.len()) {
                 if line_lower.contains(q) {
-                    self.diff_search.matches.push(flat_idx);
+                    self.diff.search.matches.push(flat_idx);
                 }
                 flat_idx += 1;
             }
         }
         debug_assert!(
-            self.diff_search.matches.windows(2).all(|w| w[0] < w[1]),
+            self.diff.search.matches.windows(2).all(|w| w[0] < w[1]),
             "diff_search_matches must be sorted for binary_search to be correct"
         );
-        if !self.diff_search.matches.is_empty() {
-            self.diff_search.cursor = self
-                .diff_search
+        if !self.diff.search.matches.is_empty() {
+            self.diff.search.cursor = self
+                .diff
+                .search
                 .cursor
-                .min(self.diff_search.matches.len().saturating_sub(1));
+                .min(self.diff.search.matches.len().saturating_sub(1));
             if scroll_to_match {
                 self.scroll_to_diff_match();
             }
         } else {
-            self.diff_search.cursor = 0;
+            self.diff.search.cursor = 0;
         }
     }
 
     fn scroll_to_diff_match(&mut self) {
-        if let Some(&idx) = self.diff_search.matches.get(self.diff_search.cursor) {
-            self.scroll = idx;
+        if let Some(&idx) = self.diff.search.matches.get(self.diff.search.cursor) {
+            self.diff.scroll = idx;
         }
     }
 
@@ -1220,10 +1231,10 @@ impl App {
                 self.move_selected_in_filter(-1);
             }
             Focus::DiffViewer => {
-                if self.diff_pane_view == DiffPaneView::File {
+                if self.diff.view == DiffPaneView::File {
                     self.file_view_scroll_up(1);
                 } else {
-                    self.scroll = self.scroll.saturating_sub(1);
+                    self.diff.scroll = self.diff.scroll.saturating_sub(1);
                 }
             }
             Focus::Terminal => {}
@@ -1239,10 +1250,14 @@ impl App {
                 self.move_selected_in_filter(1);
             }
             Focus::DiffViewer => {
-                if self.diff_pane_view == DiffPaneView::File {
+                if self.diff.view == DiffPaneView::File {
                     self.file_view_scroll_down(1);
                 } else {
-                    self.scroll = self.scroll.saturating_add(1).min(self.max_diff_scroll());
+                    self.diff.scroll = self
+                        .diff
+                        .scroll
+                        .saturating_add(1)
+                        .min(self.max_diff_scroll());
                 }
             }
             Focus::Terminal => {}
@@ -1258,10 +1273,10 @@ impl App {
                 self.move_selected_in_filter(-(LIST_PAGE_SIZE as isize));
             }
             Focus::DiffViewer => {
-                if self.diff_pane_view == DiffPaneView::File {
+                if self.diff.view == DiffPaneView::File {
                     self.file_view_scroll_up(DIFF_PAGE_SIZE);
                 } else {
-                    self.scroll = self.scroll.saturating_sub(DIFF_PAGE_SIZE);
+                    self.diff.scroll = self.diff.scroll.saturating_sub(DIFF_PAGE_SIZE);
                 }
             }
             Focus::Terminal => {}
@@ -1277,10 +1292,11 @@ impl App {
                 self.move_selected_in_filter(LIST_PAGE_SIZE as isize);
             }
             Focus::DiffViewer => {
-                if self.diff_pane_view == DiffPaneView::File {
+                if self.diff.view == DiffPaneView::File {
                     self.file_view_scroll_down(DIFF_PAGE_SIZE);
                 } else {
-                    self.scroll = self
+                    self.diff.scroll = self
+                        .diff
                         .scroll
                         .saturating_add(DIFF_PAGE_SIZE)
                         .min(self.max_diff_scroll());
@@ -1553,7 +1569,7 @@ impl App {
                 .files
                 .get(self.status_view.selected)
                 .map(|f| f.path.clone()),
-            scroll: self.scroll,
+            scroll: self.diff.scroll,
             active_pane: self.terminal.active,
             terminal_fullscreen: self.terminal.fullscreen,
             mode: Some(self.mode),
@@ -1606,7 +1622,7 @@ impl App {
         {
             self.status_view.selected = idx;
             self.refresh_diff(true);
-            self.scroll = state.scroll.min(self.max_diff_scroll());
+            self.diff.scroll = state.scroll.min(self.max_diff_scroll());
         }
         // If the saved file is no longer present, leave selected/scroll as they
         // were after the initial snapshot — applying saved_scroll to a different
@@ -1633,7 +1649,7 @@ impl App {
         } else {
             self.load_commit_diff_for_selected();
         }
-        self.scroll = state.scroll.min(self.max_diff_scroll());
+        self.diff.scroll = state.scroll.min(self.max_diff_scroll());
     }
 
     fn restore_log_drill_down(&mut self, state: &crate::session::SessionState) {
@@ -1707,19 +1723,13 @@ mod tests {
         App {
             mode: ViewMode::Status,
             status_view,
-            hunks: Vec::new(),
-            hunks_lines_lower: Vec::new(),
-            scroll: 0,
-            diff_scroll_x: 0,
+            diff: DiffPane::default(),
             focus: Focus::FileList,
             status: None,
             repo_path: ".".to_string(),
             log_view: LogView::default(),
             terminal: TerminalState::new(None, false),
             repo_input: RepoInput::default(),
-            diff_search: DiffSearch::default(),
-            diff_pane_view: DiffPaneView::default(),
-            file_view: FileViewState::default(),
             accent_idx: 0,
             tracking: None,
             snapshot,
@@ -1773,11 +1783,11 @@ mod tests {
     fn diff_scroll_saturates_on_page_up() {
         let mut app = app_with_files(vec!["a.rs"]);
         app.focus = Focus::DiffViewer;
-        app.scroll = 3;
+        app.diff.scroll = 3;
 
         app.page_up();
 
-        assert_eq!(app.scroll, 0);
+        assert_eq!(app.diff.scroll, 0);
     }
 
     #[test]
@@ -1785,61 +1795,61 @@ mod tests {
         let mut app = app_with_files(vec!["a.rs"]);
         app.focus = Focus::DiffViewer;
         // 1 hunk = header + 1 content line = 2 total lines, max_scroll = 1
-        app.hunks = vec![context_hunk(&["x"])];
-        app.scroll = 1; // already at max
+        app.diff.hunks = vec![context_hunk(&["x"])];
+        app.diff.scroll = 1; // already at max
 
         app.select_down();
 
-        assert_eq!(app.scroll, 1, "scroll must not exceed last line index");
+        assert_eq!(app.diff.scroll, 1, "scroll must not exceed last line index");
     }
 
     #[test]
     fn diff_scroll_clamps_at_last_line_on_page_down() {
         let mut app = app_with_files(vec!["a.rs"]);
         app.focus = Focus::DiffViewer;
-        app.hunks = vec![context_hunk(&["x"])];
-        app.scroll = 0;
+        app.diff.hunks = vec![context_hunk(&["x"])];
+        app.diff.scroll = 0;
 
         app.page_down(); // +20, but max is 1
 
-        assert_eq!(app.scroll, 1);
+        assert_eq!(app.diff.scroll, 1);
     }
 
     #[test]
     fn diff_scroll_handles_large_restored_offset() {
         let mut app = app_with_files(vec!["a.rs"]);
         app.focus = Focus::DiffViewer;
-        app.hunks = vec![context_hunk(&["x"])];
-        app.scroll = usize::MAX;
+        app.diff.hunks = vec![context_hunk(&["x"])];
+        app.diff.scroll = usize::MAX;
 
         app.select_down();
 
-        assert_eq!(app.scroll, 1);
+        assert_eq!(app.diff.scroll, 1);
     }
 
     #[test]
     fn diff_match_refresh_can_preserve_manual_scroll() {
         let mut app = app_with_files(vec!["a.rs"]);
-        app.hunks = vec![context_hunk(&["needle"])];
-        app.diff_search.query = "needle".to_string();
-        app.diff_search.query_lower = "needle".to_string();
-        app.scroll = 7;
+        app.diff.hunks = vec![context_hunk(&["needle"])];
+        app.diff.search.query = "needle".to_string();
+        app.diff.search.query_lower = "needle".to_string();
+        app.diff.scroll = 7;
 
         app.recompute_diff_matches(false);
 
-        assert_eq!(app.diff_search.matches, vec![1]);
-        assert_eq!(app.scroll, 7);
+        assert_eq!(app.diff.search.matches, vec![1]);
+        assert_eq!(app.diff.scroll, 7);
     }
 
     #[test]
     fn diff_search_input_scrolls_to_first_match() {
         let mut app = app_with_files(vec!["a.rs"]);
-        app.hunks = vec![context_hunk(&["alpha", "needle"])];
+        app.diff.hunks = vec![context_hunk(&["alpha", "needle"])];
 
         app.diff_search_push('n');
 
-        assert_eq!(app.diff_search.matches, vec![2]);
-        assert_eq!(app.scroll, 2);
+        assert_eq!(app.diff.search.matches, vec![2]);
+        assert_eq!(app.diff.scroll, 2);
     }
 
     #[test]
@@ -2002,8 +2012,8 @@ mod tests {
         });
 
         assert_eq!(app.mode, ViewMode::Log);
-        assert!(!app.hunks.is_empty());
-        assert_eq!(app.scroll, 2);
+        assert!(!app.diff.hunks.is_empty());
+        assert_eq!(app.diff.scroll, 2);
     }
 
     #[test]
@@ -2015,14 +2025,14 @@ mod tests {
         app.repo_path = path.clone();
         app.mode = ViewMode::Log;
         app.log_view.commits = load_commit_log(&path, 1).unwrap();
-        app.hunks = vec![context_hunk(&["stale"])];
+        app.diff.hunks = vec![context_hunk(&["stale"])];
         app.log_view.diff_title = "stale".to_string();
 
         app.log_drill_in();
 
         assert!(app.log_view.drill_down);
         assert!(app.log_view.commit_files.is_empty());
-        assert!(app.hunks.is_empty());
+        assert!(app.diff.hunks.is_empty());
         assert!(app.log_view.diff_title.contains("empty"));
     }
 
