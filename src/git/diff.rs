@@ -452,6 +452,29 @@ mod tests {
     }
 
     #[test]
+    fn is_empty_head_recognizes_unborn_branch_error() {
+        // Drive the actual error path: a freshly-initialized repo has no
+        // HEAD target, so revwalk.push_head() returns the error variant our
+        // helper must recognize. This guards against libgit2 changing the
+        // error class/code combination it reports.
+        let (dir, path) = make_repo();
+        let repo = open_repo(&path);
+        let mut revwalk = repo.revwalk().unwrap();
+        let err = revwalk
+            .push_head()
+            .expect_err("empty repo should fail to push HEAD");
+        assert!(
+            is_empty_head(&err),
+            "is_empty_head failed to recognize unborn HEAD error: \
+             class={:?} code={:?} message={}",
+            err.class(),
+            err.code(),
+            err.message()
+        );
+        drop(dir);
+    }
+
+    #[test]
     fn root_commit_diff_lists_added_files() {
         let (dir, path) = make_repo();
         let fp = Path::new(&path).join("first.rs");
