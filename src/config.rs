@@ -10,20 +10,15 @@ pub struct Config {
     pub theme: ThemeConfig,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Accent {
     Yellow,
+    #[default]
     Green,
     Cyan,
     Magenta,
     Blue,
-}
-
-impl Default for Accent {
-    fn default() -> Self {
-        Self::Green
-    }
 }
 
 impl Accent {
@@ -75,34 +70,24 @@ impl ThemeConfig {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum LogRotation {
+    #[default]
     Daily,
     Hourly,
     Size,
 }
 
-impl Default for LogRotation {
-    fn default() -> Self {
-        Self::Daily
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum LogLevel {
     Error,
     Warn,
+    #[default]
     Info,
     Debug,
     Trace,
-}
-
-impl Default for LogLevel {
-    fn default() -> Self {
-        Self::Info
-    }
 }
 
 impl LogLevel {
