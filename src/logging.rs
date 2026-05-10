@@ -121,10 +121,7 @@ fn cleanup_old_logs(log_dir: &Path, max_days: u32) {
 /// Always preserves the newest entry, even if it is older than the cutoff —
 /// SizeRollingAppender resumes the highest-index file, so deleting it would
 /// drop the active session's tail.
-fn expired_log_paths(
-    candidates: &[(PathBuf, SystemTime)],
-    cutoff: SystemTime,
-) -> Vec<&PathBuf> {
+fn expired_log_paths(candidates: &[(PathBuf, SystemTime)], cutoff: SystemTime) -> Vec<&PathBuf> {
     let newest = candidates.iter().map(|(_, t)| *t).max();
     candidates
         .iter()
@@ -204,8 +201,7 @@ impl Write for SizeRollingAppender {
         let mut total_written = 0usize;
         let mut remaining = buf;
         while !remaining.is_empty() {
-            if inner.max_bytes > 0
-                && inner.current_size + remaining.len() as u64 > inner.max_bytes
+            if inner.max_bytes > 0 && inner.current_size + remaining.len() as u64 > inner.max_bytes
             {
                 inner.index += 1;
                 let path = inner.dir.join(format!("{}.{}", inner.prefix, inner.index));
@@ -278,8 +274,14 @@ mod tests {
     fn expired_log_paths_keeps_recent_files() {
         let now = SystemTime::now();
         let candidates = vec![
-            (PathBuf::from("nightcrow.log.0"), now - Duration::from_secs(60)),
-            (PathBuf::from("nightcrow.log.1"), now - Duration::from_secs(30)),
+            (
+                PathBuf::from("nightcrow.log.0"),
+                now - Duration::from_secs(60),
+            ),
+            (
+                PathBuf::from("nightcrow.log.1"),
+                now - Duration::from_secs(30),
+            ),
         ];
         let cutoff = now - Duration::from_secs(86400);
 
