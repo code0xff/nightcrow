@@ -324,7 +324,11 @@ impl DiffSearch {
     }
 
     fn confirm(&mut self) {
-        self.active = false;
+        if self.query.is_empty() {
+            self.clear();
+        } else {
+            self.active = false;
+        }
     }
 
     fn clear(&mut self) {
@@ -1015,7 +1019,13 @@ impl App {
     }
 
     pub fn confirm_search(&mut self) {
-        self.status_view.search_active = false;
+        // Confirming an empty query is treated as cancel so the search bar
+        // doesn't linger with no filter applied.
+        if self.status_view.search_query.is_empty() {
+            self.cancel_search();
+        } else {
+            self.status_view.search_active = false;
+        }
     }
 
     pub fn search_push(&mut self, ch: char) {
