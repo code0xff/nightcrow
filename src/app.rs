@@ -1767,7 +1767,7 @@ impl App {
         if self.terminal.fullscreen {
             self.focus = Focus::Terminal;
         }
-        self.accent_idx = state.accent_idx;
+        self.set_accent_index(state.accent_idx);
 
         // Mode-specific diff/scroll restoration. We avoid loading a workdir diff
         // when the saved mode is Log — otherwise we'd waste a load and clamp the
@@ -2158,6 +2158,21 @@ mod tests {
 
         assert!(app.terminal.fullscreen);
         assert_eq!(app.focus, Focus::Terminal);
+    }
+
+    #[test]
+    fn restore_session_normalizes_accent_index() {
+        let mut app = app_with_files(vec![]);
+
+        app.restore_session(&crate::session::SessionState {
+            accent_idx: usize::MAX,
+            ..Default::default()
+        });
+
+        assert_eq!(
+            app.accent_idx,
+            usize::MAX % crate::config::Accent::ALL.len()
+        );
     }
 
     #[test]
