@@ -13,8 +13,8 @@ pub struct Config {
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Accent {
-    Yellow,
     #[default]
+    Yellow,
     Green,
     Cyan,
     Magenta,
@@ -261,6 +261,14 @@ level = "verbose"
         assert_eq!(cfg.rotation, LogRotation::Daily);
         assert_eq!(cfg.level, LogLevel::Info);
         assert_eq!(cfg.max_days, 7);
+    }
+
+    #[test]
+    fn theme_default_matches_documented_preset() {
+        let cfg = ThemeConfig::default();
+
+        assert_eq!(cfg.name, Accent::Yellow);
+        assert_eq!(cfg.preset_index(), 0);
     }
 
     #[test]
