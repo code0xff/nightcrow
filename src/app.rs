@@ -1,9 +1,10 @@
 use crate::backend::BackendEvent;
 use crate::backend::{PaneId, PtyBackend, TerminalBackend};
 use crate::git::diff::{
-    ChangedFile, CommitEntry, DiffHunk, RepoSnapshot, TrackingStatus, load_commit_diff,
-    load_commit_file_blob, load_commit_file_diff, load_commit_files, load_commit_log,
-    load_file_diff, load_snapshot, load_workdir_file, parse_hunk_new_start,
+    ChangedFile, CommitEntry, DiffHunk, RepoSnapshot, TrackingStatus, load_commit_diff_with_repo,
+    load_commit_file_blob_with_repo, load_commit_file_diff_with_repo, load_commit_files_with_repo,
+    load_commit_log_with_repo, load_file_diff_with_repo, load_snapshot,
+    load_workdir_file_with_repo, parse_hunk_new_start,
 };
 use std::collections::HashMap;
 use std::sync::mpsc::{self, Receiver, SyncSender};
@@ -366,6 +367,11 @@ pub struct App {
     pub tracking: Option<TrackingStatus>,
     snapshot: SnapshotChannel,
     pending_session: Option<crate::session::SessionState>,
+    /// Cached `git2::Repository` for synchronous loads (file diff, commit
+    /// diff, file blob, commit log). Opened lazily on first use; invalidated
+    /// in `change_repo`. The snapshot worker thread keeps its own handle —
+    /// `git2::Repository` is `!Send` and cannot be shared.
+    repo_cache: Option<git2::Repository>,
 }
 
 impl App {
@@ -393,6 +399,7 @@ impl App {
             tracking: None,
             snapshot,
             pending_session: None,
+            repo_cache: None,
         };
 
         app.ensure_initial_terminal();
@@ -549,6 +556,9 @@ impl App {
         }
         tracing::info!(path = %new_path, "repo changed");
         self.repo_path = new_path;
+        // Drop the cached Repository — it points to the previous repo's .git
+        // directory and would silently keep returning stale results.
+        self.repo_cache = None;
         self.mode = ViewMode::Status;
         self.status_view.files.clear();
         self.status_view.selected = 0;
@@ -723,26 +733,47 @@ impl App {
         self.refresh_diff(true);
     }
 
+    /// Run `f` with the cached `git2::Repository`, opening it lazily on first
+    /// use. Cache is invalidated by `change_repo` so that follow-up calls open
+    /// a fresh handle for the new path. Errors from the open propagate so the
+    /// caller can surface them in `self.status`.
+    fn with_repo<R>(
+        &mut self,
+        f: impl FnOnce(&git2::Repository) -> anyhow::Result<R>,
+    ) -> anyhow::Result<R> {
+        if self.repo_cache.is_none() {
+            let repo = git2::Repository::discover(self.repo_path.as_str())
+                .map_err(|e| anyhow::anyhow!("not a git repository: {e}"))?;
+            self.repo_cache = Some(repo);
+        }
+        // unwrap is sound: we just inserted Some above when None.
+        f(self.repo_cache.as_ref().unwrap())
+    }
+
     fn refresh_diff(&mut self, reset_scroll: bool) {
         if self.mode == ViewMode::Log {
             return;
         }
         let previous_scroll = self.scroll;
-        if let Some(file) = self.status_view.files.get(self.status_view.selected) {
-            let path = file.path.clone();
-            let result = load_file_diff(&self.repo_path, &path);
-            if let Err(e) = &result {
-                tracing::debug!(error = %e, file = %path, "failed to load diff");
-            }
-            let mode = if reset_scroll {
-                DiffApply::Reset
-            } else {
-                DiffApply::KeepScroll(previous_scroll)
-            };
-            self.apply_diff_result(result, mode);
-        } else {
+        let path = self
+            .status_view
+            .files
+            .get(self.status_view.selected)
+            .map(|f| f.path.clone());
+        let Some(path) = path else {
             self.clear_diff_state();
+            return;
+        };
+        let result = self.with_repo(|repo| load_file_diff_with_repo(repo, &path));
+        if let Err(e) = &result {
+            tracing::debug!(error = %e, file = %path, "failed to load diff");
         }
+        let mode = if reset_scroll {
+            DiffApply::Reset
+        } else {
+            DiffApply::KeepScroll(previous_scroll)
+        };
+        self.apply_diff_result(result, mode);
     }
 
     /// Centralizes the post-load shape used by every diff loader: on success
@@ -823,9 +854,13 @@ impl App {
     }
 
     fn load_file_view(&mut self, key: FileViewKey) {
-        let result = match &key {
-            FileViewKey::Status(path) => load_workdir_file(&self.repo_path, path),
-            FileViewKey::Commit { oid, path } => load_commit_file_blob(&self.repo_path, *oid, path),
+        let result = match key.clone() {
+            FileViewKey::Status(path) => {
+                self.with_repo(|repo| load_workdir_file_with_repo(repo, &path))
+            }
+            FileViewKey::Commit { oid, path } => {
+                self.with_repo(|repo| load_commit_file_blob_with_repo(repo, oid, &path))
+            }
         };
         let anchor = self
             .hunks
@@ -1188,14 +1223,15 @@ impl App {
     }
 
     fn load_commit_diff_for_selected(&mut self) {
-        let Some(entry) = self.log_view.commits.get(self.log_view.selected) else {
-            self.clear_diff_state();
-            self.log_view.diff_title.clear();
-            return;
+        let (oid, title) = match self.log_view.commits.get(self.log_view.selected) {
+            Some(entry) => (entry.oid, entry.to_string()),
+            None => {
+                self.clear_diff_state();
+                self.log_view.diff_title.clear();
+                return;
+            }
         };
-        let oid = entry.oid;
-        let title = entry.to_string();
-        let result = load_commit_diff(&self.repo_path, oid);
+        let result = self.with_repo(|repo| load_commit_diff_with_repo(repo, oid));
         if let Err(e) = &result {
             tracing::debug!(error = %e, "failed to load commit diff");
         }
@@ -1209,12 +1245,11 @@ impl App {
     }
 
     pub fn log_drill_in(&mut self) {
-        let Some(entry) = self.log_view.commits.get(self.log_view.selected) else {
-            return;
+        let (oid, title) = match self.log_view.commits.get(self.log_view.selected) {
+            Some(entry) => (entry.oid, entry.to_string()),
+            None => return,
         };
-        let oid = entry.oid;
-        let title = entry.to_string();
-        match load_commit_files(&self.repo_path, oid) {
+        match self.with_repo(|repo| load_commit_files_with_repo(repo, oid)) {
             Ok(files) => {
                 self.log_view.commit_files = files;
                 self.log_view.file_selected = 0;
@@ -1270,21 +1305,28 @@ impl App {
     }
 
     fn load_file_diff_for_log_file_selected(&mut self) {
-        let Some(commit_entry) = self.log_view.commits.get(self.log_view.selected) else {
+        let Some((oid, short_id, commit_title)) = self
+            .log_view
+            .commits
+            .get(self.log_view.selected)
+            .map(|c| (c.oid, c.short_id.clone(), c.to_string()))
+        else {
             self.clear_diff_state();
             self.log_view.diff_title.clear();
             return;
         };
-        let oid = commit_entry.oid;
-        let commit_title = commit_entry.to_string();
-        let Some(file) = self.log_view.commit_files.get(self.log_view.file_selected) else {
+        let Some(path) = self
+            .log_view
+            .commit_files
+            .get(self.log_view.file_selected)
+            .map(|f| f.path.clone())
+        else {
             self.clear_diff_state();
             self.log_view.diff_title = commit_title;
             return;
         };
-        let path = file.path.clone();
-        let title = format!("{} {}", commit_entry.short_id, path);
-        let result = load_commit_file_diff(&self.repo_path, oid, &path);
+        let title = format!("{short_id} {path}");
+        let result = self.with_repo(|repo| load_commit_file_diff_with_repo(repo, oid, &path));
         if let Err(e) = &result {
             tracing::debug!(error = %e, file = %path, "failed to load commit file diff");
         }
@@ -1297,7 +1339,7 @@ impl App {
             ViewMode::Status => {
                 self.mode = ViewMode::Log;
                 self.reset_drill_down_state();
-                match load_commit_log(&self.repo_path, COMMIT_LOG_LIMIT) {
+                match self.with_repo(|repo| load_commit_log_with_repo(repo, COMMIT_LOG_LIMIT)) {
                     Ok(commits) => {
                         self.log_view.commits = commits;
                         self.log_view.selected = 0;
@@ -1504,7 +1546,8 @@ impl App {
     }
 
     fn restore_log_session(&mut self, state: &crate::session::SessionState) {
-        let commits = match load_commit_log(&self.repo_path, COMMIT_LOG_LIMIT) {
+        let commits = match self.with_repo(|repo| load_commit_log_with_repo(repo, COMMIT_LOG_LIMIT))
+        {
             Ok(c) => c,
             Err(e) => {
                 tracing::warn!(error = %e, "failed to restore commit log");
@@ -1526,13 +1569,14 @@ impl App {
     }
 
     fn restore_log_drill_down(&mut self, state: &crate::session::SessionState) {
-        let Some(entry) = self.log_view.commits.get(self.log_view.selected) else {
-            self.load_commit_diff_for_selected();
-            return;
+        let (oid, title) = match self.log_view.commits.get(self.log_view.selected) {
+            Some(entry) => (entry.oid, entry.to_string()),
+            None => {
+                self.load_commit_diff_for_selected();
+                return;
+            }
         };
-        let oid = entry.oid;
-        let title = entry.to_string();
-        match load_commit_files(&self.repo_path, oid) {
+        match self.with_repo(|repo| load_commit_files_with_repo(repo, oid)) {
             Ok(files) => {
                 self.log_view.commit_files = files;
                 self.log_view.drill_down = true;
@@ -1614,6 +1658,7 @@ mod tests {
             tracking: None,
             snapshot,
             pending_session: None,
+            repo_cache: None,
         }
     }
 

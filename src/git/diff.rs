@@ -151,8 +151,16 @@ fn decode_file_view(bytes: &[u8]) -> Result<String> {
         .map_err(|_| anyhow::anyhow!("binary or non-utf8 file"))
 }
 
+// Path-based wrappers below are convenience entrypoints used only by unit
+// tests, which open a one-shot Repository per call. The TUI runtime drives
+// these via `*_with_repo` against the cached `git2::Repository` held by App.
+#[cfg(test)]
 pub fn load_workdir_file(repo_path: &str, file_path: &str) -> Result<String> {
     let repo = Repository::discover(repo_path).context("not a git repository")?;
+    load_workdir_file_with_repo(&repo, file_path)
+}
+
+pub fn load_workdir_file_with_repo(repo: &Repository, file_path: &str) -> Result<String> {
     let workdir = repo
         .workdir()
         .ok_or_else(|| anyhow::anyhow!("bare repository"))?;
@@ -161,8 +169,17 @@ pub fn load_workdir_file(repo_path: &str, file_path: &str) -> Result<String> {
     decode_file_view(&bytes)
 }
 
+#[cfg(test)]
 pub fn load_commit_file_blob(repo_path: &str, oid: Oid, file_path: &str) -> Result<String> {
     let repo = Repository::discover(repo_path).context("not a git repository")?;
+    load_commit_file_blob_with_repo(&repo, oid, file_path)
+}
+
+pub fn load_commit_file_blob_with_repo(
+    repo: &Repository,
+    oid: Oid,
+    file_path: &str,
+) -> Result<String> {
     let commit = repo.find_commit(oid).context("failed to find commit")?;
     let tree = commit.tree().context("failed to get commit tree")?;
     let entry = tree
@@ -172,8 +189,13 @@ pub fn load_commit_file_blob(repo_path: &str, oid: Oid, file_path: &str) -> Resu
     decode_file_view(blob.content())
 }
 
+#[cfg(test)]
 pub fn load_file_diff(repo_path: &str, file_path: &str) -> Result<Vec<DiffHunk>> {
     let repo = Repository::discover(repo_path).context("not a git repository")?;
+    load_file_diff_with_repo(&repo, file_path)
+}
+
+pub fn load_file_diff_with_repo(repo: &Repository, file_path: &str) -> Result<Vec<DiffHunk>> {
     let head_tree = repo.head().ok().and_then(|head| head.peel_to_tree().ok());
     let mut diff_opts = diff_options(Some(file_path));
 
@@ -187,8 +209,13 @@ pub fn load_file_diff(repo_path: &str, file_path: &str) -> Result<Vec<DiffHunk>>
     collect_diff_hunks(&diff, file_path)
 }
 
+#[cfg(test)]
 pub fn load_commit_log(repo_path: &str, max_count: usize) -> Result<Vec<CommitEntry>> {
     let repo = Repository::discover(repo_path).context("not a git repository")?;
+    load_commit_log_with_repo(&repo, max_count)
+}
+
+pub fn load_commit_log_with_repo(repo: &Repository, max_count: usize) -> Result<Vec<CommitEntry>> {
     if repo
         .is_empty()
         .context("failed to inspect repository state")?
@@ -257,9 +284,14 @@ fn commit_diff<'repo>(
     Ok(diff)
 }
 
+#[cfg(test)]
 pub fn load_commit_files(repo_path: &str, oid: Oid) -> Result<Vec<ChangedFile>> {
     let repo = Repository::discover(repo_path).context("not a git repository")?;
-    let diff = commit_diff(&repo, oid, None)?;
+    load_commit_files_with_repo(&repo, oid)
+}
+
+pub fn load_commit_files_with_repo(repo: &Repository, oid: Oid) -> Result<Vec<ChangedFile>> {
+    let diff = commit_diff(repo, oid, None)?;
     let mut files = Vec::new();
     for delta in diff.deltas() {
         let status = match delta.status() {
@@ -274,15 +306,29 @@ pub fn load_commit_files(repo_path: &str, oid: Oid) -> Result<Vec<ChangedFile>> 
     Ok(files)
 }
 
+#[cfg(test)]
 pub fn load_commit_file_diff(repo_path: &str, oid: Oid, file_path: &str) -> Result<Vec<DiffHunk>> {
     let repo = Repository::discover(repo_path).context("not a git repository")?;
-    let diff = commit_diff(&repo, oid, Some(file_path))?;
+    load_commit_file_diff_with_repo(&repo, oid, file_path)
+}
+
+pub fn load_commit_file_diff_with_repo(
+    repo: &Repository,
+    oid: Oid,
+    file_path: &str,
+) -> Result<Vec<DiffHunk>> {
+    let diff = commit_diff(repo, oid, Some(file_path))?;
     collect_commit_diff_hunks(&diff)
 }
 
+#[cfg(test)]
 pub fn load_commit_diff(repo_path: &str, oid: Oid) -> Result<Vec<DiffHunk>> {
     let repo = Repository::discover(repo_path).context("not a git repository")?;
-    let diff = commit_diff(&repo, oid, None)?;
+    load_commit_diff_with_repo(&repo, oid)
+}
+
+pub fn load_commit_diff_with_repo(repo: &Repository, oid: Oid) -> Result<Vec<DiffHunk>> {
+    let diff = commit_diff(repo, oid, None)?;
     collect_commit_diff_hunks(&diff)
 }
 
