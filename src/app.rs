@@ -258,6 +258,8 @@ pub struct LogView {
     pub drill_down: bool,
     pub commit_files: Vec<ChangedFile>,
     pub file_selected: usize,
+    pub commit_scroll_x: usize,
+    pub file_scroll_x: usize,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -604,10 +606,12 @@ impl App {
                     self.sync_selection_to_filter();
                     let selected_path = self.selected_filtered_status_path();
                     let selected_path_changed = selected_path != previous_path;
-                    if selected_path.is_some() {
-                        self.refresh_diff(selected_path_changed);
-                    } else {
-                        self.clear_diff_state();
+                    if self.mode == ViewMode::Status {
+                        if selected_path.is_some() {
+                            self.refresh_diff(selected_path_changed);
+                        } else {
+                            self.clear_diff_state();
+                        }
                     }
                     if self
                         .status
@@ -749,6 +753,7 @@ impl App {
         self.log_view.commits.clear();
         self.log_view.selected = 0;
         self.log_view.diff_title.clear();
+        self.log_view.commit_scroll_x = 0;
         self.reset_drill_down_state();
         self.status_view.search_query.clear();
         self.status_view.search_query_lower.clear();
@@ -1276,20 +1281,50 @@ impl App {
     }
 
     pub fn file_scroll_left(&mut self) {
-        self.status_view.file_scroll_x = self.status_view.file_scroll_x.saturating_sub(4);
+        let target = self.upper_scroll_x_mut();
+        *target = target.saturating_sub(4);
     }
 
     pub fn file_scroll_right(&mut self) {
-        // Cap at the longest visible path's char width so we don't drift past
-        // the last column of any rendered entry.
-        let max = self
-            .status_view
-            .files
-            .iter()
-            .map(|f| f.path.chars().count())
-            .max()
-            .unwrap_or(0);
-        self.status_view.file_scroll_x = self.status_view.file_scroll_x.saturating_add(4).min(max);
+        let max = self.upper_scroll_x_max();
+        let target = self.upper_scroll_x_mut();
+        *target = target.saturating_add(4).min(max);
+    }
+
+    fn upper_scroll_x_mut(&mut self) -> &mut usize {
+        match self.mode {
+            ViewMode::Status => &mut self.status_view.file_scroll_x,
+            ViewMode::Log if self.log_view.drill_down => &mut self.log_view.file_scroll_x,
+            ViewMode::Log => &mut self.log_view.commit_scroll_x,
+        }
+    }
+
+    fn upper_scroll_x_max(&self) -> usize {
+        // Cap at the longest visible entry's char width so we don't drift past
+        // the last column of any rendered row.
+        match self.mode {
+            ViewMode::Status => self
+                .status_view
+                .files
+                .iter()
+                .map(|f| f.path.chars().count())
+                .max()
+                .unwrap_or(0),
+            ViewMode::Log if self.log_view.drill_down => self
+                .log_view
+                .commit_files
+                .iter()
+                .map(|f| f.path.chars().count())
+                .max()
+                .unwrap_or(0),
+            ViewMode::Log => self
+                .log_view
+                .commits
+                .iter()
+                .map(|c| c.summary.chars().count())
+                .max()
+                .unwrap_or(0),
+        }
     }
 
     fn recompute_diff_matches(&mut self, scroll_to_match: bool) {
@@ -1527,6 +1562,7 @@ impl App {
         self.log_view.drill_down = false;
         self.log_view.commit_files.clear();
         self.log_view.file_selected = 0;
+        self.log_view.file_scroll_x = 0;
     }
 
     pub fn log_drill_in(&mut self) {
@@ -1624,6 +1660,7 @@ impl App {
             ViewMode::Status => {
                 self.mode = ViewMode::Log;
                 self.reset_drill_down_state();
+                self.log_view.commit_scroll_x = 0;
                 match self.with_repo(|repo| load_commit_log(repo, COMMIT_LOG_LIMIT)) {
                     Ok(commits) => {
                         self.log_view.commits = commits;

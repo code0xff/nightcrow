@@ -49,6 +49,7 @@ fn render_commit_list(frame: &mut Frame, app: &App, area: Rect, accent: Color) {
 
     let ahead_count = app.tracking.as_ref().map_or(0, |t| t.ahead);
 
+    let scroll_x = app.log_view.commit_scroll_x;
     let items: Vec<ListItem> = app
         .log_view
         .commits
@@ -58,6 +59,7 @@ fn render_commit_list(frame: &mut Frame, app: &App, area: Rect, accent: Color) {
             let time_str = format_relative_time(entry.time);
             let author_short: String = entry.author.chars().take(10).collect();
             let marker = if i < ahead_count { "↑ " } else { "  " };
+            let summary = char_offset(&entry.summary, scroll_x);
             let line = Line::from(vec![
                 Span::styled(marker, Style::default().fg(Color::Green)),
                 Span::styled(format!("{} ", entry.short_id), Style::default().fg(accent)),
@@ -69,7 +71,7 @@ fn render_commit_list(frame: &mut Frame, app: &App, area: Rect, accent: Color) {
                     format!("{:<10} ", author_short),
                     Style::default().fg(Color::Cyan),
                 ),
-                Span::raw(entry.summary.as_str()),
+                Span::raw(summary),
             ]);
             ListItem::new(line)
         })
@@ -99,17 +101,19 @@ fn render_file_list(frame: &mut Frame, app: &App, area: Rect, accent: Color) {
     let focused = app.focus == Focus::FileList;
     let border_style = super::focused_border_style(focused, accent);
 
+    let scroll_x = app.log_view.file_scroll_x;
     let items: Vec<ListItem> = app
         .log_view
         .commit_files
         .iter()
         .map(|f| {
+            let path = char_offset(&f.path, scroll_x);
             let line = Line::from(vec![
                 Span::styled(
                     format!("{} ", f.status.symbol()),
                     Style::default().fg(super::status_color(f.status)),
                 ),
-                Span::raw(f.path.as_str()),
+                Span::raw(path),
             ]);
             ListItem::new(line)
         })
@@ -126,6 +130,18 @@ fn render_file_list(frame: &mut Frame, app: &App, area: Rect, accent: Color) {
 
     let selected = (!app.log_view.commit_files.is_empty()).then_some(app.log_view.file_selected);
     super::render_selectable_list(frame, area, title, items, selected, border_style);
+}
+
+fn char_offset(s: &str, scroll_x: usize) -> &str {
+    if scroll_x == 0 {
+        return s;
+    }
+    let byte_off = s
+        .char_indices()
+        .nth(scroll_x)
+        .map(|(b, _)| b)
+        .unwrap_or(s.len());
+    &s[byte_off..]
 }
 
 fn truncate_title(title: &str, max_chars: usize) -> String {
