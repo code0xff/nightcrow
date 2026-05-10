@@ -71,6 +71,8 @@ nightcrow --repo ~/projects/myapp
 |-----|--------|
 | `↑` / `k`, `↓` / `j` | Scroll one line |
 | `PgUp` / `PgDn` | Scroll 20 lines |
+| `←` / `→` | Horizontal scroll (4 columns) |
+| `v` | Toggle between hunk diff and full file preview |
 | `/` | Open diff search |
 | `n` / `N` | Next / previous search match |
 | `Esc` | Clear search |
