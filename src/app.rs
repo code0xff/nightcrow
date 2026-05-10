@@ -3,7 +3,7 @@ use crate::backend::{PaneId, PtyBackend, TerminalBackend};
 use crate::git::diff::{
     ChangedFile, CommitEntry, DiffHunk, RepoSnapshot, TrackingStatus, load_commit_diff_with_repo,
     load_commit_file_blob_with_repo, load_commit_file_diff_with_repo, load_commit_files_with_repo,
-    load_commit_log_with_repo, load_file_diff_with_repo, load_snapshot,
+    load_commit_log_with_repo, load_file_diff_with_repo, load_snapshot_with_repo,
     load_workdir_file_with_repo, parse_hunk_new_start,
 };
 use std::collections::HashMap;
@@ -58,10 +58,28 @@ impl SnapshotChannel {
         let (stop_tx, stop_rx) = mpsc::sync_channel::<()>(0);
         let path = repo_path.to_string();
         thread::spawn(move || {
+            // Open Repository once and reuse for the lifetime of this worker.
+            // Re-discovering on each tick costs an unnecessary directory walk
+            // every second. If the open itself fails (e.g. not a git dir),
+            // surface the error each tick so the user sees a stable message.
+            let mut repo: Option<git2::Repository> = None;
             loop {
-                let msg = match load_snapshot(&path) {
-                    Ok(s) => SnapshotMsg::Ok(s),
-                    Err(e) => SnapshotMsg::Err(e.to_string()),
+                let msg = match repo.as_ref() {
+                    Some(r) => match load_snapshot_with_repo(r) {
+                        Ok(s) => SnapshotMsg::Ok(s),
+                        Err(e) => SnapshotMsg::Err(e.to_string()),
+                    },
+                    None => match git2::Repository::discover(&path) {
+                        Ok(r) => {
+                            let result = load_snapshot_with_repo(&r);
+                            repo = Some(r);
+                            match result {
+                                Ok(s) => SnapshotMsg::Ok(s),
+                                Err(e) => SnapshotMsg::Err(e.to_string()),
+                            }
+                        }
+                        Err(e) => SnapshotMsg::Err(format!("not a git repository: {e}")),
+                    },
                 };
                 if tx.send(msg).is_err() {
                     break;

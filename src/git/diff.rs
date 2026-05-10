@@ -91,9 +91,13 @@ fn load_tracking_status(repo: &Repository) -> Option<TrackingStatus> {
     Some(TrackingStatus { ahead, behind })
 }
 
+#[cfg(test)]
 pub fn load_snapshot(repo_path: &str) -> Result<RepoSnapshot> {
     let repo = Repository::discover(repo_path).context("not a git repository")?;
+    load_snapshot_with_repo(&repo)
+}
 
+pub fn load_snapshot_with_repo(repo: &Repository) -> Result<RepoSnapshot> {
     let mut opts = StatusOptions::new();
     opts.include_untracked(true)
         .recurse_untracked_dirs(true)
@@ -121,7 +125,7 @@ pub fn load_snapshot(repo_path: &str) -> Result<RepoSnapshot> {
         .map(|(path, status)| ChangedFile { path, status })
         .collect();
 
-    let tracking = load_tracking_status(&repo);
+    let tracking = load_tracking_status(repo);
     Ok(RepoSnapshot { files, tracking })
 }
 
