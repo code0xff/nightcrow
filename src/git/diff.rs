@@ -30,6 +30,21 @@ impl ChangeStatus {
 pub struct ChangedFile {
     pub path: String,
     pub status: ChangeStatus,
+    /// Pre-computed lowercase form of `path` for case-insensitive search.
+    /// Set on construction so the file-list filter doesn't lowercase on every
+    /// keystroke.
+    pub path_lower: String,
+}
+
+impl ChangedFile {
+    pub fn new(path: String, status: ChangeStatus) -> Self {
+        let path_lower = path.to_lowercase();
+        Self {
+            path,
+            status,
+            path_lower,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -122,7 +137,7 @@ pub fn load_snapshot_with_repo(repo: &Repository) -> Result<RepoSnapshot> {
 
     let files = files
         .into_iter()
-        .map(|(path, status)| ChangedFile { path, status })
+        .map(|(path, status)| ChangedFile::new(path, status))
         .collect();
 
     let tracking = load_tracking_status(repo);
@@ -305,7 +320,7 @@ pub fn load_commit_files_with_repo(repo: &Repository, oid: Oid) -> Result<Vec<Ch
             _ => ChangeStatus::Modified,
         };
         let path = path_from_delta(delta).unwrap_or_else(|| "unknown".to_string());
-        files.push(ChangedFile { path, status });
+        files.push(ChangedFile::new(path, status));
     }
     Ok(files)
 }

@@ -226,7 +226,7 @@ impl StatusView {
         }
         let q = self.search_query_lower.as_str();
         for (i, f) in self.files.iter().enumerate() {
-            if f.path.to_lowercase().contains(q) {
+            if f.path_lower.contains(q) {
                 self.filter_cache.push(i);
             }
         }
@@ -370,6 +370,11 @@ pub struct App {
     pub mode: ViewMode,
     pub status_view: StatusView,
     pub hunks: Vec<DiffHunk>,
+    /// Lowercased copy of each `DiffLine::content` aligned with `hunks`.
+    /// `hunks_lines_lower[i][j]` corresponds to `hunks[i].lines[j].content`.
+    /// Built once per diff load so per-keystroke search does not re-lowercase
+    /// the entire diff. Header lines are never searched and are not cached.
+    hunks_lines_lower: Vec<Vec<String>>,
     pub scroll: usize,
     pub diff_scroll_x: usize,
     pub focus: Focus,
@@ -402,6 +407,7 @@ impl App {
             mode: ViewMode::Status,
             status_view: StatusView::default(),
             hunks: Vec::new(),
+            hunks_lines_lower: Vec::new(),
             scroll: 0,
             diff_scroll_x: 0,
             focus: Focus::FileList,
@@ -807,6 +813,7 @@ impl App {
         match result {
             Ok(hunks) => {
                 self.hunks = hunks;
+                self.rebuild_diff_lower_cache();
                 match mode {
                     DiffApply::Reset | DiffApply::ResetWithTitle(_) => {
                         self.scroll = 0;
@@ -836,11 +843,39 @@ impl App {
 
     fn clear_diff_state(&mut self) {
         self.hunks.clear();
+        self.hunks_lines_lower.clear();
         self.diff_search.matches.clear();
         self.diff_search.cursor = 0;
         self.scroll = 0;
         self.diff_scroll_x = 0;
         self.invalidate_file_view();
+    }
+
+    /// Rebuild the lowercase cache from current `hunks`. Call after replacing
+    /// `hunks` so per-keystroke search does not re-lowercase line content.
+    fn rebuild_diff_lower_cache(&mut self) {
+        self.hunks_lines_lower.clear();
+        self.hunks_lines_lower.reserve(self.hunks.len());
+        for hunk in &self.hunks {
+            let lines = hunk
+                .lines
+                .iter()
+                .map(|l| l.content.to_lowercase())
+                .collect();
+            self.hunks_lines_lower.push(lines);
+        }
+    }
+
+    fn ensure_diff_lower_cache(&mut self) {
+        let shape_matches = self.hunks_lines_lower.len() == self.hunks.len()
+            && self
+                .hunks
+                .iter()
+                .zip(self.hunks_lines_lower.iter())
+                .all(|(h, ll)| ll.len() == h.lines.len());
+        if !shape_matches {
+            self.rebuild_diff_lower_cache();
+        }
     }
 
     fn invalidate_file_view(&mut self) {
@@ -1070,12 +1105,13 @@ impl App {
             self.diff_search.cursor = 0;
             return;
         }
+        self.ensure_diff_lower_cache();
         let q = self.diff_search.query_lower.as_str();
         let mut flat_idx = 0usize;
-        for hunk in &self.hunks {
+        for (hunk, lines_lower) in self.hunks.iter().zip(self.hunks_lines_lower.iter()) {
             flat_idx += 1; // header line
-            for line in &hunk.lines {
-                if line.content.to_lowercase().contains(q) {
+            for line_lower in lines_lower.iter().take(hunk.lines.len()) {
+                if line_lower.contains(q) {
                     self.diff_search.matches.push(flat_idx);
                 }
                 flat_idx += 1;
@@ -1653,10 +1689,7 @@ mod tests {
         let mut status_view = StatusView {
             files: files
                 .into_iter()
-                .map(|path| ChangedFile {
-                    path: path.to_string(),
-                    status: ChangeStatus::Modified,
-                })
+                .map(|path| ChangedFile::new(path.to_string(), ChangeStatus::Modified))
                 .collect(),
             ..Default::default()
         };
@@ -1665,6 +1698,7 @@ mod tests {
             mode: ViewMode::Status,
             status_view,
             hunks: Vec::new(),
+            hunks_lines_lower: Vec::new(),
             scroll: 0,
             diff_scroll_x: 0,
             focus: Focus::FileList,
@@ -1701,10 +1735,7 @@ mod tests {
     fn selection_clamps_when_file_list_shrinks() {
         let mut app = app_with_files(vec!["a.rs", "b.rs", "c.rs"]);
         app.status_view.selected = 2;
-        app.status_view.files = vec![ChangedFile {
-            path: "a.rs".to_string(),
-            status: ChangeStatus::Modified,
-        }];
+        app.status_view.files = vec![ChangedFile::new("a.rs".to_string(), ChangeStatus::Modified)];
 
         let selected_path = app.restore_selection(Some("c.rs"));
 
@@ -1717,18 +1748,9 @@ mod tests {
         let mut app = app_with_files(vec!["a.rs", "b.rs", "c.rs"]);
         app.status_view.selected = 1;
         app.status_view.files = vec![
-            ChangedFile {
-                path: "a.rs".to_string(),
-                status: ChangeStatus::Modified,
-            },
-            ChangedFile {
-                path: "c.rs".to_string(),
-                status: ChangeStatus::Modified,
-            },
-            ChangedFile {
-                path: "b.rs".to_string(),
-                status: ChangeStatus::Modified,
-            },
+            ChangedFile::new("a.rs".to_string(), ChangeStatus::Modified),
+            ChangedFile::new("c.rs".to_string(), ChangeStatus::Modified),
+            ChangedFile::new("b.rs".to_string(), ChangeStatus::Modified),
         ];
 
         let selected_path = app.restore_selection(Some("b.rs"));
