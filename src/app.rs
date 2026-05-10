@@ -41,26 +41,44 @@ fn cursor_down(idx: &mut usize, len: usize, n: usize) -> bool {
     }
 }
 
-fn spawn_snapshot_thread(repo_path: &str) -> (Receiver<SnapshotMsg>, SyncSender<()>) {
-    let (tx, rx) = mpsc::channel::<SnapshotMsg>();
-    let (stop_tx, stop_rx) = mpsc::sync_channel::<()>(0);
-    let path = repo_path.to_string();
-    thread::spawn(move || {
-        loop {
-            let msg = match load_snapshot(&path) {
-                Ok(s) => SnapshotMsg::Ok(s),
-                Err(e) => SnapshotMsg::Err(e.to_string()),
-            };
-            if tx.send(msg).is_err() {
-                break;
+/// Owns the receiver and stop channel for the background snapshot thread.
+/// Dropping the struct (and its `_stop_tx`) signals the thread to exit.
+pub struct SnapshotChannel {
+    rx: Receiver<SnapshotMsg>,
+    // Held only for its drop side-effect: dropping the sender unblocks
+    // the worker's recv_timeout so it can observe the disconnect.
+    _stop_tx: SyncSender<()>,
+}
+
+impl SnapshotChannel {
+    pub fn spawn(repo_path: &str) -> Self {
+        let (tx, rx) = mpsc::channel::<SnapshotMsg>();
+        let (stop_tx, stop_rx) = mpsc::sync_channel::<()>(0);
+        let path = repo_path.to_string();
+        thread::spawn(move || {
+            loop {
+                let msg = match load_snapshot(&path) {
+                    Ok(s) => SnapshotMsg::Ok(s),
+                    Err(e) => SnapshotMsg::Err(e.to_string()),
+                };
+                if tx.send(msg).is_err() {
+                    break;
+                }
+                match stop_rx.recv_timeout(Duration::from_millis(1000)) {
+                    Ok(()) | Err(mpsc::RecvTimeoutError::Disconnected) => break,
+                    Err(mpsc::RecvTimeoutError::Timeout) => {}
+                }
             }
-            match stop_rx.recv_timeout(Duration::from_millis(1000)) {
-                Ok(()) | Err(mpsc::RecvTimeoutError::Disconnected) => break,
-                Err(mpsc::RecvTimeoutError::Timeout) => {}
-            }
+        });
+        Self {
+            rx,
+            _stop_tx: stop_tx,
         }
-    });
-    (rx, stop_tx)
+    }
+
+    pub fn try_recv(&self) -> Result<SnapshotMsg, mpsc::TryRecvError> {
+        self.rx.try_recv()
+    }
 }
 
 fn strip_escape_sequences(data: &[u8]) -> String {
@@ -283,15 +301,13 @@ pub struct App {
     pub diff_search: DiffSearch,
     pub accent_idx: usize,
     pub tracking: Option<TrackingStatus>,
-    rx: Receiver<SnapshotMsg>,
-    // Dropping this sender signals the background thread to exit.
-    _stop_tx: SyncSender<()>,
+    snapshot: SnapshotChannel,
     pending_session: Option<crate::session::SessionState>,
 }
 
 impl App {
     pub fn new(repo_path: String, prompt_log: bool) -> Self {
-        let (rx, stop_tx) = spawn_snapshot_thread(&repo_path);
+        let snapshot = SnapshotChannel::spawn(&repo_path);
 
         let backend: Box<dyn TerminalBackend> = Box::new(PtyBackend::new(&repo_path));
 
@@ -315,8 +331,7 @@ impl App {
             diff_search: DiffSearch::default(),
             accent_idx: 0,
             tracking: None,
-            rx,
-            _stop_tx: stop_tx,
+            snapshot,
             pending_session: None,
         };
 
@@ -336,7 +351,7 @@ impl App {
     }
 
     pub fn poll_snapshot(&mut self) {
-        while let Ok(msg) = self.rx.try_recv() {
+        while let Ok(msg) = self.snapshot.try_recv() {
             match msg {
                 SnapshotMsg::Ok(snapshot) => {
                     let previous_path = self.files.get(self.selected).map(|f| f.path.clone());
@@ -450,9 +465,9 @@ impl App {
 
     pub fn change_repo(&mut self, new_path: String) {
         // Replacing _stop_tx drops the old sender, signaling the old thread to exit.
-        let (rx, stop_tx) = spawn_snapshot_thread(&new_path);
-        self._stop_tx = stop_tx;
-        self.rx = rx;
+        // Replacing the channel drops the old _stop_tx, signaling the old
+        // worker to exit at its next recv_timeout boundary.
+        self.snapshot = SnapshotChannel::spawn(&new_path);
         if let Some(ref mut backend) = self.terminal.backend {
             backend.set_cwd(std::path::Path::new(&new_path));
         }
@@ -1328,9 +1343,22 @@ mod tests {
     use crate::test_util::{make_repo, run_git};
     use std::path::Path;
 
+    /// Build an inert SnapshotChannel for tests: real receiver, real stop
+    /// sender, but no worker thread driving the receiver.
+    fn dummy_snapshot_channel() -> (SnapshotChannel, std::sync::mpsc::Sender<SnapshotMsg>) {
+        let (tx, rx) = mpsc::channel::<SnapshotMsg>();
+        let (stop_tx, _stop_rx) = mpsc::sync_channel::<()>(0);
+        (
+            SnapshotChannel {
+                rx,
+                _stop_tx: stop_tx,
+            },
+            tx,
+        )
+    }
+
     fn app_with_files(files: Vec<&str>) -> App {
-        let (_tx, rx) = mpsc::channel::<SnapshotMsg>();
-        let (_stop_tx, _stop_rx) = mpsc::sync_channel::<()>(0);
+        let (snapshot, _tx) = dummy_snapshot_channel();
         App {
             mode: ViewMode::Status,
             files: files
@@ -1357,8 +1385,7 @@ mod tests {
             diff_search: DiffSearch::default(),
             accent_idx: 0,
             tracking: None,
-            rx,
-            _stop_tx,
+            snapshot,
             pending_session: None,
         }
     }
@@ -1675,12 +1702,10 @@ mod tests {
 
     #[test]
     fn successful_snapshot_preserves_terminal_status() {
-        let (tx, rx) = mpsc::channel::<SnapshotMsg>();
-        let (_stop_tx, _stop_rx) = mpsc::sync_channel::<()>(0);
+        let (snapshot, tx) = dummy_snapshot_channel();
         let mut app = App {
             status: Some("terminal error: backend unavailable".to_string()),
-            rx,
-            _stop_tx,
+            snapshot,
             ..app_with_files(vec![])
         };
 
@@ -1699,12 +1724,10 @@ mod tests {
 
     #[test]
     fn successful_snapshot_clears_git_status() {
-        let (tx, rx) = mpsc::channel::<SnapshotMsg>();
-        let (_stop_tx, _stop_rx) = mpsc::sync_channel::<()>(0);
+        let (snapshot, tx) = dummy_snapshot_channel();
         let mut app = App {
             status: Some("git error: not a repo".to_string()),
-            rx,
-            _stop_tx,
+            snapshot,
             ..app_with_files(vec![])
         };
 
