@@ -69,10 +69,6 @@ impl ThemeConfig {
     pub fn preset_index(&self) -> usize {
         self.name.index()
     }
-
-    pub fn accent_for_index(idx: usize) -> ratatui::style::Color {
-        Accent::from_index(idx).color()
-    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -197,9 +193,6 @@ fn validate_config(cfg: &Config) -> Result<()> {
     );
     Ok(())
 }
-
-// Kept temporarily during migration — most code now uses Accent directly.
-pub const ACCENT_PRESETS: &[&str] = &["yellow", "green", "cyan", "magenta", "blue"];
 
 #[cfg(test)]
 mod tests {

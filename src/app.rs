@@ -1122,15 +1122,15 @@ impl App {
     pub fn set_accent_index(&mut self, idx: usize) {
         // Normalize on entry so we never persist out-of-range indices to the
         // session file, even though `current_accent` would tolerate them.
-        self.accent_idx = idx % crate::config::ACCENT_PRESETS.len();
+        self.accent_idx = idx % crate::config::Accent::ALL.len();
     }
 
     pub fn cycle_accent(&mut self) {
-        self.accent_idx = (self.accent_idx + 1) % crate::config::ACCENT_PRESETS.len();
+        self.accent_idx = (self.accent_idx + 1) % crate::config::Accent::ALL.len();
     }
 
     pub fn current_accent(&self) -> ratatui::style::Color {
-        crate::config::ThemeConfig::accent_for_index(self.accent_idx)
+        crate::config::Accent::from_index(self.accent_idx).color()
     }
 
     pub fn cycle_focus_forward(&mut self) {
