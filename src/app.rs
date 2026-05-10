@@ -287,15 +287,15 @@ pub struct FileViewState {
     /// Syntax name used to build `line_highlights`. `None` means the cache is
     /// unbuilt or invalidated (e.g. on content reload).
     pub cached_syntax_name: Option<String>,
+    /// Cached `content.lines().count()` populated on load. Avoids walking the
+    /// full file on every scroll keystroke (`file_view_max_scroll` is called
+    /// from each j/k/PgUp/PgDn handler).
+    total_lines: usize,
 }
 
 impl FileViewState {
     pub fn line_count(&self) -> usize {
-        if self.content.is_empty() {
-            return 0;
-        }
-        // count() on lines() drops a trailing empty line; that's fine for scroll bounds.
-        self.content.lines().count()
+        self.total_lines
     }
 
     /// Ensure `line_highlights` matches the current `content` and supplied
@@ -1103,6 +1103,11 @@ impl App {
                 fv.scroll = anchor
                     .map(|n| n.saturating_sub(1).saturating_sub(2))
                     .unwrap_or(0);
+                fv.total_lines = if content.is_empty() {
+                    0
+                } else {
+                    content.lines().count()
+                };
                 fv.content = content;
             }
             Err(e) => {
