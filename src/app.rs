@@ -181,6 +181,16 @@ impl TerminalState {
 }
 
 #[derive(Default)]
+pub struct StatusView {
+    pub files: Vec<ChangedFile>,
+    pub selected: usize,
+    pub file_scroll_x: usize,
+    pub search_query: String,
+    search_query_lower: String,
+    pub search_active: bool,
+}
+
+#[derive(Default)]
 pub struct RepoInput {
     pub active: bool,
     pub buf: String,
@@ -283,20 +293,15 @@ impl DiffSearch {
 
 pub struct App {
     pub mode: ViewMode,
-    pub files: Vec<ChangedFile>,
-    pub selected: usize,
+    pub status_view: StatusView,
     pub hunks: Vec<DiffHunk>,
     pub scroll: usize,
     pub diff_scroll_x: usize,
-    pub file_scroll_x: usize,
     pub focus: Focus,
     pub status: Option<String>,
     pub repo_path: String,
     pub log_view: LogView,
     pub terminal: TerminalState,
-    pub search_query: String,
-    search_query_lower: String,
-    pub search_active: bool,
     pub repo_input: RepoInput,
     pub diff_search: DiffSearch,
     pub accent_idx: usize,
@@ -313,20 +318,15 @@ impl App {
 
         let mut app = App {
             mode: ViewMode::Status,
-            files: Vec::new(),
-            selected: 0,
+            status_view: StatusView::default(),
             hunks: Vec::new(),
             scroll: 0,
             diff_scroll_x: 0,
-            file_scroll_x: 0,
             focus: Focus::FileList,
             status: None,
             repo_path,
             log_view: LogView::default(),
             terminal: TerminalState::new(Some(backend), prompt_log),
-            search_query: String::new(),
-            search_query_lower: String::new(),
-            search_active: false,
             repo_input: RepoInput::default(),
             diff_search: DiffSearch::default(),
             accent_idx: 0,
@@ -354,8 +354,12 @@ impl App {
         while let Ok(msg) = self.snapshot.try_recv() {
             match msg {
                 SnapshotMsg::Ok(snapshot) => {
-                    let previous_path = self.files.get(self.selected).map(|f| f.path.clone());
-                    self.files = snapshot.files;
+                    let previous_path = self
+                        .status_view
+                        .files
+                        .get(self.status_view.selected)
+                        .map(|f| f.path.clone());
+                    self.status_view.files = snapshot.files;
                     self.tracking = snapshot.tracking;
 
                     let selected_path_changed =
@@ -381,7 +385,9 @@ impl App {
     }
 
     pub fn poll_terminal(&mut self) {
-        let events: Vec<BackendEvent> = self.terminal.backend
+        let events: Vec<BackendEvent> = self
+            .terminal
+            .backend
             .as_mut()
             .map(|b| b.drain_events())
             .unwrap_or_default();
@@ -411,7 +417,9 @@ impl App {
 
     pub fn create_terminal_pane(&mut self) -> anyhow::Result<()> {
         let (rows, cols) = self.terminal.size;
-        let backend = self.terminal.backend
+        let backend = self
+            .terminal
+            .backend
             .as_mut()
             .ok_or_else(|| anyhow::anyhow!("no terminal backend available"))?;
 
@@ -474,18 +482,18 @@ impl App {
         tracing::info!(path = %new_path, "repo changed");
         self.repo_path = new_path;
         self.mode = ViewMode::Status;
-        self.files.clear();
-        self.selected = 0;
+        self.status_view.files.clear();
+        self.status_view.selected = 0;
         self.hunks.clear();
         self.scroll = 0;
         self.diff_scroll_x = 0;
-        self.file_scroll_x = 0;
+        self.status_view.file_scroll_x = 0;
         self.log_view.commits.clear();
         self.log_view.selected = 0;
         self.log_view.diff_title.clear();
         self.reset_drill_down_state();
-        self.search_query.clear();
-        self.search_active = false;
+        self.status_view.search_query.clear();
+        self.status_view.search_active = false;
         self.diff_search.clear();
         self.status = None;
         self.tracking = None;
@@ -650,7 +658,7 @@ impl App {
             return;
         }
         let previous_scroll = self.scroll;
-        if let Some(file) = self.files.get(self.selected) {
+        if let Some(file) = self.status_view.files.get(self.status_view.selected) {
             let path = file.path.clone();
             let result = load_file_diff(&self.repo_path, &path);
             if let Err(e) = &result {
@@ -711,28 +719,39 @@ impl App {
     }
 
     fn restore_selection(&mut self, previous_path: Option<&str>) -> Option<String> {
-        if self.files.is_empty() {
-            self.selected = 0;
+        if self.status_view.files.is_empty() {
+            self.status_view.selected = 0;
             return None;
         }
 
         if let Some(path) = previous_path
-            && let Some(index) = self.files.iter().position(|file| file.path == path)
+            && let Some(index) = self
+                .status_view
+                .files
+                .iter()
+                .position(|file| file.path == path)
         {
-            self.selected = index;
+            self.status_view.selected = index;
             return Some(path.to_string());
         }
 
-        self.selected = self.selected.min(self.files.len().saturating_sub(1));
-        self.files.get(self.selected).map(|file| file.path.clone())
+        self.status_view.selected = self
+            .status_view
+            .selected
+            .min(self.status_view.files.len().saturating_sub(1));
+        self.status_view
+            .files
+            .get(self.status_view.selected)
+            .map(|file| file.path.clone())
     }
 
     pub fn filtered_indices(&self) -> Vec<usize> {
-        if self.search_query.is_empty() {
-            return (0..self.files.len()).collect();
+        if self.status_view.search_query.is_empty() {
+            return (0..self.status_view.files.len()).collect();
         }
-        let q = self.search_query_lower.as_str();
-        self.files
+        let q = self.status_view.search_query_lower.as_str();
+        self.status_view
+            .files
             .iter()
             .enumerate()
             .filter(|(_, f)| f.path.to_lowercase().contains(q))
@@ -741,28 +760,28 @@ impl App {
     }
 
     pub fn start_search(&mut self) {
-        self.search_active = true;
+        self.status_view.search_active = true;
     }
 
     pub fn cancel_search(&mut self) {
-        self.search_active = false;
-        self.search_query.clear();
-        self.search_query_lower.clear();
+        self.status_view.search_active = false;
+        self.status_view.search_query.clear();
+        self.status_view.search_query_lower.clear();
     }
 
     pub fn confirm_search(&mut self) {
-        self.search_active = false;
+        self.status_view.search_active = false;
     }
 
     pub fn search_push(&mut self, ch: char) {
-        self.search_query.push(ch);
-        self.search_query_lower = self.search_query.to_lowercase();
+        self.status_view.search_query.push(ch);
+        self.status_view.search_query_lower = self.status_view.search_query.to_lowercase();
         self.clamp_to_filtered();
     }
 
     pub fn search_pop(&mut self) {
-        self.search_query.pop();
-        self.search_query_lower = self.search_query.to_lowercase();
+        self.status_view.search_query.pop();
+        self.status_view.search_query_lower = self.status_view.search_query.to_lowercase();
         self.clamp_to_filtered();
     }
 
@@ -817,19 +836,20 @@ impl App {
     }
 
     pub fn file_scroll_left(&mut self) {
-        self.file_scroll_x = self.file_scroll_x.saturating_sub(4);
+        self.status_view.file_scroll_x = self.status_view.file_scroll_x.saturating_sub(4);
     }
 
     pub fn file_scroll_right(&mut self) {
         // Cap at the longest visible path's char width so we don't drift past
         // the last column of any rendered entry.
         let max = self
+            .status_view
             .files
             .iter()
             .map(|f| f.path.chars().count())
             .max()
             .unwrap_or(0);
-        self.file_scroll_x = self.file_scroll_x.saturating_add(4).min(max);
+        self.status_view.file_scroll_x = self.status_view.file_scroll_x.saturating_add(4).min(max);
     }
 
     fn recompute_diff_matches(&mut self, scroll_to_match: bool) {
@@ -874,10 +894,10 @@ impl App {
 
     fn clamp_to_filtered(&mut self) {
         let indices = self.filtered_indices();
-        if !indices.contains(&self.selected)
+        if !indices.contains(&self.status_view.selected)
             && let Some(&first) = indices.first()
         {
-            self.selected = first;
+            self.status_view.selected = first;
             self.reload_diff();
         }
     }
@@ -904,7 +924,7 @@ impl App {
         if indices.is_empty() {
             return;
         }
-        let pos = indices.iter().position(|&i| i == self.selected);
+        let pos = indices.iter().position(|&i| i == self.status_view.selected);
         let new_pos = match pos {
             Some(p) => {
                 let last = indices.len() as isize - 1;
@@ -913,8 +933,8 @@ impl App {
             None => 0,
         };
         let new_selected = indices[new_pos];
-        if Some(new_pos) != pos || self.selected != new_selected {
-            self.selected = new_selected;
+        if Some(new_pos) != pos || self.status_view.selected != new_selected {
+            self.status_view.selected = new_selected;
             self.reload_diff();
         }
     }
@@ -1039,7 +1059,11 @@ impl App {
     }
 
     pub fn log_file_select_down(&mut self) {
-        if cursor_down(&mut self.log_view.file_selected, self.log_view.commit_files.len(), 1) {
+        if cursor_down(
+            &mut self.log_view.file_selected,
+            self.log_view.commit_files.len(),
+            1,
+        ) {
             self.load_file_diff_for_log_file_selected();
         }
     }
@@ -1129,7 +1153,11 @@ impl App {
     }
 
     pub fn log_page_down(&mut self) {
-        if cursor_down(&mut self.log_view.selected, self.log_view.commits.len(), LIST_PAGE_SIZE) {
+        if cursor_down(
+            &mut self.log_view.selected,
+            self.log_view.commits.len(),
+            LIST_PAGE_SIZE,
+        ) {
             self.load_commit_diff_for_selected();
         }
     }
@@ -1225,7 +1253,11 @@ impl App {
     pub fn save_session(&self) -> crate::session::SessionState {
         crate::session::SessionState {
             focus: Some(self.focus),
-            selected_file: self.files.get(self.selected).map(|f| f.path.clone()),
+            selected_file: self
+                .status_view
+                .files
+                .get(self.status_view.selected)
+                .map(|f| f.path.clone()),
             scroll: self.scroll,
             active_pane: self.terminal.active,
             terminal_fullscreen: self.terminal.fullscreen,
@@ -1275,9 +1307,9 @@ impl App {
 
     fn restore_status_session(&mut self, state: &crate::session::SessionState) {
         if let Some(path) = &state.selected_file
-            && let Some(idx) = self.files.iter().position(|f| &f.path == path)
+            && let Some(idx) = self.status_view.files.iter().position(|f| &f.path == path)
         {
-            self.selected = idx;
+            self.status_view.selected = idx;
             self.refresh_diff(true);
             self.scroll = state.scroll.min(self.max_diff_scroll());
         }
@@ -1295,7 +1327,9 @@ impl App {
             }
         };
         self.log_view.commits = commits;
-        self.log_view.selected = state.log_selected.min(self.log_view.commits.len().saturating_sub(1));
+        self.log_view.selected = state
+            .log_selected
+            .min(self.log_view.commits.len().saturating_sub(1));
         self.mode = ViewMode::Log;
 
         if state.log_drill_down {
@@ -1361,26 +1395,24 @@ mod tests {
         let (snapshot, _tx) = dummy_snapshot_channel();
         App {
             mode: ViewMode::Status,
-            files: files
-                .into_iter()
-                .map(|path| ChangedFile {
-                    path: path.to_string(),
-                    status: ChangeStatus::Modified,
-                })
-                .collect(),
-            selected: 0,
+            status_view: StatusView {
+                files: files
+                    .into_iter()
+                    .map(|path| ChangedFile {
+                        path: path.to_string(),
+                        status: ChangeStatus::Modified,
+                    })
+                    .collect(),
+                ..Default::default()
+            },
             hunks: Vec::new(),
             scroll: 0,
             diff_scroll_x: 0,
-            file_scroll_x: 0,
             focus: Focus::FileList,
             status: None,
             repo_path: ".".to_string(),
             log_view: LogView::default(),
             terminal: TerminalState::new(None, false),
-            search_query: String::new(),
-            search_query_lower: String::new(),
-            search_active: false,
             repo_input: RepoInput::default(),
             diff_search: DiffSearch::default(),
             accent_idx: 0,
@@ -1406,8 +1438,8 @@ mod tests {
     #[test]
     fn selection_clamps_when_file_list_shrinks() {
         let mut app = app_with_files(vec!["a.rs", "b.rs", "c.rs"]);
-        app.selected = 2;
-        app.files = vec![ChangedFile {
+        app.status_view.selected = 2;
+        app.status_view.files = vec![ChangedFile {
             path: "a.rs".to_string(),
             status: ChangeStatus::Modified,
         }];
@@ -1415,14 +1447,14 @@ mod tests {
         let selected_path = app.restore_selection(Some("c.rs"));
 
         assert_eq!(selected_path.as_deref(), Some("a.rs"));
-        assert_eq!(app.selected, 0);
+        assert_eq!(app.status_view.selected, 0);
     }
 
     #[test]
     fn selection_prefers_same_path_after_refresh() {
         let mut app = app_with_files(vec!["a.rs", "b.rs", "c.rs"]);
-        app.selected = 1;
-        app.files = vec![
+        app.status_view.selected = 1;
+        app.status_view.files = vec![
             ChangedFile {
                 path: "a.rs".to_string(),
                 status: ChangeStatus::Modified,
@@ -1440,7 +1472,7 @@ mod tests {
         let selected_path = app.restore_selection(Some("b.rs"));
 
         assert_eq!(selected_path.as_deref(), Some("b.rs"));
-        assert_eq!(app.selected, 2);
+        assert_eq!(app.status_view.selected, 2);
     }
 
     #[test]

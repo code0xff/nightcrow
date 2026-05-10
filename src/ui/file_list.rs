@@ -11,7 +11,7 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect, accent: Color) {
     let focused = app.focus == Focus::FileList;
     let border_style = super::focused_border_style(focused, accent);
 
-    let show_search = app.search_active || !app.search_query.is_empty();
+    let show_search = app.status_view.search_active || !app.status_view.search_query.is_empty();
 
     let (list_area, search_area) = if show_search {
         let chunks = Layout::default()
@@ -29,16 +29,16 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect, accent: Color) {
     let items: Vec<ListItem> = filtered_indices
         .iter()
         .map(|&idx| {
-            let f = &app.files[idx];
+            let f = &app.status_view.files[idx];
             let symbol = f.status.symbol();
             let color = super::status_color(f.status);
-            let path: &str = if app.file_scroll_x == 0 {
+            let path: &str = if app.status_view.file_scroll_x == 0 {
                 &f.path
             } else {
                 let byte_off = f
                     .path
                     .char_indices()
-                    .nth(app.file_scroll_x)
+                    .nth(app.status_view.file_scroll_x)
                     .map(|(b, _)| b)
                     .unwrap_or(f.path.len());
                 &f.path[byte_off..]
@@ -52,8 +52,8 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect, accent: Color) {
         .collect();
 
     let title = if show_search {
-        format!(" Files ({}/{}) ", match_count, app.files.len())
-    } else if app.files.is_empty() {
+        format!(" Files ({}/{}) ", match_count, app.status_view.files.len())
+    } else if app.status_view.files.is_empty() {
         " Files (no changes) ".to_string()
     } else {
         " Files ".to_string()
@@ -75,7 +75,9 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect, accent: Color) {
 
     let mut state = ListState::default();
     if !filtered_indices.is_empty()
-        && let Some(pos) = filtered_indices.iter().position(|&i| i == app.selected)
+        && let Some(pos) = filtered_indices
+            .iter()
+            .position(|&i| i == app.status_view.selected)
     {
         state.select(Some(pos));
     }
@@ -83,6 +85,12 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect, accent: Color) {
     frame.render_stateful_widget(list, list_area, &mut state);
 
     if let Some(sa) = search_area {
-        super::render_search_bar(frame, &app.search_query, app.search_active, sa, accent);
+        super::render_search_bar(
+            frame,
+            &app.status_view.search_query,
+            app.status_view.search_active,
+            sa,
+            accent,
+        );
     }
 }

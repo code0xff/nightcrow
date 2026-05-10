@@ -45,7 +45,8 @@ pub fn render(frame: &mut Frame, app: &mut App, area: Rect, accent: Color) {
             Style::default().fg(Color::DarkGray),
         )]
     } else {
-        app.terminal.panes
+        app.terminal
+            .panes
             .iter()
             .enumerate()
             .map(|(i, pane)| {

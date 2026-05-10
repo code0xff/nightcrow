@@ -25,14 +25,17 @@ fn extension(path: &str) -> &str {
 
 fn file_path_for_syntax(app: &App) -> &str {
     match app.mode {
-        ViewMode::Log if app.log_view.drill_down => app.log_view.commit_files
+        ViewMode::Log if app.log_view.drill_down => app
+            .log_view
+            .commit_files
             .get(app.log_view.file_selected)
             .map(|f| f.path.as_str())
             .unwrap_or(""),
         ViewMode::Log => "",
         ViewMode::Status => app
+            .status_view
             .files
-            .get(app.selected)
+            .get(app.status_view.selected)
             .map(|f| f.path.as_str())
             .unwrap_or(""),
     }
@@ -152,7 +155,7 @@ pub fn render(
                 }
             }
             ViewMode::Status => {
-                if app.files.is_empty() {
+                if app.status_view.files.is_empty() {
                     "No changes in repository"
                 } else {
                     "No diff for selected file"
@@ -187,8 +190,9 @@ pub fn render(
             if has_search {
                 let count = app.diff_search.matches.len();
                 let file = app
+                    .status_view
                     .files
-                    .get(app.selected)
+                    .get(app.status_view.selected)
                     .map(|f| f.path.as_str())
                     .unwrap_or("Diff");
                 if count == 0 {
@@ -196,7 +200,7 @@ pub fn render(
                 } else {
                     format!(" {file} [{}/{}] ", app.diff_search.cursor + 1, count)
                 }
-            } else if let Some(f) = app.files.get(app.selected) {
+            } else if let Some(f) = app.status_view.files.get(app.status_view.selected) {
                 format!(" {} ", f.path)
             } else {
                 " Diff ".to_string()

@@ -269,7 +269,7 @@ fn handle_terminal_key(app: &mut App, key: KeyEvent, action: Action) {
 }
 
 fn handle_upper_key(app: &mut App, key: KeyEvent, action: Action) {
-    if app.focus == Focus::FileList && app.search_active {
+    if app.focus == Focus::FileList && app.status_view.search_active {
         handle_file_search_key(app, key);
         return;
     }
@@ -299,7 +299,7 @@ fn handle_file_search_key(app: &mut App, key: KeyEvent) {
         KeyCode::Esc => app.cancel_search(),
         KeyCode::Enter => app.confirm_search(),
         KeyCode::Backspace => {
-            if app.search_query.is_empty() {
+            if app.status_view.search_query.is_empty() {
                 app.cancel_search();
             } else {
                 app.search_pop();
@@ -334,7 +334,7 @@ fn handle_unmapped_upper_key(app: &mut App, key: KeyEvent) {
             }
             KeyCode::Esc if app.log_view.drill_down => app.log_drill_out(),
             KeyCode::Char('/') if app.mode == ViewMode::Status => app.start_search(),
-            KeyCode::Esc if !app.search_query.is_empty() => app.cancel_search(),
+            KeyCode::Esc if !app.status_view.search_query.is_empty() => app.cancel_search(),
             KeyCode::Left => app.file_scroll_left(),
             KeyCode::Right => app.file_scroll_right(),
             _ => {}
