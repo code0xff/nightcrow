@@ -4,7 +4,7 @@ pub mod file_list;
 pub mod splash;
 pub mod terminal_tab;
 
-use crate::app::{App, Focus, ViewMode};
+use crate::app::{App, DiffPaneView, Focus, ViewMode};
 use crate::config::LayoutConfig;
 use crate::git::diff::ChangeStatus;
 use ratatui::{
@@ -143,12 +143,14 @@ fn render_hint_bar(app: &App, accent: Color) -> Paragraph<'_> {
             }
         },
         Focus::DiffViewer => {
-            if app.diff_search.active {
+            if app.diff_pane_view == DiffPaneView::File {
+                " v: back to diff | j/k: scroll | pgup/pgdn: page | shift+←/→: cycle | ctrl+q: quit"
+            } else if app.diff_search.active {
                 " type to search | enter: confirm | esc: cancel"
             } else if !app.diff_search.query.is_empty() {
                 " n: next match | shift+n: prev match | /: new search | esc: clear"
             } else {
-                " shift+←/→: cycle | j/k: scroll | /: search | pgup/pgdn: scroll | F1-F9: switch pane | ctrl+f: fullscreen | ctrl+l: log view | ctrl+o: repo | ctrl+p: theme | ctrl+q: quit"
+                " shift+←/→: cycle | j/k: scroll | v: view file | /: search | pgup/pgdn: scroll | F1-F9: switch pane | ctrl+f: fullscreen | ctrl+l: log view | ctrl+o: repo | ctrl+p: theme | ctrl+q: quit"
             }
         }
     };

@@ -2,7 +2,8 @@ use crate::backend::BackendEvent;
 use crate::backend::{PaneId, PtyBackend, TerminalBackend};
 use crate::git::diff::{
     ChangedFile, CommitEntry, DiffHunk, RepoSnapshot, TrackingStatus, load_commit_diff,
-    load_commit_file_diff, load_commit_files, load_commit_log, load_file_diff, load_snapshot,
+    load_commit_file_blob, load_commit_file_diff, load_commit_files, load_commit_log,
+    load_file_diff, load_snapshot, load_workdir_file, parse_hunk_new_start,
 };
 use std::collections::HashMap;
 use std::sync::mpsc::{self, Receiver, SyncSender};
@@ -218,6 +219,38 @@ pub struct LogView {
     pub file_selected: usize,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum DiffPaneView {
+    #[default]
+    Diff,
+    File,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum FileViewKey {
+    Status(String),
+    Commit { oid: git2::Oid, path: String },
+}
+
+#[derive(Default)]
+pub struct FileViewState {
+    pub key: Option<FileViewKey>,
+    pub content: String,
+    pub scroll: usize,
+    pub anchor_line: Option<usize>,
+    pub error: Option<String>,
+}
+
+impl FileViewState {
+    pub fn line_count(&self) -> usize {
+        if self.content.is_empty() {
+            return 0;
+        }
+        // count() on lines() drops a trailing empty line; that's fine for scroll bounds.
+        self.content.lines().count()
+    }
+}
+
 #[derive(Default)]
 pub struct DiffSearch {
     pub active: bool,
@@ -304,6 +337,8 @@ pub struct App {
     pub terminal: TerminalState,
     pub repo_input: RepoInput,
     pub diff_search: DiffSearch,
+    pub diff_pane_view: DiffPaneView,
+    pub file_view: FileViewState,
     pub accent_idx: usize,
     pub tracking: Option<TrackingStatus>,
     snapshot: SnapshotChannel,
@@ -329,6 +364,8 @@ impl App {
             terminal: TerminalState::new(Some(backend), prompt_log),
             repo_input: RepoInput::default(),
             diff_search: DiffSearch::default(),
+            diff_pane_view: DiffPaneView::default(),
+            file_view: FileViewState::default(),
             accent_idx: 0,
             tracking: None,
             snapshot,
@@ -689,6 +726,7 @@ impl App {
                         self.scroll = 0;
                         self.diff_scroll_x = 0;
                         self.diff_search.cursor = 0;
+                        self.invalidate_file_view();
                     }
                     DiffApply::KeepScroll(prev) => {
                         self.scroll = prev;
@@ -716,6 +754,99 @@ impl App {
         self.diff_search.cursor = 0;
         self.scroll = 0;
         self.diff_scroll_x = 0;
+        self.invalidate_file_view();
+    }
+
+    fn invalidate_file_view(&mut self) {
+        self.diff_pane_view = DiffPaneView::Diff;
+        self.file_view = FileViewState::default();
+    }
+
+    fn current_file_view_key(&self) -> Option<FileViewKey> {
+        match self.mode {
+            ViewMode::Status => {
+                let path = self
+                    .status_view
+                    .files
+                    .get(self.status_view.selected)?
+                    .path
+                    .clone();
+                Some(FileViewKey::Status(path))
+            }
+            ViewMode::Log => {
+                if !self.log_view.drill_down {
+                    return None;
+                }
+                let oid = self.log_view.commits.get(self.log_view.selected)?.oid;
+                let path = self
+                    .log_view
+                    .commit_files
+                    .get(self.log_view.file_selected)?
+                    .path
+                    .clone();
+                Some(FileViewKey::Commit { oid, path })
+            }
+        }
+    }
+
+    fn load_file_view(&mut self, key: FileViewKey) {
+        let result = match &key {
+            FileViewKey::Status(path) => load_workdir_file(&self.repo_path, path),
+            FileViewKey::Commit { oid, path } => {
+                load_commit_file_blob(&self.repo_path, *oid, path)
+            }
+        };
+        let anchor = self
+            .hunks
+            .iter()
+            .find_map(|h| parse_hunk_new_start(&h.header));
+        let mut fv = FileViewState {
+            key: Some(key),
+            anchor_line: anchor,
+            ..Default::default()
+        };
+        match result {
+            Ok(content) => {
+                fv.scroll = anchor
+                    .map(|n| n.saturating_sub(1).saturating_sub(2))
+                    .unwrap_or(0);
+                fv.content = content;
+            }
+            Err(e) => {
+                fv.error = Some(e.to_string());
+            }
+        }
+        self.file_view = fv;
+    }
+
+    pub fn toggle_diff_file_view(&mut self) {
+        if self.diff_pane_view == DiffPaneView::File {
+            self.diff_pane_view = DiffPaneView::Diff;
+            return;
+        }
+        let Some(key) = self.current_file_view_key() else {
+            return;
+        };
+        if self.file_view.key.as_ref() != Some(&key) {
+            self.load_file_view(key);
+        }
+        self.diff_pane_view = DiffPaneView::File;
+    }
+
+    pub fn file_view_max_scroll(&self) -> usize {
+        self.file_view.line_count().saturating_sub(1)
+    }
+
+    pub fn file_view_scroll_up(&mut self, n: usize) {
+        self.file_view.scroll = self.file_view.scroll.saturating_sub(n);
+    }
+
+    pub fn file_view_scroll_down(&mut self, n: usize) {
+        self.file_view.scroll = self
+            .file_view
+            .scroll
+            .saturating_add(n)
+            .min(self.file_view_max_scroll());
     }
 
     fn restore_selection(&mut self, previous_path: Option<&str>) -> Option<String> {
@@ -948,7 +1079,11 @@ impl App {
                 self.move_selected_in_filter(-1);
             }
             Focus::DiffViewer => {
-                self.scroll = self.scroll.saturating_sub(1);
+                if self.diff_pane_view == DiffPaneView::File {
+                    self.file_view_scroll_up(1);
+                } else {
+                    self.scroll = self.scroll.saturating_sub(1);
+                }
             }
             Focus::Terminal => {}
         }
@@ -963,7 +1098,11 @@ impl App {
                 self.move_selected_in_filter(1);
             }
             Focus::DiffViewer => {
-                self.scroll = self.scroll.saturating_add(1).min(self.max_diff_scroll());
+                if self.diff_pane_view == DiffPaneView::File {
+                    self.file_view_scroll_down(1);
+                } else {
+                    self.scroll = self.scroll.saturating_add(1).min(self.max_diff_scroll());
+                }
             }
             Focus::Terminal => {}
         }
@@ -978,7 +1117,11 @@ impl App {
                 self.move_selected_in_filter(-(LIST_PAGE_SIZE as isize));
             }
             Focus::DiffViewer => {
-                self.scroll = self.scroll.saturating_sub(DIFF_PAGE_SIZE);
+                if self.diff_pane_view == DiffPaneView::File {
+                    self.file_view_scroll_up(DIFF_PAGE_SIZE);
+                } else {
+                    self.scroll = self.scroll.saturating_sub(DIFF_PAGE_SIZE);
+                }
             }
             Focus::Terminal => {}
         }
@@ -993,10 +1136,14 @@ impl App {
                 self.move_selected_in_filter(LIST_PAGE_SIZE as isize);
             }
             Focus::DiffViewer => {
-                self.scroll = self
-                    .scroll
-                    .saturating_add(DIFF_PAGE_SIZE)
-                    .min(self.max_diff_scroll());
+                if self.diff_pane_view == DiffPaneView::File {
+                    self.file_view_scroll_down(DIFF_PAGE_SIZE);
+                } else {
+                    self.scroll = self
+                        .scroll
+                        .saturating_add(DIFF_PAGE_SIZE)
+                        .min(self.max_diff_scroll());
+                }
             }
             Focus::Terminal => {}
         }
@@ -1421,6 +1568,8 @@ mod tests {
             terminal: TerminalState::new(None, false),
             repo_input: RepoInput::default(),
             diff_search: DiffSearch::default(),
+            diff_pane_view: DiffPaneView::default(),
+            file_view: FileViewState::default(),
             accent_idx: 0,
             tracking: None,
             snapshot,
