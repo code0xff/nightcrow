@@ -177,7 +177,7 @@ pub struct TerminalState {
     pub size: (u16, u16),
     pub scroll: HashMap<PaneId, usize>,
     pub fullscreen: bool,
-    parsers: HashMap<PaneId, vt100::Parser>,
+    parsers: HashMap<PaneId, vt100_ctt::Parser>,
     prompt_bufs: HashMap<PaneId, String>,
     prompt_log_enabled: bool,
     backend: Option<Box<dyn TerminalBackend>>,
@@ -688,7 +688,7 @@ impl App {
             .ok_or_else(|| anyhow::anyhow!("no terminal backend available"))?;
 
         let id = backend.create_pane(rows.max(1), cols.max(1))?;
-        let parser = vt100::Parser::new(rows.max(1), cols.max(1), SCROLLBACK_LINES);
+        let parser = vt100_ctt::Parser::new(rows.max(1), cols.max(1), SCROLLBACK_LINES);
         self.terminal.parsers.insert(id, parser);
         self.terminal.panes.push(PaneInfo {
             id,
@@ -870,12 +870,10 @@ impl App {
         let offset = self.terminal.scroll.get(&id).copied().unwrap_or(0);
         let actual = match self.terminal.parsers.get_mut(&id) {
             Some(parser) => {
-                // vt100 0.15 panics in screen rendering (`grid.rs` row math
-                // overflow) whenever scrollback_offset > screen rows, even
-                // though set_scrollback itself accepts larger values. Cap
-                // here so the renderer never trips that overflow.
-                let screen_rows = parser.screen().size().0 as usize;
-                parser.set_scrollback(offset.min(screen_rows));
+                // vt100-ctt clamps the offset to the actual scrollback
+                // buffer size internally, so we can pass the full request
+                // through and read back what was applied.
+                parser.screen_mut().set_scrollback(offset);
                 parser.screen().scrollback()
             }
             None => return,
@@ -914,7 +912,7 @@ impl App {
                 backend.resize(info.id, r, c);
             }
             if let Some(parser) = self.terminal.parsers.get_mut(&info.id) {
-                parser.set_size(r, c);
+                parser.screen_mut().set_size(r, c);
             }
         }
     }
@@ -923,7 +921,7 @@ impl App {
         self.terminal.panes.get(self.terminal.active).map(|p| p.id)
     }
 
-    pub fn active_screen(&self) -> Option<&vt100::Screen> {
+    pub fn active_screen(&self) -> Option<&vt100_ctt::Screen> {
         let id = self.active_pane_id()?;
         self.terminal.parsers.get(&id).map(|p| p.screen())
     }
@@ -2116,7 +2114,7 @@ mod tests {
     }
 
     #[test]
-    fn terminal_scrollback_is_capped_at_screen_rows() {
+    fn terminal_scrollback_uses_full_buffer() {
         let mut app = app_with_files(vec![]);
         app.terminal.panes = vec![PaneInfo {
             id: 1,
@@ -2125,17 +2123,43 @@ mod tests {
         app.terminal.active = 0;
         app.terminal.size = (3, 10);
 
-        let mut parser = vt100::Parser::new(3, 10, SCROLLBACK_LINES);
+        let mut parser = vt100_ctt::Parser::new(3, 10, SCROLLBACK_LINES);
         parser.process(b"1\r\n2\r\n3\r\n4\r\n5\r\n6\r\n7\r\n8\r\n9\r\n");
         app.terminal.parsers.insert(1, parser);
+        // Request scrolling well past screen height; vt100-ctt supports
+        // arbitrary offsets up to the buffered line count.
         app.terminal.scroll.insert(1, 6);
 
         app.sync_terminal_scroll();
 
-        // vt100 0.15 panics in screen rendering when scrollback_offset
-        // exceeds screen rows, so we cap offset at screen height.
         let actual = app.terminal.parsers.get(&1).unwrap().screen().scrollback();
-        assert_eq!(actual, app.terminal.size.0 as usize);
+        assert_eq!(actual, 6);
+        assert_eq!(app.terminal.scroll.get(&1).copied(), Some(6));
+    }
+
+    #[test]
+    fn terminal_scrollback_clamps_to_buffered_rows() {
+        let mut app = app_with_files(vec![]);
+        app.terminal.panes = vec![PaneInfo {
+            id: 1,
+            title: "shell".into(),
+        }];
+        app.terminal.active = 0;
+        app.terminal.size = (3, 10);
+
+        let mut parser = vt100_ctt::Parser::new(3, 10, SCROLLBACK_LINES);
+        // Only a handful of buffered rows exist; an outsized request must
+        // clamp to whatever vt100-ctt actually has, never panic.
+        parser.process(b"1\r\n2\r\n3\r\n4\r\n5\r\n");
+        app.terminal.parsers.insert(1, parser);
+        app.terminal.scroll.insert(1, 999);
+
+        app.sync_terminal_scroll();
+
+        let stored = app.terminal.scroll.get(&1).copied().unwrap_or(0);
+        let actual = app.terminal.parsers.get(&1).unwrap().screen().scrollback();
+        assert_eq!(stored, actual);
+        assert!(actual < 999);
     }
 
     #[test]
@@ -2200,7 +2224,9 @@ mod tests {
         app.focus = Focus::Terminal;
         app.terminal.scroll.insert(1, 3);
         app.terminal.prompt_bufs.insert(1, "cargo test".to_string());
-        app.terminal.parsers.insert(1, vt100::Parser::new(3, 10, 0));
+        app.terminal
+            .parsers
+            .insert(1, vt100_ctt::Parser::new(3, 10, 0));
 
         app.close_active_pane();
 
