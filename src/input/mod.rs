@@ -42,11 +42,29 @@ pub fn map_key(event: KeyEvent) -> Action {
         KeyCode::PageUp if shift => Action::TermScrollUp,
         KeyCode::PageDown if shift => Action::TermScrollDown,
         KeyCode::F(n @ 1..=9) => Action::SwitchPane(n as usize - 1),
-        KeyCode::Up | KeyCode::Char('k') => Action::Up,
-        KeyCode::Down | KeyCode::Char('j') => Action::Down,
+        KeyCode::Up => Action::Up,
+        KeyCode::Down => Action::Down,
         KeyCode::PageUp => Action::PageUp,
         KeyCode::PageDown => Action::PageDown,
+        // j/k are intentionally NOT mapped here so they remain plain
+        // characters when Focus::Terminal forwards them to the PTY. The
+        // upper-pane handler interprets them as navigation explicitly via
+        // `is_vim_navigation_key`.
         _ => Action::None,
+    }
+}
+
+/// Returns `Some(Action::Up | Action::Down)` for the vim-style j/k navigation
+/// keys (no modifiers), and `None` otherwise. Used by upper-pane handlers so
+/// that terminal pass-through is unaffected by changes in `map_key`.
+pub fn vim_navigation_action(key: KeyEvent) -> Option<Action> {
+    if !key.modifiers.is_empty() {
+        return None;
+    }
+    match key.code {
+        KeyCode::Char('k') => Some(Action::Up),
+        KeyCode::Char('j') => Some(Action::Down),
+        _ => None,
     }
 }
 
@@ -129,11 +147,29 @@ mod tests {
     #[test]
     fn maps_navigation_shortcuts() {
         assert_eq!(map_key(key(KeyCode::Up)), Action::Up);
-        assert_eq!(map_key(key(KeyCode::Char('k'))), Action::Up);
         assert_eq!(map_key(key(KeyCode::Down)), Action::Down);
-        assert_eq!(map_key(key(KeyCode::Char('j'))), Action::Down);
         assert_eq!(map_key(key(KeyCode::PageUp)), Action::PageUp);
         assert_eq!(map_key(key(KeyCode::PageDown)), Action::PageDown);
+        // j/k are no longer remapped to Up/Down by map_key — they must
+        // pass through as Action::None so terminal focus can forward them
+        // verbatim to the PTY.
+        assert_eq!(map_key(key(KeyCode::Char('k'))), Action::None);
+        assert_eq!(map_key(key(KeyCode::Char('j'))), Action::None);
+    }
+
+    #[test]
+    fn vim_navigation_for_j_k() {
+        assert_eq!(
+            vim_navigation_action(key(KeyCode::Char('k'))),
+            Some(Action::Up)
+        );
+        assert_eq!(
+            vim_navigation_action(key(KeyCode::Char('j'))),
+            Some(Action::Down)
+        );
+        // Modifiers must disable the vim mapping (e.g. Ctrl-J / Shift-K).
+        assert_eq!(vim_navigation_action(ctrl(KeyCode::Char('j'))), None);
+        assert_eq!(vim_navigation_action(key(KeyCode::Char('h'))), None);
     }
 
     #[test]

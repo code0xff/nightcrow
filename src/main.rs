@@ -18,7 +18,7 @@ use crossterm::{
     execute,
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
-use input::{Action, encode_key, map_key};
+use input::{Action, encode_key, map_key, vim_navigation_action};
 use ratatui::{Terminal, backend::CrosstermBackend};
 use std::{io, time::Duration};
 use syntect::highlighting::ThemeSet;
@@ -277,6 +277,10 @@ fn handle_upper_key(app: &mut App, key: KeyEvent, action: Action) {
         handle_diff_search_key(app, key);
         return;
     }
+
+    // Apply vim-style j/k navigation only in upper panes; terminal focus is
+    // routed through handle_terminal_key so j/k reach the PTY untouched.
+    let action = vim_navigation_action(key).unwrap_or(action);
 
     match action {
         Action::Up => app.select_up(),
