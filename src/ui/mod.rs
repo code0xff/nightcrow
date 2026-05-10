@@ -10,9 +10,9 @@ use crate::git::diff::ChangeStatus;
 use ratatui::{
     Frame,
     layout::{Constraint, Direction, Layout, Rect},
-    style::{Color, Style},
+    style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::Paragraph,
+    widgets::{Block, Borders, List, ListItem, ListState, Paragraph},
 };
 use syntect::highlighting::ThemeSet;
 use syntect::parsing::SyntaxSet;
@@ -33,6 +33,41 @@ pub(crate) fn status_color(status: ChangeStatus) -> Color {
         ChangeStatus::Untracked => Color::DarkGray,
         ChangeStatus::Modified => Color::Yellow,
     }
+}
+
+/// Render a bordered, single-selection list with the project's standard
+/// highlight styling. `selected` is clamped to `items.len() - 1` to match
+/// the prior call sites' defensive behaviour.
+pub(crate) fn render_selectable_list(
+    frame: &mut Frame,
+    area: Rect,
+    title: String,
+    items: Vec<ListItem<'_>>,
+    selected: Option<usize>,
+    border_style: Style,
+) {
+    let len = items.len();
+    let list = List::new(items)
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title(title)
+                .border_style(border_style),
+        )
+        .highlight_style(
+            Style::default()
+                .bg(Color::DarkGray)
+                .add_modifier(Modifier::BOLD),
+        )
+        .highlight_symbol("> ");
+
+    let mut state = ListState::default();
+    if len > 0
+        && let Some(idx) = selected
+    {
+        state.select(Some(idx.min(len - 1)));
+    }
+    frame.render_stateful_widget(list, area, &mut state);
 }
 
 pub(crate) fn render_search_bar(

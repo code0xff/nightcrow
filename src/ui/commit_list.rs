@@ -2,9 +2,9 @@ use crate::app::{App, Focus};
 use ratatui::{
     Frame,
     layout::Rect,
-    style::{Color, Modifier, Style},
+    style::{Color, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, List, ListItem, ListState},
+    widgets::ListItem,
 };
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -91,30 +91,8 @@ fn render_commit_list(frame: &mut Frame, app: &App, area: Rect, accent: Color) {
         }
     };
 
-    let list = List::new(items)
-        .block(
-            Block::default()
-                .borders(Borders::ALL)
-                .title(title)
-                .border_style(border_style),
-        )
-        .highlight_style(
-            Style::default()
-                .bg(Color::DarkGray)
-                .add_modifier(Modifier::BOLD),
-        )
-        .highlight_symbol("> ");
-
-    let mut state = ListState::default();
-    if !app.log_view.commits.is_empty() {
-        state.select(Some(
-            app.log_view
-                .selected
-                .min(app.log_view.commits.len().saturating_sub(1)),
-        ));
-    }
-
-    frame.render_stateful_widget(list, area, &mut state);
+    let selected = (!app.log_view.commits.is_empty()).then_some(app.log_view.selected);
+    super::render_selectable_list(frame, area, title, items, selected, border_style);
 }
 
 fn render_file_list(frame: &mut Frame, app: &App, area: Rect, accent: Color) {
@@ -146,30 +124,8 @@ fn render_file_list(frame: &mut Frame, app: &App, area: Rect, accent: Color) {
 
     let title = truncate_title(&commit_summary, 30);
 
-    let list = List::new(items)
-        .block(
-            Block::default()
-                .borders(Borders::ALL)
-                .title(title)
-                .border_style(border_style),
-        )
-        .highlight_style(
-            Style::default()
-                .bg(Color::DarkGray)
-                .add_modifier(Modifier::BOLD),
-        )
-        .highlight_symbol("> ");
-
-    let mut state = ListState::default();
-    if !app.log_view.commit_files.is_empty() {
-        state.select(Some(
-            app.log_view
-                .file_selected
-                .min(app.log_view.commit_files.len().saturating_sub(1)),
-        ));
-    }
-
-    frame.render_stateful_widget(list, area, &mut state);
+    let selected = (!app.log_view.commit_files.is_empty()).then_some(app.log_view.file_selected);
+    super::render_selectable_list(frame, area, title, items, selected, border_style);
 }
 
 fn truncate_title(title: &str, max_chars: usize) -> String {

@@ -2,9 +2,9 @@ use crate::app::{App, Focus};
 use ratatui::{
     Frame,
     layout::{Constraint, Direction, Layout, Rect},
-    style::{Color, Modifier, Style},
+    style::{Color, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, List, ListItem, ListState},
+    widgets::ListItem,
 };
 
 pub fn render(frame: &mut Frame, app: &App, area: Rect, accent: Color) {
@@ -59,30 +59,10 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect, accent: Color) {
         " Files ".to_string()
     };
 
-    let list = List::new(items)
-        .block(
-            Block::default()
-                .borders(Borders::ALL)
-                .title(title)
-                .border_style(border_style),
-        )
-        .highlight_style(
-            Style::default()
-                .bg(Color::DarkGray)
-                .add_modifier(Modifier::BOLD),
-        )
-        .highlight_symbol("> ");
-
-    let mut state = ListState::default();
-    if !filtered_indices.is_empty()
-        && let Some(pos) = filtered_indices
-            .iter()
-            .position(|&i| i == app.status_view.selected)
-    {
-        state.select(Some(pos));
-    }
-
-    frame.render_stateful_widget(list, list_area, &mut state);
+    let selected_pos = filtered_indices
+        .iter()
+        .position(|&i| i == app.status_view.selected);
+    super::render_selectable_list(frame, list_area, title, items, selected_pos, border_style);
 
     if let Some(sa) = search_area {
         super::render_search_bar(
