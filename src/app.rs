@@ -600,9 +600,15 @@ impl App {
                     self.status_view.recompute_filter();
                     self.tracking = snapshot.tracking;
 
-                    let selected_path_changed =
-                        self.restore_selection(previous_path.as_deref()) != previous_path;
-                    self.refresh_diff(selected_path_changed);
+                    self.restore_selection(previous_path.as_deref());
+                    self.sync_selection_to_filter();
+                    let selected_path = self.selected_filtered_status_path();
+                    let selected_path_changed = selected_path != previous_path;
+                    if selected_path.is_some() {
+                        self.refresh_diff(selected_path_changed);
+                    } else {
+                        self.clear_diff_state();
+                    }
                     if self
                         .status
                         .as_deref()
@@ -1192,6 +1198,7 @@ impl App {
         self.status_view.search_query.clear();
         self.status_view.search_query_lower.clear();
         self.status_view.recompute_filter();
+        self.refresh_status_diff_after_filter_change();
     }
 
     pub fn confirm_search(&mut self) {
@@ -1208,14 +1215,14 @@ impl App {
         self.status_view.search_query.push(ch);
         self.status_view.search_query_lower = self.status_view.search_query.to_lowercase();
         self.status_view.recompute_filter();
-        self.clamp_to_filtered();
+        self.refresh_status_diff_after_filter_change();
     }
 
     pub fn search_pop(&mut self) {
         self.status_view.search_query.pop();
         self.status_view.search_query_lower = self.status_view.search_query.to_lowercase();
         self.status_view.recompute_filter();
-        self.clamp_to_filtered();
+        self.refresh_status_diff_after_filter_change();
     }
 
     pub fn start_diff_search(&mut self) {
@@ -1332,19 +1339,42 @@ impl App {
         }
     }
 
-    fn clamp_to_filtered(&mut self) {
-        // Copy out the data we need so the immutable borrow ends before we
-        // call the mutating reload below.
+    fn selected_filtered_status_path(&self) -> Option<String> {
+        if !self.filtered_indices().contains(&self.status_view.selected) {
+            return None;
+        }
+        self.status_view
+            .files
+            .get(self.status_view.selected)
+            .map(|file| file.path.clone())
+    }
+
+    fn sync_selection_to_filter(&mut self) -> bool {
         let target = {
             let indices = self.filtered_indices();
+            if indices.is_empty() {
+                return false;
+            }
             if indices.contains(&self.status_view.selected) {
-                None
+                self.status_view.selected
             } else {
-                indices.first().copied()
+                indices[0]
             }
         };
-        if let Some(first) = target {
-            self.status_view.selected = first;
+
+        if target == self.status_view.selected {
+            false
+        } else {
+            self.status_view.selected = target;
+            true
+        }
+    }
+
+    fn refresh_status_diff_after_filter_change(&mut self) {
+        let selection_changed = self.sync_selection_to_filter();
+        if self.selected_filtered_status_path().is_none() {
+            self.clear_diff_state();
+        } else if selection_changed || self.diff.hunks.is_empty() {
             self.reload_diff();
         }
     }
@@ -2023,6 +2053,17 @@ mod tests {
     }
 
     #[test]
+    fn status_search_with_no_matches_clears_stale_diff() {
+        let mut app = app_with_files(vec!["a.rs"]);
+        app.diff.hunks = vec![context_hunk(&["stale"])];
+
+        app.search_push('z');
+
+        assert!(app.filtered_indices().is_empty());
+        assert!(app.diff.hunks.is_empty());
+    }
+
+    #[test]
     fn terminal_scrollback_is_capped_at_screen_rows() {
         let mut app = app_with_files(vec![]);
         app.terminal.panes = vec![PaneInfo {
@@ -2260,5 +2301,60 @@ mod tests {
         app.poll_snapshot();
 
         assert_eq!(app.status, None);
+    }
+
+    #[test]
+    fn snapshot_refresh_clamps_selection_to_active_filter() {
+        let (snapshot, tx) = dummy_snapshot_channel();
+        let mut app = App {
+            snapshot,
+            ..app_with_files(vec!["bar.rs"])
+        };
+        app.status_view.search_query = "bar".to_string();
+        app.status_view.search_query_lower = "bar".to_string();
+        app.status_view.recompute_filter();
+
+        tx.send(SnapshotMsg::Ok(RepoSnapshot {
+            files: vec![
+                ChangedFile::new("aaa.rs".to_string(), ChangeStatus::Modified),
+                ChangedFile::new("bar2.rs".to_string(), ChangeStatus::Modified),
+            ],
+            tracking: None,
+        }))
+        .unwrap();
+        app.poll_snapshot();
+
+        assert_eq!(app.filtered_indices(), &[1]);
+        assert_eq!(app.status_view.selected, 1);
+        assert_eq!(
+            app.status_view.files[app.status_view.selected].path,
+            "bar2.rs"
+        );
+    }
+
+    #[test]
+    fn snapshot_refresh_with_no_filter_matches_clears_stale_diff() {
+        let (snapshot, tx) = dummy_snapshot_channel();
+        let mut app = App {
+            snapshot,
+            ..app_with_files(vec!["bar.rs"])
+        };
+        app.status_view.search_query = "bar".to_string();
+        app.status_view.search_query_lower = "bar".to_string();
+        app.status_view.recompute_filter();
+        app.diff.hunks = vec![context_hunk(&["stale"])];
+
+        tx.send(SnapshotMsg::Ok(RepoSnapshot {
+            files: vec![ChangedFile::new(
+                "aaa.rs".to_string(),
+                ChangeStatus::Modified,
+            )],
+            tracking: None,
+        }))
+        .unwrap();
+        app.poll_snapshot();
+
+        assert!(app.filtered_indices().is_empty());
+        assert!(app.diff.hunks.is_empty());
     }
 }
