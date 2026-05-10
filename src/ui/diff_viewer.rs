@@ -8,16 +8,11 @@ use ratatui::{
     widgets::{Block, Borders, Paragraph},
 };
 use std::path::Path;
-use syntect::easy::HighlightLines;
-use syntect::highlighting::{Color as SColor, ThemeSet};
+use syntect::highlighting::ThemeSet;
 use syntect::parsing::SyntaxSet;
 
 fn rgb_to_color(rgb: (u8, u8, u8)) -> Color {
     Color::Rgb(rgb.0, rgb.1, rgb.2)
-}
-
-fn scolor(c: SColor) -> Color {
-    Color::Rgb(c.r, c.g, c.b)
 }
 
 fn extension(path: &str) -> &str {
@@ -253,7 +248,7 @@ pub fn render(
 
 fn render_file_view(
     frame: &mut Frame,
-    app: &App,
+    app: &mut App,
     area: Rect,
     ss: &SyntaxSet,
     ts: &ThemeSet,
@@ -261,72 +256,64 @@ fn render_file_view(
 ) {
     let focused = app.focus == Focus::DiffViewer;
     let border_style = super::focused_border_style(focused, accent);
-    let file_path = file_path_for_syntax(app);
-    let ext = extension(file_path);
+    let file_path = file_path_for_syntax(app).to_string();
+    let ext = extension(&file_path);
     let syntax = ss
         .find_syntax_by_extension(ext)
-        .unwrap_or_else(|| ss.find_syntax_plain_text());
-    let theme = &ts.themes["base16-ocean.dark"];
+        .unwrap_or_else(|| ss.find_syntax_plain_text())
+        .clone();
 
     let title = format!(" {file_path} [file] ");
 
-    let mut lines: Vec<Line> = Vec::new();
-    if let Some(err) = &app.diff.file_view.error {
-        lines.push(Line::from(Span::styled(
+    let visible_height = (area.height as usize).saturating_sub(2);
+    let lines: Vec<Line> = if let Some(err) = &app.diff.file_view.error {
+        vec![Line::from(Span::styled(
             err.clone(),
             Style::default().fg(Color::Red),
-        )));
+        ))]
     } else if app.diff.file_view.content.is_empty() {
-        lines.push(Line::from(Span::styled(
+        vec![Line::from(Span::styled(
             "(empty file)",
             Style::default().fg(Color::DarkGray),
-        )));
+        ))]
     } else {
-        let total = app.diff.file_view.line_count();
+        app.diff.file_view.ensure_highlight_cache(ss, ts, &syntax);
+        let fv = &app.diff.file_view;
+        let total = fv.line_count();
         let width = total.to_string().len();
-        let anchor = app.diff.file_view.anchor_line;
-        let mut hl = HighlightLines::new(syntax, theme);
-        for (idx, raw_line) in app.diff.file_view.content.lines().enumerate() {
-            let line_no = idx + 1;
-            let is_anchor = anchor == Some(line_no);
-            let bg = if is_anchor {
-                Color::Rgb(60, 60, 90)
-            } else {
-                Color::Reset
-            };
-            let mut spans = vec![Span::styled(
-                format!(" {:>width$} ", line_no, width = width),
-                Style::default().fg(Color::DarkGray).bg(bg),
-            )];
-            let with_nl = format!("{raw_line}\n");
-            if let Ok(ranges) = hl.highlight_line(&with_nl, ss) {
-                for (style, text) in ranges {
-                    let t = text.trim_end_matches('\n');
-                    if t.is_empty() {
-                        continue;
-                    }
+        let max_scroll = total.saturating_sub(1);
+        let scroll_start = fv.scroll.min(max_scroll);
+        let scroll_end = scroll_start
+            .saturating_add(visible_height)
+            .min(fv.line_highlights.len());
+
+        fv.line_highlights[scroll_start..scroll_end]
+            .iter()
+            .enumerate()
+            .map(|(i, segs)| {
+                let line_no = scroll_start + i + 1;
+                let is_anchor = fv.anchor_line == Some(line_no);
+                let bg = if is_anchor {
+                    Color::Rgb(60, 60, 90)
+                } else {
+                    Color::Reset
+                };
+                let mut spans = vec![Span::styled(
+                    format!(" {:>width$} ", line_no, width = width),
+                    Style::default().fg(Color::DarkGray).bg(bg),
+                )];
+                for seg in segs {
                     spans.push(Span::styled(
-                        t.to_string(),
-                        Style::default().fg(scolor(style.foreground)).bg(bg),
+                        seg.text.clone(),
+                        Style::default().fg(rgb_to_color(seg.rgb)).bg(bg),
                     ));
                 }
-            } else {
-                spans.push(Span::styled(raw_line.to_string(), Style::default().bg(bg)));
-            }
-            lines.push(Line::from(spans));
-        }
-    }
+                Line::from(spans)
+            })
+            .collect()
+    };
 
-    let max_scroll = lines.len().saturating_sub(1);
-    let scroll_start = app.diff.file_view.scroll.min(max_scroll);
-    let visible_height = (area.height as usize).saturating_sub(2);
-    let visible: Vec<Line> = lines
-        .into_iter()
-        .skip(scroll_start)
-        .take(visible_height)
-        .collect();
-
-    let para = Paragraph::new(visible).block(
+    let para = Paragraph::new(lines).block(
         Block::default()
             .borders(Borders::ALL)
             .title(title)

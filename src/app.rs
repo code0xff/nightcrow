@@ -280,6 +280,13 @@ pub struct FileViewState {
     pub scroll: usize,
     pub anchor_line: Option<usize>,
     pub error: Option<String>,
+    /// Cached syntect highlight output, one entry per `content.lines()` line.
+    /// Built once per (content, syntax) so per-frame rendering only slices the
+    /// visible window instead of re-highlighting the whole file.
+    pub line_highlights: Vec<Vec<HighlightSegment>>,
+    /// Syntax name used to build `line_highlights`. `None` means the cache is
+    /// unbuilt or invalidated (e.g. on content reload).
+    pub cached_syntax_name: Option<String>,
 }
 
 impl FileViewState {
@@ -289,6 +296,55 @@ impl FileViewState {
         }
         // count() on lines() drops a trailing empty line; that's fine for scroll bounds.
         self.content.lines().count()
+    }
+
+    /// Ensure `line_highlights` matches the current `content` and supplied
+    /// syntax. Rebuilds when the line count diverges or the syntax name
+    /// changed since the last build. Builds once per file load; the renderer
+    /// only slices the visible window from the cache afterward.
+    pub fn ensure_highlight_cache(
+        &mut self,
+        ss: &syntect::parsing::SyntaxSet,
+        ts: &syntect::highlighting::ThemeSet,
+        syntax: &syntect::parsing::SyntaxReference,
+    ) {
+        let total = self.line_count();
+        if self.line_highlights.len() == total
+            && self.cached_syntax_name.as_deref() == Some(syntax.name.as_str())
+        {
+            return;
+        }
+
+        use syntect::easy::HighlightLines;
+        let theme = &ts.themes[DIFF_THEME];
+        let mut hl = HighlightLines::new(syntax, theme);
+
+        let mut out: Vec<Vec<HighlightSegment>> = Vec::with_capacity(total);
+        for raw in self.content.lines() {
+            let with_nl = format!("{raw}\n");
+            let segs: Vec<HighlightSegment> = match hl.highlight_line(&with_nl, ss) {
+                Ok(ranges) => ranges
+                    .into_iter()
+                    .filter_map(|(style, text)| {
+                        let trimmed = text.trim_end_matches('\n');
+                        if trimmed.is_empty() {
+                            return None;
+                        }
+                        Some(HighlightSegment {
+                            rgb: (style.foreground.r, style.foreground.g, style.foreground.b),
+                            text: trimmed.to_string(),
+                        })
+                    })
+                    .collect(),
+                Err(_) => vec![HighlightSegment {
+                    rgb: (200, 200, 200),
+                    text: raw.to_string(),
+                }],
+            };
+            out.push(segs);
+        }
+        self.line_highlights = out;
+        self.cached_syntax_name = Some(syntax.name.clone());
     }
 }
 
@@ -369,9 +425,12 @@ impl DiffSearch {
     }
 }
 
-/// One highlighted segment of a diff body line: foreground RGB + the text.
+/// Syntect theme name used for both the diff and file-view highlight caches.
+pub const DIFF_THEME: &str = "base16-ocean.dark";
+
+/// One highlighted segment of a body line: foreground RGB + the text.
 /// Cached so per-frame rendering does not re-run the syntect highlighter
-/// over the whole diff for state recovery.
+/// over the whole document for state recovery.
 #[derive(Debug, Clone)]
 pub struct HighlightSegment {
     pub rgb: (u8, u8, u8),
@@ -427,7 +486,7 @@ impl DiffPane {
         }
 
         use syntect::easy::HighlightLines;
-        let theme = &ts.themes["base16-ocean.dark"];
+        let theme = &ts.themes[DIFF_THEME];
         let mut hl_new = HighlightLines::new(syntax, theme);
         let mut hl_old = HighlightLines::new(syntax, theme);
 
@@ -1004,18 +1063,36 @@ impl App {
         }
     }
 
+    /// Pick the new-side starting line of the hunk currently visible at the
+    /// top of the diff viewport. Walks the flat hunk layout (one header row +
+    /// body rows per hunk) and returns the most recent hunk whose header was
+    /// reached at or before `self.diff.scroll`. Falls back to the first
+    /// parseable hunk when the scroll is past every hunk we could parse.
+    fn anchor_for_current_diff(&self) -> Option<usize> {
+        let scroll = self.diff.scroll;
+        let mut offset = 0usize;
+        let mut chosen = None;
+        for h in &self.diff.hunks {
+            if let Some(n) = parse_hunk_new_start(&h.header) {
+                chosen = Some(n);
+            }
+            offset += 1 + h.lines.len();
+            if scroll < offset {
+                break;
+            }
+        }
+        chosen
+    }
+
     fn load_file_view(&mut self, key: FileViewKey) {
-        let result = match key.clone() {
-            FileViewKey::Status(path) => self.with_repo(|repo| load_workdir_file(repo, &path)),
+        let result = match &key {
+            FileViewKey::Status(path) => self.with_repo(|repo| load_workdir_file(repo, path)),
             FileViewKey::Commit { oid, path } => {
-                self.with_repo(|repo| load_commit_file_blob(repo, oid, &path))
+                let oid = *oid;
+                self.with_repo(|repo| load_commit_file_blob(repo, oid, path))
             }
         };
-        let anchor = self
-            .diff
-            .hunks
-            .iter()
-            .find_map(|h| parse_hunk_new_start(&h.header));
+        let anchor = self.anchor_for_current_diff();
         let mut fv = FileViewState {
             key: Some(key),
             anchor_line: anchor,
