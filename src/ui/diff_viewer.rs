@@ -12,6 +12,10 @@ use syntect::easy::HighlightLines;
 use syntect::highlighting::{Color as SColor, ThemeSet};
 use syntect::parsing::SyntaxSet;
 
+fn rgb_to_color(rgb: (u8, u8, u8)) -> Color {
+    Color::Rgb(rgb.0, rgb.1, rgb.2)
+}
+
 fn scolor(c: SColor) -> Color {
     Color::Rgb(c.r, c.g, c.b)
 }
@@ -43,7 +47,7 @@ fn file_path_for_syntax(app: &App) -> &str {
 
 pub fn render(
     frame: &mut Frame,
-    app: &App,
+    app: &mut App,
     area: Rect,
     ss: &SyntaxSet,
     ts: &ThemeSet,
@@ -69,20 +73,19 @@ pub fn render(
     let focused = app.focus == Focus::DiffViewer;
     let border_style = super::focused_border_style(focused, accent);
 
-    let file_path = file_path_for_syntax(app);
-    let ext = extension(file_path);
+    let file_path = file_path_for_syntax(app).to_string();
+    let ext = extension(&file_path).to_string();
     let syntax = ss
-        .find_syntax_by_extension(ext)
+        .find_syntax_by_extension(&ext)
         .unwrap_or_else(|| ss.find_syntax_plain_text());
-    let theme = &ts.themes["base16-ocean.dark"];
+    // Build the syntect highlight cache once per (hunks × syntax) so the
+    // visible-window walk below stays bounded even on large diffs.
+    app.diff.ensure_highlight_cache(ss, ts, syntax);
 
     let current_match = app.diff.search.current_match();
     let has_search = app.diff.search.has_query();
 
-    // Total flat row count = (1 hunk header + N body lines) per hunk. Computing
-    // this up front (cheap: O(n_hunks)) lets us clamp `app.diff.scroll` and emit
-    // only the visible window, instead of building Spans for every diff line
-    // every frame.
+    // Total flat row count = (1 hunk header + N body lines) per hunk.
     let total_lines: usize = app.diff.hunks.iter().map(|h| 1 + h.lines.len()).sum();
     let visible_height = (diff_area.height as usize).saturating_sub(2);
     let max_scroll = total_lines.saturating_sub(1);
@@ -92,16 +95,7 @@ pub fn render(
     let mut lines: Vec<Line> = Vec::with_capacity(visible_height);
     let mut flat_idx: usize = 0;
 
-    // Two separate highlighters for the whole diff: removed lines must not bleed
-    // their syntax state (e.g. an unclosed string) into the added/context lines.
-    // Keeping them alive across hunks lets context carry forward correctly for
-    // multiline constructs (block comments, string literals) that span hunk boundaries.
-    // Lines before the visible window still drive the highlighters so syntax
-    // state stays consistent — we just skip building Spans for them.
-    let mut hl_new = HighlightLines::new(syntax, theme);
-    let mut hl_old = HighlightLines::new(syntax, theme);
-
-    'outer: for hunk in &app.diff.hunks {
+    'outer: for (hi, hunk) in app.diff.hunks.iter().enumerate() {
         if flat_idx >= visible_end {
             break;
         }
@@ -115,20 +109,11 @@ pub fn render(
         }
         flat_idx += 1;
 
-        for diff_line in &hunk.lines {
+        for (li, diff_line) in hunk.lines.iter().enumerate() {
             if flat_idx >= visible_end {
                 break 'outer;
             }
-
-            let hl = match diff_line.kind {
-                LineKind::Removed => &mut hl_old,
-                _ => &mut hl_new,
-            };
-            let content_with_newline = format!("{}\n", diff_line.content);
-            let highlight_result = hl.highlight_line(&content_with_newline, ss);
-
             if flat_idx < scroll_start {
-                // Outside the visible window — advance highlight state only.
                 flat_idx += 1;
                 continue;
             }
@@ -159,14 +144,20 @@ pub fn render(
                 Style::default().fg(Color::DarkGray).bg(bg),
             )];
 
-            if let Ok(ranges) = highlight_result {
-                for (style, text) in ranges {
-                    let t = text.trim_end_matches('\n');
-                    if t.is_empty() {
-                        continue;
-                    }
-                    let fg = scolor(style.foreground);
-                    spans.push(Span::styled(t.to_string(), Style::default().fg(fg).bg(bg)));
+            // Read from the prebuilt highlight cache. Shape is guaranteed to
+            // match `hunks` after `ensure_highlight_cache`; treat any
+            // mismatch as a fallback path that just renders the raw text.
+            if let Some(segs) = app
+                .diff
+                .line_highlights
+                .get(hi)
+                .and_then(|hh| hh.get(li))
+            {
+                for seg in segs {
+                    spans.push(Span::styled(
+                        seg.text.clone(),
+                        Style::default().fg(rgb_to_color(seg.rgb)).bg(bg),
+                    ));
                 }
             } else {
                 spans.push(Span::styled(

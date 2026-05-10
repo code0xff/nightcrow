@@ -1,7 +1,7 @@
 use crate::backend::BackendEvent;
 use crate::backend::{PaneId, PtyBackend, TerminalBackend};
 use crate::git::diff::{
-    ChangedFile, CommitEntry, DiffHunk, RepoSnapshot, TrackingStatus, load_commit_diff,
+    ChangedFile, CommitEntry, DiffHunk, LineKind, RepoSnapshot, TrackingStatus, load_commit_diff,
     load_commit_file_blob, load_commit_file_diff, load_commit_files, load_commit_log,
     load_file_diff, load_snapshot, load_workdir_file, parse_hunk_new_start,
 };
@@ -369,6 +369,15 @@ impl DiffSearch {
     }
 }
 
+/// One highlighted segment of a diff body line: foreground RGB + the text.
+/// Cached so per-frame rendering does not re-run the syntect highlighter
+/// over the whole diff for state recovery.
+#[derive(Debug, Clone)]
+pub struct HighlightSegment {
+    pub rgb: (u8, u8, u8),
+    pub text: String,
+}
+
 /// All state for the diff viewer pane: the loaded hunks, scroll cursors,
 /// search state, and the optional file-content overlay. Lifted out of App
 /// so renderers and navigation handlers operate on a self-contained value.
@@ -380,11 +389,84 @@ pub struct DiffPane {
     /// Built once per diff load so per-keystroke search does not re-lowercase
     /// the entire diff. Header lines are never searched and are not cached.
     hunks_lines_lower: Vec<Vec<String>>,
+    /// Cached syntect highlight output per body line. Same shape as
+    /// `hunks_lines_lower`. Built once when hunks (or the active syntax)
+    /// change so the renderer skips the full-document state-recovery pass
+    /// every frame.
+    pub line_highlights: Vec<Vec<Vec<HighlightSegment>>>,
+    /// Syntax name (`SyntaxReference::name`) used to build `line_highlights`.
+    /// `None` means the cache is unbuilt or invalidated.
+    pub cached_syntax_name: Option<String>,
     pub scroll: usize,
     pub scroll_x: usize,
     pub search: DiffSearch,
     pub view: DiffPaneView,
     pub file_view: FileViewState,
+}
+
+impl DiffPane {
+    /// Ensure `line_highlights` matches the current `hunks` and the supplied
+    /// syntax. Rebuilds when the cache shape diverges from `hunks` or the
+    /// syntax name changed since last build. The walk uses two highlight
+    /// states (one for context/added, one for removed) so multi-line
+    /// constructs stay coherent across hunks.
+    pub fn ensure_highlight_cache(
+        &mut self,
+        ss: &syntect::parsing::SyntaxSet,
+        ts: &syntect::highlighting::ThemeSet,
+        syntax: &syntect::parsing::SyntaxReference,
+    ) {
+        let shape_matches = self.line_highlights.len() == self.hunks.len()
+            && self
+                .hunks
+                .iter()
+                .zip(self.line_highlights.iter())
+                .all(|(h, lh)| lh.len() == h.lines.len());
+        if shape_matches && self.cached_syntax_name.as_deref() == Some(syntax.name.as_str()) {
+            return;
+        }
+
+        use syntect::easy::HighlightLines;
+        let theme = &ts.themes["base16-ocean.dark"];
+        let mut hl_new = HighlightLines::new(syntax, theme);
+        let mut hl_old = HighlightLines::new(syntax, theme);
+
+        let mut out: Vec<Vec<Vec<HighlightSegment>>> = Vec::with_capacity(self.hunks.len());
+        for hunk in &self.hunks {
+            let mut per_hunk: Vec<Vec<HighlightSegment>> = Vec::with_capacity(hunk.lines.len());
+            for line in &hunk.lines {
+                let hl = match line.kind {
+                    LineKind::Removed => &mut hl_old,
+                    _ => &mut hl_new,
+                };
+                let with_nl = format!("{}\n", line.content);
+                let segs: Vec<HighlightSegment> = match hl.highlight_line(&with_nl, ss) {
+                    Ok(ranges) => ranges
+                        .into_iter()
+                        .filter_map(|(style, text)| {
+                            let trimmed = text.trim_end_matches('\n');
+                            if trimmed.is_empty() {
+                                return None;
+                            }
+                            let fg = style.foreground;
+                            Some(HighlightSegment {
+                                rgb: (fg.r, fg.g, fg.b),
+                                text: trimmed.to_string(),
+                            })
+                        })
+                        .collect(),
+                    Err(_) => vec![HighlightSegment {
+                        rgb: (200, 200, 200),
+                        text: line.content.clone(),
+                    }],
+                };
+                per_hunk.push(segs);
+            }
+            out.push(per_hunk);
+        }
+        self.line_highlights = out;
+        self.cached_syntax_name = Some(syntax.name.clone());
+    }
 }
 
 pub struct App {
@@ -849,6 +931,8 @@ impl App {
     fn clear_diff_state(&mut self) {
         self.diff.hunks.clear();
         self.diff.hunks_lines_lower.clear();
+        self.diff.line_highlights.clear();
+        self.diff.cached_syntax_name = None;
         self.diff.search.matches.clear();
         self.diff.search.cursor = 0;
         self.diff.scroll = 0;
@@ -869,6 +953,10 @@ impl App {
                 .collect();
             self.diff.hunks_lines_lower.push(lines);
         }
+        // Highlight cache shape is keyed by hunks; invalidate so the renderer
+        // rebuilds it on next frame against the active syntax.
+        self.diff.line_highlights.clear();
+        self.diff.cached_syntax_name = None;
     }
 
     fn ensure_diff_lower_cache(&mut self) {
