@@ -197,15 +197,33 @@ fn latest_size_log_index(dir: &Path, prefix: &str) -> u32 {
 impl Write for SizeRollingAppender {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         let mut inner = self.inner.lock().unwrap_or_else(|e| e.into_inner());
-        if inner.max_bytes > 0 && inner.current_size + buf.len() as u64 > inner.max_bytes {
-            inner.index += 1;
-            let path = inner.dir.join(format!("{}.{}", inner.prefix, inner.index));
-            inner.current = OpenOptions::new().create(true).append(true).open(path)?;
-            inner.current_size = 0;
+        // Loop so partial writes still trigger rotation when crossing the
+        // size threshold. Without this loop, a write returning fewer bytes
+        // than `buf.len()` could leave the threshold check stale until the
+        // caller's next call.
+        let mut total_written = 0usize;
+        let mut remaining = buf;
+        while !remaining.is_empty() {
+            if inner.max_bytes > 0
+                && inner.current_size + remaining.len() as u64 > inner.max_bytes
+            {
+                inner.index += 1;
+                let path = inner.dir.join(format!("{}.{}", inner.prefix, inner.index));
+                inner.current = OpenOptions::new().create(true).append(true).open(path)?;
+                inner.current_size = 0;
+            }
+            let n = inner.current.write(remaining)?;
+            if n == 0 {
+                return Err(io::Error::new(
+                    io::ErrorKind::WriteZero,
+                    "SizeRollingAppender wrote 0 bytes",
+                ));
+            }
+            inner.current_size += n as u64;
+            total_written += n;
+            remaining = &remaining[n..];
         }
-        let n = inner.current.write(buf)?;
-        inner.current_size += n as u64;
-        Ok(n)
+        Ok(total_written)
     }
 
     fn flush(&mut self) -> io::Result<()> {
