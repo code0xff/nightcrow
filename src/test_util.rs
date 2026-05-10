@@ -7,8 +7,13 @@
 
 #![cfg(test)]
 
+use git2::Repository;
 use std::process::Command;
 use tempfile::TempDir;
+
+pub fn open_repo(path: &str) -> Repository {
+    Repository::discover(path).expect("discover test repo")
+}
 
 pub fn run_git(repo_path: &str, args: &[&str]) {
     let output = Command::new("git")

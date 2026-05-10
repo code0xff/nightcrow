@@ -106,13 +106,7 @@ fn load_tracking_status(repo: &Repository) -> Option<TrackingStatus> {
     Some(TrackingStatus { ahead, behind })
 }
 
-#[cfg(test)]
-pub fn load_snapshot(repo_path: &str) -> Result<RepoSnapshot> {
-    let repo = Repository::discover(repo_path).context("not a git repository")?;
-    load_snapshot_with_repo(&repo)
-}
-
-pub fn load_snapshot_with_repo(repo: &Repository) -> Result<RepoSnapshot> {
+pub fn load_snapshot(repo: &Repository) -> Result<RepoSnapshot> {
     let mut opts = StatusOptions::new();
     opts.include_untracked(true)
         .recurse_untracked_dirs(true)
@@ -170,16 +164,7 @@ fn decode_file_view(bytes: &[u8]) -> Result<String> {
         .map_err(|_| anyhow::anyhow!("binary or non-utf8 file"))
 }
 
-// Path-based wrappers below are convenience entrypoints used only by unit
-// tests, which open a one-shot Repository per call. The TUI runtime drives
-// these via `*_with_repo` against the cached `git2::Repository` held by App.
-#[cfg(test)]
-pub fn load_workdir_file(repo_path: &str, file_path: &str) -> Result<String> {
-    let repo = Repository::discover(repo_path).context("not a git repository")?;
-    load_workdir_file_with_repo(&repo, file_path)
-}
-
-pub fn load_workdir_file_with_repo(repo: &Repository, file_path: &str) -> Result<String> {
+pub fn load_workdir_file(repo: &Repository, file_path: &str) -> Result<String> {
     let workdir = repo
         .workdir()
         .ok_or_else(|| anyhow::anyhow!("bare repository"))?;
@@ -188,17 +173,7 @@ pub fn load_workdir_file_with_repo(repo: &Repository, file_path: &str) -> Result
     decode_file_view(&bytes)
 }
 
-#[cfg(test)]
-pub fn load_commit_file_blob(repo_path: &str, oid: Oid, file_path: &str) -> Result<String> {
-    let repo = Repository::discover(repo_path).context("not a git repository")?;
-    load_commit_file_blob_with_repo(&repo, oid, file_path)
-}
-
-pub fn load_commit_file_blob_with_repo(
-    repo: &Repository,
-    oid: Oid,
-    file_path: &str,
-) -> Result<String> {
+pub fn load_commit_file_blob(repo: &Repository, oid: Oid, file_path: &str) -> Result<String> {
     let commit = repo.find_commit(oid).context("failed to find commit")?;
     let tree = commit.tree().context("failed to get commit tree")?;
     let entry = tree
@@ -208,13 +183,7 @@ pub fn load_commit_file_blob_with_repo(
     decode_file_view(blob.content())
 }
 
-#[cfg(test)]
-pub fn load_file_diff(repo_path: &str, file_path: &str) -> Result<Vec<DiffHunk>> {
-    let repo = Repository::discover(repo_path).context("not a git repository")?;
-    load_file_diff_with_repo(&repo, file_path)
-}
-
-pub fn load_file_diff_with_repo(repo: &Repository, file_path: &str) -> Result<Vec<DiffHunk>> {
+pub fn load_file_diff(repo: &Repository, file_path: &str) -> Result<Vec<DiffHunk>> {
     let head_tree = repo.head().ok().and_then(|head| head.peel_to_tree().ok());
     let mut diff_opts = diff_options(Some(file_path));
 
@@ -228,13 +197,7 @@ pub fn load_file_diff_with_repo(repo: &Repository, file_path: &str) -> Result<Ve
     collect_diff_hunks(&diff, file_path)
 }
 
-#[cfg(test)]
-pub fn load_commit_log(repo_path: &str, max_count: usize) -> Result<Vec<CommitEntry>> {
-    let repo = Repository::discover(repo_path).context("not a git repository")?;
-    load_commit_log_with_repo(&repo, max_count)
-}
-
-pub fn load_commit_log_with_repo(repo: &Repository, max_count: usize) -> Result<Vec<CommitEntry>> {
+pub fn load_commit_log(repo: &Repository, max_count: usize) -> Result<Vec<CommitEntry>> {
     if repo
         .is_empty()
         .context("failed to inspect repository state")?
@@ -303,13 +266,7 @@ fn commit_diff<'repo>(
     Ok(diff)
 }
 
-#[cfg(test)]
-pub fn load_commit_files(repo_path: &str, oid: Oid) -> Result<Vec<ChangedFile>> {
-    let repo = Repository::discover(repo_path).context("not a git repository")?;
-    load_commit_files_with_repo(&repo, oid)
-}
-
-pub fn load_commit_files_with_repo(repo: &Repository, oid: Oid) -> Result<Vec<ChangedFile>> {
+pub fn load_commit_files(repo: &Repository, oid: Oid) -> Result<Vec<ChangedFile>> {
     let diff = commit_diff(repo, oid, None)?;
     let mut files = Vec::new();
     for delta in diff.deltas() {
@@ -325,13 +282,7 @@ pub fn load_commit_files_with_repo(repo: &Repository, oid: Oid) -> Result<Vec<Ch
     Ok(files)
 }
 
-#[cfg(test)]
-pub fn load_commit_file_diff(repo_path: &str, oid: Oid, file_path: &str) -> Result<Vec<DiffHunk>> {
-    let repo = Repository::discover(repo_path).context("not a git repository")?;
-    load_commit_file_diff_with_repo(&repo, oid, file_path)
-}
-
-pub fn load_commit_file_diff_with_repo(
+pub fn load_commit_file_diff(
     repo: &Repository,
     oid: Oid,
     file_path: &str,
@@ -340,13 +291,7 @@ pub fn load_commit_file_diff_with_repo(
     collect_commit_diff_hunks(&diff)
 }
 
-#[cfg(test)]
-pub fn load_commit_diff(repo_path: &str, oid: Oid) -> Result<Vec<DiffHunk>> {
-    let repo = Repository::discover(repo_path).context("not a git repository")?;
-    load_commit_diff_with_repo(&repo, oid)
-}
-
-pub fn load_commit_diff_with_repo(repo: &Repository, oid: Oid) -> Result<Vec<DiffHunk>> {
+pub fn load_commit_diff(repo: &Repository, oid: Oid) -> Result<Vec<DiffHunk>> {
     let diff = commit_diff(repo, oid, None)?;
     collect_commit_diff_hunks(&diff)
 }
@@ -486,13 +431,13 @@ fn binary_diff_hunk(file_path: &str) -> DiffHunk {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_util::{make_repo, run_git};
+    use crate::test_util::{make_repo, open_repo, run_git};
     use std::path::Path;
 
     #[test]
     fn snapshot_empty_repo_does_not_panic() {
         let (dir, path) = make_repo();
-        let _ = load_snapshot(&path);
+        let _ = load_snapshot(&open_repo(&path));
         drop(dir);
     }
 
@@ -500,7 +445,7 @@ mod tests {
     fn commit_log_empty_repo_returns_empty() {
         let (dir, path) = make_repo();
 
-        let commits = load_commit_log(&path, 10).unwrap();
+        let commits = load_commit_log(&open_repo(&path), 10).unwrap();
 
         assert!(commits.is_empty());
         drop(dir);
@@ -514,9 +459,9 @@ mod tests {
         run_git(&path, &["add", "."]);
         run_git(&path, &["commit", "-m", "init"]);
 
-        let commits = load_commit_log(&path, 1).unwrap();
-        let files = load_commit_files(&path, commits[0].oid).unwrap();
-        let hunks = load_commit_diff(&path, commits[0].oid).unwrap();
+        let commits = load_commit_log(&open_repo(&path), 1).unwrap();
+        let files = load_commit_files(&open_repo(&path), commits[0].oid).unwrap();
+        let hunks = load_commit_diff(&open_repo(&path), commits[0].oid).unwrap();
 
         assert_eq!(files.len(), 1);
         assert_eq!(files[0].path, "first.rs");
@@ -539,7 +484,7 @@ mod tests {
         run_git(&path, &["commit", "-m", "init"]);
         std::fs::write(&fp, "line1\nline2\n").unwrap();
 
-        let snap = load_snapshot(&path).unwrap();
+        let snap = load_snapshot(&open_repo(&path)).unwrap();
         assert!(snap.files.iter().any(|f| f.path.contains("a.txt")));
         drop(dir);
     }
@@ -554,7 +499,7 @@ mod tests {
         std::fs::write(&fp, "line1\nline2\n").unwrap();
         run_git(&path, &["add", "a.txt"]);
 
-        let snap = load_snapshot(&path).unwrap();
+        let snap = load_snapshot(&open_repo(&path)).unwrap();
 
         assert!(
             snap.files
@@ -573,7 +518,7 @@ mod tests {
         run_git(&path, &["commit", "-m", "init"]);
         std::fs::write(&fp, "fn main() {\n    println!(\"hi\");\n}\n").unwrap();
 
-        let hunks = load_file_diff(&path, "b.rs").unwrap();
+        let hunks = load_file_diff(&open_repo(&path), "b.rs").unwrap();
         assert!(!hunks.is_empty());
         assert!(hunks[0].lines.iter().any(|l| l.kind == LineKind::Added));
         drop(dir);
@@ -589,7 +534,7 @@ mod tests {
         std::fs::write(&fp, "fn main() {\n    println!(\"hi\");\n}\n").unwrap();
         run_git(&path, &["add", "b.rs"]);
 
-        let hunks = load_file_diff(&path, "b.rs").unwrap();
+        let hunks = load_file_diff(&open_repo(&path), "b.rs").unwrap();
 
         assert!(!hunks.is_empty());
         assert!(hunks[0].lines.iter().any(|l| l.kind == LineKind::Added));
@@ -603,7 +548,7 @@ mod tests {
         std::fs::write(&fp, "fn main() {}\n").unwrap();
         run_git(&path, &["add", "new.rs"]);
 
-        let snap = load_snapshot(&path).unwrap();
+        let snap = load_snapshot(&open_repo(&path)).unwrap();
 
         assert!(
             snap.files
@@ -620,7 +565,7 @@ mod tests {
         std::fs::write(&fp, "fn main() {}\n").unwrap();
         run_git(&path, &["add", "new.rs"]);
 
-        let hunks = load_file_diff(&path, "new.rs").unwrap();
+        let hunks = load_file_diff(&open_repo(&path), "new.rs").unwrap();
 
         assert_eq!(hunks.len(), 1);
         assert_eq!(hunks[0].lines[0].kind, LineKind::Added);
@@ -633,14 +578,14 @@ mod tests {
         let fp = Path::new(&path).join("new.rs");
         std::fs::write(&fp, "fn main() {}\n").unwrap();
 
-        let snap = load_snapshot(&path).unwrap();
+        let snap = load_snapshot(&open_repo(&path)).unwrap();
         assert!(
             snap.files
                 .iter()
                 .any(|f| { f.path == "new.rs" && matches!(f.status, ChangeStatus::Untracked) })
         );
 
-        let hunks = load_file_diff(&path, "new.rs").unwrap();
+        let hunks = load_file_diff(&open_repo(&path), "new.rs").unwrap();
         assert_eq!(hunks.len(), 1);
         assert_eq!(hunks[0].lines[0].kind, LineKind::Added);
         drop(dir);
@@ -653,7 +598,7 @@ mod tests {
         std::fs::create_dir_all(nested.parent().unwrap()).unwrap();
         std::fs::write(&nested, "fn main() {}\n").unwrap();
 
-        let snap = load_snapshot(&path).unwrap();
+        let snap = load_snapshot(&open_repo(&path)).unwrap();
 
         assert!(snap.files.iter().any(|f| f.path == "src/new.rs"));
         drop(dir);
@@ -668,7 +613,7 @@ mod tests {
         run_git(&path, &["commit", "-m", "init"]);
         std::fs::write(&fp, [0, 1, 3]).unwrap();
 
-        let hunks = load_file_diff(&path, "asset.bin").unwrap();
+        let hunks = load_file_diff(&open_repo(&path), "asset.bin").unwrap();
 
         assert_eq!(hunks.len(), 1);
         assert!(hunks[0].header.contains("Binary file"));
@@ -685,8 +630,8 @@ mod tests {
         run_git(&path, &["mv", "old.rs", "new.rs"]);
         run_git(&path, &["commit", "-m", "rename"]);
 
-        let commits = load_commit_log(&path, 1).unwrap();
-        let files = load_commit_files(&path, commits[0].oid).unwrap();
+        let commits = load_commit_log(&open_repo(&path), 1).unwrap();
+        let files = load_commit_files(&open_repo(&path), commits[0].oid).unwrap();
 
         assert_eq!(files.len(), 1);
         assert_eq!(files[0].path, "new.rs");
@@ -709,7 +654,7 @@ mod tests {
         let (dir, path) = make_repo();
         let fp = Path::new(&path).join("hello.txt");
         std::fs::write(&fp, "hi\nthere\n").unwrap();
-        let content = load_workdir_file(&path, "hello.txt").unwrap();
+        let content = load_workdir_file(&open_repo(&path), "hello.txt").unwrap();
         assert_eq!(content, "hi\nthere\n");
         drop(dir);
     }
@@ -719,7 +664,7 @@ mod tests {
         let (dir, path) = make_repo();
         let fp = Path::new(&path).join("bin");
         std::fs::write(&fp, [0x00, 0xff, 0xfe]).unwrap();
-        assert!(load_workdir_file(&path, "bin").is_err());
+        assert!(load_workdir_file(&open_repo(&path), "bin").is_err());
         drop(dir);
     }
 
@@ -731,8 +676,8 @@ mod tests {
         run_git(&path, &["add", "."]);
         run_git(&path, &["commit", "-m", "init"]);
         std::fs::write(&fp, "v2\n").unwrap();
-        let commits = load_commit_log(&path, 1).unwrap();
-        let content = load_commit_file_blob(&path, commits[0].oid, "a.txt").unwrap();
+        let commits = load_commit_log(&open_repo(&path), 1).unwrap();
+        let content = load_commit_file_blob(&open_repo(&path), commits[0].oid, "a.txt").unwrap();
         assert_eq!(content, "v1\n");
         drop(dir);
     }
@@ -753,8 +698,8 @@ mod tests {
         run_git(&path, &["add", "."]);
         run_git(&path, &["commit", "-m", "rename and edit"]);
 
-        let commits = load_commit_log(&path, 1).unwrap();
-        let hunks = load_commit_file_diff(&path, commits[0].oid, "new.rs").unwrap();
+        let commits = load_commit_log(&open_repo(&path), 1).unwrap();
+        let hunks = load_commit_file_diff(&open_repo(&path), commits[0].oid, "new.rs").unwrap();
 
         assert!(!hunks.is_empty());
         assert!(
