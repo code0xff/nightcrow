@@ -552,6 +552,10 @@ impl App {
         // worker to exit at its next recv_timeout boundary.
         self.snapshot = SnapshotChannel::spawn(&new_path);
         if let Some(ref mut backend) = self.terminal.backend {
+            // Only future panes adopt the new cwd; existing shells stay in
+            // their original directory so we don't disrupt commands already
+            // running in them. Users who want the new cwd everywhere can
+            // close existing panes (ctrl+w) and open fresh ones (ctrl+t).
             backend.set_cwd(std::path::Path::new(&new_path));
         }
         tracing::info!(path = %new_path, "repo changed");
