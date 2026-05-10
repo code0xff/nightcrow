@@ -147,12 +147,7 @@ pub fn render(
             // Read from the prebuilt highlight cache. Shape is guaranteed to
             // match `hunks` after `ensure_highlight_cache`; treat any
             // mismatch as a fallback path that just renders the raw text.
-            if let Some(segs) = app
-                .diff
-                .line_highlights
-                .get(hi)
-                .and_then(|hh| hh.get(li))
-            {
+            if let Some(segs) = app.diff.line_highlights.get(hi).and_then(|hh| hh.get(li)) {
                 for seg in segs {
                     spans.push(Span::styled(
                         seg.text.clone(),
