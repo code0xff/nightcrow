@@ -870,10 +870,12 @@ impl App {
         let offset = self.terminal.scroll.get(&id).copied().unwrap_or(0);
         let actual = match self.terminal.parsers.get_mut(&id) {
             Some(parser) => {
-                // Cap by the parser's scrollback buffer size so vt100 never
-                // sees an offset it can't satisfy; the actual applied offset
-                // is read back below to keep our state in sync.
-                parser.set_scrollback(offset.min(SCROLLBACK_LINES));
+                // vt100 0.15 panics in screen rendering (`grid.rs` row math
+                // overflow) whenever scrollback_offset > screen rows, even
+                // though set_scrollback itself accepts larger values. Cap
+                // here so the renderer never trips that overflow.
+                let screen_rows = parser.screen().size().0 as usize;
+                parser.set_scrollback(offset.min(screen_rows));
                 parser.screen().scrollback()
             }
             None => return,
@@ -2114,7 +2116,7 @@ mod tests {
     }
 
     #[test]
-    fn terminal_scrollback_uses_full_buffer() {
+    fn terminal_scrollback_is_capped_at_screen_rows() {
         let mut app = app_with_files(vec![]);
         app.terminal.panes = vec![PaneInfo {
             id: 1,
@@ -2130,11 +2132,10 @@ mod tests {
 
         app.sync_terminal_scroll();
 
-        // Offset is now bounded by SCROLLBACK_LINES, not screen height, so the
-        // requested 6-row scrollback is honored end-to-end.
+        // vt100 0.15 panics in screen rendering when scrollback_offset
+        // exceeds screen rows, so we cap offset at screen height.
         let actual = app.terminal.parsers.get(&1).unwrap().screen().scrollback();
-        assert_eq!(actual, 6);
-        assert_eq!(app.terminal.scroll.get(&1).copied(), Some(6));
+        assert_eq!(actual, app.terminal.size.0 as usize);
     }
 
     #[test]
