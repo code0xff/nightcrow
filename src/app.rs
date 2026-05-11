@@ -490,7 +490,7 @@ pub struct FileViewState {
     /// unbuilt or invalidated (e.g. on content reload).
     pub cached_syntax_name: Option<String>,
     /// Cached `content.lines().count()` populated on load. Avoids walking the
-    /// full file on every scroll keystroke (`file_view_max_scroll` is called
+    /// full file on every scroll keystroke (`FileViewState::max_scroll` is called
     /// from each j/k/PgUp/PgDn handler).
     total_lines: usize,
     /// Byte length of `content` at the time `line_highlights` was built.
@@ -503,6 +503,20 @@ pub struct FileViewState {
 impl FileViewState {
     pub fn line_count(&self) -> usize {
         self.total_lines
+    }
+
+    /// Largest legal `scroll` value: one less than `line_count`, or 0 when
+    /// the file is empty.
+    pub fn max_scroll(&self) -> usize {
+        self.line_count().saturating_sub(1)
+    }
+
+    pub fn scroll_up(&mut self, n: usize) {
+        self.scroll = self.scroll.saturating_sub(n);
+    }
+
+    pub fn scroll_down(&mut self, n: usize) {
+        self.scroll = self.scroll.saturating_add(n).min(self.max_scroll());
     }
 
     /// Ensure `line_highlights` matches the current `content` and supplied
@@ -1429,23 +1443,6 @@ impl App {
         self.diff.view = DiffPaneView::File;
     }
 
-    pub fn file_view_max_scroll(&self) -> usize {
-        self.diff.file_view.line_count().saturating_sub(1)
-    }
-
-    pub fn file_view_scroll_up(&mut self, n: usize) {
-        self.diff.file_view.scroll = self.diff.file_view.scroll.saturating_sub(n);
-    }
-
-    pub fn file_view_scroll_down(&mut self, n: usize) {
-        self.diff.file_view.scroll = self
-            .diff
-            .file_view
-            .scroll
-            .saturating_add(n)
-            .min(self.file_view_max_scroll());
-    }
-
     fn restore_selection(&mut self, previous_path: Option<&str>) -> Option<String> {
         if self.status_view.files.is_empty() {
             self.status_view.selected = 0;
@@ -1675,7 +1672,7 @@ impl App {
             }
             Focus::DiffViewer => {
                 if self.diff.view == DiffPaneView::File {
-                    self.file_view_scroll_up(1);
+                    self.diff.file_view.scroll_up(1);
                 } else {
                     self.diff.scroll = self.diff.scroll.saturating_sub(1);
                 }
@@ -1695,7 +1692,7 @@ impl App {
             }
             Focus::DiffViewer => {
                 if self.diff.view == DiffPaneView::File {
-                    self.file_view_scroll_down(1);
+                    self.diff.file_view.scroll_down(1);
                 } else {
                     self.diff.scroll = self
                         .diff
@@ -1719,7 +1716,7 @@ impl App {
             }
             Focus::DiffViewer => {
                 if self.diff.view == DiffPaneView::File {
-                    self.file_view_scroll_up(DIFF_PAGE_SIZE);
+                    self.diff.file_view.scroll_up(DIFF_PAGE_SIZE);
                 } else {
                     self.diff.scroll = self.diff.scroll.saturating_sub(DIFF_PAGE_SIZE);
                 }
@@ -1739,7 +1736,7 @@ impl App {
             }
             Focus::DiffViewer => {
                 if self.diff.view == DiffPaneView::File {
-                    self.file_view_scroll_down(DIFF_PAGE_SIZE);
+                    self.diff.file_view.scroll_down(DIFF_PAGE_SIZE);
                 } else {
                     self.diff.scroll = self
                         .diff
