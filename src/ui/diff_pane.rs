@@ -87,6 +87,29 @@ impl DiffSearch {
     }
 }
 
+/// Return the index of the match in `matches` whose flat row is closest to
+/// `scroll`. Ties prefer the smaller flat row (i.e. the one already on or
+/// above the cursor) so a content refresh during reading never jumps the
+/// "current match" past where the user is looking. `matches` must be sorted
+/// ascending and non-empty.
+fn nearest_match_index(matches: &[usize], scroll: usize) -> usize {
+    debug_assert!(!matches.is_empty());
+    match matches.binary_search(&scroll) {
+        Ok(i) => i,
+        Err(i) => {
+            if i == 0 {
+                0
+            } else if i == matches.len() {
+                matches.len() - 1
+            } else {
+                let prev = matches[i - 1];
+                let next = matches[i];
+                if scroll - prev <= next - scroll { i - 1 } else { i }
+            }
+        }
+    }
+}
+
 /// Syntect theme name used for both the diff and file-view highlight caches.
 pub const DIFF_THEME: &str = "base16-ocean.dark";
 
@@ -206,6 +229,16 @@ impl DiffPane {
     /// Rebuild `search.matches` against the current query, using
     /// `hunks_lines_lower` so per-keystroke search is just a substring scan
     /// over precomputed strings.
+    ///
+    /// `scroll_to_match` selects the post-rebuild behaviour:
+    /// - `true`: jump the viewport to the current cursor's match (used after
+    ///   a keystroke where the user explicitly drove the search).
+    /// - `false`: keep the viewport pinned and re-anchor `cursor` to the
+    ///   match nearest to the current scroll. Without this, a content-only
+    ///   refresh (e.g. background snapshot tick while a query is active)
+    ///   would leave the "current match" indicator at a stale row far from
+    ///   where the user is reading, so the next `n`/`p` would jump
+    ///   unexpectedly.
     pub fn recompute_matches(&mut self, scroll_to_match: bool) {
         self.search.matches.clear();
         if self.search.query.is_empty() {
@@ -228,17 +261,24 @@ impl DiffPane {
             self.search.matches.windows(2).all(|w| w[0] < w[1]),
             "diff_search_matches must be sorted for binary_search to be correct"
         );
-        if !self.search.matches.is_empty() {
+        if self.search.matches.is_empty() {
+            self.search.cursor = 0;
+            return;
+        }
+        if scroll_to_match {
             self.search.cursor = self
                 .search
                 .cursor
-                .min(self.search.matches.len().saturating_sub(1));
-            if scroll_to_match {
-                self.scroll_to_match();
-            }
+                .min(self.search.matches.len() - 1);
+            self.scroll_to_match();
         } else {
-            self.search.cursor = 0;
+            self.search.cursor = nearest_match_index(&self.search.matches, self.scroll);
         }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn search_cursor(&self) -> usize {
+        self.search.cursor
     }
 
     fn scroll_to_match(&mut self) {
@@ -351,5 +391,80 @@ impl DiffPane {
         self.line_highlights = out;
         self.cached_syntax_name = Some(syntax.name.clone());
         self.cached_content_bytes = content_bytes;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::git::diff::{DiffLine, LineKind};
+
+    #[test]
+    fn nearest_match_index_picks_closest_and_prefers_lower_on_tie() {
+        let m = [10, 30, 50];
+        assert_eq!(nearest_match_index(&m, 5), 0);
+        assert_eq!(nearest_match_index(&m, 10), 0);
+        assert_eq!(nearest_match_index(&m, 19), 0);
+        // tie: equidistant from 10 and 30 → prefer the lower row.
+        assert_eq!(nearest_match_index(&m, 20), 0);
+        assert_eq!(nearest_match_index(&m, 21), 1);
+        assert_eq!(nearest_match_index(&m, 50), 2);
+        assert_eq!(nearest_match_index(&m, 999), 2);
+    }
+
+    fn match_hunk(lines: &[&str]) -> DiffHunk {
+        DiffHunk {
+            header: "@@".to_string(),
+            lines: lines
+                .iter()
+                .map(|s| DiffLine {
+                    kind: LineKind::Context,
+                    content: (*s).to_string(),
+                })
+                .collect(),
+        }
+    }
+
+    #[test]
+    fn recompute_matches_keep_scroll_repins_cursor_near_viewport() {
+        // 1 hunk header + 10 body lines. "foo" matches at body indices 0, 4, 8
+        // → flat rows 1, 5, 9.
+        let mut pane = DiffPane {
+            hunks: vec![match_hunk(&[
+                "foo a", "b", "c", "d", "foo e", "f", "g", "h", "foo i", "j",
+            ])],
+            ..Default::default()
+        };
+        pane.search.query = "foo".to_string();
+        pane.search.query_lower = "foo".to_string();
+        pane.scroll = 6; // user is reading near the middle match (row 5)
+        pane.search.cursor = 0; // stale cursor from before content changed
+
+        pane.recompute_matches(false);
+
+        assert_eq!(pane.search.matches, vec![1, 5, 9]);
+        // Closest match to scroll=6 is row 5 (cursor index 1), not the
+        // stale index 0 or a clamp to len-1.
+        assert_eq!(pane.search_cursor(), 1);
+        // Viewport stayed pinned where the user left it.
+        assert_eq!(pane.scroll, 6);
+    }
+
+    #[test]
+    fn recompute_matches_scroll_to_match_clamps_and_jumps() {
+        let mut pane = DiffPane {
+            hunks: vec![match_hunk(&["foo a", "b", "foo c"])],
+            ..Default::default()
+        };
+        pane.search.query = "foo".to_string();
+        pane.search.query_lower = "foo".to_string();
+        pane.scroll = 100; // arbitrary; scroll_to_match should overwrite
+        pane.search.cursor = 99; // stale, should clamp to last match index.
+
+        pane.recompute_matches(true);
+
+        assert_eq!(pane.search.matches, vec![1, 3]);
+        assert_eq!(pane.search_cursor(), 1);
+        assert_eq!(pane.scroll, 3);
     }
 }
