@@ -49,7 +49,7 @@ impl App {
         };
         let result = self.with_repo(|repo| load_file_diff(repo, &path));
         if let Err(e) = &result {
-            tracing::debug!(error = %e, file = %path, "failed to load diff");
+            tracing::warn!(error = %e, file = %path, "failed to load diff");
         }
         let mode = if reset_scroll {
             DiffApply::Reset
@@ -222,7 +222,7 @@ impl App {
         };
         let result = self.with_repo(|repo| load_commit_diff(repo, oid));
         if let Err(e) = &result {
-            tracing::debug!(error = %e, "failed to load commit diff");
+            tracing::warn!(error = %e, "failed to load commit diff");
         }
         self.apply_diff_result(result, DiffApply::ResetWithTitle(&title));
     }
@@ -251,7 +251,7 @@ impl App {
         let title = format!("{short_id} {path}");
         let result = self.with_repo(|repo| load_commit_file_diff(repo, oid, &path));
         if let Err(e) = &result {
-            tracing::debug!(error = %e, file = %path, "failed to load commit file diff");
+            tracing::warn!(error = %e, file = %path, "failed to load commit file diff");
         }
         self.apply_diff_result(result, DiffApply::ResetWithTitle(&title));
     }

@@ -4,6 +4,7 @@ use crate::git::diff::load_commit_log;
 impl App {
     pub fn toggle_mode(&mut self) {
         self.clear_diff_state();
+        let from = self.mode;
         match self.mode {
             ViewMode::Status => {
                 self.mode = ViewMode::Log;
@@ -29,6 +30,7 @@ impl App {
                 self.refresh_diff(true);
             }
         }
+        tracing::debug!(from = ?from, to = ?self.mode, "view mode toggled");
     }
 
     pub fn set_accent_index(&mut self, idx: usize) {

@@ -51,6 +51,13 @@ fn main() -> Result<()> {
 
     let _log_guard = logging::init_logging(&cfg.log, &repo_path);
 
+    tracing::info!(
+        level = cfg.log.level.as_str(),
+        rotation = ?cfg.log.rotation,
+        prompt_log = cfg.log.prompt_log,
+        "logging initialized"
+    );
+
     let _guard = TerminalGuard::enter()?;
 
     let original_hook = std::panic::take_hook();
@@ -105,6 +112,7 @@ fn run(
     main_loop(terminal, &mut app, &ss, &ts, &cfg)?;
 
     session::save_session(&app.repo_path, &app.save_session());
+    tracing::info!(repo = %app.repo_path, "nightcrow stopped");
     Ok(())
 }
 

@@ -324,7 +324,7 @@ impl App {
                 }
             }
             Err(e) => {
-                tracing::debug!(error = %e, "failed to load commit files");
+                tracing::warn!(error = %e, "failed to load commit files");
             }
         }
     }

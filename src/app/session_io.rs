@@ -126,7 +126,7 @@ impl App {
                 }
             }
             Err(e) => {
-                tracing::debug!(error = %e, "failed to load drill-down commit files");
+                tracing::warn!(error = %e, "failed to load drill-down commit files");
                 self.load_commit_diff_for_selected();
             }
         }
