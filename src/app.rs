@@ -168,9 +168,16 @@ fn strip_escape_sequences(data: &[u8]) -> String {
                 }
                 Some('O') => {
                     // SS3: ESC O <final>. Used by xterm-style application
-                    // keypad for arrow/function keys. Consume the final byte.
+                    // keypad for arrow/function keys. Consume the `O`, then
+                    // only consume the next char when it looks like a valid
+                    // SS3 final byte (0x40–0x7e). A malformed `ESC O <x>`
+                    // sequence followed by ordinary text used to swallow `x`.
                     chars.next();
-                    chars.next();
+                    if let Some(&next) = chars.peek()
+                        && ('\x40'..='\x7e').contains(&next)
+                    {
+                        chars.next();
+                    }
                 }
                 Some('(') | Some(')') | Some('*') | Some('+') | Some('-') | Some('.')
                 | Some('/') | Some('#') => {
@@ -2999,6 +3006,15 @@ mod tests {
         // must all be stripped fully without leaving final bytes behind.
         let out = super::strip_escape_sequences(b"hi\x1b[31mRED\x1b[0m\x1bOA\x1b(Bend");
         assert_eq!(out, "hiREDend");
+    }
+
+    #[test]
+    fn strip_escape_sequences_keeps_text_after_malformed_ss3() {
+        // ESC O followed by a control byte is not a valid SS3 sequence. The
+        // old implementation unconditionally consumed two chars after ESC,
+        // swallowing the newline (and any subsequent text relying on it).
+        let out = super::strip_escape_sequences(b"\x1bO\nhello");
+        assert_eq!(out, "\nhello");
     }
 
     #[test]
