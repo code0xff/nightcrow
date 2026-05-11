@@ -254,8 +254,7 @@ fn render_file_view(
     let ext = extension(&file_path);
     let syntax = ss
         .find_syntax_by_extension(ext)
-        .unwrap_or_else(|| ss.find_syntax_plain_text())
-        .clone();
+        .unwrap_or_else(|| ss.find_syntax_plain_text());
 
     let title = format!(" {file_path} [file] ");
 
@@ -271,7 +270,7 @@ fn render_file_view(
             Style::default().fg(Color::DarkGray),
         ))]
     } else {
-        app.diff.file_view.ensure_highlight_cache(ss, ts, &syntax);
+        app.diff.file_view.ensure_highlight_cache(ss, ts, syntax);
         let fv = &app.diff.file_view;
         let total = fv.line_count();
         let width = total.to_string().len();
