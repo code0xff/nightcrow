@@ -322,16 +322,16 @@ fn handle_file_search_key(app: &mut App, key: KeyEvent) {
 
 fn handle_diff_search_key(app: &mut App, key: KeyEvent) {
     match key.code {
-        KeyCode::Esc => app.cancel_diff_search(),
-        KeyCode::Enter => app.confirm_diff_search(),
+        KeyCode::Esc => app.diff.cancel_search(),
+        KeyCode::Enter => app.diff.confirm_search(),
         KeyCode::Backspace => {
             if app.diff.search.query.is_empty() {
-                app.cancel_diff_search();
+                app.diff.cancel_search();
             } else {
-                app.diff_search_pop();
+                app.diff.search_pop();
             }
         }
-        KeyCode::Char(c) => app.diff_search_push(c),
+        KeyCode::Char(c) => app.diff.search_push(c),
         _ => {}
     }
 }
@@ -351,12 +351,12 @@ fn handle_unmapped_upper_key(app: &mut App, key: KeyEvent) {
         },
         Focus::DiffViewer => match key.code {
             KeyCode::Char('v') => app.toggle_diff_file_view(),
-            KeyCode::Char('/') => app.start_diff_search(),
-            KeyCode::Char('n') => app.next_diff_match(),
-            KeyCode::Char('N') => app.prev_diff_match(),
-            KeyCode::Esc if !app.diff.search.query.is_empty() => app.cancel_diff_search(),
-            KeyCode::Left => app.diff_scroll_left(),
-            KeyCode::Right => app.diff_scroll_right(),
+            KeyCode::Char('/') => app.diff.start_search(),
+            KeyCode::Char('n') => app.diff.next_match(),
+            KeyCode::Char('N') => app.diff.prev_match(),
+            KeyCode::Esc if !app.diff.search.query.is_empty() => app.diff.cancel_search(),
+            KeyCode::Left => app.diff.scroll_left(),
+            KeyCode::Right => app.diff.scroll_right(),
             _ => {}
         },
         Focus::Terminal => {}

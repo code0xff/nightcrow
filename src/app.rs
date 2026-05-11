@@ -686,6 +686,150 @@ pub struct DiffPane {
 }
 
 impl DiffPane {
+    /// Total flat row count across all hunks (1 header + N body lines each).
+    pub fn line_count(&self) -> usize {
+        self.hunks.iter().map(|h| 1 + h.lines.len()).sum()
+    }
+
+    /// Largest legal `scroll` value: one less than the total row count, or 0
+    /// when there are no rows. Callers clamp restored scroll positions and
+    /// page-down ends against this bound.
+    pub fn max_scroll(&self) -> usize {
+        self.line_count().saturating_sub(1)
+    }
+
+    /// Move the active horizontal scroll target (diff or file view, depending
+    /// on `self.view`) left by one tab stop.
+    pub fn scroll_left(&mut self) {
+        let target = self.scroll_x_target_mut();
+        *target = target.saturating_sub(4);
+    }
+
+    /// Move the active horizontal scroll target right by one tab stop.
+    /// Capped at `u16::MAX` because ratatui's `Paragraph::scroll` takes `u16`.
+    pub fn scroll_right(&mut self) {
+        let target = self.scroll_x_target_mut();
+        *target = target.saturating_add(4).min(u16::MAX as usize);
+    }
+
+    fn scroll_x_target_mut(&mut self) -> &mut usize {
+        match self.view {
+            DiffPaneView::File => &mut self.file_view.scroll_x,
+            DiffPaneView::Diff => &mut self.scroll_x,
+        }
+    }
+
+    pub fn start_search(&mut self) {
+        self.search.start();
+    }
+
+    pub fn cancel_search(&mut self) {
+        self.search.clear();
+    }
+
+    pub fn confirm_search(&mut self) {
+        self.search.confirm();
+    }
+
+    pub fn search_push(&mut self, ch: char) {
+        self.search.push_char(ch);
+        self.recompute_matches(true);
+    }
+
+    pub fn search_pop(&mut self) {
+        self.search.pop_char();
+        self.recompute_matches(true);
+    }
+
+    pub fn next_match(&mut self) {
+        if let Some(idx) = self.search.next() {
+            self.scroll = idx;
+        }
+    }
+
+    pub fn prev_match(&mut self) {
+        if let Some(idx) = self.search.prev() {
+            self.scroll = idx;
+        }
+    }
+
+    /// Rebuild `search.matches` against the current query, using
+    /// `hunks_lines_lower` so per-keystroke search is just a substring scan
+    /// over precomputed strings.
+    pub fn recompute_matches(&mut self, scroll_to_match: bool) {
+        self.search.matches.clear();
+        if self.search.query.is_empty() {
+            self.search.cursor = 0;
+            return;
+        }
+        self.ensure_lower_cache();
+        let q = self.search.query_lower.as_str();
+        let mut flat_idx = 0usize;
+        for (hunk, lines_lower) in self.hunks.iter().zip(self.hunks_lines_lower.iter()) {
+            flat_idx += 1; // header line
+            for line_lower in lines_lower.iter().take(hunk.lines.len()) {
+                if line_lower.contains(q) {
+                    self.search.matches.push(flat_idx);
+                }
+                flat_idx += 1;
+            }
+        }
+        debug_assert!(
+            self.search.matches.windows(2).all(|w| w[0] < w[1]),
+            "diff_search_matches must be sorted for binary_search to be correct"
+        );
+        if !self.search.matches.is_empty() {
+            self.search.cursor = self
+                .search
+                .cursor
+                .min(self.search.matches.len().saturating_sub(1));
+            if scroll_to_match {
+                self.scroll_to_match();
+            }
+        } else {
+            self.search.cursor = 0;
+        }
+    }
+
+    fn scroll_to_match(&mut self) {
+        if let Some(&idx) = self.search.matches.get(self.search.cursor) {
+            self.scroll = idx;
+        }
+    }
+
+    /// Rebuild the lowercased line cache from scratch and invalidate the
+    /// highlight cache so the renderer rebuilds it on next frame.
+    pub fn rebuild_lower_cache(&mut self) {
+        self.hunks_lines_lower.clear();
+        self.hunks_lines_lower.reserve(self.hunks.len());
+        for hunk in &self.hunks {
+            let lines = hunk
+                .lines
+                .iter()
+                .map(|l| l.content.to_lowercase())
+                .collect();
+            self.hunks_lines_lower.push(lines);
+        }
+        // Highlight cache shape is keyed by hunks; invalidate so the renderer
+        // rebuilds it on next frame against the active syntax.
+        self.line_highlights.clear();
+        self.cached_syntax_name = None;
+    }
+
+    /// Rebuild the lowercased line cache iff its shape diverges from `hunks`.
+    /// Cheap path for callers that aren't sure whether the cache is current.
+    pub fn ensure_lower_cache(&mut self) {
+        let shape_matches = self.hunks_lines_lower.len() == self.hunks.len()
+            && self
+                .hunks
+                .iter()
+                .zip(self.hunks_lines_lower.iter())
+                .all(|(h, ll)| ll.len() == h.lines.len());
+        if !shape_matches {
+            self.rebuild_lower_cache();
+        }
+    }
+
     /// Ensure `line_highlights` matches the current `hunks` and the supplied
     /// syntax. Rebuilds when the cache shape diverges from `hunks` or the
     /// syntax name changed since last build. The walk uses two highlight
@@ -1144,7 +1288,7 @@ impl App {
         match result {
             Ok(hunks) => {
                 self.diff.hunks = hunks;
-                self.rebuild_diff_lower_cache();
+                self.diff.rebuild_lower_cache();
                 match mode {
                     DiffApply::Reset | DiffApply::ResetWithTitle(_) => {
                         self.diff.scroll = 0;
@@ -1157,14 +1301,14 @@ impl App {
                         // clamp against the freshly assigned diff to avoid
                         // leaving an out-of-range scroll that misbehaves on
                         // the next navigation keystroke.
-                        self.diff.scroll = prev.min(self.max_diff_scroll());
+                        self.diff.scroll = prev.min(self.diff.max_scroll());
                     }
                 }
                 if let DiffApply::ResetWithTitle(title) = mode {
                     self.log_view.diff_title = title.to_string();
                 }
                 if !self.diff.search.query.is_empty() {
-                    self.recompute_diff_matches(reset_scroll);
+                    self.diff.recompute_matches(reset_scroll);
                 }
             }
             Err(_) => {
@@ -1190,36 +1334,6 @@ impl App {
 
     /// Rebuild the lowercase cache from current `hunks`. Call after replacing
     /// `hunks` so per-keystroke search does not re-lowercase line content.
-    fn rebuild_diff_lower_cache(&mut self) {
-        self.diff.hunks_lines_lower.clear();
-        self.diff.hunks_lines_lower.reserve(self.diff.hunks.len());
-        for hunk in &self.diff.hunks {
-            let lines = hunk
-                .lines
-                .iter()
-                .map(|l| l.content.to_lowercase())
-                .collect();
-            self.diff.hunks_lines_lower.push(lines);
-        }
-        // Highlight cache shape is keyed by hunks; invalidate so the renderer
-        // rebuilds it on next frame against the active syntax.
-        self.diff.line_highlights.clear();
-        self.diff.cached_syntax_name = None;
-    }
-
-    fn ensure_diff_lower_cache(&mut self) {
-        let shape_matches = self.diff.hunks_lines_lower.len() == self.diff.hunks.len()
-            && self
-                .diff
-                .hunks
-                .iter()
-                .zip(self.diff.hunks_lines_lower.iter())
-                .all(|(h, ll)| ll.len() == h.lines.len());
-        if !shape_matches {
-            self.rebuild_diff_lower_cache();
-        }
-    }
-
     fn invalidate_file_view(&mut self) {
         self.diff.view = DiffPaneView::Diff;
         self.diff.file_view = FileViewState::default();
@@ -1398,65 +1512,6 @@ impl App {
         self.refresh_status_diff_after_filter_change();
     }
 
-    pub fn start_diff_search(&mut self) {
-        self.diff.search.start();
-    }
-
-    pub fn cancel_diff_search(&mut self) {
-        self.diff.search.clear();
-    }
-
-    pub fn confirm_diff_search(&mut self) {
-        self.diff.search.confirm();
-    }
-
-    pub fn diff_search_push(&mut self, ch: char) {
-        self.diff.search.push_char(ch);
-        self.recompute_diff_matches(true);
-    }
-
-    pub fn diff_search_pop(&mut self) {
-        self.diff.search.pop_char();
-        self.recompute_diff_matches(true);
-    }
-
-    pub fn next_diff_match(&mut self) {
-        if let Some(idx) = self.diff.search.next() {
-            self.diff.scroll = idx;
-        }
-    }
-
-    pub fn prev_diff_match(&mut self) {
-        if let Some(idx) = self.diff.search.prev() {
-            self.diff.scroll = idx;
-        }
-    }
-
-    fn diff_line_count(&self) -> usize {
-        self.diff.hunks.iter().map(|h| 1 + h.lines.len()).sum()
-    }
-
-    fn max_diff_scroll(&self) -> usize {
-        self.diff_line_count().saturating_sub(1)
-    }
-
-    pub fn diff_scroll_left(&mut self) {
-        let target = self.diff_pane_scroll_x_mut();
-        *target = target.saturating_sub(4);
-    }
-
-    pub fn diff_scroll_right(&mut self) {
-        let target = self.diff_pane_scroll_x_mut();
-        *target = target.saturating_add(4).min(u16::MAX as usize);
-    }
-
-    fn diff_pane_scroll_x_mut(&mut self) -> &mut usize {
-        match self.diff.view {
-            DiffPaneView::File => &mut self.diff.file_view.scroll_x,
-            DiffPaneView::Diff => &mut self.diff.scroll_x,
-        }
-    }
-
     pub fn file_scroll_left(&mut self) {
         let target = self.upper_scroll_x_mut();
         *target = target.saturating_sub(4);
@@ -1512,53 +1567,6 @@ impl App {
                 &self.log_view.commits,
                 |c| c.summary.chars().count(),
             ),
-        }
-    }
-
-    fn recompute_diff_matches(&mut self, scroll_to_match: bool) {
-        self.diff.search.matches.clear();
-        if self.diff.search.query.is_empty() {
-            self.diff.search.cursor = 0;
-            return;
-        }
-        self.ensure_diff_lower_cache();
-        let q = self.diff.search.query_lower.as_str();
-        let mut flat_idx = 0usize;
-        for (hunk, lines_lower) in self
-            .diff
-            .hunks
-            .iter()
-            .zip(self.diff.hunks_lines_lower.iter())
-        {
-            flat_idx += 1; // header line
-            for line_lower in lines_lower.iter().take(hunk.lines.len()) {
-                if line_lower.contains(q) {
-                    self.diff.search.matches.push(flat_idx);
-                }
-                flat_idx += 1;
-            }
-        }
-        debug_assert!(
-            self.diff.search.matches.windows(2).all(|w| w[0] < w[1]),
-            "diff_search_matches must be sorted for binary_search to be correct"
-        );
-        if !self.diff.search.matches.is_empty() {
-            self.diff.search.cursor = self
-                .diff
-                .search
-                .cursor
-                .min(self.diff.search.matches.len().saturating_sub(1));
-            if scroll_to_match {
-                self.scroll_to_diff_match();
-            }
-        } else {
-            self.diff.search.cursor = 0;
-        }
-    }
-
-    fn scroll_to_diff_match(&mut self) {
-        if let Some(&idx) = self.diff.search.matches.get(self.diff.search.cursor) {
-            self.diff.scroll = idx;
         }
     }
 
@@ -1693,7 +1701,7 @@ impl App {
                         .diff
                         .scroll
                         .saturating_add(1)
-                        .min(self.max_diff_scroll());
+                        .min(self.diff.max_scroll());
                 }
             }
             Focus::Terminal => {}
@@ -1737,7 +1745,7 @@ impl App {
                         .diff
                         .scroll
                         .saturating_add(DIFF_PAGE_SIZE)
-                        .min(self.max_diff_scroll());
+                        .min(self.diff.max_scroll());
                 }
             }
             Focus::Terminal => {}
@@ -2184,7 +2192,7 @@ impl App {
         {
             self.status_view.selected = idx;
             self.refresh_diff(true);
-            self.diff.scroll = state.scroll.min(self.max_diff_scroll());
+            self.diff.scroll = state.scroll.min(self.diff.max_scroll());
         }
         // If the saved file is no longer present, leave selected/scroll as they
         // were after the initial snapshot — applying saved_scroll to a different
@@ -2210,7 +2218,7 @@ impl App {
         } else {
             self.load_commit_diff_for_selected();
         }
-        self.diff.scroll = state.scroll.min(self.max_diff_scroll());
+        self.diff.scroll = state.scroll.min(self.diff.max_scroll());
     }
 
     fn restore_log_drill_down(&mut self, state: &crate::session::SessionState) {
@@ -2401,7 +2409,7 @@ mod tests {
         app.diff.search.query_lower = "needle".to_string();
         app.diff.scroll = 7;
 
-        app.recompute_diff_matches(false);
+        app.diff.recompute_matches(false);
 
         assert_eq!(app.diff.search.matches, vec![1]);
         assert_eq!(app.diff.scroll, 7);
@@ -2412,7 +2420,7 @@ mod tests {
         let mut app = app_with_files(vec!["a.rs"]);
         app.diff.hunks = vec![context_hunk(&["alpha", "needle"])];
 
-        app.diff_search_push('n');
+        app.diff.search_push('n');
 
         assert_eq!(app.diff.search.matches, vec![2]);
         assert_eq!(app.diff.scroll, 2);
@@ -2960,15 +2968,15 @@ mod tests {
         app.diff.file_view.scroll_x = 4;
         app.diff.view = DiffPaneView::File;
 
-        app.diff_scroll_right();
+        app.diff.scroll_right();
         assert_eq!(app.diff.scroll_x, 12, "diff scroll_x must not change");
         assert_eq!(app.diff.file_view.scroll_x, 8);
 
-        app.diff_scroll_left();
+        app.diff.scroll_left();
         assert_eq!(app.diff.file_view.scroll_x, 4);
 
         app.diff.view = DiffPaneView::Diff;
-        app.diff_scroll_right();
+        app.diff.scroll_right();
         assert_eq!(app.diff.scroll_x, 16);
         assert_eq!(
             app.diff.file_view.scroll_x, 4,
@@ -3034,7 +3042,7 @@ mod tests {
             context_hunk(&["l1", "l2", "l3", "l4", "l5"]),
             context_hunk(&["l6", "l7", "l8"]),
         ];
-        app.diff.scroll = app.max_diff_scroll();
+        app.diff.scroll = app.diff.max_scroll();
         let prev_scroll = app.diff.scroll;
         assert!(prev_scroll > 1);
 
@@ -3042,10 +3050,10 @@ mod tests {
         let shorter = vec![context_hunk(&["only"])];
         app.apply_diff_result(Ok(shorter), DiffApply::KeepScroll(prev_scroll));
         assert!(
-            app.diff.scroll <= app.max_diff_scroll(),
+            app.diff.scroll <= app.diff.max_scroll(),
             "scroll {} exceeded max {}",
             app.diff.scroll,
-            app.max_diff_scroll()
+            app.diff.max_scroll()
         );
     }
 
