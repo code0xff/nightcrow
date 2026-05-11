@@ -21,17 +21,25 @@ impl App {
         self.mode = ViewMode::Status;
         self.status_view.files.clear();
         self.status_view.selected = 0;
-        self.diff.hunks.clear();
-        self.diff.scroll = 0;
-        self.diff.scroll_x = 0;
         self.status_view.file_scroll_x = 0;
+        // Hot mtimes are workdir-scoped; carrying them into the new repo would
+        // bias auto-follow toward unrelated paths until the first snapshot tick.
+        self.status_view.hot_table.clear();
         self.log_view.commits.clear();
         self.log_view.selected = 0;
         self.log_view.diff_title.clear();
         self.log_view.commit_scroll_x = 0;
         self.log_view.reset_drill_down();
         self.status_view.cancel_search();
+        // clear_diff_state empties hunks + lower/highlight caches, resets diff
+        // scroll/search cursor, and invalidates the open file view. Calling it
+        // here also keeps the per-load reset shape centralized.
+        self.clear_diff_state();
         self.diff.search.clear();
+        // Auto-follow timers and steered-path memory are tied to the previous
+        // workdir; reset them so the new repo's first snapshot starts clean.
+        self.last_manual_nav_at = None;
+        self.auto_followed_path = None;
         self.status = None;
         self.tracking = None;
         self.focus = Focus::FileList;
