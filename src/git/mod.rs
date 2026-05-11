@@ -26,7 +26,14 @@ mod tests {
 
         let resolved = resolve_repo_path(&nested);
 
-        assert_eq!(resolved, PathBuf::from(repo_path));
+        // libgit2 returns the workdir with platform-specific symlink resolution
+        // (e.g. macOS surfaces /private/var instead of /var) and a trailing
+        // separator. Canonicalize both sides so the assertion checks structural
+        // equality rather than literal byte equality.
+        assert_eq!(
+            resolved.canonicalize().unwrap(),
+            PathBuf::from(repo_path).canonicalize().unwrap()
+        );
     }
 
     #[test]
