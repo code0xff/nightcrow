@@ -171,7 +171,7 @@ impl Default for AgentIndicatorConfig {
     fn default() -> Self {
         Self {
             enabled: true,
-            hot_window_secs: 10,
+            hot_window_secs: 60,
             auto_follow: true,
         }
     }
@@ -305,7 +305,7 @@ level = "verbose"
         let cfg = AgentIndicatorConfig::default();
         assert!(cfg.enabled);
         assert!(cfg.auto_follow);
-        assert_eq!(cfg.hot_window_secs, 10);
+        assert_eq!(cfg.hot_window_secs, 60);
     }
 
     #[test]
