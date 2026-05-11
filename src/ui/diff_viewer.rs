@@ -96,7 +96,7 @@ pub fn render(
         // Hunk header
         if flat_idx >= scroll_start && flat_idx < visible_end {
             lines.push(Line::from(Span::styled(
-                hunk.header.clone(),
+                hunk.header.as_str(),
                 Style::default().fg(Color::Cyan),
             )));
         }
@@ -143,13 +143,13 @@ pub fn render(
             if let Some(segs) = app.diff.line_highlights.get(hi).and_then(|hh| hh.get(li)) {
                 for seg in segs {
                     spans.push(Span::styled(
-                        seg.text.clone(),
+                        seg.text.as_str(),
                         Style::default().fg(rgb_to_color(seg.rgb)).bg(bg),
                     ));
                 }
             } else {
                 spans.push(Span::styled(
-                    diff_line.content.clone(),
+                    diff_line.content.as_str(),
                     Style::default().bg(bg),
                 ));
             }
@@ -262,7 +262,7 @@ fn render_file_view(
     let visible_height = (area.height as usize).saturating_sub(2);
     let lines: Vec<Line> = if let Some(err) = &app.diff.file_view.error {
         vec![Line::from(Span::styled(
-            err.clone(),
+            err.as_str(),
             Style::default().fg(Color::Red),
         ))]
     } else if app.diff.file_view.content.is_empty() {
@@ -298,7 +298,7 @@ fn render_file_view(
                 )];
                 for seg in segs {
                     spans.push(Span::styled(
-                        seg.text.clone(),
+                        seg.text.as_str(),
                         Style::default().fg(rgb_to_color(seg.rgb)).bg(bg),
                     ));
                 }
