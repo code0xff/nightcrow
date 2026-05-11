@@ -424,6 +424,45 @@ impl StatusView {
             }
         }
     }
+
+    pub fn start_search(&mut self) {
+        self.search_active = true;
+    }
+
+    /// Exit the search bar and clear any active query. Always recomputes the
+    /// filter so the caller can refresh the diff against the now-unfiltered
+    /// list without inspecting prior state.
+    pub fn cancel_search(&mut self) {
+        self.search_active = false;
+        self.clear_search();
+        self.recompute_filter();
+    }
+
+    /// Hide the search bar. Returns `true` when the query was empty and the
+    /// call therefore collapsed to a cancel (the caller should refresh the
+    /// diff in that case so a stale selection from the empty-filter state is
+    /// re-pinned).
+    pub fn confirm_search(&mut self) -> bool {
+        if self.search_query.is_empty() {
+            self.cancel_search();
+            true
+        } else {
+            self.search_active = false;
+            false
+        }
+    }
+
+    pub fn search_push(&mut self, ch: char) {
+        self.search_query.push(ch);
+        self.search_query_lower = self.search_query.to_lowercase();
+        self.recompute_filter();
+    }
+
+    pub fn search_pop(&mut self) {
+        self.search_query.pop();
+        self.search_query_lower = self.search_query.to_lowercase();
+        self.recompute_filter();
+    }
 }
 
 #[derive(Default)]
@@ -1475,37 +1514,27 @@ impl App {
     }
 
     pub fn start_search(&mut self) {
-        self.status_view.search_active = true;
+        self.status_view.start_search();
     }
 
     pub fn cancel_search(&mut self) {
-        self.status_view.search_active = false;
-        self.status_view.clear_search();
-        self.status_view.recompute_filter();
+        self.status_view.cancel_search();
         self.refresh_status_diff_after_filter_change();
     }
 
     pub fn confirm_search(&mut self) {
-        // Confirming an empty query is treated as cancel so the search bar
-        // doesn't linger with no filter applied.
-        if self.status_view.search_query.is_empty() {
-            self.cancel_search();
-        } else {
-            self.status_view.search_active = false;
+        if self.status_view.confirm_search() {
+            self.refresh_status_diff_after_filter_change();
         }
     }
 
     pub fn search_push(&mut self, ch: char) {
-        self.status_view.search_query.push(ch);
-        self.status_view.search_query_lower = self.status_view.search_query.to_lowercase();
-        self.status_view.recompute_filter();
+        self.status_view.search_push(ch);
         self.refresh_status_diff_after_filter_change();
     }
 
     pub fn search_pop(&mut self) {
-        self.status_view.search_query.pop();
-        self.status_view.search_query_lower = self.status_view.search_query.to_lowercase();
-        self.status_view.recompute_filter();
+        self.status_view.search_pop();
         self.refresh_status_diff_after_filter_change();
     }
 
