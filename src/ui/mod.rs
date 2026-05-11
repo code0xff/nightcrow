@@ -30,7 +30,7 @@ pub(crate) fn status_color(status: ChangeStatus) -> Color {
         ChangeStatus::Added => Color::Green,
         ChangeStatus::Deleted => Color::Red,
         ChangeStatus::Renamed => Color::Cyan,
-        ChangeStatus::Untracked => Color::DarkGray,
+        ChangeStatus::Untracked => Color::Gray,
         ChangeStatus::Modified => Color::Yellow,
     }
 }
