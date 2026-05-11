@@ -1061,6 +1061,8 @@ impl App {
         }
     }
 
+    // ── Snapshot polling ──────────────────────────────────────────
+
     pub fn poll_snapshot(&mut self) {
         while let Ok(msg) = self.snapshot.try_recv() {
             match msg {
@@ -1133,6 +1135,8 @@ impl App {
                 .or_insert(new_mtime);
         }
     }
+
+    // ── Terminal pane lifecycle ───────────────────────────────────
 
     pub fn poll_terminal(&mut self) {
         let events: Vec<BackendEvent> = self
@@ -1227,6 +1231,8 @@ impl App {
             self.terminal.active = self.terminal.active.min(self.terminal.panes.len() - 1);
         }
     }
+
+    // ── Repo selection + input bar ────────────────────────────────
 
     pub fn change_repo(&mut self, new_path: String) {
         // Replacing _stop_tx drops the old sender, signaling the old thread to exit.
@@ -1323,6 +1329,8 @@ impl App {
         let id = self.terminal.active_pane_id()?;
         self.terminal.parsers.get(&id).map(|p| p.screen())
     }
+
+    // ── Diff loading ──────────────────────────────────────────────
 
     pub fn reload_diff(&mut self) {
         self.refresh_diff(true);
@@ -1515,6 +1523,8 @@ impl App {
         }
         self.diff.view = DiffPaneView::File;
     }
+
+    // ── Status selection + filter ─────────────────────────────────
 
     fn restore_selection(&mut self, previous_path: Option<&str>) -> Option<String> {
         if self.status_view.files.is_empty() {
@@ -1724,6 +1734,8 @@ impl App {
         }
     }
 
+    // ── Selection navigation (status + log shared) ────────────────
+
     pub fn select_up(&mut self) {
         match self.focus {
             Focus::FileList => {
@@ -1906,6 +1918,8 @@ impl App {
         false
     }
 
+    // ── Log view ──────────────────────────────────────────────────
+
     fn load_commit_diff_for_selected(&mut self) {
         let (oid, title) = match self.log_view.commits.get(self.log_view.selected) {
             Some(entry) => (entry.oid, entry.to_string()),
@@ -2002,6 +2016,8 @@ impl App {
         }
         self.apply_diff_result(result, DiffApply::ResetWithTitle(&title));
     }
+
+    // ── Mode, theme, focus, fullscreen ────────────────────────────
 
     pub fn toggle_mode(&mut self) {
         self.clear_diff_state();
@@ -2162,6 +2178,8 @@ impl App {
             self.terminal.fullscreen = false;
         }
     }
+
+    // ── Session save / restore ────────────────────────────────────
 
     pub fn set_pending_session(&mut self, state: crate::session::SessionState) {
         self.pending_session = Some(state);
