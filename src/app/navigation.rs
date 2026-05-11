@@ -187,6 +187,10 @@ impl App {
     /// Handles both empty-query (full file list) and non-empty (filtered subset)
     /// cases uniformly.
     pub(crate) fn move_selected_in_filter(&mut self, delta: isize) {
+        // Status-mode nav is the only path that drives auto-follow gating;
+        // marking here avoids writing the timer in Log mode where the value
+        // is never read.
+        self.mark_user_navigated();
         // Resolve the new selection in a scoped block so the borrow on
         // filtered_indices does not outlive the mutating reload below.
         let resolved = {
@@ -219,7 +223,6 @@ impl App {
     pub fn select_up(&mut self) {
         match self.focus {
             Focus::FileList => {
-                self.mark_user_navigated();
                 if self.navigate_log_list(Self::log_select_up, Self::log_file_select_up) {
                     return;
                 }
@@ -239,7 +242,6 @@ impl App {
     pub fn select_down(&mut self) {
         match self.focus {
             Focus::FileList => {
-                self.mark_user_navigated();
                 if self.navigate_log_list(Self::log_select_down, Self::log_file_select_down) {
                     return;
                 }
@@ -263,7 +265,6 @@ impl App {
     pub fn page_up(&mut self) {
         match self.focus {
             Focus::FileList => {
-                self.mark_user_navigated();
                 if self.navigate_log_list(Self::log_page_up, Self::log_file_page_up) {
                     return;
                 }
@@ -283,7 +284,6 @@ impl App {
     pub fn page_down(&mut self) {
         match self.focus {
             Focus::FileList => {
-                self.mark_user_navigated();
                 if self.navigate_log_list(Self::log_page_down, Self::log_file_page_down) {
                     return;
                 }
