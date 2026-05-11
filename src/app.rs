@@ -500,6 +500,40 @@ pub struct LogView {
     commit_files_width_cache: Cell<Option<(usize, usize)>>,
 }
 
+impl LogView {
+    /// Exit drill-down so the upper pane shows the commit list again. Clears
+    /// the file list and resets file-side cursors/scroll so a later drill-in
+    /// starts from a clean state.
+    pub fn reset_drill_down(&mut self) {
+        self.drill_down = false;
+        self.commit_files.clear();
+        self.file_selected = 0;
+        self.file_scroll_x = 0;
+    }
+
+    /// Move the file-list cursor up by `n`. Returns whether the selection
+    /// actually changed so the caller can decide whether to reload the diff.
+    /// A non-zero move also resets `file_scroll_x` to mirror the established
+    /// behaviour of clearing horizontal scroll when the highlighted row moves.
+    pub fn file_select_up(&mut self, n: usize) -> bool {
+        let moved = cursor_up(&mut self.file_selected, n);
+        if moved {
+            self.file_scroll_x = 0;
+        }
+        moved
+    }
+
+    /// Move the file-list cursor down by `n`. See `file_select_up` for the
+    /// return-value contract.
+    pub fn file_select_down(&mut self, n: usize) -> bool {
+        let moved = cursor_down(&mut self.file_selected, self.commit_files.len(), n);
+        if moved {
+            self.file_scroll_x = 0;
+        }
+        moved
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum DiffPaneView {
     #[default]
@@ -1222,7 +1256,7 @@ impl App {
         self.log_view.selected = 0;
         self.log_view.diff_title.clear();
         self.log_view.commit_scroll_x = 0;
-        self.reset_drill_down_state();
+        self.log_view.reset_drill_down();
         self.status_view.clear_search();
         self.status_view.search_active = false;
         self.status_view.recompute_filter();
@@ -1888,13 +1922,6 @@ impl App {
         self.apply_diff_result(result, DiffApply::ResetWithTitle(&title));
     }
 
-    fn reset_drill_down_state(&mut self) {
-        self.log_view.drill_down = false;
-        self.log_view.commit_files.clear();
-        self.log_view.file_selected = 0;
-        self.log_view.file_scroll_x = 0;
-    }
-
     pub fn log_drill_in(&mut self) {
         let (oid, title) = match self.log_view.commits.get(self.log_view.selected) {
             Some(entry) => (entry.oid, entry.to_string()),
@@ -1919,42 +1946,30 @@ impl App {
     }
 
     pub fn log_drill_out(&mut self) {
-        self.reset_drill_down_state();
+        self.log_view.reset_drill_down();
         self.load_commit_diff_for_selected();
     }
 
     pub fn log_file_select_up(&mut self) {
-        if cursor_up(&mut self.log_view.file_selected, 1) {
-            self.log_view.file_scroll_x = 0;
+        if self.log_view.file_select_up(1) {
             self.load_file_diff_for_log_file_selected();
         }
     }
 
     pub fn log_file_select_down(&mut self) {
-        if cursor_down(
-            &mut self.log_view.file_selected,
-            self.log_view.commit_files.len(),
-            1,
-        ) {
-            self.log_view.file_scroll_x = 0;
+        if self.log_view.file_select_down(1) {
             self.load_file_diff_for_log_file_selected();
         }
     }
 
     pub fn log_file_page_up(&mut self) {
-        if cursor_up(&mut self.log_view.file_selected, LIST_PAGE_SIZE) {
-            self.log_view.file_scroll_x = 0;
+        if self.log_view.file_select_up(LIST_PAGE_SIZE) {
             self.load_file_diff_for_log_file_selected();
         }
     }
 
     pub fn log_file_page_down(&mut self) {
-        if cursor_down(
-            &mut self.log_view.file_selected,
-            self.log_view.commit_files.len(),
-            LIST_PAGE_SIZE,
-        ) {
-            self.log_view.file_scroll_x = 0;
+        if self.log_view.file_select_down(LIST_PAGE_SIZE) {
             self.load_file_diff_for_log_file_selected();
         }
     }
@@ -1993,7 +2008,7 @@ impl App {
         match self.mode {
             ViewMode::Status => {
                 self.mode = ViewMode::Log;
-                self.reset_drill_down_state();
+                self.log_view.reset_drill_down();
                 self.log_view.commit_scroll_x = 0;
                 match self.with_repo(|repo| load_commit_log(repo, COMMIT_LOG_LIMIT)) {
                     Ok(commits) => {
@@ -2011,7 +2026,7 @@ impl App {
             }
             ViewMode::Log => {
                 self.mode = ViewMode::Status;
-                self.reset_drill_down_state();
+                self.log_view.reset_drill_down();
                 self.refresh_diff(true);
             }
         }
