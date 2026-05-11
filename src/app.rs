@@ -382,6 +382,11 @@ pub struct FileViewState {
     /// full file on every scroll keystroke (`file_view_max_scroll` is called
     /// from each j/k/PgUp/PgDn handler).
     total_lines: usize,
+    /// Byte length of `content` at the time `line_highlights` was built.
+    /// Combined with `total_lines` it lets `ensure_highlight_cache` notice
+    /// in-place content edits that happen to keep the line count constant
+    /// (line counts alone are too coarse a fingerprint).
+    cached_content_len: usize,
 }
 
 impl FileViewState {
@@ -400,7 +405,9 @@ impl FileViewState {
         syntax: &syntect::parsing::SyntaxReference,
     ) {
         let total = self.line_count();
+        let content_len = self.content.len();
         if self.line_highlights.len() == total
+            && self.cached_content_len == content_len
             && self.cached_syntax_name.as_deref() == Some(syntax.name.as_str())
         {
             return;
@@ -436,6 +443,7 @@ impl FileViewState {
         }
         self.line_highlights = out;
         self.cached_syntax_name = Some(syntax.name.clone());
+        self.cached_content_len = content_len;
     }
 }
 
@@ -549,6 +557,12 @@ pub struct DiffPane {
     /// Syntax name (`SyntaxReference::name`) used to build `line_highlights`.
     /// `None` means the cache is unbuilt or invalidated.
     pub cached_syntax_name: Option<String>,
+    /// Sum of `line.content.len()` across all hunk lines at the time
+    /// `line_highlights` was built. Pairs with the shape check so a hunk
+    /// replacement that happens to preserve the same line counts still
+    /// invalidates the cache. Belt-and-braces on top of the existing
+    /// `rebuild_diff_lower_cache` invariant.
+    cached_content_bytes: usize,
     pub scroll: usize,
     pub scroll_x: usize,
     pub search: DiffSearch,
@@ -578,7 +592,16 @@ impl DiffPane {
                 .iter()
                 .zip(self.line_highlights.iter())
                 .all(|(h, lh)| lh.len() == h.lines.len());
-        if shape_matches && self.cached_syntax_name.as_deref() == Some(syntax.name.as_str()) {
+        let content_bytes: usize = self
+            .hunks
+            .iter()
+            .flat_map(|h| h.lines.iter())
+            .map(|l| l.content.len())
+            .sum();
+        if shape_matches
+            && self.cached_content_bytes == content_bytes
+            && self.cached_syntax_name.as_deref() == Some(syntax.name.as_str())
+        {
             return;
         }
 
@@ -622,6 +645,7 @@ impl DiffPane {
         }
         self.line_highlights = out;
         self.cached_syntax_name = Some(syntax.name.clone());
+        self.cached_content_bytes = content_bytes;
     }
 }
 
