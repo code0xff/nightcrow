@@ -163,7 +163,9 @@ pub struct AgentIndicatorConfig {
     /// Must be >= 3 so the bright→normal fade transition stays observable.
     pub hot_window_secs: u64,
     /// When idle (no manual navigation for >=2s), move selection to the
-    /// freshest hot file. Required by the "AI cockpit" workflow.
+    /// freshest hot file. Opt-in: set to `true` to enable the "AI cockpit"
+    /// workflow where the file list follows whichever file was most recently
+    /// touched on disk.
     pub auto_follow: bool,
 }
 
@@ -172,7 +174,7 @@ impl Default for AgentIndicatorConfig {
         Self {
             enabled: true,
             hot_window_secs: 60,
-            auto_follow: true,
+            auto_follow: false,
         }
     }
 }
@@ -303,7 +305,7 @@ level = "verbose"
     fn agent_indicator_defaults_are_sane() {
         let cfg = AgentIndicatorConfig::default();
         assert!(cfg.enabled);
-        assert!(cfg.auto_follow);
+        assert!(!cfg.auto_follow);
         assert_eq!(cfg.hot_window_secs, 60);
     }
 

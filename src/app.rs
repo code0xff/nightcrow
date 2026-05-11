@@ -187,7 +187,10 @@ mod tests {
             snapshot,
             pending_session: None,
             repo_cache: None,
-            cfg_agent_indicator: crate::config::AgentIndicatorConfig::default(),
+            cfg_agent_indicator: crate::config::AgentIndicatorConfig {
+                auto_follow: true,
+                ..crate::config::AgentIndicatorConfig::default()
+            },
             last_manual_nav_at: None,
             auto_followed_path: None,
         }
