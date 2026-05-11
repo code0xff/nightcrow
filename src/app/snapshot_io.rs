@@ -26,7 +26,7 @@ impl App {
             .files
             .get(self.status_view.selected)
             .map(|f| f.path.clone());
-        self.status_view.files = snapshot.files;
+        self.status_view.set_files(snapshot.files);
         self.status_view.recompute_filter();
         self.tracking = snapshot.tracking;
         self.merge_hot_table(mtimes);

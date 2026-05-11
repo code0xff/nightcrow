@@ -20,12 +20,28 @@ pub struct LogView {
 }
 
 impl LogView {
+    /// Replace `commits` and invalidate the summary-width cache. See
+    /// `StatusView::set_files` for the same-length rationale.
+    pub(crate) fn set_commits(&mut self, commits: Vec<CommitEntry>) {
+        self.commits = commits;
+        self.commit_width_cache.set(None);
+    }
+
+    /// Replace `commit_files` and invalidate the file-width cache so a
+    /// same-length drill-in into a different commit doesn't reuse the
+    /// previous commit's max path width.
+    pub(crate) fn set_commit_files(&mut self, files: Vec<ChangedFile>) {
+        self.commit_files = files;
+        self.commit_files_width_cache.set(None);
+    }
+
     /// Exit drill-down so the upper pane shows the commit list again. Clears
     /// the file list and resets file-side cursors/scroll so a later drill-in
     /// starts from a clean state.
     pub fn reset_drill_down(&mut self) {
         self.drill_down = false;
         self.commit_files.clear();
+        self.commit_files_width_cache.set(None);
         self.file_selected = 0;
         self.file_scroll_x = 0;
     }

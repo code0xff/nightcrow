@@ -752,6 +752,38 @@ mod tests {
     }
 
     #[test]
+    fn snapshot_invalidates_path_width_cache_on_same_length_rename() {
+        let (snapshot, tx) = dummy_snapshot_channel();
+        let mut app = App {
+            snapshot,
+            ..app_with_files(vec!["short.rs"])
+        };
+        // Prime the width cache by reading the right-scroll bound once.
+        app.file_scroll_right();
+        // Rename to a longer path while keeping the file count constant.
+        // Length-keyed invalidation alone would miss this; the cache must
+        // clear on every `set_files` assignment.
+        tx.send(SnapshotMsg::Ok(
+            RepoSnapshot {
+                files: vec![ChangedFile::new(
+                    "a_much_longer_renamed_path.rs".to_string(),
+                    ChangeStatus::Modified,
+                )],
+                tracking: None,
+            },
+            HashMap::new(),
+        ))
+        .unwrap();
+        app.poll_snapshot();
+        // Drive enough right-scrolls to reach the new max; if the cache were
+        // stale we would clamp at the old (shorter) bound.
+        for _ in 0..20 {
+            app.file_scroll_right();
+        }
+        assert!(app.status_view.file_scroll_x >= "short.rs".chars().count());
+    }
+
+    #[test]
     fn snapshot_refresh_with_no_filter_matches_clears_stale_diff() {
         let (snapshot, tx) = dummy_snapshot_channel();
         let mut app = App {

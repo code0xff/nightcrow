@@ -88,7 +88,7 @@ impl App {
                 return;
             }
         };
-        self.log_view.commits = commits;
+        self.log_view.set_commits(commits);
         self.log_view.selected = state
             .log_selected
             .min(self.log_view.commits.len().saturating_sub(1));
@@ -112,7 +112,7 @@ impl App {
         };
         match self.with_repo(|repo| load_commit_files(repo, oid)) {
             Ok(files) => {
-                self.log_view.commit_files = files;
+                self.log_view.set_commit_files(files);
                 self.log_view.drill_down = true;
                 if self.log_view.commit_files.is_empty() {
                     self.log_view.file_selected = 0;

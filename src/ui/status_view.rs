@@ -23,13 +23,22 @@ pub struct StatusView {
     pub hot_table: HashMap<String, SystemTime>,
     /// Memoized longest-path char width, keyed by `files.len()`. Used by
     /// `upper_scroll_x_max` so the right-arrow keystroke does not walk every
-    /// path on every press. Invalidated on length change; in this app the
-    /// snapshot worker replaces `files` wholesale every tick so length-keyed
-    /// invalidation is reliable enough for scroll bounds.
+    /// path on every press. Length-keyed invalidation alone misses
+    /// same-length content swaps (e.g. renames), so mutations must go through
+    /// `set_files`, which clears this cell on every assignment.
     pub(crate) path_width_cache: Cell<Option<(usize, usize)>>,
 }
 
 impl StatusView {
+    /// Replace `files` and invalidate the path-width cache so a same-length
+    /// snapshot whose contents changed (e.g. a file rename) does not leave a
+    /// stale right-scroll bound. Length-keyed invalidation alone misses the
+    /// rename case; clearing the cell on every assignment closes that hole.
+    pub(crate) fn set_files(&mut self, files: Vec<ChangedFile>) {
+        self.files = files;
+        self.path_width_cache.set(None);
+    }
+
     /// Clear the search query and its lowercase cache together so callers
     /// can't accidentally reset only one and leave the cache stale.
     pub fn clear_search(&mut self) {

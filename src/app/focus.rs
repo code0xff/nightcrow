@@ -11,13 +11,13 @@ impl App {
                 self.log_view.commit_scroll_x = 0;
                 match self.with_repo(|repo| load_commit_log(repo, COMMIT_LOG_LIMIT)) {
                     Ok(commits) => {
-                        self.log_view.commits = commits;
+                        self.log_view.set_commits(commits);
                         self.log_view.selected = 0;
                         self.load_commit_diff_for_selected();
                     }
                     Err(e) => {
                         tracing::warn!(error = %e, "failed to load commit log");
-                        self.log_view.commits.clear();
+                        self.log_view.set_commits(Vec::new());
                         self.log_view.selected = 0;
                         self.status = Some(format!("git error: {e}"));
                     }

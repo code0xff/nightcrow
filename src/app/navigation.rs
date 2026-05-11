@@ -313,7 +313,7 @@ impl App {
         };
         match self.with_repo(|repo| load_commit_files(repo, oid)) {
             Ok(files) => {
-                self.log_view.commit_files = files;
+                self.log_view.set_commit_files(files);
                 self.log_view.file_selected = 0;
                 self.log_view.drill_down = true;
                 if self.log_view.commit_files.is_empty() {
