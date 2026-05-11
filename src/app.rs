@@ -5,6 +5,7 @@ use crate::git::diff::{
     load_commit_file_blob, load_commit_file_diff, load_commit_files, load_commit_log,
     load_file_diff, load_snapshot, load_workdir_file, parse_hunk_new_start,
 };
+use std::cell::Cell;
 use std::collections::HashMap;
 use std::path::Path;
 use std::sync::mpsc::{self, Receiver, SyncSender};
@@ -280,6 +281,12 @@ pub struct StatusView {
     /// from the latest snapshot are dropped each tick so the map stays
     /// bounded by the working-tree change count.
     pub hot_table: HashMap<String, SystemTime>,
+    /// Memoized longest-path char width, keyed by `files.len()`. Used by
+    /// `upper_scroll_x_max` so the right-arrow keystroke does not walk every
+    /// path on every press. Invalidated on length change; in this app the
+    /// snapshot worker replaces `files` wholesale every tick so length-keyed
+    /// invalidation is reliable enough for scroll bounds.
+    path_width_cache: Cell<Option<(usize, usize)>>,
 }
 
 impl StatusView {
@@ -336,6 +343,11 @@ pub struct LogView {
     pub file_selected: usize,
     pub commit_scroll_x: usize,
     pub file_scroll_x: usize,
+    /// Memoized longest-summary char width, keyed by `commits.len()`. See
+    /// `StatusView::path_width_cache` for the invalidation contract.
+    commit_width_cache: Cell<Option<(usize, usize)>>,
+    /// Memoized longest-path char width for `commit_files`.
+    commit_files_width_cache: Cell<Option<(usize, usize)>>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -1434,29 +1446,40 @@ impl App {
 
     fn upper_scroll_x_max(&self) -> usize {
         // Cap at the longest visible entry's char width so we don't drift past
-        // the last column of any rendered row.
+        // the last column of any rendered row. Each branch consults a
+        // length-keyed `Cell` cache so repeated keystrokes don't re-walk the
+        // full list (and re-count chars per item) every press.
+        fn cached_max<'a, T: 'a>(
+            cache: &Cell<Option<(usize, usize)>>,
+            items: &'a [T],
+            width_of: impl Fn(&'a T) -> usize,
+        ) -> usize {
+            let len = items.len();
+            if let Some((cached_len, cached_max)) = cache.get()
+                && cached_len == len
+            {
+                return cached_max;
+            }
+            let max = items.iter().map(width_of).max().unwrap_or(0);
+            cache.set(Some((len, max)));
+            max
+        }
         match self.mode {
-            ViewMode::Status => self
-                .status_view
-                .files
-                .iter()
-                .map(|f| f.path.chars().count())
-                .max()
-                .unwrap_or(0),
-            ViewMode::Log if self.log_view.drill_down => self
-                .log_view
-                .commit_files
-                .iter()
-                .map(|f| f.path.chars().count())
-                .max()
-                .unwrap_or(0),
-            ViewMode::Log => self
-                .log_view
-                .commits
-                .iter()
-                .map(|c| c.summary.chars().count())
-                .max()
-                .unwrap_or(0),
+            ViewMode::Status => cached_max(
+                &self.status_view.path_width_cache,
+                &self.status_view.files,
+                |f| f.path.chars().count(),
+            ),
+            ViewMode::Log if self.log_view.drill_down => cached_max(
+                &self.log_view.commit_files_width_cache,
+                &self.log_view.commit_files,
+                |f| f.path.chars().count(),
+            ),
+            ViewMode::Log => cached_max(
+                &self.log_view.commit_width_cache,
+                &self.log_view.commits,
+                |c| c.summary.chars().count(),
+            ),
         }
     }
 
