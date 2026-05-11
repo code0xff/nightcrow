@@ -104,7 +104,11 @@ fn nearest_match_index(matches: &[usize], scroll: usize) -> usize {
             } else {
                 let prev = matches[i - 1];
                 let next = matches[i];
-                if scroll - prev <= next - scroll { i - 1 } else { i }
+                if scroll - prev <= next - scroll {
+                    i - 1
+                } else {
+                    i
+                }
             }
         }
     }
@@ -266,10 +270,7 @@ impl DiffPane {
             return;
         }
         if scroll_to_match {
-            self.search.cursor = self
-                .search
-                .cursor
-                .min(self.search.matches.len() - 1);
+            self.search.cursor = self.search.cursor.min(self.search.matches.len() - 1);
             self.scroll_to_match();
         } else {
             self.search.cursor = nearest_match_index(&self.search.matches, self.scroll);
