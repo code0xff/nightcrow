@@ -9,8 +9,6 @@ mod session_io;
 mod snapshot_io;
 mod terminal_ctrl;
 
-#[cfg(test)]
-pub(crate) use diff_load::DiffApply;
 pub use crate::runtime::snapshot::{SnapshotChannel, SnapshotMsg};
 #[cfg(test)]
 pub(crate) use crate::runtime::terminal::strip_escape_sequences;
@@ -19,6 +17,8 @@ pub use crate::ui::diff_pane::{DiffPane, DiffPaneView};
 pub use crate::ui::file_view::{FileViewKey, FileViewState};
 pub use crate::ui::log_view::LogView;
 pub use crate::ui::status_view::{RepoInput, StatusView};
+#[cfg(test)]
+pub(crate) use diff_load::DiffApply;
 use std::time::Instant;
 
 pub(crate) const SCROLLBACK_LINES: usize = 1000;
@@ -66,8 +66,6 @@ pub enum Focus {
     DiffViewer,
     Terminal,
 }
-
-
 
 pub struct App {
     pub mode: ViewMode,
