@@ -6,9 +6,10 @@ use crate::git::diff::{
     load_file_diff, load_snapshot, load_workdir_file, parse_hunk_new_start,
 };
 use std::collections::HashMap;
+use std::path::Path;
 use std::sync::mpsc::{self, Receiver, SyncSender};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant, SystemTime};
 
 const SCROLLBACK_LINES: usize = 1000;
 const LIST_PAGE_SIZE: usize = 10;
@@ -227,6 +228,12 @@ pub struct StatusView {
     /// Recomputed only when `files` or the query changes (see
     /// `App::recompute_status_filter`). Read-only for renderers.
     filter_cache: Vec<usize>,
+    /// Per-file mtime observed at the latest snapshot, keyed by `path`.
+    /// Used by the agent-aware focus indicator to decide whether a file
+    /// is currently "hot" (recently touched). Entries for paths missing
+    /// from the latest snapshot are dropped each tick so the map stays
+    /// bounded by the working-tree change count.
+    pub hot_table: HashMap<String, SystemTime>,
 }
 
 impl StatusView {
@@ -579,6 +586,14 @@ pub struct App {
     /// in `change_repo`. The snapshot worker thread keeps its own handle —
     /// `git2::Repository` is `!Send` and cannot be shared.
     repo_cache: Option<git2::Repository>,
+    pub cfg_agent_indicator: crate::config::AgentIndicatorConfig,
+    /// Wall-clock instant of the most recent user-driven selection change in
+    /// the file list. `None` means "idle since boot". Used to gate
+    /// auto-follow so an active user is never hijacked.
+    pub last_manual_nav_at: Option<Instant>,
+    /// Path the auto-follow last steered selection to. Prevents repeatedly
+    /// re-asserting selection on the same already-hot-and-selected file.
+    pub auto_followed_path: Option<String>,
 }
 
 impl App {
@@ -602,6 +617,9 @@ impl App {
             snapshot,
             pending_session: None,
             repo_cache: None,
+            cfg_agent_indicator: crate::config::AgentIndicatorConfig::default(),
+            last_manual_nav_at: None,
+            auto_followed_path: None,
         };
 
         app.ensure_initial_terminal();
@@ -623,42 +641,93 @@ impl App {
         while let Ok(msg) = self.snapshot.try_recv() {
             match msg {
                 SnapshotMsg::Ok(snapshot) => {
-                    let previous_path = self
-                        .status_view
-                        .files
-                        .get(self.status_view.selected)
-                        .map(|f| f.path.clone());
-                    self.status_view.files = snapshot.files;
-                    self.status_view.recompute_filter();
-                    self.tracking = snapshot.tracking;
-
-                    self.restore_selection(previous_path.as_deref());
-                    self.sync_selection_to_filter();
-                    let selected_path = self.selected_filtered_status_path();
-                    let selected_path_changed = selected_path != previous_path;
-                    if self.mode == ViewMode::Status {
-                        if selected_path.is_some() {
-                            self.refresh_diff(selected_path_changed);
-                        } else {
-                            self.clear_diff_state();
-                        }
-                    }
-                    if self
-                        .status
-                        .as_deref()
-                        .is_some_and(|msg| msg.starts_with("git error:"))
-                    {
-                        self.status = None;
-                    }
-                    if let Some(state) = self.pending_session.take() {
-                        self.restore_session(&state);
-                    }
+                    let mtimes = self.collect_mtimes(&snapshot);
+                    self.ingest_snapshot(snapshot, mtimes);
                 }
                 SnapshotMsg::Err(e) => {
                     tracing::warn!(error = %e, "git snapshot failed");
                     self.status = Some(format!("git error: {e}"));
                 }
             }
+        }
+    }
+
+    /// Read mtimes for every file in the snapshot. Files whose metadata
+    /// cannot be read (e.g. deleted between snapshot and stat) are simply
+    /// omitted; absence in the returned map drops them from `hot_table`.
+    fn collect_mtimes(&self, snapshot: &RepoSnapshot) -> HashMap<String, SystemTime> {
+        let mut out = HashMap::with_capacity(snapshot.files.len());
+        let repo_root = Path::new(&self.repo_path);
+        for f in &snapshot.files {
+            if let Ok(meta) = std::fs::metadata(repo_root.join(&f.path))
+                && let Ok(mtime) = meta.modified()
+            {
+                out.insert(f.path.clone(), mtime);
+            }
+        }
+        out
+    }
+
+    /// Apply a snapshot to app state. Split out from `poll_snapshot` so
+    /// tests can drive the merge/auto-follow logic with deterministic
+    /// mtimes instead of booting the background worker.
+    pub fn ingest_snapshot(
+        &mut self,
+        snapshot: RepoSnapshot,
+        mtimes: HashMap<String, SystemTime>,
+    ) {
+        let previous_path = self
+            .status_view
+            .files
+            .get(self.status_view.selected)
+            .map(|f| f.path.clone());
+        self.status_view.files = snapshot.files;
+        self.status_view.recompute_filter();
+        self.tracking = snapshot.tracking;
+        self.merge_hot_table(mtimes);
+
+        self.restore_selection(previous_path.as_deref());
+        self.sync_selection_to_filter();
+        let auto_followed = self.try_auto_follow();
+        let selected_path = self.selected_filtered_status_path();
+        let selected_path_changed = auto_followed || selected_path != previous_path;
+        if self.mode == ViewMode::Status {
+            if selected_path.is_some() {
+                self.refresh_diff(selected_path_changed);
+            } else {
+                self.clear_diff_state();
+            }
+        }
+        if self
+            .status
+            .as_deref()
+            .is_some_and(|msg| msg.starts_with("git error:"))
+        {
+            self.status = None;
+        }
+        if let Some(state) = self.pending_session.take() {
+            self.restore_session(&state);
+        }
+    }
+
+    /// Update `hot_table` with the latest observed mtimes. Entries for
+    /// paths missing from the new snapshot are dropped; entries with a
+    /// strictly newer mtime are replaced (so a file edited twice within
+    /// the hot window re-arms its fade).
+    fn merge_hot_table(&mut self, mtimes: HashMap<String, SystemTime>) {
+        self.status_view
+            .hot_table
+            .retain(|p, _| mtimes.contains_key(p));
+        for (path, new_mtime) in mtimes {
+            self.status_view
+                .hot_table
+                .entry(path)
+                .and_modify(|stored| {
+                    if new_mtime > *stored {
+                        *stored = new_mtime;
+                    }
+                })
+                .or_insert(new_mtime);
         }
     }
 
@@ -1510,6 +1579,7 @@ impl App {
     pub fn select_up(&mut self) {
         match self.focus {
             Focus::FileList => {
+                self.mark_user_navigated();
                 if self.navigate_log_list(Self::log_select_up, Self::log_file_select_up) {
                     return;
                 }
@@ -1529,6 +1599,7 @@ impl App {
     pub fn select_down(&mut self) {
         match self.focus {
             Focus::FileList => {
+                self.mark_user_navigated();
                 if self.navigate_log_list(Self::log_select_down, Self::log_file_select_down) {
                     return;
                 }
@@ -1552,6 +1623,7 @@ impl App {
     pub fn page_up(&mut self) {
         match self.focus {
             Focus::FileList => {
+                self.mark_user_navigated();
                 if self.navigate_log_list(Self::log_page_up, Self::log_file_page_up) {
                     return;
                 }
@@ -1571,6 +1643,7 @@ impl App {
     pub fn page_down(&mut self) {
         match self.focus {
             Focus::FileList => {
+                self.mark_user_navigated();
                 if self.navigate_log_list(Self::log_page_down, Self::log_file_page_down) {
                     return;
                 }
@@ -1589,6 +1662,90 @@ impl App {
             }
             Focus::Terminal => {}
         }
+    }
+
+    /// Record that the user just moved selection so auto-follow holds off
+    /// for a short grace period. Also clears the "we steered to this path"
+    /// memory — the user has taken back control.
+    fn mark_user_navigated(&mut self) {
+        self.last_manual_nav_at = Some(Instant::now());
+        self.auto_followed_path = None;
+    }
+
+    /// Decide whether the file list should auto-follow to a new hot file,
+    /// and perform the move if so. Returns `true` when selection changed.
+    /// Caller is responsible for refreshing the diff afterward.
+    fn try_auto_follow(&mut self) -> bool {
+        if !self.cfg_agent_indicator.enabled || !self.cfg_agent_indicator.auto_follow {
+            return false;
+        }
+        if self.focus != Focus::FileList || self.mode != ViewMode::Status {
+            return false;
+        }
+        let idle = match self.last_manual_nav_at {
+            None => true,
+            Some(t) => t.elapsed() >= Duration::from_secs(2),
+        };
+        if !idle {
+            return false;
+        }
+        let Some(target_path) = self.freshest_hot_path() else {
+            return false;
+        };
+        let current_path = self.selected_filtered_status_path();
+        if current_path.as_deref() == Some(target_path.as_str()) {
+            return false;
+        }
+        if self.auto_followed_path.as_deref() == Some(target_path.as_str()) {
+            return false;
+        }
+        let moved = self.select_status_file_by_path(&target_path);
+        if moved {
+            self.auto_followed_path = Some(target_path);
+        }
+        moved
+    }
+
+    /// Path with the newest mtime among files that are still inside the
+    /// configured hot window and pass the current filter. Returns `None`
+    /// when no qualifying file exists. Tiebreak by path for stability.
+    fn freshest_hot_path(&self) -> Option<String> {
+        let now = SystemTime::now();
+        let window = Duration::from_secs(self.cfg_agent_indicator.hot_window_secs);
+        let filtered: std::collections::HashSet<&str> = self
+            .filtered_indices()
+            .iter()
+            .filter_map(|&i| self.status_view.files.get(i).map(|f| f.path.as_str()))
+            .collect();
+        self.status_view
+            .hot_table
+            .iter()
+            .filter(|(p, mtime)| {
+                filtered.contains(p.as_str())
+                    && now
+                        .duration_since(**mtime)
+                        .map(|d| d <= window)
+                        .unwrap_or(true)
+            })
+            .max_by(|(pa, ma), (pb, mb)| ma.cmp(mb).then_with(|| pb.cmp(pa)))
+            .map(|(p, _)| p.clone())
+    }
+
+    /// Move the selection cursor to `path` if it exists in the unfiltered
+    /// status list. Returns whether selection actually changed.
+    fn select_status_file_by_path(&mut self, path: &str) -> bool {
+        if let Some(idx) = self
+            .status_view
+            .files
+            .iter()
+            .position(|f| f.path == path)
+            && self.status_view.selected != idx
+        {
+            self.status_view.selected = idx;
+            self.status_view.file_scroll_x = 0;
+            return true;
+        }
+        false
     }
 
     fn load_commit_diff_for_selected(&mut self) {
@@ -2051,6 +2208,9 @@ mod tests {
             snapshot,
             pending_session: None,
             repo_cache: None,
+            cfg_agent_indicator: crate::config::AgentIndicatorConfig::default(),
+            last_manual_nav_at: None,
+            auto_followed_path: None,
         }
     }
 
@@ -2876,5 +3036,197 @@ mod tests {
         assert!(app.diff.hunks.is_empty());
         assert_eq!(app.diff.view, DiffPaneView::Diff);
         assert!(app.diff.file_view.key.is_none());
+    }
+
+    fn snapshot_with(paths: &[&str]) -> RepoSnapshot {
+        RepoSnapshot {
+            files: paths
+                .iter()
+                .map(|p| ChangedFile::new((*p).to_string(), ChangeStatus::Modified))
+                .collect(),
+            tracking: None,
+        }
+    }
+
+    #[test]
+    fn ingest_snapshot_populates_hot_table_from_mtimes() {
+        let mut app = app_with_files(vec![]);
+        let snap = snapshot_with(&["a.rs", "b.rs"]);
+        let now = SystemTime::now();
+        let mtimes = HashMap::from([
+            ("a.rs".to_string(), now),
+            ("b.rs".to_string(), now - Duration::from_secs(5)),
+        ]);
+
+        app.ingest_snapshot(snap, mtimes);
+
+        assert_eq!(app.status_view.hot_table.len(), 2);
+        assert!(app.status_view.hot_table.contains_key("a.rs"));
+        assert!(app.status_view.hot_table.contains_key("b.rs"));
+    }
+
+    #[test]
+    fn merge_hot_table_drops_paths_missing_from_new_snapshot() {
+        let mut app = app_with_files(vec![]);
+        let now = SystemTime::now();
+
+        app.ingest_snapshot(
+            snapshot_with(&["a.rs"]),
+            HashMap::from([("a.rs".to_string(), now)]),
+        );
+        assert!(app.status_view.hot_table.contains_key("a.rs"));
+
+        app.ingest_snapshot(snapshot_with(&["b.rs"]), HashMap::new());
+        assert!(!app.status_view.hot_table.contains_key("a.rs"));
+        assert!(!app.status_view.hot_table.contains_key("b.rs"));
+    }
+
+    #[test]
+    fn merge_hot_table_replaces_only_when_newer() {
+        let mut app = app_with_files(vec![]);
+        let old = SystemTime::UNIX_EPOCH + Duration::from_secs(100);
+        let newer = SystemTime::UNIX_EPOCH + Duration::from_secs(200);
+
+        app.ingest_snapshot(
+            snapshot_with(&["a.rs"]),
+            HashMap::from([("a.rs".to_string(), newer)]),
+        );
+        app.ingest_snapshot(
+            snapshot_with(&["a.rs"]),
+            HashMap::from([("a.rs".to_string(), old)]),
+        );
+
+        // The earlier mtime must not overwrite the newer observation; a
+        // rename-from-stash scenario can resurrect older mtimes for the
+        // same path and would otherwise demote a fresh edit to cool.
+        assert_eq!(app.status_view.hot_table.get("a.rs"), Some(&newer));
+    }
+
+    #[test]
+    fn auto_follow_selects_freshest_hot_file_when_idle() {
+        let mut app = app_with_files(vec!["a.rs", "b.rs"]);
+        app.status_view.selected = 0;
+        let now = SystemTime::now();
+
+        app.ingest_snapshot(
+            snapshot_with(&["a.rs", "b.rs"]),
+            HashMap::from([
+                ("a.rs".to_string(), now - Duration::from_secs(5)),
+                ("b.rs".to_string(), now),
+            ]),
+        );
+
+        // b.rs is fresher and the user is idle (last_manual_nav_at = None),
+        // so selection must move from a.rs to b.rs.
+        assert_eq!(app.status_view.selected, 1);
+        assert_eq!(app.auto_followed_path.as_deref(), Some("b.rs"));
+    }
+
+    #[test]
+    fn auto_follow_skipped_when_user_recently_navigated() {
+        let mut app = app_with_files(vec!["a.rs", "b.rs"]);
+        app.status_view.selected = 0;
+        app.last_manual_nav_at = Some(Instant::now());
+        let now = SystemTime::now();
+
+        app.ingest_snapshot(
+            snapshot_with(&["a.rs", "b.rs"]),
+            HashMap::from([("b.rs".to_string(), now)]),
+        );
+
+        assert_eq!(app.status_view.selected, 0);
+        assert!(app.auto_followed_path.is_none());
+    }
+
+    #[test]
+    fn auto_follow_skipped_when_focus_not_filelist() {
+        let mut app = app_with_files(vec!["a.rs", "b.rs"]);
+        app.focus = Focus::DiffViewer;
+        app.status_view.selected = 0;
+        let now = SystemTime::now();
+
+        app.ingest_snapshot(
+            snapshot_with(&["a.rs", "b.rs"]),
+            HashMap::from([("b.rs".to_string(), now)]),
+        );
+
+        assert_eq!(app.status_view.selected, 0);
+        assert!(app.auto_followed_path.is_none());
+    }
+
+    #[test]
+    fn auto_follow_skipped_when_disabled_in_config() {
+        let mut app = app_with_files(vec!["a.rs", "b.rs"]);
+        app.cfg_agent_indicator.auto_follow = false;
+        app.status_view.selected = 0;
+        let now = SystemTime::now();
+
+        app.ingest_snapshot(
+            snapshot_with(&["a.rs", "b.rs"]),
+            HashMap::from([("b.rs".to_string(), now)]),
+        );
+
+        assert_eq!(app.status_view.selected, 0);
+    }
+
+    #[test]
+    fn auto_follow_skipped_when_freshest_is_already_selected() {
+        let mut app = app_with_files(vec!["a.rs", "b.rs"]);
+        app.status_view.selected = 1;
+        let now = SystemTime::now();
+
+        app.ingest_snapshot(
+            snapshot_with(&["a.rs", "b.rs"]),
+            HashMap::from([("b.rs".to_string(), now)]),
+        );
+
+        // Selection already points to b.rs — no need to steer or arm the
+        // "already followed here" guard.
+        assert_eq!(app.status_view.selected, 1);
+        assert!(app.auto_followed_path.is_none());
+    }
+
+    #[test]
+    fn select_down_marks_user_active_when_focus_is_filelist() {
+        let mut app = app_with_files(vec!["a.rs", "b.rs"]);
+        app.focus = Focus::FileList;
+        app.auto_followed_path = Some("a.rs".to_string());
+
+        app.select_down();
+
+        assert!(app.last_manual_nav_at.is_some());
+        assert!(app.auto_followed_path.is_none());
+    }
+
+    #[test]
+    fn select_down_does_not_mark_when_focus_is_diff() {
+        let mut app = app_with_files(vec!["a.rs"]);
+        app.focus = Focus::DiffViewer;
+
+        app.select_down();
+
+        assert!(app.last_manual_nav_at.is_none());
+    }
+
+    #[test]
+    fn auto_follow_respects_search_filter() {
+        let mut app = app_with_files(vec!["alpha.rs", "beta.rs"]);
+        app.status_view.search_query = "alpha".into();
+        app.status_view.search_query_lower = "alpha".into();
+        app.status_view.recompute_filter();
+        app.status_view.selected = 0; // alpha.rs (the only filtered entry)
+        let now = SystemTime::now();
+
+        app.ingest_snapshot(
+            snapshot_with(&["alpha.rs", "beta.rs"]),
+            HashMap::from([
+                ("alpha.rs".to_string(), now - Duration::from_secs(5)),
+                ("beta.rs".to_string(), now),
+            ]),
+        );
+
+        // beta.rs is fresher but filtered out, so auto-follow must not
+        // jump to a row the user cannot even see.
+        assert_eq!(app.status_view.selected, 0);
     }
 }

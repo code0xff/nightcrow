@@ -111,6 +111,7 @@ fn init_app(repo_path: &str, cfg: &config::Config) -> App {
     let saved_session = session::load_session(repo_path);
     let mut app = App::new(repo_path.to_string(), cfg.log.prompt_log);
     app.set_accent_index(cfg.theme.preset_index());
+    app.cfg_agent_indicator = cfg.agent_indicator.clone();
     if let Some(state) = saved_session {
         app.set_accent_index(state.accent_idx);
         app.set_pending_session(state);

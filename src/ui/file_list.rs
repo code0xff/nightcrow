@@ -2,10 +2,37 @@ use crate::app::{App, Focus};
 use ratatui::{
     Frame,
     layout::{Constraint, Direction, Layout, Rect},
-    style::{Color, Style},
+    style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::ListItem,
 };
+use std::time::{Duration, SystemTime};
+
+/// Stages of the agent-aware focus indicator fade. `Cool` means the file is
+/// outside the configured hot window and renders identically to the legacy
+/// (pre-feature) row.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum HotStage {
+    Fresh,
+    Warm,
+    Cool,
+}
+
+/// Bucket a single mtime against `now` and the user's hot window. The
+/// "fresh" threshold is intentionally smaller than typical filesystem
+/// mtime granularity (1s on FAT/older ext4) × 3 so the transition out of
+/// bold remains observable. Negative deltas (clock skew, mtime in the
+/// future) saturate to `Fresh` — the conservative "just touched" choice.
+fn classify_hot(mtime: SystemTime, now: SystemTime, hot_window: Duration) -> HotStage {
+    let age = now.duration_since(mtime).unwrap_or(Duration::ZERO);
+    if age >= hot_window {
+        HotStage::Cool
+    } else if age < Duration::from_secs(3) {
+        HotStage::Fresh
+    } else {
+        HotStage::Warm
+    }
+}
 
 pub fn render(frame: &mut Frame, app: &App, area: Rect, accent: Color) {
     let focused = app.focus == Focus::FileList;
@@ -26,6 +53,10 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect, accent: Color) {
     let filtered_indices = app.filtered_indices();
     let match_count = filtered_indices.len();
 
+    let indicator_enabled = app.cfg_agent_indicator.enabled;
+    let hot_window = Duration::from_secs(app.cfg_agent_indicator.hot_window_secs);
+    let now = SystemTime::now();
+
     let items: Vec<ListItem> = filtered_indices
         .iter()
         .map(|&idx| {
@@ -43,10 +74,39 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect, accent: Color) {
                     .unwrap_or(f.path.len());
                 &f.path[byte_off..]
             };
-            let line = Line::from(vec![
-                Span::styled(format!("{symbol} "), Style::default().fg(color)),
-                Span::raw(path),
-            ]);
+
+            let stage = if indicator_enabled {
+                app.status_view
+                    .hot_table
+                    .get(&f.path)
+                    .map(|m| classify_hot(*m, now, hot_window))
+                    .unwrap_or(HotStage::Cool)
+            } else {
+                HotStage::Cool
+            };
+
+            let line = match stage {
+                HotStage::Cool => Line::from(vec![
+                    Span::styled(format!("{symbol} "), Style::default().fg(color)),
+                    Span::raw(path),
+                ]),
+                HotStage::Fresh => Line::from(vec![
+                    Span::styled(
+                        "★ ",
+                        Style::default().fg(accent).add_modifier(Modifier::BOLD),
+                    ),
+                    Span::styled(format!("{symbol} "), Style::default().fg(color)),
+                    Span::styled(
+                        path.to_string(),
+                        Style::default().fg(accent).add_modifier(Modifier::BOLD),
+                    ),
+                ]),
+                HotStage::Warm => Line::from(vec![
+                    Span::styled("★ ", Style::default().fg(accent)),
+                    Span::styled(format!("{symbol} "), Style::default().fg(color)),
+                    Span::styled(path.to_string(), Style::default().fg(accent)),
+                ]),
+            };
             ListItem::new(line)
         })
         .collect();
@@ -72,5 +132,41 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect, accent: Color) {
             sa,
             accent,
         );
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn classify_hot_buckets_fresh_warm_cool() {
+        let window = Duration::from_secs(10);
+        let now = SystemTime::UNIX_EPOCH + Duration::from_secs(100);
+
+        let fresh = SystemTime::UNIX_EPOCH + Duration::from_secs(99);
+        assert_eq!(classify_hot(fresh, now, window), HotStage::Fresh);
+
+        let warm = SystemTime::UNIX_EPOCH + Duration::from_secs(95);
+        assert_eq!(classify_hot(warm, now, window), HotStage::Warm);
+
+        let cool = SystemTime::UNIX_EPOCH + Duration::from_secs(80);
+        assert_eq!(classify_hot(cool, now, window), HotStage::Cool);
+    }
+
+    #[test]
+    fn classify_hot_clamps_future_mtime_to_fresh() {
+        let window = Duration::from_secs(10);
+        let now = SystemTime::UNIX_EPOCH + Duration::from_secs(100);
+        let future = SystemTime::UNIX_EPOCH + Duration::from_secs(110);
+        assert_eq!(classify_hot(future, now, window), HotStage::Fresh);
+    }
+
+    #[test]
+    fn classify_hot_window_boundary_is_cool() {
+        let window = Duration::from_secs(10);
+        let now = SystemTime::UNIX_EPOCH + Duration::from_secs(100);
+        let on_boundary = SystemTime::UNIX_EPOCH + Duration::from_secs(90);
+        assert_eq!(classify_hot(on_boundary, now, window), HotStage::Cool);
     }
 }

@@ -87,6 +87,12 @@ nightcrow --repo ~/projects/myapp
 
 While scrolled, the terminal border title shows `[SCROLL — shift+pgdn: down | input: live]`. Keyboard input is still forwarded to the running process; `Shift+PgDn` to scroll back to the bottom.
 
+## Agent-aware focus indicator
+
+Files modified within the last `hot_window_secs` seconds are tagged with `★ ` in the file list and rendered in the accent color (bold for the first 3 seconds, normal until the window expires). When the file list is in focus and you have not navigated in the last 2 seconds, the selection auto-follows to the freshest hot file so the diff updates as the agent works. Manual navigation (`j` / `k` / arrows / PgUp / PgDn) immediately suppresses auto-follow until you go idle again.
+
+Configurable under `[agent_indicator]` (see below).
+
 ## Session persistence
 
 nightcrow saves the current state on exit and restores it on the next launch for the same repo — focus position, scroll offset, active terminal pane, commit log view mode, and accent color. The state file is `.nightcrow/session.json` inside the repo directory.
@@ -111,6 +117,11 @@ max_size_mb = 10          # used when rotation = "size"
 max_days = 7              # delete logs older than N days (0 = keep forever)
 level = "info"            # "error" | "warn" | "info" | "debug" | "trace"
 prompt_log = false        # record terminal prompt input line by line
+
+[agent_indicator]
+enabled = true            # show the ★ marker on recently-touched files
+hot_window_secs = 10      # seconds within which a file stays hot (3–3600)
+auto_follow = true        # jump selection to the freshest hot file when idle
 ```
 
 ## License

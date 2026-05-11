@@ -8,6 +8,7 @@ pub struct Config {
     pub layout: LayoutConfig,
     pub log: LogConfig,
     pub theme: ThemeConfig,
+    pub agent_indicator: AgentIndicatorConfig,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -153,6 +154,29 @@ impl Default for LayoutConfig {
     }
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct AgentIndicatorConfig {
+    /// Show the "recently touched" marker next to files in the status panel.
+    pub enabled: bool,
+    /// Seconds within which a file is considered hot after its mtime.
+    /// Must be >= 3 so the bright→normal fade transition stays observable.
+    pub hot_window_secs: u64,
+    /// When idle (no manual navigation for >=2s), move selection to the
+    /// freshest hot file. Required by the "AI cockpit" workflow.
+    pub auto_follow: bool,
+}
+
+impl Default for AgentIndicatorConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            hot_window_secs: 10,
+            auto_follow: true,
+        }
+    }
+}
+
 fn default_config_path() -> Option<PathBuf> {
     dirs::config_dir().map(|d| d.join("nightcrow").join("config.toml"))
 }
@@ -179,6 +203,11 @@ fn validate_config(cfg: &Config) -> Result<()> {
     anyhow::ensure!(
         cfg.layout.file_list_pct >= 1 && cfg.layout.file_list_pct <= 99,
         "layout.file_list_pct must be between 1 and 99"
+    );
+    anyhow::ensure!(
+        cfg.agent_indicator.hot_window_secs >= 3
+            && cfg.agent_indicator.hot_window_secs <= 3600,
+        "agent_indicator.hot_window_secs must be between 3 and 3600"
     );
     Ok(())
 }
@@ -269,6 +298,42 @@ level = "verbose"
 
         assert_eq!(cfg.name, Accent::Yellow);
         assert_eq!(cfg.preset_index(), 0);
+    }
+
+    #[test]
+    fn agent_indicator_defaults_are_sane() {
+        let cfg = AgentIndicatorConfig::default();
+        assert!(cfg.enabled);
+        assert!(cfg.auto_follow);
+        assert_eq!(cfg.hot_window_secs, 10);
+    }
+
+    #[test]
+    fn agent_indicator_parses_from_toml() {
+        let toml = r#"
+[agent_indicator]
+enabled = false
+hot_window_secs = 30
+auto_follow = false
+"#;
+        let cfg: Config = toml::from_str(toml).unwrap();
+        assert!(!cfg.agent_indicator.enabled);
+        assert!(!cfg.agent_indicator.auto_follow);
+        assert_eq!(cfg.agent_indicator.hot_window_secs, 30);
+    }
+
+    #[test]
+    fn agent_indicator_validation_rejects_too_small_window() {
+        let mut cfg = Config::default();
+        cfg.agent_indicator.hot_window_secs = 2;
+        assert!(validate_config(&cfg).is_err());
+    }
+
+    #[test]
+    fn agent_indicator_validation_rejects_too_large_window() {
+        let mut cfg = Config::default();
+        cfg.agent_indicator.hot_window_secs = 3601;
+        assert!(validate_config(&cfg).is_err());
     }
 
     #[test]
