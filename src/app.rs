@@ -792,6 +792,10 @@ impl App {
         self.status = None;
         self.tracking = None;
         self.focus = Focus::FileList;
+        // Drop transient view modes — the previous repo's diff zoom or terminal
+        // fullscreen has no meaning under the new working tree.
+        self.diff.fullscreen = false;
+        self.terminal.fullscreen = false;
     }
 
     pub fn start_repo_input(&mut self) {
@@ -836,6 +840,10 @@ impl App {
         if idx < self.terminal.panes.len() {
             self.terminal.active = idx;
             self.focus = Focus::Terminal;
+            // Pressing F1..=F9 is a request to interact with a terminal pane;
+            // dropping diff fullscreen here keeps focus, render, and hints in
+            // sync (otherwise the diff stays zoomed while focus moves away).
+            self.diff.fullscreen = false;
         }
     }
 
@@ -2243,6 +2251,23 @@ mod tests {
     fn switch_pane_ignores_out_of_range() {
         let mut app = app_with_files(vec![]);
         app.switch_pane(5);
+        assert_eq!(app.terminal.active, 0);
+    }
+
+    #[test]
+    fn switch_pane_exits_diff_fullscreen() {
+        let mut app = app_with_files(vec![]);
+        app.terminal.panes = vec![PaneInfo {
+            id: 1,
+            title: "shell".into(),
+        }];
+        app.toggle_diff_fullscreen();
+        assert!(app.diff.fullscreen);
+
+        app.switch_pane(0);
+
+        assert!(!app.diff.fullscreen);
+        assert_eq!(app.focus, Focus::Terminal);
         assert_eq!(app.terminal.active, 0);
     }
 
