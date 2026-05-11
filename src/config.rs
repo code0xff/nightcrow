@@ -130,7 +130,7 @@ impl Default for LogConfig {
             rotation: LogRotation::default(),
             max_size_mb: 10,
             max_days: 7,
-            prompt_log: false,
+            prompt_log: true,
             level: LogLevel::default(),
         }
     }
@@ -287,7 +287,7 @@ level = "verbose"
     fn log_config_defaults_are_sane() {
         let cfg = LogConfig::default();
         assert!(cfg.enabled);
-        assert!(!cfg.prompt_log);
+        assert!(cfg.prompt_log);
         assert_eq!(cfg.rotation, LogRotation::Daily);
         assert_eq!(cfg.level, LogLevel::Info);
         assert_eq!(cfg.max_days, 7);
