@@ -11,7 +11,7 @@ pub fn render(frame: &mut Frame, app: &mut App, area: Rect, accent: Color) {
     let focused = app.focus == Focus::Terminal;
     let border_style = super::focused_border_style(focused, accent);
 
-    let title = if app.is_terminal_scrolled() {
+    let title = if app.terminal.is_scrolled() {
         " Terminal [SCROLL — shift+pgdn: down | input: live] "
     } else {
         " Terminal "
@@ -36,7 +36,8 @@ pub fn render(frame: &mut Frame, app: &mut App, area: Rect, accent: Color) {
 
     // Update stored terminal size so App can resize panes if needed
     let content_area = chunks[1];
-    app.resize_terminal_panes(content_area.height, content_area.width);
+    app.terminal
+        .resize_panes(content_area.height, content_area.width);
 
     // ── Tab bar ──────────────────────────────────────────────
     let tab_spans: Vec<Span> = if app.terminal.panes.is_empty() {
@@ -65,7 +66,7 @@ pub fn render(frame: &mut Frame, app: &mut App, area: Rect, accent: Color) {
     frame.render_widget(Paragraph::new(Line::from(tab_spans)), chunks[0]);
 
     // ── Terminal screen ───────────────────────────────────────
-    app.sync_terminal_scroll();
+    app.terminal.sync_scroll();
     let screen_lines = build_screen_lines(app, content_area.height, content_area.width);
     frame.render_widget(Paragraph::new(screen_lines), content_area);
     render_cursor(frame, app, content_area);
@@ -131,7 +132,7 @@ fn render_cursor(frame: &mut Frame, app: &App, area: Rect) {
     if app.focus != Focus::Terminal {
         return;
     }
-    if app.is_terminal_scrolled() {
+    if app.terminal.is_scrolled() {
         return;
     }
 

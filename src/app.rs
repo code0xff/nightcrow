@@ -255,6 +255,110 @@ pub struct TerminalState {
 }
 
 impl TerminalState {
+    pub fn active_pane_id(&self) -> Option<PaneId> {
+        self.panes.get(self.active).map(|p| p.id)
+    }
+
+    pub fn scroll_up(&mut self, lines: usize) {
+        if lines == 0 {
+            return;
+        }
+        if let Some(id) = self.active_pane_id() {
+            let offset = self.scroll.entry(id).or_insert(0);
+            *offset = offset.saturating_add(lines);
+        }
+    }
+
+    pub fn scroll_down(&mut self, lines: usize) {
+        if lines == 0 {
+            return;
+        }
+        if let Some(id) = self.active_pane_id()
+            && let Some(entry) = self.scroll.get_mut(&id)
+        {
+            *entry = entry.saturating_sub(lines);
+            if *entry == 0 {
+                self.scroll.remove(&id);
+            }
+        }
+    }
+
+    pub fn is_scrolled(&self) -> bool {
+        self.active_pane_id()
+            .and_then(|id| self.scroll.get(&id))
+            .is_some_and(|&v| v > 0)
+    }
+
+    pub fn sync_scroll(&mut self) {
+        let Some(id) = self.active_pane_id() else {
+            return;
+        };
+        let offset = self.scroll.get(&id).copied().unwrap_or(0);
+        let actual = match self.parsers.get_mut(&id) {
+            Some(parser) => {
+                // vt100 clamps the offset to the actual scrollback
+                // buffer size internally, so we can pass the full request
+                // through and read back what was applied.
+                parser.screen_mut().set_scrollback(offset);
+                parser.screen().scrollback()
+            }
+            None => return,
+        };
+        if actual == 0 {
+            self.scroll.remove(&id);
+        } else {
+            self.scroll.insert(id, actual);
+        }
+    }
+
+    fn buffer_prompt_input(&mut self, pane_id: PaneId, data: &[u8]) {
+        let text = strip_escape_sequences(data);
+        let buf = self.prompt_bufs.entry(pane_id).or_default();
+        for ch in text.chars() {
+            if ch == '\r' || ch == '\n' {
+                if !buf.is_empty() {
+                    tracing::info!(target: "prompt", pane = pane_id, text = %buf);
+                    buf.clear();
+                }
+            } else {
+                buf.push(ch);
+            }
+        }
+    }
+
+    pub fn resize_panes(&mut self, rows: u16, cols: u16) {
+        if self.size == (rows, cols) {
+            return;
+        }
+        self.size = (rows, cols);
+        let r = rows.max(1);
+        let c = cols.max(1);
+        for info in &self.panes {
+            if let Some(backend) = &mut self.backend {
+                backend.resize(info.id, r, c);
+            }
+            if let Some(parser) = self.parsers.get_mut(&info.id) {
+                parser.screen_mut().set_size(r, c);
+            }
+        }
+    }
+
+    pub fn send_input(&mut self, data: &[u8]) {
+        let Some(info) = self.panes.get(self.active) else {
+            return;
+        };
+        let id = info.id;
+        self.scroll.remove(&id);
+        if let Some(backend) = &mut self.backend
+            && let Err(e) = backend.send_input(id, data)
+        {
+            tracing::warn!("failed to send terminal input to pane {id}: {e}");
+        }
+        if self.prompt_log_enabled {
+            self.buffer_prompt_input(id, data);
+        }
+    }
+
     pub fn new(backend: Option<Box<dyn TerminalBackend>>, prompt_log_enabled: bool) -> Self {
         Self {
             panes: Vec::new(),
@@ -984,111 +1088,8 @@ impl App {
         }
     }
 
-    pub fn send_terminal_input(&mut self, data: &[u8]) {
-        if let Some(info) = self.terminal.panes.get(self.terminal.active) {
-            let id = info.id;
-            self.terminal.scroll.remove(&id);
-            if let Some(backend) = &mut self.terminal.backend
-                && let Err(e) = backend.send_input(id, data)
-            {
-                tracing::warn!("failed to send terminal input to pane {id}: {e}");
-            }
-            if self.terminal.prompt_log_enabled {
-                self.buffer_prompt_input(id, data);
-            }
-        }
-    }
-
-    pub fn scroll_terminal_up(&mut self, lines: usize) {
-        if lines == 0 {
-            return;
-        }
-        if let Some(id) = self.active_pane_id() {
-            let offset = self.terminal.scroll.entry(id).or_insert(0);
-            *offset = offset.saturating_add(lines);
-        }
-    }
-
-    pub fn scroll_terminal_down(&mut self, lines: usize) {
-        if lines == 0 {
-            return;
-        }
-        if let Some(id) = self.active_pane_id()
-            && let Some(entry) = self.terminal.scroll.get_mut(&id)
-        {
-            *entry = entry.saturating_sub(lines);
-            if *entry == 0 {
-                self.terminal.scroll.remove(&id);
-            }
-        }
-    }
-
-    pub fn is_terminal_scrolled(&self) -> bool {
-        self.active_pane_id()
-            .and_then(|id| self.terminal.scroll.get(&id))
-            .is_some_and(|&v| v > 0)
-    }
-
-    pub fn sync_terminal_scroll(&mut self) {
-        let Some(id) = self.active_pane_id() else {
-            return;
-        };
-        let offset = self.terminal.scroll.get(&id).copied().unwrap_or(0);
-        let actual = match self.terminal.parsers.get_mut(&id) {
-            Some(parser) => {
-                // vt100 clamps the offset to the actual scrollback
-                // buffer size internally, so we can pass the full request
-                // through and read back what was applied.
-                parser.screen_mut().set_scrollback(offset);
-                parser.screen().scrollback()
-            }
-            None => return,
-        };
-        if actual == 0 {
-            self.terminal.scroll.remove(&id);
-        } else {
-            self.terminal.scroll.insert(id, actual);
-        }
-    }
-
-    fn buffer_prompt_input(&mut self, pane_id: PaneId, data: &[u8]) {
-        let text = strip_escape_sequences(data);
-        let buf = self.terminal.prompt_bufs.entry(pane_id).or_default();
-        for ch in text.chars() {
-            if ch == '\r' || ch == '\n' {
-                if !buf.is_empty() {
-                    tracing::info!(target: "prompt", pane = pane_id, text = %buf);
-                    buf.clear();
-                }
-            } else {
-                buf.push(ch);
-            }
-        }
-    }
-
-    pub fn resize_terminal_panes(&mut self, rows: u16, cols: u16) {
-        if self.terminal.size == (rows, cols) {
-            return;
-        }
-        self.terminal.size = (rows, cols);
-        let r = rows.max(1);
-        let c = cols.max(1);
-        for info in &self.terminal.panes {
-            if let Some(backend) = &mut self.terminal.backend {
-                backend.resize(info.id, r, c);
-            }
-            if let Some(parser) = self.terminal.parsers.get_mut(&info.id) {
-                parser.screen_mut().set_size(r, c);
-            }
-        }
-    }
-
-    pub fn active_pane_id(&self) -> Option<PaneId> {
-        self.terminal.panes.get(self.terminal.active).map(|p| p.id)
-    }
-
     pub fn active_screen(&self) -> Option<&vt100::Screen> {
-        let id = self.active_pane_id()?;
+        let id = self.terminal.active_pane_id()?;
         self.terminal.parsers.get(&id).map(|p| p.screen())
     }
 
@@ -2445,7 +2446,7 @@ mod tests {
         // arbitrary offsets up to the buffered line count.
         app.terminal.scroll.insert(1, 6);
 
-        app.sync_terminal_scroll();
+        app.terminal.sync_scroll();
 
         let actual = app.terminal.parsers.get(&1).unwrap().screen().scrollback();
         assert_eq!(actual, 6);
@@ -2469,7 +2470,7 @@ mod tests {
         app.terminal.parsers.insert(1, parser);
         app.terminal.scroll.insert(1, 999);
 
-        app.sync_terminal_scroll();
+        app.terminal.sync_scroll();
 
         let stored = app.terminal.scroll.get(&1).copied().unwrap_or(0);
         let actual = app.terminal.parsers.get(&1).unwrap().screen().scrollback();

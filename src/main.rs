@@ -258,17 +258,17 @@ fn handle_terminal_key(app: &mut App, key: KeyEvent, action: Action) {
     match action {
         Action::TermScrollUp => {
             let lines = app.terminal.size.0 as usize;
-            app.scroll_terminal_up(lines);
+            app.terminal.scroll_up(lines);
         }
         Action::TermScrollDown => {
             let lines = app.terminal.size.0 as usize;
-            app.scroll_terminal_down(lines);
+            app.terminal.scroll_down(lines);
         }
-        Action::TermScrollLineUp => app.scroll_terminal_up(3),
-        Action::TermScrollLineDown => app.scroll_terminal_down(3),
+        Action::TermScrollLineUp => app.terminal.scroll_up(3),
+        Action::TermScrollLineDown => app.terminal.scroll_down(3),
         _ => {
             if let Some(data) = encode_key(key) {
-                app.send_terminal_input(&data);
+                app.terminal.send_input(&data);
             }
         }
     }
