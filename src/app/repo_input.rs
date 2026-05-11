@@ -1,0 +1,81 @@
+use super::{App, Focus, SnapshotChannel, ViewMode};
+
+impl App {
+    pub fn change_repo(&mut self, new_path: String) {
+        // Replacing _stop_tx drops the old sender, signaling the old thread to exit.
+        // Replacing the channel drops the old _stop_tx, signaling the old
+        // worker to exit at its next recv_timeout boundary.
+        self.snapshot = SnapshotChannel::spawn(&new_path);
+        if let Some(ref mut backend) = self.terminal.backend {
+            // Only future panes adopt the new cwd; existing shells stay in
+            // their original directory so we don't disrupt commands already
+            // running in them. Users who want the new cwd everywhere can
+            // close existing panes (ctrl+w) and open fresh ones (ctrl+t).
+            backend.set_cwd(std::path::Path::new(&new_path));
+        }
+        tracing::info!(path = %new_path, "repo changed");
+        self.repo_path = new_path;
+        // Drop the cached Repository — it points to the previous repo's .git
+        // directory and would silently keep returning stale results.
+        self.repo_cache = None;
+        self.mode = ViewMode::Status;
+        self.status_view.files.clear();
+        self.status_view.selected = 0;
+        self.diff.hunks.clear();
+        self.diff.scroll = 0;
+        self.diff.scroll_x = 0;
+        self.status_view.file_scroll_x = 0;
+        self.log_view.commits.clear();
+        self.log_view.selected = 0;
+        self.log_view.diff_title.clear();
+        self.log_view.commit_scroll_x = 0;
+        self.log_view.reset_drill_down();
+        self.status_view.cancel_search();
+        self.diff.search.clear();
+        self.status = None;
+        self.tracking = None;
+        self.focus = Focus::FileList;
+        // Drop transient view modes — the previous repo's diff zoom or terminal
+        // fullscreen has no meaning under the new working tree.
+        self.diff.fullscreen = false;
+        self.terminal.fullscreen = false;
+    }
+
+    pub fn start_repo_input(&mut self) {
+        self.repo_input.buf = self.repo_path.clone();
+        self.repo_input.active = true;
+    }
+
+    pub fn cancel_repo_input(&mut self) {
+        self.repo_input.active = false;
+        self.repo_input.buf.clear();
+    }
+
+    pub fn confirm_repo_input(&mut self) {
+        self.repo_input.active = false;
+        let path = std::mem::take(&mut self.repo_input.buf);
+        let trimmed = path.trim();
+        if trimmed.is_empty() {
+            self.status = Some("repo path cannot be empty".to_string());
+            return;
+        }
+        let p = std::path::Path::new(trimmed);
+        if !p.is_dir() {
+            self.status = Some(format!("not a directory: {trimmed}"));
+            return;
+        }
+        self.change_repo(
+            crate::git::resolve_repo_path(p)
+                .to_string_lossy()
+                .to_string(),
+        );
+    }
+
+    pub fn repo_input_push(&mut self, ch: char) {
+        self.repo_input.buf.push(ch);
+    }
+
+    pub fn repo_input_pop(&mut self) {
+        self.repo_input.buf.pop();
+    }
+}

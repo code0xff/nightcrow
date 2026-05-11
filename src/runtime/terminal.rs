@@ -1,0 +1,209 @@
+use crate::backend::{PaneId, TerminalBackend};
+use std::collections::HashMap;
+
+pub struct PaneInfo {
+    pub id: PaneId,
+    pub title: String,
+}
+
+pub struct TerminalState {
+    pub panes: Vec<PaneInfo>,
+    pub active: usize,
+    pub size: (u16, u16),
+    pub scroll: HashMap<PaneId, usize>,
+    pub fullscreen: bool,
+    pub(crate) parsers: HashMap<PaneId, vt100::Parser>,
+    pub(crate) prompt_bufs: HashMap<PaneId, String>,
+    prompt_log_enabled: bool,
+    pub(crate) backend: Option<Box<dyn TerminalBackend>>,
+}
+
+impl TerminalState {
+    pub fn active_pane_id(&self) -> Option<PaneId> {
+        self.panes.get(self.active).map(|p| p.id)
+    }
+
+    pub fn scroll_up(&mut self, lines: usize) {
+        if lines == 0 {
+            return;
+        }
+        if let Some(id) = self.active_pane_id() {
+            let offset = self.scroll.entry(id).or_insert(0);
+            *offset = offset.saturating_add(lines);
+        }
+    }
+
+    pub fn scroll_down(&mut self, lines: usize) {
+        if lines == 0 {
+            return;
+        }
+        if let Some(id) = self.active_pane_id()
+            && let Some(entry) = self.scroll.get_mut(&id)
+        {
+            *entry = entry.saturating_sub(lines);
+            if *entry == 0 {
+                self.scroll.remove(&id);
+            }
+        }
+    }
+
+    pub fn is_scrolled(&self) -> bool {
+        self.active_pane_id()
+            .and_then(|id| self.scroll.get(&id))
+            .is_some_and(|&v| v > 0)
+    }
+
+    pub fn sync_scroll(&mut self) {
+        let Some(id) = self.active_pane_id() else {
+            return;
+        };
+        let offset = self.scroll.get(&id).copied().unwrap_or(0);
+        let actual = match self.parsers.get_mut(&id) {
+            Some(parser) => {
+                // vt100 clamps the offset to the actual scrollback
+                // buffer size internally, so we can pass the full request
+                // through and read back what was applied.
+                parser.screen_mut().set_scrollback(offset);
+                parser.screen().scrollback()
+            }
+            None => return,
+        };
+        if actual == 0 {
+            self.scroll.remove(&id);
+        } else {
+            self.scroll.insert(id, actual);
+        }
+    }
+
+    fn buffer_prompt_input(&mut self, pane_id: PaneId, data: &[u8]) {
+        let text = strip_escape_sequences(data);
+        let buf = self.prompt_bufs.entry(pane_id).or_default();
+        for ch in text.chars() {
+            if ch == '\r' || ch == '\n' {
+                if !buf.is_empty() {
+                    tracing::info!(target: "prompt", pane = pane_id, text = %buf);
+                    buf.clear();
+                }
+            } else {
+                buf.push(ch);
+            }
+        }
+    }
+
+    pub fn resize_panes(&mut self, rows: u16, cols: u16) {
+        if self.size == (rows, cols) {
+            return;
+        }
+        self.size = (rows, cols);
+        let r = rows.max(1);
+        let c = cols.max(1);
+        for info in &self.panes {
+            if let Some(backend) = &mut self.backend {
+                backend.resize(info.id, r, c);
+            }
+            if let Some(parser) = self.parsers.get_mut(&info.id) {
+                parser.screen_mut().set_size(r, c);
+            }
+        }
+    }
+
+    pub fn send_input(&mut self, data: &[u8]) {
+        let Some(info) = self.panes.get(self.active) else {
+            return;
+        };
+        let id = info.id;
+        self.scroll.remove(&id);
+        if let Some(backend) = &mut self.backend
+            && let Err(e) = backend.send_input(id, data)
+        {
+            tracing::warn!("failed to send terminal input to pane {id}: {e}");
+        }
+        if self.prompt_log_enabled {
+            self.buffer_prompt_input(id, data);
+        }
+    }
+
+    pub fn new(backend: Option<Box<dyn TerminalBackend>>, prompt_log_enabled: bool) -> Self {
+        Self {
+            panes: Vec::new(),
+            active: 0,
+            size: (22, 78),
+            scroll: HashMap::new(),
+            fullscreen: false,
+            parsers: HashMap::new(),
+            prompt_bufs: HashMap::new(),
+            prompt_log_enabled,
+            backend,
+        }
+    }
+}
+
+pub(crate) fn strip_escape_sequences(data: &[u8]) -> String {
+    let text = String::from_utf8_lossy(data);
+    let mut result = String::new();
+    let mut chars = text.chars().peekable();
+    while let Some(ch) = chars.next() {
+        match ch {
+            '\x1b' => match chars.peek().copied() {
+                Some('[') => {
+                    // CSI: consume parameter/intermediate bytes (0x20–0x3f), stop at
+                    // final byte (0x40–0x7e). Break early on control chars to avoid
+                    // consuming content that follows a malformed sequence.
+                    chars.next();
+                    for c in chars.by_ref() {
+                        if ('\x40'..='\x7e').contains(&c) {
+                            break;
+                        }
+                        if c < '\x20' {
+                            break;
+                        }
+                    }
+                }
+                Some(']') => {
+                    // OSC: skip until BEL or ST
+                    chars.next();
+                    loop {
+                        match chars.next() {
+                            None | Some('\x07') => break,
+                            Some('\x1b') if chars.peek() == Some(&'\\') => {
+                                chars.next();
+                                break;
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+                Some('O') => {
+                    // SS3: ESC O <final>. Used by xterm-style application
+                    // keypad for arrow/function keys. Consume the `O`, then
+                    // only consume the next char when it looks like a valid
+                    // SS3 final byte (0x40–0x7e). A malformed `ESC O <x>`
+                    // sequence followed by ordinary text used to swallow `x`.
+                    chars.next();
+                    if let Some(&next) = chars.peek()
+                        && ('\x40'..='\x7e').contains(&next)
+                    {
+                        chars.next();
+                    }
+                }
+                Some('(') | Some(')') | Some('*') | Some('+') | Some('-') | Some('.')
+                | Some('/') | Some('#') => {
+                    // Charset designators / DEC private 2-byte escapes:
+                    // ESC <intermediate> <final>. Skip both.
+                    chars.next();
+                    chars.next();
+                }
+                _ => {
+                    // Drop the bare ESC and let the next iteration process
+                    // whatever follows as ordinary input. Consuming an extra
+                    // byte here would silently swallow user keystrokes that
+                    // happened to land right after a stray Esc.
+                }
+            },
+            '\r' | '\n' => result.push(ch),
+            c if !c.is_control() => result.push(c),
+            _ => {}
+        }
+    }
+    result
+}

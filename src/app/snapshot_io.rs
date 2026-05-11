@@ -1,0 +1,78 @@
+use super::{App, RepoSnapshot, SnapshotMsg, ViewMode};
+use std::collections::HashMap;
+use std::time::SystemTime;
+
+impl App {
+    pub fn poll_snapshot(&mut self) {
+        while let Ok(msg) = self.snapshot.try_recv() {
+            match msg {
+                SnapshotMsg::Ok(snapshot, mtimes) => {
+                    self.ingest_snapshot(snapshot, mtimes);
+                }
+                SnapshotMsg::Err(e) => {
+                    tracing::warn!(error = %e, "git snapshot failed");
+                    self.status = Some(format!("git error: {e}"));
+                }
+            }
+        }
+    }
+
+    /// Apply a snapshot to app state. Split out from `poll_snapshot` so
+    /// tests can drive the merge/auto-follow logic with deterministic
+    /// mtimes instead of booting the background worker.
+    pub fn ingest_snapshot(&mut self, snapshot: RepoSnapshot, mtimes: HashMap<String, SystemTime>) {
+        let previous_path = self
+            .status_view
+            .files
+            .get(self.status_view.selected)
+            .map(|f| f.path.clone());
+        self.status_view.files = snapshot.files;
+        self.status_view.recompute_filter();
+        self.tracking = snapshot.tracking;
+        self.merge_hot_table(mtimes);
+
+        self.restore_selection(previous_path.as_deref());
+        self.sync_selection_to_filter();
+        let auto_followed = self.try_auto_follow();
+        let selected_path = self.selected_filtered_status_path();
+        let selected_path_changed = auto_followed || selected_path != previous_path;
+        if self.mode == ViewMode::Status {
+            if selected_path.is_some() {
+                self.refresh_diff(selected_path_changed);
+            } else {
+                self.clear_diff_state();
+            }
+        }
+        if self
+            .status
+            .as_deref()
+            .is_some_and(|msg| msg.starts_with("git error:"))
+        {
+            self.status = None;
+        }
+        if let Some(state) = self.pending_session.take() {
+            self.restore_session(&state);
+        }
+    }
+
+    /// Update `hot_table` with the latest observed mtimes. Entries for
+    /// paths missing from the new snapshot are dropped; entries with a
+    /// strictly newer mtime are replaced (so a file edited twice within
+    /// the hot window re-arms its fade).
+    pub(crate) fn merge_hot_table(&mut self, mtimes: HashMap<String, SystemTime>) {
+        self.status_view
+            .hot_table
+            .retain(|p, _| mtimes.contains_key(p));
+        for (path, new_mtime) in mtimes {
+            self.status_view
+                .hot_table
+                .entry(path)
+                .and_modify(|stored| {
+                    if new_mtime > *stored {
+                        *stored = new_mtime;
+                    }
+                })
+                .or_insert(new_mtime);
+        }
+    }
+}

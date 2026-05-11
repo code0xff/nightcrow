@@ -4,6 +4,7 @@ mod config;
 mod git;
 mod input;
 mod logging;
+mod runtime;
 mod session;
 #[cfg(test)]
 mod test_util;
