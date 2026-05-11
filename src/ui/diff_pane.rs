@@ -13,8 +13,8 @@ pub struct DiffSearch {
     pub active: bool,
     pub query: String,
     pub(crate) query_lower: String,
-    pub matches: Vec<usize>,
-    pub cursor: usize,
+    pub(crate) matches: Vec<usize>,
+    pub(crate) cursor: usize,
 }
 
 impl DiffSearch {
