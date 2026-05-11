@@ -205,8 +205,7 @@ fn validate_config(cfg: &Config) -> Result<()> {
         "layout.file_list_pct must be between 1 and 99"
     );
     anyhow::ensure!(
-        cfg.agent_indicator.hot_window_secs >= 3
-            && cfg.agent_indicator.hot_window_secs <= 3600,
+        cfg.agent_indicator.hot_window_secs >= 3 && cfg.agent_indicator.hot_window_secs <= 3600,
         "agent_indicator.hot_window_secs must be between 3 and 3600"
     );
     Ok(())

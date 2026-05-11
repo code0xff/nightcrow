@@ -671,11 +671,7 @@ impl App {
     /// Apply a snapshot to app state. Split out from `poll_snapshot` so
     /// tests can drive the merge/auto-follow logic with deterministic
     /// mtimes instead of booting the background worker.
-    pub fn ingest_snapshot(
-        &mut self,
-        snapshot: RepoSnapshot,
-        mtimes: HashMap<String, SystemTime>,
-    ) {
+    pub fn ingest_snapshot(&mut self, snapshot: RepoSnapshot, mtimes: HashMap<String, SystemTime>) {
         let previous_path = self
             .status_view
             .files
@@ -1734,11 +1730,7 @@ impl App {
     /// Move the selection cursor to `path` if it exists in the unfiltered
     /// status list. Returns whether selection actually changed.
     fn select_status_file_by_path(&mut self, path: &str) -> bool {
-        if let Some(idx) = self
-            .status_view
-            .files
-            .iter()
-            .position(|f| f.path == path)
+        if let Some(idx) = self.status_view.files.iter().position(|f| f.path == path)
             && self.status_view.selected != idx
         {
             self.status_view.selected = idx;
