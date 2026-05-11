@@ -151,13 +151,7 @@ mod tests {
     fn dummy_snapshot_channel() -> (SnapshotChannel, std::sync::mpsc::Sender<SnapshotMsg>) {
         let (tx, rx) = mpsc::channel::<SnapshotMsg>();
         let (stop_tx, _stop_rx) = mpsc::sync_channel::<()>(0);
-        (
-            SnapshotChannel {
-                rx,
-                _stop_tx: stop_tx,
-            },
-            tx,
-        )
+        (SnapshotChannel::from_endpoints(rx, stop_tx), tx)
     }
 
     fn app_with_files(files: Vec<&str>) -> App {

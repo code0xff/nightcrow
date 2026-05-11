@@ -8,10 +8,10 @@ use std::time::{Duration, SystemTime};
 /// Owns the receiver and stop channel for the background snapshot thread.
 /// Dropping the struct (and its `_stop_tx`) signals the thread to exit.
 pub struct SnapshotChannel {
-    pub(crate) rx: Receiver<SnapshotMsg>,
+    rx: Receiver<SnapshotMsg>,
     // Held only for its drop side-effect: dropping the sender unblocks
     // the worker's recv_timeout so it can observe the disconnect.
-    pub(crate) _stop_tx: SyncSender<()>,
+    _stop_tx: SyncSender<()>,
 }
 
 /// Reopen the cached `git2::Repository` handle every N ticks so we observe
@@ -89,6 +89,18 @@ impl SnapshotChannel {
 
     pub fn try_recv(&self) -> Result<SnapshotMsg, mpsc::TryRecvError> {
         self.rx.try_recv()
+    }
+
+    /// Build a `SnapshotChannel` from externally provided endpoints. Lets
+    /// tests construct an inert channel (no worker thread) so they can
+    /// inject snapshots directly via `ingest_snapshot` instead of booting
+    /// the background discoverer.
+    #[cfg(test)]
+    pub(crate) fn from_endpoints(rx: Receiver<SnapshotMsg>, stop_tx: SyncSender<()>) -> Self {
+        Self {
+            rx,
+            _stop_tx: stop_tx,
+        }
     }
 }
 
