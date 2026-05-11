@@ -2625,4 +2625,90 @@ mod tests {
         assert_eq!(app.diff.view, DiffPaneView::Diff);
         assert!(app.diff.file_view.key.is_none());
     }
+
+    /// Helper: build a populated FileViewState so tests can assert that
+    /// downstream operations either preserve or invalidate it without
+    /// going through the disk-reading `load_file_view` path.
+    fn seeded_file_view(path: &str) -> FileViewState {
+        FileViewState {
+            key: Some(FileViewKey::Status(path.to_string())),
+            content: "one\ntwo\nthree\n".to_string(),
+            scroll: 1,
+            scroll_x: 4,
+            total_lines: 3,
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn keep_scroll_preserves_open_file_view() {
+        let mut app = app_with_files(vec!["a.rs"]);
+        app.diff.hunks = vec![context_hunk(&["l1", "l2"])];
+        app.diff.scroll = 1;
+        app.diff.file_view = seeded_file_view("a.rs");
+        app.diff.view = DiffPaneView::File;
+
+        // Same file refresh through KeepScroll must leave the file view
+        // alone — only Reset paths should invalidate it.
+        let fresh = vec![context_hunk(&["l1", "l2", "l3"])];
+        app.apply_diff_result(Ok(fresh), DiffApply::KeepScroll(app.diff.scroll));
+
+        assert_eq!(app.diff.view, DiffPaneView::File);
+        assert_eq!(
+            app.diff.file_view.key,
+            Some(FileViewKey::Status("a.rs".into()))
+        );
+        assert_eq!(app.diff.file_view.scroll, 1);
+        assert_eq!(app.diff.file_view.scroll_x, 4);
+    }
+
+    #[test]
+    fn clear_diff_state_invalidates_open_file_view() {
+        let mut app = app_with_files(vec!["a.rs"]);
+        app.diff.hunks = vec![context_hunk(&["l1"])];
+        app.diff.file_view = seeded_file_view("a.rs");
+        app.diff.view = DiffPaneView::File;
+
+        // toggle_mode and other reset paths route through clear_diff_state
+        // — that single call must wipe the file view to its default.
+        app.clear_diff_state();
+
+        assert_eq!(app.diff.view, DiffPaneView::Diff);
+        assert!(app.diff.file_view.key.is_none());
+        assert!(app.diff.file_view.content.is_empty());
+        assert_eq!(app.diff.file_view.scroll, 0);
+        assert_eq!(app.diff.file_view.scroll_x, 0);
+    }
+
+    #[test]
+    fn snapshot_refresh_with_no_filter_matches_clears_file_view() {
+        let (snapshot, tx) = dummy_snapshot_channel();
+        let mut app = App {
+            snapshot,
+            ..app_with_files(vec!["bar.rs"])
+        };
+        app.status_view.search_query = "bar".into();
+        app.status_view.search_query_lower = "bar".into();
+        app.status_view.recompute_filter();
+        app.diff.hunks = vec![context_hunk(&["stale"])];
+        app.diff.file_view = seeded_file_view("bar.rs");
+        app.diff.view = DiffPaneView::File;
+
+        tx.send(SnapshotMsg::Ok(RepoSnapshot {
+            files: vec![ChangedFile::new(
+                "aaa.rs".to_string(),
+                ChangeStatus::Modified,
+            )],
+            tracking: None,
+        }))
+        .unwrap();
+        app.poll_snapshot();
+
+        // No filter matches the new snapshot, so the diff and file view
+        // both need to drop their stale handles on the gone path.
+        assert!(app.filtered_indices().is_empty());
+        assert!(app.diff.hunks.is_empty());
+        assert_eq!(app.diff.view, DiffPaneView::Diff);
+        assert!(app.diff.file_view.key.is_none());
+    }
 }
