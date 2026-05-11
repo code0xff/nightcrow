@@ -115,6 +115,17 @@ pub fn draw(
         return;
     }
 
+    if app.diff.fullscreen {
+        let root = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Min(0), Constraint::Length(1)])
+            .split(frame.area());
+
+        diff_viewer::render(frame, app, root[0], ss, ts, accent);
+        frame.render_widget(render_hint_bar(app, accent), root[1]);
+        return;
+    }
+
     let root = Layout::default()
         .direction(Direction::Vertical)
         .constraints([Constraint::Min(0), Constraint::Length(1)])
@@ -161,6 +172,21 @@ fn render_hint_bar(app: &App, accent: Color) -> Paragraph<'_> {
             Style::default().fg(Color::DarkGray),
         )));
     }
+    if app.diff.fullscreen {
+        let hint = if app.diff.view == DiffPaneView::File {
+            " ctrl+f: exit zoom | v: back to diff | j/k: scroll | pgup/pgdn: page | ctrl+q: quit"
+        } else if app.diff.search.active {
+            " type to search | enter: confirm | esc: cancel"
+        } else if !app.diff.search.query.is_empty() {
+            " ctrl+f: exit zoom | n: next match | shift+n: prev match | /: new search | esc: clear"
+        } else {
+            " ctrl+f: exit zoom | j/k: scroll | v: view file | /: search | pgup/pgdn: page | ctrl+q: quit"
+        };
+        return Paragraph::new(Line::from(Span::styled(
+            hint,
+            Style::default().fg(Color::DarkGray),
+        )));
+    }
     let hint = match app.focus {
         Focus::Terminal => {
             " shift+↑/↓: scroll | shift+pgup/dn: page scroll | shift+←/→: cycle | ctrl+t: new pane | ctrl+w: close pane | F1-F9: switch pane | ctrl+f: fullscreen | ctrl+l: log view | ctrl+o: repo | ctrl+p: theme | ctrl+q: quit"
@@ -185,7 +211,7 @@ fn render_hint_bar(app: &App, accent: Color) -> Paragraph<'_> {
             } else if !app.diff.search.query.is_empty() {
                 " n: next match | shift+n: prev match | /: new search | esc: clear"
             } else {
-                " shift+←/→: cycle | j/k: scroll | v: view file | /: search | pgup/pgdn: scroll | F1-F9: switch pane | ctrl+f: fullscreen | ctrl+l: log view | ctrl+o: repo | ctrl+p: theme | ctrl+q: quit"
+                " shift+←/→: cycle | j/k: scroll | v: view file | /: search | ctrl+f: zoom | pgup/pgdn: scroll | F1-F9: switch pane | ctrl+l: log view | ctrl+o: repo | ctrl+p: theme | ctrl+q: quit"
             }
         }
     };

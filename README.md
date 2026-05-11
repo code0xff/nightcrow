@@ -49,7 +49,7 @@ nightcrow --repo ~/projects/myapp
 | `Ctrl+T` | Open new terminal pane |
 | `Ctrl+W` | Close active terminal pane |
 | `F1`…`F9` | Jump to terminal pane N |
-| `Ctrl+F` | Toggle terminal fullscreen |
+| `Ctrl+F` | Toggle fullscreen for the focused pane (diff viewer or terminal) |
 | `Ctrl+P` | Cycle accent color (yellow → cyan → green → magenta → blue) |
 | `Ctrl+O` | Change repo path |
 | `Ctrl+Q` | Quit |
@@ -73,6 +73,7 @@ nightcrow --repo ~/projects/myapp
 | `PgUp` / `PgDn` | Scroll 20 lines |
 | `←` / `→` | Horizontal scroll (4 columns) |
 | `v` | Toggle between hunk diff and full file preview |
+| `Ctrl+F` | Zoom the diff/file pane to full screen (toggle) |
 | `/` | Open diff search |
 | `n` / `N` | Next / previous search match |
 | `Esc` | Clear search |

@@ -207,7 +207,10 @@ fn handle_global_action(app: &mut App, action: Action) -> Option<KeyOutcome> {
             Some(KeyOutcome::Continue)
         }
         Action::ToggleFullscreen => {
-            app.toggle_terminal_fullscreen();
+            match app.focus {
+                Focus::DiffViewer => app.toggle_diff_fullscreen(),
+                _ => app.toggle_terminal_fullscreen(),
+            }
             Some(KeyOutcome::Continue)
         }
         Action::ToggleLogView => {

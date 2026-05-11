@@ -489,6 +489,10 @@ pub struct DiffPane {
     pub search: DiffSearch,
     pub view: DiffPaneView,
     pub file_view: FileViewState,
+    /// True while the diff pane is rendered full-screen (hint bar excluded).
+    /// Toggled by `Ctrl+F` while focus is on `DiffViewer`; mutually exclusive
+    /// with `TerminalPane::fullscreen`.
+    pub fullscreen: bool,
 }
 
 impl DiffPane {
@@ -1771,6 +1775,9 @@ impl App {
     }
 
     pub fn cycle_focus_forward(&mut self) {
+        if self.diff.fullscreen {
+            return;
+        }
         if self.terminal.fullscreen {
             let len = self.terminal.panes.len();
             if len > 0 {
@@ -1801,6 +1808,9 @@ impl App {
     }
 
     pub fn cycle_focus_backward(&mut self) {
+        if self.diff.fullscreen {
+            return;
+        }
         if self.terminal.fullscreen {
             let len = self.terminal.panes.len();
             if len > 0 {
@@ -1837,6 +1847,15 @@ impl App {
         self.terminal.fullscreen = !self.terminal.fullscreen;
         if self.terminal.fullscreen {
             self.focus = Focus::Terminal;
+            self.diff.fullscreen = false;
+        }
+    }
+
+    pub fn toggle_diff_fullscreen(&mut self) {
+        self.diff.fullscreen = !self.diff.fullscreen;
+        if self.diff.fullscreen {
+            self.focus = Focus::DiffViewer;
+            self.terminal.fullscreen = false;
         }
     }
 
@@ -1855,6 +1874,7 @@ impl App {
             scroll: self.diff.scroll,
             active_pane: self.terminal.active,
             terminal_fullscreen: self.terminal.fullscreen,
+            diff_fullscreen: self.diff.fullscreen,
             mode: Some(self.mode),
             log_selected: self.log_view.selected,
             accent_idx: self.accent_idx,
@@ -1878,6 +1898,10 @@ impl App {
         self.terminal.fullscreen = state.terminal_fullscreen && !self.terminal.panes.is_empty();
         if self.terminal.fullscreen {
             self.focus = Focus::Terminal;
+        }
+        self.diff.fullscreen = state.diff_fullscreen && !self.terminal.fullscreen;
+        if self.diff.fullscreen {
+            self.focus = Focus::DiffViewer;
         }
         self.set_accent_index(state.accent_idx);
 
@@ -2248,6 +2272,74 @@ mod tests {
     }
 
     #[test]
+    fn toggle_diff_fullscreen_sets_flag_and_focuses_diff_viewer() {
+        let mut app = app_with_files(vec![]);
+        assert_eq!(app.focus, Focus::FileList);
+
+        app.toggle_diff_fullscreen();
+
+        assert!(app.diff.fullscreen);
+        assert_eq!(app.focus, Focus::DiffViewer);
+
+        app.toggle_diff_fullscreen();
+
+        assert!(!app.diff.fullscreen);
+        // Exiting zoom leaves focus on DiffViewer (no reason to bounce back).
+        assert_eq!(app.focus, Focus::DiffViewer);
+    }
+
+    #[test]
+    fn toggle_diff_fullscreen_exits_terminal_fullscreen() {
+        let mut app = app_with_files(vec![]);
+        app.terminal.panes = vec![PaneInfo {
+            id: 1,
+            title: "shell".into(),
+        }];
+        app.toggle_terminal_fullscreen();
+        assert!(app.terminal.fullscreen);
+
+        app.toggle_diff_fullscreen();
+
+        assert!(app.diff.fullscreen);
+        assert!(!app.terminal.fullscreen);
+        assert_eq!(app.focus, Focus::DiffViewer);
+    }
+
+    #[test]
+    fn toggle_terminal_fullscreen_exits_diff_fullscreen() {
+        let mut app = app_with_files(vec![]);
+        app.terminal.panes = vec![PaneInfo {
+            id: 1,
+            title: "shell".into(),
+        }];
+        app.toggle_diff_fullscreen();
+        assert!(app.diff.fullscreen);
+
+        app.toggle_terminal_fullscreen();
+
+        assert!(app.terminal.fullscreen);
+        assert!(!app.diff.fullscreen);
+        assert_eq!(app.focus, Focus::Terminal);
+    }
+
+    #[test]
+    fn cycle_focus_is_noop_in_diff_fullscreen() {
+        let mut app = app_with_files(vec![]);
+        app.terminal.panes = vec![PaneInfo {
+            id: 1,
+            title: "shell".into(),
+        }];
+        app.toggle_diff_fullscreen();
+        assert_eq!(app.focus, Focus::DiffViewer);
+
+        app.cycle_focus_forward();
+        assert_eq!(app.focus, Focus::DiffViewer);
+
+        app.cycle_focus_backward();
+        assert_eq!(app.focus, Focus::DiffViewer);
+    }
+
+    #[test]
     fn close_last_pane_exits_fullscreen() {
         let mut app = app_with_files(vec![]);
         app.terminal.panes = vec![PaneInfo {
@@ -2309,6 +2401,55 @@ mod tests {
 
         assert!(app.terminal.fullscreen);
         assert_eq!(app.focus, Focus::Terminal);
+    }
+
+    #[test]
+    fn restore_session_diff_fullscreen_forces_diff_focus() {
+        let mut app = app_with_files(vec![]);
+
+        app.restore_session(&crate::session::SessionState {
+            focus: Some(Focus::FileList),
+            diff_fullscreen: true,
+            ..Default::default()
+        });
+
+        assert!(app.diff.fullscreen);
+        assert_eq!(app.focus, Focus::DiffViewer);
+    }
+
+    #[test]
+    fn restore_session_prefers_terminal_fullscreen_over_diff_fullscreen() {
+        let mut app = app_with_files(vec![]);
+        app.terminal.panes = vec![PaneInfo {
+            id: 1,
+            title: "shell".into(),
+        }];
+
+        app.restore_session(&crate::session::SessionState {
+            focus: Some(Focus::FileList),
+            terminal_fullscreen: true,
+            diff_fullscreen: true,
+            ..Default::default()
+        });
+
+        assert!(app.terminal.fullscreen);
+        assert!(!app.diff.fullscreen);
+        assert_eq!(app.focus, Focus::Terminal);
+    }
+
+    #[test]
+    fn save_session_round_trips_diff_fullscreen() {
+        let mut app = app_with_files(vec![]);
+        app.toggle_diff_fullscreen();
+        assert!(app.diff.fullscreen);
+
+        let state = app.save_session();
+        assert!(state.diff_fullscreen);
+
+        let mut other = app_with_files(vec![]);
+        other.restore_session(&state);
+        assert!(other.diff.fullscreen);
+        assert_eq!(other.focus, Focus::DiffViewer);
     }
 
     #[test]

@@ -11,6 +11,8 @@ pub struct SessionState {
     #[serde(default)]
     pub terminal_fullscreen: bool,
     #[serde(default)]
+    pub diff_fullscreen: bool,
+    #[serde(default)]
     pub mode: Option<ViewMode>,
     #[serde(default)]
     pub log_selected: usize,
