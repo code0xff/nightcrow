@@ -275,7 +275,13 @@ fn render_file_view(
         let fv = &app.diff.file_view;
         let total = fv.line_count();
         let width = total.to_string().len();
-        let max_scroll = total.saturating_sub(1);
+        // Belt-and-braces: ensure_highlight_cache keeps line_highlights aligned
+        // with content.lines().count(), but if that invariant ever slips the
+        // slice below would panic. Clamp against the cache length so a stale
+        // total_lines can never produce an out-of-range start.
+        let max_scroll = total
+            .saturating_sub(1)
+            .min(fv.line_highlights.len().saturating_sub(1));
         let scroll_start = fv.scroll.min(max_scroll);
         let scroll_end = scroll_start
             .saturating_add(visible_height)
