@@ -1263,9 +1263,7 @@ impl App {
         self.log_view.diff_title.clear();
         self.log_view.commit_scroll_x = 0;
         self.log_view.reset_drill_down();
-        self.status_view.clear_search();
-        self.status_view.search_active = false;
-        self.status_view.recompute_filter();
+        self.status_view.cancel_search();
         self.diff.search.clear();
         self.status = None;
         self.tracking = None;
@@ -1427,8 +1425,6 @@ impl App {
         self.invalidate_file_view();
     }
 
-    /// Rebuild the lowercase cache from current `hunks`. Call after replacing
-    /// `hunks` so per-keystroke search does not re-lowercase line content.
     fn invalidate_file_view(&mut self) {
         self.diff.view = DiffPaneView::Diff;
         self.diff.file_view = FileViewState::default();
