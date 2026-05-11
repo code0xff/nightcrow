@@ -25,10 +25,15 @@ impl App {
         // Hot mtimes are workdir-scoped; carrying them into the new repo would
         // bias auto-follow toward unrelated paths until the first snapshot tick.
         self.status_view.hot_table.clear();
+        // Width caches are length-keyed and can alias across repos with the
+        // same file/commit count, so clear them explicitly on repo switch.
+        self.status_view.path_width_cache.set(None);
         self.log_view.commits.clear();
         self.log_view.selected = 0;
         self.log_view.diff_title.clear();
         self.log_view.commit_scroll_x = 0;
+        self.log_view.commit_width_cache.set(None);
+        self.log_view.commit_files_width_cache.set(None);
         self.log_view.reset_drill_down();
         self.status_view.cancel_search();
         // clear_diff_state empties hunks + lower/highlight caches, resets diff
