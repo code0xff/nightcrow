@@ -75,16 +75,16 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect, accent: Color) {
                 HotStage::Cool
             };
 
+            // The status symbol keeps its change-status color across all hot
+            // stages so the change kind (added/modified/…) stays readable.
+            // Recency is conveyed by path styling only — no leading glyph —
+            // so transitions between stages don't shift the row width.
             let line = match stage {
                 HotStage::Cool => Line::from(vec![
                     Span::styled(format!("{symbol} "), Style::default().fg(color)),
                     Span::raw(path),
                 ]),
                 HotStage::Fresh => Line::from(vec![
-                    Span::styled(
-                        "★ ",
-                        Style::default().fg(accent).add_modifier(Modifier::BOLD),
-                    ),
                     Span::styled(format!("{symbol} "), Style::default().fg(color)),
                     Span::styled(
                         path,
@@ -92,7 +92,6 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect, accent: Color) {
                     ),
                 ]),
                 HotStage::Warm => Line::from(vec![
-                    Span::styled("★ ", Style::default().fg(accent)),
                     Span::styled(format!("{symbol} "), Style::default().fg(color)),
                     Span::styled(path, Style::default().fg(accent)),
                 ]),
