@@ -59,7 +59,7 @@ fn render_commit_list(frame: &mut Frame, app: &App, area: Rect, accent: Color) {
             let time_str = format_relative_time(entry.time);
             let author_short: String = entry.author.chars().take(10).collect();
             let marker = if i < ahead_count { "↑ " } else { "  " };
-            let summary = char_offset(&entry.summary, scroll_x);
+            let summary = super::char_offset(&entry.summary, scroll_x);
             let line = Line::from(vec![
                 Span::styled(marker, Style::default().fg(Color::Green)),
                 Span::styled(format!("{} ", entry.short_id), Style::default().fg(accent)),
@@ -107,7 +107,7 @@ fn render_file_list(frame: &mut Frame, app: &App, area: Rect, accent: Color) {
         .commit_files
         .iter()
         .map(|f| {
-            let path = char_offset(&f.path, scroll_x);
+            let path = super::char_offset(&f.path, scroll_x);
             let line = Line::from(vec![
                 Span::styled(
                     format!("{} ", f.status.symbol()),
@@ -130,18 +130,6 @@ fn render_file_list(frame: &mut Frame, app: &App, area: Rect, accent: Color) {
 
     let selected = (!app.log_view.commit_files.is_empty()).then_some(app.log_view.file_selected);
     super::render_selectable_list(frame, area, title, items, selected, border_style);
-}
-
-fn char_offset(s: &str, scroll_x: usize) -> &str {
-    if scroll_x == 0 {
-        return s;
-    }
-    let byte_off = s
-        .char_indices()
-        .nth(scroll_x)
-        .map(|(b, _)| b)
-        .unwrap_or(s.len());
-    &s[byte_off..]
 }
 
 fn truncate_title(title: &str, max_chars: usize) -> String {

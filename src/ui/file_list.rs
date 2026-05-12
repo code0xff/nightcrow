@@ -63,17 +63,7 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect, accent: Color) {
             let f = &app.status_view.files[idx];
             let symbol = f.status.symbol();
             let color = super::status_color(f.status);
-            let path: &str = if app.status_view.file_scroll_x == 0 {
-                &f.path
-            } else {
-                let byte_off = f
-                    .path
-                    .char_indices()
-                    .nth(app.status_view.file_scroll_x)
-                    .map(|(b, _)| b)
-                    .unwrap_or(f.path.len());
-                &f.path[byte_off..]
-            };
+            let path = super::char_offset(&f.path, app.status_view.file_scroll_x);
 
             let stage = if indicator_enabled {
                 app.status_view

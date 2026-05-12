@@ -100,6 +100,21 @@ fn main_content_constraints(layout: &LayoutConfig) -> [Constraint; 2] {
     ]
 }
 
+/// Slice `s` past its first `scroll_x` characters, returning the remainder.
+/// Used by the file/commit list renderers to scroll long entries horizontally
+/// without slicing inside a multi-byte char boundary.
+pub(crate) fn char_offset(s: &str, scroll_x: usize) -> &str {
+    if scroll_x == 0 {
+        return s;
+    }
+    let byte_off = s
+        .char_indices()
+        .nth(scroll_x)
+        .map(|(b, _)| b)
+        .unwrap_or(s.len());
+    &s[byte_off..]
+}
+
 pub fn draw(
     frame: &mut Frame,
     app: &mut App,
