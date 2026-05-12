@@ -952,6 +952,23 @@ mod tests {
     }
 
     #[test]
+    fn change_repo_clears_pending_session() {
+        // A pending session for the previous repo must not survive a Ctrl+O.
+        // Otherwise the first snapshot of the new repo would replay focus,
+        // fullscreen, and selection captured from a workdir the user just left.
+        let mut app = app_with_files(vec!["a.rs"]);
+        app.pending_session = Some(crate::session::SessionState {
+            focus: Some(Focus::DiffViewer),
+            ..Default::default()
+        });
+
+        let path = app.repo_path.clone();
+        app.change_repo(path);
+
+        assert!(app.pending_session.is_none());
+    }
+
+    #[test]
     fn keep_scroll_clamps_when_new_diff_is_shorter() {
         let mut app = app_with_files(vec!["a.rs"]);
         // Seed a long diff and put scroll near the bottom.
