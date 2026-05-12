@@ -14,6 +14,10 @@ impl App {
                     Ok(commits) => {
                         self.log_view.set_commits(commits);
                         self.log_view.selected = 0;
+                        // Sync last_head_oid to the freshly loaded HEAD so the
+                        // next snapshot tick doesn't immediately re-trigger
+                        // `refresh_commit_log_after_head_change`.
+                        self.last_head_oid = self.log_view.commits.first().map(|c| c.oid);
                         self.load_commit_diff_for_selected();
                     }
                     Err(e) => {

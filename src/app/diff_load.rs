@@ -1,7 +1,7 @@
-use super::{App, DiffPaneView, FileViewKey, FileViewState, ViewMode};
+use super::{App, COMMIT_LOG_LIMIT, DiffPaneView, FileViewKey, FileViewState, ViewMode};
 use crate::git::diff::{
-    DiffHunk, load_commit_diff, load_commit_file_blob, load_commit_file_diff, load_file_diff,
-    load_workdir_file, parse_hunk_new_start,
+    DiffHunk, load_commit_diff, load_commit_file_blob, load_commit_file_diff, load_commit_log,
+    load_file_diff, load_workdir_file, parse_hunk_new_start,
 };
 
 /// Post-load behaviour for `apply_diff_result`. Replaces the prior 3-flag
@@ -253,5 +253,49 @@ impl App {
             tracing::warn!(error = %e, file = %path, "failed to load commit file diff");
         }
         self.apply_diff_result(result, DiffApply::ResetWithTitle(&title));
+    }
+
+    /// Reload the Log view's commit list after the snapshot worker detected a
+    /// HEAD oid change (new commit via the terminal pane, external push,
+    /// amend, branch switch). Preserves the selection by oid so the user
+    /// keeps looking at the same commit when one is appended above; falls
+    /// back to the freshest commit when the prior oid disappeared (amend/
+    /// force-push). Drill-down stays if its commit survives, otherwise it
+    /// collapses to the commit-level diff view.
+    pub(crate) fn refresh_commit_log_after_head_change(&mut self) {
+        let prior_selected_oid = self
+            .log_view
+            .commits
+            .get(self.log_view.selected)
+            .map(|c| c.oid);
+
+        let commits = match self.with_repo(|repo| load_commit_log(repo, COMMIT_LOG_LIMIT)) {
+            Ok(c) => c,
+            Err(e) => {
+                tracing::warn!(error = %e, "failed to refresh commit log after HEAD change");
+                return;
+            }
+        };
+        self.log_view.set_commits(commits);
+
+        self.log_view.selected = prior_selected_oid
+            .and_then(|oid| self.log_view.commits.iter().position(|c| c.oid == oid))
+            .unwrap_or(0);
+        self.log_view.commit_scroll_x = 0;
+
+        // Drill-down survives only if the commit it was opened on is still in
+        // the new list. Otherwise drop back to the commit-level diff.
+        if self.log_view.drill_down
+            && prior_selected_oid
+                .is_none_or(|oid| !self.log_view.commits.iter().any(|c| c.oid == oid))
+        {
+            self.log_view.reset_drill_down();
+        }
+
+        if self.log_view.drill_down {
+            self.load_file_diff_for_log_file_selected();
+        } else {
+            self.load_commit_diff_for_selected();
+        }
     }
 }

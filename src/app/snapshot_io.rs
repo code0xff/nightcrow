@@ -26,6 +26,9 @@ impl App {
             .files
             .get(self.status_view.selected)
             .map(|f| f.path.clone());
+        // Capture the HEAD oid up front so the detection branch below stays
+        // independent of where the snapshot fields get moved out.
+        let new_head = snapshot.head_oid;
         self.status_view.set_files(snapshot.files);
         self.status_view.recompute_filter();
         self.tracking = snapshot.tracking;
@@ -50,6 +53,20 @@ impl App {
         {
             self.status = None;
         }
+
+        // Detect commits made through the terminal pane or external tools and
+        // refresh the Log view's cached commit list. Skip on the very first
+        // snapshot (prior == None) so initial loads don't double-fetch the
+        // commit log on top of `toggle_mode`'s eager load.
+        let prior_head = self.last_head_oid;
+        self.last_head_oid = new_head;
+        if prior_head.is_some()
+            && prior_head != new_head
+            && self.mode == ViewMode::Log
+        {
+            self.refresh_commit_log_after_head_change();
+        }
+
         if let Some(state) = self.pending_session.take() {
             self.restore_session(&state);
         }

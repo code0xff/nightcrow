@@ -57,6 +57,11 @@ impl App {
         // its saved focus/fullscreen/selection applied to the new repo via
         // `ingest_snapshot`, overriding the explicit reset above.
         self.pending_session = None;
+        // The new repo's first snapshot will populate `last_head_oid` and
+        // skip the reload branch (initial snapshot guard). Keeping the prior
+        // repo's HEAD here would otherwise trigger a spurious commit log
+        // reload for the new repo.
+        self.last_head_oid = None;
     }
 
     pub fn start_repo_input(&mut self) {

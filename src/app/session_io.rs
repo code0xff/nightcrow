@@ -98,6 +98,9 @@ impl App {
         self.log_view.selected = state
             .log_selected
             .min(self.log_view.commits.len().saturating_sub(1));
+        // Same rationale as toggle_mode: avoid a same-tick HEAD-change-trigger
+        // reload on the very next snapshot.
+        self.last_head_oid = self.log_view.commits.first().map(|c| c.oid);
         self.mode = ViewMode::Log;
 
         if state.log_drill_down {

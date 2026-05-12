@@ -76,6 +76,11 @@ pub struct TrackingStatus {
 pub struct RepoSnapshot {
     pub files: Vec<ChangedFile>,
     pub tracking: Option<TrackingStatus>,
+    /// HEAD commit oid at the moment the snapshot was taken. `None` for
+    /// empty or detached repositories with no resolvable HEAD. The main
+    /// thread compares this against `App::last_head_oid` to detect new
+    /// commits and refresh the Log view's cached commit list.
+    pub head_oid: Option<Oid>,
 }
 
 #[derive(Debug, Clone)]
@@ -135,7 +140,12 @@ pub fn load_snapshot(repo: &Repository) -> Result<RepoSnapshot> {
         .collect();
 
     let tracking = load_tracking_status(repo);
-    Ok(RepoSnapshot { files, tracking })
+    let head_oid = repo.head().ok().and_then(|h| h.target());
+    Ok(RepoSnapshot {
+        files,
+        tracking,
+        head_oid,
+    })
 }
 
 pub const MAX_FILE_VIEW_BYTES: usize = 5 * 1024 * 1024;
