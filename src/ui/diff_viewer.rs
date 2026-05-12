@@ -66,11 +66,11 @@ pub fn render(
     let focused = app.focus == Focus::DiffViewer;
     let border_style = super::focused_border_style(focused, accent);
 
-    let file_path = file_path_for_syntax(app).to_string();
-    let ext = extension(&file_path);
-    let syntax = ss
-        .find_syntax_by_extension(ext)
-        .unwrap_or_else(|| ss.find_syntax_plain_text());
+    let syntax = {
+        let file_path = file_path_for_syntax(app);
+        ss.find_syntax_by_extension(extension(file_path))
+            .unwrap_or_else(|| ss.find_syntax_plain_text())
+    };
     // Build the syntect highlight cache once per (hunks × syntax) so the
     // visible-window walk below stays bounded even on large diffs.
     app.diff.ensure_highlight_cache(ss, ts, syntax);
@@ -249,8 +249,8 @@ fn render_file_view(
 ) {
     let focused = app.focus == Focus::DiffViewer;
     let border_style = super::focused_border_style(focused, accent);
-    let file_path = file_path_for_syntax(app).to_string();
-    let ext = extension(&file_path);
+    let file_path = file_path_for_syntax(app);
+    let ext = extension(file_path);
     let syntax = ss
         .find_syntax_by_extension(ext)
         .unwrap_or_else(|| ss.find_syntax_plain_text());
