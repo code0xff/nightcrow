@@ -81,6 +81,10 @@ pub struct RepoSnapshot {
     /// thread compares this against `App::last_head_oid` to detect new
     /// commits and refresh the Log view's cached commit list.
     pub head_oid: Option<Oid>,
+    /// Current branch shorthand (e.g. `main`) when HEAD points at a branch.
+    /// `None` for detached HEAD, unborn branch, or bare repo so the header
+    /// can decide whether to render the branch chip.
+    pub branch_name: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -140,11 +144,17 @@ pub fn load_snapshot(repo: &Repository) -> Result<RepoSnapshot> {
         .collect();
 
     let tracking = load_tracking_status(repo);
-    let head_oid = repo.head().ok().and_then(|h| h.target());
+    let head = repo.head().ok();
+    let head_oid = head.as_ref().and_then(|h| h.target());
+    let branch_name = head
+        .as_ref()
+        .filter(|h| h.is_branch())
+        .and_then(|h| h.shorthand().map(String::from));
     Ok(RepoSnapshot {
         files,
         tracking,
         head_oid,
+        branch_name,
     })
 }
 

@@ -103,6 +103,10 @@ pub struct App {
     /// terminal pane (or external tools) so the Log view's commit list can
     /// auto-refresh without requiring the user to toggle modes.
     pub(crate) last_head_oid: Option<git2::Oid>,
+    /// Current branch shorthand carried in the latest snapshot. `None` for
+    /// detached HEAD, unborn branches, or bare repos. Rendered in the top
+    /// header so the user always sees which branch the workdir tracks.
+    pub branch_name: Option<String>,
 }
 
 impl App {
@@ -131,6 +135,7 @@ impl App {
             auto_followed_path: None,
             list_fullscreen: false,
             last_head_oid: None,
+            branch_name: None,
         };
 
         app.ensure_initial_terminal();
@@ -199,6 +204,7 @@ mod tests {
             auto_followed_path: None,
             list_fullscreen: false,
             last_head_oid: None,
+            branch_name: None,
         }
     }
 
@@ -902,6 +908,7 @@ mod tests {
             files: Vec::new(),
             tracking: None,
             head_oid: head,
+            branch_name: None,
         }
     }
 
@@ -1106,6 +1113,7 @@ mod tests {
                 files: Vec::new(),
                 tracking: None,
                 head_oid: None,
+                branch_name: None,
             },
             HashMap::new(),
         ))
@@ -1132,6 +1140,7 @@ mod tests {
                 files: Vec::new(),
                 tracking: None,
                 head_oid: None,
+                branch_name: None,
             },
             HashMap::new(),
         ))
@@ -1160,6 +1169,7 @@ mod tests {
                 ],
                 tracking: None,
                 head_oid: None,
+                branch_name: None,
             },
             HashMap::new(),
         ))
@@ -1194,6 +1204,7 @@ mod tests {
                 )],
                 tracking: None,
                 head_oid: None,
+                branch_name: None,
             },
             HashMap::new(),
         ))
@@ -1227,6 +1238,7 @@ mod tests {
                 )],
                 tracking: None,
                 head_oid: None,
+                branch_name: None,
             },
             HashMap::new(),
         ))
@@ -1518,6 +1530,7 @@ mod tests {
                 )],
                 tracking: None,
                 head_oid: None,
+                branch_name: None,
             },
             HashMap::new(),
         ))
@@ -1540,6 +1553,7 @@ mod tests {
                 .collect(),
             tracking: None,
             head_oid: None,
+            branch_name: None,
         }
     }
 

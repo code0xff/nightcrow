@@ -123,51 +123,48 @@ pub fn draw(
     layout: &LayoutConfig,
     accent: Color,
 ) {
-    if app.terminal.fullscreen {
-        let root = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([Constraint::Min(0), Constraint::Length(1)])
-            .split(frame.area());
+    // Reserve 1 row at the top for the repo/branch header and 1 row at the
+    // bottom for the hint/status bar. The header is rendered in every layout
+    // branch (fullscreen included) so the repo identity is always visible.
+    let outer = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(1),
+            Constraint::Min(0),
+            Constraint::Length(1),
+        ])
+        .split(frame.area());
+    let header_area = outer[0];
+    let body_area = outer[1];
+    let hint_area = outer[2];
 
-        terminal_tab::render(frame, app, root[0], accent);
-        frame.render_widget(render_hint_bar(app, accent), root[1]);
+    frame.render_widget(render_repo_header(app, accent), header_area);
+
+    if app.terminal.fullscreen {
+        terminal_tab::render(frame, app, body_area, accent);
+        frame.render_widget(render_hint_bar(app, accent), hint_area);
         return;
     }
 
     if app.diff.fullscreen {
-        let root = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([Constraint::Min(0), Constraint::Length(1)])
-            .split(frame.area());
-
-        diff_viewer::render(frame, app, root[0], ss, ts, accent);
-        frame.render_widget(render_hint_bar(app, accent), root[1]);
+        diff_viewer::render(frame, app, body_area, ss, ts, accent);
+        frame.render_widget(render_hint_bar(app, accent), hint_area);
         return;
     }
 
     if app.list_fullscreen {
-        let root = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([Constraint::Min(0), Constraint::Length(1)])
-            .split(frame.area());
-
         match app.mode {
-            ViewMode::Status => file_list::render(frame, app, root[0], accent),
-            ViewMode::Log => commit_list::render(frame, app, root[0], accent),
+            ViewMode::Status => file_list::render(frame, app, body_area, accent),
+            ViewMode::Log => commit_list::render(frame, app, body_area, accent),
         }
-        frame.render_widget(render_hint_bar(app, accent), root[1]);
+        frame.render_widget(render_hint_bar(app, accent), hint_area);
         return;
     }
-
-    let root = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([Constraint::Min(0), Constraint::Length(1)])
-        .split(frame.area());
 
     let main = Layout::default()
         .direction(Direction::Vertical)
         .constraints(main_content_constraints(layout))
-        .split(root[0]);
+        .split(body_area);
 
     let file_list_pct = layout.file_list_pct;
     let diff_pct = 100u16.saturating_sub(file_list_pct);
@@ -185,7 +182,47 @@ pub fn draw(
     }
     diff_viewer::render(frame, app, upper[1], ss, ts, accent);
     terminal_tab::render(frame, app, main[1], accent);
-    frame.render_widget(render_hint_bar(app, accent), root[1]);
+    frame.render_widget(render_hint_bar(app, accent), hint_area);
+}
+
+/// Render the top header strip: `repo-path  branch  ↑N ↓M`. Branch and
+/// tracking chips are omitted when their data is absent so the line stays
+/// short on detached HEAD or empty repos.
+fn render_repo_header<'a>(app: &'a App, accent: Color) -> Paragraph<'a> {
+    let display_path = home_relative_path(&app.repo_path);
+    let mut spans: Vec<Span<'a>> = vec![Span::styled(
+        format!(" {display_path} "),
+        Style::default().fg(Color::Gray).add_modifier(Modifier::BOLD),
+    )];
+    if let Some(branch) = app.branch_name.as_deref() {
+        spans.push(Span::styled(
+            format!(" {branch} "),
+            Style::default().fg(accent).add_modifier(Modifier::BOLD),
+        ));
+    }
+    if let Some(t) = &app.tracking
+        && (t.ahead > 0 || t.behind > 0)
+    {
+        spans.push(Span::styled(
+            format!(" ↑{} ↓{} ", t.ahead, t.behind),
+            Style::default().fg(Color::Cyan),
+        ));
+    }
+    Paragraph::new(Line::from(spans))
+}
+
+/// Replace the user's home prefix with `~` for display, leaving non-home
+/// paths unchanged. Trailing path separator (libgit2 workdirs include one)
+/// is stripped so the header stays compact.
+fn home_relative_path(path: &str) -> String {
+    let trimmed = path.trim_end_matches('/');
+    if let Some(home) = dirs::home_dir()
+        && let Some(home_str) = home.to_str()
+        && let Some(rest) = trimmed.strip_prefix(home_str)
+    {
+        return format!("~{rest}");
+    }
+    trimmed.to_string()
 }
 
 fn render_hint_bar(app: &App, accent: Color) -> Paragraph<'_> {
@@ -274,6 +311,22 @@ fn render_hint_bar(app: &App, accent: Color) -> Paragraph<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn home_relative_strips_home_prefix_and_trailing_slash() {
+        let home = dirs::home_dir().expect("home dir for test host");
+        let home_str = home.to_str().unwrap();
+        let nested = format!("{home_str}/projects/foo/");
+        assert_eq!(home_relative_path(&nested), "~/projects/foo");
+    }
+
+    #[test]
+    fn home_relative_keeps_paths_outside_home_unchanged() {
+        // Trailing slash still trimmed for compactness, but the body is
+        // returned verbatim when the home prefix doesn't match.
+        assert_eq!(home_relative_path("/tmp/repo/"), "/tmp/repo");
+        assert_eq!(home_relative_path("/var/code"), "/var/code");
+    }
 
     #[test]
     fn main_content_split_preserves_lower_panel_at_high_upper_ratio() {

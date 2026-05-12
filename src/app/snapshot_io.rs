@@ -29,6 +29,7 @@ impl App {
         // Capture the HEAD oid up front so the detection branch below stays
         // independent of where the snapshot fields get moved out.
         let new_head = snapshot.head_oid;
+        self.branch_name = snapshot.branch_name;
         self.status_view.set_files(snapshot.files);
         self.status_view.recompute_filter();
         self.tracking = snapshot.tracking;
