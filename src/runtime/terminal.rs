@@ -6,13 +6,35 @@ pub struct PaneInfo {
     pub title: String,
 }
 
+/// vt100 callbacks that capture OSC 0/2 window title updates so the tab bar
+/// can reflect what the running program (claude, vim, ssh, …) advertises.
+/// Bare shells without precmd hooks never emit OSC, so a sensible default
+/// title still lives on `PaneInfo`.
+#[derive(Default, Debug)]
+pub(crate) struct PaneCallbacks {
+    pub(crate) pending_title: Option<String>,
+}
+
+impl vt100::Callbacks for PaneCallbacks {
+    fn set_window_title(&mut self, _: &mut vt100::Screen, title: &[u8]) {
+        let cleaned: String = String::from_utf8_lossy(title)
+            .chars()
+            .filter(|c| !c.is_control())
+            .collect();
+        let trimmed = cleaned.trim();
+        if !trimmed.is_empty() {
+            self.pending_title = Some(trimmed.to_string());
+        }
+    }
+}
+
 pub struct TerminalState {
     pub panes: Vec<PaneInfo>,
     pub active: usize,
     pub size: (u16, u16),
     pub scroll: HashMap<PaneId, usize>,
     pub fullscreen: bool,
-    pub(crate) parsers: HashMap<PaneId, vt100::Parser>,
+    pub(crate) parsers: HashMap<PaneId, vt100::Parser<PaneCallbacks>>,
     pub(crate) prompt_bufs: HashMap<PaneId, String>,
     prompt_log_enabled: bool,
     pub(crate) backend: Option<Box<dyn TerminalBackend>>,
@@ -216,4 +238,46 @@ pub(crate) fn strip_escape_sequences(data: &[u8]) -> String {
         }
     }
     result
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn parser() -> vt100::Parser<PaneCallbacks> {
+        vt100::Parser::new_with_callbacks(3, 20, 0, PaneCallbacks::default())
+    }
+
+    #[test]
+    fn captures_osc_two_window_title() {
+        let mut p = parser();
+        p.process(b"\x1b]2;claude\x07");
+        assert_eq!(p.callbacks().pending_title.as_deref(), Some("claude"));
+    }
+
+    #[test]
+    fn captures_osc_zero_title_and_strips_controls() {
+        let mut p = parser();
+        // OSC 0 sets both icon name and window title; embedded tab/BS bytes
+        // must not leak into the tab label.
+        p.process(b"\x1b]0;cargo\t test\x08\x07");
+        assert_eq!(p.callbacks().pending_title.as_deref(), Some("cargo test"));
+    }
+
+    #[test]
+    fn ignores_empty_title() {
+        let mut p = parser();
+        p.process(b"\x1b]2;\x07");
+        assert!(p.callbacks().pending_title.is_none());
+    }
+
+    #[test]
+    fn later_title_replaces_earlier_until_taken() {
+        let mut p = parser();
+        p.process(b"\x1b]2;first\x07");
+        p.process(b"\x1b]2;second\x07");
+        let taken = p.callbacks_mut().pending_title.take();
+        assert_eq!(taken.as_deref(), Some("second"));
+        assert!(p.callbacks().pending_title.is_none());
+    }
 }

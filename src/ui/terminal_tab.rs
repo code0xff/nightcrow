@@ -59,7 +59,14 @@ pub fn render(frame: &mut Frame, app: &mut App, area: Rect, accent: Color) {
                 } else {
                     Style::default().fg(Color::DarkGray)
                 };
-                Span::styled(format!(" {} {} ", i + 1, pane.title), style)
+                // F3..=F9 are wired to panes 0..=6 in `input::map_key`; show
+                // the binding so the tab bar doubles as a key legend.
+                let key_hint = if i < 7 {
+                    format!("F{}", i + 3)
+                } else {
+                    format!("{}", i + 1)
+                };
+                Span::styled(format!(" {} {} ", key_hint, pane.title), style)
             })
             .collect()
     };

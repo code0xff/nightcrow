@@ -158,13 +158,4 @@ impl App {
         self.list_fullscreen = false;
         self.terminal.fullscreen = false;
     }
-
-    pub fn focus_terminal(&mut self) {
-        if self.terminal.panes.is_empty() {
-            return;
-        }
-        self.focus = Focus::Terminal;
-        self.diff.fullscreen = false;
-        self.list_fullscreen = false;
-    }
 }

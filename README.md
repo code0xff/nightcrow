@@ -48,7 +48,8 @@ nightcrow --repo ~/projects/myapp
 | `Ctrl+L` | Toggle between status view and commit log view |
 | `Ctrl+T` | Open new terminal pane |
 | `Ctrl+W` | Close active terminal pane |
-| `F1`…`F9` | Jump to terminal pane N |
+| `F1` / `F2` | Focus file list / diff viewer |
+| `F3`…`F9` | Jump to terminal pane 1…7 |
 | `Ctrl+F` | Toggle fullscreen for the focused pane (file/commit list, diff viewer, or terminal) |
 | `Ctrl+P` | Cycle accent color (yellow → cyan → green → magenta → blue) |
 | `Ctrl+O` | Change repo path |

@@ -244,10 +244,6 @@ fn handle_global_action(app: &mut App, action: Action) -> Option<KeyOutcome> {
             app.focus_diff();
             Some(KeyOutcome::Continue)
         }
-        Action::FocusTerminal => {
-            app.focus_terminal();
-            Some(KeyOutcome::Continue)
-        }
         Action::CycleForward => {
             app.cycle_focus_forward();
             Some(KeyOutcome::Continue)

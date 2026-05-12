@@ -1,5 +1,6 @@
 use super::{App, Focus, PaneInfo, SCROLLBACK_LINES};
 use crate::backend::{BackendEvent, PaneId};
+use crate::runtime::terminal::PaneCallbacks;
 
 impl App {
     pub(crate) fn ensure_initial_terminal(&mut self) {
@@ -23,8 +24,17 @@ impl App {
         for event in events {
             match event {
                 BackendEvent::Output { pane, data } => {
-                    if let Some(parser) = self.terminal.parsers.get_mut(&pane) {
+                    let new_title = if let Some(parser) = self.terminal.parsers.get_mut(&pane) {
                         parser.process(&data);
+                        parser.callbacks_mut().pending_title.take()
+                    } else {
+                        None
+                    };
+                    if let Some(title) = new_title
+                        && let Some(info) =
+                            self.terminal.panes.iter_mut().find(|p| p.id == pane)
+                    {
+                        info.title = title;
                     }
                 }
                 BackendEvent::Exited { pane } => {
@@ -59,11 +69,17 @@ impl App {
             .ok_or_else(|| anyhow::anyhow!("no terminal backend available"))?;
 
         let id = backend.create_pane(rows.max(1), cols.max(1))?;
-        let parser = vt100::Parser::new(rows.max(1), cols.max(1), SCROLLBACK_LINES);
+        let parser = vt100::Parser::new_with_callbacks(
+            rows.max(1),
+            cols.max(1),
+            SCROLLBACK_LINES,
+            PaneCallbacks::default(),
+        );
         self.terminal.parsers.insert(id, parser);
+        let default_title = format!("shell {}", self.terminal.panes.len() + 1);
         self.terminal.panes.push(PaneInfo {
             id,
-            title: "shell".to_string(),
+            title: default_title,
         });
         self.terminal.active = self.terminal.panes.len() - 1;
         tracing::info!(pane = id, "terminal pane opened");

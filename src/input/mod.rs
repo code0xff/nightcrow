@@ -14,7 +14,6 @@ pub enum Action {
     SwitchPane(usize),
     FocusList,
     FocusDiff,
-    FocusTerminal,
     CycleForward,
     CycleBackward,
     TermScrollUp,
@@ -38,16 +37,18 @@ pub fn map_key(event: KeyEvent) -> Action {
         KeyCode::Char('f') if ctrl => Action::ToggleFullscreen,
         KeyCode::Char('l') if ctrl => Action::ToggleLogView,
         KeyCode::Char('p') if ctrl => Action::CycleTheme,
-        KeyCode::Char('1') if ctrl => Action::FocusList,
-        KeyCode::Char('2') if ctrl => Action::FocusDiff,
-        KeyCode::Char('3') if ctrl => Action::FocusTerminal,
         KeyCode::Left if shift => Action::CycleBackward,
         KeyCode::Right if shift => Action::CycleForward,
         KeyCode::Up if shift => Action::TermScrollLineUp,
         KeyCode::Down if shift => Action::TermScrollLineDown,
         KeyCode::PageUp if shift => Action::TermScrollUp,
         KeyCode::PageDown if shift => Action::TermScrollDown,
-        KeyCode::F(n @ 1..=9) => Action::SwitchPane(n as usize - 1),
+        // F-keys are universally distinct across terminals (no kitty protocol
+        // dependency), so they own focus jumps: F1=list, F2=diff,
+        // F3..=F9 = terminal panes 1..=7.
+        KeyCode::F(1) => Action::FocusList,
+        KeyCode::F(2) => Action::FocusDiff,
+        KeyCode::F(n @ 3..=9) => Action::SwitchPane(n as usize - 3),
         KeyCode::Up => Action::Up,
         KeyCode::Down => Action::Down,
         KeyCode::PageUp => Action::PageUp,
@@ -217,21 +218,17 @@ mod tests {
     }
 
     #[test]
-    fn maps_switch_pane() {
-        assert_eq!(map_key(key(KeyCode::F(1))), Action::SwitchPane(0));
-        assert_eq!(map_key(key(KeyCode::F(2))), Action::SwitchPane(1));
-        assert_eq!(map_key(key(KeyCode::F(9))), Action::SwitchPane(8));
+    fn maps_focus_jump_shortcuts() {
+        assert_eq!(map_key(key(KeyCode::F(1))), Action::FocusList);
+        assert_eq!(map_key(key(KeyCode::F(2))), Action::FocusDiff);
     }
 
     #[test]
-    fn maps_focus_jump_shortcuts() {
-        assert_eq!(map_key(ctrl(KeyCode::Char('1'))), Action::FocusList);
-        assert_eq!(map_key(ctrl(KeyCode::Char('2'))), Action::FocusDiff);
-        assert_eq!(map_key(ctrl(KeyCode::Char('3'))), Action::FocusTerminal);
-        // Plain digits must not steal focus from the underlying view.
-        assert_eq!(map_key(key(KeyCode::Char('1'))), Action::None);
-        assert_eq!(map_key(key(KeyCode::Char('2'))), Action::None);
-        assert_eq!(map_key(key(KeyCode::Char('3'))), Action::None);
+    fn maps_switch_pane() {
+        // F3..=F9 directly select terminal panes 0..=6.
+        assert_eq!(map_key(key(KeyCode::F(3))), Action::SwitchPane(0));
+        assert_eq!(map_key(key(KeyCode::F(4))), Action::SwitchPane(1));
+        assert_eq!(map_key(key(KeyCode::F(9))), Action::SwitchPane(6));
     }
 
     #[test]

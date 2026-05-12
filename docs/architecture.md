@@ -76,7 +76,7 @@ trait TerminalBackend {
 
 - **Upper panel focused**: Ratatui app이 모든 키 처리 (파일 탐색, diff/file subfocus 전환). `j`/`k`는 upper-pane handler 내부에서 vim navigation으로 변환되며, `map_key`는 plain character로 통과시킨다 — terminal focus에서 j/k가 PTY로 그대로 전달되도록 보장하기 위함.
 - **Lower panel focused**: 키 입력을 active backend의 stdin으로 직접 통과
-- **Global shortcuts** (`Shift+←/→`: 포커스 cycling, `Ctrl+T`: 터미널 생성, `F1`–`F9`: 터미널 pane jump 등)는 항상 앱이 먼저 처리
+- **Global shortcuts** (`Shift+←/→`: 포커스 cycling, `Ctrl+T`: 터미널 생성, `F1`/`F2`: 파일 리스트·diff 포커스 jump, `F3`–`F9`: 터미널 pane 1–7 jump 등)는 항상 앱이 먼저 처리
 - **Upper subfocus shortcuts** (`Left`/`Right`/`Shift+Tab`: 파일 리스트와 diff 뷰어 전환)는 상단 포커스에서만 앱이 처리한다.
 
 ## Critical Risk
