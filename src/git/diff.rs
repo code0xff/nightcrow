@@ -161,7 +161,7 @@ fn decode_file_view(bytes: &[u8]) -> Result<String> {
         ));
     }
     std::str::from_utf8(bytes)
-        .map(|s| s.to_string())
+        .map(String::from)
         .map_err(|_| anyhow::anyhow!("binary or non-utf8 file"))
 }
 

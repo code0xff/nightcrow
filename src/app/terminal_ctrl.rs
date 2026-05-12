@@ -119,6 +119,6 @@ impl App {
 
     pub fn active_screen(&self) -> Option<&vt100::Screen> {
         let id = self.terminal.active_pane_id()?;
-        self.terminal.parsers.get(&id).map(|p| p.screen())
+        self.terminal.parsers.get(&id).map(vt100::Parser::screen)
     }
 }

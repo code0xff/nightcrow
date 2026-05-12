@@ -178,9 +178,9 @@ impl SizeRollingAppender {
 fn latest_size_log_index(dir: &Path, prefix: &str) -> u32 {
     let prefix = format!("{prefix}.");
     fs::read_dir(dir)
-        .ok()
         .into_iter()
-        .flat_map(|entries| entries.flatten())
+        .flatten()
+        .flatten()
         .filter_map(|entry| {
             entry
                 .file_name()
