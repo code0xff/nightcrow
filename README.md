@@ -49,7 +49,7 @@ nightcrow --repo ~/projects/myapp
 | `Ctrl+T` | Open new terminal pane |
 | `Ctrl+W` | Close active terminal pane |
 | `F1`…`F9` | Jump to terminal pane N |
-| `Ctrl+F` | Toggle fullscreen for the focused pane (diff viewer or terminal) |
+| `Ctrl+F` | Toggle fullscreen for the focused pane (file/commit list, diff viewer, or terminal) |
 | `Ctrl+P` | Cycle accent color (yellow → cyan → green → magenta → blue) |
 | `Ctrl+O` | Change repo path |
 | `Ctrl+Q` | Quit |
@@ -60,6 +60,7 @@ nightcrow --repo ~/projects/myapp
 |-----|--------|
 | `↑` / `k`, `↓` / `j` | Navigate items one by one |
 | `PgUp` / `PgDn` | Jump 10 items |
+| `Ctrl+F` | Zoom the list pane to full screen (toggle) |
 | `/` | Incremental search (status view only) |
 | `Esc` | Cancel search |
 | `Enter` | Drill into commit's file list (log view) |
