@@ -145,6 +145,20 @@ pub fn draw(
         return;
     }
 
+    if app.list_fullscreen {
+        let root = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Min(0), Constraint::Length(1)])
+            .split(frame.area());
+
+        match app.mode {
+            ViewMode::Status => file_list::render(frame, app, root[0], accent),
+            ViewMode::Log => commit_list::render(frame, app, root[0], accent),
+        }
+        frame.render_widget(render_hint_bar(app, accent), root[1]);
+        return;
+    }
+
     let root = Layout::default()
         .direction(Direction::Vertical)
         .constraints([Constraint::Min(0), Constraint::Length(1)])
@@ -200,6 +214,23 @@ fn render_hint_bar(app: &App, accent: Color) -> Paragraph<'_> {
             " ctrl+f: exit zoom | n: next match | shift+n: prev match | /: new search | esc: clear"
         } else {
             " ctrl+f: exit zoom | j/k: scroll | v: view file | /: search | pgup/pgdn: page | ctrl+q: quit"
+        };
+        return Paragraph::new(Line::from(Span::styled(
+            hint,
+            Style::default().fg(Color::DarkGray),
+        )));
+    }
+    if app.list_fullscreen {
+        let hint = match app.mode {
+            ViewMode::Log if app.log_view.drill_down => {
+                " ctrl+f: exit zoom | esc: back to commits | j/k: navigate files | ctrl+q: quit"
+            }
+            ViewMode::Log => {
+                " ctrl+f: exit zoom | ctrl+l: status view | j/k: navigate commits | enter: view files | ctrl+q: quit"
+            }
+            ViewMode::Status => {
+                " ctrl+f: exit zoom | j/k: navigate | /: search | ctrl+l: log view | ctrl+q: quit"
+            }
         };
         return Paragraph::new(Line::from(Span::styled(
             hint,

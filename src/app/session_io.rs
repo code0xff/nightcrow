@@ -19,6 +19,7 @@ impl App {
             active_pane: self.terminal.active,
             terminal_fullscreen: self.terminal.fullscreen,
             diff_fullscreen: self.diff.fullscreen,
+            list_fullscreen: self.list_fullscreen,
             mode: Some(self.mode),
             log_selected: self.log_view.selected,
             accent_idx: self.accent_idx,
@@ -46,6 +47,11 @@ impl App {
         self.diff.fullscreen = state.diff_fullscreen && !self.terminal.fullscreen;
         if self.diff.fullscreen {
             self.focus = Focus::DiffViewer;
+        }
+        self.list_fullscreen =
+            state.list_fullscreen && !self.terminal.fullscreen && !self.diff.fullscreen;
+        if self.list_fullscreen {
+            self.focus = Focus::FileList;
         }
         self.set_accent_index(state.accent_idx);
 

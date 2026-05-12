@@ -219,7 +219,8 @@ fn handle_global_action(app: &mut App, action: Action) -> Option<KeyOutcome> {
         Action::ToggleFullscreen => {
             match app.focus {
                 Focus::DiffViewer => app.toggle_diff_fullscreen(),
-                _ => app.toggle_terminal_fullscreen(),
+                Focus::FileList => app.toggle_list_fullscreen(),
+                Focus::Terminal => app.toggle_terminal_fullscreen(),
             }
             Some(KeyOutcome::Continue)
         }

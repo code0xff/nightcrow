@@ -94,6 +94,10 @@ pub struct App {
     /// Path the auto-follow last steered selection to. Prevents repeatedly
     /// re-asserting selection on the same already-hot-and-selected file.
     pub auto_followed_path: Option<String>,
+    /// True while the upper-left list panel (file list in Status mode, commit
+    /// list in Log mode) is rendered full-screen. Mutually exclusive with
+    /// `diff.fullscreen` and `terminal.fullscreen`.
+    pub list_fullscreen: bool,
 }
 
 impl App {
@@ -120,6 +124,7 @@ impl App {
             cfg_agent_indicator: crate::config::AgentIndicatorConfig::default(),
             last_manual_nav_at: None,
             auto_followed_path: None,
+            list_fullscreen: false,
         };
 
         app.ensure_initial_terminal();
@@ -185,6 +190,7 @@ mod tests {
             },
             last_manual_nav_at: None,
             auto_followed_path: None,
+            list_fullscreen: false,
         }
     }
 
@@ -496,6 +502,166 @@ mod tests {
 
         app.cycle_focus_backward();
         assert_eq!(app.focus, Focus::DiffViewer);
+    }
+
+    #[test]
+    fn toggle_list_fullscreen_sets_flag_and_focuses_file_list() {
+        let mut app = app_with_files(vec![]);
+        app.focus = Focus::DiffViewer;
+        assert!(!app.list_fullscreen);
+
+        app.toggle_list_fullscreen();
+
+        assert!(app.list_fullscreen);
+        assert_eq!(app.focus, Focus::FileList);
+
+        app.toggle_list_fullscreen();
+
+        assert!(!app.list_fullscreen);
+        // Exiting list zoom leaves focus on FileList (matches diff zoom semantics).
+        assert_eq!(app.focus, Focus::FileList);
+    }
+
+    #[test]
+    fn toggle_list_fullscreen_exits_diff_fullscreen() {
+        let mut app = app_with_files(vec![]);
+        app.toggle_diff_fullscreen();
+        assert!(app.diff.fullscreen);
+
+        app.toggle_list_fullscreen();
+
+        assert!(app.list_fullscreen);
+        assert!(!app.diff.fullscreen);
+        assert_eq!(app.focus, Focus::FileList);
+    }
+
+    #[test]
+    fn toggle_list_fullscreen_exits_terminal_fullscreen() {
+        let mut app = app_with_files(vec![]);
+        app.terminal.panes = vec![PaneInfo {
+            id: 1,
+            title: "shell".into(),
+        }];
+        app.toggle_terminal_fullscreen();
+        assert!(app.terminal.fullscreen);
+
+        app.toggle_list_fullscreen();
+
+        assert!(app.list_fullscreen);
+        assert!(!app.terminal.fullscreen);
+        assert_eq!(app.focus, Focus::FileList);
+    }
+
+    #[test]
+    fn toggle_diff_fullscreen_exits_list_fullscreen() {
+        let mut app = app_with_files(vec![]);
+        app.toggle_list_fullscreen();
+        assert!(app.list_fullscreen);
+
+        app.toggle_diff_fullscreen();
+
+        assert!(app.diff.fullscreen);
+        assert!(!app.list_fullscreen);
+        assert_eq!(app.focus, Focus::DiffViewer);
+    }
+
+    #[test]
+    fn toggle_terminal_fullscreen_exits_list_fullscreen() {
+        let mut app = app_with_files(vec![]);
+        app.terminal.panes = vec![PaneInfo {
+            id: 1,
+            title: "shell".into(),
+        }];
+        app.toggle_list_fullscreen();
+        assert!(app.list_fullscreen);
+
+        app.toggle_terminal_fullscreen();
+
+        assert!(app.terminal.fullscreen);
+        assert!(!app.list_fullscreen);
+        assert_eq!(app.focus, Focus::Terminal);
+    }
+
+    #[test]
+    fn cycle_focus_is_noop_in_list_fullscreen() {
+        let mut app = app_with_files(vec![]);
+        app.terminal.panes = vec![PaneInfo {
+            id: 1,
+            title: "shell".into(),
+        }];
+        app.toggle_list_fullscreen();
+        assert_eq!(app.focus, Focus::FileList);
+
+        app.cycle_focus_forward();
+        assert_eq!(app.focus, Focus::FileList);
+
+        app.cycle_focus_backward();
+        assert_eq!(app.focus, Focus::FileList);
+    }
+
+    #[test]
+    fn switch_pane_exits_list_fullscreen() {
+        let mut app = app_with_files(vec![]);
+        app.terminal.panes = vec![PaneInfo {
+            id: 1,
+            title: "shell".into(),
+        }];
+        app.toggle_list_fullscreen();
+        assert!(app.list_fullscreen);
+
+        app.switch_pane(0);
+
+        assert!(!app.list_fullscreen);
+        assert_eq!(app.focus, Focus::Terminal);
+    }
+
+    #[test]
+    fn save_session_round_trips_list_fullscreen() {
+        let mut app = app_with_files(vec![]);
+        app.toggle_list_fullscreen();
+        assert!(app.list_fullscreen);
+
+        let state = app.save_session();
+        assert!(state.list_fullscreen);
+
+        let mut other = app_with_files(vec![]);
+        other.restore_session(&state);
+        assert!(other.list_fullscreen);
+        assert_eq!(other.focus, Focus::FileList);
+    }
+
+    #[test]
+    fn restore_session_list_fullscreen_forces_filelist_focus() {
+        let mut app = app_with_files(vec![]);
+
+        app.restore_session(&crate::session::SessionState {
+            focus: Some(Focus::DiffViewer),
+            list_fullscreen: true,
+            ..Default::default()
+        });
+
+        assert!(app.list_fullscreen);
+        assert_eq!(app.focus, Focus::FileList);
+    }
+
+    #[test]
+    fn restore_session_prefers_terminal_fullscreen_over_list_fullscreen() {
+        let mut app = app_with_files(vec![]);
+        app.terminal.panes = vec![PaneInfo {
+            id: 1,
+            title: "shell".into(),
+        }];
+
+        app.restore_session(&crate::session::SessionState {
+            focus: Some(Focus::FileList),
+            terminal_fullscreen: true,
+            list_fullscreen: true,
+            ..Default::default()
+        });
+
+        assert!(app.terminal.fullscreen);
+        assert!(!app.list_fullscreen);
+        assert_eq!(app.focus, Focus::Terminal);
     }
 
     #[test]
@@ -966,6 +1132,18 @@ mod tests {
         app.change_repo(path);
 
         assert!(app.pending_session.is_none());
+    }
+
+    #[test]
+    fn change_repo_clears_list_fullscreen() {
+        let mut app = app_with_files(vec!["a.rs"]);
+        app.toggle_list_fullscreen();
+        assert!(app.list_fullscreen);
+
+        let path = app.repo_path.clone();
+        app.change_repo(path);
+
+        assert!(!app.list_fullscreen);
     }
 
     #[test]

@@ -111,9 +111,11 @@ impl App {
             self.terminal.active = idx;
             self.focus = Focus::Terminal;
             // Pressing F1..=F9 is a request to interact with a terminal pane;
-            // dropping diff fullscreen here keeps focus, render, and hints in
-            // sync (otherwise the diff stays zoomed while focus moves away).
+            // drop any competing fullscreen so focus, render, and hints stay
+            // in sync (otherwise a zoomed diff/list would persist while focus
+            // moves away).
             self.diff.fullscreen = false;
+            self.list_fullscreen = false;
         }
     }
 

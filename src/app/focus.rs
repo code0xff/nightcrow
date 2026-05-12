@@ -48,7 +48,7 @@ impl App {
     }
 
     pub fn cycle_focus_forward(&mut self) {
-        if self.diff.fullscreen {
+        if self.diff.fullscreen || self.list_fullscreen {
             return;
         }
         if self.terminal.fullscreen {
@@ -81,7 +81,7 @@ impl App {
     }
 
     pub fn cycle_focus_backward(&mut self) {
-        if self.diff.fullscreen {
+        if self.diff.fullscreen || self.list_fullscreen {
             return;
         }
         if self.terminal.fullscreen {
@@ -121,6 +121,7 @@ impl App {
         if self.terminal.fullscreen {
             self.focus = Focus::Terminal;
             self.diff.fullscreen = false;
+            self.list_fullscreen = false;
         }
     }
 
@@ -128,6 +129,16 @@ impl App {
         self.diff.fullscreen = !self.diff.fullscreen;
         if self.diff.fullscreen {
             self.focus = Focus::DiffViewer;
+            self.terminal.fullscreen = false;
+            self.list_fullscreen = false;
+        }
+    }
+
+    pub fn toggle_list_fullscreen(&mut self) {
+        self.list_fullscreen = !self.list_fullscreen;
+        if self.list_fullscreen {
+            self.focus = Focus::FileList;
+            self.diff.fullscreen = false;
             self.terminal.fullscreen = false;
         }
     }

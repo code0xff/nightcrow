@@ -47,10 +47,11 @@ impl App {
         self.status = None;
         self.tracking = None;
         self.focus = Focus::FileList;
-        // Drop transient view modes — the previous repo's diff zoom or terminal
-        // fullscreen has no meaning under the new working tree.
+        // Drop transient view modes — the previous repo's diff zoom, terminal
+        // fullscreen, or list fullscreen has no meaning under the new working tree.
         self.diff.fullscreen = false;
         self.terminal.fullscreen = false;
+        self.list_fullscreen = false;
         // Drop any pending session restore for the previous repo. Without this,
         // a Ctrl+O before the first snapshot of the old repo lands would have
         // its saved focus/fullscreen/selection applied to the new repo via
