@@ -236,6 +236,18 @@ fn handle_global_action(app: &mut App, action: Action) -> Option<KeyOutcome> {
             app.switch_pane(n);
             Some(KeyOutcome::Continue)
         }
+        Action::FocusList => {
+            app.focus_list();
+            Some(KeyOutcome::Continue)
+        }
+        Action::FocusDiff => {
+            app.focus_diff();
+            Some(KeyOutcome::Continue)
+        }
+        Action::FocusTerminal => {
+            app.focus_terminal();
+            Some(KeyOutcome::Continue)
+        }
         Action::CycleForward => {
             app.cycle_focus_forward();
             Some(KeyOutcome::Continue)

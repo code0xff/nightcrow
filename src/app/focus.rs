@@ -146,4 +146,25 @@ impl App {
             self.terminal.fullscreen = false;
         }
     }
+
+    pub fn focus_list(&mut self) {
+        self.focus = Focus::FileList;
+        self.diff.fullscreen = false;
+        self.terminal.fullscreen = false;
+    }
+
+    pub fn focus_diff(&mut self) {
+        self.focus = Focus::DiffViewer;
+        self.list_fullscreen = false;
+        self.terminal.fullscreen = false;
+    }
+
+    pub fn focus_terminal(&mut self) {
+        if self.terminal.panes.is_empty() {
+            return;
+        }
+        self.focus = Focus::Terminal;
+        self.diff.fullscreen = false;
+        self.list_fullscreen = false;
+    }
 }

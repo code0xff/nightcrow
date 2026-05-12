@@ -239,7 +239,7 @@ fn render_hint_bar(app: &App, accent: Color) -> Paragraph<'_> {
     }
     let hint = match app.focus {
         Focus::Terminal => {
-            " shift+↑/↓: scroll | shift+pgup/dn: page scroll | shift+←/→: cycle | ctrl+t: new pane | ctrl+w: close pane | F1-F9: switch pane | ctrl+f: fullscreen | ctrl+l: log view | ctrl+o: repo | ctrl+p: theme | ctrl+q: quit"
+            " shift+↑/↓: scroll | shift+pgup/dn: page scroll | shift+←/→: cycle | ctrl+1/2/3: focus list/diff/term | ctrl+t: new pane | ctrl+w: close pane | F1-F9: switch pane | ctrl+f: fullscreen | ctrl+l: log view | ctrl+o: repo | ctrl+p: theme | ctrl+q: quit"
         }
         Focus::FileList => match app.mode {
             ViewMode::Log => {
@@ -250,7 +250,7 @@ fn render_hint_bar(app: &App, accent: Color) -> Paragraph<'_> {
                 }
             }
             ViewMode::Status => {
-                " shift+←/→: cycle | j/k: navigate | /: search | F1-F9: switch pane | ctrl+f: fullscreen | ctrl+l: log view | ctrl+o: repo | ctrl+p: theme | ctrl+q: quit"
+                " shift+←/→: cycle | j/k: navigate | /: search | ctrl+1/2/3: focus list/diff/term | F1-F9: switch pane | ctrl+f: fullscreen | ctrl+l: log view | ctrl+o: repo | ctrl+p: theme | ctrl+q: quit"
             }
         },
         Focus::DiffViewer => {
@@ -261,7 +261,7 @@ fn render_hint_bar(app: &App, accent: Color) -> Paragraph<'_> {
             } else if !app.diff.search.query.is_empty() {
                 " n: next match | shift+n: prev match | /: new search | esc: clear"
             } else {
-                " shift+←/→: cycle | j/k: scroll | v: view file | /: search | ctrl+f: zoom | pgup/pgdn: scroll | F1-F9: switch pane | ctrl+l: log view | ctrl+o: repo | ctrl+p: theme | ctrl+q: quit"
+                " shift+←/→: cycle | j/k: scroll | v: view file | /: search | ctrl+f: zoom | pgup/pgdn: scroll | ctrl+1/2/3: focus list/diff/term | F1-F9: switch pane | ctrl+l: log view | ctrl+o: repo | ctrl+p: theme | ctrl+q: quit"
             }
         }
     };

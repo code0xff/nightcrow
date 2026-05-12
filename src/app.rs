@@ -402,6 +402,67 @@ mod tests {
     }
 
     #[test]
+    fn focus_list_jumps_and_exits_competing_fullscreens() {
+        let mut app = app_with_files(vec![]);
+        app.terminal.panes = vec![PaneInfo {
+            id: 1,
+            title: "shell".into(),
+        }];
+        app.focus = Focus::Terminal;
+        app.toggle_terminal_fullscreen();
+        assert!(app.terminal.fullscreen);
+
+        app.focus_list();
+
+        assert_eq!(app.focus, Focus::FileList);
+        assert!(!app.terminal.fullscreen);
+        assert!(!app.diff.fullscreen);
+    }
+
+    #[test]
+    fn focus_diff_jumps_and_exits_competing_fullscreens() {
+        let mut app = app_with_files(vec![]);
+        app.toggle_list_fullscreen();
+        assert!(app.list_fullscreen);
+
+        app.focus_diff();
+
+        assert_eq!(app.focus, Focus::DiffViewer);
+        assert!(!app.list_fullscreen);
+        assert!(!app.terminal.fullscreen);
+    }
+
+    #[test]
+    fn focus_terminal_is_noop_without_panes() {
+        let mut app = app_with_files(vec![]);
+        assert!(app.terminal.panes.is_empty());
+        app.focus = Focus::FileList;
+
+        app.focus_terminal();
+
+        // Without any terminal pane there is nothing to focus, so state stays
+        // on FileList rather than landing on an empty Terminal focus.
+        assert_eq!(app.focus, Focus::FileList);
+    }
+
+    #[test]
+    fn focus_terminal_jumps_and_exits_competing_fullscreens() {
+        let mut app = app_with_files(vec![]);
+        app.terminal.panes = vec![PaneInfo {
+            id: 1,
+            title: "shell".into(),
+        }];
+        app.toggle_diff_fullscreen();
+        assert!(app.diff.fullscreen);
+
+        app.focus_terminal();
+
+        assert_eq!(app.focus, Focus::Terminal);
+        assert!(!app.diff.fullscreen);
+        assert!(!app.list_fullscreen);
+    }
+
+    #[test]
     fn switch_pane_exits_diff_fullscreen() {
         let mut app = app_with_files(vec![]);
         app.terminal.panes = vec![PaneInfo {
