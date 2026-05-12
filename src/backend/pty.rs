@@ -72,20 +72,19 @@ impl TerminalBackend for PtyBackend {
         self.next_id = next;
 
         let (tx, rx) = mpsc::channel();
-        let output_tx = tx.clone();
         thread::spawn(move || {
             let mut buf = [0u8; 4096];
             loop {
                 match reader.read(&mut buf) {
                     Ok(0) | Err(_) => break,
                     Ok(n) => {
-                        if output_tx.send(PtyEvent::Output(buf[..n].to_vec())).is_err() {
+                        if tx.send(PtyEvent::Output(buf[..n].to_vec())).is_err() {
                             break;
                         }
                     }
                 }
             }
-            let _ = output_tx.send(PtyEvent::Exited);
+            let _ = tx.send(PtyEvent::Exited);
         });
 
         thread::spawn(move || {
@@ -138,17 +137,18 @@ impl TerminalBackend for PtyBackend {
         // destroy_pane on Exited). Doing it here too created a dual-ownership
         // race where reader-thread events queued after destroy_pane were
         // silently dropped, and where Exited could be reported twice.
+        //
+        // The reader thread emits all Output messages, then a single Exited as
+        // the last message before its sender drops. The mpsc channel preserves
+        // send order, so any Output enqueued before Exited has already been
+        // surfaced by an earlier iteration of the outer try_recv loop — no
+        // separate post-Exited drain is needed.
         let mut events = Vec::new();
         for (id, pane) in &self.panes {
             while let Ok(event) = pane.rx.try_recv() {
                 match event {
                     PtyEvent::Output(data) => events.push(BackendEvent::Output { pane: *id, data }),
                     PtyEvent::Exited => {
-                        // Drain any output buffered between the last read and the
-                        // exit signal before advertising the pane as gone.
-                        while let Ok(PtyEvent::Output(data)) = pane.rx.try_recv() {
-                            events.push(BackendEvent::Output { pane: *id, data });
-                        }
                         events.push(BackendEvent::Exited { pane: *id });
                         break;
                     }
