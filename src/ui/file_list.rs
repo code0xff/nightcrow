@@ -87,14 +87,14 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect, accent: Color) {
                     ),
                     Span::styled(format!("{symbol} "), Style::default().fg(color)),
                     Span::styled(
-                        path.to_string(),
+                        path,
                         Style::default().fg(accent).add_modifier(Modifier::BOLD),
                     ),
                 ]),
                 HotStage::Warm => Line::from(vec![
                     Span::styled("★ ", Style::default().fg(accent)),
                     Span::styled(format!("{symbol} "), Style::default().fg(color)),
-                    Span::styled(path.to_string(), Style::default().fg(accent)),
+                    Span::styled(path, Style::default().fg(accent)),
                 ]),
             };
             ListItem::new(line)
