@@ -58,21 +58,20 @@ impl App {
     /// Update `hot_table` with the latest observed mtimes. Entries for
     /// paths missing from the new snapshot are dropped; entries with a
     /// strictly newer mtime are replaced (so a file edited twice within
-    /// the hot window re-arms its fade).
+    /// the hot window re-arms its fade). A path whose previous mtime was
+    /// newer than the freshly observed one keeps its previous mtime — a
+    /// rename-from-stash can resurrect older mtimes for the same path
+    /// and must not demote a recent edit to cool.
     pub(crate) fn merge_hot_table(&mut self, mtimes: HashMap<String, SystemTime>) {
-        self.status_view
-            .hot_table
-            .retain(|p, _| mtimes.contains_key(p));
+        let prior = std::mem::take(&mut self.status_view.hot_table);
+        let mut next = HashMap::with_capacity(mtimes.len());
         for (path, new_mtime) in mtimes {
-            self.status_view
-                .hot_table
-                .entry(path)
-                .and_modify(|stored| {
-                    if new_mtime > *stored {
-                        *stored = new_mtime;
-                    }
-                })
-                .or_insert(new_mtime);
+            let final_mtime = match prior.get(&path) {
+                Some(&stored) if stored > new_mtime => stored,
+                _ => new_mtime,
+            };
+            next.insert(path, final_mtime);
         }
+        self.status_view.hot_table = next;
     }
 }
