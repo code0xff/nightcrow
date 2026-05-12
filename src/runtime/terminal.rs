@@ -79,13 +79,20 @@ impl TerminalState {
         let text = strip_escape_sequences(data);
         let buf = self.prompt_bufs.entry(pane_id).or_default();
         for ch in text.chars() {
-            if ch == '\r' || ch == '\n' {
-                if !buf.is_empty() {
-                    tracing::info!(target: "prompt", pane = pane_id, text = %buf);
-                    buf.clear();
+            match ch {
+                '\r' | '\n' => {
+                    if !buf.is_empty() {
+                        tracing::info!(target: "prompt", pane = pane_id, text = %buf);
+                        buf.clear();
+                    }
                 }
-            } else {
-                buf.push(ch);
+                // 0x7f (DEL, sent by Backspace) and 0x08 (BS, sent by Ctrl+H)
+                // both remove the previous typed char. Without this branch the
+                // prompt log would accumulate typos the user already corrected.
+                '\x7f' | '\x08' => {
+                    buf.pop();
+                }
+                _ => buf.push(ch),
             }
         }
     }
@@ -200,7 +207,10 @@ pub(crate) fn strip_escape_sequences(data: &[u8]) -> String {
                     // happened to land right after a stray Esc.
                 }
             },
-            '\r' | '\n' => result.push(ch),
+            // \r, \n, and the line-editing controls (BS, DEL) are forwarded
+            // so `buffer_prompt_input` can flush on newlines and pop on
+            // backspace; every other control byte is dropped.
+            '\r' | '\n' | '\x08' | '\x7f' => result.push(ch),
             c if !c.is_control() => result.push(c),
             _ => {}
         }

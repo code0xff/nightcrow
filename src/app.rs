@@ -943,6 +943,15 @@ mod tests {
     }
 
     #[test]
+    fn strip_escape_sequences_preserves_backspace_and_del() {
+        // BS (0x08) and DEL (0x7f) survive stripping so `buffer_prompt_input`
+        // can replay them as `buf.pop()` instead of logging chars the user
+        // already corrected.
+        let out = super::strip_escape_sequences(b"ab\x7fcd\x08e");
+        assert_eq!(out, "ab\x7fcd\x08e");
+    }
+
+    #[test]
     fn keep_scroll_clamps_when_new_diff_is_shorter() {
         let mut app = app_with_files(vec!["a.rs"]);
         // Seed a long diff and put scroll near the bottom.
