@@ -91,7 +91,7 @@ fn build_screen_lines(app: &App, rows: u16, cols: u16) -> Vec<Line<'static>> {
             let mut run_style = Style::default();
 
             for col in 0..render_cols {
-                let (text, style) = match screen.cell(row, col) {
+                let (text, style): (&str, Style) = match screen.cell(row, col) {
                     Some(cell) => {
                         // Wide chars (e.g., Hangul) occupy two columns: vt100
                         // stores the glyph on the first cell and an empty
@@ -100,25 +100,20 @@ fn build_screen_lines(app: &App, rows: u16, cols: u16) -> Vec<Line<'static>> {
                         if cell.is_wide_continuation() {
                             continue;
                         }
-                        let t = if cell.contents().is_empty() {
-                            " ".to_string()
-                        } else {
-                            cell.contents().to_string()
-                        };
+                        let contents = cell.contents();
+                        let t = if contents.is_empty() { " " } else { contents };
                         (t, cell_to_style(cell))
                     }
-                    None => (" ".to_string(), Style::default()),
+                    None => (" ", Style::default()),
                 };
 
-                if style == run_style {
-                    run_text.push_str(&text);
-                } else {
+                if style != run_style {
                     if !run_text.is_empty() {
                         spans.push(Span::styled(std::mem::take(&mut run_text), run_style));
                     }
                     run_style = style;
-                    run_text = text;
                 }
+                run_text.push_str(text);
             }
             if !run_text.is_empty() {
                 spans.push(Span::styled(run_text, run_style));
