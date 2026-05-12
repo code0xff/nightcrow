@@ -19,15 +19,15 @@ enum HotStage {
 }
 
 /// Bucket a single mtime against `now` and the user's hot window. The
-/// "fresh" threshold is intentionally smaller than typical filesystem
-/// mtime granularity (1s on FAT/older ext4) × 3 so the transition out of
-/// bold remains observable. Negative deltas (clock skew, mtime in the
-/// future) saturate to `Fresh` — the conservative "just touched" choice.
+/// "fresh" threshold sits well above typical filesystem mtime granularity
+/// (1s on FAT/older ext4) so the bold→non-bold transition remains easy to
+/// spot. Negative deltas (clock skew, mtime in the future) saturate to
+/// `Fresh` — the conservative "just touched" choice.
 fn classify_hot(mtime: SystemTime, now: SystemTime, hot_window: Duration) -> HotStage {
     let age = now.duration_since(mtime).unwrap_or(Duration::ZERO);
     if age >= hot_window {
         HotStage::Cool
-    } else if age < Duration::from_secs(3) {
+    } else if age < Duration::from_secs(5) {
         HotStage::Fresh
     } else {
         HotStage::Warm
