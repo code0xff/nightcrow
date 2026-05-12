@@ -88,19 +88,18 @@ impl App {
                         self.diff.scroll = prev.min(self.diff.max_scroll());
                     }
                 }
-                if let DiffApply::ResetWithTitle(title) = mode {
-                    self.log_view.diff_title = title.to_string();
-                }
                 if !self.diff.search.query.is_empty() {
                     self.diff.recompute_matches(reset_scroll);
                 }
             }
             Err(_) => {
                 self.clear_diff_state();
-                if let DiffApply::ResetWithTitle(title) = mode {
-                    self.log_view.diff_title = title.to_string();
-                }
             }
+        }
+        // Title belongs to the surrounding view, not the diff state — set it
+        // last so it survives both success and failure of the load.
+        if let DiffApply::ResetWithTitle(title) = mode {
+            self.log_view.diff_title = title.to_string();
         }
     }
 
