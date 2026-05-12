@@ -67,9 +67,9 @@ pub fn render(
     let border_style = super::focused_border_style(focused, accent);
 
     let file_path = file_path_for_syntax(app).to_string();
-    let ext = extension(&file_path).to_string();
+    let ext = extension(&file_path);
     let syntax = ss
-        .find_syntax_by_extension(&ext)
+        .find_syntax_by_extension(ext)
         .unwrap_or_else(|| ss.find_syntax_plain_text());
     // Build the syntect highlight cache once per (hunks × syntax) so the
     // visible-window walk below stays bounded even on large diffs.
@@ -79,10 +79,9 @@ pub fn render(
     let has_search = app.diff.search.has_query();
 
     // Total flat row count = (1 hunk header + N body lines) per hunk.
-    let total_lines: usize = app.diff.hunks.iter().map(|h| 1 + h.lines.len()).sum();
+    let total_lines = app.diff.line_count();
     let visible_height = (diff_area.height as usize).saturating_sub(2);
-    let max_scroll = total_lines.saturating_sub(1);
-    let scroll_start = app.diff.scroll.min(max_scroll);
+    let scroll_start = app.diff.scroll.min(app.diff.max_scroll());
     let visible_end = scroll_start.saturating_add(visible_height);
 
     let mut lines: Vec<Line> = Vec::with_capacity(visible_height);
