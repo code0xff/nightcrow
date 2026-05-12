@@ -19,21 +19,20 @@ impl App {
         // directory and would silently keep returning stale results.
         self.repo_cache = None;
         self.mode = ViewMode::Status;
-        self.status_view.files.clear();
+        // Go through `set_files` / `set_commits` so the width caches stay
+        // in lockstep with the underlying vec — manual `.clear()` calls
+        // would drift if the setter contract grows new invariants.
+        self.status_view.set_files(Vec::new());
         self.status_view.selected = 0;
         self.status_view.file_scroll_x = 0;
         // Hot mtimes are workdir-scoped; carrying them into the new repo would
         // bias auto-follow toward unrelated paths until the first snapshot tick.
         self.status_view.hot_table.clear();
-        // Width caches are length-keyed and can alias across repos with the
-        // same file/commit count, so clear them explicitly on repo switch.
-        self.status_view.path_width_cache.set(None);
-        self.log_view.commits.clear();
+        self.log_view.set_commits(Vec::new());
         self.log_view.selected = 0;
         self.log_view.diff_title.clear();
         self.log_view.commit_scroll_x = 0;
-        self.log_view.commit_width_cache.set(None);
-        self.log_view.commit_files_width_cache.set(None);
+        // `reset_drill_down` also clears `commit_files` and its width cache.
         self.log_view.reset_drill_down();
         self.status_view.cancel_search();
         // clear_diff_state empties hunks + lower/highlight caches, resets diff
