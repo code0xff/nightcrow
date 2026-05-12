@@ -52,6 +52,11 @@ impl App {
         // fullscreen has no meaning under the new working tree.
         self.diff.fullscreen = false;
         self.terminal.fullscreen = false;
+        // Drop any pending session restore for the previous repo. Without this,
+        // a Ctrl+O before the first snapshot of the old repo lands would have
+        // its saved focus/fullscreen/selection applied to the new repo via
+        // `ingest_snapshot`, overriding the explicit reset above.
+        self.pending_session = None;
     }
 
     pub fn start_repo_input(&mut self) {
