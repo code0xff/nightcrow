@@ -53,14 +53,14 @@ pub(crate) fn cursor_down(idx: &mut usize, len: usize, n: usize) -> bool {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize, Default)]
 pub enum ViewMode {
     #[default]
     Status,
     Log,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum Focus {
     FileList,
     DiffViewer,
