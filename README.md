@@ -3,6 +3,7 @@
 TUI for Agentic Coding — git diff viewer + commit log + multi-terminal panes in one terminal window.
 
 ```
+ ~/projects/myapp   main   ↑2 ↓0
 ┌──────────────────────────────────────────────────────┐
 │ Files           │ @@ -36,7 +36,12 @@                 │
 │ M src/app.rs    │  fn collect_hunks(                  │
@@ -12,6 +13,7 @@ TUI for Agentic Coding — git diff viewer + commit log + multi-terminal panes i
 │ [1] claude  [2] aider  [3] bash                      │
 │ $ cargo test                                         │
 └──────────────────────────────────────────────────────┘
+ j/k: scroll | /: search | v: view file | ctrl+q: quit
 ```
 
 ## Install
@@ -36,7 +38,9 @@ nightcrow --repo ~/projects/myapp
 
 **Status view** (default) — lists changed files on the left, syntax-highlighted diff on the right.
 
-**Commit log view** (`Ctrl+L`) — tig-like commit list on the left, full commit diff on the right. Commits ahead of the upstream are marked with `↑`. Press `Enter` on a commit to drill into its individual files; `Esc` to go back.
+**Commit log view** (`Ctrl+L`) — tig-like commit list on the left, full commit diff on the right. Commits ahead of the upstream are marked with `↑`. Press `Enter` on a commit to drill into its individual files; `Esc` to go back. The list auto-refreshes when the workdir HEAD changes (commits made in the terminal pane, amends, force-pushes, branch switches).
+
+**Top header** — a one-row strip at the top of the screen always shows the repo path (home-relative, e.g. `~/projects/myapp`), the current branch, and ahead/behind counts (`↑N ↓M`) when the branch tracks an upstream.
 
 ## Keyboard shortcuts
 
@@ -89,9 +93,11 @@ nightcrow --repo ~/projects/myapp
 
 While scrolled, the terminal border title shows `[SCROLL — shift+pgdn: down | input: live]`. Keyboard input is still forwarded to the running process; `Shift+PgDn` to scroll back to the bottom.
 
+The tab bar picks up OSC 0/2 window-title escape sequences, so programs like `claude`, `vim`, `ssh`, or `cd`-aware shell prompts can rename their own tab. Panes without an emitted title fall back to a default label.
+
 ## Agent-aware focus indicator
 
-Files modified within the last `hot_window_secs` seconds are tagged with `★ ` in the file list and rendered in the accent color (bold for the first 3 seconds, normal until the window expires). When the file list is in focus and you have not navigated in the last 2 seconds, the selection auto-follows to the freshest hot file so the diff updates as the agent works. Manual navigation (`j` / `k` / arrows / PgUp / PgDn) immediately suppresses auto-follow until you go idle again.
+Files modified within the last `hot_window_secs` seconds are rendered in the accent color (bold for the first 5 seconds, normal until the window expires). When the file list is in focus and you have not navigated in the last 2 seconds, the selection auto-follows to the freshest hot file so the diff updates as the agent works. Manual navigation (`j` / `k` / arrows / PgUp / PgDn) immediately suppresses auto-follow until you go idle again.
 
 Configurable under `[agent_indicator]` (see below).
 
@@ -118,11 +124,11 @@ rotation = "daily"        # "daily" | "hourly" | "size"
 max_size_mb = 10          # used when rotation = "size"
 max_days = 7              # delete logs older than N days (0 = keep forever)
 level = "info"            # "error" | "warn" | "info" | "debug" | "trace"
-prompt_log = false        # record terminal prompt input line by line
+prompt_log = true         # record terminal prompt input line by line
 
 [agent_indicator]
-enabled = true            # show the ★ marker on recently-touched files
-hot_window_secs = 10      # seconds within which a file stays hot (3–3600)
+enabled = true            # color recently-touched files in the file list
+hot_window_secs = 15      # seconds within which a file stays hot (3–3600)
 auto_follow = true        # jump selection to the freshest hot file when idle
 ```
 
