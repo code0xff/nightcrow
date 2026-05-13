@@ -191,12 +191,12 @@ pub fn render(
             if has_search {
                 let count = app.diff.search.matches.len();
                 if count == 0 {
-                    format!(" {label} [no matches] ")
+                    format!(" F2 {label} [no matches] ")
                 } else {
-                    format!(" {label} [{}/{}] ", app.diff.search.cursor + 1, count)
+                    format!(" F2 {label} [{}/{}] ", app.diff.search.cursor + 1, count)
                 }
             } else {
-                format!(" {label} ")
+                format!(" F2 {label} ")
             }
         }
         ViewMode::Status => {
@@ -205,14 +205,14 @@ pub fn render(
                 let count = app.diff.search.matches.len();
                 let file = selected.map(|f| f.path.as_str()).unwrap_or("Diff");
                 if count == 0 {
-                    format!(" {file} [no matches] ")
+                    format!(" F2 {file} [no matches] ")
                 } else {
-                    format!(" {file} [{}/{}] ", app.diff.search.cursor + 1, count)
+                    format!(" F2 {file} [{}/{}] ", app.diff.search.cursor + 1, count)
                 }
             } else if let Some(f) = selected {
-                format!(" {} ", f.path)
+                format!(" F2 {} ", f.path)
             } else {
-                " Diff ".to_string()
+                " F2 Diff ".to_string()
             }
         }
     };
@@ -255,7 +255,7 @@ fn render_file_view(
         .find_syntax_by_extension(ext)
         .unwrap_or_else(|| ss.find_syntax_plain_text());
 
-    let title = format!(" {file_path} [file] ");
+    let title = format!(" F2 {file_path} [file] ");
 
     let visible_height = (area.height as usize).saturating_sub(2);
     let lines: Vec<Line> = if let Some(err) = &app.diff.file_view.error {

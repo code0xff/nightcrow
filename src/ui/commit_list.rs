@@ -78,18 +78,18 @@ fn render_commit_list(frame: &mut Frame, app: &App, area: Rect, accent: Color) {
         .collect();
 
     let title = if app.log_view.commits.is_empty() {
-        " Log (no commits) ".to_string()
+        " F1 Log (no commits) ".to_string()
     } else {
         match &app.tracking {
             Some(t) if t.ahead > 0 || t.behind > 0 => {
                 format!(
-                    " Log ({})  ↑{} ↓{} ",
+                    " F1 Log ({})  ↑{} ↓{} ",
                     app.log_view.commits.len(),
                     t.ahead,
                     t.behind
                 )
             }
-            _ => format!(" Log ({}) ", app.log_view.commits.len()),
+            _ => format!(" F1 Log ({}) ", app.log_view.commits.len()),
         }
     };
 
@@ -123,10 +123,10 @@ fn render_file_list(frame: &mut Frame, app: &App, area: Rect, accent: Color) {
         .log_view
         .commits
         .get(app.log_view.selected)
-        .map(|e| format!(" {} {} ", e.short_id, e.summary))
-        .unwrap_or_else(|| " Files ".to_string());
+        .map(|e| format!(" F1 {} {} ", e.short_id, e.summary))
+        .unwrap_or_else(|| " F1 Files ".to_string());
 
-    let title = truncate_title(&commit_summary, 30);
+    let title = truncate_title(&commit_summary, 33);
 
     let selected = (!app.log_view.commit_files.is_empty()).then_some(app.log_view.file_selected);
     super::render_selectable_list(frame, area, title, items, selected, border_style);

@@ -101,11 +101,15 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect, accent: Color) {
         .collect();
 
     let title = if show_search {
-        format!(" Files ({}/{}) ", match_count, app.status_view.files.len())
+        format!(
+            " F1 Files ({}/{}) ",
+            match_count,
+            app.status_view.files.len()
+        )
     } else if app.status_view.files.is_empty() {
-        " Files (no changes) ".to_string()
+        " F1 Files (no changes) ".to_string()
     } else {
-        " Files ".to_string()
+        " F1 Files ".to_string()
     };
 
     let selected_pos = filtered_indices
