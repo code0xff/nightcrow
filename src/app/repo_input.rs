@@ -2,6 +2,9 @@ use super::{App, Focus, SnapshotChannel, ViewMode};
 
 impl App {
     pub fn change_repo(&mut self, new_path: String) {
+        // Drop any commit-log page worker tied to the previous repo so its
+        // result (built against the old `.git`) cannot leak into the new view.
+        self.cancel_commit_log_page_fetch();
         // Replacing _stop_tx drops the old sender, signaling the old thread to exit.
         // Replacing the channel drops the old _stop_tx, signaling the old
         // worker to exit at its next recv_timeout boundary.

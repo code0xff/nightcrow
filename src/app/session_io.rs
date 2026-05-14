@@ -95,7 +95,9 @@ impl App {
                 return;
             }
         };
+        let fully_loaded = commits.len() < page_size;
         self.log_view.set_commits(commits);
+        self.log_view.fully_loaded = fully_loaded;
         self.log_view.selected = state
             .log_selected
             .min(self.log_view.commits.len().saturating_sub(1));
@@ -110,6 +112,10 @@ impl App {
             self.load_commit_diff_for_selected();
         }
         self.diff.scroll = state.scroll.min(self.diff.max_scroll());
+        // Restored cursor may already sit close to the tail of the first
+        // page; kick off the next prefetch so the first key move doesn't
+        // bump into a not-yet-loaded boundary.
+        self.maybe_prefetch_commit_log();
     }
 
     fn restore_log_drill_down(&mut self, state: &SessionState) {

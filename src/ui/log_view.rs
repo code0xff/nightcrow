@@ -43,15 +43,6 @@ impl LogView {
         self.fully_loaded = false;
     }
 
-    /// Clear pagination state without touching `commits`. Used when the
-    /// receiver/worker is being torn down (e.g. repo switch) and the existing
-    /// commit list will be replaced separately.
-    pub(crate) fn reset_pagination(&mut self) {
-        self.loaded_count = self.commits.len();
-        self.pending_fetch = false;
-        self.fully_loaded = false;
-    }
-
     /// Append a freshly-fetched page to the tail. `page_size` is the limit
     /// the caller asked for: a short result means we've reached the end.
     pub(crate) fn append_page(&mut self, mut page: Vec<CommitEntry>, page_size: usize) {

@@ -1,6 +1,6 @@
 use super::{App, DiffPaneView, FileViewKey, FileViewState, ViewMode};
 use crate::git::diff::{
-    DiffHunk, load_commit_diff, load_commit_file_blob, load_commit_file_diff, load_commit_log,
+    DiffHunk, load_commit_diff, load_commit_file_blob, load_commit_file_diff, load_commit_log_page,
     load_file_diff, load_workdir_file, parse_hunk_new_start,
 };
 
@@ -268,24 +268,62 @@ impl App {
             .commits
             .get(self.log_view.selected)
             .map(|c| c.oid);
+        let prior_head_oid = self.log_view.commits.first().map(|c| c.oid);
+
+        // Any in-flight worker was launched against the old head; its result
+        // would be `skip`-mismatched after we prepend or reset below. Drop it.
+        self.cancel_commit_log_page_fetch();
 
         let page_size = self.cfg_commit_log_page_size;
-        let commits = match self.with_repo(|repo| load_commit_log(repo, page_size)) {
+        let page = match self.with_repo(|repo| load_commit_log_page(repo, 0, page_size)) {
             Ok(c) => c,
             Err(e) => {
                 tracing::warn!(error = %e, "failed to refresh commit log after HEAD change");
                 return;
             }
         };
-        self.log_view.set_commits(commits);
 
-        self.log_view.selected = prior_selected_oid
-            .and_then(|oid| self.log_view.commits.iter().position(|c| c.oid == oid))
-            .unwrap_or(0);
+        // If the previous head still appears in the freshly fetched first
+        // page, treat the change as a fast-forward / new commit: prepend the
+        // newer entries onto the existing list so all accumulated pages stay
+        // valid. Otherwise (rewrite, branch switch, force push, no prior list)
+        // discard everything and start from the new first page.
+        let prepend_idx = prior_head_oid.and_then(|oid| page.iter().position(|c| c.oid == oid));
+        if let Some(idx) = prepend_idx
+            && !self.log_view.commits.is_empty()
+        {
+            let mut new_head_commits: Vec<_> = page.into_iter().take(idx).collect();
+            let n_new = new_head_commits.len();
+            new_head_commits.extend(self.log_view.commits.drain(..));
+            self.log_view.commits = new_head_commits;
+            self.log_view.loaded_count = self.log_view.commits.len();
+            self.log_view.commit_width_cache.set(None);
+            // Slide the selection so the user keeps looking at the same
+            // commit even though new entries appeared above it.
+            if let Some(prior_oid) = prior_selected_oid
+                && let Some(pos) = self
+                    .log_view
+                    .commits
+                    .iter()
+                    .position(|c| c.oid == prior_oid)
+            {
+                self.log_view.selected = pos;
+            } else {
+                self.log_view.selected = self.log_view.selected.saturating_add(n_new);
+            }
+        } else {
+            let fully_loaded = page.len() < page_size;
+            self.log_view.set_commits(page);
+            self.log_view.fully_loaded = fully_loaded;
+            self.log_view.selected = prior_selected_oid
+                .and_then(|oid| self.log_view.commits.iter().position(|c| c.oid == oid))
+                .unwrap_or(0);
+        }
         self.log_view.commit_scroll_x = 0;
 
         // Drill-down survives only if the commit it was opened on is still in
-        // the new list. Otherwise drop back to the commit-level diff.
+        // the (possibly extended) list. Otherwise drop back to the commit-
+        // level diff.
         if self.log_view.drill_down
             && prior_selected_oid
                 .is_none_or(|oid| !self.log_view.commits.iter().any(|c| c.oid == oid))
@@ -298,5 +336,7 @@ impl App {
         } else {
             self.load_commit_diff_for_selected();
         }
+
+        self.maybe_prefetch_commit_log();
     }
 }
