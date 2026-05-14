@@ -1,4 +1,4 @@
-use super::{App, COMMIT_LOG_LIMIT, Focus, ViewMode};
+use super::{App, Focus, ViewMode};
 use crate::git::diff::{load_commit_files, load_commit_log};
 use crate::session::SessionState;
 
@@ -87,7 +87,8 @@ impl App {
     }
 
     fn restore_log_session(&mut self, state: &SessionState) {
-        let commits = match self.with_repo(|repo| load_commit_log(repo, COMMIT_LOG_LIMIT)) {
+        let page_size = self.cfg_commit_log_page_size;
+        let commits = match self.with_repo(|repo| load_commit_log(repo, page_size)) {
             Ok(c) => c,
             Err(e) => {
                 tracing::warn!(error = %e, "failed to restore commit log");

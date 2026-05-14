@@ -1,4 +1,4 @@
-use super::{App, COMMIT_LOG_LIMIT, DiffPaneView, FileViewKey, FileViewState, ViewMode};
+use super::{App, DiffPaneView, FileViewKey, FileViewState, ViewMode};
 use crate::git::diff::{
     DiffHunk, load_commit_diff, load_commit_file_blob, load_commit_file_diff, load_commit_log,
     load_file_diff, load_workdir_file, parse_hunk_new_start,
@@ -269,7 +269,8 @@ impl App {
             .get(self.log_view.selected)
             .map(|c| c.oid);
 
-        let commits = match self.with_repo(|repo| load_commit_log(repo, COMMIT_LOG_LIMIT)) {
+        let page_size = self.cfg_commit_log_page_size;
+        let commits = match self.with_repo(|repo| load_commit_log(repo, page_size)) {
             Ok(c) => c,
             Err(e) => {
                 tracing::warn!(error = %e, "failed to refresh commit log after HEAD change");

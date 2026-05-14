@@ -1,4 +1,4 @@
-use super::{App, COMMIT_LOG_LIMIT, Focus, ViewMode};
+use super::{App, Focus, ViewMode};
 use crate::git::diff::load_commit_log;
 
 impl App {
@@ -10,7 +10,8 @@ impl App {
                 self.mode = ViewMode::Log;
                 self.log_view.reset_drill_down();
                 self.log_view.commit_scroll_x = 0;
-                match self.with_repo(|repo| load_commit_log(repo, COMMIT_LOG_LIMIT)) {
+                let page_size = self.cfg_commit_log_page_size;
+                match self.with_repo(|repo| load_commit_log(repo, page_size)) {
                     Ok(commits) => {
                         self.log_view.set_commits(commits);
                         self.log_view.selected = 0;

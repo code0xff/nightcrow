@@ -24,7 +24,6 @@ use std::time::Instant;
 pub(crate) const SCROLLBACK_LINES: usize = 1000;
 pub(crate) const LIST_PAGE_SIZE: usize = 10;
 pub(crate) const DIFF_PAGE_SIZE: usize = 20;
-pub(crate) const COMMIT_LOG_LIMIT: usize = 500;
 
 /// Move a list index up by `n`, saturating at 0. Returns `true` when the index
 /// actually changed so callers can decide whether to refresh associated state.
@@ -87,6 +86,13 @@ pub struct App {
     /// `git2::Repository` is `!Send` and cannot be shared.
     pub(crate) repo_cache: Option<git2::Repository>,
     pub cfg_agent_indicator: crate::config::AgentIndicatorConfig,
+    /// How many commits to fetch per commit-log page. Sourced from
+    /// `LogConfig::commit_log_page_size` and held on `App` so paged loads and
+    /// the background prefetcher share a single value.
+    pub cfg_commit_log_page_size: usize,
+    /// How close to the loaded tail the selection must be before a background
+    /// prefetch starts. Sourced from `LogConfig::commit_log_prefetch_threshold`.
+    pub cfg_commit_log_prefetch_threshold: usize,
     /// Wall-clock instant of the most recent user-driven selection change in
     /// the file list. `None` means "idle since boot". Used to gate
     /// auto-follow so an active user is never hijacked.
@@ -131,6 +137,9 @@ impl App {
             pending_session: None,
             repo_cache: None,
             cfg_agent_indicator: crate::config::AgentIndicatorConfig::default(),
+            cfg_commit_log_page_size: crate::config::LogConfig::default().commit_log_page_size,
+            cfg_commit_log_prefetch_threshold: crate::config::LogConfig::default()
+                .commit_log_prefetch_threshold,
             last_manual_nav_at: None,
             auto_followed_path: None,
             list_fullscreen: false,
@@ -200,6 +209,9 @@ mod tests {
                 auto_follow: true,
                 ..crate::config::AgentIndicatorConfig::default()
             },
+            cfg_commit_log_page_size: crate::config::LogConfig::default().commit_log_page_size,
+            cfg_commit_log_prefetch_threshold: crate::config::LogConfig::default()
+                .commit_log_prefetch_threshold,
             last_manual_nav_at: None,
             auto_followed_path: None,
             list_fullscreen: false,
