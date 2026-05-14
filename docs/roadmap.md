@@ -121,3 +121,18 @@
 - Deliverables: `TrackingStatus` (ahead/behind) git2 조회, commit list에서 ahead 커밋에 `↑` 마커 렌더링
 - Exit Criteria: upstream 대비 ahead 커밋이 commit log 좌측 패널에 `↑`로 구분 표시됨
 - status: done
+
+---
+
+## Increment 6
+
+- service_goal: 개발자가 큰 저장소에서도 commit log를 끊김 없이 끝까지 탐색할 수 있고, 처음 진입 시 빠르게 화면이 뜬다
+- acceptance: 첫 진입 시 설정된 페이지 크기(기본 300)만 동기 로드, 선택이 끝에 근접하면 백그라운드 prefetch가 정확히 1회 트리거되어 추가 페이지가 append됨, HEAD 변경 시 1페이지만 reload하며 새 커밋이 기존 목록과 겹치면 prepend로 머지/발산하면 reset, `[log]`의 `commit_log_page_size`와 `commit_log_prefetch_threshold`로 동작 조정 가능
+- status: pending
+
+### Workstream 1
+
+- Goal: commit log 점진 로드(페이지네이션) + 백그라운드 prefetch
+- Deliverables: `load_commit_log_page(repo, skip, limit)` API (기존 `load_commit_log`는 page 0 wrapper로 호환 유지), `LogView`에 `loaded_count`/`pending_fetch`/`fully_loaded` 페이지 상태, `App`에 백그라운드 fetch worker (`mpsc::channel` + 자체 `Repository` 핸들) + drain/poll, `[log]`에 `commit_log_page_size`/`commit_log_prefetch_threshold` config + 범위 검증(page_size ∈ 200..=500, threshold ∈ 1..=page_size), HEAD 변경 시 first-page reload + 겹침 시 prepend / 발산 시 reset, repo·HEAD 변경 시 stale fetch 결과 폐기
+- Exit Criteria: 첫 페이지만 초기 로드, 임계점에서 백그라운드 fetch 1회 트리거(중복 억제), 짧은 마지막 페이지에서 `fully_loaded` 설정, HEAD prepend/divergent reset 동작, stale skip 결과 무시, README/roadmap 갱신, `cargo test` 통과
+- status: pending
