@@ -219,6 +219,22 @@ pub fn load_file_diff(repo: &Repository, file_path: &str) -> Result<Vec<DiffHunk
 }
 
 pub fn load_commit_log(repo: &Repository, max_count: usize) -> Result<Vec<CommitEntry>> {
+    load_commit_log_page(repo, 0, max_count)
+}
+
+/// Load a slice of the commit log walking back from HEAD.
+///
+/// `skip` discards the most recent commits before collecting `limit` entries.
+/// Callers paginating the log pass the count already loaded as `skip` so the
+/// next slice continues from the existing tail.
+pub fn load_commit_log_page(
+    repo: &Repository,
+    skip: usize,
+    limit: usize,
+) -> Result<Vec<CommitEntry>> {
+    if limit == 0 {
+        return Ok(Vec::new());
+    }
     if repo
         .is_empty()
         .context("failed to inspect repository state")?
@@ -233,8 +249,8 @@ pub fn load_commit_log(repo: &Repository, max_count: usize) -> Result<Vec<Commit
         return Err(err).context("failed to push HEAD");
     }
 
-    let mut entries = Vec::new();
-    for oid_result in revwalk.take(max_count) {
+    let mut entries = Vec::with_capacity(limit);
+    for oid_result in revwalk.skip(skip).take(limit) {
         let oid = oid_result.context("revwalk error")?;
         let commit = repo.find_commit(oid).context("failed to find commit")?;
         let short_id = repo
@@ -469,6 +485,67 @@ mod tests {
         let commits = load_commit_log(&open_repo(&path), 10).unwrap();
 
         assert!(commits.is_empty());
+        drop(dir);
+    }
+
+    #[test]
+    fn commit_log_page_empty_repo_returns_empty() {
+        let (dir, path) = make_repo();
+
+        let page = load_commit_log_page(&open_repo(&path), 0, 5).unwrap();
+
+        assert!(page.is_empty());
+        drop(dir);
+    }
+
+    #[test]
+    fn commit_log_page_zero_limit_returns_empty() {
+        let (dir, path) = make_repo();
+        std::fs::write(Path::new(&path).join("f"), "x").unwrap();
+        run_git(&path, &["add", "."]);
+        run_git(&path, &["commit", "-m", "c1"]);
+
+        let page = load_commit_log_page(&open_repo(&path), 0, 0).unwrap();
+
+        assert!(page.is_empty());
+        drop(dir);
+    }
+
+    #[test]
+    fn commit_log_page_paginates_via_skip() {
+        let (dir, path) = make_repo();
+        for i in 0..5 {
+            std::fs::write(Path::new(&path).join(format!("f{i}")), format!("{i}")).unwrap();
+            run_git(&path, &["add", "."]);
+            run_git(&path, &["commit", "-m", &format!("c{i}")]);
+        }
+
+        let first = load_commit_log_page(&open_repo(&path), 0, 2).unwrap();
+        let second = load_commit_log_page(&open_repo(&path), 2, 2).unwrap();
+        let third = load_commit_log_page(&open_repo(&path), 4, 2).unwrap();
+
+        // Newest first: c4, c3 | c2, c1 | c0.
+        assert_eq!(first.len(), 2);
+        assert_eq!(first[0].summary, "c4");
+        assert_eq!(first[1].summary, "c3");
+        assert_eq!(second.len(), 2);
+        assert_eq!(second[0].summary, "c2");
+        assert_eq!(second[1].summary, "c1");
+        assert_eq!(third.len(), 1);
+        assert_eq!(third[0].summary, "c0");
+        drop(dir);
+    }
+
+    #[test]
+    fn commit_log_page_skip_beyond_history_returns_empty() {
+        let (dir, path) = make_repo();
+        std::fs::write(Path::new(&path).join("f"), "x").unwrap();
+        run_git(&path, &["add", "."]);
+        run_git(&path, &["commit", "-m", "only"]);
+
+        let page = load_commit_log_page(&open_repo(&path), 5, 10).unwrap();
+
+        assert!(page.is_empty());
         drop(dir);
     }
 
