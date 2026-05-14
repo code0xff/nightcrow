@@ -17,14 +17,71 @@ pub struct LogView {
     pub(crate) commit_width_cache: Cell<Option<(usize, usize)>>,
     /// Memoized longest-path char width for `commit_files`.
     pub(crate) commit_files_width_cache: Cell<Option<(usize, usize)>>,
+    /// Count of commits currently loaded. Maintained in lockstep with
+    /// `commits.len()` by the pagination helpers; kept as a discrete field so
+    /// the worker channel can compare against an expected `skip` when results
+    /// arrive (drop pages produced from a stale view).
+    pub(crate) loaded_count: usize,
+    /// A background page fetch is in flight. Guards against issuing duplicate
+    /// requests for the same tail.
+    pub(crate) pending_fetch: bool,
+    /// The previous fetch returned fewer entries than requested, so no further
+    /// pages exist. Cleared by `reset_pagination`.
+    pub(crate) fully_loaded: bool,
 }
 
 impl LogView {
     /// Replace `commits` and invalidate the summary-width cache. See
-    /// `StatusView::set_files` for the same-length rationale.
+    /// `StatusView::set_files` for the same-length rationale. Also resets
+    /// pagination bookkeeping because `commits` is no longer the result of
+    /// the previous page sequence.
     pub(crate) fn set_commits(&mut self, commits: Vec<CommitEntry>) {
+        self.loaded_count = commits.len();
         self.commits = commits;
         self.commit_width_cache.set(None);
+        self.pending_fetch = false;
+        self.fully_loaded = false;
+    }
+
+    /// Clear pagination state without touching `commits`. Used when the
+    /// receiver/worker is being torn down (e.g. repo switch) and the existing
+    /// commit list will be replaced separately.
+    pub(crate) fn reset_pagination(&mut self) {
+        self.loaded_count = self.commits.len();
+        self.pending_fetch = false;
+        self.fully_loaded = false;
+    }
+
+    /// Append a freshly-fetched page to the tail. `page_size` is the limit
+    /// the caller asked for: a short result means we've reached the end.
+    pub(crate) fn append_page(&mut self, mut page: Vec<CommitEntry>, page_size: usize) {
+        let received = page.len();
+        if received > 0 {
+            self.commits.append(&mut page);
+            self.loaded_count = self.commits.len();
+            self.commit_width_cache.set(None);
+        }
+        self.pending_fetch = false;
+        if received < page_size {
+            self.fully_loaded = true;
+        }
+    }
+
+    /// Mark a fetch as in flight. Returns `true` if the flag transitioned,
+    /// `false` if a fetch was already pending so the caller should not spawn
+    /// another worker.
+    pub(crate) fn mark_pending(&mut self) -> bool {
+        if self.pending_fetch {
+            return false;
+        }
+        self.pending_fetch = true;
+        true
+    }
+
+    /// Clear the pending flag without appending a page. Used when a worker
+    /// result is discarded (stale skip, repo switch).
+    pub(crate) fn clear_pending(&mut self) {
+        self.pending_fetch = false;
     }
 
     /// Replace `commit_files` and invalidate the file-width cache so a
