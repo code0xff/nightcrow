@@ -162,6 +162,7 @@ fn main_loop(
     loop {
         app.poll_snapshot();
         app.poll_terminal();
+        app.poll_commit_log_page_fetch();
 
         let accent = app.current_accent();
         terminal.draw(|frame| {

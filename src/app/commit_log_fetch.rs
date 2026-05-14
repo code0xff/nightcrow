@@ -12,6 +12,7 @@ use std::thread;
 use git2::Repository;
 
 use super::App;
+use super::ViewMode;
 use crate::git::diff::{CommitEntry, load_commit_log_page};
 
 /// One reply from a paged fetch worker.
@@ -82,6 +83,33 @@ impl App {
         self.log_view.clear_pending();
     }
 
+    /// If the current Log view selection is within
+    /// `cfg_commit_log_prefetch_threshold` rows of the loaded tail,
+    /// start a background page fetch from `loaded_count`. No-ops in
+    /// Status mode, drill-down, empty list, pending, and fully-loaded
+    /// states.
+    pub(crate) fn maybe_prefetch_commit_log(&mut self) {
+        if self.mode != ViewMode::Log {
+            return;
+        }
+        if self.log_view.drill_down {
+            return;
+        }
+        if self.log_view.commits.is_empty() {
+            return;
+        }
+        if self.log_view.pending_fetch || self.log_view.fully_loaded {
+            return;
+        }
+        let loaded = self.log_view.loaded_count;
+        let threshold = self.cfg_commit_log_prefetch_threshold;
+        // Trigger when the user is close enough to the tail that the
+        // next handful of moves would scroll past the loaded range.
+        if self.log_view.selected + threshold >= loaded {
+            self.spawn_commit_log_page_fetch(loaded);
+        }
+    }
+
     fn handle_commit_log_page_msg(&mut self, msg: CommitLogPageMsg) {
         // Stale-result check: the worker was launched with `skip` equal
         // to the loaded count at the time. If the count has changed
@@ -93,7 +121,13 @@ impl App {
             return;
         }
         match msg.result {
-            Ok(page) => self.log_view.append_page(page, msg.page_size),
+            Ok(page) => {
+                self.log_view.append_page(page, msg.page_size);
+                // Chain another fetch immediately if the user is still
+                // sitting near the new tail; otherwise the next
+                // selection move would have to wait a tick.
+                self.maybe_prefetch_commit_log();
+            }
             Err(e) => {
                 tracing::warn!(error = %e, "commit log page fetch failed");
                 self.log_view.clear_pending();

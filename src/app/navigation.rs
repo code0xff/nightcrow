@@ -370,6 +370,7 @@ impl App {
             self.log_view.commit_scroll_x = 0;
             self.load_commit_diff_for_selected();
         }
+        self.maybe_prefetch_commit_log();
     }
 
     pub fn log_page_up(&mut self) {
@@ -388,5 +389,6 @@ impl App {
             self.log_view.commit_scroll_x = 0;
             self.load_commit_diff_for_selected();
         }
+        self.maybe_prefetch_commit_log();
     }
 }
