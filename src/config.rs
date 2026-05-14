@@ -120,6 +120,13 @@ pub struct LogConfig {
     pub prompt_log: bool,
     /// Minimum log level
     pub level: LogLevel,
+    /// Number of commits loaded per commit-log page. Must lie in 200..=500 so
+    /// startup latency stays predictable while a single page is still wide
+    /// enough to fill most viewports without an immediate prefetch.
+    pub commit_log_page_size: usize,
+    /// Trigger a background prefetch once the selection is within this many
+    /// rows of the loaded tail. Must be in 1..=page_size.
+    pub commit_log_prefetch_threshold: usize,
 }
 
 impl Default for LogConfig {
@@ -132,6 +139,8 @@ impl Default for LogConfig {
             max_days: 7,
             prompt_log: true,
             level: LogLevel::default(),
+            commit_log_page_size: 300,
+            commit_log_prefetch_threshold: 50,
         }
     }
 }
@@ -209,6 +218,15 @@ fn validate_config(cfg: &Config) -> Result<()> {
     anyhow::ensure!(
         cfg.agent_indicator.hot_window_secs >= 3 && cfg.agent_indicator.hot_window_secs <= 3600,
         "agent_indicator.hot_window_secs must be between 3 and 3600"
+    );
+    anyhow::ensure!(
+        (200..=500).contains(&cfg.log.commit_log_page_size),
+        "log.commit_log_page_size must be between 200 and 500"
+    );
+    anyhow::ensure!(
+        cfg.log.commit_log_prefetch_threshold >= 1
+            && cfg.log.commit_log_prefetch_threshold <= cfg.log.commit_log_page_size,
+        "log.commit_log_prefetch_threshold must be between 1 and log.commit_log_page_size"
     );
     Ok(())
 }
@@ -291,6 +309,45 @@ level = "verbose"
         assert_eq!(cfg.rotation, LogRotation::Daily);
         assert_eq!(cfg.level, LogLevel::Info);
         assert_eq!(cfg.max_days, 7);
+        assert_eq!(cfg.commit_log_page_size, 300);
+        assert_eq!(cfg.commit_log_prefetch_threshold, 50);
+    }
+
+    #[test]
+    fn commit_log_pagination_parses_from_toml() {
+        let toml = r#"
+[log]
+commit_log_page_size = 400
+commit_log_prefetch_threshold = 80
+"#;
+        let cfg: Config = toml::from_str(toml).unwrap();
+        assert_eq!(cfg.log.commit_log_page_size, 400);
+        assert_eq!(cfg.log.commit_log_prefetch_threshold, 80);
+        validate_config(&cfg).unwrap();
+    }
+
+    #[test]
+    fn commit_log_page_size_validation_rejects_out_of_range() {
+        let mut cfg = Config::default();
+        cfg.log.commit_log_page_size = 199;
+        assert!(validate_config(&cfg).is_err());
+        cfg.log.commit_log_page_size = 501;
+        assert!(validate_config(&cfg).is_err());
+    }
+
+    #[test]
+    fn commit_log_prefetch_threshold_validation_rejects_zero() {
+        let mut cfg = Config::default();
+        cfg.log.commit_log_prefetch_threshold = 0;
+        assert!(validate_config(&cfg).is_err());
+    }
+
+    #[test]
+    fn commit_log_prefetch_threshold_validation_rejects_above_page_size() {
+        let mut cfg = Config::default();
+        cfg.log.commit_log_page_size = 300;
+        cfg.log.commit_log_prefetch_threshold = 301;
+        assert!(validate_config(&cfg).is_err());
     }
 
     #[test]
