@@ -38,7 +38,7 @@ nightcrow --repo ~/projects/myapp
 
 **Status view** (default) — lists changed files on the left, syntax-highlighted diff on the right.
 
-**Commit log view** (`Ctrl+L`) — tig-like commit list on the left, full commit diff on the right. Commits ahead of the upstream are marked with `↑`. Press `Enter` on a commit to drill into its individual files; `Esc` to go back. The list auto-refreshes when the workdir HEAD changes (commits made in the terminal pane, amends, force-pushes, branch switches).
+**Commit log view** (`Ctrl+L`) — tig-like commit list on the left, full commit diff on the right. Commits ahead of the upstream are marked with `↑`. Press `Enter` on a commit to drill into its individual files; `Esc` to go back. The list auto-refreshes when the workdir HEAD changes (commits made in the terminal pane, amends, force-pushes, branch switches). History loads one page at a time — initial entry fetches `commit_log_page_size` commits and additional pages stream in on a background thread as the selection approaches the loaded tail, so deep histories stay responsive.
 
 **Top header** — a one-row strip at the top of the screen always shows the repo path (home-relative, e.g. `~/projects/myapp`), the current branch, and ahead/behind counts (`↑N ↓M`) when the branch tracks an upstream.
 
@@ -125,6 +125,9 @@ max_size_mb = 10          # used when rotation = "size"
 max_days = 7              # delete logs older than N days (0 = keep forever)
 level = "info"            # "error" | "warn" | "info" | "debug" | "trace"
 prompt_log = true         # record terminal prompt input line by line
+commit_log_page_size = 300        # commits fetched per commit-log page (200–500)
+commit_log_prefetch_threshold = 50 # start the next-page fetch when the selection is within
+                                  # this many rows of the loaded tail (1..=page_size)
 
 [agent_indicator]
 enabled = true            # color recently-touched files in the file list
