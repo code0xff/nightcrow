@@ -1,6 +1,7 @@
 use crate::backend::{PtyBackend, TerminalBackend};
 use crate::git::diff::{ChangedFile, RepoSnapshot, TrackingStatus};
 mod auto_follow;
+mod commit_log_fetch;
 mod diff_load;
 mod focus;
 mod navigation;
@@ -113,6 +114,11 @@ pub struct App {
     /// detached HEAD, unborn branches, or bare repos. Rendered in the top
     /// header so the user always sees which branch the workdir tracks.
     pub branch_name: Option<String>,
+    /// Receiver for the in-flight commit-log page worker. `Some` while a
+    /// background fetch is pending; cleared once the page is drained or
+    /// the request is cancelled (e.g. repo switch).
+    pub(crate) commit_log_page_rx:
+        Option<std::sync::mpsc::Receiver<commit_log_fetch::CommitLogPageMsg>>,
 }
 
 impl App {
@@ -145,6 +151,7 @@ impl App {
             list_fullscreen: false,
             last_head_oid: None,
             branch_name: None,
+            commit_log_page_rx: None,
         };
 
         app.ensure_initial_terminal();
@@ -217,6 +224,7 @@ mod tests {
             list_fullscreen: false,
             last_head_oid: None,
             branch_name: None,
+            commit_log_page_rx: None,
         }
     }
 
