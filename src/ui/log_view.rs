@@ -116,3 +116,78 @@ impl LogView {
         moved
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use git2::Oid;
+
+    fn entry(time: i64) -> CommitEntry {
+        CommitEntry {
+            oid: Oid::zero(),
+            short_id: "deadbee".to_string(),
+            summary: format!("c{time}"),
+            author: "T".to_string(),
+            time,
+        }
+    }
+
+    #[test]
+    fn append_page_extends_commits_and_tracks_loaded_count() {
+        let mut lv = LogView::default();
+        lv.set_commits(vec![entry(0), entry(1)]);
+
+        lv.append_page(vec![entry(2), entry(3)], 2);
+
+        assert_eq!(lv.commits.len(), 4);
+        assert_eq!(lv.loaded_count, 4);
+        assert!(!lv.fully_loaded);
+        assert!(!lv.pending_fetch);
+    }
+
+    #[test]
+    fn append_page_short_result_marks_fully_loaded() {
+        let mut lv = LogView::default();
+        lv.set_commits(vec![entry(0), entry(1)]);
+
+        lv.append_page(vec![entry(2)], 3);
+
+        assert_eq!(lv.commits.len(), 3);
+        assert!(lv.fully_loaded);
+    }
+
+    #[test]
+    fn append_page_empty_result_marks_fully_loaded_without_extending() {
+        let mut lv = LogView::default();
+        lv.set_commits(vec![entry(0)]);
+
+        lv.append_page(Vec::new(), 3);
+
+        assert_eq!(lv.commits.len(), 1);
+        assert_eq!(lv.loaded_count, 1);
+        assert!(lv.fully_loaded);
+        assert!(!lv.pending_fetch);
+    }
+
+    #[test]
+    fn mark_pending_is_idempotent() {
+        let mut lv = LogView::default();
+        assert!(lv.mark_pending());
+        assert!(!lv.mark_pending());
+        lv.clear_pending();
+        assert!(lv.mark_pending());
+    }
+
+    #[test]
+    fn set_commits_resets_pagination_state() {
+        let mut lv = LogView::default();
+        lv.set_commits(vec![entry(0)]);
+        lv.append_page(vec![entry(1)], 5);
+        assert!(lv.fully_loaded);
+
+        lv.set_commits(vec![entry(2), entry(3)]);
+        assert_eq!(lv.loaded_count, 2);
+        assert!(!lv.fully_loaded);
+        assert!(!lv.pending_fetch);
+    }
+}
