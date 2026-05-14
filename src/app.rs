@@ -147,10 +147,10 @@ impl App {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::runtime::terminal::PaneCallbacks;
     use crate::git::diff::{
         ChangeStatus, CommitEntry, DiffHunk, DiffLine, LineKind, load_commit_log,
     };
+    use crate::runtime::terminal::PaneCallbacks;
     use crate::test_util::{make_repo, open_repo, run_git};
     use std::collections::HashMap;
     use std::path::Path;
@@ -343,12 +343,8 @@ mod tests {
         app.terminal.active = 0;
         app.terminal.size = (3, 10);
 
-        let mut parser = vt100::Parser::new_with_callbacks(
-            3,
-            10,
-            SCROLLBACK_LINES,
-            PaneCallbacks::default(),
-        );
+        let mut parser =
+            vt100::Parser::new_with_callbacks(3, 10, SCROLLBACK_LINES, PaneCallbacks::default());
         parser.process(b"1\r\n2\r\n3\r\n4\r\n5\r\n6\r\n7\r\n8\r\n9\r\n");
         app.terminal.parsers.insert(1, parser);
         // Request scrolling well past screen height; vt100 supports
@@ -372,12 +368,8 @@ mod tests {
         app.terminal.active = 0;
         app.terminal.size = (3, 10);
 
-        let mut parser = vt100::Parser::new_with_callbacks(
-            3,
-            10,
-            SCROLLBACK_LINES,
-            PaneCallbacks::default(),
-        );
+        let mut parser =
+            vt100::Parser::new_with_callbacks(3, 10, SCROLLBACK_LINES, PaneCallbacks::default());
         // Only a handful of buffered rows exist; an outsized request must
         // clamp to whatever vt100 actually has, never panic.
         parser.process(b"1\r\n2\r\n3\r\n4\r\n5\r\n");
@@ -900,10 +892,7 @@ mod tests {
     /// has a real oid to compare against. The snapshot itself is otherwise
     /// empty — we only care about `head_oid` in these tests.
     fn snapshot_with_head(repo_path: &str) -> RepoSnapshot {
-        let head = open_repo(repo_path)
-            .head()
-            .ok()
-            .and_then(|h| h.target());
+        let head = open_repo(repo_path).head().ok().and_then(|h| h.target());
         RepoSnapshot {
             files: Vec::new(),
             tracking: None,

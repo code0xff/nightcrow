@@ -31,8 +31,7 @@ impl App {
                         None
                     };
                     if let Some(title) = new_title
-                        && let Some(info) =
-                            self.terminal.panes.iter_mut().find(|p| p.id == pane)
+                        && let Some(info) = self.terminal.panes.iter_mut().find(|p| p.id == pane)
                     {
                         info.title = title;
                     }

@@ -61,10 +61,7 @@ impl App {
         // commit log on top of `toggle_mode`'s eager load.
         let prior_head = self.last_head_oid;
         self.last_head_oid = new_head;
-        if prior_head.is_some()
-            && prior_head != new_head
-            && self.mode == ViewMode::Log
-        {
+        if prior_head.is_some() && prior_head != new_head && self.mode == ViewMode::Log {
             self.refresh_commit_log_after_head_change();
         }
 

@@ -192,7 +192,9 @@ fn render_repo_header<'a>(app: &'a App, accent: Color) -> Paragraph<'a> {
     let display_path = home_relative_path(&app.repo_path);
     let mut spans: Vec<Span<'a>> = vec![Span::styled(
         format!(" {display_path} "),
-        Style::default().fg(Color::Gray).add_modifier(Modifier::BOLD),
+        Style::default()
+            .fg(Color::Gray)
+            .add_modifier(Modifier::BOLD),
     )];
     if let Some(branch) = app.branch_name.as_deref() {
         spans.push(Span::styled(
