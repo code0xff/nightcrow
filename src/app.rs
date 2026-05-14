@@ -987,6 +987,45 @@ mod tests {
     }
 
     #[test]
+    fn toggling_log_after_status_head_change_reloads_stale_cache() {
+        let (_dir, path) = make_repo();
+        run_git(&path, &["commit", "--allow-empty", "-m", "first"]);
+
+        let (snapshot, tx) = dummy_snapshot_channel();
+        let mut app = App {
+            snapshot,
+            ..app_with_files(vec![])
+        };
+        app.repo_path = path.clone();
+        app.mode = ViewMode::Status;
+        app.log_view
+            .set_commits(load_commit_log(&open_repo(&path), 500).unwrap());
+        app.last_head_oid = app.log_view.commits.first().map(|c| c.oid);
+        assert_eq!(app.log_view.commits[0].summary, "first");
+
+        run_git(&path, &["commit", "--allow-empty", "-m", "second"]);
+        tx.send(SnapshotMsg::Ok(snapshot_with_head(&path), HashMap::new()))
+            .unwrap();
+        app.poll_snapshot();
+
+        // Status mode leaves the hidden list untouched, but records the new
+        // HEAD. Entering Log mode must notice the mismatch and reconcile page 0
+        // rather than reusing the stale cached page as-is.
+        assert_eq!(app.log_view.commits.len(), 1);
+        assert_eq!(app.log_view.commits[0].summary, "first");
+
+        app.toggle_mode();
+
+        assert_eq!(app.mode, ViewMode::Log);
+        assert_eq!(app.log_view.commits.len(), 2);
+        assert_eq!(app.log_view.commits[0].summary, "second");
+        assert_eq!(app.log_view.selected, 1);
+        assert_eq!(app.log_view.commits[app.log_view.selected].summary, "first");
+        assert!(app.log_view.fully_loaded);
+        assert!(app.commit_log_page_rx.is_none());
+    }
+
+    #[test]
     fn head_change_preserves_selected_commit_by_oid() {
         let (_dir, path) = make_repo();
         run_git(&path, &["commit", "--allow-empty", "-m", "first"]);
@@ -1953,6 +1992,52 @@ mod tests {
         assert_eq!(app.log_view.commits.len(), 2);
         assert_eq!(app.log_view.commits[1].oid, prior_oid);
         assert_eq!(app.log_view.selected, 1);
+        drop(dir);
+    }
+
+    #[test]
+    fn refresh_after_head_change_keeps_merged_side_branch_commits() {
+        let (dir, path) = make_repo();
+        std::fs::write(Path::new(&path).join("base"), "0").unwrap();
+        run_git(&path, &["add", "."]);
+        run_git(&path, &["commit", "-m", "c0"]);
+
+        run_git(&path, &["checkout", "-b", "feature"]);
+        std::fs::write(Path::new(&path).join("feature"), "feature").unwrap();
+        run_git(&path, &["add", "."]);
+        run_git(&path, &["commit", "-m", "feature"]);
+
+        run_git(&path, &["checkout", "-"]);
+        std::fs::write(Path::new(&path).join("main"), "main").unwrap();
+        run_git(&path, &["add", "."]);
+        run_git(&path, &["commit", "-m", "c1"]);
+
+        let mut app = app_with_files(vec![]);
+        app.repo_path = path.clone();
+        app.mode = ViewMode::Log;
+        app.log_view
+            .set_commits(load_commit_log(&open_repo(&path), 500).unwrap());
+        assert_eq!(app.log_view.commits.len(), 2);
+        assert_eq!(app.log_view.commits[0].summary, "c1");
+
+        run_git(
+            &path,
+            &["merge", "--no-ff", "feature", "-m", "merge feature"],
+        );
+
+        app.refresh_commit_log_after_head_change();
+
+        let summaries: Vec<_> = app
+            .log_view
+            .commits
+            .iter()
+            .map(|c| c.summary.as_str())
+            .collect();
+        assert!(
+            summaries.contains(&"feature"),
+            "merged side-branch commit was dropped: {summaries:?}"
+        );
+        assert_eq!(app.log_view.commits.len(), 4);
         drop(dir);
     }
 

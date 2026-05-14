@@ -10,35 +10,44 @@ impl App {
                 self.mode = ViewMode::Log;
                 self.log_view.reset_drill_down();
                 self.log_view.commit_scroll_x = 0;
-                // Reuse cached pages on re-entry: refresh_commit_log_after_head_change
-                // keeps the list in sync during Status mode, so a non-empty
-                // `commits` already reflects the current HEAD.
-                if self.log_view.commits.is_empty() {
-                    let page_size = self.cfg_commit_log_page_size;
-                    match self.with_repo(|repo| load_commit_log(repo, page_size)) {
-                        Ok(commits) => {
-                            // Short first page means the entire history fits,
-                            // no further prefetch needed; a full page means
-                            // more may exist and the next move will pull it.
-                            let fully_loaded = commits.len() < page_size;
-                            self.log_view.set_commits(commits);
-                            self.log_view.fully_loaded = fully_loaded;
-                            self.log_view.selected = 0;
-                            // Sync last_head_oid to the freshly loaded HEAD so
-                            // the next snapshot tick doesn't immediately
-                            // re-trigger refresh_commit_log_after_head_change.
-                            self.last_head_oid = self.log_view.commits.first().map(|c| c.oid);
-                        }
-                        Err(e) => {
-                            tracing::warn!(error = %e, "failed to load commit log");
-                            self.log_view.set_commits(Vec::new());
-                            self.log_view.selected = 0;
-                            self.status = Some(format!("git error: {e}"));
+                // Reuse cached pages on re-entry only while they still match
+                // the latest HEAD observed by the snapshot worker. Status mode
+                // intentionally does not refresh the hidden commit list, so a
+                // HEAD change there must invalidate the cache on the next entry.
+                let cached_head = self.log_view.commits.first().map(|c| c.oid);
+                let cache_matches_head =
+                    !self.log_view.commits.is_empty() && cached_head == self.last_head_oid;
+                if !self.log_view.commits.is_empty() && !cache_matches_head {
+                    self.refresh_commit_log_after_head_change();
+                } else {
+                    if self.log_view.commits.is_empty() {
+                        self.cancel_commit_log_page_fetch();
+                        let page_size = self.cfg_commit_log_page_size;
+                        match self.with_repo(|repo| load_commit_log(repo, page_size)) {
+                            Ok(commits) => {
+                                // Short first page means the entire history fits,
+                                // no further prefetch needed; a full page means
+                                // more may exist and the next move will pull it.
+                                let fully_loaded = commits.len() < page_size;
+                                self.log_view.set_commits(commits);
+                                self.log_view.fully_loaded = fully_loaded;
+                                self.log_view.selected = 0;
+                                // Sync last_head_oid to the freshly loaded HEAD so
+                                // the next snapshot tick doesn't immediately
+                                // re-trigger refresh_commit_log_after_head_change.
+                                self.last_head_oid = self.log_view.commits.first().map(|c| c.oid);
+                            }
+                            Err(e) => {
+                                tracing::warn!(error = %e, "failed to load commit log");
+                                self.log_view.set_commits(Vec::new());
+                                self.log_view.selected = 0;
+                                self.status = Some(format!("git error: {e}"));
+                            }
                         }
                     }
+                    self.load_commit_diff_for_selected();
+                    self.maybe_prefetch_commit_log();
                 }
-                self.load_commit_diff_for_selected();
-                self.maybe_prefetch_commit_log();
             }
             ViewMode::Log => {
                 self.mode = ViewMode::Status;

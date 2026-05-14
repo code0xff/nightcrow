@@ -284,19 +284,32 @@ impl App {
         };
 
         // If the previous head still appears in the freshly fetched first
-        // page, treat the change as a fast-forward / new commit: prepend the
-        // newer entries onto the existing list so all accumulated pages stay
-        // valid. Otherwise (rewrite, branch switch, force push, no prior list)
-        // discard everything and start from the new first page.
+        // page and the fresh tail lines up with the cached list, treat the
+        // change as a fast-forward / simple new commit: prepend the newer
+        // entries onto the existing list so all accumulated pages stay valid.
+        // A merge can interleave side-branch commits after the old head; in
+        // that case cached pages are no longer a contiguous prefix of the
+        // new revwalk, so reset to the freshly loaded first page instead.
         let prepend_idx = prior_head_oid.and_then(|oid| page.iter().position(|c| c.oid == oid));
+        let page_is_short = page.len() < page_size;
+        let can_prepend = prepend_idx.is_some_and(|idx| {
+            let fresh_tail = &page[idx..];
+            !self.log_view.commits.is_empty()
+                && fresh_tail.len() <= self.log_view.commits.len()
+                && fresh_tail
+                    .iter()
+                    .zip(self.log_view.commits.iter())
+                    .all(|(fresh, cached)| fresh.oid == cached.oid)
+        });
         if let Some(idx) = prepend_idx
-            && !self.log_view.commits.is_empty()
+            && can_prepend
         {
             let mut new_head_commits: Vec<_> = page.into_iter().take(idx).collect();
             let n_new = new_head_commits.len();
-            new_head_commits.extend(self.log_view.commits.drain(..));
+            new_head_commits.append(&mut self.log_view.commits);
             self.log_view.commits = new_head_commits;
             self.log_view.loaded_count = self.log_view.commits.len();
+            self.log_view.fully_loaded = page_is_short;
             self.log_view.commit_width_cache.set(None);
             // Slide the selection so the user keeps looking at the same
             // commit even though new entries appeared above it.
