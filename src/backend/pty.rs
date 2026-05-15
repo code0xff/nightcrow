@@ -1,11 +1,17 @@
 use super::{BackendEvent, PaneId, TerminalBackend};
 use anyhow::Result;
 use portable_pty::{CommandBuilder, NativePtySystem, PtySize, PtySystem};
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{self, Receiver};
 use std::thread;
+
+/// Max events drained from any one pane in a single `drain_events` call.
+/// A pane that produces output faster than the UI loop consumes it would
+/// otherwise monopolize the per-frame drain and starve sibling panes —
+/// the round-robin cap bounds the work per pane to a small constant.
+const PER_PANE_DRAIN_BUDGET: usize = 64;
 
 enum PtyEvent {
     Output(Vec<u8>),
@@ -51,7 +57,12 @@ impl Drop for PtyPane {
 }
 
 pub struct PtyBackend {
-    panes: HashMap<PaneId, PtyPane>,
+    // BTreeMap (not HashMap) so per-frame event drain visits panes in
+    // PaneId order — IDs are monotonic, so this matches creation order
+    // and stays deterministic across runs. HashMap iteration was random
+    // per process, which made inter-pane event ordering unobservable
+    // and could mask fairness regressions in tests.
+    panes: BTreeMap<PaneId, PtyPane>,
     next_id: PaneId,
     // Each new pane spawns the shell here so its cwd matches the repo
     // nightcrow is tracking, even when the binary was launched elsewhere.
@@ -61,7 +72,7 @@ pub struct PtyBackend {
 impl PtyBackend {
     pub fn new(cwd: impl AsRef<Path>) -> Self {
         Self {
-            panes: HashMap::new(),
+            panes: BTreeMap::new(),
             next_id: 1,
             cwd: cwd.as_ref().to_path_buf(),
         }
@@ -187,16 +198,26 @@ impl TerminalBackend for PtyBackend {
         // send order, so any Output enqueued before Exited has already been
         // surfaced by an earlier iteration of the outer try_recv loop — no
         // separate post-Exited drain is needed.
+        //
+        // Each pane is drained up to PER_PANE_DRAIN_BUDGET events to keep
+        // one noisy pane (e.g. `yes | head -100000`) from starving its
+        // siblings within a single frame; whatever is left lands on the
+        // next tick.
         let mut events = Vec::new();
         for (id, pane) in &self.panes {
-            while let Ok(event) = pane.rx.try_recv() {
-                match event {
-                    PtyEvent::Output(data) => events.push(BackendEvent::Output { pane: *id, data }),
-                    PtyEvent::Exited => {
+            let mut budget = PER_PANE_DRAIN_BUDGET;
+            while budget > 0 {
+                match pane.rx.try_recv() {
+                    Ok(PtyEvent::Output(data)) => {
+                        events.push(BackendEvent::Output { pane: *id, data });
+                    }
+                    Ok(PtyEvent::Exited) => {
                         events.push(BackendEvent::Exited { pane: *id });
                         break;
                     }
+                    Err(_) => break,
                 }
+                budget -= 1;
             }
         }
         events
