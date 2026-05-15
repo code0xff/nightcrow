@@ -249,6 +249,7 @@ pub(crate) mod tests {
                     content: (*content).to_string(),
                 })
                 .collect(),
+            file_path: None,
         }
     }
 

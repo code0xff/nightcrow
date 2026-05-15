@@ -22,22 +22,6 @@ fn extension(path: &str) -> &str {
         .unwrap_or("")
 }
 
-fn file_path_for_syntax(app: &App) -> &str {
-    match app.mode {
-        ViewMode::Log if app.log_view.drill_down => app
-            .log_view
-            .commit_files
-            .get(app.log_view.file_selected)
-            .map(|f| f.path.as_str())
-            .unwrap_or(""),
-        ViewMode::Log => "",
-        ViewMode::Status => app
-            .selected_filtered_status_file()
-            .map(|f| f.path.as_str())
-            .unwrap_or(""),
-    }
-}
-
 pub fn render(
     frame: &mut Frame,
     app: &mut App,
@@ -66,14 +50,11 @@ pub fn render(
     let focused = app.focus == Focus::DiffViewer;
     let border_style = super::focused_border_style(focused, accent);
 
-    let syntax = {
-        let file_path = file_path_for_syntax(app);
-        ss.find_syntax_by_extension(extension(file_path))
-            .unwrap_or_else(|| ss.find_syntax_plain_text())
-    };
-    // Build the syntect highlight cache once per (hunks × syntax) so the
-    // visible-window walk below stays bounded even on large diffs.
-    app.diff.ensure_highlight_cache(ss, ts, syntax);
+    // Build the syntect highlight cache once per (hunks × per-hunk syntax)
+    // so the visible-window walk below stays bounded even on large diffs.
+    // Each hunk carries its own file_path now, so commit diffs that touch
+    // multiple file types stop rendering as plain text.
+    app.diff.ensure_highlight_cache(ss, ts);
 
     let current_match = app.diff.search.current_match();
     let has_search = app.diff.search.has_query();
@@ -249,7 +230,14 @@ fn render_file_view(
 ) {
     let focused = app.focus == Focus::DiffViewer;
     let border_style = super::focused_border_style(focused, accent);
-    let file_path = file_path_for_syntax(app);
+    // file_view backs a single file by definition, so its key carries the
+    // path. Status overlays use the workdir path; commit overlays use the
+    // path inside the commit.
+    let file_path: &str = match &app.diff.file_view.key {
+        Some(crate::app::FileViewKey::Status(p)) => p.as_str(),
+        Some(crate::app::FileViewKey::Commit { path, .. }) => path.as_str(),
+        None => "",
+    };
     let ext = extension(file_path);
     let syntax = ss
         .find_syntax_by_extension(ext)

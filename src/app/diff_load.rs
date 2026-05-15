@@ -150,7 +150,7 @@ impl App {
         self.diff.hunks.clear();
         self.diff.hunks_lines_lower.clear();
         self.diff.line_highlights.clear();
-        self.diff.cached_syntax_name = None;
+        self.diff.cached_hunk_syntax.clear();
         // Drop the entire search state, not just the match list: keeping the
         // query alive after a content-discarding clear would (a) leave a
         // ghost `[0/0]` counter visible in the title, and (b) cause the

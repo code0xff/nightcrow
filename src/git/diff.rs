@@ -64,6 +64,11 @@ pub struct DiffLine {
 pub struct DiffHunk {
     pub header: String,
     pub lines: Vec<DiffLine>,
+    /// File this hunk belongs to. `Some` for hunks emitted by the diff
+    /// collectors below; `None` for hand-built fixtures in tests where the
+    /// path is irrelevant. Used by the renderer to pick a per-hunk syntax
+    /// in commit diffs (one commit can touch multiple file types).
+    pub file_path: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -345,7 +350,7 @@ pub fn load_commit_files(repo: &Repository, oid: Oid) -> Result<Vec<ChangedFile>
             git2::Delta::Renamed => ChangeStatus::Renamed,
             _ => ChangeStatus::Modified,
         };
-        let path = path_from_delta(delta).unwrap_or_else(|| "unknown".to_string());
+        let path = path_from_delta(&delta).unwrap_or_else(|| "unknown".to_string());
         files.push(ChangedFile::new(path, status));
     }
     Ok(files)
@@ -385,16 +390,21 @@ fn collect_hunks(
     binary_fallback: &str,
 ) -> Result<Vec<DiffHunk>> {
     let hunks: RefCell<Vec<DiffHunk>> = RefCell::new(Vec::new());
+    // Tracks the current file's path between callbacks. libgit2 invokes
+    // file_cb once per delta, followed by hunk_cb/line_cb for that file —
+    // hunk_cb itself isn't given the delta, so we stash the path here.
+    let current_path: RefCell<Option<String>> = RefCell::new(None);
 
     diff.foreach(
         &mut |delta, _| {
+            *current_path.borrow_mut() = path_from_delta(&delta);
             if let Some(h) = on_file(delta) {
                 hunks.borrow_mut().push(h);
             }
             true
         },
         Some(&mut |delta, _| {
-            let path = path_from_delta(delta).unwrap_or_else(|| binary_fallback.to_string());
+            let path = path_from_delta(&delta).unwrap_or_else(|| binary_fallback.to_string());
             hunks.borrow_mut().push(binary_diff_hunk(&path));
             true
         }),
@@ -406,6 +416,7 @@ fn collect_hunks(
             hunks.borrow_mut().push(DiffHunk {
                 header,
                 lines: Vec::new(),
+                file_path: current_path.borrow().clone(),
             });
             true
         }),
@@ -438,10 +449,11 @@ fn collect_commit_diff_hunks(diff: &Diff<'_>) -> Result<Vec<DiffHunk>> {
     collect_hunks(
         diff,
         |delta| {
-            let path = path_from_delta(delta).unwrap_or_else(|| "unknown".to_string());
+            let path = path_from_delta(&delta).unwrap_or_else(|| "unknown".to_string());
             Some(DiffHunk {
                 header: format!("diff {path}"),
                 lines: Vec::new(),
+                file_path: Some(path),
             })
         },
         "unknown",
@@ -474,12 +486,12 @@ fn change_status_from_git_status(status: Status) -> Option<ChangeStatus> {
 fn path_from_status_entry(entry: &StatusEntry<'_>) -> Option<String> {
     entry
         .index_to_workdir()
-        .and_then(path_from_delta)
-        .or_else(|| entry.head_to_index().and_then(path_from_delta))
+        .and_then(|d| path_from_delta(&d))
+        .or_else(|| entry.head_to_index().and_then(|d| path_from_delta(&d)))
         .or_else(|| entry.path().map(str::to_string))
 }
 
-fn path_from_delta(delta: DiffDelta<'_>) -> Option<String> {
+fn path_from_delta(delta: &DiffDelta<'_>) -> Option<String> {
     delta
         .new_file()
         .path()
@@ -494,6 +506,7 @@ fn binary_diff_hunk(file_path: &str) -> DiffHunk {
             kind: LineKind::Context,
             content: "Binary files differ".to_string(),
         }],
+        file_path: Some(file_path.to_string()),
     }
 }
 

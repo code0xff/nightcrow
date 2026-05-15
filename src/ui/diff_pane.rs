@@ -149,9 +149,12 @@ pub struct DiffPane {
     /// change so the renderer skips the full-document state-recovery pass
     /// every frame.
     pub line_highlights: Vec<Vec<Vec<HighlightSegment>>>,
-    /// Syntax name (`SyntaxReference::name`) used to build `line_highlights`.
-    /// `None` means the cache is unbuilt or invalidated.
-    pub cached_syntax_name: Option<String>,
+    /// Syntax name (`SyntaxReference::name`) resolved per hunk at the time
+    /// `line_highlights` was built. Stored as a per-hunk vector because a
+    /// single commit diff can touch files of different types and each hunk
+    /// needs its own highlighter state. Empty means the cache is unbuilt
+    /// or invalidated.
+    pub cached_hunk_syntax: Vec<String>,
     /// Sum of `line.content.len()` across all hunk lines at the time
     /// `line_highlights` was built. Pairs with the shape check so a hunk
     /// replacement that happens to preserve the same line counts still
@@ -311,7 +314,7 @@ impl DiffPane {
         // Highlight cache shape is keyed by hunks; invalidate so the renderer
         // rebuilds it on next frame against the active syntax.
         self.line_highlights.clear();
-        self.cached_syntax_name = None;
+        self.cached_hunk_syntax.clear();
     }
 
     /// Rebuild the lowercased line cache iff its shape diverges from `hunks`.
@@ -328,17 +331,26 @@ impl DiffPane {
         }
     }
 
-    /// Ensure `line_highlights` matches the current `hunks` and the supplied
-    /// syntax. Rebuilds when the cache shape diverges from `hunks` or the
-    /// syntax name changed since last build. The walk uses two highlight
-    /// states (one for context/added, one for removed) so multi-line
-    /// constructs stay coherent across hunks.
+    /// Ensure `line_highlights` matches the current `hunks`, resolving the
+    /// syntax separately for each hunk from its `file_path`. A commit diff
+    /// can touch files of different types — using a single syntax for the
+    /// whole diff would render everything as the first file's language (or
+    /// plain text, when there is no single "current" file). Rebuilds when
+    /// the cache shape, content size, or any per-hunk syntax diverges from
+    /// the cached state.
     pub fn ensure_highlight_cache(
         &mut self,
         ss: &syntect::parsing::SyntaxSet,
         ts: &syntect::highlighting::ThemeSet,
-        syntax: &syntect::parsing::SyntaxReference,
     ) {
+        let per_hunk_syntax: Vec<&syntect::parsing::SyntaxReference> = self
+            .hunks
+            .iter()
+            .map(|h| resolve_hunk_syntax(ss, h.file_path.as_deref()))
+            .collect();
+        let resolved_names: Vec<String> =
+            per_hunk_syntax.iter().map(|s| s.name.clone()).collect();
+
         let shape_matches = self.line_highlights.len() == self.hunks.len()
             && self
                 .hunks
@@ -353,23 +365,36 @@ impl DiffPane {
             .sum();
         if shape_matches
             && self.cached_content_bytes == content_bytes
-            && self.cached_syntax_name.as_deref() == Some(syntax.name.as_str())
+            && self.cached_hunk_syntax == resolved_names
         {
             return;
         }
 
         use syntect::easy::HighlightLines;
         let theme = &ts.themes[DIFF_THEME];
-        let mut hl_new = HighlightLines::new(syntax, theme);
-        let mut hl_old = HighlightLines::new(syntax, theme);
+        // Reset the highlighter state pair whenever the hunk's syntax
+        // changes — running a JS hunk through a Rust HighlightLines would
+        // mis-paint stateful multi-line constructs.
+        let mut hl_pair: Option<(HighlightLines<'_>, HighlightLines<'_>)> = None;
+        let mut current_syntax_name = String::new();
 
         let mut out: Vec<Vec<Vec<HighlightSegment>>> = Vec::with_capacity(self.hunks.len());
-        for hunk in &self.hunks {
+        for (hunk, syntax) in self.hunks.iter().zip(per_hunk_syntax.iter()) {
+            if hl_pair.is_none() || current_syntax_name != syntax.name {
+                hl_pair = Some((
+                    HighlightLines::new(syntax, theme),
+                    HighlightLines::new(syntax, theme),
+                ));
+                current_syntax_name = syntax.name.clone();
+            }
+            // Safe: just assigned in the line above when None.
+            let (hl_new, hl_old) = hl_pair.as_mut().unwrap();
+
             let mut per_hunk: Vec<Vec<HighlightSegment>> = Vec::with_capacity(hunk.lines.len());
             for line in &hunk.lines {
                 let hl = match line.kind {
-                    LineKind::Removed => &mut hl_old,
-                    _ => &mut hl_new,
+                    LineKind::Removed => &mut *hl_old,
+                    _ => &mut *hl_new,
                 };
                 let with_nl = format!("{}\n", line.content);
                 let segs: Vec<HighlightSegment> = match hl.highlight_line(&with_nl, ss) {
@@ -397,9 +422,29 @@ impl DiffPane {
             out.push(per_hunk);
         }
         self.line_highlights = out;
-        self.cached_syntax_name = Some(syntax.name.clone());
+        self.cached_hunk_syntax = resolved_names;
         self.cached_content_bytes = content_bytes;
     }
+}
+
+/// Pick the syntect syntax for a hunk based on its `file_path`'s extension.
+/// Falls back to plain text when the path is absent (test fixtures) or the
+/// extension is unknown.
+fn resolve_hunk_syntax<'a>(
+    ss: &'a syntect::parsing::SyntaxSet,
+    file_path: Option<&str>,
+) -> &'a syntect::parsing::SyntaxReference {
+    file_path
+        .map(hunk_extension)
+        .and_then(|ext| ss.find_syntax_by_extension(ext))
+        .unwrap_or_else(|| ss.find_syntax_plain_text())
+}
+
+fn hunk_extension(path: &str) -> &str {
+    std::path::Path::new(path)
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("")
 }
 
 #[cfg(test)]
@@ -430,6 +475,7 @@ mod tests {
                     content: (*s).to_string(),
                 })
                 .collect(),
+            file_path: None,
         }
     }
 
