@@ -7,19 +7,11 @@ use ratatui::{
     text::{Line, Span},
     widgets::{Block, Borders, Paragraph},
 };
-use std::path::Path;
 use syntect::highlighting::ThemeSet;
 use syntect::parsing::SyntaxSet;
 
 fn rgb_to_color(rgb: (u8, u8, u8)) -> Color {
     Color::Rgb(rgb.0, rgb.1, rgb.2)
-}
-
-fn extension(path: &str) -> &str {
-    Path::new(path)
-        .extension()
-        .and_then(|e| e.to_str())
-        .unwrap_or("")
 }
 
 pub fn render(
@@ -238,7 +230,7 @@ fn render_file_view(
         Some(crate::app::FileViewKey::Commit { path, .. }) => path.as_str(),
         None => "",
     };
-    let ext = extension(file_path);
+    let ext = super::path_extension(file_path);
     let syntax = ss
         .find_syntax_by_extension(ext)
         .unwrap_or_else(|| ss.find_syntax_plain_text());

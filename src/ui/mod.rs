@@ -21,6 +21,16 @@ use ratatui::{
 use syntect::highlighting::ThemeSet;
 use syntect::parsing::SyntaxSet;
 
+/// Extract a file path's extension as a `&str`, returning `""` when the path
+/// has no extension or non-UTF-8 bytes. Shared by diff and file-view rendering
+/// so syntax lookup behaves consistently regardless of the surface.
+pub(crate) fn path_extension(path: &str) -> &str {
+    std::path::Path::new(path)
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("")
+}
+
 pub(crate) fn focused_border_style(focused: bool, accent: Color) -> Style {
     if focused {
         Style::default().fg(accent)

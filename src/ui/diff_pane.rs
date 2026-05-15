@@ -447,16 +447,9 @@ fn resolve_hunk_syntax<'a>(
     file_path: Option<&str>,
 ) -> &'a syntect::parsing::SyntaxReference {
     file_path
-        .map(hunk_extension)
+        .map(crate::ui::path_extension)
         .and_then(|ext| ss.find_syntax_by_extension(ext))
         .unwrap_or_else(|| ss.find_syntax_plain_text())
-}
-
-fn hunk_extension(path: &str) -> &str {
-    std::path::Path::new(path)
-        .extension()
-        .and_then(|e| e.to_str())
-        .unwrap_or("")
 }
 
 #[cfg(test)]
