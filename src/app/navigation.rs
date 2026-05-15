@@ -187,10 +187,6 @@ impl App {
     /// Handles both empty-query (full file list) and non-empty (filtered subset)
     /// cases uniformly.
     pub(crate) fn move_selected_in_filter(&mut self, delta: isize) {
-        // Status-mode nav is the only path that drives auto-follow gating;
-        // marking here avoids writing the timer in Log mode where the value
-        // is never read.
-        self.mark_user_navigated();
         // Resolve the new selection in a scoped block so the borrow on
         // filtered_indices does not outlive the mutating reload below.
         let resolved = {
@@ -212,6 +208,10 @@ impl App {
         if let Some((pos, new_pos, new_selected)) = resolved
             && (Some(new_pos) != pos || self.status_view.selected != new_selected)
         {
+            // Mark only after confirming the selection actually changed so
+            // that bumping against either end of the list doesn't reset the
+            // auto-follow steered-path memory.
+            self.mark_user_navigated();
             self.status_view.selected = new_selected;
             self.status_view.file_scroll_x = 0;
             self.reload_diff();
