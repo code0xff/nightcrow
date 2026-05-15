@@ -83,9 +83,19 @@ pub fn encode_key(key: KeyEvent) -> Option<Vec<u8>> {
     match key.code {
         KeyCode::Char(c) => {
             if ctrl && c.is_ascii() {
-                let b = (c.to_ascii_uppercase() as u8).wrapping_sub(b'@');
-                if b < 32 {
-                    return Some(vec![b]);
+                // Space is below '@' in ASCII so the standard `c - '@'`
+                // formula wraps. xterm convention is Ctrl+Space → NUL.
+                let b = if c == ' ' {
+                    Some(0x00)
+                } else {
+                    let v = (c.to_ascii_uppercase() as u8).wrapping_sub(b'@');
+                    (v < 32).then_some(v)
+                };
+                if let Some(b) = b {
+                    // Ctrl+Alt+Char encodes as ESC + control byte (matches
+                    // readline / Emacs expectations). Without the prefix
+                    // programs like Emacs would see plain Ctrl+Char.
+                    return Some(if alt { vec![0x1b, b] } else { vec![b] });
                 }
             }
             if alt {
@@ -258,5 +268,22 @@ mod tests {
     #[test]
     fn encode_enter_as_cr() {
         assert_eq!(encode_key(key(KeyCode::Enter)), Some(vec![b'\r']));
+    }
+
+    #[test]
+    fn encode_ctrl_space_as_nul() {
+        // xterm convention: Ctrl+Space → NUL. The generic `c - '@'` formula
+        // wraps for space (0x20 < 0x40), so this case needs special handling.
+        assert_eq!(encode_key(ctrl(KeyCode::Char(' '))), Some(vec![0x00]));
+    }
+
+    #[test]
+    fn encode_ctrl_alt_char_prefixes_esc_to_control_byte() {
+        // readline / Emacs convention: Ctrl+Alt+Char → ESC + control byte.
+        let key = KeyEvent::new(
+            KeyCode::Char('c'),
+            KeyModifiers::CONTROL | KeyModifiers::ALT,
+        );
+        assert_eq!(encode_key(key), Some(vec![0x1b, 0x03]));
     }
 }
