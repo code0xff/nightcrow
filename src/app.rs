@@ -13,10 +13,10 @@ mod terminal_ctrl;
 pub use crate::app::commit_log_fetch::CommitLogPagination;
 pub use crate::runtime::snapshot::{SnapshotChannel, SnapshotMsg};
 #[cfg(test)]
-pub(crate) use crate::runtime::terminal::strip_escape_sequences;
+pub use crate::runtime::terminal::PaneInfo;
 pub use crate::runtime::terminal::TerminalState;
 #[cfg(test)]
-pub use crate::runtime::terminal::PaneInfo;
+pub(crate) use crate::runtime::terminal::strip_escape_sequences;
 pub use crate::ui::diff_pane::{DiffPane, DiffPaneView};
 pub use crate::ui::file_view::{FileViewKey, FileViewState};
 pub use crate::ui::log_view::LogView;
