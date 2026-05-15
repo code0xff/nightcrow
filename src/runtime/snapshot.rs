@@ -6,12 +6,19 @@ use std::thread;
 use std::time::{Duration, SystemTime};
 
 /// Owns the receiver and stop channel for the background snapshot thread.
-/// Dropping the struct (and its `_stop_tx`) signals the thread to exit.
+/// Dropping the struct signals the worker to exit and joins it before
+/// returning, so a repo switch cannot leave the old-repo worker holding a
+/// `git2::Repository` after the new channel is in place.
 pub struct SnapshotChannel {
     rx: Receiver<SnapshotMsg>,
-    // Held only for its drop side-effect: dropping the sender unblocks
-    // the worker's recv_timeout so it can observe the disconnect.
-    _stop_tx: SyncSender<()>,
+    // Held in an Option so `Drop` can release it before joining the
+    // worker. Dropping the sender unblocks the worker's `recv_timeout`
+    // immediately rather than letting it sleep up to the snapshot
+    // interval.
+    stop_tx: Option<SyncSender<()>>,
+    // None in test fixtures that construct an inert channel via
+    // `from_endpoints` (no real worker to join).
+    handle: Option<thread::JoinHandle<()>>,
 }
 
 /// Reopen the cached `git2::Repository` handle every N ticks so we observe
@@ -25,7 +32,7 @@ impl SnapshotChannel {
         let (tx, rx) = mpsc::channel::<SnapshotMsg>();
         let (stop_tx, stop_rx) = mpsc::sync_channel::<()>(0);
         let path = repo_path.to_string();
-        thread::spawn(move || {
+        let handle = thread::spawn(move || {
             // Cache the Repository handle to avoid a fresh `discover` walk
             // every tick, but drop it periodically (and on any load error)
             // so external repo mutations cannot leave us serving stale state.
@@ -87,7 +94,8 @@ impl SnapshotChannel {
         });
         Self {
             rx,
-            _stop_tx: stop_tx,
+            stop_tx: Some(stop_tx),
+            handle: Some(handle),
         }
     }
 
@@ -103,7 +111,28 @@ impl SnapshotChannel {
     pub(crate) fn from_endpoints(rx: Receiver<SnapshotMsg>, stop_tx: SyncSender<()>) -> Self {
         Self {
             rx,
-            _stop_tx: stop_tx,
+            stop_tx: Some(stop_tx),
+            handle: None,
+        }
+    }
+}
+
+impl Drop for SnapshotChannel {
+    fn drop(&mut self) {
+        // Release the stop sender first: the worker's `recv_timeout`
+        // observes `Disconnected` immediately rather than sleeping out
+        // the remaining tick interval.
+        drop(self.stop_tx.take());
+        // Wait for the worker to finish its current `load_snapshot` so a
+        // `change_repo` doesn't leave the old-repo worker running with a
+        // live `git2::Repository` after the new channel is installed. A
+        // panic in the worker is logged rather than propagated — the
+        // UI thread is in the middle of a drop and cannot meaningfully
+        // recover.
+        if let Some(h) = self.handle.take()
+            && let Err(e) = h.join()
+        {
+            tracing::warn!(?e, "snapshot worker panicked during shutdown");
         }
     }
 }
