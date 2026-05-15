@@ -481,3 +481,128 @@ fn handle_unmapped_upper_key(app: &mut App, key: KeyEvent) {
         Focus::Terminal => {}
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::app::tests::app_with_files;
+    use crossterm::event::KeyModifiers;
+
+    fn press(code: KeyCode, mods: KeyModifiers) -> KeyEvent {
+        KeyEvent::new(code, mods)
+    }
+
+    #[test]
+    fn handle_key_ignores_release_events() {
+        // Regression for 4faacce: Windows / kitty keyboard protocol emits
+        // Press+Release pairs for every keystroke. Only Press must trigger
+        // app mutations; Release of Ctrl+Q in particular must NOT quit.
+        let mut app = app_with_files(vec!["a.rs"]);
+        let release = KeyEvent::new_with_kind(
+            KeyCode::Char('q'),
+            KeyModifiers::CONTROL,
+            crossterm::event::KeyEventKind::Release,
+        );
+
+        let outcome = handle_key(&mut app, release);
+
+        assert!(matches!(outcome, KeyOutcome::Continue));
+    }
+
+    #[test]
+    fn handle_key_press_of_ctrl_q_quits() {
+        // Companion to the release test: the same chord on Press MUST quit
+        // so we know the filter targets only the non-Press kinds.
+        let mut app = app_with_files(vec!["a.rs"]);
+        let pressed = press(KeyCode::Char('q'), KeyModifiers::CONTROL);
+
+        let outcome = handle_key(&mut app, pressed);
+
+        assert!(matches!(outcome, KeyOutcome::Quit));
+    }
+
+    #[test]
+    fn handle_key_overlay_gate_blocks_global_action_when_diff_search_active() {
+        // Regression for 4084760: Ctrl+L (ToggleLogView) must NOT fire
+        // while the diff search bar is active — otherwise the view tears
+        // down the state the user was searching against.
+        let mut app = app_with_files(vec!["a.rs"]);
+        app.focus = Focus::DiffViewer;
+        app.diff.start_search();
+        assert!(app.diff.search.active);
+        let before = app.mode;
+
+        let ctrl_l = press(KeyCode::Char('l'), KeyModifiers::CONTROL);
+        let _ = handle_key(&mut app, ctrl_l);
+
+        assert_eq!(app.mode, before, "Ctrl+L must be suppressed by overlay");
+        assert!(app.diff.search.active, "diff search must remain open");
+    }
+
+    #[test]
+    fn handle_key_overlay_gate_blocks_global_action_when_file_search_active() {
+        let mut app = app_with_files(vec!["a.rs"]);
+        app.focus = Focus::FileList;
+        app.start_search();
+        assert!(app.status_view.search_active);
+        let before = app.mode;
+
+        let ctrl_l = press(KeyCode::Char('l'), KeyModifiers::CONTROL);
+        let _ = handle_key(&mut app, ctrl_l);
+
+        assert_eq!(app.mode, before);
+        assert!(app.status_view.search_active);
+    }
+
+    #[test]
+    fn handle_key_overlay_gate_blocks_global_action_when_repo_input_active() {
+        let mut app = app_with_files(vec!["a.rs"]);
+        app.start_repo_input();
+        assert!(app.repo_input.active);
+        let before = app.mode;
+
+        let ctrl_l = press(KeyCode::Char('l'), KeyModifiers::CONTROL);
+        let _ = handle_key(&mut app, ctrl_l);
+
+        assert_eq!(app.mode, before);
+        assert!(app.repo_input.active);
+    }
+
+    #[test]
+    fn handle_paste_into_file_search_strips_control_chars() {
+        // Regression for e21c449 + 4084760: paste into the file-search
+        // overlay drops control characters (newlines, tabs, bells) before
+        // appending to the query.
+        let mut app = app_with_files(vec!["alpha.rs", "beta.rs"]);
+        app.focus = Focus::FileList;
+        app.start_search();
+
+        handle_paste(&mut app, "al\nph\ta\x07");
+
+        assert_eq!(app.status_view.search_query, "alpha");
+    }
+
+    #[test]
+    fn handle_paste_into_diff_search_strips_control_chars() {
+        let mut app = app_with_files(vec!["alpha.rs"]);
+        app.focus = Focus::DiffViewer;
+        app.diff.start_search();
+
+        handle_paste(&mut app, "fn\rname\x08");
+
+        assert_eq!(app.diff.search.query, "fnname");
+    }
+
+    #[test]
+    fn handle_paste_into_repo_input_strips_control_chars() {
+        let mut app = app_with_files(vec!["a.rs"]);
+        app.start_repo_input();
+        // Pre-existing buffer content is preserved by repo_input_push;
+        // start_repo_input copies the current repo_path in, so reset.
+        app.repo_input.buf.clear();
+
+        handle_paste(&mut app, "/tmp\n/repo\x07");
+
+        assert_eq!(app.repo_input.buf, "/tmp/repo");
+    }
+}

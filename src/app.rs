@@ -172,7 +172,7 @@ impl App {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use crate::git::diff::{
         ChangeStatus, CommitEntry, DiffHunk, DiffLine, LineKind, load_commit_log,
@@ -192,13 +192,14 @@ mod tests {
     /// here, nothing waits on either side, and dropping `_stop_rx` upfront
     /// keeps the helper's tuple shape minimal. If a future test ever spawns
     /// a real worker against this channel, it must keep `_stop_rx` alive.
-    fn dummy_snapshot_channel() -> (SnapshotChannel, std::sync::mpsc::Sender<SnapshotMsg>) {
+    pub(crate) fn dummy_snapshot_channel()
+    -> (SnapshotChannel, std::sync::mpsc::Sender<SnapshotMsg>) {
         let (tx, rx) = mpsc::channel::<SnapshotMsg>();
         let (stop_tx, _stop_rx) = mpsc::sync_channel::<()>(0);
         (SnapshotChannel::from_endpoints(rx, stop_tx), tx)
     }
 
-    fn app_with_files(files: Vec<&str>) -> App {
+    pub(crate) fn app_with_files(files: Vec<&str>) -> App {
         let (snapshot, _tx) = dummy_snapshot_channel();
         let mut status_view = StatusView {
             files: files
