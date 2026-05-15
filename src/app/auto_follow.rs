@@ -68,15 +68,15 @@ impl App {
             // `duration_since` returns Err when `mtime > now` (clock skew on
             // NFS, VMs, files touched with a future stamp). Treating those as
             // permanently in-window (`unwrap_or(true)`) would pin auto-follow
-            // to a single bogus file forever — no later edit can ever beat a
-            // future timestamp. Floor the timestamp at `now` instead so a
-            // future-stamped file is treated as "just edited."
-            let effective = mtime.min(now);
-            let in_window = now
-                .duration_since(effective)
-                .map(|d| d <= window)
-                .unwrap_or(false);
-            if !in_window {
+            // to a single bogus file forever — no later real edit could beat
+            // the inflated timestamp in the `mtime > bm` comparison below.
+            // Drop future-stamped files from consideration entirely: clock
+            // skew is rare, recovery happens automatically once the real
+            // wall clock catches up.
+            let Ok(age) = now.duration_since(mtime) else {
+                continue;
+            };
+            if age > window {
                 continue;
             }
             let replace = match best {
