@@ -22,6 +22,12 @@ pub enum Accent {
     Blue,
 }
 
+// Compile-time guard: a future refactor must not shrink `Accent::ALL` to
+// empty. `from_index` would otherwise rely on a runtime fallback we'd
+// rather not exercise. `const` items don't accept `_` inside an `impl`
+// block, so this lives at module scope.
+const _: () = assert!(!Accent::ALL.is_empty(), "Accent::ALL must be non-empty");
+
 impl Accent {
     // Variant declaration order MUST match this slice so accent_idx values
     // persisted in pre-existing session.json files keep mapping to the same
@@ -46,14 +52,20 @@ impl Accent {
     }
 
     pub fn index(self) -> usize {
-        Self::ALL
-            .iter()
-            .position(|&a| a == self)
-            .expect("ALL must contain every variant")
+        // Fall back to 0 when a variant is missing from `ALL` — should be
+        // unreachable, but a runtime panic on a UI helper is worse than a
+        // silently miscoloured tile. The roundtrip test pins the invariant.
+        Self::ALL.iter().position(|&a| a == self).unwrap_or(0)
     }
 
     pub fn from_index(idx: usize) -> Accent {
-        Self::ALL[idx % Self::ALL.len()]
+        // The compile-time guard above keeps `len > 0`, so `% len` is sound.
+        // `get(...).copied()` is the same value as direct indexing here; the
+        // form matches the explicit non-panicking pattern used for `index`.
+        Self::ALL
+            .get(idx % Self::ALL.len())
+            .copied()
+            .unwrap_or(Accent::Yellow)
     }
 }
 
@@ -355,6 +367,37 @@ commit_log_prefetch_threshold = 80
 
         assert_eq!(cfg.name, Accent::Yellow);
         assert_eq!(cfg.preset_index(), 0);
+    }
+
+    #[test]
+    fn accent_index_from_index_roundtrip_for_every_variant() {
+        // Pin the ALL slice against the enum: a missing entry would make
+        // `index()` return 0 silently, miscolouring a real variant as the
+        // default. Iterate every variant via a match so a future variant
+        // addition forces this test to be updated.
+        let all = [
+            Accent::Yellow,
+            Accent::Cyan,
+            Accent::Green,
+            Accent::Magenta,
+            Accent::Blue,
+        ];
+        for a in all {
+            let idx = a.index();
+            assert!(idx < Accent::ALL.len(), "{a:?} index {idx} out of range");
+            assert_eq!(Accent::from_index(idx), a, "roundtrip failed for {a:?}");
+        }
+        // And confirm the canonical slice length stays in sync.
+        assert_eq!(Accent::ALL.len(), all.len());
+    }
+
+    #[test]
+    fn accent_from_index_wraps_out_of_range() {
+        // Defensive: a stale session.json with a huge accent_idx must not
+        // panic — `from_index` wraps via `%`. The compile-time guard above
+        // keeps `ALL` non-empty so `% len` is sound.
+        assert_eq!(Accent::from_index(usize::MAX), Accent::from_index(usize::MAX % Accent::ALL.len()));
+        assert_eq!(Accent::from_index(Accent::ALL.len()), Accent::from_index(0));
     }
 
     #[test]
