@@ -135,9 +135,8 @@ impl App {
                     selected = self.log_view.selected,
                     "drill-down restore: saved commit index is out of range"
                 );
-                self.status = Some(
-                    "drill-down restore skipped: saved commit not in log".to_string(),
-                );
+                self.status =
+                    Some("drill-down restore skipped: saved commit not in log".to_string());
                 self.load_commit_diff_for_selected();
                 return;
             }

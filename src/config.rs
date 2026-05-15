@@ -444,7 +444,10 @@ commit_log_prefetch_threshold = 80
         // Defensive: a stale session.json with a huge accent_idx must not
         // panic — `from_index` wraps via `%`. The compile-time guard above
         // keeps `ALL` non-empty so `% len` is sound.
-        assert_eq!(Accent::from_index(usize::MAX), Accent::from_index(usize::MAX % Accent::ALL.len()));
+        assert_eq!(
+            Accent::from_index(usize::MAX),
+            Accent::from_index(usize::MAX % Accent::ALL.len())
+        );
         assert_eq!(Accent::from_index(Accent::ALL.len()), Accent::from_index(0));
     }
 

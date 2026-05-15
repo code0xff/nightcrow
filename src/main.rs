@@ -269,9 +269,8 @@ fn handle_key(app: &mut App, key: KeyEvent) -> KeyOutcome {
     // keystroke until dismissed. Letting global actions fire while one is
     // open would tear down the state the overlay is operating on — e.g.
     // Ctrl+L toggling the view away while a diff-search query is active.
-    let overlay_active = app.repo_input.active
-        || app.status_view.search_active
-        || app.diff.search.active;
+    let overlay_active =
+        app.repo_input.active || app.status_view.search_active || app.diff.search.active;
     if !overlay_active && let Some(outcome) = handle_global_action(app, action) {
         return outcome;
     }
