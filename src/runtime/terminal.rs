@@ -1,6 +1,12 @@
 use crate::backend::{PaneId, TerminalBackend};
 use std::collections::HashMap;
 
+/// Upper bound on a pane's in-flight prompt buffer before further chars are
+/// dropped. Prevents unbounded growth when a program writes a stream of bytes
+/// without ever sending `\r` / `\n` (progress bars, large pastes, `yes` piped
+/// to cat). 4 KiB easily exceeds any realistic shell prompt line.
+const PROMPT_BUFFER_MAX_BYTES: usize = 4096;
+
 pub struct PaneInfo {
     pub id: PaneId,
     pub title: String,
@@ -114,7 +120,15 @@ impl TerminalState {
                 '\x7f' | '\x08' => {
                     buf.pop();
                 }
-                _ => buf.push(ch),
+                _ => {
+                    // Cap to bound memory under degenerate "no-newline" producers
+                    // (progress bars piped through cat, paste of a multi-MB
+                    // string, etc.). Dropping further chars before the next flush
+                    // is preferable to letting the buffer grow without limit.
+                    if buf.len() < PROMPT_BUFFER_MAX_BYTES {
+                        buf.push(ch);
+                    }
+                }
             }
         }
     }
