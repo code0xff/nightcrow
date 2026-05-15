@@ -13,10 +13,41 @@ enum PtyEvent {
 }
 
 struct PtyPane {
-    master: Box<dyn portable_pty::MasterPty>,
-    writer: Box<dyn Write + Send>,
+    // master/writer are wrapped in Option so `Drop` can release them
+    // before joining the reader thread — the reader blocks in `read()`
+    // and only unblocks when both sides of the PTY are closed.
+    master: Option<Box<dyn portable_pty::MasterPty>>,
+    writer: Option<Box<dyn Write + Send>>,
     killer: Box<dyn portable_pty::ChildKiller + Send + Sync>,
     rx: Receiver<PtyEvent>,
+    reader_handle: Option<thread::JoinHandle<()>>,
+    wait_handle: Option<thread::JoinHandle<()>>,
+}
+
+impl Drop for PtyPane {
+    fn drop(&mut self) {
+        // Best-effort kill: the child may already be gone.
+        let _ = self.killer.kill();
+        // Drop writer/master so the reader's blocked `read()` returns EOF
+        // and the thread exits. Without this, joining the reader would
+        // hang.
+        self.writer.take();
+        self.master.take();
+        // Join so closing a pane cannot leave reader/wait threads alive
+        // holding fds against the (possibly killed) child. We're inside
+        // drop, so a panic in either thread is logged rather than
+        // propagated.
+        if let Some(h) = self.reader_handle.take()
+            && let Err(e) = h.join()
+        {
+            tracing::warn!(?e, "PTY reader thread panicked during shutdown");
+        }
+        if let Some(h) = self.wait_handle.take()
+            && let Err(e) = h.join()
+        {
+            tracing::warn!(?e, "PTY wait thread panicked during shutdown");
+        }
+    }
 }
 
 pub struct PtyBackend {
@@ -72,7 +103,7 @@ impl TerminalBackend for PtyBackend {
         self.next_id = next;
 
         let (tx, rx) = mpsc::channel();
-        thread::spawn(move || {
+        let reader_handle = thread::spawn(move || {
             let mut buf = [0u8; 4096];
             loop {
                 match reader.read(&mut buf) {
@@ -87,26 +118,28 @@ impl TerminalBackend for PtyBackend {
             let _ = tx.send(PtyEvent::Exited);
         });
 
-        thread::spawn(move || {
+        let wait_handle = thread::spawn(move || {
             let _ = child.wait();
         });
 
         self.panes.insert(
             id,
             PtyPane {
-                master: pair.master,
-                writer,
+                master: Some(pair.master),
+                writer: Some(writer),
                 killer,
                 rx,
+                reader_handle: Some(reader_handle),
+                wait_handle: Some(wait_handle),
             },
         );
         Ok(id)
     }
 
     fn destroy_pane(&mut self, id: PaneId) {
-        if let Some(mut pane) = self.panes.remove(&id) {
-            let _ = pane.killer.kill();
-        }
+        // Removing the pane drops it, which runs PtyPane::drop: kill,
+        // release master/writer, join reader/wait threads.
+        self.panes.remove(&id);
     }
 
     fn send_input(&mut self, id: PaneId, data: &[u8]) -> Result<()> {
@@ -117,14 +150,20 @@ impl TerminalBackend for PtyBackend {
             .panes
             .get_mut(&id)
             .ok_or_else(|| anyhow::anyhow!("pane {id} not found"))?;
-        pane.writer.write_all(data)?;
-        pane.writer.flush()?;
+        let writer = pane
+            .writer
+            .as_mut()
+            .ok_or_else(|| anyhow::anyhow!("pane {id} writer already released"))?;
+        writer.write_all(data)?;
+        writer.flush()?;
         Ok(())
     }
 
     fn resize(&mut self, id: PaneId, rows: u16, cols: u16) {
-        if let Some(pane) = self.panes.get_mut(&id) {
-            let _ = pane.master.resize(PtySize {
+        if let Some(pane) = self.panes.get_mut(&id)
+            && let Some(master) = pane.master.as_mut()
+        {
+            let _ = master.resize(PtySize {
                 rows,
                 cols,
                 pixel_width: 0,
@@ -164,15 +203,9 @@ impl TerminalBackend for PtyBackend {
     }
 }
 
-impl Drop for PtyBackend {
-    fn drop(&mut self) {
-        // Ensure child processes are killed even when destroy_pane was never
-        // called — e.g. on panic unwind or normal exit without explicit close.
-        for (_, mut pane) in self.panes.drain() {
-            let _ = pane.killer.kill();
-        }
-    }
-}
+// `PtyBackend` no longer needs an explicit Drop: `HashMap::drop` drops every
+// pane, and `PtyPane::drop` handles kill+release+join. Leaving an empty
+// Drop here would still work but would obscure that ownership.
 
 #[cfg(test)]
 mod tests {
