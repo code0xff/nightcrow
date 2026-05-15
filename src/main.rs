@@ -169,7 +169,11 @@ fn main_loop(
             ui::draw(frame, app, ss, ts, &cfg.layout, accent);
         })?;
 
-        if event::poll(Duration::from_millis(50))? {
+        // 16 ms ≈ 60 fps. The previous 50 ms tick noticeably lagged PTY echo
+        // on every keystroke (typing felt sticky). `event::poll` performs an
+        // OS-level wait when nothing is happening, so the higher cap doesn't
+        // burn CPU at idle.
+        if event::poll(Duration::from_millis(16))? {
             match event::read()? {
                 // Ratatui's next draw will pick up the new size from
                 // `Frame::area()`. An explicit clear() here only adds a
