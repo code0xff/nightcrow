@@ -10,7 +10,7 @@ use ratatui::{
 /// Per-tab character budget for the title (excluding the `F#` key hint and
 /// surrounding padding). Anything longer is truncated with a trailing ellipsis
 /// so long OSC-set titles can't push neighboring tabs off the row.
-const TAB_TITLE_MAX_CHARS: usize = 24;
+const TAB_TITLE_MAX_CHARS: usize = 20;
 
 /// Truncate `title` to at most `max` characters, appending `…` when cut.
 /// Char-based (not display-width) for simplicity: ASCII shell program names
