@@ -156,6 +156,11 @@ impl App {
             false
         } else {
             self.status_view.selected = target;
+            // Match `move_selected_in_filter`: selection landing on a new
+            // file should drop the previous file's horizontal scroll so the
+            // newly-shown path starts from column 0 rather than scrolled
+            // mid-string.
+            self.status_view.file_scroll_x = 0;
             true
         }
     }
