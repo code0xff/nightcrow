@@ -126,10 +126,20 @@ fn render_file_list(frame: &mut Frame, app: &App, area: Rect, accent: Color) {
         .map(|e| format!(" F1 {} {} ", e.short_id, e.summary))
         .unwrap_or_else(|| " F1 Files ".to_string());
 
-    let title = truncate_title(&commit_summary, 33);
+    let title = truncate_title(&commit_summary, title_budget(area.width));
 
     let selected = (!app.log_view.commit_files.is_empty()).then_some(app.log_view.file_selected);
     super::render_selectable_list(frame, area, title, items, selected, border_style);
+}
+
+/// Char budget for the drill-down title inside `area`.
+///
+/// Reserves two cells for the surrounding border corners. The title is then
+/// measured in chars (not display width), matching the trade-off documented
+/// on `terminal_tab::truncate_tab_title`: ASCII summaries are the common
+/// case and CJK titles render slightly under the visual budget.
+fn title_budget(width: u16) -> usize {
+    (width as usize).saturating_sub(2)
 }
 
 fn truncate_title(title: &str, max_chars: usize) -> String {
