@@ -117,7 +117,7 @@ pub fn draw(frame: &mut Frame, state: &SplashState, accent: Color) {
     );
 
     // Loading bar
-    let filled = (progress * BAR_WIDTH as f64) as usize;
+    let filled = ((progress * BAR_WIDTH as f64) as usize).min(BAR_WIDTH);
     let empty = BAR_WIDTH - filled;
     let bar = format!("{}{}", "█".repeat(filled), "░".repeat(empty));
 
