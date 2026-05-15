@@ -236,13 +236,18 @@ fn consume_escape_sequence(chars: &mut std::iter::Peekable<std::str::Chars<'_>>)
 /// byte (0x40–0x7e). Break early on a control char so content that follows a
 /// malformed sequence isn't accidentally eaten — and leave that control byte
 /// in the iterator: eating it here would silently drop a `\n` or `\r` that
-/// the outer pass needs to flush the prompt buffer.
+/// the outer pass needs to flush the prompt buffer. DEL (0x7f) is treated
+/// per ECMA-48 as a no-op inside the sequence: consumed but does not stand
+/// in for a final byte.
 fn consume_csi(chars: &mut std::iter::Peekable<std::str::Chars<'_>>) {
     while let Some(&c) = chars.peek() {
         if c < '\x20' {
             return;
         }
         chars.next();
+        if c == '\x7f' {
+            continue;
+        }
         if ('\x40'..='\x7e').contains(&c) {
             return;
         }
@@ -304,6 +309,15 @@ mod tests {
         let mut p = parser();
         p.process(b"\x1b]2;\x07");
         assert!(p.callbacks().pending_title.is_none());
+    }
+
+    #[test]
+    fn consume_csi_skips_del_byte_per_ecma48() {
+        // ESC [ 3 1 DEL m sgr — the DEL must be ignored without terminating
+        // the sequence early. The trailing 'm' is the real final byte; the
+        // following "ok" should survive intact.
+        let out = strip_escape_sequences(b"\x1b[31\x7fmok");
+        assert_eq!(out, "ok");
     }
 
     #[test]
