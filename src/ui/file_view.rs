@@ -1,4 +1,4 @@
-use crate::ui::diff_pane::{DIFF_THEME, HighlightSegment};
+use crate::ui::diff_pane::{DIFF_THEME, HighlightSegment, highlight_line_segments};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FileViewKey {
@@ -99,27 +99,7 @@ impl FileViewState {
 
         let mut out: Vec<Vec<HighlightSegment>> = Vec::with_capacity(total);
         for raw in self.content.lines() {
-            let with_nl = format!("{raw}\n");
-            let segs: Vec<HighlightSegment> = match hl.highlight_line(&with_nl, ss) {
-                Ok(ranges) => ranges
-                    .into_iter()
-                    .filter_map(|(style, text)| {
-                        let trimmed = text.trim_end_matches('\n');
-                        if trimmed.is_empty() {
-                            return None;
-                        }
-                        Some(HighlightSegment {
-                            rgb: (style.foreground.r, style.foreground.g, style.foreground.b),
-                            text: trimmed.to_string(),
-                        })
-                    })
-                    .collect(),
-                Err(_) => vec![HighlightSegment {
-                    rgb: (200, 200, 200),
-                    text: raw.to_string(),
-                }],
-            };
-            out.push(segs);
+            out.push(highlight_line_segments(&mut hl, ss, raw));
         }
         self.line_highlights = out;
         self.cached_syntax_name = Some(syntax.name.clone());

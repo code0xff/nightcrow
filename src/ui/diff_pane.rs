@@ -133,6 +133,40 @@ pub struct HighlightSegment {
     pub text: String,
 }
 
+/// Run a single line through the supplied syntect highlighter and convert
+/// the result into `HighlightSegment`s. Falls back to a single grey segment
+/// on highlighter error. Shared by `DiffPane` and `FileViewState` so both
+/// caches build segments identically.
+pub(crate) fn highlight_line_segments(
+    hl: &mut syntect::easy::HighlightLines,
+    ss: &syntect::parsing::SyntaxSet,
+    raw: &str,
+) -> Vec<HighlightSegment> {
+    // syntect expects trailing newlines to terminate lines; strip them back
+    // off the resulting segments so cached text matches the source line.
+    let with_nl = format!("{raw}\n");
+    match hl.highlight_line(&with_nl, ss) {
+        Ok(ranges) => ranges
+            .into_iter()
+            .filter_map(|(style, text)| {
+                let trimmed = text.trim_end_matches('\n');
+                if trimmed.is_empty() {
+                    return None;
+                }
+                let fg = style.foreground;
+                Some(HighlightSegment {
+                    rgb: (fg.r, fg.g, fg.b),
+                    text: trimmed.to_string(),
+                })
+            })
+            .collect(),
+        Err(_) => vec![HighlightSegment {
+            rgb: (200, 200, 200),
+            text: raw.to_string(),
+        }],
+    }
+}
+
 /// All state for the diff viewer pane: the loaded hunks, scroll cursors,
 /// search state, and the optional file-content overlay. Lifted out of App
 /// so renderers and navigation handlers operate on a self-contained value.
@@ -395,28 +429,7 @@ impl DiffPane {
                     LineKind::Removed => &mut *hl_old,
                     _ => &mut *hl_new,
                 };
-                let with_nl = format!("{}\n", line.content);
-                let segs: Vec<HighlightSegment> = match hl.highlight_line(&with_nl, ss) {
-                    Ok(ranges) => ranges
-                        .into_iter()
-                        .filter_map(|(style, text)| {
-                            let trimmed = text.trim_end_matches('\n');
-                            if trimmed.is_empty() {
-                                return None;
-                            }
-                            let fg = style.foreground;
-                            Some(HighlightSegment {
-                                rgb: (fg.r, fg.g, fg.b),
-                                text: trimmed.to_string(),
-                            })
-                        })
-                        .collect(),
-                    Err(_) => vec![HighlightSegment {
-                        rgb: (200, 200, 200),
-                        text: line.content.clone(),
-                    }],
-                };
-                per_hunk.push(segs);
+                per_hunk.push(highlight_line_segments(hl, ss, &line.content));
             }
             out.push(per_hunk);
         }
