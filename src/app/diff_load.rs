@@ -36,10 +36,19 @@ impl App {
         }
         // unwrap is sound: we just inserted Some above when None.
         let result = f(self.repo_cache.as_ref().unwrap());
-        // Drop the cached handle on any failure so the next call rediscovers
-        // from disk: a user can `rm -rf .git && git init` in the terminal
-        // pane, which would otherwise leave us pinned to the stale repo.
-        if result.is_err() {
+        // Only drop the cached handle when the error suggests the repo
+        // *itself* is gone or unreadable — a user doing `rm -rf .git && git
+        // init` in the terminal pane is the motivating case. Errors like
+        // "path not in commit" or "object not found" are normal data misses
+        // that shouldn't force a fresh `Repository::discover` walk on every
+        // subsequent call.
+        if let Err(ref e) = result
+            && let Some(git_err) = e.downcast_ref::<git2::Error>()
+            && matches!(
+                git_err.class(),
+                git2::ErrorClass::Os | git2::ErrorClass::Repository
+            )
+        {
             self.repo_cache = None;
         }
         result
