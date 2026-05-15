@@ -87,6 +87,11 @@ impl App {
     }
 
     fn restore_log_session(&mut self, state: &SessionState) {
+        // A page worker launched before the restore (e.g. via `toggle_mode`
+        // earlier in this frame) would race against the fresh `set_commits`
+        // below: its reply would be matched by `loaded_count` and silently
+        // appended over the restored list. Cancel before we mutate state.
+        self.cancel_commit_log_page_fetch();
         let page_size = self.cfg_commit_log_page_size;
         let commits = match self.with_repo(|repo| load_commit_log(repo, page_size)) {
             Ok(c) => c,
