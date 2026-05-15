@@ -356,7 +356,11 @@ fn handle_file_search_key(app: &mut App, key: KeyEvent) {
                 app.search_pop();
             }
         }
-        KeyCode::Char(c) => app.search_push(c),
+        // Reject control bytes: Ctrl+letter chords reach here with their
+        // letter intact, and pushing them as literal search input would
+        // pollute the query (e.g. Ctrl+L would type "l" into the filter).
+        // Symmetric with `handle_repo_input_key`.
+        KeyCode::Char(c) if !c.is_control() => app.search_push(c),
         _ => {}
     }
 }
@@ -372,7 +376,7 @@ fn handle_diff_search_key(app: &mut App, key: KeyEvent) {
                 app.diff.search_pop();
             }
         }
-        KeyCode::Char(c) => app.diff.search_push(c),
+        KeyCode::Char(c) if !c.is_control() => app.diff.search_push(c),
         _ => {}
     }
 }
