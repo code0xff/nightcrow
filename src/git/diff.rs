@@ -190,6 +190,15 @@ pub fn load_workdir_file(repo: &Repository, file_path: &str) -> Result<String> {
         .workdir()
         .ok_or_else(|| anyhow::anyhow!("bare repository"))?;
     let full = workdir.join(file_path);
+    // Stat first so a multi-GB log file or build artifact can be rejected
+    // without ever materializing into memory: `decode_file_view`'s post-read
+    // length check otherwise allocates the full buffer before bailing.
+    let len = std::fs::metadata(&full)
+        .with_context(|| format!("failed to stat {file_path}"))?
+        .len();
+    if len > MAX_FILE_VIEW_BYTES as u64 {
+        return Err(anyhow::anyhow!("file too large to preview: {len} bytes"));
+    }
     let bytes = std::fs::read(&full).with_context(|| format!("failed to read {file_path}"))?;
     decode_file_view(&bytes)
 }
@@ -293,7 +302,21 @@ fn commit_diff<'repo>(
 ) -> Result<git2::Diff<'repo>> {
     let commit = repo.find_commit(oid).context("failed to find commit")?;
     let new_tree = commit.tree().context("failed to get commit tree")?;
-    let old_tree = commit.parent(0).ok().and_then(|p| p.tree().ok());
+    // Distinguish a true root commit (no parents) from a parent-lookup
+    // failure on a non-root commit — bare `.ok()` previously rendered both
+    // merge commits (when parent objects were unreachable) and corrupt
+    // history as if the entire tree had just been added.
+    let old_tree = if commit.parent_count() == 0 {
+        None
+    } else {
+        Some(
+            commit
+                .parent(0)
+                .context("failed to load parent commit")?
+                .tree()
+                .context("failed to load parent tree")?,
+        )
+    };
     let mut diff_opts = diff_options(pathspec);
     let mut diff = repo
         .diff_tree_to_tree(old_tree.as_ref(), Some(&new_tree), Some(&mut diff_opts))
