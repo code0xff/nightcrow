@@ -13,7 +13,7 @@ mod ui;
 use anyhow::{Context, Result};
 use app::{App, Focus, ViewMode};
 use clap::Parser;
-use crossterm::event::{KeyCode, KeyEvent};
+use crossterm::event::{KeyCode, KeyEvent, KeyEventKind};
 use crossterm::{
     event::{self, Event},
     execute,
@@ -191,6 +191,15 @@ fn main_loop(
 }
 
 fn handle_key(app: &mut App, key: KeyEvent) -> KeyOutcome {
+    // Crossterm emits Press/Repeat/Release for every keystroke on Windows
+    // and on terminals that negotiate the kitty keyboard protocol.
+    // Without this guard every keypress would be processed twice or more
+    // — visible as doubled search chars, Ctrl+Q firing repeatedly, and
+    // Backspace popping past the buffer.
+    if key.kind != KeyEventKind::Press {
+        return KeyOutcome::Continue;
+    }
+
     let action = map_key(key);
     if let Some(outcome) = handle_global_action(app, action) {
         return outcome;
