@@ -14,7 +14,9 @@ pub use crate::app::commit_log_fetch::CommitLogPagination;
 pub use crate::runtime::snapshot::{SnapshotChannel, SnapshotMsg};
 #[cfg(test)]
 pub(crate) use crate::runtime::terminal::strip_escape_sequences;
-pub use crate::runtime::terminal::{PaneInfo, TerminalState};
+pub use crate::runtime::terminal::TerminalState;
+#[cfg(test)]
+pub use crate::runtime::terminal::PaneInfo;
 pub use crate::ui::diff_pane::{DiffPane, DiffPaneView};
 pub use crate::ui::file_view::{FileViewKey, FileViewState};
 pub use crate::ui::log_view::LogView;
@@ -23,7 +25,8 @@ pub use crate::ui::status_view::{RepoInput, StatusView};
 pub(crate) use diff_load::DiffApply;
 use std::time::Instant;
 
-pub(crate) const SCROLLBACK_LINES: usize = 1000;
+#[cfg(test)]
+use crate::runtime::terminal::SCROLLBACK_LINES;
 pub(crate) const LIST_PAGE_SIZE: usize = 10;
 pub(crate) const DIFF_PAGE_SIZE: usize = 20;
 

@@ -1,114 +1,42 @@
-use super::{App, Focus, PaneInfo, SCROLLBACK_LINES};
-use crate::backend::{BackendEvent, PaneId};
-use crate::runtime::terminal::PaneCallbacks;
+//! App-level wrappers around `TerminalState` that mix in cross-cutting state
+//! (focus, status line, fullscreen flags). The pure terminal logic — event
+//! drain, pane create/close, vt100 parser bookkeeping — lives on
+//! `TerminalState` in `runtime/terminal.rs`; this module exists for the
+//! handful of actions that have to coordinate that logic with the rest of
+//! `App`'s state machine.
+
+use super::{App, Focus};
 
 impl App {
     pub(crate) fn ensure_initial_terminal(&mut self) {
         if self.terminal.backend.is_none() {
             return;
         }
-
-        if let Err(err) = self.create_terminal_pane() {
+        if let Err(err) = self.terminal.create_pane() {
             self.status = Some(format!("terminal error: {err}"));
         }
     }
 
     pub fn poll_terminal(&mut self) {
-        let events: Vec<BackendEvent> = self
-            .terminal
-            .backend
-            .as_mut()
-            .map(|b| b.drain_events())
-            .unwrap_or_default();
-
-        for event in events {
-            match event {
-                BackendEvent::Output { pane, data } => {
-                    let new_title = if let Some(parser) = self.terminal.parsers.get_mut(&pane) {
-                        parser.process(&data);
-                        parser.callbacks_mut().pending_title.take()
-                    } else {
-                        None
-                    };
-                    if let Some(title) = new_title
-                        && let Some(info) = self.terminal.panes.iter_mut().find(|p| p.id == pane)
-                    {
-                        info.title = title;
-                    }
-                }
-                BackendEvent::Exited { pane } => {
-                    // Single source of truth for pane removal: drain_events no
-                    // longer touches the backend's pane map, so we drive the
-                    // teardown here. destroy_pane is idempotent against a
-                    // pane that close_active_pane already removed.
-                    if let Some(backend) = &mut self.terminal.backend {
-                        backend.destroy_pane(pane);
-                    }
-                    self.remove_terminal_pane_state(pane);
-                    self.terminal.panes.retain(|p| p.id != pane);
-                    self.clamp_active_pane_after_removal();
-                }
-            }
+        // `TerminalState::poll` only signals which panes the backend exited;
+        // re-clamping focus and fullscreen when one of them was the active
+        // pane is cross-cutting and stays here.
+        if !self.terminal.poll().is_empty() {
+            self.clamp_active_pane_after_removal();
         }
     }
 
     pub fn open_new_pane(&mut self) {
-        if let Err(e) = self.create_terminal_pane() {
+        if let Err(e) = self.terminal.create_pane() {
             tracing::error!("create_terminal_pane failed: {e}");
             self.status = Some(format!("terminal error: {e}"));
         }
     }
 
-    pub fn create_terminal_pane(&mut self) -> anyhow::Result<()> {
-        let (rows, cols) = self.terminal.size;
-        let backend = self
-            .terminal
-            .backend
-            .as_mut()
-            .ok_or_else(|| anyhow::anyhow!("no terminal backend available"))?;
-
-        let id = backend.create_pane(rows.max(1), cols.max(1))?;
-        let parser = vt100::Parser::new_with_callbacks(
-            rows.max(1),
-            cols.max(1),
-            SCROLLBACK_LINES,
-            PaneCallbacks::default(),
-        );
-        self.terminal.parsers.insert(id, parser);
-        let default_title = format!("shell {}", self.terminal.panes.len() + 1);
-        self.terminal.panes.push(PaneInfo {
-            id,
-            title: default_title,
-        });
-        self.terminal.active = self.terminal.panes.len() - 1;
-        tracing::info!(pane = id, "terminal pane opened");
-        Ok(())
-    }
-
     pub fn close_active_pane(&mut self) {
-        let Some(info) = self.terminal.panes.get(self.terminal.active) else {
-            return;
-        };
-        let id = info.id;
-        tracing::info!(pane = id, "terminal pane closed");
-        if let Some(backend) = &mut self.terminal.backend {
-            backend.destroy_pane(id);
+        if self.terminal.close_active() {
+            self.clamp_active_pane_after_removal();
         }
-        self.remove_terminal_pane_state(id);
-        self.terminal.panes.remove(self.terminal.active);
-        self.clamp_active_pane_after_removal();
-    }
-
-    fn remove_terminal_pane_state(&mut self, id: PaneId) {
-        self.terminal.parsers.remove(&id);
-        // Flush any unterminated prompt input so we don't lose the line the
-        // user was composing when the pane closes.
-        if let Some(buf) = self.terminal.prompt_bufs.remove(&id)
-            && !buf.is_empty()
-        {
-            tracing::info!(target: "prompt", pane = id, text = %buf);
-        }
-        self.terminal.scroll.remove(&id);
     }
 
     pub(crate) fn clamp_active_pane_after_removal(&mut self) {
@@ -141,7 +69,6 @@ impl App {
     }
 
     pub fn active_screen(&self) -> Option<&vt100::Screen> {
-        let id = self.terminal.active_pane_id()?;
-        self.terminal.parsers.get(&id).map(vt100::Parser::screen)
+        self.terminal.active_screen()
     }
 }

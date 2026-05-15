@@ -1,4 +1,4 @@
-use crate::backend::{PaneId, TerminalBackend};
+use crate::backend::{BackendEvent, PaneId, TerminalBackend};
 use std::collections::HashMap;
 
 /// Upper bound on a pane's in-flight prompt buffer before further chars are
@@ -6,6 +6,11 @@ use std::collections::HashMap;
 /// without ever sending `\r` / `\n` (progress bars, large pastes, `yes` piped
 /// to cat). 4 KiB easily exceeds any realistic shell prompt line.
 const PROMPT_BUFFER_MAX_BYTES: usize = 4096;
+
+/// Scrollback line cap for every vt100 parser. Lifted here so the terminal
+/// state machine — which owns parser creation now — defines its own budget
+/// rather than reading it from `app`.
+pub const SCROLLBACK_LINES: usize = 1000;
 
 pub struct PaneInfo {
     pub id: PaneId,
@@ -164,6 +169,112 @@ impl TerminalState {
         if self.prompt_log_enabled {
             self.buffer_prompt_input(id, data);
         }
+    }
+
+    /// Drain pending backend events into vt100 parsers and pane metadata.
+    /// Returns the pane ids the backend signalled as exited so the caller
+    /// can run cross-cutting cleanup (focus redirect, fullscreen reset)
+    /// that depends on state outside this struct.
+    pub fn poll(&mut self) -> Vec<PaneId> {
+        let mut exited = Vec::new();
+        let events: Vec<BackendEvent> = self
+            .backend
+            .as_mut()
+            .map(|b| b.drain_events())
+            .unwrap_or_default();
+
+        for event in events {
+            match event {
+                BackendEvent::Output { pane, data } => {
+                    let new_title = if let Some(parser) = self.parsers.get_mut(&pane) {
+                        parser.process(&data);
+                        parser.callbacks_mut().pending_title.take()
+                    } else {
+                        None
+                    };
+                    if let Some(title) = new_title
+                        && let Some(info) = self.panes.iter_mut().find(|p| p.id == pane)
+                    {
+                        info.title = title;
+                    }
+                }
+                BackendEvent::Exited { pane } => {
+                    // Single source of truth for pane removal: `drain_events`
+                    // no longer touches the backend's pane map, so we drive
+                    // the teardown here. `destroy_pane` is idempotent against
+                    // a pane that `close_active` already removed.
+                    if let Some(backend) = &mut self.backend {
+                        backend.destroy_pane(pane);
+                    }
+                    self.remove_pane_state(pane);
+                    self.panes.retain(|p| p.id != pane);
+                    exited.push(pane);
+                }
+            }
+        }
+        exited
+    }
+
+    /// Allocate a new backend pane and matching vt100 parser. The caller is
+    /// expected to surface any error to the user.
+    pub fn create_pane(&mut self) -> anyhow::Result<()> {
+        let (rows, cols) = self.size;
+        let backend = self
+            .backend
+            .as_mut()
+            .ok_or_else(|| anyhow::anyhow!("no terminal backend available"))?;
+
+        let id = backend.create_pane(rows.max(1), cols.max(1))?;
+        let parser = vt100::Parser::new_with_callbacks(
+            rows.max(1),
+            cols.max(1),
+            SCROLLBACK_LINES,
+            PaneCallbacks::default(),
+        );
+        self.parsers.insert(id, parser);
+        let default_title = format!("shell {}", self.panes.len() + 1);
+        self.panes.push(PaneInfo {
+            id,
+            title: default_title,
+        });
+        self.active = self.panes.len() - 1;
+        tracing::info!(pane = id, "terminal pane opened");
+        Ok(())
+    }
+
+    /// Remove the currently active pane. Returns `true` when a pane was
+    /// removed so the caller can re-clamp dependent state (focus,
+    /// fullscreen). Returns `false` for an empty list — a benign no-op
+    /// the caller can ignore.
+    pub fn close_active(&mut self) -> bool {
+        let Some(info) = self.panes.get(self.active) else {
+            return false;
+        };
+        let id = info.id;
+        tracing::info!(pane = id, "terminal pane closed");
+        if let Some(backend) = &mut self.backend {
+            backend.destroy_pane(id);
+        }
+        self.remove_pane_state(id);
+        self.panes.remove(self.active);
+        true
+    }
+
+    pub fn active_screen(&self) -> Option<&vt100::Screen> {
+        let id = self.active_pane_id()?;
+        self.parsers.get(&id).map(vt100::Parser::screen)
+    }
+
+    fn remove_pane_state(&mut self, id: PaneId) {
+        self.parsers.remove(&id);
+        // Flush any unterminated prompt input so we don't lose the line the
+        // user was composing when the pane closes.
+        if let Some(buf) = self.prompt_bufs.remove(&id)
+            && !buf.is_empty()
+        {
+            tracing::info!(target: "prompt", pane = id, text = %buf);
+        }
+        self.scroll.remove(&id);
     }
 
     pub fn new(backend: Option<Box<dyn TerminalBackend>>, prompt_log_enabled: bool) -> Self {
