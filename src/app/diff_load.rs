@@ -50,6 +50,7 @@ impl App {
         let result = self.with_repo(|repo| load_file_diff(repo, &path));
         if let Err(e) = &result {
             tracing::warn!(error = %e, file = %path, "failed to load diff");
+            self.status = Some(format!("diff error: {e}"));
         }
         let mode = if reset_scroll {
             DiffApply::Reset
@@ -71,6 +72,16 @@ impl App {
         let reset_scroll = matches!(mode, DiffApply::Reset | DiffApply::ResetWithTitle(_));
         match result {
             Ok(hunks) => {
+                // Clear any stale "diff error:" surfaced by a previous failed
+                // load — keeping it would mislead the user about the current
+                // file's state. Untouched for unrelated status messages.
+                if self
+                    .status
+                    .as_deref()
+                    .is_some_and(|m| m.starts_with("diff error:"))
+                {
+                    self.status = None;
+                }
                 self.diff.hunks = hunks;
                 self.diff.rebuild_lower_cache();
                 match mode {
@@ -93,7 +104,17 @@ impl App {
                 }
             }
             Err(_) => {
+                // Preserve the prior scroll position on a transient KeepScroll
+                // error so a momentarily-unreadable file (e.g. mid-rename)
+                // doesn't snap the viewport back to the top when it returns.
+                let preserved_scroll = match mode {
+                    DiffApply::KeepScroll(prev) => Some(prev),
+                    _ => None,
+                };
                 self.clear_diff_state();
+                if let Some(prev) = preserved_scroll {
+                    self.diff.scroll = prev;
+                }
             }
         }
         // Title belongs to the surrounding view, not the diff state — set it
@@ -222,6 +243,7 @@ impl App {
         let result = self.with_repo(|repo| load_commit_diff(repo, oid));
         if let Err(e) = &result {
             tracing::warn!(error = %e, "failed to load commit diff");
+            self.status = Some(format!("diff error: {e}"));
         }
         self.apply_diff_result(result, DiffApply::ResetWithTitle(&title));
     }
@@ -251,6 +273,7 @@ impl App {
         let result = self.with_repo(|repo| load_commit_file_diff(repo, oid, &path));
         if let Err(e) = &result {
             tracing::warn!(error = %e, file = %path, "failed to load commit file diff");
+            self.status = Some(format!("diff error: {e}"));
         }
         self.apply_diff_result(result, DiffApply::ResetWithTitle(&title));
     }
