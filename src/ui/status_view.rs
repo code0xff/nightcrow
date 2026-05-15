@@ -1,4 +1,5 @@
 use crate::git::diff::ChangedFile;
+use crate::ui::SearchQuery;
 use std::cell::Cell;
 use std::collections::HashMap;
 use std::time::SystemTime;
@@ -8,8 +9,7 @@ pub struct StatusView {
     pub files: Vec<ChangedFile>,
     pub selected: usize,
     pub file_scroll_x: usize,
-    pub search_query: String,
-    pub(crate) search_query_lower: String,
+    pub search_query: SearchQuery,
     pub search_active: bool,
     /// Indices into `files` that match the current `search_query`.
     /// Recomputed only when `files` or the query changes (see
@@ -39,23 +39,20 @@ impl StatusView {
         self.path_width_cache.set(None);
     }
 
-    /// Clear the search query and its lowercase cache together so callers
-    /// can't accidentally reset only one and leave the cache stale.
     pub fn clear_search(&mut self) {
         self.search_query.clear();
-        self.search_query_lower.clear();
     }
 
     /// Refresh `filter_cache` from `files` and the current query. Callers must
-    /// invoke this after mutating `files`, `search_query`, or
-    /// `search_query_lower`; otherwise the cache will diverge from state.
+    /// invoke this after mutating `files` or `search_query`; otherwise the
+    /// cache will diverge from state.
     pub(crate) fn recompute_filter(&mut self) {
         self.filter_cache.clear();
         if self.search_query.is_empty() {
             self.filter_cache.extend(0..self.files.len());
             return;
         }
-        let q = self.search_query_lower.as_str();
+        let q = self.search_query.lower();
         for (i, f) in self.files.iter().enumerate() {
             if f.path_lower.contains(q) {
                 self.filter_cache.push(i);
@@ -92,13 +89,11 @@ impl StatusView {
 
     pub fn search_push(&mut self, ch: char) {
         self.search_query.push(ch);
-        self.search_query_lower = self.search_query.to_lowercase();
         self.recompute_filter();
     }
 
     pub fn search_pop(&mut self) {
         self.search_query.pop();
-        self.search_query_lower = self.search_query.to_lowercase();
         self.recompute_filter();
     }
 }

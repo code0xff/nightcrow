@@ -204,7 +204,7 @@ pub fn render(
     if let Some(sa) = search_area {
         super::render_search_bar(
             frame,
-            &app.diff.search.query,
+            app.diff.search.query.as_str(),
             app.diff.search.active,
             sa,
             accent,

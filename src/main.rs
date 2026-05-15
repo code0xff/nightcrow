@@ -693,7 +693,7 @@ mod tests {
 
         handle_paste(&mut app, "al\nph\ta\x07");
 
-        assert_eq!(app.status_view.search_query, "alpha");
+        assert_eq!(app.status_view.search_query.as_str(), "alpha");
     }
 
     #[test]
@@ -704,7 +704,7 @@ mod tests {
 
         handle_paste(&mut app, "fn\rname\x08");
 
-        assert_eq!(app.diff.search.query, "fnname");
+        assert_eq!(app.diff.search.query.as_str(), "fnname");
     }
 
     #[test]

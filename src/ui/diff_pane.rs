@@ -1,4 +1,5 @@
 use crate::git::diff::{DiffHunk, LineKind};
+use crate::ui::SearchQuery;
 use crate::ui::file_view::FileViewState;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -11,8 +12,7 @@ pub enum DiffPaneView {
 #[derive(Default)]
 pub struct DiffSearch {
     pub active: bool,
-    pub query: String,
-    pub(crate) query_lower: String,
+    pub query: SearchQuery,
     pub(crate) matches: Vec<usize>,
     pub(crate) cursor: usize,
 }
@@ -51,19 +51,16 @@ impl DiffSearch {
     pub fn clear(&mut self) {
         self.active = false;
         self.query.clear();
-        self.query_lower.clear();
         self.matches.clear();
         self.cursor = 0;
     }
 
     fn push_char(&mut self, ch: char) {
         self.query.push(ch);
-        self.query_lower = self.query.to_lowercase();
     }
 
     fn pop_char(&mut self) {
         self.query.pop();
-        self.query_lower = self.query.to_lowercase();
     }
 
     fn next(&mut self) -> Option<usize> {
@@ -294,7 +291,7 @@ impl DiffPane {
             return;
         }
         self.ensure_lower_cache();
-        let q = self.search.query_lower.as_str();
+        let q = self.search.query.lower();
         let mut flat_idx = 0usize;
         for (hunk, lines_lower) in self.hunks.iter().zip(self.hunks_lines_lower.iter()) {
             flat_idx += 1; // header line
@@ -494,8 +491,7 @@ mod tests {
             ])],
             ..Default::default()
         };
-        pane.search.query = "foo".to_string();
-        pane.search.query_lower = "foo".to_string();
+        pane.search.query.set("foo");
         pane.scroll = 6; // user is reading near the middle match (row 5)
         pane.search.cursor = 0; // stale cursor from before content changed
 
@@ -515,8 +511,7 @@ mod tests {
             hunks: vec![match_hunk(&["foo a", "b", "foo c"])],
             ..Default::default()
         };
-        pane.search.query = "foo".to_string();
-        pane.search.query_lower = "foo".to_string();
+        pane.search.query.set("foo");
         pane.scroll = 100; // arbitrary; scroll_to_match should overwrite
         pane.search.cursor = 99; // stale, should clamp to last match index.
 

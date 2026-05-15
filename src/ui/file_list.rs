@@ -120,7 +120,7 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect, accent: Color) {
     if let Some(sa) = search_area {
         super::render_search_bar(
             frame,
-            &app.status_view.search_query,
+            app.status_view.search_query.as_str(),
             app.status_view.search_active,
             sa,
             accent,

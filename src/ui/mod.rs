@@ -4,9 +4,12 @@ pub mod diff_viewer;
 pub mod file_list;
 pub mod file_view;
 pub mod log_view;
+pub mod search;
 pub mod splash;
 pub mod status_view;
 pub mod terminal_tab;
+
+pub use search::SearchQuery;
 
 use crate::app::{App, DiffPaneView, Focus, ViewMode};
 use crate::config::LayoutConfig;

@@ -320,8 +320,7 @@ pub(crate) mod tests {
     fn diff_match_refresh_can_preserve_manual_scroll() {
         let mut app = app_with_files(vec!["a.rs"]);
         app.diff.hunks = vec![context_hunk(&["needle"])];
-        app.diff.search.query = "needle".to_string();
-        app.diff.search.query_lower = "needle".to_string();
+        app.diff.search.query.set("needle");
         app.diff.scroll = 7;
 
         app.diff.recompute_matches(false);
@@ -1209,8 +1208,7 @@ pub(crate) mod tests {
             snapshot,
             ..app_with_files(vec!["bar.rs"])
         };
-        app.status_view.search_query = "bar".to_string();
-        app.status_view.search_query_lower = "bar".to_string();
+        app.status_view.search_query.set("bar");
         app.status_view.recompute_filter();
 
         tx.send(SnapshotMsg::Ok(
@@ -1277,8 +1275,7 @@ pub(crate) mod tests {
             snapshot,
             ..app_with_files(vec!["bar.rs"])
         };
-        app.status_view.search_query = "bar".to_string();
-        app.status_view.search_query_lower = "bar".to_string();
+        app.status_view.search_query.set("bar");
         app.status_view.recompute_filter();
         app.diff.hunks = vec![context_hunk(&["stale"])];
 
@@ -1384,8 +1381,7 @@ pub(crate) mod tests {
     #[test]
     fn selected_filtered_status_file_returns_none_outside_filter() {
         let mut app = app_with_files(vec!["alpha.rs", "bravo.rs", "charlie.rs"]);
-        app.status_view.search_query = "alpha".into();
-        app.status_view.search_query_lower = "alpha".into();
+        app.status_view.search_query.set("alpha");
         app.status_view.recompute_filter();
         // Filter only matches index 0; selecting index 2 must return None.
         app.status_view.selected = 2;
@@ -1495,8 +1491,7 @@ pub(crate) mod tests {
     #[test]
     fn toggle_diff_file_view_ignores_selection_outside_filter() {
         let mut app = app_with_files(vec!["alpha.rs", "bravo.rs"]);
-        app.status_view.search_query = "alpha".into();
-        app.status_view.search_query_lower = "alpha".into();
+        app.status_view.search_query.set("alpha");
         app.status_view.recompute_filter();
         // selected points outside the filter — toggle must refuse to open
         // a file view rather than loading the hidden entry.
@@ -1567,8 +1562,7 @@ pub(crate) mod tests {
             snapshot,
             ..app_with_files(vec!["bar.rs"])
         };
-        app.status_view.search_query = "bar".into();
-        app.status_view.search_query_lower = "bar".into();
+        app.status_view.search_query.set("bar");
         app.status_view.recompute_filter();
         app.diff.hunks = vec![context_hunk(&["stale"])];
         app.diff.file_view = seeded_file_view("bar.rs");
@@ -1772,8 +1766,7 @@ pub(crate) mod tests {
     #[test]
     fn auto_follow_respects_search_filter() {
         let mut app = app_with_files(vec!["alpha.rs", "beta.rs"]);
-        app.status_view.search_query = "alpha".into();
-        app.status_view.search_query_lower = "alpha".into();
+        app.status_view.search_query.set("alpha");
         app.status_view.recompute_filter();
         app.status_view.selected = 0; // alpha.rs (the only filtered entry)
         let now = SystemTime::now();
