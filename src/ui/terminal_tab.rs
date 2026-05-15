@@ -7,6 +7,26 @@ use ratatui::{
     widgets::{Block, Borders, Paragraph},
 };
 
+/// Per-tab character budget for the title (excluding the `F#` key hint and
+/// surrounding padding). Anything longer is truncated with a trailing ellipsis
+/// so long OSC-set titles can't push neighboring tabs off the row.
+const TAB_TITLE_MAX_CHARS: usize = 24;
+
+/// Truncate `title` to at most `max` characters, appending `…` when cut.
+/// Char-based (not display-width) for simplicity: ASCII shell program names
+/// are the common case and `chars().count()` is already correct there. CJK
+/// titles render slightly under the visual budget, which is acceptable.
+fn truncate_tab_title(title: &str, max: usize) -> String {
+    if title.chars().count() <= max {
+        return title.to_string();
+    }
+    // Reserve one char of the budget for the ellipsis itself.
+    let keep = max.saturating_sub(1);
+    let mut out: String = title.chars().take(keep).collect();
+    out.push('…');
+    out
+}
+
 pub fn render(frame: &mut Frame, app: &mut App, area: Rect, accent: Color) {
     let focused = app.focus == Focus::Terminal;
     let border_style = super::focused_border_style(focused, accent);
@@ -66,7 +86,8 @@ pub fn render(frame: &mut Frame, app: &mut App, area: Rect, accent: Color) {
                 } else {
                     format!("{}", i + 1)
                 };
-                Span::styled(format!(" {} {} ", key_hint, pane.title), style)
+                let title = truncate_tab_title(&pane.title, TAB_TITLE_MAX_CHARS);
+                Span::styled(format!(" {} {} ", key_hint, title), style)
             })
             .collect()
     };
@@ -201,6 +222,25 @@ mod tests {
         let position = screen_cursor_position(parser.screen(), Rect::new(20, 10, 10, 3)).unwrap();
 
         assert_eq!(position, Position::new(23, 11));
+    }
+
+    #[test]
+    fn short_title_passes_through_untouched() {
+        assert_eq!(truncate_tab_title("claude", 24), "claude");
+    }
+
+    #[test]
+    fn long_title_is_cut_with_ellipsis_within_budget() {
+        let truncated = truncate_tab_title("claude-code: very-long-project-name", 24);
+        assert_eq!(truncated.chars().count(), 24);
+        assert!(truncated.ends_with('…'));
+        assert!(truncated.starts_with("claude-code"));
+    }
+
+    #[test]
+    fn title_exactly_at_budget_is_not_truncated() {
+        let s: String = "a".repeat(24);
+        assert_eq!(truncate_tab_title(&s, 24), s);
     }
 
     #[test]
