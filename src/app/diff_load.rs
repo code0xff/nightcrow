@@ -113,6 +113,14 @@ impl App {
                         // leaving an out-of-range scroll that misbehaves on
                         // the next navigation keystroke.
                         self.diff.scroll = prev.min(self.diff.max_scroll());
+                        // If the file-overlay view is open, the anchor was
+                        // computed against the previous hunks. After the
+                        // diff is replaced, that anchor may point at the
+                        // wrong row — recompute against the new hunks so
+                        // the open file pane stays aligned with the diff.
+                        if self.diff.file_view.key.is_some() {
+                            self.diff.file_view.anchor_line = self.anchor_for_current_diff();
+                        }
                     }
                 }
                 if !self.diff.search.query.is_empty() {
