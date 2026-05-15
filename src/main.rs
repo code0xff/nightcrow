@@ -13,7 +13,9 @@ mod ui;
 use anyhow::{Context, Result};
 use app::{App, Focus, ViewMode};
 use clap::Parser;
-use crossterm::event::{KeyCode, KeyEvent, KeyEventKind};
+use crossterm::event::{
+    DisableBracketedPaste, EnableBracketedPaste, KeyCode, KeyEvent, KeyEventKind,
+};
 use crossterm::{
     event::{self, Event},
     execute,
@@ -78,7 +80,11 @@ struct TerminalGuard;
 impl TerminalGuard {
     fn enter() -> Result<Self> {
         enable_raw_mode()?;
-        if let Err(err) = execute!(io::stdout(), EnterAlternateScreen) {
+        // EnableBracketedPaste makes crossterm surface paste as
+        // `Event::Paste(String)` instead of a flood of `Event::Key` chars —
+        // the latter would each be filtered as control chars by the search
+        // handler and silently drop newlines.
+        if let Err(err) = execute!(io::stdout(), EnterAlternateScreen, EnableBracketedPaste) {
             let _ = disable_raw_mode();
             return Err(err.into());
         }
@@ -89,8 +95,8 @@ impl TerminalGuard {
 
 impl Drop for TerminalGuard {
     fn drop(&mut self) {
+        let _ = execute!(io::stdout(), DisableBracketedPaste, LeaveAlternateScreen);
         let _ = disable_raw_mode();
-        let _ = execute!(io::stdout(), LeaveAlternateScreen);
     }
 }
 
@@ -184,9 +190,46 @@ fn main_loop(
                         return Ok(());
                     }
                 }
+                Event::Paste(text) => handle_paste(app, &text),
                 _ => {}
             }
         }
+    }
+}
+
+/// Route a bracketed-paste payload to the appropriate sink.
+///
+/// Modal overlays (repo input, file/diff search) accept the text after
+/// stripping control characters — the same rule the typed-key handlers
+/// enforce. The terminal pane receives the paste re-wrapped in
+/// `ESC [200~ ... ESC [201~` so the inner shell can distinguish multi-line
+/// paste from interactive input (crossterm consumes the outer markers when
+/// surfacing `Event::Paste`).
+fn handle_paste(app: &mut App, text: &str) {
+    if app.repo_input.active {
+        for ch in text.chars().filter(|c| !c.is_control()) {
+            app.repo_input_push(ch);
+        }
+        return;
+    }
+    if app.focus == Focus::FileList && app.status_view.search_active {
+        for ch in text.chars().filter(|c| !c.is_control()) {
+            app.search_push(ch);
+        }
+        return;
+    }
+    if app.focus == Focus::DiffViewer && app.diff.search.active {
+        for ch in text.chars().filter(|c| !c.is_control()) {
+            app.diff.search_push(ch);
+        }
+        return;
+    }
+    if app.focus == Focus::Terminal {
+        let mut bytes = Vec::with_capacity(text.len() + 12);
+        bytes.extend_from_slice(b"\x1b[200~");
+        bytes.extend_from_slice(text.as_bytes());
+        bytes.extend_from_slice(b"\x1b[201~");
+        app.terminal.send_input(&bytes);
     }
 }
 
