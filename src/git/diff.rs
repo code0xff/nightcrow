@@ -262,23 +262,32 @@ pub fn load_commit_log_page(
     for oid_result in revwalk.skip(skip).take(limit) {
         let oid = oid_result.context("revwalk error")?;
         let commit = repo.find_commit(oid).context("failed to find commit")?;
-        let short_id = repo
-            .find_object(oid, None)
-            .and_then(|obj| obj.short_id())
-            .map(|buf| buf.as_str().unwrap_or("").to_string())
-            .unwrap_or_else(|_| format!("{:.7}", oid));
         let summary = commit.summary().unwrap_or("").to_string();
         let author = commit.author().name().unwrap_or("Unknown").to_string();
         let time = commit.time().seconds();
         entries.push(CommitEntry {
             oid,
-            short_id,
+            short_id: short_oid(oid),
             summary,
             author,
             time,
         });
     }
     Ok(entries)
+}
+
+/// Render a commit oid as the conventional 7-character abbreviated form.
+///
+/// Previously this used `repo.find_object(...).short_id()`, which asks
+/// libgit2 to compute the *minimum unique prefix length* — at the cost of
+/// roughly O(log n) ODB lookups per commit. For a repo with thousands of
+/// commits that cost was paid on every initial commit log load. git's own
+/// default `core.abbrev` is 7, so a fixed 7-char prefix matches the
+/// familiar form while making this an O(1) operation. Oid hex strings are
+/// always 40 ASCII bytes, so the slice is sound.
+pub(crate) fn short_oid(oid: Oid) -> String {
+    let s = oid.to_string();
+    s.get(..7).unwrap_or(&s).to_string()
 }
 
 fn is_empty_head(err: &git2::Error) -> bool {
