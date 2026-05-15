@@ -131,9 +131,10 @@ pub struct LogConfig {
     pub prompt_log: bool,
     /// Minimum log level
     pub level: LogLevel,
-    /// Number of commits loaded per commit-log page. Must lie in 200..=500 so
-    /// startup latency stays predictable while a single page is still wide
-    /// enough to fill most viewports without an immediate prefetch.
+    /// Number of commits loaded per commit-log page. Must lie in 50..=500.
+    /// The default (100) is the sweet spot for the async refresh path: small
+    /// enough that the background worker returns in well under a frame, big
+    /// enough that scrolling rarely outruns the prefetch threshold.
     pub commit_log_page_size: usize,
     /// Trigger a background prefetch once the selection is within this many
     /// rows of the loaded tail. Must be in 1..=page_size.
@@ -150,8 +151,8 @@ impl Default for LogConfig {
             max_days: 7,
             prompt_log: false,
             level: LogLevel::default(),
-            commit_log_page_size: 300,
-            commit_log_prefetch_threshold: 50,
+            commit_log_page_size: 100,
+            commit_log_prefetch_threshold: 25,
         }
     }
 }
@@ -231,8 +232,8 @@ fn validate_config(cfg: &Config) -> Result<()> {
         "agent_indicator.hot_window_secs must be between 3 and 3600"
     );
     anyhow::ensure!(
-        (200..=500).contains(&cfg.log.commit_log_page_size),
-        "log.commit_log_page_size must be between 200 and 500"
+        (50..=500).contains(&cfg.log.commit_log_page_size),
+        "log.commit_log_page_size must be between 50 and 500"
     );
     anyhow::ensure!(
         cfg.log.commit_log_prefetch_threshold >= 1
@@ -336,8 +337,8 @@ level = "verbose"
         assert_eq!(cfg.rotation, LogRotation::Daily);
         assert_eq!(cfg.level, LogLevel::Info);
         assert_eq!(cfg.max_days, 7);
-        assert_eq!(cfg.commit_log_page_size, 300);
-        assert_eq!(cfg.commit_log_prefetch_threshold, 50);
+        assert_eq!(cfg.commit_log_page_size, 100);
+        assert_eq!(cfg.commit_log_prefetch_threshold, 25);
     }
 
     #[test]
@@ -356,7 +357,7 @@ commit_log_prefetch_threshold = 80
     #[test]
     fn commit_log_page_size_validation_rejects_out_of_range() {
         let mut cfg = Config::default();
-        cfg.log.commit_log_page_size = 199;
+        cfg.log.commit_log_page_size = 49;
         assert!(validate_config(&cfg).is_err());
         cfg.log.commit_log_page_size = 501;
         assert!(validate_config(&cfg).is_err());
