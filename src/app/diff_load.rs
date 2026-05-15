@@ -35,7 +35,14 @@ impl App {
             self.repo_cache = Some(repo);
         }
         // unwrap is sound: we just inserted Some above when None.
-        f(self.repo_cache.as_ref().unwrap())
+        let result = f(self.repo_cache.as_ref().unwrap());
+        // Drop the cached handle on any failure so the next call rediscovers
+        // from disk: a user can `rm -rf .git && git init` in the terminal
+        // pane, which would otherwise leave us pinned to the stale repo.
+        if result.is_err() {
+            self.repo_cache = None;
+        }
+        result
     }
 
     pub(crate) fn refresh_diff(&mut self, reset_scroll: bool) {
