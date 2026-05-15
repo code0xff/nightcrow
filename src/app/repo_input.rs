@@ -82,9 +82,10 @@ impl App {
     }
 
     pub fn confirm_repo_input(&mut self) {
-        self.repo_input.active = false;
-        let path = std::mem::take(&mut self.repo_input.buf);
-        let trimmed = path.trim();
+        // Validate against the live buffer so a failed attempt leaves the
+        // dialog open with the user's text intact for correction; only close
+        // and consume the buffer once we're committed to switching repos.
+        let trimmed = self.repo_input.buf.trim();
         if trimmed.is_empty() {
             self.status = Some("repo path cannot be empty".to_string());
             return;
@@ -94,11 +95,12 @@ impl App {
             self.status = Some(format!("not a directory: {trimmed}"));
             return;
         }
-        self.change_repo(
-            crate::git::resolve_repo_path(p)
-                .to_string_lossy()
-                .to_string(),
-        );
+        let resolved = crate::git::resolve_repo_path(p)
+            .to_string_lossy()
+            .to_string();
+        self.repo_input.active = false;
+        self.repo_input.buf.clear();
+        self.change_repo(resolved);
     }
 
     pub fn repo_input_push(&mut self, ch: char) {

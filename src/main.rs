@@ -270,7 +270,7 @@ fn handle_repo_input_key(app: &mut App, key: KeyEvent) {
                 app.repo_input_pop();
             }
         }
-        KeyCode::Char(c) => app.repo_input_push(c),
+        KeyCode::Char(c) if !c.is_control() => app.repo_input_push(c),
         _ => {}
     }
 }
