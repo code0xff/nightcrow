@@ -246,9 +246,20 @@ fn handle_paste(app: &mut App, text: &str) {
         return;
     }
     if app.focus == Focus::Terminal {
-        let mut bytes = Vec::with_capacity(text.len() + 12);
+        // Strip ESC (0x1b) and NUL (0x00) before forwarding: an embedded
+        // 0x1b can re-arm or cancel the bracketed-paste boundary the shell
+        // is parsing, and NUL is malformed for most line-buffered shells.
+        // Newlines, tabs, and other printable controls stay in — they are
+        // exactly what bracketed paste is meant to deliver atomically.
+        let sanitized: Vec<u8> = text
+            .as_bytes()
+            .iter()
+            .copied()
+            .filter(|&b| b != 0x1b && b != 0x00)
+            .collect();
+        let mut bytes = Vec::with_capacity(sanitized.len() + 12);
         bytes.extend_from_slice(b"\x1b[200~");
-        bytes.extend_from_slice(text.as_bytes());
+        bytes.extend_from_slice(&sanitized);
         bytes.extend_from_slice(b"\x1b[201~");
         app.terminal.send_input(&bytes);
     }
