@@ -134,8 +134,13 @@ impl App {
         self.diff.hunks_lines_lower.clear();
         self.diff.line_highlights.clear();
         self.diff.cached_syntax_name = None;
-        self.diff.search.matches.clear();
-        self.diff.search.cursor = 0;
+        // Drop the entire search state, not just the match list: keeping the
+        // query alive after a content-discarding clear would (a) leave a
+        // ghost `[0/0]` counter visible in the title, and (b) cause the
+        // next file load's `recompute_matches` to apply the previous file's
+        // query to unrelated content. `search.clear` also flips `active`
+        // off so the search bar disappears in the same frame.
+        self.diff.search.clear();
         self.diff.scroll = 0;
         self.diff.scroll_x = 0;
         self.invalidate_file_view();
@@ -205,12 +210,7 @@ impl App {
         };
         match result {
             Ok(content) => {
-                fv.total_lines = if content.is_empty() {
-                    0
-                } else {
-                    content.lines().count()
-                };
-                fv.content = content;
+                fv.set_content(content);
                 // Initial scroll: 2 lines of context above the hunk's new-side
                 // start line, converted from 1-based to 0-based. Clamp against
                 // `max_scroll` so a stale anchor past the current file length
