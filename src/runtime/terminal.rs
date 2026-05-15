@@ -220,11 +220,17 @@ fn consume_escape_sequence(chars: &mut std::iter::Peekable<std::str::Chars<'_>>)
 
 /// CSI: consume parameter/intermediate bytes (0x20–0x3f), stop at the final
 /// byte (0x40–0x7e). Break early on a control char so content that follows a
-/// malformed sequence isn't accidentally eaten.
+/// malformed sequence isn't accidentally eaten — and leave that control byte
+/// in the iterator: eating it here would silently drop a `\n` or `\r` that
+/// the outer pass needs to flush the prompt buffer.
 fn consume_csi(chars: &mut std::iter::Peekable<std::str::Chars<'_>>) {
-    for c in chars.by_ref() {
-        if ('\x40'..='\x7e').contains(&c) || c < '\x20' {
-            break;
+    while let Some(&c) = chars.peek() {
+        if c < '\x20' {
+            return;
+        }
+        chars.next();
+        if ('\x40'..='\x7e').contains(&c) {
+            return;
         }
     }
 }
@@ -284,6 +290,14 @@ mod tests {
         let mut p = parser();
         p.process(b"\x1b]2;\x07");
         assert!(p.callbacks().pending_title.is_none());
+    }
+
+    #[test]
+    fn strip_escape_sequences_preserves_newline_after_malformed_csi() {
+        // A CSI body interrupted by a control byte must leave that byte for
+        // the outer pass so prompt-buffer flush on `\n` still fires.
+        let out = strip_escape_sequences(b"\x1b[31\ndone\n");
+        assert_eq!(out, "\ndone\n");
     }
 
     #[test]
