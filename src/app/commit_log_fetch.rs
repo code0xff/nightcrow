@@ -8,6 +8,35 @@
 
 use std::sync::mpsc::{self, Receiver};
 use std::thread::{self, JoinHandle};
+use std::time::{Duration, Instant};
+
+/// Spin briefly waiting for the worker to finish, then either join it or
+/// detach the handle. Used at known quiescent moments (repo switch, after
+/// reply drain) where the worker is either already done or microseconds
+/// away from exiting via its failed `tx.send`. Detaches without panicking
+/// on timeout so the UI is never blocked by a hung worker.
+fn try_timed_join(handle: JoinHandle<()>, timeout: Duration) {
+    let deadline = Instant::now() + timeout;
+    while !handle.is_finished() && Instant::now() < deadline {
+        // Short sleep keeps the busy-wait cheap; the common path is one
+        // iteration because the worker exits as soon as it tries to send.
+        thread::sleep(Duration::from_micros(200));
+    }
+    if handle.is_finished() {
+        if let Err(e) = handle.join() {
+            tracing::warn!(?e, "commit-log page worker panicked");
+        }
+    } else {
+        tracing::debug!("commit-log page worker still running at detach; reaping deferred to OS");
+        drop(handle);
+    }
+}
+
+/// Upper bound for `try_timed_join` at known-quiescent call sites. The
+/// worker exits at the next `tx.send` after the receiver is dropped, so
+/// a few milliseconds is generous enough to absorb scheduling jitter
+/// without ever stalling the UI noticeably.
+const REAP_TIMEOUT: Duration = Duration::from_millis(5);
 
 use git2::{Oid, Repository};
 
@@ -175,28 +204,37 @@ impl App {
         match rx.try_recv() {
             Ok(msg) => {
                 self.pagination.page_rx = None;
-                // Detach the worker handle: it has finished sending and
-                // will exit cleanly. Joining here would be free but
-                // pointless — the OS reaps it either way.
-                self.pagination.handle.take();
+                // Worker just sent → it is one statement away from
+                // returning. A short timed join reaps the OS thread now
+                // instead of waiting for `Drop`, and the timeout means a
+                // wedged worker still can't stall the frame.
+                if let Some(h) = self.pagination.handle.take() {
+                    try_timed_join(h, REAP_TIMEOUT);
+                }
                 self.handle_commit_log_page_msg(msg);
             }
             Err(mpsc::TryRecvError::Empty) => {}
             Err(mpsc::TryRecvError::Disconnected) => {
                 self.pagination.page_rx = None;
-                self.pagination.handle.take();
+                if let Some(h) = self.pagination.handle.take() {
+                    try_timed_join(h, REAP_TIMEOUT);
+                }
                 self.log_view.clear_pending();
             }
         }
     }
 
     /// Tear down any in-flight worker and clear the pending flag.
-    /// Used when the underlying repo changes so a result built against
-    /// the old repo never lands in the new view. The handle is detached
-    /// rather than joined — see `launch_commit_log_worker` for why.
+    /// Called on repo switch (a discrete user action, not a per-tick
+    /// hot path), so a short timed join is affordable here. The
+    /// receiver-drop above flips the worker's next `tx.send` to Err and
+    /// the join completes in microseconds in the common case; the
+    /// timeout caps worst-case latency if a worker is wedged.
     pub(crate) fn cancel_commit_log_page_fetch(&mut self) {
         drop(self.pagination.page_rx.take());
-        self.pagination.handle.take();
+        if let Some(h) = self.pagination.handle.take() {
+            try_timed_join(h, REAP_TIMEOUT);
+        }
         self.log_view.clear_pending();
     }
 
