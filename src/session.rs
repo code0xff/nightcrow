@@ -44,10 +44,19 @@ pub fn load_session(repo_path: &str) -> Option<SessionState> {
 
 pub fn save_session(repo_path: &str, state: &SessionState) {
     let path = session_path(repo_path);
-    if let Some(dir) = path.parent()
-        && let Err(e) = std::fs::create_dir_all(dir)
-    {
-        tracing::warn!("failed to create session directory: {e}");
+    if let Some(dir) = path.parent() {
+        if let Err(e) = std::fs::create_dir_all(dir) {
+            tracing::warn!("failed to create session directory: {e}");
+        }
+        // Drop a self-ignoring `.gitignore` inside `.nightcrow/` so the
+        // session file never pollutes the user's `git status`. Only write
+        // when missing — a user-edited file should not be clobbered.
+        let gi = dir.join(".gitignore");
+        if !gi.exists()
+            && let Err(e) = std::fs::write(&gi, "*\n")
+        {
+            tracing::warn!("failed to write nightcrow gitignore: {e}");
+        }
     }
     let text = match serde_json::to_string(state) {
         Ok(t) => t,
