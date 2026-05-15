@@ -66,8 +66,12 @@ impl SnapshotChannel {
                     Err(e) => {
                         // Drop the handle: the next tick will re-discover.
                         // This covers the case where the repo was relocated
-                        // or its internal state became inconsistent.
+                        // or its internal state became inconsistent. Reset
+                        // the reopen counter alongside the handle so the
+                        // next successful open restarts the cycle cleanly
+                        // instead of carrying over a stale tick count.
                         repo = None;
+                        ticks_since_open = 0;
                         SnapshotMsg::Err(e.to_string())
                     }
                 };
