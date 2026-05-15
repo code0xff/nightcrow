@@ -199,6 +199,11 @@ fn cell_to_style(cell: &vt100::Cell) -> Style {
     if cell.underline() {
         style = style.add_modifier(Modifier::UNDERLINED);
     }
+    // Reverse video is how vim visual mode, fzf's cursor, and less's search
+    // hit mark selections. Without it those selections render as plain text.
+    if cell.inverse() {
+        style = style.add_modifier(Modifier::REVERSED);
+    }
     style
 }
 
