@@ -67,6 +67,21 @@ pub enum Focus {
     Terminal,
 }
 
+/// State that drives the auto-follow behaviour: keep track of when the user
+/// last navigated manually (so an active user is never hijacked) and the path
+/// auto-follow last steered selection to (so it doesn't repeatedly assert the
+/// same hot file). The behaviour config (`cfg_agent_indicator`) stays on
+/// `App` because the file-list renderer also reads it.
+#[derive(Default)]
+pub struct AutoFollow {
+    /// Wall-clock instant of the most recent user-driven selection change in
+    /// the file list. `None` means "idle since boot".
+    pub last_manual_nav_at: Option<Instant>,
+    /// Path the auto-follow last steered selection to. Prevents repeatedly
+    /// re-asserting selection on the same already-hot-and-selected file.
+    pub followed_path: Option<String>,
+}
+
 pub struct App {
     pub mode: ViewMode,
     pub status_view: StatusView,
@@ -94,13 +109,10 @@ pub struct App {
     /// How close to the loaded tail the selection must be before a background
     /// prefetch starts. Sourced from `LogConfig::commit_log_prefetch_threshold`.
     pub cfg_commit_log_prefetch_threshold: usize,
-    /// Wall-clock instant of the most recent user-driven selection change in
-    /// the file list. `None` means "idle since boot". Used to gate
-    /// auto-follow so an active user is never hijacked.
-    pub last_manual_nav_at: Option<Instant>,
-    /// Path the auto-follow last steered selection to. Prevents repeatedly
-    /// re-asserting selection on the same already-hot-and-selected file.
-    pub auto_followed_path: Option<String>,
+    /// Auto-follow state (idle timer + last-steered path). Behaviour config
+    /// lives separately on `cfg_agent_indicator` since the file-list
+    /// renderer also reads it.
+    pub auto_follow: AutoFollow,
     /// True while the upper-left list panel (file list in Status mode, commit
     /// list in Log mode) is rendered full-screen. Mutually exclusive with
     /// `diff.fullscreen` and `terminal.fullscreen`.
@@ -146,8 +158,7 @@ impl App {
             cfg_commit_log_page_size: crate::config::LogConfig::default().commit_log_page_size,
             cfg_commit_log_prefetch_threshold: crate::config::LogConfig::default()
                 .commit_log_prefetch_threshold,
-            last_manual_nav_at: None,
-            auto_followed_path: None,
+            auto_follow: AutoFollow::default(),
             list_fullscreen: false,
             last_head_oid: None,
             branch_name: None,
@@ -219,8 +230,7 @@ mod tests {
             cfg_commit_log_page_size: crate::config::LogConfig::default().commit_log_page_size,
             cfg_commit_log_prefetch_threshold: crate::config::LogConfig::default()
                 .commit_log_prefetch_threshold,
-            last_manual_nav_at: None,
-            auto_followed_path: None,
+            auto_follow: AutoFollow::default(),
             list_fullscreen: false,
             last_head_oid: None,
             branch_name: None,
@@ -1676,14 +1686,14 @@ mod tests {
         // b.rs is fresher and the user is idle (last_manual_nav_at = None),
         // so selection must move from a.rs to b.rs.
         assert_eq!(app.status_view.selected, 1);
-        assert_eq!(app.auto_followed_path.as_deref(), Some("b.rs"));
+        assert_eq!(app.auto_follow.followed_path.as_deref(), Some("b.rs"));
     }
 
     #[test]
     fn auto_follow_skipped_when_user_recently_navigated() {
         let mut app = app_with_files(vec!["a.rs", "b.rs"]);
         app.status_view.selected = 0;
-        app.last_manual_nav_at = Some(Instant::now());
+        app.auto_follow.last_manual_nav_at = Some(Instant::now());
         let now = SystemTime::now();
 
         app.ingest_snapshot(
@@ -1692,7 +1702,7 @@ mod tests {
         );
 
         assert_eq!(app.status_view.selected, 0);
-        assert!(app.auto_followed_path.is_none());
+        assert!(app.auto_follow.followed_path.is_none());
     }
 
     #[test]
@@ -1708,7 +1718,7 @@ mod tests {
         );
 
         assert_eq!(app.status_view.selected, 0);
-        assert!(app.auto_followed_path.is_none());
+        assert!(app.auto_follow.followed_path.is_none());
     }
 
     #[test]
@@ -1740,19 +1750,19 @@ mod tests {
         // Selection already points to b.rs — no need to steer or arm the
         // "already followed here" guard.
         assert_eq!(app.status_view.selected, 1);
-        assert!(app.auto_followed_path.is_none());
+        assert!(app.auto_follow.followed_path.is_none());
     }
 
     #[test]
     fn select_down_marks_user_active_when_focus_is_filelist() {
         let mut app = app_with_files(vec!["a.rs", "b.rs"]);
         app.focus = Focus::FileList;
-        app.auto_followed_path = Some("a.rs".to_string());
+        app.auto_follow.followed_path = Some("a.rs".to_string());
 
         app.select_down();
 
-        assert!(app.last_manual_nav_at.is_some());
-        assert!(app.auto_followed_path.is_none());
+        assert!(app.auto_follow.last_manual_nav_at.is_some());
+        assert!(app.auto_follow.followed_path.is_none());
     }
 
     #[test]
@@ -1762,7 +1772,7 @@ mod tests {
 
         app.select_down();
 
-        assert!(app.last_manual_nav_at.is_none());
+        assert!(app.auto_follow.last_manual_nav_at.is_none());
     }
 
     #[test]

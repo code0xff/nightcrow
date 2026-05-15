@@ -45,8 +45,8 @@ impl App {
         self.clear_diff_state();
         // Auto-follow timers and steered-path memory are tied to the previous
         // workdir; reset them so the new repo's first snapshot starts clean.
-        self.last_manual_nav_at = None;
-        self.auto_followed_path = None;
+        self.auto_follow.last_manual_nav_at = None;
+        self.auto_follow.followed_path = None;
         self.status = None;
         self.tracking = None;
         self.focus = Focus::FileList;

@@ -6,8 +6,8 @@ impl App {
     /// for a short grace period. Also clears the "we steered to this path"
     /// memory — the user has taken back control.
     pub(crate) fn mark_user_navigated(&mut self) {
-        self.last_manual_nav_at = Some(Instant::now());
-        self.auto_followed_path = None;
+        self.auto_follow.last_manual_nav_at = Some(Instant::now());
+        self.auto_follow.followed_path = None;
     }
 
     /// Decide whether the file list should auto-follow to a new hot file,
@@ -20,7 +20,7 @@ impl App {
         if self.focus != Focus::FileList || self.mode != ViewMode::Status {
             return false;
         }
-        let idle = match self.last_manual_nav_at {
+        let idle = match self.auto_follow.last_manual_nav_at {
             None => true,
             Some(t) => t.elapsed() >= Duration::from_secs(2),
         };
@@ -34,12 +34,12 @@ impl App {
         if current_path.as_deref() == Some(target_path.as_str()) {
             return false;
         }
-        if self.auto_followed_path.as_deref() == Some(target_path.as_str()) {
+        if self.auto_follow.followed_path.as_deref() == Some(target_path.as_str()) {
             return false;
         }
         let moved = self.select_status_file_by_path(&target_path);
         if moved {
-            self.auto_followed_path = Some(target_path);
+            self.auto_follow.followed_path = Some(target_path);
         }
         moved
     }
