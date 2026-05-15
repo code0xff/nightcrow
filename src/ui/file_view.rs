@@ -37,6 +37,24 @@ impl FileViewState {
         self.total_lines
     }
 
+    /// Replace the rendered content. Keeps `total_lines` and the highlight
+    /// cache in lockstep with `content` so partial assignments at call sites
+    /// can't leave them disagreeing (which would make `max_scroll` lie about
+    /// the legal scroll range).
+    pub fn set_content(&mut self, content: String) {
+        self.total_lines = if content.is_empty() {
+            0
+        } else {
+            content.lines().count()
+        };
+        self.content = content;
+        // Highlights are content-derived: stale entries would either index
+        // past `total_lines` or render the previous file's colors.
+        self.line_highlights.clear();
+        self.cached_syntax_name = None;
+        self.cached_content_len = 0;
+    }
+
     /// Largest legal `scroll` value: one less than `line_count`, or 0 when
     /// the file is empty.
     pub fn max_scroll(&self) -> usize {
