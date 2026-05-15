@@ -21,7 +21,16 @@ pub fn init_logging(config: &LogConfig, repo_path: &str) -> Option<LogGuard> {
     }
 
     let log_dir = resolve_log_dir(&config.dir, repo_path);
-    fs::create_dir_all(&log_dir).ok()?;
+    if let Err(e) = fs::create_dir_all(&log_dir) {
+        // Subscriber install hasn't happened yet, so tracing would go to a
+        // no-op writer. Print to stderr so the user can see why "log.enabled
+        // = true" produced no file.
+        eprintln!(
+            "nightcrow: failed to create log directory {}: {e}",
+            log_dir.display()
+        );
+        return None;
+    }
     cleanup_old_logs(&log_dir, config.max_days);
 
     let level = config.level.as_str();
@@ -45,6 +54,10 @@ pub fn init_logging(config: &LogConfig, repo_path: &str) -> Option<LogGuard> {
             if let Some(appender) = SizeRollingAppender::new(&log_dir, LOG_FILE_PREFIX, max_bytes) {
                 tracing_appender::non_blocking(appender)
             } else {
+                eprintln!(
+                    "nightcrow: failed to open size-based log appender in {}; falling back to daily rotation",
+                    log_dir.display()
+                );
                 let appender = tracing_appender::rolling::daily(&log_dir, LOG_FILE_PREFIX);
                 tracing_appender::non_blocking(appender)
             }
@@ -64,7 +77,11 @@ pub fn init_logging(config: &LogConfig, repo_path: &str) -> Option<LogGuard> {
 
     let subscriber = tracing_subscriber::registry().with(filter).with(file_layer);
 
-    if tracing::subscriber::set_global_default(subscriber).is_err() {
+    if let Err(e) = tracing::subscriber::set_global_default(subscriber) {
+        // A prior `set_global_default` in this process (rare but possible
+        // in tests / repeated init) silently drops every later log line —
+        // surface it so the user can see why logs are empty.
+        eprintln!("nightcrow: failed to install global tracing subscriber: {e}");
         return None;
     }
 
@@ -120,22 +137,39 @@ fn cleanup_old_logs(log_dir: &Path, max_days: u32) {
 /// Returns paths to delete from a list of candidate `(path, mtime)` entries.
 /// Always preserves the newest entry, even if it is older than the cutoff —
 /// SizeRollingAppender resumes the highest-index file, so deleting it would
-/// drop the active session's tail.
+/// drop the active session's tail. When two candidates share the maximum
+/// mtime (1 s mtime granularity on FAT/exFAT, simultaneous touches, etc.),
+/// only the first occurrence is preserved; the others remain eligible for
+/// cleanup so a tie doesn't silently inflate disk usage.
 fn expired_log_paths(candidates: &[(PathBuf, SystemTime)], cutoff: SystemTime) -> Vec<&PathBuf> {
-    let newest = candidates.iter().map(|(_, t)| *t).max();
+    let newest_idx = candidates
+        .iter()
+        .enumerate()
+        .max_by_key(|(_, (_, t))| *t)
+        .map(|(i, _)| i);
     candidates
         .iter()
-        .filter(|(_, t)| Some(*t) != newest && *t < cutoff)
-        .map(|(p, _)| p)
+        .enumerate()
+        .filter(|(i, (_, t))| Some(*i) != newest_idx && *t < cutoff)
+        .map(|(_, (p, _))| p)
         .collect()
 }
 
 fn is_nightcrow_log_file(path: &Path) -> bool {
-    path.file_name()
-        .and_then(|n| n.to_str())
-        .is_some_and(|name| {
-            name == LOG_FILE_PREFIX || name.starts_with(LOG_FILE_PREFIX_WITH_SEPARATOR)
-        })
+    let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+        return false;
+    };
+    if name == LOG_FILE_PREFIX {
+        return true;
+    }
+    let Some(suffix) = name.strip_prefix(LOG_FILE_PREFIX_WITH_SEPARATOR) else {
+        return false;
+    };
+    // Generated suffixes are size index (`0`, `12`, …), daily date
+    // (`2026-05-03`), or hourly stamp (`2026-05-03-14`). Restricting to
+    // digits + `-` keeps user-placed siblings like `nightcrow.log.backup`
+    // from being swept up by cleanup_old_logs.
+    !suffix.is_empty() && suffix.chars().all(|c| c.is_ascii_digit() || c == '-')
 }
 
 // Rotates to a new numbered file when the current file exceeds max_bytes.
