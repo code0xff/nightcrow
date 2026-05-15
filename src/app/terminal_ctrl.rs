@@ -111,7 +111,7 @@ impl App {
         self.terminal.scroll.remove(&id);
     }
 
-    fn clamp_active_pane_after_removal(&mut self) {
+    pub(crate) fn clamp_active_pane_after_removal(&mut self) {
         if self.terminal.panes.is_empty() {
             self.terminal.active = 0;
             self.terminal.fullscreen = false;

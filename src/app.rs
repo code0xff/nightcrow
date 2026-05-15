@@ -1797,6 +1797,69 @@ mod tests {
         assert_eq!(app.status_view.selected, 0);
     }
 
+    #[test]
+    fn auto_follow_excludes_future_mtime_clock_skew() {
+        // Regression for 962bde2: a file with mtime ahead of `now` (NFS
+        // clock skew, files copied from a host with a wrong clock) used
+        // to pin auto-follow forever because the inflated timestamp
+        // beat every other candidate's `mtime > bm` comparison.
+        // Future-stamped files must be excluded from consideration.
+        let mut app = app_with_files(vec!["bogus.rs", "real.rs"]);
+        app.status_view.selected = 0;
+        let now = SystemTime::now();
+
+        app.ingest_snapshot(
+            snapshot_with(&["bogus.rs", "real.rs"]),
+            HashMap::from([
+                ("bogus.rs".to_string(), now + Duration::from_secs(3600)),
+                ("real.rs".to_string(), now - Duration::from_secs(2)),
+            ]),
+        );
+
+        // real.rs (the only candidate with a sane timestamp) must win,
+        // and bogus.rs must not be recorded as the steered path.
+        let real_idx = app
+            .status_view
+            .files
+            .iter()
+            .position(|f| f.path == "real.rs")
+            .expect("real.rs must be in the file list");
+        assert_eq!(app.status_view.selected, real_idx);
+        assert_eq!(app.auto_follow.followed_path.as_deref(), Some("real.rs"));
+    }
+
+    #[test]
+    fn clamp_active_pane_preserves_non_terminal_focus_on_last_exit() {
+        // Regression for 56ced5f: when the last terminal pane self-exits
+        // (Ctrl+D in the only shell), focus that wasn't on Terminal must
+        // stay put. Previously the clamp unconditionally redirected to
+        // DiffViewer, yanking focus away from a user reading the diff.
+        let mut app = app_with_files(vec!["a.rs"]);
+        app.focus = Focus::FileList;
+        // No panes registered — simulate "last pane exited" path.
+        app.terminal.panes.clear();
+
+        app.clamp_active_pane_after_removal();
+
+        assert_eq!(app.focus, Focus::FileList);
+        assert_eq!(app.terminal.active, 0);
+        assert!(!app.terminal.fullscreen);
+    }
+
+    #[test]
+    fn clamp_active_pane_redirects_when_focus_was_terminal() {
+        // Symmetric case: if focus *was* Terminal and the last pane
+        // exits, we need to redirect to a non-terminal pane (DiffViewer)
+        // so the user can still drive the UI.
+        let mut app = app_with_files(vec!["a.rs"]);
+        app.focus = Focus::Terminal;
+        app.terminal.panes.clear();
+
+        app.clamp_active_pane_after_removal();
+
+        assert_eq!(app.focus, Focus::DiffViewer);
+    }
+
     // ---------------------------------------------------------------
     // Commit log pagination
     // ---------------------------------------------------------------
