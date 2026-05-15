@@ -19,7 +19,7 @@ fn format_relative_time(ts: i64) -> String {
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_secs() as i64)
         .unwrap_or(0);
-    let secs = (now - ts).max(0);
+    let secs = now.saturating_sub(ts).max(0);
     if secs < SECS_PER_MINUTE {
         format!("{secs}s")
     } else if secs < SECS_PER_HOUR {
@@ -148,7 +148,14 @@ fn truncate_title(title: &str, max_chars: usize) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::truncate_title;
+    use super::{format_relative_time, truncate_title};
+
+    #[test]
+    fn format_relative_time_handles_far_future_timestamp() {
+        // Corrupt/malicious commit timestamps must not panic on i64 underflow.
+        let s = format_relative_time(i64::MAX);
+        assert_eq!(s, "0s");
+    }
 
     #[test]
     fn truncate_title_handles_multibyte_text() {
