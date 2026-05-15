@@ -85,16 +85,25 @@ impl App {
     /// newer than the freshly observed one keeps its previous mtime — a
     /// rename-from-stash can resurrect older mtimes for the same path
     /// and must not demote a recent edit to cool.
+    ///
+    /// Updates the existing map in place instead of building a fresh
+    /// HashMap on every snapshot tick: the typical steady state has the
+    /// same path set tick after tick, so the prior strategy churned the
+    /// allocator on the UI poll path for no behavioural benefit.
     pub(crate) fn merge_hot_table(&mut self, mtimes: HashMap<String, SystemTime>) {
-        let prior = std::mem::take(&mut self.status_view.hot_table);
-        let mut next = HashMap::with_capacity(mtimes.len());
+        let table = &mut self.status_view.hot_table;
+        // Drop entries that are no longer in the snapshot.
+        table.retain(|path, _| mtimes.contains_key(path));
+        // Upsert: insert new paths, keep the newer mtime when both exist.
         for (path, new_mtime) in mtimes {
-            let final_mtime = match prior.get(&path) {
-                Some(&stored) if stored > new_mtime => stored,
-                _ => new_mtime,
-            };
-            next.insert(path, final_mtime);
+            table
+                .entry(path)
+                .and_modify(|stored| {
+                    if new_mtime > *stored {
+                        *stored = new_mtime;
+                    }
+                })
+                .or_insert(new_mtime);
         }
-        self.status_view.hot_table = next;
     }
 }
