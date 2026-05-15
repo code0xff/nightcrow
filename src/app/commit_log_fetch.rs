@@ -38,6 +38,13 @@ impl App {
         if !self.log_view.mark_pending() {
             return;
         }
+        // Drop any stale receiver before installing the new one. `mark_pending`
+        // guards against a concurrent spawn for the same tail, but a leftover
+        // `Some(rx)` from a previously-cleared `pending_fetch` (e.g. via
+        // `clear_pending` on a worker error) would otherwise be silently
+        // overwritten — making the invariant "rx is_some ⇔ fetch pending"
+        // visibly explicit at the spawn site.
+        self.commit_log_page_rx = None;
         let page_size = self.cfg_commit_log_page_size;
         let repo_path = self.repo_path.clone();
         let (tx, rx) = mpsc::channel();
