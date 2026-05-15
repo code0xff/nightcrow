@@ -373,7 +373,17 @@ impl App {
             {
                 self.log_view.selected = pos;
             } else {
-                self.log_view.selected = self.log_view.selected.saturating_add(n_new);
+                // `prior_selected_oid` was Some, so the cached list contained
+                // that oid. If the position lookup fails despite the list
+                // being a prefix of the new one — corruption, or a race we
+                // haven't accounted for — clamp to the new bounds so a
+                // downstream `commits.get(selected)` lands on the tail
+                // instead of returning None and clearing the diff pane.
+                self.log_view.selected = self
+                    .log_view
+                    .selected
+                    .saturating_add(n_new)
+                    .min(self.log_view.commits.len().saturating_sub(1));
             }
         } else {
             self.log_view.set_commits_from_first_page(page, page_size);
