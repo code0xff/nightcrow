@@ -195,12 +195,20 @@ pub fn load_workdir_file(repo: &Repository, file_path: &str) -> Result<String> {
         .workdir()
         .ok_or_else(|| anyhow::anyhow!("bare repository"))?;
     let full = workdir.join(file_path);
+    let meta =
+        std::fs::symlink_metadata(&full).with_context(|| format!("failed to stat {file_path}"))?;
+    if meta.file_type().is_symlink() {
+        let target = std::fs::read_link(&full)
+            .map(|p| p.display().to_string())
+            .unwrap_or_else(|_| "<unreadable target>".to_string());
+        return Err(anyhow::anyhow!(
+            "symlink preview disabled: {file_path} -> {target}"
+        ));
+    }
     // Stat first so a multi-GB log file or build artifact can be rejected
     // without ever materializing into memory: `decode_file_view`'s post-read
     // length check otherwise allocates the full buffer before bailing.
-    let len = std::fs::metadata(&full)
-        .with_context(|| format!("failed to stat {file_path}"))?
-        .len();
+    let len = meta.len();
     if len > MAX_FILE_VIEW_BYTES as u64 {
         return Err(anyhow::anyhow!("file too large to preview: {len} bytes"));
     }
@@ -208,9 +216,22 @@ pub fn load_workdir_file(repo: &Repository, file_path: &str) -> Result<String> {
     decode_file_view(&bytes)
 }
 
-pub fn load_commit_file_blob(repo: &Repository, oid: Oid, file_path: &str) -> Result<String> {
+pub fn load_commit_file_blob(
+    repo: &Repository,
+    oid: Oid,
+    file_path: &str,
+    status: ChangeStatus,
+) -> Result<String> {
     let commit = repo.find_commit(oid).context("failed to find commit")?;
-    let tree = commit.tree().context("failed to get commit tree")?;
+    let tree = if status == ChangeStatus::Deleted {
+        commit
+            .parent(0)
+            .context("deleted file has no parent commit")?
+            .tree()
+            .context("failed to get parent tree")?
+    } else {
+        commit.tree().context("failed to get commit tree")?
+    };
     let entry = tree
         .get_path(std::path::Path::new(file_path))
         .with_context(|| format!("path not in commit: {file_path}"))?;
@@ -834,6 +855,20 @@ mod tests {
         drop(dir);
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn load_workdir_file_rejects_symlink_without_following() {
+        let (dir, path) = make_repo();
+        let target = Path::new(&path).join("target.txt");
+        std::fs::write(&target, "secret\n").unwrap();
+        std::os::unix::fs::symlink(&target, Path::new(&path).join("link.txt")).unwrap();
+
+        let err = load_workdir_file(&open_repo(&path), "link.txt").unwrap_err();
+
+        assert!(err.to_string().contains("symlink preview disabled"));
+        drop(dir);
+    }
+
     #[test]
     fn load_commit_file_blob_reads_committed_text() {
         let (dir, path) = make_repo();
@@ -843,8 +878,38 @@ mod tests {
         run_git(&path, &["commit", "-m", "init"]);
         std::fs::write(&fp, "v2\n").unwrap();
         let commits = load_commit_log(&open_repo(&path), 1).unwrap();
-        let content = load_commit_file_blob(&open_repo(&path), commits[0].oid, "a.txt").unwrap();
+        let content = load_commit_file_blob(
+            &open_repo(&path),
+            commits[0].oid,
+            "a.txt",
+            ChangeStatus::Modified,
+        )
+        .unwrap();
         assert_eq!(content, "v1\n");
+        drop(dir);
+    }
+
+    #[test]
+    fn load_commit_file_blob_reads_deleted_file_from_parent() {
+        let (dir, path) = make_repo();
+        let fp = Path::new(&path).join("gone.txt");
+        std::fs::write(&fp, "before delete\n").unwrap();
+        run_git(&path, &["add", "."]);
+        run_git(&path, &["commit", "-m", "add file"]);
+        std::fs::remove_file(&fp).unwrap();
+        run_git(&path, &["add", "."]);
+        run_git(&path, &["commit", "-m", "delete file"]);
+
+        let commits = load_commit_log(&open_repo(&path), 1).unwrap();
+        let content = load_commit_file_blob(
+            &open_repo(&path),
+            commits[0].oid,
+            "gone.txt",
+            ChangeStatus::Deleted,
+        )
+        .unwrap();
+
+        assert_eq!(content, "before delete\n");
         drop(dir);
     }
 

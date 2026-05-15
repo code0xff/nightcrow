@@ -27,7 +27,23 @@ fn truncate_tab_title(title: &str, max: usize) -> String {
     out
 }
 
-pub fn render(frame: &mut Frame, app: &mut App, area: Rect, accent: Color) {
+pub(crate) fn content_area(area: Rect) -> Option<Rect> {
+    terminal_layout(area).map(|(_, content)| content)
+}
+
+fn terminal_layout(area: Rect) -> Option<(Rect, Rect)> {
+    let inner = Block::default().borders(Borders::ALL).inner(area);
+    if inner.height == 0 || inner.width == 0 {
+        return None;
+    }
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Length(1), Constraint::Min(0)])
+        .split(inner);
+    Some((chunks[0], chunks[1]))
+}
+
+pub fn render(frame: &mut Frame, app: &App, area: Rect, accent: Color) {
     let focused = app.focus == Focus::Terminal;
     let border_style = super::focused_border_style(focused, accent);
 
@@ -41,23 +57,11 @@ pub fn render(frame: &mut Frame, app: &mut App, area: Rect, accent: Color) {
         .title(title)
         .border_style(border_style);
 
-    let inner = block.inner(area);
     frame.render_widget(block, area);
 
-    if inner.height == 0 || inner.width == 0 {
+    let Some((tab_area, content_area)) = terminal_layout(area) else {
         return;
-    }
-
-    // Tab bar (1 row) + terminal content
-    let chunks = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([Constraint::Length(1), Constraint::Min(0)])
-        .split(inner);
-
-    // Update stored terminal size so App can resize panes if needed
-    let content_area = chunks[1];
-    app.terminal
-        .resize_panes(content_area.height, content_area.width);
+    };
 
     // ── Tab bar ──────────────────────────────────────────────
     let tab_spans: Vec<Span> = if app.terminal.panes.is_empty() {
@@ -91,10 +95,9 @@ pub fn render(frame: &mut Frame, app: &mut App, area: Rect, accent: Color) {
             })
             .collect()
     };
-    frame.render_widget(Paragraph::new(Line::from(tab_spans)), chunks[0]);
+    frame.render_widget(Paragraph::new(Line::from(tab_spans)), tab_area);
 
     // ── Terminal screen ───────────────────────────────────────
-    app.terminal.sync_scroll();
     let screen_lines = build_screen_lines(app, content_area.height, content_area.width);
     frame.render_widget(Paragraph::new(screen_lines), content_area);
     render_cursor(frame, app, content_area);
@@ -218,6 +221,8 @@ fn vt100_color(c: vt100::Color) -> Color {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::app::tests::app_with_files;
+    use ratatui::{Terminal, backend::TestBackend};
 
     #[test]
     fn maps_screen_cursor_to_render_area() {
@@ -256,5 +261,20 @@ mod tests {
         let position = screen_cursor_position(parser.screen(), Rect::new(20, 10, 10, 3)).unwrap();
 
         assert_eq!(position, Position::new(23, 11));
+    }
+
+    #[test]
+    fn render_does_not_resize_terminal_state() {
+        let mut app = app_with_files(vec!["a.rs"]);
+        app.terminal.size = (3, 10);
+        let mut terminal = Terminal::new(TestBackend::new(40, 10)).unwrap();
+
+        terminal
+            .draw(|frame| {
+                render(frame, &app, frame.area(), Color::Yellow);
+            })
+            .unwrap();
+
+        assert_eq!(app.terminal.size, (3, 10));
     }
 }

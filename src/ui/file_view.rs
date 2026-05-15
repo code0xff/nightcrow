@@ -1,9 +1,14 @@
+use crate::git::diff::ChangeStatus;
 use crate::ui::diff_pane::{DIFF_THEME, HighlightSegment, highlight_line_segments};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FileViewKey {
     Status(String),
-    Commit { oid: git2::Oid, path: String },
+    Commit {
+        oid: git2::Oid,
+        path: String,
+        status: ChangeStatus,
+    },
 }
 
 #[derive(Default)]

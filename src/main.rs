@@ -14,7 +14,7 @@ use anyhow::{Context, Result};
 use app::{App, Focus, ViewMode};
 use clap::Parser;
 use crossterm::event::{
-    DisableBracketedPaste, EnableBracketedPaste, KeyCode, KeyEvent, KeyEventKind,
+    DisableBracketedPaste, EnableBracketedPaste, KeyCode, KeyEvent, KeyEventKind, KeyModifiers,
 };
 use crossterm::{
     event::{self, Event},
@@ -22,7 +22,7 @@ use crossterm::{
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
 use input::{Action, encode_key, map_key, vim_navigation_action};
-use ratatui::{Terminal, backend::CrosstermBackend};
+use ratatui::{Terminal, backend::CrosstermBackend, layout::Rect};
 use std::{io, time::Duration};
 use syntect::highlighting::ThemeSet;
 use syntect::parsing::SyntaxSet;
@@ -191,6 +191,14 @@ fn main_loop(
         app.poll_terminal();
         app.poll_commit_log_page_fetch();
 
+        let size = terminal.size()?;
+        if let Some(area) =
+            ui::terminal_content_area(app, Rect::new(0, 0, size.width, size.height), &cfg.layout)
+        {
+            app.terminal.resize_panes(area.height, area.width);
+            app.terminal.sync_scroll();
+        }
+
         let accent = app.current_accent();
         terminal.draw(|frame| {
             ui::draw(frame, app, ss, ts, &cfg.layout, accent);
@@ -353,6 +361,30 @@ fn handle_global_action(app: &mut App, action: Action) -> Option<KeyOutcome> {
     }
 }
 
+fn has_command_modifier(key: KeyEvent) -> bool {
+    key.modifiers.intersects(
+        KeyModifiers::CONTROL
+            | KeyModifiers::ALT
+            | KeyModifiers::SUPER
+            | KeyModifiers::HYPER
+            | KeyModifiers::META,
+    )
+}
+
+fn text_input_char(key: KeyEvent) -> Option<char> {
+    if has_command_modifier(key) {
+        return None;
+    }
+    match key.code {
+        KeyCode::Char(c) if !c.is_control() => Some(c),
+        _ => None,
+    }
+}
+
+fn matches_text_command(key: KeyEvent, expected: char) -> bool {
+    !has_command_modifier(key) && matches!(key.code, KeyCode::Char(c) if c == expected)
+}
+
 fn handle_repo_input_key(app: &mut App, key: KeyEvent) {
     match key.code {
         KeyCode::Esc => app.cancel_repo_input(),
@@ -364,8 +396,11 @@ fn handle_repo_input_key(app: &mut App, key: KeyEvent) {
                 app.repo_input_pop();
             }
         }
-        KeyCode::Char(c) if !c.is_control() => app.repo_input_push(c),
-        _ => {}
+        _ => {
+            if let Some(c) = text_input_char(key) {
+                app.repo_input_push(c);
+            }
+        }
     }
 }
 
@@ -430,12 +465,14 @@ fn handle_file_search_key(app: &mut App, key: KeyEvent) {
                 app.search_pop();
             }
         }
-        // Reject control bytes: Ctrl+letter chords reach here with their
-        // letter intact, and pushing them as literal search input would
-        // pollute the query (e.g. Ctrl+L would type "l" into the filter).
-        // Symmetric with `handle_repo_input_key`.
-        KeyCode::Char(c) if !c.is_control() => app.search_push(c),
-        _ => {}
+        _ => {
+            // Reject command chords: Ctrl+letter reaches crossterm as the
+            // literal letter, not as a control char, so modifier state is the
+            // reliable guard against polluting the query.
+            if let Some(c) = text_input_char(key) {
+                app.search_push(c);
+            }
+        }
     }
 }
 
@@ -450,8 +487,11 @@ fn handle_diff_search_key(app: &mut App, key: KeyEvent) {
                 app.diff.search_pop();
             }
         }
-        KeyCode::Char(c) if !c.is_control() => app.diff.search_push(c),
-        _ => {}
+        _ => {
+            if let Some(c) = text_input_char(key) {
+                app.diff.search_push(c);
+            }
+        }
     }
 }
 
@@ -462,17 +502,19 @@ fn handle_unmapped_upper_key(app: &mut App, key: KeyEvent) {
                 app.log_drill_in()
             }
             KeyCode::Esc if app.log_view.drill_down => app.log_drill_out(),
-            KeyCode::Char('/') if app.mode == ViewMode::Status => app.start_search(),
+            _ if app.mode == ViewMode::Status && matches_text_command(key, '/') => {
+                app.start_search()
+            }
             KeyCode::Esc if !app.status_view.search_query.is_empty() => app.cancel_search(),
             KeyCode::Left => app.file_scroll_left(),
             KeyCode::Right => app.file_scroll_right(),
             _ => {}
         },
         Focus::DiffViewer => match key.code {
-            KeyCode::Char('v') => app.toggle_diff_file_view(),
-            KeyCode::Char('/') => app.diff.start_search(),
-            KeyCode::Char('n') => app.diff.next_match(),
-            KeyCode::Char('N') => app.diff.prev_match(),
+            _ if matches_text_command(key, 'v') => app.toggle_diff_file_view(),
+            _ if matches_text_command(key, '/') => app.diff.start_search(),
+            _ if matches_text_command(key, 'n') => app.diff.next_match(),
+            _ if matches_text_command(key, 'N') => app.diff.prev_match(),
             KeyCode::Esc if !app.diff.search.query.is_empty() => app.diff.cancel_search(),
             KeyCode::Left => app.diff.scroll_left(),
             KeyCode::Right => app.diff.scroll_right(),
@@ -485,6 +527,7 @@ fn handle_unmapped_upper_key(app: &mut App, key: KeyEvent) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::app::DiffPaneView;
     use crate::app::tests::app_with_files;
     use crossterm::event::KeyModifiers;
 
@@ -537,6 +580,10 @@ mod tests {
 
         assert_eq!(app.mode, before, "Ctrl+L must be suppressed by overlay");
         assert!(app.diff.search.active, "diff search must remain open");
+        assert!(
+            app.diff.search.query.is_empty(),
+            "Ctrl+L must not type into diff search"
+        );
     }
 
     #[test]
@@ -552,6 +599,10 @@ mod tests {
 
         assert_eq!(app.mode, before);
         assert!(app.status_view.search_active);
+        assert!(
+            app.status_view.search_query.is_empty(),
+            "Ctrl+L must not type into file search"
+        );
     }
 
     #[test]
@@ -560,12 +611,75 @@ mod tests {
         app.start_repo_input();
         assert!(app.repo_input.active);
         let before = app.mode;
+        let before_buf = app.repo_input.buf.clone();
 
         let ctrl_l = press(KeyCode::Char('l'), KeyModifiers::CONTROL);
         let _ = handle_key(&mut app, ctrl_l);
 
         assert_eq!(app.mode, before);
         assert!(app.repo_input.active);
+        assert_eq!(
+            app.repo_input.buf, before_buf,
+            "Ctrl+L must not type into repo input"
+        );
+    }
+
+    #[test]
+    fn handle_key_repo_input_rejects_command_modifier_chars() {
+        let mut app = app_with_files(vec!["a.rs"]);
+        app.start_repo_input();
+        app.repo_input.buf.clear();
+
+        let alt_x = press(KeyCode::Char('x'), KeyModifiers::ALT);
+        let _ = handle_key(&mut app, alt_x);
+
+        assert!(app.repo_input.buf.is_empty());
+    }
+
+    #[test]
+    fn handle_key_file_search_rejects_command_modifier_chars() {
+        let mut app = app_with_files(vec!["a.rs"]);
+        app.focus = Focus::FileList;
+        app.start_search();
+
+        let ctrl_x = press(KeyCode::Char('x'), KeyModifiers::CONTROL);
+        let _ = handle_key(&mut app, ctrl_x);
+
+        assert!(app.status_view.search_query.is_empty());
+    }
+
+    #[test]
+    fn handle_key_diff_search_rejects_command_modifier_chars() {
+        let mut app = app_with_files(vec!["a.rs"]);
+        app.focus = Focus::DiffViewer;
+        app.diff.start_search();
+
+        let alt_x = press(KeyCode::Char('x'), KeyModifiers::ALT);
+        let _ = handle_key(&mut app, alt_x);
+
+        assert!(app.diff.search.query.is_empty());
+    }
+
+    #[test]
+    fn handle_key_status_search_shortcut_requires_no_command_modifier() {
+        let mut app = app_with_files(vec!["a.rs"]);
+        app.focus = Focus::FileList;
+
+        let ctrl_slash = press(KeyCode::Char('/'), KeyModifiers::CONTROL);
+        let _ = handle_key(&mut app, ctrl_slash);
+
+        assert!(!app.status_view.search_active);
+    }
+
+    #[test]
+    fn handle_key_diff_file_toggle_requires_no_command_modifier() {
+        let mut app = app_with_files(vec!["a.rs"]);
+        app.focus = Focus::DiffViewer;
+
+        let alt_v = press(KeyCode::Char('v'), KeyModifiers::ALT);
+        let _ = handle_key(&mut app, alt_v);
+
+        assert_eq!(app.diff.view, DiffPaneView::Diff);
     }
 
     #[test]

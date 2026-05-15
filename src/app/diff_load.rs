@@ -179,13 +179,15 @@ impl App {
                     return None;
                 }
                 let oid = self.log_view.commits.get(self.log_view.selected)?.oid;
-                let path = self
+                let file = self
                     .log_view
                     .commit_files
-                    .get(self.log_view.file_selected)?
-                    .path
-                    .clone();
-                Some(FileViewKey::Commit { oid, path })
+                    .get(self.log_view.file_selected)?;
+                Some(FileViewKey::Commit {
+                    oid,
+                    path: file.path.clone(),
+                    status: file.status,
+                })
             }
         }
     }
@@ -214,9 +216,12 @@ impl App {
     pub(crate) fn load_file_view(&mut self, key: FileViewKey) {
         let result = match &key {
             FileViewKey::Status(path) => self.with_repo(|repo| load_workdir_file(repo, path)),
-            FileViewKey::Commit { oid, path } => {
+            FileViewKey::Commit {
+                oid, path, status, ..
+            } => {
                 let oid = *oid;
-                self.with_repo(|repo| load_commit_file_blob(repo, oid, path))
+                let status = *status;
+                self.with_repo(|repo| load_commit_file_blob(repo, oid, path, status))
             }
         };
         let anchor = self.anchor_for_current_diff();

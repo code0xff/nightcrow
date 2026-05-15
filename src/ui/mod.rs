@@ -185,6 +185,35 @@ pub fn draw(
     frame.render_widget(render_hint_bar(app, accent), hint_area);
 }
 
+pub(crate) fn terminal_content_area(
+    app: &App,
+    screen_area: Rect,
+    layout: &LayoutConfig,
+) -> Option<Rect> {
+    let outer = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(1),
+            Constraint::Min(0),
+            Constraint::Length(1),
+        ])
+        .split(screen_area);
+    let body_area = outer[1];
+
+    if app.terminal.fullscreen {
+        return terminal_tab::content_area(body_area);
+    }
+    if app.diff.fullscreen || app.list_fullscreen {
+        return None;
+    }
+
+    let main = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints(main_content_constraints(layout))
+        .split(body_area);
+    terminal_tab::content_area(main[1])
+}
+
 /// Render the top header strip: `repo-path  branch  ↑N ↓M`. Branch and
 /// tracking chips are omitted when their data is absent so the line stays
 /// short on detached HEAD or empty repos.
@@ -313,6 +342,7 @@ fn render_hint_bar(app: &App, accent: Color) -> Paragraph<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::app::tests::app_with_files;
 
     #[test]
     fn home_relative_strips_home_prefix_and_trailing_slash() {
@@ -341,5 +371,33 @@ mod tests {
             main_content_constraints(&cfg),
             [Constraint::Percentage(99), Constraint::Percentage(1)]
         );
+    }
+
+    #[test]
+    fn terminal_content_area_hidden_when_other_pane_is_fullscreen() {
+        let mut app = app_with_files(vec!["a.rs"]);
+        app.toggle_diff_fullscreen();
+
+        let area = terminal_content_area(&app, Rect::new(0, 0, 100, 40), &LayoutConfig::default());
+
+        assert!(area.is_none());
+    }
+
+    #[test]
+    fn terminal_content_area_uses_body_when_terminal_fullscreen() {
+        let mut app = app_with_files(vec!["a.rs"]);
+        app.terminal.panes.push(crate::app::PaneInfo {
+            id: 1,
+            title: "shell".to_string(),
+        });
+        app.toggle_terminal_fullscreen();
+
+        let area = terminal_content_area(&app, Rect::new(0, 0, 100, 40), &LayoutConfig::default())
+            .expect("terminal fullscreen should produce a content area");
+
+        // Full screen keeps the top header and bottom hint bar, then the
+        // terminal widget consumes one border row on each side and one tab row.
+        assert_eq!(area.height, 35);
+        assert_eq!(area.width, 98);
     }
 }

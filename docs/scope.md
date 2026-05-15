@@ -12,4 +12,4 @@
 
 ## Constraints
 
-- "Rust, ratatui 0.29 + crossterm, tmux(선택/없으면 fallback), macOS+Linux"
+- "Rust, ratatui 0.30 + crossterm 0.29, portable-pty, macOS+Linux"
