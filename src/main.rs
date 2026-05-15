@@ -114,7 +114,10 @@ fn run(
     let ts = ThemeSet::load_defaults();
     let mut app = init_app(&repo_path, &cfg);
 
-    splash_loop(terminal, &app)?;
+    if matches!(splash_loop(terminal, &app)?, SplashOutcome::Quit) {
+        tracing::info!(repo = %app.repo_path, "nightcrow stopped during splash");
+        return Ok(());
+    }
     main_loop(terminal, &mut app, &ss, &ts, &cfg)?;
 
     session::save_session(&app.repo_path, &app.save_session());
@@ -136,7 +139,15 @@ fn init_app(repo_path: &str, cfg: &config::Config) -> App {
     app
 }
 
-fn splash_loop(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &App) -> Result<()> {
+enum SplashOutcome {
+    Enter,
+    Quit,
+}
+
+fn splash_loop(
+    terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
+    app: &App,
+) -> Result<SplashOutcome> {
     let splash = ui::splash::SplashState::new();
     loop {
         let accent = app.current_accent();
@@ -148,14 +159,24 @@ fn splash_loop(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &App)
         }
         if event::poll(Duration::from_millis(16))? {
             match event::read()? {
-                Event::Key(_) => break,
+                // Honour Ctrl+Q (and Esc) so the user can abort during the
+                // splash instead of being forced to wait for it to clear
+                // and quit from the main view. Any other key dismisses
+                // the splash, matching the prior behaviour.
+                Event::Key(k) if k.kind == KeyEventKind::Press => {
+                    let action = map_key(k);
+                    if action == Action::Quit || k.code == KeyCode::Esc {
+                        return Ok(SplashOutcome::Quit);
+                    }
+                    break;
+                }
                 Event::Resize(_, _) => terminal.clear()?,
                 _ => {}
             }
         }
     }
     terminal.clear()?;
-    Ok(())
+    Ok(SplashOutcome::Enter)
 }
 
 fn main_loop(
