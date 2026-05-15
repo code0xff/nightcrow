@@ -4,16 +4,24 @@ use std::time::SystemTime;
 
 impl App {
     pub fn poll_snapshot(&mut self) {
+        // Only the most recent queued message reflects current repo state, so
+        // drain everything and act on the tail. Without this, a burst of
+        // snapshots (e.g. when the main loop was blocked by a synchronous
+        // git2 call) would each trigger a full `refresh_diff` that the next
+        // iteration immediately overwrites — wasted CPU + brief UI flicker.
+        let mut latest: Option<SnapshotMsg> = None;
         while let Ok(msg) = self.snapshot.try_recv() {
-            match msg {
-                SnapshotMsg::Ok(snapshot, mtimes) => {
-                    self.ingest_snapshot(snapshot, mtimes);
-                }
-                SnapshotMsg::Err(e) => {
-                    tracing::warn!(error = %e, "git snapshot failed");
-                    self.status = Some(format!("git error: {e}"));
-                }
+            latest = Some(msg);
+        }
+        match latest {
+            Some(SnapshotMsg::Ok(snapshot, mtimes)) => {
+                self.ingest_snapshot(snapshot, mtimes);
             }
+            Some(SnapshotMsg::Err(e)) => {
+                tracing::warn!(error = %e, "git snapshot failed");
+                self.status = Some(format!("git error: {e}"));
+            }
+            None => {}
         }
     }
 
