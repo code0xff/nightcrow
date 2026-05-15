@@ -1,5 +1,9 @@
 use super::{App, Focus, SnapshotChannel, ViewMode};
 
+// Mirrors `PROMPT_BUFFER_MAX_BYTES` so a bracketed paste cannot grow this
+// buffer without bound; comfortably above any realistic filesystem path.
+const REPO_INPUT_MAX_BYTES: usize = 4096;
+
 impl App {
     pub fn change_repo(&mut self, new_path: String) {
         // Drop any commit-log page worker tied to the previous repo so its
@@ -104,6 +108,9 @@ impl App {
     }
 
     pub fn repo_input_push(&mut self, ch: char) {
+        if self.repo_input.buf.len() + ch.len_utf8() > REPO_INPUT_MAX_BYTES {
+            return;
+        }
         self.repo_input.buf.push(ch);
     }
 
