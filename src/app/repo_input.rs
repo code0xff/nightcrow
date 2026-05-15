@@ -39,10 +39,10 @@ impl App {
         self.log_view.reset_drill_down();
         self.status_view.cancel_search();
         // clear_diff_state empties hunks + lower/highlight caches, resets diff
-        // scroll/search cursor, and invalidates the open file view. Calling it
-        // here also keeps the per-load reset shape centralized.
+        // scroll/search cursor, drops the search query, and invalidates the
+        // open file view. Calling it here keeps the per-load reset shape
+        // centralized.
         self.clear_diff_state();
-        self.diff.search.clear();
         // Auto-follow timers and steered-path memory are tied to the previous
         // workdir; reset them so the new repo's first snapshot starts clean.
         self.last_manual_nav_at = None;
