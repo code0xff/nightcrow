@@ -15,8 +15,8 @@ impl App {
                 // intentionally does not refresh the hidden commit list, so a
                 // HEAD change there must invalidate the cache on the next entry.
                 let cached_head = self.log_view.commits.first().map(|c| c.oid);
-                let cache_matches_head =
-                    !self.log_view.commits.is_empty() && cached_head == self.pagination.last_head_oid;
+                let cache_matches_head = !self.log_view.commits.is_empty()
+                    && cached_head == self.pagination.last_head_oid;
                 if !self.log_view.commits.is_empty() && !cache_matches_head {
                     self.refresh_commit_log_after_head_change();
                 } else {
@@ -31,7 +31,8 @@ impl App {
                                 // Sync last_head_oid to the freshly loaded HEAD so
                                 // the next snapshot tick doesn't immediately
                                 // re-trigger refresh_commit_log_after_head_change.
-                                self.pagination.last_head_oid = self.log_view.commits.first().map(|c| c.oid);
+                                self.pagination.last_head_oid =
+                                    self.log_view.commits.first().map(|c| c.oid);
                             }
                             Err(e) => {
                                 tracing::warn!(error = %e, "failed to load commit log");

@@ -348,8 +348,7 @@ impl DiffPane {
             .iter()
             .map(|h| resolve_hunk_syntax(ss, h.file_path.as_deref()))
             .collect();
-        let resolved_names: Vec<String> =
-            per_hunk_syntax.iter().map(|s| s.name.clone()).collect();
+        let resolved_names: Vec<String> = per_hunk_syntax.iter().map(|s| s.name.clone()).collect();
 
         let shape_matches = self.line_highlights.len() == self.hunks.len()
             && self
