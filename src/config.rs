@@ -239,6 +239,22 @@ fn validate_config(cfg: &Config) -> Result<()> {
             && cfg.log.commit_log_prefetch_threshold <= cfg.log.commit_log_page_size,
         "log.commit_log_prefetch_threshold must be between 1 and log.commit_log_page_size"
     );
+    // `max_size_mb == 0` would make SizeRollingAppender rotate on every
+    // write (and even degenerate to creating a new file per write call),
+    // so disallow it. The upper bound is a sanity ceiling that still
+    // allows hours of trace logging at high volume.
+    anyhow::ensure!(
+        (1..=10_000).contains(&cfg.log.max_size_mb),
+        "log.max_size_mb must be between 1 and 10000"
+    );
+    // `max_days == 0` is the documented "keep forever" sentinel and is
+    // intentionally accepted; only the upper bound is sanity-checked so a
+    // typo in years-vs-days doesn't silently produce log retention that
+    // exceeds the host's life.
+    anyhow::ensure!(
+        cfg.log.max_days <= 3650,
+        "log.max_days must be at most 3650 (10 years); 0 = keep forever"
+    );
     Ok(())
 }
 
@@ -389,6 +405,38 @@ commit_log_prefetch_threshold = 80
         }
         // And confirm the canonical slice length stays in sync.
         assert_eq!(Accent::ALL.len(), all.len());
+    }
+
+    #[test]
+    fn log_max_size_mb_validation_rejects_zero_and_huge() {
+        let mut cfg = Config::default();
+        cfg.log.max_size_mb = 0;
+        assert!(validate_config(&cfg).is_err());
+        cfg.log.max_size_mb = 10_001;
+        assert!(validate_config(&cfg).is_err());
+    }
+
+    #[test]
+    fn log_max_size_mb_validation_accepts_in_range() {
+        let mut cfg = Config::default();
+        cfg.log.max_size_mb = 1;
+        assert!(validate_config(&cfg).is_ok());
+        cfg.log.max_size_mb = 10_000;
+        assert!(validate_config(&cfg).is_ok());
+    }
+
+    #[test]
+    fn log_max_days_validation_accepts_zero_as_keep_forever_sentinel() {
+        let mut cfg = Config::default();
+        cfg.log.max_days = 0;
+        assert!(validate_config(&cfg).is_ok());
+    }
+
+    #[test]
+    fn log_max_days_validation_rejects_unreasonable_horizon() {
+        let mut cfg = Config::default();
+        cfg.log.max_days = 3651;
+        assert!(validate_config(&cfg).is_err());
     }
 
     #[test]
