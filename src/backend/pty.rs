@@ -110,10 +110,15 @@ impl TerminalBackend for PtyBackend {
     }
 
     fn send_input(&mut self, id: PaneId, data: &[u8]) -> Result<()> {
-        if let Some(pane) = self.panes.get_mut(&id) {
-            pane.writer.write_all(data)?;
-            pane.writer.flush()?;
-        }
+        // Surface "no such pane" as an error so the caller can warn — a
+        // silent Ok hid drops where the UI kept the pane in `panes` but the
+        // backend had already discarded it.
+        let pane = self
+            .panes
+            .get_mut(&id)
+            .ok_or_else(|| anyhow::anyhow!("pane {id} not found"))?;
+        pane.writer.write_all(data)?;
+        pane.writer.flush()?;
         Ok(())
     }
 
