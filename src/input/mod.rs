@@ -83,13 +83,20 @@ pub fn encode_key(key: KeyEvent) -> Option<Vec<u8>> {
     match key.code {
         KeyCode::Char(c) => {
             if ctrl && c.is_ascii() {
-                // Space is below '@' in ASCII so the standard `c - '@'`
-                // formula wraps. xterm convention is Ctrl+Space → NUL.
-                let b = if c == ' ' {
-                    Some(0x00)
-                } else {
-                    let v = (c.to_ascii_uppercase() as u8).wrapping_sub(b'@');
-                    (v < 32).then_some(v)
+                // Several Ctrl chords fall outside the contiguous
+                // `c.to_ascii_uppercase() - '@' < 32` range and need
+                // explicit xterm-convention mappings:
+                //   Ctrl+Space → NUL (formula wraps because ' ' < '@')
+                //   Ctrl+/     → 0x1F (US): screen/tmux/emacs/less use this
+                //   Ctrl+?     → 0x7F (DEL): xterm convention
+                let b = match c {
+                    ' ' => Some(0x00),
+                    '/' => Some(0x1F),
+                    '?' => Some(0x7F),
+                    _ => {
+                        let v = (c.to_ascii_uppercase() as u8).wrapping_sub(b'@');
+                        (v < 32).then_some(v)
+                    }
                 };
                 if let Some(b) = b {
                     // Ctrl+Alt+Char encodes as ESC + control byte (matches
@@ -275,6 +282,28 @@ mod tests {
         // xterm convention: Ctrl+Space → NUL. The generic `c - '@'` formula
         // wraps for space (0x20 < 0x40), so this case needs special handling.
         assert_eq!(encode_key(ctrl(KeyCode::Char(' '))), Some(vec![0x00]));
+    }
+
+    #[test]
+    fn encode_ctrl_slash_as_us() {
+        // Ctrl+/ is conventionally 0x1F (US) on xterm; vim/less/emacs
+        // bindings depend on it. Without the explicit mapping the slash
+        // fell through as a literal '/' character.
+        assert_eq!(encode_key(ctrl(KeyCode::Char('/'))), Some(vec![0x1F]));
+    }
+
+    #[test]
+    fn encode_ctrl_question_as_del() {
+        // Ctrl+? is conventionally DEL (0x7F).
+        assert_eq!(encode_key(ctrl(KeyCode::Char('?'))), Some(vec![0x7F]));
+    }
+
+    #[test]
+    fn encode_ctrl_right_bracket_via_formula() {
+        // Sanity check: the `c.to_ascii_uppercase() - '@'` formula already
+        // covered Ctrl+]. Pin it so a future refactor of the special-case
+        // table doesn't accidentally regress it.
+        assert_eq!(encode_key(ctrl(KeyCode::Char(']'))), Some(vec![0x1D]));
     }
 
     #[test]
