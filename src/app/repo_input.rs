@@ -5,9 +5,9 @@ impl App {
         // Drop any commit-log page worker tied to the previous repo so its
         // result (built against the old `.git`) cannot leak into the new view.
         self.cancel_commit_log_page_fetch();
-        // Replacing _stop_tx drops the old sender, signaling the old thread to exit.
-        // Replacing the channel drops the old _stop_tx, signaling the old
-        // worker to exit at its next recv_timeout boundary.
+        // Replacing the channel drops the prior SnapshotChannel; its `Drop`
+        // signals and joins the old-repo worker before this assignment
+        // returns, so no in-flight load_snapshot leaks into the new state.
         self.snapshot = SnapshotChannel::spawn(&new_path);
         if let Some(ref mut backend) = self.terminal.backend {
             // Only future panes adopt the new cwd; existing shells stay in
