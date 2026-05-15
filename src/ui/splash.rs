@@ -5,7 +5,7 @@ use ratatui::{
     text::{Line, Span},
     widgets::{Block, Paragraph},
 };
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 const LOGO: &[&str] = &[
     "███╗   ██╗██╗ ██████╗ ██╗  ██╗████████╗ ██████╗██████╗  ██████╗ ██╗    ██╗",
@@ -16,7 +16,7 @@ const LOGO: &[&str] = &[
     "╚═╝  ╚═══╝╚═╝ ╚═════╝ ╚═╝  ╚═╝   ╚═╝    ╚═════╝╚═╝  ╚═╝ ╚═════╝  ╚══╝╚══╝",
 ];
 
-const SPLASH_MS: u64 = 1600;
+const SPLASH_DURATION: Duration = Duration::from_millis(1600);
 const BAR_WIDTH: usize = 44;
 
 pub struct SplashState {
@@ -37,15 +37,11 @@ impl SplashState {
     }
 
     pub fn is_done(&self) -> bool {
-        self.start.elapsed().as_millis() as u64 >= SPLASH_MS
-    }
-
-    fn elapsed_ms(&self) -> u64 {
-        self.start.elapsed().as_millis() as u64
+        self.start.elapsed() >= SPLASH_DURATION
     }
 
     fn progress(&self) -> f64 {
-        (self.elapsed_ms() as f64 / SPLASH_MS as f64).min(1.0)
+        (self.start.elapsed().as_secs_f64() / SPLASH_DURATION.as_secs_f64()).min(1.0)
     }
 }
 
