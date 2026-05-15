@@ -348,9 +348,7 @@ impl App {
                 self.log_view.selected = self.log_view.selected.saturating_add(n_new);
             }
         } else {
-            let fully_loaded = page.len() < page_size;
-            self.log_view.set_commits(page);
-            self.log_view.fully_loaded = fully_loaded;
+            self.log_view.set_commits_from_first_page(page, page_size);
             self.log_view.selected = prior_selected_oid
                 .and_then(|oid| self.log_view.commits.iter().position(|c| c.oid == oid))
                 .unwrap_or(0);

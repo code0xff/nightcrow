@@ -25,12 +25,8 @@ impl App {
                         let page_size = self.cfg_commit_log_page_size;
                         match self.with_repo(|repo| load_commit_log(repo, page_size)) {
                             Ok(commits) => {
-                                // Short first page means the entire history fits,
-                                // no further prefetch needed; a full page means
-                                // more may exist and the next move will pull it.
-                                let fully_loaded = commits.len() < page_size;
-                                self.log_view.set_commits(commits);
-                                self.log_view.fully_loaded = fully_loaded;
+                                self.log_view
+                                    .set_commits_from_first_page(commits, page_size);
                                 self.log_view.selected = 0;
                                 // Sync last_head_oid to the freshly loaded HEAD so
                                 // the next snapshot tick doesn't immediately

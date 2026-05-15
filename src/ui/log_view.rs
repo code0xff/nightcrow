@@ -43,6 +43,15 @@ impl LogView {
         self.fully_loaded = false;
     }
 
+    /// Install a freshly-fetched first page. Resets pagination state via
+    /// `set_commits` and computes `fully_loaded` from the page length so the
+    /// callsite doesn't have to repeat the short-page sentinel logic.
+    pub(crate) fn set_commits_from_first_page(&mut self, page: Vec<CommitEntry>, page_size: usize) {
+        let fully_loaded = page.len() < page_size;
+        self.set_commits(page);
+        self.fully_loaded = fully_loaded;
+    }
+
     /// Append a freshly-fetched page to the tail. `page_size` is the limit
     /// the caller asked for: a short result means we've reached the end.
     pub(crate) fn append_page(&mut self, mut page: Vec<CommitEntry>, page_size: usize) {
