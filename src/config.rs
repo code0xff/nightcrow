@@ -16,17 +16,16 @@ pub struct Config {
 pub enum Accent {
     #[default]
     Yellow,
-    Green,
     Cyan,
+    Green,
     Magenta,
     Blue,
 }
 
 impl Accent {
-    // Order MUST match the historical ACCENT_PRESETS slice
-    // ["yellow", "cyan", "green", "magenta", "blue"] so that accent_idx
-    // values persisted in pre-existing session.json files keep mapping
-    // to the same color after the strong-enum migration.
+    // Variant declaration order MUST match this slice so accent_idx values
+    // persisted in pre-existing session.json files keep mapping to the same
+    // color after the strong-enum migration.
     pub const ALL: &'static [Accent] = &[
         Accent::Yellow,
         Accent::Cyan,
