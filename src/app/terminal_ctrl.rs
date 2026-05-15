@@ -114,8 +114,14 @@ impl App {
     fn clamp_active_pane_after_removal(&mut self) {
         if self.terminal.panes.is_empty() {
             self.terminal.active = 0;
-            self.focus = Focus::DiffViewer;
             self.terminal.fullscreen = false;
+            // Only redirect focus when it was actually on the terminal —
+            // otherwise an externally-exited last pane (Ctrl+D in the only
+            // shell while the user was reading the diff) would yank focus
+            // away from where the user was working.
+            if self.focus == Focus::Terminal {
+                self.focus = Focus::DiffViewer;
+            }
         } else {
             self.terminal.active = self.terminal.active.min(self.terminal.panes.len() - 1);
         }
