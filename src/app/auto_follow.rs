@@ -65,10 +65,17 @@ impl App {
             let Some(&mtime) = self.status_view.hot_table.get(&file.path) else {
                 continue;
             };
+            // `duration_since` returns Err when `mtime > now` (clock skew on
+            // NFS, VMs, files touched with a future stamp). Treating those as
+            // permanently in-window (`unwrap_or(true)`) would pin auto-follow
+            // to a single bogus file forever — no later edit can ever beat a
+            // future timestamp. Floor the timestamp at `now` instead so a
+            // future-stamped file is treated as "just edited."
+            let effective = mtime.min(now);
             let in_window = now
-                .duration_since(mtime)
+                .duration_since(effective)
                 .map(|d| d <= window)
-                .unwrap_or(true);
+                .unwrap_or(false);
             if !in_window {
                 continue;
             }
