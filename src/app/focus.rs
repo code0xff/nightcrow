@@ -16,13 +16,13 @@ impl App {
                 // HEAD change there must invalidate the cache on the next entry.
                 let cached_head = self.log_view.commits.first().map(|c| c.oid);
                 let cache_matches_head =
-                    !self.log_view.commits.is_empty() && cached_head == self.last_head_oid;
+                    !self.log_view.commits.is_empty() && cached_head == self.pagination.last_head_oid;
                 if !self.log_view.commits.is_empty() && !cache_matches_head {
                     self.refresh_commit_log_after_head_change();
                 } else {
                     if self.log_view.commits.is_empty() {
                         self.cancel_commit_log_page_fetch();
-                        let page_size = self.cfg_commit_log_page_size;
+                        let page_size = self.pagination.page_size;
                         match self.with_repo(|repo| load_commit_log(repo, page_size)) {
                             Ok(commits) => {
                                 self.log_view
@@ -31,7 +31,7 @@ impl App {
                                 // Sync last_head_oid to the freshly loaded HEAD so
                                 // the next snapshot tick doesn't immediately
                                 // re-trigger refresh_commit_log_after_head_change.
-                                self.last_head_oid = self.log_view.commits.first().map(|c| c.oid);
+                                self.pagination.last_head_oid = self.log_view.commits.first().map(|c| c.oid);
                             }
                             Err(e) => {
                                 tracing::warn!(error = %e, "failed to load commit log");

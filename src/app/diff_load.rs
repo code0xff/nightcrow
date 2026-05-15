@@ -325,7 +325,7 @@ impl App {
         // would be `skip`-mismatched after we prepend or reset below. Drop it.
         self.cancel_commit_log_page_fetch();
 
-        let page_size = self.cfg_commit_log_page_size;
+        let page_size = self.pagination.page_size;
         let page = match self.with_repo(|repo| load_commit_log_page(repo, 0, page_size)) {
             Ok(c) => c,
             Err(e) => {

@@ -64,7 +64,7 @@ impl App {
         // skip the reload branch (initial snapshot guard). Keeping the prior
         // repo's HEAD here would otherwise trigger a spurious commit log
         // reload for the new repo.
-        self.last_head_oid = None;
+        self.pagination.last_head_oid = None;
         // Branch label is workdir-scoped; clearing here prevents the previous
         // repo's branch from flashing in the header until the first snapshot
         // of the new repo arrives.

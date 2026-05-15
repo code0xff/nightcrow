@@ -10,6 +10,7 @@ mod session_io;
 mod snapshot_io;
 mod terminal_ctrl;
 
+pub use crate::app::commit_log_fetch::CommitLogPagination;
 pub use crate::runtime::snapshot::{SnapshotChannel, SnapshotMsg};
 #[cfg(test)]
 pub(crate) use crate::runtime::terminal::strip_escape_sequences;
@@ -102,13 +103,11 @@ pub struct App {
     /// `git2::Repository` is `!Send` and cannot be shared.
     pub(crate) repo_cache: Option<git2::Repository>,
     pub cfg_agent_indicator: crate::config::AgentIndicatorConfig,
-    /// How many commits to fetch per commit-log page. Sourced from
-    /// `LogConfig::commit_log_page_size` and held on `App` so paged loads and
-    /// the background prefetcher share a single value.
-    pub cfg_commit_log_page_size: usize,
-    /// How close to the loaded tail the selection must be before a background
-    /// prefetch starts. Sourced from `LogConfig::commit_log_prefetch_threshold`.
-    pub cfg_commit_log_prefetch_threshold: usize,
+    /// Commit-log page sizing, prefetch threshold, in-flight worker, and
+    /// the HEAD anchor used to detect external commits. See
+    /// `CommitLogPagination`. The Drop impl on the struct joins the
+    /// worker so a `change_repo` cannot leak the old-repo fetch.
+    pub pagination: CommitLogPagination,
     /// Auto-follow state (idle timer + last-steered path). Behaviour config
     /// lives separately on `cfg_agent_indicator` since the file-list
     /// renderer also reads it.
@@ -117,20 +116,10 @@ pub struct App {
     /// list in Log mode) is rendered full-screen. Mutually exclusive with
     /// `diff.fullscreen` and `terminal.fullscreen`.
     pub list_fullscreen: bool,
-    /// HEAD commit oid carried in the most recent snapshot. Used by
-    /// `ingest_snapshot` to detect new commits made through the embedded
-    /// terminal pane (or external tools) so the Log view's commit list can
-    /// auto-refresh without requiring the user to toggle modes.
-    pub(crate) last_head_oid: Option<git2::Oid>,
     /// Current branch shorthand carried in the latest snapshot. `None` for
     /// detached HEAD, unborn branches, or bare repos. Rendered in the top
     /// header so the user always sees which branch the workdir tracks.
     pub branch_name: Option<String>,
-    /// Receiver for the in-flight commit-log page worker. `Some` while a
-    /// background fetch is pending; cleared once the page is drained or
-    /// the request is cancelled (e.g. repo switch).
-    pub(crate) commit_log_page_rx:
-        Option<std::sync::mpsc::Receiver<commit_log_fetch::CommitLogPageMsg>>,
 }
 
 impl App {
@@ -155,14 +144,13 @@ impl App {
             pending_session: None,
             repo_cache: None,
             cfg_agent_indicator: crate::config::AgentIndicatorConfig::default(),
-            cfg_commit_log_page_size: crate::config::LogConfig::default().commit_log_page_size,
-            cfg_commit_log_prefetch_threshold: crate::config::LogConfig::default()
-                .commit_log_prefetch_threshold,
+            pagination: CommitLogPagination::with_config(
+                crate::config::LogConfig::default().commit_log_page_size,
+                crate::config::LogConfig::default().commit_log_prefetch_threshold,
+            ),
             auto_follow: AutoFollow::default(),
             list_fullscreen: false,
-            last_head_oid: None,
             branch_name: None,
-            commit_log_page_rx: None,
         };
 
         app.ensure_initial_terminal();
@@ -228,14 +216,13 @@ pub(crate) mod tests {
                 auto_follow: true,
                 ..crate::config::AgentIndicatorConfig::default()
             },
-            cfg_commit_log_page_size: crate::config::LogConfig::default().commit_log_page_size,
-            cfg_commit_log_prefetch_threshold: crate::config::LogConfig::default()
-                .commit_log_prefetch_threshold,
+            pagination: CommitLogPagination::with_config(
+                crate::config::LogConfig::default().commit_log_page_size,
+                crate::config::LogConfig::default().commit_log_prefetch_threshold,
+            ),
             auto_follow: AutoFollow::default(),
             list_fullscreen: false,
-            last_head_oid: None,
             branch_name: None,
-            commit_log_page_rx: None,
         }
     }
 
@@ -948,7 +935,7 @@ pub(crate) mod tests {
         app.mode = ViewMode::Log;
         app.log_view.commits = load_commit_log(&open_repo(&path), 500).unwrap();
         app.log_view.selected = 0;
-        app.last_head_oid = app.log_view.commits.first().map(|c| c.oid);
+        app.pagination.last_head_oid = app.log_view.commits.first().map(|c| c.oid);
         assert_eq!(app.log_view.commits.len(), 2);
 
         // Make a new commit in the same repo (simulates the terminal pane
@@ -981,7 +968,7 @@ pub(crate) mod tests {
         // Pre-load a stale 1-entry list; in Status mode it must NOT be
         // refreshed even when HEAD moves.
         app.log_view.commits = load_commit_log(&open_repo(&path), 500).unwrap();
-        app.last_head_oid = app.log_view.commits.first().map(|c| c.oid);
+        app.pagination.last_head_oid = app.log_view.commits.first().map(|c| c.oid);
         assert_eq!(app.log_view.commits.len(), 1);
         assert_eq!(app.mode, ViewMode::Status);
 
@@ -1012,7 +999,7 @@ pub(crate) mod tests {
         app.mode = ViewMode::Status;
         app.log_view
             .set_commits(load_commit_log(&open_repo(&path), 500).unwrap());
-        app.last_head_oid = app.log_view.commits.first().map(|c| c.oid);
+        app.pagination.last_head_oid = app.log_view.commits.first().map(|c| c.oid);
         assert_eq!(app.log_view.commits[0].summary, "first");
 
         run_git(&path, &["commit", "--allow-empty", "-m", "second"]);
@@ -1034,7 +1021,7 @@ pub(crate) mod tests {
         assert_eq!(app.log_view.selected, 1);
         assert_eq!(app.log_view.commits[app.log_view.selected].summary, "first");
         assert!(app.log_view.fully_loaded);
-        assert!(app.commit_log_page_rx.is_none());
+        assert!(app.pagination.page_rx.is_none());
     }
 
     #[test]
@@ -1054,7 +1041,7 @@ pub(crate) mod tests {
         // Select the older commit at the bottom.
         app.log_view.selected = 1;
         let prior_oid = app.log_view.commits[1].oid;
-        app.last_head_oid = app.log_view.commits.first().map(|c| c.oid);
+        app.pagination.last_head_oid = app.log_view.commits.first().map(|c| c.oid);
 
         run_git(&path, &["commit", "--allow-empty", "-m", "third"]);
 
@@ -1084,7 +1071,7 @@ pub(crate) mod tests {
         app.mode = ViewMode::Log;
         app.log_view.commits = load_commit_log(&open_repo(&path), 500).unwrap();
         app.log_view.selected = 0;
-        app.last_head_oid = app.log_view.commits.first().map(|c| c.oid);
+        app.pagination.last_head_oid = app.log_view.commits.first().map(|c| c.oid);
 
         // Reset to before the second commit so the prior HEAD oid is gone,
         // then add a different commit on top.
@@ -1117,7 +1104,7 @@ pub(crate) mod tests {
         app.log_view.commits = load_commit_log(&open_repo(&path), 500).unwrap();
         app.log_view.selected = 0; // 'doomed' commit at top
         app.log_view.drill_down = true;
-        app.last_head_oid = app.log_view.commits.first().map(|c| c.oid);
+        app.pagination.last_head_oid = app.log_view.commits.first().map(|c| c.oid);
 
         // Drop the selected commit via reset, then advance HEAD with a new one.
         run_git(&path, &["reset", "--hard", "HEAD~1"]);
@@ -1146,7 +1133,7 @@ pub(crate) mod tests {
         app.mode = ViewMode::Log;
         // No prior commits loaded; last_head_oid = None (default).
         assert!(app.log_view.commits.is_empty());
-        assert!(app.last_head_oid.is_none());
+        assert!(app.pagination.last_head_oid.is_none());
 
         tx.send(SnapshotMsg::Ok(snapshot_with_head(&path), HashMap::new()))
             .unwrap();
@@ -1156,7 +1143,7 @@ pub(crate) mod tests {
         // toggle_mode's / restore_log_session's job. We only refresh on
         // subsequent HEAD changes.
         assert!(app.log_view.commits.is_empty());
-        assert!(app.last_head_oid.is_some());
+        assert!(app.pagination.last_head_oid.is_some());
     }
 
     #[test]
@@ -1881,8 +1868,8 @@ pub(crate) mod tests {
     fn seed_log_app(entries: usize, page_size: usize, threshold: usize) -> App {
         let mut app = app_with_files(vec![]);
         app.mode = ViewMode::Log;
-        app.cfg_commit_log_page_size = page_size;
-        app.cfg_commit_log_prefetch_threshold = threshold;
+        app.pagination.page_size = page_size;
+        app.pagination.prefetch_threshold = threshold;
         let commits: Vec<_> = (0..entries).map(|i| fake_entry(i as i64)).collect();
         app.log_view.set_commits(commits);
         app
@@ -1897,7 +1884,7 @@ pub(crate) mod tests {
         app.maybe_prefetch_commit_log();
 
         assert!(!app.log_view.pending_fetch);
-        assert!(app.commit_log_page_rx.is_none());
+        assert!(app.pagination.page_rx.is_none());
     }
 
     #[test]
@@ -1905,7 +1892,7 @@ pub(crate) mod tests {
         let mut app = seed_log_app(0, 5, 5);
         app.maybe_prefetch_commit_log();
         assert!(!app.log_view.pending_fetch);
-        assert!(app.commit_log_page_rx.is_none());
+        assert!(app.pagination.page_rx.is_none());
     }
 
     #[test]
@@ -1917,7 +1904,7 @@ pub(crate) mod tests {
         app.maybe_prefetch_commit_log();
 
         assert!(!app.log_view.pending_fetch);
-        assert!(app.commit_log_page_rx.is_none());
+        assert!(app.pagination.page_rx.is_none());
     }
 
     #[test]
@@ -1929,7 +1916,7 @@ pub(crate) mod tests {
         app.maybe_prefetch_commit_log();
 
         assert!(!app.log_view.pending_fetch);
-        assert!(app.commit_log_page_rx.is_none());
+        assert!(app.pagination.page_rx.is_none());
     }
 
     #[test]
@@ -1946,11 +1933,11 @@ pub(crate) mod tests {
         app.maybe_prefetch_commit_log();
 
         assert!(app.log_view.pending_fetch);
-        assert!(app.commit_log_page_rx.is_some());
+        assert!(app.pagination.page_rx.is_some());
 
         // Wait for the worker to land so its result doesn't leak into a
         // subsequent test scenario.
-        let rx = app.commit_log_page_rx.take().unwrap();
+        let rx = app.pagination.page_rx.take().unwrap();
         let _ = rx.recv_timeout(Duration::from_secs(2)).unwrap();
         drop(dir);
     }
@@ -1966,15 +1953,15 @@ pub(crate) mod tests {
         app.log_view.selected = 6;
 
         app.maybe_prefetch_commit_log();
-        let first_rx_ptr = app.commit_log_page_rx.as_ref().map(|r| r as *const _);
+        let first_rx_ptr = app.pagination.page_rx.as_ref().map(|r| r as *const _);
         assert!(first_rx_ptr.is_some());
 
         app.maybe_prefetch_commit_log();
-        let second_rx_ptr = app.commit_log_page_rx.as_ref().map(|r| r as *const _);
+        let second_rx_ptr = app.pagination.page_rx.as_ref().map(|r| r as *const _);
         // The second call must reuse the same receiver — no second spawn.
         assert_eq!(first_rx_ptr, second_rx_ptr);
 
-        let rx = app.commit_log_page_rx.take().unwrap();
+        let rx = app.pagination.page_rx.take().unwrap();
         let _ = rx.recv_timeout(Duration::from_secs(2)).unwrap();
         drop(dir);
     }
@@ -1984,7 +1971,7 @@ pub(crate) mod tests {
         let mut app = seed_log_app(3, 5, 1);
         app.log_view.pending_fetch = true;
         let (tx, rx) = mpsc::channel();
-        app.commit_log_page_rx = Some(rx);
+        app.pagination.page_rx = Some(rx);
         // Worker thinks the loaded tail was 3 when it ran; this matches.
         tx.send(CommitLogPageMsg {
             skip: 3,
@@ -2000,7 +1987,7 @@ pub(crate) mod tests {
         // Page was shorter than page_size → end of history reached.
         assert!(app.log_view.fully_loaded);
         assert!(!app.log_view.pending_fetch);
-        assert!(app.commit_log_page_rx.is_none());
+        assert!(app.pagination.page_rx.is_none());
     }
 
     #[test]
@@ -2008,7 +1995,7 @@ pub(crate) mod tests {
         let mut app = seed_log_app(3, 5, 1);
         app.log_view.pending_fetch = true;
         let (tx, rx) = mpsc::channel();
-        app.commit_log_page_rx = Some(rx);
+        app.pagination.page_rx = Some(rx);
         // skip=2 doesn't match loaded_count=3 → discard (e.g. HEAD changed
         // between spawn and reply, resetting pagination).
         tx.send(CommitLogPageMsg {
@@ -2031,12 +2018,12 @@ pub(crate) mod tests {
         let mut app = seed_log_app(3, 5, 1);
         app.log_view.pending_fetch = true;
         let (_tx, rx) = mpsc::channel::<CommitLogPageMsg>();
-        app.commit_log_page_rx = Some(rx);
+        app.pagination.page_rx = Some(rx);
 
         app.change_repo(path.clone());
 
         assert!(!app.log_view.pending_fetch);
-        assert!(app.commit_log_page_rx.is_none());
+        assert!(app.pagination.page_rx.is_none());
         drop(dir);
     }
 
