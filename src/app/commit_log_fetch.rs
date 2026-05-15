@@ -309,7 +309,13 @@ impl App {
             new_head_commits.append(&mut self.log_view.commits);
             self.log_view.commits = new_head_commits;
             self.log_view.loaded_count = self.log_view.commits.len();
-            self.log_view.fully_loaded = page_is_short;
+            // `page_is_short` only describes the freshly fetched first page;
+            // it doesn't account for cached later pages. Preserve prior
+            // completion state and only promote to fully_loaded when the
+            // new revwalk demonstrably fits within one page.
+            if page_is_short && self.log_view.commits.len() <= page_size {
+                self.log_view.fully_loaded = true;
+            }
             self.log_view.commit_width_cache.set(None);
             self.log_view.clear_pending();
             // Slide the selection so the user keeps looking at the same
