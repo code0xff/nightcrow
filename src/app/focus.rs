@@ -1,5 +1,4 @@
 use super::{App, Focus, ViewMode};
-use crate::git::diff::load_commit_log;
 
 impl App {
     pub fn toggle_mode(&mut self) {
@@ -21,29 +20,17 @@ impl App {
                     self.refresh_commit_log_after_head_change();
                 } else {
                     if self.log_view.commits.is_empty() {
+                        // First entry with no cached pages: spawn a background
+                        // refresh fetch instead of loading on the UI thread. The
+                        // diff pane stays empty until the worker replies via
+                        // `apply_refresh_page`, which then loads the commit diff
+                        // for the freshly populated selection.
                         self.cancel_commit_log_page_fetch();
-                        let page_size = self.pagination.page_size;
-                        match self.with_repo(|repo| load_commit_log(repo, page_size)) {
-                            Ok(commits) => {
-                                self.log_view
-                                    .set_commits_from_first_page(commits, page_size);
-                                self.log_view.selected = 0;
-                                // Sync last_head_oid to the freshly loaded HEAD so
-                                // the next snapshot tick doesn't immediately
-                                // re-trigger refresh_commit_log_after_head_change.
-                                self.pagination.last_head_oid =
-                                    self.log_view.commits.first().map(|c| c.oid);
-                            }
-                            Err(e) => {
-                                tracing::warn!(error = %e, "failed to load commit log");
-                                self.log_view.set_commits(Vec::new());
-                                self.log_view.selected = 0;
-                                self.status = Some(format!("git error: {e}"));
-                            }
-                        }
+                        self.spawn_commit_log_refresh_fetch(None, None);
+                    } else {
+                        self.load_commit_diff_for_selected();
+                        self.maybe_prefetch_commit_log();
                     }
-                    self.load_commit_diff_for_selected();
-                    self.maybe_prefetch_commit_log();
                 }
             }
             ViewMode::Log => {

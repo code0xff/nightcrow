@@ -1,7 +1,7 @@
 use super::{App, DiffPaneView, FileViewKey, FileViewState, ViewMode};
 use crate::git::diff::{
-    DiffHunk, load_commit_diff, load_commit_file_blob, load_commit_file_diff, load_commit_log_page,
-    load_file_diff, load_workdir_file, parse_hunk_new_start,
+    DiffHunk, load_commit_diff, load_commit_file_blob, load_commit_file_diff, load_file_diff,
+    load_workdir_file, parse_hunk_new_start,
 };
 
 /// Post-load behaviour for `apply_diff_result`. Replaces the prior 3-flag
@@ -313,11 +313,11 @@ impl App {
 
     /// Reload the Log view's commit list after the snapshot worker detected a
     /// HEAD oid change (new commit via the terminal pane, external push,
-    /// amend, branch switch). Preserves the selection by oid so the user
-    /// keeps looking at the same commit when one is appended above; falls
-    /// back to the freshest commit when the prior oid disappeared (amend/
-    /// force-push). Drill-down stays if its commit survives, otherwise it
-    /// collapses to the commit-level diff view.
+    /// amend, branch switch). Captures the current selection/head oids and
+    /// spawns a background fetch; the merge happens in `apply_refresh_page`
+    /// when the worker replies so the UI tick never blocks on a 100-commit
+    /// revwalk. Selection-by-oid preservation, prepend-vs-reset detection,
+    /// and drill-down survival all live on that arrival path.
     pub(crate) fn refresh_commit_log_after_head_change(&mut self) {
         let prior_selected_oid = self
             .log_view
@@ -326,94 +326,10 @@ impl App {
             .map(|c| c.oid);
         let prior_head_oid = self.log_view.commits.first().map(|c| c.oid);
 
-        // Any in-flight worker was launched against the old head; its result
-        // would be `skip`-mismatched after we prepend or reset below. Drop it.
+        // Any in-flight worker (tail prefetch or older refresh) was launched
+        // against state that no longer matches; drop it so only this fresh
+        // refresh's reply can land.
         self.cancel_commit_log_page_fetch();
-
-        let page_size = self.pagination.page_size;
-        let page = match self.with_repo(|repo| load_commit_log_page(repo, 0, page_size)) {
-            Ok(c) => c,
-            Err(e) => {
-                tracing::warn!(error = %e, "failed to refresh commit log after HEAD change");
-                return;
-            }
-        };
-
-        // If the previous head still appears in the freshly fetched first
-        // page and the fresh tail lines up with the cached list, treat the
-        // change as a fast-forward / simple new commit: prepend the newer
-        // entries onto the existing list so all accumulated pages stay valid.
-        // A merge can interleave side-branch commits after the old head; in
-        // that case cached pages are no longer a contiguous prefix of the
-        // new revwalk, so reset to the freshly loaded first page instead.
-        let prepend_idx = prior_head_oid.and_then(|oid| page.iter().position(|c| c.oid == oid));
-        let page_is_short = page.len() < page_size;
-        let can_prepend = prepend_idx.is_some_and(|idx| {
-            let fresh_tail = &page[idx..];
-            !self.log_view.commits.is_empty()
-                && fresh_tail.len() <= self.log_view.commits.len()
-                && fresh_tail
-                    .iter()
-                    .zip(self.log_view.commits.iter())
-                    .all(|(fresh, cached)| fresh.oid == cached.oid)
-        });
-        if let Some(idx) = prepend_idx
-            && can_prepend
-        {
-            let mut new_head_commits: Vec<_> = page.into_iter().take(idx).collect();
-            let n_new = new_head_commits.len();
-            new_head_commits.append(&mut self.log_view.commits);
-            self.log_view.commits = new_head_commits;
-            self.log_view.loaded_count = self.log_view.commits.len();
-            self.log_view.fully_loaded = page_is_short;
-            self.log_view.commit_width_cache.set(None);
-            // Slide the selection so the user keeps looking at the same
-            // commit even though new entries appeared above it.
-            if let Some(prior_oid) = prior_selected_oid
-                && let Some(pos) = self
-                    .log_view
-                    .commits
-                    .iter()
-                    .position(|c| c.oid == prior_oid)
-            {
-                self.log_view.selected = pos;
-            } else {
-                // `prior_selected_oid` was Some, so the cached list contained
-                // that oid. If the position lookup fails despite the list
-                // being a prefix of the new one — corruption, or a race we
-                // haven't accounted for — clamp to the new bounds so a
-                // downstream `commits.get(selected)` lands on the tail
-                // instead of returning None and clearing the diff pane.
-                self.log_view.selected = self
-                    .log_view
-                    .selected
-                    .saturating_add(n_new)
-                    .min(self.log_view.commits.len().saturating_sub(1));
-            }
-        } else {
-            self.log_view.set_commits_from_first_page(page, page_size);
-            self.log_view.selected = prior_selected_oid
-                .and_then(|oid| self.log_view.commits.iter().position(|c| c.oid == oid))
-                .unwrap_or(0);
-        }
-        self.log_view.commit_scroll_x = 0;
-
-        // Drill-down survives only if the commit it was opened on is still in
-        // the (possibly extended) list. Otherwise drop back to the commit-
-        // level diff.
-        if self.log_view.drill_down
-            && prior_selected_oid
-                .is_none_or(|oid| !self.log_view.commits.iter().any(|c| c.oid == oid))
-        {
-            self.log_view.reset_drill_down();
-        }
-
-        if self.log_view.drill_down {
-            self.load_file_diff_for_log_file_selected();
-        } else {
-            self.load_commit_diff_for_selected();
-        }
-
-        self.maybe_prefetch_commit_log();
+        self.spawn_commit_log_refresh_fetch(prior_selected_oid, prior_head_oid);
     }
 }

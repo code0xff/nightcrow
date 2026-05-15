@@ -945,6 +945,7 @@ pub(crate) mod tests {
         tx.send(SnapshotMsg::Ok(snapshot_with_head(&path), HashMap::new()))
             .unwrap();
         app.poll_snapshot();
+        app.flush_commit_log_fetch_for_test(Duration::from_secs(2));
 
         assert_eq!(
             app.log_view.commits.len(),
@@ -1014,6 +1015,7 @@ pub(crate) mod tests {
         assert_eq!(app.log_view.commits[0].summary, "first");
 
         app.toggle_mode();
+        app.flush_commit_log_fetch_for_test(Duration::from_secs(2));
 
         assert_eq!(app.mode, ViewMode::Log);
         assert_eq!(app.log_view.commits.len(), 2);
@@ -1048,6 +1050,7 @@ pub(crate) mod tests {
         tx.send(SnapshotMsg::Ok(snapshot_with_head(&path), HashMap::new()))
             .unwrap();
         app.poll_snapshot();
+        app.flush_commit_log_fetch_for_test(Duration::from_secs(2));
 
         // The 'first' commit now sits at index 2 because a new commit is
         // prepended. Selection must follow it by oid, not by index.
@@ -1081,6 +1084,7 @@ pub(crate) mod tests {
         tx.send(SnapshotMsg::Ok(snapshot_with_head(&path), HashMap::new()))
             .unwrap();
         app.poll_snapshot();
+        app.flush_commit_log_fetch_for_test(Duration::from_secs(2));
 
         // The original selected commit ('second') no longer exists; selection
         // must fall back to the newest (index 0).
@@ -1113,6 +1117,7 @@ pub(crate) mod tests {
         tx.send(SnapshotMsg::Ok(snapshot_with_head(&path), HashMap::new()))
             .unwrap();
         app.poll_snapshot();
+        app.flush_commit_log_fetch_for_test(Duration::from_secs(2));
 
         // The drill-down's commit oid is gone, so drill-down must collapse
         // and the view drops back to the commit-level diff.
@@ -1853,7 +1858,7 @@ pub(crate) mod tests {
     // Commit log pagination
     // ---------------------------------------------------------------
 
-    use crate::app::commit_log_fetch::CommitLogPageMsg;
+    use crate::app::commit_log_fetch::{CommitLogFetchKind, CommitLogPageMsg};
 
     fn fake_entry(time: i64) -> CommitEntry {
         CommitEntry {
@@ -1974,6 +1979,7 @@ pub(crate) mod tests {
         app.pagination.page_rx = Some(rx);
         // Worker thinks the loaded tail was 3 when it ran; this matches.
         tx.send(CommitLogPageMsg {
+            kind: CommitLogFetchKind::Tail,
             skip: 3,
             page_size: 5,
             result: Ok(vec![fake_entry(3), fake_entry(4)]),
@@ -1999,6 +2005,7 @@ pub(crate) mod tests {
         // skip=2 doesn't match loaded_count=3 → discard (e.g. HEAD changed
         // between spawn and reply, resetting pagination).
         tx.send(CommitLogPageMsg {
+            kind: CommitLogFetchKind::Tail,
             skip: 2,
             page_size: 5,
             result: Ok(vec![fake_entry(2), fake_entry(3)]),
@@ -2048,6 +2055,7 @@ pub(crate) mod tests {
         app.log_view.selected = 0;
 
         app.refresh_commit_log_after_head_change();
+        app.flush_commit_log_fetch_for_test(Duration::from_secs(2));
 
         // The fresh c1 commit is prepended; selection shifts so the user keeps
         // looking at c0.
@@ -2088,6 +2096,7 @@ pub(crate) mod tests {
         );
 
         app.refresh_commit_log_after_head_change();
+        app.flush_commit_log_fetch_for_test(Duration::from_secs(2));
 
         let summaries: Vec<_> = app
             .log_view
@@ -2126,6 +2135,7 @@ pub(crate) mod tests {
         app.log_view.selected = 0;
 
         app.refresh_commit_log_after_head_change();
+        app.flush_commit_log_fetch_for_test(Duration::from_secs(2));
 
         // c0 from the actual repo replaces the ghost entry.
         assert_eq!(app.log_view.commits.len(), 1);
