@@ -111,16 +111,14 @@ impl App {
                 }
             }
             Err(_) => {
-                // Preserve the prior scroll position on a transient KeepScroll
-                // error so a momentarily-unreadable file (e.g. mid-rename)
-                // doesn't snap the viewport back to the top when it returns.
-                let preserved_scroll = match mode {
-                    DiffApply::KeepScroll(prev) => Some(prev),
-                    _ => None,
-                };
-                self.clear_diff_state();
-                if let Some(prev) = preserved_scroll {
-                    self.diff.scroll = prev;
+                // For a KeepScroll error (an in-place refresh of the same
+                // file) we keep the prior diff on screen: this is usually a
+                // transient race (mid-rename, slow git index update) and
+                // clearing would both flash an empty pane and leave `scroll`
+                // dangling past the now-empty `max_scroll`. The error is
+                // already surfaced in `self.status` by the loader.
+                if !matches!(mode, DiffApply::KeepScroll(_)) {
+                    self.clear_diff_state();
                 }
             }
         }
@@ -207,15 +205,21 @@ impl App {
         };
         match result {
             Ok(content) => {
-                fv.scroll = anchor
-                    .map(|n| n.saturating_sub(1).saturating_sub(2))
-                    .unwrap_or(0);
                 fv.total_lines = if content.is_empty() {
                     0
                 } else {
                     content.lines().count()
                 };
                 fv.content = content;
+                // Initial scroll: 2 lines of context above the hunk's new-side
+                // start line, converted from 1-based to 0-based. Clamp against
+                // `max_scroll` so a stale anchor past the current file length
+                // (file truncated since the diff was computed) doesn't open
+                // the file view on a blank region the user has to page back from.
+                let initial = anchor
+                    .map(|n| n.saturating_sub(1).saturating_sub(2))
+                    .unwrap_or(0);
+                fv.scroll = initial.min(fv.max_scroll());
             }
             Err(e) => {
                 fv.error = Some(e.to_string());
