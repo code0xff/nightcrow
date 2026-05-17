@@ -8,35 +8,8 @@
 
 use std::sync::mpsc::{self, Receiver};
 use std::thread::{self, JoinHandle};
-use std::time::{Duration, Instant};
 
-/// Spin briefly waiting for the worker to finish, then either join it or
-/// detach the handle. Used at known quiescent moments (repo switch, after
-/// reply drain) where the worker is either already done or microseconds
-/// away from exiting via its failed `tx.send`. Detaches without panicking
-/// on timeout so the UI is never blocked by a hung worker.
-fn try_timed_join(handle: JoinHandle<()>, timeout: Duration) {
-    let deadline = Instant::now() + timeout;
-    while !handle.is_finished() && Instant::now() < deadline {
-        // Short sleep keeps the busy-wait cheap; the common path is one
-        // iteration because the worker exits as soon as it tries to send.
-        thread::sleep(Duration::from_micros(200));
-    }
-    if handle.is_finished() {
-        if let Err(e) = handle.join() {
-            tracing::warn!(?e, "commit-log page worker panicked");
-        }
-    } else {
-        tracing::debug!("commit-log page worker still running at detach; reaping deferred to OS");
-        drop(handle);
-    }
-}
-
-/// Upper bound for `try_timed_join` at known-quiescent call sites. The
-/// worker exits at the next `tx.send` after the receiver is dropped, so
-/// a few milliseconds is generous enough to absorb scheduling jitter
-/// without ever stalling the UI noticeably.
-const REAP_TIMEOUT: Duration = Duration::from_millis(5);
+use crate::util::{REAP_TIMEOUT, try_timed_join};
 
 use git2::{Oid, Repository};
 
@@ -121,12 +94,12 @@ impl CommitLogPagination {
 impl Drop for CommitLogPagination {
     fn drop(&mut self) {
         // Drop the receiver first so the worker's next `tx.send` fails
-        // and the loop exits; then await the thread.
+        // and the loop exits; then await the thread with a bounded
+        // timeout — a worker stuck mid-`load_commit_log_page` on libgit2
+        // must not freeze app shutdown / repo switch.
         drop(self.page_rx.take());
-        if let Some(h) = self.handle.take()
-            && let Err(e) = h.join()
-        {
-            tracing::warn!(?e, "commit-log page worker panicked during shutdown");
+        if let Some(h) = self.handle.take() {
+            try_timed_join(h, REAP_TIMEOUT);
         }
     }
 }

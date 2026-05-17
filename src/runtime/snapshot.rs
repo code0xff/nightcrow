@@ -125,14 +125,11 @@ impl Drop for SnapshotChannel {
         drop(self.stop_tx.take());
         // Wait for the worker to finish its current `load_snapshot` so a
         // `change_repo` doesn't leave the old-repo worker running with a
-        // live `git2::Repository` after the new channel is installed. A
-        // panic in the worker is logged rather than propagated — the
-        // UI thread is in the middle of a drop and cannot meaningfully
-        // recover.
-        if let Some(h) = self.handle.take()
-            && let Err(e) = h.join()
-        {
-            tracing::warn!(?e, "snapshot worker panicked during shutdown");
+        // live `git2::Repository` after the new channel is installed.
+        // Bounded join: a worker stuck inside libgit2 (corrupted packfile,
+        // hung NFS) must not freeze app shutdown / repo switch.
+        if let Some(h) = self.handle.take() {
+            crate::util::try_timed_join(h, crate::util::REAP_TIMEOUT);
         }
     }
 }

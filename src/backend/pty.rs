@@ -1,4 +1,5 @@
 use super::{BackendEvent, PaneId, TerminalBackend};
+use crate::util::try_timed_join;
 use anyhow::Result;
 use portable_pty::{CommandBuilder, NativePtySystem, PtySize, PtySystem};
 use std::collections::BTreeMap;
@@ -6,6 +7,13 @@ use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{self, Receiver};
 use std::thread;
+use std::time::Duration;
+
+/// Reap window for PTY reader / wait threads. Bigger than the commit-log
+/// REAP_TIMEOUT because `read()` on a PTY master can stay blocked if a
+/// daemonized grandchild inherited the slave fd — portable_pty does not
+/// guarantee CLOEXEC on every platform, so the join must be detachable.
+const PTY_REAP_TIMEOUT: Duration = Duration::from_millis(50);
 
 /// Max events drained from any one pane in a single `drain_events` call.
 /// A pane that produces output faster than the UI loop consumes it would
@@ -39,19 +47,17 @@ impl Drop for PtyPane {
         // hang.
         self.writer.take();
         self.master.take();
-        // Join so closing a pane cannot leave reader/wait threads alive
-        // holding fds against the (possibly killed) child. We're inside
-        // drop, so a panic in either thread is logged rather than
-        // propagated.
-        if let Some(h) = self.reader_handle.take()
-            && let Err(e) = h.join()
-        {
-            tracing::warn!(?e, "PTY reader thread panicked during shutdown");
+        // Bounded join so closing a pane cannot leave reader/wait threads
+        // alive holding fds against the (possibly killed) child. If a
+        // daemonized grandchild kept the slave fd open, the reader's
+        // `read()` won't return EOF; detach in that case rather than
+        // freezing the close. We're inside drop, so a panic in either
+        // thread is logged rather than propagated.
+        if let Some(h) = self.reader_handle.take() {
+            try_timed_join(h, PTY_REAP_TIMEOUT);
         }
-        if let Some(h) = self.wait_handle.take()
-            && let Err(e) = h.join()
-        {
-            tracing::warn!(?e, "PTY wait thread panicked during shutdown");
+        if let Some(h) = self.wait_handle.take() {
+            try_timed_join(h, PTY_REAP_TIMEOUT);
         }
     }
 }

@@ -9,6 +9,7 @@ mod session;
 #[cfg(test)]
 mod test_util;
 mod ui;
+mod util;
 
 use anyhow::{Context, Result};
 use app::{App, Focus, ViewMode};
