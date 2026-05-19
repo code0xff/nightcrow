@@ -1,6 +1,6 @@
 # nightcrow
 
-TUI for Agentic Coding — git diff viewer + commit log + multi-terminal panes in one terminal window.
+Agent-adjacent terminal workbench — git diff viewer, commit log, and multi-pane terminal multiplexer in one window. Tuned for sitting next to LLM CLIs (Claude Code, Codex, aider) or any process that touches your working tree, but nightcrow itself has no AI ontology — it watches files and PTYs, not agents.
 
 ```
  ~/projects/myapp   main   ↑2 ↓0
@@ -95,9 +95,9 @@ While scrolled, the terminal border title shows `[SCROLL — shift+pgdn: down | 
 
 The tab bar picks up OSC 0/2 window-title escape sequences, so programs like `claude`, `vim`, `ssh`, or `cd`-aware shell prompts can rename their own tab. Panes without an emitted title fall back to a default label.
 
-## Agent-aware focus indicator
+## Recent-activity focus indicator
 
-Files modified within the last `hot_window_secs` seconds are rendered in the accent color (bold for the first 5 seconds, normal until the window expires). When the file list is in focus and you have not navigated in the last 2 seconds, the selection auto-follows to the freshest hot file so the diff updates as the agent works. Manual navigation (`j` / `k` / arrows / PgUp / PgDn) immediately suppresses auto-follow until you go idle again.
+Files modified within the last `hot_window_secs` seconds — whether by an agent in a terminal pane, your editor, or a build/format script — are rendered in the accent color (bold for the first 5 seconds, normal until the window expires). When the file list is in focus and you have not navigated in the last 2 seconds, the selection auto-follows to the freshest hot file so the diff updates as files change. Manual navigation (`j` / `k` / arrows / PgUp / PgDn) immediately suppresses auto-follow until you go idle again.
 
 Configurable under `[agent_indicator]` (see below).
 

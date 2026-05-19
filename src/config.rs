@@ -184,9 +184,10 @@ pub struct AgentIndicatorConfig {
     /// Must be >= 3 so the bright→normal fade transition stays observable.
     pub hot_window_secs: u64,
     /// When idle (no manual navigation for >=2s), move selection to the
-    /// freshest hot file. Opt-in: set to `true` to enable the "AI cockpit"
-    /// workflow where the file list follows whichever file was most recently
-    /// touched on disk.
+    /// freshest hot file. Opt-in: set to `true` so the file list follows
+    /// whichever file was most recently touched on disk — useful when an
+    /// agent, build script, or external process is editing files in a
+    /// neighbouring pane.
     pub auto_follow: bool,
 }
 

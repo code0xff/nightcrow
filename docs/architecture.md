@@ -2,8 +2,9 @@
 
 ## Overview
 
-nightcrow는 Agentic Coding 워크플로우를 위한 Rust TUI 애플리케이션이다.
-상단 패널에서 git diff를 실시간 추적하고, 하단 패널에서 여러 LLM CLI를 동시에 실행한다.
+nightcrow는 agent-adjacent Rust TUI 애플리케이션이다.
+상단 패널에서 git diff를 실시간 추적하고, 하단 패널에서 임의의 프로세스(주로 LLM CLI나 빌드/테스트 러너)를 동시에 실행한다.
+nightcrow 자체는 AI에 대한 ontology를 갖지 않는다 — agent든 사람이든 동일한 PTY와 파일 mtime을 본다.
 
 ## Layout
 

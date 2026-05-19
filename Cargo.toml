@@ -2,7 +2,7 @@
 name = "nightcrow"
 version = "0.1.0"
 edition = "2024"
-description = "TUI for Agentic Coding — git diff viewer + multi-terminal panes"
+description = "Agent-adjacent terminal workbench — git diff viewer + multi-terminal panes for running CLIs next to your code"
 license = "MIT"
 keywords = ["tui", "git", "terminal", "agentic", "cli"]
 categories = ["command-line-utilities", "development-tools"]
