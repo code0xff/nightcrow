@@ -143,7 +143,7 @@
 
 - service_goal: 개발자가 config.toml에 시작 명령(예: LLM CLI)들을 예약하거나 실행 시 CLI 옵션으로 지정하면, nightcrow 실행 시 그 개수만큼 터미널 패널이 자동으로 생성되어 각 명령이 바로 실행된 상태로 떠 있다
 - acceptance: config.toml의 `[[startup_command]]` 항목 개수만큼 시작 시 하단 터미널 pane이 생성되고 각 명령이 자동 실행됨, `nightcrow --exec "<command>"`(반복 지정)로도 실행 시점에 동일하게 pane이 생성·실행됨, 각 pane은 지정한 이름으로 라벨링됨, config와 CLI를 함께 쓰면 정의된 병합 순서대로 동작함, startup_command/--exec가 없으면 기존 단일 빈 셸 동작을 유지함, 잘못된 설정(빈 command, 합산 개수 초과)은 명확한 에러로 거부됨
-- status: active
+- status: done
 
 ### Workstream 1
 
@@ -164,4 +164,4 @@
 - Goal: 실행 시 CLI 옵션(`--exec`)으로 터미널 pane 실행
 - Deliverables: `clap` `Cli`에 `--exec <command>`(여러 번 지정 가능, `Vec<String>`) 추가, WS2의 `create_pane_with` spawn 경로 재사용, config의 `startup_commands`와 CLI `--exec`를 병합하는 단일 진입점 정의(config 항목 먼저 → CLI `--exec` 항목 이어붙임), 병합 결과에도 `MAX_STARTUP_COMMANDS`(9) 합산 한도 적용 및 초과 시 명확한 에러, CLI 항목은 name 없이 command 텍스트를 라벨로 사용, README/`--help`에 `--exec` 사용법 문서화, 병합·한도·spawn 단위 테스트
 - Exit Criteria: `nightcrow --exec "claude" --exec "codex"` 실행 시 해당 pane들이 자동 생성·실행됨, config `[[startup_command]]`와 `--exec`를 함께 쓰면 config 먼저 → CLI 순서로 pane이 뜸, 합산 개수가 9 초과 시 시작이 명확한 에러로 중단됨, 옵션 미지정 시 단일 빈 셸 유지, `cargo test`/`cargo clippy` 통과
-- status: pending
+- status: done
