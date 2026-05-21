@@ -113,7 +113,7 @@ nightcrow saves the current state on exit and restores it on the next launch for
 
 ## Configuration
 
-Config file: `~/.config/nightcrow/config.toml` (all fields optional, defaults shown).
+Config file: `~/.nightcrow/config.toml` (all fields optional, defaults shown).
 
 ```toml
 [layout]

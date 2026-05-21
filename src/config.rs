@@ -222,7 +222,7 @@ impl Default for AgentIndicatorConfig {
 }
 
 fn default_config_path() -> Option<PathBuf> {
-    dirs::config_dir().map(|d| d.join("nightcrow").join("config.toml"))
+    dirs::home_dir().map(|h| h.join(".nightcrow").join("config.toml"))
 }
 
 pub fn load_config() -> Result<Config> {
