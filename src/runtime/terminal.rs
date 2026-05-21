@@ -215,16 +215,29 @@ impl TerminalState {
         exited
     }
 
-    /// Allocate a new backend pane and matching vt100 parser. The caller is
-    /// expected to surface any error to the user.
+    /// Allocate a new bare interactive-shell pane. Thin wrapper over
+    /// `create_pane_with` for the common "open an empty terminal" path.
     pub fn create_pane(&mut self) -> anyhow::Result<()> {
+        self.create_pane_with(None, None)
+    }
+
+    /// Allocate a new backend pane and matching vt100 parser. `command`, when
+    /// present, is run in the pane's shell immediately; `label` sets the
+    /// initial tab title (a program that emits OSC 0/2 can still override it
+    /// later). Both default sensibly when `None`. The caller is expected to
+    /// surface any error to the user.
+    pub fn create_pane_with(
+        &mut self,
+        command: Option<&str>,
+        label: Option<&str>,
+    ) -> anyhow::Result<()> {
         let (rows, cols) = self.size;
         let backend = self
             .backend
             .as_mut()
             .ok_or_else(|| anyhow::anyhow!("no terminal backend available"))?;
 
-        let id = backend.create_pane(rows.max(1), cols.max(1))?;
+        let id = backend.create_pane(rows.max(1), cols.max(1), command)?;
         let parser = vt100::Parser::new_with_callbacks(
             rows.max(1),
             cols.max(1),
@@ -232,11 +245,13 @@ impl TerminalState {
             PaneCallbacks::default(),
         );
         self.parsers.insert(id, parser);
-        let default_title = format!("shell {}", self.panes.len() + 1);
-        self.panes.push(PaneInfo {
-            id,
-            title: default_title,
-        });
+        // Title precedence: explicit label → command text → default shell N.
+        let title = match (label, command) {
+            (Some(l), _) if !l.trim().is_empty() => l.trim().to_string(),
+            (_, Some(c)) if !c.trim().is_empty() => c.trim().to_string(),
+            _ => format!("shell {}", self.panes.len() + 1),
+        };
+        self.panes.push(PaneInfo { id, title });
         self.active = self.panes.len() - 1;
         tracing::info!(pane = id, "terminal pane opened");
         Ok(())
@@ -447,5 +462,44 @@ mod tests {
         let taken = p.callbacks_mut().pending_title.take();
         assert_eq!(taken.as_deref(), Some("second"));
         assert!(p.callbacks().pending_title.is_none());
+    }
+
+    fn state_with_fake() -> TerminalState {
+        let backend = Box::new(crate::test_util::FakeBackend::default());
+        TerminalState::new(Some(backend), false)
+    }
+
+    #[test]
+    fn create_pane_defaults_to_shell_label_and_no_command() {
+        let mut state = state_with_fake();
+        state.create_pane().unwrap();
+        assert_eq!(state.panes.len(), 1);
+        assert_eq!(state.panes[0].title, "shell 1");
+    }
+
+    #[test]
+    fn create_pane_with_label_sets_title() {
+        let mut state = state_with_fake();
+        state
+            .create_pane_with(Some("claude --foo"), Some("Claude"))
+            .unwrap();
+        assert_eq!(state.panes[0].title, "Claude");
+    }
+
+    #[test]
+    fn create_pane_with_falls_back_to_command_text() {
+        let mut state = state_with_fake();
+        state.create_pane_with(Some("cargo test"), None).unwrap();
+        assert_eq!(state.panes[0].title, "cargo test");
+    }
+
+    #[test]
+    fn create_pane_with_appends_and_focuses_new_pane() {
+        let mut state = state_with_fake();
+        state.create_pane_with(Some("echo hi"), Some("E")).unwrap();
+        state.create_pane().unwrap();
+        assert_eq!(state.panes.len(), 2);
+        assert_eq!(state.panes[1].title, "shell 2");
+        assert_eq!(state.active, 1);
     }
 }

@@ -126,7 +126,11 @@ pub struct App {
 }
 
 impl App {
-    pub fn new(repo_path: String, prompt_log: bool) -> Self {
+    pub fn new(
+        repo_path: String,
+        prompt_log: bool,
+        startup_commands: &[crate::config::StartupCommand],
+    ) -> Self {
         let snapshot = SnapshotChannel::spawn(&repo_path);
 
         let backend: Box<dyn TerminalBackend> = Box::new(PtyBackend::new(&repo_path));
@@ -156,7 +160,7 @@ impl App {
             branch_name: None,
         };
 
-        app.ensure_initial_terminal();
+        app.ensure_initial_terminal(startup_commands);
         tracing::info!(repo = %app.repo_path, "nightcrow started");
         app
     }
@@ -241,6 +245,43 @@ pub(crate) mod tests {
                 .collect(),
             file_path: None,
         }
+    }
+
+    fn app_with_fake_backend() -> App {
+        let mut app = app_with_files(vec!["a.rs"]);
+        let backend = Box::new(crate::test_util::FakeBackend::default());
+        app.terminal = TerminalState::new(Some(backend), false);
+        app
+    }
+
+    #[test]
+    fn ensure_initial_terminal_opens_single_empty_pane_without_commands() {
+        let mut app = app_with_fake_backend();
+        app.ensure_initial_terminal(&[]);
+        assert_eq!(app.terminal.panes.len(), 1);
+        assert_eq!(app.terminal.panes[0].title, "shell 1");
+    }
+
+    #[test]
+    fn ensure_initial_terminal_opens_one_pane_per_startup_command() {
+        use crate::config::StartupCommand;
+        let mut app = app_with_fake_backend();
+        let commands = vec![
+            StartupCommand {
+                name: Some("Claude".into()),
+                command: "claude".into(),
+            },
+            StartupCommand {
+                name: None,
+                command: "cargo test".into(),
+            },
+        ];
+        app.ensure_initial_terminal(&commands);
+        assert_eq!(app.terminal.panes.len(), 2);
+        assert_eq!(app.terminal.panes[0].title, "Claude");
+        assert_eq!(app.terminal.panes[1].title, "cargo test");
+        // Focus clamps to the first reserved pane.
+        assert_eq!(app.terminal.active, 0);
     }
 
     #[test]

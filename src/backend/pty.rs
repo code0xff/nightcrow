@@ -86,7 +86,7 @@ impl PtyBackend {
 }
 
 impl TerminalBackend for PtyBackend {
-    fn create_pane(&mut self, rows: u16, cols: u16) -> Result<PaneId> {
+    fn create_pane(&mut self, rows: u16, cols: u16, command: Option<&str>) -> Result<PaneId> {
         // Reserve the next id only after every fallible PTY/spawn step succeeds,
         // so a failure here does not consume an id slot.
         let pty_system = NativePtySystem::default();
@@ -99,6 +99,15 @@ impl TerminalBackend for PtyBackend {
 
         let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".to_string());
         let mut cmd = CommandBuilder::new(&shell);
+        // A reserved startup command runs through the login shell's `-lc`:
+        // the command text is passed as a single argv item, so the shell —
+        // not us — handles its quoting/word-splitting. This avoids the race
+        // of spawning a shell and later injecting `command\r`, and avoids any
+        // string interpolation into a wrapper on our side.
+        if let Some(command) = command {
+            cmd.arg("-lc");
+            cmd.arg(command);
+        }
         cmd.env("TERM", "xterm-256color");
         // Only set cwd if the directory actually exists; otherwise inherit
         // ours so spawn does not fail outright (matters for unit tests that
@@ -242,7 +251,9 @@ mod tests {
     #[test]
     fn pty_backend_create_and_destroy_pane() {
         let mut backend = PtyBackend::new(".");
-        let id = backend.create_pane(24, 80).expect("create_pane failed");
+        let id = backend
+            .create_pane(24, 80, None)
+            .expect("create_pane failed");
         assert_eq!(id, 1);
         backend.destroy_pane(id);
         assert!(!backend.panes.contains_key(&id));
@@ -251,7 +262,9 @@ mod tests {
     #[test]
     fn pty_backend_drains_output_before_exit_event() {
         let mut backend = PtyBackend::new(".");
-        let id = backend.create_pane(24, 80).expect("create_pane failed");
+        let id = backend
+            .create_pane(24, 80, None)
+            .expect("create_pane failed");
 
         backend
             .send_input(id, b"printf nightcrow-pty-output; exit\n")
@@ -278,6 +291,38 @@ mod tests {
         assert!(
             String::from_utf8_lossy(&output).contains("nightcrow-pty-output"),
             "PTY output was not drained before exit"
+        );
+    }
+
+    #[test]
+    fn pty_backend_runs_startup_command() {
+        let mut backend = PtyBackend::new(".");
+        // The command runs itself on launch — no input is sent. `exit` keeps
+        // the test bounded by ending the shell after the command prints.
+        let id = backend
+            .create_pane(24, 80, Some("printf nightcrow-startup-ran; exit"))
+            .expect("create_pane failed");
+
+        let deadline = Instant::now() + Duration::from_secs(3);
+        let mut output = Vec::new();
+        let mut saw_exit = false;
+        while Instant::now() < deadline {
+            for event in backend.drain_events() {
+                match event {
+                    BackendEvent::Output { data, .. } => output.extend(data),
+                    BackendEvent::Exited { pane } if pane == id => saw_exit = true,
+                    BackendEvent::Exited { .. } => {}
+                }
+            }
+            if saw_exit {
+                break;
+            }
+            thread::sleep(Duration::from_millis(10));
+        }
+
+        assert!(
+            String::from_utf8_lossy(&output).contains("nightcrow-startup-ran"),
+            "startup command did not run automatically"
         );
     }
 }

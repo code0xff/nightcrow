@@ -128,7 +128,11 @@ fn run(
 
 fn init_app(repo_path: &str, cfg: &config::Config) -> App {
     let saved_session = session::load_session(repo_path);
-    let mut app = App::new(repo_path.to_string(), cfg.log.prompt_log);
+    let mut app = App::new(
+        repo_path.to_string(),
+        cfg.log.prompt_log,
+        &cfg.startup_commands,
+    );
     app.set_accent_index(cfg.theme.preset_index());
     app.cfg_agent_indicator = cfg.agent_indicator.clone();
     app.pagination.page_size = cfg.log.commit_log_page_size;

@@ -37,3 +37,39 @@ pub fn make_repo() -> (TempDir, String) {
     run_git(&path, &["config", "user.name", "T"]);
     (dir, path)
 }
+
+/// In-memory `TerminalBackend` for tests: spawns nothing, just records the
+/// command each `create_pane` was asked to run so pane-creation logic can be
+/// asserted deterministically without a real PTY or shell.
+#[derive(Default)]
+pub struct FakeBackend {
+    next_id: crate::backend::PaneId,
+    pub launched: Vec<Option<String>>,
+}
+
+impl crate::backend::TerminalBackend for FakeBackend {
+    fn create_pane(
+        &mut self,
+        _rows: u16,
+        _cols: u16,
+        command: Option<&str>,
+    ) -> anyhow::Result<crate::backend::PaneId> {
+        self.next_id += 1;
+        self.launched.push(command.map(str::to_string));
+        Ok(self.next_id)
+    }
+
+    fn destroy_pane(&mut self, _id: crate::backend::PaneId) {}
+
+    fn send_input(&mut self, _id: crate::backend::PaneId, _data: &[u8]) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn resize(&mut self, _id: crate::backend::PaneId, _rows: u16, _cols: u16) {}
+
+    fn drain_events(&mut self) -> Vec<crate::backend::BackendEvent> {
+        Vec::new()
+    }
+
+    fn set_cwd(&mut self, _path: &std::path::Path) {}
+}

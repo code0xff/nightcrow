@@ -8,12 +8,34 @@
 use super::{App, Focus};
 
 impl App {
-    pub(crate) fn ensure_initial_terminal(&mut self) {
+    /// Open the panes nightcrow starts with. With no reserved
+    /// `startup_commands`, this keeps the historical single empty-shell
+    /// behaviour. Otherwise it opens one pane per command, runs each command
+    /// immediately, and labels the tab with the command's `name` (falling
+    /// back to the command text). Focus lands on the first startup pane.
+    pub(crate) fn ensure_initial_terminal(
+        &mut self,
+        startup_commands: &[crate::config::StartupCommand],
+    ) {
         if self.terminal.backend.is_none() {
             return;
         }
-        if let Err(err) = self.terminal.create_pane() {
-            self.status = Some(format!("terminal error: {err}"));
+        if startup_commands.is_empty() {
+            if let Err(err) = self.terminal.create_pane() {
+                self.status = Some(format!("terminal error: {err}"));
+            }
+            return;
+        }
+        for sc in startup_commands {
+            let label = sc.name.as_deref();
+            if let Err(err) = self.terminal.create_pane_with(Some(&sc.command), label) {
+                self.status = Some(format!("terminal error: {err}"));
+            }
+        }
+        // Clamp focus to the first startup pane so the user starts at the top
+        // of the reserved set rather than the last one created.
+        if !self.terminal.panes.is_empty() {
+            self.terminal.active = 0;
         }
     }
 
