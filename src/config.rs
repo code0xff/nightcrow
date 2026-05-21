@@ -2,6 +2,11 @@ use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
+/// Upper bound on `[[startup_command]]` entries. Aligned with the F1..F9
+/// pane-jump shortcut range: more startup panes than there are direct-jump
+/// keys would create panes the user cannot reach by their documented key.
+pub const MAX_STARTUP_COMMANDS: usize = 9;
+
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Config {
@@ -9,6 +14,21 @@ pub struct Config {
     pub log: LogConfig,
     pub theme: ThemeConfig,
     pub agent_indicator: AgentIndicatorConfig,
+    /// Commands launched in their own terminal pane at startup, in order.
+    /// Maps from TOML `[[startup_command]]` array-of-tables. Empty by
+    /// default, which preserves the single empty-shell startup behaviour.
+    #[serde(rename = "startup_command")]
+    pub startup_commands: Vec<StartupCommand>,
+}
+
+/// A single reserved startup command. `name` labels the pane's tab; when
+/// absent the command text is used as the label.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct StartupCommand {
+    /// Optional tab label. Falls back to `command` when omitted.
+    pub name: Option<String>,
+    /// Shell command run in the pane immediately on launch.
+    pub command: String,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -257,6 +277,17 @@ fn validate_config(cfg: &Config) -> Result<()> {
         cfg.log.max_days <= 3650,
         "log.max_days must be at most 3650 (10 years); 0 = keep forever"
     );
+    anyhow::ensure!(
+        cfg.startup_commands.len() <= MAX_STARTUP_COMMANDS,
+        "at most {MAX_STARTUP_COMMANDS} [[startup_command]] entries are allowed, found {}",
+        cfg.startup_commands.len()
+    );
+    for (i, sc) in cfg.startup_commands.iter().enumerate() {
+        anyhow::ensure!(
+            !sc.command.trim().is_empty(),
+            "startup_command[{i}].command must not be empty"
+        );
+    }
     Ok(())
 }
 
@@ -487,6 +518,69 @@ auto_follow = false
         let mut cfg = Config::default();
         cfg.agent_indicator.hot_window_secs = 3601;
         assert!(validate_config(&cfg).is_err());
+    }
+
+    #[test]
+    fn startup_commands_default_to_empty() {
+        let cfg = Config::default();
+        assert!(cfg.startup_commands.is_empty());
+        // A config without the table also defaults to empty and validates.
+        let cfg: Config = toml::from_str("[layout]\nupper_pct = 50\n").unwrap();
+        assert!(cfg.startup_commands.is_empty());
+        validate_config(&cfg).unwrap();
+    }
+
+    #[test]
+    fn startup_commands_parse_array_of_tables() {
+        let toml = r#"
+[[startup_command]]
+name = "Claude"
+command = "claude"
+
+[[startup_command]]
+command = "cargo test"
+"#;
+        let cfg: Config = toml::from_str(toml).unwrap();
+        assert_eq!(cfg.startup_commands.len(), 2);
+        assert_eq!(cfg.startup_commands[0].name.as_deref(), Some("Claude"));
+        assert_eq!(cfg.startup_commands[0].command, "claude");
+        assert_eq!(cfg.startup_commands[1].name, None);
+        assert_eq!(cfg.startup_commands[1].command, "cargo test");
+        validate_config(&cfg).unwrap();
+    }
+
+    #[test]
+    fn startup_command_validation_rejects_empty_command() {
+        let mut cfg = Config::default();
+        cfg.startup_commands.push(StartupCommand {
+            name: Some("blank".into()),
+            command: "   ".into(),
+        });
+        assert!(validate_config(&cfg).is_err());
+    }
+
+    #[test]
+    fn startup_command_validation_rejects_too_many() {
+        let mut cfg = Config::default();
+        for i in 0..(MAX_STARTUP_COMMANDS + 1) {
+            cfg.startup_commands.push(StartupCommand {
+                name: None,
+                command: format!("echo {i}"),
+            });
+        }
+        assert!(validate_config(&cfg).is_err());
+    }
+
+    #[test]
+    fn startup_command_validation_accepts_max() {
+        let mut cfg = Config::default();
+        for i in 0..MAX_STARTUP_COMMANDS {
+            cfg.startup_commands.push(StartupCommand {
+                name: None,
+                command: format!("echo {i}"),
+            });
+        }
+        assert!(validate_config(&cfg).is_ok());
     }
 
     #[test]
