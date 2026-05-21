@@ -277,6 +277,10 @@ fn render_hint_bar(app: &App, accent: Color) -> Paragraph<'_> {
             Span::styled("█", Style::default().fg(accent)),
         ]));
     }
+    if app.quit_confirm_pending() {
+        return Paragraph::new(Line::from(" Press ctrl+q again to quit (any other key cancels)"))
+            .style(Style::default().fg(Color::Yellow));
+    }
     if let Some(ref msg) = app.status {
         return Paragraph::new(Line::from(msg.as_str())).style(Style::default().fg(Color::Red));
     }

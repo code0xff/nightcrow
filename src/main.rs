@@ -298,6 +298,13 @@ fn handle_key(app: &mut App, key: KeyEvent) -> KeyOutcome {
     }
 
     let action = map_key(key);
+    // Any keystroke other than a follow-up Ctrl+Q cancels an armed quit
+    // confirmation. This runs before the overlay gate so opening a search
+    // or repo dialog also dismisses the prompt — otherwise the hint would
+    // linger until the deadline expires.
+    if action != Action::Quit {
+        app.cancel_quit_confirm();
+    }
     // Modal overlays (repo-input dialog, both search bars) own every
     // keystroke until dismissed. Letting global actions fire while one is
     // open would tear down the state the overlay is operating on — e.g.
@@ -322,7 +329,11 @@ fn handle_key(app: &mut App, key: KeyEvent) -> KeyOutcome {
 
 fn handle_global_action(app: &mut App, action: Action) -> Option<KeyOutcome> {
     match action {
-        Action::Quit => Some(KeyOutcome::Quit),
+        Action::Quit => Some(if app.try_quit() {
+            KeyOutcome::Quit
+        } else {
+            KeyOutcome::Continue
+        }),
         Action::NewPane => {
             app.open_new_pane();
             Some(KeyOutcome::Continue)
@@ -568,14 +579,62 @@ mod tests {
 
     #[test]
     fn handle_key_press_of_ctrl_q_quits() {
-        // Companion to the release test: the same chord on Press MUST quit
-        // so we know the filter targets only the non-Press kinds.
+        // Companion to the release test: a Press of Ctrl+Q must drive the
+        // quit path. The double-press rule means it takes two Presses to
+        // exit, but both must be of kind Press — never Release — so this
+        // test still pins the kind filter.
         let mut app = app_with_files(vec!["a.rs"]);
         let pressed = press(KeyCode::Char('q'), KeyModifiers::CONTROL);
 
+        let first = handle_key(&mut app, pressed);
+        assert!(matches!(first, KeyOutcome::Continue));
+        assert!(app.quit_confirm_pending());
+
+        let second = handle_key(&mut app, pressed);
+        assert!(matches!(second, KeyOutcome::Quit));
+    }
+
+    #[test]
+    fn handle_key_ctrl_q_after_window_expires_re_arms() {
+        // If the user pressed Ctrl+Q minutes ago and walked away, the next
+        // Ctrl+Q must NOT quit — it should start a fresh confirmation. We
+        // simulate the expired window by parking the deadline in the past.
+        let mut app = app_with_files(vec!["a.rs"]);
+        app.quit_pending_until = Some(
+            std::time::Instant::now()
+                .checked_sub(std::time::Duration::from_secs(60))
+                .expect("instant - 60s is well within Instant's representable range"),
+        );
+
+        let pressed = press(KeyCode::Char('q'), KeyModifiers::CONTROL);
         let outcome = handle_key(&mut app, pressed);
 
-        assert!(matches!(outcome, KeyOutcome::Quit));
+        assert!(matches!(outcome, KeyOutcome::Continue));
+        assert!(
+            app.quit_confirm_pending(),
+            "expired arming must be replaced with a fresh window, not just cleared"
+        );
+    }
+
+    #[test]
+    fn handle_key_other_key_cancels_pending_quit() {
+        // An armed quit must clear the moment the user does anything else
+        // — otherwise the confirmation could fire on a much later Ctrl+Q
+        // that the user no longer intends as a follow-up.
+        let mut app = app_with_files(vec!["a.rs"]);
+        let _ = handle_key(&mut app, press(KeyCode::Char('q'), KeyModifiers::CONTROL));
+        assert!(app.quit_confirm_pending());
+
+        let _ = handle_key(&mut app, press(KeyCode::Down, KeyModifiers::NONE));
+        assert!(
+            !app.quit_confirm_pending(),
+            "any non-Quit action must immediately disarm the confirmation"
+        );
+
+        // Subsequent Ctrl+Q now only arms again; it does not quit.
+        let outcome = handle_key(&mut app, press(KeyCode::Char('q'), KeyModifiers::CONTROL));
+        assert!(matches!(outcome, KeyOutcome::Continue));
+        assert!(app.quit_confirm_pending());
     }
 
     #[test]

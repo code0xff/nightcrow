@@ -23,12 +23,16 @@ pub use crate::ui::log_view::LogView;
 pub use crate::ui::status_view::{RepoInput, StatusView};
 #[cfg(test)]
 pub(crate) use diff_load::DiffApply;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 #[cfg(test)]
 use crate::runtime::terminal::SCROLLBACK_LINES;
 pub(crate) const LIST_PAGE_SIZE: usize = 10;
 pub(crate) const DIFF_PAGE_SIZE: usize = 20;
+/// Window during which a second Ctrl+Q press confirms the quit. The first
+/// press only arms this window; if the second press doesn't arrive within
+/// it, the arming expires and the next Ctrl+Q starts a fresh prompt.
+pub(crate) const QUIT_CONFIRM_WINDOW: Duration = Duration::from_secs(2);
 
 /// Move a list index up by `n`, saturating at 0. Returns `true` when the index
 /// actually changed so callers can decide whether to refresh associated state.
@@ -123,6 +127,10 @@ pub struct App {
     /// detached HEAD, unborn branches, or bare repos. Rendered in the top
     /// header so the user always sees which branch the workdir tracks.
     pub branch_name: Option<String>,
+    /// Deadline by which a second Ctrl+Q must arrive to confirm the quit.
+    /// `None` when not armed; an instant already in the past means the prior
+    /// arming expired and the next Ctrl+Q will re-arm instead of quitting.
+    pub quit_pending_until: Option<Instant>,
 }
 
 impl App {
@@ -158,11 +166,44 @@ impl App {
             auto_follow: AutoFollow::default(),
             list_fullscreen: false,
             branch_name: None,
+            quit_pending_until: None,
         };
 
         app.ensure_initial_terminal(startup_commands);
         tracing::info!(repo = %app.repo_path, "nightcrow started");
         app
+    }
+
+    /// True while the first Ctrl+Q is still within its confirmation window.
+    /// Drives the hint bar so the user sees why their first press didn't
+    /// quit — without an indicator the double-press rule is invisible.
+    pub fn quit_confirm_pending(&self) -> bool {
+        self.quit_pending_until
+            .is_some_and(|deadline| Instant::now() < deadline)
+    }
+
+    /// Request a quit. Returns `true` if the caller should actually exit,
+    /// `false` if the request only armed the confirmation window. The second
+    /// arming call within the window confirms; after the deadline expires
+    /// the next call re-arms instead of confirming so a stale press from
+    /// minutes ago can't take the app down.
+    pub fn try_quit(&mut self) -> bool {
+        let now = Instant::now();
+        if let Some(deadline) = self.quit_pending_until
+            && now < deadline
+        {
+            self.quit_pending_until = None;
+            return true;
+        }
+        self.quit_pending_until = Some(now + QUIT_CONFIRM_WINDOW);
+        false
+    }
+
+    /// Cancel any armed quit confirmation. Called from the key-dispatch path
+    /// the moment the user does anything other than press Ctrl+Q again, so
+    /// the hint bar reverts immediately.
+    pub fn cancel_quit_confirm(&mut self) {
+        self.quit_pending_until = None;
     }
 }
 
@@ -230,6 +271,7 @@ pub(crate) mod tests {
             auto_follow: AutoFollow::default(),
             list_fullscreen: false,
             branch_name: None,
+            quit_pending_until: None,
         }
     }
 
