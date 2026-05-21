@@ -30,3 +30,23 @@
 - Add automation gates, regression checks, and release validation
 - Close security and operational readiness gaps
 - Prepare final quality/review pass for release
+
+## Increment 7 Plan
+
+service_goal: 개발자가 config.toml에 시작 명령들을 예약하면, nightcrow 실행 시 그 개수만큼 터미널 pane이 자동 생성되어 각 명령이 실행된 상태로 뜬다.
+
+### Workstream 1 Plan
+
+- `Config`에 `startup_commands: Vec<StartupCommand>` 필드와 `StartupCommand { name, command }` 구조체 추가
+- TOML `[[startup_command]]` array-of-tables를 serde rename으로 매핑
+- `validate_config`에 빈 command 거부 + 항목 개수 상한(<= 9) 검증 추가
+- 파싱/검증 단위 테스트 작성 (정상 파싱, 빈 command 거부, 개수 초과 거부, 미지정 시 빈 Vec)
+
+### Workstream 2 Plan
+
+- `TerminalBackend::create_pane`와 `PtyBackend`를 선택적 시작 명령 실행으로 확장 (race 없는 방식 선택)
+- `TerminalState`에 명령·라벨로 pane을 생성하는 경로 추가
+- 시작 시 `App`이 startup_commands를 순회하며 pane 생성, 타이틀을 name으로 설정
+- startup_commands가 비면 기존 단일 pane 동작 유지, 포커스 클램프 검증
+- README config 섹션에 `[[startup_command]]` 사용법 문서화
+- 통합 동작 테스트 + `cargo clippy` 통과

@@ -73,7 +73,7 @@ src/
 
 ```rust
 trait TerminalBackend {
-    fn create_pane(&mut self, rows: u16, cols: u16) -> Result<PaneId>;
+    fn create_pane(&mut self, rows: u16, cols: u16, command: Option<&str>) -> Result<PaneId>;
     fn destroy_pane(&mut self, id: PaneId);
     fn send_input(&mut self, id: PaneId, data: &[u8]) -> Result<()>;
     fn resize(&mut self, id: PaneId, rows: u16, cols: u16);

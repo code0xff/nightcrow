@@ -136,3 +136,25 @@
 - Deliverables: `load_commit_log_page(repo, skip, limit)` API (기존 `load_commit_log`는 page 0 wrapper로 호환 유지), `LogView`에 `loaded_count`/`pending_fetch`/`fully_loaded` 페이지 상태, `App`에 백그라운드 fetch worker (`mpsc::channel` + 자체 `Repository` 핸들) + drain/poll, `[log]`에 `commit_log_page_size`/`commit_log_prefetch_threshold` config + 범위 검증(page_size ∈ 200..=500, threshold ∈ 1..=page_size), HEAD 변경 시 first-page reload + 겹침 시 prepend / 발산 시 reset, repo·HEAD 변경 시 stale fetch 결과 폐기
 - Exit Criteria: 첫 페이지만 초기 로드, 임계점에서 백그라운드 fetch 1회 트리거(중복 억제), 짧은 마지막 페이지에서 `fully_loaded` 설정, HEAD prepend/divergent reset 동작, stale skip 결과 무시, README/roadmap 갱신, `cargo test` 통과
 - status: done
+
+---
+
+## Increment 7
+
+- service_goal: 개발자가 config.toml에 시작 명령(예: LLM CLI)들을 예약해두면, nightcrow 실행 시 예약한 개수만큼 터미널 패널이 자동으로 생성되어 각 명령이 바로 실행된 상태로 떠 있다
+- acceptance: config.toml의 `[[startup_command]]` 항목 개수만큼 시작 시 하단 터미널 pane이 생성되고 각 명령이 자동 실행됨, 각 pane은 지정한 이름으로 라벨링됨, startup_command가 없으면 기존 단일 빈 셸 동작을 유지함, 잘못된 설정(빈 command, 과도한 개수)은 명확한 에러로 거부됨
+- status: active
+
+### Workstream 1
+
+- Goal: 시작 명령 config 스키마 (`[[startup_command]]`)
+- Deliverables: `Config`에 `startup_commands: Vec<StartupCommand>` 필드(`#[serde(rename = "startup_command")]`로 TOML array-of-tables 매핑), `StartupCommand { name: Option<String>, command: String }` 구조체, `validate_config`에서 command 비어있음 거부 + 항목 개수 상한(예: <= 9, F1..F9 pane 전환 한도와 정렬) 검증, 파싱/검증 단위 테스트
+- Exit Criteria: `[[startup_command]]` TOML이 정확히 파싱됨, 빈 command와 개수 초과가 검증에서 거부됨, startup_command 미지정 시 빈 Vec 기본값, `cargo test` 통과
+- status: done
+
+### Workstream 2
+
+- Goal: 시작 시 예약 명령으로 터미널 pane 자동 생성·실행
+- Deliverables: `TerminalBackend::create_pane`(및 `PtyBackend` 구현)이 선택적 시작 명령을 받아 셸에서 실행하도록 확장(예: `$SHELL -lc "<command>"` 또는 spawn 후 `command\r` 주입 중 race 없는 방식 선택), `TerminalState`에 명령·라벨을 받아 pane을 생성하는 경로 추가, 시작 시 `App`이 config의 startup_commands를 순회하며 pane을 생성하고 각 pane 타이틀을 name(또는 command)로 설정, startup_commands가 비면 기존 `ensure_initial_terminal` 단일 pane 동작 유지, 첫 pane에 포커스 클램프 정상 동작
+- Exit Criteria: startup_command 2개 이상 설정 시 실행 직후 동일 개수의 pane이 뜨고 각 명령이 자동 실행됨, pane 타이틀이 지정 이름으로 표시됨, 미설정 시 단일 빈 셸 유지, README의 config 섹션에 `[[startup_command]]` 사용법 문서화, `cargo test`/`cargo clippy` 통과
+- status: done

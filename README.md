@@ -133,6 +133,18 @@ commit_log_prefetch_threshold = 50 # start the next-page fetch when the selectio
 enabled = true            # color recently-touched files in the file list
 hot_window_secs = 15      # seconds within which a file stays hot (3–3600)
 auto_follow = true        # jump selection to the freshest hot file when idle
+
+# Reserve startup commands: each [[startup_command]] opens its own terminal
+# pane at launch and runs `command` immediately (via `$SHELL -lc <command>`).
+# Up to 9 entries (aligned with the F1–F9 pane-jump keys). `name` labels the
+# tab; when omitted the command text is used. With no [[startup_command]]
+# entries, nightcrow opens a single empty shell as before.
+[[startup_command]]
+name = "Claude"           # optional tab label; falls back to the command text
+command = "claude"        # required; must not be empty
+
+[[startup_command]]
+command = "cargo test --watch"
 ```
 
 ## License

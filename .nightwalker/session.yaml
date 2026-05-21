@@ -11,6 +11,6 @@ recommended_stack: E안
 selected_stack: "E안: ratatui+crossterm, git2, syntect+syntect-tui, TmuxBackend(tmux control mode)+PtyBackend(portable-pty+alacritty_terminal)"
 open_questions: "중첩 TUI 키보드 라우팅 early prototype 검증 필요, tmux 정적 번들링 v2 이후 고려, Windows는 PtyBackend fallback만 가능"
 decisions: "2026-04-28: 프로젝트명 nightcrow 확정, project_archetype=service-app, E안 스택 확정, 실용성 7/10 평가"
-current_increment: 1
-increment_status: unset
+current_increment: 7
+increment_status: in-progress
 last_delivered_at: unset
