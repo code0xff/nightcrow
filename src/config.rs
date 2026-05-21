@@ -291,6 +291,35 @@ fn validate_config(cfg: &Config) -> Result<()> {
     Ok(())
 }
 
+/// Merge config `[[startup_command]]` entries with CLI `--exec` commands into
+/// the final ordered list of panes to open at launch. Config entries come
+/// first, then CLI commands (labelled by their command text). The combined
+/// count is held to `MAX_STARTUP_COMMANDS`, and empty `--exec` values are
+/// rejected — config entries were already validated by `validate_config`.
+pub fn resolve_startup_commands(
+    cfg: &Config,
+    cli_exec: &[String],
+) -> Result<Vec<StartupCommand>> {
+    let mut resolved = cfg.startup_commands.clone();
+    for (i, command) in cli_exec.iter().enumerate() {
+        anyhow::ensure!(
+            !command.trim().is_empty(),
+            "--exec[{i}] command must not be empty"
+        );
+        resolved.push(StartupCommand {
+            name: None,
+            command: command.clone(),
+        });
+    }
+    anyhow::ensure!(
+        resolved.len() <= MAX_STARTUP_COMMANDS,
+        "at most {MAX_STARTUP_COMMANDS} startup panes are allowed \
+         (config [[startup_command]] + --exec combined), found {}",
+        resolved.len()
+    );
+    Ok(resolved)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -557,6 +586,53 @@ command = "cargo test"
             command: "   ".into(),
         });
         assert!(validate_config(&cfg).is_err());
+    }
+
+    #[test]
+    fn resolve_startup_commands_appends_cli_exec_after_config() {
+        let mut cfg = Config::default();
+        cfg.startup_commands.push(StartupCommand {
+            name: Some("Claude".into()),
+            command: "claude".into(),
+        });
+        let resolved =
+            resolve_startup_commands(&cfg, &["codex".to_string(), "vim".to_string()]).unwrap();
+        assert_eq!(resolved.len(), 3);
+        assert_eq!(resolved[0].command, "claude");
+        assert_eq!(resolved[0].name.as_deref(), Some("Claude"));
+        // CLI entries carry no name and are ordered after config entries.
+        assert_eq!(resolved[1].command, "codex");
+        assert_eq!(resolved[1].name, None);
+        assert_eq!(resolved[2].command, "vim");
+    }
+
+    #[test]
+    fn resolve_startup_commands_empty_when_nothing_configured() {
+        let resolved = resolve_startup_commands(&Config::default(), &[]).unwrap();
+        assert!(resolved.is_empty());
+    }
+
+    #[test]
+    fn resolve_startup_commands_rejects_empty_exec() {
+        let resolved = resolve_startup_commands(&Config::default(), &["  ".to_string()]);
+        assert!(resolved.is_err());
+    }
+
+    #[test]
+    fn resolve_startup_commands_caps_combined_total() {
+        let mut cfg = Config::default();
+        for i in 0..5 {
+            cfg.startup_commands.push(StartupCommand {
+                name: None,
+                command: format!("echo {i}"),
+            });
+        }
+        // 5 config + 5 CLI = 10 > MAX_STARTUP_COMMANDS (9).
+        let cli: Vec<String> = (0..5).map(|i| format!("run {i}")).collect();
+        assert!(resolve_startup_commands(&cfg, &cli).is_err());
+        // 5 config + 4 CLI = 9 is exactly the cap.
+        let cli: Vec<String> = (0..4).map(|i| format!("run {i}")).collect();
+        assert_eq!(resolve_startup_commands(&cfg, &cli).unwrap().len(), 9);
     }
 
     #[test]

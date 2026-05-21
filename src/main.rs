@@ -38,11 +38,19 @@ struct Cli {
     /// Path to the git repository (defaults to current directory)
     #[arg(short, long)]
     repo: Option<std::path::PathBuf>,
+
+    /// Open a terminal pane running this command at startup. Repeatable;
+    /// each --exec adds one pane after any config [[startup_command]] panes.
+    #[arg(long = "exec", value_name = "COMMAND")]
+    exec: Vec<String>,
 }
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
     let cfg = config::load_config()?;
+    // Resolve before entering the alternate screen so a too-many-panes error
+    // surfaces as plain stderr text rather than a flash behind the TUI.
+    let startup_commands = config::resolve_startup_commands(&cfg, &cli.exec)?;
 
     let input_path = match cli.repo {
         Some(p) => p,
@@ -73,7 +81,7 @@ fn main() -> Result<()> {
     let backend = CrosstermBackend::new(io::stdout());
     let mut terminal = Terminal::new(backend)?;
 
-    run(&mut terminal, repo_path, cfg)
+    run(&mut terminal, repo_path, cfg, startup_commands)
 }
 
 struct TerminalGuard;
@@ -110,10 +118,11 @@ fn run(
     terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
     repo_path: String,
     cfg: config::Config,
+    startup_commands: Vec<config::StartupCommand>,
 ) -> Result<()> {
     let ss = SyntaxSet::load_defaults_newlines();
     let ts = ThemeSet::load_defaults();
-    let mut app = init_app(&repo_path, &cfg);
+    let mut app = init_app(&repo_path, &cfg, &startup_commands);
 
     if matches!(splash_loop(terminal, &app)?, SplashOutcome::Quit) {
         tracing::info!(repo = %app.repo_path, "nightcrow stopped during splash");
@@ -126,13 +135,13 @@ fn run(
     Ok(())
 }
 
-fn init_app(repo_path: &str, cfg: &config::Config) -> App {
+fn init_app(
+    repo_path: &str,
+    cfg: &config::Config,
+    startup_commands: &[config::StartupCommand],
+) -> App {
     let saved_session = session::load_session(repo_path);
-    let mut app = App::new(
-        repo_path.to_string(),
-        cfg.log.prompt_log,
-        &cfg.startup_commands,
-    );
+    let mut app = App::new(repo_path.to_string(), cfg.log.prompt_log, startup_commands);
     app.set_accent_index(cfg.theme.preset_index());
     app.cfg_agent_indicator = cfg.agent_indicator.clone();
     app.pagination.page_size = cfg.log.commit_log_page_size;

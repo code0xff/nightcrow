@@ -32,7 +32,13 @@ nightcrow
 
 # Open a specific repo
 nightcrow --repo ~/projects/myapp
+
+# Launch terminal panes running commands at startup (repeatable)
+nightcrow --exec "claude" --exec "codex"
 ```
+
+`--exec` panes open after any `[[startup_command]]` panes from the config
+file; the two sources share a combined cap of 9 panes (the F1–F9 jump keys).
 
 ## Views
 
