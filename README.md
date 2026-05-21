@@ -131,8 +131,8 @@ max_size_mb = 10          # used when rotation = "size"
 max_days = 7              # delete logs older than N days (0 = keep forever)
 level = "info"            # "error" | "warn" | "info" | "debug" | "trace"
 prompt_log = true         # record terminal prompt input line by line
-commit_log_page_size = 300        # commits fetched per commit-log page (200–500)
-commit_log_prefetch_threshold = 50 # start the next-page fetch when the selection is within
+commit_log_page_size = 100        # commits fetched per commit-log page
+commit_log_prefetch_threshold = 25 # start the next-page fetch when the selection is within
                                   # this many rows of the loaded tail (1..=page_size)
 
 [agent_indicator]
