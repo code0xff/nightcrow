@@ -130,7 +130,7 @@ rotation = "daily"        # "daily" | "hourly" | "size"
 max_size_mb = 10          # used when rotation = "size"
 max_days = 7              # delete logs older than N days (0 = keep forever)
 level = "info"            # "error" | "warn" | "info" | "debug" | "trace"
-prompt_log = true         # record terminal prompt input line by line
+prompt_log = false        # record terminal prompt input line by line
 commit_log_page_size = 100        # commits fetched per commit-log page
 commit_log_prefetch_threshold = 25 # start the next-page fetch when the selection is within
                                   # this many rows of the loaded tail (1..=page_size)
@@ -138,7 +138,7 @@ commit_log_prefetch_threshold = 25 # start the next-page fetch when the selectio
 [agent_indicator]
 enabled = true            # color recently-touched files in the file list
 hot_window_secs = 15      # seconds within which a file stays hot (3–3600)
-auto_follow = true        # jump selection to the freshest hot file when idle
+auto_follow = false       # jump selection to the freshest hot file when idle
 
 # Reserve startup commands: each [[startup_command]] opens its own terminal
 # pane at launch and runs `command` immediately (via `$SHELL -lc <command>`).
