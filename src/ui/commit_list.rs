@@ -80,17 +80,7 @@ fn render_commit_list(frame: &mut Frame, app: &App, area: Rect, accent: Color) {
     let title = if app.log_view.commits.is_empty() {
         " F1 Log (no commits) ".to_string()
     } else {
-        match &app.tracking {
-            Some(t) if t.ahead > 0 || t.behind > 0 => {
-                format!(
-                    " F1 Log ({})  ↑{} ↓{} ",
-                    app.log_view.commits.len(),
-                    t.ahead,
-                    t.behind
-                )
-            }
-            _ => format!(" F1 Log ({}) ", app.log_view.commits.len()),
-        }
+        format!(" F1 Log ({}) ", app.log_view.commits.len())
     };
 
     let selected = (!app.log_view.commits.is_empty()).then_some(app.log_view.selected);
