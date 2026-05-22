@@ -330,6 +330,15 @@ mod tests {
     }
 
     #[test]
+    fn example_config_parses_and_validates() {
+        // Guards the shipped config.example.toml against drift: it must parse
+        // into Config and pass the same validation as a real user file.
+        let toml = include_str!("../config.example.toml");
+        let cfg: Config = toml::from_str(toml).expect("config.example.toml should parse");
+        validate_config(&cfg).expect("config.example.toml should validate");
+    }
+
+    #[test]
     fn parse_toml_overrides() {
         let toml = r#"
 [layout]
