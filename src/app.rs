@@ -32,7 +32,7 @@ pub(crate) const DIFF_PAGE_SIZE: usize = 20;
 /// Window during which a second Ctrl+Q press confirms the quit. The first
 /// press only arms this window; if the second press doesn't arrive within
 /// it, the arming expires and the next Ctrl+Q starts a fresh prompt.
-pub(crate) const QUIT_CONFIRM_WINDOW: Duration = Duration::from_secs(2);
+pub(crate) const QUIT_CONFIRM_WINDOW: Duration = Duration::from_secs(5);
 
 /// Move a list index up by `n`, saturating at 0. Returns `true` when the index
 /// actually changed so callers can decide whether to refresh associated state.
