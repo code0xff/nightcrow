@@ -97,8 +97,26 @@ pub struct CommitEntry {
     pub oid: Oid,
     pub short_id: String,
     pub summary: String,
+    /// Pre-computed lowercase form of `summary` for case-insensitive search.
+    /// Set on construction so the commit-log filter doesn't lowercase on every
+    /// keystroke. Mirrors `ChangedFile::path_lower`.
+    pub summary_lower: String,
     pub author: String,
     pub time: i64,
+}
+
+impl CommitEntry {
+    pub fn new(oid: Oid, short_id: String, summary: String, author: String, time: i64) -> Self {
+        let summary_lower = summary.to_lowercase();
+        Self {
+            oid,
+            short_id,
+            summary,
+            summary_lower,
+            author,
+            time,
+        }
+    }
 }
 
 impl std::fmt::Display for CommitEntry {
@@ -291,13 +309,7 @@ pub fn load_commit_log_page(
         let summary = commit.summary().unwrap_or("").to_string();
         let author = commit.author().name().unwrap_or("Unknown").to_string();
         let time = commit.time().seconds();
-        entries.push(CommitEntry {
-            oid,
-            short_id: short_oid(oid),
-            summary,
-            author,
-            time,
-        });
+        entries.push(CommitEntry::new(oid, short_oid(oid), summary, author, time));
     }
     Ok(entries)
 }

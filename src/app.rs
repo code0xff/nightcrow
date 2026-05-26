@@ -1398,20 +1398,20 @@ pub(crate) mod tests {
         let mut app = app_with_files(vec![]);
         app.mode = ViewMode::Log;
         app.log_view.commits = vec![
-            CommitEntry {
-                oid: git2::Oid::zero(),
-                short_id: "0000000".into(),
-                summary: "first".into(),
-                author: "T".into(),
-                time: 0,
-            },
-            CommitEntry {
-                oid: git2::Oid::zero(),
-                short_id: "1111111".into(),
-                summary: "second".into(),
-                author: "T".into(),
-                time: 0,
-            },
+            CommitEntry::new(
+                git2::Oid::zero(),
+                "0000000".into(),
+                "first".into(),
+                "T".into(),
+                0,
+            ),
+            CommitEntry::new(
+                git2::Oid::zero(),
+                "1111111".into(),
+                "second".into(),
+                "T".into(),
+                0,
+            ),
         ];
         app.log_view.commit_scroll_x = 9;
         app.log_select_down();
@@ -1424,13 +1424,13 @@ pub(crate) mod tests {
         let mut app = app_with_files(vec![]);
         app.mode = ViewMode::Log;
         app.log_view.drill_down = true;
-        app.log_view.commits = vec![CommitEntry {
-            oid: git2::Oid::zero(),
-            short_id: "0000000".into(),
-            summary: "first".into(),
-            author: "T".into(),
-            time: 0,
-        }];
+        app.log_view.commits = vec![CommitEntry::new(
+            git2::Oid::zero(),
+            "0000000".into(),
+            "first".into(),
+            "T".into(),
+            0,
+        )];
         app.log_view.commit_files = vec![
             ChangedFile::new("x.rs".into(), ChangeStatus::Modified),
             ChangedFile::new("y.rs".into(), ChangeStatus::Modified),
@@ -1940,13 +1940,13 @@ pub(crate) mod tests {
     use crate::app::commit_log_fetch::{CommitLogFetchKind, CommitLogPageMsg};
 
     fn fake_entry(time: i64) -> CommitEntry {
-        CommitEntry {
-            oid: git2::Oid::zero(),
-            short_id: "deadbee".to_string(),
-            summary: format!("c{time}"),
-            author: "T".to_string(),
+        CommitEntry::new(
+            git2::Oid::zero(),
+            "deadbee".to_string(),
+            format!("c{time}"),
+            "T".to_string(),
             time,
-        }
+        )
     }
 
     fn seed_log_app(entries: usize, page_size: usize, threshold: usize) -> App {
@@ -2204,13 +2204,13 @@ pub(crate) mod tests {
         // Pretend a prior list whose head no longer exists in the repo —
         // simulates rebase/reset/branch switch that drops the old chain.
         let ghost_oid = git2::Oid::from_str("0123456789abcdef0123456789abcdef01234567").unwrap();
-        app.log_view.set_commits(vec![CommitEntry {
-            oid: ghost_oid,
-            short_id: "012345".to_string(),
-            summary: "vanished".to_string(),
-            author: "T".to_string(),
-            time: 0,
-        }]);
+        app.log_view.set_commits(vec![CommitEntry::new(
+            ghost_oid,
+            "012345".to_string(),
+            "vanished".to_string(),
+            "T".to_string(),
+            0,
+        )]);
         app.log_view.selected = 0;
 
         app.refresh_commit_log_after_head_change();

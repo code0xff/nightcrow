@@ -132,13 +132,13 @@ mod tests {
     use git2::Oid;
 
     fn entry(time: i64) -> CommitEntry {
-        CommitEntry {
-            oid: Oid::zero(),
-            short_id: "deadbee".to_string(),
-            summary: format!("c{time}"),
-            author: "T".to_string(),
+        CommitEntry::new(
+            Oid::zero(),
+            "deadbee".to_string(),
+            format!("c{time}"),
+            "T".to_string(),
             time,
-        }
+        )
     }
 
     #[test]
