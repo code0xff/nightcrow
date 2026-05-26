@@ -1,7 +1,7 @@
 use crate::app::{App, Focus};
 use ratatui::{
     Frame,
-    layout::Rect,
+    layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Style},
     text::{Line, Span},
     widgets::ListItem,
@@ -49,13 +49,28 @@ fn render_commit_list(frame: &mut Frame, app: &App, area: Rect, accent: Color) {
 
     let ahead_count = app.tracking.as_ref().map_or(0, |t| t.ahead);
 
+    let show_search =
+        app.log_view.commit_search_active || !app.log_view.commit_search_query.is_empty();
+
+    let (list_area, search_area) = if show_search {
+        let chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Min(0), Constraint::Length(1)])
+            .split(area);
+        (chunks[0], Some(chunks[1]))
+    } else {
+        (area, None)
+    };
+
+    let filtered = app.log_commit_filtered_indices();
+    let match_count = filtered.len();
+    let total_count = app.log_view.commits.len();
+
     let scroll_x = app.log_view.commit_scroll_x;
-    let items: Vec<ListItem> = app
-        .log_view
-        .commits
+    let items: Vec<ListItem> = filtered
         .iter()
-        .enumerate()
-        .map(|(i, entry)| {
+        .map(|&i| {
+            let entry = &app.log_view.commits[i];
             let time_str = format_relative_time(entry.time);
             let author_short: String = entry.author.chars().take(10).collect();
             let marker = if i < ahead_count { "↑ " } else { "  " };
@@ -77,26 +92,53 @@ fn render_commit_list(frame: &mut Frame, app: &App, area: Rect, accent: Color) {
         })
         .collect();
 
-    let title = if app.log_view.commits.is_empty() {
+    let title = if total_count == 0 {
         " F1 Log (no commits) ".to_string()
+    } else if show_search {
+        format!(" F1 Log ({match_count}/{total_count}) ")
     } else {
-        format!(" F1 Log ({}) ", app.log_view.commits.len())
+        format!(" F1 Log ({total_count}) ")
     };
 
-    let selected = (!app.log_view.commits.is_empty()).then_some(app.log_view.selected);
-    super::render_selectable_list(frame, area, title, items, selected, border_style);
+    let selected_pos = filtered.iter().position(|&i| i == app.log_view.selected);
+    super::render_selectable_list(frame, list_area, title, items, selected_pos, border_style);
+
+    if let Some(sa) = search_area {
+        super::render_search_bar(
+            frame,
+            app.log_view.commit_search_query.as_str(),
+            app.log_view.commit_search_active,
+            sa,
+            accent,
+        );
+    }
 }
 
 fn render_file_list(frame: &mut Frame, app: &App, area: Rect, accent: Color) {
     let focused = app.focus == Focus::FileList;
     let border_style = super::focused_border_style(focused, accent);
 
+    let show_search = app.log_view.file_search_active || !app.log_view.file_search_query.is_empty();
+
+    let (list_area, search_area) = if show_search {
+        let chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Min(0), Constraint::Length(1)])
+            .split(area);
+        (chunks[0], Some(chunks[1]))
+    } else {
+        (area, None)
+    };
+
+    let filtered = app.log_file_filtered_indices();
+    let match_count = filtered.len();
+    let total_count = app.log_view.commit_files.len();
+
     let scroll_x = app.log_view.file_scroll_x;
-    let items: Vec<ListItem> = app
-        .log_view
-        .commit_files
+    let items: Vec<ListItem> = filtered
         .iter()
-        .map(|f| {
+        .map(|&i| {
+            let f = &app.log_view.commit_files[i];
             let path = super::char_offset(&f.path, scroll_x);
             let line = Line::from(vec![
                 Span::styled(
@@ -116,10 +158,29 @@ fn render_file_list(frame: &mut Frame, app: &App, area: Rect, accent: Color) {
         .map(|e| format!(" F1 {} {} ", e.short_id, e.summary))
         .unwrap_or_else(|| " F1 Files ".to_string());
 
-    let title = truncate_title(&commit_summary, title_budget(area.width));
+    let title_base = truncate_title(&commit_summary, title_budget(list_area.width));
+    let title = if show_search && total_count > 0 {
+        // Drop the trailing space the base title carries so the count
+        // suffix sits flush against the summary text.
+        format!("{} ({match_count}/{total_count}) ", title_base.trim_end())
+    } else {
+        title_base
+    };
 
-    let selected = (!app.log_view.commit_files.is_empty()).then_some(app.log_view.file_selected);
-    super::render_selectable_list(frame, area, title, items, selected, border_style);
+    let selected_pos = filtered
+        .iter()
+        .position(|&i| i == app.log_view.file_selected);
+    super::render_selectable_list(frame, list_area, title, items, selected_pos, border_style);
+
+    if let Some(sa) = search_area {
+        super::render_search_bar(
+            frame,
+            app.log_view.file_search_query.as_str(),
+            app.log_view.file_search_active,
+            sa,
+            accent,
+        );
+    }
 }
 
 /// Char budget for the drill-down title inside `area`.
