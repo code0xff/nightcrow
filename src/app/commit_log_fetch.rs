@@ -222,6 +222,14 @@ impl App {
         if self.log_view.drill_down {
             return;
         }
+        // Pause tail prefetch while the commit-list search bar is open.
+        // A new page arriving mid-search would shift the filter cache
+        // and disturb the user's view; the gate is lifted by
+        // `cancel_log_search` / `confirm_log_search`, which re-call this
+        // helper on the way out.
+        if self.log_view.commit_search_active {
+            return;
+        }
         if self.log_view.commits.is_empty() {
             return;
         }
@@ -328,6 +336,10 @@ impl App {
                 self.log_view.fully_loaded = true;
             }
             self.log_view.commit_width_cache.set(None);
+            // Prepend bypasses `set_commits`, so the filter cache must be
+            // refreshed manually so an active search query still resolves
+            // against the newly merged head commits.
+            self.log_view.recompute_commit_filter();
             self.log_view.clear_pending();
             // Slide the selection so the user keeps looking at the same
             // commit even though new entries appeared above it.

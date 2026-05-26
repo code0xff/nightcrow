@@ -34,33 +34,6 @@ pub(crate) const DIFF_PAGE_SIZE: usize = 20;
 /// it, the arming expires and the next Ctrl+Q starts a fresh prompt.
 pub(crate) const QUIT_CONFIRM_WINDOW: Duration = Duration::from_secs(5);
 
-/// Move a list index up by `n`, saturating at 0. Returns `true` when the index
-/// actually changed so callers can decide whether to refresh associated state.
-pub(crate) fn cursor_up(idx: &mut usize, n: usize) -> bool {
-    let next = idx.saturating_sub(n);
-    if next != *idx {
-        *idx = next;
-        true
-    } else {
-        false
-    }
-}
-
-/// Move a list index down by `n`, clamped to `len - 1`. Returns `true` when the
-/// index actually changed. A zero-length list is a no-op.
-pub(crate) fn cursor_down(idx: &mut usize, len: usize, n: usize) -> bool {
-    if len == 0 {
-        return false;
-    }
-    let next = idx.saturating_add(n).min(len - 1);
-    if next != *idx {
-        *idx = next;
-        true
-    } else {
-        false
-    }
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize, Default)]
 pub enum ViewMode {
     #[default]
@@ -980,7 +953,8 @@ pub(crate) mod tests {
         let mut app = app_with_files(vec![]);
         app.repo_path = path.clone();
         app.mode = ViewMode::Log;
-        app.log_view.commits = load_commit_log(&open_repo(&path), 1).unwrap();
+        app.log_view
+            .set_commits(load_commit_log(&open_repo(&path), 1).unwrap());
         app.diff.hunks = vec![context_hunk(&["stale"])];
         app.log_view.diff_title = "stale".to_string();
 
@@ -1018,7 +992,8 @@ pub(crate) mod tests {
         };
         app.repo_path = path.clone();
         app.mode = ViewMode::Log;
-        app.log_view.commits = load_commit_log(&open_repo(&path), 500).unwrap();
+        app.log_view
+            .set_commits(load_commit_log(&open_repo(&path), 500).unwrap());
         app.log_view.selected = 0;
         app.pagination.last_head_oid = app.log_view.commits.first().map(|c| c.oid);
         assert_eq!(app.log_view.commits.len(), 2);
@@ -1053,7 +1028,8 @@ pub(crate) mod tests {
         app.repo_path = path.clone();
         // Pre-load a stale 1-entry list; in Status mode it must NOT be
         // refreshed even when HEAD moves.
-        app.log_view.commits = load_commit_log(&open_repo(&path), 500).unwrap();
+        app.log_view
+            .set_commits(load_commit_log(&open_repo(&path), 500).unwrap());
         app.pagination.last_head_oid = app.log_view.commits.first().map(|c| c.oid);
         assert_eq!(app.log_view.commits.len(), 1);
         assert_eq!(app.mode, ViewMode::Status);
@@ -1124,7 +1100,8 @@ pub(crate) mod tests {
         };
         app.repo_path = path.clone();
         app.mode = ViewMode::Log;
-        app.log_view.commits = load_commit_log(&open_repo(&path), 500).unwrap();
+        app.log_view
+            .set_commits(load_commit_log(&open_repo(&path), 500).unwrap());
         // Select the older commit at the bottom.
         app.log_view.selected = 1;
         let prior_oid = app.log_view.commits[1].oid;
@@ -1157,7 +1134,8 @@ pub(crate) mod tests {
         };
         app.repo_path = path.clone();
         app.mode = ViewMode::Log;
-        app.log_view.commits = load_commit_log(&open_repo(&path), 500).unwrap();
+        app.log_view
+            .set_commits(load_commit_log(&open_repo(&path), 500).unwrap());
         app.log_view.selected = 0;
         app.pagination.last_head_oid = app.log_view.commits.first().map(|c| c.oid);
 
@@ -1190,7 +1168,8 @@ pub(crate) mod tests {
         };
         app.repo_path = path.clone();
         app.mode = ViewMode::Log;
-        app.log_view.commits = load_commit_log(&open_repo(&path), 500).unwrap();
+        app.log_view
+            .set_commits(load_commit_log(&open_repo(&path), 500).unwrap());
         app.log_view.selected = 0; // 'doomed' commit at top
         app.log_view.drill_down = true;
         app.pagination.last_head_oid = app.log_view.commits.first().map(|c| c.oid);
@@ -1397,7 +1376,10 @@ pub(crate) mod tests {
     fn log_select_down_resets_commit_scroll() {
         let mut app = app_with_files(vec![]);
         app.mode = ViewMode::Log;
-        app.log_view.commits = vec![
+        // Seed through `set_commits` so the search filter cache is built;
+        // log navigation walks the filter cache (empty query → 0..len),
+        // which matches the production code path.
+        app.log_view.set_commits(vec![
             CommitEntry::new(
                 git2::Oid::zero(),
                 "0000000".into(),
@@ -1412,7 +1394,7 @@ pub(crate) mod tests {
                 "T".into(),
                 0,
             ),
-        ];
+        ]);
         app.log_view.commit_scroll_x = 9;
         app.log_select_down();
         assert_eq!(app.log_view.selected, 1);
@@ -1424,17 +1406,17 @@ pub(crate) mod tests {
         let mut app = app_with_files(vec![]);
         app.mode = ViewMode::Log;
         app.log_view.drill_down = true;
-        app.log_view.commits = vec![CommitEntry::new(
+        app.log_view.set_commits(vec![CommitEntry::new(
             git2::Oid::zero(),
             "0000000".into(),
             "first".into(),
             "T".into(),
             0,
-        )];
-        app.log_view.commit_files = vec![
+        )]);
+        app.log_view.set_commit_files(vec![
             ChangedFile::new("x.rs".into(), ChangeStatus::Modified),
             ChangedFile::new("y.rs".into(), ChangeStatus::Modified),
-        ];
+        ]);
         app.log_view.file_scroll_x = 7;
         app.log_file_select_down();
         assert_eq!(app.log_view.file_selected, 1);

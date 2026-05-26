@@ -1,5 +1,5 @@
-use crate::app::{cursor_down, cursor_up};
 use crate::git::diff::{ChangedFile, CommitEntry};
+use crate::ui::SearchQuery;
 use std::cell::Cell;
 
 #[derive(Default)]
@@ -28,6 +28,19 @@ pub struct LogView {
     /// The previous fetch returned fewer entries than requested, so no further
     /// pages exist. Cleared by `reset_pagination`.
     pub(crate) fully_loaded: bool,
+    /// Commit-list incremental search. Mirrors `StatusView::search_query` /
+    /// `search_active` / `filter_cache`: the cache contains indices into
+    /// `commits` whose summary matches the lowercased query (or `0..len`
+    /// when the query is empty). Recomputed only when commits or the query
+    /// change.
+    pub commit_search_query: SearchQuery,
+    pub commit_search_active: bool,
+    pub(crate) commits_filter_cache: Vec<usize>,
+    /// Drill-down file-list incremental search. Same shape as the commit
+    /// search above; indices reference `commit_files`.
+    pub file_search_query: SearchQuery,
+    pub file_search_active: bool,
+    pub(crate) commit_files_filter_cache: Vec<usize>,
 }
 
 impl LogView {
@@ -41,6 +54,7 @@ impl LogView {
         self.commit_width_cache.set(None);
         self.pending_fetch = false;
         self.fully_loaded = false;
+        self.recompute_commit_filter();
     }
 
     /// Install a freshly-fetched first page. Resets pagination state via
@@ -60,6 +74,7 @@ impl LogView {
             self.commits.append(&mut page);
             self.loaded_count = self.commits.len();
             self.commit_width_cache.set(None);
+            self.recompute_commit_filter();
         }
         self.pending_fetch = false;
         if received < page_size {
@@ -90,6 +105,7 @@ impl LogView {
     pub(crate) fn set_commit_files(&mut self, files: Vec<ChangedFile>) {
         self.commit_files = files;
         self.commit_files_width_cache.set(None);
+        self.recompute_file_filter();
     }
 
     /// Exit drill-down so the upper pane shows the commit list again. Clears
@@ -101,28 +117,112 @@ impl LogView {
         self.commit_files_width_cache.set(None);
         self.file_selected = 0;
         self.file_scroll_x = 0;
+        // Drop any file-list search state so a later drill-in starts fresh
+        // and does not carry the previous commit's query into the new view.
+        self.file_search_active = false;
+        self.file_search_query.clear();
+        self.commit_files_filter_cache.clear();
     }
 
-    /// Move the file-list cursor up by `n`. Returns whether the selection
-    /// actually changed so the caller can decide whether to reload the diff.
-    /// A non-zero move also resets `file_scroll_x` to mirror the established
-    /// behaviour of clearing horizontal scroll when the highlighted row moves.
-    pub fn file_select_up(&mut self, n: usize) -> bool {
-        let moved = cursor_up(&mut self.file_selected, n);
-        if moved {
-            self.file_scroll_x = 0;
+    /// Refresh `commits_filter_cache` from `commits` and the current query.
+    /// Callers must invoke this after mutating `commits` or
+    /// `commit_search_query`; otherwise the cache will diverge from state.
+    /// Mirrors `StatusView::recompute_filter`.
+    pub(crate) fn recompute_commit_filter(&mut self) {
+        self.commits_filter_cache.clear();
+        if self.commit_search_query.is_empty() {
+            self.commits_filter_cache.extend(0..self.commits.len());
+            return;
         }
-        moved
+        let q = self.commit_search_query.lower();
+        for (i, c) in self.commits.iter().enumerate() {
+            if c.summary_lower.contains(q) {
+                self.commits_filter_cache.push(i);
+            }
+        }
     }
 
-    /// Move the file-list cursor down by `n`. See `file_select_up` for the
-    /// return-value contract.
-    pub fn file_select_down(&mut self, n: usize) -> bool {
-        let moved = cursor_down(&mut self.file_selected, self.commit_files.len(), n);
-        if moved {
-            self.file_scroll_x = 0;
+    /// Refresh `commit_files_filter_cache` from `commit_files` and the
+    /// current query.
+    pub(crate) fn recompute_file_filter(&mut self) {
+        self.commit_files_filter_cache.clear();
+        if self.file_search_query.is_empty() {
+            self.commit_files_filter_cache
+                .extend(0..self.commit_files.len());
+            return;
         }
-        moved
+        let q = self.file_search_query.lower();
+        for (i, f) in self.commit_files.iter().enumerate() {
+            if f.path_lower.contains(q) {
+                self.commit_files_filter_cache.push(i);
+            }
+        }
+    }
+
+    pub fn start_commit_search(&mut self) {
+        self.commit_search_active = true;
+    }
+
+    /// Exit the commit-list search bar and clear any active query. Always
+    /// recomputes the filter so the caller can refresh the diff against the
+    /// now-unfiltered list without inspecting prior state.
+    pub fn cancel_commit_search(&mut self) {
+        self.commit_search_active = false;
+        self.commit_search_query.clear();
+        self.recompute_commit_filter();
+    }
+
+    /// Hide the commit-list search bar. Returns `true` when the query was
+    /// empty and the call therefore collapsed to a cancel (so the caller
+    /// knows to refresh the diff for the now-unfiltered list).
+    pub fn confirm_commit_search(&mut self) -> bool {
+        if self.commit_search_query.is_empty() {
+            self.cancel_commit_search();
+            true
+        } else {
+            self.commit_search_active = false;
+            false
+        }
+    }
+
+    pub fn commit_search_push(&mut self, ch: char) {
+        self.commit_search_query.push(ch);
+        self.recompute_commit_filter();
+    }
+
+    pub fn commit_search_pop(&mut self) {
+        self.commit_search_query.pop();
+        self.recompute_commit_filter();
+    }
+
+    pub fn start_file_search(&mut self) {
+        self.file_search_active = true;
+    }
+
+    pub fn cancel_file_search(&mut self) {
+        self.file_search_active = false;
+        self.file_search_query.clear();
+        self.recompute_file_filter();
+    }
+
+    pub fn confirm_file_search(&mut self) -> bool {
+        if self.file_search_query.is_empty() {
+            self.cancel_file_search();
+            true
+        } else {
+            self.file_search_active = false;
+            false
+        }
+    }
+
+    pub fn file_search_push(&mut self, ch: char) {
+        self.file_search_query.push(ch);
+        self.recompute_file_filter();
+    }
+
+    pub fn file_search_pop(&mut self) {
+        self.file_search_query.pop();
+        self.recompute_file_filter();
     }
 }
 
@@ -198,5 +298,126 @@ mod tests {
         assert_eq!(lv.loaded_count, 2);
         assert!(!lv.fully_loaded);
         assert!(!lv.pending_fetch);
+    }
+
+    fn named_entry(summary: &str) -> CommitEntry {
+        CommitEntry::new(
+            Oid::zero(),
+            "deadbee".to_string(),
+            summary.to_string(),
+            "T".to_string(),
+            0,
+        )
+    }
+
+    #[test]
+    fn commit_filter_empty_query_includes_all_indices() {
+        let mut lv = LogView::default();
+        lv.set_commits(vec![entry(0), entry(1), entry(2)]);
+        assert_eq!(lv.commits_filter_cache, vec![0, 1, 2]);
+    }
+
+    #[test]
+    fn commit_filter_substring_is_case_insensitive() {
+        let mut lv = LogView::default();
+        lv.set_commits(vec![
+            named_entry("Fix Auth bug"),
+            named_entry("feat: AUTH refresh"),
+            named_entry("docs: readme"),
+        ]);
+        lv.commit_search_push('a');
+        lv.commit_search_push('u');
+        lv.commit_search_push('t');
+        lv.commit_search_push('h');
+        assert_eq!(lv.commits_filter_cache, vec![0, 1]);
+    }
+
+    #[test]
+    fn append_page_extends_filter_cache_for_matching_tail() {
+        let mut lv = LogView::default();
+        lv.set_commits(vec![named_entry("alpha"), named_entry("zulu")]);
+        lv.commit_search_push('a');
+        assert_eq!(lv.commits_filter_cache, vec![0]);
+
+        lv.append_page(vec![named_entry("quill"), named_entry("apple")], 2);
+        assert_eq!(lv.commits_filter_cache, vec![0, 3]);
+    }
+
+    #[test]
+    fn cancel_commit_search_clears_query_and_resets_cache() {
+        let mut lv = LogView::default();
+        lv.set_commits(vec![named_entry("alpha"), named_entry("zulu")]);
+        lv.start_commit_search();
+        lv.commit_search_push('a');
+        assert_eq!(lv.commits_filter_cache, vec![0]);
+
+        lv.cancel_commit_search();
+        assert!(!lv.commit_search_active);
+        assert!(lv.commit_search_query.is_empty());
+        assert_eq!(lv.commits_filter_cache, vec![0, 1]);
+    }
+
+    #[test]
+    fn confirm_commit_search_hides_bar_but_keeps_filter() {
+        let mut lv = LogView::default();
+        lv.set_commits(vec![named_entry("alpha"), named_entry("zulu")]);
+        lv.start_commit_search();
+        lv.commit_search_push('a');
+
+        let collapsed_to_cancel = lv.confirm_commit_search();
+        assert!(!collapsed_to_cancel);
+        assert!(!lv.commit_search_active);
+        assert_eq!(lv.commit_search_query.as_str(), "a");
+        assert_eq!(lv.commits_filter_cache, vec![0]);
+    }
+
+    #[test]
+    fn confirm_commit_search_on_empty_query_collapses_to_cancel() {
+        let mut lv = LogView::default();
+        lv.set_commits(vec![named_entry("alpha")]);
+        lv.start_commit_search();
+
+        let collapsed_to_cancel = lv.confirm_commit_search();
+        assert!(collapsed_to_cancel);
+        assert!(!lv.commit_search_active);
+    }
+
+    #[test]
+    fn set_commit_files_seeds_filter_cache_under_active_query() {
+        let mut lv = LogView::default();
+        lv.file_search_push('r');
+        lv.set_commit_files(vec![
+            ChangedFile::new("readme.md".into(), crate::git::diff::ChangeStatus::Modified),
+            ChangedFile::new(
+                "src/lib.rs".into(),
+                crate::git::diff::ChangeStatus::Modified,
+            ),
+        ]);
+        assert_eq!(lv.commit_files_filter_cache, vec![0, 1]);
+
+        lv.file_search_push('e');
+        lv.file_search_push('a');
+        // "readme.md" contains "rea"; "src/lib.rs" does not.
+        assert_eq!(lv.commit_files_filter_cache, vec![0]);
+    }
+
+    #[test]
+    fn reset_drill_down_clears_file_search_state() {
+        let mut lv = LogView::default();
+        lv.drill_down = true;
+        lv.set_commit_files(vec![ChangedFile::new(
+            "readme.md".into(),
+            crate::git::diff::ChangeStatus::Modified,
+        )]);
+        lv.start_file_search();
+        lv.file_search_push('r');
+        assert!(lv.file_search_active);
+        assert_eq!(lv.commit_files_filter_cache, vec![0]);
+
+        lv.reset_drill_down();
+        assert!(!lv.drill_down);
+        assert!(!lv.file_search_active);
+        assert!(lv.file_search_query.is_empty());
+        assert!(lv.commit_files_filter_cache.is_empty());
     }
 }
