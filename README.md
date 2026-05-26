@@ -72,10 +72,9 @@ file; the two sources share a combined cap of 9 panes (the F1–F9 jump keys).
 | `↑` / `k`, `↓` / `j` | Navigate items one by one |
 | `PgUp` / `PgDn` | Jump 10 items |
 | `Ctrl+F` | Zoom the list pane to full screen (toggle) |
-| `/` | Incremental search (status view only) |
-| `Esc` | Cancel search |
-| `Enter` | Drill into commit's file list (log view) |
-| `Esc` | Return to commit list from file drill-down |
+| `/` | Incremental search (status: paths; log: commit summaries; drill-down: paths) |
+| `Esc` | Clear filter, then exit drill-down (log), then cancel search bar |
+| `Enter` | Confirm filter (keeps query) or drill into commit's file list (log view) |
 
 ### Diff viewer (right panel)
 
