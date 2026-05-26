@@ -296,10 +296,7 @@ fn validate_config(cfg: &Config) -> Result<()> {
 /// first, then CLI commands (labelled by their command text). The combined
 /// count is held to `MAX_STARTUP_COMMANDS`, and empty `--exec` values are
 /// rejected — config entries were already validated by `validate_config`.
-pub fn resolve_startup_commands(
-    cfg: &Config,
-    cli_exec: &[String],
-) -> Result<Vec<StartupCommand>> {
+pub fn resolve_startup_commands(cfg: &Config, cli_exec: &[String]) -> Result<Vec<StartupCommand>> {
     let mut resolved = cfg.startup_commands.clone();
     for (i, command) in cli_exec.iter().enumerate() {
         anyhow::ensure!(
