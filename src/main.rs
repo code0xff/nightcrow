@@ -261,6 +261,14 @@ fn handle_paste(app: &mut App, text: &str) {
         }
         return;
     }
+    if app.focus == Focus::FileList
+        && (app.log_view.commit_search_active || app.log_view.file_search_active)
+    {
+        for ch in text.chars().filter(|c| !c.is_control()) {
+            app.log_search_push(ch);
+        }
+        return;
+    }
     if app.focus == Focus::DiffViewer && app.diff.search.active {
         for ch in text.chars().filter(|c| !c.is_control()) {
             app.diff.search_push(ch);
@@ -309,8 +317,11 @@ fn handle_key(app: &mut App, key: KeyEvent) -> KeyOutcome {
     // keystroke until dismissed. Letting global actions fire while one is
     // open would tear down the state the overlay is operating on — e.g.
     // Ctrl+L toggling the view away while a diff-search query is active.
-    let overlay_active =
-        app.repo_input.active || app.status_view.search_active || app.diff.search.active;
+    let overlay_active = app.repo_input.active
+        || app.status_view.search_active
+        || app.diff.search.active
+        || app.log_view.commit_search_active
+        || app.log_view.file_search_active;
     if !overlay_active && let Some(outcome) = handle_global_action(app, action) {
         return outcome;
     }
@@ -454,6 +465,12 @@ fn handle_upper_key(app: &mut App, key: KeyEvent, action: Action) {
         handle_file_search_key(app, key);
         return;
     }
+    if app.focus == Focus::FileList
+        && (app.log_view.commit_search_active || app.log_view.file_search_active)
+    {
+        handle_log_search_key(app, key);
+        return;
+    }
     if app.focus == Focus::DiffViewer && app.diff.search.active {
         handle_diff_search_key(app, key);
         return;
@@ -501,6 +518,34 @@ fn handle_file_search_key(app: &mut App, key: KeyEvent) {
     }
 }
 
+fn handle_log_search_key(app: &mut App, key: KeyEvent) {
+    match key.code {
+        KeyCode::Up => app.select_up(),
+        KeyCode::Down => app.select_down(),
+        KeyCode::Esc => app.cancel_log_search(),
+        KeyCode::Enter => app.confirm_log_search(),
+        KeyCode::Backspace => {
+            // Which query is active depends on whether the drill-down file
+            // list is showing; mirror the dispatch used by `log_search_push`.
+            let query_empty = if app.log_view.drill_down {
+                app.log_view.file_search_query.is_empty()
+            } else {
+                app.log_view.commit_search_query.is_empty()
+            };
+            if query_empty {
+                app.cancel_log_search();
+            } else {
+                app.log_search_pop();
+            }
+        }
+        _ => {
+            if let Some(c) = text_input_char(key) {
+                app.log_search_push(c);
+            }
+        }
+    }
+}
+
 fn handle_diff_search_key(app: &mut App, key: KeyEvent) {
     match key.code {
         KeyCode::Esc => app.diff.cancel_search(),
@@ -526,9 +571,29 @@ fn handle_unmapped_upper_key(app: &mut App, key: KeyEvent) {
             KeyCode::Enter if app.mode == ViewMode::Log && !app.log_view.drill_down => {
                 app.log_drill_in()
             }
+            // Log search Esc precedence sits ahead of `log_drill_out` so the
+            // first Esc clears a confirmed filter before a second Esc exits
+            // drill-down — mirrors the status-search Esc rule below.
+            KeyCode::Esc
+                if app.mode == ViewMode::Log
+                    && app.log_view.drill_down
+                    && !app.log_view.file_search_query.is_empty() =>
+            {
+                app.cancel_log_search()
+            }
+            KeyCode::Esc
+                if app.mode == ViewMode::Log
+                    && !app.log_view.drill_down
+                    && !app.log_view.commit_search_query.is_empty() =>
+            {
+                app.cancel_log_search()
+            }
             KeyCode::Esc if app.log_view.drill_down => app.log_drill_out(),
             _ if app.mode == ViewMode::Status && matches_text_command(key, '/') => {
                 app.start_search()
+            }
+            _ if app.mode == ViewMode::Log && matches_text_command(key, '/') => {
+                app.start_log_search()
             }
             KeyCode::Esc if !app.status_view.search_query.is_empty() => app.cancel_search(),
             KeyCode::Left => app.file_scroll_left(),
