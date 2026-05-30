@@ -326,18 +326,18 @@ fn render_hint_bar(app: &App, accent: Color) -> Paragraph<'_> {
     }
     let hint = match app.focus {
         Focus::Terminal => {
-            " shift+↑/↓: scroll | shift+pgup/dn: page scroll | shift+←/→: cycle | ctrl+t: new pane | ctrl+w: close pane | ctrl+f: fullscreen | ctrl+l: log view | ctrl+o: repo | ctrl+p: theme | ctrl+q: quit"
+            " shift+↑/↓: scroll | shift+pgup/dn: page scroll | shift+←/→: cycle | ctrl+t: new pane | ctrl+w: close pane | ctrl+f: fullscreen | ctrl+l: log view | ctrl+o: repo | ctrl+q: quit"
         }
         Focus::FileList => match app.mode {
             ViewMode::Log => {
                 if app.log_view.drill_down {
                     " esc: back to commits | j/k: navigate files | shift+←/→: cycle | ctrl+q: quit"
                 } else {
-                    " ctrl+l: status view | j/k: navigate commits | enter: view files | shift+←/→: cycle | ctrl+q: quit"
+                    " shift+←/→: cycle | j/k: navigate commits | enter: view files | ctrl+t: new pane | ctrl+w: close pane | ctrl+f: fullscreen | ctrl+l: status view | ctrl+o: repo | ctrl+q: quit"
                 }
             }
             ViewMode::Status => {
-                " shift+←/→: cycle | j/k: navigate | /: search | ctrl+f: fullscreen | ctrl+l: log view | ctrl+o: repo | ctrl+p: theme | ctrl+q: quit"
+                " shift+←/→: cycle | j/k: navigate | /: search | ctrl+t: new pane | ctrl+w: close pane | ctrl+f: fullscreen | ctrl+l: log view | ctrl+o: repo | ctrl+q: quit"
             }
         },
         Focus::DiffViewer => {
@@ -348,7 +348,7 @@ fn render_hint_bar(app: &App, accent: Color) -> Paragraph<'_> {
             } else if !app.diff.search.query.is_empty() {
                 " n: next match | shift+n: prev match | /: new search | esc: clear"
             } else {
-                " shift+←/→: cycle | j/k: scroll | v: view file | /: search | ctrl+f: zoom | pgup/pgdn: scroll | ctrl+l: log view | ctrl+o: repo | ctrl+p: theme | ctrl+q: quit"
+                " shift+←/→: cycle | j/k: scroll | pgup/pgdn: scroll | v: view file | /: search | ctrl+t: new pane | ctrl+w: close pane | ctrl+f: zoom | ctrl+l: log view | ctrl+o: repo | ctrl+q: quit"
             }
         }
     };
