@@ -22,7 +22,7 @@ use crossterm::{
     execute,
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
-use input::{Action, encode_key, map_key, vim_navigation_action};
+use input::{Action, encode_key, map_key, prefix_action, vim_navigation_action};
 use ratatui::{Terminal, backend::CrosstermBackend, layout::Rect};
 use std::{io, time::Duration};
 use syntect::highlighting::ThemeSet;
@@ -51,6 +51,10 @@ fn main() -> Result<()> {
     // Resolve before entering the alternate screen so a too-many-panes error
     // surfaces as plain stderr text rather than a flash behind the TUI.
     let startup_commands = config::resolve_startup_commands(&cfg, &cli.exec)?;
+    // Parse the leader before the alternate screen too, so a malformed
+    // `[input] leader` is reported as plain stderr. `load_config` already
+    // validated it; re-parsing keeps the KeyEvent local to the app setup.
+    let leader = config::parse_leader(&cfg.input.leader)?;
 
     let input_path = match cli.repo {
         Some(p) => p,
@@ -81,7 +85,7 @@ fn main() -> Result<()> {
     let backend = CrosstermBackend::new(io::stdout());
     let mut terminal = Terminal::new(backend)?;
 
-    run(&mut terminal, repo_path, cfg, startup_commands)
+    run(&mut terminal, repo_path, cfg, startup_commands, leader)
 }
 
 struct TerminalGuard;
@@ -119,10 +123,11 @@ fn run(
     repo_path: String,
     cfg: config::Config,
     startup_commands: Vec<config::StartupCommand>,
+    leader: KeyEvent,
 ) -> Result<()> {
     let ss = SyntaxSet::load_defaults_newlines();
     let ts = ThemeSet::load_defaults();
-    let mut app = init_app(&repo_path, &cfg, &startup_commands);
+    let mut app = init_app(&repo_path, &cfg, &startup_commands, leader);
 
     if matches!(splash_loop(terminal, &app)?, SplashOutcome::Quit) {
         tracing::info!(repo = %app.repo_path, "nightcrow stopped during splash");
@@ -139,9 +144,15 @@ fn init_app(
     repo_path: &str,
     cfg: &config::Config,
     startup_commands: &[config::StartupCommand],
+    leader: KeyEvent,
 ) -> App {
     let saved_session = session::load_session(repo_path);
-    let mut app = App::new(repo_path.to_string(), cfg.log.prompt_log, startup_commands);
+    let mut app = App::new(
+        repo_path.to_string(),
+        cfg.log.prompt_log,
+        startup_commands,
+        leader,
+    );
     app.set_accent_index(cfg.theme.preset_index());
     app.cfg_agent_indicator = cfg.agent_indicator.clone();
     app.pagination.page_size = cfg.log.commit_log_page_size;
@@ -173,13 +184,13 @@ fn splash_loop(
         }
         if event::poll(Duration::from_millis(16))? {
             match event::read()? {
-                // Honour Ctrl+Q (and Esc) so the user can abort during the
-                // splash instead of being forced to wait for it to clear
-                // and quit from the main view. Any other key dismisses
-                // the splash, matching the prior behaviour.
+                // Honour Esc so the user can abort during the splash instead
+                // of being forced to wait for it to clear and quit from the
+                // main view. (Leader-based quit needs a two-key sequence, so
+                // it isn't recognised on the one-shot splash screen.) Any
+                // other key dismisses the splash.
                 Event::Key(k) if k.kind == KeyEventKind::Press => {
-                    let action = map_key(k);
-                    if action == Action::Quit || k.code == KeyCode::Esc {
+                    if k.code == KeyCode::Esc {
                         return Ok(SplashOutcome::Quit);
                     }
                     break;
@@ -305,30 +316,44 @@ fn handle_key(app: &mut App, key: KeyEvent) -> KeyOutcome {
         return KeyOutcome::Continue;
     }
 
-    let action = map_key(key);
-    // Any keystroke other than a follow-up Ctrl+Q cancels an armed quit
-    // confirmation. This runs before the overlay gate so opening a search
-    // or repo dialog also dismisses the prompt — otherwise the hint would
-    // linger until the deadline expires.
-    if action != Action::Quit {
-        app.cancel_quit_confirm();
-    }
     // Modal overlays (repo-input dialog, both search bars) own every
-    // keystroke until dismissed. Letting global actions fire while one is
-    // open would tear down the state the overlay is operating on — e.g.
-    // Ctrl+L toggling the view away while a diff-search query is active.
+    // keystroke until dismissed. They are checked before any leader handling
+    // so a leader keypress while a search/repo dialog is open is typed/edited
+    // by the overlay rather than arming the prefix.
     let overlay_active = app.repo_input.active
         || app.status_view.search_active
         || app.diff.search.active
         || app.log_view.commit_search_active
         || app.log_view.file_search_active;
-    if !overlay_active && let Some(outcome) = handle_global_action(app, action) {
-        return outcome;
+    if overlay_active {
+        // A prefix could only be armed if an overlay opened out from under it;
+        // disarm so the indicator never lingers behind a modal.
+        app.cancel_prefix();
+        if app.repo_input.active {
+            handle_repo_input_key(app, key);
+        } else {
+            // Search overlays are handled inside the focus-local upper handler.
+            handle_upper_key(app, key, Action::None);
+        }
+        return KeyOutcome::Continue;
     }
 
-    if app.repo_input.active {
-        handle_repo_input_key(app, key);
+    // Prefix is armed: this key is the single follow-up. Resolve it three
+    // ways — Esc/Ctrl+C cancels, the leader again sends a literal leader to
+    // the PTY, a mapped key runs its action; any other key is consumed.
+    if app.prefix_armed() {
+        return handle_prefix_followup(app, key);
+    }
+
+    // The leader chord arms the prefix; nothing else happens this tick.
+    if app.is_leader_key(key) {
+        app.arm_prefix();
         return KeyOutcome::Continue;
+    }
+
+    let action = map_key(key);
+    if let Some(outcome) = handle_global_action(app, action) {
+        return outcome;
     }
 
     match app.focus {
@@ -338,13 +363,41 @@ fn handle_key(app: &mut App, key: KeyEvent) -> KeyOutcome {
     KeyOutcome::Continue
 }
 
+/// Resolve the single key pressed while the prefix is armed. The prefix is
+/// always disarmed before returning (tmux-style: one follow-up per leader).
+fn handle_prefix_followup(app: &mut App, key: KeyEvent) -> KeyOutcome {
+    app.cancel_prefix();
+
+    // Esc / Ctrl+C cancel the prefix without acting. The follow-up key is
+    // consumed (not forwarded) so the cancel never leaks into the PTY.
+    let is_ctrl_c = key.code == KeyCode::Char('c') && key.modifiers.contains(KeyModifiers::CONTROL);
+    if key.code == KeyCode::Esc || is_ctrl_c {
+        return KeyOutcome::Continue;
+    }
+
+    // `<L> <L>`: send the leader chord literally to the focused PTY so the
+    // running program still sees the prefix key when the user means it.
+    if app.is_leader_key(key) {
+        if app.focus == Focus::Terminal
+            && let Some(data) = encode_key(app.leader)
+        {
+            app.terminal.send_input(&data);
+        }
+        return KeyOutcome::Continue;
+    }
+
+    // A mapped follow-up runs its app command everywhere (terminal + upper).
+    let action = prefix_action(key);
+    if let Some(outcome) = handle_global_action(app, action) {
+        return outcome;
+    }
+    // Unmapped follow-up: consume and drop it, then return to pass-through.
+    KeyOutcome::Continue
+}
+
 fn handle_global_action(app: &mut App, action: Action) -> Option<KeyOutcome> {
     match action {
-        Action::Quit => Some(if app.try_quit() {
-            KeyOutcome::Quit
-        } else {
-            KeyOutcome::Continue
-        }),
+        Action::Quit => Some(KeyOutcome::Quit),
         Action::NewPane => {
             app.open_new_pane();
             Some(KeyOutcome::Continue)
@@ -618,18 +671,42 @@ fn handle_unmapped_upper_key(app: &mut App, key: KeyEvent) {
 mod tests {
     use super::*;
     use crate::app::DiffPaneView;
-    use crate::app::tests::app_with_files;
+    use crate::app::tests::{app_with_fake_backend, app_with_files};
     use crossterm::event::KeyModifiers;
 
     fn press(code: KeyCode, mods: KeyModifiers) -> KeyEvent {
         KeyEvent::new(code, mods)
     }
 
+    /// The default leader chord (Ctrl+G). Test apps all use the default, so a
+    /// standalone constructor avoids borrowing `app` inside a `handle_key`
+    /// call (which would conflict with the `&mut app` argument).
+    fn leader() -> KeyEvent {
+        KeyEvent::new(KeyCode::Char('g'), KeyModifiers::CONTROL)
+    }
+
+    /// Snapshot the byte payloads the app's `FakeBackend` recorded so terminal
+    /// pass-through and literal-leader tests can assert exact PTY bytes.
+    fn backend_payloads(app: &App) -> Vec<Vec<u8>> {
+        app.terminal
+            .fake_backend_sent()
+            .expect("test app must use a FakeBackend")
+    }
+
+    /// A FakeBackend-backed app with one open terminal pane and terminal
+    /// focus, ready for PTY pass-through assertions.
+    fn app_with_terminal_pane() -> App {
+        let mut app = app_with_fake_backend();
+        app.terminal.create_pane().unwrap();
+        app.focus = Focus::Terminal;
+        app
+    }
+
     #[test]
     fn handle_key_ignores_release_events() {
         // Regression for 4faacce: Windows / kitty keyboard protocol emits
         // Press+Release pairs for every keystroke. Only Press must trigger
-        // app mutations; Release of Ctrl+Q in particular must NOT quit.
+        // app mutations; a Release must never act.
         let mut app = app_with_files(vec!["a.rs"]);
         let release = KeyEvent::new_with_kind(
             KeyCode::Char('q'),
@@ -643,123 +720,172 @@ mod tests {
     }
 
     #[test]
-    fn handle_key_press_of_ctrl_q_quits() {
-        // Companion to the release test: a Press of Ctrl+Q must drive the
-        // quit path. The double-press rule means it takes two Presses to
-        // exit, but both must be of kind Press — never Release — so this
-        // test still pins the kind filter.
+    fn handle_key_leader_then_q_quits() {
         let mut app = app_with_files(vec!["a.rs"]);
-        let pressed = press(KeyCode::Char('q'), KeyModifiers::CONTROL);
 
-        let first = handle_key(&mut app, pressed);
+        let first = handle_key(&mut app, leader());
         assert!(matches!(first, KeyOutcome::Continue));
-        assert!(app.quit_confirm_pending());
+        assert!(app.prefix_armed(), "leader must arm the prefix");
 
-        let second = handle_key(&mut app, pressed);
+        let second = handle_key(&mut app, press(KeyCode::Char('q'), KeyModifiers::NONE));
         assert!(matches!(second, KeyOutcome::Quit));
+        assert!(!app.prefix_armed(), "prefix must disarm after follow-up");
     }
 
     #[test]
-    fn handle_key_ctrl_q_after_window_expires_re_arms() {
-        // If the user pressed Ctrl+Q minutes ago and walked away, the next
-        // Ctrl+Q must NOT quit — it should start a fresh confirmation. We
-        // simulate the expired window by parking the deadline in the past.
-        let mut app = app_with_files(vec!["a.rs"]);
-        app.quit_pending_until = Some(
-            std::time::Instant::now()
-                .checked_sub(std::time::Duration::from_secs(60))
-                .expect("instant - 60s is well within Instant's representable range"),
-        );
+    fn handle_key_bare_ctrl_q_does_not_quit() {
+        // Ctrl+Q is no longer an app command; in terminal focus it passes
+        // through to the PTY, never quitting nightcrow.
+        let mut app = app_with_terminal_pane();
 
-        let pressed = press(KeyCode::Char('q'), KeyModifiers::CONTROL);
-        let outcome = handle_key(&mut app, pressed);
-
-        assert!(matches!(outcome, KeyOutcome::Continue));
-        assert!(
-            app.quit_confirm_pending(),
-            "expired arming must be replaced with a fresh window, not just cleared"
-        );
-    }
-
-    #[test]
-    fn handle_key_other_key_cancels_pending_quit() {
-        // An armed quit must clear the moment the user does anything else
-        // — otherwise the confirmation could fire on a much later Ctrl+Q
-        // that the user no longer intends as a follow-up.
-        let mut app = app_with_files(vec!["a.rs"]);
-        let _ = handle_key(&mut app, press(KeyCode::Char('q'), KeyModifiers::CONTROL));
-        assert!(app.quit_confirm_pending());
-
-        let _ = handle_key(&mut app, press(KeyCode::Down, KeyModifiers::NONE));
-        assert!(
-            !app.quit_confirm_pending(),
-            "any non-Quit action must immediately disarm the confirmation"
-        );
-
-        // Subsequent Ctrl+Q now only arms again; it does not quit.
         let outcome = handle_key(&mut app, press(KeyCode::Char('q'), KeyModifiers::CONTROL));
+
         assert!(matches!(outcome, KeyOutcome::Continue));
-        assert!(app.quit_confirm_pending());
+        assert!(!app.prefix_armed());
     }
 
     #[test]
-    fn handle_key_overlay_gate_blocks_global_action_when_diff_search_active() {
-        // Regression for 4084760: Ctrl+L (ToggleLogView) must NOT fire
-        // while the diff search bar is active — otherwise the view tears
-        // down the state the user was searching against.
+    fn handle_key_leader_esc_cancels() {
+        let mut app = app_with_files(vec!["a.rs"]);
+        let _ = handle_key(&mut app, leader());
+        assert!(app.prefix_armed());
+
+        let outcome = handle_key(&mut app, press(KeyCode::Esc, KeyModifiers::NONE));
+        assert!(matches!(outcome, KeyOutcome::Continue));
+        assert!(!app.prefix_armed(), "Esc must cancel the armed prefix");
+    }
+
+    #[test]
+    fn handle_key_leader_unmapped_followup_cancels() {
+        let mut app = app_with_terminal_pane();
+        let _ = handle_key(&mut app, leader());
+        assert!(app.prefix_armed());
+
+        let outcome = handle_key(&mut app, press(KeyCode::Char('z'), KeyModifiers::NONE));
+        assert!(matches!(outcome, KeyOutcome::Continue));
+        assert!(!app.prefix_armed());
+        // The unmapped follow-up is consumed, NOT forwarded to the PTY.
+        assert!(
+            backend_payloads(&app).is_empty(),
+            "unmapped follow-up must be dropped, not sent to the PTY"
+        );
+    }
+
+    #[test]
+    fn handle_key_double_leader_sends_literal_to_pty() {
+        let mut app = app_with_terminal_pane();
+        let _ = handle_key(&mut app, leader());
+        assert!(app.prefix_armed());
+
+        let outcome = handle_key(&mut app, leader());
+        assert!(matches!(outcome, KeyOutcome::Continue));
+        assert!(!app.prefix_armed());
+        // Ctrl+G encodes to 0x07 (BEL) — the literal leader byte.
+        assert_eq!(backend_payloads(&app), vec![vec![0x07]]);
+    }
+
+    #[test]
+    fn handle_key_leader_t_opens_pane() {
+        let mut app = app_with_terminal_pane();
+        let before = app.terminal.panes.len();
+        let _ = handle_key(&mut app, leader());
+        let _ = handle_key(&mut app, press(KeyCode::Char('t'), KeyModifiers::NONE));
+        assert_eq!(app.terminal.panes.len(), before + 1);
+    }
+
+    #[test]
+    fn handle_key_leader_l_toggles_log_view_from_upper_focus() {
+        // Leader commands work in upper (file list) focus too, not just
+        // terminal focus.
+        let mut app = app_with_files(vec!["a.rs"]);
+        app.focus = Focus::FileList;
+        let before = app.mode;
+        let _ = handle_key(&mut app, leader());
+        let _ = handle_key(&mut app, press(KeyCode::Char('l'), KeyModifiers::NONE));
+        assert_ne!(
+            app.mode, before,
+            "leader+l must toggle the view in upper focus"
+        );
+    }
+
+    #[test]
+    fn handle_key_leader_digit_switches_pane() {
+        let mut app = app_with_terminal_pane();
+        app.terminal
+            .create_pane_with(Some("echo two"), Some("two"))
+            .unwrap();
+        assert_eq!(app.terminal.panes.len(), 2);
+        let _ = handle_key(&mut app, leader());
+        let _ = handle_key(&mut app, press(KeyCode::Char('2'), KeyModifiers::NONE));
+        assert_eq!(app.terminal.active, 1);
+        assert_eq!(app.focus, Focus::Terminal);
+    }
+
+    #[test]
+    fn handle_key_terminal_ctrl_w_passes_through_to_pty() {
+        // Ctrl+W (and friends) are prompt-editing keys that must now reach
+        // the running program as control bytes instead of closing the pane.
+        let mut app = app_with_terminal_pane();
+
+        let _ = handle_key(&mut app, press(KeyCode::Char('w'), KeyModifiers::CONTROL));
+
+        // Ctrl+W encodes to 0x17 (ETB).
+        assert_eq!(backend_payloads(&app), vec![vec![0x17]]);
+    }
+
+    #[test]
+    fn handle_key_terminal_ctrl_app_keys_all_pass_through() {
+        // Every former bare-Ctrl app shortcut now reaches the PTY untouched.
+        for (c, byte) in [
+            ('q', 0x11u8),
+            ('t', 0x14),
+            ('w', 0x17),
+            ('f', 0x06),
+            ('l', 0x0c),
+            ('p', 0x10),
+            ('o', 0x0f),
+        ] {
+            let mut app = app_with_terminal_pane();
+            let _ = handle_key(&mut app, press(KeyCode::Char(c), KeyModifiers::CONTROL));
+            assert_eq!(
+                backend_payloads(&app),
+                vec![vec![byte]],
+                "ctrl+{c} must pass through to the PTY"
+            );
+        }
+    }
+
+    #[test]
+    fn handle_key_overlay_blocks_leader_when_diff_search_active() {
+        // While a search overlay is open the leader is typed/consumed by the
+        // overlay, never arming the prefix or firing an app command.
         let mut app = app_with_files(vec!["a.rs"]);
         app.focus = Focus::DiffViewer;
         app.diff.start_search();
         assert!(app.diff.search.active);
         let before = app.mode;
 
-        let ctrl_l = press(KeyCode::Char('l'), KeyModifiers::CONTROL);
-        let _ = handle_key(&mut app, ctrl_l);
+        let _ = handle_key(&mut app, leader());
+        assert!(!app.prefix_armed(), "leader must not arm behind an overlay");
+        let _ = handle_key(&mut app, press(KeyCode::Char('l'), KeyModifiers::NONE));
 
-        assert_eq!(app.mode, before, "Ctrl+L must be suppressed by overlay");
+        assert_eq!(
+            app.mode, before,
+            "no app command may fire behind an overlay"
+        );
         assert!(app.diff.search.active, "diff search must remain open");
-        assert!(
-            app.diff.search.query.is_empty(),
-            "Ctrl+L must not type into diff search"
-        );
     }
 
     #[test]
-    fn handle_key_overlay_gate_blocks_global_action_when_file_search_active() {
-        let mut app = app_with_files(vec!["a.rs"]);
-        app.focus = Focus::FileList;
-        app.start_search();
-        assert!(app.status_view.search_active);
-        let before = app.mode;
-
-        let ctrl_l = press(KeyCode::Char('l'), KeyModifiers::CONTROL);
-        let _ = handle_key(&mut app, ctrl_l);
-
-        assert_eq!(app.mode, before);
-        assert!(app.status_view.search_active);
-        assert!(
-            app.status_view.search_query.is_empty(),
-            "Ctrl+L must not type into file search"
-        );
-    }
-
-    #[test]
-    fn handle_key_overlay_gate_blocks_global_action_when_repo_input_active() {
+    fn handle_key_overlay_blocks_leader_when_repo_input_active() {
         let mut app = app_with_files(vec!["a.rs"]);
         app.start_repo_input();
+        app.repo_input.buf.clear();
         assert!(app.repo_input.active);
-        let before = app.mode;
-        let before_buf = app.repo_input.buf.clone();
 
-        let ctrl_l = press(KeyCode::Char('l'), KeyModifiers::CONTROL);
-        let _ = handle_key(&mut app, ctrl_l);
-
-        assert_eq!(app.mode, before);
+        let _ = handle_key(&mut app, leader());
+        assert!(!app.prefix_armed());
         assert!(app.repo_input.active);
-        assert_eq!(
-            app.repo_input.buf, before_buf,
-            "Ctrl+L must not type into repo input"
-        );
     }
 
     #[test]

@@ -25,18 +25,17 @@ pub enum Action {
     None,
 }
 
+/// Classify a key with NO leader prefix in play. App commands are no longer
+/// reachable here (they moved behind the leader — see `prefix_action`); only
+/// the modifier-required reserved keys and the bare navigation keys remain.
+///
+/// Reserved no-prefix keys are safe global shortcuts because they cannot be
+/// confused with prompt text: F-keys are distinct across terminals, and the
+/// Shift+arrow / Shift+PgUp/PgDn chords carry a modifier.
 pub fn map_key(event: KeyEvent) -> Action {
-    let ctrl = event.modifiers.contains(KeyModifiers::CONTROL);
     let shift = event.modifiers.contains(KeyModifiers::SHIFT);
 
     match event.code {
-        KeyCode::Char('q') if ctrl => Action::Quit,
-        KeyCode::Char('t') if ctrl => Action::NewPane,
-        KeyCode::Char('w') if ctrl => Action::ClosePane,
-        KeyCode::Char('o') if ctrl => Action::ChangeRepo,
-        KeyCode::Char('f') if ctrl => Action::ToggleFullscreen,
-        KeyCode::Char('l') if ctrl => Action::ToggleLogView,
-        KeyCode::Char('p') if ctrl => Action::CycleTheme,
         KeyCode::Left if shift => Action::CycleBackward,
         KeyCode::Right if shift => Action::CycleForward,
         KeyCode::Up if shift => Action::TermScrollLineUp,
@@ -57,6 +56,30 @@ pub fn map_key(event: KeyEvent) -> Action {
         // characters when Focus::Terminal forwards them to the PTY. The
         // upper-pane handler interprets them as navigation explicitly via
         // `is_vim_navigation_key`.
+        _ => Action::None,
+    }
+}
+
+/// Classify the single follow-up key pressed after the leader. Returns the
+/// app `Action` the leader chord maps to, or `Action::None` for an unmapped
+/// follow-up (which the dispatcher consumes and drops).
+///
+/// The follow-up is matched on the bare character regardless of modifiers so
+/// `<L> t` works whether or not the user is still holding a modifier from the
+/// leader chord. Digits `1`..`7` select terminal panes `0`..`6`.
+pub fn prefix_action(event: KeyEvent) -> Action {
+    match event.code {
+        KeyCode::Char(c) => match c.to_ascii_lowercase() {
+            't' => Action::NewPane,
+            'w' => Action::ClosePane,
+            'l' => Action::ToggleLogView,
+            'f' => Action::ToggleFullscreen,
+            'o' => Action::ChangeRepo,
+            'p' => Action::CycleTheme,
+            'q' => Action::Quit,
+            d @ '1'..='7' => Action::SwitchPane(d as usize - '1' as usize),
+            _ => Action::None,
+        },
         _ => Action::None,
     }
 }
@@ -160,12 +183,62 @@ mod tests {
     }
 
     #[test]
-    fn maps_quit_shortcuts() {
-        assert_eq!(map_key(ctrl(KeyCode::Char('q'))), Action::Quit);
+    fn single_ctrl_keys_are_no_longer_app_commands() {
+        // The leader redesign removed bare Ctrl app shortcuts: these now pass
+        // through to the PTY (Action::None) so the running program receives
+        // them as control bytes.
+        for c in ['q', 't', 'w', 'o', 'f', 'l', 'p'] {
+            assert_eq!(
+                map_key(ctrl(KeyCode::Char(c))),
+                Action::None,
+                "ctrl+{c} must no longer be a no-prefix app command"
+            );
+        }
         // Plain 'q' must pass through (terminal apps like less/vim use it).
         assert_ne!(map_key(key(KeyCode::Char('q'))), Action::Quit);
-        // Ctrl+C is a terminal signal, not a quit shortcut.
-        assert_ne!(map_key(ctrl(KeyCode::Char('c'))), Action::Quit);
+    }
+
+    #[test]
+    fn prefix_dispatch_maps_app_commands() {
+        assert_eq!(prefix_action(key(KeyCode::Char('t'))), Action::NewPane);
+        assert_eq!(prefix_action(key(KeyCode::Char('w'))), Action::ClosePane);
+        assert_eq!(
+            prefix_action(key(KeyCode::Char('l'))),
+            Action::ToggleLogView
+        );
+        assert_eq!(
+            prefix_action(key(KeyCode::Char('f'))),
+            Action::ToggleFullscreen
+        );
+        assert_eq!(prefix_action(key(KeyCode::Char('o'))), Action::ChangeRepo);
+        assert_eq!(prefix_action(key(KeyCode::Char('p'))), Action::CycleTheme);
+        assert_eq!(prefix_action(key(KeyCode::Char('q'))), Action::Quit);
+    }
+
+    #[test]
+    fn prefix_dispatch_maps_digits_to_panes() {
+        assert_eq!(
+            prefix_action(key(KeyCode::Char('1'))),
+            Action::SwitchPane(0)
+        );
+        assert_eq!(
+            prefix_action(key(KeyCode::Char('7'))),
+            Action::SwitchPane(6)
+        );
+        // 8/9 are out of the 1..=7 range and fall through to None.
+        assert_eq!(prefix_action(key(KeyCode::Char('8'))), Action::None);
+    }
+
+    #[test]
+    fn prefix_dispatch_ignores_modifiers_on_follow_up() {
+        // A leftover Ctrl from the leader chord must not break the follow-up.
+        assert_eq!(prefix_action(ctrl(KeyCode::Char('t'))), Action::NewPane);
+    }
+
+    #[test]
+    fn prefix_dispatch_unmapped_key_is_none() {
+        assert_eq!(prefix_action(key(KeyCode::Char('z'))), Action::None);
+        assert_eq!(prefix_action(key(KeyCode::Esc)), Action::None);
     }
 
     #[test]
@@ -217,21 +290,6 @@ mod tests {
         // Plain up/down must not trigger terminal scroll.
         assert_ne!(map_key(key(KeyCode::Up)), Action::TermScrollLineUp);
         assert_ne!(map_key(key(KeyCode::Down)), Action::TermScrollLineDown);
-    }
-
-    #[test]
-    fn maps_new_pane() {
-        assert_eq!(map_key(ctrl(KeyCode::Char('t'))), Action::NewPane);
-    }
-
-    #[test]
-    fn maps_close_pane() {
-        assert_eq!(map_key(ctrl(KeyCode::Char('w'))), Action::ClosePane);
-    }
-
-    #[test]
-    fn maps_change_repo() {
-        assert_eq!(map_key(ctrl(KeyCode::Char('o'))), Action::ChangeRepo);
     }
 
     #[test]

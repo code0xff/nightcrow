@@ -45,6 +45,10 @@ pub fn make_repo() -> (TempDir, String) {
 pub struct FakeBackend {
     next_id: crate::backend::PaneId,
     pub launched: Vec<Option<String>>,
+    /// Byte payloads passed to `send_input`, in call order. Lets input tests
+    /// assert the exact bytes forwarded to the PTY (pass-through, literal
+    /// leader) without a real terminal.
+    pub sent: Vec<Vec<u8>>,
 }
 
 impl crate::backend::TerminalBackend for FakeBackend {
@@ -61,7 +65,8 @@ impl crate::backend::TerminalBackend for FakeBackend {
 
     fn destroy_pane(&mut self, _id: crate::backend::PaneId) {}
 
-    fn send_input(&mut self, _id: crate::backend::PaneId, _data: &[u8]) -> anyhow::Result<()> {
+    fn send_input(&mut self, _id: crate::backend::PaneId, data: &[u8]) -> anyhow::Result<()> {
+        self.sent.push(data.to_vec());
         Ok(())
     }
 
@@ -72,4 +77,8 @@ impl crate::backend::TerminalBackend for FakeBackend {
     }
 
     fn set_cwd(&mut self, _path: &std::path::Path) {}
+
+    fn test_sent_payloads(&self) -> Option<Vec<Vec<u8>>> {
+        Some(self.sent.clone())
+    }
 }

@@ -22,4 +22,12 @@ pub trait TerminalBackend {
     fn resize(&mut self, id: PaneId, rows: u16, cols: u16);
     fn drain_events(&mut self) -> Vec<BackendEvent>;
     fn set_cwd(&mut self, path: &std::path::Path);
+
+    /// Test hook: byte payloads recorded by a recording backend. Real
+    /// backends return `None`; the in-memory test `FakeBackend` overrides
+    /// this so input tests can assert exact PTY pass-through bytes.
+    #[cfg(test)]
+    fn test_sent_payloads(&self) -> Option<Vec<Vec<u8>>> {
+        None
+    }
 }

@@ -1,10 +1,12 @@
 use anyhow::{Context, Result};
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
-/// Upper bound on `[[startup_command]]` entries. Aligned with the F1..F9
-/// pane-jump shortcut range: more startup panes than there are direct-jump
-/// keys would create panes the user cannot reach by their documented key.
+/// Upper bound on `[[startup_command]]` entries. A small fixed cap keeps the
+/// tab bar legible and startup bounded. Direct pane-jump keys cover the first
+/// seven panes (`F3`..`F9` and `<leader> 1`..`7`); panes beyond that are still
+/// reachable via focus cycling (`Shift+←/→`).
 pub const MAX_STARTUP_COMMANDS: usize = 9;
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -14,11 +16,70 @@ pub struct Config {
     pub log: LogConfig,
     pub theme: ThemeConfig,
     pub agent_indicator: AgentIndicatorConfig,
+    pub input: InputConfig,
     /// Commands launched in their own terminal pane at startup, in order.
     /// Maps from TOML `[[startup_command]]` array-of-tables. Empty by
     /// default, which preserves the single empty-shell startup behaviour.
     #[serde(rename = "startup_command")]
     pub startup_commands: Vec<StartupCommand>,
+}
+
+/// Default leader chord literal. `Ctrl+G` avoids tmux's own `Ctrl+B` prefix
+/// (so nightcrow can run inside tmux), and is rarely used by shells/readline,
+/// leaving the terminal-editing Ctrl keys (`Ctrl+W`, `Ctrl+L`, …) free to
+/// reach the PTY.
+const DEFAULT_LEADER: &str = "ctrl+g";
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct InputConfig {
+    /// The leader (prefix) chord. Every nightcrow app command is reached by
+    /// pressing this key, then a follow-up key (tmux-style). Accepts a single
+    /// `ctrl+<ascii>` chord; the parser rejects anything that doubles as a
+    /// no-prefix reserved key (F1..F9, Shift+arrows, Shift+PgUp/PgDn).
+    pub leader: String,
+}
+
+impl Default for InputConfig {
+    fn default() -> Self {
+        Self {
+            leader: DEFAULT_LEADER.to_string(),
+        }
+    }
+}
+
+/// Parse a leader chord string (e.g. `"ctrl+b"`) into a `KeyEvent`.
+///
+/// Only `ctrl+<ascii-printable>` chords are accepted. The chord must be a key
+/// that `encode_key` can turn into literal bytes (so `<L><L>` can pass the
+/// leader through to the PTY) and must NOT collide with a no-prefix reserved
+/// key. F-keys, Shift+arrows, and Shift+PgUp/PgDn are reserved and rejected.
+pub fn parse_leader(spec: &str) -> Result<KeyEvent> {
+    let normalized = spec.trim().to_ascii_lowercase();
+    let rest = normalized.strip_prefix("ctrl+").ok_or_else(|| {
+        anyhow::anyhow!(
+            "input.leader \"{spec}\" must be a ctrl chord like \"ctrl+b\" \
+             (only ctrl+<letter/ascii> leaders are supported)"
+        )
+    })?;
+    let mut chars = rest.chars();
+    let (Some(c), None) = (chars.next(), chars.next()) else {
+        anyhow::ensure!(
+            false,
+            "input.leader \"{spec}\" must name exactly one ascii character after ctrl+"
+        );
+        unreachable!()
+    };
+    anyhow::ensure!(
+        c.is_ascii_graphic(),
+        "input.leader \"{spec}\" must use a printable ascii character after ctrl+ \
+         (e.g. ctrl+b, ctrl+a, ctrl+space is not allowed)"
+    );
+    // A control chord that encode_key cannot turn into a single control byte
+    // would make `<L><L>` literal pass-through impossible. The ascii-graphic
+    // gate above already excludes space/control inputs, so every accepted
+    // char maps to a control byte via the xterm convention.
+    Ok(KeyEvent::new(KeyCode::Char(c), KeyModifiers::CONTROL))
 }
 
 /// A single reserved startup command. `name` labels the pane's tab; when
@@ -288,6 +349,9 @@ fn validate_config(cfg: &Config) -> Result<()> {
             "startup_command[{i}].command must not be empty"
         );
     }
+    // Surface a bad leader at startup (plain stderr) rather than letting the
+    // app fall back to a silent default the user did not ask for.
+    parse_leader(&cfg.input.leader)?;
     Ok(())
 }
 
@@ -663,6 +727,60 @@ command = "cargo test"
             });
         }
         assert!(validate_config(&cfg).is_ok());
+    }
+
+    #[test]
+    fn input_leader_defaults_to_ctrl_g() {
+        let cfg = Config::default();
+        assert_eq!(cfg.input.leader, "ctrl+g");
+        let leader = parse_leader(&cfg.input.leader).unwrap();
+        assert_eq!(leader.code, KeyCode::Char('g'));
+        assert!(leader.modifiers.contains(KeyModifiers::CONTROL));
+    }
+
+    #[test]
+    fn input_leader_parses_from_toml() {
+        let toml = r#"
+[input]
+leader = "ctrl+a"
+"#;
+        let cfg: Config = toml::from_str(toml).unwrap();
+        assert_eq!(cfg.input.leader, "ctrl+a");
+        validate_config(&cfg).unwrap();
+        let leader = parse_leader(&cfg.input.leader).unwrap();
+        assert_eq!(leader.code, KeyCode::Char('a'));
+    }
+
+    #[test]
+    fn parse_leader_accepts_uppercase_and_whitespace() {
+        let leader = parse_leader("  CTRL+B  ").unwrap();
+        assert_eq!(leader.code, KeyCode::Char('b'));
+        assert!(leader.modifiers.contains(KeyModifiers::CONTROL));
+    }
+
+    #[test]
+    fn parse_leader_rejects_non_ctrl_chords() {
+        assert!(parse_leader("b").is_err());
+        assert!(parse_leader("alt+b").is_err());
+        assert!(parse_leader("shift+b").is_err());
+    }
+
+    #[test]
+    fn parse_leader_rejects_reserved_and_multichar_keys() {
+        // F-keys, named keys, and multi-char specs are not single ctrl+ascii
+        // chords, so they fail the ctrl+ prefix / single-char gates.
+        assert!(parse_leader("ctrl+f1").is_err());
+        assert!(parse_leader("f1").is_err());
+        assert!(parse_leader("ctrl+pageup").is_err());
+        assert!(parse_leader("ctrl+").is_err());
+        assert!(parse_leader("ctrl+ ").is_err());
+    }
+
+    #[test]
+    fn validate_rejects_bad_leader() {
+        let mut cfg = Config::default();
+        cfg.input.leader = "f1".to_string();
+        assert!(validate_config(&cfg).is_err());
     }
 
     #[test]

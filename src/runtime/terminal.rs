@@ -155,6 +155,14 @@ impl TerminalState {
         }
     }
 
+    /// Byte payloads recorded by an underlying `FakeBackend`, for tests that
+    /// assert exact PTY pass-through. `None` when the backend is not a
+    /// `FakeBackend` (e.g. production `PtyBackend` or no backend).
+    #[cfg(test)]
+    pub(crate) fn fake_backend_sent(&self) -> Option<Vec<Vec<u8>>> {
+        self.backend.as_ref().and_then(|b| b.test_sent_payloads())
+    }
+
     pub fn send_input(&mut self, data: &[u8]) {
         let Some(info) = self.panes.get(self.active) else {
             return;

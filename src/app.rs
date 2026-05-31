@@ -21,18 +21,15 @@ pub use crate::ui::diff_pane::{DiffPane, DiffPaneView};
 pub use crate::ui::file_view::{FileViewKey, FileViewState};
 pub use crate::ui::log_view::LogView;
 pub use crate::ui::status_view::{RepoInput, StatusView};
+use crossterm::event::{KeyEvent, KeyModifiers};
 #[cfg(test)]
 pub(crate) use diff_load::DiffApply;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 #[cfg(test)]
 use crate::runtime::terminal::SCROLLBACK_LINES;
 pub(crate) const LIST_PAGE_SIZE: usize = 10;
 pub(crate) const DIFF_PAGE_SIZE: usize = 20;
-/// Window during which a second Ctrl+Q press confirms the quit. The first
-/// press only arms this window; if the second press doesn't arrive within
-/// it, the arming expires and the next Ctrl+Q starts a fresh prompt.
-pub(crate) const QUIT_CONFIRM_WINDOW: Duration = Duration::from_secs(5);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize, Default)]
 pub enum ViewMode {
@@ -100,10 +97,14 @@ pub struct App {
     /// detached HEAD, unborn branches, or bare repos. Rendered in the top
     /// header so the user always sees which branch the workdir tracks.
     pub branch_name: Option<String>,
-    /// Deadline by which a second Ctrl+Q must arrive to confirm the quit.
-    /// `None` when not armed; an instant already in the past means the prior
-    /// arming expired and the next Ctrl+Q will re-arm instead of quitting.
-    pub quit_pending_until: Option<Instant>,
+    /// The configured leader (prefix) chord. Pressing it arms `prefix_armed`;
+    /// the next key is then interpreted as an app command (tmux-style).
+    pub leader: KeyEvent,
+    /// True while the leader has been pressed and we are waiting for the
+    /// follow-up key. There is intentionally NO timeout: the prefix stays
+    /// armed until a follow-up key (mapped → run + disarm, unmapped → consume
+    /// + disarm) or `Esc`/`Ctrl+C` (cancel) resolves it.
+    pub prefix_armed: bool,
 }
 
 impl App {
@@ -111,6 +112,7 @@ impl App {
         repo_path: String,
         prompt_log: bool,
         startup_commands: &[crate::config::StartupCommand],
+        leader: KeyEvent,
     ) -> Self {
         let snapshot = SnapshotChannel::spawn(&repo_path);
 
@@ -139,7 +141,8 @@ impl App {
             auto_follow: AutoFollow::default(),
             list_fullscreen: false,
             branch_name: None,
-            quit_pending_until: None,
+            leader,
+            prefix_armed: false,
         };
 
         app.ensure_initial_terminal(startup_commands);
@@ -147,36 +150,43 @@ impl App {
         app
     }
 
-    /// True while the first Ctrl+Q is still within its confirmation window.
-    /// Drives the hint bar so the user sees why their first press didn't
-    /// quit — without an indicator the double-press rule is invisible.
-    pub fn quit_confirm_pending(&self) -> bool {
-        self.quit_pending_until
-            .is_some_and(|deadline| Instant::now() < deadline)
+    /// True while the leader has been pressed and we await the follow-up key.
+    /// Drives the hint bar's `PREFIX` indicator.
+    pub fn prefix_armed(&self) -> bool {
+        self.prefix_armed
     }
 
-    /// Request a quit. Returns `true` if the caller should actually exit,
-    /// `false` if the request only armed the confirmation window. The second
-    /// arming call within the window confirms; after the deadline expires
-    /// the next call re-arms instead of confirming so a stale press from
-    /// minutes ago can't take the app down.
-    pub fn try_quit(&mut self) -> bool {
-        let now = Instant::now();
-        if let Some(deadline) = self.quit_pending_until
-            && now < deadline
-        {
-            self.quit_pending_until = None;
-            return true;
+    /// Arm the prefix: the next key will be interpreted as an app command.
+    pub fn arm_prefix(&mut self) {
+        self.prefix_armed = true;
+    }
+
+    /// Disarm the prefix, returning to normal pass-through routing.
+    pub fn cancel_prefix(&mut self) {
+        self.prefix_armed = false;
+    }
+
+    /// Caret-notation label for the configured leader chord, e.g. `^G` for
+    /// `Ctrl+G`. Leaders are always ctrl chords (see `config::parse_leader`),
+    /// so the control character maps cleanly to `^<UPPER>`; any non-ctrl key
+    /// falls back to printing its raw character.
+    pub fn leader_label(&self) -> String {
+        match self.leader.code {
+            crossterm::event::KeyCode::Char(c)
+                if self.leader.modifiers.contains(KeyModifiers::CONTROL) =>
+            {
+                format!("^{}", c.to_ascii_uppercase())
+            }
+            crossterm::event::KeyCode::Char(c) => c.to_string(),
+            _ => "<prefix>".to_string(),
         }
-        self.quit_pending_until = Some(now + QUIT_CONFIRM_WINDOW);
-        false
     }
 
-    /// Cancel any armed quit confirmation. Called from the key-dispatch path
-    /// the moment the user does anything other than press Ctrl+Q again, so
-    /// the hint bar reverts immediately.
-    pub fn cancel_quit_confirm(&mut self) {
-        self.quit_pending_until = None;
+    /// True when `key` matches the configured leader chord.
+    pub fn is_leader_key(&self, key: KeyEvent) -> bool {
+        key.code == self.leader.code
+            && key.modifiers.contains(KeyModifiers::CONTROL)
+                == self.leader.modifiers.contains(KeyModifiers::CONTROL)
     }
 }
 
@@ -188,6 +198,7 @@ pub(crate) mod tests {
     };
     use crate::runtime::terminal::PaneCallbacks;
     use crate::test_util::{make_repo, open_repo, run_git};
+    use crossterm::event::KeyCode;
     use std::collections::HashMap;
     use std::path::Path;
     use std::sync::mpsc;
@@ -244,7 +255,8 @@ pub(crate) mod tests {
             auto_follow: AutoFollow::default(),
             list_fullscreen: false,
             branch_name: None,
-            quit_pending_until: None,
+            leader: KeyEvent::new(KeyCode::Char('g'), KeyModifiers::CONTROL),
+            prefix_armed: false,
         }
     }
 
@@ -262,11 +274,27 @@ pub(crate) mod tests {
         }
     }
 
-    fn app_with_fake_backend() -> App {
+    pub(crate) fn app_with_fake_backend() -> App {
         let mut app = app_with_files(vec!["a.rs"]);
         let backend = Box::new(crate::test_util::FakeBackend::default());
         app.terminal = TerminalState::new(Some(backend), false);
         app
+    }
+
+    #[test]
+    fn leader_label_renders_ctrl_chord_as_caret_uppercase() {
+        let mut app = app_with_files(vec!["a.rs"]);
+        // Default leader is Ctrl+G.
+        assert_eq!(app.leader_label(), "^G");
+        app.leader = KeyEvent::new(KeyCode::Char('b'), KeyModifiers::CONTROL);
+        assert_eq!(app.leader_label(), "^B");
+    }
+
+    #[test]
+    fn leader_label_without_ctrl_prints_raw_char() {
+        let mut app = app_with_files(vec!["a.rs"]);
+        app.leader = KeyEvent::new(KeyCode::Char('x'), KeyModifiers::NONE);
+        assert_eq!(app.leader_label(), "x");
     }
 
     #[test]

@@ -277,30 +277,43 @@ fn render_hint_bar(app: &App, accent: Color) -> Paragraph<'_> {
             Span::styled("█", Style::default().fg(accent)),
         ]));
     }
-    if app.quit_confirm_pending() {
-        return Paragraph::new(Line::from(
-            " Press ctrl+q again to quit (any other key cancels)",
-        ))
-        .style(Style::default().fg(Color::Yellow));
+    if app.prefix_armed() {
+        return Paragraph::new(Line::from(vec![
+            Span::styled(
+                " PREFIX ",
+                Style::default()
+                    .fg(Color::Black)
+                    .bg(accent)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(
+                " t: new pane | w: close | l: log/status | f: fullscreen | o: repo | p: theme | q: quit | 1-7: pane | esc: cancel",
+                Style::default().fg(Color::DarkGray),
+            ),
+        ]));
     }
     if let Some(ref msg) = app.status {
         return Paragraph::new(Line::from(msg.as_str())).style(Style::default().fg(Color::Red));
     }
     if app.terminal.fullscreen {
+        let leader = app.leader_label();
+        let hint = format!(
+            " {leader}: leader | shift+↑/↓: scroll | shift+pgup/dn: page scroll | shift+←/→: cycle pane | <prefix> f: exit fullscreen | <prefix> t: new pane | <prefix> w: close pane | <prefix> q: quit"
+        );
         return Paragraph::new(Line::from(Span::styled(
-            " shift+↑/↓: scroll | shift+pgup/dn: page scroll | shift+←/→: cycle pane | ctrl+f: exit fullscreen | ctrl+t: new pane | ctrl+w: close pane | ctrl+q: quit",
+            hint,
             Style::default().fg(Color::DarkGray),
         )));
     }
     if app.diff.fullscreen {
         let hint = if app.diff.view == DiffPaneView::File {
-            " ctrl+f: exit zoom | v: back to diff | j/k: scroll | pgup/pgdn: page | ctrl+q: quit"
+            " <prefix> f: exit zoom | v: back to diff | j/k: scroll | pgup/pgdn: page | <prefix> q: quit"
         } else if app.diff.search.active {
             " type to search | enter: confirm | esc: cancel"
         } else if !app.diff.search.query.is_empty() {
-            " ctrl+f: exit zoom | n: next match | shift+n: prev match | /: new search | esc: clear"
+            " <prefix> f: exit zoom | n: next match | shift+n: prev match | /: new search | esc: clear"
         } else {
-            " ctrl+f: exit zoom | j/k: scroll | v: view file | /: search | pgup/pgdn: page | ctrl+q: quit"
+            " <prefix> f: exit zoom | j/k: scroll | v: view file | /: search | pgup/pgdn: page | <prefix> q: quit"
         };
         return Paragraph::new(Line::from(Span::styled(
             hint,
@@ -310,13 +323,13 @@ fn render_hint_bar(app: &App, accent: Color) -> Paragraph<'_> {
     if app.list_fullscreen {
         let hint = match app.mode {
             ViewMode::Log if app.log_view.drill_down => {
-                " ctrl+f: exit zoom | esc: back to commits | j/k: navigate files | ctrl+q: quit"
+                " <prefix> f: exit zoom | esc: back to commits | j/k: navigate files | <prefix> q: quit"
             }
             ViewMode::Log => {
-                " ctrl+f: exit zoom | ctrl+l: status view | j/k: navigate commits | enter: view files | ctrl+q: quit"
+                " <prefix> f: exit zoom | <prefix> l: status view | j/k: navigate commits | enter: view files | <prefix> q: quit"
             }
             ViewMode::Status => {
-                " ctrl+f: exit zoom | j/k: navigate | /: search | ctrl+l: log view | ctrl+q: quit"
+                " <prefix> f: exit zoom | j/k: navigate | /: search | <prefix> l: log view | <prefix> q: quit"
             }
         };
         return Paragraph::new(Line::from(Span::styled(
@@ -324,31 +337,39 @@ fn render_hint_bar(app: &App, accent: Color) -> Paragraph<'_> {
             Style::default().fg(Color::DarkGray),
         )));
     }
+    if let Focus::Terminal = app.focus {
+        let leader = app.leader_label();
+        let hint = format!(
+            " {leader}: leader | shift+↑/↓: scroll | shift+pgup/dn: page scroll | shift+←/→: cycle | <prefix> t: new pane | <prefix> w: close pane | <prefix> f: fullscreen | <prefix> l: log view | <prefix> o: repo | <prefix> q: quit"
+        );
+        return Paragraph::new(Line::from(Span::styled(
+            hint,
+            Style::default().fg(Color::DarkGray),
+        )));
+    }
     let hint = match app.focus {
-        Focus::Terminal => {
-            " shift+↑/↓: scroll | shift+pgup/dn: page scroll | shift+←/→: cycle | ctrl+t: new pane | ctrl+w: close pane | ctrl+f: fullscreen | ctrl+l: log view | ctrl+o: repo | ctrl+q: quit"
-        }
+        Focus::Terminal => unreachable!("Focus::Terminal handled above"),
         Focus::FileList => match app.mode {
             ViewMode::Log => {
                 if app.log_view.drill_down {
-                    " esc: back to commits | j/k: navigate files | shift+←/→: cycle | ctrl+q: quit"
+                    " esc: back to commits | j/k: navigate files | shift+←/→: cycle | <prefix> q: quit"
                 } else {
-                    " shift+←/→: cycle | j/k: navigate commits | enter: view files | ctrl+t: new pane | ctrl+w: close pane | ctrl+f: fullscreen | ctrl+l: status view | ctrl+o: repo | ctrl+q: quit"
+                    " shift+←/→: cycle | j/k: navigate commits | enter: view files | <prefix> t: new pane | <prefix> w: close pane | <prefix> f: fullscreen | <prefix> l: status view | <prefix> o: repo | <prefix> q: quit"
                 }
             }
             ViewMode::Status => {
-                " shift+←/→: cycle | j/k: navigate | /: search | ctrl+t: new pane | ctrl+w: close pane | ctrl+f: fullscreen | ctrl+l: log view | ctrl+o: repo | ctrl+q: quit"
+                " shift+←/→: cycle | j/k: navigate | /: search | <prefix> t: new pane | <prefix> w: close pane | <prefix> f: fullscreen | <prefix> l: log view | <prefix> o: repo | <prefix> q: quit"
             }
         },
         Focus::DiffViewer => {
             if app.diff.view == DiffPaneView::File {
-                " v: back to diff | j/k: scroll | pgup/pgdn: page | shift+←/→: cycle | ctrl+q: quit"
+                " v: back to diff | j/k: scroll | pgup/pgdn: page | shift+←/→: cycle | <prefix> q: quit"
             } else if app.diff.search.active {
                 " type to search | enter: confirm | esc: cancel"
             } else if !app.diff.search.query.is_empty() {
                 " n: next match | shift+n: prev match | /: new search | esc: clear"
             } else {
-                " shift+←/→: cycle | j/k: scroll | pgup/pgdn: scroll | v: view file | /: search | ctrl+t: new pane | ctrl+w: close pane | ctrl+f: zoom | ctrl+l: log view | ctrl+o: repo | ctrl+q: quit"
+                " shift+←/→: cycle | j/k: scroll | pgup/pgdn: scroll | v: view file | /: search | <prefix> t: new pane | <prefix> w: close pane | <prefix> f: zoom | <prefix> l: log view | <prefix> o: repo | <prefix> q: quit"
             }
         }
     };

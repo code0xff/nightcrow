@@ -13,7 +13,7 @@ Agent-adjacent terminal workbench — git diff viewer, commit log, and multi-pan
 │ [1] claude  [2] aider  [3] bash                      │
 │ $ cargo test                                         │
 └──────────────────────────────────────────────────────┘
- j/k: scroll | /: search | v: view file | ctrl+q: quit
+ j/k: scroll | /: search | v: view file | <prefix> q: quit
 ```
 
 ## Install
@@ -38,32 +38,63 @@ nightcrow --exec "claude" --exec "codex"
 ```
 
 `--exec` panes open after any `[[startup_command]]` panes from the config
-file; the two sources share a combined cap of 9 panes (the F1–F9 jump keys).
+file; the two sources share a combined cap of 9 panes. Direct jump keys
+(`F3`–`F9`, `<prefix> 1`–`7`) reach the first seven; the rest are reachable by
+focus cycling (`Shift+←/→`).
 
 ## Views
 
 **Status view** (default) — lists changed files on the left, syntax-highlighted diff on the right.
 
-**Commit log view** (`Ctrl+L`) — tig-like commit list on the left, full commit diff on the right. Commits ahead of the upstream are marked with `↑`. Press `Enter` on a commit to drill into its individual files; `Esc` to go back. The list auto-refreshes when the workdir HEAD changes (commits made in the terminal pane, amends, force-pushes, branch switches). History loads one page at a time — initial entry fetches `commit_log_page_size` commits and additional pages stream in on a background thread as the selection approaches the loaded tail, so deep histories stay responsive.
+**Commit log view** (`<prefix> l`) — tig-like commit list on the left, full commit diff on the right. Commits ahead of the upstream are marked with `↑`. Press `Enter` on a commit to drill into its individual files; `Esc` to go back. The list auto-refreshes when the workdir HEAD changes (commits made in the terminal pane, amends, force-pushes, branch switches). History loads one page at a time — initial entry fetches `commit_log_page_size` commits and additional pages stream in on a background thread as the selection approaches the loaded tail, so deep histories stay responsive.
 
 **Top header** — a one-row strip at the top of the screen always shows the repo path (home-relative, e.g. `~/projects/myapp`), the current branch, and ahead/behind counts (`↑N ↓M`) when the branch tracks an upstream.
 
 ## Keyboard shortcuts
 
-### Global
+nightcrow uses a tmux-style **leader (prefix)** key for its app commands. The
+default leader is `Ctrl+G` (configurable via `[input] leader`). `Ctrl+G` avoids
+tmux's own `Ctrl+B` prefix, so nightcrow stays usable inside a tmux session. Press the
+leader, then a single follow-up key. Every other key — including Ctrl chords
+like `Ctrl+W` and `Ctrl+L` — passes straight through to the focused terminal,
+so a CLI running there (claude, codex, your shell) receives them unchanged.
+This is why the leader exists: cockpit users live inside the terminal panes and
+need their prompt-editing keys to reach the program, not nightcrow.
+
+The hint bar shows the active leader in caret notation at its left edge (e.g.
+`^G: leader` for the default `Ctrl+G`), so the configured prefix is always
+visible from the terminal pane.
+
+> **Migration from earlier versions:** the old bare-`Ctrl` app shortcuts moved
+> behind the leader. `Ctrl+T/W/L/F/O/P/Q` are now `<prefix> t/w/l/f/o/p/q`, and
+> those `Ctrl` keys now pass through to the terminal program instead. The old
+> `Ctrl+Q`-twice quit confirmation is gone; quit with `<prefix> q`.
+
+### Leader commands (press `<prefix>`, then the key)
+
+| Key | Action |
+|-----|--------|
+| `<prefix>` then `<prefix>` | Send the literal leader to the terminal program |
+| `<prefix> t` | Open new terminal pane |
+| `<prefix> w` | Close active terminal pane |
+| `<prefix> l` | Toggle between status view and commit log view |
+| `<prefix> f` | Toggle fullscreen for the focused pane (file/commit list, diff viewer, or terminal) |
+| `<prefix> o` | Change repo path |
+| `<prefix> p` | Cycle accent color (yellow → cyan → green → magenta → blue) |
+| `<prefix> q` | Quit |
+| `<prefix> 1`…`<prefix> 7` | Jump to terminal pane 1…7 |
+| `Esc` / `Ctrl+C` (while armed) | Cancel the prefix |
+
+The prefix has no timeout: once armed it waits indefinitely for the follow-up
+key. A key with no leader binding cancels the prefix and is dropped.
+
+### Global (no prefix)
 
 | Key | Action |
 |-----|--------|
 | `Shift+→` / `Shift+←` | Cycle focus: file list → diff viewer → terminal panes → … |
-| `Ctrl+L` | Toggle between status view and commit log view |
-| `Ctrl+T` | Open new terminal pane |
-| `Ctrl+W` | Close active terminal pane |
 | `F1` / `F2` | Focus file list / diff viewer |
 | `F3`…`F9` | Jump to terminal pane 1…7 |
-| `Ctrl+F` | Toggle fullscreen for the focused pane (file/commit list, diff viewer, or terminal) |
-| `Ctrl+P` | Cycle accent color (yellow → cyan → green → magenta → blue) |
-| `Ctrl+O` | Change repo path |
-| `Ctrl+Q` | Quit |
 
 ### File list / Commit list (left panel)
 
@@ -71,7 +102,7 @@ file; the two sources share a combined cap of 9 panes (the F1–F9 jump keys).
 |-----|--------|
 | `↑` / `k`, `↓` / `j` | Navigate items one by one |
 | `PgUp` / `PgDn` | Jump 10 items |
-| `Ctrl+F` | Zoom the list pane to full screen (toggle) |
+| `<prefix> f` | Zoom the list pane to full screen (toggle) |
 | `/` | Incremental search (status: paths; log: commit summaries; drill-down: paths) |
 | `Esc` | Clear filter, then exit drill-down (log), then cancel search bar |
 | `Enter` | Confirm filter (keeps query) or drill into commit's file list (log view) |
@@ -84,7 +115,7 @@ file; the two sources share a combined cap of 9 panes (the F1–F9 jump keys).
 | `PgUp` / `PgDn` | Scroll 20 lines |
 | `←` / `→` | Horizontal scroll (4 columns) |
 | `v` | Toggle between hunk diff and full file preview |
-| `Ctrl+F` | Zoom the diff/file pane to full screen (toggle) |
+| `<prefix> f` | Zoom the diff/file pane to full screen (toggle) |
 | `/` | Open diff search |
 | `n` / `N` | Next / previous search match |
 | `Esc` | Clear search |
@@ -121,6 +152,11 @@ file_list_pct = 25   # horizontal % of upper panel for the file list (1–99)
 
 [theme]
 name = "yellow"      # accent color preset: "yellow" | "cyan" | "green" | "magenta" | "blue"
+
+[input]
+leader = "ctrl+g"    # leader (prefix) chord for app commands; tmux-style.
+                     # Allowed: "ctrl+<letter>". Reserved keys (F1..F9,
+                     # Shift+arrows, Shift+PgUp/PgDn) cannot be the leader.
 
 [log]
 enabled = true

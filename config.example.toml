@@ -10,6 +10,23 @@ file_list_pct = 25   # horizontal % of upper panel for the file list (1–99)
 [theme]
 name = "yellow"      # accent color preset: "yellow" | "cyan" | "green" | "magenta" | "blue"
 
+[input]
+# Leader (prefix) chord. nightcrow app commands are reached tmux-style by
+# pressing the leader, then a follow-up key (e.g. <leader> q to quit). Every
+# other key — including Ctrl chords like Ctrl+W / Ctrl+L — passes straight to
+# the focused terminal so prompt-editing keys reach the program running there.
+#
+# Allowed form: "ctrl+<letter>" (a single ctrl chord). Reserved no-prefix keys
+# (F1..F9, Shift+arrows, Shift+PgUp/PgDn) cannot be used as the leader.
+#
+# Migration: the old bare-Ctrl app shortcuts moved behind the leader:
+#   Ctrl+T → <leader> t   Ctrl+W → <leader> w   Ctrl+L → <leader> l
+#   Ctrl+F → <leader> f   Ctrl+O → <leader> o   Ctrl+P → <leader> p
+#   Ctrl+Q → <leader> q   (and <leader> 1..7 selects a terminal pane)
+# Press the leader twice (<leader> <leader>) to send the literal leader byte
+# to the terminal program.
+leader = "ctrl+g"    # default; avoids tmux's own Ctrl+B prefix so nightcrow can run inside tmux
+
 [log]
 enabled = true
 dir = ".nightcrow/logs"   # relative to repo root
@@ -29,7 +46,8 @@ auto_follow = false       # jump selection to the freshest hot file when idle
 
 # Reserve startup commands: each [[startup_command]] opens its own terminal
 # pane at launch and runs `command` immediately (via `$SHELL -lc <command>`).
-# Up to 9 entries (aligned with the F1–F9 pane-jump keys). `name` labels the
+# Up to 9 entries. Direct pane-jump keys (F3–F9, <leader> 1–7) reach the first
+# seven panes; the rest are still reachable via focus cycling. `name` labels the
 # tab; when omitted the command text is used. With no [[startup_command]]
 # entries, nightcrow opens a single empty shell as before.
 #
