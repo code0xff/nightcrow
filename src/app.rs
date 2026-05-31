@@ -182,11 +182,14 @@ impl App {
         }
     }
 
-    /// True when `key` matches the configured leader chord.
+    /// True when `key` matches the configured leader chord. Only Ctrl/Alt/Shift
+    /// distinguish a chord, so we compare exactly those: a bare `Ctrl+<leader>`
+    /// matches, while `Ctrl+Alt+<leader>` / `Ctrl+Shift+<leader>` do not and
+    /// pass straight through to the PTY instead of being swallowed.
     pub fn is_leader_key(&self, key: KeyEvent) -> bool {
+        let relevant = KeyModifiers::CONTROL | KeyModifiers::ALT | KeyModifiers::SHIFT;
         key.code == self.leader.code
-            && key.modifiers.contains(KeyModifiers::CONTROL)
-                == self.leader.modifiers.contains(KeyModifiers::CONTROL)
+            && (key.modifiers & relevant) == (self.leader.modifiers & relevant)
     }
 }
 

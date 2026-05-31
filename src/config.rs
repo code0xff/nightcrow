@@ -59,7 +59,7 @@ pub fn parse_leader(spec: &str) -> Result<KeyEvent> {
     let rest = normalized.strip_prefix("ctrl+").ok_or_else(|| {
         anyhow::anyhow!(
             "input.leader \"{spec}\" must be a ctrl chord like \"ctrl+b\" \
-             (only ctrl+<letter/ascii> leaders are supported)"
+             (only ctrl+<letter> leaders are supported)"
         )
     })?;
     let mut chars = rest.chars();
@@ -71,14 +71,15 @@ pub fn parse_leader(spec: &str) -> Result<KeyEvent> {
         unreachable!()
     };
     anyhow::ensure!(
-        c.is_ascii_graphic(),
-        "input.leader \"{spec}\" must use a printable ascii character after ctrl+ \
-         (e.g. ctrl+b, ctrl+a, ctrl+space is not allowed)"
+        c.is_ascii_alphabetic(),
+        "input.leader \"{spec}\" must use an ascii letter after ctrl+ \
+         (e.g. ctrl+b; ctrl+1, ctrl+-, ctrl+space are not allowed)"
     );
-    // A control chord that encode_key cannot turn into a single control byte
-    // would make `<L><L>` literal pass-through impossible. The ascii-graphic
-    // gate above already excludes space/control inputs, so every accepted
-    // char maps to a control byte via the xterm convention.
+    // Restricting to letters guarantees `<L><L>` literal pass-through works:
+    // `encode_key` maps Ctrl+A..Ctrl+Z to control bytes 1..26 via the xterm
+    // convention. Digits and punctuation (e.g. ctrl+1) have no single-control-
+    // byte encoding, so encode_key would send the literal char instead and the
+    // pass-through would break — hence they are rejected above.
     Ok(KeyEvent::new(KeyCode::Char(c), KeyModifiers::CONTROL))
 }
 
@@ -736,6 +737,24 @@ command = "cargo test"
         let leader = parse_leader(&cfg.input.leader).unwrap();
         assert_eq!(leader.code, KeyCode::Char('g'));
         assert!(leader.modifiers.contains(KeyModifiers::CONTROL));
+    }
+
+    #[test]
+    fn parse_leader_rejects_unencodable_ctrl_chords() {
+        // Digits and punctuation have no single control-byte encoding, so they
+        // would break `<L><L>` literal pass-through and must be rejected.
+        for spec in ["ctrl+1", "ctrl+-", "ctrl+/", "ctrl+@"] {
+            assert!(
+                parse_leader(spec).is_err(),
+                "{spec} must be rejected as a leader"
+            );
+        }
+    }
+
+    #[test]
+    fn parse_leader_rejects_non_ctrl_and_multichar() {
+        assert!(parse_leader("g").is_err(), "bare key is not a ctrl chord");
+        assert!(parse_leader("ctrl+ab").is_err(), "leader is a single key");
     }
 
     #[test]

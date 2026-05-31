@@ -260,6 +260,11 @@ fn main_loop(
 /// paste from interactive input (crossterm consumes the outer markers when
 /// surfacing `Event::Paste`).
 fn handle_paste(app: &mut App, text: &str) {
+    // A paste arriving while the prefix is armed would otherwise leave the
+    // PREFIX indicator stuck and make the next key resolve as a follow-up.
+    // Resolve the prefix first (tmux treats a non-command event as a cancel),
+    // then route the paste normally.
+    app.cancel_prefix();
     if app.repo_input.active {
         for ch in text.chars().filter(|c| !c.is_control()) {
             app.repo_input_push(ch);
@@ -753,6 +758,58 @@ mod tests {
         let outcome = handle_key(&mut app, press(KeyCode::Esc, KeyModifiers::NONE));
         assert!(matches!(outcome, KeyOutcome::Continue));
         assert!(!app.prefix_armed(), "Esc must cancel the armed prefix");
+    }
+
+    #[test]
+    fn handle_key_leader_ctrl_c_cancels() {
+        let mut app = app_with_terminal_pane();
+        let _ = handle_key(&mut app, leader());
+        assert!(app.prefix_armed());
+
+        let outcome = handle_key(&mut app, press(KeyCode::Char('c'), KeyModifiers::CONTROL));
+        assert!(matches!(outcome, KeyOutcome::Continue));
+        assert!(!app.prefix_armed(), "Ctrl+C must cancel the armed prefix");
+        // The cancel is consumed, never leaked to the PTY.
+        assert!(
+            backend_payloads(&app).is_empty(),
+            "Ctrl+C cancel must not send bytes to the PTY"
+        );
+    }
+
+    #[test]
+    fn handle_key_ctrl_alt_leader_passes_through() {
+        // Ctrl+Alt+<leader> carries an extra modifier, so it is NOT the leader
+        // chord — it must reach the PTY rather than arm the prefix.
+        let mut app = app_with_terminal_pane();
+
+        let outcome = handle_key(
+            &mut app,
+            press(KeyCode::Char('g'), KeyModifiers::CONTROL | KeyModifiers::ALT),
+        );
+
+        assert!(matches!(outcome, KeyOutcome::Continue));
+        assert!(
+            !app.prefix_armed(),
+            "Ctrl+Alt+leader must not arm the prefix"
+        );
+        assert!(
+            !backend_payloads(&app).is_empty(),
+            "Ctrl+Alt+leader must pass through to the PTY"
+        );
+    }
+
+    #[test]
+    fn paste_while_prefix_armed_cancels_prefix() {
+        let mut app = app_with_terminal_pane();
+        let _ = handle_key(&mut app, leader());
+        assert!(app.prefix_armed());
+
+        handle_paste(&mut app, "hello");
+
+        assert!(
+            !app.prefix_armed(),
+            "a paste must resolve (cancel) the armed prefix"
+        );
     }
 
     #[test]
