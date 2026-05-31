@@ -33,14 +33,13 @@ pub enum Action {
 /// confused with prompt text: F-keys are distinct across terminals, and the
 /// Shift+arrow / Shift+PgUp/PgDn chords carry a modifier.
 pub fn map_key(event: KeyEvent) -> Action {
-    // Match reserved chords on their EXACT relevant modifiers so extra
-    // modifiers fall through to the PTY: Shift+arrow must be shift-only (not
-    // Ctrl+Shift+arrow), and the bare F-keys / arrows must carry no
-    // Ctrl/Alt/Shift (so Alt+F3, Ctrl+Up, etc. pass straight through).
-    let relevant = KeyModifiers::CONTROL | KeyModifiers::ALT | KeyModifiers::SHIFT;
-    let mods = event.modifiers & relevant;
-    let shift_only = mods == KeyModifiers::SHIFT;
-    let no_mods = mods.is_empty();
+    // Match reserved chords on their EXACT modifier set so any extra modifier
+    // falls through to the PTY: Shift+arrow must be shift-only (not
+    // Ctrl+Shift+arrow), and the bare F-keys / arrows must carry no modifier at
+    // all — including Super/Hyper/Meta, so e.g. Super+F3 passes straight
+    // through instead of triggering a focus jump.
+    let shift_only = event.modifiers == KeyModifiers::SHIFT;
+    let no_mods = event.modifiers.is_empty();
 
     match event.code {
         KeyCode::Left if shift_only => Action::CycleBackward,
@@ -146,35 +145,99 @@ pub fn encode_key(key: KeyEvent) -> Option<Vec<u8>> {
         }
         KeyCode::Enter => Some(vec![b'\r']),
         KeyCode::Backspace => Some(vec![0x7f]),
-        KeyCode::Delete => Some(b"\x1b[3~".to_vec()),
+        KeyCode::Delete => Some(csi_tilde(3, key.modifiers)),
         KeyCode::Esc => Some(vec![0x1b]),
         KeyCode::Tab => Some(vec![b'\t']),
         KeyCode::BackTab => Some(b"\x1b[Z".to_vec()),
-        KeyCode::Up => Some(b"\x1b[A".to_vec()),
-        KeyCode::Down => Some(b"\x1b[B".to_vec()),
-        KeyCode::Right => Some(b"\x1b[C".to_vec()),
-        KeyCode::Left => Some(b"\x1b[D".to_vec()),
-        KeyCode::Home => Some(b"\x1b[H".to_vec()),
-        KeyCode::End => Some(b"\x1b[F".to_vec()),
-        KeyCode::PageUp => Some(b"\x1b[5~".to_vec()),
-        KeyCode::PageDown => Some(b"\x1b[6~".to_vec()),
-        KeyCode::F(n) => Some(match n {
-            1 => b"\x1bOP".to_vec(),
-            2 => b"\x1bOQ".to_vec(),
-            3 => b"\x1bOR".to_vec(),
-            4 => b"\x1bOS".to_vec(),
-            5 => b"\x1b[15~".to_vec(),
-            6 => b"\x1b[17~".to_vec(),
-            7 => b"\x1b[18~".to_vec(),
-            8 => b"\x1b[19~".to_vec(),
-            9 => b"\x1b[20~".to_vec(),
-            10 => b"\x1b[21~".to_vec(),
-            11 => b"\x1b[23~".to_vec(),
-            12 => b"\x1b[24~".to_vec(),
-            _ => return None,
-        }),
+        KeyCode::Up => Some(csi_cursor(b'A', key.modifiers)),
+        KeyCode::Down => Some(csi_cursor(b'B', key.modifiers)),
+        KeyCode::Right => Some(csi_cursor(b'C', key.modifiers)),
+        KeyCode::Left => Some(csi_cursor(b'D', key.modifiers)),
+        KeyCode::Home => Some(csi_cursor(b'H', key.modifiers)),
+        KeyCode::End => Some(csi_cursor(b'F', key.modifiers)),
+        KeyCode::PageUp => Some(csi_tilde(5, key.modifiers)),
+        KeyCode::PageDown => Some(csi_tilde(6, key.modifiers)),
+        KeyCode::F(n) => encode_function_key(n, key.modifiers),
         _ => None,
     }
+}
+
+/// xterm modifier parameter for CSI sequences: `1 + (shift=1 | alt=2 | ctrl=4 |
+/// meta=8)`. Returns `None` when no modifier is held, signalling that the
+/// legacy unparametrized escape sequence should be used instead.
+fn xterm_modifier_param(mods: KeyModifiers) -> Option<u8> {
+    let mut bits = 0u8;
+    if mods.contains(KeyModifiers::SHIFT) {
+        bits |= 1;
+    }
+    if mods.contains(KeyModifiers::ALT) {
+        bits |= 2;
+    }
+    if mods.contains(KeyModifiers::CONTROL) {
+        bits |= 4;
+    }
+    if mods.intersects(KeyModifiers::SUPER | KeyModifiers::HYPER | KeyModifiers::META) {
+        bits |= 8;
+    }
+    (bits != 0).then_some(bits + 1)
+}
+
+/// Encode a cursor/edit key of the `ESC [ <final>` family, inserting the
+/// `1;<mod>` parameters when a modifier is held so the PTY program sees e.g.
+/// `Ctrl+Up` (`ESC[1;5A`) instead of a bare `Up`.
+fn csi_cursor(final_byte: u8, mods: KeyModifiers) -> Vec<u8> {
+    match xterm_modifier_param(mods) {
+        Some(m) => {
+            let mut bytes = format!("\x1b[1;{m}").into_bytes();
+            bytes.push(final_byte);
+            bytes
+        }
+        None => vec![0x1b, b'[', final_byte],
+    }
+}
+
+/// Encode a `ESC [ <n> ~` edit key (PageUp/PageDown/Delete), adding the
+/// `;<mod>` parameter when a modifier is held.
+fn csi_tilde(n: u8, mods: KeyModifiers) -> Vec<u8> {
+    match xterm_modifier_param(mods) {
+        Some(m) => format!("\x1b[{n};{m}~").into_bytes(),
+        None => format!("\x1b[{n}~").into_bytes(),
+    }
+}
+
+/// Encode an F-key. F1–F4 use the SS3 form (`ESC O P..S`) when unmodified and
+/// the CSI form (`ESC[1;<mod>P..S`) when modified; F5–F12 use the tilde form.
+fn encode_function_key(n: u8, mods: KeyModifiers) -> Option<Vec<u8>> {
+    let param = xterm_modifier_param(mods);
+    let seq = match n {
+        1..=4 => {
+            let final_byte = b"PQRS"[(n - 1) as usize];
+            match param {
+                Some(m) => {
+                    let mut bytes = format!("\x1b[1;{m}").into_bytes();
+                    bytes.push(final_byte);
+                    bytes
+                }
+                None => vec![0x1b, b'O', final_byte],
+            }
+        }
+        5..=12 => {
+            let code = match n {
+                5 => 15,
+                6 => 17,
+                7 => 18,
+                8 => 19,
+                9 => 20,
+                10 => 21,
+                11 => 23,
+                12 => 24,
+                _ => unreachable!(),
+            };
+            csi_tilde(code, mods)
+        }
+        _ => return None,
+    };
+    Some(seq)
 }
 
 #[cfg(test)]
@@ -278,6 +341,31 @@ mod tests {
         // Bare navigation keys with a modifier pass through too.
         assert_eq!(with(KeyCode::Up, M::CONTROL), Action::None);
         assert_eq!(with(KeyCode::Up, M::NONE), Action::Up);
+        // Super/Hyper/Meta count as modifiers and must not be ignored.
+        assert_eq!(with(KeyCode::F(3), M::SUPER), Action::None);
+        assert_eq!(with(KeyCode::Left, M::SHIFT | M::SUPER), Action::None);
+    }
+
+    #[test]
+    fn encode_key_emits_xterm_modifier_sequences() {
+        use KeyModifiers as M;
+        let enc = |code, mods| encode_key(KeyEvent::new(code, mods)).unwrap();
+
+        // Unmodified cursor/F-keys keep their legacy sequences.
+        assert_eq!(enc(KeyCode::Up, M::NONE), b"\x1b[A");
+        assert_eq!(enc(KeyCode::F(3), M::NONE), b"\x1bOR");
+        assert_eq!(enc(KeyCode::F(5), M::NONE), b"\x1b[15~");
+        assert_eq!(enc(KeyCode::PageUp, M::NONE), b"\x1b[5~");
+
+        // Modified keys carry the xterm `1;<mod>` parameter (ctrl=5, shift=2,
+        // alt=3).
+        assert_eq!(enc(KeyCode::Up, M::CONTROL), b"\x1b[1;5A");
+        assert_eq!(enc(KeyCode::Up, M::SHIFT), b"\x1b[1;2A");
+        assert_eq!(enc(KeyCode::Left, M::ALT), b"\x1b[1;3D");
+        assert_eq!(enc(KeyCode::F(3), M::ALT), b"\x1b[1;3R");
+        assert_eq!(enc(KeyCode::F(5), M::CONTROL), b"\x1b[15;5~");
+        assert_eq!(enc(KeyCode::PageUp, M::CONTROL), b"\x1b[5;5~");
+        assert_eq!(enc(KeyCode::Delete, M::SHIFT), b"\x1b[3;2~");
     }
 
     #[test]
