@@ -33,25 +33,32 @@ pub enum Action {
 /// confused with prompt text: F-keys are distinct across terminals, and the
 /// Shift+arrow / Shift+PgUp/PgDn chords carry a modifier.
 pub fn map_key(event: KeyEvent) -> Action {
-    let shift = event.modifiers.contains(KeyModifiers::SHIFT);
+    // Match reserved chords on their EXACT relevant modifiers so extra
+    // modifiers fall through to the PTY: Shift+arrow must be shift-only (not
+    // Ctrl+Shift+arrow), and the bare F-keys / arrows must carry no
+    // Ctrl/Alt/Shift (so Alt+F3, Ctrl+Up, etc. pass straight through).
+    let relevant = KeyModifiers::CONTROL | KeyModifiers::ALT | KeyModifiers::SHIFT;
+    let mods = event.modifiers & relevant;
+    let shift_only = mods == KeyModifiers::SHIFT;
+    let no_mods = mods.is_empty();
 
     match event.code {
-        KeyCode::Left if shift => Action::CycleBackward,
-        KeyCode::Right if shift => Action::CycleForward,
-        KeyCode::Up if shift => Action::TermScrollLineUp,
-        KeyCode::Down if shift => Action::TermScrollLineDown,
-        KeyCode::PageUp if shift => Action::TermScrollUp,
-        KeyCode::PageDown if shift => Action::TermScrollDown,
+        KeyCode::Left if shift_only => Action::CycleBackward,
+        KeyCode::Right if shift_only => Action::CycleForward,
+        KeyCode::Up if shift_only => Action::TermScrollLineUp,
+        KeyCode::Down if shift_only => Action::TermScrollLineDown,
+        KeyCode::PageUp if shift_only => Action::TermScrollUp,
+        KeyCode::PageDown if shift_only => Action::TermScrollDown,
         // F-keys are universally distinct across terminals (no kitty protocol
         // dependency), so they own focus jumps: F1=list, F2=diff,
         // F3..=F9 = terminal panes 1..=7.
-        KeyCode::F(1) => Action::FocusList,
-        KeyCode::F(2) => Action::FocusDiff,
-        KeyCode::F(n @ 3..=9) => Action::SwitchPane(n as usize - 3),
-        KeyCode::Up => Action::Up,
-        KeyCode::Down => Action::Down,
-        KeyCode::PageUp => Action::PageUp,
-        KeyCode::PageDown => Action::PageDown,
+        KeyCode::F(1) if no_mods => Action::FocusList,
+        KeyCode::F(2) if no_mods => Action::FocusDiff,
+        KeyCode::F(n @ 3..=9) if no_mods => Action::SwitchPane(n as usize - 3),
+        KeyCode::Up if no_mods => Action::Up,
+        KeyCode::Down if no_mods => Action::Down,
+        KeyCode::PageUp if no_mods => Action::PageUp,
+        KeyCode::PageDown if no_mods => Action::PageDown,
         // j/k are intentionally NOT mapped here so they remain plain
         // characters when Focus::Terminal forwards them to the PTY. The
         // upper-pane handler interprets them as navigation explicitly via
@@ -252,6 +259,25 @@ mod tests {
         // verbatim to the PTY.
         assert_eq!(map_key(key(KeyCode::Char('k'))), Action::None);
         assert_eq!(map_key(key(KeyCode::Char('j'))), Action::None);
+    }
+
+    #[test]
+    fn reserved_keys_require_exact_modifiers() {
+        use KeyModifiers as M;
+        let with = |code, mods| map_key(KeyEvent::new(code, mods));
+
+        // Shift-only arrows are reserved.
+        assert_eq!(with(KeyCode::Left, M::SHIFT), Action::CycleBackward);
+        // Extra modifiers fall through to the PTY.
+        assert_eq!(with(KeyCode::Left, M::SHIFT | M::CONTROL), Action::None);
+        assert_eq!(with(KeyCode::Right, M::SHIFT | M::ALT), Action::None);
+        // F-keys are reserved only without modifiers.
+        assert_eq!(with(KeyCode::F(3), M::NONE), Action::SwitchPane(0));
+        assert_eq!(with(KeyCode::F(3), M::ALT), Action::None);
+        assert_eq!(with(KeyCode::F(1), M::CONTROL), Action::None);
+        // Bare navigation keys with a modifier pass through too.
+        assert_eq!(with(KeyCode::Up, M::CONTROL), Action::None);
+        assert_eq!(with(KeyCode::Up, M::NONE), Action::Up);
     }
 
     #[test]
