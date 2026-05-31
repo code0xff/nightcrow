@@ -373,21 +373,24 @@ fn handle_key(app: &mut App, key: KeyEvent) -> KeyOutcome {
 fn handle_prefix_followup(app: &mut App, key: KeyEvent) -> KeyOutcome {
     app.cancel_prefix();
 
-    // Esc / Ctrl+C cancel the prefix without acting. The follow-up key is
-    // consumed (not forwarded) so the cancel never leaks into the PTY.
-    let is_ctrl_c = key.code == KeyCode::Char('c') && key.modifiers.contains(KeyModifiers::CONTROL);
-    if key.code == KeyCode::Esc || is_ctrl_c {
-        return KeyOutcome::Continue;
-    }
-
     // `<L> <L>`: send the leader chord literally to the focused PTY so the
-    // running program still sees the prefix key when the user means it.
+    // running program still sees the prefix key when the user means it. This
+    // is resolved before the Esc/Ctrl+C cancel below so that a `ctrl+c` leader
+    // can still deliver a literal Ctrl+C via `<leader><leader>` (Esc remains a
+    // universal cancel regardless of the configured leader).
     if app.is_leader_key(key) {
         if app.focus == Focus::Terminal
             && let Some(data) = encode_key(app.leader)
         {
             app.terminal.send_input(&data);
         }
+        return KeyOutcome::Continue;
+    }
+
+    // Esc / Ctrl+C cancel the prefix without acting. The follow-up key is
+    // consumed (not forwarded) so the cancel never leaks into the PTY.
+    let is_ctrl_c = key.code == KeyCode::Char('c') && key.modifiers.contains(KeyModifiers::CONTROL);
+    if key.code == KeyCode::Esc || is_ctrl_c {
         return KeyOutcome::Continue;
     }
 
@@ -809,6 +812,27 @@ mod tests {
         assert!(
             !app.prefix_armed(),
             "a paste must resolve (cancel) the armed prefix"
+        );
+    }
+
+    #[test]
+    fn leader_leader_sends_literal_leader_even_when_leader_is_ctrl_c() {
+        // With a `ctrl+c` leader, `<leader><leader>` must still reach the PTY
+        // as a literal Ctrl+C (0x03); the leader-again path takes precedence
+        // over the Ctrl+C cancel path.
+        let mut app = app_with_terminal_pane();
+        app.leader = press(KeyCode::Char('c'), KeyModifiers::CONTROL);
+
+        let _ = handle_key(&mut app, press(KeyCode::Char('c'), KeyModifiers::CONTROL));
+        assert!(app.prefix_armed());
+
+        let outcome = handle_key(&mut app, press(KeyCode::Char('c'), KeyModifiers::CONTROL));
+        assert!(matches!(outcome, KeyOutcome::Continue));
+        assert!(!app.prefix_armed());
+        assert_eq!(
+            backend_payloads(&app).concat(),
+            vec![0x03],
+            "<leader><leader> must deliver a literal Ctrl+C to the PTY"
         );
     }
 
