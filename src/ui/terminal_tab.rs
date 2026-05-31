@@ -66,7 +66,7 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect, accent: Color) {
     // ── Tab bar ──────────────────────────────────────────────
     let tab_spans: Vec<Span> = if app.terminal.panes.is_empty() {
         vec![Span::styled(
-            " ctrl+t: new terminal ",
+            format!(" {} t: new terminal ", app.leader_label()),
             Style::default().fg(Color::DarkGray),
         )]
     } else {
@@ -106,7 +106,7 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect, accent: Color) {
 fn build_screen_lines(app: &App, rows: u16, cols: u16) -> Vec<Line<'static>> {
     let Some(screen) = app.active_screen() else {
         return vec![Line::from(Span::styled(
-            " No terminal — press ctrl+t to open one ",
+            format!(" No terminal — press {} t to open one ", app.leader_label()),
             Style::default().fg(Color::DarkGray),
         ))];
     };
