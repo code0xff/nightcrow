@@ -303,11 +303,22 @@ fn handle_paste(app: &mut App, text: &str) {
             .copied()
             .filter(|&b| b != 0x1b && b != 0x00)
             .collect();
-        let mut bytes = Vec::with_capacity(sanitized.len() + 12);
-        bytes.extend_from_slice(b"\x1b[200~");
-        bytes.extend_from_slice(&sanitized);
-        bytes.extend_from_slice(b"\x1b[201~");
-        app.terminal.send_input(&bytes);
+        // Only wrap in bracketed-paste markers when the running program asked
+        // for them (DECSET 2004). A raw program that never enabled the mode
+        // would otherwise receive the literal `[200~`/`[201~` markers as input.
+        let bracketed = app
+            .active_screen()
+            .map(|screen| screen.bracketed_paste())
+            .unwrap_or(false);
+        if bracketed {
+            let mut bytes = Vec::with_capacity(sanitized.len() + 12);
+            bytes.extend_from_slice(b"\x1b[200~");
+            bytes.extend_from_slice(&sanitized);
+            bytes.extend_from_slice(b"\x1b[201~");
+            app.terminal.send_input(&bytes);
+        } else {
+            app.terminal.send_input(&sanitized);
+        }
     }
 }
 
@@ -833,6 +844,36 @@ mod tests {
             backend_payloads(&app).concat(),
             vec![0x03],
             "<leader><leader> must deliver a literal Ctrl+C to the PTY"
+        );
+    }
+
+    #[test]
+    fn terminal_paste_wraps_only_when_bracketed_mode_enabled() {
+        let mut app = app_with_terminal_pane();
+        // The running program enables bracketed paste (DECSET 2004).
+        for parser in app.terminal.parsers.values_mut() {
+            parser.process(b"\x1b[?2004h");
+        }
+
+        handle_paste(&mut app, "hi");
+
+        assert_eq!(
+            backend_payloads(&app).concat(),
+            b"\x1b[200~hi\x1b[201~".to_vec(),
+            "paste must be bracketed when the program enabled DECSET 2004"
+        );
+    }
+
+    #[test]
+    fn terminal_paste_sends_raw_when_bracketed_mode_disabled() {
+        let mut app = app_with_terminal_pane();
+
+        handle_paste(&mut app, "hi");
+
+        assert_eq!(
+            backend_payloads(&app).concat(),
+            b"hi".to_vec(),
+            "without DECSET 2004 the markers must not be sent as literal input"
         );
     }
 
