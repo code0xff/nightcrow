@@ -403,8 +403,7 @@ mod tests {
 
     #[test]
     fn reset_drill_down_clears_file_search_state() {
-        let mut lv = LogView::default();
-        lv.drill_down = true;
+        let mut lv = LogView { drill_down: true, ..Default::default() };
         lv.set_commit_files(vec![ChangedFile::new(
             "readme.md".into(),
             crate::git::diff::ChangeStatus::Modified,
