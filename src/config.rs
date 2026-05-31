@@ -75,6 +75,15 @@ pub fn parse_leader(spec: &str) -> Result<KeyEvent> {
         "input.leader \"{spec}\" must use an ascii letter after ctrl+ \
          (e.g. ctrl+b; ctrl+1, ctrl+-, ctrl+space are not allowed)"
     );
+    // Terminals send Ctrl+I as Tab (0x09) and Ctrl+M as Enter/CR (0x0d), so
+    // crossterm surfaces those as KeyCode::Tab / KeyCode::Enter — never the
+    // Char('i')/Char('m') + CONTROL event that is_leader_key looks for. Such a
+    // leader could be armed but never recognized, so reject it up front.
+    anyhow::ensure!(
+        !matches!(c, 'i' | 'm'),
+        "input.leader \"{spec}\" is not usable: terminals deliver Ctrl+I as Tab \
+         and Ctrl+M as Enter, so this leader would never be recognized"
+    );
     // Restricting to letters guarantees `<L><L>` literal pass-through works:
     // `encode_key` maps Ctrl+A..Ctrl+Z to control bytes 1..26 via the xterm
     // convention. Digits and punctuation (e.g. ctrl+1) have no single-control-
@@ -749,6 +758,18 @@ command = "cargo test"
                 "{spec} must be rejected as a leader"
             );
         }
+    }
+
+    #[test]
+    fn parse_leader_rejects_terminal_alias_chords() {
+        // Ctrl+I == Tab and Ctrl+M == Enter at the byte level, so crossterm
+        // never reports them as Char('i')/Char('m') and the leader would be
+        // unrecognizable.
+        assert!(parse_leader("ctrl+i").is_err(), "ctrl+i aliases Tab");
+        assert!(parse_leader("ctrl+m").is_err(), "ctrl+m aliases Enter");
+        // Neighboring letters remain valid.
+        assert!(parse_leader("ctrl+j").is_ok());
+        assert!(parse_leader("ctrl+n").is_ok());
     }
 
     #[test]
