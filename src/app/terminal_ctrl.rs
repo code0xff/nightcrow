@@ -52,7 +52,16 @@ impl App {
         if let Err(e) = self.terminal.create_pane() {
             tracing::error!("create_terminal_pane failed: {e}");
             self.status = Some(format!("terminal error: {e}"));
+            return;
         }
+        // `create_pane` already made the new pane the active one within
+        // `TerminalState`; move the app-level focus onto it too so the user
+        // lands in the freshly opened terminal instead of staying on the
+        // file list or diff viewer. Drop competing fullscreen flags for the
+        // same reason `switch_pane` does — keep focus, render, and hints in sync.
+        self.focus = Focus::Terminal;
+        self.diff.fullscreen = false;
+        self.list_fullscreen = false;
     }
 
     pub fn close_active_pane(&mut self) {

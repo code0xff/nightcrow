@@ -512,6 +512,31 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn open_new_pane_moves_focus_to_new_terminal() {
+        let mut app = app_with_fake_backend();
+        assert_eq!(app.focus, Focus::FileList);
+
+        app.open_new_pane();
+
+        assert_eq!(app.terminal.panes.len(), 1);
+        assert_eq!(app.focus, Focus::Terminal);
+        assert_eq!(app.terminal.active, 0);
+    }
+
+    #[test]
+    fn open_new_pane_exits_competing_fullscreen() {
+        let mut app = app_with_fake_backend();
+        app.toggle_diff_fullscreen();
+        assert!(app.diff.fullscreen);
+
+        app.open_new_pane();
+
+        assert_eq!(app.focus, Focus::Terminal);
+        assert!(!app.diff.fullscreen);
+        assert!(!app.list_fullscreen);
+    }
+
+    #[test]
     fn switch_pane_ignores_out_of_range() {
         let mut app = app_with_files(vec![]);
         app.switch_pane(5);
