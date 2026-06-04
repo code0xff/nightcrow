@@ -22,7 +22,7 @@ name = "yellow"      # accent color preset: "yellow" | "cyan" | "green" | "magen
 # Migration: the old bare-Ctrl app shortcuts moved behind the leader:
 #   Ctrl+T → <leader> t   Ctrl+W → <leader> w   Ctrl+L → <leader> l
 #   Ctrl+F → <leader> f   Ctrl+O → <leader> o   Ctrl+P → <leader> p
-#   Ctrl+Q → <leader> q   (and <leader> 1..7 selects a terminal pane)
+#   Ctrl+Q → <leader> q
 # Press the leader twice (<leader> <leader>) to send the literal leader byte
 # to the terminal program.
 leader = "ctrl+g"    # default; avoids tmux's own Ctrl+B prefix so nightcrow can run inside tmux
@@ -46,8 +46,10 @@ auto_follow = false       # jump selection to the freshest hot file when idle
 
 # Reserve startup commands: each [[startup_command]] opens its own terminal
 # pane at launch and runs `command` immediately (via `$SHELL -lc <command>`).
-# Up to 9 entries. Direct pane-jump keys (F3–F9, <leader> 1–7) reach the first
-# seven panes; the rest are still reachable via focus cycling. `name` labels the
+# Up to 9 entries. This caps how many panes spawn at once at launch (a guard
+# against a misconfigured batch), not the total — open more anytime with
+# <leader> t. Direct pane-jump keys (F3–F9) reach the first seven panes; the
+# rest are still reachable via focus cycling (Shift+←/→). `name` labels the
 # tab; when omitted the command text is used. With no [[startup_command]]
 # entries, nightcrow opens a single empty shell as before.
 #

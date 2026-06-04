@@ -3,10 +3,14 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
-/// Upper bound on `[[startup_command]]` entries. A small fixed cap keeps the
-/// tab bar legible and startup bounded. The direct pane-jump keys (`F3`..`F9`)
-/// cover the first seven panes; panes beyond that are still reachable via focus
-/// cycling (`Shift+←/→`).
+/// Upper bound on the number of `[[startup_command]]` + `--exec` panes opened
+/// at launch. Unlike runtime panes (opened one at a time by `<leader> t`, and
+/// intentionally unbounded), startup panes all spawn at once from a static
+/// config, so a typo or a pasted block could fork a large batch of processes at
+/// boot. This cap is a misconfiguration guard on that batch — not a limit on
+/// total panes, and not tied to the `F3`..`F9` jump keys. The value is a
+/// deliberately conservative bound; panes past the seventh are still reachable
+/// by focus cycling (`Shift+←/→`).
 pub const MAX_STARTUP_COMMANDS: usize = 9;
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
