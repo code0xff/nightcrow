@@ -148,7 +148,7 @@
 ### Workstream 1
 
 - Goal: 시작 명령 config 스키마 (`[[startup_command]]`)
-- Deliverables: `Config`에 `startup_commands: Vec<StartupCommand>` 필드(`#[serde(rename = "startup_command")]`로 TOML array-of-tables 매핑), `StartupCommand { name: Option<String>, command: String }` 구조체, `validate_config`에서 command 비어있음 거부 + 항목 개수 상한(예: <= 9, F1..F9 pane 전환 한도와 정렬) 검증, 파싱/검증 단위 테스트
+- Deliverables: `Config`에 `startup_commands: Vec<StartupCommand>` 필드(`#[serde(rename = "startup_command")]`로 TOML array-of-tables 매핑), `StartupCommand { name: Option<String>, command: String }` 구조체, `validate_config`에서 command 비어있음 거부 + 항목 개수 상한(예: <= 9, 시작 시 일괄 spawn 방지용 보수적 상한) 검증, 파싱/검증 단위 테스트
 - Exit Criteria: `[[startup_command]]` TOML이 정확히 파싱됨, 빈 command와 개수 초과가 검증에서 거부됨, startup_command 미지정 시 빈 Vec 기본값, `cargo test` 통과
 - status: done
 
