@@ -287,7 +287,7 @@ fn render_hint_bar(app: &App, accent: Color) -> Paragraph<'_> {
                     .add_modifier(Modifier::BOLD),
             ),
             Span::styled(
-                " t: new pane | w: close | l: log/status | f: fullscreen | o: repo | p: theme | q: quit | 1-7: pane | esc: cancel",
+                " t: new pane | w: close | l: log/status | f: fullscreen | o: repo | p: theme | q: quit | esc: cancel",
                 Style::default().fg(Color::DarkGray),
             ),
         ]));

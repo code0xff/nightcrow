@@ -39,8 +39,8 @@ nightcrow --exec "claude" --exec "codex"
 
 `--exec` panes open after any `[[startup_command]]` panes from the config
 file; the two sources share a combined cap of 9 panes. Direct jump keys
-(`F3`–`F9`, `<prefix> 1`–`7`) reach the first seven; the rest are reachable by
-focus cycling (`Shift+←/→`).
+(`F3`–`F9`) reach the first seven; the rest are reachable by focus cycling
+(`Shift+←/→`).
 
 ## Views
 
@@ -82,7 +82,6 @@ visible from the terminal pane.
 | `<prefix> o` | Change repo path |
 | `<prefix> p` | Cycle accent color (yellow → cyan → green → magenta → blue) |
 | `<prefix> q` | Quit |
-| `<prefix> 1`…`<prefix> 7` | Jump to terminal pane 1…7 |
 | `Esc` / `Ctrl+C` (while armed) | Cancel the prefix |
 
 The prefix has no timeout: once armed it waits indefinitely for the follow-up
