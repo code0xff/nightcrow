@@ -295,15 +295,20 @@ fn render_hint_bar(app: &App, accent: Color) -> Paragraph<'_> {
     if let Some(ref msg) = app.status {
         return Paragraph::new(Line::from(msg.as_str())).style(Style::default().fg(Color::Red));
     }
-    if app.terminal.fullscreen {
-        let leader = app.leader_label();
-        let hint = format!(
-            " {leader}: leader | shift+↑/↓: scroll | shift+pgup/dn: page scroll | shift+←/→: cycle pane | <prefix> f: exit fullscreen | <prefix> t: new pane | <prefix> w: close pane | <prefix> q: quit"
-        );
-        return Paragraph::new(Line::from(Span::styled(
-            hint,
+    // `<prefix>` in the hint strings below is a single placeholder that resolves
+    // to the configured leader chord (e.g. `^G`) so the footer always names the
+    // actual key to press rather than an abstract word.
+    let leader = app.leader_label();
+    let render = |hint: &str| {
+        Paragraph::new(Line::from(Span::styled(
+            hint.replace("<prefix>", &leader),
             Style::default().fg(Color::DarkGray),
-        )));
+        )))
+    };
+    if app.terminal.fullscreen {
+        return render(
+            " <prefix>: leader | shift+↑/↓: scroll | shift+pgup/dn: page scroll | shift+←/→: cycle pane | <prefix> f: exit fullscreen | <prefix> t: new pane | <prefix> w: close pane | <prefix> q: quit",
+        );
     }
     if app.diff.fullscreen {
         let hint = if app.diff.view == DiffPaneView::File {
@@ -315,10 +320,7 @@ fn render_hint_bar(app: &App, accent: Color) -> Paragraph<'_> {
         } else {
             " <prefix> f: exit zoom | j/k: scroll | v: view file | /: search | pgup/pgdn: page | <prefix> q: quit"
         };
-        return Paragraph::new(Line::from(Span::styled(
-            hint,
-            Style::default().fg(Color::DarkGray),
-        )));
+        return render(hint);
     }
     if app.list_fullscreen {
         let hint = match app.mode {
@@ -332,20 +334,12 @@ fn render_hint_bar(app: &App, accent: Color) -> Paragraph<'_> {
                 " <prefix> f: exit zoom | j/k: navigate | /: search | <prefix> l: log view | <prefix> q: quit"
             }
         };
-        return Paragraph::new(Line::from(Span::styled(
-            hint,
-            Style::default().fg(Color::DarkGray),
-        )));
+        return render(hint);
     }
     if let Focus::Terminal = app.focus {
-        let leader = app.leader_label();
-        let hint = format!(
-            " {leader}: leader | shift+↑/↓: scroll | shift+pgup/dn: page scroll | shift+←/→: cycle | <prefix> t: new pane | <prefix> w: close pane | <prefix> f: fullscreen | <prefix> l: log view | <prefix> o: repo | <prefix> q: quit"
+        return render(
+            " <prefix>: leader | shift+↑/↓: scroll | shift+pgup/dn: page scroll | shift+←/→: cycle | <prefix> t: new pane | <prefix> w: close pane | <prefix> f: fullscreen | <prefix> l: log view | <prefix> o: repo | <prefix> q: quit",
         );
-        return Paragraph::new(Line::from(Span::styled(
-            hint,
-            Style::default().fg(Color::DarkGray),
-        )));
     }
     let hint = match app.focus {
         Focus::Terminal => unreachable!("Focus::Terminal handled above"),
@@ -373,10 +367,7 @@ fn render_hint_bar(app: &App, accent: Color) -> Paragraph<'_> {
             }
         }
     };
-    Paragraph::new(Line::from(Span::styled(
-        hint,
-        Style::default().fg(Color::DarkGray),
-    )))
+    render(hint)
 }
 
 #[cfg(test)]
