@@ -931,16 +931,30 @@ mod tests {
     }
 
     #[test]
-    fn handle_key_leader_digit_switches_pane() {
+    fn handle_key_leader_digit_is_unmapped() {
+        // Pane jumps moved entirely to the no-prefix F3-F9 keys. A digit after
+        // the leader is unmapped, so it must not switch panes; the dispatcher
+        // consumes it (disarming the prefix) instead of forwarding it to the PTY.
         let mut app = app_with_terminal_pane();
         app.terminal
             .create_pane_with(Some("echo two"), Some("two"))
             .unwrap();
         assert_eq!(app.terminal.panes.len(), 2);
+        app.switch_pane(0);
+        assert_eq!(app.terminal.active, 0);
+
         let _ = handle_key(&mut app, leader());
         let _ = handle_key(&mut app, press(KeyCode::Char('2'), KeyModifiers::NONE));
-        assert_eq!(app.terminal.active, 1);
-        assert_eq!(app.focus, Focus::Terminal);
+
+        assert_eq!(app.terminal.active, 0, "leader+digit must not switch panes");
+        assert!(
+            !app.prefix_armed(),
+            "unmapped follow-up must disarm the prefix"
+        );
+        assert!(
+            backend_payloads(&app).is_empty(),
+            "a consumed leader digit must not reach the PTY"
+        );
     }
 
     #[test]

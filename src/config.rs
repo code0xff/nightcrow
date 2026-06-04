@@ -4,9 +4,9 @@ use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
 /// Upper bound on `[[startup_command]]` entries. A small fixed cap keeps the
-/// tab bar legible and startup bounded. Direct pane-jump keys cover the first
-/// seven panes (`F3`..`F9` and `<leader> 1`..`7`); panes beyond that are still
-/// reachable via focus cycling (`Shift+←/→`).
+/// tab bar legible and startup bounded. The direct pane-jump keys (`F3`..`F9`)
+/// cover the first seven panes; panes beyond that are still reachable via focus
+/// cycling (`Shift+←/→`).
 pub const MAX_STARTUP_COMMANDS: usize = 9;
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]

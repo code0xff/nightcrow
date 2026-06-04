@@ -176,8 +176,9 @@ auto_follow = false       # jump selection to the freshest hot file when idle
 
 # Reserve startup commands: each [[startup_command]] opens its own terminal
 # pane at launch and runs `command` immediately (via `$SHELL -lc <command>`).
-# Up to 9 entries (aligned with the F1–F9 pane-jump keys). `name` labels the
-# tab; when omitted the command text is used. With no [[startup_command]]
+# Up to 9 entries; the first seven are reachable by the F3–F9 pane-jump keys,
+# the rest via focus cycling (Shift+←/→). `name` labels the tab; when omitted
+# the command text is used. With no [[startup_command]]
 # entries, nightcrow opens a single empty shell as before.
 [[startup_command]]
 name = "Claude"           # optional tab label; falls back to the command text
