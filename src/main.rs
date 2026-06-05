@@ -798,7 +798,10 @@ mod tests {
 
         let outcome = handle_key(
             &mut app,
-            press(KeyCode::Char('g'), KeyModifiers::CONTROL | KeyModifiers::ALT),
+            press(
+                KeyCode::Char('g'),
+                KeyModifiers::CONTROL | KeyModifiers::ALT,
+            ),
         );
 
         assert!(matches!(outcome, KeyOutcome::Continue));
