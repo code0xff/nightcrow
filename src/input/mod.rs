@@ -22,6 +22,7 @@ pub enum Action {
     TermScrollLineDown,
     ToggleLogView,
     CycleTheme,
+    Redraw,
     None,
 }
 
@@ -83,6 +84,7 @@ pub fn prefix_action(event: KeyEvent) -> Action {
             'f' => Action::ToggleFullscreen,
             'o' => Action::ChangeRepo,
             'p' => Action::CycleTheme,
+            'r' => Action::Redraw,
             'q' => Action::Quit,
             _ => Action::None,
         },
@@ -282,6 +284,7 @@ mod tests {
         );
         assert_eq!(prefix_action(key(KeyCode::Char('o'))), Action::ChangeRepo);
         assert_eq!(prefix_action(key(KeyCode::Char('p'))), Action::CycleTheme);
+        assert_eq!(prefix_action(key(KeyCode::Char('r'))), Action::Redraw);
         assert_eq!(prefix_action(key(KeyCode::Char('q'))), Action::Quit);
     }
 

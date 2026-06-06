@@ -115,6 +115,10 @@ impl Drop for TerminalGuard {
 
 enum KeyOutcome {
     Continue,
+    /// Force a full repaint on the next frame. Used by the `<prefix> r` redraw
+    /// chord to wipe stray glyphs left behind when a PTY child writes cells
+    /// ratatui's diff renderer doesn't track.
+    Redraw,
     Quit,
 }
 
@@ -239,11 +243,11 @@ fn main_loop(
                 // `Frame::area()`. An explicit clear() here only adds a
                 // visible flash on resize without improving correctness.
                 Event::Resize(_, _) => {}
-                Event::Key(key) => {
-                    if matches!(handle_key(app, key), KeyOutcome::Quit) {
-                        return Ok(());
-                    }
-                }
+                Event::Key(key) => match handle_key(app, key) {
+                    KeyOutcome::Quit => return Ok(()),
+                    KeyOutcome::Redraw => terminal.clear()?,
+                    KeyOutcome::Continue => {}
+                },
                 Event::Paste(text) => handle_paste(app, &text),
                 _ => {}
             }
@@ -445,6 +449,7 @@ fn handle_global_action(app: &mut App, action: Action) -> Option<KeyOutcome> {
             app.cycle_accent();
             Some(KeyOutcome::Continue)
         }
+        Action::Redraw => Some(KeyOutcome::Redraw),
         Action::SwitchPane(n) => {
             app.switch_pane(n);
             Some(KeyOutcome::Continue)

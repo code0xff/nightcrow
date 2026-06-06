@@ -81,6 +81,7 @@ visible from the terminal pane.
 | `<prefix> f` | Toggle fullscreen for the focused pane (file/commit list, diff viewer, or terminal) |
 | `<prefix> o` | Change repo path |
 | `<prefix> p` | Cycle accent color (yellow → cyan → green → magenta → blue) |
+| `<prefix> r` | Force a full redraw (clears stray glyphs left by terminal programs) |
 | `<prefix> q` | Quit |
 | `Esc` / `Ctrl+C` (while armed) | Cancel the prefix |
 
