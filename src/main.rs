@@ -939,25 +939,36 @@ mod tests {
     }
 
     #[test]
-    fn handle_key_leader_digit_is_unmapped() {
-        // Pane jumps moved entirely to the no-prefix F3-F9 keys. A digit after
-        // the leader is unmapped, so it must not switch panes; the dispatcher
-        // consumes it (disarming the prefix) instead of forwarding it to the PTY.
+    fn handle_key_leader_digits_mirror_focus_and_pane_fkeys() {
+        // Digits mirror the no-prefix F-keys one-for-one: 1=F1 (file list),
+        // 2=F2 (diff viewer), 3..9=F3..F9 (terminal panes 0..6). The dispatcher
+        // consumes the digit (disarming the prefix) instead of forwarding it to
+        // the PTY.
         let mut app = app_with_terminal_pane();
         app.terminal
             .create_pane_with(Some("echo two"), Some("two"))
             .unwrap();
         assert_eq!(app.terminal.panes.len(), 2);
         app.switch_pane(0);
-        assert_eq!(app.terminal.active, 0);
 
+        // <prefix> 1 → focus file list (mirrors F1)
+        let _ = handle_key(&mut app, leader());
+        let _ = handle_key(&mut app, press(KeyCode::Char('1'), KeyModifiers::NONE));
+        assert_eq!(app.focus, Focus::FileList, "leader+1 must mirror F1");
+
+        // <prefix> 2 → focus diff viewer (mirrors F2)
         let _ = handle_key(&mut app, leader());
         let _ = handle_key(&mut app, press(KeyCode::Char('2'), KeyModifiers::NONE));
+        assert_eq!(app.focus, Focus::DiffViewer, "leader+2 must mirror F2");
 
-        assert_eq!(app.terminal.active, 0, "leader+digit must not switch panes");
+        // <prefix> 4 → terminal pane 1 (mirrors F4)
+        let _ = handle_key(&mut app, leader());
+        let _ = handle_key(&mut app, press(KeyCode::Char('4'), KeyModifiers::NONE));
+        assert_eq!(app.terminal.active, 1, "leader+4 must mirror F4 → pane 1");
+
         assert!(
             !app.prefix_armed(),
-            "unmapped follow-up must disarm the prefix"
+            "a mapped follow-up must disarm the prefix"
         );
         assert!(
             backend_payloads(&app).is_empty(),

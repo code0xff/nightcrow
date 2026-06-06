@@ -73,8 +73,9 @@ pub fn map_key(event: KeyEvent) -> Action {
 ///
 /// The follow-up is matched on the bare character regardless of modifiers so
 /// `<L> t` works whether or not the user is still holding a modifier from the
-/// leader chord. Direct pane jumps live on the no-prefix `F3`..`F9` keys (see
-/// `map_key`), not behind the leader.
+/// leader chord. Digits mirror the no-prefix focus/pane F-keys one-for-one:
+/// `1` = `F1` (file list), `2` = `F2` (diff viewer), `3`..`9` = `F3`..`F9`
+/// (terminal panes `0`..`6`).
 pub fn prefix_action(event: KeyEvent) -> Action {
     match event.code {
         KeyCode::Char(c) => match c.to_ascii_lowercase() {
@@ -86,6 +87,9 @@ pub fn prefix_action(event: KeyEvent) -> Action {
             'p' => Action::CycleTheme,
             'r' => Action::Redraw,
             'q' => Action::Quit,
+            '1' => Action::FocusList,
+            '2' => Action::FocusDiff,
+            d @ '3'..='9' => Action::SwitchPane(d as usize - '3' as usize),
             _ => Action::None,
         },
         _ => Action::None,
@@ -289,11 +293,21 @@ mod tests {
     }
 
     #[test]
-    fn prefix_dispatch_does_not_map_digits() {
-        // Pane jumps moved entirely to the no-prefix F3..F9 keys; digits after
-        // the leader are unmapped and get consumed/dropped by the dispatcher.
-        assert_eq!(prefix_action(key(KeyCode::Char('1'))), Action::None);
-        assert_eq!(prefix_action(key(KeyCode::Char('7'))), Action::None);
+    fn prefix_dispatch_maps_digits_to_focus_and_panes() {
+        // Digits mirror the no-prefix F-keys one-for-one: 1=F1 (file list),
+        // 2=F2 (diff viewer), 3..9=F3..F9 (terminal panes 0..6).
+        assert_eq!(prefix_action(key(KeyCode::Char('1'))), Action::FocusList);
+        assert_eq!(prefix_action(key(KeyCode::Char('2'))), Action::FocusDiff);
+        assert_eq!(
+            prefix_action(key(KeyCode::Char('3'))),
+            Action::SwitchPane(0)
+        );
+        assert_eq!(
+            prefix_action(key(KeyCode::Char('9'))),
+            Action::SwitchPane(6)
+        );
+        // 0 has no F-key counterpart and falls through to None.
+        assert_eq!(prefix_action(key(KeyCode::Char('0'))), Action::None);
     }
 
     #[test]

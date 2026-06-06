@@ -83,15 +83,17 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect, accent: Color) {
                 } else {
                     Style::default().fg(Color::DarkGray)
                 };
-                // F3..=F9 are wired to panes 0..=6 in `input::map_key`; show
-                // the binding so the tab bar doubles as a key legend.
-                let key_hint = if i < 7 {
-                    format!("F{}", i + 3)
-                } else {
-                    format!("{}", i + 1)
-                };
+                // F3..=F9 (and the matching `<prefix> 3..9` digits) are wired
+                // to panes 0..=6 in `input`; show the binding so the tab bar
+                // doubles as a key legend. Panes past the 7th have no jump key,
+                // so they carry no hint to avoid implying an unbound shortcut.
                 let title = truncate_tab_title(&pane.title, TAB_TITLE_MAX_CHARS);
-                Span::styled(format!(" {} {} ", key_hint, title), style)
+                let label = if i < 7 {
+                    format!(" F{} {} ", i + 3, title)
+                } else {
+                    format!(" {} ", title)
+                };
+                Span::styled(label, style)
             })
             .collect()
     };
