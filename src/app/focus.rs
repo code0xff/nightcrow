@@ -4,6 +4,12 @@ impl App {
     pub fn toggle_mode(&mut self) {
         self.clear_diff_state();
         let from = self.mode;
+        // Terminal/diff fullscreen hides the list pane, so a mode toggle there
+        // would flip state invisibly behind the zoomed pane. Reveal the result
+        // with the same policy as `focus_list` (F1). `list_fullscreen` is not
+        // part of this check: it already renders the mode's active list, so the
+        // swap is visible and the zoom should survive the toggle.
+        let reveal_after_toggle = self.terminal.fullscreen || self.diff.fullscreen;
         match self.mode {
             ViewMode::Status => {
                 self.mode = ViewMode::Log;
@@ -38,6 +44,9 @@ impl App {
                 self.log_view.reset_drill_down();
                 self.refresh_diff(true);
             }
+        }
+        if reveal_after_toggle {
+            self.focus_list();
         }
         tracing::debug!(from = ?from, to = ?self.mode, "view mode toggled");
     }
