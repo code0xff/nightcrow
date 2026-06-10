@@ -715,6 +715,80 @@ pub(crate) mod tests {
         assert_eq!(app.focus, Focus::FileList);
     }
 
+    /// Seed one cached commit whose oid matches `last_head_oid` and mark the
+    /// log fully loaded, so toggling into Log mode reuses the cache without
+    /// spawning a background fetch.
+    fn seed_cached_commit_log(app: &mut App) {
+        app.log_view.set_commits(vec![fake_entry(0)]);
+        app.log_view.fully_loaded = true;
+        app.pagination.last_head_oid = app.log_view.commits.first().map(|c| c.oid);
+    }
+
+    #[test]
+    fn toggle_mode_from_terminal_fullscreen_reveals_file_list() {
+        let mut app = app_with_files(vec![]);
+        seed_cached_commit_log(&mut app);
+        app.terminal.panes = vec![PaneInfo {
+            id: 1,
+            title: "shell".into(),
+        }];
+        app.toggle_terminal_fullscreen();
+        assert!(app.terminal.fullscreen);
+
+        app.toggle_mode();
+
+        assert_eq!(app.mode, ViewMode::Log);
+        assert!(!app.terminal.fullscreen);
+        assert!(!app.diff.fullscreen);
+        assert_eq!(app.focus, Focus::FileList);
+    }
+
+    #[test]
+    fn toggle_mode_from_diff_fullscreen_reveals_file_list() {
+        let mut app = app_with_files(vec![]);
+        seed_cached_commit_log(&mut app);
+        app.toggle_diff_fullscreen();
+        assert!(app.diff.fullscreen);
+
+        app.toggle_mode();
+
+        assert_eq!(app.mode, ViewMode::Log);
+        assert!(!app.diff.fullscreen);
+        assert!(!app.terminal.fullscreen);
+        assert_eq!(app.focus, Focus::FileList);
+    }
+
+    #[test]
+    fn toggle_mode_in_split_layout_keeps_focus() {
+        let mut app = app_with_files(vec![]);
+        seed_cached_commit_log(&mut app);
+        app.focus = Focus::DiffViewer;
+
+        app.toggle_mode();
+
+        assert_eq!(app.mode, ViewMode::Log);
+        assert_eq!(app.focus, Focus::DiffViewer);
+
+        app.toggle_mode();
+
+        assert_eq!(app.mode, ViewMode::Status);
+        assert_eq!(app.focus, Focus::DiffViewer);
+    }
+
+    #[test]
+    fn toggle_mode_in_list_fullscreen_keeps_list_fullscreen() {
+        let mut app = app_with_files(vec![]);
+        seed_cached_commit_log(&mut app);
+        app.toggle_list_fullscreen();
+        assert!(app.list_fullscreen);
+
+        app.toggle_mode();
+
+        assert_eq!(app.mode, ViewMode::Log);
+        assert!(app.list_fullscreen);
+        assert_eq!(app.focus, Focus::FileList);
+    }
+
     #[test]
     fn toggle_list_fullscreen_exits_terminal_fullscreen() {
         let mut app = app_with_files(vec![]);
