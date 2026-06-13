@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+# Runs the same gates as .github/workflows/ci.yml before allowing a commit,
+# so a commit never lands a failure that CI would catch.
+#
+# Enable once per clone:  git config core.hooksPath .githooks
+# Bypass for one commit:  git commit --no-verify
+set -euo pipefail
+
+cd "$(git rev-parse --show-toplevel)"
+
+run() {
+	printf '\033[1m▶ %s\033[0m\n' "$*"
+	if ! "$@"; then
+		printf '\033[31m✗ pre-commit gate failed: %s\033[0m\n' "$*" >&2
+		printf '  fix it, or bypass with: git commit --no-verify\n' >&2
+		exit 1
+	fi
+}
+
+run cargo fmt --check
+run cargo clippy --locked -- -D warnings
+run cargo build --locked
+run cargo test --locked
+
+printf '\033[32m✓ all CI gates passed\033[0m\n'
