@@ -7,6 +7,12 @@ use ratatui::{
     widgets::{Block, Borders, Paragraph},
 };
 
+/// The terminal pane draws only top/bottom borders, never the left/right `│`.
+/// With side bars, selecting terminal output to copy picks up a `│` glyph on
+/// every wrapped row; dropping them lets the content run edge-to-edge so a
+/// copy is clean. Top stays for the title + focus tint, bottom for separation.
+const TERMINAL_BORDERS: Borders = Borders::TOP.union(Borders::BOTTOM);
+
 /// Per-tab character budget for the title (excluding the `F#` key hint and
 /// surrounding padding). Anything longer is truncated with a trailing ellipsis
 /// so long OSC-set titles can't push neighboring tabs off the row.
@@ -32,7 +38,7 @@ pub(crate) fn content_area(area: Rect) -> Option<Rect> {
 }
 
 fn terminal_layout(area: Rect) -> Option<(Rect, Rect)> {
-    let inner = Block::default().borders(Borders::ALL).inner(area);
+    let inner = Block::default().borders(TERMINAL_BORDERS).inner(area);
     if inner.height == 0 || inner.width == 0 {
         return None;
     }
@@ -47,13 +53,18 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect, accent: Color) {
     let focused = app.focus == Focus::Terminal;
     let border_style = super::focused_border_style(focused, accent);
 
-    let title = if app.terminal.is_scrolled() {
+    let label = if app.terminal.is_scrolled() {
         " Terminal [SCROLL — shift+pgdn: down | input: live] "
     } else {
         " Terminal "
     };
+    // The upper panes draw a `┌` corner that pushes their title text in by one
+    // column (`┌ F1 Files`). This pane has no left border, so a border-styled
+    // `─` stands in for that corner — it keeps `Terminal` column-aligned with
+    // `F1 Files` / `F2 Diff` above and makes the line start flush at the edge.
+    let title = Line::from(vec![Span::styled("─", border_style), Span::raw(label)]);
     let block = Block::default()
-        .borders(Borders::ALL)
+        .borders(TERMINAL_BORDERS)
         .title(title)
         .border_style(border_style);
 
@@ -263,6 +274,17 @@ mod tests {
         let position = screen_cursor_position(parser.screen(), Rect::new(20, 10, 10, 3)).unwrap();
 
         assert_eq!(position, Position::new(23, 11));
+    }
+
+    #[test]
+    fn content_spans_full_width_without_side_borders() {
+        // The terminal content must reach both pane edges so copied output never
+        // includes a `│`. Side borders would inset x by 1 and shrink width by 2.
+        let area = Rect::new(0, 0, 40, 10);
+        let content = content_area(area).unwrap();
+
+        assert_eq!(content.x, area.x);
+        assert_eq!(content.width, area.width);
     }
 
     #[test]
