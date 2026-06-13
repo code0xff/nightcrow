@@ -427,8 +427,9 @@ mod tests {
             .expect("terminal fullscreen should produce a content area");
 
         // Full screen keeps the top header and bottom hint bar, then the
-        // terminal widget consumes one border row on each side and one tab row.
+        // terminal widget consumes one tab row and the top/bottom border rows.
+        // Side borders were dropped, so the content spans the full width.
         assert_eq!(area.height, 35);
-        assert_eq!(area.width, 98);
+        assert_eq!(area.width, 100);
     }
 }
