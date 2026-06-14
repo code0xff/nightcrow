@@ -620,8 +620,18 @@ fn collect_commit_diff_hunks(diff: &Diff<'_>) -> Result<Vec<DiffHunk>> {
 /// renderer can collapse them to `??` / `UU`. Returns `None` when neither
 /// column carries a displayable change.
 fn status_columns(status: Status) -> Option<(StatusKind, StatusKind)> {
-    // Untracked: git renders `??` (both columns), not ` ?`.
-    if status.contains(Status::WT_NEW) && !status.contains(Status::INDEX_NEW) {
+    // Untracked: git renders `??` (both columns), not ` ?`. Only a *purely*
+    // untracked entry collapses to `??`. A combined state such as
+    // `INDEX_DELETED | WT_NEW` (staged deletion, then a fresh file recreated at
+    // the same path) keeps its index status so the staged change is not hidden;
+    // git itself emits two rows there, but our one-row-per-path model preserves
+    // the index side (`D `) rather than masking it as untracked.
+    let index_bits = Status::INDEX_NEW
+        | Status::INDEX_MODIFIED
+        | Status::INDEX_DELETED
+        | Status::INDEX_RENAMED
+        | Status::INDEX_TYPECHANGE;
+    if status.contains(Status::WT_NEW) && !status.intersects(index_bits) {
         return Some((StatusKind::Untracked, StatusKind::Untracked));
     }
     // Conflicts render as `UU` in the first pass; the structured columns keep
@@ -681,10 +691,14 @@ fn paths_from_status_entry(entry: &StatusEntry<'_>) -> Option<(String, Option<St
         .or_else(|| entry.path().map(str::to_string))?;
 
     let old_path = if status.intersects(Status::INDEX_RENAMED | Status::WT_RENAMED) {
-        let from = if status.contains(Status::WT_RENAMED) {
-            i2w.as_ref()
-        } else {
+        // Prefer the HEAD-side original when the index carries a rename, so a
+        // double-rename (`INDEX_RENAMED | WT_RENAMED`) reports the true original
+        // path rather than the intermediate staged name. Fall back to the
+        // worktree side for a pure unstaged rename.
+        let from = if status.contains(Status::INDEX_RENAMED) {
             h2i.as_ref()
+        } else {
+            i2w.as_ref()
         };
         from.and_then(old_path_from_delta)
             .filter(|old| old != &path)
@@ -1243,6 +1257,27 @@ mod tests {
         let snap = load_snapshot(&open_repo(&path)).unwrap();
         assert_eq!(find(&snap, "staged.txt").short_code(), "D ");
         assert_eq!(find(&snap, "wt.txt").short_code(), " D");
+        drop(dir);
+    }
+
+    #[test]
+    fn snapshot_keeps_staged_deletion_visible_when_path_recreated() {
+        // `INDEX_DELETED | WT_NEW`: a staged deletion with a fresh untracked
+        // file recreated at the same path. git emits two rows (`D ` and `??`);
+        // our one-row model must keep the staged deletion rather than masking
+        // the whole row as untracked.
+        let (dir, path) = make_repo();
+        let fp = Path::new(&path).join("f.txt");
+        std::fs::write(&fp, "orig\n").unwrap();
+        run_git(&path, &["add", "."]);
+        run_git(&path, &["commit", "-m", "init"]);
+        run_git(&path, &["rm", "--cached", "f.txt"]);
+        std::fs::write(&fp, "new content\n").unwrap();
+
+        let snap = load_snapshot(&open_repo(&path)).unwrap();
+        let f = find(&snap, "f.txt");
+        assert_eq!(f.index, StatusKind::Deleted);
+        assert_eq!(f.short_code(), "D ");
         drop(dir);
     }
 
