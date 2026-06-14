@@ -61,9 +61,20 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect, accent: Color) {
         .iter()
         .map(|&idx| {
             let f = &app.status_view.files[idx];
-            let symbol = f.status.symbol();
-            let color = super::status_color(f.status);
-            let path = super::char_offset(&f.path, app.status_view.file_scroll_x);
+            let symbol = f.short_code();
+            let color = super::status_color(f.most_severe());
+            let scroll_x = app.status_view.file_scroll_x;
+            // Borrow `f.path` (which outlives the item list) in the common
+            // non-rename case so rendering stays allocation-free; only renames,
+            // whose `old -> new` display string is owned, allocate.
+            let path: std::borrow::Cow<'_, str> = match f.display_path() {
+                std::borrow::Cow::Borrowed(_) => {
+                    std::borrow::Cow::Borrowed(super::char_offset(&f.path, scroll_x))
+                }
+                std::borrow::Cow::Owned(display) => {
+                    std::borrow::Cow::Owned(super::char_offset(&display, scroll_x).to_string())
+                }
+            };
 
             let stage = if indicator_enabled {
                 app.status_view

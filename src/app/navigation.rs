@@ -102,12 +102,12 @@ impl App {
             ViewMode::Status => cached_max(
                 &self.status_view.path_width_cache,
                 &self.status_view.files,
-                |f| f.path.chars().count(),
+                |f| f.display_path().chars().count(),
             ),
             ViewMode::Log if self.log_view.drill_down => cached_max(
                 &self.log_view.commit_files_width_cache,
                 &self.log_view.commit_files,
-                |f| f.path.chars().count(),
+                |f| f.display_path().chars().count(),
             ),
             ViewMode::Log => cached_max(
                 &self.log_view.commit_width_cache,

@@ -186,7 +186,10 @@ impl App {
                 Some(FileViewKey::Commit {
                     oid,
                     path: file.path.clone(),
-                    status: file.status,
+                    // Commit deltas carry their single status in the index
+                    // column; `load_commit_file_blob` only needs the Deleted
+                    // case to read from the parent tree.
+                    status: file.index,
                 })
             }
         }

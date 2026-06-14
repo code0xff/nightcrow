@@ -54,7 +54,7 @@ impl StatusView {
         }
         let q = self.search_query.lower();
         for (i, f) in self.files.iter().enumerate() {
-            if f.path_lower.contains(q) {
+            if f.search_lower.contains(q) {
                 self.filter_cache.push(i);
             }
         }

@@ -197,7 +197,7 @@ impl App {
 pub(crate) mod tests {
     use super::*;
     use crate::git::diff::{
-        ChangeStatus, CommitEntry, DiffHunk, DiffLine, LineKind, load_commit_log,
+        CommitEntry, DiffHunk, DiffLine, LineKind, StatusKind, load_commit_log,
     };
     use crate::runtime::terminal::PaneCallbacks;
     use crate::test_util::{make_repo, open_repo, run_git};
@@ -227,7 +227,7 @@ pub(crate) mod tests {
         let mut status_view = StatusView {
             files: files
                 .into_iter()
-                .map(|path| ChangedFile::new(path.to_string(), ChangeStatus::Modified))
+                .map(|path| ChangedFile::unstaged_only(path.to_string(), StatusKind::Modified))
                 .collect(),
             ..Default::default()
         };
@@ -334,7 +334,10 @@ pub(crate) mod tests {
     fn selection_clamps_when_file_list_shrinks() {
         let mut app = app_with_files(vec!["a.rs", "b.rs", "c.rs"]);
         app.status_view.selected = 2;
-        app.status_view.files = vec![ChangedFile::new("a.rs".to_string(), ChangeStatus::Modified)];
+        app.status_view.files = vec![ChangedFile::unstaged_only(
+            "a.rs".to_string(),
+            StatusKind::Modified,
+        )];
 
         let selected_path = app.restore_selection(Some("c.rs"));
 
@@ -347,9 +350,9 @@ pub(crate) mod tests {
         let mut app = app_with_files(vec!["a.rs", "b.rs", "c.rs"]);
         app.status_view.selected = 1;
         app.status_view.files = vec![
-            ChangedFile::new("a.rs".to_string(), ChangeStatus::Modified),
-            ChangedFile::new("c.rs".to_string(), ChangeStatus::Modified),
-            ChangedFile::new("b.rs".to_string(), ChangeStatus::Modified),
+            ChangedFile::unstaged_only("a.rs".to_string(), StatusKind::Modified),
+            ChangedFile::unstaged_only("c.rs".to_string(), StatusKind::Modified),
+            ChangedFile::unstaged_only("b.rs".to_string(), StatusKind::Modified),
         ];
 
         let selected_path = app.restore_selection(Some("b.rs"));
@@ -1409,8 +1412,8 @@ pub(crate) mod tests {
         tx.send(SnapshotMsg::Ok(
             RepoSnapshot {
                 files: vec![
-                    ChangedFile::new("aaa.rs".to_string(), ChangeStatus::Modified),
-                    ChangedFile::new("bar2.rs".to_string(), ChangeStatus::Modified),
+                    ChangedFile::unstaged_only("aaa.rs".to_string(), StatusKind::Modified),
+                    ChangedFile::unstaged_only("bar2.rs".to_string(), StatusKind::Modified),
                 ],
                 tracking: None,
                 head_oid: None,
@@ -1443,9 +1446,9 @@ pub(crate) mod tests {
         // clear on every `set_files` assignment.
         tx.send(SnapshotMsg::Ok(
             RepoSnapshot {
-                files: vec![ChangedFile::new(
+                files: vec![ChangedFile::unstaged_only(
                     "a_much_longer_renamed_path.rs".to_string(),
-                    ChangeStatus::Modified,
+                    StatusKind::Modified,
                 )],
                 tracking: None,
                 head_oid: None,
@@ -1476,9 +1479,9 @@ pub(crate) mod tests {
 
         tx.send(SnapshotMsg::Ok(
             RepoSnapshot {
-                files: vec![ChangedFile::new(
+                files: vec![ChangedFile::unstaged_only(
                     "aaa.rs".to_string(),
-                    ChangeStatus::Modified,
+                    StatusKind::Modified,
                 )],
                 tracking: None,
                 head_oid: None,
@@ -1544,8 +1547,8 @@ pub(crate) mod tests {
             0,
         )]);
         app.log_view.set_commit_files(vec![
-            ChangedFile::new("x.rs".into(), ChangeStatus::Modified),
-            ChangedFile::new("y.rs".into(), ChangeStatus::Modified),
+            ChangedFile::unstaged_only("x.rs".into(), StatusKind::Modified),
+            ChangedFile::unstaged_only("y.rs".into(), StatusKind::Modified),
         ]);
         app.log_view.file_scroll_x = 7;
         app.log_file_select_down();
@@ -1768,9 +1771,9 @@ pub(crate) mod tests {
 
         tx.send(SnapshotMsg::Ok(
             RepoSnapshot {
-                files: vec![ChangedFile::new(
+                files: vec![ChangedFile::unstaged_only(
                     "aaa.rs".to_string(),
-                    ChangeStatus::Modified,
+                    StatusKind::Modified,
                 )],
                 tracking: None,
                 head_oid: None,
@@ -1793,7 +1796,7 @@ pub(crate) mod tests {
         RepoSnapshot {
             files: paths
                 .iter()
-                .map(|p| ChangedFile::new((*p).to_string(), ChangeStatus::Modified))
+                .map(|p| ChangedFile::unstaged_only((*p).to_string(), StatusKind::Modified))
                 .collect(),
             tracking: None,
             head_oid: None,
@@ -2448,9 +2451,9 @@ pub(crate) mod tests {
         app.mode = ViewMode::Log;
         app.log_view.drill_down = true;
         app.log_view.set_commit_files(vec![
-            ChangedFile::new("src/lib.rs".into(), ChangeStatus::Modified),
-            ChangedFile::new("README.md".into(), ChangeStatus::Modified),
-            ChangedFile::new("src/main.rs".into(), ChangeStatus::Modified),
+            ChangedFile::unstaged_only("src/lib.rs".into(), StatusKind::Modified),
+            ChangedFile::unstaged_only("README.md".into(), StatusKind::Modified),
+            ChangedFile::unstaged_only("src/main.rs".into(), StatusKind::Modified),
         ]);
         app.log_view.file_selected = 1;
 

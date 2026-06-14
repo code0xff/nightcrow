@@ -1,4 +1,4 @@
-use crate::git::diff::ChangeStatus;
+use crate::git::diff::StatusKind;
 use crate::ui::diff_pane::{DIFF_THEME, HighlightSegment, highlight_line_segments};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -7,7 +7,7 @@ pub enum FileViewKey {
     Commit {
         oid: git2::Oid,
         path: String,
-        status: ChangeStatus,
+        status: StatusKind,
     },
 }
 

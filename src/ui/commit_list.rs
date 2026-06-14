@@ -139,11 +139,18 @@ fn render_file_list(frame: &mut Frame, app: &App, area: Rect, accent: Color) {
         .iter()
         .map(|&i| {
             let f = &app.log_view.commit_files[i];
-            let path = super::char_offset(&f.path, scroll_x);
+            let path: std::borrow::Cow<'_, str> = match f.display_path() {
+                std::borrow::Cow::Borrowed(_) => {
+                    std::borrow::Cow::Borrowed(super::char_offset(&f.path, scroll_x))
+                }
+                std::borrow::Cow::Owned(display) => {
+                    std::borrow::Cow::Owned(super::char_offset(&display, scroll_x).to_string())
+                }
+            };
             let line = Line::from(vec![
                 Span::styled(
-                    format!("{} ", f.status.symbol()),
-                    Style::default().fg(super::status_color(f.status)),
+                    format!("{} ", f.short_code()),
+                    Style::default().fg(super::status_color(f.most_severe())),
                 ),
                 Span::raw(path),
             ]);

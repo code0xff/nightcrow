@@ -13,7 +13,7 @@ pub use search::SearchQuery;
 
 use crate::app::{App, DiffPaneView, Focus, ViewMode};
 use crate::config::LayoutConfig;
-use crate::git::diff::ChangeStatus;
+use crate::git::diff::StatusKind;
 use ratatui::{
     Frame,
     layout::{Constraint, Direction, Layout, Rect},
@@ -42,13 +42,16 @@ pub(crate) fn focused_border_style(focused: bool, accent: Color) -> Style {
     }
 }
 
-pub(crate) fn status_color(status: ChangeStatus) -> Color {
+pub(crate) fn status_color(status: StatusKind) -> Color {
     match status {
-        ChangeStatus::Added => Color::Green,
-        ChangeStatus::Deleted => Color::Red,
-        ChangeStatus::Renamed => Color::Cyan,
-        ChangeStatus::Untracked => Color::Gray,
-        ChangeStatus::Modified => Color::Yellow,
+        StatusKind::Added => Color::Green,
+        StatusKind::Deleted => Color::Red,
+        StatusKind::Renamed => Color::Cyan,
+        StatusKind::TypeChanged => Color::Magenta,
+        StatusKind::Unmerged => Color::Red,
+        StatusKind::Untracked => Color::Gray,
+        StatusKind::Modified => Color::Yellow,
+        StatusKind::Unmodified => Color::DarkGray,
     }
 }
 

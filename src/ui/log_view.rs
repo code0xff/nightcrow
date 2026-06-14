@@ -153,7 +153,7 @@ impl LogView {
         }
         let q = self.file_search_query.lower();
         for (i, f) in self.commit_files.iter().enumerate() {
-            if f.path_lower.contains(q) {
+            if f.search_lower.contains(q) {
                 self.commit_files_filter_cache.push(i);
             }
         }
@@ -387,11 +387,8 @@ mod tests {
         let mut lv = LogView::default();
         lv.file_search_push('r');
         lv.set_commit_files(vec![
-            ChangedFile::new("readme.md".into(), crate::git::diff::ChangeStatus::Modified),
-            ChangedFile::new(
-                "src/lib.rs".into(),
-                crate::git::diff::ChangeStatus::Modified,
-            ),
+            ChangedFile::unstaged_only("readme.md".into(), crate::git::diff::StatusKind::Modified),
+            ChangedFile::unstaged_only("src/lib.rs".into(), crate::git::diff::StatusKind::Modified),
         ]);
         assert_eq!(lv.commit_files_filter_cache, vec![0, 1]);
 
@@ -407,9 +404,9 @@ mod tests {
             drill_down: true,
             ..Default::default()
         };
-        lv.set_commit_files(vec![ChangedFile::new(
+        lv.set_commit_files(vec![ChangedFile::unstaged_only(
             "readme.md".into(),
-            crate::git::diff::ChangeStatus::Modified,
+            crate::git::diff::StatusKind::Modified,
         )]);
         lv.start_file_search();
         lv.file_search_push('r');

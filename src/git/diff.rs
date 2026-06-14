@@ -2,48 +2,147 @@ use anyhow::{Context, Result};
 use git2::{
     Branch, Diff, DiffDelta, DiffOptions, Oid, Repository, Status, StatusEntry, StatusOptions,
 };
+use std::borrow::Cow;
 use std::cell::RefCell;
 use std::collections::BTreeMap;
 
+/// State of a single git status column. `index` (X) compares HEAD with the
+/// staged tree, `worktree` (Y) compares the staged tree with the working
+/// directory. Either column can be `Unmodified` — that is what the old
+/// single-status `ChangeStatus` could not express. Mirrors the codes used by
+/// `git status --short`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ChangeStatus {
+pub enum StatusKind {
+    Unmodified,
     Added,
     Modified,
     Deleted,
     Renamed,
+    TypeChanged,
     Untracked,
+    Unmerged,
 }
 
-impl ChangeStatus {
-    pub fn symbol(&self) -> &'static str {
+impl StatusKind {
+    /// The Git short status character for this column. `Unmodified` is a space
+    /// so a single-sided change renders as ` M` / `M `.
+    fn code_char(self) -> char {
         match self {
-            Self::Added => "A",
-            Self::Modified => "M",
-            Self::Deleted => "D",
-            Self::Renamed => "R",
-            Self::Untracked => "?",
+            Self::Unmodified => ' ',
+            Self::Added => 'A',
+            Self::Modified => 'M',
+            Self::Deleted => 'D',
+            Self::Renamed => 'R',
+            Self::TypeChanged => 'T',
+            Self::Untracked => '?',
+            Self::Unmerged => 'U',
+        }
+    }
+
+    /// Severity rank used to pick a single color for the two-character code.
+    /// Higher wins: unmerged > deleted > renamed > added > modified >
+    /// typechanged > untracked > unmodified (see plan Resolved Decisions #3).
+    fn severity(self) -> u8 {
+        match self {
+            Self::Unmerged => 7,
+            Self::Deleted => 6,
+            Self::Renamed => 5,
+            Self::Added => 4,
+            Self::Modified => 3,
+            Self::TypeChanged => 2,
+            Self::Untracked => 1,
+            Self::Unmodified => 0,
         }
     }
 }
 
 #[derive(Debug, Clone)]
 pub struct ChangedFile {
+    /// New/effective path. Used for diff loading, file preview, hot-file
+    /// tracking, and selection restoration.
     pub path: String,
-    pub status: ChangeStatus,
-    /// Pre-computed lowercase form of `path` for case-insensitive search.
-    /// Set on construction so the file-list filter doesn't lowercase on every
-    /// keystroke.
-    pub path_lower: String,
+    /// Old path for renames (display/search metadata only). `None` otherwise.
+    pub old_path: Option<String>,
+    /// Index column (X): HEAD vs staged.
+    pub index: StatusKind,
+    /// Working-tree column (Y): staged vs working directory.
+    pub worktree: StatusKind,
+    /// Pre-computed lowercase search text. For renames it contains both old and
+    /// new paths so either side matches the `contains` filter; otherwise it is
+    /// the lowercased `path`. Set on construction so the file-list filter
+    /// doesn't lowercase on every keystroke.
+    pub search_lower: String,
 }
 
 impl ChangedFile {
-    pub fn new(path: String, status: ChangeStatus) -> Self {
-        let path_lower = path.to_lowercase();
+    /// Build from explicit status columns (status snapshot path).
+    pub fn from_status_columns(
+        path: String,
+        old_path: Option<String>,
+        index: StatusKind,
+        worktree: StatusKind,
+    ) -> Self {
+        let search_lower = match &old_path {
+            Some(old) => format!("{old} {path}").to_lowercase(),
+            None => path.to_lowercase(),
+        };
         Self {
             path,
-            status,
-            path_lower,
+            old_path,
+            index,
+            worktree,
+            search_lower,
         }
+    }
+
+    /// Build from a commit delta: the single delta status lives in the index
+    /// column and the worktree column is `Unmodified`, so commit drill-down
+    /// rows render `M `, `A `, `D `, `R `.
+    pub fn from_commit_delta(path: String, old_path: Option<String>, kind: StatusKind) -> Self {
+        Self::from_status_columns(path, old_path, kind, StatusKind::Unmodified)
+    }
+
+    /// Two-character Git short status code (`XY`). Untracked is special-cased
+    /// to `??` and conflicts to `UU` to match git rather than emitting ` ?`
+    /// from a blank index plus untracked worktree.
+    pub fn short_code(&self) -> String {
+        if self.index == StatusKind::Untracked || self.worktree == StatusKind::Untracked {
+            return "??".to_string();
+        }
+        if self.index == StatusKind::Unmerged || self.worktree == StatusKind::Unmerged {
+            return "UU".to_string();
+        }
+        let mut code = String::with_capacity(2);
+        code.push(self.index.code_char());
+        code.push(self.worktree.code_char());
+        code
+    }
+
+    /// The more severe of the two columns, used to pick the row color.
+    pub fn most_severe(&self) -> StatusKind {
+        if self.index.severity() >= self.worktree.severity() {
+            self.index
+        } else {
+            self.worktree
+        }
+    }
+
+    /// Rendered display path. Non-rename borrows `path` with no allocation
+    /// (the hot per-frame case); renames own the formatted `old -> new` string.
+    /// Returns `Cow<str>` so callers can slice it for horizontal scroll via
+    /// `char_offset` and measure it with `chars().count()`.
+    pub fn display_path(&self) -> Cow<'_, str> {
+        match &self.old_path {
+            Some(old) => Cow::Owned(format!("{old} -> {}", self.path)),
+            None => Cow::Borrowed(&self.path),
+        }
+    }
+
+    /// Test-only convenience: an unstaged change of `kind` at `path`
+    /// (` X` column blank). Production code uses the explicit constructors.
+    #[cfg(test)]
+    pub(crate) fn unstaged_only(path: String, kind: StatusKind) -> Self {
+        Self::from_status_columns(path, None, StatusKind::Unmodified, kind)
     }
 }
 
@@ -99,7 +198,7 @@ pub struct CommitEntry {
     pub summary: String,
     /// Pre-computed lowercase form of `summary` for case-insensitive search.
     /// Set on construction so the commit-log filter doesn't lowercase on every
-    /// keystroke. Mirrors `ChangedFile::path_lower`.
+    /// keystroke. Mirrors `ChangedFile::search_lower`.
     pub summary_lower: String,
     pub author: String,
     pub time: i64,
@@ -149,22 +248,28 @@ pub fn load_snapshot(repo: &Repository) -> Result<RepoSnapshot> {
         .statuses(Some(&mut opts))
         .context("failed to get repository status")?;
 
+    // Keyed by effective (new-side) path so the file list stays in a stable
+    // sorted order across refreshes — selection restoration depends on that.
+    // Each git status entry already carries both X and Y bits, so there is no
+    // longer a first-wins collapse: one entry maps to one row.
     let mut files = BTreeMap::new();
     for entry in statuses.iter() {
-        let Some(status) = change_status_from_git_status(entry.status()) else {
+        let Some((index, worktree)) = status_columns(entry.status()) else {
             continue;
         };
-        if let Some(path) = path_from_status_entry(&entry)
-            && !path.is_empty()
-        {
-            files.entry(path).or_insert(status);
+        let Some((path, old_path)) = paths_from_status_entry(&entry) else {
+            continue;
+        };
+        if path.is_empty() {
+            continue;
         }
+        files.insert(
+            path.clone(),
+            ChangedFile::from_status_columns(path, old_path, index, worktree),
+        );
     }
 
-    let files = files
-        .into_iter()
-        .map(|(path, status)| ChangedFile::new(path, status))
-        .collect();
+    let files = files.into_values().collect();
 
     let tracking = load_tracking_status(repo);
     let head = repo.head().ok();
@@ -238,10 +343,10 @@ pub fn load_commit_file_blob(
     repo: &Repository,
     oid: Oid,
     file_path: &str,
-    status: ChangeStatus,
+    status: StatusKind,
 ) -> Result<String> {
     let commit = repo.find_commit(oid).context("failed to find commit")?;
-    let tree = if status == ChangeStatus::Deleted {
+    let tree = if status == StatusKind::Deleted {
         commit
             .parent(0)
             .context("deleted file has no parent commit")?
@@ -377,14 +482,31 @@ pub fn load_commit_files(repo: &Repository, oid: Oid) -> Result<Vec<ChangedFile>
     let diff = commit_diff(repo, oid, None)?;
     let mut files = Vec::new();
     for delta in diff.deltas() {
-        let status = match delta.status() {
-            git2::Delta::Added => ChangeStatus::Added,
-            git2::Delta::Deleted => ChangeStatus::Deleted,
-            git2::Delta::Renamed => ChangeStatus::Renamed,
-            _ => ChangeStatus::Modified,
+        let kind = match delta.status() {
+            git2::Delta::Added => StatusKind::Added,
+            git2::Delta::Deleted => StatusKind::Deleted,
+            git2::Delta::Renamed => StatusKind::Renamed,
+            git2::Delta::Typechange => StatusKind::TypeChanged,
+            _ => StatusKind::Modified,
         };
-        let path = path_from_delta(&delta).unwrap_or_else(|| "unknown".to_string());
-        files.push(ChangedFile::new(path, status));
+        // New side is the effective path; carry the old side for renames so
+        // commit drill-down also renders `old -> new`.
+        let path = delta
+            .new_file()
+            .path()
+            .or_else(|| delta.old_file().path())
+            .map(|p| p.to_string_lossy().to_string())
+            .unwrap_or_else(|| "unknown".to_string());
+        let old_path = if kind == StatusKind::Renamed {
+            delta
+                .old_file()
+                .path()
+                .map(|p| p.to_string_lossy().to_string())
+                .filter(|old| old != &path)
+        } else {
+            None
+        };
+        files.push(ChangedFile::from_commit_delta(path, old_path, kind));
     }
     Ok(files)
 }
@@ -493,35 +615,98 @@ fn collect_commit_diff_hunks(diff: &Diff<'_>) -> Result<Vec<DiffHunk>> {
     )
 }
 
-fn change_status_from_git_status(status: Status) -> Option<ChangeStatus> {
+/// Map a git2 status bitset into separate index (X) and worktree (Y) columns.
+/// Untracked and conflicted are reported as both-column sentinels so the
+/// renderer can collapse them to `??` / `UU`. Returns `None` when neither
+/// column carries a displayable change.
+fn status_columns(status: Status) -> Option<(StatusKind, StatusKind)> {
+    // Untracked: git renders `??` (both columns), not ` ?`.
     if status.contains(Status::WT_NEW) && !status.contains(Status::INDEX_NEW) {
-        Some(ChangeStatus::Untracked)
-    } else if status.intersects(Status::INDEX_RENAMED | Status::WT_RENAMED) {
-        Some(ChangeStatus::Renamed)
-    } else if status.intersects(Status::INDEX_DELETED | Status::WT_DELETED) {
-        Some(ChangeStatus::Deleted)
-    } else if status.contains(Status::INDEX_NEW) {
-        Some(ChangeStatus::Added)
-    } else if status.intersects(
-        Status::INDEX_MODIFIED
-            | Status::WT_MODIFIED
-            | Status::INDEX_TYPECHANGE
-            | Status::WT_TYPECHANGE
-            | Status::WT_UNREADABLE
-            | Status::CONFLICTED,
-    ) {
-        Some(ChangeStatus::Modified)
-    } else {
-        None
+        return Some((StatusKind::Untracked, StatusKind::Untracked));
     }
+    // Conflicts render as `UU` in the first pass; the structured columns keep
+    // room for the full unmerged matrix later.
+    if status.contains(Status::CONFLICTED) {
+        return Some((StatusKind::Unmerged, StatusKind::Unmerged));
+    }
+
+    let index = if status.contains(Status::INDEX_NEW) {
+        StatusKind::Added
+    } else if status.contains(Status::INDEX_MODIFIED) {
+        StatusKind::Modified
+    } else if status.contains(Status::INDEX_DELETED) {
+        StatusKind::Deleted
+    } else if status.contains(Status::INDEX_RENAMED) {
+        StatusKind::Renamed
+    } else if status.contains(Status::INDEX_TYPECHANGE) {
+        StatusKind::TypeChanged
+    } else {
+        StatusKind::Unmodified
+    };
+
+    let worktree = if status.contains(Status::WT_MODIFIED) {
+        StatusKind::Modified
+    } else if status.contains(Status::WT_DELETED) {
+        StatusKind::Deleted
+    } else if status.contains(Status::WT_RENAMED) {
+        StatusKind::Renamed
+    } else if status.contains(Status::WT_TYPECHANGE) {
+        StatusKind::TypeChanged
+    } else if status.contains(Status::WT_UNREADABLE) {
+        // No standard git short code; keep it visible as a worktree change
+        // rather than dropping the row (preserves prior behavior).
+        StatusKind::Modified
+    } else {
+        StatusKind::Unmodified
+    };
+
+    if index == StatusKind::Unmodified && worktree == StatusKind::Unmodified {
+        return None;
+    }
+    Some((index, worktree))
 }
 
-fn path_from_status_entry(entry: &StatusEntry<'_>) -> Option<String> {
-    entry
-        .index_to_workdir()
-        .and_then(|d| path_from_delta(&d))
-        .or_else(|| entry.head_to_index().and_then(|d| path_from_delta(&d)))
-        .or_else(|| entry.path().map(str::to_string))
+/// Effective (new-side) path plus the old path for renames. The effective
+/// path drives diff/file loading; `old_path` is display/search metadata only
+/// and is omitted when it equals the effective path.
+fn paths_from_status_entry(entry: &StatusEntry<'_>) -> Option<(String, Option<String>)> {
+    let i2w = entry.index_to_workdir();
+    let h2i = entry.head_to_index();
+    let status = entry.status();
+
+    let path = i2w
+        .as_ref()
+        .and_then(new_path_from_delta)
+        .or_else(|| h2i.as_ref().and_then(new_path_from_delta))
+        .or_else(|| entry.path().map(str::to_string))?;
+
+    let old_path = if status.intersects(Status::INDEX_RENAMED | Status::WT_RENAMED) {
+        let from = if status.contains(Status::WT_RENAMED) {
+            i2w.as_ref()
+        } else {
+            h2i.as_ref()
+        };
+        from.and_then(old_path_from_delta)
+            .filter(|old| old != &path)
+    } else {
+        None
+    };
+
+    Some((path, old_path))
+}
+
+fn new_path_from_delta(delta: &DiffDelta<'_>) -> Option<String> {
+    delta
+        .new_file()
+        .path()
+        .map(|p| p.to_string_lossy().to_string())
+}
+
+fn old_path_from_delta(delta: &DiffDelta<'_>) -> Option<String> {
+    delta
+        .old_file()
+        .path()
+        .map(|p| p.to_string_lossy().to_string())
 }
 
 fn path_from_delta(delta: &DiffDelta<'_>) -> Option<String> {
@@ -664,7 +849,8 @@ mod tests {
 
         assert_eq!(files.len(), 1);
         assert_eq!(files[0].path, "first.rs");
-        assert_eq!(files[0].status, ChangeStatus::Added);
+        assert_eq!(files[0].index, StatusKind::Added);
+        assert_eq!(files[0].worktree, StatusKind::Unmodified);
         assert!(
             hunks
                 .iter()
@@ -700,11 +886,10 @@ mod tests {
 
         let snap = load_snapshot(&open_repo(&path)).unwrap();
 
-        assert!(
-            snap.files
-                .iter()
-                .any(|f| f.path == "a.txt" && matches!(f.status, ChangeStatus::Modified))
-        );
+        assert!(snap.files.iter().any(|f| f.path == "a.txt"
+            && f.index == StatusKind::Modified
+            && f.worktree == StatusKind::Unmodified
+            && f.short_code() == "M "));
         drop(dir);
     }
 
@@ -750,9 +935,9 @@ mod tests {
         let snap = load_snapshot(&open_repo(&path)).unwrap();
 
         assert!(
-            snap.files
-                .iter()
-                .any(|f| f.path == "new.rs" && matches!(f.status, ChangeStatus::Added))
+            snap.files.iter().any(|f| f.path == "new.rs"
+                && f.index == StatusKind::Added
+                && f.short_code() == "A ")
         );
         drop(dir);
     }
@@ -781,7 +966,7 @@ mod tests {
         assert!(
             snap.files
                 .iter()
-                .any(|f| { f.path == "new.rs" && matches!(f.status, ChangeStatus::Untracked) })
+                .any(|f| { f.path == "new.rs" && f.short_code() == "??" })
         );
 
         let hunks = load_file_diff(&open_repo(&path), "new.rs").unwrap();
@@ -834,7 +1019,9 @@ mod tests {
 
         assert_eq!(files.len(), 1);
         assert_eq!(files[0].path, "new.rs");
-        assert_eq!(files[0].status, ChangeStatus::Renamed);
+        assert_eq!(files[0].index, StatusKind::Renamed);
+        assert_eq!(files[0].old_path.as_deref(), Some("old.rs"));
+        assert_eq!(files[0].display_path(), "old.rs -> new.rs");
         drop(dir);
     }
 
@@ -894,7 +1081,7 @@ mod tests {
             &open_repo(&path),
             commits[0].oid,
             "a.txt",
-            ChangeStatus::Modified,
+            StatusKind::Modified,
         )
         .unwrap();
         assert_eq!(content, "v1\n");
@@ -917,7 +1104,7 @@ mod tests {
             &open_repo(&path),
             commits[0].oid,
             "gone.txt",
-            ChangeStatus::Deleted,
+            StatusKind::Deleted,
         )
         .unwrap();
 
@@ -951,6 +1138,178 @@ mod tests {
                 .flat_map(|h| &h.lines)
                 .any(|l| l.kind == LineKind::Added && l.content.contains("println"))
         );
+        drop(dir);
+    }
+
+    // --- Workstream 1: XY status model unit tests (no git needed) ---
+
+    #[test]
+    fn short_code_renders_each_xy_combination() {
+        let mk = |index, worktree| {
+            ChangedFile::from_status_columns("p".into(), None, index, worktree).short_code()
+        };
+        assert_eq!(mk(StatusKind::Unmodified, StatusKind::Modified), " M");
+        assert_eq!(mk(StatusKind::Modified, StatusKind::Unmodified), "M ");
+        assert_eq!(mk(StatusKind::Modified, StatusKind::Modified), "MM");
+        assert_eq!(mk(StatusKind::Added, StatusKind::Unmodified), "A ");
+        assert_eq!(mk(StatusKind::Renamed, StatusKind::Unmodified), "R ");
+        assert_eq!(mk(StatusKind::TypeChanged, StatusKind::Unmodified), "T ");
+        // Untracked and conflicted collapse to git's two-column sentinels
+        // regardless of which column carries the bit.
+        assert_eq!(mk(StatusKind::Untracked, StatusKind::Untracked), "??");
+        assert_eq!(mk(StatusKind::Unmerged, StatusKind::Unmerged), "UU");
+    }
+
+    #[test]
+    fn display_path_borrows_for_non_rename_and_formats_rename() {
+        let plain = ChangedFile::from_status_columns(
+            "src/a.rs".into(),
+            None,
+            StatusKind::Modified,
+            StatusKind::Unmodified,
+        );
+        assert!(matches!(plain.display_path(), Cow::Borrowed(_)));
+        assert_eq!(plain.display_path(), "src/a.rs");
+
+        let renamed = ChangedFile::from_status_columns(
+            "new.rs".into(),
+            Some("old.rs".into()),
+            StatusKind::Renamed,
+            StatusKind::Unmodified,
+        );
+        assert!(matches!(renamed.display_path(), Cow::Owned(_)));
+        assert_eq!(renamed.display_path(), "old.rs -> new.rs");
+        // Search text matches either side of a rename.
+        assert!(renamed.search_lower.contains("old.rs"));
+        assert!(renamed.search_lower.contains("new.rs"));
+    }
+
+    #[test]
+    fn most_severe_picks_higher_severity_column() {
+        // Deleted outranks modified regardless of column.
+        let f = ChangedFile::from_status_columns(
+            "p".into(),
+            None,
+            StatusKind::Modified,
+            StatusKind::Deleted,
+        );
+        assert_eq!(f.most_severe(), StatusKind::Deleted);
+        let f = ChangedFile::from_status_columns(
+            "p".into(),
+            None,
+            StatusKind::Deleted,
+            StatusKind::Modified,
+        );
+        assert_eq!(f.most_severe(), StatusKind::Deleted);
+    }
+
+    // --- Workstream 1: git status -> XY mapping tests ---
+
+    fn find<'a>(snap: &'a RepoSnapshot, path: &str) -> &'a ChangedFile {
+        snap.files
+            .iter()
+            .find(|f| f.path == path)
+            .unwrap_or_else(|| panic!("{path} missing from snapshot"))
+    }
+
+    #[test]
+    fn snapshot_distinguishes_staged_and_unstaged_modification() {
+        let (dir, path) = make_repo();
+        let fp = Path::new(&path).join("a.txt");
+        std::fs::write(&fp, "v1\n").unwrap();
+        run_git(&path, &["add", "."]);
+        run_git(&path, &["commit", "-m", "init"]);
+        // Stage one modification, then modify again without staging.
+        std::fs::write(&fp, "v2\n").unwrap();
+        run_git(&path, &["add", "a.txt"]);
+        std::fs::write(&fp, "v3\n").unwrap();
+
+        let snap = load_snapshot(&open_repo(&path)).unwrap();
+        assert_eq!(find(&snap, "a.txt").short_code(), "MM");
+        drop(dir);
+    }
+
+    #[test]
+    fn snapshot_distinguishes_staged_and_unstaged_deletion() {
+        let (dir, path) = make_repo();
+        std::fs::write(Path::new(&path).join("staged.txt"), "x\n").unwrap();
+        std::fs::write(Path::new(&path).join("wt.txt"), "y\n").unwrap();
+        run_git(&path, &["add", "."]);
+        run_git(&path, &["commit", "-m", "init"]);
+        // staged deletion (index) vs working-tree deletion (unstaged).
+        run_git(&path, &["rm", "staged.txt"]);
+        std::fs::remove_file(Path::new(&path).join("wt.txt")).unwrap();
+
+        let snap = load_snapshot(&open_repo(&path)).unwrap();
+        assert_eq!(find(&snap, "staged.txt").short_code(), "D ");
+        assert_eq!(find(&snap, "wt.txt").short_code(), " D");
+        drop(dir);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn snapshot_detects_staged_typechange() {
+        let (dir, path) = make_repo();
+        let fp = Path::new(&path).join("f");
+        std::fs::write(&fp, "regular\n").unwrap();
+        run_git(&path, &["add", "."]);
+        run_git(&path, &["commit", "-m", "init"]);
+        // Replace the regular file with a symlink and stage it.
+        std::fs::remove_file(&fp).unwrap();
+        std::os::unix::fs::symlink("target", &fp).unwrap();
+        run_git(&path, &["add", "f"]);
+
+        let snap = load_snapshot(&open_repo(&path)).unwrap();
+        assert_eq!(find(&snap, "f").index, StatusKind::TypeChanged);
+        assert_eq!(find(&snap, "f").short_code(), "T ");
+        drop(dir);
+    }
+
+    #[test]
+    fn snapshot_renders_conflicted_file_as_uu() {
+        let (dir, path) = make_repo();
+        let fp = Path::new(&path).join("c.txt");
+        std::fs::write(&fp, "base\n").unwrap();
+        run_git(&path, &["add", "."]);
+        run_git(&path, &["commit", "-m", "init"]);
+        run_git(&path, &["checkout", "-b", "feature"]);
+        std::fs::write(&fp, "feature\n").unwrap();
+        run_git(&path, &["commit", "-am", "feature edit"]);
+        run_git(&path, &["checkout", "-"]);
+        std::fs::write(&fp, "mainline\n").unwrap();
+        run_git(&path, &["commit", "-am", "mainline edit"]);
+        // Conflicting merge exits non-zero; run it tolerantly.
+        let merge = std::process::Command::new("git")
+            .args(["merge", "feature"])
+            .current_dir(&path)
+            .output()
+            .unwrap();
+        assert!(!merge.status.success(), "merge should conflict");
+
+        let snap = load_snapshot(&open_repo(&path)).unwrap();
+        assert_eq!(find(&snap, "c.txt").short_code(), "UU");
+        drop(dir);
+    }
+
+    #[test]
+    fn snapshot_preserves_rename_and_loads_new_side_diff() {
+        let (dir, path) = make_repo();
+        // Keep content identical across the rename so git's similarity
+        // detection reports a staged rename rather than add+delete.
+        std::fs::write(Path::new(&path).join("old.rs"), "fn main() {}\n").unwrap();
+        run_git(&path, &["add", "."]);
+        run_git(&path, &["commit", "-m", "init"]);
+        run_git(&path, &["mv", "old.rs", "new.rs"]);
+
+        let snap = load_snapshot(&open_repo(&path)).unwrap();
+        let f = find(&snap, "new.rs");
+        assert_eq!(f.index, StatusKind::Renamed);
+        assert_eq!(f.old_path.as_deref(), Some("old.rs"));
+        assert_eq!(f.display_path(), "old.rs -> new.rs");
+
+        // The effective path is the new side; selecting it must still load a
+        // diff without error (regression guard for the rename display change).
+        assert!(load_file_diff(&open_repo(&path), &f.path).is_ok());
         drop(dir);
     }
 }
