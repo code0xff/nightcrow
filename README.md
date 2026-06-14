@@ -6,9 +6,9 @@ Agent-adjacent terminal workbench — git diff viewer, commit log, and multi-pan
  ~/projects/myapp   main   ↑2 ↓0
 ┌──────────────────────────────────────────────────────┐
 │ Files           │ @@ -36,7 +36,12 @@                 │
-│ M src/app.rs    │  fn collect_hunks(                  │
-│ M src/diff.rs   │ -    mut on_file: impl FnMut(...),  │
-│▶M src/main.rs   │ +    on_file: impl FnMut(...)       │
+│  M src/app.rs   │  fn collect_hunks(                  │
+│ M  src/diff.rs  │ -    mut on_file: impl FnMut(...),  │
+│▶MM src/main.rs  │ +    on_file: impl FnMut(...)       │
 ├──────────────────────────────────────────────────────┤
 │ [1] claude  [2] aider  [3] bash                      │
 │ $ cargo test                                         │
@@ -45,6 +45,22 @@ file; the two sources share a combined cap of 9 panes. Direct jump keys
 ## Views
 
 **Status view** (default) — lists changed files on the left, syntax-highlighted diff on the right.
+
+Each row begins with a two-character `XY` status code, following Git's short status notation (nightcrow reads status through git2 internally, not by parsing `git status --short`). `X` is the staged (index) state and `Y` is the unstaged (working-tree) state, so a file can show both at once:
+
+| Code | Meaning |
+| --- | --- |
+| ` M` | modified, unstaged |
+| `M ` | modified, staged |
+| `MM` | modified, staged **and** further modified in the working tree |
+| `A ` | added (staged) |
+| `D `/` D` | deleted (staged / unstaged) |
+| `R ` | renamed (shown as `old -> new`; searchable by either path) |
+| `T ` | type changed (e.g. file ↔ symlink) |
+| `??` | untracked |
+| `UU` | conflicted (placeholder for unmerged paths) |
+
+The diff for a selected file shows the combined working-tree-with-index changes.
 
 **Commit log view** (`<prefix> l`) — tig-like commit list on the left, full commit diff on the right. Commits ahead of the upstream are marked with `↑`. Press `Enter` on a commit to drill into its individual files; `Esc` to go back. The list auto-refreshes when the workdir HEAD changes (commits made in the terminal pane, amends, force-pushes, branch switches). History loads one page at a time — initial entry fetches `commit_log_page_size` commits and additional pages stream in on a background thread as the selection approaches the loaded tail, so deep histories stay responsive. Toggling while a terminal or diff pane is zoomed exits the zoom and focuses the list, so the view switch is always visible.
 
