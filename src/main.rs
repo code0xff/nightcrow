@@ -12,7 +12,7 @@ mod ui;
 mod util;
 
 use anyhow::{Context, Result};
-use app::{App, Focus, ViewMode};
+use app::{App, DiffPaneView, Focus, ViewMode};
 use clap::Parser;
 use crossterm::event::{
     DisableBracketedPaste, EnableBracketedPaste, KeyCode, KeyEvent, KeyEventKind, KeyModifiers,
@@ -680,15 +680,30 @@ fn handle_unmapped_upper_key(app: &mut App, key: KeyEvent) {
         Focus::DiffViewer => match key.code {
             _ if matches_text_command(key, 'v') => app.toggle_diff_file_view(),
             _ if matches_text_command(key, 's') => app.toggle_diff_split_view(),
-            _ if matches_text_command(key, '/') => app.diff.start_search(),
-            _ if matches_text_command(key, 'n') => app.diff.next_match(),
-            _ if matches_text_command(key, 'N') => app.diff.prev_match(),
+            _ if matches_text_command(key, '/') => {
+                exit_split_for_search(app);
+                app.diff.start_search();
+            }
+            _ if matches_text_command(key, 'n') && app.diff.search.has_query() => {
+                exit_split_for_search(app);
+                app.diff.next_match();
+            }
+            _ if matches_text_command(key, 'N') && app.diff.search.has_query() => {
+                exit_split_for_search(app);
+                app.diff.prev_match();
+            }
             KeyCode::Esc if !app.diff.search.query.is_empty() => app.diff.cancel_search(),
             KeyCode::Left => app.diff.scroll_left(),
             KeyCode::Right => app.diff.scroll_right(),
             _ => {}
         },
         Focus::Terminal => {}
+    }
+}
+
+fn exit_split_for_search(app: &mut App) {
+    if app.diff.view == DiffPaneView::Split {
+        app.diff.view = DiffPaneView::Diff;
     }
 }
 
@@ -1098,6 +1113,30 @@ mod tests {
 
         let alt_v = press(KeyCode::Char('v'), KeyModifiers::ALT);
         let _ = handle_key(&mut app, alt_v);
+
+        assert_eq!(app.diff.view, DiffPaneView::Diff);
+    }
+
+    #[test]
+    fn handle_key_diff_search_from_split_returns_to_unified_overlay() {
+        let mut app = app_with_files(vec!["a.rs"]);
+        app.focus = Focus::DiffViewer;
+        app.diff.view = DiffPaneView::Split;
+
+        let _ = handle_key(&mut app, press(KeyCode::Char('/'), KeyModifiers::NONE));
+
+        assert_eq!(app.diff.view, DiffPaneView::Diff);
+        assert!(app.diff.search.active);
+    }
+
+    #[test]
+    fn handle_key_diff_next_match_from_split_returns_to_unified_when_query_exists() {
+        let mut app = app_with_files(vec!["a.rs"]);
+        app.focus = Focus::DiffViewer;
+        app.diff.view = DiffPaneView::Split;
+        app.diff.search.query.set("needle");
+
+        let _ = handle_key(&mut app, press(KeyCode::Char('n'), KeyModifiers::NONE));
 
         assert_eq!(app.diff.view, DiffPaneView::Diff);
     }
