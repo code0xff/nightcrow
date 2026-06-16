@@ -1702,6 +1702,23 @@ pub(crate) mod tests {
         assert!(app.diff.file_view.key.is_none());
     }
 
+    #[test]
+    fn toggle_diff_split_view_round_trips_and_overrides_file_view() {
+        let mut app = app_with_files(vec!["a.rs"]);
+
+        // Diff → Split → Diff.
+        app.toggle_diff_split_view();
+        assert_eq!(app.diff.view, DiffPaneView::Split);
+        app.toggle_diff_split_view();
+        assert_eq!(app.diff.view, DiffPaneView::Diff);
+
+        // From the file overlay, the split toggle switches straight to Split
+        // rather than back to the unified diff.
+        app.diff.view = DiffPaneView::File;
+        app.toggle_diff_split_view();
+        assert_eq!(app.diff.view, DiffPaneView::Split);
+    }
+
     /// Helper: build a populated FileViewState so tests can assert that
     /// downstream operations either preserve or invalidate it without
     /// going through the disk-reading `load_file_view` path.

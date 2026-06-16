@@ -267,6 +267,17 @@ impl App {
         self.diff.view = DiffPaneView::File;
     }
 
+    /// Toggle the side-by-side split view on or off. From any other view
+    /// (unified diff or file overlay) this switches into `Split`; pressing it
+    /// again returns to the unified diff.
+    pub fn toggle_diff_split_view(&mut self) {
+        self.diff.view = if self.diff.view == DiffPaneView::Split {
+            DiffPaneView::Diff
+        } else {
+            DiffPaneView::Split
+        };
+    }
+
     pub(crate) fn load_commit_diff_for_selected(&mut self) {
         let (oid, title) = match self.log_view.commits.get(self.log_view.selected) {
             Some(entry) => (entry.oid, entry.to_string()),

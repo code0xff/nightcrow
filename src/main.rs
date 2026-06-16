@@ -679,6 +679,7 @@ fn handle_unmapped_upper_key(app: &mut App, key: KeyEvent) {
         },
         Focus::DiffViewer => match key.code {
             _ if matches_text_command(key, 'v') => app.toggle_diff_file_view(),
+            _ if matches_text_command(key, 's') => app.toggle_diff_split_view(),
             _ if matches_text_command(key, '/') => app.diff.start_search(),
             _ if matches_text_command(key, 'n') => app.diff.next_match(),
             _ if matches_text_command(key, 'N') => app.diff.prev_match(),

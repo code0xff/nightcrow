@@ -316,12 +316,14 @@ fn render_hint_bar(app: &App, accent: Color) -> Paragraph<'_> {
     if app.diff.fullscreen {
         let hint = if app.diff.view == DiffPaneView::File {
             " <prefix> f: exit zoom | v: back to diff | j/k: scroll | pgup/pgdn: page | <prefix> q: quit"
+        } else if app.diff.view == DiffPaneView::Split {
+            " <prefix> f: exit zoom | s: unified diff | j/k: scroll | pgup/pgdn: page | <prefix> q: quit"
         } else if app.diff.search.active {
             " type to search | enter: confirm | esc: cancel"
         } else if !app.diff.search.query.is_empty() {
             " <prefix> f: exit zoom | n: next match | shift+n: prev match | /: new search | esc: clear"
         } else {
-            " <prefix> f: exit zoom | j/k: scroll | v: view file | /: search | pgup/pgdn: page | <prefix> q: quit"
+            " <prefix> f: exit zoom | j/k: scroll | v: view file | s: split | /: search | pgup/pgdn: page | <prefix> q: quit"
         };
         return render(hint);
     }
@@ -361,12 +363,14 @@ fn render_hint_bar(app: &App, accent: Color) -> Paragraph<'_> {
         Focus::DiffViewer => {
             if app.diff.view == DiffPaneView::File {
                 " v: back to diff | j/k: scroll | pgup/pgdn: page | shift+←/→: cycle | <prefix> q: quit"
+            } else if app.diff.view == DiffPaneView::Split {
+                " s: unified diff | j/k: scroll | pgup/pgdn: page | shift+←/→: cycle | <prefix> f: zoom | <prefix> q: quit"
             } else if app.diff.search.active {
                 " type to search | enter: confirm | esc: cancel"
             } else if !app.diff.search.query.is_empty() {
                 " n: next match | shift+n: prev match | /: new search | esc: clear"
             } else {
-                " shift+←/→: cycle | j/k: scroll | pgup/pgdn: scroll | v: view file | /: search | <prefix> t: new pane | <prefix> w: close pane | <prefix> f: zoom | <prefix> l: log view | <prefix> o: repo | <prefix> q: quit"
+                " shift+←/→: cycle | j/k: scroll | pgup/pgdn: scroll | v: view file | s: split | /: search | <prefix> t: new pane | <prefix> w: close pane | <prefix> f: zoom | <prefix> l: log view | <prefix> o: repo | <prefix> q: quit"
             }
         }
     };
