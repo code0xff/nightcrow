@@ -7,6 +7,25 @@ pub enum DiffPaneView {
     #[default]
     Diff,
     File,
+    /// Side-by-side diff: removed lines on the left, added lines on the right,
+    /// context lines mirrored on both sides. Falls back to the unified `Diff`
+    /// renderer when the pane is too narrow to split usefully.
+    Split,
+}
+
+/// One row of the side-by-side layout. `Header` carries the hunk index whose
+/// `@@ ... @@` header spans the full width; `Body` carries the (hunk, line)
+/// coordinates shown on each side, with `None` marking a blank padding cell
+/// where one side has no counterpart line. Coordinates index into
+/// `DiffPane::hunks` (and the matching `line_highlights`) so the renderer can
+/// reuse the prebuilt highlight cache without re-running syntect.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SplitRow {
+    Header(usize),
+    Body {
+        left: Option<(usize, usize)>,
+        right: Option<(usize, usize)>,
+    },
 }
 
 #[derive(Default)]
@@ -233,8 +252,39 @@ impl DiffPane {
     fn scroll_x_target_mut(&mut self) -> &mut usize {
         match self.view {
             DiffPaneView::File => &mut self.file_view.scroll_x,
-            DiffPaneView::Diff => &mut self.scroll_x,
+            // Split reuses the unified diff's horizontal cursor so both halves
+            // scroll together.
+            DiffPaneView::Diff | DiffPaneView::Split => &mut self.scroll_x,
         }
+    }
+
+    /// Build the side-by-side row layout from the current hunks. Within each
+    /// hunk, consecutive removed/added lines are paired index-by-index (the
+    /// shorter run padded with blank cells), and context lines are mirrored on
+    /// both sides. Cheap to recompute: it only walks line kinds and stores
+    /// coordinates, never copying content.
+    pub fn split_rows(&self) -> Vec<SplitRow> {
+        let mut rows = Vec::new();
+        for (hi, hunk) in self.hunks.iter().enumerate() {
+            rows.push(SplitRow::Header(hi));
+            let mut removed: Vec<usize> = Vec::new();
+            let mut added: Vec<usize> = Vec::new();
+            for (li, line) in hunk.lines.iter().enumerate() {
+                match line.kind {
+                    LineKind::Removed => removed.push(li),
+                    LineKind::Added => added.push(li),
+                    LineKind::Context => {
+                        flush_split_blocks(&mut rows, hi, &mut removed, &mut added);
+                        rows.push(SplitRow::Body {
+                            left: Some((hi, li)),
+                            right: Some((hi, li)),
+                        });
+                    }
+                }
+            }
+            flush_split_blocks(&mut rows, hi, &mut removed, &mut added);
+        }
+        rows
     }
 
     pub fn start_search(&mut self) {
@@ -436,6 +486,26 @@ impl DiffPane {
     }
 }
 
+/// Flush the pending removed/added runs into paired `SplitRow::Body` rows,
+/// padding the shorter run with `None` cells, then clear both queues. Called
+/// whenever a context line or hunk boundary breaks a change block.
+fn flush_split_blocks(
+    rows: &mut Vec<SplitRow>,
+    hi: usize,
+    removed: &mut Vec<usize>,
+    added: &mut Vec<usize>,
+) {
+    let pairs = removed.len().max(added.len());
+    for i in 0..pairs {
+        rows.push(SplitRow::Body {
+            left: removed.get(i).map(|&li| (hi, li)),
+            right: added.get(i).map(|&li| (hi, li)),
+        });
+    }
+    removed.clear();
+    added.clear();
+}
+
 /// Pick the syntect syntax for a hunk based on its `file_path`'s extension.
 /// Falls back to plain text when the path is absent (test fixtures) or the
 /// extension is unknown.
@@ -520,5 +590,90 @@ mod tests {
         assert_eq!(pane.search.matches, vec![1, 3]);
         assert_eq!(pane.search_cursor(), 1);
         assert_eq!(pane.scroll, 3);
+    }
+
+    fn kinded_hunk(lines: &[(LineKind, &str)]) -> DiffHunk {
+        DiffHunk {
+            header: "@@".to_string(),
+            lines: lines
+                .iter()
+                .map(|(kind, s)| DiffLine {
+                    kind: *kind,
+                    content: (*s).to_string(),
+                })
+                .collect(),
+            file_path: None,
+        }
+    }
+
+    #[test]
+    fn split_rows_pairs_changes_and_mirrors_context() {
+        use LineKind::{Added, Context, Removed};
+        // A typical edit block: one context line, a 2-removed/1-added change,
+        // then a trailing context line.
+        let pane = DiffPane {
+            hunks: vec![kinded_hunk(&[
+                (Context, "ctx0"),
+                (Removed, "old a"),
+                (Removed, "old b"),
+                (Added, "new a"),
+                (Context, "ctx1"),
+            ])],
+            ..Default::default()
+        };
+
+        let rows = pane.split_rows();
+        assert_eq!(
+            rows,
+            vec![
+                SplitRow::Header(0),
+                // context mirrored on both sides
+                SplitRow::Body {
+                    left: Some((0, 0)),
+                    right: Some((0, 0)),
+                },
+                // removed[0] pairs with added[0]
+                SplitRow::Body {
+                    left: Some((0, 1)),
+                    right: Some((0, 3)),
+                },
+                // removed[1] has no added counterpart → right padded blank
+                SplitRow::Body {
+                    left: Some((0, 2)),
+                    right: None,
+                },
+                SplitRow::Body {
+                    left: Some((0, 4)),
+                    right: Some((0, 4)),
+                },
+            ]
+        );
+        // 1 header + 4 body rows.
+        assert_eq!(rows.len(), 5);
+    }
+
+    #[test]
+    fn split_rows_pads_added_only_block() {
+        use LineKind::Added;
+        // Pure insertion: every change row has a blank left side.
+        let pane = DiffPane {
+            hunks: vec![kinded_hunk(&[(Added, "x"), (Added, "y")])],
+            ..Default::default()
+        };
+        let rows = pane.split_rows();
+        assert_eq!(
+            rows,
+            vec![
+                SplitRow::Header(0),
+                SplitRow::Body {
+                    left: None,
+                    right: Some((0, 0)),
+                },
+                SplitRow::Body {
+                    left: None,
+                    right: Some((0, 1)),
+                },
+            ]
+        );
     }
 }
