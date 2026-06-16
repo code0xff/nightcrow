@@ -163,6 +163,11 @@ fn init_app(
     app.pagination.prefetch_threshold = cfg.log.commit_log_prefetch_threshold;
     if let Some(state) = saved_session {
         app.set_accent_index(state.accent_idx);
+        // Restore pane/focus/fullscreen now so the fresh-launch terminal focus
+        // set by `ensure_initial_terminal` never draws or routes keystrokes
+        // over the saved focus while the first snapshot is still pending.
+        // Selection/diff/log restoration stays deferred until the snapshot.
+        app.restore_pane_focus(&state);
         app.set_pending_session(state);
     }
     app

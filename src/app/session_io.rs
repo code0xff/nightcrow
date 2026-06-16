@@ -28,8 +28,13 @@ impl App {
         }
     }
 
-    pub fn restore_session(&mut self, state: &SessionState) {
-        // Pane / focus / fullscreen restoration — independent of view mode.
+    /// Restore the pane/focus/fullscreen subset of a saved session. This needs
+    /// no loaded snapshot data, so it runs synchronously at startup (before the
+    /// first snapshot) to stop the fresh-launch terminal focus from briefly
+    /// drawing — and routing keystrokes — over a saved `FileList`/`DiffViewer`
+    /// focus on restart. Idempotent: `restore_session` re-applies it once the
+    /// snapshot arrives, which is a no-op against the same state.
+    pub(crate) fn restore_pane_focus(&mut self, state: &SessionState) {
         self.terminal.active = state
             .active_pane
             .min(self.terminal.panes.len().saturating_sub(1));
@@ -53,6 +58,11 @@ impl App {
         if self.list_fullscreen {
             self.focus = Focus::FileList;
         }
+    }
+
+    pub fn restore_session(&mut self, state: &SessionState) {
+        // Pane / focus / fullscreen restoration — independent of view mode.
+        self.restore_pane_focus(state);
         self.set_accent_index(state.accent_idx);
 
         // Mode-specific diff/scroll restoration. We avoid loading a workdir diff

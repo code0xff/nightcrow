@@ -12,7 +12,14 @@ impl App {
     /// `startup_commands`, this keeps the historical single empty-shell
     /// behaviour. Otherwise it opens one pane per command, runs each command
     /// immediately, and labels the tab with the command's `name` (falling
-    /// back to the command text). Focus lands on the first startup pane.
+    /// back to the command text).
+    ///
+    /// On a fresh launch the input focus lands on the first pane so a cockpit
+    /// user can type into the startup program (or the empty shell) right away.
+    /// A restored session overrides this later in `restore_session`, so the
+    /// last active pane/focus still wins on restart. When no pane could be
+    /// created (no backend, or `create_pane` failed), focus stays on the file
+    /// list — there is no terminal to focus.
     pub(crate) fn ensure_initial_terminal(
         &mut self,
         startup_commands: &[crate::config::StartupCommand],
@@ -24,18 +31,20 @@ impl App {
             if let Err(err) = self.terminal.create_pane() {
                 self.status = Some(format!("terminal error: {err}"));
             }
-            return;
-        }
-        for sc in startup_commands {
-            let label = sc.name.as_deref();
-            if let Err(err) = self.terminal.create_pane_with(Some(&sc.command), label) {
-                self.status = Some(format!("terminal error: {err}"));
+        } else {
+            for sc in startup_commands {
+                let label = sc.name.as_deref();
+                if let Err(err) = self.terminal.create_pane_with(Some(&sc.command), label) {
+                    self.status = Some(format!("terminal error: {err}"));
+                }
             }
         }
-        // Clamp focus to the first startup pane so the user starts at the top
-        // of the reserved set rather than the last one created.
+        // Start at the top of the reserved set rather than the last pane
+        // created, and put input focus on it so keystrokes reach the terminal
+        // program immediately on first launch.
         if !self.terminal.panes.is_empty() {
             self.terminal.active = 0;
+            self.focus = Focus::Terminal;
         }
     }
 
