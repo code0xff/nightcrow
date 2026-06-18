@@ -38,9 +38,11 @@ nightcrow --exec "claude" --exec "codex"
 ```
 
 `--exec` panes open after any `[[startup_command]]` panes from the config
-file; the two sources share a combined cap of 9 panes. Direct jump keys
-(`F3`–`F9`, or `<prefix> 3`–`9`) reach the first seven; the rest are reachable by focus cycling
-(`Shift+←/→`).
+file; the two sources share a combined cap of 7 panes — the same count the
+`F3`–`F9` (or `<prefix> 3`–`9`) jump keys address, so every startup pane is
+reachable by a direct key. (`F1`/`F2` map to the file list and diff viewer.)
+Panes opened later with `<prefix> t` are not capped; any past the seventh are
+reached by focus cycling (`Shift+←/→`).
 
 ## Views
 
@@ -195,10 +197,12 @@ auto_follow = false       # jump selection to the freshest hot file when idle
 
 # Reserve startup commands: each [[startup_command]] opens its own terminal
 # pane at launch and runs `command` immediately (via `$SHELL -lc <command>`).
-# Up to 9 entries; the first seven are reachable by the F3–F9 pane-jump keys,
-# the rest via focus cycling (Shift+←/→). `name` labels the tab; when omitted
-# the command text is used. With no [[startup_command]]
-# entries, nightcrow opens a single empty shell as before.
+# Up to 7 entries (combined with CLI --exec). 7 matches the F3–F9 / <leader>
+# 3–9 jump keys, so every startup pane is reachable by a direct key (F1/F2
+# reach the file list and diff viewer). This caps only the startup batch — open
+# more anytime with <leader> t (panes past the seventh are reached by focus
+# cycling, Shift+←/→). `name` labels the tab; when omitted the command text is
+# used. With no [[startup_command]] entries, nightcrow opens a single empty shell.
 [[startup_command]]
 name = "Claude"           # optional tab label; falls back to the command text
 command = "claude"        # required; must not be empty

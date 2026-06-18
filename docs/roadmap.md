@@ -148,7 +148,7 @@
 ### Workstream 1
 
 - Goal: 시작 명령 config 스키마 (`[[startup_command]]`)
-- Deliverables: `Config`에 `startup_commands: Vec<StartupCommand>` 필드(`#[serde(rename = "startup_command")]`로 TOML array-of-tables 매핑), `StartupCommand { name: Option<String>, command: String }` 구조체, `validate_config`에서 command 비어있음 거부 + 항목 개수 상한(예: <= 9, 시작 시 일괄 spawn 방지용 보수적 상한) 검증, 파싱/검증 단위 테스트
+- Deliverables: `Config`에 `startup_commands: Vec<StartupCommand>` 필드(`#[serde(rename = "startup_command")]`로 TOML array-of-tables 매핑), `StartupCommand { name: Option<String>, command: String }` 구조체, `validate_config`에서 command 비어있음 거부 + 항목 개수 상한(<= 7, F3–F9 점프 키로 직접 접근 가능한 범위) 검증, 파싱/검증 단위 테스트
 - Exit Criteria: `[[startup_command]]` TOML이 정확히 파싱됨, 빈 command와 개수 초과가 검증에서 거부됨, startup_command 미지정 시 빈 Vec 기본값, `cargo test` 통과
 - status: done
 
@@ -162,6 +162,6 @@
 ### Workstream 3
 
 - Goal: 실행 시 CLI 옵션(`--exec`)으로 터미널 pane 실행
-- Deliverables: `clap` `Cli`에 `--exec <command>`(여러 번 지정 가능, `Vec<String>`) 추가, WS2의 `create_pane_with` spawn 경로 재사용, config의 `startup_commands`와 CLI `--exec`를 병합하는 단일 진입점 정의(config 항목 먼저 → CLI `--exec` 항목 이어붙임), 병합 결과에도 `MAX_STARTUP_COMMANDS`(9) 합산 한도 적용 및 초과 시 명확한 에러, CLI 항목은 name 없이 command 텍스트를 라벨로 사용, README/`--help`에 `--exec` 사용법 문서화, 병합·한도·spawn 단위 테스트
-- Exit Criteria: `nightcrow --exec "claude" --exec "codex"` 실행 시 해당 pane들이 자동 생성·실행됨, config `[[startup_command]]`와 `--exec`를 함께 쓰면 config 먼저 → CLI 순서로 pane이 뜸, 합산 개수가 9 초과 시 시작이 명확한 에러로 중단됨, 옵션 미지정 시 단일 빈 셸 유지, `cargo test`/`cargo clippy` 통과
+- Deliverables: `clap` `Cli`에 `--exec <command>`(여러 번 지정 가능, `Vec<String>`) 추가, WS2의 `create_pane_with` spawn 경로 재사용, config의 `startup_commands`와 CLI `--exec`를 병합하는 단일 진입점 정의(config 항목 먼저 → CLI `--exec` 항목 이어붙임), 병합 결과에도 `MAX_STARTUP_COMMANDS`(7) 합산 한도 적용 및 초과 시 명확한 에러, CLI 항목은 name 없이 command 텍스트를 라벨로 사용, README/`--help`에 `--exec` 사용법 문서화, 병합·한도·spawn 단위 테스트
+- Exit Criteria: `nightcrow --exec "claude" --exec "codex"` 실행 시 해당 pane들이 자동 생성·실행됨, config `[[startup_command]]`와 `--exec`를 함께 쓰면 config 먼저 → CLI 순서로 pane이 뜸, 합산 개수가 7 초과 시 시작이 명확한 에러로 중단됨, 옵션 미지정 시 단일 빈 셸 유지, `cargo test`/`cargo clippy` 통과
 - status: done

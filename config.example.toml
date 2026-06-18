@@ -46,12 +46,13 @@ auto_follow = false       # jump selection to the freshest hot file when idle
 
 # Reserve startup commands: each [[startup_command]] opens its own terminal
 # pane at launch and runs `command` immediately (via `$SHELL -lc <command>`).
-# Up to 9 entries. This caps how many panes spawn at once at launch (a guard
-# against a misconfigured batch), not the total — open more anytime with
-# <leader> t. Direct pane-jump keys (F3–F9) reach the first seven panes; the
-# rest are still reachable via focus cycling (Shift+←/→). `name` labels the
-# tab; when omitted the command text is used. With no [[startup_command]]
-# entries, nightcrow opens a single empty shell as before.
+# Up to 7 entries (combined with CLI --exec). 7 matches the F3–F9 / <leader>
+# 3–9 pane-jump keys, so every startup pane is reachable by a direct key (F1/F2
+# reach the file list and diff viewer). This caps only the startup batch — open
+# more anytime with <leader> t (panes past the seventh are reached via focus
+# cycling, Shift+←/→). `name` labels the tab; when omitted the command text is
+# used. With no [[startup_command]] entries, nightcrow opens a single empty
+# shell as before.
 #
 # [[startup_command]]
 # name = "Claude"           # optional tab label; falls back to the command text

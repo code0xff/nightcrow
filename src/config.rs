@@ -4,14 +4,13 @@ use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
 /// Upper bound on the number of `[[startup_command]]` + `--exec` panes opened
-/// at launch. Unlike runtime panes (opened one at a time by `<leader> t`, and
-/// intentionally unbounded), startup panes all spawn at once from a static
-/// config, so a typo or a pasted block could fork a large batch of processes at
-/// boot. This cap is a misconfiguration guard on that batch — not a limit on
-/// total panes, and not tied to the `F3`..`F9` jump keys. The value is a
-/// deliberately conservative bound; panes past the seventh are still reachable
-/// by focus cycling (`Shift+←/→`).
-pub const MAX_STARTUP_COMMANDS: usize = 9;
+/// at launch. The value matches the `F3`..`F9` / `<prefix> 3`..`9` jump-key
+/// range, so every startup pane is reachable by a direct key: `F1`/`F2` reach
+/// the upper panels (file list, diff) and `F3`..`F9` reach all seven terminal
+/// panes. Runtime panes (opened one at a time by `<leader> t`) are not bounded
+/// by this — they may exceed seven, in which case the extras past the seventh
+/// are reachable by focus cycling (`Shift+←/→`) rather than a jump key.
+pub const MAX_STARTUP_COMMANDS: usize = 7;
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(default)]
@@ -705,18 +704,21 @@ command = "cargo test"
     #[test]
     fn resolve_startup_commands_caps_combined_total() {
         let mut cfg = Config::default();
-        for i in 0..5 {
+        for i in 0..4 {
             cfg.startup_commands.push(StartupCommand {
                 name: None,
                 command: format!("echo {i}"),
             });
         }
-        // 5 config + 5 CLI = 10 > MAX_STARTUP_COMMANDS (9).
-        let cli: Vec<String> = (0..5).map(|i| format!("run {i}")).collect();
-        assert!(resolve_startup_commands(&cfg, &cli).is_err());
-        // 5 config + 4 CLI = 9 is exactly the cap.
+        // 4 config + 4 CLI = 8 > MAX_STARTUP_COMMANDS (7).
         let cli: Vec<String> = (0..4).map(|i| format!("run {i}")).collect();
-        assert_eq!(resolve_startup_commands(&cfg, &cli).unwrap().len(), 9);
+        assert!(resolve_startup_commands(&cfg, &cli).is_err());
+        // 4 config + 3 CLI = 7 is exactly the cap.
+        let cli: Vec<String> = (0..3).map(|i| format!("run {i}")).collect();
+        assert_eq!(
+            resolve_startup_commands(&cfg, &cli).unwrap().len(),
+            MAX_STARTUP_COMMANDS
+        );
     }
 
     #[test]

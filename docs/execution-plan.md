@@ -39,7 +39,7 @@ service_goal: 개발자가 config.toml에 시작 명령들을 예약하면, nigh
 
 - `Config`에 `startup_commands: Vec<StartupCommand>` 필드와 `StartupCommand { name, command }` 구조체 추가
 - TOML `[[startup_command]]` array-of-tables를 serde rename으로 매핑
-- `validate_config`에 빈 command 거부 + 항목 개수 상한(<= 9) 검증 추가
+- `validate_config`에 빈 command 거부 + 항목 개수 상한(<= 7) 검증 추가
 - 파싱/검증 단위 테스트 작성 (정상 파싱, 빈 command 거부, 개수 초과 거부, 미지정 시 빈 Vec)
 
 ### Workstream 2 Plan
@@ -55,7 +55,7 @@ service_goal: 개발자가 config.toml에 시작 명령들을 예약하면, nigh
 
 - `clap` `Cli`에 `--exec <command>`(다중 지정, `Vec<String>`) 추가
 - config `startup_commands` + CLI `--exec`를 병합하는 단일 진입점 정의 (config 먼저 → CLI 이어붙임)
-- 병합 결과에 `MAX_STARTUP_COMMANDS`(9) 합산 한도 적용, 초과 시 시작 중단 + 명확한 에러
+- 병합 결과에 `MAX_STARTUP_COMMANDS`(7) 합산 한도 적용, 초과 시 시작 중단 + 명확한 에러
 - CLI 항목은 command 텍스트를 라벨로 사용 (name 없음), WS2의 `create_pane_with` 경로 재사용
 - README/`--help`에 `--exec` 문서화
 - 병합/한도/spawn 단위 테스트 + `cargo clippy` 통과
