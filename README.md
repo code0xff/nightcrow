@@ -164,6 +164,15 @@ nightcrow saves the current state on exit and restores it on the next launch for
 ## Configuration
 
 Config file: `~/.nightcrow/config.toml` (all fields optional, defaults shown).
+nightcrow runs on built-in defaults when the file is absent and never creates
+it on its own. To get a starter file, run:
+
+```bash
+nightcrow init            # writes a commented ~/.nightcrow/config.toml
+nightcrow init --force    # overwrite an existing file
+```
+
+`init` leaves an existing config untouched unless `--force` is passed.
 
 ```toml
 [layout]

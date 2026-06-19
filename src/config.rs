@@ -299,6 +299,44 @@ fn default_config_path() -> Option<PathBuf> {
     dirs::home_dir().map(|h| h.join(".nightcrow").join("config.toml"))
 }
 
+/// The shipped, commented configuration template, embedded at compile time so
+/// a standalone binary (with no source checkout alongside it) can still hand
+/// the user a starting file. `nightcrow init` writes this verbatim, and
+/// `example_config_parses_and_validates` guards that it always parses and
+/// validates against the current `Config`.
+pub const EXAMPLE_CONFIG: &str = include_str!("../config.example.toml");
+
+/// Result of `init_config`, so the caller can report precisely which path was
+/// touched and whether anything was written.
+pub enum InitOutcome {
+    Created(PathBuf),
+    AlreadyExists(PathBuf),
+}
+
+/// Write the embedded template to `~/.nightcrow/config.toml`, creating the
+/// parent directory if needed. An existing file is preserved unless `force`
+/// is set, so re-running `init` never clobbers a user's edits by accident.
+pub fn init_config(force: bool) -> Result<InitOutcome> {
+    let path = default_config_path()
+        .ok_or_else(|| anyhow::anyhow!("cannot determine home directory for config path"))?;
+    write_config_template(&path, force)
+}
+
+/// Path-explicit core of `init_config` (no `$HOME` lookup) so the write/skip
+/// behaviour is unit-testable against a temp directory.
+fn write_config_template(path: &std::path::Path, force: bool) -> Result<InitOutcome> {
+    if path.exists() && !force {
+        return Ok(InitOutcome::AlreadyExists(path.to_path_buf()));
+    }
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)
+            .with_context(|| format!("creating config directory {}", parent.display()))?;
+    }
+    std::fs::write(path, EXAMPLE_CONFIG)
+        .with_context(|| format!("writing config file {}", path.display()))?;
+    Ok(InitOutcome::Created(path.to_path_buf()))
+}
+
 pub fn load_config() -> Result<Config> {
     let path = match default_config_path() {
         Some(p) if p.exists() => p,
@@ -406,10 +444,47 @@ mod tests {
     #[test]
     fn example_config_parses_and_validates() {
         // Guards the shipped config.example.toml against drift: it must parse
-        // into Config and pass the same validation as a real user file.
-        let toml = include_str!("../config.example.toml");
-        let cfg: Config = toml::from_str(toml).expect("config.example.toml should parse");
+        // into Config and pass the same validation as a real user file. This is
+        // the exact text `nightcrow init` writes, so the guard covers both.
+        let cfg: Config = toml::from_str(EXAMPLE_CONFIG).expect("config.example.toml should parse");
         validate_config(&cfg).expect("config.example.toml should validate");
+    }
+
+    #[test]
+    fn write_config_template_creates_file_and_parent_dir() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let path = dir.path().join("nested").join("config.toml");
+        match write_config_template(&path, false).unwrap() {
+            InitOutcome::Created(p) => assert_eq!(p, path),
+            InitOutcome::AlreadyExists(_) => panic!("expected Created on a fresh path"),
+        }
+        let written = std::fs::read_to_string(&path).unwrap();
+        assert_eq!(written, EXAMPLE_CONFIG);
+    }
+
+    #[test]
+    fn write_config_template_preserves_existing_without_force() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let path = dir.path().join("config.toml");
+        std::fs::write(&path, "# user edits\n").unwrap();
+        match write_config_template(&path, false).unwrap() {
+            InitOutcome::AlreadyExists(p) => assert_eq!(p, path),
+            InitOutcome::Created(_) => panic!("must not overwrite an existing file"),
+        }
+        // The user's content survives untouched.
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "# user edits\n");
+    }
+
+    #[test]
+    fn write_config_template_overwrites_with_force() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let path = dir.path().join("config.toml");
+        std::fs::write(&path, "# stale\n").unwrap();
+        match write_config_template(&path, true).unwrap() {
+            InitOutcome::Created(p) => assert_eq!(p, path),
+            InitOutcome::AlreadyExists(_) => panic!("force should rewrite the file"),
+        }
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), EXAMPLE_CONFIG);
     }
 
     #[test]

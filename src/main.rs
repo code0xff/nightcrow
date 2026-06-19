@@ -13,7 +13,7 @@ mod util;
 
 use anyhow::{Context, Result};
 use app::{App, DiffPaneView, Focus, ViewMode};
-use clap::Parser;
+use clap::{Parser, Subcommand};
 use crossterm::event::{
     DisableBracketedPaste, EnableBracketedPaste, KeyCode, KeyEvent, KeyEventKind, KeyModifiers,
 };
@@ -43,10 +43,31 @@ struct Cli {
     /// each --exec adds one pane after any config [[startup_command]] panes.
     #[arg(long = "exec", value_name = "COMMAND")]
     exec: Vec<String>,
+
+    #[command(subcommand)]
+    command: Option<Commands>,
+}
+
+#[derive(Subcommand)]
+enum Commands {
+    /// Write a starter config file to ~/.nightcrow/config.toml
+    Init {
+        /// Overwrite the config file if it already exists
+        #[arg(long)]
+        force: bool,
+    },
 }
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
+
+    // Subcommands run to completion and exit before any TUI setup, so their
+    // output stays on the normal terminal rather than flashing behind the
+    // alternate screen.
+    if let Some(Commands::Init { force }) = cli.command {
+        return run_init(force);
+    }
+
     let cfg = config::load_config()?;
     // Resolve before entering the alternate screen so a too-many-panes error
     // surfaces as plain stderr text rather than a flash behind the TUI.
@@ -86,6 +107,22 @@ fn main() -> Result<()> {
     let mut terminal = Terminal::new(backend)?;
 
     run(&mut terminal, repo_path, cfg, startup_commands, leader)
+}
+
+fn run_init(force: bool) -> Result<()> {
+    match config::init_config(force)? {
+        config::InitOutcome::Created(path) => {
+            println!("Created starter config at {}", path.display());
+            println!("Edit it to reserve startup commands, panel layout, theme, and more.");
+        }
+        config::InitOutcome::AlreadyExists(path) => {
+            println!(
+                "Config already exists at {} — left untouched (pass --force to overwrite).",
+                path.display()
+            );
+        }
+    }
+    Ok(())
 }
 
 struct TerminalGuard;
