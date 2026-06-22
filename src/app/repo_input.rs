@@ -41,6 +41,9 @@ impl App {
         self.log_view.commit_scroll_x = 0;
         // `reset_drill_down` also clears `commit_files` and its width cache.
         self.log_view.reset_drill_down();
+        // Tree cache/expansion/selection are workdir-scoped; drop them so the
+        // new repo's tree starts fresh (and never previews a stale path).
+        self.tree_view.reset();
         self.status_view.cancel_search();
         // clear_diff_state empties hunks + lower/highlight caches, resets diff
         // scroll/search cursor, drops the search query, and invalidates the

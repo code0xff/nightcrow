@@ -20,6 +20,7 @@ pub struct Config {
     pub theme: ThemeConfig,
     pub agent_indicator: AgentIndicatorConfig,
     pub input: InputConfig,
+    pub tree: TreeConfig,
     /// Commands launched in their own terminal pane at startup, in order.
     /// Maps from TOML `[[startup_command]]` array-of-tables. Empty by
     /// default, which preserves the single empty-shell startup behaviour.
@@ -295,6 +296,29 @@ impl Default for AgentIndicatorConfig {
     }
 }
 
+/// Configuration for the read-only file-tree navigator (`ViewMode::Tree`).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct TreeConfig {
+    /// Hide paths matched by `.gitignore` (e.g. `target/`, `node_modules/`).
+    /// On by default so the tree doesn't explode into build artifacts; set to
+    /// `false` to browse every file on disk.
+    pub respect_gitignore: bool,
+    /// Maximum directory depth the navigator will expand into. A guard against
+    /// pathologically deep trees; expansion past this depth is a no-op. Must be
+    /// in 1..=1024.
+    pub max_depth: usize,
+}
+
+impl Default for TreeConfig {
+    fn default() -> Self {
+        Self {
+            respect_gitignore: true,
+            max_depth: 64,
+        }
+    }
+}
+
 fn default_config_path() -> Option<PathBuf> {
     dirs::home_dir().map(|h| h.join(".nightcrow").join("config.toml"))
 }
@@ -400,6 +424,10 @@ fn validate_config(cfg: &Config) -> Result<()> {
             "startup_command[{i}].command must not be empty"
         );
     }
+    anyhow::ensure!(
+        (1..=1024).contains(&cfg.tree.max_depth),
+        "tree.max_depth must be between 1 and 1024"
+    );
     // Surface a bad leader at startup (plain stderr) rather than letting the
     // app fall back to a silent default the user did not ask for.
     parse_leader(&cfg.input.leader)?;
@@ -902,6 +930,45 @@ leader = "ctrl+a"
         let mut cfg = Config::default();
         cfg.input.leader = "f1".to_string();
         assert!(validate_config(&cfg).is_err());
+    }
+
+    #[test]
+    fn tree_config_defaults_are_sane() {
+        let cfg = TreeConfig::default();
+        assert!(cfg.respect_gitignore);
+        assert_eq!(cfg.max_depth, 64);
+    }
+
+    #[test]
+    fn tree_config_parses_from_toml() {
+        let toml = r#"
+[tree]
+respect_gitignore = false
+max_depth = 12
+"#;
+        let cfg: Config = toml::from_str(toml).unwrap();
+        assert!(!cfg.tree.respect_gitignore);
+        assert_eq!(cfg.tree.max_depth, 12);
+        validate_config(&cfg).unwrap();
+    }
+
+    #[test]
+    fn tree_max_depth_validation_rejects_out_of_range() {
+        let mut cfg = Config::default();
+        cfg.tree.max_depth = 0;
+        assert!(validate_config(&cfg).is_err());
+        cfg.tree.max_depth = 1025;
+        assert!(validate_config(&cfg).is_err());
+    }
+
+    #[test]
+    fn config_without_tree_table_defaults() {
+        // A pre-existing config file with no [tree] table must still parse and
+        // validate, falling back to defaults.
+        let cfg: Config = toml::from_str("[layout]\nupper_pct = 50\n").unwrap();
+        assert!(cfg.tree.respect_gitignore);
+        assert_eq!(cfg.tree.max_depth, 64);
+        validate_config(&cfg).unwrap();
     }
 
     #[test]

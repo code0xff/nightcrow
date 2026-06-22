@@ -8,6 +8,7 @@ pub mod search;
 pub mod splash;
 pub mod status_view;
 pub mod terminal_tab;
+pub mod tree_list;
 pub mod tree_view;
 
 pub use search::SearchQuery;
@@ -173,6 +174,7 @@ pub fn draw(
         match app.mode {
             ViewMode::Status => file_list::render(frame, app, body_area, accent),
             ViewMode::Log => commit_list::render(frame, app, body_area, accent),
+            ViewMode::Tree => tree_list::render(frame, app, body_area, accent),
         }
         frame.render_widget(render_hint_bar(app, accent), hint_area);
         return;
@@ -196,6 +198,7 @@ pub fn draw(
     match app.mode {
         ViewMode::Status => file_list::render(frame, app, upper[0], accent),
         ViewMode::Log => commit_list::render(frame, app, upper[0], accent),
+        ViewMode::Tree => tree_list::render(frame, app, upper[0], accent),
     }
     diff_viewer::render(frame, app, upper[1], ss, ts, accent);
     terminal_tab::render(frame, app, main[1], accent);
@@ -339,6 +342,9 @@ fn render_hint_bar(app: &App, accent: Color) -> Paragraph<'_> {
             ViewMode::Status => {
                 " <prefix> f: exit zoom | j/k: navigate | /: search | <prefix> l: log view | <prefix> q: quit"
             }
+            ViewMode::Tree => {
+                " <prefix> f: exit zoom | j/k: navigate | →/enter: expand | ←: collapse | <prefix> b: status view | <prefix> q: quit"
+            }
         };
         return render(hint);
     }
@@ -358,7 +364,10 @@ fn render_hint_bar(app: &App, accent: Color) -> Paragraph<'_> {
                 }
             }
             ViewMode::Status => {
-                " shift+←/→: cycle | j/k: navigate | /: search | <prefix> t: new pane | <prefix> w: close pane | <prefix> f: fullscreen | <prefix> l: log view | <prefix> o: repo | <prefix> q: quit"
+                " shift+←/→: cycle | j/k: navigate | /: search | <prefix> t: new pane | <prefix> w: close pane | <prefix> f: fullscreen | <prefix> l: log view | <prefix> b: tree view | <prefix> o: repo | <prefix> q: quit"
+            }
+            ViewMode::Tree => {
+                " shift+←/→: cycle | j/k: navigate | →/enter: expand | ←: collapse | <prefix> b: status view | <prefix> l: log view | <prefix> q: quit"
             }
         },
         Focus::DiffViewer => {

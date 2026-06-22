@@ -25,6 +25,8 @@ impl App {
             accent_idx: self.accent_idx,
             log_drill_down: self.log_view.drill_down,
             log_file_selected: self.log_view.file_selected,
+            tree_selected_path: self.tree_view.selected_path(),
+            tree_expanded: self.tree_view.expanded.iter().cloned().collect(),
         }
     }
 
@@ -70,6 +72,7 @@ impl App {
         // scroll against the wrong diff length.
         match state.mode {
             Some(ViewMode::Log) => self.restore_log_session(state),
+            Some(ViewMode::Tree) => self.restore_tree_session(state),
             _ => self.restore_status_session(state),
         }
 
@@ -94,6 +97,31 @@ impl App {
         // If the saved file is no longer present, leave selected/scroll as they
         // were after the initial snapshot — applying saved_scroll to a different
         // file would jump the user to an unrelated location.
+    }
+
+    fn restore_tree_session(&mut self, state: &SessionState) {
+        self.mode = ViewMode::Tree;
+        self.clear_diff_state();
+        self.ensure_tree_root();
+        // Re-expand saved directories shallowest-first so each parent is loaded
+        // before its children are referenced by `visible_rows`.
+        let mut dirs = state.tree_expanded.clone();
+        dirs.sort_by_key(|p| p.matches('/').count());
+        for dir in dirs {
+            self.ensure_tree_children(&dir);
+            self.tree_view.expanded.insert(dir);
+        }
+        // Restore the cursor by path when it still resolves to a visible row;
+        // otherwise leave it at the top.
+        if let Some(path) = &state.tree_selected_path {
+            let rows = self.tree_view.visible_rows();
+            if let Some(idx) = rows.iter().position(|r| &r.path == path) {
+                self.tree_view.selected = idx;
+            }
+        }
+        let row_count = self.tree_view.visible_rows().len();
+        self.tree_view.clamp_selection(row_count);
+        self.preview_tree_selected();
     }
 
     fn restore_log_session(&mut self, state: &SessionState) {

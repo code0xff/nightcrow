@@ -73,6 +73,7 @@ impl App {
     fn upper_scroll_x_mut(&mut self) -> &mut usize {
         match self.mode {
             ViewMode::Status => &mut self.status_view.file_scroll_x,
+            ViewMode::Tree => &mut self.tree_view.scroll_x,
             ViewMode::Log if self.log_view.drill_down => &mut self.log_view.file_scroll_x,
             ViewMode::Log => &mut self.log_view.commit_scroll_x,
         }
@@ -104,6 +105,26 @@ impl App {
                 &self.status_view.files,
                 |f| f.display_path().chars().count(),
             ),
+            // Tree rows are derived (not a stored slice), so cache the max by
+            // visible-row count directly rather than via `cached_max`. Width =
+            // indent (depth*2) + 2-char dir/file marker + name char count.
+            ViewMode::Tree => {
+                let rows = self.tree_view.visible_rows();
+                let len = rows.len();
+                if let Some((cached_len, cached_max)) = self.tree_view.row_width_cache.get()
+                    && cached_len == len
+                {
+                    cached_max
+                } else {
+                    let max = rows
+                        .iter()
+                        .map(|r| r.depth * 2 + 2 + r.name.chars().count())
+                        .max()
+                        .unwrap_or(0);
+                    self.tree_view.row_width_cache.set(Some((len, max)));
+                    max
+                }
+            }
             ViewMode::Log if self.log_view.drill_down => cached_max(
                 &self.log_view.commit_files_width_cache,
                 &self.log_view.commit_files,
@@ -362,6 +383,10 @@ impl App {
     pub fn select_up(&mut self) {
         match self.focus {
             Focus::FileList => {
+                if self.mode == ViewMode::Tree {
+                    self.tree_select_up();
+                    return;
+                }
                 if self.navigate_log_list(Self::log_select_up, Self::log_file_select_up) {
                     return;
                 }
@@ -381,6 +406,10 @@ impl App {
     pub fn select_down(&mut self) {
         match self.focus {
             Focus::FileList => {
+                if self.mode == ViewMode::Tree {
+                    self.tree_select_down();
+                    return;
+                }
                 if self.navigate_log_list(Self::log_select_down, Self::log_file_select_down) {
                     return;
                 }
@@ -404,6 +433,10 @@ impl App {
     pub fn page_up(&mut self) {
         match self.focus {
             Focus::FileList => {
+                if self.mode == ViewMode::Tree {
+                    self.tree_page_up();
+                    return;
+                }
                 if self.navigate_log_list(Self::log_page_up, Self::log_file_page_up) {
                     return;
                 }
@@ -423,6 +456,10 @@ impl App {
     pub fn page_down(&mut self) {
         match self.focus {
             Focus::FileList => {
+                if self.mode == ViewMode::Tree {
+                    self.tree_page_down();
+                    return;
+                }
                 if self.navigate_log_list(Self::log_page_down, Self::log_file_page_down) {
                     return;
                 }

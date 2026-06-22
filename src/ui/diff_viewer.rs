@@ -167,6 +167,10 @@ pub fn render(
                     "No diff for selected file"
                 }
             }
+            // Tree mode renders the file overlay, not the unified diff, so this
+            // message is only reachable if the diff view is forced open with no
+            // file selected.
+            ViewMode::Tree => "Select a file to preview",
         };
         lines.push(Line::from(Span::styled(
             msg,
@@ -206,6 +210,20 @@ pub fn render(
                 format!(" F2 {} ", f.path)
             } else {
                 " F2 Diff ".to_string()
+            }
+        }
+        ViewMode::Tree => {
+            let path = app.tree_view.selected_path();
+            let label = path.as_deref().unwrap_or("File");
+            if has_search {
+                let count = app.diff.search.matches.len();
+                if count == 0 {
+                    format!(" F2 {label} [no matches] ")
+                } else {
+                    format!(" F2 {label} [{}/{}] ", app.diff.search.cursor + 1, count)
+                }
+            } else {
+                format!(" F2 {label} ")
             }
         }
     };
@@ -372,6 +390,10 @@ fn split_title(app: &App) -> String {
             .selected_filtered_status_file()
             .map(|f| f.path.clone())
             .unwrap_or_else(|| "Diff".to_string()),
+        ViewMode::Tree => app
+            .tree_view
+            .selected_path()
+            .unwrap_or_else(|| "File".to_string()),
     };
     format!(" F2 {label} [split] ")
 }

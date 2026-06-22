@@ -56,12 +56,6 @@ impl TreeView {
         self.row_width_cache.set(None);
     }
 
-    /// Whether `dir` (repo-relative) is currently expanded. The root is always
-    /// considered expanded so its children form the top level.
-    pub fn is_expanded(&self, dir: &str) -> bool {
-        dir.is_empty() || self.expanded.contains(dir)
-    }
-
     /// Derive the flattened list of currently-visible rows from the cache and
     /// expansion set. Only expanded, cached directories contribute children, so
     /// this never triggers I/O and never walks an unexpanded subtree.
@@ -181,13 +175,6 @@ mod tests {
         assert_eq!(rows.len(), 2);
         // The directory row itself still renders as expanded.
         assert!(rows[0].expanded);
-    }
-
-    #[test]
-    fn is_expanded_treats_root_as_always_open() {
-        let tv = TreeView::default();
-        assert!(tv.is_expanded(""));
-        assert!(!tv.is_expanded("src"));
     }
 
     #[test]

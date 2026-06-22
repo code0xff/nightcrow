@@ -487,6 +487,10 @@ fn handle_global_action(app: &mut App, action: Action) -> Option<KeyOutcome> {
             app.toggle_mode();
             Some(KeyOutcome::Continue)
         }
+        Action::ToggleTreeView => {
+            app.toggle_tree_mode();
+            Some(KeyOutcome::Continue)
+        }
         Action::CycleTheme => {
             app.cycle_accent();
             Some(KeyOutcome::Continue)
@@ -690,6 +694,13 @@ fn handle_unmapped_upper_key(app: &mut App, key: KeyEvent) {
             KeyCode::Enter if app.mode == ViewMode::Log && !app.log_view.drill_down => {
                 app.log_drill_in()
             }
+            // Tree navigation: Enter toggles a directory (or re-previews a
+            // file), Right expands, Left collapses / steps to the parent. These
+            // guarded arms shadow the generic Left/Right horizontal-scroll arms
+            // below while in Tree mode.
+            KeyCode::Enter if app.mode == ViewMode::Tree => app.tree_toggle(),
+            KeyCode::Right if app.mode == ViewMode::Tree => app.tree_expand(),
+            KeyCode::Left if app.mode == ViewMode::Tree => app.tree_collapse(),
             // Log search Esc precedence sits ahead of `log_drill_out` so the
             // first Esc clears a confirmed filter before a second Esc exits
             // drill-down — mirrors the status-search Esc rule below.

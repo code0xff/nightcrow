@@ -21,6 +21,7 @@ pub enum Action {
     TermScrollLineUp,
     TermScrollLineDown,
     ToggleLogView,
+    ToggleTreeView,
     CycleTheme,
     Redraw,
     None,
@@ -82,6 +83,7 @@ pub fn prefix_action(event: KeyEvent) -> Action {
             't' => Action::NewPane,
             'w' => Action::ClosePane,
             'l' => Action::ToggleLogView,
+            'b' => Action::ToggleTreeView,
             'f' => Action::ToggleFullscreen,
             'o' => Action::ChangeRepo,
             'p' => Action::CycleTheme,
@@ -281,6 +283,10 @@ mod tests {
         assert_eq!(
             prefix_action(key(KeyCode::Char('l'))),
             Action::ToggleLogView
+        );
+        assert_eq!(
+            prefix_action(key(KeyCode::Char('b'))),
+            Action::ToggleTreeView
         );
         assert_eq!(
             prefix_action(key(KeyCode::Char('f'))),

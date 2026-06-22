@@ -9,6 +9,7 @@ mod repo_input;
 mod session_io;
 mod snapshot_io;
 mod terminal_ctrl;
+mod tree;
 
 pub use crate::app::commit_log_fetch::CommitLogPagination;
 pub use crate::runtime::snapshot::{SnapshotChannel, SnapshotMsg};
@@ -21,6 +22,7 @@ pub use crate::ui::diff_pane::{DiffPane, DiffPaneView};
 pub use crate::ui::file_view::{FileViewKey, FileViewState};
 pub use crate::ui::log_view::LogView;
 pub use crate::ui::status_view::{RepoInput, StatusView};
+pub use crate::ui::tree_view::TreeView;
 use crossterm::event::{KeyEvent, KeyModifiers};
 #[cfg(test)]
 pub(crate) use diff_load::DiffApply;
@@ -36,6 +38,8 @@ pub enum ViewMode {
     #[default]
     Status,
     Log,
+    /// Read-only directory-tree navigator rooted at the workdir.
+    Tree,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -68,6 +72,7 @@ pub struct App {
     pub status: Option<String>,
     pub repo_path: String,
     pub log_view: LogView,
+    pub tree_view: TreeView,
     pub terminal: TerminalState,
     pub repo_input: RepoInput,
     pub accent_idx: usize,
@@ -80,6 +85,9 @@ pub struct App {
     /// `git2::Repository` is `!Send` and cannot be shared.
     pub(crate) repo_cache: Option<git2::Repository>,
     pub cfg_agent_indicator: crate::config::AgentIndicatorConfig,
+    /// Behaviour config for the file-tree navigator (`.gitignore` filtering,
+    /// max expansion depth). Read by the tree navigation/preview methods.
+    pub cfg_tree: crate::config::TreeConfig,
     /// Commit-log page sizing, prefetch threshold, in-flight worker, and
     /// the HEAD anchor used to detect external commits. See
     /// `CommitLogPagination`. The Drop impl on the struct joins the
@@ -126,6 +134,7 @@ impl App {
             status: None,
             repo_path,
             log_view: LogView::default(),
+            tree_view: TreeView::default(),
             terminal: TerminalState::new(Some(backend), prompt_log),
             repo_input: RepoInput::default(),
             accent_idx: 0,
@@ -134,6 +143,7 @@ impl App {
             pending_session: None,
             repo_cache: None,
             cfg_agent_indicator: crate::config::AgentIndicatorConfig::default(),
+            cfg_tree: crate::config::TreeConfig::default(),
             pagination: CommitLogPagination::with_config(
                 crate::config::LogConfig::default().commit_log_page_size,
                 crate::config::LogConfig::default().commit_log_prefetch_threshold,
@@ -240,6 +250,7 @@ pub(crate) mod tests {
             status: None,
             repo_path: ".".to_string(),
             log_view: LogView::default(),
+            tree_view: TreeView::default(),
             terminal: TerminalState::new(None, false),
             repo_input: RepoInput::default(),
             accent_idx: 0,
@@ -251,6 +262,7 @@ pub(crate) mod tests {
                 auto_follow: true,
                 ..crate::config::AgentIndicatorConfig::default()
             },
+            cfg_tree: crate::config::TreeConfig::default(),
             pagination: CommitLogPagination::with_config(
                 crate::config::LogConfig::default().commit_log_page_size,
                 crate::config::LogConfig::default().commit_log_prefetch_threshold,

@@ -24,6 +24,12 @@ pub struct SessionState {
     pub log_drill_down: bool,
     #[serde(default)]
     pub log_file_selected: usize,
+    /// Repo-relative path the tree cursor was on (Tree mode only).
+    #[serde(default)]
+    pub tree_selected_path: Option<String>,
+    /// Repo-relative directory paths that were expanded in the tree.
+    #[serde(default)]
+    pub tree_expanded: Vec<String>,
 }
 
 fn session_path(repo_path: &str) -> std::path::PathBuf {

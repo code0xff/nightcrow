@@ -11,34 +11,8 @@ impl App {
         // swap is visible and the zoom should survive the toggle.
         let reveal_after_toggle = self.terminal.fullscreen || self.diff.fullscreen;
         match self.mode {
-            ViewMode::Status => {
-                self.mode = ViewMode::Log;
-                self.log_view.reset_drill_down();
-                self.log_view.commit_scroll_x = 0;
-                // Reuse cached pages on re-entry only while they still match
-                // the latest HEAD observed by the snapshot worker. Status mode
-                // intentionally does not refresh the hidden commit list, so a
-                // HEAD change there must invalidate the cache on the next entry.
-                let cached_head = self.log_view.commits.first().map(|c| c.oid);
-                let cache_matches_head = !self.log_view.commits.is_empty()
-                    && cached_head == self.pagination.last_head_oid;
-                if !self.log_view.commits.is_empty() && !cache_matches_head {
-                    self.refresh_commit_log_after_head_change();
-                } else {
-                    if self.log_view.commits.is_empty() {
-                        // First entry with no cached pages: spawn a background
-                        // refresh fetch instead of loading on the UI thread. The
-                        // diff pane stays empty until the worker replies via
-                        // `apply_refresh_page`, which then loads the commit diff
-                        // for the freshly populated selection.
-                        self.cancel_commit_log_page_fetch();
-                        self.spawn_commit_log_refresh_fetch(None, None);
-                    } else {
-                        self.load_commit_diff_for_selected();
-                        self.maybe_prefetch_commit_log();
-                    }
-                }
-            }
+            // `<prefix> l` from either Status or Tree enters the Log view.
+            ViewMode::Status | ViewMode::Tree => self.enter_log_mode(),
             ViewMode::Log => {
                 self.mode = ViewMode::Status;
                 self.log_view.reset_drill_down();
@@ -49,6 +23,53 @@ impl App {
             self.focus_list();
         }
         tracing::debug!(from = ?from, to = ?self.mode, "view mode toggled");
+    }
+
+    /// Switch into the Log view from the current mode. Shared by `<prefix> l`
+    /// from both Status and Tree. Reuses cached commit pages when they still
+    /// match the latest observed HEAD; otherwise refreshes in the background.
+    fn enter_log_mode(&mut self) {
+        self.mode = ViewMode::Log;
+        self.log_view.reset_drill_down();
+        self.log_view.commit_scroll_x = 0;
+        // Reuse cached pages on re-entry only while they still match
+        // the latest HEAD observed by the snapshot worker. Status mode
+        // intentionally does not refresh the hidden commit list, so a
+        // HEAD change there must invalidate the cache on the next entry.
+        let cached_head = self.log_view.commits.first().map(|c| c.oid);
+        let cache_matches_head =
+            !self.log_view.commits.is_empty() && cached_head == self.pagination.last_head_oid;
+        if !self.log_view.commits.is_empty() && !cache_matches_head {
+            self.refresh_commit_log_after_head_change();
+        } else if self.log_view.commits.is_empty() {
+            // First entry with no cached pages: spawn a background
+            // refresh fetch instead of loading on the UI thread. The
+            // diff pane stays empty until the worker replies via
+            // `apply_refresh_page`, which then loads the commit diff
+            // for the freshly populated selection.
+            self.cancel_commit_log_page_fetch();
+            self.spawn_commit_log_refresh_fetch(None, None);
+        } else {
+            self.load_commit_diff_for_selected();
+            self.maybe_prefetch_commit_log();
+        }
+    }
+
+    /// Toggle the file-tree navigator: `<prefix> b` enters Tree mode from
+    /// Status/Log and returns to Status from Tree. Mirrors `toggle_mode`'s
+    /// fullscreen-reveal policy so the swap is visible behind a zoomed pane.
+    pub fn toggle_tree_mode(&mut self) {
+        let from = self.mode;
+        let reveal_after_toggle = self.terminal.fullscreen || self.diff.fullscreen;
+        if self.mode == ViewMode::Tree {
+            self.exit_tree_to_status();
+        } else {
+            self.enter_tree_mode();
+        }
+        if reveal_after_toggle {
+            self.focus_list();
+        }
+        tracing::debug!(from = ?from, to = ?self.mode, "tree mode toggled");
     }
 
     pub fn set_accent_index(&mut self, idx: usize) {

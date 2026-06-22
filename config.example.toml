@@ -44,6 +44,12 @@ enabled = true            # color recently-touched files in the file list
 hot_window_secs = 15      # seconds within which a file stays hot (3–3600)
 auto_follow = false       # jump selection to the freshest hot file when idle
 
+[tree]
+# Read-only directory-tree navigator (enter with <leader> b). Browse the whole
+# working tree and preview any file's contents in the diff pane.
+respect_gitignore = true  # hide .gitignore-matched paths (target/, node_modules/, …)
+max_depth = 64            # deepest directory level the tree will expand into (1..=1024)
+
 # Reserve startup commands: each [[startup_command]] opens its own terminal
 # pane at launch and runs `command` immediately (via `$SHELL -lc <command>`).
 # Up to 7 entries (combined with CLI --exec). 7 matches the F3–F9 / <leader>

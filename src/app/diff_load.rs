@@ -55,7 +55,10 @@ impl App {
     }
 
     pub(crate) fn refresh_diff(&mut self, reset_scroll: bool) {
-        if self.mode == ViewMode::Log {
+        // Only the working-tree status view shows a file diff. Log drives the
+        // diff via its own loaders, and Tree shows raw file previews — neither
+        // should have a status diff loaded over it.
+        if self.mode != ViewMode::Status {
             return;
         }
         let previous_scroll = self.diff.scroll;
@@ -173,6 +176,15 @@ impl App {
             ViewMode::Status => {
                 let path = self.selected_filtered_status_file()?.path.clone();
                 Some(FileViewKey::Status(path))
+            }
+            ViewMode::Tree => {
+                let row = self.tree_view.visible_rows().into_iter().nth(self.tree_view.selected)?;
+                if row.is_dir {
+                    return None;
+                }
+                // Tree files reuse the workdir-file key — the source is the
+                // same `load_workdir_file` loader as the status preview.
+                Some(FileViewKey::Status(row.path))
             }
             ViewMode::Log => {
                 if !self.log_view.drill_down {
