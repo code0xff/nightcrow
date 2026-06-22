@@ -55,6 +55,18 @@ pub fn read_children(
     if !meta.file_type().is_dir() {
         anyhow::bail!("not a directory (or a symlink): {}", abs_dir.display());
     }
+    // `symlink_metadata` only spares the *final* component — an intermediate
+    // segment that is a symlink is still followed when `read_dir` resolves the
+    // path. Resolve the full path and confirm it stays inside the working tree
+    // so a symlinked parent (e.g. from a stale cache after an on-disk swap)
+    // can't be used to read outside the repo.
+    let canon_dir = std::fs::canonicalize(&abs_dir)
+        .with_context(|| format!("failed to resolve {}", abs_dir.display()))?;
+    let canon_root = std::fs::canonicalize(workdir)
+        .with_context(|| format!("failed to resolve workdir {}", workdir.display()))?;
+    if !canon_dir.starts_with(&canon_root) {
+        anyhow::bail!("path escapes the working tree: {}", abs_dir.display());
+    }
     let read = std::fs::read_dir(&abs_dir)
         .with_context(|| format!("failed to read directory {}", abs_dir.display()))?;
 
@@ -200,6 +212,28 @@ mod tests {
         assert!(err.to_string().contains("not a directory"));
         // The real directory still reads normally.
         assert!(read_children(&repo, root, "real_dir", false).is_ok());
+        drop(dir);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn read_children_rejects_escape_through_symlinked_parent() {
+        let (dir, path) = make_repo();
+        let root = StdPath::new(&path);
+        // An external tree outside the repo, reachable via a symlinked parent.
+        let outside = tempfile::TempDir::new().unwrap();
+        std::fs::create_dir(outside.path().join("sub")).unwrap();
+        std::fs::write(outside.path().join("sub").join("secret.txt"), "x").unwrap();
+        std::os::unix::fs::symlink(outside.path(), root.join("link")).unwrap();
+
+        let repo = open_repo(&path);
+        // `link` is a symlink (intermediate component); resolving `link/sub`
+        // lands outside the worktree and must be rejected, not read.
+        let err = read_children(&repo, root, "link/sub", false).unwrap_err();
+        assert!(
+            err.to_string().contains("escapes the working tree"),
+            "unexpected error: {err}"
+        );
         drop(dir);
     }
 

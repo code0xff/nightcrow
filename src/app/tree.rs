@@ -20,6 +20,12 @@ impl App {
         // the Tree file preview a tick later. Cancel it on entry so only Tree
         // controls the diff pane while this mode is active.
         self.cancel_commit_log_page_fetch();
+        // Drop a lingering status-search overlay so its modal key handler can't
+        // keep capturing keystrokes after the mode switch. (`clear_diff_state`
+        // below clears the diff-search overlay.) This closes the case where a
+        // search started before a pending session restore would otherwise route
+        // Tree keys into the hidden search handler.
+        self.status_view.cancel_search();
         // Drop any diff/file-view state from the prior mode so the right pane
         // starts clean; `preview_tree_selected` repopulates it.
         self.clear_diff_state();

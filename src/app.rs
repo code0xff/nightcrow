@@ -1022,6 +1022,47 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn restoring_tree_session_clears_lingering_status_search() {
+        // Reachable case: `/` opens status search before the first snapshot,
+        // then a pending session restores Tree mode. The stale search overlay
+        // must be cleared so Tree keystrokes aren't captured by the search
+        // handler.
+        let (dir, path) = make_tree_repo();
+        let mut app = app_on(&path);
+        app.start_search();
+        app.search_push('x');
+        assert!(app.status_view.search_active);
+
+        app.restore_session(&crate::session::SessionState {
+            mode: Some(ViewMode::Tree),
+            ..Default::default()
+        });
+
+        assert_eq!(app.mode, ViewMode::Tree);
+        assert!(
+            !app.status_view.search_active,
+            "restoring Tree mode must clear a lingering status search overlay"
+        );
+        assert!(app.status_view.search_query.is_empty());
+        drop(dir);
+    }
+
+    #[test]
+    fn entering_tree_mode_clears_lingering_status_search() {
+        let (dir, path) = make_tree_repo();
+        let mut app = app_on(&path);
+        app.start_search();
+        app.search_push('x');
+        assert!(app.status_view.search_active);
+
+        app.enter_tree_mode();
+
+        assert!(!app.status_view.search_active);
+        assert!(app.status_view.search_query.is_empty());
+        drop(dir);
+    }
+
+    #[test]
     fn restore_tree_session_ignores_unsafe_expanded_paths() {
         // A corrupted/hand-edited session must not be able to drive the tree
         // to read directories outside the working tree.

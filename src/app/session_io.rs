@@ -101,7 +101,15 @@ impl App {
 
     fn restore_tree_session(&mut self, state: &SessionState) {
         self.mode = ViewMode::Tree;
+        // A status search started before this restore (e.g. `/` pressed while
+        // the default Status view was shown awaiting the first snapshot) would
+        // otherwise stay active and capture Tree keystrokes. Drop it; the diff
+        // search overlay is cleared by `clear_diff_state` below.
+        self.status_view.cancel_search();
         self.clear_diff_state();
+        // Restoring expansion mutates the cache/expanded set; drop the stale
+        // row-width bound so horizontal scroll clamps to the restored rows.
+        self.tree_view.row_width_cache.set(None);
         self.ensure_tree_root();
         // Re-expand saved directories shallowest-first so each parent is loaded
         // before its children are referenced by `visible_rows`. The session
