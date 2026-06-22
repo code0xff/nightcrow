@@ -8,7 +8,7 @@
 use crate::app::{App, Focus};
 use ratatui::{
     Frame,
-    layout::Rect,
+    layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::ListItem,
@@ -21,6 +21,19 @@ const FILE_MARKER: &str = "  ";
 pub fn render(frame: &mut Frame, app: &App, area: Rect, accent: Color) {
     let focused = app.focus == Focus::FileList;
     let border_style = super::focused_border_style(focused, accent);
+
+    // Reserve a bottom row for the search input whenever the overlay is open or
+    // a query is still showing, mirroring the status/commit list layout.
+    let show_search = app.tree_view.search_active || !app.tree_view.search_query.is_empty();
+    let (list_area, search_area) = if show_search {
+        let chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Min(0), Constraint::Length(1)])
+            .split(area);
+        (chunks[0], Some(chunks[1]))
+    } else {
+        (area, None)
+    };
 
     let rows = app.tree_view.visible_rows();
     let scroll_x = app.tree_view.scroll_x;
@@ -53,7 +66,13 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect, accent: Color) {
         })
         .collect();
 
-    let title = if rows.is_empty() {
+    let title = if app.tree_view.search_filtering() {
+        format!(
+            " F1 Tree ({}/{}) ",
+            app.tree_view.match_count,
+            app.tree_view.index.len()
+        )
+    } else if rows.is_empty() {
         " F1 Tree (empty) ".to_string()
     } else {
         " F1 Tree ".to_string()
@@ -65,5 +84,15 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect, accent: Color) {
         Some(app.tree_view.selected.min(rows.len() - 1))
     };
 
-    super::render_selectable_list(frame, area, title, items, selected, border_style);
+    super::render_selectable_list(frame, list_area, title, items, selected, border_style);
+
+    if let Some(sa) = search_area {
+        super::render_search_bar(
+            frame,
+            app.tree_view.search_query.as_str(),
+            app.tree_view.search_active,
+            sa,
+            accent,
+        );
+    }
 }

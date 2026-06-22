@@ -343,7 +343,7 @@ fn render_hint_bar(app: &App, accent: Color) -> Paragraph<'_> {
                 " <prefix> f: exit zoom | j/k: navigate | /: search | <prefix> l: log view | <prefix> q: quit"
             }
             ViewMode::Tree => {
-                " <prefix> f: exit zoom | j/k: navigate | →/enter: expand | ←: collapse | <prefix> b: status view | <prefix> q: quit"
+                " <prefix> f: exit zoom | j/k: navigate | /: search | →/enter: expand | ←: collapse | <prefix> b: status view | <prefix> q: quit"
             }
         };
         return render(hint);
@@ -367,7 +367,7 @@ fn render_hint_bar(app: &App, accent: Color) -> Paragraph<'_> {
                 " shift+←/→: cycle | j/k: navigate | /: search | <prefix> t: new pane | <prefix> w: close pane | <prefix> f: fullscreen | <prefix> l: log view | <prefix> b: tree view | <prefix> o: repo | <prefix> q: quit"
             }
             ViewMode::Tree => {
-                " shift+←/→: cycle | j/k: navigate | →/enter: expand | ←: collapse | <prefix> b: status view | <prefix> l: log view | <prefix> q: quit"
+                " shift+←/→: cycle | j/k: navigate | /: search | →/enter: expand | ←: collapse | <prefix> b: status view | <prefix> l: log view | <prefix> q: quit"
             }
         },
         Focus::DiffViewer => {

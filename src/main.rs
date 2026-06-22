@@ -324,6 +324,12 @@ fn handle_paste(app: &mut App, text: &str) {
         }
         return;
     }
+    if app.focus == Focus::FileList && app.tree_view.search_active {
+        for ch in text.chars().filter(|c| !c.is_control()) {
+            app.tree_search_push(ch);
+        }
+        return;
+    }
     if app.focus == Focus::FileList
         && (app.log_view.commit_search_active || app.log_view.file_search_active)
     {
@@ -385,6 +391,7 @@ fn handle_key(app: &mut App, key: KeyEvent) -> KeyOutcome {
     // by the overlay rather than arming the prefix.
     let overlay_active = app.repo_input.active
         || app.status_view.search_active
+        || app.tree_view.search_active
         || app.diff.search.active
         || app.log_view.commit_search_active
         || app.log_view.file_search_active;
@@ -589,6 +596,10 @@ fn handle_upper_key(app: &mut App, key: KeyEvent, action: Action) {
         handle_file_search_key(app, key);
         return;
     }
+    if app.focus == Focus::FileList && app.tree_view.search_active {
+        handle_tree_search_key(app, key);
+        return;
+    }
     if app.focus == Focus::FileList
         && (app.log_view.commit_search_active || app.log_view.file_search_active)
     {
@@ -637,6 +648,29 @@ fn handle_file_search_key(app: &mut App, key: KeyEvent) {
             // reliable guard against polluting the query.
             if let Some(c) = text_input_char(key) {
                 app.search_push(c);
+            }
+        }
+    }
+}
+
+fn handle_tree_search_key(app: &mut App, key: KeyEvent) {
+    match key.code {
+        KeyCode::Up => app.select_up(),
+        KeyCode::Down => app.select_down(),
+        KeyCode::Esc => app.cancel_tree_search(),
+        KeyCode::Enter => app.confirm_tree_search(),
+        KeyCode::Backspace => {
+            if app.tree_view.search_query.is_empty() {
+                app.cancel_tree_search();
+            } else {
+                app.tree_search_pop();
+            }
+        }
+        _ => {
+            // Same chord guard as the file search: Ctrl+letter arrives as the
+            // bare letter, so modifier state is what keeps it out of the query.
+            if let Some(c) = text_input_char(key) {
+                app.tree_search_push(c);
             }
         }
     }
@@ -722,6 +756,9 @@ fn handle_unmapped_upper_key(app: &mut App, key: KeyEvent) {
             KeyCode::Esc if app.log_view.drill_down => app.log_drill_out(),
             _ if app.mode == ViewMode::Status && matches_text_command(key, '/') => {
                 app.start_search()
+            }
+            _ if app.mode == ViewMode::Tree && matches_text_command(key, '/') => {
+                app.start_tree_search()
             }
             _ if app.mode == ViewMode::Log && matches_text_command(key, '/') => {
                 app.start_log_search()
