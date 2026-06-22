@@ -942,6 +942,78 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn tree_search_finds_file_in_unexpanded_dir() {
+        let (dir, path) = make_tree_repo();
+        let mut app = app_on(&path);
+        app.enter_tree_mode();
+        // `src` starts collapsed, so its child is not in the normal view.
+        assert!(!app.tree_view.expanded.contains("src"));
+
+        app.start_tree_search();
+        for ch in "main".chars() {
+            app.tree_search_push(ch);
+        }
+
+        // The match is revealed through its ancestor chain even though `src`
+        // was never manually expanded.
+        let rows = app.tree_view.visible_rows();
+        assert!(rows.iter().any(|r| r.path == "src/main.rs"));
+        assert!(rows.iter().any(|r| r.path == "src"));
+        assert!(!rows.iter().any(|r| r.path == "README.md"));
+        // Cursor lands on the matching file, not the connecting `src` dir.
+        assert_eq!(app.tree_view.selected_path().as_deref(), Some("src/main.rs"));
+        // Filtering must not mutate the real expansion set.
+        assert!(!app.tree_view.expanded.contains("src"));
+        drop(dir);
+    }
+
+    #[test]
+    fn confirm_tree_search_reveals_match_in_normal_view() {
+        let (dir, path) = make_tree_repo();
+        let mut app = app_on(&path);
+        app.enter_tree_mode();
+
+        app.start_tree_search();
+        for ch in "main".chars() {
+            app.tree_search_push(ch);
+        }
+        app.confirm_tree_search();
+
+        // Overlay closed, query cleared, and `src` is now genuinely expanded so
+        // the chosen file stays visible with the cursor on it.
+        assert!(!app.tree_view.search_active);
+        assert!(app.tree_view.search_query.is_empty());
+        assert!(app.tree_view.expanded.contains("src"));
+        assert_eq!(app.tree_view.selected_path().as_deref(), Some("src/main.rs"));
+        drop(dir);
+    }
+
+    #[test]
+    fn cancel_tree_search_leaves_expansion_untouched() {
+        let (dir, path) = make_tree_repo();
+        let mut app = app_on(&path);
+        app.enter_tree_mode();
+
+        app.start_tree_search();
+        for ch in "main".chars() {
+            app.tree_search_push(ch);
+        }
+        app.cancel_tree_search();
+
+        assert!(!app.tree_view.search_active);
+        assert!(app.tree_view.search_query.is_empty());
+        // Esc must not expand anything; the view returns to its prior state.
+        assert!(!app.tree_view.expanded.contains("src"));
+        assert!(
+            !app.tree_view
+                .visible_rows()
+                .iter()
+                .any(|r| r.path == "src/main.rs")
+        );
+        drop(dir);
+    }
+
+    #[test]
     fn toggle_tree_mode_round_trips_status_and_tree() {
         let (dir, path) = make_tree_repo();
         let mut app = app_on(&path);

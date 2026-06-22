@@ -8,7 +8,7 @@
 //! introduced.
 
 use super::{App, DiffPaneView, FileViewKey, FileViewState, LIST_PAGE_SIZE, ViewMode};
-use crate::ui::tree_view::parent_path;
+use crate::ui::tree_view::{TreeIndexEntry, parent_path};
 
 impl App {
     /// Enter Tree mode: load the root level, clamp the cursor, and preview the
@@ -26,6 +26,9 @@ impl App {
         // search started before a pending session restore would otherwise route
         // Tree keys into the hidden search handler.
         self.status_view.cancel_search();
+        // A prior Tree session could be re-entered with a stale search overlay;
+        // start clean so the first keystroke is plain navigation.
+        self.tree_view.cancel_search();
         // Drop any diff/file-view state from the prior mode so the right pane
         // starts clean; `preview_tree_selected` repopulates it.
         self.clear_diff_state();
@@ -37,6 +40,7 @@ impl App {
 
     /// Leave Tree mode back to the working-tree status view.
     pub fn exit_tree_to_status(&mut self) {
+        self.tree_view.cancel_search();
         self.mode = ViewMode::Status;
         self.clear_diff_state();
         self.refresh_diff(true);
@@ -198,5 +202,126 @@ impl App {
         } else {
             self.preview_tree_selected();
         }
+    }
+
+    /// Open the filename-search overlay: walk the whole tree once to build the
+    /// search index, then keep showing the (still unfiltered) view until the
+    /// user types a query.
+    pub fn start_tree_search(&mut self) {
+        self.build_tree_index();
+        self.tree_view.search_active = true;
+        self.tree_view.search_query.clear();
+        self.tree_view.recompute_filter();
+    }
+
+    pub fn tree_search_push(&mut self, ch: char) {
+        self.tree_view.search_query.push(ch);
+        self.tree_view.recompute_filter();
+        self.reset_tree_selection_after_filter();
+    }
+
+    pub fn tree_search_pop(&mut self) {
+        self.tree_view.search_query.pop();
+        self.tree_view.recompute_filter();
+        self.reset_tree_selection_after_filter();
+    }
+
+    /// Close the overlay without changing the expansion state; the cursor stays
+    /// on whatever row maps into the now-unfiltered view.
+    pub fn cancel_tree_search(&mut self) {
+        self.tree_view.cancel_search();
+        let row_count = self.tree_view.visible_rows().len();
+        self.tree_view.clamp_selection(row_count);
+        self.preview_tree_selected();
+    }
+
+    /// Confirm the current selection: reveal it in the normal expansion-based
+    /// view by expanding all of its ancestor directories, close the overlay,
+    /// and move the cursor onto that path. An empty query collapses to a cancel.
+    pub fn confirm_tree_search(&mut self) {
+        if self.tree_view.search_query.is_empty() {
+            self.cancel_tree_search();
+            return;
+        }
+        let target = self.tree_view.selected_path();
+        if let Some(path) = &target {
+            // Expand every ancestor so the chosen path is visible once
+            // filtering ends. The path itself (if a directory) is left
+            // collapsed — the user opens it explicitly.
+            let mut p = parent_path(path);
+            while let Some(parent) = p {
+                self.tree_view.expanded.insert(parent.to_string());
+                p = parent_path(parent);
+            }
+        }
+        self.tree_view.cancel_search();
+        if let Some(path) = target {
+            let rows = self.tree_view.visible_rows();
+            if let Some(idx) = rows.iter().position(|r| r.path == path) {
+                self.tree_view.selected = idx;
+            }
+        }
+        self.tree_view.scroll_x = 0;
+        let row_count = self.tree_view.visible_rows().len();
+        self.tree_view.clamp_selection(row_count);
+        self.preview_tree_selected();
+    }
+
+    /// After a query change the row set shifts, so pin the cursor to the first
+    /// *matching* row (skipping the ancestor directories pulled in only to
+    /// connect the path) and re-preview it. Falls back to the first row when
+    /// nothing matches the basename directly.
+    fn reset_tree_selection_after_filter(&mut self) {
+        self.tree_view.scroll_x = 0;
+        let rows = self.tree_view.visible_rows();
+        if rows.is_empty() {
+            self.tree_view.selected = 0;
+            self.preview_tree_selected();
+            return;
+        }
+        let q = self.tree_view.search_query.lower();
+        let first_match = rows
+            .iter()
+            .position(|r| r.name.to_lowercase().contains(q))
+            .unwrap_or(0);
+        self.tree_view.selected = first_match;
+        self.preview_tree_selected();
+    }
+
+    /// Walk the entire tree once (depth-capped at `max_depth`, gitignore applied
+    /// via the same guarded reader used for lazy expansion), populating the
+    /// per-directory cache and a flat search index. Synchronous on the UI thread
+    /// like the per-level reads — one keystroke triggers it, then all filtering
+    /// is in-memory.
+    pub(crate) fn build_tree_index(&mut self) {
+        self.ensure_tree_root();
+        let max_depth = self.cfg_tree.max_depth;
+        let mut index = Vec::new();
+        // (dir, depth-of-its-children): the root's children sit at depth 0.
+        let mut stack = vec![(String::new(), 0usize)];
+        while let Some((dir, depth)) = stack.pop() {
+            self.ensure_tree_children(&dir);
+            let children = match self.tree_view.cache.get(&dir) {
+                Some(c) => c.clone(),
+                None => continue,
+            };
+            for entry in children {
+                let path = if dir.is_empty() {
+                    entry.name.clone()
+                } else {
+                    format!("{dir}/{}", entry.name)
+                };
+                index.push(TreeIndexEntry {
+                    name_lower: entry.name.to_lowercase(),
+                    path: path.clone(),
+                });
+                // Descend only while the next level stays within max_depth,
+                // mirroring the expand guard (`depth + 1 > max_depth` blocks).
+                if entry.is_dir && depth + 1 <= max_depth {
+                    stack.push((path, depth + 1));
+                }
+            }
+        }
+        self.tree_view.index = index;
     }
 }
