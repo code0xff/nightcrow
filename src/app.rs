@@ -829,6 +829,226 @@ pub(crate) mod tests {
         assert_eq!(app.focus, Focus::DiffViewer);
     }
 
+    // ── Tree mode (read-only file-tree navigator) ─────────────────
+
+    /// A temp repo with `src/main.rs` and `README.md` at the root, plus an app
+    /// pointed at it. The app uses an inert snapshot channel (no worker).
+    fn make_tree_repo() -> (tempfile::TempDir, String) {
+        let (dir, path) = make_repo();
+        let root = Path::new(&path);
+        std::fs::create_dir(root.join("src")).unwrap();
+        std::fs::write(root.join("src").join("main.rs"), "fn main() {}\n").unwrap();
+        std::fs::write(root.join("README.md"), "# hi\n").unwrap();
+        (dir, path)
+    }
+
+    fn app_on(path: &str) -> App {
+        let mut app = app_with_files(vec![]);
+        app.repo_path = path.to_string();
+        app
+    }
+
+    fn tree_index_of(app: &App, path: &str) -> usize {
+        app.tree_view
+            .visible_rows()
+            .iter()
+            .position(|r| r.path == path)
+            .unwrap_or_else(|| panic!("{path} not visible in tree"))
+    }
+
+    #[test]
+    fn enter_tree_mode_loads_root_and_shows_file_overlay() {
+        let (dir, path) = make_tree_repo();
+        let mut app = app_on(&path);
+
+        app.enter_tree_mode();
+
+        assert_eq!(app.mode, ViewMode::Tree);
+        let rows = app.tree_view.visible_rows();
+        // Directories sort first: src/ before README.md.
+        assert_eq!(rows[0].path, "src");
+        assert!(rows[0].is_dir);
+        assert!(rows.iter().any(|r| r.path == "README.md"));
+        // The right pane is always the file overlay in Tree mode.
+        assert_eq!(app.diff.view, DiffPaneView::File);
+        drop(dir);
+    }
+
+    #[test]
+    fn tree_expand_reveals_children_and_collapse_hides_them() {
+        let (dir, path) = make_tree_repo();
+        let mut app = app_on(&path);
+        app.enter_tree_mode();
+
+        app.tree_view.selected = tree_index_of(&app, "src");
+        app.tree_expand();
+        assert!(
+            app.tree_view
+                .visible_rows()
+                .iter()
+                .any(|r| r.path == "src/main.rs"),
+            "expanding src must reveal its child"
+        );
+
+        // Cursor is back on the (still-selected) src row; collapsing hides it.
+        app.tree_view.selected = tree_index_of(&app, "src");
+        app.tree_collapse();
+        assert!(
+            !app.tree_view
+                .visible_rows()
+                .iter()
+                .any(|r| r.path == "src/main.rs"),
+            "collapsing src must hide its child"
+        );
+        drop(dir);
+    }
+
+    #[test]
+    fn selecting_tree_file_loads_raw_contents_into_file_view() {
+        let (dir, path) = make_tree_repo();
+        let mut app = app_on(&path);
+        app.enter_tree_mode();
+
+        app.tree_view.selected = tree_index_of(&app, "README.md");
+        app.preview_tree_selected();
+
+        assert_eq!(app.diff.view, DiffPaneView::File);
+        assert_eq!(
+            app.diff.file_view.key,
+            Some(FileViewKey::Status("README.md".to_string()))
+        );
+        assert_eq!(app.diff.file_view.content, "# hi\n");
+        drop(dir);
+    }
+
+    #[test]
+    fn tree_collapse_on_expanded_child_steps_to_parent() {
+        let (dir, path) = make_tree_repo();
+        let mut app = app_on(&path);
+        app.enter_tree_mode();
+        app.tree_view.selected = tree_index_of(&app, "src");
+        app.tree_expand();
+
+        // Sit on the child file, then collapse: the cursor walks up to `src`.
+        app.tree_view.selected = tree_index_of(&app, "src/main.rs");
+        app.tree_collapse();
+
+        assert_eq!(
+            app.tree_view.selected_path().as_deref(),
+            Some("src"),
+            "Left on a child should move selection to its parent dir"
+        );
+        drop(dir);
+    }
+
+    #[test]
+    fn toggle_tree_mode_round_trips_status_and_tree() {
+        let (dir, path) = make_tree_repo();
+        let mut app = app_on(&path);
+        assert_eq!(app.mode, ViewMode::Status);
+
+        app.toggle_tree_mode();
+        assert_eq!(app.mode, ViewMode::Tree);
+
+        app.toggle_tree_mode();
+        assert_eq!(app.mode, ViewMode::Status);
+        drop(dir);
+    }
+
+    #[test]
+    fn toggle_mode_from_tree_enters_log_view() {
+        let (dir, path) = make_tree_repo();
+        let mut app = app_on(&path);
+        app.enter_tree_mode();
+
+        // `<prefix> l` from Tree goes to Log (not back to Status).
+        app.toggle_mode();
+        assert_eq!(app.mode, ViewMode::Log);
+        drop(dir);
+    }
+
+    #[test]
+    fn tree_preview_survives_status_snapshot() {
+        let (dir, path) = make_tree_repo();
+        let (snapshot, tx) = dummy_snapshot_channel();
+        let mut app = App {
+            snapshot,
+            ..app_on(&path)
+        };
+        app.enter_tree_mode();
+        app.tree_view.selected = tree_index_of(&app, "README.md");
+        app.preview_tree_selected();
+        let content_before = app.diff.file_view.content.clone();
+
+        // A git-status snapshot arrives (e.g. file changed in a terminal pane).
+        tx.send(SnapshotMsg::Ok(
+            RepoSnapshot {
+                files: Vec::new(),
+                tracking: None,
+                head_oid: None,
+                branch_name: None,
+            },
+            HashMap::new(),
+        ))
+        .unwrap();
+        app.poll_snapshot();
+
+        // Tree mode and its preview must be untouched by the snapshot ingest.
+        assert_eq!(app.mode, ViewMode::Tree);
+        assert_eq!(app.diff.view, DiffPaneView::File);
+        assert_eq!(app.diff.file_view.content, content_before);
+        drop(dir);
+    }
+
+    #[test]
+    fn change_repo_resets_tree_state() {
+        let (dir, path) = make_tree_repo();
+        let mut app = app_on(&path);
+        app.enter_tree_mode();
+        app.tree_view.selected = tree_index_of(&app, "src");
+        app.tree_expand();
+        assert!(!app.tree_view.cache.is_empty());
+        assert!(!app.tree_view.expanded.is_empty());
+
+        let (dir2, path2) = make_repo();
+        app.change_repo(path2);
+
+        assert_eq!(app.mode, ViewMode::Status);
+        assert!(app.tree_view.cache.is_empty());
+        assert!(app.tree_view.expanded.is_empty());
+        assert_eq!(app.tree_view.selected, 0);
+        drop(dir);
+        drop(dir2);
+    }
+
+    #[test]
+    fn tree_session_round_trips_mode_expansion_and_selection() {
+        let (dir, path) = make_tree_repo();
+        let mut app = app_on(&path);
+        app.enter_tree_mode();
+        app.tree_view.selected = tree_index_of(&app, "src");
+        app.tree_expand();
+        app.tree_view.selected = tree_index_of(&app, "src/main.rs");
+
+        let state = app.save_session();
+        assert_eq!(state.mode, Some(ViewMode::Tree));
+        assert!(state.tree_expanded.contains(&"src".to_string()));
+        assert_eq!(state.tree_selected_path.as_deref(), Some("src/main.rs"));
+
+        let mut other = app_on(&path);
+        other.restore_session(&state);
+        assert_eq!(other.mode, ViewMode::Tree);
+        assert!(other.tree_view.expanded.contains("src"));
+        assert_eq!(
+            other.tree_view.selected_path().as_deref(),
+            Some("src/main.rs")
+        );
+        // The restored selection previews the file, not a diff.
+        assert_eq!(other.diff.view, DiffPaneView::File);
+        assert_eq!(other.diff.file_view.content, "fn main() {}\n");
+        drop(dir);
+    }
+
     #[test]
     fn toggle_mode_in_list_fullscreen_keeps_list_fullscreen() {
         let mut app = app_with_files(vec![]);

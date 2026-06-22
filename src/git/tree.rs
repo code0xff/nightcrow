@@ -72,11 +72,7 @@ pub fn read_children(
         } else {
             format!("{rel_dir}/{name}")
         };
-        if respect_gitignore
-            && repo
-                .is_path_ignored(Path::new(&rel_path))
-                .unwrap_or(false)
-        {
+        if respect_gitignore && repo.is_path_ignored(Path::new(&rel_path)).unwrap_or(false) {
             continue;
         }
         out.push(TreeEntry { name, is_dir });

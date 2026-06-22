@@ -178,7 +178,11 @@ impl App {
                 Some(FileViewKey::Status(path))
             }
             ViewMode::Tree => {
-                let row = self.tree_view.visible_rows().into_iter().nth(self.tree_view.selected)?;
+                let row = self
+                    .tree_view
+                    .visible_rows()
+                    .into_iter()
+                    .nth(self.tree_view.selected)?;
                 if row.is_dir {
                     return None;
                 }

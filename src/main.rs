@@ -1046,6 +1046,64 @@ mod tests {
     }
 
     #[test]
+    fn handle_key_leader_b_toggles_tree_mode() {
+        // `<prefix> b` enters Tree mode and a second `<prefix> b` returns to
+        // Status. Uses the live cwd repo (the crate root) for the root read.
+        let mut app = app_with_files(vec!["a.rs"]);
+        app.focus = Focus::FileList;
+        assert_eq!(app.mode, ViewMode::Status);
+
+        let _ = handle_key(&mut app, leader());
+        let _ = handle_key(&mut app, press(KeyCode::Char('b'), KeyModifiers::NONE));
+        assert_eq!(app.mode, ViewMode::Tree);
+
+        let _ = handle_key(&mut app, leader());
+        let _ = handle_key(&mut app, press(KeyCode::Char('b'), KeyModifiers::NONE));
+        assert_eq!(app.mode, ViewMode::Status);
+    }
+
+    #[test]
+    fn handle_key_tree_right_left_expand_and_collapse() {
+        let (dir, path) = crate::test_util::make_repo();
+        let root = std::path::Path::new(&path);
+        std::fs::create_dir(root.join("sub")).unwrap();
+        std::fs::write(root.join("sub").join("f.txt"), "x").unwrap();
+
+        let mut app = app_with_files(vec![]);
+        app.repo_path = path.clone();
+        app.focus = Focus::FileList;
+        app.enter_tree_mode();
+        let idx = app
+            .tree_view
+            .visible_rows()
+            .iter()
+            .position(|r| r.path == "sub")
+            .unwrap();
+        app.tree_view.selected = idx;
+
+        // Right expands the directory.
+        let _ = handle_key(&mut app, press(KeyCode::Right, KeyModifiers::NONE));
+        assert!(
+            app.tree_view
+                .visible_rows()
+                .iter()
+                .any(|r| r.path == "sub/f.txt"),
+            "Right must expand the selected directory"
+        );
+
+        // Left collapses it again.
+        let _ = handle_key(&mut app, press(KeyCode::Left, KeyModifiers::NONE));
+        assert!(
+            !app.tree_view
+                .visible_rows()
+                .iter()
+                .any(|r| r.path == "sub/f.txt"),
+            "Left must collapse the expanded directory"
+        );
+        drop(dir);
+    }
+
+    #[test]
     fn handle_key_terminal_ctrl_w_passes_through_to_pty() {
         // Ctrl+W (and friends) are prompt-editing keys that must now reach
         // the running program as control bytes instead of closing the pane.
