@@ -104,8 +104,16 @@ impl App {
         self.clear_diff_state();
         self.ensure_tree_root();
         // Re-expand saved directories shallowest-first so each parent is loaded
-        // before its children are referenced by `visible_rows`.
-        let mut dirs = state.tree_expanded.clone();
+        // before its children are referenced by `visible_rows`. The session
+        // file is an on-disk boundary: drop any entry that isn't a safe
+        // repo-internal relative path so a hand-edited/corrupted `..` or
+        // absolute path can't drive a directory read outside the working tree.
+        let mut dirs: Vec<String> = state
+            .tree_expanded
+            .iter()
+            .filter(|p| crate::ui::tree_view::is_safe_rel_path(p))
+            .cloned()
+            .collect();
         dirs.sort_by_key(|p| p.matches('/').count());
         for dir in dirs {
             self.ensure_tree_children(&dir);

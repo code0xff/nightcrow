@@ -1022,6 +1022,32 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn restore_tree_session_ignores_unsafe_expanded_paths() {
+        // A corrupted/hand-edited session must not be able to drive the tree
+        // to read directories outside the working tree.
+        let (dir, path) = make_tree_repo();
+        let mut app = app_on(&path);
+
+        app.restore_session(&crate::session::SessionState {
+            mode: Some(ViewMode::Tree),
+            tree_expanded: vec![
+                "../../..".to_string(),
+                "/etc".to_string(),
+                "src".to_string(),
+            ],
+            ..Default::default()
+        });
+
+        assert_eq!(app.mode, ViewMode::Tree);
+        // Only the safe, real directory was expanded/cached.
+        assert!(app.tree_view.expanded.contains("src"));
+        assert!(!app.tree_view.expanded.contains("../../.."));
+        assert!(!app.tree_view.expanded.contains("/etc"));
+        assert!(!app.tree_view.cache.contains_key("/etc"));
+        drop(dir);
+    }
+
+    #[test]
     fn entering_tree_cancels_in_flight_commit_log_fetch() {
         // A page fetch spawned in Log mode must be torn down on Tree entry so
         // its reply can't load a commit diff over the Tree file preview.

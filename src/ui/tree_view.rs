@@ -114,6 +114,21 @@ pub fn parent_path(path: &str) -> Option<&str> {
     path.rfind('/').map(|i| &path[..i])
 }
 
+/// Whether `rel` is a safe, repo-internal relative path. Paths produced during
+/// normal navigation always are (they're built from `read_dir` entry names),
+/// but a restored session is read from disk — a boundary where a hand-edited
+/// or corrupted `tree_expanded` entry containing `..`, a leading `/`, or a
+/// drive prefix would otherwise let the tree read directories outside the
+/// working tree. Used to filter restored expansion paths before any directory
+/// read happens.
+pub fn is_safe_rel_path(rel: &str) -> bool {
+    use std::path::Component;
+    !rel.is_empty()
+        && std::path::Path::new(rel)
+            .components()
+            .all(|c| matches!(c, Component::Normal(_) | Component::CurDir))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -201,5 +216,17 @@ mod tests {
         assert_eq!(parent_path("src"), None);
         assert_eq!(parent_path("src/ui/mod.rs"), Some("src/ui"));
         assert_eq!(parent_path("src/main.rs"), Some("src"));
+    }
+
+    #[test]
+    fn is_safe_rel_path_accepts_repo_internal_and_rejects_escapes() {
+        assert!(is_safe_rel_path("src"));
+        assert!(is_safe_rel_path("src/ui/mod.rs"));
+        // Escapes / absolute / empty are rejected.
+        assert!(!is_safe_rel_path(""));
+        assert!(!is_safe_rel_path(".."));
+        assert!(!is_safe_rel_path("../etc"));
+        assert!(!is_safe_rel_path("src/../../etc"));
+        assert!(!is_safe_rel_path("/etc/passwd"));
     }
 }
