@@ -43,6 +43,18 @@ pub fn read_children(
     } else {
         workdir.join(rel_dir)
     };
+    // Refuse to descend through the directory path itself if it is a symlink
+    // (or no longer a directory). Children are already filtered to real
+    // directories, but a cached entry could be swapped for a symlink on disk,
+    // or a stale session could ask to expand a path that is now a link —
+    // reading through it would browse outside the working tree. `read_dir`
+    // follows the final component, so this guard (using non-following
+    // `symlink_metadata`) is what keeps the navigator inside the repo.
+    let meta = std::fs::symlink_metadata(&abs_dir)
+        .with_context(|| format!("failed to stat {}", abs_dir.display()))?;
+    if !meta.file_type().is_dir() {
+        anyhow::bail!("not a directory (or a symlink): {}", abs_dir.display());
+    }
     let read = std::fs::read_dir(&abs_dir)
         .with_context(|| format!("failed to read directory {}", abs_dir.display()))?;
 
@@ -169,6 +181,25 @@ mod tests {
         let unfiltered = read_children(&repo, root, "", false).unwrap();
         assert!(names(&unfiltered).contains(&"ignored.log"));
         assert!(names(&unfiltered).contains(&"build"));
+        drop(dir);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn read_children_refuses_to_descend_a_symlinked_directory() {
+        let (dir, path) = make_repo();
+        let root = StdPath::new(&path);
+        std::fs::create_dir(root.join("real_dir")).unwrap();
+        std::fs::write(root.join("real_dir").join("secret.txt"), "x").unwrap();
+        std::os::unix::fs::symlink(root.join("real_dir"), root.join("link_dir")).unwrap();
+
+        let repo = open_repo(&path);
+        // Expanding the symlink path directly (as a stale session or swapped
+        // cache entry could ask to) must be rejected, not followed.
+        let err = read_children(&repo, root, "link_dir", false).unwrap_err();
+        assert!(err.to_string().contains("not a directory"));
+        // The real directory still reads normally.
+        assert!(read_children(&repo, root, "real_dir", false).is_ok());
         drop(dir);
     }
 

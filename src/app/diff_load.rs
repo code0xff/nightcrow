@@ -270,6 +270,11 @@ impl App {
     }
 
     pub fn toggle_diff_file_view(&mut self) {
+        // Tree mode's right pane is always the raw file preview; the diff and
+        // split views have no meaning there, so `v`/`s` are no-ops.
+        if self.mode == ViewMode::Tree {
+            return;
+        }
         if self.diff.view == DiffPaneView::File {
             self.diff.view = DiffPaneView::Diff;
             return;
@@ -287,6 +292,9 @@ impl App {
     /// (unified diff or file overlay) this switches into `Split`; pressing it
     /// again returns to the unified diff.
     pub fn toggle_diff_split_view(&mut self) {
+        if self.mode == ViewMode::Tree {
+            return;
+        }
         self.diff.view = if self.diff.view == DiffPaneView::Split {
             DiffPaneView::Diff
         } else {

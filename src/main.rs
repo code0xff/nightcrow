@@ -196,6 +196,7 @@ fn init_app(
     );
     app.set_accent_index(cfg.theme.preset_index());
     app.cfg_agent_indicator = cfg.agent_indicator.clone();
+    app.cfg_tree = cfg.tree.clone();
     app.pagination.page_size = cfg.log.commit_log_page_size;
     app.pagination.prefetch_threshold = cfg.log.commit_log_prefetch_threshold;
     if let Some(state) = saved_session {

@@ -15,6 +15,11 @@ impl App {
     /// selected row. Safe to call repeatedly (the root read is cached).
     pub fn enter_tree_mode(&mut self) {
         self.mode = ViewMode::Tree;
+        // A commit-log page fetch spawned in Log mode could still be in flight;
+        // its reply loads a commit diff over `self.diff`, which would clobber
+        // the Tree file preview a tick later. Cancel it on entry so only Tree
+        // controls the diff pane while this mode is active.
+        self.cancel_commit_log_page_fetch();
         // Drop any diff/file-view state from the prior mode so the right pane
         // starts clean; `preview_tree_selected` repopulates it.
         self.clear_diff_state();
@@ -137,6 +142,9 @@ impl App {
         }
         self.ensure_tree_children(&row.path);
         self.tree_view.expanded.insert(row.path);
+        // Visible rows changed: a same-row-count expand/collapse elsewhere
+        // could otherwise reuse a stale horizontal-scroll width bound.
+        self.tree_view.row_width_cache.set(None);
     }
 
     /// Collapse the selected directory if expanded; otherwise move the cursor
@@ -155,6 +163,7 @@ impl App {
             self.tree_view
                 .expanded
                 .retain(|p| p != &path && !p.starts_with(&prefix));
+            self.tree_view.row_width_cache.set(None);
             return;
         }
         if let Some(parent) = parent_path(&row.path) {

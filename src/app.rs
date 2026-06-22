@@ -1022,6 +1022,39 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn entering_tree_cancels_in_flight_commit_log_fetch() {
+        // A page fetch spawned in Log mode must be torn down on Tree entry so
+        // its reply can't load a commit diff over the Tree file preview.
+        let (dir, path) = make_tree_repo();
+        let mut app = app_on(&path);
+        app.spawn_commit_log_refresh_fetch(None, None);
+        assert!(app.pagination.page_rx.is_some(), "fetch should be pending");
+
+        app.enter_tree_mode();
+
+        assert!(
+            app.pagination.page_rx.is_none(),
+            "entering Tree mode must cancel the in-flight commit-log fetch"
+        );
+        drop(dir);
+    }
+
+    #[test]
+    fn tree_mode_diff_file_and_split_toggles_are_noops() {
+        let (dir, path) = make_tree_repo();
+        let mut app = app_on(&path);
+        app.enter_tree_mode();
+        assert_eq!(app.diff.view, DiffPaneView::File);
+
+        // `v` and `s` must not flip the right pane away from the file preview.
+        app.toggle_diff_file_view();
+        assert_eq!(app.diff.view, DiffPaneView::File);
+        app.toggle_diff_split_view();
+        assert_eq!(app.diff.view, DiffPaneView::File);
+        drop(dir);
+    }
+
+    #[test]
     fn tree_session_round_trips_mode_expansion_and_selection() {
         let (dir, path) = make_tree_repo();
         let mut app = app_on(&path);
