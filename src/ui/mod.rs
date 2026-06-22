@@ -371,8 +371,14 @@ fn render_hint_bar(app: &App, accent: Color) -> Paragraph<'_> {
             }
         },
         Focus::DiffViewer => {
-            if app.diff.view == DiffPaneView::File {
-                " v: back to diff | j/k: scroll | pgup/pgdn: page | shift+←/→: cycle | <prefix> q: quit"
+            if app.diff.view == DiffPaneView::File && app.diff.search.active {
+                " type to search | enter: confirm | esc: cancel"
+            } else if app.diff.view == DiffPaneView::File
+                && !app.diff.search.query.is_empty()
+            {
+                " n: next match | shift+n: prev match | /: new search | esc: clear"
+            } else if app.diff.view == DiffPaneView::File {
+                " v: back to diff | j/k: scroll | pgup/pgdn: page | /: search | shift+←/→: cycle | <prefix> q: quit"
             } else if app.diff.view == DiffPaneView::Split {
                 " s: unified diff | j/k: scroll | pgup/pgdn: page | shift+←/→: cycle | <prefix> f: zoom | <prefix> q: quit"
             } else if app.diff.search.active {

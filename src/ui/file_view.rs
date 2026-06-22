@@ -35,6 +35,10 @@ pub struct FileViewState {
     /// in-place content edits that happen to keep the line count constant
     /// (line counts alone are too coarse a fingerprint).
     pub(crate) cached_content_len: usize,
+    /// Lowercased copy of each `content` line. Built on demand by
+    /// `ensure_lower_cache` so per-keystroke file search avoids re-lowercasing
+    /// the whole file. Cleared whenever `content` changes.
+    pub(crate) lines_lower: Vec<String>,
 }
 
 impl FileViewState {
@@ -61,6 +65,7 @@ impl FileViewState {
         self.line_highlights.clear();
         self.cached_syntax_name = None;
         self.cached_content_len = 0;
+        self.lines_lower.clear();
         self.scroll = self.scroll.min(self.max_scroll());
         self.error = None;
     }
@@ -77,6 +82,16 @@ impl FileViewState {
 
     pub fn scroll_down(&mut self, n: usize) {
         self.scroll = self.scroll.saturating_add(n).min(self.max_scroll());
+    }
+
+    /// Ensure `lines_lower` is built for the current `content`. Called by
+    /// `DiffPane::recompute_matches` in File-view mode so per-keystroke search
+    /// only pays the lowercase cost once per file load.
+    pub(crate) fn ensure_lower_cache(&mut self) {
+        if self.lines_lower.len() == self.total_lines && !self.content.is_empty() {
+            return;
+        }
+        self.lines_lower = self.content.lines().map(|l| l.to_lowercase()).collect();
     }
 
     /// Ensure `line_highlights` matches the current `content` and supplied

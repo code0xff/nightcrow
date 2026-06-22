@@ -311,13 +311,21 @@ impl DiffPane {
 
     pub fn next_match(&mut self) {
         if let Some(idx) = self.search.next() {
-            self.scroll = idx;
+            if self.view == DiffPaneView::File {
+                self.file_view.scroll = idx.min(self.file_view.max_scroll());
+            } else {
+                self.scroll = idx;
+            }
         }
     }
 
     pub fn prev_match(&mut self) {
         if let Some(idx) = self.search.prev() {
-            self.scroll = idx;
+            if self.view == DiffPaneView::File {
+                self.file_view.scroll = idx.min(self.file_view.max_scroll());
+            } else {
+                self.scroll = idx;
+            }
         }
     }
 
@@ -340,16 +348,30 @@ impl DiffPane {
             self.search.cursor = 0;
             return;
         }
-        self.ensure_lower_cache();
-        let q = self.search.query.lower();
-        let mut flat_idx = 0usize;
-        for (hunk, lines_lower) in self.hunks.iter().zip(self.hunks_lines_lower.iter()) {
-            flat_idx += 1; // header line
-            for line_lower in lines_lower.iter().take(hunk.lines.len()) {
+        let q_owned;
+        let q: &str;
+        if self.view == DiffPaneView::File {
+            self.file_view.ensure_lower_cache();
+            q_owned = self.search.query.lower().to_owned();
+            q = &q_owned;
+            for (idx, line_lower) in self.file_view.lines_lower.iter().enumerate() {
                 if line_lower.contains(q) {
-                    self.search.matches.push(flat_idx);
+                    self.search.matches.push(idx);
                 }
-                flat_idx += 1;
+            }
+        } else {
+            self.ensure_lower_cache();
+            q_owned = self.search.query.lower().to_owned();
+            q = &q_owned;
+            let mut flat_idx = 0usize;
+            for (hunk, lines_lower) in self.hunks.iter().zip(self.hunks_lines_lower.iter()) {
+                flat_idx += 1; // header line
+                for line_lower in lines_lower.iter().take(hunk.lines.len()) {
+                    if line_lower.contains(q) {
+                        self.search.matches.push(flat_idx);
+                    }
+                    flat_idx += 1;
+                }
             }
         }
         debug_assert!(
@@ -364,7 +386,12 @@ impl DiffPane {
             self.search.cursor = self.search.cursor.min(self.search.matches.len() - 1);
             self.scroll_to_match();
         } else {
-            self.search.cursor = nearest_match_index(&self.search.matches, self.scroll);
+            let anchor = if self.view == DiffPaneView::File {
+                self.file_view.scroll
+            } else {
+                self.scroll
+            };
+            self.search.cursor = nearest_match_index(&self.search.matches, anchor);
         }
     }
 
@@ -374,7 +401,12 @@ impl DiffPane {
     }
 
     fn scroll_to_match(&mut self) {
-        if let Some(&idx) = self.search.matches.get(self.search.cursor) {
+        let Some(&idx) = self.search.matches.get(self.search.cursor) else {
+            return;
+        };
+        if self.view == DiffPaneView::File {
+            self.file_view.scroll = idx.min(self.file_view.max_scroll());
+        } else {
             self.scroll = idx;
         }
     }
@@ -675,5 +707,75 @@ mod tests {
                 },
             ]
         );
+    }
+
+    fn make_file_view_pane(content: &str) -> DiffPane {
+        let mut pane = DiffPane::default();
+        pane.view = DiffPaneView::File;
+        pane.file_view.set_content(content.to_string());
+        pane
+    }
+
+    #[test]
+    fn file_view_search_matches_correct_line_indices() {
+        let mut pane = make_file_view_pane("hello world\nfoo bar\nhello again\n");
+        for ch in "hello".chars() {
+            pane.search_push(ch);
+        }
+        // lines 0 and 2 contain "hello"
+        assert_eq!(pane.search.matches, vec![0, 2]);
+    }
+
+    #[test]
+    fn file_view_search_no_matches() {
+        let mut pane = make_file_view_pane("foo\nbar\nbaz\n");
+        for ch in "xyz".chars() {
+            pane.search_push(ch);
+        }
+        assert!(pane.search.matches.is_empty());
+    }
+
+    #[test]
+    fn file_view_search_case_insensitive() {
+        let mut pane = make_file_view_pane("Hello World\nhello\nHELLO\n");
+        for ch in "hello".chars() {
+            pane.search_push(ch);
+        }
+        assert_eq!(pane.search.matches, vec![0, 1, 2]);
+    }
+
+    #[test]
+    fn file_view_next_match_updates_file_scroll() {
+        let mut pane = make_file_view_pane("match\nskip\nmatch\n");
+        for ch in "match".chars() {
+            pane.search_push(ch);
+        }
+        assert_eq!(pane.file_view.scroll, 0); // jumped to first match
+        pane.next_match();
+        assert_eq!(pane.file_view.scroll, 2); // jumped to second match
+        pane.next_match();
+        assert_eq!(pane.file_view.scroll, 0); // wraps back to first
+    }
+
+    #[test]
+    fn file_view_prev_match_updates_file_scroll() {
+        let mut pane = make_file_view_pane("match\nskip\nmatch\n");
+        for ch in "match".chars() {
+            pane.search_push(ch);
+        }
+        pane.prev_match();
+        assert_eq!(pane.file_view.scroll, 2); // wraps to last match
+    }
+
+    #[test]
+    fn file_view_search_clear_resets_state() {
+        let mut pane = make_file_view_pane("hello\nworld\n");
+        for ch in "hello".chars() {
+            pane.search_push(ch);
+        }
+        assert!(!pane.search.matches.is_empty());
+        pane.cancel_search();
+        assert!(pane.search.matches.is_empty());
+        assert!(!pane.search.active);
     }
 }

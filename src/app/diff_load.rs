@@ -276,6 +276,7 @@ impl App {
             return;
         }
         if self.diff.view == DiffPaneView::File {
+            self.diff.search.clear();
             self.diff.view = DiffPaneView::Diff;
             return;
         }
@@ -285,6 +286,7 @@ impl App {
         if self.diff.file_view.key.as_ref() != Some(&key) {
             self.load_file_view(key);
         }
+        self.diff.search.clear();
         self.diff.view = DiffPaneView::File;
     }
 

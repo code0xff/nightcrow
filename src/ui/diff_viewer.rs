@@ -421,9 +421,36 @@ fn render_file_view(
         .find_syntax_by_extension(ext)
         .unwrap_or_else(|| ss.find_syntax_plain_text());
 
-    let title = format!(" F2 {file_path} [file] ");
+    let has_search = app.diff.search.has_query();
+    let show_search = app.diff.search.is_visible();
 
-    let visible_height = (area.height as usize).saturating_sub(2);
+    let (content_area, search_area) = if show_search {
+        let chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Min(0), Constraint::Length(1)])
+            .split(area);
+        (chunks[0], Some(chunks[1]))
+    } else {
+        (area, None)
+    };
+
+    let title = if has_search {
+        let count = app.diff.search.matches.len();
+        if count == 0 {
+            format!(" F2 {file_path} [no matches] ")
+        } else {
+            format!(
+                " F2 {file_path} [{}/{}] ",
+                app.diff.search.cursor + 1,
+                count
+            )
+        }
+    } else {
+        format!(" F2 {file_path} [file] ")
+    };
+
+    let visible_height = (content_area.height as usize).saturating_sub(2);
+    let current_match = app.diff.search.current_match();
     let lines: Vec<Line> = if let Some(err) = &app.diff.file_view.error {
         vec![Line::from(Span::styled(
             err.as_str(),
@@ -456,8 +483,16 @@ fn render_file_view(
             .enumerate()
             .map(|(i, segs)| {
                 let line_no = scroll_start + i + 1;
+                let line_idx = scroll_start + i;
                 let is_anchor = fv.anchor_line == Some(line_no);
-                let bg = if is_anchor {
+                let is_current = has_search && current_match == Some(line_idx);
+                let is_match =
+                    has_search && !is_current && app.diff.search.is_match(line_idx);
+                let bg = if is_current {
+                    Color::Rgb(100, 80, 0)
+                } else if is_match {
+                    Color::Rgb(50, 42, 0)
+                } else if is_anchor {
                     Color::Rgb(60, 60, 90)
                 } else {
                     Color::Reset
@@ -485,5 +520,15 @@ fn render_file_view(
                 .border_style(border_style),
         )
         .scroll((0, app.diff.file_view.scroll_x.min(u16::MAX as usize) as u16));
-    frame.render_widget(para, area);
+    frame.render_widget(para, content_area);
+
+    if let Some(sa) = search_area {
+        super::render_search_bar(
+            frame,
+            app.diff.search.query.as_str(),
+            app.diff.search.active,
+            sa,
+            accent,
+        );
+    }
 }
