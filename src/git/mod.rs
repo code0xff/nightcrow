@@ -1,4 +1,5 @@
 pub mod diff;
+pub mod tree;
 
 use std::path::{Path, PathBuf};
 

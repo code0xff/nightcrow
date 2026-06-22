@@ -8,6 +8,7 @@ pub mod search;
 pub mod splash;
 pub mod status_view;
 pub mod terminal_tab;
+pub mod tree_view;
 
 pub use search::SearchQuery;
 
