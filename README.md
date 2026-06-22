@@ -66,7 +66,7 @@ The diff for a selected file shows the combined working-tree-with-index changes.
 
 **Commit log view** (`<prefix> l`) — tig-like commit list on the left, full commit diff on the right. Commits ahead of the upstream are marked with `↑`. Press `Enter` on a commit to drill into its individual files; `Esc` to go back. The list auto-refreshes when the workdir HEAD changes (commits made in the terminal pane, amends, force-pushes, branch switches). History loads one page at a time — initial entry fetches `commit_log_page_size` commits and additional pages stream in on a background thread as the selection approaches the loaded tail, so deep histories stay responsive. Toggling while a terminal or diff pane is zoomed exits the zoom and focuses the list, so the view switch is always visible.
 
-**Tree view** (`<prefix> b`) — a read-only directory tree of the whole working tree on the left, with the selected file's raw contents on the right. Unlike the status view (which lists only changed files), the tree lets you browse and read *any* file next to the diff without leaving nightcrow. `j`/`k` move the cursor, `→`/`Enter` expand a directory (read lazily, one level at a time), `←` collapses it or steps up to the parent, and selecting a file previews it. `.gitignore`-matched paths (e.g. `target/`, `node_modules/`) are hidden by default — toggle with `[tree] respect_gitignore`. The tree never writes, renames, or deletes anything. Expansion state and the selected path persist across sessions.
+**Tree view** (`<prefix> b`) — a read-only directory tree of the whole working tree on the left, with the selected file's raw contents on the right. Unlike the status view (which lists only changed files), the tree lets you browse and read *any* file next to the diff without leaving nightcrow. `j`/`k` move the cursor, `→`/`Enter` expand a directory (read lazily, one level at a time), `←` collapses it or steps up to the parent, and selecting a file previews it. Focus the file preview with `F2`, then press `/` to search within the file contents — `n`/`N` jump to the next/previous match, `Esc` clears the search. `.gitignore`-matched paths (e.g. `target/`, `node_modules/`) are hidden by default — toggle with `[tree] respect_gitignore`. The tree never writes, renames, or deletes anything. Expansion state and the selected path persist across sessions.
 
 **Top header** — a one-row strip at the top of the screen always shows the repo path (home-relative, e.g. `~/projects/myapp`), the current branch, and ahead/behind counts (`↑N ↓M`) when the branch tracks an upstream.
 
@@ -139,7 +139,7 @@ key. A key with no leader binding cancels the prefix and is dropped.
 | `←` / `→` | Horizontal scroll (4 columns) |
 | `v` | Toggle between hunk diff and full file preview |
 | `<prefix> f` | Zoom the diff/file pane to full screen (toggle) |
-| `/` | Open diff search |
+| `/` | Open search (works in both diff and file preview, including tree mode) |
 | `n` / `N` | Next / previous search match |
 | `Esc` | Clear search |
 
