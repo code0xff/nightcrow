@@ -710,8 +710,10 @@ mod tests {
     }
 
     fn make_file_view_pane(content: &str) -> DiffPane {
-        let mut pane = DiffPane::default();
-        pane.view = DiffPaneView::File;
+        let mut pane = DiffPane {
+            view: DiffPaneView::File,
+            ..Default::default()
+        };
         pane.file_view.set_content(content.to_string());
         pane
     }

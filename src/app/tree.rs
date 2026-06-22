@@ -317,7 +317,7 @@ impl App {
                 });
                 // Descend only while the next level stays within max_depth,
                 // mirroring the expand guard (`depth + 1 > max_depth` blocks).
-                if entry.is_dir && depth + 1 <= max_depth {
+                if entry.is_dir && depth < max_depth {
                     stack.push((path, depth + 1));
                 }
             }
