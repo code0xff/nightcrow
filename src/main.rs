@@ -166,7 +166,10 @@ fn run(
     startup_commands: Vec<config::StartupCommand>,
     leader: KeyEvent,
 ) -> Result<()> {
-    let ss = SyntaxSet::load_defaults_newlines();
+    // syntect's bundled defaults omit TypeScript/TSX/TOML/YAML; two-face
+    // supplies bat's expanded syntax set (newline variant matches the diff /
+    // file-view highlighters, which feed whole lines including trailing \n).
+    let ss = two_face::syntax::extra_newlines();
     let ts = ThemeSet::load_defaults();
     let mut app = init_app(&repo_path, &cfg, &startup_commands, leader);
 
