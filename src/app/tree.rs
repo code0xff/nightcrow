@@ -9,6 +9,7 @@
 
 use super::{App, DiffPaneView, FileViewKey, FileViewState, LIST_PAGE_SIZE, ViewMode};
 use crate::ui::tree_view::{TreeIndexEntry, parent_path};
+use std::collections::BTreeSet;
 
 impl App {
     /// Enter Tree mode: load the root level, clamp the cursor, and preview the
@@ -32,10 +33,53 @@ impl App {
         // Drop any diff/file-view state from the prior mode so the right pane
         // starts clean; `preview_tree_selected` repopulates it.
         self.clear_diff_state();
-        self.ensure_tree_root();
-        let row_count = self.tree_view.visible_rows().len();
-        self.tree_view.clamp_selection(row_count);
+        // Re-read from disk so a directory created/moved/renamed/deleted while
+        // away from Tree mode is reflected — the per-directory cache is
+        // otherwise only cleared on a repo switch, so structural changes never
+        // surfaced here. Capture the path under the cursor first so it survives
+        // the row-set shift the re-read may cause.
+        let prev_path = self.tree_view.selected_path();
+        self.refresh_tree_cache();
+        let rows = self.tree_view.visible_rows();
+        if let Some(idx) = prev_path
+            .as_deref()
+            .and_then(|p| rows.iter().position(|r| r.path == p))
+        {
+            self.tree_view.selected = idx;
+        }
+        self.tree_view.clamp_selection(rows.len());
         self.preview_tree_selected();
+    }
+
+    /// Drop the per-directory cache and re-read the root plus every currently
+    /// expanded directory from disk, so structural changes made while away from
+    /// Tree mode become visible. Expanded directories are re-read top-down
+    /// (shallowest first) so each parent listing is available before its
+    /// children are checked. A directory that no longer appears in its freshly
+    /// read parent listing — e.g. one that was moved or deleted — is dropped
+    /// from the expanded set instead of being re-read, so a vanished directory
+    /// cannot surface a spurious "tree error" in the status bar.
+    pub(crate) fn refresh_tree_cache(&mut self) {
+        self.tree_view.cache.clear();
+        self.ensure_tree_root();
+        let mut dirs: Vec<String> = self.tree_view.expanded.iter().cloned().collect();
+        dirs.sort_by_key(|p| p.matches('/').count());
+        let mut kept = BTreeSet::new();
+        for dir in dirs {
+            let parent = parent_path(&dir).unwrap_or("");
+            let name = dir.rsplit('/').next().unwrap_or(&dir);
+            let still_a_dir = self
+                .tree_view
+                .cache
+                .get(parent)
+                .is_some_and(|children| children.iter().any(|e| e.is_dir && e.name == name));
+            if still_a_dir {
+                self.ensure_tree_children(&dir);
+                kept.insert(dir);
+            }
+        }
+        self.tree_view.expanded = kept;
+        self.tree_view.row_width_cache.set(None);
     }
 
     /// Leave Tree mode back to the working-tree status view.

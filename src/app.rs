@@ -1028,6 +1028,121 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn enter_tree_mode_picks_up_dir_created_after_first_entry() {
+        let (dir, path) = make_tree_repo();
+        let mut app = app_on(&path);
+        // First entry caches the root listing (no `docs/` yet).
+        app.enter_tree_mode();
+        assert!(
+            !app.tree_view.visible_rows().iter().any(|r| r.path == "docs"),
+            "docs should not exist before it is created"
+        );
+
+        // Create a directory on disk while away from Tree mode.
+        app.exit_tree_to_status();
+        std::fs::create_dir(Path::new(&path).join("docs")).unwrap();
+        std::fs::write(Path::new(&path).join("docs").join("guide.md"), "x").unwrap();
+
+        // Re-entering must re-read the root and surface the new directory.
+        app.enter_tree_mode();
+        assert!(
+            app.tree_view.visible_rows().iter().any(|r| r.path == "docs"),
+            "re-entering Tree mode must reflect the newly created directory"
+        );
+        drop(dir);
+    }
+
+    #[test]
+    fn enter_tree_mode_reflects_moved_dir_without_error() {
+        let (dir, path) = make_tree_repo();
+        let mut app = app_on(&path);
+        // Cache the root with `src/` present, expanded.
+        app.enter_tree_mode();
+        app.tree_view.selected = tree_index_of(&app, "src");
+        app.tree_expand();
+        assert!(app.tree_view.expanded.contains("src"));
+
+        // Move `src/` to `lib/` on disk while away from Tree mode.
+        app.exit_tree_to_status();
+        std::fs::rename(Path::new(&path).join("src"), Path::new(&path).join("lib")).unwrap();
+
+        app.enter_tree_mode();
+        let rows = app.tree_view.visible_rows();
+        assert!(
+            !rows.iter().any(|r| r.path == "src"),
+            "the moved-away directory must disappear from its old location"
+        );
+        assert!(
+            rows.iter().any(|r| r.path == "lib"),
+            "the directory must appear at its new location"
+        );
+        // The stale `src` expansion is pruned (it no longer exists), so no
+        // failing re-read leaks a "tree error" into the status bar.
+        assert!(!app.tree_view.expanded.contains("src"));
+        assert!(
+            !app
+                .status
+                .as_deref()
+                .is_some_and(|m| m.starts_with("tree error")),
+            "a vanished directory must not surface a tree error: {:?}",
+            app.status
+        );
+        drop(dir);
+    }
+
+    #[test]
+    fn refresh_tree_cache_keeps_expansion_for_surviving_dirs() {
+        let (dir, path) = make_tree_repo();
+        let mut app = app_on(&path);
+        app.enter_tree_mode();
+        app.tree_view.selected = tree_index_of(&app, "src");
+        app.tree_expand();
+        assert!(
+            app.tree_view
+                .visible_rows()
+                .iter()
+                .any(|r| r.path == "src/main.rs"),
+            "src should be expanded before the refresh"
+        );
+
+        app.refresh_tree_cache();
+
+        assert!(app.tree_view.expanded.contains("src"));
+        assert!(
+            app.tree_view
+                .visible_rows()
+                .iter()
+                .any(|r| r.path == "src/main.rs"),
+            "a surviving directory keeps its expansion and re-read children"
+        );
+        drop(dir);
+    }
+
+    #[test]
+    fn enter_tree_mode_keeps_cursor_on_same_path_when_rows_shift() {
+        let (dir, path) = make_tree_repo();
+        let mut app = app_on(&path);
+        app.enter_tree_mode();
+        // Park the cursor on README.md.
+        app.tree_view.selected = tree_index_of(&app, "README.md");
+
+        // Insert a directory that sorts ahead of everything, shifting README.md
+        // down by one row.
+        app.exit_tree_to_status();
+        std::fs::create_dir(Path::new(&path).join("aaa")).unwrap();
+
+        app.enter_tree_mode();
+        // The cursor must follow README.md, not stay on its old index (which now
+        // points at a different row).
+        assert_eq!(
+            app.tree_view.selected_path().as_deref(),
+            Some("README.md"),
+            "cursor must track its path across the row-set shift"
+        );
+        drop(dir);
+    }
+
+    #[test]
     fn toggle_mode_from_tree_enters_log_view() {
         let (dir, path) = make_tree_repo();
         let mut app = app_on(&path);
