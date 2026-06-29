@@ -1276,6 +1276,38 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn restore_tree_session_prunes_expansion_gone_since_save() {
+        // A directory that was expanded when the session was saved may have been
+        // moved/deleted before the next launch. Restore must drop it rather than
+        // re-reading a now-missing path and leaking a "tree error".
+        let (dir, path) = make_tree_repo();
+        std::fs::rename(Path::new(&path).join("src"), Path::new(&path).join("lib")).unwrap();
+        let mut app = app_on(&path);
+
+        app.restore_session(&crate::session::SessionState {
+            mode: Some(ViewMode::Tree),
+            tree_expanded: vec!["src".to_string()],
+            tree_selected_path: Some("src".to_string()),
+            ..Default::default()
+        });
+
+        assert_eq!(app.mode, ViewMode::Tree);
+        // `src` no longer exists on disk, so it must not be kept as expanded...
+        assert!(!app.tree_view.expanded.contains("src"));
+        // ...and the moved-to directory is visible at the root.
+        assert!(app.tree_view.visible_rows().iter().any(|r| r.path == "lib"));
+        assert!(
+            !app
+                .status
+                .as_deref()
+                .is_some_and(|m| m.starts_with("tree error")),
+            "a vanished restored expansion must not surface a tree error: {:?}",
+            app.status
+        );
+        drop(dir);
+    }
+
+    #[test]
     fn entering_tree_cancels_in_flight_commit_log_fetch() {
         // A page fetch spawned in Log mode must be torn down on Tree entry so
         // its reply can't load a commit diff over the Tree file preview.

@@ -110,23 +110,20 @@ impl App {
         // Restoring expansion mutates the cache/expanded set; drop the stale
         // row-width bound so horizontal scroll clamps to the restored rows.
         self.tree_view.row_width_cache.set(None);
-        self.ensure_tree_root();
-        // Re-expand saved directories shallowest-first so each parent is loaded
-        // before its children are referenced by `visible_rows`. The session
-        // file is an on-disk boundary: drop any entry that isn't a safe
-        // repo-internal relative path so a hand-edited/corrupted `..` or
+        // Seed the expanded set from the saved session, then re-read the tree.
+        // The session file is an on-disk boundary: drop any entry that isn't a
+        // safe repo-internal relative path so a hand-edited/corrupted `..` or
         // absolute path can't drive a directory read outside the working tree.
-        let mut dirs: Vec<String> = state
+        // `refresh_tree_cache` reads the root and these directories top-down and
+        // prunes any that no longer exist on disk (moved/deleted between
+        // sessions), so a stale expansion can't surface a "tree error".
+        self.tree_view.expanded = state
             .tree_expanded
             .iter()
             .filter(|p| crate::ui::tree_view::is_safe_rel_path(p))
             .cloned()
             .collect();
-        dirs.sort_by_key(|p| p.matches('/').count());
-        for dir in dirs {
-            self.ensure_tree_children(&dir);
-            self.tree_view.expanded.insert(dir);
-        }
+        self.refresh_tree_cache();
         // Restore the cursor by path when it still resolves to a visible row;
         // otherwise leave it at the top.
         if let Some(path) = &state.tree_selected_path {
