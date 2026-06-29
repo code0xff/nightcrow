@@ -12,7 +12,15 @@ impl App {
         let reveal_after_toggle = self.terminal.fullscreen || self.diff.fullscreen;
         match self.mode {
             // `<prefix> l` from either Status or Tree enters the Log view.
-            ViewMode::Status | ViewMode::Tree => self.enter_log_mode(),
+            ViewMode::Status | ViewMode::Tree => {
+                // Leaving Tree (not just to Status): drop the filesystem watches
+                // so descriptors aren't held while the tree is hidden. Tree
+                // re-entry re-syncs them.
+                if self.mode == ViewMode::Tree {
+                    self.clear_tree_watches();
+                }
+                self.enter_log_mode();
+            }
             ViewMode::Log => {
                 self.mode = ViewMode::Status;
                 self.log_view.reset_drill_down();

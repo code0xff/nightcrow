@@ -146,7 +146,10 @@ impl App {
             accent_idx: 0,
             tracking: None,
             snapshot,
-            tree_watch: crate::runtime::tree_watch::TreeWatcher::new(),
+            // Start disabled; `main` upgrades to a live watcher after the parsed
+            // `[tree] live_watch` config is applied, so a `false` setting never
+            // spawns an OS watcher.
+            tree_watch: crate::runtime::tree_watch::TreeWatcher::disabled(),
             pending_session: None,
             repo_cache: None,
             cfg_agent_indicator: crate::config::AgentIndicatorConfig::default(),
@@ -1205,6 +1208,39 @@ pub(crate) mod tests {
         // The event is drained but must not build/touch the tree off-screen.
         assert_eq!(app.mode, ViewMode::Status);
         assert!(app.tree_view.cache.is_empty());
+        drop(dir);
+    }
+
+    #[test]
+    fn leaving_tree_for_log_clears_watches() {
+        let (dir, path) = make_tree_repo();
+        let mut app = app_on(&path);
+        app.enter_tree_mode();
+        assert!(
+            app.tree_watch.watched_count() > 0,
+            "entering Tree mode watches at least the root"
+        );
+
+        app.toggle_mode(); // Tree -> Log via <prefix> l
+        assert_eq!(app.mode, ViewMode::Log);
+        assert_eq!(
+            app.tree_watch.watched_count(),
+            0,
+            "leaving Tree for Log must drop all watches"
+        );
+        drop(dir);
+    }
+
+    #[test]
+    fn leaving_tree_for_status_clears_watches() {
+        let (dir, path) = make_tree_repo();
+        let mut app = app_on(&path);
+        app.enter_tree_mode();
+        assert!(app.tree_watch.watched_count() > 0);
+
+        app.exit_tree_to_status();
+        assert_eq!(app.mode, ViewMode::Status);
+        assert_eq!(app.tree_watch.watched_count(), 0);
         drop(dir);
     }
 

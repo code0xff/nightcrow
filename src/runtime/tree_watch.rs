@@ -72,6 +72,21 @@ impl TreeWatcher {
         }
     }
 
+    /// An inert watcher that never observes anything: no OS watcher is created
+    /// and `sync` performs no filesystem calls. Used when live watching is
+    /// disabled by config so the feature costs nothing (no watcher thread, no
+    /// inotify descriptors), with refresh-on-entry carrying the navigator.
+    pub fn disabled() -> Self {
+        // A dropped sender makes `drain_changed` see `Disconnected` and report
+        // no changes; the field shape stays uniform with the active watcher.
+        let (_tx, rx) = mpsc::channel();
+        Self {
+            debouncer: None,
+            rx,
+            watched: BTreeSet::new(),
+        }
+    }
+
     /// Build an inert watcher from a caller-held receiver. Tests keep the
     /// matching `Sender` to inject synthetic events; no OS watcher is created.
     #[cfg(test)]
@@ -119,6 +134,14 @@ impl TreeWatcher {
                 }
             }
         }
+    }
+
+    /// Number of directories currently registered with the watcher. Test-only:
+    /// lets `App` tests assert watch lifecycle (entry adds, exit clears) through
+    /// the inert watcher without reaching into private state.
+    #[cfg(test)]
+    pub(crate) fn watched_count(&self) -> usize {
+        self.watched.len()
     }
 
     /// Drain pending events. Returns `true` if anything was observed since the
