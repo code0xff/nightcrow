@@ -186,8 +186,8 @@ impl App {
         self.prefix_armed = false;
     }
 
-    /// Caret-notation label for the configured leader chord, e.g. `^G` for
-    /// `Ctrl+G`. Leaders are always ctrl chords (see `config::parse_leader`),
+    /// Caret-notation label for the configured leader chord, e.g. `^Q` for
+    /// `Ctrl+Q`. Leaders are always ctrl chords (see `config::parse_leader`),
     /// so the control character maps cleanly to `^<UPPER>`; any non-ctrl key
     /// falls back to printing its raw character.
     pub fn leader_label(&self) -> String {
@@ -296,7 +296,7 @@ pub(crate) mod tests {
             auto_follow: AutoFollow::default(),
             list_fullscreen: false,
             branch_name: None,
-            leader: KeyEvent::new(KeyCode::Char('g'), KeyModifiers::CONTROL),
+            leader: KeyEvent::new(KeyCode::Char('q'), KeyModifiers::CONTROL),
             prefix_armed: false,
         }
     }
@@ -325,8 +325,8 @@ pub(crate) mod tests {
     #[test]
     fn leader_label_renders_ctrl_chord_as_caret_uppercase() {
         let mut app = app_with_files(vec!["a.rs"]);
-        // Default leader is Ctrl+G.
-        assert_eq!(app.leader_label(), "^G");
+        // Default leader is Ctrl+Q.
+        assert_eq!(app.leader_label(), "^Q");
         app.leader = KeyEvent::new(KeyCode::Char('b'), KeyModifiers::CONTROL);
         assert_eq!(app.leader_label(), "^B");
     }

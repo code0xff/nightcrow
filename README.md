@@ -73,8 +73,11 @@ The diff for a selected file shows the combined working-tree-with-index changes.
 ## Keyboard shortcuts
 
 nightcrow uses a tmux-style **leader (prefix)** key for its app commands. The
-default leader is `Ctrl+G` (configurable via `[input] leader`). `Ctrl+G` avoids
-tmux's own `Ctrl+B` prefix, so nightcrow stays usable inside a tmux session. Press the
+default leader is `Ctrl+Q` (configurable via `[input] leader`). `Ctrl+Q` avoids
+both tmux's own `Ctrl+B` prefix (so nightcrow stays usable inside a tmux session)
+and the Ctrl chords an inner Claude Code pane reserves (`Ctrl+G` is its external
+editor, plus `Ctrl+O/R/S/T/L`) — its only other claimant is terminal flow
+control (XON), which nightcrow's raw-mode input disables. Press the
 leader, then a single follow-up key. Every other key — including Ctrl chords
 like `Ctrl+W` and `Ctrl+L` — passes straight through to the focused terminal,
 so a CLI running there (claude, codex, your shell) receives them unchanged.
@@ -82,7 +85,7 @@ This is why the leader exists: cockpit users live inside the terminal panes and
 need their prompt-editing keys to reach the program, not nightcrow.
 
 The hint bar shows the active leader in caret notation at its left edge (e.g.
-`^G: leader` for the default `Ctrl+G`), so the configured prefix is always
+`^Q: leader` for the default `Ctrl+Q`), so the configured prefix is always
 visible from the terminal pane.
 
 > **Migration from earlier versions:** the old bare-`Ctrl` app shortcuts moved
@@ -186,7 +189,7 @@ file_list_pct = 25   # horizontal % of upper panel for the file list (1–99)
 name = "yellow"      # accent color preset: "yellow" | "cyan" | "green" | "magenta" | "blue"
 
 [input]
-leader = "ctrl+g"    # leader (prefix) chord for app commands; tmux-style.
+leader = "ctrl+q"    # leader (prefix) chord for app commands; tmux-style.
                      # Allowed: "ctrl+<letter>". Reserved keys (F1..F9,
                      # Shift+arrows, Shift+PgUp/PgDn) cannot be the leader.
 

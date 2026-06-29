@@ -303,7 +303,7 @@ fn render_hint_bar(app: &App, accent: Color) -> Paragraph<'_> {
         return Paragraph::new(Line::from(msg.as_str())).style(Style::default().fg(Color::Red));
     }
     // `<prefix>` in the hint strings below is a single placeholder that resolves
-    // to the configured leader chord (e.g. `^G`) so the footer always names the
+    // to the configured leader chord (e.g. `^Q`) so the footer always names the
     // actual key to press rather than an abstract word.
     let leader = app.leader_label();
     let render = |hint: &str| {

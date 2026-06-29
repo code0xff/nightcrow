@@ -816,11 +816,11 @@ mod tests {
         KeyEvent::new(code, mods)
     }
 
-    /// The default leader chord (Ctrl+G). Test apps all use the default, so a
+    /// The default leader chord (Ctrl+Q). Test apps all use the default, so a
     /// standalone constructor avoids borrowing `app` inside a `handle_key`
     /// call (which would conflict with the `&mut app` argument).
     fn leader() -> KeyEvent {
-        KeyEvent::new(KeyCode::Char('g'), KeyModifiers::CONTROL)
+        KeyEvent::new(KeyCode::Char('q'), KeyModifiers::CONTROL)
     }
 
     /// Snapshot the byte payloads the app's `FakeBackend` recorded so terminal
@@ -871,15 +871,15 @@ mod tests {
     }
 
     #[test]
-    fn handle_key_bare_ctrl_q_does_not_quit() {
-        // Ctrl+Q is no longer an app command; in terminal focus it passes
-        // through to the PTY, never quitting nightcrow.
+    fn handle_key_bare_ctrl_q_arms_prefix_and_does_not_quit() {
+        // Ctrl+Q is the default leader: pressing it alone arms the prefix and
+        // never quits nightcrow on its own (quitting is `<leader> q`).
         let mut app = app_with_terminal_pane();
 
         let outcome = handle_key(&mut app, press(KeyCode::Char('q'), KeyModifiers::CONTROL));
 
         assert!(matches!(outcome, KeyOutcome::Continue));
-        assert!(!app.prefix_armed());
+        assert!(app.prefix_armed(), "the leader press arms the prefix");
     }
 
     #[test]
@@ -918,7 +918,7 @@ mod tests {
         let outcome = handle_key(
             &mut app,
             press(
-                KeyCode::Char('g'),
+                KeyCode::Char('q'),
                 KeyModifiers::CONTROL | KeyModifiers::ALT,
             ),
         );
@@ -1024,8 +1024,8 @@ mod tests {
         let outcome = handle_key(&mut app, leader());
         assert!(matches!(outcome, KeyOutcome::Continue));
         assert!(!app.prefix_armed());
-        // Ctrl+G encodes to 0x07 (BEL) — the literal leader byte.
-        assert_eq!(backend_payloads(&app), vec![vec![0x07]]);
+        // Ctrl+Q encodes to 0x11 (DC1/XON) — the literal leader byte.
+        assert_eq!(backend_payloads(&app), vec![vec![0x11]]);
     }
 
     #[test]
@@ -1163,9 +1163,10 @@ mod tests {
     #[test]
     fn handle_key_terminal_ctrl_app_keys_all_pass_through() {
         // Every former bare-Ctrl app shortcut now reaches the PTY untouched.
+        // Ctrl+Q is excluded: it is the default leader, so it is intercepted to
+        // arm the prefix rather than passed through (see the bare-Ctrl+Q test).
         for (c, byte) in [
-            ('q', 0x11u8),
-            ('t', 0x14),
+            ('t', 0x14u8),
             ('w', 0x17),
             ('f', 0x06),
             ('l', 0x0c),

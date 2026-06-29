@@ -25,7 +25,8 @@ name = "yellow"      # accent color preset: "yellow" | "cyan" | "green" | "magen
 #   Ctrl+Q → <leader> q
 # Press the leader twice (<leader> <leader>) to send the literal leader byte
 # to the terminal program.
-leader = "ctrl+g"    # default; avoids tmux's own Ctrl+B prefix so nightcrow can run inside tmux
+leader = "ctrl+q"    # default; dodges tmux's Ctrl+B and the Ctrl chords an inner
+                     # Claude Code pane uses (Ctrl+G=external editor, Ctrl+O/R/S/T/L)
 
 [log]
 enabled = true

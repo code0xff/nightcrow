@@ -28,11 +28,15 @@ pub struct Config {
     pub startup_commands: Vec<StartupCommand>,
 }
 
-/// Default leader chord literal. `Ctrl+G` avoids tmux's own `Ctrl+B` prefix
-/// (so nightcrow can run inside tmux), and is rarely used by shells/readline,
-/// leaving the terminal-editing Ctrl keys (`Ctrl+W`, `Ctrl+L`, …) free to
-/// reach the PTY.
-const DEFAULT_LEADER: &str = "ctrl+g";
+/// Default leader chord literal. `Ctrl+Q` avoids tmux's own `Ctrl+B` prefix (so
+/// nightcrow can run inside tmux) AND the Ctrl chords that an inner Claude Code
+/// pane reserves (`Ctrl+G` = external editor, plus `Ctrl+O/R/S/T/L/…`) — the
+/// reason `Ctrl+G` was a poor fit for a tool meant to sit beside Claude Code.
+/// `Ctrl+Q` is only otherwise claimed by terminal flow control (XON), which is
+/// disabled in nightcrow's raw-mode input, so the key arrives as a normal event;
+/// editors that bind it (vim's CTRL-V alias, emacs quoted-insert) remain
+/// reachable via `<leader><leader>`.
+const DEFAULT_LEADER: &str = "ctrl+q";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
@@ -856,11 +860,11 @@ command = "cargo test"
     }
 
     #[test]
-    fn input_leader_defaults_to_ctrl_g() {
+    fn input_leader_defaults_to_ctrl_q() {
         let cfg = Config::default();
-        assert_eq!(cfg.input.leader, "ctrl+g");
+        assert_eq!(cfg.input.leader, "ctrl+q");
         let leader = parse_leader(&cfg.input.leader).unwrap();
-        assert_eq!(leader.code, KeyCode::Char('g'));
+        assert_eq!(leader.code, KeyCode::Char('q'));
         assert!(leader.modifiers.contains(KeyModifiers::CONTROL));
     }
 
