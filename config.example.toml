@@ -49,6 +49,8 @@ auto_follow = false       # jump selection to the freshest hot file when idle
 # working tree and preview any file's contents in the diff pane.
 respect_gitignore = true  # hide .gitignore-matched paths (target/, node_modules/, …)
 max_depth = 64            # deepest directory level the tree will expand into (1..=1024)
+live_watch = true         # watch expanded dirs and refresh the tree live; set false
+                          # to refresh only on tree entry (large trees / odd filesystems)
 
 # Reserve startup commands: each [[startup_command]] opens its own terminal
 # pane at launch and runs `command` immediately (via `$SHELL -lc <command>`).
