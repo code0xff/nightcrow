@@ -36,8 +36,18 @@ impl App {
         // Re-read from disk so a directory created/moved/renamed/deleted while
         // away from Tree mode is reflected — the per-directory cache is
         // otherwise only cleared on a repo switch, so structural changes never
-        // surfaced here. Capture the path under the cursor first so it survives
-        // the row-set shift the re-read may cause.
+        // surfaced here. The same re-read is what the filesystem watcher runs on
+        // each change while Tree mode stays open.
+        self.refresh_tree_preserving_cursor();
+    }
+
+    /// Re-read the tree from disk while keeping the cursor on the same path. The
+    /// re-read can shift the row set (a directory created/moved/deleted changes
+    /// which rows are visible), so the path under the cursor is captured first
+    /// and the cursor restored to it afterwards; if that path is gone the cursor
+    /// falls back to a clamped index. Shared by Tree-mode entry, session
+    /// restore, and the watcher-driven live refresh.
+    pub(crate) fn refresh_tree_preserving_cursor(&mut self) {
         let prev_path = self.tree_view.selected_path();
         self.refresh_tree_cache();
         let rows = self.tree_view.visible_rows();
@@ -80,11 +90,56 @@ impl App {
         }
         self.tree_view.expanded = kept;
         self.tree_view.row_width_cache.set(None);
+        // The expansion set may have changed (pruned vanished dirs); reconcile
+        // the watch set so the watcher tracks exactly the visible directories.
+        self.sync_tree_watches();
+    }
+
+    /// Reconcile the filesystem watcher to the directories currently visible in
+    /// Tree mode (the root plus every expanded directory). No-op when live
+    /// watching is disabled or the working tree cannot be resolved.
+    pub(crate) fn sync_tree_watches(&mut self) {
+        if !self.cfg_tree.live_watch {
+            return;
+        }
+        let mut desired: BTreeSet<String> = self.tree_view.expanded.iter().cloned().collect();
+        // The root is always watched while Tree mode is open so top-level
+        // creations/removals are caught even with nothing expanded.
+        desired.insert(String::new());
+        if let Some(workdir) = self.tree_workdir() {
+            self.tree_watch.sync(&workdir, &desired);
+        }
+    }
+
+    /// Tear down all tree watches (reconcile to the empty set). Called on exit
+    /// from Tree mode so watch descriptors aren't held while the tree is hidden.
+    pub(crate) fn clear_tree_watches(&mut self) {
+        if let Some(workdir) = self.tree_workdir() {
+            self.tree_watch.sync(&workdir, &BTreeSet::new());
+        }
+    }
+
+    /// Absolute working-tree root, or `None` for a bare repo / open failure.
+    fn tree_workdir(&mut self) -> Option<std::path::PathBuf> {
+        self.with_repo(|repo| Ok(repo.workdir().map(|w| w.to_path_buf())))
+            .ok()
+            .flatten()
+    }
+
+    /// Drain filesystem-watcher events and, while Tree mode is open, re-read the
+    /// tree if anything changed. Called every main-loop tick alongside the other
+    /// pollers; cheap when idle (a non-blocking channel drain).
+    pub fn poll_tree_watcher(&mut self) {
+        let changed = self.tree_watch.drain_changed();
+        if changed && self.mode == ViewMode::Tree {
+            self.refresh_tree_preserving_cursor();
+        }
     }
 
     /// Leave Tree mode back to the working-tree status view.
     pub fn exit_tree_to_status(&mut self) {
         self.tree_view.cancel_search();
+        self.clear_tree_watches();
         self.mode = ViewMode::Status;
         self.clear_diff_state();
         self.refresh_diff(true);
@@ -199,6 +254,8 @@ impl App {
         // Visible rows changed: a same-row-count expand/collapse elsewhere
         // could otherwise reuse a stale horizontal-scroll width bound.
         self.tree_view.row_width_cache.set(None);
+        // A newly expanded directory becomes visible — start watching it.
+        self.sync_tree_watches();
     }
 
     /// Collapse the selected directory if expanded; otherwise move the cursor
@@ -218,6 +275,8 @@ impl App {
                 .expanded
                 .retain(|p| p != &path && !p.starts_with(&prefix));
             self.tree_view.row_width_cache.set(None);
+            // The collapsed subtree is no longer visible — stop watching it.
+            self.sync_tree_watches();
             return;
         }
         if let Some(parent) = parent_path(&row.path) {

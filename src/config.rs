@@ -308,6 +308,12 @@ pub struct TreeConfig {
     /// pathologically deep trees; expansion past this depth is a no-op. Must be
     /// in 1..=1024.
     pub max_depth: usize,
+    /// Watch expanded directories for filesystem changes and refresh the tree
+    /// live while Tree mode is open. On by default; only the visible (expanded)
+    /// directories are watched, non-recursively. Set to `false` to fall back to
+    /// refreshing only on Tree-mode entry — useful on very large trees or
+    /// filesystems where native watching is costly or unsupported.
+    pub live_watch: bool,
 }
 
 impl Default for TreeConfig {
@@ -315,6 +321,7 @@ impl Default for TreeConfig {
         Self {
             respect_gitignore: true,
             max_depth: 64,
+            live_watch: true,
         }
     }
 }
@@ -937,6 +944,7 @@ leader = "ctrl+a"
         let cfg = TreeConfig::default();
         assert!(cfg.respect_gitignore);
         assert_eq!(cfg.max_depth, 64);
+        assert!(cfg.live_watch, "live watching is on by default");
     }
 
     #[test]
@@ -945,10 +953,12 @@ leader = "ctrl+a"
 [tree]
 respect_gitignore = false
 max_depth = 12
+live_watch = false
 "#;
         let cfg: Config = toml::from_str(toml).unwrap();
         assert!(!cfg.tree.respect_gitignore);
         assert_eq!(cfg.tree.max_depth, 12);
+        assert!(!cfg.tree.live_watch);
         validate_config(&cfg).unwrap();
     }
 
@@ -968,6 +978,7 @@ max_depth = 12
         let cfg: Config = toml::from_str("[layout]\nupper_pct = 50\n").unwrap();
         assert!(cfg.tree.respect_gitignore);
         assert_eq!(cfg.tree.max_depth, 64);
+        assert!(cfg.tree.live_watch);
         validate_config(&cfg).unwrap();
     }
 

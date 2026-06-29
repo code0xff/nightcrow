@@ -263,6 +263,7 @@ fn main_loop(
 ) -> Result<()> {
     loop {
         app.poll_snapshot();
+        app.poll_tree_watcher();
         app.poll_terminal();
         app.poll_commit_log_page_fetch();
 

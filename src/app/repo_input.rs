@@ -44,6 +44,10 @@ impl App {
         // Tree cache/expansion/selection are workdir-scoped; drop them so the
         // new repo's tree starts fresh (and never previews a stale path).
         self.tree_view.reset();
+        // The watcher holds absolute paths under the *old* workdir; replace it
+        // with a fresh one so no stale watch survives the switch. The next Tree
+        // entry re-syncs it against the new repo's expansion set.
+        self.tree_watch = crate::runtime::tree_watch::TreeWatcher::new();
         self.status_view.cancel_search();
         // clear_diff_state empties hunks + lower/highlight caches, resets diff
         // scroll/search cursor, drops the search query, and invalidates the

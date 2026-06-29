@@ -78,6 +78,12 @@ pub struct App {
     pub accent_idx: usize,
     pub tracking: Option<TrackingStatus>,
     pub(crate) snapshot: SnapshotChannel,
+    /// Filesystem watcher driving live refresh of the file-tree navigator. Only
+    /// active while in `ViewMode::Tree`; watches the expanded directories
+    /// (non-recursively) and triggers a cache re-read on change. Inert when the
+    /// OS watcher could not start, in which case refresh-on-entry is the
+    /// fallback.
+    pub(crate) tree_watch: crate::runtime::tree_watch::TreeWatcher,
     pub(crate) pending_session: Option<crate::session::SessionState>,
     /// Cached `git2::Repository` for synchronous loads (file diff, commit
     /// diff, file blob, commit log). Opened lazily on first use; invalidated
@@ -140,6 +146,7 @@ impl App {
             accent_idx: 0,
             tracking: None,
             snapshot,
+            tree_watch: crate::runtime::tree_watch::TreeWatcher::new(),
             pending_session: None,
             repo_cache: None,
             cfg_agent_indicator: crate::config::AgentIndicatorConfig::default(),
@@ -232,8 +239,23 @@ pub(crate) mod tests {
         (SnapshotChannel::from_endpoints(rx, stop_tx), tx)
     }
 
+    /// Inert tree watcher plus its event sender. Tests that drive the
+    /// watcher-triggered refresh keep the `Sender` to inject synthetic events;
+    /// most tests drop it (a closed channel simply never reports a change).
+    pub(crate) fn dummy_tree_watcher() -> (
+        crate::runtime::tree_watch::TreeWatcher,
+        std::sync::mpsc::Sender<notify_debouncer_mini::DebounceEventResult>,
+    ) {
+        let (tx, rx) = mpsc::channel();
+        (
+            crate::runtime::tree_watch::TreeWatcher::from_receiver(rx),
+            tx,
+        )
+    }
+
     pub(crate) fn app_with_files(files: Vec<&str>) -> App {
         let (snapshot, _tx) = dummy_snapshot_channel();
+        let (tree_watch, _tw_tx) = dummy_tree_watcher();
         let mut status_view = StatusView {
             files: files
                 .into_iter()
@@ -256,6 +278,7 @@ pub(crate) mod tests {
             accent_idx: 0,
             tracking: None,
             snapshot,
+            tree_watch,
             pending_session: None,
             repo_cache: None,
             cfg_agent_indicator: crate::config::AgentIndicatorConfig {
@@ -1139,6 +1162,49 @@ pub(crate) mod tests {
             Some("README.md"),
             "cursor must track its path across the row-set shift"
         );
+        drop(dir);
+    }
+
+    #[test]
+    fn poll_tree_watcher_refreshes_tree_on_event_in_tree_mode() {
+        use crate::runtime::tree_watch::TreeWatcher;
+        let (dir, path) = make_tree_repo();
+        let mut app = app_on(&path);
+        // Swap in a watcher we can feed synthetic events into.
+        let (tx, rx) = std::sync::mpsc::channel();
+        app.tree_watch = TreeWatcher::from_receiver(rx);
+        app.enter_tree_mode();
+        assert!(!app.tree_view.visible_rows().iter().any(|r| r.path == "docs"));
+
+        // A folder appears on disk, then the watcher fires.
+        std::fs::create_dir(Path::new(&path).join("docs")).unwrap();
+        tx.send(Ok(Vec::new())).unwrap();
+        app.poll_tree_watcher();
+
+        assert!(
+            app.tree_view.visible_rows().iter().any(|r| r.path == "docs"),
+            "a watcher event in Tree mode must re-read and surface the new dir"
+        );
+        drop(dir);
+    }
+
+    #[test]
+    fn poll_tree_watcher_ignores_events_outside_tree_mode() {
+        use crate::runtime::tree_watch::TreeWatcher;
+        let (dir, path) = make_tree_repo();
+        let mut app = app_on(&path);
+        let (tx, rx) = std::sync::mpsc::channel();
+        app.tree_watch = TreeWatcher::from_receiver(rx);
+        // Never enter Tree mode.
+        assert_eq!(app.mode, ViewMode::Status);
+
+        std::fs::create_dir(Path::new(&path).join("docs")).unwrap();
+        tx.send(Ok(Vec::new())).unwrap();
+        app.poll_tree_watcher();
+
+        // The event is drained but must not build/touch the tree off-screen.
+        assert_eq!(app.mode, ViewMode::Status);
+        assert!(app.tree_view.cache.is_empty());
         drop(dir);
     }
 
