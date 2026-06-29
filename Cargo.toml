@@ -10,7 +10,7 @@ categories = ["command-line-utilities", "development-tools"]
 [dependencies]
 ratatui = { version = "0.30", features = ["crossterm"] }
 crossterm = "0.29"
-git2 = { version = "0.20", features = ["vendored-openssl", "vendored-libgit2"] }
+git2 = { version = "0.21", features = ["vendored-openssl", "vendored-libgit2"] }
 syntect = "5.3"
 anyhow = "1"
 portable-pty = "0.8"

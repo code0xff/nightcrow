@@ -277,7 +277,7 @@ pub fn load_snapshot(repo: &Repository) -> Result<RepoSnapshot> {
     let branch_name = head
         .as_ref()
         .filter(|h| h.is_branch())
-        .and_then(|h| h.shorthand().map(String::from));
+        .and_then(|h| h.shorthand().ok().map(String::from));
     Ok(RepoSnapshot {
         files,
         tracking,
@@ -411,7 +411,7 @@ pub fn load_commit_log_page(
     for oid_result in revwalk.skip(skip).take(limit) {
         let oid = oid_result.context("revwalk error")?;
         let commit = repo.find_commit(oid).context("failed to find commit")?;
-        let summary = commit.summary().unwrap_or("").to_string();
+        let summary = commit.summary().ok().flatten().unwrap_or("").to_string();
         let author = commit.author().name().unwrap_or("Unknown").to_string();
         let time = commit.time().seconds();
         entries.push(CommitEntry::new(oid, short_oid(oid), summary, author, time));
@@ -688,7 +688,7 @@ fn paths_from_status_entry(entry: &StatusEntry<'_>) -> Option<(String, Option<St
         .as_ref()
         .and_then(new_path_from_delta)
         .or_else(|| h2i.as_ref().and_then(new_path_from_delta))
-        .or_else(|| entry.path().map(str::to_string))?;
+        .or_else(|| entry.path().ok().map(str::to_string))?;
 
     let old_path = if status.intersects(Status::INDEX_RENAMED | Status::WT_RENAMED) {
         // Prefer the HEAD-side original when the index carries a rename, so a

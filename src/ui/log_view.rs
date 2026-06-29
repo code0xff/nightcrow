@@ -233,7 +233,7 @@ mod tests {
 
     fn entry(time: i64) -> CommitEntry {
         CommitEntry::new(
-            Oid::zero(),
+            Oid::ZERO_SHA1,
             "deadbee".to_string(),
             format!("c{time}"),
             "T".to_string(),
@@ -302,7 +302,7 @@ mod tests {
 
     fn named_entry(summary: &str) -> CommitEntry {
         CommitEntry::new(
-            Oid::zero(),
+            Oid::ZERO_SHA1,
             "deadbee".to_string(),
             summary.to_string(),
             "T".to_string(),

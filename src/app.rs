@@ -2206,14 +2206,14 @@ pub(crate) mod tests {
         // which matches the production code path.
         app.log_view.set_commits(vec![
             CommitEntry::new(
-                git2::Oid::zero(),
+                git2::Oid::ZERO_SHA1,
                 "0000000".into(),
                 "first".into(),
                 "T".into(),
                 0,
             ),
             CommitEntry::new(
-                git2::Oid::zero(),
+                git2::Oid::ZERO_SHA1,
                 "1111111".into(),
                 "second".into(),
                 "T".into(),
@@ -2232,7 +2232,7 @@ pub(crate) mod tests {
         app.mode = ViewMode::Log;
         app.log_view.drill_down = true;
         app.log_view.set_commits(vec![CommitEntry::new(
-            git2::Oid::zero(),
+            git2::Oid::ZERO_SHA1,
             "0000000".into(),
             "first".into(),
             "T".into(),
@@ -2765,7 +2765,7 @@ pub(crate) mod tests {
 
     fn fake_entry(time: i64) -> CommitEntry {
         CommitEntry::new(
-            git2::Oid::zero(),
+            git2::Oid::ZERO_SHA1,
             "deadbee".to_string(),
             format!("c{time}"),
             "T".to_string(),
@@ -3053,7 +3053,7 @@ pub(crate) mod tests {
 
     fn named_commit(summary: &str) -> CommitEntry {
         CommitEntry::new(
-            git2::Oid::zero(),
+            git2::Oid::ZERO_SHA1,
             "deadbee".to_string(),
             summary.to_string(),
             "T".to_string(),
