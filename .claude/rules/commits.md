@@ -21,11 +21,6 @@
 - `commit message`는 무엇을 바꿨는지 짧고 구체적으로 적는다.
 - 메시지에는 실제 변경 내용을 담는다. 작업 과정이나 도구 이름을 메시지로 쓰지 않는다 (예: ✗ "codex review 반영", ✗ "리뷰 수정", ✓ "리뷰 중단 기준에 순환 판단 조건 추가").
 
-## Autonomy
-
-- workstream 실행 중에는 의미 있는 작업 단위마다 자율적으로 커밋한다. 매 커밋마다 사용자 확인을 받지 않는다.
-- 구현 완료 후 리뷰 단계에서 사용자 확인을 받는다 (workstream skill의 리뷰 절차 참조).
-
 ## Pre-commit Checks
 
 - commit 전에는 빌드 검증과 해당 변경 범위 테스트를 수행한다.
@@ -40,7 +35,7 @@
 
 ## Branch Strategy
 
-- workstream 또는 feature 단위로 브랜치를 생성한다.
+- feature 단위로 브랜치를 생성한다.
 - 브랜치 네이밍: `type/short-description` (e.g., `feat/user-auth`, `fix/token-expiry`)
 - type은 commit message와 동일한 set을 사용한다: feat, fix, refactor, test, docs, chore
 - main에 직접 커밋은 문서만 변경하거나 설정 수정 등 단순 변경에 한한다.

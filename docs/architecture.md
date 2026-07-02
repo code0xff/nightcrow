@@ -6,6 +6,10 @@ nightcrow는 agent-adjacent Rust TUI 애플리케이션이다.
 상단 패널에서 git diff를 실시간 추적하고, 하단 패널에서 임의의 프로세스(주로 LLM CLI나 빌드/테스트 러너)를 동시에 실행한다.
 nightcrow 자체는 AI에 대한 ontology를 갖지 않는다 — agent든 사람이든 동일한 PTY와 파일 mtime을 본다.
 
+**대상 사용자**: 터미널 중심으로 작업하면서, 옆 패널의 LLM CLI(Claude Code, Codex, aider 등)나 빌드/테스트 러너가 만든 코드 변경을 실시간으로 따라잡고 싶은 개발자.
+
+**핵심 기능**: 변경 파일 리스트(좌측/키보드 네비게이션), git diff 뷰어(우측/문법 하이라이팅), commit log 뷰, split-view 멀티 PTY 패널(하단), mtime 기반 hot-file 강조 + idle auto-follow, OSC 0/2 탭 타이틀 캡처.
+
 ## Layout
 
 ```
@@ -185,6 +189,19 @@ Ratatui 레이어와 내부 TUI 간 키보드 이벤트 충돌은 leader(prefix)
 | 설정 파싱 | toml 0.8 + serde |
 | 세션 저장 | serde_json |
 | CLI args | clap 4 (derive) |
+
+PTY 관리는 portable-pty 기반 `PtyBackend` 단일 구현으로 정리됐다. 초기에는 tmux control-mode 백엔드(`TmuxBackend`)도 병행 지원했으나, 중첩 TUI 키보드 라우팅 문제를 leader(prefix) 모델로 해결하면서 tmux 의존성 없이 `PtyBackend`만으로 충분해져 제거했다.
+
+## Development History
+
+- 프로젝트 골격: 상단 파일 리스트 + diff 뷰어, git2 기반 변경 파일/diff 감지 파이프라인 (ratatui/crossterm/git2/syntect)
+- 멀티 터미널: `TerminalBackend` trait 도입, `TmuxBackend` → `PtyBackend` 단일화, 중첩 TUI 키보드 라우팅을 leader 모델로 정리
+- 릴리스 준비: `config.toml` 설정 시스템(키바인딩/레이아웃 비율), `cargo clippy`/`cargo audit` clean, GitHub Actions CI
+- 로깅: 파일 기반 에러 로그(rotation + retention) + opt-in 프롬프트 입력 로깅
+- 컬러 테마 시스템(런타임 cycling) + commit log ahead/behind(upstream tracking) 표시
+- commit log 페이지네이션 + 백그라운드 prefetch (대형 저장소에서 초기 진입 속도 개선)
+- 시작 시 예약 명령(`[[startup_command]]`/`--exec`)으로 터미널 pane 자동 생성·실행
+- split-view 터미널: 여러 pane을 탭 전환 없이 balanced grid로 동시 렌더링(활성 pane accent 테두리, hidden pane `+N` 마커)
 
 ## Future Refactor Notes
 

@@ -42,10 +42,9 @@ extended thinking을 활용하여 다음을 분석한다:
 
 ### 설계 정합성
 - 프로젝트의 architecture 문서가 있으면 계층 책임과 일치하는지 확인한다.
-- roadmap / workstream 문서가 있으면 현재 workstream 범위 내인지 확인한다.
 - `.claude/rules/`의 현재 구현 규칙을 위반하지 않는지 확인한다.
 - 현재 작업의 scope 문서가 있으면 scope 범위 내인지 확인한다.
-- 문서 간 충돌이 있으면 Architecture > Roadmap > Rules > Scope 우선순위를 따른다.
+- 문서 간 충돌이 있으면 Architecture > Rules > Scope 우선순위를 따른다.
 - 모듈 간 의존 방향이 설계 의도와 맞는지 확인한다.
 
 ### 테스트 충분성

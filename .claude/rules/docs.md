@@ -4,19 +4,7 @@
   - **README**: 프로젝트 목적, 시작 방법 (설치, 실행), 주요 명령어
   - **Architecture 문서**: 계층 구조, 모듈 책임, 핵심 설계 결정과 그 이유
   - **API 문서**: 공개 인터페이스의 입력, 출력, 에러, 사용 예시
-  - **Roadmap**: workstream 기반 개발 시 전체 workstream 순서, 범위, 의존성을 정의하는 상위 문서
-  - **Project Profile**: 엔진/모델/게이트 고정값 (`.claude/project-profile.md`)
-  - **Project Approvals**: 사전 승인 명령/행동 범위 (`.claude/project-approvals.md`)
-  - **Project Automation**: 자동화 모드, 재시도, gate 명령 (`.claude/project-automation.md`)
 - 프로젝트에 필요 없는 문서 유형을 만들지 않는다.
-
-## Roadmap 과 Workstream
-
-- roadmap은 프로젝트 전체의 상위 실행 계획이다. workstream 순서, 범위, 선행 의존성, 큰 deliverable을 정의한다.
-- workstream은 roadmap을 구성하는 개별 실행 단위다. 각 workstream은 자체 목표, Deliverables, Exit Criteria를 가질 수 있다.
-- 소규모 프로젝트는 `docs/roadmap.md` 하나에 모든 workstream을 포함해도 된다.
-- 필요하면 `docs/workstreams/ws-1.md` 같은 개별 workstream 문서로 상세 계획을 분리할 수 있다.
-- 개별 workstream 문서로 분리한 경우 roadmap은 순서와 관계를 요약하는 상위 인덱스로 유지한다.
 
 ## README
 
