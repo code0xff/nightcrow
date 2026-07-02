@@ -172,7 +172,7 @@
 
 - service_goal: 개발자가 하단 터미널 패널에서 여러 pane을 탭 전환 없이 화면에서 동시에(split view) 볼 수 있다
 - acceptance: pane 2개 이상일 때 자동으로 grid split 렌더링(일반 최대 4개, fullscreen 최대 7개), F3-F9/prefix 3-9는 여전히 pane focus 이동으로 동작, 키보드 입력/scroll은 active pane에만 적용, pane별 정확한 PTY resize, 기존 단일 pane 동작 회귀 없음
-- status: active
+- status: done
 
 ### Workstream 1
 
@@ -200,4 +200,4 @@
 - Goal: 통합 검증 + 문서화
 - Deliverables: config 노출 여부 결정(MVP는 상수 유지, 내부는 확장 가능하게 설계), `cargo test`/`cargo clippy --all-targets -- -D warnings` 통과, 수동 검증(1/2/4/7 pane, fullscreen, pane close, shell exit, resize), `docs/architecture.md` 하단 diagram 및 키보드 라우팅 설명 갱신
 - Exit Criteria: 모든 gate 통과, 아키텍처 문서가 split view 동작과 일치
-- status: pending
+- status: done

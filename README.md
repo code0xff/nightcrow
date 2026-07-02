@@ -148,6 +148,17 @@ key. A key with no leader binding cancels the prefix and is dropped.
 
 ### Terminal panes (bottom)
 
+Every visible pane renders at once as a split grid instead of switching
+between tabs — 2 panes go side by side (or stacked if the terminal is
+narrow), 4 form a 2x2 grid, up to 4 show normally and up to 7 when the
+terminal panel is fullscreen. The active pane's cell is bordered in the
+accent color; jumping focus with `F3`–`F9` or `Shift+←/→` moves that
+border without hiding any other pane. With more panes than fit, the tab
+bar shows a `+N` marker for the ones scrolled out of view — they keep
+running in the background. Keyboard input, paste, and scroll still target
+only the active pane. A single pane draws with no cell border, exactly as
+before split view existed.
+
 | Key | Action |
 |-----|--------|
 | `Shift+↑` / `Shift+↓` | Scroll terminal output 3 lines |
