@@ -39,6 +39,25 @@ run_expect_fail_pipe() {
   fi
 }
 
+# Onboarding-generated docs the tests below create/overwrite. On a fresh
+# scaffold these don't exist yet and deleting them at the end is correct
+# teardown, but running this suite against an established project (like this
+# one, with real hand-maintained docs/architecture.md and docs/roadmap.md)
+# used to permanently delete that real content — these had no backup/restore
+# step, unlike project-automation.md/project-approvals.md/completion-contract.md
+# below. Back them up the same way and restore (or remove, if they didn't
+# exist before the run) in cleanup.
+DOC_FILES=(
+  ONBOARDING_READY.md
+  docs/project-goal.md
+  docs/scope.md
+  docs/architecture.md
+  docs/stack-decision.md
+  docs/acceptance-criteria.md
+  docs/roadmap.md
+  docs/execution-plan.md
+)
+
 cleanup() {
   cp "$AUTOMATION_BAK" .claude/project-automation.md
   cp "$APPROVALS_BAK" .claude/project-approvals.md
@@ -52,12 +71,22 @@ cleanup() {
   rm -f .claude/state/qa-report.md
   rm -f .claude/state/final-report.md
   rm -f .claude/state/qa-registry.json
-  rm -f ONBOARDING_READY.md
-  rm -f docs/project-goal.md docs/scope.md docs/architecture.md docs/stack-decision.md docs/acceptance-criteria.md docs/roadmap.md docs/execution-plan.md
+  for f in "${DOC_FILES[@]}"; do
+    rm -f "$f"
+    if [ -f "$DOC_BAK_DIR/$f" ]; then
+      mkdir -p "$(dirname "$f")"
+      cp "$DOC_BAK_DIR/$f" "$f"
+    fi
+  done
   rm -rf docs/workstreams
+  if [ "$DOCS_WORKSTREAMS_EXISTED" = "1" ]; then
+    mkdir -p docs
+    cp -R "$DOC_BAK_DIR/docs/workstreams" docs/workstreams
+  fi
   rmdir docs 2>/dev/null || true
   rm -f "$AUTOMATION_BAK" "$APPROVALS_BAK"
   rm -f "$CONTRACT_BAK"
+  rm -rf "$DOC_BAK_DIR"
 }
 
 AUTOMATION_BAK="$(mktemp)"
@@ -68,6 +97,21 @@ cp .claude/project-automation.md "$AUTOMATION_BAK"
 cp .claude/project-approvals.md "$APPROVALS_BAK"
 cp .claude/completion-contract.md "$CONTRACT_BAK"
 [ -f .nightwalker/session.yaml ] && cp .nightwalker/session.yaml "$SESSION_BAK" || true
+
+DOC_BAK_DIR="$(mktemp -d)"
+for f in "${DOC_FILES[@]}"; do
+  if [ -f "$f" ]; then
+    mkdir -p "$DOC_BAK_DIR/$(dirname "$f")"
+    cp "$f" "$DOC_BAK_DIR/$f"
+  fi
+done
+DOCS_WORKSTREAMS_EXISTED=0
+if [ -d docs/workstreams ]; then
+  DOCS_WORKSTREAMS_EXISTED=1
+  mkdir -p "$DOC_BAK_DIR/docs"
+  cp -R docs/workstreams "$DOC_BAK_DIR/docs/workstreams"
+fi
+
 trap cleanup EXIT
 
 run_expect_ok "hook syntax" sh -c 'find .claude/hooks -type f -name "*.sh" -print0 | xargs -0 -I{} bash -n "{}"'
