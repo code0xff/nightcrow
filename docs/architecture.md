@@ -134,6 +134,13 @@ background even while scrolled out of the window.
 - **Input/scroll scope unchanged**: keyboard input, paste, prompt logging,
   and terminal scroll (`TerminalState::active_pane_rows` for page size)
   still target only the active pane, even though multiple panes are drawn.
+- **Accent means real focus, not just "active pane"**: the accent color is
+  reserved app-wide for "this region has keyboard focus right now" (see
+  `focused_border_style`, used identically by `FileList`/`DiffViewer`). The
+  active pane's cell border/tab only gets accent when `Focus::Terminal` is
+  also true; otherwise it renders pixel-identical to an inactive pane (plain
+  `Color::DarkGray`/`Color::Gray`, no bold, no lighter stand-in color) so it
+  never looks focused while another region actually has focus.
 
 ### Worker Thread Lifecycle (intentional asymmetry)
 
@@ -201,7 +208,7 @@ PTY 관리는 portable-pty 기반 `PtyBackend` 단일 구현으로 정리됐다.
 - 컬러 테마 시스템(런타임 cycling) + commit log ahead/behind(upstream tracking) 표시
 - commit log 페이지네이션 + 백그라운드 prefetch (대형 저장소에서 초기 진입 속도 개선)
 - 시작 시 예약 명령(`[[startup_command]]`/`--exec`)으로 터미널 pane 자동 생성·실행
-- split-view 터미널: 여러 pane을 탭 전환 없이 balanced grid로 동시 렌더링(활성 pane accent 테두리, hidden pane `+N` 마커)
+- split-view 터미널: 여러 pane을 탭 전환 없이 balanced grid로 동시 렌더링(Terminal에 포커스가 있을 때만 활성 pane accent 테두리, 그 외엔 비활성 pane과 동일한 색, hidden pane `+N` 마커)
 
 ## Future Refactor Notes
 

@@ -217,7 +217,7 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect, accent: Color) {
         pane_count,
         app.terminal.max_visible(),
     );
-    render_tab_bar(frame, app, tab_area, accent, visible.clone());
+    render_tab_bar(frame, app, tab_area, accent, focused, visible.clone());
 
     let cells = visible_pane_cells(app, content_area);
     if cells.is_empty() {
@@ -233,7 +233,12 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect, accent: Color) {
         let i = visible.start + offset;
         let is_active = i == app.terminal.active;
         if cell.bordered {
-            let pane_border_style = if is_active {
+            // `accent` means "this is where your keystrokes go right now" —
+            // reserved for Focus::Terminal, matching FileList/DiffViewer.
+            // Without real focus, the active pane must look identical to an
+            // inactive one (plain DarkGray) — any brighter treatment reads
+            // as focused when it isn't.
+            let pane_border_style = if is_active && focused {
                 Style::default().fg(accent)
             } else {
                 Style::default().fg(Color::DarkGray)
@@ -267,6 +272,7 @@ fn render_tab_bar(
     app: &App,
     tab_area: Rect,
     accent: Color,
+    focused: bool,
     visible: std::ops::Range<usize>,
 ) {
     let tab_spans: Vec<Span> = if app.terminal.panes.is_empty() {
@@ -287,7 +293,7 @@ fn render_tab_bar(
         spans.extend(app.terminal.panes[visible.clone()].iter().enumerate().map(
             |(offset, pane)| {
                 let i = visible.start + offset;
-                let style = if i == app.terminal.active {
+                let style = if i == app.terminal.active && focused {
                     Style::default()
                         .fg(Color::Black)
                         .bg(accent)
@@ -636,6 +642,7 @@ mod tests {
         let mut app = crate::app::tests::app_with_fake_backend();
         app.terminal.create_pane_with(None, Some("Alpha")).unwrap();
         app.terminal.create_pane_with(None, Some("Beta")).unwrap();
+        app.focus = Focus::Terminal;
         let accent = Color::Yellow;
         let mut terminal = Terminal::new(TestBackend::new(60, 20)).unwrap();
 
@@ -653,6 +660,38 @@ mod tests {
         assert!(
             buf.content.iter().any(|cell| cell.fg == Color::DarkGray),
             "expected the inactive pane's border in dark gray"
+        );
+    }
+
+    #[test]
+    fn split_view_active_pane_matches_inactive_style_when_terminal_unfocused() {
+        // Regression guard: accent (and any brighter stand-in for it) must
+        // mean "keystrokes go here right now". When Diff/FileList holds
+        // focus, the terminal's active pane must render pixel-identical to
+        // an inactive pane — no accent, no bold, no lighter gray — otherwise
+        // it still reads as focused when it isn't.
+        let mut app = crate::app::tests::app_with_fake_backend();
+        app.terminal.create_pane_with(None, Some("Alpha")).unwrap();
+        app.terminal.create_pane_with(None, Some("Beta")).unwrap();
+        app.focus = Focus::DiffViewer;
+        let accent = Color::Yellow;
+        let mut terminal = Terminal::new(TestBackend::new(60, 20)).unwrap();
+
+        terminal
+            .draw(|frame| {
+                render(frame, &app, frame.area(), accent);
+            })
+            .unwrap();
+
+        let buf = terminal.backend().buffer();
+        assert!(
+            !buf.content.iter().any(|cell| cell.fg == accent || cell.fg == Color::White),
+            "terminal must not show accent or white anywhere while unfocused"
+        );
+        assert!(
+            !buf.content.iter().any(|cell| cell.modifier.contains(Modifier::BOLD)
+                && cell.bg == accent),
+            "active pane tab must not carry an accent-bolded highlight while unfocused"
         );
     }
 
