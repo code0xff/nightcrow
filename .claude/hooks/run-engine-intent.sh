@@ -26,7 +26,11 @@ get_automation_value() {
 }
 
 shell_quote() {
-  printf "%q" "$1"
+  # bash 3.2's `printf %q` (macOS default /bin/bash) byte-escapes multibyte
+  # UTF-8 characters, which then breaks `sed` under a UTF-8 locale with
+  # "illegal byte sequence". Single-quote wrapping is byte-safe for any
+  # locale since it only special-cases the ASCII `'` character.
+  printf "'%s'" "$(printf '%s' "$1" | sed "s/'/'\\\\''/g")"
 }
 
 sed_escape_replacement() {
