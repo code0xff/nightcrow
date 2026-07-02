@@ -253,7 +253,8 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect, accent: Color) {
         if cell.content.width == 0 || cell.content.height == 0 {
             continue;
         }
-        let screen_lines = build_screen_lines(app, cell.id, cell.content.height, cell.content.width);
+        let screen_lines =
+            build_screen_lines(app, cell.id, cell.content.height, cell.content.width);
         frame.render_widget(Paragraph::new(screen_lines), cell.content);
         if is_active {
             render_cursor(frame, app, cell.id, cell.content);
@@ -565,7 +566,10 @@ mod tests {
             let cells = split_pane_areas(area, count);
             assert_eq!(cells.len(), count, "count={count}");
             for cell in cells {
-                assert!(cell.width > 0 && cell.height > 0, "count={count} cell={cell:?}");
+                assert!(
+                    cell.width > 0 && cell.height > 0,
+                    "count={count} cell={cell:?}"
+                );
             }
         }
     }

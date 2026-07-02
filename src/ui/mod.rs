@@ -446,7 +446,8 @@ mod tests {
         let mut app = app_with_files(vec!["a.rs"]);
         app.toggle_diff_fullscreen();
 
-        let areas = terminal_content_areas(&app, Rect::new(0, 0, 100, 40), &LayoutConfig::default());
+        let areas =
+            terminal_content_areas(&app, Rect::new(0, 0, 100, 40), &LayoutConfig::default());
 
         assert!(areas.is_empty());
     }
@@ -460,7 +461,8 @@ mod tests {
         });
         app.toggle_terminal_fullscreen();
 
-        let areas = terminal_content_areas(&app, Rect::new(0, 0, 100, 40), &LayoutConfig::default());
+        let areas =
+            terminal_content_areas(&app, Rect::new(0, 0, 100, 40), &LayoutConfig::default());
 
         // Full screen keeps the top header and bottom hint bar, then the
         // terminal widget consumes one tab row and the top/bottom border rows.

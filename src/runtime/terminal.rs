@@ -116,14 +116,19 @@ impl TerminalState {
     /// Last known content size for `id`, falling back to the default pane
     /// size for a pane that hasn't been through a layout resize yet.
     pub fn pane_size(&self, id: PaneId) -> (u16, u16) {
-        self.last_content_size.get(&id).copied().unwrap_or(self.size)
+        self.last_content_size
+            .get(&id)
+            .copied()
+            .unwrap_or(self.size)
     }
 
     /// Row count used for terminal-scroll paging: the active pane's own
     /// content height when known, otherwise the default pane size. Callers
     /// used to read `size` directly, which no longer tracks per-pane height.
     pub fn active_pane_rows(&self) -> usize {
-        self.active_pane_id().map(|id| self.pane_size(id).0 as usize).unwrap_or(self.size.0 as usize)
+        self.active_pane_id()
+            .map(|id| self.pane_size(id).0 as usize)
+            .unwrap_or(self.size.0 as usize)
     }
 
     /// Re-clamp `visible_start` against the current active pane and pane
@@ -131,7 +136,12 @@ impl TerminalState {
     /// `panes.len()` (focus jumps, pane create/close, session restore) so
     /// the split-view window always contains the active pane.
     pub fn sync_visible_window(&mut self) {
-        let range = visible_range(self.visible_start, self.active, self.panes.len(), self.max_visible());
+        let range = visible_range(
+            self.visible_start,
+            self.active,
+            self.panes.len(),
+            self.max_visible(),
+        );
         self.visible_start = range.start;
     }
 
@@ -223,9 +233,13 @@ impl TerminalState {
     /// the split-view window are omitted and keep their `last_content_size`
     /// until they become visible again.
     pub fn resize_visible_panes(&mut self, layouts: &[(PaneId, u16, u16)]) {
+        let active_id = self.active_pane_id();
         for &(id, rows, cols) in layouts {
             let rows = rows.max(1);
             let cols = cols.max(1);
+            if Some(id) == active_id {
+                self.size = (rows, cols);
+            }
             if self.last_content_size.get(&id) == Some(&(rows, cols)) {
                 continue;
             }
@@ -779,6 +793,20 @@ mod tests {
         let id = state.panes[0].id;
         state.resize_visible_panes(&[(id, 33, 90)]);
         assert_eq!(state.active_pane_rows(), 33);
+    }
+
+    #[test]
+    fn resize_visible_panes_keeps_default_size_in_sync_with_active_pane() {
+        let mut state = state_with_fake();
+        state.create_pane().unwrap();
+        let first_id = state.panes[0].id;
+        state.create_pane().unwrap();
+        let second_id = state.panes[1].id;
+        state.active = 1;
+
+        state.resize_visible_panes(&[(first_id, 10, 40), (second_id, 12, 50)]);
+
+        assert_eq!(state.size, (12, 50));
     }
 
     #[test]
