@@ -652,7 +652,7 @@ mod tests {
 
         state.close_active();
 
-        assert!(state.last_content_size.get(&id).is_none());
+        assert!(!state.last_content_size.contains_key(&id));
     }
 
     #[test]

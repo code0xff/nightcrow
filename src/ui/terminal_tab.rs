@@ -1,4 +1,5 @@
 use crate::app::{App, Focus};
+use crate::backend::PaneId;
 use ratatui::{
     Frame,
     layout::{Constraint, Direction, Layout, Position, Rect},
@@ -175,25 +176,105 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect, accent: Color) {
         return;
     };
 
-    // ── Tab bar ──────────────────────────────────────────────
+    let pane_count = app.terminal.panes.len();
+    let visible = visible_range(
+        app.terminal.visible_start,
+        app.terminal.active,
+        pane_count,
+        app.terminal.max_visible(),
+    );
+
+    render_tab_bar(frame, app, tab_area, accent, visible.clone());
+
+    if visible.is_empty() {
+        let screen_lines = vec![Line::from(Span::styled(
+            format!(" No terminal — press {} t to open one ", app.leader_label()),
+            Style::default().fg(Color::DarkGray),
+        ))];
+        frame.render_widget(Paragraph::new(screen_lines), content_area);
+        return;
+    }
+
+    let visible_ids: Vec<PaneId> = app.terminal.panes[visible.clone()]
+        .iter()
+        .map(|p| p.id)
+        .collect();
+
+    if visible_ids.len() == 1 {
+        // The common case — one pane fills the whole area exactly as before
+        // split view existed: no per-cell border, content runs edge-to-edge
+        // so copying terminal output never picks up a stray `│`.
+        let id = visible_ids[0];
+        let screen_lines = build_screen_lines(app, id, content_area.height, content_area.width);
+        frame.render_widget(Paragraph::new(screen_lines), content_area);
+        render_cursor(frame, app, id, content_area);
+        return;
+    }
+
+    let cells = split_pane_areas(content_area, visible_ids.len());
+    for (offset, (&id, &cell)) in visible_ids.iter().zip(cells.iter()).enumerate() {
+        let i = visible.start + offset;
+        let is_active = i == app.terminal.active;
+        let pane_border_style = if is_active {
+            Style::default().fg(accent)
+        } else {
+            Style::default().fg(Color::DarkGray)
+        };
+        let pane_title = app
+            .terminal
+            .panes
+            .get(i)
+            .map(|p| truncate_tab_title(&p.title, TAB_TITLE_MAX_CHARS))
+            .unwrap_or_default();
+        let cell_block = Block::default()
+            .borders(Borders::ALL)
+            .border_style(pane_border_style)
+            .title(format!(" {pane_title} "));
+        let inner = cell_block.inner(cell);
+        frame.render_widget(cell_block, cell);
+        if inner.width == 0 || inner.height == 0 {
+            continue;
+        }
+        let screen_lines = build_screen_lines(app, id, inner.height, inner.width);
+        frame.render_widget(Paragraph::new(screen_lines), inner);
+        if is_active {
+            render_cursor(frame, app, id, inner);
+        }
+    }
+}
+
+fn render_tab_bar(
+    frame: &mut Frame,
+    app: &App,
+    tab_area: Rect,
+    accent: Color,
+    visible: std::ops::Range<usize>,
+) {
     let tab_spans: Vec<Span> = if app.terminal.panes.is_empty() {
         vec![Span::styled(
             format!(" {} t: new terminal ", app.leader_label()),
             Style::default().fg(Color::DarkGray),
         )]
     } else {
-        app.terminal
-            .panes
-            .iter()
-            .enumerate()
-            .map(|(i, pane)| {
+        let hidden_before = visible.start;
+        let hidden_after = app.terminal.panes.len().saturating_sub(visible.end);
+        let mut spans = Vec::new();
+        if hidden_before > 0 {
+            spans.push(Span::styled(
+                format!(" +{hidden_before} "),
+                Style::default().fg(Color::DarkGray),
+            ));
+        }
+        spans.extend(app.terminal.panes[visible.clone()].iter().enumerate().map(
+            |(offset, pane)| {
+                let i = visible.start + offset;
                 let style = if i == app.terminal.active {
                     Style::default()
                         .fg(Color::Black)
                         .bg(accent)
                         .add_modifier(Modifier::BOLD)
                 } else {
-                    Style::default().fg(Color::DarkGray)
+                    Style::default().fg(Color::Gray)
                 };
                 // F3..=F9 (and the matching `<prefix> 3..9` digits) are wired
                 // to panes 0..=6 in `input`; show the binding so the tab bar
@@ -206,21 +287,23 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect, accent: Color) {
                     format!(" {} ", title)
                 };
                 Span::styled(label, style)
-            })
-            .collect()
+            },
+        ));
+        if hidden_after > 0 {
+            spans.push(Span::styled(
+                format!(" +{hidden_after} "),
+                Style::default().fg(Color::DarkGray),
+            ));
+        }
+        spans
     };
     frame.render_widget(Paragraph::new(Line::from(tab_spans)), tab_area);
-
-    // ── Terminal screen ───────────────────────────────────────
-    let screen_lines = build_screen_lines(app, content_area.height, content_area.width);
-    frame.render_widget(Paragraph::new(screen_lines), content_area);
-    render_cursor(frame, app, content_area);
 }
 
-fn build_screen_lines(app: &App, rows: u16, cols: u16) -> Vec<Line<'static>> {
-    let Some(screen) = app.active_screen() else {
+fn build_screen_lines(app: &App, pane_id: PaneId, rows: u16, cols: u16) -> Vec<Line<'static>> {
+    let Some(screen) = app.terminal.screen_for_pane(pane_id) else {
         return vec![Line::from(Span::styled(
-            format!(" No terminal — press {} t to open one ", app.leader_label()),
+            " (no output) ",
             Style::default().fg(Color::DarkGray),
         ))];
     };
@@ -268,7 +351,7 @@ fn build_screen_lines(app: &App, rows: u16, cols: u16) -> Vec<Line<'static>> {
         .collect()
 }
 
-fn render_cursor(frame: &mut Frame, app: &App, area: Rect) {
+fn render_cursor(frame: &mut Frame, app: &App, pane_id: PaneId, area: Rect) {
     if app.focus != Focus::Terminal {
         return;
     }
@@ -276,7 +359,7 @@ fn render_cursor(frame: &mut Frame, app: &App, area: Rect) {
         return;
     }
 
-    let Some(screen) = app.active_screen() else {
+    let Some(screen) = app.terminal.screen_for_pane(pane_id) else {
         return;
     };
     let Some(position) = screen_cursor_position(screen, area) else {
@@ -501,5 +584,106 @@ mod tests {
     #[test]
     fn split_pane_areas_empty_for_zero_count() {
         assert!(split_pane_areas(Rect::new(0, 0, 80, 24), 0).is_empty());
+    }
+
+    fn buffer_text(buf: &ratatui::buffer::Buffer) -> String {
+        buf.content.iter().map(|c| c.symbol()).collect()
+    }
+
+    #[test]
+    fn single_pane_render_still_has_no_left_border_character() {
+        // Regression guard for split-view acceptance criterion 9: with only
+        // one pane, render() must take the no-cell-border branch, matching
+        // pre-split-view behaviour exactly (clean copy-paste, no `│`).
+        let mut app = crate::app::tests::app_with_fake_backend();
+        app.terminal.create_pane_with(None, Some("Solo")).unwrap();
+        let area = Rect::new(0, 0, 40, 10);
+        let mut terminal = Terminal::new(TestBackend::new(40, 10)).unwrap();
+
+        terminal
+            .draw(|frame| {
+                render(frame, &app, area, Color::Yellow);
+            })
+            .unwrap();
+
+        let content = content_area(area).unwrap();
+        let buf = terminal.backend().buffer();
+        for y in content.top()..content.bottom() {
+            let cell = buf.cell((content.x, y)).unwrap();
+            assert_ne!(
+                cell.symbol(),
+                "│",
+                "single pane must not draw a left border at y={y}"
+            );
+        }
+    }
+
+    #[test]
+    fn split_view_renders_multiple_panes_simultaneously() {
+        let mut app = crate::app::tests::app_with_fake_backend();
+        app.terminal.create_pane_with(None, Some("Alpha")).unwrap();
+        app.terminal.create_pane_with(None, Some("Beta")).unwrap();
+        let mut terminal = Terminal::new(TestBackend::new(60, 20)).unwrap();
+
+        terminal
+            .draw(|frame| {
+                render(frame, &app, frame.area(), Color::Yellow);
+            })
+            .unwrap();
+
+        let text = buffer_text(terminal.backend().buffer());
+        assert!(
+            text.contains("Alpha") && text.contains("Beta"),
+            "expected both pane titles visible at once, got: {text}"
+        );
+    }
+
+    #[test]
+    fn split_view_borders_active_pane_in_accent_color() {
+        let mut app = crate::app::tests::app_with_fake_backend();
+        app.terminal.create_pane_with(None, Some("Alpha")).unwrap();
+        app.terminal.create_pane_with(None, Some("Beta")).unwrap();
+        let accent = Color::Yellow;
+        let mut terminal = Terminal::new(TestBackend::new(60, 20)).unwrap();
+
+        terminal
+            .draw(|frame| {
+                render(frame, &app, frame.area(), accent);
+            })
+            .unwrap();
+
+        let buf = terminal.backend().buffer();
+        assert!(
+            buf.content.iter().any(|cell| cell.fg == accent),
+            "expected the active pane's border/title in accent color"
+        );
+        assert!(
+            buf.content.iter().any(|cell| cell.fg == Color::DarkGray),
+            "expected the inactive pane's border in dark gray"
+        );
+    }
+
+    #[test]
+    fn tab_bar_marks_hidden_panes_beyond_max_visible() {
+        let mut app = crate::app::tests::app_with_fake_backend();
+        for i in 0..5 {
+            app.terminal
+                .create_pane_with(None, Some(&format!("P{i}")))
+                .unwrap();
+        }
+        assert_eq!(app.terminal.max_visible_normal, 4);
+        let mut terminal = Terminal::new(TestBackend::new(80, 20)).unwrap();
+
+        terminal
+            .draw(|frame| {
+                render(frame, &app, frame.area(), Color::Yellow);
+            })
+            .unwrap();
+
+        let text = buffer_text(terminal.backend().buffer());
+        assert!(
+            text.contains('+'),
+            "expected a hidden-pane count marker, got: {text}"
+        );
     }
 }
