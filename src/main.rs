@@ -271,21 +271,13 @@ fn main_loop(
         app.poll_commit_log_page_fetch();
 
         let size = terminal.size()?;
-        if let Some(area) =
-            ui::terminal_content_area(app, Rect::new(0, 0, size.width, size.height), &cfg.layout)
-        {
-            // TODO(split-view WS2/WS3): still resizes every pane to one shared
-            // Rect. Once the renderer produces per-pane cell Rects, this must
-            // switch to only the currently visible panes' individual sizes.
-            let layouts: Vec<(backend::PaneId, u16, u16)> = app
-                .terminal
-                .panes
-                .iter()
-                .map(|p| (p.id, area.height, area.width))
+        let layouts: Vec<(backend::PaneId, u16, u16)> =
+            ui::terminal_content_areas(app, Rect::new(0, 0, size.width, size.height), &cfg.layout)
+                .into_iter()
+                .map(|(id, area)| (id, area.height, area.width))
                 .collect();
-            app.terminal.resize_visible_panes(&layouts);
-            app.terminal.sync_scroll();
-        }
+        app.terminal.resize_visible_panes(&layouts);
+        app.terminal.sync_scroll();
 
         let accent = app.current_accent();
         terminal.draw(|frame| {
@@ -590,11 +582,11 @@ fn handle_repo_input_key(app: &mut App, key: KeyEvent) {
 fn handle_terminal_key(app: &mut App, key: KeyEvent, action: Action) {
     match action {
         Action::TermScrollUp => {
-            let lines = app.terminal.size.0 as usize;
+            let lines = app.terminal.active_pane_rows();
             app.terminal.scroll_up(lines);
         }
         Action::TermScrollDown => {
-            let lines = app.terminal.size.0 as usize;
+            let lines = app.terminal.active_pane_rows();
             app.terminal.scroll_down(lines);
         }
         Action::TermScrollLineUp => app.terminal.scroll_up(3),

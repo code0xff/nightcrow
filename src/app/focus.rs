@@ -102,6 +102,7 @@ impl App {
             let len = self.terminal.panes.len();
             if len > 0 {
                 self.terminal.active = (self.terminal.active + 1) % len;
+                self.terminal.sync_visible_window();
             }
             return;
         }
@@ -112,6 +113,7 @@ impl App {
             Focus::DiffViewer => {
                 if !self.terminal.panes.is_empty() {
                     self.terminal.active = 0;
+                    self.terminal.sync_visible_window();
                     self.focus = Focus::Terminal;
                 } else {
                     self.focus = Focus::FileList;
@@ -120,6 +122,7 @@ impl App {
             Focus::Terminal => {
                 if self.terminal.active + 1 < self.terminal.panes.len() {
                     self.terminal.active += 1;
+                    self.terminal.sync_visible_window();
                 } else {
                     self.focus = Focus::FileList;
                 }
@@ -135,6 +138,7 @@ impl App {
             let len = self.terminal.panes.len();
             if len > 0 {
                 self.terminal.active = (self.terminal.active + len - 1) % len;
+                self.terminal.sync_visible_window();
             }
             return;
         }
@@ -142,6 +146,7 @@ impl App {
             Focus::FileList => {
                 if !self.terminal.panes.is_empty() {
                     self.terminal.active = self.terminal.panes.len() - 1;
+                    self.terminal.sync_visible_window();
                     self.focus = Focus::Terminal;
                 } else {
                     self.focus = Focus::DiffViewer;
@@ -153,6 +158,7 @@ impl App {
             Focus::Terminal => {
                 if self.terminal.active > 0 {
                     self.terminal.active -= 1;
+                    self.terminal.sync_visible_window();
                 } else {
                     self.focus = Focus::DiffViewer;
                 }

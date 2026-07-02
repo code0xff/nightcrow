@@ -44,6 +44,7 @@ impl App {
         // program immediately on first launch.
         if !self.terminal.panes.is_empty() {
             self.terminal.active = 0;
+            self.terminal.sync_visible_window();
             self.focus = Focus::Terminal;
         }
     }
@@ -93,11 +94,18 @@ impl App {
         } else {
             self.terminal.active = self.terminal.active.min(self.terminal.panes.len() - 1);
         }
+        // The pane count (and possibly `active`) just changed — re-clamp the
+        // split-view window so it still points at real panes.
+        self.terminal.sync_visible_window();
     }
 
+    /// Move terminal focus to pane `idx`. This is a focus jump, not a tab
+    /// switch: every visible pane keeps rendering, this only changes which
+    /// one is active (cursor, input, and the accent-bordered cell).
     pub fn switch_pane(&mut self, idx: usize) {
         if idx < self.terminal.panes.len() {
             self.terminal.active = idx;
+            self.terminal.sync_visible_window();
             self.focus = Focus::Terminal;
             // Pressing F1..=F9 is a request to interact with a terminal pane;
             // drop any competing fullscreen so focus, render, and hints stay

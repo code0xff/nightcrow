@@ -40,6 +40,9 @@ impl App {
         self.terminal.active = state
             .active_pane
             .min(self.terminal.panes.len().saturating_sub(1));
+        // `visible_start` isn't persisted (MVP scope) — recompute it fresh
+        // from the restored active pane so the split-view window contains it.
+        self.terminal.sync_visible_window();
         if let Some(focus) = state.focus {
             if focus == Focus::Terminal && self.terminal.panes.is_empty() {
                 self.focus = Focus::FileList;

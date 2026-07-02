@@ -1,5 +1,6 @@
 use crate::app::{App, Focus};
 use crate::backend::PaneId;
+use crate::runtime::terminal::visible_range;
 use ratatui::{
     Frame,
     layout::{Constraint, Direction, Layout, Position, Rect},
@@ -34,10 +35,6 @@ fn truncate_tab_title(title: &str, max: usize) -> String {
     out
 }
 
-pub(crate) fn content_area(area: Rect) -> Option<Rect> {
-    terminal_layout(area).map(|(_, content)| content)
-}
-
 fn terminal_layout(area: Rect) -> Option<(Rect, Rect)> {
     let inner = Block::default().borders(TERMINAL_BORDERS).inner(area);
     if inner.height == 0 || inner.width == 0 {
@@ -48,33 +45,6 @@ fn terminal_layout(area: Rect) -> Option<(Rect, Rect)> {
         .constraints([Constraint::Length(1), Constraint::Min(0)])
         .split(inner);
     Some((chunks[0], chunks[1]))
-}
-
-/// Compute the visible pane-index window `[start, start+len)` for a split
-/// grid capped at `max_visible` panes. `prev_start` is the previous window's
-/// start (0 for a fresh terminal); the window is nudged the minimum amount
-/// needed to keep `active` inside it, rather than re-centering every call —
-/// so paging through panes one at a time doesn't reshuffle the whole grid.
-pub(crate) fn visible_range(
-    prev_start: usize,
-    active: usize,
-    pane_count: usize,
-    max_visible: usize,
-) -> std::ops::Range<usize> {
-    if pane_count == 0 || max_visible == 0 {
-        return 0..0;
-    }
-    let window = max_visible.min(pane_count);
-    let active = active.min(pane_count - 1);
-    let max_start = pane_count - window;
-
-    let mut start = prev_start.min(max_start);
-    if active < start {
-        start = active;
-    } else if active >= start + window {
-        start = active + 1 - window;
-    }
-    start..(start + window)
 }
 
 /// Split `area` into `count` cells using a balanced grid: 1 pane fills the
@@ -151,6 +121,70 @@ fn split_by_row_plan(area: Rect, plan: &[usize]) -> Vec<Rect> {
     result
 }
 
+/// One visible split-view cell: `outer` is the full grid cell (border +
+/// content), `content` is where the PTY screen actually draws. For the
+/// single-pane case `outer == content` and `bordered` is `false` — no cell
+/// border is drawn, matching pre-split-view rendering exactly.
+struct VisiblePaneCell {
+    id: PaneId,
+    outer: Rect,
+    content: Rect,
+    bordered: bool,
+}
+
+/// Lay out every currently visible pane inside `content_area` (the terminal
+/// body, i.e. below the tab row). This is the single source of truth for
+/// pane sizing: `render` draws from it and `visible_pane_content_areas` (used
+/// to resize each pane's PTY) reads from it, so a pane's backend/vt100 size
+/// always matches what's actually drawn on screen.
+fn visible_pane_cells(app: &App, content_area: Rect) -> Vec<VisiblePaneCell> {
+    let pane_count = app.terminal.panes.len();
+    let visible = visible_range(
+        app.terminal.visible_start,
+        app.terminal.active,
+        pane_count,
+        app.terminal.max_visible(),
+    );
+    if visible.is_empty() {
+        return Vec::new();
+    }
+    let visible_ids: Vec<PaneId> = app.terminal.panes[visible].iter().map(|p| p.id).collect();
+
+    if visible_ids.len() == 1 {
+        return vec![VisiblePaneCell {
+            id: visible_ids[0],
+            outer: content_area,
+            content: content_area,
+            bordered: false,
+        }];
+    }
+
+    let outers = split_pane_areas(content_area, visible_ids.len());
+    visible_ids
+        .into_iter()
+        .zip(outers)
+        .map(|(id, outer)| VisiblePaneCell {
+            id,
+            outer,
+            content: Block::default().borders(Borders::ALL).inner(outer),
+            bordered: true,
+        })
+        .collect()
+}
+
+/// Content Rect (post border) for every currently visible pane, keyed by
+/// pane id. Used by the main loop to resize each pane's backend PTY and
+/// vt100 parser to exactly what `render` draws inside it.
+pub(crate) fn visible_pane_content_areas(app: &App, area: Rect) -> Vec<(PaneId, Rect)> {
+    let Some((_, content_area)) = terminal_layout(area) else {
+        return Vec::new();
+    };
+    visible_pane_cells(app, content_area)
+        .into_iter()
+        .map(|cell| (cell.id, cell.content))
+        .collect()
+}
+
 pub fn render(frame: &mut Frame, app: &App, area: Rect, accent: Color) {
     let focused = app.focus == Focus::Terminal;
     let border_style = super::focused_border_style(focused, accent);
@@ -183,10 +217,10 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect, accent: Color) {
         pane_count,
         app.terminal.max_visible(),
     );
-
     render_tab_bar(frame, app, tab_area, accent, visible.clone());
 
-    if visible.is_empty() {
+    let cells = visible_pane_cells(app, content_area);
+    if cells.is_empty() {
         let screen_lines = vec![Line::from(Span::styled(
             format!(" No terminal — press {} t to open one ", app.leader_label()),
             Style::default().fg(Color::DarkGray),
@@ -195,50 +229,34 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect, accent: Color) {
         return;
     }
 
-    let visible_ids: Vec<PaneId> = app.terminal.panes[visible.clone()]
-        .iter()
-        .map(|p| p.id)
-        .collect();
-
-    if visible_ids.len() == 1 {
-        // The common case — one pane fills the whole area exactly as before
-        // split view existed: no per-cell border, content runs edge-to-edge
-        // so copying terminal output never picks up a stray `│`.
-        let id = visible_ids[0];
-        let screen_lines = build_screen_lines(app, id, content_area.height, content_area.width);
-        frame.render_widget(Paragraph::new(screen_lines), content_area);
-        render_cursor(frame, app, id, content_area);
-        return;
-    }
-
-    let cells = split_pane_areas(content_area, visible_ids.len());
-    for (offset, (&id, &cell)) in visible_ids.iter().zip(cells.iter()).enumerate() {
+    for (offset, cell) in cells.iter().enumerate() {
         let i = visible.start + offset;
         let is_active = i == app.terminal.active;
-        let pane_border_style = if is_active {
-            Style::default().fg(accent)
-        } else {
-            Style::default().fg(Color::DarkGray)
-        };
-        let pane_title = app
-            .terminal
-            .panes
-            .get(i)
-            .map(|p| truncate_tab_title(&p.title, TAB_TITLE_MAX_CHARS))
-            .unwrap_or_default();
-        let cell_block = Block::default()
-            .borders(Borders::ALL)
-            .border_style(pane_border_style)
-            .title(format!(" {pane_title} "));
-        let inner = cell_block.inner(cell);
-        frame.render_widget(cell_block, cell);
-        if inner.width == 0 || inner.height == 0 {
+        if cell.bordered {
+            let pane_border_style = if is_active {
+                Style::default().fg(accent)
+            } else {
+                Style::default().fg(Color::DarkGray)
+            };
+            let pane_title = app
+                .terminal
+                .panes
+                .get(i)
+                .map(|p| truncate_tab_title(&p.title, TAB_TITLE_MAX_CHARS))
+                .unwrap_or_default();
+            let cell_block = Block::default()
+                .borders(Borders::ALL)
+                .border_style(pane_border_style)
+                .title(format!(" {pane_title} "));
+            frame.render_widget(cell_block, cell.outer);
+        }
+        if cell.content.width == 0 || cell.content.height == 0 {
             continue;
         }
-        let screen_lines = build_screen_lines(app, id, inner.height, inner.width);
-        frame.render_widget(Paragraph::new(screen_lines), inner);
+        let screen_lines = build_screen_lines(app, cell.id, cell.content.height, cell.content.width);
+        frame.render_widget(Paragraph::new(screen_lines), cell.content);
         if is_active {
-            render_cursor(frame, app, id, inner);
+            render_cursor(frame, app, cell.id, cell.content);
         }
     }
 }
@@ -465,7 +483,7 @@ mod tests {
         // The terminal content must reach both pane edges so copied output never
         // includes a `│`. Side borders would inset x by 1 and shrink width by 2.
         let area = Rect::new(0, 0, 40, 10);
-        let content = content_area(area).unwrap();
+        let (_, content) = terminal_layout(area).unwrap();
 
         assert_eq!(content.x, area.x);
         assert_eq!(content.width, area.width);
@@ -484,35 +502,6 @@ mod tests {
             .unwrap();
 
         assert_eq!(app.terminal.size, (3, 10));
-    }
-
-    #[test]
-    fn visible_range_shows_everything_under_the_cap() {
-        assert_eq!(visible_range(0, 0, 3, 4), 0..3);
-    }
-
-    #[test]
-    fn visible_range_keeps_active_inside_a_capped_window() {
-        // 7 panes, window of 4, active is the last pane: window must end at 7.
-        assert_eq!(visible_range(0, 6, 7, 4), 3..7);
-    }
-
-    #[test]
-    fn visible_range_moves_start_forward_only_as_far_as_needed() {
-        // Previously showing [2,6). Active moves to 6 (just past the window):
-        // start should shift by exactly 1, not jump to re-center.
-        assert_eq!(visible_range(2, 6, 7, 4), 3..7);
-    }
-
-    #[test]
-    fn visible_range_moves_start_backward_when_active_precedes_window() {
-        // Previously showing [3,7). Active jumps back to 0.
-        assert_eq!(visible_range(3, 0, 7, 4), 0..4);
-    }
-
-    #[test]
-    fn visible_range_empty_when_no_panes() {
-        assert_eq!(visible_range(0, 0, 0, 4), 0..0);
     }
 
     #[test]
@@ -606,7 +595,7 @@ mod tests {
             })
             .unwrap();
 
-        let content = content_area(area).unwrap();
+        let (_, content) = terminal_layout(area).unwrap();
         let buf = terminal.backend().buffer();
         for y in content.top()..content.bottom() {
             let cell = buf.cell((content.x, y)).unwrap();

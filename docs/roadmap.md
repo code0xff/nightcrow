@@ -186,14 +186,14 @@
 - Goal: split view 렌더러
 - Deliverables: `ui::terminal_tab` grid 렌더링(`terminal_content_areas`), active pane accent 테두리/타이틀, `build_screen_lines(app, pane_id, rows, cols)`, cursor는 active pane Rect 기준, 빈 pane placeholder
 - Exit Criteria: 2 pane 이상에서 각 pane vt100 화면이 동시에 렌더링됨, `TestBackend` 렌더 테스트로 2 pane 동시 표시 검증, `cargo test` 통과
-- status: pending
+- status: done
 
 ### Workstream 3
 
 - Goal: resize 통합 + 포커스/키바인딩/tab bar 의미 변경
 - Deliverables: `main_loop` resize를 pane별 `terminal_content_areas` 기반으로 변경, terminal scroll을 active pane 기준으로 정리, `switch_pane`/`cycle_focus_forward/backward`를 visible window 이동 포함하도록 재정의, tab bar를 visible/active/hidden 상태 표시로 변경(hidden `+N` marker), close/exit 시 `last_content_size`/`visible_start` clamp, 키바인딩 힌트 문구 갱신("switch tab" 제거)
 - Exit Criteria: pane 제거/추가/포커스 이동 후 active/visible 상태가 깨지지 않음, session restore 후 active pane 유지, `cargo test` 통과
-- status: pending
+- status: done
 
 ### Workstream 4
 

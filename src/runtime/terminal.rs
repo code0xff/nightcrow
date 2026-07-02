@@ -47,6 +47,35 @@ pub const MAX_VISIBLE_NORMAL: usize = 4;
 /// fullscreen (still bounded by the F3–F9 direct-jump range).
 pub const MAX_VISIBLE_FULLSCREEN: usize = 7;
 
+/// Compute the visible pane-index window `[start, start+len)` for a split
+/// grid capped at `max_visible` panes. `prev_start` is the previous window's
+/// start (0 for a fresh terminal); the window is nudged the minimum amount
+/// needed to keep `active` inside it, rather than re-centering every call —
+/// so paging through panes one at a time doesn't reshuffle the whole grid.
+/// Shared by `TerminalState::sync_visible_window` (state update) and
+/// `ui::terminal_tab` (rendering) so both always agree on what's visible.
+pub(crate) fn visible_range(
+    prev_start: usize,
+    active: usize,
+    pane_count: usize,
+    max_visible: usize,
+) -> std::ops::Range<usize> {
+    if pane_count == 0 || max_visible == 0 {
+        return 0..0;
+    }
+    let window = max_visible.min(pane_count);
+    let active = active.min(pane_count - 1);
+    let max_start = pane_count - window;
+
+    let mut start = prev_start.min(max_start);
+    if active < start {
+        start = active;
+    } else if active >= start + window {
+        start = active + 1 - window;
+    }
+    start..(start + window)
+}
+
 pub struct TerminalState {
     pub panes: Vec<PaneInfo>,
     pub active: usize,
@@ -88,6 +117,22 @@ impl TerminalState {
     /// size for a pane that hasn't been through a layout resize yet.
     pub fn pane_size(&self, id: PaneId) -> (u16, u16) {
         self.last_content_size.get(&id).copied().unwrap_or(self.size)
+    }
+
+    /// Row count used for terminal-scroll paging: the active pane's own
+    /// content height when known, otherwise the default pane size. Callers
+    /// used to read `size` directly, which no longer tracks per-pane height.
+    pub fn active_pane_rows(&self) -> usize {
+        self.active_pane_id().map(|id| self.pane_size(id).0 as usize).unwrap_or(self.size.0 as usize)
+    }
+
+    /// Re-clamp `visible_start` against the current active pane and pane
+    /// count. Must be called after anything that changes `active` or
+    /// `panes.len()` (focus jumps, pane create/close, session restore) so
+    /// the split-view window always contains the active pane.
+    pub fn sync_visible_window(&mut self) {
+        let range = visible_range(self.visible_start, self.active, self.panes.len(), self.max_visible());
+        self.visible_start = range.start;
     }
 
     pub fn scroll_up(&mut self, lines: usize) {
@@ -310,6 +355,7 @@ impl TerminalState {
         };
         self.panes.push(PaneInfo { id, title });
         self.active = self.panes.len() - 1;
+        self.sync_visible_window();
         tracing::info!(pane = id, "terminal pane opened");
         Ok(())
     }
@@ -663,5 +709,81 @@ mod tests {
         assert_eq!(state.max_visible(), 4);
         state.fullscreen = true;
         assert_eq!(state.max_visible(), 7);
+    }
+
+    #[test]
+    fn visible_range_shows_everything_under_the_cap() {
+        assert_eq!(visible_range(0, 0, 3, 4), 0..3);
+    }
+
+    #[test]
+    fn visible_range_keeps_active_inside_a_capped_window() {
+        // 7 panes, window of 4, active is the last pane: window must end at 7.
+        assert_eq!(visible_range(0, 6, 7, 4), 3..7);
+    }
+
+    #[test]
+    fn visible_range_moves_start_forward_only_as_far_as_needed() {
+        // Previously showing [2,6). Active moves to 6 (just past the window):
+        // start should shift by exactly 1, not jump to re-center.
+        assert_eq!(visible_range(2, 6, 7, 4), 3..7);
+    }
+
+    #[test]
+    fn visible_range_moves_start_backward_when_active_precedes_window() {
+        // Previously showing [3,7). Active jumps back to 0.
+        assert_eq!(visible_range(3, 0, 7, 4), 0..4);
+    }
+
+    #[test]
+    fn visible_range_empty_when_no_panes() {
+        assert_eq!(visible_range(0, 0, 0, 4), 0..0);
+    }
+
+    #[test]
+    fn sync_visible_window_follows_active_when_panes_exceed_max_visible() {
+        let mut state = state_with_fake();
+        state.max_visible_normal = 4;
+        for i in 0..7 {
+            state
+                .create_pane_with(None, Some(&format!("P{i}")))
+                .unwrap();
+        }
+        // Each create_pane_with call makes the new pane active and syncs the
+        // window, so after 7 panes the last one (index 6) must be visible.
+        assert_eq!(state.active, 6);
+        assert!(state.visible_start <= 6 && state.visible_start + 4 > 6);
+    }
+
+    #[test]
+    fn sync_visible_window_clamps_after_pane_count_shrinks() {
+        let mut state = state_with_fake();
+        state.max_visible_normal = 4;
+        for i in 0..7 {
+            state
+                .create_pane_with(None, Some(&format!("P{i}")))
+                .unwrap();
+        }
+        // Window is currently sliding near the end; drop back to a single
+        // pane and re-sync — start must fall back inside [0, 0].
+        state.panes.truncate(1);
+        state.active = 0;
+        state.sync_visible_window();
+        assert_eq!(state.visible_start, 0);
+    }
+
+    #[test]
+    fn active_pane_rows_uses_pane_specific_size() {
+        let mut state = state_with_fake();
+        state.create_pane().unwrap();
+        let id = state.panes[0].id;
+        state.resize_visible_panes(&[(id, 33, 90)]);
+        assert_eq!(state.active_pane_rows(), 33);
+    }
+
+    #[test]
+    fn active_pane_rows_falls_back_to_default_with_no_panes() {
+        let state = state_with_fake();
+        assert_eq!(state.active_pane_rows(), state.size.0 as usize);
     }
 }

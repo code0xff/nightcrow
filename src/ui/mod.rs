@@ -205,11 +205,25 @@ pub fn draw(
     frame.render_widget(render_hint_bar(app, accent), hint_area);
 }
 
-pub(crate) fn terminal_content_area(
+/// Content Rect (post border) for every currently visible terminal pane,
+/// keyed by pane id — `None` when the terminal panel isn't shown at all
+/// (diff/list fullscreen). Used to resize each pane's PTY to exactly the
+/// area `terminal_tab::render` draws it in.
+pub(crate) fn terminal_content_areas(
     app: &App,
     screen_area: Rect,
     layout: &LayoutConfig,
-) -> Option<Rect> {
+) -> Vec<(crate::backend::PaneId, Rect)> {
+    let Some(widget_area) = terminal_widget_area(app, screen_area, layout) else {
+        return Vec::new();
+    };
+    terminal_tab::visible_pane_content_areas(app, widget_area)
+}
+
+/// The full terminal widget area (tab row + content), matching exactly what
+/// `terminal_tab::render` is given as its `area` argument in `draw`. `None`
+/// when a different pane is fullscreen and the terminal isn't drawn at all.
+fn terminal_widget_area(app: &App, screen_area: Rect, layout: &LayoutConfig) -> Option<Rect> {
     let outer = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
@@ -221,7 +235,7 @@ pub(crate) fn terminal_content_area(
     let body_area = outer[1];
 
     if app.terminal.fullscreen {
-        return terminal_tab::content_area(body_area);
+        return Some(body_area);
     }
     if app.diff.fullscreen || app.list_fullscreen {
         return None;
@@ -231,7 +245,7 @@ pub(crate) fn terminal_content_area(
         .direction(Direction::Vertical)
         .constraints(main_content_constraints(layout))
         .split(body_area);
-    terminal_tab::content_area(main[1])
+    Some(main[1])
 }
 
 /// Render the top header strip: `repo-path  branch  ↑N ↓M`. Branch and
@@ -428,17 +442,17 @@ mod tests {
     }
 
     #[test]
-    fn terminal_content_area_hidden_when_other_pane_is_fullscreen() {
+    fn terminal_content_areas_hidden_when_other_pane_is_fullscreen() {
         let mut app = app_with_files(vec!["a.rs"]);
         app.toggle_diff_fullscreen();
 
-        let area = terminal_content_area(&app, Rect::new(0, 0, 100, 40), &LayoutConfig::default());
+        let areas = terminal_content_areas(&app, Rect::new(0, 0, 100, 40), &LayoutConfig::default());
 
-        assert!(area.is_none());
+        assert!(areas.is_empty());
     }
 
     #[test]
-    fn terminal_content_area_uses_body_when_terminal_fullscreen() {
+    fn terminal_content_areas_uses_body_when_terminal_fullscreen() {
         let mut app = app_with_files(vec!["a.rs"]);
         app.terminal.panes.push(crate::app::PaneInfo {
             id: 1,
@@ -446,13 +460,16 @@ mod tests {
         });
         app.toggle_terminal_fullscreen();
 
-        let area = terminal_content_area(&app, Rect::new(0, 0, 100, 40), &LayoutConfig::default())
-            .expect("terminal fullscreen should produce a content area");
+        let areas = terminal_content_areas(&app, Rect::new(0, 0, 100, 40), &LayoutConfig::default());
 
         // Full screen keeps the top header and bottom hint bar, then the
         // terminal widget consumes one tab row and the top/bottom border rows.
-        // Side borders were dropped, so the content spans the full width.
-        assert_eq!(area.height, 35);
-        assert_eq!(area.width, 100);
+        // Side borders were dropped, so the content spans the full width. A
+        // single pane has no per-cell border, so its content Rect equals the
+        // whole terminal content area.
+        assert_eq!(areas.len(), 1);
+        assert_eq!(areas[0].0, 1);
+        assert_eq!(areas[0].1.height, 35);
+        assert_eq!(areas[0].1.width, 100);
     }
 }

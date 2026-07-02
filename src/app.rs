@@ -624,6 +624,47 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn switch_pane_slides_visible_window_to_include_hidden_pane() {
+        let mut app = app_with_files(vec![]);
+        app.terminal.max_visible_normal = 4;
+        app.terminal.panes = (0..7)
+            .map(|i| PaneInfo {
+                id: i + 1,
+                title: format!("shell {}", i + 1),
+            })
+            .collect();
+
+        // Jumping straight to the last pane (index 6, beyond the default
+        // [0,4) window) must slide the window to include it.
+        app.switch_pane(6);
+
+        assert_eq!(app.terminal.active, 6);
+        assert!(app.terminal.visible_start <= 6 && app.terminal.visible_start + 4 > 6);
+    }
+
+    #[test]
+    fn closing_pane_reclamps_visible_window() {
+        let mut app = app_with_fake_backend();
+        app.terminal.max_visible_normal = 4;
+        for i in 0..7 {
+            app.terminal
+                .create_pane_with(None, Some(&format!("P{i}")))
+                .unwrap();
+        }
+        assert_eq!(app.terminal.active, 6);
+
+        // Close panes back down to a single one; the visible window must
+        // shrink back to contain only the remaining pane.
+        for _ in 0..6 {
+            app.close_active_pane();
+        }
+
+        assert_eq!(app.terminal.panes.len(), 1);
+        assert_eq!(app.terminal.active, 0);
+        assert_eq!(app.terminal.visible_start, 0);
+    }
+
+    #[test]
     fn focus_list_jumps_and_exits_competing_fullscreens() {
         let mut app = app_with_files(vec![]);
         app.terminal.panes = vec![PaneInfo {
@@ -762,6 +803,32 @@ pub(crate) mod tests {
 
         app.cycle_focus_backward();
         assert_eq!(app.focus, Focus::DiffViewer);
+    }
+
+    #[test]
+    fn cycle_focus_forward_through_terminal_panes_slides_visible_window() {
+        let mut app = app_with_files(vec![]);
+        app.terminal.max_visible_normal = 4;
+        app.terminal.panes = (0..7)
+            .map(|i| PaneInfo {
+                id: i + 1,
+                title: format!("shell {}", i + 1),
+            })
+            .collect();
+        app.focus = Focus::DiffViewer;
+
+        // DiffViewer -> Terminal(0), then step forward through every pane.
+        for expected_active in 0..7 {
+            app.cycle_focus_forward();
+            assert_eq!(app.focus, Focus::Terminal);
+            assert_eq!(app.terminal.active, expected_active);
+            assert!(
+                app.terminal.visible_start <= expected_active
+                    && app.terminal.visible_start + 4 > expected_active,
+                "active {expected_active} not inside visible window starting at {}",
+                app.terminal.visible_start
+            );
+        }
     }
 
     #[test]
