@@ -39,12 +39,31 @@ impl vt100::Callbacks for PaneCallbacks {
     }
 }
 
+/// Default count of panes shown side by side in the normal (non-fullscreen)
+/// lower panel before the visible window starts sliding.
+pub const MAX_VISIBLE_NORMAL: usize = 4;
+
+/// Default count of panes shown side by side when the terminal panel is
+/// fullscreen (still bounded by the F3–F9 direct-jump range).
+pub const MAX_VISIBLE_FULLSCREEN: usize = 7;
+
 pub struct TerminalState {
     pub panes: Vec<PaneInfo>,
     pub active: usize,
+    /// Default size used to create a pane before any layout resize has run
+    /// (e.g. the very first pane on startup). Once a pane has a real content
+    /// Rect, its size lives in `last_content_size` instead.
     pub size: (u16, u16),
     pub scroll: HashMap<PaneId, usize>,
     pub fullscreen: bool,
+    /// Last (rows, cols) applied to each pane's backend + vt100 parser via
+    /// `resize_visible_panes`. Panes currently scrolled out of the visible
+    /// window keep whatever size they had when they were last visible.
+    pub last_content_size: HashMap<PaneId, (u16, u16)>,
+    /// Index of the first pane in the visible split-view window.
+    pub visible_start: usize,
+    pub max_visible_normal: usize,
+    pub max_visible_fullscreen: usize,
     pub(crate) parsers: HashMap<PaneId, vt100::Parser<PaneCallbacks>>,
     pub(crate) prompt_bufs: HashMap<PaneId, String>,
     prompt_log_enabled: bool,
@@ -54,6 +73,21 @@ pub struct TerminalState {
 impl TerminalState {
     pub fn active_pane_id(&self) -> Option<PaneId> {
         self.panes.get(self.active).map(|p| p.id)
+    }
+
+    /// Maximum number of panes shown at once in the current fullscreen state.
+    pub fn max_visible(&self) -> usize {
+        if self.fullscreen {
+            self.max_visible_fullscreen
+        } else {
+            self.max_visible_normal
+        }
+    }
+
+    /// Last known content size for `id`, falling back to the default pane
+    /// size for a pane that hasn't been through a layout resize yet.
+    pub fn pane_size(&self, id: PaneId) -> (u16, u16) {
+        self.last_content_size.get(&id).copied().unwrap_or(self.size)
     }
 
     pub fn scroll_up(&mut self, lines: usize) {
@@ -138,20 +172,25 @@ impl TerminalState {
         }
     }
 
-    pub fn resize_panes(&mut self, rows: u16, cols: u16) {
-        if self.size == (rows, cols) {
-            return;
-        }
-        self.size = (rows, cols);
-        let r = rows.max(1);
-        let c = cols.max(1);
-        for info in &self.panes {
+    /// Resize each listed pane's backend PTY and vt100 parser to its own
+    /// (rows, cols), skipping a pane whose size didn't change. `layouts`
+    /// carries one entry per currently *visible* pane — panes scrolled out of
+    /// the split-view window are omitted and keep their `last_content_size`
+    /// until they become visible again.
+    pub fn resize_visible_panes(&mut self, layouts: &[(PaneId, u16, u16)]) {
+        for &(id, rows, cols) in layouts {
+            let rows = rows.max(1);
+            let cols = cols.max(1);
+            if self.last_content_size.get(&id) == Some(&(rows, cols)) {
+                continue;
+            }
             if let Some(backend) = &mut self.backend {
-                backend.resize(info.id, r, c);
+                backend.resize(id, rows, cols);
             }
-            if let Some(parser) = self.parsers.get_mut(&info.id) {
-                parser.screen_mut().set_size(r, c);
+            if let Some(parser) = self.parsers.get_mut(&id) {
+                parser.screen_mut().set_size(rows, cols);
             }
+            self.last_content_size.insert(id, (rows, cols));
         }
     }
 
@@ -239,20 +278,30 @@ impl TerminalState {
         command: Option<&str>,
         label: Option<&str>,
     ) -> anyhow::Result<()> {
-        let (rows, cols) = self.size;
+        // Seed the new pane with the active pane's current content size so it
+        // starts roughly right-sized inside the split grid; the next frame's
+        // `resize_visible_panes` corrects it to the actual cell Rect once the
+        // pane count (and therefore the grid) has changed.
+        let (rows, cols) = self
+            .active_pane_id()
+            .map(|id| self.pane_size(id))
+            .unwrap_or(self.size);
+        let rows = rows.max(1);
+        let cols = cols.max(1);
         let backend = self
             .backend
             .as_mut()
             .ok_or_else(|| anyhow::anyhow!("no terminal backend available"))?;
 
-        let id = backend.create_pane(rows.max(1), cols.max(1), command)?;
+        let id = backend.create_pane(rows, cols, command)?;
         let parser = vt100::Parser::new_with_callbacks(
-            rows.max(1),
-            cols.max(1),
+            rows,
+            cols,
             SCROLLBACK_LINES,
             PaneCallbacks::default(),
         );
         self.parsers.insert(id, parser);
+        self.last_content_size.insert(id, (rows, cols));
         // Title precedence: explicit label → command text → default shell N.
         let title = match (label, command) {
             (Some(l), _) if !l.trim().is_empty() => l.trim().to_string(),
@@ -283,9 +332,16 @@ impl TerminalState {
         true
     }
 
+    /// Screen for a specific pane, independent of which pane is currently
+    /// active — the split-view renderer draws every visible pane, not just
+    /// the focused one.
+    pub fn screen_for_pane(&self, id: PaneId) -> Option<&vt100::Screen> {
+        self.parsers.get(&id).map(vt100::Parser::screen)
+    }
+
     pub fn active_screen(&self) -> Option<&vt100::Screen> {
         let id = self.active_pane_id()?;
-        self.parsers.get(&id).map(vt100::Parser::screen)
+        self.screen_for_pane(id)
     }
 
     fn remove_pane_state(&mut self, id: PaneId) {
@@ -298,6 +354,7 @@ impl TerminalState {
             tracing::info!(target: "prompt", pane = id, text = %buf);
         }
         self.scroll.remove(&id);
+        self.last_content_size.remove(&id);
     }
 
     pub fn new(backend: Option<Box<dyn TerminalBackend>>, prompt_log_enabled: bool) -> Self {
@@ -307,6 +364,10 @@ impl TerminalState {
             size: (22, 78),
             scroll: HashMap::new(),
             fullscreen: false,
+            last_content_size: HashMap::new(),
+            visible_start: 0,
+            max_visible_normal: MAX_VISIBLE_NORMAL,
+            max_visible_fullscreen: MAX_VISIBLE_FULLSCREEN,
             parsers: HashMap::new(),
             prompt_bufs: HashMap::new(),
             prompt_log_enabled,
@@ -509,5 +570,98 @@ mod tests {
         assert_eq!(state.panes.len(), 2);
         assert_eq!(state.panes[1].title, "shell 2");
         assert_eq!(state.active, 1);
+    }
+
+    #[test]
+    fn pane_size_falls_back_to_default_before_any_resize() {
+        let mut state = state_with_fake();
+        state.create_pane().unwrap();
+        let id = state.panes[0].id;
+        assert_eq!(state.pane_size(id), state.size);
+    }
+
+    #[test]
+    fn resize_visible_panes_updates_parser_and_last_content_size() {
+        let mut state = state_with_fake();
+        state.create_pane().unwrap();
+        let id = state.panes[0].id;
+
+        state.resize_visible_panes(&[(id, 12, 60)]);
+
+        assert_eq!(state.screen_for_pane(id).unwrap().size(), (12, 60));
+        assert_eq!(state.last_content_size.get(&id), Some(&(12, 60)));
+    }
+
+    #[test]
+    fn resize_visible_panes_clamps_zero_to_one() {
+        let mut state = state_with_fake();
+        state.create_pane().unwrap();
+        let id = state.panes[0].id;
+
+        state.resize_visible_panes(&[(id, 0, 0)]);
+
+        assert_eq!(state.last_content_size.get(&id), Some(&(1, 1)));
+    }
+
+    #[test]
+    fn resize_visible_panes_ignores_panes_not_listed() {
+        let mut state = state_with_fake();
+        state.create_pane().unwrap();
+        let hidden_id = state.panes[0].id;
+        let hidden_size_at_creation = state.pane_size(hidden_id);
+        state.create_pane().unwrap();
+        let visible_id = state.panes[1].id;
+
+        state.resize_visible_panes(&[(visible_id, 15, 70)]);
+
+        // The hidden pane keeps whatever size it had before this call — it
+        // wasn't in the `layouts` list, so `resize_visible_panes` must not
+        // touch it.
+        assert_eq!(
+            state.last_content_size.get(&hidden_id),
+            Some(&hidden_size_at_creation)
+        );
+        assert_eq!(state.last_content_size.get(&visible_id), Some(&(15, 70)));
+    }
+
+    #[test]
+    fn new_pane_seeds_size_from_active_pane_last_content_size() {
+        let mut state = state_with_fake();
+        state.create_pane().unwrap();
+        let first_id = state.panes[0].id;
+        state.resize_visible_panes(&[(first_id, 18, 65)]);
+
+        state.create_pane().unwrap();
+        let second_id = state.panes[1].id;
+
+        assert_eq!(state.screen_for_pane(second_id).unwrap().size(), (18, 65));
+    }
+
+    #[test]
+    fn screen_for_pane_none_for_unknown_id() {
+        let state = state_with_fake();
+        assert!(state.screen_for_pane(999).is_none());
+    }
+
+    #[test]
+    fn closing_pane_drops_its_last_content_size() {
+        let mut state = state_with_fake();
+        state.create_pane().unwrap();
+        let id = state.panes[0].id;
+        state.resize_visible_panes(&[(id, 10, 40)]);
+
+        state.close_active();
+
+        assert!(state.last_content_size.get(&id).is_none());
+    }
+
+    #[test]
+    fn max_visible_switches_with_fullscreen() {
+        let mut state = state_with_fake();
+        state.max_visible_normal = 4;
+        state.max_visible_fullscreen = 7;
+        assert_eq!(state.max_visible(), 4);
+        state.fullscreen = true;
+        assert_eq!(state.max_visible(), 7);
     }
 }

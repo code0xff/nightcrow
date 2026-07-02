@@ -165,3 +165,39 @@
 - Deliverables: `clap` `Cli`에 `--exec <command>`(여러 번 지정 가능, `Vec<String>`) 추가, WS2의 `create_pane_with` spawn 경로 재사용, config의 `startup_commands`와 CLI `--exec`를 병합하는 단일 진입점 정의(config 항목 먼저 → CLI `--exec` 항목 이어붙임), 병합 결과에도 `MAX_STARTUP_COMMANDS`(7) 합산 한도 적용 및 초과 시 명확한 에러, CLI 항목은 name 없이 command 텍스트를 라벨로 사용, README/`--help`에 `--exec` 사용법 문서화, 병합·한도·spawn 단위 테스트
 - Exit Criteria: `nightcrow --exec "claude" --exec "codex"` 실행 시 해당 pane들이 자동 생성·실행됨, config `[[startup_command]]`와 `--exec`를 함께 쓰면 config 먼저 → CLI 순서로 pane이 뜸, 합산 개수가 7 초과 시 시작이 명확한 에러로 중단됨, 옵션 미지정 시 단일 빈 셸 유지, `cargo test`/`cargo clippy` 통과
 - status: done
+
+---
+
+## Increment 8
+
+- service_goal: 개발자가 하단 터미널 패널에서 여러 pane을 탭 전환 없이 화면에서 동시에(split view) 볼 수 있다
+- acceptance: pane 2개 이상일 때 자동으로 grid split 렌더링(일반 최대 4개, fullscreen 최대 7개), F3-F9/prefix 3-9는 여전히 pane focus 이동으로 동작, 키보드 입력/scroll은 active pane에만 적용, pane별 정확한 PTY resize, 기존 단일 pane 동작 회귀 없음
+- status: active
+
+### Workstream 1
+
+- Goal: split layout 순수 함수 + TerminalState pane별 상태 확장
+- Deliverables: `visible_range`/`split_pane_areas` 순수 함수(1,2,3,4,7개 케이스 테스트), `TerminalState`에 `last_content_size: HashMap<PaneId,(u16,u16)>`/`visible_start`/`max_visible_normal`/`max_visible_fullscreen` 추가, `screen_for_pane(id)` API, `resize_panes` → `resize_visible_panes(&[(PaneId,u16,u16)])` 교체, 새 pane 초기 크기 정책
+- Exit Criteria: layout 함수 단위 테스트 통과, `resize_visible_panes`가 pane별로만 backend+vt100 resize 호출, `cargo test` 통과
+- status: done
+
+### Workstream 2
+
+- Goal: split view 렌더러
+- Deliverables: `ui::terminal_tab` grid 렌더링(`terminal_content_areas`), active pane accent 테두리/타이틀, `build_screen_lines(app, pane_id, rows, cols)`, cursor는 active pane Rect 기준, 빈 pane placeholder
+- Exit Criteria: 2 pane 이상에서 각 pane vt100 화면이 동시에 렌더링됨, `TestBackend` 렌더 테스트로 2 pane 동시 표시 검증, `cargo test` 통과
+- status: pending
+
+### Workstream 3
+
+- Goal: resize 통합 + 포커스/키바인딩/tab bar 의미 변경
+- Deliverables: `main_loop` resize를 pane별 `terminal_content_areas` 기반으로 변경, terminal scroll을 active pane 기준으로 정리, `switch_pane`/`cycle_focus_forward/backward`를 visible window 이동 포함하도록 재정의, tab bar를 visible/active/hidden 상태 표시로 변경(hidden `+N` marker), close/exit 시 `last_content_size`/`visible_start` clamp, 키바인딩 힌트 문구 갱신("switch tab" 제거)
+- Exit Criteria: pane 제거/추가/포커스 이동 후 active/visible 상태가 깨지지 않음, session restore 후 active pane 유지, `cargo test` 통과
+- status: pending
+
+### Workstream 4
+
+- Goal: 통합 검증 + 문서화
+- Deliverables: config 노출 여부 결정(MVP는 상수 유지, 내부는 확장 가능하게 설계), `cargo test`/`cargo clippy --all-targets -- -D warnings` 통과, 수동 검증(1/2/4/7 pane, fullscreen, pane close, shell exit, resize), `docs/architecture.md` 하단 diagram 및 키보드 라우팅 설명 갱신
+- Exit Criteria: 모든 gate 통과, 아키텍처 문서가 split view 동작과 일치
+- status: pending

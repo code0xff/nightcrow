@@ -274,7 +274,16 @@ fn main_loop(
         if let Some(area) =
             ui::terminal_content_area(app, Rect::new(0, 0, size.width, size.height), &cfg.layout)
         {
-            app.terminal.resize_panes(area.height, area.width);
+            // TODO(split-view WS2/WS3): still resizes every pane to one shared
+            // Rect. Once the renderer produces per-pane cell Rects, this must
+            // switch to only the currently visible panes' individual sizes.
+            let layouts: Vec<(backend::PaneId, u16, u16)> = app
+                .terminal
+                .panes
+                .iter()
+                .map(|p| (p.id, area.height, area.width))
+                .collect();
+            app.terminal.resize_visible_panes(&layouts);
             app.terminal.sync_scroll();
         }
 

@@ -49,6 +49,107 @@ fn terminal_layout(area: Rect) -> Option<(Rect, Rect)> {
     Some((chunks[0], chunks[1]))
 }
 
+/// Compute the visible pane-index window `[start, start+len)` for a split
+/// grid capped at `max_visible` panes. `prev_start` is the previous window's
+/// start (0 for a fresh terminal); the window is nudged the minimum amount
+/// needed to keep `active` inside it, rather than re-centering every call —
+/// so paging through panes one at a time doesn't reshuffle the whole grid.
+pub(crate) fn visible_range(
+    prev_start: usize,
+    active: usize,
+    pane_count: usize,
+    max_visible: usize,
+) -> std::ops::Range<usize> {
+    if pane_count == 0 || max_visible == 0 {
+        return 0..0;
+    }
+    let window = max_visible.min(pane_count);
+    let active = active.min(pane_count - 1);
+    let max_start = pane_count - window;
+
+    let mut start = prev_start.min(max_start);
+    if active < start {
+        start = active;
+    } else if active >= start + window {
+        start = active + 1 - window;
+    }
+    start..(start + window)
+}
+
+/// Split `area` into `count` cells using a balanced grid: 1 pane fills the
+/// area; 2 panes go side by side when `area` is wide, stacked otherwise; 3
+/// panes get a 2-column row plus a full-width remainder row; 4 is a 2x2
+/// grid; 5-6 use 3 columns; 7 uses a 4-then-3 row split. Counts beyond that
+/// (not expected given `MAX_VISIBLE_FULLSCREEN`) fall back to a near-square
+/// grid. Every returned Rect has at least 1x1 size when `area` is at least
+/// `count` cells large, so no cell silently disappears.
+pub(crate) fn split_pane_areas(area: Rect, count: usize) -> Vec<Rect> {
+    if count == 0 || area.width == 0 || area.height == 0 {
+        return Vec::new();
+    }
+    let plan = grid_row_plan(count, area);
+    split_by_row_plan(area, &plan)
+}
+
+/// One entry per row, each entry the number of columns in that row.
+fn grid_row_plan(count: usize, area: Rect) -> Vec<usize> {
+    match count {
+        1 => vec![1],
+        2 => {
+            if area.width >= area.height.saturating_mul(2) {
+                vec![2]
+            } else {
+                vec![1, 1]
+            }
+        }
+        3 => vec![2, 1],
+        4 => vec![2, 2],
+        5 => vec![3, 2],
+        6 => vec![3, 3],
+        7 => vec![4, 3],
+        n => {
+            let cols = (n as f64).sqrt().ceil() as usize;
+            let rows = n.div_ceil(cols);
+            let mut plan = vec![cols; rows];
+            let mut excess = cols * rows - n;
+            let mut i = plan.len();
+            while excess > 0 && i > 0 {
+                i -= 1;
+                let take = plan[i].saturating_sub(1).min(excess);
+                plan[i] -= take;
+                excess -= take;
+            }
+            plan.retain(|&c| c > 0);
+            plan
+        }
+    }
+}
+
+fn split_by_row_plan(area: Rect, plan: &[usize]) -> Vec<Rect> {
+    if plan.is_empty() {
+        return Vec::new();
+    }
+    let row_constraints: Vec<Constraint> = plan.iter().map(|_| Constraint::Min(1)).collect();
+    let rows = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints(row_constraints)
+        .split(area);
+
+    let mut result = Vec::with_capacity(plan.iter().sum());
+    for (row_area, &cols) in rows.iter().zip(plan.iter()) {
+        if cols == 0 {
+            continue;
+        }
+        let col_constraints: Vec<Constraint> = (0..cols).map(|_| Constraint::Min(1)).collect();
+        let cells = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints(col_constraints)
+            .split(*row_area);
+        result.extend(cells.iter().copied());
+    }
+    result
+}
+
 pub fn render(frame: &mut Frame, app: &App, area: Rect, accent: Color) {
     let focused = app.focus == Focus::Terminal;
     let border_style = super::focused_border_style(focused, accent);
@@ -300,5 +401,105 @@ mod tests {
             .unwrap();
 
         assert_eq!(app.terminal.size, (3, 10));
+    }
+
+    #[test]
+    fn visible_range_shows_everything_under_the_cap() {
+        assert_eq!(visible_range(0, 0, 3, 4), 0..3);
+    }
+
+    #[test]
+    fn visible_range_keeps_active_inside_a_capped_window() {
+        // 7 panes, window of 4, active is the last pane: window must end at 7.
+        assert_eq!(visible_range(0, 6, 7, 4), 3..7);
+    }
+
+    #[test]
+    fn visible_range_moves_start_forward_only_as_far_as_needed() {
+        // Previously showing [2,6). Active moves to 6 (just past the window):
+        // start should shift by exactly 1, not jump to re-center.
+        assert_eq!(visible_range(2, 6, 7, 4), 3..7);
+    }
+
+    #[test]
+    fn visible_range_moves_start_backward_when_active_precedes_window() {
+        // Previously showing [3,7). Active jumps back to 0.
+        assert_eq!(visible_range(3, 0, 7, 4), 0..4);
+    }
+
+    #[test]
+    fn visible_range_empty_when_no_panes() {
+        assert_eq!(visible_range(0, 0, 0, 4), 0..0);
+    }
+
+    #[test]
+    fn split_pane_areas_single_pane_fills_area() {
+        let area = Rect::new(0, 0, 80, 24);
+        assert_eq!(split_pane_areas(area, 1), vec![area]);
+    }
+
+    #[test]
+    fn split_pane_areas_two_panes_side_by_side_when_wide() {
+        let area = Rect::new(0, 0, 80, 24);
+        let cells = split_pane_areas(area, 2);
+        assert_eq!(cells.len(), 2);
+        assert_eq!(cells[0].y, cells[1].y);
+        assert_ne!(cells[0].x, cells[1].x);
+    }
+
+    #[test]
+    fn split_pane_areas_two_panes_stacked_when_narrow() {
+        let area = Rect::new(0, 0, 30, 24);
+        let cells = split_pane_areas(area, 2);
+        assert_eq!(cells.len(), 2);
+        assert_eq!(cells[0].x, cells[1].x);
+        assert_ne!(cells[0].y, cells[1].y);
+    }
+
+    #[test]
+    fn split_pane_areas_three_panes_two_over_one() {
+        let area = Rect::new(0, 0, 80, 24);
+        let cells = split_pane_areas(area, 3);
+        assert_eq!(cells.len(), 3);
+        // First row: two side-by-side cells.
+        assert_eq!(cells[0].y, cells[1].y);
+        // Second row: one full-width cell below.
+        assert!(cells[2].y > cells[0].y);
+    }
+
+    #[test]
+    fn split_pane_areas_four_panes_is_2x2() {
+        let area = Rect::new(0, 0, 80, 24);
+        let cells = split_pane_areas(area, 4);
+        assert_eq!(cells.len(), 4);
+        let rows: std::collections::BTreeSet<u16> = cells.iter().map(|r| r.y).collect();
+        assert_eq!(rows.len(), 2);
+    }
+
+    #[test]
+    fn split_pane_areas_seven_panes_four_then_three() {
+        let area = Rect::new(0, 0, 100, 30);
+        let cells = split_pane_areas(area, 7);
+        assert_eq!(cells.len(), 7);
+        let top_row_y = cells[0].y;
+        let top_row_count = cells.iter().filter(|r| r.y == top_row_y).count();
+        assert_eq!(top_row_count, 4);
+    }
+
+    #[test]
+    fn split_pane_areas_never_produces_zero_size_cells_when_area_fits() {
+        for count in 1..=7 {
+            let area = Rect::new(0, 0, 40, 20);
+            let cells = split_pane_areas(area, count);
+            assert_eq!(cells.len(), count, "count={count}");
+            for cell in cells {
+                assert!(cell.width > 0 && cell.height > 0, "count={count} cell={cell:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn split_pane_areas_empty_for_zero_count() {
+        assert!(split_pane_areas(Rect::new(0, 0, 80, 24), 0).is_empty());
     }
 }
