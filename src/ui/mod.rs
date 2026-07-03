@@ -15,6 +15,7 @@ pub use search::SearchQuery;
 
 use crate::app::{App, DiffPaneView, Focus, ViewMode};
 use crate::config::LayoutConfig;
+use crate::runtime::terminal::TerminalFullscreen;
 use crate::git::diff::StatusKind;
 use ratatui::{
     Frame,
@@ -158,7 +159,7 @@ pub fn draw(
 
     frame.render_widget(render_repo_header(app, accent), header_area);
 
-    if app.terminal.fullscreen {
+    if app.terminal.fullscreen.fills_body() {
         terminal_tab::render(frame, app, body_area, accent);
         frame.render_widget(render_hint_bar(app, accent), hint_area);
         return;
@@ -234,7 +235,7 @@ fn terminal_widget_area(app: &App, screen_area: Rect, layout: &LayoutConfig) -> 
         .split(screen_area);
     let body_area = outer[1];
 
-    if app.terminal.fullscreen {
+    if app.terminal.fullscreen.fills_body() {
         return Some(body_area);
     }
     if app.diff.fullscreen || app.list_fullscreen {
@@ -326,10 +327,25 @@ fn render_hint_bar(app: &App, accent: Color) -> Paragraph<'_> {
             Style::default().fg(Color::DarkGray),
         )))
     };
-    if app.terminal.fullscreen {
-        return render(
-            " <prefix>: leader | shift+↑/↓: scroll | shift+pgup/dn: page scroll | shift+←/→: cycle pane | <prefix> f: exit fullscreen | <prefix> t: new pane | <prefix> w: close pane | <prefix> q: quit",
-        );
+    match app.terminal.fullscreen {
+        // From Grid the next `f` zooms the active pane — but only when there
+        // are 2+ panes; with a single pane the cycle skips Zoom and `f` exits.
+        TerminalFullscreen::Grid if app.terminal.panes.len() > 1 => {
+            return render(
+                " <prefix>: leader | shift+↑/↓: scroll | shift+pgup/dn: page scroll | shift+←/→: cycle pane | <prefix> f: zoom active pane | <prefix> t: new pane | <prefix> w: close pane | <prefix> q: quit",
+            );
+        }
+        TerminalFullscreen::Grid => {
+            return render(
+                " <prefix>: leader | shift+↑/↓: scroll | shift+pgup/dn: page scroll | <prefix> f: exit fullscreen | <prefix> t: new pane | <prefix> w: close pane | <prefix> q: quit",
+            );
+        }
+        TerminalFullscreen::Zoom => {
+            return render(
+                " <prefix>: leader | shift+↑/↓: scroll | shift+pgup/dn: page scroll | shift+←/→: cycle pane | <prefix> f: exit fullscreen | <prefix> t: new pane | <prefix> w: close pane | <prefix> q: quit",
+            );
+        }
+        TerminalFullscreen::Off => {}
     }
     if app.diff.fullscreen {
         let hint = if app.diff.view == DiffPaneView::File {

@@ -1,4 +1,5 @@
 use super::{App, Focus, ViewMode};
+use crate::runtime::terminal::TerminalFullscreen;
 
 impl App {
     pub fn toggle_mode(&mut self) {
@@ -9,7 +10,7 @@ impl App {
         // with the same policy as `focus_list` (F1). `list_fullscreen` is not
         // part of this check: it already renders the mode's active list, so the
         // swap is visible and the zoom should survive the toggle.
-        let reveal_after_toggle = self.terminal.fullscreen || self.diff.fullscreen;
+        let reveal_after_toggle = self.terminal.fullscreen.fills_body() || self.diff.fullscreen;
         match self.mode {
             // `<prefix> l` from either Status or Tree enters the Log view.
             ViewMode::Status | ViewMode::Tree => {
@@ -68,7 +69,7 @@ impl App {
     /// fullscreen-reveal policy so the swap is visible behind a zoomed pane.
     pub fn toggle_tree_mode(&mut self) {
         let from = self.mode;
-        let reveal_after_toggle = self.terminal.fullscreen || self.diff.fullscreen;
+        let reveal_after_toggle = self.terminal.fullscreen.fills_body() || self.diff.fullscreen;
         if self.mode == ViewMode::Tree {
             self.exit_tree_to_status();
         } else {
@@ -98,7 +99,7 @@ impl App {
         if self.diff.fullscreen || self.list_fullscreen {
             return;
         }
-        if self.terminal.fullscreen {
+        if self.terminal.fullscreen.fills_body() {
             let len = self.terminal.panes.len();
             if len > 0 {
                 self.terminal.active = (self.terminal.active + 1) % len;
@@ -134,7 +135,7 @@ impl App {
         if self.diff.fullscreen || self.list_fullscreen {
             return;
         }
-        if self.terminal.fullscreen {
+        if self.terminal.fullscreen.fills_body() {
             let len = self.terminal.panes.len();
             if len > 0 {
                 self.terminal.active = (self.terminal.active + len - 1) % len;
@@ -166,23 +167,38 @@ impl App {
         }
     }
 
+    /// Cycle the terminal fullscreen state: `Off → Grid → Zoom → Off`. With
+    /// fewer than two panes `Grid` and `Zoom` render identically, so the cycle
+    /// collapses to `Off → Grid → Off` to avoid a press that looks like a no-op.
+    /// Entering any body-filling state moves focus to the terminal and clears
+    /// the competing diff/list fullscreens.
     pub fn toggle_terminal_fullscreen(&mut self) {
-        if !self.terminal.fullscreen && self.terminal.panes.is_empty() {
+        if self.terminal.panes.is_empty() {
+            // Nothing to show; keep (or force) the normal split view.
+            self.terminal.fullscreen = TerminalFullscreen::Off;
             return;
         }
-        self.terminal.fullscreen = !self.terminal.fullscreen;
-        if self.terminal.fullscreen {
+        let next = match self.terminal.fullscreen {
+            TerminalFullscreen::Off => TerminalFullscreen::Grid,
+            TerminalFullscreen::Grid if self.terminal.panes.len() > 1 => TerminalFullscreen::Zoom,
+            TerminalFullscreen::Grid | TerminalFullscreen::Zoom => TerminalFullscreen::Off,
+        };
+        self.terminal.fullscreen = next;
+        if next.fills_body() {
             self.focus = Focus::Terminal;
             self.diff.fullscreen = false;
             self.list_fullscreen = false;
         }
+        // `max_visible()` just changed (e.g. 8 → 1 entering Zoom), so re-clamp
+        // the visible window to keep the active pane pinned inside it.
+        self.terminal.sync_visible_window();
     }
 
     pub fn toggle_diff_fullscreen(&mut self) {
         self.diff.fullscreen = !self.diff.fullscreen;
         if self.diff.fullscreen {
             self.focus = Focus::DiffViewer;
-            self.terminal.fullscreen = false;
+            self.terminal.fullscreen = TerminalFullscreen::Off;
             self.list_fullscreen = false;
         }
     }
@@ -192,7 +208,7 @@ impl App {
         if self.list_fullscreen {
             self.focus = Focus::FileList;
             self.diff.fullscreen = false;
-            self.terminal.fullscreen = false;
+            self.terminal.fullscreen = TerminalFullscreen::Off;
         }
     }
 
@@ -202,7 +218,7 @@ impl App {
     pub fn focus_list(&mut self) {
         self.focus = Focus::FileList;
         self.diff.fullscreen = false;
-        self.terminal.fullscreen = false;
+        self.terminal.fullscreen = TerminalFullscreen::Off;
     }
 
     /// Jump focus to the diff viewer. Mirror policy of `focus_list`: clears
@@ -211,6 +227,6 @@ impl App {
     pub fn focus_diff(&mut self) {
         self.focus = Focus::DiffViewer;
         self.list_fullscreen = false;
-        self.terminal.fullscreen = false;
+        self.terminal.fullscreen = TerminalFullscreen::Off;
     }
 }

@@ -219,7 +219,7 @@ pub(crate) mod tests {
     use crate::git::diff::{
         CommitEntry, DiffHunk, DiffLine, LineKind, StatusKind, load_commit_log,
     };
-    use crate::runtime::terminal::PaneCallbacks;
+    use crate::runtime::terminal::{PaneCallbacks, TerminalFullscreen};
     use crate::test_util::{make_repo, open_repo, run_git};
     use crossterm::event::KeyCode;
     use std::collections::HashMap;
@@ -673,12 +673,12 @@ pub(crate) mod tests {
         }];
         app.focus = Focus::Terminal;
         app.toggle_terminal_fullscreen();
-        assert!(app.terminal.fullscreen);
+        assert!(app.terminal.fullscreen.fills_body());
 
         app.focus_list();
 
         assert_eq!(app.focus, Focus::FileList);
-        assert!(!app.terminal.fullscreen);
+        assert!(!app.terminal.fullscreen.fills_body());
         assert!(!app.diff.fullscreen);
     }
 
@@ -692,7 +692,7 @@ pub(crate) mod tests {
 
         assert_eq!(app.focus, Focus::DiffViewer);
         assert!(!app.list_fullscreen);
-        assert!(!app.terminal.fullscreen);
+        assert!(!app.terminal.fullscreen.fills_body());
     }
 
     #[test]
@@ -723,7 +723,7 @@ pub(crate) mod tests {
 
         app.toggle_terminal_fullscreen();
 
-        assert!(app.terminal.fullscreen);
+        assert!(app.terminal.fullscreen.fills_body());
         assert_eq!(app.focus, Focus::Terminal);
     }
 
@@ -734,7 +734,53 @@ pub(crate) mod tests {
 
         app.toggle_terminal_fullscreen();
 
-        assert!(!app.terminal.fullscreen);
+        assert!(!app.terminal.fullscreen.fills_body());
+    }
+
+    #[test]
+    fn toggle_terminal_fullscreen_cycles_off_grid_zoom_off_with_multiple_panes() {
+        let mut app = app_with_files(vec![]);
+        app.terminal.panes = vec![
+            PaneInfo {
+                id: 1,
+                title: "a".into(),
+            },
+            PaneInfo {
+                id: 2,
+                title: "b".into(),
+            },
+        ];
+        app.focus = Focus::Terminal;
+        assert_eq!(app.terminal.fullscreen, TerminalFullscreen::Off);
+
+        app.toggle_terminal_fullscreen();
+        assert_eq!(app.terminal.fullscreen, TerminalFullscreen::Grid);
+
+        app.toggle_terminal_fullscreen();
+        assert_eq!(app.terminal.fullscreen, TerminalFullscreen::Zoom);
+        // Zoom pins the visible window to exactly the active pane.
+        assert_eq!(app.terminal.max_visible(), 1);
+
+        app.toggle_terminal_fullscreen();
+        assert_eq!(app.terminal.fullscreen, TerminalFullscreen::Off);
+    }
+
+    #[test]
+    fn toggle_terminal_fullscreen_skips_zoom_with_single_pane() {
+        let mut app = app_with_files(vec![]);
+        app.terminal.panes = vec![PaneInfo {
+            id: 1,
+            title: "shell".into(),
+        }];
+        app.focus = Focus::Terminal;
+
+        app.toggle_terminal_fullscreen();
+        assert_eq!(app.terminal.fullscreen, TerminalFullscreen::Grid);
+
+        // With a lone pane Grid and Zoom look identical, so the cycle collapses
+        // straight back to Off rather than stopping at an indistinguishable Zoom.
+        app.toggle_terminal_fullscreen();
+        assert_eq!(app.terminal.fullscreen, TerminalFullscreen::Off);
     }
 
     #[test]
@@ -762,12 +808,12 @@ pub(crate) mod tests {
             title: "shell".into(),
         }];
         app.toggle_terminal_fullscreen();
-        assert!(app.terminal.fullscreen);
+        assert!(app.terminal.fullscreen.fills_body());
 
         app.toggle_diff_fullscreen();
 
         assert!(app.diff.fullscreen);
-        assert!(!app.terminal.fullscreen);
+        assert!(!app.terminal.fullscreen.fills_body());
         assert_eq!(app.focus, Focus::DiffViewer);
     }
 
@@ -783,7 +829,7 @@ pub(crate) mod tests {
 
         app.toggle_terminal_fullscreen();
 
-        assert!(app.terminal.fullscreen);
+        assert!(app.terminal.fullscreen.fills_body());
         assert!(!app.diff.fullscreen);
         assert_eq!(app.focus, Focus::Terminal);
     }
@@ -880,12 +926,12 @@ pub(crate) mod tests {
             title: "shell".into(),
         }];
         app.toggle_terminal_fullscreen();
-        assert!(app.terminal.fullscreen);
+        assert!(app.terminal.fullscreen.fills_body());
 
         app.toggle_mode();
 
         assert_eq!(app.mode, ViewMode::Log);
-        assert!(!app.terminal.fullscreen);
+        assert!(!app.terminal.fullscreen.fills_body());
         assert!(!app.diff.fullscreen);
         assert_eq!(app.focus, Focus::FileList);
     }
@@ -901,7 +947,7 @@ pub(crate) mod tests {
 
         assert_eq!(app.mode, ViewMode::Log);
         assert!(!app.diff.fullscreen);
-        assert!(!app.terminal.fullscreen);
+        assert!(!app.terminal.fullscreen.fills_body());
         assert_eq!(app.focus, Focus::FileList);
     }
 
@@ -1577,12 +1623,12 @@ pub(crate) mod tests {
             title: "shell".into(),
         }];
         app.toggle_terminal_fullscreen();
-        assert!(app.terminal.fullscreen);
+        assert!(app.terminal.fullscreen.fills_body());
 
         app.toggle_list_fullscreen();
 
         assert!(app.list_fullscreen);
-        assert!(!app.terminal.fullscreen);
+        assert!(!app.terminal.fullscreen.fills_body());
         assert_eq!(app.focus, Focus::FileList);
     }
 
@@ -1611,7 +1657,7 @@ pub(crate) mod tests {
 
         app.toggle_terminal_fullscreen();
 
-        assert!(app.terminal.fullscreen);
+        assert!(app.terminal.fullscreen.fills_body());
         assert!(!app.list_fullscreen);
         assert_eq!(app.focus, Focus::Terminal);
     }
@@ -1693,7 +1739,7 @@ pub(crate) mod tests {
             ..Default::default()
         });
 
-        assert!(app.terminal.fullscreen);
+        assert!(app.terminal.fullscreen.fills_body());
         assert!(!app.list_fullscreen);
         assert_eq!(app.focus, Focus::Terminal);
     }
@@ -1705,7 +1751,7 @@ pub(crate) mod tests {
             id: 1,
             title: "shell".into(),
         }];
-        app.terminal.fullscreen = true;
+        app.terminal.fullscreen = TerminalFullscreen::Grid;
         app.focus = Focus::Terminal;
         app.terminal.scroll.insert(1, 3);
         app.terminal.prompt_bufs.insert(1, "cargo test".to_string());
@@ -1716,7 +1762,7 @@ pub(crate) mod tests {
 
         app.close_active_pane();
 
-        assert!(!app.terminal.fullscreen);
+        assert!(!app.terminal.fullscreen.fills_body());
         assert_eq!(app.focus, Focus::DiffViewer);
         assert!(!app.terminal.scroll.contains_key(&1));
         assert!(!app.terminal.prompt_bufs.contains_key(&1));
@@ -1761,7 +1807,7 @@ pub(crate) mod tests {
             ..Default::default()
         });
 
-        assert!(app.terminal.fullscreen);
+        assert!(app.terminal.fullscreen.fills_body());
         assert_eq!(app.focus, Focus::Terminal);
     }
 
@@ -1794,7 +1840,7 @@ pub(crate) mod tests {
             ..Default::default()
         });
 
-        assert!(app.terminal.fullscreen);
+        assert!(app.terminal.fullscreen.fills_body());
         assert!(!app.diff.fullscreen);
         assert_eq!(app.focus, Focus::Terminal);
     }
@@ -2825,7 +2871,7 @@ pub(crate) mod tests {
 
         assert_eq!(app.focus, Focus::FileList);
         assert_eq!(app.terminal.active, 0);
-        assert!(!app.terminal.fullscreen);
+        assert!(!app.terminal.fullscreen.fills_body());
     }
 
     #[test]

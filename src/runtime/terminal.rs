@@ -47,6 +47,33 @@ pub const MAX_VISIBLE_NORMAL: usize = 4;
 /// fullscreen (still bounded by the F3–F10 direct-jump range).
 pub const MAX_VISIBLE_FULLSCREEN: usize = 8;
 
+/// Fullscreen state of the lower terminal panel. `<leader> f` cycles through
+/// these while the terminal is focused: `Off → Grid → Zoom → Off`.
+/// - `Off`: normal split — top viewer above, terminal split-view below.
+/// - `Grid`: terminal fills the body; up to `MAX_VISIBLE_FULLSCREEN` panes.
+/// - `Zoom`: terminal fills the body showing only the active pane. Rendered
+///   by the same grid path with a visible cap of 1, so no dedicated render
+///   branch is needed.
+///
+/// `Grid` and `Zoom` are visually identical with a single pane, so the cycle
+/// skips `Zoom` when fewer than two panes exist (see
+/// `App::toggle_terminal_fullscreen`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum TerminalFullscreen {
+    #[default]
+    Off,
+    Grid,
+    Zoom,
+}
+
+impl TerminalFullscreen {
+    /// Whether the terminal panel takes over the whole body area (both `Grid`
+    /// and `Zoom`), hiding the top diff/list viewer.
+    pub fn fills_body(self) -> bool {
+        !matches!(self, TerminalFullscreen::Off)
+    }
+}
+
 /// Compute the visible pane-index window `[start, start+len)` for a split
 /// grid capped at `max_visible` panes. `prev_start` is the previous window's
 /// start (0 for a fresh terminal); the window is nudged the minimum amount
@@ -84,7 +111,7 @@ pub struct TerminalState {
     /// Rect, its size lives in `last_content_size` instead.
     pub size: (u16, u16),
     pub scroll: HashMap<PaneId, usize>,
-    pub fullscreen: bool,
+    pub fullscreen: TerminalFullscreen,
     /// Last (rows, cols) applied to each pane's backend + vt100 parser via
     /// `resize_visible_panes`. Panes currently scrolled out of the visible
     /// window keep whatever size they had when they were last visible.
@@ -105,11 +132,12 @@ impl TerminalState {
     }
 
     /// Maximum number of panes shown at once in the current fullscreen state.
+    /// `Zoom` caps at 1 so the shared grid path renders only the active pane.
     pub fn max_visible(&self) -> usize {
-        if self.fullscreen {
-            self.max_visible_fullscreen
-        } else {
-            self.max_visible_normal
+        match self.fullscreen {
+            TerminalFullscreen::Off => self.max_visible_normal,
+            TerminalFullscreen::Grid => self.max_visible_fullscreen,
+            TerminalFullscreen::Zoom => 1,
         }
     }
 
@@ -423,7 +451,7 @@ impl TerminalState {
             active: 0,
             size: (22, 78),
             scroll: HashMap::new(),
-            fullscreen: false,
+            fullscreen: TerminalFullscreen::Off,
             last_content_size: HashMap::new(),
             visible_start: 0,
             max_visible_normal: MAX_VISIBLE_NORMAL,
@@ -721,8 +749,10 @@ mod tests {
         state.max_visible_normal = 4;
         state.max_visible_fullscreen = 7;
         assert_eq!(state.max_visible(), 4);
-        state.fullscreen = true;
+        state.fullscreen = TerminalFullscreen::Grid;
         assert_eq!(state.max_visible(), 7);
+        state.fullscreen = TerminalFullscreen::Zoom;
+        assert_eq!(state.max_visible(), 1);
     }
 
     #[test]

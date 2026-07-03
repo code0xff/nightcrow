@@ -1,5 +1,6 @@
 use super::{App, Focus, ViewMode};
 use crate::git::diff::{load_commit_files, load_commit_log};
+use crate::runtime::terminal::TerminalFullscreen;
 use crate::session::SessionState;
 
 impl App {
@@ -17,7 +18,7 @@ impl App {
                 .map(|f| f.path.clone()),
             scroll: self.diff.scroll,
             active_pane: self.terminal.active,
-            terminal_fullscreen: self.terminal.fullscreen,
+            terminal_fullscreen: self.terminal.fullscreen.fills_body(),
             diff_fullscreen: self.diff.fullscreen,
             list_fullscreen: self.list_fullscreen,
             mode: Some(self.mode),
@@ -50,16 +51,23 @@ impl App {
                 self.focus = focus;
             }
         }
-        self.terminal.fullscreen = state.terminal_fullscreen && !self.terminal.panes.is_empty();
-        if self.terminal.fullscreen {
+        // Zoom is a transient "look at one pane" state; a restored fullscreen
+        // session collapses to `Grid` rather than persisting the zoom.
+        self.terminal.fullscreen = if state.terminal_fullscreen && !self.terminal.panes.is_empty() {
+            TerminalFullscreen::Grid
+        } else {
+            TerminalFullscreen::Off
+        };
+        if self.terminal.fullscreen.fills_body() {
             self.focus = Focus::Terminal;
         }
-        self.diff.fullscreen = state.diff_fullscreen && !self.terminal.fullscreen;
+        self.diff.fullscreen = state.diff_fullscreen && !self.terminal.fullscreen.fills_body();
         if self.diff.fullscreen {
             self.focus = Focus::DiffViewer;
         }
-        self.list_fullscreen =
-            state.list_fullscreen && !self.terminal.fullscreen && !self.diff.fullscreen;
+        self.list_fullscreen = state.list_fullscreen
+            && !self.terminal.fullscreen.fills_body()
+            && !self.diff.fullscreen;
         if self.list_fullscreen {
             self.focus = Focus::FileList;
         }

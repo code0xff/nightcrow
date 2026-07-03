@@ -1,4 +1,5 @@
 use super::{App, Focus, SnapshotChannel, ViewMode};
+use crate::runtime::terminal::TerminalFullscreen;
 
 // Mirrors `PROMPT_BUFFER_MAX_BYTES` so a bracketed paste cannot grow this
 // buffer without bound; comfortably above any realistic filesystem path.
@@ -69,7 +70,7 @@ impl App {
         // Drop transient view modes — the previous repo's diff zoom, terminal
         // fullscreen, or list fullscreen has no meaning under the new working tree.
         self.diff.fullscreen = false;
-        self.terminal.fullscreen = false;
+        self.terminal.fullscreen = TerminalFullscreen::Off;
         self.list_fullscreen = false;
         // Drop any pending session restore for the previous repo. Without this,
         // a Ctrl+O before the first snapshot of the old repo lands would have
