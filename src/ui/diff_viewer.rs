@@ -486,8 +486,7 @@ fn render_file_view(
                 let line_idx = scroll_start + i;
                 let is_anchor = fv.anchor_line == Some(line_no);
                 let is_current = has_search && current_match == Some(line_idx);
-                let is_match =
-                    has_search && !is_current && app.diff.search.is_match(line_idx);
+                let is_match = has_search && !is_current && app.diff.search.is_match(line_idx);
                 let bg = if is_current {
                     Color::Rgb(100, 80, 0)
                 } else if is_match {

@@ -1054,7 +1054,10 @@ pub(crate) mod tests {
         assert!(rows.iter().any(|r| r.path == "src"));
         assert!(!rows.iter().any(|r| r.path == "README.md"));
         // Cursor lands on the matching file, not the connecting `src` dir.
-        assert_eq!(app.tree_view.selected_path().as_deref(), Some("src/main.rs"));
+        assert_eq!(
+            app.tree_view.selected_path().as_deref(),
+            Some("src/main.rs")
+        );
         // Filtering must not mutate the real expansion set.
         assert!(!app.tree_view.expanded.contains("src"));
         drop(dir);
@@ -1077,7 +1080,10 @@ pub(crate) mod tests {
         assert!(!app.tree_view.search_active);
         assert!(app.tree_view.search_query.is_empty());
         assert!(app.tree_view.expanded.contains("src"));
-        assert_eq!(app.tree_view.selected_path().as_deref(), Some("src/main.rs"));
+        assert_eq!(
+            app.tree_view.selected_path().as_deref(),
+            Some("src/main.rs")
+        );
         drop(dir);
     }
 
@@ -1127,7 +1133,10 @@ pub(crate) mod tests {
         // First entry caches the root listing (no `docs/` yet).
         app.enter_tree_mode();
         assert!(
-            !app.tree_view.visible_rows().iter().any(|r| r.path == "docs"),
+            !app.tree_view
+                .visible_rows()
+                .iter()
+                .any(|r| r.path == "docs"),
             "docs should not exist before it is created"
         );
 
@@ -1139,7 +1148,10 @@ pub(crate) mod tests {
         // Re-entering must re-read the root and surface the new directory.
         app.enter_tree_mode();
         assert!(
-            app.tree_view.visible_rows().iter().any(|r| r.path == "docs"),
+            app.tree_view
+                .visible_rows()
+                .iter()
+                .any(|r| r.path == "docs"),
             "re-entering Tree mode must reflect the newly created directory"
         );
         drop(dir);
@@ -1173,8 +1185,7 @@ pub(crate) mod tests {
         // failing re-read leaks a "tree error" into the status bar.
         assert!(!app.tree_view.expanded.contains("src"));
         assert!(
-            !app
-                .status
+            !app.status
                 .as_deref()
                 .is_some_and(|m| m.starts_with("tree error")),
             "a vanished directory must not surface a tree error: {:?}",
@@ -1244,7 +1255,12 @@ pub(crate) mod tests {
         let (tx, rx) = std::sync::mpsc::channel();
         app.tree_watch = TreeWatcher::from_receiver(rx);
         app.enter_tree_mode();
-        assert!(!app.tree_view.visible_rows().iter().any(|r| r.path == "docs"));
+        assert!(
+            !app.tree_view
+                .visible_rows()
+                .iter()
+                .any(|r| r.path == "docs")
+        );
 
         // A folder appears on disk, then the watcher fires.
         std::fs::create_dir(Path::new(&path).join("docs")).unwrap();
@@ -1252,7 +1268,10 @@ pub(crate) mod tests {
         app.poll_tree_watcher();
 
         assert!(
-            app.tree_view.visible_rows().iter().any(|r| r.path == "docs"),
+            app.tree_view
+                .visible_rows()
+                .iter()
+                .any(|r| r.path == "docs"),
             "a watcher event in Tree mode must re-read and surface the new dir"
         );
         drop(dir);
@@ -1466,8 +1485,7 @@ pub(crate) mod tests {
         // ...and the moved-to directory is visible at the root.
         assert!(app.tree_view.visible_rows().iter().any(|r| r.path == "lib"));
         assert!(
-            !app
-                .status
+            !app.status
                 .as_deref()
                 .is_some_and(|m| m.starts_with("tree error")),
             "a vanished restored expansion must not surface a tree error: {:?}",

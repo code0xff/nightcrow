@@ -685,12 +685,15 @@ mod tests {
 
         let buf = terminal.backend().buffer();
         assert!(
-            !buf.content.iter().any(|cell| cell.fg == accent || cell.fg == Color::White),
+            !buf.content
+                .iter()
+                .any(|cell| cell.fg == accent || cell.fg == Color::White),
             "terminal must not show accent or white anywhere while unfocused"
         );
         assert!(
-            !buf.content.iter().any(|cell| cell.modifier.contains(Modifier::BOLD)
-                && cell.bg == accent),
+            !buf.content
+                .iter()
+                .any(|cell| cell.modifier.contains(Modifier::BOLD) && cell.bg == accent),
             "active pane tab must not carry an accent-bolded highlight while unfocused"
         );
     }
