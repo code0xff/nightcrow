@@ -328,9 +328,10 @@ fn render_hint_bar(app: &App, accent: Color) -> Paragraph<'_> {
         )))
     };
     match app.terminal.fullscreen {
-        // From Grid the next `f` zooms the active pane — but only when there
-        // are 2+ panes; with a single pane the cycle skips Zoom and `f` exits.
-        TerminalFullscreen::Grid if app.terminal.panes.len() > 1 => {
+        // From Grid the next `f` zooms the active pane — but only when Zoom
+        // would look different from Grid; otherwise the cycle skips Zoom and
+        // `f` exits.
+        TerminalFullscreen::Grid if app.terminal.zoom_distinct_from_grid() => {
             return render(
                 " <prefix>: leader | shift+↑/↓: scroll | shift+pgup/dn: page scroll | shift+←/→: cycle pane | <prefix> f: zoom active pane | <prefix> t: new pane | <prefix> w: close pane | <prefix> q: quit",
             );

@@ -809,6 +809,32 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn toggle_terminal_fullscreen_skips_zoom_when_grid_cap_is_one() {
+        // Even with multiple panes, a fullscreen grid capped at 1 shows a
+        // single pane, so Grid and Zoom are indistinguishable and Zoom is
+        // skipped — the skip must not assume `max_visible_fullscreen >= 2`.
+        let mut app = app_with_files(vec![]);
+        app.terminal.max_visible_fullscreen = 1;
+        app.terminal.panes = vec![
+            PaneInfo {
+                id: 1,
+                title: "a".into(),
+            },
+            PaneInfo {
+                id: 2,
+                title: "b".into(),
+            },
+        ];
+        app.focus = Focus::Terminal;
+
+        app.toggle_terminal_fullscreen();
+        assert_eq!(app.terminal.fullscreen, TerminalFullscreen::Grid);
+
+        app.toggle_terminal_fullscreen();
+        assert_eq!(app.terminal.fullscreen, TerminalFullscreen::Off);
+    }
+
+    #[test]
     fn toggle_diff_fullscreen_sets_flag_and_focuses_diff_viewer() {
         let mut app = app_with_files(vec![]);
         assert_eq!(app.focus, Focus::FileList);

@@ -167,11 +167,12 @@ impl App {
         }
     }
 
-    /// Cycle the terminal fullscreen state: `Off → Grid → Zoom → Off`. With
-    /// fewer than two panes `Grid` and `Zoom` render identically, so the cycle
-    /// collapses to `Off → Grid → Off` to avoid a press that looks like a no-op.
-    /// Entering any body-filling state moves focus to the terminal and clears
-    /// the competing diff/list fullscreens.
+    /// Cycle the terminal fullscreen state: `Off → Grid → Zoom → Off`. When
+    /// `Grid` would already show a single pane, `Zoom` looks identical to it
+    /// (`TerminalState::zoom_distinct_from_grid`), so the cycle collapses to
+    /// `Off → Grid → Off` to avoid a press that looks like a no-op. Entering
+    /// any body-filling state moves focus to the terminal and clears the
+    /// competing diff/list fullscreens.
     pub fn toggle_terminal_fullscreen(&mut self) {
         if self.terminal.panes.is_empty() {
             // Nothing to show; keep (or force) the normal split view.
@@ -180,7 +181,9 @@ impl App {
         }
         let next = match self.terminal.fullscreen {
             TerminalFullscreen::Off => TerminalFullscreen::Grid,
-            TerminalFullscreen::Grid if self.terminal.panes.len() > 1 => TerminalFullscreen::Zoom,
+            TerminalFullscreen::Grid if self.terminal.zoom_distinct_from_grid() => {
+                TerminalFullscreen::Zoom
+            }
             TerminalFullscreen::Grid | TerminalFullscreen::Zoom => TerminalFullscreen::Off,
         };
         self.terminal.fullscreen = next;

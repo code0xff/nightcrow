@@ -55,8 +55,9 @@ pub const MAX_VISIBLE_FULLSCREEN: usize = 8;
 ///   by the same grid path with a visible cap of 1, so no dedicated render
 ///   branch is needed.
 ///
-/// `Grid` and `Zoom` are visually identical with a single pane, so the cycle
-/// skips `Zoom` when fewer than two panes exist (see
+/// `Grid` and `Zoom` are visually identical whenever `Grid` would show a
+/// single pane, so the cycle skips `Zoom` in that case (see
+/// `TerminalState::zoom_distinct_from_grid` and
 /// `App::toggle_terminal_fullscreen`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum TerminalFullscreen {
@@ -139,6 +140,16 @@ impl TerminalState {
             TerminalFullscreen::Grid => self.max_visible_fullscreen,
             TerminalFullscreen::Zoom => 1,
         }
+    }
+
+    /// Whether `Zoom` would render differently from `Grid` — i.e. whether
+    /// `Grid` would show more than one pane. When false the two are
+    /// indistinguishable, so the fullscreen cycle skips `Zoom` and a pane
+    /// close normalizes `Zoom` back to `Grid`. Guards against both a lone pane
+    /// and a `max_visible_fullscreen` of 1, so no site has to assume the cap
+    /// is ≥ 2.
+    pub fn zoom_distinct_from_grid(&self) -> bool {
+        self.max_visible_fullscreen.min(self.panes.len()) > 1
     }
 
     /// Last known content size for `id`, falling back to the default pane

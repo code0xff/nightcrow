@@ -94,11 +94,11 @@ impl App {
             }
         } else {
             self.terminal.active = self.terminal.active.min(self.terminal.panes.len() - 1);
-            // Closing a pane while zoomed can leave a lone pane in `Zoom`, where
-            // it's indistinguishable from `Grid`. Normalize down so the held
-            // state matches the "Zoom needs 2+ panes" invariant the cycle keeps.
+            // Closing a pane while zoomed can leave `Zoom` in a state where it's
+            // indistinguishable from `Grid`. Normalize down so the held state
+            // matches the invariant the cycle keeps (Zoom only when distinct).
             if self.terminal.fullscreen == TerminalFullscreen::Zoom
-                && self.terminal.panes.len() < 2
+                && !self.terminal.zoom_distinct_from_grid()
             {
                 self.terminal.fullscreen = TerminalFullscreen::Grid;
             }

@@ -126,8 +126,12 @@ background even while scrolled out of the window.
   render/`terminal_widget_area` branches key off that. `Zoom` needs no
   dedicated render path — it just caps `max_visible()` at 1, so the shared
   grid path draws the active pane alone (no border, per the single-pane
-  case). Because `Grid` and `Zoom` are indistinguishable with one pane, the
-  cycle skips `Zoom` when `panes.len() < 2`. Entering any body-filling state
+  case). Because `Grid` and `Zoom` are indistinguishable whenever `Grid`
+  would show a single pane, the cycle skips `Zoom` in that case — the
+  predicate `TerminalState::zoom_distinct_from_grid`
+  (`max_visible_fullscreen.min(panes.len()) > 1`) is the single source of
+  truth for it, shared by the toggle, the pane-close normalization, and the
+  hint text. Entering any body-filling state
   moves focus to the terminal and clears the competing diff/list fullscreens;
   closing the last pane resets to `Off`. Persistence collapses `Zoom` to
   `Grid` on save (session stores a single bool).
