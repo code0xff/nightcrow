@@ -20,6 +20,11 @@ const TERMINAL_BORDERS: Borders = Borders::TOP.union(Borders::BOTTOM);
 /// so long OSC-set titles can't push neighboring tabs off the row.
 const TAB_TITLE_MAX_CHARS: usize = 20;
 
+/// Number of panes reachable by a direct `F3`..`F10` jump key. Panes past
+/// this index have no jump-key hint in the tab bar (only focus cycling
+/// reaches them) — matches `MAX_VISIBLE_FULLSCREEN`.
+const JUMP_KEY_PANE_COUNT: usize = 8;
+
 /// Truncate `title` to at most `max` characters, appending `…` when cut.
 /// Char-based (not display-width) for simplicity: ASCII shell program names
 /// are the common case and `chars().count()` is already correct there. CJK
@@ -50,10 +55,10 @@ fn terminal_layout(area: Rect) -> Option<(Rect, Rect)> {
 /// Split `area` into `count` cells using a balanced grid: 1 pane fills the
 /// area; 2 panes go side by side when `area` is wide, stacked otherwise; 3
 /// panes get a 2-column row plus a full-width remainder row; 4 is a 2x2
-/// grid; 5-6 use 3 columns; 7 uses a 4-then-3 row split. Counts beyond that
-/// (not expected given `MAX_VISIBLE_FULLSCREEN`) fall back to a near-square
-/// grid. Every returned Rect has at least 1x1 size when `area` is at least
-/// `count` cells large, so no cell silently disappears.
+/// grid; 5-6 use 3 columns; 7 uses a 4-then-3 row split; 8 is a 2x4 grid.
+/// Counts beyond that (not expected given `MAX_VISIBLE_FULLSCREEN`) fall back
+/// to a near-square grid. Every returned Rect has at least 1x1 size when
+/// `area` is at least `count` cells large, so no cell silently disappears.
 pub(crate) fn split_pane_areas(area: Rect, count: usize) -> Vec<Rect> {
     if count == 0 || area.width == 0 || area.height == 0 {
         return Vec::new();
@@ -78,6 +83,7 @@ fn grid_row_plan(count: usize, area: Rect) -> Vec<usize> {
         5 => vec![3, 2],
         6 => vec![3, 3],
         7 => vec![4, 3],
+        8 => vec![4, 4],
         n => {
             let cols = (n as f64).sqrt().ceil() as usize;
             let rows = n.div_ceil(cols);
@@ -301,12 +307,13 @@ fn render_tab_bar(
                 } else {
                     Style::default().fg(Color::Gray)
                 };
-                // F3..=F9 (and the matching `<prefix> 3..9` digits) are wired
-                // to panes 0..=6 in `input`; show the binding so the tab bar
-                // doubles as a key legend. Panes past the 7th have no jump key,
-                // so they carry no hint to avoid implying an unbound shortcut.
+                // F3..=F10 (and the matching `<prefix> 3..9,0` digits) are
+                // wired to panes 0..=7 in `input`; show the binding so the
+                // tab bar doubles as a key legend. Panes past the 8th have no
+                // jump key, so they carry no hint to avoid implying an
+                // unbound shortcut.
                 let title = truncate_tab_title(&pane.title, TAB_TITLE_MAX_CHARS);
-                let label = if i < 7 {
+                let label = if i < JUMP_KEY_PANE_COUNT {
                     format!(" F{} {} ", i + 3, title)
                 } else {
                     format!(" {} ", title)
@@ -566,8 +573,20 @@ mod tests {
     }
 
     #[test]
+    fn split_pane_areas_eight_panes_is_2x4() {
+        let area = Rect::new(0, 0, 100, 30);
+        let cells = split_pane_areas(area, 8);
+        assert_eq!(cells.len(), 8);
+        let rows: std::collections::BTreeSet<u16> = cells.iter().map(|r| r.y).collect();
+        assert_eq!(rows.len(), 2);
+        let top_row_y = cells[0].y;
+        let top_row_count = cells.iter().filter(|r| r.y == top_row_y).count();
+        assert_eq!(top_row_count, 4);
+    }
+
+    #[test]
     fn split_pane_areas_never_produces_zero_size_cells_when_area_fits() {
-        for count in 1..=7 {
+        for count in 1..=8 {
             let area = Rect::new(0, 0, 40, 20);
             let cells = split_pane_areas(area, count);
             assert_eq!(cells.len(), count, "count={count}");
