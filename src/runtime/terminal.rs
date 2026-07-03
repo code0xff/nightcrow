@@ -44,8 +44,8 @@ impl vt100::Callbacks for PaneCallbacks {
 pub const MAX_VISIBLE_NORMAL: usize = 4;
 
 /// Default count of panes shown side by side when the terminal panel is
-/// fullscreen (still bounded by the F3–F9 direct-jump range).
-pub const MAX_VISIBLE_FULLSCREEN: usize = 7;
+/// fullscreen (still bounded by the F3–F10 direct-jump range).
+pub const MAX_VISIBLE_FULLSCREEN: usize = 8;
 
 /// Compute the visible pane-index window `[start, start+len)` for a split
 /// grid capped at `max_visible` panes. `prev_start` is the previous window's

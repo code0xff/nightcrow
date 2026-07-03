@@ -52,10 +52,10 @@ pub fn map_key(event: KeyEvent) -> Action {
         KeyCode::PageDown if shift_only => Action::TermScrollDown,
         // F-keys are universally distinct across terminals (no kitty protocol
         // dependency), so they own focus jumps: F1=list, F2=diff,
-        // F3..=F9 = terminal panes 1..=7.
+        // F3..=F10 = terminal panes 1..=8.
         KeyCode::F(1) if no_mods => Action::FocusList,
         KeyCode::F(2) if no_mods => Action::FocusDiff,
-        KeyCode::F(n @ 3..=9) if no_mods => Action::SwitchPane(n as usize - 3),
+        KeyCode::F(n @ 3..=10) if no_mods => Action::SwitchPane(n as usize - 3),
         KeyCode::Up if no_mods => Action::Up,
         KeyCode::Down if no_mods => Action::Down,
         KeyCode::PageUp if no_mods => Action::PageUp,
@@ -75,8 +75,8 @@ pub fn map_key(event: KeyEvent) -> Action {
 /// The follow-up is matched on the bare character regardless of modifiers so
 /// `<L> t` works whether or not the user is still holding a modifier from the
 /// leader chord. Digits mirror the no-prefix focus/pane F-keys one-for-one:
-/// `1` = `F1` (file list), `2` = `F2` (diff viewer), `3`..`9` = `F3`..`F9`
-/// (terminal panes `0`..`6`).
+/// `1` = `F1` (file list), `2` = `F2` (diff viewer), `3`..`9`,`0` = `F3`..`F10`
+/// (terminal panes `0`..`7`; `0` mirrors `F10` since digits only go up to `9`).
 pub fn prefix_action(event: KeyEvent) -> Action {
     match event.code {
         KeyCode::Char(c) => match c.to_ascii_lowercase() {
@@ -92,6 +92,7 @@ pub fn prefix_action(event: KeyEvent) -> Action {
             '1' => Action::FocusList,
             '2' => Action::FocusDiff,
             d @ '3'..='9' => Action::SwitchPane(d as usize - '3' as usize),
+            '0' => Action::SwitchPane(7),
             _ => Action::None,
         },
         _ => Action::None,
@@ -301,7 +302,7 @@ mod tests {
     #[test]
     fn prefix_dispatch_maps_digits_to_focus_and_panes() {
         // Digits mirror the no-prefix F-keys one-for-one: 1=F1 (file list),
-        // 2=F2 (diff viewer), 3..9=F3..F9 (terminal panes 0..6).
+        // 2=F2 (diff viewer), 3..9,0=F3..F10 (terminal panes 0..7).
         assert_eq!(prefix_action(key(KeyCode::Char('1'))), Action::FocusList);
         assert_eq!(prefix_action(key(KeyCode::Char('2'))), Action::FocusDiff);
         assert_eq!(
@@ -312,8 +313,11 @@ mod tests {
             prefix_action(key(KeyCode::Char('9'))),
             Action::SwitchPane(6)
         );
-        // 0 has no F-key counterpart and falls through to None.
-        assert_eq!(prefix_action(key(KeyCode::Char('0'))), Action::None);
+        // 0 mirrors F10 (the 8th pane) since digits only go up to 9.
+        assert_eq!(
+            prefix_action(key(KeyCode::Char('0'))),
+            Action::SwitchPane(7)
+        );
     }
 
     #[test]
@@ -431,10 +435,11 @@ mod tests {
 
     #[test]
     fn maps_switch_pane() {
-        // F3..=F9 directly select terminal panes 0..=6.
+        // F3..=F10 directly select terminal panes 0..=7.
         assert_eq!(map_key(key(KeyCode::F(3))), Action::SwitchPane(0));
         assert_eq!(map_key(key(KeyCode::F(4))), Action::SwitchPane(1));
         assert_eq!(map_key(key(KeyCode::F(9))), Action::SwitchPane(6));
+        assert_eq!(map_key(key(KeyCode::F(10))), Action::SwitchPane(7));
     }
 
     #[test]

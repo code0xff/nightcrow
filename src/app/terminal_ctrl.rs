@@ -107,7 +107,7 @@ impl App {
             self.terminal.active = idx;
             self.terminal.sync_visible_window();
             self.focus = Focus::Terminal;
-            // Pressing F1..=F9 is a request to interact with a terminal pane;
+            // Pressing F1..=F10 is a request to interact with a terminal pane;
             // drop any competing fullscreen so focus, render, and hints stay
             // in sync (otherwise a zoomed diff/list would persist while focus
             // moves away).

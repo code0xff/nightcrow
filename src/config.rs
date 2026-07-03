@@ -4,13 +4,13 @@ use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
 /// Upper bound on the number of `[[startup_command]]` + `--exec` panes opened
-/// at launch. The value matches the `F3`..`F9` / `<prefix> 3`..`9` jump-key
+/// at launch. The value matches the `F3`..`F10` / `<prefix> 3`..`9`,`0` jump-key
 /// range, so every startup pane is reachable by a direct key: `F1`/`F2` reach
-/// the upper panels (file list, diff) and `F3`..`F9` reach all seven terminal
+/// the upper panels (file list, diff) and `F3`..`F10` reach all eight terminal
 /// panes. Runtime panes (opened one at a time by `<leader> t`) are not bounded
-/// by this — they may exceed seven, in which case the extras past the seventh
+/// by this — they may exceed eight, in which case the extras past the eighth
 /// are reachable by focus cycling (`Shift+←/→`) rather than a jump key.
-pub const MAX_STARTUP_COMMANDS: usize = 7;
+pub const MAX_STARTUP_COMMANDS: usize = 8;
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(default)]
@@ -824,11 +824,11 @@ command = "cargo test"
                 command: format!("echo {i}"),
             });
         }
-        // 4 config + 4 CLI = 8 > MAX_STARTUP_COMMANDS (7).
-        let cli: Vec<String> = (0..4).map(|i| format!("run {i}")).collect();
+        // 4 config + 5 CLI = 9 > MAX_STARTUP_COMMANDS (8).
+        let cli: Vec<String> = (0..5).map(|i| format!("run {i}")).collect();
         assert!(resolve_startup_commands(&cfg, &cli).is_err());
-        // 4 config + 3 CLI = 7 is exactly the cap.
-        let cli: Vec<String> = (0..3).map(|i| format!("run {i}")).collect();
+        // 4 config + 4 CLI = 8 is exactly the cap.
+        let cli: Vec<String> = (0..4).map(|i| format!("run {i}")).collect();
         assert_eq!(
             resolve_startup_commands(&cfg, &cli).unwrap().len(),
             MAX_STARTUP_COMMANDS

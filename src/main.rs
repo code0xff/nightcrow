@@ -1056,14 +1056,21 @@ mod tests {
     #[test]
     fn handle_key_leader_digits_mirror_focus_and_pane_fkeys() {
         // Digits mirror the no-prefix F-keys one-for-one: 1=F1 (file list),
-        // 2=F2 (diff viewer), 3..9=F3..F9 (terminal panes 0..6). The dispatcher
-        // consumes the digit (disarming the prefix) instead of forwarding it to
-        // the PTY.
+        // 2=F2 (diff viewer), 3..9,0=F3..F10 (terminal panes 0..7). The
+        // dispatcher consumes the digit (disarming the prefix) instead of
+        // forwarding it to the PTY.
         let mut app = app_with_terminal_pane();
         app.terminal
             .create_pane_with(Some("echo two"), Some("two"))
             .unwrap();
-        assert_eq!(app.terminal.panes.len(), 2);
+        // Pad up to 8 panes so `<prefix> 0` (pane index 7) below is a real
+        // switch, not a no-op against an out-of-range index.
+        for i in 2..8 {
+            app.terminal
+                .create_pane_with(None, Some(&format!("pane{i}")))
+                .unwrap();
+        }
+        assert_eq!(app.terminal.panes.len(), 8);
         app.switch_pane(0);
 
         // <prefix> 1 → focus file list (mirrors F1)
@@ -1080,6 +1087,11 @@ mod tests {
         let _ = handle_key(&mut app, leader());
         let _ = handle_key(&mut app, press(KeyCode::Char('4'), KeyModifiers::NONE));
         assert_eq!(app.terminal.active, 1, "leader+4 must mirror F4 → pane 1");
+
+        // <prefix> 0 → terminal pane 7 (mirrors F10)
+        let _ = handle_key(&mut app, leader());
+        let _ = handle_key(&mut app, press(KeyCode::Char('0'), KeyModifiers::NONE));
+        assert_eq!(app.terminal.active, 7, "leader+0 must mirror F10 → pane 7");
 
         assert!(
             !app.prefix_armed(),
