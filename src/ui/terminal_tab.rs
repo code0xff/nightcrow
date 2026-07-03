@@ -1,6 +1,6 @@
 use crate::app::{App, Focus};
 use crate::backend::PaneId;
-use crate::runtime::terminal::visible_range;
+use crate::runtime::terminal::{MAX_VISIBLE_FULLSCREEN, visible_range};
 use ratatui::{
     Frame,
     layout::{Constraint, Direction, Layout, Position, Rect},
@@ -22,8 +22,9 @@ const TAB_TITLE_MAX_CHARS: usize = 20;
 
 /// Number of panes reachable by a direct `F3`..`F10` jump key. Panes past
 /// this index have no jump-key hint in the tab bar (only focus cycling
-/// reaches them) — matches `MAX_VISIBLE_FULLSCREEN`.
-const JUMP_KEY_PANE_COUNT: usize = 8;
+/// reaches them). Tied to `MAX_VISIBLE_FULLSCREEN` by reference (not just by
+/// convention) so the two can never silently drift apart.
+const JUMP_KEY_PANE_COUNT: usize = MAX_VISIBLE_FULLSCREEN;
 
 /// Truncate `title` to at most `max` characters, appending `…` when cut.
 /// Char-based (not display-width) for simplicity: ASCII shell program names
