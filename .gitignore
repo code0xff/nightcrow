@@ -35,6 +35,7 @@
 .omc/
 .codex
 .codex/
+.claude/state/
 
 # Added by cargo
 
