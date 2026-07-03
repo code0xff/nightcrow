@@ -766,6 +766,31 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn closing_pane_normalizes_zoom_to_grid_when_one_pane_remains() {
+        let mut app = app_with_files(vec![]);
+        app.terminal.panes = vec![
+            PaneInfo {
+                id: 1,
+                title: "a".into(),
+            },
+            PaneInfo {
+                id: 2,
+                title: "b".into(),
+            },
+        ];
+        app.focus = Focus::Terminal;
+        app.toggle_terminal_fullscreen(); // Grid
+        app.toggle_terminal_fullscreen(); // Zoom
+        assert_eq!(app.terminal.fullscreen, TerminalFullscreen::Zoom);
+
+        // One pane left: Zoom is indistinguishable from Grid, so it normalizes.
+        app.terminal.panes.pop();
+        app.clamp_active_pane_after_removal();
+
+        assert_eq!(app.terminal.fullscreen, TerminalFullscreen::Grid);
+    }
+
+    #[test]
     fn toggle_terminal_fullscreen_skips_zoom_with_single_pane() {
         let mut app = app_with_files(vec![]);
         app.terminal.panes = vec![PaneInfo {
