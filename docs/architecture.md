@@ -109,9 +109,9 @@ instead of switching between tabs. A pane's PTY keeps running in the
 background even while scrolled out of the window.
 
 - **Visible window**: `TerminalState.visible_start`/`active` define a
-  `[visible_start, visible_start + max_visible)` index range, capped at
-  `max_visible_normal` (4) normally or `max_visible_fullscreen` (7) when the
-  terminal panel is fullscreen. `TerminalState::sync_visible_window` (backed
+  `[visible_start, visible_start + max_visible)` index range. `max_visible()`
+  is driven by the `TerminalFullscreen` state: `Off` → `max_visible_normal`
+  (4), `Grid` → `max_visible_fullscreen` (8), `Zoom` → 1. `TerminalState::sync_visible_window` (backed
   by the pure `runtime::terminal::visible_range`) re-clamps this range to
   always contain `active`, nudging the window the minimum amount needed
   rather than re-centering. It must be called after anything that changes
@@ -119,6 +119,18 @@ background even while scrolled out of the window.
   `cycle_focus_forward/backward`, pane close/exit clamp, and session
   restore all do this; adding a new mutation site for `active` without a
   matching `sync_visible_window` call is a bug.
+- **Fullscreen cycle**: `<prefix> f` while the terminal is focused cycles
+  `App::toggle_terminal_fullscreen` through `TerminalFullscreen::{Off, Grid,
+  Zoom}` (`Off → Grid → Zoom → Off`). `Grid` and `Zoom` both hide the top
+  viewer and hand the whole body to the terminal (`fills_body()`); the
+  render/`terminal_widget_area` branches key off that. `Zoom` needs no
+  dedicated render path — it just caps `max_visible()` at 1, so the shared
+  grid path draws the active pane alone (no border, per the single-pane
+  case). Because `Grid` and `Zoom` are indistinguishable with one pane, the
+  cycle skips `Zoom` when `panes.len() < 2`. Entering any body-filling state
+  moves focus to the terminal and clears the competing diff/list fullscreens;
+  closing the last pane resets to `Off`. Persistence collapses `Zoom` to
+  `Grid` on save (session stores a single bool).
 - **Grid layout**: `ui::terminal_tab::split_pane_areas` lays out 1 pane full
   width, 2 side-by-side (or stacked if the area is narrow), 3 as a 2-column
   row plus a full-width remainder, 4 as 2x2, 5–6 as 3 columns, 7 as 4-then-3

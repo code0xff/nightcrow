@@ -102,7 +102,7 @@ visible from the terminal pane.
 | `<prefix> w` | Close active terminal pane |
 | `<prefix> l` | Toggle between status view and commit log view |
 | `<prefix> b` | Toggle the read-only file-tree view (returns to status view) |
-| `<prefix> f` | Toggle fullscreen for the focused pane (file/commit list, diff viewer, or terminal) |
+| `<prefix> f` | Fullscreen the focused pane. For the terminal it cycles `off → grid (all panes) → zoom (active pane only) → off`; with a single pane it toggles straight off/on. File list and diff viewer toggle off/on |
 | `<prefix> o` | Change repo path |
 | `<prefix> p` | Cycle accent color (yellow → cyan → green → magenta → blue) |
 | `<prefix> r` | Force a full redraw (clears stray glyphs left by terminal programs) |
@@ -150,14 +150,17 @@ key. A key with no leader binding cancels the prefix and is dropped.
 
 Every visible pane renders at once as a split grid instead of switching
 between tabs — 2 panes go side by side (or stacked if the terminal is
-narrow), 4 form a 2x2 grid, up to 4 show normally and up to 8 when the
-terminal panel is fullscreen. The active pane's cell is bordered in the
-accent color; jumping focus with `F3`–`F10` or `Shift+←/→` moves that
-border without hiding any other pane. With more panes than fit, the tab
-bar shows a `+N` marker for the ones scrolled out of view — they keep
-running in the background. Keyboard input, paste, and scroll still target
-only the active pane. A single pane draws with no cell border, exactly as
-before split view existed.
+narrow), 4 form a 2x2 grid, up to 4 show normally and up to 8 in the
+fullscreen grid. `<prefix> f` cycles the terminal through `off → grid →
+zoom → off`: *grid* hides the top viewer and fills the screen with the
+split grid, *zoom* fills the screen with just the active pane. The active
+pane's cell is bordered in the accent color; jumping focus with `F3`–`F10`
+or `Shift+←/→` moves that border (and, while zoomed, the pane on screen)
+without closing any other pane. With more panes than fit, the tab bar
+shows a `+N` marker for the ones scrolled out of view — they keep running
+in the background. Keyboard input, paste, and scroll still target only the
+active pane. A single pane draws with no cell border, exactly as before
+split view existed.
 
 | Key | Action |
 |-----|--------|
