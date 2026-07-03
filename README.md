@@ -38,11 +38,11 @@ nightcrow --exec "claude" --exec "codex"
 ```
 
 `--exec` panes open after any `[[startup_command]]` panes from the config
-file; the two sources share a combined cap of 7 panes — the same count the
-`F3`–`F9` (or `<prefix> 3`–`9`) jump keys address, so every startup pane is
-reachable by a direct key. (`F1`/`F2` map to the file list and diff viewer.)
-Panes opened later with `<prefix> t` are not capped; any past the seventh are
-reached by focus cycling (`Shift+←/→`).
+file; the two sources share a combined cap of 8 panes — the same count the
+`F3`–`F10` (or `<prefix> 3`–`9`,`0`) jump keys address, so every startup pane
+is reachable by a direct key. (`F1`/`F2` map to the file list and diff
+viewer.) Panes opened later with `<prefix> t` are not capped; any past the
+eighth are reached by focus cycling (`Shift+←/→`).
 
 ## Views
 
@@ -108,7 +108,7 @@ visible from the terminal pane.
 | `<prefix> r` | Force a full redraw (clears stray glyphs left by terminal programs) |
 | `<prefix> q` | Quit |
 | `<prefix> 1` / `<prefix> 2` | Focus the file/commit list / diff viewer (mirrors `F1` / `F2`) |
-| `<prefix> 3`…`<prefix> 9` | Jump to terminal pane 1…7 (mirrors `F3`…`F9`) |
+| `<prefix> 3`…`<prefix> 9`, `<prefix> 0` | Jump to terminal pane 1…8 (mirrors `F3`…`F10`; `0` mirrors `F10`) |
 | `Esc` / `Ctrl+C` (while armed) | Cancel the prefix |
 
 The prefix has no timeout: once armed it waits indefinitely for the follow-up
@@ -120,7 +120,7 @@ key. A key with no leader binding cancels the prefix and is dropped.
 |-----|--------|
 | `Shift+→` / `Shift+←` | Cycle focus: file list → diff viewer → terminal panes → … |
 | `F1` / `F2` | Focus file list / diff viewer |
-| `F3`…`F9` | Jump to terminal pane 1…7 |
+| `F3`…`F10` | Jump to terminal pane 1…8 |
 
 ### File list / Commit list (left panel)
 
@@ -150,9 +150,9 @@ key. A key with no leader binding cancels the prefix and is dropped.
 
 Every visible pane renders at once as a split grid instead of switching
 between tabs — 2 panes go side by side (or stacked if the terminal is
-narrow), 4 form a 2x2 grid, up to 4 show normally and up to 7 when the
+narrow), 4 form a 2x2 grid, up to 4 show normally and up to 8 when the
 terminal panel is fullscreen. The active pane's cell is bordered in the
-accent color; jumping focus with `F3`–`F9` or `Shift+←/→` moves that
+accent color; jumping focus with `F3`–`F10` or `Shift+←/→` moves that
 border without hiding any other pane. With more panes than fit, the tab
 bar shows a `+N` marker for the ones scrolled out of view — they keep
 running in the background. Keyboard input, paste, and scroll still target
@@ -201,7 +201,7 @@ name = "yellow"      # accent color preset: "yellow" | "cyan" | "green" | "magen
 
 [input]
 leader = "ctrl+q"    # leader (prefix) chord for app commands; tmux-style.
-                     # Allowed: "ctrl+<letter>". Reserved keys (F1..F9,
+                     # Allowed: "ctrl+<letter>". Reserved keys (F1..F10,
                      # Shift+arrows, Shift+PgUp/PgDn) cannot be the leader.
 
 [log]
@@ -223,10 +223,10 @@ auto_follow = false       # jump selection to the freshest hot file when idle
 
 # Reserve startup commands: each [[startup_command]] opens its own terminal
 # pane at launch and runs `command` immediately (via `$SHELL -lc <command>`).
-# Up to 7 entries (combined with CLI --exec). 7 matches the F3–F9 / <leader>
-# 3–9 jump keys, so every startup pane is reachable by a direct key (F1/F2
+# Up to 8 entries (combined with CLI --exec). 8 matches the F3–F10 / <leader>
+# 3–9,0 jump keys, so every startup pane is reachable by a direct key (F1/F2
 # reach the file list and diff viewer). This caps only the startup batch — open
-# more anytime with <leader> t (panes past the seventh are reached by focus
+# more anytime with <leader> t (panes past the eighth are reached by focus
 # cycling, Shift+←/→). `name` labels the tab; when omitted the command text is
 # used. With no [[startup_command]] entries, nightcrow opens a single empty shell.
 [[startup_command]]

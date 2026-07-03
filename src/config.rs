@@ -44,7 +44,7 @@ pub struct InputConfig {
     /// The leader (prefix) chord. Every nightcrow app command is reached by
     /// pressing this key, then a follow-up key (tmux-style). Accepts a single
     /// `ctrl+<ascii>` chord; the parser rejects anything that doubles as a
-    /// no-prefix reserved key (F1..F9, Shift+arrows, Shift+PgUp/PgDn).
+    /// no-prefix reserved key (F1..F10, Shift+arrows, Shift+PgUp/PgDn).
     pub leader: String,
 }
 
