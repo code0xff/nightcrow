@@ -15,8 +15,8 @@ pub use search::SearchQuery;
 
 use crate::app::{App, DiffPaneView, Focus, ViewMode};
 use crate::config::LayoutConfig;
-use crate::runtime::terminal::TerminalFullscreen;
 use crate::git::diff::StatusKind;
+use crate::runtime::terminal::TerminalFullscreen;
 use ratatui::{
     Frame,
     layout::{Constraint, Direction, Layout, Rect},
