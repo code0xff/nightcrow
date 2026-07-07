@@ -125,6 +125,19 @@ impl App {
         }
     }
 
+    /// Swap the active pane with pane `idx`, moving focus so it follows the
+    /// active pane to its new slot. Like `switch_pane`, this drops competing
+    /// fullscreen and puts input focus on the terminal so the reordered pane is
+    /// the one the user is now driving. No-op when `idx` is out of range or
+    /// equals the active pane.
+    pub fn swap_active_pane_with(&mut self, idx: usize) {
+        if self.terminal.swap_active_with(idx) {
+            self.focus = Focus::Terminal;
+            self.diff.fullscreen = false;
+            self.list_fullscreen = false;
+        }
+    }
+
     pub fn active_screen(&self) -> Option<&vt100::Screen> {
         self.terminal.active_screen()
     }

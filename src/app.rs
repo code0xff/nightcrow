@@ -119,6 +119,12 @@ pub struct App {
     /// armed until a follow-up key (mapped → run + disarm, unmapped → consume
     /// + disarm) or `Esc`/`Ctrl+C` (cancel) resolves it.
     pub prefix_armed: bool,
+    /// True while `<leader> s` has armed pane-swap mode and we await the digit
+    /// that names the swap target. Mutually exclusive with `prefix_armed`:
+    /// arming this clears the prefix, so both are never set at once. Resolved by
+    /// the next key (digit → swap + disarm, `Esc`/`Ctrl+C` → cancel, anything
+    /// else → consume + disarm), with no timeout — same model as the prefix.
+    pub awaiting_swap_target: bool,
 }
 
 impl App {
@@ -163,6 +169,7 @@ impl App {
             branch_name: None,
             leader,
             prefix_armed: false,
+            awaiting_swap_target: false,
         };
 
         app.ensure_initial_terminal(startup_commands);
@@ -184,6 +191,24 @@ impl App {
     /// Disarm the prefix, returning to normal pass-through routing.
     pub fn cancel_prefix(&mut self) {
         self.prefix_armed = false;
+    }
+
+    /// True while `<leader> s` armed pane-swap mode and we await the target
+    /// digit. Drives the hint bar's `SWAP` indicator.
+    pub fn awaiting_swap_target(&self) -> bool {
+        self.awaiting_swap_target
+    }
+
+    /// Arm pane-swap mode: the next digit picks the pane to swap with the
+    /// active pane. Clears the prefix so the two follow-up states never overlap.
+    pub fn begin_swap_target(&mut self) {
+        self.prefix_armed = false;
+        self.awaiting_swap_target = true;
+    }
+
+    /// Disarm pane-swap mode without acting.
+    pub fn cancel_swap_target(&mut self) {
+        self.awaiting_swap_target = false;
     }
 
     /// Caret-notation label for the configured leader chord, e.g. `^Q` for
@@ -298,6 +323,7 @@ pub(crate) mod tests {
             branch_name: None,
             leader: KeyEvent::new(KeyCode::Char('q'), KeyModifiers::CONTROL),
             prefix_armed: false,
+            awaiting_swap_target: false,
         }
     }
 

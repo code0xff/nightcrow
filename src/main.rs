@@ -404,9 +404,11 @@ fn handle_key(app: &mut App, key: KeyEvent) -> KeyOutcome {
         || app.log_view.commit_search_active
         || app.log_view.file_search_active;
     if overlay_active {
-        // A prefix could only be armed if an overlay opened out from under it;
-        // disarm so the indicator never lingers behind a modal.
+        // A prefix (or swap-target) could only be armed if an overlay opened
+        // out from under it; disarm both so neither indicator lingers behind a
+        // modal.
         app.cancel_prefix();
+        app.cancel_swap_target();
         if app.repo_input.active {
             handle_repo_input_key(app, key);
         } else {
@@ -414,6 +416,13 @@ fn handle_key(app: &mut App, key: KeyEvent) -> KeyOutcome {
             handle_upper_key(app, key, Action::None);
         }
         return KeyOutcome::Continue;
+    }
+
+    // Swap-target mode is armed (`<leader> s`): this key is the digit naming
+    // the pane to swap the active pane with. Checked before the prefix so its
+    // dedicated follow-up handler owns the key.
+    if app.awaiting_swap_target() {
+        return handle_swap_target_followup(app, key);
     }
 
     // Prefix is armed: this key is the single follow-up. Resolve it three
@@ -476,6 +485,25 @@ fn handle_prefix_followup(app: &mut App, key: KeyEvent) -> KeyOutcome {
     KeyOutcome::Continue
 }
 
+/// Resolve the key pressed while swap-target mode is armed (`<leader> s`). The
+/// mode is always disarmed before returning. A digit that names a pane runs the
+/// swap; `Esc`/`Ctrl+C` cancels; any other key is consumed. The digit→pane
+/// mapping is reused from `prefix_action` so it matches the focus-jump digits
+/// one-for-one (`3`..`9`,`0` → panes `0`..`7`).
+fn handle_swap_target_followup(app: &mut App, key: KeyEvent) -> KeyOutcome {
+    app.cancel_swap_target();
+
+    let is_ctrl_c = key.code == KeyCode::Char('c') && key.modifiers.contains(KeyModifiers::CONTROL);
+    if key.code == KeyCode::Esc || is_ctrl_c {
+        return KeyOutcome::Continue;
+    }
+
+    if let Action::SwitchPane(idx) = prefix_action(key) {
+        app.swap_active_pane_with(idx);
+    }
+    KeyOutcome::Continue
+}
+
 fn handle_global_action(app: &mut App, action: Action) -> Option<KeyOutcome> {
     match action {
         Action::Quit => Some(KeyOutcome::Quit),
@@ -514,6 +542,10 @@ fn handle_global_action(app: &mut App, action: Action) -> Option<KeyOutcome> {
         Action::Redraw => Some(KeyOutcome::Redraw),
         Action::SwitchPane(n) => {
             app.switch_pane(n);
+            Some(KeyOutcome::Continue)
+        }
+        Action::SwapPanePrompt => {
+            app.begin_swap_target();
             Some(KeyOutcome::Continue)
         }
         Action::FocusList => {
@@ -1101,6 +1133,75 @@ mod tests {
             backend_payloads(&app).is_empty(),
             "a consumed leader digit must not reach the PTY"
         );
+    }
+
+    #[test]
+    fn handle_key_leader_s_then_digit_swaps_active_pane() {
+        // `<leader> s 5` swaps the active pane with pane index 2 (digit 5
+        // mirrors F5 → pane 2) and moves focus to follow it.
+        let mut app = app_with_terminal_pane();
+        for i in 1..3 {
+            app.terminal
+                .create_pane_with(None, Some(&format!("pane{i}")))
+                .unwrap();
+        }
+        assert_eq!(app.terminal.panes.len(), 3);
+        app.switch_pane(0);
+        let moving_id = app.terminal.panes[0].id;
+        let target_id = app.terminal.panes[2].id;
+
+        // `<leader> s` arms swap mode without acting.
+        let _ = handle_key(&mut app, leader());
+        let _ = handle_key(&mut app, press(KeyCode::Char('s'), KeyModifiers::NONE));
+        assert!(app.awaiting_swap_target(), "leader+s must arm swap mode");
+        assert!(!app.prefix_armed(), "swap mode must clear the prefix");
+
+        // The digit resolves the swap.
+        let _ = handle_key(&mut app, press(KeyCode::Char('5'), KeyModifiers::NONE));
+        assert!(!app.awaiting_swap_target(), "the digit must disarm swap mode");
+        assert_eq!(app.terminal.panes[0].id, target_id);
+        assert_eq!(app.terminal.panes[2].id, moving_id);
+        assert_eq!(app.terminal.active, 2, "focus follows the moved pane");
+        assert!(
+            backend_payloads(&app).is_empty(),
+            "a consumed swap digit must not reach the PTY"
+        );
+    }
+
+    #[test]
+    fn handle_key_leader_s_esc_cancels_without_swapping() {
+        let mut app = app_with_terminal_pane();
+        app.terminal.create_pane_with(None, Some("two")).unwrap();
+        app.switch_pane(0);
+        let order: Vec<_> = app.terminal.panes.iter().map(|p| p.id).collect();
+
+        let _ = handle_key(&mut app, leader());
+        let _ = handle_key(&mut app, press(KeyCode::Char('s'), KeyModifiers::NONE));
+        let _ = handle_key(&mut app, press(KeyCode::Esc, KeyModifiers::NONE));
+
+        assert!(!app.awaiting_swap_target());
+        assert_eq!(app.terminal.active, 0);
+        let after: Vec<_> = app.terminal.panes.iter().map(|p| p.id).collect();
+        assert_eq!(order, after, "esc must leave pane order unchanged");
+    }
+
+    #[test]
+    fn handle_key_leader_s_non_digit_cancels() {
+        // A non-pane follow-up (e.g. a letter) cancels swap mode and is
+        // consumed rather than swapping or reaching the PTY.
+        let mut app = app_with_terminal_pane();
+        app.terminal.create_pane_with(None, Some("two")).unwrap();
+        app.switch_pane(0);
+        let order: Vec<_> = app.terminal.panes.iter().map(|p| p.id).collect();
+
+        let _ = handle_key(&mut app, leader());
+        let _ = handle_key(&mut app, press(KeyCode::Char('s'), KeyModifiers::NONE));
+        let _ = handle_key(&mut app, press(KeyCode::Char('z'), KeyModifiers::NONE));
+
+        assert!(!app.awaiting_swap_target());
+        let after: Vec<_> = app.terminal.panes.iter().map(|p| p.id).collect();
+        assert_eq!(order, after);
+        assert!(backend_payloads(&app).is_empty());
     }
 
     #[test]

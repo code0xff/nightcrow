@@ -431,6 +431,22 @@ impl TerminalState {
         true
     }
 
+    /// Swap the active pane with the pane at `idx`, moving focus so it follows
+    /// the active pane to its new slot (`active` becomes `idx`). Returns `true`
+    /// when the swap happened, `false` for an out-of-range `idx` or a self-swap
+    /// (both benign no-ops). Only the ordered `panes` Vec changes — all
+    /// per-pane state (parsers, scroll, sizes, prompt buffers, backend) is keyed
+    /// by `PaneId`, so reordering leaves it untouched.
+    pub fn swap_active_with(&mut self, idx: usize) -> bool {
+        if idx >= self.panes.len() || idx == self.active {
+            return false;
+        }
+        self.panes.swap(self.active, idx);
+        self.active = idx;
+        self.sync_visible_window();
+        true
+    }
+
     /// Screen for a specific pane, independent of which pane is currently
     /// active — the split-view renderer draws every visible pane, not just
     /// the focused one.
@@ -669,6 +685,70 @@ mod tests {
         assert_eq!(state.panes.len(), 2);
         assert_eq!(state.panes[1].title, "shell 2");
         assert_eq!(state.active, 1);
+    }
+
+    #[test]
+    fn swap_active_with_exchanges_panes_and_follows_focus() {
+        let mut state = state_with_fake();
+        state.create_pane_with(None, Some("A")).unwrap();
+        state.create_pane_with(None, Some("B")).unwrap();
+        state.create_pane_with(None, Some("C")).unwrap();
+        state.active = 0; // focus pane "A"
+        let a_id = state.panes[0].id;
+        let c_id = state.panes[2].id;
+
+        assert!(state.swap_active_with(2));
+
+        // "A" and "C" exchanged slots; focus followed "A" to slot 2.
+        assert_eq!(state.panes[0].id, c_id);
+        assert_eq!(state.panes[2].id, a_id);
+        assert_eq!(state.panes[0].title, "C");
+        assert_eq!(state.panes[2].title, "A");
+        assert_eq!(state.active, 2);
+    }
+
+    #[test]
+    fn swap_active_with_out_of_range_is_noop() {
+        let mut state = state_with_fake();
+        state.create_pane_with(None, Some("A")).unwrap();
+        state.create_pane_with(None, Some("B")).unwrap();
+        state.active = 0;
+
+        assert!(!state.swap_active_with(5));
+        assert_eq!(state.active, 0);
+        assert_eq!(state.panes[0].title, "A");
+        assert_eq!(state.panes[1].title, "B");
+    }
+
+    #[test]
+    fn swap_active_with_self_is_noop() {
+        let mut state = state_with_fake();
+        state.create_pane_with(None, Some("A")).unwrap();
+        state.create_pane_with(None, Some("B")).unwrap();
+        state.active = 1;
+
+        assert!(!state.swap_active_with(1));
+        assert_eq!(state.active, 1);
+        assert_eq!(state.panes[1].title, "B");
+    }
+
+    #[test]
+    fn swap_active_with_preserves_per_pane_state() {
+        let mut state = state_with_fake();
+        state.create_pane_with(None, Some("A")).unwrap();
+        state.create_pane_with(None, Some("B")).unwrap();
+        state.active = 0;
+        let a_id = state.panes[0].id;
+        // Seed scroll/size state keyed by the moving pane's id.
+        state.scroll.insert(a_id, 7);
+        state.last_content_size.insert(a_id, (10, 40));
+
+        assert!(state.swap_active_with(1));
+
+        // Per-pane state is id-keyed, so it survives the reorder unchanged.
+        assert_eq!(state.scroll.get(&a_id), Some(&7));
+        assert_eq!(state.last_content_size.get(&a_id), Some(&(10, 40)));
+        assert_eq!(state.panes[1].id, a_id);
     }
 
     #[test]

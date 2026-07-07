@@ -12,6 +12,10 @@ pub enum Action {
     ChangeRepo,
     ToggleFullscreen,
     SwitchPane(usize),
+    /// Arm swap mode: the next digit picks the pane to swap the active pane
+    /// with. Emitted by the `<leader> s` follow-up; the digit is resolved in a
+    /// separate tick (see `handle_swap_target_followup` in `main`).
+    SwapPanePrompt,
     FocusList,
     FocusDiff,
     CycleForward,
@@ -85,6 +89,7 @@ pub fn prefix_action(event: KeyEvent) -> Action {
             'l' => Action::ToggleLogView,
             'b' => Action::ToggleTreeView,
             'f' => Action::ToggleFullscreen,
+            's' => Action::SwapPanePrompt,
             'o' => Action::ChangeRepo,
             'p' => Action::CycleTheme,
             'r' => Action::Redraw,
@@ -297,6 +302,10 @@ mod tests {
         assert_eq!(prefix_action(key(KeyCode::Char('p'))), Action::CycleTheme);
         assert_eq!(prefix_action(key(KeyCode::Char('r'))), Action::Redraw);
         assert_eq!(prefix_action(key(KeyCode::Char('q'))), Action::Quit);
+        assert_eq!(
+            prefix_action(key(KeyCode::Char('s'))),
+            Action::SwapPanePrompt
+        );
     }
 
     #[test]

@@ -309,7 +309,22 @@ fn render_hint_bar(app: &App, accent: Color) -> Paragraph<'_> {
                     .add_modifier(Modifier::BOLD),
             ),
             Span::styled(
-                " t: new pane | w: close | l: log/status | b: tree/status | f: fullscreen | o: repo | p: theme | r: redraw | q: quit | 1-9: focus/pane | esc: cancel",
+                " t: new pane | w: close | s: swap pane | l: log/status | b: tree/status | f: fullscreen | o: repo | p: theme | r: redraw | q: quit | 1-9: focus/pane | esc: cancel",
+                Style::default().fg(Color::DarkGray),
+            ),
+        ]));
+    }
+    if app.awaiting_swap_target() {
+        return Paragraph::new(Line::from(vec![
+            Span::styled(
+                " SWAP ",
+                Style::default()
+                    .fg(Color::Black)
+                    .bg(accent)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(
+                " 3-9,0: swap active pane with this pane | esc: cancel",
                 Style::default().fg(Color::DarkGray),
             ),
         ]));
