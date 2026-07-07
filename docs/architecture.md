@@ -116,9 +116,20 @@ background even while scrolled out of the window.
   always contain `active`, nudging the window the minimum amount needed
   rather than re-centering. It must be called after anything that changes
   `active` or the pane count — `create_pane_with`, `switch_pane`,
-  `cycle_focus_forward/backward`, pane close/exit clamp, and session
-  restore all do this; adding a new mutation site for `active` without a
-  matching `sync_visible_window` call is a bug.
+  `swap_active_with`, `cycle_focus_forward/backward`, pane close/exit clamp,
+  and session restore all do this; adding a new mutation site for `active`
+  without a matching `sync_visible_window` call is a bug.
+- **Pane reorder (swap)**: `TerminalState::swap_active_with(idx)` exchanges the
+  active pane with the pane at `idx` in the ordered `panes` Vec and sets
+  `active = idx` so focus follows the moved pane. Only the Vec order changes —
+  all per-pane state (parsers, scroll, sizes, prompt buffers, backend PTYs) is
+  keyed by the stable `PaneId`, so a reorder never touches it. Pane order is not
+  persisted (PTYs are live processes recreated from `startup_commands` on
+  restart), so swap is session-transient; the saved `active_pane` index stays
+  consistent because `active` is updated in step. Triggered by `<prefix> s`,
+  which arms a second follow-up state (`App::awaiting_swap_target`, mutually
+  exclusive with `prefix_armed`); the next digit is resolved through the same
+  `prefix_action` mapping as the focus-jump digits so both stay in lockstep.
 - **Fullscreen cycle**: `<prefix> f` while the terminal is focused cycles
   `App::toggle_terminal_fullscreen` through `TerminalFullscreen::{Off, Grid,
   Zoom}` (`Off → Grid → Zoom → Off`). `Grid` and `Zoom` both hide the top

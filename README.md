@@ -100,6 +100,7 @@ visible from the terminal pane.
 | `<prefix>` then `<prefix>` | Send the literal leader to the terminal program |
 | `<prefix> t` | Open new terminal pane |
 | `<prefix> w` | Close active terminal pane |
+| `<prefix> s` then `3`…`9`,`0` | Swap the active terminal pane with pane 1…8 (focus follows the pane; same pane numbering as the jump keys) |
 | `<prefix> l` | Toggle between status view and commit log view |
 | `<prefix> b` | Toggle the read-only file-tree view (returns to status view) |
 | `<prefix> f` | Fullscreen the focused pane. For the terminal it cycles `off → grid (all panes) → zoom (active pane only) → off`; with a single pane it toggles straight off/on. File list and diff viewer toggle off/on |
@@ -113,6 +114,10 @@ visible from the terminal pane.
 
 The prefix has no timeout: once armed it waits indefinitely for the follow-up
 key. A key with no leader binding cancels the prefix and is dropped.
+
+`<prefix> s` is the one two-step chord: it arms a swap mode (shown as `SWAP` in
+the hint bar) that waits for a pane digit, then swaps the active pane with the
+chosen one. A non-digit follow-up or `Esc` cancels swap mode without reordering.
 
 ### Global (no prefix)
 
