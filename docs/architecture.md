@@ -128,8 +128,22 @@ background even while scrolled out of the window.
   restart), so swap is session-transient; the saved `active_pane` index stays
   consistent because `active` is updated in step. Triggered by `<prefix> s`,
   which arms a second follow-up state (`App::awaiting_swap_target`, mutually
-  exclusive with `prefix_armed`); the next digit is resolved through the same
-  `prefix_action` mapping as the focus-jump digits so both stay in lockstep.
+  exclusive with `prefix_armed`); the next digit is resolved through
+  `resolve_prefix_action` — the same layout-aware mapping as the focus-jump
+  digits — so both stay in lockstep in split view and fullscreen alike.
+- **Layout-aware jump keys**: both the leader digit row and the no-prefix F-key
+  row switch mapping by layout, kept in lockstep. In the split view
+  `input::prefix_action` (`1`=list, `2`=diff, `3`..`9`,`0`=panes `0`..`7`) and
+  `input::map_key` (`F1`=list, `F2`=diff, `F3`..`F10`=panes `0`..`7`) apply.
+  While the terminal fills the body (`fills_body()`) the upper viewer is hidden,
+  so `main::resolve_prefix_action` and the no-prefix dispatch in `handle_key`
+  swap in the fullscreen variants: `input::prefix_action_fullscreen` maps
+  `1`..`8` → panes `0`..`7` and `input::map_key_fullscreen` maps `F1`..`F8` →
+  panes `0`..`7` (both by natural numbering; `9`/`0` and `F9`/`F10` are dropped,
+  non-jump keys unchanged). No jump key returns to the list/diff in fullscreen —
+  the sole exit is `<prefix> f`, which cycles fullscreen off. The tab bar
+  (`render_tab_bar`) mirrors the active mapping in its key legend (`1`..`8` in
+  fullscreen — doubling for `<prefix>` and F-keys — `F3`..`F10` in split view).
 - **Fullscreen cycle**: `<prefix> f` while the terminal is focused cycles
   `App::toggle_terminal_fullscreen` through `TerminalFullscreen::{Off, Grid,
   Zoom}` (`Off → Grid → Zoom → Off`). `Grid` and `Zoom` both hide the top

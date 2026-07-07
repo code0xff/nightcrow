@@ -100,7 +100,7 @@ visible from the terminal pane.
 | `<prefix>` then `<prefix>` | Send the literal leader to the terminal program |
 | `<prefix> t` | Open new terminal pane |
 | `<prefix> w` | Close active terminal pane |
-| `<prefix> s` then `3`…`9`,`0` | Swap the active terminal pane with pane 1…8 (focus follows the pane; same pane numbering as the jump keys) |
+| `<prefix> s` then `3`…`9`,`0` | Swap the active terminal pane with pane 1…8 (focus follows the pane; same pane numbering as the jump keys, so in terminal fullscreen the swap digits are `1`…`8`) |
 | `<prefix> l` | Toggle between status view and commit log view |
 | `<prefix> b` | Toggle the read-only file-tree view (returns to status view) |
 | `<prefix> f` | Fullscreen the focused pane. For the terminal it cycles `off → grid (all panes) → zoom (active pane only) → off`; with a single pane it toggles straight off/on. File list and diff viewer toggle off/on |
@@ -108,8 +108,9 @@ visible from the terminal pane.
 | `<prefix> p` | Cycle accent color (yellow → cyan → green → magenta → blue) |
 | `<prefix> r` | Force a full redraw (clears stray glyphs left by terminal programs) |
 | `<prefix> q` | Quit |
-| `<prefix> 1` / `<prefix> 2` | Focus the file/commit list / diff viewer (mirrors `F1` / `F2`) |
+| `<prefix> 1` / `<prefix> 2` | Focus the file/commit list / diff viewer (mirrors `F1` / `F2`) — **split view only** |
 | `<prefix> 3`…`<prefix> 9`, `<prefix> 0` | Jump to terminal pane 1…8 (mirrors `F3`…`F10`; `0` mirrors `F10`) |
+| `<prefix> 1`…`<prefix> 8` (terminal fullscreen) | Jump to terminal pane 1…8. With the viewer hidden the digit row addresses panes by natural numbering; `9`/`0` are unused. The bare `F1`…`F8` keys remap the same way, so the only way back to the list/diff is `<prefix> f` to leave fullscreen |
 | `Esc` / `Ctrl+C` (while armed) | Cancel the prefix |
 
 The prefix has no timeout: once armed it waits indefinitely for the follow-up
@@ -124,8 +125,9 @@ chosen one. A non-digit follow-up or `Esc` cancels swap mode without reordering.
 | Key | Action |
 |-----|--------|
 | `Shift+→` / `Shift+←` | Cycle focus: file list → diff viewer → terminal panes → … |
-| `F1` / `F2` | Focus file list / diff viewer |
-| `F3`…`F10` | Jump to terminal pane 1…8 |
+| `F1` / `F2` | Focus file list / diff viewer — **split view only** |
+| `F3`…`F10` | Jump to terminal pane 1…8 (split view) |
+| `F1`…`F8` (terminal fullscreen) | Jump to terminal pane 1…8. With the viewer hidden the whole F-key row addresses panes by natural numbering (mirrors `<prefix> 1`…`8`); `F9`/`F10` are unused. Exit fullscreen with `<prefix> f` |
 
 ### File list / Commit list (left panel)
 
