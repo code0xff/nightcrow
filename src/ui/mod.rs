@@ -300,6 +300,14 @@ fn render_hint_bar(app: &App, accent: Color) -> Paragraph<'_> {
         ]));
     }
     if app.prefix_armed() {
+        // While the terminal fills the body the digit row addresses panes
+        // directly (`1-8`); in the split view `1`/`2` focus the list/diff and
+        // `3-9,0` jump to panes (see `main::resolve_prefix_action`).
+        let digits = if app.terminal.fullscreen.fills_body() {
+            "1-8: pane"
+        } else {
+            "1-9: focus/pane"
+        };
         return Paragraph::new(Line::from(vec![
             Span::styled(
                 " PREFIX ",
@@ -309,12 +317,20 @@ fn render_hint_bar(app: &App, accent: Color) -> Paragraph<'_> {
                     .add_modifier(Modifier::BOLD),
             ),
             Span::styled(
-                " t: new pane | w: close | s: swap pane | l: log/status | b: tree/status | f: fullscreen | o: repo | p: theme | r: redraw | q: quit | 1-9: focus/pane | esc: cancel",
+                format!(" t: new pane | w: close | s: swap pane | l: log/status | b: tree/status | f: fullscreen | o: repo | p: theme | r: redraw | q: quit | {digits} | esc: cancel"),
                 Style::default().fg(Color::DarkGray),
             ),
         ]));
     }
     if app.awaiting_swap_target() {
+        // The swap-target digits follow the same layout-aware mapping as the
+        // focus jumps (see `main::resolve_prefix_action`): `1-8` while the
+        // terminal fills the body, `3-9,0` in the split view.
+        let digits = if app.terminal.fullscreen.fills_body() {
+            "1-8"
+        } else {
+            "3-9,0"
+        };
         return Paragraph::new(Line::from(vec![
             Span::styled(
                 " SWAP ",
@@ -324,7 +340,7 @@ fn render_hint_bar(app: &App, accent: Color) -> Paragraph<'_> {
                     .add_modifier(Modifier::BOLD),
             ),
             Span::styled(
-                " 3-9,0: swap active pane with this pane | esc: cancel",
+                format!(" {digits}: swap active pane with this pane | esc: cancel"),
                 Style::default().fg(Color::DarkGray),
             ),
         ]));
@@ -440,7 +456,78 @@ fn render_hint_bar(app: &App, accent: Color) -> Paragraph<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::app::tests::app_with_files;
+    use crate::app::tests::{app_with_fake_backend, app_with_files};
+    use crate::runtime::terminal::TerminalFullscreen;
+    use ratatui::{Terminal, backend::TestBackend};
+
+    /// Render the hint bar into a wide buffer and return its flattened text so
+    /// footer wording can be asserted layout by layout.
+    fn hint_text(app: &App) -> String {
+        let mut terminal = Terminal::new(TestBackend::new(200, 1)).unwrap();
+        terminal
+            .draw(|frame| frame.render_widget(render_hint_bar(app, Color::Yellow), frame.area()))
+            .unwrap();
+        let buf = terminal.backend().buffer();
+        (0..buf.area.height)
+            .map(|y| {
+                (0..buf.area.width)
+                    .map(|x| buf[(x, y)].symbol())
+                    .collect::<String>()
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
+    #[test]
+    fn swap_hint_advertises_split_view_digits_by_default() {
+        let mut app = app_with_fake_backend();
+        app.begin_swap_target();
+
+        assert!(
+            hint_text(&app).contains("3-9,0: swap active pane"),
+            "split view swap prompt must advertise the 3-9,0 mapping"
+        );
+    }
+
+    #[test]
+    fn swap_hint_advertises_fullscreen_digits_when_terminal_fills_body() {
+        let mut app = app_with_fake_backend();
+        app.terminal.fullscreen = TerminalFullscreen::Grid;
+        app.begin_swap_target();
+
+        let text = hint_text(&app);
+        assert!(
+            text.contains("1-8: swap active pane"),
+            "fullscreen swap prompt must advertise the 1-8 mapping, got: {text}"
+        );
+        assert!(
+            !text.contains("3-9,0"),
+            "fullscreen swap prompt must not show the split-view digits, got: {text}"
+        );
+    }
+
+    #[test]
+    fn prefix_hint_switches_pane_digit_legend_by_layout() {
+        let mut split = app_with_fake_backend();
+        split.arm_prefix();
+        assert!(
+            hint_text(&split).contains("1-9: focus/pane"),
+            "split view prefix hint must advertise focus/pane digits"
+        );
+
+        let mut full = app_with_fake_backend();
+        full.terminal.fullscreen = TerminalFullscreen::Grid;
+        full.arm_prefix();
+        let text = hint_text(&full);
+        assert!(
+            text.contains("1-8: pane"),
+            "fullscreen prefix hint must advertise the 1-8 pane digits, got: {text}"
+        );
+        assert!(
+            !text.contains("1-9: focus/pane"),
+            "fullscreen prefix hint must not show the split-view legend, got: {text}"
+        );
+    }
 
     #[test]
     fn home_relative_strips_home_prefix_and_trailing_slash() {

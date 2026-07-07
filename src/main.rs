@@ -22,7 +22,10 @@ use crossterm::{
     execute,
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
-use input::{Action, encode_key, map_key, prefix_action, vim_navigation_action};
+use input::{
+    Action, encode_key, map_key, map_key_fullscreen, prefix_action, prefix_action_fullscreen,
+    vim_navigation_action,
+};
 use ratatui::{Terminal, backend::CrosstermBackend, layout::Rect};
 use std::{io, time::Duration};
 use syntect::highlighting::ThemeSet;
@@ -438,7 +441,13 @@ fn handle_key(app: &mut App, key: KeyEvent) -> KeyOutcome {
         return KeyOutcome::Continue;
     }
 
-    let action = map_key(key);
+    // Fullscreen repurposes the bare F-key row onto panes, matching the
+    // layout-aware leader digits (see `resolve_prefix_action`).
+    let action = if app.terminal.fullscreen.fills_body() {
+        map_key_fullscreen(key)
+    } else {
+        map_key(key)
+    };
     if let Some(outcome) = handle_global_action(app, action) {
         return outcome;
     }
@@ -477,7 +486,7 @@ fn handle_prefix_followup(app: &mut App, key: KeyEvent) -> KeyOutcome {
     }
 
     // A mapped follow-up runs its app command everywhere (terminal + upper).
-    let action = prefix_action(key);
+    let action = resolve_prefix_action(app, key);
     if let Some(outcome) = handle_global_action(app, action) {
         return outcome;
     }
@@ -498,10 +507,23 @@ fn handle_swap_target_followup(app: &mut App, key: KeyEvent) -> KeyOutcome {
         return KeyOutcome::Continue;
     }
 
-    if let Action::SwitchPane(idx) = prefix_action(key) {
+    if let Action::SwitchPane(idx) = resolve_prefix_action(app, key) {
         app.swap_active_pane_with(idx);
     }
     KeyOutcome::Continue
+}
+
+/// Pick the leader follow-up mapping for the current layout. While the terminal
+/// fills the body the upper viewer is hidden, so `prefix_action_fullscreen`
+/// repurposes the digit row `1`..`8` onto panes `0`..`7`; otherwise the normal
+/// split-view mapping applies (`1`=list, `2`=diff, `3`..`0`=panes). Shared by
+/// the focus-jump and swap-target follow-ups so both stay in lockstep.
+fn resolve_prefix_action(app: &App, key: KeyEvent) -> Action {
+    if app.terminal.fullscreen.fills_body() {
+        prefix_action_fullscreen(key)
+    } else {
+        prefix_action(key)
+    }
 }
 
 fn handle_global_action(app: &mut App, action: Action) -> Option<KeyOutcome> {
@@ -1158,7 +1180,10 @@ mod tests {
 
         // The digit resolves the swap.
         let _ = handle_key(&mut app, press(KeyCode::Char('5'), KeyModifiers::NONE));
-        assert!(!app.awaiting_swap_target(), "the digit must disarm swap mode");
+        assert!(
+            !app.awaiting_swap_target(),
+            "the digit must disarm swap mode"
+        );
         assert_eq!(app.terminal.panes[0].id, target_id);
         assert_eq!(app.terminal.panes[2].id, moving_id);
         assert_eq!(app.terminal.active, 2, "focus follows the moved pane");

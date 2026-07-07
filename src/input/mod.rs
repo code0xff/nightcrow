@@ -72,6 +72,27 @@ pub fn map_key(event: KeyEvent) -> Action {
     }
 }
 
+/// No-prefix classification while the terminal fills the body
+/// (`TerminalFullscreen::fills_body`). Mirrors `prefix_action_fullscreen` on the
+/// F-key row: with the upper viewer hidden, `F1`..`F8` address the (up to
+/// `MAX_VISIBLE_FULLSCREEN` = 8) terminal panes `0`..`7` by natural numbering
+/// instead of `F1`=list / `F2`=diff. `F9`/`F10` have no pane and are dropped.
+/// Every other key (Shift+arrows, PageUp/Down, plain arrows) defers to
+/// `map_key`. Only bare F-keys are remapped; a modified F-key still passes
+/// through to the PTY. Exit fullscreen with `<prefix> f`, since no F-key returns
+/// to the list/diff here.
+pub fn map_key_fullscreen(event: KeyEvent) -> Action {
+    if event.modifiers.is_empty()
+        && let KeyCode::F(n) = event.code
+    {
+        return match n {
+            1..=8 => Action::SwitchPane(n as usize - 1),
+            _ => Action::None,
+        };
+    }
+    map_key(event)
+}
+
 /// Classify the single follow-up key pressed after the leader. Returns the
 /// app `Action` the leader chord maps to, or `Action::None` for an unmapped
 /// follow-up (which the dispatcher consumes and drops).
@@ -102,6 +123,24 @@ pub fn prefix_action(event: KeyEvent) -> Action {
         },
         _ => Action::None,
     }
+}
+
+/// Leader follow-up mapping used while the terminal fills the body
+/// (`TerminalFullscreen::fills_body`). The upper viewer is hidden, so the digit
+/// row is repurposed: `1`..`8` address the (up to `MAX_VISIBLE_FULLSCREEN` = 8)
+/// terminal panes `0`..`7` by natural numbering instead of the list/diff focus
+/// jumps that would only make sense with the viewer on screen. `9`/`0` have no
+/// pane in the 8-pane cap and are dropped rather than falling through to the
+/// split-view bindings. Every non-digit chord behaves exactly as in
+/// `prefix_action`, so `f` (exit fullscreen), `t`, `w`, `s`, etc. are unchanged.
+pub fn prefix_action_fullscreen(event: KeyEvent) -> Action {
+    if let KeyCode::Char(c @ '0'..='9') = event.code {
+        return match c {
+            '1'..='8' => Action::SwitchPane(c as usize - '1' as usize),
+            _ => Action::None,
+        };
+    }
+    prefix_action(event)
 }
 
 /// Returns `Some(Action::Up | Action::Down)` for the vim-style j/k navigation
@@ -327,6 +366,87 @@ mod tests {
             prefix_action(key(KeyCode::Char('0'))),
             Action::SwitchPane(7)
         );
+    }
+
+    #[test]
+    fn fullscreen_prefix_maps_digits_one_through_eight_to_panes() {
+        // With the upper viewer hidden the whole digit row addresses panes by
+        // natural numbering: 1..8 -> panes 0..7.
+        for d in 1..=8u8 {
+            let c = char::from(b'0' + d);
+            assert_eq!(
+                prefix_action_fullscreen(key(KeyCode::Char(c))),
+                Action::SwitchPane((d - 1) as usize),
+                "<prefix> {c} in fullscreen must jump to pane {}",
+                d - 1
+            );
+        }
+    }
+
+    #[test]
+    fn fullscreen_prefix_drops_nine_and_zero() {
+        // Only 8 panes have a jump key, so 9/0 must not fall through to the
+        // split-view list/diff/pane bindings.
+        assert_eq!(
+            prefix_action_fullscreen(key(KeyCode::Char('9'))),
+            Action::None
+        );
+        assert_eq!(
+            prefix_action_fullscreen(key(KeyCode::Char('0'))),
+            Action::None
+        );
+    }
+
+    #[test]
+    fn fullscreen_map_key_maps_f1_through_f8_to_panes() {
+        // With the viewer hidden the bare F-key row addresses panes by natural
+        // numbering, mirroring the leader digits: F1..F8 -> panes 0..7.
+        for n in 1..=8u8 {
+            assert_eq!(
+                map_key_fullscreen(key(KeyCode::F(n))),
+                Action::SwitchPane((n - 1) as usize),
+                "F{n} in fullscreen must jump to pane {}",
+                n - 1
+            );
+        }
+    }
+
+    #[test]
+    fn fullscreen_map_key_drops_f9_and_f10() {
+        // Only 8 panes have a jump key, so F9/F10 must not fall through to the
+        // split-view F3..F10 pane bindings.
+        assert_eq!(map_key_fullscreen(key(KeyCode::F(9))), Action::None);
+        assert_eq!(map_key_fullscreen(key(KeyCode::F(10))), Action::None);
+    }
+
+    #[test]
+    fn fullscreen_map_key_only_remaps_bare_f_keys() {
+        // A modified F-key still passes through to the PTY, and non-F reserved
+        // chords keep their meaning via the `map_key` delegation.
+        assert_eq!(
+            map_key_fullscreen(KeyEvent::new(KeyCode::F(1), KeyModifiers::CONTROL)),
+            Action::None
+        );
+        assert_eq!(
+            map_key_fullscreen(KeyEvent::new(KeyCode::Left, KeyModifiers::SHIFT)),
+            Action::CycleBackward
+        );
+        assert_eq!(map_key_fullscreen(key(KeyCode::Up)), Action::Up);
+    }
+
+    #[test]
+    fn fullscreen_prefix_leaves_non_digit_chords_unchanged() {
+        // Non-digit chords defer to `prefix_action`, so `f`/`t`/`w`/`s` and the
+        // rest keep their meaning while the terminal is fullscreen.
+        for (c, expected) in [
+            ('f', Action::ToggleFullscreen),
+            ('t', Action::NewPane),
+            ('w', Action::ClosePane),
+            ('s', Action::SwapPanePrompt),
+            ('q', Action::Quit),
+        ] {
+            assert_eq!(prefix_action_fullscreen(key(KeyCode::Char(c))), expected);
+        }
     }
 
     #[test]

@@ -288,6 +288,12 @@ fn render_tab_bar(
             Style::default().fg(Color::DarkGray),
         )]
     } else {
+        // While the terminal fills the body the upper viewer is hidden, so
+        // `<prefix> 1..8` address panes 0..7 directly (see
+        // `input::prefix_action_fullscreen`); label the tabs with those digits.
+        // In the split view the digits `1`/`2` belong to the list/diff, so the
+        // pane legend stays on `F3..F10` there.
+        let fullscreen = app.terminal.fullscreen.fills_body();
         let hidden_before = visible.start;
         let hidden_after = app.terminal.panes.len().saturating_sub(visible.end);
         let mut spans = Vec::new();
@@ -308,14 +314,18 @@ fn render_tab_bar(
                 } else {
                     Style::default().fg(Color::Gray)
                 };
-                // F3..=F10 (and the matching `<prefix> 3..9,0` digits) are
-                // wired to panes 0..=7 in `input`; show the binding so the
-                // tab bar doubles as a key legend. Panes past the 8th have no
-                // jump key, so they carry no hint to avoid implying an
-                // unbound shortcut.
+                // Panes 0..=7 carry a jump key, so show it as a key legend:
+                // `1..8` in fullscreen (both `<prefix> 1..8` and `F1..F8`),
+                // `F3..F10` in the split view (`<prefix> 3..9,0`). Panes past the
+                // 8th have no jump key, so they carry no hint to avoid implying
+                // an unbound shortcut.
                 let title = truncate_tab_title(&pane.title, TAB_TITLE_MAX_CHARS);
                 let label = if i < JUMP_KEY_PANE_COUNT {
-                    format!(" F{} {} ", i + 3, title)
+                    if fullscreen {
+                        format!(" {} {} ", i + 1, title)
+                    } else {
+                        format!(" F{} {} ", i + 3, title)
+                    }
                 } else {
                     format!(" {} ", title)
                 };
@@ -739,6 +749,48 @@ mod tests {
         assert!(
             text.contains('+'),
             "expected a hidden-pane count marker, got: {text}"
+        );
+    }
+
+    #[test]
+    fn tab_bar_labels_panes_with_f_keys_in_split_view() {
+        let mut app = crate::app::tests::app_with_fake_backend();
+        app.terminal.create_pane_with(None, Some("Alpha")).unwrap();
+        let mut terminal = Terminal::new(TestBackend::new(60, 20)).unwrap();
+
+        terminal
+            .draw(|frame| render(frame, &app, frame.area(), Color::Yellow))
+            .unwrap();
+
+        let text = buffer_text(terminal.backend().buffer());
+        assert!(
+            text.contains("F3 Alpha"),
+            "split view must label the first pane with its F3 jump key, got: {text}"
+        );
+    }
+
+    #[test]
+    fn tab_bar_labels_panes_with_digits_in_fullscreen() {
+        // Fullscreen hides the viewer, so the pane legend switches to the
+        // `<prefix> 1..8` digits that address panes there.
+        let mut app = crate::app::tests::app_with_fake_backend();
+        app.terminal.create_pane_with(None, Some("Alpha")).unwrap();
+        app.terminal.create_pane_with(None, Some("Beta")).unwrap();
+        app.terminal.fullscreen = crate::runtime::terminal::TerminalFullscreen::Grid;
+        let mut terminal = Terminal::new(TestBackend::new(60, 20)).unwrap();
+
+        terminal
+            .draw(|frame| render(frame, &app, frame.area(), Color::Yellow))
+            .unwrap();
+
+        let text = buffer_text(terminal.backend().buffer());
+        assert!(
+            text.contains("1 Alpha") && text.contains("2 Beta"),
+            "fullscreen must label panes with their <prefix> digits, got: {text}"
+        );
+        assert!(
+            !text.contains("F3"),
+            "fullscreen must not show the split-view F-key legend, got: {text}"
         );
     }
 }
