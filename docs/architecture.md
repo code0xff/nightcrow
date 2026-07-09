@@ -53,7 +53,8 @@ src/
 ├── runtime/
 │   ├── mod.rs
 │   ├── snapshot.rs       # SnapshotChannel: background git status/log worker
-│   └── terminal.rs       # TerminalState (panes, parsers, scroll, OSC title capture)
+│   ├── emulator.rs       # PaneEmulator/ScreenView: alacritty_terminal wrapper
+│   └── terminal.rs       # TerminalState (panes, emulators, scroll, title routing)
 ├── ui/
 │   ├── mod.rs            # root layout (top header + upper/lower split + hint bar)
 │   ├── status_view.rs    # status-mode state (file filter, search query/cache)
@@ -67,7 +68,7 @@ src/
 │   └── splash.rs         # first-run splash overlay
 ├── backend/
 │   ├── mod.rs            # TerminalBackend trait + BackendEvent
-│   └── pty.rs            # PtyBackend (portable-pty + vt100, the only backend)
+│   └── pty.rs            # PtyBackend (portable-pty, the only backend)
 ├── git/
 │   ├── mod.rs
 │   └── diff.rs           # git2 snapshot/diff loaders + tracking status
@@ -93,7 +94,7 @@ trait TerminalBackend {
 }
 ```
 
-- `PtyBackend`: portable-pty로 PTY 생성, reader 스레드가 `mpsc::Sender`로 출력/Exited 이벤트를 푸시한다. `vt100::Parser`가 VT 시퀀스를 그리드로 변환한다.
+- `PtyBackend`: portable-pty로 PTY 생성, reader 스레드가 `mpsc::Sender`로 출력/Exited 이벤트를 푸시한다. `runtime::emulator::PaneEmulator`(alacritty_terminal 래퍼)가 VT 시퀀스를 그리드로 변환한다.
 - **Pane 생명주기 단일 owner**: `drain_events`는 보고만 하고 제거하지 않는다. `App::poll_terminal`이 Exited 수신 시 `destroy_pane`을 호출해 backend HashMap에서 제거한다. `close_active_pane`도 같은 destroy 경로를 사용해, reader 스레드와의 race로 인한 이중 제거 / 이벤트 누락이 없다.
 
 ### Git Diff Pipeline
@@ -169,7 +170,7 @@ background even while scrolled out of the window.
 - **Sizing invariant**: `ui::terminal_tab::visible_pane_cells` is the single
   source of truth for pane Rects. `render` draws from it every frame, and
   `ui::terminal_content_areas` → `main_loop`'s `resize_visible_panes` call
-  reads from the same function, so a pane's backend PTY + vt100 parser size
+  reads from the same function, so a pane's backend PTY + emulator size
   always matches exactly what's drawn inside its cell. Don't compute pane
   sizes independently in a new call site — route it through this function.
 - **Input/scroll scope unchanged**: keyboard input, paste, prompt logging,
@@ -211,9 +212,15 @@ background even while scrolled out of the window.
 
 `ui::mod::render_repo_header`가 화면 첫 행에 repo 경로(`~/...` 형식으로 home-relative 표기), 현재 브랜치, upstream tracking 상태(`↑N ↓M`)를 상시 노출한다. 브랜치/추적 정보는 snapshot worker가 채워주고, detached HEAD/unborn branch처럼 값이 없으면 해당 칩만 생략한다.
 
-### OSC Title Capture
+### Terminal Emulation Layer
 
-`runtime::terminal::PaneCallbacks`가 `vt100::Callbacks::set_window_title`을 구현해 OSC 0/2 시퀀스로 들어오는 윈도우 타이틀을 캡처하고, `TerminalState`가 이를 `PaneInfo.title`에 반영해 탭 바에서 노출한다. claude/vim/ssh 같은 자체 타이틀 갱신 프로그램은 자동으로 적절한 라벨이 붙고, 타이틀을 보내지 않는 셸은 기본 라벨을 유지한다.
+`runtime::emulator::PaneEmulator`가 pane당 하나씩 alacritty_terminal의 `Term` + ANSI `Processor`를 감싸고, 렌더러는 `ScreenView`/`CellView`로만 화면을 조회한다. alacritty 타입은 이 모듈 밖으로 노출되지 않으므로 에뮬레이터 교체·업그레이드의 영향 범위가 이 파일 하나로 국소화된다.
+
+원래는 vt100 크레이트를 사용했으나 alacritty_terminal 0.26으로 교체했다. 근거: vt100은 (1) 스크롤백 underflow panic(당시 vendor 패치로 우회), (2) 스크롤 offset 초과 panic(앱 레벨 캡으로 우회), (3) wide char(한글 등)가 마지막 컬럼에 걸린 채 화면이 축소되면 이후 ED(erase) 처리에서 index out of bounds panic(upstream issue #28, 미수정 방치)으로 세 차례 크래시를 냈고 업스트림 유지보수가 정체 상태다. alacritty_terminal은 Alacritty/Zed에서 실전 검증된 활발한 프로젝트로 리사이즈 시 reflow까지 지원한다. 대안으로 검토한 avt(asciinema)는 바이트 입력·OSC 타이틀 통지가 없고, tui-term/shpool_vt100은 내부가 vt100이라 같은 버그를 공유해 제외했다. 단, alacritty의 최소 그리드는 1행 x 2열(`MIN_COLUMNS`)이라 `PaneEmulator`가 요청 크기를 이 최소값으로 클램프한다 — 1열 그리드는 wide char reflow가 무한 루프에 빠진다.
+
+**OSC title capture**: `Term`이 OSC 0/2 타이틀을 `Event::Title`로 통지하면 `PaneEmulator::process`가 이를 수집해 반환하고, `TerminalState::poll`이 `PaneInfo.title`에 반영해 탭 바에서 노출한다. claude/vim/ssh 같은 자체 타이틀 갱신 프로그램은 자동으로 적절한 라벨이 붙고, 타이틀을 보내지 않는 셸은 기본 라벨을 유지한다.
+
+**Terminal query replies**: DSR/DA처럼 내부 프로그램이 터미널에 묻는 쿼리에 대해 에뮬레이터가 생성한 응답(`Event::PtyWrite`)을 `TerminalState::poll`이 해당 pane의 PTY로 되돌려준다. vt100 시절에는 응답이 불가능해 쿼리가 무시됐다.
 
 ### HEAD Change Detection
 
@@ -232,7 +239,7 @@ Ratatui 레이어와 내부 TUI 간 키보드 이벤트 충돌은 leader(prefix)
 | Git diff | git2 0.20 (vendored libgit2/openssl) |
 | 문법 하이라이팅 | syntect 5.3 |
 | PTY 관리 | portable-pty 0.8 |
-| VT 파싱 | vt100 0.16 |
+| 터미널 에뮬레이션 | alacritty_terminal 0.26 |
 | 파일 로깅 | tracing + tracing-subscriber + tracing-appender |
 | 설정 파싱 | toml 0.8 + serde |
 | 세션 저장 | serde_json |
