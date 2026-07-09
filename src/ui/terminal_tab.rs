@@ -1,5 +1,6 @@
 use crate::app::{App, Focus};
 use crate::backend::PaneId;
+use crate::runtime::emulator::{CellView, ScreenView};
 use crate::runtime::terminal::{MAX_VISIBLE_FULLSCREEN, visible_range};
 use ratatui::{
     Frame,
@@ -142,7 +143,7 @@ struct VisiblePaneCell {
 /// Lay out every currently visible pane inside `content_area` (the terminal
 /// body, i.e. below the tab row). This is the single source of truth for
 /// pane sizing: `render` draws from it and `visible_pane_content_areas` (used
-/// to resize each pane's PTY) reads from it, so a pane's backend/vt100 size
+/// to resize each pane's PTY) reads from it, so a pane's backend/emulator size
 /// always matches what's actually drawn on screen.
 fn visible_pane_cells(app: &App, content_area: Rect) -> Vec<VisiblePaneCell> {
     let pane_count = app.terminal.panes.len();
@@ -181,7 +182,7 @@ fn visible_pane_cells(app: &App, content_area: Rect) -> Vec<VisiblePaneCell> {
 
 /// Content Rect (post border) for every currently visible pane, keyed by
 /// pane id. Used by the main loop to resize each pane's backend PTY and
-/// vt100 parser to exactly what `render` draws inside it.
+/// emulator to exactly what `render` draws inside it.
 pub(crate) fn visible_pane_content_areas(app: &App, area: Rect) -> Vec<(PaneId, Rect)> {
     let Some((_, content_area)) = terminal_layout(area) else {
         return Vec::new();
@@ -362,20 +363,20 @@ fn build_screen_lines(app: &App, pane_id: PaneId, rows: u16, cols: u16) -> Vec<L
             let mut run_style = Style::default();
 
             for col in 0..render_cols {
-                let (text, style): (&str, Style) = match screen.cell(row, col) {
+                let mut style = Style::default();
+                let cell = match screen.cell(row, col) {
                     Some(cell) => {
-                        // Wide chars (e.g., Hangul) occupy two columns: vt100
-                        // stores the glyph on the first cell and an empty
-                        // continuation on the second. Emitting anything for
-                        // the continuation would shift the row by one column.
-                        if cell.is_wide_continuation() {
+                        // Wide chars (e.g., Hangul) occupy two columns: the
+                        // glyph lives on the first cell and a spacer fills
+                        // the second. Emitting anything for the spacer would
+                        // shift the row by one column.
+                        if cell.is_wide_spacer() {
                             continue;
                         }
-                        let contents = cell.contents();
-                        let t = if contents.is_empty() { " " } else { contents };
-                        (t, cell_to_style(cell))
+                        style = cell_to_style(&cell);
+                        Some(cell)
                     }
-                    None => (" ", Style::default()),
+                    None => None,
                 };
 
                 if style != run_style {
@@ -384,7 +385,10 @@ fn build_screen_lines(app: &App, pane_id: PaneId, rows: u16, cols: u16) -> Vec<L
                     }
                     run_style = style;
                 }
-                run_text.push_str(text);
+                match cell {
+                    Some(cell) => cell.append_contents(&mut run_text),
+                    None => run_text.push(' '),
+                }
             }
             if !run_text.is_empty() {
                 spans.push(Span::styled(run_text, run_style));
@@ -405,22 +409,23 @@ fn render_cursor(frame: &mut Frame, app: &App, pane_id: PaneId, area: Rect) {
     let Some(screen) = app.terminal.screen_for_pane(pane_id) else {
         return;
     };
-    let Some(position) = screen_cursor_position(screen, area) else {
+    let Some(position) = screen_cursor_position(&screen, area) else {
         return;
     };
 
     frame.set_cursor_position(position);
 }
 
-fn screen_cursor_position(screen: &vt100::Screen, area: Rect) -> Option<Position> {
+fn screen_cursor_position(screen: &ScreenView<'_>, area: Rect) -> Option<Position> {
     if area.height == 0 || area.width == 0 {
         return None;
     }
 
     // Embedded CLIs such as Claude can leave DECTCEM hide-cursor mode enabled
     // while still expecting an outer terminal host to expose the input point.
-    // For the focused terminal pane, keep the host cursor visible at vt100's
-    // tracked cursor position instead of honoring the inner app's hide flag.
+    // For the focused terminal pane, keep the host cursor visible at the
+    // emulator's tracked cursor position instead of honoring the inner app's
+    // hide flag.
     let (row, col) = screen.cursor_position();
     Some(Position::new(
         area.x.saturating_add(col.min(area.width.saturating_sub(1))),
@@ -429,10 +434,8 @@ fn screen_cursor_position(screen: &vt100::Screen, area: Rect) -> Option<Position
     ))
 }
 
-fn cell_to_style(cell: &vt100::Cell) -> Style {
-    let mut style = Style::default()
-        .fg(vt100_color(cell.fgcolor()))
-        .bg(vt100_color(cell.bgcolor()));
+fn cell_to_style(cell: &CellView<'_>) -> Style {
+    let mut style = Style::default().fg(cell.fg()).bg(cell.bg());
     if cell.bold() {
         style = style.add_modifier(Modifier::BOLD);
     }
@@ -442,20 +445,15 @@ fn cell_to_style(cell: &vt100::Cell) -> Style {
     if cell.underline() {
         style = style.add_modifier(Modifier::UNDERLINED);
     }
+    if cell.dim() {
+        style = style.add_modifier(Modifier::DIM);
+    }
     // Reverse video is how vim visual mode, fzf's cursor, and less's search
     // hit mark selections. Without it those selections render as plain text.
     if cell.inverse() {
         style = style.add_modifier(Modifier::REVERSED);
     }
     style
-}
-
-fn vt100_color(c: vt100::Color) -> Color {
-    match c {
-        vt100::Color::Default => Color::Reset,
-        vt100::Color::Idx(i) => Color::Indexed(i),
-        vt100::Color::Rgb(r, g, b) => Color::Rgb(r, g, b),
-    }
 }
 
 #[cfg(test)]
@@ -466,10 +464,11 @@ mod tests {
 
     #[test]
     fn maps_screen_cursor_to_render_area() {
-        let mut parser = vt100::Parser::new(3, 10, 0);
-        parser.process(b"\x1b[2;4H");
+        let mut emulator = crate::runtime::emulator::PaneEmulator::new(3, 10, 0);
+        emulator.process(b"\x1b[2;4H");
 
-        let position = screen_cursor_position(parser.screen(), Rect::new(20, 10, 10, 3)).unwrap();
+        let position =
+            screen_cursor_position(&emulator.view(), Rect::new(20, 10, 10, 3)).unwrap();
 
         assert_eq!(position, Position::new(23, 11));
     }
@@ -495,10 +494,11 @@ mod tests {
 
     #[test]
     fn keeps_cursor_visible_when_terminal_requests_hide() {
-        let mut parser = vt100::Parser::new(3, 10, 0);
-        parser.process(b"\x1b[?25l\x1b[2;4H");
+        let mut emulator = crate::runtime::emulator::PaneEmulator::new(3, 10, 0);
+        emulator.process(b"\x1b[?25l\x1b[2;4H");
 
-        let position = screen_cursor_position(parser.screen(), Rect::new(20, 10, 10, 3)).unwrap();
+        let position =
+            screen_cursor_position(&emulator.view(), Rect::new(20, 10, 10, 3)).unwrap();
 
         assert_eq!(position, Position::new(23, 11));
     }

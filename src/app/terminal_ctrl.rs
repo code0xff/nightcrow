@@ -1,6 +1,6 @@
 //! App-level wrappers around `TerminalState` that mix in cross-cutting state
 //! (focus, status line, fullscreen flags). The pure terminal logic — event
-//! drain, pane create/close, vt100 parser bookkeeping — lives on
+//! drain, pane create/close, emulator bookkeeping — lives on
 //! `TerminalState` in `runtime/terminal.rs`; this module exists for the
 //! handful of actions that have to coordinate that logic with the rest of
 //! `App`'s state machine.
@@ -138,7 +138,7 @@ impl App {
         }
     }
 
-    pub fn active_screen(&self) -> Option<&vt100::Screen> {
+    pub fn active_screen(&self) -> Option<crate::runtime::emulator::ScreenView<'_>> {
         self.terminal.active_screen()
     }
 }

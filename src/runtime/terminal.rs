@@ -1,4 +1,5 @@
 use crate::backend::{BackendEvent, PaneId, TerminalBackend};
+use crate::runtime::emulator::{PaneEmulator, ScreenView};
 use std::collections::HashMap;
 
 /// Upper bound on a pane's in-flight prompt buffer before further chars are
@@ -7,36 +8,14 @@ use std::collections::HashMap;
 /// to cat). 4 KiB easily exceeds any realistic shell prompt line.
 const PROMPT_BUFFER_MAX_BYTES: usize = 4096;
 
-/// Scrollback line cap for every vt100 parser. Lifted here so the terminal
-/// state machine — which owns parser creation now — defines its own budget
+/// Scrollback line cap for every pane emulator. Lifted here so the terminal
+/// state machine — which owns emulator creation now — defines its own budget
 /// rather than reading it from `app`.
 pub const SCROLLBACK_LINES: usize = 1000;
 
 pub struct PaneInfo {
     pub id: PaneId,
     pub title: String,
-}
-
-/// vt100 callbacks that capture OSC 0/2 window title updates so the tab bar
-/// can reflect what the running program (claude, vim, ssh, …) advertises.
-/// Bare shells without precmd hooks never emit OSC, so a sensible default
-/// title still lives on `PaneInfo`.
-#[derive(Default, Debug)]
-pub(crate) struct PaneCallbacks {
-    pub(crate) pending_title: Option<String>,
-}
-
-impl vt100::Callbacks for PaneCallbacks {
-    fn set_window_title(&mut self, _: &mut vt100::Screen, title: &[u8]) {
-        let cleaned: String = String::from_utf8_lossy(title)
-            .chars()
-            .filter(|c| !c.is_control())
-            .collect();
-        let trimmed = cleaned.trim();
-        if !trimmed.is_empty() {
-            self.pending_title = Some(trimmed.to_string());
-        }
-    }
 }
 
 /// Default count of panes shown side by side in the normal (non-fullscreen)
@@ -113,7 +92,7 @@ pub struct TerminalState {
     pub size: (u16, u16),
     pub scroll: HashMap<PaneId, usize>,
     pub fullscreen: TerminalFullscreen,
-    /// Last (rows, cols) applied to each pane's backend + vt100 parser via
+    /// Last (rows, cols) applied to each pane's backend + emulator via
     /// `resize_visible_panes`. Panes currently scrolled out of the visible
     /// window keep whatever size they had when they were last visible.
     pub last_content_size: HashMap<PaneId, (u16, u16)>,
@@ -121,7 +100,7 @@ pub struct TerminalState {
     pub visible_start: usize,
     pub max_visible_normal: usize,
     pub max_visible_fullscreen: usize,
-    pub(crate) parsers: HashMap<PaneId, vt100::Parser<PaneCallbacks>>,
+    pub(crate) emulators: HashMap<PaneId, PaneEmulator>,
     pub(crate) prompt_bufs: HashMap<PaneId, String>,
     prompt_log_enabled: bool,
     pub(crate) backend: Option<Box<dyn TerminalBackend>>,
@@ -219,14 +198,11 @@ impl TerminalState {
             return;
         };
         let offset = self.scroll.get(&id).copied().unwrap_or(0);
-        let actual = match self.parsers.get_mut(&id) {
-            Some(parser) => {
-                // vt100 clamps the offset to the actual scrollback
-                // buffer size internally, so we can pass the full request
-                // through and read back what was applied.
-                parser.screen_mut().set_scrollback(offset);
-                parser.screen().scrollback()
-            }
+        let actual = match self.emulators.get_mut(&id) {
+            // The emulator clamps the offset to the actual scrollback
+            // buffer size internally, so we can pass the full request
+            // through and read back what was applied.
+            Some(emulator) => emulator.set_scroll_offset(offset),
             None => return,
         };
         if actual == 0 {
@@ -266,7 +242,7 @@ impl TerminalState {
         }
     }
 
-    /// Resize each listed pane's backend PTY and vt100 parser to its own
+    /// Resize each listed pane's backend PTY and emulator to its own
     /// (rows, cols), skipping a pane whose size didn't change. `layouts`
     /// carries one entry per currently *visible* pane — panes scrolled out of
     /// the split-view window are omitted and keep their `last_content_size`
@@ -274,8 +250,10 @@ impl TerminalState {
     pub fn resize_visible_panes(&mut self, layouts: &[(PaneId, u16, u16)]) {
         let active_id = self.active_pane_id();
         for &(id, rows, cols) in layouts {
-            let rows = rows.max(1);
-            let cols = cols.max(1);
+            // Shared minimum-grid clamp: PTY, emulator, and the recorded
+            // size must all agree, or the skip-if-unchanged check and the
+            // inner program's wrap width drift apart at degenerate layouts.
+            let (rows, cols) = crate::runtime::emulator::effective_size(rows, cols);
             if Some(id) == active_id {
                 self.size = (rows, cols);
             }
@@ -285,8 +263,8 @@ impl TerminalState {
             if let Some(backend) = &mut self.backend {
                 backend.resize(id, rows, cols);
             }
-            if let Some(parser) = self.parsers.get_mut(&id) {
-                parser.screen_mut().set_size(rows, cols);
+            if let Some(emulator) = self.emulators.get_mut(&id) {
+                emulator.resize(rows, cols);
             }
             self.last_content_size.insert(id, (rows, cols));
         }
@@ -316,7 +294,7 @@ impl TerminalState {
         }
     }
 
-    /// Drain pending backend events into vt100 parsers and pane metadata.
+    /// Drain pending backend events into pane emulators and pane metadata.
     /// Returns the pane ids the backend signalled as exited so the caller
     /// can run cross-cutting cleanup (focus redirect, fullscreen reset)
     /// that depends on state outside this struct.
@@ -331,16 +309,24 @@ impl TerminalState {
         for event in events {
             match event {
                 BackendEvent::Output { pane, data } => {
-                    let new_title = if let Some(parser) = self.parsers.get_mut(&pane) {
-                        parser.process(&data);
-                        parser.callbacks_mut().pending_title.take()
-                    } else {
-                        None
+                    let Some(emulator) = self.emulators.get_mut(&pane) else {
+                        continue;
                     };
-                    if let Some(title) = new_title
+                    let events = emulator.process(&data);
+                    if let Some(title) = events.title
                         && let Some(info) = self.panes.iter_mut().find(|p| p.id == pane)
                     {
                         info.title = title;
+                    }
+                    // Terminal query responses (DA, DSR, ...) go back to the
+                    // program that asked. Bypasses `send_input` on purpose:
+                    // an emulator-generated reply must not clear the user's
+                    // scroll position or land in the prompt log.
+                    if !events.pty_writes.is_empty()
+                        && let Some(backend) = &mut self.backend
+                        && let Err(e) = backend.send_input(pane, &events.pty_writes)
+                    {
+                        tracing::warn!("failed to send terminal reply to pane {pane}: {e}");
                     }
                 }
                 BackendEvent::Exited { pane } => {
@@ -366,7 +352,7 @@ impl TerminalState {
         self.create_pane_with(None, None)
     }
 
-    /// Allocate a new backend pane and matching vt100 parser. `command`, when
+    /// Allocate a new backend pane and matching emulator. `command`, when
     /// present, is run in the pane's shell immediately; `label` sets the
     /// initial tab title (a program that emits OSC 0/2 can still override it
     /// later). Both default sensibly when `None`. The caller is expected to
@@ -384,21 +370,15 @@ impl TerminalState {
             .active_pane_id()
             .map(|id| self.pane_size(id))
             .unwrap_or(self.size);
-        let rows = rows.max(1);
-        let cols = cols.max(1);
+        let (rows, cols) = crate::runtime::emulator::effective_size(rows, cols);
         let backend = self
             .backend
             .as_mut()
             .ok_or_else(|| anyhow::anyhow!("no terminal backend available"))?;
 
         let id = backend.create_pane(rows, cols, command)?;
-        let parser = vt100::Parser::new_with_callbacks(
-            rows,
-            cols,
-            SCROLLBACK_LINES,
-            PaneCallbacks::default(),
-        );
-        self.parsers.insert(id, parser);
+        self.emulators
+            .insert(id, PaneEmulator::new(rows, cols, SCROLLBACK_LINES));
         self.last_content_size.insert(id, (rows, cols));
         // Title precedence: explicit label → command text → default shell N.
         let title = match (label, command) {
@@ -450,17 +430,17 @@ impl TerminalState {
     /// Screen for a specific pane, independent of which pane is currently
     /// active — the split-view renderer draws every visible pane, not just
     /// the focused one.
-    pub fn screen_for_pane(&self, id: PaneId) -> Option<&vt100::Screen> {
-        self.parsers.get(&id).map(vt100::Parser::screen)
+    pub fn screen_for_pane(&self, id: PaneId) -> Option<ScreenView<'_>> {
+        self.emulators.get(&id).map(PaneEmulator::view)
     }
 
-    pub fn active_screen(&self) -> Option<&vt100::Screen> {
+    pub fn active_screen(&self) -> Option<ScreenView<'_>> {
         let id = self.active_pane_id()?;
         self.screen_for_pane(id)
     }
 
     fn remove_pane_state(&mut self, id: PaneId) {
-        self.parsers.remove(&id);
+        self.emulators.remove(&id);
         // Flush any unterminated prompt input so we don't lose the line the
         // user was composing when the pane closes.
         if let Some(buf) = self.prompt_bufs.remove(&id)
@@ -483,7 +463,7 @@ impl TerminalState {
             visible_start: 0,
             max_visible_normal: MAX_VISIBLE_NORMAL,
             max_visible_fullscreen: MAX_VISIBLE_FULLSCREEN,
-            parsers: HashMap::new(),
+            emulators: HashMap::new(),
             prompt_bufs: HashMap::new(),
             prompt_log_enabled,
             backend,
@@ -594,31 +574,64 @@ fn consume_ss3(chars: &mut std::iter::Peekable<std::str::Chars<'_>>) {
 mod tests {
     use super::*;
 
-    fn parser() -> vt100::Parser<PaneCallbacks> {
-        vt100::Parser::new_with_callbacks(3, 20, 0, PaneCallbacks::default())
+    /// A state with a FakeBackend plus the shared handle for injecting
+    /// synthetic backend events into the next `poll` call.
+    fn state_with_event_queue() -> (
+        TerminalState,
+        std::rc::Rc<std::cell::RefCell<Vec<BackendEvent>>>,
+    ) {
+        let backend = crate::test_util::FakeBackend::default();
+        let events = backend.pending_events.clone();
+        (TerminalState::new(Some(Box::new(backend)), false), events)
     }
 
     #[test]
-    fn captures_osc_two_window_title() {
-        let mut p = parser();
-        p.process(b"\x1b]2;claude\x07");
-        assert_eq!(p.callbacks().pending_title.as_deref(), Some("claude"));
+    fn poll_applies_osc_title_to_pane() {
+        let (mut state, events) = state_with_event_queue();
+        state.create_pane().unwrap();
+        let id = state.panes[0].id;
+
+        events.borrow_mut().push(BackendEvent::Output {
+            pane: id,
+            data: b"\x1b]2;claude\x07".to_vec(),
+        });
+        state.poll();
+
+        assert_eq!(state.panes[0].title, "claude");
     }
 
     #[test]
-    fn captures_osc_zero_title_and_strips_controls() {
-        let mut p = parser();
-        // OSC 0 sets both icon name and window title; embedded tab/BS bytes
-        // must not leak into the tab label.
-        p.process(b"\x1b]0;cargo\t test\x08\x07");
-        assert_eq!(p.callbacks().pending_title.as_deref(), Some("cargo test"));
+    fn poll_keeps_title_when_output_sets_none() {
+        let (mut state, events) = state_with_event_queue();
+        state.create_pane_with(None, Some("shell")).unwrap();
+        let id = state.panes[0].id;
+
+        events.borrow_mut().push(BackendEvent::Output {
+            pane: id,
+            data: b"plain output\x1b]2;\x07".to_vec(),
+        });
+        state.poll();
+
+        // Plain output (and an empty OSC title) must not clobber the label.
+        assert_eq!(state.panes[0].title, "shell");
     }
 
     #[test]
-    fn ignores_empty_title() {
-        let mut p = parser();
-        p.process(b"\x1b]2;\x07");
-        assert!(p.callbacks().pending_title.is_none());
+    fn poll_forwards_terminal_query_reply_to_pty() {
+        let (mut state, events) = state_with_event_queue();
+        state.create_pane().unwrap();
+        let id = state.panes[0].id;
+
+        // DSR 6 — the program asks for the cursor position; the emulator's
+        // reply must reach the backend PTY.
+        events.borrow_mut().push(BackendEvent::Output {
+            pane: id,
+            data: b"\x1b[6n".to_vec(),
+        });
+        state.poll();
+
+        let sent = state.fake_backend_sent().unwrap();
+        assert_eq!(sent, vec![b"\x1b[1;1R".to_vec()]);
     }
 
     #[test]
@@ -639,13 +652,18 @@ mod tests {
     }
 
     #[test]
-    fn later_title_replaces_earlier_until_taken() {
-        let mut p = parser();
-        p.process(b"\x1b]2;first\x07");
-        p.process(b"\x1b]2;second\x07");
-        let taken = p.callbacks_mut().pending_title.take();
-        assert_eq!(taken.as_deref(), Some("second"));
-        assert!(p.callbacks().pending_title.is_none());
+    fn later_title_replaces_earlier_within_one_poll() {
+        let (mut state, events) = state_with_event_queue();
+        state.create_pane().unwrap();
+        let id = state.panes[0].id;
+
+        events.borrow_mut().push(BackendEvent::Output {
+            pane: id,
+            data: b"\x1b]2;first\x07\x1b]2;second\x07".to_vec(),
+        });
+        state.poll();
+
+        assert_eq!(state.panes[0].title, "second");
     }
 
     fn state_with_fake() -> TerminalState {
@@ -772,14 +790,17 @@ mod tests {
     }
 
     #[test]
-    fn resize_visible_panes_clamps_zero_to_one() {
+    fn resize_visible_panes_clamps_zero_to_minimum_grid() {
         let mut state = state_with_fake();
         state.create_pane().unwrap();
         let id = state.panes[0].id;
 
         state.resize_visible_panes(&[(id, 0, 0)]);
 
-        assert_eq!(state.last_content_size.get(&id), Some(&(1, 1)));
+        // The recorded size must match the emulator's minimum grid (1x2),
+        // not a raw 1x1 clamp — PTY, emulator, and bookkeeping stay in sync.
+        assert_eq!(state.last_content_size.get(&id), Some(&(1, 2)));
+        assert_eq!(state.screen_for_pane(id).unwrap().size(), (1, 2));
     }
 
     #[test]

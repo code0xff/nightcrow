@@ -14,7 +14,6 @@ git2 = { version = "0.21", features = ["vendored-openssl", "vendored-libgit2"] }
 syntect = "5.3"
 anyhow = "1"
 portable-pty = "0.8"
-vt100 = "0.16"
 clap = { version = "4", features = ["derive"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
@@ -26,6 +25,7 @@ tracing-appender = "0.2"
 two-face = "0.5.1"
 notify = "8.2.0"
 notify-debouncer-mini = "0.7.0"
+alacritty_terminal = { version = "0.26", default-features = false }
 
 [dev-dependencies]
 tempfile = "3"

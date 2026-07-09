@@ -244,7 +244,7 @@ pub(crate) mod tests {
     use crate::git::diff::{
         CommitEntry, DiffHunk, DiffLine, LineKind, StatusKind, load_commit_log,
     };
-    use crate::runtime::terminal::{PaneCallbacks, TerminalFullscreen};
+    use crate::runtime::terminal::TerminalFullscreen;
     use crate::test_util::{make_repo, open_repo, run_git};
     use crossterm::event::KeyCode;
     use std::collections::HashMap;
@@ -557,17 +557,16 @@ pub(crate) mod tests {
         app.terminal.active = 0;
         app.terminal.size = (3, 10);
 
-        let mut parser =
-            vt100::Parser::new_with_callbacks(3, 10, SCROLLBACK_LINES, PaneCallbacks::default());
-        parser.process(b"1\r\n2\r\n3\r\n4\r\n5\r\n6\r\n7\r\n8\r\n9\r\n");
-        app.terminal.parsers.insert(1, parser);
-        // Request scrolling well past screen height; vt100 supports
+        let mut emulator = crate::runtime::emulator::PaneEmulator::new(3, 10, SCROLLBACK_LINES);
+        emulator.process(b"1\r\n2\r\n3\r\n4\r\n5\r\n6\r\n7\r\n8\r\n9\r\n");
+        app.terminal.emulators.insert(1, emulator);
+        // Request scrolling well past screen height; the emulator supports
         // arbitrary offsets up to the buffered line count.
         app.terminal.scroll.insert(1, 6);
 
         app.terminal.sync_scroll();
 
-        let actual = app.terminal.parsers.get(&1).unwrap().screen().scrollback();
+        let actual = app.terminal.emulators.get(&1).unwrap().scroll_offset();
         assert_eq!(actual, 6);
         assert_eq!(app.terminal.scroll.get(&1).copied(), Some(6));
     }
@@ -582,18 +581,17 @@ pub(crate) mod tests {
         app.terminal.active = 0;
         app.terminal.size = (3, 10);
 
-        let mut parser =
-            vt100::Parser::new_with_callbacks(3, 10, SCROLLBACK_LINES, PaneCallbacks::default());
+        let mut emulator = crate::runtime::emulator::PaneEmulator::new(3, 10, SCROLLBACK_LINES);
         // Only a handful of buffered rows exist; an outsized request must
-        // clamp to whatever vt100 actually has, never panic.
-        parser.process(b"1\r\n2\r\n3\r\n4\r\n5\r\n");
-        app.terminal.parsers.insert(1, parser);
+        // clamp to whatever the emulator actually has, never panic.
+        emulator.process(b"1\r\n2\r\n3\r\n4\r\n5\r\n");
+        app.terminal.emulators.insert(1, emulator);
         app.terminal.scroll.insert(1, 999);
 
         app.terminal.sync_scroll();
 
         let stored = app.terminal.scroll.get(&1).copied().unwrap_or(0);
-        let actual = app.terminal.parsers.get(&1).unwrap().screen().scrollback();
+        let actual = app.terminal.emulators.get(&1).unwrap().scroll_offset();
         assert_eq!(stored, actual);
         assert!(actual < 999);
     }
@@ -1832,10 +1830,9 @@ pub(crate) mod tests {
         app.focus = Focus::Terminal;
         app.terminal.scroll.insert(1, 3);
         app.terminal.prompt_bufs.insert(1, "cargo test".to_string());
-        app.terminal.parsers.insert(
-            1,
-            vt100::Parser::new_with_callbacks(3, 10, 0, PaneCallbacks::default()),
-        );
+        app.terminal
+            .emulators
+            .insert(1, crate::runtime::emulator::PaneEmulator::new(3, 10, 0));
 
         app.close_active_pane();
 
@@ -1843,7 +1840,7 @@ pub(crate) mod tests {
         assert_eq!(app.focus, Focus::DiffViewer);
         assert!(!app.terminal.scroll.contains_key(&1));
         assert!(!app.terminal.prompt_bufs.contains_key(&1));
-        assert!(!app.terminal.parsers.contains_key(&1));
+        assert!(!app.terminal.emulators.contains_key(&1));
     }
 
     #[test]

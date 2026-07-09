@@ -49,6 +49,10 @@ pub struct FakeBackend {
     /// assert the exact bytes forwarded to the PTY (pass-through, literal
     /// leader) without a real terminal.
     pub sent: Vec<Vec<u8>>,
+    /// Events handed out by the next `drain_events` call. Shared handle so a
+    /// test can keep a clone and inject synthetic pane output/exit after the
+    /// backend was boxed into `TerminalState`.
+    pub pending_events: std::rc::Rc<std::cell::RefCell<Vec<crate::backend::BackendEvent>>>,
 }
 
 impl crate::backend::TerminalBackend for FakeBackend {
@@ -73,7 +77,7 @@ impl crate::backend::TerminalBackend for FakeBackend {
     fn resize(&mut self, _id: crate::backend::PaneId, _rows: u16, _cols: u16) {}
 
     fn drain_events(&mut self) -> Vec<crate::backend::BackendEvent> {
-        Vec::new()
+        std::mem::take(&mut *self.pending_events.borrow_mut())
     }
 
     fn set_cwd(&mut self, _path: &std::path::Path) {}

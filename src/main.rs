@@ -1028,8 +1028,8 @@ mod tests {
     fn terminal_paste_wraps_only_when_bracketed_mode_enabled() {
         let mut app = app_with_terminal_pane();
         // The running program enables bracketed paste (DECSET 2004).
-        for parser in app.terminal.parsers.values_mut() {
-            parser.process(b"\x1b[?2004h");
+        for emulator in app.terminal.emulators.values_mut() {
+            emulator.process(b"\x1b[?2004h");
         }
 
         handle_paste(&mut app, "hi");
