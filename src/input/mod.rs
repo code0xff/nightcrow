@@ -215,6 +215,29 @@ pub fn encode_key(key: KeyEvent) -> Option<Vec<u8>> {
     }
 }
 
+/// SGR (1006) mouse button code for a wheel-up event. Wheel-down is one more.
+/// Bit 6 (64) marks the button as a wheel rather than a click.
+const SGR_WHEEL_UP: u8 = 64;
+
+/// Encode a mouse wheel notch as an SGR (1006) mouse report. `col`/`row` are
+/// 1-based cell coordinates; the pane's centre is a good choice, since a TUI
+/// may route the event by which of its regions the pointer sits over.
+///
+/// A wheel notch has no release event, so a single `M` (press) report is the
+/// whole sequence — unlike a click, which xterm follows with an `m`.
+pub fn encode_wheel(up: bool, col: u16, row: u16) -> Vec<u8> {
+    let button = if up { SGR_WHEEL_UP } else { SGR_WHEEL_UP + 1 };
+    format!("\x1b[<{button};{};{}M", col.max(1), row.max(1)).into_bytes()
+}
+
+/// Encode a bare Up/Down arrow. `app_cursor` selects the SS3 form (`ESC O A`)
+/// that DECCKM-enabled programs expect over the default CSI form (`ESC [ A`).
+pub fn encode_arrow(up: bool, app_cursor: bool) -> Vec<u8> {
+    let final_byte = if up { b'A' } else { b'B' };
+    let introducer = if app_cursor { b'O' } else { b'[' };
+    vec![0x1b, introducer, final_byte]
+}
+
 /// xterm modifier parameter for CSI sequences: `1 + (shift=1 | alt=2 | ctrl=4 |
 /// meta=8)`. Returns `None` when no modifier is held, signalling that the
 /// legacy unparametrized escape sequence should be used instead.
@@ -494,6 +517,27 @@ mod tests {
         // Super/Hyper/Meta count as modifiers and must not be ignored.
         assert_eq!(with(KeyCode::F(3), M::SUPER), Action::None);
         assert_eq!(with(KeyCode::Left, M::SHIFT | M::SUPER), Action::None);
+    }
+
+    #[test]
+    fn encode_wheel_emits_sgr_press_reports() {
+        assert_eq!(encode_wheel(true, 40, 12), b"\x1b[<64;40;12M".to_vec());
+        assert_eq!(encode_wheel(false, 40, 12), b"\x1b[<65;40;12M".to_vec());
+    }
+
+    #[test]
+    fn encode_wheel_clamps_coordinates_to_one_based_origin() {
+        // SGR coordinates start at 1; a degenerate 0-sized pane must not
+        // produce a `0` that a TUI would read as out of range.
+        assert_eq!(encode_wheel(true, 0, 0), b"\x1b[<64;1;1M".to_vec());
+    }
+
+    #[test]
+    fn encode_arrow_follows_application_cursor_mode() {
+        assert_eq!(encode_arrow(true, false), b"\x1b[A".to_vec());
+        assert_eq!(encode_arrow(false, false), b"\x1b[B".to_vec());
+        assert_eq!(encode_arrow(true, true), b"\x1bOA".to_vec());
+        assert_eq!(encode_arrow(false, true), b"\x1bOB".to_vec());
     }
 
     #[test]

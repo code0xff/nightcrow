@@ -1,5 +1,6 @@
 use crate::backend::{BackendEvent, PaneId, TerminalBackend};
-use crate::runtime::emulator::{PaneEmulator, ScreenView};
+use crate::input::{encode_arrow, encode_wheel};
+use crate::runtime::emulator::{PaneEmulator, ScreenView, ScrollSink};
 use std::collections::HashMap;
 
 /// Upper bound on a pane's in-flight prompt buffer before further chars are
@@ -12,6 +13,13 @@ const PROMPT_BUFFER_MAX_BYTES: usize = 4096;
 /// state machine — which owns emulator creation now — defines its own budget
 /// rather than reading it from `app`.
 pub const SCROLLBACK_LINES: usize = 1000;
+
+/// Lines moved by a single line-scroll keypress (`Shift+Up`/`Shift+Down`).
+pub const SCROLL_LINE_STEP: usize = 3;
+
+/// Lines one mouse wheel notch scrolls, by terminal convention. Used to
+/// convert a line count into a notch count when a pane wants wheel events.
+const WHEEL_LINES_PER_NOTCH: usize = 3;
 
 pub struct PaneInfo {
     pub id: PaneId,
@@ -161,6 +169,65 @@ impl TerminalState {
             self.max_visible(),
         );
         self.visible_start = range.start;
+    }
+
+    /// Scroll the active pane by `lines`, delivering the request wherever
+    /// that pane's program expects it (see `ScrollSink`).
+    ///
+    /// Only the `Scrollback` sink moves the emulator's view; the other two
+    /// synthesize input, because a program that owns its viewport keeps its
+    /// transcript out of the emulator's grid entirely and scrolling the grid
+    /// would reveal nothing.
+    pub fn scroll_active(&mut self, up: bool, lines: usize) {
+        if lines == 0 {
+            return;
+        }
+        let Some(id) = self.active_pane_id() else {
+            return;
+        };
+        let Some(emulator) = self.emulators.get(&id) else {
+            return;
+        };
+        let sink = emulator.scroll_sink();
+        let app_cursor = emulator.app_cursor();
+
+        match sink {
+            ScrollSink::MouseWheel => {
+                // Report the pointer at the pane's centre: a TUI may pick
+                // which of its regions to scroll from the coordinates, and
+                // the centre is the only cell guaranteed to be inside the
+                // transcript rather than on a border or input box.
+                let (rows, cols) = self.pane_size(id);
+                let (col, row) = (cols / 2 + 1, rows / 2 + 1);
+                let notch = encode_wheel(up, col, row);
+                let notches = lines.div_ceil(WHEEL_LINES_PER_NOTCH);
+                let payload = notch.repeat(notches);
+                self.write_pty(id, &payload);
+            }
+            ScrollSink::ArrowKeys => {
+                let payload = encode_arrow(up, app_cursor).repeat(lines);
+                self.write_pty(id, &payload);
+            }
+            ScrollSink::Scrollback => {
+                if up {
+                    self.scroll_up(lines);
+                } else {
+                    self.scroll_down(lines);
+                }
+            }
+        }
+    }
+
+    /// Write straight to a pane's PTY. Bypasses `send_input` on purpose:
+    /// input we synthesized on the user's behalf must not clear their scroll
+    /// position or land in the prompt log, for the same reason the emulator's
+    /// query replies in `poll` bypass it.
+    fn write_pty(&mut self, id: PaneId, data: &[u8]) {
+        if let Some(backend) = &mut self.backend
+            && let Err(e) = backend.send_input(id, data)
+        {
+            tracing::warn!("failed to send synthesized scroll to pane {id}: {e}");
+        }
     }
 
     pub fn scroll_up(&mut self, lines: usize) {
@@ -583,6 +650,125 @@ mod tests {
         let backend = crate::test_util::FakeBackend::default();
         let events = backend.pending_events.clone();
         (TerminalState::new(Some(Box::new(backend)), false), events)
+    }
+
+    /// A single 10x40 pane whose program has already emitted `modes`, with
+    /// the payloads recorded during setup discarded so a test sees only what
+    /// the scroll itself wrote. The pane's centre is therefore column 21,
+    /// row 6.
+    fn state_with_pane_in_modes(modes: &[u8]) -> (TerminalState, PaneId) {
+        let (mut state, events) = state_with_event_queue();
+        state.create_pane().unwrap();
+        let id = state.panes[0].id;
+        state.resize_visible_panes(&[(id, 10, 40)]);
+        events.borrow_mut().push(BackendEvent::Output {
+            pane: id,
+            data: modes.to_vec(),
+        });
+        state.poll();
+        if let Some(backend) = &mut state.backend {
+            backend.send_input(id, b"").ok();
+        }
+        (state, id)
+    }
+
+    /// Plain shell output taller than the 10-row test pane, so lines actually
+    /// scroll off the top and land in the emulator's scrollback. Without
+    /// overflow there is no history and nothing to scroll into.
+    fn shell_output_past_one_screen() -> Vec<u8> {
+        (0..20).fold(Vec::new(), |mut out, i| {
+            out.extend_from_slice(format!("line{i}\r\n").as_bytes());
+            out
+        })
+    }
+
+    /// Payloads written to the PTY after `state_with_pane_in_modes` set up
+    /// the pane, i.e. everything past its trailing empty marker payload.
+    fn payloads_after_setup(state: &TerminalState) -> Vec<Vec<u8>> {
+        let sent = state.fake_backend_sent().unwrap();
+        let marker = sent.iter().rposition(|p| p.is_empty()).unwrap();
+        sent[marker + 1..].to_vec()
+    }
+
+    #[test]
+    fn scroll_active_sends_wheel_notches_to_a_mouse_reporting_pane() {
+        // Claude Code's startup mode set. Six lines is two wheel notches.
+        let (mut state, _) = state_with_pane_in_modes(b"\x1b[?1000h\x1b[?1002h\x1b[?1006h");
+
+        state.scroll_active(true, 6);
+
+        assert_eq!(
+            payloads_after_setup(&state),
+            vec![b"\x1b[<64;21;6M\x1b[<64;21;6M".to_vec()]
+        );
+        assert!(
+            state.scroll.is_empty(),
+            "a wheel-driven pane must not move the emulator's own view"
+        );
+    }
+
+    #[test]
+    fn scroll_active_rounds_a_partial_notch_up() {
+        let (mut state, _) = state_with_pane_in_modes(b"\x1b[?1000h\x1b[?1006h");
+
+        // One line still has to move the pane; it must not round down to zero
+        // notches and silently do nothing.
+        state.scroll_active(false, 1);
+
+        assert_eq!(payloads_after_setup(&state), vec![b"\x1b[<65;21;6M".to_vec()]);
+    }
+
+    #[test]
+    fn scroll_active_sends_arrow_keys_on_the_alternate_screen() {
+        let (mut state, _) = state_with_pane_in_modes(b"\x1b[?1049h");
+
+        state.scroll_active(true, 3);
+
+        assert_eq!(payloads_after_setup(&state), vec![b"\x1b[A\x1b[A\x1b[A".to_vec()]);
+    }
+
+    #[test]
+    fn scroll_active_uses_application_arrow_keys_when_decckm_is_set() {
+        let (mut state, _) = state_with_pane_in_modes(b"\x1b[?1049h\x1b[?1h");
+
+        state.scroll_active(false, 2);
+
+        assert_eq!(payloads_after_setup(&state), vec![b"\x1bOB\x1bOB".to_vec()]);
+    }
+
+    #[test]
+    fn scroll_active_scrolls_the_emulator_for_a_plain_shell() {
+        let (mut state, id) = state_with_pane_in_modes(&shell_output_past_one_screen());
+
+        state.scroll_active(true, 3);
+        state.sync_scroll();
+
+        assert_eq!(state.scroll.get(&id).copied(), Some(3));
+        assert!(
+            payloads_after_setup(&state).is_empty(),
+            "a shell echoes unbound escape sequences into its prompt, so the \
+             scrollback branch must write nothing to the PTY"
+        );
+    }
+
+    #[test]
+    fn scroll_active_down_unwinds_the_emulator_offset_for_a_plain_shell() {
+        let (mut state, id) = state_with_pane_in_modes(&shell_output_past_one_screen());
+        state.scroll_active(true, 3);
+
+        state.scroll_active(false, 3);
+
+        assert!(!state.scroll.contains_key(&id));
+        assert!(payloads_after_setup(&state).is_empty());
+    }
+
+    #[test]
+    fn scroll_active_ignores_a_zero_line_request() {
+        let (mut state, _) = state_with_pane_in_modes(b"\x1b[?1000h\x1b[?1006h");
+
+        state.scroll_active(true, 0);
+
+        assert!(payloads_after_setup(&state).is_empty());
     }
 
     #[test]

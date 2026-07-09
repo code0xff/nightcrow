@@ -32,6 +32,26 @@ pub struct EmulatorEvents {
     pub pty_writes: Vec<u8>,
 }
 
+/// Where a scroll request for a pane must be delivered. A program that owns
+/// its viewport keeps its transcript in its own memory, not in the emulator's
+/// scrollback, so scrolling the grid would move nothing; the scroll has to
+/// reach the program as input instead. Which input it expects is announced by
+/// the modes the program itself enabled.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ScrollSink {
+    /// The program tracks the mouse and reports in SGR (1006) form: send it
+    /// wheel events. Claude Code lands here.
+    MouseWheel,
+    /// The program is on the alternate screen and left xterm's
+    /// `alternateScroll` (1007) enabled: send it arrow keys. `less`, `man`.
+    ArrowKeys,
+    /// Nothing claimed the scroll, so the emulator's own scrollback owns it.
+    /// Interactive shells land here — the default, and the only branch that
+    /// writes nothing to the PTY. A shell would echo an unbound escape
+    /// sequence straight into its prompt, so this branch must stay silent.
+    Scrollback,
+}
+
 #[derive(Default)]
 struct ProxyState {
     title: Option<String>,
@@ -130,6 +150,34 @@ impl PaneEmulator {
     /// Read-only view of the screen as currently scrolled.
     pub fn view(&self) -> ScreenView<'_> {
         ScreenView { term: &self.term }
+    }
+
+    /// Which input, if any, a scroll request for this pane must be turned
+    /// into. See `ScrollSink`. Mouse reporting wins over `alternateScroll`
+    /// because a program that asked for wheel events wants them even on the
+    /// alternate screen — that is also the order xterm resolves them in.
+    ///
+    /// `MOUSE_MODE` alone is not enough: without `SGR_MOUSE` the program
+    /// expects the legacy X10 encoding, which cannot address columns past
+    /// 223. Rather than emit a second encoding for a case no modern TUI
+    /// uses, such a pane falls back to `Scrollback`.
+    pub fn scroll_sink(&self) -> ScrollSink {
+        let mode = self.term.mode();
+        if mode.intersects(TermMode::MOUSE_MODE) && mode.contains(TermMode::SGR_MOUSE) {
+            ScrollSink::MouseWheel
+        } else if mode.contains(TermMode::ALT_SCREEN)
+            && mode.contains(TermMode::ALTERNATE_SCROLL)
+        {
+            ScrollSink::ArrowKeys
+        } else {
+            ScrollSink::Scrollback
+        }
+    }
+
+    /// Whether the program enabled DECCKM (application cursor keys), which
+    /// changes the arrow-key encoding from `ESC [ A` to `ESC O A`.
+    pub fn app_cursor(&self) -> bool {
+        self.term.mode().contains(TermMode::APP_CURSOR)
     }
 }
 
@@ -400,6 +448,73 @@ mod tests {
         let view = emu.view();
         let row: String = (0..5).map(|c| contents(&view, 0, c)).collect();
         assert_eq!(row, "line6");
+    }
+
+    #[test]
+    fn scroll_sink_defaults_to_scrollback_for_a_plain_shell() {
+        let emu = PaneEmulator::new(3, 10, 100);
+        assert_eq!(emu.scroll_sink(), ScrollSink::Scrollback);
+    }
+
+    #[test]
+    fn scroll_sink_is_mouse_wheel_when_program_reports_sgr_mouse() {
+        let mut emu = PaneEmulator::new(3, 10, 100);
+        // The exact mode set Claude Code emits on startup.
+        emu.process(b"\x1b[?1000h\x1b[?1002h\x1b[?1003h\x1b[?1006h");
+        assert_eq!(emu.scroll_sink(), ScrollSink::MouseWheel);
+    }
+
+    #[test]
+    fn scroll_sink_ignores_mouse_reporting_without_sgr_encoding() {
+        let mut emu = PaneEmulator::new(3, 10, 100);
+        // X10-encoded mouse reporting: we have no encoder for it, so the
+        // pane must not be handed wheel bytes it cannot parse.
+        emu.process(b"\x1b[?1000h");
+        assert_eq!(emu.scroll_sink(), ScrollSink::Scrollback);
+    }
+
+    #[test]
+    fn scroll_sink_is_arrow_keys_on_alternate_screen() {
+        let mut emu = PaneEmulator::new(3, 10, 100);
+        emu.process(b"\x1b[?1049h");
+        assert_eq!(emu.scroll_sink(), ScrollSink::ArrowKeys);
+    }
+
+    #[test]
+    fn scroll_sink_falls_back_when_alternate_scroll_is_disabled() {
+        let mut emu = PaneEmulator::new(3, 10, 100);
+        emu.process(b"\x1b[?1049h\x1b[?1007l");
+        assert_eq!(emu.scroll_sink(), ScrollSink::Scrollback);
+    }
+
+    #[test]
+    fn scroll_sink_prefers_mouse_wheel_over_alternate_screen() {
+        let mut emu = PaneEmulator::new(3, 10, 100);
+        emu.process(b"\x1b[?1049h\x1b[?1000h\x1b[?1006h");
+        assert_eq!(emu.scroll_sink(), ScrollSink::MouseWheel);
+    }
+
+    #[test]
+    fn alternate_screen_keeps_no_scrollback() {
+        // The reason `ScrollSink` exists: alacritty gives the alternate grid
+        // zero history, so a scroll offset there can never leave 0 and the
+        // grid has nothing to reveal.
+        let mut emu = PaneEmulator::new(3, 10, 100);
+        emu.process(b"\x1b[?1049h");
+        for i in 0..20 {
+            emu.process(format!("line{i}\r\n").as_bytes());
+        }
+        assert_eq!(emu.set_scroll_offset(999), 0);
+    }
+
+    #[test]
+    fn app_cursor_follows_decckm() {
+        let mut emu = PaneEmulator::new(3, 10, 0);
+        assert!(!emu.app_cursor());
+        emu.process(b"\x1b[?1h");
+        assert!(emu.app_cursor());
+        emu.process(b"\x1b[?1l");
+        assert!(!emu.app_cursor());
     }
 
     #[test]

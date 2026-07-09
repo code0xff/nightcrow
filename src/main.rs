@@ -27,6 +27,7 @@ use input::{
     vim_navigation_action,
 };
 use ratatui::{Terminal, backend::CrosstermBackend, layout::Rect};
+use runtime::terminal::SCROLL_LINE_STEP;
 use std::{io, time::Duration};
 use syntect::highlighting::ThemeSet;
 use syntect::parsing::SyntaxSet;
@@ -637,14 +638,14 @@ fn handle_terminal_key(app: &mut App, key: KeyEvent, action: Action) {
     match action {
         Action::TermScrollUp => {
             let lines = app.terminal.active_pane_rows();
-            app.terminal.scroll_up(lines);
+            app.terminal.scroll_active(true, lines);
         }
         Action::TermScrollDown => {
             let lines = app.terminal.active_pane_rows();
-            app.terminal.scroll_down(lines);
+            app.terminal.scroll_active(false, lines);
         }
-        Action::TermScrollLineUp => app.terminal.scroll_up(3),
-        Action::TermScrollLineDown => app.terminal.scroll_down(3),
+        Action::TermScrollLineUp => app.terminal.scroll_active(true, SCROLL_LINE_STEP),
+        Action::TermScrollLineDown => app.terminal.scroll_active(false, SCROLL_LINE_STEP),
         _ => {
             if let Some(data) = encode_key(key) {
                 app.terminal.send_input(&data);
