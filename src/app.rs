@@ -125,6 +125,13 @@ pub struct App {
     /// the next key (digit → swap + disarm, `Esc`/`Ctrl+C` → cancel, anything
     /// else → consume + disarm), with no timeout — same model as the prefix.
     pub awaiting_swap_target: bool,
+    /// The pane and button of a forwarded mouse press whose release has not
+    /// been seen yet. A release pairs with the press's pane, not the pane
+    /// under the pointer: drag reports are not forwarded, so the program
+    /// that saw the press must see the release even when the pointer moved
+    /// off the pane in between. Single slot — a second press before the
+    /// first release overwrites it (multi-button chords are not paired).
+    pub pending_mouse_press: Option<(crate::backend::PaneId, crossterm::event::MouseButton)>,
 }
 
 impl App {
@@ -170,6 +177,7 @@ impl App {
             leader,
             prefix_armed: false,
             awaiting_swap_target: false,
+            pending_mouse_press: None,
         };
 
         app.ensure_initial_terminal(startup_commands);
@@ -191,6 +199,18 @@ impl App {
     /// Disarm the prefix, returning to normal pass-through routing.
     pub fn cancel_prefix(&mut self) {
         self.prefix_armed = false;
+    }
+
+    /// Whether a modal overlay (repo-input dialog or any search bar) owns
+    /// input right now. Shared by the key and mouse handlers so a mouse
+    /// click can never reach behind a modal that swallows keystrokes.
+    pub fn overlay_active(&self) -> bool {
+        self.repo_input.active
+            || self.status_view.search_active
+            || self.tree_view.search_active
+            || self.diff.search.active
+            || self.log_view.commit_search_active
+            || self.log_view.file_search_active
     }
 
     /// True while `<leader> s` armed pane-swap mode and we await the target
@@ -324,6 +344,7 @@ pub(crate) mod tests {
             leader: KeyEvent::new(KeyCode::Char('q'), KeyModifiers::CONTROL),
             prefix_armed: false,
             awaiting_swap_target: false,
+            pending_mouse_press: None,
         }
     }
 

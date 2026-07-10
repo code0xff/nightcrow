@@ -19,7 +19,7 @@ use crate::git::diff::StatusKind;
 use crate::runtime::terminal::TerminalFullscreen;
 use ratatui::{
     Frame,
-    layout::{Constraint, Direction, Layout, Rect},
+    layout::{Constraint, Direction, Layout, Position, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, List, ListItem, ListState, Paragraph},
@@ -219,6 +219,69 @@ pub(crate) fn terminal_content_areas(
         return Vec::new();
     };
     terminal_tab::visible_pane_content_areas(app, widget_area)
+}
+
+/// The upper panel owning screen cell `(x, y)` in the normal split layout —
+/// the click-to-focus hit test for the file/commit/tree list and the diff
+/// viewer, mirroring `draw`'s geometry. `None` in every fullscreen state
+/// (a body-filling panel already holds focus, and the terminal case belongs
+/// to `pane_at`) and for cells on the header/hint rows or the terminal.
+pub(crate) fn upper_panel_at(
+    app: &App,
+    screen_area: Rect,
+    layout: &LayoutConfig,
+    x: u16,
+    y: u16,
+) -> Option<Focus> {
+    if app.terminal.fullscreen.fills_body() || app.diff.fullscreen || app.list_fullscreen {
+        return None;
+    }
+    let outer = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(1),
+            Constraint::Min(0),
+            Constraint::Length(1),
+        ])
+        .split(screen_area);
+    let main = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints(main_content_constraints(layout))
+        .split(outer[1]);
+    let file_list_pct = layout.file_list_pct;
+    let upper = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([
+            Constraint::Percentage(file_list_pct),
+            Constraint::Percentage(100u16.saturating_sub(file_list_pct)),
+        ])
+        .split(main[0]);
+
+    let pos = Position { x, y };
+    if upper[0].contains(pos) {
+        Some(Focus::FileList)
+    } else if upper[1].contains(pos) {
+        Some(Focus::DiffViewer)
+    } else {
+        None
+    }
+}
+
+/// The visible pane whose content rect contains screen cell `(x, y)`, with
+/// that rect — the hit test for mouse events, using 0-based screen
+/// coordinates as crossterm reports them. `None` when the cell lies outside
+/// every pane's content (upper panels, borders, tab bar), or when the
+/// terminal isn't drawn at all because another panel is fullscreen.
+pub(crate) fn pane_at(
+    app: &App,
+    screen_area: Rect,
+    layout: &LayoutConfig,
+    x: u16,
+    y: u16,
+) -> Option<(crate::backend::PaneId, Rect)> {
+    terminal_content_areas(app, screen_area, layout)
+        .into_iter()
+        .find(|(_, rect)| rect.contains(Position { x, y }))
 }
 
 /// The full terminal widget area (tab row + content), matching exactly what
@@ -590,5 +653,87 @@ mod tests {
         assert_eq!(areas[0].0, 1);
         assert_eq!(areas[0].1.height, 35);
         assert_eq!(areas[0].1.width, 100);
+    }
+
+    #[test]
+    fn pane_at_resolves_the_pane_under_a_cell_and_misses_elsewhere() {
+        let mut app = app_with_files(vec!["a.rs"]);
+        app.terminal.panes.push(crate::app::PaneInfo {
+            id: 1,
+            title: "shell".to_string(),
+        });
+        app.terminal.panes.push(crate::app::PaneInfo {
+            id: 2,
+            title: "shell".to_string(),
+        });
+        let screen = Rect::new(0, 0, 100, 40);
+        let layout = LayoutConfig::default();
+        let areas = terminal_content_areas(&app, screen, &layout);
+        assert_eq!(areas.len(), 2);
+
+        // A cell inside each pane's content rect resolves to that pane.
+        for (id, rect) in &areas {
+            let hit = pane_at(&app, screen, &layout, rect.x, rect.y);
+            assert_eq!(hit, Some((*id, *rect)));
+        }
+        // The top-left corner belongs to the upper panels, not a pane.
+        assert_eq!(pane_at(&app, screen, &layout, 0, 0), None);
+    }
+
+    #[test]
+    fn upper_panel_at_resolves_list_and_diff_by_the_layout_split() {
+        let app = app_with_files(vec!["a.rs"]);
+        let screen = Rect::new(0, 0, 100, 40);
+        let layout = LayoutConfig::default();
+
+        // Row 0 is the repo header, row 1 the first body row. The default
+        // file_list_pct (25) puts x=0 in the list and x=60 in the diff.
+        assert_eq!(upper_panel_at(&app, screen, &layout, 0, 0), None);
+        assert_eq!(
+            upper_panel_at(&app, screen, &layout, 0, 1),
+            Some(Focus::FileList)
+        );
+        assert_eq!(
+            upper_panel_at(&app, screen, &layout, 60, 1),
+            Some(Focus::DiffViewer)
+        );
+        // The last body row belongs to the terminal panel, the row after it
+        // to the hint bar — neither is an upper panel.
+        assert_eq!(upper_panel_at(&app, screen, &layout, 0, 38), None);
+        assert_eq!(upper_panel_at(&app, screen, &layout, 0, 39), None);
+    }
+
+    #[test]
+    fn upper_panel_at_misses_in_every_fullscreen_state() {
+        // The implementation guards three distinct flags; each must miss on
+        // its own, at a cell that hits the file list in the normal split.
+        let screen = Rect::new(0, 0, 100, 40);
+        let layout = LayoutConfig::default();
+
+        let mut diff_full = app_with_files(vec!["a.rs"]);
+        diff_full.toggle_diff_fullscreen();
+        assert_eq!(upper_panel_at(&diff_full, screen, &layout, 0, 1), None);
+
+        let mut list_full = app_with_files(vec!["a.rs"]);
+        list_full.list_fullscreen = true;
+        assert_eq!(upper_panel_at(&list_full, screen, &layout, 0, 1), None);
+
+        let mut term_full = app_with_files(vec!["a.rs"]);
+        term_full.terminal.fullscreen = TerminalFullscreen::Grid;
+        assert_eq!(upper_panel_at(&term_full, screen, &layout, 0, 1), None);
+    }
+
+    #[test]
+    fn pane_at_misses_when_another_panel_is_fullscreen() {
+        let mut app = app_with_files(vec!["a.rs"]);
+        app.terminal.panes.push(crate::app::PaneInfo {
+            id: 1,
+            title: "shell".to_string(),
+        });
+        app.toggle_diff_fullscreen();
+
+        let hit = pane_at(&app, Rect::new(0, 0, 100, 40), &LayoutConfig::default(), 50, 30);
+
+        assert_eq!(hit, None);
     }
 }

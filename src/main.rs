@@ -15,7 +15,8 @@ use anyhow::{Context, Result};
 use app::{App, DiffPaneView, Focus, ViewMode};
 use clap::{Parser, Subcommand};
 use crossterm::event::{
-    DisableBracketedPaste, EnableBracketedPaste, KeyCode, KeyEvent, KeyEventKind, KeyModifiers,
+    DisableBracketedPaste, DisableMouseCapture, EnableBracketedPaste, EnableMouseCapture, KeyCode,
+    KeyEvent, KeyEventKind, KeyModifiers, MouseEvent, MouseEventKind,
 };
 use crossterm::{
     event::{self, Event},
@@ -27,7 +28,7 @@ use input::{
     vim_navigation_action,
 };
 use ratatui::{Terminal, backend::CrosstermBackend, layout::Rect};
-use runtime::terminal::SCROLL_LINE_STEP;
+use runtime::terminal::{SCROLL_LINE_STEP, WHEEL_LINES_PER_NOTCH};
 use std::{io, time::Duration};
 use syntect::highlighting::ThemeSet;
 use syntect::parsing::SyntaxSet;
@@ -98,12 +99,12 @@ fn main() -> Result<()> {
         "logging initialized"
     );
 
-    let _guard = TerminalGuard::enter()?;
+    let _guard = TerminalGuard::enter(cfg.mouse.enabled)?;
 
     let original_hook = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {
         let _ = disable_raw_mode();
-        let _ = execute!(io::stdout(), LeaveAlternateScreen);
+        let _ = execute!(io::stdout(), DisableMouseCapture, LeaveAlternateScreen);
         original_hook(info);
     }));
 
@@ -132,13 +133,31 @@ fn run_init(force: bool) -> Result<()> {
 struct TerminalGuard;
 
 impl TerminalGuard {
-    fn enter() -> Result<Self> {
+    fn enter(mouse: bool) -> Result<Self> {
         enable_raw_mode()?;
         // EnableBracketedPaste makes crossterm surface paste as
         // `Event::Paste(String)` instead of a flood of `Event::Key` chars —
         // the latter would each be filtered as control chars by the search
         // handler and silently drop newlines.
         if let Err(err) = execute!(io::stdout(), EnterAlternateScreen, EnableBracketedPaste) {
+            let _ = disable_raw_mode();
+            return Err(err.into());
+        }
+        // Mouse capture is config-gated (`[mouse] enabled`): while captured,
+        // the outer terminal only selects text with Shift held, so users who
+        // prefer plain-drag selection can hand the mouse back entirely.
+        if mouse && let Err(err) = execute!(io::stdout(), EnableMouseCapture) {
+            // The enable may have partially reached the terminal even though
+            // the call errored (e.g. the write landed but a later flush
+            // failed), and no TerminalGuard exists yet to undo it on drop —
+            // send the disable explicitly; it is harmless when capture never
+            // took effect.
+            let _ = execute!(
+                io::stdout(),
+                DisableMouseCapture,
+                DisableBracketedPaste,
+                LeaveAlternateScreen
+            );
             let _ = disable_raw_mode();
             return Err(err.into());
         }
@@ -149,7 +168,14 @@ impl TerminalGuard {
 
 impl Drop for TerminalGuard {
     fn drop(&mut self) {
-        let _ = execute!(io::stdout(), DisableBracketedPaste, LeaveAlternateScreen);
+        // DisableMouseCapture is unconditional: it merely writes the reset
+        // sequences, which are harmless when capture was never enabled.
+        let _ = execute!(
+            io::stdout(),
+            DisableMouseCapture,
+            DisableBracketedPaste,
+            LeaveAlternateScreen
+        );
         let _ = disable_raw_mode();
     }
 }
@@ -304,10 +330,133 @@ fn main_loop(
                     KeyOutcome::Continue => {}
                 },
                 Event::Paste(text) => handle_paste(app, &text),
+                Event::Mouse(mouse) => {
+                    let screen = Rect::new(0, 0, size.width, size.height);
+                    handle_mouse(app, mouse, screen, &cfg.layout);
+                }
                 _ => {}
             }
         }
     }
+}
+
+/// Route a captured mouse event to the pane under the pointer.
+///
+/// A button press focuses that pane (mirroring a jump key), and press and
+/// release are forwarded — via `click_pane` — only to a program that asked
+/// for mouse reports. A release pairs with the press's pane rather than the
+/// pane under the pointer (see `release_pending_press`). Wheel notches
+/// scroll the pane under the pointer, not the active one, through the same
+/// sink logic as the scroll keys. Other events outside every pane content
+/// rect (upper panels, borders, tab bar) are dropped, and drag/motion
+/// reports are not forwarded at all: inner-program text selection stays
+/// with the outer terminal's Shift+drag.
+fn handle_mouse(app: &mut App, mouse: MouseEvent, screen: Rect, layout: &config::LayoutConfig) {
+    // Releases route by the pending press, not the pointer, so they must be
+    // handled before the hit test — the pointer may have left the pane (or
+    // every pane) between press and release. They also bypass the modal
+    // guard below: the press happened before the modal opened, and the
+    // program that saw it must still see the release — swallowing it would
+    // leave the pending slot stale for a later unrelated release.
+    if let MouseEventKind::Up(_) = mouse.kind {
+        release_pending_press(app, screen, layout, mouse.column, mouse.row);
+        return;
+    }
+    // Modal overlays (repo-switch dialog, every search bar) own all other
+    // input while open — same rule the key handler enforces: a click behind
+    // a modal must not move focus or reach a pane.
+    if app.overlay_active() {
+        return;
+    }
+    let Some((id, rect)) = ui::pane_at(app, screen, layout, mouse.column, mouse.row) else {
+        // Not a terminal cell: a press can still focus an upper panel
+        // (file/commit/tree list or diff viewer) in the normal split layout.
+        if let MouseEventKind::Down(_) = mouse.kind
+            && let Some(focus) = ui::upper_panel_at(app, screen, layout, mouse.column, mouse.row)
+        {
+            app.cancel_prefix();
+            app.focus = focus;
+        }
+        return;
+    };
+    // 1-based pane-local cell, as SGR reports expect. In-bounds by
+    // construction: `pane_at` only returns a rect containing the cell.
+    let col = mouse.column - rect.x + 1;
+    let row = mouse.row - rect.y + 1;
+    match mouse.kind {
+        MouseEventKind::Down(button) => {
+            focus_clicked_pane(app, id);
+            if app.terminal.click_pane(id, button, true, col, row) {
+                app.pending_mouse_press = Some((id, button));
+            }
+        }
+        MouseEventKind::ScrollUp => {
+            app.terminal
+                .scroll_pane(id, true, WHEEL_LINES_PER_NOTCH, Some((col, row)));
+        }
+        MouseEventKind::ScrollDown => {
+            app.terminal
+                .scroll_pane(id, false, WHEEL_LINES_PER_NOTCH, Some((col, row)));
+        }
+        // Horizontal wheel has no scrollback fallback; it reaches only a
+        // pane whose program asked for wheel reports (trackpads and tilt
+        // wheels in e.g. a full-screen TUI with horizontal panes).
+        MouseEventKind::ScrollLeft => {
+            app.terminal.wheel_horizontal_pane(id, true, col, row);
+        }
+        MouseEventKind::ScrollRight => {
+            app.terminal.wheel_horizontal_pane(id, false, col, row);
+        }
+        _ => {}
+    }
+}
+
+/// Deliver a button release to the pane that received the matching press.
+///
+/// A program that saw an SGR press must see the release even when the
+/// pointer moved off the pane in between (no drag reports are forwarded, so
+/// it cannot track the pointer itself) — and a pane the pointer merely ends
+/// up over must NOT receive a release it never got a press for. The release
+/// carries the *stored* press button, not the one crossterm reported:
+/// legacy encodings don't identify the button on release, so some
+/// platforms report every `Up` as `Left`, and trusting that would strand a
+/// right/middle press without its release. Chords were never paired (the
+/// slot is single), so any release closes the pending press. The release
+/// cell is clamped into the pressed pane's current rect. If that pane was
+/// closed or hidden since the press, the release is dropped.
+fn release_pending_press(app: &mut App, screen: Rect, layout: &config::LayoutConfig, x: u16, y: u16) {
+    let Some((id, pressed)) = app.pending_mouse_press else {
+        return;
+    };
+    app.pending_mouse_press = None;
+    let Some(rect) = ui::terminal_content_areas(app, screen, layout)
+        .into_iter()
+        .find_map(|(pid, rect)| (pid == id).then_some(rect))
+    else {
+        return;
+    };
+    // An extreme resize between press and release can shrink the pane to a
+    // zero-sized rect, which would invert the clamp bounds below (`clamp`
+    // panics when min > max).
+    if rect.width == 0 || rect.height == 0 {
+        return;
+    }
+    let col = x.clamp(rect.x, rect.right() - 1) - rect.x + 1;
+    let row = y.clamp(rect.y, rect.bottom() - 1) - rect.y + 1;
+    app.terminal.click_pane(id, pressed, false, col, row);
+}
+
+/// Make the clicked pane active and move focus to the terminal, exactly what
+/// a jump key does. A click is also a non-command event while the prefix is
+/// armed, so resolve the prefix first (same rule as `handle_paste`).
+fn focus_clicked_pane(app: &mut App, id: backend::PaneId) {
+    app.cancel_prefix();
+    let Some(idx) = app.terminal.panes.iter().position(|p| p.id == id) else {
+        return;
+    };
+    app.terminal.active = idx;
+    app.terminal.sync_visible_window();
+    app.focus = Focus::Terminal;
 }
 
 /// Route a bracketed-paste payload to the appropriate sink.
@@ -401,13 +550,7 @@ fn handle_key(app: &mut App, key: KeyEvent) -> KeyOutcome {
     // keystroke until dismissed. They are checked before any leader handling
     // so a leader keypress while a search/repo dialog is open is typed/edited
     // by the overlay rather than arming the prefix.
-    let overlay_active = app.repo_input.active
-        || app.status_view.search_active
-        || app.tree_view.search_active
-        || app.diff.search.active
-        || app.log_view.commit_search_active
-        || app.log_view.file_search_active;
-    if overlay_active {
+    if app.overlay_active() {
         // A prefix (or swap-target) could only be armed if an overlay opened
         // out from under it; disarm both so neither indicator lingers behind a
         // modal.
@@ -1474,5 +1617,318 @@ mod tests {
         handle_paste(&mut app, "/tmp\n/repo\x07");
 
         assert_eq!(app.repo_input.buf, "/tmp/repo");
+    }
+
+    const MOUSE_TEST_SCREEN: Rect = Rect::new(0, 0, 100, 40);
+
+    fn mouse(kind: MouseEventKind, column: u16, row: u16) -> MouseEvent {
+        MouseEvent {
+            kind,
+            column,
+            row,
+            modifiers: KeyModifiers::NONE,
+        }
+    }
+
+    /// A two-pane terminal app plus each pane's content rect under the
+    /// standard test screen, so mouse tests can aim events at real geometry.
+    fn app_with_two_panes_and_areas() -> (App, Vec<(backend::PaneId, Rect)>) {
+        let mut app = app_with_terminal_pane();
+        app.terminal.create_pane().unwrap();
+        let layout = config::LayoutConfig::default();
+        let areas = ui::terminal_content_areas(&app, MOUSE_TEST_SCREEN, &layout);
+        assert_eq!(areas.len(), 2);
+        (app, areas)
+    }
+
+    #[test]
+    fn handle_mouse_click_focuses_the_pane_under_the_pointer() {
+        let (mut app, areas) = app_with_two_panes_and_areas();
+        app.focus = Focus::FileList;
+        let (first_id, rect) = areas[0];
+        let first_idx = app
+            .terminal
+            .panes
+            .iter()
+            .position(|p| p.id == first_id)
+            .unwrap();
+        assert_ne!(app.terminal.active, first_idx, "click must change focus");
+
+        let kind = MouseEventKind::Down(crossterm::event::MouseButton::Left);
+        handle_mouse(
+            &mut app,
+            mouse(kind, rect.x, rect.y),
+            MOUSE_TEST_SCREEN,
+            &config::LayoutConfig::default(),
+        );
+
+        assert_eq!(app.terminal.active, first_idx);
+        assert_eq!(app.focus, Focus::Terminal);
+        assert!(
+            backend_payloads(&app).is_empty(),
+            "a plain shell never claimed the mouse, so the click byte stream \
+             must stay empty"
+        );
+    }
+
+    #[test]
+    fn handle_mouse_forwards_press_and_release_to_a_mouse_reporting_pane() {
+        let (mut app, areas) = app_with_two_panes_and_areas();
+        let (id, rect) = areas[0];
+        app.terminal
+            .emulators
+            .get_mut(&id)
+            .unwrap()
+            .process(b"\x1b[?1000h\x1b[?1006h");
+
+        let layout = config::LayoutConfig::default();
+        let down = MouseEventKind::Down(crossterm::event::MouseButton::Left);
+        let up = MouseEventKind::Up(crossterm::event::MouseButton::Left);
+        handle_mouse(&mut app, mouse(down, rect.x, rect.y), MOUSE_TEST_SCREEN, &layout);
+        handle_mouse(&mut app, mouse(up, rect.x, rect.y), MOUSE_TEST_SCREEN, &layout);
+
+        // The pane's top-left content cell is SGR cell (1, 1).
+        assert_eq!(
+            backend_payloads(&app),
+            vec![b"\x1b[<0;1;1M".to_vec(), b"\x1b[<0;1;1m".to_vec()]
+        );
+    }
+
+    #[test]
+    fn handle_mouse_click_focuses_the_upper_panels() {
+        let (mut app, _) = app_with_two_panes_and_areas();
+        assert_eq!(app.focus, Focus::Terminal);
+        let layout = config::LayoutConfig::default();
+        let down = MouseEventKind::Down(crossterm::event::MouseButton::Left);
+
+        // Row 1 is the first body row; x=0 is the list, x=60 the diff.
+        handle_mouse(&mut app, mouse(down, 0, 1), MOUSE_TEST_SCREEN, &layout);
+        assert_eq!(app.focus, Focus::FileList);
+
+        handle_mouse(&mut app, mouse(down, 60, 1), MOUSE_TEST_SCREEN, &layout);
+        assert_eq!(app.focus, Focus::DiffViewer);
+
+        assert!(
+            backend_payloads(&app).is_empty(),
+            "an upper-panel click must not write to any PTY"
+        );
+    }
+
+    #[test]
+    fn handle_mouse_release_follows_the_pressed_pane_when_the_pointer_moves_away() {
+        let (mut app, areas) = app_with_two_panes_and_areas();
+        let (pressed_id, pressed_rect) = areas[0];
+        let (_, other_rect) = areas[1];
+        // Only the pressed pane is mouse-aware: any release payload proves
+        // routing went to the pressed pane, not the pane under the pointer.
+        app.terminal
+            .emulators
+            .get_mut(&pressed_id)
+            .unwrap()
+            .process(b"\x1b[?1000h\x1b[?1006h");
+
+        let layout = config::LayoutConfig::default();
+        let down = MouseEventKind::Down(crossterm::event::MouseButton::Left);
+        let up = MouseEventKind::Up(crossterm::event::MouseButton::Left);
+        handle_mouse(
+            &mut app,
+            mouse(down, pressed_rect.x, pressed_rect.y),
+            MOUSE_TEST_SCREEN,
+            &layout,
+        );
+        handle_mouse(
+            &mut app,
+            mouse(up, other_rect.x, other_rect.y),
+            MOUSE_TEST_SCREEN,
+            &layout,
+        );
+
+        // The release cell is clamped into the pressed pane's rect.
+        let col = other_rect
+            .x
+            .clamp(pressed_rect.x, pressed_rect.right() - 1)
+            - pressed_rect.x
+            + 1;
+        let row = other_rect
+            .y
+            .clamp(pressed_rect.y, pressed_rect.bottom() - 1)
+            - pressed_rect.y
+            + 1;
+        let release = format!("\x1b[<0;{col};{row}m").into_bytes();
+        assert_eq!(
+            backend_payloads(&app),
+            vec![b"\x1b[<0;1;1M".to_vec(), release]
+        );
+        assert!(app.pending_mouse_press.is_none());
+    }
+
+    #[test]
+    fn handle_mouse_completes_a_pending_release_even_while_the_repo_modal_is_open() {
+        let (mut app, areas) = app_with_two_panes_and_areas();
+        let (id, rect) = areas[0];
+        app.terminal
+            .emulators
+            .get_mut(&id)
+            .unwrap()
+            .process(b"\x1b[?1000h\x1b[?1006h");
+        let layout = config::LayoutConfig::default();
+        let down = MouseEventKind::Down(crossterm::event::MouseButton::Left);
+        let up = MouseEventKind::Up(crossterm::event::MouseButton::Left);
+        handle_mouse(&mut app, mouse(down, rect.x, rect.y), MOUSE_TEST_SCREEN, &layout);
+
+        // The modal opens between press and release (e.g. via the leader
+        // chord): the pane that saw the press must still see the release,
+        // and the pending slot must not go stale.
+        app.start_repo_input();
+        handle_mouse(&mut app, mouse(up, rect.x, rect.y), MOUSE_TEST_SCREEN, &layout);
+
+        assert_eq!(
+            backend_payloads(&app),
+            vec![b"\x1b[<0;1;1M".to_vec(), b"\x1b[<0;1;1m".to_vec()]
+        );
+        assert!(app.pending_mouse_press.is_none());
+    }
+
+    #[test]
+    fn handle_mouse_release_pairs_by_the_stored_press_button() {
+        let (mut app, areas) = app_with_two_panes_and_areas();
+        let (id, rect) = areas[0];
+        app.terminal
+            .emulators
+            .get_mut(&id)
+            .unwrap()
+            .process(b"\x1b[?1000h\x1b[?1006h");
+
+        // Press Right, but the terminal reports the release as Left — the
+        // legacy encodings don't carry the button on release, so crossterm
+        // may fall back to Left. The pane must still see a Right release.
+        let layout = config::LayoutConfig::default();
+        let down = MouseEventKind::Down(crossterm::event::MouseButton::Right);
+        let up = MouseEventKind::Up(crossterm::event::MouseButton::Left);
+        handle_mouse(&mut app, mouse(down, rect.x, rect.y), MOUSE_TEST_SCREEN, &layout);
+        handle_mouse(&mut app, mouse(up, rect.x, rect.y), MOUSE_TEST_SCREEN, &layout);
+
+        assert_eq!(
+            backend_payloads(&app),
+            vec![b"\x1b[<2;1;1M".to_vec(), b"\x1b[<2;1;1m".to_vec()]
+        );
+        assert!(app.pending_mouse_press.is_none());
+    }
+
+    #[test]
+    fn handle_mouse_is_inert_while_a_search_overlay_is_open() {
+        let (mut app, areas) = app_with_two_panes_and_areas();
+        app.focus = Focus::FileList;
+        app.status_view.search_active = true;
+        let (_, rect) = areas[0];
+        let active_before = app.terminal.active;
+
+        let kind = MouseEventKind::Down(crossterm::event::MouseButton::Left);
+        handle_mouse(
+            &mut app,
+            mouse(kind, rect.x, rect.y),
+            MOUSE_TEST_SCREEN,
+            &config::LayoutConfig::default(),
+        );
+
+        assert_eq!(
+            app.focus,
+            Focus::FileList,
+            "a search overlay owns the mouse exactly like it owns keys"
+        );
+        assert_eq!(app.terminal.active, active_before);
+        assert!(backend_payloads(&app).is_empty());
+    }
+
+    #[test]
+    fn handle_mouse_drops_a_release_with_no_pending_press() {
+        let (mut app, areas) = app_with_two_panes_and_areas();
+        let (id, rect) = areas[0];
+        app.terminal
+            .emulators
+            .get_mut(&id)
+            .unwrap()
+            .process(b"\x1b[?1000h\x1b[?1006h");
+
+        let up = MouseEventKind::Up(crossterm::event::MouseButton::Left);
+        handle_mouse(
+            &mut app,
+            mouse(up, rect.x, rect.y),
+            MOUSE_TEST_SCREEN,
+            &config::LayoutConfig::default(),
+        );
+
+        assert!(
+            backend_payloads(&app).is_empty(),
+            "a pane must not receive a release it never got a press for"
+        );
+    }
+
+    #[test]
+    fn handle_mouse_ignores_events_outside_pane_content() {
+        let (mut app, _) = app_with_two_panes_and_areas();
+        app.focus = Focus::FileList;
+        let active_before = app.terminal.active;
+
+        let kind = MouseEventKind::Down(crossterm::event::MouseButton::Left);
+        // (0, 0) is the upper header row, never pane content.
+        handle_mouse(
+            &mut app,
+            mouse(kind, 0, 0),
+            MOUSE_TEST_SCREEN,
+            &config::LayoutConfig::default(),
+        );
+
+        assert_eq!(app.focus, Focus::FileList);
+        assert_eq!(app.terminal.active, active_before);
+    }
+
+    #[test]
+    fn handle_mouse_is_inert_while_the_repo_modal_is_open() {
+        let (mut app, areas) = app_with_two_panes_and_areas();
+        app.focus = Focus::FileList;
+        app.start_repo_input();
+        let (_, rect) = areas[0];
+        let active_before = app.terminal.active;
+
+        let kind = MouseEventKind::Down(crossterm::event::MouseButton::Left);
+        handle_mouse(
+            &mut app,
+            mouse(kind, rect.x, rect.y),
+            MOUSE_TEST_SCREEN,
+            &config::LayoutConfig::default(),
+        );
+
+        assert_eq!(app.focus, Focus::FileList, "a modal owns all input");
+        assert_eq!(app.terminal.active, active_before);
+    }
+
+    #[test]
+    fn handle_mouse_wheel_scrolls_the_pane_under_the_pointer_not_the_active_one() {
+        let (mut app, areas) = app_with_two_panes_and_areas();
+        let (id, rect) = areas[0];
+        let idx = app.terminal.panes.iter().position(|p| p.id == id).unwrap();
+        let active_before = app.terminal.active;
+        assert_ne!(active_before, idx, "wheel must not require focus");
+        // Overflow the pane so its emulator has scrollback to move into.
+        app.terminal.resize_visible_panes(&[(id, 10, 40)]);
+        let output = (0..20).fold(Vec::new(), |mut out, i| {
+            out.extend_from_slice(format!("line{i}\r\n").as_bytes());
+            out
+        });
+        app.terminal.emulators.get_mut(&id).unwrap().process(&output);
+
+        handle_mouse(
+            &mut app,
+            mouse(MouseEventKind::ScrollUp, rect.x, rect.y),
+            MOUSE_TEST_SCREEN,
+            &config::LayoutConfig::default(),
+        );
+
+        assert_eq!(app.terminal.scroll.get(&id).copied(), Some(3));
+        assert_eq!(
+            app.terminal.active, active_before,
+            "a wheel scroll must not steal focus"
+        );
     }
 }

@@ -21,6 +21,7 @@ pub struct Config {
     pub agent_indicator: AgentIndicatorConfig,
     pub input: InputConfig,
     pub tree: TreeConfig,
+    pub mouse: MouseConfig,
     /// Commands launched in their own terminal pane at startup, in order.
     /// Maps from TOML `[[startup_command]]` array-of-tables. Empty by
     /// default, which preserves the single empty-shell startup behaviour.
@@ -37,6 +38,24 @@ pub struct Config {
 /// editors that bind it (vim's CTRL-V alias, emacs quoted-insert) remain
 /// reachable via `<leader><leader>`.
 const DEFAULT_LEADER: &str = "ctrl+q";
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct MouseConfig {
+    /// Capture the mouse so clicks reach mouse-aware pane programs and wheel
+    /// scrolls move the pane under the pointer. While captured, the outer
+    /// terminal only performs its own text selection with Shift held — the
+    /// standard override every major terminal honors. Set to `false` to give
+    /// the mouse back to the outer terminal entirely (plain-drag selection,
+    /// no click forwarding).
+    pub enabled: bool,
+}
+
+impl Default for MouseConfig {
+    fn default() -> Self {
+        Self { enabled: true }
+    }
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
@@ -730,6 +749,14 @@ auto_follow = false
         assert!(!cfg.agent_indicator.enabled);
         assert!(!cfg.agent_indicator.auto_follow);
         assert_eq!(cfg.agent_indicator.hot_window_secs, 30);
+    }
+
+    #[test]
+    fn mouse_capture_defaults_on_and_parses_from_toml() {
+        assert!(Config::default().mouse.enabled);
+
+        let cfg: Config = toml::from_str("[mouse]\nenabled = false\n").unwrap();
+        assert!(!cfg.mouse.enabled);
     }
 
     #[test]

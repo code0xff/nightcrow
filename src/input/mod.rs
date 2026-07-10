@@ -1,4 +1,4 @@
-use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseButton};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Action {
@@ -228,6 +228,30 @@ const SGR_WHEEL_UP: u8 = 64;
 pub fn encode_wheel(up: bool, col: u16, row: u16) -> Vec<u8> {
     let button = if up { SGR_WHEEL_UP } else { SGR_WHEEL_UP + 1 };
     format!("\x1b[<{button};{};{}M", col.max(1), row.max(1)).into_bytes()
+}
+
+/// Encode a horizontal wheel notch as an SGR (1006) mouse report: button 66
+/// is wheel-left, 67 wheel-right. `col`/`row` are 1-based pane-local cells.
+/// Horizontal wheel has no scrollback or arrow-key analog, so — unlike the
+/// vertical encoder — this only ever targets a pane that claimed the mouse.
+pub fn encode_wheel_horizontal(left: bool, col: u16, row: u16) -> Vec<u8> {
+    let button: u8 = if left { SGR_WHEEL_UP + 2 } else { SGR_WHEEL_UP + 3 };
+    format!("\x1b[<{button};{};{}M", col.max(1), row.max(1)).into_bytes()
+}
+
+/// Encode a mouse button press or release as an SGR (1006) mouse report.
+/// `col`/`row` are 1-based pane-local cell coordinates. SGR keeps the real
+/// button code on release and marks it with a final `m` instead of `M` —
+/// unlike the legacy X10 encoding, which collapses every release to
+/// button 3 and could not tell the program which button went up.
+pub fn encode_button(button: MouseButton, press: bool, col: u16, row: u16) -> Vec<u8> {
+    let code: u8 = match button {
+        MouseButton::Left => 0,
+        MouseButton::Middle => 1,
+        MouseButton::Right => 2,
+    };
+    let final_byte = if press { 'M' } else { 'm' };
+    format!("\x1b[<{code};{};{}{final_byte}", col.max(1), row.max(1)).into_bytes()
 }
 
 /// Encode a bare Up/Down arrow. `app_cursor` selects the SS3 form (`ESC O A`)
@@ -530,6 +554,46 @@ mod tests {
         // SGR coordinates start at 1; a degenerate 0-sized pane must not
         // produce a `0` that a TUI would read as out of range.
         assert_eq!(encode_wheel(true, 0, 0), b"\x1b[<64;1;1M".to_vec());
+    }
+
+    #[test]
+    fn encode_wheel_horizontal_uses_sgr_buttons_66_and_67() {
+        assert_eq!(
+            encode_wheel_horizontal(true, 5, 3),
+            b"\x1b[<66;5;3M".to_vec()
+        );
+        assert_eq!(
+            encode_wheel_horizontal(false, 0, 0),
+            b"\x1b[<67;1;1M".to_vec()
+        );
+    }
+
+    #[test]
+    fn encode_button_reports_press_and_release_with_real_button_code() {
+        assert_eq!(
+            encode_button(MouseButton::Left, true, 5, 3),
+            b"\x1b[<0;5;3M".to_vec()
+        );
+        assert_eq!(
+            encode_button(MouseButton::Left, false, 5, 3),
+            b"\x1b[<0;5;3m".to_vec()
+        );
+        assert_eq!(
+            encode_button(MouseButton::Middle, true, 1, 1),
+            b"\x1b[<1;1;1M".to_vec()
+        );
+        assert_eq!(
+            encode_button(MouseButton::Right, false, 80, 24),
+            b"\x1b[<2;80;24m".to_vec()
+        );
+    }
+
+    #[test]
+    fn encode_button_clamps_coordinates_to_one_based_origin() {
+        assert_eq!(
+            encode_button(MouseButton::Left, true, 0, 0),
+            b"\x1b[<0;1;1M".to_vec()
+        );
     }
 
     #[test]

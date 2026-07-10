@@ -1,6 +1,7 @@
 use crate::backend::{BackendEvent, PaneId, TerminalBackend};
-use crate::input::{encode_arrow, encode_wheel};
+use crate::input::{encode_arrow, encode_button, encode_wheel, encode_wheel_horizontal};
 use crate::runtime::emulator::{PaneEmulator, ScreenView, ScrollSink};
+use crossterm::event::MouseButton;
 use std::collections::HashMap;
 
 /// Upper bound on a pane's in-flight prompt buffer before further chars are
@@ -18,8 +19,9 @@ pub const SCROLLBACK_LINES: usize = 1000;
 pub const SCROLL_LINE_STEP: usize = 3;
 
 /// Lines one mouse wheel notch scrolls, by terminal convention. Used to
-/// convert a line count into a notch count when a pane wants wheel events.
-const WHEEL_LINES_PER_NOTCH: usize = 3;
+/// convert a line count into a notch count when a pane wants wheel events,
+/// and by the mouse handler as the line count of one captured wheel event.
+pub const WHEEL_LINES_PER_NOTCH: usize = 3;
 
 pub struct PaneInfo {
     pub id: PaneId,
@@ -171,20 +173,26 @@ impl TerminalState {
         self.visible_start = range.start;
     }
 
-    /// Scroll the active pane by `lines`, delivering the request wherever
-    /// that pane's program expects it (see `ScrollSink`).
+    /// Scroll the active pane by `lines`. See `scroll_pane`.
+    pub fn scroll_active(&mut self, up: bool, lines: usize) {
+        let Some(id) = self.active_pane_id() else {
+            return;
+        };
+        self.scroll_pane(id, up, lines, None);
+    }
+
+    /// Scroll pane `id` by `lines`, delivering the request wherever that
+    /// pane's program expects it (see `ScrollSink`). `pointer` is the 1-based
+    /// pane-local cell of a captured mouse wheel event, when there is one.
     ///
     /// Only the `Scrollback` sink moves the emulator's view; the other two
     /// synthesize input, because a program that owns its viewport keeps its
     /// transcript out of the emulator's grid entirely and scrolling the grid
     /// would reveal nothing.
-    pub fn scroll_active(&mut self, up: bool, lines: usize) {
+    pub fn scroll_pane(&mut self, id: PaneId, up: bool, lines: usize, pointer: Option<(u16, u16)>) {
         if lines == 0 {
             return;
         }
-        let Some(id) = self.active_pane_id() else {
-            return;
-        };
         let Some(emulator) = self.emulators.get(&id) else {
             return;
         };
@@ -193,12 +201,19 @@ impl TerminalState {
 
         match sink {
             ScrollSink::MouseWheel => {
-                // Report the pointer at the pane's centre: a TUI may pick
-                // which of its regions to scroll from the coordinates, and
-                // the centre is the only cell guaranteed to be inside the
-                // transcript rather than on a border or input box.
-                let (rows, cols) = self.pane_size(id);
-                let (col, row) = (cols / 2 + 1, rows / 2 + 1);
+                // A TUI may pick which of its regions to scroll from the
+                // report's coordinates, so a captured wheel event passes the
+                // real pointer cell through. Keyboard scrolls have no
+                // pointer and report the pane's centre instead — the only
+                // cell guaranteed to be inside the transcript rather than on
+                // a border or input box.
+                let (col, row) = match pointer {
+                    Some(cell) => cell,
+                    None => {
+                        let (rows, cols) = self.pane_size(id);
+                        (cols / 2 + 1, rows / 2 + 1)
+                    }
+                };
                 let notch = encode_wheel(up, col, row);
                 let notches = lines.div_ceil(WHEEL_LINES_PER_NOTCH);
                 let payload = notch.repeat(notches);
@@ -210,12 +225,58 @@ impl TerminalState {
             }
             ScrollSink::Scrollback => {
                 if up {
-                    self.scroll_up(lines);
+                    self.scroll_up(id, lines);
                 } else {
-                    self.scroll_down(lines);
+                    self.scroll_down(id, lines);
                 }
+                // A wheel event can target a non-active pane, which the
+                // per-frame `sync_scroll` (active pane only) never reaches —
+                // apply the offset here so the view moves immediately.
+                self.sync_scroll_pane(id);
             }
         }
+    }
+
+    /// Forward a horizontal wheel notch to pane `id` as an SGR report at the
+    /// pointer cell. Horizontal scrolling has no scrollback or arrow-key
+    /// analog, so there is no sink dispatch: a pane whose program asked for
+    /// wheel reports receives the notch, every other pane silently drops it
+    /// (the same rule as `click_pane`).
+    pub fn wheel_horizontal_pane(&mut self, id: PaneId, left: bool, col: u16, row: u16) {
+        let Some(emulator) = self.emulators.get(&id) else {
+            return;
+        };
+        if emulator.scroll_sink() != ScrollSink::MouseWheel {
+            return;
+        }
+        let payload = encode_wheel_horizontal(left, col, row);
+        self.write_pty(id, &payload);
+    }
+
+    /// Forward a mouse button press or release to pane `id`, translated to an
+    /// SGR report at 1-based pane-local `col`/`row`. Only a pane whose program
+    /// asked for SGR mouse reports receives anything: a click has no
+    /// scrollback fallback, so an unclaimed click is dropped — the same
+    /// silence rule that keeps scroll bytes out of plain shells. Returns
+    /// whether the report was sent, so the caller can pair a forwarded press
+    /// with its eventual release.
+    pub fn click_pane(
+        &mut self,
+        id: PaneId,
+        button: MouseButton,
+        press: bool,
+        col: u16,
+        row: u16,
+    ) -> bool {
+        let Some(emulator) = self.emulators.get(&id) else {
+            return false;
+        };
+        if !emulator.wants_mouse_buttons() {
+            return false;
+        }
+        let payload = encode_button(button, press, col, row);
+        self.write_pty(id, &payload);
+        true
     }
 
     /// Write straight to a pane's PTY. Bypasses `send_input` on purpose:
@@ -230,23 +291,19 @@ impl TerminalState {
         }
     }
 
-    pub fn scroll_up(&mut self, lines: usize) {
+    fn scroll_up(&mut self, id: PaneId, lines: usize) {
         if lines == 0 {
             return;
         }
-        if let Some(id) = self.active_pane_id() {
-            let offset = self.scroll.entry(id).or_insert(0);
-            *offset = offset.saturating_add(lines);
-        }
+        let offset = self.scroll.entry(id).or_insert(0);
+        *offset = offset.saturating_add(lines);
     }
 
-    pub fn scroll_down(&mut self, lines: usize) {
+    fn scroll_down(&mut self, id: PaneId, lines: usize) {
         if lines == 0 {
             return;
         }
-        if let Some(id) = self.active_pane_id()
-            && let Some(entry) = self.scroll.get_mut(&id)
-        {
+        if let Some(entry) = self.scroll.get_mut(&id) {
             *entry = entry.saturating_sub(lines);
             if *entry == 0 {
                 self.scroll.remove(&id);
@@ -264,6 +321,10 @@ impl TerminalState {
         let Some(id) = self.active_pane_id() else {
             return;
         };
+        self.sync_scroll_pane(id);
+    }
+
+    fn sync_scroll_pane(&mut self, id: PaneId) {
         let offset = self.scroll.get(&id).copied().unwrap_or(0);
         let actual = match self.emulators.get_mut(&id) {
             // The emulator clamps the offset to the actual scrollback
@@ -769,6 +830,97 @@ mod tests {
         state.scroll_active(true, 0);
 
         assert!(payloads_after_setup(&state).is_empty());
+    }
+
+    #[test]
+    fn scroll_pane_moves_a_non_active_panes_view_immediately() {
+        let (mut state, events) = state_with_event_queue();
+        state.create_pane().unwrap();
+        state.create_pane().unwrap();
+        let first = state.panes[0].id;
+        state.resize_visible_panes(&[(first, 10, 40)]);
+        events.borrow_mut().push(BackendEvent::Output {
+            pane: first,
+            data: shell_output_past_one_screen(),
+        });
+        state.poll();
+        assert_ne!(
+            state.active_pane_id(),
+            Some(first),
+            "test needs the scrolled pane to be non-active"
+        );
+
+        state.scroll_pane(first, true, 3, None);
+
+        assert_eq!(state.scroll.get(&first).copied(), Some(3));
+        assert_eq!(
+            state.emulators.get(&first).unwrap().scroll_offset(),
+            3,
+            "the per-frame sync only reaches the active pane, so scroll_pane \
+             must apply the offset itself"
+        );
+    }
+
+    #[test]
+    fn click_pane_forwards_sgr_press_and_release_to_a_mouse_reporting_pane() {
+        let (mut state, id) = state_with_pane_in_modes(b"\x1b[?1000h\x1b[?1002h\x1b[?1006h");
+
+        assert!(state.click_pane(id, MouseButton::Left, true, 5, 3));
+        assert!(state.click_pane(id, MouseButton::Left, false, 5, 3));
+
+        assert_eq!(
+            payloads_after_setup(&state),
+            vec![b"\x1b[<0;5;3M".to_vec(), b"\x1b[<0;5;3m".to_vec()]
+        );
+    }
+
+    #[test]
+    fn click_pane_stays_silent_for_a_pane_that_never_claimed_the_mouse() {
+        let (mut state, id) = state_with_pane_in_modes(&shell_output_past_one_screen());
+
+        assert!(!state.click_pane(id, MouseButton::Left, true, 5, 3));
+        assert!(!state.click_pane(id, MouseButton::Right, false, 5, 3));
+
+        assert!(
+            payloads_after_setup(&state).is_empty(),
+            "a shell echoes unbound escape sequences into its prompt, so an \
+             unclaimed click must write nothing to the PTY"
+        );
+    }
+
+    #[test]
+    fn wheel_horizontal_pane_forwards_only_to_a_wheel_reporting_pane() {
+        let (mut state, id) = state_with_pane_in_modes(b"\x1b[?1000h\x1b[?1006h");
+
+        state.wheel_horizontal_pane(id, true, 5, 2);
+        state.wheel_horizontal_pane(id, false, 5, 2);
+
+        assert_eq!(
+            payloads_after_setup(&state),
+            vec![b"\x1b[<66;5;2M".to_vec(), b"\x1b[<67;5;2M".to_vec()]
+        );
+    }
+
+    #[test]
+    fn wheel_horizontal_pane_stays_silent_for_a_plain_shell() {
+        let (mut state, id) = state_with_pane_in_modes(&shell_output_past_one_screen());
+
+        state.wheel_horizontal_pane(id, true, 5, 2);
+
+        assert!(
+            payloads_after_setup(&state).is_empty(),
+            "horizontal wheel has no scrollback fallback, so an unclaimed \
+             notch must write nothing to the PTY"
+        );
+    }
+
+    #[test]
+    fn scroll_pane_reports_the_pointer_cell_when_given_one() {
+        let (mut state, id) = state_with_pane_in_modes(b"\x1b[?1000h\x1b[?1006h");
+
+        state.scroll_pane(id, true, 3, Some((5, 2)));
+
+        assert_eq!(payloads_after_setup(&state), vec![b"\x1b[<64;5;2M".to_vec()]);
     }
 
     #[test]

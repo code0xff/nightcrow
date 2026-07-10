@@ -174,6 +174,16 @@ impl PaneEmulator {
         }
     }
 
+    /// Whether the program asked for mouse button reports in SGR form —
+    /// the gate for forwarding clicks. The mode set is the same one that
+    /// routes wheel scrolls to `ScrollSink::MouseWheel`, but it is a
+    /// separate predicate because the meaning differs: a click has no
+    /// scrollback fallback, it is either claimed by the program or dropped.
+    pub fn wants_mouse_buttons(&self) -> bool {
+        let mode = self.term.mode();
+        mode.intersects(TermMode::MOUSE_MODE) && mode.contains(TermMode::SGR_MOUSE)
+    }
+
     /// Whether the program enabled DECCKM (application cursor keys), which
     /// changes the arrow-key encoding from `ESC [ A` to `ESC O A`.
     pub fn app_cursor(&self) -> bool {
@@ -471,6 +481,24 @@ mod tests {
         // pane must not be handed wheel bytes it cannot parse.
         emu.process(b"\x1b[?1000h");
         assert_eq!(emu.scroll_sink(), ScrollSink::Scrollback);
+    }
+
+    #[test]
+    fn wants_mouse_buttons_when_program_reports_sgr_mouse() {
+        let mut emu = PaneEmulator::new(3, 10, 100);
+        // The exact mode set Claude Code emits on startup.
+        emu.process(b"\x1b[?1000h\x1b[?1002h\x1b[?1003h\x1b[?1006h");
+        assert!(emu.wants_mouse_buttons());
+    }
+
+    #[test]
+    fn wants_mouse_buttons_rejects_shell_and_x10_only_panes() {
+        let mut emu = PaneEmulator::new(3, 10, 100);
+        // A plain shell never claims the mouse: no click byte may reach it.
+        assert!(!emu.wants_mouse_buttons());
+        // X10-encoded reporting without SGR: we have no encoder for it.
+        emu.process(b"\x1b[?1000h");
+        assert!(!emu.wants_mouse_buttons());
     }
 
     #[test]

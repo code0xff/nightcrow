@@ -28,6 +28,16 @@ name = "yellow"      # accent color preset: "yellow" | "cyan" | "green" | "magen
 leader = "ctrl+q"    # default; dodges tmux's Ctrl+B and the Ctrl chords an inner
                      # Claude Code pane uses (Ctrl+G=external editor, Ctrl+O/R/S/T/L)
 
+[mouse]
+# Capture the mouse: clicking a panel (file list, diff viewer, terminal pane)
+# focuses it, clicks on terminal panes are forwarded to programs that asked
+# for mouse reports (Claude Code, less --mouse, ...), and wheel scrolls move
+# the pane under the pointer. While captured, select
+# text in the outer terminal by holding Shift while dragging. Set to false to
+# give the mouse back to the outer terminal (plain-drag selection, no click
+# forwarding).
+enabled = true
+
 [log]
 enabled = true
 dir = ".nightcrow/logs"   # relative to repo root
