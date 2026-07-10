@@ -259,6 +259,14 @@ mod tests {
         assert!(!backend.panes.contains_key(&id));
     }
 
+    /// Deadline for the real-PTY tests below. They spawn the user's actual
+    /// `$SHELL` (an interactive zsh sources the full rc chain), and cargo
+    /// runs tests in parallel, so several shells can be initializing at
+    /// once — under load a 3 s budget was measurably flaky (~2/25 runs).
+    /// A generous bound only delays the failure verdict; passing runs
+    /// still finish as soon as the events arrive.
+    const PTY_TEST_DEADLINE: Duration = Duration::from_secs(15);
+
     #[test]
     fn pty_backend_drains_output_before_exit_event() {
         let mut backend = PtyBackend::new(".");
@@ -270,7 +278,7 @@ mod tests {
             .send_input(id, b"printf nightcrow-pty-output; exit\n")
             .expect("send_input failed");
 
-        let deadline = Instant::now() + Duration::from_secs(3);
+        let deadline = Instant::now() + PTY_TEST_DEADLINE;
         let mut output = Vec::new();
         let mut saw_exit = false;
         while Instant::now() < deadline {
@@ -303,7 +311,7 @@ mod tests {
             .create_pane(24, 80, Some("printf nightcrow-startup-ran; exit"))
             .expect("create_pane failed");
 
-        let deadline = Instant::now() + Duration::from_secs(3);
+        let deadline = Instant::now() + PTY_TEST_DEADLINE;
         let mut output = Vec::new();
         let mut saw_exit = false;
         while Instant::now() < deadline {
