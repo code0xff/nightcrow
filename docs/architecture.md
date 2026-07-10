@@ -165,8 +165,9 @@ background even while scrolled out of the window.
   width, 2 side-by-side (or stacked if the area is narrow), 3 as a 2-column
   row plus a full-width remainder, 4 as 2x2, 5–6 as 3 columns, 7 as 4-then-3
   rows. The single-pane case takes a dedicated no-border code path so
-  copying terminal output still never picks up a stray `│` — this is the
-  overwhelmingly common case and must not regress.
+  copying terminal output — Shift+drag while the mouse is captured, plain
+  drag with `[mouse]` disabled — still never picks up a stray `│`; this is
+  the overwhelmingly common case and must not regress.
 - **Sizing invariant**: `ui::terminal_tab::visible_pane_cells` is the single
   source of truth for pane Rects. `render` draws from it every frame, and
   `ui::terminal_content_areas` → `main_loop`'s `resize_visible_panes` call
@@ -239,6 +240,20 @@ background even while scrolled out of the window.
 `Scrollback`이 기본값이어야 하는 이유는 안전 문제다. bash/zsh는 바인딩되지 않은 이스케이프 시퀀스를 받으면 BEL을 울리고 `;2A` 같은 잔여 문자를 프롬프트에 그대로 삽입한다. 따라서 스크롤을 청구하지 않은 pane에는 **한 바이트도 보내지 않는다**.
 
 합성한 입력은 `send_input`이 아니라 `write_pty`로 나간다. 사용자가 누른 키가 아니므로 스크롤 위치를 초기화하거나 prompt log에 남으면 안 된다 — 에뮬레이터의 쿼리 응답이 `send_input`을 우회하는 것과 같은 이유다.
+
+### Mouse Routing
+
+`[mouse] enabled`(기본 on)일 때 crossterm `EnableMouseCapture`로 마우스를 캡처한다. 캡처는 화면 전체 단위라 pane별로 쪼갤 수 없으므로, 바깥 터미널의 네이티브 텍스트 선택은 주요 터미널이 공통으로 지원하는 Shift+드래그 오버라이드로 우회한다. 끄면 마우스는 바깥 터미널 소유로 돌아간다(맨 드래그 선택, 클릭 포워딩 없음).
+
+캡처된 이벤트는 `main::handle_mouse`가 `ui::pane_at`으로 hit-test한다. `pane_at`은 렌더링과 동일한 `terminal_content_areas` 기하를 재사용하므로 화면과 판정이 어긋날 수 없다. pane content 셀 밖(상단 패널, 보더, 탭 바)에 떨어진 이벤트는 버린다.
+
+- **상단 패널 클릭**: pane content 밖의 press는 `ui::upper_panel_at`(draw와 동일한 split 기하)으로 다시 판정해, 리스트/diff 영역이면 focus만 옮긴다(F1/F2와 동일). fullscreen 상태에서는 판정하지 않는다 — body를 채운 패널이 이미 focus를 갖고 있다.
+- **클릭**: press가 클릭된 pane을 활성화하고 focus를 터미널로 옮긴다 — jump key와 동일. press/release는 `TerminalState::click_pane`이 pane-local 1-based 좌표의 SGR(1006) 버튼 리포트로 변환하되, `PaneEmulator::wants_mouse_buttons`(`MOUSE_MODE`+`SGR_MOUSE`)를 켠 프로그램에만 보낸다. Scroll Routing과 같은 침묵 규칙이다: 청구하지 않은 pane에는 한 바이트도 보내지 않는다. 클릭은 스크롤과 달리 스크롤백 폴백이 없으므로, 미청구 클릭은 조용히 버려진다.
+- **release 짝짓기**: release는 포인터 아래 pane이 아니라 **press를 받은 pane**으로 간다(`App::pending_mouse_press`, single slot). 드래그 리포트를 포워딩하지 않으므로 프로그램은 포인터 이탈을 스스로 알 수 없다 — press를 본 프로그램은 release도 봐야 하고, 포인터가 우연히 머문 pane이 press 없는 release를 받아서는 안 된다. release 좌표는 press pane의 현재 rect로 클램프하고, 그 pane이 닫혔거나 숨겨졌으면 release를 버린다.
+- **휠**: 활성 pane이 아니라 **포인터 아래 pane**을 `scroll_pane`으로 스크롤한다. sink 판정은 Scroll Routing 표와 동일하되, `MouseWheel` sink의 리포트 좌표는 실제 포인터 셀을 그대로 전달한다(키보드 스크롤만 pane 중앙 폴백 — 포인터가 없으므로). 비활성 pane의 `Scrollback` sink에는 per-frame `sync_scroll`(활성 pane 전용)이 닿지 않으므로, `scroll_pane`이 오프셋을 즉시 직접 적용한다.
+- **드래그/모션**: 포워딩하지 않는다. 내부 프로그램의 자체 텍스트 선택(예: Claude Code의 드래그 선택)은 지원 범위 밖이고, 텍스트 선택은 바깥 터미널의 Shift+드래그가 담당한다.
+
+합성 버튼 리포트도 스크롤과 같은 이유로 `send_input`이 아니라 `write_pty`로 나간다.
 
 ### HEAD Change Detection
 

@@ -178,6 +178,15 @@ While scrolled, the terminal border title shows `[SCROLL — shift+pgdn: down | 
 
 The tab bar picks up OSC 0/2 window-title escape sequences, so programs like `claude`, `vim`, `ssh`, or `cd`-aware shell prompts can rename their own tab. Panes without an emitted title fall back to a default label.
 
+### Mouse
+
+nightcrow captures the mouse by default (`[mouse]` in the configuration):
+
+- **Click a pane** to focus it, same as a jump key. The click is also forwarded to programs that asked for mouse reports (Claude Code, `less --mouse`, …) — so their clickable UI, like Claude Code's jump-to-bottom control, works. A plain shell receives nothing.
+- **Click the file list or diff viewer** to focus that panel, same as `F1`/`F2`.
+- **Wheel** scrolls the pane under the pointer, routed exactly like the scroll keys (wheel reports, arrow keys, or scrollback — whatever the program expects).
+- **Select text with Shift+drag.** While the mouse is captured, the outer terminal performs its native selection and copy only with Shift held (standard behavior in every major terminal). Set `enabled = false` under `[mouse]` to give the mouse back to the outer terminal entirely — plain-drag selection returns, click forwarding stops.
+
 ## Recent-activity focus indicator
 
 Files modified within the last `hot_window_secs` seconds — whether by an agent in a terminal pane, your editor, or a build/format script — are rendered in the accent color (bold for the first 5 seconds, normal until the window expires). When the file list is in focus and you have not navigated in the last 2 seconds, the selection auto-follows to the freshest hot file so the diff updates as files change. Manual navigation (`j` / `k` / arrows / PgUp / PgDn) immediately suppresses auto-follow until you go idle again.
@@ -213,6 +222,11 @@ name = "yellow"      # accent color preset: "yellow" | "cyan" | "green" | "magen
 leader = "ctrl+q"    # leader (prefix) chord for app commands; tmux-style.
                      # Allowed: "ctrl+<letter>". Reserved keys (F1..F10,
                      # Shift+arrows, Shift+PgUp/PgDn) cannot be the leader.
+
+[mouse]
+enabled = true       # capture the mouse: click to focus/forward, wheel scrolls
+                     # the pane under the pointer; select text with Shift+drag.
+                     # false = plain-drag selection, no click forwarding.
 
 [log]
 enabled = true
