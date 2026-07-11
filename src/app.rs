@@ -132,6 +132,11 @@ pub struct App {
     /// off the pane in between. Single slot — a second press before the
     /// first release overwrites it (multi-button chords are not paired).
     pub pending_mouse_press: Option<(crate::backend::PaneId, crossterm::event::MouseButton)>,
+    /// Mirror of `[mouse] enabled`. Gates only the hint bar's clickability
+    /// inversion — with capture off no mouse event ever arrives, so the
+    /// input path needs no check, but a label must not advertise a click
+    /// that cannot happen.
+    pub mouse_enabled: bool,
 }
 
 impl App {
@@ -178,6 +183,7 @@ impl App {
             prefix_armed: false,
             awaiting_swap_target: false,
             pending_mouse_press: None,
+            mouse_enabled: true,
         };
 
         app.ensure_initial_terminal(startup_commands);
@@ -345,6 +351,7 @@ pub(crate) mod tests {
             prefix_armed: false,
             awaiting_swap_target: false,
             pending_mouse_press: None,
+            mouse_enabled: true,
         }
     }
 

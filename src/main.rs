@@ -230,6 +230,7 @@ fn init_app(
     app.set_accent_index(cfg.theme.preset_index());
     app.cfg_agent_indicator = cfg.agent_indicator.clone();
     app.cfg_tree = cfg.tree.clone();
+    app.mouse_enabled = cfg.mouse.enabled;
     if cfg.tree.live_watch {
         app.tree_watch = crate::runtime::tree_watch::TreeWatcher::new();
     }

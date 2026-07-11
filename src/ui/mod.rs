@@ -375,6 +375,46 @@ fn prefix_armed_hint_text(app: &App) -> String {
     )
 }
 
+/// Build the styled spans for a hint legend, inverting (`REVERSED`) the key
+/// label of every clickable segment so the bar itself shows which hints
+/// respond to a click. Consumes the same literal and `" | "` segmentation as
+/// `hint_click_at` — and decides clickability with the same `segment_click`
+/// — so an inverted label can never disagree with the hit test. Only styles
+/// change; the rendered text (and thus every column offset) stays identical.
+/// `mark_clickable` is `[mouse] enabled`: with capture off a click can never
+/// arrive, so no label may advertise one.
+fn hint_spans(text: &str, leader: &str, mark_clickable: bool) -> Vec<Span<'static>> {
+    let base = Style::default().fg(Color::DarkGray);
+    let inverted = base.add_modifier(Modifier::REVERSED);
+    let mut spans = Vec::new();
+    for (i, segment) in text.split(" | ").enumerate() {
+        if i > 0 {
+            spans.push(Span::styled(" | ", base));
+        }
+        let rendered = segment.replace("<prefix>", leader);
+        let clickable = mark_clickable
+            && segment
+                .split_once(':')
+                .and_then(|(keyspec, _)| segment_click(keyspec))
+                .is_some();
+        match rendered.split_once(':') {
+            Some((key, rest)) if clickable => {
+                // Invert only the key label, keeping any leading whitespace
+                // plain so the affordance reads as a chip.
+                let label_start = key.len() - key.trim_start().len();
+                let (lead_ws, label) = key.split_at(label_start);
+                if !lead_ws.is_empty() {
+                    spans.push(Span::styled(lead_ws.to_string(), base));
+                }
+                spans.push(Span::styled(label.to_string(), inverted));
+                spans.push(Span::styled(format!(":{rest}"), base));
+            }
+            _ => spans.push(Span::styled(rendered, base)),
+        }
+    }
+    spans
+}
+
 fn render_hint_bar(app: &App, accent: Color) -> Paragraph<'_> {
     if app.repo_input.active {
         return Paragraph::new(Line::from(vec![
@@ -384,19 +424,19 @@ fn render_hint_bar(app: &App, accent: Color) -> Paragraph<'_> {
         ]));
     }
     if app.prefix_armed() {
-        return Paragraph::new(Line::from(vec![
-            Span::styled(
-                PREFIX_CHIP,
-                Style::default()
-                    .fg(Color::Black)
-                    .bg(accent)
-                    .add_modifier(Modifier::BOLD),
-            ),
-            Span::styled(
-                prefix_armed_hint_text(app),
-                Style::default().fg(Color::DarkGray),
-            ),
-        ]));
+        let mut spans = vec![Span::styled(
+            PREFIX_CHIP,
+            Style::default()
+                .fg(Color::Black)
+                .bg(accent)
+                .add_modifier(Modifier::BOLD),
+        )];
+        spans.extend(hint_spans(
+            &prefix_armed_hint_text(app),
+            &app.leader_label(),
+            app.mouse_enabled,
+        ));
+        return Paragraph::new(Line::from(spans));
     }
     if app.awaiting_swap_target() {
         // The swap-target digits follow the same layout-aware mapping as the
@@ -427,9 +467,10 @@ fn render_hint_bar(app: &App, accent: Color) -> Paragraph<'_> {
     // `<prefix>` in the hint literal resolves to the configured leader chord
     // (e.g. `^Q`) so the footer always names the actual key to press rather
     // than an abstract word.
-    Paragraph::new(Line::from(Span::styled(
-        normal_hint_literal(app).replace("<prefix>", &app.leader_label()),
-        Style::default().fg(Color::DarkGray),
+    Paragraph::new(Line::from(hint_spans(
+        normal_hint_literal(app),
+        &app.leader_label(),
+        app.mouse_enabled,
     )))
 }
 
@@ -652,6 +693,66 @@ mod tests {
             })
             .collect::<Vec<_>>()
             .join("\n")
+    }
+
+    /// Every column the hint bar renders REVERSED must resolve to a click
+    /// action, and at least one such column must exist — the inversion is
+    /// the clickability affordance, so it may never mark a dead segment.
+    fn assert_inverted_cells_are_clickable(app: &App) {
+        let mut terminal = Terminal::new(TestBackend::new(200, 1)).unwrap();
+        terminal
+            .draw(|frame| frame.render_widget(render_hint_bar(app, Color::Yellow), frame.area()))
+            .unwrap();
+        let buf = terminal.backend().buffer();
+        // `hint_click_at` takes full-screen coordinates: hint row = row 2 of
+        // a 3-row screen, with the same x origin as the 1-row render above.
+        let screen = Rect::new(0, 0, 200, 3);
+        let mut inverted = 0;
+        for x in 0..200u16 {
+            if buf[(x, 0)].modifier.contains(Modifier::REVERSED) {
+                inverted += 1;
+                assert!(
+                    hint_click_at(app, screen, x, 2).is_some(),
+                    "inverted hint cell at column {x} must be clickable"
+                );
+            }
+        }
+        assert!(
+            inverted > 0,
+            "at least one clickable key label must render inverted"
+        );
+    }
+
+    #[test]
+    fn hint_bar_inverts_only_clickable_key_labels() {
+        let app = app_with_fake_backend();
+        assert_inverted_cells_are_clickable(&app);
+    }
+
+    #[test]
+    fn armed_prefix_hint_bar_inverts_only_clickable_key_labels() {
+        let mut app = app_with_fake_backend();
+        app.arm_prefix();
+        assert_inverted_cells_are_clickable(&app);
+    }
+
+    #[test]
+    fn hint_bar_inverts_nothing_when_mouse_capture_is_disabled() {
+        let mut app = app_with_fake_backend();
+        app.mouse_enabled = false;
+        let mut terminal = Terminal::new(TestBackend::new(200, 1)).unwrap();
+        terminal
+            .draw(|frame| frame.render_widget(render_hint_bar(&app, Color::Yellow), frame.area()))
+            .unwrap();
+        let buf = terminal.backend().buffer();
+
+        let inverted = (0..200u16).any(|x| buf[(x, 0)].modifier.contains(Modifier::REVERSED));
+
+        assert!(
+            !inverted,
+            "with the mouse handed back to the terminal, no hint may \
+             advertise a click that cannot arrive"
+        );
     }
 
     #[test]
