@@ -375,9 +375,10 @@ fn prefix_armed_hint_text(app: &App) -> String {
     )
 }
 
-/// Build the styled spans for a hint legend, inverting (`REVERSED`) the key
-/// label of every clickable segment so the bar itself shows which hints
-/// respond to a click. Consumes the same literal and `" | "` segmentation as
+/// Build the styled spans for a hint legend, inverting (`REVERSED`) every
+/// clickable segment — the whole `key: description` label, matching the
+/// click target exactly — so the bar itself shows which hints respond to a
+/// click. Consumes the same literal and `" | "` segmentation as
 /// `hint_click_at` — and decides clickability with the same `segment_click`
 /// — so an inverted label can never disagree with the hit test. Only styles
 /// change; the rendered text (and thus every column offset) stays identical.
@@ -397,19 +398,19 @@ fn hint_spans(text: &str, leader: &str, mark_clickable: bool) -> Vec<Span<'stati
                 .split_once(':')
                 .and_then(|(keyspec, _)| segment_click(keyspec))
                 .is_some();
-        match rendered.split_once(':') {
-            Some((key, rest)) if clickable => {
-                // Invert only the key label, keeping any leading whitespace
-                // plain so the affordance reads as a chip.
-                let label_start = key.len() - key.trim_start().len();
-                let (lead_ws, label) = key.split_at(label_start);
-                if !lead_ws.is_empty() {
-                    spans.push(Span::styled(lead_ws.to_string(), base));
-                }
-                spans.push(Span::styled(label.to_string(), inverted));
-                spans.push(Span::styled(format!(":{rest}"), base));
+        if clickable {
+            // Invert the whole segment — the entire label is the click
+            // target, so the affordance covers exactly what responds.
+            // Leading whitespace stays plain so the chip doesn't start
+            // with a stray block.
+            let label_start = rendered.len() - rendered.trim_start().len();
+            let (lead_ws, label) = rendered.split_at(label_start);
+            if !lead_ws.is_empty() {
+                spans.push(Span::styled(lead_ws.to_string(), base));
             }
-            _ => spans.push(Span::styled(rendered, base)),
+            spans.push(Span::styled(label.to_string(), inverted));
+        } else {
+            spans.push(Span::styled(rendered, base));
         }
     }
     spans
