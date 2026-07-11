@@ -587,6 +587,9 @@ pub(crate) fn tab_click_at(
 /// the caller can dispatch it through the exact same path as a keypress.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum HintClick {
+    /// The bare `<prefix>` label — press the leader chord alone, arming the
+    /// prefix so the armed follow-up row (itself clickable) takes over.
+    Arm,
     /// `<prefix> c` — press the leader chord, then `c`.
     Leader(char),
     /// A bare key `c` (a focus-local command, or an armed-prefix follow-up —
@@ -642,8 +645,10 @@ pub(crate) fn hint_click_at(app: &App, screen_area: Rect, x: u16, y: u16) -> Opt
     None
 }
 
-/// Map a hint segment's key label to its click action. Only discrete
-/// commands are clickable; everything else returns `None`:
+/// Map a hint segment's key label to its click action. The bare `<prefix>`
+/// label arms the prefix (the armed row's follow-ups are clickable in turn,
+/// completing a mouse-only flow). Beyond that, only discrete commands are
+/// clickable; everything else returns `None`:
 /// - continuous navigation (`j/k`, `shift+↑/↓`, `pgup/pgdn`, …) — a click
 ///   has no sensible single-step meaning,
 /// - digit legends (`1-8`, `3-9,0`) — the digit is the argument, a click
@@ -653,6 +658,9 @@ pub(crate) fn hint_click_at(app: &App, screen_area: Rect, x: u16, y: u16) -> Opt
 /// - `esc`/`enter` and free-text labels.
 fn segment_click(keyspec: &str) -> Option<HintClick> {
     let spec = keyspec.trim();
+    if spec == "<prefix>" {
+        return Some(HintClick::Arm);
+    }
     if let Some(rest) = spec.strip_prefix("<prefix> ") {
         let mut chars = rest.chars();
         if let (Some(c), None) = (chars.next(), chars.next())
@@ -728,6 +736,22 @@ mod tests {
     fn hint_bar_inverts_only_clickable_key_labels() {
         let app = app_with_fake_backend();
         assert_inverted_cells_are_clickable(&app);
+    }
+
+    /// The terminal-focus legend is the one carrying the bare
+    /// `<prefix>: leader` segment — its inversion must round-trip to a
+    /// click like every other clickable label.
+    #[test]
+    fn terminal_focus_hint_bar_inverts_only_clickable_key_labels() {
+        let mut app = app_with_fake_backend();
+        app.focus = Focus::Terminal;
+        assert_inverted_cells_are_clickable(&app);
+    }
+
+    #[test]
+    fn bare_prefix_segment_resolves_to_an_arm_click() {
+        assert_eq!(segment_click("<prefix>"), Some(HintClick::Arm));
+        assert_eq!(segment_click(" <prefix>"), Some(HintClick::Arm));
     }
 
     #[test]

@@ -462,11 +462,17 @@ fn handle_mouse(
 /// Run a clicked hint-bar shortcut by synthesizing the keypress(es) its
 /// label names, so a click and the real key share every guard and dispatch
 /// path in `handle_key` — a hint click can never do something the named key
-/// would not. `Leader` hints press the leader chord first (arming the
-/// prefix) and the follow-up second; `Plain` hints press one bare key.
+/// would not. `Arm` hints press the leader chord alone (the armed row then
+/// offers clickable follow-ups); `Leader` hints press the leader chord first
+/// (arming the prefix) and the follow-up second; `Plain` hints press one
+/// bare key.
 fn dispatch_hint_click(app: &mut App, click: ui::HintClick) -> KeyOutcome {
     let plain = |c| KeyEvent::new(KeyCode::Char(c), KeyModifiers::NONE);
     match click {
+        ui::HintClick::Arm => {
+            let leader = app.leader;
+            handle_key(app, leader)
+        }
         ui::HintClick::Leader(c) => {
             let leader = app.leader;
             match handle_key(app, leader) {
@@ -2142,6 +2148,62 @@ mod tests {
             "clicking `<prefix> t: new pane` must run the same command as the keys"
         );
         assert!(!app.prefix_armed(), "the synthesized prefix must not linger");
+    }
+
+    #[test]
+    fn handle_mouse_hint_click_on_the_leader_label_arms_the_prefix() {
+        let mut app = app_with_terminal_pane();
+        let x = hint_x_for(&app, ui::HintClick::Arm);
+
+        let down = MouseEventKind::Down(crossterm::event::MouseButton::Left);
+        let outcome = handle_mouse(
+            &mut app,
+            mouse(down, x, HINT_TEST_SCREEN.height - 1),
+            HINT_TEST_SCREEN,
+            &config::LayoutConfig::default(),
+        );
+
+        assert!(matches!(outcome, KeyOutcome::Continue));
+        assert!(
+            app.prefix_armed(),
+            "clicking `<prefix>: leader` must arm the prefix exactly like the chord"
+        );
+        assert!(
+            backend_payloads(&app).is_empty(),
+            "arming is UI-only; nothing may reach a PTY"
+        );
+    }
+
+    /// The mouse-only flow the arm click exists for: click the leader label,
+    /// then click a follow-up on the armed row.
+    #[test]
+    fn handle_mouse_arm_click_then_followup_click_runs_the_command() {
+        let mut app = app_with_terminal_pane();
+        let panes_before = app.terminal.panes.len();
+        let down = MouseEventKind::Down(crossterm::event::MouseButton::Left);
+        let row = HINT_TEST_SCREEN.height - 1;
+
+        let x = hint_x_for(&app, ui::HintClick::Arm);
+        handle_mouse(
+            &mut app,
+            mouse(down, x, row),
+            HINT_TEST_SCREEN,
+            &config::LayoutConfig::default(),
+        );
+        let x = hint_x_for(&app, ui::HintClick::Plain('t'));
+        handle_mouse(
+            &mut app,
+            mouse(down, x, row),
+            HINT_TEST_SCREEN,
+            &config::LayoutConfig::default(),
+        );
+
+        assert_eq!(
+            app.terminal.panes.len(),
+            panes_before + 1,
+            "arm click + `t` click must open a pane like the key sequence"
+        );
+        assert!(!app.prefix_armed(), "the follow-up must consume the prefix");
     }
 
     #[test]
