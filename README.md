@@ -185,6 +185,8 @@ nightcrow captures the mouse by default (`[mouse]` in the configuration):
 - **Click a pane** to focus it, same as a jump key. The click is also forwarded to programs that asked for mouse reports (Claude Code, `less --mouse`, …) — so their clickable UI, like Claude Code's jump-to-bottom control, works. A plain shell receives nothing.
 - **Click the file list or diff viewer** to focus that panel, same as `F1`/`F2`.
 - **Wheel** scrolls the pane under the pointer, routed exactly like the scroll keys (wheel reports, arrow keys, or scrollback — whatever the program expects).
+- **Click a tab** in the terminal tab bar to jump to that pane; clicking a `+N` hidden-pane marker reveals the nearest hidden pane on that side.
+- **Click a shortcut** in the bottom hint bar to run it — command hints like `t: new pane`, `w: close pane`, or `f: fullscreen` dispatch exactly as if you pressed the keys they name. Navigation hints and `q: quit` are not clickable (quitting stays a deliberate two-key act).
 - **Select text with Shift+drag.** While the mouse is captured, the outer terminal performs its native selection and copy only with Shift held (standard behavior in every major terminal). Set `enabled = false` under `[mouse]` to give the mouse back to the outer terminal entirely — plain-drag selection returns, click forwarding stops.
 
 ## Recent-activity focus indicator
