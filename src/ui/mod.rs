@@ -606,6 +606,12 @@ pub(crate) enum HintClick {
 /// / `normal_hint_literal` are shared — measuring rendered display widths,
 /// so the hit test cannot drift from the screen.
 pub(crate) fn hint_click_at(app: &App, screen_area: Rect, x: u16, y: u16) -> Option<HintClick> {
+    // With mouse capture off no click can reach us anyway, but the bar also
+    // renders no inverted labels (`hint_spans`) — keep the affordance and the
+    // hit test in agreement rather than relying on the caller.
+    if !app.mouse_enabled {
+        return None;
+    }
     let outer = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
@@ -787,6 +793,23 @@ mod tests {
             "with the mouse handed back to the terminal, no hint may \
              advertise a click that cannot arrive"
         );
+    }
+
+    /// The affordance/hit-test agreement holds with the mouse disabled too:
+    /// nothing renders inverted, so nothing may resolve to a click.
+    #[test]
+    fn hint_click_resolves_nothing_when_mouse_capture_is_disabled() {
+        let mut app = app_with_fake_backend();
+        app.focus = Focus::Terminal;
+        app.mouse_enabled = false;
+        let screen = Rect::new(0, 0, 200, 3);
+        for x in 0..200u16 {
+            assert_eq!(
+                hint_click_at(&app, screen, x, 2),
+                None,
+                "x={x} resolves to a click the disabled mouse can never send"
+            );
+        }
     }
 
     #[test]
