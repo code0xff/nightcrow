@@ -637,6 +637,14 @@ pub(crate) fn hint_click_at(app: &App, screen_area: Rect, x: u16, y: u16) -> Opt
         let rendered = segment.replace("<prefix>", &leader);
         let width = Span::raw(rendered.as_str()).width() as u16;
         if x >= cursor && x < cursor + width {
+            // Leading whitespace renders plain (see `hint_spans`), so it is
+            // not part of the click target either — the clickable range must
+            // match the inverted label cell for cell.
+            let label_start = rendered.len() - rendered.trim_start().len();
+            let lead_width = Span::raw(&rendered[..label_start]).width() as u16;
+            if x < cursor + lead_width {
+                return None;
+            }
             let (keyspec, _) = segment.split_once(':')?;
             return segment_click(keyspec);
         }
@@ -704,9 +712,10 @@ mod tests {
             .join("\n")
     }
 
-    /// Every column the hint bar renders REVERSED must resolve to a click
-    /// action, and at least one such column must exist — the inversion is
-    /// the clickability affordance, so it may never mark a dead segment.
+    /// The inversion is the clickability affordance, so the two must agree
+    /// cell for cell: every column the hint bar renders REVERSED must
+    /// resolve to a click action, every clickable column must render
+    /// REVERSED, and at least one such column must exist.
     fn assert_inverted_cells_are_clickable(app: &App) {
         let mut terminal = Terminal::new(TestBackend::new(200, 1)).unwrap();
         terminal
@@ -718,13 +727,13 @@ mod tests {
         let screen = Rect::new(0, 0, 200, 3);
         let mut inverted = 0;
         for x in 0..200u16 {
-            if buf[(x, 0)].modifier.contains(Modifier::REVERSED) {
-                inverted += 1;
-                assert!(
-                    hint_click_at(app, screen, x, 2).is_some(),
-                    "inverted hint cell at column {x} must be clickable"
-                );
-            }
+            let is_inverted = buf[(x, 0)].modifier.contains(Modifier::REVERSED);
+            let is_clickable = hint_click_at(app, screen, x, 2).is_some();
+            assert_eq!(
+                is_inverted, is_clickable,
+                "hint cell at column {x}: inverted={is_inverted} but clickable={is_clickable}"
+            );
+            inverted += is_inverted as u32;
         }
         assert!(
             inverted > 0,
