@@ -354,6 +354,27 @@ fn home_relative_path(path: &str) -> String {
     trimmed.to_string()
 }
 
+/// The `PREFIX` indicator chip. Shared by `render_hint_bar` and
+/// `hint_click_at` so the click hit-test's column offset can never drift
+/// from what is drawn.
+const PREFIX_CHIP: &str = " PREFIX ";
+
+/// The armed-prefix follow-up legend (everything after the chip). Single
+/// source for rendering and click hit-testing.
+fn prefix_armed_hint_text(app: &App) -> String {
+    // While the terminal fills the body the digit row addresses panes
+    // directly (`1-8`); in the split view `1`/`2` focus the list/diff and
+    // `3-9,0` jump to panes (see `main::resolve_prefix_action`).
+    let digits = if app.terminal.fullscreen.fills_body() {
+        "1-8: pane"
+    } else {
+        "1-9: focus/pane"
+    };
+    format!(
+        " t: new pane | w: close | s: swap pane | l: log/status | b: tree/status | f: fullscreen | o: repo | p: theme | r: redraw | q: quit | {digits} | esc: cancel"
+    )
+}
+
 fn render_hint_bar(app: &App, accent: Color) -> Paragraph<'_> {
     if app.repo_input.active {
         return Paragraph::new(Line::from(vec![
@@ -363,24 +384,16 @@ fn render_hint_bar(app: &App, accent: Color) -> Paragraph<'_> {
         ]));
     }
     if app.prefix_armed() {
-        // While the terminal fills the body the digit row addresses panes
-        // directly (`1-8`); in the split view `1`/`2` focus the list/diff and
-        // `3-9,0` jump to panes (see `main::resolve_prefix_action`).
-        let digits = if app.terminal.fullscreen.fills_body() {
-            "1-8: pane"
-        } else {
-            "1-9: focus/pane"
-        };
         return Paragraph::new(Line::from(vec![
             Span::styled(
-                " PREFIX ",
+                PREFIX_CHIP,
                 Style::default()
                     .fg(Color::Black)
                     .bg(accent)
                     .add_modifier(Modifier::BOLD),
             ),
             Span::styled(
-                format!(" t: new pane | w: close | s: swap pane | l: log/status | b: tree/status | f: fullscreen | o: repo | p: theme | r: redraw | q: quit | {digits} | esc: cancel"),
+                prefix_armed_hint_text(app),
                 Style::default().fg(Color::DarkGray),
             ),
         ]));
@@ -411,34 +424,32 @@ fn render_hint_bar(app: &App, accent: Color) -> Paragraph<'_> {
     if let Some(ref msg) = app.status {
         return Paragraph::new(Line::from(msg.as_str())).style(Style::default().fg(Color::Red));
     }
-    // `<prefix>` in the hint strings below is a single placeholder that resolves
-    // to the configured leader chord (e.g. `^Q`) so the footer always names the
-    // actual key to press rather than an abstract word.
-    let leader = app.leader_label();
-    let render = |hint: &str| {
-        Paragraph::new(Line::from(Span::styled(
-            hint.replace("<prefix>", &leader),
-            Style::default().fg(Color::DarkGray),
-        )))
-    };
+    // `<prefix>` in the hint literal resolves to the configured leader chord
+    // (e.g. `^Q`) so the footer always names the actual key to press rather
+    // than an abstract word.
+    Paragraph::new(Line::from(Span::styled(
+        normal_hint_literal(app).replace("<prefix>", &app.leader_label()),
+        Style::default().fg(Color::DarkGray),
+    )))
+}
+
+/// The hint literal (with `<prefix>` placeholders) for the current
+/// non-modal state. Single source for `render_hint_bar` and
+/// `hint_click_at`, so the click hit-test always segments exactly the text
+/// on screen.
+fn normal_hint_literal(app: &App) -> &'static str {
     match app.terminal.fullscreen {
         // From Grid the next `f` zooms the active pane — but only when Zoom
         // would look different from Grid; otherwise the cycle skips Zoom and
         // `f` exits.
         TerminalFullscreen::Grid if app.terminal.zoom_distinct_from_grid() => {
-            return render(
-                " <prefix>: leader | shift+↑/↓: scroll | shift+pgup/dn: page scroll | shift+←/→: cycle pane | <prefix> f: zoom active pane | <prefix> t: new pane | <prefix> w: close pane | <prefix> q: quit",
-            );
+            return " <prefix>: leader | shift+↑/↓: scroll | shift+pgup/dn: page scroll | shift+←/→: cycle pane | <prefix> f: zoom active pane | <prefix> t: new pane | <prefix> w: close pane | <prefix> q: quit";
         }
         TerminalFullscreen::Grid => {
-            return render(
-                " <prefix>: leader | shift+↑/↓: scroll | shift+pgup/dn: page scroll | <prefix> f: exit fullscreen | <prefix> t: new pane | <prefix> w: close pane | <prefix> q: quit",
-            );
+            return " <prefix>: leader | shift+↑/↓: scroll | shift+pgup/dn: page scroll | <prefix> f: exit fullscreen | <prefix> t: new pane | <prefix> w: close pane | <prefix> q: quit";
         }
         TerminalFullscreen::Zoom => {
-            return render(
-                " <prefix>: leader | shift+↑/↓: scroll | shift+pgup/dn: page scroll | shift+←/→: cycle pane | <prefix> f: exit fullscreen | <prefix> t: new pane | <prefix> w: close pane | <prefix> q: quit",
-            );
+            return " <prefix>: leader | shift+↑/↓: scroll | shift+pgup/dn: page scroll | shift+←/→: cycle pane | <prefix> f: exit fullscreen | <prefix> t: new pane | <prefix> w: close pane | <prefix> q: quit";
         }
         TerminalFullscreen::Off => {}
     }
@@ -454,7 +465,7 @@ fn render_hint_bar(app: &App, accent: Color) -> Paragraph<'_> {
         } else {
             " <prefix> f: exit zoom | j/k: scroll | v: view file | s: split | /: search | pgup/pgdn: page | <prefix> q: quit"
         };
-        return render(hint);
+        return hint;
     }
     if app.list_fullscreen {
         let hint = match app.mode {
@@ -471,14 +482,12 @@ fn render_hint_bar(app: &App, accent: Color) -> Paragraph<'_> {
                 " <prefix> f: exit zoom | j/k: navigate | /: search | →/enter: expand | ←: collapse | <prefix> b: status view | <prefix> q: quit"
             }
         };
-        return render(hint);
+        return hint;
     }
     if let Focus::Terminal = app.focus {
-        return render(
-            " <prefix>: leader | shift+↑/↓: scroll | shift+pgup/dn: page scroll | shift+←/→: cycle | <prefix> t: new pane | <prefix> w: close pane | <prefix> f: fullscreen | <prefix> l: log view | <prefix> o: repo | <prefix> q: quit",
-        );
+        return " <prefix>: leader | shift+↑/↓: scroll | shift+pgup/dn: page scroll | shift+←/→: cycle | <prefix> t: new pane | <prefix> w: close pane | <prefix> f: fullscreen | <prefix> l: log view | <prefix> o: repo | <prefix> q: quit";
     }
-    let hint = match app.focus {
+    match app.focus {
         Focus::Terminal => unreachable!("Focus::Terminal handled above"),
         Focus::FileList => match app.mode {
             ViewMode::Log => {
@@ -512,8 +521,112 @@ fn render_hint_bar(app: &App, accent: Color) -> Paragraph<'_> {
                 " shift+←/→: cycle | j/k: scroll | pgup/pgdn: scroll | v: view file | s: split | /: search | <prefix> t: new pane | <prefix> w: close pane | <prefix> f: zoom | <prefix> l: log view | <prefix> o: repo | <prefix> q: quit"
             }
         }
+    }
+}
+
+/// The pane index a click at screen cell `(x, y)` on the terminal tab bar
+/// jumps to — a tab targets its own pane, a `+N` hidden marker the nearest
+/// hidden pane on its side. `None` off the tab row or when the terminal
+/// isn't drawn (another panel fullscreen). Mirrors `pane_at`'s geometry
+/// sourcing: the tab row comes from the same `terminal_widget_area` the
+/// renderer draws into.
+pub(crate) fn tab_click_at(
+    app: &App,
+    screen_area: Rect,
+    layout: &LayoutConfig,
+    x: u16,
+    y: u16,
+) -> Option<usize> {
+    let widget_area = terminal_widget_area(app, screen_area, layout)?;
+    terminal_tab::tab_target_at(app, widget_area, x, y)
+}
+
+/// A clickable hint-bar shortcut, expressed as the key(s) the label names so
+/// the caller can dispatch it through the exact same path as a keypress.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum HintClick {
+    /// `<prefix> c` — press the leader chord, then `c`.
+    Leader(char),
+    /// A bare key `c` (a focus-local command, or an armed-prefix follow-up —
+    /// the armed state already lives in `App`, so the bare key resolves).
+    Plain(char),
+}
+
+/// The clickable shortcut under screen cell `(x, y)` on the bottom hint row,
+/// or `None` for anything else: a cell off the hint row, an informational
+/// segment (`j/k: navigate`, digit legends), a separator, or a modal row
+/// (repo input, swap target, status message — none carry clickable hints).
+///
+/// Segments the same text `render_hint_bar` draws — `prefix_armed_hint_text`
+/// / `normal_hint_literal` are shared — measuring rendered display widths,
+/// so the hit test cannot drift from the screen.
+pub(crate) fn hint_click_at(app: &App, screen_area: Rect, x: u16, y: u16) -> Option<HintClick> {
+    let outer = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(1),
+            Constraint::Min(0),
+            Constraint::Length(1),
+        ])
+        .split(screen_area);
+    let hint_area = outer[2];
+    if hint_area.height == 0 || !hint_area.contains(Position { x, y }) {
+        return None;
+    }
+
+    if app.repo_input.active || app.awaiting_swap_target() || app.status.is_some() {
+        return None;
+    }
+    let (chip, text) = if app.prefix_armed() {
+        (PREFIX_CHIP, prefix_armed_hint_text(app))
+    } else {
+        ("", normal_hint_literal(app).to_string())
     };
-    render(hint)
+
+    let leader = app.leader_label();
+    let mut cursor = hint_area.x + Span::raw(chip).width() as u16;
+    for (i, segment) in text.split(" | ").enumerate() {
+        if i > 0 {
+            cursor += Span::raw(" | ").width() as u16;
+        }
+        let rendered = segment.replace("<prefix>", &leader);
+        let width = Span::raw(rendered.as_str()).width() as u16;
+        if x >= cursor && x < cursor + width {
+            let (keyspec, _) = segment.split_once(':')?;
+            return segment_click(keyspec);
+        }
+        cursor += width;
+    }
+    None
+}
+
+/// Map a hint segment's key label to its click action. Only discrete
+/// commands are clickable; everything else returns `None`:
+/// - continuous navigation (`j/k`, `shift+↑/↓`, `pgup/pgdn`, …) — a click
+///   has no sensible single-step meaning,
+/// - digit legends (`1-8`, `3-9,0`) — the digit is the argument, a click
+///   doesn't name one,
+/// - `q: quit` — deliberately excluded so one stray click can't end the
+///   session,
+/// - `esc`/`enter` and free-text labels.
+fn segment_click(keyspec: &str) -> Option<HintClick> {
+    let spec = keyspec.trim();
+    if let Some(rest) = spec.strip_prefix("<prefix> ") {
+        let mut chars = rest.chars();
+        if let (Some(c), None) = (chars.next(), chars.next())
+            && matches!(c, 't' | 'w' | 'f' | 'l' | 'b' | 'o')
+        {
+            return Some(HintClick::Leader(c));
+        }
+        return None;
+    }
+    let mut chars = spec.chars();
+    if let (Some(c), None) = (chars.next(), chars.next())
+        && matches!(c, 't' | 'w' | 's' | 'l' | 'b' | 'f' | 'o' | 'p' | 'r' | 'v' | '/')
+    {
+        return Some(HintClick::Plain(c));
+    }
+    None
 }
 
 #[cfg(test)]
@@ -653,6 +766,116 @@ mod tests {
         assert_eq!(areas[0].0, 1);
         assert_eq!(areas[0].1.height, 35);
         assert_eq!(areas[0].1.width, 100);
+    }
+
+    /// x column where `needle` starts on the rendered hint row, measured in
+    /// display cells over exactly the text the renderer draws.
+    fn hint_x_of(app: &App, needle: &str) -> u16 {
+        let (chip, text) = if app.prefix_armed() {
+            (PREFIX_CHIP, prefix_armed_hint_text(app))
+        } else {
+            (
+                "",
+                normal_hint_literal(app).replace("<prefix>", &app.leader_label()),
+            )
+        };
+        let full = format!("{chip}{text}");
+        let byte = full.find(needle).expect("needle must be on the hint row");
+        Span::raw(&full[..byte]).width() as u16
+    }
+
+    const HINT_TEST_SCREEN: Rect = Rect::new(0, 0, 300, 40);
+    const HINT_ROW: u16 = 39;
+
+    #[test]
+    fn hint_click_resolves_commands_and_skips_nav_and_quit() {
+        // Default state: FileList focus, status view — the row carries both
+        // leader commands and nav segments.
+        let app = app_with_fake_backend();
+
+        let x = hint_x_of(&app, "t: new pane");
+        assert_eq!(
+            hint_click_at(&app, HINT_TEST_SCREEN, x, HINT_ROW),
+            Some(HintClick::Leader('t'))
+        );
+        let x = hint_x_of(&app, "/: search");
+        assert_eq!(
+            hint_click_at(&app, HINT_TEST_SCREEN, x, HINT_ROW),
+            Some(HintClick::Plain('/'))
+        );
+        let x = hint_x_of(&app, "j/k: navigate");
+        assert_eq!(hint_click_at(&app, HINT_TEST_SCREEN, x, HINT_ROW), None);
+        let x = hint_x_of(&app, "q: quit");
+        assert_eq!(
+            hint_click_at(&app, HINT_TEST_SCREEN, x, HINT_ROW),
+            None,
+            "quit must never be one stray click away"
+        );
+    }
+
+    #[test]
+    fn hint_click_agrees_with_the_rendered_buffer_not_just_the_builder() {
+        // Independent cross-check: locate the label in the *rendered* buffer
+        // (no shared width math with `hint_click_at`) and hit-test there. If
+        // renderer and hit test ever segment differently, this drifts.
+        let app = app_with_fake_backend();
+        let mut terminal = Terminal::new(TestBackend::new(300, 1)).unwrap();
+        terminal
+            .draw(|frame| frame.render_widget(render_hint_bar(&app, Color::Yellow), frame.area()))
+            .unwrap();
+        let buf = terminal.backend().buffer();
+        // Scan cell-wise so the needle's index is a *column*, not a byte
+        // offset — the row contains multi-byte arrows before the label.
+        let cells: Vec<&str> = (0..buf.area.width).map(|x| buf[(x, 0)].symbol()).collect();
+        let x = (0..cells.len())
+            .find(|&i| cells[i..].concat().starts_with("t: new pane"))
+            .expect("label rendered") as u16;
+
+        assert_eq!(
+            hint_click_at(&app, HINT_TEST_SCREEN, x, HINT_ROW),
+            Some(HintClick::Leader('t'))
+        );
+    }
+
+    #[test]
+    fn hint_click_misses_off_the_hint_row() {
+        let app = app_with_fake_backend();
+        let x = hint_x_of(&app, "t: new pane");
+        assert_eq!(hint_click_at(&app, HINT_TEST_SCREEN, x, HINT_ROW - 1), None);
+    }
+
+    #[test]
+    fn hint_click_armed_row_resolves_bare_followups_after_the_chip() {
+        let mut app = app_with_fake_backend();
+        app.arm_prefix();
+
+        let x = hint_x_of(&app, "t: new pane");
+        assert_eq!(
+            hint_click_at(&app, HINT_TEST_SCREEN, x, HINT_ROW),
+            Some(HintClick::Plain('t'))
+        );
+        let x = hint_x_of(&app, "r: redraw");
+        assert_eq!(
+            hint_click_at(&app, HINT_TEST_SCREEN, x, HINT_ROW),
+            Some(HintClick::Plain('r'))
+        );
+        let x = hint_x_of(&app, "q: quit");
+        assert_eq!(hint_click_at(&app, HINT_TEST_SCREEN, x, HINT_ROW), None);
+        let x = hint_x_of(&app, "esc: cancel");
+        assert_eq!(hint_click_at(&app, HINT_TEST_SCREEN, x, HINT_ROW), None);
+    }
+
+    #[test]
+    fn hint_click_none_on_modal_rows() {
+        let mut swap = app_with_fake_backend();
+        swap.begin_swap_target();
+        assert!((0..HINT_TEST_SCREEN.width)
+            .all(|x| hint_click_at(&swap, HINT_TEST_SCREEN, x, HINT_ROW).is_none()));
+
+        let mut status = app_with_fake_backend();
+        status.status = Some("boom".to_string());
+        assert!((0..HINT_TEST_SCREEN.width)
+            .all(|x| hint_click_at(&status, HINT_TEST_SCREEN, x, HINT_ROW).is_none()));
     }
 
     #[test]

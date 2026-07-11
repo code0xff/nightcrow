@@ -275,6 +275,110 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect, accent: Color) {
     }
 }
 
+/// What one rendered tab-bar segment is, deciding both its style and what a
+/// click on it does.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TabSegment {
+    /// The `<leader> t: new terminal` legend shown with no panes. Inert.
+    Legend,
+    /// A pane's tab; a click jumps to this pane index.
+    Tab(usize),
+    /// A `+N` hidden-pane marker; a click jumps to the nearest hidden pane
+    /// on its side (`visible.start - 1` / `visible.end`), which slides the
+    /// visible window by exactly one slot via `sync_visible_window` — the
+    /// minimal reveal.
+    Marker(usize),
+}
+
+impl TabSegment {
+    /// The pane index a click on this segment jumps to, if any.
+    fn click_target(self) -> Option<usize> {
+        match self {
+            TabSegment::Legend => None,
+            TabSegment::Tab(i) | TabSegment::Marker(i) => Some(i),
+        }
+    }
+}
+
+/// The tab bar's rendered segments in draw order. Single source for
+/// `render_tab_bar` (which styles them) and `tab_target_at` (which measures
+/// them), so the click hit-test cannot drift from the drawn labels.
+fn tab_segments(app: &App, visible: std::ops::Range<usize>) -> Vec<(String, TabSegment)> {
+    if app.terminal.panes.is_empty() {
+        return vec![(
+            format!(" {} t: new terminal ", app.leader_label()),
+            TabSegment::Legend,
+        )];
+    }
+    // While the terminal fills the body the upper viewer is hidden, so
+    // `<prefix> 1..8` address panes 0..7 directly (see
+    // `input::prefix_action_fullscreen`); label the tabs with those digits.
+    // In the split view the digits `1`/`2` belong to the list/diff, so the
+    // pane legend stays on `F3..F10` there.
+    let fullscreen = app.terminal.fullscreen.fills_body();
+    let hidden_before = visible.start;
+    let hidden_after = app.terminal.panes.len().saturating_sub(visible.end);
+    let mut segments = Vec::new();
+    if hidden_before > 0 {
+        segments.push((
+            format!(" +{hidden_before} "),
+            TabSegment::Marker(visible.start - 1),
+        ));
+    }
+    segments.extend(app.terminal.panes[visible.clone()].iter().enumerate().map(
+        |(offset, pane)| {
+            let i = visible.start + offset;
+            // Panes 0..=7 carry a jump key, so show it as a key legend:
+            // `1..8` in fullscreen (both `<prefix> 1..8` and `F1..F8`),
+            // `F3..F10` in the split view (`<prefix> 3..9,0`). Panes past the
+            // 8th have no jump key, so they carry no hint to avoid implying
+            // an unbound shortcut.
+            let title = truncate_tab_title(&pane.title, TAB_TITLE_MAX_CHARS);
+            let label = if i < JUMP_KEY_PANE_COUNT {
+                if fullscreen {
+                    format!(" {} {} ", i + 1, title)
+                } else {
+                    format!(" F{} {} ", i + 3, title)
+                }
+            } else {
+                format!(" {} ", title)
+            };
+            (label, TabSegment::Tab(i))
+        },
+    ));
+    if hidden_after > 0 {
+        segments.push((format!(" +{hidden_after} "), TabSegment::Marker(visible.end)));
+    }
+    segments
+}
+
+/// The pane index a click at screen cell `(x, y)` on the tab bar should
+/// jump to: a tab targets its own pane, a `+N` marker the nearest hidden
+/// pane on its side. `None` off the tab row, past the last segment, or on
+/// the no-panes legend. `area` is the full terminal widget Rect, exactly
+/// what `render` receives.
+pub(crate) fn tab_target_at(app: &App, area: Rect, x: u16, y: u16) -> Option<usize> {
+    let (tab_area, _) = terminal_layout(area)?;
+    if !tab_area.contains(Position { x, y }) {
+        return None;
+    }
+    let visible = visible_range(
+        app.terminal.visible_start,
+        app.terminal.active,
+        app.terminal.panes.len(),
+        app.terminal.max_visible(),
+    );
+    let mut cursor = tab_area.x;
+    for (text, segment) in tab_segments(app, visible) {
+        let width = Span::raw(text.as_str()).width() as u16;
+        if x >= cursor && x < cursor + width {
+            return segment.click_target();
+        }
+        cursor += width;
+    }
+    None
+}
+
 fn render_tab_bar(
     frame: &mut Frame,
     app: &App,
@@ -283,64 +387,22 @@ fn render_tab_bar(
     focused: bool,
     visible: std::ops::Range<usize>,
 ) {
-    let tab_spans: Vec<Span> = if app.terminal.panes.is_empty() {
-        vec![Span::styled(
-            format!(" {} t: new terminal ", app.leader_label()),
-            Style::default().fg(Color::DarkGray),
-        )]
-    } else {
-        // While the terminal fills the body the upper viewer is hidden, so
-        // `<prefix> 1..8` address panes 0..7 directly (see
-        // `input::prefix_action_fullscreen`); label the tabs with those digits.
-        // In the split view the digits `1`/`2` belong to the list/diff, so the
-        // pane legend stays on `F3..F10` there.
-        let fullscreen = app.terminal.fullscreen.fills_body();
-        let hidden_before = visible.start;
-        let hidden_after = app.terminal.panes.len().saturating_sub(visible.end);
-        let mut spans = Vec::new();
-        if hidden_before > 0 {
-            spans.push(Span::styled(
-                format!(" +{hidden_before} "),
-                Style::default().fg(Color::DarkGray),
-            ));
-        }
-        spans.extend(app.terminal.panes[visible.clone()].iter().enumerate().map(
-            |(offset, pane)| {
-                let i = visible.start + offset;
-                let style = if i == app.terminal.active && focused {
-                    Style::default()
-                        .fg(Color::Black)
-                        .bg(accent)
-                        .add_modifier(Modifier::BOLD)
-                } else {
-                    Style::default().fg(Color::Gray)
-                };
-                // Panes 0..=7 carry a jump key, so show it as a key legend:
-                // `1..8` in fullscreen (both `<prefix> 1..8` and `F1..F8`),
-                // `F3..F10` in the split view (`<prefix> 3..9,0`). Panes past the
-                // 8th have no jump key, so they carry no hint to avoid implying
-                // an unbound shortcut.
-                let title = truncate_tab_title(&pane.title, TAB_TITLE_MAX_CHARS);
-                let label = if i < JUMP_KEY_PANE_COUNT {
-                    if fullscreen {
-                        format!(" {} {} ", i + 1, title)
-                    } else {
-                        format!(" F{} {} ", i + 3, title)
-                    }
-                } else {
-                    format!(" {} ", title)
-                };
-                Span::styled(label, style)
-            },
-        ));
-        if hidden_after > 0 {
-            spans.push(Span::styled(
-                format!(" +{hidden_after} "),
-                Style::default().fg(Color::DarkGray),
-            ));
-        }
-        spans
-    };
+    let tab_spans: Vec<Span> = tab_segments(app, visible)
+        .into_iter()
+        .map(|(text, segment)| {
+            let style = match segment {
+                TabSegment::Tab(i) if i == app.terminal.active && focused => Style::default()
+                    .fg(Color::Black)
+                    .bg(accent)
+                    .add_modifier(Modifier::BOLD),
+                TabSegment::Tab(_) => Style::default().fg(Color::Gray),
+                TabSegment::Legend | TabSegment::Marker(_) => {
+                    Style::default().fg(Color::DarkGray)
+                }
+            };
+            Span::styled(text, style)
+        })
+        .collect();
     frame.render_widget(Paragraph::new(Line::from(tab_spans)), tab_area);
 }
 
@@ -726,6 +788,106 @@ mod tests {
                 .any(|cell| cell.modifier.contains(Modifier::BOLD) && cell.bg == accent),
             "active pane tab must not carry an accent-bolded highlight while unfocused"
         );
+    }
+
+    /// x column where the `nth` tab-bar segment starts, measured with the
+    /// same builder and widths the renderer and hit-test use.
+    fn tab_segment_x(app: &App, area: Rect, nth: usize) -> u16 {
+        let (tab_area, _) = terminal_layout(area).unwrap();
+        let visible = visible_range(
+            app.terminal.visible_start,
+            app.terminal.active,
+            app.terminal.panes.len(),
+            app.terminal.max_visible(),
+        );
+        let segments = tab_segments(app, visible);
+        assert!(nth < segments.len(), "segment {nth} must exist");
+        tab_area.x
+            + segments
+                .iter()
+                .take(nth)
+                .map(|(text, _)| Span::raw(text.as_str()).width() as u16)
+                .sum::<u16>()
+    }
+
+    #[test]
+    fn tab_target_at_resolves_tabs_and_hidden_markers() {
+        let mut app = crate::app::tests::app_with_fake_backend();
+        app.terminal.max_visible_normal = 2;
+        for i in 0..4 {
+            app.terminal
+                .create_pane_with(None, Some(&format!("P{i}")))
+                .unwrap();
+        }
+        // Creation leaves pane 3 active with a 2-pane window: [2, 4).
+        let area = Rect::new(0, 0, 80, 20);
+        let (tab_area, _) = terminal_layout(area).unwrap();
+        let y = tab_area.y;
+
+        // Segment 0 is the ` +2 ` marker → nearest hidden pane on the left.
+        assert_eq!(tab_target_at(&app, area, tab_segment_x(&app, area, 0), y), Some(1));
+        // Segments 1 and 2 are the visible tabs for panes 2 and 3.
+        assert_eq!(tab_target_at(&app, area, tab_segment_x(&app, area, 1), y), Some(2));
+        assert_eq!(tab_target_at(&app, area, tab_segment_x(&app, area, 2), y), Some(3));
+        // Past the last segment and off the tab row: no target.
+        assert_eq!(tab_target_at(&app, area, tab_area.right() - 1, y), None);
+        assert_eq!(tab_target_at(&app, area, tab_segment_x(&app, area, 1), y + 1), None);
+    }
+
+    #[test]
+    fn tab_target_at_right_marker_reveals_the_next_hidden_pane() {
+        let mut app = crate::app::tests::app_with_fake_backend();
+        app.terminal.max_visible_normal = 2;
+        for i in 0..4 {
+            app.terminal
+                .create_pane_with(None, Some(&format!("P{i}")))
+                .unwrap();
+        }
+        // Jump back to pane 0: window slides to [0, 2), marker sits on the right.
+        app.terminal.active = 0;
+        app.terminal.sync_visible_window();
+        let area = Rect::new(0, 0, 80, 20);
+        let (tab_area, _) = terminal_layout(area).unwrap();
+
+        // Segments: tab 0, tab 1, ` +2 ` marker → nearest hidden pane index 2.
+        let x = tab_segment_x(&app, area, 2);
+        assert_eq!(tab_target_at(&app, area, x, tab_area.y), Some(2));
+    }
+
+    #[test]
+    fn tab_target_agrees_with_the_rendered_buffer_not_just_the_builder() {
+        // Independent cross-check: find the second tab's jump-key label in
+        // the *rendered* buffer and hit-test at that column. Catches any
+        // renderer vs hit-test segmentation drift the builder-based
+        // position helper cannot see.
+        let mut app = crate::app::tests::app_with_fake_backend();
+        app.terminal.create_pane_with(None, Some("Alpha")).unwrap();
+        app.terminal.create_pane_with(None, Some("Beta")).unwrap();
+        let area = Rect::new(0, 0, 80, 20);
+        let mut terminal = Terminal::new(TestBackend::new(80, 20)).unwrap();
+        terminal
+            .draw(|frame| render(frame, &app, area, Color::Yellow))
+            .unwrap();
+
+        let (tab_area, _) = terminal_layout(area).unwrap();
+        let buf = terminal.backend().buffer();
+        let cells: Vec<&str> = (0..buf.area.width)
+            .map(|x| buf[(x, tab_area.y)].symbol())
+            .collect();
+        let x = (0..cells.len())
+            .find(|&i| cells[i..].concat().starts_with("F4 Beta"))
+            .expect("second tab rendered") as u16;
+
+        assert_eq!(tab_target_at(&app, area, x, tab_area.y), Some(1));
+    }
+
+    #[test]
+    fn tab_target_at_none_on_the_no_pane_legend() {
+        let app = crate::app::tests::app_with_fake_backend();
+        let area = Rect::new(0, 0, 80, 20);
+        let (tab_area, _) = terminal_layout(area).unwrap();
+
+        assert_eq!(tab_target_at(&app, area, tab_area.x + 2, tab_area.y), None);
     }
 
     #[test]

@@ -332,7 +332,11 @@ fn main_loop(
                 Event::Paste(text) => handle_paste(app, &text),
                 Event::Mouse(mouse) => {
                     let screen = Rect::new(0, 0, size.width, size.height);
-                    handle_mouse(app, mouse, screen, &cfg.layout);
+                    match handle_mouse(app, mouse, screen, &cfg.layout) {
+                        KeyOutcome::Quit => return Ok(()),
+                        KeyOutcome::Redraw => terminal.clear()?,
+                        KeyOutcome::Continue => {}
+                    }
                 }
                 _ => {}
             }
@@ -347,11 +351,22 @@ fn main_loop(
 /// for mouse reports. A release pairs with the press's pane rather than the
 /// pane under the pointer (see `release_pending_press`). Wheel notches
 /// scroll the pane under the pointer, not the active one, through the same
-/// sink logic as the scroll keys. Other events outside every pane content
-/// rect (upper panels, borders, tab bar) are dropped, and drag/motion
-/// reports are not forwarded at all: inner-program text selection stays
-/// with the outer terminal's Shift+drag.
-fn handle_mouse(app: &mut App, mouse: MouseEvent, screen: Rect, layout: &config::LayoutConfig) {
+/// sink logic as the scroll keys. A left press outside pane content can
+/// focus an upper panel, jump to a pane via its tab (or a `+N` hidden
+/// marker), or run a hint-bar shortcut — the latter dispatched as
+/// synthesized keypresses so a click and the named key take the same code
+/// path (hence the `KeyOutcome` return, e.g. for `r: redraw`). While
+/// pane-swap mode is armed, a left click names the swap target instead,
+/// mirroring the digit follow-up. Presses on anything else (borders,
+/// header) are dropped, and drag/motion reports are not forwarded at all:
+/// inner-program text selection stays with the outer terminal's
+/// Shift+drag.
+fn handle_mouse(
+    app: &mut App,
+    mouse: MouseEvent,
+    screen: Rect,
+    layout: &config::LayoutConfig,
+) -> KeyOutcome {
     // Releases route by the pending press, not the pointer, so they must be
     // handled before the hit test — the pointer may have left the pane (or
     // every pane) between press and release. They also bypass the modal
@@ -360,24 +375,55 @@ fn handle_mouse(app: &mut App, mouse: MouseEvent, screen: Rect, layout: &config:
     // leave the pending slot stale for a later unrelated release.
     if let MouseEventKind::Up(_) = mouse.kind {
         release_pending_press(app, screen, layout, mouse.column, mouse.row);
-        return;
+        return KeyOutcome::Continue;
     }
     // Modal overlays (repo-switch dialog, every search bar) own all other
     // input while open — same rule the key handler enforces: a click behind
     // a modal must not move focus or reach a pane.
     if app.overlay_active() {
-        return;
+        return KeyOutcome::Continue;
+    }
+    // Pane-swap mode: a press names the swap target the way a digit does —
+    // a left click on a pane or its tab swaps the active pane with it, and
+    // any other press consumes-and-disarms, mirroring the key follow-up
+    // (`handle_swap_target_followup`). Without this branch a click would
+    // change the active pane while leaving swap mode armed, so a later
+    // digit would swap the wrong pane. Wheel events fall through, like a
+    // paste: they don't name a pane and don't disturb the armed state.
+    if app.awaiting_swap_target() && let MouseEventKind::Down(button) = mouse.kind {
+        app.cancel_swap_target();
+        if button == crossterm::event::MouseButton::Left {
+            let target = ui::pane_at(app, screen, layout, mouse.column, mouse.row)
+                .and_then(|(id, _)| app.terminal.panes.iter().position(|p| p.id == id))
+                .or_else(|| ui::tab_click_at(app, screen, layout, mouse.column, mouse.row));
+            if let Some(idx) = target {
+                app.swap_active_pane_with(idx);
+            }
+        }
+        return KeyOutcome::Continue;
     }
     let Some((id, rect)) = ui::pane_at(app, screen, layout, mouse.column, mouse.row) else {
         // Not a terminal cell: a press can still focus an upper panel
-        // (file/commit/tree list or diff viewer) in the normal split layout.
-        if let MouseEventKind::Down(_) = mouse.kind
-            && let Some(focus) = ui::upper_panel_at(app, screen, layout, mouse.column, mouse.row)
-        {
-            app.cancel_prefix();
-            app.focus = focus;
+        // (file/commit/tree list or diff viewer) in the normal split layout,
+        // or run a shortcut named on the bottom hint row.
+        if let MouseEventKind::Down(button) = mouse.kind {
+            if let Some(focus) = ui::upper_panel_at(app, screen, layout, mouse.column, mouse.row) {
+                app.cancel_prefix();
+                app.focus = focus;
+            } else if button == crossterm::event::MouseButton::Left {
+                if let Some(idx) = ui::tab_click_at(app, screen, layout, mouse.column, mouse.row) {
+                    // A tab click is a jump-key press with the pointer: same
+                    // prefix resolution and focus/fullscreen handling.
+                    app.cancel_prefix();
+                    app.switch_pane(idx);
+                } else if let Some(click) =
+                    ui::hint_click_at(app, screen, mouse.column, mouse.row)
+                {
+                    return dispatch_hint_click(app, click);
+                }
+            }
         }
-        return;
+        return KeyOutcome::Continue;
     };
     // 1-based pane-local cell, as SGR reports expect. In-bounds by
     // construction: `pane_at` only returns a rect containing the cell.
@@ -408,6 +454,27 @@ fn handle_mouse(app: &mut App, mouse: MouseEvent, screen: Rect, layout: &config:
             app.terminal.wheel_horizontal_pane(id, false, col, row);
         }
         _ => {}
+    }
+    KeyOutcome::Continue
+}
+
+/// Run a clicked hint-bar shortcut by synthesizing the keypress(es) its
+/// label names, so a click and the real key share every guard and dispatch
+/// path in `handle_key` — a hint click can never do something the named key
+/// would not. `Leader` hints press the leader chord first (arming the
+/// prefix) and the follow-up second; `Plain` hints press one bare key.
+fn dispatch_hint_click(app: &mut App, click: ui::HintClick) -> KeyOutcome {
+    let plain = |c| KeyEvent::new(KeyCode::Char(c), KeyModifiers::NONE);
+    match click {
+        ui::HintClick::Leader(c) => {
+            let leader = app.leader;
+            match handle_key(app, leader) {
+                KeyOutcome::Continue => {}
+                other => return other,
+            }
+            handle_key(app, plain(c))
+        }
+        ui::HintClick::Plain(c) => handle_key(app, plain(c)),
     }
 }
 
@@ -1901,6 +1968,213 @@ mod tests {
 
         assert_eq!(app.focus, Focus::FileList, "a modal owns all input");
         assert_eq!(app.terminal.active, active_before);
+    }
+
+    /// Wide screen for hint-row click tests: the longest hint rows overflow
+    /// the 100-column mouse screen, and a clipped segment is unclickable by
+    /// design — these tests target segments, so give them room.
+    const HINT_TEST_SCREEN: Rect = Rect::new(0, 0, 300, 40);
+
+    /// First x column on the hint row that resolves to `want`, scanning with
+    /// the same hit-test the mouse handler uses.
+    fn hint_x_for(app: &App, want: ui::HintClick) -> u16 {
+        let row = HINT_TEST_SCREEN.height - 1;
+        (0..HINT_TEST_SCREEN.width)
+            .find(|&x| ui::hint_click_at(app, HINT_TEST_SCREEN, x, row) == Some(want))
+            .expect("expected a clickable hint segment")
+    }
+
+    /// First (x, y) cell resolving to tab-click target `want`, scanning with
+    /// the same hit-test the mouse handler uses.
+    fn tab_xy_for(app: &App, want: usize) -> (u16, u16) {
+        let layout = config::LayoutConfig::default();
+        for y in 0..MOUSE_TEST_SCREEN.height {
+            for x in 0..MOUSE_TEST_SCREEN.width {
+                if ui::tab_click_at(app, MOUSE_TEST_SCREEN, &layout, x, y) == Some(want) {
+                    return (x, y);
+                }
+            }
+        }
+        panic!("expected a tab segment targeting pane {want}");
+    }
+
+    #[test]
+    fn handle_mouse_tab_click_jumps_to_that_pane() {
+        let (mut app, _) = app_with_two_panes_and_areas();
+        app.terminal.active = 0;
+        app.focus = Focus::FileList;
+        let (x, y) = tab_xy_for(&app, 1);
+
+        let down = MouseEventKind::Down(crossterm::event::MouseButton::Left);
+        handle_mouse(
+            &mut app,
+            mouse(down, x, y),
+            MOUSE_TEST_SCREEN,
+            &config::LayoutConfig::default(),
+        );
+
+        assert_eq!(app.terminal.active, 1);
+        assert_eq!(app.focus, Focus::Terminal);
+        assert!(
+            backend_payloads(&app).is_empty(),
+            "a tab click is UI-only; nothing may reach a PTY"
+        );
+    }
+
+    #[test]
+    fn handle_mouse_tab_click_on_hidden_marker_slides_the_window() {
+        let mut app = app_with_terminal_pane();
+        for _ in 0..5 {
+            app.terminal.create_pane().unwrap();
+        }
+        // 6 panes, window of 4: creation leaves pane 5 active, window [2, 6).
+        assert_eq!(app.terminal.visible_start, 2);
+        // The left ` +2 ` marker targets the nearest hidden pane, index 1.
+        let (x, y) = tab_xy_for(&app, 1);
+
+        let down = MouseEventKind::Down(crossterm::event::MouseButton::Left);
+        handle_mouse(
+            &mut app,
+            mouse(down, x, y),
+            MOUSE_TEST_SCREEN,
+            &config::LayoutConfig::default(),
+        );
+
+        assert_eq!(app.terminal.active, 1);
+        assert_eq!(
+            app.terminal.visible_start, 1,
+            "revealing the clicked marker's pane must slide the window one slot"
+        );
+    }
+
+    #[test]
+    fn handle_mouse_click_completes_an_armed_swap_with_the_clicked_pane() {
+        let (mut app, areas) = app_with_two_panes_and_areas();
+        app.terminal.active = 0;
+        let first_id = app.terminal.panes[0].id;
+        let (clicked_id, rect) = areas[1];
+        assert_ne!(clicked_id, first_id);
+        app.begin_swap_target();
+
+        let down = MouseEventKind::Down(crossterm::event::MouseButton::Left);
+        handle_mouse(
+            &mut app,
+            mouse(down, rect.x, rect.y),
+            MOUSE_TEST_SCREEN,
+            &config::LayoutConfig::default(),
+        );
+
+        // The clicked pane is the swap target, exactly like its digit: the
+        // previously active pane moved into the clicked slot and stays active.
+        assert!(!app.awaiting_swap_target());
+        assert_eq!(app.terminal.panes[1].id, first_id);
+        assert_eq!(app.terminal.active, 1);
+        assert!(
+            backend_payloads(&app).is_empty(),
+            "a swap-target click must not be forwarded to any PTY"
+        );
+    }
+
+    #[test]
+    fn handle_mouse_tab_click_completes_an_armed_swap() {
+        let (mut app, _) = app_with_two_panes_and_areas();
+        app.terminal.active = 0;
+        let first_id = app.terminal.panes[0].id;
+        app.begin_swap_target();
+        let (x, y) = tab_xy_for(&app, 1);
+
+        let down = MouseEventKind::Down(crossterm::event::MouseButton::Left);
+        handle_mouse(
+            &mut app,
+            mouse(down, x, y),
+            MOUSE_TEST_SCREEN,
+            &config::LayoutConfig::default(),
+        );
+
+        assert!(!app.awaiting_swap_target());
+        assert_eq!(app.terminal.panes[1].id, first_id);
+        assert_eq!(app.terminal.active, 1);
+    }
+
+    #[test]
+    fn handle_mouse_press_elsewhere_cancels_an_armed_swap() {
+        let (mut app, _) = app_with_two_panes_and_areas();
+        app.terminal.active = 0;
+        app.begin_swap_target();
+        let order_before: Vec<_> = app.terminal.panes.iter().map(|p| p.id).collect();
+
+        // (0, 0) is the header row: it names no pane, so the press must
+        // consume-and-disarm without swapping or moving focus — the same
+        // rule as a non-digit key.
+        let down = MouseEventKind::Down(crossterm::event::MouseButton::Left);
+        handle_mouse(
+            &mut app,
+            mouse(down, 0, 0),
+            MOUSE_TEST_SCREEN,
+            &config::LayoutConfig::default(),
+        );
+
+        assert!(!app.awaiting_swap_target());
+        let order_after: Vec<_> = app.terminal.panes.iter().map(|p| p.id).collect();
+        assert_eq!(order_before, order_after);
+        assert_eq!(app.terminal.active, 0);
+    }
+
+    #[test]
+    fn handle_mouse_hint_click_runs_the_named_leader_command() {
+        let mut app = app_with_terminal_pane();
+        let panes_before = app.terminal.panes.len();
+        let x = hint_x_for(&app, ui::HintClick::Leader('t'));
+
+        let down = MouseEventKind::Down(crossterm::event::MouseButton::Left);
+        let outcome = handle_mouse(
+            &mut app,
+            mouse(down, x, HINT_TEST_SCREEN.height - 1),
+            HINT_TEST_SCREEN,
+            &config::LayoutConfig::default(),
+        );
+
+        assert!(matches!(outcome, KeyOutcome::Continue));
+        assert_eq!(
+            app.terminal.panes.len(),
+            panes_before + 1,
+            "clicking `<prefix> t: new pane` must run the same command as the keys"
+        );
+        assert!(!app.prefix_armed(), "the synthesized prefix must not linger");
+    }
+
+    #[test]
+    fn handle_mouse_hint_click_propagates_redraw_from_the_armed_row() {
+        let mut app = app_with_terminal_pane();
+        app.arm_prefix();
+        let x = hint_x_for(&app, ui::HintClick::Plain('r'));
+
+        let down = MouseEventKind::Down(crossterm::event::MouseButton::Left);
+        let outcome = handle_mouse(
+            &mut app,
+            mouse(down, x, HINT_TEST_SCREEN.height - 1),
+            HINT_TEST_SCREEN,
+            &config::LayoutConfig::default(),
+        );
+
+        assert!(matches!(outcome, KeyOutcome::Redraw));
+        assert!(!app.prefix_armed(), "the follow-up must consume the prefix");
+    }
+
+    #[test]
+    fn handle_mouse_hint_click_never_quits() {
+        let app = app_with_terminal_pane();
+        let row = HINT_TEST_SCREEN.height - 1;
+        for x in 0..HINT_TEST_SCREEN.width {
+            let click = ui::hint_click_at(&app, HINT_TEST_SCREEN, x, row);
+            assert!(
+                !matches!(
+                    click,
+                    Some(ui::HintClick::Leader('q')) | Some(ui::HintClick::Plain('q'))
+                ),
+                "x={x} resolves to a quit click"
+            );
+        }
     }
 
     #[test]
