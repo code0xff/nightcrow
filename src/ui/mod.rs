@@ -625,11 +625,15 @@ pub(crate) fn hint_click_at(app: &App, screen_area: Rect, x: u16, y: u16) -> Opt
         return None;
     }
 
-    if app.repo_input.active || app.awaiting_swap_target() || app.status.is_some() {
+    // Row selection mirrors `render_hint_bar`'s branch order exactly — the
+    // armed row outranks a status message there, so it must here too, or a
+    // status arriving while armed would strand inverted labels unclickable.
+    let (chip, text) = if app.repo_input.active {
         return None;
-    }
-    let (chip, text) = if app.prefix_armed() {
+    } else if app.prefix_armed() {
         (PREFIX_CHIP, prefix_armed_hint_text(app))
+    } else if app.awaiting_swap_target() || app.status.is_some() {
+        return None;
     } else {
         ("", normal_hint_literal(app).to_string())
     };
@@ -773,6 +777,17 @@ mod tests {
     fn armed_prefix_hint_bar_inverts_only_clickable_key_labels() {
         let mut app = app_with_fake_backend();
         app.arm_prefix();
+        assert_inverted_cells_are_clickable(&app);
+    }
+
+    /// The armed row outranks a status message (`render_hint_bar` branch
+    /// order), so its labels must stay clickable while a status is pending —
+    /// the hit test mirrors the same precedence.
+    #[test]
+    fn armed_prefix_hint_bar_stays_clickable_while_a_status_is_set() {
+        let mut app = app_with_fake_backend();
+        app.arm_prefix();
+        app.status = Some("boom".to_string());
         assert_inverted_cells_are_clickable(&app);
     }
 
