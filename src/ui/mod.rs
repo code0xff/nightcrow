@@ -384,8 +384,15 @@ fn prefix_armed_hint_text(app: &App) -> String {
     } else {
         ""
     };
+    // The view toggles name their destination from the current mode, matching
+    // the normal legends, instead of a generic `log/status` label.
+    let (log_toggle, tree_toggle) = match app.mode {
+        ViewMode::Log => ("l: status view", "b: tree view"),
+        ViewMode::Status => ("l: log view", "b: tree view"),
+        ViewMode::Tree => ("l: log view", "b: status view"),
+    };
     format!(
-        " t: new pane | {close}{swap}l: log/status | b: tree/status | f: fullscreen | o: repo | p: theme | r: redraw | q: quit | {digits} | esc: cancel"
+        " t: new pane | {close}{swap}{log_toggle} | {tree_toggle} | f: fullscreen | o: repo | p: theme | r: redraw | q: quit | {digits} | esc: cancel"
     )
 }
 
@@ -539,19 +546,25 @@ fn normal_hint_literal(app: &App) -> &'static str {
                 " <prefix> f: exit zoom | esc: back to commits | j/k: navigate files | <prefix> q: quit"
             }
             ViewMode::Log => {
-                " <prefix> f: exit zoom | <prefix> l: status view | j/k: navigate commits | enter: view files | <prefix> q: quit"
+                " <prefix> f: exit zoom | <prefix> l: status view | <prefix> b: tree view | j/k: navigate commits | enter: view files | <prefix> q: quit"
             }
             ViewMode::Status => {
-                " <prefix> f: exit zoom | j/k: navigate | /: search | <prefix> l: log view | <prefix> q: quit"
+                " <prefix> f: exit zoom | j/k: navigate | /: search | <prefix> l: log view | <prefix> b: tree view | <prefix> q: quit"
             }
             ViewMode::Tree => {
-                " <prefix> f: exit zoom | j/k: navigate | /: search | →/enter: expand | ←: collapse | <prefix> b: status view | <prefix> q: quit"
+                " <prefix> f: exit zoom | j/k: navigate | /: search | →/enter: expand | ←: collapse | <prefix> b: status view | <prefix> l: log view | <prefix> q: quit"
             }
         };
         return hint;
     }
     if let Focus::Terminal = app.focus {
-        return " <prefix>: leader | shift+↑/↓: scroll | shift+pgup/dn: page scroll | shift+←/→: cycle | <prefix> t: new pane | <prefix> w: close pane | <prefix> f: fullscreen | <prefix> l: log view | <prefix> o: repo | <prefix> q: quit";
+        // The `l` toggle names its destination: from Log mode it returns to
+        // the status view, from Status/Tree it enters the log view.
+        return if app.mode == ViewMode::Log {
+            " <prefix>: leader | shift+↑/↓: scroll | shift+pgup/dn: page scroll | shift+←/→: cycle | <prefix> t: new pane | <prefix> w: close pane | <prefix> f: fullscreen | <prefix> l: status view | <prefix> o: repo | <prefix> q: quit"
+        } else {
+            " <prefix>: leader | shift+↑/↓: scroll | shift+pgup/dn: page scroll | shift+←/→: cycle | <prefix> t: new pane | <prefix> w: close pane | <prefix> f: fullscreen | <prefix> l: log view | <prefix> o: repo | <prefix> q: quit"
+        };
     }
     match app.focus {
         Focus::Terminal => unreachable!("Focus::Terminal handled above"),
@@ -560,7 +573,7 @@ fn normal_hint_literal(app: &App) -> &'static str {
                 if app.log_view.drill_down {
                     " esc: back to commits | j/k: navigate files | shift+←/→: cycle | <prefix> q: quit"
                 } else {
-                    " shift+←/→: cycle | j/k: navigate commits | enter: view files | <prefix> t: new pane | <prefix> f: fullscreen | <prefix> l: status view | <prefix> o: repo | <prefix> q: quit"
+                    " shift+←/→: cycle | j/k: navigate commits | enter: view files | <prefix> t: new pane | <prefix> f: fullscreen | <prefix> l: status view | <prefix> b: tree view | <prefix> o: repo | <prefix> q: quit"
                 }
             }
             ViewMode::Status => {
@@ -590,11 +603,21 @@ fn normal_hint_literal(app: &App) -> &'static str {
             } else if !app.diff.search.query.is_empty() {
                 " n: next match | shift+n: prev match | /: new search | esc: clear"
             } else if app.can_open_file_view() {
-                " shift+←/→: cycle | j/k: scroll | pgup/pgdn: scroll | v: view file | s: split | /: search | <prefix> t: new pane | <prefix> f: zoom | <prefix> l: log view | <prefix> o: repo | <prefix> q: quit"
+                // The `l` toggle names its destination (Tree mode never
+                // reaches these arms — its right pane is always the file view).
+                if app.mode == ViewMode::Log {
+                    " shift+←/→: cycle | j/k: scroll | pgup/pgdn: scroll | v: view file | s: split | /: search | <prefix> t: new pane | <prefix> f: zoom | <prefix> l: status view | <prefix> b: tree view | <prefix> o: repo | <prefix> q: quit"
+                } else {
+                    " shift+←/→: cycle | j/k: scroll | pgup/pgdn: scroll | v: view file | s: split | /: search | <prefix> t: new pane | <prefix> f: zoom | <prefix> l: log view | <prefix> b: tree view | <prefix> o: repo | <prefix> q: quit"
+                }
             } else {
                 // No file target for `v` (log view browsing commits, or
                 // nothing selected) — a hint for a no-op key would lie.
-                " shift+←/→: cycle | j/k: scroll | pgup/pgdn: scroll | s: split | /: search | <prefix> t: new pane | <prefix> f: zoom | <prefix> l: log view | <prefix> o: repo | <prefix> q: quit"
+                if app.mode == ViewMode::Log {
+                    " shift+←/→: cycle | j/k: scroll | pgup/pgdn: scroll | s: split | /: search | <prefix> t: new pane | <prefix> f: zoom | <prefix> l: status view | <prefix> b: tree view | <prefix> o: repo | <prefix> q: quit"
+                } else {
+                    " shift+←/→: cycle | j/k: scroll | pgup/pgdn: scroll | s: split | /: search | <prefix> t: new pane | <prefix> f: zoom | <prefix> l: log view | <prefix> b: tree view | <prefix> o: repo | <prefix> q: quit"
+                }
             }
         }
     }
@@ -995,6 +1018,87 @@ mod tests {
         assert!(
             hint_text(&term).contains("s: swap pane"),
             "armed row must offer swap with terminal focus and two panes"
+        );
+    }
+
+    /// The armed row's view toggles name their destination from the current
+    /// mode, mirroring the normal legends' `l: log view`/`l: status view`
+    /// wording instead of a generic `log/status` label.
+    #[test]
+    fn prefix_hint_names_view_toggle_destinations_by_mode() {
+        let mut app = app_with_fake_backend();
+        app.arm_prefix();
+
+        let text = hint_text(&app);
+        assert!(
+            text.contains("l: log view") && text.contains("b: tree view"),
+            "status mode armed row must name log/tree destinations, got: {text}"
+        );
+
+        app.mode = ViewMode::Log;
+        let text = hint_text(&app);
+        assert!(
+            text.contains("l: status view") && text.contains("b: tree view"),
+            "log mode armed row must name status/tree destinations, got: {text}"
+        );
+
+        app.mode = ViewMode::Tree;
+        let text = hint_text(&app);
+        assert!(
+            text.contains("l: log view") && text.contains("b: status view"),
+            "tree mode armed row must name log/status destinations, got: {text}"
+        );
+    }
+
+    /// Every upper legend advertises both view toggles with destination
+    /// labels — `l` (log ↔ status) and `b` (tree ↔ status) act from any
+    /// focus, so no mode may hide one or name the view already shown.
+    #[test]
+    fn upper_legends_advertise_both_view_toggles() {
+        // FileList browsing commits in Log mode.
+        let mut app = app_with_fake_backend();
+        app.mode = ViewMode::Log;
+        let text = hint_text(&app);
+        assert!(
+            text.contains("l: status view") && text.contains("b: tree view"),
+            "log list legend must offer both toggles, got: {text}"
+        );
+
+        // DiffViewer in Log mode: `l` names status, not the view shown.
+        app.focus = Focus::DiffViewer;
+        let text = hint_text(&app);
+        assert!(
+            text.contains("l: status view") && text.contains("b: tree view"),
+            "log diff legend must offer both toggles, got: {text}"
+        );
+
+        // Terminal focus in Log mode follows the same destination wording.
+        app.focus = Focus::Terminal;
+        let text = hint_text(&app);
+        assert!(
+            text.contains("l: status view"),
+            "log terminal legend must name the status destination, got: {text}"
+        );
+
+        // Zoomed list rows carry both toggles in every mode.
+        let mut zoomed = app_with_fake_backend();
+        zoomed.list_fullscreen = true;
+        let text = hint_text(&zoomed);
+        assert!(
+            text.contains("l: log view") && text.contains("b: tree view"),
+            "zoomed status list must offer both toggles, got: {text}"
+        );
+        zoomed.mode = ViewMode::Log;
+        let text = hint_text(&zoomed);
+        assert!(
+            text.contains("l: status view") && text.contains("b: tree view"),
+            "zoomed log list must offer both toggles, got: {text}"
+        );
+        zoomed.mode = ViewMode::Tree;
+        let text = hint_text(&zoomed);
+        assert!(
+            text.contains("b: status view") && text.contains("l: log view"),
+            "zoomed tree list must offer both toggles, got: {text}"
         );
     }
 
