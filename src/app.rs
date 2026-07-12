@@ -668,6 +668,34 @@ pub(crate) mod tests {
         assert!(!app.list_fullscreen);
     }
 
+    /// Contract for the close/swap availability predicates shared by the key
+    /// gates (`main::handle_global_action`) and the armed hint row: close
+    /// needs terminal focus, swap additionally needs a second pane.
+    #[test]
+    fn pane_action_predicates_follow_focus_and_pane_count() {
+        let mut app = app_with_fake_backend();
+        app.terminal.create_pane().unwrap();
+        app.terminal.create_pane().unwrap();
+        assert!(
+            !app.can_close_pane() && !app.can_swap_panes(),
+            "neither close nor swap may act without terminal focus"
+        );
+
+        app.focus = Focus::Terminal;
+        assert!(app.can_close_pane());
+        assert!(app.can_swap_panes());
+
+        app.close_active_pane();
+        assert!(
+            app.can_close_pane(),
+            "close still acts on the last remaining pane"
+        );
+        assert!(
+            !app.can_swap_panes(),
+            "swap needs a second pane to exchange with"
+        );
+    }
+
     #[test]
     fn switch_pane_ignores_out_of_range() {
         let mut app = app_with_files(vec![]);

@@ -81,6 +81,25 @@ impl App {
         }
     }
 
+    /// Whether `<prefix> w` may close the active pane: terminal focus only.
+    /// Without it the active pane is deliberately rendered indistinguishable
+    /// from the others (see `terminal_tab::render`), so the close target
+    /// would be invisible. Single source for the key gate
+    /// (`main::handle_global_action`) and the hint rows, so an advertised
+    /// hint can never disagree with what the key does.
+    pub fn can_close_pane(&self) -> bool {
+        self.focus == Focus::Terminal
+    }
+
+    /// Whether `<prefix> s` may arm pane-swap mode: close's terminal-focus
+    /// scope (the active pane is the swap's first operand) plus a second
+    /// pane to swap with — with fewer, every target digit would be a no-op.
+    /// Single source for the key gate and the hint rows, like
+    /// `can_close_pane`.
+    pub fn can_swap_panes(&self) -> bool {
+        self.focus == Focus::Terminal && self.terminal.panes.len() > 1
+    }
+
     pub(crate) fn clamp_active_pane_after_removal(&mut self) {
         if self.terminal.panes.is_empty() {
             self.terminal.active = 0;

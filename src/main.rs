@@ -752,11 +752,10 @@ fn handle_global_action(app: &mut App, action: Action) -> Option<KeyOutcome> {
             Some(KeyOutcome::Continue)
         }
         Action::ClosePane => {
-            // Closing is scoped to terminal focus: without it the active pane
-            // is deliberately rendered indistinguishable from the others (see
-            // `terminal_tab::render`), so the target of a close would be
-            // invisible. The key is still consumed so it can't leak elsewhere.
-            if app.focus == Focus::Terminal {
+            // Scoped by `can_close_pane` (terminal focus — the close target
+            // is invisible without it). The key is still consumed so it
+            // can't leak elsewhere.
+            if app.can_close_pane() {
                 app.close_active_pane();
             }
             Some(KeyOutcome::Continue)
@@ -791,12 +790,9 @@ fn handle_global_action(app: &mut App, action: Action) -> Option<KeyOutcome> {
             Some(KeyOutcome::Continue)
         }
         Action::SwapPanePrompt => {
-            // Swap shares close's terminal-focus scope: without it the active
-            // pane — the swap's first operand — is deliberately rendered
-            // indistinguishable, so the target of a swap would be invisible.
-            // It additionally needs a second pane; with fewer, every target
-            // digit would be a no-op. The key is still consumed either way.
-            if app.focus == Focus::Terminal && app.terminal.panes.len() > 1 {
+            // Scoped by `can_swap_panes` (terminal focus plus a second pane).
+            // The key is still consumed either way.
+            if app.can_swap_panes() {
                 app.begin_swap_target();
             }
             Some(KeyOutcome::Continue)

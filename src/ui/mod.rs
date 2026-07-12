@@ -370,16 +370,11 @@ fn prefix_armed_hint_text(app: &App) -> String {
     } else {
         "1-9: focus/pane"
     };
-    // `w` only closes with terminal focus (see `main::handle_global_action`)
-    // — the active pane is invisible without it — so only advertise it there.
-    let close = if app.focus == Focus::Terminal {
-        "w: close | "
-    } else {
-        ""
-    };
-    // `s` shares close's terminal-focus scope and additionally needs a second
-    // pane to swap with (see `main::handle_global_action`).
-    let swap = if app.focus == Focus::Terminal && app.terminal.panes.len() > 1 {
+    // `w`/`s` only act under their availability predicates (see
+    // `App::can_close_pane`/`can_swap_panes`), so only advertise them there —
+    // a hint for a no-op key would lie.
+    let close = if app.can_close_pane() { "w: close | " } else { "" };
+    let swap = if app.can_swap_panes() {
         "s: swap pane | "
     } else {
         ""
