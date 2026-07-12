@@ -752,7 +752,13 @@ fn handle_global_action(app: &mut App, action: Action) -> Option<KeyOutcome> {
             Some(KeyOutcome::Continue)
         }
         Action::ClosePane => {
-            app.close_active_pane();
+            // Closing is scoped to terminal focus: without it the active pane
+            // is deliberately rendered indistinguishable from the others (see
+            // `terminal_tab::render`), so the target of a close would be
+            // invisible. The key is still consumed so it can't leak elsewhere.
+            if app.focus == Focus::Terminal {
+                app.close_active_pane();
+            }
             Some(KeyOutcome::Continue)
         }
         Action::ChangeRepo => {
@@ -1308,6 +1314,56 @@ mod tests {
         let _ = handle_key(&mut app, leader());
         let _ = handle_key(&mut app, press(KeyCode::Char('t'), KeyModifiers::NONE));
         assert_eq!(app.terminal.panes.len(), before + 1);
+    }
+
+    #[test]
+    fn handle_key_leader_w_closes_pane_with_terminal_focus() {
+        let mut app = app_with_terminal_pane();
+        app.terminal.create_pane().unwrap();
+        let before = app.terminal.panes.len();
+        let _ = handle_key(&mut app, leader());
+        let _ = handle_key(&mut app, press(KeyCode::Char('w'), KeyModifiers::NONE));
+        assert_eq!(app.terminal.panes.len(), before - 1);
+    }
+
+    #[test]
+    fn handle_key_leader_w_closes_pane_in_terminal_fullscreen() {
+        // Fullscreen routes the follow-up through `prefix_action_fullscreen`;
+        // `w` must keep closing there (focus is Terminal while it fills the
+        // body).
+        let mut app = app_with_terminal_pane();
+        app.terminal.create_pane().unwrap();
+        app.terminal.fullscreen = crate::runtime::terminal::TerminalFullscreen::Grid;
+        let before = app.terminal.panes.len();
+
+        let _ = handle_key(&mut app, leader());
+        let _ = handle_key(&mut app, press(KeyCode::Char('w'), KeyModifiers::NONE));
+
+        assert_eq!(app.terminal.panes.len(), before - 1);
+    }
+
+    #[test]
+    fn handle_key_leader_w_is_ignored_without_terminal_focus() {
+        // Without terminal focus the active pane is rendered identically to
+        // the others, so `<leader> w` must not close an invisible target.
+        // The follow-up is still consumed: prefix disarmed, nothing forwarded.
+        let mut app = app_with_terminal_pane();
+        app.focus = Focus::FileList;
+        let before = app.terminal.panes.len();
+
+        let _ = handle_key(&mut app, leader());
+        let _ = handle_key(&mut app, press(KeyCode::Char('w'), KeyModifiers::NONE));
+
+        assert_eq!(
+            app.terminal.panes.len(),
+            before,
+            "leader+w must be a no-op outside terminal focus"
+        );
+        assert!(!app.prefix_armed());
+        assert!(
+            backend_payloads(&app).is_empty(),
+            "the consumed follow-up must not reach the PTY"
+        );
     }
 
     #[test]

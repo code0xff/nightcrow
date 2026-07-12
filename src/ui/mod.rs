@@ -370,8 +370,15 @@ fn prefix_armed_hint_text(app: &App) -> String {
     } else {
         "1-9: focus/pane"
     };
+    // `w` only closes with terminal focus (see `main::handle_global_action`)
+    // — the active pane is invisible without it — so only advertise it there.
+    let close = if app.focus == Focus::Terminal {
+        "w: close | "
+    } else {
+        ""
+    };
     format!(
-        " t: new pane | w: close | s: swap pane | l: log/status | b: tree/status | f: fullscreen | o: repo | p: theme | r: redraw | q: quit | {digits} | esc: cancel"
+        " t: new pane | {close}s: swap pane | l: log/status | b: tree/status | f: fullscreen | o: repo | p: theme | r: redraw | q: quit | {digits} | esc: cancel"
     )
 }
 
@@ -536,11 +543,11 @@ fn normal_hint_literal(app: &App) -> &'static str {
                 if app.log_view.drill_down {
                     " esc: back to commits | j/k: navigate files | shift+←/→: cycle | <prefix> q: quit"
                 } else {
-                    " shift+←/→: cycle | j/k: navigate commits | enter: view files | <prefix> t: new pane | <prefix> w: close pane | <prefix> f: fullscreen | <prefix> l: status view | <prefix> o: repo | <prefix> q: quit"
+                    " shift+←/→: cycle | j/k: navigate commits | enter: view files | <prefix> t: new pane | <prefix> f: fullscreen | <prefix> l: status view | <prefix> o: repo | <prefix> q: quit"
                 }
             }
             ViewMode::Status => {
-                " shift+←/→: cycle | j/k: navigate | /: search | <prefix> t: new pane | <prefix> w: close pane | <prefix> f: fullscreen | <prefix> l: log view | <prefix> b: tree view | <prefix> o: repo | <prefix> q: quit"
+                " shift+←/→: cycle | j/k: navigate | /: search | <prefix> t: new pane | <prefix> f: fullscreen | <prefix> l: log view | <prefix> b: tree view | <prefix> o: repo | <prefix> q: quit"
             }
             ViewMode::Tree => {
                 " shift+←/→: cycle | j/k: navigate | /: search | →/enter: expand | ←: collapse | <prefix> b: status view | <prefix> l: log view | <prefix> q: quit"
@@ -560,7 +567,7 @@ fn normal_hint_literal(app: &App) -> &'static str {
             } else if !app.diff.search.query.is_empty() {
                 " n: next match | shift+n: prev match | /: new search | esc: clear"
             } else {
-                " shift+←/→: cycle | j/k: scroll | pgup/pgdn: scroll | v: view file | s: split | /: search | <prefix> t: new pane | <prefix> w: close pane | <prefix> f: zoom | <prefix> l: log view | <prefix> o: repo | <prefix> q: quit"
+                " shift+←/→: cycle | j/k: scroll | pgup/pgdn: scroll | v: view file | s: split | /: search | <prefix> t: new pane | <prefix> f: zoom | <prefix> l: log view | <prefix> o: repo | <prefix> q: quit"
             }
         }
     }
@@ -875,6 +882,75 @@ mod tests {
         assert!(
             !text.contains("1-9: focus/pane"),
             "fullscreen prefix hint must not show the split-view legend, got: {text}"
+        );
+    }
+
+    /// `<leader> w` only closes with terminal focus (`handle_global_action`
+    /// scopes it), so both the armed row and the normal legends must only
+    /// advertise it there — a hint for a no-op key would lie.
+    #[test]
+    fn prefix_hint_advertises_close_only_with_terminal_focus() {
+        let mut upper = app_with_fake_backend();
+        upper.arm_prefix();
+        assert!(
+            !hint_text(&upper).contains("w: close"),
+            "armed row must not offer close without terminal focus"
+        );
+
+        let mut term = app_with_fake_backend();
+        term.focus = Focus::Terminal;
+        term.arm_prefix();
+        assert!(
+            hint_text(&term).contains("w: close"),
+            "armed row must offer close with terminal focus"
+        );
+    }
+
+    /// The armed row's `w: close` must round-trip to a click exactly when it
+    /// is shown: some column resolves to `Plain('w')` with terminal focus,
+    /// and no column does without it (the segment isn't rendered, so a click
+    /// target for it would be a phantom).
+    #[test]
+    fn armed_prefix_close_click_target_follows_terminal_focus() {
+        let screen = Rect::new(0, 0, 200, 3);
+        let clicks = |app: &App| {
+            (0..200u16)
+                .filter(|&x| hint_click_at(app, screen, x, 2) == Some(HintClick::Plain('w')))
+                .count()
+        };
+
+        let mut term = app_with_fake_backend();
+        term.focus = Focus::Terminal;
+        term.arm_prefix();
+        assert!(
+            clicks(&term) > 0,
+            "terminal-focused armed row must offer a close click target"
+        );
+
+        let mut upper = app_with_fake_backend();
+        upper.arm_prefix();
+        assert_eq!(
+            clicks(&upper),
+            0,
+            "non-terminal armed row must not resolve any cell to a close click"
+        );
+    }
+
+    #[test]
+    fn normal_hint_advertises_close_only_with_terminal_focus() {
+        let mut app = app_with_fake_backend();
+        for focus in [Focus::FileList, Focus::DiffViewer] {
+            app.focus = focus;
+            let text = hint_text(&app);
+            assert!(
+                !text.contains("w: close pane"),
+                "{focus:?} legend must not offer close, got: {text}"
+            );
+        }
+        app.focus = Focus::Terminal;
+        assert!(
+            hint_text(&app).contains("w: close pane"),
+            "terminal legend must offer close"
         );
     }
 

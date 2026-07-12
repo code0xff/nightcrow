@@ -99,7 +99,7 @@ visible from the terminal pane.
 |-----|--------|
 | `<prefix>` then `<prefix>` | Send the literal leader to the terminal program |
 | `<prefix> t` | Open new terminal pane |
-| `<prefix> w` | Close active terminal pane |
+| `<prefix> w` | Close active terminal pane — terminal focus only, since without it no pane is highlighted as the close target |
 | `<prefix> s` then `3`…`9`,`0` | Swap the active terminal pane with pane 1…8 (focus follows the pane; same pane numbering as the jump keys, so in terminal fullscreen the swap digits are `1`…`8`) |
 | `<prefix> l` | Toggle between status view and commit log view |
 | `<prefix> b` | Toggle the read-only file-tree view (returns to status view) |
