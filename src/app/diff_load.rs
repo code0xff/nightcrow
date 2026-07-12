@@ -269,6 +269,14 @@ impl App {
         self.diff.file_view = fv;
     }
 
+    /// Whether `v` currently has a file to open. Mirrors the gates in
+    /// `toggle_diff_file_view` — Tree mode never toggles, and elsewhere the
+    /// key must resolve (log view needs a drill-down file selection) — so
+    /// the hint bar only advertises `v: view file` when a press would act.
+    pub(crate) fn can_open_file_view(&self) -> bool {
+        self.mode != ViewMode::Tree && self.current_file_view_key().is_some()
+    }
+
     pub fn toggle_diff_file_view(&mut self) {
         // Tree mode's right pane is always the raw file preview; the diff and
         // split views have no meaning there, so `v`/`s` are no-ops.

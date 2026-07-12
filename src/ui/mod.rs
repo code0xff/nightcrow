@@ -504,15 +504,25 @@ fn normal_hint_literal(app: &App) -> &'static str {
     }
     if app.diff.fullscreen {
         let hint = if app.diff.view == DiffPaneView::File {
-            " <prefix> f: exit zoom | v: back to diff | j/k: scroll | pgup/pgdn: page | <prefix> q: quit"
+            // Tree mode's right pane is permanently the file view — `v`
+            // can't leave it, so don't advertise a no-op.
+            if app.mode == ViewMode::Tree {
+                " <prefix> f: exit zoom | j/k: scroll | pgup/pgdn: page | <prefix> q: quit"
+            } else {
+                " <prefix> f: exit zoom | v: back to diff | j/k: scroll | pgup/pgdn: page | <prefix> q: quit"
+            }
         } else if app.diff.view == DiffPaneView::Split {
             " <prefix> f: exit zoom | s: unified diff | j/k: scroll | pgup/pgdn: page | <prefix> q: quit"
         } else if app.diff.search.active {
             " type to search | enter: confirm | esc: cancel"
         } else if !app.diff.search.query.is_empty() {
             " <prefix> f: exit zoom | n: next match | shift+n: prev match | /: new search | esc: clear"
-        } else {
+        } else if app.can_open_file_view() {
             " <prefix> f: exit zoom | j/k: scroll | v: view file | s: split | /: search | pgup/pgdn: page | <prefix> q: quit"
+        } else {
+            // No file target for `v` (log view browsing commits, or nothing
+            // selected) — a hint for a no-op key would lie.
+            " <prefix> f: exit zoom | j/k: scroll | s: split | /: search | pgup/pgdn: page | <prefix> q: quit"
         };
         return hint;
     }
@@ -559,15 +569,25 @@ fn normal_hint_literal(app: &App) -> &'static str {
             } else if app.diff.view == DiffPaneView::File && !app.diff.search.query.is_empty() {
                 " n: next match | shift+n: prev match | /: new search | esc: clear"
             } else if app.diff.view == DiffPaneView::File {
-                " v: back to diff | j/k: scroll | pgup/pgdn: page | /: search | shift+←/→: cycle | <prefix> q: quit"
+                // Tree mode's right pane is permanently the file view — `v`
+                // can't leave it, so don't advertise a no-op.
+                if app.mode == ViewMode::Tree {
+                    " j/k: scroll | pgup/pgdn: page | /: search | shift+←/→: cycle | <prefix> q: quit"
+                } else {
+                    " v: back to diff | j/k: scroll | pgup/pgdn: page | /: search | shift+←/→: cycle | <prefix> q: quit"
+                }
             } else if app.diff.view == DiffPaneView::Split {
                 " s: unified diff | j/k: scroll | pgup/pgdn: page | shift+←/→: cycle | <prefix> f: zoom | <prefix> q: quit"
             } else if app.diff.search.active {
                 " type to search | enter: confirm | esc: cancel"
             } else if !app.diff.search.query.is_empty() {
                 " n: next match | shift+n: prev match | /: new search | esc: clear"
-            } else {
+            } else if app.can_open_file_view() {
                 " shift+←/→: cycle | j/k: scroll | pgup/pgdn: scroll | v: view file | s: split | /: search | <prefix> t: new pane | <prefix> f: zoom | <prefix> l: log view | <prefix> o: repo | <prefix> q: quit"
+            } else {
+                // No file target for `v` (log view browsing commits, or
+                // nothing selected) — a hint for a no-op key would lie.
+                " shift+←/→: cycle | j/k: scroll | pgup/pgdn: scroll | s: split | /: search | <prefix> t: new pane | <prefix> f: zoom | <prefix> l: log view | <prefix> o: repo | <prefix> q: quit"
             }
         }
     }
@@ -951,6 +971,83 @@ mod tests {
         assert!(
             hint_text(&app).contains("w: close pane"),
             "terminal legend must offer close"
+        );
+    }
+
+    /// `v` only opens a file when `current_file_view_key` resolves (log view
+    /// needs a drill-down file selection), so the diff legend must only
+    /// advertise `v: view file` then — a hint for a no-op key would lie.
+    #[test]
+    fn diff_hint_advertises_view_file_only_with_a_file_target() {
+        // Log view browsing commits (no drill-down): `v` has no target.
+        let mut app = app_with_fake_backend();
+        app.mode = ViewMode::Log;
+        app.focus = Focus::DiffViewer;
+        let text = hint_text(&app);
+        assert!(
+            !text.contains("v: view file"),
+            "commit-level log legend must not offer view file, got: {text}"
+        );
+        assert!(
+            text.contains("s: split"),
+            "split still acts on the commit diff, got: {text}"
+        );
+
+        // Same state zoomed: the fullscreen legend must agree.
+        app.diff.fullscreen = true;
+        let text = hint_text(&app);
+        assert!(
+            !text.contains("v: view file"),
+            "zoomed commit-level legend must not offer view file, got: {text}"
+        );
+
+        // Drill-down with a file selected: `v` acts, so advertise it.
+        app.diff.fullscreen = false;
+        app.log_view.set_commits(vec![crate::git::diff::CommitEntry::new(
+            git2::Oid::ZERO_SHA1,
+            "deadbee".to_string(),
+            "c".to_string(),
+            "T".to_string(),
+            0,
+        )]);
+        app.log_view.drill_down = true;
+        app.log_view.commit_files = vec![crate::git::diff::ChangedFile::unstaged_only(
+            "a.rs".to_string(),
+            StatusKind::Modified,
+        )];
+        assert!(
+            hint_text(&app).contains("v: view file"),
+            "drill-down legend must offer view file"
+        );
+
+        // Status view with a selected file (the fixture's default list).
+        let mut status = app_with_fake_backend();
+        status.focus = Focus::DiffViewer;
+        assert!(
+            hint_text(&status).contains("v: view file"),
+            "status legend must offer view file for a selected file"
+        );
+    }
+
+    /// Tree mode's right pane is permanently the file view — `v` never
+    /// toggles there, so the file-view legend must not offer `back to diff`.
+    #[test]
+    fn tree_file_view_hint_omits_back_to_diff() {
+        let mut app = app_with_fake_backend();
+        app.mode = ViewMode::Tree;
+        app.focus = Focus::DiffViewer;
+        app.diff.view = DiffPaneView::File;
+        let text = hint_text(&app);
+        assert!(
+            !text.contains("v: back to diff"),
+            "tree file-view legend must not offer back to diff, got: {text}"
+        );
+
+        app.diff.fullscreen = true;
+        let text = hint_text(&app);
+        assert!(
+            !text.contains("v: back to diff"),
+            "zoomed tree file-view legend must not offer back to diff, got: {text}"
         );
     }
 
