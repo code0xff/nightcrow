@@ -377,8 +377,15 @@ fn prefix_armed_hint_text(app: &App) -> String {
     } else {
         ""
     };
+    // `s` shares close's terminal-focus scope and additionally needs a second
+    // pane to swap with (see `main::handle_global_action`).
+    let swap = if app.focus == Focus::Terminal && app.terminal.panes.len() > 1 {
+        "s: swap pane | "
+    } else {
+        ""
+    };
     format!(
-        " t: new pane | {close}s: swap pane | l: log/status | b: tree/status | f: fullscreen | o: repo | p: theme | r: redraw | q: quit | {digits} | esc: cancel"
+        " t: new pane | {close}{swap}l: log/status | b: tree/status | f: fullscreen | o: repo | p: theme | r: redraw | q: quit | {digits} | esc: cancel"
     )
 }
 
@@ -953,6 +960,41 @@ mod tests {
             clicks(&upper),
             0,
             "non-terminal armed row must not resolve any cell to a close click"
+        );
+    }
+
+    /// `<leader> s` shares close's scoping (`handle_global_action`): terminal
+    /// focus plus a second pane to swap with. The armed row must only
+    /// advertise it then — a hint for a no-op key would lie.
+    #[test]
+    fn prefix_hint_advertises_swap_only_when_a_swap_can_act() {
+        let mut upper = app_with_fake_backend();
+        upper.terminal.create_pane().unwrap();
+        upper.terminal.create_pane().unwrap();
+        upper.focus = Focus::FileList;
+        upper.arm_prefix();
+        assert!(
+            !hint_text(&upper).contains("s: swap pane"),
+            "armed row must not offer swap without terminal focus"
+        );
+
+        let mut single = app_with_fake_backend();
+        single.terminal.create_pane().unwrap();
+        single.focus = Focus::Terminal;
+        single.arm_prefix();
+        assert!(
+            !hint_text(&single).contains("s: swap pane"),
+            "armed row must not offer swap with a single pane"
+        );
+
+        let mut term = app_with_fake_backend();
+        term.terminal.create_pane().unwrap();
+        term.terminal.create_pane().unwrap();
+        term.focus = Focus::Terminal;
+        term.arm_prefix();
+        assert!(
+            hint_text(&term).contains("s: swap pane"),
+            "armed row must offer swap with terminal focus and two panes"
         );
     }
 

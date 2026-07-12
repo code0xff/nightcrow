@@ -791,7 +791,14 @@ fn handle_global_action(app: &mut App, action: Action) -> Option<KeyOutcome> {
             Some(KeyOutcome::Continue)
         }
         Action::SwapPanePrompt => {
-            app.begin_swap_target();
+            // Swap shares close's terminal-focus scope: without it the active
+            // pane — the swap's first operand — is deliberately rendered
+            // indistinguishable, so the target of a swap would be invisible.
+            // It additionally needs a second pane; with fewer, every target
+            // digit would be a no-op. The key is still consumed either way.
+            if app.focus == Focus::Terminal && app.terminal.panes.len() > 1 {
+                app.begin_swap_target();
+            }
             Some(KeyOutcome::Continue)
         }
         Action::FocusList => {
@@ -1500,6 +1507,49 @@ mod tests {
         assert!(!app.awaiting_swap_target());
         let after: Vec<_> = app.terminal.panes.iter().map(|p| p.id).collect();
         assert_eq!(order, after);
+        assert!(backend_payloads(&app).is_empty());
+    }
+
+    /// `<leader> s` shares close's terminal-focus scope: from the upper panes
+    /// the active pane is rendered indistinguishable, so the chord must be
+    /// consumed without arming swap mode.
+    #[test]
+    fn handle_key_leader_s_without_terminal_focus_does_not_arm() {
+        let mut app = app_with_terminal_pane();
+        app.terminal.create_pane_with(None, Some("two")).unwrap();
+        app.focus = Focus::FileList;
+
+        let _ = handle_key(&mut app, leader());
+        let _ = handle_key(&mut app, press(KeyCode::Char('s'), KeyModifiers::NONE));
+
+        assert!(
+            !app.awaiting_swap_target(),
+            "leader+s must not arm swap mode without terminal focus"
+        );
+        assert!(
+            !app.prefix_armed(),
+            "the follow-up must still disarm the prefix"
+        );
+        assert!(
+            backend_payloads(&app).is_empty(),
+            "the consumed chord must not reach the PTY"
+        );
+    }
+
+    /// With a single pane every swap target digit would be a no-op, so the
+    /// chord must not arm swap mode.
+    #[test]
+    fn handle_key_leader_s_with_single_pane_does_not_arm() {
+        let mut app = app_with_terminal_pane();
+        assert_eq!(app.terminal.panes.len(), 1);
+
+        let _ = handle_key(&mut app, leader());
+        let _ = handle_key(&mut app, press(KeyCode::Char('s'), KeyModifiers::NONE));
+
+        assert!(
+            !app.awaiting_swap_target(),
+            "leader+s must not arm swap mode with a single pane"
+        );
         assert!(backend_payloads(&app).is_empty());
     }
 

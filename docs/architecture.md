@@ -132,6 +132,11 @@ background even while scrolled out of the window.
   exclusive with `prefix_armed`); the next digit is resolved through
   `resolve_prefix_action` — the same layout-aware mapping as the focus-jump
   digits — so both stay in lockstep in split view and fullscreen alike.
+  Arming shares `<prefix> w`'s terminal-focus scope (without it the active
+  pane — the swap's first operand — is rendered indistinguishable) and
+  additionally requires a second pane; otherwise the chord is consumed
+  without arming, and the armed hint row hides `s: swap pane` under the
+  same conditions.
 - **Layout-aware jump keys**: both the leader digit row and the no-prefix F-key
   row switch mapping by layout, kept in lockstep. In the split view
   `input::prefix_action` (`1`=list, `2`=diff, `3`..`9`,`0`=panes `0`..`7`) and
