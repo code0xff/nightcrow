@@ -17,7 +17,7 @@ name = "yellow"      # accent color preset: "yellow" | "cyan" | "green" | "magen
 # the focused terminal so prompt-editing keys reach the program running there.
 #
 # Allowed form: "ctrl+<letter>" (a single ctrl chord). Reserved no-prefix keys
-# (F1..F9, Shift+arrows, Shift+PgUp/PgDn) cannot be used as the leader.
+# (F1..F10, Shift+arrows, Shift+PgUp/PgDn) cannot be used as the leader.
 #
 # Migration: the old bare-Ctrl app shortcuts moved behind the leader:
 #   Ctrl+T → <leader> t   Ctrl+W → <leader> w   Ctrl+L → <leader> l
@@ -65,13 +65,13 @@ live_watch = true         # watch expanded dirs and refresh the tree live; set f
 
 # Reserve startup commands: each [[startup_command]] opens its own terminal
 # pane at launch and runs `command` immediately (via `$SHELL -lc <command>`).
-# Up to 7 entries (combined with CLI --exec). 7 matches the F3–F9 / <leader>
-# 3–9 pane-jump keys, so every startup pane is reachable by a direct key (F1/F2
-# reach the file list and diff viewer). This caps only the startup batch — open
-# more anytime with <leader> t (panes past the seventh are reached via focus
-# cycling, Shift+←/→). `name` labels the tab; when omitted the command text is
-# used. With no [[startup_command]] entries, nightcrow opens a single empty
-# shell as before.
+# Up to 8 entries (combined with CLI --exec). 8 matches the F3–F10 / <leader>
+# 3–9,0 pane-jump keys, so every startup pane is reachable by a direct key
+# (F1/F2 reach the file list and diff viewer). This caps only the startup
+# batch — open more anytime with <leader> t (panes past the eighth are reached
+# via focus cycling, Shift+←/→). `name` labels the tab; when omitted the
+# command text is used. With no [[startup_command]] entries, nightcrow opens a
+# single empty shell.
 #
 # [[startup_command]]
 # name = "Claude"           # optional tab label; falls back to the command text

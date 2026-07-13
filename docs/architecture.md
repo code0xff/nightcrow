@@ -8,7 +8,7 @@ nightcrow 자체는 AI에 대한 ontology를 갖지 않는다 — agent든 사�
 
 **대상 사용자**: 터미널 중심으로 작업하면서, 옆 패널의 LLM CLI(Claude Code, Codex, aider 등)나 빌드/테스트 러너가 만든 코드 변경을 실시간으로 따라잡고 싶은 개발자.
 
-**핵심 기능**: 변경 파일 리스트(좌측/키보드 네비게이션), git diff 뷰어(우측/문법 하이라이팅), commit log 뷰, split-view 멀티 PTY 패널(하단), mtime 기반 hot-file 강조 + idle auto-follow, OSC 0/2 탭 타이틀 캡처.
+**핵심 기능**: 변경 파일 리스트(좌측/키보드 네비게이션), git diff 뷰어(우측/문법 하이라이팅), commit log 뷰, read-only 파일 트리 내비게이터(라이브 워치 + 재귀 파일명 검색), split-view 멀티 PTY 패널(하단), mtime 기반 hot-file 강조 + idle auto-follow, OSC 0/2 탭 타이틀 캡처, 마우스 캡처(클릭 포커스/포워딩, 휠 라우팅, 클릭 가능한 힌트 바).
 
 ## Layout
 
@@ -40,38 +40,48 @@ src/
 ├── app.rs                # App struct + integration tests; impl blocks split into app/
 ├── app/
 │   ├── auto_follow.rs    # idle-driven jump to freshest hot file
+│   ├── commit_log_fetch.rs # background commit-log page fetcher (worker thread + poll)
 │   ├── diff_load.rs      # diff + file-view loaders, apply_diff_result, refresh_diff
 │   ├── focus.rs          # focus jumps, cycling, fullscreen toggles
 │   ├── navigation.rs     # selection, j/k, filtered status, log drill-in/out
-│   ├── repo_input.rs     # Ctrl+O repo-input modal state
+│   ├── repo_input.rs     # <prefix> o repo-input modal state
 │   ├── session_io.rs     # save/restore session state
 │   ├── snapshot_io.rs    # poll_snapshot: drain SnapshotChannel, detect HEAD change
-│   └── terminal_ctrl.rs  # poll_terminal, open/close pane, scroll, fullscreen
-├── config.rs             # config.toml parsing (layout, theme, log, agent_indicator, input leader)
+│   ├── terminal_ctrl.rs  # poll_terminal, open/close/swap pane, scroll, fullscreen
+│   └── tree.rs           # tree-navigator App methods: lazy expand, filename search, watcher wiring
+├── config.rs             # config.toml parsing (layout, theme, log, agent_indicator,
+│                         #   input leader, mouse, tree, startup_command) + init template
 ├── logging.rs            # tracing-based file logger (rotation + retention)
 ├── session.rs            # session state save/restore (.nightcrow/session.json)
+├── util.rs               # shared low-level helpers (try_timed_join)
 ├── runtime/
 │   ├── mod.rs
 │   ├── snapshot.rs       # SnapshotChannel: background git status/log worker
 │   ├── emulator.rs       # PaneEmulator/ScreenView: alacritty_terminal wrapper
-│   └── terminal.rs       # TerminalState (panes, emulators, scroll, title routing)
+│   ├── terminal.rs       # TerminalState (panes, emulators, scroll, title routing)
+│   └── tree_watch.rs     # notify-based watcher for expanded tree directories
 ├── ui/
-│   ├── mod.rs            # root layout (top header + upper/lower split + hint bar)
+│   ├── mod.rs            # root layout (top header + upper/lower split + hint bar,
+│   │                     #   mouse hit-testing: pane_at/tab_click_at/hint_click_at)
 │   ├── status_view.rs    # status-mode state (file filter, search query/cache)
 │   ├── log_view.rs       # log-mode state (commits, drill-down, file selection)
+│   ├── tree_view.rs      # tree-mode state (child cache, expanded set, search index)
 │   ├── file_list.rs      # upper-left: changed files with hot-stage coloring
 │   ├── commit_list.rs    # upper-left (log view): commit list with ahead marker
+│   ├── tree_list.rs      # upper-left (tree view): indented directory-tree rows
 │   ├── diff_pane.rs      # DiffPane: hunks, scroll, search, file_view sub-state
 │   ├── diff_viewer.rs    # upper-right: diff widget; toggleable file preview
 │   ├── file_view.rs      # full-file preview state (content, scroll, syntect cache)
-│   ├── terminal_tab.rs   # lower: terminal pane + tab bar widget
+│   ├── search.rs         # SearchQuery newtype (query + lowercased form in lockstep)
+│   ├── terminal_tab.rs   # lower: terminal pane grid + tab bar widget
 │   └── splash.rs         # first-run splash overlay
 ├── backend/
 │   ├── mod.rs            # TerminalBackend trait + BackendEvent
 │   └── pty.rs            # PtyBackend (portable-pty, the only backend)
 ├── git/
 │   ├── mod.rs
-│   └── diff.rs           # git2 snapshot/diff loaders + tracking status
+│   ├── diff.rs           # git2 snapshot/diff loaders + tracking status
+│   └── tree.rs           # lazy read-only directory listing (gitignore filter, symlink guard)
 └── input/
     └── mod.rs            # keyboard routing: map_key (no-prefix reserved keys),
                           #   prefix_action (leader follow-up dispatch), encode_key, vim-style j/k
@@ -203,11 +213,22 @@ background even while scrolled out of the window.
 
 `StatusView::filter_cache`는 `search_query` 또는 `files`가 변경될 때만 재계산된다 (`recompute_filter`). 렌더러와 navigation helper는 캐시된 슬라이스를 읽기만 한다.
 
+### File-Tree Navigator (`ViewMode::Tree`)
+
+`<prefix> b`로 진입하는 read-only 디렉토리 트리. 좌측 리스트가 워크트리 전체를 탐색하고, 파일 선택은 기존 file-view pane(`DiffPaneView::File`)을 재사용한다 — 새 렌더 경로를 만들지 않는다.
+
+- **Lazy one-level reads**: `git::tree::read_children`가 `std::fs::read_dir`로 정확히 한 디렉토리 레벨만 읽는다. 펼치지 않은 서브트리는 절대 walk되지 않는다. `.gitignore` 필터링은 libgit2를 통하고(`[tree] respect_gitignore`), symlink는 non-directory로 보고해 visited-set 없이 순환을 차단한다.
+- **Derived rows**: `TreeView`는 per-directory child cache와 expanded set만 저장하고, 보이는 행 리스트는 `visible_rows`로 매번 파생한다 — 확장 상태와 flatten된 뷰가 어긋날 수 없다. 디렉토리 I/O는 전부 `app/tree.rs`(UI 스레드 동기)에 있어 populated cache가 주어지면 `tree_view.rs`는 순수하고, 파일시스템 없이 단위 테스트된다.
+- **파일명 검색**: 트리 focus에서 `/`가 검색 오버레이를 열 때 `build_tree_index`가 `max_depth`까지 전체 트리를 한 번 walk해 flat index를 만들고, 이후 필터링은 인메모리다. `Enter`는 선택 경로의 조상 디렉토리를 모두 펼쳐 일반 뷰에서 reveal한다.
+- **Live watch**: `runtime::tree_watch`가 notify(+debouncer-mini)로 **펼친 디렉토리만 비재귀로** 감시한다(yazi/broot/nvim-tree와 같은 전략) — 워크트리 전체 재귀 감시는 디렉토리당 inotify watch 하나를 소비해 대형 트리에서 무너진다. `[tree] live_watch = false`면 Tree 진입 시에만 재조회한다.
+- **Read-only 보장**: 트리는 어떤 쓰기·이름변경·삭제도 수행하지 않는다.
+- **세션 지속성**: expanded set과 선택 경로는 세션에 저장·복원되며, 복원 시 unsafe 경로와 사라진 디렉토리의 stale 확장은 정리된다.
+
 ### Keyboard Routing
 
 라우팅은 leader(prefix) 모델을 따른다. 1순위 사용자는 패널에서 LLM CLI를 굴리는 cockpit 사용자이므로, `Ctrl+W`/`Ctrl+L` 같은 프롬프트 편집 Ctrl 키가 nightcrow에 가로채이지 않고 PTY로 통과해야 한다. 앱 전역 명령은 leader 뒤에 한 키를 눌러야만 실행된다.
 
-- **Leader (prefix)**: 기본값 `Ctrl+Q`, `[input] leader`로 변경 가능(`config.rs::parse_leader`가 `ctrl+<letter>`만 허용하고 예약키·인코딩 불가 chord는 거부). leader를 누르면 `App.prefix_armed` 플래그가 켜지고, 다음 키 한 개가 앱 명령(`input::prefix_action`)으로 해석된다. **타임아웃은 없다** — armed 상태는 follow-up 키나 `Esc`/`Ctrl+C`로만 해제된다. 해제 경로는 셋뿐이다: 매핑된 키 → Action 실행 후 해제, 미매핑 키 → 소비 후 해제, `Esc`/`Ctrl+C` → 취소. `<L> <L>`는 terminal focus에서 leader를 `encode_key`로 리터럴 PTY 전송한다. prefix 매핑: `t`=NewPane, `w`=ClosePane(terminal focus 한정 — unfocus 시 active pane이 다른 pane과 동일하게 그려져 닫힐 대상이 보이지 않으므로, 키는 소비하되 no-op이고 힌트 바에도 노출하지 않는다), `l`=ToggleLogView, `f`=ToggleFullscreen, `o`=ChangeRepo, `p`=CycleTheme, `r`=Redraw, `q`=Quit. 숫자는 no-prefix focus/pane F키를 1:1로 미러링한다: `1`=FocusList(`F1`), `2`=FocusDiff(`F2`), `3`–`9`,`0`=pane 0–7로 focus 이동(`F3`–`F10`, `0`은 digit이 9까지밖에 없어 `F10`을 미러링). 따라서 focus/pane 점프는 `F1`–`F10`과 leader `<prefix> 1`–`9`,`0` 양쪽에서 동일하게 동작한다. pane 포커스 이동은 tab 전환이 아니라 어떤 pane이 active인지만 바꾼다 — split-view grid는 이동 전후로 계속 여러 pane을 동시에 그린다.
+- **Leader (prefix)**: 기본값 `Ctrl+Q`, `[input] leader`로 변경 가능(`config.rs::parse_leader`가 `ctrl+<letter>`만 허용하고 예약키·인코딩 불가 chord는 거부). leader를 누르면 `App.prefix_armed` 플래그가 켜지고, 다음 키 한 개가 앱 명령(`input::prefix_action`)으로 해석된다. **타임아웃은 없다** — armed 상태는 follow-up 키나 `Esc`/`Ctrl+C`로만 해제된다. 해제 경로는 셋뿐이다: 매핑된 키 → Action 실행 후 해제, 미매핑 키 → 소비 후 해제, `Esc`/`Ctrl+C` → 취소. `<L> <L>`는 terminal focus에서 leader를 `encode_key`로 리터럴 PTY 전송한다. prefix 매핑: `t`=NewPane, `w`=ClosePane(terminal focus 한정 — unfocus 시 active pane이 다른 pane과 동일하게 그려져 닫힐 대상이 보이지 않으므로, 키는 소비하되 no-op이고 힌트 바에도 노출하지 않는다), `s`=pane swap 대기 모드 arm(같은 terminal-focus 스코프 + pane 2개 이상 필요 — 상세는 "Split-View Terminal Panel"의 swap 항목), `l`=ToggleLogView, `b`=ToggleTreeView(트리 뷰 ↔ status 뷰), `f`=ToggleFullscreen, `o`=ChangeRepo, `p`=CycleTheme, `r`=Redraw, `q`=Quit. 숫자는 no-prefix focus/pane F키를 1:1로 미러링한다: `1`=FocusList(`F1`), `2`=FocusDiff(`F2`), `3`–`9`,`0`=pane 0–7로 focus 이동(`F3`–`F10`, `0`은 digit이 9까지밖에 없어 `F10`을 미러링). 따라서 focus/pane 점프는 `F1`–`F10`과 leader `<prefix> 1`–`9`,`0` 양쪽에서 동일하게 동작한다. pane 포커스 이동은 tab 전환이 아니라 어떤 pane이 active인지만 바꾼다 — split-view grid는 이동 전후로 계속 여러 pane을 동시에 그린다.
 - **No-prefix 예약키**: `F1`/`F2`(focus jump), `F3`–`F10`(pane focus jump), `Shift+←/→`(focus cycle — terminal focus 상태에서는 active pane을 앞/뒤로 이동), `Shift+↑/↓`·`Shift+PgUp/PgDn`(터미널 스크롤, active pane 기준 — 전달 방식은 "Scroll Routing" 참조)는 leader 없이 항상 앱이 먼저 처리한다. modifier 또는 F-key라서 프롬프트 텍스트와 혼동되지 않는다.
 - **Upper panel focused**: leader 명령과 no-prefix 예약키를 제외한 나머지는 로컬 네비게이션(`j`/`k`, `/`, `v`, `n`/`N`, `Enter`, `Esc`, 화살표, `PgUp`/`PgDn`)으로 처리된다. `j`/`k`는 upper-pane handler 내부에서 vim navigation으로 변환되며, `map_key`는 plain character로 통과시켜 terminal focus에서 PTY로 그대로 전달되게 한다.
 - **Lower panel focused (terminal)**: leader/예약키가 아닌 모든 키는 active backend의 stdin으로 직접 통과한다(`encode_key`가 화살표/F-key/제어문자를 VT100 시퀀스로 인코딩). 단독 `Ctrl+T/W/L/F/O/P/Q`도 더 이상 앱 명령이 아니므로 control byte로 PTY에 전달된다.
@@ -277,10 +298,11 @@ Ratatui 레이어와 내부 TUI 간 키보드 이벤트 충돌은 leader(prefix)
 | 용도 | 크레이트 |
 |------|---------|
 | TUI 렌더링 | ratatui 0.30 + crossterm 0.29 |
-| Git diff | git2 0.20 (vendored libgit2/openssl) |
-| 문법 하이라이팅 | syntect 5.3 |
+| Git diff | git2 0.21 (vendored libgit2/openssl) |
+| 문법 하이라이팅 | syntect 5.3 + two-face (문법 정의 확장) |
 | PTY 관리 | portable-pty 0.8 |
 | 터미널 에뮬레이션 | alacritty_terminal 0.26 |
+| 파일시스템 감시 (tree live watch) | notify 8 + notify-debouncer-mini |
 | 파일 로깅 | tracing + tracing-subscriber + tracing-appender |
 | 설정 파싱 | toml 0.8 + serde |
 | 세션 저장 | serde_json |
@@ -298,6 +320,10 @@ PTY 관리는 portable-pty 기반 `PtyBackend` 단일 구현으로 정리됐다.
 - commit log 페이지네이션 + 백그라운드 prefetch (대형 저장소에서 초기 진입 속도 개선)
 - 시작 시 예약 명령(`[[startup_command]]`/`--exec`)으로 터미널 pane 자동 생성·실행
 - split-view 터미널: 여러 pane을 탭 전환 없이 balanced grid로 동시 렌더링(Terminal에 포커스가 있을 때만 활성 pane accent 테두리, 그 외엔 비활성 pane과 동일한 색, hidden pane `+N` 마커)
+- read-only 파일 트리 내비게이터(`<prefix> b`): lazy 디렉토리 읽기 + 재귀 파일명 검색 + notify 기반 라이브 워치
+- 터미널 fullscreen 3-state 사이클(Off → Grid → Zoom) + pane swap(`<prefix> s`) + layout-aware jump/swap digit 재매핑
+- 터미널 에뮬레이터 교체: vt100 → alacritty_terminal(쿼리 응답, resize reflow, wide-char 크래시 해소)
+- scroll/mouse routing: 프로그램이 켠 모드 기반 스크롤 싱크 판정, config-gated 마우스 캡처(클릭 포커스/SGR 포워딩), 클릭 가능한 힌트 바·탭 바
 
 ## Future Refactor Notes
 
