@@ -347,15 +347,17 @@ fn main_loop(
         app.terminal.sync_scroll();
 
         let accent = app.current_accent();
-        terminal.draw(|frame| {
+        let completed = terminal.draw(|frame| {
             ui::draw(frame, app, ss, ts, &cfg.layout, accent);
         })?;
 
-        // Mirror the freshly composited frame to any connected browsers. The
-        // local terminal stays the authority for the grid size; the web view
-        // renders the exact same cells.
+        // Mirror the freshly composited frame to any connected browsers. Use the
+        // buffer returned by `draw` — after it swaps buffers, `current_buffer_mut`
+        // points at the next (reset) frame, not the one just rendered. The local
+        // terminal stays the authority for the grid size; the web view renders
+        // the exact same cells.
         if let Some(server) = web_server.as_mut() {
-            server.broadcast(terminal.current_buffer_mut());
+            server.broadcast(completed.buffer);
         }
 
         // 16 ms ≈ 60 fps. The previous 50 ms tick noticeably lagged PTY echo
