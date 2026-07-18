@@ -56,8 +56,10 @@
       // The mirror shows exactly the current grid; there is no client-side
       // scrollback (scrolling is routed to the pane program server-side).
       scrollback: 0,
-      // We capture and forward input ourselves; xterm renders only.
-      disableStdin: true,
+      // NOTE: `disableStdin` must stay off. It gates xterm's `triggerDataEvent`,
+      // which is the only path IME-composed text (Hangul, kana, pinyin) and
+      // clipboard pastes take to reach `onData` below. Keydown-driven input is
+      // suppressed by the custom key handler instead, so nothing double-sends.
       theme: { background: '#000000', foreground: '#e5e5e5' },
     });
     term.open(wrap);
@@ -148,7 +150,9 @@
       return false; // xterm must not also process the key
     });
 
-    // With keys suppressed above, onData only carries IME-composed text.
+    // The custom handler above consumes every keydown, so onData is left with
+    // only the input xterm produces on its own: IME-composed text (delivered at
+    // compositionend) and clipboard pastes. Both forward as a paste.
     term.onData((data) => {
       if (data) send({ t: 'paste', data });
     });

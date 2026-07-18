@@ -25,3 +25,24 @@ pub fn login_page(error: Option<&str>) -> String {
     };
     LOGIN_TEMPLATE.replace("<!--ERROR-->", &banner)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn app_page_leaves_xterm_stdin_enabled_so_ime_and_paste_reach_ondata() {
+        // xterm's `triggerDataEvent` — the sole source of the `onData` events the
+        // page forwards as `{t:"paste"}` — returns early when `disableStdin` is
+        // set. Turning it on silently drops IME-composed text (Hangul, kana,
+        // pinyin) and clipboard pastes, with no error anywhere to trace it to.
+        assert!(
+            !APP_HTML.contains("disableStdin:"),
+            "app.html must not set the disableStdin option; it would break IME input and paste"
+        );
+        assert!(
+            APP_HTML.contains("term.onData("),
+            "app.html must keep the onData handler that forwards composed text and pastes"
+        );
+    }
+}
