@@ -2,39 +2,189 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
 <title>nightcrow</title>
+<link rel="stylesheet" href="/vendor/xterm.css">
 <style>
   :root { color-scheme: dark; }
-  body { margin: 0; background: #0a0a0a; color: #e5e5e5;
-    font-family: system-ui, sans-serif; display: grid; place-items: center; min-height: 100vh; }
-  .card { text-align: center; }
-  .status { color: #a3a3a3; font-size: .9rem; margin-top: .5rem; }
+  html, body { margin: 0; height: 100%; background: #000; overflow: hidden; }
+  body {
+    display: flex; flex-direction: column; height: 100vh;
+    font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  /* The stage centers and letterboxes the terminal. The grid size is dictated
+     by the local terminal; the browser scales the exact same grid to fit. */
+  #stage { position: relative; flex: 1 1 auto; overflow: hidden; background: #000; }
+  #term { position: absolute; top: 0; left: 0; }
+  #bar {
+    flex: 0 0 auto; display: flex; align-items: center; gap: .75rem;
+    padding: .3rem .75rem; background: #0a0a0a; border-top: 1px solid #262626;
+    color: #a3a3a3; font-size: .78rem; font-family: system-ui, sans-serif;
+  }
+  #bar .dot { width: .55rem; height: .55rem; border-radius: 50%; background: #737373; }
+  #bar.connected .dot { background: #4ade80; }
+  #bar.down .dot { background: #f87171; }
+  #bar .grow { flex: 1 1 auto; }
+  #bar a { color: #a3a3a3; text-decoration: none; }
+  #bar a:hover { color: #e5e5e5; }
+  /* nightcrow paints its own cursor cells; hide xterm's native cursor. */
+  .xterm .xterm-cursor-layer { display: none !important; }
 </style>
 </head>
 <body>
-  <!-- Placeholder shell. The vendored xterm.js renderer and input capture are
-       added in the frontend step; this stub only confirms the WebSocket and
-       auth plumbing end to end. -->
-  <div class="card">
-    <h1>nightcrow web mirror</h1>
-    <div class="status" id="status">connecting…</div>
+  <div id="stage"><div id="term"></div></div>
+  <div id="bar">
+    <span class="dot"></span>
+    <span id="status">connecting…</span>
+    <span class="grow"></span>
+    <a href="/logout">sign out</a>
   </div>
+  <script src="/vendor/xterm.js"></script>
   <script>
-    (function () {
-      const statusEl = document.getElementById('status');
+  (function () {
+    const statusEl = document.getElementById('status');
+    const bar = document.getElementById('bar');
+    const stage = document.getElementById('stage');
+    const wrap = document.getElementById('term');
+
+    const term = new Terminal({
+      cols: 80,
+      rows: 24,
+      fontFamily: '"JetBrains Mono", ui-monospace, monospace',
+      fontSize: 14,
+      cursorBlink: false,
+      // The mirror shows exactly the current grid; there is no client-side
+      // scrollback (scrolling is routed to the pane program server-side).
+      scrollback: 0,
+      // We capture and forward input ourselves; xterm renders only.
+      disableStdin: true,
+      theme: { background: '#000000', foreground: '#e5e5e5' },
+    });
+    term.open(wrap);
+
+    let ws = null;
+    let reconnectDelay = 500;
+    let failures = 0;
+
+    function send(obj) {
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify(obj));
+      }
+    }
+
+    // Scale the (fixed-size) grid to fit the viewport, centered.
+    function fit() {
+      const screen = term.element && term.element.querySelector('.xterm-screen');
+      if (!screen) return;
+      wrap.style.transform = 'none';
+      const tw = screen.offsetWidth;
+      const th = screen.offsetHeight;
+      if (!tw || !th) return;
+      const scale = Math.min(stage.clientWidth / tw, stage.clientHeight / th);
+      wrap.style.transformOrigin = 'top left';
+      wrap.style.transform = 'scale(' + scale + ')';
+      wrap.style.left = Math.max(0, (stage.clientWidth - tw * scale) / 2) + 'px';
+      wrap.style.top = Math.max(0, (stage.clientHeight - th * scale) / 2) + 'px';
+    }
+    window.addEventListener('resize', fit);
+
+    function setStatus(text, cls) {
+      statusEl.textContent = text;
+      bar.className = cls || '';
+    }
+
+    function connect() {
       const proto = location.protocol === 'https:' ? 'wss' : 'ws';
-      const ws = new WebSocket(`${proto}://${location.host}/ws`);
+      ws = new WebSocket(proto + '://' + location.host + '/ws');
       ws.binaryType = 'arraybuffer';
-      let bytes = 0;
-      ws.onopen = () => { statusEl.textContent = 'connected'; };
-      ws.onmessage = (e) => {
-        bytes += e.data.byteLength || e.data.length || 0;
-        statusEl.textContent = `connected — ${bytes} bytes received`;
+
+      ws.onopen = () => {
+        failures = 0;
+        reconnectDelay = 500;
+        setStatus('connected', 'connected');
       };
-      ws.onclose = () => { statusEl.textContent = 'disconnected'; };
-      ws.onerror = () => { statusEl.textContent = 'connection error'; };
-    })();
+      ws.onmessage = (e) => {
+        if (typeof e.data === 'string') {
+          let msg;
+          try { msg = JSON.parse(e.data); } catch (_) { return; }
+          if (msg.t === 'resize') {
+            term.resize(msg.cols, msg.rows);
+            fit();
+          }
+          return;
+        }
+        term.write(new Uint8Array(e.data));
+      };
+      ws.onclose = () => {
+        setStatus('disconnected — reconnecting…', 'down');
+        failures += 1;
+        // After several failures the session has likely expired; reload so the
+        // server can redirect us to the login page.
+        if (failures >= 6) { location.reload(); return; }
+        setTimeout(connect, reconnectDelay);
+        reconnectDelay = Math.min(reconnectDelay * 2, 5000);
+      };
+      ws.onerror = () => { try { ws.close(); } catch (_) {} };
+    }
+
+    // --- Input capture ---------------------------------------------------
+
+    // Special/ASCII keys go out as structured events so they run through
+    // nightcrow's exact key routing (leader, focus jumps, scroll keys). During
+    // IME composition (Hangul, etc.) keydown is suppressed and the composed
+    // text is delivered on compositionend via onData below.
+    term.attachCustomKeyEventHandler((e) => {
+      if (e.type !== 'keydown') return false;
+      if (e.isComposing || e.keyCode === 229) return false;
+      send({
+        t: 'key',
+        key: e.key,
+        ctrl: e.ctrlKey,
+        alt: e.altKey,
+        shift: e.shiftKey,
+        meta: e.metaKey,
+      });
+      e.preventDefault();
+      return false; // xterm must not also process the key
+    });
+
+    // With keys suppressed above, onData only carries IME-composed text.
+    term.onData((data) => {
+      if (data) send({ t: 'paste', data });
+    });
+
+    function mouseButton(button) {
+      return button === 2 ? 'right' : button === 1 ? 'middle' : 'left';
+    }
+    function cellAt(e) {
+      const screen = term.element.querySelector('.xterm-screen');
+      const rect = screen.getBoundingClientRect();
+      const cw = rect.width / term.cols;
+      const ch = rect.height / term.rows;
+      const col = Math.max(0, Math.min(term.cols - 1, Math.floor((e.clientX - rect.left) / cw)));
+      const row = Math.max(0, Math.min(term.rows - 1, Math.floor((e.clientY - rect.top) / ch)));
+      return { col, row };
+    }
+
+    wrap.addEventListener('mousedown', (e) => {
+      const { col, row } = cellAt(e);
+      send({ t: 'mouse', kind: 'down', button: mouseButton(e.button), col, row,
+             ctrl: e.ctrlKey, alt: e.altKey, shift: e.shiftKey });
+    });
+    wrap.addEventListener('mouseup', (e) => {
+      const { col, row } = cellAt(e);
+      send({ t: 'mouse', kind: 'up', button: mouseButton(e.button), col, row });
+    });
+    wrap.addEventListener('wheel', (e) => {
+      const { col, row } = cellAt(e);
+      send({ t: 'mouse', kind: 'wheel', dir: e.deltaY < 0 ? 'up' : 'down', col, row });
+      e.preventDefault();
+    }, { passive: false });
+    // Suppress the browser context menu so right-click can reach the pane.
+    wrap.addEventListener('contextmenu', (e) => e.preventDefault());
+
+    connect();
+  })();
   </script>
 </body>
 </html>

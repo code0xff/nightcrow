@@ -38,6 +38,9 @@ pub fn encode_full_frame(current: &Buffer) -> Vec<u8> {
     let blank = Buffer::empty(*current.area());
     let updates = blank.diff(current);
     let mut out = Vec::new();
+    // Hide the terminal cursor: nightcrow renders its own cursor cells into the
+    // grid, so the browser terminal's native cursor must not also show.
+    out.extend_from_slice(b"\x1b[?25l");
     {
         let mut backend = CrosstermBackend::new(&mut out);
         // `clear` + `draw` both write ANSI into the Vec; flush on a Vec is a

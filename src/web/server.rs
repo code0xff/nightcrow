@@ -44,12 +44,21 @@ struct Shared {
     next_id: AtomicU64,
 }
 
+/// A message queued for one client's handler thread to write to its socket.
+enum ClientMsg {
+    /// Grid dimensions changed (or first frame): tell the browser to resize its
+    /// terminal to match before the repaint. Sent as a JSON text frame.
+    Resize { cols: u16, rows: u16 },
+    /// Encoded ANSI screen bytes. Sent as a binary frame.
+    Frame(Vec<u8>),
+}
+
 /// A connected browser, as seen by the main loop's broadcast.
 struct ClientHandle {
     id: u64,
-    /// Encoded ANSI frames are pushed here; the client's handler thread writes
-    /// them to the socket.
-    tx: Sender<Vec<u8>>,
+    /// Screen updates are pushed here; the client's handler thread writes them
+    /// to the socket.
+    tx: Sender<ClientMsg>,
     /// Set when the client must receive a full repaint on the next frame
     /// (fresh connection or a grid resize).
     needs_full: bool,
@@ -168,15 +177,23 @@ impl WebServer {
         };
         let mut full_bytes: Option<Vec<u8>> = None;
 
+        let area = current.area();
+        let (cols, rows) = (area.width, area.height);
         let mut dead = Vec::new();
         for client in clients.iter_mut() {
             let needs_full = client.needs_full || area_changed;
             let result = if needs_full {
                 let bytes = full_bytes.get_or_insert_with(|| protocol::encode_full_frame(current));
                 client.needs_full = false;
-                client.tx.send(bytes.clone())
+                // The browser must resize its terminal to the grid before the
+                // repaint lands, so the frame's absolute cursor moves address
+                // the right cells.
+                client
+                    .tx
+                    .send(ClientMsg::Resize { cols, rows })
+                    .and_then(|()| client.tx.send(ClientMsg::Frame(bytes.clone())))
             } else if let Some(bytes) = update_bytes.as_ref().filter(|b| !b.is_empty()) {
-                client.tx.send(bytes.clone())
+                client.tx.send(ClientMsg::Frame(bytes.clone()))
             } else {
                 Ok(())
             };
@@ -290,6 +307,19 @@ fn route_http(head: &RequestHead, body: &str, shared: &Shared) -> Vec<u8> {
             let clear = format!("{SESSION_COOKIE}=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0");
             http::redirect("/", &[("Set-Cookie", &clear)])
         }
+        // Public vendored renderer assets (MIT xterm.js); no secrets.
+        ("GET", "/vendor/xterm.js") => http::response(
+            "200 OK",
+            "application/javascript; charset=utf-8",
+            &[],
+            frontend::XTERM_JS.as_bytes(),
+        ),
+        ("GET", "/vendor/xterm.css") => http::response(
+            "200 OK",
+            "text/css; charset=utf-8",
+            &[],
+            frontend::XTERM_CSS.as_bytes(),
+        ),
         _ => http::html("404 Not Found", "<h1>404 Not Found</h1>"),
     }
 }
@@ -360,7 +390,7 @@ fn serve_websocket(mut stream: TcpStream, head: &RequestHead, shared: Arc<Shared
 }
 
 fn run_client(mut ws: WebSocket<TcpStream>, shared: Arc<Shared>) {
-    let (tx, rx) = mpsc::channel::<Vec<u8>>();
+    let (tx, rx) = mpsc::channel::<ClientMsg>();
     let id = shared.next_id.fetch_add(1, Ordering::Relaxed);
     if let Ok(mut clients) = shared.clients.lock() {
         clients.push(ClientHandle {
@@ -387,11 +417,17 @@ fn run_client(mut ws: WebSocket<TcpStream>, shared: Arc<Shared>) {
     }
 }
 
-/// Drain and send any queued output frames. Returns false on a write error
+/// Drain and send any queued output messages. Returns false on a write error
 /// (client gone).
-fn pump_writes(ws: &mut WebSocket<TcpStream>, rx: &Receiver<Vec<u8>>) -> bool {
-    while let Ok(bytes) = rx.try_recv() {
-        if ws.write(Message::binary(bytes)).is_err() {
+fn pump_writes(ws: &mut WebSocket<TcpStream>, rx: &Receiver<ClientMsg>) -> bool {
+    while let Ok(msg) = rx.try_recv() {
+        let written = match msg {
+            ClientMsg::Resize { cols, rows } => {
+                ws.write(Message::text(format!(r#"{{"t":"resize","cols":{cols},"rows":{rows}}}"#)))
+            }
+            ClientMsg::Frame(bytes) => ws.write(Message::binary(bytes)),
+        };
+        if written.is_err() {
             return false;
         }
     }
@@ -516,7 +552,10 @@ mod tests {
             "GET / HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n",
         );
         assert!(anon.contains("Sign in"), "login page expected");
-        assert!(!anon.contains("web mirror"), "app must be gated behind auth");
+        assert!(
+            !anon.contains("/vendor/xterm.js"),
+            "the terminal app must be gated behind auth"
+        );
 
         // Wrong password is rejected.
         let bad = http_request(addr, &form_post("password=nope"));
@@ -534,7 +573,22 @@ mod tests {
                 "GET / HTTP/1.1\r\nHost: x\r\nCookie: {SESSION_COOKIE}={token}\r\nConnection: close\r\n\r\n"
             ),
         );
-        assert!(app.contains("web mirror"), "authenticated GET / serves the app");
+        assert!(
+            app.contains("/vendor/xterm.js"),
+            "authenticated GET / serves the terminal app"
+        );
+    }
+
+    #[test]
+    fn serves_vendored_renderer_assets() {
+        let server = WebServer::start_from_config(&test_config("pw")).unwrap();
+        let addr = server.addr();
+        let js = http_request(
+            addr,
+            "GET /vendor/xterm.js HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n",
+        );
+        assert!(js.starts_with("HTTP/1.1 200"));
+        assert!(js.contains("application/javascript"));
     }
 
     #[test]
@@ -571,13 +625,26 @@ mod tests {
             .set_read_timeout(Some(Duration::from_millis(200)))
             .unwrap();
 
-        // Broadcast a frame; retry to absorb the connect-vs-register race.
+        // Broadcast a frame; retry to absorb the connect-vs-register race. A new
+        // client receives a resize control message (text) then the full frame
+        // (binary).
         let mut buffer = Buffer::empty(Rect::new(0, 0, 8, 1));
         buffer.set_string(0, 0, "hello", Style::default());
+        let mut resize_seen = false;
         let mut frame = None;
         for _ in 0..100 {
             server.broadcast(&buffer);
             match ws.read() {
+                Ok(msg) if msg.is_text() => {
+                    let text = msg.into_text().unwrap();
+                    assert!(
+                        text.contains("\"t\":\"resize\"")
+                            && text.contains("\"cols\":8")
+                            && text.contains("\"rows\":1"),
+                        "resize control message must carry the grid size, got: {text}"
+                    );
+                    resize_seen = true;
+                }
                 Ok(msg) if msg.is_binary() => {
                     frame = Some(msg.into_data());
                     break;
@@ -592,6 +659,7 @@ mod tests {
             }
             thread::sleep(Duration::from_millis(20));
         }
+        assert!(resize_seen, "a new client must receive a resize message first");
         let frame = frame.expect("a broadcast frame within the retry budget");
         assert!(
             frame.windows(5).any(|w| w == b"hello"),
