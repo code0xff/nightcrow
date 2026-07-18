@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>nightcrow</title>
+<style>
+  :root { color-scheme: dark; }
+  body { margin: 0; background: #0a0a0a; color: #e5e5e5;
+    font-family: system-ui, sans-serif; display: grid; place-items: center; min-height: 100vh; }
+  .card { text-align: center; }
+  .status { color: #a3a3a3; font-size: .9rem; margin-top: .5rem; }
+</style>
+</head>
+<body>
+  <!-- Placeholder shell. The vendored xterm.js renderer and input capture are
+       added in the frontend step; this stub only confirms the WebSocket and
+       auth plumbing end to end. -->
+  <div class="card">
+    <h1>nightcrow web mirror</h1>
+    <div class="status" id="status">connecting…</div>
+  </div>
+  <script>
+    (function () {
+      const statusEl = document.getElementById('status');
+      const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+      const ws = new WebSocket(`${proto}://${location.host}/ws`);
+      ws.binaryType = 'arraybuffer';
+      let bytes = 0;
+      ws.onopen = () => { statusEl.textContent = 'connected'; };
+      ws.onmessage = (e) => {
+        bytes += e.data.byteLength || e.data.length || 0;
+        statusEl.textContent = `connected — ${bytes} bytes received`;
+      };
+      ws.onclose = () => { statusEl.textContent = 'disconnected'; };
+      ws.onerror = () => { statusEl.textContent = 'connection error'; };
+    })();
+  </script>
+</body>
+</html>

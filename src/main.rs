@@ -10,6 +10,7 @@ mod session;
 mod test_util;
 mod ui;
 mod util;
+mod web;
 
 use anyhow::{Context, Result};
 use app::{App, DiffPaneView, Focus, ViewMode};
@@ -74,20 +75,10 @@ fn main() -> Result<()> {
     }
 
     let mut cfg = config::load_config()?;
-    // Bootstrap the web login credential before the alternate screen so a
-    // freshly generated password prints as plain, copyable stderr text rather
-    // than flashing behind the TUI. A no-op when the server is disabled or a
-    // password is already configured.
-    if cfg.web.enabled {
-        let path = config::config_file_path()?;
-        if let Some(password) = config::ensure_web_password(&mut cfg, &path)? {
-            eprintln!(
-                "nightcrow web: generated a login password and saved it to {}:",
-                path.display()
-            );
-            eprintln!("  {password}");
-        }
-    }
+    // Bootstrap the web login credential and start the server before the
+    // alternate screen, so a freshly generated password and any bind error
+    // print as plain, copyable stderr text rather than flashing behind the TUI.
+    let web_server = start_web_if_enabled(&mut cfg)?;
     // Resolve before entering the alternate screen so a too-many-panes error
     // surfaces as plain stderr text rather than a flash behind the TUI.
     let startup_commands = config::resolve_startup_commands(&cfg, &cli.exec)?;
@@ -125,7 +116,36 @@ fn main() -> Result<()> {
     let backend = CrosstermBackend::new(io::stdout());
     let mut terminal = Terminal::new(backend)?;
 
-    run(&mut terminal, repo_path, cfg, startup_commands, leader)
+    run(&mut terminal, repo_path, cfg, startup_commands, leader, web_server)
+}
+
+/// Bootstrap the web login credential and start the mirror server when enabled.
+///
+/// Runs before the alternate screen so a generated password and any bind error
+/// surface as plain stderr. A bind failure disables the web mirror with a
+/// warning rather than aborting the whole app — the local TUI still runs.
+fn start_web_if_enabled(cfg: &mut config::Config) -> Result<Option<web::WebServer>> {
+    if !cfg.web.enabled {
+        return Ok(None);
+    }
+    let path = config::config_file_path()?;
+    if let Some(password) = config::ensure_web_password(cfg, &path)? {
+        eprintln!(
+            "nightcrow web: generated a login password and saved it to {}:",
+            path.display()
+        );
+        eprintln!("  {password}");
+    }
+    match web::WebServer::start_from_config(&cfg.web) {
+        Ok(server) => {
+            eprintln!("nightcrow web: mirror serving at http://{}/", server.addr());
+            Ok(Some(server))
+        }
+        Err(err) => {
+            eprintln!("nightcrow web: mirror disabled — {err:#}");
+            Ok(None)
+        }
+    }
 }
 
 fn run_init(force: bool) -> Result<()> {
@@ -209,6 +229,7 @@ fn run(
     cfg: config::Config,
     startup_commands: Vec<config::StartupCommand>,
     leader: KeyEvent,
+    web_server: Option<web::WebServer>,
 ) -> Result<()> {
     // syntect's bundled defaults omit TypeScript/TSX/TOML/YAML; two-face
     // supplies bat's expanded syntax set (newline variant matches the diff /
@@ -221,7 +242,7 @@ fn run(
         tracing::info!(repo = %app.repo_path, "nightcrow stopped during splash");
         return Ok(());
     }
-    main_loop(terminal, &mut app, &ss, &ts, &cfg)?;
+    main_loop(terminal, &mut app, &ss, &ts, &cfg, web_server)?;
 
     session::save_session(&app.repo_path, &app.save_session());
     tracing::info!(repo = %app.repo_path, "nightcrow stopped");
@@ -308,6 +329,7 @@ fn main_loop(
     ss: &SyntaxSet,
     ts: &ThemeSet,
     cfg: &config::Config,
+    mut web_server: Option<web::WebServer>,
 ) -> Result<()> {
     loop {
         app.poll_snapshot();
@@ -328,6 +350,13 @@ fn main_loop(
         terminal.draw(|frame| {
             ui::draw(frame, app, ss, ts, &cfg.layout, accent);
         })?;
+
+        // Mirror the freshly composited frame to any connected browsers. The
+        // local terminal stays the authority for the grid size; the web view
+        // renders the exact same cells.
+        if let Some(server) = web_server.as_mut() {
+            server.broadcast(terminal.current_buffer_mut());
+        }
 
         // 16 ms ≈ 60 fps. The previous 50 ms tick noticeably lagged PTY echo
         // on every keystroke (typing felt sticky). `event::poll` performs an
@@ -355,6 +384,38 @@ fn main_loop(
                 }
                 _ => {}
             }
+        }
+
+        // Browser input runs through the exact same handlers as local input, so
+        // a web action can never diverge from the equivalent local keypress.
+        if let Some(server) = web_server.as_ref() {
+            let screen = Rect::new(0, 0, size.width, size.height);
+            for event in server.drain_input() {
+                match dispatch_web_event(app, event, screen, &cfg.layout) {
+                    KeyOutcome::Quit => return Ok(()),
+                    KeyOutcome::Redraw => terminal.clear()?,
+                    KeyOutcome::Continue => {}
+                }
+            }
+        }
+    }
+}
+
+/// Route a decoded browser input event through the same handlers as local
+/// input. Keeps web and terminal control behaviourally identical.
+fn dispatch_web_event(
+    app: &mut App,
+    event: web::protocol::WebInputEvent,
+    screen: Rect,
+    layout: &config::LayoutConfig,
+) -> KeyOutcome {
+    use web::protocol::WebInputEvent;
+    match event {
+        WebInputEvent::Key(key) => handle_key(app, key),
+        WebInputEvent::Mouse(mouse) => handle_mouse(app, mouse, screen, layout),
+        WebInputEvent::Paste(text) => {
+            handle_paste(app, &text);
+            KeyOutcome::Continue
         }
     }
 }
