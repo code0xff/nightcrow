@@ -91,11 +91,13 @@ impl App {
     pub fn start_repo_input(&mut self) {
         self.repo_input.buf = self.repo_path.clone();
         self.repo_input.active = true;
+        self.repo_input.error = None;
     }
 
     pub fn cancel_repo_input(&mut self) {
         self.repo_input.active = false;
         self.repo_input.buf.clear();
+        self.repo_input.error = None;
     }
 
     pub fn confirm_repo_input(&mut self) {
@@ -104,12 +106,18 @@ impl App {
         // and consume the buffer once we're committed to switching repos.
         let trimmed = self.repo_input.buf.trim();
         if trimmed.is_empty() {
-            self.status = Some("repo path cannot be empty".to_string());
+            self.repo_input.error = Some("path cannot be empty".to_string());
             return;
         }
         let p = std::path::Path::new(trimmed);
         if !p.is_dir() {
-            self.status = Some(format!("not a directory: {trimmed}"));
+            // The rejected path is already on screen in the input itself, so
+            // the message names the problem only.
+            self.repo_input.error = Some(if p.exists() {
+                "not a directory".to_string()
+            } else {
+                "no such directory".to_string()
+            });
             return;
         }
         let resolved = crate::git::resolve_repo_path(p)
@@ -117,6 +125,7 @@ impl App {
             .to_string();
         self.repo_input.active = false;
         self.repo_input.buf.clear();
+        self.repo_input.error = None;
         self.change_repo(resolved);
     }
 
@@ -124,10 +133,13 @@ impl App {
         if self.repo_input.buf.len() + ch.len_utf8() > REPO_INPUT_MAX_BYTES {
             return;
         }
+        // Any edit invalidates the verdict on the old text.
+        self.repo_input.error = None;
         self.repo_input.buf.push(ch);
     }
 
     pub fn repo_input_pop(&mut self) {
+        self.repo_input.error = None;
         self.repo_input.buf.pop();
     }
 }

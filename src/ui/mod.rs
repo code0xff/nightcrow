@@ -439,11 +439,20 @@ fn hint_spans(text: &str, leader: &str, mark_clickable: bool) -> Vec<Span<'stati
 
 fn render_hint_bar(app: &App, accent: Color) -> Paragraph<'_> {
     if app.repo_input.active {
-        return Paragraph::new(Line::from(vec![
+        // This row replaces the status row entirely, so a rejected confirm has
+        // to report itself here or it is never seen at all.
+        let mut spans = vec![
             Span::styled("repo: ", Style::default().fg(accent)),
             Span::raw(app.repo_input.buf.as_str()),
             Span::styled("█", Style::default().fg(accent)),
-        ]));
+        ];
+        if let Some(ref err) = app.repo_input.error {
+            spans.push(Span::styled(
+                format!("  {err} — edit and press enter, or esc to cancel"),
+                Style::default().fg(Color::Red),
+            ));
+        }
+        return Paragraph::new(Line::from(spans));
     }
     if app.prefix_armed() {
         let mut spans = vec![Span::styled(
@@ -805,6 +814,47 @@ mod tests {
         assert!(
             inverted > 0,
             "at least one clickable key label must render inverted"
+        );
+    }
+
+    /// The repo-input row replaces the status row rather than sharing it, so a
+    /// rejected path must report itself inside this row. Writing the message to
+    /// `App::status` instead left it unrendered for as long as the dialog was
+    /// open — the confirm looked like it did nothing at all.
+    #[test]
+    fn repo_input_hint_bar_shows_why_a_confirm_was_rejected() {
+        let mut app = app_with_files(vec![]);
+        app.start_repo_input();
+        app.repo_input.buf = "/definitely/not/here".to_string();
+        app.confirm_repo_input();
+
+        assert!(
+            app.repo_input.active,
+            "a rejected path must leave the dialog open for correction"
+        );
+        let text = hint_text(&app);
+        assert!(
+            text.contains("/definitely/not/here"),
+            "the rejected text must stay in the input, got: {text}"
+        );
+        assert!(
+            text.contains("no such directory"),
+            "the hint bar must say why the confirm was rejected, got: {text}"
+        );
+    }
+
+    #[test]
+    fn repo_input_hint_bar_drops_the_error_once_the_path_is_edited() {
+        let mut app = app_with_files(vec![]);
+        app.start_repo_input();
+        app.repo_input.buf = "/definitely/not/here".to_string();
+        app.confirm_repo_input();
+        app.repo_input_pop();
+
+        let text = hint_text(&app);
+        assert!(
+            !text.contains("no such directory"),
+            "editing the path must clear the stale verdict, got: {text}"
         );
     }
 
