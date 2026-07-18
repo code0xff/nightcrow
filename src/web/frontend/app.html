@@ -32,9 +32,17 @@
   /* xterm anchors its IME preview to its own cursor (buffer.x/y), which is
      meaningless here: the server streams cell writes, so xterm's cursor ends up
      wherever the last diff stopped. The unstyled, background-less overlay then
-     lands on arbitrary mirrored text. Hide it and show the composition in the
-     status bar (#ime) instead. */
-  .xterm .composition-view { display: none !important; }
+     lands on arbitrary mirrored text, so hide it and show the composition in
+     the status bar (#ime) instead.
+
+     It must stay laid out: `updateCompositionElements` measures this element
+     with getBoundingClientRect and sizes the IME textarea from the result, so
+     `display: none` collapses that textarea to 1x1 and breaks composition
+     outright. Drop the paint, keep the box. */
+  .xterm .composition-view {
+    opacity: 0 !important;
+    pointer-events: none !important;
+  }
   #bar #ime:empty { display: none; }
   #bar #ime {
     padding: .05rem .4rem; border-radius: 3px;

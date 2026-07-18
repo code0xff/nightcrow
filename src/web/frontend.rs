@@ -45,4 +45,25 @@ mod tests {
             "app.html must keep the onData handler that forwards composed text and pastes"
         );
     }
+
+    #[test]
+    fn hiding_the_composition_view_keeps_it_laid_out_so_the_ime_textarea_has_size() {
+        // xterm's `updateCompositionElements` measures `.composition-view` with
+        // getBoundingClientRect and sizes the IME textarea from the result. Taking
+        // the element out of layout zeroes that box, collapsing the textarea to
+        // 1x1 and stopping composition entirely — measured against stock xterm,
+        // which sizes it 12.12x16 for the same input.
+        let start = APP_HTML
+            .find(".composition-view")
+            .expect("app.html must style .composition-view to keep it off the grid");
+        let rest = &APP_HTML[start..];
+        let end = rest.find('}').expect(".composition-view rule must be closed");
+        let rule = &rest[..end];
+        assert!(
+            !rule.contains("display:"),
+            "the .composition-view rule must not touch `display`; removing it from layout \
+             collapses the IME textarea and breaks composition. Suppress the paint instead \
+             (opacity). Rule was: {rule}"
+        );
+    }
 }
