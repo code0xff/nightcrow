@@ -945,6 +945,9 @@ fn handle_repo_input_key(app: &mut App, key: KeyEvent) {
                 app.repo_input_pop();
             }
         }
+        // The caret is always at the end of the buffer, so these can't move
+        // it; they mean "keep this path and let me extend it".
+        KeyCode::Right | KeyCode::End => app.repo_input_accept_prefill(),
         _ => {
             if let Some(c) = text_input_char(key) {
                 app.repo_input_push(c);

@@ -92,12 +92,14 @@ impl App {
     pub fn start_repo_input(&mut self) {
         self.repo_input.buf = self.repo_path.clone();
         self.repo_input.active = true;
+        self.repo_input.prefilled = true;
         self.clear_notice(NoticeKind::RepoInput);
     }
 
     pub fn cancel_repo_input(&mut self) {
         self.repo_input.active = false;
         self.repo_input.buf.clear();
+        self.repo_input.prefilled = false;
         self.clear_notice(NoticeKind::RepoInput);
     }
 
@@ -129,11 +131,20 @@ impl App {
             .to_string();
         self.repo_input.active = false;
         self.repo_input.buf.clear();
+        self.repo_input.prefilled = false;
         self.clear_notice(NoticeKind::RepoInput);
         self.change_repo(resolved);
     }
 
     pub fn repo_input_push(&mut self, ch: char) {
+        // Typing over an untouched prefill replaces it: the dialog opens on the
+        // current repo path, and a user heading somewhere unrelated would
+        // otherwise have to backspace all of it first. A paste lands here one
+        // char at a time, so only its first char clears.
+        if self.repo_input.prefilled {
+            self.repo_input.buf.clear();
+            self.repo_input.prefilled = false;
+        }
         if self.repo_input.buf.len() + ch.len_utf8() > REPO_INPUT_MAX_BYTES {
             return;
         }
@@ -142,7 +153,18 @@ impl App {
         self.repo_input.buf.push(ch);
     }
 
+    /// Leave prefill mode without changing the text, so the next keystroke
+    /// appends. Bound to →/End: the sub-directory case (`<prefix> o`, then
+    /// type `src` onto the trailing slash) needs a gesture that says "edit
+    /// this" without Backspace eating the separator first.
+    pub fn repo_input_accept_prefill(&mut self) {
+        self.repo_input.prefilled = false;
+    }
+
     pub fn repo_input_pop(&mut self) {
+        // Backspace means "edit this path", not "replace it" — keep the text
+        // and just leave prefill mode.
+        self.repo_input.prefilled = false;
         self.clear_notice(NoticeKind::RepoInput);
         self.repo_input.buf.pop();
     }

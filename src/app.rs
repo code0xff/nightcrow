@@ -2425,6 +2425,69 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn first_typed_char_replaces_the_prefilled_repo_path() {
+        let mut app = app_with_files(vec![]);
+        app.repo_path = "/repos/current".to_string();
+        app.start_repo_input();
+        assert_eq!(app.repo_input.buf, "/repos/current");
+
+        for c in "/tmp".chars() {
+            app.repo_input_push(c);
+        }
+
+        assert_eq!(
+            app.repo_input.buf, "/tmp",
+            "typing over an untouched prefill must replace it, not append"
+        );
+    }
+
+    /// Backspace is the "edit this path" gesture — the sub-directory case
+    /// depends on the prefill surviving it.
+    #[test]
+    fn backspace_leaves_prefill_mode_without_dropping_the_path() {
+        let mut app = app_with_files(vec![]);
+        app.repo_path = "/repos/current".to_string();
+        app.start_repo_input();
+
+        app.repo_input_pop();
+        assert_eq!(app.repo_input.buf, "/repos/curren");
+        app.repo_input_push('t');
+        assert_eq!(
+            app.repo_input.buf, "/repos/current",
+            "after Backspace, typing must append to the surviving text"
+        );
+    }
+
+    /// →/End keeps the prefill and appends, which is what the sub-directory
+    /// case needs: Backspace would eat the trailing separator first.
+    #[test]
+    fn accepting_the_prefill_appends_instead_of_replacing() {
+        let mut app = app_with_files(vec![]);
+        app.repo_path = "/repos/current/".to_string();
+        app.start_repo_input();
+
+        app.repo_input_accept_prefill();
+        for c in "src".chars() {
+            app.repo_input_push(c);
+        }
+
+        assert_eq!(app.repo_input.buf, "/repos/current/src");
+    }
+
+    #[test]
+    fn reopening_the_dialog_re_arms_the_prefill() {
+        let mut app = app_with_files(vec![]);
+        app.repo_path = "/repos/current".to_string();
+        app.start_repo_input();
+        app.repo_input_push('x');
+        app.cancel_repo_input();
+
+        app.start_repo_input();
+        app.repo_input_push('y');
+        assert_eq!(app.repo_input.buf, "y");
+    }
+
+    #[test]
     fn successful_snapshot_preserves_terminal_status() {
         let (snapshot, tx) = dummy_snapshot_channel();
         let mut app = App {

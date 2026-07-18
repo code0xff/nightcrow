@@ -102,4 +102,10 @@ impl StatusView {
 pub struct RepoInput {
     pub active: bool,
     pub buf: String,
+    /// Whether `buf` is still the untouched current-repo path the dialog
+    /// opened with. The first typed character replaces it rather than
+    /// appending, so switching to an unrelated path doesn't start with
+    /// backspacing the whole prefill; Backspace clears the flag instead, which
+    /// keeps the text and enters ordinary editing (the sub-directory case).
+    pub prefilled: bool,
 }
