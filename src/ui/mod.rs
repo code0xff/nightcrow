@@ -134,6 +134,10 @@ pub(crate) fn char_offset(s: &str, scroll_x: usize) -> &str {
     &s[byte_off..]
 }
 
+/// Render one frame, returning the screen cell the terminal cursor was placed
+/// on (`None` when no cursor is shown). Ratatui applies the cursor to the local
+/// terminal itself, but the web mirror streams only the cell buffer, so the
+/// position has to be handed back for `web::WebServer::broadcast` to replay.
 pub fn draw(
     frame: &mut Frame,
     app: &mut App,
@@ -141,7 +145,7 @@ pub fn draw(
     ts: &ThemeSet,
     layout: &LayoutConfig,
     accent: Color,
-) {
+) -> Option<Position> {
     // Reserve 1 row at the top for the repo/branch header and 1 row at the
     // bottom for the hint/status bar. The header is rendered in every layout
     // branch (fullscreen included) so the repo identity is always visible.
@@ -160,15 +164,15 @@ pub fn draw(
     frame.render_widget(render_repo_header(app, accent), header_area);
 
     if app.terminal.fullscreen.fills_body() {
-        terminal_tab::render(frame, app, body_area, accent);
+        let cursor = terminal_tab::render(frame, app, body_area, accent);
         frame.render_widget(render_hint_bar(app, accent), hint_area);
-        return;
+        return cursor;
     }
 
     if app.diff.fullscreen {
         diff_viewer::render(frame, app, body_area, ss, ts, accent);
         frame.render_widget(render_hint_bar(app, accent), hint_area);
-        return;
+        return None;
     }
 
     if app.list_fullscreen {
@@ -178,7 +182,7 @@ pub fn draw(
             ViewMode::Tree => tree_list::render(frame, app, body_area, accent),
         }
         frame.render_widget(render_hint_bar(app, accent), hint_area);
-        return;
+        return None;
     }
 
     let main = Layout::default()
@@ -202,8 +206,9 @@ pub fn draw(
         ViewMode::Tree => tree_list::render(frame, app, upper[0], accent),
     }
     diff_viewer::render(frame, app, upper[1], ss, ts, accent);
-    terminal_tab::render(frame, app, main[1], accent);
+    let cursor = terminal_tab::render(frame, app, main[1], accent);
     frame.render_widget(render_hint_bar(app, accent), hint_area);
+    cursor
 }
 
 /// Content Rect (post border) for every currently visible terminal pane,

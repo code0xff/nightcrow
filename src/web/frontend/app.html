@@ -27,13 +27,10 @@
   #bar .grow { flex: 1 1 auto; }
   #bar a { color: #a3a3a3; text-decoration: none; }
   #bar a:hover { color: #e5e5e5; }
-  /* nightcrow paints its own cursor cells; hide xterm's native cursor. */
-  .xterm .xterm-cursor-layer { display: none !important; }
-  /* xterm anchors its IME preview to its own cursor (buffer.x/y), which is
-     meaningless here: the server streams cell writes, so xterm's cursor ends up
-     wherever the last diff stopped. The unstyled, background-less overlay then
-     lands on arbitrary mirrored text, so hide it and show the composition in
-     the status bar (#ime) instead.
+  /* xterm's IME preview is an unstyled, background-less overlay: it paints the
+     in-progress syllable straight over the mirrored cells underneath it, which
+     is unreadable on a dense TUI grid. Hide it and show the composition in the
+     status bar (#ime) instead.
 
      It must stay laid out: `updateCompositionElements` measures this element
      with getBoundingClientRect and sizes the IME textarea from the result, so
@@ -73,7 +70,10 @@
       rows: 24,
       fontFamily: '"JetBrains Mono", ui-monospace, monospace',
       fontSize: 14,
-      cursorBlink: false,
+      // The server parks the cursor at the end of every frame chunk and hides it
+      // (DECTCEM) when the mirrored frame has none, so xterm's native cursor is
+      // the mirror's cursor.
+      cursorBlink: true,
       // The mirror shows exactly the current grid; there is no client-side
       // scrollback (scrolling is routed to the pane program server-side).
       scrollback: 0,

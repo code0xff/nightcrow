@@ -12,6 +12,7 @@ use crate::web::http::{self, RequestHead};
 use crate::web::protocol::{self, WebInputEvent};
 use anyhow::{Context, Result};
 use ratatui::buffer::Buffer;
+use ratatui::layout::Position;
 use std::io::{Read, Write};
 use std::net::{IpAddr, SocketAddr, TcpListener, TcpStream};
 use std::sync::Arc;
@@ -73,6 +74,10 @@ pub struct WebServer {
     /// Private baseline of the last broadcast buffer, diffed against each frame.
     /// Main-thread only, so it needs no lock.
     baseline: Option<Buffer>,
+    /// Cursor sent with the last broadcast. Tracked separately from `baseline`
+    /// because the cursor can move on a frame whose cells are all unchanged
+    /// (arrow keys in a shell), which would otherwise send nothing.
+    baseline_cursor: Option<Position>,
     addr: SocketAddr,
 }
 
@@ -124,6 +129,7 @@ impl WebServer {
             shared,
             input_rx,
             baseline: None,
+            baseline_cursor: None,
             addr,
         })
     }
@@ -148,7 +154,10 @@ impl WebServer {
     /// the rest get the incremental cell diff against the last broadcast. A
     /// no-op when no clients are connected — the baseline is dropped so the
     /// next client to connect receives a full frame.
-    pub fn broadcast(&mut self, current: &Buffer) {
+    ///
+    /// `cursor` is the cell `ui::draw` placed the terminal cursor on, which is
+    /// not part of `current` and must be replayed explicitly.
+    pub fn broadcast(&mut self, current: &Buffer, cursor: Option<Position>) {
         // Lock first and bail on no clients so a disconnected session never
         // pays for frame encoding. The baseline is dropped so the next client
         // to connect is treated as needing a full repaint.
@@ -159,6 +168,7 @@ impl WebServer {
         if clients.is_empty() {
             drop(clients);
             self.baseline = None;
+            self.baseline_cursor = None;
             return;
         }
 
@@ -166,14 +176,22 @@ impl WebServer {
             .baseline
             .as_ref()
             .is_some_and(|prev| prev.area() != current.area());
+        let cursor_bytes = protocol::encode_cursor(cursor);
+        let cursor_moved = cursor != self.baseline_cursor;
         // Incremental diff against our own baseline (a different field from the
-        // locked `clients`, so the borrows are disjoint).
+        // locked `clients`, so the borrows are disjoint). A frame with no cell
+        // changes still ships when the cursor alone moved.
         let update_bytes = if area_changed {
             None
         } else {
             self.baseline
                 .as_ref()
                 .map(|prev| protocol::encode_update(prev, current))
+                .filter(|cells| !cells.is_empty() || cursor_moved)
+                .map(|mut bytes| {
+                    bytes.extend_from_slice(&cursor_bytes);
+                    bytes
+                })
         };
         let mut full_bytes: Option<Vec<u8>> = None;
 
@@ -183,7 +201,11 @@ impl WebServer {
         for client in clients.iter_mut() {
             let needs_full = client.needs_full || area_changed;
             let result = if needs_full {
-                let bytes = full_bytes.get_or_insert_with(|| protocol::encode_full_frame(current));
+                let bytes = full_bytes.get_or_insert_with(|| {
+                    let mut bytes = protocol::encode_full_frame(current);
+                    bytes.extend_from_slice(&cursor_bytes);
+                    bytes
+                });
                 client.needs_full = false;
                 // The browser must resize its terminal to the grid before the
                 // repaint lands, so the frame's absolute cursor moves address
@@ -192,7 +214,7 @@ impl WebServer {
                     .tx
                     .send(ClientMsg::Resize { cols, rows })
                     .and_then(|()| client.tx.send(ClientMsg::Frame(bytes.clone())))
-            } else if let Some(bytes) = update_bytes.as_ref().filter(|b| !b.is_empty()) {
+            } else if let Some(bytes) = update_bytes.as_ref() {
                 client.tx.send(ClientMsg::Frame(bytes.clone()))
             } else {
                 Ok(())
@@ -206,6 +228,7 @@ impl WebServer {
         }
         drop(clients);
         self.baseline = Some(current.clone());
+        self.baseline_cursor = cursor;
     }
 }
 
@@ -685,7 +708,7 @@ mod tests {
         let mut resize_seen = false;
         let mut frame = None;
         for _ in 0..100 {
-            server.broadcast(&buffer);
+            server.broadcast(&buffer, Some(Position::new(2, 0)));
             match ws.read() {
                 Ok(msg) if msg.is_text() => {
                     let text = msg.into_text().unwrap();
@@ -716,6 +739,11 @@ mod tests {
         assert!(
             frame.windows(5).any(|w| w == b"hello"),
             "the mirrored frame must carry the painted text"
+        );
+        let cursor_tail = protocol::encode_cursor(Some(Position::new(2, 0)));
+        assert!(
+            frame.ends_with(&cursor_tail),
+            "the frame must end by parking the cursor where the draw left it"
         );
 
         // Input sent from the browser reaches the main loop's drain.

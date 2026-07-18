@@ -18,6 +18,7 @@ use crossterm::event::{
 };
 use ratatui::backend::{Backend, CrosstermBackend};
 use ratatui::buffer::Buffer;
+use ratatui::layout::Position;
 use serde::Deserialize;
 
 /// A decoded browser input event, already lowered to the crossterm types the
@@ -38,8 +39,8 @@ pub fn encode_full_frame(current: &Buffer) -> Vec<u8> {
     let blank = Buffer::empty(*current.area());
     let updates = blank.diff(current);
     let mut out = Vec::new();
-    // Hide the terminal cursor: nightcrow renders its own cursor cells into the
-    // grid, so the browser terminal's native cursor must not also show.
+    // Hide the cursor for the duration of the repaint so it doesn't visibly
+    // chase the painted cells; `encode_cursor` re-shows it at the right spot.
     out.extend_from_slice(b"\x1b[?25l");
     {
         let mut backend = CrosstermBackend::new(&mut out);
@@ -69,6 +70,21 @@ pub fn encode_update(previous: &Buffer, current: &Buffer) -> Vec<u8> {
         let _ = backend.draw(updates.into_iter());
     }
     out
+}
+
+/// Encode the trailing cursor state for a frame chunk.
+///
+/// The cell buffer carries no cursor — ratatui applies it to the local terminal
+/// directly — so every chunk sent to a browser ends with an explicit park:
+/// either a move to `cursor` plus show, or a hide when the frame has no cursor
+/// (terminal panel unfocused, scrolled back, or not rendered at all). Without
+/// this the browser would keep the cursor wherever the last painted cell left
+/// it. Coordinates are absolute screen cells; ANSI is 1-based, the buffer 0.
+pub fn encode_cursor(cursor: Option<Position>) -> Vec<u8> {
+    match cursor {
+        Some(p) => format!("\x1b[{};{}H\x1b[?25h", p.y as u32 + 1, p.x as u32 + 1).into_bytes(),
+        None => b"\x1b[?25l".to_vec(),
+    }
 }
 
 /// JSON envelope sent by the browser. The `t` tag selects the variant; unknown
@@ -298,6 +314,17 @@ mod tests {
             bytes.windows(2).any(|w| w == b"hi"),
             "full frame must paint the cell content"
         );
+    }
+
+    #[test]
+    fn cursor_at_a_cell_moves_and_shows_in_one_based_coords() {
+        let bytes = encode_cursor(Some(Position::new(3, 7)));
+        assert_eq!(bytes, b"\x1b[8;4H\x1b[?25h".to_vec());
+    }
+
+    #[test]
+    fn absent_cursor_hides_it() {
+        assert_eq!(encode_cursor(None), b"\x1b[?25l".to_vec());
     }
 
     #[test]

@@ -193,7 +193,10 @@ pub(crate) fn visible_pane_content_areas(app: &App, area: Rect) -> Vec<(PaneId, 
         .collect()
 }
 
-pub fn render(frame: &mut Frame, app: &App, area: Rect, accent: Color) {
+/// Draw the terminal panel, returning the screen cell the cursor was placed on
+/// (`None` when the panel shows no cursor). See `super::draw` for why the
+/// position is returned rather than left implicit in the frame.
+pub fn render(frame: &mut Frame, app: &App, area: Rect, accent: Color) -> Option<Position> {
     let focused = app.focus == Focus::Terminal;
     let border_style = super::focused_border_style(focused, accent);
 
@@ -214,9 +217,7 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect, accent: Color) {
 
     frame.render_widget(block, area);
 
-    let Some((tab_area, content_area)) = terminal_layout(area) else {
-        return;
-    };
+    let (tab_area, content_area) = terminal_layout(area)?;
 
     let pane_count = app.terminal.panes.len();
     let visible = visible_range(
@@ -234,9 +235,10 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect, accent: Color) {
             Style::default().fg(Color::DarkGray),
         ))];
         frame.render_widget(Paragraph::new(screen_lines), content_area);
-        return;
+        return None;
     }
 
+    let mut cursor = None;
     for (offset, cell) in cells.iter().enumerate() {
         let i = visible.start + offset;
         let is_active = i == app.terminal.active;
@@ -270,9 +272,10 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect, accent: Color) {
             build_screen_lines(app, cell.id, cell.content.height, cell.content.width);
         frame.render_widget(Paragraph::new(screen_lines), cell.content);
         if is_active {
-            render_cursor(frame, app, cell.id, cell.content);
+            cursor = render_cursor(frame, app, cell.id, cell.content);
         }
     }
+    cursor
 }
 
 /// What one rendered tab-bar segment is, deciding both its style and what a
@@ -460,22 +463,19 @@ fn build_screen_lines(app: &App, pane_id: PaneId, rows: u16, cols: u16) -> Vec<L
         .collect()
 }
 
-fn render_cursor(frame: &mut Frame, app: &App, pane_id: PaneId, area: Rect) {
+fn render_cursor(frame: &mut Frame, app: &App, pane_id: PaneId, area: Rect) -> Option<Position> {
     if app.focus != Focus::Terminal {
-        return;
+        return None;
     }
     if app.terminal.is_scrolled() {
-        return;
+        return None;
     }
 
-    let Some(screen) = app.terminal.screen_for_pane(pane_id) else {
-        return;
-    };
-    let Some(position) = screen_cursor_position(&screen, area) else {
-        return;
-    };
+    let screen = app.terminal.screen_for_pane(pane_id)?;
+    let position = screen_cursor_position(&screen, area)?;
 
     frame.set_cursor_position(position);
+    Some(position)
 }
 
 fn screen_cursor_position(screen: &ScreenView<'_>, area: Rect) -> Option<Position> {
@@ -866,7 +866,9 @@ mod tests {
         let area = Rect::new(0, 0, 80, 20);
         let mut terminal = Terminal::new(TestBackend::new(80, 20)).unwrap();
         terminal
-            .draw(|frame| render(frame, &app, area, Color::Yellow))
+            .draw(|frame| {
+                render(frame, &app, area, Color::Yellow);
+            })
             .unwrap();
 
         let (tab_area, _) = terminal_layout(area).unwrap();
@@ -921,7 +923,9 @@ mod tests {
         let mut terminal = Terminal::new(TestBackend::new(60, 20)).unwrap();
 
         terminal
-            .draw(|frame| render(frame, &app, frame.area(), Color::Yellow))
+            .draw(|frame| {
+                render(frame, &app, frame.area(), Color::Yellow);
+            })
             .unwrap();
 
         let text = buffer_text(terminal.backend().buffer());
@@ -942,7 +946,9 @@ mod tests {
         let mut terminal = Terminal::new(TestBackend::new(60, 20)).unwrap();
 
         terminal
-            .draw(|frame| render(frame, &app, frame.area(), Color::Yellow))
+            .draw(|frame| {
+                render(frame, &app, frame.area(), Color::Yellow);
+            })
             .unwrap();
 
         let text = buffer_text(terminal.backend().buffer());
