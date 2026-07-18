@@ -29,6 +29,18 @@
   #bar a:hover { color: #e5e5e5; }
   /* nightcrow paints its own cursor cells; hide xterm's native cursor. */
   .xterm .xterm-cursor-layer { display: none !important; }
+  /* xterm anchors its IME preview to its own cursor (buffer.x/y), which is
+     meaningless here: the server streams cell writes, so xterm's cursor ends up
+     wherever the last diff stopped. The unstyled, background-less overlay then
+     lands on arbitrary mirrored text. Hide it and show the composition in the
+     status bar (#ime) instead. */
+  .xterm .composition-view { display: none !important; }
+  #bar #ime:empty { display: none; }
+  #bar #ime {
+    padding: .05rem .4rem; border-radius: 3px;
+    background: #1f2937; color: #e5e5e5;
+    font-family: "JetBrains Mono", ui-monospace, monospace;
+  }
 </style>
 </head>
 <body>
@@ -36,6 +48,7 @@
   <div id="bar">
     <span class="dot"></span>
     <span id="status">connecting…</span>
+    <span id="ime"></span>
     <span class="grow"></span>
     <a href="/logout">sign out</a>
   </div>
@@ -156,6 +169,21 @@
     term.onData((data) => {
       if (data) send({ t: 'paste', data });
     });
+
+    // Echo the in-progress composition into the status bar. xterm's own preview
+    // is hidden (see .composition-view above) because it anchors to a cursor
+    // position the mirror does not track; this keeps the syllable being composed
+    // visible without ever painting over the grid.
+    const imeEl = document.getElementById('ime');
+    if (term.textarea) {
+      const showComposition = (e) => { imeEl.textContent = e.data || ''; };
+      term.textarea.addEventListener('compositionstart', showComposition);
+      term.textarea.addEventListener('compositionupdate', showComposition);
+      term.textarea.addEventListener('compositionend', () => { imeEl.textContent = ''; });
+      // A dropped connection cannot deliver the pending syllable; clear the
+      // stale preview so it does not linger over a reconnect.
+      term.textarea.addEventListener('blur', () => { imeEl.textContent = ''; });
+    }
 
     function mouseButton(button) {
       return button === 2 ? 'right' : button === 1 ? 'middle' : 'left';
