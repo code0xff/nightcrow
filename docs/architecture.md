@@ -13,9 +13,7 @@ nightcrow 자체는 AI에 대한 ontology를 갖지 않는다 — agent든 사�
 ## Layout
 
 ```
-┌─────────────────────────────────────────────┐
-│ ~/path/to/repo  branch  ↑N ↓M                │  ← top header (always visible)
-├──────────────────────┬──────────────────────┤
+┌──────────────────────┬──────────────────────┐
 │ File List (20~25%)   │ Diff Viewer (75~80%) │  ← upper panel
 ├──────────────────────┴──────────────────────┤
 │ F3 pane-a  F4 pane-b  +2       (tab bar)     │
@@ -24,9 +22,16 @@ nightcrow 자체는 AI에 대한 ontology를 갖지 않는다 — agent든 사�
 ├────────────────────┼────────────────────────┤     visible pane renders at
 │  Pane C            │      Pane D             │     once, not one-at-a-time
 ├────────────────────┴────────────────────────┤
-│ hint bar (focused-pane shortcuts)            │
+│ ~/path/to/repo  branch  ↑N ↓M                │  ← notice row (repo identity,
+│ hint bar (focused-pane shortcuts)            │     or a notice covering it)
 └─────────────────────────────────────────────┘
 ```
+
+크롬 두 행(notice row + hint bar)은 하단에 모여 있고, 세 행 분할은
+`ui::mod::chrome_rows` 한 곳에서만 계산된다 — `draw`와 세 개의 geometry
+helper(PTY 사이저, upper-panel/hint-bar hit test)가 정확히 같은 셀에
+떨어져야 하므로, 손으로 복사된 분할이 어긋나면 터미널 크기가 틀어지거나
+모든 마우스 클릭이 한 행씩 밀린다.
 
 The lower panel shows every *visible* pane simultaneously in a balanced
 grid instead of switching between tabs — see "Split-View Terminal Panel"
@@ -61,7 +66,7 @@ src/
 │   ├── terminal.rs       # TerminalState (panes, emulators, scroll, title routing)
 │   └── tree_watch.rs     # notify-based watcher for expanded tree directories
 ├── ui/
-│   ├── mod.rs            # root layout (top header + upper/lower split + hint bar,
+│   ├── mod.rs            # root layout (upper/lower split + notice row + hint bar,
 │   │                     #   mouse hit-testing: pane_at/tab_click_at/hint_click_at)
 │   ├── status_view.rs    # status-mode state (file filter, search query/cache)
 │   ├── log_view.rs       # log-mode state (commits, drill-down, file selection)
@@ -243,9 +248,18 @@ background even while scrolled out of the window.
 - overlay(repo input/search) active 시에는 leader dispatch가 금지되고 overlay가 키를 소유한다. armed 중 overlay가 열리는 경로면 prefix를 취소한다.
 - 좌측/우측 패널 타이틀에는 현재 포커스 단축키(`F1` / `F2`)가 노출돼 사용자가 즉시 jump 키를 알 수 있다.
 
-### Top Header
+### Notice Row
 
-`ui::mod::render_repo_header`가 화면 첫 행에 repo 경로(`~/...` 형식으로 home-relative 표기), 현재 브랜치, upstream tracking 상태(`↑N ↓M`)를 상시 노출한다. 브랜치/추적 정보는 snapshot worker가 채워주고, detached HEAD/unborn branch처럼 값이 없으면 해당 칩만 생략한다.
+힌트 바 바로 위 한 행. 평상시에는 `ui::mod::render_repo_header`가 repo 경로(`~/...` 형식으로 home-relative 표기), 현재 브랜치, upstream tracking 상태(`↑N ↓M`)를 노출한다. 브랜치/추적 정보는 snapshot worker가 채워주고, detached HEAD/unborn branch처럼 값이 없으면 해당 칩만 생략한다.
+
+**알림(`App::notice`)이 올라오면 이 행을 덮는다.** 전용 행을 따로 만들지 않은 이유는 알림이 뜨고 사라질 때마다 body가 한 행씩 줄었다 늘어나면서 **열려 있는 모든 PTY가 리사이즈**되기 때문이다(전체화면 프로그램이 매번 다시 그려진다). 이 행의 내용은 매 프레임 `App`에서 다시 계산되는 ambient 정보라 잠시 덮어도 잃는 것이 없다 — 반대로 아래 hint bar는 사용자가 편집 중인 repo 입력 텍스트를 담고 있어 덮으면 안 된다.
+
+알림은 `Notice { kind: NoticeKind, text }` 타입이고, **만료는 메시지 문자열이 아니라 kind로 판정한다**. 이전에는 `msg.starts_with("git error:")` 같은 접두사 매칭이라 (a) 사람이 읽는 문구에 해제 로직이 묶여 있었고 (b) 매칭 arm이 없는 종류(`Terminal`/`Tree`/`Session`)는 repo를 바꾸기 전까지 영영 사라지지 않았다. 해제 경로는 둘이다:
+
+- **같은 kind의 성공** — `App::clear_notice(kind)`. 각 서브시스템의 성공 경로에서 호출하며, 그 사이 도착한 다른 종류의 알림은 건드리지 않는다.
+- **앱 레벨 키 입력** — `App::dismiss_notice_on_app_input()`. PTY로 그대로 포워딩되는 키는 **제외**한다. 터미널 패널에서는 모든 키가 passthrough라 포함시키면 사용자가 타이핑을 재개하는 순간 알림이 사라져, 이 행이 막으려던 "보이지 않는 에러"로 되돌아간다.
+
+hint bar는 오버레이(repo 입력·prefix armed·swap target)가 열리면 그 내용으로 먼저 `return` 하므로, 알림이 거기 있던 시절에는 오버레이가 열린 동안 어떤 에러도 보이지 않았다. 알림을 별도 행으로 분리하면서 이 경합 자체가 사라졌다.
 
 ### Terminal Emulation Layer
 
