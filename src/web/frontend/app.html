@@ -125,10 +125,13 @@
       }
     }
 
-    // Scale the (fixed-size) grid to fit the stage: centered horizontally, but
-    // pinned to the top edge — the header above supplies the breathing room
-    // that vertical centering used to, and a grid that shifts down as the
-    // window grows is harder to read against than one anchored under the header.
+    // Gap between the header's bottom rule and the first grid row. Anchoring the
+    // grid to a fixed offset (rather than vertically centering it) keeps it from
+    // drifting as the window grows, while still setting it off from the header.
+    const GRID_TOP_GAP = 24;
+
+    // Scale the (fixed-size) grid to fit the stage below that gap, centered
+    // horizontally.
     function fit() {
       const screen = term.element && term.element.querySelector('.xterm-screen');
       if (!screen) return;
@@ -136,11 +139,14 @@
       const tw = screen.offsetWidth;
       const th = screen.offsetHeight;
       if (!tw || !th) return;
-      const scale = Math.min(stage.clientWidth / tw, stage.clientHeight / th);
+      // On a short viewport the gap would eat rows the grid needs, so it is
+      // taken out of the available height, never out of the grid itself.
+      const avail = Math.max(1, stage.clientHeight - GRID_TOP_GAP);
+      const scale = Math.min(stage.clientWidth / tw, avail / th);
       wrap.style.transformOrigin = 'top left';
       wrap.style.transform = 'scale(' + scale + ')';
       wrap.style.left = Math.max(0, (stage.clientWidth - tw * scale) / 2) + 'px';
-      wrap.style.top = '0px';
+      wrap.style.top = GRID_TOP_GAP + 'px';
     }
     window.addEventListener('resize', fit);
 
