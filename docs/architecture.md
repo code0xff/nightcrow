@@ -82,9 +82,17 @@ src/
 │   ├── mod.rs
 │   ├── diff.rs           # git2 snapshot/diff loaders + tracking status
 │   └── tree.rs           # lazy read-only directory listing (gitignore filter, symlink guard)
-└── input/
-    └── mod.rs            # keyboard routing: map_key (no-prefix reserved keys),
-                          #   prefix_action (leader follow-up dispatch), encode_key, vim-style j/k
+├── input/
+│   └── mod.rs            # keyboard routing: map_key (no-prefix reserved keys),
+│                         #   prefix_action (leader follow-up dispatch), encode_key, vim-style j/k
+└── web/                  # optional browser mirror ([web] enabled) — see "Web Mirror"
+    ├── mod.rs            # module root + html_escape
+    ├── protocol.rs      # Buffer→ANSI frame encode, JSON→crossterm input decode
+    ├── server.rs        # sync accept/connection threads, broadcast, WS upgrade
+    ├── auth.rs          # Argon2 password verify, session tokens, login rate limit
+    ├── http.rs          # minimal HTTP request parse + response builders
+    ├── frontend.rs      # embedded page assets
+    └── frontend/        # login.html, app.html, vendor/xterm.{js,css}
 ```
 
 ## Key Design Decisions
@@ -288,6 +296,18 @@ background even while scrolled out of the window.
 
 snapshot worker는 매 폴 사이클마다 현재 HEAD oid를 함께 보고한다. UI 스레드는 `poll_snapshot`에서 oid 변동을 감지하면 `refresh_commit_log_after_head_change`로 commit log와 drill-down 상태를 동일 oid 기준으로 재정렬해, 터미널에서 새 커밋·amend·force-push·브랜치 전환이 일어났을 때도 로그 뷰가 즉시 따라잡는다.
 
+### Web Mirror (`src/web/`)
+
+`[web] enabled`이면 nightcrow는 자기 화면을 브라우저에 미러링하고 양방향 제어를 받는 HTTP/WebSocket 서버를 함께 띄운다. 브라우저와 로컬 터미널은 **같은 세션**을 구동하며 실시간으로 동기화된다. async 런타임을 도입하지 않는다 — 동기 서버가 별도 스레드에서 돌고 채널로만 메인 루프와 통신한다.
+
+- **단일 그리드 = 단일 권위**: nightcrow 화면 전체가 ratatui가 합성한 하나의 `Buffer`(셀 격자)다. 웹에는 이 격자를 그대로 보낸다. **그리드 크기의 권위는 로컬 tty 하나**다(ratatui가 `terminal.size()`로 렌더). 웹은 프레임에 실린 (cols,rows)에 xterm.js를 맞추고 창에 스케일해 letterbox한다 — 두 클라이언트가 크기를 두고 다투는 smallest-common-size 문제가 없다.
+- **출력 (`protocol::encode_*`)**: ratatui의 `CrosstermBackend`를 그대로 재사용해 `Buffer`를 ANSI로 인코딩한다. 로컬 터미널이 받는 바이트와 **바이트 단위로 동일**하다. 신규 접속자에겐 full frame(빈 버퍼와 diff + 커서 숨김), 그 외엔 직전 브로드캐스트 버퍼와의 셀 diff만 보낸다. crossterm의 `draw`가 매 호출 끝에 스타일을 리셋하므로 프레임을 이어 붙여도 xterm.js 상태가 어긋나지 않는다.
+  - **주의(버퍼 스왑)**: `terminal.draw()`는 반환 전에 버퍼를 스왑하므로 직후의 `current_buffer_mut()`는 다음(리셋된) 프레임을 가리킨다. 방금 그린 프레임은 `draw()`가 돌려주는 `CompletedFrame.buffer`다 — 미러는 이 쪽을 브로드캐스트해야 한다.
+- **입력 (`protocol::decode_input`)**: 브라우저는 특수/ASCII 키를 **구조화 JSON 이벤트**로 보내고(VT 역파싱 대신), 서버가 crossterm `KeyEvent`/`MouseEvent`/paste로 낮춰 `mpsc`로 메인 루프에 넣는다. 메인 루프는 이를 로컬 입력과 **동일한 `handle_key`/`handle_mouse`/`handle_paste`**로 디스패치한다 — 웹 동작이 로컬 키와 갈라질 수 없다(leader/prefix/focus 라우팅 전부 공유). 한글 등 IME 조합 텍스트는 `compositionend`에서 paste 이벤트로 전달된다.
+- **서버 (`server.rs`)**: accept 스레드가 연결마다 handler 스레드를 하나 띄운다. 프레임(출력)은 클라이언트별 채널로, 입력은 공용 `mpsc`로 메인 루프와 오간다 — **`App`은 스레드 간에 공유되지 않고** 바이트와 디코드된 이벤트만 경계를 넘는다. handler 스레드는 소켓에 read timeout을 걸어 같은 스레드에서 읽기(입력)와 큐된 쓰기(프레임)를 번갈아 처리한다. WebSocket 업그레이드는 요청 head를 라우팅/인증에 쓴 뒤 직접(`derive_accept_key` + 101 응답) 완료하고 `from_raw_socket`으로 넘긴다.
+- **인증 (`auth.rs`)**: 비밀번호를 Argon2로 검증한다(code-server와 동일 방식). 평문 `password`는 시작 시 메모리에서 해시하고, `hashed_password`(PHC)가 있으면 그쪽이 우선한다. 로그인은 rate-limit(2/분 + 14/시간)되고 성공 시 httpOnly 세션 쿠키를 발급한다. 기본 바인딩은 loopback이며 **TLS는 없다** — 원격은 SSH 터널/리버스 프록시로 감싼다. 서버 활성 시 비밀번호가 없으면 랜덤 생성해 config에 기록하고(주석 보존) 시작 시 1회 출력한다.
+- **프론트엔드 (`frontend/`)**: 벤더링한 xterm.js 5.5.0(MIT)이 셀을 렌더한다. 별도 빌드 파이프라인 없이 `include_str!`로 바이너리에 임베드돼 오프라인·자기완결이다. 로그인 페이지와 터미널 페이지는 손 CSS로 neutral 다크 하우스 룩을 맞춘다.
+
 ## Critical Risk
 
 **중첩 TUI 키보드 라우팅**: Claude Code, Codex 등 LLM CLI는 자체 TUI를 가진다.
@@ -307,6 +327,7 @@ Ratatui 레이어와 내부 TUI 간 키보드 이벤트 충돌은 leader(prefix)
 | 설정 파싱 | toml 0.8 + serde |
 | 세션 저장 | serde_json |
 | CLI args | clap 4 (derive) |
+| 웹 미러 서버 | tungstenite 0.29 (sync WS) + argon2 + getrandom, 브라우저는 벤더링한 xterm.js 5.5 |
 
 PTY 관리는 portable-pty 기반 `PtyBackend` 단일 구현으로 정리됐다. 초기에는 tmux control-mode 백엔드(`TmuxBackend`)도 병행 지원했으나, 중첩 TUI 키보드 라우팅 문제를 leader(prefix) 모델로 해결하면서 tmux 의존성 없이 `PtyBackend`만으로 충분해져 제거했다.
 
@@ -324,6 +345,7 @@ PTY 관리는 portable-pty 기반 `PtyBackend` 단일 구현으로 정리됐다.
 - 터미널 fullscreen 3-state 사이클(Off → Grid → Zoom) + pane swap(`<prefix> s`) + layout-aware jump/swap digit 재매핑
 - 터미널 에뮬레이터 교체: vt100 → alacritty_terminal(쿼리 응답, resize reflow, wide-char 크래시 해소)
 - scroll/mouse routing: 프로그램이 켠 모드 기반 스크롤 싱크 판정, config-gated 마우스 캡처(클릭 포커스/SGR 포워딩), 클릭 가능한 힌트 바·탭 바
+- 웹 미러(`[web]`): 동기 WS/HTTP 서버로 화면을 브라우저에 미러링하고 로컬 터미널과 양방향 동기화(`Buffer`→ANSI 재사용, 구조화 입력을 기존 핸들러로 라우팅, Argon2 로그인 + 세션 쿠키, 벤더링 xterm.js)
 
 ## Future Refactor Notes
 

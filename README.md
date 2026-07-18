@@ -199,6 +199,40 @@ Configurable under `[agent_indicator]` (see below).
 
 nightcrow saves the current state on exit and restores it on the next launch for the same repo — focus position, selected file, scroll offset, active terminal pane, view mode (status / commit log / tree), fullscreen states, commit-log drill-down position, tree expansion and selection, and accent color. The state file is `.nightcrow/session.json` inside the repo directory.
 
+## Web mirror
+
+nightcrow can serve a live, controllable view of itself in a browser. The
+browser and the local terminal drive the **same** session and stay in sync —
+type on either side, watch both update. It is off by default; enable it under
+`[web]`:
+
+```toml
+[web]
+enabled = true
+bind = "127.0.0.1"   # loopback only; change deliberately
+port = 8090
+# password = "..."   # auto-generated and written here on first launch if unset
+```
+
+On launch nightcrow prints the address (e.g. `http://127.0.0.1:8090/`). Open it,
+sign in with the password, and the page renders the exact TUI — file list, diff,
+commit log, and terminal panes — via [xterm.js](https://xtermjs.org/). Keyboard,
+mouse, and paste all work: the leader chord, focus jumps, terminal input, and
+pane clicks behave identically to the local terminal because browser input runs
+through the same handlers. The local terminal stays the authority for the grid
+size; the browser scales that grid to fit its window.
+
+**Authentication.** If no `password` is set when the server is enabled, a random
+one is generated and written back into your config (so it survives restarts and
+stays readable) and printed once at startup. To avoid a plaintext password on
+disk, set `hashed_password` to an Argon2 PHC string instead — it takes
+precedence. Login is rate-limited and grants a session cookie.
+
+> **Security.** Enabling the web mirror grants live control of a shell. It binds
+> to loopback (`127.0.0.1`) by default and speaks plain HTTP with **no built-in
+> TLS**. For remote access, do **not** expose the port directly — tunnel it over
+> SSH (`ssh -L 8090:127.0.0.1:8090 host`) or put it behind a TLS reverse proxy.
+
 ## Configuration
 
 Config file: `~/.nightcrow/config.toml` (all fields optional, defaults shown).
@@ -229,6 +263,13 @@ leader = "ctrl+q"    # leader (prefix) chord for app commands; tmux-style.
 enabled = true       # capture the mouse: click to focus/forward, wheel scrolls
                      # the pane under the pointer; select text with Shift+drag.
                      # false = plain-drag selection, no click forwarding.
+
+[web]
+enabled = false      # serve a live, controllable mirror in a browser (off by default)
+bind = "127.0.0.1"   # loopback only by default; plain HTTP, so tunnel/proxy for remote
+port = 8090
+# password = "..."         # auto-generated + saved here on first launch if unset
+# hashed_password = "..."  # Argon2 PHC string; takes precedence over `password`
 
 [log]
 enabled = true
