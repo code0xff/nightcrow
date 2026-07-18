@@ -73,7 +73,21 @@ fn main() -> Result<()> {
         return run_init(force);
     }
 
-    let cfg = config::load_config()?;
+    let mut cfg = config::load_config()?;
+    // Bootstrap the web login credential before the alternate screen so a
+    // freshly generated password prints as plain, copyable stderr text rather
+    // than flashing behind the TUI. A no-op when the server is disabled or a
+    // password is already configured.
+    if cfg.web.enabled {
+        let path = config::config_file_path()?;
+        if let Some(password) = config::ensure_web_password(&mut cfg, &path)? {
+            eprintln!(
+                "nightcrow web: generated a login password and saved it to {}:",
+                path.display()
+            );
+            eprintln!("  {password}");
+        }
+    }
     // Resolve before entering the alternate screen so a too-many-panes error
     // surfaces as plain stderr text rather than a flash behind the TUI.
     let startup_commands = config::resolve_startup_commands(&cfg, &cli.exec)?;

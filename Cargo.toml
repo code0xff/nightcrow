@@ -26,6 +26,11 @@ two-face = "0.5.1"
 notify = "8.2.0"
 notify-debouncer-mini = "0.7.0"
 alacritty_terminal = { version = "0.26", default-features = false }
+# Web mirror server: synchronous WebSocket (no async runtime), Argon2 login
+# hashing (matches code-server), and an OS RNG for password/session tokens.
+tungstenite = "0.29"
+argon2 = "0.5"
+getrandom = "0.3"
 
 [dev-dependencies]
 tempfile = "3"

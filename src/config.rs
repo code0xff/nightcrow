@@ -22,6 +22,7 @@ pub struct Config {
     pub input: InputConfig,
     pub tree: TreeConfig,
     pub mouse: MouseConfig,
+    pub web: WebConfig,
     /// Commands launched in their own terminal pane at startup, in order.
     /// Maps from TOML `[[startup_command]]` array-of-tables. Empty by
     /// default, which preserves the single empty-shell startup behaviour.
@@ -54,6 +55,183 @@ pub struct MouseConfig {
 impl Default for MouseConfig {
     fn default() -> Self {
         Self { enabled: true }
+    }
+}
+
+/// Default TCP port for the web mirror server.
+const DEFAULT_WEB_PORT: u16 = 8090;
+/// Default bind address: loopback only. Exposing the server on a routable
+/// address is a deliberate opt-in because it grants live control of a shell.
+const DEFAULT_WEB_BIND: &str = "127.0.0.1";
+/// Length (characters) of an auto-generated web password.
+const GENERATED_PASSWORD_LEN: usize = 24;
+/// Alphabet for generated passwords: alphanumeric minus visually ambiguous
+/// glyphs (0/O, 1/l/I). All chars are TOML-safe, so the persisted value never
+/// needs escaping when written as a basic `"..."` string.
+const PASSWORD_ALPHABET: &[u8] =
+    b"abcdefghijkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+
+/// Web mirror server: serve a live, controllable view of this nightcrow over
+/// HTTP so a browser and the local terminal drive the same session.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct WebConfig {
+    /// Enable the web mirror. Off by default — turning it on exposes live
+    /// view+control of this nightcrow over the network, so it is opt-in.
+    pub enabled: bool,
+    /// Address to bind. Defaults to loopback (`127.0.0.1`); set to `0.0.0.0`
+    /// only deliberately, and prefer an SSH tunnel / reverse proxy for remote
+    /// access since the server speaks plain HTTP (no built-in TLS).
+    pub bind: String,
+    /// TCP port for the web server.
+    pub port: u16,
+    /// Plaintext login password. When the web server is enabled and neither
+    /// this nor `hashed_password` is set, a random password is generated and
+    /// written back here so it survives restarts and stays readable.
+    pub password: Option<String>,
+    /// Optional Argon2 PHC hash — an alternative to storing `password` in
+    /// plaintext. Takes precedence over `password` when both are present.
+    pub hashed_password: Option<String>,
+}
+
+impl Default for WebConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            bind: DEFAULT_WEB_BIND.to_string(),
+            port: DEFAULT_WEB_PORT,
+            password: None,
+            hashed_password: None,
+        }
+    }
+}
+
+impl WebConfig {
+    /// Whether a login credential is already configured (either form).
+    pub fn has_credential(&self) -> bool {
+        self.hashed_password.is_some()
+            || self.password.as_deref().is_some_and(|p| !p.is_empty())
+    }
+}
+
+/// Generate a random, human-readable password from the OS RNG.
+///
+/// Uses a 55-character unambiguous alphabet. The modulo reduction introduces a
+/// negligible bias (256 mod 55) that is immaterial for a locally-scoped dev
+/// credential; `getrandom` is the same OS entropy source Argon2 salts use.
+pub fn generate_password() -> Result<String> {
+    let mut bytes = [0u8; GENERATED_PASSWORD_LEN];
+    getrandom::fill(&mut bytes)
+        .map_err(|e| anyhow::anyhow!("OS RNG unavailable for web password generation: {e}"))?;
+    Ok(bytes
+        .iter()
+        .map(|b| PASSWORD_ALPHABET[usize::from(*b) % PASSWORD_ALPHABET.len()] as char)
+        .collect())
+}
+
+/// Ensure the enabled web server has a login credential, generating and
+/// persisting one when the config has none.
+///
+/// A no-op when a `password` or `hashed_password` is already set. Otherwise a
+/// random password is generated, written back into the config file at `path`
+/// (creating it if absent, preserving any existing content and comments), and
+/// stored on `cfg` so the running instance uses it. Returns the freshly
+/// generated password so the caller can surface it to the user, or `None` when
+/// a credential already existed.
+pub fn ensure_web_password(cfg: &mut Config, path: &std::path::Path) -> Result<Option<String>> {
+    if cfg.web.has_credential() {
+        return Ok(None);
+    }
+    let password = generate_password()?;
+    persist_web_password(path, &password)
+        .with_context(|| format!("persisting generated web password to {}", path.display()))?;
+    cfg.web.password = Some(password.clone());
+    Ok(Some(password))
+}
+
+/// Write `password` into the `[web]` table of the TOML file at `path`.
+///
+/// Preserves the rest of the file (including comments) by inserting a single
+/// `password = "..."` line: right after an existing `[web]` header, or as a new
+/// appended `[web]` table when none exists. The parent directory is created if
+/// needed and the file is written user-only (0600 on Unix) since it holds a
+/// secret. `password` must contain only TOML-safe characters (the generator's
+/// alphabet guarantees this), so it is emitted as a basic string unescaped.
+fn persist_web_password(path: &std::path::Path, password: &str) -> Result<()> {
+    let existing = if path.exists() {
+        std::fs::read_to_string(path)
+            .with_context(|| format!("reading config file {}", path.display()))?
+    } else {
+        String::new()
+    };
+    let updated = insert_web_password(&existing, password);
+
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)
+            .with_context(|| format!("creating config directory {}", parent.display()))?;
+    }
+    std::fs::write(path, &updated)
+        .with_context(|| format!("writing config file {}", path.display()))?;
+    restrict_permissions(path);
+    Ok(())
+}
+
+/// Pure text transform behind `persist_web_password`, isolated for testing.
+/// Inserts `password = "..."` under the first `[web]` header, or appends a new
+/// `[web]` table when the source has none.
+fn insert_web_password(source: &str, password: &str) -> String {
+    let line = format!("password = \"{password}\"");
+    if let Some(insert_at) = web_header_line_end(source) {
+        let mut out = String::with_capacity(source.len() + line.len() + 1);
+        out.push_str(&source[..insert_at]);
+        out.push('\n');
+        out.push_str(&line);
+        out.push_str(&source[insert_at..]);
+        out
+    } else {
+        let mut out = String::with_capacity(source.len() + line.len() + 16);
+        out.push_str(source);
+        if !out.is_empty() && !out.ends_with('\n') {
+            out.push('\n');
+        }
+        if !out.is_empty() {
+            out.push('\n');
+        }
+        out.push_str("[web]\n");
+        out.push_str(&line);
+        out.push('\n');
+        out
+    }
+}
+
+/// Byte offset of the end of the first line that is exactly `[web]` (ignoring
+/// surrounding whitespace), or `None` when no such header exists. Comment lines
+/// (`# [web]`) are not headers and are skipped.
+fn web_header_line_end(source: &str) -> Option<usize> {
+    let mut offset = 0;
+    for line in source.split_inclusive('\n') {
+        if line.trim() == "[web]" {
+            // Point at the newline (or end of source) that terminates the
+            // header line so the insert lands on the following line.
+            return Some(offset + line.trim_end_matches('\n').len());
+        }
+        offset += line.len();
+    }
+    None
+}
+
+/// Best-effort tighten of a secret-bearing file to owner-only permissions.
+/// Failure is non-fatal: on platforms without Unix permissions this is a no-op,
+/// and a permission error should not stop the server from starting.
+fn restrict_permissions(path: &std::path::Path) {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600));
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = path;
     }
 }
 
@@ -353,6 +531,15 @@ fn default_config_path() -> Option<PathBuf> {
     dirs::home_dir().map(|h| h.join(".nightcrow").join("config.toml"))
 }
 
+/// The path nightcrow reads/writes its config at (`~/.nightcrow/config.toml`),
+/// resolved regardless of whether the file exists yet. Errors only when the
+/// home directory cannot be determined. Used by the web-password bootstrap,
+/// which may need to create the file to persist a generated credential.
+pub fn config_file_path() -> Result<PathBuf> {
+    default_config_path()
+        .ok_or_else(|| anyhow::anyhow!("cannot determine home directory for config path"))
+}
+
 /// The shipped, commented configuration template, embedded at compile time so
 /// a standalone binary (with no source checkout alongside it) can still hand
 /// the user a starting file. `nightcrow init` writes this verbatim, and
@@ -458,6 +645,15 @@ fn validate_config(cfg: &Config) -> Result<()> {
         (1..=1024).contains(&cfg.tree.max_depth),
         "tree.max_depth must be between 1 and 1024"
     );
+    // The web server only needs a valid bind/port when it is enabled; a
+    // disabled section is never acted on, so leave its fields unchecked.
+    if cfg.web.enabled {
+        anyhow::ensure!(cfg.web.port != 0, "web.port must be non-zero when web.enabled");
+        cfg.web
+            .bind
+            .parse::<std::net::IpAddr>()
+            .with_context(|| format!("web.bind \"{}\" is not a valid IP address", cfg.web.bind))?;
+    }
     // Surface a bad leader at startup (plain stderr) rather than letting the
     // app fall back to a silent default the user did not ask for.
     parse_leader(&cfg.input.leader)?;
@@ -1011,6 +1207,188 @@ live_watch = false
         assert_eq!(cfg.tree.max_depth, 64);
         assert!(cfg.tree.live_watch);
         validate_config(&cfg).unwrap();
+    }
+
+    #[test]
+    fn web_config_defaults_are_off_and_loopback() {
+        let cfg = WebConfig::default();
+        assert!(!cfg.enabled);
+        assert_eq!(cfg.bind, "127.0.0.1");
+        assert_eq!(cfg.port, 8090);
+        assert!(cfg.password.is_none());
+        assert!(cfg.hashed_password.is_none());
+        assert!(!cfg.has_credential());
+    }
+
+    #[test]
+    fn web_config_parses_from_toml() {
+        let toml = r#"
+[web]
+enabled = true
+bind = "0.0.0.0"
+port = 9000
+password = "hunter2"
+"#;
+        let cfg: Config = toml::from_str(toml).unwrap();
+        assert!(cfg.web.enabled);
+        assert_eq!(cfg.web.bind, "0.0.0.0");
+        assert_eq!(cfg.web.port, 9000);
+        assert_eq!(cfg.web.password.as_deref(), Some("hunter2"));
+        assert!(cfg.web.has_credential());
+        validate_config(&cfg).unwrap();
+    }
+
+    #[test]
+    fn config_without_web_table_defaults() {
+        // A pre-existing config file with no [web] table must still parse and
+        // validate, falling back to the disabled default.
+        let cfg: Config = toml::from_str("[layout]\nupper_pct = 50\n").unwrap();
+        assert!(!cfg.web.enabled);
+        assert_eq!(cfg.web.port, 8090);
+        validate_config(&cfg).unwrap();
+    }
+
+    #[test]
+    fn web_has_credential_treats_empty_password_as_missing() {
+        let empty = WebConfig {
+            password: Some(String::new()),
+            ..WebConfig::default()
+        };
+        assert!(!empty.has_credential(), "an empty password is not a credential");
+        let with_pw = WebConfig {
+            password: Some("x".into()),
+            ..WebConfig::default()
+        };
+        assert!(with_pw.has_credential());
+        let with_hash = WebConfig {
+            hashed_password: Some("$argon2id$...".into()),
+            ..WebConfig::default()
+        };
+        assert!(with_hash.has_credential());
+    }
+
+    #[test]
+    fn web_validation_rejects_port_zero_when_enabled() {
+        let mut cfg = Config::default();
+        cfg.web.enabled = true;
+        cfg.web.port = 0;
+        assert!(validate_config(&cfg).is_err());
+    }
+
+    #[test]
+    fn web_validation_rejects_bad_bind_when_enabled() {
+        let mut cfg = Config::default();
+        cfg.web.enabled = true;
+        cfg.web.bind = "not-an-ip".into();
+        assert!(validate_config(&cfg).is_err());
+    }
+
+    #[test]
+    fn web_validation_ignores_bind_and_port_when_disabled() {
+        // A disabled web section is never acted on, so its fields are not
+        // range-checked — a stale/garbage value must not block startup.
+        let mut cfg = Config::default();
+        cfg.web.enabled = false;
+        cfg.web.port = 0;
+        cfg.web.bind = "not-an-ip".into();
+        assert!(validate_config(&cfg).is_ok());
+    }
+
+    #[test]
+    fn generate_password_has_expected_length_and_alphabet() {
+        let pw = generate_password().unwrap();
+        assert_eq!(pw.chars().count(), GENERATED_PASSWORD_LEN);
+        assert!(
+            pw.bytes().all(|b| PASSWORD_ALPHABET.contains(&b)),
+            "generated password must only use the unambiguous TOML-safe alphabet"
+        );
+        // Two draws should differ with overwhelming probability.
+        assert_ne!(pw, generate_password().unwrap());
+    }
+
+    #[test]
+    fn insert_web_password_adds_line_under_existing_header() {
+        let source = "[web]\nenabled = true\nport = 8090\n";
+        let out = insert_web_password(source, "secret");
+        assert_eq!(
+            out, "[web]\npassword = \"secret\"\nenabled = true\nport = 8090\n",
+            "the password line must land right after the [web] header"
+        );
+        // The result round-trips and exposes the password.
+        let cfg: Config = toml::from_str(&out).unwrap();
+        assert_eq!(cfg.web.password.as_deref(), Some("secret"));
+    }
+
+    #[test]
+    fn insert_web_password_appends_table_when_absent() {
+        let source = "[layout]\nupper_pct = 55\n";
+        let out = insert_web_password(source, "secret");
+        assert!(out.starts_with(source));
+        assert!(out.contains("\n[web]\npassword = \"secret\"\n"));
+        let cfg: Config = toml::from_str(&out).unwrap();
+        assert_eq!(cfg.web.password.as_deref(), Some("secret"));
+    }
+
+    #[test]
+    fn insert_web_password_appends_table_into_empty_source() {
+        let out = insert_web_password("", "secret");
+        assert_eq!(out, "[web]\npassword = \"secret\"\n");
+        let cfg: Config = toml::from_str(&out).unwrap();
+        assert_eq!(cfg.web.password.as_deref(), Some("secret"));
+    }
+
+    #[test]
+    fn insert_web_password_ignores_commented_header() {
+        // A `# [web]` comment is not a real table header, so the password must
+        // be appended as a new table rather than inserted under the comment.
+        let source = "# [web] example\nfoo = 1\n";
+        let out = insert_web_password(source, "secret");
+        assert!(out.contains("\n[web]\npassword = \"secret\"\n"));
+    }
+
+    #[test]
+    fn ensure_web_password_is_noop_when_credential_present() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let path = dir.path().join("config.toml");
+        let mut cfg = Config::default();
+        cfg.web.enabled = true;
+        cfg.web.password = Some("preset".into());
+        let generated = ensure_web_password(&mut cfg, &path).unwrap();
+        assert!(generated.is_none(), "an existing credential must not be replaced");
+        assert!(!path.exists(), "no file should be written when a password exists");
+        assert_eq!(cfg.web.password.as_deref(), Some("preset"));
+    }
+
+    #[test]
+    fn ensure_web_password_generates_persists_and_sets() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let path = dir.path().join("nested").join("config.toml");
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(&path, "[web]\nenabled = true\n").unwrap();
+
+        let mut cfg = Config::default();
+        cfg.web.enabled = true;
+        let generated = ensure_web_password(&mut cfg, &path).unwrap();
+
+        let pw = generated.expect("a password must be generated when none is set");
+        assert_eq!(cfg.web.password.as_deref(), Some(pw.as_str()));
+        // The persisted file now parses back to the same password.
+        let reparsed: Config = toml::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        assert_eq!(reparsed.web.password.as_deref(), Some(pw.as_str()));
+    }
+
+    #[test]
+    fn ensure_web_password_creates_file_when_absent() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let path = dir.path().join("config.toml");
+        let mut cfg = Config::default();
+        cfg.web.enabled = true;
+
+        let pw = ensure_web_password(&mut cfg, &path).unwrap().unwrap();
+
+        assert!(path.exists());
+        let reparsed: Config = toml::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        assert_eq!(reparsed.web.password.as_deref(), Some(pw.as_str()));
     }
 
     #[test]
