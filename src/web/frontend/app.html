@@ -6,14 +6,33 @@
 <title>nightcrow</title>
 <link rel="stylesheet" href="/vendor/xterm.css">
 <style>
-  :root { color-scheme: dark; }
+  :root { color-scheme: dark; --accent: #d9a441; }
   html, body { margin: 0; height: 100%; background: #000; overflow: hidden; }
   body {
     display: flex; flex-direction: column; height: 100vh;
     font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
   }
-  /* The stage centers and letterboxes the terminal. The grid size is dictated
-     by the local terminal; the browser scales the exact same grid to fit. */
+  /* Wordmark header, matching the login page's mark. Left-aligned rather than
+     centered like the login page: this one sits above a dense terminal grid,
+     where a centered title reads as a banner instead of app chrome. It also
+     gives the grid its top margin, so the terminal can sit flush under it
+     instead of floating in the middle of the viewport. */
+  #head {
+    flex: 0 0 auto; display: flex; align-items: baseline; gap: .5rem;
+    padding: .55rem .8rem; background: #0a0a0a; border-bottom: 1px solid #262626;
+  }
+  #head .mark { align-self: center; flex: 0 0 auto; }
+  #head .wordmark {
+    font-size: 1rem; font-weight: 500; letter-spacing: .04em; color: #e5e5e5;
+  }
+  #head .tag {
+    font-family: system-ui, sans-serif;
+    font-size: .62rem; letter-spacing: .18em; text-transform: uppercase;
+    color: #737373;
+  }
+  /* The stage letterboxes the terminal: horizontally centered, top-aligned.
+     The grid size is dictated by the local terminal; the browser scales the
+     exact same grid to fit. */
   #stage { position: relative; flex: 1 1 auto; overflow: hidden; background: #000; }
   #term { position: absolute; top: 0; left: 0; }
   #bar {
@@ -49,6 +68,17 @@
 </style>
 </head>
 <body>
+  <header id="head">
+    <svg class="mark" width="22" height="22" viewBox="0 0 42 42" aria-hidden="true" focusable="false">
+      <rect x="1.25" y="1.25" width="39.5" height="39.5" rx="10.5"
+            fill="none" stroke="#282828" stroke-width="1.5"/>
+      <path d="M14 15.5 L20 21 L14 26.5" fill="none" stroke="#d9a441"
+            stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+      <rect x="23" y="24.4" width="7.5" height="2.4" rx="1.2" fill="#d9a441"/>
+    </svg>
+    <span class="wordmark">nightcrow</span>
+    <span class="tag">web mirror</span>
+  </header>
   <div id="stage"><div id="term"></div></div>
   <div id="bar">
     <span class="dot"></span>
@@ -95,7 +125,10 @@
       }
     }
 
-    // Scale the (fixed-size) grid to fit the viewport, centered.
+    // Scale the (fixed-size) grid to fit the stage: centered horizontally, but
+    // pinned to the top edge — the header above supplies the breathing room
+    // that vertical centering used to, and a grid that shifts down as the
+    // window grows is harder to read against than one anchored under the header.
     function fit() {
       const screen = term.element && term.element.querySelector('.xterm-screen');
       if (!screen) return;
@@ -107,7 +140,7 @@
       wrap.style.transformOrigin = 'top left';
       wrap.style.transform = 'scale(' + scale + ')';
       wrap.style.left = Math.max(0, (stage.clientWidth - tw * scale) / 2) + 'px';
-      wrap.style.top = Math.max(0, (stage.clientHeight - th * scale) / 2) + 'px';
+      wrap.style.top = '0px';
     }
     window.addEventListener('resize', fit);
 
