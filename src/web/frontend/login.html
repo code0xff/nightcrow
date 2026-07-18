@@ -11,32 +11,40 @@
     background: #0a0a0a; color: #e5e5e5;
     font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
   }
-  form {
-    background: #171717; border: 1px solid #262626; border-radius: 10px;
-    padding: 2rem; width: min(22rem, 90vw); box-sizing: border-box;
+  /* No card: the page holds a single field, so there is nothing to separate
+     it from. The bare centered form reads closer to the terminal it fronts. */
+  form { width: min(19rem, 86vw); }
+  h1 {
+    margin: 0 0 1.75rem; text-align: center;
+    font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 1rem; font-weight: 500; letter-spacing: .04em; color: #e5e5e5;
   }
-  h1 { margin: 0 0 1.25rem; font-size: 1.15rem; font-weight: 600; letter-spacing: .01em; }
-  label { display: block; font-size: .8rem; color: #a3a3a3; margin-bottom: .4rem; }
   input {
-    width: 100%; box-sizing: border-box; padding: .6rem .7rem; margin-bottom: 1rem;
-    background: #0a0a0a; border: 1px solid #404040; border-radius: 6px; color: #e5e5e5;
-    font-size: .95rem;
+    width: 100%; box-sizing: border-box; padding: .6rem .7rem; margin-bottom: .6rem;
+    background: transparent; border: 1px solid #303030; border-radius: 6px;
+    color: #e5e5e5; font-size: .95rem;
   }
-  input:focus { outline: none; border-color: #737373; }
+  input::placeholder { color: #6b6b6b; }
+  input:focus { outline: none; border-color: #6b6b6b; }
   button {
     width: 100%; padding: .6rem; border: 0; border-radius: 6px; cursor: pointer;
     background: #e5e5e5; color: #0a0a0a; font-weight: 600; font-size: .95rem;
   }
   button:hover { background: #fafafa; }
-  .error { color: #f87171; font-size: .85rem; margin: 0 0 1rem; }
+  .error { color: #f87171; font-size: .85rem; margin: 0 0 .75rem; text-align: center; }
+  .sr-only {
+    position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+    overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+  }
 </style>
 </head>
 <body>
   <form method="post" action="/login">
     <h1>nightcrow</h1>
     <!--ERROR-->
-    <label for="password">Password</label>
-    <input id="password" type="password" name="password" autofocus autocomplete="current-password">
+    <label class="sr-only" for="password">Password</label>
+    <input id="password" type="password" name="password" placeholder="Password"
+           autofocus autocomplete="current-password">
     <button type="submit">Sign in</button>
   </form>
 </body>
