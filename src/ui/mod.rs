@@ -869,7 +869,42 @@ mod tests {
         );
     }
 
+    /// The notice row is the one place every kind reports, and no overlay may
+    /// shadow it — the hint bar's own early-returns are what made a notice
+    /// invisible before it moved off that row.
+    #[test]
+    fn notice_row_shows_notices_through_every_overlay() {
+        for setup in [
+            (|app: &mut App| app.arm_prefix()) as fn(&mut App),
+            |app: &mut App| app.begin_swap_target(),
+            |app: &mut App| app.start_repo_input(),
+        ] {
+            let mut app = app_with_fake_backend();
+            setup(&mut app);
+            app.raise_notice(NoticeKind::Git, "not a repo");
+            let text = notice_text(&app);
+            assert!(
+                text.contains("git error: not a repo"),
+                "an open overlay must not shadow the notice row, got: {text}"
+            );
+        }
+    }
 
+    /// With nothing raised the row is the repo/branch line, and it comes back
+    /// intact after a notice is cleared.
+    #[test]
+    fn notice_row_falls_back_to_repo_identity() {
+        let mut app = app_with_files(vec![]);
+        app.repo_path = "/tmp/somewhere".to_string();
+        let before = notice_text(&app);
+        assert!(before.contains("/tmp/somewhere"), "got: {before}");
+
+        app.raise_notice(NoticeKind::Tree, "boom");
+        assert!(!notice_text(&app).contains("/tmp/somewhere"));
+
+        app.clear_notice(NoticeKind::Tree);
+        assert_eq!(notice_text(&app), before);
+    }
 
     #[test]
     fn hint_bar_inverts_only_clickable_key_labels() {
