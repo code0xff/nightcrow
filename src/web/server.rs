@@ -242,6 +242,21 @@ fn handle_connection(mut stream: TcpStream, shared: Arc<Shared>) {
             ));
             return;
         }
+        // Defense-in-depth against cross-site WebSocket hijacking: reject a
+        // browser upgrade whose Origin is not this server. SameSite=Strict
+        // already keeps the session cookie off cross-site requests, so a
+        // hijack fails auth anyway; this refuses it outright. A missing Origin
+        // (native, non-browser clients) is allowed — such a client cannot
+        // carry a victim's cookie.
+        if !origin_allowed(&head) {
+            let _ = stream.write_all(&http::response(
+                "403 Forbidden",
+                "text/plain; charset=utf-8",
+                &[],
+                b"cross-origin websocket rejected",
+            ));
+            return;
+        }
         serve_websocket(stream, &head, shared);
         return;
     }
@@ -291,6 +306,23 @@ fn read_request(stream: &mut TcpStream) -> Result<(RequestHead, String)> {
 fn is_authenticated(head: &RequestHead, shared: &Shared) -> bool {
     head.cookie(SESSION_COOKIE)
         .is_some_and(|token| shared.sessions.is_valid(token))
+}
+
+/// Whether a WebSocket upgrade's `Origin` is acceptable. Absent Origin (a
+/// native client that cannot carry a browser's cookie) is allowed; a present
+/// Origin must match the request `Host` authority, else it is a cross-site
+/// upgrade and is refused.
+fn origin_allowed(head: &RequestHead) -> bool {
+    match head.header("origin") {
+        None => true,
+        Some(origin) => {
+            let origin_authority = origin.split_once("://").map(|(_, rest)| rest);
+            matches!(
+                (origin_authority, head.header("host")),
+                (Some(authority), Some(host)) if authority == host
+            )
+        }
+    }
 }
 
 fn route_http(head: &RequestHead, body: &str, shared: &Shared) -> Vec<u8> {
@@ -603,6 +635,26 @@ mod tests {
              Sec-WebSocket-Version: 13\r\nConnection: close\r\n\r\n",
         );
         assert!(resp.starts_with("HTTP/1.1 401"), "unauthenticated WS must 401");
+    }
+
+    #[test]
+    fn websocket_rejects_cross_origin_even_with_valid_cookie() {
+        let server = WebServer::start_from_config(&test_config("hunter2")).unwrap();
+        let addr = server.addr();
+        let token = session_token(&http_request(addr, &form_post("password=hunter2")))
+            .expect("a session cookie");
+        // A valid cookie but a foreign Origin (cross-site WebSocket hijack
+        // attempt) must be refused before the handshake.
+        let resp = http_request(
+            addr,
+            &format!(
+                "GET /ws HTTP/1.1\r\nHost: {addr}\r\nOrigin: http://evil.example\r\n\
+                 Upgrade: websocket\r\nConnection: Upgrade\r\n\
+                 Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nSec-WebSocket-Version: 13\r\n\
+                 Cookie: {SESSION_COOKIE}={token}\r\nConnection: close\r\n\r\n"
+            ),
+        );
+        assert!(resp.starts_with("HTTP/1.1 403"), "cross-origin WS must be forbidden");
     }
 
     #[test]
