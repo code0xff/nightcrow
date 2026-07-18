@@ -5,7 +5,7 @@
 //! handful of actions that have to coordinate that logic with the rest of
 //! `App`'s state machine.
 
-use super::{App, Focus};
+use super::{App, Focus, NoticeKind};
 use crate::runtime::terminal::TerminalFullscreen;
 
 impl App {
@@ -30,13 +30,13 @@ impl App {
         }
         if startup_commands.is_empty() {
             if let Err(err) = self.terminal.create_pane() {
-                self.status = Some(format!("terminal error: {err}"));
+                self.raise_notice(NoticeKind::Terminal, err.to_string());
             }
         } else {
             for sc in startup_commands {
                 let label = sc.name.as_deref();
                 if let Err(err) = self.terminal.create_pane_with(Some(&sc.command), label) {
-                    self.status = Some(format!("terminal error: {err}"));
+                    self.raise_notice(NoticeKind::Terminal, err.to_string());
                 }
             }
         }
@@ -62,9 +62,12 @@ impl App {
     pub fn open_new_pane(&mut self) {
         if let Err(e) = self.terminal.create_pane() {
             tracing::error!("create_terminal_pane failed: {e}");
-            self.status = Some(format!("terminal error: {e}"));
+            self.raise_notice(NoticeKind::Terminal, e.to_string());
             return;
         }
+        // Opening a pane succeeded, so a previous failure no longer describes
+        // the terminal's state.
+        self.clear_notice(NoticeKind::Terminal);
         // `create_pane` already made the new pane the active one within
         // `TerminalState`; move the app-level focus onto it too so the user
         // lands in the freshly opened terminal instead of staying on the

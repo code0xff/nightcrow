@@ -1,4 +1,4 @@
-use super::{App, Focus, SnapshotChannel, ViewMode};
+use super::{App, Focus, NoticeKind, SnapshotChannel, ViewMode};
 use crate::runtime::terminal::TerminalFullscreen;
 
 // Mirrors `PROMPT_BUFFER_MAX_BYTES` so a bracketed paste cannot grow this
@@ -64,7 +64,8 @@ impl App {
         // workdir; reset them so the new repo's first snapshot starts clean.
         self.auto_follow.last_manual_nav_at = None;
         self.auto_follow.followed_path = None;
-        self.status = None;
+        // Every notice describes the repo being left behind.
+        self.notice = None;
         self.tracking = None;
         self.focus = Focus::FileList;
         // Drop transient view modes — the previous repo's diff zoom, terminal
@@ -91,13 +92,13 @@ impl App {
     pub fn start_repo_input(&mut self) {
         self.repo_input.buf = self.repo_path.clone();
         self.repo_input.active = true;
-        self.repo_input.error = None;
+        self.clear_notice(NoticeKind::RepoInput);
     }
 
     pub fn cancel_repo_input(&mut self) {
         self.repo_input.active = false;
         self.repo_input.buf.clear();
-        self.repo_input.error = None;
+        self.clear_notice(NoticeKind::RepoInput);
     }
 
     pub fn confirm_repo_input(&mut self) {
@@ -106,18 +107,21 @@ impl App {
         // and consume the buffer once we're committed to switching repos.
         let trimmed = self.repo_input.buf.trim();
         if trimmed.is_empty() {
-            self.repo_input.error = Some("path cannot be empty".to_string());
+            self.raise_notice(NoticeKind::RepoInput, "repo path cannot be empty");
             return;
         }
         let p = std::path::Path::new(trimmed);
         if !p.is_dir() {
             // The rejected path is already on screen in the input itself, so
             // the message names the problem only.
-            self.repo_input.error = Some(if p.exists() {
-                "not a directory".to_string()
-            } else {
-                "no such directory".to_string()
-            });
+            self.raise_notice(
+                NoticeKind::RepoInput,
+                if p.exists() {
+                    "not a directory"
+                } else {
+                    "no such directory"
+                },
+            );
             return;
         }
         let resolved = crate::git::resolve_repo_path(p)
@@ -125,7 +129,7 @@ impl App {
             .to_string();
         self.repo_input.active = false;
         self.repo_input.buf.clear();
-        self.repo_input.error = None;
+        self.clear_notice(NoticeKind::RepoInput);
         self.change_repo(resolved);
     }
 
@@ -134,12 +138,12 @@ impl App {
             return;
         }
         // Any edit invalidates the verdict on the old text.
-        self.repo_input.error = None;
+        self.clear_notice(NoticeKind::RepoInput);
         self.repo_input.buf.push(ch);
     }
 
     pub fn repo_input_pop(&mut self) {
-        self.repo_input.error = None;
+        self.clear_notice(NoticeKind::RepoInput);
         self.repo_input.buf.pop();
     }
 }

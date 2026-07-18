@@ -1,4 +1,4 @@
-use super::{App, Focus, ViewMode};
+use super::{App, Focus, NoticeKind, ViewMode};
 use crate::git::diff::{load_commit_files, load_commit_log};
 use crate::runtime::terminal::TerminalFullscreen;
 use crate::session::SessionState;
@@ -197,8 +197,10 @@ impl App {
                     selected = self.log_view.selected,
                     "drill-down restore: saved commit index is out of range"
                 );
-                self.status =
-                    Some("drill-down restore skipped: saved commit not in log".to_string());
+                self.raise_notice(
+                    NoticeKind::Session,
+                    "drill-down restore skipped: saved commit not in log",
+                );
                 self.load_commit_diff_for_selected();
                 return;
             }
@@ -220,7 +222,7 @@ impl App {
             }
             Err(e) => {
                 tracing::warn!(error = %e, "failed to load drill-down commit files");
-                self.status = Some(format!("drill-down restore failed: {e}"));
+                self.raise_notice(NoticeKind::Session, format!("drill-down restore failed: {e}"));
                 self.load_commit_diff_for_selected();
             }
         }

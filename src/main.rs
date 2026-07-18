@@ -698,6 +698,21 @@ fn handle_key(app: &mut App, key: KeyEvent) -> KeyOutcome {
         return KeyOutcome::Continue;
     }
 
+    // A key nightcrow acts on itself means the user has moved on, so the
+    // notice row goes back to showing repo identity. Keys forwarded verbatim
+    // to a PTY are excluded: in a terminal pane every keystroke is
+    // passthrough, and dismissing on those would blank a notice the moment
+    // the user resumed typing. Runs before dispatch so an action that raises
+    // a *new* notice still leaves it standing.
+    if app.overlay_active()
+        || app.prefix_armed()
+        || app.awaiting_swap_target()
+        || app.is_leader_key(key)
+        || app.focus != Focus::Terminal
+    {
+        app.dismiss_notice_on_app_input();
+    }
+
     // Modal overlays (repo-input dialog, both search bars) own every
     // keystroke until dismissed. They are checked before any leader handling
     // so a leader keypress while a search/repo dialog is open is typed/edited

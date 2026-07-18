@@ -102,10 +102,4 @@ impl StatusView {
 pub struct RepoInput {
     pub active: bool,
     pub buf: String,
-    /// Why the last confirm was rejected, shown beside the input until the
-    /// next edit. Kept here rather than in `App::status` because the hint bar
-    /// renders the repo-input row *instead of* the status row, so a message
-    /// left in `status` would be invisible while the dialog is open and would
-    /// then surface out of context after it closes.
-    pub error: Option<String>,
 }

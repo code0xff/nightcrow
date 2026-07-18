@@ -7,7 +7,7 @@
 //! surface used by the status/commit file preview, so no new render path is
 //! introduced.
 
-use super::{App, DiffPaneView, FileViewKey, FileViewState, LIST_PAGE_SIZE, ViewMode};
+use super::{App, DiffPaneView, FileViewKey, FileViewState, LIST_PAGE_SIZE, NoticeKind, ViewMode};
 use crate::ui::tree_view::{TreeIndexEntry, parent_path};
 use std::collections::BTreeSet;
 
@@ -168,11 +168,14 @@ impl App {
         });
         match result {
             Ok(children) => {
+                // A successful read resolves whatever the last failing one
+                // reported; without this the tree error outlived its cause.
+                self.clear_notice(NoticeKind::Tree);
                 self.tree_view.cache.insert(dir.to_string(), children);
             }
             Err(e) => {
                 tracing::warn!(error = %e, dir = %dir, "failed to read tree directory");
-                self.status = Some(format!("tree error: {e}"));
+                self.raise_notice(NoticeKind::Tree, e.to_string());
                 // Cache an empty listing so we don't retry the failing read on
                 // every keystroke; a repo change / refresh clears the cache.
                 self.tree_view.cache.insert(dir.to_string(), Vec::new());

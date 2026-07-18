@@ -33,6 +33,63 @@ use crate::runtime::terminal::SCROLLBACK_LINES;
 pub(crate) const LIST_PAGE_SIZE: usize = 10;
 pub(crate) const DIFF_PAGE_SIZE: usize = 20;
 
+/// What raised a notice — the key its expiry is scoped to.
+///
+/// Expiry used to be decided by matching the message text
+/// (`msg.starts_with("git error:")`), which tied clearing to human-readable
+/// prose and only ever covered the two kinds that happened to have a matching
+/// arm: terminal, tree, and session messages were never cleared at all and sat
+/// in the chrome until the repo was switched. Keying on the variant instead
+/// means adding a kind forces a decision about when it goes away.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NoticeKind {
+    Git,
+    Diff,
+    Terminal,
+    Tree,
+    Session,
+    RepoInput,
+}
+
+impl NoticeKind {
+    /// Prefix shown before the message, or `None` when the message already
+    /// reads on its own (a repo-input rejection or a session-restore note
+    /// names its own subject).
+    pub fn label(self) -> Option<&'static str> {
+        match self {
+            Self::Git => Some("git error"),
+            Self::Diff => Some("diff error"),
+            Self::Terminal => Some("terminal error"),
+            Self::Tree => Some("tree error"),
+            Self::Session | Self::RepoInput => None,
+        }
+    }
+}
+
+/// A message shown in the chrome's notice row until its kind expires.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Notice {
+    pub kind: NoticeKind,
+    pub text: String,
+}
+
+impl Notice {
+    pub fn new(kind: NoticeKind, text: impl Into<String>) -> Self {
+        Self {
+            kind,
+            text: text.into(),
+        }
+    }
+
+    /// The single line to render, label included when the kind carries one.
+    pub fn line(&self) -> String {
+        match self.kind.label() {
+            Some(label) => format!("{label}: {}", self.text),
+            None => self.text.clone(),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize, Default)]
 pub enum ViewMode {
     #[default]
@@ -69,7 +126,7 @@ pub struct App {
     pub status_view: StatusView,
     pub diff: DiffPane,
     pub focus: Focus,
-    pub status: Option<String>,
+    pub notice: Option<Notice>,
     pub repo_path: String,
     pub log_view: LogView,
     pub tree_view: TreeView,
@@ -140,6 +197,31 @@ pub struct App {
 }
 
 impl App {
+    /// Raise a notice, replacing whatever was showing. The chrome has one
+    /// notice row, so the newest problem wins.
+    pub fn raise_notice(&mut self, kind: NoticeKind, text: impl Into<String>) {
+        self.notice = Some(Notice::new(kind, text));
+    }
+
+    /// Drop the current notice if it was raised by `kind`. Called from the
+    /// success path of each subsystem, so a resolved problem stops being
+    /// reported without clobbering an unrelated one that arrived since.
+    pub fn clear_notice(&mut self, kind: NoticeKind) {
+        if self.notice.as_ref().is_some_and(|n| n.kind == kind) {
+            self.notice = None;
+        }
+    }
+
+    /// Drop the current notice because the user acted on the app itself.
+    ///
+    /// Deliberately *not* called for keys forwarded to a PTY: in a terminal
+    /// pane every keystroke is passthrough, so dismissing on those would make
+    /// a notice vanish the instant the user resumed typing — the same
+    /// effectively-invisible failure this row exists to prevent.
+    pub fn dismiss_notice_on_app_input(&mut self) {
+        self.notice = None;
+    }
+
     pub fn new(
         repo_path: String,
         prompt_log: bool,
@@ -155,7 +237,7 @@ impl App {
             status_view: StatusView::default(),
             diff: DiffPane::default(),
             focus: Focus::FileList,
-            status: None,
+            notice: None,
             repo_path,
             log_view: LogView::default(),
             tree_view: TreeView::default(),
@@ -323,7 +405,7 @@ pub(crate) mod tests {
             status_view,
             diff: DiffPane::default(),
             focus: Focus::FileList,
-            status: None,
+            notice: None,
             repo_path: ".".to_string(),
             log_view: LogView::default(),
             tree_view: TreeView::default(),
@@ -1362,11 +1444,12 @@ pub(crate) mod tests {
         // failing re-read leaks a "tree error" into the status bar.
         assert!(!app.tree_view.expanded.contains("src"));
         assert!(
-            !app.status
-                .as_deref()
-                .is_some_and(|m| m.starts_with("tree error")),
+            !app
+                .notice
+                .as_ref()
+                .is_some_and(|n| n.kind == NoticeKind::Tree),
             "a vanished directory must not surface a tree error: {:?}",
-            app.status
+            app.notice
         );
         drop(dir);
     }
@@ -1662,11 +1745,12 @@ pub(crate) mod tests {
         // ...and the moved-to directory is visible at the root.
         assert!(app.tree_view.visible_rows().iter().any(|r| r.path == "lib"));
         assert!(
-            !app.status
-                .as_deref()
-                .is_some_and(|m| m.starts_with("tree error")),
+            !app
+                .notice
+                .as_ref()
+                .is_some_and(|n| n.kind == NoticeKind::Tree),
             "a vanished restored expansion must not surface a tree error: {:?}",
-            app.status
+            app.notice
         );
         drop(dir);
     }
@@ -2301,11 +2385,14 @@ pub(crate) mod tests {
         assert!(app.pagination.last_head_oid.is_some());
     }
 
+
+
+
     #[test]
     fn successful_snapshot_preserves_terminal_status() {
         let (snapshot, tx) = dummy_snapshot_channel();
         let mut app = App {
-            status: Some("terminal error: backend unavailable".to_string()),
+            notice: Some(Notice::new(NoticeKind::Terminal, "backend unavailable")),
             snapshot,
             ..app_with_files(vec![])
         };
@@ -2323,8 +2410,8 @@ pub(crate) mod tests {
         app.poll_snapshot();
 
         assert_eq!(
-            app.status.as_deref(),
-            Some("terminal error: backend unavailable")
+            app.notice,
+            Some(Notice::new(NoticeKind::Terminal, "backend unavailable"))
         );
     }
 
@@ -2332,7 +2419,7 @@ pub(crate) mod tests {
     fn successful_snapshot_clears_git_status() {
         let (snapshot, tx) = dummy_snapshot_channel();
         let mut app = App {
-            status: Some("git error: not a repo".to_string()),
+            notice: Some(Notice::new(NoticeKind::Git, "not a repo")),
             snapshot,
             ..app_with_files(vec![])
         };
@@ -2349,7 +2436,7 @@ pub(crate) mod tests {
         .unwrap();
         app.poll_snapshot();
 
-        assert_eq!(app.status, None);
+        assert_eq!(app.notice, None);
     }
 
     #[test]

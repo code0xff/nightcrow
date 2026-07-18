@@ -1,4 +1,4 @@
-use super::{App, DiffPaneView, FileViewKey, FileViewState, ViewMode};
+use super::{App, DiffPaneView, FileViewKey, FileViewState, NoticeKind, ViewMode};
 use crate::git::diff::{
     DiffHunk, load_commit_diff, load_commit_file_blob, load_commit_file_diff, load_file_diff,
     load_workdir_file, parse_hunk_new_start,
@@ -24,7 +24,7 @@ impl App {
     /// Run `f` with the cached `git2::Repository`, opening it lazily on first
     /// use. Cache is invalidated by `change_repo` so that follow-up calls open
     /// a fresh handle for the new path. Errors from the open propagate so the
-    /// caller can surface them in `self.status`.
+    /// caller can surface them as a notice.
     pub(crate) fn with_repo<R>(
         &mut self,
         f: impl FnOnce(&git2::Repository) -> anyhow::Result<R>,
@@ -69,7 +69,7 @@ impl App {
         let result = self.with_repo(|repo| load_file_diff(repo, &path));
         if let Err(e) = &result {
             tracing::warn!(error = %e, file = %path, "failed to load diff");
-            self.status = Some(format!("diff error: {e}"));
+            self.raise_notice(NoticeKind::Diff, e.to_string());
         }
         let mode = if reset_scroll {
             DiffApply::Reset
@@ -91,16 +91,10 @@ impl App {
         let reset_scroll = matches!(mode, DiffApply::Reset | DiffApply::ResetWithTitle(_));
         match result {
             Ok(hunks) => {
-                // Clear any stale "diff error:" surfaced by a previous failed
-                // load — keeping it would mislead the user about the current
-                // file's state. Untouched for unrelated status messages.
-                if self
-                    .status
-                    .as_deref()
-                    .is_some_and(|m| m.starts_with("diff error:"))
-                {
-                    self.status = None;
-                }
+                // Clear any stale diff error from a previous failed load —
+                // keeping it would mislead the user about the current file's
+                // state. Notices of other kinds are left alone.
+                self.clear_notice(NoticeKind::Diff);
                 self.diff.hunks = hunks;
                 self.diff.rebuild_lower_cache();
                 match mode {
@@ -136,7 +130,7 @@ impl App {
                 // transient race (mid-rename, slow git index update) and
                 // clearing would both flash an empty pane and leave `scroll`
                 // dangling past the now-empty `max_scroll`. The error is
-                // already surfaced in `self.status` by the loader.
+                // already surfaced as a notice by the loader.
                 if !matches!(mode, DiffApply::KeepScroll(_)) {
                     self.clear_diff_state();
                 }
@@ -324,7 +318,7 @@ impl App {
         let result = self.with_repo(|repo| load_commit_diff(repo, oid));
         if let Err(e) = &result {
             tracing::warn!(error = %e, "failed to load commit diff");
-            self.status = Some(format!("diff error: {e}"));
+            self.raise_notice(NoticeKind::Diff, e.to_string());
         }
         self.apply_diff_result(result, DiffApply::ResetWithTitle(&title));
     }
@@ -354,7 +348,7 @@ impl App {
         let result = self.with_repo(|repo| load_commit_file_diff(repo, oid, &path));
         if let Err(e) = &result {
             tracing::warn!(error = %e, file = %path, "failed to load commit file diff");
-            self.status = Some(format!("diff error: {e}"));
+            self.raise_notice(NoticeKind::Diff, e.to_string());
         }
         self.apply_diff_result(result, DiffApply::ResetWithTitle(&title));
     }

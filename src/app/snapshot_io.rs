@@ -1,4 +1,4 @@
-use super::{App, RepoSnapshot, SnapshotMsg, ViewMode};
+use super::{App, NoticeKind, RepoSnapshot, SnapshotMsg, ViewMode};
 use std::collections::HashMap;
 use std::time::SystemTime;
 
@@ -19,7 +19,7 @@ impl App {
             }
             Some(SnapshotMsg::Err(e)) => {
                 tracing::warn!(error = %e, "git snapshot failed");
-                self.status = Some(format!("git error: {e}"));
+                self.raise_notice(NoticeKind::Git, e.to_string());
             }
             None => {}
         }
@@ -55,13 +55,7 @@ impl App {
                 self.clear_diff_state();
             }
         }
-        if self
-            .status
-            .as_deref()
-            .is_some_and(|msg| msg.starts_with("git error:"))
-        {
-            self.status = None;
-        }
+        self.clear_notice(NoticeKind::Git);
 
         // Detect commits made through the terminal pane or external tools and
         // refresh the Log view's cached commit list. Skip on the very first

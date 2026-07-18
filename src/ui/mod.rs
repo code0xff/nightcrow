@@ -112,6 +112,29 @@ pub(crate) fn render_search_bar(
     );
 }
 
+/// Split the screen into the three top-level rows: the body, the notice row
+/// (repo identity, or a notice covering it), and the hint bar.
+///
+/// The chrome sits at the bottom so a rejected repo path lands directly above
+/// the input the user has to correct, instead of across the screen from it.
+///
+/// This is called from `draw` and from three geometry helpers that must land on
+/// exactly the same cells — the PTY sizer, the upper-panel hit test, and the
+/// hint-bar hit test. They were four hand-copied splits before; one drifting
+/// from the others mis-sizes terminals or offsets every mouse click by a row,
+/// so the split lives here only.
+fn chrome_rows(screen_area: Rect) -> (Rect, Rect, Rect) {
+    let outer = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Min(0),
+            Constraint::Length(1),
+            Constraint::Length(1),
+        ])
+        .split(screen_area);
+    (outer[0], outer[1], outer[2])
+}
+
 fn main_content_constraints(layout: &LayoutConfig) -> [Constraint; 2] {
     [
         Constraint::Percentage(layout.upper_pct),
@@ -146,22 +169,13 @@ pub fn draw(
     layout: &LayoutConfig,
     accent: Color,
 ) -> Option<Position> {
-    // Reserve 1 row at the top for the repo/branch header and 1 row at the
-    // bottom for the hint/status bar. The header is rendered in every layout
-    // branch (fullscreen included) so the repo identity is always visible.
-    let outer = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(1),
-            Constraint::Min(0),
-            Constraint::Length(1),
-        ])
-        .split(frame.area());
-    let header_area = outer[0];
-    let body_area = outer[1];
-    let hint_area = outer[2];
+    // Two chrome rows at the bottom: the notice row (repo identity, or a
+    // notice covering it) and the hint bar. Both are rendered in every layout
+    // branch (fullscreen included) so repo identity and notices are never lost
+    // to a view mode.
+    let (body_area, notice_area, hint_area) = chrome_rows(frame.area());
 
-    frame.render_widget(render_repo_header(app, accent), header_area);
+    frame.render_widget(render_notice_row(app, accent), notice_area);
 
     if app.terminal.fullscreen.fills_body() {
         let cursor = terminal_tab::render(frame, app, body_area, accent);
@@ -241,18 +255,10 @@ pub(crate) fn upper_panel_at(
     if app.terminal.fullscreen.fills_body() || app.diff.fullscreen || app.list_fullscreen {
         return None;
     }
-    let outer = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(1),
-            Constraint::Min(0),
-            Constraint::Length(1),
-        ])
-        .split(screen_area);
     let main = Layout::default()
         .direction(Direction::Vertical)
         .constraints(main_content_constraints(layout))
-        .split(outer[1]);
+        .split(chrome_rows(screen_area).0);
     let file_list_pct = layout.file_list_pct;
     let upper = Layout::default()
         .direction(Direction::Horizontal)
@@ -293,15 +299,7 @@ pub(crate) fn pane_at(
 /// `terminal_tab::render` is given as its `area` argument in `draw`. `None`
 /// when a different pane is fullscreen and the terminal isn't drawn at all.
 fn terminal_widget_area(app: &App, screen_area: Rect, layout: &LayoutConfig) -> Option<Rect> {
-    let outer = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(1),
-            Constraint::Min(0),
-            Constraint::Length(1),
-        ])
-        .split(screen_area);
-    let body_area = outer[1];
+    let (body_area, _, _) = chrome_rows(screen_area);
 
     if app.terminal.fullscreen.fills_body() {
         return Some(body_area);
@@ -320,6 +318,23 @@ fn terminal_widget_area(app: &App, screen_area: Rect, layout: &LayoutConfig) -> 
 /// Render the top header strip: `repo-path  branch  ↑N ↓M`. Branch and
 /// tracking chips are omitted when their data is absent so the line stays
 /// short on detached HEAD or empty repos.
+/// The notice row: a notice when one is raised, otherwise repo identity.
+///
+/// A notice covers the repo/branch line rather than taking a row of its own.
+/// Adding a row would resize every PTY as notices come and go, and this is the
+/// one chrome row whose content is ambient and re-derived every frame, so
+/// covering it costs nothing — unlike the hint bar below, which holds the
+/// repo-input text the user is editing.
+fn render_notice_row<'a>(app: &'a App, accent: Color) -> Paragraph<'a> {
+    if let Some(notice) = app.notice.as_ref() {
+        return Paragraph::new(Line::from(Span::styled(
+            format!(" {}", notice.line()),
+            Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+        )));
+    }
+    render_repo_header(app, accent)
+}
+
 fn render_repo_header<'a>(app: &'a App, accent: Color) -> Paragraph<'a> {
     let display_path = home_relative_path(&app.repo_path);
     let mut spans: Vec<Span<'a>> = vec![Span::styled(
@@ -439,20 +454,13 @@ fn hint_spans(text: &str, leader: &str, mark_clickable: bool) -> Vec<Span<'stati
 
 fn render_hint_bar(app: &App, accent: Color) -> Paragraph<'_> {
     if app.repo_input.active {
-        // This row replaces the status row entirely, so a rejected confirm has
-        // to report itself here or it is never seen at all.
-        let mut spans = vec![
+        // A rejected path is reported on the notice row directly above, so
+        // this row stays a plain input line.
+        return Paragraph::new(Line::from(vec![
             Span::styled("repo: ", Style::default().fg(accent)),
             Span::raw(app.repo_input.buf.as_str()),
             Span::styled("█", Style::default().fg(accent)),
-        ];
-        if let Some(ref err) = app.repo_input.error {
-            spans.push(Span::styled(
-                format!("  {err} — edit and press enter, or esc to cancel"),
-                Style::default().fg(Color::Red),
-            ));
-        }
-        return Paragraph::new(Line::from(spans));
+        ]));
     }
     if app.prefix_armed() {
         let mut spans = vec![Span::styled(
@@ -491,9 +499,6 @@ fn render_hint_bar(app: &App, accent: Color) -> Paragraph<'_> {
                 Style::default().fg(Color::DarkGray),
             ),
         ]));
-    }
-    if let Some(ref msg) = app.status {
-        return Paragraph::new(Line::from(msg.as_str())).style(Style::default().fg(Color::Red));
     }
     // `<prefix>` in the hint literal resolves to the configured leader chord
     // (e.g. `^Q`) so the footer always names the actual key to press rather
@@ -678,27 +683,19 @@ pub(crate) fn hint_click_at(app: &App, screen_area: Rect, x: u16, y: u16) -> Opt
     if !app.mouse_enabled {
         return None;
     }
-    let outer = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(1),
-            Constraint::Min(0),
-            Constraint::Length(1),
-        ])
-        .split(screen_area);
-    let hint_area = outer[2];
+    let (_, _, hint_area) = chrome_rows(screen_area);
     if hint_area.height == 0 || !hint_area.contains(Position { x, y }) {
         return None;
     }
 
-    // Row selection mirrors `render_hint_bar`'s branch order exactly — the
-    // armed row outranks a status message there, so it must here too, or a
-    // status arriving while armed would strand inverted labels unclickable.
+    // Row selection mirrors `render_hint_bar`'s branch order exactly, or a
+    // click would resolve against a row the user isn't looking at. Notices no
+    // longer appear here (they own the row above), so they don't feature.
     let (chip, text) = if app.repo_input.active {
         return None;
     } else if app.prefix_armed() {
         (PREFIX_CHIP, prefix_armed_hint_text(app))
-    } else if app.awaiting_swap_target() || app.status.is_some() {
+    } else if app.awaiting_swap_target() {
         return None;
     } else {
         ("", normal_hint_literal(app).to_string())
@@ -766,9 +763,22 @@ fn segment_click(keyspec: &str) -> Option<HintClick> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::app::NoticeKind;
     use crate::app::tests::{app_with_fake_backend, app_with_files};
     use crate::runtime::terminal::TerminalFullscreen;
     use ratatui::{Terminal, backend::TestBackend};
+
+    /// Render the notice row into a wide buffer and return its flattened text.
+    fn notice_text(app: &App) -> String {
+        let mut terminal = Terminal::new(TestBackend::new(200, 1)).unwrap();
+        terminal
+            .draw(|frame| frame.render_widget(render_notice_row(app, Color::Yellow), frame.area()))
+            .unwrap();
+        let buf = terminal.backend().buffer();
+        (0..buf.area.width)
+            .map(|x| buf[(x, 0)].symbol())
+            .collect::<String>()
+    }
 
     /// Render the hint bar into a wide buffer and return its flattened text so
     /// footer wording can be asserted layout by layout.
@@ -817,12 +827,12 @@ mod tests {
         );
     }
 
-    /// The repo-input row replaces the status row rather than sharing it, so a
-    /// rejected path must report itself inside this row. Writing the message to
-    /// `App::status` instead left it unrendered for as long as the dialog was
-    /// open — the confirm looked like it did nothing at all.
+    /// A rejected path is reported on the notice row while the input keeps the
+    /// text being corrected on the row below. The message used to be written to
+    /// a field the repo-input row never rendered, so the confirm looked like it
+    /// did nothing at all.
     #[test]
-    fn repo_input_hint_bar_shows_why_a_confirm_was_rejected() {
+    fn repo_input_reports_a_rejected_path_on_the_notice_row() {
         let mut app = app_with_files(vec![]);
         app.start_repo_input();
         app.repo_input.buf = "/definitely/not/here".to_string();
@@ -832,31 +842,34 @@ mod tests {
             app.repo_input.active,
             "a rejected path must leave the dialog open for correction"
         );
-        let text = hint_text(&app);
+        let notice = notice_text(&app);
         assert!(
-            text.contains("/definitely/not/here"),
-            "the rejected text must stay in the input, got: {text}"
+            notice.contains("no such directory"),
+            "the notice row must say why the confirm was rejected, got: {notice}"
         );
+        let hint = hint_text(&app);
         assert!(
-            text.contains("no such directory"),
-            "the hint bar must say why the confirm was rejected, got: {text}"
+            hint.contains("/definitely/not/here"),
+            "the rejected text must stay in the input, got: {hint}"
         );
     }
 
     #[test]
-    fn repo_input_hint_bar_drops_the_error_once_the_path_is_edited() {
+    fn repo_input_notice_clears_once_the_path_is_edited() {
         let mut app = app_with_files(vec![]);
         app.start_repo_input();
         app.repo_input.buf = "/definitely/not/here".to_string();
         app.confirm_repo_input();
         app.repo_input_pop();
 
-        let text = hint_text(&app);
+        let notice = notice_text(&app);
         assert!(
-            !text.contains("no such directory"),
-            "editing the path must clear the stale verdict, got: {text}"
+            !notice.contains("no such directory"),
+            "editing the path must clear the stale verdict, got: {notice}"
         );
     }
+
+
 
     #[test]
     fn hint_bar_inverts_only_clickable_key_labels() {
@@ -887,14 +900,13 @@ mod tests {
         assert_inverted_cells_are_clickable(&app);
     }
 
-    /// The armed row outranks a status message (`render_hint_bar` branch
-    /// order), so its labels must stay clickable while a status is pending —
-    /// the hit test mirrors the same precedence.
+    /// Notices own the row above the hint bar, so raising one must not
+    /// disturb the hint bar's labels or their click targets.
     #[test]
-    fn armed_prefix_hint_bar_stays_clickable_while_a_status_is_set() {
+    fn armed_prefix_hint_bar_stays_clickable_while_a_notice_is_set() {
         let mut app = app_with_fake_backend();
         app.arm_prefix();
-        app.status = Some("boom".to_string());
+        app.raise_notice(NoticeKind::Git, "boom");
         assert_inverted_cells_are_clickable(&app);
     }
 
@@ -1414,10 +1426,6 @@ mod tests {
         assert!((0..HINT_TEST_SCREEN.width)
             .all(|x| hint_click_at(&swap, HINT_TEST_SCREEN, x, HINT_ROW).is_none()));
 
-        let mut status = app_with_fake_backend();
-        status.status = Some("boom".to_string());
-        assert!((0..HINT_TEST_SCREEN.width)
-            .all(|x| hint_click_at(&status, HINT_TEST_SCREEN, x, HINT_ROW).is_none()));
     }
 
     #[test]
@@ -1443,6 +1451,8 @@ mod tests {
         }
         // The top-left corner belongs to the upper panels, not a pane.
         assert_eq!(pane_at(&app, screen, &layout, 0, 0), None);
+        // ...and so do the two chrome rows at the bottom.
+        assert_eq!(pane_at(&app, screen, &layout, 0, 39), None);
     }
 
     #[test]
@@ -1451,19 +1461,19 @@ mod tests {
         let screen = Rect::new(0, 0, 100, 40);
         let layout = LayoutConfig::default();
 
-        // Row 0 is the repo header, row 1 the first body row. The default
-        // file_list_pct (25) puts x=0 in the list and x=60 in the diff.
-        assert_eq!(upper_panel_at(&app, screen, &layout, 0, 0), None);
+        // The chrome is at the bottom, so row 0 is the first body row. The
+        // default file_list_pct (25) puts x=0 in the list and x=60 in the diff.
         assert_eq!(
-            upper_panel_at(&app, screen, &layout, 0, 1),
+            upper_panel_at(&app, screen, &layout, 0, 0),
             Some(Focus::FileList)
         );
         assert_eq!(
-            upper_panel_at(&app, screen, &layout, 60, 1),
+            upper_panel_at(&app, screen, &layout, 60, 0),
             Some(Focus::DiffViewer)
         );
-        // The last body row belongs to the terminal panel, the row after it
-        // to the hint bar — neither is an upper panel.
+        // Below the upper panels: the terminal panel, then the two chrome
+        // rows (notice, hint) — none of them is an upper panel.
+        assert_eq!(upper_panel_at(&app, screen, &layout, 0, 37), None);
         assert_eq!(upper_panel_at(&app, screen, &layout, 0, 38), None);
         assert_eq!(upper_panel_at(&app, screen, &layout, 0, 39), None);
     }
