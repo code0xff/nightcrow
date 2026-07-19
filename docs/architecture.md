@@ -8,15 +8,16 @@ nightcrow 자체는 AI에 대한 ontology를 갖지 않는다 — agent든 사�
 
 **대상 사용자**: 터미널 중심으로 작업하면서, 옆 패널의 LLM CLI(Claude Code, Codex, aider 등)나 빌드/테스트 러너가 만든 코드 변경을 실시간으로 따라잡고 싶은 개발자.
 
-**핵심 기능**: 변경 파일 리스트(좌측/키보드 네비게이션), git diff 뷰어(우측/문법 하이라이팅), commit log 뷰, read-only 파일 트리 내비게이터(라이브 워치 + 재귀 파일명 검색), split-view 멀티 PTY 패널(하단), mtime 기반 hot-file 강조 + idle auto-follow, OSC 0/2 탭 타이틀 캡처, 마우스 캡처(클릭 포커스/포워딩, 휠 라우팅, 클릭 가능한 힌트 바).
+**핵심 기능**: 멀티 프로젝트 탭(최대 10개 저장소, 프로젝트별 git 뷰 + 터미널 pane), 변경 파일 리스트(좌측/키보드 네비게이션), git diff 뷰어(우측/문법 하이라이팅), commit log 뷰, read-only 파일 트리 내비게이터(라이브 워치 + 재귀 파일명 검색), split-view 멀티 PTY 패널(하단), mtime 기반 hot-file 강조 + idle auto-follow, OSC 0/2 탭 타이틀 캡처, 마우스 캡처(클릭 포커스/포워딩, 휠 라우팅, 클릭 가능한 힌트 바).
 
 ## Layout
 
 ```
-┌──────────────────────┬──────────────────────┐
+│ F1 repo-a  F2 repo-b  +2                     │  ← project tab row
+├──────────────────────┬──────────────────────┤
 │ File List (20~25%)   │ Diff Viewer (75~80%) │  ← upper panel
 ├──────────────────────┴──────────────────────┤
-│ F3 pane-a  F4 pane-b  +2       (tab bar)     │
+│ ^Q3 pane-a  ^Q4 pane-b  +2     (tab bar)     │
 ├────────────────────┬────────────────────────┤
 │  Pane A (active)   │      Pane B             │  ← split-view grid: every
 ├────────────────────┼────────────────────────┤     visible pane renders at
@@ -27,11 +28,20 @@ nightcrow 자체는 AI에 대한 ontology를 갖지 않는다 — agent든 사�
 └─────────────────────────────────────────────┘
 ```
 
-크롬 두 행(notice row + hint bar)은 하단에 모여 있고, 세 행 분할은
-`ui::mod::chrome_rows` 한 곳에서만 계산된다 — `draw`와 세 개의 geometry
-helper(PTY 사이저, upper-panel/hint-bar hit test)가 정확히 같은 셀에
-떨어져야 하므로, 손으로 복사된 분할이 어긋나면 터미널 크기가 틀어지거나
-모든 마우스 클릭이 한 행씩 밀린다.
+프로젝트 탭 행은 상단, 나머지 크롬 두 행(notice row + hint bar)은 하단에
+모여 있다. 네 행 분할은 `ui::mod::chrome_rows` 한 곳에서만 계산된다 —
+`draw`와 세 개의 geometry helper(PTY 사이저, upper-panel/hint-bar hit
+test)가 정확히 같은 셀에 떨어져야 하므로, 손으로 복사된 분할이 어긋나면
+터미널 크기가 틀어지거나 모든 마우스 클릭이 한 행씩 밀린다.
+
+프로젝트 탭 행은 탭 개수와 무관하게 **항상 존재한다**. 행이 생겼다 사라지면
+프로젝트를 열고 닫을 때마다 모든 PTY가 resize되는데, 이는 notice row를
+별도 행이 아닌 오버레이로 둔 것과 같은 이유다. 고정 행은 시작 시 pane당
+SIGWINCH 한 번으로 끝난다.
+
+탭 행과 notice row는 `draw`의 레이아웃 분기 **이전에** 렌더된다. fullscreen
+모드에서 탭이 사라지면 사용자가 자기가 어느 프로젝트에 있는지 알 방법이
+없어지므로, 분기마다 중복 렌더하는 대신 구조로 보장한다.
 
 The lower panel shows every *visible* pane simultaneously in a balanced
 grid instead of switching between tabs — see "Split-View Terminal Panel"
@@ -123,7 +133,7 @@ trait TerminalBackend {
 ### Git Diff Pipeline
 
 - 백그라운드 worker 스레드: `SnapshotChannel`이 1초 간격으로 `load_snapshot`을 호출해 변경 파일 + tracking status를 `mpsc` 채널로 푸시한다.
-- UI 스레드 동기 로드: 파일/커밋 선택이 바뀌면 `load_*_with_repo`를 직접 호출한다. App은 `git2::Repository`를 lazy-cache하므로 매 호출마다 `Repository::discover`를 다시 실행하지 않는다. `change_repo` 시점에만 cache가 무효화된다.
+- UI 스레드 동기 로드: 파일/커밋 선택이 바뀌면 `load_*_with_repo`를 직접 호출한다. App은 `git2::Repository`를 lazy-cache하므로 매 호출마다 `Repository::discover`를 다시 실행하지 않는다. cache는 프로젝트와 수명을 같이 하므로 무효화 시점이 따로 없다 — 저장소가 바뀌는 유일한 방법이 탭을 닫고 새로 여는 것이기 때문.
 - 렌더링: 보이는 행(`scroll_start..scroll_start+visible_height`)에 한해 `syntect`로 syntax highlighting을 수행한다. 보이지 않는 라인은 highlighter state만 진행시켜 multi-line construct(블록 주석, 문자열 리터럴)의 syntax 연속성을 유지한다.
 
 ### Split-View Terminal Panel
@@ -247,6 +257,52 @@ background even while scrolled out of the window.
 - **Lower panel focused (terminal)**: leader/예약키가 아닌 모든 키는 active backend의 stdin으로 직접 통과한다(`encode_key`가 화살표/F-key/제어문자를 VT100 시퀀스로 인코딩). 단독 `Ctrl+T/W/L/F/O/P/Q`도 더 이상 앱 명령이 아니므로 control byte로 PTY에 전달된다.
 - overlay(repo input/search) active 시에는 leader dispatch가 금지되고 overlay가 키를 소유한다. armed 중 overlay가 열리는 경로면 prefix를 취소한다.
 - 좌측/우측 패널 타이틀에는 현재 포커스 단축키(`F1` / `F2`)가 노출돼 사용자가 즉시 jump 키를 알 수 있다.
+
+### Project Boundary (`Workspace` / `App`)
+
+한 프로세스가 저장소 N개(최대 `MAX_PROJECTS` = 10, F1~F10 키 공간과 일치)를
+탭으로 연다.
+
+- `App` = 저장소 하나의 상태 전부. 터미널 pane도 `App`에 있으므로 프로젝트마다
+  자기 PTY 집합과 cwd를 갖는다.
+- `Workspace` = `Vec<App>` + 활성 인덱스. 탭 전환은 인덱스 변경뿐이며 어떤
+  프로젝트 상태도 건드리지 않는다. 목록은 **비어 있을 수 있다** — 인자 없는
+  실행이 그 상태이고, 마지막 탭을 닫아도 그리로 돌아온다. 그래서 `active()`가
+  `Option`이다.
+
+저장소를 "교체"하는 경로는 없다. 탭을 닫으면 `App`이 drop되면서
+`SnapshotChannel`이 worker를 join하고 `TerminalState`가 자식 프로세스를
+정리하므로, 손으로 유지하는 초기화 목록이 존재하지 않는다. 제자리 교체는
+pane을 살려두는 탓에 탭 라벨과 셸의 작업 디렉토리가 어긋나기도 했다.
+
+**프로세스 레벨 상태** — 저장소 열기 다이얼로그(`repo_input`)는 `Workspace`에
+있다. 프로젝트가 없을 때도 동작해야 하는데, 그때가 바로 이 다이얼로그가 유일한
+행동이기 때문이다. 그것이 참조하는 leader 화음과 거부된 경로를 알릴 notice
+슬롯도 함께 있다. 반면 `handle_key`는 여전히 `&mut App` 하나만 받는다 —
+`dispatch_key`가 워크스페이스 레벨 경우(다이얼로그, 빈 화면의 두 키)를 먼저
+해소하므로, 프로젝트별 입력 경로 전체가 프로젝트 하나만 아는 채로 유지된다.
+
+입력 핸들러는 `&mut App` 하나만 받으므로 탭 목록에 닿을 수 없다. 대신
+워크스페이스 수준 의도를 `KeyOutcome::Project(ProjectRequest)`로 반환하고
+`main_loop`이 실행한다. 이 덕분에 프로젝트별 입력 경로 전체가 그대로 유지된다.
+
+**Polling 규칙** — 모든 프로젝트가 매 tick 자기 큐를 비우지만(스냅샷 worker와
+PTY reader는 unbounded 채널에 계속 쓰므로), 스냅샷을 *적용*하는 것은 활성
+프로젝트뿐이다. 적용은 전체 `refresh_diff`를 돌리므로 열린 저장소마다
+프레임당 git diff를 UI 스레드에서 수행하게 된다. 배경 스냅샷은
+`pending_snapshot`에 대기하다 탭이 앞으로 나온 첫 tick에 적용된다.
+**중복 방지** — 다른 탭이 이미 연 저장소는 두 번 열지 않고 그 탭으로
+포커스를 옮긴다. 같은 workdir에 프로젝트 두 개는 스냅샷 worker가 중복으로
+돌고 같은 session 파일에 쓴다. git 저장소가 아닌 경로는 canonicalize해서
+철자 차이(`/w` vs `/w/`)가 이 검사를 빠져나가지 못하게 한다.
+
+**세션** — 저장소별 파일이므로 탭을 닫을 때와 종료 시 각각 저장한다. 단
+자기 복원이 아직 실행되지 않은 프로젝트(`has_pending_session`)는 건너뛴다 —
+뷰 필드가 기본값이라 그대로 쓰면 진짜 세션 파일을 덮어쓴다. 어떤 저장소가
+열려 있었는지는 저장하지 않는다: 시작 시 여는 것은 `--repo`가 지정한 것뿐이다.
+
+**로그 경로** — 로그 파일은 시작 시 한 번 열리므로 활성 탭을 따라갈 수 없다.
+첫 `--repo`를, 그것도 없으면 작업 디렉토리를 고정 기준으로 삼는다.
 
 ### Notice Row
 

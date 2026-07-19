@@ -27,11 +27,14 @@ Requires Rust 1.85+ (edition 2024).
 ## Usage
 
 ```bash
-# Open in current git repo
+# Start with no project open — press ^Q o to open one
 nightcrow
 
-# Open a specific repo
+# Open a repo in a tab
 nightcrow --repo ~/projects/myapp
+
+# Open several at once, one tab each (repeatable)
+nightcrow --repo ~/projects/api --repo ~/projects/web
 
 # Launch terminal panes running commands at startup (repeatable)
 nightcrow --exec "claude" --exec "codex"
@@ -39,10 +42,41 @@ nightcrow --exec "claude" --exec "codex"
 
 `--exec` panes open after any `[[startup_command]]` panes from the config
 file; the two sources share a combined cap of 8 panes — the same count the
-`F3`–`F10` (or `<prefix> 3`–`9`,`0`) jump keys address, so every startup pane
-is reachable by a direct key. (`F1`/`F2` map to the file list and diff
-viewer.) Panes opened later with `<prefix> t` are not capped; any past the
-eighth are reached by focus cycling (`Shift+←/→`).
+`<prefix> 3`–`9`,`0` jump keys address, so every startup pane is reachable by
+a direct key. (`<prefix> 1`/`2` map to the file list and diff viewer.) Panes
+opened later with `<prefix> t` are not capped; any past the eighth are reached
+by focus cycling (`Shift+←/→`).
+
+## Projects
+
+One nightcrow process holds up to **10 repositories at once**, each in its own
+tab across the top row. A project owns everything scoped to its repo — the git
+views, the snapshot worker, and its own set of terminal panes — so switching
+tabs swaps the whole screen, not just the diff. A pane running a build in one
+project keeps running while you work in another.
+
+```
+ F1 nightcrow  F2 api-server  +3          ← project tabs (active one accented)
+┌ ^Q1 Files ──────┐┌ ^Q2 src/main.rs ────┐
+```
+
+- `^Q o` opens a repo in a tab, `^Q x` closes the active one, and `F1`…`F10`
+  switch between them. There is no "change this tab's repo": closing and
+  opening is the same thing, and it tears the old project down properly
+  instead of leaving its shells behind in the previous directory.
+- Opening a repo another tab already holds focuses that tab instead of running
+  two copies against one worktree.
+- When the tabs outgrow the row, it scrolls around the active tab and folds the
+  rest behind `+N` markers; clicking a marker jumps to the nearest project
+  behind it.
+
+**No project open** is a normal state, not an error — it is how nightcrow
+starts without `--repo`, and where closing the last tab returns you. The screen
+keeps its chrome and offers the only two things that apply: `^Q o` to open a
+repo, `^Q q` to quit.
+
+Each project keeps its own session file (see
+[Session persistence](#session-persistence)), so tabs restore independently.
 
 ## Views
 
@@ -66,7 +100,7 @@ The diff for a selected file shows the combined working-tree-with-index changes.
 
 **Commit log view** (`<prefix> l`) — tig-like commit list on the left, full commit diff on the right. Commits ahead of the upstream are marked with `↑`. Press `Enter` on a commit to drill into its individual files; `Esc` to go back. The list auto-refreshes when the workdir HEAD changes (commits made in the terminal pane, amends, force-pushes, branch switches). History loads one page at a time — initial entry fetches `commit_log_page_size` commits and additional pages stream in on a background thread as the selection approaches the loaded tail, so deep histories stay responsive. Toggling while a terminal or diff pane is zoomed exits the zoom and focuses the list, so the view switch is always visible.
 
-**Tree view** (`<prefix> b`) — a read-only directory tree of the whole working tree on the left, with the selected file's raw contents on the right. Unlike the status view (which lists only changed files), the tree lets you browse and read *any* file next to the diff without leaving nightcrow. `j`/`k` move the cursor, `→`/`Enter` expand a directory (read lazily, one level at a time), `←` collapses it or steps up to the parent, and selecting a file previews it. Press `/` while the tree is focused for a recursive filename search across the whole tree — type to filter, `Enter` reveals the selected match in place (expanding its ancestor directories), `Esc` cancels. Focus the file preview with `F2`, then press `/` to search within the file contents — `n`/`N` jump to the next/previous match, `Esc` clears the search. `.gitignore`-matched paths (e.g. `target/`, `node_modules/`) are hidden by default — toggle with `[tree] respect_gitignore`. Expanded directories are watched for filesystem changes, so files and folders created, moved, or deleted by another process (an editor, `git`, an LLM CLI) appear without leaving the view; set `[tree] live_watch = false` to refresh only on entry instead. The tree never writes, renames, or deletes anything. Expansion state and the selected path persist across sessions.
+**Tree view** (`<prefix> b`) — a read-only directory tree of the whole working tree on the left, with the selected file's raw contents on the right. Unlike the status view (which lists only changed files), the tree lets you browse and read *any* file next to the diff without leaving nightcrow. `j`/`k` move the cursor, `→`/`Enter` expand a directory (read lazily, one level at a time), `←` collapses it or steps up to the parent, and selecting a file previews it. Press `/` while the tree is focused for a recursive filename search across the whole tree — type to filter, `Enter` reveals the selected match in place (expanding its ancestor directories), `Esc` cancels. Focus the file preview with `<prefix> 2`, then press `/` to search within the file contents — `n`/`N` jump to the next/previous match, `Esc` clears the search. `.gitignore`-matched paths (e.g. `target/`, `node_modules/`) are hidden by default — toggle with `[tree] respect_gitignore`. Expanded directories are watched for filesystem changes, so files and folders created, moved, or deleted by another process (an editor, `git`, an LLM CLI) appear without leaving the view; set `[tree] live_watch = false` to refresh only on entry instead. The tree never writes, renames, or deletes anything. Expansion state and the selected path persist across sessions.
 
 **Notice row** — a one-row strip just above the hint bar shows the repo path (home-relative, e.g. `~/projects/myapp`), the current branch, and ahead/behind counts (`↑N ↓M`) when the branch tracks an upstream. When something fails — a git snapshot, a diff load, a terminal pane, or a repo path you typed that doesn't exist — the message takes over this row in red until the problem is resolved or you act on the app again. A rejected repo path therefore appears directly above the input you're correcting.
 
@@ -104,13 +138,14 @@ visible from the terminal pane.
 | `<prefix> l` | Toggle between status view and commit log view |
 | `<prefix> b` | Toggle the read-only file-tree view (returns to status view) |
 | `<prefix> f` | Fullscreen the focused pane. For the terminal it cycles `off → grid (all panes) → zoom (active pane only) → off`; with a single pane it toggles straight off/on. File list and diff viewer toggle off/on |
-| `<prefix> o` | Change repo path (prefilled with the current one — type to replace it, or press `→`/`End` first to extend it) |
+| `<prefix> o` | Open a repo in a **project tab** (prefilled with the active project's path — type to replace it, or press `→`/`End` first to extend it). If another tab already has that repo open, nightcrow focuses that tab instead of running two copies against one worktree |
+| `<prefix> x` | Close the active project tab. Closing the last one leaves nightcrow with no project open, which is a normal state |
 | `<prefix> p` | Cycle accent color (yellow → cyan → green → magenta → blue) |
 | `<prefix> r` | Force a full redraw (clears stray glyphs left by terminal programs) |
 | `<prefix> q` | Quit |
-| `<prefix> 1` / `<prefix> 2` | Focus the file/commit list / diff viewer (mirrors `F1` / `F2`) — **split view only** |
-| `<prefix> 3`…`<prefix> 9`, `<prefix> 0` | Jump to terminal pane 1…8 (mirrors `F3`…`F10`; `0` mirrors `F10`) |
-| `<prefix> 1`…`<prefix> 8` (terminal fullscreen) | Jump to terminal pane 1…8. With the viewer hidden the digit row addresses panes by natural numbering; `9`/`0` are unused. The bare `F1`…`F8` keys remap the same way, so the only way back to the list/diff is `<prefix> f` to leave fullscreen |
+| `<prefix> 1` / `<prefix> 2` | Focus the file/commit list / diff viewer — **split view only** |
+| `<prefix> 3`…`<prefix> 9`, `<prefix> 0` | Jump to terminal pane 1…8 (`0` addresses pane 8) |
+| `<prefix> 1`…`<prefix> 8` (terminal fullscreen) | Jump to terminal pane 1…8. With the viewer hidden the digit row addresses panes by natural numbering; `9`/`0` are unused. The only way back to the list/diff is `<prefix> f` to leave fullscreen |
 | `Esc` / `Ctrl+C` (while armed) | Cancel the prefix |
 
 The prefix has no timeout: once armed it waits indefinitely for the follow-up
@@ -125,9 +160,10 @@ chosen one. A non-digit follow-up or `Esc` cancels swap mode without reordering.
 | Key | Action |
 |-----|--------|
 | `Shift+→` / `Shift+←` | Cycle focus: file list → diff viewer → terminal panes → … |
-| `F1` / `F2` | Focus file list / diff viewer — **split view only** |
-| `F3`…`F10` | Jump to terminal pane 1…8 (split view) |
-| `F1`…`F8` (terminal fullscreen) | Jump to terminal pane 1…8. With the viewer hidden the whole F-key row addresses panes by natural numbering (mirrors `<prefix> 1`…`8`); `F9`/`F10` are unused. Exit fullscreen with `<prefix> f` |
+| `F1`…`F10` | Switch to project tab 1…10 — see [Projects](#projects). Unlike the pane digits, this mapping does not change with the layout: the same F-key reaches the same project in every view, fullscreen included |
+
+A modified F-key (`Ctrl+F1`, `Shift+F5`, …) is not intercepted and passes
+through to the terminal program.
 
 ### File list / Commit list (left panel)
 
@@ -161,7 +197,7 @@ narrow), 4 form a 2x2 grid, up to 4 show normally and up to 8 in the
 fullscreen grid. `<prefix> f` cycles the terminal through `off → grid →
 zoom → off`: *grid* hides the top viewer and fills the screen with the
 split grid, *zoom* fills the screen with just the active pane. The active
-pane's cell is bordered in the accent color; jumping focus with `F3`–`F10`
+pane's cell is bordered in the accent color; jumping focus with `<prefix> 3`–`9`,`0`
 or `Shift+←/→` moves that border (and, while zoomed, the pane on screen)
 without closing any other pane. With more panes than fit, the tab bar
 shows a `+N` marker for the ones scrolled out of view — they keep running
@@ -183,7 +219,8 @@ The tab bar picks up OSC 0/2 window-title escape sequences, so programs like `cl
 nightcrow captures the mouse by default (`[mouse]` in the configuration):
 
 - **Click a pane** to focus it, same as a jump key. The click is also forwarded to programs that asked for mouse reports (Claude Code, `less --mouse`, …) — so their clickable UI, like Claude Code's jump-to-bottom control, works. A plain shell receives nothing.
-- **Click the file list or diff viewer** to focus that panel, same as `F1`/`F2`.
+- **Click the file list or diff viewer** to focus that panel, same as `<prefix> 1`/`2`.
+- **Click a project tab** in the top row to switch to it, same as its `F`-key. A `+N` overflow marker jumps to the nearest project folded behind it.
 - **Wheel** scrolls the pane under the pointer, routed exactly like the scroll keys (wheel reports, arrow keys, or scrollback — whatever the program expects).
 - **Click a tab** in the terminal tab bar to jump to that pane; clicking a `+N` hidden-pane marker reveals the nearest hidden pane on that side.
 - **Click a shortcut** in the bottom hint bar to run it — command hints like `t: new pane`, `w: close pane`, or `f: fullscreen` dispatch exactly as if you pressed the keys they name. Clickable hints render inverted (reverse video) across their whole label so they stand out from informational hints; the inversion disappears when `[mouse]` is disabled. Navigation hints and `q: quit` are not clickable (quitting stays a deliberate two-key act).
@@ -198,6 +235,8 @@ Configurable under `[agent_indicator]` (see below).
 ## Session persistence
 
 nightcrow saves the current state on exit and restores it on the next launch for the same repo — focus position, selected file, scroll offset, active terminal pane, view mode (status / commit log / tree), fullscreen states, commit-log drill-down position, tree expansion and selection, and accent color. The state file is `.nightcrow/session.json` inside the repo directory.
+
+State is per repo, not per process, so each open project tab writes its own file — on exit and when you close its tab. Which repos were open is *not* saved: a launch opens whatever `--repo` names (nothing, if it names none), and further tabs are opened with `^Q o`.
 
 ## Web mirror
 
@@ -297,8 +336,8 @@ live_watch = true         # watch expanded dirs and refresh the tree live; set f
 
 # Reserve startup commands: each [[startup_command]] opens its own terminal
 # pane at launch and runs `command` immediately (via `$SHELL -lc <command>`).
-# Up to 8 entries (combined with CLI --exec). 8 matches the F3–F10 / <leader>
-# 3–9,0 jump keys, so every startup pane is reachable by a direct key (F1/F2
+# Up to 8 entries (combined with CLI --exec). 8 matches the <leader> 3–9,0
+# jump keys, so every startup pane is reachable by a direct key (<leader> 1/2
 # reach the file list and diff viewer). This caps only the startup batch — open
 # more anytime with <leader> t (panes past the eighth are reached by focus
 # cycling, Shift+←/→). `name` labels the tab; when omitted the command text is
