@@ -339,17 +339,13 @@ struct ProjectContext<'a> {
     leader: KeyEvent,
 }
 
-/// Persist one project's session, unless its own restore never ran.
+/// Persist one project's session.
 ///
-/// Restoration is deferred to the first snapshot, so a project opened and then
-/// left before that tick still holds default view state — serializing it would
-/// clobber the session file it never got to read from. The on-disk copy stays
-/// the truth in that case.
+/// `session_to_save` handles the project whose own restore has not run yet,
+/// merging the live half with the still-pending half rather than clobbering
+/// the file with defaults or skipping the save entirely.
 fn save_project_session(project: &App) {
-    if project.has_pending_session() {
-        return;
-    }
-    session::save_session(&project.repo_path, &project.save_session());
+    session::save_session(&project.repo_path, &project.session_to_save());
 }
 
 /// Carry out a workspace-level request produced by a key or click.
@@ -704,8 +700,13 @@ fn dispatch_mouse(
             // The open hint is the one action the empty screen offers, so a
             // click on it does what its key does.
             let leader_label = app::leader_label_of(ws_leader);
-            match ui::empty_hint_click_at(screen, &leader_label, mouse.column, mouse.row) {
+            let armed = ws.prefix_armed();
+            match ui::empty_hint_click_at(screen, &leader_label, armed, mouse.column, mouse.row) {
                 Some(ui::HintClick::Plain('o')) | Some(ui::HintClick::Leader('o')) => {
+                    // Disarm like the key path: an armed prefix left standing
+                    // would consume the next key as a stale follow-up once the
+                    // dialog closes.
+                    ws.cancel_prefix();
                     KeyOutcome::Project(ProjectRequest::OpenDialog)
                 }
                 _ => KeyOutcome::Continue,
@@ -1811,7 +1812,7 @@ mod tests {
         let label = app::leader_label_of(leader());
         let x = (0..MOUSE_TEST_SCREEN.width)
             .find(|&x| {
-                ui::empty_hint_click_at(MOUSE_TEST_SCREEN, &label, x, MOUSE_TEST_SCREEN.height - 1)
+                ui::empty_hint_click_at(MOUSE_TEST_SCREEN, &label, false, x, MOUSE_TEST_SCREEN.height - 1)
                     .is_some()
             })
             .expect("the open hint is clickable");
@@ -1829,6 +1830,41 @@ mod tests {
         );
 
         assert_eq!(outcome, KeyOutcome::Project(ProjectRequest::OpenDialog));
+    }
+
+    #[test]
+    fn clicking_the_open_hint_while_armed_disarms_the_prefix() {
+        // The armed row lays out differently (chip plus bare keys), so the hit
+        // test must measure that layout — and the click must disarm, or the
+        // next key after the dialog closes resolves as a stale follow-up.
+        let mut ws = Workspace::new(leader());
+        ws.arm_prefix();
+        let tabs: Vec<String> = Vec::new();
+        let label = app::leader_label_of(leader());
+        let row = MOUSE_TEST_SCREEN.height - 1;
+        let x = (0..MOUSE_TEST_SCREEN.width)
+            .find(|&x| {
+                matches!(
+                    ui::empty_hint_click_at(MOUSE_TEST_SCREEN, &label, true, x, row),
+                    Some(ui::HintClick::Plain('o'))
+                )
+            })
+            .expect("the armed open hint is clickable");
+
+        let outcome = dispatch_mouse(
+            &mut ws,
+            test_tab_view(&tabs),
+            mouse(
+                MouseEventKind::Down(crossterm::event::MouseButton::Left),
+                x,
+                row,
+            ),
+            MOUSE_TEST_SCREEN,
+            &config::LayoutConfig::default(),
+        );
+
+        assert_eq!(outcome, KeyOutcome::Project(ProjectRequest::OpenDialog));
+        assert!(!ws.prefix_armed(), "the click must disarm the prefix");
     }
 
     #[test]

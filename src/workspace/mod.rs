@@ -176,6 +176,11 @@ impl Workspace {
         // no longer the empty screen. Left standing, a stale message would
         // reappear the moment the last tab was closed again.
         self.empty_notice = None;
+        // Same reasoning as `switch`: the outgoing project's press can no
+        // longer be paired, since the release will be routed to the new one.
+        if let Some(previous) = self.projects.get_mut(self.active) {
+            previous.pending_mouse_press = None;
+        }
         self.projects.push(project);
         self.active = self.projects.len() - 1;
         true
@@ -434,6 +439,18 @@ mod tests {
 
         assert_eq!(paths(&ws), vec!["/a"]);
         assert_eq!(ws.active().unwrap().repo_path, "/a");
+    }
+
+    #[test]
+    fn 프로젝트를_추가해도_이전_프로젝트의_press가_버려진다() {
+        // `add` makes the new project active, so the outgoing project's press
+        // can no longer be paired — same reasoning as `switch`.
+        let mut ws = workspace_on(&["/a"]);
+        ws.active_mut().unwrap().pending_mouse_press = Some((1, crossterm::event::MouseButton::Left));
+
+        ws.add(project_at("/b"));
+
+        assert!(ws.projects()[0].pending_mouse_press.is_none());
     }
 
     #[test]

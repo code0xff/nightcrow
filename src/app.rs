@@ -1658,9 +1658,49 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn a_failed_snapshot_gives_up_the_deferred_restore() {
-        // Otherwise the project reports a pending session forever and every
-        // save skips it, losing the state it does have.
+    fn an_unrestored_session_is_merged_rather_than_clobbered_or_skipped() {
+        // A project quit before its first snapshot holds defaults in every
+        // snapshot-dependent field, but panes and focus are live from startup.
+        // Saving either half alone loses the other.
+        let mut app = app_with_files(vec![]);
+        app.set_pending_session(crate::session::SessionState {
+            selected_file: Some("saved.rs".to_string()),
+            scroll: 42,
+            mode: Some(ViewMode::Log),
+            active_pane: 0,
+            ..Default::default()
+        });
+        // The user changes something that needs no snapshot.
+        app.focus = Focus::DiffViewer;
+
+        let saved = app.session_to_save();
+
+        assert_eq!(saved.focus, Some(Focus::DiffViewer), "live half is kept");
+        assert_eq!(
+            saved.selected_file.as_deref(),
+            Some("saved.rs"),
+            "pending half is preserved, not overwritten with defaults"
+        );
+        assert_eq!(saved.scroll, 42);
+        assert_eq!(saved.mode, Some(ViewMode::Log));
+    }
+
+    #[test]
+    fn a_restored_session_saves_the_live_state() {
+        // With nothing pending there is no merge — the app owns every field.
+        let mut app = app_with_files(vec![]);
+        app.focus = Focus::DiffViewer;
+
+        let saved = app.session_to_save();
+
+        assert_eq!(saved.focus, Some(Focus::DiffViewer));
+        assert_eq!(saved.selected_file, None);
+    }
+
+    #[test]
+    fn a_failed_snapshot_keeps_the_deferred_restore() {
+        // The worker retries, so a transient failure must not throw away the
+        // saved selection; saving is unblocked by the merge instead.
         let (snapshot, tx) = dummy_snapshot_channel();
         let mut app = App {
             snapshot,
@@ -1673,7 +1713,7 @@ pub(crate) mod tests {
             .unwrap();
         app.poll_snapshot();
 
-        assert!(!app.has_pending_session());
+        assert!(app.pending_session.is_some(), "the restore still waits");
         assert_eq!(app.notice.as_ref().map(|n| n.kind), Some(NoticeKind::Git));
     }
 
@@ -1693,40 +1733,6 @@ pub(crate) mod tests {
 
         app.poll_tree_watcher();
         assert!(!app.tree_dirty, "the active project consumes it");
-    }
-
-    #[test]
-    fn pending_session_is_reported_until_a_snapshot_applies_it() {
-        // The exit path skips saving a project that still reports a pending
-        // session: its view fields are defaults, and writing them would
-        // clobber the session file it never got to restore from.
-        let (snapshot, tx) = dummy_snapshot_channel();
-        let mut app = App {
-            snapshot,
-            pending_snapshot: None,
-            ..app_with_files(vec!["a.rs"])
-        };
-        assert!(!app.has_pending_session());
-
-        app.set_pending_session(crate::session::SessionState::default());
-        assert!(app.has_pending_session(), "a loaded session is pending");
-
-        tx.send(SnapshotMsg::Ok(
-            RepoSnapshot {
-                files: Vec::new(),
-                tracking: None,
-                head_oid: None,
-                branch_name: None,
-            },
-            HashMap::new(),
-        ))
-        .unwrap();
-        app.poll_snapshot();
-
-        assert!(
-            !app.has_pending_session(),
-            "the first snapshot consumes the restore"
-        );
     }
 
     #[test]

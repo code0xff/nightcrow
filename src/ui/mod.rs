@@ -224,9 +224,12 @@ pub(crate) fn project_tab_at(
     )
 }
 
-/// The empty screen's hint legend. Shared by the renderer and the click
-/// hit-test so a clickable label and its target cannot drift.
+/// The empty screen's hint legend, unarmed and armed. Shared by the renderer
+/// and the click hit-test so a clickable label and its target cannot drift —
+/// the armed row is laid out differently (chip plus bare keys), so measuring
+/// the wrong one would leave parts of a rendered label unclickable.
 const EMPTY_HINT: &str = " <prefix> o: open project | <prefix> q: quit";
+const EMPTY_HINT_ARMED: &str = " o: open project | q: quit | esc: cancel";
 
 /// The click action for `(x, y)` on the empty screen's hint row, or `None`
 /// off it. Only `o` resolves — quitting stays a deliberate keyboard act, as
@@ -234,6 +237,7 @@ const EMPTY_HINT: &str = " <prefix> o: open project | <prefix> q: quit";
 pub(crate) fn empty_hint_click_at(
     screen_area: Rect,
     leader_label: &str,
+    prefix_armed: bool,
     x: u16,
     y: u16,
 ) -> Option<HintClick> {
@@ -241,8 +245,13 @@ pub(crate) fn empty_hint_click_at(
     if hint_area.height == 0 || !hint_area.contains(Position { x, y }) {
         return None;
     }
-    let mut cursor = hint_area.x;
-    for (i, segment) in EMPTY_HINT.split(" | ").enumerate() {
+    let (chip, text) = if prefix_armed {
+        (PREFIX_CHIP, EMPTY_HINT_ARMED)
+    } else {
+        ("", EMPTY_HINT)
+    };
+    let mut cursor = hint_area.x + Span::raw(chip).width() as u16;
+    for (i, segment) in text.split(" | ").enumerate() {
         if i > 0 {
             cursor += Span::raw(" | ").width() as u16;
         }
@@ -323,11 +332,7 @@ pub fn draw_empty(
                 .bg(accent)
                 .add_modifier(Modifier::BOLD),
         )];
-        spans.extend(hint_spans(
-            " o: open project | q: quit | esc: cancel",
-            &leader_label,
-            mouse_enabled,
-        ));
+        spans.extend(hint_spans(EMPTY_HINT_ARMED, &leader_label, mouse_enabled));
         Line::from(spans)
     } else {
         Line::from(hint_spans(

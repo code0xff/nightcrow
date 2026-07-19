@@ -8,13 +8,41 @@ impl App {
         self.pending_session = Some(state);
     }
 
-    /// Whether a loaded session is still waiting to be applied.
+    /// The state to persist for this project.
     ///
-    /// Restoration is deferred to the first snapshot, so until then the view
-    /// fields hold defaults rather than the saved state — `save_session` would
-    /// serialize those defaults over the real session file.
-    pub fn has_pending_session(&self) -> bool {
-        self.pending_session.is_some()
+    /// Normally the live view. But a restore is deferred to the first
+    /// snapshot, so a project quit before one arrived still holds defaults in
+    /// every snapshot-dependent field — writing those would clobber the file it
+    /// never got to read from. Skipping the save instead would lose the half of
+    /// the state that *is* live: panes, focus and fullscreen are restored up
+    /// front (see `restore_pane_focus`) and the user can change them meanwhile.
+    ///
+    /// So the two halves are merged: the saved state supplies what is still
+    /// pending, the live app supplies what it actually owns.
+    pub fn session_to_save(&self) -> SessionState {
+        let live = self.save_session();
+        let Some(pending) = self.pending_session.as_ref() else {
+            return live;
+        };
+        SessionState {
+            // Live: applied at startup, and editable before any snapshot.
+            focus: live.focus,
+            active_pane: live.active_pane,
+            terminal_fullscreen: live.terminal_fullscreen,
+            diff_fullscreen: live.diff_fullscreen,
+            list_fullscreen: live.list_fullscreen,
+            accent_idx: live.accent_idx,
+            // Still pending: these need a file or commit list to restore onto,
+            // so the live values are defaults, not choices.
+            selected_file: pending.selected_file.clone(),
+            scroll: pending.scroll,
+            mode: pending.mode,
+            log_selected: pending.log_selected,
+            log_drill_down: pending.log_drill_down,
+            log_file_selected: pending.log_file_selected,
+            tree_selected_path: pending.tree_selected_path.clone(),
+            tree_expanded: pending.tree_expanded.clone(),
+        }
     }
 
     pub fn save_session(&self) -> SessionState {
