@@ -42,7 +42,7 @@ pub struct RepoSession {
 /// How many repositories' view state to remember. Beyond this the
 /// least-recently-used entries are dropped, so the file cannot grow without
 /// bound as repos are opened over the years.
-const MAX_REMEMBERED: usize = 50;
+pub const MAX_REMEMBERED: usize = 50;
 
 /// Everything nightcrow remembers between runs: which repositories were open,
 /// which tab was in front, and each repository's view state.

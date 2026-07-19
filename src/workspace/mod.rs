@@ -29,7 +29,7 @@ mod repo_input;
 pub use repo_input::RepoInputResult;
 
 use crate::app::{App, Notice, NoticeKind};
-use crate::session::{RepoSession, SessionState, WorkspaceState};
+use crate::session::{MAX_REMEMBERED, RepoSession, SessionState, WorkspaceState};
 use crate::ui::status_view::RepoInput;
 use crossterm::event::{KeyEvent, KeyModifiers};
 
@@ -251,6 +251,11 @@ impl Workspace {
                 state: closing.session_to_save(),
             },
         );
+        // Capped here as well as on the way to disk: a long-lived process that
+        // opens and closes many repositories would otherwise hold every
+        // session it had ever seen, tree expansion paths and all, and rescan
+        // that history on every save.
+        self.remembered.truncate(MAX_REMEMBERED);
         // Focus the tab that slid into this slot; closing the rightmost tab
         // falls back to its left neighbour. Saturates to 0 when now empty.
         self.active = self.active.min(self.projects.len().saturating_sub(1));
@@ -408,6 +413,23 @@ mod tests {
 
         assert!(ws.active().is_none());
         assert!(ws.projects().is_empty());
+    }
+
+    #[test]
+    fn 닫은_프로젝트_기억은_상한을_넘지_않는다() {
+        // A long-lived process that opens and closes many repositories would
+        // otherwise hold every session it had ever seen — and rescan that
+        // history on every save.
+        let mut ws = Workspace::new(test_leader());
+        for i in 0..MAX_REMEMBERED + 5 {
+            ws.add(project_at(&format!("/w/p{i}")));
+            ws.close_active();
+        }
+
+        assert_eq!(ws.remembered.len(), MAX_REMEMBERED);
+        // The most recently closed survives; the oldest is gone.
+        assert!(ws.session_for(&format!("/w/p{}", MAX_REMEMBERED + 4)).is_some());
+        assert!(ws.session_for("/w/p0").is_none());
     }
 
     #[test]

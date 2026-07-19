@@ -7,6 +7,10 @@ use std::time::{Duration, SystemTime};
 use tracing_appender::non_blocking::WorkerGuard;
 use tracing_subscriber::{EnvFilter, fmt, layer::SubscriberExt};
 
+/// The directory nightcrow keeps its own files in, inside a repository. Only
+/// a log directory under this one gets an ignore file written into it.
+const NIGHTCROW_DIR: &str = ".nightcrow";
+
 const LOG_FILE_PREFIX: &str = "nightcrow.log";
 const LOG_FILE_PREFIX_WITH_SEPARATOR: &str = "nightcrow.log.";
 const BYTES_PER_MB: u64 = 1 << 20;
@@ -31,17 +35,7 @@ pub fn init_logging(config: &LogConfig, repo_path: &str) -> Option<LogGuard> {
         );
         return None;
     }
-    // Drop a self-ignoring `.gitignore` in the log directory so logs never
-    // pollute the user's `git status` — the default `.nightcrow/logs` sits
-    // inside the repo. A directory whose whole contents are ignored is not
-    // reported as untracked, so this covers the `.nightcrow/` wrapper too.
-    // Only written when missing: a user-edited file should not be clobbered.
-    let gitignore = log_dir.join(".gitignore");
-    if !gitignore.exists()
-        && let Err(e) = fs::write(&gitignore, "*\n")
-    {
-        eprintln!("nightcrow: failed to write log gitignore: {e}");
-    }
+    write_log_gitignore(&log_dir);
     cleanup_old_logs(&log_dir, config.max_days);
 
     let level = config.level.as_str();
@@ -97,6 +91,34 @@ pub fn init_logging(config: &LogConfig, repo_path: &str) -> Option<LogGuard> {
     }
 
     Some(LogGuard { _guard: guard })
+}
+
+/// Drop a self-ignoring `.gitignore` in the log directory so logs never
+/// pollute the user's `git status` — the default `.nightcrow/logs` sits inside
+/// the repo. A directory whose whole contents are ignored is not reported as
+/// untracked, so this covers the `.nightcrow/` wrapper too.
+///
+/// Only into a directory nightcrow owns, meaning one under `.nightcrow`. The
+/// pattern is `*`, which has to ignore the ignore file itself to hide the
+/// directory — harmless in our own folder, but writing that into a directory
+/// the user pointed `[log] dir` at (their repo root, a shared logs folder)
+/// would make Git ignore everything untracked there, their own `.gitignore`
+/// included. A custom location is the user's to manage.
+///
+/// Only written when missing: a user-edited file should not be clobbered.
+fn write_log_gitignore(log_dir: &Path) {
+    if !log_dir
+        .components()
+        .any(|c| c.as_os_str() == NIGHTCROW_DIR)
+    {
+        return;
+    }
+    let gitignore = log_dir.join(".gitignore");
+    if !gitignore.exists()
+        && let Err(e) = fs::write(&gitignore, "*\n")
+    {
+        eprintln!("nightcrow: failed to write log gitignore: {e}");
+    }
 }
 
 fn resolve_log_dir(dir: &str, repo_path: &str) -> PathBuf {
@@ -376,6 +398,43 @@ mod tests {
 
         assert_eq!(inner.index, 2);
         assert_eq!(inner.current_size, 3);
+    }
+
+    #[test]
+    fn gitignore_is_written_only_into_a_nightcrow_owned_directory() {
+        // `*` has to ignore the ignore file itself to hide the directory. In
+        // our own folder that is harmless; in a directory the user pointed
+        // `[log] dir` at it would make Git ignore everything untracked there,
+        // their own `.gitignore` included.
+        let dir = tempfile::TempDir::new().unwrap();
+        let ours = dir.path().join(".nightcrow").join("logs");
+        let theirs = dir.path().join("build-logs");
+        std::fs::create_dir_all(&ours).unwrap();
+        std::fs::create_dir_all(&theirs).unwrap();
+
+        write_log_gitignore(&ours);
+        write_log_gitignore(&theirs);
+
+        assert_eq!(std::fs::read_to_string(ours.join(".gitignore")).unwrap(), "*\n");
+        assert!(
+            !theirs.join(".gitignore").exists(),
+            "a user-chosen log directory is theirs to manage"
+        );
+    }
+
+    #[test]
+    fn gitignore_never_clobbers_an_existing_file() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let ours = dir.path().join(".nightcrow").join("logs");
+        std::fs::create_dir_all(&ours).unwrap();
+        std::fs::write(ours.join(".gitignore"), "# mine\n").unwrap();
+
+        write_log_gitignore(&ours);
+
+        assert_eq!(
+            std::fs::read_to_string(ours.join(".gitignore")).unwrap(),
+            "# mine\n"
+        );
     }
 
     #[test]
