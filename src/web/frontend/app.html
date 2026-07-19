@@ -245,14 +245,27 @@
       return { col, row };
     }
 
+    // Tracks a press that has not been released yet, so the window-level
+    // handler below only reports releases that pair with one of ours.
+    let pressedButton = null;
     wrap.addEventListener('mousedown', (e) => {
+      pressedButton = mouseButton(e.button);
       const { col, row } = cellAt(e);
-      send({ t: 'mouse', kind: 'down', button: mouseButton(e.button), col, row,
+      send({ t: 'mouse', kind: 'down', button: pressedButton, col, row,
              ctrl: e.ctrlKey, alt: e.altKey, shift: e.shiftKey });
     });
-    wrap.addEventListener('mouseup', (e) => {
+    // On window, not wrap: a mouseup targets the element the pointer is over,
+    // so dragging out of the terminal before releasing would never fire a
+    // handler bound to wrap. The program that saw the button-down would then
+    // never see the button-up and could sit in a drag or selection state.
+    // `cellAt` clamps to the grid, so an outside release lands on the nearest
+    // edge cell — the same thing the native side does with the pane rect.
+    window.addEventListener('mouseup', (e) => {
+      if (pressedButton === null) return;
+      const button = pressedButton;
+      pressedButton = null;
       const { col, row } = cellAt(e);
-      send({ t: 'mouse', kind: 'up', button: mouseButton(e.button), col, row });
+      send({ t: 'mouse', kind: 'up', button, col, row });
     });
     wrap.addEventListener('wheel', (e) => {
       const { col, row } = cellAt(e);

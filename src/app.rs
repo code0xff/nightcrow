@@ -1736,6 +1736,31 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn a_watcher_refresh_updates_active_search_results() {
+        // The filtered view renders from the search index, so refreshing only
+        // the directory cache left a new file out of the results and the match
+        // count stale until the query changed.
+        let (dir, path) = make_tree_repo();
+        let mut app = app_on(&path);
+        app.enter_tree_mode();
+        app.start_tree_search();
+        for c in "main".chars() {
+            app.tree_search_push(c);
+        }
+        let before = app.tree_view.match_count;
+
+        std::fs::write(Path::new(&path).join("src").join("main_two.rs"), "\n").unwrap();
+        app.refresh_tree_preserving_cursor();
+
+        assert_eq!(
+            app.tree_view.match_count,
+            before + 1,
+            "a file created while the search is open must join the results"
+        );
+        drop(dir);
+    }
+
+    #[test]
     fn a_hidden_tree_change_is_remembered_until_the_tab_is_shown() {
         // Rereading directories is the expensive half; a hidden project only
         // records that it must, so filesystem churn elsewhere cannot stall the

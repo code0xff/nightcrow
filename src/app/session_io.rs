@@ -8,6 +8,22 @@ impl App {
         self.pending_session = Some(state);
     }
 
+    /// Give up a deferred restore because the user has started driving.
+    ///
+    /// Restoration waits for the first snapshot, and the wait is visible: a
+    /// project opened at runtime accepts input immediately. Applying the saved
+    /// mode or selection on top of what the user just chose would undo an
+    /// explicit action, which reads as the app fighting back. An intent beats a
+    /// convenience, so the saved half is dropped instead.
+    ///
+    /// Only the deferred half is at stake — panes, focus and fullscreen were
+    /// restored up front and are untouched by this.
+    pub fn drop_pending_restore_on_app_input(&mut self) {
+        if self.pending_session.take().is_some() {
+            tracing::debug!("session restore dropped: the user acted first");
+        }
+    }
+
     /// The state to persist for this project.
     ///
     /// Normally the live view. But a restore is deferred to the first

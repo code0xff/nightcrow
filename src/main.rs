@@ -1084,6 +1084,10 @@ fn handle_key(app: &mut App, key: KeyEvent) -> KeyOutcome {
         || app.focus != Focus::Terminal
     {
         app.dismiss_notice_on_app_input();
+        // Same signal, second consequence: a key nightcrow acts on itself
+        // means the user is driving, so a session restore still waiting on the
+        // first snapshot must not land on top of what they just did.
+        app.drop_pending_restore_on_app_input();
     }
 
     // Modal overlays (repo-input dialog, both search bars) own every
@@ -1728,6 +1732,41 @@ mod tests {
         );
 
         assert_eq!(outcome, KeyOutcome::Project(ProjectRequest::Switch(0)));
+    }
+
+    #[test]
+    fn acting_before_the_first_snapshot_cancels_the_restore() {
+        // Opening a project at runtime accepts input right away, while the
+        // restore still waits on a file list. Applying the saved mode on top
+        // of the one the user just picked would undo an explicit action.
+        let mut app = app_with_files(vec!["a.rs"]);
+        app.set_pending_session(crate::session::SessionState {
+            mode: Some(ViewMode::Log),
+            ..Default::default()
+        });
+
+        // `<prefix> b` — an app command, not PTY passthrough.
+        let _ = handle_key(&mut app, leader());
+        let _ = handle_key(&mut app, press(KeyCode::Char('b'), KeyModifiers::NONE));
+
+        assert_eq!(app.mode, ViewMode::Tree);
+        assert!(
+            app.pending_session.is_none(),
+            "the saved mode must not land on top of the chosen one"
+        );
+    }
+
+    #[test]
+    fn terminal_passthrough_leaves_the_restore_alone() {
+        // Typing into a pane is not a view choice, so it must not cost the
+        // user their saved selection.
+        let mut app = app_with_fake_backend();
+        app.focus = Focus::Terminal;
+        app.set_pending_session(crate::session::SessionState::default());
+
+        let _ = handle_key(&mut app, press(KeyCode::Char('x'), KeyModifiers::NONE));
+
+        assert!(app.pending_session.is_some());
     }
 
     #[test]

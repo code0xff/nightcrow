@@ -50,6 +50,15 @@ impl App {
     pub(crate) fn refresh_tree_preserving_cursor(&mut self) {
         let prev_path = self.tree_view.selected_path();
         self.refresh_tree_cache();
+        // The filtered view renders from the search index, not the directory
+        // cache, so refreshing only the cache would leave a created or deleted
+        // file missing from the results and the match count wrong until the
+        // query changed. Rebuilding walks the tree again, which is why it is
+        // done only while a search is actually open.
+        if self.tree_view.search_active {
+            self.build_tree_index();
+            self.tree_view.recompute_filter();
+        }
         let rows = self.tree_view.visible_rows();
         if let Some(idx) = prev_path
             .as_deref()
