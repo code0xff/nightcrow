@@ -625,7 +625,7 @@ fn main_loop(
                 Event::Paste(text) => dispatch_paste(ws, &text),
                 Event::Mouse(mouse) => {
                     let screen = Rect::new(0, 0, size.width, size.height);
-                    let outcome = dispatch_mouse(ws, tabs, mouse, screen, &cfg.layout);
+                    let outcome = dispatch_mouse(ws, tabs, mouse, screen, &cfg.layout, cfg.mouse.enabled);
                     if apply_outcome(terminal, ws, ctx, outcome)? {
                         return Ok(());
                     }
@@ -652,7 +652,7 @@ fn main_loop(
                     active: active_tab,
                     repo_input: &repo_input,
                 };
-                let outcome = dispatch_web_event(ws, tabs, event, screen, &cfg.layout);
+                let outcome = dispatch_web_event(ws, tabs, event, screen, &cfg.layout, cfg.mouse.enabled);
                 if apply_outcome(terminal, ws, ctx, outcome)? {
                     return Ok(());
                 }
@@ -669,11 +669,12 @@ fn dispatch_web_event(
     event: web::protocol::WebInputEvent,
     screen: Rect,
     layout: &config::LayoutConfig,
+    mouse_enabled: bool,
 ) -> KeyOutcome {
     use web::protocol::WebInputEvent;
     match event {
         WebInputEvent::Key(key) => dispatch_key(ws, key),
-        WebInputEvent::Mouse(mouse) => dispatch_mouse(ws, tabs, mouse, screen, layout),
+        WebInputEvent::Mouse(mouse) => dispatch_mouse(ws, tabs, mouse, screen, layout, mouse_enabled),
         WebInputEvent::Paste(text) => {
             dispatch_paste(ws, &text);
             KeyOutcome::Continue
@@ -689,6 +690,7 @@ fn dispatch_mouse(
     mouse: MouseEvent,
     screen: Rect,
     layout: &config::LayoutConfig,
+    mouse_enabled: bool,
 ) -> KeyOutcome {
     let ws_leader = ws.leader();
     // A release must reach the pane whose press it pairs with, even when the
@@ -714,7 +716,14 @@ fn dispatch_mouse(
             // click on it does what its key does.
             let leader_label = app::leader_label_of(ws_leader);
             let armed = ws.prefix_armed();
-            match ui::empty_hint_click_at(screen, &leader_label, armed, mouse.column, mouse.row) {
+            match ui::empty_hint_click_at(
+                screen,
+                &leader_label,
+                armed,
+                mouse_enabled,
+                mouse.column,
+                mouse.row,
+            ) {
                 Some(ui::HintClick::Plain('o')) | Some(ui::HintClick::Leader('o')) => {
                     // Disarm like the key path: an armed prefix left standing
                     // would consume the next key as a stale follow-up once the
@@ -1801,6 +1810,7 @@ mod tests {
             mouse(down, rect.x, rect.y),
             MOUSE_TEST_SCREEN,
             &config::LayoutConfig::default(),
+        true,
         );
         assert!(ws.active().unwrap().pending_mouse_press.is_some());
 
@@ -1811,6 +1821,7 @@ mod tests {
             mouse(up, rect.x, rect.y),
             MOUSE_TEST_SCREEN,
             &config::LayoutConfig::default(),
+        true,
         );
 
         assert!(
@@ -1843,6 +1854,7 @@ mod tests {
             ),
             MOUSE_TEST_SCREEN,
             &config::LayoutConfig::default(),
+        true,
         );
         assert!(ws.active().unwrap().pending_mouse_press.is_some());
 
@@ -1866,7 +1878,7 @@ mod tests {
         let label = app::leader_label_of(leader());
         let x = (0..MOUSE_TEST_SCREEN.width)
             .find(|&x| {
-                ui::empty_hint_click_at(MOUSE_TEST_SCREEN, &label, false, x, MOUSE_TEST_SCREEN.height - 1)
+                ui::empty_hint_click_at(MOUSE_TEST_SCREEN, &label, false, true, x, MOUSE_TEST_SCREEN.height - 1)
                     .is_some()
             })
             .expect("the open hint is clickable");
@@ -1881,6 +1893,7 @@ mod tests {
             ),
             MOUSE_TEST_SCREEN,
             &config::LayoutConfig::default(),
+        true,
         );
 
         assert_eq!(outcome, KeyOutcome::Project(ProjectRequest::OpenDialog));
@@ -1899,7 +1912,7 @@ mod tests {
         let x = (0..MOUSE_TEST_SCREEN.width)
             .find(|&x| {
                 matches!(
-                    ui::empty_hint_click_at(MOUSE_TEST_SCREEN, &label, true, x, row),
+                    ui::empty_hint_click_at(MOUSE_TEST_SCREEN, &label, true, true, x, row),
                     Some(ui::HintClick::Plain('o'))
                 )
             })
@@ -1915,10 +1928,32 @@ mod tests {
             ),
             MOUSE_TEST_SCREEN,
             &config::LayoutConfig::default(),
+            true,
         );
 
         assert_eq!(outcome, KeyOutcome::Project(ProjectRequest::OpenDialog));
         assert!(!ws.prefix_armed(), "the click must disarm the prefix");
+    }
+
+    #[test]
+    fn the_empty_hint_is_inert_when_mouse_capture_is_disabled() {
+        // The row renders plain in that case, and a browser mouse event still
+        // reaches this path — a label that does not advertise itself as
+        // clickable must not act like one.
+        let label = app::leader_label_of(leader());
+        let row = MOUSE_TEST_SCREEN.height - 1;
+
+        assert!(
+            (0..MOUSE_TEST_SCREEN.width).all(|x| ui::empty_hint_click_at(
+                MOUSE_TEST_SCREEN,
+                &label,
+                false,
+                false,
+                x,
+                row
+            )
+            .is_none())
+        );
     }
 
     #[test]
@@ -2887,6 +2922,7 @@ mod tests {
             mouse(kind, rect.x, rect.y),
             MOUSE_TEST_SCREEN,
             &config::LayoutConfig::default(),
+        true,
         );
 
         let app = ws.active().unwrap();

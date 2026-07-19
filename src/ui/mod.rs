@@ -238,9 +238,16 @@ pub(crate) fn empty_hint_click_at(
     screen_area: Rect,
     leader_label: &str,
     prefix_armed: bool,
+    mouse_enabled: bool,
     x: u16,
     y: u16,
 ) -> Option<HintClick> {
+    // Gated like `hint_click_at`: with capture off the row renders plain, and
+    // a browser mouse event still reaches this path, so a label that does not
+    // advertise itself as clickable must not act like one either.
+    if !mouse_enabled {
+        return None;
+    }
     let hint_area = chrome_rows(screen_area).hint;
     if hint_area.height == 0 || !hint_area.contains(Position { x, y }) {
         return None;
