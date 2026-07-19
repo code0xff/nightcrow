@@ -279,13 +279,30 @@ fn run(
         leader,
     };
     let mut ws = Workspace::new(leader);
-    // Every `--repo` opens a tab. Repeats are skipped for the same reason the
+    // Named repos win over the remembered ones: `--repo X` says which repo to
+    // work in, and restoring extra tabs beside it would be surprising. With no
+    // argument, the last set of tabs comes back — and since quitting with none
+    // open records exactly that, an empty screen stays reachable without a
+    // dedicated flag.
+    let restored = repo_paths.is_empty().then(session::load_workspace).flatten();
+    let (repo_paths, restored_active) = match restored {
+        Some(state) => (state.repos, state.active),
+        None => (repo_paths, 0),
+    };
+    // Restored repos can have been moved or deleted since; opening a tab on a
+    // path that is gone would show a broken project rather than nothing.
+    let mut missing = 0usize;
+    // Every repo opens a tab. Repeats are skipped for the same reason the
     // dialog focuses an open repo instead of opening it twice: two projects on
     // one workdir would run duplicate snapshot workers and write the same
     // session file. Past `MAX_PROJECTS` the extras are dropped rather than
     // silently replacing earlier ones; the notice says so.
     let mut overflowed = false;
     for path in &repo_paths {
+        if !std::path::Path::new(path).is_dir() {
+            missing += 1;
+            continue;
+        }
         if ws.index_of_repo(path).is_some() {
             continue;
         }
@@ -299,15 +316,21 @@ fn run(
         }
         ws.add(init_app(path, &cfg, &startup_commands, leader));
     }
-    // Land on the first repo named, not the last opened.
-    ws.switch(0);
+    // Land on the tab that was in front, or on the first repo named. Clamped
+    // because skipped repos shift every later index.
+    ws.switch(restored_active.min(ws.projects().len().saturating_sub(1)));
     // Raised after the switch: notices are project-scoped, so reporting this
     // before would leave it on a tab the user never sees, hiding the only sign
-    // that later repositories were dropped.
+    // that something was dropped.
     if overflowed {
         ws.raise_notice(
             app::NoticeKind::Project,
             format!("cannot open more than {} projects", workspace::MAX_PROJECTS),
+        );
+    } else if missing > 0 {
+        ws.raise_notice(
+            app::NoticeKind::Project,
+            format!("{missing} remembered repo(s) no longer exist"),
         );
     }
 
@@ -324,6 +347,10 @@ fn run(
     for project in ws.projects() {
         save_project_session(project);
     }
+    session::save_workspace(&session::WorkspaceState {
+        repos: ws.projects().iter().map(|p| p.repo_path.clone()).collect(),
+        active: ws.active_index(),
+    });
     tracing::info!("nightcrow stopped");
     Ok(())
 }

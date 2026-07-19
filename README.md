@@ -27,7 +27,7 @@ Requires Rust 1.85+ (edition 2024).
 ## Usage
 
 ```bash
-# Start with no project open — press ^Q o to open one
+# Reopen the tabs from last time (empty on a first run)
 nightcrow
 
 # Open a repo in a tab
@@ -241,7 +241,11 @@ Configurable under `[agent_indicator]` (see below).
 
 nightcrow saves the current state on exit and restores it on the next launch for the same repo — focus position, selected file, scroll offset, active terminal pane, view mode (status / commit log / tree), fullscreen states, commit-log drill-down position, tree expansion and selection, and accent color. The state file is `.nightcrow/session.json` inside the repo directory.
 
-State is per repo, not per process, so each open project tab writes its own file — on exit and when you close its tab. Which repos were open is *not* saved: a launch opens whatever `--repo` names (nothing, if it names none), and further tabs are opened with `^Q o`.
+State is per repo, not per process, so each open project tab writes its own file — on exit and when you close its tab.
+
+Which repos were open is saved separately, in `~/.nightcrow/workspace.json`, since no single repo owns the fact that others were open beside it. A bare `nightcrow` reopens those tabs and lands on the one that was in front. Repos that have moved or been deleted since are skipped, with a notice saying how many.
+
+Passing `--repo` overrides the remembered list — it names the repo you want, so restoring extra tabs beside it would be surprising. To start empty, close every tab before quitting: that records an empty list, which is what the next launch restores.
 
 ## Web mirror
 
