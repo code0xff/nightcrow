@@ -850,12 +850,14 @@ fn handle_mouse(
             }
             if let Some(focus) = ui::upper_panel_at(app, screen, layout, mouse.column, mouse.row) {
                 app.cancel_prefix();
+                app.drop_pending_restore_on_app_input();
                 app.focus = focus;
             } else if button == crossterm::event::MouseButton::Left {
                 if let Some(idx) = ui::tab_click_at(app, screen, layout, mouse.column, mouse.row) {
                     // A tab click is a jump-key press with the pointer: same
                     // prefix resolution and focus/fullscreen handling.
                     app.cancel_prefix();
+                    app.drop_pending_restore_on_app_input();
                     app.switch_pane(idx);
                 } else if let Some(click) =
                     ui::hint_click_at(app, tabs, screen, mouse.column, mouse.row)
@@ -964,6 +966,8 @@ fn release_pending_press(app: &mut App, screen: Rect, layout: &config::LayoutCon
 /// a jump key does. A click is also a non-command event while the prefix is
 /// armed, so resolve the prefix first (same rule as `handle_paste`).
 fn focus_clicked_pane(app: &mut App, id: backend::PaneId) {
+    // A click is as explicit as a key: same reasoning as `handle_global_action`.
+    app.drop_pending_restore_on_app_input();
     app.cancel_prefix();
     let Some(idx) = app.terminal.panes.iter().position(|p| p.id == id) else {
         return;
@@ -1084,10 +1088,6 @@ fn handle_key(app: &mut App, key: KeyEvent) -> KeyOutcome {
         || app.focus != Focus::Terminal
     {
         app.dismiss_notice_on_app_input();
-        // Same signal, second consequence: a key nightcrow acts on itself
-        // means the user is driving, so a session restore still waiting on the
-        // first snapshot must not land on top of what they just did.
-        app.drop_pending_restore_on_app_input();
     }
 
     // Modal overlays (repo-input dialog, both search bars) own every
@@ -1205,6 +1205,13 @@ fn resolve_prefix_action(app: &App, key: KeyEvent) -> Action {
 }
 
 fn handle_global_action(app: &mut App, action: Action) -> Option<KeyOutcome> {
+    // Every mapped action funnels through here, so this is where "the user is
+    // driving" is known — not at the key guard, which misses the chords that
+    // fire while a terminal pane holds focus (`Shift+←/→`). A restore still
+    // waiting on the first snapshot must not land on top of what they chose.
+    if action != Action::None {
+        app.drop_pending_restore_on_app_input();
+    }
     match action {
         Action::Quit => Some(KeyOutcome::Quit),
         Action::NewPane => {
@@ -1754,6 +1761,43 @@ mod tests {
             app.pending_session.is_none(),
             "the saved mode must not land on top of the chosen one"
         );
+    }
+
+    #[test]
+    fn focus_cycling_from_a_pane_cancels_the_restore() {
+        // `Shift+←/→` fires while a terminal pane holds focus, so the old
+        // hook — which keyed off focus not being Terminal — missed it and let
+        // the snapshot put focus back where the session said.
+        let mut app = app_with_fake_backend();
+        app.focus = Focus::Terminal;
+        app.set_pending_session(crate::session::SessionState::default());
+
+        let _ = handle_key(&mut app, press(KeyCode::Right, KeyModifiers::SHIFT));
+
+        assert!(app.pending_session.is_none());
+    }
+
+    #[test]
+    fn clicking_a_pane_cancels_the_restore() {
+        // Mouse input never reaches `handle_global_action`, but a click is as
+        // explicit as a key.
+        let (mut app, areas) = app_with_two_panes_and_areas();
+        app.set_pending_session(crate::session::SessionState::default());
+        let (_, rect) = areas[0];
+
+        handle_mouse(
+            &mut app,
+            test_tab_view(&test_tabs()),
+            mouse(
+                MouseEventKind::Down(crossterm::event::MouseButton::Left),
+                rect.x,
+                rect.y,
+            ),
+            MOUSE_TEST_SCREEN,
+            &config::LayoutConfig::default(),
+        );
+
+        assert!(app.pending_session.is_none());
     }
 
     #[test]
