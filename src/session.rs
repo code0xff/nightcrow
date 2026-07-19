@@ -133,8 +133,17 @@ pub fn save_session(repo_path: &str, state: &SessionState) {
     }
     let path = session_path(repo_path);
     if let Some(dir) = path.parent() {
-        if let Err(e) = std::fs::create_dir_all(dir) {
-            tracing::warn!("failed to create session directory: {e}");
+        // Non-recursive on purpose. `create_dir_all` would recreate the repo
+        // root as well if it vanished between the check above and this call,
+        // leaving behind a directory holding nothing but `.nightcrow/` — which
+        // the next launch would restore as a tab on a non-repository.
+        match std::fs::create_dir(dir) {
+            Ok(()) => {}
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {}
+            Err(e) => {
+                tracing::warn!("failed to create session directory: {e}");
+                return;
+            }
         }
         // Drop a self-ignoring `.gitignore` inside `.nightcrow/` so the
         // session file never pollutes the user's `git status`. Only write
@@ -213,6 +222,18 @@ mod tests {
         save_session(&gone.to_string_lossy(), &SessionState::default());
 
         assert!(!gone.exists(), "the repo root must not be recreated");
+    }
+
+    #[test]
+    fn a_session_directory_is_created_inside_an_existing_repo() {
+        // The guard above is non-recursive, so confirm the ordinary path still
+        // creates `.nightcrow/` when the repo root is there.
+        let dir = tempfile::TempDir::new().unwrap();
+        let repo = dir.path().to_string_lossy().to_string();
+
+        save_session(&repo, &SessionState::default());
+
+        assert!(load_session(&repo).is_some());
     }
 
     #[test]
