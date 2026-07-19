@@ -241,11 +241,11 @@ Configurable under `[agent_indicator]` (see below).
 
 nightcrow saves the current state on exit and restores it on the next launch for the same repo — focus position, selected file, scroll offset, active terminal pane, view mode (status / commit log / tree), fullscreen states, commit-log drill-down position, tree expansion and selection, and accent color. The state file is `.nightcrow/session.json` inside the repo directory.
 
-State is per repo, not per process, so each open project tab writes its own file — on exit and when you close its tab.
+Everything lands in one file, `~/.nightcrow/workspace.json` — which repos were open, which tab was in front, and each repo's view state. Nothing is written inside your repositories: no single repo owns the fact that others were open beside it, and nightcrow shouldn't create directories in a project it is only reading.
 
-Which repos were open is saved separately, in `~/.nightcrow/workspace.json`, since no single repo owns the fact that others were open beside it. A bare `nightcrow` reopens those tabs and lands on the one that was in front. Repos that have moved or been deleted since are skipped, with a notice saying how many.
+A bare `nightcrow` reopens those tabs and lands on the one that was in front, with each project's selection and scroll where you left them. Repos that have moved or been deleted since are skipped, with a notice saying how many. View state is kept for the 50 most recently used repos.
 
-Passing `--repo` overrides the remembered list — it names the repo you want, so restoring extra tabs beside it would be surprising. To start empty, close every tab before quitting: that records an empty list, which is what the next launch restores.
+Passing `--repo` overrides the remembered tab list — it names the repo you want, so restoring extra tabs beside it would be surprising. Each repo's view state is still restored. To start empty, close every tab before quitting: that records an empty list, which is what the next launch restores.
 
 ## Web mirror
 

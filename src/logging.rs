@@ -31,6 +31,17 @@ pub fn init_logging(config: &LogConfig, repo_path: &str) -> Option<LogGuard> {
         );
         return None;
     }
+    // Drop a self-ignoring `.gitignore` in the log directory so logs never
+    // pollute the user's `git status` — the default `.nightcrow/logs` sits
+    // inside the repo. A directory whose whole contents are ignored is not
+    // reported as untracked, so this covers the `.nightcrow/` wrapper too.
+    // Only written when missing: a user-edited file should not be clobbered.
+    let gitignore = log_dir.join(".gitignore");
+    if !gitignore.exists()
+        && let Err(e) = fs::write(&gitignore, "*\n")
+    {
+        eprintln!("nightcrow: failed to write log gitignore: {e}");
+    }
     cleanup_old_logs(&log_dir, config.max_days);
 
     let level = config.level.as_str();

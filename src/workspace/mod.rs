@@ -29,6 +29,7 @@ mod repo_input;
 pub use repo_input::RepoInputResult;
 
 use crate::app::{App, Notice, NoticeKind};
+use crate::session::{RepoSession, SessionState, WorkspaceState};
 use crate::ui::status_view::RepoInput;
 use crossterm::event::{KeyEvent, KeyModifiers};
 
@@ -60,6 +61,10 @@ pub struct Workspace {
     /// Prefix armed on the empty screen. A project has its own flag; the two
     /// never both apply, since a key is dispatched to exactly one of them.
     empty_prefix_armed: bool,
+    /// View state for repositories that are not open right now — read at
+    /// startup, added to as tabs close. Open projects are not in here; their
+    /// state is read off the `App` when the file is written.
+    remembered: Vec<RepoSession>,
 }
 
 impl Workspace {
@@ -72,7 +77,43 @@ impl Workspace {
             empty_notice: None,
             leader,
             empty_prefix_armed: false,
+            remembered: Vec::new(),
         }
+    }
+
+    /// Seed the remembered view state, once, from the file read at startup.
+    pub fn set_remembered(&mut self, sessions: Vec<RepoSession>) {
+        self.remembered = sessions;
+    }
+
+    /// The saved view state for `repo`, whether it comes from a closed tab
+    /// this run or from the file read at startup.
+    pub fn session_for(&self, repo: &str) -> Option<&SessionState> {
+        self.remembered
+            .iter()
+            .find(|s| s.repo == repo)
+            .map(|s| &s.state)
+    }
+
+    /// Everything to write out: the open tabs, which was in front, and every
+    /// repository's view state — the open ones read live, the rest as
+    /// remembered. Open projects go first so the least-recently-used eviction
+    /// never drops a tab that is currently on screen.
+    pub fn to_persisted(&self) -> WorkspaceState {
+        let mut persisted = WorkspaceState {
+            repos: self.projects.iter().map(|p| p.repo_path.clone()).collect(),
+            active: self.active,
+            sessions: Vec::new(),
+        };
+        // `remember` inserts at the front, so applying the remembered entries
+        // first and the open ones last leaves the open ones foremost.
+        for entry in self.remembered.iter().rev() {
+            persisted.remember(&entry.repo, entry.state.clone());
+        }
+        for project in self.projects.iter().rev() {
+            persisted.remember(&project.repo_path, project.session_to_save());
+        }
+        persisted
     }
 
     pub fn is_leader_key(&self, key: KeyEvent) -> bool {
@@ -199,7 +240,17 @@ impl Workspace {
         if self.projects.is_empty() {
             return false;
         }
-        self.projects.remove(self.active);
+        // Carry the closing project's view state over, or reopening the repo
+        // would restore whatever it looked like at the last shutdown instead.
+        let closing = self.projects.remove(self.active);
+        self.remembered.retain(|s| s.repo != closing.repo_path);
+        self.remembered.insert(
+            0,
+            RepoSession {
+                repo: closing.repo_path.clone(),
+                state: closing.session_to_save(),
+            },
+        );
         // Focus the tab that slid into this slot; closing the rightmost tab
         // falls back to its left neighbour. Saturates to 0 when now empty.
         self.active = self.active.min(self.projects.len().saturating_sub(1));

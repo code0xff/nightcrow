@@ -284,7 +284,13 @@ fn run(
     // argument, the last set of tabs comes back — and since quitting with none
     // open records exactly that, an empty screen stays reachable without a
     // dedicated flag.
-    let restored = repo_paths.is_empty().then(session::load_workspace).flatten();
+    let stored = session::load_workspace();
+    // The same file carries the tab list and every repo's view state, so the
+    // remembered half is seeded even when `--repo` overrides the tab list.
+    if let Some(state) = stored.as_ref() {
+        ws.set_remembered(state.sessions.clone());
+    }
+    let restored = repo_paths.is_empty().then_some(stored).flatten();
     // Tracked by path, not index: skipping a missing repo compacts the list,
     // so the saved index would then name a different tab.
     let restored_active_repo = restored
@@ -322,7 +328,8 @@ fn run(
             overflowed = true;
             break;
         }
-        ws.add(init_app(path, &cfg, &startup_commands, leader));
+        let saved = ws.session_for(path).cloned();
+        ws.add(init_app(path, &cfg, &startup_commands, leader, saved));
     }
     // Land on the tab that was in front, found by path so a skipped repo
     // earlier in the list cannot shift the choice onto its neighbour.
@@ -355,13 +362,7 @@ fn run(
     // sessions are stored per repo (`<repo>/.nightcrow/session.json`), so a
     // background project's pane/focus state would otherwise be lost purely
     // because the user happened to quit from another tab.
-    for project in ws.projects() {
-        save_project_session(project);
-    }
-    session::save_workspace(&session::WorkspaceState {
-        repos: ws.projects().iter().map(|p| p.repo_path.clone()).collect(),
-        active: ws.active_index(),
-    });
+    session::save_workspace(&ws.to_persisted());
     tracing::info!("nightcrow stopped");
     Ok(())
 }
@@ -377,15 +378,6 @@ struct ProjectContext<'a> {
     leader: KeyEvent,
 }
 
-/// Persist one project's session.
-///
-/// `session_to_save` handles the project whose own restore has not run yet,
-/// merging the live half with the still-pending half rather than clobbering
-/// the file with defaults or skipping the save entirely.
-fn save_project_session(project: &App) {
-    session::save_session(&project.repo_path, &project.session_to_save());
-}
-
 /// Carry out a workspace-level request produced by a key or click.
 ///
 /// Refusals land on the notice row rather than being dropped: a keypress that
@@ -395,13 +387,11 @@ fn apply_project_request(ws: &mut Workspace, ctx: &ProjectContext, request: Proj
         ProjectRequest::Switch(idx) => ws.switch(idx),
         ProjectRequest::OpenDialog => ws.start_repo_input(),
         ProjectRequest::Close => {
-            // Save before removing: the shutdown loop only walks projects that
-            // are still open, so a closed tab would otherwise lose its state
-            // and restore a stale session when reopened.
-            if let Some(project) = ws.active() {
-                save_project_session(project);
+            // `close_active` carries the project's view state into the
+            // remembered set; writing here means a crash later cannot lose it.
+            if ws.close_active() {
+                session::save_workspace(&ws.to_persisted());
             }
-            ws.close_active();
         }
         ProjectRequest::Open(repo_path) => {
             // Focus rather than duplicate: two tabs on one workdir would show
@@ -420,7 +410,14 @@ fn apply_project_request(ws: &mut Workspace, ctx: &ProjectContext, request: Proj
                 );
                 return;
             }
-            let project = init_app(&repo_path, ctx.cfg, ctx.startup_commands, ctx.leader);
+            let saved = ws.session_for(&repo_path).cloned();
+            let project = init_app(
+                &repo_path,
+                ctx.cfg,
+                ctx.startup_commands,
+                ctx.leader,
+                saved,
+            );
             ws.add(project);
         }
     }
@@ -447,8 +444,8 @@ fn init_app(
     cfg: &config::Config,
     startup_commands: &[config::StartupCommand],
     leader: KeyEvent,
+    saved_session: Option<crate::session::SessionState>,
 ) -> App {
-    let saved_session = session::load_session(repo_path);
     let mut app = App::new(
         repo_path.to_string(),
         cfg.log.prompt_log,

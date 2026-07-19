@@ -32,11 +32,25 @@ pub struct SessionState {
     pub tree_expanded: Vec<String>,
 }
 
-/// Which repositories were open, and which tab was in front.
+/// One repository's saved view state.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RepoSession {
+    pub repo: String,
+    pub state: SessionState,
+}
+
+/// How many repositories' view state to remember. Beyond this the
+/// least-recently-used entries are dropped, so the file cannot grow without
+/// bound as repos are opened over the years.
+const MAX_REMEMBERED: usize = 50;
+
+/// Everything nightcrow remembers between runs: which repositories were open,
+/// which tab was in front, and each repository's view state.
 ///
-/// Separate from `SessionState`, which is per repo and lives inside that repo.
-/// This is a property of the process, so it lives with the config instead —
-/// no single repo owns the fact that three others were open beside it.
+/// One file, under the config directory rather than inside any repository.
+/// No single repo owns the fact that three others were open beside it, and
+/// keeping view state out of the repos means nightcrow never creates a
+/// directory in a project it is only reading.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct WorkspaceState {
     /// Absolute repo paths in tab order.
@@ -44,10 +58,25 @@ pub struct WorkspaceState {
     /// Index into `repos` of the tab that was in front.
     #[serde(default)]
     pub active: usize,
+    /// Per-repository view state, most recently used first.
+    #[serde(default)]
+    pub sessions: Vec<RepoSession>,
 }
 
-fn session_path(repo_path: &str) -> std::path::PathBuf {
-    Path::new(repo_path).join(".nightcrow").join("session.json")
+impl WorkspaceState {
+    /// Record `state` for `repo`, moving it to the front of the
+    /// least-recently-used order and evicting past `MAX_REMEMBERED`.
+    pub fn remember(&mut self, repo: &str, state: SessionState) {
+        self.sessions.retain(|s| s.repo != repo);
+        self.sessions.insert(
+            0,
+            RepoSession {
+                repo: repo.to_string(),
+                state,
+            },
+        );
+        self.sessions.truncate(MAX_REMEMBERED);
+    }
 }
 
 /// `~/.nightcrow/workspace.json`, or `None` when the home directory cannot be
@@ -110,71 +139,6 @@ fn save_workspace_at(path: &Path, state: &WorkspaceState) {
     }
 }
 
-pub fn load_session(repo_path: &str) -> Option<SessionState> {
-    let path = session_path(repo_path);
-    let text = std::fs::read_to_string(&path).ok()?;
-    match serde_json::from_str(&text) {
-        Ok(state) => Some(state),
-        Err(e) => {
-            tracing::warn!("corrupted session file, ignoring: {e}");
-            None
-        }
-    }
-}
-
-pub fn save_session(repo_path: &str, state: &SessionState) {
-    // A repo deleted or moved while nightcrow was running must not be
-    // recreated by `create_dir_all` below: the directory would come back
-    // holding only `.nightcrow/`, and the next launch would restore it as a
-    // tab on a path that is no longer a repository.
-    if !Path::new(repo_path).is_dir() {
-        tracing::warn!(repo = %repo_path, "repo is gone, not writing its session");
-        return;
-    }
-    let path = session_path(repo_path);
-    if let Some(dir) = path.parent() {
-        // Non-recursive on purpose. `create_dir_all` would recreate the repo
-        // root as well if it vanished between the check above and this call,
-        // leaving behind a directory holding nothing but `.nightcrow/` — which
-        // the next launch would restore as a tab on a non-repository.
-        match std::fs::create_dir(dir) {
-            Ok(()) => {}
-            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {}
-            Err(e) => {
-                tracing::warn!("failed to create session directory: {e}");
-                return;
-            }
-        }
-        // Drop a self-ignoring `.gitignore` inside `.nightcrow/` so the
-        // session file never pollutes the user's `git status`. Only write
-        // when missing — a user-edited file should not be clobbered.
-        let gi = dir.join(".gitignore");
-        if !gi.exists()
-            && let Err(e) = std::fs::write(&gi, "*\n")
-        {
-            tracing::warn!("failed to write nightcrow gitignore: {e}");
-        }
-    }
-    let text = match serde_json::to_string(state) {
-        Ok(t) => t,
-        Err(e) => {
-            tracing::warn!("failed to serialize session: {e}");
-            return;
-        }
-    };
-    // Atomic replace: write to a sibling tmp file then rename. This keeps
-    // session.json intact if the process dies mid-write.
-    let tmp_path = path.with_extension("json.tmp");
-    if let Err(e) = std::fs::write(&tmp_path, &text) {
-        tracing::warn!("failed to write session tmp: {e}");
-        return;
-    }
-    if let Err(e) = std::fs::rename(&tmp_path, &path) {
-        tracing::warn!("failed to rename session tmp into place: {e}");
-        let _ = std::fs::remove_file(&tmp_path);
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -186,6 +150,7 @@ mod tests {
         let state = WorkspaceState {
             repos: vec!["/w/api".to_string(), "/w/web".to_string()],
             active: 1,
+            sessions: Vec::new(),
         };
 
         save_workspace_at(&path, &state);
@@ -204,6 +169,7 @@ mod tests {
         save_workspace_at(&path, &WorkspaceState {
             repos: vec!["/w/api".to_string()],
             active: 0,
+            sessions: Vec::new(),
         });
 
         save_workspace_at(&path, &WorkspaceState::default());
@@ -212,28 +178,24 @@ mod tests {
     }
 
     #[test]
-    fn a_session_is_not_written_under_a_missing_repo() {
-        // `create_dir_all` would otherwise resurrect the repo directory
-        // holding only `.nightcrow/`, and the next launch would restore a tab
-        // on a path that is no longer a repository.
-        let dir = tempfile::TempDir::new().unwrap();
-        let gone = dir.path().join("deleted-repo");
+    fn remembering_a_repo_moves_it_to_the_front_and_evicts_the_oldest() {
+        let mut state = WorkspaceState::default();
+        for i in 0..MAX_REMEMBERED {
+            state.remember(&format!("/w/p{i}"), SessionState::default());
+        }
+        // Re-recording an existing repo moves it rather than duplicating it.
+        state.remember("/w/p0", SessionState::default());
+        assert_eq!(state.sessions.len(), MAX_REMEMBERED);
+        assert_eq!(state.sessions[0].repo, "/w/p0");
 
-        save_session(&gone.to_string_lossy(), &SessionState::default());
+        state.remember("/w/fresh", SessionState::default());
 
-        assert!(!gone.exists(), "the repo root must not be recreated");
-    }
-
-    #[test]
-    fn a_session_directory_is_created_inside_an_existing_repo() {
-        // The guard above is non-recursive, so confirm the ordinary path still
-        // creates `.nightcrow/` when the repo root is there.
-        let dir = tempfile::TempDir::new().unwrap();
-        let repo = dir.path().to_string_lossy().to_string();
-
-        save_session(&repo, &SessionState::default());
-
-        assert!(load_session(&repo).is_some());
+        assert_eq!(state.sessions.len(), MAX_REMEMBERED, "capped");
+        assert_eq!(state.sessions[0].repo, "/w/fresh");
+        assert!(
+            !state.sessions.iter().any(|s| s.repo == "/w/p1"),
+            "the least recently used entry is evicted"
+        );
     }
 
     #[test]
