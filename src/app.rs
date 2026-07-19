@@ -22,7 +22,7 @@ pub(crate) use crate::runtime::terminal::strip_escape_sequences;
 pub use crate::ui::diff_pane::{DiffPane, DiffPaneView};
 pub use crate::ui::file_view::{FileViewKey, FileViewState};
 pub use crate::ui::log_view::LogView;
-pub use crate::ui::status_view::{RepoInput, RepoInputIntent, StatusView};
+pub use crate::ui::status_view::{RepoInput, StatusView};
 pub use crate::ui::tree_view::TreeView;
 use crossterm::event::{KeyEvent, KeyModifiers};
 #[cfg(test)]
@@ -1686,44 +1686,6 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn change_repo_drops_a_drained_but_unapplied_snapshot() {
-        let (dir, path) = make_repo();
-        let (snapshot, tx) = dummy_snapshot_channel();
-        let mut app = App {
-            snapshot,
-            pending_snapshot: None,
-            ..app_with_files(vec!["old.rs"])
-        };
-        tx.send(SnapshotMsg::Ok(
-            RepoSnapshot {
-                files: vec![ChangedFile::unstaged_only(
-                    "stale.rs".to_string(),
-                    StatusKind::Modified,
-                )],
-                tracking: None,
-                head_oid: None,
-                branch_name: None,
-            },
-            HashMap::new(),
-        ))
-        .unwrap();
-        app.drain_snapshot();
-        assert!(app.pending_snapshot.is_some());
-
-        app.change_repo(path);
-
-        // The pending snapshot described the repo just left behind; applying
-        // it would show the old repo's files under the new one.
-        assert!(app.pending_snapshot.is_none());
-        app.poll_snapshot();
-        assert!(
-            app.status_view.files.is_empty(),
-            "the old repo's file list must not survive the switch"
-        );
-        drop(dir);
-    }
-
-    #[test]
     fn tree_preview_survives_status_snapshot() {
         let (dir, path) = make_tree_repo();
         let (snapshot, tx) = dummy_snapshot_channel();
@@ -1755,27 +1717,6 @@ pub(crate) mod tests {
         assert_eq!(app.diff.view, DiffPaneView::File);
         assert_eq!(app.diff.file_view.content, content_before);
         drop(dir);
-    }
-
-    #[test]
-    fn change_repo_resets_tree_state() {
-        let (dir, path) = make_tree_repo();
-        let mut app = app_on(&path);
-        app.enter_tree_mode();
-        app.tree_view.selected = tree_index_of(&app, "src");
-        app.tree_expand();
-        assert!(!app.tree_view.cache.is_empty());
-        assert!(!app.tree_view.expanded.is_empty());
-
-        let (dir2, path2) = make_repo();
-        app.change_repo(path2);
-
-        assert_eq!(app.mode, ViewMode::Status);
-        assert!(app.tree_view.cache.is_empty());
-        assert!(app.tree_view.expanded.is_empty());
-        assert_eq!(app.tree_view.selected, 0);
-        drop(dir);
-        drop(dir2);
     }
 
     #[test]
@@ -2911,35 +2852,6 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn change_repo_clears_pending_session() {
-        // A pending session for the previous repo must not survive a Ctrl+O.
-        // Otherwise the first snapshot of the new repo would replay focus,
-        // fullscreen, and selection captured from a workdir the user just left.
-        let mut app = app_with_files(vec!["a.rs"]);
-        app.pending_session = Some(crate::session::SessionState {
-            focus: Some(Focus::DiffViewer),
-            ..Default::default()
-        });
-
-        let path = app.repo_path.clone();
-        app.change_repo(path);
-
-        assert!(app.pending_session.is_none());
-    }
-
-    #[test]
-    fn change_repo_clears_list_fullscreen() {
-        let mut app = app_with_files(vec!["a.rs"]);
-        app.toggle_list_fullscreen();
-        assert!(app.list_fullscreen);
-
-        let path = app.repo_path.clone();
-        app.change_repo(path);
-
-        assert!(!app.list_fullscreen);
-    }
-
-    #[test]
     fn keep_scroll_clamps_when_new_diff_is_shorter() {
         let mut app = app_with_files(vec!["a.rs"]);
         // Seed a long diff and put scroll near the bottom.
@@ -3502,21 +3414,6 @@ pub(crate) mod tests {
         assert_eq!(app.log_view.commits.len(), 3);
         assert!(!app.log_view.fully_loaded);
         assert!(!app.log_view.pending_fetch);
-    }
-
-    #[test]
-    fn change_repo_cancels_pending_fetch() {
-        let (dir, path) = make_repo();
-        let mut app = seed_log_app(3, 5, 1);
-        app.log_view.pending_fetch = true;
-        let (_tx, rx) = mpsc::channel::<CommitLogPageMsg>();
-        app.pagination.page_rx = Some(rx);
-
-        app.change_repo(path.clone());
-
-        assert!(!app.log_view.pending_fetch);
-        assert!(app.pagination.page_rx.is_none());
-        drop(dir);
     }
 
     #[test]

@@ -21,7 +21,6 @@ pub trait TerminalBackend {
     fn send_input(&mut self, id: PaneId, data: &[u8]) -> Result<()>;
     fn resize(&mut self, id: PaneId, rows: u16, cols: u16);
     fn drain_events(&mut self) -> Vec<BackendEvent>;
-    fn set_cwd(&mut self, path: &std::path::Path);
 
     /// Test hook: byte payloads recorded by a recording backend. Real
     /// backends return `None`; the in-memory test `FakeBackend` overrides

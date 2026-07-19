@@ -75,15 +75,6 @@ pub struct TreeView {
 impl TreeView {
     /// Reset everything except config — used when switching repositories so a
     /// previous workdir's cache/expansion never leaks into the new tree.
-    pub fn reset(&mut self) {
-        self.selected = 0;
-        self.scroll_x = 0;
-        self.expanded.clear();
-        self.cache.clear();
-        self.cancel_search();
-        self.row_width_cache.set(None);
-    }
-
     /// Whether the search overlay is open with a non-empty query, i.e. the
     /// filtered view is in effect. An open overlay with an empty query still
     /// shows the normal expansion-based view (so the tree does not explode

@@ -480,7 +480,7 @@ fn prefix_armed_hint_text(app: &App) -> String {
     // close the last project reports why on the notice row, so the key always
     // produces a visible result rather than silently doing nothing.
     format!(
-        " t: new pane | {close}{swap}{log_toggle} | {tree_toggle} | f: fullscreen | o: repo | n: new project | x: close project | p: theme | r: redraw | q: quit | {digits} | esc: cancel"
+        " t: new pane | {close}{swap}{log_toggle} | {tree_toggle} | f: fullscreen | o: open project | x: close project | p: theme | r: redraw | q: quit | {digits} | esc: cancel"
     )
 }
 
@@ -828,7 +828,7 @@ fn segment_click(keyspec: &str) -> Option<HintClick> {
     if let (Some(c), None) = (chars.next(), chars.next())
         && matches!(
             c,
-            't' | 'w' | 's' | 'l' | 'b' | 'f' | 'o' | 'n' | 'x' | 'p' | 'r' | 'v' | '/'
+            't' | 'w' | 's' | 'l' | 'b' | 'f' | 'o' | 'x' | 'p' | 'r' | 'v' | '/'
         )
     {
         return Some(HintClick::Plain(c));
@@ -1127,7 +1127,7 @@ mod tests {
 
         let text = hint_text(&app);
 
-        assert!(text.contains("n: new project"), "got: {text}");
+        assert!(text.contains("o: open project"), "got: {text}");
         assert!(text.contains("x: close project"), "got: {text}");
     }
 

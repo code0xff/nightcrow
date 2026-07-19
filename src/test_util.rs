@@ -80,8 +80,6 @@ impl crate::backend::TerminalBackend for FakeBackend {
         std::mem::take(&mut *self.pending_events.borrow_mut())
     }
 
-    fn set_cwd(&mut self, _path: &std::path::Path) {}
-
     fn test_sent_payloads(&self) -> Option<Vec<Vec<u8>>> {
         Some(self.sent.clone())
     }

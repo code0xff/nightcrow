@@ -9,7 +9,6 @@ pub enum Action {
     PageDown,
     NewPane,
     ClosePane,
-    ChangeRepo,
     ToggleFullscreen,
     SwitchPane(usize),
     /// Arm swap mode: the next digit picks the pane to swap the active pane
@@ -19,7 +18,7 @@ pub enum Action {
     /// Focus the project tab at this index. Out-of-range indices are inert.
     SwitchProject(usize),
     /// Open the repo-path dialog to add a project tab.
-    NewProject,
+    OpenProject,
     /// Close the active project tab. Refused when it is the only one.
     CloseProject,
     FocusList,
@@ -99,8 +98,7 @@ pub fn prefix_action(event: KeyEvent) -> Action {
             'b' => Action::ToggleTreeView,
             'f' => Action::ToggleFullscreen,
             's' => Action::SwapPanePrompt,
-            'o' => Action::ChangeRepo,
-            'n' => Action::NewProject,
+            'o' => Action::OpenProject,
             'x' => Action::CloseProject,
             'p' => Action::CycleTheme,
             'r' => Action::Redraw,
@@ -374,7 +372,7 @@ mod tests {
             prefix_action(key(KeyCode::Char('f'))),
             Action::ToggleFullscreen
         );
-        assert_eq!(prefix_action(key(KeyCode::Char('o'))), Action::ChangeRepo);
+        assert_eq!(prefix_action(key(KeyCode::Char('o'))), Action::OpenProject);
         assert_eq!(prefix_action(key(KeyCode::Char('p'))), Action::CycleTheme);
         assert_eq!(prefix_action(key(KeyCode::Char('r'))), Action::Redraw);
         assert_eq!(prefix_action(key(KeyCode::Char('q'))), Action::Quit);

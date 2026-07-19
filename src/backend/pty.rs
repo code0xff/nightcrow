@@ -198,10 +198,6 @@ impl TerminalBackend for PtyBackend {
         }
     }
 
-    fn set_cwd(&mut self, path: &std::path::Path) {
-        self.cwd = path.to_path_buf();
-    }
-
     fn drain_events(&mut self) -> Vec<BackendEvent> {
         // Pane removal is the caller's responsibility (App::poll_terminal calls
         // destroy_pane on Exited). Doing it here too created a dual-ownership

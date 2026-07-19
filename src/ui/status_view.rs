@@ -98,27 +98,10 @@ impl StatusView {
     }
 }
 
-/// What confirming the repo-path dialog should do with the typed path.
-///
-/// The dialog itself is identical either way — same editing, same validation,
-/// same rejection notice — so the two entry points share it and only differ in
-/// where the accepted path lands.
-#[derive(Default, Clone, Copy, PartialEq, Eq, Debug)]
-pub enum RepoInputIntent {
-    /// Point the current project at the typed repo, discarding its state.
-    #[default]
-    Change,
-    /// Open the typed repo as an additional project tab, leaving the current
-    /// project untouched.
-    Open,
-}
-
 #[derive(Default)]
 pub struct RepoInput {
     pub active: bool,
     pub buf: String,
-    /// Which entry point opened the dialog. Read once, on confirm.
-    pub intent: RepoInputIntent,
     /// Whether `buf` is still the untouched current-repo path the dialog
     /// opened with. The first typed character replaces it rather than
     /// appending, so switching to an unrelated path doesn't start with

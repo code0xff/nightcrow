@@ -238,9 +238,6 @@ enum ProjectRequest {
     Close,
     /// Open this resolved repo path as a tab, or focus the tab already on it.
     Open(String),
-    /// Point the active tab at this resolved repo path, unless another tab
-    /// already holds it — in which case focus that tab instead.
-    Change(String),
 }
 
 fn run(
@@ -320,20 +317,6 @@ fn apply_project_request(ws: &mut Workspace, ctx: &ProjectContext, request: Proj
             if !ws.close_active() {
                 ws.active_mut()
                     .raise_notice(app::NoticeKind::Project, "cannot close the last project");
-            }
-        }
-        ProjectRequest::Change(repo_path) => {
-            match ws.index_of_repo(&repo_path) {
-                // Already the active tab's repo: fall through to `change_repo`,
-                // which reloads it from scratch.
-                Some(idx) if idx == ws.active_index() => {
-                    ws.active_mut().change_repo(repo_path);
-                }
-                // Another tab holds it. Focus that tab instead of pointing a
-                // second project at the same workdir, which would run duplicate
-                // snapshot workers and write the same session file.
-                Some(idx) => ws.switch(idx),
-                None => ws.active_mut().change_repo(repo_path),
             }
         }
         ProjectRequest::Open(repo_path) => {
@@ -1033,14 +1016,10 @@ fn handle_global_action(app: &mut App, action: Action) -> Option<KeyOutcome> {
             }
             Some(KeyOutcome::Continue)
         }
-        Action::ChangeRepo => {
-            app.start_repo_input();
-            Some(KeyOutcome::Continue)
-        }
         // Opening is two steps: this only raises the dialog, and confirming it
         // emits the `Open` request (see `handle_repo_input_key`).
-        Action::NewProject => {
-            app.start_project_input();
+        Action::OpenProject => {
+            app.start_repo_input();
             Some(KeyOutcome::Continue)
         }
         Action::CloseProject => Some(KeyOutcome::Project(ProjectRequest::Close)),
@@ -1126,11 +1105,8 @@ fn handle_repo_input_key(app: &mut App, key: KeyEvent) -> KeyOutcome {
     match key.code {
         KeyCode::Esc => app.cancel_repo_input(),
         KeyCode::Enter => {
-            if let app::RepoInputResult::Accepted { intent, path } = app.confirm_repo_input() {
-                return KeyOutcome::Project(match intent {
-                    app::RepoInputIntent::Open => ProjectRequest::Open(path),
-                    app::RepoInputIntent::Change => ProjectRequest::Change(path),
-                });
+            if let app::RepoInputResult::Open(path) = app.confirm_repo_input() {
+                return KeyOutcome::Project(ProjectRequest::Open(path));
             }
         }
         KeyCode::Backspace => {
@@ -1473,26 +1449,6 @@ mod tests {
     }
 
     #[test]
-    fn changing_to_a_repo_another_tab_holds_focuses_that_tab() {
-        let cfg = config::Config::default();
-        let ctx = ProjectContext {
-            cfg: &cfg,
-            startup_commands: &[],
-            leader: leader(),
-        };
-        let mut ws = workspace_on(&["/a", "/b"]);
-        ws.switch(1);
-
-        apply_project_request(&mut ws, &ctx, ProjectRequest::Change("/a".to_string()));
-
-        // Focused, not duplicated: pointing a second project at /a would run
-        // two snapshot workers on one workdir and write the same session file.
-        assert_eq!(ws.active_index(), 0);
-        assert_eq!(ws.projects().len(), 2);
-        assert_eq!(ws.projects()[1].repo_path, "/b", "the other tab is intact");
-    }
-
-    #[test]
     fn opening_a_repo_another_tab_holds_focuses_it_instead_of_duplicating() {
         let cfg = config::Config::default();
         let ctx = ProjectContext {
@@ -1572,25 +1528,25 @@ mod tests {
     }
 
     #[test]
-    fn leader_n_opens_the_dialog_without_touching_the_current_repo() {
+    fn leader_o_opens_the_dialog_without_touching_the_current_repo() {
         let mut app = app_with_files(vec!["a.rs"]);
         let repo_before = app.repo_path.clone();
         let _ = handle_key(&mut app, leader());
 
-        let outcome = handle_key(&mut app, press(KeyCode::Char('n'), KeyModifiers::NONE));
+        let outcome = handle_key(&mut app, press(KeyCode::Char('o'), KeyModifiers::NONE));
 
-        // Opening is two steps: `n` only raises the dialog. Nothing is opened
+        // Opening is two steps: `o` only raises the dialog. Nothing is opened
         // and the current project is untouched until Enter confirms a path.
         assert_eq!(outcome, KeyOutcome::Continue);
-        assert!(app.repo_input.active, "<prefix> n must raise the dialog");
+        assert!(app.repo_input.active, "<prefix> o must raise the dialog");
         assert_eq!(app.repo_path, repo_before);
     }
 
     #[test]
-    fn confirming_the_open_dialog_asks_the_workspace_to_open_that_path() {
+    fn confirming_the_dialog_asks_the_workspace_to_open_that_path() {
         let (_dir, path) = crate::test_util::make_repo();
         let mut app = app_with_files(vec!["a.rs"]);
-        app.start_project_input();
+        app.start_repo_input();
         for c in path.chars() {
             app.repo_input_push(c);
         }
@@ -1604,16 +1560,16 @@ mod tests {
             .to_string_lossy()
             .to_string();
         assert_eq!(outcome, KeyOutcome::Project(ProjectRequest::Open(expected)));
-        // Crucially the *current* project still points at its original repo:
-        // Open must not fall back to Change.
+        // The current project still points at its original repo: confirming
+        // opens a tab, it never repoints this one.
         assert_ne!(app.repo_path, path);
         assert!(!app.repo_input.active, "dialog must close on success");
     }
 
     #[test]
-    fn confirming_the_open_dialog_on_a_bad_path_keeps_it_open() {
+    fn confirming_the_dialog_on_a_bad_path_keeps_it_open() {
         let mut app = app_with_files(vec!["a.rs"]);
-        app.start_project_input();
+        app.start_repo_input();
         for c in "/definitely/not/a/directory".chars() {
             app.repo_input_push(c);
         }
