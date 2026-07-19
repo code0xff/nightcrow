@@ -594,7 +594,7 @@ fn prefix_armed_hint_text(app: &App) -> String {
     // `w`/`s` only act under their availability predicates (see
     // `App::can_close_pane`/`can_swap_panes`), so only advertise them there —
     // a hint for a no-op key would lie.
-    let close = if app.can_close_pane() { "w: close | " } else { "" };
+    let close = if app.can_close_pane() { "w: close pane | " } else { "" };
     let swap = if app.can_swap_panes() {
         "s: swap pane | "
     } else {
@@ -779,9 +779,9 @@ fn normal_hint_literal(app: &App) -> &'static str {
         // The `l` toggle names its destination: from Log mode it returns to
         // the status view, from Status/Tree it enters the log view.
         return if app.mode == ViewMode::Log {
-            " <prefix>: leader | shift+↑/↓: scroll | shift+pgup/dn: page scroll | shift+←/→: cycle | <prefix> t: new pane | <prefix> w: close pane | <prefix> f: fullscreen | <prefix> l: status view | <prefix> o: repo | <prefix> q: quit"
+            " <prefix>: leader | shift+↑/↓: scroll | shift+pgup/dn: page scroll | shift+←/→: cycle | <prefix> t: new pane | <prefix> w: close pane | <prefix> f: fullscreen | <prefix> l: status view | <prefix> o: open project | <prefix> q: quit"
         } else {
-            " <prefix>: leader | shift+↑/↓: scroll | shift+pgup/dn: page scroll | shift+←/→: cycle | <prefix> t: new pane | <prefix> w: close pane | <prefix> f: fullscreen | <prefix> l: log view | <prefix> o: repo | <prefix> q: quit"
+            " <prefix>: leader | shift+↑/↓: scroll | shift+pgup/dn: page scroll | shift+←/→: cycle | <prefix> t: new pane | <prefix> w: close pane | <prefix> f: fullscreen | <prefix> l: log view | <prefix> o: open project | <prefix> q: quit"
         };
     }
     match app.focus {
@@ -791,11 +791,11 @@ fn normal_hint_literal(app: &App) -> &'static str {
                 if app.log_view.drill_down {
                     " esc: back to commits | j/k: navigate files | shift+←/→: cycle | <prefix> q: quit"
                 } else {
-                    " shift+←/→: cycle | j/k: navigate commits | enter: view files | <prefix> t: new pane | <prefix> f: fullscreen | <prefix> l: status view | <prefix> b: tree view | <prefix> o: repo | <prefix> q: quit"
+                    " shift+←/→: cycle | j/k: navigate commits | enter: view files | <prefix> t: new pane | <prefix> f: fullscreen | <prefix> l: status view | <prefix> b: tree view | <prefix> o: open project | <prefix> q: quit"
                 }
             }
             ViewMode::Status => {
-                " shift+←/→: cycle | j/k: navigate | /: search | <prefix> t: new pane | <prefix> f: fullscreen | <prefix> l: log view | <prefix> b: tree view | <prefix> o: repo | <prefix> q: quit"
+                " shift+←/→: cycle | j/k: navigate | /: search | <prefix> t: new pane | <prefix> f: fullscreen | <prefix> l: log view | <prefix> b: tree view | <prefix> o: open project | <prefix> q: quit"
             }
             ViewMode::Tree => {
                 " shift+←/→: cycle | j/k: navigate | /: search | →/enter: expand | ←: collapse | <prefix> b: status view | <prefix> l: log view | <prefix> q: quit"
@@ -824,17 +824,17 @@ fn normal_hint_literal(app: &App) -> &'static str {
                 // The `l` toggle names its destination (Tree mode never
                 // reaches these arms — its right pane is always the file view).
                 if app.mode == ViewMode::Log {
-                    " shift+←/→: cycle | j/k: scroll | pgup/pgdn: scroll | v: view file | s: split | /: search | <prefix> t: new pane | <prefix> f: zoom | <prefix> l: status view | <prefix> b: tree view | <prefix> o: repo | <prefix> q: quit"
+                    " shift+←/→: cycle | j/k: scroll | pgup/pgdn: scroll | v: view file | s: split | /: search | <prefix> t: new pane | <prefix> f: zoom | <prefix> l: status view | <prefix> b: tree view | <prefix> o: open project | <prefix> q: quit"
                 } else {
-                    " shift+←/→: cycle | j/k: scroll | pgup/pgdn: scroll | v: view file | s: split | /: search | <prefix> t: new pane | <prefix> f: zoom | <prefix> l: log view | <prefix> b: tree view | <prefix> o: repo | <prefix> q: quit"
+                    " shift+←/→: cycle | j/k: scroll | pgup/pgdn: scroll | v: view file | s: split | /: search | <prefix> t: new pane | <prefix> f: zoom | <prefix> l: log view | <prefix> b: tree view | <prefix> o: open project | <prefix> q: quit"
                 }
             } else {
                 // No file target for `v` (log view browsing commits, or
                 // nothing selected) — a hint for a no-op key would lie.
                 if app.mode == ViewMode::Log {
-                    " shift+←/→: cycle | j/k: scroll | pgup/pgdn: scroll | s: split | /: search | <prefix> t: new pane | <prefix> f: zoom | <prefix> l: status view | <prefix> b: tree view | <prefix> o: repo | <prefix> q: quit"
+                    " shift+←/→: cycle | j/k: scroll | pgup/pgdn: scroll | s: split | /: search | <prefix> t: new pane | <prefix> f: zoom | <prefix> l: status view | <prefix> b: tree view | <prefix> o: open project | <prefix> q: quit"
                 } else {
-                    " shift+←/→: cycle | j/k: scroll | pgup/pgdn: scroll | s: split | /: search | <prefix> t: new pane | <prefix> f: zoom | <prefix> l: log view | <prefix> b: tree view | <prefix> o: repo | <prefix> q: quit"
+                    " shift+←/→: cycle | j/k: scroll | pgup/pgdn: scroll | s: split | /: search | <prefix> t: new pane | <prefix> f: zoom | <prefix> l: log view | <prefix> b: tree view | <prefix> o: open project | <prefix> q: quit"
                 }
             }
         }
@@ -1357,6 +1357,25 @@ mod tests {
             !text.contains("F1 Files"),
             "the bare F-key must not be advertised for panels, got: {text}"
         );
+    }
+
+    #[test]
+    fn no_hint_row_advertises_the_removed_change_repo_command() {
+        // `o` opened the change-this-tab's-repo dialog before tabs existed.
+        // Two terminal-focus rows kept saying "repo" long after it started
+        // opening a tab instead — a rename that no test was watching.
+        let mut app = app_with_fake_backend();
+        for mode in [ViewMode::Status, ViewMode::Log, ViewMode::Tree] {
+            for focus in [Focus::Terminal, Focus::FileList, Focus::DiffViewer] {
+                app.mode = mode;
+                app.focus = focus;
+                let text = normal_hint_literal(&app);
+                assert!(
+                    !text.contains("o: repo"),
+                    "{mode:?}/{focus:?} still advertises the removed command: {text}"
+                );
+            }
+        }
     }
 
     #[test]
