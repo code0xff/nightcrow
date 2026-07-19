@@ -236,6 +236,7 @@ pub fn draw_empty(
     chrome: Chrome<'_>,
     notice: Option<&crate::app::Notice>,
     leader: crossterm::event::KeyEvent,
+    prefix_armed: bool,
     accent: Color,
 ) {
     let rows = chrome_rows(frame.area());
@@ -264,12 +265,28 @@ pub fn draw_empty(
     };
     frame.render_widget(Paragraph::new(notice_line), rows.notice);
 
+    // The armed prefix shows the same chip as the project screen: pressing the
+    // leader here has to look like it did something, or it reads as a dead key.
     let hint = if chrome.repo_input.active {
         Line::from(vec![
             Span::styled("repo: ", Style::default().fg(accent)),
             Span::raw(chrome.repo_input.buf.clone()),
             Span::styled("█", Style::default().fg(accent)),
         ])
+    } else if prefix_armed {
+        let mut spans = vec![Span::styled(
+            PREFIX_CHIP,
+            Style::default()
+                .fg(Color::Black)
+                .bg(accent)
+                .add_modifier(Modifier::BOLD),
+        )];
+        spans.extend(hint_spans(
+            " o: open project | q: quit | esc: cancel",
+            &leader_label,
+            false,
+        ));
+        Line::from(spans)
     } else {
         Line::from(hint_spans(
             " <prefix> o: open project | <prefix> q: quit",
@@ -1120,6 +1137,71 @@ mod tests {
             })
             .collect::<Vec<_>>()
             .join("\n")
+    }
+
+    /// Render the empty screen and flatten it to text.
+    fn drawn_empty(repo_input: &RepoInput, notice: Option<&crate::app::Notice>, armed: bool) -> String {
+        let mut terminal = Terminal::new(TestBackend::new(90, 12)).unwrap();
+        let leader = crossterm::event::KeyEvent::new(
+            crossterm::event::KeyCode::Char('q'),
+            crossterm::event::KeyModifiers::CONTROL,
+        );
+        terminal
+            .draw(|frame| {
+                let chrome = Chrome {
+                    repo_paths: &[],
+                    active: 0,
+                    repo_input,
+                };
+                draw_empty(frame, chrome, notice, leader, armed, Color::Yellow);
+            })
+            .unwrap();
+        let buf = terminal.backend().buffer();
+        (0..buf.area.height)
+            .map(|y| {
+                (0..buf.area.width)
+                    .map(|x| buf[(x, y)].symbol())
+                    .collect::<String>()
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
+    #[test]
+    fn the_empty_screen_names_the_only_two_things_that_work() {
+        let text = drawn_empty(&RepoInput::default(), None, false);
+
+        assert!(text.contains("no project open"), "got: {text}");
+        assert!(text.contains("^Q o: open project"), "got: {text}");
+        assert!(text.contains("^Q q: quit"), "got: {text}");
+    }
+
+    #[test]
+    fn the_empty_screen_shows_the_prefix_chip_when_armed() {
+        // Pressing the leader with no project open has to look like it did
+        // something, or it reads as a dead key.
+        let text = drawn_empty(&RepoInput::default(), None, true);
+
+        assert!(text.contains("PREFIX"), "got: {text}");
+        assert!(text.contains("o: open project"), "got: {text}");
+        assert!(text.contains("esc: cancel"), "got: {text}");
+    }
+
+    #[test]
+    fn the_empty_screen_shows_the_dialog_and_its_rejection() {
+        // The dialog and its notice are the reason the empty screen keeps its
+        // chrome at all — a rejected path must still report why.
+        let repo_input = RepoInput {
+            active: true,
+            buf: "/definitely/not/here".to_string(),
+            prefilled: false,
+        };
+        let notice = crate::app::Notice::new(NoticeKind::RepoInput, "no such directory");
+
+        let text = drawn_empty(&repo_input, Some(&notice), false);
+
+        assert!(text.contains("repo: /definitely/not/here"), "got: {text}");
+        assert!(text.contains("no such directory"), "got: {text}");
     }
 
     #[test]

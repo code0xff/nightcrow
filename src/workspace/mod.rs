@@ -5,21 +5,23 @@
 //! rooted at that workdir. `Workspace` is the layer above it: a list of those
 //! per-repo states plus the index of the one currently on screen.
 //!
-//! The split follows the reset list in `App::change_repo`. Every field that
-//! call clears is repo-scoped and therefore lives on `App`; anything it leaves
-//! standing is process-wide and belongs here. Keeping that correspondence
-//! exact is what makes "switch project" a cheap index change instead of a
-//! teardown — `change_repo` stays the *replace this project's repo* path,
-//! while switching tabs touches no project state at all.
+//! Anything scoped to a repository lives on `App`; anything process-wide
+//! belongs here. Switching tabs is therefore a cheap index change that touches
+//! no project state at all, and there is no operation that repoints a project
+//! at another repo — closing the tab drops the `App`, and its own types tear
+//! the worker and the panes down. That is why nothing here needs a
+//! field-by-field reset list to keep in sync.
 //!
-//! Only the active project is rendered and routed input, but *every* project
-//! is polled each tick. Its snapshot worker and PTY reader keep producing into
-//! unbounded channels whether or not its tab is on screen, so a background
-//! project that went undrained would grow without bound until the user
-//! happened to switch back to it.
+//! The list may be empty. A bare launch starts that way and closing the last
+//! tab returns to it, so `active()` yields an `Option` and the open-repo
+//! dialog lives here rather than on a project — with none open, raising it is
+//! the only thing left to do.
 //!
-//! Background projects are not resized, though (see the resize loop in
-//! `main`): a hidden project's panes hold their last size the same way a
+//! Only the active project is rendered, routed input, and resized, but every
+//! project *drains* its queues each tick (see the loop in `main`): the snapshot
+//! worker and PTY reader keep producing into unbounded channels whether or not
+//! a tab is on screen. Applying a snapshot is active-only, since that runs a
+//! full diff. A hidden project's panes hold their last size the same way a
 //! hidden pane does.
 
 mod repo_input;
@@ -27,8 +29,8 @@ mod repo_input;
 pub use repo_input::RepoInputResult;
 
 use crate::app::{App, Notice, NoticeKind};
-use crossterm::event::{KeyEvent, KeyModifiers};
 use crate::ui::status_view::RepoInput;
+use crossterm::event::{KeyEvent, KeyModifiers};
 
 /// Upper bound on open projects, matching the F1..F10 switch keys. Panes cap
 /// at 8 for the same reason: a tab you cannot reach by key is a tab that is

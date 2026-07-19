@@ -279,9 +279,15 @@ fn run(
         leader,
     };
     let mut ws = Workspace::new(leader);
-    // Every `--repo` opens a tab. Past `MAX_PROJECTS` the extras are dropped
-    // rather than silently replacing earlier ones; the notice says so.
+    // Every `--repo` opens a tab. Repeats are skipped for the same reason the
+    // dialog focuses an open repo instead of opening it twice: two projects on
+    // one workdir would run duplicate snapshot workers and write the same
+    // session file. Past `MAX_PROJECTS` the extras are dropped rather than
+    // silently replacing earlier ones; the notice says so.
     for path in &repo_paths {
+        if ws.index_of_repo(path).is_some() {
+            continue;
+        }
         if !ws.add(init_app(path, &cfg, &startup_commands, leader)) {
             ws.raise_notice(
                 app::NoticeKind::Project,
@@ -534,6 +540,7 @@ fn main_loop(
             .collect();
         let active_tab = ws.active_index();
         let empty_notice = ws.empty_notice().cloned();
+        let prefix_armed = ws.prefix_armed();
         let fallback_accent = config::Accent::from_index(cfg.theme.preset_index()).color();
 
         let (app_opt, repo_input) = ws.render_parts();
@@ -551,7 +558,14 @@ fn main_loop(
             cursor = match app_opt {
                 Some(app) => ui::draw(frame, app, tabs, ss, ts, &cfg.layout, accent),
                 None => {
-                    ui::draw_empty(frame, tabs, empty_notice.as_ref(), ctx.leader, accent);
+                    ui::draw_empty(
+                        frame,
+                        tabs,
+                        empty_notice.as_ref(),
+                        ctx.leader,
+                        prefix_armed,
+                        accent,
+                    );
                     None
                 }
             };
@@ -1208,6 +1222,13 @@ fn dispatch_key(ws: &mut Workspace, key: KeyEvent) -> KeyOutcome {
 fn handle_empty_key(ws: &mut Workspace, key: KeyEvent) -> KeyOutcome {
     if ws.prefix_armed() {
         ws.cancel_prefix();
+        // `<L> <L>` sends a literal leader to the focused PTY on the project
+        // screen; here there is no pane to send it to, so it is consumed.
+        // Resolving it before the action table matters: with the default
+        // `ctrl+q` leader the follow-up would otherwise match `q` and quit.
+        if ws.is_leader_key(key) {
+            return KeyOutcome::Continue;
+        }
         return match prefix_action(key) {
             Action::OpenProject => KeyOutcome::Project(ProjectRequest::OpenDialog),
             Action::Quit => KeyOutcome::Quit,
@@ -1698,6 +1719,19 @@ mod tests {
         let _ = dispatch_key(&mut ws, leader());
         let other = dispatch_key(&mut ws, press(KeyCode::Char('t'), KeyModifiers::NONE));
         assert_eq!(other, KeyOutcome::Continue);
+    }
+
+    #[test]
+    fn a_doubled_leader_on_the_empty_screen_does_not_quit() {
+        // `<L> <L>` sends a literal leader to a pane on the project screen.
+        // Here there is none, but the follow-up must still not reach the action
+        // table: with the default ctrl+q leader it would match `q` and quit.
+        let mut ws = Workspace::new(leader());
+
+        let _ = dispatch_key(&mut ws, leader());
+        let outcome = dispatch_key(&mut ws, leader());
+
+        assert_eq!(outcome, KeyOutcome::Continue);
     }
 
     #[test]
