@@ -98,7 +98,7 @@ impl StatusView {
     }
 }
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct RepoInput {
     pub active: bool,
     pub buf: String,

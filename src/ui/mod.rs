@@ -15,6 +15,7 @@ pub mod tree_view;
 pub use search::SearchQuery;
 
 use crate::app::{App, DiffPaneView, Focus, ViewMode};
+use crate::ui::status_view::RepoInput;
 use crate::config::LayoutConfig;
 use crate::git::diff::StatusKind;
 use crate::runtime::terminal::TerminalFullscreen;
@@ -191,22 +192,25 @@ pub(crate) fn char_offset(s: &str, scroll_x: usize) -> &str {
     &s[byte_off..]
 }
 
-/// The workspace metadata the tab row needs.
+/// The process-level state the chrome draws, alongside the active project.
 ///
 /// Passed as data rather than as the `Workspace` itself: rendering reads one
 /// project plus this summary, and taking the whole workspace would hand every
 /// renderer access to projects it must not touch.
 #[derive(Clone, Copy)]
-pub struct ProjectTabs<'a> {
+pub struct Chrome<'a> {
     pub repo_paths: &'a [String],
     pub active: usize,
+    /// The open-repo dialog, which lives on the workspace because it must work
+    /// with no project open.
+    pub repo_input: &'a RepoInput,
 }
 
 /// The project index a click at `(x, y)` selects, or `None` when the click is
 /// not on a project tab. Shares `chrome_rows` with `draw`, so the hit boxes
 /// track the rendered row.
 pub(crate) fn project_tab_at(
-    tabs: ProjectTabs<'_>,
+    tabs: Chrome<'_>,
     screen_area: Rect,
     x: u16,
     y: u16,
@@ -220,6 +224,62 @@ pub(crate) fn project_tab_at(
     )
 }
 
+/// Render the screen with no project open.
+///
+/// The body is a placeholder rather than a borrowed panel: every viewer here
+/// reads a repo, and there is none. The chrome still draws — an empty tab row,
+/// the notice row (which carries a rejected path from the open dialog, since
+/// repo identity has nothing to show), and a hint bar naming the only two
+/// things that work from here.
+pub fn draw_empty(
+    frame: &mut Frame,
+    chrome: Chrome<'_>,
+    notice: Option<&crate::app::Notice>,
+    leader: crossterm::event::KeyEvent,
+    accent: Color,
+) {
+    let rows = chrome_rows(frame.area());
+    frame.render_widget(
+        project_tab::render(chrome.repo_paths, chrome.active, rows.tabs, accent),
+        rows.tabs,
+    );
+
+    let leader_label = crate::app::leader_label_of(leader);
+    frame.render_widget(
+        Paragraph::new(Line::from(vec![Span::styled(
+            format!("  no project open — {leader_label} o to open a repo"),
+            Style::default().fg(Color::DarkGray),
+        )]))
+        .block(Block::default().borders(Borders::ALL)),
+        rows.body,
+    );
+
+    // Matches `render_notice_row`: a notice is the same red wherever it lands.
+    let notice_line = match notice {
+        Some(n) => Line::from(Span::styled(
+            format!(" {}", n.line()),
+            Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+        )),
+        None => Line::default(),
+    };
+    frame.render_widget(Paragraph::new(notice_line), rows.notice);
+
+    let hint = if chrome.repo_input.active {
+        Line::from(vec![
+            Span::styled("repo: ", Style::default().fg(accent)),
+            Span::raw(chrome.repo_input.buf.clone()),
+            Span::styled("█", Style::default().fg(accent)),
+        ])
+    } else {
+        Line::from(hint_spans(
+            " <prefix> o: open project | <prefix> q: quit",
+            &leader_label,
+            false,
+        ))
+    };
+    frame.render_widget(Paragraph::new(hint), rows.hint);
+}
+
 /// Render one frame, returning the screen cell the terminal cursor was placed
 /// on (`None` when no cursor is shown). Ratatui applies the cursor to the local
 /// terminal itself, but the web mirror streams only the cell buffer, so the
@@ -227,7 +287,7 @@ pub(crate) fn project_tab_at(
 pub fn draw(
     frame: &mut Frame,
     app: &mut App,
-    tabs: ProjectTabs<'_>,
+    tabs: Chrome<'_>,
     ss: &SyntaxSet,
     ts: &ThemeSet,
     layout: &LayoutConfig,
@@ -249,13 +309,13 @@ pub fn draw(
 
     if app.terminal.fullscreen.fills_body() {
         let cursor = terminal_tab::render(frame, app, body_area, accent);
-        frame.render_widget(render_hint_bar(app, accent), hint_area);
+        frame.render_widget(render_hint_bar(app, tabs, accent), hint_area);
         return cursor;
     }
 
     if app.diff.fullscreen {
         diff_viewer::render(frame, app, body_area, ss, ts, accent);
-        frame.render_widget(render_hint_bar(app, accent), hint_area);
+        frame.render_widget(render_hint_bar(app, tabs, accent), hint_area);
         return None;
     }
 
@@ -265,7 +325,7 @@ pub fn draw(
             ViewMode::Log => commit_list::render(frame, app, body_area, accent),
             ViewMode::Tree => tree_list::render(frame, app, body_area, accent),
         }
-        frame.render_widget(render_hint_bar(app, accent), hint_area);
+        frame.render_widget(render_hint_bar(app, tabs, accent), hint_area);
         return None;
     }
 
@@ -291,7 +351,7 @@ pub fn draw(
     }
     diff_viewer::render(frame, app, upper[1], ss, ts, accent);
     let cursor = terminal_tab::render(frame, app, main[1], accent);
-    frame.render_widget(render_hint_bar(app, accent), hint_area);
+    frame.render_widget(render_hint_bar(app, tabs, accent), hint_area);
     cursor
 }
 
@@ -525,13 +585,13 @@ fn hint_spans(text: &str, leader: &str, mark_clickable: bool) -> Vec<Span<'stati
     spans
 }
 
-fn render_hint_bar(app: &App, accent: Color) -> Paragraph<'_> {
-    if app.repo_input.active {
+fn render_hint_bar<'a>(app: &'a App, chrome: Chrome<'a>, accent: Color) -> Paragraph<'a> {
+    if chrome.repo_input.active {
         // A rejected path is reported on the notice row directly above, so
         // this row stays a plain input line.
         return Paragraph::new(Line::from(vec![
             Span::styled("repo: ", Style::default().fg(accent)),
-            Span::raw(app.repo_input.buf.as_str()),
+            Span::raw(chrome.repo_input.buf.as_str()),
             Span::styled("█", Style::default().fg(accent)),
         ]));
     }
@@ -749,7 +809,13 @@ pub(crate) enum HintClick {
 /// Segments the same text `render_hint_bar` draws — `prefix_armed_hint_text`
 /// / `normal_hint_literal` are shared — measuring rendered display widths,
 /// so the hit test cannot drift from the screen.
-pub(crate) fn hint_click_at(app: &App, screen_area: Rect, x: u16, y: u16) -> Option<HintClick> {
+pub(crate) fn hint_click_at(
+    app: &App,
+    chrome: Chrome<'_>,
+    screen_area: Rect,
+    x: u16,
+    y: u16,
+) -> Option<HintClick> {
     // With mouse capture off no click can reach us anyway, but the bar also
     // renders no inverted labels (`hint_spans`) — keep the affordance and the
     // hit test in agreement rather than relying on the caller.
@@ -764,7 +830,7 @@ pub(crate) fn hint_click_at(app: &App, screen_area: Rect, x: u16, y: u16) -> Opt
     // Row selection mirrors `render_hint_bar`'s branch order exactly, or a
     // click would resolve against a row the user isn't looking at. Notices no
     // longer appear here (they own the row above), so they don't feature.
-    let (chip, text) = if app.repo_input.active {
+    let (chip, text) = if chrome.repo_input.active {
         return None;
     } else if app.prefix_armed() {
         (PREFIX_CHIP, prefix_armed_hint_text(app))
@@ -858,10 +924,38 @@ mod tests {
 
     /// Render the hint bar into a wide buffer and return its flattened text so
     /// footer wording can be asserted layout by layout.
+    /// A workspace holding one project, for the dialog tests — the dialog is
+    /// workspace state, but its rejection notice lands on the active project.
+    fn test_workspace() -> crate::workspace::Workspace {
+        let mut ws = crate::workspace::Workspace::new(crossterm::event::KeyEvent::new(
+            crossterm::event::KeyCode::Char('q'),
+            crossterm::event::KeyModifiers::CONTROL,
+        ));
+        ws.add(app_with_files(vec![]));
+        ws
+    }
+
+    /// A chrome view with no tabs and a closed dialog — the shape most hint
+    /// assertions want, since they are about one project's footer.
+    fn plain_chrome(repo_input: &RepoInput) -> Chrome<'_> {
+        Chrome {
+            repo_paths: &[],
+            active: 0,
+            repo_input,
+        }
+    }
+
     fn hint_text(app: &App) -> String {
+        let repo_input = RepoInput::default();
+        hint_text_with(app, plain_chrome(&repo_input))
+    }
+
+    fn hint_text_with(app: &App, chrome: Chrome<'_>) -> String {
         let mut terminal = Terminal::new(TestBackend::new(200, 1)).unwrap();
         terminal
-            .draw(|frame| frame.render_widget(render_hint_bar(app, Color::Yellow), frame.area()))
+            .draw(|frame| {
+                frame.render_widget(render_hint_bar(app, chrome, Color::Yellow), frame.area())
+            })
             .unwrap();
         let buf = terminal.backend().buffer();
         (0..buf.area.height)
@@ -879,9 +973,13 @@ mod tests {
     /// resolve to a click action, every clickable column must render
     /// REVERSED, and at least one such column must exist.
     fn assert_inverted_cells_are_clickable(app: &App) {
+        let repo_input = RepoInput::default();
+        let chrome = plain_chrome(&repo_input);
         let mut terminal = Terminal::new(TestBackend::new(200, 1)).unwrap();
         terminal
-            .draw(|frame| frame.render_widget(render_hint_bar(app, Color::Yellow), frame.area()))
+            .draw(|frame| {
+                frame.render_widget(render_hint_bar(app, chrome, Color::Yellow), frame.area())
+            })
             .unwrap();
         let buf = terminal.backend().buffer();
         // `hint_click_at` takes full-screen coordinates: hint row = row 2 of
@@ -890,7 +988,7 @@ mod tests {
         let mut inverted = 0;
         for x in 0..200u16 {
             let is_inverted = buf[(x, 0)].modifier.contains(Modifier::REVERSED);
-            let is_clickable = hint_click_at(app, screen, x, 2).is_some();
+            let is_clickable = hint_click_at(app, chrome, screen, x, 2).is_some();
             assert_eq!(
                 is_inverted, is_clickable,
                 "hint cell at column {x}: inverted={is_inverted} but clickable={is_clickable}"
@@ -909,21 +1007,24 @@ mod tests {
     /// did nothing at all.
     #[test]
     fn repo_input_reports_a_rejected_path_on_the_notice_row() {
-        let mut app = app_with_files(vec![]);
-        app.start_repo_input();
-        app.repo_input.buf = "/definitely/not/here".to_string();
-        app.confirm_repo_input();
+        let mut ws = test_workspace();
+        ws.start_repo_input();
+        ws.repo_input.buf = "/definitely/not/here".to_string();
+        ws.confirm_repo_input();
 
         assert!(
-            app.repo_input.active,
+            ws.repo_input.active,
             "a rejected path must leave the dialog open for correction"
         );
-        let notice = notice_text(&app);
+        // With a project open the rejection lands on that project's notice row,
+        // directly above the input still holding the text to correct.
+        let notice = notice_text(ws.active().unwrap());
         assert!(
             notice.contains("no such directory"),
             "the notice row must say why the confirm was rejected, got: {notice}"
         );
-        let hint = hint_text(&app);
+        let repo_input = ws.repo_input.clone();
+        let hint = hint_text_with(ws.active().unwrap(), plain_chrome(&repo_input));
         assert!(
             hint.contains("/definitely/not/here"),
             "the rejected text must stay in the input, got: {hint}"
@@ -932,13 +1033,13 @@ mod tests {
 
     #[test]
     fn repo_input_notice_clears_once_the_path_is_edited() {
-        let mut app = app_with_files(vec![]);
-        app.start_repo_input();
-        app.repo_input.buf = "/definitely/not/here".to_string();
-        app.confirm_repo_input();
-        app.repo_input_pop();
+        let mut ws = test_workspace();
+        ws.start_repo_input();
+        ws.repo_input.buf = "/definitely/not/here".to_string();
+        ws.confirm_repo_input();
+        ws.repo_input_pop();
 
-        let notice = notice_text(&app);
+        let notice = notice_text(ws.active().unwrap());
         assert!(
             !notice.contains("no such directory"),
             "editing the path must clear the stale verdict, got: {notice}"
@@ -953,7 +1054,6 @@ mod tests {
         for setup in [
             (|app: &mut App| app.arm_prefix()) as fn(&mut App),
             |app: &mut App| app.begin_swap_target(),
-            |app: &mut App| app.start_repo_input(),
         ] {
             let mut app = app_with_fake_backend();
             setup(&mut app);
@@ -995,9 +1095,10 @@ mod tests {
         let ts = ThemeSet::load_defaults();
         terminal
             .draw(|frame| {
-                let tabs = ProjectTabs {
+                let tabs = Chrome {
                     repo_paths: tab_paths,
                     active,
+                    repo_input: &RepoInput::default(),
                 };
                 draw(
                     frame,
@@ -1063,9 +1164,10 @@ mod tests {
         let first_row = text.lines().next().unwrap();
         let web_x = first_row.find("F2 web").expect("second tab rendered") as u16;
 
-        let tabs = ProjectTabs {
+        let tabs = Chrome {
             repo_paths: &paths,
             active: 0,
+            repo_input: &RepoInput::default(),
         };
         assert_eq!(project_tab_at(tabs, screen, 0, 0), Some(0));
         assert_eq!(project_tab_at(tabs, screen, web_x, 0), Some(1));
@@ -1088,9 +1190,10 @@ mod tests {
                 draw(
                     frame,
                     &mut app,
-                    ProjectTabs {
+                    Chrome {
                         repo_paths: &tab_paths,
                         active: 0,
+                        repo_input: &RepoInput::default(),
                     },
                     &ss,
                     &ts,
@@ -1170,7 +1273,7 @@ mod tests {
         app.mouse_enabled = false;
         let mut terminal = Terminal::new(TestBackend::new(200, 1)).unwrap();
         terminal
-            .draw(|frame| frame.render_widget(render_hint_bar(&app, Color::Yellow), frame.area()))
+            .draw(|frame| frame.render_widget(render_hint_bar(&app, plain_chrome(&RepoInput::default()), Color::Yellow), frame.area()))
             .unwrap();
         let buf = terminal.backend().buffer();
 
@@ -1193,7 +1296,7 @@ mod tests {
         let screen = Rect::new(0, 0, 200, 3);
         for x in 0..200u16 {
             assert_eq!(
-                hint_click_at(&app, screen, x, 2),
+                hint_click_at(&app, plain_chrome(&RepoInput::default()), screen, x, 2),
                 None,
                 "x={x} resolves to a click the disabled mouse can never send"
             );
@@ -1281,7 +1384,7 @@ mod tests {
         let screen = Rect::new(0, 0, 200, 3);
         let clicks = |app: &App| {
             (0..200u16)
-                .filter(|&x| hint_click_at(app, screen, x, 2) == Some(HintClick::Plain('w')))
+                .filter(|&x| hint_click_at(app, plain_chrome(&RepoInput::default()), screen, x, 2) == Some(HintClick::Plain('w')))
                 .count()
         };
 
@@ -1603,19 +1706,19 @@ mod tests {
 
         let x = hint_x_of(&app, "t: new pane");
         assert_eq!(
-            hint_click_at(&app, HINT_TEST_SCREEN, x, HINT_ROW),
+            hint_click_at(&app, plain_chrome(&RepoInput::default()), HINT_TEST_SCREEN, x, HINT_ROW),
             Some(HintClick::Leader('t'))
         );
         let x = hint_x_of(&app, "/: search");
         assert_eq!(
-            hint_click_at(&app, HINT_TEST_SCREEN, x, HINT_ROW),
+            hint_click_at(&app, plain_chrome(&RepoInput::default()), HINT_TEST_SCREEN, x, HINT_ROW),
             Some(HintClick::Plain('/'))
         );
         let x = hint_x_of(&app, "j/k: navigate");
-        assert_eq!(hint_click_at(&app, HINT_TEST_SCREEN, x, HINT_ROW), None);
+        assert_eq!(hint_click_at(&app, plain_chrome(&RepoInput::default()), HINT_TEST_SCREEN, x, HINT_ROW), None);
         let x = hint_x_of(&app, "q: quit");
         assert_eq!(
-            hint_click_at(&app, HINT_TEST_SCREEN, x, HINT_ROW),
+            hint_click_at(&app, plain_chrome(&RepoInput::default()), HINT_TEST_SCREEN, x, HINT_ROW),
             None,
             "quit must never be one stray click away"
         );
@@ -1629,7 +1732,7 @@ mod tests {
         let app = app_with_fake_backend();
         let mut terminal = Terminal::new(TestBackend::new(300, 1)).unwrap();
         terminal
-            .draw(|frame| frame.render_widget(render_hint_bar(&app, Color::Yellow), frame.area()))
+            .draw(|frame| frame.render_widget(render_hint_bar(&app, plain_chrome(&RepoInput::default()), Color::Yellow), frame.area()))
             .unwrap();
         let buf = terminal.backend().buffer();
         // Scan cell-wise so the needle's index is a *column*, not a byte
@@ -1640,7 +1743,7 @@ mod tests {
             .expect("label rendered") as u16;
 
         assert_eq!(
-            hint_click_at(&app, HINT_TEST_SCREEN, x, HINT_ROW),
+            hint_click_at(&app, plain_chrome(&RepoInput::default()), HINT_TEST_SCREEN, x, HINT_ROW),
             Some(HintClick::Leader('t'))
         );
     }
@@ -1649,7 +1752,7 @@ mod tests {
     fn hint_click_misses_off_the_hint_row() {
         let app = app_with_fake_backend();
         let x = hint_x_of(&app, "t: new pane");
-        assert_eq!(hint_click_at(&app, HINT_TEST_SCREEN, x, HINT_ROW - 1), None);
+        assert_eq!(hint_click_at(&app, plain_chrome(&RepoInput::default()), HINT_TEST_SCREEN, x, HINT_ROW - 1), None);
     }
 
     #[test]
@@ -1659,18 +1762,18 @@ mod tests {
 
         let x = hint_x_of(&app, "t: new pane");
         assert_eq!(
-            hint_click_at(&app, HINT_TEST_SCREEN, x, HINT_ROW),
+            hint_click_at(&app, plain_chrome(&RepoInput::default()), HINT_TEST_SCREEN, x, HINT_ROW),
             Some(HintClick::Plain('t'))
         );
         let x = hint_x_of(&app, "r: redraw");
         assert_eq!(
-            hint_click_at(&app, HINT_TEST_SCREEN, x, HINT_ROW),
+            hint_click_at(&app, plain_chrome(&RepoInput::default()), HINT_TEST_SCREEN, x, HINT_ROW),
             Some(HintClick::Plain('r'))
         );
         let x = hint_x_of(&app, "q: quit");
-        assert_eq!(hint_click_at(&app, HINT_TEST_SCREEN, x, HINT_ROW), None);
+        assert_eq!(hint_click_at(&app, plain_chrome(&RepoInput::default()), HINT_TEST_SCREEN, x, HINT_ROW), None);
         let x = hint_x_of(&app, "esc: cancel");
-        assert_eq!(hint_click_at(&app, HINT_TEST_SCREEN, x, HINT_ROW), None);
+        assert_eq!(hint_click_at(&app, plain_chrome(&RepoInput::default()), HINT_TEST_SCREEN, x, HINT_ROW), None);
     }
 
     #[test]
@@ -1678,7 +1781,7 @@ mod tests {
         let mut swap = app_with_fake_backend();
         swap.begin_swap_target();
         assert!((0..HINT_TEST_SCREEN.width)
-            .all(|x| hint_click_at(&swap, HINT_TEST_SCREEN, x, HINT_ROW).is_none()));
+            .all(|x| hint_click_at(&swap, plain_chrome(&RepoInput::default()), HINT_TEST_SCREEN, x, HINT_ROW).is_none()));
 
     }
 

@@ -5,14 +5,12 @@ mod commit_log_fetch;
 mod diff_load;
 mod focus;
 mod navigation;
-mod repo_input;
 mod session_io;
 mod snapshot_io;
 mod terminal_ctrl;
 mod tree;
 
 pub use crate::app::commit_log_fetch::CommitLogPagination;
-pub use crate::app::repo_input::RepoInputResult;
 pub use crate::runtime::snapshot::{SnapshotChannel, SnapshotMsg};
 #[cfg(test)]
 pub use crate::runtime::terminal::PaneInfo;
@@ -22,7 +20,7 @@ pub(crate) use crate::runtime::terminal::strip_escape_sequences;
 pub use crate::ui::diff_pane::{DiffPane, DiffPaneView};
 pub use crate::ui::file_view::{FileViewKey, FileViewState};
 pub use crate::ui::log_view::LogView;
-pub use crate::ui::status_view::{RepoInput, StatusView};
+pub use crate::ui::status_view::StatusView;
 pub use crate::ui::tree_view::TreeView;
 use crossterm::event::{KeyEvent, KeyModifiers};
 #[cfg(test)]
@@ -74,6 +72,18 @@ impl NoticeKind {
 pub struct Notice {
     pub kind: NoticeKind,
     pub text: String,
+}
+
+/// Caret-notation label for a leader chord. Free function so the empty
+/// screen, which has no project to ask, can label its hints too.
+pub fn leader_label_of(leader: KeyEvent) -> String {
+    match leader.code {
+        crossterm::event::KeyCode::Char(c) if leader.modifiers.contains(KeyModifiers::CONTROL) => {
+            format!("^{}", c.to_ascii_uppercase())
+        }
+        crossterm::event::KeyCode::Char(c) => c.to_string(),
+        _ => "<prefix>".to_string(),
+    }
 }
 
 impl Notice {
@@ -134,7 +144,6 @@ pub struct App {
     pub log_view: LogView,
     pub tree_view: TreeView,
     pub terminal: TerminalState,
-    pub repo_input: RepoInput,
     pub accent_idx: usize,
     pub tracking: Option<TrackingStatus>,
     pub(crate) snapshot: SnapshotChannel,
@@ -250,7 +259,6 @@ impl App {
             log_view: LogView::default(),
             tree_view: TreeView::default(),
             terminal: TerminalState::new(Some(backend), prompt_log),
-            repo_input: RepoInput::default(),
             accent_idx: 0,
             tracking: None,
             snapshot,
@@ -298,12 +306,12 @@ impl App {
         self.prefix_armed = false;
     }
 
-    /// Whether a modal overlay (repo-input dialog or any search bar) owns
-    /// input right now. Shared by the key and mouse handlers so a mouse
+    /// Whether one of this project's search bars owns input right now. The
+    /// repo dialog is process-level, so the full modal test lives on
+    /// `Workspace::overlay_active`; both feed the key and mouse handlers so a
     /// click can never reach behind a modal that swallows keystrokes.
-    pub fn overlay_active(&self) -> bool {
-        self.repo_input.active
-            || self.status_view.search_active
+    pub fn search_overlay_active(&self) -> bool {
+        self.status_view.search_active
             || self.tree_view.search_active
             || self.diff.search.active
             || self.log_view.commit_search_active
@@ -333,15 +341,7 @@ impl App {
     /// so the control character maps cleanly to `^<UPPER>`; any non-ctrl key
     /// falls back to printing its raw character.
     pub fn leader_label(&self) -> String {
-        match self.leader.code {
-            crossterm::event::KeyCode::Char(c)
-                if self.leader.modifiers.contains(KeyModifiers::CONTROL) =>
-            {
-                format!("^{}", c.to_ascii_uppercase())
-            }
-            crossterm::event::KeyCode::Char(c) => c.to_string(),
-            _ => "<prefix>".to_string(),
-        }
+        leader_label_of(self.leader)
     }
 
     /// True when `key` matches the configured leader chord. Only Ctrl/Alt/Shift
@@ -419,7 +419,6 @@ pub(crate) mod tests {
             log_view: LogView::default(),
             tree_view: TreeView::default(),
             terminal: TerminalState::new(None, false),
-            repo_input: RepoInput::default(),
             accent_idx: 0,
             tracking: None,
             snapshot,
@@ -2494,69 +2493,10 @@ pub(crate) mod tests {
         );
     }
 
-    #[test]
-    fn first_typed_char_replaces_the_prefilled_repo_path() {
-        let mut app = app_with_files(vec![]);
-        app.repo_path = "/repos/current".to_string();
-        app.start_repo_input();
-        assert_eq!(app.repo_input.buf, "/repos/current");
-
-        for c in "/tmp".chars() {
-            app.repo_input_push(c);
-        }
-
-        assert_eq!(
-            app.repo_input.buf, "/tmp",
-            "typing over an untouched prefill must replace it, not append"
-        );
-    }
-
     /// Backspace is the "edit this path" gesture — the sub-directory case
     /// depends on the prefill surviving it.
-    #[test]
-    fn backspace_leaves_prefill_mode_without_dropping_the_path() {
-        let mut app = app_with_files(vec![]);
-        app.repo_path = "/repos/current".to_string();
-        app.start_repo_input();
-
-        app.repo_input_pop();
-        assert_eq!(app.repo_input.buf, "/repos/curren");
-        app.repo_input_push('t');
-        assert_eq!(
-            app.repo_input.buf, "/repos/current",
-            "after Backspace, typing must append to the surviving text"
-        );
-    }
-
     /// →/End keeps the prefill and appends, which is what the sub-directory
     /// case needs: Backspace would eat the trailing separator first.
-    #[test]
-    fn accepting_the_prefill_appends_instead_of_replacing() {
-        let mut app = app_with_files(vec![]);
-        app.repo_path = "/repos/current/".to_string();
-        app.start_repo_input();
-
-        app.repo_input_accept_prefill();
-        for c in "src".chars() {
-            app.repo_input_push(c);
-        }
-
-        assert_eq!(app.repo_input.buf, "/repos/current/src");
-    }
-
-    #[test]
-    fn reopening_the_dialog_re_arms_the_prefill() {
-        let mut app = app_with_files(vec![]);
-        app.repo_path = "/repos/current".to_string();
-        app.start_repo_input();
-        app.repo_input_push('x');
-        app.cancel_repo_input();
-
-        app.start_repo_input();
-        app.repo_input_push('y');
-        assert_eq!(app.repo_input.buf, "y");
-    }
-
     #[test]
     fn successful_snapshot_preserves_terminal_status() {
         let (snapshot, tx) = dummy_snapshot_channel();

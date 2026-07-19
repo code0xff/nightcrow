@@ -1,4 +1,5 @@
-use super::{App, NoticeKind};
+use super::Workspace;
+use crate::app::NoticeKind;
 
 /// The outcome of confirming the repo-path dialog.
 ///
@@ -19,13 +20,18 @@ pub enum RepoInputResult {
 // buffer without bound; comfortably above any realistic filesystem path.
 const REPO_INPUT_MAX_BYTES: usize = 4096;
 
-impl App {
+impl Workspace {
     /// Open the dialog that adds a project tab.
     ///
-    /// Prefilled with the current repo path: a sibling checkout is the common
-    /// case, and the shared prefix is most of what the user would retype.
+    /// Prefilled with the active project's repo path: a sibling checkout is
+    /// the common case, and the shared prefix is most of what the user would
+    /// retype. With no project open there is nothing to prefill, so the dialog
+    /// starts empty.
     pub fn start_repo_input(&mut self) {
-        self.repo_input.buf = self.repo_path.clone();
+        self.repo_input.buf = self
+            .active()
+            .map(|p| p.repo_path.clone())
+            .unwrap_or_default();
         self.repo_input.active = true;
         self.repo_input.prefilled = true;
         self.clear_notice(NoticeKind::RepoInput);

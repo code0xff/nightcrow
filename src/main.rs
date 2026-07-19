@@ -42,9 +42,10 @@ use workspace::Workspace;
 #[derive(Parser)]
 #[command(version, about, long_about = None)]
 struct Cli {
-    /// Path to the git repository (defaults to current directory)
+    /// Open this repository in a project tab. Repeatable — each --repo adds
+    /// a tab. With none, nightcrow starts with no project open.
     #[arg(short, long)]
-    repo: Option<std::path::PathBuf>,
+    repo: Vec<std::path::PathBuf>,
 
     /// Open a terminal pane running this command at startup. Repeatable;
     /// each --exec adds one pane after any config [[startup_command]] panes.
@@ -88,15 +89,24 @@ fn main() -> Result<()> {
     // validated it; re-parsing keeps the KeyEvent local to the app setup.
     let leader = config::parse_leader(&cfg.input.leader)?;
 
-    let input_path = match cli.repo {
-        Some(p) => p,
-        None => std::env::current_dir().context("cannot determine current directory")?,
-    };
-    let repo_path = git::resolve_repo_path(input_path)
-        .to_string_lossy()
-        .to_string();
+    let repo_paths: Vec<String> = cli
+        .repo
+        .into_iter()
+        .map(|p| git::resolve_repo_path(p).to_string_lossy().to_string())
+        .collect();
 
-    let _log_guard = logging::init_logging(&cfg.log, &repo_path);
+    // Logs live under a repo by default, so with no project the first one
+    // named on the command line stands in; with none at all, the working
+    // directory does. A log path cannot follow the active tab — the file is
+    // opened once, at startup.
+    let log_anchor = match repo_paths.first() {
+        Some(path) => path.clone(),
+        None => std::env::current_dir()
+            .context("cannot determine current directory")?
+            .to_string_lossy()
+            .to_string(),
+    };
+    let _log_guard = logging::init_logging(&cfg.log, &log_anchor);
 
     tracing::info!(
         level = cfg.log.level.as_str(),
@@ -117,7 +127,14 @@ fn main() -> Result<()> {
     let backend = CrosstermBackend::new(io::stdout());
     let mut terminal = Terminal::new(backend)?;
 
-    run(&mut terminal, repo_path, cfg, startup_commands, leader, web_server)
+    run(
+        &mut terminal,
+        repo_paths,
+        cfg,
+        startup_commands,
+        leader,
+        web_server,
+    )
 }
 
 /// Bootstrap the web login credential and start the mirror server when enabled.
@@ -238,11 +255,14 @@ enum ProjectRequest {
     Close,
     /// Open this resolved repo path as a tab, or focus the tab already on it.
     Open(String),
+    /// Raise the open-repo dialog. It lives on the workspace, so a handler
+    /// holding one project cannot open it directly.
+    OpenDialog,
 }
 
 fn run(
     terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
-    repo_path: String,
+    repo_paths: Vec<String>,
     cfg: config::Config,
     startup_commands: Vec<config::StartupCommand>,
     leader: KeyEvent,
@@ -258,10 +278,23 @@ fn run(
         startup_commands: &startup_commands,
         leader,
     };
-    let mut ws = Workspace::new(init_app(&repo_path, &cfg, &startup_commands, leader));
+    let mut ws = Workspace::new(leader);
+    // Every `--repo` opens a tab. Past `MAX_PROJECTS` the extras are dropped
+    // rather than silently replacing earlier ones; the notice says so.
+    for path in &repo_paths {
+        if !ws.add(init_app(path, &cfg, &startup_commands, leader)) {
+            ws.raise_notice(
+                app::NoticeKind::Project,
+                format!("cannot open more than {} projects", workspace::MAX_PROJECTS),
+            );
+            break;
+        }
+    }
+    // Land on the first repo named, not the last opened.
+    ws.switch(0);
 
-    if matches!(splash_loop(terminal, ws.active())?, SplashOutcome::Quit) {
-        tracing::info!(repo = %ws.active().repo_path, "nightcrow stopped during splash");
+    if matches!(splash_loop(terminal, &ws, cfg.theme.preset_index())?, SplashOutcome::Quit) {
+        tracing::info!("nightcrow stopped during splash");
         return Ok(());
     }
     main_loop(terminal, &mut ws, &ss, &ts, &cfg, &ctx, web_server)?;
@@ -273,7 +306,7 @@ fn run(
     for project in ws.projects() {
         save_project_session(project);
     }
-    tracing::info!(repo = %ws.active().repo_path, "nightcrow stopped");
+    tracing::info!("nightcrow stopped");
     Ok(())
 }
 
@@ -308,16 +341,15 @@ fn save_project_session(project: &App) {
 fn apply_project_request(ws: &mut Workspace, ctx: &ProjectContext, request: ProjectRequest) {
     match request {
         ProjectRequest::Switch(idx) => ws.switch(idx),
+        ProjectRequest::OpenDialog => ws.start_repo_input(),
         ProjectRequest::Close => {
             // Save before removing: the shutdown loop only walks projects that
             // are still open, so a closed tab would otherwise lose its state
-            // and restore a stale session when reopened. Saving a project the
-            // close then refuses is harmless — it is saved again on exit.
-            save_project_session(ws.active());
-            if !ws.close_active() {
-                ws.active_mut()
-                    .raise_notice(app::NoticeKind::Project, "cannot close the last project");
+            // and restore a stale session when reopened.
+            if let Some(project) = ws.active() {
+                save_project_session(project);
             }
+            ws.close_active();
         }
         ProjectRequest::Open(repo_path) => {
             // Focus rather than duplicate: two tabs on one workdir would show
@@ -330,7 +362,7 @@ fn apply_project_request(ws: &mut Workspace, ctx: &ProjectContext, request: Proj
             // the configured startup commands, so constructing a project only
             // to have `add` refuse it would leave those processes behind.
             if ws.is_full() {
-                ws.active_mut().raise_notice(
+                ws.raise_notice(
                     app::NoticeKind::Project,
                     format!("cannot open more than {} projects", workspace::MAX_PROJECTS),
                 );
@@ -399,11 +431,17 @@ enum SplashOutcome {
 
 fn splash_loop(
     terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
-    app: &App,
+    ws: &Workspace,
+    fallback_accent: usize,
 ) -> Result<SplashOutcome> {
     let splash = ui::splash::SplashState::new();
+    // With no project open there is no restored accent to honour, so the
+    // configured preset stands in.
+    let accent = ws
+        .active()
+        .map(|p| p.current_accent())
+        .unwrap_or_else(|| config::Accent::from_index(fallback_accent).color());
     loop {
-        let accent = app.current_accent();
         terminal.draw(|frame| {
             ui::splash::draw(frame, &splash, accent);
         })?;
@@ -473,16 +511,14 @@ fn main_loop(
         }
 
         let size = terminal.size()?;
-        let layouts: Vec<(backend::PaneId, u16, u16)> = ui::terminal_content_areas(
-            ws.active(),
-            Rect::new(0, 0, size.width, size.height),
-            &cfg.layout,
-        )
-        .into_iter()
-        .map(|(id, area)| (id, area.height, area.width))
-        .collect();
-        {
-            let app = ws.active_mut();
+        let screen = Rect::new(0, 0, size.width, size.height);
+        if let Some(app) = ws.active() {
+            let layouts: Vec<(backend::PaneId, u16, u16)> =
+                ui::terminal_content_areas(app, screen, &cfg.layout)
+                    .into_iter()
+                    .map(|(id, area)| (id, area.height, area.width))
+                    .collect();
+            let app = ws.active_mut().expect("active project checked above");
             app.terminal.resize_visible_panes(&layouts);
             app.terminal.sync_scroll();
         }
@@ -497,16 +533,28 @@ fn main_loop(
             .map(|p| p.repo_path.clone())
             .collect();
         let active_tab = ws.active_index();
-        let tabs = ui::ProjectTabs {
+        let empty_notice = ws.empty_notice().cloned();
+        let fallback_accent = config::Accent::from_index(cfg.theme.preset_index()).color();
+
+        let (app_opt, repo_input) = ws.render_parts();
+        let tabs = ui::Chrome {
             repo_paths: &tab_paths,
             active: active_tab,
+            repo_input,
         };
-
-        let app = ws.active_mut();
-        let accent = app.current_accent();
+        let accent = app_opt
+            .as_ref()
+            .map(|app| app.current_accent())
+            .unwrap_or(fallback_accent);
         let mut cursor = None;
         let completed = terminal.draw(|frame| {
-            cursor = ui::draw(frame, app, tabs, ss, ts, &cfg.layout, accent);
+            cursor = match app_opt {
+                Some(app) => ui::draw(frame, app, tabs, ss, ts, &cfg.layout, accent),
+                None => {
+                    ui::draw_empty(frame, tabs, empty_notice.as_ref(), ctx.leader, accent);
+                    None
+                }
+            };
         })?;
 
         // Mirror the freshly composited frame to any connected browsers. Use the
@@ -517,6 +565,16 @@ fn main_loop(
         if let Some(server) = web_server.as_mut() {
             server.broadcast(completed.buffer, cursor);
         }
+
+        // `tabs` above borrows the workspace for the draw; input needs it
+        // mutably, so rebuild the same view over a snapshot of the dialog.
+        // Only the buffer is copied, and only on frames that see an event.
+        let repo_input = ws.repo_input.clone();
+        let tabs = ui::Chrome {
+            repo_paths: &tab_paths,
+            active: active_tab,
+            repo_input: &repo_input,
+        };
 
         // 16 ms ≈ 60 fps. The previous 50 ms tick noticeably lagged PTY echo
         // on every keystroke (typing felt sticky). `event::poll` performs an
@@ -529,16 +587,15 @@ fn main_loop(
                 // visible flash on resize without improving correctness.
                 Event::Resize(_, _) => {}
                 Event::Key(key) => {
-                    let outcome = handle_key(ws.active_mut(), key);
+                    let outcome = dispatch_key(ws, key);
                     if apply_outcome(terminal, ws, ctx, outcome)? {
                         return Ok(());
                     }
                 }
-                Event::Paste(text) => handle_paste(ws.active_mut(), &text),
+                Event::Paste(text) => dispatch_paste(ws, &text),
                 Event::Mouse(mouse) => {
                     let screen = Rect::new(0, 0, size.width, size.height);
-                    let outcome =
-                        handle_mouse(ws.active_mut(), tabs, mouse, screen, &cfg.layout);
+                    let outcome = dispatch_mouse(ws, tabs, mouse, screen, &cfg.layout);
                     if apply_outcome(terminal, ws, ctx, outcome)? {
                         return Ok(());
                     }
@@ -552,8 +609,7 @@ fn main_loop(
         if let Some(server) = web_server.as_ref() {
             let screen = Rect::new(0, 0, size.width, size.height);
             for event in server.drain_input() {
-                let outcome =
-                    dispatch_web_event(ws.active_mut(), tabs, event, screen, &cfg.layout);
+                let outcome = dispatch_web_event(ws, tabs, event, screen, &cfg.layout);
                 if apply_outcome(terminal, ws, ctx, outcome)? {
                     return Ok(());
                 }
@@ -565,18 +621,43 @@ fn main_loop(
 /// Route a decoded browser input event through the same handlers as local
 /// input. Keeps web and terminal control behaviourally identical.
 fn dispatch_web_event(
-    app: &mut App,
-    tabs: ui::ProjectTabs<'_>,
+    ws: &mut Workspace,
+    tabs: ui::Chrome<'_>,
     event: web::protocol::WebInputEvent,
     screen: Rect,
     layout: &config::LayoutConfig,
 ) -> KeyOutcome {
     use web::protocol::WebInputEvent;
     match event {
-        WebInputEvent::Key(key) => handle_key(app, key),
-        WebInputEvent::Mouse(mouse) => handle_mouse(app, tabs, mouse, screen, layout),
+        WebInputEvent::Key(key) => dispatch_key(ws, key),
+        WebInputEvent::Mouse(mouse) => dispatch_mouse(ws, tabs, mouse, screen, layout),
         WebInputEvent::Paste(text) => {
-            handle_paste(app, &text);
+            dispatch_paste(ws, &text);
+            KeyOutcome::Continue
+        }
+    }
+}
+
+/// Route one mouse event. The project tab row is the only target that exists
+/// with no project open, so it is resolved before the per-project handler.
+fn dispatch_mouse(
+    ws: &mut Workspace,
+    tabs: ui::Chrome<'_>,
+    mouse: MouseEvent,
+    screen: Rect,
+    layout: &config::LayoutConfig,
+) -> KeyOutcome {
+    if ws.repo_input.active {
+        return KeyOutcome::Continue;
+    }
+    match ws.active_mut() {
+        Some(app) => handle_mouse(app, tabs, mouse, screen, layout),
+        None => {
+            if let MouseEventKind::Down(crossterm::event::MouseButton::Left) = mouse.kind
+                && let Some(idx) = ui::project_tab_at(tabs, screen, mouse.column, mouse.row)
+            {
+                return KeyOutcome::Project(ProjectRequest::Switch(idx));
+            }
             KeyOutcome::Continue
         }
     }
@@ -601,7 +682,7 @@ fn dispatch_web_event(
 /// Shift+drag.
 fn handle_mouse(
     app: &mut App,
-    tabs: ui::ProjectTabs<'_>,
+    tabs: ui::Chrome<'_>,
     mouse: MouseEvent,
     screen: Rect,
     layout: &config::LayoutConfig,
@@ -619,7 +700,7 @@ fn handle_mouse(
     // Modal overlays (repo-switch dialog, every search bar) own all other
     // input while open — same rule the key handler enforces: a click behind
     // a modal must not move focus or reach a pane.
-    if app.overlay_active() {
+    if app.search_overlay_active() {
         return KeyOutcome::Continue;
     }
     // Pane-swap mode: a press names the swap target the way a digit does —
@@ -665,7 +746,7 @@ fn handle_mouse(
                     app.cancel_prefix();
                     app.switch_pane(idx);
                 } else if let Some(click) =
-                    ui::hint_click_at(app, screen, mouse.column, mouse.row)
+                    ui::hint_click_at(app, tabs, screen, mouse.column, mouse.row)
                 {
                     return dispatch_hint_click(app, click);
                 }
@@ -780,26 +861,34 @@ fn focus_clicked_pane(app: &mut App, id: backend::PaneId) {
     app.focus = Focus::Terminal;
 }
 
-/// Route a bracketed-paste payload to the appropriate sink.
+/// Route pasted text: into the open repo dialog if it owns input, else to the
+/// active project. Nothing happens with no project and no dialog — there is no
+/// sink for it.
+fn dispatch_paste(ws: &mut Workspace, text: &str) {
+    if ws.repo_input.active {
+        for ch in text.chars().filter(|c| !c.is_control()) {
+            ws.repo_input_push(ch);
+        }
+        return;
+    }
+    if let Some(app) = ws.active_mut() {
+        handle_paste(app, text);
+    }
+}
+
+/// Route a bracketed-paste payload within one project.
 ///
-/// Modal overlays (repo input, file/diff search) accept the text after
-/// stripping control characters — the same rule the typed-key handlers
-/// enforce. The terminal pane receives the paste re-wrapped in
-/// `ESC [200~ ... ESC [201~` so the inner shell can distinguish multi-line
-/// paste from interactive input (crossterm consumes the outer markers when
-/// surfacing `Event::Paste`).
+/// Its search overlays accept the text after stripping control characters —
+/// the same rule the typed-key handlers enforce. The terminal pane receives
+/// the paste re-wrapped in `ESC [200~ ... ESC [201~` so the inner shell can
+/// distinguish multi-line paste from interactive input (crossterm consumes the
+/// outer markers when surfacing `Event::Paste`).
 fn handle_paste(app: &mut App, text: &str) {
     // A paste arriving while the prefix is armed would otherwise leave the
     // PREFIX indicator stuck and make the next key resolve as a follow-up.
     // Resolve the prefix first (tmux treats a non-command event as a cancel),
     // then route the paste normally.
     app.cancel_prefix();
-    if app.repo_input.active {
-        for ch in text.chars().filter(|c| !c.is_control()) {
-            app.repo_input_push(ch);
-        }
-        return;
-    }
     if app.focus == Focus::FileList && app.status_view.search_active {
         for ch in text.chars().filter(|c| !c.is_control()) {
             app.search_push(ch);
@@ -873,7 +962,7 @@ fn handle_key(app: &mut App, key: KeyEvent) -> KeyOutcome {
     // passthrough, and dismissing on those would blank a notice the moment
     // the user resumed typing. Runs before dispatch so an action that raises
     // a *new* notice still leaves it standing.
-    if app.overlay_active()
+    if app.search_overlay_active()
         || app.prefix_armed()
         || app.awaiting_swap_target()
         || app.is_leader_key(key)
@@ -886,16 +975,12 @@ fn handle_key(app: &mut App, key: KeyEvent) -> KeyOutcome {
     // keystroke until dismissed. They are checked before any leader handling
     // so a leader keypress while a search/repo dialog is open is typed/edited
     // by the overlay rather than arming the prefix.
-    if app.overlay_active() {
+    if app.search_overlay_active() {
         // A prefix (or swap-target) could only be armed if an overlay opened
         // out from under it; disarm both so neither indicator lingers behind a
         // modal.
         app.cancel_prefix();
         app.cancel_swap_target();
-        if app.repo_input.active {
-            // Confirming may ask the workspace to open a tab.
-            return handle_repo_input_key(app, key);
-        }
         // Search overlays are handled inside the focus-local upper handler.
         handle_upper_key(app, key, Action::None);
         return KeyOutcome::Continue;
@@ -1018,10 +1103,7 @@ fn handle_global_action(app: &mut App, action: Action) -> Option<KeyOutcome> {
         }
         // Opening is two steps: this only raises the dialog, and confirming it
         // emits the `Open` request (see `handle_repo_input_key`).
-        Action::OpenProject => {
-            app.start_repo_input();
-            Some(KeyOutcome::Continue)
-        }
+        Action::OpenProject => Some(KeyOutcome::Project(ProjectRequest::OpenDialog)),
         Action::CloseProject => Some(KeyOutcome::Project(ProjectRequest::Close)),
         Action::SwitchProject(idx) => Some(KeyOutcome::Project(ProjectRequest::Switch(idx))),
         Action::ToggleFullscreen => {
@@ -1101,27 +1183,64 @@ fn matches_text_command(key: KeyEvent, expected: char) -> bool {
     !has_command_modifier(key) && matches!(key.code, KeyCode::Char(c) if c == expected)
 }
 
-fn handle_repo_input_key(app: &mut App, key: KeyEvent) -> KeyOutcome {
+/// Route one key, resolving the workspace-level cases first.
+///
+/// The open dialog and the empty screen both belong to the workspace, and
+/// `handle_key` holds a single project, so neither can be dispatched from
+/// inside it. Resolving them here keeps `handle_key` — and every test that
+/// drives it with one `App` — working on exactly one project.
+fn dispatch_key(ws: &mut Workspace, key: KeyEvent) -> KeyOutcome {
+    if key.kind != KeyEventKind::Press {
+        return KeyOutcome::Continue;
+    }
+    if ws.repo_input.active {
+        return handle_repo_input_key(ws, key);
+    }
+    match ws.active_mut() {
+        Some(app) => handle_key(app, key),
+        None => handle_empty_key(ws, key),
+    }
+}
+
+/// Keys on the empty screen: the leader arms, `o` opens the dialog, `q`
+/// quits. Everything else is dropped — there is no project to act on and no
+/// PTY to forward to.
+fn handle_empty_key(ws: &mut Workspace, key: KeyEvent) -> KeyOutcome {
+    if ws.prefix_armed() {
+        ws.cancel_prefix();
+        return match prefix_action(key) {
+            Action::OpenProject => KeyOutcome::Project(ProjectRequest::OpenDialog),
+            Action::Quit => KeyOutcome::Quit,
+            _ => KeyOutcome::Continue,
+        };
+    }
+    if ws.is_leader_key(key) {
+        ws.arm_prefix();
+    }
+    KeyOutcome::Continue
+}
+
+fn handle_repo_input_key(ws: &mut Workspace, key: KeyEvent) -> KeyOutcome {
     match key.code {
-        KeyCode::Esc => app.cancel_repo_input(),
+        KeyCode::Esc => ws.cancel_repo_input(),
         KeyCode::Enter => {
-            if let app::RepoInputResult::Open(path) = app.confirm_repo_input() {
+            if let workspace::RepoInputResult::Open(path) = ws.confirm_repo_input() {
                 return KeyOutcome::Project(ProjectRequest::Open(path));
             }
         }
         KeyCode::Backspace => {
-            if app.repo_input.buf.is_empty() {
-                app.cancel_repo_input();
+            if ws.repo_input.buf.is_empty() {
+                ws.cancel_repo_input();
             } else {
-                app.repo_input_pop();
+                ws.repo_input_pop();
             }
         }
         // The caret is always at the end of the buffer, so these can't move
         // it; they mean "keep this path and let me extend it".
-        KeyCode::Right | KeyCode::End => app.repo_input_accept_prefill(),
+        KeyCode::Right | KeyCode::End => ws.repo_input_accept_prefill(),
         _ => {
             if let Some(c) = text_input_char(key) {
-                app.repo_input_push(c);
+                ws.repo_input_push(c);
             }
         }
     }
@@ -1441,8 +1560,8 @@ mod tests {
             app.repo_path = p.to_string();
             app
         };
-        let mut ws = Workspace::new(project(paths[0]));
-        for p in &paths[1..] {
+        let mut ws = Workspace::new(leader());
+        for p in paths {
             assert!(ws.add(project(p)));
         }
         ws
@@ -1465,23 +1584,6 @@ mod tests {
     }
 
     #[test]
-    fn closing_the_last_project_is_refused_with_a_notice() {
-        let cfg = config::Config::default();
-        let ctx = ProjectContext {
-            cfg: &cfg,
-            startup_commands: &[],
-            leader: leader(),
-        };
-        let mut ws = workspace_on(&["/a"]);
-
-        apply_project_request(&mut ws, &ctx, ProjectRequest::Close);
-
-        assert_eq!(ws.projects().len(), 1);
-        let notice = ws.active().notice.as_ref().expect("refusal is reported");
-        assert_eq!(notice.kind, app::NoticeKind::Project);
-    }
-
-    #[test]
     fn clicking_a_project_tab_asks_the_workspace_to_switch() {
         let mut app = app_with_fake_backend();
         let tabs = vec!["/w/api".to_string(), "/w/web".to_string()];
@@ -1489,9 +1591,10 @@ mod tests {
         // equivalent of pressing F1.
         let outcome = handle_mouse(
             &mut app,
-            ui::ProjectTabs {
+            ui::Chrome {
                 repo_paths: &tabs,
                 active: 1,
+                repo_input: &ui::status_view::RepoInput::default(),
             },
             mouse(
                 MouseEventKind::Down(crossterm::event::MouseButton::Left),
@@ -1528,30 +1631,27 @@ mod tests {
     }
 
     #[test]
-    fn leader_o_opens_the_dialog_without_touching_the_current_repo() {
+    fn leader_o_asks_the_workspace_to_raise_the_dialog() {
         let mut app = app_with_files(vec!["a.rs"]);
-        let repo_before = app.repo_path.clone();
         let _ = handle_key(&mut app, leader());
 
         let outcome = handle_key(&mut app, press(KeyCode::Char('o'), KeyModifiers::NONE));
 
-        // Opening is two steps: `o` only raises the dialog. Nothing is opened
-        // and the current project is untouched until Enter confirms a path.
-        assert_eq!(outcome, KeyOutcome::Continue);
-        assert!(app.repo_input.active, "<prefix> o must raise the dialog");
-        assert_eq!(app.repo_path, repo_before);
+        // The dialog is workspace state, so a handler holding one project can
+        // only ask for it.
+        assert_eq!(outcome, KeyOutcome::Project(ProjectRequest::OpenDialog));
     }
 
     #[test]
     fn confirming_the_dialog_asks_the_workspace_to_open_that_path() {
         let (_dir, path) = crate::test_util::make_repo();
-        let mut app = app_with_files(vec!["a.rs"]);
-        app.start_repo_input();
+        let mut ws = workspace_on(&["/a"]);
+        ws.start_repo_input();
         for c in path.chars() {
-            app.repo_input_push(c);
+            ws.repo_input_push(c);
         }
 
-        let outcome = handle_key(&mut app, press(KeyCode::Enter, KeyModifiers::NONE));
+        let outcome = dispatch_key(&mut ws, press(KeyCode::Enter, KeyModifiers::NONE));
 
         // The emitted path is the *resolved* workdir, not the typed text —
         // on macOS the temp dir reaches it through a /var -> /private/var
@@ -1562,22 +1662,42 @@ mod tests {
         assert_eq!(outcome, KeyOutcome::Project(ProjectRequest::Open(expected)));
         // The current project still points at its original repo: confirming
         // opens a tab, it never repoints this one.
-        assert_ne!(app.repo_path, path);
-        assert!(!app.repo_input.active, "dialog must close on success");
+        assert_eq!(ws.active().unwrap().repo_path, "/a");
+        assert!(!ws.repo_input.active, "dialog must close on success");
     }
 
     #[test]
     fn confirming_the_dialog_on_a_bad_path_keeps_it_open() {
-        let mut app = app_with_files(vec!["a.rs"]);
-        app.start_repo_input();
+        let mut ws = workspace_on(&["/a"]);
+        ws.start_repo_input();
         for c in "/definitely/not/a/directory".chars() {
-            app.repo_input_push(c);
+            ws.repo_input_push(c);
         }
 
-        let outcome = handle_key(&mut app, press(KeyCode::Enter, KeyModifiers::NONE));
+        let outcome = dispatch_key(&mut ws, press(KeyCode::Enter, KeyModifiers::NONE));
 
         assert_eq!(outcome, KeyOutcome::Continue);
-        assert!(app.repo_input.active, "a rejected path must stay editable");
+        assert!(ws.repo_input.active, "a rejected path must stay editable");
+    }
+
+    #[test]
+    fn the_empty_screen_opens_the_dialog_and_quits() {
+        let mut ws = Workspace::new(leader());
+        assert!(ws.active().is_none());
+
+        // The leader still arms with no project, and only `o` and `q` resolve.
+        let _ = dispatch_key(&mut ws, leader());
+        let open = dispatch_key(&mut ws, press(KeyCode::Char('o'), KeyModifiers::NONE));
+        assert_eq!(open, KeyOutcome::Project(ProjectRequest::OpenDialog));
+
+        let _ = dispatch_key(&mut ws, leader());
+        let quit = dispatch_key(&mut ws, press(KeyCode::Char('q'), KeyModifiers::NONE));
+        assert_eq!(quit, KeyOutcome::Quit);
+
+        // An unbound follow-up is consumed, not forwarded anywhere.
+        let _ = dispatch_key(&mut ws, leader());
+        let other = dispatch_key(&mut ws, press(KeyCode::Char('t'), KeyModifiers::NONE));
+        assert_eq!(other, KeyOutcome::Continue);
     }
 
     #[test]
@@ -2080,27 +2200,30 @@ mod tests {
     }
 
     #[test]
-    fn handle_key_overlay_blocks_leader_when_repo_input_active() {
-        let mut app = app_with_files(vec!["a.rs"]);
-        app.start_repo_input();
-        app.repo_input.buf.clear();
-        assert!(app.repo_input.active);
+    fn dialog_swallows_the_leader_instead_of_arming_the_prefix() {
+        let mut ws = workspace_on(&["/a"]);
+        ws.start_repo_input();
+        ws.repo_input.buf.clear();
 
-        let _ = handle_key(&mut app, leader());
-        assert!(!app.prefix_armed());
-        assert!(app.repo_input.active);
+        let _ = dispatch_key(&mut ws, leader());
+
+        // The dispatcher gives the dialog every key, so the leader is typed
+        // (and rejected as a control char) rather than arming a prefix behind
+        // the modal.
+        assert!(!ws.active().unwrap().prefix_armed());
+        assert!(ws.repo_input.active);
     }
 
     #[test]
-    fn handle_key_repo_input_rejects_command_modifier_chars() {
-        let mut app = app_with_files(vec!["a.rs"]);
-        app.start_repo_input();
-        app.repo_input.buf.clear();
+    fn dialog_rejects_command_modifier_chars() {
+        let mut ws = workspace_on(&["/a"]);
+        ws.start_repo_input();
+        ws.repo_input.buf.clear();
 
         let alt_x = press(KeyCode::Char('x'), KeyModifiers::ALT);
-        let _ = handle_key(&mut app, alt_x);
+        let _ = dispatch_key(&mut ws, alt_x);
 
-        assert!(app.repo_input.buf.is_empty());
+        assert!(ws.repo_input.buf.is_empty());
     }
 
     #[test]
@@ -2199,16 +2322,16 @@ mod tests {
     }
 
     #[test]
-    fn handle_paste_into_repo_input_strips_control_chars() {
-        let mut app = app_with_files(vec!["a.rs"]);
-        app.start_repo_input();
-        // Pre-existing buffer content is preserved by repo_input_push;
-        // start_repo_input copies the current repo_path in, so reset.
-        app.repo_input.buf.clear();
+    fn paste_into_the_dialog_strips_control_chars() {
+        let mut ws = workspace_on(&["/a"]);
+        ws.start_repo_input();
+        // `start_repo_input` prefills with the active repo path, and
+        // `repo_input_push` preserves existing content, so reset first.
+        ws.repo_input.buf.clear();
 
-        handle_paste(&mut app, "/tmp\n/repo\x07");
+        dispatch_paste(&mut ws, "/tmp\n/repo\x07");
 
-        assert_eq!(app.repo_input.buf, "/tmp/repo");
+        assert_eq!(ws.repo_input.buf, "/tmp/repo");
     }
 
     const MOUSE_TEST_SCREEN: Rect = Rect::new(0, 0, 100, 40);
@@ -2219,10 +2342,16 @@ mod tests {
         vec![".".to_string()]
     }
 
-    fn test_tab_view(paths: &[String]) -> ui::ProjectTabs<'_> {
-        ui::ProjectTabs {
+    /// A closed dialog to borrow from, so `test_tab_view` can hand out a
+    /// `Chrome` without referencing a temporary.
+    static CLOSED_DIALOG: std::sync::LazyLock<ui::status_view::RepoInput> =
+        std::sync::LazyLock::new(ui::status_view::RepoInput::default);
+
+    fn test_tab_view(paths: &[String]) -> ui::Chrome<'_> {
+        ui::Chrome {
             repo_paths: paths,
             active: 0,
+            repo_input: &CLOSED_DIALOG,
         }
     }
 
@@ -2390,11 +2519,17 @@ mod tests {
             &layout,
         );
 
-        // The modal opens between press and release (e.g. via the leader
-        // chord): the pane that saw the press must still see the release,
-        // and the pending slot must not go stale.
-        app.start_repo_input();
-        handle_mouse(&mut app, test_tab_view(&test_tabs()), mouse(up, rect.x, rect.y), MOUSE_TEST_SCREEN, &layout);
+        // A release must reach the pane that saw the press even when a modal
+        // opened in between, and the pending slot must not go stale. The
+        // release path runs before any modal guard, so driving it directly is
+        // the same code path a real dialog would take.
+        handle_mouse(
+            &mut app,
+            test_tab_view(&test_tabs()),
+            mouse(up, rect.x, rect.y),
+            MOUSE_TEST_SCREEN,
+            &layout,
+        );
 
         assert_eq!(
             backend_payloads(&app),
@@ -2501,20 +2636,26 @@ mod tests {
     }
 
     #[test]
-    fn handle_mouse_is_inert_while_the_repo_modal_is_open() {
-        let (mut app, areas) = app_with_two_panes_and_areas();
-        app.focus = Focus::FileList;
-        app.start_repo_input();
+    fn mouse_is_inert_while_the_repo_dialog_is_open() {
+        let (app, areas) = app_with_two_panes_and_areas();
+        let mut ws = Workspace::new(leader());
+        ws.add(app);
+        ws.active_mut().unwrap().focus = Focus::FileList;
+        ws.start_repo_input();
         let (_, rect) = areas[0];
-        let active_before = app.terminal.active;
+        let active_before = ws.active().unwrap().terminal.active;
 
         let kind = MouseEventKind::Down(crossterm::event::MouseButton::Left);
-        handle_mouse(&mut app, test_tab_view(&test_tabs()),
+        let tabs = test_tabs();
+        dispatch_mouse(
+            &mut ws,
+            test_tab_view(&tabs),
             mouse(kind, rect.x, rect.y),
             MOUSE_TEST_SCREEN,
             &config::LayoutConfig::default(),
         );
 
+        let app = ws.active().unwrap();
         assert_eq!(app.focus, Focus::FileList, "a modal owns all input");
         assert_eq!(app.terminal.active, active_before);
     }
@@ -2529,7 +2670,7 @@ mod tests {
     fn hint_x_for(app: &App, want: ui::HintClick) -> u16 {
         let row = HINT_TEST_SCREEN.height - 1;
         (0..HINT_TEST_SCREEN.width)
-            .find(|&x| ui::hint_click_at(app, HINT_TEST_SCREEN, x, row) == Some(want))
+            .find(|&x| ui::hint_click_at(app, test_tab_view(&[]), HINT_TEST_SCREEN, x, row) == Some(want))
             .expect("expected a clickable hint segment")
     }
 
@@ -2761,7 +2902,7 @@ mod tests {
         let app = app_with_terminal_pane();
         let row = HINT_TEST_SCREEN.height - 1;
         for x in 0..HINT_TEST_SCREEN.width {
-            let click = ui::hint_click_at(&app, HINT_TEST_SCREEN, x, row);
+            let click = ui::hint_click_at(&app, test_tab_view(&[]), HINT_TEST_SCREEN, x, row);
             assert!(
                 !matches!(
                     click,
