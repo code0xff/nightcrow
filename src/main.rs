@@ -504,11 +504,26 @@ fn main_loop(
             app.terminal.sync_scroll();
         }
 
+        // Collected before the mutable borrow of the active project, since the
+        // tab row names every project while the body renders only one. Bounded
+        // by `MAX_PROJECTS`, so the per-frame clone is a handful of short
+        // strings.
+        let tab_paths: Vec<String> = ws
+            .projects()
+            .iter()
+            .map(|p| p.repo_path.clone())
+            .collect();
+        let active_tab = ws.active_index();
+        let tabs = ui::ProjectTabs {
+            repo_paths: &tab_paths,
+            active: active_tab,
+        };
+
         let app = ws.active_mut();
         let accent = app.current_accent();
         let mut cursor = None;
         let completed = terminal.draw(|frame| {
-            cursor = ui::draw(frame, app, ss, ts, &cfg.layout, accent);
+            cursor = ui::draw(frame, app, tabs, ss, ts, &cfg.layout, accent);
         })?;
 
         // Mirror the freshly composited frame to any connected browsers. Use the
@@ -539,7 +554,8 @@ fn main_loop(
                 Event::Paste(text) => handle_paste(ws.active_mut(), &text),
                 Event::Mouse(mouse) => {
                     let screen = Rect::new(0, 0, size.width, size.height);
-                    let outcome = handle_mouse(ws.active_mut(), mouse, screen, &cfg.layout);
+                    let outcome =
+                        handle_mouse(ws.active_mut(), tabs, mouse, screen, &cfg.layout);
                     if apply_outcome(terminal, ws, ctx, outcome)? {
                         return Ok(());
                     }
@@ -553,7 +569,8 @@ fn main_loop(
         if let Some(server) = web_server.as_ref() {
             let screen = Rect::new(0, 0, size.width, size.height);
             for event in server.drain_input() {
-                let outcome = dispatch_web_event(ws.active_mut(), event, screen, &cfg.layout);
+                let outcome =
+                    dispatch_web_event(ws.active_mut(), tabs, event, screen, &cfg.layout);
                 if apply_outcome(terminal, ws, ctx, outcome)? {
                     return Ok(());
                 }
@@ -566,6 +583,7 @@ fn main_loop(
 /// input. Keeps web and terminal control behaviourally identical.
 fn dispatch_web_event(
     app: &mut App,
+    tabs: ui::ProjectTabs<'_>,
     event: web::protocol::WebInputEvent,
     screen: Rect,
     layout: &config::LayoutConfig,
@@ -573,7 +591,7 @@ fn dispatch_web_event(
     use web::protocol::WebInputEvent;
     match event {
         WebInputEvent::Key(key) => handle_key(app, key),
-        WebInputEvent::Mouse(mouse) => handle_mouse(app, mouse, screen, layout),
+        WebInputEvent::Mouse(mouse) => handle_mouse(app, tabs, mouse, screen, layout),
         WebInputEvent::Paste(text) => {
             handle_paste(app, &text);
             KeyOutcome::Continue
@@ -600,6 +618,7 @@ fn dispatch_web_event(
 /// Shift+drag.
 fn handle_mouse(
     app: &mut App,
+    tabs: ui::ProjectTabs<'_>,
     mouse: MouseEvent,
     screen: Rect,
     layout: &config::LayoutConfig,
@@ -644,6 +663,15 @@ fn handle_mouse(
         // (file/commit/tree list or diff viewer) in the normal split layout,
         // or run a shortcut named on the bottom hint row.
         if let MouseEventKind::Down(button) = mouse.kind {
+            // The project tab row is checked first: it sits above the body, so
+            // no panel hit test can claim it, and a tab click is the pointer
+            // equivalent of its F-key.
+            if button == crossterm::event::MouseButton::Left
+                && let Some(idx) = ui::project_tab_at(tabs, screen, mouse.column, mouse.row)
+            {
+                app.cancel_prefix();
+                return KeyOutcome::Project(ProjectRequest::Switch(idx));
+            }
             if let Some(focus) = ui::upper_panel_at(app, screen, layout, mouse.column, mouse.row) {
                 app.cancel_prefix();
                 app.focus = focus;
@@ -1498,6 +1526,30 @@ mod tests {
     }
 
     #[test]
+    fn clicking_a_project_tab_asks_the_workspace_to_switch() {
+        let mut app = app_with_fake_backend();
+        let tabs = vec!["/w/api".to_string(), "/w/web".to_string()];
+        // Column 0 of row 0 is the first tab; a click there is the pointer
+        // equivalent of pressing F1.
+        let outcome = handle_mouse(
+            &mut app,
+            ui::ProjectTabs {
+                repo_paths: &tabs,
+                active: 1,
+            },
+            mouse(
+                MouseEventKind::Down(crossterm::event::MouseButton::Left),
+                0,
+                0,
+            ),
+            MOUSE_TEST_SCREEN,
+            &config::LayoutConfig::default(),
+        );
+
+        assert_eq!(outcome, KeyOutcome::Project(ProjectRequest::Switch(0)));
+    }
+
+    #[test]
     fn f_key_asks_the_workspace_to_switch_project() {
         let mut app = app_with_files(vec!["a.rs"]);
 
@@ -2205,6 +2257,19 @@ mod tests {
 
     const MOUSE_TEST_SCREEN: Rect = Rect::new(0, 0, 100, 40);
 
+    /// A single-project tab row, matching the app these mouse tests drive.
+    /// Tests that specifically exercise tab clicks build their own list.
+    fn test_tabs() -> Vec<String> {
+        vec![".".to_string()]
+    }
+
+    fn test_tab_view(paths: &[String]) -> ui::ProjectTabs<'_> {
+        ui::ProjectTabs {
+            repo_paths: paths,
+            active: 0,
+        }
+    }
+
     fn mouse(kind: MouseEventKind, column: u16, row: u16) -> MouseEvent {
         MouseEvent {
             kind,
@@ -2239,8 +2304,7 @@ mod tests {
         assert_ne!(app.terminal.active, first_idx, "click must change focus");
 
         let kind = MouseEventKind::Down(crossterm::event::MouseButton::Left);
-        handle_mouse(
-            &mut app,
+        handle_mouse(&mut app, test_tab_view(&test_tabs()),
             mouse(kind, rect.x, rect.y),
             MOUSE_TEST_SCREEN,
             &config::LayoutConfig::default(),
@@ -2268,8 +2332,14 @@ mod tests {
         let layout = config::LayoutConfig::default();
         let down = MouseEventKind::Down(crossterm::event::MouseButton::Left);
         let up = MouseEventKind::Up(crossterm::event::MouseButton::Left);
-        handle_mouse(&mut app, mouse(down, rect.x, rect.y), MOUSE_TEST_SCREEN, &layout);
-        handle_mouse(&mut app, mouse(up, rect.x, rect.y), MOUSE_TEST_SCREEN, &layout);
+        handle_mouse(
+            &mut app,
+            test_tab_view(&test_tabs()),
+            mouse(down, rect.x, rect.y),
+            MOUSE_TEST_SCREEN,
+            &layout,
+        );
+        handle_mouse(&mut app, test_tab_view(&test_tabs()), mouse(up, rect.x, rect.y), MOUSE_TEST_SCREEN, &layout);
 
         // The pane's top-left content cell is SGR cell (1, 1).
         assert_eq!(
@@ -2286,10 +2356,10 @@ mod tests {
         let down = MouseEventKind::Down(crossterm::event::MouseButton::Left);
 
         // Row 1 is the first body row; x=0 is the list, x=60 the diff.
-        handle_mouse(&mut app, mouse(down, 0, 1), MOUSE_TEST_SCREEN, &layout);
+        handle_mouse(&mut app, test_tab_view(&test_tabs()), mouse(down, 0, 1), MOUSE_TEST_SCREEN, &layout);
         assert_eq!(app.focus, Focus::FileList);
 
-        handle_mouse(&mut app, mouse(down, 60, 1), MOUSE_TEST_SCREEN, &layout);
+        handle_mouse(&mut app, test_tab_view(&test_tabs()), mouse(down, 60, 1), MOUSE_TEST_SCREEN, &layout);
         assert_eq!(app.focus, Focus::DiffViewer);
 
         assert!(
@@ -2314,14 +2384,12 @@ mod tests {
         let layout = config::LayoutConfig::default();
         let down = MouseEventKind::Down(crossterm::event::MouseButton::Left);
         let up = MouseEventKind::Up(crossterm::event::MouseButton::Left);
-        handle_mouse(
-            &mut app,
+        handle_mouse(&mut app, test_tab_view(&test_tabs()),
             mouse(down, pressed_rect.x, pressed_rect.y),
             MOUSE_TEST_SCREEN,
             &layout,
         );
-        handle_mouse(
-            &mut app,
+        handle_mouse(&mut app, test_tab_view(&test_tabs()),
             mouse(up, other_rect.x, other_rect.y),
             MOUSE_TEST_SCREEN,
             &layout,
@@ -2358,13 +2426,19 @@ mod tests {
         let layout = config::LayoutConfig::default();
         let down = MouseEventKind::Down(crossterm::event::MouseButton::Left);
         let up = MouseEventKind::Up(crossterm::event::MouseButton::Left);
-        handle_mouse(&mut app, mouse(down, rect.x, rect.y), MOUSE_TEST_SCREEN, &layout);
+        handle_mouse(
+            &mut app,
+            test_tab_view(&test_tabs()),
+            mouse(down, rect.x, rect.y),
+            MOUSE_TEST_SCREEN,
+            &layout,
+        );
 
         // The modal opens between press and release (e.g. via the leader
         // chord): the pane that saw the press must still see the release,
         // and the pending slot must not go stale.
         app.start_repo_input();
-        handle_mouse(&mut app, mouse(up, rect.x, rect.y), MOUSE_TEST_SCREEN, &layout);
+        handle_mouse(&mut app, test_tab_view(&test_tabs()), mouse(up, rect.x, rect.y), MOUSE_TEST_SCREEN, &layout);
 
         assert_eq!(
             backend_payloads(&app),
@@ -2389,8 +2463,14 @@ mod tests {
         let layout = config::LayoutConfig::default();
         let down = MouseEventKind::Down(crossterm::event::MouseButton::Right);
         let up = MouseEventKind::Up(crossterm::event::MouseButton::Left);
-        handle_mouse(&mut app, mouse(down, rect.x, rect.y), MOUSE_TEST_SCREEN, &layout);
-        handle_mouse(&mut app, mouse(up, rect.x, rect.y), MOUSE_TEST_SCREEN, &layout);
+        handle_mouse(
+            &mut app,
+            test_tab_view(&test_tabs()),
+            mouse(down, rect.x, rect.y),
+            MOUSE_TEST_SCREEN,
+            &layout,
+        );
+        handle_mouse(&mut app, test_tab_view(&test_tabs()), mouse(up, rect.x, rect.y), MOUSE_TEST_SCREEN, &layout);
 
         assert_eq!(
             backend_payloads(&app),
@@ -2408,8 +2488,7 @@ mod tests {
         let active_before = app.terminal.active;
 
         let kind = MouseEventKind::Down(crossterm::event::MouseButton::Left);
-        handle_mouse(
-            &mut app,
+        handle_mouse(&mut app, test_tab_view(&test_tabs()),
             mouse(kind, rect.x, rect.y),
             MOUSE_TEST_SCREEN,
             &config::LayoutConfig::default(),
@@ -2435,8 +2514,7 @@ mod tests {
             .process(b"\x1b[?1000h\x1b[?1006h");
 
         let up = MouseEventKind::Up(crossterm::event::MouseButton::Left);
-        handle_mouse(
-            &mut app,
+        handle_mouse(&mut app, test_tab_view(&test_tabs()),
             mouse(up, rect.x, rect.y),
             MOUSE_TEST_SCREEN,
             &config::LayoutConfig::default(),
@@ -2456,8 +2534,7 @@ mod tests {
 
         let kind = MouseEventKind::Down(crossterm::event::MouseButton::Left);
         // (0, 0) is the upper header row, never pane content.
-        handle_mouse(
-            &mut app,
+        handle_mouse(&mut app, test_tab_view(&test_tabs()),
             mouse(kind, 0, 0),
             MOUSE_TEST_SCREEN,
             &config::LayoutConfig::default(),
@@ -2476,8 +2553,7 @@ mod tests {
         let active_before = app.terminal.active;
 
         let kind = MouseEventKind::Down(crossterm::event::MouseButton::Left);
-        handle_mouse(
-            &mut app,
+        handle_mouse(&mut app, test_tab_view(&test_tabs()),
             mouse(kind, rect.x, rect.y),
             MOUSE_TEST_SCREEN,
             &config::LayoutConfig::default(),
@@ -2523,8 +2599,7 @@ mod tests {
         let (x, y) = tab_xy_for(&app, 1);
 
         let down = MouseEventKind::Down(crossterm::event::MouseButton::Left);
-        handle_mouse(
-            &mut app,
+        handle_mouse(&mut app, test_tab_view(&test_tabs()),
             mouse(down, x, y),
             MOUSE_TEST_SCREEN,
             &config::LayoutConfig::default(),
@@ -2550,8 +2625,7 @@ mod tests {
         let (x, y) = tab_xy_for(&app, 1);
 
         let down = MouseEventKind::Down(crossterm::event::MouseButton::Left);
-        handle_mouse(
-            &mut app,
+        handle_mouse(&mut app, test_tab_view(&test_tabs()),
             mouse(down, x, y),
             MOUSE_TEST_SCREEN,
             &config::LayoutConfig::default(),
@@ -2574,8 +2648,7 @@ mod tests {
         app.begin_swap_target();
 
         let down = MouseEventKind::Down(crossterm::event::MouseButton::Left);
-        handle_mouse(
-            &mut app,
+        handle_mouse(&mut app, test_tab_view(&test_tabs()),
             mouse(down, rect.x, rect.y),
             MOUSE_TEST_SCREEN,
             &config::LayoutConfig::default(),
@@ -2601,8 +2674,7 @@ mod tests {
         let (x, y) = tab_xy_for(&app, 1);
 
         let down = MouseEventKind::Down(crossterm::event::MouseButton::Left);
-        handle_mouse(
-            &mut app,
+        handle_mouse(&mut app, test_tab_view(&test_tabs()),
             mouse(down, x, y),
             MOUSE_TEST_SCREEN,
             &config::LayoutConfig::default(),
@@ -2624,8 +2696,7 @@ mod tests {
         // consume-and-disarm without swapping or moving focus — the same
         // rule as a non-digit key.
         let down = MouseEventKind::Down(crossterm::event::MouseButton::Left);
-        handle_mouse(
-            &mut app,
+        handle_mouse(&mut app, test_tab_view(&test_tabs()),
             mouse(down, 0, 0),
             MOUSE_TEST_SCREEN,
             &config::LayoutConfig::default(),
@@ -2644,8 +2715,7 @@ mod tests {
         let x = hint_x_for(&app, ui::HintClick::Leader('t'));
 
         let down = MouseEventKind::Down(crossterm::event::MouseButton::Left);
-        let outcome = handle_mouse(
-            &mut app,
+        let outcome = handle_mouse(&mut app, test_tab_view(&test_tabs()),
             mouse(down, x, HINT_TEST_SCREEN.height - 1),
             HINT_TEST_SCREEN,
             &config::LayoutConfig::default(),
@@ -2666,8 +2736,7 @@ mod tests {
         let x = hint_x_for(&app, ui::HintClick::Arm);
 
         let down = MouseEventKind::Down(crossterm::event::MouseButton::Left);
-        let outcome = handle_mouse(
-            &mut app,
+        let outcome = handle_mouse(&mut app, test_tab_view(&test_tabs()),
             mouse(down, x, HINT_TEST_SCREEN.height - 1),
             HINT_TEST_SCREEN,
             &config::LayoutConfig::default(),
@@ -2694,15 +2763,13 @@ mod tests {
         let row = HINT_TEST_SCREEN.height - 1;
 
         let x = hint_x_for(&app, ui::HintClick::Arm);
-        handle_mouse(
-            &mut app,
+        handle_mouse(&mut app, test_tab_view(&test_tabs()),
             mouse(down, x, row),
             HINT_TEST_SCREEN,
             &config::LayoutConfig::default(),
         );
         let x = hint_x_for(&app, ui::HintClick::Plain('t'));
-        handle_mouse(
-            &mut app,
+        handle_mouse(&mut app, test_tab_view(&test_tabs()),
             mouse(down, x, row),
             HINT_TEST_SCREEN,
             &config::LayoutConfig::default(),
@@ -2723,8 +2790,7 @@ mod tests {
         let x = hint_x_for(&app, ui::HintClick::Plain('r'));
 
         let down = MouseEventKind::Down(crossterm::event::MouseButton::Left);
-        let outcome = handle_mouse(
-            &mut app,
+        let outcome = handle_mouse(&mut app, test_tab_view(&test_tabs()),
             mouse(down, x, HINT_TEST_SCREEN.height - 1),
             HINT_TEST_SCREEN,
             &config::LayoutConfig::default(),
@@ -2765,8 +2831,7 @@ mod tests {
         });
         app.terminal.emulators.get_mut(&id).unwrap().process(&output);
 
-        handle_mouse(
-            &mut app,
+        handle_mouse(&mut app, test_tab_view(&test_tabs()),
             mouse(MouseEventKind::ScrollUp, rect.x, rect.y),
             MOUSE_TEST_SCREEN,
             &config::LayoutConfig::default(),

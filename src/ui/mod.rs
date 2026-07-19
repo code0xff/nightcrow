@@ -4,6 +4,7 @@ pub mod diff_viewer;
 pub mod file_list;
 pub mod file_view;
 pub mod log_view;
+pub mod project_tab;
 pub mod search;
 pub mod splash;
 pub mod status_view;
@@ -121,27 +122,51 @@ pub(crate) fn render_search_bar(
     );
 }
 
-/// Split the screen into the three top-level rows: the body, the notice row
-/// (repo identity, or a notice covering it), and the hint bar.
+/// Split the screen into the four top-level rows: the project tab row, the
+/// body, the notice row (repo identity, or a notice covering it), and the
+/// hint bar.
 ///
-/// The chrome sits at the bottom so a rejected repo path lands directly above
-/// the input the user has to correct, instead of across the screen from it.
+/// The bottom chrome sits at the bottom so a rejected repo path lands directly
+/// above the input the user has to correct, instead of across the screen from
+/// it. The project tabs go on top instead, where tab rows are conventionally
+/// looked for, and because they name the thing the whole screen belongs to
+/// rather than commenting on the input at the bottom.
+///
+/// The tab row is permanent, not toggled by tab count. A row that came and
+/// went would resize every PTY each time a project opened or closed — the same
+/// churn that keeps the notice row an overlay rather than a row of its own.
+/// Holding it always costs one SIGWINCH per pane at startup and none after.
 ///
 /// This is called from `draw` and from three geometry helpers that must land on
 /// exactly the same cells — the PTY sizer, the upper-panel hit test, and the
 /// hint-bar hit test. They were four hand-copied splits before; one drifting
 /// from the others mis-sizes terminals or offsets every mouse click by a row,
 /// so the split lives here only.
-fn chrome_rows(screen_area: Rect) -> (Rect, Rect, Rect) {
+fn chrome_rows(screen_area: Rect) -> ChromeRows {
     let outer = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
+            Constraint::Length(1),
             Constraint::Min(0),
             Constraint::Length(1),
             Constraint::Length(1),
         ])
         .split(screen_area);
-    (outer[0], outer[1], outer[2])
+    ChromeRows {
+        tabs: outer[0],
+        body: outer[1],
+        notice: outer[2],
+        hint: outer[3],
+    }
+}
+
+/// The four top-level rows. Named rather than a tuple because four same-typed
+/// Rects are too easy to mis-order at a call site.
+struct ChromeRows {
+    tabs: Rect,
+    body: Rect,
+    notice: Rect,
+    hint: Rect,
 }
 
 fn main_content_constraints(layout: &LayoutConfig) -> [Constraint; 2] {
@@ -166,6 +191,35 @@ pub(crate) fn char_offset(s: &str, scroll_x: usize) -> &str {
     &s[byte_off..]
 }
 
+/// The workspace metadata the tab row needs.
+///
+/// Passed as data rather than as the `Workspace` itself: rendering reads one
+/// project plus this summary, and taking the whole workspace would hand every
+/// renderer access to projects it must not touch.
+#[derive(Clone, Copy)]
+pub struct ProjectTabs<'a> {
+    pub repo_paths: &'a [String],
+    pub active: usize,
+}
+
+/// The project index a click at `(x, y)` selects, or `None` when the click is
+/// not on a project tab. Shares `chrome_rows` with `draw`, so the hit boxes
+/// track the rendered row.
+pub(crate) fn project_tab_at(
+    tabs: ProjectTabs<'_>,
+    screen_area: Rect,
+    x: u16,
+    y: u16,
+) -> Option<usize> {
+    project_tab::tab_at(
+        tabs.repo_paths,
+        tabs.active,
+        chrome_rows(screen_area).tabs,
+        x,
+        y,
+    )
+}
+
 /// Render one frame, returning the screen cell the terminal cursor was placed
 /// on (`None` when no cursor is shown). Ratatui applies the cursor to the local
 /// terminal itself, but the web mirror streams only the cell buffer, so the
@@ -173,17 +227,24 @@ pub(crate) fn char_offset(s: &str, scroll_x: usize) -> &str {
 pub fn draw(
     frame: &mut Frame,
     app: &mut App,
+    tabs: ProjectTabs<'_>,
     ss: &SyntaxSet,
     ts: &ThemeSet,
     layout: &LayoutConfig,
     accent: Color,
 ) -> Option<Position> {
-    // Two chrome rows at the bottom: the notice row (repo identity, or a
-    // notice covering it) and the hint bar. Both are rendered in every layout
-    // branch (fullscreen included) so repo identity and notices are never lost
-    // to a view mode.
-    let (body_area, notice_area, hint_area) = chrome_rows(frame.area());
+    // Chrome: the project tab row on top, the notice row (repo identity, or a
+    // notice covering it) and the hint bar below. The tab row and notice row
+    // are rendered here, before any layout branch, so neither is lost to a
+    // fullscreen view mode — a tab row that vanished in fullscreen would strand
+    // the user with no indication of which project they are in.
+    let rows = chrome_rows(frame.area());
+    let (body_area, notice_area, hint_area) = (rows.body, rows.notice, rows.hint);
 
+    frame.render_widget(
+        project_tab::render(tabs.repo_paths, tabs.active, rows.tabs, accent),
+        rows.tabs,
+    );
     frame.render_widget(render_notice_row(app, accent), notice_area);
 
     if app.terminal.fullscreen.fills_body() {
@@ -267,7 +328,7 @@ pub(crate) fn upper_panel_at(
     let main = Layout::default()
         .direction(Direction::Vertical)
         .constraints(main_content_constraints(layout))
-        .split(chrome_rows(screen_area).0);
+        .split(chrome_rows(screen_area).body);
     let file_list_pct = layout.file_list_pct;
     let upper = Layout::default()
         .direction(Direction::Horizontal)
@@ -308,7 +369,7 @@ pub(crate) fn pane_at(
 /// `terminal_tab::render` is given as its `area` argument in `draw`. `None`
 /// when a different pane is fullscreen and the terminal isn't drawn at all.
 fn terminal_widget_area(app: &App, screen_area: Rect, layout: &LayoutConfig) -> Option<Rect> {
-    let (body_area, _, _) = chrome_rows(screen_area);
+    let body_area = chrome_rows(screen_area).body;
 
     if app.terminal.fullscreen.fills_body() {
         return Some(body_area);
@@ -695,7 +756,7 @@ pub(crate) fn hint_click_at(app: &App, screen_area: Rect, x: u16, y: u16) -> Opt
     if !app.mouse_enabled {
         return None;
     }
-    let (_, _, hint_area) = chrome_rows(screen_area);
+    let hint_area = chrome_rows(screen_area).hint;
     if hint_area.height == 0 || !hint_area.contains(Position { x, y }) {
         return None;
     }
@@ -927,12 +988,98 @@ mod tests {
         assert_inverted_cells_are_clickable(&app);
     }
 
+    /// Render a full frame and flatten it to text.
+    fn drawn_text(app: &mut App, tab_paths: &[String], active: usize) -> String {
+        let mut terminal = Terminal::new(TestBackend::new(120, 20)).unwrap();
+        let ss = two_face::syntax::extra_newlines();
+        let ts = ThemeSet::load_defaults();
+        terminal
+            .draw(|frame| {
+                let tabs = ProjectTabs {
+                    repo_paths: tab_paths,
+                    active,
+                };
+                draw(
+                    frame,
+                    app,
+                    tabs,
+                    &ss,
+                    &ts,
+                    &LayoutConfig::default(),
+                    Color::Yellow,
+                );
+            })
+            .unwrap();
+        let buf = terminal.backend().buffer();
+        (0..buf.area.height)
+            .map(|y| {
+                (0..buf.area.width)
+                    .map(|x| buf[(x, y)].symbol())
+                    .collect::<String>()
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
+    #[test]
+    fn the_project_tab_row_survives_every_fullscreen_mode() {
+        // Chrome is rendered before the layout branches precisely so no view
+        // mode can strand the user without knowing which project they are in.
+        let paths = vec!["/w/api".to_string(), "/w/web".to_string()];
+
+        let mut app = app_with_fake_backend();
+        assert!(drawn_text(&mut app, &paths, 0).contains("F2 web"), "split");
+
+        let mut app = app_with_fake_backend();
+        app.terminal.fullscreen = TerminalFullscreen::Grid;
+        assert!(
+            drawn_text(&mut app, &paths, 0).contains("F2 web"),
+            "terminal fullscreen"
+        );
+
+        let mut app = app_with_files(vec!["a.rs"]);
+        app.list_fullscreen = true;
+        assert!(
+            drawn_text(&mut app, &paths, 0).contains("F2 web"),
+            "list fullscreen"
+        );
+
+        let mut app = app_with_files(vec!["a.rs"]);
+        app.diff.fullscreen = true;
+        assert!(
+            drawn_text(&mut app, &paths, 0).contains("F2 web"),
+            "diff fullscreen"
+        );
+    }
+
+    #[test]
+    fn project_tab_at_matches_the_rendered_row() {
+        // The hit test derives from `chrome_rows` like `draw` does, so a click
+        // on a tab's glyphs must resolve to that tab.
+        let mut app = app_with_files(vec!["a.rs"]);
+        let paths = vec!["/w/api".to_string(), "/w/web".to_string()];
+        let screen = Rect::new(0, 0, 120, 20);
+        let text = drawn_text(&mut app, &paths, 0);
+        let first_row = text.lines().next().unwrap();
+        let web_x = first_row.find("F2 web").expect("second tab rendered") as u16;
+
+        let tabs = ProjectTabs {
+            repo_paths: &paths,
+            active: 0,
+        };
+        assert_eq!(project_tab_at(tabs, screen, 0, 0), Some(0));
+        assert_eq!(project_tab_at(tabs, screen, web_x, 0), Some(1));
+        // Row 1 is the body, not the tab row.
+        assert_eq!(project_tab_at(tabs, screen, web_x, 1), None);
+    }
+
     #[test]
     fn panels_advertise_the_leader_digit_not_the_bare_f_key() {
         // The bare F-key row selects project tabs, so a panel legend reading
         // `F1 Files` would name a key that switches projects instead of
         // focusing the panel.
         let mut app = app_with_files(vec!["a.rs"]);
+        let tab_paths = vec![".".to_string()];
         let mut terminal = Terminal::new(TestBackend::new(120, 20)).unwrap();
         let ss = two_face::syntax::extra_newlines();
         let ts = ThemeSet::load_defaults();
@@ -941,6 +1088,10 @@ mod tests {
                 draw(
                     frame,
                     &mut app,
+                    ProjectTabs {
+                        repo_paths: &tab_paths,
+                        active: 0,
+                    },
                     &ss,
                     &ts,
                     &LayoutConfig::default(),
@@ -1414,14 +1565,14 @@ mod tests {
         let areas =
             terminal_content_areas(&app, Rect::new(0, 0, 100, 40), &LayoutConfig::default());
 
-        // Full screen keeps the top header and bottom hint bar, then the
-        // terminal widget consumes one tab row and the top/bottom border rows.
-        // Side borders were dropped, so the content spans the full width. A
-        // single pane has no per-cell border, so its content Rect equals the
-        // whole terminal content area.
+        // Full screen keeps all three chrome rows (project tabs on top,
+        // notice + hint below), then the terminal widget consumes one pane tab
+        // row and the top/bottom border rows. Side borders were dropped, so the
+        // content spans the full width. A single pane has no per-cell border,
+        // so its content Rect equals the whole terminal content area.
         assert_eq!(areas.len(), 1);
         assert_eq!(areas[0].0, 1);
-        assert_eq!(areas[0].1.height, 35);
+        assert_eq!(areas[0].1.height, 34);
         assert_eq!(areas[0].1.width, 100);
     }
 
@@ -1552,8 +1703,10 @@ mod tests {
             let hit = pane_at(&app, screen, &layout, rect.x, rect.y);
             assert_eq!(hit, Some((*id, *rect)));
         }
-        // The top-left corner belongs to the upper panels, not a pane.
+        // The project tab row owns row 0, and the upper panels the rows just
+        // below it — neither is a pane.
         assert_eq!(pane_at(&app, screen, &layout, 0, 0), None);
+        assert_eq!(pane_at(&app, screen, &layout, 0, 1), None);
         // ...and so do the two chrome rows at the bottom.
         assert_eq!(pane_at(&app, screen, &layout, 0, 39), None);
     }
@@ -1564,14 +1717,15 @@ mod tests {
         let screen = Rect::new(0, 0, 100, 40);
         let layout = LayoutConfig::default();
 
-        // The chrome is at the bottom, so row 0 is the first body row. The
+        // Row 0 is the project tab row, so the body starts at row 1. The
         // default file_list_pct (25) puts x=0 in the list and x=60 in the diff.
+        assert_eq!(upper_panel_at(&app, screen, &layout, 0, 0), None);
         assert_eq!(
-            upper_panel_at(&app, screen, &layout, 0, 0),
+            upper_panel_at(&app, screen, &layout, 0, 1),
             Some(Focus::FileList)
         );
         assert_eq!(
-            upper_panel_at(&app, screen, &layout, 60, 0),
+            upper_panel_at(&app, screen, &layout, 60, 1),
             Some(Focus::DiffViewer)
         );
         // Below the upper panels: the terminal panel, then the two chrome
