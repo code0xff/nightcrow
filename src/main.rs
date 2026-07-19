@@ -11,6 +11,7 @@ mod test_util;
 mod ui;
 mod util;
 mod web;
+mod workspace;
 
 use anyhow::{Context, Result};
 use app::{App, DiffPaneView, Focus, ViewMode};
@@ -33,6 +34,7 @@ use runtime::terminal::{SCROLL_LINE_STEP, WHEEL_LINES_PER_NOTCH};
 use std::{io, time::Duration};
 use syntect::highlighting::ThemeSet;
 use syntect::parsing::SyntaxSet;
+use workspace::Workspace;
 
 /// nightcrow — TUI for Agentic Coding
 ///
@@ -236,16 +238,22 @@ fn run(
     // file-view highlighters, which feed whole lines including trailing \n).
     let ss = two_face::syntax::extra_newlines();
     let ts = ThemeSet::load_defaults();
-    let mut app = init_app(&repo_path, &cfg, &startup_commands, leader);
+    let mut ws = Workspace::new(init_app(&repo_path, &cfg, &startup_commands, leader));
 
-    if matches!(splash_loop(terminal, &app)?, SplashOutcome::Quit) {
-        tracing::info!(repo = %app.repo_path, "nightcrow stopped during splash");
+    if matches!(splash_loop(terminal, ws.active())?, SplashOutcome::Quit) {
+        tracing::info!(repo = %ws.active().repo_path, "nightcrow stopped during splash");
         return Ok(());
     }
-    main_loop(terminal, &mut app, &ss, &ts, &cfg, web_server)?;
+    main_loop(terminal, &mut ws, &ss, &ts, &cfg, web_server)?;
 
-    session::save_session(&app.repo_path, &app.save_session());
-    tracing::info!(repo = %app.repo_path, "nightcrow stopped");
+    // Every open project gets its session written, not just the active one:
+    // sessions are stored per repo (`<repo>/.nightcrow/session.json`), so a
+    // background project's pane/focus state would otherwise be lost purely
+    // because the user happened to quit from another tab.
+    for project in ws.projects() {
+        session::save_session(&project.repo_path, &project.save_session());
+    }
+    tracing::info!(repo = %ws.active().repo_path, "nightcrow stopped");
     Ok(())
 }
 
@@ -325,13 +333,17 @@ fn splash_loop(
 
 fn main_loop(
     terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
-    app: &mut App,
+    ws: &mut Workspace,
     ss: &SyntaxSet,
     ts: &ThemeSet,
     cfg: &config::Config,
     mut web_server: Option<web::WebServer>,
 ) -> Result<()> {
     loop {
+        // Rendering and input both act on the project on screen. Re-borrowed
+        // each tick so a later tab switch takes effect on the next frame.
+        let app = ws.active_mut();
+
         app.poll_snapshot();
         app.poll_tree_watcher();
         app.poll_terminal();
