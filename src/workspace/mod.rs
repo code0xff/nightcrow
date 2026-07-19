@@ -368,6 +368,29 @@ mod tests {
 
 
     #[test]
+    fn confirming_a_tilde_path_opens_the_home_relative_directory() {
+        // The dialog never passes through a shell, so an unexpanded `~` would
+        // be rejected as "no such directory".
+        let home = dirs::home_dir().expect("a home directory");
+        let mut ws = workspace_on(&["/repos/current"]);
+        ws.start_repo_input();
+        for c in "~".chars() {
+            ws.repo_input_push(c);
+        }
+
+        let result = ws.confirm_repo_input();
+
+        assert_eq!(
+            result,
+            RepoInputResult::Open(
+                crate::git::resolve_repo_path(&home)
+                    .to_string_lossy()
+                    .to_string()
+            )
+        );
+    }
+
+    #[test]
     fn reopening_the_dialog_re_arms_the_prefill() {
         let mut ws = workspace_on(&["/repos/current"]);
         ws.start_repo_input();

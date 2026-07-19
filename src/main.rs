@@ -92,7 +92,11 @@ fn main() -> Result<()> {
     let repo_paths: Vec<String> = cli
         .repo
         .into_iter()
-        .map(|p| git::resolve_repo_path(p).to_string_lossy().to_string())
+        .map(|p| {
+            git::resolve_repo_path(util::expand_tilde(p))
+                .to_string_lossy()
+                .to_string()
+        })
         .collect();
 
     // Logs live under a repo by default, so with no project the first one

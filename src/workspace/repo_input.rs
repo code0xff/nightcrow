@@ -53,7 +53,9 @@ impl Workspace {
             self.raise_notice(NoticeKind::RepoInput, "repo path cannot be empty");
             return RepoInputResult::Rejected;
         }
-        let p = std::path::Path::new(trimmed);
+        // The dialog is not a shell, so `~` has to be expanded here or a home
+        // relative path would read as a directory literally named `~`.
+        let p = crate::util::expand_tilde(trimmed);
         if !p.is_dir() {
             // The rejected path is already on screen in the input itself, so
             // the message names the problem only.
@@ -67,7 +69,7 @@ impl Workspace {
             );
             return RepoInputResult::Rejected;
         }
-        let resolved = crate::git::resolve_repo_path(p)
+        let resolved = crate::git::resolve_repo_path(&p)
             .to_string_lossy()
             .to_string();
         self.repo_input.active = false;
