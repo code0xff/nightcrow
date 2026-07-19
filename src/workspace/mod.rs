@@ -168,6 +168,10 @@ impl Workspace {
         if self.projects.len() >= MAX_PROJECTS {
             return false;
         }
+        // Whatever the empty screen was reporting is answered by this: it is
+        // no longer the empty screen. Left standing, a stale message would
+        // reappear the moment the last tab was closed again.
+        self.empty_notice = None;
         self.projects.push(project);
         self.active = self.projects.len() - 1;
         true
@@ -340,6 +344,20 @@ mod tests {
 
         assert!(ws.repo_input.active);
         assert_eq!(ws.repo_input.buf, "", "no project to prefill from");
+    }
+
+    #[test]
+    fn 프로젝트를_열면_빈_화면_공지가_사라진다() {
+        // Otherwise a stale rejection would reappear the moment the last tab
+        // was closed again, long after it stopped being true.
+        let mut ws = Workspace::new(test_leader());
+        ws.raise_notice(NoticeKind::RepoInput, "no such directory");
+
+        ws.add(project_at("/a"));
+        ws.close_active();
+
+        assert!(ws.active().is_none(), "back to the empty screen");
+        assert!(ws.empty_notice().is_none());
     }
 
     #[test]
