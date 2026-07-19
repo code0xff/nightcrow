@@ -4,61 +4,18 @@ use crate::runtime::terminal::TerminalFullscreen;
 use crate::session::SessionState;
 
 impl App {
-    pub fn set_pending_session(&mut self, state: SessionState) {
-        self.pending_session = Some(state);
-    }
-
-    /// Give up a deferred restore because the user has started driving.
+    /// The state to persist.
     ///
-    /// Restoration waits for the first snapshot, and the wait is visible: a
-    /// project opened at runtime accepts input immediately. Applying the saved
-    /// mode or selection on top of what the user just chose would undo an
-    /// explicit action, which reads as the app fighting back. An intent beats a
-    /// convenience, so the saved half is dropped instead.
-    ///
-    /// Only the deferred half is at stake — panes, focus and fullscreen were
-    /// restored up front and are untouched by this.
-    pub fn drop_pending_restore_on_app_input(&mut self) {
-        if self.pending_session.take().is_some() {
-            tracing::debug!("session restore dropped: the user acted first");
-        }
-    }
-
-    /// The state to persist for this project.
-    ///
-    /// Normally the live view. But a restore is deferred to the first
-    /// snapshot, so a project quit before one arrived still holds defaults in
-    /// every snapshot-dependent field — writing those would clobber the file it
-    /// never got to read from. Skipping the save instead would lose the half of
-    /// the state that *is* live: panes, focus and fullscreen are restored up
-    /// front (see `restore_pane_focus`) and the user can change them meanwhile.
-    ///
-    /// So the two halves are merged: the saved state supplies what is still
-    /// pending, the live app supplies what it actually owns.
+    /// The live view, except for a selection still waiting on its first
+    /// snapshot — quitting before that arrives would otherwise record "no file
+    /// selected" over the one the user actually left open.
     pub fn session_to_save(&self) -> SessionState {
-        let live = self.save_session();
-        let Some(pending) = self.pending_session.as_ref() else {
-            return live;
-        };
-        SessionState {
-            // Live: applied at startup, and editable before any snapshot.
-            focus: live.focus,
-            active_pane: live.active_pane,
-            terminal_fullscreen: live.terminal_fullscreen,
-            diff_fullscreen: live.diff_fullscreen,
-            list_fullscreen: live.list_fullscreen,
-            accent_idx: live.accent_idx,
-            // Still pending: these need a file or commit list to restore onto,
-            // so the live values are defaults, not choices.
-            selected_file: pending.selected_file.clone(),
-            scroll: pending.scroll,
-            mode: pending.mode,
-            log_selected: pending.log_selected,
-            log_drill_down: pending.log_drill_down,
-            log_file_selected: pending.log_file_selected,
-            tree_selected_path: pending.tree_selected_path.clone(),
-            tree_expanded: pending.tree_expanded.clone(),
+        let mut state = self.save_session();
+        if let Some((path, scroll)) = self.pending_selection.as_ref() {
+            state.selected_file = Some(path.clone());
+            state.scroll = *scroll;
         }
+        state
     }
 
     pub fn save_session(&self) -> SessionState {
@@ -126,6 +83,17 @@ impl App {
         }
     }
 
+    /// Apply a saved session.
+    ///
+    /// Runs as soon as the session is loaded, not on the first snapshot. Almost
+    /// none of it needs to wait: panes, focus and fullscreen need no data at
+    /// all, and Log and Tree read what they need directly — the commit log and
+    /// the directory listings — rather than from the git snapshot.
+    ///
+    /// Status mode's selection is the one exception, and only when the changed
+    /// files have not arrived yet. It is held in `pending_selection` until they
+    /// do. That deferral cannot collide with anything the user does meanwhile:
+    /// there is no way to pick a file out of a list that is still empty.
     pub fn restore_session(&mut self, state: &SessionState) {
         // Pane / focus / fullscreen restoration — independent of view mode.
         self.restore_pane_focus(state);
@@ -137,6 +105,12 @@ impl App {
         match state.mode {
             Some(ViewMode::Log) => self.restore_log_session(state),
             Some(ViewMode::Tree) => self.restore_tree_session(state),
+            _ if self.status_view.files.is_empty() => {
+                self.pending_selection = state
+                    .selected_file
+                    .clone()
+                    .map(|path| (path, state.scroll));
+            }
             _ => self.restore_status_session(state),
         }
 

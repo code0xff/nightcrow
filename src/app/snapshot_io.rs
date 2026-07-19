@@ -45,11 +45,15 @@ impl App {
     /// tests can drive the merge/auto-follow logic with deterministic
     /// mtimes instead of booting the background worker.
     pub fn ingest_snapshot(&mut self, snapshot: RepoSnapshot, mtimes: HashMap<String, SystemTime>) {
+        // A selection waiting on this very snapshot stands in as the previous
+        // path, so the ordinary "keep the cursor on the same file" machinery
+        // performs the restore — no separate restore step to collide with.
         let previous_path = self
             .status_view
             .files
             .get(self.status_view.selected)
-            .map(|f| f.path.clone());
+            .map(|f| f.path.clone())
+            .or_else(|| self.pending_selection.as_ref().map(|(path, _)| path.clone()));
         // Capture the HEAD oid up front so the detection branch below stays
         // independent of where the snapshot fields get moved out.
         let new_head = snapshot.head_oid;
@@ -83,8 +87,12 @@ impl App {
             self.refresh_commit_log_after_head_change();
         }
 
-        if let Some(state) = self.pending_session.take() {
-            self.restore_session(&state);
+        // The saved scroll belongs to the saved file, so it only applies if
+        // the cursor actually landed there.
+        if let Some((path, scroll)) = self.pending_selection.take()
+            && self.selected_filtered_status_path().as_deref() == Some(path.as_str())
+        {
+            self.diff.scroll = scroll.min(self.diff.max_scroll());
         }
     }
 

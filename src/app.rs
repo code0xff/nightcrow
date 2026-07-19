@@ -163,7 +163,12 @@ pub struct App {
     /// the active one), so a hidden project's tree refreshes when its tab is
     /// shown rather than rereading directories on the UI thread meanwhile.
     pub(crate) tree_dirty: bool,
-    pub(crate) pending_session: Option<crate::session::SessionState>,
+    /// A saved file selection waiting on the first snapshot, with its diff
+    /// scroll. The only part of a session that cannot be applied on the spot:
+    /// it names a file the changed-file list has not delivered yet. Nothing
+    /// the user does can conflict with it, since an empty list offers nothing
+    /// to select.
+    pub(crate) pending_selection: Option<(String, usize)>,
     /// Cached `git2::Repository` for synchronous loads (file diff, commit
     /// diff, file blob, commit log). Opened lazily on first use; invalidated
     /// in `change_repo`. The snapshot worker thread keeps its own handle —
@@ -291,7 +296,7 @@ impl App {
             // spawns an OS watcher.
             tree_watch: crate::runtime::tree_watch::TreeWatcher::disabled(),
             tree_dirty: false,
-            pending_session: None,
+            pending_selection: None,
             repo_cache: None,
             cfg_agent_indicator: crate::config::AgentIndicatorConfig::default(),
             cfg_tree: crate::config::TreeConfig::default(),
@@ -449,7 +454,7 @@ pub(crate) mod tests {
             pending_snapshot: None,
             tree_watch,
             tree_dirty: false,
-            pending_session: None,
+            pending_selection: None,
             repo_cache: None,
             cfg_agent_indicator: crate::config::AgentIndicatorConfig {
                 auto_follow: true,
@@ -1676,66 +1681,6 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn an_unrestored_session_is_merged_rather_than_clobbered_or_skipped() {
-        // A project quit before its first snapshot holds defaults in every
-        // snapshot-dependent field, but panes and focus are live from startup.
-        // Saving either half alone loses the other.
-        let mut app = app_with_files(vec![]);
-        app.set_pending_session(crate::session::SessionState {
-            selected_file: Some("saved.rs".to_string()),
-            scroll: 42,
-            mode: Some(ViewMode::Log),
-            active_pane: 0,
-            ..Default::default()
-        });
-        // The user changes something that needs no snapshot.
-        app.focus = Focus::DiffViewer;
-
-        let saved = app.session_to_save();
-
-        assert_eq!(saved.focus, Some(Focus::DiffViewer), "live half is kept");
-        assert_eq!(
-            saved.selected_file.as_deref(),
-            Some("saved.rs"),
-            "pending half is preserved, not overwritten with defaults"
-        );
-        assert_eq!(saved.scroll, 42);
-        assert_eq!(saved.mode, Some(ViewMode::Log));
-    }
-
-    #[test]
-    fn a_restored_session_saves_the_live_state() {
-        // With nothing pending there is no merge — the app owns every field.
-        let mut app = app_with_files(vec![]);
-        app.focus = Focus::DiffViewer;
-
-        let saved = app.session_to_save();
-
-        assert_eq!(saved.focus, Some(Focus::DiffViewer));
-        assert_eq!(saved.selected_file, None);
-    }
-
-    #[test]
-    fn a_failed_snapshot_keeps_the_deferred_restore() {
-        // The worker retries, so a transient failure must not throw away the
-        // saved selection; saving is unblocked by the merge instead.
-        let (snapshot, tx) = dummy_snapshot_channel();
-        let mut app = App {
-            snapshot,
-            pending_snapshot: None,
-            ..app_with_files(vec!["a.rs"])
-        };
-        app.set_pending_session(crate::session::SessionState::default());
-
-        tx.send(SnapshotMsg::Err("not a repository".to_string()))
-            .unwrap();
-        app.poll_snapshot();
-
-        assert!(app.pending_session.is_some(), "the restore still waits");
-        assert_eq!(app.notice.as_ref().map(|n| n.kind), Some(NoticeKind::Git));
-    }
-
-    #[test]
     fn a_watcher_refresh_updates_active_search_results() {
         // The filtered view renders from the search index, so refreshing only
         // the directory cache left a new file out of the results and the match
@@ -1758,6 +1703,77 @@ pub(crate) mod tests {
             "a file created while the search is open must join the results"
         );
         drop(dir);
+    }
+
+    #[test]
+    fn a_saved_mode_lands_immediately_and_survives_being_changed() {
+        // The restore used to wait for the first snapshot and then overwrite
+        // whatever the user had picked in between. Now the mode is applied on
+        // the spot, so a later change is simply the newer choice.
+        let (snapshot, tx) = dummy_snapshot_channel();
+        let mut app = App {
+            snapshot,
+            pending_snapshot: None,
+            ..app_with_files(vec![])
+        };
+
+        app.restore_session(&crate::session::SessionState {
+            mode: Some(ViewMode::Tree),
+            ..Default::default()
+        });
+        assert_eq!(app.mode, ViewMode::Tree, "applied without a snapshot");
+
+        app.toggle_mode();
+        let chosen = app.mode;
+        tx.send(SnapshotMsg::Ok(
+            RepoSnapshot {
+                files: Vec::new(),
+                tracking: None,
+                head_oid: None,
+                branch_name: None,
+            },
+            HashMap::new(),
+        ))
+        .unwrap();
+        app.poll_snapshot();
+
+        assert_eq!(app.mode, chosen, "the snapshot must not undo the choice");
+    }
+
+    #[test]
+    fn a_saved_selection_is_restored_by_the_first_snapshot() {
+        // The one part that has to wait: it names a file the changed-file list
+        // has not delivered yet. It rides the ordinary path-preservation code.
+        let (snapshot, tx) = dummy_snapshot_channel();
+        let mut app = App {
+            snapshot,
+            pending_snapshot: None,
+            ..app_with_files(vec![])
+        };
+
+        app.restore_session(&crate::session::SessionState {
+            selected_file: Some("b.rs".to_string()),
+            ..Default::default()
+        });
+        assert!(app.pending_selection.is_some(), "held until the list lands");
+
+        tx.send(SnapshotMsg::Ok(
+            RepoSnapshot {
+                files: ["a.rs", "b.rs"]
+                    .iter()
+                    .map(|p| ChangedFile::unstaged_only(p.to_string(), StatusKind::Modified))
+                    .collect(),
+                tracking: None,
+                head_oid: None,
+                branch_name: None,
+            },
+            HashMap::new(),
+        ))
+        .unwrap();
+        app.poll_snapshot();
+
+        assert_eq!(app.status_view.files[app.status_view.selected].path, "b.rs");
+        assert!(app.pending_selection.is_none(), "consumed");
     }
 
     #[test]
