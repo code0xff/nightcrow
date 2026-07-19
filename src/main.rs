@@ -284,20 +284,27 @@ fn run(
     // one workdir would run duplicate snapshot workers and write the same
     // session file. Past `MAX_PROJECTS` the extras are dropped rather than
     // silently replacing earlier ones; the notice says so.
+    let mut overflowed = false;
     for path in &repo_paths {
         if ws.index_of_repo(path).is_some() {
             continue;
         }
         if !ws.add(init_app(path, &cfg, &startup_commands, leader)) {
-            ws.raise_notice(
-                app::NoticeKind::Project,
-                format!("cannot open more than {} projects", workspace::MAX_PROJECTS),
-            );
+            overflowed = true;
             break;
         }
     }
     // Land on the first repo named, not the last opened.
     ws.switch(0);
+    // Raised after the switch: notices are project-scoped, so reporting this
+    // before would leave it on a tab the user never sees, hiding the only sign
+    // that later repositories were dropped.
+    if overflowed {
+        ws.raise_notice(
+            app::NoticeKind::Project,
+            format!("cannot open more than {} projects", workspace::MAX_PROJECTS),
+        );
+    }
 
     if matches!(splash_loop(terminal, &ws, cfg.theme.preset_index())?, SplashOutcome::Quit) {
         tracing::info!("nightcrow stopped during splash");
@@ -661,7 +668,14 @@ fn dispatch_mouse(
     screen: Rect,
     layout: &config::LayoutConfig,
 ) -> KeyOutcome {
-    if ws.repo_input.active {
+    // A release must reach the pane whose press it pairs with, even when the
+    // dialog opened in between: no drag reports are forwarded, so that program
+    // cannot track the pointer itself, and a swallowed release leaves
+    // `pending_mouse_press` set for a later unrelated release to match.
+    // `handle_mouse` resolves releases before its own modal guard for exactly
+    // this reason, so the dialog must not swallow them ahead of it either.
+    let is_release = matches!(mouse.kind, MouseEventKind::Up(_));
+    if ws.repo_input.active && !is_release {
         return KeyOutcome::Continue;
     }
     match ws.active_mut() {
@@ -1719,6 +1733,50 @@ mod tests {
         let _ = dispatch_key(&mut ws, leader());
         let other = dispatch_key(&mut ws, press(KeyCode::Char('t'), KeyModifiers::NONE));
         assert_eq!(other, KeyOutcome::Continue);
+    }
+
+    #[test]
+    fn the_dialog_still_lets_a_pending_release_through() {
+        // A modal opening between press and release must not strand the
+        // pending slot: the pane that saw the press has to see the release, and
+        // a leftover slot would pair with a later unrelated one.
+        let (mut app, areas) = app_with_two_panes_and_areas();
+        let (id, rect) = areas[0];
+        // Only a pane whose program asked for mouse reports records a pending
+        // press, so opt it in.
+        app.terminal
+            .emulators
+            .get_mut(&id)
+            .unwrap()
+            .process(b"\x1b[?1000h\x1b[?1006h");
+        let mut ws = Workspace::new(leader());
+        ws.add(app);
+        let down = MouseEventKind::Down(crossterm::event::MouseButton::Left);
+        let up = MouseEventKind::Up(crossterm::event::MouseButton::Left);
+        let tabs = test_tabs();
+
+        dispatch_mouse(
+            &mut ws,
+            test_tab_view(&tabs),
+            mouse(down, rect.x, rect.y),
+            MOUSE_TEST_SCREEN,
+            &config::LayoutConfig::default(),
+        );
+        assert!(ws.active().unwrap().pending_mouse_press.is_some());
+
+        ws.start_repo_input();
+        dispatch_mouse(
+            &mut ws,
+            test_tab_view(&tabs),
+            mouse(up, rect.x, rect.y),
+            MOUSE_TEST_SCREEN,
+            &config::LayoutConfig::default(),
+        );
+
+        assert!(
+            ws.active().unwrap().pending_mouse_press.is_none(),
+            "the dialog must not swallow the release"
+        );
     }
 
     #[test]
