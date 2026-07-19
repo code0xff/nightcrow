@@ -332,6 +332,62 @@ fn encode_function_key(n: u8, mods: KeyModifiers) -> Option<Vec<u8>> {
 mod tests {
     use super::*;
 
+    /// The README, read at compile time. A missing or moved file is a build
+    /// error rather than a test that silently stops checking anything.
+    const README: &str = include_str!("../../README.md");
+
+    /// Every `<prefix> c` the README spells out, deduplicated.
+    fn documented_prefix_keys() -> Vec<char> {
+        let mut found: Vec<char> = README
+            .match_indices("`<prefix> ")
+            .filter_map(|(i, m)| {
+                let rest = &README[i + m.len()..];
+                let mut chars = rest.chars();
+                let c = chars.next()?;
+                // Only a single character followed by the closing backtick —
+                // `<prefix>` alone and prose like "`<prefix> then`" are not keys.
+                (chars.next() == Some('`')).then_some(c)
+            })
+            .collect();
+        found.sort_unstable();
+        found.dedup();
+        found
+    }
+
+    /// Doc drift is silent: a renamed command leaves the old key sitting in a
+    /// table nobody re-reads. These two tests make the README answerable to
+    /// `prefix_action` in both directions.
+    #[test]
+    fn every_leader_command_is_documented() {
+        let documented = documented_prefix_keys();
+        for c in "twslbfoxprq".chars() {
+            assert_ne!(
+                prefix_action(key(KeyCode::Char(c))),
+                Action::None,
+                "test is stale: `{c}` is no longer a leader command"
+            );
+            assert!(
+                documented.contains(&c),
+                "`<prefix> {c}` works but the README never mentions it"
+            );
+        }
+    }
+
+    #[test]
+    fn every_documented_leader_key_still_works() {
+        for c in documented_prefix_keys() {
+            // Checked against both layouts: the digits mean different things
+            // in the split view and in terminal fullscreen, and a key that
+            // only works in one is still a real key.
+            let split = prefix_action(key(KeyCode::Char(c)));
+            let full = prefix_action_fullscreen(key(KeyCode::Char(c)));
+            assert!(
+                split != Action::None || full != Action::None,
+                "the README documents `<prefix> {c}`, which maps to nothing"
+            );
+        }
+    }
+
     fn key(code: KeyCode) -> KeyEvent {
         KeyEvent::new(code, KeyModifiers::NONE)
     }
