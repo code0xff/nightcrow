@@ -289,10 +289,15 @@ fn run(
         if ws.index_of_repo(path).is_some() {
             continue;
         }
-        if !ws.add(init_app(path, &cfg, &startup_commands, leader)) {
+        // Checked before building, like the dialog path: `init_app` spawns a
+        // PTY and runs the configured startup commands, so constructing a
+        // project only to have `add` refuse it would leave those side effects
+        // behind for a tab that never opens.
+        if ws.is_full() {
             overflowed = true;
             break;
         }
+        ws.add(init_app(path, &cfg, &startup_commands, leader));
     }
     // Land on the first repo named, not the last opened.
     ws.switch(0);
@@ -519,7 +524,14 @@ fn main_loop(
             // Both are cheap drains that must run everywhere: the tree watcher
             // to keep OS filesystem events from piling up, the terminal to
             // consume PTY output before the pipe fills and blocks the child.
-            project.poll_tree_watcher();
+            // Acting on a watcher event rereads directories and previews a
+            // file, so like the snapshot that is active-only; a hidden project
+            // records the event and refreshes when its tab comes forward.
+            if i == active {
+                project.poll_tree_watcher();
+            } else {
+                project.drain_tree_watcher();
+            }
             project.poll_terminal();
         }
 
@@ -571,6 +583,7 @@ fn main_loop(
                         empty_notice.as_ref(),
                         ctx.leader,
                         prefix_armed,
+                        cfg.mouse.enabled,
                         accent,
                     );
                     None
@@ -668,6 +681,7 @@ fn dispatch_mouse(
     screen: Rect,
     layout: &config::LayoutConfig,
 ) -> KeyOutcome {
+    let ws_leader = ws.leader();
     // A release must reach the pane whose press it pairs with, even when the
     // dialog opened in between: no drag reports are forwarded, so that program
     // cannot track the pointer itself, and a swallowed release leaves
@@ -681,12 +695,21 @@ fn dispatch_mouse(
     match ws.active_mut() {
         Some(app) => handle_mouse(app, tabs, mouse, screen, layout),
         None => {
-            if let MouseEventKind::Down(crossterm::event::MouseButton::Left) = mouse.kind
-                && let Some(idx) = ui::project_tab_at(tabs, screen, mouse.column, mouse.row)
-            {
+            let MouseEventKind::Down(crossterm::event::MouseButton::Left) = mouse.kind else {
+                return KeyOutcome::Continue;
+            };
+            if let Some(idx) = ui::project_tab_at(tabs, screen, mouse.column, mouse.row) {
                 return KeyOutcome::Project(ProjectRequest::Switch(idx));
             }
-            KeyOutcome::Continue
+            // The open hint is the one action the empty screen offers, so a
+            // click on it does what its key does.
+            let leader_label = app::leader_label_of(ws_leader);
+            match ui::empty_hint_click_at(screen, &leader_label, mouse.column, mouse.row) {
+                Some(ui::HintClick::Plain('o')) | Some(ui::HintClick::Leader('o')) => {
+                    KeyOutcome::Project(ProjectRequest::OpenDialog)
+                }
+                _ => KeyOutcome::Continue,
+            }
         }
     }
 }
@@ -1777,6 +1800,35 @@ mod tests {
             ws.active().unwrap().pending_mouse_press.is_none(),
             "the dialog must not swallow the release"
         );
+    }
+
+    #[test]
+    fn clicking_the_empty_screen_open_hint_raises_the_dialog() {
+        // It is the only action that screen offers, so it must work by pointer
+        // as well as by key — and it renders inverted, advertising as much.
+        let mut ws = Workspace::new(leader());
+        let tabs: Vec<String> = Vec::new();
+        let label = app::leader_label_of(leader());
+        let x = (0..MOUSE_TEST_SCREEN.width)
+            .find(|&x| {
+                ui::empty_hint_click_at(MOUSE_TEST_SCREEN, &label, x, MOUSE_TEST_SCREEN.height - 1)
+                    .is_some()
+            })
+            .expect("the open hint is clickable");
+
+        let outcome = dispatch_mouse(
+            &mut ws,
+            test_tab_view(&tabs),
+            mouse(
+                MouseEventKind::Down(crossterm::event::MouseButton::Left),
+                x,
+                MOUSE_TEST_SCREEN.height - 1,
+            ),
+            MOUSE_TEST_SCREEN,
+            &config::LayoutConfig::default(),
+        );
+
+        assert_eq!(outcome, KeyOutcome::Project(ProjectRequest::OpenDialog));
     }
 
     #[test]

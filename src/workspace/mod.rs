@@ -81,6 +81,10 @@ impl Workspace {
             && (key.modifiers & relevant) == (self.leader.modifiers & relevant)
     }
 
+    pub fn leader(&self) -> KeyEvent {
+        self.leader
+    }
+
     pub fn prefix_armed(&self) -> bool {
         self.empty_prefix_armed
     }

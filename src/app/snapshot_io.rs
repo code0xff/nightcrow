@@ -32,6 +32,13 @@ impl App {
             Some(SnapshotMsg::Err(e)) => {
                 tracing::warn!(error = %e, "git snapshot failed");
                 self.raise_notice(NoticeKind::Git, e.to_string());
+                // Give up on the deferred half of a session restore. Panes and
+                // focus were already restored at startup; only selection and
+                // scroll wait on a file list, and this project may never get
+                // one. Left pending, the project would be skipped by every
+                // save from here on (see `save_project_session`) and lose the
+                // state it does have.
+                self.pending_session = None;
             }
             None => {}
         }

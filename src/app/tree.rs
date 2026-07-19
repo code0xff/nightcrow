@@ -129,9 +129,25 @@ impl App {
     /// Drain filesystem-watcher events and, while Tree mode is open, re-read the
     /// tree if anything changed. Called every main-loop tick alongside the other
     /// pollers; cheap when idle (a non-blocking channel drain).
+    /// Empty the watcher's event queue, remembering only that something
+    /// changed.
+    ///
+    /// The cheap half: no directory is reread and no file is previewed. Every
+    /// project runs this each tick so OS events cannot pile up behind a hidden
+    /// tab, while the rereading waits for that tab to come forward.
+    pub fn drain_tree_watcher(&mut self) {
+        if self.tree_watch.drain_changed() {
+            self.tree_dirty = true;
+        }
+    }
+
+    /// Drain, then act on it: reread the expanded directories and re-preview
+    /// the selection. Only the project on screen does this — several
+    /// repositories rereading directories per tick would stall the active tab.
     pub fn poll_tree_watcher(&mut self) {
-        let changed = self.tree_watch.drain_changed();
-        if changed && self.mode == ViewMode::Tree {
+        self.drain_tree_watcher();
+        if self.tree_dirty && self.mode == ViewMode::Tree {
+            self.tree_dirty = false;
             self.refresh_tree_preserving_cursor();
         }
     }

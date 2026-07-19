@@ -40,6 +40,11 @@ nightcrow --repo ~/projects/api --repo ~/projects/web
 nightcrow --exec "claude" --exec "codex"
 ```
 
+Startup panes belong to a project, not to the process: each project opened —
+by `--repo` at launch or by `^Q o` later — gets its own set. So
+`nightcrow --exec claude` with no repo opens the empty screen and starts
+`claude` in the first project you open, not before there is one to open it in.
+
 `--exec` panes open after any `[[startup_command]]` panes from the config
 file; the two sources share a combined cap of 8 panes — the same count the
 `<prefix> 3`–`9`,`0` jump keys address, so every startup pane is reachable by

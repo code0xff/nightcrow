@@ -224,6 +224,47 @@ pub(crate) fn project_tab_at(
     )
 }
 
+/// The empty screen's hint legend. Shared by the renderer and the click
+/// hit-test so a clickable label and its target cannot drift.
+const EMPTY_HINT: &str = " <prefix> o: open project | <prefix> q: quit";
+
+/// The click action for `(x, y)` on the empty screen's hint row, or `None`
+/// off it. Only `o` resolves — quitting stays a deliberate keyboard act, as
+/// on the project screen.
+pub(crate) fn empty_hint_click_at(
+    screen_area: Rect,
+    leader_label: &str,
+    x: u16,
+    y: u16,
+) -> Option<HintClick> {
+    let hint_area = chrome_rows(screen_area).hint;
+    if hint_area.height == 0 || !hint_area.contains(Position { x, y }) {
+        return None;
+    }
+    let mut cursor = hint_area.x;
+    for (i, segment) in EMPTY_HINT.split(" | ").enumerate() {
+        if i > 0 {
+            cursor += Span::raw(" | ").width() as u16;
+        }
+        let rendered = segment.replace("<prefix>", leader_label);
+        let width = Span::raw(rendered.as_str()).width() as u16;
+        if x >= cursor && x < cursor + width {
+            // Same rules as `hint_click_at`: leading whitespace renders plain
+            // and so is not part of the target, and the key is the text before
+            // the colon.
+            let label_start = rendered.len() - rendered.trim_start().len();
+            let lead_width = Span::raw(&rendered[..label_start]).width() as u16;
+            if x < cursor + lead_width {
+                return None;
+            }
+            let (keyspec, _) = segment.split_once(':')?;
+            return segment_click(keyspec);
+        }
+        cursor += width;
+    }
+    None
+}
+
 /// Render the screen with no project open.
 ///
 /// The body is a placeholder rather than a borrowed panel: every viewer here
@@ -237,6 +278,7 @@ pub fn draw_empty(
     notice: Option<&crate::app::Notice>,
     leader: crossterm::event::KeyEvent,
     prefix_armed: bool,
+    mouse_enabled: bool,
     accent: Color,
 ) {
     let rows = chrome_rows(frame.area());
@@ -284,14 +326,14 @@ pub fn draw_empty(
         spans.extend(hint_spans(
             " o: open project | q: quit | esc: cancel",
             &leader_label,
-            false,
+            mouse_enabled,
         ));
         Line::from(spans)
     } else {
         Line::from(hint_spans(
-            " <prefix> o: open project | <prefix> q: quit",
+            EMPTY_HINT,
             &leader_label,
-            false,
+            mouse_enabled,
         ))
     };
     frame.render_widget(Paragraph::new(hint), rows.hint);
@@ -1153,7 +1195,7 @@ mod tests {
                     active: 0,
                     repo_input,
                 };
-                draw_empty(frame, chrome, notice, leader, armed, Color::Yellow);
+                draw_empty(frame, chrome, notice, leader, armed, false, Color::Yellow);
             })
             .unwrap();
         let buf = terminal.backend().buffer();

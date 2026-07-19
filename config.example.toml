@@ -83,7 +83,9 @@ port = 8090
 # hashed_password = "$argon2id$v=19$m=..."
 
 # Reserve startup commands: each [[startup_command]] opens its own terminal
-# pane at launch and runs `command` immediately (via `$SHELL -lc <command>`).
+# pane and runs `command` immediately (via `$SHELL -lc <command>`). Panes are
+# per project, so these run again for every project tab you open, not once
+# per process.
 # Up to 8 entries (combined with CLI --exec). 8 matches the <leader> 3–9,0
 # pane-jump keys, so every startup pane is reachable by a direct key
 # (<leader> 1/2 reach the file list and diff viewer; the bare F-keys select

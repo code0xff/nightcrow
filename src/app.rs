@@ -158,6 +158,11 @@ pub struct App {
     /// OS watcher could not start, in which case refresh-on-entry is the
     /// fallback.
     pub(crate) tree_watch: crate::runtime::tree_watch::TreeWatcher,
+    /// A watcher event seen but not yet acted on. Set by `drain_tree_watcher`
+    /// (which every project runs) and consumed by `poll_tree_watcher` (only
+    /// the active one), so a hidden project's tree refreshes when its tab is
+    /// shown rather than rereading directories on the UI thread meanwhile.
+    pub(crate) tree_dirty: bool,
     pub(crate) pending_session: Option<crate::session::SessionState>,
     /// Cached `git2::Repository` for synchronous loads (file diff, commit
     /// diff, file blob, commit log). Opened lazily on first use; invalidated
@@ -267,6 +272,7 @@ impl App {
             // `[tree] live_watch` config is applied, so a `false` setting never
             // spawns an OS watcher.
             tree_watch: crate::runtime::tree_watch::TreeWatcher::disabled(),
+            tree_dirty: false,
             pending_session: None,
             repo_cache: None,
             cfg_agent_indicator: crate::config::AgentIndicatorConfig::default(),
@@ -424,6 +430,7 @@ pub(crate) mod tests {
             snapshot,
             pending_snapshot: None,
             tree_watch,
+            tree_dirty: false,
             pending_session: None,
             repo_cache: None,
             cfg_agent_indicator: crate::config::AgentIndicatorConfig {
@@ -1648,6 +1655,44 @@ pub(crate) mod tests {
         app.poll_snapshot();
         assert_eq!(app.status_view.files[0].path, "second.rs");
         assert!(app.pending_snapshot.is_none(), "pending is consumed");
+    }
+
+    #[test]
+    fn a_failed_snapshot_gives_up_the_deferred_restore() {
+        // Otherwise the project reports a pending session forever and every
+        // save skips it, losing the state it does have.
+        let (snapshot, tx) = dummy_snapshot_channel();
+        let mut app = App {
+            snapshot,
+            pending_snapshot: None,
+            ..app_with_files(vec!["a.rs"])
+        };
+        app.set_pending_session(crate::session::SessionState::default());
+
+        tx.send(SnapshotMsg::Err("not a repository".to_string()))
+            .unwrap();
+        app.poll_snapshot();
+
+        assert!(!app.has_pending_session());
+        assert_eq!(app.notice.as_ref().map(|n| n.kind), Some(NoticeKind::Git));
+    }
+
+    #[test]
+    fn a_hidden_tree_change_is_remembered_until_the_tab_is_shown() {
+        // Rereading directories is the expensive half; a hidden project only
+        // records that it must, so filesystem churn elsewhere cannot stall the
+        // active tab.
+        let mut app = app_with_files(vec!["a.rs"]);
+        app.mode = ViewMode::Tree;
+        app.tree_dirty = true;
+
+        // Draining with no new event leaves the flag standing, so the refresh
+        // still happens once this project becomes the active one.
+        app.drain_tree_watcher();
+        assert!(app.tree_dirty, "a pending refresh survives a drain");
+
+        app.poll_tree_watcher();
+        assert!(!app.tree_dirty, "the active project consumes it");
     }
 
     #[test]
