@@ -285,9 +285,14 @@ fn run(
     // open records exactly that, an empty screen stays reachable without a
     // dedicated flag.
     let restored = repo_paths.is_empty().then(session::load_workspace).flatten();
-    let (repo_paths, restored_active) = match restored {
-        Some(state) => (state.repos, state.active),
-        None => (repo_paths, 0),
+    // Tracked by path, not index: skipping a missing repo compacts the list,
+    // so the saved index would then name a different tab.
+    let restored_active_repo = restored
+        .as_ref()
+        .and_then(|state| state.repos.get(state.active).cloned());
+    let (repo_paths, from_restore) = match restored {
+        Some(state) => (state.repos, true),
+        None => (repo_paths, false),
     };
     // Restored repos can have been moved or deleted since; opening a tab on a
     // path that is gone would show a broken project rather than nothing.
@@ -299,7 +304,10 @@ fn run(
     // silently replacing earlier ones; the notice says so.
     let mut overflowed = false;
     for path in &repo_paths {
-        if !std::path::Path::new(path).is_dir() {
+        // Only remembered repos are filtered. An explicit `--repo` that does
+        // not exist still opens, so the git error says so — silently dropping
+        // it would look like the argument was ignored.
+        if from_restore && !std::path::Path::new(path).is_dir() {
             missing += 1;
             continue;
         }
@@ -316,9 +324,12 @@ fn run(
         }
         ws.add(init_app(path, &cfg, &startup_commands, leader));
     }
-    // Land on the tab that was in front, or on the first repo named. Clamped
-    // because skipped repos shift every later index.
-    ws.switch(restored_active.min(ws.projects().len().saturating_sub(1)));
+    // Land on the tab that was in front, found by path so a skipped repo
+    // earlier in the list cannot shift the choice onto its neighbour.
+    let active_idx = restored_active_repo
+        .and_then(|repo| ws.index_of_repo(&repo))
+        .unwrap_or(0);
+    ws.switch(active_idx);
     // Raised after the switch: notices are project-scoped, so reporting this
     // before would leave it on a tab the user never sees, hiding the only sign
     // that something was dropped.

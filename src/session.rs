@@ -123,6 +123,14 @@ pub fn load_session(repo_path: &str) -> Option<SessionState> {
 }
 
 pub fn save_session(repo_path: &str, state: &SessionState) {
+    // A repo deleted or moved while nightcrow was running must not be
+    // recreated by `create_dir_all` below: the directory would come back
+    // holding only `.nightcrow/`, and the next launch would restore it as a
+    // tab on a path that is no longer a repository.
+    if !Path::new(repo_path).is_dir() {
+        tracing::warn!(repo = %repo_path, "repo is gone, not writing its session");
+        return;
+    }
     let path = session_path(repo_path);
     if let Some(dir) = path.parent() {
         if let Err(e) = std::fs::create_dir_all(dir) {
@@ -192,6 +200,19 @@ mod tests {
         save_workspace_at(&path, &WorkspaceState::default());
 
         assert!(load_workspace_at(&path).unwrap().repos.is_empty());
+    }
+
+    #[test]
+    fn a_session_is_not_written_under_a_missing_repo() {
+        // `create_dir_all` would otherwise resurrect the repo directory
+        // holding only `.nightcrow/`, and the next launch would restore a tab
+        // on a path that is no longer a repository.
+        let dir = tempfile::TempDir::new().unwrap();
+        let gone = dir.path().join("deleted-repo");
+
+        save_session(&gone.to_string_lossy(), &SessionState::default());
+
+        assert!(!gone.exists(), "the repo root must not be recreated");
     }
 
     #[test]
