@@ -336,19 +336,51 @@ mod tests {
     /// error rather than a test that silently stops checking anything.
     const README: &str = include_str!("../../README.md");
 
-    /// Every `<prefix> c` the README spells out, deduplicated.
-    fn documented_prefix_keys() -> Vec<char> {
-        let mut found: Vec<char> = README
-            .match_indices("`<prefix> ")
-            .filter_map(|(i, m)| {
-                let rest = &README[i + m.len()..];
-                let mut chars = rest.chars();
-                let c = chars.next()?;
-                // Only a single character followed by the closing backtick —
-                // `<prefix>` alone and prose like "`<prefix> then`" are not keys.
-                (chars.next() == Some('`')).then_some(c)
+    const PREFIX_TOKEN: &str = "`<prefix> ";
+
+    /// Every leader command, derived from `prefix_action` itself by probing
+    /// the candidate keys. Deriving rather than listing is the point: a
+    /// hard-coded set cannot notice a command that was just added to the
+    /// match arm, which is exactly the drift these tests exist to catch.
+    fn leader_commands() -> Vec<char> {
+        ('a'..='z')
+            .chain('0'..='9')
+            .filter(|&c| {
+                let e = key(KeyCode::Char(c));
+                prefix_action(e) != Action::None || prefix_action_fullscreen(e) != Action::None
             })
-            .collect();
+            .collect()
+    }
+
+    /// Every `<prefix> c` the README spells out, with ranges expanded.
+    ///
+    /// `<prefix> 3`…`<prefix> 9` documents seven keys, not two — the interior
+    /// ones never appear on their own, so without expanding them a removed
+    /// `<prefix> 5` would leave the README claiming a key that does nothing.
+    fn documented_prefix_keys() -> Vec<char> {
+        let mut found = Vec::new();
+        let mut idx = 0;
+        while let Some(offset) = README[idx..].find(PREFIX_TOKEN) {
+            let start = idx + offset + PREFIX_TOKEN.len();
+            idx = start;
+            let rest = &README[start..];
+            let mut chars = rest.chars();
+            let (Some(c), Some('`')) = (chars.next(), chars.next()) else {
+                // `<prefix>` alone, or prose rather than a key.
+                continue;
+            };
+            found.push(c);
+            let after = &rest[c.len_utf8() + '`'.len_utf8()..];
+            if let Some(tail) = after.strip_prefix('…')
+                && let Some(upper) = tail.strip_prefix(PREFIX_TOKEN)
+                && let Some(end) = upper.chars().next()
+                && c.is_ascii()
+                && end.is_ascii()
+                && c < end
+            {
+                found.extend((c as u8 + 1..end as u8).map(char::from));
+            }
+        }
         found.sort_unstable();
         found.dedup();
         found
@@ -360,12 +392,9 @@ mod tests {
     #[test]
     fn every_leader_command_is_documented() {
         let documented = documented_prefix_keys();
-        for c in "twslbfoxprq".chars() {
-            assert_ne!(
-                prefix_action(key(KeyCode::Char(c))),
-                Action::None,
-                "test is stale: `{c}` is no longer a leader command"
-            );
+        let commands = leader_commands();
+        assert!(!commands.is_empty(), "probing found no leader commands");
+        for c in commands {
             assert!(
                 documented.contains(&c),
                 "`<prefix> {c}` works but the README never mentions it"
@@ -373,16 +402,17 @@ mod tests {
         }
     }
 
+    /// Note the limit: a key is accepted if *either* layout maps it, because
+    /// the parser reads keys out of prose and cannot tell which table row
+    /// documented them. So a digit dropped from only the split view still
+    /// passes here. What this does catch is a documented key that does nothing
+    /// at all — including the interior of a range, thanks to the expansion.
     #[test]
     fn every_documented_leader_key_still_works() {
         for c in documented_prefix_keys() {
-            // Checked against both layouts: the digits mean different things
-            // in the split view and in terminal fullscreen, and a key that
-            // only works in one is still a real key.
-            let split = prefix_action(key(KeyCode::Char(c)));
-            let full = prefix_action_fullscreen(key(KeyCode::Char(c)));
+            let e = key(KeyCode::Char(c));
             assert!(
-                split != Action::None || full != Action::None,
+                prefix_action(e) != Action::None || prefix_action_fullscreen(e) != Action::None,
                 "the README documents `<prefix> {c}`, which maps to nothing"
             );
         }
