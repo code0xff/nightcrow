@@ -179,7 +179,7 @@ impl Workspace {
         // Same reasoning as `switch`: the outgoing project's press can no
         // longer be paired, since the release will be routed to the new one.
         if let Some(previous) = self.projects.get_mut(self.active) {
-            previous.pending_mouse_press = None;
+            previous.release_pending_press_in_place();
         }
         self.projects.push(project);
         self.active = self.projects.len() - 1;
@@ -215,9 +215,12 @@ impl Workspace {
         // Safe to index: the bound check above proved `active` is in range
         // whenever `projects` is non-empty, and an empty list fails it.
         // A press still awaiting its release can no longer be paired: the
-        // release will be routed to the newly active project. Drop it so a
-        // later unrelated release cannot pair with this stale press.
-        self.projects[self.active].pending_mouse_press = None;
+        // release will be routed to the newly active project. Deliver it to
+        // the pane that saw the press instead of dropping the record — that
+        // program's PTY is still alive, and with no release it would sit in a
+        // drag or selection state, while a leftover record could pair with an
+        // unrelated release later.
+        self.projects[self.active].release_pending_press_in_place();
         self.active = index;
     }
 
@@ -444,9 +447,9 @@ mod tests {
     #[test]
     fn 프로젝트를_추가해도_이전_프로젝트의_press가_버려진다() {
         // `add` makes the new project active, so the outgoing project's press
-        // can no longer be paired — same reasoning as `switch`.
+        // is released in place — same reasoning as `switch`.
         let mut ws = workspace_on(&["/a"]);
-        ws.active_mut().unwrap().pending_mouse_press = Some((1, crossterm::event::MouseButton::Left));
+        ws.active_mut().unwrap().pending_mouse_press = Some((1, crossterm::event::MouseButton::Left, 1, 1));
 
         ws.add(project_at("/b"));
 
@@ -458,12 +461,12 @@ mod tests {
         let mut ws = workspace_from(project_at("/a"));
         ws.add(project_at("/b"));
         ws.switch(0);
-        ws.active_mut().unwrap().pending_mouse_press = Some((1, crossterm::event::MouseButton::Left));
+        ws.active_mut().unwrap().pending_mouse_press = Some((1, crossterm::event::MouseButton::Left, 1, 1));
 
         ws.switch(1);
 
-        // The release will be routed to /b, so /a's press can never be paired;
-        // leaving it would let a later unrelated release match it.
+        // /a's press can never be paired now, so it is released where it
+        // happened rather than left to match an unrelated release later.
         assert!(ws.projects()[0].pending_mouse_press.is_none());
     }
 
@@ -471,7 +474,7 @@ mod tests {
     fn 같은_인덱스로_전환하면_대기중인_press를_유지한다() {
         // A no-op switch must not disturb an in-flight press/release pair.
         let mut ws = workspace_from(project_at("/a"));
-        let press = Some((1, crossterm::event::MouseButton::Left));
+        let press = Some((1, crossterm::event::MouseButton::Left, 1, 1));
         ws.active_mut().unwrap().pending_mouse_press = press;
 
         ws.switch(0);

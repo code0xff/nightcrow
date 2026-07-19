@@ -639,6 +639,19 @@ fn main_loop(
         if let Some(server) = web_server.as_ref() {
             let screen = Rect::new(0, 0, size.width, size.height);
             for event in server.drain_input() {
+                // Rebuilt per event, not reused from the frame: an earlier
+                // event in this batch (or the local input above) may have
+                // opened, closed, or switched a project, and a tab hit-test
+                // against the stale row would select the wrong one.
+                let tab_paths: Vec<String> =
+                    ws.projects().iter().map(|p| p.repo_path.clone()).collect();
+                let active_tab = ws.active_index();
+                let repo_input = ws.repo_input.clone();
+                let tabs = ui::Chrome {
+                    repo_paths: &tab_paths,
+                    active: active_tab,
+                    repo_input: &repo_input,
+                };
                 let outcome = dispatch_web_event(ws, tabs, event, screen, &cfg.layout);
                 if apply_outcome(terminal, ws, ctx, outcome)? {
                     return Ok(());
@@ -814,7 +827,7 @@ fn handle_mouse(
         MouseEventKind::Down(button) => {
             focus_clicked_pane(app, id);
             if app.terminal.click_pane(id, button, true, col, row) {
-                app.pending_mouse_press = Some((id, button));
+                app.pending_mouse_press = Some((id, button, col, row));
             }
         }
         MouseEventKind::ScrollUp => {
@@ -879,7 +892,7 @@ fn dispatch_hint_click(app: &mut App, click: ui::HintClick) -> KeyOutcome {
 /// cell is clamped into the pressed pane's current rect. If that pane was
 /// closed or hidden since the press, the release is dropped.
 fn release_pending_press(app: &mut App, screen: Rect, layout: &config::LayoutConfig, x: u16, y: u16) {
-    let Some((id, pressed)) = app.pending_mouse_press else {
+    let Some((id, pressed, _, _)) = app.pending_mouse_press else {
         return;
     };
     app.pending_mouse_press = None;
@@ -923,8 +936,11 @@ fn dispatch_paste(ws: &mut Workspace, text: &str) {
         }
         return;
     }
-    if let Some(app) = ws.active_mut() {
-        handle_paste(app, text);
+    match ws.active_mut() {
+        Some(app) => handle_paste(app, text),
+        // No sink for the text, but an armed prefix must still resolve — a
+        // non-command event cancels it, as it does on the project screen.
+        None => ws.cancel_prefix(),
     }
 }
 
@@ -1800,6 +1816,44 @@ mod tests {
         assert!(
             ws.active().unwrap().pending_mouse_press.is_none(),
             "the dialog must not swallow the release"
+        );
+    }
+
+    #[test]
+    fn switching_projects_releases_a_pending_press_to_its_own_pane() {
+        // The old PTY is still alive; without a release it sits in a drag or
+        // selection state forever, since drag reports are never forwarded.
+        let (mut app, areas) = app_with_two_panes_and_areas();
+        let (id, rect) = areas[0];
+        app.terminal
+            .emulators
+            .get_mut(&id)
+            .unwrap()
+            .process(b"\x1b[?1000h\x1b[?1006h");
+        let mut ws = Workspace::new(leader());
+        ws.add(app);
+        let tabs = test_tabs();
+        dispatch_mouse(
+            &mut ws,
+            test_tab_view(&tabs),
+            mouse(
+                MouseEventKind::Down(crossterm::event::MouseButton::Left),
+                rect.x,
+                rect.y,
+            ),
+            MOUSE_TEST_SCREEN,
+            &config::LayoutConfig::default(),
+        );
+        assert!(ws.active().unwrap().pending_mouse_press.is_some());
+
+        ws.add(app_with_files(vec!["b.rs"]));
+
+        let old = &ws.projects()[0];
+        assert!(old.pending_mouse_press.is_none());
+        assert_eq!(
+            backend_payloads(old),
+            vec![b"\x1b[<0;1;1M".to_vec(), b"\x1b[<0;1;1m".to_vec()],
+            "the pane must see its button-up, not just lose the record"
         );
     }
 

@@ -210,7 +210,12 @@ pub struct App {
     /// that saw the press must see the release even when the pointer moved
     /// off the pane in between. Single slot — a second press before the
     /// first release overwrites it (multi-button chords are not paired).
-    pub pending_mouse_press: Option<(crate::backend::PaneId, crossterm::event::MouseButton)>,
+    /// Pane, button, and pane-local cell of a forwarded press whose release
+    /// has not been seen. The cell is kept so the press can still be released
+    /// where it happened when no pointer position is available — switching
+    /// projects, for instance.
+    pub pending_mouse_press:
+        Option<(crate::backend::PaneId, crossterm::event::MouseButton, u16, u16)>,
     /// Mirror of `[mouse] enabled`. Gates only the hint bar's clickability
     /// inversion — with capture off no mouse event ever arrives, so the
     /// input path needs no check, but a label must not advertise a click
@@ -240,6 +245,19 @@ impl App {
     /// pane every keystroke is passthrough, so dismissing on those would make
     /// a notice vanish the instant the user resumed typing — the same
     /// effectively-invisible failure this row exists to prevent.
+    /// Deliver a pending press's release to the pane that saw it, at the cell
+    /// the press landed on.
+    ///
+    /// Used when the press can no longer be paired with a real release — the
+    /// project is leaving the screen — but the PTY is still alive. Dropping
+    /// the record instead would leave that program in a drag or selection
+    /// state with no release ever coming.
+    pub fn release_pending_press_in_place(&mut self) {
+        if let Some((id, button, col, row)) = self.pending_mouse_press.take() {
+            self.terminal.click_pane(id, button, false, col, row);
+        }
+    }
+
     pub fn dismiss_notice_on_app_input(&mut self) {
         self.notice = None;
     }
