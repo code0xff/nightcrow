@@ -93,11 +93,14 @@ fn render_commit_list(frame: &mut Frame, app: &App, area: Rect, accent: Color) {
         .collect();
 
     let title = if total_count == 0 {
-        " F1 Log (no commits) ".to_string()
+        format!(" {} Log (no commits) ", super::jump_legend(app, '1'))
     } else if show_search {
-        format!(" F1 Log ({match_count}/{total_count}) ")
+        format!(
+            " {} Log ({match_count}/{total_count}) ",
+            super::jump_legend(app, '1')
+        )
     } else {
-        format!(" F1 Log ({total_count}) ")
+        format!(" {} Log ({total_count}) ", super::jump_legend(app, '1'))
     };
 
     let selected_pos = filtered.iter().position(|&i| i == app.log_view.selected);
@@ -162,8 +165,8 @@ fn render_file_list(frame: &mut Frame, app: &App, area: Rect, accent: Color) {
         .log_view
         .commits
         .get(app.log_view.selected)
-        .map(|e| format!(" F1 {} {} ", e.short_id, e.summary))
-        .unwrap_or_else(|| " F1 Files ".to_string());
+        .map(|e| format!(" {} {} {} ", super::jump_legend(app, '1'), e.short_id, e.summary))
+        .unwrap_or_else(|| format!(" {} Files ", super::jump_legend(app, '1')));
 
     let title_base = truncate_title(&commit_summary, title_budget(list_area.width));
     let title = if show_search && total_count > 0 {

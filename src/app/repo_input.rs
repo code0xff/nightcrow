@@ -1,5 +1,26 @@
 use super::{App, Focus, NoticeKind, SnapshotChannel, ViewMode};
 use crate::runtime::terminal::TerminalFullscreen;
+use crate::ui::status_view::RepoInputIntent;
+
+/// What the caller must do after the user confirmed the repo-path dialog.
+///
+/// Neither intent is carried out here. Both need the `Workspace`: opening a tab
+/// builds a whole new `App` (which requires config the project does not carry),
+/// and even changing this project's repo has to check first whether another tab
+/// already holds it — two `App`s on one workdir would run duplicate snapshot
+/// workers and write the same session file. So the accepted path is handed back
+/// and the caller, which owns the workspace, decides.
+#[derive(Debug, PartialEq, Eq)]
+pub enum RepoInputResult {
+    /// Validation failed. The dialog stays open with the text intact and a
+    /// notice naming the problem.
+    Rejected,
+    /// The user accepted this resolved path, to be applied per `intent`.
+    Accepted {
+        intent: RepoInputIntent,
+        path: String,
+    },
+}
 
 // Mirrors `PROMPT_BUFFER_MAX_BYTES` so a bracketed paste cannot grow this
 // buffer without bound; comfortably above any realistic filesystem path.
@@ -14,6 +35,11 @@ impl App {
         // signals and joins the old-repo worker before this assignment
         // returns, so no in-flight load_snapshot leaks into the new state.
         self.snapshot = SnapshotChannel::spawn(&new_path);
+        // A snapshot drained but not yet applied describes the repo being left
+        // behind. Replacing the channel does not touch it, so without this a
+        // background project repointed before its next poll would refresh the
+        // new repo's diff against the old repo's file list.
+        self.pending_snapshot = None;
         if let Some(ref mut backend) = self.terminal.backend {
             // Only future panes adopt the new cwd; existing shells stay in
             // their original directory so we don't disrupt commands already
@@ -89,10 +115,25 @@ impl App {
         self.branch_name = None;
     }
 
+    /// Open the dialog to repoint this project at another repo.
     pub fn start_repo_input(&mut self) {
+        self.open_repo_input(RepoInputIntent::Change);
+    }
+
+    /// Open the dialog to add another project tab.
+    ///
+    /// Prefilled with the current repo path like the change dialog: a sibling
+    /// checkout is the common case, and the shared path prefix is most of what
+    /// the user would otherwise retype.
+    pub fn start_project_input(&mut self) {
+        self.open_repo_input(RepoInputIntent::Open);
+    }
+
+    fn open_repo_input(&mut self, intent: RepoInputIntent) {
         self.repo_input.buf = self.repo_path.clone();
         self.repo_input.active = true;
         self.repo_input.prefilled = true;
+        self.repo_input.intent = intent;
         self.clear_notice(NoticeKind::RepoInput);
     }
 
@@ -103,14 +144,14 @@ impl App {
         self.clear_notice(NoticeKind::RepoInput);
     }
 
-    pub fn confirm_repo_input(&mut self) {
+    pub fn confirm_repo_input(&mut self) -> RepoInputResult {
         // Validate against the live buffer so a failed attempt leaves the
         // dialog open with the user's text intact for correction; only close
         // and consume the buffer once we're committed to switching repos.
         let trimmed = self.repo_input.buf.trim();
         if trimmed.is_empty() {
             self.raise_notice(NoticeKind::RepoInput, "repo path cannot be empty");
-            return;
+            return RepoInputResult::Rejected;
         }
         let p = std::path::Path::new(trimmed);
         if !p.is_dir() {
@@ -124,16 +165,20 @@ impl App {
                     "no such directory"
                 },
             );
-            return;
+            return RepoInputResult::Rejected;
         }
         let resolved = crate::git::resolve_repo_path(p)
             .to_string_lossy()
             .to_string();
+        let intent = self.repo_input.intent;
         self.repo_input.active = false;
         self.repo_input.buf.clear();
         self.repo_input.prefilled = false;
         self.clear_notice(NoticeKind::RepoInput);
-        self.change_repo(resolved);
+        RepoInputResult::Accepted {
+            intent,
+            path: resolved,
+        }
     }
 
     pub fn repo_input_push(&mut self, ch: char) {

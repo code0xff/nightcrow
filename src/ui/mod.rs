@@ -61,6 +61,15 @@ pub(crate) fn status_color(status: StatusKind) -> Color {
 /// Render a bordered, single-selection list with the project's standard
 /// highlight styling. `selected` is clamped to `items.len() - 1` to match
 /// the prior call sites' defensive behaviour.
+/// Key legend for a panel or pane reached by a leader digit, e.g. `^Q1`.
+///
+/// Panels advertise the chord that actually reaches them. The bare F-key row
+/// used to serve here, but it now selects project tabs, so a label reading
+/// `F1 Files` would name a key that switches projects instead.
+pub(crate) fn jump_legend(app: &App, digit: char) -> String {
+    format!("{}{}", app.leader_label(), digit)
+}
+
 pub(crate) fn render_selectable_list(
     frame: &mut Frame,
     area: Rect,
@@ -406,8 +415,11 @@ fn prefix_armed_hint_text(app: &App) -> String {
         ViewMode::Status => ("l: log view", "b: tree view"),
         ViewMode::Tree => ("l: log view", "b: status view"),
     };
+    // `x` is advertised unconditionally, unlike `w`/`s` above: refusing to
+    // close the last project reports why on the notice row, so the key always
+    // produces a visible result rather than silently doing nothing.
     format!(
-        " t: new pane | {close}{swap}{log_toggle} | {tree_toggle} | f: fullscreen | o: repo | p: theme | r: redraw | q: quit | {digits} | esc: cancel"
+        " t: new pane | {close}{swap}{log_toggle} | {tree_toggle} | f: fullscreen | o: repo | n: new project | x: close project | p: theme | r: redraw | q: quit | {digits} | esc: cancel"
     )
 }
 
@@ -753,7 +765,10 @@ fn segment_click(keyspec: &str) -> Option<HintClick> {
     }
     let mut chars = spec.chars();
     if let (Some(c), None) = (chars.next(), chars.next())
-        && matches!(c, 't' | 'w' | 's' | 'l' | 'b' | 'f' | 'o' | 'p' | 'r' | 'v' | '/')
+        && matches!(
+            c,
+            't' | 'w' | 's' | 'l' | 'b' | 'f' | 'o' | 'n' | 'x' | 'p' | 'r' | 'v' | '/'
+        )
     {
         return Some(HintClick::Plain(c));
     }
@@ -910,6 +925,59 @@ mod tests {
     fn hint_bar_inverts_only_clickable_key_labels() {
         let app = app_with_fake_backend();
         assert_inverted_cells_are_clickable(&app);
+    }
+
+    #[test]
+    fn panels_advertise_the_leader_digit_not_the_bare_f_key() {
+        // The bare F-key row selects project tabs, so a panel legend reading
+        // `F1 Files` would name a key that switches projects instead of
+        // focusing the panel.
+        let mut app = app_with_files(vec!["a.rs"]);
+        let mut terminal = Terminal::new(TestBackend::new(120, 20)).unwrap();
+        let ss = two_face::syntax::extra_newlines();
+        let ts = ThemeSet::load_defaults();
+        terminal
+            .draw(|frame| {
+                draw(
+                    frame,
+                    &mut app,
+                    &ss,
+                    &ts,
+                    &LayoutConfig::default(),
+                    Color::Yellow,
+                );
+            })
+            .unwrap();
+
+        let buf = terminal.backend().buffer();
+        let text: String = (0..buf.area.height)
+            .map(|y| {
+                (0..buf.area.width)
+                    .map(|x| buf[(x, y)].symbol())
+                    .collect::<String>()
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        assert!(
+            text.contains("^Q1 Files"),
+            "file list must advertise its leader digit, got: {text}"
+        );
+        assert!(
+            !text.contains("F1 Files"),
+            "the bare F-key must not be advertised for panels, got: {text}"
+        );
+    }
+
+    #[test]
+    fn armed_prefix_hint_advertises_the_project_keys() {
+        let mut app = app_with_fake_backend();
+        app.arm_prefix();
+
+        let text = hint_text(&app);
+
+        assert!(text.contains("n: new project"), "got: {text}");
+        assert!(text.contains("x: close project"), "got: {text}");
     }
 
     /// The terminal-focus legend is the one carrying the bare

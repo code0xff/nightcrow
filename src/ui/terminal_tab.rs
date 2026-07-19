@@ -16,12 +16,12 @@ use ratatui::{
 /// copy is clean. Top stays for the title + focus tint, bottom for separation.
 const TERMINAL_BORDERS: Borders = Borders::TOP.union(Borders::BOTTOM);
 
-/// Per-tab character budget for the title (excluding the `F#` key hint and
+/// Per-tab character budget for the title (excluding the jump-key hint and
 /// surrounding padding). Anything longer is truncated with a trailing ellipsis
 /// so long OSC-set titles can't push neighboring tabs off the row.
 const TAB_TITLE_MAX_CHARS: usize = 20;
 
-/// Number of panes reachable by a direct `F3`..`F10` jump key. Panes past
+/// Number of panes reachable by a leader-digit jump key. Panes past
 /// this index have no jump-key hint in the tab bar (only focus cycling
 /// reaches them). Tied to `MAX_VISIBLE_FULLSCREEN` by reference (not just by
 /// convention) so the two can never silently drift apart.
@@ -206,9 +206,9 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect, accent: Color) -> Option
         " Terminal "
     };
     // The upper panes draw a `┌` corner that pushes their title text in by one
-    // column (`┌ F1 Files`). This pane has no left border, so a border-styled
+    // column (`┌ ^Q1 Files`). This pane has no left border, so a border-styled
     // `─` stands in for that corner — it keeps `Terminal` column-aligned with
-    // `F1 Files` / `F2 Diff` above and makes the line start flush at the edge.
+    // `^Q1 Files` / `^Q2 Diff` above and makes the line start flush at the edge.
     let title = Line::from(vec![Span::styled("─", border_style), Span::raw(label)]);
     let block = Block::default()
         .borders(TERMINAL_BORDERS)
@@ -332,17 +332,20 @@ fn tab_segments(app: &App, visible: std::ops::Range<usize>) -> Vec<(String, TabS
         |(offset, pane)| {
             let i = visible.start + offset;
             // Panes 0..=7 carry a jump key, so show it as a key legend:
-            // `1..8` in fullscreen (both `<prefix> 1..8` and `F1..F8`),
-            // `F3..F10` in the split view (`<prefix> 3..9,0`). Panes past the
-            // 8th have no jump key, so they carry no hint to avoid implying
-            // an unbound shortcut.
+            // `<prefix> 1..8` in fullscreen, `<prefix> 3..9,0` in the split
+            // view (the digit row is layout-aware — see `prefix_action`).
+            // Panes past the 8th have no jump key, so they carry no hint to
+            // avoid implying an unbound shortcut. The bare F-keys are NOT
+            // advertised here: they select project tabs.
             let title = truncate_tab_title(&pane.title, TAB_TITLE_MAX_CHARS);
             let label = if i < JUMP_KEY_PANE_COUNT {
-                if fullscreen {
-                    format!(" {} {} ", i + 1, title)
+                // Split view runs 3,4..9 then wraps to 0 for the eighth pane.
+                let digit = if fullscreen {
+                    char::from_digit(i as u32 + 1, 10).unwrap_or('?')
                 } else {
-                    format!(" F{} {} ", i + 3, title)
-                }
+                    char::from_digit((i as u32 + 3) % 10, 10).unwrap_or('?')
+                };
+                format!(" {}{} {} ", app.leader_label(), digit, title)
             } else {
                 format!(" {} ", title)
             };
@@ -877,7 +880,7 @@ mod tests {
             .map(|x| buf[(x, tab_area.y)].symbol())
             .collect();
         let x = (0..cells.len())
-            .find(|&i| cells[i..].concat().starts_with("F4 Beta"))
+            .find(|&i| cells[i..].concat().starts_with("^Q4 Beta"))
             .expect("second tab rendered") as u16;
 
         assert_eq!(tab_target_at(&app, area, x, tab_area.y), Some(1));
@@ -917,7 +920,7 @@ mod tests {
     }
 
     #[test]
-    fn tab_bar_labels_panes_with_f_keys_in_split_view() {
+    fn tab_bar_labels_panes_with_leader_digits_in_split_view() {
         let mut app = crate::app::tests::app_with_fake_backend();
         app.terminal.create_pane_with(None, Some("Alpha")).unwrap();
         let mut terminal = Terminal::new(TestBackend::new(60, 20)).unwrap();
@@ -929,9 +932,15 @@ mod tests {
             .unwrap();
 
         let text = buffer_text(terminal.backend().buffer());
+        // The bare F-keys select project tabs, so the pane legend must name
+        // the leader digit that actually reaches this pane.
         assert!(
-            text.contains("F3 Alpha"),
-            "split view must label the first pane with its F3 jump key, got: {text}"
+            text.contains("^Q3 Alpha"),
+            "split view must label the first pane with its <prefix> 3 jump key, got: {text}"
+        );
+        assert!(
+            !text.contains("F3 Alpha"),
+            "the bare F-key must not be advertised for panes, got: {text}"
         );
     }
 

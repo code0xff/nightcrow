@@ -3,17 +3,29 @@ use std::collections::HashMap;
 use std::time::SystemTime;
 
 impl App {
-    pub fn poll_snapshot(&mut self) {
-        // Only the most recent queued message reflects current repo state, so
-        // drain everything and act on the tail. Without this, a burst of
-        // snapshots (e.g. when the main loop was blocked by a synchronous
-        // git2 call) would each trigger a full `refresh_diff` that the next
-        // iteration immediately overwrites — wasted CPU + brief UI flicker.
-        let mut latest: Option<SnapshotMsg> = None;
+    /// Empty the worker's queue, keeping only the tail in `pending_snapshot`.
+    ///
+    /// Only the most recent message reflects current repo state, so a burst
+    /// (e.g. while the main loop was blocked by a synchronous git2 call)
+    /// collapses to one. Applying it is deliberately NOT done here: this half
+    /// touches no git state, so every open project can run it every tick to
+    /// keep its unbounded channel from growing, no matter which tab is shown.
+    pub fn drain_snapshot(&mut self) {
         while let Ok(msg) = self.snapshot.try_recv() {
-            latest = Some(msg);
+            self.pending_snapshot = Some(msg);
         }
-        match latest {
+    }
+
+    /// Drain, then apply whatever is pending.
+    ///
+    /// Applying runs a full `refresh_diff`, so this is for the project on
+    /// screen only — doing it for hidden projects would put several
+    /// repositories' git diffs on the UI thread every tick. A background
+    /// project's snapshot waits in `pending_snapshot` and is applied on the
+    /// first tick after its tab comes forward.
+    pub fn poll_snapshot(&mut self) {
+        self.drain_snapshot();
+        match self.pending_snapshot.take() {
             Some(SnapshotMsg::Ok(snapshot, mtimes)) => {
                 self.ingest_snapshot(snapshot, mtimes);
             }

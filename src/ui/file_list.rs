@@ -113,14 +113,15 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect, accent: Color) {
 
     let title = if show_search {
         format!(
-            " F1 Files ({}/{}) ",
+            " {} Files ({}/{}) ",
+            super::jump_legend(app, '1'),
             match_count,
             app.status_view.files.len()
         )
     } else if app.status_view.files.is_empty() {
-        " F1 Files (no changes) ".to_string()
+        format!(" {} Files (no changes) ", super::jump_legend(app, '1'))
     } else {
-        " F1 Files ".to_string()
+        format!(" {} Files ", super::jump_legend(app, '1'))
     };
 
     let selected_pos = filtered_indices

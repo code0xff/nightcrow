@@ -8,6 +8,15 @@ impl App {
         self.pending_session = Some(state);
     }
 
+    /// Whether a loaded session is still waiting to be applied.
+    ///
+    /// Restoration is deferred to the first snapshot, so until then the view
+    /// fields hold defaults rather than the saved state — `save_session` would
+    /// serialize those defaults over the real session file.
+    pub fn has_pending_session(&self) -> bool {
+        self.pending_session.is_some()
+    }
+
     pub fn save_session(&self) -> SessionState {
         SessionState {
             focus: Some(self.focus),

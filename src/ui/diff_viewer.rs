@@ -178,6 +178,7 @@ pub fn render(
         )));
     }
 
+    let jump = super::jump_legend(app, '2');
     let title = match app.mode {
         ViewMode::Log => {
             let label = if app.log_view.diff_title.is_empty() {
@@ -188,12 +189,12 @@ pub fn render(
             if has_search {
                 let count = app.diff.search.matches.len();
                 if count == 0 {
-                    format!(" F2 {label} [no matches] ")
+                    format!(" {jump} {label} [no matches] ")
                 } else {
-                    format!(" F2 {label} [{}/{}] ", app.diff.search.cursor + 1, count)
+                    format!(" {jump} {label} [{}/{}] ", app.diff.search.cursor + 1, count)
                 }
             } else {
-                format!(" F2 {label} ")
+                format!(" {jump} {label} ")
             }
         }
         ViewMode::Status => {
@@ -202,14 +203,14 @@ pub fn render(
                 let count = app.diff.search.matches.len();
                 let file = selected.map(|f| f.path.as_str()).unwrap_or("Diff");
                 if count == 0 {
-                    format!(" F2 {file} [no matches] ")
+                    format!(" {jump} {file} [no matches] ")
                 } else {
-                    format!(" F2 {file} [{}/{}] ", app.diff.search.cursor + 1, count)
+                    format!(" {jump} {file} [{}/{}] ", app.diff.search.cursor + 1, count)
                 }
             } else if let Some(f) = selected {
-                format!(" F2 {} ", f.path)
+                format!(" {jump} {} ", f.path)
             } else {
-                " F2 Diff ".to_string()
+                format!(" {jump} Diff ")
             }
         }
         ViewMode::Tree => {
@@ -218,12 +219,12 @@ pub fn render(
             if has_search {
                 let count = app.diff.search.matches.len();
                 if count == 0 {
-                    format!(" F2 {label} [no matches] ")
+                    format!(" {jump} {label} [no matches] ")
                 } else {
-                    format!(" F2 {label} [{}/{}] ", app.diff.search.cursor + 1, count)
+                    format!(" {jump} {label} [{}/{}] ", app.diff.search.cursor + 1, count)
                 }
             } else {
-                format!(" F2 {label} ")
+                format!(" {jump} {label} ")
             }
         }
     };
@@ -395,7 +396,7 @@ fn split_title(app: &App) -> String {
             .selected_path()
             .unwrap_or_else(|| "File".to_string()),
     };
-    format!(" F2 {label} [split] ")
+    format!(" {} {label} [split] ", super::jump_legend(app, '2'))
 }
 
 fn render_file_view(
@@ -434,19 +435,20 @@ fn render_file_view(
         (area, None)
     };
 
+    let jump = super::jump_legend(app, '2');
     let title = if has_search {
         let count = app.diff.search.matches.len();
         if count == 0 {
-            format!(" F2 {file_path} [no matches] ")
+            format!(" {jump} {file_path} [no matches] ")
         } else {
             format!(
-                " F2 {file_path} [{}/{}] ",
+                " {jump} {file_path} [{}/{}] ",
                 app.diff.search.cursor + 1,
                 count
             )
         }
     } else {
-        format!(" F2 {file_path} [file] ")
+        format!(" {jump} {file_path} [file] ")
     };
 
     let visible_height = (content_area.height as usize).saturating_sub(2);

@@ -12,6 +12,7 @@ mod terminal_ctrl;
 mod tree;
 
 pub use crate::app::commit_log_fetch::CommitLogPagination;
+pub use crate::app::repo_input::RepoInputResult;
 pub use crate::runtime::snapshot::{SnapshotChannel, SnapshotMsg};
 #[cfg(test)]
 pub use crate::runtime::terminal::PaneInfo;
@@ -21,7 +22,7 @@ pub(crate) use crate::runtime::terminal::strip_escape_sequences;
 pub use crate::ui::diff_pane::{DiffPane, DiffPaneView};
 pub use crate::ui::file_view::{FileViewKey, FileViewState};
 pub use crate::ui::log_view::LogView;
-pub use crate::ui::status_view::{RepoInput, StatusView};
+pub use crate::ui::status_view::{RepoInput, RepoInputIntent, StatusView};
 pub use crate::ui::tree_view::TreeView;
 use crossterm::event::{KeyEvent, KeyModifiers};
 #[cfg(test)]
@@ -49,19 +50,21 @@ pub enum NoticeKind {
     Tree,
     Session,
     RepoInput,
+    /// A refused workspace-level action (tab cap reached, last tab closed).
+    Project,
 }
 
 impl NoticeKind {
     /// Prefix shown before the message, or `None` when the message already
-    /// reads on its own (a repo-input rejection or a session-restore note
-    /// names its own subject).
+    /// reads on its own (a repo-input rejection, a session-restore note, or a
+    /// refused project action names its own subject).
     pub fn label(self) -> Option<&'static str> {
         match self {
             Self::Git => Some("git error"),
             Self::Diff => Some("diff error"),
             Self::Terminal => Some("terminal error"),
             Self::Tree => Some("tree error"),
-            Self::Session | Self::RepoInput => None,
+            Self::Session | Self::RepoInput | Self::Project => None,
         }
     }
 }
@@ -135,6 +138,11 @@ pub struct App {
     pub accent_idx: usize,
     pub tracking: Option<TrackingStatus>,
     pub(crate) snapshot: SnapshotChannel,
+    /// Latest snapshot drained from the worker but not yet applied. Set by
+    /// `drain_snapshot` (which every project runs) and consumed by
+    /// `poll_snapshot` (which only the active project runs), so a background
+    /// project's git work is deferred until its tab is shown.
+    pub(crate) pending_snapshot: Option<SnapshotMsg>,
     /// Filesystem watcher driving live refresh of the file-tree navigator. Only
     /// active while in `ViewMode::Tree`; watches the expanded directories
     /// (non-recursively) and triggers a cache re-read on change. Inert when the
@@ -246,6 +254,7 @@ impl App {
             accent_idx: 0,
             tracking: None,
             snapshot,
+            pending_snapshot: None,
             // Start disabled; `main` upgrades to a live watcher after the parsed
             // `[tree] live_watch` config is applied, so a `false` setting never
             // spawns an OS watcher.
@@ -414,6 +423,7 @@ pub(crate) mod tests {
             accent_idx: 0,
             tracking: None,
             snapshot,
+            pending_snapshot: None,
             tree_watch,
             pending_session: None,
             repo_cache: None,
@@ -1603,11 +1613,123 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn drain_snapshot_empties_the_queue_without_applying_it() {
+        let (snapshot, tx) = dummy_snapshot_channel();
+        let mut app = App {
+            snapshot,
+            pending_snapshot: None,
+            ..app_with_files(vec!["old.rs"])
+        };
+        let send = |files: Vec<&str>| {
+            SnapshotMsg::Ok(
+                RepoSnapshot {
+                    files: files
+                        .into_iter()
+                        .map(|p| ChangedFile::unstaged_only(p.to_string(), StatusKind::Modified))
+                        .collect(),
+                    tracking: None,
+                    head_oid: None,
+                    branch_name: None,
+                },
+                HashMap::new(),
+            )
+        };
+        tx.send(send(vec!["first.rs"])).unwrap();
+        tx.send(send(vec!["second.rs"])).unwrap();
+
+        app.drain_snapshot();
+
+        // The queue is empty (so a hidden project's channel cannot grow), but
+        // no git work ran: the view still shows the pre-snapshot file list.
+        assert!(app.snapshot.try_recv().is_err(), "queue must be drained");
+        assert_eq!(app.status_view.files[0].path, "old.rs");
+        assert!(app.pending_snapshot.is_some(), "the tail is held for later");
+
+        // Applying it later yields the *last* snapshot, not the first.
+        app.poll_snapshot();
+        assert_eq!(app.status_view.files[0].path, "second.rs");
+        assert!(app.pending_snapshot.is_none(), "pending is consumed");
+    }
+
+    #[test]
+    fn pending_session_is_reported_until_a_snapshot_applies_it() {
+        // The exit path skips saving a project that still reports a pending
+        // session: its view fields are defaults, and writing them would
+        // clobber the session file it never got to restore from.
+        let (snapshot, tx) = dummy_snapshot_channel();
+        let mut app = App {
+            snapshot,
+            pending_snapshot: None,
+            ..app_with_files(vec!["a.rs"])
+        };
+        assert!(!app.has_pending_session());
+
+        app.set_pending_session(crate::session::SessionState::default());
+        assert!(app.has_pending_session(), "a loaded session is pending");
+
+        tx.send(SnapshotMsg::Ok(
+            RepoSnapshot {
+                files: Vec::new(),
+                tracking: None,
+                head_oid: None,
+                branch_name: None,
+            },
+            HashMap::new(),
+        ))
+        .unwrap();
+        app.poll_snapshot();
+
+        assert!(
+            !app.has_pending_session(),
+            "the first snapshot consumes the restore"
+        );
+    }
+
+    #[test]
+    fn change_repo_drops_a_drained_but_unapplied_snapshot() {
+        let (dir, path) = make_repo();
+        let (snapshot, tx) = dummy_snapshot_channel();
+        let mut app = App {
+            snapshot,
+            pending_snapshot: None,
+            ..app_with_files(vec!["old.rs"])
+        };
+        tx.send(SnapshotMsg::Ok(
+            RepoSnapshot {
+                files: vec![ChangedFile::unstaged_only(
+                    "stale.rs".to_string(),
+                    StatusKind::Modified,
+                )],
+                tracking: None,
+                head_oid: None,
+                branch_name: None,
+            },
+            HashMap::new(),
+        ))
+        .unwrap();
+        app.drain_snapshot();
+        assert!(app.pending_snapshot.is_some());
+
+        app.change_repo(path);
+
+        // The pending snapshot described the repo just left behind; applying
+        // it would show the old repo's files under the new one.
+        assert!(app.pending_snapshot.is_none());
+        app.poll_snapshot();
+        assert!(
+            app.status_view.files.is_empty(),
+            "the old repo's file list must not survive the switch"
+        );
+        drop(dir);
+    }
+
+    #[test]
     fn tree_preview_survives_status_snapshot() {
         let (dir, path) = make_tree_repo();
         let (snapshot, tx) = dummy_snapshot_channel();
         let mut app = App {
             snapshot,
+            pending_snapshot: None,
             ..app_on(&path)
         };
         app.enter_tree_mode();
@@ -2158,6 +2280,7 @@ pub(crate) mod tests {
         let (snapshot, tx) = dummy_snapshot_channel();
         let mut app = App {
             snapshot,
+            pending_snapshot: None,
             ..app_with_files(vec![])
         };
         app.repo_path = path.clone();
@@ -2193,6 +2316,7 @@ pub(crate) mod tests {
         let (snapshot, tx) = dummy_snapshot_channel();
         let mut app = App {
             snapshot,
+            pending_snapshot: None,
             ..app_with_files(vec![])
         };
         app.repo_path = path.clone();
@@ -2225,6 +2349,7 @@ pub(crate) mod tests {
         let (snapshot, tx) = dummy_snapshot_channel();
         let mut app = App {
             snapshot,
+            pending_snapshot: None,
             ..app_with_files(vec![])
         };
         app.repo_path = path.clone();
@@ -2266,6 +2391,7 @@ pub(crate) mod tests {
         let (snapshot, tx) = dummy_snapshot_channel();
         let mut app = App {
             snapshot,
+            pending_snapshot: None,
             ..app_with_files(vec![])
         };
         app.repo_path = path.clone();
@@ -2300,6 +2426,7 @@ pub(crate) mod tests {
         let (snapshot, tx) = dummy_snapshot_channel();
         let mut app = App {
             snapshot,
+            pending_snapshot: None,
             ..app_with_files(vec![])
         };
         app.repo_path = path.clone();
@@ -2334,6 +2461,7 @@ pub(crate) mod tests {
         let (snapshot, tx) = dummy_snapshot_channel();
         let mut app = App {
             snapshot,
+            pending_snapshot: None,
             ..app_with_files(vec![])
         };
         app.repo_path = path.clone();
@@ -2366,6 +2494,7 @@ pub(crate) mod tests {
         let (snapshot, tx) = dummy_snapshot_channel();
         let mut app = App {
             snapshot,
+            pending_snapshot: None,
             ..app_with_files(vec![])
         };
         app.repo_path = path.clone();
@@ -2493,6 +2622,7 @@ pub(crate) mod tests {
         let mut app = App {
             notice: Some(Notice::new(NoticeKind::Terminal, "backend unavailable")),
             snapshot,
+            pending_snapshot: None,
             ..app_with_files(vec![])
         };
 
@@ -2520,6 +2650,7 @@ pub(crate) mod tests {
         let mut app = App {
             notice: Some(Notice::new(NoticeKind::Git, "not a repo")),
             snapshot,
+            pending_snapshot: None,
             ..app_with_files(vec![])
         };
 
@@ -2543,6 +2674,7 @@ pub(crate) mod tests {
         let (snapshot, tx) = dummy_snapshot_channel();
         let mut app = App {
             snapshot,
+            pending_snapshot: None,
             ..app_with_files(vec!["bar.rs"])
         };
         app.status_view.search_query.set("bar");
@@ -2576,6 +2708,7 @@ pub(crate) mod tests {
         let (snapshot, tx) = dummy_snapshot_channel();
         let mut app = App {
             snapshot,
+            pending_snapshot: None,
             ..app_with_files(vec!["short.rs"])
         };
         // Prime the width cache by reading the right-scroll bound once.
@@ -2610,6 +2743,7 @@ pub(crate) mod tests {
         let (snapshot, tx) = dummy_snapshot_channel();
         let mut app = App {
             snapshot,
+            pending_snapshot: None,
             ..app_with_files(vec!["bar.rs"])
         };
         app.status_view.search_query.set("bar");
@@ -2917,6 +3051,7 @@ pub(crate) mod tests {
         let (snapshot, tx) = dummy_snapshot_channel();
         let mut app = App {
             snapshot,
+            pending_snapshot: None,
             ..app_with_files(vec!["bar.rs"])
         };
         app.status_view.search_query.set("bar");

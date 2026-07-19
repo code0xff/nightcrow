@@ -68,14 +68,15 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect, accent: Color) {
 
     let title = if app.tree_view.search_filtering() {
         format!(
-            " F1 Tree ({}/{}) ",
+            " {} Tree ({}/{}) ",
+            super::jump_legend(app, '1'),
             app.tree_view.match_count,
             app.tree_view.index.len()
         )
     } else if rows.is_empty() {
-        " F1 Tree (empty) ".to_string()
+        format!(" {} Tree (empty) ", super::jump_legend(app, '1'))
     } else {
-        " F1 Tree ".to_string()
+        format!(" {} Tree ", super::jump_legend(app, '1'))
     };
 
     let selected = if rows.is_empty() {
