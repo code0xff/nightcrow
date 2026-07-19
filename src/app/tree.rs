@@ -48,13 +48,23 @@ impl App {
     /// falls back to a clamped index. Shared by Tree-mode entry, session
     /// restore, and the watcher-driven live refresh.
     pub(crate) fn refresh_tree_preserving_cursor(&mut self) {
+        self.refresh_tree_preserving_cursor_scoped(None);
+    }
+
+    /// As above, re-reading only the listings named by `invalidate` (see
+    /// `refresh_tree_cache_scoped`).
+    pub(crate) fn refresh_tree_preserving_cursor_scoped(
+        &mut self,
+        invalidate: Option<&BTreeSet<String>>,
+    ) {
         let prev_path = self.tree_view.selected_path();
-        self.refresh_tree_cache();
+        self.refresh_tree_cache_scoped(invalidate);
         // The filtered view renders from the search index, not the directory
         // cache, so refreshing only the cache would leave a created or deleted
         // file missing from the results and the match count wrong until the
-        // query changed. Rebuilding walks the tree again, which is why it is
-        // done only while a search is actually open.
+        // query changed. The rebuild walks the cache rather than the disk —
+        // only the invalidated listings above are re-read — so its cost is
+        // proportional to what changed, not to the size of the tree.
         if self.tree_view.search_active {
             self.build_tree_index();
             self.tree_view.recompute_filter();
@@ -79,7 +89,26 @@ impl App {
     /// from the expanded set instead of being re-read, so a vanished directory
     /// cannot surface a spurious "tree error" in the status bar.
     pub(crate) fn refresh_tree_cache(&mut self) {
-        self.tree_view.cache.clear();
+        self.refresh_tree_cache_scoped(None);
+    }
+
+    /// Re-read directory listings, dropping either the whole cache or only the
+    /// listings named by `invalidate`.
+    ///
+    /// The scoped form is what a watcher event uses: everything else stays
+    /// cached, so the rebuild that follows touches disk only for the
+    /// directories that actually changed. The expansion-pruning loop below is
+    /// identical either way — `ensure_tree_children` is a no-op for a listing
+    /// still in the cache.
+    pub(crate) fn refresh_tree_cache_scoped(&mut self, invalidate: Option<&BTreeSet<String>>) {
+        match invalidate {
+            None => self.tree_view.cache.clear(),
+            Some(dirs) => {
+                for dir in dirs {
+                    self.tree_view.cache.remove(dir);
+                }
+            }
+        }
         self.ensure_tree_root();
         let mut dirs: Vec<String> = self.tree_view.expanded.iter().cloned().collect();
         dirs.sort_by_key(|p| p.matches('/').count());
@@ -111,7 +140,15 @@ impl App {
         if !self.cfg_tree.live_watch {
             return;
         }
-        let mut desired: BTreeSet<String> = self.tree_view.expanded.iter().cloned().collect();
+        // A filename search matches the whole tree, not just what is expanded,
+        // so a file created in a collapsed directory changes the results and
+        // has to produce an event. The cache keys are exactly the directories
+        // `build_tree_index` walked, which is the set the results come from.
+        let mut desired: BTreeSet<String> = if self.tree_view.search_active {
+            self.tree_view.cache.keys().cloned().collect()
+        } else {
+            self.tree_view.expanded.iter().cloned().collect()
+        };
         // The root is always watched while Tree mode is open so top-level
         // creations/removals are caught even with nothing expanded.
         desired.insert(String::new());
@@ -145,9 +182,16 @@ impl App {
     /// project runs this each tick so OS events cannot pile up behind a hidden
     /// tab, while the rereading waits for that tab to come forward.
     pub fn drain_tree_watcher(&mut self) {
-        if self.tree_watch.drain_changed() {
-            self.tree_dirty = true;
+        let changes = self.tree_watch.drain_changed();
+        if changes.is_empty() {
+            return;
         }
+        if changes.unknown {
+            // Events may have been dropped, so no set of directories can be
+            // trusted to be complete — fall back to re-reading everything.
+            self.tree_dirty_all = true;
+        }
+        self.tree_dirty.extend(changes.dirs);
     }
 
     /// Drain, then act on it: reread the expanded directories and re-preview
@@ -155,10 +199,12 @@ impl App {
     /// repositories rereading directories per tick would stall the active tab.
     pub fn poll_tree_watcher(&mut self) {
         self.drain_tree_watcher();
-        if self.tree_dirty && self.mode == ViewMode::Tree {
-            self.tree_dirty = false;
-            self.refresh_tree_preserving_cursor();
+        if self.mode != ViewMode::Tree || (self.tree_dirty.is_empty() && !self.tree_dirty_all) {
+            return;
         }
+        let all = std::mem::take(&mut self.tree_dirty_all);
+        let dirs = std::mem::take(&mut self.tree_dirty);
+        self.refresh_tree_preserving_cursor_scoped(if all { None } else { Some(&dirs) });
     }
 
     /// Leave Tree mode back to the working-tree status view.
@@ -343,6 +389,11 @@ impl App {
         self.tree_view.search_active = true;
         self.tree_view.search_query.clear();
         self.tree_view.recompute_filter();
+        // The results now span the whole tree, so the watch set has to as well
+        // — a file created in a directory the user never expanded still
+        // changes them. `sync_tree_watches` reads `search_active`, so this
+        // must come after it is set.
+        self.sync_tree_watches();
     }
 
     pub fn tree_search_push(&mut self, ch: char) {
@@ -361,6 +412,10 @@ impl App {
     /// on whatever row maps into the now-unfiltered view.
     pub fn cancel_tree_search(&mut self) {
         self.tree_view.cancel_search();
+        // Back to watching only what is expanded: the wider set existed for
+        // the filtered view and would otherwise hold descriptors for the whole
+        // tree until Tree mode was left.
+        self.sync_tree_watches();
         let row_count = self.tree_view.visible_rows().len();
         self.tree_view.clamp_selection(row_count);
         self.preview_tree_selected();
@@ -386,6 +441,7 @@ impl App {
             }
         }
         self.tree_view.cancel_search();
+        self.sync_tree_watches();
         if let Some(path) = target {
             let rows = self.tree_view.visible_rows();
             if let Some(idx) = rows.iter().position(|r| r.path == path) {

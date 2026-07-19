@@ -158,11 +158,15 @@ pub struct App {
     /// OS watcher could not start, in which case refresh-on-entry is the
     /// fallback.
     pub(crate) tree_watch: crate::runtime::tree_watch::TreeWatcher,
-    /// A watcher event seen but not yet acted on. Set by `drain_tree_watcher`
-    /// (which every project runs) and consumed by `poll_tree_watcher` (only
-    /// the active one), so a hidden project's tree refreshes when its tab is
-    /// shown rather than rereading directories on the UI thread meanwhile.
-    pub(crate) tree_dirty: bool,
+    /// Directories a watcher event touched but which have not been re-read
+    /// yet. Filled by `drain_tree_watcher` (which every project runs) and
+    /// consumed by `poll_tree_watcher` (only the active one), so a hidden
+    /// project's tree refreshes when its tab is shown rather than rereading
+    /// directories on the UI thread meanwhile.
+    pub(crate) tree_dirty: std::collections::BTreeSet<String>,
+    /// Set when events were dropped or could not be attributed, so the next
+    /// refresh must re-read everything instead of trusting `tree_dirty`.
+    pub(crate) tree_dirty_all: bool,
     /// A saved file selection waiting on the first snapshot, with its diff
     /// scroll. The only part of a session that cannot be applied on the spot:
     /// it names a file the changed-file list has not delivered yet. Nothing
@@ -295,7 +299,8 @@ impl App {
             // `[tree] live_watch` config is applied, so a `false` setting never
             // spawns an OS watcher.
             tree_watch: crate::runtime::tree_watch::TreeWatcher::disabled(),
-            tree_dirty: false,
+            tree_dirty: Default::default(),
+            tree_dirty_all: false,
             pending_selection: None,
             repo_cache: None,
             cfg_agent_indicator: crate::config::AgentIndicatorConfig::default(),
@@ -453,7 +458,8 @@ pub(crate) mod tests {
             snapshot,
             pending_snapshot: None,
             tree_watch,
-            tree_dirty: false,
+            tree_dirty: Default::default(),
+            tree_dirty_all: false,
             pending_selection: None,
             repo_cache: None,
             cfg_agent_indicator: crate::config::AgentIndicatorConfig {
@@ -1561,9 +1567,13 @@ pub(crate) mod tests {
                 .any(|r| r.path == "docs")
         );
 
-        // A folder appears on disk, then the watcher fires.
+        // A folder appears on disk, then the watcher fires with its path.
         std::fs::create_dir(Path::new(&path).join("docs")).unwrap();
-        tx.send(Ok(Vec::new())).unwrap();
+        tx.send(Ok(vec![notify_debouncer_mini::DebouncedEvent {
+            path: Path::new(&path).join("docs"),
+            kind: notify_debouncer_mini::DebouncedEventKind::Any,
+        }]))
+        .unwrap();
         app.poll_tree_watcher();
 
         assert!(
@@ -1681,6 +1691,40 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn a_change_in_a_collapsed_directory_updates_search_results() {
+        // The filtered view spans the whole tree, so a file created under a
+        // directory the user never expanded still changes the results. The
+        // watch set follows the index while a search is open, which is what
+        // makes the event arrive at all.
+        use crate::runtime::tree_watch::TreeWatcher;
+        let (dir, path) = make_tree_repo();
+        let mut app = app_on(&path);
+        let (tx, rx) = std::sync::mpsc::channel();
+        app.tree_watch = TreeWatcher::from_receiver(rx);
+        app.enter_tree_mode();
+        app.start_tree_search();
+        for c in "main".chars() {
+            app.tree_search_push(c);
+        }
+        let before = app.tree_view.match_count;
+        assert!(
+            !app.tree_view.expanded.contains("src"),
+            "src stays collapsed — the point of the test"
+        );
+
+        std::fs::write(Path::new(&path).join("src").join("main_two.rs"), "\n").unwrap();
+        tx.send(Ok(vec![notify_debouncer_mini::DebouncedEvent {
+            path: Path::new(&path).join("src").join("main_two.rs"),
+            kind: notify_debouncer_mini::DebouncedEventKind::Any,
+        }]))
+        .unwrap();
+        app.poll_tree_watcher();
+
+        assert_eq!(app.tree_view.match_count, before + 1);
+        drop(dir);
+    }
+
+    #[test]
     fn a_watcher_refresh_updates_active_search_results() {
         // The filtered view renders from the search index, so refreshing only
         // the directory cache left a new file out of the results and the match
@@ -1783,15 +1827,15 @@ pub(crate) mod tests {
         // active tab.
         let mut app = app_with_files(vec!["a.rs"]);
         app.mode = ViewMode::Tree;
-        app.tree_dirty = true;
+        app.tree_dirty.insert("src".to_string());
 
         // Draining with no new event leaves the flag standing, so the refresh
         // still happens once this project becomes the active one.
         app.drain_tree_watcher();
-        assert!(app.tree_dirty, "a pending refresh survives a drain");
+        assert!(!app.tree_dirty.is_empty(), "a pending refresh survives a drain");
 
         app.poll_tree_watcher();
-        assert!(!app.tree_dirty, "the active project consumes it");
+        assert!(app.tree_dirty.is_empty(), "the active project consumes it");
     }
 
     #[test]

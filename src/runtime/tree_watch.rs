@@ -10,8 +10,8 @@
 //! default), so the watch set is bounded to what is visible.
 //!
 //! Events are coalesced by `notify-debouncer-mini` over a short window and
-//! surfaced as opaque "something changed" notifications: the navigator re-reads
-//! the cache wholesale rather than diffing, so the event payload is irrelevant.
+//! reported as the set of repo-relative directories whose contents changed, so
+//! the navigator can re-read just those instead of the whole cache.
 //! Refresh-on-entry remains the fallback when the watcher cannot start (e.g. a
 //! platform/filesystem where native events never arrive), so this layer is
 //! strictly additive — its absence degrades to the previous behaviour.
@@ -39,6 +39,25 @@ const DEBOUNCE: Duration = Duration::from_millis(300);
 /// In tests (and when the watcher fails to start) `debouncer` is `None`: the
 /// receiver still exists so `App` polling is uniform, and watch/unwatch calls
 /// become no-ops.
+/// What changed since the last poll.
+#[derive(Debug, Default, PartialEq, Eq)]
+pub struct TreeChanges {
+    /// Repo-relative directories whose contents changed. A file event is
+    /// attributed to its parent directory, which is the listing that has to be
+    /// re-read.
+    pub dirs: BTreeSet<String>,
+    /// Something changed that could not be attributed to a directory — a
+    /// watcher error, or a path outside the working tree. The caller must
+    /// re-read wholesale rather than trust `dirs` to be complete.
+    pub unknown: bool,
+}
+
+impl TreeChanges {
+    pub fn is_empty(&self) -> bool {
+        self.dirs.is_empty() && !self.unknown
+    }
+}
+
 pub struct TreeWatcher {
     /// `None` when the watcher could not be created or in test fixtures.
     debouncer: Option<Debouncer<notify::RecommendedWatcher>>,
@@ -47,6 +66,10 @@ pub struct TreeWatcher {
     /// `sync` can reconcile (add/remove) against a freshly desired set without
     /// re-registering unchanged paths.
     watched: BTreeSet<String>,
+    /// Working-tree root, remembered at the last `sync` so event paths can be
+    /// made repo-relative. `None` until the first sync, in which case events
+    /// cannot be attributed and are reported as `unknown`.
+    root: Option<PathBuf>,
 }
 
 impl TreeWatcher {
@@ -66,6 +89,7 @@ impl TreeWatcher {
             }
         };
         Self {
+            root: None,
             debouncer,
             rx,
             watched: BTreeSet::new(),
@@ -81,6 +105,7 @@ impl TreeWatcher {
         // no changes; the field shape stays uniform with the active watcher.
         let (_tx, rx) = mpsc::channel();
         Self {
+            root: None,
             debouncer: None,
             rx,
             watched: BTreeSet::new(),
@@ -92,6 +117,7 @@ impl TreeWatcher {
     #[cfg(test)]
     pub(crate) fn from_receiver(rx: Receiver<DebounceEventResult>) -> Self {
         Self {
+            root: None,
             debouncer: None,
             rx,
             watched: BTreeSet::new(),
@@ -105,6 +131,8 @@ impl TreeWatcher {
     /// was deleted between the listing and this call) is skipped, not retried,
     /// and never enters `watched`.
     pub fn sync(&mut self, workdir: &Path, desired: &BTreeSet<String>) {
+        // Remembered so `drain_changed` can make event paths repo-relative.
+        self.root = Some(workdir.to_path_buf());
         let Some(debouncer) = self.debouncer.as_mut() else {
             // Inert watcher: track intent only so behaviour is observable in
             // tests, but perform no OS calls.
@@ -144,21 +172,46 @@ impl TreeWatcher {
         self.watched.len()
     }
 
-    /// Drain pending events. Returns `true` if anything was observed since the
-    /// last poll (any event or watcher error counts — the navigator re-reads
-    /// wholesale rather than inspecting paths).
-    pub fn drain_changed(&mut self) -> bool {
-        let mut changed = false;
+    /// Drain pending events into the set of directories they touched.
+    ///
+    /// A file event is attributed to its parent: that is the listing whose
+    /// contents changed. A directory event is attributed to its parent too —
+    /// the directory appearing or vanishing is a change in the listing that
+    /// holds it. Anything that cannot be mapped into the working tree sets
+    /// `unknown`, since a partial set would silently skip a refresh.
+    pub fn drain_changed(&mut self) -> TreeChanges {
+        let mut changes = TreeChanges::default();
         loop {
             match self.rx.try_recv() {
-                Ok(_) => changed = true,
+                Ok(Ok(events)) => {
+                    for event in events {
+                        match self.relative_parent(&event.path) {
+                            Some(dir) => {
+                                changes.dirs.insert(dir);
+                            }
+                            None => changes.unknown = true,
+                        }
+                    }
+                }
+                // A watcher error means events may have been dropped, so the
+                // set that did arrive cannot be trusted to be complete.
+                Ok(Err(_)) => changes.unknown = true,
                 Err(TryRecvError::Empty) => break,
                 // The sender is gone (watcher thread exited): nothing more will
                 // ever arrive, so stop draining.
                 Err(TryRecvError::Disconnected) => break,
             }
         }
-        changed
+        changes
+    }
+
+    /// The repo-relative directory holding `path`, or `None` when the path is
+    /// outside the working tree or no root has been synced yet.
+    fn relative_parent(&self, path: &Path) -> Option<String> {
+        let root = self.root.as_ref()?;
+        let parent = path.parent()?;
+        let rel = parent.strip_prefix(root).ok()?;
+        Some(rel.to_string_lossy().replace('\\', "/"))
     }
 }
 
@@ -199,25 +252,67 @@ mod tests {
         assert_eq!(w.watched, smaller);
     }
 
-    #[test]
-    fn drain_changed_reports_and_clears() {
-        let (tx, rx) = mpsc::channel();
-        let mut w = TreeWatcher::from_receiver(rx);
-        assert!(!w.drain_changed(), "no events yet");
+    fn event_at(path: &str) -> notify_debouncer_mini::DebouncedEvent {
+        notify_debouncer_mini::DebouncedEvent {
+            path: PathBuf::from(path),
+            kind: notify_debouncer_mini::DebouncedEventKind::Any,
+        }
+    }
 
-        tx.send(Ok(Vec::new())).unwrap();
-        tx.send(Ok(Vec::new())).unwrap();
-        assert!(w.drain_changed(), "queued events are observed");
-        // Drained: a second poll with nothing new reports no change.
-        assert!(!w.drain_changed());
+    /// A watcher already synced to `/tmp/repo`, so event paths can be made
+    /// repo-relative.
+    fn watcher_on_root(rx: Receiver<DebounceEventResult>) -> TreeWatcher {
+        let mut w = TreeWatcher::from_receiver(rx);
+        w.root = Some(PathBuf::from("/tmp/repo"));
+        w
     }
 
     #[test]
-    fn drain_changed_treats_watcher_error_as_change() {
+    fn drain_changed_reports_the_directories_that_changed_and_clears() {
         let (tx, rx) = mpsc::channel();
-        let mut w = TreeWatcher::from_receiver(rx);
+        let mut w = watcher_on_root(rx);
+        assert!(w.drain_changed().is_empty(), "no events yet");
+
+        // A file event is attributed to its parent — that is the listing whose
+        // contents changed, and the one that has to be re-read.
+        tx.send(Ok(vec![event_at("/tmp/repo/src/main.rs")])).unwrap();
+        tx.send(Ok(vec![event_at("/tmp/repo/README.md")])).unwrap();
+
+        let changes = w.drain_changed();
+        assert!(!changes.unknown);
+        assert_eq!(
+            changes.dirs,
+            BTreeSet::from(["src".to_string(), String::new()]),
+            "the repo root is the empty relative path"
+        );
+        // Drained: a second poll with nothing new reports no change.
+        assert!(w.drain_changed().is_empty());
+    }
+
+    #[test]
+    fn drain_changed_flags_a_watcher_error_as_unknown() {
+        // Events may have been dropped, so no set of directories can be
+        // trusted to be complete — the caller must re-read wholesale.
+        let (tx, rx) = mpsc::channel();
+        let mut w = watcher_on_root(rx);
         tx.send(Err(notify::Error::generic("boom"))).unwrap();
-        assert!(w.drain_changed());
+
+        let changes = w.drain_changed();
+
+        assert!(changes.unknown);
+        assert!(!changes.is_empty());
+    }
+
+    #[test]
+    fn drain_changed_flags_a_path_outside_the_worktree_as_unknown() {
+        let (tx, rx) = mpsc::channel();
+        let mut w = watcher_on_root(rx);
+        tx.send(Ok(vec![event_at("/elsewhere/file.rs")])).unwrap();
+
+        let changes = w.drain_changed();
+
+        assert!(changes.unknown, "an unmappable path cannot be attributed");
+        assert!(changes.dirs.is_empty());
     }
 
     #[test]
