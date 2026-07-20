@@ -404,7 +404,10 @@ export function App() {
             list on the left uses. Pinning it from inside the scroll box instead
             would only hold it vertically, letting a long code line carry the
             path off to the left; this holds it on both axes. */}
-        <section className="flex min-h-0 flex-col">
+        {/* `min-w-0` is load-bearing: a grid item defaults to min-width:auto, so
+            without it this column refuses to shrink below the widest line in the
+            pre and pushes the layout off-screen instead of scrolling inside. */}
+        <section className="flex min-h-0 min-w-0 flex-col">
           {/* Always rendered, even with nothing open: it carries the maximise
               control, and a header that came and went with the selection would
               shift the pane under the cursor. Diffs carry a path too, so both
