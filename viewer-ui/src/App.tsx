@@ -12,37 +12,22 @@ import {
   type TreeEntry,
 } from "./api";
 import { TerminalPanel } from "./Terminal";
+import { MaximizeIcon } from "./icons";
 
 /// How often the tab bar re-reads the served set. The payload is a handful of
 /// short strings, and this only has to feel prompt when a tab opens.
 const REPO_POLL_MS = 3000;
 
-/// Sidebar width bounds in px: narrow enough that the file pane keeps a usable
-/// column, wide enough that a nested path is still legible.
-const SIDEBAR_MIN = 200;
-const SIDEBAR_MAX = 560;
-const SIDEBAR_DEFAULT = 350;
-/// How far one arrow-key press moves the divider.
-const SIDEBAR_STEP = 16;
-const SIDEBAR_KEY = "nightcrow.viewer.sidebar";
-
-function clampSidebar(px: number) {
-  return Math.min(SIDEBAR_MAX, Math.max(SIDEBAR_MIN, px));
-}
-
-/// The stored width is user-editable and outlives any given build, so treat it
-/// as untrusted input: anything unparseable falls back to the default. Reading
-/// can itself throw when storage is blocked, which must not stop the app.
-function loadSidebar() {
-  try {
-    const px = Number.parseInt(localStorage.getItem(SIDEBAR_KEY) ?? "", 10);
-    return Number.isFinite(px) ? clampSidebar(px) : SIDEBAR_DEFAULT;
-  } catch {
-    return SIDEBAR_DEFAULT;
-  }
-}
+/// Sidebar width. Fixed rather than adjustable: it fits every path this
+/// repository has, and the file pane's maximise button covers the case where
+/// the code needs the whole window.
+const SIDEBAR_WIDTH = "350px";
 
 type Tab = "status" | "log" | "tree";
+/// Which panel, if any, has been given the whole work area. One value rather
+/// than a flag per panel: only one can hold the space, and a pair of booleans
+/// would admit a "both maximised" state that has no layout.
+type Maximized = "none" | "terminal" | "files";
 type Pane =
   | { kind: "diff"; value: Diff }
   | { kind: "file"; value: FileView }
@@ -69,44 +54,7 @@ export function App() {
   const [pane, setPane] = useState<Pane>({ kind: "empty" });
   const [error, setError] = useState<string | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
-  const [sidebar, setSidebar] = useState(loadSidebar);
-  const [dragging, setDragging] = useState(false);
-  const [maxTerm, setMaxTerm] = useState(false);
-
-  useEffect(() => {
-    try {
-      localStorage.setItem(SIDEBAR_KEY, String(sidebar));
-    } catch {
-      // Storage blocked or full. The width still applies for this session;
-      // losing the preference is not worth surfacing an error for.
-    }
-  }, [sidebar]);
-
-  // Pointer capture keeps the drag alive past the handle's own 4px, so no
-  // window-level listeners are needed and the drag cannot get stuck.
-  const startDrag = (e: React.PointerEvent<HTMLDivElement>) => {
-    e.currentTarget.setPointerCapture(e.pointerId);
-    setDragging(true);
-  };
-  const onDrag = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (!dragging) return;
-    // Measured from the grid's left edge rather than accumulated from a start
-    // delta, so clamping at either end cannot desync the handle from the
-    // cursor over a long drag.
-    const left = e.currentTarget.parentElement?.getBoundingClientRect().left ?? 0;
-    setSidebar(clampSidebar(e.clientX - left));
-  };
-  const endDrag = (e: React.PointerEvent<HTMLDivElement>) => {
-    e.currentTarget.releasePointerCapture(e.pointerId);
-    setDragging(false);
-  };
-  const nudge = (e: React.KeyboardEvent<HTMLDivElement>) => {
-    if (e.key === "ArrowLeft") setSidebar((w) => clampSidebar(w - SIDEBAR_STEP));
-    else if (e.key === "ArrowRight")
-      setSidebar((w) => clampSidebar(w + SIDEBAR_STEP));
-    else return;
-    e.preventDefault();
-  };
+  const [maximized, setMaximized] = useState<Maximized>("none");
 
   // A failed call is either "log back in" or a message worth showing.
   const handle = useCallback((err: unknown) => {
@@ -238,19 +186,20 @@ export function App() {
     f.path.toLowerCase().includes(filter.toLowerCase()),
   );
 
-  // Maximising collapses the diff row to nothing rather than unmounting it, so
-  // the row count keeps matching the template and the pane comes back scrolled
-  // where it was.
+  // Maximising collapses the losing row to nothing rather than unmounting it,
+  // so the row count keeps matching the template and the panel comes back
+  // scrolled where it was.
+  const filesMax = maximized === "files";
+  const rows = !repo
+    ? "grid-rows-[auto_1fr]"
+    : maximized === "terminal"
+      ? "grid-rows-[auto_minmax(0,0fr)_minmax(0,1fr)_auto]"
+      : maximized === "files"
+        ? "grid-rows-[auto_minmax(0,1fr)_minmax(0,0fr)_auto]"
+        : "grid-rows-[auto_minmax(0,3fr)_minmax(0,2fr)_auto]";
+
   return (
-    <div
-      className={`nc-fade grid h-full ${
-        repo
-          ? maxTerm
-            ? "grid-rows-[auto_minmax(0,0fr)_minmax(0,1fr)_auto]"
-            : "grid-rows-[auto_minmax(0,3fr)_minmax(0,2fr)_auto]"
-          : "grid-rows-[auto_1fr]"
-      }`}
-    >
+    <div className={`nc-fade grid h-full ${rows}`}>
       {/* Pinned in px to render identically to the web mirror's header
           (src/web/frontend/app.html), which sits on a 16px root while this app
           runs at 14px — matching rem values there lands 12.5% smaller and reads
@@ -315,15 +264,23 @@ export function App() {
       {repo ? (
         <>
           {/* The width rides on a custom property so the responsive rule stays
-              declarative — below md the grid collapses to one column and the
-              divider is hidden, leaving the stacked layout untouched. */}
+              declarative — below md the grid collapses to one column, leaving
+              the stacked layout untouched. Maximising the file pane drives the
+              property to zero rather than dropping the sidebar, so its content
+              is not torn down and rebuilt on every toggle. */}
           <main
-            className={`grid min-h-0 grid-cols-1 md:grid-cols-[var(--nc-sidebar)_auto_1fr] ${
-              dragging ? "select-none" : ""
-            }`}
-            style={{ "--nc-sidebar": `${sidebar}px` } as CSSProperties}
+            className="grid min-h-0 grid-cols-1 md:grid-cols-[var(--nc-sidebar)_1fr]"
+            style={
+              {
+                "--nc-sidebar": filesMax ? "0px" : SIDEBAR_WIDTH,
+              } as CSSProperties
+            }
           >
-        <section className="flex min-h-0 flex-col">
+        <section
+          className={`flex min-h-0 flex-col overflow-hidden ${
+            filesMax ? "" : "border-ink-700 md:border-r"
+          }`}
+        >
           <div className="flex shrink-0 gap-1 px-2 py-1">
             {(["status", "log", "tree"] as Tab[]).map((t) => (
               <button
@@ -420,42 +377,33 @@ export function App() {
           </ul>
         </section>
 
-        {/* Doubles as the column rule, so the sidebar drops its own border. The
-            hit area is deliberately wider than the rule it draws: a 1px target
-            is unusable, and a 7px rule would read as a gutter. */}
-        <div
-          role="separator"
-          aria-orientation="vertical"
-          aria-label="Resize the file list"
-          aria-valuenow={sidebar}
-          aria-valuemin={SIDEBAR_MIN}
-          aria-valuemax={SIDEBAR_MAX}
-          tabIndex={0}
-          onPointerDown={startDrag}
-          onPointerMove={onDrag}
-          onPointerUp={endDrag}
-          onKeyDown={nudge}
-          className="group hidden w-[7px] cursor-col-resize focus:outline-none md:block"
-        >
-          <div
-            className={`mx-auto h-full w-px ${
-              dragging
-                ? "bg-accent"
-                : "bg-ink-700 group-hover:bg-accent group-focus:bg-accent"
-            }`}
-          />
-        </div>
-
         {/* Header outside the scroll box, body inside — the same split the file
             list on the left uses. Pinning it from inside the scroll box instead
             would only hold it vertically, letting a long code line carry the
             path off to the left; this holds it on both axes. */}
         <section className="flex min-h-0 flex-col">
-          {pane.kind === "file" && (
-            <div className="shrink-0 truncate bg-ink-850 px-3 py-0.5 text-ink-400">
-              {pane.value.path}
-            </div>
-          )}
+          {/* Always rendered, even with nothing open: it carries the maximise
+              control, and a header that came and went with the selection would
+              shift the pane under the cursor. Diffs carry a path too, so both
+              kinds label themselves the same way. */}
+          <div className="flex shrink-0 items-center gap-2 bg-ink-850 px-3 py-0.5 text-ink-400">
+            <span className="truncate">
+              {pane.kind === "empty" ? "" : pane.value.path}
+            </span>
+            <button
+              onClick={() =>
+                setMaximized((m) => (m === "files" ? "none" : "files"))
+              }
+              aria-pressed={filesMax}
+              title={filesMax ? "Restore the layout" : "Maximize the file pane"}
+              aria-label={
+                filesMax ? "Restore the layout" : "Maximize the file pane"
+              }
+              className="ml-auto flex shrink-0 items-center rounded-sm px-1.5 py-0.5 hover:text-accent"
+            >
+              <MaximizeIcon maximized={filesMax} />
+            </button>
+          </div>
           <div className="min-h-0 flex-1 overflow-auto">
             {pane.kind === "empty" && (
               <p className="p-4 text-ink-400">Select a file or commit.</p>
@@ -530,8 +478,10 @@ export function App() {
       {repo && (
         <TerminalPanel
           repo={repo}
-          maximized={maxTerm}
-          onToggleMaximized={() => setMaxTerm((m) => !m)}
+          maximized={maximized === "terminal"}
+          onToggleMaximized={() =>
+            setMaximized((m) => (m === "terminal" ? "none" : "terminal"))
+          }
         />
       )}
 
