@@ -15,3 +15,4 @@ pub mod catalog;
 pub mod dto;
 pub mod limits;
 pub mod runtime;
+pub mod server;
