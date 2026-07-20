@@ -17,7 +17,7 @@ use std::io::{Read, Write};
 use std::net::{IpAddr, SocketAddr, TcpListener, TcpStream};
 use std::sync::Arc;
 use std::sync::Mutex;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -34,6 +34,10 @@ const HEAD_READ_TIMEOUT: Duration = Duration::from_secs(15);
 /// Poll interval for the per-client loop: bounds added output latency while
 /// letting the same thread service both socket reads and queued writes.
 const WS_POLL_TIMEOUT: Duration = Duration::from_millis(10);
+/// Live connections allowed at once. Each one costs a thread, so an unbounded
+/// accept loop lets anything that can reach the port exhaust the process.
+/// A browser session needs a handful; this leaves room for several of them.
+const MAX_CONNECTIONS: usize = 64;
 
 /// State shared between the accept/handler threads. Holds no `App` reference.
 struct Shared {
@@ -43,6 +47,37 @@ struct Shared {
     sessions: SessionStore,
     limiter: RateLimiter,
     next_id: AtomicU64,
+    /// Connections currently held by a handler thread, capped at
+    /// [`MAX_CONNECTIONS`]. Owned through [`ConnectionSlot`].
+    connections: Arc<AtomicUsize>,
+}
+
+/// A claimed connection slot. Releasing it is `Drop`, so every handler exit
+/// path — normal return, early error, a panicking thread — frees the slot.
+struct ConnectionSlot {
+    counter: Arc<AtomicUsize>,
+}
+
+impl ConnectionSlot {
+    /// Claim a slot, or return `None` when `counter` is already at `cap`.
+    fn acquire(counter: &Arc<AtomicUsize>, cap: usize) -> Option<Self> {
+        // Claim first and give back on overflow, so two accepts racing at the
+        // limit cannot both see room and both proceed.
+        let previous = counter.fetch_add(1, Ordering::AcqRel);
+        if previous >= cap {
+            counter.fetch_sub(1, Ordering::AcqRel);
+            return None;
+        }
+        Some(Self {
+            counter: Arc::clone(counter),
+        })
+    }
+}
+
+impl Drop for ConnectionSlot {
+    fn drop(&mut self) {
+        self.counter.fetch_sub(1, Ordering::AcqRel);
+    }
 }
 
 /// A message queued for one client's handler thread to write to its socket.
@@ -117,6 +152,7 @@ impl WebServer {
             sessions: SessionStore::new(),
             limiter: RateLimiter::new(),
             next_id: AtomicU64::new(0),
+            connections: Arc::new(AtomicUsize::new(0)),
         });
 
         let accept_shared = Arc::clone(&shared);
@@ -235,12 +271,22 @@ impl WebServer {
 fn accept_loop(listener: TcpListener, shared: Arc<Shared>) {
     for stream in listener.incoming() {
         let Ok(stream) = stream else { continue };
+        // Refuse over the cap by closing the socket here rather than writing a
+        // 503 from the accept loop: a write to a stalled client would block
+        // every other connection behind it.
+        let Some(slot) = ConnectionSlot::acquire(&shared.connections, MAX_CONNECTIONS) else {
+            tracing::debug!(cap = MAX_CONNECTIONS, "web: refusing connection over cap");
+            continue;
+        };
         let shared = Arc::clone(&shared);
-        // One handler thread per connection. A failed spawn just drops the
-        // connection; the accept loop keeps serving others.
+        // One handler thread per connection. A failed spawn drops the closure,
+        // and with it the slot; the accept loop keeps serving others.
         let _ = thread::Builder::new()
             .name("nightcrow-web-conn".into())
-            .spawn(move || handle_connection(stream, shared));
+            .spawn(move || {
+                let _slot = slot;
+                handle_connection(stream, shared)
+            });
     }
 }
 
@@ -542,6 +588,39 @@ mod tests {
     use ratatui::layout::Rect;
     use ratatui::style::Style;
     use tungstenite::client::IntoClientRequest;
+
+    #[test]
+    fn connection_slot_refuses_over_the_cap() {
+        let counter = Arc::new(AtomicUsize::new(0));
+
+        let held: Vec<_> = (0..2)
+            .map(|_| ConnectionSlot::acquire(&counter, 2).expect("under the cap"))
+            .collect();
+
+        assert!(
+            ConnectionSlot::acquire(&counter, 2).is_none(),
+            "a third connection must be refused"
+        );
+        assert_eq!(
+            counter.load(Ordering::Acquire),
+            2,
+            "a refused connection must not leak a slot"
+        );
+        drop(held);
+    }
+
+    #[test]
+    fn connection_slot_releases_on_drop() {
+        let counter = Arc::new(AtomicUsize::new(0));
+
+        drop(ConnectionSlot::acquire(&counter, 1).expect("under the cap"));
+
+        assert_eq!(counter.load(Ordering::Acquire), 0);
+        assert!(
+            ConnectionSlot::acquire(&counter, 1).is_some(),
+            "the freed slot must be reusable"
+        );
+    }
 
     #[test]
     fn find_subsequence_locates_delimiter() {
