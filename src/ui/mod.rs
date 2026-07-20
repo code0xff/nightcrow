@@ -15,10 +15,10 @@ pub mod tree_view;
 pub use search::SearchQuery;
 
 use crate::app::{App, DiffPaneView, Focus, ViewMode};
-use crate::ui::status_view::RepoInput;
 use crate::config::LayoutConfig;
 use crate::git::diff::StatusKind;
 use crate::runtime::terminal::TerminalFullscreen;
+use crate::ui::status_view::RepoInput;
 use ratatui::{
     Frame,
     layout::{Constraint, Direction, Layout, Position, Rect},
@@ -209,12 +209,7 @@ pub struct Chrome<'a> {
 /// The project index a click at `(x, y)` selects, or `None` when the click is
 /// not on a project tab. Shares `chrome_rows` with `draw`, so the hit boxes
 /// track the rendered row.
-pub(crate) fn project_tab_at(
-    tabs: Chrome<'_>,
-    screen_area: Rect,
-    x: u16,
-    y: u16,
-) -> Option<usize> {
+pub(crate) fn project_tab_at(tabs: Chrome<'_>, screen_area: Rect, x: u16, y: u16) -> Option<usize> {
     project_tab::tab_at(
         tabs.repo_paths,
         tabs.active,
@@ -342,11 +337,7 @@ pub fn draw_empty(
         spans.extend(hint_spans(EMPTY_HINT_ARMED, &leader_label, mouse_enabled));
         Line::from(spans)
     } else {
-        Line::from(hint_spans(
-            EMPTY_HINT,
-            &leader_label,
-            mouse_enabled,
-        ))
+        Line::from(hint_spans(EMPTY_HINT, &leader_label, mouse_enabled))
     };
     frame.render_widget(Paragraph::new(hint), rows.hint);
 }
@@ -594,7 +585,11 @@ fn prefix_armed_hint_text(app: &App) -> String {
     // `w`/`s` only act under their availability predicates (see
     // `App::can_close_pane`/`can_swap_panes`), so only advertise them there —
     // a hint for a no-op key would lie.
-    let close = if app.can_close_pane() { "w: close pane | " } else { "" };
+    let close = if app.can_close_pane() {
+        "w: close pane | "
+    } else {
+        ""
+    };
     let swap = if app.can_swap_panes() {
         "s: swap pane | "
     } else {
@@ -1194,7 +1189,11 @@ mod tests {
     }
 
     /// Render the empty screen and flatten it to text.
-    fn drawn_empty(repo_input: &RepoInput, notice: Option<&crate::app::Notice>, armed: bool) -> String {
+    fn drawn_empty(
+        repo_input: &RepoInput,
+        notice: Option<&crate::app::Notice>,
+        armed: bool,
+    ) -> String {
         let mut terminal = Terminal::new(TestBackend::new(90, 12)).unwrap();
         let leader = crossterm::event::KeyEvent::new(
             crossterm::event::KeyCode::Char('q'),
@@ -1428,7 +1427,12 @@ mod tests {
         app.mouse_enabled = false;
         let mut terminal = Terminal::new(TestBackend::new(200, 1)).unwrap();
         terminal
-            .draw(|frame| frame.render_widget(render_hint_bar(&app, plain_chrome(&RepoInput::default()), Color::Yellow), frame.area()))
+            .draw(|frame| {
+                frame.render_widget(
+                    render_hint_bar(&app, plain_chrome(&RepoInput::default()), Color::Yellow),
+                    frame.area(),
+                )
+            })
             .unwrap();
         let buf = terminal.backend().buffer();
 
@@ -1539,7 +1543,10 @@ mod tests {
         let screen = Rect::new(0, 0, 200, 3);
         let clicks = |app: &App| {
             (0..200u16)
-                .filter(|&x| hint_click_at(app, plain_chrome(&RepoInput::default()), screen, x, 2) == Some(HintClick::Plain('w')))
+                .filter(|&x| {
+                    hint_click_at(app, plain_chrome(&RepoInput::default()), screen, x, 2)
+                        == Some(HintClick::Plain('w'))
+                })
                 .count()
         };
 
@@ -1723,13 +1730,14 @@ mod tests {
 
         // Drill-down with a file selected: `v` acts, so advertise it.
         app.diff.fullscreen = false;
-        app.log_view.set_commits(vec![crate::git::diff::CommitEntry::new(
-            git2::Oid::ZERO_SHA1,
-            "deadbee".to_string(),
-            "c".to_string(),
-            "T".to_string(),
-            0,
-        )]);
+        app.log_view
+            .set_commits(vec![crate::git::diff::CommitEntry::new(
+                git2::Oid::ZERO_SHA1,
+                "deadbee".to_string(),
+                "c".to_string(),
+                "T".to_string(),
+                0,
+            )]);
         app.log_view.drill_down = true;
         app.log_view.commit_files = vec![crate::git::diff::ChangedFile::unstaged_only(
             "a.rs".to_string(),
@@ -1861,19 +1869,46 @@ mod tests {
 
         let x = hint_x_of(&app, "t: new pane");
         assert_eq!(
-            hint_click_at(&app, plain_chrome(&RepoInput::default()), HINT_TEST_SCREEN, x, HINT_ROW),
+            hint_click_at(
+                &app,
+                plain_chrome(&RepoInput::default()),
+                HINT_TEST_SCREEN,
+                x,
+                HINT_ROW
+            ),
             Some(HintClick::Leader('t'))
         );
         let x = hint_x_of(&app, "/: search");
         assert_eq!(
-            hint_click_at(&app, plain_chrome(&RepoInput::default()), HINT_TEST_SCREEN, x, HINT_ROW),
+            hint_click_at(
+                &app,
+                plain_chrome(&RepoInput::default()),
+                HINT_TEST_SCREEN,
+                x,
+                HINT_ROW
+            ),
             Some(HintClick::Plain('/'))
         );
         let x = hint_x_of(&app, "j/k: navigate");
-        assert_eq!(hint_click_at(&app, plain_chrome(&RepoInput::default()), HINT_TEST_SCREEN, x, HINT_ROW), None);
+        assert_eq!(
+            hint_click_at(
+                &app,
+                plain_chrome(&RepoInput::default()),
+                HINT_TEST_SCREEN,
+                x,
+                HINT_ROW
+            ),
+            None
+        );
         let x = hint_x_of(&app, "q: quit");
         assert_eq!(
-            hint_click_at(&app, plain_chrome(&RepoInput::default()), HINT_TEST_SCREEN, x, HINT_ROW),
+            hint_click_at(
+                &app,
+                plain_chrome(&RepoInput::default()),
+                HINT_TEST_SCREEN,
+                x,
+                HINT_ROW
+            ),
             None,
             "quit must never be one stray click away"
         );
@@ -1887,7 +1922,12 @@ mod tests {
         let app = app_with_fake_backend();
         let mut terminal = Terminal::new(TestBackend::new(300, 1)).unwrap();
         terminal
-            .draw(|frame| frame.render_widget(render_hint_bar(&app, plain_chrome(&RepoInput::default()), Color::Yellow), frame.area()))
+            .draw(|frame| {
+                frame.render_widget(
+                    render_hint_bar(&app, plain_chrome(&RepoInput::default()), Color::Yellow),
+                    frame.area(),
+                )
+            })
             .unwrap();
         let buf = terminal.backend().buffer();
         // Scan cell-wise so the needle's index is a *column*, not a byte
@@ -1898,7 +1938,13 @@ mod tests {
             .expect("label rendered") as u16;
 
         assert_eq!(
-            hint_click_at(&app, plain_chrome(&RepoInput::default()), HINT_TEST_SCREEN, x, HINT_ROW),
+            hint_click_at(
+                &app,
+                plain_chrome(&RepoInput::default()),
+                HINT_TEST_SCREEN,
+                x,
+                HINT_ROW
+            ),
             Some(HintClick::Leader('t'))
         );
     }
@@ -1907,7 +1953,16 @@ mod tests {
     fn hint_click_misses_off_the_hint_row() {
         let app = app_with_fake_backend();
         let x = hint_x_of(&app, "t: new pane");
-        assert_eq!(hint_click_at(&app, plain_chrome(&RepoInput::default()), HINT_TEST_SCREEN, x, HINT_ROW - 1), None);
+        assert_eq!(
+            hint_click_at(
+                &app,
+                plain_chrome(&RepoInput::default()),
+                HINT_TEST_SCREEN,
+                x,
+                HINT_ROW - 1
+            ),
+            None
+        );
     }
 
     #[test]
@@ -1917,27 +1972,64 @@ mod tests {
 
         let x = hint_x_of(&app, "t: new pane");
         assert_eq!(
-            hint_click_at(&app, plain_chrome(&RepoInput::default()), HINT_TEST_SCREEN, x, HINT_ROW),
+            hint_click_at(
+                &app,
+                plain_chrome(&RepoInput::default()),
+                HINT_TEST_SCREEN,
+                x,
+                HINT_ROW
+            ),
             Some(HintClick::Plain('t'))
         );
         let x = hint_x_of(&app, "r: redraw");
         assert_eq!(
-            hint_click_at(&app, plain_chrome(&RepoInput::default()), HINT_TEST_SCREEN, x, HINT_ROW),
+            hint_click_at(
+                &app,
+                plain_chrome(&RepoInput::default()),
+                HINT_TEST_SCREEN,
+                x,
+                HINT_ROW
+            ),
             Some(HintClick::Plain('r'))
         );
         let x = hint_x_of(&app, "q: quit");
-        assert_eq!(hint_click_at(&app, plain_chrome(&RepoInput::default()), HINT_TEST_SCREEN, x, HINT_ROW), None);
+        assert_eq!(
+            hint_click_at(
+                &app,
+                plain_chrome(&RepoInput::default()),
+                HINT_TEST_SCREEN,
+                x,
+                HINT_ROW
+            ),
+            None
+        );
         let x = hint_x_of(&app, "esc: cancel");
-        assert_eq!(hint_click_at(&app, plain_chrome(&RepoInput::default()), HINT_TEST_SCREEN, x, HINT_ROW), None);
+        assert_eq!(
+            hint_click_at(
+                &app,
+                plain_chrome(&RepoInput::default()),
+                HINT_TEST_SCREEN,
+                x,
+                HINT_ROW
+            ),
+            None
+        );
     }
 
     #[test]
     fn hint_click_none_on_modal_rows() {
         let mut swap = app_with_fake_backend();
         swap.begin_swap_target();
-        assert!((0..HINT_TEST_SCREEN.width)
-            .all(|x| hint_click_at(&swap, plain_chrome(&RepoInput::default()), HINT_TEST_SCREEN, x, HINT_ROW).is_none()));
-
+        assert!((0..HINT_TEST_SCREEN.width).all(|x| {
+            hint_click_at(
+                &swap,
+                plain_chrome(&RepoInput::default()),
+                HINT_TEST_SCREEN,
+                x,
+                HINT_ROW,
+            )
+            .is_none()
+        }));
     }
 
     #[test]
@@ -2022,7 +2114,13 @@ mod tests {
         });
         app.toggle_diff_fullscreen();
 
-        let hit = pane_at(&app, Rect::new(0, 0, 100, 40), &LayoutConfig::default(), 50, 30);
+        let hit = pane_at(
+            &app,
+            Rect::new(0, 0, 100, 40),
+            &LayoutConfig::default(),
+            50,
+            30,
+        );
 
         assert_eq!(hit, None);
     }

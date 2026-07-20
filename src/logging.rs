@@ -107,10 +107,7 @@ pub fn init_logging(config: &LogConfig, repo_path: &str) -> Option<LogGuard> {
 ///
 /// Only written when missing: a user-edited file should not be clobbered.
 fn write_log_gitignore(log_dir: &Path) {
-    if !log_dir
-        .components()
-        .any(|c| c.as_os_str() == NIGHTCROW_DIR)
-    {
+    if !log_dir.components().any(|c| c.as_os_str() == NIGHTCROW_DIR) {
         return;
     }
     let gitignore = log_dir.join(".gitignore");
@@ -415,7 +412,10 @@ mod tests {
         write_log_gitignore(&ours);
         write_log_gitignore(&theirs);
 
-        assert_eq!(std::fs::read_to_string(ours.join(".gitignore")).unwrap(), "*\n");
+        assert_eq!(
+            std::fs::read_to_string(ours.join(".gitignore")).unwrap(),
+            "*\n"
+        );
         assert!(
             !theirs.join(".gitignore").exists(),
             "a user-chosen log directory is theirs to manage"

@@ -106,10 +106,8 @@ impl App {
             Some(ViewMode::Log) => self.restore_log_session(state),
             Some(ViewMode::Tree) => self.restore_tree_session(state),
             _ if self.status_view.files.is_empty() => {
-                self.pending_selection = state
-                    .selected_file
-                    .clone()
-                    .map(|path| (path, state.scroll));
+                self.pending_selection =
+                    state.selected_file.clone().map(|path| (path, state.scroll));
             }
             _ => self.restore_status_session(state),
         }
@@ -249,7 +247,10 @@ impl App {
             }
             Err(e) => {
                 tracing::warn!(error = %e, "failed to load drill-down commit files");
-                self.raise_notice(NoticeKind::Session, format!("drill-down restore failed: {e}"));
+                self.raise_notice(
+                    NoticeKind::Session,
+                    format!("drill-down restore failed: {e}"),
+                );
                 self.load_commit_diff_for_selected();
             }
         }

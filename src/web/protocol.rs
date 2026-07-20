@@ -13,9 +13,7 @@
 //! local input — a web action can never diverge from the equivalent keypress.
 
 use anyhow::{Result, bail};
-use crossterm::event::{
-    KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
-};
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
 use ratatui::backend::{Backend, CrosstermBackend};
 use ratatui::buffer::Buffer;
 use ratatui::layout::Position;
@@ -154,8 +152,17 @@ pub fn decode_input(json: &str) -> Result<Option<WebInputEvent>> {
             ctrl,
             alt,
             shift,
-        } => decode_mouse(&kind, button.as_deref(), col, row, dir.as_deref(), ctrl, alt, shift)
-            .map(WebInputEvent::Mouse),
+        } => decode_mouse(
+            &kind,
+            button.as_deref(),
+            col,
+            row,
+            dir.as_deref(),
+            ctrl,
+            alt,
+            shift,
+        )
+        .map(WebInputEvent::Mouse),
         Wire::Paste { data } => Some(WebInputEvent::Paste(data)),
     })
 }
@@ -309,7 +316,10 @@ mod tests {
         let bytes = encode_full_frame(&b);
         // Clears first (ESC[2J) so a reconnecting client drops stale content,
         // and the painted text is present.
-        assert!(bytes.windows(4).any(|w| w == b"\x1b[2J"), "full frame must clear");
+        assert!(
+            bytes.windows(4).any(|w| w == b"\x1b[2J"),
+            "full frame must clear"
+        );
         assert!(
             bytes.windows(2).any(|w| w == b"hi"),
             "full frame must paint the cell content"
@@ -339,7 +349,10 @@ mod tests {
         // Only the third column changed ('t' -> 'r'); the update must carry the
         // new glyph but not repaint the unchanged prefix.
         assert!(text.contains('r'), "changed glyph must be present");
-        assert!(!text.contains("car"), "unchanged prefix must not be repainted");
+        assert!(
+            !text.contains("car"),
+            "unchanged prefix must not be repainted"
+        );
     }
 
     #[test]
@@ -372,7 +385,10 @@ mod tests {
         let bytes = encode_full_frame(&b);
         // Crossterm encodes a red foreground via an SGR sequence; assert some
         // SGR + the glyph made it through (exact code is crossterm's concern).
-        assert!(bytes.contains(&0x1b), "styled output must contain escape codes");
+        assert!(
+            bytes.contains(&0x1b),
+            "styled output must contain escape codes"
+        );
         assert!(bytes.contains(&b'x'));
     }
 
@@ -422,7 +438,11 @@ mod tests {
         ];
         for (json, code) in cases {
             let ev = decode_input(json).unwrap().unwrap();
-            assert_eq!(ev, WebInputEvent::Key(KeyEvent::new(code, KeyModifiers::NONE)), "for {json}");
+            assert_eq!(
+                ev,
+                WebInputEvent::Key(KeyEvent::new(code, KeyModifiers::NONE)),
+                "for {json}"
+            );
         }
     }
 
@@ -461,14 +481,30 @@ mod tests {
 
     #[test]
     fn decode_modifier_only_key_is_dropped() {
-        assert!(decode_input(r#"{"t":"key","key":"Shift"}"#).unwrap().is_none());
-        assert!(decode_input(r#"{"t":"key","key":"Control"}"#).unwrap().is_none());
-        assert!(decode_input(r#"{"t":"key","key":"Dead"}"#).unwrap().is_none());
+        assert!(
+            decode_input(r#"{"t":"key","key":"Shift"}"#)
+                .unwrap()
+                .is_none()
+        );
+        assert!(
+            decode_input(r#"{"t":"key","key":"Control"}"#)
+                .unwrap()
+                .is_none()
+        );
+        assert!(
+            decode_input(r#"{"t":"key","key":"Dead"}"#)
+                .unwrap()
+                .is_none()
+        );
     }
 
     #[test]
     fn decode_out_of_range_function_key_is_dropped() {
-        assert!(decode_input(r#"{"t":"key","key":"F99"}"#).unwrap().is_none());
+        assert!(
+            decode_input(r#"{"t":"key","key":"F99"}"#)
+                .unwrap()
+                .is_none()
+        );
     }
 
     #[test]
@@ -534,7 +570,10 @@ mod tests {
     fn decode_rejects_malformed_and_unknown() {
         assert!(decode_input("not json").is_err());
         assert!(decode_input(r#"{"t":"explode"}"#).is_err());
-        assert!(decode_input(r#"{"t":"key"}"#).is_err(), "missing required field");
+        assert!(
+            decode_input(r#"{"t":"key"}"#).is_err(),
+            "missing required field"
+        );
     }
 
     #[test]

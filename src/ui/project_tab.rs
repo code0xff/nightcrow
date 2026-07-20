@@ -320,7 +320,15 @@ mod tests {
         assert!(marker.starts_with(" +"), "got: {marker}");
         // The marker selects the nearest hidden project, so the overflow is
         // reachable by pointer and not only by F-key.
-        assert_eq!(*target, marker.trim().trim_start_matches('+').parse::<usize>().unwrap() - 1);
+        assert_eq!(
+            *target,
+            marker
+                .trim()
+                .trim_start_matches('+')
+                .parse::<usize>()
+                .unwrap()
+                - 1
+        );
     }
 
     #[test]

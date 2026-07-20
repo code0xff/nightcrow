@@ -191,7 +191,11 @@ pub fn render(
                 if count == 0 {
                     format!(" {jump} {label} [no matches] ")
                 } else {
-                    format!(" {jump} {label} [{}/{}] ", app.diff.search.cursor + 1, count)
+                    format!(
+                        " {jump} {label} [{}/{}] ",
+                        app.diff.search.cursor + 1,
+                        count
+                    )
                 }
             } else {
                 format!(" {jump} {label} ")
@@ -221,7 +225,11 @@ pub fn render(
                 if count == 0 {
                     format!(" {jump} {label} [no matches] ")
                 } else {
-                    format!(" {jump} {label} [{}/{}] ", app.diff.search.cursor + 1, count)
+                    format!(
+                        " {jump} {label} [{}/{}] ",
+                        app.diff.search.cursor + 1,
+                        count
+                    )
                 }
             } else {
                 format!(" {jump} {label} ")

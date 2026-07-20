@@ -53,7 +53,11 @@ impl App {
             .files
             .get(self.status_view.selected)
             .map(|f| f.path.clone())
-            .or_else(|| self.pending_selection.as_ref().map(|(path, _)| path.clone()));
+            .or_else(|| {
+                self.pending_selection
+                    .as_ref()
+                    .map(|(path, _)| path.clone())
+            });
         // Capture the HEAD oid up front so the detection branch below stays
         // independent of where the snapshot fields get moved out.
         let new_head = snapshot.head_oid;

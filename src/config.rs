@@ -68,8 +68,7 @@ const GENERATED_PASSWORD_LEN: usize = 24;
 /// Alphabet for generated passwords: alphanumeric minus visually ambiguous
 /// glyphs (0/O, 1/l/I). All chars are TOML-safe, so the persisted value never
 /// needs escaping when written as a basic `"..."` string.
-const PASSWORD_ALPHABET: &[u8] =
-    b"abcdefghijkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+const PASSWORD_ALPHABET: &[u8] = b"abcdefghijkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 
 /// Web mirror server: serve a live, controllable view of this nightcrow over
 /// HTTP so a browser and the local terminal drive the same session.
@@ -109,8 +108,7 @@ impl Default for WebConfig {
 impl WebConfig {
     /// Whether a login credential is already configured (either form).
     pub fn has_credential(&self) -> bool {
-        self.hashed_password.is_some()
-            || self.password.as_deref().is_some_and(|p| !p.is_empty())
+        self.hashed_password.is_some() || self.password.as_deref().is_some_and(|p| !p.is_empty())
     }
 }
 
@@ -648,7 +646,10 @@ fn validate_config(cfg: &Config) -> Result<()> {
     // The web server only needs a valid bind/port when it is enabled; a
     // disabled section is never acted on, so leave its fields unchecked.
     if cfg.web.enabled {
-        anyhow::ensure!(cfg.web.port != 0, "web.port must be non-zero when web.enabled");
+        anyhow::ensure!(
+            cfg.web.port != 0,
+            "web.port must be non-zero when web.enabled"
+        );
         cfg.web
             .bind
             .parse::<std::net::IpAddr>()
@@ -1254,7 +1255,10 @@ password = "hunter2"
             password: Some(String::new()),
             ..WebConfig::default()
         };
-        assert!(!empty.has_credential(), "an empty password is not a credential");
+        assert!(
+            !empty.has_credential(),
+            "an empty password is not a credential"
+        );
         let with_pw = WebConfig {
             password: Some("x".into()),
             ..WebConfig::default()
@@ -1354,8 +1358,14 @@ password = "hunter2"
         cfg.web.enabled = true;
         cfg.web.password = Some("preset".into());
         let generated = ensure_web_password(&mut cfg, &path).unwrap();
-        assert!(generated.is_none(), "an existing credential must not be replaced");
-        assert!(!path.exists(), "no file should be written when a password exists");
+        assert!(
+            generated.is_none(),
+            "an existing credential must not be replaced"
+        );
+        assert!(
+            !path.exists(),
+            "no file should be written when a password exists"
+        );
         assert_eq!(cfg.web.password.as_deref(), Some("preset"));
     }
 

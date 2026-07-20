@@ -223,7 +223,11 @@ pub fn encode_wheel(up: bool, col: u16, row: u16) -> Vec<u8> {
 /// Horizontal wheel has no scrollback or arrow-key analog, so — unlike the
 /// vertical encoder — this only ever targets a pane that claimed the mouse.
 pub fn encode_wheel_horizontal(left: bool, col: u16, row: u16) -> Vec<u8> {
-    let button: u8 = if left { SGR_WHEEL_UP + 2 } else { SGR_WHEEL_UP + 3 };
+    let button: u8 = if left {
+        SGR_WHEEL_UP + 2
+    } else {
+        SGR_WHEEL_UP + 3
+    };
     format!("\x1b[<{button};{};{}M", col.max(1), row.max(1)).into_bytes()
 }
 

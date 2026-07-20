@@ -342,7 +342,6 @@ mod tests {
         );
     }
 
-
     #[test]
     fn backspace_leaves_prefill_mode_without_dropping_the_path() {
         let mut ws = workspace_on(&["/repos/current"]);
@@ -357,7 +356,6 @@ mod tests {
         );
     }
 
-
     #[test]
     fn accepting_the_prefill_appends_instead_of_replacing() {
         let mut ws = workspace_on(&["/repos/current/"]);
@@ -370,7 +368,6 @@ mod tests {
 
         assert_eq!(ws.repo_input.buf, "/repos/current/src");
     }
-
 
     #[test]
     fn confirming_a_tilde_path_opens_the_home_relative_directory() {
@@ -428,7 +425,10 @@ mod tests {
 
         assert_eq!(ws.remembered.len(), MAX_REMEMBERED);
         // The most recently closed survives; the oldest is gone.
-        assert!(ws.session_for(&format!("/w/p{}", MAX_REMEMBERED + 4)).is_some());
+        assert!(
+            ws.session_for(&format!("/w/p{}", MAX_REMEMBERED + 4))
+                .is_some()
+        );
         assert!(ws.session_for("/w/p0").is_none());
     }
 
@@ -545,7 +545,8 @@ mod tests {
         // `add` makes the new project active, so the outgoing project's press
         // is released in place — same reasoning as `switch`.
         let mut ws = workspace_on(&["/a"]);
-        ws.active_mut().unwrap().pending_mouse_press = Some((1, crossterm::event::MouseButton::Left, 1, 1));
+        ws.active_mut().unwrap().pending_mouse_press =
+            Some((1, crossterm::event::MouseButton::Left, 1, 1));
 
         ws.add(project_at("/b"));
 
@@ -557,7 +558,8 @@ mod tests {
         let mut ws = workspace_from(project_at("/a"));
         ws.add(project_at("/b"));
         ws.switch(0);
-        ws.active_mut().unwrap().pending_mouse_press = Some((1, crossterm::event::MouseButton::Left, 1, 1));
+        ws.active_mut().unwrap().pending_mouse_press =
+            Some((1, crossterm::event::MouseButton::Left, 1, 1));
 
         ws.switch(1);
 

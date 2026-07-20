@@ -275,7 +275,8 @@ mod tests {
 
         // A file event is attributed to its parent — that is the listing whose
         // contents changed, and the one that has to be re-read.
-        tx.send(Ok(vec![event_at("/tmp/repo/src/main.rs")])).unwrap();
+        tx.send(Ok(vec![event_at("/tmp/repo/src/main.rs")]))
+            .unwrap();
         tx.send(Ok(vec![event_at("/tmp/repo/README.md")])).unwrap();
 
         let changes = w.drain_changed();

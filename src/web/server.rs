@@ -125,9 +125,7 @@ impl WebServer {
         } else if let Some(password) = web.password.as_deref().filter(|p| !p.is_empty()) {
             Auth::from_plaintext(password)?
         } else {
-            anyhow::bail!(
-                "web server is enabled but no password or hashed_password is configured"
-            );
+            anyhow::bail!("web server is enabled but no password or hashed_password is configured");
         };
         let bind: IpAddr = web
             .bind
@@ -431,7 +429,8 @@ fn handle_login(body: &str, shared: &Shared) -> Vec<u8> {
             "429 Too Many Requests",
             "text/html; charset=utf-8",
             &[],
-            frontend::login_page(Some("Too many attempts — wait a minute and try again.")).as_bytes(),
+            frontend::login_page(Some("Too many attempts — wait a minute and try again."))
+                .as_bytes(),
         );
     }
 
@@ -523,9 +522,9 @@ fn run_client(mut ws: WebSocket<TcpStream>, shared: Arc<Shared>) {
 fn pump_writes(ws: &mut WebSocket<TcpStream>, rx: &Receiver<ClientMsg>) -> bool {
     while let Ok(msg) = rx.try_recv() {
         let written = match msg {
-            ClientMsg::Resize { cols, rows } => {
-                ws.write(Message::text(format!(r#"{{"t":"resize","cols":{cols},"rows":{rows}}}"#)))
-            }
+            ClientMsg::Resize { cols, rows } => ws.write(Message::text(format!(
+                r#"{{"t":"resize","cols":{cols},"rows":{rows}}}"#
+            ))),
             ClientMsg::Frame(bytes) => ws.write(Message::binary(bytes)),
         };
         if written.is_err() {
@@ -552,7 +551,10 @@ fn pump_read(ws: &mut WebSocket<TcpStream>, shared: &Shared) -> bool {
             true
         }
         Err(tungstenite::Error::Io(e))
-            if matches!(e.kind(), std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut) =>
+            if matches!(
+                e.kind(),
+                std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut
+            ) =>
         {
             // Poll timeout: no message this round.
             true
@@ -643,7 +645,9 @@ mod tests {
     /// connection after each response).
     fn http_request(addr: SocketAddr, raw: &str) -> String {
         let mut stream = TcpStream::connect(addr).unwrap();
-        stream.set_read_timeout(Some(Duration::from_secs(2))).unwrap();
+        stream
+            .set_read_timeout(Some(Duration::from_secs(2)))
+            .unwrap();
         stream.write_all(raw.as_bytes()).unwrap();
         let mut buf = Vec::new();
         // Reads until the server closes the socket (Connection: close).
@@ -697,7 +701,10 @@ mod tests {
 
         // Correct password issues a session cookie via a redirect.
         let ok = http_request(addr, &form_post("password=swordfish"));
-        assert!(ok.starts_with("HTTP/1.1 303"), "correct password must redirect");
+        assert!(
+            ok.starts_with("HTTP/1.1 303"),
+            "correct password must redirect"
+        );
         let token = session_token(&ok).expect("a session cookie");
 
         // The cookie unlocks the app page.
@@ -736,7 +743,10 @@ mod tests {
              Connection: Upgrade\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n\
              Sec-WebSocket-Version: 13\r\nConnection: close\r\n\r\n",
         );
-        assert!(resp.starts_with("HTTP/1.1 401"), "unauthenticated WS must 401");
+        assert!(
+            resp.starts_with("HTTP/1.1 401"),
+            "unauthenticated WS must 401"
+        );
     }
 
     #[test]
@@ -756,7 +766,10 @@ mod tests {
                  Cookie: {SESSION_COOKIE}={token}\r\nConnection: close\r\n\r\n"
             ),
         );
-        assert!(resp.starts_with("HTTP/1.1 403"), "cross-origin WS must be forbidden");
+        assert!(
+            resp.starts_with("HTTP/1.1 403"),
+            "cross-origin WS must be forbidden"
+        );
     }
 
     #[test]
@@ -813,7 +826,10 @@ mod tests {
             }
             thread::sleep(Duration::from_millis(20));
         }
-        assert!(resize_seen, "a new client must receive a resize message first");
+        assert!(
+            resize_seen,
+            "a new client must receive a resize message first"
+        );
         let frame = frame.expect("a broadcast frame within the retry budget");
         assert!(
             frame.windows(5).any(|w| w == b"hello"),
@@ -836,7 +852,11 @@ mod tests {
             }
             thread::sleep(Duration::from_millis(20));
         }
-        assert_eq!(input.len(), 1, "the keypress must be delivered exactly once");
+        assert_eq!(
+            input.len(),
+            1,
+            "the keypress must be delivered exactly once"
+        );
         assert!(matches!(input[0], WebInputEvent::Key(_)));
     }
 }

@@ -17,10 +17,7 @@ pub const XTERM_CSS: &str = include_str!("frontend/vendor/xterm.css");
 /// Render the login page, injecting an escaped error banner when present.
 pub fn login_page(error: Option<&str>) -> String {
     let banner = match error {
-        Some(msg) => format!(
-            "<p class=\"error\" role=\"alert\">{}</p>",
-            html_escape(msg)
-        ),
+        Some(msg) => format!("<p class=\"error\" role=\"alert\">{}</p>", html_escape(msg)),
         None => String::new(),
     };
     LOGIN_TEMPLATE.replace("<!--ERROR-->", &banner)
@@ -57,7 +54,9 @@ mod tests {
             .find(".composition-view")
             .expect("app.html must style .composition-view to keep it off the grid");
         let rest = &APP_HTML[start..];
-        let end = rest.find('}').expect(".composition-view rule must be closed");
+        let end = rest
+            .find('}')
+            .expect(".composition-view rule must be closed");
         let rule = &rest[..end];
         assert!(
             !rule.contains("display:"),

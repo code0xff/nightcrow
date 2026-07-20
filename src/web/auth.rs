@@ -24,8 +24,8 @@ impl Auth {
         let mut salt_bytes = [0u8; 16];
         getrandom::fill(&mut salt_bytes)
             .map_err(|e| anyhow!("OS RNG unavailable for password salt: {e}"))?;
-        let salt =
-            SaltString::encode_b64(&salt_bytes).map_err(|e| anyhow!("encoding password salt: {e}"))?;
+        let salt = SaltString::encode_b64(&salt_bytes)
+            .map_err(|e| anyhow!("encoding password salt: {e}"))?;
         let phc = Argon2::default()
             .hash_password(password.as_bytes(), &salt)
             .map_err(|e| anyhow!("hashing web password: {e}"))?
@@ -215,7 +215,8 @@ mod tests {
             let ok = limiter.check_and_record(t0 + Duration::from_secs((i as u64) * 40));
             assert!(ok, "attempt {i} within the hourly cap should pass");
         }
-        let blocked = limiter.check_and_record(t0 + Duration::from_secs((MAX_PER_HOUR as u64) * 40));
+        let blocked =
+            limiter.check_and_record(t0 + Duration::from_secs((MAX_PER_HOUR as u64) * 40));
         assert!(!blocked, "the 15th attempt in an hour is blocked");
     }
 }

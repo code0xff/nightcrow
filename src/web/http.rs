@@ -188,7 +188,10 @@ mod tests {
     fn parses_method_and_strips_query_from_path() {
         let head = parse("GET /login?token=abc&x=1 HTTP/1.1\r\nHost: localhost\r\n\r\n");
         assert_eq!(head.method, "GET");
-        assert_eq!(head.path, "/login", "the query string must be stripped for routing");
+        assert_eq!(
+            head.path, "/login",
+            "the query string must be stripped for routing"
+        );
     }
 
     #[test]
@@ -209,9 +212,7 @@ mod tests {
 
     #[test]
     fn detects_websocket_upgrade() {
-        let ws = parse(
-            "GET /ws HTTP/1.1\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n\r\n",
-        );
+        let ws = parse("GET /ws HTTP/1.1\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n\r\n");
         assert!(ws.is_websocket_upgrade());
         let plain = parse("GET / HTTP/1.1\r\nConnection: keep-alive\r\n\r\n");
         assert!(!plain.is_websocket_upgrade());

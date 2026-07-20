@@ -75,7 +75,10 @@ impl EventListener for EventProxy {
                 }
             }
             Event::PtyWrite(text) => {
-                self.0.borrow_mut().pty_writes.extend_from_slice(text.as_bytes());
+                self.0
+                    .borrow_mut()
+                    .pty_writes
+                    .extend_from_slice(text.as_bytes());
             }
             // Clipboard, bell, damage and child-process events are not part
             // of nightcrow's pane contract; drop them.
@@ -165,9 +168,7 @@ impl PaneEmulator {
         let mode = self.term.mode();
         if mode.intersects(TermMode::MOUSE_MODE) && mode.contains(TermMode::SGR_MOUSE) {
             ScrollSink::MouseWheel
-        } else if mode.contains(TermMode::ALT_SCREEN)
-            && mode.contains(TermMode::ALTERNATE_SCROLL)
-        {
+        } else if mode.contains(TermMode::ALT_SCREEN) && mode.contains(TermMode::ALTERNATE_SCROLL) {
             ScrollSink::ArrowKeys
         } else {
             ScrollSink::Scrollback
@@ -559,13 +560,22 @@ mod tests {
     #[test]
     fn named_colors_map_to_indexed_and_defaults_to_reset() {
         use ratatui::style::Color as C;
-        assert_eq!(to_ratatui_color(Color::Named(NamedColor::Red)), C::Indexed(1));
+        assert_eq!(
+            to_ratatui_color(Color::Named(NamedColor::Red)),
+            C::Indexed(1)
+        );
         assert_eq!(
             to_ratatui_color(Color::Named(NamedColor::BrightWhite)),
             C::Indexed(15)
         );
-        assert_eq!(to_ratatui_color(Color::Named(NamedColor::DimBlue)), C::Indexed(4));
-        assert_eq!(to_ratatui_color(Color::Named(NamedColor::Foreground)), C::Reset);
+        assert_eq!(
+            to_ratatui_color(Color::Named(NamedColor::DimBlue)),
+            C::Indexed(4)
+        );
+        assert_eq!(
+            to_ratatui_color(Color::Named(NamedColor::Foreground)),
+            C::Reset
+        );
         assert_eq!(to_ratatui_color(Color::Indexed(42)), C::Indexed(42));
         assert_eq!(
             to_ratatui_color(Color::Spec(alacritty_terminal::vte::ansi::Rgb {

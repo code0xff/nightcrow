@@ -353,7 +353,10 @@ fn tab_segments(app: &App, visible: std::ops::Range<usize>) -> Vec<(String, TabS
         },
     ));
     if hidden_after > 0 {
-        segments.push((format!(" +{hidden_after} "), TabSegment::Marker(visible.end)));
+        segments.push((
+            format!(" +{hidden_after} "),
+            TabSegment::Marker(visible.end),
+        ));
     }
     segments
 }
@@ -402,9 +405,7 @@ fn render_tab_bar(
                     .bg(accent)
                     .add_modifier(Modifier::BOLD),
                 TabSegment::Tab(_) => Style::default().fg(Color::Gray),
-                TabSegment::Legend | TabSegment::Marker(_) => {
-                    Style::default().fg(Color::DarkGray)
-                }
+                TabSegment::Legend | TabSegment::Marker(_) => Style::default().fg(Color::DarkGray),
             };
             Span::styled(text, style)
         })
@@ -532,8 +533,7 @@ mod tests {
         let mut emulator = crate::runtime::emulator::PaneEmulator::new(3, 10, 0);
         emulator.process(b"\x1b[2;4H");
 
-        let position =
-            screen_cursor_position(&emulator.view(), Rect::new(20, 10, 10, 3)).unwrap();
+        let position = screen_cursor_position(&emulator.view(), Rect::new(20, 10, 10, 3)).unwrap();
 
         assert_eq!(position, Position::new(23, 11));
     }
@@ -562,8 +562,7 @@ mod tests {
         let mut emulator = crate::runtime::emulator::PaneEmulator::new(3, 10, 0);
         emulator.process(b"\x1b[?25l\x1b[2;4H");
 
-        let position =
-            screen_cursor_position(&emulator.view(), Rect::new(20, 10, 10, 3)).unwrap();
+        let position = screen_cursor_position(&emulator.view(), Rect::new(20, 10, 10, 3)).unwrap();
 
         assert_eq!(position, Position::new(23, 11));
     }
@@ -828,13 +827,25 @@ mod tests {
         let y = tab_area.y;
 
         // Segment 0 is the ` +2 ` marker → nearest hidden pane on the left.
-        assert_eq!(tab_target_at(&app, area, tab_segment_x(&app, area, 0), y), Some(1));
+        assert_eq!(
+            tab_target_at(&app, area, tab_segment_x(&app, area, 0), y),
+            Some(1)
+        );
         // Segments 1 and 2 are the visible tabs for panes 2 and 3.
-        assert_eq!(tab_target_at(&app, area, tab_segment_x(&app, area, 1), y), Some(2));
-        assert_eq!(tab_target_at(&app, area, tab_segment_x(&app, area, 2), y), Some(3));
+        assert_eq!(
+            tab_target_at(&app, area, tab_segment_x(&app, area, 1), y),
+            Some(2)
+        );
+        assert_eq!(
+            tab_target_at(&app, area, tab_segment_x(&app, area, 2), y),
+            Some(3)
+        );
         // Past the last segment and off the tab row: no target.
         assert_eq!(tab_target_at(&app, area, tab_area.right() - 1, y), None);
-        assert_eq!(tab_target_at(&app, area, tab_segment_x(&app, area, 1), y + 1), None);
+        assert_eq!(
+            tab_target_at(&app, area, tab_segment_x(&app, area, 1), y + 1),
+            None
+        );
     }
 
     #[test]

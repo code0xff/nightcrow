@@ -223,8 +223,12 @@ pub struct App {
     /// has not been seen. The cell is kept so the press can still be released
     /// where it happened when no pointer position is available — switching
     /// projects, for instance.
-    pub pending_mouse_press:
-        Option<(crate::backend::PaneId, crossterm::event::MouseButton, u16, u16)>,
+    pub pending_mouse_press: Option<(
+        crate::backend::PaneId,
+        crossterm::event::MouseButton,
+        u16,
+        u16,
+    )>,
     /// Mirror of `[mouse] enabled`. Gates only the hint bar's clickability
     /// inversion — with capture off no mouse event ever arrives, so the
     /// input path needs no check, but a label must not advertise a click
@@ -1489,8 +1493,7 @@ pub(crate) mod tests {
         // failing re-read leaks a "tree error" into the status bar.
         assert!(!app.tree_view.expanded.contains("src"));
         assert!(
-            !app
-                .notice
+            !app.notice
                 .as_ref()
                 .is_some_and(|n| n.kind == NoticeKind::Tree),
             "a vanished directory must not surface a tree error: {:?}",
@@ -1832,7 +1835,10 @@ pub(crate) mod tests {
         // Draining with no new event leaves the flag standing, so the refresh
         // still happens once this project becomes the active one.
         app.drain_tree_watcher();
-        assert!(!app.tree_dirty.is_empty(), "a pending refresh survives a drain");
+        assert!(
+            !app.tree_dirty.is_empty(),
+            "a pending refresh survives a drain"
+        );
 
         app.poll_tree_watcher();
         assert!(app.tree_dirty.is_empty(), "the active project consumes it");
@@ -1961,8 +1967,7 @@ pub(crate) mod tests {
         // ...and the moved-to directory is visible at the root.
         assert!(app.tree_view.visible_rows().iter().any(|r| r.path == "lib"));
         assert!(
-            !app
-                .notice
+            !app.notice
                 .as_ref()
                 .is_some_and(|n| n.kind == NoticeKind::Tree),
             "a vanished restored expansion must not surface a tree error: {:?}",

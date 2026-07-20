@@ -165,7 +165,14 @@ fn render_file_list(frame: &mut Frame, app: &App, area: Rect, accent: Color) {
         .log_view
         .commits
         .get(app.log_view.selected)
-        .map(|e| format!(" {} {} {} ", super::jump_legend(app, '1'), e.short_id, e.summary))
+        .map(|e| {
+            format!(
+                " {} {} {} ",
+                super::jump_legend(app, '1'),
+                e.short_id,
+                e.summary
+            )
+        })
         .unwrap_or_else(|| format!(" {} Files ", super::jump_legend(app, '1')));
 
     let title_base = truncate_title(&commit_summary, title_budget(list_area.width));

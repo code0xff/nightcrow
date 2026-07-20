@@ -166,11 +166,14 @@ mod tests {
         // screen next launch; skipping the write would restore the old tabs.
         let dir = tempfile::TempDir::new().unwrap();
         let path = dir.path().join("workspace.json");
-        save_workspace_at(&path, &WorkspaceState {
-            repos: vec!["/w/api".to_string()],
-            active: 0,
-            sessions: Vec::new(),
-        });
+        save_workspace_at(
+            &path,
+            &WorkspaceState {
+                repos: vec!["/w/api".to_string()],
+                active: 0,
+                sessions: Vec::new(),
+            },
+        );
 
         save_workspace_at(&path, &WorkspaceState::default());
 

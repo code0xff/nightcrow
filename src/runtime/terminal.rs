@@ -776,7 +776,10 @@ mod tests {
         // notches and silently do nothing.
         state.scroll_active(false, 1);
 
-        assert_eq!(payloads_after_setup(&state), vec![b"\x1b[<65;21;6M".to_vec()]);
+        assert_eq!(
+            payloads_after_setup(&state),
+            vec![b"\x1b[<65;21;6M".to_vec()]
+        );
     }
 
     #[test]
@@ -785,7 +788,10 @@ mod tests {
 
         state.scroll_active(true, 3);
 
-        assert_eq!(payloads_after_setup(&state), vec![b"\x1b[A\x1b[A\x1b[A".to_vec()]);
+        assert_eq!(
+            payloads_after_setup(&state),
+            vec![b"\x1b[A\x1b[A\x1b[A".to_vec()]
+        );
     }
 
     #[test]
@@ -920,7 +926,10 @@ mod tests {
 
         state.scroll_pane(id, true, 3, Some((5, 2)));
 
-        assert_eq!(payloads_after_setup(&state), vec![b"\x1b[<64;5;2M".to_vec()]);
+        assert_eq!(
+            payloads_after_setup(&state),
+            vec![b"\x1b[<64;5;2M".to_vec()]
+        );
     }
 
     #[test]
