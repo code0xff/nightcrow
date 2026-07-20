@@ -6,6 +6,18 @@ description = "Agent-adjacent terminal workbench — git diff viewer + multi-ter
 license = "Apache-2.0"
 keywords = ["tui", "git", "terminal", "agentic", "cli"]
 categories = ["command-line-utilities", "development-tools"]
+# The published crate needs the viewer's *built* bundle (rust-embed reads
+# viewer-ui/dist at compile time) but not its sources or toolchain files —
+# those live in git. Keeps the crate small without breaking `cargo install`.
+exclude = [
+    "viewer-ui/node_modules",
+    "viewer-ui/src",
+    "viewer-ui/index.html",
+    "viewer-ui/package.json",
+    "viewer-ui/package-lock.json",
+    "viewer-ui/tsconfig.json",
+    "viewer-ui/vite.config.ts",
+]
 
 [dependencies]
 ratatui = { version = "0.30", features = ["crossterm"] }
