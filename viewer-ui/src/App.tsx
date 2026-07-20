@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, type CSSProperties } from "react";
 import {
   api,
   isUnauthorized,
@@ -16,6 +16,31 @@ import { TerminalPanel } from "./Terminal";
 /// How often the tab bar re-reads the served set. The payload is a handful of
 /// short strings, and this only has to feel prompt when a tab opens.
 const REPO_POLL_MS = 3000;
+
+/// Sidebar width bounds in px: narrow enough that the file pane keeps a usable
+/// column, wide enough that a nested path is still legible.
+const SIDEBAR_MIN = 200;
+const SIDEBAR_MAX = 560;
+const SIDEBAR_DEFAULT = 350;
+/// How far one arrow-key press moves the divider.
+const SIDEBAR_STEP = 16;
+const SIDEBAR_KEY = "nightcrow.viewer.sidebar";
+
+function clampSidebar(px: number) {
+  return Math.min(SIDEBAR_MAX, Math.max(SIDEBAR_MIN, px));
+}
+
+/// The stored width is user-editable and outlives any given build, so treat it
+/// as untrusted input: anything unparseable falls back to the default. Reading
+/// can itself throw when storage is blocked, which must not stop the app.
+function loadSidebar() {
+  try {
+    const px = Number.parseInt(localStorage.getItem(SIDEBAR_KEY) ?? "", 10);
+    return Number.isFinite(px) ? clampSidebar(px) : SIDEBAR_DEFAULT;
+  } catch {
+    return SIDEBAR_DEFAULT;
+  }
+}
 
 type Tab = "status" | "log" | "tree";
 type Pane =
@@ -44,6 +69,43 @@ export function App() {
   const [pane, setPane] = useState<Pane>({ kind: "empty" });
   const [error, setError] = useState<string | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [sidebar, setSidebar] = useState(loadSidebar);
+  const [dragging, setDragging] = useState(false);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(SIDEBAR_KEY, String(sidebar));
+    } catch {
+      // Storage blocked or full. The width still applies for this session;
+      // losing the preference is not worth surfacing an error for.
+    }
+  }, [sidebar]);
+
+  // Pointer capture keeps the drag alive past the handle's own 4px, so no
+  // window-level listeners are needed and the drag cannot get stuck.
+  const startDrag = (e: React.PointerEvent<HTMLDivElement>) => {
+    e.currentTarget.setPointerCapture(e.pointerId);
+    setDragging(true);
+  };
+  const onDrag = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!dragging) return;
+    // Measured from the grid's left edge rather than accumulated from a start
+    // delta, so clamping at either end cannot desync the handle from the
+    // cursor over a long drag.
+    const left = e.currentTarget.parentElement?.getBoundingClientRect().left ?? 0;
+    setSidebar(clampSidebar(e.clientX - left));
+  };
+  const endDrag = (e: React.PointerEvent<HTMLDivElement>) => {
+    e.currentTarget.releasePointerCapture(e.pointerId);
+    setDragging(false);
+  };
+  const nudge = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (e.key === "ArrowLeft") setSidebar((w) => clampSidebar(w - SIDEBAR_STEP));
+    else if (e.key === "ArrowRight")
+      setSidebar((w) => clampSidebar(w + SIDEBAR_STEP));
+    else return;
+    e.preventDefault();
+  };
 
   // A failed call is either "log back in" or a message worth showing.
   const handle = useCallback((err: unknown) => {
@@ -246,8 +308,16 @@ export function App() {
 
       {repo ? (
         <>
-          <main className="grid min-h-0 grid-cols-1 md:grid-cols-[minmax(200px,300px)_1fr]">
-        <section className="flex min-h-0 flex-col border-ink-700 md:border-r">
+          {/* The width rides on a custom property so the responsive rule stays
+              declarative — below md the grid collapses to one column and the
+              divider is hidden, leaving the stacked layout untouched. */}
+          <main
+            className={`grid min-h-0 grid-cols-1 md:grid-cols-[var(--nc-sidebar)_auto_1fr] ${
+              dragging ? "select-none" : ""
+            }`}
+            style={{ "--nc-sidebar": `${sidebar}px` } as CSSProperties}
+          >
+        <section className="flex min-h-0 flex-col">
           <div className="flex shrink-0 gap-1 px-2 py-1">
             {(["status", "log", "tree"] as Tab[]).map((t) => (
               <button
@@ -343,6 +413,32 @@ export function App() {
             )}
           </ul>
         </section>
+
+        {/* Doubles as the column rule, so the sidebar drops its own border. The
+            hit area is deliberately wider than the rule it draws: a 1px target
+            is unusable, and a 7px rule would read as a gutter. */}
+        <div
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="Resize the file list"
+          aria-valuenow={sidebar}
+          aria-valuemin={SIDEBAR_MIN}
+          aria-valuemax={SIDEBAR_MAX}
+          tabIndex={0}
+          onPointerDown={startDrag}
+          onPointerMove={onDrag}
+          onPointerUp={endDrag}
+          onKeyDown={nudge}
+          className="group hidden w-[7px] cursor-col-resize focus:outline-none md:block"
+        >
+          <div
+            className={`mx-auto h-full w-px ${
+              dragging
+                ? "bg-accent"
+                : "bg-ink-700 group-hover:bg-accent group-focus:bg-accent"
+            }`}
+          />
+        </div>
 
         {/* Header outside the scroll box, body inside — the same split the file
             list on the left uses. Pinning it from inside the scroll box instead
