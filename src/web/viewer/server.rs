@@ -6,7 +6,9 @@
 //!
 //! Request handling order is deliberate and load-bearing:
 //!
-//! 1. **Origin** — a cross-site request is refused before anything else runs.
+//! 1. **Host, then Origin** — a rebound name or a cross-site request is
+//!    refused before anything else runs. Origin alone only proves Origin and
+//!    Host agree, which a DNS-rebinding attacker satisfies trivially.
 //! 2. **Static assets** — the built bundle is public. It holds no repository
 //!    data and renders the login form, so gating it would leave no way in.
 //! 3. **Auth** — checked *before* the repository is looked up, so an
@@ -57,6 +59,10 @@ const TERM_POLL_TIMEOUT: Duration = Duration::from_millis(10);
 
 pub struct ViewerState {
     pub catalog: Catalog,
+    /// Whether the listener is on a loopback address. Gates the Host check:
+    /// off-loopback, the operator owns the network path and may front this
+    /// with a proxy under any name.
+    bound_loopback: bool,
     auth: Auth,
     sessions: SessionStore,
     limiter: RateLimiter,
@@ -102,6 +108,7 @@ impl ViewerServer {
 
         let state = Arc::new(ViewerState {
             catalog: Catalog::new(),
+            bound_loopback: bind.is_loopback(),
             auth,
             sessions: SessionStore::new(),
             limiter: RateLimiter::new(),
@@ -167,7 +174,12 @@ fn handle_connection(mut stream: TcpStream, state: Arc<ViewerState>) {
         }
     };
 
-    // (1) Origin, before anything reads state.
+    // (1) Host, then Origin — both before anything reads state. Origin only
+    // proves the two agree, which a DNS-rebound attacker controls outright.
+    if !conn::host_allowed(&head, state.bound_loopback) {
+        let _ = stream.write_all(&text_response("403 Forbidden", "unexpected host"));
+        return;
+    }
     if !conn::origin_allowed(&head) {
         let _ = stream.write_all(&text_response(
             "403 Forbidden",
@@ -183,6 +195,12 @@ fn handle_connection(mut stream: TcpStream, state: Arc<ViewerState>) {
             return;
         }
         ("GET", "/logout") => {
+            // Revoke server-side, not just in the browser: cookies are not
+            // port-isolated, so any other loopback service is same-site here
+            // and could have read the token before it was cleared.
+            if let Some(token) = head.cookie(VIEWER_SESSION_COOKIE) {
+                state.sessions.revoke(token);
+            }
             let clear =
                 format!("{VIEWER_SESSION_COOKIE}=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0");
             let _ = stream.write_all(&http::redirect("/", &[("Set-Cookie", &clear)]));
@@ -567,7 +585,7 @@ mod tests {
         };
         request(
             addr,
-            &format!("GET {path} HTTP/1.1\r\nHost: x\r\n{cookie}Connection: close\r\n\r\n"),
+            &format!("GET {path} HTTP/1.1\r\nHost: 127.0.0.1\r\n{cookie}Connection: close\r\n\r\n"),
         )
     }
 
@@ -577,7 +595,7 @@ mod tests {
         let response = request(
             addr,
             &format!(
-                "POST /login HTTP/1.1\r\nHost: x\r\n\
+                "POST /login HTTP/1.1\r\nHost: 127.0.0.1\r\n\
                  Content-Type: application/x-www-form-urlencoded\r\n\
                  Content-Length: {}\r\nConnection: close\r\n\r\n{body}",
                 body.len()
@@ -650,6 +668,47 @@ mod tests {
     }
 
     #[test]
+    fn a_rebound_host_is_refused_on_a_loopback_bind() {
+        // DNS rebinding: the attacker controls Origin *and* Host, so they
+        // agree and the origin check alone would pass. Only the Host check
+        // denies the same-origin foothold.
+        let (dir, path) = make_repo();
+        let server = server(&[path]);
+        let token = login(server.addr());
+
+        let response = request(
+            server.addr(),
+            &format!(
+                "GET /api/repos HTTP/1.1\r\nHost: evil.example\r\n\
+                 Origin: http://evil.example\r\n\
+                 Cookie: {VIEWER_SESSION_COOKIE}={token}\r\nConnection: close\r\n\r\n"
+            ),
+        );
+
+        assert!(response.starts_with("HTTP/1.1 403"), "got: {response}");
+        drop(dir);
+    }
+
+    #[test]
+    fn logout_revokes_the_session_server_side() {
+        // Clearing the cookie is not enough: cookies are not port-isolated, so
+        // another loopback service is same-site and may already hold the token.
+        let (dir, path) = make_repo();
+        let server = server(&[path]);
+        let token = login(server.addr());
+        assert!(get(server.addr(), "/api/repos", Some(&token)).starts_with("HTTP/1.1 200"));
+
+        get(server.addr(), "/logout", Some(&token));
+
+        let after = get(server.addr(), "/api/repos", Some(&token));
+        assert!(
+            after.starts_with("HTTP/1.1 401"),
+            "the token must stop working immediately: {after}"
+        );
+        drop(dir);
+    }
+
+    #[test]
     fn a_cross_origin_request_is_refused_before_auth() {
         let (dir, path) = make_repo();
         let server = server(&[path]);
@@ -658,7 +717,7 @@ mod tests {
         let response = request(
             server.addr(),
             &format!(
-                "GET /api/repos HTTP/1.1\r\nHost: x\r\nOrigin: http://evil.example\r\n\
+                "GET /api/repos HTTP/1.1\r\nHost: 127.0.0.1\r\nOrigin: http://evil.example\r\n\
                  Cookie: {VIEWER_SESSION_COOKIE}={token}\r\nConnection: close\r\n\r\n"
             ),
         );
@@ -876,7 +935,7 @@ mod tests {
         let response = request(
             server.addr(),
             &format!(
-                "DELETE /api/status?repo={id} HTTP/1.1\r\nHost: x\r\n\
+                "DELETE /api/status?repo={id} HTTP/1.1\r\nHost: 127.0.0.1\r\n\
                  Cookie: {VIEWER_SESSION_COOKIE}={token}\r\nConnection: close\r\n\r\n"
             ),
         );
@@ -896,7 +955,7 @@ mod tests {
         stream
             .write_all(
                 format!(
-                    "GET /api/events?repo={id} HTTP/1.1\r\nHost: x\r\n\
+                    "GET /api/events?repo={id} HTTP/1.1\r\nHost: 127.0.0.1\r\n\
                      Cookie: {VIEWER_SESSION_COOKIE}={token}\r\n\r\n"
                 )
                 .as_bytes(),
@@ -984,7 +1043,7 @@ mod tests {
         let unknown = request(
             server.addr(),
             &format!(
-                "GET /ws/term?repo=r9999 HTTP/1.1\r\nHost: x\r\nUpgrade: websocket\r\n\
+                "GET /ws/term?repo=r9999 HTTP/1.1\r\nHost: 127.0.0.1\r\nUpgrade: websocket\r\n\
                  Connection: Upgrade\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n\
                  Sec-WebSocket-Version: 13\r\nCookie: {VIEWER_SESSION_COOKIE}={token}\r\n\r\n"
             ),

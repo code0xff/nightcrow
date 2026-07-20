@@ -127,7 +127,15 @@ impl TerminalSession {
             },
             ClientMessage::Close { pane } => Command::Close { pane },
         };
-        let _ = self.hub.commands.send(command);
+        // Never block the connection thread here. The hub drains this queue
+        // from the same thread that writes to a PTY master, and that write
+        // blocks forever if the child has stopped reading stdin — a blocking
+        // send would then wedge every connection thread for this repository.
+        // Dropping a command under that much backpressure is the honest
+        // outcome; the client is already far ahead of what the shell can take.
+        if let Err(TrySendError::Full(_)) = self.hub.commands.try_send(command) {
+            tracing::debug!("viewer: terminal command queue full, dropping");
+        }
     }
 }
 

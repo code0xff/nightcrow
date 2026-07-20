@@ -16,14 +16,19 @@ use std::io::Read;
 use std::net::TcpStream;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 /// Reject a request head larger than this (headers only) to bound memory.
 pub const MAX_HEAD_BYTES: usize = 32 * 1024;
 /// Cap the request body read. Both servers take only small form posts.
 pub const MAX_BODY_BYTES: usize = 64 * 1024;
-/// Give a client this long to send its request head before dropping it.
+/// Per-read socket timeout while collecting the head.
 pub const HEAD_READ_TIMEOUT: Duration = Duration::from_secs(15);
+/// Wall-clock budget for the *whole* request. The socket timeout above only
+/// bounds one `read`, and it re-arms on every byte — a client dribbling one
+/// byte per timeout would otherwise hold a connection slot for days, and 64 of
+/// those starve the accept loop. This is the deadline that actually ends it.
+pub const REQUEST_DEADLINE: Duration = Duration::from_secs(30);
 
 /// Read the request head (up to CRLFCRLF) plus any declared body.
 ///
@@ -31,6 +36,7 @@ pub const HEAD_READ_TIMEOUT: Duration = Duration::from_secs(15);
 /// sends a terminator cannot grow the buffer without bound.
 pub fn read_request(stream: &mut TcpStream) -> Result<(RequestHead, String)> {
     stream.set_read_timeout(Some(HEAD_READ_TIMEOUT)).ok();
+    let deadline = Instant::now() + REQUEST_DEADLINE;
     let mut buf = Vec::new();
     let mut chunk = [0u8; 4096];
     let head_end = loop {
@@ -39,6 +45,9 @@ pub fn read_request(stream: &mut TcpStream) -> Result<(RequestHead, String)> {
         }
         if buf.len() > MAX_HEAD_BYTES {
             anyhow::bail!("request head exceeds {MAX_HEAD_BYTES} bytes");
+        }
+        if Instant::now() >= deadline {
+            anyhow::bail!("request head did not arrive within {REQUEST_DEADLINE:?}");
         }
         let n = stream.read(&mut chunk).context("reading request head")?;
         if n == 0 {
@@ -54,6 +63,9 @@ pub fn read_request(stream: &mut TcpStream) -> Result<(RequestHead, String)> {
     let want = head.content_length.min(MAX_BODY_BYTES);
     let mut body = buf[head_end..].to_vec();
     while body.len() < want {
+        if Instant::now() >= deadline {
+            anyhow::bail!("request body did not arrive within {REQUEST_DEADLINE:?}");
+        }
         let n = stream.read(&mut chunk).context("reading request body")?;
         if n == 0 {
             break;
@@ -84,6 +96,42 @@ pub fn origin_allowed(head: &RequestHead) -> bool {
             )
         }
     }
+}
+
+/// Whether the request's `Host` names an address this server should answer on.
+///
+/// [`origin_allowed`] only proves Origin and Host *agree*, which a DNS-rebound
+/// attacker satisfies trivially: they control both. Rebinding `evil.example` to
+/// 127.0.0.1 would otherwise give their page a same-origin position from which
+/// to POST `/login` and read the reply — and a hit yields repository contents
+/// plus interactive shells.
+///
+/// A loopback-bound server can only legitimately be addressed as loopback (or,
+/// through a tunnel, as whatever the operator configured), so any other Host is
+/// refused. When bound off-loopback the operator has taken responsibility for
+/// the network path, and the check would reject legitimate proxied hosts, so it
+/// does not apply.
+pub fn host_allowed(head: &RequestHead, bound_loopback: bool) -> bool {
+    if !bound_loopback {
+        return true;
+    }
+    let Some(host) = head.header("host") else {
+        // HTTP/1.1 requires Host; a request without one is not from a browser
+        // and cannot be a rebinding victim.
+        return true;
+    };
+    // Strip the port, and the brackets of an IPv6 literal.
+    let name = match host.rsplit_once(':') {
+        Some((name, port)) if port.chars().all(|c| c.is_ascii_digit()) => name,
+        _ => host,
+    };
+    let name = name.trim_start_matches('[').trim_end_matches(']');
+    name.eq_ignore_ascii_case("localhost")
+        || name == "127.0.0.1"
+        || name == "::1"
+        || name
+            .parse::<std::net::IpAddr>()
+            .is_ok_and(|ip| ip.is_loopback())
 }
 
 pub fn find_subsequence(haystack: &[u8], needle: &[u8]) -> Option<usize> {
@@ -120,6 +168,10 @@ impl Drop for ConnectionSlot {
     }
 }
 
+/// Largest WebSocket message either server will accept. Terminal input is
+/// keystrokes and pastes; the mirror's is small JSON.
+pub const MAX_WS_MESSAGE_BYTES: usize = 1024 * 1024;
+
 /// Complete a WebSocket upgrade on `stream`, or answer the error and give up.
 ///
 /// Shared by both servers: the handshake needs only the request head and the
@@ -150,16 +202,68 @@ pub fn websocket_handshake(
     if stream.write_all(handshake.as_bytes()).is_err() {
         return None;
     }
+    // Cap frame and message size. tungstenite's defaults are 16 MiB / 64 MiB,
+    // which a client could pair with the terminal command queue to park
+    // gigabytes of pending input. Nothing either server accepts is large.
+    let config = tungstenite::protocol::WebSocketConfig::default()
+        .max_message_size(Some(MAX_WS_MESSAGE_BYTES))
+        .max_frame_size(Some(MAX_WS_MESSAGE_BYTES));
     Some(tungstenite::WebSocket::from_raw_socket(
         stream,
         tungstenite::protocol::Role::Server,
-        None,
+        Some(config),
     ))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn head_with(headers: &[(&str, &str)]) -> RequestHead {
+        let mut text = String::from("GET / HTTP/1.1\r\n");
+        for (name, value) in headers {
+            text.push_str(&format!("{name}: {value}\r\n"));
+        }
+        text.push_str("\r\n");
+        http::parse_request_head(&text).unwrap()
+    }
+
+    #[test]
+    fn host_allowed_accepts_loopback_spellings() {
+        for host in [
+            "localhost:8091",
+            "LOCALHOST",
+            "127.0.0.1:8091",
+            "127.0.0.1",
+            "[::1]:8091",
+            "127.0.0.2",
+        ] {
+            assert!(
+                host_allowed(&head_with(&[("Host", host)]), true),
+                "{host} must be accepted"
+            );
+        }
+    }
+
+    #[test]
+    fn host_allowed_refuses_a_rebound_name_on_a_loopback_bind() {
+        // The attacker controls both headers, so origin_allowed passes; only
+        // the Host check stops the same-origin foothold.
+        let head = head_with(&[("Host", "evil.example"), ("Origin", "http://evil.example")]);
+
+        assert!(origin_allowed(&head), "precondition: origin matches host");
+        assert!(!host_allowed(&head, true), "a rebound name must be refused");
+    }
+
+    #[test]
+    fn host_allowed_defers_when_bound_off_loopback() {
+        // The operator chose the network path; rejecting their proxy's Host
+        // would break a legitimate deployment.
+        let head = head_with(&[("Host", "nightcrow.internal")]);
+
+        assert!(!host_allowed(&head, true));
+        assert!(host_allowed(&head, false));
+    }
 
     #[test]
     fn connection_slot_refuses_over_the_cap() {

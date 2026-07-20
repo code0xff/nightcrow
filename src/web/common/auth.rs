@@ -80,6 +80,16 @@ impl SessionStore {
         Ok(token)
     }
 
+    /// Invalidate a token server-side. Clearing the cookie alone leaves a
+    /// leaked token usable until the process exits, which makes logout a
+    /// suggestion rather than a revocation.
+    pub fn revoke(&self, token: &str) {
+        self.tokens
+            .lock()
+            .expect("session store mutex poisoned")
+            .remove(token);
+    }
+
     pub fn is_valid(&self, token: &str) -> bool {
         self.tokens
             .lock()
@@ -182,6 +192,22 @@ mod tests {
         assert!(store.is_valid(&a));
         assert!(store.is_valid(&b));
         assert!(!store.is_valid("unknown"));
+    }
+
+    #[test]
+    fn a_revoked_session_stops_validating() {
+        let store = SessionStore::new();
+        let token = store.issue().unwrap();
+        assert!(store.is_valid(&token));
+
+        store.revoke(&token);
+
+        assert!(
+            !store.is_valid(&token),
+            "a leaked token must stop working at logout, not at process exit"
+        );
+        // Revoking an unknown token is a no-op, not a panic.
+        store.revoke("never-issued");
     }
 
     #[test]
