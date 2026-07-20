@@ -33,6 +33,31 @@ type Pane =
   | { kind: "file"; value: FileView }
   | { kind: "empty" };
 
+/**
+ * A path that gives up its directory before its file name.
+ *
+ * A plain `truncate` cuts the tail, which is the one part that tells two rows
+ * apart — `src/web/viewer/server.rs` and `src/web/viewer/terminal.rs` both
+ * become `src/web/viewer/…` in a narrow sidebar. Splitting the two and letting
+ * only the directory shrink keeps the name legible at any width; the ellipsis
+ * lands mid-path, so the top-level directory survives too. `title` still
+ * carries the whole path for the cases where the middle mattered.
+ */
+function PathLabel({ path, from }: { path: string; from?: string }) {
+  const cut = path.lastIndexOf("/");
+  const dir = cut === -1 ? "" : path.slice(0, cut + 1);
+  const name = cut === -1 ? path : path.slice(cut + 1);
+  return (
+    <span
+      className="flex min-w-0"
+      title={from ? `${from} → ${path}` : path}
+    >
+      <span className="min-w-0 truncate">{from ? `${from} → ${dir}` : dir}</span>
+      <span className="shrink-0">{name}</span>
+    </span>
+  );
+}
+
 /** git status XY codes, coloured by how much attention each deserves. */
 function statusColor(code: string) {
   if (code === "?") return "text-ink-400";
@@ -318,9 +343,7 @@ export function App() {
                         {f.worktree === " " ? " " : f.worktree}
                       </span>
                     </span>
-                    <span className="truncate">
-                      {f.old_path ? `${f.old_path} → ${f.path}` : f.path}
-                    </span>
+                    <PathLabel path={f.path} from={f.old_path} />
                   </button>
                 </li>
               ))}
@@ -387,9 +410,7 @@ export function App() {
               shift the pane under the cursor. Diffs carry a path too, so both
               kinds label themselves the same way. */}
           <div className="flex shrink-0 items-center gap-2 bg-ink-850 px-3 py-0.5 text-ink-400">
-            <span className="truncate">
-              {pane.kind === "empty" ? "" : pane.value.path}
-            </span>
+            {pane.kind !== "empty" && <PathLabel path={pane.value.path} />}
             <button
               onClick={() =>
                 setMaximized((m) => (m === "files" ? "none" : "files"))
