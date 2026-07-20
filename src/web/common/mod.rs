@@ -9,6 +9,7 @@
 pub mod auth;
 pub mod conn;
 pub mod http;
+pub mod sse;
 
 /// Escape the five HTML-significant characters for safe interpolation into page
 /// text (used for the login error banner).
