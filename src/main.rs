@@ -75,6 +75,10 @@ enum Commands {
         /// Override the configured port.
         #[arg(long)]
         port: Option<u16>,
+        /// Override the configured bind address. `0.0.0.0` exposes the server
+        /// — and the shells it serves — to the whole network over plain HTTP.
+        #[arg(long)]
+        bind: Option<String>,
     },
 }
 
@@ -86,7 +90,7 @@ fn main() -> Result<()> {
     // alternate screen.
     match cli.command {
         Some(Commands::Init { force }) => return run_init(force),
-        Some(Commands::Serve { repo, port }) => return run_serve(repo, port),
+        Some(Commands::Serve { repo, port, bind }) => return run_serve(repo, port, bind),
         None => {}
     }
 
@@ -207,10 +211,17 @@ fn start_viewer_if_enabled(
 ///
 /// The catalog is fixed for the run: with no TUI there is no tab to open or
 /// close, so the repository set comes entirely from `--repo`.
-fn run_serve(repos: Vec<std::path::PathBuf>, port: Option<u16>) -> Result<()> {
+fn run_serve(
+    repos: Vec<std::path::PathBuf>,
+    port: Option<u16>,
+    bind: Option<String>,
+) -> Result<()> {
     let mut cfg = config::load_config()?;
     if let Some(port) = port {
         cfg.web_viewer.port = port;
+    }
+    if let Some(bind) = bind {
+        cfg.web_viewer.bind = bind;
     }
     // `serve` is an explicit request, so the config toggle is not consulted —
     // the user already said what they want by running this.
@@ -236,6 +247,15 @@ fn run_serve(repos: Vec<std::path::PathBuf>, port: Option<u16>) -> Result<()> {
         if paths.len() == 1 { "y" } else { "ies" },
         server.addr()
     );
+    if !server.addr().ip().is_loopback() {
+        // Worth saying out loud: this is not the default, it carries shells,
+        // and there is no TLS to fall back on.
+        eprintln!(
+            "nightcrow: WARNING bound to {} — repository contents and interactive",
+            server.addr().ip()
+        );
+        eprintln!("nightcrow: shells are reachable from the network over plain HTTP.");
+    }
     eprintln!("nightcrow: press Ctrl-C to stop");
 
     // The accept loop owns its own threads; park this one until interrupted.
