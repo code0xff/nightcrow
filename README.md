@@ -282,6 +282,62 @@ precedence. Login is rate-limited and grants a session cookie.
 > TLS**. For remote access, do **not** expose the port directly — tunnel it over
 > SSH (`ssh -L 8090:127.0.0.1:8090 host`) or put it behind a TLS reverse proxy.
 
+## Web viewer
+
+A second, different browser surface: instead of mirroring the TUI's screen, it
+renders the same git data as a native web page — selectable text, real
+scrolling, clickable paths, and a layout that collapses to one column on a
+phone. It also serves its **own** terminals, independent of the TUI's panes.
+
+Enable it alongside the TUI under `[web_viewer]`:
+
+```toml
+[web_viewer]
+enabled = true
+bind = "127.0.0.1"   # loopback only; change deliberately
+port = 8091
+# password = "..."   # auto-generated and written here on first launch if unset
+```
+
+Or run it with no TUI at all:
+
+```bash
+nightcrow serve --repo ~/code/app --repo ~/code/api
+nightcrow serve --repo . --port 9000
+```
+
+`serve` runs in the foreground until Ctrl-C. Because the server never touches
+the TUI's state, it needs no terminal — which is what makes this mode possible.
+
+**Mirror or viewer?** The mirror is for *driving* nightcrow remotely: it is the
+same session, so what you type appears on both screens. The viewer is for
+*reading* a repository comfortably in a browser, with terminals of its own. They
+run on separate ports with separate passwords and separate session cookies, and
+either can be enabled without the other.
+
+**Authentication.** `[web_viewer]` has its own credential, generated and written
+back on first launch exactly like `[web]`. A mirror session does not
+authenticate against the viewer, or the reverse.
+
+> **Security.** The viewer serves repository contents *and* interactive
+> terminals, so an authenticated session is equivalent to shell access. The same
+> rules as the mirror apply: loopback by default, no built-in TLS, and remote
+> access belongs behind an SSH tunnel or a TLS reverse proxy.
+
+### Developing the frontend
+
+The UI lives in `viewer-ui/` (React + Vite + Tailwind). Its build output is
+committed to `viewer-ui/dist/` and embedded into the binary, so installing
+nightcrow never requires Node.
+
+```bash
+npm --prefix viewer-ui install
+npm --prefix viewer-ui run dev     # Vite on :5173, proxying the API to :8091
+npm --prefix viewer-ui run build   # rebuild dist/ — commit the result
+```
+
+CI rebuilds the bundle and fails if it differs from what is committed.
+
 ## Configuration
 
 Config file: `~/.nightcrow/config.toml` (all fields optional, defaults shown).

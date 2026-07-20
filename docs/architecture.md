@@ -109,6 +109,14 @@ src/
     │   ├── http.rs       # minimal HTTP request parse (path + query) + response builders
     │   ├── sse.rs        # SseStream: streaming text/event-stream responses
     │   └── conn.rs       # ConnectionSlot: accept-loop connection accounting
+    ├── viewer/           # native web viewer ([web_viewer] / `serve`) — see "Web Viewer"
+    │   ├── limits.rs     # ceilings: log page, tree entries, diff bytes/lines, PTYs
+    │   ├── dto.rs        # whitelisted wire types + PROTOCOL_VERSION envelope
+    │   ├── catalog.rs    # opaque repo ids, atomic swap, per-repo entries
+    │   ├── runtime.rs    # per-repo thread: SnapshotChannel drain + conflated SSE fan-out
+    │   ├── terminal.rs   # per-repo TerminalHub owning its own PtyBackend
+    │   ├── server.rs     # HTTP routes, SSE, /ws/term
+    │   └── assets.rs     # rust-embed of viewer-ui/dist + CSP
     ├── protocol.rs       # Buffer→ANSI frame encode, JSON→crossterm input decode
     ├── server.rs         # sync accept/connection threads, broadcast, WS upgrade
     ├── frontend.rs       # embedded page assets
@@ -462,3 +470,15 @@ PTY 관리는 portable-pty 기반 `PtyBackend` 단일 구현으로 정리됐다.
 
 - `App` 구조체는 도메인별 sub-struct(`StatusView`, `LogView`, `DiffPane`, `TerminalState`, `RepoInput`)와 `app/` 서브모듈로 impl 책임이 나뉘어 있지만, 여전히 한 구조체가 모든 sub-state를 들고 있다. 추가 분리가 필요해지면 sub-struct별 명시적 manager로 승격하는 게 다음 단계다.
 - 대형 diff에서 j/k 빠른 탐색 시 동기 diff 로드가 여전히 ms 단위 블로킹을 만들 수 있다. Repository 캐싱으로 `discover` 비용은 제거됐으나, 추가 향상이 필요하면 채널 기반 비동기 로드 + debouncing을 도입할 수 있다.
+
+### Web Viewer (`src/web/viewer/`, `viewer-ui/`)
+
+미러가 TUI 화면을 그대로 반사하는 것과 달리, 뷰어는 **같은 데이터 계층을 읽어 DOM으로 렌더하는 두 번째 프론트엔드**다. `App`/`ui`/`input`을 전혀 참조하지 않으며, 그래서 TUI 없이도(`nightcrow serve`) 동작한다. 별도 포트·별도 쿠키·별도 비밀번호를 쓴다 — 셋 중 하나라도 공유하면 분리가 형식적인 것이 된다.
+
+- **요청 처리 순서가 설계다** (`viewer/server.rs`): ① Origin → ② 정적 번들(인증 불필요) → ③ 인증 → ④ 저장소 조회 → ⑤ 경로 검증. 인증을 조회보다 **먼저** 하는 이유는, 그러지 않으면 미인증 클라이언트가 404와 401을 비교해 존재하는 repo id를 열거할 수 있기 때문이다. 정적 번들이 인증 앞에 오는 이유는 그것이 로그인 폼을 그리는 주체이기 때문 — 게이팅하면 로그인할 방법 자체가 사라진다.
+- **경로 검증은 `with_repo` 한 곳에서** 한다. 라우트마다 쓰면 빠뜨린다: 실제로 `/api/diff`가 `../../etc/passwd`를 받아들였다. `load_file_diff`는 경로를 파일이 아니라 git pathspec으로 넘겨 검증기에 닿지 않았고, 빈 hunk와 함께 공격자의 경로를 그대로 되돌려줬다. **라우트가 "어떤 로더를 호출하느냐"에 따라 우연히 안전해서는 안 된다.**
+- **저장소는 opaque id로만 지정**한다(`catalog.rs`). 클라이언트가 디렉토리를 이름 붙일 수 없으므로 "어느 저장소인가"는 검증할 입력이 아니라 성공하거나 404가 되는 조회다. id는 프로세스 수명 동안 안정적이라, 무관한 탭을 열고 닫아도 다른 id가 재배치되지 않는다.
+- **저장소별 런타임**(`runtime.rs`): `SnapshotChannel`은 단일 consumer `mpsc`라 TUI 것을 공유할 수 없어 자기 것을 띄운다. 스냅샷을 wire 페이로드로 한 번만 줄여 팬아웃한다. **팬아웃은 conflate**된다 — 느린 구독자는 최신 상태를 받지, 밀린 과거를 재생하지 않는다(슬롯 1개 + 1-depth 병합 wakeup). 소켓 I/O 중 락을 잡지 않는다. 페이로드가 직전과 동일하면 발행하지 않는다: producer는 변화가 아니라 타이머로 tick하므로, 그러지 않으면 유휴 저장소가 매초 스트리밍하며 seq를 태워 "뭔가 바뀌었나"의 지표로 쓸 수 없게 된다.
+- **터미널**(`terminal.rs`)은 TUI 패인과 **별개 세션**이다. 공유하려면 `App`에 손을 대야 하고 그러면 헤드리스가 깨진다. raw PTY 바이트를 서버측 VT 에뮬레이션 없이 그대로 보낸다(xterm.js가 이미 에뮬레이터다). 4바이트 LE pane id를 앞에 붙인 **바이너리 프레임** — PTY 읽기는 멀티바이트 시퀀스를 일상적으로 쪼개므로 JSON으로 조기 디코딩하면 브라우저가 재조립하기 전에 깨진다. **출력은 conflate하지 않고 큐잉**한다: 최신 status는 완결된 그림이지만 터미널 바이트는 하나만 빠져도 스트림이 깨지므로, 큐를 넘긴 클라이언트는 조용히 버리지 않고 끊는다.
+- **자원 상한**(`limits.rs`)은 전부 `truncated`로 보고된다. 잘린 목록이 전체인 척하지 않는다.
+- **프론트엔드**(`viewer-ui/`): React 19 + Vite 7 + Tailwind v4 + `@xterm/xterm`. shadcn/ui는 쓰지 않는다 — 기본 톤이 TUI 밀도와 맞지 않아 덮어쓸 것이 더 많았다. `dist/`를 커밋해 `cargo install`에 Node를 요구하지 않는다(build.rs에서 npm을 부르면 Node 없는 설치가 전부 깨진다). CI가 재빌드해 커밋된 번들과 다르면 실패시킨다.

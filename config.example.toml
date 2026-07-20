@@ -101,3 +101,13 @@ port = 8090
 #
 # [[startup_command]]
 # command = "cargo test --watch"
+
+# Native web viewer: renders git data as a real web page and serves its own
+# terminals, separate from the mirror above. Also available without the TUI as
+# `nightcrow serve --repo <path>`.
+[web_viewer]
+enabled = false
+bind = "127.0.0.1"
+port = 8091
+# password = "..."         # generated and written here on first launch if unset
+# hashed_password = "..."  # Argon2 PHC string; takes precedence over password
