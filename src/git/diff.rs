@@ -317,25 +317,29 @@ pub fn load_workdir_file(repo: &Repository, file_path: &str) -> Result<String> {
     let workdir = repo
         .workdir()
         .ok_or_else(|| anyhow::anyhow!("bare repository"))?;
-    let full = workdir.join(file_path);
-    let meta =
-        std::fs::symlink_metadata(&full).with_context(|| format!("failed to stat {file_path}"))?;
-    if meta.file_type().is_symlink() {
-        let target = std::fs::read_link(&full)
-            .map(|p| p.display().to_string())
-            .unwrap_or_else(|_| "<unreadable target>".to_string());
-        return Err(anyhow::anyhow!(
-            "symlink preview disabled: {file_path} -> {target}"
-        ));
-    }
-    // Stat first so a multi-GB log file or build artifact can be rejected
-    // without ever materializing into memory: `decode_file_view`'s post-read
-    // length check otherwise allocates the full buffer before bailing.
-    let len = meta.len();
+    let full = crate::git::path::resolve_in_workdir(workdir, file_path)?;
+    // Size-check through the open handle rather than a second path lookup, so
+    // the file that gets read is the one that was measured.
+    let file = std::fs::File::open(&full).with_context(|| format!("failed to open {file_path}"))?;
+    let len = file
+        .metadata()
+        .with_context(|| format!("failed to stat {file_path}"))?
+        .len();
+    // Reject a multi-GB log file or build artifact before it ever materializes
+    // into memory: `decode_file_view`'s post-read length check would otherwise
+    // allocate the full buffer before bailing.
     if len > MAX_FILE_VIEW_BYTES as u64 {
         return Err(anyhow::anyhow!("file too large to preview: {len} bytes"));
     }
-    let bytes = std::fs::read(&full).with_context(|| format!("failed to read {file_path}"))?;
+    let mut bytes = Vec::with_capacity(len as usize);
+    {
+        use std::io::Read;
+        // Cap the read itself: `len` came from the handle, but a file that
+        // grows between the stat and the read would otherwise be read in full.
+        file.take(MAX_FILE_VIEW_BYTES as u64 + 1)
+            .read_to_end(&mut bytes)
+            .with_context(|| format!("failed to read {file_path}"))?;
+    }
     decode_file_view(&bytes)
 }
 
@@ -1078,7 +1082,33 @@ mod tests {
 
         let err = load_workdir_file(&open_repo(&path), "link.txt").unwrap_err();
 
-        assert!(err.to_string().contains("symlink preview disabled"));
+        assert!(err.to_string().contains("symlinks are not followed"));
+        drop(dir);
+    }
+
+    #[test]
+    fn load_workdir_file_rejects_paths_outside_the_worktree() {
+        let (dir, path) = make_repo();
+
+        let err = load_workdir_file(&open_repo(&path), "../../etc/passwd").unwrap_err();
+
+        assert!(
+            err.to_string().contains("plain relative path"),
+            "unexpected error: {err}"
+        );
+        drop(dir);
+    }
+
+    #[test]
+    fn load_workdir_file_rejects_reading_the_git_directory() {
+        let (dir, path) = make_repo();
+
+        let err = load_workdir_file(&open_repo(&path), ".git/config").unwrap_err();
+
+        assert!(
+            err.to_string().contains("git directory"),
+            "unexpected error: {err}"
+        );
         drop(dir);
     }
 
