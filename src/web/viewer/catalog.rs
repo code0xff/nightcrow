@@ -64,10 +64,28 @@ impl IdAssigner {
     }
 }
 
+/// Result of [`Catalog::add_path`].
+pub enum AddOutcome {
+    /// The repository is now served — newly added, or already present.
+    Added(RepoDto),
+    /// The served set is already at its ceiling; nothing was added.
+    TooMany,
+}
+
 #[derive(Default)]
 pub struct Catalog {
     entries: Mutex<Vec<Arc<RepoEntry>>>,
     ids: Mutex<IdAssigner>,
+    /// Repositories supplied by the CLI (`serve --repo`) or pushed from the TUI
+    /// workspace. Replaced wholesale by [`Catalog::set_paths`].
+    base: Mutex<Vec<String>>,
+    /// Repositories opened from the browser. Kept across `base` updates so a
+    /// workspace tab change in the TUI does not drop them.
+    added: Mutex<Vec<String>>,
+    /// Repositories closed from the browser. Subtracted from the served set so
+    /// a `base` re-sync (a TUI tab change) does not resurrect a closed repo;
+    /// re-opening a path clears it from here.
+    hidden: Mutex<Vec<String>>,
 }
 
 impl Catalog {
@@ -75,18 +93,101 @@ impl Catalog {
         Self::default()
     }
 
-    /// Replace the served set with exactly `paths`.
+    /// Replace the base served set — CLI `--repo` args or the TUI workspace's
+    /// open tabs. Browser-opened repositories ([`Catalog::add_path`]) survive
+    /// this, so a workspace change does not close a tab a viewer opened.
+    pub fn set_paths(&self, paths: &[String]) {
+        {
+            let mut base = self.base.lock().expect("catalog base poisoned");
+            *base = paths.to_vec();
+        }
+        self.rebuild();
+    }
+
+    /// Add a repository opened from the browser, returning its identity.
+    ///
+    /// Idempotent: an already-served path returns its existing entry without
+    /// disturbing its runtime. Refused with [`AddOutcome::TooMany`] once the
+    /// served set is at `max`, so a client cannot spawn unbounded runtimes.
+    pub fn add_path(&self, path: String, max: usize) -> AddOutcome {
+        // Opening a path clears any prior close, so a previously removed repo
+        // comes back rather than staying suppressed by `hidden`.
+        {
+            let mut hidden = self.hidden.lock().expect("catalog hidden poisoned");
+            hidden.retain(|h| h != &path);
+        }
+        let union = self.union_paths();
+        if !union.iter().any(|p| p == &path) {
+            if union.len() >= max {
+                return AddOutcome::TooMany;
+            }
+            {
+                let mut added = self.added.lock().expect("catalog added poisoned");
+                if !added.iter().any(|p| p == &path) {
+                    added.push(path.clone());
+                }
+            }
+        }
+        self.rebuild();
+        match self.dto_for_path(&path) {
+            Some(dto) => AddOutcome::Added(dto),
+            // rebuild always creates the entry; this only trips if a concurrent
+            // set_paths raced it back out, which the caller can treat as full.
+            None => AddOutcome::TooMany,
+        }
+    }
+
+    /// Close a repository opened or shown in the browser. Removed from `added`
+    /// and remembered in `hidden` so a `base` re-sync will not bring it back;
+    /// `rebuild` then stops its runtime and terminals.
+    pub fn remove_path(&self, path: &str) {
+        {
+            let mut added = self.added.lock().expect("catalog added poisoned");
+            added.retain(|p| p != path);
+        }
+        {
+            let mut hidden = self.hidden.lock().expect("catalog hidden poisoned");
+            if !hidden.iter().any(|h| h == path) {
+                hidden.push(path.to_string());
+            }
+        }
+        self.rebuild();
+    }
+
+    /// The desired served set: base first, then browser-added, minus any path
+    /// closed from the browser, deduplicated.
+    fn union_paths(&self) -> Vec<String> {
+        let base = self.base.lock().expect("catalog base poisoned");
+        let added = self.added.lock().expect("catalog added poisoned");
+        let hidden = self.hidden.lock().expect("catalog hidden poisoned");
+        let mut union: Vec<String> = Vec::with_capacity(base.len() + added.len());
+        for path in base.iter().chain(added.iter()) {
+            if hidden.iter().any(|h| h == path) {
+                continue;
+            }
+            if !union.contains(path) {
+                union.push(path.clone());
+            }
+        }
+        union
+    }
+
+    fn dto_for_path(&self, path: &str) -> Option<RepoDto> {
+        self.entries
+            .lock()
+            .expect("catalog poisoned")
+            .iter()
+            .find(|e| e.path == path)
+            .map(|e| e.to_dto())
+    }
+
+    /// Reconcile the live entries to `union_paths()`.
     ///
     /// A path already present keeps its entry — and therefore its runtime and
     /// every SSE subscriber attached to it. Only genuinely new paths start a
     /// runtime, and only genuinely removed ones stop.
-    pub fn set_paths(&self, paths: &[String]) {
-        let mut deduped: Vec<String> = Vec::with_capacity(paths.len());
-        for path in paths {
-            if !deduped.contains(path) {
-                deduped.push(path.clone());
-            }
-        }
+    fn rebuild(&self) {
+        let deduped = self.union_paths();
 
         let assigned: Vec<(String, String)> = {
             let mut ids = self.ids.lock().expect("catalog ids poisoned");
@@ -145,6 +246,17 @@ impl Catalog {
             .expect("catalog poisoned")
             .iter()
             .map(|e| e.to_dto())
+            .collect()
+    }
+
+    /// Absolute worktree paths of the served set, in order. Used to persist the
+    /// open projects; never serialized to a client.
+    pub fn paths(&self) -> Vec<String> {
+        self.entries
+            .lock()
+            .expect("catalog poisoned")
+            .iter()
+            .map(|e| e.path.clone())
             .collect()
     }
 
@@ -226,6 +338,85 @@ mod tests {
 
         let reopened = catalog.get(&a_id).expect("the id must still resolve");
         assert_eq!(reopened.path, a);
+        catalog.shutdown();
+        drop((dir_a, dir_b));
+    }
+
+    #[test]
+    fn add_path_is_idempotent_and_respects_the_cap() {
+        let (dir_a, a) = make_repo();
+        let (dir_b, b) = make_repo();
+        let (dir_c, c) = make_repo();
+        let catalog = Catalog::new();
+
+        let id_a = match catalog.add_path(a.clone(), 2) {
+            AddOutcome::Added(dto) => dto.id,
+            AddOutcome::TooMany => panic!("the first add must succeed"),
+        };
+        assert_eq!(catalog.len(), 1);
+
+        // Re-adding an open path is a no-op that returns the same identity.
+        match catalog.add_path(a.clone(), 2) {
+            AddOutcome::Added(dto) => assert_eq!(dto.id, id_a),
+            AddOutcome::TooMany => panic!("re-adding an open repo must not be refused"),
+        }
+        assert_eq!(catalog.len(), 1);
+
+        // A second distinct repo fits under the cap of two.
+        assert!(matches!(catalog.add_path(b, 2), AddOutcome::Added(_)));
+        assert_eq!(catalog.len(), 2);
+
+        // A third exceeds the cap and is refused without disturbing the set.
+        assert!(matches!(catalog.add_path(c, 2), AddOutcome::TooMany));
+        assert_eq!(catalog.len(), 2);
+
+        catalog.shutdown();
+        drop((dir_a, dir_b, dir_c));
+    }
+
+    #[test]
+    fn a_browser_added_repo_survives_a_base_update() {
+        let (dir_a, a) = make_repo();
+        let (dir_b, b) = make_repo();
+        let catalog = Catalog::new();
+
+        catalog.set_paths(std::slice::from_ref(&a));
+        let added = match catalog.add_path(b, 10) {
+            AddOutcome::Added(dto) => dto.id,
+            AddOutcome::TooMany => panic!("the add must succeed"),
+        };
+
+        // The TUI opening or closing a tab re-runs set_paths with a new base;
+        // a repository opened from the browser must not be dropped by it.
+        catalog.set_paths(std::slice::from_ref(&a));
+        assert!(
+            catalog.get(&added).is_some(),
+            "a browser-added repo must survive a base update"
+        );
+
+        catalog.shutdown();
+        drop((dir_a, dir_b));
+    }
+
+    #[test]
+    fn remove_path_closes_and_stays_closed_until_reopened() {
+        let (dir_a, a) = make_repo();
+        let (dir_b, b) = make_repo();
+        let catalog = Catalog::new();
+        catalog.set_paths(&[a.clone(), b.clone()]);
+        assert_eq!(catalog.len(), 2);
+
+        catalog.remove_path(&a);
+        assert_eq!(catalog.len(), 1);
+
+        // A base re-sync (a TUI tab change) must not resurrect a closed repo.
+        catalog.set_paths(&[a.clone(), b.clone()]);
+        assert_eq!(catalog.len(), 1, "a closed repo must stay closed");
+
+        // Re-opening it from the browser clears the close and brings it back.
+        assert!(matches!(catalog.add_path(a.clone(), 10), AddOutcome::Added(_)));
+        assert_eq!(catalog.len(), 2);
+
         catalog.shutdown();
         drop((dir_a, dir_b));
     }

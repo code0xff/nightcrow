@@ -14,6 +14,7 @@
 pub mod assets;
 pub mod catalog;
 pub mod dto;
+pub mod highlight;
 pub mod limits;
 pub mod runtime;
 pub mod server;

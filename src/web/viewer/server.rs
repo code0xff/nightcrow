@@ -32,8 +32,10 @@ use crate::web::common::conn::{self, ConnectionSlot};
 use crate::web::common::http::{self, RequestHead};
 use crate::web::common::sse::SseStream;
 use crate::web::viewer::assets;
-use crate::web::viewer::catalog::{Catalog, RepoEntry};
-use crate::web::viewer::dto::{DiffDto, Envelope, FileDto, LogDto, StatusDto, TreeDto};
+use crate::web::viewer::catalog::{AddOutcome, Catalog, RepoEntry};
+use crate::web::viewer::dto::{
+    BrowseDto, BrowseEntryDto, DiffDto, Envelope, FileDto, LogDto, StatusDto, TreeDto,
+};
 use crate::web::viewer::limits;
 use crate::web::viewer::terminal::{self, ClientMessage, TerminalFrame};
 use anyhow::{Context, Result};
@@ -67,6 +69,10 @@ pub struct ViewerState {
     sessions: SessionStore,
     limiter: RateLimiter,
     connections: Arc<AtomicUsize>,
+    /// Whether catalog changes are mirrored to the shared workspace file. On in
+    /// headless `serve` (so opens/closes are remembered), off alongside the TUI
+    /// (which owns that file).
+    persist: bool,
 }
 
 pub struct ViewerServer {
@@ -80,6 +86,7 @@ impl ViewerServer {
     pub fn start_from_config(
         viewer: &crate::config::WebViewerConfig,
         paths: &[String],
+        persist: bool,
     ) -> Result<Self> {
         let auth = if let Some(hash) = viewer.hashed_password.as_deref() {
             Auth::from_hashed(hash)?
@@ -94,12 +101,19 @@ impl ViewerServer {
                 viewer.bind
             )
         })?;
-        Self::start(bind, viewer.port, auth, paths)
+        Self::start(bind, viewer.port, auth, paths, persist)
     }
 
     /// Bind and start accepting. `paths` seeds the catalog; the caller may
-    /// replace it later through [`ViewerServer::set_repos`].
-    pub fn start(bind: IpAddr, port: u16, auth: Auth, paths: &[String]) -> Result<Self> {
+    /// replace it later through [`ViewerServer::set_repos`]. `persist` mirrors
+    /// catalog changes into the shared workspace file (headless `serve` only).
+    pub fn start(
+        bind: IpAddr,
+        port: u16,
+        auth: Auth,
+        paths: &[String],
+        persist: bool,
+    ) -> Result<Self> {
         let listener = TcpListener::bind((bind, port))
             .with_context(|| format!("binding viewer server to {bind}:{port}"))?;
         let addr = listener
@@ -113,6 +127,7 @@ impl ViewerServer {
             sessions: SessionStore::new(),
             limiter: RateLimiter::new(),
             connections: Arc::new(AtomicUsize::new(0)),
+            persist,
         });
         state.catalog.set_paths(paths);
 
@@ -241,6 +256,23 @@ fn handle_connection(mut stream: TcpStream, state: Arc<ViewerState>) {
         return;
     }
 
+    // Opening a repository is the one state-changing route. It is a POST, so a
+    // cross-site page cannot trigger it (Origin was already checked, and the
+    // session cookie is SameSite=Strict). An authenticated user can already
+    // open a shell here, so pointing the viewer at another local directory
+    // stays within the same trust boundary.
+    if head.method == "POST" && head.path == "/api/repos" {
+        let _ = stream.write_all(&handle_open_repo(&body, &state));
+        return;
+    }
+
+    // Closing a repository: same trust reasoning as opening. Removes it from
+    // the served set and stops its runtime and terminals.
+    if head.method == "DELETE" && head.path == "/api/repos" {
+        let _ = stream.write_all(&handle_close_repo(&head, &state));
+        return;
+    }
+
     let _ = stream.write_all(&route(&head, &state));
 }
 
@@ -270,6 +302,84 @@ fn handle_login(body: &str, state: &ViewerState) -> Vec<u8> {
             json_error("500 Internal Server Error", "could not start a session")
         }
     }
+}
+
+#[derive(serde::Deserialize)]
+struct OpenRequest {
+    path: String,
+}
+
+/// Open a repository from the browser and add it to the served catalog.
+///
+/// The path is user-supplied but the response is public, so a bad path yields a
+/// generic message rather than echoing what was tried.
+fn handle_open_repo(body: &str, state: &ViewerState) -> Vec<u8> {
+    let request: OpenRequest = match serde_json::from_str(body) {
+        Ok(request) => request,
+        Err(_) => return json_error("400 Bad Request", "expected a JSON body with a path"),
+    };
+    let raw = request.path.trim();
+    if raw.is_empty() {
+        return json_error("400 Bad Request", "a path is required");
+    }
+    let expanded = crate::util::expand_tilde(raw);
+    // is_dir() follows symlinks and is false for a missing path — either way it
+    // cannot be served.
+    if !expanded.is_dir() {
+        return json_error("400 Bad Request", "no such directory");
+    }
+    let resolved = crate::git::resolve_repo_path(&expanded)
+        .to_string_lossy()
+        .into_owned();
+
+    match state.catalog.add_path(resolved, crate::workspace::MAX_PROJECTS) {
+        AddOutcome::Added(repo) => {
+            persist_workspace(state);
+            match serde_json::to_string(&Envelope::new(serde_json::json!({ "repo": repo }))) {
+                Ok(json) => json_response("200 OK", &json, &[]),
+                Err(_) => json_error("500 Internal Server Error", "could not encode repository"),
+            }
+        }
+        AddOutcome::TooMany => json_error(
+            "409 Conflict",
+            "the maximum number of repositories is already open",
+        ),
+    }
+}
+
+/// Close a repository named by the `repo` id and return the updated set.
+///
+/// Idempotent from the client's view: an unknown id is a 404, a known one is
+/// removed and its runtime/terminals stopped by the catalog rebuild.
+fn handle_close_repo(head: &RequestHead, state: &ViewerState) -> Vec<u8> {
+    let entry = match lookup_repo(head, state) {
+        Ok(entry) => entry,
+        Err(response) => return response,
+    };
+    state.catalog.remove_path(&entry.path);
+    persist_workspace(state);
+    let repos = state.catalog.list();
+    match serde_json::to_string(&Envelope::new(serde_json::json!({ "repos": repos }))) {
+        Ok(json) => json_response("200 OK", &json, &[]),
+        Err(_) => json_error("500 Internal Server Error", "could not encode repositories"),
+    }
+}
+
+/// Mirror the served set into the shared workspace file so the next launch —
+/// TUI, mirror, or viewer — starts with the same projects. No-op unless the
+/// server was started with `persist` (headless `serve`); alongside the TUI,
+/// the TUI owns that file. The existing per-repo view state and active tab are
+/// preserved; only the open-repo list is rewritten.
+fn persist_workspace(state: &ViewerState) {
+    if !state.persist {
+        return;
+    }
+    let mut ws = crate::session::load_workspace().unwrap_or_default();
+    ws.repos = state.catalog.paths();
+    if ws.active >= ws.repos.len() {
+        ws.active = 0;
+    }
+    crate::session::save_workspace(&ws);
 }
 
 /// Resolve the `repo` parameter to an entry, or produce the 404 response.
@@ -373,8 +483,68 @@ fn route(head: &RequestHead, state: &ViewerState) -> Vec<u8> {
                 &[],
             ))
         }),
+        "/api/browse" => browse(head),
         _ => json_error("404 Not Found", "no such route"),
     }
+}
+
+/// List the server sub-directories under `path` (home when absent) for the
+/// folder picker. Directories only, hidden ones skipped; each is flagged when
+/// it looks like a git worktree. Deliberately unconfined — the picker browses
+/// the server to find a repo to open — but reachable only authenticated and at
+/// the same trust as the terminal.
+fn browse(head: &RequestHead) -> Vec<u8> {
+    let start = match head.query_param("path").filter(|p| !p.is_empty()) {
+        Some(path) => std::path::PathBuf::from(path),
+        None => dirs::home_dir().unwrap_or_else(|| std::path::PathBuf::from("/")),
+    };
+    match list_directories(&start) {
+        Ok(dto) => match serde_json::to_string(&Envelope::new(dto)) {
+            Ok(json) => json_response("200 OK", &json, &[]),
+            Err(_) => json_error("500 Internal Server Error", "could not encode listing"),
+        },
+        Err(err) => redact(&head.path, &err),
+    }
+}
+
+fn list_directories(path: &std::path::Path) -> anyhow::Result<BrowseDto> {
+    use anyhow::Context;
+    let canonical = path
+        .canonicalize()
+        .with_context(|| "path could not be resolved")?;
+    if !canonical.is_dir() {
+        anyhow::bail!("not a directory");
+    }
+    let mut entries: Vec<BrowseEntryDto> = Vec::new();
+    let mut truncated = false;
+    for entry in std::fs::read_dir(&canonical).with_context(|| "directory is not readable")? {
+        let Ok(entry) = entry else { continue };
+        // `file_type` does not follow symlinks, so a symlinked directory is
+        // skipped rather than risking a browse loop.
+        let Ok(file_type) = entry.file_type() else {
+            continue;
+        };
+        if !file_type.is_dir() {
+            continue;
+        }
+        let name = entry.file_name().to_string_lossy().into_owned();
+        if name.starts_with('.') {
+            continue;
+        }
+        if entries.len() >= limits::MAX_TREE_ENTRIES {
+            truncated = true;
+            break;
+        }
+        let is_repo = entry.path().join(".git").exists();
+        entries.push(BrowseEntryDto { name, is_repo });
+    }
+    entries.sort_by(|a, b| a.name.cmp(&b.name));
+    Ok(BrowseDto {
+        path: canonical.to_string_lossy().into_owned(),
+        parent: canonical.parent().map(|p| p.to_string_lossy().into_owned()),
+        entries,
+        truncated,
+    })
 }
 
 /// Look the repository up, validate any `path` parameter, then run `body`.
@@ -562,6 +732,9 @@ mod tests {
             0,
             Auth::from_plaintext("swordfish").unwrap(),
             paths,
+            // Never persist from tests — they must not touch the real
+            // ~/.nightcrow/workspace.json.
+            false,
         )
         .unwrap()
     }
@@ -586,6 +759,35 @@ mod tests {
         request(
             addr,
             &format!("GET {path} HTTP/1.1\r\nHost: 127.0.0.1\r\n{cookie}Connection: close\r\n\r\n"),
+        )
+    }
+
+    fn post(addr: SocketAddr, path: &str, body: &str, cookie: Option<&str>) -> String {
+        let cookie = match cookie {
+            Some(token) => format!("Cookie: {VIEWER_SESSION_COOKIE}={token}\r\n"),
+            None => String::new(),
+        };
+        request(
+            addr,
+            &format!(
+                "POST {path} HTTP/1.1\r\nHost: 127.0.0.1\r\n\
+                 Content-Type: application/json\r\n{cookie}\
+                 Content-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                body.len()
+            ),
+        )
+    }
+
+    fn delete(addr: SocketAddr, path: &str, cookie: Option<&str>) -> String {
+        let cookie = match cookie {
+            Some(token) => format!("Cookie: {VIEWER_SESSION_COOKIE}={token}\r\n"),
+            None => String::new(),
+        };
+        request(
+            addr,
+            &format!(
+                "DELETE {path} HTTP/1.1\r\nHost: 127.0.0.1\r\n{cookie}Connection: close\r\n\r\n"
+            ),
         )
     }
 
@@ -658,6 +860,119 @@ mod tests {
 
         assert!(response.starts_with("HTTP/1.1 401"), "got: {response}");
         drop(dir);
+    }
+
+    #[test]
+    fn opening_a_repository_adds_it_to_the_served_set() {
+        // Start empty, the way `serve` with no --repo now does, then open a
+        // repository from the browser.
+        let server = server(&[]);
+        let token = login(server.addr());
+        let (dir, path) = make_repo();
+        let body = format!("{{\"path\":{}}}", serde_json::to_string(&path).unwrap());
+
+        let opened = post(server.addr(), "/api/repos", &body, Some(&token));
+        assert!(opened.starts_with("HTTP/1.1 200"), "got: {opened}");
+
+        let list = get(server.addr(), "/api/repos", Some(&token));
+        let value: serde_json::Value = serde_json::from_str(body_of(&list)).unwrap();
+        assert_eq!(
+            value["repos"].as_array().unwrap().len(),
+            1,
+            "the opened repository must appear in the served set"
+        );
+        drop(dir);
+    }
+
+    #[test]
+    fn opening_a_repository_requires_authentication() {
+        let server = server(&[]);
+        let (dir, path) = make_repo();
+        let body = format!("{{\"path\":{}}}", serde_json::to_string(&path).unwrap());
+
+        let response = post(server.addr(), "/api/repos", &body, None);
+
+        assert!(response.starts_with("HTTP/1.1 401"), "got: {response}");
+        drop(dir);
+    }
+
+    #[test]
+    fn browse_lists_subdirectories_and_flags_repos() {
+        let root = tempfile::tempdir().unwrap();
+        std::fs::create_dir(root.path().join("alpha")).unwrap();
+        std::fs::create_dir_all(root.path().join("beta").join(".git")).unwrap();
+        std::fs::write(root.path().join("afile.txt"), b"x").unwrap();
+        let server = server(&[]);
+        let token = login(server.addr());
+
+        let path = root.path().to_string_lossy();
+        let response = get(
+            server.addr(),
+            &format!("/api/browse?path={path}"),
+            Some(&token),
+        );
+        assert!(response.starts_with("HTTP/1.1 200"), "got: {response}");
+
+        let value: serde_json::Value = serde_json::from_str(body_of(&response)).unwrap();
+        let list = value["entries"].as_array().unwrap();
+        let names: Vec<&str> = list.iter().map(|e| e["name"].as_str().unwrap()).collect();
+        assert!(
+            names.contains(&"alpha") && names.contains(&"beta"),
+            "expected sub-directories, got: {names:?}"
+        );
+        assert!(!names.contains(&"afile.txt"), "files must be excluded");
+        let beta = list.iter().find(|e| e["name"] == "beta").unwrap();
+        assert_eq!(beta["is_repo"], true, "a .git folder marks a repo");
+    }
+
+    #[test]
+    fn closing_a_repository_removes_it_from_the_served_set() {
+        let (dir, path) = make_repo();
+        let server = server(&[path]);
+        let token = login(server.addr());
+
+        let list = get(server.addr(), "/api/repos", Some(&token));
+        let value: serde_json::Value = serde_json::from_str(body_of(&list)).unwrap();
+        let id = value["repos"][0]["id"].as_str().unwrap().to_string();
+
+        let closed = delete(server.addr(), &format!("/api/repos?repo={id}"), Some(&token));
+        assert!(closed.starts_with("HTTP/1.1 200"), "got: {closed}");
+
+        let after = get(server.addr(), "/api/repos", Some(&token));
+        let value: serde_json::Value = serde_json::from_str(body_of(&after)).unwrap();
+        assert_eq!(
+            value["repos"].as_array().unwrap().len(),
+            0,
+            "the closed repository must be gone from the served set"
+        );
+        drop(dir);
+    }
+
+    #[test]
+    fn closing_an_unknown_repository_is_a_404() {
+        let (dir, path) = make_repo();
+        let server = server(&[path]);
+        let token = login(server.addr());
+
+        let response = delete(server.addr(), "/api/repos?repo=nope", Some(&token));
+
+        assert!(response.starts_with("HTTP/1.1 404"), "got: {response}");
+        drop(dir);
+    }
+
+    #[test]
+    fn opening_a_nonexistent_path_is_rejected() {
+        let server = server(&[]);
+        let token = login(server.addr());
+
+        let response = post(
+            server.addr(),
+            "/api/repos",
+            "{\"path\":\"/definitely/not/a/real/directory\"}",
+            Some(&token),
+        );
+
+        assert!(response.starts_with("HTTP/1.1 400"), "got: {response}");
     }
 
     #[test]
@@ -883,7 +1198,17 @@ mod tests {
         );
         let value: serde_json::Value = serde_json::from_str(body_of(&response)).unwrap();
 
-        assert_eq!(value["content"], "fn main() {}\n");
+        // Content is returned as per-line, syntax-highlighted spans. Rebuild the
+        // text from them and confirm it round-trips.
+        let text: String = value["lines"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .flat_map(|line| line.as_array().unwrap())
+            .map(|span| span["t"].as_str().unwrap())
+            .collect::<Vec<_>>()
+            .join("");
+        assert_eq!(text, "fn main() {}");
         assert_eq!(value["truncated"], false);
         drop(dir);
     }

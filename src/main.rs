@@ -197,7 +197,9 @@ fn start_viewer_if_enabled(
         );
         eprintln!("  {password}");
     }
-    match web::viewer::server::ViewerServer::start_from_config(&cfg.web_viewer, repo_paths) {
+    // Alongside the TUI the viewer does not persist: the TUI owns the workspace
+    // file and the catalog already follows its tabs.
+    match web::viewer::server::ViewerServer::start_from_config(&cfg.web_viewer, repo_paths, false) {
         Ok(server) => {
             eprintln!("nightcrow: web viewer serving at http://{}/", server.addr());
             Ok(Some(server))
@@ -239,8 +241,19 @@ fn run_serve(
         eprintln!("  {password}");
     }
 
-    let paths = resolve_serve_repos(&repos)?;
-    let server = web::viewer::server::ViewerServer::start_from_config(&cfg.web_viewer, &paths)?;
+    let mut paths = resolve_serve_repos(&repos)?;
+    // Unify with the TUI/mirror: restore the previously-open projects so the
+    // viewer does not start blank each launch. Explicit --repo comes first and
+    // wins; remembered repos that still exist fill in after, de-duplicated.
+    if let Some(ws) = session::load_workspace() {
+        for repo in ws.repos {
+            if std::path::Path::new(&repo).is_dir() && !paths.contains(&repo) {
+                paths.push(repo);
+            }
+        }
+    }
+    let server =
+        web::viewer::server::ViewerServer::start_from_config(&cfg.web_viewer, &paths, true)?;
     if paths.is_empty() {
         // An empty catalog is a legitimate state — the same one the TUI starts
         // in when launched with no repository. The viewer shows its no-repository

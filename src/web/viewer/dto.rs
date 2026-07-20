@@ -11,12 +11,35 @@
 //! build can then refuse to interpret a newer payload rather than misread it.
 
 use crate::git::diff::{ChangedFile, CommitEntry, DiffHunk, LineKind, StatusKind, TrackingStatus};
+use crate::web::viewer::highlight;
 use crate::web::viewer::limits::{self, Capped};
 use serde::Serialize;
 
+/// One navigable directory in the "open a project" folder picker. Directories
+/// only — files are not openable as projects. `is_repo` flags a git worktree so
+/// the picker can mark it.
+#[derive(Debug, Serialize)]
+pub struct BrowseEntryDto {
+    pub name: String,
+    pub is_repo: bool,
+}
+
+/// One level of the server filesystem for the folder picker. Unlike [`TreeDto`]
+/// this is deliberately *not* confined to a worktree — it browses the server to
+/// find a repository to open — so it is reachable only authenticated and
+/// carries the same trust as the terminal. `parent` is `None` at the root.
+#[derive(Debug, Serialize)]
+pub struct BrowseDto {
+    pub path: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub parent: Option<String>,
+    pub entries: Vec<BrowseEntryDto>,
+    pub truncated: bool,
+}
+
 /// Bumped whenever an existing field changes meaning or disappears. Adding a
 /// new optional field does not need a bump.
-pub const PROTOCOL_VERSION: u32 = 1;
+pub const PROTOCOL_VERSION: u32 = 2;
 
 /// Wrapper carried by every response so a stale client can detect a mismatch.
 #[derive(Debug, Serialize)]
@@ -203,11 +226,20 @@ impl TreeDto {
     }
 }
 
+/// One run of characters sharing a colour, from server-side syntax
+/// highlighting. `t` is the text, `c` a `#rrggbb` foreground.
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct SpanDto {
+    pub t: String,
+    pub c: String,
+}
+
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub struct DiffLineDto {
     /// `+`, `-`, or ` `.
     pub kind: String,
-    pub content: String,
+    /// Syntax-highlighted content as coloured spans.
+    pub spans: Vec<SpanDto>,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -246,6 +278,10 @@ impl DiffDto {
         let mut truncated = false;
 
         'outer: for hunk in hunks {
+            // One highlighter per hunk, using the hunk's own file on commit
+            // diffs (which span several files) and the request path otherwise.
+            let mut lighter =
+                highlight::highlighter(Some(hunk.file_path.as_deref().unwrap_or(path)));
             let mut kept = Vec::new();
             for line in &hunk.lines {
                 if lines_used >= limits::MAX_DIFF_LINES
@@ -265,7 +301,7 @@ impl DiffDto {
                 bytes_used += line.content.len();
                 kept.push(DiffLineDto {
                     kind: line_code(line.kind).to_string(),
-                    content: line.content.clone(),
+                    spans: lighter.line(&line.content),
                 });
             }
             out.push(DiffHunkDto {
@@ -283,11 +319,12 @@ impl DiffDto {
     }
 }
 
-/// A file's text content, already capped.
+/// A file's syntax-highlighted content, already capped. One entry per line,
+/// each a list of coloured spans.
 #[derive(Debug, Clone, Serialize)]
 pub struct FileDto {
     pub path: String,
-    pub content: String,
+    pub lines: Vec<Vec<SpanDto>>,
     pub truncated: bool,
 }
 
@@ -296,7 +333,7 @@ impl FileDto {
         let (content, truncated) = limits::cap_text(content, limits::MAX_DIFF_BYTES);
         Self {
             path: path.to_string(),
-            content,
+            lines: highlight::file_spans(path, &content),
             truncated,
         }
     }
@@ -474,7 +511,12 @@ mod tests {
 
         let dto = DiffDto::from_hunks("wide.rs", &hunks);
 
-        let bytes: usize = dto.hunks[0].lines.iter().map(|l| l.content.len()).sum();
+        let bytes: usize = dto.hunks[0]
+            .lines
+            .iter()
+            .flat_map(|l| &l.spans)
+            .map(|s| s.t.len())
+            .sum();
         assert!(bytes <= limits::MAX_DIFF_BYTES);
         assert!(dto.truncated);
         assert!(
@@ -489,10 +531,12 @@ mod tests {
 
         let dto = FileDto::new("big.txt", &content);
 
+        // Reconstruct the served text from its spans (one line here — no \n).
+        let served: String = dto.lines.iter().flatten().map(|s| s.t.as_str()).collect();
         assert!(dto.truncated);
-        assert!(dto.content.len() <= limits::MAX_DIFF_BYTES);
+        assert!(served.len() <= limits::MAX_DIFF_BYTES);
         assert!(
-            content.starts_with(&dto.content),
+            content.starts_with(&served),
             "the cap must yield a clean prefix"
         );
     }
