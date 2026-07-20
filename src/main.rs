@@ -68,8 +68,10 @@ enum Commands {
     ///
     /// Runs in the foreground until interrupted. Unlike the TUI's optional
     /// viewer, this needs no terminal — the repositories come from --repo.
+    /// --repo is optional: with none, the viewer starts on an empty catalog,
+    /// the same state the TUI starts in when launched without a repository.
     Serve {
-        /// Repository to serve. Repeatable.
+        /// Repository to serve. Repeatable. Optional — omit to start empty.
         #[arg(short, long)]
         repo: Vec<std::path::PathBuf>,
         /// Override the configured port.
@@ -210,7 +212,8 @@ fn start_viewer_if_enabled(
 /// Serve the viewer headlessly until interrupted.
 ///
 /// The catalog is fixed for the run: with no TUI there is no tab to open or
-/// close, so the repository set comes entirely from `--repo`.
+/// close, so the repository set comes entirely from `--repo` — which may be
+/// empty, starting the viewer on an empty catalog just like the TUI does.
 fn run_serve(
     repos: Vec<std::path::PathBuf>,
     port: Option<u16>,
@@ -237,16 +240,24 @@ fn run_serve(
     }
 
     let paths = resolve_serve_repos(&repos)?;
-    if paths.is_empty() {
-        anyhow::bail!("nothing to serve: pass at least one --repo");
-    }
     let server = web::viewer::server::ViewerServer::start_from_config(&cfg.web_viewer, &paths)?;
-    eprintln!(
-        "nightcrow: web viewer serving {} repositor{} at http://{}/",
-        paths.len(),
-        if paths.len() == 1 { "y" } else { "ies" },
-        server.addr()
-    );
+    if paths.is_empty() {
+        // An empty catalog is a legitimate state — the same one the TUI starts
+        // in when launched with no repository. The viewer shows its no-repository
+        // state and can still be reached; repositories are added by relaunching
+        // with --repo (a headless run has no tab UI to open one).
+        eprintln!(
+            "nightcrow: web viewer serving an empty catalog (no --repo given) at http://{}/",
+            server.addr()
+        );
+    } else {
+        eprintln!(
+            "nightcrow: web viewer serving {} repositor{} at http://{}/",
+            paths.len(),
+            if paths.len() == 1 { "y" } else { "ies" },
+            server.addr()
+        );
+    }
     if !server.addr().ip().is_loopback() {
         // Worth saying out loud: this is not the default, it carries shells,
         // and there is no TLS to fall back on.
