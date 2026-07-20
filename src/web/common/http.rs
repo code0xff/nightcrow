@@ -14,6 +14,14 @@ pub struct RequestHead {
     pub method: String,
     /// Path with the query string stripped (e.g. `/login`).
     pub path: String,
+    /// Raw query string without the `?` (e.g. `repo=a&path=src`), empty when
+    /// the target carried none. Read it through [`RequestHead::query_param`]
+    /// rather than parsing it again at each call site.
+    ///
+    /// The mirror's routes take no parameters; this exists for the viewer's
+    /// `?repo=&path=` routes (step 6 of `docs/web-viewer-plan.md`).
+    #[allow(dead_code)]
+    pub query: String,
     pub headers: Vec<(String, String)>,
     /// Declared body length from `Content-Length`, 0 when absent/invalid.
     pub content_length: usize,
@@ -26,6 +34,21 @@ impl RequestHead {
             .iter()
             .find(|(k, _)| *k == name)
             .map(|(_, v)| v.as_str())
+    }
+
+    /// Look up a query parameter, percent-decoded. Returns the first match when
+    /// a name repeats, so a duplicate cannot be used to smuggle a second value
+    /// past a check that read the first.
+    ///
+    /// The result is decoded exactly once. Callers that turn a parameter into a
+    /// filesystem path must validate *this* value — decoding again afterwards
+    /// would let `%252e%252e` become `..` after the check.
+    #[allow(dead_code)] // First caller is the viewer's git routes; see `query`.
+    pub fn query_param(&self, name: &str) -> Option<String> {
+        parse_form(&self.query)
+            .into_iter()
+            .find(|(k, _)| k == name)
+            .map(|(_, v)| v)
     }
 
     /// Look up a cookie by name from the `Cookie` header.
@@ -64,11 +87,11 @@ pub fn parse_request_head(text: &str) -> Result<RequestHead> {
     if method.is_empty() || target.is_empty() {
         bail!("malformed HTTP request line: {request_line:?}");
     }
-    // Strip any query string so routing matches on the path alone; the query
-    // itself is not used by the current routes.
-    let path = match target.split_once('?') {
-        Some((p, _)) => p.to_string(),
-        None => target,
+    // Split the query off so routing matches on the path alone. Both halves are
+    // bounded by the caller's head-size cap.
+    let (path, query) = match target.split_once('?') {
+        Some((p, q)) => (p.to_string(), q.to_string()),
+        None => (target, String::new()),
     };
 
     let mut headers = Vec::new();
@@ -90,6 +113,7 @@ pub fn parse_request_head(text: &str) -> Result<RequestHead> {
     Ok(RequestHead {
         method,
         path,
+        query,
         headers,
         content_length,
     })
@@ -192,6 +216,39 @@ mod tests {
             head.path, "/login",
             "the query string must be stripped for routing"
         );
+    }
+
+    #[test]
+    fn query_params_are_captured_and_decoded() {
+        let head = parse("GET /api/diff?repo=r1&path=src%2Fmain.rs HTTP/1.1\r\n\r\n");
+        assert_eq!(head.path, "/api/diff");
+        assert_eq!(head.query, "repo=r1&path=src%2Fmain.rs");
+        assert_eq!(head.query_param("repo").as_deref(), Some("r1"));
+        assert_eq!(head.query_param("path").as_deref(), Some("src/main.rs"));
+        assert_eq!(head.query_param("missing"), None);
+    }
+
+    #[test]
+    fn query_param_is_absent_without_a_query_string() {
+        let head = parse("GET /api/repos HTTP/1.1\r\n\r\n");
+        assert_eq!(head.query, "");
+        assert_eq!(head.query_param("repo"), None);
+    }
+
+    #[test]
+    fn query_param_takes_the_first_of_a_repeated_name() {
+        // A checked-then-reused parameter must not be overridable by appending
+        // a second copy.
+        let head = parse("GET /api/file?path=ok.txt&path=..%2F..%2Fetc%2Fpasswd HTTP/1.1\r\n\r\n");
+        assert_eq!(head.query_param("path").as_deref(), Some("ok.txt"));
+    }
+
+    #[test]
+    fn query_param_decodes_only_once() {
+        // `%252e` is a literal `%2e` after one decode. Decoding twice would
+        // turn it into `.` and let `..` past a traversal check.
+        let head = parse("GET /api/file?path=%252e%252e%2Fsecret HTTP/1.1\r\n\r\n");
+        assert_eq!(head.query_param("path").as_deref(), Some("%2e%2e/secret"));
     }
 
     #[test]
