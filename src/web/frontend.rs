@@ -3,7 +3,7 @@
 //! xterm.js renderer are fleshed out in the frontend step; the login page is
 //! self-contained here.
 
-use crate::web::html_escape;
+use crate::web::common::html_escape;
 
 /// The login page, with `{error}` substituted for an optional message.
 const LOGIN_TEMPLATE: &str = include_str!("frontend/login.html");

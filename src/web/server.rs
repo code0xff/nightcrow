@@ -6,9 +6,10 @@
 //! encoded screen frames flow out over a per-client channel. The `App` is never
 //! shared across threads; only bytes and decoded input events cross the boundary.
 
-use crate::web::auth::{Auth, RateLimiter, SESSION_COOKIE, SessionStore};
+use crate::web::common::auth::{Auth, RateLimiter, SESSION_COOKIE, SessionStore};
+use crate::web::common::conn::ConnectionSlot;
+use crate::web::common::http::{self, RequestHead};
 use crate::web::frontend;
-use crate::web::http::{self, RequestHead};
 use crate::web::protocol::{self, WebInputEvent};
 use anyhow::{Context, Result};
 use ratatui::buffer::Buffer;
@@ -50,34 +51,6 @@ struct Shared {
     /// Connections currently held by a handler thread, capped at
     /// [`MAX_CONNECTIONS`]. Owned through [`ConnectionSlot`].
     connections: Arc<AtomicUsize>,
-}
-
-/// A claimed connection slot. Releasing it is `Drop`, so every handler exit
-/// path — normal return, early error, a panicking thread — frees the slot.
-struct ConnectionSlot {
-    counter: Arc<AtomicUsize>,
-}
-
-impl ConnectionSlot {
-    /// Claim a slot, or return `None` when `counter` is already at `cap`.
-    fn acquire(counter: &Arc<AtomicUsize>, cap: usize) -> Option<Self> {
-        // Claim first and give back on overflow, so two accepts racing at the
-        // limit cannot both see room and both proceed.
-        let previous = counter.fetch_add(1, Ordering::AcqRel);
-        if previous >= cap {
-            counter.fetch_sub(1, Ordering::AcqRel);
-            return None;
-        }
-        Some(Self {
-            counter: Arc::clone(counter),
-        })
-    }
-}
-
-impl Drop for ConnectionSlot {
-    fn drop(&mut self) {
-        self.counter.fetch_sub(1, Ordering::AcqRel);
-    }
 }
 
 /// A message queued for one client's handler thread to write to its socket.
@@ -590,39 +563,6 @@ mod tests {
     use ratatui::layout::Rect;
     use ratatui::style::Style;
     use tungstenite::client::IntoClientRequest;
-
-    #[test]
-    fn connection_slot_refuses_over_the_cap() {
-        let counter = Arc::new(AtomicUsize::new(0));
-
-        let held: Vec<_> = (0..2)
-            .map(|_| ConnectionSlot::acquire(&counter, 2).expect("under the cap"))
-            .collect();
-
-        assert!(
-            ConnectionSlot::acquire(&counter, 2).is_none(),
-            "a third connection must be refused"
-        );
-        assert_eq!(
-            counter.load(Ordering::Acquire),
-            2,
-            "a refused connection must not leak a slot"
-        );
-        drop(held);
-    }
-
-    #[test]
-    fn connection_slot_releases_on_drop() {
-        let counter = Arc::new(AtomicUsize::new(0));
-
-        drop(ConnectionSlot::acquire(&counter, 1).expect("under the cap"));
-
-        assert_eq!(counter.load(Ordering::Acquire), 0);
-        assert!(
-            ConnectionSlot::acquire(&counter, 1).is_some(),
-            "the freed slot must be reusable"
-        );
-    }
 
     #[test]
     fn find_subsequence_locates_delimiter() {
