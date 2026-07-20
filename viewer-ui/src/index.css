@@ -1,4 +1,10 @@
 @import "tailwindcss";
+/* `dist/` is committed, so it is not gitignored, so Tailwind's automatic source
+   detection treats the previous build's own output as source. Class names then
+   outlive their removal by one build — deleted markup keeps its CSS until the
+   build after — and any stray file under dist/ can inject rules. Scan only the
+   handwritten sources. */
+@source not "../dist";
 @import "@xterm/xterm/css/xterm.css";
 
 /* Neutral dark, carried over from the TUI. Amber is the single accent, used
