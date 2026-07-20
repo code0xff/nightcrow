@@ -419,10 +419,12 @@ export function App() {
         <section className="flex min-h-0 min-w-0 flex-col">
           {/* Always rendered, even with nothing open: it carries the maximise
               control, and a header that came and went with the selection would
-              shift the pane under the cursor. Diffs carry a path too, so both
-              kinds label themselves the same way. */}
+              shift the pane under the cursor. Only a file view is labelled with
+              its path here — a diff already prints each file path in its hunk
+              headers, and a commit diff's `path` is the commit oid, which would
+              read as a bogus file name. */}
           <div className="flex shrink-0 items-center gap-2 bg-ink-850 px-3 py-0.5 text-ink-400">
-            {pane.kind !== "empty" && <PathLabel path={pane.value.path} />}
+            {pane.kind === "file" && <PathLabel path={pane.value.path} />}
             <button
               onClick={() =>
                 setMaximized((m) => (m === "files" ? "none" : "files"))
