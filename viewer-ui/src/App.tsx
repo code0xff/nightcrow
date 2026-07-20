@@ -359,19 +359,26 @@ export function App() {
               <p className="p-4 text-ink-400">Select a file or commit.</p>
             )}
             {pane.kind === "file" && (
-              <pre className="p-3 whitespace-pre text-ink-200">
-                {pane.value.lines.map((line, i) => (
-                  <div key={i}>
-                    {line.length === 0
-                      ? " "
-                      : line.map((s, j) => (
-                          <span key={j} style={{ color: s.c }}>
-                            {s.t}
-                          </span>
-                        ))}
-                  </div>
-                ))}
-              </pre>
+              <>
+                <pre className="p-3 whitespace-pre text-ink-200">
+                  {pane.value.lines.map((line, i) => (
+                    <div key={i}>
+                      {line.length === 0
+                        ? " "
+                        : line.map((s, j) => (
+                            <span key={j} style={{ color: s.c }}>
+                              {s.t}
+                            </span>
+                          ))}
+                    </div>
+                  ))}
+                </pre>
+                {pane.value.truncated && (
+                  <p className="p-3 text-accent">
+                    File truncated — it exceeded the server's size ceiling.
+                  </p>
+                )}
+              </>
             )}
             {pane.kind === "diff" && (
               <div className="p-1">
