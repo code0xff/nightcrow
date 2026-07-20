@@ -16,5 +16,6 @@ pub mod protocol;
 pub(crate) mod common;
 mod frontend;
 mod server;
+pub(crate) mod viewer;
 
 pub use server::WebServer;
