@@ -71,6 +71,7 @@ export function App() {
   const [pickerOpen, setPickerOpen] = useState(false);
   const [sidebar, setSidebar] = useState(loadSidebar);
   const [dragging, setDragging] = useState(false);
+  const [maxTerm, setMaxTerm] = useState(false);
 
   useEffect(() => {
     try {
@@ -237,11 +238,16 @@ export function App() {
     f.path.toLowerCase().includes(filter.toLowerCase()),
   );
 
+  // Maximising collapses the diff row to nothing rather than unmounting it, so
+  // the row count keeps matching the template and the pane comes back scrolled
+  // where it was.
   return (
     <div
       className={`nc-fade grid h-full ${
         repo
-          ? "grid-rows-[auto_minmax(0,3fr)_minmax(0,2fr)_auto]"
+          ? maxTerm
+            ? "grid-rows-[auto_minmax(0,0fr)_minmax(0,1fr)_auto]"
+            : "grid-rows-[auto_minmax(0,3fr)_minmax(0,2fr)_auto]"
           : "grid-rows-[auto_1fr]"
       }`}
     >
@@ -521,7 +527,13 @@ export function App() {
         </section>
       </main>
 
-      {repo && <TerminalPanel repo={repo} />}
+      {repo && (
+        <TerminalPanel
+          repo={repo}
+          maximized={maxTerm}
+          onToggleMaximized={() => setMaxTerm((m) => !m)}
+        />
+      )}
 
       <footer className="flex shrink-0 items-center gap-3 border-t border-ink-700 bg-ink-900 px-3 py-1 text-ink-400">
         <span className="truncate">{current?.display_path}</span>

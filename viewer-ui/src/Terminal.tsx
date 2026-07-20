@@ -9,6 +9,46 @@ interface PaneView {
 }
 
 /**
+ * Maximise/restore glyph, traced from Lucide's `maximize` and `minimize`
+ * (https://lucide.dev — ISC, Copyright (c) 2026 Lucide Icons and Contributors).
+ *
+ * Inlined rather than added as a dependency: two icons do not justify an icon
+ * package, and the bundle has to stay self-contained anyway. `currentColor`
+ * lets the button's own text colour drive it, hover states included.
+ */
+function MaximizeIcon({ maximized }: { maximized: boolean }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+      focusable="false"
+      className="h-4 w-4"
+    >
+      {maximized ? (
+        <>
+          <path d="M8 3v3a2 2 0 0 1-2 2H3" />
+          <path d="M21 8h-3a2 2 0 0 1-2-2V3" />
+          <path d="M3 16h3a2 2 0 0 1 2 2v3" />
+          <path d="M16 21v-3a2 2 0 0 1 2-2h3" />
+        </>
+      ) : (
+        <>
+          <path d="M8 3H5a2 2 0 0 0-2 2v3" />
+          <path d="M21 8V5a2 2 0 0 0-2-2h-3" />
+          <path d="M3 16v3a2 2 0 0 0 2 2h3" />
+          <path d="M16 21h3a2 2 0 0 0 2-2v-3" />
+        </>
+      )}
+    </svg>
+  );
+}
+
+/**
  * One WebSocket multiplexes every terminal for a repository.
  *
  * Output arrives as binary frames tagged with a 4-byte little-endian pane id
@@ -21,7 +61,15 @@ interface PaneView {
  * whose element was detached renders blank, so switching panes toggles
  * `display` instead of moving a single terminal between elements.
  */
-export function TerminalPanel({ repo }: { repo: string }) {
+export function TerminalPanel({
+  repo,
+  maximized,
+  onToggleMaximized,
+}: {
+  repo: string;
+  maximized: boolean;
+  onToggleMaximized: () => void;
+}) {
   const hostRef = useRef<HTMLDivElement>(null);
   const socketRef = useRef<WebSocket | null>(null);
   const viewsRef = useRef(new Map<number, PaneView>());
@@ -243,6 +291,18 @@ export function TerminalPanel({ repo }: { repo: string }) {
           +
         </button>
         {error && <span className="ml-2 text-xs text-removed">{error}</span>}
+        {/* No Escape shortcut to leave: Escape belongs to whatever is running
+            in the PTY, and stealing it would break vim and every TUI below it.
+            The button is the way out. */}
+        <button
+          onClick={onToggleMaximized}
+          aria-pressed={maximized}
+          title={maximized ? "Restore panel height" : "Maximize the panel"}
+          aria-label={maximized ? "Restore panel height" : "Maximize the panel"}
+          className="ml-auto flex items-center rounded-sm px-1.5 py-0.5 text-ink-400 hover:text-accent"
+        >
+          <MaximizeIcon maximized={maximized} />
+        </button>
       </div>
       <div className="relative min-h-0 flex-1 overflow-hidden bg-ink-950 p-1">
         {panes.length === 0 && (
