@@ -96,18 +96,22 @@ src/
 ├── git/
 │   ├── mod.rs
 │   ├── diff.rs           # git2 snapshot/diff loaders + tracking status
+│   ├── path.rs           # repo-relative path validation before any filesystem read
 │   └── tree.rs           # lazy read-only directory listing (gitignore filter, symlink guard)
 ├── input/
 │   └── mod.rs            # keyboard routing: map_key (no-prefix reserved keys),
 │                         #   prefix_action (leader follow-up dispatch), encode_key, vim-style j/k
 └── web/                  # optional browser mirror ([web] enabled) — see "Web Mirror"
-    ├── mod.rs            # module root + html_escape
-    ├── protocol.rs      # Buffer→ANSI frame encode, JSON→crossterm input decode
-    ├── server.rs        # sync accept/connection threads, broadcast, WS upgrade
-    ├── auth.rs          # Argon2 password verify, session tokens, login rate limit
-    ├── http.rs          # minimal HTTP request parse + response builders
-    ├── frontend.rs      # embedded page assets
-    └── frontend/        # login.html, app.html, vendor/xterm.{js,css}
+    ├── mod.rs            # module root
+    ├── common/           # server-agnostic primitives (no frames, git, or terminals)
+    │   ├── mod.rs        # html_escape
+    │   ├── auth.rs       # Argon2 password verify, session tokens, login rate limit
+    │   ├── http.rs       # minimal HTTP request parse + response builders
+    │   └── conn.rs       # ConnectionSlot: accept-loop connection accounting
+    ├── protocol.rs       # Buffer→ANSI frame encode, JSON→crossterm input decode
+    ├── server.rs         # sync accept/connection threads, broadcast, WS upgrade
+    ├── frontend.rs       # embedded page assets
+    └── frontend/         # login.html, app.html, vendor/xterm.{js,css}
 ```
 
 ## Key Design Decisions
@@ -134,6 +138,7 @@ trait TerminalBackend {
 
 - 백그라운드 worker 스레드: `SnapshotChannel`이 1초 간격으로 `load_snapshot`을 호출해 변경 파일 + tracking status를 `mpsc` 채널로 푸시한다.
 - UI 스레드 동기 로드: 파일/커밋 선택이 바뀌면 `load_*_with_repo`를 직접 호출한다. App은 `git2::Repository`를 lazy-cache하므로 매 호출마다 `Repository::discover`를 다시 실행하지 않는다. cache는 프로젝트와 수명을 같이 하므로 무효화 시점이 따로 없다 — 저장소가 바뀌는 유일한 방법이 탭을 닫고 새로 여는 것이기 때문.
+- 경로 검증: 워크트리 안의 파일을 여는 경로는 전부 `git::path::resolve_in_workdir`를 거친다. plain relative 컴포넌트만 허용하고 `..`·절대경로·NUL·`.git`(대소문자 무시)을 거부하며, 워크디렉토리부터 한 컴포넌트씩 내려가 **모든 깊이의 심링크**를 막고 canonicalize containment로 마무리한다. 지금 호출자는 git이 만들어 낸 경로만 넘기지만, 검증을 호출부가 아니라 파일시스템 경계에 두어야 웹 표면이 요청 문자열을 같은 로더에 태워도 안전하다. 크기 검사와 읽기는 같은 파일 핸들에서 수행해 stat→read TOCTOU를 닫는다.
 - 렌더링: 보이는 행(`scroll_start..scroll_start+visible_height`)에 한해 `syntect`로 syntax highlighting을 수행한다. 보이지 않는 라인은 highlighter state만 진행시켜 multi-line construct(블록 주석, 문자열 리터럴)의 syntax 연속성을 유지한다.
 
 ### Split-View Terminal Panel
@@ -407,7 +412,9 @@ snapshot worker는 매 폴 사이클마다 현재 HEAD oid를 함께 보고한�
   - **주의(버퍼 스왑)**: `terminal.draw()`는 반환 전에 버퍼를 스왑하므로 직후의 `current_buffer_mut()`는 다음(리셋된) 프레임을 가리킨다. 방금 그린 프레임은 `draw()`가 돌려주는 `CompletedFrame.buffer`다 — 미러는 이 쪽을 브로드캐스트해야 한다.
 - **입력 (`protocol::decode_input`)**: 브라우저는 특수/ASCII 키를 **구조화 JSON 이벤트**로 보내고(VT 역파싱 대신), 서버가 crossterm `KeyEvent`/`MouseEvent`/paste로 낮춰 `mpsc`로 메인 루프에 넣는다. 메인 루프는 이를 로컬 입력과 **동일한 `handle_key`/`handle_mouse`/`handle_paste`**로 디스패치한다 — 웹 동작이 로컬 키와 갈라질 수 없다(leader/prefix/focus 라우팅 전부 공유). 한글 등 IME 조합 텍스트는 `compositionend`에서 paste 이벤트로 전달된다.
 - **서버 (`server.rs`)**: accept 스레드가 연결마다 handler 스레드를 하나 띄운다. 프레임(출력)은 클라이언트별 채널로, 입력은 공용 `mpsc`로 메인 루프와 오간다 — **`App`은 스레드 간에 공유되지 않고** 바이트와 디코드된 이벤트만 경계를 넘는다. handler 스레드는 소켓에 read timeout을 걸어 같은 스레드에서 읽기(입력)와 큐된 쓰기(프레임)를 번갈아 처리한다. WebSocket 업그레이드는 요청 head를 라우팅/인증에 쓴 뒤 직접(`derive_accept_key` + 101 응답) 완료하고 `from_raw_socket`으로 넘긴다.
-- **인증 (`auth.rs`)**: 비밀번호를 Argon2로 검증한다(code-server와 동일 방식). 평문 `password`는 시작 시 메모리에서 해시하고, `hashed_password`(PHC)가 있으면 그쪽이 우선한다. 로그인은 rate-limit(2/분 + 14/시간)되고 성공 시 httpOnly 세션 쿠키를 발급한다. 기본 바인딩은 loopback이며 **TLS는 없다** — 원격은 SSH 터널/리버스 프록시로 감싼다. 서버 활성 시 비밀번호가 없으면 랜덤 생성해 config에 기록하고(주석 보존) 시작 시 1회 출력한다.
+  연결 수는 `MAX_CONNECTIONS`(64)로 제한한다 — 연결마다 스레드가 하나씩 붙으므로 상한이 없으면 포트에 닿을 수 있는 누구나 프로세스를 고갈시킬 수 있다. 상한 초과분은 accept 루프에서 소켓을 닫는다(거기서 503을 쓰면 멈춘 클라이언트 하나가 뒤의 모든 연결을 막는다). 슬롯은 `common::conn::ConnectionSlot`의 `Drop`으로 반납돼 장수하는 WS handler와 조기 에러 반환 양쪽에서 새지 않는다.
+- **공용 계층 (`common/`)**: 인증·HTTP 프레이밍·연결 회계는 미러 고유 로직이 아니므로 분리해 둔다. 화면 프레임·git 데이터·터미널을 전혀 모르는 계층이며, 계획 중인 웹 뷰어(`docs/web-viewer-plan.md`)가 정확히 이 계층까지만 공유한다.
+- **인증 (`common/auth.rs`)**: 비밀번호를 Argon2로 검증한다(code-server와 동일 방식). 평문 `password`는 시작 시 메모리에서 해시하고, `hashed_password`(PHC)가 있으면 그쪽이 우선한다. 로그인은 rate-limit(2/분 + 14/시간)되고 성공 시 httpOnly 세션 쿠키를 발급한다. 기본 바인딩은 loopback이며 **TLS는 없다** — 원격은 SSH 터널/리버스 프록시로 감싼다. 서버 활성 시 비밀번호가 없으면 랜덤 생성해 config에 기록하고(주석 보존) 시작 시 1회 출력한다.
 - **프론트엔드 (`frontend/`)**: 벤더링한 xterm.js 5.5.0(MIT)이 셀을 렌더한다. 별도 빌드 파이프라인 없이 `include_str!`로 바이너리에 임베드돼 오프라인·자기완결이다. 로그인 페이지와 터미널 페이지는 손 CSS로 neutral 다크 하우스 룩을 맞춘다.
 
 ## Critical Risk
