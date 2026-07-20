@@ -12,6 +12,10 @@ import {
 } from "./api";
 import { TerminalPanel } from "./Terminal";
 
+/// How often the tab bar re-reads the served set. The payload is a handful of
+/// short strings, and this only has to feel prompt when a tab opens.
+const REPO_POLL_MS = 3000;
+
 type Tab = "status" | "log" | "tree";
 type Pane =
   | { kind: "diff"; value: Diff }
@@ -48,15 +52,39 @@ export function App() {
     setError(err instanceof Error ? err.message : "request failed");
   }, []);
 
+  // The catalog follows the TUI: a tab opened or closed there changes what is
+  // served. Poll it so the tab bar tracks that without a reload — status has
+  // its own live stream, but the repo *list* has no event source of its own.
   useEffect(() => {
-    api
-      .repos()
-      .then((list) => {
-        setAuthed(true);
-        setRepos(list);
-        setRepo((current) => current ?? list[0]?.id ?? null);
-      })
-      .catch((err) => (isUnauthorized(err) ? setAuthed(false) : handle(err)));
+    let cancelled = false;
+    const refresh = () =>
+      api
+        .repos()
+        .then((list) => {
+          if (cancelled) return;
+          setAuthed(true);
+          setRepos(list);
+          // Keep the current selection when it survives; otherwise fall back to
+          // the first repo, so closing the active tab in the TUI does not leave
+          // the page pointing at an id the server no longer knows.
+          setRepo((current) =>
+            current && list.some((r) => r.id === current)
+              ? current
+              : (list[0]?.id ?? null),
+          );
+        })
+        .catch((err) => {
+          if (cancelled) return;
+          if (isUnauthorized(err)) setAuthed(false);
+          else handle(err);
+        });
+
+    refresh();
+    const timer = setInterval(refresh, REPO_POLL_MS);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
   }, [handle]);
 
   // Live status. The server replays the latest snapshot on subscribe, so this
@@ -92,6 +120,12 @@ export function App() {
   }
   if (!authed) {
     return <Login onSuccess={() => setAuthed(true)} />;
+  }
+  // An empty catalog is a real state, not a failure: the TUI can run with no
+  // project open. Say so, rather than rendering an empty shell that reads as
+  // a broken page.
+  if (repos.length === 0) {
+    return <NoRepositories />;
   }
 
   const current = repos.find((r) => r.id === repo);
@@ -291,6 +325,23 @@ export function App() {
           )}
         </span>
       </footer>
+    </div>
+  );
+}
+
+function NoRepositories() {
+  return (
+    <div className="flex h-full items-center justify-center p-6">
+      <div className="max-w-md">
+        <h1 className="mb-2 font-semibold text-accent">nightcrow</h1>
+        <p className="mb-3 text-ink-200">No repository is open.</p>
+        <p className="text-ink-400">
+          Open a project tab in the terminal UI and it appears here — the list
+          follows the TUI live, so there is nothing to reload. If you are
+          running <span className="text-ink-200">nightcrow serve</span>, pass{" "}
+          <span className="text-ink-200">--repo &lt;path&gt;</span>.
+        </p>
+      </div>
     </div>
   );
 }

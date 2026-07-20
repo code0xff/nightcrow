@@ -636,6 +636,20 @@ mod tests {
     }
 
     #[test]
+    fn an_empty_catalog_serves_cleanly() {
+        // The TUI can start with no project open, so the viewer alongside it
+        // sees an empty catalog. That is a legitimate state, not an error.
+        let server = server(&[]);
+        let token = login(server.addr());
+
+        let response = get(server.addr(), "/api/repos", Some(&token));
+        let value: serde_json::Value = serde_json::from_str(body_of(&response)).unwrap();
+
+        assert!(response.starts_with("HTTP/1.1 200"), "got: {response}");
+        assert_eq!(value["repos"].as_array().unwrap().len(), 0);
+    }
+
+    #[test]
     fn api_requires_authentication() {
         let (dir, path) = make_repo();
         let server = server(&[path]);
