@@ -183,10 +183,18 @@ export function App() {
           : "grid-rows-[auto_1fr]"
       }`}
     >
-      <header className="flex items-center gap-2 border-b border-ink-700 bg-ink-900 px-3 py-1.5">
-        <Mark className="h-[18px] w-[18px] shrink-0" />
-        <span className="font-medium tracking-wide text-ink-50">nightcrow</span>
-        <span className="hidden text-[0.6rem] uppercase tracking-[0.18em] text-ink-400 sm:inline">
+      {/* Pinned in px to render identically to the web mirror's header
+          (src/web/frontend/app.html), which sits on a 16px root while this app
+          runs at 14px — matching rem values there lands 12.5% smaller and reads
+          as chrome rather than a wordmark. Deliberately opted out of the density
+          knob in index.css: the header is shared branding across both services,
+          not content that should thin out as the UI gets denser. The tag drops
+          to the sans stack, as the mirror does, so it reads as a label against
+          the mono wordmark rather than more of the same. */}
+      <header className="flex items-center gap-2 border-b border-ink-700 bg-ink-900 px-[12.8px] py-[8.8px]">
+        <Mark className="h-[22px] w-[22px] shrink-0" />
+        <span className="text-[16px] font-medium tracking-[0.04em] text-ink-50">nightcrow</span>
+        <span className="hidden font-sans text-[10px] uppercase tracking-[0.18em] text-ink-400 sm:inline">
           web viewer
         </span>
         <nav className="flex gap-1 overflow-x-auto pl-1">

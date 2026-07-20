@@ -20,6 +20,10 @@
 
   --font-mono:
     ui-monospace, "JetBrains Mono", "SF Mono", Menlo, Consolas, monospace;
+  /* Only the header tag uses this, matching the web mirror: a sans label
+     against the mono wordmark. Pinned here rather than left to Tailwind's
+     default so both services resolve to the same stack. */
+  --font-sans: system-ui, sans-serif;
 }
 
 html,
