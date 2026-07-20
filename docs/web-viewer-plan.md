@@ -150,8 +150,8 @@ open**한다(`Repository`는 `Send`라 스레드별로 안전). 저장소별 런
      심링크/containment. 이후 tree/file/commit 엔드포인트가 전부 이 검증기를 공유한다.
    - `accept_loop` 동시 연결 상한(`ConnectionSlot`) — 뷰어 서버가 같은 프리미티브를 재사용한다.
 
-1. **web/common 추출** — 프리미티브 공유, 미러 회귀 테스트 보존.
-2. **HTTP 계층 확장** — 쿼리 파싱 + SSE writer + 연결 수명. 단위 테스트.
+1. **web/common 추출 (완료)** — `web/common/{auth,http,conn}`. 미러의 `Shared`/`ClientMsg`/`Buffer` 팬아웃은 `server.rs`에 유지.
+2. **HTTP 계층 확장 (완료)** — `RequestHead.query` + `query_param`(1회 디코드, 중복 이름은 첫 값), `common/sse.rs`의 `SseStream`. 연결 수명은 `SseStream`이 자기 헤드를 쓰고 소켓을 소유하는 것으로 해결했다 — 미러의 `handle_connection`은 건드리지 않았고, 실제 배선은 라우트가 생기는 6단계에서 한다.
 3. **나머지 자원 캡 헬퍼** — log/tree/diff/status/PTY 상한. 경로 검증기는 0단계에서 완료.
 4. **DTO + serde 변환** — 화이트리스트·버저닝. 단위 테스트.
 5. **카탈로그 + 저장소별 런타임(SnapshotChannel 드레인 + SSE)** — 안정 ID·원자 교체. 계약 테스트.
