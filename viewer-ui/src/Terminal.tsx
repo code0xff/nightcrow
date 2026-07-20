@@ -167,24 +167,31 @@ export function TerminalPanel({ repo }: { repo: string }) {
     }
   }, [active, panes]);
 
-  // Keep the active PTY's idea of the window in step with the browser's.
+  // Keep the active PTY's idea of its window in step with the panel's actual
+  // size. Observing the host rather than listening for window resizes catches
+  // every way the panel can change shape — a layout change, a split, a font
+  // change — not just the one that happens to move the viewport.
   useEffect(() => {
-    const onResize = () => {
-      if (active === null) return;
+    const host = hostRef.current;
+    if (!host || active === null) return;
+
+    // The grid is what the PTY cares about; pixel changes that leave rows and
+    // cols alone would just be noise on the socket and extra SIGWINCHs in the
+    // shell. A drag crosses a cell boundary rarely, so this filters most of it.
+    let sent = { rows: 0, cols: 0 };
+    const observer = new ResizeObserver(() => {
       const view = viewsRef.current.get(active);
       if (!view) return;
       view.fit.fit();
+      const { rows, cols } = view.term;
+      if (rows === sent.rows && cols === sent.cols) return;
+      sent = { rows, cols };
       socketRef.current?.send(
-        JSON.stringify({
-          type: "resize",
-          pane: active,
-          rows: view.term.rows,
-          cols: view.term.cols,
-        }),
+        JSON.stringify({ type: "resize", pane: active, rows, cols }),
       );
-    };
-    window.addEventListener("resize", onResize);
-    return () => window.removeEventListener("resize", onResize);
+    });
+    observer.observe(host);
+    return () => observer.disconnect();
   }, [active]);
 
   const create = () => {
