@@ -7,14 +7,14 @@
 //! shared across threads; only bytes and decoded input events cross the boundary.
 
 use crate::web::common::auth::{Auth, RateLimiter, SESSION_COOKIE, SessionStore};
-use crate::web::common::conn::ConnectionSlot;
+use crate::web::common::conn::{self, ConnectionSlot};
 use crate::web::common::http::{self, RequestHead};
 use crate::web::frontend;
 use crate::web::protocol::{self, WebInputEvent};
 use anyhow::{Context, Result};
 use ratatui::buffer::Buffer;
 use ratatui::layout::Position;
-use std::io::{Read, Write};
+use std::io::Write;
 use std::net::{IpAddr, SocketAddr, TcpListener, TcpStream};
 use std::sync::Arc;
 use std::sync::Mutex;
@@ -26,12 +26,6 @@ use tungstenite::handshake::derive_accept_key;
 use tungstenite::protocol::Role;
 use tungstenite::{Message, WebSocket};
 
-/// Reject a request head larger than this (headers only) to bound memory.
-const MAX_HEAD_BYTES: usize = 32 * 1024;
-/// Cap the request body we read (login form is tiny).
-const MAX_BODY_BYTES: usize = 64 * 1024;
-/// Give a client this long to send its request head before dropping it.
-const HEAD_READ_TIMEOUT: Duration = Duration::from_secs(15);
 /// Poll interval for the per-client loop: bounds added output latency while
 /// letting the same thread service both socket reads and queued writes.
 const WS_POLL_TIMEOUT: Duration = Duration::from_millis(10);
@@ -262,7 +256,7 @@ fn accept_loop(listener: TcpListener, shared: Arc<Shared>) {
 }
 
 fn handle_connection(mut stream: TcpStream, shared: Arc<Shared>) {
-    let (head, body) = match read_request(&mut stream) {
+    let (head, body) = match conn::read_request(&mut stream) {
         Ok(v) => v,
         Err(err) => {
             tracing::debug!(%err, "web: dropping malformed request");
@@ -288,7 +282,7 @@ fn handle_connection(mut stream: TcpStream, shared: Arc<Shared>) {
         // hijack fails auth anyway; this refuses it outright. A missing Origin
         // (native, non-browser clients) is allowed — such a client cannot
         // carry a victim's cookie.
-        if !origin_allowed(&head) {
+        if !conn::origin_allowed(&head) {
             let _ = stream.write_all(&http::response(
                 "403 Forbidden",
                 "text/plain; charset=utf-8",
@@ -305,64 +299,9 @@ fn handle_connection(mut stream: TcpStream, shared: Arc<Shared>) {
     let _ = stream.write_all(&response);
 }
 
-/// Read the request head (up to CRLFCRLF) plus any declared body.
-fn read_request(stream: &mut TcpStream) -> Result<(RequestHead, String)> {
-    stream.set_read_timeout(Some(HEAD_READ_TIMEOUT)).ok();
-    let mut buf = Vec::new();
-    let mut chunk = [0u8; 4096];
-    let head_end = loop {
-        if let Some(pos) = find_subsequence(&buf, b"\r\n\r\n") {
-            break pos + 4;
-        }
-        if buf.len() > MAX_HEAD_BYTES {
-            anyhow::bail!("request head exceeds {MAX_HEAD_BYTES} bytes");
-        }
-        let n = stream.read(&mut chunk).context("reading request head")?;
-        if n == 0 {
-            anyhow::bail!("connection closed before the request head completed");
-        }
-        buf.extend_from_slice(&chunk[..n]);
-    };
-
-    let head_text =
-        std::str::from_utf8(&buf[..head_end]).context("request head is not valid UTF-8")?;
-    let head = http::parse_request_head(head_text)?;
-
-    let want = head.content_length.min(MAX_BODY_BYTES);
-    let mut body = buf[head_end..].to_vec();
-    while body.len() < want {
-        let n = stream.read(&mut chunk).context("reading request body")?;
-        if n == 0 {
-            break;
-        }
-        body.extend_from_slice(&chunk[..n]);
-    }
-    body.truncate(want);
-    // The WebSocket loop installs its own timeout; clear this one first.
-    stream.set_read_timeout(None).ok();
-    Ok((head, String::from_utf8_lossy(&body).into_owned()))
-}
-
 fn is_authenticated(head: &RequestHead, shared: &Shared) -> bool {
     head.cookie(SESSION_COOKIE)
         .is_some_and(|token| shared.sessions.is_valid(token))
-}
-
-/// Whether a WebSocket upgrade's `Origin` is acceptable. Absent Origin (a
-/// native client that cannot carry a browser's cookie) is allowed; a present
-/// Origin must match the request `Host` authority, else it is a cross-site
-/// upgrade and is refused.
-fn origin_allowed(head: &RequestHead) -> bool {
-    match head.header("origin") {
-        None => true,
-        Some(origin) => {
-            let origin_authority = origin.split_once("://").map(|(_, rest)| rest);
-            matches!(
-                (origin_authority, head.header("host")),
-                (Some(authority), Some(host)) if authority == host
-            )
-        }
-    }
 }
 
 fn route_http(head: &RequestHead, body: &str, shared: &Shared) -> Vec<u8> {
@@ -550,25 +489,14 @@ fn dispatch_input(text: &str, shared: &Shared) {
     }
 }
 
-fn find_subsequence(haystack: &[u8], needle: &[u8]) -> Option<usize> {
-    haystack
-        .windows(needle.len())
-        .position(|window| window == needle)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::config::WebConfig;
     use ratatui::layout::Rect;
     use ratatui::style::Style;
+    use std::io::Read;
     use tungstenite::client::IntoClientRequest;
-
-    #[test]
-    fn find_subsequence_locates_delimiter() {
-        assert_eq!(find_subsequence(b"abc\r\n\r\nxyz", b"\r\n\r\n"), Some(3));
-        assert_eq!(find_subsequence(b"no delimiter", b"\r\n\r\n"), None);
-    }
 
     fn test_config(password: &str) -> WebConfig {
         WebConfig {
