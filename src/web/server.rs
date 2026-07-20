@@ -82,20 +82,20 @@ pub struct WebServer {
 }
 
 impl WebServer {
-    /// Bind and start the server from the `[web]` config, building the password
+    /// Bind and start the server from the `[web_mirror]` config, building the password
     /// verifier from either `hashed_password` or `password`.
-    pub fn start_from_config(web: &crate::config::WebConfig) -> Result<Self> {
+    pub fn start_from_config(web: &crate::config::WebMirrorConfig) -> Result<Self> {
         let auth = if let Some(hash) = web.hashed_password.as_deref() {
             Auth::from_hashed(hash)?
         } else if let Some(password) = web.password.as_deref().filter(|p| !p.is_empty()) {
             Auth::from_plaintext(password)?
         } else {
-            anyhow::bail!("web server is enabled but no password or hashed_password is configured");
+            anyhow::bail!("web_mirror is enabled but no password or hashed_password is configured");
         };
         let bind: IpAddr = web
             .bind
             .parse()
-            .with_context(|| format!("web.bind {:?} is not a valid IP address", web.bind))?;
+            .with_context(|| format!("web_mirror.bind {:?} is not a valid IP address", web.bind))?;
         Self::start(bind, web.port, auth)
     }
 
@@ -471,14 +471,14 @@ fn dispatch_input(text: &str, shared: &Shared) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::WebConfig;
+    use crate::config::WebMirrorConfig;
     use ratatui::layout::Rect;
     use ratatui::style::Style;
     use std::io::Read;
     use tungstenite::client::IntoClientRequest;
 
-    fn test_config(password: &str) -> WebConfig {
-        WebConfig {
+    fn test_config(password: &str) -> WebMirrorConfig {
+        WebMirrorConfig {
             enabled: true,
             bind: "127.0.0.1".into(),
             // Port 0 asks the OS for a free ephemeral port.

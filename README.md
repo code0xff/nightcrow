@@ -253,10 +253,10 @@ Passing `--repo` overrides the remembered tab list — it names the repo you wan
 nightcrow can serve a live, controllable view of itself in a browser. The
 browser and the local terminal drive the **same** session and stay in sync —
 type on either side, watch both update. It is off by default; enable it under
-`[web]`:
+`[web_mirror]`:
 
 ```toml
-[web]
+[web_mirror]
 enabled = true
 bind = "127.0.0.1"   # loopback only; change deliberately
 port = 8090
@@ -316,7 +316,7 @@ run on separate ports with separate passwords and separate session cookies, and
 either can be enabled without the other.
 
 **Authentication.** `[web_viewer]` has its own credential, generated and written
-back on first launch exactly like `[web]`. A mirror session does not
+back on first launch exactly like `[web_mirror]`. A mirror session does not
 authenticate against the viewer, or the reverse.
 
 > **Security.** The viewer serves repository contents *and* interactive
@@ -369,11 +369,18 @@ enabled = true       # capture the mouse: click to focus/forward, wheel scrolls
                      # the pane under the pointer; select text with Shift+drag.
                      # false = plain-drag selection, no click forwarding.
 
-[web]
+[web_mirror]
 enabled = false      # serve a live, controllable mirror in a browser (off by default)
 bind = "127.0.0.1"   # loopback only by default; plain HTTP, so tunnel/proxy for remote
 port = 8090
 # password = "..."         # auto-generated + saved here on first launch if unset
+# hashed_password = "..."  # Argon2 PHC string; takes precedence over `password`
+
+[web_viewer]
+enabled = false      # serve the native web viewer (off by default)
+bind = "127.0.0.1"   # loopback only by default
+port = 8091
+# password = "..."         # separate credential from the mirror above
 # hashed_password = "..."  # Argon2 PHC string; takes precedence over `password`
 
 [log]

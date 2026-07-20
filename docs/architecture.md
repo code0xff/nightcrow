@@ -101,7 +101,7 @@ src/
 ├── input/
 │   └── mod.rs            # keyboard routing: map_key (no-prefix reserved keys),
 │                         #   prefix_action (leader follow-up dispatch), encode_key, vim-style j/k
-└── web/                  # optional browser mirror ([web] enabled) — see "Web Mirror"
+└── web/                  # optional browser mirror ([web_mirror] enabled) — see "Web Mirror"
     ├── mod.rs            # module root
     ├── common/           # server-agnostic primitives (no frames, git, or terminals)
     │   ├── mod.rs        # html_escape
@@ -413,7 +413,7 @@ snapshot worker는 매 폴 사이클마다 현재 HEAD oid를 함께 보고한�
 
 ### Web Mirror (`src/web/`)
 
-`[web] enabled`이면 nightcrow는 자기 화면을 브라우저에 미러링하고 양방향 제어를 받는 HTTP/WebSocket 서버를 함께 띄운다. 브라우저와 로컬 터미널은 **같은 세션**을 구동하며 실시간으로 동기화된다. async 런타임을 도입하지 않는다 — 동기 서버가 별도 스레드에서 돌고 채널로만 메인 루프와 통신한다.
+`[web_mirror] enabled`이면 nightcrow는 자기 화면을 브라우저에 미러링하고 양방향 제어를 받는 HTTP/WebSocket 서버를 함께 띄운다. 브라우저와 로컬 터미널은 **같은 세션**을 구동하며 실시간으로 동기화된다. async 런타임을 도입하지 않는다 — 동기 서버가 별도 스레드에서 돌고 채널로만 메인 루프와 통신한다.
 
 - **단일 그리드 = 단일 권위**: nightcrow 화면 전체가 ratatui가 합성한 하나의 `Buffer`(셀 격자)다. 웹에는 이 격자를 그대로 보낸다. **그리드 크기의 권위는 로컬 tty 하나**다(ratatui가 `terminal.size()`로 렌더). 웹은 프레임에 실린 (cols,rows)에 xterm.js를 맞추고 창에 스케일해 letterbox한다 — 두 클라이언트가 크기를 두고 다투는 smallest-common-size 문제가 없다.
 - **출력 (`protocol::encode_*`)**: ratatui의 `CrosstermBackend`를 그대로 재사용해 `Buffer`를 ANSI로 인코딩한다. 로컬 터미널이 받는 바이트와 **바이트 단위로 동일**하다. 신규 접속자에겐 full frame(빈 버퍼와 diff), 그 외엔 직전 브로드캐스트 버퍼와의 셀 diff만 보낸다. crossterm의 `draw`가 매 호출 끝에 스타일을 리셋하므로 프레임을 이어 붙여도 xterm.js 상태가 어긋나지 않는다.
@@ -464,7 +464,7 @@ PTY 관리는 portable-pty 기반 `PtyBackend` 단일 구현으로 정리됐다.
 - 터미널 fullscreen 3-state 사이클(Off → Grid → Zoom) + pane swap(`<prefix> s`) + layout-aware jump/swap digit 재매핑
 - 터미널 에뮬레이터 교체: vt100 → alacritty_terminal(쿼리 응답, resize reflow, wide-char 크래시 해소)
 - scroll/mouse routing: 프로그램이 켠 모드 기반 스크롤 싱크 판정, config-gated 마우스 캡처(클릭 포커스/SGR 포워딩), 클릭 가능한 힌트 바·탭 바
-- 웹 미러(`[web]`): 동기 WS/HTTP 서버로 화면을 브라우저에 미러링하고 로컬 터미널과 양방향 동기화(`Buffer`→ANSI 재사용, 구조화 입력을 기존 핸들러로 라우팅, Argon2 로그인 + 세션 쿠키, 벤더링 xterm.js)
+- 웹 미러(`[web_mirror]`): 동기 WS/HTTP 서버로 화면을 브라우저에 미러링하고 로컬 터미널과 양방향 동기화(`Buffer`→ANSI 재사용, 구조화 입력을 기존 핸들러로 라우팅, Argon2 로그인 + 세션 쿠키, 벤더링 xterm.js)
 
 ## Future Refactor Notes
 

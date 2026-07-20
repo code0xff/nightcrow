@@ -64,7 +64,7 @@ max_depth = 64            # deepest directory level the tree will expand into (1
 live_watch = true         # watch expanded dirs and refresh the tree live; set false
                           # to refresh only on tree entry (large trees / odd filesystems)
 
-[web]
+[web_mirror]
 # Web mirror: serve a live, controllable view of this nightcrow in a browser.
 # The browser and the local terminal drive the SAME session and stay in sync.
 # Off by default — enabling it grants remote control of a shell, so treat the

@@ -271,18 +271,18 @@ fn resolve_serve_repos(repos: &[std::path::PathBuf]) -> Result<Vec<String>> {
 /// surface as plain stderr. A bind failure disables the web mirror with a
 /// warning rather than aborting the whole app — the local TUI still runs.
 fn start_web_if_enabled(cfg: &mut config::Config) -> Result<Option<web::WebServer>> {
-    if !cfg.web.enabled {
+    if !cfg.web_mirror.enabled {
         return Ok(None);
     }
     let path = config::config_file_path()?;
-    if let Some(password) = config::ensure_web_password(cfg, &path)? {
+    if let Some(password) = config::ensure_web_mirror_password(cfg, &path)? {
         eprintln!(
             "nightcrow web: generated a login password and saved it to {}:",
             path.display()
         );
         eprintln!("  {password}");
     }
-    match web::WebServer::start_from_config(&cfg.web) {
+    match web::WebServer::start_from_config(&cfg.web_mirror) {
         Ok(server) => {
             eprintln!("nightcrow web: mirror serving at http://{}/", server.addr());
             Ok(Some(server))
