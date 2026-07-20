@@ -38,37 +38,25 @@ pub fn read_children(
     rel_dir: &str,
     respect_gitignore: bool,
 ) -> Result<Vec<TreeEntry>> {
+    // Same gate as the file loader: plain relative components only, no `.git`,
+    // no symlink at any depth, and containment in the worktree. A stale session
+    // or a cached entry swapped for a symlink on disk both arrive here, and the
+    // web surfaces will route request strings straight into `rel_dir`.
     let abs_dir = if rel_dir.is_empty() {
-        workdir.to_path_buf()
+        std::fs::canonicalize(workdir)
+            .with_context(|| format!("failed to resolve workdir {}", workdir.display()))?
     } else {
-        workdir.join(rel_dir)
+        crate::git::path::resolve_in_workdir(workdir, rel_dir)?
     };
-    // Refuse to descend through the directory path itself if it is a symlink
-    // (or no longer a directory). Children are already filtered to real
-    // directories, but a cached entry could be swapped for a symlink on disk,
-    // or a stale session could ask to expand a path that is now a link —
-    // reading through it would browse outside the working tree. `read_dir`
-    // follows the final component, so this guard (using non-following
-    // `symlink_metadata`) is what keeps the navigator inside the repo.
-    let meta = std::fs::symlink_metadata(&abs_dir)
-        .with_context(|| format!("failed to stat {}", abs_dir.display()))?;
+    let meta =
+        std::fs::symlink_metadata(&abs_dir).with_context(|| format!("failed to stat {rel_dir}"))?;
     if !meta.file_type().is_dir() {
-        anyhow::bail!("not a directory (or a symlink): {}", abs_dir.display());
+        anyhow::bail!("not a directory: {rel_dir}");
     }
-    // `symlink_metadata` only spares the *final* component — an intermediate
-    // segment that is a symlink is still followed when `read_dir` resolves the
-    // path. Resolve the full path and confirm it stays inside the working tree
-    // so a symlinked parent (e.g. from a stale cache after an on-disk swap)
-    // can't be used to read outside the repo.
-    let canon_dir = std::fs::canonicalize(&abs_dir)
-        .with_context(|| format!("failed to resolve {}", abs_dir.display()))?;
-    let canon_root = std::fs::canonicalize(workdir)
-        .with_context(|| format!("failed to resolve workdir {}", workdir.display()))?;
-    if !canon_dir.starts_with(&canon_root) {
-        anyhow::bail!("path escapes the working tree: {}", abs_dir.display());
-    }
+    // Read the resolved path rather than re-joining `rel_dir`, so the directory
+    // that gets listed is the one that was validated.
     let read = std::fs::read_dir(&abs_dir)
-        .with_context(|| format!("failed to read directory {}", abs_dir.display()))?;
+        .with_context(|| format!("failed to read directory {rel_dir}"))?;
 
     let mut out = Vec::new();
     for entry in read {
@@ -80,7 +68,9 @@ pub fn read_children(
         };
         // `.git` is repository metadata, not browsable project content. git
         // does not list it in `.gitignore`, so it must be skipped explicitly.
-        if name == ".git" {
+        // Shares the rule with the path validator: an exact `== ".git"` here
+        // would still list `.GIT` on a case-insensitive filesystem.
+        if crate::git::path::is_git_dir_name(&name) {
             continue;
         }
         // `file_type()` does NOT follow symlinks, so a symlinked directory
@@ -198,6 +188,41 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
+    fn read_children_refuses_to_list_the_git_directory() {
+        // Skipping `.git` from child listings is not enough: asking for it as
+        // the directory itself enumerated refs, hooks, and object layout.
+        let (dir, path) = make_repo();
+        let root = StdPath::new(&path);
+        let repo = open_repo(&path);
+
+        for asked in [".git", ".git/refs", ".GIT", "src/../.git"] {
+            let err = read_children(&repo, root, asked, false).unwrap_err();
+            assert!(
+                !err.to_string().contains("failed to read directory"),
+                "{asked:?} must be refused by validation, not by chance: {err}"
+            );
+        }
+        drop(dir);
+    }
+
+    #[test]
+    fn read_children_refuses_traversal_that_stays_inside_the_worktree() {
+        // Containment alone accepts this — it resolves back inside the repo.
+        let (dir, path) = make_repo();
+        let root = StdPath::new(&path);
+        std::fs::create_dir(root.join("src")).unwrap();
+        let repo = open_repo(&path);
+
+        let err = read_children(&repo, root, "src/..", false).unwrap_err();
+
+        assert!(
+            err.to_string().contains("plain relative path"),
+            "unexpected error: {err}"
+        );
+        drop(dir);
+    }
+
+    #[test]
     fn read_children_refuses_to_descend_a_symlinked_directory() {
         let (dir, path) = make_repo();
         let root = StdPath::new(&path);
@@ -209,7 +234,10 @@ mod tests {
         // Expanding the symlink path directly (as a stale session or swapped
         // cache entry could ask to) must be rejected, not followed.
         let err = read_children(&repo, root, "link_dir", false).unwrap_err();
-        assert!(err.to_string().contains("not a directory"));
+        assert!(
+            err.to_string().contains("symlinks are not followed"),
+            "unexpected error: {err}"
+        );
         // The real directory still reads normally.
         assert!(read_children(&repo, root, "real_dir", false).is_ok());
         drop(dir);
@@ -227,11 +255,11 @@ mod tests {
         std::os::unix::fs::symlink(outside.path(), root.join("link")).unwrap();
 
         let repo = open_repo(&path);
-        // `link` is a symlink (intermediate component); resolving `link/sub`
-        // lands outside the worktree and must be rejected, not read.
+        // `link` is a symlink (intermediate component); `link/sub` must be
+        // rejected at the link, before the path is ever resolved outside.
         let err = read_children(&repo, root, "link/sub", false).unwrap_err();
         assert!(
-            err.to_string().contains("escapes the working tree"),
+            err.to_string().contains("symlinks are not followed"),
             "unexpected error: {err}"
         );
         drop(dir);

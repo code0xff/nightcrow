@@ -13,13 +13,33 @@ use std::path::{Component, Path, PathBuf};
 /// preview would expose config, hooks, and object contents.
 const GIT_DIR: &str = ".git";
 
+/// Characters NTFS and some other filesystems strip from the end of a name, so
+/// that `.git.` and `.git ` open the same directory as `.git`. Git defends the
+/// same way (`core.protectNTFS`).
+const NAME_PADDING: [char; 2] = ['.', ' '];
+
+/// True when `name` refers to the git directory on *any* filesystem this could
+/// run on: case-insensitively (macOS, Windows) and ignoring the trailing dots
+/// and spaces that NTFS discards.
+///
+/// Every place that decides whether a name is git's own directory must use this
+/// — a second, looser spelling of the rule is how a bypass gets in.
+pub fn is_git_dir_name(name: &str) -> bool {
+    name.trim_end_matches(NAME_PADDING)
+        .eq_ignore_ascii_case(GIT_DIR)
+}
+
+fn is_git_dir(part: &std::ffi::OsStr) -> bool {
+    // A non-UTF-8 name cannot equal the ASCII `.git` under any of these rules.
+    part.to_str().is_some_and(is_git_dir_name)
+}
+
 /// Resolve `relative` against `workdir`, rejecting anything that could escape
 /// the worktree or read git's internals.
 ///
-/// Rejects: absolute paths, `..` and other non-plain components, any `.git`
-/// component (case-insensitively, since macOS and Windows filesystems are
-/// case-insensitive), embedded NUL bytes, and symlinks at *any* component —
-/// not just the final one.
+/// Rejects: absolute paths, `..` and other non-plain components, any component
+/// naming the git directory (see [`is_git_dir`]), embedded NUL bytes, and
+/// symlinks at *any* component — not just the final one.
 ///
 /// The returned path is the canonicalized location and is guaranteed to sit
 /// under the canonicalized `workdir`. A caller that opens it still races with
@@ -38,10 +58,7 @@ pub fn resolve_in_workdir(workdir: &Path, relative: &str) -> Result<PathBuf> {
     for component in candidate.components() {
         match component {
             Component::Normal(part) => {
-                let is_git_dir = part
-                    .to_str()
-                    .is_some_and(|part| part.eq_ignore_ascii_case(GIT_DIR));
-                if is_git_dir {
+                if is_git_dir(part) {
                     return Err(anyhow!("path enters the git directory: {relative}"));
                 }
             }
@@ -158,6 +175,34 @@ mod tests {
             err.to_string().contains("git directory"),
             "unexpected error: {err}"
         );
+    }
+
+    #[test]
+    fn resolve_in_workdir_rejects_the_git_directory_with_trailing_padding() {
+        // NTFS strips trailing dots and spaces, so these name `.git` there. The
+        // check must not depend on the host filesystem refusing to open them.
+        let (_dir, root) = workdir();
+
+        for padded in [".git.", ".git ", ".GIT..  ", ".git. /config"] {
+            let err = resolve_in_workdir(&root, padded).unwrap_err();
+            assert!(
+                err.to_string().contains("git directory"),
+                "{padded:?} must be rejected as the git directory, got: {err}"
+            );
+        }
+    }
+
+    #[test]
+    fn resolve_in_workdir_allows_dotfiles_that_merely_start_with_git() {
+        // `.gitignore` and `.github/` are ordinary tracked files; rejecting a
+        // whole `.git*` prefix would make them unviewable.
+        let (_dir, root) = workdir();
+        std::fs::write(root.join(".gitignore"), "/target\n").unwrap();
+        std::fs::create_dir(root.join(".github")).unwrap();
+        std::fs::write(root.join(".github/ci.yml"), "on: push\n").unwrap();
+
+        assert!(resolve_in_workdir(&root, ".gitignore").is_ok());
+        assert!(resolve_in_workdir(&root, ".github/ci.yml").is_ok());
     }
 
     #[test]
