@@ -49,10 +49,13 @@ function PathLabel({ path, from }: { path: string; from?: string }) {
   const name = cut === -1 ? path : path.slice(cut + 1);
   return (
     <span
-      className="flex min-w-0"
+      className="flex min-w-0 overflow-hidden"
       title={from ? `${from} → ${path}` : path}
     >
       <span className="min-w-0 truncate">{from ? `${from} → ${dir}` : dir}</span>
+      {/* The name holds its width so the directory yields first; overflow-hidden
+          on the row clips a pathological basename here rather than letting it
+          spill over the sibling controls. */}
       <span className="shrink-0">{name}</span>
     </span>
   );
@@ -301,9 +304,15 @@ export function App() {
               } as CSSProperties
             }
           >
+        {/* Two mechanisms collapse the sidebar when maximised, one per breakpoint.
+            At md+ it stays in the grid (md:flex) and the --nc-sidebar:0px column
+            hides it — display:none here would drop it from grid placement and
+            shift the file pane into the 0px track, collapsing it to nothing.
+            Below md the grid is a single column that ignores --nc-sidebar, so
+            there `hidden` is what removes it. */}
         <section
-          className={`flex min-h-0 flex-col overflow-hidden ${
-            filesMax ? "" : "border-ink-700 md:border-r"
+          className={`min-h-0 flex-col overflow-hidden ${
+            filesMax ? "hidden md:flex" : "flex border-ink-700 md:border-r"
           }`}
         >
           <div className="flex shrink-0 gap-1 px-2 py-1">

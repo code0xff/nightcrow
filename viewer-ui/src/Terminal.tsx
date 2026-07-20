@@ -191,6 +191,11 @@ export function TerminalPanel({
     const observer = new ResizeObserver(() => {
       const view = viewsRef.current.get(active);
       if (!view) return;
+      // A collapsed panel — height 0 while the file pane is maximised — would
+      // make fit propose a one-row terminal and SIGWINCH the shell to a garbage
+      // size, corrupting any full-screen program running in it. There is
+      // nothing to fit to at zero size; the restore fires its own resize.
+      if (host.clientHeight === 0 || host.clientWidth === 0) return;
       view.fit.fit();
       const { rows, cols } = view.term;
       if (rows === sent.rows && cols === sent.cols) return;
