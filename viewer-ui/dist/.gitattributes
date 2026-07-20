@@ -1,0 +1,2 @@
+# Vite output, committed so `cargo install` needs no Node toolchain.
+* linguist-generated=true -diff

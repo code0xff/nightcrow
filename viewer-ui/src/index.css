@@ -1,0 +1,45 @@
+@import "tailwindcss";
+@import "@xterm/xterm/css/xterm.css";
+
+/* Neutral dark, carried over from the TUI. Amber is the single accent, used
+   for selection and focus only — everything else stays greyscale so the diff
+   colours are the loudest thing on screen. */
+@theme {
+  --color-ink-950: #0b0b0d;
+  --color-ink-900: #121215;
+  --color-ink-850: #17171b;
+  --color-ink-800: #1d1d22;
+  --color-ink-700: #2a2a31;
+  --color-ink-600: #3a3a43;
+  --color-ink-400: #6f6f7d;
+  --color-ink-200: #a8a8b5;
+  --color-ink-50: #e6e6ec;
+  --color-accent: #d9a441;
+  --color-added: #4ba36b;
+  --color-removed: #c85f5f;
+
+  --font-mono:
+    ui-monospace, "JetBrains Mono", "SF Mono", Menlo, Consolas, monospace;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--color-ink-950);
+  color: var(--color-ink-50);
+  font-family: var(--font-mono);
+  /* TUI density: the default 16px leaves too few rows on screen. */
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+/* Thin, low-contrast scrollbars so panes read as one surface. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-ink-600) transparent;
+}

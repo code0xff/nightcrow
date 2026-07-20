@@ -41,3 +41,7 @@
 
 /target
 .claude/scheduled_tasks.lock
+
+# Frontend: source and build output are tracked, dependencies are not.
+/viewer-ui/node_modules/
+/viewer-ui/tsconfig.tsbuildinfo

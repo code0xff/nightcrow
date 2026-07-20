@@ -7,11 +7,13 @@
 //! Request handling order is deliberate and load-bearing:
 //!
 //! 1. **Origin** — a cross-site request is refused before anything else runs.
-//! 2. **Auth** — checked *before* the repository is looked up, so an
+//! 2. **Static assets** — the built bundle is public. It holds no repository
+//!    data and renders the login form, so gating it would leave no way in.
+//! 3. **Auth** — checked *before* the repository is looked up, so an
 //!    unauthenticated request cannot probe which ids exist by comparing a 404
 //!    against a 401.
-//! 3. **Lookup** — an opaque id resolves to a repository, or 404s.
-//! 4. **Path validation** — any `path` parameter goes through
+//! 4. **Lookup** — an opaque id resolves to a repository, or 404s.
+//! 5. **Path validation** — any `path` parameter goes through
 //!    [`crate::git::path::resolve_in_workdir`] before touching the filesystem.
 //!
 //! Each git request opens its own `git2::Repository`. Handler threads are
@@ -27,6 +29,7 @@ use crate::web::common::auth::{Auth, RateLimiter, SessionStore};
 use crate::web::common::conn::{self, ConnectionSlot};
 use crate::web::common::http::{self, RequestHead};
 use crate::web::common::sse::SseStream;
+use crate::web::viewer::assets;
 use crate::web::viewer::catalog::{Catalog, RepoEntry};
 use crate::web::viewer::dto::{DiffDto, Envelope, FileDto, LogDto, StatusDto, TreeDto};
 use crate::web::viewer::limits;
@@ -188,7 +191,19 @@ fn handle_connection(mut stream: TcpStream, state: Arc<ViewerState>) {
         _ => {}
     }
 
-    // (2) Auth, before any repository is named or looked up.
+    // (2) The static bundle is served unauthenticated. It carries no
+    // repository data — it is the shell that renders the login form and then
+    // calls the API, which *is* gated. Requiring a session to fetch it would
+    // mean the user could never reach a login screen at all.
+    if head.method == "GET" && !head.path.starts_with("/api/") && head.path != "/ws/term" {
+        let _ = stream.write_all(
+            &assets::serve(&head.path)
+                .unwrap_or_else(|| text_response("404 Not Found", "frontend not built")),
+        );
+        return;
+    }
+
+    // (3) Auth, before any repository is named or looked up.
     if !is_authenticated(&head, &state) {
         let _ = stream.write_all(&match head.path.starts_with("/api/") {
             true => json_error("401 Unauthorized", "authentication required"),
@@ -582,6 +597,24 @@ mod tests {
 
     fn body_of(response: &str) -> &str {
         response.split("\r\n\r\n").nth(1).unwrap_or("")
+    }
+
+    #[test]
+    fn the_app_shell_is_reachable_without_a_session() {
+        // The bundle renders the login form, so gating it would leave the user
+        // with no way to authenticate at all.
+        let (dir, path) = make_repo();
+        let server = server(&[path]);
+
+        let response = get(server.addr(), "/", None);
+
+        assert!(response.starts_with("HTTP/1.1 200"), "got: {response}");
+        assert!(response.contains("<div id=\"root\">"), "not the app shell");
+        assert!(
+            response.contains("Content-Security-Policy"),
+            "the shell must carry a CSP"
+        );
+        drop(dir);
     }
 
     #[test]
