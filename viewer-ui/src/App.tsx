@@ -344,66 +344,77 @@ export function App() {
           </ul>
         </section>
 
-        <section className="min-h-0 overflow-auto">
-          {pane.kind === "empty" && (
-            <p className="p-4 text-ink-400">Select a file or commit.</p>
-          )}
+        {/* Header outside the scroll box, body inside — the same split the file
+            list on the left uses. Pinning it from inside the scroll box instead
+            would only hold it vertically, letting a long code line carry the
+            path off to the left; this holds it on both axes. */}
+        <section className="flex min-h-0 flex-col">
           {pane.kind === "file" && (
-            <pre className="p-3 whitespace-pre text-ink-200">
-              {pane.value.lines.map((line, i) => (
-                <div key={i}>
-                  {line.length === 0
-                    ? " "
-                    : line.map((s, j) => (
-                        <span key={j} style={{ color: s.c }}>
-                          {s.t}
-                        </span>
-                      ))}
-                </div>
-              ))}
-            </pre>
-          )}
-          {pane.kind === "diff" && (
-            <div className="p-1">
-              {pane.value.hunks.length === 0 && (
-                <p className="p-3 text-ink-400">No changes.</p>
-              )}
-              {pane.value.hunks.map((h, i) => (
-                <div key={i} className="mb-2">
-                  <div className="bg-ink-850 px-3 py-0.5 text-ink-400">
-                    {h.file_path ? `${h.file_path}  ` : ""}
-                    {h.header}
-                  </div>
-                  {h.lines.map((line, j) => (
-                    <div
-                      key={j}
-                      className={`px-3 whitespace-pre ${
-                        line.kind === "+"
-                          ? "bg-added/10"
-                          : line.kind === "-"
-                            ? "bg-removed/10"
-                            : ""
-                      }`}
-                    >
-                      <span className="text-ink-400 select-none">
-                        {line.kind}
-                      </span>
-                      {line.spans.map((s, k) => (
-                        <span key={k} style={{ color: s.c }}>
-                          {s.t}
-                        </span>
-                      ))}
-                    </div>
-                  ))}
-                </div>
-              ))}
-              {pane.value.truncated && (
-                <p className="p-3 text-accent">
-                  Diff truncated — it exceeded the server's size ceiling.
-                </p>
-              )}
+            <div className="shrink-0 truncate bg-ink-850 px-3 py-0.5 text-ink-400">
+              {pane.value.path}
             </div>
           )}
+          <div className="min-h-0 flex-1 overflow-auto">
+            {pane.kind === "empty" && (
+              <p className="p-4 text-ink-400">Select a file or commit.</p>
+            )}
+            {pane.kind === "file" && (
+              <pre className="p-3 whitespace-pre text-ink-200">
+                {pane.value.lines.map((line, i) => (
+                  <div key={i}>
+                    {line.length === 0
+                      ? " "
+                      : line.map((s, j) => (
+                          <span key={j} style={{ color: s.c }}>
+                            {s.t}
+                          </span>
+                        ))}
+                  </div>
+                ))}
+              </pre>
+            )}
+            {pane.kind === "diff" && (
+              <div className="p-1">
+                {pane.value.hunks.length === 0 && (
+                  <p className="p-3 text-ink-400">No changes.</p>
+                )}
+                {pane.value.hunks.map((h, i) => (
+                  <div key={i} className="mb-2">
+                    <div className="bg-ink-850 px-3 py-0.5 text-ink-400">
+                      {h.file_path ? `${h.file_path}  ` : ""}
+                      {h.header}
+                    </div>
+                    {h.lines.map((line, j) => (
+                      <div
+                        key={j}
+                        className={`px-3 whitespace-pre ${
+                          line.kind === "+"
+                            ? "bg-added/10"
+                            : line.kind === "-"
+                              ? "bg-removed/10"
+                              : ""
+                        }`}
+                      >
+                        <span className="text-ink-400 select-none">
+                          {line.kind}
+                        </span>
+                        {line.spans.map((s, k) => (
+                          <span key={k} style={{ color: s.c }}>
+                            {s.t}
+                          </span>
+                        ))}
+                      </div>
+                    ))}
+                  </div>
+                ))}
+                {pane.value.truncated && (
+                  <p className="p-3 text-accent">
+                    Diff truncated — it exceeded the server's size ceiling.
+                  </p>
+                )}
+              </div>
+            )}
+          </div>
         </section>
       </main>
 
