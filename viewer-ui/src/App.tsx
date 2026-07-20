@@ -3,6 +3,7 @@ import {
   api,
   isUnauthorized,
   subscribeStatus,
+  type Browse,
   type Commit,
   type Diff,
   type FileView,
@@ -42,6 +43,7 @@ export function App() {
   const [filter, setFilter] = useState("");
   const [pane, setPane] = useState<Pane>({ kind: "empty" });
   const [error, setError] = useState<string | null>(null);
+  const [pickerOpen, setPickerOpen] = useState(false);
 
   // A failed call is either "log back in" or a message worth showing.
   const handle = useCallback((err: unknown) => {
@@ -51,6 +53,38 @@ export function App() {
     }
     setError(err instanceof Error ? err.message : "request failed");
   }, []);
+
+  // Focus a repository the folder picker just opened. The picker performs the
+  // open and hands back the repo; select it right away rather than waiting for
+  // the next repo poll to notice it.
+  const selectOpenedRepo = useCallback((opened: Repo) => {
+    setRepos((prev) =>
+      prev.some((r) => r.id === opened.id) ? prev : [...prev, opened],
+    );
+    setRepo(opened.id);
+    setPane({ kind: "empty" });
+    setTreePath("");
+    setTab("status");
+    setPickerOpen(false);
+  }, []);
+
+  // Close a project. The tab disappears immediately; if it was the selected
+  // one, focus falls back to another repo (or the empty state).
+  const closeRepo = useCallback(
+    async (id: string) => {
+      try {
+        await api.close(id);
+        const remaining = repos.filter((r) => r.id !== id);
+        setRepos(remaining);
+        setRepo((current) =>
+          current === id ? (remaining[0]?.id ?? null) : current,
+        );
+      } catch (err) {
+        handle(err);
+      }
+    },
+    [repos, handle],
+  );
 
   // The catalog follows the TUI: a tab opened or closed there changes what is
   // served. Poll it so the tab bar tracks that without a reload — status has
@@ -116,53 +150,95 @@ export function App() {
     repo && api.commit(repo, oid).then((v) => setPane({ kind: "diff", value: v })).catch(handle);
 
   if (authed === null) {
-    return <p className="p-6 text-ink-400">Loading…</p>;
+    // Initial load: determining the session and fetching the repo list. Show a
+    // centred, branded screen so the app fades in from here rather than the
+    // content snapping onto a blank page.
+    return (
+      <div className="flex h-full items-center justify-center p-6">
+        <div className="flex flex-col items-center gap-3 text-ink-400">
+          <Mark className="h-12 w-12 animate-pulse" />
+          <span className="text-[0.72rem] tracking-[0.18em] uppercase">
+            Loading…
+          </span>
+        </div>
+      </div>
+    );
   }
   if (!authed) {
     return <Login onSuccess={() => setAuthed(true)} />;
   }
-  // An empty catalog is a real state, not a failure: the TUI can run with no
-  // project open. Say so, rather than rendering an empty shell that reads as
-  // a broken page.
-  if (repos.length === 0) {
-    return <NoRepositories />;
-  }
-
+  // An empty catalog is a real state (the TUI can run with no project open, and
+  // `serve` starts empty). Render the normal shell anyway — the header's
+  // "+ open" is the way in — rather than a separate full-screen prompt.
   const current = repos.find((r) => r.id === repo);
   const files = (status?.files ?? []).filter((f) =>
     f.path.toLowerCase().includes(filter.toLowerCase()),
   );
 
   return (
-    <div className="grid h-full grid-rows-[auto_minmax(0,3fr)_minmax(0,2fr)_auto]">
-      <header className="flex items-center gap-3 border-b border-ink-700 bg-ink-900 px-3 py-1.5">
-        <span className="font-semibold text-accent">nightcrow</span>
-        <nav className="flex gap-1 overflow-x-auto">
+    <div
+      className={`nc-fade grid h-full ${
+        repo
+          ? "grid-rows-[auto_minmax(0,3fr)_minmax(0,2fr)_auto]"
+          : "grid-rows-[auto_1fr]"
+      }`}
+    >
+      <header className="flex items-center gap-2 border-b border-ink-700 bg-ink-900 px-3 py-1.5">
+        <Mark className="h-[18px] w-[18px] shrink-0" />
+        <span className="font-medium tracking-wide text-ink-50">nightcrow</span>
+        <span className="hidden text-[0.6rem] uppercase tracking-[0.18em] text-ink-400 sm:inline">
+          web viewer
+        </span>
+        <nav className="flex gap-1 overflow-x-auto pl-1">
           {repos.map((r) => (
-            <button
+            <div
               key={r.id}
-              onClick={() => {
-                setRepo(r.id);
-                setPane({ kind: "empty" });
-                setTreePath("");
-              }}
-              className={`rounded-sm px-2 py-0.5 whitespace-nowrap ${
+              className={`flex items-center rounded-sm whitespace-nowrap ${
                 r.id === repo
                   ? "bg-ink-700 text-ink-50"
                   : "text-ink-400 hover:text-ink-200"
               }`}
               title={r.display_path}
             >
-              {r.name}
-            </button>
+              <button
+                onClick={() => {
+                  setRepo(r.id);
+                  setPane({ kind: "empty" });
+                  setTreePath("");
+                }}
+                className="py-0.5 pl-2 pr-1"
+              >
+                {r.name}
+              </button>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  closeRepo(r.id);
+                }}
+                title="Close project"
+                aria-label={`close ${r.name}`}
+                className="pr-1.5 text-ink-400 hover:text-removed"
+              >
+                ×
+              </button>
+            </div>
           ))}
         </nav>
-        <a href="/logout" className="ml-auto text-ink-400 hover:text-ink-200">
+        <button
+          onClick={() => setPickerOpen(true)}
+          title="Open a project"
+          className="rounded-sm px-2 py-0.5 text-ink-400 hover:text-ink-200"
+        >
+          + open
+        </button>
+        <a href="/logout" className="ml-auto pl-2 text-ink-400 hover:text-ink-200">
           sign out
         </a>
       </header>
 
-      <main className="grid min-h-0 grid-cols-1 md:grid-cols-[minmax(220px,1fr)_2fr]">
+      {repo ? (
+        <>
+          <main className="grid min-h-0 grid-cols-1 md:grid-cols-[minmax(200px,300px)_1fr]">
         <section className="flex min-h-0 flex-col border-ink-700 md:border-r">
           <div className="flex shrink-0 gap-1 px-2 py-1">
             {(["status", "log", "tree"] as Tab[]).map((t) => (
@@ -265,7 +341,19 @@ export function App() {
             <p className="p-4 text-ink-400">Select a file or commit.</p>
           )}
           {pane.kind === "file" && (
-            <pre className="p-3 whitespace-pre">{pane.value.content}</pre>
+            <pre className="p-3 whitespace-pre text-ink-200">
+              {pane.value.lines.map((line, i) => (
+                <div key={i}>
+                  {line.length === 0
+                    ? " "
+                    : line.map((s, j) => (
+                        <span key={j} style={{ color: s.c }}>
+                          {s.t}
+                        </span>
+                      ))}
+                </div>
+              ))}
+            </pre>
           )}
           {pane.kind === "diff" && (
             <div className="p-1">
@@ -283,14 +371,20 @@ export function App() {
                       key={j}
                       className={`px-3 whitespace-pre ${
                         line.kind === "+"
-                          ? "bg-added/10 text-added"
+                          ? "bg-added/10"
                           : line.kind === "-"
-                            ? "bg-removed/10 text-removed"
-                            : "text-ink-200"
+                            ? "bg-removed/10"
+                            : ""
                       }`}
                     >
-                      {line.kind}
-                      {line.content}
+                      <span className="text-ink-400 select-none">
+                        {line.kind}
+                      </span>
+                      {line.spans.map((s, k) => (
+                        <span key={k} style={{ color: s.c }}>
+                          {s.t}
+                        </span>
+                      ))}
                     </div>
                   ))}
                 </div>
@@ -308,7 +402,7 @@ export function App() {
       {repo && <TerminalPanel repo={repo} />}
 
       <footer className="flex shrink-0 items-center gap-3 border-t border-ink-700 bg-ink-900 px-3 py-1 text-ink-400">
-        <span className="truncate">{current?.display_path ?? "—"}</span>
+        <span className="truncate">{current?.display_path}</span>
         {status?.branch && <span className="text-accent">{status.branch}</span>}
         {status?.tracking && (
           <span>
@@ -324,25 +418,172 @@ export function App() {
             "connecting…"
           )}
         </span>
-      </footer>
+          </footer>
+        </>
+      ) : (
+        <div className="flex items-center justify-center p-6 text-center text-ink-400">
+          <span>
+            No repository open. Click{" "}
+            <span className="text-ink-200">+ open</span> above to add one.
+          </span>
+        </div>
+      )}
+      {pickerOpen && (
+        <FolderPicker
+          onClose={() => setPickerOpen(false)}
+          onOpened={selectOpenedRepo}
+        />
+      )}
     </div>
   );
 }
 
-function NoRepositories() {
+/** A server-side folder browser (code-server style): navigate the machine the
+ *  viewer runs on and open a directory as a project. The OS file dialog cannot
+ *  do this — it would pick paths on the viewer's machine, not the server's. */
+function FolderPicker({
+  onClose,
+  onOpened,
+}: {
+  onClose: () => void;
+  onOpened: (repo: Repo) => void;
+}) {
+  // `null` means "the server's default" (home); the server resolves it.
+  const [path, setPath] = useState<string | null>(null);
+  const [dir, setDir] = useState<Browse | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .browse(path ?? undefined)
+      .then((d) => {
+        if (!cancelled) {
+          setDir(d);
+          setError(null);
+        }
+      })
+      .catch((err) => {
+        if (!cancelled)
+          setError(err instanceof Error ? err.message : "could not browse");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [path]);
+
+  const into = (name: string) =>
+    setPath(`${dir!.path.replace(/\/$/, "")}/${name}`);
+
+  const openHere = async () => {
+    if (!dir) return;
+    setBusy(true);
+    setError(null);
+    try {
+      onOpened(await api.open(dir.path));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "could not open");
+      setBusy(false);
+    }
+  };
+
   return (
-    <div className="flex h-full items-center justify-center p-6">
-      <div className="max-w-md">
-        <h1 className="mb-2 font-semibold text-accent">nightcrow</h1>
-        <p className="mb-3 text-ink-200">No repository is open.</p>
-        <p className="text-ink-400">
-          Open a project tab in the terminal UI and it appears here — the list
-          follows the TUI live, so there is nothing to reload. If you are
-          running <span className="text-ink-200">nightcrow serve</span>, pass{" "}
-          <span className="text-ink-200">--repo &lt;path&gt;</span>.
-        </p>
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+      onClick={onClose}
+    >
+      <div
+        className="flex max-h-[80vh] w-[34rem] max-w-full flex-col rounded-md border border-ink-700 bg-ink-900"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center gap-2 border-b border-ink-700 px-3 py-2">
+          <span className="font-medium text-ink-50">Open a project</span>
+          <button
+            onClick={onClose}
+            aria-label="close"
+            className="ml-auto text-ink-400 hover:text-ink-200"
+          >
+            ×
+          </button>
+        </div>
+        <div className="truncate border-b border-ink-700 px-3 py-1.5 text-ink-400">
+          {dir?.path ?? "…"}
+        </div>
+        <ul className="min-h-0 flex-1 overflow-y-auto">
+          {dir?.parent && (
+            <li>
+              <button
+                onClick={() => setPath(dir.parent!)}
+                className="w-full px-3 py-1 text-left text-ink-400 hover:bg-ink-850"
+              >
+                ../
+              </button>
+            </li>
+          )}
+          {dir?.entries.map((e) => (
+            <li key={e.name}>
+              <button
+                onClick={() => into(e.name)}
+                className="flex w-full items-center gap-2 px-3 py-1 text-left hover:bg-ink-850"
+              >
+                <span className="truncate text-accent">{e.name}/</span>
+                {e.is_repo && (
+                  <span className="rounded-sm bg-ink-700 px-1 text-[0.65rem] text-ink-200">
+                    git
+                  </span>
+                )}
+              </button>
+            </li>
+          ))}
+          {dir && dir.entries.length === 0 && (
+            <li className="px-3 py-1 text-ink-400">No sub-folders.</li>
+          )}
+        </ul>
+        {error && <p className="px-3 py-1 text-removed">{error}</p>}
+        <div className="flex items-center gap-2 border-t border-ink-700 px-3 py-2">
+          <span className="truncate text-ink-400">
+            {dir ? dir.path : ""}
+          </span>
+          <button
+            onClick={openHere}
+            disabled={!dir || busy}
+            className="ml-auto shrink-0 rounded-md bg-ink-50 px-3 py-1 font-semibold text-ink-950 hover:bg-white disabled:opacity-50"
+          >
+            {busy ? "Opening…" : "Open this folder"}
+          </button>
+        </div>
       </div>
     </div>
+  );
+}
+
+/** The nightcrow mark: a rounded square holding an amber chevron + prompt
+ *  underscore. Shared with the web mirror's login/header so the two services
+ *  read as one product. */
+function Mark({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 42 42" aria-hidden="true" focusable="false" className={className}>
+      <rect
+        x="1.25"
+        y="1.25"
+        width="39.5"
+        height="39.5"
+        rx="10.5"
+        fill="none"
+        stroke="#282828"
+        strokeWidth="1.5"
+      />
+      <path
+        d="M14 15.5 L20 21 L14 26.5"
+        fill="none"
+        stroke="#d9a441"
+        strokeWidth="2.4"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <rect x="23" y="24.4" width="7.5" height="2.4" rx="1.2" fill="#d9a441" />
+    </svg>
   );
 }
 
@@ -366,28 +607,31 @@ function Login({ onSuccess }: { onSuccess: () => void }) {
   };
 
   return (
-    <div className="flex h-full items-center justify-center">
-      <form
-        onSubmit={submit}
-        className="w-72 rounded-md border border-ink-700 bg-ink-900 p-5"
-      >
-        <h1 className="mb-3 font-semibold text-accent">nightcrow</h1>
+    <div className="flex h-full items-center justify-center p-6">
+      <form onSubmit={submit} className="w-[17rem] max-w-[86vw]">
+        <Mark className="mx-auto mb-3 block h-10 w-10" />
+        <h1 className="text-center text-lg font-medium tracking-wide text-ink-50">
+          nightcrow
+        </h1>
+        <p className="mt-1 mb-5 text-center text-[0.62rem] tracking-[0.18em] text-ink-400 uppercase">
+          web viewer
+        </p>
+        {error && <p className="mb-2.5 text-center text-removed">{error}</p>}
         <input
           type="password"
           autoFocus
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           placeholder="password"
-          className="mb-3 w-full rounded-sm bg-ink-850 px-2 py-1.5 outline-none focus:ring-1 focus:ring-accent"
+          className="mb-2 w-full rounded-md border border-ink-700 bg-ink-900 px-2.5 py-1.5 outline-none placeholder:text-ink-400 focus:border-accent focus:ring-[3px] focus:ring-accent/15"
         />
         <button
           type="submit"
           disabled={busy}
-          className="w-full rounded-sm bg-accent py-1.5 font-semibold text-ink-950 disabled:opacity-50"
+          className="w-full rounded-md bg-ink-50 py-1.5 font-semibold text-ink-950 hover:bg-white disabled:opacity-50"
         >
           {busy ? "Signing in…" : "Sign in"}
         </button>
-        {error && <p className="mt-2 text-removed">{error}</p>}
       </form>
     </div>
   );

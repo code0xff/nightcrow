@@ -1,7 +1,13 @@
 // Typed access to the viewer API. Mirrors src/web/viewer/dto.rs — the server
 // owns the shape, this only describes it.
 
-export const PROTOCOL_VERSION = 1;
+export const PROTOCOL_VERSION = 2;
+
+/** A run of characters sharing a colour (server-side syntax highlighting). */
+export interface Span {
+  t: string;
+  c: string;
+}
 
 export interface Repo {
   id: string;
@@ -39,7 +45,7 @@ export interface TreeEntry {
 
 export interface DiffLine {
   kind: string;
-  content: string;
+  spans: Span[];
 }
 
 export interface DiffHunk {
@@ -56,7 +62,19 @@ export interface Diff {
 
 export interface FileView {
   path: string;
-  content: string;
+  lines: Span[][];
+  truncated: boolean;
+}
+
+export interface BrowseEntry {
+  name: string;
+  is_repo: boolean;
+}
+
+export interface Browse {
+  path: string;
+  parent?: string;
+  entries: BrowseEntry[];
   truncated: boolean;
 }
 
@@ -90,6 +108,33 @@ async function get<T>(path: string): Promise<T> {
   if (body.version !== PROTOCOL_VERSION) {
     // Refuse rather than misread: a cached page from an older build must not
     // guess at a payload whose fields may have changed meaning.
+    throw new ApiError(
+      response.status,
+      `this page is out of date (server protocol v${body.version}) — reload`,
+    );
+  }
+  return body;
+}
+
+async function post<T>(path: string, payload: unknown): Promise<T> {
+  const response = await fetch(path, {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!response.ok) {
+    let message = `request failed (${response.status})`;
+    try {
+      const body = await response.json();
+      if (typeof body?.error === "string") message = body.error;
+    } catch {
+      // A non-JSON error body is not worth reporting beyond the status.
+    }
+    throw new ApiError(response.status, message);
+  }
+  const body = (await response.json()) as { version?: number } & T;
+  if (body.version !== PROTOCOL_VERSION) {
     throw new ApiError(
       response.status,
       `this page is out of date (server protocol v${body.version}) — reload`,
@@ -133,6 +178,19 @@ export const api = {
     get<FileView>(`/api/file?${query({ repo, path })}`),
   commit: (repo: string, oid: string) =>
     get<Diff>(`/api/commit?${query({ repo, oid })}`),
+  browse: (path?: string) =>
+    get<Browse>(`/api/browse${path ? `?${query({ path })}` : ""}`),
+  open: (path: string) =>
+    post<{ repo: Repo }>("/api/repos", { path }).then((r) => r.repo),
+  close: async (repo: string) => {
+    const response = await fetch(`/api/repos?${query({ repo })}`, {
+      method: "DELETE",
+      credentials: "same-origin",
+    });
+    if (!response.ok) {
+      throw new ApiError(response.status, `could not close (${response.status})`);
+    }
+  },
 };
 
 /**

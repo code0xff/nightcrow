@@ -28,18 +28,41 @@ body,
   height: 100%;
 }
 
+/* Root sits below the browser default 16px. Tailwind's utilities are rem-based,
+   so lowering this scales the whole UI down at once — text, padding, gaps,
+   widths — for a denser, higher-resolution feel. Tune UI density here. */
+html {
+  font-size: 14px;
+}
+
 body {
   margin: 0;
   background: var(--color-ink-950);
   color: var(--color-ink-50);
   font-family: var(--font-mono);
-  /* TUI density: the default 16px leaves too few rows on screen. */
-  font-size: 13px;
-  line-height: 1.45;
+  /* Inherited size for unclassed text (header wordmark, list rows, diff). */
+  font-size: 0.85rem;
+  line-height: 1.4;
 }
 
 /* Thin, low-contrast scrollbars so panes read as one surface. */
 * {
   scrollbar-width: thin;
   scrollbar-color: var(--color-ink-600) transparent;
+}
+
+/* The app fades in once, when it first mounts after the loading screen, so the
+   layout eases onto the page instead of snapping from blank. Runs a single time
+   per element mount — re-renders reuse the node and do not replay it. */
+@keyframes nc-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.nc-fade {
+  animation: nc-fade-in 160ms ease-out;
 }
