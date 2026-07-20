@@ -138,7 +138,7 @@ trait TerminalBackend {
 
 - 백그라운드 worker 스레드: `SnapshotChannel`이 1초 간격으로 `load_snapshot`을 호출해 변경 파일 + tracking status를 `mpsc` 채널로 푸시한다.
 - UI 스레드 동기 로드: 파일/커밋 선택이 바뀌면 `load_*_with_repo`를 직접 호출한다. App은 `git2::Repository`를 lazy-cache하므로 매 호출마다 `Repository::discover`를 다시 실행하지 않는다. cache는 프로젝트와 수명을 같이 하므로 무효화 시점이 따로 없다 — 저장소가 바뀌는 유일한 방법이 탭을 닫고 새로 여는 것이기 때문.
-- 경로 검증: 워크트리 안의 파일을 여는 경로는 전부 `git::path::resolve_in_workdir`를 거친다. plain relative 컴포넌트만 허용하고 `..`·절대경로·NUL·`.git`(대소문자 무시)을 거부하며, 워크디렉토리부터 한 컴포넌트씩 내려가 **모든 깊이의 심링크**를 막고 canonicalize containment로 마무리한다. 지금 호출자는 git이 만들어 낸 경로만 넘기지만, 검증을 호출부가 아니라 파일시스템 경계에 두어야 웹 표면이 요청 문자열을 같은 로더에 태워도 안전하다. 크기 검사와 읽기는 같은 파일 핸들에서 수행해 stat→read TOCTOU를 닫는다.
+- 경로 검증: 워크트리 안의 파일·디렉토리를 여는 경로는 전부 `git::path::resolve_in_workdir`를 거친다(파일 미리보기와 트리 리스팅 양쪽). plain relative 컴포넌트만 허용하고 `..`·절대경로·NUL·`.git`(대소문자 무시)을 거부하며, 워크디렉토리부터 한 컴포넌트씩 내려가 **모든 깊이의 심링크**를 막고 canonicalize containment로 마무리한다. 지금 호출자는 git이 만들어 낸 경로만 넘기지만, 검증을 호출부가 아니라 파일시스템 경계에 두어야 웹 표면이 요청 문자열을 같은 로더에 태워도 안전하다. 크기 검사와 읽기는 같은 파일 핸들에서, 트리 리스팅은 검증기가 돌려준 경로로 `read_dir`을 수행해 check→use TOCTOU를 닫는다. `.git` 판정은 `is_git_dir_name` 하나로 통일한다 — 대소문자와 후행 점·공백(NTFS가 버리는 문자)까지 흡수하며, 규칙을 두 군데에 따로 적으면 그 틈이 우회로가 된다.
 - 렌더링: 보이는 행(`scroll_start..scroll_start+visible_height`)에 한해 `syntect`로 syntax highlighting을 수행한다. 보이지 않는 라인은 highlighter state만 진행시켜 multi-line construct(블록 주석, 문자열 리터럴)의 syntax 연속성을 유지한다.
 
 ### Split-View Terminal Panel
