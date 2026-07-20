@@ -224,39 +224,49 @@ export function TerminalPanel({
   return (
     <section className="flex min-h-0 flex-col border-t border-ink-700">
       <div className="flex shrink-0 items-center gap-1 bg-ink-900 px-2 py-1">
-        {panes.map((pane, index) => (
-          <div
-            key={pane}
-            className={`flex items-center rounded-sm text-xs ${
-              pane === active
-                ? "bg-ink-700 text-ink-50"
-                : "text-ink-400 hover:text-ink-200"
-            }`}
-          >
-            <button onClick={() => setActive(pane)} className="py-0.5 pl-2 pr-1">
-              term {index + 1}
-            </button>
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                closePane(pane);
-              }}
-              title="Close terminal"
-              aria-label={`close terminal ${index + 1}`}
-              className="px-1 py-0.5 text-ink-400 hover:text-removed"
+        {/* The tabs scroll; the maximize button is pinned outside them. With up
+            to MAX_PTYS_PER_REPO tabs on a narrow panel they would otherwise push
+            the button off-screen, leaving no way to restore a maximized panel. */}
+        <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto">
+          {panes.map((pane, index) => (
+            <div
+              key={pane}
+              className={`flex shrink-0 items-center rounded-sm text-xs ${
+                pane === active
+                  ? "bg-ink-700 text-ink-50"
+                  : "text-ink-400 hover:text-ink-200"
+              }`}
             >
-              ×
-            </button>
-          </div>
-        ))}
-        <button
-          onClick={create}
-          className="rounded-sm px-2 py-0.5 text-xs text-ink-400 hover:text-accent"
-          title="New terminal"
-        >
-          +
-        </button>
-        {error && <span className="ml-2 text-xs text-removed">{error}</span>}
+              <button
+                onClick={() => setActive(pane)}
+                className="py-0.5 pl-2 pr-1"
+              >
+                term {index + 1}
+              </button>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  closePane(pane);
+                }}
+                title="Close terminal"
+                aria-label={`close terminal ${index + 1}`}
+                className="px-1 py-0.5 text-ink-400 hover:text-removed"
+              >
+                ×
+              </button>
+            </div>
+          ))}
+          <button
+            onClick={create}
+            className="shrink-0 rounded-sm px-2 py-0.5 text-xs text-ink-400 hover:text-accent"
+            title="New terminal"
+          >
+            +
+          </button>
+          {error && (
+            <span className="ml-2 shrink-0 text-xs text-removed">{error}</span>
+          )}
+        </div>
         {/* No Escape shortcut to leave: Escape belongs to whatever is running
             in the PTY, and stealing it would break vim and every TUI below it.
             The button is the way out. */}
@@ -265,7 +275,7 @@ export function TerminalPanel({
           aria-pressed={maximized}
           title={maximized ? "Restore panel height" : "Maximize the panel"}
           aria-label={maximized ? "Restore panel height" : "Maximize the panel"}
-          className="ml-auto flex items-center rounded-sm px-1.5 py-0.5 text-ink-400 hover:text-accent"
+          className="flex shrink-0 items-center rounded-sm px-1.5 py-0.5 text-ink-400 hover:text-accent"
         >
           <MaximizeIcon maximized={maximized} />
         </button>
