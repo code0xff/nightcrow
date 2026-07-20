@@ -11,5 +11,7 @@
 
 #![allow(dead_code)] // Wired up at step 6; see the module docs above.
 
+pub mod catalog;
 pub mod dto;
 pub mod limits;
+pub mod runtime;
