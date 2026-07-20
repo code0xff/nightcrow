@@ -28,8 +28,9 @@ nightcrow TUI 기능(git diff/트리/로그 + 멀티 터미널)을 **네이티�
 | 프론트 프레임워크 | React 19 + TypeScript | 상태 있는 다중 pane UI(탭·선택·라이브 갱신)에 적합 |
 | 빌드 | Vite 7 (Node 20.19+/22.12+) | 현행 표준, React 19 지원 |
 | 스타일 | Tailwind v4 + shadcn/ui(neutral 베이스, `primary`=앰버 `#d9a441`) | TUI 뉴트럴 다크 룩 계승, shadcn v4/React 19 완전 지원 |
-| 터미널 | `@xterm/xterm` (+ fit addon) | 브라우저 VT 에뮬레이션, 미러가 이미 사용 |
+| 터미널 | `@xterm/xterm` (+ fit addon) | 브라우저 VT 에뮬레이션. 미러가 쓰는 벤더링 `xterm.js` 5.5.0의 후속 스코프 패키지이므로 **재사용이 아니라 신규 도입** — 11단계에서 API 차이를 확인한다 |
 | 패키징 | Vite 빌드 → `rust-embed`로 바이너리 임베드 | `nightcrow serve` 단일 바이너리·오프라인·CSP 자기완결 |
+| 빌드 산출물 배포 | **Vite `dist/`를 저장소에 커밋** | `cargo install nightcrow`이 Node 없이 동작해야 한다. `build.rs`에서 npm을 부르면 crates.io 설치 사용자가 깨지고, cargo feature로 가르면 CI 매트릭스와 조건부 컴파일이 늘어난다. 비용은 산출물 diff 노이즈 — `.gitattributes`의 `linguist-generated`로 완화 |
 | 서버 | 동기 스레드(tungstenite/http 재사용) | async 무도입 원칙 |
 
 - shadcn 기본값은 여백 넉넉·라운드 큰 SaaS 톤이므로 **TUI 밀도로 튜닝**(radius 축소, 행/패딩 압축, 데이터 모노스페이스).
@@ -45,6 +46,13 @@ nightcrow TUI 기능(git diff/트리/로그 + 멀티 터미널)을 **네이티�
   헤드리스 모드 = CLI 인자. 서버는 어느 모드에서도 `App`을 참조하지 않는다.
 
 ### 저장소별 런타임(스레드) — App 독립
+런타임 수는 `Workspace::MAX_PROJECTS`(10)를 상한으로 따른다.
+
+`SnapshotChannel`은 `mpsc` 단일 consumer라 App의 것을 함께 구독할 수 없다. 뷰어 런타임이
+자기 채널을 새로 spawn하므로 **동시 실행 모드에서는 저장소당 status 폴링이 2배**가 된다
+(각 채널이 1초 주기로 `git status`). 이 비용은 수용한다 — App 쪽 채널에 팬아웃을 다는
+대안은 TUI hot path를 건드리고 "서버는 App을 참조하지 않는다"는 전제를 깬다.
+
 저장소마다 하나의 런타임 스레드가 다음을 소유·담당한다:
 - 자기 `SnapshotChannel`을 드레인해 최신 status를 보관하고, **SSE로 팬아웃**한다
   (bounded·최신값 conflated, 구독 시 최신 스냅샷 replay, sequence 번호 부여).
@@ -62,7 +70,9 @@ open**한다(`Repository`는 `Send`라 스레드별로 안전). 저장소별 런
 ### HTTP 계층 확장
 - `RequestHead`에 **쿼리 파라미터 파싱**을 추가한다(현재는 쿼리를 버린다).
 - **전용 SSE writer**를 추가한다(`text/event-stream`, content-length 없음, flush·heartbeat·
-  disconnect 정리). 현재 응답 빌더는 `Content-Length`+`Connection: close` 하드코딩이라 SSE 불가.
+  disconnect 정리). SSE는 두 곳에서 막혀 있다: 응답 빌더의 `Content-Length`+`Connection: close`
+  하드코딩(`http.rs:158,164`)과, 응답 1회 후 연결을 닫는 `handle_connection`(`server.rs`).
+  **연결 수명 분기까지 이 단계 범위**에 포함한다.
 - **WebSocket은 미러의 업그레이드 머신을 재사용**한다.
 
 ### 프로토콜
@@ -88,12 +98,13 @@ open**한다(`Repository`는 `Send`라 스레드별로 안전). 저장소별 런
 
 ## 4. 보안 (필수)
 
-- **단일 저장소-상대 경로 검증기**: 절대경로·`..`·`.git` 컴포넌트·잘못된 인코딩 거부, 모든
-  컴포넌트의 심링크 정책·containment 검사, 가능한 곳은 무팔로우 open. tree/file/commit 전
-  엔드포인트가 공유한다(Codex H4 — 기존 `load_workdir_file`은 `..`·`.git`·중간 심링크를 막지
-  않고 TOCTOU 경합이 있다).
+- **단일 저장소-상대 경로 검증기**: 절대경로·`..`·`.git` 컴포넌트·NUL 거부, 모든 컴포넌트의
+  심링크 거부, canonicalize containment 검사. tree/file/commit 전 엔드포인트가 공유한다
+  (Codex H4). **0단계에서 `git::path::resolve_in_workdir`로 구현 완료.** 워크트리 자체가
+  검사 도중 옮겨지는 잔여 TOCTOU는 수용한다 — 도달 경로가 모두 인증된 로컬 surface다.
 - **자원 상한**: log 페이지 크기, tree 엔트리 수, diff 바이트/라인/hunk, status 파일 수,
-  SSE 페이로드, **PTY 수(per-repo 캡)**, 서버 동시성(Codex H9/C1).
+  SSE 페이로드, **PTY 수(per-repo 캡)**, 서버 동시성(Codex H9/C1). 서버 동시성은 0단계의
+  `ConnectionSlot`을 재사용한다.
 - **SSE/WS 자원 관리**: 연결 상한, write timeout, heartbeat, 구독 큐 bounded, 모든 종료
   경로 RAII 정리. 소켓 I/O 중 공유 락 보유 금지(Codex C1).
 - 모든 API/SSE/**WS**에 **auth를 repo 조회 前**에 수행 + **Origin/Referer 검사**(미러 `/ws`
@@ -134,9 +145,14 @@ open**한다(`Repository`는 `Send`라 스레드별로 안전). 저장소별 런
 
 ## 6. 구현 순서 (커밋 단위, 각 단계 build/test/clippy green)
 
+**0. 선행 (완료)** — 뷰어와 무관하게 미러에도 해당하던 결함이라 독립 커밋으로 먼저 넣었다.
+   - `git::path::resolve_in_workdir` 신설 + `load_workdir_file` 적용 — `..`/`.git`/전 컴포넌트
+     심링크/containment. 이후 tree/file/commit 엔드포인트가 전부 이 검증기를 공유한다.
+   - `accept_loop` 동시 연결 상한(`ConnectionSlot`) — 뷰어 서버가 같은 프리미티브를 재사용한다.
+
 1. **web/common 추출** — 프리미티브 공유, 미러 회귀 테스트 보존.
-2. **HTTP 계층 확장** — 쿼리 파싱 + SSE writer. 단위 테스트.
-3. **경로 검증기 + 자원 캡 헬퍼** — `..`/`.git`/심링크/초과 크기 단위 테스트.
+2. **HTTP 계층 확장** — 쿼리 파싱 + SSE writer + 연결 수명. 단위 테스트.
+3. **나머지 자원 캡 헬퍼** — log/tree/diff/status/PTY 상한. 경로 검증기는 0단계에서 완료.
 4. **DTO + serde 변환** — 화이트리스트·버저닝. 단위 테스트.
 5. **카탈로그 + 저장소별 런타임(SnapshotChannel 드레인 + SSE)** — 안정 ID·원자 교체. 계약 테스트.
 6. **뷰어 서버 git 라우트 + SSE** — 요청별 Repository·auth-before-lookup·origin·redaction. 통합 테스트.
@@ -172,6 +188,12 @@ diff/log/tree, PTY 생성/종료/리사이즈, **미러+뷰어 동시 기동**.
   축소(H2), 카탈로그 안정 ID(H5), DTO 화이트리스트(L1)를 계획에 편입.
 
 ## 9. 미확정/후속
+
+- **뷰어 인증 부트스트랩** — `[web_viewer]`가 `[web]`의 비밀번호를 공유할지 자체 생성할지
+  미정. 8단계 설정 스키마 작성 전에 확정한다.
+- **미러의 장기 거취** — 뷰어가 안착하면 브라우저 표면이 둘(포트·쿠키·터미널 세션 의미가
+  모두 다름)이 된다. v1은 미러 불변으로 가되, 프론트엔드 두 벌 유지 비용은 뷰어 완료 후
+  재평가한다.
 
 - 세션 TTL·revocation(M2) — 필요 시 후속.
 - 문법 하이라이팅 — v1 라인 레벨(+/-), 토큰 단위 syntect 스팬은 후속(신규 의존성 없이 서버 스팬 JSON).
