@@ -165,6 +165,18 @@ impl RepoRuntime {
             return;
         }
 
+        // The snapshot worker ticks on a timer, not on change, so most polls
+        // produce a payload identical to the last. Publishing those would keep
+        // an idle repository streaming once a second forever and burn a
+        // sequence number per tick, making `seq` useless for "did anything
+        // happen". Only a real change is an event.
+        {
+            let latest = self.latest.lock().expect("latest slot poisoned");
+            if latest.as_ref().is_some_and(|prev| *prev.json == json) {
+                return;
+            }
+        }
+
         let update = StatusUpdate {
             seq: self.next_seq.fetch_add(1, Ordering::AcqRel),
             json: Arc::new(json),
@@ -366,6 +378,42 @@ mod tests {
                 .next_update(Duration::from_millis(50))
                 .is_none(),
             "no stale backlog may remain"
+        );
+        runtime.stop();
+    }
+
+    #[test]
+    fn an_unchanged_snapshot_is_not_republished() {
+        // The producer ticks on a timer; an idle repository must stay silent
+        // rather than re-emitting the same status every second.
+        let (runtime, tx, _stop) = test_runtime();
+        tx.send(SnapshotMsg::Ok(snapshot("main", 1), Default::default()))
+            .unwrap();
+        assert!(wait_for(|| runtime.latest().is_some()));
+        let first_seq = runtime.latest().unwrap().seq;
+        let subscription = runtime.subscribe();
+        assert!(
+            subscription
+                .next_update(Duration::from_millis(50))
+                .is_some()
+        );
+
+        for _ in 0..3 {
+            tx.send(SnapshotMsg::Ok(snapshot("main", 1), Default::default()))
+                .unwrap();
+        }
+        thread::sleep(Duration::from_millis(200));
+
+        assert_eq!(
+            runtime.latest().unwrap().seq,
+            first_seq,
+            "an identical snapshot must not burn a sequence number"
+        );
+        assert!(
+            subscription
+                .next_update(Duration::from_millis(50))
+                .is_none(),
+            "an idle repository must not wake its subscribers"
         );
         runtime.stop();
     }

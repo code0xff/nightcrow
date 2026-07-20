@@ -66,6 +66,28 @@ pub struct ViewerServer {
 }
 
 impl ViewerServer {
+    /// Bind and start from `[web_viewer]`, building the password verifier from
+    /// either `hashed_password` or `password`.
+    pub fn start_from_config(
+        viewer: &crate::config::WebViewerConfig,
+        paths: &[String],
+    ) -> Result<Self> {
+        let auth = if let Some(hash) = viewer.hashed_password.as_deref() {
+            Auth::from_hashed(hash)?
+        } else if let Some(password) = viewer.password.as_deref().filter(|p| !p.is_empty()) {
+            Auth::from_plaintext(password)?
+        } else {
+            anyhow::bail!("web viewer is enabled but no password or hashed_password is configured");
+        };
+        let bind: IpAddr = viewer.bind.parse().with_context(|| {
+            format!(
+                "web_viewer.bind {:?} is not a valid IP address",
+                viewer.bind
+            )
+        })?;
+        Self::start(bind, viewer.port, auth, paths)
+    }
+
     /// Bind and start accepting. `paths` seeds the catalog; the caller may
     /// replace it later through [`ViewerServer::set_repos`].
     pub fn start(bind: IpAddr, port: u16, auth: Auth, paths: &[String]) -> Result<Self> {

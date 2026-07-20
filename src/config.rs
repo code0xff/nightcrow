@@ -23,6 +23,7 @@ pub struct Config {
     pub tree: TreeConfig,
     pub mouse: MouseConfig,
     pub web: WebConfig,
+    pub web_viewer: WebViewerConfig,
     /// Commands launched in their own terminal pane at startup, in order.
     /// Maps from TOML `[[startup_command]]` array-of-tables. Empty by
     /// default, which preserves the single empty-shell startup behaviour.
@@ -60,6 +61,10 @@ impl Default for MouseConfig {
 
 /// Default TCP port for the web mirror server.
 const DEFAULT_WEB_PORT: u16 = 8090;
+/// Viewer default. Adjacent to the mirror's but distinct: both can run at once.
+const DEFAULT_WEB_VIEWER_PORT: u16 = 8091;
+const WEB_TABLE: &str = "web";
+const WEB_VIEWER_TABLE: &str = "web_viewer";
 /// Default bind address: loopback only. Exposing the server on a routable
 /// address is a deliberate opt-in because it grants live control of a shell.
 const DEFAULT_WEB_BIND: &str = "127.0.0.1";
@@ -112,6 +117,42 @@ impl WebConfig {
     }
 }
 
+/// The native web viewer (`[web_viewer]`). Independent of the mirror: its own
+/// port, cookie, and credential, so enabling one does not expose the other.
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+#[serde(default)]
+pub struct WebViewerConfig {
+    /// Enable the viewer alongside the TUI. Off by default — it exposes both
+    /// repository contents and interactive terminals.
+    pub enabled: bool,
+    /// Address to bind. Loopback by default; the server speaks plain HTTP, so
+    /// remote access belongs behind an SSH tunnel or reverse proxy.
+    pub bind: String,
+    pub port: u16,
+    /// Plaintext login password, generated and written back on first enable.
+    pub password: Option<String>,
+    /// Optional Argon2 PHC hash. Takes precedence over `password`.
+    pub hashed_password: Option<String>,
+}
+
+impl Default for WebViewerConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            bind: DEFAULT_WEB_BIND.to_string(),
+            port: DEFAULT_WEB_VIEWER_PORT,
+            password: None,
+            hashed_password: None,
+        }
+    }
+}
+
+impl WebViewerConfig {
+    pub fn has_credential(&self) -> bool {
+        self.hashed_password.is_some() || self.password.as_deref().is_some_and(|p| !p.is_empty())
+    }
+}
+
 /// Generate a random, human-readable password from the OS RNG.
 ///
 /// Uses a 55-character unambiguous alphabet. The modulo reduction introduces a
@@ -141,28 +182,51 @@ pub fn ensure_web_password(cfg: &mut Config, path: &std::path::Path) -> Result<O
         return Ok(None);
     }
     let password = generate_password()?;
-    persist_web_password(path, &password)
+    persist_password(path, WEB_TABLE, &password)
         .with_context(|| format!("persisting generated web password to {}", path.display()))?;
     cfg.web.password = Some(password.clone());
     Ok(Some(password))
 }
 
-/// Write `password` into the `[web]` table of the TOML file at `path`.
+/// Same bootstrap for the viewer's own `[web_viewer]` credential.
+///
+/// The viewer gets a *separate* password rather than sharing the mirror's: the
+/// two servers already run on separate ports with separate cookies, and one
+/// credential granting both would make that separation cosmetic.
+pub fn ensure_web_viewer_password(
+    cfg: &mut Config,
+    path: &std::path::Path,
+) -> Result<Option<String>> {
+    if cfg.web_viewer.has_credential() {
+        return Ok(None);
+    }
+    let password = generate_password()?;
+    persist_password(path, WEB_VIEWER_TABLE, &password).with_context(|| {
+        format!(
+            "persisting generated web viewer password to {}",
+            path.display()
+        )
+    })?;
+    cfg.web_viewer.password = Some(password.clone());
+    Ok(Some(password))
+}
+
+/// Write `password` into the `[{table}]` table of the TOML file at `path`.
 ///
 /// Preserves the rest of the file (including comments) by inserting a single
-/// `password = "..."` line: right after an existing `[web]` header, or as a new
-/// appended `[web]` table when none exists. The parent directory is created if
+/// `password = "..."` line: right after an existing `[{table}]` header, or as a
+/// new appended table when none exists. The parent directory is created if
 /// needed and the file is written user-only (0600 on Unix) since it holds a
 /// secret. `password` must contain only TOML-safe characters (the generator's
 /// alphabet guarantees this), so it is emitted as a basic string unescaped.
-fn persist_web_password(path: &std::path::Path, password: &str) -> Result<()> {
+fn persist_password(path: &std::path::Path, table: &str, password: &str) -> Result<()> {
     let existing = if path.exists() {
         std::fs::read_to_string(path)
             .with_context(|| format!("reading config file {}", path.display()))?
     } else {
         String::new()
     };
-    let updated = insert_web_password(&existing, password);
+    let updated = insert_password(&existing, table, password);
 
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)
@@ -175,11 +239,11 @@ fn persist_web_password(path: &std::path::Path, password: &str) -> Result<()> {
 }
 
 /// Pure text transform behind `persist_web_password`, isolated for testing.
-/// Inserts `password = "..."` under the first `[web]` header, or appends a new
-/// `[web]` table when the source has none.
-fn insert_web_password(source: &str, password: &str) -> String {
+/// Inserts `password = "..."` under the first `[{table}]` header, or appends a
+/// new table when the source has none.
+fn insert_password(source: &str, table: &str, password: &str) -> String {
     let line = format!("password = \"{password}\"");
-    if let Some(insert_at) = web_header_line_end(source) {
+    if let Some(insert_at) = table_header_line_end(source, table) {
         let mut out = String::with_capacity(source.len() + line.len() + 1);
         out.push_str(&source[..insert_at]);
         out.push('\n');
@@ -195,20 +259,20 @@ fn insert_web_password(source: &str, password: &str) -> String {
         if !out.is_empty() {
             out.push('\n');
         }
-        out.push_str("[web]\n");
+        out.push_str(&format!("[{table}]\n"));
         out.push_str(&line);
         out.push('\n');
         out
     }
 }
 
-/// Byte offset of the end of the first line that is exactly `[web]` (ignoring
-/// surrounding whitespace), or `None` when no such header exists. Comment lines
-/// (`# [web]`) are not headers and are skipped.
-fn web_header_line_end(source: &str) -> Option<usize> {
+/// Byte offset of the end of the first line that is exactly `[{table}]`
+/// (ignoring surrounding whitespace), or `None` when no such header exists.
+/// Comment lines (`# [web]`) are not headers and are skipped.
+fn table_header_line_end(source: &str, table: &str) -> Option<usize> {
     let mut offset = 0;
     for line in source.split_inclusive('\n') {
-        if line.trim() == "[web]" {
+        if line.trim() == format!("[{table}]") {
             // Point at the newline (or end of source) that terminates the
             // header line so the insert lands on the following line.
             return Some(offset + line.trim_end_matches('\n').len());
@@ -1313,7 +1377,7 @@ password = "hunter2"
     #[test]
     fn insert_web_password_adds_line_under_existing_header() {
         let source = "[web]\nenabled = true\nport = 8090\n";
-        let out = insert_web_password(source, "secret");
+        let out = insert_password(source, WEB_TABLE, "secret");
         assert_eq!(
             out, "[web]\npassword = \"secret\"\nenabled = true\nport = 8090\n",
             "the password line must land right after the [web] header"
@@ -1326,7 +1390,7 @@ password = "hunter2"
     #[test]
     fn insert_web_password_appends_table_when_absent() {
         let source = "[layout]\nupper_pct = 55\n";
-        let out = insert_web_password(source, "secret");
+        let out = insert_password(source, WEB_TABLE, "secret");
         assert!(out.starts_with(source));
         assert!(out.contains("\n[web]\npassword = \"secret\"\n"));
         let cfg: Config = toml::from_str(&out).unwrap();
@@ -1335,10 +1399,41 @@ password = "hunter2"
 
     #[test]
     fn insert_web_password_appends_table_into_empty_source() {
-        let out = insert_web_password("", "secret");
+        let out = insert_password("", WEB_TABLE, "secret");
         assert_eq!(out, "[web]\npassword = \"secret\"\n");
         let cfg: Config = toml::from_str(&out).unwrap();
         assert_eq!(cfg.web.password.as_deref(), Some("secret"));
+    }
+
+    #[test]
+    fn insert_password_targets_the_named_table() {
+        // The viewer's credential must land under [web_viewer], not [web] —
+        // writing it to the wrong table would silently give the mirror a
+        // second password and leave the viewer without one.
+        let source = "[web]\nport = 8090\n";
+
+        let out = insert_password(source, WEB_VIEWER_TABLE, "vsecret");
+
+        assert!(
+            out.contains("[web_viewer]\npassword = \"vsecret\""),
+            "got: {out}"
+        );
+        let web_table = out.split("[web_viewer]").next().unwrap();
+        assert!(
+            !web_table.contains("vsecret"),
+            "the viewer password leaked into [web]: {out}"
+        );
+    }
+
+    #[test]
+    fn insert_password_finds_an_existing_viewer_table() {
+        let source = "[web]\nport = 8090\n\n[web_viewer]\nport = 8091\n";
+
+        let out = insert_password(source, WEB_VIEWER_TABLE, "vsecret");
+
+        let viewer = out.split("[web_viewer]").nth(1).unwrap();
+        assert!(viewer.contains("password = \"vsecret\""), "got: {out}");
+        assert_eq!(out.matches("[web_viewer]").count(), 1, "no duplicate table");
     }
 
     #[test]
@@ -1346,7 +1441,7 @@ password = "hunter2"
         // A `# [web]` comment is not a real table header, so the password must
         // be appended as a new table rather than inserted under the comment.
         let source = "# [web] example\nfoo = 1\n";
-        let out = insert_web_password(source, "secret");
+        let out = insert_password(source, WEB_TABLE, "secret");
         assert!(out.contains("\n[web]\npassword = \"secret\"\n"));
     }
 

@@ -64,6 +64,18 @@ enum Commands {
         #[arg(long)]
         force: bool,
     },
+    /// Serve the web viewer without starting the TUI.
+    ///
+    /// Runs in the foreground until interrupted. Unlike the TUI's optional
+    /// viewer, this needs no terminal — the repositories come from --repo.
+    Serve {
+        /// Repository to serve. Repeatable.
+        #[arg(short, long)]
+        repo: Vec<std::path::PathBuf>,
+        /// Override the configured port.
+        #[arg(long)]
+        port: Option<u16>,
+    },
 }
 
 fn main() -> Result<()> {
@@ -72,8 +84,10 @@ fn main() -> Result<()> {
     // Subcommands run to completion and exit before any TUI setup, so their
     // output stays on the normal terminal rather than flashing behind the
     // alternate screen.
-    if let Some(Commands::Init { force }) = cli.command {
-        return run_init(force);
+    match cli.command {
+        Some(Commands::Init { force }) => return run_init(force),
+        Some(Commands::Serve { repo, port }) => return run_serve(repo, port),
+        None => {}
     }
 
     let mut cfg = config::load_config()?;
@@ -98,6 +112,14 @@ fn main() -> Result<()> {
                 .to_string()
         })
         .collect();
+
+    // The viewer needs the resolved repository list, so it starts after it is
+    // built — still before the alternate screen, so its generated password and
+    // any bind error stay readable on stderr.
+    let surfaces = WebSurfaces {
+        mirror: web_server,
+        viewer: start_viewer_if_enabled(&mut cfg, &repo_paths)?,
+    };
 
     // Logs live under a repo by default, so with no project the first one
     // named on the command line stands in; with none at all, the working
@@ -137,8 +159,110 @@ fn main() -> Result<()> {
         cfg,
         startup_commands,
         leader,
-        web_server,
+        surfaces,
     )
+}
+
+/// The optional browser surfaces, which start and stop together with the app.
+///
+/// Grouped because they are always passed as a pair and are the same kind of
+/// thing: an independently-failable server the TUI does not depend on.
+struct WebSurfaces {
+    mirror: Option<web::WebServer>,
+    viewer: Option<web::viewer::server::ViewerServer>,
+}
+
+/// Start the viewer alongside the TUI when `[web_viewer] enabled` is set.
+///
+/// Like the mirror, a bind failure only disables the viewer with a warning —
+/// the local TUI is the primary interface and must still come up.
+fn start_viewer_if_enabled(
+    cfg: &mut config::Config,
+    repo_paths: &[String],
+) -> Result<Option<web::viewer::server::ViewerServer>> {
+    if !cfg.web_viewer.enabled {
+        return Ok(None);
+    }
+    let path = config::config_file_path()?;
+    if let Some(password) = config::ensure_web_viewer_password(cfg, &path)? {
+        eprintln!(
+            "nightcrow: generated a web viewer password and saved it to {}:",
+            path.display()
+        );
+        eprintln!("  {password}");
+    }
+    match web::viewer::server::ViewerServer::start_from_config(&cfg.web_viewer, repo_paths) {
+        Ok(server) => {
+            eprintln!("nightcrow: web viewer serving at http://{}/", server.addr());
+            Ok(Some(server))
+        }
+        Err(err) => {
+            eprintln!("nightcrow: web viewer disabled — {err:#}");
+            Ok(None)
+        }
+    }
+}
+
+/// Serve the viewer headlessly until interrupted.
+///
+/// The catalog is fixed for the run: with no TUI there is no tab to open or
+/// close, so the repository set comes entirely from `--repo`.
+fn run_serve(repos: Vec<std::path::PathBuf>, port: Option<u16>) -> Result<()> {
+    let mut cfg = config::load_config()?;
+    if let Some(port) = port {
+        cfg.web_viewer.port = port;
+    }
+    // `serve` is an explicit request, so the config toggle is not consulted —
+    // the user already said what they want by running this.
+    cfg.web_viewer.enabled = true;
+
+    let path = config::config_file_path()?;
+    if let Some(password) = config::ensure_web_viewer_password(&mut cfg, &path)? {
+        eprintln!(
+            "nightcrow: generated a web viewer password and saved it to {}:",
+            path.display()
+        );
+        eprintln!("  {password}");
+    }
+
+    let paths = resolve_serve_repos(&repos)?;
+    if paths.is_empty() {
+        anyhow::bail!("nothing to serve: pass at least one --repo");
+    }
+    let server = web::viewer::server::ViewerServer::start_from_config(&cfg.web_viewer, &paths)?;
+    eprintln!(
+        "nightcrow: web viewer serving {} repositor{} at http://{}/",
+        paths.len(),
+        if paths.len() == 1 { "y" } else { "ies" },
+        server.addr()
+    );
+    eprintln!("nightcrow: press Ctrl-C to stop");
+
+    // The accept loop owns its own threads; park this one until interrupted.
+    loop {
+        std::thread::park();
+    }
+}
+
+/// Canonicalize and de-duplicate the `--repo` list for `serve`.
+///
+/// Two spellings of one worktree must collapse to one catalog entry, or the
+/// browser shows the same repository twice under different ids.
+fn resolve_serve_repos(repos: &[std::path::PathBuf]) -> Result<Vec<String>> {
+    let mut out: Vec<String> = Vec::new();
+    for repo in repos {
+        let expanded = util::expand_tilde(repo);
+        if !expanded.exists() {
+            anyhow::bail!("no such directory: {}", expanded.display());
+        }
+        let resolved = git::resolve_repo_path(&expanded)
+            .to_string_lossy()
+            .into_owned();
+        if !out.contains(&resolved) {
+            out.push(resolved);
+        }
+    }
+    Ok(out)
 }
 
 /// Bootstrap the web login credential and start the mirror server when enabled.
@@ -270,7 +394,7 @@ fn run(
     cfg: config::Config,
     startup_commands: Vec<config::StartupCommand>,
     leader: KeyEvent,
-    web_server: Option<web::WebServer>,
+    surfaces: WebSurfaces,
 ) -> Result<()> {
     // syntect's bundled defaults omit TypeScript/TSX/TOML/YAML; two-face
     // supplies bat's expanded syntax set (newline variant matches the diff /
@@ -363,7 +487,7 @@ fn run(
         tracing::info!("nightcrow stopped during splash");
         return Ok(());
     }
-    main_loop(terminal, &mut ws, &ss, &ts, &cfg, &ctx, web_server)?;
+    main_loop(terminal, &mut ws, &ss, &ts, &cfg, &ctx, surfaces)?;
 
     // Every open project gets its session written, not just the active one:
     // sessions are stored per repo (`<repo>/.nightcrow/session.json`), so a
@@ -526,9 +650,23 @@ fn main_loop(
     ts: &ThemeSet,
     cfg: &config::Config,
     ctx: &ProjectContext,
-    mut web_server: Option<web::WebServer>,
+    surfaces: WebSurfaces,
 ) -> Result<()> {
+    let WebSurfaces {
+        mirror: mut web_server,
+        viewer,
+    } = surfaces;
+    // Signature of the repository set last handed to the viewer. The catalog
+    // only needs updating when a tab opens or closes, not every frame.
+    let mut served_repos: Vec<String> = Vec::new();
     loop {
+        if let Some(viewer) = viewer.as_ref() {
+            let current: Vec<String> = ws.projects().iter().map(|p| p.repo_path.clone()).collect();
+            if current != served_repos {
+                viewer.set_repos(&current);
+                served_repos = current;
+            }
+        }
         // Every project drains its queues, not just the visible one: the
         // snapshot worker and PTY reader produce into unbounded channels
         // regardless of which tab is on screen, so skipping the background

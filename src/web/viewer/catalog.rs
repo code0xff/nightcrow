@@ -167,7 +167,7 @@ impl Catalog {
 }
 
 fn repo_name(path: &str) -> String {
-    Path::new(path)
+    Path::new(path.trim_end_matches('/'))
         .file_name()
         .map(|n| n.to_string_lossy().into_owned())
         .unwrap_or_else(|| path.to_string())
@@ -176,6 +176,9 @@ fn repo_name(path: &str) -> String {
 /// Render `path` with the home directory as `~`, so the client shows a short
 /// path and never learns the account name.
 fn display_path(path: &str) -> String {
+    // libgit2 hands back a workdir with a trailing separator; a path shown to
+    // a person should not carry it.
+    let path = path.trim_end_matches('/');
     let Some(home) = dirs::home_dir() else {
         return path.to_string();
     };
@@ -321,5 +324,16 @@ mod tests {
         );
         assert_eq!(display_path(&home.to_string_lossy()), "~");
         assert_eq!(display_path("/opt/elsewhere"), "/opt/elsewhere");
+        assert_eq!(
+            display_path("/opt/elsewhere/"),
+            "/opt/elsewhere",
+            "libgit2's trailing separator must not reach the UI"
+        );
+    }
+
+    #[test]
+    fn repo_name_ignores_a_trailing_separator() {
+        assert_eq!(repo_name("/code/app/"), "app");
+        assert_eq!(repo_name("/code/app"), "app");
     }
 }
