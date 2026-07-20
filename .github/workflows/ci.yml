@@ -21,7 +21,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo build --locked
       - run: cargo test --locked
-      - run: cargo clippy --locked -- -D warnings
+      - run: cargo clippy --locked --all-targets --all-features -- -D warnings
 
   fmt:
     name: Rustfmt
@@ -32,3 +32,28 @@ jobs:
         with:
           components: rustfmt
       - run: cargo fmt --check
+
+  viewer-ui:
+    name: Viewer frontend
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: viewer-ui/package-lock.json
+      - run: npm ci
+        working-directory: viewer-ui
+      - run: npm run build
+        working-directory: viewer-ui
+      # dist/ is committed so `cargo install` needs no Node. If a rebuild here
+      # differs, the checked-in bundle is stale and the binary would ship a
+      # frontend that does not match the source.
+      - name: Check the committed bundle is up to date
+        run: |
+          if ! git diff --quiet -- viewer-ui/dist; then
+            echo "viewer-ui/dist is stale — run 'npm --prefix viewer-ui run build' and commit"
+            git diff --stat -- viewer-ui/dist
+            exit 1
+          fi

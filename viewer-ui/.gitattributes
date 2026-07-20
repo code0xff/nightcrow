@@ -1,0 +1,4 @@
+# Vite output, committed so `cargo install` needs no Node toolchain. Kept out
+# of diffs and language stats; `dist/` is wiped on each build, so this lives
+# a level up where the build cannot delete it.
+dist/** linguist-generated=true -diff
