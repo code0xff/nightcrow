@@ -16,6 +16,7 @@
 
 use crate::web::viewer::dto::RepoDto;
 use crate::web::viewer::runtime::RepoRuntime;
+use crate::web::viewer::terminal::TerminalHub;
 use std::collections::HashMap;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
@@ -28,6 +29,9 @@ pub struct RepoEntry {
     pub name: String,
     pub display_path: String,
     pub runtime: Arc<RepoRuntime>,
+    /// This repository's terminals. Independent of the TUI's panes — see
+    /// [`crate::web::viewer::terminal`].
+    pub terminals: Arc<TerminalHub>,
 }
 
 impl RepoEntry {
@@ -104,6 +108,7 @@ impl Catalog {
                         name: repo_name(&path),
                         display_path: display_path(&path),
                         runtime: RepoRuntime::spawn(&path),
+                        terminals: TerminalHub::spawn(&path),
                         id,
                         path,
                     })),
@@ -121,6 +126,7 @@ impl Catalog {
         // Outside the lock: stopping a runtime joins its thread.
         for entry in retired {
             entry.runtime.stop();
+            entry.terminals.stop();
         }
     }
 
@@ -155,6 +161,7 @@ impl Catalog {
         let entries = std::mem::take(&mut *self.entries.lock().expect("catalog poisoned"));
         for entry in entries {
             entry.runtime.stop();
+            entry.terminals.stop();
         }
     }
 }

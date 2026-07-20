@@ -22,8 +22,6 @@ use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::thread;
 use std::time::{Duration, Instant};
-use tungstenite::handshake::derive_accept_key;
-use tungstenite::protocol::Role;
 use tungstenite::{Message, WebSocket};
 
 /// Poll interval for the per-client loop: bounds added output latency while
@@ -376,29 +374,10 @@ fn handle_login(body: &str, shared: &Shared) -> Vec<u8> {
 
 /// Complete the WebSocket handshake manually (the request head was already
 /// consumed for routing/auth), then run the per-client read/write loop.
-fn serve_websocket(mut stream: TcpStream, head: &RequestHead, shared: Arc<Shared>) {
-    let Some(key) = head.header("sec-websocket-key") else {
-        let _ = stream.write_all(&http::response(
-            "400 Bad Request",
-            "text/plain; charset=utf-8",
-            &[],
-            b"missing Sec-WebSocket-Key",
-        ));
-        return;
-    };
-    let accept = derive_accept_key(key.as_bytes());
-    let handshake = format!(
-        "HTTP/1.1 101 Switching Protocols\r\n\
-         Upgrade: websocket\r\n\
-         Connection: Upgrade\r\n\
-         Sec-WebSocket-Accept: {accept}\r\n\r\n"
-    );
-    if stream.write_all(handshake.as_bytes()).is_err() {
-        return;
+fn serve_websocket(stream: TcpStream, head: &RequestHead, shared: Arc<Shared>) {
+    if let Some(ws) = conn::websocket_handshake(stream, head) {
+        run_client(ws, shared);
     }
-
-    let ws = WebSocket::from_raw_socket(stream, Role::Server, None);
-    run_client(ws, shared);
 }
 
 fn run_client(mut ws: WebSocket<TcpStream>, shared: Arc<Shared>) {

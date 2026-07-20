@@ -30,12 +30,14 @@ use crate::web::common::sse::SseStream;
 use crate::web::viewer::catalog::{Catalog, RepoEntry};
 use crate::web::viewer::dto::{DiffDto, Envelope, FileDto, LogDto, StatusDto, TreeDto};
 use crate::web::viewer::limits;
+use crate::web::viewer::terminal::{self, ClientMessage, TerminalFrame};
 use anyhow::{Context, Result};
 use std::io::Write;
 use std::net::{IpAddr, SocketAddr, TcpListener, TcpStream};
 use std::sync::Arc;
 use std::sync::atomic::AtomicUsize;
 use std::time::{Duration, Instant};
+use tungstenite::Message;
 
 /// Distinct from the mirror's cookie: same host, different servers, so a
 /// session for one must not authenticate against the other.
@@ -45,6 +47,10 @@ pub const VIEWER_SESSION_COOKIE: &str = "nightcrow_viewer_session";
 /// that a dead socket is noticed promptly, since a write is the only way to
 /// find out.
 const SSE_HEARTBEAT: Duration = Duration::from_secs(15);
+
+/// Read timeout on a terminal socket. Bounds how long queued output waits
+/// behind a blocked read; terminal latency is felt directly.
+const TERM_POLL_TIMEOUT: Duration = Duration::from_millis(10);
 
 pub struct ViewerState {
     pub catalog: Catalog,
@@ -172,6 +178,11 @@ fn handle_connection(mut stream: TcpStream, state: Arc<ViewerState>) {
     // SSE takes over the socket rather than returning a body.
     if head.method == "GET" && head.path == "/api/events" {
         serve_events(stream, &head, &state);
+        return;
+    }
+
+    if head.path == "/ws/term" && head.is_websocket_upgrade() {
+        serve_terminal(stream, &head, &state);
         return;
     }
 
@@ -389,6 +400,72 @@ fn serve_events(mut stream: TcpStream, head: &RequestHead, state: &ViewerState) 
         }
     }
     // `subscription` drops here, unregistering from the fan-out.
+}
+
+/// Hand this connection to the repository's terminal hub.
+///
+/// Auth and Origin were already enforced by `handle_connection`, before the
+/// repository was named — a terminal is effectively a shell, so the upgrade
+/// must never be reachable ahead of those checks.
+fn serve_terminal(stream: TcpStream, head: &RequestHead, state: &ViewerState) {
+    let mut stream = stream;
+    let entry = match lookup_repo(head, state) {
+        Ok(entry) => entry,
+        Err(response) => {
+            let _ = stream.write_all(&response);
+            return;
+        }
+    };
+    // Without a read timeout, `ws.read()` blocks and terminal output would
+    // only flush when the user happened to type. The timeout turns the loop
+    // into a poll that services both directions.
+    let _ = stream.set_read_timeout(Some(TERM_POLL_TIMEOUT));
+    let _ = stream.set_write_timeout(Some(SSE_HEARTBEAT));
+    let Some(mut ws) = conn::websocket_handshake(stream, head) else {
+        return;
+    };
+    let session = entry.terminals.connect();
+
+    loop {
+        // Drain everything queued for us before blocking on the socket, so
+        // output is not held back waiting for the client to say something.
+        let mut wrote = false;
+        while let Some(frame) = session.next_frame(Duration::from_millis(1)) {
+            let message = match frame {
+                TerminalFrame::Output { pane, data } => {
+                    Message::Binary(terminal::encode_output(pane, &data).into())
+                }
+                TerminalFrame::Control(json) => Message::Text(json.into()),
+            };
+            if ws.send(message).is_err() {
+                return;
+            }
+            wrote = true;
+        }
+        if wrote && ws.flush().is_err() {
+            return;
+        }
+
+        match ws.read() {
+            Ok(Message::Text(text)) => match serde_json::from_str::<ClientMessage>(&text) {
+                Ok(message) => session.dispatch(message),
+                // A malformed frame is dropped, not fatal: a client bug should
+                // not take the terminal down with it.
+                Err(err) => tracing::debug!(%err, "viewer: bad terminal message"),
+            },
+            Ok(Message::Close(_)) => return,
+            Ok(_) => {}
+            // A poll timeout surfaces as WouldBlock on macOS and TimedOut on
+            // Linux; neither means the client is gone.
+            Err(tungstenite::Error::Io(err))
+                if matches!(
+                    err.kind(),
+                    std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut
+                ) => {}
+            Err(_) => return,
+        }
+    }
+    // `session` drops here, unregistering from the hub.
 }
 
 fn json_response(status: &str, body: &str, extra: &[(&str, &str)]) -> Vec<u8> {
@@ -791,6 +868,73 @@ mod tests {
         );
         assert!(!seen.contains("Content-Length"), "SSE must not declare one");
         assert!(seen.contains("event: status"), "no status event: {seen}");
+        drop(dir);
+    }
+
+    #[test]
+    fn the_terminal_socket_creates_a_pane_and_streams_its_output() {
+        use tungstenite::client::IntoClientRequest;
+
+        let (dir, server, token, id) = seeded_server();
+        let mut request = format!("ws://{}/ws/term?repo={id}", server.addr())
+            .into_client_request()
+            .unwrap();
+        request.headers_mut().insert(
+            "Cookie",
+            format!("{VIEWER_SESSION_COOKIE}={token}").parse().unwrap(),
+        );
+        let (mut ws, _) = tungstenite::connect(request).expect("terminal upgrade");
+
+        ws.send(tungstenite::Message::Text(
+            r#"{"type":"create","rows":24,"cols":80}"#.into(),
+        ))
+        .unwrap();
+
+        // Expect the created control frame, then real PTY bytes tagged with
+        // the pane id — proving the multiplexing round-trips end to end.
+        let mut created_pane = None;
+        let mut saw_output = false;
+        for _ in 0..40 {
+            match ws.read() {
+                Ok(tungstenite::Message::Text(text)) if text.contains("created") => {
+                    let value: serde_json::Value = serde_json::from_str(&text).unwrap();
+                    created_pane = value["pane"].as_u64().map(|p| p as u32);
+                }
+                Ok(tungstenite::Message::Binary(bytes)) => {
+                    let (pane, data) = terminal::decode_output(&bytes).expect("a tagged frame");
+                    assert_eq!(Some(pane), created_pane, "output for an unannounced pane");
+                    if !data.is_empty() {
+                        saw_output = true;
+                        break;
+                    }
+                }
+                Ok(_) => {}
+                Err(_) => break,
+            }
+        }
+
+        assert!(created_pane.is_some(), "no created frame");
+        assert!(saw_output, "no PTY output reached the socket");
+        drop(dir);
+    }
+
+    #[test]
+    fn the_terminal_socket_requires_auth_and_a_known_repo() {
+        let (dir, server, token, _id) = seeded_server();
+
+        let anon = get(server.addr(), "/ws/term?repo=r1", None);
+        assert!(anon.starts_with("HTTP/1.1 401"), "got: {anon}");
+
+        // Authenticated but unknown: refused before any upgrade happens.
+        let unknown = request(
+            server.addr(),
+            &format!(
+                "GET /ws/term?repo=r9999 HTTP/1.1\r\nHost: x\r\nUpgrade: websocket\r\n\
+                 Connection: Upgrade\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n\
+                 Sec-WebSocket-Version: 13\r\nCookie: {VIEWER_SESSION_COOKIE}={token}\r\n\r\n"
+            ),
+        );
+        assert!(unknown.starts_with("HTTP/1.1 404"), "got: {unknown}");
         drop(dir);
     }
 

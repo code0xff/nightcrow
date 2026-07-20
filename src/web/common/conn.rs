@@ -120,6 +120,43 @@ impl Drop for ConnectionSlot {
     }
 }
 
+/// Complete a WebSocket upgrade on `stream`, or answer the error and give up.
+///
+/// Shared by both servers: the handshake needs only the request head and the
+/// socket, so the mirror and the viewer differ only in what they do with the
+/// resulting connection.
+pub fn websocket_handshake(
+    mut stream: TcpStream,
+    head: &RequestHead,
+) -> Option<tungstenite::WebSocket<TcpStream>> {
+    use std::io::Write;
+
+    let Some(key) = head.header("sec-websocket-key") else {
+        let _ = stream.write_all(&http::response(
+            "400 Bad Request",
+            "text/plain; charset=utf-8",
+            &[],
+            b"missing Sec-WebSocket-Key",
+        ));
+        return None;
+    };
+    let accept = tungstenite::handshake::derive_accept_key(key.as_bytes());
+    let handshake = format!(
+        "HTTP/1.1 101 Switching Protocols\r\n\
+         Upgrade: websocket\r\n\
+         Connection: Upgrade\r\n\
+         Sec-WebSocket-Accept: {accept}\r\n\r\n"
+    );
+    if stream.write_all(handshake.as_bytes()).is_err() {
+        return None;
+    }
+    Some(tungstenite::WebSocket::from_raw_socket(
+        stream,
+        tungstenite::protocol::Role::Server,
+        None,
+    ))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
