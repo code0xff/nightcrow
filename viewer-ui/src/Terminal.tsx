@@ -9,6 +9,50 @@ interface PaneView {
   el: HTMLDivElement;
 }
 
+/// Tab labels are capped by display width (not character count) so a title of
+/// wide CJK glyphs cannot overflow the tab bar; the full title stays reachable
+/// through the tab's tooltip. Matches the viewer's tab-label convention.
+const TAB_TITLE_MAX_CELLS = 20;
+
+/// True for code points that occupy two terminal cells. An approximation of the
+/// common East Asian wide / fullwidth ranges — enough to keep CJK titles from
+/// overflowing without pulling in a full Unicode width table.
+function isWide(cp: number): boolean {
+  return (
+    (cp >= 0x1100 && cp <= 0x115f) ||
+    (cp >= 0x2e80 && cp <= 0x303e) ||
+    (cp >= 0x3041 && cp <= 0x33ff) ||
+    (cp >= 0x3400 && cp <= 0x4dbf) ||
+    (cp >= 0x4e00 && cp <= 0x9fff) ||
+    (cp >= 0xa000 && cp <= 0xa4cf) ||
+    (cp >= 0xac00 && cp <= 0xd7a3) ||
+    (cp >= 0xf900 && cp <= 0xfaff) ||
+    (cp >= 0xfe30 && cp <= 0xfe4f) ||
+    (cp >= 0xff00 && cp <= 0xff60) ||
+    (cp >= 0xffe0 && cp <= 0xffe6) ||
+    (cp >= 0x1f300 && cp <= 0x1faff) ||
+    (cp >= 0x20000 && cp <= 0x3fffd)
+  );
+}
+
+/// Truncate `text` to at most `max` display cells, appending an ellipsis (which
+/// costs one cell) when anything was dropped.
+function truncateCells(text: string, max: number): string {
+  let width = 0;
+  for (const ch of text) width += isWide(ch.codePointAt(0) ?? 0) ? 2 : 1;
+  if (width <= max) return text;
+
+  let used = 0;
+  let out = "";
+  for (const ch of text) {
+    const cw = isWide(ch.codePointAt(0) ?? 0) ? 2 : 1;
+    if (used + cw > max - 1) break;
+    out += ch;
+    used += cw;
+  }
+  return `${out}…`;
+}
+
 /**
  * One WebSocket multiplexes every terminal for a repository.
  *
@@ -41,6 +85,9 @@ export function TerminalPanel({
   const pendingRef = useRef(new Map<number, Uint8Array[]>());
   const [panes, setPanes] = useState<number[]>([]);
   const [active, setActive] = useState<number | null>(null);
+  // Per-pane title from the shell's OSC 0/2 sequence (parsed by xterm.js), so a
+  // tab reads e.g. "claude" or "vim README" instead of a bare "term 2".
+  const [titles, setTitles] = useState<Record<number, string>>({});
   const [error, setError] = useState<string | null>(null);
 
   // One socket per repo. Pane ids belong to a repository's own terminal hub, so
@@ -67,6 +114,7 @@ export function TerminalPanel({
       // announced.
       setPanes([]);
       setActive(null);
+      setTitles({});
       disposeAll();
 
       const scheme = location.protocol === "https:" ? "wss:" : "ws:";
@@ -88,6 +136,12 @@ export function TerminalPanel({
             setPanes((current) => current.filter((p) => p !== message.pane));
             setActive((current) => (current === message.pane ? null : current));
             pendingRef.current.delete(message.pane);
+            setTitles((current) => {
+              if (!(message.pane in current)) return current;
+              const next = { ...current };
+              delete next[message.pane];
+              return next;
+            });
           } else if (message.type === "error") {
             setError(message.message);
           }
@@ -154,6 +208,14 @@ export function TerminalPanel({
           JSON.stringify({ type: "input", pane, data }),
         ),
       );
+      // xterm parses OSC 0/2 window-title sequences; mirror the latest non-empty
+      // one into the tab label. An empty title is ignored so the previous label
+      // (or the "term N" fallback) stands, matching the TUI.
+      term.onTitleChange((title) => {
+        const cleaned = title.replace(/\s+/g, " ").trim();
+        if (!cleaned) return;
+        setTitles((current) => ({ ...current, [pane]: cleaned }));
+      });
       term.open(el);
       viewsRef.current.set(pane, { term, fit, el });
 
@@ -256,7 +318,9 @@ export function TerminalPanel({
             to MAX_PTYS_PER_REPO tabs on a narrow panel they would otherwise push
             the button off-screen, leaving no way to restore a maximized panel. */}
         <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto">
-          {panes.map((pane, index) => (
+          {panes.map((pane, index) => {
+            const label = titles[pane] ?? `term ${index + 1}`;
+            return (
             <div
               key={pane}
               className={`flex shrink-0 items-center rounded-sm text-xs ${
@@ -267,9 +331,10 @@ export function TerminalPanel({
             >
               <button
                 onClick={() => setActive(pane)}
+                title={label}
                 className="py-0.5 pl-2 pr-1"
               >
-                term {index + 1}
+                {truncateCells(label, TAB_TITLE_MAX_CELLS)}
               </button>
               <button
                 onClick={(e) => {
@@ -283,7 +348,8 @@ export function TerminalPanel({
                 ×
               </button>
             </div>
-          ))}
+            );
+          })}
           <button
             onClick={create}
             className="shrink-0 rounded-sm px-2 py-0.5 text-xs text-ink-400 hover:text-accent"
