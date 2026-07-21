@@ -158,6 +158,10 @@ export function App() {
         .then((list) => {
           if (cancelled) return;
           setAuthed(true);
+          // A successful poll means the server is reachable again: clear any
+          // stale error so a transient failure (a blip, a server restart) does
+          // not latch the footer red forever — nothing else resets it.
+          setError(null);
           setRepos(list);
           // Keep the current selection when it survives; otherwise fall back to
           // the first repo, so closing the active tab in the TUI does not leave
