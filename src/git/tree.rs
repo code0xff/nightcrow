@@ -99,6 +99,86 @@ pub fn read_children(
     Ok(out)
 }
 
+/// One hit from [`search_tree`]: the full repo-relative path and whether the
+/// entry is a directory.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TreeMatch {
+    pub path: String,
+    pub is_dir: bool,
+}
+
+/// Recursively search the worktree for entries whose basename contains `query`
+/// (case-insensitive substring), mirroring the TUI's tree search
+/// (`App::build_tree_index` + `recompute_filter`): a full walk from the root,
+/// one [`read_children`] call per directory, depth-capped at `max_depth` and
+/// gitignore-filtered. Symlinked directories report `is_dir == false` and so are
+/// never descended (the same cycle guard that browsing relies on).
+///
+/// Results are sorted by path for a stable listing and capped at `limit`.
+/// `max_visits` bounds how many entries the walk may inspect: unlike the TUI's
+/// single-user in-process index, this runs per web request, so the traversal —
+/// not just the retained results — must be bounded against a pathological or
+/// hostile tree. `truncated` is true when either budget cut the walk short or
+/// more matches existed than were returned. An empty `query` matches every
+/// entry, so callers gate on non-empty input.
+pub fn search_tree(
+    repo: &Repository,
+    workdir: &Path,
+    query: &str,
+    max_depth: usize,
+    max_visits: usize,
+    limit: usize,
+) -> Result<(Vec<TreeMatch>, bool)> {
+    let q = query.to_lowercase();
+    let mut matches = Vec::new();
+    let mut visited = 0usize;
+    // Set when a budget (visit count or result limit) cuts the walk short, so the
+    // caller can flag the listing as incomplete.
+    let mut budget_hit = false;
+    // (dir, depth-of-its-children): the root's children sit at depth 0, matching
+    // `App::build_tree_index`'s depth accounting.
+    let mut stack = vec![(String::new(), 0usize)];
+    'walk: while let Some((dir, depth)) = stack.pop() {
+        let children = match read_children(repo, workdir, &dir, true) {
+            Ok(children) => children,
+            // The root must be readable; a subdirectory that vanished mid-walk
+            // (or is otherwise unreadable) is skipped rather than failing the
+            // whole search.
+            Err(err) if dir.is_empty() => return Err(err),
+            Err(_) => continue,
+        };
+        for entry in children {
+            // Every inspected entry counts against the visit budget, including
+            // non-matching ones — that is what bounds the filesystem work.
+            if visited >= max_visits {
+                budget_hit = true;
+                break 'walk;
+            }
+            visited += 1;
+            let path = if dir.is_empty() {
+                entry.name.clone()
+            } else {
+                format!("{dir}/{}", entry.name)
+            };
+            if entry.name.to_lowercase().contains(&q) {
+                matches.push(TreeMatch {
+                    path: path.clone(),
+                    is_dir: entry.is_dir,
+                });
+            }
+            // Descend only while the next level stays within max_depth, mirroring
+            // the expand guard in the TUI.
+            if entry.is_dir && depth < max_depth {
+                stack.push((path, depth + 1));
+            }
+        }
+    }
+    matches.sort_by(|a, b| a.path.cmp(&b.path));
+    let truncated = budget_hit || matches.len() > limit;
+    matches.truncate(limit);
+    Ok((matches, truncated))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -262,6 +342,95 @@ mod tests {
             err.to_string().contains("symlinks are not followed"),
             "unexpected error: {err}"
         );
+        drop(dir);
+    }
+
+    fn paths(matches: &[TreeMatch]) -> Vec<&str> {
+        matches.iter().map(|m| m.path.as_str()).collect()
+    }
+
+    #[test]
+    fn search_tree_finds_nested_matches_by_basename() {
+        let (dir, path) = make_repo();
+        let root = StdPath::new(&path);
+        std::fs::create_dir_all(root.join("src").join("ui")).unwrap();
+        std::fs::write(root.join("src").join("main.rs"), "x").unwrap();
+        std::fs::write(root.join("src").join("ui").join("tree_view.rs"), "x").unwrap();
+        std::fs::write(root.join("README.md"), "x").unwrap();
+
+        let repo = open_repo(&path);
+        // Case-insensitive substring on the basename, matched recursively; sorted
+        // by full path.
+        let (matches, truncated) = search_tree(&repo, root, "RS", 64, 10_000, 100).unwrap();
+        assert_eq!(paths(&matches), vec!["src/main.rs", "src/ui/tree_view.rs"]);
+        assert!(!truncated);
+        drop(dir);
+    }
+
+    #[test]
+    fn search_tree_excludes_gitignored_and_git_metadata() {
+        let (dir, path) = make_repo();
+        let root = StdPath::new(&path);
+        std::fs::write(root.join(".gitignore"), "target/\n").unwrap();
+        std::fs::create_dir(root.join("target")).unwrap();
+        std::fs::write(root.join("target").join("build.rs"), "x").unwrap();
+        std::fs::write(root.join("keep.rs"), "x").unwrap();
+        run_git(&path, &["add", ".gitignore"]);
+        run_git(&path, &["commit", "-m", "add gitignore"]);
+
+        let repo = open_repo(&path);
+        let (matches, _) = search_tree(&repo, root, ".rs", 64, 10_000, 100).unwrap();
+        assert_eq!(paths(&matches), vec!["keep.rs"]);
+        drop(dir);
+    }
+
+    #[test]
+    fn search_tree_stops_descending_beyond_max_depth() {
+        let (dir, path) = make_repo();
+        let root = StdPath::new(&path);
+        std::fs::create_dir_all(root.join("a").join("b")).unwrap();
+        std::fs::write(root.join("a").join("shallow.txt"), "x").unwrap();
+        std::fs::write(root.join("a").join("b").join("deep.txt"), "x").unwrap();
+
+        let repo = open_repo(&path);
+        // depth 0 = root's children ("a"); depth 1 = "a"'s children ("b",
+        // "shallow.txt"). With max_depth 1, "b"'s children are never read.
+        let (matches, _) = search_tree(&repo, root, ".txt", 1, 10_000, 100).unwrap();
+        assert_eq!(paths(&matches), vec!["a/shallow.txt"]);
+        drop(dir);
+    }
+
+    #[test]
+    fn search_tree_caps_results_and_flags_truncation() {
+        let (dir, path) = make_repo();
+        let root = StdPath::new(&path);
+        for i in 0..5 {
+            std::fs::write(root.join(format!("hit_{i}.txt")), "x").unwrap();
+        }
+
+        let repo = open_repo(&path);
+        let (matches, truncated) = search_tree(&repo, root, "hit_", 64, 10_000, 3).unwrap();
+        assert_eq!(matches.len(), 3);
+        assert!(truncated);
+        // Deterministic prefix: sorted then truncated.
+        assert_eq!(paths(&matches), vec!["hit_0.txt", "hit_1.txt", "hit_2.txt"]);
+        drop(dir);
+    }
+
+    #[test]
+    fn search_tree_stops_when_the_visit_budget_is_exhausted() {
+        let (dir, path) = make_repo();
+        let root = StdPath::new(&path);
+        for i in 0..20 {
+            std::fs::write(root.join(format!("f_{i:02}.txt")), "x").unwrap();
+        }
+
+        let repo = open_repo(&path);
+        // A tight visit budget cuts the walk short before every entry is seen, so
+        // the result is flagged incomplete even though it is under the result cap.
+        let (matches, truncated) = search_tree(&repo, root, ".txt", 64, 5, 100).unwrap();
+        assert!(matches.len() <= 5, "got {} matches", matches.len());
+        assert!(truncated);
         drop(dir);
     }
 

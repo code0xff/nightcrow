@@ -35,6 +35,7 @@ use crate::web::viewer::assets;
 use crate::web::viewer::catalog::{AddOutcome, Catalog, RepoEntry};
 use crate::web::viewer::dto::{
     BrowseDto, BrowseEntryDto, DiffDto, Envelope, FileDto, LogDto, StatusDto, TreeDto,
+    TreeSearchDto,
 };
 use crate::web::viewer::limits;
 use crate::web::viewer::terminal::{self, ClientMessage, TerminalFrame};
@@ -438,6 +439,35 @@ fn route(head: &RequestHead, state: &ViewerState) -> Vec<u8> {
             Ok(json_response(
                 "200 OK",
                 &encode(&TreeDto::from_entries(&path, &entries))?,
+                &[],
+            ))
+        }),
+        "/api/tree/search" => with_repo(head, state, |entry| {
+            let query = head.query_param("q").unwrap_or_default();
+            // An empty query would match every entry, and an over-long one is not
+            // a real filename search; both short-circuit to an empty result so the
+            // walk never runs on degenerate input.
+            let (matches, truncated) =
+                if query.is_empty() || query.len() > limits::MAX_TREE_SEARCH_QUERY_BYTES {
+                    (Vec::new(), false)
+                } else {
+                    let repo = open_repo(&entry.path)?;
+                    let workdir = repo
+                        .workdir()
+                        .ok_or_else(|| anyhow::anyhow!("bare repository"))?
+                        .to_path_buf();
+                    crate::git::tree::search_tree(
+                        &repo,
+                        &workdir,
+                        &query,
+                        limits::MAX_TREE_SEARCH_DEPTH,
+                        limits::MAX_TREE_SEARCH_VISITS,
+                        limits::MAX_TREE_SEARCH_RESULTS,
+                    )?
+                };
+            Ok(json_response(
+                "200 OK",
+                &encode(&TreeSearchDto::new(&query, &matches, truncated))?,
                 &[],
             ))
         }),
@@ -1144,6 +1174,45 @@ mod tests {
             .collect();
         assert!(names.contains(&"src"), "got: {names:?}");
         assert!(!names.contains(&".git"), "git metadata must not be listed");
+        drop(dir);
+    }
+
+    #[test]
+    fn tree_search_finds_a_nested_file_by_name() {
+        let (dir, server, token, id) = seeded_server();
+
+        let response = get(
+            server.addr(),
+            &format!("/api/tree/search?repo={id}&q=main"),
+            Some(&token),
+        );
+        let value: serde_json::Value = serde_json::from_str(body_of(&response)).unwrap();
+
+        let paths: Vec<_> = value["matches"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|m| m["path"].as_str().unwrap())
+            .collect();
+        // The match lives one level down, which the single-level /api/tree could
+        // not surface.
+        assert_eq!(paths, vec!["src/main.rs"]);
+        assert_eq!(value["truncated"], false);
+        drop(dir);
+    }
+
+    #[test]
+    fn tree_search_with_an_empty_query_returns_no_matches() {
+        let (dir, server, token, id) = seeded_server();
+
+        let response = get(
+            server.addr(),
+            &format!("/api/tree/search?repo={id}&q="),
+            Some(&token),
+        );
+        let value: serde_json::Value = serde_json::from_str(body_of(&response)).unwrap();
+
+        assert!(value["matches"].as_array().unwrap().is_empty());
         drop(dir);
     }
 

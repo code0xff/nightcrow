@@ -15,6 +15,19 @@
 pub const MAX_LOG_PAGE: usize = 200;
 /// Entries returned for one directory level of `/api/tree`.
 pub const MAX_TREE_ENTRIES: usize = 2_000;
+/// Depth cap for the recursive `/api/tree/search` walk. Matches the TUI tree's
+/// default `max_depth` (`config.rs`) so both surfaces reach the same files.
+pub const MAX_TREE_SEARCH_DEPTH: usize = 64;
+/// Entries one `/api/tree/search` walk may inspect before it stops and reports
+/// the listing as incomplete. Bounds filesystem work per request (the TUI has no
+/// equivalent cap because it walks once, in-process, for a single local user).
+pub const MAX_TREE_SEARCH_VISITS: usize = 100_000;
+/// Matches returned by one `/api/tree/search` request.
+pub const MAX_TREE_SEARCH_RESULTS: usize = 500;
+/// Longest accepted `/api/tree/search` query. A filename substring never needs
+/// to be large; anything past this is rejected at the boundary rather than
+/// lowercased and matched against every basename.
+pub const MAX_TREE_SEARCH_QUERY_BYTES: usize = 256;
 /// Changed files reported in one status payload.
 pub const MAX_STATUS_FILES: usize = 2_000;
 /// Bytes of diff text returned for one file.

@@ -226,6 +226,37 @@ impl TreeDto {
     }
 }
 
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct TreeMatchDto {
+    pub path: String,
+    pub is_dir: bool,
+}
+
+/// Result of a recursive `/api/tree/search`: full paths whose basename matched
+/// the query, already sorted and capped by the search walk.
+#[derive(Debug, Clone, Serialize)]
+pub struct TreeSearchDto {
+    pub query: String,
+    pub matches: Vec<TreeMatchDto>,
+    pub truncated: bool,
+}
+
+impl TreeSearchDto {
+    pub fn new(query: &str, matches: &[crate::git::tree::TreeMatch], truncated: bool) -> Self {
+        Self {
+            query: query.to_string(),
+            matches: matches
+                .iter()
+                .map(|m| TreeMatchDto {
+                    path: m.path.clone(),
+                    is_dir: m.is_dir,
+                })
+                .collect(),
+            truncated,
+        }
+    }
+}
+
 /// One run of characters sharing a colour, from server-side syntax
 /// highlighting. `t` is the text, `c` a `#rrggbb` foreground.
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
