@@ -289,6 +289,11 @@ renders the same git data as a native web page — selectable text, real
 scrolling, clickable paths, and a layout that collapses to one column on a
 phone. It also serves its **own** terminals, independent of the TUI's panes.
 
+The swatch in the header cycles the accent colour through the same five
+presets as the TUI's `<prefix> p` (yellow → cyan → green → magenta → blue).
+It is stored per browser and is **not** read from `[theme]` — that setting
+colours the TUI, and the viewer keeps its own.
+
 Enable it alongside the TUI under `[web_viewer]`:
 
 ```toml
