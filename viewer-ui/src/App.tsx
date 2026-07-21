@@ -432,7 +432,8 @@ export function App() {
       ? "grid-rows-[auto_minmax(0,0fr)_minmax(0,1fr)_auto]"
       : maximized === "files"
         ? "grid-rows-[auto_minmax(0,1fr)_minmax(0,0fr)_auto]"
-        : "grid-rows-[auto_minmax(0,3fr)_minmax(0,2fr)_auto]";
+        : // 55/45 split, matching the TUI's default layout.upper_pct.
+          "grid-rows-[auto_minmax(0,11fr)_minmax(0,9fr)_auto]";
 
   return (
     <div className={`nc-fade grid h-full ${rows}`}>
