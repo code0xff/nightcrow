@@ -39,6 +39,29 @@ export function MaximizeIcon({ maximized }: { maximized: boolean }) {
   );
 }
 
+/**
+ * Expand/collapse chevron for the file tree (VS Code style), traced from
+ * Lucide's `chevron-right`: points right when closed and rotates to point down
+ * when open.
+ */
+export function ChevronIcon({ open }: { open: boolean }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+      focusable="false"
+      className={`h-3.5 w-3.5 shrink-0 transition-transform ${open ? "rotate-90" : ""}`}
+    >
+      <path d="m9 18 6-6-6-6" />
+    </svg>
+  );
+}
+
 /** Search glyph, traced from Lucide's `search` (same provenance as above). */
 export function SearchIcon() {
   return (

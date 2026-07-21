@@ -19,7 +19,7 @@ import {
   type TreeMatch,
 } from "./api";
 import { TerminalPanel } from "./Terminal";
-import { MaximizeIcon, SearchIcon } from "./icons";
+import { ChevronIcon, MaximizeIcon, SearchIcon } from "./icons";
 
 /// How often the tab bar re-reads the served set. The payload is a handful of
 /// short strings, and this only has to feel prompt when a tab opens.
@@ -43,6 +43,35 @@ type Pane =
   | { kind: "diff"; value: Diff }
   | { kind: "file"; value: FileView }
   | { kind: "empty" };
+
+/// One visible row of the folder tree, flattened with its nesting depth for
+/// indentation.
+interface TreeRow {
+  path: string;
+  name: string;
+  is_dir: boolean;
+  depth: number;
+}
+
+/// Flatten the lazily-cached tree into the rows to render: a depth-first walk
+/// from the root that descends only into expanded directories whose children
+/// have been fetched. An expanded directory whose children are still loading
+/// simply shows no rows beneath it until they arrive.
+function buildTreeRows(
+  children: Record<string, TreeEntry[]>,
+  expanded: Set<string>,
+): TreeRow[] {
+  const rows: TreeRow[] = [];
+  const walk = (dir: string, depth: number) => {
+    for (const entry of children[dir] ?? []) {
+      const path = dir ? `${dir}/${entry.name}` : entry.name;
+      rows.push({ path, name: entry.name, is_dir: entry.is_dir, depth });
+      if (entry.is_dir && expanded.has(path)) walk(path, depth + 1);
+    }
+  };
+  walk("", 0);
+  return rows;
+}
 
 /**
  * A path that gives up its directory before its file name.
@@ -87,8 +116,13 @@ export function App() {
   const [tab, setTab] = useState<Tab>("status");
   const [status, setStatus] = useState<Status | null>(null);
   const [commits, setCommits] = useState<Commit[]>([]);
-  const [tree, setTree] = useState<TreeEntry[]>([]);
-  const [treePath, setTreePath] = useState("");
+  // Lazy folder tree, mirroring the TUI: children are cached per directory
+  // ("" is the root) and fetched on demand, and the set of expanded directories
+  // derives the visible rows.
+  const [treeChildren, setTreeChildren] = useState<Record<string, TreeEntry[]>>(
+    {},
+  );
+  const [treeExpanded, setTreeExpanded] = useState<Set<string>>(new Set());
   const [treeMatches, setTreeMatches] = useState<TreeMatch[]>([]);
   const [treeTruncated, setTreeTruncated] = useState(false);
   const [treeSearchLoading, setTreeSearchLoading] = useState(false);
@@ -124,7 +158,6 @@ export function App() {
     );
     setRepo(opened.id);
     setPane({ kind: "empty" });
-    setTreePath("");
     setTab("status");
     setPickerOpen(false);
   }, []);
@@ -221,13 +254,22 @@ export function App() {
     api.log(repo).then((r) => setCommits(r.commits)).catch(handle);
   }, [repo, authed, tab, handle]);
 
+  // The cached tree belongs to one repository; drop it when the repo changes.
+  useEffect(() => {
+    setTreeChildren({});
+    setTreeExpanded(new Set());
+  }, [repo]);
+
+  // Load (and refresh) the root level whenever the tree tab is shown; deeper
+  // levels are fetched lazily as folders expand, and expansion state is kept
+  // across tab switches.
   useEffect(() => {
     if (!repo || !authed || tab !== "tree") return;
     api
-      .tree(repo, treePath)
-      .then((r) => setTree(r.entries))
+      .tree(repo, "")
+      .then((r) => setTreeChildren((cache) => ({ ...cache, "": r.entries })))
       .catch(handle);
-  }, [repo, authed, tab, treePath, handle]);
+  }, [repo, authed, tab, handle]);
 
   // Recursive tree search runs against the backend (unlike the status/log
   // filters, which match an already-loaded list client-side), so it is debounced
@@ -274,6 +316,47 @@ export function App() {
   const openCommit = (oid: string) =>
     repo && api.commit(repo, oid).then((v) => setPane({ kind: "diff", value: v })).catch(handle);
 
+  // Fetch one directory level into the cache (used the first time a folder is
+  // expanded or revealed).
+  const loadTreeChildren = (path: string) => {
+    if (!repo) return;
+    api
+      .tree(repo, path)
+      .then((r) => setTreeChildren((cache) => ({ ...cache, [path]: r.entries })))
+      .catch(handle);
+  };
+  const toggleTreeDir = (path: string) => {
+    const willExpand = !treeExpanded.has(path);
+    setTreeExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(path)) next.delete(path);
+      else next.add(path);
+      return next;
+    });
+    if (willExpand && !(path in treeChildren)) loadTreeChildren(path);
+  };
+  // Reveal a path found by search: expand every ancestor directory (fetching
+  // levels as needed) and the directory itself, then leave the search view.
+  const revealTreeDir = (path: string) => {
+    const parts = path.split("/");
+    const dirs: string[] = [];
+    let acc = "";
+    for (const part of parts) {
+      acc = acc ? `${acc}/${part}` : part;
+      dirs.push(acc);
+    }
+    setTreeExpanded((prev) => {
+      const next = new Set(prev);
+      dirs.forEach((d) => next.add(d));
+      return next;
+    });
+    dirs.forEach((d) => {
+      if (!(d in treeChildren)) loadTreeChildren(d);
+    });
+    setFilter("");
+    setFilterOpen(false);
+  };
+
   if (authed === null) {
     // Initial load: determining the session and fetching the repo list. Show a
     // centred, branded screen so the app fades in from here rather than the
@@ -306,8 +389,9 @@ export function App() {
     c.summary.toLowerCase().includes(q),
   );
   // The tree tab searches the whole repo server-side when the filter holds a
-  // query; otherwise it browses one directory level at a time.
+  // query; otherwise it shows the lazily-expanded folder tree.
   const treeSearching = tab === "tree" && filterOpen && filter !== "";
+  const treeRows = buildTreeRows(treeChildren, treeExpanded);
 
   // Maximising collapses the losing row to nothing rather than unmounting it,
   // so the row count keeps matching the template and the panel comes back
@@ -352,7 +436,6 @@ export function App() {
                 onClick={() => {
                   setRepo(r.id);
                   setPane({ kind: "empty" });
-                  setTreePath("");
                 }}
                 className="py-0.5 pl-2 pr-1"
               >
@@ -490,15 +573,10 @@ export function App() {
                   <li key={m.path}>
                     <button
                       onClick={() => {
-                        // Files open in the pane; a matched directory drops the
-                        // query and browses into it.
-                        if (m.is_dir) {
-                          setTreePath(m.path);
-                          setFilter("");
-                          setFilterOpen(false);
-                        } else {
-                          openFile(m.path);
-                        }
+                        // Files open in the pane; a matched directory is
+                        // revealed in the tree and the query is dropped.
+                        if (m.is_dir) revealTreeDir(m.path);
+                        else openFile(m.path);
                       }}
                       title={m.path}
                       className="w-full truncate px-3 py-0.5 text-left hover:bg-ink-850"
@@ -523,44 +601,33 @@ export function App() {
                 )}
               </>
             )}
-            {tab === "tree" && !treeSearching && (
-              <>
-                {treePath && (
-                  <li>
-                    <button
-                      onClick={() =>
-                        setTreePath(
-                          treePath.includes("/")
-                            ? treePath.slice(0, treePath.lastIndexOf("/"))
-                            : "",
-                        )
-                      }
-                      className="w-full px-3 py-0.5 text-left text-ink-400 hover:bg-ink-850"
+            {tab === "tree" &&
+              !treeSearching &&
+              treeRows.map((row) => (
+                <li key={row.path}>
+                  <button
+                    onClick={() =>
+                      row.is_dir ? toggleTreeDir(row.path) : openFile(row.path)
+                    }
+                    title={row.path}
+                    style={{ paddingLeft: `${row.depth * 0.75 + 0.5}rem` }}
+                    className="flex w-full items-center gap-1 py-0.5 pr-3 text-left hover:bg-ink-850"
+                  >
+                    {row.is_dir ? (
+                      <ChevronIcon open={treeExpanded.has(row.path)} />
+                    ) : (
+                      // Spacer the width of a chevron so file names line up under
+                      // folder names, like VS Code's tree.
+                      <span className="h-3.5 w-3.5 shrink-0" />
+                    )}
+                    <span
+                      className={`truncate ${row.is_dir ? "text-accent" : ""}`}
                     >
-                      ../
-                    </button>
-                  </li>
-                )}
-                {tree.map((e) => (
-                  <li key={e.name}>
-                    <button
-                      onClick={() => {
-                        const next = treePath ? `${treePath}/${e.name}` : e.name;
-                        if (e.is_dir) setTreePath(next);
-                        else openFile(next);
-                      }}
-                      className="w-full truncate px-3 py-0.5 text-left hover:bg-ink-850"
-                    >
-                      {e.is_dir ? (
-                        <span className="text-accent">{e.name}/</span>
-                      ) : (
-                        e.name
-                      )}
-                    </button>
-                  </li>
-                ))}
-              </>
-            )}
+                      {row.is_dir ? `${row.name}/` : row.name}
+                    </span>
+                  </button>
+                </li>
+              ))}
           </ul>
         </section>
 
