@@ -142,6 +142,15 @@ export function TerminalPanel({
   // but the replayed scrollback arrives on the socket immediately after that
   // message — buffer it here and flush when the view is opened, or it is lost.
   const pendingRef = useRef(new Map<number, Uint8Array[]>());
+  // The pane a client last focused, per repo. This panel instance is reused
+  // across project switches (it is not keyed by repo), so this survives the
+  // reconnect and lets us restore the selection instead of jumping to the last
+  // replayed pane.
+  const lastActiveByRepoRef = useRef(new Map<string, number>());
+  // Count of creates this client has requested but not yet seen announced.
+  // Focus follows only these — not panes replayed on reconnect, startup
+  // terminals, or another browser's creates.
+  const expectCreateRef = useRef(0);
   const [panes, setPanes] = useState<number[]>([]);
   const [active, setActive] = useState<number | null>(null);
   // When set, this pane fills the whole panel and the rest are hidden — the
@@ -195,9 +204,18 @@ export function TerminalPanel({
         if (typeof event.data === "string") {
           const message = JSON.parse(event.data);
           if (message.type === "created") {
-            // Focus follows creation: a freshly opened terminal becomes active.
-            setPanes((current) => [...current, message.pane]);
-            setActive(message.pane);
+            const pane = message.pane;
+            setPanes((current) => [...current, pane]);
+            if (expectCreateRef.current > 0) {
+              // A terminal this client just asked for: focus follows creation.
+              expectCreateRef.current -= 1;
+              setActive(pane);
+              lastActiveByRepoRef.current.set(repo, pane);
+            } else if (lastActiveByRepoRef.current.get(repo) === pane) {
+              // A replayed pane that was focused before switching away — restore
+              // it rather than letting focus land on the last replayed pane.
+              setActive(pane);
+            }
           } else if (message.type === "exited") {
             setPanes((current) => current.filter((p) => p !== message.pane));
             setActive((current) => (current === message.pane ? null : current));
@@ -213,6 +231,9 @@ export function TerminalPanel({
               return next;
             });
           } else if (message.type === "error") {
+            // A create was refused (e.g. the per-repo cap); do not let the
+            // pending focus-follow attach to an unrelated later "created".
+            expectCreateRef.current = 0;
             setError(message.message);
           }
           return;
@@ -330,26 +351,41 @@ export function TerminalPanel({
     return () => observer.disconnect();
   }, []);
 
-  // When the active terminal is closed (or exits) but others remain, focus
-  // falls back to one of them rather than leaving nothing selected.
+  // When nothing is selected but panes exist — after a close, or after a
+  // reconnect reset — pick one: the repo's remembered pane if it is still here,
+  // otherwise the last.
   useEffect(() => {
     if (active === null && panes.length > 0) {
-      setActive(panes[panes.length - 1]);
+      const remembered = lastActiveByRepoRef.current.get(repo);
+      setActive(
+        remembered !== undefined && panes.includes(remembered)
+          ? remembered
+          : panes[panes.length - 1],
+      );
     }
-  }, [active, panes]);
+  }, [active, panes, repo]);
 
   // Give the keyboard to the active pane.
   useEffect(() => {
     if (active !== null) viewsRef.current.get(active)?.term.focus();
   }, [active]);
 
+  // Select a pane and remember it as this repo's focus, so returning to the
+  // project restores it.
+  const focusPane = (pane: number) => {
+    setActive(pane);
+    lastActiveByRepoRef.current.set(repo, pane);
+  };
+
   const create = () => {
+    const socket = socketRef.current;
+    if (!socket) return;
     setError(null);
     // Show the new pane in the grid rather than under whatever was zoomed.
     setZoomed(null);
-    socketRef.current?.send(
-      JSON.stringify({ type: "create", rows: 24, cols: 80 }),
-    );
+    // Focus should follow this create when its "created" comes back.
+    expectCreateRef.current += 1;
+    socket.send(JSON.stringify({ type: "create", rows: 24, cols: 80 }));
   };
 
   // Ask the server to kill the PTY. The pane is removed when the resulting
@@ -419,7 +455,7 @@ export function TerminalPanel({
             return (
               <div
                 key={pane}
-                onMouseDown={() => setActive(pane)}
+                onMouseDown={() => focusPane(pane)}
                 style={cellStyle}
                 className={`min-h-0 min-w-0 flex-col overflow-hidden rounded-sm border ${
                   pane === active ? "border-accent" : "border-ink-700"
