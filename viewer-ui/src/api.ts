@@ -38,6 +38,11 @@ export interface Commit {
   time: number;
 }
 
+export interface CommitFiles {
+  files: ChangedFile[];
+  truncated: boolean;
+}
+
 export interface TreeEntry {
   name: string;
   is_dir: boolean;
@@ -188,6 +193,10 @@ export const api = {
     get<FileView>(`/api/file?${query({ repo, path })}`),
   commit: (repo: string, oid: string) =>
     get<Diff>(`/api/commit?${query({ repo, oid })}`),
+  commitFiles: (repo: string, oid: string) =>
+    get<CommitFiles>(`/api/commit/files?${query({ repo, oid })}`),
+  commitFileDiff: (repo: string, oid: string, path: string) =>
+    get<Diff>(`/api/commit/file-diff?${query({ repo, oid, path })}`),
   browse: (path?: string) =>
     get<Browse>(`/api/browse${path ? `?${query({ path })}` : ""}`),
   open: (path: string) =>

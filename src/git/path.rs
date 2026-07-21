@@ -34,6 +34,33 @@ fn is_git_dir(part: &std::ffi::OsStr) -> bool {
     part.to_str().is_some_and(is_git_dir_name)
 }
 
+/// Validate a path used only to address an object *inside a git commit*.
+///
+/// Unlike [`resolve_in_workdir`], this deliberately does not stat the path:
+/// a deleted file is absent from the current worktree but is still a valid
+/// member of a historical commit diff. Callers must use this only with git's
+/// object database, never before opening a worktree file.
+pub fn validate_commit_path(relative: &str) -> Result<()> {
+    if relative.is_empty() {
+        return Err(anyhow!("empty path"));
+    }
+    if relative.contains('\0') {
+        return Err(anyhow!("path contains a NUL byte"));
+    }
+
+    for component in Path::new(relative).components() {
+        match component {
+            Component::Normal(part) if !is_git_dir(part) => {}
+            Component::Normal(_) => {
+                return Err(anyhow!("path enters the git directory: {relative}"));
+            }
+            // `..`/`.`/absolute paths must not be accepted as git pathspecs.
+            _ => return Err(anyhow!("path is not a plain relative path: {relative}")),
+        }
+    }
+    Ok(())
+}
+
 /// Resolve `relative` against `workdir`, rejecting anything that could escape
 /// the worktree or read git's internals.
 ///
@@ -47,21 +74,12 @@ fn is_git_dir(part: &std::ffi::OsStr) -> bool {
 /// accepted, since every surface reaching this function is already
 /// authenticated and local.
 pub fn resolve_in_workdir(workdir: &Path, relative: &str) -> Result<PathBuf> {
-    if relative.is_empty() {
-        return Err(anyhow!("empty path"));
-    }
-    if relative.contains('\0') {
-        return Err(anyhow!("path contains a NUL byte"));
-    }
+    validate_commit_path(relative)?;
 
     let candidate = Path::new(relative);
     for component in candidate.components() {
         match component {
-            Component::Normal(part) => {
-                if is_git_dir(part) {
-                    return Err(anyhow!("path enters the git directory: {relative}"));
-                }
-            }
+            Component::Normal(_) => {}
             // `..` escapes the worktree; `.` and root/prefix components mean
             // the path is absolute or non-normalized. Reject rather than
             // normalize, so a rejected path never silently becomes another.
@@ -262,5 +280,28 @@ mod tests {
             err.to_string().contains("failed to stat"),
             "unexpected error: {err}"
         );
+    }
+
+    #[test]
+    fn validate_commit_path_allows_a_deleted_worktree_path() {
+        let (_dir, root) = workdir();
+
+        // Historical diff routes must be able to address a file that no
+        // longer exists in the current checkout.
+        assert!(validate_commit_path("gone.txt").is_ok());
+        assert!(resolve_in_workdir(&root, "gone.txt").is_err());
+    }
+
+    #[test]
+    fn validate_commit_path_keeps_the_worktree_safety_rules() {
+        for path in [
+            "../secret",
+            "/etc/passwd",
+            ".git/config",
+            "src/../x",
+            "x\0y",
+        ] {
+            assert!(validate_commit_path(path).is_err(), "{path:?} was accepted");
+        }
     }
 }

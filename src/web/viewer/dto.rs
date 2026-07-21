@@ -185,6 +185,25 @@ pub struct LogDto {
     pub truncated: bool,
 }
 
+/// Changed paths in one historical commit. The row shape intentionally matches
+/// [`ChangedFileDto`], so the browser renders status and commit drill-down
+/// lists consistently (including rename sources and XY-style status columns).
+#[derive(Debug, Clone, Serialize)]
+pub struct CommitFilesDto {
+    pub files: Vec<ChangedFileDto>,
+    pub truncated: bool,
+}
+
+impl CommitFilesDto {
+    pub fn from_entries(files: &[ChangedFile]) -> Self {
+        let capped = Capped::new(files.to_vec(), limits::MAX_COMMIT_FILES);
+        Self {
+            files: capped.items.iter().map(ChangedFileDto::from).collect(),
+            truncated: capped.truncated,
+        }
+    }
+}
+
 impl LogDto {
     pub fn from_entries(entries: &[CommitEntry]) -> Self {
         let capped = Capped::new(entries.to_vec(), limits::MAX_LOG_PAGE);

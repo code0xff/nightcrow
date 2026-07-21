@@ -34,8 +34,8 @@ use crate::web::common::sse::SseStream;
 use crate::web::viewer::assets;
 use crate::web::viewer::catalog::{AddOutcome, Catalog, RepoEntry};
 use crate::web::viewer::dto::{
-    BrowseDto, BrowseEntryDto, DiffDto, Envelope, FileDto, LogDto, StatusDto, TreeDto,
-    TreeSearchDto,
+    BrowseDto, BrowseEntryDto, CommitFilesDto, DiffDto, Envelope, FileDto, LogDto, StatusDto,
+    TreeDto, TreeSearchDto,
 };
 use crate::web::viewer::limits;
 use crate::web::viewer::terminal::{self, ClientMessage, TerminalFrame};
@@ -503,15 +503,33 @@ fn route(head: &RequestHead, state: &ViewerState) -> Vec<u8> {
             ))
         }),
         "/api/commit" => with_repo(head, state, |entry| {
-            let oid_text = head
-                .query_param("oid")
-                .ok_or_else(|| anyhow::anyhow!("missing oid parameter"))?;
-            let oid = git2::Oid::from_str(&oid_text).context("malformed oid")?;
+            let oid = required_oid(head)?;
+            let oid_text = oid.to_string();
             let repo = open_repo(&entry.path)?;
             let hunks = diff::load_commit_diff(&repo, oid)?;
             Ok(json_response(
                 "200 OK",
                 &encode(&DiffDto::from_hunks(&oid_text, &hunks))?,
+                &[],
+            ))
+        }),
+        "/api/commit/files" => with_repo(head, state, |entry| {
+            let oid = required_oid(head)?;
+            let repo = open_repo(&entry.path)?;
+            let files = diff::load_commit_files(&repo, oid)?;
+            Ok(json_response(
+                "200 OK",
+                &encode(&CommitFilesDto::from_entries(&files))?,
+                &[],
+            ))
+        }),
+        "/api/commit/file-diff" => with_repo_commit_path(head, state, |entry, path| {
+            let oid = required_oid(head)?;
+            let repo = open_repo(&entry.path)?;
+            let hunks = diff::load_commit_file_diff(&repo, oid, path)?;
+            Ok(json_response(
+                "200 OK",
+                &encode(&DiffDto::from_hunks(path, &hunks))?,
                 &[],
             ))
         }),
@@ -610,10 +628,45 @@ fn with_repo(
     }
 }
 
+/// Variant of [`with_repo`] for a path inside a historical git object.
+///
+/// A deleted commit path cannot be resolved in the current worktree, so this
+/// validates its syntax without statting it. The route passes it only to an
+/// exact git pathspec; it never opens a filesystem path.
+fn with_repo_commit_path(
+    head: &RequestHead,
+    state: &ViewerState,
+    body: impl FnOnce(&RepoEntry, &str) -> Result<Vec<u8>>,
+) -> Vec<u8> {
+    let entry = match lookup_repo(head, state) {
+        Ok(entry) => entry,
+        Err(response) => return response,
+    };
+    let path = match required_path(head) {
+        Ok(path) => path,
+        Err(err) => return redact(&head.path, &err),
+    };
+    if let Err(err) = crate::git::path::validate_commit_path(&path) {
+        tracing::debug!(%err, route = %head.path, "viewer: rejected historical path parameter");
+        return json_error("400 Bad Request", "invalid path");
+    }
+    match body(&entry, &path) {
+        Ok(response) => response,
+        Err(err) => redact(&head.path, &err),
+    }
+}
+
 fn required_path(head: &RequestHead) -> Result<String> {
     head.query_param("path")
         .filter(|p| !p.is_empty())
         .ok_or_else(|| anyhow::anyhow!("missing path parameter"))
+}
+
+fn required_oid(head: &RequestHead) -> Result<git2::Oid> {
+    let oid_text = head
+        .query_param("oid")
+        .ok_or_else(|| anyhow::anyhow!("missing oid parameter"))?;
+    git2::Oid::from_str(&oid_text).context("malformed oid")
 }
 
 fn open_repo(path: &str) -> Result<git2::Repository> {
@@ -1300,6 +1353,112 @@ mod tests {
             40,
             "the oid must be hex, not libgit2's own shape"
         );
+        drop(dir);
+    }
+
+    #[test]
+    fn commit_files_returns_the_selected_commits_changed_paths() {
+        let (dir, server, token, id) = seeded_server();
+        let log = get(server.addr(), &format!("/api/log?repo={id}"), Some(&token));
+        let value: serde_json::Value = serde_json::from_str(body_of(&log)).unwrap();
+        let oid = value["commits"][0]["oid"].as_str().unwrap();
+
+        let response = get(
+            server.addr(),
+            &format!("/api/commit/files?repo={id}&oid={oid}"),
+            Some(&token),
+        );
+        let value: serde_json::Value = serde_json::from_str(body_of(&response)).unwrap();
+
+        assert!(response.starts_with("HTTP/1.1 200"), "got: {response}");
+        assert_eq!(value["files"][0]["path"], "src/main.rs");
+        assert_eq!(value["files"][0]["index"], "A");
+        assert_eq!(value["files"][0]["worktree"], " ");
+        assert_eq!(value["truncated"], false);
+        drop(dir);
+    }
+
+    #[test]
+    fn commit_file_diff_returns_only_the_selected_path() {
+        let (dir, server, token, id) = seeded_server();
+        let log = get(server.addr(), &format!("/api/log?repo={id}"), Some(&token));
+        let value: serde_json::Value = serde_json::from_str(body_of(&log)).unwrap();
+        let oid = value["commits"][0]["oid"].as_str().unwrap();
+
+        let response = get(
+            server.addr(),
+            &format!("/api/commit/file-diff?repo={id}&oid={oid}&path=src%2Fmain.rs"),
+            Some(&token),
+        );
+        let value: serde_json::Value = serde_json::from_str(body_of(&response)).unwrap();
+
+        assert!(response.starts_with("HTTP/1.1 200"), "got: {response}");
+        assert_eq!(value["path"], "src/main.rs");
+        assert!(
+            value["hunks"].as_array().unwrap().iter().any(|hunk| {
+                hunk["file_path"] == "src/main.rs" && !hunk["lines"].as_array().unwrap().is_empty()
+            }),
+            "expected a diff for just src/main.rs: {value}"
+        );
+        drop(dir);
+    }
+
+    #[test]
+    fn commit_file_diff_allows_a_deleted_path_without_worktree_lookup() {
+        let (dir, server, token, id) = seeded_server();
+        let repo_path = {
+            let entry = server.state.catalog.get(&id).unwrap();
+            entry.path.clone()
+        };
+        let gone = std::path::Path::new(&repo_path).join("gone.txt");
+        std::fs::write(&gone, "before delete\n").unwrap();
+        run_git(&repo_path, &["add", "gone.txt"]);
+        run_git(&repo_path, &["commit", "-m", "add gone"]);
+        run_git(&repo_path, &["rm", "gone.txt"]);
+        run_git(&repo_path, &["commit", "-m", "delete gone"]);
+        assert!(!gone.exists(), "test precondition: file must be deleted");
+
+        let log = get(server.addr(), &format!("/api/log?repo={id}"), Some(&token));
+        let value: serde_json::Value = serde_json::from_str(body_of(&log)).unwrap();
+        let oid = value["commits"][0]["oid"].as_str().unwrap();
+        let response = get(
+            server.addr(),
+            &format!("/api/commit/file-diff?repo={id}&oid={oid}&path=gone.txt"),
+            Some(&token),
+        );
+        let value: serde_json::Value = serde_json::from_str(body_of(&response)).unwrap();
+
+        assert!(response.starts_with("HTTP/1.1 200"), "got: {response}");
+        assert!(
+            value["hunks"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .flat_map(|h| h["lines"].as_array().unwrap())
+                .any(|line| line["kind"] == "-"),
+            "expected a removal line: {value}"
+        );
+        drop(dir);
+    }
+
+    #[test]
+    fn commit_file_diff_rejects_traversal_without_requiring_a_worktree_file() {
+        let (dir, server, token, id) = seeded_server();
+        let log = get(server.addr(), &format!("/api/log?repo={id}"), Some(&token));
+        let value: serde_json::Value = serde_json::from_str(body_of(&log)).unwrap();
+        let oid = value["commits"][0]["oid"].as_str().unwrap();
+
+        for attack in ["..%2Fsecret", ".git%2Fconfig", "src%2F..%2Fx"] {
+            let response = get(
+                server.addr(),
+                &format!("/api/commit/file-diff?repo={id}&oid={oid}&path={attack}"),
+                Some(&token),
+            );
+            assert!(
+                response.starts_with("HTTP/1.1 400"),
+                "historical route accepted {attack:?}: {response}"
+            );
+        }
         drop(dir);
     }
 

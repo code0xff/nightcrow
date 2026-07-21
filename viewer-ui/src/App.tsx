@@ -11,6 +11,7 @@ import {
   subscribeStatus,
   type Browse,
   type Commit,
+  type CommitFiles,
   type Diff,
   type FileView,
   type Repo,
@@ -56,6 +57,10 @@ type Pane =
   | { kind: "diff"; value: Diff }
   | { kind: "file"; value: FileView }
   | { kind: "empty" };
+
+interface CommitDrillDown extends CommitFiles {
+  commit: Commit;
+}
 
 /// One visible row of the folder tree, flattened with its nesting depth for
 /// indentation.
@@ -132,6 +137,8 @@ export function App() {
   const [tab, setTab] = useState<Tab>("status");
   const [status, setStatus] = useState<Status | null>(null);
   const [commits, setCommits] = useState<Commit[]>([]);
+  const [commitDrillDown, setCommitDrillDown] =
+    useState<CommitDrillDown | null>(null);
   // Lazy folder tree, mirroring the TUI: children are cached per directory
   // ("" is the root) and fetched on demand, and the set of expanded directories
   // derives the visible rows.
@@ -153,6 +160,9 @@ export function App() {
   paneRef.current = pane;
   const tabRef = useRef(tab);
   tabRef.current = tab;
+  // Invalidates an in-flight file-list or file-diff request when the user
+  // chooses another commit or switches repository before it finishes.
+  const commitRequestRef = useRef(0);
   const [pickerOpen, setPickerOpen] = useState(false);
   // False until the repo list has been fetched for the current session. Gates
   // the loading splash so the window between logging in and the first repo
@@ -295,6 +305,8 @@ export function App() {
   useEffect(() => {
     setTreeChildren({});
     setTreeExpanded(new Set());
+    commitRequestRef.current += 1;
+    setCommitDrillDown(null);
   }, [repo]);
 
   // Load (and refresh) the root level whenever the tree tab is shown; deeper
@@ -350,8 +362,52 @@ export function App() {
     repo && api.diff(repo, path).then((v) => setPane({ kind: "diff", value: v })).catch(handle);
   const openFile = (path: string) =>
     repo && api.file(repo, path).then((v) => setPane({ kind: "file", value: v })).catch(handle);
-  const openCommit = (oid: string) =>
-    repo && api.commit(repo, oid).then((v) => setPane({ kind: "diff", value: v })).catch(handle);
+  const openCommit = (oid: string) => {
+    if (!repo) return;
+    const request = ++commitRequestRef.current;
+    api
+      .commit(repo, oid)
+      .then((v) => {
+        if (request === commitRequestRef.current) setPane({ kind: "diff", value: v });
+      })
+      .catch((err) => {
+        if (request === commitRequestRef.current) handle(err);
+      });
+  };
+  const openCommitFileDiff = (oid: string, path: string) => {
+    if (!repo) return;
+    const request = ++commitRequestRef.current;
+    api
+      .commitFileDiff(repo, oid, path)
+      .then((v) => {
+        if (request === commitRequestRef.current) setPane({ kind: "diff", value: v });
+      })
+      .catch((err) => {
+        if (request === commitRequestRef.current) handle(err);
+      });
+  };
+  const openCommitFiles = async (commit: Commit) => {
+    if (!repo) return;
+    const request = ++commitRequestRef.current;
+    try {
+      const result = await api.commitFiles(repo, commit.oid);
+      if (request !== commitRequestRef.current) return;
+      setCommitDrillDown({ commit, ...result });
+      if (result.files.length === 0) {
+        setPane({ kind: "empty" });
+        return;
+      }
+      // Match the TUI's selection state: entering a commit drill-down keeps
+      // the complete commit diff visible. Choosing a row below narrows the
+      // pane to that file only.
+      const diff = await api.commit(repo, commit.oid);
+      if (request === commitRequestRef.current) {
+        setPane({ kind: "diff", value: diff });
+      }
+    } catch (err) {
+      if (request === commitRequestRef.current) handle(err);
+    }
+  };
 
   // Fetch one directory level into the cache (used the first time a folder is
   // expanded or revealed).
@@ -420,6 +476,10 @@ export function App() {
   );
   const visibleCommits = commits.filter((c) =>
     c.summary.toLowerCase().includes(q),
+  );
+  const visibleCommitFiles = (commitDrillDown?.files ?? []).filter((f) =>
+    f.path.toLowerCase().includes(q) ||
+    f.old_path?.toLowerCase().includes(q),
   );
   // The log is newest-first, so the first `ahead` commits are the unpushed ones
   // — mark them like the TUI does.
@@ -552,6 +612,10 @@ export function App() {
                 key={t}
                 onClick={() => {
                   if (t === tab) return;
+                  if (tab === "log") {
+                    commitRequestRef.current += 1;
+                    setCommitDrillDown(null);
+                  }
                   setTab(t);
                   // The pane's content belongs to the tab it was opened from;
                   // switching tabs leaves nothing to re-preview, so clear it.
@@ -616,11 +680,11 @@ export function App() {
                   </button>
                 </li>
               ))}
-            {tab === "log" &&
+            {tab === "log" && !commitDrillDown &&
               visibleCommits.map((c) => (
                 <li key={c.oid}>
                   <button
-                    onClick={() => openCommit(c.oid)}
+                    onClick={() => void openCommitFiles(c)}
                     title={`${c.author} · ${c.summary}`}
                     className="flex w-max min-w-full items-baseline gap-2 px-3 py-0.5 text-left hover:bg-ink-850"
                   >
@@ -642,6 +706,59 @@ export function App() {
                   </button>
                 </li>
               ))}
+            {tab === "log" && commitDrillDown && (
+              <>
+                <li className="sticky top-0 z-10 flex w-max min-w-full items-center gap-1 bg-ink-900 px-2 py-1 text-ink-400">
+                  <button
+                    onClick={() => {
+                      commitRequestRef.current += 1;
+                      setCommitDrillDown(null);
+                      setPane({ kind: "empty" });
+                    }}
+                    className="rounded-sm px-1 hover:text-accent"
+                    title="Back to commit log"
+                  >
+                    ← log
+                  </button>
+                  <span className="text-ink-600">·</span>
+                  <span className="shrink-0 text-accent">
+                    {commitDrillDown.commit.short_id}
+                  </span>
+                  <button
+                    onClick={() => openCommit(commitDrillDown.commit.oid)}
+                    className="rounded-sm px-1 hover:text-accent"
+                    title="Show the complete commit diff"
+                  >
+                    all changes
+                  </button>
+                </li>
+                {visibleCommitFiles.map((f) => (
+                  <li key={f.path}>
+                    <button
+                      onClick={() =>
+                        openCommitFileDiff(commitDrillDown.commit.oid, f.path)
+                      }
+                      className="flex w-max min-w-full gap-2 px-3 py-0.5 text-left hover:bg-ink-850"
+                    >
+                      <span className={statusColor(f.index)}>{f.index}</span>
+                      <PathLabel path={f.path} from={f.old_path} />
+                    </button>
+                  </li>
+                ))}
+                {commitDrillDown.files.length === 0 && (
+                  <li className="px-3 py-2 text-ink-400">No changed files.</li>
+                )}
+                {commitDrillDown.files.length > 0 &&
+                  visibleCommitFiles.length === 0 && (
+                    <li className="px-3 py-2 text-ink-400">No matching files.</li>
+                  )}
+                {commitDrillDown.truncated && (
+                  <li className="px-3 py-1 text-accent">
+                    Showing the first {commitDrillDown.files.length} files.
+                  </li>
+                )}
+              </>
+            )}
             {tab === "tree" && treeSearching && (
               <>
                 {treeMatches.map((m) => (

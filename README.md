@@ -289,6 +289,10 @@ renders the same git data as a native web page — selectable text, real
 scrolling, clickable paths, and a layout that collapses to one column on a
 phone. It also serves its **own** terminals, independent of the TUI's panes.
 
+In the Log tab, selecting a commit opens its changed-file list alongside the
+complete commit diff. Select a file to view only that file's change; use
+`← log` to return or `all changes` to restore the complete commit diff.
+
 The swatch in the header cycles the accent colour through the same five
 presets as the TUI's `<prefix> p` (yellow → cyan → green → magenta → blue).
 It is stored per browser and is **not** read from `[theme]` — that setting

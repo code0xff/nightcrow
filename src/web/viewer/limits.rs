@@ -13,6 +13,8 @@
 
 /// Commits returned by one page of `/api/log`.
 pub const MAX_LOG_PAGE: usize = 200;
+/// Changed paths returned while drilling into one commit.
+pub const MAX_COMMIT_FILES: usize = 2_000;
 /// Entries returned for one directory level of `/api/tree`.
 pub const MAX_TREE_ENTRIES: usize = 2_000;
 /// Depth cap for the recursive `/api/tree/search` walk. Matches the TUI tree's
