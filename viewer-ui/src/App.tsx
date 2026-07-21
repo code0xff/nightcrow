@@ -86,29 +86,17 @@ function buildTreeRows(
 }
 
 /**
- * A path that gives up its directory before its file name.
+ * A path rendered in full, reachable by scrolling the list sideways.
  *
- * A plain `truncate` cuts the tail, which is the one part that tells two rows
- * apart — `src/web/viewer/server.rs` and `src/web/viewer/terminal.rs` both
- * become `src/web/viewer/…` in a narrow sidebar. Splitting the two and letting
- * only the directory shrink keeps the name legible at any width; the ellipsis
- * lands mid-path, so the top-level directory survives too. `title` still
- * carries the whole path for the cases where the middle mattered.
+ * Truncating instead would cut the tail, which is the one part that tells two
+ * rows apart — `src/web/viewer/server.rs` and `src/web/viewer/terminal.rs` both
+ * become `src/web/viewer/…` in a narrow sidebar. `title` still carries the
+ * whole path so a hover answers without scrolling.
  */
 function PathLabel({ path, from }: { path: string; from?: string }) {
-  const cut = path.lastIndexOf("/");
-  const dir = cut === -1 ? "" : path.slice(0, cut + 1);
-  const name = cut === -1 ? path : path.slice(cut + 1);
   return (
-    <span
-      className="flex min-w-0 overflow-hidden"
-      title={from ? `${from} → ${path}` : path}
-    >
-      <span className="min-w-0 truncate">{from ? `${from} → ${dir}` : dir}</span>
-      {/* The name holds its width so the directory yields first; overflow-hidden
-          on the row clips a pathological basename here rather than letting it
-          spill over the sibling controls. */}
-      <span className="shrink-0">{name}</span>
+    <span className="whitespace-nowrap" title={from ? `${from} → ${path}` : path}>
+      {from ? `${from} → ${path}` : path}
     </span>
   );
 }
@@ -582,7 +570,11 @@ export function App() {
               className="mx-2 mb-1 shrink-0 rounded-sm bg-ink-850 px-2 py-1 outline-none placeholder:text-ink-400 focus:ring-1 focus:ring-accent"
             />
           )}
-          <ul className="min-h-0 flex-1 overflow-y-auto">
+          {/* Scrolls on both axes, like the TUI's lists: long paths and commit
+              summaries stay readable in a narrow sidebar rather than being cut
+              off. Rows are `w-max min-w-full` so the hover highlight spans the
+              full scroll width instead of stopping at the visible edge. */}
+          <ul className="min-h-0 flex-1 overflow-auto">
             {tab === "status" && status === null && (
               <li className="px-3 py-2 text-ink-400">Loading…</li>
             )}
@@ -592,7 +584,7 @@ export function App() {
                 <li key={f.path}>
                   <button
                     onClick={() => openDiff(f.path)}
-                    className="flex w-full gap-2 px-3 py-0.5 text-left hover:bg-ink-850"
+                    className="flex w-max min-w-full gap-2 px-3 py-0.5 text-left hover:bg-ink-850"
                   >
                     <span className="shrink-0">
                       <span className={statusColor(f.index)}>
@@ -612,7 +604,7 @@ export function App() {
                   <button
                     onClick={() => openCommit(c.oid)}
                     title={`${c.author} · ${c.summary}`}
-                    className="flex w-full items-baseline gap-2 px-3 py-0.5 text-left hover:bg-ink-850"
+                    className="flex w-max min-w-full items-baseline gap-2 px-3 py-0.5 text-left hover:bg-ink-850"
                   >
                     {/* ↑ marks unpushed commits, like the TUI's ahead marker. */}
                     <span className="w-2 shrink-0 text-added">
@@ -622,10 +614,13 @@ export function App() {
                     <span className="w-10 shrink-0 text-right text-ink-400">
                       {formatRelativeTime(c.time)}
                     </span>
+                    {/* Author stays a fixed column so summaries line up, the
+                        same cap the TUI applies at 10 chars; `title` carries
+                        the full name. */}
                     <span className="max-w-[6rem] shrink-0 truncate text-ink-400">
                       {c.author}
                     </span>
-                    <span className="truncate">{c.summary}</span>
+                    <span className="whitespace-nowrap">{c.summary}</span>
                   </button>
                 </li>
               ))}
@@ -641,7 +636,7 @@ export function App() {
                         else openFile(m.path);
                       }}
                       title={m.path}
-                      className="w-full truncate px-3 py-0.5 text-left hover:bg-ink-850"
+                      className="w-max min-w-full whitespace-nowrap px-3 py-0.5 text-left hover:bg-ink-850"
                     >
                       {m.is_dir ? (
                         <span className="text-accent">{m.path}/</span>
@@ -673,7 +668,7 @@ export function App() {
                     }
                     title={row.path}
                     style={{ paddingLeft: `${row.depth * 0.75 + 0.5}rem` }}
-                    className="flex w-full items-center gap-1 py-0.5 pr-3 text-left hover:bg-ink-850"
+                    className="flex w-max min-w-full items-center gap-1 py-0.5 pr-3 text-left hover:bg-ink-850"
                   >
                     {row.is_dir ? (
                       <ChevronIcon open={treeExpanded.has(row.path)} />
@@ -683,7 +678,7 @@ export function App() {
                       <span className="h-3.5 w-3.5 shrink-0" />
                     )}
                     <span
-                      className={`truncate ${row.is_dir ? "text-accent" : ""}`}
+                      className={`whitespace-nowrap ${row.is_dir ? "text-accent" : ""}`}
                     >
                       {row.is_dir ? `${row.name}/` : row.name}
                     </span>
