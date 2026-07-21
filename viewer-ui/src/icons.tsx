@@ -62,6 +62,35 @@ export function ChevronIcon({ open }: { open: boolean }) {
   );
 }
 
+/**
+ * Close glyph, traced from Lucide's `x` (same provenance as above).
+ *
+ * Replaces the `×` character these buttons used to render: U+00D7 is a maths
+ * operator drawn near x-height, so at the viewer's ~12px mono it left only a
+ * few pixels of ink and read as far lighter than the icons beside it.
+ *
+ * Sized by the caller — the terminal tab matches `MaximizeIcon` next to it,
+ * while the header's project tabs take a smaller one to suit their label.
+ */
+export function XIcon({ className = "h-4 w-4" }: { className?: string }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+      focusable="false"
+      className={`shrink-0 ${className}`}
+    >
+      <path d="M18 6 6 18" />
+      <path d="m6 6 12 12" />
+    </svg>
+  );
+}
+
 /** Search glyph, traced from Lucide's `search` (same provenance as above). */
 export function SearchIcon() {
   return (

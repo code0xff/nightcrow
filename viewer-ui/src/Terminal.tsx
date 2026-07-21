@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
-import { MaximizeIcon } from "./icons";
+import { MaximizeIcon, XIcon } from "./icons";
 
 interface PaneView {
   term: Terminal;
@@ -480,7 +480,7 @@ export function TerminalPanel({
                     aria-label={
                       zoomed === pane ? "Restore the grid" : "Zoom this terminal"
                     }
-                    className="flex shrink-0 items-center rounded-sm px-0.5 text-ink-400 hover:text-accent"
+                    className="flex h-5 w-5 shrink-0 items-center justify-center rounded-sm text-ink-400 hover:text-accent"
                   >
                     <MaximizeIcon maximized={zoomed === pane} />
                   </button>
@@ -489,9 +489,9 @@ export function TerminalPanel({
                     onClick={() => closePane(pane)}
                     title="Close terminal"
                     aria-label={`close terminal ${index + 1}`}
-                    className="shrink-0 px-0.5 text-ink-400 hover:text-removed"
+                    className="flex h-5 w-5 shrink-0 items-center justify-center rounded-sm text-ink-400 hover:text-removed"
                   >
-                    ×
+                    <XIcon />
                   </button>
                 </div>
                 <div

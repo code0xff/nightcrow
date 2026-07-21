@@ -19,7 +19,7 @@ import {
   type TreeMatch,
 } from "./api";
 import { TerminalPanel } from "./Terminal";
-import { ChevronIcon, MaximizeIcon, SearchIcon } from "./icons";
+import { ChevronIcon, MaximizeIcon, SearchIcon, XIcon } from "./icons";
 
 /// How often the tab bar re-reads the served set. The payload is a handful of
 /// short strings, and this only has to feel prompt when a tab opens.
@@ -483,9 +483,9 @@ export function App() {
                 }}
                 title="Close project"
                 aria-label={`close ${r.name}`}
-                className="pr-1.5 text-ink-400 hover:text-removed"
+                className="mr-0.5 flex h-5 w-5 items-center justify-center rounded-sm text-ink-400 hover:text-removed"
               >
-                ×
+                <XIcon className="h-3.5 w-3.5" />
               </button>
             </div>
           ))}
@@ -902,9 +902,9 @@ function FolderPicker({
           <button
             onClick={onClose}
             aria-label="close"
-            className="ml-auto text-ink-400 hover:text-ink-200"
+            className="ml-auto flex h-5 w-5 items-center justify-center rounded-sm text-ink-400 hover:text-ink-200"
           >
-            ×
+            <XIcon />
           </button>
         </div>
         <div className="truncate border-b border-ink-700 px-3 py-1.5 text-ink-400">
