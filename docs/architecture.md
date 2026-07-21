@@ -482,6 +482,7 @@ PTY 관리는 portable-pty 기반 `PtyBackend` 단일 구현으로 정리됐다.
 - **터미널**(`terminal.rs`)은 TUI 패인과 **별개 세션**이다. 공유하려면 `App`에 손을 대야 하고 그러면 헤드리스가 깨진다. raw PTY 바이트를 서버측 VT 에뮬레이션 없이 그대로 보낸다(xterm.js가 이미 에뮬레이터다). 4바이트 LE pane id를 앞에 붙인 **바이너리 프레임** — PTY 읽기는 멀티바이트 시퀀스를 일상적으로 쪼개므로 JSON으로 조기 디코딩하면 브라우저가 재조립하기 전에 깨진다. **출력은 conflate하지 않고 큐잉**한다: 최신 status는 완결된 그림이지만 터미널 바이트는 하나만 빠져도 스트림이 깨지므로, 큐를 넘긴 클라이언트는 조용히 버리지 않고 끊는다.
 - **자원 상한**(`limits.rs`)은 전부 `truncated`로 보고된다. 잘린 목록이 전체인 척하지 않는다.
 - **프론트엔드**(`viewer-ui/`): React 19 + Vite 7 + Tailwind v4 + `@xterm/xterm`. shadcn/ui는 쓰지 않는다 — 기본 톤이 TUI 밀도와 맞지 않아 덮어쓸 것이 더 많았다. `dist/`를 커밋해 `cargo install`에 Node를 요구하지 않는다(build.rs에서 npm을 부르면 Node 없는 설치가 전부 깨진다). CI가 재빌드해 커밋된 번들과 다르면 실패시킨다.
+- **사이드바 목록은 잘라내지 않고 가로로 스크롤한다**(`viewer-ui/src/App.tsx`). status/log/tree 목록은 TUI가 `ui/mod.rs`의 `char_offset`으로 긴 경로와 커밋 summary를 좌우로 미는 것과 같은 접근을 취한다. `truncate`를 쓰지 않는 이유는 두 행을 구분하는 것이 대개 경로의 **꼬리**이기 때문이다 — `src/web/viewer/server.rs`와 `terminal.rs`는 말줄임이 지우는 바로 그 부분에서만 갈린다. 단 TUI와 한 가지가 다르다: TUI는 status 코드나 commit short_id 같은 접두 컬럼을 고정한 채 가변 텍스트만 미는 반면, 뷰어는 **행 전체가 함께 스크롤된다**(VS Code 탐색기와 같은 동작). `position: sticky`로 접두를 고정하는 안은 검토 후 기각했다 — sticky 요소가 자기 배경을 들고 hover 상태까지 따라가야 해서, 얻는 것에 비해 행 렌더링이 복잡해진다.
 
 #### 알려진 잔여 위험 (수용 또는 후속)
 
