@@ -1,4 +1,10 @@
-import { useCallback, useEffect, useState, type CSSProperties } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+} from "react";
 import {
   api,
   isUnauthorized,
@@ -90,6 +96,13 @@ export function App() {
   const [filterOpen, setFilterOpen] = useState(false);
   const [pane, setPane] = useState<Pane>({ kind: "empty" });
   const [error, setError] = useState<string | null>(null);
+  // Latest pane/tab for the status-activity effect, which reacts to new status
+  // snapshots and must not re-run when the pane changes (that would loop on its
+  // own re-fetch).
+  const paneRef = useRef(pane);
+  paneRef.current = pane;
+  const tabRef = useRef(tab);
+  tabRef.current = tab;
   const [pickerOpen, setPickerOpen] = useState(false);
   const [maximized, setMaximized] = useState<Maximized>("none");
 
@@ -176,6 +189,28 @@ export function App() {
     setStatus(null);
     return subscribeStatus(repo, setStatus);
   }, [repo, authed]);
+
+  // Keep the status tab's open diff honest when the working tree changes under
+  // it (a commit lands, files are staged/edited): reload it in place if its file
+  // is still changed, drop it if the file left the list — the same rule the TUI
+  // applies on a status refresh. Log and tree panes show history or raw file
+  // contents, which working-tree activity does not invalidate, so they are left
+  // untouched. Keyed on `status` only; pane/tab are read through refs so the
+  // effect does not re-fire on its own re-fetch.
+  useEffect(() => {
+    if (!repo || !status) return;
+    const current = paneRef.current;
+    if (tabRef.current !== "status" || current.kind !== "diff") return;
+    const path = current.value.path;
+    if (!status.files.some((f) => f.path === path)) {
+      setPane({ kind: "empty" });
+    } else {
+      api
+        .diff(repo, path)
+        .then((v) => setPane({ kind: "diff", value: v }))
+        .catch(handle);
+    }
+  }, [status, repo, handle]);
 
   useEffect(() => {
     if (!repo || !authed || tab !== "log") return;
@@ -375,7 +410,13 @@ export function App() {
             {(["status", "log", "tree"] as Tab[]).map((t) => (
               <button
                 key={t}
-                onClick={() => setTab(t)}
+                onClick={() => {
+                  if (t === tab) return;
+                  setTab(t);
+                  // The pane's content belongs to the tab it was opened from;
+                  // switching tabs leaves nothing to re-preview, so clear it.
+                  setPane({ kind: "empty" });
+                }}
                 className={`rounded-sm px-2 py-0.5 ${
                   t === tab ? "bg-ink-700 text-ink-50" : "text-ink-400"
                 }`}
