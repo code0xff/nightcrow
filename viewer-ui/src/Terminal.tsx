@@ -34,6 +34,11 @@ export function TerminalPanel({
   const hostRef = useRef<HTMLDivElement>(null);
   const socketRef = useRef<WebSocket | null>(null);
   const viewsRef = useRef(new Map<number, PaneView>());
+  // Output for a pane whose xterm view does not exist yet. A pane's view is
+  // materialised in a later effect (after its "created" updates React state),
+  // but the replayed scrollback arrives on the socket immediately after that
+  // message — buffer it here and flush when the view is opened, or it is lost.
+  const pendingRef = useRef(new Map<number, Uint8Array[]>());
   const [panes, setPanes] = useState<number[]>([]);
   const [active, setActive] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -49,12 +54,17 @@ export function TerminalPanel({
     const disposeAll = () => {
       viewsRef.current.forEach((view) => view.term.dispose());
       viewsRef.current.clear();
+      pendingRef.current.clear();
       hostRef.current?.replaceChildren();
     };
 
     const connect = () => {
-      // Each (re)connection starts clean: a server restart drops every PTY, so
-      // stale panes would point at terminals the new process never created.
+      // Each (re)connection starts from a clean slate and lets the server
+      // repopulate it: on connect the hub replays every live pane and its
+      // scrollback, so a browser refresh restores the terminals while a server
+      // restart (no panes to replay) correctly comes back empty. Keeping stale
+      // local panes would instead point at terminals the new socket never
+      // announced.
       setPanes([]);
       setActive(null);
       disposeAll();
@@ -77,6 +87,7 @@ export function TerminalPanel({
           } else if (message.type === "exited") {
             setPanes((current) => current.filter((p) => p !== message.pane));
             setActive((current) => (current === message.pane ? null : current));
+            pendingRef.current.delete(message.pane);
           } else if (message.type === "error") {
             setError(message.message);
           }
@@ -85,7 +96,16 @@ export function TerminalPanel({
         const frame = new Uint8Array(event.data as ArrayBuffer);
         if (frame.length < 4) return;
         const pane = new DataView(frame.buffer).getUint32(0, true);
-        viewsRef.current.get(pane)?.term.write(frame.subarray(4));
+        const bytes = frame.subarray(4);
+        const view = viewsRef.current.get(pane);
+        if (view) {
+          view.term.write(bytes);
+        } else {
+          // The view is created by a later effect; hold this until then.
+          const queue = pendingRef.current.get(pane) ?? [];
+          queue.push(bytes);
+          pendingRef.current.set(pane, queue);
+        }
       };
       // Reconnect quietly. The control socket is always open — it is how a
       // terminal gets created — so a drop with nothing running is not worth
@@ -136,6 +156,14 @@ export function TerminalPanel({
       );
       term.open(el);
       viewsRef.current.set(pane, { term, fit, el });
+
+      // Flush any output (typically replayed scrollback) that arrived before
+      // this view existed, in order, so the restored screen is complete.
+      const queued = pendingRef.current.get(pane);
+      if (queued) {
+        for (const chunk of queued) term.write(chunk);
+        pendingRef.current.delete(pane);
+      }
     }
 
     for (const [pane, view] of viewsRef.current) {
