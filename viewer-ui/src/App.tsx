@@ -20,6 +20,7 @@ import {
 } from "./api";
 import { TerminalPanel } from "./Terminal";
 import { ChevronIcon, MaximizeIcon, SearchIcon, XIcon } from "./icons";
+import { useAccent } from "./theme";
 
 /// How often the tab bar re-reads the served set. The payload is a handful of
 /// short strings, and this only has to feel prompt when a tab opens.
@@ -158,6 +159,9 @@ export function App() {
   // response does not flash the "No repository open" empty state.
   const [reposLoaded, setReposLoaded] = useState(false);
   const [maximized, setMaximized] = useState<Maximized>("none");
+  // Ahead of the login/loading early returns below, so the stored accent
+  // applies to those screens too and not just the main view.
+  const { accent, next, cycle } = useAccent();
 
   // A failed call is either "log back in" or a message worth showing.
   const handle = useCallback((err: unknown) => {
@@ -497,7 +501,21 @@ export function App() {
         >
           + open
         </button>
-        <a href="/logout" className="ml-auto pl-2 text-ink-400 hover:text-ink-200">
+        {/* Cycles rather than opening a picker, matching the TUI's
+            `<prefix> p`. The swatch is the current accent, so the control
+            doubles as the indicator. */}
+        <button
+          onClick={cycle}
+          title={`Accent: ${accent.name} (click for ${next.name})`}
+          aria-label={`accent colour: ${accent.name}, click for ${next.name}`}
+          className="ml-auto flex h-6 w-6 shrink-0 items-center justify-center rounded-sm"
+        >
+          <span
+            aria-hidden="true"
+            className="h-3 w-3 rounded-full bg-accent ring-1 ring-ink-600"
+          />
+        </button>
+        <a href="/logout" className="pl-2 text-ink-400 hover:text-ink-200">
           sign out
         </a>
       </header>
@@ -958,12 +976,21 @@ function FolderPicker({
   );
 }
 
-/** The nightcrow mark: a rounded square holding an amber chevron + prompt
- *  underscore. Shared with the web mirror's login/header so the two services
- *  read as one product. */
+/** The nightcrow mark: a rounded square holding a chevron + prompt underscore.
+ *  Shared with the web mirror's login/header so the two services read as one
+ *  product — the mirror's copy is fixed amber, while this one follows the
+ *  accent, as the TUI's splash logo does (`ui/splash.rs` colours it with
+ *  `accent`). `text-accent` is set here rather than inherited: the loading
+ *  splash nests the mark in a `text-ink-400` block, which `currentColor` would
+ *  otherwise pick up. The surrounding square stays a fixed dark edge. */
 function Mark({ className }: { className?: string }) {
   return (
-    <svg viewBox="0 0 42 42" aria-hidden="true" focusable="false" className={className}>
+    <svg
+      viewBox="0 0 42 42"
+      aria-hidden="true"
+      focusable="false"
+      className={`text-accent ${className ?? ""}`}
+    >
       <rect
         x="1.25"
         y="1.25"
@@ -977,12 +1004,12 @@ function Mark({ className }: { className?: string }) {
       <path
         d="M14 15.5 L20 21 L14 26.5"
         fill="none"
-        stroke="#d9a441"
+        stroke="currentColor"
         strokeWidth="2.4"
         strokeLinecap="round"
         strokeLinejoin="round"
       />
-      <rect x="23" y="24.4" width="7.5" height="2.4" rx="1.2" fill="#d9a441" />
+      <rect x="23" y="24.4" width="7.5" height="2.4" rx="1.2" fill="currentColor" />
     </svg>
   );
 }

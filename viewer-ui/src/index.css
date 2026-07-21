@@ -7,9 +7,12 @@
 @source not "../dist";
 @import "@xterm/xterm/css/xterm.css";
 
-/* Neutral dark, carried over from the TUI. Amber is the single accent, used
-   for selection and focus only — everything else stays greyscale so the diff
-   colours are the loudest thing on screen. */
+/* Neutral dark, carried over from the TUI. A single accent carries selection
+   and focus — everything else stays greyscale so the diff colours are the
+   loudest thing on screen. `--color-accent` is the default (amber) preset; the
+   header swatch overrides it on the root element at runtime, which recolours
+   every accent utility because Tailwind compiles them to `var(--color-accent)`.
+   The presets live in `theme.ts`. */
 @theme {
   --color-ink-950: #0b0b0d;
   --color-ink-900: #121215;
