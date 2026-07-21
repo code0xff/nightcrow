@@ -109,6 +109,21 @@ function statusColor(code: string) {
   return "text-accent";
 }
 
+/// Centred, branded loading indicator shown before the first repo list settles
+/// (both at session start and while an empty catalog may still be populating).
+function LoadingSplash() {
+  return (
+    <div className="flex h-full items-center justify-center p-6">
+      <div className="flex flex-col items-center gap-3 text-ink-400">
+        <Mark className="h-12 w-12 animate-pulse" />
+        <span className="text-[0.72rem] tracking-[0.18em] uppercase">
+          Loading…
+        </span>
+      </div>
+    </div>
+  );
+}
+
 export function App() {
   const [authed, setAuthed] = useState<boolean | null>(null);
   const [repos, setRepos] = useState<Repo[]>([]);
@@ -138,6 +153,10 @@ export function App() {
   const tabRef = useRef(tab);
   tabRef.current = tab;
   const [pickerOpen, setPickerOpen] = useState(false);
+  // False until the repo list has been fetched for the current session. Gates
+  // the loading splash so the window between logging in and the first repo
+  // response does not flash the "No repository open" empty state.
+  const [reposLoaded, setReposLoaded] = useState(false);
   const [maximized, setMaximized] = useState<Maximized>("none");
 
   // A failed call is either "log back in" or a message worth showing.
@@ -185,12 +204,16 @@ export function App() {
   // its own live stream, but the repo *list* has no event source of its own.
   useEffect(() => {
     let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
     const refresh = () =>
       api
         .repos()
         .then((list) => {
           if (cancelled) return;
           setAuthed(true);
+          // We now hold the authoritative list for this session; the initial
+          // splash can give way to the shell (or the empty-state prompt).
+          setReposLoaded(true);
           // A successful poll means the server is reachable again: clear any
           // stale error so a transient failure (a blip, a server restart) does
           // not latch the footer red forever — nothing else resets it.
@@ -204,20 +227,30 @@ export function App() {
               ? current
               : (list[0]?.id ?? null),
           );
+          if (!cancelled) timer = setTimeout(refresh, REPO_POLL_MS);
         })
         .catch((err) => {
           if (cancelled) return;
-          if (isUnauthorized(err)) setAuthed(false);
-          else handle(err);
+          if (isUnauthorized(err)) {
+            // The session is gone; a later login re-runs this effect (authed is
+            // a dep) and reloads the list, so show the splash again until then.
+            setAuthed(false);
+            setReposLoaded(false);
+          } else {
+            handle(err);
+          }
+          timer = setTimeout(refresh, REPO_POLL_MS);
         });
 
+    // Re-runs when `authed` flips true on login, giving an immediate repo fetch
+    // rather than waiting up to a poll interval — otherwise the post-login
+    // screen would sit on the empty state until the next tick.
     refresh();
-    const timer = setInterval(refresh, REPO_POLL_MS);
     return () => {
       cancelled = true;
-      clearInterval(timer);
+      if (timer) clearTimeout(timer);
     };
-  }, [handle]);
+  }, [authed, handle]);
 
   // Live status. The server replays the latest snapshot on subscribe, so this
   // both seeds the view and keeps it current — no separate initial fetch.
@@ -361,19 +394,15 @@ export function App() {
     // Initial load: determining the session and fetching the repo list. Show a
     // centred, branded screen so the app fades in from here rather than the
     // content snapping onto a blank page.
-    return (
-      <div className="flex h-full items-center justify-center p-6">
-        <div className="flex flex-col items-center gap-3 text-ink-400">
-          <Mark className="h-12 w-12 animate-pulse" />
-          <span className="text-[0.72rem] tracking-[0.18em] uppercase">
-            Loading…
-          </span>
-        </div>
-      </div>
-    );
+    return <LoadingSplash />;
   }
   if (!authed) {
     return <Login onSuccess={() => setAuthed(true)} />;
+  }
+  if (!reposLoaded) {
+    // Authenticated but the repo list has not arrived yet (notably the moment
+    // right after login). Hold the splash rather than flash the empty state.
+    return <LoadingSplash />;
   }
   // An empty catalog is a real state (the TUI can run with no project open, and
   // `serve` starts empty). Render the normal shell anyway — the header's
@@ -536,7 +565,11 @@ export function App() {
             />
           )}
           <ul className="min-h-0 flex-1 overflow-y-auto">
+            {tab === "status" && status === null && (
+              <li className="px-3 py-2 text-ink-400">Loading…</li>
+            )}
             {tab === "status" &&
+              status !== null &&
               files.map((f) => (
                 <li key={f.path}>
                   <button
@@ -663,7 +696,9 @@ export function App() {
           </div>
           <div className="min-h-0 flex-1 overflow-auto">
             {pane.kind === "empty" && (
-              <p className="p-4 text-ink-400">Select a file or commit.</p>
+              <p className="p-4 text-ink-400">
+                {status === null ? "Loading…" : "Select a file or commit."}
+              </p>
             )}
             {pane.kind === "file" && (
               <>
