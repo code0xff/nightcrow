@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { MaximizeIcon } from "./icons";
@@ -6,13 +6,66 @@ import { MaximizeIcon } from "./icons";
 interface PaneView {
   term: Terminal;
   fit: FitAddon;
-  el: HTMLDivElement;
 }
 
-/// Tab labels are capped by display width (not character count) so a title of
-/// wide CJK glyphs cannot overflow the tab bar; the full title stays reachable
-/// through the tab's tooltip. Matches the viewer's tab-label convention.
+/// Pane titles are capped by display width (not character count) so a title of
+/// wide CJK glyphs cannot overflow its cell header; the full title stays
+/// reachable through the tooltip. Matches the viewer's label convention.
 const TAB_TITLE_MAX_CELLS = 20;
+
+function gcd(a: number, b: number): number {
+  while (b) [a, b] = [b, a % b];
+  return a;
+}
+
+/// Columns per row for `n` panes, mirroring the TUI's `grid_row_plan`
+/// (src/ui/terminal_tab.rs): a balanced grid, with the two-pane case flipping to
+/// stacked when the panel is taller than it is wide.
+function rowPlan(n: number, wide: boolean): number[] {
+  switch (n) {
+    case 1:
+      return [1];
+    case 2:
+      return wide ? [2] : [1, 1];
+    case 3:
+      return [2, 1];
+    case 4:
+      return [2, 2];
+    case 5:
+      return [3, 2];
+    case 6:
+      return [3, 3];
+    case 7:
+      return [4, 3];
+    default:
+      return [4, 4]; // 8 (the per-repo cap); also a sane fallback beyond it
+  }
+}
+
+interface CellPlacement {
+  row: number;
+  colStart: number;
+  colSpan: number;
+}
+
+/// Flatten `rowPlan` into a CSS-grid placement per pane. Rows can hold different
+/// column counts (e.g. 3 = [2,1]); a shared column count (the LCM of the rows'
+/// counts) lets each cell span evenly so every row fills the width.
+function planLayout(
+  n: number,
+  wide: boolean,
+): { cols: number; rows: number; cells: CellPlacement[] } {
+  const plan = rowPlan(n, wide);
+  const cols = plan.reduce((acc, c) => (acc * c) / gcd(acc, c), 1);
+  const cells: CellPlacement[] = [];
+  plan.forEach((count, r) => {
+    const span = cols / count;
+    for (let k = 0; k < count; k++) {
+      cells.push({ row: r + 1, colStart: k * span + 1, colSpan: span });
+    }
+  });
+  return { cols, rows: plan.length, cells };
+}
 
 /// True for code points that occupy two terminal cells. An approximation of the
 /// common East Asian wide / fullwidth ranges — enough to keep CJK titles from
@@ -61,10 +114,11 @@ function truncateCells(text: string, max: number): string {
  * routinely split a multi-byte sequence, and decoding early would corrupt it
  * before xterm.js could reassemble it. Bytes are handed to xterm.js untouched.
  *
- * Each pane owns a dedicated child element that lives for the pane's lifetime.
- * xterm's `open()` is called exactly once per instance: re-opening a terminal
- * whose element was detached renders blank, so switching panes toggles
- * `display` instead of moving a single terminal between elements.
+ * Panes render simultaneously in a balanced split-view grid (mirroring the
+ * TUI), not tabs. Every pane's cell stays mounted for its lifetime — xterm's
+ * `open()` runs once per instance and re-opening a detached element renders
+ * blank — so reflowing the grid only restyles the (stable, keyed) cells, and
+ * zooming a pane toggles the others' `display` rather than unmounting them.
  */
 export function TerminalPanel({
   repo,
@@ -75,9 +129,14 @@ export function TerminalPanel({
   maximized: boolean;
   onToggleMaximized: () => void;
 }) {
-  const hostRef = useRef<HTMLDivElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
   const socketRef = useRef<WebSocket | null>(null);
   const viewsRef = useRef(new Map<number, PaneView>());
+  // The DOM element xterm is opened into, per pane, registered by each cell.
+  const bodyRefs = useRef(new Map<number, HTMLDivElement>());
+  // Last size reported to each PTY, so a reflow that leaves rows/cols unchanged
+  // does not spam resize frames.
+  const sentSizesRef = useRef(new Map<number, { rows: number; cols: number }>());
   // Output for a pane whose xterm view does not exist yet. A pane's view is
   // materialised in a later effect (after its "created" updates React state),
   // but the replayed scrollback arrives on the socket immediately after that
@@ -85,8 +144,14 @@ export function TerminalPanel({
   const pendingRef = useRef(new Map<number, Uint8Array[]>());
   const [panes, setPanes] = useState<number[]>([]);
   const [active, setActive] = useState<number | null>(null);
+  // When set, this pane fills the whole panel and the rest are hidden — the
+  // web equivalent of the TUI's zoom mode.
+  const [zoomed, setZoomed] = useState<number | null>(null);
+  // Panel dimensions, tracked so the two-pane split can flip between side-by-side
+  // and stacked and so a resize refits every visible pane.
+  const [size, setSize] = useState({ w: 0, h: 0 });
   // Per-pane title from the shell's OSC 0/2 sequence (parsed by xterm.js), so a
-  // tab reads e.g. "claude" or "vim README" instead of a bare "term 2".
+  // cell reads e.g. "claude" or "vim README" instead of a bare "term 2".
   const [titles, setTitles] = useState<Record<number, string>>({});
   const [error, setError] = useState<string | null>(null);
 
@@ -102,7 +167,7 @@ export function TerminalPanel({
       viewsRef.current.forEach((view) => view.term.dispose());
       viewsRef.current.clear();
       pendingRef.current.clear();
-      hostRef.current?.replaceChildren();
+      sentSizesRef.current.clear();
     };
 
     const connect = () => {
@@ -114,6 +179,7 @@ export function TerminalPanel({
       // announced.
       setPanes([]);
       setActive(null);
+      setZoomed(null);
       setTitles({});
       disposeAll();
 
@@ -135,7 +201,11 @@ export function TerminalPanel({
           } else if (message.type === "exited") {
             setPanes((current) => current.filter((p) => p !== message.pane));
             setActive((current) => (current === message.pane ? null : current));
+            setZoomed((current) =>
+              current === message.pane ? null : current,
+            );
             pendingRef.current.delete(message.pane);
+            sentSizesRef.current.delete(message.pane);
             setTitles((current) => {
               if (!(message.pane in current)) return current;
               const next = { ...current };
@@ -181,19 +251,14 @@ export function TerminalPanel({
     };
   }, [repo]);
 
-  // Materialise one xterm per pane in its own child element, and dispose the
-  // views of panes that have gone away. `open()` runs once, here, and never
-  // again for that instance.
+  // Materialise one xterm per pane, opened into that pane's cell body (rendered
+  // below, keyed by pane so it survives grid reflows). `open()` runs once here;
+  // dispose the views of panes that have gone away.
   useEffect(() => {
-    const host = hostRef.current;
-    if (!host) return;
-
     for (const pane of panes) {
       if (viewsRef.current.has(pane)) continue;
-      const el = document.createElement("div");
-      el.style.height = "100%";
-      el.style.display = "none";
-      host.appendChild(el);
+      const body = bodyRefs.current.get(pane);
+      if (!body) continue; // its cell has not mounted yet; a later pass catches it
 
       const term = new Terminal({
         fontFamily: getComputedStyle(document.body).fontFamily,
@@ -204,20 +269,18 @@ export function TerminalPanel({
       const fit = new FitAddon();
       term.loadAddon(fit);
       term.onData((data) =>
-        socketRef.current?.send(
-          JSON.stringify({ type: "input", pane, data }),
-        ),
+        socketRef.current?.send(JSON.stringify({ type: "input", pane, data })),
       );
       // xterm parses OSC 0/2 window-title sequences; mirror the latest non-empty
-      // one into the tab label. An empty title is ignored so the previous label
+      // one into the cell title. An empty title is ignored so the previous label
       // (or the "term N" fallback) stands, matching the TUI.
       term.onTitleChange((title) => {
         const cleaned = title.replace(/\s+/g, " ").trim();
         if (!cleaned) return;
         setTitles((current) => ({ ...current, [pane]: cleaned }));
       });
-      term.open(el);
-      viewsRef.current.set(pane, { term, fit, el });
+      term.open(body);
+      viewsRef.current.set(pane, { term, fit });
 
       // Flush any output (typically replayed scrollback) that arrived before
       // this view existed, in order, so the restored screen is complete.
@@ -231,136 +294,85 @@ export function TerminalPanel({
     for (const [pane, view] of viewsRef.current) {
       if (!panes.includes(pane)) {
         view.term.dispose();
-        view.el.remove();
         viewsRef.current.delete(pane);
       }
     }
   }, [panes]);
 
-  // Show only the active pane; fit it to the panel and tell the PTY the size.
-  // A hidden element has no dimensions, so only the visible pane is ever fit.
+  // Fit every visible pane to its cell and report the size to its PTY. Runs on
+  // any layout change (pane added/removed, zoom toggled, panel resized). Hidden
+  // or collapsed cells (zoomed-out, or the panel shrunk to nothing) report zero
+  // size and are skipped — fitting them would SIGWINCH the shell to garbage.
   useEffect(() => {
     for (const [pane, view] of viewsRef.current) {
-      view.el.style.display = pane === active ? "block" : "none";
+      const body = bodyRefs.current.get(pane);
+      if (!body || body.clientHeight === 0 || body.clientWidth === 0) continue;
+      view.fit.fit();
+      const { rows, cols } = view.term;
+      const sent = sentSizesRef.current.get(pane);
+      if (sent && sent.rows === rows && sent.cols === cols) continue;
+      sentSizesRef.current.set(pane, { rows, cols });
+      socketRef.current?.send(
+        JSON.stringify({ type: "resize", pane, rows, cols }),
+      );
     }
-    if (active === null) return;
-    const view = viewsRef.current.get(active);
-    if (!view) return;
-    view.fit.fit();
-    view.term.focus();
-    socketRef.current?.send(
-      JSON.stringify({
-        type: "resize",
-        pane: active,
-        rows: view.term.rows,
-        cols: view.term.cols,
-      }),
-    );
-  }, [active, panes]);
+  }, [panes, zoomed, size]);
+
+  // Track the panel's size so the two-pane split can pick its orientation and a
+  // resize refits every pane.
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+    const observer = new ResizeObserver(() => {
+      setSize({ w: container.clientWidth, h: container.clientHeight });
+    });
+    observer.observe(container);
+    return () => observer.disconnect();
+  }, []);
 
   // When the active terminal is closed (or exits) but others remain, focus
-  // falls back to one of them rather than leaving the panel blank.
+  // falls back to one of them rather than leaving nothing selected.
   useEffect(() => {
     if (active === null && panes.length > 0) {
       setActive(panes[panes.length - 1]);
     }
   }, [active, panes]);
 
-  // Keep the active PTY's idea of its window in step with the panel's actual
-  // size. Observing the host rather than listening for window resizes catches
-  // every way the panel can change shape — a layout change, a split, a font
-  // change — not just the one that happens to move the viewport.
+  // Give the keyboard to the active pane.
   useEffect(() => {
-    const host = hostRef.current;
-    if (!host || active === null) return;
-
-    // The grid is what the PTY cares about; pixel changes that leave rows and
-    // cols alone would just be noise on the socket and extra SIGWINCHs in the
-    // shell. A drag crosses a cell boundary rarely, so this filters most of it.
-    let sent = { rows: 0, cols: 0 };
-    const observer = new ResizeObserver(() => {
-      const view = viewsRef.current.get(active);
-      if (!view) return;
-      // A collapsed panel — height 0 while the file pane is maximised — would
-      // make fit propose a one-row terminal and SIGWINCH the shell to a garbage
-      // size, corrupting any full-screen program running in it. There is
-      // nothing to fit to at zero size; the restore fires its own resize.
-      if (host.clientHeight === 0 || host.clientWidth === 0) return;
-      view.fit.fit();
-      const { rows, cols } = view.term;
-      if (rows === sent.rows && cols === sent.cols) return;
-      sent = { rows, cols };
-      socketRef.current?.send(
-        JSON.stringify({ type: "resize", pane: active, rows, cols }),
-      );
-    });
-    observer.observe(host);
-    return () => observer.disconnect();
+    if (active !== null) viewsRef.current.get(active)?.term.focus();
   }, [active]);
 
   const create = () => {
     setError(null);
+    // Show the new pane in the grid rather than under whatever was zoomed.
+    setZoomed(null);
     socketRef.current?.send(
       JSON.stringify({ type: "create", rows: 24, cols: 80 }),
     );
   };
 
-  // Ask the server to kill the PTY. The tab is removed when the resulting
+  // Ask the server to kill the PTY. The pane is removed when the resulting
   // "exited" broadcast arrives, so every client stays in step.
   const closePane = (pane: number) => {
     socketRef.current?.send(JSON.stringify({ type: "close", pane }));
   };
 
+  const layout = planLayout(panes.length, size.w >= size.h);
+
   return (
     <section className="flex min-h-0 flex-col border-t border-ink-700">
-      <div className="flex shrink-0 items-center gap-1 bg-ink-900 px-2 py-1">
-        {/* The tabs scroll; the maximize button is pinned outside them. With up
-            to MAX_PTYS_PER_REPO tabs on a narrow panel they would otherwise push
-            the button off-screen, leaving no way to restore a maximized panel. */}
-        <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto">
-          {panes.map((pane, index) => {
-            const label = titles[pane] ?? `term ${index + 1}`;
-            return (
-            <div
-              key={pane}
-              className={`flex shrink-0 items-center rounded-sm text-xs ${
-                pane === active
-                  ? "bg-ink-700 text-ink-50"
-                  : "text-ink-400 hover:text-ink-200"
-              }`}
-            >
-              <button
-                onClick={() => setActive(pane)}
-                title={label}
-                className="py-0.5 pl-2 pr-1"
-              >
-                {truncateCells(label, TAB_TITLE_MAX_CELLS)}
-              </button>
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  closePane(pane);
-                }}
-                title="Close terminal"
-                aria-label={`close terminal ${index + 1}`}
-                className="px-1 py-0.5 text-ink-400 hover:text-removed"
-              >
-                ×
-              </button>
-            </div>
-            );
-          })}
-          <button
-            onClick={create}
-            className="shrink-0 rounded-sm px-2 py-0.5 text-xs text-ink-400 hover:text-accent"
-            title="New terminal"
-          >
-            +
-          </button>
-          {error && (
-            <span className="ml-2 shrink-0 text-xs text-removed">{error}</span>
-          )}
-        </div>
+      <div className="flex shrink-0 items-center gap-2 bg-ink-900 px-2 py-1">
+        <button
+          onClick={create}
+          className="shrink-0 rounded-sm px-2 py-0.5 text-xs text-ink-400 hover:text-accent"
+          title="New terminal"
+        >
+          + terminal
+        </button>
+        {error && (
+          <span className="min-w-0 truncate text-xs text-removed">{error}</span>
+        )}
         {/* No Escape shortcut to leave: Escape belongs to whatever is running
             in the PTY, and stealing it would break vim and every TUI below it.
             The button is the way out. */}
@@ -369,7 +381,7 @@ export function TerminalPanel({
           aria-pressed={maximized}
           title={maximized ? "Restore panel height" : "Maximize the panel"}
           aria-label={maximized ? "Restore panel height" : "Maximize the panel"}
-          className="flex shrink-0 items-center rounded-sm px-1.5 py-0.5 text-ink-400 hover:text-accent"
+          className="ml-auto flex shrink-0 items-center rounded-sm px-1.5 py-0.5 text-ink-400 hover:text-accent"
         >
           <MaximizeIcon maximized={maximized} />
         </button>
@@ -377,11 +389,86 @@ export function TerminalPanel({
       <div className="relative min-h-0 flex-1 overflow-hidden bg-ink-950 p-1">
         {panes.length === 0 && (
           <p className="p-3 text-ink-400">
-            No terminal open. Press <span className="text-accent">+</span> to
-            start one.
+            No terminal open. Press{" "}
+            <span className="text-accent">+ terminal</span> to start one.
           </p>
         )}
-        <div ref={hostRef} className="h-full" />
+        <div
+          ref={containerRef}
+          className="grid h-full gap-1"
+          style={
+            zoomed !== null
+              ? { gridTemplateColumns: "1fr", gridTemplateRows: "1fr" }
+              : {
+                  gridTemplateColumns: `repeat(${layout.cols}, minmax(0, 1fr))`,
+                  gridTemplateRows: `repeat(${layout.rows}, minmax(0, 1fr))`,
+                }
+          }
+        >
+          {panes.map((pane, index) => {
+            const label = titles[pane] ?? `term ${index + 1}`;
+            const cell = layout.cells[index];
+            const cellStyle: CSSProperties =
+              zoomed !== null
+                ? { display: pane === zoomed ? "flex" : "none" }
+                : {
+                    display: "flex",
+                    gridColumn: `${cell.colStart} / span ${cell.colSpan}`,
+                    gridRow: `${cell.row}`,
+                  };
+            return (
+              <div
+                key={pane}
+                onMouseDown={() => setActive(pane)}
+                style={cellStyle}
+                className={`min-h-0 min-w-0 flex-col overflow-hidden rounded-sm border ${
+                  pane === active ? "border-accent" : "border-ink-700"
+                }`}
+              >
+                <div className="flex shrink-0 items-center gap-1 bg-ink-900 px-2 py-0.5 text-xs">
+                  <span
+                    title={label}
+                    className={`min-w-0 flex-1 truncate ${
+                      pane === active ? "text-ink-50" : "text-ink-400"
+                    }`}
+                  >
+                    {truncateCells(label, TAB_TITLE_MAX_CELLS)}
+                  </span>
+                  <button
+                    onMouseDown={(e) => e.stopPropagation()}
+                    onClick={() =>
+                      setZoomed((z) => (z === pane ? null : pane))
+                    }
+                    aria-pressed={zoomed === pane}
+                    title={zoomed === pane ? "Restore the grid" : "Zoom this terminal"}
+                    aria-label={
+                      zoomed === pane ? "Restore the grid" : "Zoom this terminal"
+                    }
+                    className="flex shrink-0 items-center rounded-sm px-0.5 text-ink-400 hover:text-accent"
+                  >
+                    <MaximizeIcon maximized={zoomed === pane} />
+                  </button>
+                  <button
+                    onMouseDown={(e) => e.stopPropagation()}
+                    onClick={() => closePane(pane)}
+                    title="Close terminal"
+                    aria-label={`close terminal ${index + 1}`}
+                    className="shrink-0 px-0.5 text-ink-400 hover:text-removed"
+                  >
+                    ×
+                  </button>
+                </div>
+                <div
+                  ref={(node) => {
+                    if (node) bodyRefs.current.set(pane, node);
+                    else bodyRefs.current.delete(pane);
+                  }}
+                  className="min-h-0 flex-1"
+                />
+              </div>
+            );
+          })}
+        </div>
       </div>
     </section>
   );
