@@ -480,7 +480,7 @@ export function TerminalPanel({
                     aria-label={
                       zoomed === pane ? "Restore the grid" : "Zoom this terminal"
                     }
-                    className="flex h-5 w-5 shrink-0 items-center justify-center rounded-sm text-ink-400 hover:text-accent"
+                    className="flex h-6 w-6 shrink-0 items-center justify-center rounded-sm text-ink-400 hover:text-accent"
                   >
                     <MaximizeIcon maximized={zoomed === pane} />
                   </button>
@@ -489,7 +489,7 @@ export function TerminalPanel({
                     onClick={() => closePane(pane)}
                     title="Close terminal"
                     aria-label={`close terminal ${index + 1}`}
-                    className="flex h-5 w-5 shrink-0 items-center justify-center rounded-sm text-ink-400 hover:text-removed"
+                    className="flex h-6 w-6 shrink-0 items-center justify-center rounded-sm text-ink-400 hover:text-removed"
                   >
                     <XIcon />
                   </button>

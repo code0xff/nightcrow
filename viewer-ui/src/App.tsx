@@ -483,7 +483,7 @@ export function App() {
                 }}
                 title="Close project"
                 aria-label={`close ${r.name}`}
-                className="mr-0.5 flex h-5 w-5 items-center justify-center rounded-sm text-ink-400 hover:text-removed"
+                className="mr-0.5 flex h-6 w-6 items-center justify-center rounded-sm text-ink-400 hover:text-removed"
               >
                 <XIcon className="h-3.5 w-3.5" />
               </button>
@@ -902,7 +902,7 @@ function FolderPicker({
           <button
             onClick={onClose}
             aria-label="close"
-            className="ml-auto flex h-5 w-5 items-center justify-center rounded-sm text-ink-400 hover:text-ink-200"
+            className="ml-auto flex h-6 w-6 items-center justify-center rounded-sm text-ink-400 hover:text-ink-200"
           >
             <XIcon />
           </button>
