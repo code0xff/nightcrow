@@ -43,6 +43,12 @@ export interface TreeEntry {
   is_dir: boolean;
 }
 
+/** One recursive tree-search hit: full repo-relative path plus its kind. */
+export interface TreeMatch {
+  path: string;
+  is_dir: boolean;
+}
+
 export interface DiffLine {
   kind: string;
   spans: Span[];
@@ -169,6 +175,10 @@ export const api = {
   tree: (repo: string, path: string) =>
     get<{ path: string; entries: TreeEntry[]; truncated: boolean }>(
       `/api/tree?${query({ repo, path })}`,
+    ),
+  treeSearch: (repo: string, q: string) =>
+    get<{ query: string; matches: TreeMatch[]; truncated: boolean }>(
+      `/api/tree/search?${query({ repo, q })}`,
     ),
   log: (repo: string) =>
     get<{ commits: Commit[]; truncated: boolean }>(`/api/log?${query({ repo })}`),

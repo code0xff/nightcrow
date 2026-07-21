@@ -38,3 +38,23 @@ export function MaximizeIcon({ maximized }: { maximized: boolean }) {
     </svg>
   );
 }
+
+/** Search glyph, traced from Lucide's `search` (same provenance as above). */
+export function SearchIcon() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+      focusable="false"
+      className="h-4 w-4"
+    >
+      <circle cx="11" cy="11" r="8" />
+      <path d="m21 21-4.3-4.3" />
+    </svg>
+  );
+}

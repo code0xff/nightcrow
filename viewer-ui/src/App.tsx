@@ -10,13 +10,18 @@ import {
   type Repo,
   type Status,
   type TreeEntry,
+  type TreeMatch,
 } from "./api";
 import { TerminalPanel } from "./Terminal";
-import { MaximizeIcon } from "./icons";
+import { MaximizeIcon, SearchIcon } from "./icons";
 
 /// How often the tab bar re-reads the served set. The payload is a handful of
 /// short strings, and this only has to feel prompt when a tab opens.
 const REPO_POLL_MS = 3000;
+
+/// Debounce for the recursive tree search: each keystroke hits the filesystem
+/// on the backend, so wait for a pause in typing before firing.
+const TREE_SEARCH_DEBOUNCE_MS = 180;
 
 /// Sidebar width. Fixed rather than adjustable: it fits every path this
 /// repository has, and the file pane's maximise button covers the case where
@@ -78,7 +83,11 @@ export function App() {
   const [commits, setCommits] = useState<Commit[]>([]);
   const [tree, setTree] = useState<TreeEntry[]>([]);
   const [treePath, setTreePath] = useState("");
+  const [treeMatches, setTreeMatches] = useState<TreeMatch[]>([]);
+  const [treeTruncated, setTreeTruncated] = useState(false);
+  const [treeSearchLoading, setTreeSearchLoading] = useState(false);
   const [filter, setFilter] = useState("");
+  const [filterOpen, setFilterOpen] = useState(false);
   const [pane, setPane] = useState<Pane>({ kind: "empty" });
   const [error, setError] = useState<string | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -181,6 +190,44 @@ export function App() {
       .catch(handle);
   }, [repo, authed, tab, treePath, handle]);
 
+  // Recursive tree search runs against the backend (unlike the status/log
+  // filters, which match an already-loaded list client-side), so it is debounced
+  // and only active while the filter box holds a query on the tree tab.
+  useEffect(() => {
+    if (!repo || !authed || tab !== "tree" || !filterOpen || !filter) {
+      setTreeMatches([]);
+      setTreeTruncated(false);
+      setTreeSearchLoading(false);
+      return;
+    }
+    // Mark loading up front so the debounce window shows "searching…" rather
+    // than a premature "no matches" before the first result lands.
+    setTreeSearchLoading(true);
+    // Guard against out-of-order responses: a slower earlier request must not
+    // overwrite a newer one's results, and nothing may update state after the
+    // query changed or the tab/repo was left.
+    let active = true;
+    const timer = setTimeout(() => {
+      api
+        .treeSearch(repo, filter)
+        .then((r) => {
+          if (!active) return;
+          setTreeMatches(r.matches);
+          setTreeTruncated(r.truncated);
+        })
+        .catch((err) => {
+          if (active) handle(err);
+        })
+        .finally(() => {
+          if (active) setTreeSearchLoading(false);
+        });
+    }, TREE_SEARCH_DEBOUNCE_MS);
+    return () => {
+      active = false;
+      clearTimeout(timer);
+    };
+  }, [repo, authed, tab, filter, filterOpen, handle]);
+
   const openDiff = (path: string) =>
     repo && api.diff(repo, path).then((v) => setPane({ kind: "diff", value: v })).catch(handle);
   const openFile = (path: string) =>
@@ -210,9 +257,18 @@ export function App() {
   // `serve` starts empty). Render the normal shell anyway — the header's
   // "+ open" is the way in — rather than a separate full-screen prompt.
   const current = repos.find((r) => r.id === repo);
+  // One filter box drives whichever tab is active; each list matches the query
+  // against its own natural field (path / commit text / entry name).
+  const q = filter.toLowerCase();
   const files = (status?.files ?? []).filter((f) =>
-    f.path.toLowerCase().includes(filter.toLowerCase()),
+    f.path.toLowerCase().includes(q),
   );
+  const visibleCommits = commits.filter((c) =>
+    c.summary.toLowerCase().includes(q),
+  );
+  // The tree tab searches the whole repo server-side when the filter holds a
+  // query; otherwise it browses one directory level at a time.
+  const treeSearching = tab === "tree" && filterOpen && filter !== "";
 
   // Maximising collapses the losing row to nothing rather than unmounting it,
   // so the row count keeps matching the template and the panel comes back
@@ -327,12 +383,27 @@ export function App() {
                 {t}
               </button>
             ))}
+            <button
+              onClick={() => {
+                if (filterOpen) setFilter("");
+                setFilterOpen((open) => !open);
+              }}
+              aria-pressed={filterOpen}
+              title={filterOpen ? "Hide the filter" : "Filter the list"}
+              aria-label={filterOpen ? "Hide the filter" : "Filter the list"}
+              className={`ml-auto flex shrink-0 items-center rounded-sm px-1.5 py-0.5 hover:text-accent ${
+                filterOpen ? "text-ink-50" : "text-ink-400"
+              }`}
+            >
+              <SearchIcon />
+            </button>
           </div>
-          {tab === "status" && (
+          {filterOpen && (
             <input
               value={filter}
               onChange={(e) => setFilter(e.target.value)}
               placeholder="filter…"
+              autoFocus
               className="mx-2 mb-1 shrink-0 rounded-sm bg-ink-850 px-2 py-1 outline-none placeholder:text-ink-400 focus:ring-1 focus:ring-accent"
             />
           )}
@@ -357,7 +428,7 @@ export function App() {
                 </li>
               ))}
             {tab === "log" &&
-              commits.map((c) => (
+              visibleCommits.map((c) => (
                 <li key={c.oid}>
                   <button
                     onClick={() => openCommit(c.oid)}
@@ -368,7 +439,46 @@ export function App() {
                   </button>
                 </li>
               ))}
-            {tab === "tree" && (
+            {tab === "tree" && treeSearching && (
+              <>
+                {treeMatches.map((m) => (
+                  <li key={m.path}>
+                    <button
+                      onClick={() => {
+                        // Files open in the pane; a matched directory drops the
+                        // query and browses into it.
+                        if (m.is_dir) {
+                          setTreePath(m.path);
+                          setFilter("");
+                          setFilterOpen(false);
+                        } else {
+                          openFile(m.path);
+                        }
+                      }}
+                      title={m.path}
+                      className="w-full truncate px-3 py-0.5 text-left hover:bg-ink-850"
+                    >
+                      {m.is_dir ? (
+                        <span className="text-accent">{m.path}/</span>
+                      ) : (
+                        m.path
+                      )}
+                    </button>
+                  </li>
+                ))}
+                {treeMatches.length === 0 && (
+                  <li className="px-3 py-0.5 text-ink-400">
+                    {treeSearchLoading ? "searching…" : "no matches"}
+                  </li>
+                )}
+                {treeTruncated && (
+                  <li className="px-3 py-0.5 text-ink-400">
+                    showing the first {treeMatches.length} matches
+                  </li>
+                )}
+              </>
+            )}
+            {tab === "tree" && !treeSearching && (
               <>
                 {treePath && (
                   <li>
