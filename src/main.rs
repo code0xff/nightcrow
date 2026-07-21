@@ -197,9 +197,21 @@ fn start_viewer_if_enabled(
         );
         eprintln!("  {password}");
     }
+    // The viewer runs the same configured startup terminals as the TUI (in its
+    // own, independent PTYs), or one bare shell when none are configured.
+    let startup = cfg
+        .startup_commands
+        .iter()
+        .map(|sc| sc.command.clone())
+        .collect();
     // Alongside the TUI the viewer does not persist: the TUI owns the workspace
     // file and the catalog already follows its tabs.
-    match web::viewer::server::ViewerServer::start_from_config(&cfg.web_viewer, repo_paths, false) {
+    match web::viewer::server::ViewerServer::start_from_config(
+        &cfg.web_viewer,
+        repo_paths,
+        false,
+        startup,
+    ) {
         Ok(server) => {
             eprintln!("nightcrow: web viewer serving at http://{}/", server.addr());
             Ok(Some(server))
@@ -252,8 +264,17 @@ fn run_serve(
             }
         }
     }
-    let server =
-        web::viewer::server::ViewerServer::start_from_config(&cfg.web_viewer, &paths, true)?;
+    let startup = cfg
+        .startup_commands
+        .iter()
+        .map(|sc| sc.command.clone())
+        .collect();
+    let server = web::viewer::server::ViewerServer::start_from_config(
+        &cfg.web_viewer,
+        &paths,
+        true,
+        startup,
+    )?;
     if paths.is_empty() {
         // An empty catalog is a legitimate state — the same one the TUI starts
         // in when launched with no repository. The viewer shows its no-repository

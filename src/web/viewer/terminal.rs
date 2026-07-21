@@ -85,7 +85,14 @@ pub fn decode_output(frame: &[u8]) -> Option<(PaneId, &[u8])> {
 }
 
 enum Command {
-    Create { rows: u16, cols: u16, client: u64 },
+    /// `command` is `Some` only for startup panes (run via `$SHELL -lc`);
+    /// client-initiated creates always pass `None` for a bare interactive shell.
+    Create {
+        rows: u16,
+        cols: u16,
+        client: u64,
+        command: Option<String>,
+    },
     Input { pane: PaneId, data: Vec<u8> },
     Resize { pane: PaneId, rows: u16, cols: u16 },
     Close { pane: PaneId },
@@ -135,6 +142,7 @@ impl TerminalSession {
                 rows: rows.max(1),
                 cols: cols.max(1),
                 client: self.id,
+                command: None,
             },
             ClientMessage::Input { pane, data } => Command::Input {
                 pane,
@@ -171,11 +179,18 @@ pub struct TerminalHub {
     next_client_id: AtomicU64,
     stop: Arc<AtomicBool>,
     worker: Mutex<Option<thread::JoinHandle<()>>>,
+    /// Commands to run in startup terminals, spawned once when the first client
+    /// connects. Empty means a single bare shell (matching the TUI's default).
+    startup: Vec<String>,
+    /// Set the first time a client connects, so the startup terminals spawn
+    /// exactly once for the hub's life rather than on every (re)connection.
+    started: AtomicBool,
 }
 
 impl TerminalHub {
-    /// Start a hub whose terminals run in `cwd`.
-    pub fn spawn(cwd: &str) -> Arc<Self> {
+    /// Start a hub whose terminals run in `cwd`. `startup` is the list of
+    /// commands to launch when the first client connects (empty = one shell).
+    pub fn spawn(cwd: &str, startup: Vec<String>) -> Arc<Self> {
         let (commands, command_rx) = mpsc::sync_channel::<Command>(256);
         let hub = Arc::new(Self {
             commands,
@@ -186,6 +201,8 @@ impl TerminalHub {
             next_client_id: AtomicU64::new(0),
             stop: Arc::new(AtomicBool::new(false)),
             worker: Mutex::new(None),
+            startup,
+            started: AtomicBool::new(false),
         });
 
         let worker_hub = Arc::clone(&hub);
@@ -205,12 +222,17 @@ impl TerminalHub {
         while !stop.load(Ordering::Acquire) {
             while let Ok(command) = commands.try_recv() {
                 match command {
-                    Command::Create { rows, cols, client } => {
+                    Command::Create {
+                        rows,
+                        cols,
+                        client,
+                        command,
+                    } => {
                         if self.pane_count() >= limits::MAX_PTYS_PER_REPO {
                             self.send_error_to(client, "terminal limit reached");
                             continue;
                         }
-                        match backend.create_pane(rows, cols, None) {
+                        match backend.create_pane(rows, cols, command.as_deref()) {
                             Ok(pane) => self.register_pane(pane),
                             Err(err) => {
                                 tracing::warn!(%err, "viewer: could not create a terminal");
@@ -370,11 +392,40 @@ impl TerminalHub {
         }
         state.clients.push(Client { id, tx });
         drop(state);
+
+        // First connection spawns the startup terminals (once per hub life):
+        // the configured commands, or a single bare shell if none. Queued after
+        // the client is registered so it receives the resulting "created"
+        // broadcasts, and skipped on a stopped hub.
+        if !self.stop.load(Ordering::Acquire)
+            && !self.started.swap(true, Ordering::AcqRel)
+        {
+            if self.startup.is_empty() {
+                self.queue_startup_pane(id, None);
+            } else {
+                for command in &self.startup {
+                    self.queue_startup_pane(id, Some(command.clone()));
+                }
+            }
+        }
+
         TerminalSession {
             hub: Arc::clone(self),
             id,
             rx,
         }
+    }
+
+    /// Enqueue a startup terminal. Uses the same command queue as client
+    /// creates; a full queue just drops it (the hub is under heavy backpressure,
+    /// and a startup pane is not worth wedging the connection thread over).
+    fn queue_startup_pane(&self, client: u64, command: Option<String>) {
+        let _ = self.commands.try_send(Command::Create {
+            rows: 24,
+            cols: 80,
+            client,
+            command,
+        });
     }
 
     fn disconnect(&self, id: u64) {
@@ -508,7 +559,7 @@ mod tests {
     #[test]
     fn creating_a_terminal_announces_it_and_streams_output() {
         let dir = tempfile::TempDir::new().unwrap();
-        let hub = TerminalHub::spawn(&dir.path().to_string_lossy());
+        let hub = TerminalHub::spawn(&dir.path().to_string_lossy(), Vec::new());
         let session = hub.connect();
 
         session.dispatch(ClientMessage::Create { rows: 24, cols: 80 });
@@ -528,7 +579,7 @@ mod tests {
     #[test]
     fn the_per_repo_terminal_cap_is_enforced() {
         let dir = tempfile::TempDir::new().unwrap();
-        let hub = TerminalHub::spawn(&dir.path().to_string_lossy());
+        let hub = TerminalHub::spawn(&dir.path().to_string_lossy(), Vec::new());
         let session = hub.connect();
 
         for _ in 0..limits::MAX_PTYS_PER_REPO + 2 {
@@ -549,7 +600,7 @@ mod tests {
     #[test]
     fn a_dropped_session_stops_receiving() {
         let dir = tempfile::TempDir::new().unwrap();
-        let hub = TerminalHub::spawn(&dir.path().to_string_lossy());
+        let hub = TerminalHub::spawn(&dir.path().to_string_lossy(), Vec::new());
 
         let session = hub.connect();
         assert_eq!(hub.client_count(), 1);
@@ -573,7 +624,7 @@ mod tests {
     #[test]
     fn a_reconnecting_client_receives_existing_panes_and_scrollback() {
         let dir = tempfile::TempDir::new().unwrap();
-        let hub = TerminalHub::spawn(&dir.path().to_string_lossy());
+        let hub = TerminalHub::spawn(&dir.path().to_string_lossy(), Vec::new());
         let first = hub.connect();
 
         first.dispatch(ClientMessage::Create { rows: 24, cols: 80 });
@@ -628,7 +679,7 @@ mod tests {
         // A client racing a pane exit is normal traffic, not an error worth
         // tearing the connection down for.
         let dir = tempfile::TempDir::new().unwrap();
-        let hub = TerminalHub::spawn(&dir.path().to_string_lossy());
+        let hub = TerminalHub::spawn(&dir.path().to_string_lossy(), Vec::new());
         let session = hub.connect();
 
         session.dispatch(ClientMessage::Input {
@@ -655,8 +706,45 @@ mod tests {
     #[test]
     fn stop_is_idempotent() {
         let dir = tempfile::TempDir::new().unwrap();
-        let hub = TerminalHub::spawn(&dir.path().to_string_lossy());
+        let hub = TerminalHub::spawn(&dir.path().to_string_lossy(), Vec::new());
         hub.stop();
+        hub.stop();
+    }
+
+    #[test]
+    fn the_first_connection_spawns_a_startup_terminal() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let hub = TerminalHub::spawn(
+            &dir.path().to_string_lossy(),
+            vec!["printf hello".to_string()],
+        );
+        // Connecting is enough — no client Create is dispatched — to launch the
+        // configured startup terminal.
+        let session = hub.connect();
+        let created = next_matching(
+            &session,
+            |f| matches!(f, TerminalFrame::Control(json) if json.contains("created")),
+        );
+        assert!(
+            created.is_some(),
+            "the startup terminal was not spawned on connect"
+        );
+        hub.stop();
+    }
+
+    #[test]
+    fn an_empty_startup_opens_one_shell_on_the_first_connection() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let hub = TerminalHub::spawn(&dir.path().to_string_lossy(), Vec::new());
+        let session = hub.connect();
+        let created = next_matching(
+            &session,
+            |f| matches!(f, TerminalFrame::Control(json) if json.contains("created")),
+        );
+        assert!(
+            created.is_some(),
+            "a default shell should open on the first connect"
+        );
         hub.stop();
     }
 }

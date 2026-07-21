@@ -86,11 +86,24 @@ pub struct Catalog {
     /// a `base` re-sync (a TUI tab change) does not resurrect a closed repo;
     /// re-opening a path clears it from here.
     hidden: Mutex<Vec<String>>,
+    /// Commands each repository's terminal hub runs as startup terminals on the
+    /// first client connect (empty = one bare shell). Applied to every hub the
+    /// catalog spawns.
+    startup_commands: Vec<String>,
 }
 
 impl Catalog {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Like [`Catalog::new`], but every terminal hub it spawns runs `startup`
+    /// as its startup terminals.
+    pub fn with_startup(startup_commands: Vec<String>) -> Self {
+        Self {
+            startup_commands,
+            ..Self::default()
+        }
     }
 
     /// Replace the base served set — CLI `--repo` args or the TUI workspace's
@@ -209,7 +222,7 @@ impl Catalog {
                         name: repo_name(&path),
                         display_path: display_path(&path),
                         runtime: RepoRuntime::spawn(&path),
-                        terminals: TerminalHub::spawn(&path),
+                        terminals: TerminalHub::spawn(&path, self.startup_commands.clone()),
                         id,
                         path,
                     })),

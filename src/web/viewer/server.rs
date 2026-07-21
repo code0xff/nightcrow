@@ -88,6 +88,7 @@ impl ViewerServer {
         viewer: &crate::config::WebViewerConfig,
         paths: &[String],
         persist: bool,
+        startup_commands: Vec<String>,
     ) -> Result<Self> {
         let auth = if let Some(hash) = viewer.hashed_password.as_deref() {
             Auth::from_hashed(hash)?
@@ -102,7 +103,7 @@ impl ViewerServer {
                 viewer.bind
             )
         })?;
-        Self::start(bind, viewer.port, auth, paths, persist)
+        Self::start(bind, viewer.port, auth, paths, persist, startup_commands)
     }
 
     /// Bind and start accepting. `paths` seeds the catalog; the caller may
@@ -114,6 +115,7 @@ impl ViewerServer {
         auth: Auth,
         paths: &[String],
         persist: bool,
+        startup_commands: Vec<String>,
     ) -> Result<Self> {
         let listener = TcpListener::bind((bind, port))
             .with_context(|| format!("binding viewer server to {bind}:{port}"))?;
@@ -122,7 +124,7 @@ impl ViewerServer {
             .unwrap_or_else(|_| SocketAddr::new(bind, port));
 
         let state = Arc::new(ViewerState {
-            catalog: Catalog::new(),
+            catalog: Catalog::with_startup(startup_commands),
             bound_loopback: bind.is_loopback(),
             auth,
             sessions: SessionStore::new(),
@@ -765,6 +767,7 @@ mod tests {
             // Never persist from tests — they must not touch the real
             // ~/.nightcrow/workspace.json.
             false,
+            Vec::new(),
         )
         .unwrap()
     }
@@ -1412,19 +1415,23 @@ mod tests {
         ))
         .unwrap();
 
-        // Expect the created control frame, then real PTY bytes tagged with
-        // the pane id — proving the multiplexing round-trips end to end.
-        let mut created_pane = None;
+        // Expect created control frames, then real PTY bytes tagged with a pane
+        // id — proving the multiplexing round-trips end to end. More than one
+        // pane can appear: the first connect also spawns the default startup
+        // terminal, so track every announced pane and require output for one.
+        let mut created = std::collections::HashSet::new();
         let mut saw_output = false;
         for _ in 0..40 {
             match ws.read() {
                 Ok(tungstenite::Message::Text(text)) if text.contains("created") => {
                     let value: serde_json::Value = serde_json::from_str(&text).unwrap();
-                    created_pane = value["pane"].as_u64().map(|p| p as u32);
+                    if let Some(pane) = value["pane"].as_u64() {
+                        created.insert(pane as u32);
+                    }
                 }
                 Ok(tungstenite::Message::Binary(bytes)) => {
                     let (pane, data) = terminal::decode_output(&bytes).expect("a tagged frame");
-                    assert_eq!(Some(pane), created_pane, "output for an unannounced pane");
+                    assert!(created.contains(&pane), "output for an unannounced pane");
                     if !data.is_empty() {
                         saw_output = true;
                         break;
@@ -1435,7 +1442,7 @@ mod tests {
             }
         }
 
-        assert!(created_pane.is_some(), "no created frame");
+        assert!(!created.is_empty(), "no created frame");
         assert!(saw_output, "no PTY output reached the socket");
         drop(dir);
     }
