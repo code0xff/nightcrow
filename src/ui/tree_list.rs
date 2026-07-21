@@ -14,8 +14,11 @@ use ratatui::{
     widgets::ListItem,
 };
 
-const EXPANDED_MARKER: &str = "▾ ";
-const COLLAPSED_MARKER: &str = "▸ ";
+// VS Code-style chevrons rather than filled triangles: a thin right chevron
+// when collapsed, a down chevron when expanded. Each marker is two columns wide
+// (glyph + space), matching the file marker so names stay aligned.
+const EXPANDED_MARKER: &str = "⌄ ";
+const COLLAPSED_MARKER: &str = "› ";
 const FILE_MARKER: &str = "  ";
 
 pub fn render(frame: &mut Frame, app: &App, area: Rect, accent: Color) {
