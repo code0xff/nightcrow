@@ -254,6 +254,14 @@ impl TerminalHub {
         for pane in ids {
             backend.destroy_pane(pane);
         }
+        // Drop the pane records too: the hub struct can outlive its worker
+        // behind an `Arc`, and a late `connect` must not replay these now-dead
+        // terminals.
+        self.state
+            .lock()
+            .expect("terminal state poisoned")
+            .panes
+            .clear();
     }
 
     fn pane_count(&self) -> usize {
@@ -344,13 +352,20 @@ impl TerminalHub {
         let id = self.next_client_id.fetch_add(1, Ordering::AcqRel);
         let (tx, rx) = mpsc::sync_channel(CLIENT_QUEUE_DEPTH);
         let mut state = self.state.lock().expect("terminal state poisoned");
-        for pane in &state.panes {
-            if let Ok(json) = serde_json::to_string(&ServerMessage::Created { pane: pane.id }) {
-                let _ = tx.try_send(TerminalFrame::Control(json));
-            }
-            if !pane.scrollback.is_empty() {
-                let data: Vec<u8> = pane.scrollback.iter().copied().collect();
-                let _ = tx.try_send(TerminalFrame::Output { pane: pane.id, data });
+        // A hub whose worker has stopped (its repo was retired) still lingers
+        // behind the `Arc` a racing connection resolved, but its panes are dead
+        // and will never emit another frame. Skip the replay so the client is
+        // not handed phantom terminals it can never receive output or an exit
+        // for.
+        if !self.stop.load(Ordering::Acquire) {
+            for pane in &state.panes {
+                if let Ok(json) = serde_json::to_string(&ServerMessage::Created { pane: pane.id }) {
+                    let _ = tx.try_send(TerminalFrame::Control(json));
+                }
+                if !pane.scrollback.is_empty() {
+                    let data: Vec<u8> = pane.scrollback.iter().copied().collect();
+                    let _ = tx.try_send(TerminalFrame::Output { pane: pane.id, data });
+                }
             }
         }
         state.clients.push(Client { id, tx });

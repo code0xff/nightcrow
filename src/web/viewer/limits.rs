@@ -42,9 +42,15 @@ pub const MAX_PTYS_PER_REPO: usize = 8;
 /// Raw PTY bytes retained per terminal to replay to a client that (re)connects,
 /// so a browser refresh restores the screen instead of a blank pane. Bounded so
 /// a long-running terminal cannot grow without limit (up to MAX_PTYS_PER_REPO of
-/// these per repo). The oldest bytes are dropped first, which can clip an escape
-/// sequence at the very top of the scrollback; the current screen at the bottom
-/// stays intact.
+/// these per repo). The oldest bytes are dropped first.
+///
+/// Restore is best-effort, not an exact snapshot: replaying only a byte-window
+/// means a terminal mode set before that window — entering the alternate screen,
+/// a persistent SGR — can be lost, and a truncated escape sequence at the front
+/// is clipped. In practice a full-screen program repaints on the resize that
+/// every client sends right after connecting, and shells re-emit their prompt
+/// styling; a true fix would need server-side VT emulation, which this viewer
+/// deliberately does not do (xterm.js is the only emulator).
 pub const MAX_TERMINAL_SCROLLBACK_BYTES: usize = 256 * 1024;
 /// Live connections the viewer's accept loop will hold. Separate from the
 /// mirror's cap: they are different servers on different ports.
