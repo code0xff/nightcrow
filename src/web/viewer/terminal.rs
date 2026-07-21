@@ -18,6 +18,7 @@
 use crate::backend::{BackendEvent, PaneId, PtyBackend, TerminalBackend};
 use crate::web::viewer::limits;
 use serde::{Deserialize, Serialize};
+use std::collections::VecDeque;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc::{self, Receiver, SyncSender, TrySendError};
 use std::sync::{Arc, Mutex};
@@ -95,6 +96,25 @@ struct Client {
     tx: SyncSender<TerminalFrame>,
 }
 
+/// A live terminal and the recent raw bytes it has produced, kept so a client
+/// that connects (or reconnects after a refresh) can be replayed the current
+/// screen. Bounded by [`limits::MAX_TERMINAL_SCROLLBACK_BYTES`].
+struct PaneState {
+    id: PaneId,
+    scrollback: VecDeque<u8>,
+}
+
+/// Hub state shared between the worker thread (which mutates panes and
+/// broadcasts) and connection threads (which register/unregister clients and
+/// snapshot scrollback on connect). Held under one mutex so a connecting
+/// client's replay is atomic with the worker's append-and-broadcast: it sees
+/// each pane's scrollback exactly once, with no gap before or duplicate of the
+/// live output that follows.
+struct Shared {
+    clients: Vec<Client>,
+    panes: Vec<PaneState>,
+}
+
 /// A client's connection to a repository's terminals.
 pub struct TerminalSession {
     hub: Arc<TerminalHub>,
@@ -147,7 +167,7 @@ impl Drop for TerminalSession {
 
 pub struct TerminalHub {
     commands: SyncSender<Command>,
-    clients: Mutex<Vec<Client>>,
+    state: Mutex<Shared>,
     next_client_id: AtomicU64,
     stop: Arc<AtomicBool>,
     worker: Mutex<Option<thread::JoinHandle<()>>>,
@@ -159,7 +179,10 @@ impl TerminalHub {
         let (commands, command_rx) = mpsc::sync_channel::<Command>(256);
         let hub = Arc::new(Self {
             commands,
-            clients: Mutex::new(Vec::new()),
+            state: Mutex::new(Shared {
+                clients: Vec::new(),
+                panes: Vec::new(),
+            }),
             next_client_id: AtomicU64::new(0),
             stop: Arc::new(AtomicBool::new(false)),
             worker: Mutex::new(None),
@@ -178,51 +201,34 @@ impl TerminalHub {
 
     fn run(&self, cwd: &str, commands: Receiver<Command>, stop: Arc<AtomicBool>) {
         let mut backend = PtyBackend::new(cwd);
-        let mut live: Vec<PaneId> = Vec::new();
 
         while !stop.load(Ordering::Acquire) {
             while let Ok(command) = commands.try_recv() {
                 match command {
                     Command::Create { rows, cols, client } => {
-                        if live.len() >= limits::MAX_PTYS_PER_REPO {
-                            self.send_control(
-                                Some(client),
-                                &ServerMessage::Error {
-                                    message: "terminal limit reached".to_string(),
-                                },
-                            );
+                        if self.pane_count() >= limits::MAX_PTYS_PER_REPO {
+                            self.send_error_to(client, "terminal limit reached");
                             continue;
                         }
                         match backend.create_pane(rows, cols, None) {
-                            Ok(pane) => {
-                                live.push(pane);
-                                // Broadcast: every client shows the same set of
-                                // terminals for this repository.
-                                self.send_control(None, &ServerMessage::Created { pane });
-                            }
+                            Ok(pane) => self.register_pane(pane),
                             Err(err) => {
                                 tracing::warn!(%err, "viewer: could not create a terminal");
-                                self.send_control(
-                                    Some(client),
-                                    &ServerMessage::Error {
-                                        message: "could not start a terminal".to_string(),
-                                    },
-                                );
+                                self.send_error_to(client, "could not start a terminal");
                             }
                         }
                     }
                     // Unknown pane ids are ignored rather than errored: a
                     // client racing a pane exit is normal, not an attack.
-                    Command::Input { pane, data } if live.contains(&pane) => {
+                    Command::Input { pane, data } if self.pane_is_live(pane) => {
                         let _ = backend.send_input(pane, &data);
                     }
-                    Command::Resize { pane, rows, cols } if live.contains(&pane) => {
+                    Command::Resize { pane, rows, cols } if self.pane_is_live(pane) => {
                         backend.resize(pane, rows, cols);
                     }
-                    Command::Close { pane } if live.contains(&pane) => {
+                    Command::Close { pane } if self.pane_is_live(pane) => {
                         backend.destroy_pane(pane);
-                        live.retain(|p| *p != pane);
-                        self.send_control(None, &ServerMessage::Exited { pane });
+                        self.remove_pane_and_announce(pane);
                     }
                     _ => {}
                 }
@@ -230,64 +236,125 @@ impl TerminalHub {
 
             for event in backend.drain_events() {
                 match event {
-                    BackendEvent::Output { pane, data } => {
-                        self.broadcast(TerminalFrame::Output { pane, data });
-                    }
-                    BackendEvent::Exited { pane } => {
-                        live.retain(|p| *p != pane);
-                        self.send_control(None, &ServerMessage::Exited { pane });
-                    }
+                    BackendEvent::Output { pane, data } => self.record_and_broadcast(pane, data),
+                    BackendEvent::Exited { pane } => self.remove_pane_and_announce(pane),
                 }
             }
             thread::sleep(POLL_INTERVAL);
         }
 
-        for pane in live {
+        let ids: Vec<PaneId> = self
+            .state
+            .lock()
+            .expect("terminal state poisoned")
+            .panes
+            .iter()
+            .map(|p| p.id)
+            .collect();
+        for pane in ids {
             backend.destroy_pane(pane);
         }
     }
 
-    fn send_control(&self, only: Option<u64>, message: &ServerMessage) {
-        let Ok(json) = serde_json::to_string(message) else {
+    fn pane_count(&self) -> usize {
+        self.state
+            .lock()
+            .expect("terminal state poisoned")
+            .panes
+            .len()
+    }
+
+    fn pane_is_live(&self, pane: PaneId) -> bool {
+        self.state
+            .lock()
+            .expect("terminal state poisoned")
+            .panes
+            .iter()
+            .any(|p| p.id == pane)
+    }
+
+    /// Record a new pane and announce it to every client. Broadcasting under the
+    /// same lock that adds the pane keeps it consistent with `connect`'s replay:
+    /// a client either sees this pane via `connect` or via this broadcast, never
+    /// both and never neither.
+    fn register_pane(&self, pane: PaneId) {
+        let json = serde_json::to_string(&ServerMessage::Created { pane }).ok();
+        let mut state = self.state.lock().expect("terminal state poisoned");
+        state.panes.push(PaneState {
+            id: pane,
+            scrollback: VecDeque::new(),
+        });
+        if let Some(json) = json {
+            broadcast_locked(&mut state.clients, TerminalFrame::Control(json));
+        }
+    }
+
+    /// Append output to the pane's bounded scrollback and broadcast it, both
+    /// under one lock so a concurrently connecting client cannot slip a replay
+    /// snapshot between the append and the broadcast.
+    fn record_and_broadcast(&self, pane: PaneId, data: Vec<u8>) {
+        let mut state = self.state.lock().expect("terminal state poisoned");
+        if let Some(p) = state.panes.iter_mut().find(|p| p.id == pane) {
+            push_scrollback(&mut p.scrollback, &data);
+        }
+        broadcast_locked(&mut state.clients, TerminalFrame::Output { pane, data });
+    }
+
+    /// Drop a pane and tell every client, but only if it was still live — a pane
+    /// closed by command and then reported `Exited` by the backend must announce
+    /// once, not twice.
+    fn remove_pane_and_announce(&self, pane: PaneId) {
+        let json = serde_json::to_string(&ServerMessage::Exited { pane }).ok();
+        let mut state = self.state.lock().expect("terminal state poisoned");
+        let existed = state.panes.iter().any(|p| p.id == pane);
+        if !existed {
+            return;
+        }
+        state.panes.retain(|p| p.id != pane);
+        if let Some(json) = json {
+            broadcast_locked(&mut state.clients, TerminalFrame::Control(json));
+        }
+    }
+
+    fn send_error_to(&self, client_id: u64, message: &str) {
+        let Ok(json) = serde_json::to_string(&ServerMessage::Error {
+            message: message.to_string(),
+        }) else {
             return;
         };
-        match only {
-            Some(id) => self.send_to(id, TerminalFrame::Control(json)),
-            None => self.broadcast(TerminalFrame::Control(json)),
-        }
-    }
-
-    fn send_to(&self, id: u64, frame: TerminalFrame) {
-        let mut clients = self.clients.lock().expect("terminal clients poisoned");
-        if let Some(index) = clients.iter().position(|c| c.id == id)
-            && clients[index].tx.try_send(frame).is_err()
+        let mut state = self.state.lock().expect("terminal state poisoned");
+        if let Some(index) = state.clients.iter().position(|c| c.id == client_id)
+            && state.clients[index]
+                .tx
+                .try_send(TerminalFrame::Control(json))
+                .is_err()
         {
-            clients.remove(index);
+            state.clients.remove(index);
         }
     }
 
-    /// Queue a frame for every client, dropping any that has fallen too far
-    /// behind. Terminal bytes cannot be skipped, so an overfull client is
-    /// disconnected rather than served a corrupted stream.
-    fn broadcast(&self, frame: TerminalFrame) {
-        let mut clients = self.clients.lock().expect("terminal clients poisoned");
-        clients.retain(|client| match client.tx.try_send(frame.clone()) {
-            Ok(()) => true,
-            Err(TrySendError::Full(_)) => {
-                tracing::debug!(id = client.id, "viewer: terminal client too slow, dropping");
-                false
-            }
-            Err(TrySendError::Disconnected(_)) => false,
-        });
-    }
-
+    /// Register a client and replay the current terminals to it before it is
+    /// eligible for broadcasts: one `Created` plus one scrollback `Output` per
+    /// live pane. Done under the state lock so this snapshot cannot interleave
+    /// with the worker's append-and-broadcast (see [`Shared`]); the client
+    /// therefore receives every pane's history exactly once and in order ahead
+    /// of the live stream. A fresh hub (e.g. after a server restart) has no
+    /// panes, so a reconnecting client correctly comes back to an empty panel.
     pub fn connect(self: &Arc<Self>) -> TerminalSession {
         let id = self.next_client_id.fetch_add(1, Ordering::AcqRel);
         let (tx, rx) = mpsc::sync_channel(CLIENT_QUEUE_DEPTH);
-        self.clients
-            .lock()
-            .expect("terminal clients poisoned")
-            .push(Client { id, tx });
+        let mut state = self.state.lock().expect("terminal state poisoned");
+        for pane in &state.panes {
+            if let Ok(json) = serde_json::to_string(&ServerMessage::Created { pane: pane.id }) {
+                let _ = tx.try_send(TerminalFrame::Control(json));
+            }
+            if !pane.scrollback.is_empty() {
+                let data: Vec<u8> = pane.scrollback.iter().copied().collect();
+                let _ = tx.try_send(TerminalFrame::Output { pane: pane.id, data });
+            }
+        }
+        state.clients.push(Client { id, tx });
+        drop(state);
         TerminalSession {
             hub: Arc::clone(self),
             id,
@@ -296,16 +363,18 @@ impl TerminalHub {
     }
 
     fn disconnect(&self, id: u64) {
-        self.clients
+        self.state
             .lock()
-            .expect("terminal clients poisoned")
+            .expect("terminal state poisoned")
+            .clients
             .retain(|c| c.id != id);
     }
 
     pub fn client_count(&self) -> usize {
-        self.clients
+        self.state
             .lock()
-            .expect("terminal clients poisoned")
+            .expect("terminal state poisoned")
+            .clients
             .len()
     }
 
@@ -325,6 +394,31 @@ impl TerminalHub {
 impl Drop for TerminalHub {
     fn drop(&mut self) {
         self.stop();
+    }
+}
+
+/// Queue a frame for every client, dropping any that has fallen too far behind.
+/// Terminal bytes cannot be skipped, so an overfull client is disconnected
+/// rather than served a corrupted stream. Operates on an already-locked client
+/// list so the caller can pair it with a pane mutation atomically.
+fn broadcast_locked(clients: &mut Vec<Client>, frame: TerminalFrame) {
+    clients.retain(|client| match client.tx.try_send(frame.clone()) {
+        Ok(()) => true,
+        Err(TrySendError::Full(_)) => {
+            tracing::debug!(id = client.id, "viewer: terminal client too slow, dropping");
+            false
+        }
+        Err(TrySendError::Disconnected(_)) => false,
+    });
+}
+
+/// Append raw PTY bytes to a pane's scrollback, evicting the oldest bytes to
+/// stay within [`limits::MAX_TERMINAL_SCROLLBACK_BYTES`].
+fn push_scrollback(buf: &mut VecDeque<u8>, data: &[u8]) {
+    buf.extend(data.iter().copied());
+    if buf.len() > limits::MAX_TERMINAL_SCROLLBACK_BYTES {
+        let excess = buf.len() - limits::MAX_TERMINAL_SCROLLBACK_BYTES;
+        buf.drain(0..excess);
     }
 }
 
@@ -448,6 +542,70 @@ mod tests {
 
         assert_eq!(hub.client_count(), 0);
         hub.stop();
+    }
+
+    fn created_pane(frame: &TerminalFrame) -> Option<PaneId> {
+        let TerminalFrame::Control(json) = frame else {
+            return None;
+        };
+        let value: serde_json::Value = serde_json::from_str(json).ok()?;
+        if value["type"] == "created" {
+            return value["pane"].as_u64().map(|n| n as PaneId);
+        }
+        None
+    }
+
+    #[test]
+    fn a_reconnecting_client_receives_existing_panes_and_scrollback() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let hub = TerminalHub::spawn(&dir.path().to_string_lossy());
+        let first = hub.connect();
+
+        first.dispatch(ClientMessage::Create { rows: 24, cols: 80 });
+        let created =
+            next_matching(&first, |f| created_pane(f).is_some()).expect("no created message");
+        let pane = created_pane(&created).unwrap();
+        // The shell writes a prompt; that is the scrollback a late joiner must
+        // get back.
+        assert!(
+            next_matching(&first, |f| matches!(f, TerminalFrame::Output { .. })).is_some(),
+            "no output from the shell"
+        );
+
+        // A client that connects afterwards (a refreshed browser) must be told
+        // about the pane that already exists and handed its scrollback.
+        let second = hub.connect();
+        let replayed = next_matching(&second, |f| created_pane(f).is_some())
+            .expect("reconnecting client was not told about the existing pane");
+        assert_eq!(
+            created_pane(&replayed),
+            Some(pane),
+            "replayed pane id must match the live pane"
+        );
+        let replay_output =
+            next_matching(&second, |f| matches!(f, TerminalFrame::Output { pane: p, .. } if *p == pane));
+        assert!(
+            replay_output.is_some(),
+            "reconnecting client did not receive the scrollback"
+        );
+        hub.stop();
+    }
+
+    #[test]
+    fn scrollback_is_bounded_and_keeps_the_most_recent_bytes() {
+        let cap = limits::MAX_TERMINAL_SCROLLBACK_BYTES;
+        let mut buf = VecDeque::new();
+        for _ in 0..(cap / 1000 + 5) {
+            push_scrollback(&mut buf, &vec![b'x'; 1000]);
+        }
+        assert_eq!(buf.len(), cap, "scrollback must be capped");
+
+        // The tail is what restores the visible screen, so the newest bytes must
+        // survive eviction.
+        push_scrollback(&mut buf, b"TAIL");
+        assert_eq!(buf.len(), cap);
+        let contents: Vec<u8> = buf.iter().copied().collect();
+        assert!(contents.ends_with(b"TAIL"), "newest bytes must be retained");
     }
 
     #[test]

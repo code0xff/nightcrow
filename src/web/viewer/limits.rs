@@ -39,6 +39,13 @@ pub const MAX_DIFF_LINES: usize = 20_000;
 pub const MAX_SSE_PAYLOAD_BYTES: usize = 1024 * 1024;
 /// Terminals one repository may hold open at once. Each is a real process.
 pub const MAX_PTYS_PER_REPO: usize = 8;
+/// Raw PTY bytes retained per terminal to replay to a client that (re)connects,
+/// so a browser refresh restores the screen instead of a blank pane. Bounded so
+/// a long-running terminal cannot grow without limit (up to MAX_PTYS_PER_REPO of
+/// these per repo). The oldest bytes are dropped first, which can clip an escape
+/// sequence at the very top of the scrollback; the current screen at the bottom
+/// stays intact.
+pub const MAX_TERMINAL_SCROLLBACK_BYTES: usize = 256 * 1024;
 /// Live connections the viewer's accept loop will hold. Separate from the
 /// mirror's cap: they are different servers on different ports.
 pub const MAX_VIEWER_CONNECTIONS: usize = 64;
