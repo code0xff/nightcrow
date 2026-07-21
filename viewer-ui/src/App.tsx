@@ -32,7 +32,19 @@ const TREE_SEARCH_DEBOUNCE_MS = 180;
 /// Sidebar width. Fixed rather than adjustable: it fits every path this
 /// repository has, and the file pane's maximise button covers the case where
 /// the code needs the whole window.
-const SIDEBAR_WIDTH = "350px";
+const SIDEBAR_WIDTH = "460px";
+
+/// Compact relative age of a unix timestamp (seconds), matching the TUI's log
+/// column (e.g. "3s", "5m", "2h", "4d", "6mo", "1y").
+function formatRelativeTime(ts: number): string {
+  const s = Math.max(0, Math.floor(Date.now() / 1000 - ts));
+  if (s < 60) return `${s}s`;
+  if (s < 3600) return `${Math.floor(s / 60)}m`;
+  if (s < 86400) return `${Math.floor(s / 3600)}h`;
+  if (s < 86400 * 30) return `${Math.floor(s / 86400)}d`;
+  if (s < 86400 * 365) return `${Math.floor(s / (86400 * 30))}mo`;
+  return `${Math.floor(s / (86400 * 365))}y`;
+}
 
 type Tab = "status" | "log" | "tree";
 /// Which panel, if any, has been given the whole work area. One value rather
@@ -417,6 +429,11 @@ export function App() {
   const visibleCommits = commits.filter((c) =>
     c.summary.toLowerCase().includes(q),
   );
+  // The log is newest-first, so the first `ahead` commits are the unpushed ones
+  // — mark them like the TUI does.
+  const aheadOids = new Set(
+    commits.slice(0, status?.tracking?.ahead ?? 0).map((c) => c.oid),
+  );
   // The tree tab searches the whole repo server-side when the filter holds a
   // query; otherwise it shows the lazily-expanded folder tree.
   const treeSearching = tab === "tree" && filterOpen && filter !== "";
@@ -594,9 +611,20 @@ export function App() {
                 <li key={c.oid}>
                   <button
                     onClick={() => openCommit(c.oid)}
-                    className="flex w-full gap-2 px-3 py-0.5 text-left hover:bg-ink-850"
+                    title={`${c.author} · ${c.summary}`}
+                    className="flex w-full items-baseline gap-2 px-3 py-0.5 text-left hover:bg-ink-850"
                   >
+                    {/* ↑ marks unpushed commits, like the TUI's ahead marker. */}
+                    <span className="w-2 shrink-0 text-added">
+                      {aheadOids.has(c.oid) ? "↑" : ""}
+                    </span>
                     <span className="shrink-0 text-accent">{c.short_id}</span>
+                    <span className="w-10 shrink-0 text-right text-ink-400">
+                      {formatRelativeTime(c.time)}
+                    </span>
+                    <span className="max-w-[6rem] shrink-0 truncate text-ink-400">
+                      {c.author}
+                    </span>
                     <span className="truncate">{c.summary}</span>
                   </button>
                 </li>
