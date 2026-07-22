@@ -295,8 +295,10 @@ complete commit diff. Select a file to view only that file's change; use
 
 The swatch in the header cycles the accent colour through the same five
 presets as the TUI's `<prefix> p` (yellow → cyan → green → magenta → blue).
-It is stored per browser and is **not** read from `[theme]` — that setting
-colours the TUI, and the viewer keeps its own.
+The choice is stored on the server (`~/.nightcrow/viewer.json`), so every
+device that opens the viewer shows the same colour, and a change made on one
+reaches the others within a few seconds. It is **not** read from `[theme]` —
+that setting colours the TUI, and the viewer keeps its own.
 
 The diff pane has a toggle (top-right of the pane) that switches between the
 inline unified diff and a side-by-side split view, mirroring the TUI's Alt+V.
