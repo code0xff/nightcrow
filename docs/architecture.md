@@ -10,6 +10,8 @@ nightcrow 자체는 AI에 대한 ontology를 갖지 않는다 — agent든 사�
 
 **핵심 기능**: 멀티 프로젝트 탭(최대 10개 저장소, 프로젝트별 git 뷰 + 터미널 pane), 변경 파일 리스트(좌측/키보드 네비게이션), git diff 뷰어(우측/문법 하이라이팅), commit log 뷰, read-only 파일 트리 내비게이터(라이브 워치 + 재귀 파일명 검색 + 마크다운 렌더 뷰), split-view 멀티 PTY 패널(하단), mtime 기반 hot-file 강조 + idle auto-follow, OSC 0/2 탭 타이틀 캡처, 마우스 캡처(클릭 포커스/포워딩, 휠 라우팅, 클릭 가능한 힌트 바).
 
+**선택적 웹 표면 두 가지**: TUI 화면을 그대로 반사해 원격 조작까지 받는 웹 미러(`[web_mirror]`)와, 같은 git 데이터를 DOM으로 렌더하고 자기 터미널 세션을 갖는 웹 뷰어(`[web_viewer]` / TUI 없이 `nightcrow serve`). 둘은 포트·쿠키·비밀번호를 공유하지 않는다.
+
 ## Layout
 
 ```
@@ -59,7 +61,6 @@ src/
 │   ├── diff_load.rs      # diff + file-view loaders, apply_diff_result, refresh_diff
 │   ├── focus.rs          # focus jumps, cycling, fullscreen toggles
 │   ├── navigation.rs     # selection, j/k, filtered status, log drill-in/out
-│   ├── repo_input.rs     # <prefix> o repo-input modal state
 │   ├── session_io.rs     # save/restore session state
 │   ├── snapshot_io.rs    # poll_snapshot: drain SnapshotChannel, detect HEAD change
 │   ├── terminal_ctrl.rs  # poll_terminal, open/close/swap pane, scroll, fullscreen
@@ -69,6 +70,11 @@ src/
 ├── logging.rs            # tracing-based file logger (rotation + retention)
 ├── session.rs            # workspace + per-repo state (~/.nightcrow/workspace.json)
 ├── util.rs               # shared low-level helpers (try_timed_join)
+├── test_util.rs          # #[cfg(test)] git fixture helpers shared across modules
+├── workspace/
+│   ├── mod.rs            # Workspace: open projects (Vec<App>) + active index,
+│   │                     #   process-level repo dialog/notice
+│   └── repo_input.rs     # <prefix> o repo-input modal state
 ├── runtime/
 │   ├── mod.rs
 │   ├── snapshot.rs       # SnapshotChannel: background git status/log worker
@@ -115,6 +121,7 @@ src/
     │   ├── catalog.rs    # opaque repo ids, atomic swap, per-repo entries
     │   ├── runtime.rs    # per-repo thread: SnapshotChannel drain + conflated SSE fan-out
     │   ├── terminal.rs   # per-repo TerminalHub owning its own PtyBackend
+    │   ├── highlight.rs  # syntect/two-face highlight spans for diff + file payloads
     │   ├── prefs.rs      # ~/.nightcrow/viewer.json: accent shared across devices
     │   ├── server.rs     # HTTP routes, SSE, /ws/term
     │   └── assets.rs     # rust-embed of viewer-ui/dist + CSP
@@ -423,10 +430,42 @@ snapshot worker는 매 폴 사이클마다 현재 HEAD oid를 함께 보고한�
 - **입력 (`protocol::decode_input`)**: 브라우저는 특수/ASCII 키를 **구조화 JSON 이벤트**로 보내고(VT 역파싱 대신), 서버가 crossterm `KeyEvent`/`MouseEvent`/paste로 낮춰 `mpsc`로 메인 루프에 넣는다. 메인 루프는 이를 로컬 입력과 **동일한 `handle_key`/`handle_mouse`/`handle_paste`**로 디스패치한다 — 웹 동작이 로컬 키와 갈라질 수 없다(leader/prefix/focus 라우팅 전부 공유). 한글 등 IME 조합 텍스트는 `compositionend`에서 paste 이벤트로 전달된다.
 - **서버 (`server.rs`)**: accept 스레드가 연결마다 handler 스레드를 하나 띄운다. 프레임(출력)은 클라이언트별 채널로, 입력은 공용 `mpsc`로 메인 루프와 오간다 — **`App`은 스레드 간에 공유되지 않고** 바이트와 디코드된 이벤트만 경계를 넘는다. handler 스레드는 소켓에 read timeout을 걸어 같은 스레드에서 읽기(입력)와 큐된 쓰기(프레임)를 번갈아 처리한다. WebSocket 업그레이드는 요청 head를 라우팅/인증에 쓴 뒤 직접(`derive_accept_key` + 101 응답) 완료하고 `from_raw_socket`으로 넘긴다.
   연결 수는 `MAX_CONNECTIONS`(64)로 제한한다 — 연결마다 스레드가 하나씩 붙으므로 상한이 없으면 포트에 닿을 수 있는 누구나 프로세스를 고갈시킬 수 있다. 상한 초과분은 accept 루프에서 소켓을 닫는다(거기서 503을 쓰면 멈춘 클라이언트 하나가 뒤의 모든 연결을 막는다). 슬롯은 `common::conn::ConnectionSlot`의 `Drop`으로 반납돼 장수하는 WS handler와 조기 에러 반환 양쪽에서 새지 않는다.
-- **스트리밍 응답 (`common/sse.rs`)**: `http::response`는 항상 `Content-Length`와 `Connection: close`를 실고 `handle_connection`은 응답 1회 후 반환하므로, 소켓을 열어 둔 채 이벤트를 덧붙일 경로가 없다. `SseStream`은 자기 헤드를 직접 쓰고 그 시점부터 연결을 소유한다. 매 쓰기마다 flush하며(버퍼에 남은 이벤트는 전달된 이벤트가 아니다), 쓰기 실패를 그대로 전파한다 — 닫힌 탭은 다음 쓰기가 실패할 때만 알 수 있다. event 이름에 개행이 있으면 거부한다(SSE 필드 위조 가능). data는 개행마다 `data:` 라인으로 쪼개므로 별도 방어가 필요 없다. 미러는 아직 SSE 라우트가 없다 — 뷰어 계획 6단계에서 처음 사용된다.
-- **공용 계층 (`common/`)**: 인증·HTTP 프레이밍·연결 회계는 미러 고유 로직이 아니므로 분리해 둔다. 화면 프레임·git 데이터·터미널을 전혀 모르는 계층이며, 계획 중인 웹 뷰어(`docs/web-viewer-plan.md`)가 정확히 이 계층까지만 공유한다.
+- **스트리밍 응답 (`common/sse.rs`)**: `http::response`는 항상 `Content-Length`와 `Connection: close`를 실고 `handle_connection`은 응답 1회 후 반환하므로, 소켓을 열어 둔 채 이벤트를 덧붙일 경로가 없다. `SseStream`은 자기 헤드를 직접 쓰고 그 시점부터 연결을 소유한다. 매 쓰기마다 flush하며(버퍼에 남은 이벤트는 전달된 이벤트가 아니다), 쓰기 실패를 그대로 전파한다 — 닫힌 탭은 다음 쓰기가 실패할 때만 알 수 있다. event 이름에 개행이 있으면 거부한다(SSE 필드 위조 가능). data는 개행마다 `data:` 라인으로 쪼개므로 별도 방어가 필요 없다. 미러는 SSE 라우트를 갖지 않는다 — 유일한 소비자는 뷰어의 `GET /api/events`다.
+- **공용 계층 (`common/`)**: 인증·HTTP 프레이밍·연결 회계는 미러 고유 로직이 아니므로 분리해 둔다. 화면 프레임·git 데이터·터미널을 전혀 모르는 계층이며, 웹 뷰어("Web Viewer" 절)가 미러와 공유하는 것은 정확히 이 계층까지다.
 - **인증 (`common/auth.rs`)**: 비밀번호를 Argon2로 검증한다(code-server와 동일 방식). 평문 `password`는 시작 시 메모리에서 해시하고, `hashed_password`(PHC)가 있으면 그쪽이 우선한다. 로그인은 rate-limit(2/분 + 14/시간)되고 성공 시 httpOnly 세션 쿠키를 발급한다. 기본 바인딩은 loopback이며 **TLS는 없다** — 원격은 SSH 터널/리버스 프록시로 감싼다. 서버 활성 시 비밀번호가 없으면 랜덤 생성해 config에 기록하고(주석 보존) 시작 시 1회 출력한다.
 - **프론트엔드 (`frontend/`)**: 벤더링한 xterm.js 5.5.0(MIT)이 셀을 렌더한다. 별도 빌드 파이프라인 없이 `include_str!`로 바이너리에 임베드돼 오프라인·자기완결이다. 로그인 페이지와 터미널 페이지는 손 CSS로 neutral 다크 하우스 룩을 맞춘다.
+
+### Web Viewer (`src/web/viewer/`, `viewer-ui/`)
+
+미러가 TUI 화면을 그대로 반사하는 것과 달리, 뷰어는 **같은 데이터 계층을 읽어 DOM으로 렌더하는 두 번째 프론트엔드**다. `App`/`ui`/`input`을 전혀 참조하지 않으며, 그래서 TUI 없이도(`nightcrow serve`) 동작한다. 별도 포트·별도 쿠키·별도 비밀번호를 쓴다 — 셋 중 하나라도 공유하면 분리가 형식적인 것이 된다.
+
+- **요청 처리 순서가 설계다** (`viewer/server.rs`): ① Host → ② Origin → ③ 정적 번들(인증 불필요) → ④ 인증 → ⑤ 저장소 조회 → ⑥ 경로 검증. Host 검사가 Origin보다 앞이자 별개인 이유: `origin_allowed`는 Origin과 Host가 *일치한다*는 것만 증명하는데, DNS rebinding 공격자는 둘 다 통제하므로 그 조건을 자명하게 만족시킨다. loopback 바인딩일 때 non-loopback Host를 거부해야 rebinding으로 얻는 same-origin 발판이 막힌다(off-loopback이면 운영자가 네트워크 경로를 책임지므로 적용하지 않는다). 인증을 조회보다 **먼저** 하는 이유는, 그러지 않으면 미인증 클라이언트가 404와 401을 비교해 존재하는 repo id를 열거할 수 있기 때문이다. 정적 번들이 인증 앞에 오는 이유는 그것이 로그인 폼을 그리는 주체이기 때문 — 게이팅하면 로그인할 방법 자체가 사라진다.
+- **경로 검증은 `with_repo` 한 곳에서** 한다. 라우트마다 쓰면 빠뜨린다: 실제로 `/api/diff`가 `../../etc/passwd`를 받아들였다. `load_file_diff`는 경로를 파일이 아니라 git pathspec으로 넘겨 검증기에 닿지 않았고, 빈 hunk와 함께 공격자의 경로를 그대로 되돌려줬다. **라우트가 "어떤 로더를 호출하느냐"에 따라 우연히 안전해서는 안 된다.**
+- **저장소는 opaque id로만 지정**한다(`catalog.rs`). 클라이언트가 디렉토리를 이름 붙일 수 없으므로 "어느 저장소인가"는 검증할 입력이 아니라 성공하거나 404가 되는 조회다. id는 프로세스 수명 동안 안정적이라, 무관한 탭을 열고 닫아도 다른 id가 재배치되지 않는다.
+- **저장소별 런타임**(`runtime.rs`): `SnapshotChannel`은 단일 consumer `mpsc`라 TUI 것을 공유할 수 없어 자기 것을 띄운다. 스냅샷을 wire 페이로드로 한 번만 줄여 팬아웃한다. **팬아웃은 conflate**된다 — 느린 구독자는 최신 상태를 받지, 밀린 과거를 재생하지 않는다(슬롯 1개 + 1-depth 병합 wakeup). 소켓 I/O 중 락을 잡지 않는다. 페이로드가 직전과 동일하면 발행하지 않는다: producer는 변화가 아니라 타이머로 tick하므로, 그러지 않으면 유휴 저장소가 매초 스트리밍하며 seq를 태워 "뭔가 바뀌었나"의 지표로 쓸 수 없게 된다.
+- **터미널**(`terminal.rs`)은 TUI 패인과 **별개 세션**이다. 공유하려면 `App`에 손을 대야 하고 그러면 헤드리스가 깨진다. raw PTY 바이트를 서버측 VT 에뮬레이션 없이 그대로 보낸다(xterm.js가 이미 에뮬레이터다). 4바이트 LE pane id를 앞에 붙인 **바이너리 프레임** — PTY 읽기는 멀티바이트 시퀀스를 일상적으로 쪼개므로 JSON으로 조기 디코딩하면 브라우저가 재조립하기 전에 깨진다. **출력은 conflate하지 않고 큐잉**한다: 최신 status는 완결된 그림이지만 터미널 바이트는 하나만 빠져도 스트림이 깨지므로, 큐를 넘긴 클라이언트는 조용히 버리지 않고 끊는다.
+- **자원 상한**(`limits.rs`)은 전부 `truncated`로 보고된다. 잘린 목록이 전체인 척하지 않는다.
+- **프론트엔드**(`viewer-ui/`): React 19 + Vite 7 + Tailwind v4 + `@xterm/xterm`. shadcn/ui는 쓰지 않는다 — 기본 톤이 TUI 밀도와 맞지 않아 덮어쓸 것이 더 많았다. `dist/`를 커밋해 `cargo install`에 Node를 요구하지 않는다(build.rs에서 npm을 부르면 Node 없는 설치가 전부 깨진다). CI가 재빌드해 커밋된 번들과 다르면 실패시킨다.
+- **사이드바 목록은 잘라내지 않고 가로로 스크롤한다**(`viewer-ui/src/App.tsx`). status/log/tree 목록은 TUI가 `ui/mod.rs`의 `char_offset`으로 긴 경로와 커밋 summary를 좌우로 미는 것과 같은 접근을 취한다. `truncate`를 쓰지 않는 이유는 두 행을 구분하는 것이 대개 경로의 **꼬리**이기 때문이다 — `src/web/viewer/server.rs`와 `terminal.rs`는 말줄임이 지우는 바로 그 부분에서만 갈린다. 단 TUI와 한 가지가 다르다: TUI는 status 코드나 commit short_id 같은 접두 컬럼을 고정한 채 가변 텍스트만 미는 반면, 뷰어는 **행 전체가 함께 스크롤된다**(VS Code 탐색기와 같은 동작). `position: sticky`로 접두를 고정하는 안은 검토 후 기각했다 — sticky 요소가 자기 배경을 들고 hover 상태까지 따라가야 해서, 얻는 것에 비해 행 렌더링이 복잡해진다.
+
+- **accent는 브라우저에 산다**(`viewer-ui/src/theme.ts`). 헤더 스와치가 TUI의 `<prefix> p`와 같은 순서로 5색을 순환한다. TUI가 ratatui 팔레트 이름 색을 쓰는 것과 달리 브라우저에는 대응물이 없어 hex를 고정하는데, 눈대중이 아니라 기존 amber `#d9a441`(OKLCH L=0.751 C=0.130 h=79.8)의 **명도·채도를 유지한 채 hue만 돌려** 파생시킨다 — 그래야 어느 프리셋을 골라도 ink 스케일 위에서 가독성이 같다. 적용은 root의 `--color-accent` 오버라이드 하나로 끝난다(Tailwind가 accent 유틸리티를 전부 `var(--color-accent)`로 컴파일한다). **저장은 서버(`~/.nightcrow/viewer.json`, `viewer/prefs.rs`), 저장소별이 아니라 뷰어 전역**이다: 뷰어는 폰·노트북 등 여러 기기에서 열리므로 브라우저마다 색을 다시 고르게 하지 않는다. repo id는 프로세스 수명 동안만 안정적이라 저장소별로 키를 잡으면 재시작마다 설정이 사라진다. 전달은 **클라이언트가 이미 3초마다 도는 `/api/repos` 폴링에 얹는다** — 별도 스트림이나 감시할 엔드포인트가 늘지 않고, 한 기기에서 바꾸면 나머지가 한 폴링 안에 따라온다. 쓰기는 `POST /api/prefs`(cross-site가 트리거할 수 없도록 GET이 아닌 POST, 인증 뒤에 배치). 여기서 유일한 순서 문제는 **클릭 직전에 출발한 폴링 응답이 옛 색을 들고 나중에 도착하는 것**이라, `App.tsx`가 로컬 변경 횟수를 세어 자기보다 오래된 응답의 accent만 버린다(나머지 필드는 그대로 쓴다). localStorage는 이제 **첫 페인트 캐시**로만 남는다: CSP가 인라인 스크립트를 막아(`script-src 'self'`) 번들 실행 전에는 칠할 수 없는데, 거기에 폴링 왕복까지 기다리면 매 로드마다 기본 amber가 번쩍인다. TUI 설정(`[theme]`, 저장소별 `accent_idx`)은 건드리지 않는다 — 읽으려면 뷰어가 TUI 설정에 의존하게 되고, 별도 포트·쿠키·비밀번호로 분리해 둔 경계가 흐려진다.
+
+- **diff는 unified/split 두 레이아웃을 토글한다**(`viewer-ui/src/diffLayout.ts`). diff pane 헤더의 버튼이 TUI의 `DiffPaneView::{Diff, Split}`(diff pane focus에서 `s` → `diff_load.rs::toggle_diff_split_view`)와 같은 전환을 준다. 페어링은 백엔드를 건드리지 않는다 — JSON `Diff` payload가 이미 라인별 `kind`(`+`/`-`/context)와 하이라이트 span을 담고 있어, `splitHunkRows`가 TUI의 `split_rows`/`flush_split_blocks`(`ui/diff_pane.rs`)를 그대로 포팅해 순서만으로 좌/우 행을 만든다(연속 removed/added를 인덱스별로 짝짓고 짧은 쪽은 blank 셀로 패딩, context는 양쪽 미러링). **저장은 accent와 같은 뷰어 전역 localStorage**다. 좁은 화면에서는 두 코드 열이 함께 읽히지 않으므로, 저장된 선호는 그대로 두되 뷰포트가 `MIN_SPLIT_WIDTH_PX`(768px) 미만이면 `effective`가 unified로 접힌다 — TUI의 `MIN_SPLIT_WIDTH` 폴백(`diff_viewer.rs`)의 웹 대응물이고, 창을 넓히면 선호가 다시 살아난다. 뷰포트 기준으로 판정하는 것은 이 폴백이 지키는 화면(폰)이 전반적으로 좁기 때문 — pane을 `ResizeObserver`로 재는 정밀도는 여기서 얻는 게 없다.
+
+- **마크다운은 렌더 뷰로 연다**(`viewer-ui/src/Markdown.tsx`, `fileView.ts`). tree에서 연 파일 경로가 `.md`/`.markdown`이면 pane 헤더에 rendered/raw 토글이 붙고 기본은 rendered다(세션 한정 상태, diff와 달리 저장하지 않음 — rendered가 일반 경우라 매번 거기서 시작한다). 렌더는 `react-markdown`(+`remark-gfm`, `rehype-highlight`)이 AST를 React 엘리먼트로 만들어 수행한다 — `dangerouslySetInnerHTML`가 없어 별도 sanitize 없이 XSS 표면이 없고, 번들 자체 포함이라 `default-src 'self'` CSP와 맞는다. 원문은 새 API 없이 `/api/file`의 하이라이트 span에서 복원한다(span은 색만 담고 문자를 바꾸지 않으므로 `fileViewSource`의 이어붙이기가 무손실). Terminal처럼 lazy-load라 초기 청크에 remark/highlight.js 파이프라인이 들어가지 않는다. 스타일은 `index.css`의 `.nc-markdown` 스코프, 코드 토큰 색은 컴포넌트가 import하는 highlight.js 테마가 준다. **한계**: 문서 내 외부 이미지는 CSP `default-src 'self'`가 막아 로드되지 않는다(깨진 이미지로 표시).
+
+- **hot-file 강조는 mtime을 절대 시각으로 실어 보내고 브라우저가 식힌다**(`viewer-ui/src/hot.ts`). status 목록의 각 파일에 `mtime`(Unix ms)을 붙이고, 클라이언트가 TUI의 `classify_hot`(`ui/file_list.rs`)과 같은 단계로 나눈다(<5s = accent+bold, hot window 내 = accent, 그 밖 = 기본). **나이(age)가 아니라 절대 시각인 이유**: status 페이로드는 바이트 동일성으로 dedup되어 발행되므로, 매 tick 값이 변하는 필드를 넣으면 유휴 저장소가 영구 이벤트 스트림이 된다. 대가로 브라우저 시계에 의존하며, 서버와 어긋나면 강조 타이밍이 밀린다(음수 나이는 TUI와 같이 fresh로 saturate). 창(window)과 on/off는 `[agent_indicator]` 설정을 `/api/repos` 응답에 실어 전달한다 — 클라이언트에 기본값을 따로 두면 TUI와 조용히 갈라진다. `auto_follow`는 보내지 않는다(키보드 선택 이동은 뷰어에 대응물이 없다). 시간이 지나면 식어야 하므로 목록은 스스로 초당 re-render하는데, **tick은 hot 파일이 있는 스냅샷에서만 시작하고 마지막 파일이 식으면 스스로 멈춘다**. commit 파일 목록에는 `mtime`을 싣지 않는다 — 워킹 트리의 시각은 그 커밋과 무관하다.
+
+- **좁은 화면에서 프로젝트 탭은 드롭다운으로 접힌다**(`viewer-ui/src/App.tsx`의 `ProjectMenu`). 헤더의 프로젝트 탭 행은 `md`(768px) 이상에서만 보이고(`hidden md:flex`), 그 미만에서는 현재 프로젝트명을 띄우는 selector 하나로 대체된다(`md:hidden`). 드롭다운은 프로젝트 전환·프로젝트별 닫기(×)·`+ open`을 모두 담아 탭 행의 어포던스를 유지한다. 전환은 CSS 클래스로만 하고(JS 브레이크포인트 훅 없음, 사이드바 접힘과 같은 관례), 열림 상태는 컴포넌트 내부에 둔다. 바깥 클릭(투명 backdrop, `FolderPicker` 오버레이와 같은 방식)이나 Esc로 닫힌다.
+
+#### 알려진 잔여 위험 (수용 또는 후속)
+
+- **저장소 루트가 넓어질 수 있다.** 핸들러는 `Repository::discover`로 저장소를 열고 `repo.workdir()` 기준으로 경로를 푼다. `discover`는 상위로 올라가므로, 저장소가 아닌 디렉토리를 서빙하면(`serve --repo ~/notes`, `$HOME`이 저장소일 때) 브라우징 루트가 `$HOME`으로 넓어진다. traversal은 여전히 불가능하지만(내부 게이트가 유지된다) 운영자가 지정한 범위보다 넓다. 후속으로 `entry.path`에서 workdir을 파생시켜야 한다.
+- **로그인 rate limiter가 프로세스 전역**이라, 미인증 요청 3회/분으로 정당한 사용자의 로그인을 잠글 수 있다(`auth.rs`). 단일 비밀번호 모델의 대가.
+- **터미널은 클라이언트 간 격리가 없다.** 연결된 어느 클라이언트든 그 저장소의 아무 pane에 입력·리사이즈·종료할 수 있다. 단일 공유 비밀번호에서는 모두 같은 주체이므로 일관되지만, pane 소유권 개념이 없다는 뜻이다.
+- **PTY는 연결이 끊겨도 회수되지 않는다**(재접속 시 세션 유지 목적). 저장소당 최대 8개가 프로세스 수명 동안 남는다.
+- **세션에 절대 TTL이 없다.** 로그아웃은 이제 서버측에서 취소하지만, 방치된 세션은 프로세스 종료까지 유효하다.
+- **`Secure` 쿠키 플래그 없음.** loopback 기본값에서는 맞지만, `bind`를 바꾸면 평문 HTTP로 토큰이 나간다.
 
 ## Critical Risk
 
@@ -448,6 +487,8 @@ Ratatui 레이어와 내부 TUI 간 키보드 이벤트 충돌은 leader(prefix)
 | 세션 저장 | serde_json |
 | CLI args | clap 4 (derive) |
 | 웹 미러 서버 | tungstenite 0.29 (sync WS) + argon2 + getrandom, 브라우저는 벤더링한 xterm.js 5.5 |
+| 웹 뷰어 번들 임베드 | rust-embed 8 (`viewer-ui/dist`) |
+| 웹 뷰어 프론트엔드 | React 19 + Vite 7 + Tailwind v4 + `@xterm/xterm`, 마크다운은 react-markdown(+remark-gfm, rehype-highlight) |
 
 PTY 관리는 portable-pty 기반 `PtyBackend` 단일 구현으로 정리됐다. 초기에는 tmux control-mode 백엔드(`TmuxBackend`)도 병행 지원했으나, 중첩 TUI 키보드 라우팅 문제를 leader(prefix) 모델로 해결하면서 tmux 의존성 없이 `PtyBackend`만으로 충분해져 제거했다.
 
@@ -466,40 +507,11 @@ PTY 관리는 portable-pty 기반 `PtyBackend` 단일 구현으로 정리됐다.
 - 터미널 에뮬레이터 교체: vt100 → alacritty_terminal(쿼리 응답, resize reflow, wide-char 크래시 해소)
 - scroll/mouse routing: 프로그램이 켠 모드 기반 스크롤 싱크 판정, config-gated 마우스 캡처(클릭 포커스/SGR 포워딩), 클릭 가능한 힌트 바·탭 바
 - 웹 미러(`[web_mirror]`): 동기 WS/HTTP 서버로 화면을 브라우저에 미러링하고 로컬 터미널과 양방향 동기화(`Buffer`→ANSI 재사용, 구조화 입력을 기존 핸들러로 라우팅, Argon2 로그인 + 세션 쿠키, 벤더링 xterm.js)
+- 멀티 프로젝트: 한 프로세스가 저장소 10개를 탭으로 열고(`Workspace` = `Vec<App>`, F1–F10), 세션을 `~/.nightcrow/workspace.json` 한 파일로 통합
+- 웹 뷰어(`[web_viewer]` / `nightcrow serve`): 미러와 별개 포트·쿠키·비밀번호로, 같은 git 데이터를 DOM으로 렌더하는 두 번째 프론트엔드(React 19 + Vite + Tailwind v4, SSE 스냅샷 팬아웃, 저장소별 독립 PTY 세션)
+- 뷰어 기능 확장: commit 파일 드릴다운, diff unified/split 토글, 마크다운 렌더 뷰, mtime 기반 hot-file 강조, 서버 저장(`~/.nightcrow/viewer.json`) accent, 좁은 화면용 프로젝트 드롭다운
 
 ## Future Refactor Notes
 
 - `App` 구조체는 도메인별 sub-struct(`StatusView`, `LogView`, `DiffPane`, `TerminalState`, `RepoInput`)와 `app/` 서브모듈로 impl 책임이 나뉘어 있지만, 여전히 한 구조체가 모든 sub-state를 들고 있다. 추가 분리가 필요해지면 sub-struct별 명시적 manager로 승격하는 게 다음 단계다.
 - 대형 diff에서 j/k 빠른 탐색 시 동기 diff 로드가 여전히 ms 단위 블로킹을 만들 수 있다. Repository 캐싱으로 `discover` 비용은 제거됐으나, 추가 향상이 필요하면 채널 기반 비동기 로드 + debouncing을 도입할 수 있다.
-
-### Web Viewer (`src/web/viewer/`, `viewer-ui/`)
-
-미러가 TUI 화면을 그대로 반사하는 것과 달리, 뷰어는 **같은 데이터 계층을 읽어 DOM으로 렌더하는 두 번째 프론트엔드**다. `App`/`ui`/`input`을 전혀 참조하지 않으며, 그래서 TUI 없이도(`nightcrow serve`) 동작한다. 별도 포트·별도 쿠키·별도 비밀번호를 쓴다 — 셋 중 하나라도 공유하면 분리가 형식적인 것이 된다.
-
-- **요청 처리 순서가 설계다** (`viewer/server.rs`): ① Host → ② Origin → ③ 정적 번들(인증 불필요) → ④ 인증 → ⑤ 저장소 조회 → ⑥ 경로 검증. Host 검사가 Origin보다 앞이자 별개인 이유: `origin_allowed`는 Origin과 Host가 *일치한다*는 것만 증명하는데, DNS rebinding 공격자는 둘 다 통제하므로 그 조건을 자명하게 만족시킨다. loopback 바인딩일 때 non-loopback Host를 거부해야 rebinding으로 얻는 same-origin 발판이 막힌다(off-loopback이면 운영자가 네트워크 경로를 책임지므로 적용하지 않는다). 인증을 조회보다 **먼저** 하는 이유는, 그러지 않으면 미인증 클라이언트가 404와 401을 비교해 존재하는 repo id를 열거할 수 있기 때문이다. 정적 번들이 인증 앞에 오는 이유는 그것이 로그인 폼을 그리는 주체이기 때문 — 게이팅하면 로그인할 방법 자체가 사라진다.
-- **경로 검증은 `with_repo` 한 곳에서** 한다. 라우트마다 쓰면 빠뜨린다: 실제로 `/api/diff`가 `../../etc/passwd`를 받아들였다. `load_file_diff`는 경로를 파일이 아니라 git pathspec으로 넘겨 검증기에 닿지 않았고, 빈 hunk와 함께 공격자의 경로를 그대로 되돌려줬다. **라우트가 "어떤 로더를 호출하느냐"에 따라 우연히 안전해서는 안 된다.**
-- **저장소는 opaque id로만 지정**한다(`catalog.rs`). 클라이언트가 디렉토리를 이름 붙일 수 없으므로 "어느 저장소인가"는 검증할 입력이 아니라 성공하거나 404가 되는 조회다. id는 프로세스 수명 동안 안정적이라, 무관한 탭을 열고 닫아도 다른 id가 재배치되지 않는다.
-- **저장소별 런타임**(`runtime.rs`): `SnapshotChannel`은 단일 consumer `mpsc`라 TUI 것을 공유할 수 없어 자기 것을 띄운다. 스냅샷을 wire 페이로드로 한 번만 줄여 팬아웃한다. **팬아웃은 conflate**된다 — 느린 구독자는 최신 상태를 받지, 밀린 과거를 재생하지 않는다(슬롯 1개 + 1-depth 병합 wakeup). 소켓 I/O 중 락을 잡지 않는다. 페이로드가 직전과 동일하면 발행하지 않는다: producer는 변화가 아니라 타이머로 tick하므로, 그러지 않으면 유휴 저장소가 매초 스트리밍하며 seq를 태워 "뭔가 바뀌었나"의 지표로 쓸 수 없게 된다.
-- **터미널**(`terminal.rs`)은 TUI 패인과 **별개 세션**이다. 공유하려면 `App`에 손을 대야 하고 그러면 헤드리스가 깨진다. raw PTY 바이트를 서버측 VT 에뮬레이션 없이 그대로 보낸다(xterm.js가 이미 에뮬레이터다). 4바이트 LE pane id를 앞에 붙인 **바이너리 프레임** — PTY 읽기는 멀티바이트 시퀀스를 일상적으로 쪼개므로 JSON으로 조기 디코딩하면 브라우저가 재조립하기 전에 깨진다. **출력은 conflate하지 않고 큐잉**한다: 최신 status는 완결된 그림이지만 터미널 바이트는 하나만 빠져도 스트림이 깨지므로, 큐를 넘긴 클라이언트는 조용히 버리지 않고 끊는다.
-- **자원 상한**(`limits.rs`)은 전부 `truncated`로 보고된다. 잘린 목록이 전체인 척하지 않는다.
-- **프론트엔드**(`viewer-ui/`): React 19 + Vite 7 + Tailwind v4 + `@xterm/xterm`. shadcn/ui는 쓰지 않는다 — 기본 톤이 TUI 밀도와 맞지 않아 덮어쓸 것이 더 많았다. `dist/`를 커밋해 `cargo install`에 Node를 요구하지 않는다(build.rs에서 npm을 부르면 Node 없는 설치가 전부 깨진다). CI가 재빌드해 커밋된 번들과 다르면 실패시킨다.
-- **사이드바 목록은 잘라내지 않고 가로로 스크롤한다**(`viewer-ui/src/App.tsx`). status/log/tree 목록은 TUI가 `ui/mod.rs`의 `char_offset`으로 긴 경로와 커밋 summary를 좌우로 미는 것과 같은 접근을 취한다. `truncate`를 쓰지 않는 이유는 두 행을 구분하는 것이 대개 경로의 **꼬리**이기 때문이다 — `src/web/viewer/server.rs`와 `terminal.rs`는 말줄임이 지우는 바로 그 부분에서만 갈린다. 단 TUI와 한 가지가 다르다: TUI는 status 코드나 commit short_id 같은 접두 컬럼을 고정한 채 가변 텍스트만 미는 반면, 뷰어는 **행 전체가 함께 스크롤된다**(VS Code 탐색기와 같은 동작). `position: sticky`로 접두를 고정하는 안은 검토 후 기각했다 — sticky 요소가 자기 배경을 들고 hover 상태까지 따라가야 해서, 얻는 것에 비해 행 렌더링이 복잡해진다.
-
-- **accent는 브라우저에 산다**(`viewer-ui/src/theme.ts`). 헤더 스와치가 TUI의 `<prefix> p`와 같은 순서로 5색을 순환한다. TUI가 ratatui 팔레트 이름 색을 쓰는 것과 달리 브라우저에는 대응물이 없어 hex를 고정하는데, 눈대중이 아니라 기존 amber `#d9a441`(OKLCH L=0.751 C=0.130 h=79.8)의 **명도·채도를 유지한 채 hue만 돌려** 파생시킨다 — 그래야 어느 프리셋을 골라도 ink 스케일 위에서 가독성이 같다. 적용은 root의 `--color-accent` 오버라이드 하나로 끝난다(Tailwind가 accent 유틸리티를 전부 `var(--color-accent)`로 컴파일한다). **저장은 서버(`~/.nightcrow/viewer.json`, `viewer/prefs.rs`), 저장소별이 아니라 뷰어 전역**이다: 뷰어는 폰·노트북 등 여러 기기에서 열리므로 브라우저마다 색을 다시 고르게 하지 않는다. repo id는 프로세스 수명 동안만 안정적이라 저장소별로 키를 잡으면 재시작마다 설정이 사라진다. 전달은 **클라이언트가 이미 3초마다 도는 `/api/repos` 폴링에 얹는다** — 별도 스트림이나 감시할 엔드포인트가 늘지 않고, 한 기기에서 바꾸면 나머지가 한 폴링 안에 따라온다. 쓰기는 `POST /api/prefs`(cross-site가 트리거할 수 없도록 GET이 아닌 POST, 인증 뒤에 배치). 여기서 유일한 순서 문제는 **클릭 직전에 출발한 폴링 응답이 옛 색을 들고 나중에 도착하는 것**이라, `App.tsx`가 로컬 변경 횟수를 세어 자기보다 오래된 응답의 accent만 버린다(나머지 필드는 그대로 쓴다). localStorage는 이제 **첫 페인트 캐시**로만 남는다: CSP가 인라인 스크립트를 막아(`script-src 'self'`) 번들 실행 전에는 칠할 수 없는데, 거기에 폴링 왕복까지 기다리면 매 로드마다 기본 amber가 번쩍인다. TUI 설정(`[theme]`, 저장소별 `accent_idx`)은 건드리지 않는다 — 읽으려면 뷰어가 TUI 설정에 의존하게 되고, 별도 포트·쿠키·비밀번호로 분리해 둔 경계가 흐려진다.
-
-- **diff는 unified/split 두 레이아웃을 토글한다**(`viewer-ui/src/diffLayout.ts`). diff pane 헤더의 버튼이 TUI의 `DiffPaneView::{Diff, Split}`(`diff_load.rs::toggle_diff_split_view`, Alt+V)와 같은 전환을 준다. 페어링은 백엔드를 건드리지 않는다 — JSON `Diff` payload가 이미 라인별 `kind`(`+`/`-`/context)와 하이라이트 span을 담고 있어, `splitHunkRows`가 TUI의 `split_rows`/`flush_split_blocks`(`ui/diff_pane.rs`)를 그대로 포팅해 순서만으로 좌/우 행을 만든다(연속 removed/added를 인덱스별로 짝짓고 짧은 쪽은 blank 셀로 패딩, context는 양쪽 미러링). **저장은 accent와 같은 뷰어 전역 localStorage**다. 좁은 화면에서는 두 코드 열이 함께 읽히지 않으므로, 저장된 선호는 그대로 두되 뷰포트가 `MIN_SPLIT_WIDTH_PX`(768px) 미만이면 `effective`가 unified로 접힌다 — TUI의 `MIN_SPLIT_WIDTH` 폴백(`diff_viewer.rs`)의 웹 대응물이고, 창을 넓히면 선호가 다시 살아난다. 뷰포트 기준으로 판정하는 것은 이 폴백이 지키는 화면(폰)이 전반적으로 좁기 때문 — pane을 `ResizeObserver`로 재는 정밀도는 여기서 얻는 게 없다.
-
-- **마크다운은 렌더 뷰로 연다**(`viewer-ui/src/Markdown.tsx`, `fileView.ts`). tree에서 연 파일 경로가 `.md`/`.markdown`이면 pane 헤더에 rendered/raw 토글이 붙고 기본은 rendered다(세션 한정 상태, diff와 달리 저장하지 않음 — rendered가 일반 경우라 매번 거기서 시작한다). 렌더는 `react-markdown`(+`remark-gfm`, `rehype-highlight`)이 AST를 React 엘리먼트로 만들어 수행한다 — `dangerouslySetInnerHTML`가 없어 별도 sanitize 없이 XSS 표면이 없고, 번들 자체 포함이라 `default-src 'self'` CSP와 맞는다. 원문은 새 API 없이 `/api/file`의 하이라이트 span에서 복원한다(span은 색만 담고 문자를 바꾸지 않으므로 `fileViewSource`의 이어붙이기가 무손실). Terminal처럼 lazy-load라 초기 청크에 remark/highlight.js 파이프라인이 들어가지 않는다. 스타일은 `index.css`의 `.nc-markdown` 스코프, 코드 토큰 색은 컴포넌트가 import하는 highlight.js 테마가 준다. **한계**: 문서 내 외부 이미지는 CSP `default-src 'self'`가 막아 로드되지 않는다(깨진 이미지로 표시).
-
-- **hot-file 강조는 mtime을 절대 시각으로 실어 보내고 브라우저가 식힌다**(`viewer-ui/src/hot.ts`). status 목록의 각 파일에 `mtime`(Unix ms)을 붙이고, 클라이언트가 TUI의 `classify_hot`(`ui/file_list.rs`)과 같은 단계로 나눈다(<5s = accent+bold, hot window 내 = accent, 그 밖 = 기본). **나이(age)가 아니라 절대 시각인 이유**: status 페이로드는 바이트 동일성으로 dedup되어 발행되므로, 매 tick 값이 변하는 필드를 넣으면 유휴 저장소가 영구 이벤트 스트림이 된다. 대가로 브라우저 시계에 의존하며, 서버와 어긋나면 강조 타이밍이 밀린다(음수 나이는 TUI와 같이 fresh로 saturate). 창(window)과 on/off는 `[agent_indicator]` 설정을 `/api/repos` 응답에 실어 전달한다 — 클라이언트에 기본값을 따로 두면 TUI와 조용히 갈라진다. `auto_follow`는 보내지 않는다(키보드 선택 이동은 뷰어에 대응물이 없다). 시간이 지나면 식어야 하므로 목록은 스스로 초당 re-render하는데, **tick은 hot 파일이 있는 스냅샷에서만 시작하고 마지막 파일이 식으면 스스로 멈춘다**. commit 파일 목록에는 `mtime`을 싣지 않는다 — 워킹 트리의 시각은 그 커밋과 무관하다.
-
-- **좁은 화면에서 프로젝트 탭은 드롭다운으로 접힌다**(`viewer-ui/src/App.tsx`의 `ProjectMenu`). 헤더의 프로젝트 탭 행은 `md`(768px) 이상에서만 보이고(`hidden md:flex`), 그 미만에서는 현재 프로젝트명을 띄우는 selector 하나로 대체된다(`md:hidden`). 드롭다운은 프로젝트 전환·프로젝트별 닫기(×)·`+ open`을 모두 담아 탭 행의 어포던스를 유지한다. 전환은 CSS 클래스로만 하고(JS 브레이크포인트 훅 없음, 사이드바 접힘과 같은 관례), 열림 상태는 컴포넌트 내부에 둔다. 바깥 클릭(투명 backdrop, `FolderPicker` 오버레이와 같은 방식)이나 Esc로 닫힌다.
-
-#### 알려진 잔여 위험 (수용 또는 후속)
-
-- **저장소 루트가 넓어질 수 있다.** 핸들러는 `Repository::discover`로 저장소를 열고 `repo.workdir()` 기준으로 경로를 푼다. `discover`는 상위로 올라가므로, 저장소가 아닌 디렉토리를 서빙하면(`serve --repo ~/notes`, `$HOME`이 저장소일 때) 브라우징 루트가 `$HOME`으로 넓어진다. traversal은 여전히 불가능하지만(내부 게이트가 유지된다) 운영자가 지정한 범위보다 넓다. 후속으로 `entry.path`에서 workdir을 파생시켜야 한다.
-- **로그인 rate limiter가 프로세스 전역**이라, 미인증 요청 3회/분으로 정당한 사용자의 로그인을 잠글 수 있다(`auth.rs`). 단일 비밀번호 모델의 대가.
-- **터미널은 클라이언트 간 격리가 없다.** 연결된 어느 클라이언트든 그 저장소의 아무 pane에 입력·리사이즈·종료할 수 있다. 단일 공유 비밀번호에서는 모두 같은 주체이므로 일관되지만, pane 소유권 개념이 없다는 뜻이다.
-- **PTY는 연결이 끊겨도 회수되지 않는다**(재접속 시 세션 유지 목적). 저장소당 최대 8개가 프로세스 수명 동안 남는다.
-- **세션에 절대 TTL이 없다.** 로그아웃은 이제 서버측에서 취소하지만, 방치된 세션은 프로세스 종료까지 유효하다.
-- **`Secure` 쿠키 플래그 없음.** loopback 기본값에서는 맞지만, `bind`를 바꾸면 평문 HTTP로 토큰이 나간다.
