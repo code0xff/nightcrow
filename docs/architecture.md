@@ -8,7 +8,7 @@ nightcrow 자체는 AI에 대한 ontology를 갖지 않는다 — agent든 사�
 
 **대상 사용자**: 터미널 중심으로 작업하면서, 옆 패널의 LLM CLI(Claude Code, Codex, aider 등)나 빌드/테스트 러너가 만든 코드 변경을 실시간으로 따라잡고 싶은 개발자.
 
-**핵심 기능**: 멀티 프로젝트 탭(최대 10개 저장소, 프로젝트별 git 뷰 + 터미널 pane), 변경 파일 리스트(좌측/키보드 네비게이션), git diff 뷰어(우측/문법 하이라이팅), commit log 뷰, read-only 파일 트리 내비게이터(라이브 워치 + 재귀 파일명 검색), split-view 멀티 PTY 패널(하단), mtime 기반 hot-file 강조 + idle auto-follow, OSC 0/2 탭 타이틀 캡처, 마우스 캡처(클릭 포커스/포워딩, 휠 라우팅, 클릭 가능한 힌트 바).
+**핵심 기능**: 멀티 프로젝트 탭(최대 10개 저장소, 프로젝트별 git 뷰 + 터미널 pane), 변경 파일 리스트(좌측/키보드 네비게이션), git diff 뷰어(우측/문법 하이라이팅), commit log 뷰, read-only 파일 트리 내비게이터(라이브 워치 + 재귀 파일명 검색 + 마크다운 렌더 뷰), split-view 멀티 PTY 패널(하단), mtime 기반 hot-file 강조 + idle auto-follow, OSC 0/2 탭 타이틀 캡처, 마우스 캡처(클릭 포커스/포워딩, 휠 라우팅, 클릭 가능한 힌트 바).
 
 ## Layout
 
@@ -487,6 +487,8 @@ PTY 관리는 portable-pty 기반 `PtyBackend` 단일 구현으로 정리됐다.
 - **accent는 브라우저에 산다**(`viewer-ui/src/theme.ts`). 헤더 스와치가 TUI의 `<prefix> p`와 같은 순서로 5색을 순환한다. TUI가 ratatui 팔레트 이름 색을 쓰는 것과 달리 브라우저에는 대응물이 없어 hex를 고정하는데, 눈대중이 아니라 기존 amber `#d9a441`(OKLCH L=0.751 C=0.130 h=79.8)의 **명도·채도를 유지한 채 hue만 돌려** 파생시킨다 — 그래야 어느 프리셋을 골라도 ink 스케일 위에서 가독성이 같다. 적용은 root의 `--color-accent` 오버라이드 하나로 끝난다(Tailwind가 accent 유틸리티를 전부 `var(--color-accent)`로 컴파일한다). **저장은 localStorage, 저장소별이 아니라 뷰어 전역**이다: repo id는 프로세스 수명 동안만 안정적이라 저장소별로 키를 잡으면 재시작마다 설정이 사라진다. config `[theme]`을 읽지 않는 것은 의도적이다 — 읽으려면 뷰어가 TUI 설정에 의존하게 되고, 별도 포트·쿠키·비밀번호로 분리해 둔 경계가 흐려진다. 대가로 CSP가 인라인 스크립트를 막으므로(`script-src 'self'`) 번들 실행 전에는 칠할 수 없어, 하드 리로드 시 기본 amber가 잠깐 보인다.
 
 - **diff는 unified/split 두 레이아웃을 토글한다**(`viewer-ui/src/diffLayout.ts`). diff pane 헤더의 버튼이 TUI의 `DiffPaneView::{Diff, Split}`(`diff_load.rs::toggle_diff_split_view`, Alt+V)와 같은 전환을 준다. 페어링은 백엔드를 건드리지 않는다 — JSON `Diff` payload가 이미 라인별 `kind`(`+`/`-`/context)와 하이라이트 span을 담고 있어, `splitHunkRows`가 TUI의 `split_rows`/`flush_split_blocks`(`ui/diff_pane.rs`)를 그대로 포팅해 순서만으로 좌/우 행을 만든다(연속 removed/added를 인덱스별로 짝짓고 짧은 쪽은 blank 셀로 패딩, context는 양쪽 미러링). **저장은 accent와 같은 뷰어 전역 localStorage**다. 좁은 화면에서는 두 코드 열이 함께 읽히지 않으므로, 저장된 선호는 그대로 두되 뷰포트가 `MIN_SPLIT_WIDTH_PX`(768px) 미만이면 `effective`가 unified로 접힌다 — TUI의 `MIN_SPLIT_WIDTH` 폴백(`diff_viewer.rs`)의 웹 대응물이고, 창을 넓히면 선호가 다시 살아난다. 뷰포트 기준으로 판정하는 것은 이 폴백이 지키는 화면(폰)이 전반적으로 좁기 때문 — pane을 `ResizeObserver`로 재는 정밀도는 여기서 얻는 게 없다.
+
+- **마크다운은 렌더 뷰로 연다**(`viewer-ui/src/Markdown.tsx`, `fileView.ts`). tree에서 연 파일 경로가 `.md`/`.markdown`이면 pane 헤더에 rendered/raw 토글이 붙고 기본은 rendered다(세션 한정 상태, diff와 달리 저장하지 않음 — rendered가 일반 경우라 매번 거기서 시작한다). 렌더는 `react-markdown`(+`remark-gfm`, `rehype-highlight`)이 AST를 React 엘리먼트로 만들어 수행한다 — `dangerouslySetInnerHTML`가 없어 별도 sanitize 없이 XSS 표면이 없고, 번들 자체 포함이라 `default-src 'self'` CSP와 맞는다. 원문은 새 API 없이 `/api/file`의 하이라이트 span에서 복원한다(span은 색만 담고 문자를 바꾸지 않으므로 `fileViewSource`의 이어붙이기가 무손실). Terminal처럼 lazy-load라 초기 청크에 remark/highlight.js 파이프라인이 들어가지 않는다. 스타일은 `index.css`의 `.nc-markdown` 스코프, 코드 토큰 색은 컴포넌트가 import하는 highlight.js 테마가 준다. **한계**: 문서 내 외부 이미지는 CSP `default-src 'self'`가 막아 로드되지 않는다(깨진 이미지로 표시).
 
 #### 알려진 잔여 위험 (수용 또는 후속)
 

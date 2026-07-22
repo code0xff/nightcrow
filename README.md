@@ -303,6 +303,10 @@ inline unified diff and a side-by-side split view, mirroring the TUI's Alt+V.
 The choice is stored per browser; on a narrow window (phone) it always renders
 unified, since two code columns can't both stay legible there.
 
+Markdown files (`.md`, `.markdown`) opened from the tree render as formatted
+documents by default, with fenced code syntax-highlighted. A toggle (top-right
+of the pane) switches to the raw highlighted source.
+
 Enable it alongside the TUI under `[web_viewer]`:
 
 ```toml
