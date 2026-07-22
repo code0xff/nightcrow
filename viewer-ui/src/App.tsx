@@ -528,20 +528,44 @@ export function App() {
     const path = current.value.path;
     if (!status.files.some((f) => f.path === path)) {
       setPane({ kind: "empty" });
-    } else {
-      // Reads the request counter without bumping it: this refresh is on the
-      // pane the user is already looking at, so it yields to anything they open
-      // while it is in flight rather than invalidating their click.
-      const request = paneRequestRef.current;
-      api
-        .diff(repo, path)
-        .then((v) => {
-          if (request === paneRequestRef.current) setPane({ kind: "diff", value: v });
-        })
-        .catch((err) => {
-          if (request === paneRequestRef.current) handle(err);
-        });
+      return;
     }
+    // Reads the request counter without bumping it: this refresh is on the
+    // pane the user is already looking at, so it yields to anything they open
+    // while it is in flight rather than invalidating their click.
+    const request = paneRequestRef.current;
+    // Two snapshots arriving close together would otherwise both reload the
+    // same path against the same counter, and the slower of the two could land
+    // last with the older content. The next snapshot re-runs this effect, so
+    // its cleanup is what retires the previous refresh.
+    let active = true;
+    // Three conditions, because the counter alone answers the wrong question.
+    // It says "no newer request has started", not "the pane is still the one
+    // being refreshed" — and those come apart: opening B raises the counter,
+    // then a snapshot arrives while A is still on screen, so this refresh of A
+    // captures *B's* number and outlives B's own response. Checking that the
+    // rendered pane is still this path is what keeps a background reload from
+    // undoing the file the user just clicked.
+    const stillOurs = () => {
+      const shown = paneRef.current;
+      return (
+        active &&
+        request === paneRequestRef.current &&
+        shown.kind === "diff" &&
+        shown.value.path === path
+      );
+    };
+    api
+      .diff(repo, path)
+      .then((v) => {
+        if (stillOurs()) setPane({ kind: "diff", value: v });
+      })
+      .catch((err) => {
+        if (stillOurs()) handle(err);
+      });
+    return () => {
+      active = false;
+    };
   }, [status, repo, handle]);
 
   useEffect(() => {
@@ -549,12 +573,18 @@ export function App() {
     api.log(repo).then((r) => setCommits(r.commits)).catch(handle);
   }, [repo, authed, tab, handle]);
 
-  // The cached tree belongs to one repository; drop it when the repo changes.
+  // Everything on screen below the header belongs to one repository; drop it
+  // when the repo changes. This effect rather than the click handlers is where
+  // it belongs, because not every switch comes from a click: closing the active
+  // project in the TUI drops it from the poll, and the list falls back to
+  // another repo on its own. Clearing only where the user clicked would leave
+  // that path showing the old repository's file in the pane.
   useEffect(() => {
     setTreeChildren({});
     setTreeExpanded(new Set());
     paneRequestRef.current += 1;
     setCommitDrillDown(null);
+    setPane({ kind: "empty" });
   }, [repo]);
 
   // Load (and refresh) the root level whenever the tree tab is shown; deeper
