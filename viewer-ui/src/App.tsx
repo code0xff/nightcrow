@@ -1,5 +1,4 @@
 import {
-  Fragment,
   Suspense,
   lazy,
   useCallback,
@@ -145,46 +144,56 @@ function DiffLineContent({ line }: { line: DiffLine }) {
   );
 }
 
-/** One side of a split row; `null` renders a muted blank where the other side
- * has no counterpart, so the two columns stay row-aligned. `border` draws the
- * divider between the columns (always on the right cell, blank or not). */
-function SplitCell({
-  line,
-  border,
-}: {
-  line: DiffLine | null;
-  border: boolean;
-}) {
-  const divider = border ? "border-l border-ink-800" : "";
+/** One line within a split column; `null` renders a muted blank where this side
+ * has no counterpart, so the two columns stay row-aligned. Both cases carry one
+ * line's height (the blank via a non-breaking space) and fill the inner track's
+ * width so the change tint spans the whole line, overflow included. */
+function SplitCell({ line }: { line: DiffLine | null }) {
   if (line === null) {
-    return <div className={`bg-ink-900/40 ${divider}`} />;
+    return <div className="whitespace-pre bg-ink-900/40 px-3">{" "}</div>;
   }
   return (
-    <div className={`whitespace-pre px-3 ${diffLineBg(line.kind)} ${divider}`}>
+    <div className={`whitespace-pre px-3 ${diffLineBg(line.kind)}`}>
       <DiffLineContent line={line} />
     </div>
   );
 }
 
-// Each column is at least its widest line (`max-content`) and grows to fill
-// half the pane when the content is narrower. So short diffs sit at 50/50 while
-// a long line widens its column and the whole pane scrolls horizontally as one
-// unit — matching the unified view — instead of every long line growing its own
-// scrollbar. The grid keeps the two columns' seam aligned across rows.
-const SPLIT_COLUMNS = "minmax(max-content, 1fr) minmax(max-content, 1fr)";
+/** One fixed-half side of a split hunk: a stack of its lines that scrolls
+ * horizontally on its own, so a long line here never drags the other side. The
+ * inner `w-max min-w-full` track is as wide as this side's widest line (but at
+ * least the full column), giving every line a uniform width for the tint and a
+ * single shared scrollbar for the side. `border` draws the divider between the
+ * two halves (on the right side). */
+function SplitColumn({
+  cells,
+  border,
+}: {
+  cells: (DiffLine | null)[];
+  border: boolean;
+}) {
+  const divider = border ? "border-l border-ink-800" : "";
+  return (
+    <div className={`min-w-0 flex-1 basis-1/2 overflow-x-auto ${divider}`}>
+      <div className="w-max min-w-full">
+        {cells.map((line, i) => (
+          <SplitCell key={i} line={line} />
+        ))}
+      </div>
+    </div>
+  );
+}
 
 /** Side-by-side body for one hunk: removed lines on the left, added on the
- * right, paired by `splitHunkRows`. Rows are grid cells so both columns share
- * one horizontal scroll and stay aligned. */
+ * right, paired by `splitHunkRows`. The two halves are fixed at 50% each and
+ * scroll horizontally independently; equal per-line heights keep rows aligned
+ * across the seam. */
 function SplitHunk({ lines }: { lines: DiffLine[] }) {
+  const rows = splitHunkRows(lines);
   return (
-    <div className="grid" style={{ gridTemplateColumns: SPLIT_COLUMNS }}>
-      {splitHunkRows(lines).map((row, i) => (
-        <Fragment key={i}>
-          <SplitCell line={row.left} border={false} />
-          <SplitCell line={row.right} border={true} />
-        </Fragment>
-      ))}
+    <div className="flex">
+      <SplitColumn cells={rows.map((r) => r.left)} border={false} />
+      <SplitColumn cells={rows.map((r) => r.right)} border={true} />
     </div>
   );
 }
