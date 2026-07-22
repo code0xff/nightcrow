@@ -38,6 +38,7 @@ use crate::web::viewer::dto::{
     TreeDto, TreeSearchDto,
 };
 use crate::web::viewer::limits;
+use crate::web::viewer::prefs::PrefsStore;
 use crate::web::viewer::terminal::{self, ClientMessage, TerminalFrame};
 use anyhow::{Context, Result};
 use std::io::Write;
@@ -80,11 +81,33 @@ pub struct ViewerState {
     /// selection, which is a keyboard-driven notion the viewer has no analogue
     /// for.
     hot: crate::config::AgentIndicatorConfig,
+    /// Viewer preferences shared by every client (see `prefs.rs`). Unlike the
+    /// catalog's `persist`, this is always written: the file is the viewer's
+    /// own and no TUI owns it.
+    prefs: PrefsStore,
 }
 
 pub struct ViewerServer {
     state: Arc<ViewerState>,
     addr: SocketAddr,
+}
+
+/// Everything [`ViewerServer::start`] needs. A struct rather than a parameter
+/// list: the server is configured from three unrelated places (`[web_viewer]`,
+/// `[agent_indicator]`, the CLI), and positional arguments of the same types
+/// were becoming easy to transpose silently.
+pub struct ViewerOptions {
+    pub bind: IpAddr,
+    pub port: u16,
+    pub auth: Auth,
+    /// Absolute repository paths seeding the catalog; may be empty.
+    pub repos: Vec<String>,
+    /// Mirror catalog changes into the shared workspace file (headless
+    /// `serve` only — alongside the TUI, the TUI owns that file).
+    pub persist: bool,
+    pub startup_commands: Vec<String>,
+    pub hot: crate::config::AgentIndicatorConfig,
+    pub prefs: PrefsStore,
 }
 
 impl ViewerServer {
@@ -110,29 +133,31 @@ impl ViewerServer {
                 viewer.bind
             )
         })?;
-        Self::start(
+        Self::start(ViewerOptions {
             bind,
-            viewer.port,
+            port: viewer.port,
             auth,
-            paths,
+            repos: paths.to_vec(),
             persist,
             startup_commands,
-            agent_indicator.clone(),
-        )
+            hot: agent_indicator.clone(),
+            prefs: PrefsStore::load(),
+        })
     }
 
-    /// Bind and start accepting. `paths` seeds the catalog; the caller may
-    /// replace it later through [`ViewerServer::set_repos`]. `persist` mirrors
-    /// catalog changes into the shared workspace file (headless `serve` only).
-    pub fn start(
-        bind: IpAddr,
-        port: u16,
-        auth: Auth,
-        paths: &[String],
-        persist: bool,
-        startup_commands: Vec<String>,
-        hot: crate::config::AgentIndicatorConfig,
-    ) -> Result<Self> {
+    /// Bind and start accepting. The seeded repositories may be replaced later
+    /// through [`ViewerServer::set_repos`].
+    pub fn start(options: ViewerOptions) -> Result<Self> {
+        let ViewerOptions {
+            bind,
+            port,
+            auth,
+            repos,
+            persist,
+            startup_commands,
+            hot,
+            prefs,
+        } = options;
         let listener = TcpListener::bind((bind, port))
             .with_context(|| format!("binding viewer server to {bind}:{port}"))?;
         let addr = listener
@@ -148,8 +173,9 @@ impl ViewerServer {
             connections: Arc::new(AtomicUsize::new(0)),
             persist,
             hot,
+            prefs,
         });
-        state.catalog.set_paths(paths);
+        state.catalog.set_paths(&repos);
 
         let accept_state = Arc::clone(&state);
         std::thread::Builder::new()
@@ -286,6 +312,13 @@ fn handle_connection(mut stream: TcpStream, state: Arc<ViewerState>) {
         return;
     }
 
+    // Storing a viewer preference. POST for the same reason opening a
+    // repository is: a cross-site page cannot trigger it.
+    if head.method == "POST" && head.path == "/api/prefs" {
+        let _ = stream.write_all(&handle_set_prefs(&body, &state));
+        return;
+    }
+
     // Closing a repository: same trust reasoning as opening. Removes it from
     // the served set and stops its runtime and terminals.
     if head.method == "DELETE" && head.path == "/api/repos" {
@@ -327,6 +360,32 @@ fn handle_login(body: &str, state: &ViewerState) -> Vec<u8> {
 #[derive(serde::Deserialize)]
 struct OpenRequest {
     path: String,
+}
+
+#[derive(serde::Deserialize)]
+struct PrefsRequest {
+    accent: usize,
+}
+
+/// Store a viewer preference and echo back what was kept.
+///
+/// The stored value is the request's, wrapped into range — a client sending an
+/// index past the end of the cycle gets a colour back rather than an error,
+/// which is what the TUI does with the same overflow (`Accent::from_index`).
+fn handle_set_prefs(body: &str, state: &ViewerState) -> Vec<u8> {
+    let request: PrefsRequest = match serde_json::from_str(body) {
+        Ok(request) => request,
+        Err(_) => {
+            return json_error("400 Bad Request", "expected a JSON body with an accent index");
+        }
+    };
+    let stored = state.prefs.set_accent(request.accent);
+    match serde_json::to_string(&Envelope::new(
+        serde_json::json!({ "accent": stored.accent }),
+    )) {
+        Ok(json) => json_response("200 OK", &json, &[]),
+        Err(_) => json_error("500 Internal Server Error", "could not encode preferences"),
+    }
 }
 
 /// Open a repository from the browser and add it to the served catalog.
@@ -439,6 +498,10 @@ fn route(head: &RequestHead, state: &ViewerState) -> Vec<u8> {
                     "enabled": state.hot.enabled,
                     "window_secs": state.hot.hot_window_secs,
                 },
+                // The accent rides the poll every client already runs, so a
+                // change made on one device reaches the others within a poll
+                // interval without a stream or a second endpoint to watch.
+                "accent": state.prefs.get().accent,
             }))) {
                 Ok(json) => json_response("200 OK", &json, &[]),
                 Err(_) => json_error("500 Internal Server Error", "could not encode repositories"),
@@ -845,24 +908,33 @@ mod tests {
     use std::io::Read;
 
     fn server(paths: &[String]) -> ViewerServer {
-        server_with_hot(paths, crate::config::AgentIndicatorConfig::default())
+        server_with(paths, crate::config::AgentIndicatorConfig::default(), None)
     }
 
-    fn server_with_hot(
+    /// `prefs_dir` keeps preference writes inside a temp directory. Left `None`
+    /// the store still points at the real `~/.nightcrow/viewer.json`, so any
+    /// test that *writes* a preference must pass one.
+    fn server_with(
         paths: &[String],
         hot: crate::config::AgentIndicatorConfig,
+        prefs_dir: Option<&std::path::Path>,
     ) -> ViewerServer {
-        ViewerServer::start(
-            "127.0.0.1".parse().unwrap(),
-            0,
-            Auth::from_plaintext("swordfish").unwrap(),
-            paths,
+        let prefs = match prefs_dir {
+            Some(dir) => PrefsStore::at(dir.join("viewer.json")),
+            None => PrefsStore::at(std::path::PathBuf::from("/nonexistent/nightcrow/viewer.json")),
+        };
+        ViewerServer::start(ViewerOptions {
+            bind: "127.0.0.1".parse().unwrap(),
+            port: 0,
+            auth: Auth::from_plaintext("swordfish").unwrap(),
+            repos: paths.to_vec(),
             // Never persist from tests — they must not touch the real
             // ~/.nightcrow/workspace.json.
-            false,
-            Vec::new(),
+            persist: false,
+            startup_commands: Vec::new(),
             hot,
-        )
+            prefs,
+        })
         .unwrap()
     }
 
@@ -983,13 +1055,14 @@ mod tests {
         // The client fades its file list on this window; reading the config
         // from the server is what keeps it on the TUI's window rather than a
         // second default that drifts.
-        let server = server_with_hot(
+        let server = server_with(
             &[],
             crate::config::AgentIndicatorConfig {
                 enabled: false,
                 hot_window_secs: 42,
                 auto_follow: true,
             },
+            None,
         );
         let token = login(server.addr());
 
@@ -1001,6 +1074,58 @@ mod tests {
         // `auto_follow` moves a TUI selection; the browser has no analogue and
         // must not be told about it.
         assert!(value["hot"].get("auto_follow").is_none());
+    }
+
+    #[test]
+    fn a_stored_accent_is_served_to_every_later_client() {
+        // The point of storing it server-side: a second device (a second
+        // request, here) sees the choice without having made it.
+        let dir = tempfile::TempDir::new().unwrap();
+        let server = server_with(
+            &[],
+            crate::config::AgentIndicatorConfig::default(),
+            Some(dir.path()),
+        );
+        let token = login(server.addr());
+
+        let stored = post(server.addr(), "/api/prefs", "{\"accent\":3}", Some(&token));
+        assert!(stored.starts_with("HTTP/1.1 200"), "got: {stored}");
+
+        let list = get(server.addr(), "/api/repos", Some(&token));
+        let value: serde_json::Value = serde_json::from_str(body_of(&list)).unwrap();
+        assert_eq!(value["accent"], 3);
+    }
+
+    #[test]
+    fn storing_a_preference_requires_authentication() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let server = server_with(
+            &[],
+            crate::config::AgentIndicatorConfig::default(),
+            Some(dir.path()),
+        );
+
+        let response = post(server.addr(), "/api/prefs", "{\"accent\":3}", None);
+
+        assert!(response.starts_with("HTTP/1.1 401"), "got: {response}");
+    }
+
+    #[test]
+    fn a_malformed_preference_body_is_rejected_without_changing_anything() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let server = server_with(
+            &[],
+            crate::config::AgentIndicatorConfig::default(),
+            Some(dir.path()),
+        );
+        let token = login(server.addr());
+
+        let response = post(server.addr(), "/api/prefs", "{\"accent\":\"red\"}", Some(&token));
+
+        assert!(response.starts_with("HTTP/1.1 400"), "got: {response}");
+        let list = get(server.addr(), "/api/repos", Some(&token));
+        let value: serde_json::Value = serde_json::from_str(body_of(&list)).unwrap();
+        assert_eq!(value["accent"], 0);
     }
 
     #[test]
