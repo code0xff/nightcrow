@@ -490,6 +490,8 @@ PTY 관리는 portable-pty 기반 `PtyBackend` 단일 구현으로 정리됐다.
 
 - **마크다운은 렌더 뷰로 연다**(`viewer-ui/src/Markdown.tsx`, `fileView.ts`). tree에서 연 파일 경로가 `.md`/`.markdown`이면 pane 헤더에 rendered/raw 토글이 붙고 기본은 rendered다(세션 한정 상태, diff와 달리 저장하지 않음 — rendered가 일반 경우라 매번 거기서 시작한다). 렌더는 `react-markdown`(+`remark-gfm`, `rehype-highlight`)이 AST를 React 엘리먼트로 만들어 수행한다 — `dangerouslySetInnerHTML`가 없어 별도 sanitize 없이 XSS 표면이 없고, 번들 자체 포함이라 `default-src 'self'` CSP와 맞는다. 원문은 새 API 없이 `/api/file`의 하이라이트 span에서 복원한다(span은 색만 담고 문자를 바꾸지 않으므로 `fileViewSource`의 이어붙이기가 무손실). Terminal처럼 lazy-load라 초기 청크에 remark/highlight.js 파이프라인이 들어가지 않는다. 스타일은 `index.css`의 `.nc-markdown` 스코프, 코드 토큰 색은 컴포넌트가 import하는 highlight.js 테마가 준다. **한계**: 문서 내 외부 이미지는 CSP `default-src 'self'`가 막아 로드되지 않는다(깨진 이미지로 표시).
 
+- **좁은 화면에서 프로젝트 탭은 드롭다운으로 접힌다**(`viewer-ui/src/App.tsx`의 `ProjectMenu`). 헤더의 프로젝트 탭 행은 `md`(768px) 이상에서만 보이고(`hidden md:flex`), 그 미만에서는 현재 프로젝트명을 띄우는 selector 하나로 대체된다(`md:hidden`). 드롭다운은 프로젝트 전환·프로젝트별 닫기(×)·`+ open`을 모두 담아 탭 행의 어포던스를 유지한다. 전환은 CSS 클래스로만 하고(JS 브레이크포인트 훅 없음, 사이드바 접힘과 같은 관례), 열림 상태는 컴포넌트 내부에 둔다. 바깥 클릭(투명 backdrop, `FolderPicker` 오버레이와 같은 방식)이나 Esc로 닫힌다.
+
 #### 알려진 잔여 위험 (수용 또는 후속)
 
 - **저장소 루트가 넓어질 수 있다.** 핸들러는 `Repository::discover`로 저장소를 열고 `repo.workdir()` 기준으로 경로를 푼다. `discover`는 상위로 올라가므로, 저장소가 아닌 디렉토리를 서빙하면(`serve --repo ~/notes`, `$HOME`이 저장소일 때) 브라우징 루트가 `$HOME`으로 넓어진다. traversal은 여전히 불가능하지만(내부 게이트가 유지된다) 운영자가 지정한 범위보다 넓다. 후속으로 `entry.path`에서 workdir을 파생시켜야 한다.
