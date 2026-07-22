@@ -366,7 +366,14 @@ export function App() {
   const now = useHotClock(status?.files, hotWindowMs);
   // Ahead of the login/loading early returns below, so the stored accent
   // applies to those screens too and not just the main view.
-  const { accent, next, cycle } = useAccent();
+  const { accent, next, cycle: cycleAccent, adopt: adoptAccent } = useAccent();
+  // Counts local accent changes, so the repo poll can tell its response apart
+  // from one that predates the user's click.
+  const accentWrites = useRef(0);
+  const cycle = useCallback(() => {
+    accentWrites.current += 1;
+    cycleAccent();
+  }, [cycleAccent]);
   const diffLayout = useDiffLayout();
   // Markdown files open rendered; this toggles to their raw source. Session-only
   // (not persisted like the diff layout) — the rendered view is the common case,
@@ -419,12 +426,18 @@ export function App() {
   useEffect(() => {
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
-    const refresh = () =>
-      api
+    const refresh = () => {
+      // A poll that left before the user cycled the accent carries the old
+      // colour. Applying it when it lands would flicker the swatch back for a
+      // poll interval, so responses older than the last local change drop
+      // their accent. Everything else in them is still current.
+      const writes = accentWrites.current;
+      return api
         .repos()
-        .then(({ repos: list, hot }) => {
+        .then(({ repos: list, hot, accent }) => {
           if (cancelled) return;
           setHot(hot);
+          if (accentWrites.current === writes) adoptAccent(accent);
           setAuthed(true);
           // We now hold the authoritative list for this session; the initial
           // splash can give way to the shell (or the empty-state prompt).
@@ -456,6 +469,7 @@ export function App() {
           }
           timer = setTimeout(refresh, REPO_POLL_MS);
         });
+    };
 
     // Re-runs when `authed` flips true on login, giving an immediate repo fetch
     // rather than waiting up to a poll interval — otherwise the post-login
@@ -465,7 +479,7 @@ export function App() {
       cancelled = true;
       if (timer) clearTimeout(timer);
     };
-  }, [authed, handle]);
+  }, [authed, handle, adoptAccent]);
 
   // Live status. The server replays the latest snapshot on subscribe, so this
   // both seeds the view and keeps it current — no separate initial fetch.

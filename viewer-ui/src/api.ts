@@ -186,7 +186,12 @@ export const api = {
     }
   },
 
-  repos: () => get<{ repos: Repo[]; hot: HotConfig }>("/api/repos"),
+  repos: () =>
+    get<{ repos: Repo[]; hot: HotConfig; accent: number }>("/api/repos"),
+  /** Store the accent for every client of this viewer. Returns the index the
+   *  server kept, which is the request's wrapped into range. */
+  setAccent: (accent: number) =>
+    post<{ accent: number }>("/api/prefs", { accent }).then((r) => r.accent),
   status: (repo: string) => get<Status>(`/api/status?${query({ repo })}`),
   tree: (repo: string, path: string) =>
     get<{ path: string; entries: TreeEntry[]; truncated: boolean }>(

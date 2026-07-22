@@ -1,4 +1,5 @@
 import { useCallback, useLayoutEffect, useState } from "react";
+import { api } from "./api";
 
 /**
  * Accent presets, in the TUI's cycle order (`config.rs` `Accent::ALL`), so
@@ -23,6 +24,16 @@ export const ACCENTS = [
   { name: "blue", color: "#87acfd" },
 ] as const;
 
+/**
+ * Cache of the server's value, not the preference itself.
+ *
+ * The accent lives on the server (`viewer/prefs.rs`) so every device that opens
+ * the viewer shows the same colour. This copy exists only to paint the first
+ * frame: the CSP forbids inline scripts, so nothing can style the page before
+ * the bundle runs, and waiting for `/api/repos` on top of that would flash the
+ * default amber on every load. The server's value overwrites it as soon as the
+ * first poll lands.
+ */
 const STORAGE_KEY = "nightcrow.viewer.accent";
 
 /**
@@ -65,7 +76,13 @@ function storeIndex(index: number) {
  * every accent utility to `var(--color-accent)`, so one property recolours all
  * of them without a rebuild. The CSP forbids inline scripts (`script-src
  * 'self'`), so this cannot run before the bundle does — a hard reload paints
- * the default amber for the moment before React mounts.
+ * the cached accent for the moment before React mounts.
+ *
+ * `cycle` writes through to the server and `adopt` takes a value back from it,
+ * so the caller owns the ordering between the two (see `App.tsx`: a poll that
+ * was already in flight when the user clicked must not undo the click).
+ * A failed write leaves the colour applied locally — the click must not look
+ * like it did nothing — and the next poll then corrects it.
  */
 export function useAccent() {
   const [index, setIndex] = useState(loadIndex);
@@ -81,9 +98,27 @@ export function useAccent() {
     setIndex((current) => {
       const next = normalize(current + 1);
       storeIndex(next);
+      void api.setAccent(next).catch(() => {
+        // Kept locally for this session; the next poll re-reads the server.
+      });
       return next;
     });
   }, []);
 
-  return { accent: ACCENTS[index], next: ACCENTS[normalize(index + 1)], cycle };
+  /** Apply the server's value without writing it back. */
+  const adopt = useCallback((remote: number) => {
+    setIndex((current) => {
+      const next = normalize(remote);
+      if (next === current) return current;
+      storeIndex(next);
+      return next;
+    });
+  }, []);
+
+  return {
+    accent: ACCENTS[index],
+    next: ACCENTS[normalize(index + 1)],
+    cycle,
+    adopt,
+  };
 }
