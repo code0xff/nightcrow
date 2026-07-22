@@ -168,7 +168,8 @@ const HOT_CLASS: Record<HotStage, string> = {
  *  A file cools with time rather than with any event, so the list has to
  *  re-render on its own to fade. The ticking is bounded on both ends: it starts
  *  only when a snapshot actually contains a hot file, and stops itself once the
- *  last one cools — an idle repository re-renders nothing.
+ *  last one cools — an idle repository re-renders nothing. Every snapshot is
+ *  still dated on arrival, ticker or not, so a stopped clock never judges one.
  *
  *  `windowMs <= 0` (the server's indicator turned off, or its config not yet
  *  loaded) never ticks; `classifyHot` reads everything as cool at that window. */
@@ -185,10 +186,14 @@ function useHotClock(
   useEffect(() => {
     if (windowMs <= 0 || !files) return;
     const mtimes = files.map((f) => f.mtime);
-    if (!anyHot(mtimes, Date.now() + offsetMs, windowMs)) return;
-    // A fresh snapshot's mtimes are new, so date them now rather than at the
-    // end of the first tick.
-    setNow(Date.now() + offsetMs);
+    // Date the snapshot before deciding whether it needs a ticker, not after.
+    // `now` stops advancing when the last file cools, so a snapshot arriving
+    // long afterwards — the tab left open, or another repository selected —
+    // would otherwise be measured against whenever the ticker last stopped, and
+    // a file touched around that moment would read as freshly touched forever.
+    const start = Date.now() + offsetMs;
+    setNow(start);
+    if (!anyHot(mtimes, start, windowMs)) return;
     const id = setInterval(() => {
       const tick = Date.now() + offsetMs;
       setNow(tick);
