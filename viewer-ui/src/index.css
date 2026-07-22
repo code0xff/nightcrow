@@ -72,6 +72,142 @@ button:not(:disabled),
   scrollbar-color: var(--color-ink-600) transparent;
 }
 
+/* Rendered-markdown styles for the file pane (`Markdown.tsx`). Tailwind's
+   preflight strips heading/list/etc. defaults, so restore a readable document
+   look scoped to `.nc-markdown`, keyed to the ink palette. Fenced-code token
+   colours come from the highlight.js theme imported by that component; here the
+   `pre` owns the block (background, padding) and the inner `code.hljs` is reset
+   to sit transparently inside it. */
+.nc-markdown {
+  max-width: 52rem;
+  font-family: var(--font-sans);
+  color: var(--color-ink-50);
+  line-height: 1.6;
+}
+.nc-markdown h1,
+.nc-markdown h2,
+.nc-markdown h3,
+.nc-markdown h4,
+.nc-markdown h5,
+.nc-markdown h6 {
+  font-weight: 600;
+  line-height: 1.25;
+  margin: 1.4em 0 0.6em;
+}
+.nc-markdown h1 {
+  font-size: 1.6em;
+  border-bottom: 1px solid var(--color-ink-700);
+  padding-bottom: 0.3em;
+}
+.nc-markdown h2 {
+  font-size: 1.35em;
+  border-bottom: 1px solid var(--color-ink-800);
+  padding-bottom: 0.25em;
+}
+.nc-markdown h3 {
+  font-size: 1.15em;
+}
+.nc-markdown h4 {
+  font-size: 1em;
+}
+.nc-markdown h5,
+.nc-markdown h6 {
+  font-size: 0.9em;
+  color: var(--color-ink-200);
+}
+.nc-markdown :first-child {
+  margin-top: 0;
+}
+.nc-markdown p,
+.nc-markdown ul,
+.nc-markdown ol,
+.nc-markdown blockquote,
+.nc-markdown table,
+.nc-markdown pre {
+  margin: 0.75em 0;
+}
+.nc-markdown ul,
+.nc-markdown ol {
+  padding-left: 1.5em;
+}
+.nc-markdown ul {
+  list-style: disc;
+}
+.nc-markdown ol {
+  list-style: decimal;
+}
+.nc-markdown li {
+  margin: 0.25em 0;
+}
+.nc-markdown li::marker {
+  color: var(--color-ink-400);
+}
+/* GFM task lists: the checkbox sits inline, not on the list rail. */
+.nc-markdown li:has(> input[type="checkbox"]) {
+  list-style: none;
+  margin-left: -1.2em;
+}
+.nc-markdown a {
+  color: var(--color-accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.nc-markdown strong {
+  font-weight: 600;
+}
+.nc-markdown em {
+  font-style: italic;
+}
+.nc-markdown blockquote {
+  border-left: 3px solid var(--color-ink-700);
+  padding-left: 1em;
+  color: var(--color-ink-200);
+}
+.nc-markdown hr {
+  border: 0;
+  border-top: 1px solid var(--color-ink-700);
+  margin: 1.5em 0;
+}
+.nc-markdown img {
+  max-width: 100%;
+}
+/* Inline code only (fenced blocks are `pre > code`, handled below). */
+.nc-markdown :not(pre) > code {
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+  background: var(--color-ink-800);
+  padding: 0.1em 0.35em;
+  border-radius: 3px;
+}
+.nc-markdown pre {
+  background: var(--color-ink-850);
+  border: 1px solid var(--color-ink-800);
+  border-radius: 4px;
+  padding: 0.9em 1em;
+  overflow-x: auto;
+}
+.nc-markdown pre code {
+  font-family: var(--font-mono);
+  font-size: 0.85em;
+  background: transparent;
+  padding: 0;
+}
+.nc-markdown table {
+  border-collapse: collapse;
+  display: block;
+  overflow-x: auto;
+}
+.nc-markdown th,
+.nc-markdown td {
+  border: 1px solid var(--color-ink-700);
+  padding: 0.4em 0.7em;
+  text-align: left;
+}
+.nc-markdown th {
+  background: var(--color-ink-850);
+  font-weight: 600;
+}
+
 /* The app fades in once, when it first mounts after the loading screen, so the
    layout eases onto the page instead of snapping from blank. Runs a single time
    per element mount — re-renders reuse the node and do not replay it. */

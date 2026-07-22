@@ -25,11 +25,13 @@ import {
 import {
   ChevronIcon,
   MaximizeIcon,
+  PreviewIcon,
   SearchIcon,
   SplitViewIcon,
   XIcon,
 } from "./icons";
 import { splitHunkRows, useDiffLayout } from "./diffLayout";
+import { fileViewSource, isMarkdownPath } from "./fileView";
 import { useAccent } from "./theme";
 
 // Lazily loaded so `@xterm/xterm` (the bulk of the bundle) stays out of the
@@ -37,6 +39,13 @@ import { useAccent } from "./theme";
 // a repo is open and the terminal panel actually mounts.
 const TerminalPanel = lazy(() =>
   import("./Terminal").then((m) => ({ default: m.TerminalPanel })),
+);
+
+// Same reasoning as the terminal panel: react-markdown pulls in the remark /
+// rehype / highlight.js pipeline, which has no business in the initial chunk.
+// It arrives only when a markdown file is first rendered.
+const MarkdownView = lazy(() =>
+  import("./Markdown").then((m) => ({ default: m.MarkdownView })),
 );
 
 /// How often the tab bar re-reads the served set. The payload is a handful of
@@ -301,6 +310,10 @@ export function App() {
   // applies to those screens too and not just the main view.
   const { accent, next, cycle } = useAccent();
   const diffLayout = useDiffLayout();
+  // Markdown files open rendered; this toggles to their raw source. Session-only
+  // (not persisted like the diff layout) — the rendered view is the common case,
+  // so each pane starts there rather than remembering a one-off peek at source.
+  const [mdRendered, setMdRendered] = useState(true);
 
   // A failed call is either "log back in" or a message worth showing.
   const handle = useCallback((err: unknown) => {
@@ -990,6 +1003,23 @@ export function App() {
                   <SplitViewIcon />
                 </button>
               )}
+              {pane.kind === "file" && isMarkdownPath(pane.value.path) && (
+                <button
+                  onClick={() => setMdRendered((r) => !r)}
+                  aria-pressed={mdRendered}
+                  title={
+                    mdRendered ? "Show raw source" : "Show rendered markdown"
+                  }
+                  aria-label={
+                    mdRendered ? "Show raw source" : "Show rendered markdown"
+                  }
+                  className={`flex shrink-0 items-center rounded-sm px-1.5 py-0.5 hover:text-accent ${
+                    mdRendered ? "text-accent" : ""
+                  }`}
+                >
+                  <PreviewIcon />
+                </button>
+              )}
               <button
                 onClick={() =>
                   setMaximized((m) => (m === "files" ? "none" : "files"))
@@ -1015,19 +1045,27 @@ export function App() {
             )}
             {pane.kind === "file" && (
               <>
-                <pre className="p-3 whitespace-pre text-ink-200">
-                  {pane.value.lines.map((line, i) => (
-                    <div key={i}>
-                      {line.length === 0
-                        ? " "
-                        : line.map((s, j) => (
-                            <span key={j} style={{ color: s.c }}>
-                              {s.t}
-                            </span>
-                          ))}
-                    </div>
-                  ))}
-                </pre>
+                {isMarkdownPath(pane.value.path) && mdRendered ? (
+                  <Suspense
+                    fallback={<p className="p-4 text-ink-400">Rendering…</p>}
+                  >
+                    <MarkdownView source={fileViewSource(pane.value.lines)} />
+                  </Suspense>
+                ) : (
+                  <pre className="p-3 whitespace-pre text-ink-200">
+                    {pane.value.lines.map((line, i) => (
+                      <div key={i}>
+                        {line.length === 0
+                          ? " "
+                          : line.map((s, j) => (
+                              <span key={j} style={{ color: s.c }}>
+                                {s.t}
+                              </span>
+                            ))}
+                      </div>
+                    ))}
+                  </pre>
+                )}
                 {pane.value.truncated && (
                   <p className="p-3 text-accent">
                     File truncated — it exceeded the server's size ceiling.

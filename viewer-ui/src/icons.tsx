@@ -117,6 +117,30 @@ export function SplitViewIcon() {
   );
 }
 
+/**
+ * Preview glyph, traced from Lucide's `eye` (same provenance as above). Toggles
+ * the markdown file pane between its rendered view and raw source; the button
+ * signals which is active through `aria-pressed` and an accent text colour.
+ */
+export function PreviewIcon() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+      focusable="false"
+      className="h-4 w-4"
+    >
+      <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z" />
+      <circle cx="12" cy="12" r="3" />
+    </svg>
+  );
+}
+
 /** Search glyph, traced from Lucide's `search` (same provenance as above). */
 export function SearchIcon() {
   return (
