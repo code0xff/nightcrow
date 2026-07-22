@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
-import { MaximizeIcon, XIcon } from "./icons";
+import { MaximizeIcon, PlusIcon, XIcon } from "./icons";
 
 interface PaneView {
   term: Terminal;
@@ -399,16 +399,22 @@ export function TerminalPanel({
   return (
     <section className="flex min-h-0 flex-col border-t border-ink-700">
       <div className="flex shrink-0 items-center gap-2 bg-ink-900 px-2 py-1">
-        <button
-          onClick={create}
-          className="shrink-0 rounded-sm px-2 py-0.5 text-xs text-ink-400 hover:text-accent"
-          title="New terminal"
-        >
-          + terminal
-        </button>
         {error && (
           <span className="min-w-0 truncate text-xs text-removed">{error}</span>
         )}
+        {/* The panel's controls sit together at the trailing edge, the way an
+            editor keeps a pane's actions. No label: beside the maximise button
+            it reads as one of a pair of controls rather than a stray word, and
+            the panel it adds to is the thing it points at. `aria-label` is what
+            names it, an icon having no text of its own. */}
+        <button
+          onClick={create}
+          title="New terminal"
+          aria-label="New terminal"
+          className="ml-auto flex shrink-0 items-center rounded-sm px-1.5 py-0.5 text-ink-400 hover:text-accent"
+        >
+          <PlusIcon />
+        </button>
         {/* No Escape shortcut to leave: Escape belongs to whatever is running
             in the PTY, and stealing it would break vim and every TUI below it.
             The button is the way out. */}
@@ -417,7 +423,7 @@ export function TerminalPanel({
           aria-pressed={maximized}
           title={maximized ? "Restore panel height" : "Maximize the panel"}
           aria-label={maximized ? "Restore panel height" : "Maximize the panel"}
-          className="ml-auto flex shrink-0 items-center rounded-sm px-1.5 py-0.5 text-ink-400 hover:text-accent"
+          className="flex shrink-0 items-center rounded-sm px-1.5 py-0.5 text-ink-400 hover:text-accent"
         >
           <MaximizeIcon maximized={maximized} />
         </button>
@@ -425,8 +431,8 @@ export function TerminalPanel({
       <div className="relative min-h-0 flex-1 overflow-hidden bg-ink-950 p-1">
         {panes.length === 0 && (
           <p className="p-3 text-ink-400">
-            No terminal open. Press{" "}
-            <span className="text-accent">+ terminal</span> to start one.
+            No terminal open. Press <span className="text-accent">+</span> above
+            to start one.
           </p>
         )}
         <div

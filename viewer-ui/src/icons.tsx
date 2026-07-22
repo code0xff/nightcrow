@@ -92,6 +92,33 @@ export function XIcon({ className = "h-4 w-4" }: { className?: string }) {
 }
 
 /**
+ * Add glyph, traced from Lucide's `plus` (same provenance as above).
+ *
+ * Here for the reason `XIcon` is: the `+` character is drawn to the font's maths
+ * metrics, well inside the em box, so beside a 16px stroked icon it reads as a
+ * smaller, lighter mark rather than its equal. Same box, same stroke, same
+ * weight as the maximise button it sits next to.
+ */
+export function PlusIcon({ className = "h-4 w-4" }: { className?: string }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+      focusable="false"
+      className={`shrink-0 ${className}`}
+    >
+      <path d="M5 12h14" />
+      <path d="M12 5v14" />
+    </svg>
+  );
+}
+
+/**
  * Split-view glyph, traced from Lucide's `columns-2` (same provenance as
  * above): a framed pane bisected by a vertical rule. Static — the button
  * signals its on/off state through `aria-pressed` and an accent text colour,
