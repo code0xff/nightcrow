@@ -847,7 +847,7 @@ export function App() {
                     className="rounded-sm px-1 hover:text-accent"
                     title="Back to commit log"
                   >
-                    ← log
+                    &lt; log
                   </button>
                   <span className="text-ink-600">·</span>
                   <span className="shrink-0 text-accent">
