@@ -13,6 +13,7 @@
 use crate::git::diff::{ChangedFile, CommitEntry, DiffHunk, LineKind, StatusKind, TrackingStatus};
 use crate::web::viewer::highlight;
 use crate::web::viewer::limits::{self, Capped};
+use git2::Oid;
 use serde::Serialize;
 use std::collections::HashMap;
 use std::time::SystemTime;
@@ -270,10 +271,18 @@ impl From<&CommitEntry> for CommitDto {
     }
 }
 
+/// One page of the commit log.
 #[derive(Debug, Clone, Serialize)]
 pub struct LogDto {
     pub commits: Vec<CommitDto>,
+    /// True when the history continues past this page — i.e. there is a next
+    /// page to ask for, not that anything was silently dropped.
     pub truncated: bool,
+    /// The commit the walk started from, echoed so the client can pin its
+    /// following pages to it (see [`crate::git::diff::load_commit_log_from`]).
+    /// `None` only for a repository with no commits to anchor to.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub head: Option<String>,
 }
 
 /// Changed paths in one historical commit. The row shape intentionally matches
@@ -296,11 +305,22 @@ impl CommitFilesDto {
 }
 
 impl LogDto {
-    pub fn from_entries(entries: &[CommitEntry]) -> Self {
+    /// Build a page from a walk that was asked for one entry more than
+    /// [`limits::MAX_LOG_PAGE`].
+    ///
+    /// The extra entry is how "there is more" is known: asking for exactly a
+    /// page's worth and capping at the same number can never report truncation,
+    /// which is what this endpoint used to do — it answered `truncated: false`
+    /// for a history of any length.
+    ///
+    /// `anchor` is the commit the walk started from, echoed to the client so
+    /// its next request describes the same history.
+    pub fn from_entries(entries: &[CommitEntry], anchor: Option<Oid>) -> Self {
         let capped = Capped::new(entries.to_vec(), limits::MAX_LOG_PAGE);
         Self {
             commits: capped.items.iter().map(CommitDto::from).collect(),
             truncated: capped.truncated,
+            head: anchor.map(|oid| oid.to_string()),
         }
     }
 }
@@ -796,8 +816,15 @@ mod tests {
                     author: "code0xff".to_string(),
                     time: 1_700_000_000,
                 }],
-                truncated: false,
+                // A page with more behind it, carrying the anchor the client
+                // pins its next request to.
+                truncated: true,
+                head: Some("9a3bc2cf0e1d2a3b4c5d6e7f8a9b0c1d2e3f4a5b".to_string()),
             },
+            // A repository with no commits: no anchor to page from, which is
+            // also how the client learns there is nothing more. Present so the
+            // absent `head` is pinned as well as the populated one.
+            "logEmpty": LogDto::from_entries(&[], None),
             "commitFiles": CommitFilesDto {
                 files: vec![renamed],
                 truncated: true,

@@ -116,6 +116,11 @@
         "time": 1700000000
       }
     ],
+    "head": "9a3bc2cf0e1d2a3b4c5d6e7f8a9b0c1d2e3f4a5b",
+    "truncated": true
+  },
+  "logEmpty": {
+    "commits": [],
     "truncated": false
   },
   "openedRepo": {

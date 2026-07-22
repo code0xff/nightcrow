@@ -12,7 +12,18 @@
 //! everything.
 
 /// Commits returned by one page of `/api/log`.
-pub const MAX_LOG_PAGE: usize = 200;
+///
+/// Matches the TUI's `commit_log_page_size` default so both surfaces move
+/// through a history at the same pace. It was 200 while the endpoint answered
+/// once and stopped; now that the client asks for the next page as it reaches
+/// the tail, a smaller page paints sooner and costs nothing to repeat.
+pub const MAX_LOG_PAGE: usize = 100;
+// `/api/log?skip=` deliberately has no ceiling. A ceiling here would look
+// prudent and protect nothing: the skip feeds `Iterator::skip` on a revwalk, so
+// a request walks at most `skip + page` *or* the whole history, whichever is
+// smaller. An absurd skip costs what walking the repository costs and no more,
+// while a ceiling would turn the deep end of a long history into a page the
+// client can see exists and can never fetch.
 /// Changed paths returned while drilling into one commit.
 pub const MAX_COMMIT_FILES: usize = 2_000;
 /// Entries returned for one directory level of `/api/tree`.

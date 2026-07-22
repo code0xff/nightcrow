@@ -594,10 +594,33 @@ fn route(head: &RequestHead, state: &ViewerState) -> Vec<u8> {
         }),
         "/api/log" => with_repo(head, state, |entry| {
             let repo = open_repo(&entry.path)?;
-            let commits = diff::load_commit_log(&repo, limits::MAX_LOG_PAGE)?;
+            // `from` pins the walk so a page fetched later continues the history
+            // the earlier pages described, even if commits landed meanwhile —
+            // and a terminal that commits sits right below this list. Absent on
+            // the first request, which is what establishes the anchor.
+            let skip = optional_count(head, "skip")?;
+            // Resolved once, and the walk is then given exactly this oid. Asking
+            // the loader to fall back to HEAD itself would read the ref a second
+            // time, and a first commit landing between the two reads would
+            // return commits under an anchor of `None` — which the client reads
+            // as the end of the history.
+            let anchor = match optional_oid(head, "from")? {
+                Some(oid) => Some(oid),
+                None => diff::head_commit_oid(&repo)?,
+            };
+            let commits = match anchor {
+                // One more than a page, so a full page can be told apart from a
+                // page that happens to end at the last commit.
+                Some(oid) => {
+                    diff::load_commit_log_from(&repo, Some(oid), skip, limits::MAX_LOG_PAGE + 1)?
+                }
+                // No commit to walk from: an unborn HEAD, which is a repository
+                // with no history rather than an error.
+                None => Vec::new(),
+            };
             Ok(json_response(
                 "200 OK",
-                &encode(&LogDto::from_entries(&commits))?,
+                &encode(&LogDto::from_entries(&commits, anchor))?,
                 &[],
             ))
         }),
@@ -759,6 +782,33 @@ fn required_path(head: &RequestHead) -> Result<String> {
     head.query_param("path")
         .filter(|p| !p.is_empty())
         .ok_or_else(|| anyhow::anyhow!("missing path parameter"))
+}
+
+/// An oid query parameter that may be absent, but must parse when present.
+///
+/// Absent and malformed are kept apart deliberately: silently walking from HEAD
+/// after a typo would answer a different question than the one asked, and the
+/// client pages against the value it gets back.
+fn optional_oid(head: &RequestHead, name: &str) -> Result<Option<git2::Oid>> {
+    match head.query_param(name) {
+        None => Ok(None),
+        Some(text) => git2::Oid::from_str(&text)
+            .map(Some)
+            .with_context(|| format!("malformed {name} parameter")),
+    }
+}
+
+/// A non-negative count query parameter, defaulting to zero when absent.
+///
+/// Deliberately unbounded — see the note beside [`limits::MAX_LOG_PAGE`]. A
+/// negative or non-numeric value still fails to parse, so the guard that
+/// matters is here.
+fn optional_count(head: &RequestHead, name: &str) -> Result<usize> {
+    let Some(text) = head.query_param(name) else {
+        return Ok(0);
+    };
+    text.parse()
+        .with_context(|| format!("malformed {name} parameter"))
 }
 
 fn required_oid(head: &RequestHead) -> Result<git2::Oid> {
@@ -1428,6 +1478,112 @@ mod tests {
         let value: serde_json::Value = serde_json::from_str(body_of(&listing)).unwrap();
         let id = value["repos"][0]["id"].as_str().unwrap().to_string();
         (dir, server, token, id)
+    }
+
+    /// A repository whose history is one commit longer than a page, so the
+    /// first page is full and a second one exists.
+    fn server_with_paged_history() -> (tempfile::TempDir, ViewerServer, String, String, String) {
+        let (dir, path) = make_repo();
+        for i in 0..=limits::MAX_LOG_PAGE {
+            std::fs::write(std::path::Path::new(&path).join(format!("f{i}")), "x").unwrap();
+            run_git(&path, &["add", "."]);
+            run_git(&path, &["commit", "-m", &format!("c{i}")]);
+        }
+        let server = server(std::slice::from_ref(&path));
+        let token = login(server.addr());
+        let listing = get(server.addr(), "/api/repos", Some(&token));
+        let value: serde_json::Value = serde_json::from_str(body_of(&listing)).unwrap();
+        let id = value["repos"][0]["id"].as_str().unwrap().to_string();
+        (dir, server, token, id, path)
+    }
+
+    fn log_page(server: &ViewerServer, token: &str, query: &str) -> serde_json::Value {
+        let response = get(server.addr(), &format!("/api/log?{query}"), Some(token));
+        serde_json::from_str(body_of(&response)).unwrap()
+    }
+
+    #[test]
+    fn the_log_reports_more_history_and_serves_the_next_page() {
+        let (dir, server, token, id, _path) = server_with_paged_history();
+
+        let first = log_page(&server, &token, &format!("repo={id}"));
+        let anchor = first["head"].as_str().expect("first page carries an anchor");
+        let second = log_page(
+            &server,
+            &token,
+            &format!("repo={id}&from={anchor}&skip={}", limits::MAX_LOG_PAGE),
+        );
+
+        assert_eq!(first["commits"].as_array().unwrap().len(), limits::MAX_LOG_PAGE);
+        // The page is full *and* the history continues — the distinction the
+        // extra fetched entry exists to make.
+        assert_eq!(first["truncated"], true);
+        assert_eq!(second["commits"].as_array().unwrap().len(), 1);
+        assert_eq!(second["truncated"], false);
+        assert_eq!(second["commits"][0]["summary"], "c0");
+        drop(dir);
+    }
+
+    #[test]
+    fn a_pinned_log_page_ignores_commits_made_after_the_first() {
+        let (dir, server, token, id, path) = server_with_paged_history();
+        let first = log_page(&server, &token, &format!("repo={id}"));
+        let anchor = first["head"].as_str().unwrap().to_string();
+        let newest = first["commits"][0]["oid"].as_str().unwrap().to_string();
+
+        // A commit lands between the two page requests, as one made in the
+        // terminal panel below the list would.
+        std::fs::write(std::path::Path::new(&path).join("late"), "x").unwrap();
+        run_git(&path, &["add", "."]);
+        run_git(&path, &["commit", "-m", "late"]);
+
+        let second = log_page(
+            &server,
+            &token,
+            &format!("repo={id}&from={anchor}&skip={}", limits::MAX_LOG_PAGE),
+        );
+
+        assert_eq!(anchor, newest, "the anchor is the walk's first commit");
+        // Without pinning, this page would start at c1 — repeating a commit the
+        // client already holds.
+        assert_eq!(second["commits"][0]["summary"], "c0");
+        assert_eq!(second["commits"].as_array().unwrap().len(), 1);
+        drop(dir);
+    }
+
+    #[test]
+    fn the_log_rejects_a_malformed_anchor_or_skip() {
+        let (dir, server, token, id) = seeded_server();
+
+        let bad_from = get(
+            server.addr(),
+            &format!("/api/log?repo={id}&from=not-an-oid"),
+            Some(&token),
+        );
+        let bad_skip = get(
+            server.addr(),
+            &format!("/api/log?repo={id}&skip=-1"),
+            Some(&token),
+        );
+        // Falling back to HEAD would answer a different question than the one
+        // asked, and the client pages against what it gets back.
+        assert!(bad_from.starts_with("HTTP/1.1 400"), "got: {bad_from}");
+        assert!(bad_skip.starts_with("HTTP/1.1 400"), "got: {bad_skip}");
+        drop(dir);
+    }
+
+    #[test]
+    fn a_skip_past_the_end_of_history_is_an_empty_last_page() {
+        // Not an error and not a ceiling: the revwalk simply runs out. A skip
+        // far beyond the history costs what walking the history costs, which is
+        // why the parameter needs no cap.
+        let (dir, server, token, id) = seeded_server();
+
+        let value = log_page(&server, &token, &format!("repo={id}&skip=100000000"));
+
+        assert_eq!(value["commits"].as_array().unwrap().len(), 0);
+        assert_eq!(value["truncated"], false);
+        drop(dir);
     }
 
     #[test]
