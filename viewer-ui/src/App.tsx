@@ -12,11 +12,13 @@ import {
   isUnauthorized,
   subscribeStatus,
   type Browse,
+  type ChangedFile,
   type Commit,
   type CommitFiles,
   type Diff,
   type DiffLine,
   type FileView,
+  type HotConfig,
   type Repo,
   type Status,
   type TreeEntry,
@@ -32,6 +34,7 @@ import {
 } from "./icons";
 import { splitHunkRows, useDiffLayout } from "./diffLayout";
 import { fileViewSource, isMarkdownPath } from "./fileView";
+import { anyHot, classifyHot, HOT_TICK_MS, type HotStage } from "./hot";
 import { useAccent } from "./theme";
 
 // Lazily loaded so `@xterm/xterm` (the bulk of the bundle) stays out of the
@@ -124,12 +127,61 @@ function buildTreeRows(
  * become `src/web/viewer/…` in a narrow sidebar. `title` still carries the
  * whole path so a hover answers without scrolling.
  */
-function PathLabel({ path, from }: { path: string; from?: string }) {
+function PathLabel({
+  path,
+  from,
+  className,
+}: {
+  path: string;
+  from?: string;
+  className?: string;
+}) {
   return (
-    <span className="whitespace-nowrap" title={from ? `${from} → ${path}` : path}>
+    <span
+      className={`whitespace-nowrap ${className ?? ""}`}
+      title={from ? `${from} → ${path}` : path}
+    >
       {from ? `${from} → ${path}` : path}
     </span>
   );
+}
+
+/** Recency styling for one status row, mirroring the TUI: the status letters
+ *  keep their change colour at every stage — the change kind stays readable —
+ *  and only the path carries the highlight, so a row does not shift as it
+ *  fades. */
+const HOT_CLASS: Record<HotStage, string> = {
+  fresh: "text-accent font-bold",
+  warm: "text-accent",
+  cool: "",
+};
+
+/** The clock the recently-touched highlight is dated against.
+ *
+ *  A file cools with time rather than with any event, so the list has to
+ *  re-render on its own to fade. The ticking is bounded on both ends: it starts
+ *  only when a snapshot actually contains a hot file, and stops itself once the
+ *  last one cools — an idle repository re-renders nothing.
+ *
+ *  `windowMs <= 0` (the server's indicator turned off, or its config not yet
+ *  loaded) never ticks; `classifyHot` reads everything as cool at that window. */
+function useHotClock(files: ChangedFile[] | undefined, windowMs: number): number {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (windowMs <= 0 || !files) return;
+    const mtimes = files.map((f) => f.mtime);
+    if (!anyHot(mtimes, Date.now(), windowMs)) return;
+    // A fresh snapshot's mtimes are new, so date them now rather than at the
+    // end of the first tick.
+    setNow(Date.now());
+    const id = setInterval(() => {
+      const tick = Date.now();
+      setNow(tick);
+      if (!anyHot(mtimes, tick, windowMs)) clearInterval(id);
+    }, HOT_TICK_MS);
+    return () => clearInterval(id);
+  }, [files, windowMs]);
+  return now;
 }
 
 /** Background tint for a changed line, shared by the unified and split views. */
@@ -306,6 +358,12 @@ export function App() {
   // response does not flash the "No repository open" empty state.
   const [reposLoaded, setReposLoaded] = useState(false);
   const [maximized, setMaximized] = useState<Maximized>("none");
+  // The server's `agent_indicator` settings, which arrive with the repo list.
+  // Until they do, nothing is hot: guessing a window would flash a highlight
+  // that the real config might have turned off.
+  const [hot, setHot] = useState<HotConfig | null>(null);
+  const hotWindowMs = hot?.enabled ? hot.window_secs * 1000 : 0;
+  const now = useHotClock(status?.files, hotWindowMs);
   // Ahead of the login/loading early returns below, so the stored accent
   // applies to those screens too and not just the main view.
   const { accent, next, cycle } = useAccent();
@@ -364,8 +422,9 @@ export function App() {
     const refresh = () =>
       api
         .repos()
-        .then((list) => {
+        .then(({ repos: list, hot }) => {
           if (cancelled) return;
+          setHot(hot);
           setAuthed(true);
           // We now hold the authoritative list for this session; the initial
           // splash can give way to the shell (or the empty-state prompt).
@@ -829,7 +888,11 @@ export function App() {
                         {f.worktree === " " ? " " : f.worktree}
                       </span>
                     </span>
-                    <PathLabel path={f.path} from={f.old_path} />
+                    <PathLabel
+                      path={f.path}
+                      from={f.old_path}
+                      className={HOT_CLASS[classifyHot(f.mtime, now, hotWindowMs)]}
+                    />
                   </button>
                 </li>
               ))}

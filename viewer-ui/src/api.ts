@@ -20,6 +20,17 @@ export interface ChangedFile {
   old_path?: string;
   index: string;
   worktree: string;
+  /** Worktree mtime in Unix milliseconds, when the server could stat the file.
+   *  Absent on a commit's file list, which describes history rather than the
+   *  working tree. Dated against this device's clock — see `HotConfig`. */
+  mtime?: number;
+}
+
+/** The server's `agent_indicator` settings, so the recently-touched highlight
+ *  fades on the same window the TUI uses instead of a second local default. */
+export interface HotConfig {
+  enabled: boolean;
+  window_secs: number;
 }
 
 export interface Status {
@@ -175,7 +186,7 @@ export const api = {
     }
   },
 
-  repos: () => get<{ repos: Repo[] }>("/api/repos").then((r) => r.repos),
+  repos: () => get<{ repos: Repo[]; hot: HotConfig }>("/api/repos"),
   status: (repo: string) => get<Status>(`/api/status?${query({ repo })}`),
   tree: (repo: string, path: string) =>
     get<{ path: string; entries: TreeEntry[]; truncated: boolean }>(
