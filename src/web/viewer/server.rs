@@ -35,7 +35,7 @@ use crate::web::viewer::assets;
 use crate::web::viewer::catalog::{AddOutcome, Catalog, RepoEntry};
 use crate::web::viewer::dto::{
     BrowseDto, BrowseEntryDto, CommitFilesDto, DiffDto, Envelope, FileDto, LogDto, StatusDto,
-    TreeDto, TreeSearchDto,
+    TreeDto, TreeSearchDto, server_now_millis,
 };
 use crate::web::viewer::limits;
 use crate::web::viewer::prefs::PrefsStore;
@@ -498,6 +498,13 @@ fn route(head: &RequestHead, state: &ViewerState) -> Vec<u8> {
                     "enabled": state.hot.enabled,
                     "window_secs": state.hot.hot_window_secs,
                 },
+                // The clock `mtime` is measured against. The viewer is opened
+                // from phones and laptops whose clocks need not agree with this
+                // machine's, and the hot window is 15s by default — small enough
+                // that an unnoticed skew would visibly distort the highlight.
+                // It rides this poll so the correction refreshes every few
+                // seconds instead of being pinned at page load.
+                "now_ms": server_now_millis(),
                 // The accent rides the poll every client already runs, so a
                 // change made on one device reaches the others within a poll
                 // interval without a stream or a second endpoint to watch.
@@ -1074,6 +1081,25 @@ mod tests {
         // `auto_follow` moves a TUI selection; the browser has no analogue and
         // must not be told about it.
         assert!(value["hot"].get("auto_follow").is_none());
+    }
+
+    #[test]
+    fn the_repository_list_serves_the_server_clock_for_dating_mtimes() {
+        // `mtime` is an absolute instant on this machine's clock, so a browser
+        // on a device whose clock disagrees needs the reference to subtract.
+        let server = server_with(&[], crate::config::AgentIndicatorConfig::default(), None);
+        let token = login(server.addr());
+        let before = server_now_millis();
+
+        let response = get(server.addr(), "/api/repos", Some(&token));
+        let value: serde_json::Value = serde_json::from_str(body_of(&response)).unwrap();
+
+        let now_ms = value["now_ms"].as_u64().expect("now_ms is a number");
+        assert!(
+            (before..=server_now_millis()).contains(&now_ms),
+            "now_ms {now_ms} outside the request window {before}..={}",
+            server_now_millis(),
+        );
     }
 
     #[test]

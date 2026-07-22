@@ -34,7 +34,14 @@ import {
 } from "./icons";
 import { splitHunkRows, useDiffLayout } from "./diffLayout";
 import { fileViewSource, isMarkdownPath } from "./fileView";
-import { anyHot, classifyHot, HOT_TICK_MS, type HotStage } from "./hot";
+import {
+  anyHot,
+  classifyHot,
+  clockOffset,
+  CLOCK_SKEW_EPSILON_MS,
+  HOT_TICK_MS,
+  type HotStage,
+} from "./hot";
 import { useAccent } from "./theme";
 
 // Lazily loaded so `@xterm/xterm` (the bulk of the bundle) stays out of the
@@ -165,22 +172,30 @@ const HOT_CLASS: Record<HotStage, string> = {
  *
  *  `windowMs <= 0` (the server's indicator turned off, or its config not yet
  *  loaded) never ticks; `classifyHot` reads everything as cool at that window. */
-function useHotClock(files: ChangedFile[] | undefined, windowMs: number): number {
-  const [now, setNow] = useState(() => Date.now());
+function useHotClock(
+  files: ChangedFile[] | undefined,
+  windowMs: number,
+  offsetMs: number,
+): number {
+  // Every reading is shifted onto the server's clock, because that is the clock
+  // the mtimes it is compared against were measured on. `offsetMs` is a
+  // dependency so a poll that refines it restarts the tick on the corrected
+  // clock rather than finishing the current fade on the old one.
+  const [now, setNow] = useState(() => Date.now() + offsetMs);
   useEffect(() => {
     if (windowMs <= 0 || !files) return;
     const mtimes = files.map((f) => f.mtime);
-    if (!anyHot(mtimes, Date.now(), windowMs)) return;
+    if (!anyHot(mtimes, Date.now() + offsetMs, windowMs)) return;
     // A fresh snapshot's mtimes are new, so date them now rather than at the
     // end of the first tick.
-    setNow(Date.now());
+    setNow(Date.now() + offsetMs);
     const id = setInterval(() => {
-      const tick = Date.now();
+      const tick = Date.now() + offsetMs;
       setNow(tick);
       if (!anyHot(mtimes, tick, windowMs)) clearInterval(id);
     }, HOT_TICK_MS);
     return () => clearInterval(id);
-  }, [files, windowMs]);
+  }, [files, windowMs, offsetMs]);
   return now;
 }
 
@@ -365,7 +380,11 @@ export function App() {
   // that the real config might have turned off.
   const [hot, setHot] = useState<HotConfig | null>(null);
   const hotWindowMs = hot?.enabled ? hot.window_secs * 1000 : 0;
-  const now = useHotClock(status?.files, hotWindowMs);
+  // How far this device's clock sits from the server's, refreshed by the same
+  // poll that delivers the config above. Zero until the first response, which
+  // is also where a synced device stays — see `CLOCK_SKEW_EPSILON_MS`.
+  const [clockSkewMs, setClockSkewMs] = useState(0);
+  const now = useHotClock(status?.files, hotWindowMs, clockSkewMs);
   // Ahead of the login/loading early returns below, so the stored accent
   // applies to those screens too and not just the main view.
   const { accent, next, cycle: cycleAccent, adopt: adoptAccent } = useAccent();
@@ -436,9 +455,13 @@ export function App() {
       const writes = accentWrites.current;
       return api
         .repos()
-        .then(({ repos: list, hot, accent }) => {
+        .then(({ repos: list, hot, accent, now_ms }) => {
           if (cancelled) return;
           setHot(hot);
+          const skew = clockOffset(now_ms, Date.now());
+          setClockSkewMs((prev) =>
+            Math.abs(skew - prev) >= CLOCK_SKEW_EPSILON_MS ? skew : prev,
+          );
           if (accentWrites.current === writes) adoptAccent(accent);
           setAuthed(true);
           // We now hold the authoritative list for this session; the initial

@@ -22,7 +22,9 @@ export interface ChangedFile {
   worktree: string;
   /** Worktree mtime in Unix milliseconds, when the server could stat the file.
    *  Absent on a commit's file list, which describes history rather than the
-   *  working tree. Dated against this device's clock — see `HotConfig`. */
+   *  working tree. Measured against the *server's* clock, so date it against
+   *  `now_ms` from the repo poll rather than this device's — see `clockOffset`
+   *  in `hot.ts`. */
   mtime?: number;
 }
 
@@ -187,7 +189,9 @@ export const api = {
   },
 
   repos: () =>
-    get<{ repos: Repo[]; hot: HotConfig; accent: number }>("/api/repos"),
+    get<{ repos: Repo[]; hot: HotConfig; accent: number; now_ms: number }>(
+      "/api/repos",
+    ),
   /** Store the accent for every client of this viewer. Returns the index the
    *  server kept, which is the request's wrapped into range. */
   setAccent: (accent: number) =>

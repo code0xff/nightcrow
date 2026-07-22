@@ -104,9 +104,10 @@ pub struct ChangedFileDto {
     ///
     /// An absolute instant, not an age: the status payload is deduplicated by
     /// byte equality before it is pushed, so a field that moved every tick would
-    /// turn an idle repository into a permanent event stream. The client dates
-    /// it against its own clock, exactly as the TUI dates it against the
-    /// server's.
+    /// turn an idle repository into a permanent event stream. Because the
+    /// instant comes from this machine's clock and the browser may be running on
+    /// another device, the client corrects for the difference using the
+    /// `now_ms` that rides the repo poll (see [`server_now_millis`]).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub mtime: Option<u64>,
 }
@@ -146,6 +147,16 @@ fn unix_millis(t: SystemTime) -> Option<u64> {
     t.duration_since(SystemTime::UNIX_EPOCH)
         .ok()
         .map(|d| d.as_millis() as u64)
+}
+
+/// The server's wall clock in Unix milliseconds — the reference the client dates
+/// `mtime` against. `0` for a pre-epoch clock, which leaves the client on its own
+/// clock rather than shifting it by a nonsense offset.
+///
+/// Sent because `mtime` is an absolute instant produced by *this* machine while
+/// the browser reading it may be another device entirely (see [`ChangedFile`]).
+pub fn server_now_millis() -> u64 {
+    unix_millis(SystemTime::now()).unwrap_or(0)
 }
 
 #[derive(Debug, Clone, Serialize)]
