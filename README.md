@@ -301,6 +301,14 @@ In the `log` tab, selecting a commit opens its changed-file list alongside the
 complete commit diff. Select a file to view only that file's change; use
 `< log` to return or `all changes` to restore the complete commit diff.
 
+History loads a page at a time, as the TUI's does — scrolling toward the end of
+the list fetches the next page, so deep histories stay reachable without loading
+them up front. The filter narrows the commits already loaded rather than
+searching the server, so paging pauses while a query is up — the list says how
+many are loaded, and clearing the filter resumes loading. The list is the history as of entering the tab: unlike
+the TUI it does not follow HEAD, so a commit made in the terminal panel appears
+after leaving and re-entering the tab.
+
 The swatch in the header cycles the accent colour through the same five
 presets as the TUI's `<prefix> p` (yellow → cyan → green → magenta → blue).
 The choice is stored on the server (`~/.nightcrow/viewer.json`), so every

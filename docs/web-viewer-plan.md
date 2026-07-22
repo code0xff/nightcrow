@@ -92,7 +92,7 @@ open**한다(`Repository`는 `Send`라 스레드별로 안전). 저장소별 런
 | HTTP JSON | `GET /api/tree?repo=&path=` | 디렉토리 한 레벨(lazy) |
 | HTTP JSON | `GET /api/diff?repo=&path=` | 워크디렉토리 diff hunk |
 | HTTP JSON | `GET /api/file?repo=&path=` | 파일 내용 |
-| HTTP JSON | `GET /api/log?repo=&page=` | 커밋 로그 페이지 |
+| HTTP JSON | `GET /api/log?repo=&from=&skip=` | 커밋 로그 페이지(`from`은 walk를 고정하는 anchor oid, 응답의 `head`를 그대로 되돌려준다) |
 | HTTP JSON | `GET /api/commit?repo=&oid=` | 커밋 파일 + diff |
 | SSE | `GET /api/events?repo=` | status 라이브 스트림 |
 | WS | `GET /ws/term?repo=` | 멀티플렉스 터미널 I/O(pane 태그: output↓/input↑/resize/create/close/exit) |
