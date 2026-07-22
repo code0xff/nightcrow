@@ -64,9 +64,16 @@ export interface Commit {
   time: number;
 }
 
+/** One page of the commit log. */
 export interface Log {
   commits: Commit[];
+  /** True when the history continues past this page — i.e. there is another
+   *  page to ask for, not that anything was silently dropped. */
   truncated: boolean;
+  /** The commit the server's walk started from. Pass it back as `from` on the
+   *  following pages so they describe the same history even if commits land in
+   *  the meantime. Absent for a repository with no commits. */
+  head?: string;
 }
 
 export interface CommitFiles {
@@ -229,7 +236,16 @@ export const api = {
     get<Tree>(`/api/tree?${query({ repo, path })}`),
   treeSearch: (repo: string, q: string) =>
     get<TreeSearch>(`/api/tree/search?${query({ repo, q })}`),
-  log: (repo: string) => get<Log>(`/api/log?${query({ repo })}`),
+  /** One page of the commit log. Omit `page` for the first one, then pass the
+   *  `head` it returned and the number of commits already held. */
+  log: (repo: string, page?: { from: string; skip: number }) =>
+    get<Log>(
+      `/api/log?${query(
+        page
+          ? { repo, from: page.from, skip: String(page.skip) }
+          : { repo },
+      )}`,
+    ),
   diff: (repo: string, path: string) =>
     get<Diff>(`/api/diff?${query({ repo, path })}`),
   file: (repo: string, path: string) =>

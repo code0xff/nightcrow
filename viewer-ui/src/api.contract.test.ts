@@ -58,8 +58,14 @@ describe("wire contract", () => {
 
   it("log와_commit_파일_목록이_각_인터페이스와_맞는다", () => {
     const log: Log = fixture.log;
+    const empty: Log = fixture.logEmpty;
     const commitFiles: CommitFiles = fixture.commitFiles;
     expect(log.commits[0]?.short_id).toBe("9a3bc2c");
+    // 이어받을 페이지가 있는 응답은 anchor를 싣고, 커밋이 없는 저장소는
+    // 싣지 않는다 — 클라이언트가 후자를 끝으로 읽는다.
+    expect(log.head).toBeDefined();
+    expect(empty.head).toBeUndefined();
+    expect(empty.truncated).toBe(false);
     // 커밋의 파일 목록은 워킹 트리 시각을 싣지 않는다.
     expect(commitFiles.files[0]?.mtime).toBeUndefined();
     expect(commitFiles.truncated).toBe(true);
