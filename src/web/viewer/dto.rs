@@ -91,8 +91,9 @@ pub struct HotConfigDto {
 /// with. The path stays as it is so opening and closing keep their home; this
 /// type is where the payload's real job is written down.
 ///
-/// Adding a field here means adding it to `ViewerBootstrap` in
-/// `viewer-ui/src/api.ts`; the fixture contract test fails until both move.
+/// Every field here belongs in `ViewerBootstrap` in `viewer-ui/src/api.ts` too.
+/// Renaming or retyping one without doing so fails the fixture contract test;
+/// a purely additive field does not, so add it to both while it is in hand.
 #[derive(Debug, Clone, Serialize)]
 pub struct ViewerBootstrapDto {
     pub repos: Vec<RepoDto>,
@@ -878,10 +879,11 @@ mod tests {
     fn the_wire_fixture_matches_the_served_payloads() {
         // The DTOs here and the interfaces in `viewer-ui/src/api.ts` describe
         // one protocol twice, by hand. This pins the Rust half: any rename,
-        // removal, addition, or type change lands in the fixture diff. The
-        // TypeScript half then fails to compile against the regenerated
-        // fixture unless it was updated to match — that pairing, not this
-        // assertion alone, is what catches drift.
+        // removal, addition, or type change lands in the fixture diff, which is
+        // what sends someone to `api.ts`. Regenerating then puts the other half
+        // under a compiler that rejects a field the interfaces still name by its
+        // old name or type — an added field passes, being one they simply do not
+        // mention yet. See the header of `api.contract.test.ts`.
         let expected = format!("{}\n", serde_json::to_string_pretty(&wire_fixture()).unwrap());
 
         if std::env::var_os(UPDATE_ENV).is_some() {
