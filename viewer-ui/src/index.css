@@ -58,6 +58,14 @@ body {
   line-height: 1.4;
 }
 
+/* Tailwind v4's preflight resets buttons to `cursor: default`; restore the
+   pointer for anything actionable (skipping disabled controls) so the whole UI
+   signals clickability consistently. */
+button:not(:disabled),
+[role="button"]:not(:disabled) {
+  cursor: pointer;
+}
+
 /* Thin, low-contrast scrollbars so panes read as one surface. */
 * {
   scrollbar-width: thin;
