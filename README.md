@@ -298,6 +298,11 @@ presets as the TUI's `<prefix> p` (yellow → cyan → green → magenta → blu
 It is stored per browser and is **not** read from `[theme]` — that setting
 colours the TUI, and the viewer keeps its own.
 
+The diff pane has a toggle (top-right of the pane) that switches between the
+inline unified diff and a side-by-side split view, mirroring the TUI's Alt+V.
+The choice is stored per browser; on a narrow window (phone) it always renders
+unified, since two code columns can't both stay legible there.
+
 Enable it alongside the TUI under `[web_viewer]`:
 
 ```toml
