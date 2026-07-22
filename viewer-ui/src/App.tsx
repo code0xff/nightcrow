@@ -1,5 +1,7 @@
 import {
   Fragment,
+  Suspense,
+  lazy,
   useCallback,
   useEffect,
   useRef,
@@ -21,7 +23,6 @@ import {
   type TreeEntry,
   type TreeMatch,
 } from "./api";
-import { TerminalPanel } from "./Terminal";
 import {
   ChevronIcon,
   MaximizeIcon,
@@ -31,6 +32,13 @@ import {
 } from "./icons";
 import { splitHunkRows, useDiffLayout } from "./diffLayout";
 import { useAccent } from "./theme";
+
+// Lazily loaded so `@xterm/xterm` (the bulk of the bundle) stays out of the
+// initial chunk that paints the login screen and git viewer, arriving only once
+// a repo is open and the terminal panel actually mounts.
+const TerminalPanel = lazy(() =>
+  import("./Terminal").then((m) => ({ default: m.TerminalPanel })),
+);
 
 /// How often the tab bar re-reads the served set. The payload is a handful of
 /// short strings, and this only has to feel prompt when a tab opens.
@@ -1029,13 +1037,15 @@ export function App() {
       </main>
 
       {repo && (
-        <TerminalPanel
-          repo={repo}
-          maximized={maximized === "terminal"}
-          onToggleMaximized={() =>
-            setMaximized((m) => (m === "terminal" ? "none" : "terminal"))
-          }
-        />
+        <Suspense fallback={null}>
+          <TerminalPanel
+            repo={repo}
+            maximized={maximized === "terminal"}
+            onToggleMaximized={() =>
+              setMaximized((m) => (m === "terminal" ? "none" : "terminal"))
+            }
+          />
+        </Suspense>
       )}
 
       <footer className="flex shrink-0 items-center gap-3 border-t border-ink-700 bg-ink-900 px-3 py-1 text-ink-400">
