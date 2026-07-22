@@ -6,7 +6,18 @@
 <title>nightcrow</title>
 <link rel="stylesheet" href="/vendor/xterm.css">
 <style>
-  :root { color-scheme: dark; --accent: #d9a441; }
+  /* Chrome colours are the web viewer's `ink` palette (viewer-ui/src/index.css)
+     so the two services read as one product; the terminal stage keeps pure
+     black, which is what the mirrored grid paints on. */
+  :root {
+    color-scheme: dark; --accent: #d9a441;
+    --ink-900: #121215;
+    --ink-700: #2a2a31;
+    --ink-400: #6f6f7d;
+    --ink-50: #e6e6ec;
+    --added: #4ba36b;
+    --removed: #c85f5f;
+  }
   html, body { margin: 0; height: 100%; background: #000; overflow: hidden; }
   body {
     display: flex; flex-direction: column; height: 100vh;
@@ -16,36 +27,43 @@
      centered like the login page: this one sits above a dense terminal grid,
      where a centered title reads as a banner instead of app chrome. It also
      gives the grid its top margin, so the terminal can sit flush under it
-     instead of floating in the middle of the viewport. */
+     instead of floating in the middle of the viewport.
+
+     Pinned in px, and mirrored px-for-px by the viewer's header (its comment in
+     App.tsx says the same in reverse): the viewer runs on a 14px root, so the
+     shared branding only lands identically if both sides state absolute sizes. */
   #head {
-    flex: 0 0 auto; display: flex; align-items: baseline; gap: .5rem;
-    padding: .55rem .8rem; background: #0a0a0a; border-bottom: 1px solid #262626;
+    flex: 0 0 auto; display: flex; align-items: center; gap: 7px;
+    padding: 8.8px 12.8px;
+    background: var(--ink-900); border-bottom: 1px solid var(--ink-700);
   }
-  #head .mark { align-self: center; flex: 0 0 auto; }
+  #head .mark { flex: 0 0 auto; }
   #head .wordmark {
-    font-size: 1rem; font-weight: 500; letter-spacing: .04em; color: #e5e5e5;
+    font-size: 16px; font-weight: 500; letter-spacing: .04em; color: var(--ink-50);
   }
   #head .tag {
     font-family: system-ui, sans-serif;
-    font-size: .62rem; letter-spacing: .18em; text-transform: uppercase;
-    color: #737373;
+    font-size: 10px; letter-spacing: .18em; text-transform: uppercase;
+    color: var(--ink-400);
   }
   /* The stage letterboxes the terminal: horizontally centered, top-aligned.
      The grid size is dictated by the local terminal; the browser scales the
      exact same grid to fit. */
   #stage { position: relative; flex: 1 1 auto; overflow: hidden; background: #000; }
   #term { position: absolute; top: 0; left: 0; }
+  /* The viewer's footer, in the same absolute terms as the header above. */
   #bar {
-    flex: 0 0 auto; display: flex; align-items: center; gap: .75rem;
-    padding: .3rem .75rem; background: #0a0a0a; border-top: 1px solid #262626;
-    color: #a3a3a3; font-size: .78rem; font-family: system-ui, sans-serif;
+    flex: 0 0 auto; display: flex; align-items: center; gap: 10.5px;
+    padding: 3.5px 10.5px;
+    background: var(--ink-900); border-top: 1px solid var(--ink-700);
+    color: var(--ink-400); font-size: 11.9px;
   }
-  #bar .dot { width: .55rem; height: .55rem; border-radius: 50%; background: #737373; }
-  #bar.connected .dot { background: #4ade80; }
-  #bar.down .dot { background: #f87171; }
+  #bar .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--ink-400); }
+  #bar.connected .dot { background: var(--added); }
+  #bar.down .dot { background: var(--removed); }
   #bar .grow { flex: 1 1 auto; }
-  #bar a { color: #a3a3a3; text-decoration: none; }
-  #bar a:hover { color: #e5e5e5; }
+  #bar a { color: var(--ink-400); text-decoration: none; }
+  #bar a:hover { color: var(--ink-50); }
   /* xterm's IME preview is an unstyled, background-less overlay: it paints the
      in-progress syllable straight over the mirrored cells underneath it, which
      is unreadable on a dense TUI grid. Hide it and show the composition in the

@@ -5,67 +5,80 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>nightcrow — sign in</title>
 <style>
+  /* Mirrors the web viewer's login screen (viewer-ui/src/App.tsx `Login`) so
+     the two services read as one product. The values below are the viewer's
+     Tailwind utilities resolved literally: its `ink` palette, its 14px root —
+     which is what its rem-based utilities scale against — and its mono body
+     type. Changing anything here without changing it there splits them apart
+     again. The mark stays fixed amber: the viewer's follows its runtime accent,
+     which the mirror has no picker for. */
   :root {
     color-scheme: dark;
-    /* Amber stands in for the TUI's default accent, which is the terminal's
-       own ANSI yellow and therefore has no fixed hex to match exactly. */
     --accent: #d9a441;
-    --fg: #e5e5e5;
-    --muted: #8a8a8a;
-    --line: #303030;
-    --bg: #0a0a0a;
+    --ink-950: #0b0b0d;
+    --ink-900: #121215;
+    --ink-700: #2a2a31;
+    --ink-400: #6f6f7d;
+    --ink-50: #e6e6ec;
+    --removed: #c85f5f;
+    --font-mono:
+      ui-monospace, "JetBrains Mono", "SF Mono", Menlo, Consolas, monospace;
   }
   * { box-sizing: border-box; }
+  /* The viewer's density knob: its utilities are rem-based, so the root size
+     scales the whole screen at once. */
+  html { font-size: 14px; }
   body {
-    margin: 0; min-height: 100vh; display: grid; place-items: center;
-    padding: 1.5rem;
-    background: var(--bg);
-    color: var(--fg);
-    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    margin: 0; min-height: 100vh; display: flex;
+    align-items: center; justify-content: center; padding: 1.5rem;
+    background: var(--ink-950);
+    color: var(--ink-50);
+    font-family: var(--font-mono);
+    font-size: .85rem;
+    line-height: 1.4;
   }
   /* No card: the page holds a single field, so there is nothing to separate
      it from. The bare centered form reads closer to the terminal it fronts. */
-  form { width: min(19rem, 86vw); }
+  form { width: 17rem; max-width: 86vw; }
 
-  .mark { display: block; margin: 0 auto .9rem; }
+  .mark { display: block; margin: 0 auto .75rem; width: 2.5rem; height: 2.5rem; }
 
   h1 {
     margin: 0; text-align: center;
-    font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
-    font-size: 1.5rem; font-weight: 500; letter-spacing: .04em; color: var(--fg);
+    font-size: 1.125rem; line-height: 1.75rem;
+    font-weight: 500; letter-spacing: .025em; color: var(--ink-50);
   }
   .sub {
-    margin: .45rem 0 1.75rem; text-align: center;
-    font-size: .72rem; letter-spacing: .18em; text-transform: uppercase;
-    color: var(--muted);
+    margin: .25rem 0 1.25rem; text-align: center;
+    font-size: .62rem; letter-spacing: .18em; text-transform: uppercase;
+    color: var(--ink-400);
   }
 
   input {
-    width: 100%; padding: .62rem .7rem; margin-bottom: .6rem;
-    background: #101010; border: 1px solid var(--line); border-radius: 6px;
-    color: var(--fg); font-size: .95rem;
-    transition: border-color .12s ease, box-shadow .12s ease;
+    width: 100%; padding: .375rem .625rem; margin-bottom: .5rem;
+    background: var(--ink-900); border: 1px solid var(--ink-700);
+    border-radius: .375rem;
+    color: var(--ink-50); font-family: inherit; font-size: inherit;
   }
-  input::placeholder { color: #6b6b6b; }
-  input:hover { border-color: #3d3d3d; }
+  input::placeholder { color: var(--ink-400); }
   input:focus {
     outline: none; border-color: var(--accent);
-    box-shadow: 0 0 0 3px rgba(217, 164, 65, .14);
+    box-shadow: 0 0 0 3px rgba(217, 164, 65, .15);
   }
 
   button {
-    width: 100%; padding: .62rem; border: 0; border-radius: 6px; cursor: pointer;
-    background: var(--fg); color: #0a0a0a; font-weight: 600; font-size: .95rem;
-    transition: background .12s ease, transform .06s ease;
+    width: 100%; padding: .375rem; border: 0; border-radius: .375rem;
+    cursor: pointer;
+    background: var(--ink-50); color: var(--ink-950);
+    font-family: inherit; font-size: inherit; font-weight: 600;
   }
-  button:hover { background: #fafafa; }
-  button:active { transform: translateY(1px); }
+  button:hover { background: #fff; }
   button:focus-visible {
     outline: none; box-shadow: 0 0 0 3px rgba(217, 164, 65, .35);
   }
 
   .error {
-    color: #f87171; font-size: .85rem; margin: 0 0 .75rem; text-align: center;
+    color: var(--removed); margin: 0 0 .625rem; text-align: center;
   }
   .sr-only {
     position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
@@ -75,7 +88,7 @@
 </head>
 <body>
   <form method="post" action="/login">
-    <svg class="mark" width="52" height="52" viewBox="0 0 42 42" aria-hidden="true" focusable="false">
+    <svg class="mark" viewBox="0 0 42 42" aria-hidden="true" focusable="false">
       <rect x="1.25" y="1.25" width="39.5" height="39.5" rx="10.5"
             fill="none" stroke="#282828" stroke-width="1.5"/>
       <path d="M14 15.5 L20 21 L14 26.5" fill="none" stroke="#d9a441"
@@ -86,7 +99,7 @@
     <p class="sub">web mirror</p>
     <!--ERROR-->
     <label class="sr-only" for="password">Password</label>
-    <input id="password" type="password" name="password" placeholder="Password"
+    <input id="password" type="password" name="password" placeholder="password"
            autofocus autocomplete="current-password">
     <button type="submit">Sign in</button>
   </form>
