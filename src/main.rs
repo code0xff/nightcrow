@@ -226,9 +226,11 @@ fn start_viewer_if_enabled(
 
 /// Serve the viewer headlessly until interrupted.
 ///
-/// The catalog is fixed for the run: with no TUI there is no tab to open or
-/// close, so the repository set comes entirely from `--repo` — which may be
-/// empty, starting the viewer on an empty catalog just like the TUI does.
+/// The starting catalog comes from `--repo` plus the remembered workspace —
+/// either may be empty, which starts the viewer on an empty catalog just like
+/// the TUI does. From there the browser owns the set: the viewer's own open
+/// and close routes add and drop repositories, and `persist` writes the result
+/// back to the workspace file since no TUI is doing it.
 fn run_serve(
     repos: Vec<std::path::PathBuf>,
     port: Option<u16>,
@@ -279,9 +281,9 @@ fn run_serve(
     )?;
     if paths.is_empty() {
         // An empty catalog is a legitimate state — the same one the TUI starts
-        // in when launched with no repository. The viewer shows its no-repository
-        // state and can still be reached; repositories are added by relaunching
-        // with --repo (a headless run has no tab UI to open one).
+        // in when launched with no repository. The viewer shows its
+        // no-repository state and can still be reached; the page's folder
+        // picker is the way in from there.
         eprintln!(
             "nightcrow: web viewer serving an empty catalog (no --repo given) at http://{}/",
             server.addr()
