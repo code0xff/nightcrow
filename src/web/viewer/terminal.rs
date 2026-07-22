@@ -491,9 +491,19 @@ fn push_scrollback(buf: &mut VecDeque<u8>, data: &[u8]) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::time::Instant;
+
+    /// Deadline for the real-shell tests below. `connect` spawns the user's
+    /// actual `$SHELL` (an interactive zsh sources its full rc chain), and
+    /// cargo runs tests in parallel, so several shells initialize at once — a
+    /// tighter budget was measurably flaky under load. A generous bound only
+    /// delays the failure verdict; passing runs still finish the instant the
+    /// frame arrives. Mirrors `backend::pty::tests::PTY_TEST_DEADLINE`.
+    const SHELL_TEST_DEADLINE: Duration = Duration::from_secs(15);
 
     fn wait_for<T>(mut take: impl FnMut() -> Option<T>) -> Option<T> {
-        for _ in 0..200 {
+        let deadline = Instant::now() + SHELL_TEST_DEADLINE;
+        while Instant::now() < deadline {
             if let Some(value) = take() {
                 return Some(value);
             }
@@ -564,14 +574,25 @@ mod tests {
 
         session.dispatch(ClientMessage::Create { rows: 24, cols: 80 });
 
-        let created = next_matching(
-            &session,
-            |f| matches!(f, TerminalFrame::Control(json) if json.contains("created")),
-        );
-        assert!(created.is_some(), "no created message");
+        // A create is announced synchronously under the state lock, so this
+        // arrives as soon as the worker services the command.
+        let created =
+            next_matching(&session, |f| created_pane(f).is_some()).expect("no created message");
+        let pane = created_pane(&created).unwrap();
 
-        // A real shell writes a prompt; that is enough to prove the PTY is live.
-        let output = next_matching(&session, |f| matches!(f, TerminalFrame::Output { .. }));
+        // Drive deterministic output instead of waiting on the interactive
+        // prompt, whose timing depends on the user's rc chain and was flaky
+        // under parallel load. The marker proves the stream is live end to end.
+        let marker = "nightcrow-live";
+        session.dispatch(ClientMessage::Input {
+            pane,
+            data: format!("printf {marker}\n"),
+        });
+
+        let output = next_matching(&session, |f| {
+            matches!(f, TerminalFrame::Output { pane: p, data }
+                if *p == pane && String::from_utf8_lossy(data).contains(marker))
+        });
         assert!(output.is_some(), "no output from the shell");
         hub.stop();
     }
