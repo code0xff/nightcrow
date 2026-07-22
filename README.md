@@ -303,6 +303,14 @@ inline unified diff and a side-by-side split view, mirroring the TUI's Alt+V.
 The choice is stored per browser; on a narrow window (phone) it always renders
 unified, since two code columns can't both stay legible there.
 
+The Files list highlights recently touched files the same way the TUI does:
+accent-coloured and bold for the first 5 seconds after a file's mtime, accent
+until `agent_indicator.hot_window_secs` expires, then plain. The window (and
+whether the highlight runs at all) comes from the server's `[agent_indicator]`
+settings, so both surfaces fade on the same schedule. Ageing is measured
+against the browser's clock, so a device whose time is badly off will fade
+early or late.
+
 Markdown files (`.md`, `.markdown`) opened from the tree render as formatted
 documents by default, with fenced code syntax-highlighted. A toggle (top-right
 of the pane) switches to the raw highlighted source.
