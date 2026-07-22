@@ -830,14 +830,27 @@ export function App() {
           onCloseProject={closeRepo}
           onOpenPicker={() => setPickerOpen(true)}
         />
-        <nav className="hidden gap-1 overflow-x-auto pl-1 md:flex">
+        {/* Editor tabs, after VS Code's: square, touching, and stretched to the
+            full height of the bar they sit in — a tab is a tab because it fills
+            its strip, not because it is a labelled box. The negative margins eat
+            the header's padding to reach that height, and the active one takes
+            the body colour so it reads as the near edge of the content below.
+            The accent marker is an inset shadow rather than a border, which
+            would shift the label down by its own width.
+
+            VS Code also lets the active tab overlap the rule under the bar, so
+            the two areas merge outright. Not done here: this strip scrolls
+            sideways when enough projects are open, and a scroll container clips
+            both axes — the overlap would be cut off and could raise a vertical
+            scrollbar besides. */}
+        <nav className="-my-[8.8px] hidden items-stretch self-stretch overflow-x-auto pl-1 md:flex">
           {repos.map((r) => (
             <div
               key={r.id}
-              className={`flex items-center rounded-sm whitespace-nowrap ${
+              className={`flex items-center border-r border-ink-700 whitespace-nowrap ${
                 r.id === repo
-                  ? "bg-ink-700 text-ink-50"
-                  : "text-ink-400 hover:text-ink-200"
+                  ? "bg-ink-950 text-ink-50 shadow-[inset_0_2px_0_0_var(--color-accent)]"
+                  : "text-ink-400 hover:bg-ink-850 hover:text-ink-200"
               }`}
               title={r.display_path}
             >
@@ -846,7 +859,7 @@ export function App() {
                   setRepo(r.id);
                   setPane({ kind: "empty" });
                 }}
-                className="py-0.5 pl-2 pr-1"
+                className="self-stretch pl-3 pr-1"
               >
                 {r.name}
               </button>
@@ -857,7 +870,7 @@ export function App() {
                 }}
                 title="Close project"
                 aria-label={`close ${r.name}`}
-                className="mr-0.5 flex h-6 w-6 items-center justify-center rounded-sm text-ink-400 hover:text-removed"
+                className="mr-1 flex h-5 w-5 items-center justify-center rounded-sm text-ink-400 hover:bg-ink-700 hover:text-removed"
               >
                 <XIcon className="h-3.5 w-3.5" />
               </button>
@@ -916,7 +929,12 @@ export function App() {
             filesMax ? "hidden md:flex" : "flex border-ink-700 md:border-r"
           }`}
         >
-          <div className="flex shrink-0 gap-1 px-2 py-1">
+          {/* Panel tabs, after VS Code's PROBLEMS/OUTPUT/TERMINAL row: no fill,
+              just an underline on the active one, sitting on the rule that
+              separates the row from the list it labels. The tabs overlap that
+              rule by a pixel (`-mb-px`) so the marker replaces it rather than
+              stacking a second line under it. */}
+          <div className="flex shrink-0 items-stretch border-b border-ink-700 px-2">
             {(["status", "log", "tree"] as Tab[]).map((t) => (
               <button
                 key={t}
@@ -932,8 +950,11 @@ export function App() {
                   // switching tabs leaves nothing to re-preview, so clear it.
                   setPane({ kind: "empty" });
                 }}
-                className={`rounded-sm px-2 py-0.5 ${
-                  t === tab ? "bg-ink-700 text-ink-50" : "text-ink-400"
+                aria-current={t === tab ? "page" : undefined}
+                className={`-mb-px border-b-2 px-2 py-1 ${
+                  t === tab
+                    ? "border-accent text-ink-50"
+                    : "border-transparent text-ink-400 hover:text-ink-200"
                 }`}
               >
                 {t}
@@ -947,7 +968,7 @@ export function App() {
               aria-pressed={filterOpen}
               title={filterOpen ? "Hide the filter" : "Filter the list"}
               aria-label={filterOpen ? "Hide the filter" : "Filter the list"}
-              className={`ml-auto flex shrink-0 items-center rounded-sm px-1.5 py-0.5 hover:text-accent ${
+              className={`my-1 ml-auto flex shrink-0 items-center rounded-sm px-1.5 hover:text-accent ${
                 filterOpen ? "text-ink-50" : "text-ink-400"
               }`}
             >
