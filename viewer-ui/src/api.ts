@@ -35,6 +35,19 @@ export interface HotConfig {
   window_secs: number;
 }
 
+/** What `GET /api/repos` answers: everything needed before the client can
+ *  render. Named for its job rather than its route — the route also opens and
+ *  closes repositories, but this payload is the session's bootstrap. Mirrors
+ *  `ViewerBootstrapDto`. */
+export interface ViewerBootstrap {
+  repos: Repo[];
+  hot: HotConfig;
+  /** Index into the accent presets, stored server-side so devices agree. */
+  accent: number;
+  /** The server's wall clock, for dating `ChangedFile.mtime`. */
+  now_ms: number;
+}
+
 export interface Status {
   branch?: string;
   head?: string;
@@ -189,9 +202,7 @@ export const api = {
   },
 
   repos: () =>
-    get<{ repos: Repo[]; hot: HotConfig; accent: number; now_ms: number }>(
-      "/api/repos",
-    ),
+    get<ViewerBootstrap>("/api/repos"),
   /** Store the accent for every client of this viewer. Returns the index the
    *  server kept, which is the request's wrapped into range. */
   setAccent: (accent: number) =>

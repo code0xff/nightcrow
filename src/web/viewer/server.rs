@@ -34,8 +34,8 @@ use crate::web::common::sse::SseStream;
 use crate::web::viewer::assets;
 use crate::web::viewer::catalog::{AddOutcome, Catalog, RepoEntry};
 use crate::web::viewer::dto::{
-    BrowseDto, BrowseEntryDto, CommitFilesDto, DiffDto, Envelope, FileDto, LogDto, StatusDto,
-    TreeDto, TreeSearchDto, server_now_millis,
+    BrowseDto, BrowseEntryDto, CommitFilesDto, DiffDto, Envelope, FileDto, HotConfigDto, LogDto,
+    StatusDto, TreeDto, TreeSearchDto, ViewerBootstrapDto,
 };
 use crate::web::viewer::limits;
 use crate::web::viewer::prefs::PrefsStore;
@@ -487,29 +487,25 @@ fn route(head: &RequestHead, state: &ViewerState) -> Vec<u8> {
     }
     match head.path.as_str() {
         "/api/repos" => {
-            let repos = state.catalog.list();
-            // The recently-touched settings ride along with the repository list
-            // rather than on `/api/status`: they are per-server and unchanging,
-            // and the status payload is a hot, deduplicated stream that should
-            // not carry configuration.
-            match serde_json::to_string(&Envelope::new(serde_json::json!({
-                "repos": repos,
-                "hot": {
-                    "enabled": state.hot.enabled,
-                    "window_secs": state.hot.hot_window_secs,
+            // Everything server-wide the client must agree with rides this one
+            // response rather than getting endpoints of its own: the client
+            // already polls it every few seconds, so a setting changed here
+            // reaches every device within one interval, and `/api/status` — a
+            // hot, deduplicated stream — stays free of configuration.
+            //
+            // The recently-touched window keeps the browser on the TUI's
+            // schedule; `now_ms` is the clock its `mtime`s were measured on,
+            // which a phone or laptop viewing remotely need not share; the
+            // accent is stored server-side so every device shows the same one.
+            let bootstrap = ViewerBootstrapDto::new(
+                state.catalog.list(),
+                HotConfigDto {
+                    enabled: state.hot.enabled,
+                    window_secs: state.hot.hot_window_secs,
                 },
-                // The clock `mtime` is measured against. The viewer is opened
-                // from phones and laptops whose clocks need not agree with this
-                // machine's, and the hot window is 15s by default — small enough
-                // that an unnoticed skew would visibly distort the highlight.
-                // It rides this poll so the correction refreshes every few
-                // seconds instead of being pinned at page load.
-                "now_ms": server_now_millis(),
-                // The accent rides the poll every client already runs, so a
-                // change made on one device reaches the others within a poll
-                // interval without a stream or a second endpoint to watch.
-                "accent": state.prefs.get().accent,
-            }))) {
+                state.prefs.get().accent,
+            );
+            match serde_json::to_string(&Envelope::new(bootstrap)) {
                 Ok(json) => json_response("200 OK", &json, &[]),
                 Err(_) => json_error("500 Internal Server Error", "could not encode repositories"),
             }
@@ -1087,6 +1083,8 @@ mod tests {
     fn the_repository_list_serves_the_server_clock_for_dating_mtimes() {
         // `mtime` is an absolute instant on this machine's clock, so a browser
         // on a device whose clock disagrees needs the reference to subtract.
+        use crate::web::viewer::dto::server_now_millis;
+
         let server = server_with(&[], crate::config::AgentIndicatorConfig::default(), None);
         let token = login(server.addr());
         let before = server_now_millis();
@@ -1095,10 +1093,10 @@ mod tests {
         let value: serde_json::Value = serde_json::from_str(body_of(&response)).unwrap();
 
         let now_ms = value["now_ms"].as_u64().expect("now_ms is a number");
+        let after = server_now_millis();
         assert!(
-            (before..=server_now_millis()).contains(&now_ms),
-            "now_ms {now_ms} outside the request window {before}..={}",
-            server_now_millis(),
+            (before..=after).contains(&now_ms),
+            "now_ms {now_ms} outside the request window {before}..={after}",
         );
     }
 

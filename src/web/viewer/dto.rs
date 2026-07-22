@@ -73,6 +73,51 @@ pub struct RepoDto {
     pub display_path: String,
 }
 
+/// The part of `[agent_indicator]` the browser can act on. `auto_follow` is
+/// omitted: it moves a TUI selection, and the viewer has no analogue.
+#[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
+pub struct HotConfigDto {
+    pub enabled: bool,
+    pub window_secs: u64,
+}
+
+/// What `GET /api/repos` answers: everything the client needs before it can
+/// render, in one response.
+///
+/// Named for what it carries rather than for its route. The route is about
+/// repositories — `POST` opens one, `DELETE` closes one — but the `GET` grew
+/// into the session's bootstrap, because a client that already polls it every
+/// few seconds is the cheapest carrier for anything server-wide it must agree
+/// with. The path stays as it is so opening and closing keep their home; this
+/// type is where the payload's real job is written down.
+///
+/// Adding a field here means adding it to `ViewerBootstrap` in
+/// `viewer-ui/src/api.ts`; the fixture contract test fails until both move.
+#[derive(Debug, Clone, Serialize)]
+pub struct ViewerBootstrapDto {
+    pub repos: Vec<RepoDto>,
+    pub hot: HotConfigDto,
+    /// Index into the viewer's accent presets, stored server-side so every
+    /// device agrees.
+    pub accent: usize,
+    /// This server's wall clock, for dating [`ChangedFileDto::mtime`].
+    pub now_ms: u64,
+}
+
+impl ViewerBootstrapDto {
+    /// Stamps `now_ms` at construction — the value is only useful as "the
+    /// server's time when this response was built", so no caller is given the
+    /// chance to supply a staler one.
+    pub fn new(repos: Vec<RepoDto>, hot: HotConfigDto, accent: usize) -> Self {
+        Self {
+            repos,
+            hot,
+            accent,
+            now_ms: server_now_millis(),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub struct TrackingDto {
     pub ahead: usize,
