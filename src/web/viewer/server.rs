@@ -74,6 +74,12 @@ pub struct ViewerState {
     /// headless `serve` (so opens/closes are remembered), off alongside the TUI
     /// (which owns that file).
     persist: bool,
+    /// The TUI's recently-touched settings, served to the client so the file
+    /// list fades on the same window the TUI does instead of a second, silently
+    /// diverging default. `auto_follow` is not sent: it moves the TUI's
+    /// selection, which is a keyboard-driven notion the viewer has no analogue
+    /// for.
+    hot: crate::config::AgentIndicatorConfig,
 }
 
 pub struct ViewerServer {
@@ -86,6 +92,7 @@ impl ViewerServer {
     /// either `hashed_password` or `password`.
     pub fn start_from_config(
         viewer: &crate::config::WebViewerConfig,
+        agent_indicator: &crate::config::AgentIndicatorConfig,
         paths: &[String],
         persist: bool,
         startup_commands: Vec<String>,
@@ -103,7 +110,15 @@ impl ViewerServer {
                 viewer.bind
             )
         })?;
-        Self::start(bind, viewer.port, auth, paths, persist, startup_commands)
+        Self::start(
+            bind,
+            viewer.port,
+            auth,
+            paths,
+            persist,
+            startup_commands,
+            agent_indicator.clone(),
+        )
     }
 
     /// Bind and start accepting. `paths` seeds the catalog; the caller may
@@ -116,6 +131,7 @@ impl ViewerServer {
         paths: &[String],
         persist: bool,
         startup_commands: Vec<String>,
+        hot: crate::config::AgentIndicatorConfig,
     ) -> Result<Self> {
         let listener = TcpListener::bind((bind, port))
             .with_context(|| format!("binding viewer server to {bind}:{port}"))?;
@@ -131,6 +147,7 @@ impl ViewerServer {
             limiter: RateLimiter::new(),
             connections: Arc::new(AtomicUsize::new(0)),
             persist,
+            hot,
         });
         state.catalog.set_paths(paths);
 
@@ -412,7 +429,17 @@ fn route(head: &RequestHead, state: &ViewerState) -> Vec<u8> {
     match head.path.as_str() {
         "/api/repos" => {
             let repos = state.catalog.list();
-            match serde_json::to_string(&Envelope::new(serde_json::json!({ "repos": repos }))) {
+            // The recently-touched settings ride along with the repository list
+            // rather than on `/api/status`: they are per-server and unchanging,
+            // and the status payload is a hot, deduplicated stream that should
+            // not carry configuration.
+            match serde_json::to_string(&Envelope::new(serde_json::json!({
+                "repos": repos,
+                "hot": {
+                    "enabled": state.hot.enabled,
+                    "window_secs": state.hot.hot_window_secs,
+                },
+            }))) {
                 Ok(json) => json_response("200 OK", &json, &[]),
                 Err(_) => json_error("500 Internal Server Error", "could not encode repositories"),
             }
@@ -425,7 +452,13 @@ fn route(head: &RequestHead, state: &ViewerState) -> Vec<u8> {
                 Some(update) => Ok(json_response("200 OK", &update.json, &[])),
                 None => Ok(json_response(
                     "200 OK",
-                    &encode(&StatusDto::from_snapshot(&[], None, None, None))?,
+                    &encode(&StatusDto::from_snapshot(
+                        &[],
+                        None,
+                        None,
+                        None,
+                        &std::collections::HashMap::new(),
+                    ))?,
                     &[],
                 )),
             }
@@ -812,6 +845,13 @@ mod tests {
     use std::io::Read;
 
     fn server(paths: &[String]) -> ViewerServer {
+        server_with_hot(paths, crate::config::AgentIndicatorConfig::default())
+    }
+
+    fn server_with_hot(
+        paths: &[String],
+        hot: crate::config::AgentIndicatorConfig,
+    ) -> ViewerServer {
         ViewerServer::start(
             "127.0.0.1".parse().unwrap(),
             0,
@@ -821,6 +861,7 @@ mod tests {
             // ~/.nightcrow/workspace.json.
             false,
             Vec::new(),
+            hot,
         )
         .unwrap()
     }
@@ -935,6 +976,31 @@ mod tests {
 
         assert!(response.starts_with("HTTP/1.1 200"), "got: {response}");
         assert_eq!(value["repos"].as_array().unwrap().len(), 0);
+    }
+
+    #[test]
+    fn the_repository_list_serves_the_configured_recently_touched_settings() {
+        // The client fades its file list on this window; reading the config
+        // from the server is what keeps it on the TUI's window rather than a
+        // second default that drifts.
+        let server = server_with_hot(
+            &[],
+            crate::config::AgentIndicatorConfig {
+                enabled: false,
+                hot_window_secs: 42,
+                auto_follow: true,
+            },
+        );
+        let token = login(server.addr());
+
+        let response = get(server.addr(), "/api/repos", Some(&token));
+        let value: serde_json::Value = serde_json::from_str(body_of(&response)).unwrap();
+
+        assert_eq!(value["hot"]["enabled"], false);
+        assert_eq!(value["hot"]["window_secs"], 42);
+        // `auto_follow` moves a TUI selection; the browser has no analogue and
+        // must not be told about it.
+        assert!(value["hot"].get("auto_follow").is_none());
     }
 
     #[test]

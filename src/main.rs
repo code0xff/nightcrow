@@ -208,6 +208,7 @@ fn start_viewer_if_enabled(
     // file and the catalog already follows its tabs.
     match web::viewer::server::ViewerServer::start_from_config(
         &cfg.web_viewer,
+        &cfg.agent_indicator,
         repo_paths,
         false,
         startup,
@@ -271,6 +272,7 @@ fn run_serve(
         .collect();
     let server = web::viewer::server::ViewerServer::start_from_config(
         &cfg.web_viewer,
+        &cfg.agent_indicator,
         &paths,
         true,
         startup,

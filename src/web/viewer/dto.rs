@@ -14,6 +14,8 @@ use crate::git::diff::{ChangedFile, CommitEntry, DiffHunk, LineKind, StatusKind,
 use crate::web::viewer::highlight;
 use crate::web::viewer::limits::{self, Capped};
 use serde::Serialize;
+use std::collections::HashMap;
+use std::time::SystemTime;
 
 /// One navigable directory in the "open a project" folder picker. Directories
 /// only — files are not openable as projects. `is_repo` flags a git worktree so
@@ -95,6 +97,18 @@ pub struct ChangedFileDto {
     pub old_path: Option<String>,
     pub index: String,
     pub worktree: String,
+    /// Worktree mtime as Unix milliseconds, for the client's "recently touched"
+    /// highlight (the same signal the TUI's hot table carries). Absent when the
+    /// file could not be stat'd — or always, for a commit's file list, where the
+    /// working tree says nothing about the commit.
+    ///
+    /// An absolute instant, not an age: the status payload is deduplicated by
+    /// byte equality before it is pushed, so a field that moved every tick would
+    /// turn an idle repository into a permanent event stream. The client dates
+    /// it against its own clock, exactly as the TUI dates it against the
+    /// server's.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mtime: Option<u64>,
 }
 
 /// Wire code for a status column. Defined here rather than reused from the TUI
@@ -120,8 +134,18 @@ impl From<&ChangedFile> for ChangedFileDto {
             old_path: f.old_path.clone(),
             index: status_code(f.index).to_string(),
             worktree: status_code(f.worktree).to_string(),
+            mtime: None,
         }
     }
+}
+
+/// Unix milliseconds, or `None` for a pre-epoch timestamp — which only a badly
+/// skewed clock produces, and which the client would read as "infinitely old"
+/// anyway.
+fn unix_millis(t: SystemTime) -> Option<u64> {
+    t.duration_since(SystemTime::UNIX_EPOCH)
+        .ok()
+        .map(|d| d.as_millis() as u64)
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -138,11 +162,14 @@ pub struct StatusDto {
 }
 
 impl StatusDto {
+    /// `mtimes` is the snapshot worker's stat of every listed file, keyed by
+    /// path; paths missing from it simply carry no `mtime`.
     pub fn from_snapshot(
         files: &[ChangedFile],
         tracking: Option<&TrackingStatus>,
         head: Option<git2::Oid>,
         branch: Option<&str>,
+        mtimes: &HashMap<String, SystemTime>,
     ) -> Self {
         let capped = Capped::new(files.to_vec(), limits::MAX_STATUS_FILES);
         Self {
@@ -150,7 +177,14 @@ impl StatusDto {
             // `Oid`'s own serde shape is libgit2's concern; hex is the protocol's.
             head: head.map(|oid| oid.to_string()),
             tracking: tracking.map(TrackingDto::from),
-            files: capped.items.iter().map(ChangedFileDto::from).collect(),
+            files: capped
+                .items
+                .iter()
+                .map(|f| ChangedFileDto {
+                    mtime: mtimes.get(&f.path).copied().and_then(unix_millis),
+                    ..ChangedFileDto::from(f)
+                })
+                .collect(),
             truncated: capped.truncated,
         }
     }
@@ -482,7 +516,7 @@ mod tests {
             })
             .collect();
 
-        let dto = StatusDto::from_snapshot(&files, None, None, Some("main"));
+        let dto = StatusDto::from_snapshot(&files, None, None, Some("main"), &HashMap::new());
 
         assert_eq!(dto.files.len(), limits::MAX_STATUS_FILES);
         assert!(dto.truncated);
@@ -490,8 +524,54 @@ mod tests {
     }
 
     #[test]
+    fn status_dto_carries_mtime_in_millis_only_for_stated_files() {
+        let files = vec![
+            ChangedFile::from_status_columns(
+                "hot.rs".to_string(),
+                None,
+                StatusKind::Modified,
+                StatusKind::Unmodified,
+            ),
+            ChangedFile::from_status_columns(
+                "gone.rs".to_string(),
+                None,
+                StatusKind::Deleted,
+                StatusKind::Unmodified,
+            ),
+        ];
+        // Deleted files never make it into the worker's mtime map, so their
+        // rows must simply omit the field rather than carry a stand-in age.
+        let mtimes = HashMap::from([(
+            "hot.rs".to_string(),
+            SystemTime::UNIX_EPOCH + std::time::Duration::from_millis(1_500),
+        )]);
+
+        let value = json(&StatusDto::from_snapshot(&files, None, None, None, &mtimes));
+
+        assert_eq!(value["files"][0]["mtime"], 1_500u64);
+        assert!(value["files"][1].get("mtime").is_none());
+    }
+
+    #[test]
+    fn commit_file_list_never_carries_an_mtime() {
+        // A commit's files describe history; the working tree's mtime would be
+        // unrelated to them, and a client must not be able to read one as
+        // "this commit touched the file just now".
+        let files = vec![ChangedFile::from_status_columns(
+            "a.rs".to_string(),
+            None,
+            StatusKind::Modified,
+            StatusKind::Unmodified,
+        )];
+
+        let value = json(&CommitFilesDto::from_entries(&files));
+
+        assert!(value["files"][0].get("mtime").is_none());
+    }
+
+    #[test]
     fn status_dto_omits_absent_optional_fields() {
-        let value = json(&StatusDto::from_snapshot(&[], None, None, None));
+        let value = json(&StatusDto::from_snapshot(&[], None, None, None, &HashMap::new()));
 
         assert!(value.get("branch").is_none());
         assert!(value.get("head").is_none());

@@ -21,11 +21,12 @@ use crate::git::diff::RepoSnapshot;
 use crate::runtime::snapshot::{SnapshotChannel, SnapshotMsg};
 use crate::web::viewer::dto::{Envelope, StatusDto};
 use crate::web::viewer::limits;
+use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc::{self, Receiver, SyncSender, TrySendError};
 use std::sync::{Arc, Mutex};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, SystemTime};
 
 /// How often the runtime thread checks its snapshot channel. The producer ticks
 /// about once a second, so this only bounds how late an update is noticed.
@@ -121,19 +122,17 @@ impl RepoRuntime {
                 while !stop.load(Ordering::Acquire) {
                     // Drain everything queued, then publish only the last one:
                     // intermediate snapshots have already been superseded.
-                    let mut newest: Option<RepoSnapshot> = None;
+                    let mut newest: Option<(RepoSnapshot, HashMap<String, SystemTime>)> = None;
                     while let Ok(msg) = channel.try_recv() {
                         match msg {
-                            // The mtime map is deliberately dropped here: it is
-                            // a TUI hot-file heuristic, not wire data.
-                            SnapshotMsg::Ok(snapshot, _mtimes) => newest = Some(snapshot),
+                            SnapshotMsg::Ok(snapshot, mtimes) => newest = Some((snapshot, mtimes)),
                             SnapshotMsg::Err(err) => {
                                 tracing::debug!(repo = %label, %err, "viewer: snapshot error")
                             }
                         }
                     }
-                    if let Some(snapshot) = newest {
-                        worker_runtime.publish(&snapshot);
+                    if let Some((snapshot, mtimes)) = newest {
+                        worker_runtime.publish(&snapshot, &mtimes);
                     }
                     thread::sleep(POLL_INTERVAL);
                 }
@@ -147,12 +146,13 @@ impl RepoRuntime {
     }
 
     /// Reduce a snapshot to its wire form and hand it to every subscriber.
-    fn publish(&self, snapshot: &RepoSnapshot) {
+    fn publish(&self, snapshot: &RepoSnapshot, mtimes: &HashMap<String, SystemTime>) {
         let dto = StatusDto::from_snapshot(
             &snapshot.files,
             snapshot.tracking.as_ref(),
             snapshot.head_oid,
             snapshot.branch_name.as_deref(),
+            mtimes,
         );
         let Ok(json) = serde_json::to_string(&Envelope::new(dto)) else {
             tracing::warn!("viewer: status payload failed to serialize");
