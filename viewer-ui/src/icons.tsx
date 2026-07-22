@@ -91,6 +91,32 @@ export function XIcon({ className = "h-4 w-4" }: { className?: string }) {
   );
 }
 
+/**
+ * Split-view glyph, traced from Lucide's `columns-2` (same provenance as
+ * above): a framed pane bisected by a vertical rule. Static — the button
+ * signals its on/off state through `aria-pressed` and an accent text colour,
+ * the way the header's accent swatch leans on its tooltip rather than a
+ * second glyph.
+ */
+export function SplitViewIcon() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+      focusable="false"
+      className="h-4 w-4"
+    >
+      <rect width="18" height="18" x="3" y="3" rx="2" />
+      <path d="M12 3v18" />
+    </svg>
+  );
+}
+
 /** Search glyph, traced from Lucide's `search` (same provenance as above). */
 export function SearchIcon() {
   return (

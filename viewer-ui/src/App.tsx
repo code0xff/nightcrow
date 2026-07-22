@@ -1,4 +1,5 @@
 import {
+  Fragment,
   useCallback,
   useEffect,
   useRef,
@@ -13,6 +14,7 @@ import {
   type Commit,
   type CommitFiles,
   type Diff,
+  type DiffLine,
   type FileView,
   type Repo,
   type Status,
@@ -20,7 +22,14 @@ import {
   type TreeMatch,
 } from "./api";
 import { TerminalPanel } from "./Terminal";
-import { ChevronIcon, MaximizeIcon, SearchIcon, XIcon } from "./icons";
+import {
+  ChevronIcon,
+  MaximizeIcon,
+  SearchIcon,
+  SplitViewIcon,
+  XIcon,
+} from "./icons";
+import { splitHunkRows, useDiffLayout } from "./diffLayout";
 import { useAccent } from "./theme";
 
 /// How often the tab bar re-reads the served set. The payload is a handful of
@@ -107,6 +116,108 @@ function PathLabel({ path, from }: { path: string; from?: string }) {
   );
 }
 
+/** Background tint for a changed line, shared by the unified and split views. */
+function diffLineBg(kind: string): string {
+  if (kind === "+") return "bg-added/10";
+  if (kind === "-") return "bg-removed/10";
+  return "";
+}
+
+/** The kind marker plus the highlighted content spans of one diff line. */
+function DiffLineContent({ line }: { line: DiffLine }) {
+  return (
+    <>
+      <span className="text-ink-400 select-none">{line.kind}</span>
+      {line.spans.map((s, k) => (
+        <span key={k} style={{ color: s.c }}>
+          {s.t}
+        </span>
+      ))}
+    </>
+  );
+}
+
+/** One side of a split row; `null` renders a muted blank where the other side
+ * has no counterpart, so the two columns stay row-aligned. `border` draws the
+ * divider between the columns (always on the right cell, blank or not). */
+function SplitCell({
+  line,
+  border,
+}: {
+  line: DiffLine | null;
+  border: boolean;
+}) {
+  const divider = border ? "border-l border-ink-800" : "";
+  if (line === null) {
+    return <div className={`bg-ink-900/40 ${divider}`} />;
+  }
+  return (
+    <div className={`whitespace-pre px-3 ${diffLineBg(line.kind)} ${divider}`}>
+      <DiffLineContent line={line} />
+    </div>
+  );
+}
+
+// Each column is at least its widest line (`max-content`) and grows to fill
+// half the pane when the content is narrower. So short diffs sit at 50/50 while
+// a long line widens its column and the whole pane scrolls horizontally as one
+// unit — matching the unified view — instead of every long line growing its own
+// scrollbar. The grid keeps the two columns' seam aligned across rows.
+const SPLIT_COLUMNS = "minmax(max-content, 1fr) minmax(max-content, 1fr)";
+
+/** Side-by-side body for one hunk: removed lines on the left, added on the
+ * right, paired by `splitHunkRows`. Rows are grid cells so both columns share
+ * one horizontal scroll and stay aligned. */
+function SplitHunk({ lines }: { lines: DiffLine[] }) {
+  return (
+    <div className="grid" style={{ gridTemplateColumns: SPLIT_COLUMNS }}>
+      {splitHunkRows(lines).map((row, i) => (
+        <Fragment key={i}>
+          <SplitCell line={row.left} border={false} />
+          <SplitCell line={row.right} border={true} />
+        </Fragment>
+      ))}
+    </div>
+  );
+}
+
+/** The diff pane body. `split` picks the side-by-side layout; otherwise each
+ * line is stacked inline. Hunk headers are shared by both. */
+function DiffView({ diff, split }: { diff: Diff; split: boolean }) {
+  return (
+    <div className="p-1">
+      {diff.hunks.length === 0 && (
+        <p className="p-3 text-ink-400">No changes.</p>
+      )}
+      {diff.hunks.map((h, i) => (
+        <div key={i} className="mb-2">
+          <div className="bg-ink-850 px-3 py-0.5 text-ink-400">
+            {h.file_path ? `${h.file_path}  ` : ""}
+            {h.header}
+          </div>
+          {split ? (
+            <SplitHunk lines={h.lines} />
+          ) : (
+            h.lines.map((line, j) => (
+              <div
+                key={j}
+                className={`px-3 whitespace-pre ${diffLineBg(line.kind)}`}
+              >
+                <DiffLineContent line={line} />
+              </div>
+            ))
+          )}
+        </div>
+      ))}
+      {diff.truncated && (
+        <p className="p-3 text-accent">
+          Diff truncated — it exceeded the server's size ceiling.
+        </p>
+      )}
+    </div>
+  );
+}
+
 /** git status XY codes, coloured by how much attention each deserves. */
 function statusColor(code: string) {
   if (code === "?") return "text-ink-400";
@@ -172,6 +283,7 @@ export function App() {
   // Ahead of the login/loading early returns below, so the stored accent
   // applies to those screens too and not just the main view.
   const { accent, next, cycle } = useAccent();
+  const diffLayout = useDiffLayout();
 
   // A failed call is either "log back in" or a message worth showing.
   const handle = useCallback((err: unknown) => {
@@ -839,19 +951,44 @@ export function App() {
               read as a bogus file name. */}
           <div className="flex shrink-0 items-center gap-2 bg-ink-850 px-3 py-0.5 text-ink-400">
             {pane.kind === "file" && <PathLabel path={pane.value.path} />}
-            <button
-              onClick={() =>
-                setMaximized((m) => (m === "files" ? "none" : "files"))
-              }
-              aria-pressed={filesMax}
-              title={filesMax ? "Restore the layout" : "Maximize the file pane"}
-              aria-label={
-                filesMax ? "Restore the layout" : "Maximize the file pane"
-              }
-              className="ml-auto flex shrink-0 items-center rounded-sm px-1.5 py-0.5 hover:text-accent"
-            >
-              <MaximizeIcon maximized={filesMax} />
-            </button>
+            <div className="ml-auto flex shrink-0 items-center gap-1">
+              {pane.kind === "diff" && (
+                <button
+                  onClick={diffLayout.toggle}
+                  aria-pressed={diffLayout.layout === "split"}
+                  title={
+                    diffLayout.layout === "split"
+                      ? "Switch to unified diff"
+                      : "Switch to split diff"
+                  }
+                  aria-label={
+                    diffLayout.layout === "split"
+                      ? "Switch to unified diff"
+                      : "Switch to split diff"
+                  }
+                  className={`flex shrink-0 items-center rounded-sm px-1.5 py-0.5 hover:text-accent ${
+                    diffLayout.layout === "split" ? "text-accent" : ""
+                  }`}
+                >
+                  <SplitViewIcon />
+                </button>
+              )}
+              <button
+                onClick={() =>
+                  setMaximized((m) => (m === "files" ? "none" : "files"))
+                }
+                aria-pressed={filesMax}
+                title={
+                  filesMax ? "Restore the layout" : "Maximize the file pane"
+                }
+                aria-label={
+                  filesMax ? "Restore the layout" : "Maximize the file pane"
+                }
+                className="flex shrink-0 items-center rounded-sm px-1.5 py-0.5 hover:text-accent"
+              >
+                <MaximizeIcon maximized={filesMax} />
+              </button>
+            </div>
           </div>
           <div className="min-h-0 flex-1 overflow-auto">
             {pane.kind === "empty" && (
@@ -882,45 +1019,10 @@ export function App() {
               </>
             )}
             {pane.kind === "diff" && (
-              <div className="p-1">
-                {pane.value.hunks.length === 0 && (
-                  <p className="p-3 text-ink-400">No changes.</p>
-                )}
-                {pane.value.hunks.map((h, i) => (
-                  <div key={i} className="mb-2">
-                    <div className="bg-ink-850 px-3 py-0.5 text-ink-400">
-                      {h.file_path ? `${h.file_path}  ` : ""}
-                      {h.header}
-                    </div>
-                    {h.lines.map((line, j) => (
-                      <div
-                        key={j}
-                        className={`px-3 whitespace-pre ${
-                          line.kind === "+"
-                            ? "bg-added/10"
-                            : line.kind === "-"
-                              ? "bg-removed/10"
-                              : ""
-                        }`}
-                      >
-                        <span className="text-ink-400 select-none">
-                          {line.kind}
-                        </span>
-                        {line.spans.map((s, k) => (
-                          <span key={k} style={{ color: s.c }}>
-                            {s.t}
-                          </span>
-                        ))}
-                      </div>
-                    ))}
-                  </div>
-                ))}
-                {pane.value.truncated && (
-                  <p className="p-3 text-accent">
-                    Diff truncated — it exceeded the server's size ceiling.
-                  </p>
-                )}
-              </div>
+              <DiffView
+                diff={pane.value}
+                split={diffLayout.effective === "split"}
+              />
             )}
           </div>
         </section>
