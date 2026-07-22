@@ -180,6 +180,9 @@
 - `cargo test` 69 passed
 - `cargo clippy --all-targets` warning 0
 
+이후 진행: **M1**(`app.rs` 모듈 분할)은 별도 작업으로 반영돼 impl이 `src/app/` 서브모듈로
+나뉘었다. M4/M9/L4는 여전히 보류 상태다.
+
 ## 검증 필요 항목 (리뷰 범위 밖)
 
 - **H6**: OSC 제거 후 실제 환경(여러 터미널)에서 커서가 정상적으로 보이는지 확인.

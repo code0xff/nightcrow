@@ -1,5 +1,8 @@
 # Git Status Short Display Plan
 
+> **상태: 구현 완료 (계획 이력).** `XY` 두 칸 status 표기는 현재 코드와 `README.md`의
+> "Views" 절이 기준이다. 이 문서는 왜 그 모델을 택했는지의 이력으로만 남긴다.
+
 ## Goal
 
 Show staged and unstaged state separately in the status file list, using the
