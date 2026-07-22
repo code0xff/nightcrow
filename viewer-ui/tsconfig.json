@@ -11,6 +11,9 @@
     "noEmit": true,
     "skipLibCheck": true,
     "isolatedModules": true,
+    // For `api.fixture.json`, the server-generated wire fixture that
+    // `api.contract.test.ts` type-checks these interfaces against.
+    "resolveJsonModule": true,
     "verbatimModuleSyntax": true
   },
   "include": ["src"]

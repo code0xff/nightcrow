@@ -726,4 +726,175 @@ mod tests {
             "the cap must yield a clean prefix"
         );
     }
+
+    /// Where the wire fixture lives. Inside `viewer-ui/src` so the TypeScript
+    /// side can `import` it: the fixture is only half a contract test on its
+    /// own, and the half that matters is the one that fails when the two
+    /// hand-written definitions of this protocol drift apart.
+    const FIXTURE_PATH: &str = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/viewer-ui/src/api.fixture.json"
+    );
+
+    /// Set to rewrite the fixture instead of asserting against it.
+    const UPDATE_ENV: &str = "UPDATE_API_FIXTURE";
+
+    /// One instance of every payload the viewer serves, with literal values
+    /// rather than values derived from a repository — the point is the shape,
+    /// and a fixture that changed with the fixture repo could not be diffed.
+    ///
+    /// Optional fields appear both present and absent (a renamed file next to a
+    /// plain one, a commit hunk next to a single-file one) so a
+    /// `skip_serializing_if` that stops firing is visible here too.
+    fn wire_fixture() -> serde_json::Value {
+        let span = |t: &str, c: &str| SpanDto {
+            t: t.to_string(),
+            c: c.to_string(),
+        };
+        let changed = ChangedFileDto {
+            path: "src/main.rs".to_string(),
+            old_path: None,
+            index: "M".to_string(),
+            worktree: " ".to_string(),
+            mtime: Some(1_700_000_000_000),
+        };
+        let renamed = ChangedFileDto {
+            path: "src/app/mod.rs".to_string(),
+            old_path: Some("src/app.rs".to_string()),
+            index: "R".to_string(),
+            worktree: "M".to_string(),
+            mtime: None,
+        };
+
+        serde_json::json!({
+            "version": PROTOCOL_VERSION,
+            "bootstrap": ViewerBootstrapDto {
+                repos: vec![RepoDto {
+                    id: "r1".to_string(),
+                    name: "nightcrow".to_string(),
+                    display_path: "~/code/nightcrow".to_string(),
+                }],
+                hot: HotConfigDto { enabled: true, window_secs: 15 },
+                accent: 2,
+                // Literal, not `server_now_millis()`: a fixture that moved every
+                // run could not be committed.
+                now_ms: 1_700_000_000_500,
+            },
+            "status": StatusDto {
+                branch: Some("dev".to_string()),
+                head: Some("9a3bc2c".to_string()),
+                tracking: Some(TrackingDto { ahead: 2, behind: 0 }),
+                files: vec![changed.clone(), renamed.clone()],
+                truncated: false,
+            },
+            "log": LogDto {
+                commits: vec![CommitDto {
+                    oid: "9a3bc2cf0e1d2a3b4c5d6e7f8a9b0c1d2e3f4a5b".to_string(),
+                    short_id: "9a3bc2c".to_string(),
+                    summary: "refactor: name the bootstrap payload".to_string(),
+                    author: "code0xff".to_string(),
+                    time: 1_700_000_000,
+                }],
+                truncated: false,
+            },
+            "commitFiles": CommitFilesDto {
+                files: vec![renamed],
+                truncated: true,
+            },
+            "tree": TreeDto {
+                path: "src".to_string(),
+                entries: vec![
+                    TreeEntryDto { name: "web".to_string(), is_dir: true },
+                    TreeEntryDto { name: "main.rs".to_string(), is_dir: false },
+                ],
+                truncated: false,
+            },
+            "treeSearch": TreeSearchDto {
+                query: "dto".to_string(),
+                matches: vec![TreeMatchDto {
+                    path: "src/web/viewer/dto.rs".to_string(),
+                    is_dir: false,
+                }],
+                truncated: false,
+            },
+            "diff": DiffDto {
+                path: "src/main.rs".to_string(),
+                hunks: vec![
+                    DiffHunkDto {
+                        header: "@@ -1,3 +1,4 @@".to_string(),
+                        file_path: None,
+                        lines: vec![
+                            DiffLineDto {
+                                kind: " ".to_string(),
+                                spans: vec![span("fn main() {", "#c9d1d9")],
+                            },
+                            DiffLineDto {
+                                kind: "+".to_string(),
+                                spans: vec![span("    ", ""), span("run()", "#79c0ff")],
+                            },
+                        ],
+                    },
+                    DiffHunkDto {
+                        header: "@@ -10,2 +10,2 @@".to_string(),
+                        file_path: Some("src/lib.rs".to_string()),
+                        lines: vec![DiffLineDto {
+                            kind: "-".to_string(),
+                            spans: vec![span("mod old;", "#ff7b72")],
+                        }],
+                    },
+                ],
+                truncated: false,
+            },
+            "file": FileDto {
+                path: "README.md".to_string(),
+                lines: vec![vec![span("# nightcrow", "#d2a8ff")], vec![]],
+                truncated: false,
+            },
+            "browse": BrowseDto {
+                path: "/Users/code0xff/code".to_string(),
+                parent: Some("/Users/code0xff".to_string()),
+                entries: vec![
+                    BrowseEntryDto { name: "nightcrow".to_string(), is_repo: true },
+                    BrowseEntryDto { name: "scratch".to_string(), is_repo: false },
+                ],
+                truncated: false,
+            },
+            "browseRoot": BrowseDto {
+                path: "/".to_string(),
+                parent: None,
+                entries: vec![],
+                truncated: false,
+            },
+            "openedRepo": serde_json::json!({ "repo": RepoDto {
+                id: "r2".to_string(),
+                name: "scratch".to_string(),
+                display_path: "~/code/scratch".to_string(),
+            }}),
+            "storedAccent": serde_json::json!({ "accent": 2 }),
+        })
+    }
+
+    #[test]
+    fn the_wire_fixture_matches_the_served_payloads() {
+        // The DTOs here and the interfaces in `viewer-ui/src/api.ts` describe
+        // one protocol twice, by hand. This pins the Rust half: any rename,
+        // removal, addition, or type change lands in the fixture diff. The
+        // TypeScript half then fails to compile against the regenerated
+        // fixture unless it was updated to match — that pairing, not this
+        // assertion alone, is what catches drift.
+        let expected = format!("{}\n", serde_json::to_string_pretty(&wire_fixture()).unwrap());
+
+        if std::env::var_os(UPDATE_ENV).is_some() {
+            std::fs::write(FIXTURE_PATH, &expected).expect("could not write the fixture");
+            return;
+        }
+
+        let actual = std::fs::read_to_string(FIXTURE_PATH).unwrap_or_default();
+        assert_eq!(
+            actual, expected,
+            "the wire payloads no longer match {FIXTURE_PATH}. \
+             Regenerate with `{UPDATE_ENV}=1 cargo test the_wire_fixture`, then update \
+             viewer-ui/src/api.ts until `npm run build` passes again."
+        );
+    }
 }

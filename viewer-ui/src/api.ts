@@ -64,6 +64,11 @@ export interface Commit {
   time: number;
 }
 
+export interface Log {
+  commits: Commit[];
+  truncated: boolean;
+}
+
 export interface CommitFiles {
   files: ChangedFile[];
   truncated: boolean;
@@ -74,10 +79,22 @@ export interface TreeEntry {
   is_dir: boolean;
 }
 
+export interface Tree {
+  path: string;
+  entries: TreeEntry[];
+  truncated: boolean;
+}
+
 /** One recursive tree-search hit: full repo-relative path plus its kind. */
 export interface TreeMatch {
   path: string;
   is_dir: boolean;
+}
+
+export interface TreeSearch {
+  query: string;
+  matches: TreeMatch[];
+  truncated: boolean;
 }
 
 export interface DiffLine {
@@ -209,15 +226,10 @@ export const api = {
     post<{ accent: number }>("/api/prefs", { accent }).then((r) => r.accent),
   status: (repo: string) => get<Status>(`/api/status?${query({ repo })}`),
   tree: (repo: string, path: string) =>
-    get<{ path: string; entries: TreeEntry[]; truncated: boolean }>(
-      `/api/tree?${query({ repo, path })}`,
-    ),
+    get<Tree>(`/api/tree?${query({ repo, path })}`),
   treeSearch: (repo: string, q: string) =>
-    get<{ query: string; matches: TreeMatch[]; truncated: boolean }>(
-      `/api/tree/search?${query({ repo, q })}`,
-    ),
-  log: (repo: string) =>
-    get<{ commits: Commit[]; truncated: boolean }>(`/api/log?${query({ repo })}`),
+    get<TreeSearch>(`/api/tree/search?${query({ repo, q })}`),
+  log: (repo: string) => get<Log>(`/api/log?${query({ repo })}`),
   diff: (repo: string, path: string) =>
     get<Diff>(`/api/diff?${query({ repo, path })}`),
   file: (repo: string, path: string) =>

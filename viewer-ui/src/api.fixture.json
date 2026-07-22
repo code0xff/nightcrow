@@ -1,0 +1,179 @@
+{
+  "bootstrap": {
+    "accent": 2,
+    "hot": {
+      "enabled": true,
+      "window_secs": 15
+    },
+    "now_ms": 1700000000500,
+    "repos": [
+      {
+        "display_path": "~/code/nightcrow",
+        "id": "r1",
+        "name": "nightcrow"
+      }
+    ]
+  },
+  "browse": {
+    "entries": [
+      {
+        "is_repo": true,
+        "name": "nightcrow"
+      },
+      {
+        "is_repo": false,
+        "name": "scratch"
+      }
+    ],
+    "parent": "/Users/code0xff",
+    "path": "/Users/code0xff/code",
+    "truncated": false
+  },
+  "browseRoot": {
+    "entries": [],
+    "path": "/",
+    "truncated": false
+  },
+  "commitFiles": {
+    "files": [
+      {
+        "index": "R",
+        "old_path": "src/app.rs",
+        "path": "src/app/mod.rs",
+        "worktree": "M"
+      }
+    ],
+    "truncated": true
+  },
+  "diff": {
+    "hunks": [
+      {
+        "header": "@@ -1,3 +1,4 @@",
+        "lines": [
+          {
+            "kind": " ",
+            "spans": [
+              {
+                "c": "#c9d1d9",
+                "t": "fn main() {"
+              }
+            ]
+          },
+          {
+            "kind": "+",
+            "spans": [
+              {
+                "c": "",
+                "t": "    "
+              },
+              {
+                "c": "#79c0ff",
+                "t": "run()"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "file_path": "src/lib.rs",
+        "header": "@@ -10,2 +10,2 @@",
+        "lines": [
+          {
+            "kind": "-",
+            "spans": [
+              {
+                "c": "#ff7b72",
+                "t": "mod old;"
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "path": "src/main.rs",
+    "truncated": false
+  },
+  "file": {
+    "lines": [
+      [
+        {
+          "c": "#d2a8ff",
+          "t": "# nightcrow"
+        }
+      ],
+      []
+    ],
+    "path": "README.md",
+    "truncated": false
+  },
+  "log": {
+    "commits": [
+      {
+        "author": "code0xff",
+        "oid": "9a3bc2cf0e1d2a3b4c5d6e7f8a9b0c1d2e3f4a5b",
+        "short_id": "9a3bc2c",
+        "summary": "refactor: name the bootstrap payload",
+        "time": 1700000000
+      }
+    ],
+    "truncated": false
+  },
+  "openedRepo": {
+    "repo": {
+      "display_path": "~/code/scratch",
+      "id": "r2",
+      "name": "scratch"
+    }
+  },
+  "status": {
+    "branch": "dev",
+    "files": [
+      {
+        "index": "M",
+        "mtime": 1700000000000,
+        "path": "src/main.rs",
+        "worktree": " "
+      },
+      {
+        "index": "R",
+        "old_path": "src/app.rs",
+        "path": "src/app/mod.rs",
+        "worktree": "M"
+      }
+    ],
+    "head": "9a3bc2c",
+    "tracking": {
+      "ahead": 2,
+      "behind": 0
+    },
+    "truncated": false
+  },
+  "storedAccent": {
+    "accent": 2
+  },
+  "tree": {
+    "entries": [
+      {
+        "is_dir": true,
+        "name": "web"
+      },
+      {
+        "is_dir": false,
+        "name": "main.rs"
+      }
+    ],
+    "path": "src",
+    "truncated": false
+  },
+  "treeSearch": {
+    "matches": [
+      {
+        "is_dir": false,
+        "path": "src/web/viewer/dto.rs"
+      }
+    ],
+    "query": "dto",
+    "truncated": false
+  },
+  "version": 2
+}
