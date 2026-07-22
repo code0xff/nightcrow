@@ -27,6 +27,7 @@ import {
 import {
   ChevronIcon,
   MaximizeIcon,
+  PlusIcon,
   PreviewIcon,
   SearchIcon,
   SplitViewIcon,
@@ -877,12 +878,18 @@ export function App() {
             </div>
           ))}
         </nav>
+        {/* The plus is the same drawn mark the terminal panel's add button uses,
+            not the `+` character, so the app has one plus rather than two that
+            disagree on weight. Sized to the label beside it — the convention the
+            project tabs' close glyph already follows — rather than to the 16px
+            of an icon-only control. */}
         <button
           onClick={() => setPickerOpen(true)}
           title="Open a project"
-          className="hidden rounded-sm px-2 py-0.5 text-ink-400 hover:text-ink-200 md:inline-block"
+          className="hidden shrink-0 items-center gap-1 rounded-sm px-2 py-0.5 text-ink-400 hover:text-ink-200 md:inline-flex"
         >
-          + open
+          <PlusIcon className="h-3.5 w-3.5" />
+          open
         </button>
         {/* Cycles rather than opening a picker, matching the TUI's
             `<prefix> p`. The swatch is the current accent, so the control
@@ -1420,9 +1427,10 @@ function ProjectMenu({
                 onOpenPicker();
                 setOpen(false);
               }}
-              className="w-full px-3 py-1.5 text-left text-ink-400 hover:text-ink-200"
+              className="flex w-full items-center gap-1 px-3 py-1.5 text-left text-ink-400 hover:text-ink-200"
             >
-              + open
+              <PlusIcon className="h-3.5 w-3.5" />
+              open
             </button>
           </div>
         </>
