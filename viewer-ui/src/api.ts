@@ -23,8 +23,8 @@ export interface ChangedFile {
   /** Worktree mtime in Unix milliseconds, when the server could stat the file.
    *  Absent on a commit's file list, which describes history rather than the
    *  working tree. Measured against the *server's* clock, so date it against
-   *  `now_ms` from the repo poll rather than this device's — see `clockOffset`
-   *  in `hot.ts`. */
+   *  `now_ms` from the repo poll rather than this device's — see
+   *  `nextClockOffset` in `hot.ts`. */
   mtime?: number;
 }
 

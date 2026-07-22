@@ -37,9 +37,8 @@ import { fileViewSource, isMarkdownPath } from "./fileView";
 import {
   anyHot,
   classifyHot,
-  clockOffset,
-  CLOCK_SKEW_EPSILON_MS,
   HOT_TICK_MS,
+  nextClockOffset,
   type HotStage,
 } from "./hot";
 import { useAccent } from "./theme";
@@ -386,10 +385,10 @@ export function App() {
   const [hot, setHot] = useState<HotConfig | null>(null);
   const hotWindowMs = hot?.enabled ? hot.window_secs * 1000 : 0;
   // How far this device's clock sits from the server's, refreshed by the same
-  // poll that delivers the config above. Zero until the first response, which
-  // is also where a synced device stays — see `CLOCK_SKEW_EPSILON_MS`.
-  const [clockSkewMs, setClockSkewMs] = useState(0);
-  const now = useHotClock(status?.files, hotWindowMs, clockSkewMs);
+  // poll that delivers the config above. `null` until the first response, when
+  // there is nothing to correct by yet.
+  const [clockSkewMs, setClockSkewMs] = useState<number | null>(null);
+  const now = useHotClock(status?.files, hotWindowMs, clockSkewMs ?? 0);
   // Ahead of the login/loading early returns below, so the stored accent
   // applies to those screens too and not just the main view.
   const { accent, next, cycle: cycleAccent, adopt: adoptAccent } = useAccent();
@@ -463,10 +462,7 @@ export function App() {
         .then(({ repos: list, hot, accent, now_ms }) => {
           if (cancelled) return;
           setHot(hot);
-          const skew = clockOffset(now_ms, Date.now());
-          setClockSkewMs((prev) =>
-            Math.abs(skew - prev) >= CLOCK_SKEW_EPSILON_MS ? skew : prev,
-          );
+          setClockSkewMs((held) => nextClockOffset(held, now_ms, Date.now()));
           if (accentWrites.current === writes) adoptAccent(accent);
           setAuthed(true);
           // We now hold the authoritative list for this session; the initial

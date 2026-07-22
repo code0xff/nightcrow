@@ -25,7 +25,7 @@ export const HOT_TICK_MS = 1_000;
  *
  *  One-way network latency is folded into the result, which is fine here: it is
  *  tens of milliseconds against stages measured in seconds. */
-export function clockOffset(
+function measureOffset(
   serverNow: number | undefined,
   clientNow: number,
 ): number {
@@ -33,15 +33,34 @@ export function clockOffset(
   return serverNow - clientNow;
 }
 
-/** Smallest offset change worth adopting. Each poll measures the offset afresh,
- *  so network jitter moves it by tens of milliseconds even on a device whose
- *  clock never drifts; adopting every reading would restart the fade ticker
- *  every poll for a correction no stage is wide enough to show. One tick is the
- *  natural floor — a shift the list cannot render is a shift not worth taking. */
+/** Smallest *change* to an offset already held that is worth adopting. Each poll
+ *  measures afresh, so network jitter moves the reading by tens of milliseconds
+ *  even on a device whose clock never drifts; adopting every one would restart
+ *  the fade ticker every poll for a correction no stage is wide enough to show.
+ *  One tick is the natural floor — a shift the list cannot render is a shift not
+ *  worth taking. */
 export const CLOCK_SKEW_EPSILON_MS = HOT_TICK_MS;
 
+/** The offset to hold after a poll, given the one held so far (`null` before the
+ *  first response).
+ *
+ *  The first measurement is always adopted, however small. The epsilon exists to
+ *  damp *movement between* readings, not to decide whether the clocks are worth
+ *  correcting at all — and a device 900ms out is genuinely 900ms out, which
+ *  shows at a stage boundary. Afterwards only a change of at least one tick
+ *  displaces it. */
+export function nextClockOffset(
+  held: number | null,
+  serverNow: number | undefined,
+  clientNow: number,
+): number {
+  const measured = measureOffset(serverNow, clientNow);
+  if (held === null) return measured;
+  return Math.abs(measured - held) >= CLOCK_SKEW_EPSILON_MS ? measured : held;
+}
+
 /** Bucket one mtime against `now`, which callers derive from
- *  [`clockOffset`] so both sides of the subtraction share a clock.
+ *  [`nextClockOffset`] so both sides of the subtraction share a clock.
  *
  *  A negative age still saturates to `fresh`: with the offset applied what
  *  remains is sub-second ordering between the `stat` and the timestamp, exactly
