@@ -349,9 +349,11 @@ export function App() {
   paneRef.current = pane;
   const tabRef = useRef(tab);
   tabRef.current = tab;
-  // Invalidates an in-flight file-list or file-diff request when the user
-  // chooses another commit or switches repository before it finishes.
-  const commitRequestRef = useRef(0);
+  // Invalidates every in-flight request that would land in the pane. Bumped
+  // when a new one starts and whenever the context they were opened from is
+  // left (another commit, another tab, another repository), so a slow response
+  // cannot overwrite what the user is looking at now.
+  const paneRequestRef = useRef(0);
   const [pickerOpen, setPickerOpen] = useState(false);
   // False until the repo list has been fetched for the current session. Gates
   // the loading splash so the window between logging in and the first repo
@@ -504,10 +506,18 @@ export function App() {
     if (!status.files.some((f) => f.path === path)) {
       setPane({ kind: "empty" });
     } else {
+      // Reads the request counter without bumping it: this refresh is on the
+      // pane the user is already looking at, so it yields to anything they open
+      // while it is in flight rather than invalidating their click.
+      const request = paneRequestRef.current;
       api
         .diff(repo, path)
-        .then((v) => setPane({ kind: "diff", value: v }))
-        .catch(handle);
+        .then((v) => {
+          if (request === paneRequestRef.current) setPane({ kind: "diff", value: v });
+        })
+        .catch((err) => {
+          if (request === paneRequestRef.current) handle(err);
+        });
     }
   }, [status, repo, handle]);
 
@@ -520,7 +530,7 @@ export function App() {
   useEffect(() => {
     setTreeChildren({});
     setTreeExpanded(new Set());
-    commitRequestRef.current += 1;
+    paneRequestRef.current += 1;
     setCommitDrillDown(null);
   }, [repo]);
 
@@ -573,40 +583,60 @@ export function App() {
     };
   }, [repo, authed, tab, filter, filterOpen, handle]);
 
-  const openDiff = (path: string) =>
-    repo && api.diff(repo, path).then((v) => setPane({ kind: "diff", value: v })).catch(handle);
-  const openFile = (path: string) =>
-    repo && api.file(repo, path).then((v) => setPane({ kind: "file", value: v })).catch(handle);
+  const openDiff = (path: string) => {
+    if (!repo) return;
+    const request = ++paneRequestRef.current;
+    api
+      .diff(repo, path)
+      .then((v) => {
+        if (request === paneRequestRef.current) setPane({ kind: "diff", value: v });
+      })
+      .catch((err) => {
+        if (request === paneRequestRef.current) handle(err);
+      });
+  };
+  const openFile = (path: string) => {
+    if (!repo) return;
+    const request = ++paneRequestRef.current;
+    api
+      .file(repo, path)
+      .then((v) => {
+        if (request === paneRequestRef.current) setPane({ kind: "file", value: v });
+      })
+      .catch((err) => {
+        if (request === paneRequestRef.current) handle(err);
+      });
+  };
   const openCommit = (oid: string) => {
     if (!repo) return;
-    const request = ++commitRequestRef.current;
+    const request = ++paneRequestRef.current;
     api
       .commit(repo, oid)
       .then((v) => {
-        if (request === commitRequestRef.current) setPane({ kind: "diff", value: v });
+        if (request === paneRequestRef.current) setPane({ kind: "diff", value: v });
       })
       .catch((err) => {
-        if (request === commitRequestRef.current) handle(err);
+        if (request === paneRequestRef.current) handle(err);
       });
   };
   const openCommitFileDiff = (oid: string, path: string) => {
     if (!repo) return;
-    const request = ++commitRequestRef.current;
+    const request = ++paneRequestRef.current;
     api
       .commitFileDiff(repo, oid, path)
       .then((v) => {
-        if (request === commitRequestRef.current) setPane({ kind: "diff", value: v });
+        if (request === paneRequestRef.current) setPane({ kind: "diff", value: v });
       })
       .catch((err) => {
-        if (request === commitRequestRef.current) handle(err);
+        if (request === paneRequestRef.current) handle(err);
       });
   };
   const openCommitFiles = async (commit: Commit) => {
     if (!repo) return;
-    const request = ++commitRequestRef.current;
+    const request = ++paneRequestRef.current;
     try {
       const result = await api.commitFiles(repo, commit.oid);
-      if (request !== commitRequestRef.current) return;
+      if (request !== paneRequestRef.current) return;
       setCommitDrillDown({ commit, ...result });
       if (result.files.length === 0) {
         setPane({ kind: "empty" });
@@ -616,11 +646,11 @@ export function App() {
       // the complete commit diff visible. Choosing a row below narrows the
       // pane to that file only.
       const diff = await api.commit(repo, commit.oid);
-      if (request === commitRequestRef.current) {
+      if (request === paneRequestRef.current) {
         setPane({ kind: "diff", value: diff });
       }
     } catch (err) {
-      if (request === commitRequestRef.current) handle(err);
+      if (request === paneRequestRef.current) handle(err);
     }
   };
 
@@ -838,10 +868,11 @@ export function App() {
                 key={t}
                 onClick={() => {
                   if (t === tab) return;
-                  if (tab === "log") {
-                    commitRequestRef.current += 1;
-                    setCommitDrillDown(null);
-                  }
+                  // Unconditional: the pane is cleared below whatever tab we
+                  // came from, so a request still in flight from any of them
+                  // must not fill it back in.
+                  paneRequestRef.current += 1;
+                  if (tab === "log") setCommitDrillDown(null);
                   setTab(t);
                   // The pane's content belongs to the tab it was opened from;
                   // switching tabs leaves nothing to re-preview, so clear it.
@@ -941,7 +972,7 @@ export function App() {
                 <li className="sticky top-0 z-10 flex w-max min-w-full items-center gap-1 bg-ink-900 px-2 py-1 text-ink-400">
                   <button
                     onClick={() => {
-                      commitRequestRef.current += 1;
+                      paneRequestRef.current += 1;
                       setCommitDrillDown(null);
                       setPane({ kind: "empty" });
                     }}
