@@ -176,6 +176,7 @@ through to the terminal program.
 |-----|--------|
 | `↑` / `k`, `↓` / `j` | Navigate items one by one |
 | `PgUp` / `PgDn` | Jump 10 items |
+| `←` / `→` | Scroll long paths and commit summaries horizontally (in tree view these expand/collapse instead) |
 | `<prefix> f` | Zoom the list pane to full screen (toggle) |
 | `/` | Incremental search (status: paths; log: commit summaries; drill-down: paths; tree: recursive filenames) |
 | `Esc` | Clear filter, then exit drill-down (log), then cancel search bar |
@@ -189,6 +190,7 @@ through to the terminal program.
 | `PgUp` / `PgDn` | Scroll 20 lines |
 | `←` / `→` | Horizontal scroll (4 columns) |
 | `v` | Toggle between hunk diff and full file preview |
+| `s` | Toggle between the unified diff and a side-by-side split view (falls back to unified when the pane is too narrow) |
 | `<prefix> f` | Zoom the diff/file pane to full screen (toggle) |
 | `/` | Open search (works in both diff and file preview, including tree mode) |
 | `n` / `N` | Next / previous search match |
@@ -289,9 +291,15 @@ renders the same git data as a native web page — selectable text, real
 scrolling, clickable paths, and a layout that collapses to one column on a
 phone. It also serves its **own** terminals, independent of the TUI's panes.
 
-In the Log tab, selecting a commit opens its changed-file list alongside the
+The served repositories appear as project tabs in the header — `+ open` browses
+the server machine's folders to add one, `×` closes it — and each project has
+its own `status`, `log`, and `tree` tabs on the left plus a terminal panel
+below. On a narrow window (phone) the tab row folds into a dropdown showing the
+current project.
+
+In the `log` tab, selecting a commit opens its changed-file list alongside the
 complete commit diff. Select a file to view only that file's change; use
-`← log` to return or `all changes` to restore the complete commit diff.
+`< log` to return or `all changes` to restore the complete commit diff.
 
 The swatch in the header cycles the accent colour through the same five
 presets as the TUI's `<prefix> p` (yellow → cyan → green → magenta → blue).
@@ -301,11 +309,11 @@ reaches the others within a few seconds. It is **not** read from `[theme]` —
 that setting colours the TUI, and the viewer keeps its own.
 
 The diff pane has a toggle (top-right of the pane) that switches between the
-inline unified diff and a side-by-side split view, mirroring the TUI's Alt+V.
+inline unified diff and a side-by-side split view, mirroring the TUI's `s`.
 The choice is stored per browser; on a narrow window (phone) it always renders
 unified, since two code columns can't both stay legible there.
 
-The Files list highlights recently touched files the same way the TUI does:
+The `status` list highlights recently touched files the same way the TUI does:
 accent-coloured and bold for the first 5 seconds after a file's mtime, accent
 until `agent_indicator.hot_window_secs` expires, then plain. The window (and
 whether the highlight runs at all) comes from the server's `[agent_indicator]`
@@ -334,8 +342,12 @@ nightcrow serve --repo ~/code/app --repo ~/code/api
 nightcrow serve --repo . --port 9000
 ```
 
-`serve` runs in the foreground until Ctrl-C. Because the server never touches
-the TUI's state, it needs no terminal — which is what makes this mode possible.
+`serve` runs in the foreground until Ctrl-C (`--bind` overrides the configured
+address alongside `--port`). It starts with the repos from `--repo` plus the
+ones remembered from the last session, and projects opened or closed in the
+browser are written back to `~/.nightcrow/workspace.json`. Because the server
+never touches the TUI's state, it needs no terminal — which is what makes this
+mode possible.
 
 **Mirror or viewer?** The mirror is for *driving* nightcrow remotely: it is the
 same session, so what you type appears on both screens. The viewer is for
