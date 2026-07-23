@@ -1788,6 +1788,9 @@ function FolderPicker({
   const [busy, setBusy] = useState(false);
   const [newName, setNewName] = useState("");
   const [creating, setCreating] = useState(false);
+  // Bumped to re-browse the current path without navigating (e.g. after a
+  // folder is created so it shows up in the listing).
+  const [reload, setReload] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -1806,7 +1809,7 @@ function FolderPicker({
     return () => {
       cancelled = true;
     };
-  }, [path]);
+  }, [path, reload]);
 
   const into = (name: string) =>
     setPath(`${dir!.path.replace(/\/$/, "")}/${name}`);
@@ -1822,18 +1825,18 @@ function FolderPicker({
     }
   };
 
-  // Create a folder in the directory being browsed, then step into it so the
-  // next action is "Open". The new folder is empty (not a git repo yet) — the
-  // point is to scaffold a location to open and `git init`/`clone` in a pane.
+  // Create a folder in the directory being browsed and refresh the listing so
+  // it appears. Stays put rather than stepping in — the new folder is empty
+  // (not a git repo yet), so the user can keep browsing or step in manually.
   const createFolder = async () => {
     if (!dir) return;
     const name = newName.trim();
     if (!name) return;
     setCreating(true);
     try {
-      const created = await api.mkdir(dir.path, name);
+      await api.mkdir(dir.path, name);
       setNewName("");
-      setPath(created);
+      setReload((n) => n + 1);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "could not create folder");
     } finally {
