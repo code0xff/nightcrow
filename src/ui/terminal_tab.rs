@@ -206,9 +206,9 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect, accent: Color) -> Option
         " Terminal "
     };
     // The upper panes draw a `┌` corner that pushes their title text in by one
-    // column (`┌ ^Q1 Files`). This pane has no left border, so a border-styled
+    // column (`┌ ^F1 Files`). This pane has no left border, so a border-styled
     // `─` stands in for that corner — it keeps `Terminal` column-aligned with
-    // `^Q1 Files` / `^Q2 Diff` above and makes the line start flush at the edge.
+    // `^F1 Files` / `^F2 Diff` above and makes the line start flush at the edge.
     let title = Line::from(vec![Span::styled("─", border_style), Span::raw(label)]);
     let block = Block::default()
         .borders(TERMINAL_BORDERS)

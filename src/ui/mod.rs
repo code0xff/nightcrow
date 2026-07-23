@@ -63,7 +63,7 @@ pub(crate) fn status_color(status: StatusKind) -> Color {
 /// Render a bordered, single-selection list with the project's standard
 /// highlight styling. `selected` is clamped to `items.len() - 1` to match
 /// the prior call sites' defensive behaviour.
-/// Key legend for a panel or pane reached by a leader digit, e.g. `^Q1`.
+/// Key legend for a panel or pane reached by a leader digit, e.g. `^F1`.
 ///
 /// Panels advertise the chord that actually reaches them. The bare F-key row
 /// used to serve here, but it now selects project tabs, so a label reading
@@ -700,7 +700,7 @@ fn render_hint_bar<'a>(app: &'a App, chrome: Chrome<'a>, accent: Color) -> Parag
         ]));
     }
     // `<prefix>` in the hint literal resolves to the configured leader chord
-    // (e.g. `^Q`) so the footer always names the actual key to press rather
+    // (e.g. `^F`) so the footer always names the actual key to press rather
     // than an abstract word.
     Paragraph::new(Line::from(hint_spans(
         normal_hint_literal(app),

@@ -41,7 +41,7 @@ nightcrow --exec "claude" --exec "codex"
 ```
 
 Startup panes belong to a project, not to the process: each project opened —
-by `--repo` at launch or by `^Q o` later — gets its own set. So
+by `--repo` at launch or by `^F o` later — gets its own set. So
 `nightcrow --exec claude` with no repo opens the empty screen and starts
 `claude` in the first project you open, not before there is one to open it in.
 
@@ -62,10 +62,10 @@ project keeps running while you work in another.
 
 ```
  F1 nightcrow  F2 api-server  +3          ← project tabs (active one accented)
-┌ ^Q1 Files ──────┐┌ ^Q2 src/main.rs ────┐
+┌ ^F1 Files ──────┐┌ ^F2 src/main.rs ────┐
 ```
 
-- `^Q o` opens a repo in a tab, `^Q x` closes the active one, and `F1`…`F10`
+- `^F o` opens a repo in a tab, `^F x` closes the active one, and `F1`…`F10`
   switch between them. There is no "change this tab's repo": closing and
   opening is the same thing, and it tears the old project down properly
   instead of leaving its shells behind in the previous directory.
@@ -77,8 +77,8 @@ project keeps running while you work in another.
 
 **No project open** is a normal state, not an error — it is how nightcrow
 starts without `--repo`, and where closing the last tab returns you. The screen
-keeps its chrome and offers the only two things that apply: `^Q o` to open a
-repo, `^Q q` to quit.
+keeps its chrome and offers the only two things that apply: `^F o` to open a
+repo, `^F q` to quit.
 
 Each project keeps its own session file (see
 [Session persistence](#session-persistence)), so tabs restore independently.

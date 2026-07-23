@@ -374,8 +374,8 @@ impl App {
         self.awaiting_swap_target = false;
     }
 
-    /// Caret-notation label for the configured leader chord, e.g. `^Q` for
-    /// `Ctrl+Q`. Leaders are always ctrl chords (see `config::parse_leader`),
+    /// Caret-notation label for the configured leader chord, e.g. `^F` for
+    /// `Ctrl+F`. Leaders are always ctrl chords (see `config::parse_leader`),
     /// so the control character maps cleanly to `^<UPPER>`; any non-ctrl key
     /// falls back to printing its raw character.
     pub fn leader_label(&self) -> String {

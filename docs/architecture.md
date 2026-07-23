@@ -19,7 +19,7 @@ nightcrow 자체는 AI에 대한 ontology를 갖지 않는다 — agent든 사�
 ├──────────────────────┬──────────────────────┤
 │ File List (20~25%)   │ Diff Viewer (75~80%) │  ← upper panel
 ├──────────────────────┴──────────────────────┤
-│ ^Q3 pane-a  ^Q4 pane-b  +2     (tab bar)     │
+│ ^F3 pane-a  ^F4 pane-b  +2     (tab bar)     │
 ├────────────────────┬────────────────────────┤
 │  Pane A (active)   │      Pane B             │  ← split-view grid: every
 ├────────────────────┼────────────────────────┤     visible pane renders at
