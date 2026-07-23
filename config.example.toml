@@ -26,8 +26,10 @@ name = "yellow"      # accent color preset: "yellow" | "cyan" | "green" | "magen
 #   Ctrl+Q → <leader> q
 # Press the leader twice (<leader> <leader>) to send the literal leader byte
 # to the terminal program.
-leader = "ctrl+q"    # default; dodges tmux's Ctrl+B and the Ctrl chords an inner
-                     # Claude Code pane uses (Ctrl+G=external editor, Ctrl+O/R/S/T/L)
+leader = "ctrl+f"    # default; one-handed, dodges tmux's Ctrl+B, terminal flow
+                     # control (Ctrl+Q/S), the shell signals (Ctrl+C/D/Z), and the
+                     # Ctrl chords an inner Claude Code pane uses (Ctrl+G=external
+                     # editor, Ctrl+O/R/S/T/L)
 
 [mouse]
 # Capture the mouse: clicking a panel (file list, diff viewer, terminal pane)

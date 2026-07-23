@@ -402,15 +402,15 @@ mod tests {
     }
 
     #[test]
-    fn decode_ctrl_q_matches_default_leader() {
-        // The default leader is Ctrl+Q; a browser ctrl+q must decode to the
+    fn decode_ctrl_f_matches_default_leader() {
+        // The default leader is Ctrl+F; a browser ctrl+f must decode to the
         // identical KeyEvent so the leader arms from the web too.
-        let ev = decode_input(r#"{"t":"key","key":"q","ctrl":true}"#)
+        let ev = decode_input(r#"{"t":"key","key":"f","ctrl":true}"#)
             .unwrap()
             .unwrap();
         assert_eq!(
             ev,
-            WebInputEvent::Key(KeyEvent::new(KeyCode::Char('q'), KeyModifiers::CONTROL))
+            WebInputEvent::Key(KeyEvent::new(KeyCode::Char('f'), KeyModifiers::CONTROL))
         );
     }
 

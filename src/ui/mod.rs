@@ -994,7 +994,7 @@ mod tests {
     /// workspace state, but its rejection notice lands on the active project.
     fn test_workspace() -> crate::workspace::Workspace {
         let mut ws = crate::workspace::Workspace::new(crossterm::event::KeyEvent::new(
-            crossterm::event::KeyCode::Char('q'),
+            crossterm::event::KeyCode::Char('f'),
             crossterm::event::KeyModifiers::CONTROL,
         ));
         ws.add(app_with_files(vec![]));
@@ -1196,7 +1196,7 @@ mod tests {
     ) -> String {
         let mut terminal = Terminal::new(TestBackend::new(90, 12)).unwrap();
         let leader = crossterm::event::KeyEvent::new(
-            crossterm::event::KeyCode::Char('q'),
+            crossterm::event::KeyCode::Char('f'),
             crossterm::event::KeyModifiers::CONTROL,
         );
         terminal
@@ -1225,8 +1225,8 @@ mod tests {
         let text = drawn_empty(&RepoInput::default(), None, false);
 
         assert!(text.contains("no project open"), "got: {text}");
-        assert!(text.contains("^Q o: open project"), "got: {text}");
-        assert!(text.contains("^Q q: quit"), "got: {text}");
+        assert!(text.contains("^F o: open project"), "got: {text}");
+        assert!(text.contains("^F q: quit"), "got: {text}");
     }
 
     #[test]
@@ -1349,11 +1349,14 @@ mod tests {
             .join("\n");
 
         assert!(
-            text.contains("^Q1 Files"),
+            text.contains("^F1 Files"),
             "file list must advertise its leader digit, got: {text}"
         );
+        // The `Ctrl+F` leader label ("^F") ends in the letter F, so the legit
+        // "^F1 Files" legend contains "F1 Files" as a substring. Strip it before
+        // asserting the bare function-key legend never appears on its own.
         assert!(
-            !text.contains("F1 Files"),
+            !text.replace("^F1 Files", "").contains("F1 Files"),
             "the bare F-key must not be advertised for panels, got: {text}"
         );
     }

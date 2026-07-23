@@ -112,25 +112,28 @@ The diff for a selected file shows the combined working-tree-with-index changes.
 ## Keyboard shortcuts
 
 nightcrow uses a tmux-style **leader (prefix)** key for its app commands. The
-default leader is `Ctrl+Q` (configurable via `[input] leader`). `Ctrl+Q` avoids
-both tmux's own `Ctrl+B` prefix (so nightcrow stays usable inside a tmux session)
-and the Ctrl chords an inner Claude Code pane reserves (`Ctrl+G` is its external
-editor, plus `Ctrl+O/R/S/T/L`) — its only other claimant is terminal flow
-control (XON), which nightcrow's raw-mode input disables. Press the
-leader, then a single follow-up key. Every other key — including Ctrl chords
-like `Ctrl+W` and `Ctrl+L` — passes straight through to the focused terminal,
-so a CLI running there (claude, codex, your shell) receives them unchanged.
-This is why the leader exists: cockpit users live inside the terminal panes and
-need their prompt-editing keys to reach the program, not nightcrow.
+default leader is `Ctrl+F` (configurable via `[input] leader`). `Ctrl+F` is a
+one-handed left-hand chord that avoids tmux's own `Ctrl+B` prefix (so nightcrow
+stays usable inside a tmux session), terminal flow control (`Ctrl+Q`/`Ctrl+S`),
+the shell signals (`Ctrl+C/D/Z`), and the Ctrl chords an inner Claude Code pane
+reserves (`Ctrl+G` is its external editor, plus `Ctrl+O/R/S/T/L`) — its only
+claimant is `Ctrl+F` as forward-char/page-forward, which most users reach via
+the arrow keys instead. Press the leader, then a single follow-up key. Every
+other key — including Ctrl chords like `Ctrl+W` and `Ctrl+L` — passes straight
+through to the focused terminal, so a CLI running there (claude, codex, your
+shell) receives them unchanged. This is why the leader exists: cockpit users
+live inside the terminal panes and need their prompt-editing keys to reach the
+program, not nightcrow.
 
 The hint bar shows the active leader in caret notation at its left edge (e.g.
-`^Q: leader` for the default `Ctrl+Q`), so the configured prefix is always
+`^F: leader` for the default `Ctrl+F`), so the configured prefix is always
 visible from the terminal pane.
 
 > **Migration from earlier versions:** the old bare-`Ctrl` app shortcuts moved
-> behind the leader. `Ctrl+T/W/L/F/O/P/Q` are now `<prefix> t/w/l/f/o/p/q`, and
-> those `Ctrl` keys now pass through to the terminal program instead. The old
-> `Ctrl+Q`-twice quit confirmation is gone; quit with `<prefix> q`.
+> behind the leader. `Ctrl+T/W/L/O/P/Q` are now `<prefix> t/w/l/o/p/q` and pass
+> through to the terminal program instead; `Ctrl+F` is now the leader itself
+> (`<prefix> f` toggles fullscreen). The old `Ctrl+Q`-twice quit confirmation is
+> gone; quit with `<prefix> q`.
 
 ### Leader commands (press `<prefix>`, then the key)
 
@@ -413,7 +416,7 @@ file_list_pct = 25   # horizontal % of upper panel for the file list (1–99)
 name = "yellow"      # accent color preset: "yellow" | "cyan" | "green" | "magenta" | "blue"
 
 [input]
-leader = "ctrl+q"    # leader (prefix) chord for app commands; tmux-style.
+leader = "ctrl+f"    # leader (prefix) chord for app commands; tmux-style.
                      # Allowed: "ctrl+<letter>". Reserved keys (F1..F10,
                      # Shift+arrows, Shift+PgUp/PgDn) cannot be the leader.
 

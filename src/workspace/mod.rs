@@ -296,7 +296,7 @@ mod tests {
     use crossterm::event::KeyCode;
 
     fn test_leader() -> KeyEvent {
-        KeyEvent::new(KeyCode::Char('q'), KeyModifiers::CONTROL)
+        KeyEvent::new(KeyCode::Char('f'), KeyModifiers::CONTROL)
     }
 
     /// A workspace holding projects distinguished by `repo_path`.

@@ -1538,7 +1538,8 @@ fn handle_empty_key(ws: &mut Workspace, key: KeyEvent) -> KeyOutcome {
         // `<L> <L>` sends a literal leader to the focused PTY on the project
         // screen; here there is no pane to send it to, so it is consumed.
         // Resolving it before the action table matters: with the default
-        // `ctrl+q` leader the follow-up would otherwise match `q` and quit.
+        // `ctrl+f` leader the follow-up would otherwise match `f` and toggle
+        // fullscreen.
         if ws.is_leader_key(key) {
             return KeyOutcome::Continue;
         }
@@ -1819,11 +1820,11 @@ mod tests {
         KeyEvent::new(code, mods)
     }
 
-    /// The default leader chord (Ctrl+Q). Test apps all use the default, so a
+    /// The default leader chord (Ctrl+F). Test apps all use the default, so a
     /// standalone constructor avoids borrowing `app` inside a `handle_key`
     /// call (which would conflict with the `&mut app` argument).
     fn leader() -> KeyEvent {
-        KeyEvent::new(KeyCode::Char('q'), KeyModifiers::CONTROL)
+        KeyEvent::new(KeyCode::Char('f'), KeyModifiers::CONTROL)
     }
 
     /// Snapshot the byte payloads the app's `FakeBackend` recorded so terminal
@@ -1850,7 +1851,7 @@ mod tests {
         // app mutations; a Release must never act.
         let mut app = app_with_files(vec!["a.rs"]);
         let release = KeyEvent::new_with_kind(
-            KeyCode::Char('q'),
+            KeyCode::Char('f'),
             KeyModifiers::CONTROL,
             crossterm::event::KeyEventKind::Release,
         );
@@ -1874,12 +1875,12 @@ mod tests {
     }
 
     #[test]
-    fn handle_key_bare_ctrl_q_arms_prefix_and_does_not_quit() {
-        // Ctrl+Q is the default leader: pressing it alone arms the prefix and
+    fn handle_key_bare_ctrl_f_arms_prefix_and_does_not_quit() {
+        // Ctrl+F is the default leader: pressing it alone arms the prefix and
         // never quits nightcrow on its own (quitting is `<leader> q`).
         let mut app = app_with_terminal_pane();
 
-        let outcome = handle_key(&mut app, press(KeyCode::Char('q'), KeyModifiers::CONTROL));
+        let outcome = handle_key(&mut app, press(KeyCode::Char('f'), KeyModifiers::CONTROL));
 
         assert!(matches!(outcome, KeyOutcome::Continue));
         assert!(app.prefix_armed(), "the leader press arms the prefix");
@@ -2209,7 +2210,8 @@ mod tests {
     fn a_doubled_leader_on_the_empty_screen_does_not_quit() {
         // `<L> <L>` sends a literal leader to a pane on the project screen.
         // Here there is none, but the follow-up must still not reach the action
-        // table: with the default ctrl+q leader it would match `q` and quit.
+        // table: with the default ctrl+f leader it would match `f` and toggle
+        // fullscreen.
         let mut ws = Workspace::new(leader());
 
         let _ = dispatch_key(&mut ws, leader());
@@ -2360,8 +2362,8 @@ mod tests {
         let outcome = handle_key(&mut app, leader());
         assert!(matches!(outcome, KeyOutcome::Continue));
         assert!(!app.prefix_armed());
-        // Ctrl+Q encodes to 0x11 (DC1/XON) — the literal leader byte.
-        assert_eq!(backend_payloads(&app), vec![vec![0x11]]);
+        // Ctrl+F encodes to 0x06 (ACK) — the literal leader byte.
+        assert_eq!(backend_payloads(&app), vec![vec![0x06]]);
     }
 
     #[test]
@@ -2676,12 +2678,12 @@ mod tests {
     #[test]
     fn handle_key_terminal_ctrl_app_keys_all_pass_through() {
         // Every former bare-Ctrl app shortcut now reaches the PTY untouched.
-        // Ctrl+Q is excluded: it is the default leader, so it is intercepted to
-        // arm the prefix rather than passed through (see the bare-Ctrl+Q test).
+        // Ctrl+F is excluded: it is the default leader, so it is intercepted to
+        // arm the prefix rather than passed through (see the bare-Ctrl+F test).
         for (c, byte) in [
             ('t', 0x14u8),
             ('w', 0x17),
-            ('f', 0x06),
+            ('q', 0x11),
             ('l', 0x0c),
             ('p', 0x10),
             ('o', 0x0f),

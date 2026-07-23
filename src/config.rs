@@ -31,15 +31,15 @@ pub struct Config {
     pub startup_commands: Vec<StartupCommand>,
 }
 
-/// Default leader chord literal. `Ctrl+Q` avoids tmux's own `Ctrl+B` prefix (so
-/// nightcrow can run inside tmux) AND the Ctrl chords that an inner Claude Code
-/// pane reserves (`Ctrl+G` = external editor, plus `Ctrl+O/R/S/T/L/…`) — the
-/// reason `Ctrl+G` was a poor fit for a tool meant to sit beside Claude Code.
-/// `Ctrl+Q` is only otherwise claimed by terminal flow control (XON), which is
-/// disabled in nightcrow's raw-mode input, so the key arrives as a normal event;
-/// editors that bind it (vim's CTRL-V alias, emacs quoted-insert) remain
-/// reachable via `<leader><leader>`.
-const DEFAULT_LEADER: &str = "ctrl+q";
+/// Default leader chord literal. `Ctrl+F` is a one-handed left-hand chord that
+/// avoids tmux's own `Ctrl+B` prefix (so nightcrow can run inside tmux) AND the
+/// Ctrl chords that an inner Claude Code pane reserves (`Ctrl+G` = external
+/// editor, plus `Ctrl+O/R/S/T/L/…`). It also dodges terminal flow control
+/// (`Ctrl+Q`/`Ctrl+S` = XON/XOFF) and the shell signals `Ctrl+C/D/Z`. Its only
+/// collision is `Ctrl+F` as forward-char (readline) / page-forward (vim), which
+/// users almost always reach via the arrow keys / PageDown instead; when needed
+/// it stays reachable via `<leader><leader>`.
+const DEFAULT_LEADER: &str = "ctrl+f";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
@@ -1158,11 +1158,11 @@ command = "cargo test"
     }
 
     #[test]
-    fn input_leader_defaults_to_ctrl_q() {
+    fn input_leader_defaults_to_ctrl_f() {
         let cfg = Config::default();
-        assert_eq!(cfg.input.leader, "ctrl+q");
+        assert_eq!(cfg.input.leader, "ctrl+f");
         let leader = parse_leader(&cfg.input.leader).unwrap();
-        assert_eq!(leader.code, KeyCode::Char('q'));
+        assert_eq!(leader.code, KeyCode::Char('f'));
         assert!(leader.modifiers.contains(KeyModifiers::CONTROL));
     }
 

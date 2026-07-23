@@ -478,7 +478,7 @@ pub(crate) mod tests {
             auto_follow: AutoFollow::default(),
             list_fullscreen: false,
             branch_name: None,
-            leader: KeyEvent::new(KeyCode::Char('q'), KeyModifiers::CONTROL),
+            leader: KeyEvent::new(KeyCode::Char('f'), KeyModifiers::CONTROL),
             prefix_armed: false,
             awaiting_swap_target: false,
             pending_mouse_press: None,
@@ -510,8 +510,8 @@ pub(crate) mod tests {
     #[test]
     fn leader_label_renders_ctrl_chord_as_caret_uppercase() {
         let mut app = app_with_files(vec!["a.rs"]);
-        // Default leader is Ctrl+Q.
-        assert_eq!(app.leader_label(), "^Q");
+        // Default leader is Ctrl+F.
+        assert_eq!(app.leader_label(), "^F");
         app.leader = KeyEvent::new(KeyCode::Char('b'), KeyModifiers::CONTROL);
         assert_eq!(app.leader_label(), "^B");
     }
