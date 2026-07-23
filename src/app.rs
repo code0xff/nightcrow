@@ -382,14 +382,13 @@ impl App {
         leader_label_of(self.leader)
     }
 
-    /// True when `key` matches the configured leader chord. Only Ctrl/Alt/Shift
-    /// distinguish a chord, so we compare exactly those: a bare `Ctrl+<leader>`
-    /// matches, while `Ctrl+Alt+<leader>` / `Ctrl+Shift+<leader>` do not and
-    /// pass straight through to the PTY instead of being swallowed.
+    /// True when `key` matches the configured leader chord. Any modifier beyond
+    /// the leader's own (Alt, Shift, Super, Hyper, Meta — enhanced keyboard
+    /// protocols report the latter three) makes it a different chord that passes
+    /// straight through to the PTY instead of being swallowed, so we compare the
+    /// full modifier set exactly.
     pub fn is_leader_key(&self, key: KeyEvent) -> bool {
-        let relevant = KeyModifiers::CONTROL | KeyModifiers::ALT | KeyModifiers::SHIFT;
-        key.code == self.leader.code
-            && (key.modifiers & relevant) == (self.leader.modifiers & relevant)
+        key.code == self.leader.code && key.modifiers == self.leader.modifiers
     }
 }
 

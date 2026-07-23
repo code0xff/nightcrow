@@ -31,7 +31,7 @@ pub use repo_input::RepoInputResult;
 use crate::app::{App, Notice, NoticeKind};
 use crate::session::{MAX_REMEMBERED, RepoSession, SessionState, WorkspaceState};
 use crate::ui::status_view::RepoInput;
-use crossterm::event::{KeyEvent, KeyModifiers};
+use crossterm::event::KeyEvent;
 
 /// Upper bound on open projects, matching the F1..F10 switch keys. Panes cap
 /// at 8 for the same reason: a tab you cannot reach by key is a tab that is
@@ -116,10 +116,10 @@ impl Workspace {
         persisted
     }
 
+    /// Matches only the bare leader chord; any extra modifier (Alt/Shift/Super/
+    /// Hyper/Meta) is a different chord and passes through. See `App::is_leader_key`.
     pub fn is_leader_key(&self, key: KeyEvent) -> bool {
-        let relevant = KeyModifiers::CONTROL | KeyModifiers::ALT | KeyModifiers::SHIFT;
-        key.code == self.leader.code
-            && (key.modifiers & relevant) == (self.leader.modifiers & relevant)
+        key.code == self.leader.code && key.modifiers == self.leader.modifiers
     }
 
     pub fn leader(&self) -> KeyEvent {
@@ -293,7 +293,7 @@ impl Workspace {
 mod tests {
     use super::*;
     use crate::app::tests::app_with_files;
-    use crossterm::event::KeyCode;
+    use crossterm::event::{KeyCode, KeyModifiers};
 
     fn test_leader() -> KeyEvent {
         KeyEvent::new(KeyCode::Char('f'), KeyModifiers::CONTROL)

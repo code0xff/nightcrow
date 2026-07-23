@@ -1277,7 +1277,7 @@ fn handle_key(app: &mut App, key: KeyEvent) -> KeyOutcome {
     // Crossterm emits Press/Repeat/Release for every keystroke on Windows
     // and on terminals that negotiate the kitty keyboard protocol.
     // Without this guard every keypress would be processed twice or more
-    // — visible as doubled search chars, Ctrl+Q firing repeatedly, and
+    // — visible as doubled search chars, the leader firing repeatedly, and
     // Backspace popping past the buffer.
     if key.kind != KeyEventKind::Press {
         return KeyOutcome::Continue;
@@ -2248,6 +2248,28 @@ mod tests {
     }
 
     #[test]
+    fn handle_key_ctrl_super_leader_passes_through() {
+        // A Super/Hyper/Meta bit on top of Ctrl+<leader> (enhanced keyboard
+        // protocols report these) is a different chord, so it must reach the
+        // PTY rather than arm the prefix.
+        let mut app = app_with_terminal_pane();
+
+        let outcome = handle_key(
+            &mut app,
+            press(
+                KeyCode::Char('f'),
+                KeyModifiers::CONTROL | KeyModifiers::SUPER,
+            ),
+        );
+
+        assert!(matches!(outcome, KeyOutcome::Continue));
+        assert!(
+            !app.prefix_armed(),
+            "Ctrl+Super+leader must not arm the prefix"
+        );
+    }
+
+    #[test]
     fn handle_key_ctrl_alt_leader_passes_through() {
         // Ctrl+Alt+<leader> carries an extra modifier, so it is NOT the leader
         // chord — it must reach the PTY rather than arm the prefix.
@@ -2256,7 +2278,7 @@ mod tests {
         let outcome = handle_key(
             &mut app,
             press(
-                KeyCode::Char('q'),
+                KeyCode::Char('f'),
                 KeyModifiers::CONTROL | KeyModifiers::ALT,
             ),
         );
