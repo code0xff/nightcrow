@@ -1853,7 +1853,7 @@ function FolderPicker({
         className="flex max-h-[80vh] w-[34rem] max-w-full flex-col rounded-md border border-ink-700 bg-ink-900"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center gap-2 border-b border-ink-700 px-3 py-2">
+        <div className="flex shrink-0 items-center gap-2 border-b border-ink-700 px-3 py-2">
           <span className="font-medium text-ink-50">Open a project</span>
           <button
             onClick={onClose}
@@ -1863,10 +1863,10 @@ function FolderPicker({
             <XIcon />
           </button>
         </div>
-        <div className="truncate border-b border-ink-700 px-3 py-1.5 text-ink-400">
+        <div className="shrink-0 truncate border-b border-ink-700 px-3 py-1.5 text-ink-400">
           {dir?.path ?? "…"}
         </div>
-        <ul className="min-h-0 flex-1 overflow-y-auto">
+        <ul className="h-72 min-h-0 overflow-y-auto">
           {dir?.parent && (
             <li>
               <button
@@ -1896,8 +1896,8 @@ function FolderPicker({
             <li className="px-3 py-1 text-ink-400">No sub-folders.</li>
           )}
         </ul>
-        {error && <p className="px-3 py-1 text-removed">{error}</p>}
-        <div className="flex items-center gap-2 border-t border-ink-700 px-3 py-2">
+        {error && <p className="shrink-0 px-3 py-1 text-removed">{error}</p>}
+        <div className="flex shrink-0 items-center gap-2 border-t border-ink-700 px-3 py-2">
           <input
             value={newName}
             onChange={(e) => setNewName(e.target.value)}
@@ -1916,7 +1916,7 @@ function FolderPicker({
             {creating ? "Creating…" : "Create"}
           </button>
         </div>
-        <div className="flex items-center gap-2 border-t border-ink-700 px-3 py-2">
+        <div className="flex shrink-0 items-center gap-2 border-t border-ink-700 px-3 py-2">
           <span className="truncate text-ink-400">
             {dir ? dir.path : ""}
           </span>
