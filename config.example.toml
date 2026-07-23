@@ -22,8 +22,8 @@ name = "yellow"      # accent color preset: "yellow" | "cyan" | "green" | "magen
 #
 # Migration: the old bare-Ctrl app shortcuts moved behind the leader:
 #   Ctrl+T → <leader> t   Ctrl+W → <leader> w   Ctrl+L → <leader> l
-#   Ctrl+F → <leader> f   Ctrl+O → <leader> o   Ctrl+P → <leader> p
-#   Ctrl+Q → <leader> q
+#   Ctrl+O → <leader> o   Ctrl+P → <leader> p   Ctrl+Q → <leader> q
+# Fullscreen is <leader> f; Ctrl+F is now the leader itself.
 # Press the leader twice (<leader> <leader>) to send the literal leader byte
 # to the terminal program.
 leader = "ctrl+f"    # default; one-handed, dodges tmux's Ctrl+B, terminal flow
