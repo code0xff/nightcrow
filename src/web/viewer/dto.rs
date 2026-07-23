@@ -752,13 +752,15 @@ mod tests {
         );
     }
 
-    /// Where the wire fixture lives. Inside `viewer-ui/src` so the TypeScript
-    /// side can `import` it: the fixture is only half a contract test on its
-    /// own, and the half that matters is the one that fails when the two
-    /// hand-written definitions of this protocol drift apart.
+    /// Where the wire fixture lives. At the `viewer-ui` root rather than under
+    /// `viewer-ui/src` (which the published crate excludes) so it ships in the
+    /// package and this test still passes from an installed crate; the
+    /// TypeScript side reaches it with a `../` import. The fixture is only half
+    /// a contract test on its own, and the half that matters is the one that
+    /// fails when the two hand-written definitions of this protocol drift apart.
     const FIXTURE_PATH: &str = concat!(
         env!("CARGO_MANIFEST_DIR"),
-        "/viewer-ui/src/api.fixture.json"
+        "/viewer-ui/api.fixture.json"
     );
 
     /// Set to rewrite the fixture instead of asserting against it.

@@ -18,7 +18,7 @@
  * the Rust-side fixture assertion instead, which is what sends someone here.
  */
 import { describe, expect, it } from "vitest";
-import fixture from "./api.fixture.json";
+import fixture from "../api.fixture.json";
 import {
   PROTOCOL_VERSION,
   type Browse,
