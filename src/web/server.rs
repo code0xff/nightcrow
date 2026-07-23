@@ -329,6 +329,13 @@ fn route_http(head: &RequestHead, body: &str, shared: &Shared) -> Vec<u8> {
             &[],
             frontend::XTERM_CSS.as_bytes(),
         ),
+        // The favicon; public, no secrets.
+        ("GET", "/crow.svg") => http::response(
+            "200 OK",
+            "image/svg+xml; charset=utf-8",
+            &[],
+            frontend::CROW_SVG.as_bytes(),
+        ),
         _ => http::html("404 Not Found", "<h1>404 Not Found</h1>"),
     }
 }
@@ -577,6 +584,20 @@ mod tests {
         );
         assert!(js.starts_with("HTTP/1.1 200"));
         assert!(js.contains("application/javascript"));
+    }
+
+    #[test]
+    fn serves_the_favicon_without_auth() {
+        let server = WebServer::start_from_config(&test_config("pw")).unwrap();
+        let addr = server.addr();
+        // The login page references /crow.svg, so it must load before sign-in.
+        let svg = http_request(
+            addr,
+            "GET /crow.svg HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n",
+        );
+        assert!(svg.starts_with("HTTP/1.1 200"));
+        assert!(svg.contains("image/svg+xml"));
+        assert!(svg.contains("<svg"));
     }
 
     #[test]

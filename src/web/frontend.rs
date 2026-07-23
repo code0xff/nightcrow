@@ -13,6 +13,10 @@ pub const APP_HTML: &str = include_str!("frontend/app.html");
 pub const XTERM_JS: &str = include_str!("frontend/vendor/xterm.js");
 /// Vendored xterm.js 5.5.0 stylesheet (MIT).
 pub const XTERM_CSS: &str = include_str!("frontend/vendor/xterm.css");
+/// The crow favicon, shared with the web viewer (`viewer-ui/public/crow.svg`)
+/// so both services show the same mark. Referenced from the viewer's source
+/// SVG rather than a local copy, so the two never drift apart.
+pub const CROW_SVG: &str = include_str!("../../viewer-ui/public/crow.svg");
 
 /// Render the login page, injecting an escaped error banner when present.
 pub fn login_page(error: Option<&str>) -> String {
