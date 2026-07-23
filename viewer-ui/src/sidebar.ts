@@ -110,6 +110,18 @@ export function useSidebarWidth() {
     });
   }, []);
 
+  // Reset to the default. Uses the absolute clamp, not the drag clamp, so a
+  // reset on a narrow window stores the real default rather than the
+  // viewport-capped value the divider could be dragged to there.
+  const reset = useCallback(() => {
+    const clamped = clampSidebarWidth(DEFAULT_SIDEBAR_WIDTH);
+    setWidth(clamped);
+    storeWidth(clamped);
+    void api.setSidebarWidth(clamped).catch(() => {
+      // Kept locally for this session; the next poll re-reads the server.
+    });
+  }, []);
+
   /** Apply the server's value without writing it back. */
   const adopt = useCallback((remote: number) => {
     setWidth((current) => {
@@ -120,5 +132,5 @@ export function useSidebarWidth() {
     });
   }, []);
 
-  return { width, resize, commit, adopt };
+  return { width, resize, commit, reset, adopt };
 }

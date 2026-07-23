@@ -73,6 +73,10 @@ const TREE_SEARCH_DEBOUNCE_MS = 180;
 /// cannot overwrite the stored width with the viewport-capped display value.
 const SIDEBAR_DRAG_THRESHOLD_PX = 3;
 
+/// Window within which two clicks on the divider read as a double-click and
+/// reset the sidebar to its default width.
+const DOUBLE_CLICK_MS = 400;
+
 /// Compact relative age of a unix timestamp (seconds), matching the TUI's log
 /// column (e.g. "3s", "5m", "2h", "4d", "6mo", "1y").
 function formatRelativeTime(ts: number): string {
@@ -443,6 +447,7 @@ export function App() {
     width: sidebarWidth,
     resize: resizeSidebar,
     commit: commitSidebar,
+    reset: resetSidebar,
     adopt: adoptSidebarWidth,
   } = useSidebarWidth();
   const sidebarWrites = useRef(0);
@@ -453,6 +458,10 @@ export function App() {
     },
     [commitSidebar],
   );
+  const resetSidebarWidth = useCallback(() => {
+    sidebarWrites.current += 1;
+    resetSidebar();
+  }, [resetSidebar]);
   // Dragging the divider between the sidebar and the diff pane. The new width
   // is the pointer's distance from the sidebar's left edge, captured once at
   // drag start so a mid-drag re-layout cannot move the origin under the pointer.
@@ -470,9 +479,17 @@ export function App() {
   // while the stored width is still `px`, so committing the click would persist
   // the capped value and quietly overwrite the shared preference.
   const dragMovedRef = useRef(false);
+  // Timestamp of the last no-move release, so two quick clicks on the divider
+  // read as a double-click and reset the width. Detected here rather than via a
+  // native `ondblclick` because the drag's `preventDefault` on pointerdown can
+  // suppress the synthesized click/dblclick events.
+  const lastClickRef = useRef(0);
   const [draggingSidebar, setDraggingSidebar] = useState(false);
   const onSidebarDragStart = useCallback(
     (e: ReactPointerEvent) => {
+      // Primary button / first touch only, matching a native dblclick: a
+      // right- or middle-click must not start a drag or arm the reset.
+      if (e.button !== 0 || !e.isPrimary) return;
       const left = sidebarRef.current?.getBoundingClientRect().left;
       if (left === undefined) return;
       dragOriginRef.current = left;
@@ -515,8 +532,21 @@ export function App() {
     if (!draggingRef.current) return;
     draggingRef.current = false;
     setDraggingSidebar(false);
-    if (dragMovedRef.current) commitSidebarWidth(dragWidthRef.current);
-  }, [commitSidebarWidth]);
+    if (dragMovedRef.current) {
+      commitSidebarWidth(dragWidthRef.current);
+      lastClickRef.current = 0;
+      return;
+    }
+    // No move: a second quick click resets the width to the default; a lone
+    // click just arms the next one.
+    const now = Date.now();
+    if (now - lastClickRef.current < DOUBLE_CLICK_MS) {
+      lastClickRef.current = 0;
+      resetSidebarWidth();
+    } else {
+      lastClickRef.current = now;
+    }
+  }, [commitSidebarWidth, resetSidebarWidth]);
   // A cancelled gesture (OS takeover, focus loss — mostly touch/pen) must not
   // persist its partial position. Clear the gate without committing; the
   // following lost-capture event then no-ops, and the next poll reconciles the
@@ -524,6 +554,9 @@ export function App() {
   const onSidebarDragCancel = useCallback(() => {
     draggingRef.current = false;
     dragMovedRef.current = false;
+    // Also disarm the double-click: a cancelled gesture is not a completed
+    // click, so it must not pair with the next one into a reset.
+    lastClickRef.current = 0;
     setDraggingSidebar(false);
   }, []);
   const diffLayout = useDiffLayout();
@@ -1168,16 +1201,18 @@ export function App() {
             filesMax ? "hidden md:flex" : "flex border-ink-700 md:border-r"
           }`}
         >
-          {/* Drag the divider to resize the sidebar. A thin strip over the
-              right border, only at md+ (below it the layout is a single stacked
-              column) and only when the pane is not maximised. Pointer capture
-              keeps the drag alive over the diff pane; the overlay below carries
-              the resize cursor across the whole window while it lasts. */}
+          {/* Drag the divider to resize the sidebar, double-click to reset it.
+              A thin strip over the right border, only at md+ (below it the
+              layout is a single stacked column) and only when the pane is not
+              maximised. Pointer capture keeps the drag alive over the diff pane;
+              the overlay below carries the resize cursor across the whole window
+              while it lasts. */}
           {!filesMax && (
             <div
               role="separator"
               aria-orientation="vertical"
-              aria-label="Resize the file sidebar"
+              aria-label="Resize the file sidebar (double-click to reset)"
+              title="Drag to resize · double-click to reset"
               onPointerDown={onSidebarDragStart}
               onPointerMove={onSidebarDragMove}
               onPointerUp={onSidebarDragEnd}
