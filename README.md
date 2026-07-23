@@ -316,6 +316,11 @@ device that opens the viewer shows the same colour, and a change made on one
 reaches the others within a few seconds. It is **not** read from `[theme]` —
 that setting colours the TUI, and the viewer keeps its own.
 
+Drag the divider between the file list and the diff pane to resize the sidebar.
+The width is stored on the server the same way as the accent, so every device
+opens at the same split; it is bounded so the diff pane always keeps at least
+half the window.
+
 The diff pane has a toggle (top-right of the pane) that switches between the
 inline unified diff and a side-by-side split view, mirroring the TUI's `s`.
 The choice is stored per browser; on a narrow window (phone) it always renders
