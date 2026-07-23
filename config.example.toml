@@ -35,10 +35,11 @@ leader = "ctrl+f"    # default; one-handed, dodges tmux's Ctrl+B, terminal flow
 # Capture the mouse: clicking a panel (file list, diff viewer, terminal pane)
 # focuses it, clicks on terminal panes are forwarded to programs that asked
 # for mouse reports (Claude Code, less --mouse, ...), and wheel scrolls move
-# the pane under the pointer. While captured, select
-# text in the outer terminal by holding Shift while dragging. Set to false to
-# give the mouse back to the outer terminal (plain-drag selection, no click
-# forwarding).
+# the pane under the pointer. While captured, select text in the outer
+# terminal by holding its bypass modifier while dragging (Shift in
+# xterm-family terminals, Option in iTerm2, Fn/Option in macOS Terminal.app).
+# Set to false to give the mouse back to the outer terminal (plain-drag
+# selection, no click forwarding).
 enabled = true
 
 [log]

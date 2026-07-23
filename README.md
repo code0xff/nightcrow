@@ -251,7 +251,7 @@ nightcrow captures the mouse by default (`[mouse]` in the configuration):
 - **Click a tab** in the terminal tab bar to jump to that pane; clicking a `+N` hidden-pane marker reveals the nearest hidden pane on that side.
 - **Click `o: open project`** on the empty screen — with no project open it is the one action the hint bar offers, and it dispatches like its key.
 - **Click a shortcut** in the bottom hint bar to run it — command hints like `t: new pane`, `w: close pane`, or `f: fullscreen` dispatch exactly as if you pressed the keys they name. Clickable hints render inverted (reverse video) across their whole label so they stand out from informational hints; the inversion disappears when `[mouse]` is disabled. Navigation hints and `q: quit` are not clickable (quitting stays a deliberate two-key act).
-- **Select text with Shift+drag.** While the mouse is captured, the outer terminal performs its native selection and copy only with Shift held (standard behavior in every major terminal). Set `enabled = false` under `[mouse]` to give the mouse back to the outer terminal entirely — plain-drag selection returns, click forwarding stops.
+- **Select text with a bypass modifier + drag.** While the mouse is captured, the outer terminal performs its native selection and copy only when you hold its bypass modifier while dragging. The modifier depends on the terminal: **Shift** in xterm-family terminals (Alacritty, kitty, GNOME Terminal, Windows Terminal), **Option (⌥)** in iTerm2, **Fn or Option** in macOS Terminal.app. Set `enabled = false` under `[mouse]` to give the mouse back to the outer terminal entirely — plain-drag selection returns, click forwarding stops.
 
 ## Recent-activity focus indicator
 
@@ -438,7 +438,9 @@ leader = "ctrl+f"    # leader (prefix) chord for app commands; tmux-style.
 
 [mouse]
 enabled = true       # capture the mouse: click to focus/forward, wheel scrolls
-                     # the pane under the pointer; select text with Shift+drag.
+                     # the pane under the pointer; select text with the
+                     # terminal's bypass modifier + drag (Shift in xterm-family,
+                     # Option in iTerm2, Fn/Option in macOS Terminal.app).
                      # false = plain-drag selection, no click forwarding.
 
 [web_mirror]

@@ -225,8 +225,9 @@ background even while scrolled out of the window.
   width, 2 side-by-side (or stacked if the area is narrow), 3 as a 2-column
   row plus a full-width remainder, 4 as 2x2, 5–6 as 3 columns, 7 as 4-then-3
   rows. The single-pane case takes a dedicated no-border code path so
-  copying terminal output — Shift+drag while the mouse is captured, plain
-  drag with `[mouse]` disabled — still never picks up a stray `│`; this is
+  copying terminal output — bypass-modifier+drag (Shift/Option/Fn by
+  terminal) while the mouse is captured, plain drag with `[mouse]` disabled
+  — still never picks up a stray `│`; this is
   the overwhelmingly common case and must not regress.
 - **Sizing invariant**: `ui::terminal_tab::visible_pane_cells` is the single
   source of truth for pane Rects. `render` draws from it every frame, and
@@ -400,7 +401,7 @@ hint bar는 오버레이(repo 입력·prefix armed·swap target)가 열리면 �
 
 ### Mouse Routing
 
-`[mouse] enabled`(기본 on)일 때 crossterm `EnableMouseCapture`로 마우스를 캡처한다. 캡처는 화면 전체 단위라 pane별로 쪼갤 수 없으므로, 바깥 터미널의 네이티브 텍스트 선택은 주요 터미널이 공통으로 지원하는 Shift+드래그 오버라이드로 우회한다. 끄면 마우스는 바깥 터미널 소유로 돌아간다(맨 드래그 선택, 클릭 포워딩 없음).
+`[mouse] enabled`(기본 on)일 때 crossterm `EnableMouseCapture`로 마우스를 캡처한다. 캡처는 화면 전체 단위라 pane별로 쪼갤 수 없으므로, 바깥 터미널의 네이티브 텍스트 선택은 modifier+드래그 오버라이드로 우회한다(bypass modifier는 터미널마다 다르다 — xterm 계열은 Shift, iTerm2는 Option, macOS Terminal.app은 Fn/Option). 끄면 마우스는 바깥 터미널 소유로 돌아간다(맨 드래그 선택, 클릭 포워딩 없음).
 
 캡처된 이벤트는 `main::handle_mouse`가 `ui::pane_at`으로 hit-test한다. `pane_at`은 렌더링과 동일한 `terminal_content_areas` 기하를 재사용하므로 화면과 판정이 어긋날 수 없다. pane content 셀 밖(상단 패널, 보더, 탭 바)에 떨어진 이벤트는 버린다.
 
@@ -411,7 +412,7 @@ hint bar는 오버레이(repo 입력·prefix armed·swap target)가 열리면 �
 - **탭 바 클릭**: pane content 밖 press는 탭 바도 판정한다(`ui::tab_click_at` → `terminal_tab::tab_target_at`). 탭/`+N` 마커 세그먼트와 클릭 타겟은 렌더러와 공유하는 `tab_segments` 빌더가 단일 소스다. 탭 클릭은 해당 pane으로의 jump key와 동일하게 `switch_pane`을 타고, `+N` hidden 마커는 그쪽 방향의 가장 가까운 hidden pane으로 점프해 `sync_visible_window`가 창을 한 칸만 슬라이드한다.
 - **힌트 바 클릭**: 최하단 행의 press는 `ui::hint_click_at`이 렌더러와 동일한 힌트 텍스트(`normal_hint_literal`/`prefix_armed_hint_text` 공유)를 display width로 세그먼트화해 판정한다. 이산 명령(`<prefix> t/w/f/l/b/o`, armed row의 follow-up, `v`/`s`/`/`)만 클릭 가능하고, 연속 내비게이션·digit legend·`esc`는 비클릭이다. bare `<prefix>: leader` 라벨도 클릭 가능하며 leader chord keypress를 합성해 프리픽스를 arm한다 — armed row의 follow-up이 다시 클릭 가능하므로 "leader 클릭 → 명령 클릭"의 마우스-only 플로우가 이어진다. **`q: quit`은 오클릭 한 번으로 세션이 끝나지 않도록 의도적으로 제외**했다. 디스패치는 라벨이 가리키는 키 입력을 그대로 합성해 `handle_key`로 보낸다 — 클릭과 실제 키가 모든 가드(오버레이·프리픽스·포커스 라우팅)와 코드 경로를 공유하므로, 클릭이 키와 다른 동작을 할 수 없다. `r: redraw`의 `KeyOutcome` 전파를 위해 `handle_mouse`도 `KeyOutcome`을 반환한다. 클릭 가능한 세그먼트는 `hint_spans`가 `key: description` 라벨 전체를 REVERSED(배경/글자 반전)로 렌더링해 어포던스를 표시한다 — 반전 범위가 실제 클릭 영역과 일치한다 — 판정을 `segment_click`과 공유하므로 반전된 라벨과 hit-test가 어긋날 수 없고, 스타일만 바꾸므로 컬럼 오프셋은 동일하다. `[mouse] enabled = false`면 클릭이 도달할 수 없으므로 반전도 꺼진다(`App::mouse_enabled`).
 - **swap 모드 클릭**: `<leader> s`로 swap 대기 중의 좌클릭은 digit follow-up과 동일하게 **swap 대상 지명**으로 해석한다 — pane 또는 그 탭을 클릭하면 활성 pane과 교환하고, pane을 지명하지 않는 press는 consume+disarm(비-digit 키와 같은 규칙). 이 분기가 없으면 클릭이 swap 상태를 방치한 채 활성 pane만 바꿔 다음 digit이 엉뚱한 pane을 교환한다.
-- **드래그/모션**: 포워딩하지 않는다. 내부 프로그램의 자체 텍스트 선택(예: Claude Code의 드래그 선택)은 지원 범위 밖이고, 텍스트 선택은 바깥 터미널의 Shift+드래그가 담당한다.
+- **드래그/모션**: 포워딩하지 않는다. 내부 프로그램의 자체 텍스트 선택(예: Claude Code의 드래그 선택)은 지원 범위 밖이고, 텍스트 선택은 바깥 터미널의 bypass modifier+드래그(터미널별 Shift/Option/Fn)가 담당한다.
 
 합성 버튼 리포트도 스크롤과 같은 이유로 `send_input`이 아니라 `write_pty`로 나간다.
 
