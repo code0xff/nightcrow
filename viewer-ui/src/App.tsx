@@ -1814,11 +1814,10 @@ function FolderPicker({
   const openHere = async () => {
     if (!dir) return;
     setBusy(true);
-    setError(null);
     try {
       onOpened(await api.open(dir.path));
     } catch (err) {
-      setError(err instanceof Error ? err.message : "could not open");
+      toast.error(err instanceof Error ? err.message : "could not open");
       setBusy(false);
     }
   };
@@ -1831,13 +1830,12 @@ function FolderPicker({
     const name = newName.trim();
     if (!name) return;
     setCreating(true);
-    setError(null);
     try {
       const created = await api.mkdir(dir.path, name);
       setNewName("");
       setPath(created);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "could not create folder");
+      toast.error(err instanceof Error ? err.message : "could not create folder");
     } finally {
       setCreating(false);
     }
