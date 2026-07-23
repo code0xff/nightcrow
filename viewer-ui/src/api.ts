@@ -44,6 +44,8 @@ export interface ViewerBootstrap {
   hot: HotConfig;
   /** Index into the accent presets, stored server-side so devices agree. */
   accent: number;
+  /** File-sidebar width in CSS px, stored server-side so devices agree. */
+  sidebar_width: number;
   /** The server's wall clock, for dating `ChangedFile.mtime`. */
   now_ms: number;
 }
@@ -230,7 +232,15 @@ export const api = {
   /** Store the accent for every client of this viewer. Returns the index the
    *  server kept, which is the request's wrapped into range. */
   setAccent: (accent: number) =>
-    post<{ accent: number }>("/api/prefs", { accent }).then((r) => r.accent),
+    post<{ accent: number; sidebar_width: number }>("/api/prefs", {
+      accent,
+    }).then((r) => r.accent),
+  /** Store the sidebar width for every client of this viewer. Returns the width
+   *  the server kept, which is the request's clamped into range. */
+  setSidebarWidth: (sidebar_width: number) =>
+    post<{ accent: number; sidebar_width: number }>("/api/prefs", {
+      sidebar_width,
+    }).then((r) => r.sidebar_width),
   status: (repo: string) => get<Status>(`/api/status?${query({ repo })}`),
   tree: (repo: string, path: string) =>
     get<Tree>(`/api/tree?${query({ repo, path })}`),

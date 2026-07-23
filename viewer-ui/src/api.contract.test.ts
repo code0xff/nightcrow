@@ -43,6 +43,7 @@ describe("wire contract", () => {
     expect(bootstrap.repos).toHaveLength(1);
     expect(bootstrap.hot.window_secs).toBeGreaterThan(0);
     expect(bootstrap.now_ms).toBeGreaterThan(0);
+    expect(bootstrap.sidebar_width).toBeGreaterThan(0);
   });
 
   it("status_페이로드가_Status와_맞는다", () => {
@@ -99,8 +100,10 @@ describe("wire contract", () => {
 
   it("쓰기_응답이_돌려주는_모양과_맞는다", () => {
     const opened: { repo: Repo } = fixture.openedRepo;
-    const stored: { accent: number } = fixture.storedAccent;
+    const stored: { accent: number; sidebar_width: number } =
+      fixture.storedPrefs;
     expect(opened.repo.display_path).toBe("~/code/scratch");
     expect(stored.accent).toBe(2);
+    expect(stored.sidebar_width).toBe(460);
   });
 });

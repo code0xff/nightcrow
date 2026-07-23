@@ -6,6 +6,7 @@ import {
   useRef,
   useState,
   type CSSProperties,
+  type PointerEvent as ReactPointerEvent,
 } from "react";
 import {
   api,
@@ -43,6 +44,7 @@ import {
   type HotStage,
 } from "./hot";
 import { useAccent } from "./theme";
+import { MAX_SIDEBAR_VIEWPORT_FRACTION, useSidebarWidth } from "./sidebar";
 
 // Lazily loaded so `@xterm/xterm` (the bulk of the bundle) stays out of the
 // initial chunk that paints the login screen and git viewer, arriving only once
@@ -66,10 +68,10 @@ const REPO_POLL_MS = 3000;
 /// on the backend, so wait for a pause in typing before firing.
 const TREE_SEARCH_DEBOUNCE_MS = 180;
 
-/// Sidebar width. Fixed rather than adjustable: it fits every path this
-/// repository has, and the file pane's maximise button covers the case where
-/// the code needs the whole window.
-const SIDEBAR_WIDTH = "460px";
+/// Horizontal travel before a pointer press on the sidebar divider counts as a
+/// resize. Below this, a click or a vertical-only wobble commits nothing, so it
+/// cannot overwrite the stored width with the viewport-capped display value.
+const SIDEBAR_DRAG_THRESHOLD_PX = 3;
 
 /// Compact relative age of a unix timestamp (seconds), matching the TUI's log
 /// column (e.g. "3s", "5m", "2h", "4d", "6mo", "1y").
@@ -435,6 +437,95 @@ export function App() {
     accentWrites.current += 1;
     cycleAccent();
   }, [cycleAccent]);
+  // The file sidebar's width, dragged by the divider between it and the diff
+  // pane. Shared across devices like the accent, with the same in-flight guard.
+  const {
+    width: sidebarWidth,
+    resize: resizeSidebar,
+    commit: commitSidebar,
+    adopt: adoptSidebarWidth,
+  } = useSidebarWidth();
+  const sidebarWrites = useRef(0);
+  const commitSidebarWidth = useCallback(
+    (px: number) => {
+      sidebarWrites.current += 1;
+      commitSidebar(px);
+    },
+    [commitSidebar],
+  );
+  // Dragging the divider between the sidebar and the diff pane. The new width
+  // is the pointer's distance from the sidebar's left edge, captured once at
+  // drag start so a mid-drag re-layout cannot move the origin under the pointer.
+  const sidebarRef = useRef<HTMLElement>(null);
+  const dragOriginRef = useRef(0);
+  const dragStartXRef = useRef(0);
+  const dragWidthRef = useRef(0);
+  // Synchronous drag gate. The state below drives the cursor and overlay, but
+  // the move guard and the once-only commit read this ref so neither a
+  // Strict-Mode double-invoke nor the duplicate pointerup/lost-capture pair can
+  // fire the write twice, and the first move is not lost to a stale state read.
+  const draggingRef = useRef(false);
+  // Whether the pointer actually moved between down and up. A bare click must
+  // not commit: after a window shrink the displayed width is `min(px, 50vw)`
+  // while the stored width is still `px`, so committing the click would persist
+  // the capped value and quietly overwrite the shared preference.
+  const dragMovedRef = useRef(false);
+  const [draggingSidebar, setDraggingSidebar] = useState(false);
+  const onSidebarDragStart = useCallback(
+    (e: ReactPointerEvent) => {
+      const left = sidebarRef.current?.getBoundingClientRect().left;
+      if (left === undefined) return;
+      dragOriginRef.current = left;
+      dragStartXRef.current = e.clientX;
+      dragWidthRef.current = sidebarWidth;
+      draggingRef.current = true;
+      dragMovedRef.current = false;
+      // Bump the write counter now, not only on release: a poll that left
+      // before the drag must not adopt the old server width mid-drag and snap
+      // the pane out from under the pointer.
+      sidebarWrites.current += 1;
+      setDraggingSidebar(true);
+      e.currentTarget.setPointerCapture(e.pointerId);
+      e.preventDefault();
+    },
+    [sidebarWidth],
+  );
+  const onSidebarDragMove = useCallback(
+    (e: ReactPointerEvent) => {
+      if (!draggingRef.current) return;
+      // Ignore movement until the pointer has travelled horizontally: a
+      // vertical-only move or touch jitter must not count as a resize, or it
+      // would commit the clientX-derived (viewport-capped) width and overwrite
+      // the shared absolute preference without the user meaning to.
+      if (
+        !dragMovedRef.current &&
+        Math.abs(e.clientX - dragStartXRef.current) < SIDEBAR_DRAG_THRESHOLD_PX
+      ) {
+        return;
+      }
+      dragMovedRef.current = true;
+      dragWidthRef.current = e.clientX - dragOriginRef.current;
+      resizeSidebar(dragWidthRef.current);
+    },
+    [resizeSidebar],
+  );
+  // Fires on both pointerup and lost capture; the ref gate commits exactly once,
+  // and only when the pointer actually moved (a bare click stores nothing).
+  const onSidebarDragEnd = useCallback(() => {
+    if (!draggingRef.current) return;
+    draggingRef.current = false;
+    setDraggingSidebar(false);
+    if (dragMovedRef.current) commitSidebarWidth(dragWidthRef.current);
+  }, [commitSidebarWidth]);
+  // A cancelled gesture (OS takeover, focus loss — mostly touch/pen) must not
+  // persist its partial position. Clear the gate without committing; the
+  // following lost-capture event then no-ops, and the next poll reconciles the
+  // partial width back to the server's last committed value.
+  const onSidebarDragCancel = useCallback(() => {
+    draggingRef.current = false;
+    dragMovedRef.current = false;
+    setDraggingSidebar(false);
+  }, []);
   const diffLayout = useDiffLayout();
   // Markdown files open rendered; this toggles to their raw source. Session-only
   // (not persisted like the diff layout) — the rendered view is the common case,
@@ -493,13 +584,19 @@ export function App() {
       // poll interval, so responses older than the last local change drop
       // their accent. Everything else in them is still current.
       const writes = accentWrites.current;
+      const widthWrites = sidebarWrites.current;
       return api
         .repos()
-        .then(({ repos: list, hot, accent, now_ms }) => {
+        .then(({ repos: list, hot, accent, sidebar_width, now_ms }) => {
           if (cancelled) return;
           setHot(hot);
           setClockSkewMs((held) => nextClockOffset(held, now_ms, Date.now()));
           if (accentWrites.current === writes) adoptAccent(accent);
+          // Same guard as the accent, plus one more: a poll must not snap the
+          // sidebar back to the old server width while a drag is live (it may
+          // have started after the counter bumped) or after one it predates.
+          if (sidebarWrites.current === widthWrites && !draggingRef.current)
+            adoptSidebarWidth(sidebar_width);
           setAuthed(true);
           // We now hold the authoritative list for this session; the initial
           // splash can give way to the shell (or the empty-state prompt).
@@ -541,7 +638,7 @@ export function App() {
       cancelled = true;
       if (timer) clearTimeout(timer);
     };
-  }, [authed, handle, adoptAccent]);
+  }, [authed, handle, adoptAccent, adoptSidebarWidth]);
 
   // Live status. The server replays the latest snapshot on subscribe, so this
   // both seeds the view and keeps it current — no separate initial fetch.
@@ -1032,16 +1129,30 @@ export function App() {
 
       {repo ? (
         <>
+          {/* While the divider is dragged, this overlay holds the resize cursor
+              across the whole window and keeps a stray text selection from
+              starting. Pointer capture routes the move/up events to the handle
+              regardless, so the overlay is purely visual. */}
+          {draggingSidebar && (
+            <div className="fixed inset-0 z-50 cursor-col-resize" />
+          )}
           {/* The width rides on a custom property so the responsive rule stays
               declarative — below md the grid collapses to one column, leaving
               the stacked layout untouched. Maximising the file pane drives the
               property to zero rather than dropping the sidebar, so its content
               is not torn down and rebuilt on every toggle. */}
           <main
-            className="grid min-h-0 grid-cols-1 md:grid-cols-[var(--nc-sidebar)_1fr]"
+            className={`grid min-h-0 grid-cols-1 md:grid-cols-[var(--nc-sidebar)_1fr] ${
+              draggingSidebar ? "select-none" : ""
+            }`}
             style={
               {
-                "--nc-sidebar": filesMax ? "0px" : SIDEBAR_WIDTH,
+                // `min(px, N vw)` caps the width to the viewport share in CSS,
+                // so shrinking the window re-caps the pane at once rather than
+                // waiting for the next poll or drag to re-run the JS clamp.
+                "--nc-sidebar": filesMax
+                  ? "0px"
+                  : `min(${sidebarWidth}px, ${MAX_SIDEBAR_VIEWPORT_FRACTION * 100}vw)`,
               } as CSSProperties
             }
           >
@@ -1052,10 +1163,31 @@ export function App() {
             Below md the grid is a single column that ignores --nc-sidebar, so
             there `hidden` is what removes it. */}
         <section
-          className={`min-h-0 flex-col overflow-hidden ${
+          ref={sidebarRef}
+          className={`relative min-h-0 flex-col overflow-hidden ${
             filesMax ? "hidden md:flex" : "flex border-ink-700 md:border-r"
           }`}
         >
+          {/* Drag the divider to resize the sidebar. A thin strip over the
+              right border, only at md+ (below it the layout is a single stacked
+              column) and only when the pane is not maximised. Pointer capture
+              keeps the drag alive over the diff pane; the overlay below carries
+              the resize cursor across the whole window while it lasts. */}
+          {!filesMax && (
+            <div
+              role="separator"
+              aria-orientation="vertical"
+              aria-label="Resize the file sidebar"
+              onPointerDown={onSidebarDragStart}
+              onPointerMove={onSidebarDragMove}
+              onPointerUp={onSidebarDragEnd}
+              onPointerCancel={onSidebarDragCancel}
+              onLostPointerCapture={onSidebarDragEnd}
+              className={`absolute -right-px top-0 z-10 hidden h-full w-1.5 cursor-col-resize touch-none md:block ${
+                draggingSidebar ? "bg-accent" : "hover:bg-accent"
+              }`}
+            />
+          )}
           {/* Panel tabs, after VS Code's PROBLEMS/OUTPUT/TERMINAL row: no fill,
               just an underline on the active one, sitting on the rule that
               separates the row from the list it labels. The tabs overlap that
