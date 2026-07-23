@@ -10,6 +10,7 @@ import {
 } from "react";
 import {
   api,
+  isNetworkError,
   isUnauthorized,
   subscribeStatus,
   type Browse,
@@ -588,6 +589,10 @@ export function App() {
       setAuthed(false);
       return;
     }
+    // A network error (the device slept, a blip) already carries a friendly
+    // message (`NetworkError`), so a user-initiated load that failed still gets
+    // readable feedback here. The self-healing repo poll suppresses these before
+    // they reach `handle`, so a passive suspend/resume stays silent.
     toast.error(err instanceof Error ? err.message : "request failed");
   }, []);
 
@@ -623,12 +628,33 @@ export function App() {
     [repos, handle],
   );
 
+  // Bumped when the tab comes back after the device slept or the network
+  // returned. A mobile browser suspends the page and drops the in-flight poll,
+  // so an immediate re-poll on resume refreshes at once instead of waiting out
+  // the interval. The status stream reconnects on its own (EventSource retries).
+  const [resumeTick, setResumeTick] = useState(0);
+  useEffect(() => {
+    const wake = () => {
+      if (document.visibilityState === "visible") setResumeTick((t) => t + 1);
+    };
+    document.addEventListener("visibilitychange", wake);
+    window.addEventListener("online", wake);
+    return () => {
+      document.removeEventListener("visibilitychange", wake);
+      window.removeEventListener("online", wake);
+    };
+  }, []);
+
   // The catalog follows the TUI: a tab opened or closed there changes what is
   // served. Poll it so the tab bar tracks that without a reload — status has
   // its own live stream, but the repo *list* has no event source of its own.
   useEffect(() => {
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
+    // Abort the in-flight poll on teardown so a request the device suspended
+    // mid-flight is dropped rather than left hanging: without this, every
+    // resume would start a fresh poll on top of an abandoned one.
+    const controller = new AbortController();
     const refresh = () => {
       // A poll that left before the user cycled the accent carries the old
       // colour. Applying it when it lands would flicker the swatch back for a
@@ -637,7 +663,7 @@ export function App() {
       const writes = accentWrites.current;
       const widthWrites = sidebarWrites.current;
       return api
-        .repos()
+        .repos(controller.signal)
         .then(({ repos: list, hot, accent, sidebar_width, now_ms }) => {
           if (cancelled) return;
           setHot(hot);
@@ -670,7 +696,10 @@ export function App() {
             // a dep) and reloads the list, so show the splash again until then.
             setAuthed(false);
             setReposLoaded(false);
-          } else {
+          } else if (!isNetworkError(err)) {
+            // A dropped connection here is expected (the device slept, a blip);
+            // this loop retries every interval and the resume nudge re-polls at
+            // once, so stay silent and let it self-heal. Real errors still show.
             handle(err);
           }
           timer = setTimeout(refresh, REPO_POLL_MS);
@@ -683,17 +712,28 @@ export function App() {
     refresh();
     return () => {
       cancelled = true;
+      controller.abort();
       if (timer) clearTimeout(timer);
     };
-  }, [authed, handle, adoptAccent, adoptSidebarWidth]);
+  }, [authed, handle, adoptAccent, adoptSidebarWidth, resumeTick]);
+
+  // Clear the status when the repo changes or the session re-authenticates, so
+  // the pane shows "Loading…" for the new context — but NOT on a resume
+  // re-subscribe below (which excludes these deps), so a wake keeps the last
+  // snapshot on screen until the fresh one replays.
+  useEffect(() => {
+    setStatus(null);
+  }, [repo, authed]);
 
   // Live status. The server replays the latest snapshot on subscribe, so this
   // both seeds the view and keeps it current — no separate initial fetch.
+  // Re-subscribed on resume too: a mobile browser can leave the EventSource shut
+  // after a suspend instead of reconnecting, so a fresh subscription guarantees
+  // the stream (and the snapshot replay) come back when the tab does.
   useEffect(() => {
     if (!repo || !authed) return;
-    setStatus(null);
     return subscribeStatus(repo, setStatus);
-  }, [repo, authed]);
+  }, [repo, authed, resumeTick]);
 
   // Keep the status tab's open diff honest when the working tree changes under
   // it (a commit lands, files are staged/edited): reload it in place if its file

@@ -154,8 +154,41 @@ export class ApiError extends Error {
 export const isUnauthorized = (error: unknown) =>
   error instanceof ApiError && error.status === 401;
 
-async function get<T>(path: string): Promise<T> {
-  const response = await fetch(path, { credentials: "same-origin" });
+/** A network-level failure — the device slept and dropped the connection, went
+ *  offline, or the request was reset — rather than an HTTP response. `fetch`
+ *  rejects these with a `TypeError` (the message varies by browser: "Failed to
+ *  fetch" on Chrome, "Load failed" on Safari), while an HTTP error is wrapped as
+ *  an `ApiError` above. These are transient: a poll or the event stream's
+ *  reconnect recovers on its own. Wrapped in its own class at the fetch boundary
+ *  so it is distinguishable from a `TypeError` thrown while *processing* a
+ *  response (e.g. a malformed body) — that is a real defect, not a dropped
+ *  connection, and must still surface. */
+export class NetworkError extends Error {
+  constructor(cause: unknown) {
+    // A public, friendly message rather than the browser's raw "Failed to
+    // fetch" / "Load failed": several UI paths (login, folder browsing/opening/
+    // creation) show `err.message` directly, so the reason must read plainly.
+    // The original is kept as `cause` for debugging.
+    super("connection lost — check your network", { cause });
+    this.name = "NetworkError";
+  }
+}
+
+export const isNetworkError = (error: unknown) => error instanceof NetworkError;
+
+/** `fetch`, but a network-level rejection becomes a [`NetworkError`]. Any HTTP
+ *  response — including 4xx/5xx — resolves normally; only a failure to obtain a
+ *  response at all is wrapped. */
+async function request(input: string, init?: RequestInit): Promise<Response> {
+  try {
+    return await fetch(input, init);
+  } catch (err) {
+    throw new NetworkError(err);
+  }
+}
+
+async function get<T>(path: string, signal?: AbortSignal): Promise<T> {
+  const response = await request(path, { credentials: "same-origin", signal });
   if (!response.ok) {
     // The server sends a fixed public message; there is no detail to surface.
     let message = `request failed (${response.status})`;
@@ -180,7 +213,7 @@ async function get<T>(path: string): Promise<T> {
 }
 
 async function post<T>(path: string, payload: unknown): Promise<T> {
-  const response = await fetch(path, {
+  const response = await request(path, {
     method: "POST",
     credentials: "same-origin",
     headers: { "Content-Type": "application/json" },
@@ -211,7 +244,7 @@ const query = (params: Record<string, string>) =>
 
 export const api = {
   async login(password: string): Promise<void> {
-    const response = await fetch("/login", {
+    const response = await request("/login", {
       method: "POST",
       credentials: "same-origin",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -227,8 +260,8 @@ export const api = {
     }
   },
 
-  repos: () =>
-    get<ViewerBootstrap>("/api/repos"),
+  repos: (signal?: AbortSignal) =>
+    get<ViewerBootstrap>("/api/repos", signal),
   /** Store the accent for every client of this viewer. Returns the index the
    *  server kept, which is the request's wrapped into range. */
   setAccent: (accent: number) =>
@@ -275,7 +308,7 @@ export const api = {
   open: (path: string) =>
     post<{ repo: Repo }>("/api/repos", { path }).then((r) => r.repo),
   close: async (repo: string) => {
-    const response = await fetch(`/api/repos?${query({ repo })}`, {
+    const response = await request(`/api/repos?${query({ repo })}`, {
       method: "DELETE",
       credentials: "same-origin",
     });
