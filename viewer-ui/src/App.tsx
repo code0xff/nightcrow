@@ -1786,6 +1786,8 @@ function FolderPicker({
   const [dir, setDir] = useState<Browse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [newName, setNewName] = useState("");
+  const [creating, setCreating] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -1818,6 +1820,26 @@ function FolderPicker({
     } catch (err) {
       setError(err instanceof Error ? err.message : "could not open");
       setBusy(false);
+    }
+  };
+
+  // Create a folder in the directory being browsed, then step into it so the
+  // next action is "Open". The new folder is empty (not a git repo yet) — the
+  // point is to scaffold a location to open and `git init`/`clone` in a pane.
+  const createFolder = async () => {
+    if (!dir) return;
+    const name = newName.trim();
+    if (!name) return;
+    setCreating(true);
+    setError(null);
+    try {
+      const created = await api.mkdir(dir.path, name);
+      setNewName("");
+      setPath(created);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "could not create folder");
+    } finally {
+      setCreating(false);
     }
   };
 
@@ -1875,6 +1897,25 @@ function FolderPicker({
         </ul>
         {error && <p className="px-3 py-1 text-removed">{error}</p>}
         <div className="flex items-center gap-2 border-t border-ink-700 px-3 py-2">
+          <input
+            value={newName}
+            onChange={(e) => setNewName(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") createFolder();
+            }}
+            placeholder="New folder name"
+            aria-label="new folder name"
+            className="min-w-0 flex-1 rounded-sm border border-ink-700 bg-ink-950 px-2 py-1 text-ink-50 placeholder:text-ink-400 focus:border-ink-600 focus:outline-none"
+          />
+          <button
+            onClick={createFolder}
+            disabled={!dir || !newName.trim() || creating}
+            className="shrink-0 rounded-sm border border-ink-700 px-2 py-1 text-ink-200 hover:bg-ink-850 disabled:opacity-50"
+          >
+            {creating ? "Creating…" : "Create"}
+          </button>
+        </div>
+        <div className="flex items-center gap-2 border-t border-ink-700 px-3 py-2">
           <span className="truncate text-ink-400">
             {dir ? dir.path : ""}
           </span>
@@ -1883,7 +1924,7 @@ function FolderPicker({
             disabled={!dir || busy}
             className="ml-auto shrink-0 rounded-md bg-ink-50 px-3 py-1 font-semibold text-ink-950 hover:bg-white disabled:opacity-50"
           >
-            {busy ? "Opening…" : "Open this folder"}
+            {busy ? "Opening…" : "Open"}
           </button>
         </div>
       </div>

@@ -319,6 +319,14 @@ fn handle_connection(mut stream: TcpStream, state: Arc<ViewerState>) {
         return;
     }
 
+    // Creating a folder inside a browsed directory. POST for the same CSRF
+    // reasoning as the others; the new name is validated to a single path
+    // segment so it can only land under the directory the picker is showing.
+    if head.method == "POST" && head.path == "/api/mkdir" {
+        let _ = stream.write_all(&handle_mkdir(&body));
+        return;
+    }
+
     // Closing a repository: same trust reasoning as opening. Removes it from
     // the served set and stops its runtime and terminals.
     if head.method == "DELETE" && head.path == "/api/repos" {
@@ -437,6 +445,70 @@ fn handle_open_repo(body: &str, state: &ViewerState) -> Vec<u8> {
             "409 Conflict",
             "the maximum number of repositories is already open",
         ),
+    }
+}
+
+#[derive(serde::Deserialize)]
+struct MkdirRequest {
+    /// The directory to create the new folder inside — the one the picker is
+    /// currently showing.
+    path: String,
+    /// The new folder's name. Must be a single plain path segment.
+    name: String,
+}
+
+/// Create a new folder inside a directory the picker is browsing.
+///
+/// The parent is confined only as much as `browse` is (any directory an
+/// authenticated user can already reach), but `name` is held to a single plain
+/// segment: separators, `..`, a leading `.` (which also rules out `.git` and the
+/// hidden entries the picker never lists), and NUL are all rejected. Combined
+/// with canonicalizing the parent first, the created folder can only ever land
+/// directly under the browsed directory, never escape it via a symlink or `..`.
+fn handle_mkdir(body: &str) -> Vec<u8> {
+    let request: MkdirRequest = match serde_json::from_str(body) {
+        Ok(request) => request,
+        Err(_) => {
+            return json_error(
+                "400 Bad Request",
+                "expected a JSON body with a path and a name",
+            );
+        }
+    };
+    let name = request.name.trim();
+    if name.is_empty() {
+        return json_error("400 Bad Request", "a folder name is required");
+    }
+    // A single plain segment only. This — not the parent — is what keeps the
+    // create confined: no traversal, no separators, no hidden/.git, no NUL.
+    if name.starts_with('.') || name.contains('/') || name.contains('\\') || name.contains('\0') {
+        return json_error("400 Bad Request", "invalid folder name");
+    }
+    let parent = crate::util::expand_tilde(request.path.trim());
+    // is_dir() follows symlinks and is false for a missing path — the same gate
+    // `open` uses for the directory it is handed.
+    if !parent.is_dir() {
+        return json_error("400 Bad Request", "no such directory");
+    }
+    // Canonicalize first so a symlink in the supplied path cannot redirect the
+    // join; the validated single-segment name then stays under the real parent.
+    let base = match parent.canonicalize() {
+        Ok(base) => base,
+        Err(err) => return redact("mkdir canonicalize", &anyhow::Error::new(err)),
+    };
+    let target = base.join(name);
+    match std::fs::create_dir(&target) {
+        Ok(()) => {
+            let path = target.to_string_lossy().into_owned();
+            match serde_json::to_string(&Envelope::new(serde_json::json!({ "path": path }))) {
+                Ok(json) => json_response("200 OK", &json, &[]),
+                Err(_) => json_error("500 Internal Server Error", "could not encode the folder"),
+            }
+        }
+        Err(err) if err.kind() == std::io::ErrorKind::AlreadyExists => {
+            json_error("409 Conflict", "a folder with that name already exists")
+        }
+        Err(err) => redact("mkdir", &anyhow::Error::new(err)),
     }
 }
 
@@ -1215,6 +1287,92 @@ mod tests {
         assert_eq!(
             value["sidebar_width"],
             crate::web::viewer::prefs::MAX_SIDEBAR_WIDTH
+        );
+    }
+
+    #[test]
+    fn mkdir_creates_a_folder_inside_the_browsed_directory() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let server = server_with(
+            &[],
+            crate::config::AgentIndicatorConfig::default(),
+            Some(dir.path()),
+        );
+        let token = login(server.addr());
+
+        let body = serde_json::json!({
+            "path": dir.path().to_str().unwrap(),
+            "name": "scratch",
+        })
+        .to_string();
+        let created = post(server.addr(), "/api/mkdir", &body, Some(&token));
+        assert!(created.starts_with("HTTP/1.1 200"), "got: {created}");
+        assert!(
+            dir.path().join("scratch").is_dir(),
+            "the folder must exist on disk"
+        );
+
+        let value: serde_json::Value = serde_json::from_str(body_of(&created)).unwrap();
+        let path = value["path"].as_str().unwrap();
+        assert!(
+            std::path::Path::new(path).ends_with("scratch"),
+            "the response names the new folder, got: {path}"
+        );
+    }
+
+    #[test]
+    fn mkdir_rejects_a_name_that_would_escape_the_browsed_directory() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let server = server_with(
+            &[],
+            crate::config::AgentIndicatorConfig::default(),
+            Some(dir.path()),
+        );
+        let token = login(server.addr());
+
+        // Separators, traversal, and a leading dot (which also covers `.git`
+        // and hidden entries) are all refused so the create cannot leave the
+        // browsed directory.
+        for name in ["../escape", "a/b", "..", ".git", ".hidden"] {
+            let body = serde_json::json!({
+                "path": dir.path().to_str().unwrap(),
+                "name": name,
+            })
+            .to_string();
+            let response = post(server.addr(), "/api/mkdir", &body, Some(&token));
+            assert!(
+                response.starts_with("HTTP/1.1 400"),
+                "name {name:?} must be rejected, got: {response}"
+            );
+        }
+        assert!(
+            !dir.path().parent().unwrap().join("escape").exists(),
+            "traversal must not create anything above the parent"
+        );
+    }
+
+    #[test]
+    fn mkdir_requires_authentication() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let server = server_with(
+            &[],
+            crate::config::AgentIndicatorConfig::default(),
+            Some(dir.path()),
+        );
+
+        let body = serde_json::json!({
+            "path": dir.path().to_str().unwrap(),
+            "name": "nope",
+        })
+        .to_string();
+        let response = post(server.addr(), "/api/mkdir", &body, None);
+        assert!(
+            response.starts_with("HTTP/1.1 401"),
+            "an unauthenticated mkdir must be refused, got: {response}"
+        );
+        assert!(
+            !dir.path().join("nope").exists(),
+            "nothing may be created without a session"
         );
     }
 

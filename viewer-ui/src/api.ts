@@ -268,6 +268,10 @@ export const api = {
     get<Diff>(`/api/commit/file-diff?${query({ repo, oid, path })}`),
   browse: (path?: string) =>
     get<Browse>(`/api/browse${path ? `?${query({ path })}` : ""}`),
+  // Create a folder named `name` directly inside `path`; returns the new
+  // directory's absolute path. The server confines `name` to one plain segment.
+  mkdir: (path: string, name: string) =>
+    post<{ path: string }>("/api/mkdir", { path, name }).then((r) => r.path),
   open: (path: string) =>
     post<{ repo: Repo }>("/api/repos", { path }).then((r) => r.repo),
   close: async (repo: string) => {
