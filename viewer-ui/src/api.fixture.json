@@ -12,7 +12,8 @@
         "id": "r1",
         "name": "nightcrow"
       }
-    ]
+    ],
+    "sidebar_width": 460
   },
   "browse": {
     "entries": [
@@ -153,8 +154,9 @@
     },
     "truncated": false
   },
-  "storedAccent": {
-    "accent": 2
+  "storedPrefs": {
+    "accent": 2,
+    "sidebar_width": 460
   },
   "tree": {
     "entries": [

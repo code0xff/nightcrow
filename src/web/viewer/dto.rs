@@ -102,6 +102,9 @@ pub struct ViewerBootstrapDto {
     /// Index into the viewer's accent presets, stored server-side so every
     /// device agrees.
     pub accent: usize,
+    /// File-sidebar width in CSS px, stored server-side like the accent so every
+    /// device opens at the same split.
+    pub sidebar_width: u32,
     /// This server's wall clock, for dating [`ChangedFileDto::mtime`].
     pub now_ms: u64,
 }
@@ -110,11 +113,12 @@ impl ViewerBootstrapDto {
     /// Stamps `now_ms` at construction — the value is only useful as "the
     /// server's time when this response was built", so no caller is given the
     /// chance to supply a staler one.
-    pub fn new(repos: Vec<RepoDto>, hot: HotConfigDto, accent: usize) -> Self {
+    pub fn new(repos: Vec<RepoDto>, hot: HotConfigDto, accent: usize, sidebar_width: u32) -> Self {
         Self {
             repos,
             hot,
             accent,
+            sidebar_width,
             now_ms: server_now_millis(),
         }
     }
@@ -797,6 +801,7 @@ mod tests {
                 }],
                 hot: HotConfigDto { enabled: true, window_secs: 15 },
                 accent: 2,
+                sidebar_width: 460,
                 // Literal, not `server_now_millis()`: a fixture that moved every
                 // run could not be committed.
                 now_ms: 1_700_000_000_500,
@@ -898,7 +903,10 @@ mod tests {
                 name: "scratch".to_string(),
                 display_path: "~/code/scratch".to_string(),
             }}),
-            "storedAccent": serde_json::json!({ "accent": 2 }),
+            // One shape for every `/api/prefs` write: the full stored prefs, so
+            // a client that set the accent and one that set the width both read
+            // the clamped result back the same way.
+            "storedPrefs": serde_json::json!({ "accent": 2, "sidebar_width": 460 }),
         })
     }
 

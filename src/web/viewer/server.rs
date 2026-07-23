@@ -364,25 +364,39 @@ struct OpenRequest {
 
 #[derive(serde::Deserialize)]
 struct PrefsRequest {
-    accent: usize,
+    /// Each preference is optional so one write touches one setting and leaves
+    /// the rest as they are; a body naming none is rejected rather than treated
+    /// as a silent no-op.
+    accent: Option<usize>,
+    sidebar_width: Option<u32>,
 }
 
-/// Store a viewer preference and echo back what was kept.
+/// Store one or more viewer preferences and echo back the full stored set.
 ///
-/// The stored value is the request's, wrapped into range — a client sending an
-/// index past the end of the cycle gets a colour back rather than an error,
-/// which is what the TUI does with the same overflow (`Accent::from_index`).
+/// Each value is wrapped or clamped into range rather than rejected — an accent
+/// index past the end of the cycle gets a colour back (as the TUI does with
+/// `Accent::from_index`), and a width past the bounds gets a usable split back —
+/// so a client that drifts out of range self-corrects from the response.
 fn handle_set_prefs(body: &str, state: &ViewerState) -> Vec<u8> {
     let request: PrefsRequest = match serde_json::from_str(body) {
         Ok(request) => request,
         Err(_) => {
-            return json_error("400 Bad Request", "expected a JSON body with an accent index");
+            return json_error(
+                "400 Bad Request",
+                "expected a JSON body with a preference to store",
+            );
         }
     };
-    let stored = state.prefs.set_accent(request.accent);
-    match serde_json::to_string(&Envelope::new(
-        serde_json::json!({ "accent": stored.accent }),
-    )) {
+    if request.accent.is_none() && request.sidebar_width.is_none() {
+        return json_error("400 Bad Request", "no known preference in the body");
+    }
+    // One locked write for whatever the body carried, so a request naming both
+    // preferences lands atomically rather than as two racing updates.
+    let stored = state.prefs.update(request.accent, request.sidebar_width);
+    match serde_json::to_string(&Envelope::new(serde_json::json!({
+        "accent": stored.accent,
+        "sidebar_width": stored.sidebar_width,
+    }))) {
         Ok(json) => json_response("200 OK", &json, &[]),
         Err(_) => json_error("500 Internal Server Error", "could not encode preferences"),
     }
@@ -497,13 +511,15 @@ fn route(head: &RequestHead, state: &ViewerState) -> Vec<u8> {
             // schedule; `now_ms` is the clock its `mtime`s were measured on,
             // which a phone or laptop viewing remotely need not share; the
             // accent is stored server-side so every device shows the same one.
+            let prefs = state.prefs.get();
             let bootstrap = ViewerBootstrapDto::new(
                 state.catalog.list(),
                 HotConfigDto {
                     enabled: state.hot.enabled,
                     window_secs: state.hot.hot_window_secs,
                 },
-                state.prefs.get().accent,
+                prefs.accent,
+                prefs.sidebar_width,
             );
             match serde_json::to_string(&Envelope::new(bootstrap)) {
                 Ok(json) => json_response("200 OK", &json, &[]),
@@ -1168,6 +1184,77 @@ mod tests {
         let list = get(server.addr(), "/api/repos", Some(&token));
         let value: serde_json::Value = serde_json::from_str(body_of(&list)).unwrap();
         assert_eq!(value["accent"], 3);
+    }
+
+    #[test]
+    fn a_stored_sidebar_width_is_clamped_and_served_to_every_later_client() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let server = server_with(
+            &[],
+            crate::config::AgentIndicatorConfig::default(),
+            Some(dir.path()),
+        );
+        let token = login(server.addr());
+
+        // Past the ceiling: the write echoes the clamped value, and a later
+        // client's bootstrap carries the same clamped width — not the raw ask.
+        let stored = post(
+            server.addr(),
+            "/api/prefs",
+            "{\"sidebar_width\":5000}",
+            Some(&token),
+        );
+        let echoed: serde_json::Value = serde_json::from_str(body_of(&stored)).unwrap();
+        assert_eq!(
+            echoed["sidebar_width"],
+            crate::web::viewer::prefs::MAX_SIDEBAR_WIDTH
+        );
+
+        let list = get(server.addr(), "/api/repos", Some(&token));
+        let value: serde_json::Value = serde_json::from_str(body_of(&list)).unwrap();
+        assert_eq!(
+            value["sidebar_width"],
+            crate::web::viewer::prefs::MAX_SIDEBAR_WIDTH
+        );
+    }
+
+    #[test]
+    fn setting_one_preference_leaves_the_other_untouched() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let server = server_with(
+            &[],
+            crate::config::AgentIndicatorConfig::default(),
+            Some(dir.path()),
+        );
+        let token = login(server.addr());
+
+        post(server.addr(), "/api/prefs", "{\"accent\":3}", Some(&token));
+        let stored = post(
+            server.addr(),
+            "/api/prefs",
+            "{\"sidebar_width\":500}",
+            Some(&token),
+        );
+
+        // The width write must not reset the accent stored a moment earlier.
+        let echoed: serde_json::Value = serde_json::from_str(body_of(&stored)).unwrap();
+        assert_eq!(echoed["accent"], 3);
+        assert_eq!(echoed["sidebar_width"], 500);
+    }
+
+    #[test]
+    fn a_preference_body_naming_nothing_known_is_rejected() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let server = server_with(
+            &[],
+            crate::config::AgentIndicatorConfig::default(),
+            Some(dir.path()),
+        );
+        let token = login(server.addr());
+
+        let response = post(server.addr(), "/api/prefs", "{\"nope\":1}", Some(&token));
+
+        assert!(response.starts_with("HTTP/1.1 400"), "got: {response}");
     }
 
     #[test]
