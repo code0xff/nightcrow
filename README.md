@@ -18,11 +18,27 @@ Agent-adjacent terminal workbench — git diff viewer, commit log, and multi-pan
 
 ## Install
 
+Install straight from the repository (the built viewer bundle is committed, so
+this needs no Node toolchain):
+
 ```bash
-cargo install nightcrow
+cargo install --git https://github.com/code0xff/nightcrow --locked
 ```
 
-Requires Rust 1.85+ (edition 2024).
+Or build a local checkout:
+
+```bash
+cargo install --path . --locked
+```
+
+Once published to crates.io this will also work:
+
+```bash
+cargo install nightcrow --locked
+```
+
+Requires Rust 1.85+ (edition 2024). `--locked` builds against the committed
+`Cargo.lock` for a reproducible install.
 
 ## Usage
 

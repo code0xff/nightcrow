@@ -4,11 +4,15 @@ version = "0.1.0"
 edition = "2024"
 description = "Agent-adjacent terminal workbench — git diff viewer + multi-terminal panes for running CLIs next to your code"
 license = "Apache-2.0"
+repository = "https://github.com/code0xff/nightcrow"
+homepage = "https://github.com/code0xff/nightcrow"
+readme = "README.md"
 keywords = ["tui", "git", "terminal", "agentic", "cli"]
 categories = ["command-line-utilities", "development-tools"]
 # The published crate needs the viewer's *built* bundle (rust-embed reads
 # viewer-ui/dist at compile time) but not its sources or toolchain files —
 # those live in git. Keeps the crate small without breaking `cargo install`.
+# Repo-only tooling (agent rules, CI, hooks, planning notes) is dropped too.
 exclude = [
     "viewer-ui/node_modules",
     "viewer-ui/src",
@@ -17,6 +21,14 @@ exclude = [
     "viewer-ui/package-lock.json",
     "viewer-ui/tsconfig.json",
     "viewer-ui/vite.config.ts",
+    ".claude",
+    ".github",
+    ".githooks",
+    "release.toml",
+    "CLAUDE.md",
+    "docs/code-review-2026-05-08.md",
+    "docs/status-short-plan.md",
+    "docs/web-viewer-plan.md",
 ]
 
 [dependencies]
