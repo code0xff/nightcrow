@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { MaximizeIcon, PlusIcon, XIcon } from "./icons";
+import { toast } from "./toast";
 
 interface PaneView {
   term: Terminal;
@@ -162,7 +163,6 @@ export function TerminalPanel({
   // Per-pane title from the shell's OSC 0/2 sequence (parsed by xterm.js), so a
   // cell reads e.g. "claude" or "vim README" instead of a bare "term 2".
   const [titles, setTitles] = useState<Record<number, string>>({});
-  const [error, setError] = useState<string | null>(null);
 
   // One socket per repo. Pane ids belong to a repository's own terminal hub, so
   // switching repos must reset the pane list and dispose the old terminals —
@@ -170,7 +170,6 @@ export function TerminalPanel({
   useEffect(() => {
     let closedByUs = false;
     let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
-    setError(null);
 
     const disposeAll = () => {
       viewsRef.current.forEach((view) => view.term.dispose());
@@ -199,7 +198,6 @@ export function TerminalPanel({
       socket.binaryType = "arraybuffer";
       socketRef.current = socket;
 
-      socket.onopen = () => setError(null);
       socket.onmessage = (event) => {
         if (typeof event.data === "string") {
           const message = JSON.parse(event.data);
@@ -234,7 +232,7 @@ export function TerminalPanel({
             // A create was refused (e.g. the per-repo cap); do not let the
             // pending focus-follow attach to an unrelated later "created".
             expectCreateRef.current = 0;
-            setError(message.message);
+            toast.error(message.message);
           }
           return;
         }
@@ -380,7 +378,6 @@ export function TerminalPanel({
   const create = () => {
     const socket = socketRef.current;
     if (!socket) return;
-    setError(null);
     // Show the new pane in the grid rather than under whatever was zoomed.
     setZoomed(null);
     // Focus should follow this create when its "created" comes back.
@@ -399,9 +396,6 @@ export function TerminalPanel({
   return (
     <section className="flex min-h-0 flex-col border-t border-ink-700">
       <div className="flex shrink-0 items-center gap-2 bg-ink-900 px-2 py-1">
-        {error && (
-          <span className="min-w-0 truncate text-xs text-removed">{error}</span>
-        )}
         {/* The panel's controls sit together at the trailing edge, the way an
             editor keeps a pane's actions. No label: beside the maximise button
             it reads as one of a pair of controls rather than a stray word, and

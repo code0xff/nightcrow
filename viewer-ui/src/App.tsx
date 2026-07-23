@@ -45,6 +45,7 @@ import {
 } from "./hot";
 import { useAccent } from "./theme";
 import { MAX_SIDEBAR_VIEWPORT_FRACTION, useSidebarWidth } from "./sidebar";
+import { toast } from "./toast";
 
 // Lazily loaded so `@xterm/xterm` (the bulk of the bundle) stays out of the
 // initial chunk that paints the login screen and git viewer, arriving only once
@@ -357,10 +358,10 @@ export function App() {
   const [commits, setCommits] = useState<Commit[]>([]);
   const [logDone, setLogDone] = useState(false);
   // A page failed. Kept apart from `logDone`, which means the history ended:
-  // conflating them would report a blip as the end of the log, and the footer's
-  // error clears itself on the next successful poll, leaving nothing behind to
-  // say the list is short. This replaces the sentinel with a retry, which also
-  // stops a failing request from firing again on every scroll.
+  // conflating them would report a blip as the end of the log, and the error
+  // toast fades on its own, leaving nothing behind to say the list is short.
+  // This replaces the sentinel with a retry, which also stops a failing request
+  // from firing again on every scroll.
   const [logStalled, setLogStalled] = useState(false);
   // The commit the server walked from, echoed back on every following request
   // so the pages describe one history. A ref, not state: it changes once, when
@@ -397,7 +398,6 @@ export function App() {
   const [filter, setFilter] = useState("");
   const [filterOpen, setFilterOpen] = useState(false);
   const [pane, setPane] = useState<Pane>({ kind: "empty" });
-  const [error, setError] = useState<string | null>(null);
   // Latest pane/tab for the status-activity effect, which reacts to new status
   // snapshots and must not re-run when the pane changes (that would loop on its
   // own re-fetch).
@@ -565,13 +565,13 @@ export function App() {
   // so each pane starts there rather than remembering a one-off peek at source.
   const [mdRendered, setMdRendered] = useState(true);
 
-  // A failed call is either "log back in" or a message worth showing.
+  // A failed call is either "log back in" or a message worth showing as a toast.
   const handle = useCallback((err: unknown) => {
     if (isUnauthorized(err)) {
       setAuthed(false);
       return;
     }
-    setError(err instanceof Error ? err.message : "request failed");
+    toast.error(err instanceof Error ? err.message : "request failed");
   }, []);
 
   // Focus a repository the folder picker just opened. The picker performs the
@@ -634,10 +634,6 @@ export function App() {
           // We now hold the authoritative list for this session; the initial
           // splash can give way to the shell (or the empty-state prompt).
           setReposLoaded(true);
-          // A successful poll means the server is reachable again: clear any
-          // stale error so a transient failure (a blip, a server restart) does
-          // not latch the footer red forever — nothing else resets it.
-          setError(null);
           setRepos(list);
           // Keep the current selection when it survives; otherwise fall back to
           // the first repo, so closing the active tab in the TUI does not leave
@@ -1375,8 +1371,8 @@ export function App() {
                 </li>
               )}
             {/* A failed page keeps its place in the list. The history did not
-                end here, and the footer's error is gone by the next poll, so
-                without this the list would simply look shorter than it is. */}
+                end here, and the error toast fades on its own, so without this
+                the list would simply look shorter than it is. */}
             {tab === "log" && !commitDrillDown && logStalled && (
               <li className="px-3 py-1">
                 <button
@@ -1643,9 +1639,7 @@ export function App() {
           </span>
         )}
         <span className="ml-auto">
-          {error ? (
-            <span className="text-removed">{error}</span>
-          ) : status ? (
+          {status ? (
             <span className="text-added">● live</span>
           ) : (
             "connecting…"
