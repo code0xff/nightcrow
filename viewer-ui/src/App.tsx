@@ -420,7 +420,24 @@ export function App() {
   // the loading splash so the window between logging in and the first repo
   // response does not flash the "No repository open" empty state.
   const [reposLoaded, setReposLoaded] = useState(false);
-  const [maximized, setMaximized] = useState<Maximized>("none");
+  // Maximize is a per-project layout choice: each repo remembers whether its
+  // files pane, terminal, or neither was maximized, so switching projects
+  // restores that project's own layout rather than carrying one over.
+  const [maximizedByRepo, setMaximizedByRepo] = useState<
+    Record<string, Maximized>
+  >({});
+  const maximized: Maximized = (repo != null && maximizedByRepo[repo]) || "none";
+  const setMaximized = useCallback(
+    (next: Maximized | ((prev: Maximized) => Maximized)) => {
+      if (repo == null) return;
+      setMaximizedByRepo((prev) => {
+        const current = prev[repo] ?? "none";
+        const value = typeof next === "function" ? next(current) : next;
+        return { ...prev, [repo]: value };
+      });
+    },
+    [repo],
+  );
   // The server's `agent_indicator` settings, which arrive with the repo list.
   // Until they do, nothing is hot: guessing a window would flash a highlight
   // that the real config might have turned off.
@@ -598,6 +615,7 @@ export function App() {
         setRepo((current) =>
           current === id ? (remaining[0]?.id ?? null) : current,
         );
+        setMaximizedByRepo(({ [id]: _closed, ...rest }) => rest);
       } catch (err) {
         handle(err);
       }
