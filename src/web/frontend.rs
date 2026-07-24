@@ -17,6 +17,11 @@ pub const XTERM_CSS: &str = include_str!("frontend/vendor/xterm.css");
 /// so both services show the same mark. Referenced from the viewer's source
 /// SVG rather than a local copy, so the two never drift apart.
 pub const CROW_SVG: &str = include_str!("../../viewer-ui/public/crow.svg");
+/// The header/login mark: the same crow with a transparent background and no
+/// tile, so the page draws the rounded accent tile behind it in CSS. Shared
+/// with the viewer's `Mark`; referenced from the viewer's source so they never
+/// drift apart.
+pub const CROW_MONO_SVG: &str = include_str!("../../viewer-ui/public/crow-mono.svg");
 
 /// Render the login page, injecting an escaped error banner when present.
 pub fn login_page(error: Option<&str>) -> String {

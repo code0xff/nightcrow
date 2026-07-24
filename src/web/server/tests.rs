@@ -116,6 +116,44 @@ fn serves_vendored_renderer_assets() {
 }
 
 #[test]
+fn logout_revokes_the_session_server_side() {
+    // Clearing the cookie is not enough: cookies are not port-isolated, so
+    // another loopback service is same-site and may already hold the token.
+    let server = WebServer::start_from_config(&test_config("swordfish")).unwrap();
+    let addr = server.addr();
+    let token = session_token(&http_request(addr, &form_post("password=swordfish")))
+        .expect("a session cookie");
+
+    // The token unlocks the app page.
+    let before = http_request(
+        addr,
+        &format!(
+            "GET / HTTP/1.1\r\nHost: x\r\nCookie: {SESSION_COOKIE}={token}\r\nConnection: close\r\n\r\n"
+        ),
+    );
+    assert!(before.contains("/vendor/xterm.js"), "token should be valid");
+
+    http_request(
+        addr,
+        &format!(
+            "GET /logout HTTP/1.1\r\nHost: x\r\nCookie: {SESSION_COOKIE}={token}\r\nConnection: close\r\n\r\n"
+        ),
+    );
+
+    // The same token must stop unlocking the app immediately.
+    let after = http_request(
+        addr,
+        &format!(
+            "GET / HTTP/1.1\r\nHost: x\r\nCookie: {SESSION_COOKIE}={token}\r\nConnection: close\r\n\r\n"
+        ),
+    );
+    assert!(
+        !after.contains("/vendor/xterm.js"),
+        "the token must stop working immediately: {after}"
+    );
+}
+
+#[test]
 fn serves_the_favicon_without_auth() {
     let server = WebServer::start_from_config(&test_config("pw")).unwrap();
     let addr = server.addr();
@@ -123,6 +161,20 @@ fn serves_the_favicon_without_auth() {
     let svg = http_request(
         addr,
         "GET /crow.svg HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n",
+    );
+    assert!(svg.starts_with("HTTP/1.1 200"));
+    assert!(svg.contains("image/svg+xml"));
+    assert!(svg.contains("<svg"));
+}
+
+#[test]
+fn serves_the_header_mark_without_auth() {
+    let server = WebServer::start_from_config(&test_config("pw")).unwrap();
+    let addr = server.addr();
+    // The login page references /crow-mono.svg, so it must load before sign-in.
+    let svg = http_request(
+        addr,
+        "GET /crow-mono.svg HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n",
     );
     assert!(svg.starts_with("HTTP/1.1 200"));
     assert!(svg.contains("image/svg+xml"));

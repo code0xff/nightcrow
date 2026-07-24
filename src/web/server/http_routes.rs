@@ -70,6 +70,12 @@ fn route_http(head: &RequestHead, body: &str, shared: &Shared) -> Vec<u8> {
         }
         ("POST", "/login") => handle_login(body, shared),
         ("GET", "/logout") => {
+            // Revoke server-side, not just in the browser: cookies are not
+            // port-isolated, so any other loopback service is same-site here
+            // and could have read the token before it was cleared.
+            if let Some(token) = head.cookie(SESSION_COOKIE) {
+                shared.sessions.revoke(token);
+            }
             let clear = format!("{SESSION_COOKIE}=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0");
             http::redirect("/", &[("Set-Cookie", &clear)])
         }
@@ -92,6 +98,13 @@ fn route_http(head: &RequestHead, body: &str, shared: &Shared) -> Vec<u8> {
             "image/svg+xml; charset=utf-8",
             &[],
             frontend::CROW_SVG.as_bytes(),
+        ),
+        // The header/login mark; public, referenced by the login page pre-auth.
+        ("GET", "/crow-mono.svg") => http::response(
+            "200 OK",
+            "image/svg+xml; charset=utf-8",
+            &[],
+            frontend::CROW_MONO_SVG.as_bytes(),
         ),
         _ => http::html("404 Not Found", "<h1>404 Not Found</h1>"),
     }

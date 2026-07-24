@@ -1991,41 +1991,20 @@ function FolderPicker({
   );
 }
 
-/** The nightcrow mark: a rounded square holding a chevron + prompt underscore.
- *  Shared with the web mirror's login/header so the two services read as one
- *  product — the mirror's copy is fixed amber, while this one follows the
- *  accent, as the TUI's splash logo does (`ui/splash.rs` colours it with
- *  `accent`). `text-accent` is set here rather than inherited: the loading
- *  splash nests the mark in a `text-ink-400` block, which `currentColor` would
- *  otherwise pick up. The surrounding square stays a fixed dark edge. */
+/** The nightcrow mark: a black crow on a rounded accent tile. Shared with the
+ *  web mirror's login/header so the two services read as one product. The tile
+ *  is `bg-accent` rather than a baked colour, so it follows the runtime accent
+ *  as the TUI's splash logo does (`ui/splash.rs` colours it with `accent`); the
+ *  crow itself is the shared `crow-mono.svg` silhouette (transparent
+ *  background) overlaid on top. The favicon keeps its own off-white-tiled
+ *  `crow.svg`, which reads better against an arbitrary browser tab bar. */
 function Mark({ className }: { className?: string }) {
   return (
-    <svg
-      viewBox="0 0 42 42"
-      aria-hidden="true"
-      focusable="false"
-      className={`text-accent ${className ?? ""}`}
+    <span
+      className={`block overflow-hidden rounded-[20.7%] bg-accent ${className ?? ""}`}
     >
-      <rect
-        x="1.25"
-        y="1.25"
-        width="39.5"
-        height="39.5"
-        rx="10.5"
-        fill="none"
-        stroke="#282828"
-        strokeWidth="1.5"
-      />
-      <path
-        d="M14 15.5 L20 21 L14 26.5"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="2.4"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-      <rect x="23" y="24.4" width="7.5" height="2.4" rx="1.2" fill="currentColor" />
-    </svg>
+      <img src="/crow-mono.svg" alt="" aria-hidden="true" className="h-full w-full" />
+    </span>
   );
 }
 
