@@ -41,6 +41,9 @@ pub enum ClientMessage {
     Input { pane: PaneId, data: String },
     Resize { pane: PaneId, rows: u16, cols: u16 },
     Close { pane: PaneId },
+    /// A full desired sequence of the live pane ids, sent when a client drags a
+    /// pane to a new slot. The hub reconciles it (see [`TerminalHub::reorder_panes`]).
+    Reorder { order: Vec<PaneId> },
 }
 
 /// A control message to the browser.
@@ -50,6 +53,9 @@ pub enum ServerMessage {
     Created { pane: PaneId },
     Exited { pane: PaneId },
     Error { message: String },
+    /// The canonical pane order after a reorder, broadcast to every client so
+    /// the sender and any other device converge on the same layout.
+    Reordered { order: Vec<PaneId> },
 }
 
 /// One frame queued for a connected client.
@@ -96,6 +102,7 @@ enum Command {
     Input { pane: PaneId, data: Vec<u8> },
     Resize { pane: PaneId, rows: u16, cols: u16 },
     Close { pane: PaneId },
+    Reorder { order: Vec<PaneId> },
 }
 
 struct Client {
@@ -154,6 +161,7 @@ impl TerminalSession {
                 cols: cols.max(1),
             },
             ClientMessage::Close { pane } => Command::Close { pane },
+            ClientMessage::Reorder { order } => Command::Reorder { order },
         };
         // Never block the connection thread here. The hub drains this queue
         // from the same thread that writes to a PTY master, and that write
@@ -252,6 +260,7 @@ impl TerminalHub {
                         backend.destroy_pane(pane);
                         self.remove_pane_and_announce(pane);
                     }
+                    Command::Reorder { order } => self.reorder_panes(order),
                     _ => {}
                 }
             }
@@ -342,6 +351,39 @@ impl TerminalHub {
         }
         state.panes.retain(|p| p.id != pane);
         if let Some(json) = json {
+            broadcast_locked(&mut state.clients, TerminalFrame::Control(json));
+        }
+    }
+
+    /// Reorder the live panes to match `order` and tell every client the result.
+    ///
+    /// `order` is a full desired sequence of pane ids. It is reconciled against
+    /// what is actually live so a reorder is robust to races with create/close:
+    /// unknown ids are dropped and any live pane the request omits (e.g. one
+    /// another client created in the same beat) is kept, appended in its current
+    /// order (see [`canonical_order`]). The hub converges on that one canonical
+    /// order and broadcasts it, so the sender and every other device end up with
+    /// the same layout. Reordering only restyles the grid — pane ids, scrollback,
+    /// and the live PTYs are untouched. A no-op reorder sends nothing.
+    fn reorder_panes(&self, order: Vec<PaneId>) {
+        let mut state = self.state.lock().expect("terminal state poisoned");
+        let before: Vec<PaneId> = state.panes.iter().map(|p| p.id).collect();
+        let target = canonical_order(&before, &order);
+        if target == before {
+            return;
+        }
+        // `target` is a permutation of `before`, so every id resolves and `old`
+        // ends empty. Move each `PaneState` rather than clone it — it owns the
+        // pane's scrollback.
+        let mut old = std::mem::take(&mut state.panes);
+        let mut reordered = Vec::with_capacity(old.len());
+        for id in &target {
+            if let Some(pos) = old.iter().position(|p| p.id == *id) {
+                reordered.push(old.remove(pos));
+            }
+        }
+        state.panes = reordered;
+        if let Ok(json) = serde_json::to_string(&ServerMessage::Reordered { order: target }) {
             broadcast_locked(&mut state.clients, TerminalFrame::Control(json));
         }
     }
@@ -478,6 +520,29 @@ fn broadcast_locked(clients: &mut Vec<Client>, frame: TerminalFrame) {
     });
 }
 
+/// The canonical pane order for a reorder request: the requested ids that are
+/// actually live, in the requested order, followed by any live pane the request
+/// omitted, in its current order. Unknown requested ids are dropped. The result
+/// is always a permutation of `current`, which is what makes a reorder safe
+/// against a create or close that raced the request.
+fn canonical_order(current: &[PaneId], requested: &[PaneId]) -> Vec<PaneId> {
+    let mut out: Vec<PaneId> = Vec::with_capacity(current.len());
+    // Requested ids first: live, and each taken once (a repeated id would make
+    // the result a non-permutation of `current`).
+    for id in requested {
+        if current.contains(id) && !out.contains(id) {
+            out.push(*id);
+        }
+    }
+    // Then any live pane the request left out, in its current order.
+    for id in current {
+        if !out.contains(id) {
+            out.push(*id);
+        }
+    }
+    out
+}
+
 /// Append raw PTY bytes to a pane's scrollback, evicting the oldest bytes to
 /// stay within [`limits::MAX_TERMINAL_SCROLLBACK_BYTES`].
 fn push_scrollback(buf: &mut VecDeque<u8>, data: &[u8]) {
@@ -556,6 +621,10 @@ mod tests {
             serde_json::from_str(r#"{"type":"input","pane":3,"data":"ls\n"}"#).unwrap();
         assert!(matches!(input, ClientMessage::Input { pane: 3, .. }));
 
+        let reorder: ClientMessage =
+            serde_json::from_str(r#"{"type":"reorder","order":[3,1,2]}"#).unwrap();
+        assert!(matches!(reorder, ClientMessage::Reorder { order } if order == vec![3, 1, 2]));
+
         assert!(serde_json::from_str::<ClientMessage>(r#"{"type":"nope"}"#).is_err());
         assert!(serde_json::from_str::<ClientMessage>(r#"{"type":"create"}"#).is_err());
     }
@@ -564,6 +633,23 @@ mod tests {
     fn server_messages_serialize_with_a_type_tag() {
         let json = serde_json::to_string(&ServerMessage::Created { pane: 2 }).unwrap();
         assert_eq!(json, r#"{"type":"created","pane":2}"#);
+
+        let json = serde_json::to_string(&ServerMessage::Reordered { order: vec![2, 1] }).unwrap();
+        assert_eq!(json, r#"{"type":"reordered","order":[2,1]}"#);
+    }
+
+    #[test]
+    fn canonical_order_reconciles_a_request_against_the_live_panes() {
+        // A full permutation is honored verbatim.
+        assert_eq!(canonical_order(&[1, 2, 3], &[3, 1, 2]), vec![3, 1, 2]);
+        // A partial request moves the named panes; the rest keep their order.
+        assert_eq!(canonical_order(&[1, 2, 3], &[3]), vec![3, 1, 2]);
+        // An id that is no longer live (closed in a race) is dropped.
+        assert_eq!(canonical_order(&[1, 2], &[9, 2, 1]), vec![2, 1]);
+        // A repeated id is taken once, keeping the result a permutation.
+        assert_eq!(canonical_order(&[1, 2], &[2, 2, 1]), vec![2, 1]);
+        // An empty request leaves the order untouched.
+        assert_eq!(canonical_order(&[1, 2], &[]), vec![1, 2]);
     }
 
     #[test]
@@ -640,6 +726,71 @@ mod tests {
             return value["pane"].as_u64().map(|n| n as PaneId);
         }
         None
+    }
+
+    fn reordered_order(frame: &TerminalFrame) -> Option<Vec<PaneId>> {
+        let TerminalFrame::Control(json) = frame else {
+            return None;
+        };
+        let value: serde_json::Value = serde_json::from_str(json).ok()?;
+        if value["type"] != "reordered" {
+            return None;
+        }
+        Some(
+            value["order"]
+                .as_array()?
+                .iter()
+                .filter_map(|v| v.as_u64().map(|n| n as PaneId))
+                .collect(),
+        )
+    }
+
+    /// Collect the ids of the first `n` distinct panes announced to `session`,
+    /// in the order the `created` frames arrive.
+    fn collect_created(session: &TerminalSession, n: usize) -> Vec<PaneId> {
+        let mut ids = Vec::new();
+        while ids.len() < n {
+            let created =
+                next_matching(session, |f| created_pane(f).is_some()).expect("no created message");
+            let id = created_pane(&created).unwrap();
+            if !ids.contains(&id) {
+                ids.push(id);
+            }
+        }
+        ids
+    }
+
+    #[test]
+    fn reordering_panes_echoes_the_order_and_replays_it_to_a_later_joiner() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let hub = TerminalHub::spawn(&dir.path().to_string_lossy(), Vec::new());
+        let first = hub.connect();
+
+        // The startup shell plus one explicit create give two panes to reorder,
+        // captured in their creation (== current) order.
+        first.dispatch(ClientMessage::Create { rows: 24, cols: 80 });
+        let ids = collect_created(&first, 2);
+        let reversed: Vec<PaneId> = ids.iter().copied().rev().collect();
+
+        first.dispatch(ClientMessage::Reorder {
+            order: reversed.clone(),
+        });
+
+        // The sender is told the canonical order that was applied.
+        let echoed = next_matching(&first, |f| reordered_order(f).is_some())
+            .and_then(|f| reordered_order(&f))
+            .expect("no reordered echo");
+        assert_eq!(echoed, reversed, "the hub must echo the applied order");
+
+        // A client that connects afterwards replays the panes in the new order,
+        // proving the order lives on the server and survives a fresh connection.
+        let second = hub.connect();
+        assert_eq!(
+            collect_created(&second, 2),
+            reversed,
+            "replay order must follow the reorder"
+        );
+        hub.stop();
     }
 
     #[test]
