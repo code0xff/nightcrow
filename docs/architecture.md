@@ -51,62 +51,109 @@ below for the layout and resize rules.
 
 ## Module Structure
 
+모든 소스 파일은 300줄 이하(LOC 규칙, `.claude/rules/guardrails.md` 참고). 테스트는
+`#[cfg(test)] mod tests;`로 별도 파일에 분리한다.
+
 ```
 src/
-├── main.rs               # CLI args, entry point, panic-safe TerminalGuard
-├── app.rs                # App struct + integration tests; impl blocks split into app/
-├── app/
-│   ├── auto_follow.rs    # idle-driven jump to freshest hot file
-│   ├── commit_log_fetch.rs # background commit-log page fetcher (worker thread + poll)
-│   ├── diff_load.rs      # diff + file-view loaders, apply_diff_result, refresh_diff
-│   ├── focus.rs          # focus jumps, cycling, fullscreen toggles
-│   ├── navigation.rs     # selection, j/k, filtered status, log drill-in/out
-│   ├── session_io.rs     # save/restore session state
-│   ├── snapshot_io.rs    # poll_snapshot: drain SnapshotChannel, detect HEAD change
-│   ├── terminal_ctrl.rs  # poll_terminal, open/close/swap pane, scroll, fullscreen
-│   └── tree.rs           # tree-navigator App methods: lazy expand, filename search, watcher wiring
-├── config.rs             # config.toml parsing (layout, theme, log, agent_indicator,
-│                         #   input leader, mouse, tree, startup_command) + init template
+├── main.rs               # entry point, TerminalGuard, run()
+├── app_init.rs           # single-project App construction + startup commands
+├── cli.rs                # Cli/Commands, run_init/run_serve, web surface bootstrap
+├── event_loop.rs         # main_loop: poll/render/broadcast/input drain
+├── key_dispatch.rs       # handle_key, prefix follow-up, global action, KeyOutcome
+├── key_handlers.rs       # ViewMode-specific key handlers (upper/terminal/overlay)
+├── mouse.rs              # mouse dispatch, click/scroll/swap-target routing
+├── paste.rs              # paste dispatch (terminal/search/dialog)
+├── splash.rs             # first-run splash overlay loop
 ├── logging.rs            # tracing-based file logger (rotation + retention)
 ├── session.rs            # workspace + per-repo state (~/.nightcrow/workspace.json)
 ├── util.rs               # shared low-level helpers (try_timed_join)
 ├── test_util.rs          # #[cfg(test)] git fixture helpers shared across modules
+├── app.rs                # App struct + type defs (NoticeKind/ViewMode/Focus/AutoFollow)
+├── app/
+│   ├── app_impl.rs       # App core methods: new, notice, prefix/swap state
+│   ├── auto_follow.rs    # idle-driven jump to freshest hot file
+│   ├── commit_log_fetch.rs # background commit-log page fetcher (worker thread + poll)
+│   ├── commit_log_pagination.rs # CommitLogPagination struct + Drop
+│   ├── commit_log_apply.rs # apply_tail_page, apply_refresh_page
+│   ├── diff_load.rs      # diff loaders, apply_diff_result, refresh_diff
+│   ├── file_view_load.rs # file-view loaders, toggle, commit diff loading
+│   ├── focus.rs          # focus jumps, cycling, fullscreen toggles
+│   ├── navigation.rs     # status-mode selection, j/k, filtered status
+│   ├── log_nav.rs        # log-mode search, drill-in/out, cursor movement
+│   ├── scroll.rs         # upper-panel horizontal scroll helpers
+│   ├── session_io.rs     # save/restore session state
+│   ├── snapshot_io.rs    # poll_snapshot: drain SnapshotChannel, detect HEAD change
+│   ├── terminal_ctrl.rs  # poll_terminal, open/close/swap pane, scroll, fullscreen
+│   ├── tree.rs           # tree-navigator: mode entry, cache, watcher wiring
+│   ├── tree_nav.rs       # tree cursor, expand/collapse, search
+│   └── tests/            # integration tests split by feature area
+├── config.rs             # config.toml root: Config, load/validate/init, pub use re-exports
+├── config/
+│   ├── layout.rs         # LayoutConfig, ThemeConfig, Accent, InputConfig, parse_leader
+│   ├── log.rs            # LogConfig, LogRotation, LogLevel
+│   ├── panels.rs         # AgentIndicatorConfig, TreeConfig, MouseConfig
+│   ├── web.rs            # WebMirrorConfig, WebViewerConfig, password bootstrap
+│   └── tests/            # config tests split by section
 ├── workspace/
 │   ├── mod.rs            # Workspace: open projects (Vec<App>) + active index,
 │   │                     #   process-level repo dialog/notice
-│   └── repo_input.rs     # <prefix> o repo-input modal state
+│   ├── repo_input.rs     # <prefix> o repo-input modal state
+│   └── tests/            # workspace + repo_input tests
 ├── runtime/
 │   ├── mod.rs
 │   ├── snapshot.rs       # SnapshotChannel: background git status/log worker
-│   ├── emulator.rs       # PaneEmulator/ScreenView: alacritty_terminal wrapper
-│   ├── terminal.rs       # TerminalState (panes, emulators, scroll, title routing)
-│   └── tree_watch.rs     # notify-based watcher for expanded tree directories
+│   ├── tree_watch.rs     # notify-based watcher for expanded tree directories
+│   ├── emulator/
+│   │   ├── mod.rs        # PaneEmulator: alacritty_terminal wrapper, ScrollSink
+│   │   └── view.rs       # ScreenView/CellView: grid read access, color mapping
+│   └── terminal/
+│       ├── mod.rs        # TerminalState struct, constants, PaneInfo, TerminalFullscreen
+│       ├── state.rs      # accessors: active_pane_id, max_visible, sync_visible_window
+│       ├── scroll.rs     # scroll_active, scroll_pane, click_pane, sync_scroll
+│       ├── lifecycle.rs  # poll, create/close/swap pane, resize, send_input
+│       └── escape.rs     # strip_escape_sequences + consume_* helpers
 ├── ui/
-│   ├── mod.rs            # root layout (upper/lower split + notice row + hint bar,
-│   │                     #   mouse hit-testing: pane_at/tab_click_at/hint_click_at)
+│   ├── mod.rs            # root layout: draw, draw_empty, pub use re-exports
+│   ├── chrome.rs         # ChromeRows, chrome_rows, Chrome, main_content_constraints
+│   ├── helpers.rs        # shared widget/style helpers (status_color, char_offset, etc.)
+│   ├── notice.rs         # notice row + repo header rendering
+│   ├── hint_text.rs      # hint literal constants, normal_hint_literal, prefix_armed_hint_text
+│   ├── hint_bar.rs       # hint bar render, segment_click, HintClick, hint_click_at
+│   ├── hit_test.rs       # pane_at, tab_click_at, upper_panel_at, terminal_content_areas
 │   ├── status_view.rs    # status-mode state (file filter, search query/cache)
 │   ├── log_view.rs       # log-mode state (commits, drill-down, file selection)
 │   ├── tree_view.rs      # tree-mode state (child cache, expanded set, search index)
 │   ├── file_list.rs      # upper-left: changed files with hot-stage coloring
 │   ├── commit_list.rs    # upper-left (log view): commit list with ahead marker
 │   ├── tree_list.rs      # upper-left (tree view): indented directory-tree rows
-│   ├── diff_pane.rs      # DiffPane: hunks, scroll, search, file_view sub-state
-│   ├── diff_viewer.rs    # upper-right: diff widget; toggleable file preview
 │   ├── file_view.rs      # full-file preview state (content, scroll, syntect cache)
 │   ├── search.rs         # SearchQuery newtype (query + lowercased form in lockstep)
-│   ├── terminal_tab.rs   # lower: terminal pane grid + tab bar widget
-│   └── splash.rs         # first-run splash overlay
+│   ├── splash.rs         # first-run splash overlay
+│   ├── diff_pane/        # DiffPane: hunks, scroll, search, file_view sub-state
+│   ├── diff_viewer/      # upper-right: diff widget; toggleable file preview
+│   ├── terminal_tab/     # lower: terminal pane grid + tab bar widget
+│   ├── project_tab/      # project tab row rendering + click targets
+│   └── tests/            # ui integration tests (chrome, hint, hit-test, notice)
 ├── backend/
 │   ├── mod.rs            # TerminalBackend trait + BackendEvent
 │   └── pty.rs            # PtyBackend (portable-pty, the only backend)
 ├── git/
 │   ├── mod.rs
-│   ├── diff.rs           # git2 snapshot/diff loaders + tracking status
-│   ├── path.rs           # repo-relative path validation before any filesystem read
-│   └── tree.rs           # lazy read-only directory listing (gitignore filter, symlink guard)
+│   ├── diff.rs           # module root: pub use re-exports, MAX_FILE_VIEW_BYTES
+│   ├── diff/
+│   │   ├── types.rs      # StatusKind, ChangedFile, DiffHunk, CommitEntry, RepoSnapshot
+│   │   ├── snapshot.rs   # load_snapshot, status_columns, path extraction
+│   │   ├── diff_load.rs  # load_file_diff, load_commit_diff, collect_hunks
+│   │   └── commit_log.rs # load_commit_log, load_commit_log_from, head_commit_oid
+│   ├── path/
+│   │   └── mod.rs        # repo-relative path validation before any filesystem read
+│   └── tree/
+│       └── mod.rs        # lazy read-only directory listing (gitignore filter, symlink guard)
 ├── input/
-│   └── mod.rs            # keyboard routing: map_key (no-prefix reserved keys),
-│                         #   prefix_action (leader follow-up dispatch), encode_key, vim-style j/k
+│   ├── mod.rs            # Action enum, pub use re-exports
+│   ├── routing.rs        # map_key, prefix_action, prefix_action_fullscreen, vim j/k
+│   └── encode.rs         # encode_key, encode_wheel/button/arrow, CSI/SS3 helpers
 └── web/                  # optional browser mirror ([web_mirror] enabled) — see "Web Mirror"
     ├── mod.rs            # module root
     ├── common/           # server-agnostic primitives (no frames, git, or terminals)
@@ -117,16 +164,16 @@ src/
     │   └── conn.rs       # ConnectionSlot: accept-loop connection accounting
     ├── viewer/           # native web viewer ([web_viewer] / `serve`) — see "Web Viewer"
     │   ├── limits.rs     # ceilings: log page, tree entries, diff bytes/lines, PTYs
-    │   ├── dto.rs        # whitelisted wire types + PROTOCOL_VERSION envelope
-    │   ├── catalog.rs    # opaque repo ids, atomic swap, per-repo entries
-    │   ├── runtime.rs    # per-repo thread: SnapshotChannel drain + conflated SSE fan-out
-    │   ├── terminal.rs   # per-repo TerminalHub owning its own PtyBackend
+    │   ├── dto/          # whitelisted wire types + PROTOCOL_VERSION envelope
+    │   ├── catalog/      # opaque repo ids, atomic swap, per-repo entries
+    │   ├── runtime/      # per-repo thread: SnapshotChannel drain + conflated SSE fan-out
+    │   ├── terminal/     # per-repo TerminalHub owning its own PtyBackend
     │   ├── highlight.rs  # syntect/two-face highlight spans for diff + file payloads
     │   ├── prefs.rs      # ~/.nightcrow/viewer.json: accent + sidebar width shared across devices
-    │   ├── server.rs     # HTTP routes, SSE, /ws/term
+    │   ├── server/       # HTTP routes, SSE, /ws/term
     │   └── assets.rs     # rust-embed of viewer-ui/dist + CSP
-    ├── protocol.rs       # Buffer→ANSI frame encode, JSON→crossterm input decode
-    ├── server.rs         # sync accept/connection threads, broadcast, WS upgrade
+    ├── protocol/         # Buffer→ANSI frame encode, JSON→crossterm input decode
+    ├── server/           # sync accept/connection threads, broadcast, WS upgrade
     ├── frontend.rs       # embedded page assets
     └── frontend/         # login.html, app.html, vendor/xterm.{js,css}
 ```

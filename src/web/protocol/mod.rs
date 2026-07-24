@@ -12,7 +12,6 @@
 //! through the exact same `handle_key`/`handle_mouse`/`handle_paste` routing as
 //! local input — a web action can never diverge from the equivalent keypress.
 
-use anyhow::Result;
 use crossterm::event::{KeyEvent, MouseEvent};
 use ratatui::backend::{Backend, CrosstermBackend};
 use ratatui::buffer::Buffer;
@@ -86,7 +85,9 @@ pub fn encode_cursor(cursor: Option<Position>) -> Vec<u8> {
 
 mod decode;
 
-pub use decode::{MAX_INPUT_MESSAGE_BYTES, decode_input, ensure_input_size};
+#[cfg(test)]
+pub use decode::MAX_INPUT_MESSAGE_BYTES;
+pub use decode::{decode_input, ensure_input_size};
 
 #[cfg(test)]
 mod tests;

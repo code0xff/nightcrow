@@ -1,5 +1,4 @@
 use super::common::*;
-use super::*;
 
 #[test]
 fn create_pane_defaults_to_shell_label_and_no_command() {

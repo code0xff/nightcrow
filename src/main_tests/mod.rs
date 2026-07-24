@@ -1,0 +1,12 @@
+mod helpers;
+mod mouse;
+mod mouse_clicks;
+mod mouse_empty;
+mod mouse_release;
+mod paste;
+mod prefix;
+mod prefix_digits;
+mod search;
+mod swap;
+mod terminal;
+mod workspace;

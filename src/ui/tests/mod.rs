@@ -1,0 +1,8 @@
+mod common;
+mod chrome_tests;
+mod hint_armed_tests;
+mod hint_click_tests;
+mod hint_diff_tests;
+mod hint_legend_tests;
+mod hit_test_tests;
+mod notice_tests;

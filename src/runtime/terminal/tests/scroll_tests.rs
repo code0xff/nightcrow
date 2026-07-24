@@ -1,5 +1,4 @@
 use super::common::*;
-use super::*;
 use crate::backend::BackendEvent;
 use crossterm::event::MouseButton;
 
