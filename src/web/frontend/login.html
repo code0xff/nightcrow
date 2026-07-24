@@ -11,8 +11,8 @@
      Tailwind utilities resolved literally: its `ink` palette, its 14px root —
      which is what its rem-based utilities scale against — and its mono body
      type. Changing anything here without changing it there splits them apart
-     again. The mark stays fixed amber: the viewer's follows its runtime accent,
-     which the mirror has no picker for. */
+     again. The mark's tile stays fixed amber: the viewer's follows its runtime
+     accent, which the mirror has no picker for. */
   :root {
     color-scheme: dark;
     --accent: #d9a441;
@@ -42,7 +42,11 @@
      it from. The bare centered form reads closer to the terminal it fronts. */
   form { width: 17rem; max-width: 86vw; }
 
-  .mark { display: block; margin: 0 auto .75rem; width: 2.5rem; height: 2.5rem; }
+  .mark {
+    display: block; margin: 0 auto .75rem; width: 2.5rem; height: 2.5rem;
+    border-radius: 20.7%; background: var(--accent); overflow: hidden;
+  }
+  .mark img { display: block; width: 100%; height: 100%; }
 
   h1 {
     margin: 0; text-align: center;
@@ -89,13 +93,7 @@
 </head>
 <body>
   <form method="post" action="/login">
-    <svg class="mark" viewBox="0 0 42 42" aria-hidden="true" focusable="false">
-      <rect x="1.25" y="1.25" width="39.5" height="39.5" rx="10.5"
-            fill="none" stroke="#282828" stroke-width="1.5"/>
-      <path d="M14 15.5 L20 21 L14 26.5" fill="none" stroke="#d9a441"
-            stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
-      <rect x="23" y="24.4" width="7.5" height="2.4" rx="1.2" fill="#d9a441"/>
-    </svg>
+    <span class="mark" aria-hidden="true"><img src="/crow-mono.svg" alt=""></span>
     <h1>nightcrow</h1>
     <p class="sub">web mirror</p>
     <!--ERROR-->

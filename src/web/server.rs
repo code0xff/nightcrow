@@ -336,6 +336,13 @@ fn route_http(head: &RequestHead, body: &str, shared: &Shared) -> Vec<u8> {
             &[],
             frontend::CROW_SVG.as_bytes(),
         ),
+        // The header/login mark; public, referenced by the login page pre-auth.
+        ("GET", "/crow-mono.svg") => http::response(
+            "200 OK",
+            "image/svg+xml; charset=utf-8",
+            &[],
+            frontend::CROW_MONO_SVG.as_bytes(),
+        ),
         _ => http::html("404 Not Found", "<h1>404 Not Found</h1>"),
     }
 }
@@ -594,6 +601,20 @@ mod tests {
         let svg = http_request(
             addr,
             "GET /crow.svg HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n",
+        );
+        assert!(svg.starts_with("HTTP/1.1 200"));
+        assert!(svg.contains("image/svg+xml"));
+        assert!(svg.contains("<svg"));
+    }
+
+    #[test]
+    fn serves_the_header_mark_without_auth() {
+        let server = WebServer::start_from_config(&test_config("pw")).unwrap();
+        let addr = server.addr();
+        // The login page references /crow-mono.svg, so it must load before sign-in.
+        let svg = http_request(
+            addr,
+            "GET /crow-mono.svg HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n",
         );
         assert!(svg.starts_with("HTTP/1.1 200"));
         assert!(svg.contains("image/svg+xml"));

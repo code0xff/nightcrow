@@ -38,7 +38,11 @@
     padding: 8.8px 12.8px;
     background: var(--ink-900); border-bottom: 1px solid var(--ink-700);
   }
-  #head .mark { flex: 0 0 auto; }
+  #head .mark {
+    flex: 0 0 auto; width: 22px; height: 22px;
+    border-radius: 20.7%; background: var(--accent); overflow: hidden;
+  }
+  #head .mark img { display: block; width: 100%; height: 100%; }
   #head .wordmark {
     font-size: 16px; font-weight: 500; letter-spacing: .04em; color: var(--ink-50);
   }
@@ -88,13 +92,7 @@
 </head>
 <body>
   <header id="head">
-    <svg class="mark" width="22" height="22" viewBox="0 0 42 42" aria-hidden="true" focusable="false">
-      <rect x="1.25" y="1.25" width="39.5" height="39.5" rx="10.5"
-            fill="none" stroke="#282828" stroke-width="1.5"/>
-      <path d="M14 15.5 L20 21 L14 26.5" fill="none" stroke="#d9a441"
-            stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
-      <rect x="23" y="24.4" width="7.5" height="2.4" rx="1.2" fill="#d9a441"/>
-    </svg>
+    <span class="mark" aria-hidden="true"><img src="/crow-mono.svg" alt=""></span>
     <span class="wordmark">nightcrow</span>
     <span class="tag">web mirror</span>
   </header>
