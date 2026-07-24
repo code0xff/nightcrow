@@ -313,6 +313,12 @@ fn route_http(head: &RequestHead, body: &str, shared: &Shared) -> Vec<u8> {
         }
         ("POST", "/login") => handle_login(body, shared),
         ("GET", "/logout") => {
+            // Revoke server-side, not just in the browser: cookies are not
+            // port-isolated, so any other loopback service is same-site here
+            // and could have read the token before it was cleared.
+            if let Some(token) = head.cookie(SESSION_COOKIE) {
+                shared.sessions.revoke(token);
+            }
             let clear = format!("{SESSION_COOKIE}=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0");
             http::redirect("/", &[("Set-Cookie", &clear)])
         }
@@ -578,6 +584,44 @@ mod tests {
         assert!(
             app.contains("/vendor/xterm.js"),
             "authenticated GET / serves the terminal app"
+        );
+    }
+
+    #[test]
+    fn logout_revokes_the_session_server_side() {
+        // Clearing the cookie is not enough: cookies are not port-isolated, so
+        // another loopback service is same-site and may already hold the token.
+        let server = WebServer::start_from_config(&test_config("swordfish")).unwrap();
+        let addr = server.addr();
+        let token = session_token(&http_request(addr, &form_post("password=swordfish")))
+            .expect("a session cookie");
+
+        // The token unlocks the app page.
+        let before = http_request(
+            addr,
+            &format!(
+                "GET / HTTP/1.1\r\nHost: x\r\nCookie: {SESSION_COOKIE}={token}\r\nConnection: close\r\n\r\n"
+            ),
+        );
+        assert!(before.contains("/vendor/xterm.js"), "token should be valid");
+
+        http_request(
+            addr,
+            &format!(
+                "GET /logout HTTP/1.1\r\nHost: x\r\nCookie: {SESSION_COOKIE}={token}\r\nConnection: close\r\n\r\n"
+            ),
+        );
+
+        // The same token must stop unlocking the app immediately.
+        let after = http_request(
+            addr,
+            &format!(
+                "GET / HTTP/1.1\r\nHost: x\r\nCookie: {SESSION_COOKIE}={token}\r\nConnection: close\r\n\r\n"
+            ),
+        );
+        assert!(
+            !after.contains("/vendor/xterm.js"),
+            "the token must stop working immediately: {after}"
         );
     }
 
