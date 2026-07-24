@@ -345,6 +345,12 @@ inline unified diff and a side-by-side split view, mirroring the TUI's `s`.
 The choice is stored per browser; on a narrow window (phone) it always renders
 unified, since two code columns can't both stay legible there.
 
+Drag a terminal pane by its header onto another to reorder the split-view grid;
+it works with touch as well as a mouse. The order is kept on the server, so a
+refresh, a reconnect, or another device opening the same repository all show the
+same arrangement. (It is not written to disk — a server restart clears the
+terminals themselves, so there is nothing to persist.)
+
 The `status` list highlights recently touched files the same way the TUI does:
 accent-coloured and bold for the first 5 seconds after a file's mtime, accent
 until `agent_indicator.hot_window_secs` expires, then plain. The window (and
