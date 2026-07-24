@@ -428,11 +428,14 @@ export function TerminalPanel({
   };
 
   const onPaneDragStart = (e: React.PointerEvent, pane: number) => {
-    focusPane(pane);
-    // Primary button / first touch only, and never a press that lands on one of
-    // the header's buttons (zoom, close).
-    if (e.button !== 0 || !reorderable) return;
+    // A press on the header's own buttons (zoom, close) is theirs — do not
+    // focus or start a drag, matching the pre-drag behaviour where those
+    // buttons stopped the focus press from propagating.
     if ((e.target as HTMLElement).closest("button")) return;
+    focusPane(pane);
+    // Primary button / first touch only, and only when there is a grid to
+    // rearrange (more than one pane, not zoomed).
+    if (e.button !== 0 || !reorderable) return;
     dragPaneRef.current = pane;
     dragStartRef.current = { x: e.clientX, y: e.clientY };
     draggingRef.current = false;
