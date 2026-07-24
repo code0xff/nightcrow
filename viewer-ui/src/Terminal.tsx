@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { MaximizeIcon, PlusIcon, XIcon } from "./icons";
+import { reconcileOrder, reorderByDrop } from "./paneOrder";
 import { toast } from "./toast";
 
 interface PaneView {
@@ -13,6 +14,10 @@ interface PaneView {
 /// wide CJK glyphs cannot overflow its cell header; the full title stays
 /// reachable through the tooltip. Matches the viewer's label convention.
 const TAB_TITLE_MAX_CELLS = 20;
+
+/// Pointer travel before a header press becomes a pane drag rather than a click
+/// that just focuses the pane. Mirrors the sidebar divider's small dead zone.
+const PANE_DRAG_THRESHOLD_PX = 4;
 
 function gcd(a: number, b: number): number {
   while (b) [a, b] = [b, a % b];
@@ -163,6 +168,16 @@ export function TerminalPanel({
   // Per-pane title from the shell's OSC 0/2 sequence (parsed by xterm.js), so a
   // cell reads e.g. "claude" or "vim README" instead of a bare "term 2".
   const [titles, setTitles] = useState<Record<number, string>>({});
+  // Pane drag-to-reorder. The id being dragged and the drop target live in refs
+  // (read on pointerup, free of stale-closure risk); the mirrored state only
+  // drives the drag styling. `draggingRef` flips once the pointer crosses the
+  // dead zone, separating a reorder from a plain header click.
+  const dragPaneRef = useRef<number | null>(null);
+  const dragStartRef = useRef<{ x: number; y: number } | null>(null);
+  const dragOverRef = useRef<number | null>(null);
+  const draggingRef = useRef(false);
+  const [draggingPane, setDraggingPane] = useState<number | null>(null);
+  const [dragOverPane, setDragOverPane] = useState<number | null>(null);
 
   // One socket per repo. Pane ids belong to a repository's own terminal hub, so
   // switching repos must reset the pane list and dispose the old terminals —
@@ -228,6 +243,12 @@ export function TerminalPanel({
               delete next[message.pane];
               return next;
             });
+          } else if (message.type === "reordered") {
+            // The hub's canonical order after a drag — this client's or another
+            // device's. Adopt it, reconciled against the panes we actually hold
+            // so a "created"/"exited" that raced it cannot desync the grid.
+            // active/zoomed are pane ids, so they survive the reorder untouched.
+            setPanes((current) => reconcileOrder(current, message.order));
           } else if (message.type === "error") {
             // A create was refused (e.g. the per-repo cap); do not let the
             // pending focus-follow attach to an unrelated later "created".
@@ -391,6 +412,67 @@ export function TerminalPanel({
     socketRef.current?.send(JSON.stringify({ type: "close", pane }));
   };
 
+  // Dragging a pane's header to a new slot. Pointer-based rather than HTML5 drag
+  // so it works with touch on a phone exactly as with a mouse, the same choice
+  // the sidebar divider makes. Order is authoritative on the server, so a drop
+  // sends the whole desired order and the grid follows the "reordered" echo.
+  const reorderable = zoomed === null && panes.length > 1;
+
+  const endPaneDrag = () => {
+    dragPaneRef.current = null;
+    dragStartRef.current = null;
+    dragOverRef.current = null;
+    draggingRef.current = false;
+    setDraggingPane(null);
+    setDragOverPane(null);
+  };
+
+  const onPaneDragStart = (e: React.PointerEvent, pane: number) => {
+    focusPane(pane);
+    // Primary button / first touch only, and never a press that lands on one of
+    // the header's buttons (zoom, close).
+    if (e.button !== 0 || !reorderable) return;
+    if ((e.target as HTMLElement).closest("button")) return;
+    dragPaneRef.current = pane;
+    dragStartRef.current = { x: e.clientX, y: e.clientY };
+    draggingRef.current = false;
+    e.currentTarget.setPointerCapture(e.pointerId);
+  };
+
+  const onPaneDragMove = (e: React.PointerEvent) => {
+    const dragged = dragPaneRef.current;
+    const start = dragStartRef.current;
+    if (dragged === null || start === null) return;
+    if (
+      !draggingRef.current &&
+      Math.hypot(e.clientX - start.x, e.clientY - start.y) <
+        PANE_DRAG_THRESHOLD_PX
+    ) {
+      return;
+    }
+    draggingRef.current = true;
+    setDraggingPane(dragged);
+    // Which cell is under the pointer. Pointer capture does not change hit
+    // testing, so this still finds the pane being hovered, not the dragged one.
+    const el = document
+      .elementFromPoint(e.clientX, e.clientY)
+      ?.closest("[data-pane-id]");
+    const over = el ? Number(el.getAttribute("data-pane-id")) : null;
+    const target = over !== null && over !== dragged ? over : null;
+    dragOverRef.current = target;
+    setDragOverPane(target);
+  };
+
+  const onPaneDragEnd = () => {
+    const dragged = dragPaneRef.current;
+    const target = dragOverRef.current;
+    if (dragged !== null && draggingRef.current && target !== null) {
+      const order = reorderByDrop(panes, dragged, target);
+      socketRef.current?.send(JSON.stringify({ type: "reorder", order }));
+    }
+    endPaneDrag();
+  };
+
   const layout = planLayout(panes.length, size.w >= size.h);
 
   return (
@@ -452,16 +534,36 @@ export function TerminalPanel({
                     gridColumn: `${cell.colStart} / span ${cell.colSpan}`,
                     gridRow: `${cell.row}`,
                   };
+            const isDragged = draggingPane === pane;
+            const isDropTarget = dragOverPane === pane;
+            const borderClass = isDropTarget
+              ? "border-accent ring-1 ring-accent"
+              : pane === active
+                ? "border-accent"
+                : "border-ink-700";
             return (
               <div
                 key={pane}
+                data-pane-id={pane}
                 onMouseDown={() => focusPane(pane)}
                 style={cellStyle}
-                className={`min-h-0 min-w-0 flex-col overflow-hidden rounded-sm border ${
-                  pane === active ? "border-accent" : "border-ink-700"
+                className={`min-h-0 min-w-0 flex-col overflow-hidden rounded-sm border ${borderClass} ${
+                  isDragged ? "opacity-60" : ""
                 }`}
               >
-                <div className="flex shrink-0 items-center gap-1 bg-ink-900 px-2 py-0.5 text-xs">
+                <div
+                  onPointerDown={(e) => onPaneDragStart(e, pane)}
+                  onPointerMove={onPaneDragMove}
+                  onPointerUp={onPaneDragEnd}
+                  onPointerCancel={endPaneDrag}
+                  className={`flex shrink-0 items-center gap-1 select-none bg-ink-900 px-2 py-0.5 text-xs ${
+                    reorderable
+                      ? isDragged
+                        ? "cursor-grabbing touch-none"
+                        : "cursor-grab touch-none"
+                      : ""
+                  }`}
+                >
                   <span
                     title={label}
                     className={`min-w-0 flex-1 truncate ${
