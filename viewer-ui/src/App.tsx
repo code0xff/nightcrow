@@ -28,11 +28,14 @@ import {
 } from "./api";
 import {
   ChevronIcon,
+  FileTextIcon,
+  ListIcon,
   MaximizeIcon,
   PlusIcon,
   PreviewIcon,
   SearchIcon,
   SplitViewIcon,
+  TerminalIcon,
   XIcon,
 } from "./icons";
 import { splitHunkRows, useDiffLayout } from "./diffLayout";
@@ -96,6 +99,11 @@ type Tab = "status" | "log" | "tree";
 /// than a flag per panel: only one can hold the space, and a pair of booleans
 /// would admit a "both maximised" state that has no layout.
 type Maximized = "none" | "terminal" | "files";
+/// Which single region fills the screen below the `md` breakpoint. The desktop
+/// layout shows the file list, the content pane, and the terminal at once; a
+/// phone has room for one, so a bottom switcher picks it. Desktop ignores this —
+/// the `md:` layout rules override every mobile visibility class it drives.
+type MobileView = "files" | "diff" | "terminal";
 type Pane =
   | { kind: "diff"; value: Diff }
   | { kind: "file"; value: FileView }
@@ -399,6 +407,11 @@ export function App() {
   const [filter, setFilter] = useState("");
   const [filterOpen, setFilterOpen] = useState(false);
   const [pane, setPane] = useState<Pane>({ kind: "empty" });
+  // Which region the bottom switcher shows below `md`. Defaults to the file list
+  // so a phone opens on something to pick; opening a file or diff flips it to the
+  // content pane (below). Not persisted — it is transient view state, and the
+  // desktop layout never reads it.
+  const [mobileView, setMobileView] = useState<MobileView>("files");
   // Latest pane/tab for the status-activity effect, which reacts to new status
   // snapshots and must not re-run when the pane changes (that would loop on its
   // own re-fetch).
@@ -947,6 +960,9 @@ export function App() {
 
   const openDiff = (path: string) => {
     if (!repo) return;
+    // Below `md` the content pane is a separate screen from the list; opening one
+    // switches to it so the tap has a visible result. A no-op on desktop.
+    setMobileView("diff");
     const request = ++paneRequestRef.current;
     api
       .diff(repo, path)
@@ -959,6 +975,7 @@ export function App() {
   };
   const openFile = (path: string) => {
     if (!repo) return;
+    setMobileView("diff");
     const request = ++paneRequestRef.current;
     api
       .file(repo, path)
@@ -971,6 +988,7 @@ export function App() {
   };
   const openCommit = (oid: string) => {
     if (!repo) return;
+    setMobileView("diff");
     const request = ++paneRequestRef.current;
     api
       .commit(repo, oid)
@@ -983,6 +1001,7 @@ export function App() {
   };
   const openCommitFileDiff = (oid: string, path: string) => {
     if (!repo) return;
+    setMobileView("diff");
     const request = ++paneRequestRef.current;
     api
       .commitFileDiff(repo, oid, path)
@@ -1099,14 +1118,23 @@ export function App() {
   // so the row count keeps matching the template and the panel comes back
   // scrolled where it was.
   const filesMax = maximized === "files";
+  // Desktop row template (md+): header / main / terminal / footer, with the two
+  // body rows fluid so `maximized` can starve one to nothing. Below md the
+  // switcher shows a single body region, so the template is fixed there —
+  // header / active region / switcher bar / footer — and the desktop variant is
+  // layered on with `md:`. Both are four tracks, so grid auto-placement maps the
+  // four visible items (one of main/terminal is hidden per mode, the bar is
+  // `md:hidden`) the same way at either breakpoint without explicit row spans.
+  const desktopRows =
+    maximized === "terminal"
+      ? "md:grid-rows-[auto_minmax(0,0fr)_minmax(0,1fr)_auto]"
+      : maximized === "files"
+        ? "md:grid-rows-[auto_minmax(0,1fr)_minmax(0,0fr)_auto]"
+        : // 55/45 split, matching the TUI's default layout.upper_pct.
+          "md:grid-rows-[auto_minmax(0,11fr)_minmax(0,9fr)_auto]";
   const rows = !repo
     ? "grid-rows-[auto_1fr]"
-    : maximized === "terminal"
-      ? "grid-rows-[auto_minmax(0,0fr)_minmax(0,1fr)_auto]"
-      : maximized === "files"
-        ? "grid-rows-[auto_minmax(0,1fr)_minmax(0,0fr)_auto]"
-        : // 55/45 split, matching the TUI's default layout.upper_pct.
-          "grid-rows-[auto_minmax(0,11fr)_minmax(0,9fr)_auto]";
+    : `grid-rows-[auto_minmax(0,1fr)_auto_auto] ${desktopRows}`;
 
   return (
     <div className={`nc-fade grid h-full ${rows}`}>
@@ -1209,7 +1237,10 @@ export function App() {
             className="h-3 w-3 rounded-full bg-accent ring-1 ring-ink-600"
           />
         </button>
-        <a href="/logout" className="pl-2 text-ink-400 hover:text-ink-200">
+        <a
+          href="/logout"
+          className="pl-2 text-ink-400 hover:text-ink-200 active:text-ink-200"
+        >
           sign out
         </a>
       </header>
@@ -1229,9 +1260,9 @@ export function App() {
               property to zero rather than dropping the sidebar, so its content
               is not torn down and rebuilt on every toggle. */}
           <main
-            className={`grid min-h-0 grid-cols-1 md:grid-cols-[var(--nc-sidebar)_1fr] ${
-              draggingSidebar ? "select-none" : ""
-            }`}
+            className={`min-h-0 grid-cols-1 md:grid md:grid-cols-[var(--nc-sidebar)_1fr] ${
+              mobileView === "terminal" ? "hidden" : "grid"
+            } ${draggingSidebar ? "select-none" : ""}`}
             style={
               {
                 // `min(px, N vw)` caps the width to the viewport share in CSS,
@@ -1243,17 +1274,18 @@ export function App() {
               } as CSSProperties
             }
           >
-        {/* Two mechanisms collapse the sidebar when maximised, one per breakpoint.
-            At md+ it stays in the grid (md:flex) and the --nc-sidebar:0px column
-            hides it — display:none here would drop it from grid placement and
-            shift the file pane into the 0px track, collapsing it to nothing.
-            Below md the grid is a single column that ignores --nc-sidebar, so
-            there `hidden` is what removes it. */}
+        {/* Visibility is decided per breakpoint. At md+ the sidebar always stays
+            in the grid (md:flex) and maximising the file pane hides it through the
+            --nc-sidebar:0px column instead — display:none here would drop it from
+            grid placement and shift the file pane into the 0px track, collapsing
+            it to nothing. Below md the switcher governs: the sidebar is the Files
+            screen, shown only when mobileView is "files" (`maximized` is a desktop
+            concept and is ignored there). */}
         <section
           ref={sidebarRef}
-          className={`relative min-h-0 flex-col overflow-hidden ${
-            filesMax ? "hidden md:flex" : "flex border-ink-700 md:border-r"
-          }`}
+          className={`relative min-h-0 flex-col overflow-hidden md:flex ${
+            mobileView === "files" ? "flex" : "hidden"
+          } ${filesMax ? "" : "border-ink-700 md:border-r"}`}
         >
           {/* Drag the divider to resize the sidebar, double-click to reset it.
               A thin strip over the right border, only at md+ (below it the
@@ -1305,10 +1337,10 @@ export function App() {
                   setPane({ kind: "empty" });
                 }}
                 aria-current={t === tab ? "page" : undefined}
-                className={`-mb-px border-b-2 px-2 py-1 ${
+                className={`-mb-px border-b-2 px-2.5 py-2.5 md:px-2 md:py-1 ${
                   t === tab
                     ? "border-accent text-ink-50"
-                    : "border-transparent text-ink-400 hover:text-ink-200"
+                    : "border-transparent text-ink-400 hover:text-ink-200 active:text-ink-200"
                 }`}
               >
                 {t}
@@ -1322,7 +1354,7 @@ export function App() {
               aria-pressed={filterOpen}
               title={filterOpen ? "Hide the filter" : "Filter the list"}
               aria-label={filterOpen ? "Hide the filter" : "Filter the list"}
-              className={`my-1 ml-auto flex shrink-0 items-center rounded-sm px-1.5 hover:text-accent ${
+              className={`my-1 ml-auto flex shrink-0 items-center rounded-sm px-2.5 py-1 hover:text-accent active:text-accent md:px-1.5 md:py-0 ${
                 filterOpen ? "text-ink-50" : "text-ink-400"
               }`}
             >
@@ -1352,7 +1384,7 @@ export function App() {
                 <li key={f.path}>
                   <button
                     onClick={() => openDiff(f.path)}
-                    className="flex w-max min-w-full gap-2 px-3 py-0.5 text-left hover:bg-ink-850"
+                    className="flex w-max min-w-full gap-2 px-3 py-2 text-left hover:bg-ink-850 active:bg-ink-850 md:py-0.5"
                   >
                     <span className="shrink-0">
                       <span className={statusColor(f.index)}>
@@ -1376,7 +1408,7 @@ export function App() {
                   <button
                     onClick={() => void openCommitFiles(c)}
                     title={`${c.author} · ${c.summary}`}
-                    className="flex w-max min-w-full items-baseline gap-2 px-3 py-0.5 text-left hover:bg-ink-850"
+                    className="flex w-max min-w-full items-baseline gap-2 px-3 py-2 text-left hover:bg-ink-850 active:bg-ink-850 md:py-0.5"
                   >
                     {/* ↑ marks unpushed commits, like the TUI's ahead marker. */}
                     <span className="w-2 shrink-0 text-added">
@@ -1473,7 +1505,7 @@ export function App() {
                       onClick={() =>
                         openCommitFileDiff(commitDrillDown.commit.oid, f.path)
                       }
-                      className="flex w-max min-w-full gap-2 px-3 py-0.5 text-left hover:bg-ink-850"
+                      className="flex w-max min-w-full gap-2 px-3 py-2 text-left hover:bg-ink-850 active:bg-ink-850 md:py-0.5"
                     >
                       <span className={statusColor(f.index)}>{f.index}</span>
                       <PathLabel path={f.path} from={f.old_path} />
@@ -1506,7 +1538,7 @@ export function App() {
                         else openFile(m.path);
                       }}
                       title={m.path}
-                      className="w-max min-w-full whitespace-nowrap px-3 py-0.5 text-left hover:bg-ink-850"
+                      className="w-max min-w-full whitespace-nowrap px-3 py-2 text-left hover:bg-ink-850 active:bg-ink-850 md:py-0.5"
                     >
                       {m.is_dir ? (
                         <span className="text-accent">{m.path}/</span>
@@ -1538,7 +1570,7 @@ export function App() {
                     }
                     title={row.path}
                     style={{ paddingLeft: `${row.depth * 0.75 + 0.5}rem` }}
-                    className="flex w-max min-w-full items-center gap-1 py-0.5 pr-3 text-left hover:bg-ink-850"
+                    className="flex w-max min-w-full items-center gap-1 py-2 pr-3 text-left hover:bg-ink-850 active:bg-ink-850 md:py-0.5"
                   >
                     {row.is_dir ? (
                       <ChevronIcon open={treeExpanded.has(row.path)} />
@@ -1565,7 +1597,13 @@ export function App() {
         {/* `min-w-0` is load-bearing: a grid item defaults to min-width:auto, so
             without it this column refuses to shrink below the widest line in the
             pre and pushes the layout off-screen instead of scrolling inside. */}
-        <section className="flex min-h-0 min-w-0 flex-col">
+        {/* Below md this is the Diff screen of the switcher, shown only when
+            mobileView is "diff"; at md+ it always sits beside the sidebar. */}
+        <section
+          className={`min-h-0 min-w-0 flex-col md:flex ${
+            mobileView === "diff" ? "flex" : "hidden"
+          }`}
+        >
           {/* Always rendered, even with nothing open: it carries the maximise
               control, and a header that came and went with the selection would
               shift the pane under the cursor. Only a file view is labelled with
@@ -1624,7 +1662,9 @@ export function App() {
                 aria-label={
                   filesMax ? "Restore the layout" : "Maximize the file pane"
                 }
-                className="flex shrink-0 items-center rounded-sm px-1.5 py-0.5 hover:text-accent"
+                // Desktop-only: below md the bottom switcher fills a region, so a
+                // per-pane maximise toggle has no layout to act on.
+                className="hidden shrink-0 items-center rounded-sm px-1.5 py-0.5 hover:text-accent md:flex"
               >
                 <MaximizeIcon maximized={filesMax} />
               </button>
@@ -1684,8 +1724,45 @@ export function App() {
             onToggleMaximized={() =>
               setMaximized((m) => (m === "terminal" ? "none" : "terminal"))
             }
+            // Below md the terminal is the Terminal screen of the switcher, shown
+            // only when selected; at md+ it always occupies its own row.
+            className={mobileView === "terminal" ? "flex" : "hidden md:flex"}
           />
         </Suspense>
+      )}
+
+      {/* The mobile view switcher: a phone has room for one region at a time, so
+          this bottom bar picks which of the three fills the screen. `md:hidden`
+          — desktop shows all three at once and never needs it. Sits between the
+          terminal and the footer in the DOM so grid auto-placement lands it on
+          the third of four mobile tracks (see the `rows` template above). */}
+      {repo && (
+        <nav
+          aria-label="Switch view"
+          className="flex shrink-0 items-stretch border-t border-ink-700 bg-ink-900 md:hidden"
+        >
+          {(
+            [
+              { key: "files", label: "Files", Icon: ListIcon },
+              { key: "diff", label: "Diff", Icon: FileTextIcon },
+              { key: "terminal", label: "Terminal", Icon: TerminalIcon },
+            ] as { key: MobileView; label: string; Icon: typeof ListIcon }[]
+          ).map(({ key, label, Icon }) => (
+            <button
+              key={key}
+              onClick={() => setMobileView(key)}
+              aria-current={mobileView === key ? "page" : undefined}
+              className={`flex min-h-11 flex-1 flex-col items-center justify-center gap-0.5 py-1 text-[11px] ${
+                mobileView === key
+                  ? "text-accent shadow-[inset_0_2px_0_0_var(--color-accent)]"
+                  : "text-ink-400 active:text-ink-200"
+              }`}
+            >
+              <Icon className="h-5 w-5" />
+              {label}
+            </button>
+          ))}
+        </nav>
       )}
 
       <footer className="flex shrink-0 items-center gap-3 border-t border-ink-700 bg-ink-900 px-3 py-1 text-ink-400">
@@ -1796,7 +1873,7 @@ function ProjectMenu({
                     setOpen(false);
                   }}
                   title={r.display_path}
-                  className="min-w-0 flex-1 truncate py-1.5 pl-3 pr-1 text-left hover:text-accent"
+                  className="min-w-0 flex-1 truncate py-2.5 pl-3 pr-1 text-left hover:text-accent active:text-accent"
                 >
                   {r.name}
                 </button>
@@ -1804,7 +1881,7 @@ function ProjectMenu({
                   onClick={() => onCloseProject(r.id)}
                   aria-label={`close ${r.name}`}
                   title="Close project"
-                  className="mr-1 flex h-6 w-6 shrink-0 items-center justify-center rounded-sm text-ink-400 hover:text-removed"
+                  className="mr-1 flex h-9 w-9 shrink-0 items-center justify-center rounded-sm text-ink-400 hover:text-removed active:text-removed"
                 >
                   <XIcon className="h-3.5 w-3.5" />
                 </button>
@@ -1817,7 +1894,7 @@ function ProjectMenu({
                 onOpenPicker();
                 setOpen(false);
               }}
-              className="flex w-full items-center gap-1 px-3 py-1.5 text-left text-ink-400 hover:text-ink-200"
+              className="flex w-full items-center gap-1 px-3 py-2.5 text-left text-ink-400 hover:text-ink-200 active:text-ink-200"
             >
               <PlusIcon className="h-3.5 w-3.5" />
               open
@@ -1929,7 +2006,7 @@ function FolderPicker({
             <li>
               <button
                 onClick={() => setPath(dir.parent!)}
-                className="w-full px-3 py-1 text-left text-ink-400 hover:bg-ink-850"
+                className="w-full px-3 py-2 text-left text-ink-400 hover:bg-ink-850 active:bg-ink-850 md:py-1"
               >
                 ../
               </button>
@@ -1939,7 +2016,7 @@ function FolderPicker({
             <li key={e.name}>
               <button
                 onClick={() => into(e.name)}
-                className="flex w-full items-center gap-2 px-3 py-1 text-left hover:bg-ink-850"
+                className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-ink-850 active:bg-ink-850 md:py-1"
               >
                 <span className="truncate text-accent">{e.name}/</span>
                 {e.is_repo && (

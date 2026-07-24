@@ -3,12 +3,23 @@ import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { MaximizeIcon, PlusIcon, XIcon } from "./icons";
 import { reconcileOrder, reorderByDrop } from "./paneOrder";
+import { TERM_KEY_BAR, termKeySequence } from "./termKeys";
 import { toast } from "./toast";
 
 interface PaneView {
   term: Terminal;
   fit: FitAddon;
 }
+
+// Touch devices lack a physical keyboard, so xterm's cells are bumped a point to
+// keep the cursor and glyphs legible under a thumb. Read once at load — a
+// device's pointer kind does not change within a session. The guards keep it
+// defined under the test runner, where matchMedia is absent.
+const COARSE_POINTER =
+  typeof window !== "undefined" &&
+  typeof window.matchMedia === "function" &&
+  window.matchMedia("(pointer: coarse)").matches;
+const TERM_FONT_SIZE = COARSE_POINTER ? 13 : 12;
 
 /// Pane titles are capped by display width (not character count) so a title of
 /// wide CJK glyphs cannot overflow its cell header; the full title stays
@@ -130,10 +141,15 @@ export function TerminalPanel({
   repo,
   maximized,
   onToggleMaximized,
+  className = "",
 }: {
   repo: string;
   maximized: boolean;
   onToggleMaximized: () => void;
+  /// Display/visibility classes from the parent — the mobile view switcher hides
+  /// the whole panel off-screen and reveals it when its leg is picked. The base
+  /// class list here deliberately omits `display` so this alone controls it.
+  className?: string;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const socketRef = useRef<WebSocket | null>(null);
@@ -302,7 +318,7 @@ export function TerminalPanel({
 
       const term = new Terminal({
         fontFamily: getComputedStyle(document.body).fontFamily,
-        fontSize: 12,
+        fontSize: TERM_FONT_SIZE,
         theme: { background: "#0b0b0d", foreground: "#e6e6ec" },
         cursorBlink: true,
       });
@@ -412,6 +428,24 @@ export function TerminalPanel({
     socketRef.current?.send(JSON.stringify({ type: "close", pane }));
   };
 
+  // Feed a touch key-bar sequence to the active pane as if it were typed. Same
+  // wire message as `term.onData`, so the PTY cannot tell them apart. No-op when
+  // nothing is focused — there is no pane to receive it. The active terminal's
+  // cursor-key mode is read live so the arrows match what vim (and other
+  // full-screen apps that flip DECCKM) expect at that moment.
+  const sendKey = (key: (typeof TERM_KEY_BAR)[number]["key"]) => {
+    if (active === null) return;
+    const appCursor =
+      viewsRef.current.get(active)?.term.modes.applicationCursorKeysMode ?? false;
+    socketRef.current?.send(
+      JSON.stringify({
+        type: "input",
+        pane: active,
+        data: termKeySequence(key, appCursor),
+      }),
+    );
+  };
+
   // Dragging a pane's header to a new slot. Pointer-based rather than HTML5 drag
   // so it works with touch on a phone exactly as with a mouse, the same choice
   // the sidebar divider makes. Order is authoritative on the server, so a drop
@@ -479,7 +513,9 @@ export function TerminalPanel({
   const layout = planLayout(panes.length, size.w >= size.h);
 
   return (
-    <section className="flex min-h-0 flex-col border-t border-ink-700">
+    <section
+      className={`min-h-0 flex-col border-t border-ink-700 ${className}`}
+    >
       <div className="flex shrink-0 items-center gap-2 bg-ink-900 px-2 py-1">
         {/* The panel's controls sit together at the trailing edge, the way an
             editor keeps a pane's actions. No label: beside the maximise button
@@ -502,7 +538,9 @@ export function TerminalPanel({
           aria-pressed={maximized}
           title={maximized ? "Restore panel height" : "Maximize the panel"}
           aria-label={maximized ? "Restore panel height" : "Maximize the panel"}
-          className="flex shrink-0 items-center rounded-sm px-1.5 py-0.5 text-ink-400 hover:text-accent"
+          // Desktop-only: below md the bottom switcher already gives the terminal
+          // the whole screen, so the panel-height toggle has nothing to act on.
+          className="hidden shrink-0 items-center rounded-sm px-1.5 py-0.5 text-ink-400 hover:text-accent md:flex"
         >
           <MaximizeIcon maximized={maximized} />
         </button>
@@ -585,7 +623,7 @@ export function TerminalPanel({
                     aria-label={
                       zoomed === pane ? "Restore the grid" : "Zoom this terminal"
                     }
-                    className="flex h-6 w-6 shrink-0 items-center justify-center rounded-sm text-ink-400 hover:text-accent"
+                    className="flex h-8 w-8 shrink-0 items-center justify-center rounded-sm text-ink-400 hover:text-accent active:text-accent md:h-6 md:w-6"
                   >
                     <MaximizeIcon maximized={zoomed === pane} />
                   </button>
@@ -594,7 +632,7 @@ export function TerminalPanel({
                     onClick={() => closePane(pane)}
                     title="Close terminal"
                     aria-label={`close terminal ${index + 1}`}
-                    className="flex h-6 w-6 shrink-0 items-center justify-center rounded-sm text-ink-400 hover:text-removed"
+                    className="flex h-8 w-8 shrink-0 items-center justify-center rounded-sm text-ink-400 hover:text-removed active:text-removed md:h-6 md:w-6"
                   >
                     <XIcon />
                   </button>
@@ -611,6 +649,28 @@ export function TerminalPanel({
           })}
         </div>
       </div>
+      {/* Touch key bar: the keys a soft keyboard cannot type, fed straight to the
+          active pane. `md:hidden` — a desktop terminal has the real keys. Shown
+          only with a pane open; it scrolls sideways on a narrow phone rather than
+          wrapping. `onPointerDown` only prevents the default focus shift so the
+          xterm textarea keeps focus and the soft keyboard stays up; the send is on
+          `onClick`, which fires once for touch, mouse, keyboard (Enter/Space), and
+          assistive tech alike — so the bar is not pointer-only. */}
+      {panes.length > 0 && (
+        <div className="flex shrink-0 items-stretch gap-1 overflow-x-auto border-t border-ink-700 bg-ink-900 px-1 py-1 md:hidden">
+          {TERM_KEY_BAR.map(({ key, label, aria }) => (
+            <button
+              key={key}
+              onPointerDown={(e) => e.preventDefault()}
+              onClick={() => sendKey(key)}
+              aria-label={aria}
+              className="flex min-h-9 min-w-9 shrink-0 items-center justify-center rounded-sm border border-ink-700 bg-ink-850 px-2 text-xs text-ink-200 active:bg-ink-700 active:text-accent"
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      )}
     </section>
   );
 }
