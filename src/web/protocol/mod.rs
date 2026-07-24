@@ -13,6 +13,7 @@
 //! local input — a web action can never diverge from the equivalent keypress.
 
 use anyhow::Result;
+use crossterm::event::{KeyEvent, MouseEvent};
 use ratatui::backend::{Backend, CrosstermBackend};
 use ratatui::buffer::Buffer;
 use ratatui::layout::Position;

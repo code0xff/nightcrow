@@ -10,7 +10,7 @@ use std::time::Instant;
 use super::accept::Shared;
 use super::ws::serve_websocket;
 
-fn handle_connection(mut stream: TcpStream, shared: Arc<Shared>) {
+pub(super) fn handle_connection(mut stream: TcpStream, shared: Arc<Shared>) {
     let (head, body) = match conn::read_request(&mut stream) {
         Ok(v) => v,
         Err(err) => {
