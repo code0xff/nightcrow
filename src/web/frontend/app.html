@@ -51,6 +51,13 @@
     font-size: 10px; letter-spacing: .18em; text-transform: uppercase;
     color: var(--ink-400);
   }
+  /* Pushes the sign-out to the far right, matching the viewer's header
+     (App.tsx puts it after an `ml-auto` spacer). */
+  #head .grow { flex: 1 1 auto; }
+  #head a {
+    font-size: 12px; color: var(--ink-400); text-decoration: none;
+  }
+  #head a:hover { color: var(--ink-50); }
   /* The stage letterboxes the terminal: horizontally centered, top-aligned.
      The grid size is dictated by the local terminal; the browser scales the
      exact same grid to fit. */
@@ -63,12 +70,16 @@
     background: var(--ink-900); border-top: 1px solid var(--ink-700);
     color: var(--ink-400); font-size: 11.9px;
   }
-  #bar .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--ink-400); }
-  #bar.connected .dot { background: var(--added); }
-  #bar.down .dot { background: var(--removed); }
   #bar .grow { flex: 1 1 auto; }
-  #bar a { color: var(--ink-400); text-decoration: none; }
-  #bar a:hover { color: var(--ink-50); }
+  /* Connection indicator, pinned to the right like the viewer's footer status
+     (App.tsx: a `● live` span at `ml-auto`). The dot sits tight against the
+     text rather than at the footer's global gap. */
+  #bar .conn { display: inline-flex; align-items: center; gap: 5.25px; }
+  #bar .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--ink-400); }
+  #bar.connected .dot, #bar.connected #status { color: var(--added); }
+  #bar.connected .dot { background: var(--added); }
+  #bar.down .dot, #bar.down #status { color: var(--removed); }
+  #bar.down .dot { background: var(--removed); }
   /* xterm's IME preview is an unstyled, background-less overlay: it paints the
      in-progress syllable straight over the mirrored cells underneath it, which
      is unreadable on a dense TUI grid. Hide it and show the composition in the
@@ -95,14 +106,14 @@
     <span class="mark" aria-hidden="true"><img src="/crow-mono.svg" alt=""></span>
     <span class="wordmark">nightcrow</span>
     <span class="tag">web mirror</span>
+    <span class="grow"></span>
+    <a href="/logout">sign out</a>
   </header>
   <div id="stage"><div id="term"></div></div>
   <div id="bar">
-    <span class="dot"></span>
-    <span id="status">connecting…</span>
     <span id="ime"></span>
     <span class="grow"></span>
-    <a href="/logout">sign out</a>
+    <span class="conn"><span class="dot"></span><span id="status">connecting…</span></span>
   </div>
   <script src="/vendor/xterm.js"></script>
   <script>
