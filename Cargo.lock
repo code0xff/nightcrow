@@ -1244,7 +1244,7 @@ dependencies = [
  "clap",
  "crossterm",
  "dirs",
- "getrandom 0.3.4",
+ "getrandom 0.4.3",
  "git2",
  "notify",
  "notify-debouncer-mini",

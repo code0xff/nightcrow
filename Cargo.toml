@@ -54,7 +54,7 @@ alacritty_terminal = { version = "0.26", default-features = false }
 # hashing (matches code-server), and an OS RNG for password/session tokens.
 tungstenite = "0.29"
 argon2 = "0.5"
-getrandom = "0.3"
+getrandom = "0.4"
 rust-embed = { version = "8.12.0", features = ["interpolate-folder-path", "mime-guess"] }
 
 [dev-dependencies]
