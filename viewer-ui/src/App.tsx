@@ -39,6 +39,7 @@ import {
   XIcon,
 } from "./icons";
 import { splitHunkRows, useDiffLayout } from "./diffLayout";
+import { reconcileOrder, reorderByDrop } from "./paneOrder";
 import { fileViewSource, isMarkdownPath } from "./fileView";
 import {
   anyHot,
@@ -77,6 +78,10 @@ const TREE_SEARCH_DEBOUNCE_MS = 180;
 /// resize. Below this, a click or a vertical-only wobble commits nothing, so it
 /// cannot overwrite the stored width with the viewport-capped display value.
 const SIDEBAR_DRAG_THRESHOLD_PX = 3;
+
+/// Pointer travel before a press on a project tab counts as a drag rather than a
+/// click that selects it. Matches the terminal pane header's dead zone.
+const TAB_DRAG_THRESHOLD_PX = 4;
 
 /// Window within which two clicks on the divider read as a double-click and
 /// reset the sidebar to its default width.
@@ -482,6 +487,11 @@ export function App() {
     adopt: adoptSidebarWidth,
   } = useSidebarWidth();
   const sidebarWrites = useRef(0);
+  // Write generation for the repo list — bumped by a reorder, an open, or a
+  // close. A poll or an in-flight reorder response older than the latest bump
+  // must not overwrite the list, so opening and closing advance it too (not just
+  // reordering): otherwise a slow reorder echo could resurrect a just-closed tab.
+  const repoOrderWrites = useRef(0);
   const commitSidebarWidth = useCallback(
     (px: number) => {
       sidebarWrites.current += 1;
@@ -613,6 +623,9 @@ export function App() {
   // open and hands back the repo; select it right away rather than waiting for
   // the next repo poll to notice it.
   const selectOpenedRepo = useCallback((opened: Repo) => {
+    // A membership change: invalidate any older reorder echo or poll so it does
+    // not drop the tab just opened (see `repoOrderWrites`).
+    repoOrderWrites.current += 1;
     setRepos((prev) =>
       prev.some((r) => r.id === opened.id) ? prev : [...prev, opened],
     );
@@ -628,6 +641,9 @@ export function App() {
     async (id: string) => {
       try {
         await api.close(id);
+        // A membership change: invalidate any older reorder echo or poll so a
+        // slow one cannot bring the closed tab back (see `repoOrderWrites`).
+        repoOrderWrites.current += 1;
         const remaining = repos.filter((r) => r.id !== id);
         setRepos(remaining);
         setRepo((current) =>
@@ -640,6 +656,148 @@ export function App() {
     },
     [repos, handle],
   );
+
+  // Drag-to-reorder for the project tabs. Pointer-based (like the pane headers
+  // and the sidebar divider) so it works with touch too. Order is authoritative
+  // on the server; a drop POSTs the desired order and adopts the canonical set
+  // it returns. `repoOrderWrites` is the same write-generation guard the accent
+  // and sidebar width use — a poll that left before a reorder must not snap the
+  // tabs back to the old order — and `repoDraggingRef` blocks a poll from
+  // reordering under a live drag.
+  const repoDraggingRef = useRef(false);
+  // Reorder POSTs are serialised: only one is in flight, and only the latest
+  // desired order is queued behind it. Two POSTs on separate connections have no
+  // ordering guarantee, so firing them in parallel could let the server process
+  // the older one last and persist the wrong order — sending them one at a time,
+  // newest-only, makes the final drop the one the server commits.
+  const reorderInFlightRef = useRef(false);
+  const pendingReorderRef = useRef<string[] | null>(null);
+  const dragRepoRef = useRef<string | null>(null);
+  const dragRepoStartRef = useRef<{ x: number; y: number } | null>(null);
+  const dragOverRepoRef = useRef<string | null>(null);
+  const [draggingRepo, setDraggingRepo] = useState<string | null>(null);
+  const [dragOverRepo, setDragOverRepo] = useState<string | null>(null);
+
+  // Send the queued order once the previous POST settles, newest-only. Adopts
+  // the server's canonical result (its reconciliation against the live set —
+  // e.g. a repo closed on another device), unless a newer drop has since bumped
+  // the generation, in which case that drop's own write owns the final state.
+  const flushRepoOrder = useCallback(() => {
+    if (reorderInFlightRef.current) return;
+    const order = pendingReorderRef.current;
+    if (order === null) return;
+    pendingReorderRef.current = null;
+    reorderInFlightRef.current = true;
+    const generation = repoOrderWrites.current;
+    api
+      .reorderRepos(order)
+      .then((serverRepos) => {
+        if (repoOrderWrites.current === generation) setRepos(serverRepos);
+      })
+      .catch(handle)
+      .finally(() => {
+        reorderInFlightRef.current = false;
+        // A drop that arrived while this was in flight left the latest order
+        // queued; send it now so the server ends on the newest one.
+        flushRepoOrder();
+      });
+  }, [handle]);
+
+  const commitRepoOrder = useCallback(
+    (order: string[]) => {
+      repoOrderWrites.current += 1;
+      // Optimistic: reorder the tabs now, keeping the current membership, so the
+      // drop lands without waiting on the round trip.
+      setRepos((prev) => {
+        const ids = reconcileOrder(
+          prev.map((r) => r.id),
+          order,
+        );
+        const byId = new Map(prev.map((r) => [r.id, r]));
+        return ids.map((id) => byId.get(id)!).filter(Boolean) as Repo[];
+      });
+      // Queue the newest order and kick the serialised sender.
+      pendingReorderRef.current = order;
+      flushRepoOrder();
+    },
+    [flushRepoOrder],
+  );
+
+  const endRepoDrag = () => {
+    dragRepoRef.current = null;
+    dragRepoStartRef.current = null;
+    dragOverRepoRef.current = null;
+    repoDraggingRef.current = false;
+    setDraggingRepo(null);
+    setDragOverRepo(null);
+  };
+
+  const onRepoDragStart = (e: ReactPointerEvent, id: string) => {
+    // A press on the tab's close button is its own; do not start a drag.
+    if ((e.target as HTMLElement).closest("button[data-tab-close]")) return;
+    // Primary button / first touch only, and only when there is more than one
+    // tab to rearrange.
+    if (e.button !== 0 || repos.length < 2) return;
+    dragRepoRef.current = id;
+    dragRepoStartRef.current = { x: e.clientX, y: e.clientY };
+    repoDraggingRef.current = false;
+    // Capture is claimed in the move handler once the drag actually begins, not
+    // here: capturing on press would suppress the tab button's click, so a plain
+    // tap could no longer select a project.
+  };
+
+  const onRepoDragMove = (e: ReactPointerEvent) => {
+    const dragged = dragRepoRef.current;
+    const start = dragRepoStartRef.current;
+    if (dragged === null || start === null) return;
+    // Before the drag is captured, a press can end off a tab (below the
+    // threshold) without any handler firing, leaving the gesture armed. A later
+    // hover would then move over a tab with no button held; disarm on that
+    // rather than resuming a phantom drag. Once captured (dragging), pointerup
+    // and lost-capture end it, so this only guards the pre-capture window.
+    if (!repoDraggingRef.current && e.buttons === 0) {
+      dragRepoRef.current = null;
+      dragRepoStartRef.current = null;
+      return;
+    }
+    if (
+      !repoDraggingRef.current &&
+      Math.hypot(e.clientX - start.x, e.clientY - start.y) <
+        TAB_DRAG_THRESHOLD_PX
+    ) {
+      return;
+    }
+    if (!repoDraggingRef.current) {
+      // First move past the dead zone: now it is a drag, so route the rest of
+      // the gesture here even when the pointer leaves the tab.
+      e.currentTarget.setPointerCapture(e.pointerId);
+    }
+    repoDraggingRef.current = true;
+    setDraggingRepo(dragged);
+    // Which tab is under the pointer. Pointer capture does not change hit
+    // testing, so this finds the hovered tab, not the dragged one.
+    const el = document
+      .elementFromPoint(e.clientX, e.clientY)
+      ?.closest("[data-repo-id]");
+    const over = el?.getAttribute("data-repo-id") ?? null;
+    const target = over !== null && over !== dragged ? over : null;
+    dragOverRepoRef.current = target;
+    setDragOverRepo(target);
+  };
+
+  const onRepoDragEnd = () => {
+    const dragged = dragRepoRef.current;
+    const target = dragOverRepoRef.current;
+    if (dragged !== null && repoDraggingRef.current && target !== null) {
+      const order = reorderByDrop(
+        repos.map((r) => r.id),
+        dragged,
+        target,
+      );
+      commitRepoOrder(order);
+    }
+    endRepoDrag();
+  };
 
   // Bumped when the tab comes back after the device slept or the network
   // returned. A mobile browser suspends the page and drops the in-flight poll,
@@ -675,6 +833,7 @@ export function App() {
       // their accent. Everything else in them is still current.
       const writes = accentWrites.current;
       const widthWrites = sidebarWrites.current;
+      const orderWrites = repoOrderWrites.current;
       return api
         .repos(controller.signal)
         .then(({ repos: list, hot, accent, sidebar_width, now_ms }) => {
@@ -691,7 +850,36 @@ export function App() {
           // We now hold the authoritative list for this session; the initial
           // splash can give way to the shell (or the empty-state prompt).
           setReposLoaded(true);
-          setRepos(list);
+          // Take the server's tab order unless a reorder is live or unsettled —
+          // the accent/width generation guard, plus a live-drag guard and a
+          // pending-write guard. The last one closes the window this leaves for
+          // them: a poll that departed after the counter bumped but read the
+          // server before the POST committed carries a stale order at a matching
+          // generation, so also refuse the order while a reorder POST is in
+          // flight or queued. (One residual snap-back remains — a poll that read
+          // pre-commit yet arrives after the POST settles — self-corrected by the
+          // next poll, the same transient the accent and width accept.) When
+          // guarded, keep the local order but still adopt the server's membership
+          // (repos opened or closed elsewhere), the way `reconcileOrder` folds a
+          // desired order into the present set.
+          const reorderPending =
+            reorderInFlightRef.current || pendingReorderRef.current !== null;
+          if (
+            repoOrderWrites.current === orderWrites &&
+            !repoDraggingRef.current &&
+            !reorderPending
+          ) {
+            setRepos(list);
+          } else {
+            setRepos((prev) => {
+              const ids = reconcileOrder(
+                list.map((r) => r.id),
+                prev.map((r) => r.id),
+              );
+              const byId = new Map(list.map((r) => [r.id, r]));
+              return ids.map((id) => byId.get(id)!).filter(Boolean) as Repo[];
+            });
+          }
           // Keep the current selection when it survives; otherwise fall back to
           // the first repo, so closing the active tab in the TUI does not leave
           // the page pointing at an id the server no longer knows.
@@ -1180,7 +1368,17 @@ export function App() {
           {repos.map((r) => (
             <div
               key={r.id}
+              data-repo-id={r.id}
+              onPointerDown={(e) => onRepoDragStart(e, r.id)}
+              onPointerMove={onRepoDragMove}
+              onPointerUp={onRepoDragEnd}
+              onPointerCancel={endRepoDrag}
+              onLostPointerCapture={onRepoDragEnd}
               className={`flex items-center border-r border-ink-700 whitespace-nowrap ${
+                repos.length > 1 ? "touch-none" : ""
+              } ${draggingRepo === r.id ? "opacity-60" : ""} ${
+                dragOverRepo === r.id ? "bg-ink-800 ring-1 ring-inset ring-accent" : ""
+              } ${
                 r.id === repo
                   ? "bg-ink-950 text-ink-50 shadow-[inset_0_2px_0_0_var(--color-accent)]"
                   : "text-ink-400 hover:bg-ink-850 hover:text-ink-200"
@@ -1197,6 +1395,7 @@ export function App() {
                 {r.name}
               </button>
               <button
+                data-tab-close
                 onClick={(e) => {
                   e.stopPropagation();
                   closeRepo(r.id);

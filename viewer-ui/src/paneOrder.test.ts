@@ -48,3 +48,24 @@ describe("reconcileOrder", () => {
     expect(reconcileOrder([1, 2], [])).toEqual([1, 2]);
   });
 });
+
+// The same logic backs the project tabs, whose ids are strings — exercise the
+// generic with strings so a number-only regression cannot slip through.
+describe("문자열_id로도_동작한다 (project tabs)", () => {
+  it("reorderByDrop이_문자열_id를_재배열한다", () => {
+    expect(reorderByDrop(["r1", "r2", "r3"], "r3", "r1")).toEqual([
+      "r3",
+      "r1",
+      "r2",
+    ]);
+  });
+
+  it("reconcileOrder가_문자열_membership을_접는다", () => {
+    // A repo closed elsewhere ("r2") drops out; a new one ("r4") appends.
+    expect(reconcileOrder(["r1", "r3", "r4"], ["r3", "r1", "r2"])).toEqual([
+      "r3",
+      "r1",
+      "r4",
+    ]);
+  });
+});
