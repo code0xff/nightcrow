@@ -1,6 +1,4 @@
-/// Search-input string paired with its lowercased form. The two used to live
-/// as independent `String` fields on `DiffSearch` and `StatusView`, which
-/// meant every mutation site had to remember to re-lowercase. Bundling the
+/// Search-input string paired with its lowercased form. Bundling the
 /// invariant into one type keeps callers honest: pushing or popping always
 /// updates both halves in lockstep, and renderers/filters read the canonical
 /// lower form through `lower()`.
@@ -39,8 +37,8 @@ impl SearchQuery {
         self.lower.clear();
     }
 
-    /// Replace the query wholesale. Used by tests to seed an initial query
-    /// without char-by-char push; runtime callers always go through push/pop.
+    /// Replace the query wholesale. Used by tests to seed an initial query;
+    /// runtime callers always go through push/pop.
     #[cfg(test)]
     pub fn set(&mut self, s: impl Into<String>) {
         self.raw = s.into();

@@ -1,0 +1,158 @@
+use super::*;
+
+/// Backspace is the "edit this path" gesture — the sub-directory case
+/// depends on the prefill surviving it.
+/// →/End keeps the prefill and appends, which is what the sub-directory
+/// case needs: Backspace would eat the trailing separator first.
+#[test]
+fn successful_snapshot_preserves_terminal_status() {
+    let (snapshot, tx) = dummy_snapshot_channel();
+    let mut app = App {
+        notice: Some(Notice::new(NoticeKind::Terminal, "backend unavailable")),
+        snapshot,
+        pending_snapshot: None,
+        ..app_with_files(vec![])
+    };
+
+    tx.send(SnapshotMsg::Ok(
+        RepoSnapshot {
+            files: Vec::new(),
+            tracking: None,
+            head_oid: None,
+            branch_name: None,
+        },
+        HashMap::new(),
+    ))
+    .unwrap();
+    app.poll_snapshot();
+
+    assert_eq!(
+        app.notice,
+        Some(Notice::new(NoticeKind::Terminal, "backend unavailable"))
+    );
+}
+
+#[test]
+fn successful_snapshot_clears_git_status() {
+    let (snapshot, tx) = dummy_snapshot_channel();
+    let mut app = App {
+        notice: Some(Notice::new(NoticeKind::Git, "not a repo")),
+        snapshot,
+        pending_snapshot: None,
+        ..app_with_files(vec![])
+    };
+
+    tx.send(SnapshotMsg::Ok(
+        RepoSnapshot {
+            files: Vec::new(),
+            tracking: None,
+            head_oid: None,
+            branch_name: None,
+        },
+        HashMap::new(),
+    ))
+    .unwrap();
+    app.poll_snapshot();
+
+    assert_eq!(app.notice, None);
+}
+
+#[test]
+fn snapshot_refresh_clamps_selection_to_active_filter() {
+    let (snapshot, tx) = dummy_snapshot_channel();
+    let mut app = App {
+        snapshot,
+        pending_snapshot: None,
+        ..app_with_files(vec!["bar.rs"])
+    };
+    app.status_view.search_query.set("bar");
+    app.status_view.recompute_filter();
+
+    tx.send(SnapshotMsg::Ok(
+        RepoSnapshot {
+            files: vec![
+                ChangedFile::unstaged_only("aaa.rs".to_string(), StatusKind::Modified),
+                ChangedFile::unstaged_only("bar2.rs".to_string(), StatusKind::Modified),
+            ],
+            tracking: None,
+            head_oid: None,
+            branch_name: None,
+        },
+        HashMap::new(),
+    ))
+    .unwrap();
+    app.poll_snapshot();
+
+    assert_eq!(app.filtered_indices(), &[1]);
+    assert_eq!(app.status_view.selected, 1);
+    assert_eq!(
+        app.status_view.files[app.status_view.selected].path,
+        "bar2.rs"
+    );
+}
+
+#[test]
+fn snapshot_invalidates_path_width_cache_on_same_length_rename() {
+    let (snapshot, tx) = dummy_snapshot_channel();
+    let mut app = App {
+        snapshot,
+        pending_snapshot: None,
+        ..app_with_files(vec!["short.rs"])
+    };
+    // Prime the width cache by reading the right-scroll bound once.
+    app.file_scroll_right();
+    // Rename to a longer path while keeping the file count constant.
+    // Length-keyed invalidation alone would miss this; the cache must
+    // clear on every `set_files` assignment.
+    tx.send(SnapshotMsg::Ok(
+        RepoSnapshot {
+            files: vec![ChangedFile::unstaged_only(
+                "a_much_longer_renamed_path.rs".to_string(),
+                StatusKind::Modified,
+            )],
+            tracking: None,
+            head_oid: None,
+            branch_name: None,
+        },
+        HashMap::new(),
+    ))
+    .unwrap();
+    app.poll_snapshot();
+    // Drive enough right-scrolls to reach the new max; if the cache were
+    // stale we would clamp at the old (shorter) bound.
+    for _ in 0..20 {
+        app.file_scroll_right();
+    }
+    assert!(app.status_view.file_scroll_x >= "short.rs".chars().count());
+}
+
+#[test]
+fn snapshot_refresh_with_no_filter_matches_clears_stale_diff() {
+    let (snapshot, tx) = dummy_snapshot_channel();
+    let mut app = App {
+        snapshot,
+        pending_snapshot: None,
+        ..app_with_files(vec!["bar.rs"])
+    };
+    app.status_view.search_query.set("bar");
+    app.status_view.recompute_filter();
+    app.diff.hunks = vec![context_hunk(&["stale"])];
+
+    tx.send(SnapshotMsg::Ok(
+        RepoSnapshot {
+            files: vec![ChangedFile::unstaged_only(
+                "aaa.rs".to_string(),
+                StatusKind::Modified,
+            )],
+            tracking: None,
+            head_oid: None,
+            branch_name: None,
+        },
+        HashMap::new(),
+    ))
+    .unwrap();
+    app.poll_snapshot();
+
+    assert!(app.filtered_indices().is_empty());
+    assert!(app.diff.hunks.is_empty());
+}

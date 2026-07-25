@@ -151,7 +151,10 @@ mod tests {
         let text = text(&serve("/crow-mono-does-not-exist.svg").unwrap());
 
         assert!(text.starts_with("HTTP/1.1 404"), "got: {text}");
-        assert!(!text.contains("<div id=\"root\">"), "must not serve the shell");
+        assert!(
+            !text.contains("<div id=\"root\">"),
+            "must not serve the shell"
+        );
     }
 
     #[test]

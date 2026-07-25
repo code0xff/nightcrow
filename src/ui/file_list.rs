@@ -65,8 +65,8 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect, accent: Color) {
             let color = super::status_color(f.most_severe());
             let scroll_x = app.status_view.file_scroll_x;
             // Borrow `f.path` (which outlives the item list) in the common
-            // non-rename case so rendering stays allocation-free; only renames,
-            // whose `old -> new` display string is owned, allocate.
+            // non-rename case so rendering stays allocation-free; only
+            // renames, whose `old -> new` display string is owned, allocate.
             let path: std::borrow::Cow<'_, str> = match f.display_path() {
                 std::borrow::Cow::Borrowed(_) => {
                     std::borrow::Cow::Borrowed(super::char_offset(&f.path, scroll_x))
@@ -87,9 +87,9 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect, accent: Color) {
             };
 
             // The status symbol keeps its change-status color across all hot
-            // stages so the change kind (added/modified/…) stays readable.
-            // Recency is conveyed by path styling only — no leading glyph —
-            // so transitions between stages don't shift the row width.
+            // stages so the change kind stays readable. Recency is conveyed by
+            // path styling only — no leading glyph — so transitions between
+            // stages don't shift the row width.
             let line = match stage {
                 HotStage::Cool => Line::from(vec![
                     Span::styled(format!("{symbol} "), Style::default().fg(color)),

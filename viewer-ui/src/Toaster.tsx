@@ -7,16 +7,12 @@ import {
   type ToastKind,
 } from "./toast";
 
-// Errors linger longer than confirmations, since a failure is the one a reader
-// most needs time to catch.
 const DURATION_MS: Record<ToastKind, number> = {
   error: 7000,
   info: 5000,
   success: 5000,
 };
 
-// Reuse the TUI-carried palette: red for errors, green for success, accent
-// (amber) for neutral info — the same tokens the inline notices used.
 const TEXT: Record<ToastKind, string> = {
   error: "text-removed",
   info: "text-accent",
@@ -31,8 +27,7 @@ export function Toaster() {
 
   return (
     <div
-      // Above the folder picker / login overlays (z-50) so a message about a
-      // failed action is never hidden behind the action's own dialog.
+      // Keep errors visible above modal overlays.
       className="pointer-events-none fixed right-3 top-3 z-[60] flex w-80 max-w-[calc(100vw-1.5rem)] flex-col gap-2"
       aria-live="polite"
     >
@@ -46,8 +41,6 @@ export function Toaster() {
 function ToastItem({ toast }: { toast: Toast }) {
   const [paused, setPaused] = useState(false);
 
-  // Re-arm the auto-dismiss timer whenever the toast is re-pushed (`bump`) or
-  // the pointer leaves; hovering pauses it so a message stays put while read.
   useEffect(() => {
     if (paused) return;
     const timer = setTimeout(

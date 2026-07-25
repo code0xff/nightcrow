@@ -1,7 +1,5 @@
 //! Embedded frontend assets. Bundled into the binary so the server is
-//! self-contained and works offline. The terminal page and its vendored
-//! xterm.js renderer are fleshed out in the frontend step; the login page is
-//! self-contained here.
+//! self-contained and works offline.
 
 use crate::web::common::html_escape;
 

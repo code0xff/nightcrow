@@ -1,8 +1,4 @@
-// A tiny dependency-free toast store. Any module (App's error sink, the
-// terminal socket) pushes through `toast.*`; a single `<Toaster />` mounted at
-// the root subscribes and renders. Kept as a module singleton rather than React
-// context so non-component code and lazily-loaded panels can reach it without
-// threading a provider through the tree.
+// A module singleton lets non-component code publish without a provider.
 
 export type ToastKind = "error" | "info" | "success";
 
@@ -10,16 +6,13 @@ export interface Toast {
   id: number;
   kind: ToastKind;
   message: string;
-  // Incremented when an identical toast is pushed again while still visible, so
-  // the view resets its auto-dismiss timer instead of stacking duplicates — a
-  // failing 3s repo poll would otherwise flood the stack with the same message.
+  // Repeated identical toasts reset their timer instead of stacking.
   bump: number;
 }
 
 type Listener = (toasts: Toast[]) => void;
 
-// Cap the stack so a burst of distinct errors cannot cover the screen; the
-// oldest fall off the top.
+// Bound the visible stack during bursts.
 const MAX = 4;
 
 let toasts: Toast[] = [];

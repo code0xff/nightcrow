@@ -1,70 +1,42 @@
 //! `App` methods for the read-only file-tree navigator (`ViewMode::Tree`).
 //!
-//! Directory I/O is synchronous and performed here on the UI thread (one level
-//! per expansion via `crate::git::tree::read_children`); the git-status
-//! snapshot worker is never involved. Selecting a file row loads its raw
-//! contents into the existing file-view pane (`DiffPaneView::File`) — the same
-//! surface used by the status/commit file preview, so no new render path is
-//! introduced.
+//! Directory I/O is synchronous on the UI thread (one level per expansion);
+//! the git-status snapshot worker is never involved. Selecting a file row
+//! loads its raw contents into the existing file-view pane.
 
-use super::{App, DiffPaneView, FileViewKey, FileViewState, LIST_PAGE_SIZE, NoticeKind, ViewMode};
-use crate::ui::tree_view::{TreeIndexEntry, parent_path};
+use super::{App, DiffPaneView, FileViewKey, FileViewState, NoticeKind, ViewMode};
 use std::collections::BTreeSet;
 
 impl App {
-    /// Enter Tree mode: load the root level, clamp the cursor, and preview the
-    /// selected row. Safe to call repeatedly (the root read is cached).
     pub fn enter_tree_mode(&mut self) {
         self.mode = ViewMode::Tree;
-        // A commit-log page fetch spawned in Log mode could still be in flight;
-        // its reply loads a commit diff over `self.diff`, which would clobber
-        // the Tree file preview a tick later. Cancel it on entry so only Tree
-        // controls the diff pane while this mode is active.
+        // A Log-mode page fetch in flight would clobber the Tree preview a tick
+        // later; cancel so only Tree controls the diff pane while active.
         self.cancel_commit_log_page_fetch();
-        // Drop a lingering status-search overlay so its modal key handler can't
-        // keep capturing keystrokes after the mode switch. (`clear_diff_state`
-        // below clears the diff-search overlay.) This closes the case where a
-        // search started before a pending session restore would otherwise route
-        // Tree keys into the hidden search handler.
+        // Drop lingering search overlays so their modal handlers can't capture
+        // Tree keystrokes after the mode switch.
         self.status_view.cancel_search();
-        // A prior Tree session could be re-entered with a stale search overlay;
-        // start clean so the first keystroke is plain navigation.
         self.tree_view.cancel_search();
-        // Drop any diff/file-view state from the prior mode so the right pane
-        // starts clean; `preview_tree_selected` repopulates it.
         self.clear_diff_state();
-        // Re-read from disk so a directory created/moved/renamed/deleted while
-        // away from Tree mode is reflected — the per-directory cache is
-        // otherwise only cleared on a repo switch, so structural changes never
-        // surfaced here. The same re-read is what the filesystem watcher runs on
-        // each change while Tree mode stays open.
+        // Re-read from disk so structural changes while away from Tree show up
+        // (the per-directory cache is otherwise only cleared on repo switch).
         self.refresh_tree_preserving_cursor();
     }
 
-    /// Re-read the tree from disk while keeping the cursor on the same path. The
-    /// re-read can shift the row set (a directory created/moved/deleted changes
-    /// which rows are visible), so the path under the cursor is captured first
-    /// and the cursor restored to it afterwards; if that path is gone the cursor
-    /// falls back to a clamped index. Shared by Tree-mode entry, session
-    /// restore, and the watcher-driven live refresh.
     pub(crate) fn refresh_tree_preserving_cursor(&mut self) {
         self.refresh_tree_preserving_cursor_scoped(None);
     }
 
-    /// As above, re-reading only the listings named by `invalidate` (see
-    /// `refresh_tree_cache_scoped`).
     pub(crate) fn refresh_tree_preserving_cursor_scoped(
         &mut self,
         invalidate: Option<&BTreeSet<String>>,
     ) {
         let prev_path = self.tree_view.selected_path();
         self.refresh_tree_cache_scoped(invalidate);
-        // The filtered view renders from the search index, not the directory
-        // cache, so refreshing only the cache would leave a created or deleted
-        // file missing from the results and the match count wrong until the
-        // query changed. The rebuild walks the cache rather than the disk —
-        // only the invalidated listings above are re-read — so its cost is
-        // proportional to what changed, not to the size of the tree.
+        // The filtered view renders from the search index, not the cache, so
+        // refreshing only the cache would leave results stale until the query
+        // changed. The rebuild walks the cache (only invalidated listings
+        // re-read), so cost is proportional to what changed.
         if self.tree_view.search_active {
             self.build_tree_index();
             self.tree_view.recompute_filter();
@@ -80,26 +52,14 @@ impl App {
         self.preview_tree_selected();
     }
 
-    /// Drop the per-directory cache and re-read the root plus every currently
-    /// expanded directory from disk, so structural changes made while away from
-    /// Tree mode become visible. Expanded directories are re-read top-down
-    /// (shallowest first) so each parent listing is available before its
-    /// children are checked. A directory that no longer appears in its freshly
-    /// read parent listing — e.g. one that was moved or deleted — is dropped
-    /// from the expanded set instead of being re-read, so a vanished directory
-    /// cannot surface a spurious "tree error" in the status bar.
     pub(crate) fn refresh_tree_cache(&mut self) {
         self.refresh_tree_cache_scoped(None);
     }
 
-    /// Re-read directory listings, dropping either the whole cache or only the
-    /// listings named by `invalidate`.
-    ///
-    /// The scoped form is what a watcher event uses: everything else stays
-    /// cached, so the rebuild that follows touches disk only for the
-    /// directories that actually changed. The expansion-pruning loop below is
-    /// identical either way — `ensure_tree_children` is a no-op for a listing
-    /// still in the cache.
+    // Scoped form is what a watcher event uses: everything else stays cached,
+    // so the rebuild touches disk only for changed directories. The
+    // expansion-pruning loop is identical either way — `ensure_tree_children`
+    // is a no-op for a listing still in the cache.
     pub(crate) fn refresh_tree_cache_scoped(&mut self, invalidate: Option<&BTreeSet<String>>) {
         match invalidate {
             None => self.tree_view.cache.clear(),
@@ -114,7 +74,7 @@ impl App {
         dirs.sort_by_key(|p| p.matches('/').count());
         let mut kept = BTreeSet::new();
         for dir in dirs {
-            let parent = parent_path(&dir).unwrap_or("");
+            let parent = crate::ui::tree_view::parent_path(&dir).unwrap_or("");
             let name = dir.rsplit('/').next().unwrap_or(&dir);
             let still_a_dir = self
                 .tree_view
@@ -128,75 +88,58 @@ impl App {
         }
         self.tree_view.expanded = kept;
         self.tree_view.row_width_cache.set(None);
-        // The expansion set may have changed (pruned vanished dirs); reconcile
-        // the watch set so the watcher tracks exactly the visible directories.
         self.sync_tree_watches();
     }
 
-    /// Reconcile the filesystem watcher to the directories currently visible in
-    /// Tree mode (the root plus every expanded directory). No-op when live
-    /// watching is disabled or the working tree cannot be resolved.
     pub(crate) fn sync_tree_watches(&mut self) {
         if !self.cfg_tree.live_watch {
             return;
         }
         // A filename search matches the whole tree, not just what is expanded,
-        // so a file created in a collapsed directory changes the results and
-        // has to produce an event. The cache keys are exactly the directories
-        // `build_tree_index` walked, which is the set the results come from.
+        // so a file created in a collapsed directory must produce an event.
         let mut desired: BTreeSet<String> = if self.tree_view.search_active {
             self.tree_view.cache.keys().cloned().collect()
         } else {
             self.tree_view.expanded.iter().cloned().collect()
         };
-        // The root is always watched while Tree mode is open so top-level
-        // creations/removals are caught even with nothing expanded.
+        // Root is always watched so top-level creations/removals are caught
+        // even with nothing expanded.
         desired.insert(String::new());
         if let Some(workdir) = self.tree_workdir() {
             self.tree_watch.sync(&workdir, &desired);
         }
     }
 
-    /// Tear down all tree watches (reconcile to the empty set). Called on exit
-    /// from Tree mode so watch descriptors aren't held while the tree is hidden.
     pub(crate) fn clear_tree_watches(&mut self) {
         if let Some(workdir) = self.tree_workdir() {
             self.tree_watch.sync(&workdir, &BTreeSet::new());
         }
     }
 
-    /// Absolute working-tree root, or `None` for a bare repo / open failure.
     fn tree_workdir(&mut self) -> Option<std::path::PathBuf> {
         self.with_repo(|repo| Ok(repo.workdir().map(|w| w.to_path_buf())))
             .ok()
             .flatten()
     }
 
-    /// Drain filesystem-watcher events and, while Tree mode is open, re-read the
-    /// tree if anything changed. Called every main-loop tick alongside the other
-    /// pollers; cheap when idle (a non-blocking channel drain).
-    /// Empty the watcher's event queue, remembering only that something
-    /// changed.
-    ///
-    /// The cheap half: no directory is reread and no file is previewed. Every
-    /// project runs this each tick so OS events cannot pile up behind a hidden
-    /// tab, while the rereading waits for that tab to come forward.
+    // Cheap half: no directory reread, no preview. Every project runs this each
+    // tick so OS events can't pile up behind a hidden tab; rereading waits for
+    // that tab to come forward.
     pub fn drain_tree_watcher(&mut self) {
         let changes = self.tree_watch.drain_changed();
         if changes.is_empty() {
             return;
         }
         if changes.unknown {
-            // Events may have been dropped, so no set of directories can be
-            // trusted to be complete — fall back to re-reading everything.
+            // Events may have been dropped — no directory set can be trusted
+            // complete; fall back to re-reading everything.
             self.tree_dirty_all = true;
         }
         self.tree_dirty.extend(changes.dirs);
     }
 
-    /// Drain, then act on it: reread the expanded directories and re-preview
-    /// the selection. Only the project on screen does this — several
-    /// repositories rereading directories per tick would stall the active tab.
+    // Only the project on screen does this — several repos rereading per tick
+    // would stall the active tab.
     pub fn poll_tree_watcher(&mut self) {
         self.drain_tree_watcher();
         if self.mode != ViewMode::Tree || (self.tree_dirty.is_empty() && !self.tree_dirty_all) {
@@ -207,7 +150,6 @@ impl App {
         self.refresh_tree_preserving_cursor_scoped(if all { None } else { Some(&dirs) });
     }
 
-    /// Leave Tree mode back to the working-tree status view.
     pub fn exit_tree_to_status(&mut self) {
         self.tree_view.cancel_search();
         self.clear_tree_watches();
@@ -216,15 +158,12 @@ impl App {
         self.refresh_diff(true);
     }
 
-    /// Ensure the root directory's children are loaded into the cache.
     pub(crate) fn ensure_tree_root(&mut self) {
         self.ensure_tree_children("");
     }
 
-    /// Load the immediate children of `dir` (repo-relative) into the cache if
-    /// not already present. A read error caches an empty listing and surfaces
-    /// the message in the status bar so a single unreadable directory cannot
-    /// wedge navigation.
+    // A read error caches an empty listing and surfaces the message so a
+    // single unreadable directory can't wedge navigation.
     pub(crate) fn ensure_tree_children(&mut self, dir: &str) {
         if self.tree_view.cache.contains_key(dir) {
             return;
@@ -247,16 +186,13 @@ impl App {
             Err(e) => {
                 tracing::warn!(error = %e, dir = %dir, "failed to read tree directory");
                 self.raise_notice(NoticeKind::Tree, e.to_string());
-                // Cache an empty listing so we don't retry the failing read on
-                // every keystroke; a repo change / refresh clears the cache.
+                // Cache empty so we don't retry the failing read on every
+                // keystroke; a repo change / refresh clears the cache.
                 self.tree_view.cache.insert(dir.to_string(), Vec::new());
             }
         }
     }
 
-    /// Load the raw contents of the selected file row into the file-view pane.
-    /// Directory rows (and an empty tree) show a blank pane — there is no diff
-    /// in this mode, so the right pane is always the file overlay.
     pub(crate) fn preview_tree_selected(&mut self) {
         let selected = self.tree_view.selected;
         let row = self.tree_view.visible_rows().into_iter().nth(selected);
@@ -273,242 +209,5 @@ impl App {
                 self.diff.file_view = FileViewState::default();
             }
         }
-    }
-
-    /// Move the tree cursor by `delta` rows within the visible list, clamping
-    /// at both ends, and preview the new row.
-    fn move_tree_selection(&mut self, delta: isize) {
-        let len = self.tree_view.visible_rows().len();
-        if len == 0 {
-            self.tree_view.selected = 0;
-            return;
-        }
-        let last = len as isize - 1;
-        let current = self.tree_view.selected.min(len - 1) as isize;
-        let new = (current + delta).clamp(0, last) as usize;
-        if new != self.tree_view.selected {
-            self.tree_view.selected = new;
-            self.tree_view.scroll_x = 0;
-            self.preview_tree_selected();
-        }
-    }
-
-    pub fn tree_select_up(&mut self) {
-        self.move_tree_selection(-1);
-    }
-
-    pub fn tree_select_down(&mut self) {
-        self.move_tree_selection(1);
-    }
-
-    pub fn tree_page_up(&mut self) {
-        self.move_tree_selection(-(LIST_PAGE_SIZE as isize));
-    }
-
-    pub fn tree_page_down(&mut self) {
-        self.move_tree_selection(LIST_PAGE_SIZE as isize);
-    }
-
-    /// Expand the selected directory row (lazily reading its children). No-op
-    /// on file rows, already-expanded directories, or expansion past the
-    /// configured `max_depth`.
-    pub fn tree_expand(&mut self) {
-        let selected = self.tree_view.selected;
-        let Some(row) = self.tree_view.visible_rows().into_iter().nth(selected) else {
-            return;
-        };
-        if !row.is_dir || self.tree_view.expanded.contains(&row.path) {
-            return;
-        }
-        if row.depth + 1 > self.cfg_tree.max_depth {
-            return;
-        }
-        self.ensure_tree_children(&row.path);
-        self.tree_view.expanded.insert(row.path);
-        // Visible rows changed: a same-row-count expand/collapse elsewhere
-        // could otherwise reuse a stale horizontal-scroll width bound.
-        self.tree_view.row_width_cache.set(None);
-        // A newly expanded directory becomes visible — start watching it.
-        self.sync_tree_watches();
-    }
-
-    /// Collapse the selected directory if expanded; otherwise move the cursor
-    /// up to its parent directory row (so repeated `Left` walks back out).
-    pub fn tree_collapse(&mut self) {
-        let rows = self.tree_view.visible_rows();
-        let Some(row) = rows.get(self.tree_view.selected) else {
-            return;
-        };
-        if row.is_dir && self.tree_view.expanded.contains(&row.path) {
-            let path = row.path.clone();
-            // Drop the directory and every descendant from the expanded set so
-            // re-expanding it later starts collapsed rather than restoring a
-            // deep open subtree the user explicitly closed.
-            let prefix = format!("{path}/");
-            self.tree_view
-                .expanded
-                .retain(|p| p != &path && !p.starts_with(&prefix));
-            self.tree_view.row_width_cache.set(None);
-            // The collapsed subtree is no longer visible — stop watching it.
-            self.sync_tree_watches();
-            return;
-        }
-        if let Some(parent) = parent_path(&row.path) {
-            let parent = parent.to_string();
-            if let Some(idx) = rows.iter().position(|r| r.path == parent) {
-                self.tree_view.selected = idx;
-                self.tree_view.scroll_x = 0;
-                self.preview_tree_selected();
-            }
-        }
-    }
-
-    /// Enter toggles a directory open/closed; on a file row it (re)loads the
-    /// preview, mirroring selection behaviour.
-    pub fn tree_toggle(&mut self) {
-        let selected = self.tree_view.selected;
-        let Some(row) = self.tree_view.visible_rows().into_iter().nth(selected) else {
-            return;
-        };
-        if row.is_dir {
-            if self.tree_view.expanded.contains(&row.path) {
-                self.tree_collapse();
-            } else {
-                self.tree_expand();
-            }
-        } else {
-            self.preview_tree_selected();
-        }
-    }
-
-    /// Open the filename-search overlay: walk the whole tree once to build the
-    /// search index, then keep showing the (still unfiltered) view until the
-    /// user types a query.
-    pub fn start_tree_search(&mut self) {
-        self.build_tree_index();
-        self.tree_view.search_active = true;
-        self.tree_view.search_query.clear();
-        self.tree_view.recompute_filter();
-        // The results now span the whole tree, so the watch set has to as well
-        // — a file created in a directory the user never expanded still
-        // changes them. `sync_tree_watches` reads `search_active`, so this
-        // must come after it is set.
-        self.sync_tree_watches();
-    }
-
-    pub fn tree_search_push(&mut self, ch: char) {
-        self.tree_view.search_query.push(ch);
-        self.tree_view.recompute_filter();
-        self.reset_tree_selection_after_filter();
-    }
-
-    pub fn tree_search_pop(&mut self) {
-        self.tree_view.search_query.pop();
-        self.tree_view.recompute_filter();
-        self.reset_tree_selection_after_filter();
-    }
-
-    /// Close the overlay without changing the expansion state; the cursor stays
-    /// on whatever row maps into the now-unfiltered view.
-    pub fn cancel_tree_search(&mut self) {
-        self.tree_view.cancel_search();
-        // Back to watching only what is expanded: the wider set existed for
-        // the filtered view and would otherwise hold descriptors for the whole
-        // tree until Tree mode was left.
-        self.sync_tree_watches();
-        let row_count = self.tree_view.visible_rows().len();
-        self.tree_view.clamp_selection(row_count);
-        self.preview_tree_selected();
-    }
-
-    /// Confirm the current selection: reveal it in the normal expansion-based
-    /// view by expanding all of its ancestor directories, close the overlay,
-    /// and move the cursor onto that path. An empty query collapses to a cancel.
-    pub fn confirm_tree_search(&mut self) {
-        if self.tree_view.search_query.is_empty() {
-            self.cancel_tree_search();
-            return;
-        }
-        let target = self.tree_view.selected_path();
-        if let Some(path) = &target {
-            // Expand every ancestor so the chosen path is visible once
-            // filtering ends. The path itself (if a directory) is left
-            // collapsed — the user opens it explicitly.
-            let mut p = parent_path(path);
-            while let Some(parent) = p {
-                self.tree_view.expanded.insert(parent.to_string());
-                p = parent_path(parent);
-            }
-        }
-        self.tree_view.cancel_search();
-        self.sync_tree_watches();
-        if let Some(path) = target {
-            let rows = self.tree_view.visible_rows();
-            if let Some(idx) = rows.iter().position(|r| r.path == path) {
-                self.tree_view.selected = idx;
-            }
-        }
-        self.tree_view.scroll_x = 0;
-        let row_count = self.tree_view.visible_rows().len();
-        self.tree_view.clamp_selection(row_count);
-        self.preview_tree_selected();
-    }
-
-    /// After a query change the row set shifts, so pin the cursor to the first
-    /// *matching* row (skipping the ancestor directories pulled in only to
-    /// connect the path) and re-preview it. Falls back to the first row when
-    /// nothing matches the basename directly.
-    fn reset_tree_selection_after_filter(&mut self) {
-        self.tree_view.scroll_x = 0;
-        let rows = self.tree_view.visible_rows();
-        if rows.is_empty() {
-            self.tree_view.selected = 0;
-            self.preview_tree_selected();
-            return;
-        }
-        let q = self.tree_view.search_query.lower();
-        let first_match = rows
-            .iter()
-            .position(|r| r.name.to_lowercase().contains(q))
-            .unwrap_or(0);
-        self.tree_view.selected = first_match;
-        self.preview_tree_selected();
-    }
-
-    /// Walk the entire tree once (depth-capped at `max_depth`, gitignore applied
-    /// via the same guarded reader used for lazy expansion), populating the
-    /// per-directory cache and a flat search index. Synchronous on the UI thread
-    /// like the per-level reads — one keystroke triggers it, then all filtering
-    /// is in-memory.
-    pub(crate) fn build_tree_index(&mut self) {
-        self.ensure_tree_root();
-        let max_depth = self.cfg_tree.max_depth;
-        let mut index = Vec::new();
-        // (dir, depth-of-its-children): the root's children sit at depth 0.
-        let mut stack = vec![(String::new(), 0usize)];
-        while let Some((dir, depth)) = stack.pop() {
-            self.ensure_tree_children(&dir);
-            let children = match self.tree_view.cache.get(&dir) {
-                Some(c) => c.clone(),
-                None => continue,
-            };
-            for entry in children {
-                let path = if dir.is_empty() {
-                    entry.name.clone()
-                } else {
-                    format!("{dir}/{}", entry.name)
-                };
-                index.push(TreeIndexEntry {
-                    name_lower: entry.name.to_lowercase(),
-                    path: path.clone(),
-                });
-                // Descend only while the next level stays within max_depth,
-                // mirroring the expand guard (`depth + 1 > max_depth` blocks).
-                if entry.is_dir && depth < max_depth {
-                    stack.push((path, depth + 1));
-                }
-            }
-        }
-        self.tree_view.index = index;
     }
 }

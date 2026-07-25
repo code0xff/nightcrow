@@ -30,9 +30,8 @@ pub const HEAD_READ_TIMEOUT: Duration = Duration::from_secs(15);
 /// those starve the accept loop. This is the deadline that actually ends it.
 pub const REQUEST_DEADLINE: Duration = Duration::from_secs(30);
 
-/// Read the request head (up to CRLFCRLF) plus any declared body.
-///
-/// Both ceilings are enforced while reading, not after, so a client that never
+/// Read the request head (up to CRLFCRLF) plus any declared body. Both
+/// ceilings are enforced while reading, not after, so a client that never
 /// sends a terminator cannot grow the buffer without bound.
 pub fn read_request(stream: &mut TcpStream) -> Result<(RequestHead, String)> {
     stream.set_read_timeout(Some(HEAD_READ_TIMEOUT)).ok();

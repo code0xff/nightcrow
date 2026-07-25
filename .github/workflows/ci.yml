@@ -9,6 +9,42 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  package-versions:
+    name: Package versions
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Verify application package versions agree
+        run: |
+          node <<'NODE'
+          const fs = require('node:fs');
+
+          const cargo = fs.readFileSync('Cargo.toml', 'utf8');
+          const cargoVersion = cargo.match(/^version\s*=\s*"([^"]+)"$/m)?.[1];
+          const packageJson = JSON.parse(fs.readFileSync('viewer-ui/package.json', 'utf8'));
+          const packageLock = JSON.parse(fs.readFileSync('viewer-ui/package-lock.json', 'utf8'));
+          const versions = {
+            'Cargo.toml': cargoVersion,
+            'viewer-ui/package.json': packageJson.version,
+            'viewer-ui/package-lock.json': packageLock.version,
+          };
+
+          if (!cargoVersion || Object.values(versions).some((version) => version !== cargoVersion)) {
+            console.error('Application package versions must match:');
+            for (const [file, version] of Object.entries(versions)) console.error(`  ${file}: ${version ?? 'missing'}`);
+            process.exit(1);
+          }
+          NODE
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Verify Cargo lockfile
+        run: cargo metadata --locked --format-version 1 > /dev/null
+      - name: Verify npm lockfile
+        run: npm ci --ignore-scripts
+        working-directory: viewer-ui
+
   test:
     name: Test (${{ matrix.os }})
     runs-on: ${{ matrix.os }}

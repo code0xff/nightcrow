@@ -1,12 +1,11 @@
 use super::Workspace;
 use crate::app::NoticeKind;
 
-/// The outcome of confirming the repo-path dialog.
-///
-/// Opening is not carried out here: it builds a whole new `App`, which needs
-/// config the project does not carry, and it has to check whether another tab
-/// already holds that repo. So the accepted path is handed back and the
-/// caller, which owns the workspace, does the opening.
+/// The outcome of confirming the repo-path dialog. Opening is not carried out
+/// here: it builds a whole new `App`, which needs config the project does not
+/// carry, and it has to check whether another tab already holds that repo. So
+/// the accepted path is handed back and the caller, which owns the workspace,
+/// does the opening.
 #[derive(Debug, PartialEq, Eq)]
 pub enum RepoInputResult {
     /// Validation failed. The dialog stays open with the text intact and a
@@ -21,12 +20,10 @@ pub enum RepoInputResult {
 const REPO_INPUT_MAX_BYTES: usize = 4096;
 
 impl Workspace {
-    /// Open the dialog that adds a project tab.
-    ///
-    /// Prefilled with the active project's repo path: a sibling checkout is
-    /// the common case, and the shared prefix is most of what the user would
-    /// retype. With no project open there is nothing to prefill, so the dialog
-    /// starts empty.
+    /// Open the dialog that adds a project tab. Prefilled with the active
+    /// project's repo path: a sibling checkout is the common case, and the
+    /// shared prefix is most of what the user would retype. With no project
+    /// open there is nothing to prefill, so the dialog starts empty.
     pub fn start_repo_input(&mut self) {
         self.repo_input.buf = self
             .active()
@@ -80,8 +77,8 @@ impl Workspace {
     }
 
     pub fn repo_input_push(&mut self, ch: char) {
-        // Typing over an untouched prefill replaces it: the dialog opens on the
-        // current repo path, and a user heading somewhere unrelated would
+        // Typing over an untouched prefill replaces it: the dialog opens on
+        // the current repo path, and a user heading somewhere unrelated would
         // otherwise have to backspace all of it first. A paste lands here one
         // char at a time, so only its first char clears.
         if self.repo_input.prefilled {

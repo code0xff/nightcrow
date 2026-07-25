@@ -1,26 +1,11 @@
-//! App-level wrappers around `TerminalState` that mix in cross-cutting state
-//! (focus, status line, fullscreen flags). The pure terminal logic — event
-//! drain, pane create/close, emulator bookkeeping — lives on
-//! `TerminalState` in `runtime/terminal.rs`; this module exists for the
-//! handful of actions that have to coordinate that logic with the rest of
-//! `App`'s state machine.
+//! App-level wrappers around `TerminalState` mixing in cross-cutting state
+//! (focus, status line, fullscreen flags). Pure terminal logic lives on
+//! `TerminalState` in `runtime/terminal.rs`.
 
 use super::{App, Focus, NoticeKind};
 use crate::runtime::terminal::TerminalFullscreen;
 
 impl App {
-    /// Open the panes nightcrow starts with. With no reserved
-    /// `startup_commands`, this keeps the historical single empty-shell
-    /// behaviour. Otherwise it opens one pane per command, runs each command
-    /// immediately, and labels the tab with the command's `name` (falling
-    /// back to the command text).
-    ///
-    /// On a fresh launch the input focus lands on the first pane so a cockpit
-    /// user can type into the startup program (or the empty shell) right away.
-    /// A restored session overrides this later in `restore_session`, so the
-    /// last active pane/focus still wins on restart. When no pane could be
-    /// created (no backend, or `create_pane` failed), focus stays on the file
-    /// list — there is no terminal to focus.
     pub(crate) fn ensure_initial_terminal(
         &mut self,
         startup_commands: &[crate::config::StartupCommand],
@@ -40,9 +25,8 @@ impl App {
                 }
             }
         }
-        // Start at the top of the reserved set rather than the last pane
-        // created, and put input focus on it so keystrokes reach the terminal
-        // program immediately on first launch.
+        // Focus the first pane so keystrokes reach the terminal on first launch.
+        // A restored session overrides this later in `restore_session`.
         if !self.terminal.panes.is_empty() {
             self.terminal.active = 0;
             self.terminal.sync_visible_window();
@@ -51,9 +35,8 @@ impl App {
     }
 
     pub fn poll_terminal(&mut self) {
-        // `TerminalState::poll` only signals which panes the backend exited;
-        // re-clamping focus and fullscreen when one of them was the active
-        // pane is cross-cutting and stays here.
+        // `TerminalState::poll` only signals exited panes; re-clamping focus
+        // and fullscreen when the active pane was one of them stays here.
         if !self.terminal.poll().is_empty() {
             self.clamp_active_pane_after_removal();
         }
@@ -65,14 +48,9 @@ impl App {
             self.raise_notice(NoticeKind::Terminal, e.to_string());
             return;
         }
-        // Opening a pane succeeded, so a previous failure no longer describes
-        // the terminal's state.
         self.clear_notice(NoticeKind::Terminal);
-        // `create_pane` already made the new pane the active one within
-        // `TerminalState`; move the app-level focus onto it too so the user
-        // lands in the freshly opened terminal instead of staying on the
-        // file list or diff viewer. Drop competing fullscreen flags for the
-        // same reason `switch_pane` does — keep focus, render, and hints in sync.
+        // `create_pane` made the new pane active; move app focus onto it and
+        // drop competing fullscreen so focus/render/hints stay in sync.
         self.focus = Focus::Terminal;
         self.diff.fullscreen = false;
         self.list_fullscreen = false;
@@ -84,21 +62,15 @@ impl App {
         }
     }
 
-    /// Whether `<prefix> w` may close the active pane: terminal focus only.
-    /// Without it the active pane is deliberately rendered indistinguishable
-    /// from the others (see `terminal_tab::render`), so the close target
-    /// would be invisible. Single source for the key gate
-    /// (`main::handle_global_action`) and the hint rows, so an advertised
-    /// hint can never disagree with what the key does.
+    // Without terminal focus the active pane is rendered indistinguishable
+    // from the others, so the close target would be invisible. Single source
+    // for the key gate and the hint rows so they can never disagree.
     pub fn can_close_pane(&self) -> bool {
         self.focus == Focus::Terminal
     }
 
-    /// Whether `<prefix> s` may arm pane-swap mode: close's terminal-focus
-    /// scope (the active pane is the swap's first operand) plus a second
-    /// pane to swap with — with fewer, every target digit would be a no-op.
-    /// Single source for the key gate and the hint rows, like
-    /// `can_close_pane`.
+    // close's terminal-focus scope plus a second pane to swap with — fewer
+    // and every target digit would be a no-op. Single source like `can_close_pane`.
     pub fn can_swap_panes(&self) -> bool {
         self.focus == Focus::Terminal && self.terminal.panes.len() > 1
     }
@@ -107,51 +79,36 @@ impl App {
         if self.terminal.panes.is_empty() {
             self.terminal.active = 0;
             self.terminal.fullscreen = TerminalFullscreen::Off;
-            // Only redirect focus when it was actually on the terminal —
-            // otherwise an externally-exited last pane (Ctrl+D in the only
-            // shell while the user was reading the diff) would yank focus
-            // away from where the user was working.
+            // Only redirect focus when it was on the terminal — otherwise an
+            // externally-exited last pane would yank focus from where the user
+            // was working.
             if self.focus == Focus::Terminal {
                 self.focus = Focus::DiffViewer;
             }
         } else {
             self.terminal.active = self.terminal.active.min(self.terminal.panes.len() - 1);
-            // Closing a pane while zoomed can leave `Zoom` in a state where it's
-            // indistinguishable from `Grid`. Normalize down so the held state
-            // matches the invariant the cycle keeps (Zoom only when distinct).
+            // Normalize a `Zoom` that's now indistinguishable from `Grid` so
+            // the held state matches the invariant the cycle keeps.
             if self.terminal.fullscreen == TerminalFullscreen::Zoom
                 && !self.terminal.zoom_distinct_from_grid()
             {
                 self.terminal.fullscreen = TerminalFullscreen::Grid;
             }
         }
-        // The pane count (and possibly `active`) just changed — re-clamp the
-        // split-view window so it still points at real panes.
         self.terminal.sync_visible_window();
     }
 
-    /// Move terminal focus to pane `idx`. This is a focus jump, not a tab
-    /// switch: every visible pane keeps rendering, this only changes which
-    /// one is active (cursor, input, and the accent-bordered cell).
     pub fn switch_pane(&mut self, idx: usize) {
         if idx < self.terminal.panes.len() {
             self.terminal.active = idx;
             self.terminal.sync_visible_window();
             self.focus = Focus::Terminal;
-            // Pressing F1..=F10 is a request to interact with a terminal pane;
-            // drop any competing fullscreen so focus, render, and hints stay
-            // in sync (otherwise a zoomed diff/list would persist while focus
-            // moves away).
+            // Drop competing fullscreen so focus/render/hints stay in sync.
             self.diff.fullscreen = false;
             self.list_fullscreen = false;
         }
     }
 
-    /// Swap the active pane with pane `idx`, moving focus so it follows the
-    /// active pane to its new slot. Like `switch_pane`, this drops competing
-    /// fullscreen and puts input focus on the terminal so the reordered pane is
-    /// the one the user is now driving. No-op when `idx` is out of range or
-    /// equals the active pane.
     pub fn swap_active_pane_with(&mut self, idx: usize) {
         if self.terminal.swap_active_with(idx) {
             self.focus = Focus::Terminal;

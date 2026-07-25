@@ -2,17 +2,17 @@
 //!
 //! The ordinary response builder in [`super::http`] always emits a
 //! `Content-Length` and `Connection: close`, which ends the connection after
-//! one body — the opposite of what a live stream needs. An SSE response instead
-//! keeps the socket open and appends events until one side gives up, so it
-//! writes its own head and owns the connection from then on.
+//! one body — the opposite of what a live stream needs. An SSE response
+//! instead keeps the socket open and appends events until one side gives up,
+//! so it writes its own head and owns the connection from then on.
 //!
-//! Generic over [`Write`] so the framing is unit-testable against a buffer and
-//! the same code drives a real `TcpStream`.
+//! Generic over [`Write`] so the framing is unit-testable against a buffer
+//! and the same code drives a real `TcpStream`.
 //!
-//! Nothing routes an SSE response yet — the viewer's `/api/events` is step 6 of
-//! `docs/web-viewer-plan.md`, while this framing is step 2. The module is built
-//! and tested ahead of its caller so each step stays small, hence the blanket
-//! dead-code allowance; drop it once a route constructs an `SseStream`.
+//! Nothing routes an SSE response yet — the viewer's `/api/events` is step 6
+//! of `docs/web-viewer-plan.md`, while this framing is step 2. The module is
+//! built and tested ahead of its caller so each step stays small, hence the
+//! blanket dead-code allowance; drop it once a route constructs an `SseStream`.
 #![allow(dead_code)]
 
 use std::io::{self, Write};
@@ -69,9 +69,8 @@ impl<W: Write> SseStream<W> {
         frame.push_str("event: ");
         frame.push_str(event);
         frame.push('\n');
-        // `\r\n`, `\n` and `\r` all terminate a line in the SSE grammar, so each
-        // has to become its own `data:` field. A payload with no newline at all
-        // still produces exactly one.
+        // `\r\n`, `\n` and `\r` all terminate a line in the SSE grammar, so
+        // each has to become its own `data:` field.
         for line in data.split("\r\n").flat_map(|l| l.split(['\n', '\r'])) {
             frame.push_str("data: ");
             frame.push_str(line);

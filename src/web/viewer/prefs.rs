@@ -1,15 +1,14 @@
 //! Viewer preferences that follow the user rather than the browser.
 //!
 //! The accent lives here, not in `localStorage`, because the viewer is reached
-//! from several devices — phone, laptop, tablet — and a per-browser copy means
-//! picking the colour again on each one. It is stored in `~/.nightcrow/`, next
-//! to the workspace file, so the viewer never writes inside a repository it is
-//! only reading.
+//! from several devices — phone, laptop, tablet — and a per-browser copy
+//! means picking the colour again on each one. It is stored in
+//! `~/.nightcrow/`, next to the workspace file, so the viewer never writes
+//! inside a repository it is only reading.
 //!
 //! Deliberately *not* the TUI's setting: `[theme]` and the TUI's per-repo
-//! `accent_idx` (`session.rs`) stay untouched, keeping the viewer's separation
-//! from the TUI (own port, own cookie, own password) intact. This is the
-//! viewer's own preference, shared across the viewer's own clients.
+//! `accent_idx` (`session.rs`) stay untouched, keeping the viewer's
+//! separation from the TUI (own port, own cookie, own password) intact.
 
 use crate::config::Accent;
 use serde::{Deserialize, Serialize};
