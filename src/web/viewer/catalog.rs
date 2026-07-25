@@ -74,6 +74,16 @@ pub enum AddOutcome {
 
 #[derive(Default)]
 pub struct Catalog {
+    /// Serialises the mutators (`set_paths`, `add_path`, `remove_path`,
+    /// `reorder`) end to end — overlay edit *and* the `rebuild` that commits it.
+    /// Each mutator reads a snapshot (`union_paths`) and later swaps `entries` to
+    /// match; without one lock spanning both, two mutators can interleave so one
+    /// commits a snapshot the other has already invalidated (e.g. resurrecting a
+    /// repo a concurrent close removed). Held only against other writers — the
+    /// read paths (`get`/`list`/`paths`) take `entries` alone, so an in-flight
+    /// request never blocks on a mutation, which is the property the entries lock
+    /// was kept narrow to preserve.
+    mutation: Mutex<()>,
     entries: Mutex<Vec<Arc<RepoEntry>>>,
     ids: Mutex<IdAssigner>,
     /// Repositories supplied by the CLI (`serve --repo`) or pushed from the TUI
@@ -86,6 +96,13 @@ pub struct Catalog {
     /// a `base` re-sync (a TUI tab change) does not resurrect a closed repo;
     /// re-opening a path clears it from here.
     hidden: Mutex<Vec<String>>,
+    /// The user's explicit tab order, set by dragging the project tabs
+    /// ([`Catalog::reorder`]). Layered over the natural base-then-added order in
+    /// [`Catalog::union_paths`], so a reordering survives the `rebuild` that a
+    /// later open/close/base-sync triggers. Empty until the first drag; a path
+    /// it does not mention keeps its natural position at the end (that is where a
+    /// freshly opened repo appears until the user moves it).
+    order: Mutex<Vec<String>>,
     /// Commands each repository's terminal hub runs as startup terminals on the
     /// first client connect (empty = one bare shell). Applied to every hub the
     /// catalog spawns.
@@ -110,6 +127,7 @@ impl Catalog {
     /// open tabs. Browser-opened repositories ([`Catalog::add_path`]) survive
     /// this, so a workspace change does not close a tab a viewer opened.
     pub fn set_paths(&self, paths: &[String]) {
+        let _mutation = self.mutation.lock().expect("catalog mutation poisoned");
         {
             let mut base = self.base.lock().expect("catalog base poisoned");
             *base = paths.to_vec();
@@ -123,6 +141,7 @@ impl Catalog {
     /// disturbing its runtime. Refused with [`AddOutcome::TooMany`] once the
     /// served set is at `max`, so a client cannot spawn unbounded runtimes.
     pub fn add_path(&self, path: String, max: usize) -> AddOutcome {
+        let _mutation = self.mutation.lock().expect("catalog mutation poisoned");
         // Opening a path clears any prior close, so a previously removed repo
         // comes back rather than staying suppressed by `hidden`.
         {
@@ -154,6 +173,7 @@ impl Catalog {
     /// and remembered in `hidden` so a `base` re-sync will not bring it back;
     /// `rebuild` then stops its runtime and terminals.
     pub fn remove_path(&self, path: &str) {
+        let _mutation = self.mutation.lock().expect("catalog mutation poisoned");
         {
             let mut added = self.added.lock().expect("catalog added poisoned");
             added.retain(|p| p != path);
@@ -168,21 +188,74 @@ impl Catalog {
     }
 
     /// The desired served set: base first, then browser-added, minus any path
-    /// closed from the browser, deduplicated.
+    /// closed from the browser, deduplicated — then reordered to the user's tab
+    /// order where one has been set.
     fn union_paths(&self) -> Vec<String> {
-        let base = self.base.lock().expect("catalog base poisoned");
-        let added = self.added.lock().expect("catalog added poisoned");
-        let hidden = self.hidden.lock().expect("catalog hidden poisoned");
-        let mut union: Vec<String> = Vec::with_capacity(base.len() + added.len());
-        for path in base.iter().chain(added.iter()) {
-            if hidden.iter().any(|h| h == path) {
-                continue;
+        let natural = {
+            let base = self.base.lock().expect("catalog base poisoned");
+            let added = self.added.lock().expect("catalog added poisoned");
+            let hidden = self.hidden.lock().expect("catalog hidden poisoned");
+            let mut natural: Vec<String> = Vec::with_capacity(base.len() + added.len());
+            for path in base.iter().chain(added.iter()) {
+                if hidden.iter().any(|h| h == path) {
+                    continue;
+                }
+                if !natural.contains(path) {
+                    natural.push(path.clone());
+                }
             }
-            if !union.contains(path) {
-                union.push(path.clone());
+            natural
+        };
+        // Apply the user's explicit tab order over the natural order. Ordered
+        // paths that are still served come first, in that order; anything the
+        // order does not name (a freshly opened repo) keeps its natural place at
+        // the end. The order lock is taken only after the others are released, so
+        // there is a single multi-lock site and no lock-ordering hazard.
+        let order = self.order.lock().expect("catalog order poisoned");
+        if order.is_empty() {
+            return natural;
+        }
+        let mut result: Vec<String> = Vec::with_capacity(natural.len());
+        for path in order.iter() {
+            if natural.iter().any(|n| n == path) && !result.contains(path) {
+                result.push(path.clone());
             }
         }
-        union
+        for path in natural {
+            if !result.contains(&path) {
+                result.push(path);
+            }
+        }
+        result
+    }
+
+    /// Set the project-tab order to `desired` (absolute paths) and rebuild.
+    ///
+    /// Canonicalised against the live set exactly as the terminal panes are
+    /// (`terminal::canonical_order`): requested paths that are actually served
+    /// come first in the requested order, then any served path the request left
+    /// out keeps its current order at the end. The stored order is therefore
+    /// always a permutation of the served set, so a repo opened or closed on
+    /// another device between the drag and this call cannot corrupt it.
+    pub fn reorder(&self, desired: &[String]) {
+        let _mutation = self.mutation.lock().expect("catalog mutation poisoned");
+        let served = self.union_paths();
+        let mut next: Vec<String> = Vec::with_capacity(served.len());
+        for path in desired {
+            if served.iter().any(|s| s == path) && !next.contains(path) {
+                next.push(path.clone());
+            }
+        }
+        for path in &served {
+            if !next.contains(path) {
+                next.push(path.clone());
+            }
+        }
+        {
+            let mut order = self.order.lock().expect("catalog order poisoned");
+            *order = next;
+        }
+        self.rebuild();
     }
 
     fn dto_for_path(&self, path: &str) -> Option<RepoDto> {
@@ -477,6 +550,77 @@ mod tests {
         );
         assert!(catalog.is_empty());
         drop(dir_a);
+    }
+
+    #[test]
+    fn reorder_puts_the_tabs_in_the_requested_order() {
+        let (dir_a, a) = make_repo();
+        let (dir_b, b) = make_repo();
+        let (dir_c, c) = make_repo();
+        let catalog = Catalog::new();
+        catalog.set_paths(&[a.clone(), b.clone(), c.clone()]);
+
+        catalog.reorder(&[c.clone(), a.clone(), b.clone()]);
+
+        let paths = catalog.paths();
+        assert_eq!(paths, vec![c.clone(), a.clone(), b.clone()]);
+        catalog.shutdown();
+        drop((dir_a, dir_b, dir_c));
+    }
+
+    #[test]
+    fn reorder_drops_unknown_paths_and_appends_the_ones_it_omits() {
+        let (dir_a, a) = make_repo();
+        let (dir_b, b) = make_repo();
+        let (dir_c, c) = make_repo();
+        let catalog = Catalog::new();
+        catalog.set_paths(&[a.clone(), b.clone(), c.clone()]);
+
+        // Name only b (with a bogus path mixed in): b leads, and the served
+        // paths the request left out keep their order at the end.
+        catalog.reorder(&[b.clone(), "/no/such/repo".to_string()]);
+
+        assert_eq!(catalog.paths(), vec![b.clone(), a.clone(), c.clone()]);
+        catalog.shutdown();
+        drop((dir_a, dir_b, dir_c));
+    }
+
+    #[test]
+    fn a_reordering_survives_a_later_rebuild() {
+        let (dir_a, a) = make_repo();
+        let (dir_b, b) = make_repo();
+        let (dir_c, c) = make_repo();
+        let catalog = Catalog::new();
+        catalog.set_paths(&[a.clone(), b.clone()]);
+        catalog.reorder(&[b.clone(), a.clone()]);
+
+        // A base re-sync (a TUI tab change) rebuilds, but must not undo the order.
+        catalog.set_paths(&[a.clone(), b.clone()]);
+        assert_eq!(catalog.paths(), vec![b.clone(), a.clone()]);
+
+        // A newly opened repo lands at the end, after the reordered pair.
+        assert!(matches!(catalog.add_path(c.clone(), 10), AddOutcome::Added(_)));
+        assert_eq!(catalog.paths(), vec![b.clone(), a.clone(), c.clone()]);
+        catalog.shutdown();
+        drop((dir_a, dir_b, dir_c));
+    }
+
+    #[test]
+    fn reorder_keeps_ids_stable() {
+        let (dir_a, a) = make_repo();
+        let (dir_b, b) = make_repo();
+        let catalog = Catalog::new();
+        catalog.set_paths(&[a.clone(), b.clone()]);
+        let a_id = catalog.list()[0].id.clone();
+        let b_id = catalog.list()[1].id.clone();
+
+        catalog.reorder(&[b.clone(), a.clone()]);
+
+        let after = catalog.list();
+        assert_eq!(after[0].id, b_id, "moving a tab must not renumber it");
+        assert_eq!(after[1].id, a_id);
+        catalog.shutdown();
+        drop((dir_a, dir_b));
     }
 
     #[test]

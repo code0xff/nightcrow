@@ -334,6 +334,13 @@ fn handle_connection(mut stream: TcpStream, state: Arc<ViewerState>) {
         return;
     }
 
+    // Reordering the project tabs. POST for the same CSRF reasoning as the
+    // others; it renames no repository and only permutes the served set.
+    if head.method == "POST" && head.path == "/api/repos/order" {
+        let _ = stream.write_all(&handle_reorder_repos(&body, &state));
+        return;
+    }
+
     let _ = stream.write_all(&route(&head, &state));
 }
 
@@ -530,6 +537,38 @@ fn handle_close_repo(head: &RequestHead, state: &ViewerState) -> Vec<u8> {
     }
 }
 
+#[derive(serde::Deserialize)]
+struct ReorderRequest {
+    /// Repository ids in the desired tab order.
+    order: Vec<String>,
+}
+
+/// Reorder the project tabs and echo back the updated set.
+///
+/// Ids that no longer resolve are dropped rather than erroring: another device
+/// may have closed a repo between the drag and this write, and the catalog
+/// reconciles the request against the live set regardless. The persisted order
+/// follows the same boundary as opening and closing — written to the workspace
+/// file only under headless `serve`.
+fn handle_reorder_repos(body: &str, state: &ViewerState) -> Vec<u8> {
+    let request: ReorderRequest = match serde_json::from_str(body) {
+        Ok(request) => request,
+        Err(_) => return json_error("400 Bad Request", "expected a JSON body with an order"),
+    };
+    let paths: Vec<String> = request
+        .order
+        .iter()
+        .filter_map(|id| state.catalog.get(id).map(|entry| entry.path.clone()))
+        .collect();
+    state.catalog.reorder(&paths);
+    persist_workspace(state);
+    let repos = state.catalog.list();
+    match serde_json::to_string(&Envelope::new(serde_json::json!({ "repos": repos }))) {
+        Ok(json) => json_response("200 OK", &json, &[]),
+        Err(_) => json_error("500 Internal Server Error", "could not encode repositories"),
+    }
+}
+
 /// Mirror the served set into the shared workspace file so the next launch —
 /// TUI, mirror, or viewer — starts with the same projects. No-op unless the
 /// server was started with `persist` (headless `serve`); alongside the TUI,
@@ -540,10 +579,15 @@ fn persist_workspace(state: &ViewerState) {
         return;
     }
     let mut ws = crate::session::load_workspace().unwrap_or_default();
+    // `active` is an index into `repos`, so rewriting the list in a new order (a
+    // tab reorder) or dropping an entry (a close) would silently point it at a
+    // different project. Follow the previously active path to its new index
+    // instead, falling back to the first tab when it is gone (a closed active).
+    let active_path = ws.repos.get(ws.active).cloned();
     ws.repos = state.catalog.paths();
-    if ws.active >= ws.repos.len() {
-        ws.active = 0;
-    }
+    ws.active = active_path
+        .and_then(|path| ws.repos.iter().position(|repo| repo == &path))
+        .unwrap_or(0);
     crate::session::save_workspace(&ws);
 }
 
@@ -1553,6 +1597,64 @@ mod tests {
         let response = delete(server.addr(), "/api/repos?repo=nope", Some(&token));
 
         assert!(response.starts_with("HTTP/1.1 404"), "got: {response}");
+        drop(dir);
+    }
+
+    #[test]
+    fn reordering_the_tabs_changes_the_served_order() {
+        let (dir_a, a) = make_repo();
+        let (dir_b, b) = make_repo();
+        let (dir_c, c) = make_repo();
+        let server = server(&[a, b, c]);
+        let token = login(server.addr());
+
+        let list = get(server.addr(), "/api/repos", Some(&token));
+        let value: serde_json::Value = serde_json::from_str(body_of(&list)).unwrap();
+        let ids: Vec<String> = value["repos"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|r| r["id"].as_str().unwrap().to_string())
+            .collect();
+
+        // Move the last tab to the front.
+        let body = format!(
+            "{{\"order\":[\"{}\",\"{}\",\"{}\"]}}",
+            ids[2], ids[0], ids[1]
+        );
+        let response = post(server.addr(), "/api/repos/order", &body, Some(&token));
+        assert!(response.starts_with("HTTP/1.1 200"), "got: {response}");
+
+        // Both the echo and a fresh read reflect the new order.
+        let echoed: serde_json::Value = serde_json::from_str(body_of(&response)).unwrap();
+        let echoed_ids: Vec<&str> = echoed["repos"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|r| r["id"].as_str().unwrap())
+            .collect();
+        assert_eq!(echoed_ids, vec![&ids[2], &ids[0], &ids[1]]);
+
+        let after = get(server.addr(), "/api/repos", Some(&token));
+        let value: serde_json::Value = serde_json::from_str(body_of(&after)).unwrap();
+        let after_ids: Vec<&str> = value["repos"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|r| r["id"].as_str().unwrap())
+            .collect();
+        assert_eq!(after_ids, vec![&ids[2], &ids[0], &ids[1]]);
+        drop((dir_a, dir_b, dir_c));
+    }
+
+    #[test]
+    fn reordering_requires_authentication() {
+        let (dir, path) = make_repo();
+        let server = server(&[path]);
+
+        let response = post(server.addr(), "/api/repos/order", "{\"order\":[]}", None);
+
+        assert!(response.starts_with("HTTP/1.1 401"), "got: {response}");
         drop(dir);
     }
 
