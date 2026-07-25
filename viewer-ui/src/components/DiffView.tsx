@@ -1,5 +1,5 @@
-import { splitHunkRows } from "../diffLayout";
-import { diffLineBg } from "../utils";
+import { splitHunkRows } from "../lib/diffLayout";
+import { diffLineBg } from "../lib/utils";
 import type { Diff, DiffLine } from "../api";
 
 function DiffLineContent({ line }: { line: DiffLine }) {

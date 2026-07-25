@@ -129,7 +129,7 @@ impl Drop for SnapshotChannel {
         // Bounded join: a worker stuck inside libgit2 (corrupted packfile,
         // hung NFS) must not freeze app shutdown / repo switch.
         if let Some(h) = self.handle.take() {
-            crate::util::try_timed_join(h, crate::util::REAP_TIMEOUT);
+            crate::platform::threading::try_timed_join(h, crate::platform::threading::REAP_TIMEOUT);
         }
     }
 }

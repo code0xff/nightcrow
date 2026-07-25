@@ -1,30 +1,23 @@
 mod app;
-mod app_init;
+mod application;
+#[cfg(test)]
+#[path = "application/tests/mod.rs"]
+mod application_tests;
 mod backend;
 mod cli;
 mod config;
-mod event_loop;
 mod git;
 mod input;
-mod key_dispatch;
-mod key_handlers;
-mod logging;
-#[cfg(test)]
-#[path = "main_tests/mod.rs"]
-mod main_tests;
-mod mouse;
-mod paste;
+mod platform;
 mod runtime;
-mod session;
-mod splash;
 #[cfg(test)]
 mod test_util;
 mod ui;
-mod util;
 mod web;
 mod workspace;
 
 use anyhow::Result;
+use application::event_loop::{ProjectContext, main_loop};
 use clap::Parser;
 use crossterm::event::{
     DisableBracketedPaste, DisableMouseCapture, EnableBracketedPaste, EnableMouseCapture,
@@ -33,17 +26,16 @@ use crossterm::{
     execute,
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
-use event_loop::{ProjectContext, main_loop};
 use ratatui::{Terminal, backend::CrosstermBackend};
 use std::io;
 use syntect::highlighting::ThemeSet;
 use workspace::Workspace;
 
+use crate::application::splash::SplashOutcome;
 use crate::cli::{
     Cli, Commands, WebSurfaces, log_anchor_for, resolve_repo_paths, run_init, run_serve,
     start_viewer_if_enabled, start_web_if_enabled,
 };
-use crate::splash::SplashOutcome;
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
@@ -85,7 +77,7 @@ fn main() -> Result<()> {
     // directory does. A log path cannot follow the active tab — the file is
     // opened once, at startup.
     let log_anchor = log_anchor_for(&repo_paths)?;
-    let _log_guard = logging::init_logging(&cfg.log, &log_anchor);
+    let _log_guard = platform::logging::init_logging(&cfg.log, &log_anchor);
 
     tracing::info!(
         level = cfg.log.level.as_str(),
@@ -190,7 +182,7 @@ fn run(
     // argument, the last set of tabs comes back — and since quitting with none
     // open records exactly that, an empty screen stays reachable without a
     // dedicated flag.
-    let stored = session::load_workspace();
+    let stored = workspace::persistence::load_workspace();
     // The same file carries the tab list and every repo's view state, so the
     // remembered half is seeded even when `--repo` overrides the tab list.
     if let Some(state) = stored.as_ref() {
@@ -235,7 +227,7 @@ fn run(
             break;
         }
         let saved = ws.session_for(path).cloned();
-        ws.add(app_init::init_app(
+        ws.add(application::bootstrap::init_app(
             path,
             &cfg,
             &startup_commands,
@@ -265,7 +257,7 @@ fn run(
     }
 
     if matches!(
-        splash::splash_loop(terminal, &ws, cfg.theme.preset_index())?,
+        application::splash::splash_loop(terminal, &ws, cfg.theme.preset_index())?,
         SplashOutcome::Quit
     ) {
         tracing::info!("nightcrow stopped during splash");
@@ -277,7 +269,7 @@ fn run(
     // sessions are stored per repo (`<repo>/.nightcrow/session.json`), so a
     // background project's pane/focus state would otherwise be lost purely
     // because the user happened to quit from another tab.
-    session::save_workspace(&ws.to_persisted());
+    workspace::persistence::save_workspace(&ws.to_persisted());
     tracing::info!("nightcrow stopped");
     Ok(())
 }

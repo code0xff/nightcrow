@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { ChevronIcon, PlusIcon, XIcon } from "../icons";
+import { ChevronIcon, PlusIcon, XIcon } from "./icons";
 import type { Repo } from "../api";
 
 export function ProjectMenu({

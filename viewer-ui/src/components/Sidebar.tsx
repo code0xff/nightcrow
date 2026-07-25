@@ -1,7 +1,7 @@
 import type { PointerEvent as ReactPointerEvent } from "react";
-import { SearchIcon } from "../icons";
+import { SearchIcon } from "./icons";
 import { useTree } from "../hooks/useTree";
-import { buildTreeRows } from "../tree";
+import { buildTreeRows } from "../lib/tree";
 import { StatusList } from "./StatusList";
 import { LogList } from "./LogList";
 import { TreeList } from "./TreeList";

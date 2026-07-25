@@ -127,7 +127,7 @@ fn restoring_tree_session_clears_lingering_status_search() {
     app.search_push('x');
     assert!(app.status_view.search_active);
 
-    app.restore_session(&crate::session::SessionState {
+    app.restore_session(&crate::workspace::persistence::SessionState {
         mode: Some(ViewMode::Tree),
         ..Default::default()
     });
@@ -163,7 +163,7 @@ fn restore_tree_session_ignores_unsafe_expanded_paths() {
     let (dir, path) = make_tree_repo();
     let mut app = app_on(&path);
 
-    app.restore_session(&crate::session::SessionState {
+    app.restore_session(&crate::workspace::persistence::SessionState {
         mode: Some(ViewMode::Tree),
         tree_expanded: vec![
             "../../..".to_string(),
@@ -191,7 +191,7 @@ fn restore_tree_session_prunes_expansion_gone_since_save() {
     std::fs::rename(Path::new(&path).join("src"), Path::new(&path).join("lib")).unwrap();
     let mut app = app_on(&path);
 
-    app.restore_session(&crate::session::SessionState {
+    app.restore_session(&crate::workspace::persistence::SessionState {
         mode: Some(ViewMode::Tree),
         tree_expanded: vec!["src".to_string()],
         tree_selected_path: Some("src".to_string()),

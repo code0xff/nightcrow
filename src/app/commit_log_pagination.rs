@@ -3,7 +3,7 @@
 use std::sync::mpsc::Receiver;
 use std::thread::JoinHandle;
 
-use crate::util::{REAP_TIMEOUT, try_timed_join};
+use crate::platform::threading::{REAP_TIMEOUT, try_timed_join};
 
 use super::commit_log_fetch::CommitLogPageMsg;
 

@@ -69,7 +69,7 @@ pub(super) fn handle_open_repo(body: &str, state: &ViewerState) -> Vec<u8> {
     if raw.is_empty() {
         return json_error("400 Bad Request", "a path is required");
     }
-    let expanded = crate::util::expand_tilde(raw);
+    let expanded = crate::platform::paths::expand_tilde(raw);
     // is_dir() follows symlinks and is false for a missing path — either way it
     // cannot be served.
     if !expanded.is_dir() {
@@ -133,7 +133,7 @@ pub(super) fn handle_mkdir(body: &str) -> Vec<u8> {
     if name.starts_with('.') || name.contains('/') || name.contains('\\') || name.contains('\0') {
         return json_error("400 Bad Request", "invalid folder name");
     }
-    let parent = crate::util::expand_tilde(request.path.trim());
+    let parent = crate::platform::paths::expand_tilde(request.path.trim());
     // is_dir() follows symlinks and is false for a missing path — the same gate
     // `open` uses for the directory it is handed.
     if !parent.is_dir() {
@@ -206,13 +206,13 @@ fn persist_workspace(state: &ViewerState) {
     if !state.persist {
         return;
     }
-    let mut ws = crate::session::load_workspace().unwrap_or_default();
+    let mut ws = crate::workspace::persistence::load_workspace().unwrap_or_default();
     let active_path = ws.repos.get(ws.active).cloned();
     ws.repos = state.catalog.paths();
     ws.active = active_path
         .and_then(|path| ws.repos.iter().position(|repo| repo == &path))
         .unwrap_or(0);
-    crate::session::save_workspace(&ws);
+    crate::workspace::persistence::save_workspace(&ws);
 }
 
 /// Resolve the `repo` parameter to an entry, or produce the 404 response.

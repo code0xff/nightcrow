@@ -1,5 +1,5 @@
 use super::{BackendEvent, PaneId, TerminalBackend};
-use crate::util::try_timed_join;
+use crate::platform::threading::try_timed_join;
 use anyhow::Result;
 use portable_pty::{CommandBuilder, NativePtySystem, PtySize, PtySystem};
 use std::collections::BTreeMap;

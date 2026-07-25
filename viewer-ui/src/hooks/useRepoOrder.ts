@@ -1,6 +1,6 @@
 import { useCallback } from "react";
 import { api, type Repo } from "../api";
-import { reconcileOrder } from "../paneOrder";
+import { reconcileOrder } from "../lib/paneOrder";
 import { useRepoDrag } from "./useRepoDrag";
 
 interface UseRepoOrderArgs {

@@ -1,7 +1,7 @@
 use super::{App, Focus, NoticeKind, ViewMode};
 use crate::git::diff::{load_commit_files, load_commit_log};
 use crate::runtime::terminal::TerminalFullscreen;
-use crate::session::SessionState;
+use crate::workspace::persistence::SessionState;
 
 impl App {
     // The live view, except for a selection still waiting on its first

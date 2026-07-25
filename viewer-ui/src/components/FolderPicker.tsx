@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { api, type Browse, type Repo } from "../api";
-import { toast } from "../toast";
-import { XIcon } from "../icons";
+import { toast } from "../lib/toast";
+import { XIcon } from "./icons";
 
 export function FolderPicker({
   onClose,
