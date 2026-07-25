@@ -18,8 +18,8 @@ use syntect::highlighting::ThemeSet;
 use syntect::parsing::SyntaxSet;
 
 /// Minimum pane width (columns) for the side-by-side split layout. Below this
-/// each half is too narrow to read, so `Split` view transparently falls back
-/// to the unified diff renderer.
+/// each half is too narrow to read, so `Split` view falls back to the unified
+/// diff renderer.
 const MIN_SPLIT_WIDTH: u16 = 80;
 
 pub(crate) fn rgb_to_color(rgb: (u8, u8, u8)) -> Color {
@@ -66,8 +66,6 @@ pub fn render(
 
     // Build the syntect highlight cache once per (hunks × per-hunk syntax)
     // so the visible-window walk below stays bounded even on large diffs.
-    // Each hunk carries its own file_path now, so commit diffs that touch
-    // multiple file types stop rendering as plain text.
     app.diff.ensure_highlight_cache(ss, ts);
 
     let current_match = app.diff.search.current_match();
@@ -173,9 +171,9 @@ pub fn render(
                     "No diff for selected file"
                 }
             }
-            // Tree mode renders the file overlay, not the unified diff, so this
-            // message is only reachable if the diff view is forced open with no
-            // file selected.
+            // Tree mode renders the file overlay, not the unified diff, so
+            // this message is only reachable if the diff view is forced open
+            // with no file selected.
             ViewMode::Tree => "Select a file to preview",
         };
         lines.push(Line::from(Span::styled(

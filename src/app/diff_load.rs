@@ -1,15 +1,11 @@
 use super::{App, DiffPaneView, FileViewState, NoticeKind, ViewMode};
 use crate::git::diff::{DiffHunk, load_file_diff, parse_hunk_new_start};
 
-/// Post-load behaviour for `apply_diff_result`. Replaces the prior 3-flag
-/// signature where the combination of `reset_scroll` and `keep_scroll` was
-/// hard to parse at call sites.
+// Replaces a prior 3-flag signature where `reset_scroll`/`keep_scroll` were
+// hard to parse at call sites.
 pub(crate) enum DiffApply<'a> {
-    /// Reset scroll/cursor to top after a successful load.
     Reset,
-    /// Keep the previous scroll position (for in-place refresh).
     KeepScroll(usize),
-    /// Reset scroll and additionally update the log diff title.
     ResetWithTitle(&'a str),
 }
 
@@ -18,10 +14,10 @@ impl App {
         self.refresh_diff(true);
     }
 
-    /// Run `f` with the cached `git2::Repository`, opening it lazily on first
-    /// use. Cache is invalidated by `change_repo` so that follow-up calls open
-    /// a fresh handle for the new path. Errors from the open propagate so the
-    /// caller can surface them as a notice.
+    // Opens the cached `git2::Repository` lazily; invalidated by `change_repo`.
+    // Only drops the handle on errors suggesting the repo itself is gone (the
+    // motivating case: `rm -rf .git && git init` in the terminal pane) — normal
+    // data misses like "object not found" must not force a fresh `discover` walk.
     pub(crate) fn with_repo<R>(
         &mut self,
         f: impl FnOnce(&git2::Repository) -> anyhow::Result<R>,
@@ -31,14 +27,7 @@ impl App {
                 .map_err(|e| anyhow::anyhow!("not a git repository: {e}"))?;
             self.repo_cache = Some(repo);
         }
-        // unwrap is sound: we just inserted Some above when None.
         let result = f(self.repo_cache.as_ref().unwrap());
-        // Only drop the cached handle when the error suggests the repo
-        // *itself* is gone or unreadable — a user doing `rm -rf .git && git
-        // init` in the terminal pane is the motivating case. Errors like
-        // "path not in commit" or "object not found" are normal data misses
-        // that shouldn't force a fresh `Repository::discover` walk on every
-        // subsequent call.
         if let Err(ref e) = result
             && let Some(git_err) = e.downcast_ref::<git2::Error>()
             && matches!(
@@ -52,9 +41,8 @@ impl App {
     }
 
     pub(crate) fn refresh_diff(&mut self, reset_scroll: bool) {
-        // Only the working-tree status view shows a file diff. Log drives the
-        // diff via its own loaders, and Tree shows raw file previews — neither
-        // should have a status diff loaded over it.
+        // Only Status shows a file diff; Log and Tree drive the diff via their
+        // own loaders and must not have a status diff loaded over them.
         if self.mode != ViewMode::Status {
             return;
         }
@@ -76,10 +64,6 @@ impl App {
         self.apply_diff_result(result, mode);
     }
 
-    /// Centralizes the post-load shape used by every diff loader: on success
-    /// stash hunks, reset/restore scroll and search cursor, optionally update
-    /// the log title, and recompute diff search matches; on error clear state
-    /// but preserve the title so the user knows what failed.
     pub(crate) fn apply_diff_result(
         &mut self,
         result: anyhow::Result<Vec<DiffHunk>>,
@@ -88,9 +72,6 @@ impl App {
         let reset_scroll = matches!(mode, DiffApply::Reset | DiffApply::ResetWithTitle(_));
         match result {
             Ok(hunks) => {
-                // Clear any stale diff error from a previous failed load —
-                // keeping it would mislead the user about the current file's
-                // state. Notices of other kinds are left alone.
                 self.clear_notice(NoticeKind::Diff);
                 self.diff.hunks = hunks;
                 self.diff.rebuild_lower_cache();
@@ -102,16 +83,12 @@ impl App {
                         self.invalidate_file_view();
                     }
                     DiffApply::KeepScroll(prev) => {
-                        // New hunks may be shorter than the prior load, so
-                        // clamp against the freshly assigned diff to avoid
-                        // leaving an out-of-range scroll that misbehaves on
-                        // the next navigation keystroke.
+                        // Clamp against the new (possibly shorter) diff so
+                        // scroll isn't left out of range for the next keystroke.
                         self.diff.scroll = prev.min(self.diff.max_scroll());
-                        // If the file-overlay view is open, the anchor was
-                        // computed against the previous hunks. After the
-                        // diff is replaced, that anchor may point at the
-                        // wrong row — recompute against the new hunks so
-                        // the open file pane stays aligned with the diff.
+                        // The file-overlay anchor was computed against the
+                        // previous hunks; recompute so the open file pane stays
+                        // aligned with the replaced diff.
                         if self.diff.file_view.key.is_some() {
                             self.diff.file_view.anchor_line = self.anchor_for_current_diff();
                         }
@@ -122,19 +99,16 @@ impl App {
                 }
             }
             Err(_) => {
-                // For a KeepScroll error (an in-place refresh of the same
-                // file) we keep the prior diff on screen: this is usually a
-                // transient race (mid-rename, slow git index update) and
-                // clearing would both flash an empty pane and leave `scroll`
-                // dangling past the now-empty `max_scroll`. The error is
-                // already surfaced as a notice by the loader.
+                // KeepScroll error (in-place refresh) keeps the prior diff:
+                // usually a transient race (mid-rename, slow index update) and
+                // clearing would flash an empty pane and dangle `scroll`.
                 if !matches!(mode, DiffApply::KeepScroll(_)) {
                     self.clear_diff_state();
                 }
             }
         }
         // Title belongs to the surrounding view, not the diff state — set it
-        // last so it survives both success and failure of the load.
+        // last so it survives both success and failure.
         if let DiffApply::ResetWithTitle(title) = mode {
             self.log_view.diff_title = title.to_string();
         }
@@ -146,11 +120,9 @@ impl App {
         self.diff.line_highlights.clear();
         self.diff.cached_hunk_syntax.clear();
         // Drop the entire search state, not just the match list: keeping the
-        // query alive after a content-discarding clear would (a) leave a
-        // ghost `[0/0]` counter visible in the title, and (b) cause the
-        // next file load's `recompute_matches` to apply the previous file's
-        // query to unrelated content. `search.clear` also flips `active`
-        // off so the search bar disappears in the same frame.
+        // query alive after a content-discarding clear would leave a ghost
+        // `[0/0]` counter and apply the previous file's query to unrelated
+        // content on the next load.
         self.diff.search.clear();
         self.diff.scroll = 0;
         self.diff.scroll_x = 0;
@@ -162,11 +134,6 @@ impl App {
         self.diff.file_view = FileViewState::default();
     }
 
-    /// Pick the new-side starting line of the hunk currently visible at the
-    /// top of the diff viewport. Walks the flat hunk layout (one header row +
-    /// body rows per hunk) and returns the most recent hunk whose header was
-    /// reached at or before `self.diff.scroll`. Falls back to the first
-    /// parseable hunk when the scroll is past every hunk we could parse.
     pub(crate) fn anchor_for_current_diff(&self) -> Option<usize> {
         let scroll = self.diff.scroll;
         let mut offset = 0usize;
@@ -183,13 +150,8 @@ impl App {
         chosen
     }
 
-    /// Reload the Log view's commit list after the snapshot worker detected a
-    /// HEAD oid change (new commit via the terminal pane, external push,
-    /// amend, branch switch). Captures the current selection/head oids and
-    /// spawns a background fetch; the merge happens in `apply_refresh_page`
-    /// when the worker replies so the UI tick never blocks on a 100-commit
-    /// revwalk. Selection-by-oid preservation, prepend-vs-reset detection,
-    /// and drill-down survival all live on that arrival path.
+    // Spawns a background fetch; the merge happens in `apply_refresh_page` when
+    // the worker replies so the UI tick never blocks on a 100-commit revwalk.
     pub(crate) fn refresh_commit_log_after_head_change(&mut self) {
         let prior_selected_oid = self
             .log_view
@@ -198,9 +160,8 @@ impl App {
             .map(|c| c.oid);
         let prior_head_oid = self.log_view.commits.first().map(|c| c.oid);
 
-        // Any in-flight worker (tail prefetch or older refresh) was launched
-        // against state that no longer matches; drop it so only this fresh
-        // refresh's reply can land.
+        // Any in-flight worker was launched against state that no longer
+        // matches; drop it so only this refresh's reply can land.
         self.cancel_commit_log_page_fetch();
         self.spawn_commit_log_refresh_fetch(prior_selected_oid, prior_head_oid);
     }

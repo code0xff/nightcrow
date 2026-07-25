@@ -9,10 +9,7 @@ interface UsePaneDragArgs {
   onReorder: (order: number[]) => void;
 }
 
-/// Pane drag-to-reorder. The id being dragged and the drop target live in refs
-/// (read on pointerup, free of stale-closure risk); the mirrored state only
-/// drives the drag styling. `draggingRef` flips once the pointer crosses the
-/// dead zone, separating a reorder from a plain header click.
+/// Refs keep pointerup from observing stale drag state.
 export function usePaneDrag({ panes, zoomed, onFocus, onReorder }: UsePaneDragArgs) {
   const dragPaneRef = useRef<number | null>(null);
   const dragStartRef = useRef<{ x: number; y: number } | null>(null);
@@ -33,13 +30,8 @@ export function usePaneDrag({ panes, zoomed, onFocus, onReorder }: UsePaneDragAr
   };
 
   const onPaneDragStart = (e: React.PointerEvent, pane: number) => {
-    // A press on the header's own buttons (zoom, close) is theirs — do not
-    // focus or start a drag, matching the pre-drag behaviour where those
-    // buttons stopped the focus press from propagating.
     if ((e.target as HTMLElement).closest("button")) return;
     onFocus(pane);
-    // Primary button / first touch only, and only when there is a grid to
-    // rearrange (more than one pane, not zoomed).
     if (e.button !== 0 || !reorderable) return;
     dragPaneRef.current = pane;
     dragStartRef.current = { x: e.clientX, y: e.clientY };
@@ -60,8 +52,6 @@ export function usePaneDrag({ panes, zoomed, onFocus, onReorder }: UsePaneDragAr
     }
     draggingRef.current = true;
     setDraggingPane(dragged);
-    // Which cell is under the pointer. Pointer capture does not change hit
-    // testing, so this still finds the pane being hovered, not the dragged one.
     const el = document
       .elementFromPoint(e.clientX, e.clientY)
       ?.closest("[data-pane-id]");

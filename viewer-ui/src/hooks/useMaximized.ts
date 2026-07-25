@@ -1,9 +1,7 @@
 import { useCallback, useState } from "react";
 import type { Maximized } from "../types";
 
-// Maximize is a per-project layout choice: each repo remembers whether its
-// files pane, terminal, or neither was maximized, so switching projects
-// restores that project's own layout rather than carrying one over.
+// Keep maximize state per repository so switching projects does not carry layouts across.
 export function useMaximized(repo: string | null) {
   const [maximizedByRepo, setMaximizedByRepo] = useState<
     Record<string, Maximized>

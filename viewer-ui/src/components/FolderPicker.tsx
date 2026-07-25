@@ -3,9 +3,6 @@ import { api, type Browse, type Repo } from "../api";
 import { toast } from "../toast";
 import { XIcon } from "../icons";
 
-/** A server-side folder browser (code-server style): navigate the machine the
- *  viewer runs on and open a directory as a project. The OS file dialog cannot
- *  do this — it would pick paths on the viewer's machine, not the server's. */
 export function FolderPicker({
   onClose,
   onOpened,
@@ -13,15 +10,12 @@ export function FolderPicker({
   onClose: () => void;
   onOpened: (repo: Repo) => void;
 }) {
-  // `null` means "the server's default" (home); the server resolves it.
   const [path, setPath] = useState<string | null>(null);
   const [dir, setDir] = useState<Browse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [newName, setNewName] = useState("");
   const [creating, setCreating] = useState(false);
-  // Bumped to re-browse the current path without navigating (e.g. after a
-  // folder is created so it shows up in the listing).
   const [reload, setReload] = useState(0);
 
   useEffect(() => {
@@ -57,9 +51,6 @@ export function FolderPicker({
     }
   };
 
-  // Create a folder in the directory being browsed and refresh the listing so
-  // it appears. Stays put rather than stepping in — the new folder is empty
-  // (not a git repo yet), so the user can keep browsing or step in manually.
   const createFolder = async () => {
     if (!dir) return;
     const name = newName.trim();

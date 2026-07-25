@@ -2,22 +2,16 @@ use super::{App, LIST_PAGE_SIZE, ViewMode};
 use crate::git::diff::load_commit_files;
 
 impl App {
-    /// Indices into `log_view.commits` that match the active commit search.
-    /// `0..len` when no query is set (mirrors `filtered_indices`).
     pub fn log_commit_filtered_indices(&self) -> &[usize] {
         &self.log_view.commits_filter_cache
     }
 
-    /// Indices into `log_view.commit_files` that match the active drill-down
-    /// file search.
     pub fn log_file_filtered_indices(&self) -> &[usize] {
         &self.log_view.commit_files_filter_cache
     }
 
-    /// Snap `log_view.selected` into the current commit filter. If the current
-    /// selection still matches, leave it; otherwise jump to the first match.
-    /// Returns whether selection changed so the caller can decide whether to
-    /// reload the diff.
+    // Returns whether selection changed so the caller can decide whether to
+    // reload the diff.
     fn sync_log_commit_selection_to_filter(&mut self) -> bool {
         let target = {
             let indices = self.log_commit_filtered_indices();
@@ -39,8 +33,6 @@ impl App {
         }
     }
 
-    /// Same as `sync_log_commit_selection_to_filter` but for the drill-down
-    /// file list.
     fn sync_log_file_selection_to_filter(&mut self) -> bool {
         let target = {
             let indices = self.log_file_filtered_indices();
@@ -80,8 +72,6 @@ impl App {
         }
     }
 
-    /// Open the `/` search bar in the active Log sub-view (commit list or
-    /// drill-down file list). The dispatch matches the visible upper pane.
     pub fn start_log_search(&mut self) {
         if self.log_view.drill_down {
             self.log_view.start_file_search();
@@ -112,7 +102,7 @@ impl App {
             if self.log_view.confirm_commit_search() {
                 self.refresh_commit_diff_after_filter_change();
             }
-            // Resume tail prefetch regardless of whether the query was empty:
+            // Resume prefetch regardless of whether the query was empty:
             // confirm hides the search bar in both branches, so the gate in
             // `maybe_prefetch_commit_log` no longer applies.
             self.maybe_prefetch_commit_log();
@@ -139,8 +129,7 @@ impl App {
         }
     }
 
-    /// Dispatches a navigation action to the appropriate log list (commit or file).
-    /// Returns `true` if the action was handled (i.e. we are in Log mode).
+    // Returns `true` if handled (i.e. we are in Log mode).
     pub(super) fn navigate_log_list(&mut self, commit_nav: fn(&mut Self), file_nav: fn(&mut Self)) -> bool {
         if self.mode != ViewMode::Log {
             return false;
@@ -235,11 +224,8 @@ impl App {
         self.maybe_prefetch_commit_log();
     }
 
-    /// Step the commit-list cursor by `delta` positions within the active
-    /// commit search filter. When the filter holds every commit (empty
-    /// query), this is identical to the previous `cursor_up`/`cursor_down`
-    /// behaviour because the cache is built as `0..len`. Returns whether the
-    /// selection actually moved so callers can decide to reload the diff.
+    // Returns whether the selection actually moved so callers can decide to
+    // reload the diff.
     pub(crate) fn move_log_commit_in_filter(&mut self, delta: isize) -> bool {
         let resolved = {
             let indices = self.log_commit_filtered_indices();
@@ -264,7 +250,6 @@ impl App {
         }
     }
 
-    /// Same as `move_log_commit_in_filter` but for the drill-down file list.
     pub(crate) fn move_log_file_in_filter(&mut self, delta: isize) -> bool {
         let resolved = {
             let indices = self.log_file_filtered_indices();

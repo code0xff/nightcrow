@@ -61,10 +61,9 @@ impl App {
         self.selected_filtered_status_file().map(|f| f.path.clone())
     }
 
-    /// Borrow-only counterpart of `selected_filtered_status_path` so callers
-    /// that just need to read the path don't pay for an allocation. Uses
-    /// `binary_search` since `filter_cache` is built in ascending order by
-    /// `recompute_filter`.
+    // Borrow-only counterpart of `selected_filtered_status_path` so callers
+    // that just need to read don't allocate. `binary_search` works because
+    // `filter_cache` is built in ascending order by `recompute_filter`.
     pub fn selected_filtered_status_file(&self) -> Option<&ChangedFile> {
         if self
             .filtered_indices()
@@ -93,10 +92,8 @@ impl App {
             false
         } else {
             self.status_view.selected = target;
-            // Match `move_selected_in_filter`: selection landing on a new
-            // file should drop the previous file's horizontal scroll so the
-            // newly-shown path starts from column 0 rather than scrolled
-            // mid-string.
+            // Match `move_selected_in_filter`: drop the previous file's
+            // horizontal scroll so the newly-shown path starts from column 0.
             self.status_view.file_scroll_x = 0;
             true
         }
@@ -111,9 +108,6 @@ impl App {
         }
     }
 
-    /// Move `selected` by `delta` positions within the active filter view.
-    /// Handles both empty-query (full file list) and non-empty (filtered subset)
-    /// cases uniformly.
     pub(crate) fn move_selected_in_filter(&mut self, delta: isize) {
         // Resolve the new selection in a scoped block so the borrow on
         // filtered_indices does not outlive the mutating reload below.
@@ -137,8 +131,8 @@ impl App {
             && (Some(new_pos) != pos || self.status_view.selected != new_selected)
         {
             // Mark only after confirming the selection actually changed so
-            // that bumping against either end of the list doesn't reset the
-            // auto-follow steered-path memory.
+            // bumping against either end doesn't reset the auto-follow
+            // steered-path memory.
             self.mark_user_navigated();
             self.status_view.selected = new_selected;
             self.status_view.file_scroll_x = 0;

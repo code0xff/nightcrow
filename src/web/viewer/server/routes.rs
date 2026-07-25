@@ -22,13 +22,8 @@ pub(super) fn route(head: &RequestHead, state: &ViewerState) -> Vec<u8> {
             // Everything server-wide the client must agree with rides this one
             // response rather than getting endpoints of its own: the client
             // already polls it every few seconds, so a setting changed here
-            // reaches every device within one interval, and `/api/status` — a
-            // hot, deduplicated stream — stays free of configuration.
-            //
-            // The recently-touched window keeps the browser on the TUI's
-            // schedule; `now_ms` is the clock its `mtime`s were measured on,
-            // which a phone or laptop viewing remotely need not share; the
-            // accent is stored server-side so every device shows the same one.
+            // reaches every device within one interval, and `/api/status` —
+            // a hot, deduplicated stream — stays free of configuration.
             let prefs = state.prefs.get();
             let bootstrap = ViewerBootstrapDto::new(
                 state.catalog.list(),

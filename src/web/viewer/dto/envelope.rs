@@ -63,8 +63,8 @@ pub struct ViewerBootstrapDto {
     /// Index into the viewer's accent presets, stored server-side so every
     /// device agrees.
     pub accent: usize,
-    /// File-sidebar width in CSS px, stored server-side like the accent so every
-    /// device opens at the same split.
+    /// File-sidebar width in CSS px, stored server-side like the accent so
+    /// every device opens at the same split.
     pub sidebar_width: u32,
     /// This server's wall clock, for dating [`super::ChangedFileDto::mtime`].
     pub now_ms: u64,

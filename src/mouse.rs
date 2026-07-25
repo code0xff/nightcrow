@@ -5,8 +5,8 @@ use crate::workspace::Workspace;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseEvent, MouseEventKind};
 use ratatui::layout::Rect;
 
-/// Route one mouse event. The project tab row is the only target that exists
-/// with no project open, so it is resolved before the per-project handler.
+/// Route one mouse event. The project tab row is the only target with no
+/// project open, so it is resolved before the per-project handler.
 pub(crate) fn dispatch_mouse(
     ws: &mut Workspace,
     tabs: crate::ui::Chrome<'_>,
@@ -20,8 +20,6 @@ pub(crate) fn dispatch_mouse(
     // dialog opened in between: no drag reports are forwarded, so that program
     // cannot track the pointer itself, and a swallowed release leaves
     // `pending_mouse_press` set for a later unrelated release to match.
-    // `handle_mouse` resolves releases before its own modal guard for exactly
-    // this reason, so the dialog must not swallow them ahead of it either.
     let is_release = matches!(mouse.kind, MouseEventKind::Up(_));
     if ws.repo_input.active && !is_release {
         return KeyOutcome::Continue;
@@ -35,8 +33,8 @@ pub(crate) fn dispatch_mouse(
             if let Some(idx) = crate::ui::project_tab_at(tabs, screen, mouse.column, mouse.row) {
                 return KeyOutcome::Project(ProjectRequest::Switch(idx));
             }
-            // The open hint is the one action the empty screen offers, so a
-            // click on it does what its key does.
+            // The open hint is the empty screen's one action; a click does
+            // what its key does.
             let leader_label = crate::app::leader_label_of(ws_leader);
             let armed = ws.prefix_armed();
             match crate::ui::empty_hint_click_at(
@@ -49,8 +47,7 @@ pub(crate) fn dispatch_mouse(
             ) {
                 Some(crate::ui::HintClick::Plain('o')) | Some(crate::ui::HintClick::Leader('o')) => {
                     // Disarm like the key path: an armed prefix left standing
-                    // would consume the next key as a stale follow-up once the
-                    // dialog closes.
+                    // would consume the next key as a stale follow-up.
                     ws.cancel_prefix();
                     KeyOutcome::Project(ProjectRequest::OpenDialog)
                 }
@@ -60,23 +57,13 @@ pub(crate) fn dispatch_mouse(
     }
 }
 
-/// Route a captured mouse event to the pane under the pointer.
-///
-/// A button press focuses that pane (mirroring a jump key), and press and
-/// release are forwarded — via `click_pane` — only to a program that asked
-/// for mouse reports. A release pairs with the press's pane rather than the
-/// pane under the pointer (see `release_pending_press`). Wheel notches
-/// scroll the pane under the pointer, not the active one, through the same
-/// sink logic as the scroll keys. A left press outside pane content can
-/// focus an upper panel, jump to a pane via its tab (or a `+N` hidden
-/// marker), or run a hint-bar shortcut — the latter dispatched as
-/// synthesized keypresses so a click and the named key take the same code
-/// path (hence the `KeyOutcome` return, e.g. for `r: redraw`). While
-/// pane-swap mode is armed, a left click names the swap target instead,
-/// mirroring the digit follow-up. Presses on anything else (borders,
-/// header) are dropped, and drag/motion reports are not forwarded at all:
-/// inner-program text selection stays with the outer terminal's
-/// Shift+drag.
+/// Route a captured mouse event to the pane under the pointer. Releases pair
+/// with the press's pane (not the pointer pane); wheel scrolls the pane under
+/// the pointer; a left press outside pane content can focus an upper panel,
+/// jump via a tab/`+N` marker, or run a hint-bar shortcut (dispatched as
+/// synthesized keypresses so click and key share the path). In swap mode a
+/// left click names the swap target. Drag/motion reports are not forwarded —
+/// inner-program text selection stays with the outer terminal's Shift+drag.
 pub(crate) fn handle_mouse(
     app: &mut App,
     tabs: crate::ui::Chrome<'_>,
@@ -85,28 +72,22 @@ pub(crate) fn handle_mouse(
     layout: &crate::config::LayoutConfig,
 ) -> KeyOutcome {
     // Releases route by the pending press, not the pointer, so they must be
-    // handled before the hit test — the pointer may have left the pane (or
-    // every pane) between press and release. They also bypass the modal
-    // guard below: the press happened before the modal opened, and the
-    // program that saw it must still see the release — swallowing it would
-    // leave the pending slot stale for a later unrelated release.
+    // handled before the hit test — the pointer may have left the pane. They
+    // also bypass the modal guard: the press happened before the modal opened,
+    // and swallowing the release would leave the pending slot stale.
     if let MouseEventKind::Up(_) = mouse.kind {
         release_pending_press(app, screen, layout, mouse.column, mouse.row);
         return KeyOutcome::Continue;
     }
-    // Modal overlays (repo-switch dialog, every search bar) own all other
-    // input while open — same rule the key handler enforces: a click behind
-    // a modal must not move focus or reach a pane.
+    // Modal overlays own all other input while open — same rule as the key
+    // handler: a click behind a modal must not move focus or reach a pane.
     if app.search_overlay_active() {
         return KeyOutcome::Continue;
     }
-    // Pane-swap mode: a press names the swap target the way a digit does —
-    // a left click on a pane or its tab swaps the active pane with it, and
-    // any other press consumes-and-disarms, mirroring the key follow-up
-    // (`handle_swap_target_followup`). Without this branch a click would
-    // change the active pane while leaving swap mode armed, so a later
-    // digit would swap the wrong pane. Wheel events fall through, like a
-    // paste: they don't name a pane and don't disturb the armed state.
+    // Pane-swap mode: a press names the swap target the way a digit does.
+    // Without this branch a click would change the active pane while leaving
+    // swap mode armed, so a later digit would swap the wrong pane. Wheel
+    // events fall through (like a paste): they don't name a pane.
     if app.awaiting_swap_target()
         && let MouseEventKind::Down(button) = mouse.kind
     {
@@ -122,13 +103,9 @@ pub(crate) fn handle_mouse(
         return KeyOutcome::Continue;
     }
     let Some((id, rect)) = crate::ui::pane_at(app, screen, layout, mouse.column, mouse.row) else {
-        // Not a terminal cell: a press can still focus an upper panel
-        // (file/commit/tree list or diff viewer) in the normal split layout,
-        // or run a shortcut named on the bottom hint row.
         if let MouseEventKind::Down(button) = mouse.kind {
-            // The project tab row is checked first: it sits above the body, so
-            // no panel hit test can claim it, and a tab click is the pointer
-            // equivalent of its F-key.
+            // The project tab row sits above the body, so no panel hit test
+            // can claim it; a tab click is the pointer equivalent of its F-key.
             if button == crossterm::event::MouseButton::Left
                 && let Some(idx) = crate::ui::project_tab_at(tabs, screen, mouse.column, mouse.row)
             {
@@ -153,8 +130,7 @@ pub(crate) fn handle_mouse(
         }
         return KeyOutcome::Continue;
     };
-    // 1-based pane-local cell, as SGR reports expect. In-bounds by
-    // construction: `pane_at` only returns a rect containing the cell.
+    // 1-based pane-local cell, as SGR reports expect.
     let col = mouse.column - rect.x + 1;
     let row = mouse.row - rect.y + 1;
     match mouse.kind {
@@ -172,9 +148,8 @@ pub(crate) fn handle_mouse(
             app.terminal
                 .scroll_pane(id, false, WHEEL_LINES_PER_NOTCH, Some((col, row)));
         }
-        // Horizontal wheel has no scrollback fallback; it reaches only a
-        // pane whose program asked for wheel reports (trackpads and tilt
-        // wheels in e.g. a full-screen TUI with horizontal panes).
+        // Horizontal wheel has no scrollback fallback; it reaches only a pane
+        // that asked for wheel reports.
         MouseEventKind::ScrollLeft => {
             app.terminal.wheel_horizontal_pane(id, true, col, row);
         }
@@ -186,13 +161,9 @@ pub(crate) fn handle_mouse(
     KeyOutcome::Continue
 }
 
-/// Run a clicked hint-bar shortcut by synthesizing the keypress(es) its
-/// label names, so a click and the real key share every guard and dispatch
-/// path in `handle_key` — a hint click can never do something the named key
-/// would not. `Arm` hints press the leader chord alone (the armed row then
-/// offers clickable follow-ups); `Leader` hints press the leader chord first
-/// (arming the prefix) and the follow-up second; `Plain` hints press one
-/// bare key.
+/// Run a clicked hint-bar shortcut by synthesizing the keypress(es) its label
+/// names, so a click and the real key share every guard and dispatch path in
+/// `handle_key` — a hint click can never do something the named key would not.
 fn dispatch_hint_click(app: &mut App, click: crate::ui::HintClick) -> KeyOutcome {
     let plain = |c| KeyEvent::new(KeyCode::Char(c), KeyModifiers::NONE);
     match click {
@@ -213,18 +184,11 @@ fn dispatch_hint_click(app: &mut App, click: crate::ui::HintClick) -> KeyOutcome
 }
 
 /// Deliver a button release to the pane that received the matching press.
-///
-/// A program that saw an SGR press must see the release even when the
-/// pointer moved off the pane in between (no drag reports are forwarded, so
-/// it cannot track the pointer itself) — and a pane the pointer merely ends
-/// up over must NOT receive a release it never got a press for. The release
-/// carries the *stored* press button, not the one crossterm reported:
-/// legacy encodings don't identify the button on release, so some
-/// platforms report every `Up` as `Left`, and trusting that would strand a
-/// right/middle press without its release. Chords were never paired (the
-/// slot is single), so any release closes the pending press. The release
-/// cell is clamped into the pressed pane's current rect. If that pane was
-/// closed or hidden since the press, the release is dropped.
+/// The release carries the *stored* press button, not crossterm's: legacy
+/// encodings don't identify the button on release (some report every `Up` as
+/// `Left`), so trusting that would strand a right/middle press without its
+/// release. The release cell is clamped into the pressed pane's current rect;
+/// if that pane was closed or hidden since, the release is dropped.
 fn release_pending_press(
     app: &mut App,
     screen: Rect,
@@ -243,8 +207,8 @@ fn release_pending_press(
         return;
     };
     // An extreme resize between press and release can shrink the pane to a
-    // zero-sized rect, which would invert the clamp bounds below (`clamp`
-    // panics when min > max).
+    // zero-sized rect, which would invert the clamp bounds (`clamp` panics
+    // when min > max).
     if rect.width == 0 || rect.height == 0 {
         return;
     }

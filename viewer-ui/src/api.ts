@@ -1,5 +1,4 @@
-// Public surface split into `./api/*` for size; re-exported here so existing
-// imports (`./api`, `../api`) keep working unchanged.
+// Preserve existing import paths while exposing the split API modules.
 export * from "./api/types";
 export * from "./api/errors";
 
@@ -39,14 +38,10 @@ export const api = {
 
   repos: (signal?: AbortSignal) =>
     get<ViewerBootstrap>("/api/repos", signal),
-  /** Store the accent for every client of this viewer. Returns the index the
-   *  server kept, which is the request's wrapped into range. */
   setAccent: (accent: number) =>
     post<{ accent: number; sidebar_width: number }>("/api/prefs", {
       accent,
     }).then((r) => r.accent),
-  /** Store the sidebar width for every client of this viewer. Returns the width
-   *  the server kept, which is the request's clamped into range. */
   setSidebarWidth: (sidebar_width: number) =>
     post<{ accent: number; sidebar_width: number }>("/api/prefs", {
       sidebar_width,
@@ -56,8 +51,7 @@ export const api = {
     get<Tree>(`/api/tree?${query({ repo, path })}`),
   treeSearch: (repo: string, q: string) =>
     get<TreeSearch>(`/api/tree/search?${query({ repo, q })}`),
-  /** One page of the commit log. Omit `page` for the first one, then pass the
-   *  `head` it returned and the number of commits already held. */
+  /** Later pages use the returned snapshot head and held count. */
   log: (repo: string, page?: { from: string; skip: number }) =>
     get<Log>(
       `/api/log?${query(
@@ -78,8 +72,7 @@ export const api = {
     get<Diff>(`/api/commit/file-diff?${query({ repo, oid, path })}`),
   browse: (path?: string) =>
     get<Browse>(`/api/browse${path ? `?${query({ path })}` : ""}`),
-  // Create a folder named `name` directly inside `path`; returns the new
-  // directory's absolute path. The server confines `name` to one plain segment.
+  // The server confines names to one plain segment.
   mkdir: (path: string, name: string) =>
     post<{ path: string }>("/api/mkdir", { path, name }).then((r) => r.path),
   open: (path: string) =>
@@ -95,13 +88,6 @@ export const api = {
   },
 };
 
-/**
- * Subscribe to a repository's live status.
- *
- * Returns an unsubscribe function. EventSource reconnects on its own, and the
- * server replays the latest snapshot to a fresh subscriber, so a dropped
- * connection self-heals without special handling here.
- */
 export function subscribeStatus(
   repo: string,
   onStatus: (status: Status) => void,
@@ -112,7 +98,6 @@ export function subscribeStatus(
       const payload = JSON.parse((event as MessageEvent).data);
       if (payload.version === PROTOCOL_VERSION) onStatus(payload as Status);
     } catch {
-      // A malformed frame is dropped; the next one supersedes it anyway.
     }
   });
   return () => source.close();

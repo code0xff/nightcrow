@@ -30,11 +30,11 @@ pub(crate) fn build_screen_lines(app: &App, pane_id: PaneId, rows: u16, cols: u1
                 let mut style = Style::default();
                 let cell = match screen.cell(row, col) {
                     Some(cell) => {
-                        // Wide chars (e.g., Hangul) occupy two columns: the
-                        // glyph lives on the first cell and a spacer fills
-                        // the second. Emitting anything for the spacer would
-                        // shift the row by one column.
-                        if cell.is_wide_spacer() {
+                // Wide chars (e.g., Hangul) occupy two columns: the glyph
+                // lives on the first cell and a spacer fills the second.
+                // Emitting anything for the spacer would shift the row by one
+                // column.
+                if cell.is_wide_spacer() {
                             continue;
                         }
                         style = cell_to_style(&cell);

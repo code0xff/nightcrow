@@ -50,7 +50,6 @@ export function LogList({
               title={`${c.author} · ${c.summary}`}
               className="flex w-max min-w-full items-baseline gap-2 px-3 py-0.5 text-left hover:bg-ink-850"
             >
-              {/* ↑ marks unpushed commits, like the TUI's ahead marker. */}
               <span className="w-2 shrink-0 text-added">
                 {aheadOids.has(c.oid) ? "↑" : ""}
               </span>
@@ -58,9 +57,6 @@ export function LogList({
               <span className="w-10 shrink-0 text-right text-ink-400">
                 {formatRelativeTime(c.time)}
               </span>
-              {/* Author stays a fixed column so summaries line up, the
-                  same cap the TUI applies at 10 chars; `title` carries
-                  the full name. */}
               <span className="max-w-[6rem] shrink-0 truncate text-ink-400">
                 {c.author}
               </span>
@@ -68,29 +64,17 @@ export function LogList({
             </button>
           </li>
         ))}
-      {/* Asks for the next page as it scrolls into view, the way the TUI
-          prefetches as the cursor nears the loaded tail. Rendered only
-          while there is more, so reaching the end of the history stops
-          the observer rather than leaving it to fire on every scroll.
-          Kept out of the drill-down, which lists one commit's files. */}
       {!commitDrillDown && !logDone && !logStalled && !logPagingPaused && (
         <li ref={logSentinelRef} className="px-3 py-1 text-ink-400" aria-hidden="true">
           loading…
         </li>
       )}
-      {/* Says why the list stops where it does while a filter is up: the
-          query matches what is loaded, and more history is only a cleared
-          filter away. Without this the end of a filtered list is
-          indistinguishable from the end of the history. */}
       {!commitDrillDown && !logDone && !logStalled && logPagingPaused && (
         <li className="px-3 py-1 text-ink-400">
           filtering {commits.length} loaded commits — clear the filter to load
           more
         </li>
       )}
-      {/* A failed page keeps its place in the list. The history did not
-          end here, and the error toast fades on its own, so without this
-          the list would simply look shorter than it is. */}
       {!commitDrillDown && logStalled && (
         <li className="px-3 py-1">
           <button

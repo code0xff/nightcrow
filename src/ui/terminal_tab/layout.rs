@@ -7,17 +7,17 @@ use ratatui::{
 /// The terminal pane draws only top/bottom borders, never the left/right `│`.
 /// With side bars, selecting terminal output to copy picks up a `│` glyph on
 /// every wrapped row; dropping them lets the content run edge-to-edge so a
-/// copy is clean. Top stays for the title + focus tint, bottom for separation.
+/// copy is clean.
 pub(crate) const TERMINAL_BORDERS: Borders = Borders::TOP.union(Borders::BOTTOM);
 
 /// Per-tab character budget for the title (excluding the jump-key hint and
-/// surrounding padding). Anything longer is truncated with a trailing ellipsis
-/// so long OSC-set titles can't push neighboring tabs off the row.
+/// surrounding padding). Anything longer is truncated with a trailing
+/// ellipsis so long OSC-set titles can't push neighboring tabs off the row.
 pub(crate) const TAB_TITLE_MAX_CHARS: usize = 20;
 
-/// Number of panes reachable by a leader-digit jump key. Panes past
-/// this index have no jump-key hint in the tab bar (only focus cycling
-/// reaches them). Tied to `MAX_VISIBLE_FULLSCREEN` by reference (not just by
+/// Number of panes reachable by a leader-digit jump key. Panes past this
+/// index have no jump-key hint in the tab bar (only focus cycling reaches
+/// them). Tied to `MAX_VISIBLE_FULLSCREEN` by reference (not just by
 /// convention) so the two can never silently drift apart.
 pub(crate) const JUMP_KEY_PANE_COUNT: usize = MAX_VISIBLE_FULLSCREEN;
 
@@ -50,11 +50,11 @@ pub(crate) fn terminal_layout(area: Rect) -> Option<(Rect, Rect)> {
 
 /// Split `area` into `count` cells using a balanced grid: 1 pane fills the
 /// area; 2 panes go side by side when `area` is wide, stacked otherwise; 3
-/// panes get a 2-column row plus a full-width remainder row; 4 is a 2x2
-/// grid; 5-6 use 3 columns; 7 uses a 4-then-3 row split; 8 is a 2x4 grid.
-/// Counts beyond that (not expected given `MAX_VISIBLE_FULLSCREEN`) fall back
-/// to a near-square grid. Every returned Rect has at least 1x1 size when
-/// `area` is at least `count` cells large, so no cell silently disappears.
+/// panes get a 2-column row plus a full-width remainder row; 4 is a 2x2 grid;
+/// 5-6 use 3 columns; 7 uses a 4-then-3 row split; 8 is a 2x4 grid. Counts
+/// beyond that (not expected given `MAX_VISIBLE_FULLSCREEN`) fall back to a
+/// near-square grid. Every returned Rect has at least 1x1 size when `area`
+/// is at least `count` cells large, so no cell silently disappears.
 pub(crate) fn split_pane_areas(area: Rect, count: usize) -> Vec<Rect> {
     if count == 0 || area.width == 0 || area.height == 0 {
         return Vec::new();

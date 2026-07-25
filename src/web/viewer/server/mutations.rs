@@ -154,7 +154,6 @@ pub(super) fn handle_mkdir(body: &str) -> Vec<u8> {
 }
 
 /// Close a repository named by the `repo` id and return the updated set.
-///
 /// Idempotent from the client's view: an unknown id is a 404, a known one is
 /// removed and its runtime/terminals stopped by the catalog rebuild.
 pub(super) fn handle_close_repo(head: &RequestHead, state: &ViewerState) -> Vec<u8> {
@@ -200,9 +199,7 @@ pub(super) fn lookup_repo(head: &RequestHead, state: &ViewerState) -> Result<Arc
 }
 
 /// Map an internal error to a fixed public message, logging the detail.
-///
-/// git and io errors name absolute paths, symlink targets, and file sizes. The
-/// client is told only that the request failed and why in general terms.
+/// git and io errors name absolute paths, symlink targets, and file sizes.
 pub(super) fn redact(context: &str, err: &anyhow::Error) -> Vec<u8> {
     tracing::debug!(%err, context, "viewer: request failed");
     json_error("400 Bad Request", "request could not be served")

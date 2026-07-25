@@ -1,10 +1,9 @@
-//! The project tab row across the top of the screen.
-//!
-//! Mirrors `terminal_tab`'s tab bar deliberately: one `tab_segments` builder
-//! feeding both the renderer and the click hit-test, so a label and its click
-//! box can never disagree. The two rows differ only in what they address —
-//! panes below, projects above — and in their key legends, which come from
-//! different axes (leader digits for panes, bare F-keys for projects).
+//! The project tab row across the top of the screen. Mirrors
+//! `terminal_tab`'s tab bar: one `tab_segments` builder feeds both the
+//! renderer and the click hit-test, so a label and its click box can never
+//! disagree. The two rows differ only in what they address — panes below,
+//! projects above — and in their key legends (leader digits for panes, bare
+//! F-keys for projects).
 
 use ratatui::{
     layout::Rect,
@@ -14,22 +13,18 @@ use ratatui::{
 };
 
 /// Per-tab character budget for the project name. Shorter than the pane
-/// budget: up to ten tabs share one row, where panes cap at eight and carry
-/// shorter titles.
+/// budget: up to ten tabs share one row.
 const TAB_TITLE_MAX_CHARS: usize = 14;
 
-/// Width of a `+N` overflow marker. Exactly one digit is enough: at most
+/// Width of a `+N` overflow marker. One digit is enough: at most
 /// `MAX_PROJECTS` (10) tabs exist, so at most 9 can be hidden on one side.
 const MARKER_WIDTH: u16 = 4;
 
-/// The name shown for a repo path — its final component, which is what
-/// distinguishes sibling checkouts (`~/work/api` vs `~/work/web`).
-///
-/// Goes through `Path` rather than splitting on `/` so a Windows path
-/// (`C:\work\api`) yields `api` too; splitting by hand would render the whole
-/// path there and waste the tab's width. Falls back to the path itself when it
-/// has no final component (a filesystem root), and to a placeholder when it is
-/// empty — a blank tab would look unclickable.
+/// The name shown for a repo path — its final component, which distinguishes
+/// sibling checkouts (`~/work/api` vs `~/work/web`). Goes through `Path`
+/// rather than splitting on `/` so a Windows path (`C:\work\api`) yields
+/// `api` too. Falls back to the path itself for a filesystem root, and to a
+/// placeholder when empty — a blank tab would look unclickable.
 pub(crate) fn tab_label(repo_path: &str) -> String {
     let path = std::path::Path::new(repo_path);
     let name = path
@@ -53,12 +48,10 @@ fn truncate(s: &str, max: usize) -> String {
     out
 }
 
-/// The full text of every tab, ignoring how many will fit.
-///
-/// Every tab carries its `F#` legend because the F-key row addresses projects
-/// directly and layout-independently — unlike panes, whose digit legend shifts
-/// with the layout. Projects past the tenth have no key, so they carry no
-/// legend rather than implying an unbound one.
+/// The full text of every tab, ignoring how many will fit. Every tab carries
+/// its `F#` legend because the F-key row addresses projects directly and
+/// layout-independently. Projects past the tenth have no key, so they carry
+/// no legend rather than implying an unbound one.
 fn tab_texts(repo_paths: &[String]) -> Vec<String> {
     repo_paths
         .iter()
@@ -74,11 +67,10 @@ fn tab_texts(repo_paths: &[String]) -> Vec<String> {
 }
 
 /// The run of tabs to draw in `width` cells, always containing `active`.
-///
-/// Ten tabs of repo names do not fit an 80-column row, and a `Paragraph` would
-/// simply clip the tail — silently hiding later projects *and* the active-tab
-/// highlight when the active one falls off the end. So the row scrolls around
-/// the active tab instead, and what is dropped is replaced by a `+N` marker
+/// Ten tabs of repo names do not fit an 80-column row, and a `Paragraph`
+/// would clip the tail — silently hiding later projects *and* the active-tab
+/// highlight when the active one falls off the end. So the row scrolls
+/// around the active tab, and what is dropped is replaced by a `+N` marker
 /// whose width is reserved here before deciding what fits.
 fn visible_window(widths: &[u16], width: u16, active: usize) -> std::ops::Range<usize> {
     let n = widths.len();
@@ -96,9 +88,8 @@ fn visible_window(widths: &[u16], width: u16, active: usize) -> std::ops::Range<
         used.saturating_add(markers * MARKER_WIDTH) <= width
     };
 
-    // Grow right first, then left, until neither side can take another tab.
-    // Right-first keeps the common case (active near the front) showing the
-    // projects that follow it.
+    // Grow right first, then left. Right-first keeps the common case (active
+    // near the front) showing the projects that follow it.
     loop {
         let mut grew = false;
         if hi < n && fits(used + widths[hi], lo, hi + 1) {
@@ -119,10 +110,8 @@ fn visible_window(widths: &[u16], width: u16, active: usize) -> std::ops::Range<
 
 /// Build the row's segments: rendered text paired with the project each one
 /// selects. Single source for `render` and `tab_at`, so the hit boxes always
-/// match what is on screen.
-///
-/// A `+N` marker selects the nearest project hidden on its side, so the
-/// overflow is reachable by pointer as well as by F-key.
+/// match what is on screen. A `+N` marker selects the nearest project hidden
+/// on its side, so the overflow is reachable by pointer as well as by F-key.
 fn tab_segments(repo_paths: &[String], active: usize, width: u16) -> Vec<(String, usize)> {
     let texts = tab_texts(repo_paths);
     let widths: Vec<u16> = texts.iter().map(|t| Span::raw(t).width() as u16).collect();
@@ -145,12 +134,9 @@ fn tab_segments(repo_paths: &[String], active: usize, width: u16) -> Vec<(String
     segments
 }
 
-/// Draw the tab row into `area`.
-///
-/// A single project still renders its tab: the row is permanent (see
-/// `chrome_rows`), and showing which repo is open is exactly what the row is
-/// for. `accent` marks the active tab, matching the app-wide convention that
-/// accent means "this is the one in play".
+/// Draw the tab row into `area`. A single project still renders its tab: the
+/// row is permanent (see `chrome_rows`), and showing which repo is open is
+/// exactly what the row is for. `accent` marks the active tab.
 pub(crate) fn render(
     repo_paths: &[String],
     active: usize,

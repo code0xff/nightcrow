@@ -13,9 +13,6 @@ interface UseTerminalViewsArgs {
   setTitles: React.Dispatch<React.SetStateAction<Record<number, string>>>;
 }
 
-/// Materialise one xterm per pane, opened into that pane's cell body (rendered
-/// keyed by pane so it survives grid reflows). `open()` runs once here; dispose
-/// the views of panes that have gone away.
 export function useTerminalViews({
   panes,
   socketRef,
@@ -28,7 +25,7 @@ export function useTerminalViews({
     for (const pane of panes) {
       if (viewsRef.current.has(pane)) continue;
       const body = bodyRefs.current.get(pane);
-      if (!body) continue; // its cell has not mounted yet; a later pass catches it
+      if (!body) continue;
 
       const term = new Terminal({
         fontFamily: getComputedStyle(document.body).fontFamily,
@@ -41,9 +38,7 @@ export function useTerminalViews({
       term.onData((data) =>
         socketRef.current?.send(JSON.stringify({ type: "input", pane, data })),
       );
-      // xterm parses OSC 0/2 window-title sequences; mirror the latest non-empty
-      // one into the cell title. An empty title is ignored so the previous label
-      // (or the "term N" fallback) stands, matching the TUI.
+      // Preserve the previous label when OSC provides an empty title.
       term.onTitleChange((title) => {
         const cleaned = title.replace(/\s+/g, " ").trim();
         if (!cleaned) return;
@@ -52,8 +47,6 @@ export function useTerminalViews({
       term.open(body);
       viewsRef.current.set(pane, { term, fit });
 
-      // Flush any output (typically replayed scrollback) that arrived before
-      // this view existed, in order, so the restored screen is complete.
       const queued = pendingRef.current.get(pane);
       if (queued) {
         for (const chunk of queued) term.write(chunk);

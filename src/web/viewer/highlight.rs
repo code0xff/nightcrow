@@ -40,11 +40,11 @@ pub struct Highlighter {
 }
 
 impl Highlighter {
-    /// Highlight one source line into coloured spans. `raw` must not include a
-    /// trailing newline.
+    /// Highlight one source line into coloured spans. `raw` must not include
+    /// a trailing newline.
     pub fn line(&mut self, raw: &str) -> Vec<SpanDto> {
-        // syntect wants a trailing newline to terminate a line; strip it back
-        // off the segments so span text matches the source exactly.
+        // syntect wants a trailing newline to terminate a line; strip it
+        // back off the segments so span text matches the source exactly.
         let with_nl = format!("{raw}\n");
         match self.hl.highlight_line(&with_nl, self.ss) {
             Ok(ranges) => ranges

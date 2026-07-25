@@ -62,7 +62,6 @@ pub struct Subscription {
 
 impl Subscription {
     /// Wait up to `timeout` for an update, returning the newest one pending.
-    ///
     /// `None` means nothing arrived in time — the caller should send a
     /// heartbeat and come back, which is how a dead socket gets noticed.
     pub fn next_update(&self, timeout: Duration) -> Option<StatusUpdate> {

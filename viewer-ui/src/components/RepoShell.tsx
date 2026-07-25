@@ -8,9 +8,7 @@ import type { ChangedFile, Commit, Repo, Status } from "../api";
 import type { CommitDrillDown } from "../hooks/useLog";
 import type { Maximized, Pane, Tab } from "../types";
 
-// Lazily loaded so `@xterm/xterm` (the bulk of the bundle) stays out of the
-// initial chunk that paints the login screen and git viewer, arriving only once
-// a repo is open and the terminal panel actually mounts.
+// Keep xterm out of the initial login and git-viewer bundle.
 const TerminalPanel = lazy(() =>
   import("../Terminal").then((m) => ({ default: m.TerminalPanel })),
 );
@@ -117,25 +115,14 @@ export function RepoShell(props: RepoShellProps) {
 
   return (
     <>
-      {/* While the divider is dragged, this overlay holds the resize cursor
-          across the whole window and keeps a stray text selection from
-          starting. Pointer capture routes the move/up events to the handle
-          regardless, so the overlay is purely visual. */}
+      {/* Keep the resize cursor and prevent selection during dragging. */}
       {draggingSidebar && <div className="fixed inset-0 z-50 cursor-col-resize" />}
-      {/* The width rides on a custom property so the responsive rule stays
-          declarative — below md the grid collapses to one column, leaving
-          the stacked layout untouched. Maximising the file pane drives the
-          property to zero rather than dropping the sidebar, so its content
-          is not torn down and rebuilt on every toggle. */}
       <main
         className={`grid min-h-0 grid-cols-1 md:grid-cols-[var(--nc-sidebar)_1fr] ${
           draggingSidebar ? "select-none" : ""
         }`}
         style={
           {
-            // `min(px, N vw)` caps the width to the viewport share in CSS,
-            // so shrinking the window re-caps the pane at once rather than
-            // waiting for the next poll or drag to re-run the JS clamp.
             "--nc-sidebar": filesMax
               ? "0px"
               : `min(${sidebarWidth}px, ${MAX_SIDEBAR_VIEWPORT_FRACTION * 100}vw)`,

@@ -1,7 +1,5 @@
 import type { TreeEntry } from "./api";
 
-/// One visible row of the folder tree, flattened with its nesting depth for
-/// indentation.
 export interface TreeRow {
   path: string;
   name: string;
@@ -9,10 +7,6 @@ export interface TreeRow {
   depth: number;
 }
 
-/// Flatten the lazily-cached tree into the rows to render: a depth-first walk
-/// from the root that descends only into expanded directories whose children
-/// have been fetched. An expanded directory whose children are still loading
-/// simply shows no rows beneath it until they arrive.
 export function buildTreeRows(
   children: Record<string, TreeEntry[]>,
   expanded: Set<string>,

@@ -8,14 +8,12 @@ impl DiffPane {
     }
 
     /// Largest legal `scroll` value: one less than the total row count, or 0
-    /// when there are no rows. Callers clamp restored scroll positions and
-    /// page-down ends against this bound.
+    /// when there are no rows.
     pub fn max_scroll(&self) -> usize {
         self.line_count().saturating_sub(1)
     }
 
-    /// Move the active horizontal scroll target (diff or file view, depending
-    /// on `self.view`) left by one tab stop.
+    /// Move the active horizontal scroll target left by one tab stop.
     pub fn scroll_left(&mut self) {
         let target = self.scroll_x_target_mut();
         *target = target.saturating_sub(4);
@@ -39,9 +37,8 @@ impl DiffPane {
 
     /// Build the side-by-side row layout from the current hunks. Within each
     /// hunk, consecutive removed/added lines are paired index-by-index (the
-    /// shorter run padded with blank cells), and context lines are mirrored on
-    /// both sides. Cheap to recompute: it only walks line kinds and stores
-    /// coordinates, never copying content.
+    /// shorter run padded with blank cells), and context lines are mirrored.
+    /// Cheap to recompute: it only walks line kinds and stores coordinates.
     pub fn split_rows(&self) -> Vec<SplitRow> {
         let mut rows = Vec::new();
         for (hi, hunk) in self.hunks.iter().enumerate() {
@@ -110,17 +107,11 @@ impl DiffPane {
 
     /// Rebuild `search.matches` against the current query, using
     /// `hunks_lines_lower` so per-keystroke search is just a substring scan
-    /// over precomputed strings.
-    ///
-    /// `scroll_to_match` selects the post-rebuild behaviour:
-    /// - `true`: jump the viewport to the current cursor's match (used after
-    ///   a keystroke where the user explicitly drove the search).
-    /// - `false`: keep the viewport pinned and re-anchor `cursor` to the
-    ///   match nearest to the current scroll. Without this, a content-only
-    ///   refresh (e.g. background snapshot tick while a query is active)
-    ///   would leave the "current match" indicator at a stale row far from
-    ///   where the user is reading, so the next `n`/`p` would jump
-    ///   unexpectedly.
+    /// over precomputed strings. `scroll_to_match=true` jumps the viewport to
+    /// the current cursor's match (after a keystroke); `false` keeps the
+    /// viewport pinned and re-anchors `cursor` to the nearest match (a
+    /// content-only refresh, e.g. a background snapshot tick while a query is
+    /// active, so the next `n`/`p` does not jump unexpectedly).
     pub fn recompute_matches(&mut self, scroll_to_match: bool) {
         self.search.matches.clear();
         if self.search.query.is_empty() {
@@ -203,14 +194,11 @@ impl DiffPane {
                 .collect();
             self.hunks_lines_lower.push(lines);
         }
-        // Highlight cache shape is keyed by hunks; invalidate so the renderer
-        // rebuilds it on next frame against the active syntax.
         self.line_highlights.clear();
         self.cached_hunk_syntax.clear();
     }
 
     /// Rebuild the lowercased line cache iff its shape diverges from `hunks`.
-    /// Cheap path for callers that aren't sure whether the cache is current.
     pub fn ensure_lower_cache(&mut self) {
         let shape_matches = self.hunks_lines_lower.len() == self.hunks.len()
             && self
@@ -227,9 +215,8 @@ impl DiffPane {
     /// syntax separately for each hunk from its `file_path`. A commit diff
     /// can touch files of different types — using a single syntax for the
     /// whole diff would render everything as the first file's language (or
-    /// plain text, when there is no single "current" file). Rebuilds when
-    /// the cache shape, content size, or any per-hunk syntax diverges from
-    /// the cached state.
+    /// plain text). Rebuilds when the cache shape, content size, or any
+    /// per-hunk syntax diverges.
     pub fn ensure_highlight_cache(
         &mut self,
         ss: &syntect::parsing::SyntaxSet,
@@ -278,7 +265,7 @@ impl DiffPane {
                 ));
                 current_syntax_name = syntax.name.clone();
             }
-            // Safe: just assigned in the line above when None.
+            // Safe: just assigned above when None.
             let (hl_new, hl_old) = hl_pair.as_mut().unwrap();
 
             let mut per_hunk: Vec<Vec<HighlightSegment>> = Vec::with_capacity(hunk.lines.len());

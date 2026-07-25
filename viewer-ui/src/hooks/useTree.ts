@@ -1,8 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { api, type TreeEntry, type TreeMatch } from "../api";
 
-/// Debounce for the recursive tree search: each keystroke hits the filesystem
-/// on the backend, so wait for a pause in typing before firing.
 const TREE_SEARCH_DEBOUNCE_MS = 180;
 
 export interface UseTreeArgs {
@@ -37,9 +35,6 @@ export function useTree({
   filterOpen,
   handle,
 }: UseTreeArgs): UseTreeResult {
-  // Lazy folder tree, mirroring the TUI: children are cached per directory
-  // ("" is the root) and fetched on demand, and the set of expanded directories
-  // derives the visible rows.
   const [treeChildren, setTreeChildren] = useState<Record<string, TreeEntry[]>>(
     {},
   );
@@ -48,9 +43,6 @@ export function useTree({
   const [treeTruncated, setTreeTruncated] = useState(false);
   const [treeSearchLoading, setTreeSearchLoading] = useState(false);
 
-  // Load (and refresh) the root level whenever the tree tab is shown; deeper
-  // levels are fetched lazily as folders expand, and expansion state is kept
-  // across tab switches.
   useEffect(() => {
     if (!repo || !authed || tab !== "tree") return;
     api
@@ -59,9 +51,7 @@ export function useTree({
       .catch(handle);
   }, [repo, authed, tab, handle]);
 
-  // Recursive tree search runs against the backend (unlike the status/log
-  // filters, which match an already-loaded list client-side), so it is debounced
-  // and only active while the filter box holds a query on the tree tab.
+  // Avoid tree-search requests until the user has opened a non-empty query.
   useEffect(() => {
     if (!repo || !authed || tab !== "tree" || !filterOpen || !filter) {
       setTreeMatches([]);
@@ -69,12 +59,7 @@ export function useTree({
       setTreeSearchLoading(false);
       return;
     }
-    // Mark loading up front so the debounce window shows "searching…" rather
-    // than a premature "no matches" before the first result lands.
     setTreeSearchLoading(true);
-    // Guard against out-of-order responses: a slower earlier request must not
-    // overwrite a newer one's results, and nothing may update state after the
-    // query changed or the tab/repo was left.
     let active = true;
     const timer = setTimeout(() => {
       api
@@ -97,8 +82,6 @@ export function useTree({
     };
   }, [repo, authed, tab, filter, filterOpen, handle]);
 
-  // Fetch one directory level into the cache (used the first time a folder is
-  // expanded or revealed).
   const loadTreeChildren = useCallback(
     (path: string) => {
       if (!repo) return;
@@ -122,8 +105,6 @@ export function useTree({
     },
     [treeExpanded, treeChildren, loadTreeChildren],
   );
-  // Reveal a path found by search: expand every ancestor directory (fetching
-  // levels as needed) and the directory itself, then leave the search view.
   const revealTreeDir = useCallback(
     (path: string) => {
       const parts = path.split("/");

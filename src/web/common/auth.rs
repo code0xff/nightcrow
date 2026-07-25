@@ -129,10 +129,9 @@ impl RateLimiter {
         }
     }
 
-    /// Record an attempt at time `now` and report whether it is allowed. Prunes
-    /// timestamps older than an hour, then enforces the per-minute and per-hour
-    /// caps. A rejected attempt is still recorded so a flood cannot reset the
-    /// window by simply retrying.
+    /// Record an attempt at time `now` and report whether it is allowed. A
+    /// rejected attempt is still recorded so a flood cannot reset the window
+    /// by simply retrying.
     pub fn check_and_record(&self, now: Instant) -> bool {
         let mut attempts = self.attempts.lock().expect("rate limiter mutex poisoned");
         attempts.retain(|t| now.duration_since(*t) < Duration::from_secs(3600));

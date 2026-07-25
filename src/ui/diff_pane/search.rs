@@ -59,8 +59,8 @@ impl DiffSearch {
             return None;
         }
         // Defensive clamp: `recompute_matches(false)` re-anchors `cursor` to
-        // the nearest match, but a stale cursor can otherwise survive into
-        // here through code paths that mutate `matches` without re-anchoring.
+        // the nearest match, but a stale cursor can otherwise survive here
+        // through code paths that mutate `matches` without re-anchoring.
         if self.cursor >= self.matches.len() {
             self.cursor = 0;
         } else {
@@ -82,11 +82,11 @@ impl DiffSearch {
     }
 }
 
-/// Return the index of the match in `matches` whose flat row is closest to
-/// `scroll`. Ties prefer the smaller flat row (i.e. the one already on or
-/// above the cursor) so a content refresh during reading never jumps the
-/// "current match" past where the user is looking. `matches` must be sorted
-/// ascending and non-empty.
+/// Index of the match in `matches` whose flat row is closest to `scroll`.
+/// Ties prefer the smaller flat row (the one already on or above the cursor)
+/// so a content refresh during reading never jumps the "current match" past
+/// where the user is looking. `matches` must be sorted ascending and
+/// non-empty.
 pub(crate) fn nearest_match_index(matches: &[usize], scroll: usize) -> usize {
     debug_assert!(!matches.is_empty());
     match matches.binary_search(&scroll) {

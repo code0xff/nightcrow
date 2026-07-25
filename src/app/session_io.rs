@@ -4,11 +4,9 @@ use crate::runtime::terminal::TerminalFullscreen;
 use crate::session::SessionState;
 
 impl App {
-    /// The state to persist.
-    ///
-    /// The live view, except for a selection still waiting on its first
-    /// snapshot — quitting before that arrives would otherwise record "no file
-    /// selected" over the one the user actually left open.
+    // The live view, except for a selection still waiting on its first
+    // snapshot — quitting before that arrives would otherwise record "no file
+    // selected" over the one the user actually left open.
     pub fn session_to_save(&self) -> SessionState {
         let mut state = self.save_session();
         if let Some((path, scroll)) = self.pending_selection.as_ref() {
@@ -41,18 +39,16 @@ impl App {
         }
     }
 
-    /// Restore the pane/focus/fullscreen subset of a saved session. This needs
-    /// no loaded snapshot data, so it runs synchronously at startup (before the
-    /// first snapshot) to stop the fresh-launch terminal focus from briefly
-    /// drawing — and routing keystrokes — over a saved `FileList`/`DiffViewer`
-    /// focus on restart. Idempotent: `restore_session` re-applies it once the
-    /// snapshot arrives, which is a no-op against the same state.
+    // Runs synchronously at startup (before the first snapshot) to stop the
+    // fresh-launch terminal focus from briefly drawing — and routing keystrokes
+    // — over a saved `FileList`/`DiffViewer` focus. Idempotent: `restore_session`
+    // re-applies it once the snapshot arrives, a no-op against the same state.
     pub(crate) fn restore_pane_focus(&mut self, state: &SessionState) {
         self.terminal.active = state
             .active_pane
             .min(self.terminal.panes.len().saturating_sub(1));
-        // `visible_start` isn't persisted (MVP scope) — recompute it fresh
-        // from the restored active pane so the split-view window contains it.
+        // `visible_start` isn't persisted (MVP scope) — recompute from the
+        // restored active pane so the split-view window contains it.
         self.terminal.sync_visible_window();
         if let Some(focus) = state.focus {
             if focus == Focus::Terminal && self.terminal.panes.is_empty() {
@@ -61,8 +57,8 @@ impl App {
                 self.focus = focus;
             }
         }
-        // Zoom is a transient "look at one pane" state; a restored fullscreen
-        // session collapses to `Grid` rather than persisting the zoom.
+        // Zoom is transient; a restored fullscreen session collapses to `Grid`
+        // rather than persisting the zoom.
         self.terminal.fullscreen = if state.terminal_fullscreen && !self.terminal.panes.is_empty() {
             TerminalFullscreen::Grid
         } else {
@@ -83,25 +79,18 @@ impl App {
         }
     }
 
-    /// Apply a saved session.
-    ///
-    /// Runs as soon as the session is loaded, not on the first snapshot. Almost
-    /// none of it needs to wait: panes, focus and fullscreen need no data at
-    /// all, and Log and Tree read what they need directly — the commit log and
-    /// the directory listings — rather than from the git snapshot.
-    ///
-    /// Status mode's selection is the one exception, and only when the changed
-    /// files have not arrived yet. It is held in `pending_selection` until they
-    /// do. That deferral cannot collide with anything the user does meanwhile:
-    /// there is no way to pick a file out of a list that is still empty.
+    // Runs as soon as the session is loaded, not on the first snapshot. Almost
+    // none of it needs to wait: panes/focus/fullscreen need no data, and Log
+    // and Tree read what they need directly. Status mode's selection is the
+    // one exception, held in `pending_selection` until the changed files arrive
+    // — that deferral can't collide with user input: there's no way to pick a
+    // file out of a list that's still empty.
     pub fn restore_session(&mut self, state: &SessionState) {
-        // Pane / focus / fullscreen restoration — independent of view mode.
         self.restore_pane_focus(state);
         self.set_accent_index(state.accent_idx);
 
-        // Mode-specific diff/scroll restoration. We avoid loading a workdir diff
-        // when the saved mode is Log — otherwise we'd waste a load and clamp the
-        // scroll against the wrong diff length.
+        // Avoid loading a workdir diff when the saved mode is Log — otherwise
+        // we'd waste a load and clamp the scroll against the wrong diff length.
         match state.mode {
             Some(ViewMode::Log) => self.restore_log_session(state),
             Some(ViewMode::Tree) => self.restore_tree_session(state),
@@ -130,29 +119,26 @@ impl App {
             self.refresh_diff(true);
             self.diff.scroll = state.scroll.min(self.diff.max_scroll());
         }
-        // If the saved file is no longer present, leave selected/scroll as they
-        // were after the initial snapshot — applying saved_scroll to a different
-        // file would jump the user to an unrelated location.
+        // If the saved file is gone, leave selected/scroll as they were after
+        // the initial snapshot — applying saved_scroll to a different file
+        // would jump the user to an unrelated location.
     }
 
     fn restore_tree_session(&mut self, state: &SessionState) {
         self.mode = ViewMode::Tree;
         // A status search started before this restore (e.g. `/` pressed while
-        // the default Status view was shown awaiting the first snapshot) would
-        // otherwise stay active and capture Tree keystrokes. Drop it; the diff
-        // search overlay is cleared by `clear_diff_state` below.
+        // the default Status view awaited the first snapshot) would otherwise
+        // stay active and capture Tree keystrokes. Drop it.
         self.status_view.cancel_search();
         self.clear_diff_state();
         // Restoring expansion mutates the cache/expanded set; drop the stale
         // row-width bound so horizontal scroll clamps to the restored rows.
         self.tree_view.row_width_cache.set(None);
-        // Seed the expanded set from the saved session, then re-read the tree.
         // The session file is an on-disk boundary: drop any entry that isn't a
-        // safe repo-internal relative path so a hand-edited/corrupted `..` or
-        // absolute path can't drive a directory read outside the working tree.
-        // `refresh_tree_cache` reads the root and these directories top-down and
-        // prunes any that no longer exist on disk (moved/deleted between
-        // sessions), so a stale expansion can't surface a "tree error".
+        // safe repo-internal relative path so a hand-edited `..` or absolute
+        // path can't drive a directory read outside the working tree.
+        // `refresh_tree_cache` prunes any that no longer exist on disk, so a
+        // stale expansion can't surface a "tree error".
         self.tree_view.expanded = state
             .tree_expanded
             .iter()
@@ -160,8 +146,7 @@ impl App {
             .cloned()
             .collect();
         self.refresh_tree_cache();
-        // Restore the cursor by path when it still resolves to a visible row;
-        // otherwise leave it at the top.
+        // Restore the cursor by path when it still resolves to a visible row.
         if let Some(path) = &state.tree_selected_path {
             let rows = self.tree_view.visible_rows();
             if let Some(idx) = rows.iter().position(|r| &r.path == path) {
@@ -177,7 +162,7 @@ impl App {
         // A page worker launched before the restore (e.g. via `toggle_mode`
         // earlier in this frame) would race against the fresh `set_commits`
         // below: its reply would be matched by `loaded_count` and silently
-        // appended over the restored list. Cancel before we mutate state.
+        // appended over the restored list. Cancel before mutating state.
         self.cancel_commit_log_page_fetch();
         let page_size = self.pagination.page_size;
         let commits = match self.with_repo(|repo| load_commit_log(repo, page_size)) {
@@ -193,8 +178,7 @@ impl App {
         self.log_view.selected = state
             .log_selected
             .min(self.log_view.commits.len().saturating_sub(1));
-        // Same rationale as toggle_mode: avoid a same-tick HEAD-change-trigger
-        // reload on the very next snapshot.
+        // Avoid a same-tick HEAD-change-trigger reload on the next snapshot.
         self.pagination.last_head_oid = self.log_view.commits.first().map(|c| c.oid);
         self.mode = ViewMode::Log;
 
@@ -204,9 +188,9 @@ impl App {
             self.load_commit_diff_for_selected();
         }
         self.diff.scroll = state.scroll.min(self.diff.max_scroll());
-        // Restored cursor may already sit close to the tail of the first
-        // page; kick off the next prefetch so the first key move doesn't
-        // bump into a not-yet-loaded boundary.
+        // Restored cursor may already sit close to the tail of the first page;
+        // kick off the next prefetch so the first key move doesn't bump into a
+        // not-yet-loaded boundary.
         self.maybe_prefetch_commit_log();
     }
 
@@ -214,10 +198,10 @@ impl App {
         let (oid, title) = match self.log_view.commits.get(self.log_view.selected) {
             Some(entry) => (entry.oid, entry.to_string()),
             None => {
-                // Saved drill-down pointed at a commit that's no longer in
-                // the loaded first page (history rewrite, force-push) —
-                // surface this so the user knows why they're back at the
-                // commit-level view instead of where they left off.
+                // Saved drill-down pointed at a commit that's no longer in the
+                // loaded first page (history rewrite, force-push) — surface
+                // this so the user knows why they're back at the commit-level
+                // view instead of where they left off.
                 tracing::warn!(
                     selected = self.log_view.selected,
                     "drill-down restore: saved commit index is out of range"

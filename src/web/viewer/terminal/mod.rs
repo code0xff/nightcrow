@@ -84,9 +84,10 @@ impl TerminalHub {
     /// eligible for broadcasts: one `Created` plus one scrollback `Output` per
     /// live pane. Done under the state lock so this snapshot cannot interleave
     /// with the worker's append-and-broadcast (see [`Shared`]); the client
-    /// therefore receives every pane's history exactly once and in order ahead
-    /// of the live stream. A fresh hub (e.g. after a server restart) has no
-    /// panes, so a reconnecting client correctly comes back to an empty panel.
+    /// therefore receives every pane's history exactly once and in order
+    /// ahead of the live stream. A fresh hub (e.g. after a server restart)
+    /// has no panes, so a reconnecting client correctly comes back to an
+    /// empty panel.
     pub fn connect(self: &Arc<Self>) -> TerminalSession {
         let id = self.next_client_id.fetch_add(1, Ordering::AcqRel);
         let (tx, rx) = mpsc::sync_channel(CLIENT_QUEUE_DEPTH);

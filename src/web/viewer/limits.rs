@@ -1,22 +1,17 @@
 //! Ceilings on everything the viewer will serialize or hold open.
 //!
-//! Every route reads from a repository whose size the server does not control:
-//! a commit log can be a million entries, a generated file a gigabyte, a
-//! `node_modules` directory a hundred thousand children. Without a ceiling, one
-//! request turns into an unbounded allocation and a response no browser can
-//! render. Each limit below is the point past which more data stops being
-//! useful to a human reading a diff.
+//! Every route reads from a repository whose size the server does not control.
+//! Without a ceiling, one request turns into an unbounded allocation and a
+//! response no browser can render. Each limit below is the point past which
+//! more data stops being useful to a human reading a diff.
 //!
-//! Truncation is always *reported* — [`Capped::truncated`] rides along into the
+//! Truncation is always reported — [`Capped::truncated`] rides along into the
 //! DTO so the UI can say "showing the first N", never silently imply it showed
 //! everything.
 
-/// Commits returned by one page of `/api/log`.
-///
-/// Matches the TUI's `commit_log_page_size` default so both surfaces move
-/// through a history at the same pace. It was 200 while the endpoint answered
-/// once and stopped; now that the client asks for the next page as it reaches
-/// the tail, a smaller page paints sooner and costs nothing to repeat.
+/// Commits returned by one page of `/api/log`. Matches the TUI's
+/// `commit_log_page_size` default so both surfaces move through history at the
+/// same pace.
 pub const MAX_LOG_PAGE: usize = 100;
 // `/api/log?skip=` deliberately has no ceiling. A ceiling here would look
 // prudent and protect nothing: the skip feeds `Iterator::skip` on a revwalk, so
@@ -29,17 +24,15 @@ pub const MAX_COMMIT_FILES: usize = 2_000;
 /// Entries returned for one directory level of `/api/tree`.
 pub const MAX_TREE_ENTRIES: usize = 2_000;
 /// Depth cap for the recursive `/api/tree/search` walk. Matches the TUI tree's
-/// default `max_depth` (`config.rs`) so both surfaces reach the same files.
+/// `max_depth` (`config.rs`).
 pub const MAX_TREE_SEARCH_DEPTH: usize = 64;
 /// Entries one `/api/tree/search` walk may inspect before it stops and reports
-/// the listing as incomplete. Bounds filesystem work per request (the TUI has no
-/// equivalent cap because it walks once, in-process, for a single local user).
+/// the listing as incomplete. Bounds filesystem work per request.
 pub const MAX_TREE_SEARCH_VISITS: usize = 100_000;
 /// Matches returned by one `/api/tree/search` request.
 pub const MAX_TREE_SEARCH_RESULTS: usize = 500;
-/// Longest accepted `/api/tree/search` query. A filename substring never needs
-/// to be large; anything past this is rejected at the boundary rather than
-/// lowercased and matched against every basename.
+/// Longest accepted `/api/tree/search` query. Anything past this is rejected
+/// at the boundary rather than matched against every basename.
 pub const MAX_TREE_SEARCH_QUERY_BYTES: usize = 256;
 /// Changed files reported in one status payload.
 pub const MAX_STATUS_FILES: usize = 2_000;
@@ -52,18 +45,13 @@ pub const MAX_DIFF_LINES: usize = 20_000;
 pub const MAX_SSE_PAYLOAD_BYTES: usize = 1024 * 1024;
 /// Terminals one repository may hold open at once. Each is a real process.
 pub const MAX_PTYS_PER_REPO: usize = 8;
-/// Raw PTY bytes retained per terminal to replay to a client that (re)connects,
-/// so a browser refresh restores the screen instead of a blank pane. Bounded so
-/// a long-running terminal cannot grow without limit (up to MAX_PTYS_PER_REPO of
-/// these per repo). The oldest bytes are dropped first.
-///
+/// Raw PTY bytes retained per terminal to replay to a (re)connecting client.
 /// Restore is best-effort, not an exact snapshot: replaying only a byte-window
-/// means a terminal mode set before that window — entering the alternate screen,
-/// a persistent SGR — can be lost, and a truncated escape sequence at the front
-/// is clipped. In practice a full-screen program repaints on the resize that
-/// every client sends right after connecting, and shells re-emit their prompt
-/// styling; a true fix would need server-side VT emulation, which this viewer
-/// deliberately does not do (xterm.js is the only emulator).
+/// means a terminal mode set before that window (alternate screen, persistent
+/// SGR) can be lost. A full-screen program repaints on the resize every client
+/// sends right after connecting; a true fix would need server-side VT
+/// emulation, which this viewer deliberately does not do (xterm.js is the only
+/// emulator).
 pub const MAX_TERMINAL_SCROLLBACK_BYTES: usize = 256 * 1024;
 /// Live connections the viewer's accept loop will hold. Separate from the
 /// mirror's cap: they are different servers on different ports.
@@ -96,12 +84,10 @@ impl<T> Capped<T> {
     }
 }
 
-/// Cut `text` to at most `max_bytes`, never splitting a UTF-8 character.
-///
-/// Returns the kept prefix and whether anything was dropped. Byte-slicing a
-/// `String` at an arbitrary index panics mid-character, so the cut is walked
-/// back to the nearest boundary — a multi-byte character straddling the limit
-/// is dropped whole rather than emitted as a broken fragment.
+/// Cut `text` to at most `max_bytes`, never splitting a UTF-8 character. The
+/// cut walks back to the nearest boundary so a multi-byte character
+/// straddling the limit is dropped whole rather than emitted as a broken
+/// fragment.
 pub fn cap_text(text: &str, max_bytes: usize) -> (String, bool) {
     if text.len() <= max_bytes {
         return (text.to_string(), false);

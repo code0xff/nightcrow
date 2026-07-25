@@ -74,8 +74,8 @@ pub(crate) fn render_split_view(
 
     let scroll_x = app.diff.scroll_x.min(u16::MAX as usize) as u16;
     let left_para = Paragraph::new(left_lines).scroll((0, scroll_x));
-    // A left border on the right column draws the vertical divider between the
-    // two halves and indents the new-side content by one cell.
+    // A left border on the right column draws the vertical divider between
+    // the two halves and indents the new-side content by one cell.
     let right_para = Paragraph::new(right_lines)
         .block(
             Block::default()

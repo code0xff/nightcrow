@@ -26,9 +26,9 @@ use std::time::Duration;
 /// Poll interval for the per-client loop: bounds added output latency while
 /// letting the same thread service both socket reads and queued writes.
 pub(super) const WS_POLL_TIMEOUT: Duration = Duration::from_millis(10);
-/// Live connections allowed at once. Each one costs a thread, so an unbounded
-/// accept loop lets anything that can reach the port exhaust the process.
-/// A browser session needs a handful; this leaves room for several of them.
+/// Live connections allowed at once. Each one costs a thread, so an
+/// unbounded accept loop lets anything that can reach the port exhaust the
+/// process.
 pub(super) const MAX_CONNECTIONS: usize = 64;
 
 /// Handle owned by the main loop. Drop stops nothing (threads live until the

@@ -87,8 +87,7 @@ pub fn parse_request_head(text: &str) -> Result<RequestHead> {
     if method.is_empty() || target.is_empty() {
         bail!("malformed HTTP request line: {request_line:?}");
     }
-    // Split the query off so routing matches on the path alone. Both halves are
-    // bounded by the caller's head-size cap.
+    // Split the query off so routing matches on the path alone.
     let (path, query) = match target.split_once('?') {
         Some((p, q)) => (p.to_string(), q.to_string()),
         None => (target, String::new()),

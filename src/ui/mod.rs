@@ -87,8 +87,9 @@ pub fn draw_empty(
     };
     frame.render_widget(Paragraph::new(notice_line), rows.notice);
 
-    // The armed prefix shows the same chip as the project screen: pressing the
-    // leader here has to look like it did something, or it reads as a dead key.
+    // The armed prefix shows the same chip as the project screen: pressing
+    // the leader here has to look like it did something, or it reads as a
+    // dead key.
     let hint = if chrome.repo_input.active {
         Line::from(vec![
             Span::styled("repo: ", Style::default().fg(accent)),
@@ -123,8 +124,8 @@ pub fn draw(
     // Chrome: the project tab row on top, the notice row (repo identity, or a
     // notice covering it) and the hint bar below. The tab row and notice row
     // are rendered here, before any layout branch, so neither is lost to a
-    // fullscreen view mode — a tab row that vanished in fullscreen would strand
-    // the user with no indication of which project they are in.
+    // fullscreen view mode — a tab row that vanished in fullscreen would
+    // strand the user with no indication of which project they are in.
     let rows = chrome_rows(frame.area());
     let (body_area, notice_area, hint_area) = (rows.body, rows.notice, rows.hint);
 

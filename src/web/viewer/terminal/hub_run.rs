@@ -151,16 +151,18 @@ impl TerminalHub {
         }
     }
 
-    /// Reorder the live panes to match `order` and tell every client the result.
+    /// Reorder the live panes to match `order` and tell every client the
+    /// result.
     ///
-    /// `order` is a full desired sequence of pane ids. It is reconciled against
-    /// what is actually live so a reorder is robust to races with create/close:
-    /// unknown ids are dropped and any live pane the request omits (e.g. one
-    /// another client created in the same beat) is kept, appended in its current
-    /// order (see [`canonical_order`]). The hub converges on that one canonical
-    /// order and broadcasts it, so the sender and every other device end up with
-    /// the same layout. Reordering only restyles the grid — pane ids, scrollback,
-    /// and the live PTYs are untouched. A no-op reorder sends nothing.
+    /// `order` is a full desired sequence of pane ids. It is reconciled
+    /// against what is actually live so a reorder is robust to races with
+    /// create/close: unknown ids are dropped and any live pane the request
+    /// omits (e.g. one another client created in the same beat) is kept,
+    /// appended in its current order (see [`canonical_order`]). The hub
+    /// converges on that one canonical order and broadcasts it, so the
+    /// sender and every other device end up with the same layout. Reordering
+    /// only restyles the grid — pane ids, scrollback, and the live PTYs are
+    /// untouched. A no-op reorder sends nothing.
     fn reorder_panes(&self, order: Vec<PaneId>) {
         let mut state = self.state.lock().expect("terminal state poisoned");
         let before: Vec<PaneId> = state.panes.iter().map(|p| p.id).collect();

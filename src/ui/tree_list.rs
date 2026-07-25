@@ -1,5 +1,4 @@
 //! Renderer for the read-only file-tree navigator pane (`ViewMode::Tree`).
-//!
 //! Rows are derived from `TreeView::visible_rows`; each is indented by depth,
 //! prefixed with an expansion marker for directories, and horizontally
 //! scrollable via the shared `char_offset` helper (mirroring the file/commit
@@ -15,8 +14,8 @@ use ratatui::{
 };
 
 // VS Code-style chevrons rather than filled triangles: a thin right chevron
-// when collapsed, a down chevron when expanded. Each marker is two columns wide
-// (glyph + space), matching the file marker so names stay aligned.
+// when collapsed, a down chevron when expanded. Each marker is two columns
+// wide (glyph + space), matching the file marker so names stay aligned.
 const EXPANDED_MARKER: &str = "⌄ ";
 const COLLAPSED_MARKER: &str = "› ";
 const FILE_MARKER: &str = "  ";
@@ -25,8 +24,8 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect, accent: Color) {
     let focused = app.focus == Focus::FileList;
     let border_style = super::focused_border_style(focused, accent);
 
-    // Reserve a bottom row for the search input whenever the overlay is open or
-    // a query is still showing, mirroring the status/commit list layout.
+    // Reserve a bottom row for the search input whenever the overlay is open
+    // or a query is still showing, mirroring the status/commit list layout.
     let show_search = app.tree_view.search_active || !app.tree_view.search_query.is_empty();
     let (list_area, search_area) = if show_search {
         let chunks = Layout::default()

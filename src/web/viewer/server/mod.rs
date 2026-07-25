@@ -44,9 +44,8 @@ use std::time::Duration;
 /// session for one must not authenticate against the other.
 pub const VIEWER_SESSION_COOKIE: &str = "nightcrow_viewer_session";
 
-/// How long an idle SSE stream waits before sending a heartbeat. Short enough
-/// that a dead socket is noticed promptly, since a write is the only way to
-/// find out.
+/// How long an idle SSE stream waits before sending a heartbeat. A write is
+/// the only way to find out a socket is dead.
 pub(super) const SSE_HEARTBEAT: Duration = Duration::from_secs(15);
 
 /// Read timeout on a terminal socket. Bounds how long queued output waits
@@ -68,14 +67,11 @@ pub struct ViewerState {
     /// (which owns that file).
     pub(super) persist: bool,
     /// The TUI's recently-touched settings, served to the client so the file
-    /// list fades on the same window the TUI does instead of a second, silently
-    /// diverging default. `auto_follow` is not sent: it moves the TUI's
-    /// selection, which is a keyboard-driven notion the viewer has no analogue
-    /// for.
+    /// list fades on the same window the TUI does. `auto_follow` is not sent:
+    /// it moves the TUI's selection, which the viewer has no analogue for.
     pub(super) hot: crate::config::AgentIndicatorConfig,
-    /// Viewer preferences shared by every client (see `prefs.rs`). Unlike the
-    /// catalog's `persist`, this is always written: the file is the viewer's
-    /// own and no TUI owns it.
+    /// Viewer preferences shared by every client (see `prefs.rs`). Always
+    /// written: the file is the viewer's own and no TUI owns it.
     pub(super) prefs: PrefsStore,
 }
 

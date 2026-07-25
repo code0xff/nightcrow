@@ -8,15 +8,14 @@ pub(crate) const EMPTY_HINT_ARMED: &str = " o: open project | q: quit | esc: can
 pub(crate) fn prefix_armed_hint_text(app: &App) -> String {
     // While the terminal fills the body the digit row addresses panes
     // directly (`1-8`); in the split view `1`/`2` focus the list/diff and
-    // `3-9,0` jump to panes (see `main::resolve_prefix_action`).
+    // `3-9,0` jump to panes.
     let digits = if app.terminal.fullscreen.fills_body() {
         "1-8: pane"
     } else {
         "1-9: focus/pane"
     };
-    // `w`/`s` only act under their availability predicates (see
-    // `App::can_close_pane`/`can_swap_panes`), so only advertise them there —
-    // a hint for a no-op key would lie.
+    // `w`/`s` only act under their availability predicates, so only advertise
+    // them there — a hint for a no-op key would lie.
     let close = if app.can_close_pane() {
         "w: close pane | "
     } else {
@@ -27,25 +26,23 @@ pub(crate) fn prefix_armed_hint_text(app: &App) -> String {
     } else {
         ""
     };
-    // The view toggles name their destination from the current mode, matching
-    // the normal legends, instead of a generic `log/status` label.
+    // The view toggles name their destination from the current mode.
     let (log_toggle, tree_toggle) = match app.mode {
         ViewMode::Log => ("l: status view", "b: tree view"),
         ViewMode::Status => ("l: log view", "b: tree view"),
         ViewMode::Tree => ("l: log view", "b: status view"),
     };
-    // `x` is advertised unconditionally, unlike `w`/`s` above: refusing to
-    // close the last project reports why on the notice row, so the key always
-    // produces a visible result rather than silently doing nothing.
+    // `x` is advertised unconditionally: refusing to close the last project
+    // reports why on the notice row, so the key always produces a visible
+    // result.
     format!(
         " t: new pane | {close}{swap}{log_toggle} | {tree_toggle} | f: fullscreen | o: open project | x: close project | p: theme | r: redraw | q: quit | {digits} | esc: cancel"
     )
 }
 
 /// The hint literal (with `<prefix>` placeholders) for the current
-/// non-modal state. Single source for `render_hint_bar` and
-/// `hint_click_at`, so the click hit-test always segments exactly the text
-/// on screen.
+/// non-modal state. Single source for `render_hint_bar` and `hint_click_at`,
+/// so the click hit-test always segments exactly the text on screen.
 pub(crate) fn normal_hint_literal(app: &App) -> &'static str {
     match app.terminal.fullscreen {
         // From Grid the next `f` zooms the active pane — but only when Zoom
@@ -80,8 +77,7 @@ pub(crate) fn normal_hint_literal(app: &App) -> &'static str {
         } else if app.can_open_file_view() {
             " <prefix> f: exit zoom | j/k: scroll | v: view file | s: split | /: search | pgup/pgdn: page | <prefix> q: quit"
         } else {
-            // No file target for `v` (log view browsing commits, or nothing
-            // selected) — a hint for a no-op key would lie.
+            // No file target for `v` — a hint for a no-op key would lie.
             " <prefix> f: exit zoom | j/k: scroll | s: split | /: search | pgup/pgdn: page | <prefix> q: quit"
         };
         return hint;
@@ -149,16 +145,15 @@ pub(crate) fn normal_hint_literal(app: &App) -> &'static str {
             } else if !app.diff.search.query.is_empty() {
                 " n: next match | shift+n: prev match | /: new search | esc: clear"
             } else if app.can_open_file_view() {
-                // The `l` toggle names its destination (Tree mode never
-                // reaches these arms — its right pane is always the file view).
+                // The `l` toggle names its destination (Tree mode never reaches
+                // these arms — its right pane is always the file view).
                 if app.mode == ViewMode::Log {
                     " shift+←/→: cycle | j/k: scroll | pgup/pgdn: scroll | v: view file | s: split | /: search | <prefix> t: new pane | <prefix> f: zoom | <prefix> l: status view | <prefix> b: tree view | <prefix> o: open project | <prefix> q: quit"
                 } else {
                     " shift+←/→: cycle | j/k: scroll | pgup/pgdn: scroll | v: view file | s: split | /: search | <prefix> t: new pane | <prefix> f: zoom | <prefix> l: log view | <prefix> b: tree view | <prefix> o: open project | <prefix> q: quit"
                 }
             } else {
-                // No file target for `v` (log view browsing commits, or
-                // nothing selected) — a hint for a no-op key would lie.
+                // No file target for `v` — a hint for a no-op key would lie.
                 if app.mode == ViewMode::Log {
                     " shift+←/→: cycle | j/k: scroll | pgup/pgdn: scroll | s: split | /: search | <prefix> t: new pane | <prefix> f: zoom | <prefix> l: status view | <prefix> b: tree view | <prefix> o: open project | <prefix> q: quit"
                 } else {

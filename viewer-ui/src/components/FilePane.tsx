@@ -7,9 +7,7 @@ import { PathLabel } from "./PathLabel";
 import type { Status } from "../api";
 import type { Pane } from "../types";
 
-// Same reasoning as the terminal panel: react-markdown pulls in the remark /
-// rehype / highlight.js pipeline, which has no business in the initial chunk.
-// It arrives only when a markdown file is first rendered.
+// Keep the markdown pipeline out of the initial chunk.
 const MarkdownView = lazy(() =>
   import("../Markdown").then((m) => ({ default: m.MarkdownView })),
 );
@@ -34,12 +32,6 @@ export function FilePane({
   const diffLayout = useDiffLayout();
   return (
     <section className="flex min-h-0 min-w-0 flex-col">
-      {/* Always rendered, even with nothing open: it carries the maximise
-          control, and a header that came and went with the selection would
-          shift the pane under the cursor. Only a file view is labelled with
-          its path here — a diff already prints each file path in its hunk
-          headers, and a commit diff's `path` is the commit oid, which would
-          read as a bogus file name. */}
       <div className="flex shrink-0 items-center gap-2 bg-ink-850 px-3 py-0.5 text-ink-400">
         {pane.kind === "file" && <PathLabel path={pane.value.path} />}
         <div className="ml-auto flex shrink-0 items-center gap-1">

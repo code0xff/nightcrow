@@ -9,11 +9,9 @@ pub fn encode_key(key: KeyEvent) -> Option<Vec<u8>> {
         KeyCode::Char(c) => {
             if ctrl && c.is_ascii() {
                 // Several Ctrl chords fall outside the contiguous
-                // `c.to_ascii_uppercase() - '@' < 32` range and need
-                // explicit xterm-convention mappings:
-                //   Ctrl+Space → NUL (formula wraps because ' ' < '@')
-                //   Ctrl+/     → 0x1F (US): screen/tmux/emacs/less use this
-                //   Ctrl+?     → 0x7F (DEL): xterm convention
+                // `c.to_ascii_uppercase() - '@' < 32` range and need explicit
+                // xterm-convention mappings: Ctrl+Space → NUL (formula wraps
+                // because ' ' < '@'), Ctrl+/ → 0x1F (US), Ctrl+? → 0x7F (DEL).
                 let b = match c {
                     ' ' => Some(0x00),
                     '/' => Some(0x1F),
@@ -25,8 +23,7 @@ pub fn encode_key(key: KeyEvent) -> Option<Vec<u8>> {
                 };
                 if let Some(b) = b {
                     // Ctrl+Alt+Char encodes as ESC + control byte (matches
-                    // readline / Emacs expectations). Without the prefix
-                    // programs like Emacs would see plain Ctrl+Char.
+                    // readline / Emacs expectations).
                     return Some(if alt { vec![0x1b, b] } else { vec![b] });
                 }
             }
@@ -63,20 +60,17 @@ pub fn encode_key(key: KeyEvent) -> Option<Vec<u8>> {
 const SGR_WHEEL_UP: u8 = 64;
 
 /// Encode a mouse wheel notch as an SGR (1006) mouse report. `col`/`row` are
-/// 1-based cell coordinates; the pane's centre is a good choice, since a TUI
-/// may route the event by which of its regions the pointer sits over.
-///
-/// A wheel notch has no release event, so a single `M` (press) report is the
-/// whole sequence — unlike a click, which xterm follows with an `m`.
+/// 1-based cell coordinates. A wheel notch has no release event, so a single
+/// `M` (press) report is the whole sequence — unlike a click, which xterm
+/// follows with an `m`.
 pub fn encode_wheel(up: bool, col: u16, row: u16) -> Vec<u8> {
     let button = if up { SGR_WHEEL_UP } else { SGR_WHEEL_UP + 1 };
     format!("\x1b[<{button};{};{}M", col.max(1), row.max(1)).into_bytes()
 }
 
 /// Encode a horizontal wheel notch as an SGR (1006) mouse report: button 66
-/// is wheel-left, 67 wheel-right. `col`/`row` are 1-based pane-local cells.
-/// Horizontal wheel has no scrollback or arrow-key analog, so — unlike the
-/// vertical encoder — this only ever targets a pane that claimed the mouse.
+/// is wheel-left, 67 wheel-right. Horizontal wheel has no scrollback or
+/// arrow-key analog, so this only ever targets a pane that claimed the mouse.
 pub fn encode_wheel_horizontal(left: bool, col: u16, row: u16) -> Vec<u8> {
     let button: u8 = if left {
         SGR_WHEEL_UP + 2
@@ -89,8 +83,7 @@ pub fn encode_wheel_horizontal(left: bool, col: u16, row: u16) -> Vec<u8> {
 /// Encode a mouse button press or release as an SGR (1006) mouse report.
 /// `col`/`row` are 1-based pane-local cell coordinates. SGR keeps the real
 /// button code on release and marks it with a final `m` instead of `M` —
-/// unlike the legacy X10 encoding, which collapses every release to
-/// button 3 and could not tell the program which button went up.
+/// unlike legacy X10, which collapses every release to button 3.
 pub fn encode_button(button: MouseButton, press: bool, col: u16, row: u16) -> Vec<u8> {
     let code: u8 = match button {
         MouseButton::Left => 0,

@@ -15,11 +15,9 @@ impl App {
     }
 
     fn apply_tail_page(&mut self, msg: CommitLogPageMsg) {
-        // Stale-result check: the worker was launched with `skip` equal
-        // to the loaded count at the time. If the count has changed
-        // (HEAD refresh resetting pagination, repo switch landing
-        // before this reply, etc.), the page no longer concatenates
-        // safely onto the current list.
+        // Stale-result check: the worker was launched with `skip` equal to the
+        // loaded count at the time. If the count has changed (HEAD refresh,
+        // repo switch, etc.), the page no longer concatenates safely.
         if msg.skip != self.log_view.loaded_count {
             self.log_view.clear_pending();
             return;
@@ -27,9 +25,7 @@ impl App {
         match msg.result {
             Ok(page) => {
                 self.log_view.append_page(page, msg.page_size);
-                // Chain another fetch immediately if the user is still
-                // sitting near the new tail; otherwise the next
-                // selection move would have to wait a tick.
+                // Chain another fetch if the user is still near the new tail.
                 self.maybe_prefetch_commit_log();
             }
             Err(e) => {
@@ -39,12 +35,9 @@ impl App {
         }
     }
 
-    /// Apply a fresh page-0 fetch as a refresh: either prepend new head
-    /// commits onto the cached tail (fast-forward), or replace the list
-    /// outright (divergence, initial entry). Mirrors the merge that was
-    /// previously inline in `refresh_commit_log_after_head_change`, now
-    /// driven off a captured snapshot of the pre-spawn state so the
-    /// load itself can run on a worker thread.
+    // Either prepend new head commits onto the cached tail (fast-forward) or
+    // replace the list outright (divergence, initial entry). Driven off a
+    // captured snapshot of pre-spawn state so the load can run on a worker.
     fn apply_refresh_page(
         &mut self,
         msg: CommitLogPageMsg,
@@ -61,13 +54,11 @@ impl App {
             }
         };
 
-        // If the previous head still appears in the freshly fetched first
-        // page and the fresh tail lines up with the cached list, treat the
-        // change as a fast-forward / simple new commit: prepend the newer
-        // entries onto the existing list so all accumulated pages stay valid.
-        // A merge can interleave side-branch commits after the old head; in
-        // that case cached pages are no longer a contiguous prefix of the
-        // new revwalk, so reset to the freshly loaded first page instead.
+        // If the previous head still appears in the fresh first page and the
+        // fresh tail lines up with the cached list, fast-forward: prepend the
+        // newer entries so accumulated pages stay valid. A merge can interleave
+        // side-branch commits after the old head; then cached pages are no
+        // longer a contiguous prefix, so reset to the fresh first page.
         let prepend_idx = prior_head_oid.and_then(|oid| page.iter().position(|c| c.oid == oid));
         let page_is_short = page.len() < page_size;
         let can_prepend = prepend_idx.is_some_and(|idx| {
@@ -87,21 +78,18 @@ impl App {
             new_head_commits.append(&mut self.log_view.commits);
             self.log_view.commits = new_head_commits;
             self.log_view.loaded_count = self.log_view.commits.len();
-            // `page_is_short` only describes the freshly fetched first page;
-            // it doesn't account for cached later pages. Preserve prior
-            // completion state and only promote to fully_loaded when the
-            // new revwalk demonstrably fits within one page.
+            // `page_is_short` only describes the fresh first page; preserve
+            // prior completion state and only promote to fully_loaded when the
+            // new revwalk fits within one page.
             if page_is_short && self.log_view.commits.len() <= page_size {
                 self.log_view.fully_loaded = true;
             }
             self.log_view.commit_width_cache.set(None);
-            // Prepend bypasses `set_commits`, so the filter cache must be
-            // refreshed manually so an active search query still resolves
-            // against the newly merged head commits.
+            // Prepend bypasses `set_commits`, so refresh the filter cache
+            // manually so an active search query resolves against the new head.
             self.log_view.recompute_commit_filter();
             self.log_view.clear_pending();
-            // Slide the selection so the user keeps looking at the same
-            // commit even though new entries appeared above it.
+            // Slide selection so the user keeps looking at the same commit.
             if let Some(prior_oid) = prior_selected_oid
                 && let Some(pos) = self
                     .log_view
@@ -112,11 +100,10 @@ impl App {
                 self.log_view.selected = pos;
             } else {
                 // `prior_selected_oid` was Some, so the cached list contained
-                // that oid. If the position lookup fails despite the list
-                // being a prefix of the new one — corruption, or a race we
-                // haven't accounted for — clamp to the new bounds so a
-                // downstream `commits.get(selected)` lands on the tail
-                // instead of returning None and clearing the diff pane.
+                // that oid. If the lookup fails despite the list being a prefix
+                // — corruption, or an unaccounted race — clamp to bounds so a
+                // downstream `commits.get(selected)` lands on the tail instead
+                // of returning None and clearing the diff pane.
                 self.log_view.selected = self
                     .log_view
                     .selected
@@ -130,13 +117,12 @@ impl App {
                 .unwrap_or(0);
         }
         self.log_view.commit_scroll_x = 0;
-        // Anchor the head-oid sentinel to whatever we just loaded so
-        // ingest_snapshot doesn't immediately trigger another refresh.
+        // Anchor the head-oid sentinel so ingest_snapshot doesn't immediately
+        // trigger another refresh.
         self.pagination.last_head_oid = self.log_view.commits.first().map(|c| c.oid);
 
-        // Drill-down survives only if the commit it was opened on is still
-        // in the (possibly extended) list. Otherwise drop back to the
-        // commit-level diff.
+        // Drill-down survives only if the commit it was opened on is still in
+        // the (possibly extended) list.
         if self.log_view.drill_down
             && prior_selected_oid
                 .is_none_or(|oid| !self.log_view.commits.iter().any(|c| c.oid == oid))

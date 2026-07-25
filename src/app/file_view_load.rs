@@ -18,8 +18,6 @@ impl App {
                 if row.is_dir {
                     return None;
                 }
-                // Tree files reuse the workdir-file key — the source is the
-                // same `load_workdir_file` loader as the status preview.
                 Some(FileViewKey::Status(row.path))
             }
             ViewMode::Log => {
@@ -34,9 +32,6 @@ impl App {
                 Some(FileViewKey::Commit {
                     oid,
                     path: file.path.clone(),
-                    // Commit deltas carry their single status in the index
-                    // column; `load_commit_file_blob` only needs the Deleted
-                    // case to read from the parent tree.
                     status: file.index,
                 })
             }
@@ -63,11 +58,9 @@ impl App {
         match result {
             Ok(content) => {
                 fv.set_content(content);
-                // Initial scroll: 2 lines of context above the hunk's new-side
-                // start line, converted from 1-based to 0-based. Clamp against
-                // `max_scroll` so a stale anchor past the current file length
-                // (file truncated since the diff was computed) doesn't open
-                // the file view on a blank region the user has to page back from.
+                // 2 lines of context above the hunk's new-side start (1-based
+                // → 0-based). Clamp so a stale anchor past the current file
+                // length doesn't open on a blank region.
                 let initial = anchor
                     .map(|n| n.saturating_sub(1).saturating_sub(2))
                     .unwrap_or(0);
@@ -80,17 +73,14 @@ impl App {
         self.diff.file_view = fv;
     }
 
-    /// Whether `v` currently has a file to open. Mirrors the gates in
-    /// `toggle_diff_file_view` — Tree mode never toggles, and elsewhere the
-    /// key must resolve (log view needs a drill-down file selection) — so
-    /// the hint bar only advertises `v: view file` when a press would act.
+    // Mirrors the gates in `toggle_diff_file_view` so the hint bar only
+    // advertises `v: view file` when a press would act.
     pub(crate) fn can_open_file_view(&self) -> bool {
         self.mode != ViewMode::Tree && self.current_file_view_key().is_some()
     }
 
     pub fn toggle_diff_file_view(&mut self) {
-        // Tree mode's right pane is always the raw file preview; the diff and
-        // split views have no meaning there, so `v`/`s` are no-ops.
+        // Tree mode's right pane is always the raw file preview; `v`/`s` are no-ops.
         if self.mode == ViewMode::Tree {
             return;
         }
@@ -109,9 +99,6 @@ impl App {
         self.diff.view = DiffPaneView::File;
     }
 
-    /// Toggle the side-by-side split view on or off. From any other view
-    /// (unified diff or file overlay) this switches into `Split`; pressing it
-    /// again returns to the unified diff.
     pub fn toggle_diff_split_view(&mut self) {
         if self.mode == ViewMode::Tree {
             return;

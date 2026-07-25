@@ -95,10 +95,7 @@ pub(super) fn optional_oid(
 }
 
 /// A non-negative count query parameter, defaulting to zero when absent.
-///
-/// Deliberately unbounded — see the note beside [`limits::MAX_LOG_PAGE`]. A
-/// negative or non-numeric value still fails to parse, so the guard that
-/// matters is here.
+/// Deliberately unbounded — see the note beside [`limits::MAX_LOG_PAGE`].
 pub(super) fn optional_count(
     head: &crate::web::common::http::RequestHead,
     name: &str,

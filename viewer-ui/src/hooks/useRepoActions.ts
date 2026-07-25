@@ -23,8 +23,7 @@ export function useRepoActions({
   dropMaximized,
   handle,
 }: UseRepoActionsArgs) {
-  // Focus a repository the folder picker just opened, rather than waiting for
-  // the next repo poll to notice it.
+  // Select a newly opened repository immediately instead of waiting for polling.
   const selectOpenedRepo = useCallback(
     (opened: Repo) => {
       setRepos((prev) =>

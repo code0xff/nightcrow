@@ -73,10 +73,9 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect, accent: Color) -> Option
         let is_active = i == app.terminal.active;
         if cell.bordered {
             // `accent` means "this is where your keystrokes go right now" —
-            // reserved for Focus::Terminal, matching FileList/DiffViewer.
-            // Without real focus, the active pane must look identical to an
-            // inactive one (plain DarkGray) — any brighter treatment reads
-            // as focused when it isn't.
+            // reserved for Focus::Terminal. Without real focus, the active
+            // pane must look identical to an inactive one (plain DarkGray) —
+            // any brighter treatment reads as focused when it isn't.
             let pane_border_style = if is_active && focused {
                 Style::default().fg(accent)
             } else {

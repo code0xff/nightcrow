@@ -4,9 +4,9 @@ use serde::Serialize;
 use std::collections::HashMap;
 use std::time::SystemTime;
 
-/// One navigable directory in the "open a project" folder picker. Directories
-/// only — files are not openable as projects. `is_repo` flags a git worktree so
-/// the picker can mark it.
+/// One navigable directory in the "open a project" folder picker.
+/// Directories only — files are not openable as projects. `is_repo` flags a
+/// git worktree so the picker can mark it.
 #[derive(Debug, Serialize)]
 pub struct BrowseEntryDto {
     pub name: String,

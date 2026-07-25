@@ -145,11 +145,10 @@ impl Catalog {
             .map(|e| e.to_dto())
     }
 
-    /// Reconcile the live entries to `union_paths()`.
-    ///
-    /// A path already present keeps its entry — and therefore its runtime and
-    /// every SSE subscriber attached to it. Only genuinely new paths start a
-    /// runtime, and only genuinely removed ones stop.
+    /// Reconcile the live entries to `union_paths()`. A path already present
+    /// keeps its entry — and therefore its runtime and every SSE subscriber
+    /// attached to it. Only genuinely new paths start a runtime, and only
+    /// genuinely removed ones stop.
     fn rebuild(&self) {
         let deduped = self.union_paths();
 

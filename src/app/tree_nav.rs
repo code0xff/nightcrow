@@ -2,8 +2,6 @@ use super::{App, LIST_PAGE_SIZE};
 use crate::ui::tree_view::{TreeIndexEntry, parent_path};
 
 impl App {
-    /// Move the tree cursor by `delta` rows within the visible list, clamping
-    /// at both ends, and preview the new row.
     fn move_tree_selection(&mut self, delta: isize) {
         let len = self.tree_view.visible_rows().len();
         if len == 0 {
@@ -36,9 +34,6 @@ impl App {
         self.move_tree_selection(LIST_PAGE_SIZE as isize);
     }
 
-    /// Expand the selected directory row (lazily reading its children). No-op
-    /// on file rows, already-expanded directories, or expansion past the
-    /// configured `max_depth`.
     pub fn tree_expand(&mut self) {
         let selected = self.tree_view.selected;
         let Some(row) = self.tree_view.visible_rows().into_iter().nth(selected) else {
@@ -52,15 +47,14 @@ impl App {
         }
         self.ensure_tree_children(&row.path);
         self.tree_view.expanded.insert(row.path);
-        // Visible rows changed: a same-row-count expand/collapse elsewhere
-        // could otherwise reuse a stale horizontal-scroll width bound.
+        // Visible rows changed: drop a stale horizontal-scroll width bound.
         self.tree_view.row_width_cache.set(None);
         // A newly expanded directory becomes visible — start watching it.
         self.sync_tree_watches();
     }
 
-    /// Collapse the selected directory if expanded; otherwise move the cursor
-    /// up to its parent directory row (so repeated `Left` walks back out).
+    // Collapse the selected directory if expanded; otherwise move the cursor
+    // up to its parent directory row (so repeated `Left` walks back out).
     pub fn tree_collapse(&mut self) {
         let rows = self.tree_view.visible_rows();
         let Some(row) = rows.get(self.tree_view.selected) else {
@@ -68,9 +62,9 @@ impl App {
         };
         if row.is_dir && self.tree_view.expanded.contains(&row.path) {
             let path = row.path.clone();
-            // Drop the directory and every descendant from the expanded set so
-            // re-expanding it later starts collapsed rather than restoring a
-            // deep open subtree the user explicitly closed.
+            // Drop the directory and every descendant so re-expanding later
+            // starts collapsed rather than restoring a deep subtree the user
+            // explicitly closed.
             let prefix = format!("{path}/");
             self.tree_view
                 .expanded
@@ -90,8 +84,8 @@ impl App {
         }
     }
 
-    /// Enter toggles a directory open/closed; on a file row it (re)loads the
-    /// preview, mirroring selection behaviour.
+    // Enter toggles a directory open/closed; on a file row it (re)loads the
+    // preview, mirroring selection behaviour.
     pub fn tree_toggle(&mut self) {
         let selected = self.tree_view.selected;
         let Some(row) = self.tree_view.visible_rows().into_iter().nth(selected) else {
@@ -108,9 +102,8 @@ impl App {
         }
     }
 
-    /// Open the filename-search overlay: walk the whole tree once to build the
-    /// search index, then keep showing the (still unfiltered) view until the
-    /// user types a query.
+    // Walk the whole tree once to build the search index, then keep showing
+    // the (still unfiltered) view until the user types a query.
     pub fn start_tree_search(&mut self) {
         self.build_tree_index();
         self.tree_view.search_active = true;
@@ -135,8 +128,8 @@ impl App {
         self.reset_tree_selection_after_filter();
     }
 
-    /// Close the overlay without changing the expansion state; the cursor stays
-    /// on whatever row maps into the now-unfiltered view.
+    // Close the overlay without changing the expansion state; the cursor stays
+    // on whatever row maps into the now-unfiltered view.
     pub fn cancel_tree_search(&mut self) {
         self.tree_view.cancel_search();
         // Back to watching only what is expanded: the wider set existed for
@@ -148,9 +141,9 @@ impl App {
         self.preview_tree_selected();
     }
 
-    /// Confirm the current selection: reveal it in the normal expansion-based
-    /// view by expanding all of its ancestor directories, close the overlay,
-    /// and move the cursor onto that path. An empty query collapses to a cancel.
+    // Reveal the current selection in the normal expansion-based view by
+    // expanding all of its ancestor directories, close the overlay, and move
+    // the cursor onto that path. An empty query collapses to a cancel.
     pub fn confirm_tree_search(&mut self) {
         if self.tree_view.search_query.is_empty() {
             self.cancel_tree_search();
@@ -181,10 +174,9 @@ impl App {
         self.preview_tree_selected();
     }
 
-    /// After a query change the row set shifts, so pin the cursor to the first
-    /// *matching* row (skipping the ancestor directories pulled in only to
-    /// connect the path) and re-preview it. Falls back to the first row when
-    /// nothing matches the basename directly.
+    // After a query change the row set shifts, so pin the cursor to the first
+    // *matching* row (skipping ancestor directories pulled in only to connect
+    // the path). Falls back to the first row when nothing matches directly.
     fn reset_tree_selection_after_filter(&mut self) {
         self.tree_view.scroll_x = 0;
         let rows = self.tree_view.visible_rows();
@@ -202,11 +194,8 @@ impl App {
         self.preview_tree_selected();
     }
 
-    /// Walk the entire tree once (depth-capped at `max_depth`, gitignore applied
-    /// via the same guarded reader used for lazy expansion), populating the
-    /// per-directory cache and a flat search index. Synchronous on the UI thread
-    /// like the per-level reads — one keystroke triggers it, then all filtering
-    /// is in-memory.
+    // Synchronous on the UI thread like the per-level reads — one keystroke
+    // triggers it, then all filtering is in-memory.
     pub(crate) fn build_tree_index(&mut self) {
         self.ensure_tree_root();
         let max_depth = self.cfg_tree.max_depth;
@@ -230,7 +219,7 @@ impl App {
                     path: path.clone(),
                 });
                 // Descend only while the next level stays within max_depth,
-                // mirroring the expand guard (`depth + 1 > max_depth` blocks).
+                // mirroring the expand guard.
                 if entry.is_dir && depth < max_depth {
                     stack.push((path, depth + 1));
                 }

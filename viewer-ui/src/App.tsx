@@ -25,23 +25,18 @@ export function App() {
   const [filter, setFilter] = useState("");
   const [filterOpen, setFilterOpen] = useState(false);
   const [pane, setPane] = useState<Pane>({ kind: "empty" });
-  // Invalidates in-flight pane requests on context change so a slow response
-  // cannot overwrite what the user is looking at now.
+  // Prevent stale pane responses from overwriting the new context.
   const paneRequestRef = useRef(0);
   const bumpPaneRequest = useCallback(() => {
     paneRequestRef.current += 1;
   }, []);
   const [pickerOpen, setPickerOpen] = useState(false);
-  // Ahead of the login/loading early returns so the stored accent applies
-  // to those screens too.
   const { accent, next, cycle: cycleAccent, adopt: adoptAccent } = useAccent();
-  // Counts local accent changes so the repo poll can ignore stale responses.
   const accentWrites = useRef(0);
   const cycle = useCallback(() => {
     accentWrites.current += 1;
     cycleAccent();
   }, [cycleAccent]);
-  // Sidebar width, shared across devices like the accent with the same guard.
   const {
     width: sidebarWidth,
     resize: resizeSidebar,
@@ -65,18 +60,13 @@ export function App() {
     sidebarWrites.current += 1;
   }, []);
   const sidebarRef = useRef<HTMLElement>(null);
-  // Markdown files open rendered; toggles to raw source. Session-only —
-  // rendered is the common case so each pane starts there.
   const [mdRendered, setMdRendered] = useState(true);
 
-  // "log back in" or a toast-worthy message.
   const handle = useCallback((err: unknown) => {
     if (isUnauthorized(err)) {
       setAuthed(false);
       return;
     }
-    // NetworkError already carries a friendly message; the self-healing repo
-    // poll suppresses these before they reach here.
     toast.error(err instanceof Error ? err.message : "request failed");
   }, []);
 
@@ -119,9 +109,6 @@ export function App() {
   });
 
   const hotWindowMs = hot?.enabled ? hot.window_secs * 1000 : 0;
-  // The hot clock ticks against the status snapshot's mtimes; until a snapshot
-  // arrives it reads everything as cool. Kept ahead of the early returns so
-  // the hook order is stable across auth/loading states.
   useHotClock(undefined, hotWindowMs, clockSkewMs ?? 0);
 
   const { status } = useStatus({
@@ -171,8 +158,6 @@ export function App() {
     handle,
   });
 
-  // Drop everything below the header when the repo changes — not every switch
-  // is a click (closing the active project in the TUI drops it from the poll).
   useEffect(() => {
     bumpPaneRequest();
     setCommitDrillDown(null);
@@ -183,8 +168,6 @@ export function App() {
   if (authed === null) return <LoadingSplash />;
   if (!authed) return <Login onSuccess={() => setAuthed(true)} />;
   if (!reposLoaded) return <LoadingSplash />;
-  // Empty catalog is a real state — render the shell so the header's "+ open"
-  // is the way in.
   const current = repos.find((r) => r.id === repo);
   const q = filter.toLowerCase();
   const files = (status?.files ?? []).filter((f) =>
@@ -194,13 +177,10 @@ export function App() {
     f.path.toLowerCase().includes(q) ||
     f.old_path?.toLowerCase().includes(q),
   );
-  // Log is newest-first; first `ahead` commits are unpushed.
   const aheadOids = new Set(
     commits.slice(0, status?.tracking?.ahead ?? 0).map((c) => c.oid),
   );
 
-  // Maximising collapses the losing row to 0fr (not unmount) so the panel
-  // comes back scrolled where it was.
   const filesMax = maximized === "files";
   const rows = !repo
     ? "grid-rows-[auto_1fr]"
@@ -208,14 +188,10 @@ export function App() {
       ? "grid-rows-[auto_minmax(0,0fr)_minmax(0,1fr)_auto]"
       : maximized === "files"
         ? "grid-rows-[auto_minmax(0,1fr)_minmax(0,0fr)_auto]"
-        : // 55/45 split, matching the TUI's default layout.upper_pct.
-          "grid-rows-[auto_minmax(0,11fr)_minmax(0,9fr)_auto]";
+        : "grid-rows-[auto_minmax(0,11fr)_minmax(0,9fr)_auto]";
 
   return (
     <div className={`nc-fade grid h-full ${rows}`}>
-      {/* Pinned in px to match the web mirror's header (16px root vs this app's
-           14px). Deliberately opted out of the density knob — the header is
-           shared branding, not content. */}
       <Header
         repos={repos}
         repo={repo}

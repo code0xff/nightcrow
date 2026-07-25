@@ -23,10 +23,9 @@ impl App {
     }
 
     fn upper_scroll_x_max(&self) -> usize {
-        // Cap at the longest visible entry's char width so we don't drift past
-        // the last column of any rendered row. Each branch consults a
-        // length-keyed `Cell` cache so repeated keystrokes don't re-walk the
-        // full list (and re-count chars per item) every press.
+        // Cap at the longest visible entry's char width. Each branch consults
+        // a length-keyed `Cell` cache so repeated keystrokes don't re-walk the
+        // full list every press.
         fn cached_max<'a, T: 'a>(
             cache: &Cell<Option<(usize, usize)>>,
             items: &'a [T],
@@ -48,9 +47,9 @@ impl App {
                 &self.status_view.files,
                 |f| f.display_path().chars().count(),
             ),
-            // Tree rows are derived (not a stored slice), so cache the max by
-            // visible-row count directly rather than via `cached_max`. Width =
-            // indent (depth*2) + 2-char dir/file marker + name char count.
+            // Tree rows are derived (not a stored slice), so cache by
+            // visible-row count directly. Width = indent (depth*2) + 2-char
+            // dir/file marker + name char count.
             ViewMode::Tree => {
                 let rows = self.tree_view.visible_rows();
                 let len = rows.len();

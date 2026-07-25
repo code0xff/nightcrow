@@ -47,10 +47,9 @@ pub(crate) fn tab_segments(app: &App, visible: std::ops::Range<usize>) -> Vec<(S
         )];
     }
     // While the terminal fills the body the upper viewer is hidden, so
-    // `<prefix> 1..8` address panes 0..7 directly (see
-    // `input::prefix_action_fullscreen`); label the tabs with those digits.
-    // In the split view the digits `1`/`2` belong to the list/diff, so the
-    // pane legend stays on `F3..F10` there.
+    // `<prefix> 1..8` address panes 0..7 directly; label the tabs with those
+    // digits. In the split view the digits `1`/`2` belong to the list/diff,
+    // so the pane legend stays on `F3..F10` there.
     let fullscreen = app.terminal.fullscreen.fills_body();
     let hidden_before = visible.start;
     let hidden_after = app.terminal.panes.len().saturating_sub(visible.end);
@@ -64,12 +63,11 @@ pub(crate) fn tab_segments(app: &App, visible: std::ops::Range<usize>) -> Vec<(S
     segments.extend(app.terminal.panes[visible.clone()].iter().enumerate().map(
         |(offset, pane)| {
             let i = visible.start + offset;
-            // Panes 0..=7 carry a jump key, so show it as a key legend:
-            // `<prefix> 1..8` in fullscreen, `<prefix> 3..9,0` in the split
-            // view (the digit row is layout-aware — see `prefix_action`).
-            // Panes past the 8th have no jump key, so they carry no hint to
-            // avoid implying an unbound shortcut. The bare F-keys are NOT
-            // advertised here: they select project tabs.
+            // Panes 0..=7 carry a jump key: `<prefix> 1..8` in fullscreen,
+            // `<prefix> 3..9,0` in the split view (the digit row is
+            // layout-aware). Panes past the 8th have no jump key, so they
+            // carry no hint to avoid implying an unbound shortcut. The bare
+            // F-keys are NOT advertised here: they select project tabs.
             let title = truncate_tab_title(&pane.title, TAB_TITLE_MAX_CHARS);
             let label = if i < JUMP_KEY_PANE_COUNT {
                 // Split view runs 3,4..9 then wraps to 0 for the eighth pane.
@@ -94,11 +92,11 @@ pub(crate) fn tab_segments(app: &App, visible: std::ops::Range<usize>) -> Vec<(S
     segments
 }
 
-/// The pane index a click at screen cell `(x, y)` on the tab bar should
-/// jump to: a tab targets its own pane, a `+N` marker the nearest hidden
-/// pane on its side. `None` off the tab row, past the last segment, or on
-/// the no-panes legend. `area` is the full terminal widget Rect, exactly
-/// what `render` receives.
+/// The pane index a click at screen cell `(x, y)` on the tab bar should jump
+/// to: a tab targets its own pane, a `+N` marker the nearest hidden pane on
+/// its side. `None` off the tab row, past the last segment, or on the
+/// no-panes legend. `area` is the full terminal widget Rect, exactly what
+/// `render` receives.
 pub(crate) fn tab_target_at(app: &App, area: Rect, x: u16, y: u16) -> Option<usize> {
     let (tab_area, _) = terminal_layout(area)?;
     if !tab_area.contains(Position { x, y }) {

@@ -44,14 +44,14 @@ pub(crate) fn segment_click(keyspec: &str) -> Option<HintClick> {
 }
 
 /// Build the styled spans for a hint legend, inverting (`REVERSED`) every
-/// clickable segment — the whole `key: description` label, matching the
-/// click target exactly — so the bar itself shows which hints respond to a
-/// click. Consumes the same literal and `" | "` segmentation as
-/// `hint_click_at` — and decides clickability with the same `segment_click`
-/// — so an inverted label can never disagree with the hit test. Only styles
-/// change; the rendered text (and thus every column offset) stays identical.
-/// `mark_clickable` is `[mouse] enabled`: with capture off a click can never
-/// arrive, so no label may advertise one.
+/// clickable segment — the whole `key: description` label, matching the click
+/// target exactly — so the bar itself shows which hints respond to a click.
+/// Consumes the same literal and `" | "` segmentation as `hint_click_at` and
+/// decides clickability with the same `segment_click`, so an inverted label
+/// can never disagree with the hit test. Only styles change; the rendered
+/// text (and thus every column offset) stays identical. `mark_clickable` is
+/// `[mouse] enabled`: with capture off a click can never arrive, so no label
+/// may advertise one.
 pub(crate) fn hint_spans(text: &str, leader: &str, mark_clickable: bool) -> Vec<Span<'static>> {
     let base = Style::default().fg(Color::DarkGray);
     let inverted = base.add_modifier(Modifier::REVERSED);
@@ -67,10 +67,9 @@ pub(crate) fn hint_spans(text: &str, leader: &str, mark_clickable: bool) -> Vec<
                 .and_then(|(keyspec, _)| segment_click(keyspec))
                 .is_some();
         if clickable {
-            // Invert the whole segment — the entire label is the click
-            // target, so the affordance covers exactly what responds.
-            // Leading whitespace stays plain so the chip doesn't start
-            // with a stray block.
+            // Invert the whole segment — the entire label is the click target.
+            // Leading whitespace stays plain so the chip doesn't start with a
+            // stray block.
             let label_start = rendered.len() - rendered.trim_start().len();
             let (lead_ws, label) = rendered.split_at(label_start);
             if !lead_ws.is_empty() {
@@ -86,8 +85,8 @@ pub(crate) fn hint_spans(text: &str, leader: &str, mark_clickable: bool) -> Vec<
 
 pub(crate) fn render_hint_bar<'a>(app: &'a App, chrome: Chrome<'a>, accent: Color) -> Paragraph<'a> {
     if chrome.repo_input.active {
-        // A rejected path is reported on the notice row directly above, so
-        // this row stays a plain input line.
+        // A rejected path is reported on the notice row above, so this row
+        // stays a plain input line.
         return Paragraph::new(Line::from(vec![
             Span::styled("repo: ", Style::default().fg(accent)),
             Span::raw(chrome.repo_input.buf.as_str()),
@@ -111,8 +110,8 @@ pub(crate) fn render_hint_bar<'a>(app: &'a App, chrome: Chrome<'a>, accent: Colo
     }
     if app.awaiting_swap_target() {
         // The swap-target digits follow the same layout-aware mapping as the
-        // focus jumps (see `main::resolve_prefix_action`): `1-8` while the
-        // terminal fills the body, `3-9,0` in the split view.
+        // focus jumps: `1-8` while the terminal fills the body, `3-9,0` in
+        // the split view.
         let digits = if app.terminal.fullscreen.fills_body() {
             "1-8"
         } else {
@@ -132,9 +131,8 @@ pub(crate) fn render_hint_bar<'a>(app: &'a App, chrome: Chrome<'a>, accent: Colo
             ),
         ]));
     }
-    // `<prefix>` in the hint literal resolves to the configured leader chord
-    // (e.g. `^F`) so the footer always names the actual key to press rather
-    // than an abstract word.
+    // `<prefix>` resolves to the configured leader chord (e.g. `^F`) so the
+    // footer names the actual key to press rather than an abstract word.
     Paragraph::new(Line::from(hint_spans(
         normal_hint_literal(app),
         &app.leader_label(),
@@ -211,8 +209,7 @@ pub(crate) fn hint_click_at(
     }
 
     // Row selection mirrors `render_hint_bar`'s branch order exactly, or a
-    // click would resolve against a row the user isn't looking at. Notices no
-    // longer appear here (they own the row above), so they don't feature.
+    // click would resolve against a row the user isn't looking at.
     let (chip, text) = if chrome.repo_input.active {
         return None;
     } else if app.prefix_armed() {

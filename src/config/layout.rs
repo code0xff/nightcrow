@@ -2,14 +2,14 @@ use anyhow::Result;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use serde::{Deserialize, Serialize};
 
-/// Default leader chord literal. `Ctrl+F` is a one-handed left-hand chord that
-/// avoids tmux's own `Ctrl+B` prefix (so nightcrow can run inside tmux) AND the
-/// Ctrl chords that an inner Claude Code pane reserves (`Ctrl+G` = external
-/// editor, plus `Ctrl+O/R/S/T/L/…`). It also dodges terminal flow control
-/// (`Ctrl+Q`/`Ctrl+S` = XON/XOFF) and the shell signals `Ctrl+C/D/Z`. Its only
-/// collision is `Ctrl+F` as forward-char (readline) / page-forward (vim), which
-/// users almost always reach via the arrow keys / PageDown instead; when needed
-/// it stays reachable via `<leader><leader>`.
+/// Default leader chord. `Ctrl+F` is a one-handed left-hand chord that avoids
+/// tmux's `Ctrl+B` (so nightcrow can run inside tmux) AND the Ctrl chords an
+/// inner Claude Code pane reserves (`Ctrl+G` = external editor, plus
+/// `Ctrl+O/R/S/T/L/…`). It also dodges terminal flow control (`Ctrl+Q`/`Ctrl+S`
+/// = XON/XOFF) and the shell signals `Ctrl+C/D/Z`. Its only collision is
+/// `Ctrl+F` as forward-char (readline) / page-forward (vim), which users
+/// almost always reach via the arrow keys / PageDown instead; when needed it
+/// stays reachable via `<leader><leader>`.
 pub(super) const DEFAULT_LEADER: &str = "ctrl+f";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -42,9 +42,9 @@ pub enum Accent {
 }
 
 // Compile-time guard: a future refactor must not shrink `Accent::ALL` to
-// empty. `from_index` would otherwise rely on a runtime fallback we'd
-// rather not exercise. `const` items don't accept `_` inside an `impl`
-// block, so this lives at module scope.
+// empty, or `from_index` would rely on a runtime fallback we'd rather not
+// exercise. `const` items don't accept `_` inside an `impl` block, so this
+// lives at module scope.
 const _: () = assert!(!Accent::ALL.is_empty(), "Accent::ALL must be non-empty");
 
 impl Accent {
@@ -79,8 +79,6 @@ impl Accent {
 
     pub fn from_index(idx: usize) -> Accent {
         // The compile-time guard above keeps `len > 0`, so `% len` is sound.
-        // `get(...).copied()` is the same value as direct indexing here; the
-        // form matches the explicit non-panicking pattern used for `index`.
         Self::ALL
             .get(idx % Self::ALL.len())
             .copied()
@@ -104,8 +102,8 @@ impl ThemeConfig {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct InputConfig {
-    /// The leader (prefix) chord. Every nightcrow app command is reached by
-    /// pressing this key, then a follow-up key (tmux-style). Accepts a single
+    /// The leader (prefix) chord. Every app command is reached by pressing
+    /// this key, then a follow-up (tmux-style). Accepts a single
     /// `ctrl+<ascii>` chord; the parser rejects anything that doubles as a
     /// no-prefix reserved key (F1..F10, Shift+arrows, Shift+PgUp/PgDn).
     pub leader: String,
@@ -120,7 +118,6 @@ impl Default for InputConfig {
 }
 
 /// Parse a leader chord string (e.g. `"ctrl+b"`) into a `KeyEvent`.
-///
 /// Only `ctrl+<ascii-printable>` chords are accepted. The chord must be a key
 /// that `encode_key` can turn into literal bytes (so `<L><L>` can pass the
 /// leader through to the PTY) and must NOT collide with a no-prefix reserved
@@ -146,20 +143,20 @@ pub fn parse_leader(spec: &str) -> Result<KeyEvent> {
         "input.leader \"{spec}\" must use an ascii letter after ctrl+ \
          (e.g. ctrl+b; ctrl+1, ctrl+-, ctrl+space are not allowed)"
     );
-    // Terminals send Ctrl+I as Tab (0x09) and Ctrl+M as Enter/CR (0x0d), so
-    // crossterm surfaces those as KeyCode::Tab / KeyCode::Enter — never the
-    // Char('i')/Char('m') + CONTROL event that is_leader_key looks for. Such a
-    // leader could be armed but never recognized, so reject it up front.
+    // Terminals send Ctrl+I as Tab and Ctrl+M as Enter, so crossterm surfaces
+    // those as KeyCode::Tab / KeyCode::Enter — never the Char + CONTROL event
+    // is_leader_key looks for. Such a leader could be armed but never
+    // recognized, so reject it up front.
     anyhow::ensure!(
         !matches!(c, 'i' | 'm'),
         "input.leader \"{spec}\" is not usable: terminals deliver Ctrl+I as Tab \
          and Ctrl+M as Enter, so this leader would never be recognized"
     );
     // Restricting to letters guarantees `<L><L>` literal pass-through works:
-    // `encode_key` maps Ctrl+A..Ctrl+Z to control bytes 1..26 via the xterm
-    // convention. Digits and punctuation (e.g. ctrl+1) have no single-control-
-    // byte encoding, so encode_key would send the literal char instead and the
-    // pass-through would break — hence they are rejected above.
+    // `encode_key` maps Ctrl+A..Ctrl+Z to control bytes 1..26. Digits and
+    // punctuation (e.g. ctrl+1) have no single-control-byte encoding, so
+    // encode_key would send the literal char instead and the pass-through
+    // would break — hence they are rejected above.
     Ok(KeyEvent::new(KeyCode::Char(c), KeyModifiers::CONTROL))
 }
 

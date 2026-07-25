@@ -78,10 +78,9 @@ pub(crate) fn render_file_view(
         let fv = &app.diff.file_view;
         let total = fv.line_count();
         let width = total.to_string().len();
-        // Belt-and-braces: ensure_highlight_cache keeps line_highlights aligned
-        // with content.lines().count(), but if that invariant ever slips the
-        // slice below would panic. Clamp against the cache length so a stale
-        // total_lines can never produce an out-of-range start.
+        // Belt-and-braces: ensure_highlight_cache keeps line_highlights
+        // aligned with content.lines().count(), but if that invariant ever
+        // slips the slice below would panic. Clamp against the cache length.
         let max_scroll = total
             .saturating_sub(1)
             .min(fv.line_highlights.len().saturating_sub(1));

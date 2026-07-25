@@ -11,15 +11,13 @@ pub struct StatusView {
     pub file_scroll_x: usize,
     pub search_query: SearchQuery,
     pub search_active: bool,
-    /// Indices into `files` that match the current `search_query`.
-    /// Recomputed only when `files` or the query changes (see
-    /// `App::recompute_status_filter`). Read-only for renderers.
+    /// Indices into `files` matching `search_query`. Recomputed only when
+    /// `files` or the query changes (see `App::recompute_status_filter`).
     pub(crate) filter_cache: Vec<usize>,
-    /// Per-file mtime observed at the latest snapshot, keyed by `path`.
-    /// Used by the agent-aware focus indicator to decide whether a file
-    /// is currently "hot" (recently touched). Entries for paths missing
-    /// from the latest snapshot are dropped each tick so the map stays
-    /// bounded by the working-tree change count.
+    /// Per-file mtime observed at the latest snapshot, keyed by `path`. Used
+    /// by the agent-aware focus indicator to decide whether a file is "hot".
+    /// Entries for paths missing from the latest snapshot are dropped each
+    /// tick so the map stays bounded by the working-tree change count.
     pub hot_table: HashMap<String, SystemTime>,
     /// Memoized longest-path char width, keyed by `files.len()`. Used by
     /// `upper_scroll_x_max` so the right-arrow keystroke does not walk every
@@ -32,8 +30,7 @@ pub struct StatusView {
 impl StatusView {
     /// Replace `files` and invalidate the path-width cache so a same-length
     /// snapshot whose contents changed (e.g. a file rename) does not leave a
-    /// stale right-scroll bound. Length-keyed invalidation alone misses the
-    /// rename case; clearing the cell on every assignment closes that hole.
+    /// stale right-scroll bound.
     pub(crate) fn set_files(&mut self, files: Vec<ChangedFile>) {
         self.files = files;
         self.path_width_cache.set(None);
@@ -43,9 +40,8 @@ impl StatusView {
         self.search_query.clear();
     }
 
-    /// Refresh `filter_cache` from `files` and the current query. Callers must
-    /// invoke this after mutating `files` or `search_query`; otherwise the
-    /// cache will diverge from state.
+    /// Refresh `filter_cache` from `files` and the current query. Callers
+    /// must invoke this after mutating `files` or `search_query`.
     pub(crate) fn recompute_filter(&mut self) {
         self.filter_cache.clear();
         if self.search_query.is_empty() {
@@ -74,9 +70,8 @@ impl StatusView {
     }
 
     /// Hide the search bar. Returns `true` when the query was empty and the
-    /// call therefore collapsed to a cancel (the caller should refresh the
-    /// diff in that case so a stale selection from the empty-filter state is
-    /// re-pinned).
+    /// call collapsed to a cancel (the caller should refresh the diff so a
+    /// stale selection from the empty-filter state is re-pinned).
     pub fn confirm_search(&mut self) -> bool {
         if self.search_query.is_empty() {
             self.cancel_search();
@@ -102,10 +97,10 @@ impl StatusView {
 pub struct RepoInput {
     pub active: bool,
     pub buf: String,
-    /// Whether `buf` is still the untouched current-repo path the dialog
-    /// opened with. The first typed character replaces it rather than
-    /// appending, so switching to an unrelated path doesn't start with
-    /// backspacing the whole prefill; Backspace clears the flag instead, which
-    /// keeps the text and enters ordinary editing (the sub-directory case).
+    /// Whether `buf` is still the untouched prefill the dialog opened with.
+    /// The first typed character replaces it rather than appending, so
+    /// switching to an unrelated path doesn't start with backspacing the
+    /// whole prefill; Backspace clears the flag instead, keeping the text
+    /// and entering ordinary editing (the sub-directory case).
     pub prefilled: bool,
 }

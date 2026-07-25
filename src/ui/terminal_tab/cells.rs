@@ -19,10 +19,10 @@ pub(crate) struct VisiblePaneCell {
 }
 
 /// Lay out every currently visible pane inside `content_area` (the terminal
-/// body, i.e. below the tab row). This is the single source of truth for
-/// pane sizing: `render` draws from it and `visible_pane_content_areas` (used
-/// to resize each pane's PTY) reads from it, so a pane's backend/emulator size
-/// always matches what's actually drawn on screen.
+/// body, below the tab row). Single source of truth for pane sizing: `render`
+/// draws from it and `visible_pane_content_areas` (used to resize each pane's
+/// PTY) reads from it, so a pane's backend/emulator size always matches what's
+/// actually drawn on screen.
 pub(crate) fn visible_pane_cells(app: &App, content_area: Rect) -> Vec<VisiblePaneCell> {
     let pane_count = app.terminal.panes.len();
     let visible = visible_range(
@@ -58,9 +58,9 @@ pub(crate) fn visible_pane_cells(app: &App, content_area: Rect) -> Vec<VisiblePa
         .collect()
 }
 
-/// Content Rect (post border) for every currently visible pane, keyed by
-/// pane id. Used by the main loop to resize each pane's backend PTY and
-/// emulator to exactly what `render` draws inside it.
+/// Content Rect (post border) for every currently visible pane, keyed by pane
+/// id. Used by the main loop to resize each pane's backend PTY and emulator
+/// to exactly what `render` draws inside it.
 pub(crate) fn visible_pane_content_areas(app: &App, area: Rect) -> Vec<(PaneId, Rect)> {
     let Some((_, content_area)) = terminal_layout(area) else {
         return Vec::new();

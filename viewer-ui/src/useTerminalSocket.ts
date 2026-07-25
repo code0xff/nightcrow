@@ -18,10 +18,7 @@ interface UseTerminalSocketArgs {
   setTitles: React.Dispatch<React.SetStateAction<Record<number, string>>>;
 }
 
-/// One WebSocket multiplexes every terminal for a repository. Pane ids belong
-/// to a repository's own terminal hub, so switching repos must reset the pane
-/// list and dispose the old terminals — otherwise stale ids point at panes the
-/// new repo never created.
+/// Reset state on repository changes because pane ids are repository-local.
 export function useTerminalSocket({
   repo,
   socketRef,
@@ -47,12 +44,6 @@ export function useTerminalSocket({
     };
 
     const connect = () => {
-      // Each (re)connection starts from a clean slate and lets the server
-      // repopulate it: on connect the hub replays every live pane and its
-      // scrollback, so a browser refresh restores the terminals while a server
-      // restart (no panes to replay) correctly comes back empty. Keeping stale
-      // local panes would instead point at terminals the new socket never
-      // announced.
       setPanes([]);
       setActive(null);
       setZoomed(null);
@@ -73,13 +64,10 @@ export function useTerminalSocket({
             const pane = message.pane;
             setPanes((current) => [...current, pane]);
             if (expectCreateRef.current > 0) {
-              // A terminal this client just asked for: focus follows creation.
               expectCreateRef.current -= 1;
               setActive(pane);
               lastActiveByRepoRef.current.set(repo, pane);
             } else if (lastActiveByRepoRef.current.get(repo) === pane) {
-              // A replayed pane that was focused before switching away — restore
-              // it rather than letting focus land on the last replayed pane.
               setActive(pane);
             }
           } else if (message.type === "exited") {
@@ -95,14 +83,8 @@ export function useTerminalSocket({
               return next;
             });
           } else if (message.type === "reordered") {
-            // The hub's canonical order after a drag — this client's or another
-            // device's. Adopt it, reconciled against the panes we actually hold
-            // so a "created"/"exited" that raced it cannot desync the grid.
-            // active/zoomed are pane ids, so they survive the reorder untouched.
             setPanes((current) => reconcileOrder(current, message.order));
           } else if (message.type === "error") {
-            // A create was refused (e.g. the per-repo cap); do not let the
-            // pending focus-follow attach to an unrelated later "created".
             expectCreateRef.current = 0;
             toast.error(message.message);
           }
@@ -116,16 +98,11 @@ export function useTerminalSocket({
         if (view) {
           view.term.write(bytes);
         } else {
-          // The view is created by a later effect; hold this until then.
           const queue = pendingRef.current.get(pane) ?? [];
           queue.push(bytes);
           pendingRef.current.set(pane, queue);
         }
       };
-      // Reconnect quietly. The control socket is always open — it is how a
-      // terminal gets created — so a drop with nothing running is not worth
-      // alarming the user about; just wait and retry. A restart thus heals
-      // into a clean, empty panel rather than a stuck error.
       socket.onclose = () => {
         if (closedByUs) return;
         reconnectTimer = setTimeout(connect, 1000);

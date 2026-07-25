@@ -6,13 +6,10 @@ export interface PaneView {
   fit: FitAddon;
 }
 
-/// Pane titles are capped by display width (not character count) so a title of
-/// wide CJK glyphs cannot overflow its cell header; the full title stays
-/// reachable through the tooltip. Matches the viewer's label convention.
+/// Measure the title cap in display cells so wide glyphs do not overflow.
 export const TAB_TITLE_MAX_CELLS = 20;
 
-/// Pointer travel before a header press becomes a pane drag rather than a click
-/// that just focuses the pane. Mirrors the sidebar divider's small dead zone.
+/// Separate a drag from a header click by requiring pointer travel.
 export const PANE_DRAG_THRESHOLD_PX = 4;
 
 export function gcd(a: number, b: number): number {
@@ -20,9 +17,7 @@ export function gcd(a: number, b: number): number {
   return a;
 }
 
-/// Columns per row for `n` panes, mirroring the TUI's `grid_row_plan`
-/// (src/ui/terminal_tab.rs): a balanced grid, with the two-pane case flipping to
-/// stacked when the panel is taller than it is wide.
+/// Mirror the TUI's balanced row plan, stacking two panes in tall panels.
 export function rowPlan(n: number, wide: boolean): number[] {
   switch (n) {
     case 1:
@@ -40,7 +35,7 @@ export function rowPlan(n: number, wide: boolean): number[] {
     case 7:
       return [4, 3];
     default:
-      return [4, 4]; // 8 (the per-repo cap); also a sane fallback beyond it
+      return [4, 4];
   }
 }
 
@@ -50,9 +45,6 @@ export interface CellPlacement {
   colSpan: number;
 }
 
-/// Flatten `rowPlan` into a CSS-grid placement per pane. Rows can hold different
-/// column counts (e.g. 3 = [2,1]); a shared column count (the LCM of the rows'
-/// counts) lets each cell span evenly so every row fills the width.
 export function planLayout(
   n: number,
   wide: boolean,
@@ -69,9 +61,6 @@ export function planLayout(
   return { cols, rows: plan.length, cells };
 }
 
-/// True for code points that occupy two terminal cells. An approximation of the
-/// common East Asian wide / fullwidth ranges — enough to keep CJK titles from
-/// overflowing without pulling in a full Unicode width table.
 export function isWide(cp: number): boolean {
   return (
     (cp >= 0x1100 && cp <= 0x115f) ||
@@ -90,8 +79,7 @@ export function isWide(cp: number): boolean {
   );
 }
 
-/// Truncate `text` to at most `max` display cells, appending an ellipsis (which
-/// costs one cell) when anything was dropped.
+/// Reserve one display cell for the ellipsis.
 export function truncateCells(text: string, max: number): string {
   let width = 0;
   for (const ch of text) width += isWide(ch.codePointAt(0) ?? 0) ? 2 : 1;

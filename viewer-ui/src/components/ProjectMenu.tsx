@@ -2,11 +2,6 @@ import { useEffect, useRef, useState } from "react";
 import { ChevronIcon, PlusIcon, XIcon } from "../icons";
 import type { Repo } from "../api";
 
-/** Narrow-screen stand-in for the header's project tabs: a dropdown listing the
- *  open projects (tap to switch, × to close) plus "+ open". Rendered only below
- *  md (the caller hides it wider, where the tab row takes over). Closes on an
- *  outside click — a transparent backdrop, the same mechanism `FolderPicker`'s
- *  overlay uses — or on Escape, which returns focus to the trigger. */
 export function ProjectMenu({
   repos,
   currentId,

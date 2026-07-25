@@ -98,9 +98,7 @@ export function usePaneOpeners({
           setPane({ kind: "empty" });
           return;
         }
-        // Match the TUI's selection state: entering a commit drill-down keeps
-        // the complete commit diff visible. Choosing a row below narrows the
-        // pane to that file only.
+        // Keep the full commit diff visible until a file is selected.
         const diff = await api.commit(repo, commit.oid);
         if (request === paneRequestRef.current) {
           setPane({ kind: "diff", value: diff });

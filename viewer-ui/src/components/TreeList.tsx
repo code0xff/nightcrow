@@ -32,8 +32,6 @@ export function TreeList({
           <li key={m.path}>
             <button
               onClick={() => {
-                // Files open in the pane; a matched directory is
-                // revealed in the tree and the query is dropped.
                 if (m.is_dir) revealTreeDir(m.path);
                 else openFile(m.path);
               }}
@@ -76,8 +74,6 @@ export function TreeList({
             {row.is_dir ? (
               <ChevronIcon open={treeExpanded.has(row.path)} />
             ) : (
-              // Spacer the width of a chevron so file names line up under
-              // folder names, like VS Code's tree.
               <span className="h-3.5 w-3.5 shrink-0" />
             )}
             <span

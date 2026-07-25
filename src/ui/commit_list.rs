@@ -177,8 +177,8 @@ fn render_file_list(frame: &mut Frame, app: &App, area: Rect, accent: Color) {
 
     let title_base = truncate_title(&commit_summary, title_budget(list_area.width));
     let title = if show_search && total_count > 0 {
-        // Drop the trailing space the base title carries so the count
-        // suffix sits flush against the summary text.
+        // Drop the trailing space the base title carries so the count suffix
+        // sits flush against the summary text.
         format!("{} ({match_count}/{total_count}) ", title_base.trim_end())
     } else {
         title_base
@@ -200,12 +200,11 @@ fn render_file_list(frame: &mut Frame, app: &App, area: Rect, accent: Color) {
     }
 }
 
-/// Char budget for the drill-down title inside `area`.
-///
-/// Reserves two cells for the surrounding border corners. The title is then
-/// measured in chars (not display width), matching the trade-off documented
-/// on `terminal_tab::truncate_tab_title`: ASCII summaries are the common
-/// case and CJK titles render slightly under the visual budget.
+/// Char budget for the drill-down title inside `area`. Reserves two cells
+/// for the surrounding border corners. The title is then measured in chars
+/// (not display width), matching the trade-off documented on
+/// `terminal_tab::truncate_tab_title`: ASCII summaries are the common case
+/// and CJK titles render slightly under the visual budget.
 fn title_budget(width: u16) -> usize {
     (width as usize).saturating_sub(2)
 }

@@ -41,9 +41,10 @@ pub struct LogDto {
     pub head: Option<String>,
 }
 
-/// Changed paths in one historical commit. The row shape intentionally matches
-/// [`ChangedFileDto`], so the browser renders status and commit drill-down
-/// lists consistently (including rename sources and XY-style status columns).
+/// Changed paths in one historical commit. The row shape intentionally
+/// matches [`ChangedFileDto`], so the browser renders status and commit
+/// drill-down lists consistently (including rename sources and XY-style
+/// status columns).
 #[derive(Debug, Clone, Serialize)]
 pub struct CommitFilesDto {
     pub files: Vec<ChangedFileDto>,

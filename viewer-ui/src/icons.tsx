@@ -1,12 +1,4 @@
-/**
- * Maximise/restore glyph, traced from Lucide's `maximize` and `minimize`
- * (https://lucide.dev — ISC, Copyright (c) 2026 Lucide Icons and Contributors).
- *
- * Inlined rather than added as a dependency: a couple of icons do not justify
- * an icon package, and the bundle has to stay self-contained for the viewer's
- * `default-src 'self'` CSP. `currentColor` lets the host button's text colour
- * drive it, hover states included.
- */
+/** Lucide-derived inline icons keep the bundle self-contained under CSP. */
 export function MaximizeIcon({ maximized }: { maximized: boolean }) {
   return (
     <svg
@@ -39,11 +31,6 @@ export function MaximizeIcon({ maximized }: { maximized: boolean }) {
   );
 }
 
-/**
- * Expand/collapse chevron for the file tree (VS Code style), traced from
- * Lucide's `chevron-right`: points right when closed and rotates to point down
- * when open.
- */
 export function ChevronIcon({ open }: { open: boolean }) {
   return (
     <svg
@@ -62,16 +49,6 @@ export function ChevronIcon({ open }: { open: boolean }) {
   );
 }
 
-/**
- * Close glyph, traced from Lucide's `x` (same provenance as above).
- *
- * Replaces the `×` character these buttons used to render: U+00D7 is a maths
- * operator drawn near x-height, so at the viewer's ~12px mono it left only a
- * few pixels of ink and read as far lighter than the icons beside it.
- *
- * Sized by the caller — the terminal tab matches `MaximizeIcon` next to it,
- * while the header's project tabs take a smaller one to suit their label.
- */
 export function XIcon({ className = "h-4 w-4" }: { className?: string }) {
   return (
     <svg
@@ -91,14 +68,6 @@ export function XIcon({ className = "h-4 w-4" }: { className?: string }) {
   );
 }
 
-/**
- * Add glyph, traced from Lucide's `plus` (same provenance as above).
- *
- * Here for the reason `XIcon` is: the `+` character is drawn to the font's maths
- * metrics, well inside the em box, so beside a 16px stroked icon it reads as a
- * smaller, lighter mark rather than its equal. Same box, same stroke, same
- * weight as the maximise button it sits next to.
- */
 export function PlusIcon({ className = "h-4 w-4" }: { className?: string }) {
   return (
     <svg
@@ -118,13 +87,6 @@ export function PlusIcon({ className = "h-4 w-4" }: { className?: string }) {
   );
 }
 
-/**
- * Split-view glyph, traced from Lucide's `columns-2` (same provenance as
- * above): a framed pane bisected by a vertical rule. Static — the button
- * signals its on/off state through `aria-pressed` and an accent text colour,
- * the way the header's accent swatch leans on its tooltip rather than a
- * second glyph.
- */
 export function SplitViewIcon() {
   return (
     <svg
@@ -144,11 +106,6 @@ export function SplitViewIcon() {
   );
 }
 
-/**
- * Preview glyph, traced from Lucide's `eye` (same provenance as above). Toggles
- * the markdown file pane between its rendered view and raw source; the button
- * signals which is active through `aria-pressed` and an accent text colour.
- */
 export function PreviewIcon() {
   return (
     <svg
@@ -168,7 +125,6 @@ export function PreviewIcon() {
   );
 }
 
-/** Search glyph, traced from Lucide's `search` (same provenance as above). */
 export function SearchIcon() {
   return (
     <svg

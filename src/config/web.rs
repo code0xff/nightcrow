@@ -27,8 +27,8 @@ pub struct WebMirrorConfig {
     /// Enable the web mirror. Off by default — turning it on exposes live
     /// view+control of this nightcrow over the network, so it is opt-in.
     pub enabled: bool,
-    /// Address to bind. Defaults to loopback (`127.0.0.1`); set to `0.0.0.0`
-    /// only deliberately, and prefer an SSH tunnel / reverse proxy for remote
+    /// Address to bind. Defaults to loopback; set to `0.0.0.0` only
+    /// deliberately, and prefer an SSH tunnel / reverse proxy for remote
     /// access since the server speaks plain HTTP (no built-in TLS).
     pub bind: String,
     /// TCP port for the web server.
@@ -97,11 +97,10 @@ impl WebViewerConfig {
     }
 }
 
-/// Generate a random, human-readable password from the OS RNG.
-///
-/// Uses a 55-character unambiguous alphabet. The modulo reduction introduces a
-/// negligible bias (256 mod 55) that is immaterial for a locally-scoped dev
-/// credential; `getrandom` is the same OS entropy source Argon2 salts use.
+/// Generate a random, human-readable password from the OS RNG. The modulo
+/// reduction introduces a negligible bias (256 mod 55) that is immaterial for
+/// a locally-scoped dev credential; `getrandom` is the same OS entropy source
+/// Argon2 salts use.
 pub fn generate_password() -> Result<String> {
     let mut bytes = [0u8; GENERATED_PASSWORD_LEN];
     getrandom::fill(&mut bytes)
@@ -113,14 +112,13 @@ pub fn generate_password() -> Result<String> {
 }
 
 /// Ensure the enabled web server has a login credential, generating and
-/// persisting one when the config has none.
-///
-/// A no-op when a `password` or `hashed_password` is already set. Otherwise a
-/// random password is generated, written back into the config file at `path`
-/// (creating it if absent, preserving any existing content and comments), and
-/// stored on `cfg` so the running instance uses it. Returns the freshly
-/// generated password so the caller can surface it to the user, or `None` when
-/// a credential already existed.
+/// persisting one when the config has none. A no-op when a `password` or
+/// `hashed_password` is already set. Otherwise a random password is
+/// generated, written back into the config file at `path` (creating it if
+/// absent, preserving any existing content and comments), and stored on
+/// `cfg` so the running instance uses it. Returns the freshly generated
+/// password so the caller can surface it to the user, or `None` when a
+/// credential already existed.
 pub fn ensure_web_mirror_password(
     cfg: &mut super::Config,
     path: &std::path::Path,
@@ -135,10 +133,9 @@ pub fn ensure_web_mirror_password(
     Ok(Some(password))
 }
 
-/// Same bootstrap for the viewer's own `[web_viewer]` credential.
-///
-/// The viewer gets a *separate* password rather than sharing the mirror's: the
-/// two servers already run on separate ports with separate cookies, and one
+/// Same bootstrap for the viewer's own `[web_viewer]` credential. The viewer
+/// gets a *separate* password rather than sharing the mirror's: the two
+/// servers already run on separate ports with separate cookies, and one
 /// credential granting both would make that separation cosmetic.
 pub fn ensure_web_viewer_password(
     cfg: &mut super::Config,

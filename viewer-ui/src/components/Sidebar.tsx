@@ -37,8 +37,6 @@ export interface SidebarProps {
   onSidebarDragCancel: () => void;
   filesMax: boolean;
   bumpPaneRequest: () => void;
-  // Log state owned by App (commitDrillDown is shared with openCommitFiles and
-  // the repo-change cleanup, so it lives above the sidebar).
   commits: Commit[];
   logDone: boolean;
   logStalled: boolean;
@@ -107,12 +105,6 @@ export function Sidebar(props: SidebarProps) {
         filesMax ? "hidden md:flex" : "flex border-ink-700 md:border-r"
       }`}
     >
-      {/* Drag the divider to resize the sidebar, double-click to reset it.
-          A thin strip over the right border, only at md+ (below it the
-          layout is a single stacked column) and only when the pane is not
-          maximised. Pointer capture keeps the drag alive over the diff pane;
-          the overlay below carries the resize cursor across the whole window
-          while it lasts. */}
       {!filesMax && (
         <div
           role="separator"
@@ -129,31 +121,19 @@ export function Sidebar(props: SidebarProps) {
           }`}
         />
       )}
-      {/* Panel tabs, after VS Code's PROBLEMS/OUTPUT/TERMINAL row: no fill,
-          just an underline on the active one, sitting on the rule that
-          separates the row from the list it labels. The tabs overlap that
-          rule by a pixel (`-mb-px`) so the marker replaces it rather than
-          stacking a second line under it. */}
       <div className="flex shrink-0 items-stretch border-b border-ink-700 px-2">
         {(["status", "log", "tree"] as Tab[]).map((t) => (
           <button
             key={t}
             onClick={() => {
               if (t === tab) return;
-              // Unconditional: the pane is cleared below whatever tab we
-              // came from, so a request still in flight from any of them
-              // must not fill it back in.
               bumpPaneRequest();
               if (tab === "log") {
                 setCommitDrillDown(null);
-                // Leaving the log drops its pages: the anchor they were
-                // pinned to is a snapshot of HEAD at the time, and coming
-                // back should show the history as it is now.
+                // Re-entering the log must use a fresh history snapshot.
                 resetLog();
               }
               setTab(t);
-              // The pane's content belongs to the tab it was opened from;
-              // switching tabs leaves nothing to re-preview, so clear it.
               setPane({ kind: "empty" });
             }}
             aria-current={t === tab ? "page" : undefined}
@@ -190,10 +170,6 @@ export function Sidebar(props: SidebarProps) {
           className="mx-2 mb-1 shrink-0 rounded-sm bg-ink-850 px-2 py-1 outline-none placeholder:text-ink-400 focus:ring-1 focus:ring-accent"
         />
       )}
-      {/* Scrolls on both axes, like the TUI's lists: long paths and commit
-          summaries stay readable in a narrow sidebar rather than being cut
-          off. Rows are `w-max min-w-full` so the hover highlight spans the
-          full scroll width instead of stopping at the visible edge. */}
       <ul className="min-h-0 flex-1 overflow-auto">
         {tab === "status" && (
           <StatusList
