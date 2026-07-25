@@ -1,6 +1,4 @@
-use super::{
-    body_of, get, log_page, seeded_server, server_with_paged_history,
-};
+use super::{body_of, get, log_page, seeded_server, server_with_paged_history};
 use crate::test_util::run_git;
 use crate::web::viewer::limits;
 
@@ -9,14 +7,19 @@ fn the_log_reports_more_history_and_serves_the_next_page() {
     let (dir, server, token, id, _path) = server_with_paged_history();
 
     let first = log_page(&server, &token, &format!("repo={id}"));
-    let anchor = first["head"].as_str().expect("first page carries an anchor");
+    let anchor = first["head"]
+        .as_str()
+        .expect("first page carries an anchor");
     let second = log_page(
         &server,
         &token,
         &format!("repo={id}&from={anchor}&skip={}", limits::MAX_LOG_PAGE),
     );
 
-    assert_eq!(first["commits"].as_array().unwrap().len(), limits::MAX_LOG_PAGE);
+    assert_eq!(
+        first["commits"].as_array().unwrap().len(),
+        limits::MAX_LOG_PAGE
+    );
     // The page is full *and* the history continues — the distinction the
     // extra fetched entry exists to make.
     assert_eq!(first["truncated"], true);

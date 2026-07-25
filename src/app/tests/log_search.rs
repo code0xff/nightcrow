@@ -1,5 +1,5 @@
-use super::*;
 use super::commit_log::seed_log_app;
+use super::*;
 
 fn named_commit(summary: &str) -> CommitEntry {
     CommitEntry::new(

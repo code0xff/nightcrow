@@ -1,6 +1,6 @@
+use super::status::ChangedFileDto;
 use crate::git::diff::{ChangedFile, CommitEntry};
 use crate::web::viewer::limits::{self, Capped};
-use super::status::ChangedFileDto;
 use git2::Oid;
 use serde::Serialize;
 

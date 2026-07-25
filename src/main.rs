@@ -9,14 +9,14 @@ mod input;
 mod key_dispatch;
 mod key_handlers;
 mod logging;
+#[cfg(test)]
+#[path = "main_tests/mod.rs"]
+mod main_tests;
 mod mouse;
 mod paste;
 mod runtime;
 mod session;
 mod splash;
-#[cfg(test)]
-#[path = "main_tests/mod.rs"]
-mod main_tests;
 #[cfg(test)]
 mod test_util;
 mod ui;
@@ -235,7 +235,13 @@ fn run(
             break;
         }
         let saved = ws.session_for(path).cloned();
-        ws.add(app_init::init_app(path, &cfg, &startup_commands, leader, saved));
+        ws.add(app_init::init_app(
+            path,
+            &cfg,
+            &startup_commands,
+            leader,
+            saved,
+        ));
     }
     // Land on the tab that was in front, found by path so a skipped repo
     // earlier in the list cannot shift the choice onto its neighbour.

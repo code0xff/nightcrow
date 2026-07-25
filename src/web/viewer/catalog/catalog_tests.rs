@@ -109,7 +109,10 @@ fn remove_path_closes_and_stays_closed_until_reopened() {
     assert_eq!(catalog.len(), 1, "a closed repo must stay closed");
 
     // Re-opening it from the browser clears the close and brings it back.
-    assert!(matches!(catalog.add_path(a.clone(), 10), AddOutcome::Added(_)));
+    assert!(matches!(
+        catalog.add_path(a.clone(), 10),
+        AddOutcome::Added(_)
+    ));
     assert_eq!(catalog.len(), 2);
 
     catalog.shutdown();
@@ -202,7 +205,10 @@ fn a_reordering_survives_a_later_rebuild() {
 
     catalog.set_paths(&[a.clone(), b.clone()]);
     assert_eq!(catalog.paths(), vec![b.clone(), a.clone()]);
-    assert!(matches!(catalog.add_path(c.clone(), 10), AddOutcome::Added(_)));
+    assert!(matches!(
+        catalog.add_path(c.clone(), 10),
+        AddOutcome::Added(_)
+    ));
     assert_eq!(catalog.paths(), vec![b, a, c]);
     catalog.shutdown();
     drop((dir_a, dir_b, dir_c));

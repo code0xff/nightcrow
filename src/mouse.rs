@@ -45,7 +45,8 @@ pub(crate) fn dispatch_mouse(
                 mouse.column,
                 mouse.row,
             ) {
-                Some(crate::ui::HintClick::Plain('o')) | Some(crate::ui::HintClick::Leader('o')) => {
+                Some(crate::ui::HintClick::Plain('o'))
+                | Some(crate::ui::HintClick::Leader('o')) => {
                     // Disarm like the key path: an armed prefix left standing
                     // would consume the next key as a stale follow-up.
                     ws.cancel_prefix();
@@ -112,11 +113,15 @@ pub(crate) fn handle_mouse(
                 app.cancel_prefix();
                 return KeyOutcome::Project(ProjectRequest::Switch(idx));
             }
-            if let Some(focus) = crate::ui::upper_panel_at(app, screen, layout, mouse.column, mouse.row) {
+            if let Some(focus) =
+                crate::ui::upper_panel_at(app, screen, layout, mouse.column, mouse.row)
+            {
                 app.cancel_prefix();
                 app.focus = focus;
             } else if button == crossterm::event::MouseButton::Left {
-                if let Some(idx) = crate::ui::tab_click_at(app, screen, layout, mouse.column, mouse.row) {
+                if let Some(idx) =
+                    crate::ui::tab_click_at(app, screen, layout, mouse.column, mouse.row)
+                {
                     // A tab click is a jump-key press with the pointer: same
                     // prefix resolution and focus/fullscreen handling.
                     app.cancel_prefix();

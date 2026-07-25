@@ -221,6 +221,5 @@ impl LogView {
     }
 }
 
-
 #[cfg(test)]
 mod tests;

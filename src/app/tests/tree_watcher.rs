@@ -1,5 +1,5 @@
-use super::*;
 use super::tree::{app_on, make_tree_repo, tree_index_of};
+use super::*;
 
 #[test]
 fn refresh_tree_cache_keeps_expansion_for_surviving_dirs() {

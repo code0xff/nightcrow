@@ -1,6 +1,6 @@
 use crate::git::diff::{ChangedFile, RepoSnapshot, TrackingStatus};
-mod auto_follow;
 mod app_impl;
+mod auto_follow;
 mod commit_log_apply;
 mod commit_log_fetch;
 mod commit_log_pagination;

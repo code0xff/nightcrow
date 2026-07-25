@@ -1,6 +1,4 @@
-use super::{
-    body_of, get, login, post, request, server, seeded_server, VIEWER_SESSION_COOKIE,
-};
+use super::{VIEWER_SESSION_COOKIE, body_of, get, login, post, request, seeded_server, server};
 use crate::test_util::make_repo;
 
 #[test]
@@ -87,7 +85,11 @@ fn closing_a_repository_removes_it_from_the_served_set() {
     let value: serde_json::Value = serde_json::from_str(body_of(&list)).unwrap();
     let id = value["repos"][0]["id"].as_str().unwrap().to_string();
 
-    let closed = super::delete(server.addr(), &format!("/api/repos?repo={id}"), Some(&token));
+    let closed = super::delete(
+        server.addr(),
+        &format!("/api/repos?repo={id}"),
+        Some(&token),
+    );
     assert!(closed.starts_with("HTTP/1.1 200"), "got: {closed}");
 
     let after = get(server.addr(), "/api/repos", Some(&token));
@@ -210,7 +212,10 @@ fn a_cross_origin_request_is_refused_before_auth() {
 #[test]
 fn the_viewer_cookie_is_distinct_from_the_mirrors() {
     // A mirror session must not authenticate here.
-    assert_ne!(VIEWER_SESSION_COOKIE, crate::web::common::auth::SESSION_COOKIE);
+    assert_ne!(
+        VIEWER_SESSION_COOKIE,
+        crate::web::common::auth::SESSION_COOKIE
+    );
 }
 
 #[test]

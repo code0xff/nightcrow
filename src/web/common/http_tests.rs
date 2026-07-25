@@ -74,9 +74,8 @@ fn detects_websocket_upgrade() {
 #[test]
 fn detects_websocket_upgrade_with_combined_connection_header() {
     // Browsers often send "Connection: keep-alive, Upgrade".
-    let ws = parse(
-        "GET /ws HTTP/1.1\r\nUpgrade: WebSocket\r\nConnection: keep-alive, Upgrade\r\n\r\n",
-    );
+    let ws =
+        parse("GET /ws HTTP/1.1\r\nUpgrade: WebSocket\r\nConnection: keep-alive, Upgrade\r\n\r\n");
     assert!(ws.is_websocket_upgrade());
 }
 

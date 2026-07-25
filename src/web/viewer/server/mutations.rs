@@ -1,5 +1,5 @@
-use super::http_util::{json_error, json_response};
 use super::ViewerState;
+use super::http_util::{json_error, json_response};
 use crate::web::common::http::RequestHead;
 use crate::web::viewer::catalog::{AddOutcome, RepoEntry};
 use crate::web::viewer::dto::Envelope;
@@ -79,7 +79,10 @@ pub(super) fn handle_open_repo(body: &str, state: &ViewerState) -> Vec<u8> {
         .to_string_lossy()
         .into_owned();
 
-    match state.catalog.add_path(resolved, crate::workspace::MAX_PROJECTS) {
+    match state
+        .catalog
+        .add_path(resolved, crate::workspace::MAX_PROJECTS)
+    {
         AddOutcome::Added(repo) => {
             persist_workspace(state);
             match serde_json::to_string(&Envelope::new(serde_json::json!({ "repo": repo }))) {
@@ -213,7 +216,10 @@ fn persist_workspace(state: &ViewerState) {
 }
 
 /// Resolve the `repo` parameter to an entry, or produce the 404 response.
-pub(super) fn lookup_repo(head: &RequestHead, state: &ViewerState) -> Result<Arc<RepoEntry>, Vec<u8>> {
+pub(super) fn lookup_repo(
+    head: &RequestHead,
+    state: &ViewerState,
+) -> Result<Arc<RepoEntry>, Vec<u8>> {
     let id = head
         .query_param("repo")
         .ok_or_else(|| json_error("400 Bad Request", "missing repo parameter"))?;

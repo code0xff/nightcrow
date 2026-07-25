@@ -83,7 +83,11 @@ pub(crate) fn hint_spans(text: &str, leader: &str, mark_clickable: bool) -> Vec<
     spans
 }
 
-pub(crate) fn render_hint_bar<'a>(app: &'a App, chrome: Chrome<'a>, accent: Color) -> Paragraph<'a> {
+pub(crate) fn render_hint_bar<'a>(
+    app: &'a App,
+    chrome: Chrome<'a>,
+    accent: Color,
+) -> Paragraph<'a> {
     if chrome.repo_input.active {
         // A rejected path is reported on the notice row above, so this row
         // stays a plain input line.

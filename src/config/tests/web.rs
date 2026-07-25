@@ -1,8 +1,8 @@
-use crate::config::{
-    Config, WebMirrorConfig, ensure_web_mirror_password, generate_password, validate_config,
-};
 use crate::config::web::{
     GENERATED_PASSWORD_LEN, PASSWORD_ALPHABET, WEB_MIRROR_TABLE, WEB_VIEWER_TABLE, insert_password,
+};
+use crate::config::{
+    Config, WebMirrorConfig, ensure_web_mirror_password, generate_password, validate_config,
 };
 
 #[test]

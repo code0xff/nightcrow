@@ -33,12 +33,11 @@ pub(crate) use hint_bar::{
 };
 pub(crate) use hint_text::{EMPTY_HINT, EMPTY_HINT_ARMED, PREFIX_CHIP};
 pub(crate) use hit_test::{
-    pane_at, project_tab_at, tab_click_at, terminal_content_areas,
-    upper_panel_at,
+    pane_at, project_tab_at, tab_click_at, terminal_content_areas, upper_panel_at,
 };
-pub(crate) use notice::render_notice_row;
 #[cfg(test)]
 pub(crate) use notice::home_relative_path;
+pub(crate) use notice::render_notice_row;
 
 use crate::app::{App, ViewMode};
 use crate::config::LayoutConfig;

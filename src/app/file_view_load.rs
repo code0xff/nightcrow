@@ -1,6 +1,8 @@
-use super::{App, DiffPaneView, FileViewKey, FileViewState, NoticeKind, ViewMode};
 use super::diff_load::DiffApply;
-use crate::git::diff::{load_commit_diff, load_commit_file_blob, load_commit_file_diff, load_workdir_file};
+use super::{App, DiffPaneView, FileViewKey, FileViewState, NoticeKind, ViewMode};
+use crate::git::diff::{
+    load_commit_diff, load_commit_file_blob, load_commit_file_diff, load_workdir_file,
+};
 
 impl App {
     pub(crate) fn current_file_view_key(&self) -> Option<FileViewKey> {

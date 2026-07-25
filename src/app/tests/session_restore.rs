@@ -1,5 +1,5 @@
-use super::*;
 use super::mode_toggle::seed_cached_commit_log;
+use super::*;
 
 #[test]
 fn toggle_mode_in_list_fullscreen_keeps_list_fullscreen() {
@@ -172,8 +172,14 @@ fn close_last_pane_exits_fullscreen() {
 fn restore_session_restores_active_pane_even_when_focus_is_not_terminal() {
     let mut app = app_with_files(vec![]);
     app.terminal.panes = vec![
-        PaneInfo { id: 1, title: "shell 1".into() },
-        PaneInfo { id: 2, title: "shell 2".into() },
+        PaneInfo {
+            id: 1,
+            title: "shell 1".into(),
+        },
+        PaneInfo {
+            id: 2,
+            title: "shell 2".into(),
+        },
     ];
 
     app.restore_session(&crate::session::SessionState {

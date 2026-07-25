@@ -17,7 +17,8 @@ pub(super) const GENERATED_PASSWORD_LEN: usize = 24;
 /// Alphabet for generated passwords: alphanumeric minus visually ambiguous
 /// glyphs (0/O, 1/l/I). All chars are TOML-safe, so the persisted value never
 /// needs escaping when written as a basic `"..."` string.
-pub(super) const PASSWORD_ALPHABET: &[u8] = b"abcdefghijkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+pub(super) const PASSWORD_ALPHABET: &[u8] =
+    b"abcdefghijkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 
 /// Web mirror server: serve a live, controllable view of this nightcrow over
 /// HTTP so a browser and the local terminal drive the same session.

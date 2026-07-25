@@ -5,7 +5,7 @@ mod reorder;
 mod routes;
 mod terminals;
 
-use super::{ViewerOptions, ViewerServer, VIEWER_SESSION_COOKIE};
+use super::{VIEWER_SESSION_COOKIE, ViewerOptions, ViewerServer};
 use crate::test_util::{make_repo, run_git};
 use crate::web::common::auth::Auth;
 use crate::web::viewer::prefs::PrefsStore;
@@ -27,7 +27,9 @@ pub(super) fn server_with(
 ) -> ViewerServer {
     let prefs = match prefs_dir {
         Some(dir) => PrefsStore::at(dir.join("viewer.json")),
-        None => PrefsStore::at(std::path::PathBuf::from("/nonexistent/nightcrow/viewer.json")),
+        None => PrefsStore::at(std::path::PathBuf::from(
+            "/nonexistent/nightcrow/viewer.json",
+        )),
     };
     ViewerServer::start(ViewerOptions {
         bind: "127.0.0.1".parse().unwrap(),
@@ -90,9 +92,7 @@ pub(super) fn delete(addr: SocketAddr, path: &str, cookie: Option<&str>) -> Stri
     };
     request(
         addr,
-        &format!(
-            "DELETE {path} HTTP/1.1\r\nHost: 127.0.0.1\r\n{cookie}Connection: close\r\n\r\n"
-        ),
+        &format!("DELETE {path} HTTP/1.1\r\nHost: 127.0.0.1\r\n{cookie}Connection: close\r\n\r\n"),
     )
 }
 
@@ -145,13 +145,8 @@ pub(super) fn seeded_server() -> (tempfile::TempDir, ViewerServer, String, Strin
 
 /// A repository whose history is one commit longer than a page, so the
 /// first page is full and a second one exists.
-pub(super) fn server_with_paged_history() -> (
-    tempfile::TempDir,
-    ViewerServer,
-    String,
-    String,
-    String,
-) {
+pub(super) fn server_with_paged_history()
+-> (tempfile::TempDir, ViewerServer, String, String, String) {
     let (dir, path) = make_repo();
     for i in 0..=crate::web::viewer::limits::MAX_LOG_PAGE {
         std::fs::write(std::path::Path::new(&path).join(format!("f{i}")), "x").unwrap();

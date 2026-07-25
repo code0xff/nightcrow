@@ -1,10 +1,15 @@
 use super::common::*;
-use crate::app::tests::app_with_fake_backend;
 use crate::app::Focus;
+use crate::app::tests::app_with_fake_backend;
 use crate::runtime::terminal::TerminalFullscreen;
 use crate::ui::hint_bar::{HintClick, hint_click_at, render_hint_bar, segment_click};
 use crate::ui::status_view::RepoInput;
-use ratatui::{Terminal, backend::TestBackend, layout::Rect, style::{Color, Modifier}};
+use ratatui::{
+    Terminal,
+    backend::TestBackend,
+    layout::Rect,
+    style::{Color, Modifier},
+};
 
 #[test]
 fn hint_bar_inverts_only_clickable_key_labels() {

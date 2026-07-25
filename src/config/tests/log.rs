@@ -1,6 +1,4 @@
-use crate::config::{
-    Config, LogConfig, LogLevel, LogRotation, validate_config,
-};
+use crate::config::{Config, LogConfig, LogLevel, LogRotation, validate_config};
 
 #[test]
 fn parse_rejects_invalid_log_rotation() {

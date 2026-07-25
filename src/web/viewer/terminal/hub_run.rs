@@ -1,26 +1,19 @@
 use super::TerminalHub;
-use crate::backend::{BackendEvent, PaneId, PtyBackend, TerminalBackend};
 use super::frame::{ServerMessage, TerminalFrame};
-use super::hub_helpers::{
-    Command, PaneState, broadcast_locked, canonical_order, push_scrollback,
-};
+use super::hub_helpers::{Command, PaneState, broadcast_locked, canonical_order, push_scrollback};
+use crate::backend::{BackendEvent, PaneId, PtyBackend, TerminalBackend};
 use crate::web::viewer::limits;
 use std::collections::VecDeque;
+use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::Receiver;
-use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
 
 const POLL_INTERVAL: Duration = Duration::from_millis(8);
 
 impl TerminalHub {
-    pub(super) fn run(
-        &self,
-        cwd: &str,
-        commands: Receiver<Command>,
-        stop: Arc<AtomicBool>,
-    ) {
+    pub(super) fn run(&self, cwd: &str, commands: Receiver<Command>, stop: Arc<AtomicBool>) {
         let mut backend = PtyBackend::new(cwd);
 
         while !stop.load(Ordering::Acquire) {

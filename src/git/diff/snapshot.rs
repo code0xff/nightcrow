@@ -1,4 +1,6 @@
-use crate::git::diff::types::{ChangedFile, DiffHunk, DiffLine, LineKind, RepoSnapshot, StatusKind, TrackingStatus};
+use crate::git::diff::types::{
+    ChangedFile, DiffHunk, DiffLine, LineKind, RepoSnapshot, StatusKind, TrackingStatus,
+};
 use anyhow::{Context, Result};
 use git2::{Branch, DiffDelta, Repository, Status, StatusEntry, StatusOptions};
 use std::collections::BTreeMap;

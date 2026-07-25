@@ -4,9 +4,9 @@ mod split;
 #[cfg(test)]
 mod tests;
 
+pub(crate) use highlight::highlight_line_segments;
 pub use highlight::{DIFF_THEME, HighlightSegment};
 pub use search::DiffSearch;
-pub(crate) use highlight::highlight_line_segments;
 pub(crate) use search::nearest_match_index;
 pub(crate) use split::{flush_split_blocks, resolve_hunk_syntax};
 

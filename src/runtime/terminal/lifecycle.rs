@@ -1,7 +1,7 @@
 use crate::backend::{BackendEvent, PaneId};
 use crate::runtime::emulator::PaneEmulator;
 use crate::runtime::terminal::{
-    PaneInfo, PROMPT_BUFFER_MAX_BYTES, SCROLLBACK_LINES, TerminalState, strip_escape_sequences,
+    PROMPT_BUFFER_MAX_BYTES, PaneInfo, SCROLLBACK_LINES, TerminalState, strip_escape_sequences,
 };
 
 impl TerminalState {

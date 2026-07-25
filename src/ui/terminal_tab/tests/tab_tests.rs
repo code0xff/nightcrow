@@ -1,7 +1,7 @@
 use super::*;
 use crate::ui::terminal_tab::layout::terminal_layout;
-use crate::ui::terminal_tab::tab_bar::tab_target_at;
 use crate::ui::terminal_tab::render;
+use crate::ui::terminal_tab::tab_bar::tab_target_at;
 use ratatui::{Terminal, backend::TestBackend, layout::Rect, style::Color};
 
 #[test]

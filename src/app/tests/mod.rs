@@ -4,16 +4,14 @@ mod helpers;
 // (App, AutoFollow, Focus, ViewMode, Notice, NoticeKind, DiffPaneView,
 // FileViewKey, FileViewState, CommitLogPagination, SnapshotChannel, etc.)
 // so every test submodule can pull them in with `use super::*;`.
-use super::*;
-use crate::git::diff::{
-    ChangedFile, CommitEntry, RepoSnapshot, StatusKind, load_commit_log,
-};
-use crate::runtime::snapshot::SnapshotMsg;
-use crate::runtime::terminal::{PaneInfo, TerminalFullscreen, SCROLLBACK_LINES};
-use crate::test_util::{make_repo, open_repo, run_git};
-use crate::app::commit_log_fetch::{CommitLogFetchKind, CommitLogPageMsg};
 use super::diff_load::DiffApply;
 use super::strip_escape_sequences;
+use super::*;
+use crate::app::commit_log_fetch::{CommitLogFetchKind, CommitLogPageMsg};
+use crate::git::diff::{ChangedFile, CommitEntry, RepoSnapshot, StatusKind, load_commit_log};
+use crate::runtime::snapshot::SnapshotMsg;
+use crate::runtime::terminal::{PaneInfo, SCROLLBACK_LINES, TerminalFullscreen};
+use crate::test_util::{make_repo, open_repo, run_git};
 use crossterm::event::{KeyCode, KeyModifiers};
 use std::collections::HashMap;
 use std::path::Path;

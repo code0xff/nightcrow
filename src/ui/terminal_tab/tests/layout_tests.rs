@@ -2,7 +2,12 @@ use crate::app::tests::app_with_files;
 use crate::ui::terminal_tab::layout::{split_pane_areas, terminal_layout, truncate_tab_title};
 use crate::ui::terminal_tab::render;
 use crate::ui::terminal_tab::screen::screen_cursor_position;
-use ratatui::{Terminal, backend::TestBackend, layout::{Position, Rect}, style::Color};
+use ratatui::{
+    Terminal,
+    backend::TestBackend,
+    layout::{Position, Rect},
+    style::Color,
+};
 
 #[test]
 fn maps_screen_cursor_to_render_area() {

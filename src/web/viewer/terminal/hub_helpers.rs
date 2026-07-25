@@ -1,5 +1,5 @@
-use crate::backend::PaneId;
 use super::frame::TerminalFrame;
+use crate::backend::PaneId;
 use crate::web::viewer::limits;
 use std::collections::VecDeque;
 use std::sync::mpsc::TrySendError;
@@ -15,10 +15,21 @@ pub enum Command {
         client: u64,
         command: Option<String>,
     },
-    Input { pane: PaneId, data: Vec<u8> },
-    Resize { pane: PaneId, rows: u16, cols: u16 },
-    Close { pane: PaneId },
-    Reorder { order: Vec<PaneId> },
+    Input {
+        pane: PaneId,
+        data: Vec<u8>,
+    },
+    Resize {
+        pane: PaneId,
+        rows: u16,
+        cols: u16,
+    },
+    Close {
+        pane: PaneId,
+    },
+    Reorder {
+        order: Vec<PaneId>,
+    },
 }
 
 /// A live terminal and the recent raw bytes it has produced, kept so a client

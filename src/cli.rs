@@ -220,7 +220,9 @@ fn resolve_serve_repos(repos: &[std::path::PathBuf]) -> Result<Vec<String>> {
 /// Runs before the alternate screen so a generated password and any bind error
 /// surface as plain stderr. A bind failure disables the web mirror with a
 /// warning rather than aborting the whole app — the local TUI still runs.
-pub(crate) fn start_web_if_enabled(cfg: &mut crate::config::Config) -> Result<Option<crate::web::WebServer>> {
+pub(crate) fn start_web_if_enabled(
+    cfg: &mut crate::config::Config,
+) -> Result<Option<crate::web::WebServer>> {
     if !cfg.web_mirror.enabled {
         return Ok(None);
     }
@@ -261,7 +263,9 @@ pub(crate) fn run_init(force: bool) -> Result<()> {
 }
 
 /// Resolve `--repo` paths to resolved strings, used by `main` before the TUI.
-pub(crate) fn resolve_repo_paths(repos: Vec<std::path::PathBuf>) -> Result<Vec<String>, anyhow::Error> {
+pub(crate) fn resolve_repo_paths(
+    repos: Vec<std::path::PathBuf>,
+) -> Result<Vec<String>, anyhow::Error> {
     let mut out = Vec::with_capacity(repos.len());
     for p in repos {
         out.push(

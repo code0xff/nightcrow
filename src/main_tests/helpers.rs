@@ -1,5 +1,5 @@
-use crate::app::{App, Focus};
 use crate::app::tests::{app_with_fake_backend, app_with_files};
+use crate::app::{App, Focus};
 use crate::backend;
 use crate::workspace::Workspace;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseEvent, MouseEventKind};
@@ -101,7 +101,8 @@ pub(super) fn hint_x_for(app: &App, want: crate::ui::HintClick) -> u16 {
     let row = HINT_TEST_SCREEN.height - 1;
     (0..HINT_TEST_SCREEN.width)
         .find(|&x| {
-            crate::ui::hint_click_at(app, test_tab_view(&[]), HINT_TEST_SCREEN, x, row) == Some(want)
+            crate::ui::hint_click_at(app, test_tab_view(&[]), HINT_TEST_SCREEN, x, row)
+                == Some(want)
         })
         .expect("expected a clickable hint segment")
 }

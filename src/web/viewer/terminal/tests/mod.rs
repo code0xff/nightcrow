@@ -1,11 +1,11 @@
 mod behavior;
 
 use crate::backend::PaneId;
+use crate::web::viewer::limits;
 use crate::web::viewer::terminal::frame::{
     ClientMessage, ServerMessage, TerminalFrame, decode_output, encode_output,
 };
 use crate::web::viewer::terminal::hub_helpers::{canonical_order, push_scrollback};
-use crate::web::viewer::limits;
 use std::collections::VecDeque;
 use std::thread;
 use std::time::{Duration, Instant};

@@ -77,8 +77,14 @@ fn toggle_fullscreen_noop_with_no_panes() {
 fn toggle_terminal_fullscreen_cycles_off_grid_zoom_off_with_multiple_panes() {
     let mut app = app_with_files(vec![]);
     app.terminal.panes = vec![
-        PaneInfo { id: 1, title: "a".into() },
-        PaneInfo { id: 2, title: "b".into() },
+        PaneInfo {
+            id: 1,
+            title: "a".into(),
+        },
+        PaneInfo {
+            id: 2,
+            title: "b".into(),
+        },
     ];
     app.focus = Focus::Terminal;
     assert_eq!(app.terminal.fullscreen, TerminalFullscreen::Off);
@@ -99,8 +105,14 @@ fn toggle_terminal_fullscreen_cycles_off_grid_zoom_off_with_multiple_panes() {
 fn closing_pane_normalizes_zoom_to_grid_when_one_pane_remains() {
     let mut app = app_with_files(vec![]);
     app.terminal.panes = vec![
-        PaneInfo { id: 1, title: "a".into() },
-        PaneInfo { id: 2, title: "b".into() },
+        PaneInfo {
+            id: 1,
+            title: "a".into(),
+        },
+        PaneInfo {
+            id: 2,
+            title: "b".into(),
+        },
     ];
     app.focus = Focus::Terminal;
     app.toggle_terminal_fullscreen(); // Grid
@@ -140,8 +152,14 @@ fn toggle_terminal_fullscreen_skips_zoom_when_grid_cap_is_one() {
     let mut app = app_with_files(vec![]);
     app.terminal.max_visible_fullscreen = 1;
     app.terminal.panes = vec![
-        PaneInfo { id: 1, title: "a".into() },
-        PaneInfo { id: 2, title: "b".into() },
+        PaneInfo {
+            id: 1,
+            title: "a".into(),
+        },
+        PaneInfo {
+            id: 2,
+            title: "b".into(),
+        },
     ];
     app.focus = Focus::Terminal;
 

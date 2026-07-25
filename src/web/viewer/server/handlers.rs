@@ -1,6 +1,6 @@
 use super::http_util::json_error;
 use super::mutations::{lookup_repo, redact};
-use super::{ViewerState, SSE_HEARTBEAT, TERM_POLL_TIMEOUT};
+use super::{SSE_HEARTBEAT, TERM_POLL_TIMEOUT, ViewerState};
 use crate::web::common::conn;
 use crate::web::common::sse::SseStream;
 use crate::web::viewer::catalog::RepoEntry;

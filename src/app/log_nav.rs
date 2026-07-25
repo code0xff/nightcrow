@@ -130,7 +130,11 @@ impl App {
     }
 
     // Returns `true` if handled (i.e. we are in Log mode).
-    pub(super) fn navigate_log_list(&mut self, commit_nav: fn(&mut Self), file_nav: fn(&mut Self)) -> bool {
+    pub(super) fn navigate_log_list(
+        &mut self,
+        commit_nav: fn(&mut Self),
+        file_nav: fn(&mut Self),
+    ) -> bool {
         if self.mode != ViewMode::Log {
             return false;
         }

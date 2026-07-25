@@ -10,9 +10,9 @@ mod accept;
 mod http_routes;
 mod ws;
 
-use accept::Shared;
 use crate::web::common::auth::{Auth, RateLimiter, SessionStore};
 use crate::web::protocol::{self, WebInputEvent};
+use accept::Shared;
 use anyhow::{Context, Result};
 use ratatui::buffer::Buffer;
 use ratatui::layout::Position;
@@ -178,15 +178,9 @@ impl WebServer {
                 client
                     .tx
                     .send(accept::ClientMsg::Resize { cols, rows })
-                    .and_then(|()| {
-                        client
-                            .tx
-                            .send(accept::ClientMsg::Frame(bytes.clone()))
-                    })
+                    .and_then(|()| client.tx.send(accept::ClientMsg::Frame(bytes.clone())))
             } else if let Some(bytes) = update_bytes.as_ref() {
-                client
-                    .tx
-                    .send(accept::ClientMsg::Frame(bytes.clone()))
+                client.tx.send(accept::ClientMsg::Frame(bytes.clone()))
             } else {
                 Ok(())
             };

@@ -1,5 +1,5 @@
 use crate::config::{
-    Config, InitOutcome, EXAMPLE_CONFIG, MAX_STARTUP_COMMANDS, StartupCommand, validate_config,
+    Config, EXAMPLE_CONFIG, InitOutcome, MAX_STARTUP_COMMANDS, StartupCommand, validate_config,
     write_config_template,
 };
 

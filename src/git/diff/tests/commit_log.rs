@@ -88,7 +88,10 @@ fn commit_log_from_an_anchor_ignores_commits_made_after_it() {
     assert_eq!(first[0].summary, "c3");
     assert_eq!(first[1].summary, "c2");
     assert_eq!(
-        anchored.iter().map(|c| c.summary.as_str()).collect::<Vec<_>>(),
+        anchored
+            .iter()
+            .map(|c| c.summary.as_str())
+            .collect::<Vec<_>>(),
         ["c1", "c0"],
     );
     // Unanchored: HEAD moved, so the same skip lands a row late and repeats

@@ -1,6 +1,4 @@
-use crate::git::diff::{
-    ChangedFile, RepoSnapshot, StatusKind, load_file_diff, load_snapshot,
-};
+use crate::git::diff::{ChangedFile, RepoSnapshot, StatusKind, load_file_diff, load_snapshot};
 use crate::test_util::{make_repo, open_repo, run_git};
 use std::borrow::Cow;
 use std::path::Path;
@@ -55,9 +53,9 @@ fn snapshot_detects_staged_added_file() {
     let snap = load_snapshot(&open_repo(&path)).unwrap();
 
     assert!(
-        snap.files.iter().any(|f| f.path == "new.rs"
-            && f.index == StatusKind::Added
-            && f.short_code() == "A ")
+        snap.files
+            .iter()
+            .any(|f| f.path == "new.rs" && f.index == StatusKind::Added && f.short_code() == "A ")
     );
     drop(dir);
 }

@@ -1,7 +1,7 @@
-use super::hub_helpers::Command;
 use super::TerminalHub;
 use super::frame::ClientMessage;
 use super::frame::TerminalFrame;
+use super::hub_helpers::Command;
 use std::sync::mpsc::{Receiver, SyncSender, TrySendError};
 use std::time::Duration;
 

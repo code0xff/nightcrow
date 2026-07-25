@@ -1,6 +1,6 @@
 use super::helpers::*;
-use crate::app::{DiffPaneView, Focus};
 use crate::app::tests::app_with_files;
+use crate::app::{DiffPaneView, Focus};
 use crate::key_dispatch::handle_key;
 use crossterm::event::{KeyCode, KeyModifiers};
 

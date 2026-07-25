@@ -38,7 +38,8 @@ fn resolve_startup_commands_appends_cli_exec_after_config() {
         name: Some("Claude".into()),
         command: "claude".into(),
     });
-    let resolved = resolve_startup_commands(&cfg, &["codex".to_string(), "vim".to_string()]).unwrap();
+    let resolved =
+        resolve_startup_commands(&cfg, &["codex".to_string(), "vim".to_string()]).unwrap();
     assert_eq!(resolved.len(), 3);
     assert_eq!(resolved[0].command, "claude");
     assert_eq!(resolved[0].name.as_deref(), Some("Claude"));

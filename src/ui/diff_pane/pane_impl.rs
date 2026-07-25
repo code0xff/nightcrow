@@ -1,5 +1,8 @@
 use crate::git::diff::LineKind;
-use crate::ui::diff_pane::{DiffPane, DiffPaneView, SplitRow, flush_split_blocks, highlight_line_segments, nearest_match_index, resolve_hunk_syntax, DIFF_THEME, HighlightSegment};
+use crate::ui::diff_pane::{
+    DIFF_THEME, DiffPane, DiffPaneView, HighlightSegment, SplitRow, flush_split_blocks,
+    highlight_line_segments, nearest_match_index, resolve_hunk_syntax,
+};
 
 impl DiffPane {
     /// Total flat row count across all hunks (1 header + N body lines each).

@@ -6,25 +6,47 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Deserialize)]
 #[serde(tag = "type", rename_all = "lowercase")]
 pub enum ClientMessage {
-    Create { rows: u16, cols: u16 },
-    Input { pane: PaneId, data: String },
-    Resize { pane: PaneId, rows: u16, cols: u16 },
-    Close { pane: PaneId },
+    Create {
+        rows: u16,
+        cols: u16,
+    },
+    Input {
+        pane: PaneId,
+        data: String,
+    },
+    Resize {
+        pane: PaneId,
+        rows: u16,
+        cols: u16,
+    },
+    Close {
+        pane: PaneId,
+    },
     /// A full desired sequence of the live pane ids, sent when a client drags a
     /// pane to a new slot. The hub reconciles it (see [`super::TerminalHub::reorder_panes`]).
-    Reorder { order: Vec<PaneId> },
+    Reorder {
+        order: Vec<PaneId>,
+    },
 }
 
 /// A control message to the browser.
 #[derive(Debug, Serialize, PartialEq, Eq)]
 #[serde(tag = "type", rename_all = "lowercase")]
 pub enum ServerMessage {
-    Created { pane: PaneId },
-    Exited { pane: PaneId },
-    Error { message: String },
+    Created {
+        pane: PaneId,
+    },
+    Exited {
+        pane: PaneId,
+    },
+    Error {
+        message: String,
+    },
     /// The canonical pane order after a reorder, broadcast to every client so
     /// the sender and any other device converge on the same layout.
-    Reordered { order: Vec<PaneId> },
+    Reordered {
+        order: Vec<PaneId>,
+    },
 }
 
 /// One frame queued for a connected client.

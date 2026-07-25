@@ -3,10 +3,10 @@ use crate::app::Focus;
 use crate::ui::terminal_tab::layout::terminal_layout;
 use crate::ui::terminal_tab::render;
 use ratatui::{
-Terminal,
-backend::TestBackend,
-layout::Rect,
-style::{Color, Modifier},
+    Terminal,
+    backend::TestBackend,
+    layout::Rect,
+    style::{Color, Modifier},
 };
 
 #[test]
@@ -133,4 +133,3 @@ fn tab_target_at_resolves_tabs_and_hidden_markers() {
     let y = tab_area.y;
     let _ = y;
 }
-

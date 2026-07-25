@@ -5,8 +5,8 @@ use ratatui::style::Style;
 use std::net::TcpStream;
 use std::thread;
 use std::time::Duration;
-use tungstenite::client::IntoClientRequest;
 use tungstenite::Message;
+use tungstenite::client::IntoClientRequest;
 
 mod helpers;
 

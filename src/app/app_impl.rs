@@ -1,4 +1,4 @@
-use crate::app::{App, AutoFollow, Notice, NoticeKind, ViewMode, Focus};
+use crate::app::{App, AutoFollow, Focus, Notice, NoticeKind, ViewMode};
 use crate::backend::{PtyBackend, TerminalBackend};
 use crate::runtime::snapshot::SnapshotChannel;
 use crossterm::event::KeyEvent;

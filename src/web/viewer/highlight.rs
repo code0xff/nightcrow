@@ -74,11 +74,7 @@ impl Highlighter {
 pub fn highlighter(path: Option<&str>) -> Highlighter {
     let (ss, theme) = assets();
     let syntax = path
-        .and_then(|p| {
-            std::path::Path::new(p)
-                .extension()
-                .and_then(|e| e.to_str())
-        })
+        .and_then(|p| std::path::Path::new(p).extension().and_then(|e| e.to_str()))
         .and_then(|ext| ss.find_syntax_by_extension(ext))
         .unwrap_or_else(|| ss.find_syntax_plain_text());
     Highlighter {
@@ -103,9 +99,17 @@ mod tests {
         assert_eq!(lines.len(), 1);
         // A keyword, a name, and punctuation should not all be one colour.
         let colours: std::collections::HashSet<_> = lines[0].iter().map(|s| &s.c).collect();
-        assert!(colours.len() > 1, "expected multiple colours: {:?}", lines[0]);
+        assert!(
+            colours.len() > 1,
+            "expected multiple colours: {:?}",
+            lines[0]
+        );
         // Every span carries a #rrggbb colour.
-        assert!(lines[0].iter().all(|s| s.c.starts_with('#') && s.c.len() == 7));
+        assert!(
+            lines[0]
+                .iter()
+                .all(|s| s.c.starts_with('#') && s.c.len() == 7)
+        );
     }
 
     #[test]

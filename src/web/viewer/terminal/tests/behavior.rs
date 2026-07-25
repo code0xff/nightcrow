@@ -1,8 +1,8 @@
 use super::{collect_created, created_pane, next_matching, reordered_order};
 use crate::backend::PaneId;
-use crate::web::viewer::terminal::frame::{ClientMessage, TerminalFrame};
 use crate::web::viewer::limits;
 use crate::web::viewer::terminal::TerminalHub;
+use crate::web::viewer::terminal::frame::{ClientMessage, TerminalFrame};
 
 #[test]
 fn creating_a_terminal_announces_it_and_streams_output() {
@@ -109,8 +109,7 @@ fn a_reconnecting_client_receives_existing_panes_and_scrollback() {
     let first = hub.connect();
 
     first.dispatch(ClientMessage::Create { rows: 24, cols: 80 });
-    let created =
-        next_matching(&first, |f| created_pane(f).is_some()).expect("no created message");
+    let created = next_matching(&first, |f| created_pane(f).is_some()).expect("no created message");
     let pane = created_pane(&created).unwrap();
     // The shell writes a prompt; that is the scrollback a late joiner must
     // get back.
@@ -129,8 +128,10 @@ fn a_reconnecting_client_receives_existing_panes_and_scrollback() {
         Some(pane),
         "replayed pane id must match the live pane"
     );
-    let replay_output =
-        next_matching(&second, |f| matches!(f, TerminalFrame::Output { pane: p, .. } if *p == pane));
+    let replay_output = next_matching(
+        &second,
+        |f| matches!(f, TerminalFrame::Output { pane: p, .. } if *p == pane),
+    );
     assert!(
         replay_output.is_some(),
         "reconnecting client did not receive the scrollback"

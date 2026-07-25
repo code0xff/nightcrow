@@ -19,12 +19,12 @@ mod tree;
 pub use diff::{DiffDto, FileDto, SpanDto};
 #[cfg(test)]
 pub use diff::{DiffHunkDto, DiffLineDto};
-pub use envelope::{Envelope, HotConfigDto, RepoDto, ViewerBootstrapDto};
 #[cfg(test)]
 pub use envelope::PROTOCOL_VERSION;
-pub use log::{CommitFilesDto, LogDto};
+pub use envelope::{Envelope, HotConfigDto, RepoDto, ViewerBootstrapDto};
 #[cfg(test)]
 pub use log::CommitDto;
+pub use log::{CommitFilesDto, LogDto};
 pub use status::{BrowseDto, BrowseEntryDto, StatusDto};
 #[cfg(test)]
 pub use status::{ChangedFileDto, TrackingDto, server_now_millis};

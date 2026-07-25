@@ -201,7 +201,12 @@ fn a_malformed_preference_body_is_rejected_without_changing_anything() {
     );
     let token = login(server.addr());
 
-    let response = post(server.addr(), "/api/prefs", "{\"accent\":\"red\"}", Some(&token));
+    let response = post(
+        server.addr(),
+        "/api/prefs",
+        "{\"accent\":\"red\"}",
+        Some(&token),
+    );
 
     assert!(response.starts_with("HTTP/1.1 400"), "got: {response}");
     let list = get(server.addr(), "/api/repos", Some(&token));

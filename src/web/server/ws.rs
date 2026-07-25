@@ -7,8 +7,8 @@ use std::sync::atomic::Ordering;
 use std::sync::mpsc::Receiver;
 use tungstenite::{Message, WebSocket};
 
-use super::accept::{ClientHandle, ClientMsg, Shared};
 use super::WS_POLL_TIMEOUT;
+use super::accept::{ClientHandle, ClientMsg, Shared};
 
 /// Complete the WebSocket handshake manually (the request head was already
 /// consumed for routing/auth), then run the per-client read/write loop.

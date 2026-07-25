@@ -26,7 +26,10 @@ pub(crate) fn dummy_tree_watcher() -> (
     mpsc::Sender<notify_debouncer_mini::DebounceEventResult>,
 ) {
     let (tx, rx) = mpsc::channel();
-    (crate::runtime::tree_watch::TreeWatcher::from_receiver(rx), tx)
+    (
+        crate::runtime::tree_watch::TreeWatcher::from_receiver(rx),
+        tx,
+    )
 }
 
 pub(crate) fn app_with_files(files: Vec<&str>) -> App {

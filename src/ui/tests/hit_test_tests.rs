@@ -1,5 +1,5 @@
-use crate::app::tests::app_with_files;
 use crate::app::Focus;
+use crate::app::tests::app_with_files;
 use crate::config::LayoutConfig;
 use crate::runtime::terminal::TerminalFullscreen;
 use crate::ui::{pane_at, terminal_content_areas, upper_panel_at};
@@ -10,8 +10,7 @@ fn terminal_content_areas_hidden_when_other_pane_is_fullscreen() {
     let mut app = app_with_files(vec!["a.rs"]);
     app.toggle_diff_fullscreen();
 
-    let areas =
-        terminal_content_areas(&app, Rect::new(0, 0, 100, 40), &LayoutConfig::default());
+    let areas = terminal_content_areas(&app, Rect::new(0, 0, 100, 40), &LayoutConfig::default());
 
     assert!(areas.is_empty());
 }

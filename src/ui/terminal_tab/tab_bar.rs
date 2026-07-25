@@ -39,7 +39,10 @@ impl TabSegment {
 /// The tab bar's rendered segments in draw order. Single source for
 /// `render_tab_bar` (which styles them) and `tab_target_at` (which measures
 /// them), so the click hit-test cannot drift from the drawn labels.
-pub(crate) fn tab_segments(app: &App, visible: std::ops::Range<usize>) -> Vec<(String, TabSegment)> {
+pub(crate) fn tab_segments(
+    app: &App,
+    visible: std::ops::Range<usize>,
+) -> Vec<(String, TabSegment)> {
     if app.terminal.panes.is_empty() {
         return vec![(
             format!(" {} t: new terminal ", app.leader_label()),

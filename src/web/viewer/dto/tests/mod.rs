@@ -151,7 +151,13 @@ fn commit_file_list_never_carries_an_mtime() {
 
 #[test]
 fn status_dto_omits_absent_optional_fields() {
-    let value = json(&StatusDto::from_snapshot(&[], None, None, None, &HashMap::new()));
+    let value = json(&StatusDto::from_snapshot(
+        &[],
+        None,
+        None,
+        None,
+        &HashMap::new(),
+    ));
 
     assert!(value.get("branch").is_none());
     assert!(value.get("head").is_none());

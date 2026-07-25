@@ -3,7 +3,7 @@ use super::mutations::{
     handle_close_repo, handle_mkdir, handle_open_repo, handle_reorder_repos, handle_set_prefs,
 };
 use super::routes::route;
-use super::{ViewerState, VIEWER_SESSION_COOKIE};
+use super::{VIEWER_SESSION_COOKIE, ViewerState};
 use crate::web::common::conn::{self, ConnectionSlot};
 use crate::web::common::http::{self, RequestHead};
 use crate::web::viewer::assets;

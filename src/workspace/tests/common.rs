@@ -1,5 +1,5 @@
-use crate::app::tests::app_with_files;
 use crate::app::App;
+use crate::app::tests::app_with_files;
 use crate::workspace::Workspace;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 

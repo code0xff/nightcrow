@@ -1,10 +1,10 @@
+use super::ViewerState;
 use super::handlers::{
     encode, open_repo, optional_count, optional_oid, required_oid, required_path, with_repo,
     with_repo_commit_path,
 };
 use super::http_util::{json_error, json_response};
 use super::mutations::redact;
-use super::ViewerState;
 use crate::git::diff;
 use crate::web::common::http::RequestHead;
 use crate::web::viewer::dto::{

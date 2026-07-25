@@ -1,7 +1,7 @@
 use super::super::{
     BrowseDto, BrowseEntryDto, ChangedFileDto, CommitDto, CommitFilesDto, DiffDto, DiffHunkDto,
-    DiffLineDto, FileDto, HotConfigDto, LogDto, PROTOCOL_VERSION, RepoDto, SpanDto,
-    StatusDto, TrackingDto, TreeDto, TreeEntryDto, TreeMatchDto, TreeSearchDto, ViewerBootstrapDto,
+    DiffLineDto, FileDto, HotConfigDto, LogDto, PROTOCOL_VERSION, RepoDto, SpanDto, StatusDto,
+    TrackingDto, TreeDto, TreeEntryDto, TreeMatchDto, TreeSearchDto, ViewerBootstrapDto,
 };
 
 /// Where the wire fixture lives. At the `viewer-ui` root rather than under
@@ -10,10 +10,7 @@ use super::super::{
 /// TypeScript side reaches it with a `../` import. The fixture is only half
 /// a contract test on its own, and the half that matters is the one that
 /// fails when the two hand-written definitions of this protocol drift apart.
-const FIXTURE_PATH: &str = concat!(
-    env!("CARGO_MANIFEST_DIR"),
-    "/viewer-ui/api.fixture.json"
-);
+const FIXTURE_PATH: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/viewer-ui/api.fixture.json");
 
 /// Set to rewrite the fixture instead of asserting against it.
 const UPDATE_ENV: &str = "UPDATE_API_FIXTURE";
@@ -173,7 +170,10 @@ fn the_wire_fixture_matches_the_served_payloads() {
     // under a compiler that rejects a field the interfaces still name by its
     // old name or type — an added field passes, being one they simply do not
     // mention yet. See the header of `api.contract.test.ts`.
-    let expected = format!("{}\n", serde_json::to_string_pretty(&wire_fixture()).unwrap());
+    let expected = format!(
+        "{}\n",
+        serde_json::to_string_pretty(&wire_fixture()).unwrap()
+    );
 
     if std::env::var_os(UPDATE_ENV).is_some() {
         std::fs::write(FIXTURE_PATH, &expected).expect("could not write the fixture");

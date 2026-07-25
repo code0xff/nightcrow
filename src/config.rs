@@ -7,18 +7,16 @@ mod log;
 mod panels;
 mod web;
 
-pub use layout::{
-    Accent, InputConfig, LayoutConfig, StartupCommand, ThemeConfig, parse_leader,
-};
-pub use log::{LogConfig, LogRotation};
+pub use layout::{Accent, InputConfig, LayoutConfig, StartupCommand, ThemeConfig, parse_leader};
 #[cfg(test)]
 pub use log::LogLevel;
+pub use log::{LogConfig, LogRotation};
 pub use panels::{AgentIndicatorConfig, MouseConfig, TreeConfig};
+#[cfg(test)]
+pub use web::generate_password;
 pub use web::{
     WebMirrorConfig, WebViewerConfig, ensure_web_mirror_password, ensure_web_viewer_password,
 };
-#[cfg(test)]
-pub use web::generate_password;
 
 /// Upper bound on the number of `[[startup_command]]` + `--exec` panes opened
 /// at launch. The value matches the `F3`..`F10` / `<prefix> 3`..`9`,`0` jump-key

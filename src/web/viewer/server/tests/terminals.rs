@@ -1,4 +1,4 @@
-use super::{get, request, seeded_server, VIEWER_SESSION_COOKIE};
+use super::{VIEWER_SESSION_COOKIE, get, request, seeded_server};
 use crate::web::viewer::terminal;
 use std::io::{Read, Write};
 use std::net::TcpStream;

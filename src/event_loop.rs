@@ -1,12 +1,12 @@
 use crate::cli::WebSurfaces;
-use crate::key_dispatch::{KeyOutcome, ProjectRequest, dispatch_key};
 pub(crate) use crate::key_dispatch::ProjectContext;
+use crate::key_dispatch::{KeyOutcome, ProjectRequest, dispatch_key};
 use crate::mouse::dispatch_mouse;
 use crate::paste::dispatch_paste;
 use crate::workspace::Workspace;
 use crossterm::event::{self, Event};
-use ratatui::{Terminal, backend::CrosstermBackend};
 use ratatui::layout::Rect;
+use ratatui::{Terminal, backend::CrosstermBackend};
 use std::io;
 use std::time::Duration;
 use syntect::highlighting::ThemeSet;
@@ -272,12 +272,21 @@ pub(crate) fn apply_project_request(
             if ws.is_full() {
                 ws.raise_notice(
                     crate::app::NoticeKind::Project,
-                    format!("cannot open more than {} projects", crate::workspace::MAX_PROJECTS),
+                    format!(
+                        "cannot open more than {} projects",
+                        crate::workspace::MAX_PROJECTS
+                    ),
                 );
                 return;
             }
             let saved = ws.session_for(&repo_path).cloned();
-            let project = crate::app_init::init_app(&repo_path, ctx.cfg, ctx.startup_commands, ctx.leader, saved);
+            let project = crate::app_init::init_app(
+                &repo_path,
+                ctx.cfg,
+                ctx.startup_commands,
+                ctx.leader,
+                saved,
+            );
             ws.add(project);
         }
     }

@@ -1,5 +1,5 @@
-use super::*;
 use super::tree::{app_on, make_tree_repo, tree_index_of};
+use super::*;
 
 #[test]
 fn a_change_in_a_collapsed_directory_updates_search_results() {

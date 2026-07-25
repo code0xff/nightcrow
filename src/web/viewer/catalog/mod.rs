@@ -21,8 +21,8 @@ use std::sync::{Arc, Mutex};
 
 mod catalog_ids;
 mod ordering;
-pub use catalog_ids::{AddOutcome, RepoEntry};
 use catalog_ids::IdAssigner;
+pub use catalog_ids::{AddOutcome, RepoEntry};
 
 #[derive(Default)]
 pub struct Catalog {

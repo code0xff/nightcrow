@@ -113,4 +113,3 @@ pub fn resolve_in_workdir(workdir: &Path, relative: &str) -> Result<PathBuf> {
 
 #[cfg(test)]
 mod tests;
-

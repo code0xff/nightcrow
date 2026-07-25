@@ -20,11 +20,9 @@ mod hub_helpers;
 mod hub_run;
 mod session;
 
-pub use frame::{
-    ClientMessage, ServerMessage, TerminalFrame, encode_output,
-};
 #[cfg(test)]
 pub use frame::decode_output;
+pub use frame::{ClientMessage, ServerMessage, TerminalFrame, encode_output};
 pub use session::TerminalSession;
 
 use hub_helpers::{Command, Shared};
@@ -104,7 +102,10 @@ impl TerminalHub {
                 }
                 if !pane.scrollback.is_empty() {
                     let data: Vec<u8> = pane.scrollback.iter().copied().collect();
-                    let _ = tx.try_send(TerminalFrame::Output { pane: pane.id, data });
+                    let _ = tx.try_send(TerminalFrame::Output {
+                        pane: pane.id,
+                        data,
+                    });
                 }
             }
         }
@@ -115,9 +116,7 @@ impl TerminalHub {
         // the configured commands, or a single bare shell if none. Queued after
         // the client is registered so it receives the resulting "created"
         // broadcasts, and skipped on a stopped hub.
-        if !self.stop.load(Ordering::Acquire)
-            && !self.started.swap(true, Ordering::AcqRel)
-        {
+        if !self.stop.load(Ordering::Acquire) && !self.started.swap(true, Ordering::AcqRel) {
             if self.startup.is_empty() {
                 self.queue_startup_pane(id, None);
             } else {
