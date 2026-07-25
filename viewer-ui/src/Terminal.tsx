@@ -514,7 +514,13 @@ export function TerminalPanel({
 
   return (
     <section
-      className={`min-h-0 flex-col border-t border-ink-700 ${className}`}
+      // `min-w-0` is load-bearing: as a grid item of the app's single-column
+      // grid it defaults to min-width:auto, so without it xterm's intrinsic
+      // width (the 80 cols a pane is created at, before the fit) pushes the
+      // column past the viewport and the panel scrolls off-screen on a phone —
+      // the file and diff panes escape this because they carry min-w-0 too. With
+      // it the item shrinks to the track and the fit sizes the cols to match.
+      className={`min-h-0 min-w-0 flex-col border-t border-ink-700 ${className}`}
     >
       <div className="flex shrink-0 items-center gap-2 bg-ink-900 px-2 py-1">
         {/* The panel's controls sit together at the trailing edge, the way an
