@@ -52,6 +52,8 @@ export function TerminalPanel({
 
   useTerminalViews({
     panes,
+    size,
+    zoomed,
     socketRef,
     viewsRef,
     bodyRefs,
