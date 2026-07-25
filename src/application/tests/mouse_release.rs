@@ -1,5 +1,5 @@
 use super::helpers::*;
-use crate::mouse::handle_mouse;
+use crate::application::input::mouse::handle_mouse;
 use crossterm::event::MouseEventKind;
 
 #[test]

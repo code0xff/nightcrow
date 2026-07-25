@@ -1,6 +1,6 @@
 use super::helpers::*;
 use crate::app::Focus;
-use crate::key_dispatch::handle_key;
+use crate::application::input::dispatch::handle_key;
 use crossterm::event::{KeyCode, KeyModifiers};
 
 #[test]

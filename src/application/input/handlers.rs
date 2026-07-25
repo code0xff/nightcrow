@@ -1,6 +1,8 @@
 use crate::app::{App, DiffPaneView, Focus, ViewMode};
+use crate::application::input::dispatch::{
+    KeyOutcome, ProjectRequest, matches_text_command, text_input_char,
+};
 use crate::input::{Action, encode_key, prefix_action, vim_navigation_action};
-use crate::key_dispatch::{KeyOutcome, ProjectRequest, matches_text_command, text_input_char};
 use crate::runtime::terminal::SCROLL_LINE_STEP;
 use crate::workspace::Workspace;
 use crossterm::event::{KeyCode, KeyEvent};

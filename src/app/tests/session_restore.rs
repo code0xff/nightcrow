@@ -114,7 +114,7 @@ fn save_session_round_trips_list_fullscreen() {
 fn restore_session_list_fullscreen_forces_filelist_focus() {
     let mut app = app_with_files(vec![]);
 
-    app.restore_session(&crate::session::SessionState {
+    app.restore_session(&crate::workspace::persistence::SessionState {
         focus: Some(Focus::DiffViewer),
         list_fullscreen: true,
         ..Default::default()
@@ -132,7 +132,7 @@ fn restore_session_prefers_terminal_fullscreen_over_list_fullscreen() {
         title: "shell".into(),
     }];
 
-    app.restore_session(&crate::session::SessionState {
+    app.restore_session(&crate::workspace::persistence::SessionState {
         focus: Some(Focus::FileList),
         terminal_fullscreen: true,
         list_fullscreen: true,
@@ -182,7 +182,7 @@ fn restore_session_restores_active_pane_even_when_focus_is_not_terminal() {
         },
     ];
 
-    app.restore_session(&crate::session::SessionState {
+    app.restore_session(&crate::workspace::persistence::SessionState {
         focus: Some(Focus::FileList),
         active_pane: 1,
         ..Default::default()
@@ -200,7 +200,7 @@ fn restore_session_fullscreen_forces_terminal_focus() {
         title: "shell".into(),
     }];
 
-    app.restore_session(&crate::session::SessionState {
+    app.restore_session(&crate::workspace::persistence::SessionState {
         focus: Some(Focus::FileList),
         terminal_fullscreen: true,
         ..Default::default()
@@ -214,7 +214,7 @@ fn restore_session_fullscreen_forces_terminal_focus() {
 fn restore_session_diff_fullscreen_forces_diff_focus() {
     let mut app = app_with_files(vec![]);
 
-    app.restore_session(&crate::session::SessionState {
+    app.restore_session(&crate::workspace::persistence::SessionState {
         focus: Some(Focus::FileList),
         diff_fullscreen: true,
         ..Default::default()
@@ -232,7 +232,7 @@ fn restore_session_prefers_terminal_fullscreen_over_diff_fullscreen() {
         title: "shell".into(),
     }];
 
-    app.restore_session(&crate::session::SessionState {
+    app.restore_session(&crate::workspace::persistence::SessionState {
         focus: Some(Focus::FileList),
         terminal_fullscreen: true,
         diff_fullscreen: true,
@@ -263,7 +263,7 @@ fn save_session_round_trips_diff_fullscreen() {
 fn restore_session_normalizes_accent_index() {
     let mut app = app_with_files(vec![]);
 
-    app.restore_session(&crate::session::SessionState {
+    app.restore_session(&crate::workspace::persistence::SessionState {
         accent_idx: usize::MAX,
         ..Default::default()
     });
@@ -289,7 +289,7 @@ fn restore_session_keeps_log_scroll_after_loading_commit_diff() {
     let mut app = app_with_files(vec![]);
     app.repo_path = path;
 
-    app.restore_session(&crate::session::SessionState {
+    app.restore_session(&crate::workspace::persistence::SessionState {
         mode: Some(ViewMode::Log),
         scroll: 2,
         ..Default::default()

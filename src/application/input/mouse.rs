@@ -1,5 +1,5 @@
 use crate::app::{App, Focus};
-use crate::key_dispatch::{KeyOutcome, ProjectRequest, handle_key};
+use crate::application::input::dispatch::{KeyOutcome, ProjectRequest, handle_key};
 use crate::runtime::terminal::WHEEL_LINES_PER_NOTCH;
 use crate::workspace::Workspace;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseEvent, MouseEventKind};

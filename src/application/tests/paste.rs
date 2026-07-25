@@ -1,8 +1,8 @@
 use super::helpers::*;
 use crate::app::Focus;
 use crate::app::tests::app_with_files;
-use crate::key_dispatch::handle_key;
-use crate::paste::{dispatch_paste, handle_paste};
+use crate::application::input::dispatch::handle_key;
+use crate::application::input::paste::{dispatch_paste, handle_paste};
 
 #[test]
 fn paste_while_prefix_armed_cancels_prefix() {

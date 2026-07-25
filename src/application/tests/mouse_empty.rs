@@ -1,8 +1,8 @@
 use super::helpers::*;
 use crate::app;
 use crate::app::tests::{app_with_fake_backend, app_with_files};
-use crate::key_dispatch::{KeyOutcome, ProjectRequest};
-use crate::mouse::{dispatch_mouse, handle_mouse};
+use crate::application::input::dispatch::{KeyOutcome, ProjectRequest};
+use crate::application::input::mouse::{dispatch_mouse, handle_mouse};
 use crate::workspace::Workspace;
 use crossterm::event::MouseEventKind;
 

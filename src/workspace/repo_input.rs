@@ -52,7 +52,7 @@ impl Workspace {
         }
         // The dialog is not a shell, so `~` has to be expanded here or a home
         // relative path would read as a directory literally named `~`.
-        let p = crate::util::expand_tilde(trimmed);
+        let p = crate::platform::paths::expand_tilde(trimmed);
         if !p.is_dir() {
             // The rejected path is already on screen in the input itself, so
             // the message names the problem only.

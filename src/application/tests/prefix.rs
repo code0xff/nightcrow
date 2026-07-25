@@ -1,7 +1,7 @@
 use super::helpers::*;
 use crate::app::Focus;
 use crate::app::tests::app_with_files;
-use crate::key_dispatch::{KeyOutcome, ProjectRequest, dispatch_key, handle_key};
+use crate::application::input::dispatch::{KeyOutcome, ProjectRequest, dispatch_key, handle_key};
 use crate::workspace::Workspace;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 

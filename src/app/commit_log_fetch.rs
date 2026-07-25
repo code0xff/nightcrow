@@ -7,7 +7,7 @@
 use std::sync::mpsc;
 use std::thread;
 
-use crate::util::{REAP_TIMEOUT, try_timed_join};
+use crate::platform::threading::{REAP_TIMEOUT, try_timed_join};
 
 use git2::{Oid, Repository};
 

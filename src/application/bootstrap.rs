@@ -1,5 +1,5 @@
 use crate::app::App;
-use crate::session::SessionState;
+use crate::workspace::persistence::SessionState;
 
 pub(crate) fn init_app(
     repo_path: &str,

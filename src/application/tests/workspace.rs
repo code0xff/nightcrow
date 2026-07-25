@@ -1,7 +1,9 @@
 use super::helpers::*;
 use crate::app::tests::app_with_files;
-use crate::event_loop::apply_project_request;
-use crate::key_dispatch::{KeyOutcome, ProjectContext, ProjectRequest, dispatch_key, handle_key};
+use crate::application::event_loop::apply_project_request;
+use crate::application::input::dispatch::{
+    KeyOutcome, ProjectContext, ProjectRequest, dispatch_key, handle_key,
+};
 use crate::workspace::Workspace;
 use crossterm::event::{KeyCode, KeyModifiers};
 

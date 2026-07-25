@@ -57,18 +57,22 @@ below for the layout and resize rules.
 ```
 src/
 ├── main.rs               # entry point, TerminalGuard, run()
-├── app_init.rs           # single-project App construction + startup commands
 ├── cli.rs                # Cli/Commands, run_init/run_serve, web surface bootstrap
-├── event_loop.rs         # main_loop: poll/render/broadcast/input drain
-├── key_dispatch.rs       # handle_key, prefix follow-up, global action, KeyOutcome
-├── key_handlers.rs       # ViewMode-specific key handlers (upper/terminal/overlay)
-├── mouse.rs              # mouse dispatch, click/scroll/swap-target routing
-├── paste.rs              # paste dispatch (terminal/search/dialog)
-├── splash.rs             # first-run splash overlay loop
-├── logging.rs            # tracing-based file logger (rotation + retention)
-├── session.rs            # workspace + per-repo state (~/.nightcrow/workspace.json)
-├── util.rs               # shared low-level helpers (try_timed_join)
 ├── test_util.rs          # #[cfg(test)] git fixture helpers shared across modules
+├── application/          # native TUI process orchestration
+│   ├── bootstrap.rs      # single-project App construction + startup commands
+│   ├── event_loop.rs     # main_loop: poll/render/broadcast/input drain
+│   ├── splash.rs         # first-run splash overlay loop
+│   ├── input/            # terminal/browser input routing
+│   │   ├── dispatch.rs   # key dispatch, prefix follow-up, KeyOutcome
+│   │   ├── handlers.rs   # ViewMode-specific key handlers (upper/terminal/overlay)
+│   │   ├── mouse.rs      # click/scroll/swap-target routing
+│   │   └── paste.rs      # terminal/search/dialog paste routing
+│   └── tests/            # application-level input and workspace tests
+├── platform/             # OS-adjacent services shared by domain layers
+│   ├── logging.rs        # tracing-based file logger (rotation + retention)
+│   ├── paths.rs          # shell-independent tilde expansion
+│   └── threading.rs      # bounded worker-thread reaping
 ├── app.rs                # App struct + type defs (NoticeKind/ViewMode/Focus/AutoFollow)
 ├── app/
 │   ├── app_impl.rs       # App core methods: new, notice, prefix/swap state
@@ -99,6 +103,7 @@ src/
 │   ├── mod.rs            # Workspace: open projects (Vec<App>) + active index,
 │   │                     #   process-level repo dialog/notice
 │   ├── repo_input.rs     # <prefix> o repo-input modal state
+│   ├── persistence.rs    # workspace + per-repo state (~/.nightcrow/workspace.json)
 │   └── tests/            # workspace + repo_input tests
 ├── runtime/
 │   ├── mod.rs
@@ -300,7 +305,7 @@ background even while scrolled out of the window.
 - **Hot path (UI 틱 안)**: `launch_commit_log_worker`는 이전 `JoinHandle`을 join 없이 drop한다. 매 prefetch마다 5ms를 기다리면 스크롤이 jank해진다. worker 본체는 `tx.send` 1회 후 종료하므로 누적되지 않고, 받는 쪽(`page_rx`)을 먼저 drop했기 때문에 그 send는 즉시 실패한다. **timed-join을 여기 추가하지 말 것.**
 - **Quiescent moment (Drop, repo switch, reply drain 직후)**: `cancel_commit_log_page_fetch`, `poll_commit_log_page_fetch`의 reply drain 분기, 그리고 `Drop` impl은 모두 `try_timed_join`(~5ms)을 사용한다. 사용자가 클릭한 시점이거나 worker가 이미 마지막 syscall에 도달한 시점이라 잠깐의 대기를 흡수해도 UX 손실이 없고, OS 스레드를 즉시 회수한다.
 
-`try_timed_join`은 `src/util.rs`에 공유 helper로 두고, snapshot/commit-log/PTY 세 곳에서 모두 호출한다. 새 worker 패턴을 추가할 때도 같은 분기 기준으로 join 정책을 선택한다.
+`try_timed_join`은 `src/platform/threading.rs`에 공유 helper로 두고, snapshot/commit-log/PTY 세 곳에서 모두 호출한다. 새 worker 패턴을 추가할 때도 같은 분기 기준으로 join 정책을 선택한다.
 
 ### Status filter cache
 

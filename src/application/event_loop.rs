@@ -1,8 +1,8 @@
+pub(crate) use crate::application::input::dispatch::ProjectContext;
+use crate::application::input::dispatch::{KeyOutcome, ProjectRequest, dispatch_key};
+use crate::application::input::mouse::dispatch_mouse;
+use crate::application::input::paste::dispatch_paste;
 use crate::cli::WebSurfaces;
-pub(crate) use crate::key_dispatch::ProjectContext;
-use crate::key_dispatch::{KeyOutcome, ProjectRequest, dispatch_key};
-use crate::mouse::dispatch_mouse;
-use crate::paste::dispatch_paste;
 use crate::workspace::Workspace;
 use crossterm::event::{self, Event};
 use ratatui::layout::Rect;
@@ -256,7 +256,7 @@ pub(crate) fn apply_project_request(
             // `close_active` carries the project's view state into the
             // remembered set; writing here means a crash later cannot lose it.
             if ws.close_active() {
-                crate::session::save_workspace(&ws.to_persisted());
+                crate::workspace::persistence::save_workspace(&ws.to_persisted());
             }
         }
         ProjectRequest::Open(repo_path) => {
@@ -280,7 +280,7 @@ pub(crate) fn apply_project_request(
                 return;
             }
             let saved = ws.session_for(&repo_path).cloned();
-            let project = crate::app_init::init_app(
+            let project = crate::application::bootstrap::init_app(
                 &repo_path,
                 ctx.cfg,
                 ctx.startup_commands,

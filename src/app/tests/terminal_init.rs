@@ -25,7 +25,7 @@ fn restore_session_overrides_fresh_launch_terminal_focus() {
     app.ensure_initial_terminal(&[]);
     assert_eq!(app.focus, Focus::Terminal);
     // A restored session must win over the fresh-launch terminal focus.
-    app.restore_session(&crate::session::SessionState {
+    app.restore_session(&crate::workspace::persistence::SessionState {
         focus: Some(Focus::FileList),
         ..Default::default()
     });
@@ -40,7 +40,7 @@ fn restore_pane_focus_wins_immediately_without_snapshot() {
     let mut app = app_with_fake_backend();
     app.ensure_initial_terminal(&[]);
     assert_eq!(app.focus, Focus::Terminal);
-    app.restore_pane_focus(&crate::session::SessionState {
+    app.restore_pane_focus(&crate::workspace::persistence::SessionState {
         focus: Some(Focus::FileList),
         ..Default::default()
     });

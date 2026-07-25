@@ -1,6 +1,6 @@
 use super::helpers::*;
 use crate::app::Focus;
-use crate::mouse::{dispatch_mouse, handle_mouse};
+use crate::application::input::mouse::{dispatch_mouse, handle_mouse};
 use crate::workspace::Workspace;
 use crossterm::event::MouseEventKind;
 

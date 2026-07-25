@@ -9,8 +9,10 @@ mod repo_input;
 
 pub use repo_input::RepoInputResult;
 
+pub(crate) mod persistence;
+
+use self::persistence::{MAX_REMEMBERED, RepoSession, SessionState, WorkspaceState};
 use crate::app::{App, Notice, NoticeKind};
-use crate::session::{MAX_REMEMBERED, RepoSession, SessionState, WorkspaceState};
 use crate::ui::status_view::RepoInput;
 use crossterm::event::KeyEvent;
 

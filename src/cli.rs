@@ -141,7 +141,7 @@ pub(crate) fn run_serve(
     // Unify with the TUI/mirror: restore the previously-open projects so the
     // viewer does not start blank each launch. Explicit --repo comes first and
     // wins; remembered repos that still exist fill in after, de-duplicated.
-    if let Some(ws) = crate::session::load_workspace() {
+    if let Some(ws) = crate::workspace::persistence::load_workspace() {
         for repo in ws.repos {
             if std::path::Path::new(&repo).is_dir() && !paths.contains(&repo) {
                 paths.push(repo);
@@ -201,7 +201,7 @@ pub(crate) fn run_serve(
 fn resolve_serve_repos(repos: &[std::path::PathBuf]) -> Result<Vec<String>> {
     let mut out: Vec<String> = Vec::new();
     for repo in repos {
-        let expanded = crate::util::expand_tilde(repo);
+        let expanded = crate::platform::paths::expand_tilde(repo);
         if !expanded.exists() {
             anyhow::bail!("no such directory: {}", expanded.display());
         }
@@ -269,7 +269,7 @@ pub(crate) fn resolve_repo_paths(
     let mut out = Vec::with_capacity(repos.len());
     for p in repos {
         out.push(
-            crate::git::resolve_repo_path(crate::util::expand_tilde(p))
+            crate::git::resolve_repo_path(crate::platform::paths::expand_tilde(p))
                 .to_string_lossy()
                 .to_string(),
         );

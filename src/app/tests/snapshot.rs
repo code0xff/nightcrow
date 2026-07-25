@@ -51,7 +51,7 @@ fn a_saved_mode_lands_immediately_and_survives_being_changed() {
         ..app_with_files(vec![])
     };
 
-    app.restore_session(&crate::session::SessionState {
+    app.restore_session(&crate::workspace::persistence::SessionState {
         mode: Some(ViewMode::Tree),
         ..Default::default()
     });
@@ -85,7 +85,7 @@ fn a_saved_selection_is_restored_by_the_first_snapshot() {
         ..app_with_files(vec![])
     };
 
-    app.restore_session(&crate::session::SessionState {
+    app.restore_session(&crate::workspace::persistence::SessionState {
         selected_file: Some("b.rs".to_string()),
         ..Default::default()
     });

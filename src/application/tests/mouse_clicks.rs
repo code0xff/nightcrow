@@ -1,7 +1,7 @@
 use super::helpers::*;
 use crate::app::Focus;
-use crate::key_dispatch::KeyOutcome;
-use crate::mouse::handle_mouse;
+use crate::application::input::dispatch::KeyOutcome;
+use crate::application::input::mouse::handle_mouse;
 use crossterm::event::MouseEventKind;
 
 #[test]

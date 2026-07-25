@@ -169,7 +169,10 @@ impl TerminalHub {
             .expect("terminal worker slot poisoned")
             .take();
         if let Some(handle) = handle {
-            crate::util::try_timed_join(handle, crate::util::REAP_TIMEOUT);
+            crate::platform::threading::try_timed_join(
+                handle,
+                crate::platform::threading::REAP_TIMEOUT,
+            );
         }
     }
 }
