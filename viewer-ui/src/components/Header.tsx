@@ -1,6 +1,6 @@
 import { Mark } from "./Mark";
 import { ProjectMenu } from "./ProjectMenu";
-import { PlusIcon, XIcon } from "../icons";
+import { PlusIcon, XIcon } from "./icons";
 import type { Repo } from "../api";
 
 export interface HeaderProps {

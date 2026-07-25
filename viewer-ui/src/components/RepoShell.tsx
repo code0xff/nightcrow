@@ -1,6 +1,6 @@
 import { Suspense, lazy } from "react";
 import type { CSSProperties } from "react";
-import { MAX_SIDEBAR_VIEWPORT_FRACTION } from "../sidebar";
+import { MAX_SIDEBAR_VIEWPORT_FRACTION } from "../hooks/ui/sidebar";
 import type { PointerEvent as ReactPointerEvent } from "react";
 import { Sidebar } from "./Sidebar";
 import { FilePane } from "./FilePane";
@@ -8,11 +8,11 @@ import type { ChangedFile, Commit, Repo, Status } from "../api";
 import type { CommitDrillDown } from "../hooks/useLog";
 import type { Maximized, Pane, Tab } from "../types";
 import type { MobileView } from "../types";
-import { FileTextIcon, ListIcon, TerminalIcon } from "../icons";
+import { FileTextIcon, ListIcon, TerminalIcon } from "./icons";
 
 // Keep xterm out of the initial login and git-viewer bundle.
 const TerminalPanel = lazy(() =>
-  import("../Terminal").then((m) => ({ default: m.TerminalPanel })),
+  import("./terminal/Terminal").then((m) => ({ default: m.TerminalPanel })),
 );
 
 export interface RepoShellProps {

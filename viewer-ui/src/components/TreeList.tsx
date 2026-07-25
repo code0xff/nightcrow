@@ -1,6 +1,6 @@
-import { ChevronIcon } from "../icons";
+import { ChevronIcon } from "./icons";
 import type { TreeMatch } from "../api";
-import type { TreeRow } from "../tree";
+import type { TreeRow } from "../lib/tree";
 
 export interface TreeListProps {
   treeSearching: boolean;

@@ -2,7 +2,7 @@ import { useEffect } from "react";
 import type { MutableRefObject } from "react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
-import type { PaneView } from "./terminalLayout";
+import type { PaneView } from "../../lib/terminalLayout";
 
 const TERM_FONT_SIZE =
   typeof window !== "undefined" &&

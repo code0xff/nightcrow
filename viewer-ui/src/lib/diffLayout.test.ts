@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { splitHunkRows } from "./diffLayout";
-import type { DiffLine } from "./api";
+import type { DiffLine } from "../api";
 
 // Kind-only fixtures: the pairing logic looks at `kind` alone, so the spans
 // carry a single marker span whose text echoes the kind for readable asserts.

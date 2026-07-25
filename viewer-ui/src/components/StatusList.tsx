@@ -1,7 +1,7 @@
 import { PathLabel } from "./PathLabel";
-import { HOT_CLASS } from "../useHotClock";
-import { classifyHot } from "../hot";
-import { statusColor } from "../utils";
+import { HOT_CLASS } from "../hooks/ui/useHotClock";
+import { classifyHot } from "../lib/hot";
+import { statusColor } from "../lib/utils";
 import type { ChangedFile, Status } from "../api";
 
 export interface StatusListProps {

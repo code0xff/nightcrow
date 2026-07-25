@@ -1,7 +1,7 @@
 import { Suspense, lazy } from "react";
-import { useDiffLayout } from "../diffLayout";
-import { fileViewSource, isMarkdownPath } from "../fileView";
-import { MaximizeIcon, PreviewIcon, SplitViewIcon } from "../icons";
+import { useDiffLayout } from "../lib/diffLayout";
+import { fileViewSource, isMarkdownPath } from "../lib/fileView";
+import { MaximizeIcon, PreviewIcon, SplitViewIcon } from "./icons";
 import { DiffView } from "./DiffView";
 import { PathLabel } from "./PathLabel";
 import type { Status } from "../api";
@@ -9,7 +9,7 @@ import type { Pane } from "../types";
 
 // Keep the markdown pipeline out of the initial chunk.
 const MarkdownView = lazy(() =>
-  import("../Markdown").then((m) => ({ default: m.MarkdownView })),
+  import("./content/Markdown").then((m) => ({ default: m.MarkdownView })),
 );
 
 export interface FilePaneProps {

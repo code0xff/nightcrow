@@ -1,4 +1,4 @@
-import type { TreeEntry } from "./api";
+import type { TreeEntry } from "../api";
 
 export interface TreeRow {
   path: string;

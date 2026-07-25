@@ -1,6 +1,6 @@
 import type { CSSProperties } from "react";
-import { MaximizeIcon, XIcon } from "./icons";
-import { TAB_TITLE_MAX_CELLS, truncateCells } from "./terminalLayout";
+import { MaximizeIcon, XIcon } from "../icons";
+import { TAB_TITLE_MAX_CELLS, truncateCells } from "../../lib/terminalLayout";
 
 interface TerminalCellProps {
   pane: number;

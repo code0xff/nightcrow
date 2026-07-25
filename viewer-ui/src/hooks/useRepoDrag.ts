@@ -1,5 +1,5 @@
 import { useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
-import { reorderByDrop } from "../paneOrder";
+import { reorderByDrop } from "../lib/paneOrder";
 
 const DRAG_THRESHOLD_PX = 4;
 

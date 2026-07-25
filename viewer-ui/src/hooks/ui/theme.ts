@@ -1,5 +1,5 @@
 import { useCallback, useLayoutEffect, useState } from "react";
-import { api } from "./api";
+import { api } from "../../api";
 
 /** Keep accent presets in the TUI's cycle order. */
 export const ACCENTS = [

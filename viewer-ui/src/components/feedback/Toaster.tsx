@@ -1,11 +1,11 @@
 import { useEffect, useState } from "react";
-import { XIcon } from "./icons";
+import { XIcon } from "../icons";
 import {
   dismissToast,
   subscribeToasts,
   type Toast,
   type ToastKind,
-} from "./toast";
+} from "../../lib/toast";
 
 const DURATION_MS: Record<ToastKind, number> = {
   error: 7000,

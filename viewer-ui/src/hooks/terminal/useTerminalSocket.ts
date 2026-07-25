@@ -1,8 +1,8 @@
 import { useEffect } from "react";
 import type { MutableRefObject } from "react";
-import { reconcileOrder } from "./paneOrder";
-import { toast } from "./toast";
-import type { PaneView } from "./terminalLayout";
+import { reconcileOrder } from "../../lib/paneOrder";
+import { toast } from "../../lib/toast";
+import type { PaneView } from "../../lib/terminalLayout";
 
 interface UseTerminalSocketArgs {
   repo: string;

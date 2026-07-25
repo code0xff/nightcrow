@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import type { DiffLine } from "./api";
+import type { DiffLine } from "../api";
 
 export type DiffLayout = "unified" | "split";
 

@@ -1,6 +1,6 @@
 import { useRef, useState } from "react";
-import { reorderByDrop } from "./paneOrder";
-import { PANE_DRAG_THRESHOLD_PX } from "./terminalLayout";
+import { reorderByDrop } from "../../lib/paneOrder";
+import { PANE_DRAG_THRESHOLD_PX } from "../../lib/terminalLayout";
 
 interface UsePaneDragArgs {
   panes: number[];

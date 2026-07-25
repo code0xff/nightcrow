@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState, type CSSProperties } from "react";
-import { MaximizeIcon, PlusIcon } from "./icons";
-import { planLayout, type PaneView } from "./terminalLayout";
-import { usePaneDrag } from "./usePaneDrag";
-import { useTerminalSocket } from "./useTerminalSocket";
-import { useTerminalViews } from "./useTerminalViews";
+import { MaximizeIcon, PlusIcon } from "../icons";
+import { planLayout, type PaneView } from "../../lib/terminalLayout";
+import { usePaneDrag } from "../../hooks/terminal/usePaneDrag";
+import { useTerminalSocket } from "../../hooks/terminal/useTerminalSocket";
+import { useTerminalViews } from "../../hooks/terminal/useTerminalViews";
 import { TerminalCell } from "./TerminalCell";
-import { TERM_KEY_BAR, termKeySequence } from "./termKeys";
+import { TERM_KEY_BAR, termKeySequence } from "../../lib/termKeys";
 
 export function TerminalPanel({
   repo,

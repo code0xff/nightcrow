@@ -1,7 +1,7 @@
 // localStorage provides first paint while the server shares this preference.
 
 import { useCallback, useState } from "react";
-import { api } from "./api";
+import { api } from "../../api";
 
 const STORAGE_KEY = "nightcrow.sidebarWidth";
 

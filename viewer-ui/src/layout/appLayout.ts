@@ -1,4 +1,4 @@
-import type { Maximized } from "./types";
+import type { Maximized } from "../types";
 
 export function appRows(repo: string | null, maximized: Maximized): string {
   if (!repo) return "grid-rows-[auto_1fr]";

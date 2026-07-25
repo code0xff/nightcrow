@@ -6,8 +6,8 @@ import {
   type HotConfig,
   type Repo,
 } from "../api";
-import { nextClockOffset } from "../hot";
-import { reconcileOrder } from "../paneOrder";
+import { nextClockOffset } from "../lib/hot";
+import { reconcileOrder } from "../lib/paneOrder";
 
 const REPO_POLL_MS = 3000;
 

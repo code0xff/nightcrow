@@ -1,4 +1,4 @@
-import type { Span } from "./api";
+import type { Span } from "../api";
 
 const MARKDOWN_EXTENSIONS = [".md", ".markdown"];
 

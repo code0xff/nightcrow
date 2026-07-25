@@ -1,5 +1,5 @@
 import { PathLabel } from "./PathLabel";
-import { formatRelativeTime, statusColor } from "../utils";
+import { formatRelativeTime, statusColor } from "../lib/utils";
 import type { Commit } from "../api";
 import type { CommitDrillDown } from "../hooks/useLog";
 
