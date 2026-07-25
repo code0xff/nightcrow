@@ -20,11 +20,13 @@ use std::path::Path;
 use std::sync::{Arc, Mutex};
 
 mod catalog_ids;
+mod ordering;
 pub use catalog_ids::{AddOutcome, RepoEntry};
 use catalog_ids::IdAssigner;
 
 #[derive(Default)]
 pub struct Catalog {
+    mutation: Mutex<()>,
     entries: Mutex<Vec<Arc<RepoEntry>>>,
     ids: Mutex<IdAssigner>,
     /// Repositories supplied by the CLI (`serve --repo`) or pushed from the TUI
@@ -37,6 +39,7 @@ pub struct Catalog {
     /// a `base` re-sync (a TUI tab change) does not resurrect a closed repo;
     /// re-opening a path clears it from here.
     hidden: Mutex<Vec<String>>,
+    order: Mutex<Vec<String>>,
     /// Commands each repository's terminal hub runs as startup terminals on the
     /// first client connect (empty = one bare shell). Applied to every hub the
     /// catalog spawns.
@@ -61,6 +64,7 @@ impl Catalog {
     /// open tabs. Browser-opened repositories ([`Catalog::add_path`]) survive
     /// this, so a workspace change does not close a tab a viewer opened.
     pub fn set_paths(&self, paths: &[String]) {
+        let _mutation = self.mutation.lock().expect("catalog mutation poisoned");
         {
             let mut base = self.base.lock().expect("catalog base poisoned");
             *base = paths.to_vec();
@@ -74,6 +78,7 @@ impl Catalog {
     /// disturbing its runtime. Refused with [`AddOutcome::TooMany`] once the
     /// served set is at `max`, so a client cannot spawn unbounded runtimes.
     pub fn add_path(&self, path: String, max: usize) -> AddOutcome {
+        let _mutation = self.mutation.lock().expect("catalog mutation poisoned");
         // Opening a path clears any prior close, so a previously removed repo
         // comes back rather than staying suppressed by `hidden`.
         {
@@ -105,6 +110,7 @@ impl Catalog {
     /// and remembered in `hidden` so a `base` re-sync will not bring it back;
     /// `rebuild` then stops its runtime and terminals.
     pub fn remove_path(&self, path: &str) {
+        let _mutation = self.mutation.lock().expect("catalog mutation poisoned");
         {
             let mut added = self.added.lock().expect("catalog added poisoned");
             added.retain(|p| p != path);
@@ -116,24 +122,6 @@ impl Catalog {
             }
         }
         self.rebuild();
-    }
-
-    /// The desired served set: base first, then browser-added, minus any path
-    /// closed from the browser, deduplicated.
-    fn union_paths(&self) -> Vec<String> {
-        let base = self.base.lock().expect("catalog base poisoned");
-        let added = self.added.lock().expect("catalog added poisoned");
-        let hidden = self.hidden.lock().expect("catalog hidden poisoned");
-        let mut union: Vec<String> = Vec::with_capacity(base.len() + added.len());
-        for path in base.iter().chain(added.iter()) {
-            if hidden.iter().any(|h| h == path) {
-                continue;
-            }
-            if !union.contains(path) {
-                union.push(path.clone());
-            }
-        }
-        union
     }
 
     fn dto_for_path(&self, path: &str) -> Option<crate::web::viewer::dto::RepoDto> {

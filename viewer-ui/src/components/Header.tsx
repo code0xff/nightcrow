@@ -13,6 +13,11 @@ export interface HeaderProps {
   accent: { name: string };
   next: { name: string };
   cycle: () => void;
+  draggingRepo: string | null;
+  dragOverRepo: string | null;
+  onRepoDragStart: (event: React.PointerEvent, id: string) => void;
+  onRepoDragMove: (event: React.PointerEvent) => void;
+  onRepoDragEnd: () => void;
 }
 
 export function Header({
@@ -25,6 +30,11 @@ export function Header({
   accent,
   next,
   cycle,
+  draggingRepo,
+  dragOverRepo,
+  onRepoDragStart,
+  onRepoDragMove,
+  onRepoDragEnd,
 }: HeaderProps) {
   return (
     <header className="flex items-center gap-2 border-b border-ink-700 bg-ink-900 px-[12.8px] py-[8.8px]">
@@ -48,7 +58,17 @@ export function Header({
         {repos.map((r) => (
           <div
             key={r.id}
+            data-repo-id={r.id}
+            onPointerDown={(event) => onRepoDragStart(event, r.id)}
+            onPointerMove={onRepoDragMove}
+            onPointerUp={onRepoDragEnd}
+            onPointerCancel={onRepoDragEnd}
+            onLostPointerCapture={onRepoDragEnd}
             className={`flex items-center border-r border-ink-700 whitespace-nowrap ${
+              repos.length > 1 ? "touch-none" : ""
+            } ${draggingRepo === r.id ? "opacity-60" : ""} ${
+              dragOverRepo === r.id ? "bg-ink-800 ring-1 ring-inset ring-accent" : ""
+            } ${
               r.id === repo
                 ? "bg-ink-950 text-ink-50 shadow-[inset_0_2px_0_0_var(--color-accent)]"
                 : "text-ink-400 hover:bg-ink-850 hover:text-ink-200"
@@ -69,6 +89,7 @@ export function Header({
                 e.stopPropagation();
                 closeRepo(r.id);
               }}
+              data-tab-close
               title="Close project"
               aria-label={`close ${r.name}`}
               className="mr-1 flex h-5 w-5 items-center justify-center rounded-sm text-ink-400 hover:bg-ink-700 hover:text-removed"

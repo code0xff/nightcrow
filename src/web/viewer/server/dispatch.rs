@@ -1,5 +1,7 @@
 use super::http_util::{json_error, json_response, text_response};
-use super::mutations::{handle_close_repo, handle_mkdir, handle_open_repo, handle_set_prefs};
+use super::mutations::{
+    handle_close_repo, handle_mkdir, handle_open_repo, handle_reorder_repos, handle_set_prefs,
+};
 use super::routes::route;
 use super::{ViewerState, VIEWER_SESSION_COOKIE};
 use crate::web::common::conn::{self, ConnectionSlot};
@@ -135,6 +137,11 @@ fn handle_connection(mut stream: TcpStream, state: Arc<ViewerState>) {
     // the served set and stops its runtime and terminals.
     if head.method == "DELETE" && head.path == "/api/repos" {
         let _ = stream.write_all(&handle_close_repo(&head, &state));
+        return;
+    }
+
+    if head.method == "POST" && head.path == "/api/repos/order" {
+        let _ = stream.write_all(&handle_reorder_repos(&body, &state));
         return;
     }
 

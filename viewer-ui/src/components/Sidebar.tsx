@@ -8,6 +8,7 @@ import { TreeList } from "./TreeList";
 import type { ChangedFile, Commit, Status } from "../api";
 import type { CommitDrillDown } from "../hooks/useLog";
 import type { Pane, Tab } from "../types";
+import type { MobileView } from "../types";
 
 export interface SidebarProps {
   tab: Tab;
@@ -49,6 +50,7 @@ export interface SidebarProps {
   logPagingPaused: boolean;
   aheadOids: Set<string>;
   visibleCommitFiles: CommitDrillDown["files"];
+  mobileView: MobileView;
 }
 
 export function Sidebar(props: SidebarProps) {
@@ -92,6 +94,7 @@ export function Sidebar(props: SidebarProps) {
     logPagingPaused,
     aheadOids,
     visibleCommitFiles,
+    mobileView,
   } = props;
 
   const tree = useTree({ repo, authed, tab, filter, filterOpen, handle });
@@ -102,8 +105,8 @@ export function Sidebar(props: SidebarProps) {
     <section
       ref={sidebarRef}
       className={`relative min-h-0 flex-col overflow-hidden ${
-        filesMax ? "hidden md:flex" : "flex border-ink-700 md:border-r"
-      }`}
+        mobileView === "files" ? "flex" : "hidden md:flex"
+      } ${filesMax ? "md:flex" : "border-ink-700 md:border-r"}`}
     >
       {!filesMax && (
         <div

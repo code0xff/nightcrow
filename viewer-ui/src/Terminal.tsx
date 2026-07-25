@@ -5,15 +5,18 @@ import { usePaneDrag } from "./usePaneDrag";
 import { useTerminalSocket } from "./useTerminalSocket";
 import { useTerminalViews } from "./useTerminalViews";
 import { TerminalCell } from "./TerminalCell";
+import { TERM_KEY_BAR, termKeySequence } from "./termKeys";
 
 export function TerminalPanel({
   repo,
   maximized,
   onToggleMaximized,
+  className = "",
 }: {
   repo: string;
   maximized: boolean;
   onToggleMaximized: () => void;
+  className?: string;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const socketRef = useRef<WebSocket | null>(null);
@@ -114,6 +117,19 @@ export function TerminalPanel({
     socketRef.current?.send(JSON.stringify({ type: "close", pane }));
   };
 
+  const sendKey = (key: (typeof TERM_KEY_BAR)[number]["key"]) => {
+    if (active === null) return;
+    const appCursor =
+      viewsRef.current.get(active)?.term.modes.applicationCursorKeysMode ?? false;
+    socketRef.current?.send(
+      JSON.stringify({
+        type: "input",
+        pane: active,
+        data: termKeySequence(key, appCursor),
+      }),
+    );
+  };
+
   const {
     draggingPane,
     dragOverPane,
@@ -133,7 +149,7 @@ export function TerminalPanel({
   const layout = planLayout(panes.length, size.w >= size.h);
 
   return (
-    <section className="flex min-h-0 flex-col border-t border-ink-700">
+    <section className={`flex min-h-0 min-w-0 flex-col border-t border-ink-700 ${className}`}>
       <div className="flex shrink-0 items-center gap-2 bg-ink-900 px-2 py-1">
         <button
           onClick={create}
@@ -148,7 +164,7 @@ export function TerminalPanel({
           aria-pressed={maximized}
           title={maximized ? "Restore panel height" : "Maximize the panel"}
           aria-label={maximized ? "Restore panel height" : "Maximize the panel"}
-          className="flex shrink-0 items-center rounded-sm px-1.5 py-0.5 text-ink-400 hover:text-accent"
+          className="hidden shrink-0 items-center rounded-sm px-1.5 py-0.5 text-ink-400 hover:text-accent md:flex"
         >
           <MaximizeIcon maximized={maximized} />
         </button>
@@ -213,6 +229,21 @@ export function TerminalPanel({
           })}
         </div>
       </div>
+      {panes.length > 0 && (
+        <div className="flex shrink-0 items-stretch gap-1 overflow-x-auto border-t border-ink-700 bg-ink-900 px-1 py-1 md:hidden">
+          {TERM_KEY_BAR.map(({ key, label, aria }) => (
+            <button
+              key={key}
+              onPointerDown={(event) => event.preventDefault()}
+              onClick={() => sendKey(key)}
+              aria-label={aria}
+              className="flex min-h-9 min-w-9 shrink-0 items-center justify-center rounded-sm border border-ink-700 bg-ink-850 px-2 text-xs text-ink-200 active:bg-ink-700 active:text-accent"
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      )}
     </section>
   );
 }

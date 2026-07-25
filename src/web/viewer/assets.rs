@@ -31,7 +31,21 @@ form-action 'self'";
 
 /// Serve a built asset, falling back to `index.html` so client-side routes and
 /// a bare `/` both load the app.
+///
+/// A miss is split by whether the request names a file. An extensionless path is
+/// a client-side route and gets the app shell; a path that names a file (has an
+/// extension) is a real asset miss and gets a 404. The shell fallback must not
+/// cover the second case: handing `index.html` back for a missing `.svg`/`.js`
+/// serves HTML under an image or module request, which then fails silently —
+/// a stale embedded build made the header/splash crow render as a blank accent
+/// tile exactly this way (`/crow-mono.svg` missing → HTML → the `<img>` shows
+/// nothing). A loud 404 surfaces the missing asset instead.
 pub fn serve(path: &str) -> Option<Vec<u8>> {
+    let headers = [
+        ("Content-Security-Policy", CSP),
+        ("X-Content-Type-Options", "nosniff"),
+        ("Referrer-Policy", "no-referrer"),
+    ];
     let trimmed = path.trim_start_matches('/');
     let candidate = if trimmed.is_empty() {
         "index.html"
@@ -44,17 +58,36 @@ pub fn serve(path: &str) -> Option<Vec<u8>> {
     // rust-embed carries the guessed type alongside the bytes, so the content
     // type comes from the same lookup that found the file — they cannot
     // disagree, which matters when the CSP refuses a mistyped script.
-    let file = Assets::get(candidate).or_else(|| Assets::get("index.html"))?;
+    if let Some(file) = Assets::get(candidate) {
+        return Some(http::response(
+            "200 OK",
+            file.metadata.mimetype(),
+            &headers,
+            file.data.as_ref(),
+        ));
+    }
 
+    // The last path segment names a file when it contains a dot — the extension
+    // that marks it an asset rather than a route.
+    let names_a_file = candidate
+        .rsplit('/')
+        .next()
+        .is_some_and(|name| name.contains('.'));
+    if names_a_file {
+        return Some(http::response(
+            "404 Not Found",
+            "text/plain; charset=utf-8",
+            &headers,
+            b"not found",
+        ));
+    }
+
+    let shell = Assets::get("index.html")?;
     Some(http::response(
         "200 OK",
-        file.metadata.mimetype(),
-        &[
-            ("Content-Security-Policy", CSP),
-            ("X-Content-Type-Options", "nosniff"),
-            ("Referrer-Policy", "no-referrer"),
-        ],
-        file.data.as_ref(),
+        shell.metadata.mimetype(),
+        &headers,
+        shell.data.as_ref(),
     ))
 }
 
@@ -107,6 +140,37 @@ mod tests {
 
         assert!(text.contains("<div id=\"root\">"), "expected the app shell");
         assert!(!text.contains("root:x:"), "a system file leaked");
+    }
+
+    #[test]
+    fn a_missing_asset_is_a_404_not_the_app_shell() {
+        // A named file that is not embedded must 404, not fall back to
+        // index.html: serving HTML under an <img>/module request fails silently
+        // (the mark rendered as a blank accent tile when a stale build lacked
+        // crow-mono.svg). A loud 404 surfaces the missing asset instead.
+        let text = text(&serve("/crow-mono-does-not-exist.svg").unwrap());
+
+        assert!(text.starts_with("HTTP/1.1 404"), "got: {text}");
+        assert!(!text.contains("<div id=\"root\">"), "must not serve the shell");
+    }
+
+    #[test]
+    fn an_embedded_svg_asset_is_served_as_an_image() {
+        // The crow mark's source: present in the bundle and served with an image
+        // type, so the <img> actually renders it.
+        let text = text(&serve("/crow-mono.svg").unwrap());
+
+        assert!(text.starts_with("HTTP/1.1 200"), "got: {text}");
+        assert!(text.contains("image/svg+xml"), "wrong content type");
+    }
+
+    #[test]
+    fn an_extensionless_route_falls_back_to_the_shell() {
+        // A client-side route (no file extension) still gets the app shell so
+        // the SPA loads; only named-file misses 404.
+        let text = text(&serve("/some/route").unwrap());
+
+        assert!(text.contains("<div id=\"root\">"), "expected the app shell");
     }
 
     #[test]

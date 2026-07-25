@@ -1,6 +1,7 @@
 mod auth;
 mod commit_routes;
 mod prefs;
+mod reorder;
 mod routes;
 mod terminals;
 

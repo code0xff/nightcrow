@@ -4,6 +4,13 @@ import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import type { PaneView } from "./terminalLayout";
 
+const TERM_FONT_SIZE =
+  typeof window !== "undefined" &&
+  typeof window.matchMedia === "function" &&
+  window.matchMedia("(pointer: coarse)").matches
+    ? 13
+    : 12;
+
 interface UseTerminalViewsArgs {
   panes: number[];
   socketRef: MutableRefObject<WebSocket | null>;
@@ -29,7 +36,7 @@ export function useTerminalViews({
 
       const term = new Terminal({
         fontFamily: getComputedStyle(document.body).fontFamily,
-        fontSize: 12,
+        fontSize: TERM_FONT_SIZE,
         theme: { background: "#0b0b0d", foreground: "#e6e6ec" },
         cursorBlink: true,
       });

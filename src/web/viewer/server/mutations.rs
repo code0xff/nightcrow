@@ -12,6 +12,11 @@ struct OpenRequest {
 }
 
 #[derive(serde::Deserialize)]
+struct ReorderRequest {
+    order: Vec<String>,
+}
+
+#[derive(serde::Deserialize)]
 struct PrefsRequest {
     /// Each preference is optional so one write touches one setting and leaves
     /// the rest as they are; a body naming none is rejected rather than treated
@@ -170,6 +175,25 @@ pub(super) fn handle_close_repo(head: &RequestHead, state: &ViewerState) -> Vec<
     }
 }
 
+pub(super) fn handle_reorder_repos(body: &str, state: &ViewerState) -> Vec<u8> {
+    let request: ReorderRequest = match serde_json::from_str(body) {
+        Ok(request) => request,
+        Err(_) => return json_error("400 Bad Request", "expected a JSON body with an order"),
+    };
+    let paths: Vec<String> = request
+        .order
+        .iter()
+        .filter_map(|id| state.catalog.get(id).map(|entry| entry.path.clone()))
+        .collect();
+    state.catalog.reorder(&paths);
+    persist_workspace(state);
+    let repos = state.catalog.list();
+    match serde_json::to_string(&Envelope::new(serde_json::json!({ "repos": repos }))) {
+        Ok(json) => json_response("200 OK", &json, &[]),
+        Err(_) => json_error("500 Internal Server Error", "could not encode repositories"),
+    }
+}
+
 /// Mirror the served set into the shared workspace file so the next launch —
 /// TUI, mirror, or viewer — starts with the same projects. No-op unless the
 /// server was started with `persist` (headless `serve`); alongside the TUI,
@@ -180,10 +204,11 @@ fn persist_workspace(state: &ViewerState) {
         return;
     }
     let mut ws = crate::session::load_workspace().unwrap_or_default();
+    let active_path = ws.repos.get(ws.active).cloned();
     ws.repos = state.catalog.paths();
-    if ws.active >= ws.repos.len() {
-        ws.active = 0;
-    }
+    ws.active = active_path
+        .and_then(|path| ws.repos.iter().position(|repo| repo == &path))
+        .unwrap_or(0);
     crate::session::save_workspace(&ws);
 }
 

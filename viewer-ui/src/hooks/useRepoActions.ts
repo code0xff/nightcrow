@@ -11,6 +11,7 @@ export interface UseRepoActionsArgs {
   setPickerOpen: React.Dispatch<React.SetStateAction<boolean>>;
   dropMaximized: (id: string) => void;
   handle: (err: unknown) => void;
+  orderWrites: React.MutableRefObject<number>;
 }
 
 export function useRepoActions({
@@ -22,10 +23,12 @@ export function useRepoActions({
   setPickerOpen,
   dropMaximized,
   handle,
+  orderWrites,
 }: UseRepoActionsArgs) {
   // Select a newly opened repository immediately instead of waiting for polling.
   const selectOpenedRepo = useCallback(
     (opened: Repo) => {
+      orderWrites.current += 1;
       setRepos((prev) =>
         prev.some((r) => r.id === opened.id) ? prev : [...prev, opened],
       );
@@ -34,13 +37,14 @@ export function useRepoActions({
       setTab("status");
       setPickerOpen(false);
     },
-    [setRepos, setRepo, setPane, setTab, setPickerOpen],
+    [setRepos, setRepo, setPane, setTab, setPickerOpen, orderWrites],
   );
 
   const closeRepo = useCallback(
     async (id: string) => {
       try {
         await api.close(id);
+        orderWrites.current += 1;
         const remaining = repos.filter((r) => r.id !== id);
         setRepos(remaining);
         setRepo((current) =>
@@ -51,7 +55,7 @@ export function useRepoActions({
         handle(err);
       }
     },
-    [repos, setRepos, setRepo, dropMaximized, handle],
+    [repos, setRepos, setRepo, dropMaximized, handle, orderWrites],
   );
 
   return { selectOpenedRepo, closeRepo };

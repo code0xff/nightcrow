@@ -307,14 +307,16 @@ precedence. Login is rate-limited and grants a session cookie.
 
 A second, different browser surface: instead of mirroring the TUI's screen, it
 renders the same git data as a native web page — selectable text, real
-scrolling, clickable paths, and a layout that collapses to one column on a
-phone. It also serves its **own** terminals, independent of the TUI's panes.
+scrolling, clickable paths, and a layout that adapts to a phone (see below). It
+also serves its **own** terminals, independent of the TUI's panes.
 
 The served repositories appear as project tabs in the header — `+ open` browses
-the server machine's folders to add one, `×` closes it — and each project has
-its own `status`, `log`, and `tree` tabs on the left plus a terminal panel
-below. On a narrow window (phone) the tab row folds into a dropdown showing the
-current project.
+the server machine's folders to add one, `×` closes it, and dragging a tab
+reorders them — and each project has its own `status`, `log`, and `tree` tabs on
+the left plus a terminal panel below. The order is kept on the server, so every
+device shows the same arrangement; under `nightcrow serve` it also survives a
+restart (alongside the TUI it lasts the session). On a narrow window (phone) the
+tab row folds into a dropdown showing the current project.
 
 In the `log` tab, selecting a commit opens its changed-file list alongside the
 complete commit diff. Select a file to view only that file's change; use
@@ -350,6 +352,16 @@ it works with touch as well as a mouse. The order is kept on the server, so a
 refresh, a reconnect, or another device opening the same repository all show the
 same arrangement. (It is not written to disk — a server restart clears the
 terminals themselves, so there is nothing to persist.)
+
+**On a phone**, the three regions the desktop shows at once — the file/commit
+list, the content pane, and the terminal — would each shrink to an unusable
+sliver stacked in one column, so instead a bottom bar switches between them:
+tap **Files**, **Diff**, or **Terminal** to give one of them the whole screen.
+Opening a file or commit jumps to the content view automatically. Because a
+soft keyboard can't type Escape, Tab, Ctrl combinations, or the arrows, the
+terminal grows a key bar along its bottom on touch devices that sends those
+straight to the shell — so you can interrupt a process (`^C`), leave `vim`
+(`Esc`), or walk your history (arrows) without a physical keyboard.
 
 The `status` list highlights recently touched files the same way the TUI does:
 accent-coloured and bold for the first 5 seconds after a file's mtime, accent

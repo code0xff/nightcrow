@@ -1,9 +1,5 @@
-/// Server, local, and broadcast orders share the same reconciliation.
-export function reorderByDrop(
-  order: number[],
-  dragged: number,
-  target: number,
-): number[] {
+/// Shared by terminal panes and project tabs.
+export function reorderByDrop<T>(order: T[], dragged: T, target: T): T[] {
   if (dragged === target) return order;
   const from = order.indexOf(dragged);
   const to = order.indexOf(target);
@@ -15,8 +11,8 @@ export function reorderByDrop(
   return without;
 }
 
-export function reconcileOrder(present: number[], desired: number[]): number[] {
-  const out: number[] = [];
+export function reconcileOrder<T>(present: T[], desired: T[]): T[] {
+  const out: T[] = [];
   for (const id of desired) {
     if (present.includes(id) && !out.includes(id)) out.push(id);
   }

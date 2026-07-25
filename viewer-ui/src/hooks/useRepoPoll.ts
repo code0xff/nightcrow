@@ -7,6 +7,7 @@ import {
   type Repo,
 } from "../api";
 import { nextClockOffset } from "../hot";
+import { reconcileOrder } from "../paneOrder";
 
 const REPO_POLL_MS = 3000;
 
@@ -20,6 +21,10 @@ export interface UseRepoPollArgs {
   accentWrites: React.MutableRefObject<number>;
   sidebarWrites: React.MutableRefObject<number>;
   resumeTick: number;
+  orderWrites: React.MutableRefObject<number>;
+  repoDraggingRef: React.MutableRefObject<boolean>;
+  reorderInFlightRef: React.MutableRefObject<boolean>;
+  pendingReorderRef: React.MutableRefObject<string[] | null>;
 }
 
 export interface UseRepoPollResult {
@@ -42,6 +47,10 @@ export function useRepoPoll({
   accentWrites,
   sidebarWrites,
   resumeTick,
+  orderWrites,
+  repoDraggingRef,
+  reorderInFlightRef,
+  pendingReorderRef,
 }: UseRepoPollArgs): UseRepoPollResult {
   const [repos, setRepos] = useState<Repo[]>([]);
   const [repo, setRepo] = useState<string | null>(null);
@@ -59,6 +68,7 @@ export function useRepoPoll({
     const refresh = () => {
       const writes = accentWrites.current;
       const widthWrites = sidebarWrites.current;
+      const orderGeneration = orderWrites.current;
       return api
         .repos(controller.signal)
         .then(({ repos: list, hot, accent, sidebar_width, now_ms }) => {
@@ -70,7 +80,24 @@ export function useRepoPoll({
             adoptSidebarWidth(sidebar_width);
           setAuthed(true);
           setReposLoaded(true);
-          setRepos(list);
+          const reorderPending =
+            reorderInFlightRef.current || pendingReorderRef.current !== null;
+          if (
+            orderWrites.current === orderGeneration &&
+            !repoDraggingRef.current &&
+            !reorderPending
+          ) {
+            setRepos(list);
+          } else {
+            setRepos((current) => {
+              const ids = reconcileOrder(
+                list.map((item) => item.id),
+                current.map((item) => item.id),
+              );
+              const byId = new Map(list.map((item) => [item.id, item]));
+              return ids.map((id) => byId.get(id)!).filter(Boolean);
+            });
+          }
           setRepo((current) =>
             current && list.some((r) => r.id === current)
               ? current
@@ -106,6 +133,10 @@ export function useRepoPoll({
     accentWrites,
     sidebarWrites,
     draggingRef,
+    orderWrites,
+    repoDraggingRef,
+    reorderInFlightRef,
+    pendingReorderRef,
   ]);
 
   return {

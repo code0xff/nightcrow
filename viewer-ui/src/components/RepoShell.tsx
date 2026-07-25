@@ -7,6 +7,8 @@ import { FilePane } from "./FilePane";
 import type { ChangedFile, Commit, Repo, Status } from "../api";
 import type { CommitDrillDown } from "../hooks/useLog";
 import type { Maximized, Pane, Tab } from "../types";
+import type { MobileView } from "../types";
+import { FileTextIcon, ListIcon, TerminalIcon } from "../icons";
 
 // Keep xterm out of the initial login and git-viewer bundle.
 const TerminalPanel = lazy(() =>
@@ -61,6 +63,8 @@ export interface RepoShellProps {
   setMdRendered: React.Dispatch<React.SetStateAction<boolean>>;
   maximized: Maximized;
   setMaximized: (next: Maximized | ((prev: Maximized) => Maximized)) => void;
+  mobileView: MobileView;
+  setMobileView: (view: MobileView) => void;
 }
 
 export function RepoShell(props: RepoShellProps) {
@@ -111,6 +115,8 @@ export function RepoShell(props: RepoShellProps) {
     setMdRendered,
     maximized,
     setMaximized,
+    mobileView,
+    setMobileView,
   } = props;
 
   return (
@@ -119,8 +125,8 @@ export function RepoShell(props: RepoShellProps) {
       {draggingSidebar && <div className="fixed inset-0 z-50 cursor-col-resize" />}
       <main
         className={`grid min-h-0 grid-cols-1 md:grid-cols-[var(--nc-sidebar)_1fr] ${
-          draggingSidebar ? "select-none" : ""
-        }`}
+          mobileView === "terminal" ? "hidden md:grid" : ""
+        } ${draggingSidebar ? "select-none" : ""}`}
         style={
           {
             "--nc-sidebar": filesMax
@@ -169,6 +175,7 @@ export function RepoShell(props: RepoShellProps) {
           logPagingPaused={logPagingPaused}
           aheadOids={aheadOids}
           visibleCommitFiles={visibleCommitFiles}
+          mobileView={mobileView}
         />
         <FilePane
           pane={pane}
@@ -177,6 +184,7 @@ export function RepoShell(props: RepoShellProps) {
           filesMax={filesMax}
           setMaximized={setMaximized}
           status={status}
+          className={mobileView === "diff" ? "flex" : "hidden md:flex"}
         />
       </main>
 
@@ -187,8 +195,36 @@ export function RepoShell(props: RepoShellProps) {
           onToggleMaximized={() =>
             setMaximized((m) => (m === "terminal" ? "none" : "terminal"))
           }
+          className={mobileView === "terminal" ? "flex" : "hidden md:flex"}
         />
       </Suspense>
+
+      <nav
+        aria-label="Switch view"
+        className="flex shrink-0 items-stretch border-t border-ink-700 bg-ink-900 md:hidden"
+      >
+        {(
+          [
+            ["files", "Files", ListIcon],
+            ["diff", "Diff", FileTextIcon],
+            ["terminal", "Terminal", TerminalIcon],
+          ] as [MobileView, string, typeof ListIcon][]
+        ).map(([key, label, Icon]) => (
+          <button
+            key={key}
+            onClick={() => setMobileView(key)}
+            aria-current={mobileView === key ? "page" : undefined}
+            className={`flex min-h-11 flex-1 flex-col items-center justify-center gap-0.5 py-1 text-[11px] ${
+              mobileView === key
+                ? "text-accent shadow-[inset_0_2px_0_0_var(--color-accent)]"
+                : "text-ink-400"
+            }`}
+          >
+            <Icon className="h-5 w-5" />
+            {label}
+          </button>
+        ))}
+      </nav>
 
       <footer className="flex shrink-0 items-center gap-3 border-t border-ink-700 bg-ink-900 px-3 py-1 text-ink-400">
         <span className="truncate">{current?.display_path}</span>

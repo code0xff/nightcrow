@@ -86,6 +86,11 @@ export const api = {
       throw new ApiError(response.status, `could not close (${response.status})`);
     }
   },
+  /** Set the project-tab order (repo ids) for every client of this viewer, and
+   *  return the served set the server kept — its canonicalisation of the
+   *  request against the live repos. */
+  reorderRepos: (order: string[]) =>
+    post<{ repos: Repo[] }>("/api/repos/order", { order }).then((r) => r.repos),
 };
 
 export function subscribeStatus(

@@ -19,6 +19,7 @@ export interface FilePaneProps {
   filesMax: boolean;
   setMaximized: (next: "none" | "files" | "terminal") => void;
   status: Status | null;
+  className?: string;
 }
 
 export function FilePane({
@@ -28,10 +29,11 @@ export function FilePane({
   filesMax,
   setMaximized,
   status,
+  className = "",
 }: FilePaneProps) {
   const diffLayout = useDiffLayout();
   return (
-    <section className="flex min-h-0 min-w-0 flex-col">
+    <section className={`min-h-0 min-w-0 flex-col ${className}`}>
       <div className="flex shrink-0 items-center gap-2 bg-ink-850 px-3 py-0.5 text-ink-400">
         {pane.kind === "file" && <PathLabel path={pane.value.path} />}
         <div className="ml-auto flex shrink-0 items-center gap-1">
@@ -80,7 +82,7 @@ export function FilePane({
             aria-label={
               filesMax ? "Restore the layout" : "Maximize the file pane"
             }
-            className="flex shrink-0 items-center rounded-sm px-1.5 py-0.5 hover:text-accent"
+            className="hidden shrink-0 items-center rounded-sm px-1.5 py-0.5 hover:text-accent md:flex"
           >
             <MaximizeIcon maximized={filesMax} />
           </button>

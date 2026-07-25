@@ -82,7 +82,7 @@ export function TerminalCell({
           aria-pressed={isZoomed}
           title={isZoomed ? "Restore the grid" : "Zoom this terminal"}
           aria-label={isZoomed ? "Restore the grid" : "Zoom this terminal"}
-          className="flex h-6 w-6 shrink-0 items-center justify-center rounded-sm text-ink-400 hover:text-accent"
+          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-sm text-ink-400 hover:text-accent md:h-6 md:w-6"
         >
           <MaximizeIcon maximized={isZoomed} />
         </button>
@@ -91,7 +91,7 @@ export function TerminalCell({
           onClick={onClose}
           title="Close terminal"
           aria-label={`close terminal ${index + 1}`}
-          className="flex h-6 w-6 shrink-0 items-center justify-center rounded-sm text-ink-400 hover:text-removed"
+          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-sm text-ink-400 hover:text-removed md:h-6 md:w-6"
         >
           <XIcon />
         </button>

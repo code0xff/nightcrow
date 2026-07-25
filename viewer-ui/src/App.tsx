@@ -12,12 +12,14 @@ import { useLog } from "./hooks/useLog";
 import { useResumeTick } from "./hooks/useResumeTick";
 import { useMaximized } from "./hooks/useMaximized";
 import { useRepoActions } from "./hooks/useRepoActions";
+import { useRepoOrder } from "./hooks/useRepoOrder";
 import { Header } from "./components/Header";
 import { RepoShell } from "./components/RepoShell";
 import { FolderPicker } from "./components/FolderPicker";
 import { LoadingSplash } from "./components/LoadingSplash";
 import { Login } from "./components/Login";
-import type { Pane, Tab } from "./types";
+import type { MobileView, Pane, Tab } from "./types";
+import { appRows } from "./appLayout";
 
 export function App() {
   const [authed, setAuthed] = useState<boolean | null>(null);
@@ -25,6 +27,7 @@ export function App() {
   const [filter, setFilter] = useState("");
   const [filterOpen, setFilterOpen] = useState(false);
   const [pane, setPane] = useState<Pane>({ kind: "empty" });
+  const [mobileView, setMobileView] = useState<MobileView>("files");
   // Prevent stale pane responses from overwriting the new context.
   const paneRequestRef = useRef(0);
   const bumpPaneRequest = useCallback(() => {
@@ -45,6 +48,10 @@ export function App() {
     adopt: adoptSidebarWidth,
   } = useSidebarWidth();
   const sidebarWrites = useRef(0);
+  const orderWrites = useRef(0);
+  const repoDraggingRef = useRef(false);
+  const reorderInFlightRef = useRef(false);
+  const pendingReorderRef = useRef<string[] | null>(null);
   const commitSidebarWidth = useCallback(
     (px: number) => {
       sidebarWrites.current += 1;
@@ -61,7 +68,6 @@ export function App() {
   }, []);
   const sidebarRef = useRef<HTMLElement>(null);
   const [mdRendered, setMdRendered] = useState(true);
-
   const handle = useCallback((err: unknown) => {
     if (isUnauthorized(err)) {
       setAuthed(false);
@@ -71,7 +77,6 @@ export function App() {
   }, []);
 
   const resumeTick = useResumeTick();
-
   const {
     draggingSidebar,
     onSidebarDragStart,
@@ -87,7 +92,6 @@ export function App() {
     resetSidebarWidth,
     bumpSidebarWrites,
   });
-
   const {
     repos,
     setRepos,
@@ -106,6 +110,25 @@ export function App() {
     accentWrites,
     sidebarWrites,
     resumeTick,
+    orderWrites,
+    repoDraggingRef,
+    reorderInFlightRef,
+    pendingReorderRef,
+  });
+  const {
+    dragging: draggingRepo,
+    target: dragOverRepo,
+    onStart: onRepoDragStart,
+    onMove: onRepoDragMove,
+    onEnd: onRepoDragEnd,
+  } = useRepoOrder({
+    repos,
+    setRepos,
+    handle,
+    writesRef: orderWrites,
+    draggingRef: repoDraggingRef,
+    inFlightRef: reorderInFlightRef,
+    pendingRef: pendingReorderRef,
   });
 
   const hotWindowMs = hot?.enabled ? hot.window_secs * 1000 : 0;
@@ -122,7 +145,6 @@ export function App() {
     paneRequestRef,
   });
   const now = useHotClock(status?.files, hotWindowMs, clockSkewMs ?? 0);
-
   const { maximized, setMaximized, dropMaximized } = useMaximized(repo);
 
   const {
@@ -145,6 +167,7 @@ export function App() {
       setPane,
       paneRequestRef,
       setCommitDrillDown,
+      setMobileView,
     });
 
   const { selectOpenedRepo, closeRepo } = useRepoActions({
@@ -156,6 +179,7 @@ export function App() {
     setPickerOpen,
     dropMaximized,
     handle,
+    orderWrites,
   });
 
   useEffect(() => {
@@ -180,15 +204,8 @@ export function App() {
   const aheadOids = new Set(
     commits.slice(0, status?.tracking?.ahead ?? 0).map((c) => c.oid),
   );
-
   const filesMax = maximized === "files";
-  const rows = !repo
-    ? "grid-rows-[auto_1fr]"
-    : maximized === "terminal"
-      ? "grid-rows-[auto_minmax(0,0fr)_minmax(0,1fr)_auto]"
-      : maximized === "files"
-        ? "grid-rows-[auto_minmax(0,1fr)_minmax(0,0fr)_auto]"
-        : "grid-rows-[auto_minmax(0,11fr)_minmax(0,9fr)_auto]";
+  const rows = appRows(repo, maximized);
 
   return (
     <div className={`nc-fade grid h-full ${rows}`}>
@@ -205,6 +222,11 @@ export function App() {
         accent={accent}
         next={next}
         cycle={cycle}
+        draggingRepo={draggingRepo}
+        dragOverRepo={dragOverRepo}
+        onRepoDragStart={onRepoDragStart}
+        onRepoDragMove={onRepoDragMove}
+        onRepoDragEnd={onRepoDragEnd}
       />
 
       {repo ? (
@@ -256,6 +278,8 @@ export function App() {
           setMdRendered={setMdRendered}
           maximized={maximized}
           setMaximized={setMaximized}
+          mobileView={mobileView}
+          setMobileView={setMobileView}
         />
       ) : (
         <div className="flex items-center justify-center p-6 text-center text-ink-400">
