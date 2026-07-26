@@ -177,6 +177,25 @@ mod tests {
     }
 
     #[test]
+    fn the_pwa_manifest_is_served_as_a_manifest() {
+        // The install manifest must be reachable and typed as JSON so the
+        // browser parses it rather than downloading it as an opaque blob.
+        let text = text(&serve("/manifest.webmanifest").unwrap());
+
+        assert!(text.starts_with("HTTP/1.1 200"), "got: {text}");
+        assert!(text.contains("json"), "manifest served with a non-JSON type");
+    }
+
+    #[test]
+    fn a_pwa_icon_is_served_as_a_png() {
+        // Home-screen install needs raster icons the launcher can render.
+        let text = text(&serve("/icon-512.png").unwrap());
+
+        assert!(text.starts_with("HTTP/1.1 200"), "got: {text}");
+        assert!(text.contains("image/png"), "wrong content type");
+    }
+
+    #[test]
     fn a_javascript_bundle_is_served_with_a_script_mime() {
         // The build hashes the filename, so find it rather than hard-coding.
         let name = Assets::iter()

@@ -363,6 +363,14 @@ terminal grows a key bar along its bottom on touch devices that sends those
 straight to the shell — so you can interrupt a process (`^C`), leave `vim`
 (`Esc`), or walk your history (arrows) without a physical keyboard.
 
+The viewer ships a web-app manifest and icons, so you can **add it to your home
+screen** and launch it as a standalone, chrome-less window — more room for the
+terminal and one-tap access. On iOS this works over plain HTTP (Safari →
+*Share* → *Add to Home Screen*). Android's install prompt additionally wants a
+service worker and a secure origin, so reach the viewer over HTTPS (a reverse
+proxy or tunnel) to get it there; the viewer has no offline mode either way —
+every screen needs the server.
+
 The `status` list highlights recently touched files the same way the TUI does:
 accent-coloured and bold for the first 5 seconds after a file's mtime, accent
 until `agent_indicator.hot_window_secs` expires, then plain. The window (and
