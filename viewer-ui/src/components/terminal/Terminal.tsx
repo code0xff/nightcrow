@@ -210,6 +210,7 @@ export function TerminalPanel({
                 cellStyle={cellStyle}
                 isActive={pane === active}
                 isZoomed={zoomed === pane}
+                showZoom={panes.length > 1}
                 isDragged={draggingPane === pane}
                 isDropTarget={dragOverPane === pane}
                 reorderable={reorderable}

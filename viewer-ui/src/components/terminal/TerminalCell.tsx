@@ -9,6 +9,7 @@ interface TerminalCellProps {
   cellStyle: CSSProperties;
   isActive: boolean;
   isZoomed: boolean;
+  showZoom: boolean;
   isDragged: boolean;
   isDropTarget: boolean;
   reorderable: boolean;
@@ -29,6 +30,7 @@ export function TerminalCell({
   cellStyle,
   isActive,
   isZoomed,
+  showZoom,
   isDragged,
   isDropTarget,
   reorderable,
@@ -76,16 +78,18 @@ export function TerminalCell({
         >
           {truncateCells(label, TAB_TITLE_MAX_CELLS)}
         </span>
-        <button
-          onMouseDown={(e) => e.stopPropagation()}
-          onClick={onToggleZoom}
-          aria-pressed={isZoomed}
-          title={isZoomed ? "Restore the grid" : "Zoom this terminal"}
-          aria-label={isZoomed ? "Restore the grid" : "Zoom this terminal"}
-          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-sm text-ink-400 hover:text-accent md:h-6 md:w-6"
-        >
-          <MaximizeIcon maximized={isZoomed} />
-        </button>
+        {showZoom && (
+          <button
+            onMouseDown={(e) => e.stopPropagation()}
+            onClick={onToggleZoom}
+            aria-pressed={isZoomed}
+            title={isZoomed ? "Restore the grid" : "Zoom this terminal"}
+            aria-label={isZoomed ? "Restore the grid" : "Zoom this terminal"}
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-sm text-ink-400 hover:text-accent md:h-6 md:w-6"
+          >
+            <MaximizeIcon maximized={isZoomed} />
+          </button>
+        )}
         <button
           onMouseDown={(e) => e.stopPropagation()}
           onClick={onClose}
