@@ -1,4 +1,5 @@
 mod auth;
+mod clone;
 mod commit_routes;
 mod prefs;
 mod reorder;

@@ -26,6 +26,7 @@
 //! targets, and file sizes, so handlers map them to a fixed public string and
 //! log the detail server-side.
 
+mod clone_routes;
 mod dispatch;
 mod handlers;
 mod http_util;
@@ -73,6 +74,9 @@ pub struct ViewerState {
     /// Viewer preferences shared by every client (see `prefs.rs`). Always
     /// written: the file is the viewer's own and no TUI owns it.
     pub(super) prefs: PrefsStore,
+    /// In-flight and recently finished clones (see `clone_jobs.rs`). A clone
+    /// outlives the request that started it, so its result is polled.
+    pub(super) clones: crate::web::viewer::clone_jobs::CloneJobs,
 }
 
 pub struct ViewerServer {
@@ -159,6 +163,7 @@ impl ViewerServer {
             sessions: SessionStore::new(),
             limiter: RateLimiter::new(),
             connections: Arc::new(AtomicUsize::new(0)),
+            clones: Default::default(),
             persist,
             hot,
             prefs,

@@ -183,7 +183,10 @@ mod tests {
         let text = text(&serve("/manifest.webmanifest").unwrap());
 
         assert!(text.starts_with("HTTP/1.1 200"), "got: {text}");
-        assert!(text.contains("json"), "manifest served with a non-JSON type");
+        assert!(
+            text.contains("json"),
+            "manifest served with a non-JSON type"
+        );
     }
 
     #[test]
