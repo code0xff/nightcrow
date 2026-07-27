@@ -150,11 +150,25 @@ fn an_unknown_job_is_not_found() {
 }
 
 #[test]
-fn a_job_id_is_required_to_poll() {
+fn polling_without_an_id_reports_that_nothing_is_running() {
+    // How a freshly loaded page finds the clone it should follow. Idle must
+    // answer with an explicit null rather than an error, so the client can
+    // tell "nothing to attach to" from "the request failed".
     let server = server(&[]);
     let token = login(server.addr());
 
-    let response = get(server.addr(), "/api/clone", Some(&token));
+    let body = body_of(&get(server.addr(), "/api/clone", Some(&token))).to_string();
+
+    let value: serde_json::Value = serde_json::from_str(&body).expect("json body");
+    assert!(value["job"].is_null(), "got: {body}");
+}
+
+#[test]
+fn a_malformed_job_id_is_rejected() {
+    let server = server(&[]);
+    let token = login(server.addr());
+
+    let response = get(server.addr(), "/api/clone?job=abc", Some(&token));
 
     assert!(response.contains("400 Bad Request"), "got: {response}");
 }

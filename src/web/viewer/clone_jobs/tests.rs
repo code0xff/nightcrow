@@ -67,6 +67,24 @@ fn a_failure_carries_its_message() {
 }
 
 #[test]
+fn the_running_job_is_reported_until_it_finishes() {
+    // A client that lost its job id — a reloaded page — attaches through this,
+    // so it must name the running job and go quiet once nothing is running.
+    let jobs = CloneJobs::default();
+    assert_eq!(jobs.running(), None, "nothing runs on a fresh registry");
+    let id = jobs.try_start().expect("admitted");
+
+    assert_eq!(jobs.running(), Some(id));
+
+    jobs.finish(id, CloneState::Done("/tmp/x".to_string()));
+    assert_eq!(
+        jobs.running(),
+        None,
+        "a finished job is no longer something to attach to"
+    );
+}
+
+#[test]
 fn an_unknown_id_reads_as_missing() {
     let jobs = CloneJobs::default();
 

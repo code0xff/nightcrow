@@ -124,12 +124,18 @@ fn run_and_record(state: &ViewerState, id: u64, url: &str, dest: PathBuf) {
 
 /// Report on a job. An id that was never handed out — or one already evicted
 /// after the client read it — is a 404 rather than a silent "running".
+///
+/// With no id the question is instead "what is running?", which is what a page
+/// that just loaded asks: the clone it should be following may have been
+/// started by a tab that has since been reloaded or closed, and without this
+/// that client could only see the 409 refusing a second clone, never the job
+/// causing it.
 pub(super) fn handle_clone_status(head: &RequestHead, state: &ViewerState) -> Vec<u8> {
-    let Some(id) = head
-        .query_param("job")
-        .and_then(|raw| raw.parse::<u64>().ok())
-    else {
-        return json_error("400 Bad Request", "a job id is required");
+    let Some(raw) = head.query_param("job") else {
+        return encode(serde_json::json!({ "job": state.clones.running() }));
+    };
+    let Ok(id) = raw.parse::<u64>() else {
+        return json_error("400 Bad Request", "a job id must be a number");
     };
     let Some(job) = state.clones.get(id) else {
         return json_error("404 Not Found", "no such clone");

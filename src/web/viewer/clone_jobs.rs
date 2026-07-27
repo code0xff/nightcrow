@@ -84,6 +84,17 @@ impl CloneJobs {
         self.lock().get(&id).cloned()
     }
 
+    /// The job currently running, if any. At most one exists by admission, so
+    /// a client that lost track of its id — a reloaded page, a second tab —
+    /// can ask what to follow instead of being told a clone is already
+    /// running with no way to watch it.
+    pub fn running(&self) -> Option<u64> {
+        self.lock()
+            .iter()
+            .find(|(_, state)| matches!(state, CloneState::Running))
+            .map(|(id, _)| *id)
+    }
+
     fn lock(&self) -> std::sync::MutexGuard<'_, HashMap<u64, CloneState>> {
         // A poisoned lock means a panic while holding it. The map is plain data
         // with no invariant spanning the critical sections, so recovering keeps
