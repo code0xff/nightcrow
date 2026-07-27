@@ -20,7 +20,14 @@ use std::process::Command;
 /// `file://` and bare local paths are excluded too: the caller reaches local
 /// directories through the folder picker, so accepting them here would only
 /// widen what a URL can name.
-const ALLOWED_SCHEMES: [&str; 5] = ["https://", "http://", "ssh://", "git://", "git+ssh://"];
+///
+/// `git://` is excluded as well. It carries neither authentication nor
+/// encryption — anything in the path can serve arbitrary code as the clone —
+/// and it is the one transport git gives no stall control for, so a dead
+/// remote would hold the single clone slot until the server restarts. Hosts
+/// have been retiring it for years; `https://` covers the same anonymous
+/// fetch with both problems solved.
+const ALLOWED_SCHEMES: [&str; 4] = ["https://", "http://", "ssh://", "git+ssh://"];
 
 /// Longest URL accepted, to keep a hostile client from parking megabytes in a
 /// request body that is only ever a remote address.
@@ -47,7 +54,7 @@ impl CloneUrlError {
             CloneUrlError::TooLong => "that URL is too long",
             CloneUrlError::Control => "that URL contains invalid characters",
             CloneUrlError::Scheme => {
-                "only https, http, ssh, and git URLs (or user@host:path) can be cloned"
+                "only https, http, and ssh URLs (or user@host:path) can be cloned"
             }
             CloneUrlError::NoName => "could not read a repository name from that URL",
         }
@@ -169,7 +176,12 @@ fn tail_of<R: std::io::Read>(mut reader: R) -> String {
     let mut chunk = [0u8; 8192];
     loop {
         match reader.read(&mut chunk) {
-            Ok(0) | Err(_) => break,
+            Ok(0) => break,
+            // A signal can cut a read short; giving up there would drop the
+            // rest of git's message and close the pipe under a child that is
+            // still writing.
+            Err(err) if err.kind() == std::io::ErrorKind::Interrupted => continue,
+            Err(_) => break,
             Ok(n) => {
                 kept.extend_from_slice(&chunk[..n]);
                 if kept.len() > MAX_STDERR_BYTES {

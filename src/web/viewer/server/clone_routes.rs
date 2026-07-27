@@ -104,11 +104,12 @@ fn run_and_record(state: &ViewerState, id: u64, url: &str, dest: PathBuf) {
         Err(err) => {
             // The destination was created here, so a failed clone would leave
             // a directory behind that blocks a retry under the same name.
-            // Non-recursive on purpose: git removes what it wrote before
-            // giving up, so the directory is empty by then, and `remove_dir`
-            // cannot destroy content if something else has since taken this
-            // path. A leftover non-empty directory is a visible annoyance;
-            // deleting a stranger's files would not be.
+            // Non-recursive on purpose: it cannot destroy content if
+            // something else has taken this path in the meantime. That means
+            // a failure git does not clean up after — it keeps the repository
+            // when only the checkout fails — leaves the directory in place.
+            // A visible leftover the user can delete beats deleting files
+            // that turned out not to be ours.
             let _ = std::fs::remove_dir(&dest);
             // git's message names the real problem ("repository not found",
             // "permission denied"), which is exactly what the user must act on.

@@ -38,11 +38,11 @@ export function useClone(onCloned: (path: string) => Promise<void> | void) {
         try {
           status = await api.cloneStatus(job);
         } catch (err) {
-          // The server drops a finished job once it has been read or crowded
-          // out, so a 404 is the end of this job, not a hiccup — retrying it
-          // would spin forever with the form stuck on "Cloning…". Every other
-          // failure is a dropped request over a clone that is still running
-          // server-side, so it is retried.
+          // The server drops the oldest finished jobs when later clones crowd
+          // them out, so a 404 is the end of this job, not a hiccup —
+          // retrying it would spin forever with the form stuck on
+          // "Cloning…". Every other failure is a dropped request over a clone
+          // that is still running server-side, so it is retried.
           if (err instanceof ApiError && err.status === 404) {
             // Same cancellation contract as the success path: a dialog that
             // closed while this request was in flight gets no toast and no

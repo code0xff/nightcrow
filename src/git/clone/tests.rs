@@ -29,14 +29,24 @@ fn scp_like_remotes_are_accepted() {
 }
 
 #[test]
-fn ssh_and_git_schemes_are_accepted() {
+fn the_ssh_schemes_are_accepted() {
     assert_eq!(
         validate_clone_url("ssh://git@github.com/code0xff/nightcrow.git"),
         Ok("nightcrow".to_string())
     );
     assert_eq!(
-        validate_clone_url("git://example.com/thing.git"),
+        validate_clone_url("git+ssh://git@example.com/team/thing.git"),
         Ok("thing".to_string())
+    );
+}
+
+#[test]
+fn the_anonymous_git_protocol_is_rejected() {
+    // No authentication, no encryption, and no stall control — `https://`
+    // serves the same anonymous fetch without any of the three.
+    assert_eq!(
+        validate_clone_url("git://example.com/thing.git"),
+        Err(CloneUrlError::Scheme)
     );
 }
 
