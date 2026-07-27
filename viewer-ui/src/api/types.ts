@@ -117,6 +117,12 @@ export interface BrowseEntry {
   is_repo: boolean;
 }
 
+/** A clone runs past the request that started it, so it is polled by job id. */
+export type CloneStatus =
+  | { state: "running" }
+  | { state: "done"; path: string }
+  | { state: "failed"; message: string };
+
 export interface Browse {
   path: string;
   parent?: string;

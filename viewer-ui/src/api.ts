@@ -7,6 +7,7 @@ import { ApiError } from "./api/errors";
 import { get, post, query, request } from "./api/client";
 import type {
   Browse,
+  CloneStatus,
   CommitFiles,
   Diff,
   FileView,
@@ -75,6 +76,12 @@ export const api = {
   // The server confines names to one plain segment.
   mkdir: (path: string, name: string) =>
     post<{ path: string }>("/api/mkdir", { path, name }).then((r) => r.path),
+  /** Start a clone under `path`. The destination name comes from the URL, and
+   *  the server rejects any scheme that could make `git` run a command. */
+  clone: (path: string, url: string) =>
+    post<{ job: number; name: string }>("/api/clone", { path, url }),
+  cloneStatus: (job: number) =>
+    get<CloneStatus>(`/api/clone?${query({ job: String(job) })}`),
   open: (path: string) =>
     post<{ repo: Repo }>("/api/repos", { path }).then((r) => r.repo),
   close: async (repo: string) => {

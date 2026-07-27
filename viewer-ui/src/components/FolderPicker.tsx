@@ -1,5 +1,6 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { api, type Browse, type Repo } from "../api";
+import { useClone } from "../hooks/useClone";
 import { toast } from "../lib/toast";
 import { XIcon } from "./icons";
 
@@ -16,7 +17,22 @@ export function FolderPicker({
   const [busy, setBusy] = useState(false);
   const [newName, setNewName] = useState("");
   const [creating, setCreating] = useState(false);
+  const [cloneUrl, setCloneUrl] = useState("");
   const [reload, setReload] = useState(0);
+
+  // A finished clone is just a directory that now exists, so it opens through
+  // the same path a hand-picked folder does.
+  const onCloned = useCallback(
+    async (path: string) => {
+      try {
+        onOpened(await api.open(path));
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "could not open");
+      }
+    },
+    [onOpened],
+  );
+  const { busy: cloning, start: startClone } = useClone(onCloned);
 
   useEffect(() => {
     let cancelled = false;
@@ -137,6 +153,28 @@ export function FolderPicker({
             className="shrink-0 rounded-sm border border-ink-700 px-2 py-1 text-ink-200 hover:bg-ink-850 disabled:opacity-50"
           >
             {creating ? "Creating…" : "Create"}
+          </button>
+        </div>
+        <div className="flex shrink-0 items-center gap-2 border-t border-ink-700 px-3 py-2">
+          <input
+            value={cloneUrl}
+            onChange={(e) => setCloneUrl(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && dir) startClone(dir.path, cloneUrl);
+            }}
+            placeholder="Clone a git URL here"
+            aria-label="git URL to clone"
+            spellCheck={false}
+            autoCapitalize="none"
+            autoCorrect="off"
+            className="min-w-0 flex-1 rounded-sm border border-ink-700 bg-ink-950 px-2 py-1 text-ink-50 placeholder:text-ink-400 focus:border-ink-600 focus:outline-none"
+          />
+          <button
+            onClick={() => dir && startClone(dir.path, cloneUrl)}
+            disabled={!dir || !cloneUrl.trim() || cloning}
+            className="shrink-0 rounded-sm border border-ink-700 px-2 py-1 text-ink-200 hover:bg-ink-850 disabled:opacity-50"
+          >
+            {cloning ? "Cloning…" : "Clone"}
           </button>
         </div>
         <div className="flex shrink-0 items-center gap-2 border-t border-ink-700 px-3 py-2">
