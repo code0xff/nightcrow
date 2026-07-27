@@ -15,6 +15,11 @@ describe("termKeySequence", () => {
     expect(termKeySequence("tab")).toBe("\t");
   });
 
+  it("Shift_Tab은_back_tab_CSI_Z를_보낸다", () => {
+    expect(termKeySequence("shift-tab")).toBe("\x1b[Z");
+    expect(termKeySequence("shift-tab", true)).toBe("\x1b[Z");
+  });
+
   it("Ctrl_조합은_알파벳_순서의_제어바이트를_보낸다", () => {
     // Ctrl-C = 3rd letter = 0x03, and so on down the list.
     expect(termKeySequence("ctrl-c")).toBe("\x03");

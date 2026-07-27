@@ -358,10 +358,11 @@ list, the content pane, and the terminal — would each shrink to an unusable
 sliver stacked in one column, so instead a bottom bar switches between them:
 tap **Files**, **Diff**, or **Terminal** to give one of them the whole screen.
 Opening a file or commit jumps to the content view automatically. Because a
-soft keyboard can't type Escape, Tab, Ctrl combinations, or the arrows, the
-terminal grows a key bar along its bottom on touch devices that sends those
-straight to the shell — so you can interrupt a process (`^C`), leave `vim`
-(`Esc`), or walk your history (arrows) without a physical keyboard.
+soft keyboard can't type Escape, Tab, Shift-Tab, Ctrl combinations, or the
+arrows, the terminal grows a key bar along its bottom on touch devices that
+sends those straight to the shell — so you can interrupt a process (`^C`),
+leave `vim` (`Esc`), cycle a completion menu backwards (`⇧Tab`), or walk your
+history (arrows) without a physical keyboard.
 
 The viewer ships a web-app manifest and icons, so you can **add it to your home
 screen** and launch it as a standalone, chrome-less window — more room for the
