@@ -312,7 +312,12 @@ also serves its **own** terminals, independent of the TUI's panes.
 
 The served repositories appear as project tabs in the header — `+ open` browses
 the server machine's folders to add one, `×` closes it, and dragging a tab
-reorders them — and each project has its own `status`, `log`, and `tree` tabs on
+reorders them. The same dialog **clones a git URL** into the folder it is
+showing: paste `https://…` or `git@host:path`, and the repository opens as a
+tab when the clone finishes. Cloning runs `git` on the server, so it uses that
+machine's credentials — an SSH agent, a credential helper — and a private
+remote works exactly as it would in a shell there. Local paths and git's
+`ext::` transport are refused. Each project has its own `status`, `log`, and `tree` tabs on
 the left plus a terminal panel below. The order is kept on the server, so every
 device shows the same arrangement; under `nightcrow serve` it also survives a
 restart (alongside the TUI it lasts the session). On a narrow window (phone) the
