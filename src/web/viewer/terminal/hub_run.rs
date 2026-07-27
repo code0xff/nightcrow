@@ -30,7 +30,7 @@ impl TerminalHub {
                             continue;
                         }
                         match backend.create_pane(rows, cols, command.as_deref()) {
-                            Ok(pane) => self.register_pane(pane),
+                            Ok(pane) => self.register_pane(pane, rows, cols),
                             Err(err) => {
                                 tracing::warn!(%err, "viewer: could not create a terminal");
                                 self.send_error_to(client, "could not start a terminal");
@@ -44,6 +44,7 @@ impl TerminalHub {
                     }
                     Command::Resize { pane, rows, cols } if self.pane_is_live(pane) => {
                         backend.resize(pane, rows, cols);
+                        self.record_size(pane, rows, cols);
                     }
                     Command::Close { pane } if self.pane_is_live(pane) => {
                         backend.destroy_pane(pane);
@@ -105,15 +106,27 @@ impl TerminalHub {
     /// same lock that adds the pane keeps it consistent with `connect`'s replay:
     /// a client either sees this pane via `connect` or via this broadcast, never
     /// both and never neither.
-    fn register_pane(&self, pane: PaneId) {
-        let json = serde_json::to_string(&ServerMessage::Created { pane }).ok();
+    fn register_pane(&self, pane: PaneId, rows: u16, cols: u16) {
+        let json = serde_json::to_string(&ServerMessage::Created { pane, rows, cols }).ok();
         let mut state = self.state.lock().expect("terminal state poisoned");
         state.panes.push(PaneState {
             id: pane,
             scrollback: VecDeque::new(),
+            rows,
+            cols,
         });
         if let Some(json) = json {
             broadcast_locked(&mut state.clients, TerminalFrame::Control(json));
+        }
+    }
+
+    /// Remember the size a resize applied, so a client connecting later is told
+    /// what the PTY is actually set to rather than what it was born with.
+    fn record_size(&self, pane: PaneId, rows: u16, cols: u16) {
+        let mut state = self.state.lock().expect("terminal state poisoned");
+        if let Some(p) = state.panes.iter_mut().find(|p| p.id == pane) {
+            p.rows = rows;
+            p.cols = cols;
         }
     }
 

@@ -38,6 +38,10 @@ pub enum Command {
 pub(super) struct PaneState {
     pub(super) id: PaneId,
     pub(super) scrollback: VecDeque<u8>,
+    /// The size the PTY is currently set to, tracked so a connecting client
+    /// learns it and can skip a resize that would change nothing.
+    pub(super) rows: u16,
+    pub(super) cols: u16,
 }
 
 /// Hub state shared between the worker thread (which mutates panes and

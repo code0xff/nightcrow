@@ -62,6 +62,14 @@ export function useTerminalSocket({
           const message = JSON.parse(event.data);
           if (message.type === "created") {
             const pane = message.pane;
+            // Adopt the size the PTY already has. Without this the first fit
+            // sends a resize even when it computes the very size the pane is
+            // already set to — and every resize costs the child a full
+            // repaint, which is the flicker a reload used to show.
+            sentSizesRef.current.set(pane, {
+              rows: message.rows,
+              cols: message.cols,
+            });
             setPanes((current) => [...current, pane]);
             if (expectCreateRef.current > 0) {
               expectCreateRef.current -= 1;

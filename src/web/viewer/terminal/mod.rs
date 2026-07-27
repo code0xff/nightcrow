@@ -97,7 +97,11 @@ impl TerminalHub {
         // for.
         if !self.stop.load(Ordering::Acquire) {
             for pane in &state.panes {
-                if let Ok(json) = serde_json::to_string(&ServerMessage::Created { pane: pane.id }) {
+                if let Ok(json) = serde_json::to_string(&ServerMessage::Created {
+                    pane: pane.id,
+                    rows: pane.rows,
+                    cols: pane.cols,
+                }) {
                     let _ = tx.try_send(TerminalFrame::Control(json));
                 }
                 if !pane.scrollback.is_empty() {

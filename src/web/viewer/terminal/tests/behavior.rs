@@ -1,4 +1,6 @@
-use super::{collect_created, created_pane, next_matching, reordered_order};
+use super::{
+    collect_created, created_pane, created_size, next_matching, reordered_order, wait_for,
+};
 use crate::backend::PaneId;
 use crate::web::viewer::limits;
 use crate::web::viewer::terminal::TerminalHub;
@@ -135,6 +137,46 @@ fn a_reconnecting_client_receives_existing_panes_and_scrollback() {
     assert!(
         replay_output.is_some(),
         "reconnecting client did not receive the scrollback"
+    );
+    hub.stop();
+}
+
+#[test]
+fn a_replayed_pane_reports_the_size_it_was_last_resized_to() {
+    // What a reconnecting page uses to decide it has nothing to resize. If
+    // this reported the birth size instead, every reload would send a resize
+    // the PTY does not need and cost the child a full repaint.
+    let dir = tempfile::TempDir::new().unwrap();
+    let hub = TerminalHub::spawn(&dir.path().to_string_lossy(), Vec::new());
+    let first = hub.connect();
+
+    first.dispatch(ClientMessage::Create { rows: 24, cols: 80 });
+    let created = next_matching(&first, |f| created_pane(f).is_some()).expect("no created message");
+    let pane = created_pane(&created).unwrap();
+    assert_eq!(
+        created_size(&created),
+        Some((24, 80)),
+        "a new pane reports the size it was created with"
+    );
+
+    first.dispatch(ClientMessage::Resize {
+        pane,
+        rows: 40,
+        cols: 120,
+    });
+    // The resize is applied by the worker thread, so wait for the size to
+    // reach a fresh connection rather than assuming it has landed.
+    let replayed = wait_for(|| {
+        let session = hub.connect();
+        next_matching(&session, |f| created_pane(f) == Some(pane))
+            .and_then(|f| created_size(&f))
+            .filter(|size| *size == (40, 120))
+    });
+
+    assert_eq!(
+        replayed,
+        Some((40, 120)),
+        "a replayed pane must report its current size, not its birth size"
     );
     hub.stop();
 }

@@ -54,6 +54,21 @@ pub(super) fn created_pane(frame: &TerminalFrame) -> Option<PaneId> {
     None
 }
 
+/// The size a `created` frame reports for its pane.
+pub(super) fn created_size(frame: &TerminalFrame) -> Option<(u16, u16)> {
+    let TerminalFrame::Control(json) = frame else {
+        return None;
+    };
+    let value: serde_json::Value = serde_json::from_str(json).ok()?;
+    if value["type"] != "created" {
+        return None;
+    }
+    Some((
+        value["rows"].as_u64()? as u16,
+        value["cols"].as_u64()? as u16,
+    ))
+}
+
 pub(super) fn reordered_order(frame: &TerminalFrame) -> Option<Vec<PaneId>> {
     let TerminalFrame::Control(json) = frame else {
         return None;
@@ -128,8 +143,13 @@ fn client_messages_parse_from_the_wire_shape() {
 
 #[test]
 fn server_messages_serialize_with_a_type_tag() {
-    let json = serde_json::to_string(&ServerMessage::Created { pane: 2 }).unwrap();
-    assert_eq!(json, r#"{"type":"created","pane":2}"#);
+    let json = serde_json::to_string(&ServerMessage::Created {
+        pane: 2,
+        rows: 40,
+        cols: 120,
+    })
+    .unwrap();
+    assert_eq!(json, r#"{"type":"created","pane":2,"rows":40,"cols":120}"#);
 
     let json = serde_json::to_string(&ServerMessage::Reordered { order: vec![2, 1] }).unwrap();
     assert_eq!(json, r#"{"type":"reordered","order":[2,1]}"#);

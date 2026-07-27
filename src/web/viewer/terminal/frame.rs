@@ -33,8 +33,17 @@ pub enum ClientMessage {
 #[derive(Debug, Serialize, PartialEq, Eq)]
 #[serde(tag = "type", rename_all = "lowercase")]
 pub enum ServerMessage {
+    /// A pane exists, along with the size its PTY is currently set to.
+    ///
+    /// The size rides along because the client is not the only source of it:
+    /// a pane replayed to a reconnecting page, or one another device sized,
+    /// already has a size this client never chose. Without it the client must
+    /// assume nothing and send its own size on attach, and every such resize
+    /// costs the child a full repaint — even when the two agree.
     Created {
         pane: PaneId,
+        rows: u16,
+        cols: u16,
     },
     Exited {
         pane: PaneId,
