@@ -76,7 +76,14 @@ export function TerminalPanel({
   });
 
   const onAnswered = useCallback(() => setPending(null), []);
-  useStartupSizes({ pending, size, socketRef, slotRefs, onAnswered });
+  useStartupSizes({
+    pending,
+    size,
+    socketRef,
+    slotRefs,
+    panesExist: panes.length > 0,
+    onAnswered,
+  });
 
   usePaneSizes({
     panes,

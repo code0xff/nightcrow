@@ -14,6 +14,9 @@ interface UseStartupSizesArgs {
   socketRef: MutableRefObject<WebSocket | null>;
   /** The placeholder cells rendered for the pending panes, by slot. */
   slotRefs: MutableRefObject<Map<number, HTMLDivElement>>;
+  /** Whether a real pane already exists. If one does, the placeholders are
+   *  gone and there is nothing left to measure — see the answer below. */
+  panesExist: boolean;
   onAnswered: () => void;
 }
 
@@ -32,6 +35,7 @@ export function useStartupSizes({
   size,
   socketRef,
   slotRefs,
+  panesExist,
   onAnswered,
 }: UseStartupSizesArgs) {
   useEffect(() => {
@@ -42,8 +46,17 @@ export function useStartupSizes({
     const slots: HTMLDivElement[] = [];
     for (let slot = 0; slot < pending; slot++) {
       const node = slotRefs.current.get(slot);
-      // Nothing to measure yet; a later layout pass re-runs this.
-      if (!node || node.clientHeight === 0 || node.clientWidth === 0) return;
+      if (!node || node.clientHeight === 0 || node.clientWidth === 0) {
+        // Creating a terminal by hand before the handshake finished replaces
+        // the placeholders with real cells, so there is nothing left to
+        // measure and nothing that will re-render them. Answer anyway — the
+        // server opens the startup terminals at its default — rather than
+        // leave them unclaimed for the life of the hub.
+        if (!panesExist) return; // Just not laid out yet; a later pass retries.
+        socket.send(JSON.stringify({ type: "start", sizes: [] }));
+        onAnswered();
+        return;
+      }
       slots.push(node);
     }
 
@@ -69,5 +82,5 @@ export function useStartupSizes({
 
     socket.send(JSON.stringify({ type: "start", sizes }));
     onAnswered();
-  }, [pending, size, socketRef, slotRefs, onAnswered]);
+  }, [pending, size, socketRef, slotRefs, panesExist, onAnswered]);
 }
