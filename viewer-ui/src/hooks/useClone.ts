@@ -43,6 +43,10 @@ export function useClone(onCloned: (path: string) => Promise<void> | void) {
           // failure is a dropped request over a clone that is still running
           // server-side, so it is retried.
           if (err instanceof ApiError && err.status === 404) {
+            // Same cancellation contract as the success path: a dialog that
+            // closed while this request was in flight gets no toast and no
+            // state write.
+            if (cancelled.current) return;
             toast.error("the clone's progress is no longer available");
             setBusy(false);
             return;

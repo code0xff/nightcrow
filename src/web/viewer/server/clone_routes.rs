@@ -79,10 +79,14 @@ pub(super) fn handle_clone(body: &str, state: &Arc<ViewerState>) -> Vec<u8> {
     }
 
     let worker = Arc::clone(state);
+    // The closure takes the path, so keep one for the spawn-failure branch —
+    // the claimed directory must be released or it blocks a retry.
+    let claimed = dest.clone();
     if let Err(err) = std::thread::Builder::new()
         .name("nightcrow-viewer-clone".to_string())
         .spawn(move || run_and_record(&worker, id, &url, dest))
     {
+        let _ = std::fs::remove_dir(&claimed);
         state.clones.finish(
             id,
             CloneState::Failed("could not start the clone".to_string()),
@@ -100,10 +104,12 @@ fn run_and_record(state: &ViewerState, id: u64, url: &str, dest: PathBuf) {
         Err(err) => {
             // The destination was created here, so a failed clone would leave
             // a directory behind that blocks a retry under the same name.
-            // Removing recursively is safe precisely because this path was
-            // created by `create_dir` one level under a canonicalized parent:
-            // nothing but this clone has written into it.
-            let _ = std::fs::remove_dir_all(&dest);
+            // Non-recursive on purpose: git removes what it wrote before
+            // giving up, so the directory is empty by then, and `remove_dir`
+            // cannot destroy content if something else has since taken this
+            // path. A leftover non-empty directory is a visible annoyance;
+            // deleting a stranger's files would not be.
+            let _ = std::fs::remove_dir(&dest);
             // git's message names the real problem ("repository not found",
             // "permission denied"), which is exactly what the user must act on.
             // It is the remote's words about a URL the user typed, not server

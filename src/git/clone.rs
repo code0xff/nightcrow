@@ -170,6 +170,15 @@ pub fn run_clone(url: &str, dest: &Path) -> anyhow::Result<()> {
         // `output()` already gives the child a null stdin; this closes the
         // terminal path too.
         .env("GIT_TERMINAL_PROMPT", "0")
+        // Abort a transfer that has stalled rather than one that is merely
+        // slow. A wall-clock timeout cannot tell those apart — a large
+        // repository legitimately takes many minutes — but a rate floor can:
+        // under 1 KiB/s for 60 s is a dead connection, not a big clone.
+        // (HTTP transports only; git exposes no equivalent for ssh.)
+        .arg("-c")
+        .arg("http.lowSpeedLimit=1024")
+        .arg("-c")
+        .arg("http.lowSpeedTime=60")
         .arg("clone")
         .arg("--")
         .arg(url)

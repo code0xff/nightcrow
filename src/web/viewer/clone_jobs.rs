@@ -49,16 +49,22 @@ impl CloneJobs {
             return None;
         }
         let id = self.next_id.fetch_add(1, Ordering::Relaxed) + 1;
-        // Evict finished jobs before inserting so a long-lived server does not
-        // accumulate them. Running jobs are never evicted: their thread still
-        // holds the id and will write a result to it.
+        // Evict before inserting so a long-lived server does not accumulate
+        // jobs. The *oldest* finished ones go first — dropping every finished
+        // job at once could take one a client had not read yet, which reads to
+        // that client as "your clone is gone" even though it succeeded.
+        // Running jobs are never evicted: their thread still holds the id and
+        // will write a result to it.
         if jobs.len() >= MAX_RETAINED_JOBS {
-            let finished: Vec<u64> = jobs
+            let mut finished: Vec<u64> = jobs
                 .iter()
                 .filter(|(_, state)| !matches!(state, CloneState::Running))
                 .map(|(id, _)| *id)
                 .collect();
-            for id in finished {
+            finished.sort_unstable();
+            let keep = MAX_RETAINED_JOBS / 2;
+            let drop_count = finished.len().saturating_sub(keep);
+            for id in finished.into_iter().take(drop_count) {
                 jobs.remove(&id);
             }
         }
