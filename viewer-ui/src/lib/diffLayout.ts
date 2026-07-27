@@ -3,8 +3,6 @@ import type { DiffLine } from "../api";
 
 export type DiffLayout = "unified" | "split";
 
-const STORAGE_KEY = "nightcrow.viewer.diffLayout";
-
 export interface SplitRow {
   left: DiffLine | null;
   right: DiffLine | null;
@@ -39,31 +37,17 @@ export function splitHunkRows(lines: DiffLine[]): SplitRow[] {
   return rows;
 }
 
-function loadLayout(): DiffLayout {
-  try {
-    return localStorage.getItem(STORAGE_KEY) === "split" ? "split" : "unified";
-  } catch {
-    return "unified";
-  }
-}
-
-function storeLayout(layout: DiffLayout) {
-  try {
-    localStorage.setItem(STORAGE_KEY, layout);
-  } catch {
-  }
-}
-
-/** The layout holds at every width — narrow screens stack the two sides. */
+/**
+ * Unified is the default at every width; split is something you reach for on a
+ * diff that needs it, so the choice lasts the session and is not stored — the
+ * same lifetime the TUI gives it. Narrow screens stack the two sides rather
+ * than falling back to unified.
+ */
 export function useDiffLayout() {
-  const [layout, setLayout] = useState<DiffLayout>(loadLayout);
+  const [layout, setLayout] = useState<DiffLayout>("unified");
 
   const toggle = useCallback(() => {
-    setLayout((current) => {
-      const next = current === "split" ? "unified" : "split";
-      storeLayout(next);
-      return next;
-    });
+    setLayout((current) => (current === "split" ? "unified" : "split"));
   }, []);
 
   return { layout, toggle };
