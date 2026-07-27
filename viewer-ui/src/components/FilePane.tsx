@@ -123,7 +123,7 @@ export function FilePane({
           </>
         )}
         {pane.kind === "diff" && (
-          <DiffView diff={pane.value} split={diffLayout.effective === "split"} />
+          <DiffView diff={pane.value} split={diffLayout.layout === "split"} />
         )}
       </div>
     </section>

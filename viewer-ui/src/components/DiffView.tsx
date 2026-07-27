@@ -26,6 +26,8 @@ function SplitCell({ line }: { line: DiffLine | null }) {
   );
 }
 
+/// The divider follows the stacking direction: a top rule while the sides are
+/// stacked, the usual left rule once they sit side by side.
 function SplitColumn({
   cells,
   border,
@@ -33,9 +35,13 @@ function SplitColumn({
   cells: (DiffLine | null)[];
   border: boolean;
 }) {
-  const divider = border ? "border-l border-ink-800" : "";
+  const divider = border
+    ? "border-t border-ink-800 md:border-t-0 md:border-l"
+    : "";
   return (
-    <div className={`min-w-0 flex-1 basis-1/2 overflow-x-auto ${divider}`}>
+    <div
+      className={`min-w-0 flex-none overflow-x-auto md:flex-1 md:basis-1/2 ${divider}`}
+    >
       <div className="w-max min-w-full">
         {cells.map((line, i) => (
           <SplitCell key={i} line={line} />
@@ -45,10 +51,12 @@ function SplitColumn({
   );
 }
 
+/// Side by side needs width no phone has, so narrow screens stack the removed
+/// side above the added one instead of dropping split view entirely.
 function SplitHunk({ lines }: { lines: DiffLine[] }) {
   const rows = splitHunkRows(lines);
   return (
-    <div className="flex">
+    <div className="flex flex-col md:flex-row">
       <SplitColumn cells={rows.map((r) => r.left)} border={false} />
       <SplitColumn cells={rows.map((r) => r.right)} border={true} />
     </div>
