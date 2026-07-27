@@ -54,20 +54,30 @@ pub(super) fn handle_clone(body: &str, state: &Arc<ViewerState>) -> Vec<u8> {
         Err(_) => return json_error("400 Bad Request", "no such directory"),
     };
     let dest = base.join(&name);
-    if dest.exists() {
-        return json_error(
-            "409 Conflict",
-            "a folder with that repository's name already exists here",
-        );
-    }
-    // One at a time. Concurrent clones would let a single client fill the
-    // server's disk from several remotes at once, and the picker only ever
-    // shows one in progress.
-    if state.clones.any_running() {
+    // One at a time, admitted atomically — a check followed by a separate
+    // insert would let parallel requests each see an idle registry and every
+    // one of them spawn a clone.
+    let Some(id) = state.clones.try_start() else {
         return json_error("409 Conflict", "a clone is already running");
+    };
+    // Claim the destination by creating it rather than testing `exists()`
+    // first: `create_dir` is atomic and does not follow a symlink in the final
+    // component, so it cannot be raced into pointing outside `base`. git is
+    // content to clone into a directory it finds empty.
+    if let Err(err) = std::fs::create_dir(&dest) {
+        state.clones.finish(
+            id,
+            CloneState::Failed("could not create the destination".to_string()),
+        );
+        return match err.kind() {
+            std::io::ErrorKind::AlreadyExists => json_error(
+                "409 Conflict",
+                "a folder with that repository's name already exists here",
+            ),
+            _ => json_error("400 Bad Request", "could not create the destination"),
+        };
     }
 
-    let id = state.clones.start();
     let worker = Arc::clone(state);
     if let Err(err) = std::thread::Builder::new()
         .name("nightcrow-viewer-clone".to_string())
@@ -88,6 +98,12 @@ fn run_and_record(state: &ViewerState, id: u64, url: &str, dest: PathBuf) {
     let outcome = match result {
         Ok(()) => CloneState::Done(dest.to_string_lossy().into_owned()),
         Err(err) => {
+            // The destination was created here, so a failed clone would leave
+            // a directory behind that blocks a retry under the same name.
+            // Removing recursively is safe precisely because this path was
+            // created by `create_dir` one level under a canonicalized parent:
+            // nothing but this clone has written into it.
+            let _ = std::fs::remove_dir_all(&dest);
             // git's message names the real problem ("repository not found",
             // "permission denied"), which is exactly what the user must act on.
             // It is the remote's words about a URL the user typed, not server

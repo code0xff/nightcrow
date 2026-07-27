@@ -164,6 +164,12 @@ pub fn git_available() -> bool {
 /// or "permission denied".
 pub fn run_clone(url: &str, dest: &Path) -> anyhow::Result<()> {
     let output = Command::new("git")
+        // Without this a remote that wants credentials makes git open
+        // /dev/tty and wait for a human who is not there — the clone would
+        // hang forever instead of reporting that it needs authentication.
+        // `output()` already gives the child a null stdin; this closes the
+        // terminal path too.
+        .env("GIT_TERMINAL_PROMPT", "0")
         .arg("clone")
         .arg("--")
         .arg(url)

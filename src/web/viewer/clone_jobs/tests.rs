@@ -4,27 +4,44 @@ use super::*;
 fn a_started_job_reads_as_running() {
     let jobs = CloneJobs::default();
 
-    let id = jobs.start();
+    let id = jobs.try_start().expect("admitted");
 
     assert_eq!(jobs.get(id), Some(CloneState::Running));
-    assert!(jobs.any_running());
+    assert_eq!(jobs.try_start(), None, "a running job holds the only slot");
 }
 
 #[test]
 fn ids_are_distinct_and_never_zero() {
     let jobs = CloneJobs::default();
 
-    let first = jobs.start();
-    let second = jobs.start();
+    let first = jobs.try_start().expect("admitted");
+    jobs.finish(first, CloneState::Done("/tmp/x".to_string()));
+    let second = jobs.try_start().expect("admitted");
 
     assert_ne!(first, second);
     assert_ne!(first, 0, "0 is reserved so a missing id cannot look valid");
 }
 
 #[test]
+fn only_one_job_runs_at_a_time() {
+    // Admission is the whole protection against a client spawning a fleet of
+    // clones, so it must be refused while one is running.
+    let jobs = CloneJobs::default();
+    let first = jobs.try_start().expect("admitted");
+
+    assert_eq!(jobs.try_start(), None, "a second clone must be refused");
+
+    jobs.finish(first, CloneState::Done("/tmp/x".to_string()));
+    assert!(
+        jobs.try_start().is_some(),
+        "the slot frees when one finishes"
+    );
+}
+
+#[test]
 fn finishing_replaces_the_state() {
     let jobs = CloneJobs::default();
-    let id = jobs.start();
+    let id = jobs.try_start().expect("admitted");
 
     jobs.finish(id, CloneState::Done("/tmp/thing".to_string()));
 
@@ -32,13 +49,13 @@ fn finishing_replaces_the_state() {
         jobs.get(id),
         Some(CloneState::Done("/tmp/thing".to_string()))
     );
-    assert!(!jobs.any_running());
+    assert!(jobs.try_start().is_some(), "the slot is free again");
 }
 
 #[test]
 fn a_failure_carries_its_message() {
     let jobs = CloneJobs::default();
-    let id = jobs.start();
+    let id = jobs.try_start().expect("admitted");
 
     jobs.finish(id, CloneState::Failed("repository not found".to_string()));
 
@@ -46,7 +63,7 @@ fn a_failure_carries_its_message() {
         jobs.get(id),
         Some(CloneState::Failed("repository not found".to_string()))
     );
-    assert!(!jobs.any_running());
+    assert!(jobs.try_start().is_some(), "the slot is free again");
 }
 
 #[test]
@@ -66,15 +83,20 @@ fn finishing_an_unknown_id_does_not_create_it() {
 }
 
 #[test]
-fn finished_jobs_are_evicted_but_running_ones_survive() {
+fn eviction_bounds_the_map_without_dropping_the_job_it_just_admitted() {
     let jobs = CloneJobs::default();
-    let running = jobs.start();
-    // Fill past the retention cap with jobs that have all finished.
+    // Fill past the retention cap. Admission allows this because each job
+    // finishes before the next starts.
     for _ in 0..MAX_RETAINED_JOBS + 4 {
-        let id = jobs.start();
+        let id = jobs.try_start().expect("admitted");
         jobs.finish(id, CloneState::Done("/tmp/x".to_string()));
     }
 
-    // The running job still owns its id, so its thread can still report into it.
-    assert_eq!(jobs.get(running), Some(CloneState::Running));
+    let latest = jobs.try_start().expect("admitted");
+
+    assert_eq!(
+        jobs.get(latest),
+        Some(CloneState::Running),
+        "the job admitted alongside an eviction must survive it"
+    );
 }

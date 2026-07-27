@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "../api";
+import { ApiError } from "../api/errors";
 import { toast } from "../lib/toast";
 
 /** How often to ask the server whether the clone has finished. A clone is a
@@ -16,7 +17,7 @@ const POLL_INTERVAL_MS = 1000;
  * the viewer: a phone that suspends mid-clone simply resumes polling, and the
  * clone itself never depended on the connection staying up.
  */
-export function useClone(onCloned: (path: string) => void) {
+export function useClone(onCloned: (path: string) => Promise<void> | void) {
   const [busy, setBusy] = useState(false);
   // Set on unmount so a poll that lands after the picker closes does nothing.
   const cancelled = useRef(false);
@@ -35,13 +36,30 @@ export function useClone(onCloned: (path: string) => void) {
         let status;
         try {
           status = await api.cloneStatus(job);
-        } catch {
-          // A dropped poll is not a failed clone — the job keeps running on the
-          // server, so try again rather than reporting an error to the user.
+        } catch (err) {
+          // The server drops a finished job once it has been read or crowded
+          // out, so a 404 is the end of this job, not a hiccup — retrying it
+          // would spin forever with the form stuck on "Cloning…". Every other
+          // failure is a dropped request over a clone that is still running
+          // server-side, so it is retried.
+          if (err instanceof ApiError && err.status === 404) {
+            toast.error("the clone's progress is no longer available");
+            setBusy(false);
+            return;
+          }
           continue;
         }
+        // Re-checked after the await: the dialog can close while the request
+        // is in flight, and a `done` landing then must not reopen it.
+        if (cancelled.current) return;
         if (status.state === "done") {
-          onCloned(status.path);
+          try {
+            await onCloned(status.path);
+          } finally {
+            // The clone succeeded even if opening it did not, so the form must
+            // come back rather than sit on "Cloning…" forever.
+            if (!cancelled.current) setBusy(false);
+          }
           return;
         }
         if (status.state === "failed") {

@@ -176,6 +176,75 @@ fn cloning_requires_authentication() {
 }
 
 #[test]
+fn parallel_starts_admit_only_one_clone() {
+    // Admission is the only thing bounding how many `git clone` processes a
+    // client can start, so it must hold when the requests arrive together
+    // rather than one after another.
+    let server = server(&[]);
+    let token = login(server.addr());
+    let dir = tempfile::TempDir::new().unwrap();
+    let addr = server.addr();
+
+    let responses: Vec<String> = (0..6)
+        .map(|i| {
+            let token = token.clone();
+            let path = dir.path().to_path_buf();
+            std::thread::spawn(move || {
+                post(
+                    addr,
+                    "/api/clone",
+                    &serde_json::json!({
+                        "path": path,
+                        // Distinct names so a rejection can only come from
+                        // admission, never from the destination conflict.
+                        "url": format!("https://127.0.0.1:1/team/thing{i}.git"),
+                    })
+                    .to_string(),
+                    Some(&token),
+                )
+            })
+        })
+        .collect::<Vec<_>>()
+        .into_iter()
+        .map(|h| h.join().expect("request thread"))
+        .collect();
+
+    let admitted = responses.iter().filter(|r| r.contains("200 OK")).count();
+    assert_eq!(admitted, 1, "exactly one may start: {responses:?}");
+}
+
+#[test]
+fn a_destination_taken_by_a_symlink_is_refused() {
+    // The destination is claimed with `create_dir`, which does not follow a
+    // symlink in the final component — so a symlink planted under the parent
+    // cannot redirect the clone outside it.
+    let server = server(&[]);
+    let token = login(server.addr());
+    let dir = tempfile::TempDir::new().unwrap();
+    let elsewhere = tempfile::TempDir::new().unwrap();
+    #[cfg(unix)]
+    std::os::unix::fs::symlink(elsewhere.path(), dir.path().join("thing")).unwrap();
+
+    let response = post(
+        server.addr(),
+        "/api/clone",
+        &serde_json::json!({
+            "path": dir.path(),
+            "url": "https://127.0.0.1:1/team/thing.git",
+        })
+        .to_string(),
+        Some(&token),
+    );
+
+    assert!(response.contains("409 Conflict"), "got: {response}");
+    assert_eq!(
+        std::fs::read_dir(elsewhere.path()).unwrap().count(),
+        0,
+        "nothing may be written through the symlink"
+    );
+}
+
+#[test]
 fn the_bootstrap_reports_whether_the_server_can_clone() {
     // The client disables its clone form on this flag, so it must be present
     // and must reflect the probe rather than defaulting to true.

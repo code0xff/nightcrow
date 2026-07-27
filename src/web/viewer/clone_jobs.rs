@@ -33,10 +33,22 @@ pub struct CloneJobs {
 }
 
 impl CloneJobs {
-    /// Register a new running job and return its id.
-    pub fn start(&self) -> u64 {
-        let id = self.next_id.fetch_add(1, Ordering::Relaxed) + 1;
+    /// Admit a new job and return its id, or `None` when one is already
+    /// running.
+    ///
+    /// Admission and insertion happen under one lock on purpose: checking
+    /// "is anything running?" from the caller and inserting afterwards is a
+    /// check-then-act race that lets parallel requests each see an idle
+    /// registry and every one of them spawn a clone.
+    pub fn try_start(&self) -> Option<u64> {
         let mut jobs = self.lock();
+        if jobs
+            .values()
+            .any(|state| matches!(state, CloneState::Running))
+        {
+            return None;
+        }
+        let id = self.next_id.fetch_add(1, Ordering::Relaxed) + 1;
         // Evict finished jobs before inserting so a long-lived server does not
         // accumulate them. Running jobs are never evicted: their thread still
         // holds the id and will write a result to it.
@@ -51,7 +63,7 @@ impl CloneJobs {
             }
         }
         jobs.insert(id, CloneState::Running);
-        id
+        Some(id)
     }
 
     pub fn finish(&self, id: u64, state: CloneState) {
@@ -64,14 +76,6 @@ impl CloneJobs {
 
     pub fn get(&self, id: u64) -> Option<CloneState> {
         self.lock().get(&id).cloned()
-    }
-
-    /// Whether a clone is already running. One at a time keeps a client from
-    /// starting a fleet of network transfers on the server's disk.
-    pub fn any_running(&self) -> bool {
-        self.lock()
-            .values()
-            .any(|state| matches!(state, CloneState::Running))
     }
 
     fn lock(&self) -> std::sync::MutexGuard<'_, HashMap<u64, CloneState>> {
