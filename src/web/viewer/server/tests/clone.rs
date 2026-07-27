@@ -174,3 +174,20 @@ fn cloning_requires_authentication() {
 
     assert!(response.contains("401 Unauthorized"), "got: {response}");
 }
+
+#[test]
+fn the_bootstrap_reports_whether_the_server_can_clone() {
+    // The client disables its clone form on this flag, so it must be present
+    // and must reflect the probe rather than defaulting to true.
+    let server = server(&[]);
+    let token = login(server.addr());
+
+    let body = body_of(&get(server.addr(), "/api/repos", Some(&token))).to_string();
+
+    let value: serde_json::Value = serde_json::from_str(&body).expect("json body");
+    assert_eq!(
+        value["can_clone"].as_bool(),
+        Some(crate::git::clone::git_available()),
+        "got: {body}"
+    );
+}

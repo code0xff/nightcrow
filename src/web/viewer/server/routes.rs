@@ -33,6 +33,7 @@ pub(super) fn route(head: &RequestHead, state: &ViewerState) -> Vec<u8> {
                 },
                 prefs.accent,
                 prefs.sidebar_width,
+                state.git_available,
             );
             match serde_json::to_string(&Envelope::new(bootstrap)) {
                 Ok(json) => json_response("200 OK", &json, &[]),

@@ -141,6 +141,20 @@ fn repo_name_from_url(url: &str) -> Option<String> {
     Some(name.to_string())
 }
 
+/// Whether a usable `git` is on PATH.
+///
+/// Probed once at startup and reported to clients so the clone form can say up
+/// front that it is unavailable, rather than accepting a URL and failing the
+/// job. A `git` installed while the server runs is therefore not picked up
+/// until a restart — the trade for not shelling out on every page load.
+pub fn git_available() -> bool {
+    Command::new("git")
+        .arg("--version")
+        .output()
+        .map(|out| out.status.success())
+        .unwrap_or(false)
+}
+
 /// Run `git clone -- <url> <dest>` to completion.
 ///
 /// The URL is an argv item behind `--`, never a shell word, so no quoting or

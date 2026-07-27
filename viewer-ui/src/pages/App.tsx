@@ -100,6 +100,7 @@ export function App() {
     hot,
     clockSkewMs,
     reposLoaded,
+    canClone,
   } = useRepoPoll({
     authed,
     setAuthed,
@@ -294,6 +295,7 @@ export function App() {
         <FolderPicker
           onClose={() => setPickerOpen(false)}
           onOpened={selectOpenedRepo}
+          canClone={canClone}
         />
       )}
     </div>

@@ -1,6 +1,7 @@
 {
   "bootstrap": {
     "accent": 2,
+    "can_clone": true,
     "hot": {
       "enabled": true,
       "window_secs": 15

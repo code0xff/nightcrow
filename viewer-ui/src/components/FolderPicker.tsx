@@ -7,9 +7,12 @@ import { XIcon } from "./icons";
 export function FolderPicker({
   onClose,
   onOpened,
+  canClone,
 }: {
   onClose: () => void;
   onOpened: (repo: Repo) => void;
+  /** False when the server has no `git`, which is what performs the clone. */
+  canClone: boolean;
 }) {
   const [path, setPath] = useState<string | null>(null);
   const [dir, setDir] = useState<Browse | null>(null);
@@ -162,16 +165,20 @@ export function FolderPicker({
             onKeyDown={(e) => {
               if (e.key === "Enter" && dir) startClone(dir.path, cloneUrl);
             }}
-            placeholder="Clone a git URL here"
+            disabled={!canClone}
+            placeholder={
+              canClone ? "Clone a git URL here" : "git is not installed on the server"
+            }
             aria-label="git URL to clone"
             spellCheck={false}
             autoCapitalize="none"
             autoCorrect="off"
-            className="min-w-0 flex-1 rounded-sm border border-ink-700 bg-ink-950 px-2 py-1 text-ink-50 placeholder:text-ink-400 focus:border-ink-600 focus:outline-none"
+            className="min-w-0 flex-1 rounded-sm border border-ink-700 bg-ink-950 px-2 py-1 text-ink-50 placeholder:text-ink-400 focus:border-ink-600 focus:outline-none disabled:opacity-50"
           />
           <button
             onClick={() => dir && startClone(dir.path, cloneUrl)}
-            disabled={!dir || !cloneUrl.trim() || cloning}
+            disabled={!canClone || !dir || !cloneUrl.trim() || cloning}
+            title={canClone ? undefined : "the server has no git on its PATH"}
             className="shrink-0 rounded-sm border border-ink-700 px-2 py-1 text-ink-200 hover:bg-ink-850 disabled:opacity-50"
           >
             {cloning ? "Cloning…" : "Clone"}

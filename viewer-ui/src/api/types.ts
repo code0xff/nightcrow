@@ -37,6 +37,9 @@ export interface ViewerBootstrap {
   sidebar_width: number;
   /** Server wall clock used to date file mtimes. */
   now_ms: number;
+  /** False when the server has no `git` on PATH, so the clone form is disabled
+   *  rather than accepting a URL it could only fail on. */
+  can_clone: boolean;
 }
 
 export interface Status {

@@ -56,6 +56,7 @@ fn wire_fixture() -> serde_json::Value {
             // Literal, not `server_now_millis()`: a fixture that moved every
             // run could not be committed.
             now_ms: 1_700_000_000_500,
+            can_clone: true,
         },
         "status": StatusDto {
             branch: Some("dev".to_string()),

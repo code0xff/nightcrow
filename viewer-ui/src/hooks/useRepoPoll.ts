@@ -35,6 +35,8 @@ export interface UseRepoPollResult {
   hot: HotConfig | null;
   clockSkewMs: number | null;
   reposLoaded: boolean;
+  /** Whether the server can clone (it has `git` on PATH). */
+  canClone: boolean;
 }
 
 export function useRepoPoll({
@@ -60,6 +62,9 @@ export function useRepoPoll({
   const [clockSkewMs, setClockSkewMs] = useState<number | null>(null);
   // Keeps the empty catalog from flashing before the first session response.
   const [reposLoaded, setReposLoaded] = useState(false);
+  // Assume cloning works until the server says otherwise, so the form is not
+  // briefly disabled on every load.
+  const [canClone, setCanClone] = useState(true);
 
   useEffect(() => {
     let cancelled = false;
@@ -71,9 +76,10 @@ export function useRepoPoll({
       const orderGeneration = orderWrites.current;
       return api
         .repos(controller.signal)
-        .then(({ repos: list, hot, accent, sidebar_width, now_ms }) => {
+        .then(({ repos: list, hot, accent, sidebar_width, now_ms, can_clone }) => {
           if (cancelled) return;
           setHot(hot);
+          setCanClone(can_clone);
           setClockSkewMs((held) => nextClockOffset(held, now_ms, Date.now()));
           if (accentWrites.current === writes) adoptAccent(accent);
           if (sidebarWrites.current === widthWrites && !draggingRef.current)
@@ -147,5 +153,6 @@ export function useRepoPoll({
     hot,
     clockSkewMs,
     reposLoaded,
+    canClone,
   };
 }
