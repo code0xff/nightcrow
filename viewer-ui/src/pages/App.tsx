@@ -168,6 +168,7 @@ export function App() {
       paneRequestRef,
       setCommitDrillDown,
       setMobileView,
+      setMdRendered,
     });
 
   const { selectOpenedRepo, closeRepo } = useRepoActions({
