@@ -75,8 +75,16 @@ export function TerminalPanel({
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
+    // Keep the same object when the pixels are unchanged. A fresh one is never
+    // `Object.is`-equal, so React would re-render — and every consumer would
+    // re-fit every pane — for observer callbacks that carry no news, which the
+    // browser delivers whenever anything in the subtree relayouts.
     const observer = new ResizeObserver(() => {
-      setSize({ w: container.clientWidth, h: container.clientHeight });
+      const w = container.clientWidth;
+      const h = container.clientHeight;
+      setSize((current) =>
+        current.w === w && current.h === h ? current : { w, h },
+      );
     });
     observer.observe(container);
     return () => observer.disconnect();
