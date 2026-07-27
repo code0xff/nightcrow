@@ -1,10 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { isUnauthorized } from "../api";
 import { toast } from "../lib/toast";
-import { useAccent } from "../hooks/ui/theme";
-import { useSidebarWidth } from "../hooks/ui/sidebar";
 import { useHotClock } from "../hooks/ui/useHotClock";
-import { useRepoPoll } from "../hooks/useRepoPoll";
+import { useViewerPrefs } from "../hooks/useViewerPrefs";
+import { useProjectTabs } from "../hooks/useProjectTabs";
 import { useStatus } from "../hooks/useStatus";
 import { useSidebarDrag } from "../hooks/useSidebarDrag";
 import { usePaneOpeners } from "../hooks/usePaneOpeners";
@@ -12,7 +11,6 @@ import { useLog } from "../hooks/useLog";
 import { useResumeTick } from "../hooks/useResumeTick";
 import { useMaximized } from "../hooks/useMaximized";
 import { useRepoActions } from "../hooks/useRepoActions";
-import { useRepoOrder } from "../hooks/useRepoOrder";
 import { useClone } from "../hooks/useClone";
 import { Header } from "../components/Header";
 import { RepoShell } from "../components/RepoShell";
@@ -35,38 +33,20 @@ export function App() {
     paneRequestRef.current += 1;
   }, []);
   const [pickerOpen, setPickerOpen] = useState(false);
-  const { accent, next, cycle: cycleAccent, adopt: adoptAccent } = useAccent();
-  const accentWrites = useRef(0);
-  const cycle = useCallback(() => {
-    accentWrites.current += 1;
-    cycleAccent();
-  }, [cycleAccent]);
   const {
-    width: sidebarWidth,
-    resize: resizeSidebar,
-    commit: commitSidebar,
-    reset: resetSidebar,
-    adopt: adoptSidebarWidth,
-  } = useSidebarWidth();
-  const sidebarWrites = useRef(0);
-  const orderWrites = useRef(0);
-  const repoDraggingRef = useRef(false);
-  const reorderInFlightRef = useRef(false);
-  const pendingReorderRef = useRef<string[] | null>(null);
-  const commitSidebarWidth = useCallback(
-    (px: number) => {
-      sidebarWrites.current += 1;
-      commitSidebar(px);
-    },
-    [commitSidebar],
-  );
-  const resetSidebarWidth = useCallback(() => {
-    sidebarWrites.current += 1;
-    resetSidebar();
-  }, [resetSidebar]);
-  const bumpSidebarWrites = useCallback(() => {
-    sidebarWrites.current += 1;
-  }, []);
+    accent,
+    next,
+    cycle,
+    adoptAccent,
+    accentWrites,
+    sidebarWidth,
+    resizeSidebar,
+    commitSidebarWidth,
+    resetSidebarWidth,
+    bumpSidebarWrites,
+    adoptSidebarWidth,
+    sidebarWrites,
+  } = useViewerPrefs();
   const sidebarRef = useRef<HTMLElement>(null);
   const [mdRendered, setMdRendered] = useState(true);
   const handle = useCallback((err: unknown) => {
@@ -102,35 +82,22 @@ export function App() {
     clockSkewMs,
     reposLoaded,
     canClone,
-  } = useRepoPoll({
+    orderWrites,
+    draggingRepo,
+    dragOverRepo,
+    onRepoDragStart,
+    onRepoDragMove,
+    onRepoDragEnd,
+  } = useProjectTabs({
     authed,
     setAuthed,
     handle,
+    resumeTick,
     adoptAccent,
     adoptSidebarWidth,
-    draggingRef,
     accentWrites,
     sidebarWrites,
-    resumeTick,
-    orderWrites,
-    repoDraggingRef,
-    reorderInFlightRef,
-    pendingReorderRef,
-  });
-  const {
-    dragging: draggingRepo,
-    target: dragOverRepo,
-    onStart: onRepoDragStart,
-    onMove: onRepoDragMove,
-    onEnd: onRepoDragEnd,
-  } = useRepoOrder({
-    repos,
-    setRepos,
-    handle,
-    writesRef: orderWrites,
-    draggingRef: repoDraggingRef,
-    inFlightRef: reorderInFlightRef,
-    pendingRef: pendingReorderRef,
+    draggingRef,
   });
 
   const hotWindowMs = hot?.enabled ? hot.window_secs * 1000 : 0;
