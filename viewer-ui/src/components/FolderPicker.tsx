@@ -1,6 +1,5 @@
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { api, type Browse, type Repo } from "../api";
-import { useClone } from "../hooks/useClone";
 import { toast } from "../lib/toast";
 import { XIcon } from "./icons";
 
@@ -8,11 +7,19 @@ export function FolderPicker({
   onClose,
   onOpened,
   canClone,
+  cloning,
+  onClone,
 }: {
   onClose: () => void;
   onOpened: (repo: Repo) => void;
   /** False when the server has no `git`, which is what performs the clone. */
   canClone: boolean;
+  /** Whether a clone is in flight. Owned above this dialog, because the clone
+   *  outlives it — see `onClone`. */
+  cloning: boolean;
+  /** Hand the URL and its destination upward rather than running the clone
+   *  here: closing this dialog must not stop anyone from watching the job. */
+  onClone: (parent: string, url: string) => void;
 }) {
   const [path, setPath] = useState<string | null>(null);
   const [dir, setDir] = useState<Browse | null>(null);
@@ -22,20 +29,6 @@ export function FolderPicker({
   const [creating, setCreating] = useState(false);
   const [cloneUrl, setCloneUrl] = useState("");
   const [reload, setReload] = useState(0);
-
-  // A finished clone is just a directory that now exists, so it opens through
-  // the same path a hand-picked folder does.
-  const onCloned = useCallback(
-    async (path: string) => {
-      try {
-        onOpened(await api.open(path));
-      } catch (err) {
-        toast.error(err instanceof Error ? err.message : "could not open");
-      }
-    },
-    [onOpened],
-  );
-  const { busy: cloning, start: startClone } = useClone(onCloned);
 
   useEffect(() => {
     let cancelled = false;
@@ -163,7 +156,7 @@ export function FolderPicker({
             value={cloneUrl}
             onChange={(e) => setCloneUrl(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === "Enter" && dir) startClone(dir.path, cloneUrl);
+              if (e.key === "Enter" && dir) onClone(dir.path, cloneUrl);
             }}
             disabled={!canClone}
             placeholder={
@@ -176,7 +169,7 @@ export function FolderPicker({
             className="min-w-0 flex-1 rounded-sm border border-ink-700 bg-ink-950 px-2 py-1 text-ink-50 placeholder:text-ink-400 focus:border-ink-600 focus:outline-none disabled:opacity-50"
           />
           <button
-            onClick={() => dir && startClone(dir.path, cloneUrl)}
+            onClick={() => dir && onClone(dir.path, cloneUrl)}
             disabled={!canClone || !dir || !cloneUrl.trim() || cloning}
             title={canClone ? undefined : "the server has no git on its PATH"}
             className="shrink-0 rounded-sm border border-ink-700 px-2 py-1 text-ink-200 hover:bg-ink-850 disabled:opacity-50"

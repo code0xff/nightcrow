@@ -13,6 +13,7 @@ import { useResumeTick } from "../hooks/useResumeTick";
 import { useMaximized } from "../hooks/useMaximized";
 import { useRepoActions } from "../hooks/useRepoActions";
 import { useRepoOrder } from "../hooks/useRepoOrder";
+import { useClone } from "../hooks/useClone";
 import { Header } from "../components/Header";
 import { RepoShell } from "../components/RepoShell";
 import { FolderPicker } from "../components/FolderPicker";
@@ -184,6 +185,9 @@ export function App() {
     orderWrites,
   });
 
+  // Above the picker on purpose: a clone outlives the dialog that started it.
+  const { busy: cloning, start: startClone } = useClone(selectOpenedRepo);
+
   useEffect(() => {
     bumpPaneRequest();
     setCommitDrillDown(null);
@@ -221,6 +225,7 @@ export function App() {
         setPane={() => setPane({ kind: "empty" })}
         closeRepo={closeRepo}
         setPickerOpen={setPickerOpen}
+        cloning={cloning}
         accent={accent}
         next={next}
         cycle={cycle}
@@ -296,6 +301,8 @@ export function App() {
           onClose={() => setPickerOpen(false)}
           onOpened={selectOpenedRepo}
           canClone={canClone}
+          cloning={cloning}
+          onClone={startClone}
         />
       )}
     </div>

@@ -10,6 +10,9 @@ export interface HeaderProps {
   setPane: () => void;
   closeRepo: (id: string) => void;
   setPickerOpen: (open: boolean) => void;
+  /** A clone is running on the server. Shown here rather than in the folder
+   *  picker because the job outlives that dialog. */
+  cloning: boolean;
   accent: { name: string };
   next: { name: string };
   cycle: () => void;
@@ -27,6 +30,7 @@ export function Header({
   setPane,
   closeRepo,
   setPickerOpen,
+  cloning,
   accent,
   next,
   cycle,
@@ -107,6 +111,19 @@ export function Header({
         <PlusIcon className="h-3.5 w-3.5" />
         open
       </button>
+      {cloning && (
+        <span
+          role="status"
+          title="A clone is running on the server"
+          className="flex shrink-0 items-center gap-1.5 px-2 py-0.5 text-ink-400"
+        >
+          <span
+            aria-hidden="true"
+            className="h-1.5 w-1.5 animate-pulse rounded-full bg-accent"
+          />
+          Cloning…
+        </span>
+      )}
       <button
         onClick={cycle}
         title={`Accent: ${accent.name} (click for ${next.name})`}

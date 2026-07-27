@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api } from "../api";
+import { api, type Repo } from "../api";
 import { ApiError } from "../api/errors";
 import { toast } from "../lib/toast";
 
@@ -9,18 +9,25 @@ import { toast } from "../lib/toast";
 const POLL_INTERVAL_MS = 1000;
 
 /**
- * Start a clone and follow it to a terminal state.
+ * Start a clone, follow it to a terminal state, and open what it produced.
  *
  * The request that starts a clone returns immediately with a job id, because
  * the transfer outlives any request a browser will hold open. Polling — rather
  * than a stream — keeps this on the same self-healing footing as the rest of
  * the viewer: a phone that suspends mid-clone simply resumes polling, and the
  * clone itself never depended on the connection staying up.
+ *
+ * Call this *above* the folder picker. The picker only chooses where the clone
+ * lands; the job outlives the dialog, so an observer that unmounts with it
+ * would abandon a clone that is still running — no toast, no repository
+ * opened, and no way to reattach on reopening.
  */
-export function useClone(onCloned: (path: string) => Promise<void> | void) {
+export function useClone(onOpened: (repo: Repo) => void) {
   const [busy, setBusy] = useState(false);
   const busyRef = useRef(false);
-  // Set on unmount so a poll that lands after the picker closes does nothing.
+  // Set on unmount so a poll that lands after the owner is gone does nothing.
+  // With the owner above the picker this only trips when the app itself tears
+  // down — closing the dialog no longer abandons the job.
   const cancelled = useRef(false);
   useEffect(() => {
     cancelled.current = false;
@@ -44,8 +51,8 @@ export function useClone(onCloned: (path: string) => Promise<void> | void) {
           // "Cloning…". Every other failure is a dropped request over a clone
           // that is still running server-side, so it is retried.
           if (err instanceof ApiError && err.status === 404) {
-            // Same cancellation contract as the success path: a dialog that
-            // closed while this request was in flight gets no toast and no
+            // Same cancellation contract as the success path: an owner that
+            // unmounted while this request was in flight gets no toast and no
             // state write.
             if (cancelled.current) return;
             toast.error("the clone's progress is no longer available");
@@ -55,12 +62,16 @@ export function useClone(onCloned: (path: string) => Promise<void> | void) {
           }
           continue;
         }
-        // Re-checked after the await: the dialog can close while the request
-        // is in flight, and a `done` landing then must not reopen it.
+        // Re-checked after the await: the owner can unmount while the request
+        // is in flight, and a `done` landing then must not write to it.
         if (cancelled.current) return;
         if (status.state === "done") {
           try {
-            await onCloned(status.path);
+            // A finished clone is just a directory that now exists, so it
+            // opens through the same call a hand-picked folder does.
+            onOpened(await api.open(status.path));
+          } catch (err) {
+            toast.error(err instanceof Error ? err.message : "could not open");
           } finally {
             // The clone succeeded even if opening it did not, so the form must
             // come back rather than sit on "Cloning…" forever.
@@ -78,7 +89,7 @@ export function useClone(onCloned: (path: string) => Promise<void> | void) {
         }
       }
     },
-    [onCloned],
+    [onOpened],
   );
 
   const start = useCallback(
