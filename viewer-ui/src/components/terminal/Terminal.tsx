@@ -4,6 +4,7 @@ import { planLayout, type PaneView } from "../../lib/terminalLayout";
 import { usePaneDrag } from "../../hooks/terminal/usePaneDrag";
 import { useTerminalSocket } from "../../hooks/terminal/useTerminalSocket";
 import { useTerminalViews } from "../../hooks/terminal/useTerminalViews";
+import { usePaneSizes } from "../../hooks/terminal/usePaneSizes";
 import { TerminalCell } from "./TerminalCell";
 import { TERM_KEY_BAR, termKeySequence } from "../../lib/termKeys";
 
@@ -61,21 +62,15 @@ export function TerminalPanel({
     setTitles,
   });
 
-  // Fit visible panes after layout changes; never resize hidden cells to zero.
-  useEffect(() => {
-    for (const [pane, view] of viewsRef.current) {
-      const body = bodyRefs.current.get(pane);
-      if (!body || body.clientHeight === 0 || body.clientWidth === 0) continue;
-      view.fit.fit();
-      const { rows, cols } = view.term;
-      const sent = sentSizesRef.current.get(pane);
-      if (sent && sent.rows === rows && sent.cols === cols) continue;
-      sentSizesRef.current.set(pane, { rows, cols });
-      socketRef.current?.send(
-        JSON.stringify({ type: "resize", pane, rows, cols }),
-      );
-    }
-  }, [panes, zoomed, size]);
+  usePaneSizes({
+    panes,
+    size,
+    zoomed,
+    socketRef,
+    viewsRef,
+    bodyRefs,
+    sentSizesRef,
+  });
 
   useEffect(() => {
     const container = containerRef.current;
