@@ -19,6 +19,7 @@ const POLL_INTERVAL_MS = 1000;
  */
 export function useClone(onCloned: (path: string) => Promise<void> | void) {
   const [busy, setBusy] = useState(false);
+  const busyRef = useRef(false);
   // Set on unmount so a poll that lands after the picker closes does nothing.
   const cancelled = useRef(false);
   useEffect(() => {
@@ -48,6 +49,7 @@ export function useClone(onCloned: (path: string) => Promise<void> | void) {
             // state write.
             if (cancelled.current) return;
             toast.error("the clone's progress is no longer available");
+            busyRef.current = false;
             setBusy(false);
             return;
           }
@@ -62,6 +64,7 @@ export function useClone(onCloned: (path: string) => Promise<void> | void) {
           } finally {
             // The clone succeeded even if opening it did not, so the form must
             // come back rather than sit on "Cloning…" forever.
+            busyRef.current = false;
             if (!cancelled.current) setBusy(false);
           }
           return;
@@ -69,6 +72,7 @@ export function useClone(onCloned: (path: string) => Promise<void> | void) {
         if (status.state === "failed") {
           // git's own words: "repository not found", "permission denied".
           toast.error(status.message);
+          busyRef.current = false;
           setBusy(false);
           return;
         }
@@ -79,13 +83,18 @@ export function useClone(onCloned: (path: string) => Promise<void> | void) {
 
   const start = useCallback(
     async (parent: string, url: string) => {
-      if (!url.trim()) return;
+      if (!url.trim() || busyRef.current) return;
+      // Guarded by a ref, not the state: two submits in one tick would both
+      // read the pre-render value, and the second's rejection would clear the
+      // form while the first clone is still running.
+      busyRef.current = true;
       setBusy(true);
       try {
         const { job } = await api.clone(parent, url.trim());
         await poll(job);
       } catch (err) {
         toast.error(err instanceof Error ? err.message : "could not clone");
+        busyRef.current = false;
         setBusy(false);
       }
     },

@@ -155,6 +155,32 @@ pub fn git_available() -> bool {
         .unwrap_or(false)
 }
 
+/// Most stderr kept from a failing clone. A remote controls this stream —
+/// `remote:` sidebands are printed verbatim — so it cannot be collected
+/// unbounded. Only the tail is wanted anyway: git's last line is the reason.
+const MAX_STDERR_BYTES: usize = 64 * 1024;
+
+/// Read `reader` to EOF, keeping only the last [`MAX_STDERR_BYTES`].
+///
+/// Draining to the end matters as much as the cap: stopping early would fill
+/// the pipe and block the child forever.
+fn tail_of<R: std::io::Read>(mut reader: R) -> String {
+    let mut kept: Vec<u8> = Vec::new();
+    let mut chunk = [0u8; 8192];
+    loop {
+        match reader.read(&mut chunk) {
+            Ok(0) | Err(_) => break,
+            Ok(n) => {
+                kept.extend_from_slice(&chunk[..n]);
+                if kept.len() > MAX_STDERR_BYTES {
+                    kept.drain(..kept.len() - MAX_STDERR_BYTES);
+                }
+            }
+        }
+    }
+    String::from_utf8_lossy(&kept).into_owned()
+}
+
 /// Run `git clone -- <url> <dest>` to completion.
 ///
 /// The URL is an argv item behind `--`, never a shell word, so no quoting or
@@ -163,18 +189,23 @@ pub fn git_available() -> bool {
 /// carries git's stderr, which is what tells the user "repository not found"
 /// or "permission denied".
 pub fn run_clone(url: &str, dest: &Path) -> anyhow::Result<()> {
-    let output = Command::new("git")
+    let mut child = Command::new("git")
         // Without this a remote that wants credentials makes git open
         // /dev/tty and wait for a human who is not there — the clone would
         // hang forever instead of reporting that it needs authentication.
-        // `output()` already gives the child a null stdin; this closes the
-        // terminal path too.
         .env("GIT_TERMINAL_PROMPT", "0")
+        // The ssh transport needs its own liveness settings: a connect that
+        // never completes, or a session that stops answering, would otherwise
+        // hold the clone open indefinitely. Neither bound touches a slow but
+        // progressing transfer.
+        .env(
+            "GIT_SSH_COMMAND",
+            "ssh -o ConnectTimeout=30 -o ServerAliveInterval=30 -o ServerAliveCountMax=4",
+        )
         // Abort a transfer that has stalled rather than one that is merely
         // slow. A wall-clock timeout cannot tell those apart — a large
         // repository legitimately takes many minutes — but a rate floor can:
         // under 1 KiB/s for 60 s is a dead connection, not a big clone.
-        // (HTTP transports only; git exposes no equivalent for ssh.)
         .arg("-c")
         .arg("http.lowSpeedLimit=1024")
         .arg("-c")
@@ -183,17 +214,25 @@ pub fn run_clone(url: &str, dest: &Path) -> anyhow::Result<()> {
         .arg("--")
         .arg(url)
         .arg(dest)
-        .output()
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
         .map_err(|err| match err.kind() {
             std::io::ErrorKind::NotFound => {
                 anyhow::anyhow!("git is not installed or not on PATH")
             }
             _ => anyhow::anyhow!("could not run git: {err}"),
         })?;
-    if output.status.success() {
+    // Read before waiting: a child that fills the pipe blocks until it is
+    // drained, so waiting first could deadlock.
+    let stderr = child.stderr.take().map(tail_of).unwrap_or_default();
+    let status = child
+        .wait()
+        .map_err(|err| anyhow::anyhow!("could not wait for git: {err}"))?;
+    if status.success() {
         return Ok(());
     }
-    let stderr = String::from_utf8_lossy(&output.stderr);
     let detail = stderr.trim();
     if detail.is_empty() {
         anyhow::bail!("git clone failed");
