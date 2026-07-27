@@ -1,10 +1,11 @@
 use super::{
-    collect_created, created_pane, created_size, next_matching, reordered_order, wait_for,
+    collect_created, created_pane, created_size, next_matching, pending_count, reordered_order,
+    wait_for,
 };
 use crate::backend::PaneId;
 use crate::web::viewer::limits;
 use crate::web::viewer::terminal::TerminalHub;
-use crate::web::viewer::terminal::frame::{ClientMessage, TerminalFrame};
+use crate::web::viewer::terminal::frame::{ClientMessage, PaneSize, TerminalFrame};
 
 #[test]
 fn creating_a_terminal_announces_it_and_streams_output() {
@@ -77,8 +78,12 @@ fn reordering_panes_echoes_the_order_and_replays_it_to_a_later_joiner() {
     let hub = TerminalHub::spawn(&dir.path().to_string_lossy(), Vec::new());
     let first = hub.connect();
 
-    // The startup shell plus one explicit create give two panes to reorder,
-    // captured in their creation (== current) order.
+    // The startup shell (claimed with a size, as a client does) plus one
+    // explicit create give two panes to reorder, captured in their creation
+    // (== current) order.
+    first.dispatch(ClientMessage::Start {
+        sizes: vec![PaneSize { rows: 24, cols: 80 }],
+    });
     first.dispatch(ClientMessage::Create { rows: 24, cols: 80 });
     let ids = collect_created(&first, 2);
     let reversed: Vec<PaneId> = ids.iter().copied().rev().collect();
@@ -219,38 +224,108 @@ fn stop_is_idempotent() {
 }
 
 #[test]
-fn the_first_connection_spawns_a_startup_terminal() {
+fn a_startup_terminal_is_offered_for_sizing_and_born_at_that_size() {
+    // The whole point of the handshake: the child must never draw a frame at a
+    // size no client chose, so the PTY does not exist until one has measured.
     let dir = tempfile::TempDir::new().unwrap();
     let hub = TerminalHub::spawn(
         &dir.path().to_string_lossy(),
         vec!["printf hello".to_string()],
     );
-    // Connecting is enough — no client Create is dispatched — to launch the
-    // configured startup terminal.
     let session = hub.connect();
-    let created = next_matching(
-        &session,
-        |f| matches!(f, TerminalFrame::Control(json) if json.contains("created")),
+
+    assert_eq!(
+        next_matching(&session, |f| pending_count(f).is_some()).and_then(|f| pending_count(&f)),
+        Some(1),
+        "connecting must offer the startup terminal rather than spawn it"
     );
-    assert!(
-        created.is_some(),
-        "the startup terminal was not spawned on connect"
+
+    session.dispatch(ClientMessage::Start {
+        sizes: vec![PaneSize {
+            rows: 40,
+            cols: 120,
+        }],
+    });
+
+    let created =
+        next_matching(&session, |f| created_pane(f).is_some()).expect("no startup terminal");
+    assert_eq!(
+        created_size(&created),
+        Some((40, 120)),
+        "the startup terminal must be born at the size the client measured"
     );
     hub.stop();
 }
 
 #[test]
-fn an_empty_startup_opens_one_shell_on_the_first_connection() {
+fn an_empty_startup_offers_one_shell() {
     let dir = tempfile::TempDir::new().unwrap();
     let hub = TerminalHub::spawn(&dir.path().to_string_lossy(), Vec::new());
     let session = hub.connect();
-    let created = next_matching(
-        &session,
-        |f| matches!(f, TerminalFrame::Control(json) if json.contains("created")),
+
+    assert_eq!(
+        next_matching(&session, |f| pending_count(f).is_some()).and_then(|f| pending_count(&f)),
+        Some(1),
+        "no configured commands still means one bare shell"
     );
+
+    session.dispatch(ClientMessage::Start { sizes: Vec::new() });
+
     assert!(
-        created.is_some(),
-        "a default shell should open on the first connect"
+        next_matching(&session, |f| created_pane(f).is_some()).is_some(),
+        "a client that measured nothing must still get its shell"
+    );
+    hub.stop();
+}
+
+#[test]
+fn an_unanswered_offer_is_made_again_to_the_next_client() {
+    // A page that closes mid-handshake must not take the terminals with it.
+    // Nothing consumes the offer but an answer, so the hub cannot end up with
+    // no terminals and no way to ever open them.
+    let dir = tempfile::TempDir::new().unwrap();
+    let hub = TerminalHub::spawn(&dir.path().to_string_lossy(), Vec::new());
+
+    let abandoned = hub.connect();
+    assert!(
+        next_matching(&abandoned, |f| pending_count(f).is_some()).is_some(),
+        "the first client was not offered the startup terminals"
+    );
+    drop(abandoned);
+
+    let second = hub.connect();
+    assert_eq!(
+        next_matching(&second, |f| pending_count(f).is_some()).and_then(|f| pending_count(&f)),
+        Some(1),
+        "an offer nobody answered must be made again"
+    );
+    hub.stop();
+}
+
+#[test]
+fn only_the_first_answer_opens_the_startup_terminals() {
+    // Both clients were offered the panes, so both may answer. Creating them
+    // twice would double every configured command.
+    let dir = tempfile::TempDir::new().unwrap();
+    let hub = TerminalHub::spawn(&dir.path().to_string_lossy(), Vec::new());
+    let first = hub.connect();
+    let second = hub.connect();
+
+    first.dispatch(ClientMessage::Start {
+        sizes: vec![PaneSize { rows: 30, cols: 90 }],
+    });
+    let created =
+        next_matching(&first, |f| created_pane(f).is_some()).expect("no startup terminal");
+    second.dispatch(ClientMessage::Start {
+        sizes: vec![PaneSize { rows: 10, cols: 10 }],
+    });
+
+    // The second answer must not add a pane, and must not resize the first.
+    assert!(
+        next_matching(&second, |f| created_pane(f).is_some()
+            && created_pane(f) != created_pane(&created))
+        .is_none(),
+        "a second answer must not open another terminal"
     );
     hub.stop();
 }

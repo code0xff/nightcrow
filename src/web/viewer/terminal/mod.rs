@@ -22,7 +22,7 @@ mod session;
 
 #[cfg(test)]
 pub use frame::decode_output;
-pub use frame::{ClientMessage, ServerMessage, TerminalFrame, encode_output};
+pub use frame::{ClientMessage, PaneSize, ServerMessage, TerminalFrame, encode_output};
 pub use session::TerminalSession;
 
 use hub_helpers::{Command, Shared};
@@ -35,17 +35,23 @@ use std::thread;
 /// Output frames a client may fall behind by before it is dropped.
 const CLIENT_QUEUE_DEPTH: usize = 256;
 
+/// The size a pane is born at when no client measured one for it. Only reached
+/// when a client answers `Pending` with fewer sizes than there are panes; the
+/// first fit corrects it at the cost of one repaint.
+const DEFAULT_PANE_SIZE: PaneSize = PaneSize { rows: 24, cols: 80 };
+
 pub struct TerminalHub {
     pub(super) commands: SyncSender<Command>,
     pub(super) state: Mutex<Shared>,
     next_client_id: AtomicU64,
     stop: Arc<AtomicBool>,
     worker: Mutex<Option<thread::JoinHandle<()>>>,
-    /// Commands to run in startup terminals, spawned once when the first client
-    /// connects. Empty means a single bare shell (matching the TUI's default).
+    /// Commands to run in startup terminals, created once a client has sized
+    /// them. Empty means a single bare shell (matching the TUI's default).
     startup: Vec<String>,
-    /// Set the first time a client connects, so the startup terminals spawn
-    /// exactly once for the hub's life rather than on every (re)connection.
+    /// Set when a client claims the startup terminals by answering with their
+    /// sizes, so they are created exactly once for the hub's life rather than
+    /// on every (re)connection. See [`TerminalHub::claim_startup`].
     started: AtomicBool,
 }
 
@@ -116,18 +122,20 @@ impl TerminalHub {
         state.clients.push(Client { id, tx });
         drop(state);
 
-        // First connection spawns the startup terminals (once per hub life):
-        // the configured commands, or a single bare shell if none. Queued after
-        // the client is registered so it receives the resulting "created"
-        // broadcasts, and skipped on a stopped hub.
-        if !self.stop.load(Ordering::Acquire) && !self.started.swap(true, Ordering::AcqRel) {
-            if self.startup.is_empty() {
-                self.queue_startup_pane(id, None);
-            } else {
-                for command in &self.startup {
-                    self.queue_startup_pane(id, Some(command.clone()));
-                }
-            }
+        // Offer the startup terminals to be sized rather than spawning them
+        // here. A PTY created before any client has measured its cell is born
+        // at a size nobody chose, and correcting it costs the child a full
+        // repaint — so the client answers with `start` and the hub creates
+        // them then (see `claim_startup`). Announced to every client while the
+        // panes are unclaimed, so one that drops mid-handshake does not leave
+        // the hub terminal-less forever.
+        if !self.stop.load(Ordering::Acquire) && !self.started.load(Ordering::Acquire) {
+            self.send_to(
+                id,
+                &ServerMessage::Pending {
+                    count: self.startup_count(),
+                },
+            );
         }
 
         TerminalSession {
@@ -137,16 +145,67 @@ impl TerminalHub {
         }
     }
 
-    /// Enqueue a startup terminal. Uses the same command queue as client
-    /// creates; a full queue just drops it (the hub is under heavy backpressure,
-    /// and a startup pane is not worth wedging the connection thread over).
-    fn queue_startup_pane(&self, client: u64, command: Option<String>) {
-        let _ = self.commands.try_send(Command::Create {
-            rows: 24,
-            cols: 80,
-            client,
-            command,
-        });
+    /// How many startup terminals this hub will open. No configured commands
+    /// means one bare shell, matching the TUI's default.
+    fn startup_count(&self) -> usize {
+        self.startup.len().max(1)
+    }
+
+    /// Create the startup terminals at the sizes a client measured, if nobody
+    /// has claimed them yet.
+    ///
+    /// The claim is what makes this once-per-hub-life. It is taken here rather
+    /// than when a client connects because a client that never answers must
+    /// not consume it — the next one to connect is offered the panes again,
+    /// which is what keeps a dropped handshake from being fatal. Two clients
+    /// answering at once is normal (both were offered): the first to arrive
+    /// wins the exchange and the second is ignored, so the panes are created
+    /// exactly once.
+    pub(super) fn claim_startup(&self, client: u64, sizes: &[PaneSize]) {
+        if self
+            .started
+            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+            .is_err()
+        {
+            return;
+        }
+        let commands: Vec<Option<String>> = if self.startup.is_empty() {
+            vec![None]
+        } else {
+            self.startup.iter().map(|c| Some(c.clone())).collect()
+        };
+        for (index, command) in commands.into_iter().enumerate() {
+            // A client that could only measure some cells still gets the rest;
+            // they are simply born at the old default and corrected by the
+            // first fit, which is where every pane started before.
+            let size = sizes.get(index).copied().unwrap_or(DEFAULT_PANE_SIZE);
+            // Uses the same command queue as client creates; a full queue just
+            // drops it (the hub is under heavy backpressure, and a startup pane
+            // is not worth wedging the connection thread over).
+            let _ = self.commands.try_send(Command::Create {
+                rows: size.rows,
+                cols: size.cols,
+                client,
+                command,
+            });
+        }
+    }
+
+    /// Queue a control message for one client, dropping it if that client has
+    /// fallen too far behind.
+    fn send_to(&self, client_id: u64, message: &ServerMessage) {
+        let Ok(json) = serde_json::to_string(message) else {
+            return;
+        };
+        let mut state = self.state.lock().expect("terminal state poisoned");
+        if let Some(index) = state.clients.iter().position(|c| c.id == client_id)
+            && state.clients[index]
+                .tx
+                .try_send(TerminalFrame::Control(json))
+                .is_err()
+        {
+            state.clients.remove(index);
+        }
     }
 
     fn disconnect(&self, id: u64) {

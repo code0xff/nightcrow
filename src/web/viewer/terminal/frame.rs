@@ -27,6 +27,21 @@ pub enum ClientMessage {
     Reorder {
         order: Vec<PaneId>,
     },
+    /// The sizes to give the startup terminals, answering [`ServerMessage::Pending`].
+    ///
+    /// One entry per pending pane, in the order they will be created. A short
+    /// list leaves the rest at the default, so a client that could only measure
+    /// some of them still gets terminals.
+    Start {
+        sizes: Vec<PaneSize>,
+    },
+}
+
+/// One pane's size, as the client measured its cell.
+#[derive(Debug, Deserialize, Clone, Copy, PartialEq, Eq)]
+pub struct PaneSize {
+    pub rows: u16,
+    pub cols: u16,
 }
 
 /// A control message to the browser.
@@ -55,6 +70,15 @@ pub enum ServerMessage {
     /// the sender and any other device converge on the same layout.
     Reordered {
         order: Vec<PaneId>,
+    },
+    /// This many startup terminals are waiting to be sized before they are
+    /// created. The client answers with [`ClientMessage::Start`].
+    ///
+    /// Sent to every client that connects while they are still unclaimed, not
+    /// only the first: a client that disconnects mid-handshake would otherwise
+    /// leave the hub with no terminals and no way to ever get them.
+    Pending {
+        count: usize,
     },
 }
 

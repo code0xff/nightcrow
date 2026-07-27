@@ -43,6 +43,13 @@ impl TerminalSession {
             },
             ClientMessage::Close { pane } => Command::Close { pane },
             ClientMessage::Reorder { order } => Command::Reorder { order },
+            // Handled here rather than on the worker thread: it only queues
+            // creates, and routing it through the same queue would let a
+            // backed-up hub drop the one message that brings the terminals up.
+            ClientMessage::Start { sizes } => {
+                self.hub.claim_startup(self.id, &sizes);
+                return;
+            }
         };
         // Never block the connection thread here. The hub drains this queue
         // from the same thread that writes to a PTY master, and that write

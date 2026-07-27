@@ -3,13 +3,7 @@ import type { MutableRefObject } from "react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import type { PaneView } from "../../lib/terminalLayout";
-
-const TERM_FONT_SIZE =
-  typeof window !== "undefined" &&
-  typeof window.matchMedia === "function" &&
-  window.matchMedia("(pointer: coarse)").matches
-    ? 13
-    : 12;
+import { terminalFontOptions } from "../../lib/termFont";
 
 interface UseTerminalViewsArgs {
   panes: number[];
@@ -47,8 +41,7 @@ export function useTerminalViews({
       if (body.clientHeight === 0 || body.clientWidth === 0) continue;
 
       const term = new Terminal({
-        fontFamily: getComputedStyle(document.body).fontFamily,
-        fontSize: TERM_FONT_SIZE,
+        ...terminalFontOptions(),
         theme: { background: "#0b0b0d", foreground: "#e6e6ec" },
         cursorBlink: true,
       });

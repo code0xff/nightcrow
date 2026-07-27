@@ -12,6 +12,7 @@ interface UseTerminalSocketArgs {
   sentSizesRef: MutableRefObject<Map<number, { rows: number; cols: number }>>;
   lastActiveByRepoRef: MutableRefObject<Map<string, number>>;
   expectCreateRef: MutableRefObject<number>;
+  setPending: React.Dispatch<React.SetStateAction<number | null>>;
   setPanes: React.Dispatch<React.SetStateAction<number[]>>;
   setActive: React.Dispatch<React.SetStateAction<number | null>>;
   setZoomed: React.Dispatch<React.SetStateAction<number | null>>;
@@ -27,6 +28,7 @@ export function useTerminalSocket({
   sentSizesRef,
   lastActiveByRepoRef,
   expectCreateRef,
+  setPending,
   setPanes,
   setActive,
   setZoomed,
@@ -44,6 +46,7 @@ export function useTerminalSocket({
     };
 
     const connect = () => {
+      setPending(null);
       setPanes([]);
       setActive(null);
       setZoomed(null);
@@ -60,7 +63,11 @@ export function useTerminalSocket({
       socket.onmessage = (event) => {
         if (typeof event.data === "string") {
           const message = JSON.parse(event.data);
-          if (message.type === "created") {
+          if (message.type === "pending") {
+            // Startup terminals the server is holding until this page says how
+            // big to make them. Answered by `useStartupSizes`.
+            setPending(message.count);
+          } else if (message.type === "created") {
             const pane = message.pane;
             // Adopt the size the PTY already has. Without this the first fit
             // sends a resize even when it computes the very size the pane is
