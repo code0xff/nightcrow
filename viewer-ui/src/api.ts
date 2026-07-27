@@ -13,6 +13,7 @@ import type {
   FileView,
   Log,
   Repo,
+  RunningClone,
   Status,
   Tree,
   TreeSearch,
@@ -82,6 +83,9 @@ export const api = {
     post<{ job: number; name: string }>("/api/clone", { path, url }),
   cloneStatus: (job: number) =>
     get<CloneStatus>(`/api/clone?${query({ job: String(job) })}`),
+  /** The job the server is running, so a page that never saw the id — a
+   *  reload, a second tab — can follow the clone anyway. */
+  runningClone: () => get<RunningClone>("/api/clone"),
   open: (path: string) =>
     post<{ repo: Repo }>("/api/repos", { path }).then((r) => r.repo),
   close: async (repo: string) => {

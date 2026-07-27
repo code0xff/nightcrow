@@ -21,8 +21,11 @@ const POLL_INTERVAL_MS = 1000;
  * lands; the job outlives the dialog, so an observer that unmounts with it
  * would abandon a clone that is still running — no toast, no repository
  * opened, and no way to reattach on reopening.
+ *
+ * `enabled` gates the attach on being signed in: the probe is an API call, and
+ * asking before the session exists only earns a 401.
  */
-export function useClone(onOpened: (repo: Repo) => void) {
+export function useClone(onOpened: (repo: Repo) => void, enabled: boolean) {
   const [busy, setBusy] = useState(false);
   const busyRef = useRef(false);
   // Set on unmount so a poll that lands after the owner is gone does nothing.
@@ -91,6 +94,30 @@ export function useClone(onOpened: (repo: Repo) => void) {
     },
     [onOpened],
   );
+
+  // Adopt a clone this page never started. The job id lives only in the tab
+  // that started it, so a reload — or a phone that dropped the tab mid-
+  // transfer — would otherwise leave the clone running with nobody watching,
+  // and the only sign of it would be the 409 refusing the next one.
+  useEffect(() => {
+    if (!enabled || busyRef.current) return;
+    let dropped = false;
+    api
+      .runningClone()
+      .then(({ job }) => {
+        if (job === null || dropped || busyRef.current) return;
+        busyRef.current = true;
+        setBusy(true);
+        void poll(job);
+      })
+      // Nothing attachable that we can see. Staying quiet is deliberate: this
+      // probe is about a clone the user may not have started in this tab, so
+      // a failed one is not news — the next load asks again.
+      .catch(() => {});
+    return () => {
+      dropped = true;
+    };
+  }, [enabled, poll]);
 
   const start = useCallback(
     async (parent: string, url: string) => {

@@ -126,6 +126,12 @@ export type CloneStatus =
   | { state: "done"; path: string }
   | { state: "failed"; message: string };
 
+/** The clone the server is running, if any. How a page that just loaded finds
+ *  the job to follow when the tab that started it is gone. */
+export interface RunningClone {
+  job: number | null;
+}
+
 export interface Browse {
   path: string;
   parent?: string;

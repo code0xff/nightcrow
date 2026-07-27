@@ -185,8 +185,12 @@ export function App() {
     orderWrites,
   });
 
-  // Above the picker on purpose: a clone outlives the dialog that started it.
-  const { busy: cloning, start: startClone } = useClone(selectOpenedRepo);
+  // Above the picker on purpose: a clone outlives the dialog that started it,
+  // and outlives the page too — this reattaches to one still running.
+  const { busy: cloning, start: startClone } = useClone(
+    selectOpenedRepo,
+    authed === true,
+  );
 
   useEffect(() => {
     bumpPaneRequest();
