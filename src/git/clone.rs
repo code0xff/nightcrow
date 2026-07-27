@@ -214,10 +214,11 @@ pub fn run_clone(url: &str, dest: &Path) -> anyhow::Result<()> {
             "GIT_SSH_COMMAND",
             "ssh -o ConnectTimeout=30 -o ServerAliveInterval=30 -o ServerAliveCountMax=4",
         )
-        // Abort a transfer that has stalled rather than one that is merely
-        // slow. A wall-clock timeout cannot tell those apart — a large
-        // repository legitimately takes many minutes — but a rate floor can:
-        // under 1 KiB/s for 60 s is a dead connection, not a big clone.
+        // A rate floor rather than a wall clock: a wall-clock bound cannot
+        // tell a large repository (legitimately many minutes) from a dead
+        // connection, while a floor at least scales with what is arriving.
+        // It is a policy threshold, not a liveness proof — a genuine transfer
+        // that sits under 1 KiB/s for 60 s is cut too, which is the trade.
         .arg("-c")
         .arg("http.lowSpeedLimit=1024")
         .arg("-c")
