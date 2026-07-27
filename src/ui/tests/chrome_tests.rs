@@ -143,14 +143,14 @@ fn panels_advertise_the_leader_digit_not_the_bare_f_key() {
         .join("\n");
 
     assert!(
-        text.contains("^F1 Files"),
+        text.contains("^F 1 Files"),
         "file list must advertise its leader digit, got: {text}"
     );
-    // The `Ctrl+F` leader label ("^F") ends in the letter F, so the legit
-    // "^F1 Files" legend contains "F1 Files" as a substring. Strip it before
-    // asserting the bare function-key legend never appears on its own.
+    // Separating the digit also separates the strings: a bare `F1 Files`
+    // legend can no longer hide inside the leader label, so this reads
+    // directly rather than stripping the legitimate legend first.
     assert!(
-        !text.replace("^F1 Files", "").contains("F1 Files"),
+        !text.contains("F1 Files"),
         "the bare F-key must not be advertised for panels, got: {text}"
     );
 }

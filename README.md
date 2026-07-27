@@ -78,7 +78,7 @@ project keeps running while you work in another.
 
 ```
  F1 nightcrow  F2 api-server  +3          ← project tabs (active one accented)
-┌ ^F1 Files ──────┐┌ ^F2 src/main.rs ────┐
+┌ ^F 1 Files ──────┐┌ ^F 2 src/main.rs ────┐
 ```
 
 - `^F o` opens a repo in a tab, `^F x` closes the active one, and `F1`…`F10`

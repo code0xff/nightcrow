@@ -79,7 +79,7 @@ pub(crate) fn tab_segments(
                 } else {
                     char::from_digit((i as u32 + 3) % 10, 10).unwrap_or('?')
                 };
-                format!(" {}{} {} ", app.leader_label(), digit, title)
+                format!(" {} {} {} ", app.leader_label(), digit, title)
             } else {
                 format!(" {} ", title)
             };
