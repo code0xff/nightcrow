@@ -15,10 +15,12 @@
  * the sandbox.
  *
  * What the document *can* still do is load subresources, bounded by that
- * inherited CSP: `data:` URIs and this origin, nothing else. So a page that
- * embeds its images as `data:` renders completely, while any other host is
- * refused — as a subresource and as a frame navigation, so a link the user
- * clicks does not leave either (all verified in a browser, not reasoned).
+ * inherited CSP. `img-src 'self' data:` is the one directive that admits a
+ * `data:` URI, so a page carrying its images inline renders completely; every
+ * other kind of resource falls to `default-src 'self'`, which admits neither a
+ * `data:` stylesheet nor any other host — refused as a subresource and as a
+ * frame navigation, so a link the user clicks does not leave either (verified
+ * in a browser, not reasoned).
  *
  * A relative or root-relative URL does resolve, against this origin: a
  * `srcdoc` document's base URL is the embedder's, not nothing. It therefore
