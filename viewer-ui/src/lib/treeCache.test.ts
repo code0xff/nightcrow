@@ -2,8 +2,10 @@ import { describe, expect, it } from "vitest";
 import type { TreeEntry } from "../api";
 import {
   ancestorDirs,
+  emptyMatches,
   emptyTreeCache,
   forRepo,
+  matchesFor,
   withChildren,
   withRevealed,
   withToggled,
@@ -68,6 +70,22 @@ describe("tree cache", () => {
 
     expect(fresh.repo).toBe("r2");
     expect(fresh.children).toEqual({ lib: entries("b.ts") });
+  });
+
+  it("검색_결과도_자기_프로젝트에서만_보인다", () => {
+    // Search results are repository-relative paths too, and clearing them in
+    // an effect would leave one frame of the previous project's matches.
+    const found = { repo: "r1", items: ["src/a.rs"], truncated: true };
+
+    expect(matchesFor(found, "r1")).toEqual({
+      items: ["src/a.rs"],
+      truncated: true,
+    });
+    expect(matchesFor(found, "r2")).toEqual({ items: [], truncated: false });
+    expect(matchesFor(emptyMatches<string>(), null)).toEqual({
+      items: [],
+      truncated: false,
+    });
   });
 
   it("토글은_열고_닫는다", () => {

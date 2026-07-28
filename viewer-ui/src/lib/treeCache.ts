@@ -69,6 +69,28 @@ export function withRevealed(cache: TreeCache, dirs: string[]): TreeCache {
   return { ...cache, expanded };
 }
 
+/** Filename-search results, tagged like [`TreeCache`] and for the same reason:
+ *  the matches are repository-relative paths, so results from the project the
+ *  user just left read as if they were this project's files. */
+export interface TreeMatches<T> {
+  repo: string | null;
+  items: T[];
+  truncated: boolean;
+}
+
+export function emptyMatches<T>(): TreeMatches<T> {
+  return { repo: null, items: [], truncated: false };
+}
+
+/** The results as they apply to `repo` — its own, or none. */
+export function matchesFor<T>(
+  matches: TreeMatches<T>,
+  repo: string | null,
+): { items: T[]; truncated: boolean } {
+  if (matches.repo !== repo) return { items: [], truncated: false };
+  return { items: matches.items, truncated: matches.truncated };
+}
+
 /** Directories on the way to `path`, outermost first. */
 export function ancestorDirs(path: string): string[] {
   const dirs: string[] = [];

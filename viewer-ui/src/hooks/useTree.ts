@@ -2,12 +2,15 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { api, type TreeEntry, type TreeMatch } from "../api";
 import {
   ancestorDirs,
+  emptyMatches,
   emptyTreeCache,
   forRepo,
+  matchesFor,
   withChildren,
   withRevealed,
   withToggled,
 } from "../lib/treeCache";
+import type { TreeMatches } from "../lib/treeCache";
 
 const TREE_SEARCH_DEBOUNCE_MS = 180;
 
@@ -44,8 +47,7 @@ export function useTree({
   // screen may have changed in between.
   const shownRepo = useRef(repo);
   shownRepo.current = repo;
-  const [treeMatches, setTreeMatches] = useState<TreeMatch[]>([]);
-  const [treeTruncated, setTreeTruncated] = useState(false);
+  const [matches, setMatches] = useState<TreeMatches<TreeMatch>>(emptyMatches);
   const [treeSearchLoading, setTreeSearchLoading] = useState(false);
 
   // Another project's tree is not this project's tree, even where the paths
@@ -54,8 +56,6 @@ export function useTree({
   // project's contents.
   useEffect(() => {
     setCache((current) => forRepo(current, repo));
-    setTreeMatches([]);
-    setTreeTruncated(false);
   }, [repo]);
 
   useEffect(() => {
@@ -71,8 +71,7 @@ export function useTree({
   // Avoid tree-search requests until the user has opened a non-empty query.
   useEffect(() => {
     if (!repo || !authed || tab !== "tree" || !filterOpen || !filter) {
-      setTreeMatches([]);
-      setTreeTruncated(false);
+      setMatches(emptyMatches);
       setTreeSearchLoading(false);
       return;
     }
@@ -83,8 +82,7 @@ export function useTree({
         .treeSearch(repo, filter)
         .then((r) => {
           if (!active) return;
-          setTreeMatches(r.matches);
-          setTreeTruncated(r.truncated);
+          setMatches({ repo, items: r.matches, truncated: r.truncated });
         })
         .catch((err) => {
           if (active) handle(err);
@@ -137,11 +135,16 @@ export function useTree({
     [shown, loadTreeChildren],
   );
 
+  // Rendered from the tag, not from an effect that has yet to run: clearing
+  // in an effect leaves one frame where the new project shows the old
+  // project's matches.
+  const shownMatches = matchesFor(matches, repo);
+
   return {
     treeChildren: shown.children,
     treeExpanded: shown.expanded,
-    treeMatches,
-    treeTruncated,
+    treeMatches: shownMatches.items,
+    treeTruncated: shownMatches.truncated,
     treeSearchLoading,
     loadTreeChildren,
     toggleTreeDir,
