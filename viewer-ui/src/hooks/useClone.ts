@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api, type Repo } from "../api";
+import { api, isUnauthorized, type Repo } from "../api";
 import { ApiError } from "../api/errors";
 import { toast } from "../lib/toast";
 
@@ -48,11 +48,23 @@ export function useClone(onOpened: (repo: Repo) => void, enabled: boolean) {
         try {
           status = await api.cloneStatus(job);
         } catch (err) {
+          // Two failures are the end of this job rather than a hiccup, and
+          // both have to be told apart from a dropped request — retrying
+          // either would spin forever with the form stuck on "Cloning…".
+          if (isUnauthorized(err)) {
+            // The session ended under us — expiry, or a server restart. This
+            // is terminal, not a hiccup: retrying would spin at a request a
+            // second behind the login screen with the header stuck on
+            // "Cloning…". Signing back in flips `enabled` and the attach
+            // probe finds the job again if it is still running.
+            busyRef.current = false;
+            setBusy(false);
+            return;
+          }
           // The server drops the oldest finished jobs when later clones crowd
-          // them out, so a 404 is the end of this job, not a hiccup —
-          // retrying it would spin forever with the form stuck on
-          // "Cloning…". Every other failure is a dropped request over a clone
-          // that is still running server-side, so it is retried.
+          // them out, so a 404 means this job's progress is gone. Every other
+          // failure is a dropped request over a clone that is still running
+          // server-side, so it is retried.
           if (err instanceof ApiError && err.status === 404) {
             // Same cancellation contract as the success path: an owner that
             // unmounted while this request was in flight gets no toast and no
