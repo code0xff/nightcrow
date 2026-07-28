@@ -303,6 +303,39 @@ fn a_startup_size_of_zero_is_clamped_rather_than_reaching_openpty() {
 }
 
 #[test]
+fn a_startup_set_that_fills_the_cap_still_gets_every_terminal() {
+    // Commands run through one FIFO queue, so a create sent after the claim is
+    // served after the batch and cannot take a slot from it. This pins that
+    // ordering: the configured set comes up whole and the create is the one
+    // refused, not the other way round.
+    let dir = tempfile::TempDir::new().unwrap();
+    let startup: Vec<String> = (0..limits::MAX_PTYS_PER_REPO)
+        .map(|i| format!("printf startup{i}"))
+        .collect();
+    let hub = TerminalHub::spawn(&dir.path().to_string_lossy(), startup);
+    let session = hub.connect();
+    assert_eq!(
+        next_matching(&session, |f| pending_count(f).is_some()).and_then(|f| pending_count(&f)),
+        Some(limits::MAX_PTYS_PER_REPO),
+    );
+
+    session.dispatch(ClientMessage::Start { sizes: Vec::new() });
+    session.dispatch(ClientMessage::Create { rows: 24, cols: 80 });
+
+    let ids = collect_created(&session, limits::MAX_PTYS_PER_REPO);
+    assert_eq!(ids.len(), limits::MAX_PTYS_PER_REPO);
+    assert!(
+        next_matching(
+            &session,
+            |f| matches!(f, TerminalFrame::Control(json) if json.contains("terminal limit reached"))
+        )
+        .is_some(),
+        "the client create should be refused, not a startup command"
+    );
+    hub.stop();
+}
+
+#[test]
 fn an_unanswered_offer_is_made_again_to_the_next_client() {
     // A page that closes mid-handshake must not take the terminals with it.
     // Nothing consumes the offer but an answer, so the hub cannot end up with
