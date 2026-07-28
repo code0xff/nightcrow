@@ -191,6 +191,29 @@ impl Catalog {
             .map(Arc::clone)
     }
 
+    /// The served list and, from that same snapshot, the id standing for
+    /// `remembered`.
+    ///
+    /// One lock for both, because a client renders them together: a repository
+    /// opened between two separate reads would yield an active id that is
+    /// missing from the list beside it, and the client — seeing a selection it
+    /// cannot show — would fall back to its first tab and record *that*,
+    /// dropping the remembered project for good.
+    pub fn list_with_active(
+        &self,
+        remembered: Option<&str>,
+    ) -> (Vec<crate::web::viewer::dto::RepoDto>, Option<String>) {
+        let entries = self.entries.lock().expect("catalog poisoned");
+        let list = entries.iter().map(|e| e.to_dto()).collect();
+        let active = remembered.and_then(|path| {
+            entries
+                .iter()
+                .find(|e| e.path == path)
+                .map(|e| e.id.clone())
+        });
+        (list, active)
+    }
+
     /// The id currently standing for `path`, or `None` when that path is not
     /// served. The inverse of [`Catalog::get`], for the one caller that stores
     /// a repository across restarts (`prefs.rs`) and so cannot hold an id.

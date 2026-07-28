@@ -67,7 +67,10 @@ fn nothing_is_active_until_a_client_selects_a_project() {
 
     // Null rather than the first tab: choosing the fallback is the client's
     // job, and it already has the list to choose from.
-    assert_eq!(served_active(server.addr(), &token), serde_json::Value::Null);
+    assert_eq!(
+        served_active(server.addr(), &token),
+        serde_json::Value::Null
+    );
 }
 
 #[test]
@@ -113,7 +116,59 @@ fn a_remembered_project_that_is_no_longer_served_reports_nothing_active() {
 
     // A closed project has no id to name. The path stays on file rather than
     // being cleared, but nothing resolves it, so the client falls back.
-    assert_eq!(served_active(server.addr(), &token), serde_json::Value::Null);
+    assert_eq!(
+        served_active(server.addr(), &token),
+        serde_json::Value::Null
+    );
+}
+
+#[test]
+fn the_active_id_always_names_a_project_in_the_list_beside_it() {
+    // The two are read under one catalog lock. Were they read separately, a
+    // repository opening in between could yield an id the list does not carry
+    // — and a client that cannot show its remembered project falls back to the
+    // first tab and records that, losing the selection for good.
+    let prefs = tempfile::TempDir::new().unwrap();
+    let (_a, a) = make_repo();
+    let (_b, b) = make_repo();
+    let server = server_at(prefs.path(), &[a, b.clone()]);
+    let token = login(server.addr());
+    let ids = served_ids(server.addr(), &token);
+    select(server.addr(), &ids[1], &token);
+
+    // Churn the catalog while the bootstrap is being served repeatedly.
+    for _ in 0..8 {
+        delete(
+            server.addr(),
+            &format!("/api/repos?repo={}", ids[1]),
+            Some(&token),
+        );
+        let list = get(server.addr(), "/api/repos", Some(&token));
+        let value: serde_json::Value = serde_json::from_str(body_of(&list)).unwrap();
+        assert_active_is_listed(&value);
+
+        let body = serde_json::json!({ "path": b }).to_string();
+        post(server.addr(), "/api/repos", &body, Some(&token));
+        let list = get(server.addr(), "/api/repos", Some(&token));
+        let value: serde_json::Value = serde_json::from_str(body_of(&list)).unwrap();
+        assert_active_is_listed(&value);
+    }
+}
+
+fn assert_active_is_listed(bootstrap: &serde_json::Value) {
+    let Some(active) = bootstrap["active_repo"].as_str() else {
+        return;
+    };
+    let listed = bootstrap["repos"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|repo| repo["id"] == active);
+    assert!(
+        listed,
+        "active {active} is missing from {:?}",
+        bootstrap["repos"]
+    );
 }
 
 #[test]

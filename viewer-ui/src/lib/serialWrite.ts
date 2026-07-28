@@ -13,6 +13,10 @@
  * A failed send is swallowed and the queue moves on. The caller is recording a
  * preference, not performing an action — the next write tries again, and a
  * stalled queue would silently stop recording anything at all.
+ *
+ * For the same reason `send` **must settle**: one that hangs forever holds the
+ * slot forever, and every later value would pile into the queue unsent. Give
+ * it a timeout (`fetch` has none of its own — see `api.setActiveRepo`).
  */
 export function createSerialWriter<T>(
   send: (value: T) => Promise<unknown>,

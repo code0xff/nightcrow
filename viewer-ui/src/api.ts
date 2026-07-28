@@ -21,6 +21,11 @@ import type {
   ViewerBootstrap,
 } from "./api/types";
 
+/** How long a project-selection write may take before it is abandoned so the
+ *  next one can go out. Generous next to a local request, since giving up
+ *  early on a slow link would drop a write that was about to land. */
+const ACTIVE_REPO_WRITE_TIMEOUT_MS = 10_000;
+
 export const api = {
   async login(password: string): Promise<void> {
     const response = await request("/login", {
@@ -48,9 +53,18 @@ export const api = {
       (r) => r.sidebar_width,
     ),
   /** Remember the open project, by id — the server stores the path behind it
-   *  so the choice outlives this process's ids. */
+   *  so the choice outlives this process's ids.
+   *
+   *  Bounded, unlike the other preference writes: these are serialized behind
+   *  one another (`lib/serialWrite.ts`), so a request that never settles would
+   *  not just lose itself but stop every later selection from being recorded.
+   *  `fetch` has no timeout of its own. */
   setActiveRepo: (active_repo: string) =>
-    post<StoredPrefs>("/api/prefs", { active_repo }).then((r) => r.active_repo),
+    post<StoredPrefs>(
+      "/api/prefs",
+      { active_repo },
+      AbortSignal.timeout(ACTIVE_REPO_WRITE_TIMEOUT_MS),
+    ).then((r) => r.active_repo),
   status: (repo: string) => get<Status>(`/api/status?${query({ repo })}`),
   tree: (repo: string, path: string) =>
     get<Tree>(`/api/tree?${query({ repo, path })}`),
