@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api, isNetworkError, isUnauthorized, type Repo } from "../api";
+import { api, isUnauthorized, type Repo } from "../api";
 import { ApiError } from "../api/errors";
 import { toast } from "../lib/toast";
 
@@ -184,19 +184,20 @@ export function useClone(onOpened: (repo: Repo) => void, enabled: boolean) {
       } catch (err) {
         busyRef.current = false;
         if (cancelled.current) return;
-        // A request that never got an answer may still have landed — the
-        // server starts the clone before it replies. Reporting that as a
-        // failure sends the user to retry into a "folder already exists" they
-        // cannot account for, so say what is actually known. The probe below
-        // picks the job up if it is still running; a clone short enough to
-        // have finished already is what this message is for, because the
-        // server only reports a *running* job and its id is gone.
+        // Only a refusal is a failure. The server starts the clone before it
+        // replies, so anything that goes wrong from the answer onwards — the
+        // connection dropping, a truncated body, a protocol mismatch on an
+        // otherwise fine 200 — leaves a clone that may well be running. Saying
+        // it failed sends the user to retry into a "folder already exists"
+        // they cannot account for. The probe below catches it if it is still
+        // going; this message is for the clone short enough to have finished
+        // first, whose id is gone because the server reports only a running
+        // job.
+        const refused = err instanceof ApiError && err.status >= 400;
         toast.error(
-          isNetworkError(err)
-            ? "could not confirm the clone started — check this folder before retrying"
-            : err instanceof Error
-              ? err.message
-              : "could not clone",
+          refused
+            ? err.message
+            : "could not confirm the clone started — check this folder before retrying",
         );
         setBusy(false);
         // Probe again. Holding `busyRef` across this request made the attach
