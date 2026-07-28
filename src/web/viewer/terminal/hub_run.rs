@@ -42,9 +42,8 @@ impl TerminalHub {
                     Command::Input { pane, data } if self.pane_is_live(pane) => {
                         let _ = backend.send_input(pane, &data);
                     }
-                    Command::Resize { pane, rows, cols } if self.pane_is_live(pane) => {
-                        backend.resize(pane, rows, cols);
-                        self.record_size(pane, rows, cols);
+                    Command::Resize { pane, rows, cols } => {
+                        self.resize_pane(&mut backend, pane, rows, cols);
                     }
                     Command::Close { pane } if self.pane_is_live(pane) => {
                         backend.destroy_pane(pane);
@@ -120,14 +119,24 @@ impl TerminalHub {
         }
     }
 
-    /// Remember the size a resize applied, so a client connecting later is told
-    /// what the PTY is actually set to rather than what it was born with.
-    fn record_size(&self, pane: PaneId, rows: u16, cols: u16) {
+    /// Resize a live pane's PTY and record the size it is now set to.
+    ///
+    /// Both under one lock, and the liveness check with them. `connect` reports
+    /// each pane's size from this record and the client caches it as "already
+    /// applied"; a client that slipped between the two would be told the old
+    /// size for a PTY that has the new one, and would then skip the resize that
+    /// would have corrected it. The `resize` itself is an ioctl on the master —
+    /// far cheaper than the broadcast this lock already covers.
+    fn resize_pane(&self, backend: &mut PtyBackend, pane: PaneId, rows: u16, cols: u16) {
         let mut state = self.state.lock().expect("terminal state poisoned");
-        if let Some(p) = state.panes.iter_mut().find(|p| p.id == pane) {
-            p.rows = rows;
-            p.cols = cols;
-        }
+        // An unknown pane is ignored rather than errored: a client racing a
+        // pane exit is normal, not an attack.
+        let Some(p) = state.panes.iter_mut().find(|p| p.id == pane) else {
+            return;
+        };
+        backend.resize(pane, rows, cols);
+        p.rows = rows;
+        p.cols = cols;
     }
 
     /// Append output to the pane's bounded scrollback and broadcast it, both
