@@ -58,7 +58,8 @@ export function useClone(onOpened: (repo: Repo) => void, enabled: boolean) {
             // "Cloning…". Signing back in flips `enabled` and the attach
             // probe finds the job again if it is still running.
             busyRef.current = false;
-            setBusy(false);
+            // Same cancellation contract as the paths below.
+            if (!cancelled.current) setBusy(false);
             return;
           }
           // The server drops the oldest finished jobs when later clones crowd
