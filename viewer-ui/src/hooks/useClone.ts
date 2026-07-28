@@ -94,8 +94,13 @@ export function useClone(onOpened: (repo: Repo) => void, enabled: boolean) {
           try {
             // A finished clone is just a directory that now exists, so it
             // opens through the same call a hand-picked folder does.
-            onOpened(await api.open(status.path));
+            const repo = await api.open(status.path);
+            // The owner can go away during that call too; opening a
+            // repository into a torn-down tree is not a no-op worth risking.
+            if (cancelled.current) return;
+            onOpened(repo);
           } catch (err) {
+            if (cancelled.current) return;
             toast.error(err instanceof Error ? err.message : "could not open");
           } finally {
             // The clone succeeded even if opening it did not, so the form must
@@ -177,8 +182,9 @@ export function useClone(onOpened: (repo: Repo) => void, enabled: boolean) {
         const { job } = await api.clone(parent, url.trim());
         await poll(job);
       } catch (err) {
-        toast.error(err instanceof Error ? err.message : "could not clone");
         busyRef.current = false;
+        if (cancelled.current) return;
+        toast.error(err instanceof Error ? err.message : "could not clone");
         setBusy(false);
         // Probe again. Holding `busyRef` across this request made the attach
         // probe skip whatever was already running, and a refusal is often
