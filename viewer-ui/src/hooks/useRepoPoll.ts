@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import {
   api,
   isNetworkError,
@@ -66,10 +66,6 @@ export function useRepoPoll({
   // Assume cloning works until the server says otherwise, so the form is not
   // briefly disabled on every load.
   const [canClone, setCanClone] = useState(true);
-  // The project the server last reported as selected. Kept so a tab this page
-  // adopted is not posted straight back, and so a switch made on another
-  // device is not posted back as if it happened here.
-  const serverActive = useRef<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -118,7 +114,6 @@ export function useRepoPoll({
               return ids.map((id) => byId.get(id)!).filter(Boolean);
             });
           }
-          serverActive.current = active_repo;
           setRepo((current) =>
             resolveActiveRepo(
               current,
@@ -169,11 +164,16 @@ export function useRepoPoll({
   // old tab closed is still where this page now is, and recording it keeps the
   // server describing a project some client is actually in.
   //
+  // Deliberately unconditional, so the first load posts back the very project
+  // the server just named. Skipping that write would mean tracking what this
+  // page has sent against what the last poll reported, and those two go out of
+  // step for a poll every time a write is in flight — long enough for the next
+  // switch to read the stale one and skip a write that was needed.
+  //
   // Fire-and-forget: failing to remember a tab is not worth an error toast,
   // and the next switch tries again.
   useEffect(() => {
-    if (!repo || repo === serverActive.current) return;
-    serverActive.current = repo;
+    if (!repo) return;
     void api.setActiveRepo(repo).catch(() => {
     });
   }, [repo]);

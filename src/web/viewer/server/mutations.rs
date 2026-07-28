@@ -30,10 +30,12 @@ struct PrefsRequest {
 
 /// Store one or more viewer preferences and echo back the full stored set.
 ///
-/// Each value is wrapped or clamped into range rather than rejected — an accent
-/// index past the end of the cycle gets a colour back (as the TUI does with
-/// `Accent::from_index`), and a width past the bounds gets a usable split back —
-/// so a client that drifts out of range self-corrects from the response.
+/// A value with a range is wrapped or clamped into it rather than rejected — an
+/// accent index past the end of the cycle gets a colour back (as the TUI does
+/// with `Accent::from_index`), and a width past the bounds gets a usable split
+/// back — so a client that drifts out of range self-corrects from the response.
+/// `active_repo` is the exception: it names a repository rather than sitting in
+/// a range, and there is no nearest valid project to fold an unknown id onto.
 pub(super) fn handle_set_prefs(body: &str, state: &ViewerState) -> Vec<u8> {
     let request: PrefsRequest = match serde_json::from_str(body) {
         Ok(request) => request,
