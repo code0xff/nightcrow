@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useLayoutEffect } from "react";
 import type { MutableRefObject } from "react";
 import { reconcileOrder } from "../../lib/paneOrder";
 import { toast } from "../../lib/toast";
@@ -20,6 +20,13 @@ interface UseTerminalSocketArgs {
 }
 
 /// Reset state on repository changes because pane ids are repository-local.
+///
+/// A layout effect, not a passive one: the panel is not remounted per
+/// repository (it keeps the per-repo focus memory across switches), so the
+/// render that switches project still commits the previous project's panes and
+/// their xterm DOM. A passive effect may run after that has been painted, which
+/// puts one frame of the old project's terminals on screen; a layout effect
+/// clears them before the browser paints.
 export function useTerminalSocket({
   repo,
   socketRef,
@@ -34,7 +41,7 @@ export function useTerminalSocket({
   setZoomed,
   setTitles,
 }: UseTerminalSocketArgs) {
-  useEffect(() => {
+  useLayoutEffect(() => {
     let closedByUs = false;
     let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
 
