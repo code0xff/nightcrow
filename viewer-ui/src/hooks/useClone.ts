@@ -8,6 +8,15 @@ import { toast } from "../lib/toast";
  *  status stream's is right — this only has to notice the end. */
 const POLL_INTERVAL_MS = 1000;
 
+/** How many times to ask what is running before giving up, and how long to
+ *  wait between. Bounded rather than open-ended: this runs on a page that may
+ *  have nothing to attach to at all, and a probe that never stops would keep
+ *  a tab talking to a server it has no business with. Three attempts across a
+ *  few seconds covers the blip that loses one request without becoming a
+ *  background poller. */
+const ATTACH_ATTEMPTS = 3;
+const ATTACH_RETRY_MS = 2000;
+
 /**
  * Start a clone, follow it to a terminal state, and open what it produced.
  *
@@ -114,22 +123,35 @@ export function useClone(onOpened: (repo: Repo) => void, enabled: boolean) {
   // and the only sign of it would be the 409 refusing the next one.
   const attach = useCallback(
     async (isStale: () => boolean = () => false) => {
-      if (busyRef.current) return;
-      let job: number | null;
-      try {
-        ({ job } = await api.runningClone());
-      } catch {
-        // Nothing attachable that we can see. Staying quiet is deliberate:
-        // this probe is about a clone the user may not have started in this
-        // tab, so a failed one is not news — the next load asks again.
+      // Retried, because a probe that fails is not an answer. "The next page
+      // load will find it" does not hold: the server reports only a *running*
+      // job, so a clone that finishes before then becomes invisible and its
+      // repository is never opened. A dropped probe is also exactly what the
+      // one after a failed start is up against — the blip that lost the start
+      // response tends to take the probe with it.
+      for (let attempt = 0; attempt < ATTACH_ATTEMPTS; attempt++) {
+        if (attempt > 0) {
+          await new Promise((r) => setTimeout(r, ATTACH_RETRY_MS));
+        }
+        if (busyRef.current || isStale() || cancelled.current) return;
+        let job: number | null;
+        try {
+          ({ job } = await api.runningClone());
+        } catch (err) {
+          // Not signed in yet; `enabled` flipping runs this again.
+          if (isUnauthorized(err)) return;
+          continue;
+        }
+        // An answer, and it says there is nothing to follow. Staying quiet is
+        // deliberate: this probe is about a clone the user may not have
+        // started in this tab.
+        if (job === null) return;
+        if (isStale() || cancelled.current || busyRef.current) return;
+        busyRef.current = true;
+        setBusy(true);
+        void poll(job);
         return;
       }
-      if (job === null || isStale() || cancelled.current || busyRef.current) {
-        return;
-      }
-      busyRef.current = true;
-      setBusy(true);
-      void poll(job);
     },
     [poll],
   );
