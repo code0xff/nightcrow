@@ -174,20 +174,40 @@ impl TerminalHub {
         } else {
             self.startup.iter().map(|c| Some(c.clone())).collect()
         };
+        let mut queued = 0;
         for (index, command) in commands.into_iter().enumerate() {
             // A client that could only measure some cells still gets the rest;
             // they are simply born at the old default and corrected by the
             // first fit, which is where every pane started before.
             let size = sizes.get(index).copied().unwrap_or(DEFAULT_PANE_SIZE);
-            // Uses the same command queue as client creates; a full queue just
-            // drops it (the hub is under heavy backpressure, and a startup pane
-            // is not worth wedging the connection thread over).
-            let _ = self.commands.try_send(Command::Create {
-                rows: size.rows,
-                cols: size.cols,
-                client,
-                command,
-            });
+            // Uses the same command queue as client creates. A full queue means
+            // the hub is under backpressure the connection thread must not
+            // block on, so the create is dropped rather than waited on.
+            if self
+                .commands
+                .try_send(Command::Create {
+                    rows: size.rows,
+                    cols: size.cols,
+                    client,
+                    command,
+                })
+                .is_err()
+            {
+                break;
+            }
+            queued += 1;
+        }
+        // Give the claim back when the queue took nothing, or the hub would
+        // hold `started` with no terminals to show for it and never offer them
+        // again — the one outcome this handshake exists to rule out. Only when
+        // *nothing* was queued: releasing after a partial send would let the
+        // next client answer the same offer and start the accepted commands a
+        // second time. A partial startup under that much backpressure is a
+        // visible shortfall the user can fix with `+`; a duplicated `claude`
+        // is not.
+        if queued == 0 {
+            tracing::warn!("viewer: terminal command queue full, startup deferred");
+            self.started.store(false, Ordering::Release);
         }
     }
 
