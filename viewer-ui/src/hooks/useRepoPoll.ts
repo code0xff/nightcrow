@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   api,
   isNetworkError,
@@ -8,6 +8,7 @@ import {
 } from "../api";
 import { resolveActiveRepo } from "../lib/activeRepo";
 import { nextClockOffset } from "../lib/hot";
+import { createSerialWriter } from "../lib/serialWrite";
 import { reconcileOrder } from "../lib/paneOrder";
 
 const REPO_POLL_MS = 3000;
@@ -66,6 +67,11 @@ export function useRepoPoll({
   // Assume cloning works until the server says otherwise, so the form is not
   // briefly disabled on every load.
   const [canClone, setCanClone] = useState(true);
+  // One writer for the lifetime of the hook: the queue it holds is what keeps
+  // the selection writes in order.
+  const { current: writeActiveRepo } = useRef(
+    createSerialWriter(api.setActiveRepo),
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -170,13 +176,13 @@ export function useRepoPoll({
   // step for a poll every time a write is in flight — long enough for the next
   // switch to read the stale one and skip a write that was needed.
   //
-  // Fire-and-forget: failing to remember a tab is not worth an error toast,
-  // and the next switch tries again.
+  // Serialized rather than fire-and-forget: two POSTs on separate connections
+  // are ordered by arrival, so switching twice quickly could leave the first
+  // selection as the one that lands last and sticks.
   useEffect(() => {
     if (!repo) return;
-    void api.setActiveRepo(repo).catch(() => {
-    });
-  }, [repo]);
+    writeActiveRepo(repo);
+  }, [repo, writeActiveRepo]);
 
   return {
     repos,
