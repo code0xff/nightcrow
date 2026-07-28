@@ -46,10 +46,10 @@ pub struct ViewerPrefs {
     /// restart — which is exactly the case this field exists for. The server
     /// translates in both directions; the client never learns the path.
     ///
-    /// `None` until a client selects a project, and stays set to a path that
-    /// is no longer served — a closed project that comes back is still the one
-    /// the user was last in, and an unresolvable path simply falls back to the
-    /// first tab.
+    /// `None` until a client selects a project. Never cleared by the server: a
+    /// path that stops being served just stops resolving, and the client falls
+    /// back to its first tab — then records whichever project it landed on, so
+    /// what is on file is always somewhere a client actually was.
     pub active_repo: Option<String>,
 }
 

@@ -15,6 +15,7 @@ import type {
   Repo,
   RunningClone,
   Status,
+  StoredPrefs,
   Tree,
   TreeSearch,
   ViewerBootstrap,
@@ -41,13 +42,15 @@ export const api = {
   repos: (signal?: AbortSignal) =>
     get<ViewerBootstrap>("/api/repos", signal),
   setAccent: (accent: number) =>
-    post<{ accent: number; sidebar_width: number }>("/api/prefs", {
-      accent,
-    }).then((r) => r.accent),
+    post<StoredPrefs>("/api/prefs", { accent }).then((r) => r.accent),
   setSidebarWidth: (sidebar_width: number) =>
-    post<{ accent: number; sidebar_width: number }>("/api/prefs", {
-      sidebar_width,
-    }).then((r) => r.sidebar_width),
+    post<StoredPrefs>("/api/prefs", { sidebar_width }).then(
+      (r) => r.sidebar_width,
+    ),
+  /** Remember the open project, by id — the server stores the path behind it
+   *  so the choice outlives this process's ids. */
+  setActiveRepo: (active_repo: string) =>
+    post<StoredPrefs>("/api/prefs", { active_repo }).then((r) => r.active_repo),
   status: (repo: string) => get<Status>(`/api/status?${query({ repo })}`),
   tree: (repo: string, path: string) =>
     get<Tree>(`/api/tree?${query({ repo, path })}`),

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   api,
   isNetworkError,
@@ -6,6 +6,7 @@ import {
   type HotConfig,
   type Repo,
 } from "../api";
+import { resolveActiveRepo } from "../lib/activeRepo";
 import { nextClockOffset } from "../lib/hot";
 import { reconcileOrder } from "../lib/paneOrder";
 
@@ -65,6 +66,10 @@ export function useRepoPoll({
   // Assume cloning works until the server says otherwise, so the form is not
   // briefly disabled on every load.
   const [canClone, setCanClone] = useState(true);
+  // The project the server last reported as selected. Kept so a tab this page
+  // adopted is not posted straight back, and so a switch made on another
+  // device is not posted back as if it happened here.
+  const serverActive = useRef<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -76,7 +81,16 @@ export function useRepoPoll({
       const orderGeneration = orderWrites.current;
       return api
         .repos(controller.signal)
-        .then(({ repos: list, hot, accent, sidebar_width, now_ms, can_clone }) => {
+        .then((bootstrap) => {
+          const {
+            repos: list,
+            hot,
+            accent,
+            sidebar_width,
+            active_repo,
+            now_ms,
+            can_clone,
+          } = bootstrap;
           if (cancelled) return;
           setHot(hot);
           setCanClone(can_clone);
@@ -104,10 +118,13 @@ export function useRepoPoll({
               return ids.map((id) => byId.get(id)!).filter(Boolean);
             });
           }
+          serverActive.current = active_repo;
           setRepo((current) =>
-            current && list.some((r) => r.id === current)
-              ? current
-              : (list[0]?.id ?? null),
+            resolveActiveRepo(
+              current,
+              list.map((r) => r.id),
+              active_repo,
+            ),
           );
           if (!cancelled) timer = setTimeout(refresh, REPO_POLL_MS);
         })
@@ -144,6 +161,22 @@ export function useRepoPoll({
     reorderInFlightRef,
     pendingReorderRef,
   ]);
+
+  // Persist the selection from the one place it settles, rather than from each
+  // of the four callers that change it (a tab click, the picker, closing a
+  // tab, the fallback above) — a caller added later would otherwise be the one
+  // that forgets. That includes the fallback: landing somewhere because the
+  // old tab closed is still where this page now is, and recording it keeps the
+  // server describing a project some client is actually in.
+  //
+  // Fire-and-forget: failing to remember a tab is not worth an error toast,
+  // and the next switch tries again.
+  useEffect(() => {
+    if (!repo || repo === serverActive.current) return;
+    serverActive.current = repo;
+    void api.setActiveRepo(repo).catch(() => {
+    });
+  }, [repo]);
 
   return {
     repos,

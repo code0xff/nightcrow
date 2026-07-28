@@ -111,8 +111,8 @@ fn a_remembered_project_that_is_no_longer_served_reports_nothing_active() {
     );
     assert!(closed.starts_with("HTTP/1.1 200"), "got: {closed}");
 
-    // The path stays on file — reopening that project makes it current again —
-    // but a closed project has no id to name, so the client falls back.
+    // A closed project has no id to name. The path stays on file rather than
+    // being cleared, but nothing resolves it, so the client falls back.
     assert_eq!(served_active(server.addr(), &token), serde_json::Value::Null);
 }
 
