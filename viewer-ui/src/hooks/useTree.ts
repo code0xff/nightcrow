@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { api, type TreeEntry, type TreeMatch } from "../api";
 import {
   ancestorDirs,
@@ -40,6 +40,10 @@ export function useTree({
   handle,
 }: UseTreeArgs): UseTreeResult {
   const [cache, setCache] = useState(emptyTreeCache);
+  // Read when a listing *arrives*, not when it was asked for: the project on
+  // screen may have changed in between.
+  const shownRepo = useRef(repo);
+  shownRepo.current = repo;
   const [treeMatches, setTreeMatches] = useState<TreeMatch[]>([]);
   const [treeTruncated, setTreeTruncated] = useState(false);
   const [treeSearchLoading, setTreeSearchLoading] = useState(false);
@@ -58,7 +62,9 @@ export function useTree({
     if (!repo || !authed || tab !== "tree") return;
     api
       .tree(repo, "")
-      .then((r) => setCache((c) => withChildren(c, repo, "", r.entries)))
+      .then((r) =>
+        setCache((c) => withChildren(c, shownRepo.current, repo, "", r.entries)),
+      )
       .catch(handle);
   }, [repo, authed, tab, handle]);
 
@@ -98,33 +104,42 @@ export function useTree({
       if (!repo) return;
       api
         .tree(repo, path)
-        .then((r) => setCache((c) => withChildren(c, repo, path, r.entries)))
+        .then((r) =>
+          setCache((c) =>
+            withChildren(c, shownRepo.current, repo, path, r.entries),
+          ),
+        )
         .catch(handle);
     },
     [repo, handle],
   );
+  // What this project's tree looks like right now. A cache still tagged with
+  // the project the user just left renders as nothing rather than as its
+  // listings, so no frame ever shows another project's files.
+  const shown = forRepo(cache, repo);
+
   const toggleTreeDir = useCallback(
     (path: string) => {
-      const willExpand = !cache.expanded.has(path);
+      const willExpand = !shown.expanded.has(path);
       setCache((c) => withToggled(c, path));
-      if (willExpand && !(path in cache.children)) loadTreeChildren(path);
+      if (willExpand && !(path in shown.children)) loadTreeChildren(path);
     },
-    [cache, loadTreeChildren],
+    [shown, loadTreeChildren],
   );
   const revealTreeDir = useCallback(
     (path: string) => {
       const dirs = ancestorDirs(path);
       setCache((c) => withRevealed(c, dirs));
       dirs.forEach((dir) => {
-        if (!(dir in cache.children)) loadTreeChildren(dir);
+        if (!(dir in shown.children)) loadTreeChildren(dir);
       });
     },
-    [cache, loadTreeChildren],
+    [shown, loadTreeChildren],
   );
 
   return {
-    treeChildren: cache.children,
-    treeExpanded: cache.expanded,
+    treeChildren: shown.children,
+    treeExpanded: shown.expanded,
     treeMatches,
     treeTruncated,
     treeSearchLoading,

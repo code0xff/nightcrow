@@ -10,9 +10,10 @@ import type { TreeEntry } from "../api";
  * fetch entirely for a path it already holds, so the wrong contents stay until
  * a reload.
  *
- * Carrying the repository *in* the cache makes the mistake unrepresentable:
- * every read goes through [`forRepo`], and a listing that arrives late for a
- * repository no longer shown cannot land on top of the one that is.
+ * So the cache carries the repository it describes. Every read goes through
+ * [`forRepo`], which yields nothing when the tag does not match what is on
+ * screen, and [`withChildren`] drops a listing that arrives for a repository
+ * the user has already left.
  */
 export interface TreeCache {
   /** The repository these listings came from; null before anything loaded. */
@@ -36,20 +37,23 @@ export function forRepo(cache: TreeCache, repo: string | null): TreeCache {
 }
 
 /**
- * Store one directory's entries as belonging to `repo`.
+ * Store one directory's entries, given which repository is on screen
+ * (`current`) and which one the listing was requested for (`requested`).
  *
- * A response for the repository on screen is kept. One for any other
- * repository — a listing requested before the user switched projects — starts
- * that repository's cache instead of joining the current one, which is the
- * same thing `forRepo` does on the next read.
+ * Both are needed because a listing outlives the click that asked for it: a
+ * request sent for one project can arrive after the user has switched to
+ * another. Such a listing is dropped — it describes a project nobody is
+ * looking at, and the project now on screen will ask for its own.
  */
 export function withChildren(
   cache: TreeCache,
-  repo: string,
+  current: string | null,
+  requested: string,
   path: string,
   entries: TreeEntry[],
 ): TreeCache {
-  const base = forRepo(cache, repo);
+  if (current !== requested) return cache;
+  const base = forRepo(cache, current);
   return { ...base, children: { ...base.children, [path]: entries } };
 }
 

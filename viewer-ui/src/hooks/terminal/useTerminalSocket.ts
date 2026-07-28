@@ -61,6 +61,10 @@ export function useTerminalSocket({
       socketRef.current = socket;
 
       socket.onmessage = (event) => {
+        // Pane ids are per repository, so a frame that was already on its way
+        // when the project changed would land on whatever pane holds that id
+        // here. Only the live socket may touch this state.
+        if (socketRef.current !== socket) return;
         if (typeof event.data === "string") {
           const message = JSON.parse(event.data);
           if (message.type === "pending") {
