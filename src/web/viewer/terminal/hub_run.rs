@@ -1,6 +1,8 @@
 use super::TerminalHub;
 use super::frame::{ServerMessage, TerminalFrame};
-use super::hub_helpers::{Command, PaneState, broadcast_locked, canonical_order, push_scrollback};
+use super::hub_helpers::{
+    Command, PaneState, StartupPane, broadcast_locked, canonical_order, push_scrollback,
+};
 use crate::backend::{BackendEvent, PaneId, PtyBackend, TerminalBackend};
 use crate::web::viewer::limits;
 use std::collections::VecDeque;
@@ -11,6 +13,16 @@ use std::thread;
 use std::time::Duration;
 
 const POLL_INTERVAL: Duration = Duration::from_millis(8);
+
+/// How a startup pane is named back to the client when it could not be opened.
+/// The command text is the operator's own configuration and is what labels the
+/// tab, so it is the name they would recognise.
+fn startup_label(pane: &StartupPane) -> String {
+    match pane.command.as_deref() {
+        Some(command) => format!("`{command}`"),
+        None => "a shell".to_string(),
+    }
+}
 
 impl TerminalHub {
     pub(super) fn run(&self, cwd: &str, commands: Receiver<Command>, stop: Arc<AtomicBool>) {
@@ -45,7 +57,8 @@ impl TerminalHub {
                         reserved,
                     } => {
                         let mut held = reserved;
-                        for pane in panes {
+                        let mut remaining = panes.into_iter().peekable();
+                        while let Some(pane) = remaining.next() {
                             // Spend this pane's own reservation first, so the
                             // check below sees the slot it is about to take as
                             // free rather than as still held for itself.
@@ -58,7 +71,20 @@ impl TerminalHub {
                             // than what was free at claim time comes up short
                             // here rather than overrunning the ceiling.
                             if !self.has_free_slot() {
-                                self.send_error_to(client, "terminal limit reached");
+                                // Name what did not start. The set is spent
+                                // once claimed, so these will not run until
+                                // the hub restarts — the user has to open them
+                                // by hand, and cannot do that without knowing
+                                // which ones they were.
+                                let mut lost = vec![startup_label(&pane)];
+                                lost.extend(remaining.map(|p| startup_label(&p)));
+                                self.send_error_to(
+                                    client,
+                                    &format!(
+                                        "terminal limit reached — {} did not start",
+                                        lost.join(", ")
+                                    ),
+                                );
                                 break;
                             }
                             match backend.create_pane(
@@ -69,7 +95,10 @@ impl TerminalHub {
                                 Ok(id) => self.register_pane(id, pane.size.rows, pane.size.cols),
                                 Err(err) => {
                                     tracing::warn!(%err, "viewer: could not start a terminal");
-                                    self.send_error_to(client, "could not start a terminal");
+                                    self.send_error_to(
+                                        client,
+                                        &format!("could not start {}", startup_label(&pane)),
+                                    );
                                 }
                             }
                         }

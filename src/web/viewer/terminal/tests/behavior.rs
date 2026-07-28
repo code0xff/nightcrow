@@ -338,6 +338,44 @@ fn a_startup_set_that_fills_the_cap_still_gets_every_terminal() {
 }
 
 #[test]
+fn a_startup_command_the_cap_turned_away_is_named() {
+    // Reachable only this way: the configured set can never exceed the cap on
+    // its own (config refuses more than `MAX_STARTUP_COMMANDS` entries, which
+    // equals the cap), so a command is turned away only when a terminal was
+    // already open when the claim happened. The set is spent by then, so it
+    // will not run until the hub restarts — the user has to open it by hand,
+    // and cannot without being told which one it was.
+    let dir = tempfile::TempDir::new().unwrap();
+    let startup: Vec<String> = (0..limits::MAX_PTYS_PER_REPO)
+        .map(|i| format!("printf startup{i}"))
+        .collect();
+    let hub = TerminalHub::spawn(&dir.path().to_string_lossy(), startup);
+    let session = hub.connect();
+    next_matching(&session, |f| pending_count(f).is_some()).expect("no offer");
+
+    // One terminal by hand *first*, and confirmed created — the claim must see
+    // it, or it would simply reserve every slot and refuse this instead.
+    session.dispatch(ClientMessage::Create { rows: 24, cols: 80 });
+    next_matching(&session, |f| created_pane(f).is_some()).expect("no manual terminal");
+
+    session.dispatch(ClientMessage::Start { sizes: Vec::new() });
+
+    let refused = next_matching(
+        &session,
+        |f| matches!(f, TerminalFrame::Control(json) if json.contains("terminal limit reached")),
+    )
+    .expect("the command with no slot left should be refused");
+    let TerminalFrame::Control(json) = refused else {
+        unreachable!()
+    };
+    assert!(
+        json.contains(&format!("printf startup{}", limits::MAX_PTYS_PER_REPO - 1)),
+        "the message must name the command that did not start: {json}"
+    );
+    hub.stop();
+}
+
+#[test]
 fn an_unanswered_offer_is_made_again_to_the_next_client() {
     // A page that closes mid-handshake must not take the terminals with it.
     // Nothing consumes the offer but an answer, so the hub cannot end up with
