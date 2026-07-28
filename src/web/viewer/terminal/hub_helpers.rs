@@ -19,24 +19,26 @@ pub enum Command {
     /// all-or-nothing: sending them one by one could spend the claim on some
     /// and lose the rest with nothing left to retry from.
     ///
-    /// Creation is still per pane, so the set can come up short: the per-repo
-    /// cap counts every pane, including ones a client opened first — its `+`
-    /// button is live while the handshake runs — and any one `openpty` can
-    /// fail. The claim is spent by then, so a startup command lost that way
-    /// does not run until the hub restarts. The client is told which it was
-    /// (`terminal limit reached`, `could not start a terminal`).
+    /// `reserved` is how many cap slots [`Shared::reserved`] is holding for
+    /// this batch, released as the panes take them. Every connection has its
+    /// own handler thread, so between the claim and this command reaching the
+    /// queue another client can enqueue creates that the worker would serve
+    /// first — the reservation is what keeps those from taking slots the
+    /// configured set already claimed.
     ///
-    /// **Not fixed by reserving the slots at claim time**, which is the
-    /// obvious move and does not work: commands go through one FIFO queue, so
-    /// a create sent after the claim is already processed after this batch,
-    /// and one sent *before* it holds a pane that exists by the time the batch
-    /// runs — no reservation can take that back. Closing this properly means
-    /// deciding whether a configured startup command outranks a terminal the
-    /// user opened by hand, which is a question about what the cap means, not
-    /// a locking bug.
+    /// The set can still come up short of what was configured, because the
+    /// reservation only holds what was free at claim time: terminals already
+    /// open when the claim happened are not displaced, and any one `openpty`
+    /// can still fail. The claim is spent by then, so a command lost that way
+    /// does not run until the hub restarts; the client is told which it was
+    /// (`terminal limit reached`, `could not start a terminal`). Going further
+    /// would mean deciding that a configured command outranks a terminal the
+    /// user already opened, which is a question about what the cap means
+    /// rather than a race to close.
     CreateStartup {
         panes: Vec<StartupPane>,
         client: u64,
+        reserved: usize,
     },
     Input {
         pane: PaneId,
@@ -82,6 +84,12 @@ pub(super) struct PaneState {
 pub struct Shared {
     pub(super) clients: Vec<Client>,
     pub(super) panes: Vec<PaneState>,
+    /// Cap slots held for startup panes that are claimed but not created yet.
+    ///
+    /// Counted against the same cap rather than exempt from it, so the ceiling
+    /// on real processes per repository stays what it says it is — the
+    /// reservation decides *who* gets a slot, never how many there are.
+    pub(super) reserved: usize,
 }
 
 /// Queue a frame for every client, dropping any that has fallen too far behind.

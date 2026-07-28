@@ -25,7 +25,9 @@ impl TerminalHub {
                         client,
                         command,
                     } => {
-                        if self.pane_count() >= limits::MAX_PTYS_PER_REPO {
+                        // Slots reserved for a claimed startup set count here:
+                        // the configured set has first refusal on them.
+                        if !self.has_free_slot() {
                             self.send_error_to(client, "terminal limit reached");
                             continue;
                         }
@@ -37,9 +39,25 @@ impl TerminalHub {
                             }
                         }
                     }
-                    Command::CreateStartup { panes, client } => {
+                    Command::CreateStartup {
+                        panes,
+                        client,
+                        reserved,
+                    } => {
+                        let mut held = reserved;
                         for pane in panes {
-                            if self.pane_count() >= limits::MAX_PTYS_PER_REPO {
+                            // Spend this pane's own reservation first, so the
+                            // check below sees the slot it is about to take as
+                            // free rather than as still held for itself.
+                            if held > 0 {
+                                self.release_reserved(1);
+                                held -= 1;
+                            }
+                            // The cap still binds. The reservation decides who
+                            // gets a slot, not how many exist — a set larger
+                            // than what was free at claim time comes up short
+                            // here rather than overrunning the ceiling.
+                            if !self.has_free_slot() {
                                 self.send_error_to(client, "terminal limit reached");
                                 break;
                             }
@@ -55,6 +73,8 @@ impl TerminalHub {
                                 }
                             }
                         }
+                        // Whatever the break left holds slots nothing will fill.
+                        self.release_reserved(held);
                     }
                     // Unknown pane ids are ignored rather than errored: a
                     // client racing a pane exit is normal, not an attack.
@@ -103,12 +123,11 @@ impl TerminalHub {
             .clear();
     }
 
-    fn pane_count(&self) -> usize {
-        self.state
-            .lock()
-            .expect("terminal state poisoned")
-            .panes
-            .len()
+    /// Whether another terminal fits under the cap, counting slots already
+    /// held for a startup set that has been claimed but not created yet.
+    fn has_free_slot(&self) -> bool {
+        let state = self.state.lock().expect("terminal state poisoned");
+        state.panes.len() + state.reserved < limits::MAX_PTYS_PER_REPO
     }
 
     fn pane_is_live(&self, pane: PaneId) -> bool {

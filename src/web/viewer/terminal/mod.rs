@@ -25,6 +25,7 @@ pub use frame::decode_output;
 pub use frame::{ClientMessage, PaneSize, ServerMessage, TerminalFrame, encode_output};
 pub use session::TerminalSession;
 
+use crate::web::viewer::limits;
 use hub_helpers::{Command, Shared, StartupPane};
 use session::Client;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -65,6 +66,7 @@ impl TerminalHub {
             state: Mutex::new(Shared {
                 clients: Vec::new(),
                 panes: Vec::new(),
+                reserved: 0,
             }),
             next_client_id: AtomicU64::new(0),
             stop: Arc::new(AtomicBool::new(false)),
@@ -186,6 +188,19 @@ impl TerminalHub {
             })
             .collect();
 
+        // Hold the free cap slots before the command is even queued. Another
+        // connection's handler thread can enqueue creates between here and the
+        // worker reaching this batch, and the worker would serve those first;
+        // the reservation is what stops them taking slots this set claimed.
+        // Only what is free — terminals already open are not displaced.
+        let reserved = {
+            let mut state = self.state.lock().expect("terminal state poisoned");
+            let free = limits::MAX_PTYS_PER_REPO.saturating_sub(state.panes.len() + state.reserved);
+            let take = panes.len().min(free);
+            state.reserved += take;
+            take
+        };
+
         // One command for the whole set, not one per pane. Sent with
         // `try_send` because a full queue means backpressure the connection
         // thread must not block on — and as a single message that is
@@ -194,9 +209,14 @@ impl TerminalHub {
         // spent.
         if self
             .commands
-            .try_send(Command::CreateStartup { panes, client })
+            .try_send(Command::CreateStartup {
+                panes,
+                client,
+                reserved,
+            })
             .is_err()
         {
+            self.release_reserved(reserved);
             // Hand the claim back and offer again, or the hub would hold
             // `started` with no terminals to show for it — the one outcome
             // this handshake exists to rule out. The re-offer matters as much
@@ -211,6 +231,15 @@ impl TerminalHub {
                 },
             );
         }
+    }
+
+    /// Give back cap slots a startup batch is no longer going to use.
+    pub(super) fn release_reserved(&self, count: usize) {
+        if count == 0 {
+            return;
+        }
+        let mut state = self.state.lock().expect("terminal state poisoned");
+        state.reserved = state.reserved.saturating_sub(count);
     }
 
     /// Queue a control message for one client, dropping it if that client has

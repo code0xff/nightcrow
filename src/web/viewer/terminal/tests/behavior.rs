@@ -304,10 +304,12 @@ fn a_startup_size_of_zero_is_clamped_rather_than_reaching_openpty() {
 
 #[test]
 fn a_startup_set_that_fills_the_cap_still_gets_every_terminal() {
-    // Commands run through one FIFO queue, so a create sent after the claim is
-    // served after the batch and cannot take a slot from it. This pins that
-    // ordering: the configured set comes up whole and the create is the one
-    // refused, not the other way round.
+    // The claim reserves the free slots, so a create racing it loses them
+    // rather than taking them: the configured set comes up whole and the
+    // create is the one refused. Dispatching from one session cannot place a
+    // create between the claim and the batch reaching the queue — that window
+    // belongs to another connection's handler thread and has no seam to drive
+    // it from here — so what this pins is the outcome, not that interleaving.
     let dir = tempfile::TempDir::new().unwrap();
     let startup: Vec<String> = (0..limits::MAX_PTYS_PER_REPO)
         .map(|i| format!("printf startup{i}"))
