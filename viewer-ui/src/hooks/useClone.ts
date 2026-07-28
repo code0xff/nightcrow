@@ -111,25 +111,36 @@ export function useClone(onOpened: (repo: Repo) => void, enabled: boolean) {
   // that started it, so a reload — or a phone that dropped the tab mid-
   // transfer — would otherwise leave the clone running with nobody watching,
   // and the only sign of it would be the 409 refusing the next one.
+  const attach = useCallback(
+    async (isStale: () => boolean = () => false) => {
+      if (busyRef.current) return;
+      let job: number | null;
+      try {
+        ({ job } = await api.runningClone());
+      } catch {
+        // Nothing attachable that we can see. Staying quiet is deliberate:
+        // this probe is about a clone the user may not have started in this
+        // tab, so a failed one is not news — the next load asks again.
+        return;
+      }
+      if (job === null || isStale() || cancelled.current || busyRef.current) {
+        return;
+      }
+      busyRef.current = true;
+      setBusy(true);
+      void poll(job);
+    },
+    [poll],
+  );
+
   useEffect(() => {
-    if (!enabled || busyRef.current) return;
+    if (!enabled) return;
     let dropped = false;
-    api
-      .runningClone()
-      .then(({ job }) => {
-        if (job === null || dropped || busyRef.current) return;
-        busyRef.current = true;
-        setBusy(true);
-        void poll(job);
-      })
-      // Nothing attachable that we can see. Staying quiet is deliberate: this
-      // probe is about a clone the user may not have started in this tab, so
-      // a failed one is not news — the next load asks again.
-      .catch(() => {});
+    void attach(() => dropped);
     return () => {
       dropped = true;
     };
-  }, [enabled, poll]);
+  }, [enabled, attach]);
 
   const start = useCallback(
     async (parent: string, url: string) => {
@@ -146,9 +157,17 @@ export function useClone(onOpened: (repo: Repo) => void, enabled: boolean) {
         toast.error(err instanceof Error ? err.message : "could not clone");
         busyRef.current = false;
         setBusy(false);
+        // Probe again. Holding `busyRef` across this request made the attach
+        // probe skip whatever was already running, and a refusal is often
+        // *because* something is — that is what the 409 says. A request that
+        // failed on the way back rather than on the way out leaves a job
+        // running too. Either way this page would otherwise never learn of
+        // it: the effect's dependencies have not changed, so nothing looks
+        // again.
+        void attach();
       }
     },
-    [poll],
+    [poll, attach],
   );
 
   return { busy, start };
