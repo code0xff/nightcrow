@@ -18,9 +18,16 @@
  * inherited CSP. `img-src 'self' data:` is the one directive that admits a
  * `data:` URI, so a page carrying its images inline renders completely; every
  * other kind of resource falls to `default-src 'self'`, which admits neither a
- * `data:` stylesheet nor any other host — refused as a subresource and as a
- * frame navigation, so a link the user clicks does not leave either (verified
- * in a browser, not reasoned).
+ * `data:` stylesheet nor any other host.
+ *
+ * Navigating away is closed too, by two different mechanisms — worth recording
+ * because "the frame can still navigate itself" is the reading this setup
+ * invites, and it has been raised twice. A link the user clicks is refused by
+ * the inherited CSP ("Refused to frame 'https://…'", `default-src` standing in
+ * for `frame-src`). A `<meta http-equiv="refresh">`, which would fire with no
+ * interaction at all, is refused by the sandbox itself — the browser treats it
+ * as script-like and it needs `allow-scripts`. Both were tried against a
+ * listening sink that recorded no request.
  *
  * A relative or root-relative URL does resolve, against this origin: a
  * `srcdoc` document's base URL is the embedder's, not nothing. It therefore
