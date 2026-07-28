@@ -224,13 +224,25 @@ impl TerminalHub {
             // state and will not ask again on its own.
             tracing::warn!("viewer: terminal command queue full, startup deferred");
             self.started.store(false, Ordering::Release);
-            self.send_to(
-                client,
-                &ServerMessage::Pending {
-                    count: self.startup_count(),
-                },
-            );
+            // To everyone, not just whoever answered. The offer belongs to
+            // whichever client replies first, and the one that just did may be
+            // gone by now — or another may have answered while the claim was
+            // held and had its `start` ignored, clearing its pending state on
+            // the way. Re-offering to only one leaves the rest with no reason
+            // to ask again.
+            self.broadcast_pending();
         }
+    }
+
+    /// Offer the startup terminals to every connected client.
+    fn broadcast_pending(&self) {
+        let Ok(json) = serde_json::to_string(&ServerMessage::Pending {
+            count: self.startup_count(),
+        }) else {
+            return;
+        };
+        let mut state = self.state.lock().expect("terminal state poisoned");
+        hub_helpers::broadcast_locked(&mut state.clients, TerminalFrame::Control(json));
     }
 
     /// Give back cap slots a startup batch is no longer going to use.
