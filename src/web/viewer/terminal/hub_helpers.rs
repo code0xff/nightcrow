@@ -15,9 +15,16 @@ pub enum Command {
         client: u64,
         command: Option<String>,
     },
-    /// Every startup pane at once, so the set is queued all-or-nothing: a
-    /// partial enqueue would spend the claim on some of them and lose the
-    /// rest with nothing left to retry from.
+    /// Every startup pane in one command, so *queueing* the set is
+    /// all-or-nothing: sending them one by one could spend the claim on some
+    /// and lose the rest with nothing left to retry from.
+    ///
+    /// Creation is still per pane, so the set can still come up short — the
+    /// per-repo cap counts panes another client already opened, and any one
+    /// `openpty` can fail. The client is told (`terminal limit reached`,
+    /// `could not start a terminal`) but the claim is spent by then, so a
+    /// startup command lost that way does not come back without a restart.
+    /// Reaching it needs the configured set to nearly fill the cap on its own.
     CreateStartup {
         panes: Vec<StartupPane>,
         client: u64,
