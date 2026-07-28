@@ -390,10 +390,12 @@ early or late.
 
 Markdown files (`.md`, `.markdown`) opened from the tree render as formatted
 documents by default, with fenced code syntax-highlighted. HTML files
-(`.html`, `.htm`) render too, inside a fully sandboxed frame — scripts do not
-run, and stylesheets and images do not load (repository files are not served,
-and any other origin is refused), so this previews a self-contained page
-rather than a site. A toggle (top-right of the
+(`.html`, `.htm`) render too, inside a fully sandboxed frame: scripts do not
+run, and nothing loads from another host. A page that carries its own styling
+inline and embeds images as `data:` URIs shows in full; one that links a
+stylesheet or images as separate files shows without them, since repository
+files are not served to the frame. This previews a self-contained page rather
+than a site. A toggle (top-right of the
 pane) switches either back to the raw highlighted source.
 
 Enable it alongside the TUI under `[web_viewer]`:

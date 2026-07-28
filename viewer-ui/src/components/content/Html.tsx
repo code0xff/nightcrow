@@ -14,20 +14,23 @@
  * the source is already here, and the frame inherits this page's CSP on top of
  * the sandbox.
  *
- * What the document *can* still do is issue passive subresource requests, and
- * they are bounded from two sides. Outward: the inherited CSP refuses any
- * other origin (`img-src 'self' data:`, `style-src 'self' …`). Inward: a
- * relative or root-relative URL does resolve — a `srcdoc` document's base URL
- * is the embedder's, not nothing — so it reaches this server, which serves the
- * app bundle and the API but never repository files, and answers a path that
- * names a file with a 404. Those requests are unauthenticated: the sandbox
- * gives the frame an opaque origin and the session cookie is `SameSite=Strict`,
- * so even `GET /logout` from inside the frame leaves the session alone
- * (verified, not assumed).
+ * What the document *can* still do is load subresources, bounded by that
+ * inherited CSP: `data:` URIs and this origin, nothing else. So a page that
+ * embeds its images as `data:` renders completely, while any other host is
+ * refused — as a subresource and as a frame navigation, so a link the user
+ * clicks does not leave either (all verified in a browser, not reasoned).
  *
- * The cost is deliberate: a document that needs scripts does not work, and its
- * stylesheets and images do not load. This previews a self-contained page, not
- * a site.
+ * A relative or root-relative URL does resolve, against this origin: a
+ * `srcdoc` document's base URL is the embedder's, not nothing. It therefore
+ * reaches this server, which serves the app bundle and the API but never
+ * repository files, so the sibling stylesheet a document expects 404s. Those
+ * requests are unauthenticated — the sandbox gives the frame an opaque origin
+ * and the session cookie is `SameSite=Strict` — so even `GET /logout` from
+ * inside the frame leaves the session alone.
+ *
+ * The cost is deliberate: a document that needs scripts does not work, and one
+ * that links its stylesheet or images as separate files shows without them.
+ * This previews a self-contained page, not a site.
  */
 export function HtmlView({ source }: { source: string }) {
   return (
