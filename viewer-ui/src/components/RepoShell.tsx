@@ -59,8 +59,8 @@ export interface RepoShellProps {
   logPagingPaused: boolean;
   aheadOids: Set<string>;
   visibleCommitFiles: CommitDrillDown["files"];
-  mdRendered: boolean;
-  setMdRendered: React.Dispatch<React.SetStateAction<boolean>>;
+  previewRendered: boolean;
+  setPreviewRendered: React.Dispatch<React.SetStateAction<boolean>>;
   maximized: Maximized;
   setMaximized: (next: Maximized | ((prev: Maximized) => Maximized)) => void;
   mobileView: MobileView;
@@ -111,8 +111,8 @@ export function RepoShell(props: RepoShellProps) {
     logPagingPaused,
     aheadOids,
     visibleCommitFiles,
-    mdRendered,
-    setMdRendered,
+    previewRendered,
+    setPreviewRendered,
     maximized,
     setMaximized,
     mobileView,
@@ -179,8 +179,8 @@ export function RepoShell(props: RepoShellProps) {
         />
         <FilePane
           pane={pane}
-          mdRendered={mdRendered}
-          setMdRendered={setMdRendered}
+          previewRendered={previewRendered}
+          setPreviewRendered={setPreviewRendered}
           filesMax={filesMax}
           setMaximized={setMaximized}
           status={status}

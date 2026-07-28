@@ -13,7 +13,7 @@ export interface UsePaneOpenersArgs {
   setMobileView: (view: MobileView) => void;
   /// Raw is a one-off "what does the source say" check, so opening a file
   /// starts from the rendered view again rather than inheriting the last choice.
-  setMdRendered: (rendered: boolean) => void;
+  setPreviewRendered: (rendered: boolean) => void;
 }
 
 export interface UsePaneOpenersResult {
@@ -31,7 +31,7 @@ export function usePaneOpeners({
   paneRequestRef,
   setCommitDrillDown,
   setMobileView,
-  setMdRendered,
+  setPreviewRendered,
 }: UsePaneOpenersArgs): UsePaneOpenersResult {
   const openDiff = useCallback(
     (path: string) => {
@@ -53,7 +53,7 @@ export function usePaneOpeners({
     (path: string) => {
       if (!repo) return;
       setMobileView("diff");
-      setMdRendered(true);
+      setPreviewRendered(true);
       const request = (paneRequestRef.current += 1);
       api
         .file(repo, path)
@@ -64,7 +64,7 @@ export function usePaneOpeners({
           if (request === paneRequestRef.current) handle(err);
         });
     },
-    [repo, handle, setPane, paneRequestRef, setMobileView, setMdRendered],
+    [repo, handle, setPane, paneRequestRef, setMobileView, setPreviewRendered],
   );
   const openCommit = useCallback(
     (oid: string) => {

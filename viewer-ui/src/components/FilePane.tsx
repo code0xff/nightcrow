@@ -14,8 +14,8 @@ const MarkdownView = lazy(() =>
 
 export interface FilePaneProps {
   pane: Pane;
-  mdRendered: boolean;
-  setMdRendered: React.Dispatch<React.SetStateAction<boolean>>;
+  previewRendered: boolean;
+  setPreviewRendered: React.Dispatch<React.SetStateAction<boolean>>;
   filesMax: boolean;
   setMaximized: (next: "none" | "files" | "terminal") => void;
   status: Status | null;
@@ -24,8 +24,8 @@ export interface FilePaneProps {
 
 export function FilePane({
   pane,
-  mdRendered,
-  setMdRendered,
+  previewRendered,
+  setPreviewRendered,
   filesMax,
   setMaximized,
   status,
@@ -60,16 +60,16 @@ export function FilePane({
           )}
           {pane.kind === "file" && isMarkdownPath(pane.value.path) && (
             <button
-              onClick={() => setMdRendered((r) => !r)}
-              aria-pressed={mdRendered}
+              onClick={() => setPreviewRendered((r) => !r)}
+              aria-pressed={previewRendered}
               title={
-                mdRendered ? "Show raw source" : "Show rendered markdown"
+                previewRendered ? "Show raw source" : "Show rendered markdown"
               }
               aria-label={
-                mdRendered ? "Show raw source" : "Show rendered markdown"
+                previewRendered ? "Show raw source" : "Show rendered markdown"
               }
               className={`flex shrink-0 items-center rounded-sm px-1.5 py-0.5 hover:text-accent ${
-                mdRendered ? "text-accent" : ""
+                previewRendered ? "text-accent" : ""
               }`}
             >
               <PreviewIcon />
@@ -96,7 +96,7 @@ export function FilePane({
         )}
         {pane.kind === "file" && (
           <>
-            {isMarkdownPath(pane.value.path) && mdRendered ? (
+            {isMarkdownPath(pane.value.path) && previewRendered ? (
               <Suspense fallback={<p className="p-4 text-ink-400">Rendering…</p>}>
                 <MarkdownView source={fileViewSource(pane.value.lines)} />
               </Suspense>

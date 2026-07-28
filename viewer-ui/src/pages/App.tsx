@@ -48,7 +48,7 @@ export function App() {
     sidebarWrites,
   } = useViewerPrefs();
   const sidebarRef = useRef<HTMLElement>(null);
-  const [mdRendered, setMdRendered] = useState(true);
+  const [previewRendered, setPreviewRendered] = useState(true);
   const handle = useCallback((err: unknown) => {
     if (isUnauthorized(err)) {
       setAuthed(false);
@@ -137,7 +137,7 @@ export function App() {
       paneRequestRef,
       setCommitDrillDown,
       setMobileView,
-      setMdRendered,
+      setPreviewRendered,
     });
 
   const { selectOpenedRepo, closeRepo } = useRepoActions({
@@ -252,8 +252,8 @@ export function App() {
           logPagingPaused={logPagingPaused}
           aheadOids={aheadOids}
           visibleCommitFiles={visibleCommitFiles}
-          mdRendered={mdRendered}
-          setMdRendered={setMdRendered}
+          previewRendered={previewRendered}
+          setPreviewRendered={setPreviewRendered}
           maximized={maximized}
           setMaximized={setMaximized}
           mobileView={mobileView}
