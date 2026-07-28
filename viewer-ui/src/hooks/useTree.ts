@@ -4,13 +4,14 @@ import {
   ancestorDirs,
   emptyMatches,
   emptyTreeCache,
-  forRepo,
+  forOwner,
   matchesFor,
+  visibleFor,
   withChildren,
   withRevealed,
   withToggled,
 } from "../lib/treeCache";
-import type { TreeMatches } from "../lib/treeCache";
+import type { TreeMatches, TreeOwner } from "../lib/treeCache";
 
 const TREE_SEARCH_DEBOUNCE_MS = 180;
 
@@ -43,27 +44,30 @@ export function useTree({
   handle,
 }: UseTreeArgs): UseTreeResult {
   const [cache, setCache] = useState(emptyTreeCache);
-  // Read when a listing *arrives*, not when it was asked for: the project on
-  // screen may have changed in between.
-  const shownRepo = useRef(repo);
-  shownRepo.current = repo;
+  // The visit being drawn, read when a listing *arrives* rather than when it
+  // was asked for. Written in the effect below, not during render, so it only
+  // ever names a project the user actually got to see.
+  const visit = useRef<TreeOwner>({ repo });
   const [matches, setMatches] = useState<TreeMatches<TreeMatch>>(emptyMatches);
   const [treeSearchLoading, setTreeSearchLoading] = useState(false);
 
   // Another project's tree is not this project's tree, even where the paths
   // agree. Status and the log already start over on a repo change; the tree
   // has to as well, or the directories left expanded redraw with the previous
-  // project's contents.
+  // project's contents. Each change starts a new visit, so returning to a
+  // project does not let its previous visit's replies back in.
   useEffect(() => {
-    setCache((current) => forRepo(current, repo));
+    visit.current = { repo };
+    setCache((current) => forOwner(current, visit.current));
   }, [repo]);
 
   useEffect(() => {
     if (!repo || !authed || tab !== "tree") return;
+    const requested = visit.current;
     api
       .tree(repo, "")
       .then((r) =>
-        setCache((c) => withChildren(c, shownRepo.current, repo, "", r.entries)),
+        setCache((c) => withChildren(c, visit.current, requested, "", r.entries)),
       )
       .catch(handle);
   }, [repo, authed, tab, handle]);
@@ -82,7 +86,11 @@ export function useTree({
         .treeSearch(repo, filter)
         .then((r) => {
           if (!active) return;
-          setMatches({ repo, items: r.matches, truncated: r.truncated });
+          setMatches({
+            owner: visit.current,
+            items: r.matches,
+            truncated: r.truncated,
+          });
         })
         .catch((err) => {
           if (active) handle(err);
@@ -100,11 +108,12 @@ export function useTree({
   const loadTreeChildren = useCallback(
     (path: string) => {
       if (!repo) return;
+      const requested = visit.current;
       api
         .tree(repo, path)
         .then((r) =>
           setCache((c) =>
-            withChildren(c, shownRepo.current, repo, path, r.entries),
+            withChildren(c, visit.current, requested, path, r.entries),
           ),
         )
         .catch(handle);
@@ -114,7 +123,7 @@ export function useTree({
   // What this project's tree looks like right now. A cache still tagged with
   // the project the user just left renders as nothing rather than as its
   // listings, so no frame ever shows another project's files.
-  const shown = forRepo(cache, repo);
+  const shown = visibleFor(cache, repo);
 
   const toggleTreeDir = useCallback(
     (path: string) => {

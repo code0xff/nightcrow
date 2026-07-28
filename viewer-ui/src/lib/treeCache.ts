@@ -1,6 +1,18 @@
 import type { TreeEntry } from "../api";
 
 /**
+ * Which visit to which project a set of listings belongs to.
+ *
+ * Compared by identity, not by name: leaving a project and coming back makes a
+ * new owner, so a listing still in flight from the first visit is recognised as
+ * belonging to that visit and dropped, rather than landing on top of what the
+ * second visit has since loaded.
+ */
+export interface TreeOwner {
+  repo: string | null;
+}
+
+/**
  * Directory listings for the file tree, tagged with whose they are.
  *
  * The listings are keyed by repository-relative path — `src`, `src/lib` — which
@@ -10,14 +22,13 @@ import type { TreeEntry } from "../api";
  * fetch entirely for a path it already holds, so the wrong contents stay until
  * a reload.
  *
- * So the cache carries the repository it describes. Every read goes through
- * [`forRepo`], which yields nothing when the tag does not match what is on
- * screen, and [`withChildren`] drops a listing that arrives for a repository
- * the user has already left.
+ * So the cache carries its owner. Reads go through [`visibleFor`], which yields
+ * nothing unless the owner is the project on screen, and [`withChildren`] drops
+ * a listing whose visit is over.
  */
 export interface TreeCache {
-  /** The repository these listings came from; null before anything loaded. */
-  repo: string | null;
+  /** The visit these listings came from; null before anything loaded. */
+  owner: TreeOwner | null;
   /** Entries per expanded directory, keyed by repository-relative path. */
   children: Record<string, TreeEntry[]>;
   /** Directories the user has opened. */
@@ -25,35 +36,49 @@ export interface TreeCache {
 }
 
 export const emptyTreeCache: TreeCache = {
-  repo: null,
+  owner: null,
   children: {},
   expanded: new Set(),
 };
 
-/** The cache as it applies to `repo` — its own listings, or nothing. */
-export function forRepo(cache: TreeCache, repo: string | null): TreeCache {
-  if (cache.repo === repo) return cache;
-  return { repo, children: {}, expanded: new Set() };
+/** The cache as it applies to `owner` — its own listings, or nothing. */
+export function forOwner(
+  cache: TreeCache,
+  owner: TreeOwner | null,
+): TreeCache {
+  if (cache.owner === owner) return cache;
+  return { owner, children: {}, expanded: new Set() };
 }
 
 /**
- * Store one directory's entries, given which repository is on screen
- * (`current`) and which one the listing was requested for (`requested`).
+ * What `repo` may draw. Identity is right for storing but too strict for
+ * rendering: between the render that switches project and the effect that
+ * starts the new visit, the cache still belongs to the old owner, and the
+ * listings are only wrong if they describe another repository.
+ */
+export function visibleFor(cache: TreeCache, repo: string | null): TreeCache {
+  if (cache.owner && cache.owner.repo === repo) return cache;
+  return emptyTreeCache;
+}
+
+/**
+ * Store one directory's entries, given the visit on screen (`current`) and the
+ * visit that asked for them (`requested`).
  *
  * Both are needed because a listing outlives the click that asked for it: a
- * request sent for one project can arrive after the user has switched to
- * another. Such a listing is dropped — it describes a project nobody is
- * looking at, and the project now on screen will ask for its own.
+ * request sent during one visit can arrive after the user has moved on. Such a
+ * listing is dropped — nobody is looking at what it describes, and whoever is
+ * on screen asks for their own.
  */
 export function withChildren(
   cache: TreeCache,
-  current: string | null,
-  requested: string,
+  current: TreeOwner | null,
+  requested: TreeOwner,
   path: string,
   entries: TreeEntry[],
 ): TreeCache {
   if (current !== requested) return cache;
-  const base = forRepo(cache, current);
+  const base = forOwner(cache, current);
   return { ...base, children: { ...base.children, [path]: entries } };
 }
 
@@ -73,13 +98,13 @@ export function withRevealed(cache: TreeCache, dirs: string[]): TreeCache {
  *  the matches are repository-relative paths, so results from the project the
  *  user just left read as if they were this project's files. */
 export interface TreeMatches<T> {
-  repo: string | null;
+  owner: TreeOwner | null;
   items: T[];
   truncated: boolean;
 }
 
 export function emptyMatches<T>(): TreeMatches<T> {
-  return { repo: null, items: [], truncated: false };
+  return { owner: null, items: [], truncated: false };
 }
 
 /** The results as they apply to `repo` — its own, or none. */
@@ -87,7 +112,9 @@ export function matchesFor<T>(
   matches: TreeMatches<T>,
   repo: string | null,
 ): { items: T[]; truncated: boolean } {
-  if (matches.repo !== repo) return { items: [], truncated: false };
+  if (!matches.owner || matches.owner.repo !== repo) {
+    return { items: [], truncated: false };
+  }
   return { items: matches.items, truncated: matches.truncated };
 }
 
