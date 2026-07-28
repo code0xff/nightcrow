@@ -1,6 +1,6 @@
 import { Suspense, lazy } from "react";
 import { useDiffLayout } from "../lib/diffLayout";
-import { fileViewSource, isMarkdownPath } from "../lib/fileView";
+import { fileViewSource, isHtmlPath, isPreviewablePath } from "../lib/fileView";
 import { MaximizeIcon, PreviewIcon, SplitViewIcon } from "./icons";
 import { DiffView } from "./DiffView";
 import { PathLabel } from "./PathLabel";
@@ -10,6 +10,9 @@ import type { Pane } from "../types";
 // Keep the markdown pipeline out of the initial chunk.
 const MarkdownView = lazy(() =>
   import("./content/Markdown").then((m) => ({ default: m.MarkdownView })),
+);
+const HtmlView = lazy(() =>
+  import("./content/Html").then((m) => ({ default: m.HtmlView })),
 );
 
 export interface FilePaneProps {
@@ -58,15 +61,13 @@ export function FilePane({
               <SplitViewIcon />
             </button>
           )}
-          {pane.kind === "file" && isMarkdownPath(pane.value.path) && (
+          {pane.kind === "file" && isPreviewablePath(pane.value.path) && (
             <button
               onClick={() => setPreviewRendered((r) => !r)}
               aria-pressed={previewRendered}
-              title={
-                previewRendered ? "Show raw source" : "Show rendered markdown"
-              }
+              title={previewRendered ? "Show raw source" : "Show the rendered page"}
               aria-label={
-                previewRendered ? "Show raw source" : "Show rendered markdown"
+                previewRendered ? "Show raw source" : "Show the rendered page"
               }
               className={`flex shrink-0 items-center rounded-sm px-1.5 py-0.5 hover:text-accent ${
                 previewRendered ? "text-accent" : ""
@@ -96,9 +97,13 @@ export function FilePane({
         )}
         {pane.kind === "file" && (
           <>
-            {isMarkdownPath(pane.value.path) && previewRendered ? (
+            {isPreviewablePath(pane.value.path) && previewRendered ? (
               <Suspense fallback={<p className="p-4 text-ink-400">Rendering…</p>}>
-                <MarkdownView source={fileViewSource(pane.value.lines)} />
+                {isHtmlPath(pane.value.path) ? (
+                  <HtmlView source={fileViewSource(pane.value.lines)} />
+                ) : (
+                  <MarkdownView source={fileViewSource(pane.value.lines)} />
+                )}
               </Suspense>
             ) : (
               <pre className="p-3 whitespace-pre text-ink-200">
