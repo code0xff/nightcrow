@@ -23,6 +23,9 @@ struct PrefsRequest {
     /// as a silent no-op.
     accent: Option<usize>,
     sidebar_width: Option<u32>,
+    /// Repo **id**, as every other client-supplied repository reference is.
+    /// The server translates it to the path `prefs.rs` stores.
+    active_repo: Option<String>,
 }
 
 /// Store one or more viewer preferences and echo back the full stored set.
@@ -41,15 +44,33 @@ pub(super) fn handle_set_prefs(body: &str, state: &ViewerState) -> Vec<u8> {
             );
         }
     };
-    if request.accent.is_none() && request.sidebar_width.is_none() {
+    if request.accent.is_none() && request.sidebar_width.is_none() && request.active_repo.is_none()
+    {
         return json_error("400 Bad Request", "no known preference in the body");
     }
-    // One locked write for whatever the body carried, so a request naming both
-    // preferences lands atomically rather than as two racing updates.
-    let stored = state.prefs.update(request.accent, request.sidebar_width);
+    // Resolved before the write, because what is stored is the path behind the
+    // id. An id no longer in the catalog is rejected rather than dropped: the
+    // only way to send one is to have raced a close on another device, and
+    // storing nothing while answering 200 would claim a selection was kept.
+    let active_path = match request.active_repo {
+        Some(id) => match state.catalog.get(&id) {
+            Some(entry) => Some(entry.path.clone()),
+            None => return json_error("400 Bad Request", "unknown repo"),
+        },
+        None => None,
+    };
+    // One locked write for whatever the body carried, so a request naming
+    // several preferences lands atomically rather than as racing updates.
+    let stored = state
+        .prefs
+        .update(request.accent, request.sidebar_width, active_path);
     match serde_json::to_string(&Envelope::new(serde_json::json!({
         "accent": stored.accent,
         "sidebar_width": stored.sidebar_width,
+        "active_repo": stored
+            .active_repo
+            .as_deref()
+            .and_then(|path| state.catalog.id_of_path(path)),
     }))) {
         Ok(json) => json_response("200 OK", &json, &[]),
         Err(_) => json_error("500 Internal Server Error", "could not encode preferences"),

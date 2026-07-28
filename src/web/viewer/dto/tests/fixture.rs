@@ -53,6 +53,7 @@ fn wire_fixture() -> serde_json::Value {
             hot: HotConfigDto { enabled: true, window_secs: 15 },
             accent: 2,
             sidebar_width: 460,
+            active_repo: Some("r1".to_string()),
             // Literal, not `server_now_millis()`: a fixture that moved every
             // run could not be committed.
             now_ms: 1_700_000_000_500,
@@ -158,7 +159,11 @@ fn wire_fixture() -> serde_json::Value {
         // One shape for every `/api/prefs` write: the full stored prefs, so
         // a client that set the accent and one that set the width both read
         // the clamped result back the same way.
-        "storedPrefs": serde_json::json!({ "accent": 2, "sidebar_width": 460 }),
+        "storedPrefs": serde_json::json!({
+            "accent": 2,
+            "sidebar_width": 460,
+            "active_repo": "r1",
+        }),
     })
 }
 

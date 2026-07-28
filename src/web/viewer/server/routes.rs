@@ -33,6 +33,13 @@ pub(super) fn route(head: &RequestHead, state: &ViewerState) -> Vec<u8> {
                 },
                 prefs.accent,
                 prefs.sidebar_width,
+                // Resolved per response rather than stored as an id: the
+                // remembered project may have been closed since, and a path
+                // that is no longer served has no id to send.
+                prefs
+                    .active_repo
+                    .as_deref()
+                    .and_then(|path| state.catalog.id_of_path(path)),
                 state.git_available,
             );
             match serde_json::to_string(&Envelope::new(bootstrap)) {

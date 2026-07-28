@@ -191,6 +191,18 @@ impl Catalog {
             .map(Arc::clone)
     }
 
+    /// The id currently standing for `path`, or `None` when that path is not
+    /// served. The inverse of [`Catalog::get`], for the one caller that stores
+    /// a repository across restarts (`prefs.rs`) and so cannot hold an id.
+    pub fn id_of_path(&self, path: &str) -> Option<String> {
+        self.entries
+            .lock()
+            .expect("catalog poisoned")
+            .iter()
+            .find(|e| e.path == path)
+            .map(|e| e.id.clone())
+    }
+
     pub fn list(&self) -> Vec<crate::web::viewer::dto::RepoDto> {
         self.entries
             .lock()

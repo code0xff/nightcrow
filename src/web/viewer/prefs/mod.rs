@@ -29,7 +29,7 @@ pub const MAX_SIDEBAR_WIDTH: u32 = 720;
 /// Everything the viewer remembers for its clients. One shared value, not one
 /// per repository: repo ids are only stable for the process lifetime
 /// (`catalog.rs`), so a per-repo key would drop the preference on restart.
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(default)]
 pub struct ViewerPrefs {
     /// Index into the accent cycle, in the TUI's order (`config::Accent::ALL`).
@@ -38,6 +38,19 @@ pub struct ViewerPrefs {
     /// `[MIN_SIDEBAR_WIDTH, MAX_SIDEBAR_WIDTH]`. Shared across clients like the
     /// accent so every device opens at the same split.
     pub sidebar_width: u32,
+    /// Absolute worktree path of the project a client last selected, so a
+    /// reload lands where the user left off instead of on the first tab.
+    ///
+    /// A **path**, not the repo id the client speaks: ids only live as long as
+    /// the process (`catalog.rs`), so a stored id would name nothing after a
+    /// restart — which is exactly the case this field exists for. The server
+    /// translates in both directions; the client never learns the path.
+    ///
+    /// `None` until a client selects a project, and stays set to a path that
+    /// is no longer served — a closed project that comes back is still the one
+    /// the user was last in, and an unresolvable path simply falls back to the
+    /// first tab.
+    pub active_repo: Option<String>,
 }
 
 impl Default for ViewerPrefs {
@@ -45,6 +58,7 @@ impl Default for ViewerPrefs {
         Self {
             accent: 0,
             sidebar_width: DEFAULT_SIDEBAR_WIDTH,
+            active_repo: None,
         }
     }
 }
@@ -86,7 +100,7 @@ impl PrefsStore {
     }
 
     pub fn get(&self) -> ViewerPrefs {
-        *self.state.lock().expect("prefs poisoned")
+        self.state.lock().expect("prefs poisoned").clone()
     }
 
     /// Apply `change` and persist the result, both while holding the lock, so a
@@ -101,17 +115,24 @@ impl PrefsStore {
         if let Some(path) = &self.path {
             write(path, &state);
         }
-        *state
+        state.clone()
     }
 
     /// Apply any subset of the preferences in one locked write. A request may
-    /// carry several at once (`/api/prefs` accepts both), so they must land
-    /// together — otherwise a concurrent write could interleave and the echo
-    /// would describe a state no single POST produced. `None` leaves a field as
-    /// it is. Accent wraps into range as the TUI wraps it (`Accent::from_index`);
-    /// width clamps so a browser drag past the bounds still yields a usable
-    /// split.
-    pub fn update(&self, accent: Option<usize>, sidebar_width: Option<u32>) -> ViewerPrefs {
+    /// carry several at once (`/api/prefs` accepts any subset), so they must
+    /// land together — otherwise a concurrent write could interleave and the
+    /// echo would describe a state no single POST produced. `None` leaves a
+    /// field as it is. Accent wraps into range as the TUI wraps it
+    /// (`Accent::from_index`); width clamps so a browser drag past the bounds
+    /// still yields a usable split. `active_repo` is taken as given — the
+    /// caller resolved it from a live repository, so there is no range to fold
+    /// it into.
+    pub fn update(
+        &self,
+        accent: Option<usize>,
+        sidebar_width: Option<u32>,
+        active_repo: Option<String>,
+    ) -> ViewerPrefs {
         self.mutate(|state| {
             if let Some(accent) = accent {
                 state.accent = accent % Accent::ALL.len();
@@ -119,18 +140,29 @@ impl PrefsStore {
             if let Some(width) = sidebar_width {
                 state.sidebar_width = width.clamp(MIN_SIDEBAR_WIDTH, MAX_SIDEBAR_WIDTH);
             }
+            if let Some(path) = active_repo {
+                state.active_repo = Some(path);
+            }
         })
     }
 
     /// Store `accent` alone. Thin wrapper over [`update`] so the clamping lives
     /// in one place.
     pub fn set_accent(&self, accent: usize) -> ViewerPrefs {
-        self.update(Some(accent), None)
+        self.update(Some(accent), None, None)
     }
 
     /// Store the sidebar width alone. Thin wrapper over [`update`].
     pub fn set_sidebar_width(&self, width: u32) -> ViewerPrefs {
-        self.update(None, Some(width))
+        self.update(None, Some(width), None)
+    }
+
+    /// Store the active project's absolute path alone. Thin wrapper over
+    /// [`update`]. There is deliberately no way to clear it: closing the last
+    /// project leaves no path worth recording, and keeping the old one means it
+    /// is still the selection when that project is opened again.
+    pub fn set_active_repo(&self, path: String) -> ViewerPrefs {
+        self.update(None, None, Some(path))
     }
 }
 

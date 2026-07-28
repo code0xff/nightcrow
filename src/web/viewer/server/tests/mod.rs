@@ -1,3 +1,4 @@
+mod active_repo;
 mod auth;
 mod clone;
 mod commit_routes;
