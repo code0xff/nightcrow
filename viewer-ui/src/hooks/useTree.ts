@@ -1,5 +1,13 @@
 import { useCallback, useEffect, useState } from "react";
 import { api, type TreeEntry, type TreeMatch } from "../api";
+import {
+  ancestorDirs,
+  emptyTreeCache,
+  forRepo,
+  withChildren,
+  withRevealed,
+  withToggled,
+} from "../lib/treeCache";
 
 const TREE_SEARCH_DEBOUNCE_MS = 180;
 
@@ -14,11 +22,7 @@ export interface UseTreeArgs {
 
 export interface UseTreeResult {
   treeChildren: Record<string, TreeEntry[]>;
-  setTreeChildren: React.Dispatch<
-    React.SetStateAction<Record<string, TreeEntry[]>>
-  >;
   treeExpanded: Set<string>;
-  setTreeExpanded: React.Dispatch<React.SetStateAction<Set<string>>>;
   treeMatches: TreeMatch[];
   treeTruncated: boolean;
   treeSearchLoading: boolean;
@@ -35,19 +39,26 @@ export function useTree({
   filterOpen,
   handle,
 }: UseTreeArgs): UseTreeResult {
-  const [treeChildren, setTreeChildren] = useState<Record<string, TreeEntry[]>>(
-    {},
-  );
-  const [treeExpanded, setTreeExpanded] = useState<Set<string>>(new Set());
+  const [cache, setCache] = useState(emptyTreeCache);
   const [treeMatches, setTreeMatches] = useState<TreeMatch[]>([]);
   const [treeTruncated, setTreeTruncated] = useState(false);
   const [treeSearchLoading, setTreeSearchLoading] = useState(false);
+
+  // Another project's tree is not this project's tree, even where the paths
+  // agree. Status and the log already start over on a repo change; the tree
+  // has to as well, or the directories left expanded redraw with the previous
+  // project's contents.
+  useEffect(() => {
+    setCache((current) => forRepo(current, repo));
+    setTreeMatches([]);
+    setTreeTruncated(false);
+  }, [repo]);
 
   useEffect(() => {
     if (!repo || !authed || tab !== "tree") return;
     api
       .tree(repo, "")
-      .then((r) => setTreeChildren((cache) => ({ ...cache, "": r.entries })))
+      .then((r) => setCache((c) => withChildren(c, repo, "", r.entries)))
       .catch(handle);
   }, [repo, authed, tab, handle]);
 
@@ -87,50 +98,33 @@ export function useTree({
       if (!repo) return;
       api
         .tree(repo, path)
-        .then((r) => setTreeChildren((cache) => ({ ...cache, [path]: r.entries })))
+        .then((r) => setCache((c) => withChildren(c, repo, path, r.entries)))
         .catch(handle);
     },
     [repo, handle],
   );
   const toggleTreeDir = useCallback(
     (path: string) => {
-      const willExpand = !treeExpanded.has(path);
-      setTreeExpanded((prev) => {
-        const next = new Set(prev);
-        if (next.has(path)) next.delete(path);
-        else next.add(path);
-        return next;
-      });
-      if (willExpand && !(path in treeChildren)) loadTreeChildren(path);
+      const willExpand = !cache.expanded.has(path);
+      setCache((c) => withToggled(c, path));
+      if (willExpand && !(path in cache.children)) loadTreeChildren(path);
     },
-    [treeExpanded, treeChildren, loadTreeChildren],
+    [cache, loadTreeChildren],
   );
   const revealTreeDir = useCallback(
     (path: string) => {
-      const parts = path.split("/");
-      const dirs: string[] = [];
-      let acc = "";
-      for (const part of parts) {
-        acc = acc ? `${acc}/${part}` : part;
-        dirs.push(acc);
-      }
-      setTreeExpanded((prev) => {
-        const next = new Set(prev);
-        dirs.forEach((d) => next.add(d));
-        return next;
-      });
-      dirs.forEach((d) => {
-        if (!(d in treeChildren)) loadTreeChildren(d);
+      const dirs = ancestorDirs(path);
+      setCache((c) => withRevealed(c, dirs));
+      dirs.forEach((dir) => {
+        if (!(dir in cache.children)) loadTreeChildren(dir);
       });
     },
-    [treeChildren, loadTreeChildren],
+    [cache, loadTreeChildren],
   );
 
   return {
-    treeChildren,
-    setTreeChildren,
-    treeExpanded,
-    setTreeExpanded,
+    treeChildren: cache.children,
+    treeExpanded: cache.expanded,
     treeMatches,
     treeTruncated,
     treeSearchLoading,
