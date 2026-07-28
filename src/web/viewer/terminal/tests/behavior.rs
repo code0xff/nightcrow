@@ -279,6 +279,30 @@ fn an_empty_startup_offers_one_shell() {
 }
 
 #[test]
+fn a_startup_size_of_zero_is_clamped_rather_than_reaching_openpty() {
+    // A zero dimension can fail `openpty` outright, and the claim is already
+    // spent by then — the hub would hold `started` with no terminal to show
+    // for it and never offer them again.
+    let dir = tempfile::TempDir::new().unwrap();
+    let hub = TerminalHub::spawn(&dir.path().to_string_lossy(), Vec::new());
+    let session = hub.connect();
+    next_matching(&session, |f| pending_count(f).is_some()).expect("no offer");
+
+    session.dispatch(ClientMessage::Start {
+        sizes: vec![PaneSize { rows: 0, cols: 0 }],
+    });
+
+    let created = next_matching(&session, |f| created_pane(f).is_some())
+        .expect("a zero size must still produce a terminal");
+    assert_eq!(
+        created_size(&created),
+        Some((limits::MIN_PANE_DIMENSION, limits::MIN_PANE_DIMENSION)),
+        "the size must be clamped, not passed through"
+    );
+    hub.stop();
+}
+
+#[test]
 fn an_unanswered_offer_is_made_again_to_the_next_client() {
     // A page that closes mid-handshake must not take the terminals with it.
     // Nothing consumes the offer but an answer, so the hub cannot end up with

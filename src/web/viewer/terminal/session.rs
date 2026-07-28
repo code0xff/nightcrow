@@ -1,6 +1,6 @@
 use super::TerminalHub;
-use super::frame::ClientMessage;
 use super::frame::TerminalFrame;
+use super::frame::{ClientMessage, PaneSize};
 use super::hub_helpers::Command;
 use std::sync::mpsc::{Receiver, SyncSender, TrySendError};
 use std::time::Duration;
@@ -26,27 +26,34 @@ impl TerminalSession {
     /// Handle a decoded control message from this client.
     pub fn dispatch(&self, message: ClientMessage) {
         let command = match message {
-            ClientMessage::Create { rows, cols } => Command::Create {
-                rows: rows.max(1),
-                cols: cols.max(1),
-                client: self.id,
-                command: None,
-            },
+            ClientMessage::Create { rows, cols } => {
+                let size = PaneSize { rows, cols }.clamped();
+                Command::Create {
+                    rows: size.rows,
+                    cols: size.cols,
+                    client: self.id,
+                    command: None,
+                }
+            }
             ClientMessage::Input { pane, data } => Command::Input {
                 pane,
                 data: data.into_bytes(),
             },
-            ClientMessage::Resize { pane, rows, cols } => Command::Resize {
-                pane,
-                rows: rows.max(1),
-                cols: cols.max(1),
-            },
+            ClientMessage::Resize { pane, rows, cols } => {
+                let size = PaneSize { rows, cols }.clamped();
+                Command::Resize {
+                    pane,
+                    rows: size.rows,
+                    cols: size.cols,
+                }
+            }
             ClientMessage::Close { pane } => Command::Close { pane },
             ClientMessage::Reorder { order } => Command::Reorder { order },
             // Handled here rather than on the worker thread: it only queues
             // creates, and routing it through the same queue would let a
             // backed-up hub drop the one message that brings the terminals up.
             ClientMessage::Start { sizes } => {
+                let sizes: Vec<PaneSize> = sizes.into_iter().map(PaneSize::clamped).collect();
                 self.hub.claim_startup(self.id, &sizes);
                 return;
             }

@@ -1,4 +1,5 @@
 use crate::backend::PaneId;
+use crate::web::viewer::limits;
 use serde::{Deserialize, Serialize};
 
 /// A control message from the browser. Output travels as binary frames
@@ -42,6 +43,25 @@ pub enum ClientMessage {
 pub struct PaneSize {
     pub rows: u16,
     pub cols: u16,
+}
+
+impl PaneSize {
+    /// Bring a size the client sent inside [`limits`]' bounds.
+    ///
+    /// Every path that reaches `openpty` goes through here — `create`,
+    /// `resize`, and each entry of `start` — because they are all the same
+    /// thing arriving from the same untrusted side, and a clamp that only some
+    /// of them apply is the one the next path forgets.
+    pub fn clamped(self) -> Self {
+        Self {
+            rows: self
+                .rows
+                .clamp(limits::MIN_PANE_DIMENSION, limits::MAX_PANE_ROWS),
+            cols: self
+                .cols
+                .clamp(limits::MIN_PANE_DIMENSION, limits::MAX_PANE_COLS),
+        }
+    }
 }
 
 /// A control message to the browser.

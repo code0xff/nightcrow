@@ -45,6 +45,16 @@ pub const MAX_DIFF_LINES: usize = 20_000;
 pub const MAX_SSE_PAYLOAD_BYTES: usize = 1024 * 1024;
 /// Terminals one repository may hold open at once. Each is a real process.
 pub const MAX_PTYS_PER_REPO: usize = 8;
+/// Bounds on a PTY's size. The client measures these from its own layout, so
+/// they are input from outside and are clamped rather than trusted: a zero
+/// dimension gives the child a terminal it cannot draw in (and can fail
+/// `openpty` outright), and the far end lets one message ask a full-screen
+/// program to allocate a screen buffer of `rows * cols` cells. The ceiling is
+/// far above any real display — a 6K screen at a 6px font is under 500 columns
+/// — so it never truncates a size someone actually has.
+pub const MIN_PANE_DIMENSION: u16 = 1;
+pub const MAX_PANE_ROWS: u16 = 1_000;
+pub const MAX_PANE_COLS: u16 = 1_000;
 /// Raw PTY bytes retained per terminal to replay to a (re)connecting client.
 /// Restore is best-effort, not an exact snapshot: replaying only a byte-window
 /// means a terminal mode set before that window (alternate screen, persistent

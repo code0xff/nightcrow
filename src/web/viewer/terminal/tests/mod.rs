@@ -180,6 +180,38 @@ fn server_messages_serialize_with_a_type_tag() {
 }
 
 #[test]
+fn a_pane_size_is_clamped_into_the_bounds_a_pty_can_use() {
+    // These arrive from the client's own measurement, so they are input from
+    // outside. Zero gives the child a terminal it cannot draw in and can fail
+    // `openpty`; the far end asks a full-screen program for a screen buffer of
+    // rows * cells.
+    assert_eq!(
+        PaneSize { rows: 0, cols: 0 }.clamped(),
+        PaneSize {
+            rows: limits::MIN_PANE_DIMENSION,
+            cols: limits::MIN_PANE_DIMENSION
+        }
+    );
+    assert_eq!(
+        PaneSize {
+            rows: u16::MAX,
+            cols: u16::MAX
+        }
+        .clamped(),
+        PaneSize {
+            rows: limits::MAX_PANE_ROWS,
+            cols: limits::MAX_PANE_COLS
+        }
+    );
+    // A real display passes through untouched.
+    let real = PaneSize {
+        rows: 48,
+        cols: 210,
+    };
+    assert_eq!(real.clamped(), real);
+}
+
+#[test]
 fn canonical_order_reconciles_a_request_against_the_live_panes() {
     // A full permutation is honored verbatim.
     assert_eq!(canonical_order(&[1, 2, 3], &[3, 1, 2]), vec![3, 1, 2]);
