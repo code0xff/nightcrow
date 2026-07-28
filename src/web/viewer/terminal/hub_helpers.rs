@@ -15,6 +15,13 @@ pub enum Command {
         client: u64,
         command: Option<String>,
     },
+    /// Every startup pane at once, so the set is queued all-or-nothing: a
+    /// partial enqueue would spend the claim on some of them and lose the
+    /// rest with nothing left to retry from.
+    CreateStartup {
+        panes: Vec<StartupPane>,
+        client: u64,
+    },
     Input {
         pane: PaneId,
         data: Vec<u8>,
@@ -30,6 +37,12 @@ pub enum Command {
     Reorder {
         order: Vec<PaneId>,
     },
+}
+
+/// One startup terminal: the command to run, at the size a client measured.
+pub struct StartupPane {
+    pub(super) size: crate::web::viewer::terminal::frame::PaneSize,
+    pub(super) command: Option<String>,
 }
 
 /// A live terminal and the recent raw bytes it has produced, kept so a client

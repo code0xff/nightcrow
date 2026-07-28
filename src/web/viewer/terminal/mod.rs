@@ -25,7 +25,7 @@ pub use frame::decode_output;
 pub use frame::{ClientMessage, PaneSize, ServerMessage, TerminalFrame, encode_output};
 pub use session::TerminalSession;
 
-use hub_helpers::{Command, Shared};
+use hub_helpers::{Command, Shared, StartupPane};
 use session::Client;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc::{self, SyncSender};
@@ -174,40 +174,42 @@ impl TerminalHub {
         } else {
             self.startup.iter().map(|c| Some(c.clone())).collect()
         };
-        let mut queued = 0;
-        for (index, command) in commands.into_iter().enumerate() {
-            // A client that could only measure some cells still gets the rest;
-            // they are simply born at the old default and corrected by the
-            // first fit, which is where every pane started before.
-            let size = sizes.get(index).copied().unwrap_or(DEFAULT_PANE_SIZE);
-            // Uses the same command queue as client creates. A full queue means
-            // the hub is under backpressure the connection thread must not
-            // block on, so the create is dropped rather than waited on.
-            if self
-                .commands
-                .try_send(Command::Create {
-                    rows: size.rows,
-                    cols: size.cols,
-                    client,
-                    command,
-                })
-                .is_err()
-            {
-                break;
-            }
-            queued += 1;
-        }
-        // Give the claim back when the queue took nothing, or the hub would
-        // hold `started` with no terminals to show for it and never offer them
-        // again — the one outcome this handshake exists to rule out. Only when
-        // *nothing* was queued: releasing after a partial send would let the
-        // next client answer the same offer and start the accepted commands a
-        // second time. A partial startup under that much backpressure is a
-        // visible shortfall the user can fix with `+`; a duplicated `claude`
-        // is not.
-        if queued == 0 {
+        let panes: Vec<StartupPane> = commands
+            .into_iter()
+            .enumerate()
+            .map(|(index, command)| StartupPane {
+                // A client that could only measure some cells still gets the
+                // rest; they are simply born at the old default and corrected
+                // by the first fit, which is where every pane started before.
+                size: sizes.get(index).copied().unwrap_or(DEFAULT_PANE_SIZE),
+                command,
+            })
+            .collect();
+
+        // One command for the whole set, not one per pane. Sent with
+        // `try_send` because a full queue means backpressure the connection
+        // thread must not block on — and as a single message that is
+        // all-or-nothing, so there is no state where some startup terminals
+        // were accepted and the rest were silently lost with the claim already
+        // spent.
+        if self
+            .commands
+            .try_send(Command::CreateStartup { panes, client })
+            .is_err()
+        {
+            // Hand the claim back and offer again, or the hub would hold
+            // `started` with no terminals to show for it — the one outcome
+            // this handshake exists to rule out. The re-offer matters as much
+            // as the release: this client has already cleared its pending
+            // state and will not ask again on its own.
             tracing::warn!("viewer: terminal command queue full, startup deferred");
             self.started.store(false, Ordering::Release);
+            self.send_to(
+                client,
+                &ServerMessage::Pending {
+                    count: self.startup_count(),
+                },
+            );
         }
     }
 

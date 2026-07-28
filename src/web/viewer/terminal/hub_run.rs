@@ -37,6 +37,25 @@ impl TerminalHub {
                             }
                         }
                     }
+                    Command::CreateStartup { panes, client } => {
+                        for pane in panes {
+                            if self.pane_count() >= limits::MAX_PTYS_PER_REPO {
+                                self.send_error_to(client, "terminal limit reached");
+                                break;
+                            }
+                            match backend.create_pane(
+                                pane.size.rows,
+                                pane.size.cols,
+                                pane.command.as_deref(),
+                            ) {
+                                Ok(id) => self.register_pane(id, pane.size.rows, pane.size.cols),
+                                Err(err) => {
+                                    tracing::warn!(%err, "viewer: could not start a terminal");
+                                    self.send_error_to(client, "could not start a terminal");
+                                }
+                            }
+                        }
+                    }
                     // Unknown pane ids are ignored rather than errored: a
                     // client racing a pane exit is normal, not an attack.
                     Command::Input { pane, data } if self.pane_is_live(pane) => {
