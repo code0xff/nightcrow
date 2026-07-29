@@ -1,4 +1,4 @@
-import { Suspense, lazy } from "react";
+import { Suspense, lazy, useEffect } from "react";
 import type { CSSProperties } from "react";
 import { MAX_SIDEBAR_VIEWPORT_FRACTION } from "../hooks/ui/sidebar";
 import type { PointerEvent as ReactPointerEvent } from "react";
@@ -118,6 +118,12 @@ export function RepoShell(props: RepoShellProps) {
     mobileView,
     setMobileView,
   } = props;
+
+  // The drag separator lives inside the keyed `Sidebar`, and the project can
+  // change without the user letting go — another device switches it. The
+  // separator then unmounts mid-drag and its pointerup never arrives, leaving
+  // the overlay below to swallow every click for good.
+  useEffect(() => onSidebarDragCancel, [repo, onSidebarDragCancel]);
 
   return (
     <>
