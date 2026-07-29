@@ -112,6 +112,19 @@ impl App {
         };
     }
 
+    /// Soft-wrap long lines instead of scrolling sideways to reach them.
+    ///
+    /// Turning wrapping on resets the horizontal offset. ratatui ignores it
+    /// while wrapping, so leaving it set would strand a stale offset that
+    /// silently reappears the moment wrapping is turned back off.
+    pub fn toggle_diff_wrap(&mut self) {
+        self.diff.wrap = !self.diff.wrap;
+        if self.diff.wrap {
+            self.diff.scroll_x = 0;
+            self.diff.file_view.scroll_x = 0;
+        }
+    }
+
     /// Step to the next display: unified → split → file → unified.
     ///
     /// `v` and `s` each toggle one view against the unified default, which

@@ -232,6 +232,7 @@ pub fn render(
         gutter_lines,
         lines,
         app.diff.scroll_x.min(u16::MAX as usize) as u16,
+        app.diff.wrap,
     );
 
     if let Some(sa) = search_area {

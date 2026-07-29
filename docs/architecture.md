@@ -214,6 +214,10 @@ trait TerminalBackend {
   - **gutter와 본문은 반드시 별개 `Paragraph`여야 한다.** diff 계열은 수평 스크롤을 `Paragraph::scroll((0, x))`로 구현하는데 이건 라인을 통째로 밀기 때문에, 같은 paragraph에 있는 gutter는 `scroll_x > 0`이면 왼쪽으로 사라진다(실제로 file view에 그 버그가 있었다). `Block`을 따로 그리고 `block.inner`를 `Layout::Horizontal`로 쪼개 gutter는 `scroll((0,0))`, 본문만 스크롤한다. 수직 스크롤은 **어느 행을 담았는지**로 표현되므로 두 vector를 같은 루프에서 lockstep으로 채우는 것이 정렬을 지키는 유일한 수단이다.
   - 폭은 로드된 hunk 전체의 최대 줄 번호에서 파생하고 최소 3자리를 보장한다. 보이는 창 기준으로 계산하면 스크롤 중에 본문 좌측 경계가 흔들린다. hunk 헤더 행도 같은 폭의 빈 gutter를 받아야 `@@`가 본문보다 한 칼럼 왼쪽에서 시작하지 않는다.
   - `MIN_SPLIT_WIDTH`를 80 → 90으로 올렸다. 각 half가 gutter에 5칼럼을 쓰므로, 문턱을 그대로 두면 side-by-side 진입은 되지만 half당 읽을 수 있는 코드 폭이 조용히 줄어든다.
+- **자동 줄바꿈**(`DiffPane::wrap`, diff pane focus에서 `w`): ratatui `Paragraph::wrap`은 켜지면 `scroll.x`를 무시하므로(`ratatui-widgets`의 `render_paragraph`가 wrap 분기에서 `WordWrapper`만 쓰고 `LineTruncator`의 horizontal offset 경로를 타지 않는다) **줄바꿈과 수평 스크롤은 구조적으로 배타**다. 켤 때 `scroll_x`를 0으로 되돌린다 — 남겨두면 끌 때 낡은 오프셋이 되살아난다.
+  - 줄바꿈 모드에서는 **gutter를 본문 라인 안으로 접어 넣는다**. 본문 한 줄이 여러 화면 행을 먹는데 gutter 라인은 한 행이라, 두 paragraph를 나란히 두면 그 아래 전부가 어긋난다. gutter를 분리한 애초의 이유(수평 스크롤)가 이 모드엔 없으므로 인라인이 안전하다. 대가는 이어지는 행에 번호가 붙지 않는 것.
+  - **split 뷰는 줄바꿈을 무시한다.** 좌/우 half가 서로 다른 높이로 접히면 행 대응이 무너지는데, 그 대응이 이 레이아웃의 유일한 존재 이유다.
+  - 수직 스크롤은 여전히 **논리 줄** 단위다(렌더러가 창을 직접 슬라이스하고 ratatui의 vertical scroll을 쓰지 않는다). 따라서 줄바꿈이 켜진 채 긴 줄이 많으면 pane 높이보다 적은 논리 줄만 보이고 아래가 잘린다 — 스크롤로 전부 도달할 수 있으므로 감춰지는 내용은 없다. 검색 매치가 논리 행 인덱스라는 전제도 이 덕분에 유지된다.
 - **표시 방식 전환**: `DiffPaneView`는 `Diff`/`Split`/`File` 세 값인데 `v`(File 토글)와 `s`(Split 토글)는 각각 unified를 기준으로 한 축만 오간다 — 세 번째가 있다는 걸 모르면 발견할 수 없다. `Tab`(`App::cycle_diff_view`)이 `Diff → Split → File → Diff`로 셋을 모두 순회해 집합을 드러내고, `v`/`s`는 아는 뷰로 바로 가는 용도로 남는다. File 단계는 `can_open_file_view`가 거짓이면(선택 없음 / 해석 불가한 커밋 파일) 건너뛴다 — `v`가 no-op이 되는 것과 같은 게이트이며, 순회 중 죽은 입력을 만들지 않기 위함이다. Tree 모드는 우측 pane이 항상 파일 미리보기라 순회 대상이 없어 no-op이다.
 
 ### Split-View Terminal Panel

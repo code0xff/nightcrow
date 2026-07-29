@@ -75,10 +75,10 @@ pub(crate) fn normal_hint_literal(app: &App) -> &'static str {
         } else if !app.diff.search.query.is_empty() {
             " <prefix> f: exit zoom | n: next match | shift+n: prev match | /: new search | esc: clear"
         } else if app.can_open_file_view() {
-            " <prefix> f: exit zoom | j/k: scroll | tab: view | v: view file | s: split | /: search | pgup/pgdn: page | <prefix> q: quit"
+            " <prefix> f: exit zoom | j/k: scroll | tab: view | w: wrap | v: view file | s: split | /: search | pgup/pgdn: page | <prefix> q: quit"
         } else {
             // No file target for `v` — a hint for a no-op key would lie.
-            " <prefix> f: exit zoom | j/k: scroll | tab: view | s: split | /: search | pgup/pgdn: page | <prefix> q: quit"
+            " <prefix> f: exit zoom | j/k: scroll | tab: view | w: wrap | s: split | /: search | pgup/pgdn: page | <prefix> q: quit"
         };
         return hint;
     }
@@ -148,16 +148,16 @@ pub(crate) fn normal_hint_literal(app: &App) -> &'static str {
                 // The `l` toggle names its destination (Tree mode never reaches
                 // these arms — its right pane is always the file view).
                 if app.mode == ViewMode::Log {
-                    " shift+←/→: cycle | j/k: scroll | pgup/pgdn: scroll | tab: view | v: view file | s: split | /: search | <prefix> t: new pane | <prefix> f: zoom | <prefix> l: status view | <prefix> b: tree view | <prefix> o: open project | <prefix> q: quit"
+                    " shift+←/→: cycle | j/k: scroll | pgup/pgdn: scroll | tab: view | w: wrap | v: view file | s: split | /: search | <prefix> t: new pane | <prefix> f: zoom | <prefix> l: status view | <prefix> b: tree view | <prefix> o: open project | <prefix> q: quit"
                 } else {
-                    " shift+←/→: cycle | j/k: scroll | pgup/pgdn: scroll | tab: view | v: view file | s: split | /: search | <prefix> t: new pane | <prefix> f: zoom | <prefix> l: log view | <prefix> b: tree view | <prefix> o: open project | <prefix> q: quit"
+                    " shift+←/→: cycle | j/k: scroll | pgup/pgdn: scroll | tab: view | w: wrap | v: view file | s: split | /: search | <prefix> t: new pane | <prefix> f: zoom | <prefix> l: log view | <prefix> b: tree view | <prefix> o: open project | <prefix> q: quit"
                 }
             } else {
                 // No file target for `v` — a hint for a no-op key would lie.
                 if app.mode == ViewMode::Log {
-                    " shift+←/→: cycle | j/k: scroll | pgup/pgdn: scroll | tab: view | s: split | /: search | <prefix> t: new pane | <prefix> f: zoom | <prefix> l: status view | <prefix> b: tree view | <prefix> o: open project | <prefix> q: quit"
+                    " shift+←/→: cycle | j/k: scroll | pgup/pgdn: scroll | tab: view | w: wrap | s: split | /: search | <prefix> t: new pane | <prefix> f: zoom | <prefix> l: status view | <prefix> b: tree view | <prefix> o: open project | <prefix> q: quit"
                 } else {
-                    " shift+←/→: cycle | j/k: scroll | pgup/pgdn: scroll | tab: view | s: split | /: search | <prefix> t: new pane | <prefix> f: zoom | <prefix> l: log view | <prefix> b: tree view | <prefix> o: open project | <prefix> q: quit"
+                    " shift+←/→: cycle | j/k: scroll | pgup/pgdn: scroll | tab: view | w: wrap | s: split | /: search | <prefix> t: new pane | <prefix> f: zoom | <prefix> l: log view | <prefix> b: tree view | <prefix> o: open project | <prefix> q: quit"
                 }
             }
         }

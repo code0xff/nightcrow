@@ -96,6 +96,9 @@ pub(crate) fn render_split_view(
         left_gutter,
         left_lines,
         scroll_x,
+        // Wrapping is deliberately ignored here: halves that fold to different
+        // heights stop lining up, and lining up is what this layout is for.
+        false,
     );
 
     // A left border on the right column draws the vertical divider between the
@@ -113,6 +116,7 @@ pub(crate) fn render_split_view(
         right_gutter,
         right_lines,
         scroll_x,
+        false,
     );
 }
 

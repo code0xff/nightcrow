@@ -179,3 +179,31 @@ fn snapshot_refresh_with_no_filter_matches_clears_file_view() {
     assert_eq!(app.diff.view, DiffPaneView::Diff);
     assert!(app.diff.file_view.key.is_none());
 }
+
+#[test]
+fn enabling_wrap_drops_the_stale_horizontal_offset() {
+    // ratatui ignores scroll.x while wrapping, so an offset left behind would
+    // reappear the moment wrap is switched back off.
+    let mut app = app_with_files(vec!["a.rs"]);
+    app.diff.scroll_x = 12;
+    app.diff.file_view.scroll_x = 9;
+
+    app.toggle_diff_wrap();
+
+    assert!(app.diff.wrap);
+    assert_eq!(app.diff.scroll_x, 0);
+    assert_eq!(app.diff.file_view.scroll_x, 0);
+}
+
+#[test]
+fn disabling_wrap_leaves_the_offset_where_it_was_reset() {
+    let mut app = app_with_files(vec!["a.rs"]);
+    app.toggle_diff_wrap();
+    app.toggle_diff_wrap();
+
+    assert!(!app.diff.wrap);
+    assert_eq!(
+        app.diff.scroll_x, 0,
+        "turning wrap off must not resurrect a pre-wrap offset"
+    );
+}

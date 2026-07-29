@@ -3,7 +3,7 @@ use ratatui::{
     Frame,
     layout::{Constraint, Direction, Layout, Rect},
     text::Line,
-    widgets::Paragraph,
+    widgets::{Paragraph, Wrap},
 };
 
 /// Minimum digits reserved for one line-number column. Keeps the gutter — and
@@ -81,11 +81,17 @@ fn lineno_text(no: Option<u32>) -> String {
 /// Render a pinned gutter column and a horizontally scrollable body inside
 /// `inner` (a `Block`'s inner area — draw the block yourself first).
 ///
-/// The two must be separate `Paragraph`s: `Paragraph::scroll` shifts the whole
+/// The two are separate `Paragraph`s: `Paragraph::scroll` shifts the whole
 /// line, so a gutter span living in the body's paragraph would slide off the
 /// left edge as soon as `scroll_x > 0`. Vertical scroll is instead expressed
 /// by *which* lines the caller collected, so passing windows built from the
 /// same rows is what keeps numbers aligned with their content.
+///
+/// With `wrap` set that split is abandoned for the opposite reason: a wrapped
+/// body line occupies several screen rows while its gutter line still occupies
+/// one, which would desynchronise every row below it. The number is folded into
+/// the body line instead, where wrapping carries it along. That is safe only
+/// because wrapping and horizontal scrolling cannot both be active.
 pub(crate) fn render_gutter_and_body(
     frame: &mut Frame,
     inner: Rect,
@@ -93,11 +99,38 @@ pub(crate) fn render_gutter_and_body(
     gutter: Vec<Line<'_>>,
     body: Vec<Line<'_>>,
     scroll_x: u16,
+    wrap: bool,
 ) {
+    if wrap {
+        frame.render_widget(
+            // `trim: false` keeps a continuation row's leading whitespace, which
+            // in source code is the indentation.
+            Paragraph::new(merge_gutter_into_body(gutter, body)).wrap(Wrap { trim: false }),
+            inner,
+        );
+        return;
+    }
     let cols = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([Constraint::Length(gutter_width), Constraint::Min(0)])
         .split(inner);
     frame.render_widget(Paragraph::new(gutter), cols[0]);
     frame.render_widget(Paragraph::new(body).scroll((0, scroll_x)), cols[1]);
+}
+
+/// Prepend each gutter line's spans to the body line it belongs to. The two
+/// vectors are built in lockstep by the callers, so index `i` pairs row `i`; a
+/// body row with no gutter entry simply keeps its own spans.
+fn merge_gutter_into_body<'a>(gutter: Vec<Line<'a>>, body: Vec<Line<'a>>) -> Vec<Line<'a>> {
+    let mut gutter = gutter.into_iter();
+    body.into_iter()
+        .map(|line| match gutter.next() {
+            Some(g) => {
+                let mut spans = g.spans;
+                spans.extend(line.spans);
+                Line::from(spans)
+            }
+            None => line,
+        })
+        .collect()
 }

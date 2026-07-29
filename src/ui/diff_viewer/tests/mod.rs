@@ -121,3 +121,4 @@ fn skewed_pair_hunk() -> DiffHunk {
 mod file_view;
 mod split;
 mod unified;
+mod wrap;
