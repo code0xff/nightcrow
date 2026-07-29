@@ -15,9 +15,20 @@ use ratatui::{
 use syntect::highlighting::ThemeSet;
 
 pub(super) fn notice_text(app: &App) -> String {
+    notice_text_with(app, &RepoInput::default())
+}
+
+/// The notice row with a dialog state that can be claiming it — completion
+/// candidates share the row with notices and the repo header.
+pub(super) fn notice_text_with(app: &App, repo_input: &RepoInput) -> String {
     let mut terminal = Terminal::new(TestBackend::new(200, 1)).unwrap();
     terminal
-        .draw(|frame| frame.render_widget(render_notice_row(app, Color::Yellow), frame.area()))
+        .draw(|frame| {
+            frame.render_widget(
+                render_notice_row(app, repo_input, Color::Yellow, frame.area().width),
+                frame.area(),
+            )
+        })
         .unwrap();
     let buf = terminal.backend().buffer();
     (0..buf.area.width)
@@ -51,7 +62,10 @@ pub(super) fn hint_text_with(app: &App, chrome: Chrome<'_>) -> String {
     let mut terminal = Terminal::new(TestBackend::new(200, 1)).unwrap();
     terminal
         .draw(|frame| {
-            frame.render_widget(render_hint_bar(app, chrome, Color::Yellow), frame.area())
+            frame.render_widget(
+                render_hint_bar(app, chrome, Color::Yellow, frame.area().width),
+                frame.area(),
+            )
         })
         .unwrap();
     let buf = terminal.backend().buffer();
@@ -71,7 +85,10 @@ pub(super) fn assert_inverted_cells_are_clickable(app: &App) {
     let mut terminal = Terminal::new(TestBackend::new(200, 1)).unwrap();
     terminal
         .draw(|frame| {
-            frame.render_widget(render_hint_bar(app, chrome, Color::Yellow), frame.area())
+            frame.render_widget(
+                render_hint_bar(app, chrome, Color::Yellow, frame.area().width),
+                frame.area(),
+            )
         })
         .unwrap();
     let buf = terminal.backend().buffer();

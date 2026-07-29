@@ -94,3 +94,28 @@ fn handle_key_diff_next_match_from_split_returns_to_unified_when_query_exists() 
 
     assert_eq!(app.diff.view, DiffPaneView::Diff);
 }
+
+#[test]
+fn tab_in_the_diff_viewer_cycles_the_view() {
+    // Tab reaching the diff viewer at all is the point: it is not a text
+    // command, so it needs its own arm in the focus handler.
+    let mut app = app_with_files(vec!["a.rs"]);
+    app.focus = Focus::DiffViewer;
+    assert_eq!(app.diff.view, DiffPaneView::Diff);
+
+    let _ = handle_key(&mut app, press(KeyCode::Tab, KeyModifiers::NONE));
+
+    assert_eq!(app.diff.view, DiffPaneView::Split);
+}
+
+#[test]
+fn tab_outside_the_diff_viewer_leaves_the_view_alone() {
+    // The file list owns Tab-less navigation and the terminal forwards Tab to
+    // its PTY; neither may reach the diff pane's cycle.
+    let mut app = app_with_files(vec!["a.rs"]);
+    app.focus = Focus::FileList;
+
+    let _ = handle_key(&mut app, press(KeyCode::Tab, KeyModifiers::NONE));
+
+    assert_eq!(app.diff.view, DiffPaneView::Diff);
+}

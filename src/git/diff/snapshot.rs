@@ -189,6 +189,9 @@ pub(super) fn binary_diff_hunk(file_path: &str) -> DiffHunk {
         lines: vec![DiffLine {
             kind: LineKind::Context,
             content: "Binary files differ".to_string(),
+            // Synthetic placeholder: a binary file has no line numbering.
+            old_lineno: None,
+            new_lineno: None,
         }],
         file_path: Some(file_path.to_string()),
     }

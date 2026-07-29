@@ -3,6 +3,7 @@ use crate::ui::chrome::{Chrome, chrome_rows};
 use crate::ui::hint_text::{
     EMPTY_HINT, EMPTY_HINT_ARMED, PREFIX_CHIP, normal_hint_literal, prefix_armed_hint_text,
 };
+use crate::ui::status_view::RepoInput;
 use ratatui::{
     layout::{Position, Rect},
     style::{Color, Modifier, Style},
@@ -83,19 +84,47 @@ pub(crate) fn hint_spans(text: &str, leader: &str, mark_clickable: bool) -> Vec<
     spans
 }
 
+/// The dialog's input line, with its keys spelled out after the caret. Nothing
+/// else advertises them: the dialog replaces the hint legend entirely, so a key
+/// missing from this line cannot be found anywhere on screen.
+///
+/// The legend is dropped whole when the path leaves no room for it, rather than
+/// clipped — the caret has to stay visible, and half a legend reads as a glitch.
+/// `width` is the hint row's; 0 means "unknown", which keeps the legend.
+pub(crate) fn repo_input_line<'a>(
+    repo_input: &'a RepoInput,
+    accent: Color,
+    width: u16,
+) -> Line<'a> {
+    const PROMPT: &str = "repo: ";
+    let legend = if repo_input.picker.is_some() {
+        "  ↓↑/jk: move | →: open | ←: up | enter: select | esc: back"
+    } else {
+        "  ↓: browse | tab: complete | enter: open | esc: cancel"
+    };
+    let mut spans = vec![
+        Span::styled(PROMPT, Style::default().fg(accent)),
+        Span::raw(repo_input.buf.as_str()),
+        Span::styled("█", Style::default().fg(accent)),
+    ];
+    // Display columns, not bytes: a path can hold wide or combining characters.
+    let used: usize = spans.iter().map(Span::width).sum();
+    if width == 0 || used + Span::raw(legend).width() <= usize::from(width) {
+        spans.push(Span::styled(legend, Style::default().fg(Color::DarkGray)));
+    }
+    Line::from(spans)
+}
+
 pub(crate) fn render_hint_bar<'a>(
     app: &'a App,
     chrome: Chrome<'a>,
     accent: Color,
+    width: u16,
 ) -> Paragraph<'a> {
     if chrome.repo_input.active {
         // A rejected path is reported on the notice row above, so this row
-        // stays a plain input line.
-        return Paragraph::new(Line::from(vec![
-            Span::styled("repo: ", Style::default().fg(accent)),
-            Span::raw(chrome.repo_input.buf.as_str()),
-            Span::styled("█", Style::default().fg(accent)),
-        ]));
+        // stays the input line plus its own legend.
+        return Paragraph::new(repo_input_line(chrome.repo_input, accent, width));
     }
     if app.prefix_armed() {
         let mut spans = vec![Span::styled(

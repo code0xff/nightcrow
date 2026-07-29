@@ -115,6 +115,16 @@ fn encode_enter_as_cr() {
 }
 
 #[test]
+fn encode_alt_enter_as_esc_cr() {
+    // A pane program cannot tell "newline" from "submit" if the modifier is
+    // dropped; ESC+CR is the Meta-prefixed form TUIs read as newline.
+    assert_eq!(
+        encode_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::ALT)),
+        Some(vec![0x1b, b'\r'])
+    );
+}
+
+#[test]
 fn encode_ctrl_space_as_nul() {
     // xterm convention: Ctrl+Space → NUL. The generic `c - '@'` formula
     // wraps for space (0x20 < 0x40), so this case needs special handling.

@@ -33,33 +33,6 @@ pub(crate) fn handle_empty_key(ws: &mut Workspace, key: KeyEvent) -> KeyOutcome 
     KeyOutcome::Continue
 }
 
-pub(crate) fn handle_repo_input_key(ws: &mut Workspace, key: KeyEvent) -> KeyOutcome {
-    match key.code {
-        KeyCode::Esc => ws.cancel_repo_input(),
-        KeyCode::Enter => {
-            if let crate::workspace::RepoInputResult::Open(path) = ws.confirm_repo_input() {
-                return KeyOutcome::Project(ProjectRequest::Open(path));
-            }
-        }
-        KeyCode::Backspace => {
-            if ws.repo_input.buf.is_empty() {
-                ws.cancel_repo_input();
-            } else {
-                ws.repo_input_pop();
-            }
-        }
-        // The caret is always at the end of the buffer, so these can't move
-        // it; they mean "keep this path and let me extend it".
-        KeyCode::Right | KeyCode::End => ws.repo_input_accept_prefill(),
-        _ => {
-            if let Some(c) = text_input_char(key) {
-                ws.repo_input_push(c);
-            }
-        }
-    }
-    KeyOutcome::Continue
-}
-
 pub(crate) fn handle_terminal_key(app: &mut App, key: KeyEvent, action: Action) {
     match action {
         Action::TermScrollUp => {
@@ -260,6 +233,9 @@ fn handle_unmapped_upper_key(app: &mut App, key: KeyEvent) {
         Focus::DiffViewer => match key.code {
             _ if matches_text_command(key, 'v') => app.toggle_diff_file_view(),
             _ if matches_text_command(key, 's') => app.toggle_diff_split_view(),
+            _ if matches_text_command(key, 'w') => app.toggle_diff_wrap(),
+            // Walks all three views; `v`/`s` still jump straight to one.
+            KeyCode::Tab => app.cycle_diff_view(),
             _ if matches_text_command(key, '/') => {
                 exit_split_for_search(app);
                 app.diff.start_search();

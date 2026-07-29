@@ -173,6 +173,8 @@ fn hunk(header: &str, lines: usize, width: usize) -> DiffHunk {
             .map(|_| crate::git::diff::DiffLine {
                 kind: LineKind::Context,
                 content: "x".repeat(width),
+                old_lineno: None,
+                new_lineno: None,
             })
             .collect(),
     }
@@ -187,14 +189,20 @@ fn diff_dto_maps_line_kinds_to_wire_codes() {
             crate::git::diff::DiffLine {
                 kind: LineKind::Added,
                 content: "new".into(),
+                old_lineno: None,
+                new_lineno: Some(1),
             },
             crate::git::diff::DiffLine {
                 kind: LineKind::Removed,
                 content: "old".into(),
+                old_lineno: Some(1),
+                new_lineno: None,
             },
             crate::git::diff::DiffLine {
                 kind: LineKind::Context,
                 content: "same".into(),
+                old_lineno: Some(2),
+                new_lineno: Some(2),
             },
         ],
     }];

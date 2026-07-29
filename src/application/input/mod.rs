@@ -5,3 +5,4 @@ mod handlers;
 pub(crate) mod mouse;
 pub(crate) mod paste;
 mod prefix;
+mod repo_dialog;

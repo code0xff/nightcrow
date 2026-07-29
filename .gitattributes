@@ -1,0 +1,7 @@
+# The viewer's built bundle is committed so `cargo install` needs no Node
+# toolchain (see src/web/viewer/assets.rs). Vite names every chunk by content
+# hash, so any change under viewer-ui/src rewrites these files wholesale and
+# buries the real diff. Collapse them: `-diff` prints one line instead of the
+# bundle, `linguist-generated` folds them in GitHub reviews. Rebuild with
+# `npm --prefix viewer-ui run build` — never hand-edit.
+viewer-ui/dist/** -diff linguist-generated=true

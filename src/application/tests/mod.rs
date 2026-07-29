@@ -6,6 +6,7 @@ mod mouse_release;
 mod paste;
 mod prefix;
 mod prefix_digits;
+mod repo_dialog;
 mod search;
 mod swap;
 mod terminal;

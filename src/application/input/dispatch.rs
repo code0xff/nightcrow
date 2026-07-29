@@ -1,8 +1,9 @@
 use crate::app::{App, Focus};
 use crate::application::input::handlers::{
-    handle_empty_key, handle_repo_input_key, handle_terminal_key, handle_upper_key,
+    handle_empty_key, handle_terminal_key, handle_upper_key,
 };
 use crate::application::input::prefix::{handle_prefix_followup, handle_swap_target_followup};
+use crate::application::input::repo_dialog::handle_repo_input_key;
 use crate::input::{Action, map_key};
 use crate::workspace::Workspace;
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};

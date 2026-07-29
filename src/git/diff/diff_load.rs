@@ -238,7 +238,12 @@ fn collect_hunks(
                 _ => LineKind::Context,
             };
             if let Some(h) = hunks.borrow_mut().last_mut() {
-                h.lines.push(DiffLine { kind, content });
+                h.lines.push(DiffLine {
+                    kind,
+                    content,
+                    old_lineno: line.old_lineno(),
+                    new_lineno: line.new_lineno(),
+                });
             }
             true
         }),

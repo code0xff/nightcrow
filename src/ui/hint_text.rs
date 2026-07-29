@@ -71,21 +71,24 @@ pub(crate) fn normal_hint_literal(app: &App) -> &'static str {
             // Tree mode's right pane is permanently the file view — `v`
             // can't leave it, so don't advertise a no-op.
             if app.mode == ViewMode::Tree {
-                " <prefix> f: exit zoom | j/k: scroll | pgup/pgdn: page | <prefix> q: detach"
+                " <prefix> f: exit zoom | j/k: scroll | pgup/pgdn: page | w: wrap | <prefix> q: detach"
             } else {
-                " <prefix> f: exit zoom | v: back to diff | j/k: scroll | pgup/pgdn: page | <prefix> q: detach"
+                " <prefix> f: exit zoom | v: back to diff | j/k: scroll | pgup/pgdn: page | w: wrap | <prefix> q: detach"
             }
         } else if app.diff.view == DiffPaneView::Split {
+            // No `w: wrap` here or in the unzoomed split arm: the split view
+            // ignores wrapping (halves folding to different heights would stop
+            // lining up), and a hint for a no-op key would lie.
             " <prefix> f: exit zoom | s: unified diff | j/k: scroll | pgup/pgdn: page | <prefix> q: detach"
         } else if app.diff.search.active {
             " type to search | enter: confirm | esc: cancel"
         } else if !app.diff.search.query.is_empty() {
             " <prefix> f: exit zoom | n: next match | shift+n: prev match | /: new search | esc: clear"
         } else if app.can_open_file_view() {
-            " <prefix> f: exit zoom | j/k: scroll | v: view file | s: split | /: search | pgup/pgdn: page | <prefix> q: detach"
+            " <prefix> f: exit zoom | j/k: scroll | tab: view | w: wrap | v: view file | s: split | /: search | pgup/pgdn: page | <prefix> q: detach"
         } else {
             // No file target for `v` — a hint for a no-op key would lie.
-            " <prefix> f: exit zoom | j/k: scroll | s: split | /: search | pgup/pgdn: page | <prefix> q: detach"
+            " <prefix> f: exit zoom | j/k: scroll | tab: view | w: wrap | s: split | /: search | pgup/pgdn: page | <prefix> q: detach"
         };
         return hint;
     }
@@ -141,9 +144,9 @@ pub(crate) fn normal_hint_literal(app: &App) -> &'static str {
                 // Tree mode's right pane is permanently the file view — `v`
                 // can't leave it, so don't advertise a no-op.
                 if app.mode == ViewMode::Tree {
-                    " j/k: scroll | pgup/pgdn: page | /: search | shift+←/→: cycle | <prefix> q: detach"
+                    " j/k: scroll | pgup/pgdn: page | w: wrap | /: search | shift+←/→: cycle | <prefix> q: detach"
                 } else {
-                    " v: back to diff | j/k: scroll | pgup/pgdn: page | /: search | shift+←/→: cycle | <prefix> q: detach"
+                    " v: back to diff | j/k: scroll | pgup/pgdn: page | w: wrap | /: search | shift+←/→: cycle | <prefix> q: detach"
                 }
             } else if app.diff.view == DiffPaneView::Split {
                 " s: unified diff | j/k: scroll | pgup/pgdn: page | shift+←/→: cycle | <prefix> f: zoom | <prefix> q: detach"
@@ -155,16 +158,16 @@ pub(crate) fn normal_hint_literal(app: &App) -> &'static str {
                 // The `l` toggle names its destination (Tree mode never reaches
                 // these arms — its right pane is always the file view).
                 if app.mode == ViewMode::Log {
-                    " shift+←/→: cycle | j/k: scroll | pgup/pgdn: scroll | v: view file | s: split | /: search | <prefix> t: new pane | <prefix> f: zoom | <prefix> l: status view | <prefix> b: tree view | <prefix> o: open project | <prefix> q: detach"
+                    " shift+←/→: cycle | j/k: scroll | pgup/pgdn: scroll | tab: view | w: wrap | v: view file | s: split | /: search | <prefix> t: new pane | <prefix> f: zoom | <prefix> l: status view | <prefix> b: tree view | <prefix> o: open project | <prefix> q: detach"
                 } else {
-                    " shift+←/→: cycle | j/k: scroll | pgup/pgdn: scroll | v: view file | s: split | /: search | <prefix> t: new pane | <prefix> f: zoom | <prefix> l: log view | <prefix> b: tree view | <prefix> o: open project | <prefix> q: detach"
+                    " shift+←/→: cycle | j/k: scroll | pgup/pgdn: scroll | tab: view | w: wrap | v: view file | s: split | /: search | <prefix> t: new pane | <prefix> f: zoom | <prefix> l: log view | <prefix> b: tree view | <prefix> o: open project | <prefix> q: detach"
                 }
             } else {
                 // No file target for `v` — a hint for a no-op key would lie.
                 if app.mode == ViewMode::Log {
-                    " shift+←/→: cycle | j/k: scroll | pgup/pgdn: scroll | s: split | /: search | <prefix> t: new pane | <prefix> f: zoom | <prefix> l: status view | <prefix> b: tree view | <prefix> o: open project | <prefix> q: detach"
+                    " shift+←/→: cycle | j/k: scroll | pgup/pgdn: scroll | tab: view | w: wrap | s: split | /: search | <prefix> t: new pane | <prefix> f: zoom | <prefix> l: status view | <prefix> b: tree view | <prefix> o: open project | <prefix> q: detach"
                 } else {
-                    " shift+←/→: cycle | j/k: scroll | pgup/pgdn: scroll | s: split | /: search | <prefix> t: new pane | <prefix> f: zoom | <prefix> l: log view | <prefix> b: tree view | <prefix> o: open project | <prefix> q: detach"
+                    " shift+←/→: cycle | j/k: scroll | pgup/pgdn: scroll | tab: view | w: wrap | s: split | /: search | <prefix> t: new pane | <prefix> f: zoom | <prefix> l: log view | <prefix> b: tree view | <prefix> o: open project | <prefix> q: detach"
                 }
             }
         }

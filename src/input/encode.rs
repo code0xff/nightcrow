@@ -36,7 +36,11 @@ pub fn encode_key(key: KeyEvent) -> Option<Vec<u8>> {
             let mut enc = [0u8; 4];
             Some(c.encode_utf8(&mut enc).as_bytes().to_vec())
         }
-        KeyCode::Enter => Some(vec![b'\r']),
+        // Alt+Enter carries the Meta prefix like Alt+Char does. Terminal UIs
+        // read ESC+CR as "insert a newline, don't submit" — it is what Claude
+        // Code binds its newline to — so dropping the modifier here made the
+        // two indistinguishable and every Alt+Enter submitted instead.
+        KeyCode::Enter => Some(if alt { vec![0x1b, b'\r'] } else { vec![b'\r'] }),
         KeyCode::Backspace => Some(vec![0x7f]),
         KeyCode::Delete => Some(csi_tilde(3, key.modifiers)),
         KeyCode::Esc => Some(vec![0x1b]),

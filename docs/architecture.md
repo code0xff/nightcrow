@@ -111,8 +111,11 @@ src/
 │   ├── mod.rs            # Workspace: open projects (Vec<App>) + active index,
 │   │                     #   process-level repo dialog/notice
 │   ├── repo_input.rs     # <prefix> o repo-input modal state
+│   ├── path_complete.rs  # Tab 경로 완성 (read_dir 한 단계, 디렉터리만)
+│   ├── path_tree.rs      # ↓ 디렉터리 브라우저 상태 (평면 row 리스트)
+│   ├── repo_picker.rs    # 필드 ↔ 브라우저 전환
 │   ├── persistence.rs    # workspace + per-repo state (~/.nightcrow/workspace.json)
-│   └── tests/            # workspace + repo_input tests
+│   └── tests/            # workspace + repo_input + repo_picker tests
 ├── runtime/
 │   ├── mod.rs
 │   ├── snapshot.rs       # SnapshotChannel: background git status/log worker
@@ -311,6 +314,15 @@ repaint를 유발하는 제일 비싼 행동이 된다. 부수 효과로 **비�
 - UI 스레드 동기 로드: 파일/커밋 선택이 바뀌면 `load_*_with_repo`를 직접 호출한다. App은 `git2::Repository`를 lazy-cache하므로 매 호출마다 `Repository::discover`를 다시 실행하지 않는다. cache는 프로젝트와 수명을 같이 하므로 무효화 시점이 따로 없다 — 저장소가 바뀌는 유일한 방법이 탭을 닫고 새로 여는 것이기 때문.
 - 경로 검증: 워크트리 안의 파일·디렉토리를 여는 경로는 전부 `git::path::resolve_in_workdir`를 거친다(파일 미리보기와 트리 리스팅 양쪽). plain relative 컴포넌트만 허용하고 `..`·절대경로·NUL·`.git`(대소문자 무시)을 거부하며, 워크디렉토리부터 한 컴포넌트씩 내려가 **모든 깊이의 심링크**를 막고 canonicalize containment로 마무리한다. 지금 호출자는 git이 만들어 낸 경로만 넘기지만, 검증을 호출부가 아니라 파일시스템 경계에 두어야 웹 표면이 요청 문자열을 같은 로더에 태워도 안전하다. 크기 검사와 읽기는 같은 파일 핸들에서, 트리 리스팅은 검증기가 돌려준 경로로 `read_dir`을 수행해 check→use TOCTOU를 닫는다. `.git` 판정은 `is_git_dir_name` 하나로 통일한다 — 대소문자와 후행 점·공백(NTFS가 버리는 문자)까지 흡수하며, 규칙을 두 군데에 따로 적으면 그 틈이 우회로가 된다.
 - 렌더링: 보이는 행(`scroll_start..scroll_start+visible_height`)에 한해 `syntect`로 syntax highlighting을 수행한다. 보이지 않는 라인은 highlighter state만 진행시켜 multi-line construct(블록 주석, 문자열 리터럴)의 syntax 연속성을 유지한다.
+- **줄 번호 gutter**(`ui/diff_viewer/gutter.rs`): `DiffLine`이 libgit2의 `old_lineno`/`new_lineno`를 그대로 들고 다닌다. 추가 줄은 old가, 삭제 줄은 new가 `None`이라 해당 칼럼을 비운다 — hunk 헤더에서 파생시키지 않는 이유는 kind별 카운터를 렌더 층에서 관리하게 되어 상태가 잘못된 층에 놓이기 때문이다. unified은 두 칼럼, split은 좌=old·우=new 한 칼럼씩, file view는 파일 자신의 번호를 보여준다.
+  - **gutter와 본문은 반드시 별개 `Paragraph`여야 한다.** diff 계열은 수평 스크롤을 `Paragraph::scroll((0, x))`로 구현하는데 이건 라인을 통째로 밀기 때문에, 같은 paragraph에 있는 gutter는 `scroll_x > 0`이면 왼쪽으로 사라진다(실제로 file view에 그 버그가 있었다). `Block`을 따로 그리고 `block.inner`를 `Layout::Horizontal`로 쪼개 gutter는 `scroll((0,0))`, 본문만 스크롤한다. 수직 스크롤은 **어느 행을 담았는지**로 표현되므로 두 vector를 같은 루프에서 lockstep으로 채우는 것이 정렬을 지키는 유일한 수단이다.
+  - 폭은 로드된 hunk 전체의 최대 줄 번호에서 파생하고 최소 3자리를 보장한다. 보이는 창 기준으로 계산하면 스크롤 중에 본문 좌측 경계가 흔들린다. hunk 헤더 행도 같은 폭의 빈 gutter를 받아야 `@@`가 본문보다 한 칼럼 왼쪽에서 시작하지 않는다.
+  - `MIN_SPLIT_WIDTH`를 80 → 90으로 올렸다. 각 half가 gutter에 5칼럼을 쓰므로, 문턱을 그대로 두면 side-by-side 진입은 되지만 half당 읽을 수 있는 코드 폭이 조용히 줄어든다.
+- **자동 줄바꿈**(`DiffPane::wrap`, diff pane focus에서 `w`): ratatui `Paragraph::wrap`은 켜지면 `scroll.x`를 무시하므로(`ratatui-widgets`의 `render_paragraph`가 wrap 분기에서 `WordWrapper`만 쓰고 `LineTruncator`의 horizontal offset 경로를 타지 않는다) **줄바꿈과 수평 스크롤은 구조적으로 배타**다. 켤 때 `scroll_x`를 0으로 되돌린다 — 남겨두면 끌 때 낡은 오프셋이 되살아난다.
+  - 줄바꿈 모드에서는 **gutter를 본문 라인 안으로 접어 넣는다**. 본문 한 줄이 여러 화면 행을 먹는데 gutter 라인은 한 행이라, 두 paragraph를 나란히 두면 그 아래 전부가 어긋난다. gutter를 분리한 애초의 이유(수평 스크롤)가 이 모드엔 없으므로 인라인이 안전하다. 대가는 이어지는 행에 번호가 붙지 않는 것.
+  - **split 뷰는 줄바꿈을 무시한다.** 좌/우 half가 서로 다른 높이로 접히면 행 대응이 무너지는데, 그 대응이 이 레이아웃의 유일한 존재 이유다.
+  - 수직 스크롤은 여전히 **논리 줄** 단위다(렌더러가 창을 직접 슬라이스하고 ratatui의 vertical scroll을 쓰지 않는다). 따라서 줄바꿈이 켜진 채 긴 줄이 많으면 pane 높이보다 적은 논리 줄만 보이고 아래가 잘린다 — 스크롤로 전부 도달할 수 있으므로 감춰지는 내용은 없다. 검색 매치가 논리 행 인덱스라는 전제도 이 덕분에 유지된다.
+- **표시 방식 전환**: `DiffPaneView`는 `Diff`/`Split`/`File` 세 값인데 `v`(File 토글)와 `s`(Split 토글)는 각각 unified를 기준으로 한 축만 오간다 — 세 번째가 있다는 걸 모르면 발견할 수 없다. `Tab`(`App::cycle_diff_view`)이 `Diff → Split → File → Diff`로 셋을 모두 순회해 집합을 드러내고, `v`/`s`는 아는 뷰로 바로 가는 용도로 남는다. File 단계는 `can_open_file_view`가 거짓이면(선택 없음 / 해석 불가한 커밋 파일) 건너뛴다 — `v`가 no-op이 되는 것과 같은 게이트이며, 순회 중 죽은 입력을 만들지 않기 위함이다. Tree 모드는 우측 pane이 항상 파일 미리보기라 순회 대상이 없어 no-op이다.
 
 ### Split-View Terminal Panel
 
@@ -434,7 +446,7 @@ background even while scrolled out of the window.
 - **Lower panel focused (terminal)**: leader/예약키가 아닌 모든 키는 active backend의 stdin으로 직접 통과한다(`encode_key`가 화살표/F-key/제어문자를 VT100 시퀀스로 인코딩). 단독 `Ctrl+T/W/L/O/P/Q` 등은 앱 명령이 아니므로 control byte로 PTY에 전달된다(리더 `Ctrl+F`만 prefix를 arm하고 통과하지 않는다). bare F키는 앱이 가로채므로 pane 안 프로그램(htop, mc 등)의 F키 메뉴는 동작하지 않는다 — 수정자를 붙인 `Ctrl+F1`, `Shift+F5` 등은 통과한다.
 - overlay(repo input/search) active 시에는 leader dispatch가 금지되고 overlay가 키를 소유한다. armed 중 overlay가 열리는 경로면 prefix를 취소한다. repo 다이얼로그는 `Workspace` 소유라 `main::dispatch_key`가 per-project 핸들러보다 먼저 처리한다 — 프로젝트가 없을 때도 열려야 하기 때문.
 - **프로젝트가 없을 때**: `main::handle_empty_key`가 leader arming과 `o`/`q`만 해석하고 나머지는 버린다. `<L> <L>`는 여기서도 액션 테이블로 넘어가지 않는다 — 기본 leader가 `ctrl+f`라 follow-up이 `f`에 매칭돼 fullscreen이 토글될 수 있기 때문.
-- 좌측/우측 패널 타이틀에는 현재 포커스 단축키(`F1` / `F2`)가 노출돼 사용자가 즉시 jump 키를 알 수 있다.
+- 좌측/우측 패널 타이틀에는 현재 포커스 단축키(`<L> 1` / `<L> 2`, 기본 leader면 `^F 1` / `^F 2`)가 노출돼 사용자가 즉시 jump 키를 알 수 있다. `ui::jump_legend`가 설정된 leader label과 digit을 **공백으로** 이어 붙인다 — `^F1`로 붙여 쓰면 Ctrl+F1로 읽히고, 그 조합은 앱이 가로채지 않고 PTY로 통과시키는 별개 키라 오해를 만든다. 프로젝트 탭 행이 쓰는 `F1`…`F10` legend와는 다른 축임에 주의한다.
 
 ### Project Boundary (`Workspace` / `App`)
 
@@ -459,6 +471,67 @@ pane을 살려두는 탓에 탭 라벨과 셸의 작업 디렉토리가 어긋�
 슬롯도 함께 있다. 반면 `handle_key`는 여전히 `&mut App` 하나만 받는다 —
 `dispatch_key`가 워크스페이스 레벨 경우(다이얼로그, 빈 화면의 두 키)를 먼저
 해소하므로, 프로젝트별 입력 경로 전체가 프로젝트 하나만 아는 채로 유지된다.
+
+**경로 완성** — 다이얼로그의 `Tab`은 `workspace/path_complete.rs`가 처리한다.
+셸을 PTY로 띄우지 않는 이유와 대안 비교는 `docs/repo-picker-plan.md`에 있다 —
+요약하면 Windows에 readline 대응 프리미티브가 없어서 네이티브 완성기가 어차피
+필요하다. 규칙은 무상태 하나다: **확장할 게 있으면 확장하고, 없으면 후보를
+보여준다.** 단 fragment가 비어 있으면(구분자로 끝나는 상태) 확장과 동시에
+목록도 낸다 — 그때의 `Tab`은 "여기 뭐가 있냐"는 질문이라 조용한 확장은 답이
+아니다. Tab 한 번에 `read_dir` 한 단계만 읽고 디렉터리만 후보로 삼는다.
+
+사용자가 입력한 텍스트는 다시 쓰지 않는다. `~`나 상대 경로는 **읽을 때만**
+확장하고 버퍼에는 완성된 컴포넌트만 이어붙인다 — `~/x`를 `/Users/me/x`로
+바꿔 써넣으면 사용자가 타이핑한 적 없는 경로가 화면에 남는다.
+
+`git::tree::read_children`(`ViewMode::Tree`용)을 쓰지 않는다는 점에 주의한다.
+그쪽은 `git2::Repository`가 필수이고 repo-relative 경로만 받으며 워크트리 밖
+경로와 심볼릭 링크를 거부하는데, 피커는 어떤 repo에도 속하지 않는 경로를
+돌아다녀야 하고 프로젝트가 0개일 때도 떠야 한다. 심볼릭 링크 정책도 반대다 —
+트리는 링크를 따라가지 않지만(순환 방지) 피커는 따라간다(링크된 체크아웃이
+실제 repo다).
+
+후보는 notice 행에 표시한다(`ui/notice.rs`). 우선순위는 notice > 후보 >
+repo 헤더다. 플로팅 팝업을 쓰지 않은 이유는 `src/ui/`에 오버레이 인프라가
+없고(모든 surface가 레이아웃 행을 차지한다) 마우스 캡처가 기본 on이라
+`hit_test.rs`에 새 히트 영역이 필요해지기 때문이다.
+
+**디렉터리 브라우저** — `workspace/path_tree.rs`(상태) + `ui/path_tree.rs`(렌더).
+경로를 아는 경우(형제 체크아웃 — prefill이 노리는 케이스)는 타이핑이 빠르고
+모르는 경우는 브라우저가 낫다. 둘은 경쟁이 아니라 계층이다.
+
+- **진입은 `↓`**(또는 `↑`). printable 문자는 전부 합법 경로 문자라 쓸 수 없고,
+  필드의 수평 키(`→`/`End`=prefill 수락)는 이미 "이 경로를 편집한다"는 뜻이라
+  수직 축이 비어 있다 — 브라우저 안에서 `↓`/`j`가 커서를 옮기므로 진입 키와
+  진입 후 조작이 같은 축에 놓이고, 모든 자동완성이 목록을 아래에 두는 관용과도
+  맞는다. `Ctrl+T`는 접었다: `T` 니모닉이 `<prefix> t`(새 터미널)와 겹쳐
+  "충돌하지 않는다"를 설명해야 했고, 다이얼로그의 다른 키가 전부 bare인데
+  Ctrl 화음만 튄다.
+- **후보 목록이 떠 있을 때의 두 번째 `Tab`도 브라우저로 승격한다.** 그 상태의
+  Tab은 같은 목록을 다시 그리는 죽은 키였고, 평면 목록이 실패한 지점이 정확히
+  거기다 — 배울 키 없이 도달하는 경로를 하나 남긴다.
+- **`Enter`는 확정이 아니라 필드로 되돌리며 경로를 채운다.** repo를 실제로 여는
+  지점은 필드의 `Enter` 한 곳뿐이다. 그래서 `Enter`의 의미가 두 surface에서
+  갈리고, 브라우저에서는 확장이 `→` 전용이다(트리 뷰는 `Enter`도 확장한다).
+- **평면 row 리스트**로 들고 있다. 확장은 자식을 부모 뒤에 splice, 접기는 아래
+  깊은 row를 drain — 선택이 화면 인덱스 그대로여서 프레임마다 flatten이 없다.
+- **사용자 표기를 보존한다**(완성기와 같은 이유). `root_text`(타이핑한 그대로)와
+  canonical `PathBuf`를 따로 들고, 고른 경로는 `root_text` 기준으로 조립한다.
+  `←`가 depth 0에서 루트를 한 단계 올릴 때만 예외가 생긴다 — `~`나 Windows
+  드라이브의 부모는 사용자 표기로 표현할 수 없으므로 절대 경로로 대체하되,
+  텍스트 수술을 믿지 않고 `canonicalize` 결과를 실제 부모와 대조해 검증한다.
+- **body 전체를 쓴다**(위의 팝업 부재와 같은 이유). 다이얼로그가 이미 모든 키를
+  소유하므로 view mode·fullscreen 분기보다 앞에서 body를 가로챈다 — 그 분기들이
+  그릴 것은 어차피 inert다. 마우스 클릭 선택은 범위 밖(`hit_test.rs`에 새 히트
+  영역이 필요하다). 세션 저장도 하지 않는다: 필드가 활성 프로젝트 경로로
+  prefill되므로 "지난 위치"가 새 영속 상태 없이 따라온다.
+- 브라우저를 열면 `prefilled`가 해제된다. 브라우저는 버퍼에 전체 경로를 쓰므로,
+  플래그가 살아 있으면 복귀 후 첫 타이핑이 방금 고른 경로를 지운다.
+
+다이얼로그는 hint legend를 통째로 대체하므로(입력 줄이 그 자리를 쓴다) 키를
+알릴 다른 자리가 없다. `hint_bar::repo_input_line`이 커서 뒤에 축약 legend를
+붙이고, 폭이 모자라면 잘라내지 않고 통째로 버린다 — 커서는 반드시 보여야 하고
+반쪽 legend는 렌더 결함으로 읽힌다.
 
 입력 핸들러는 `&mut App` 하나만 받으므로 탭 목록에 닿을 수 없다. 대신
 워크스페이스 수준 의도를 `KeyOutcome::Project(ProjectRequest)`로 반환하고

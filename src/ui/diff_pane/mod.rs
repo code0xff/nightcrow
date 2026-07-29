@@ -59,6 +59,13 @@ pub struct DiffPane {
     pub(crate) cached_content_bytes: usize,
     pub scroll: usize,
     pub scroll_x: usize,
+    /// Soft-wrap long lines instead of letting them run off the right edge.
+    ///
+    /// Mutually exclusive with horizontal scrolling by construction, not by
+    /// choice: ratatui's `Paragraph` ignores its `scroll.x` once wrapping is on.
+    /// The split view ignores this entirely — halves that wrap to different
+    /// heights would stop lining up, which is the whole point of that layout.
+    pub wrap: bool,
     pub search: DiffSearch,
     pub view: DiffPaneView,
     pub file_view: FileViewState,

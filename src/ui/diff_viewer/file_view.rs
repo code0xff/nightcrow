@@ -1,10 +1,11 @@
 use crate::app::{App, Focus};
+use crate::ui::jump_legend;
 use ratatui::{
     Frame,
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Paragraph},
+    widgets::{Block, Borders},
 };
 use syntect::highlighting::ThemeSet;
 use syntect::parsing::SyntaxSet;
@@ -45,7 +46,7 @@ pub(crate) fn render_file_view(
         (area, None)
     };
 
-    let jump = super::jump_legend(app, '2');
+    let jump = jump_legend(app, '2');
     let title = if has_search {
         let count = app.diff.search.matches.len();
         if count == 0 {
@@ -63,6 +64,10 @@ pub(crate) fn render_file_view(
 
     let visible_height = (content_area.height as usize).saturating_sub(2);
     let current_match = app.diff.search.current_match();
+    // An error or an empty file has no lines to number, so the gutter column is
+    // not reserved at all — otherwise the message would sit indented under it.
+    let mut gutter_lines: Vec<Line> = Vec::new();
+    let mut gutter_width = 0u16;
     let lines: Vec<Line> = if let Some(err) = &app.diff.file_view.error {
         vec![Line::from(Span::styled(
             err.as_str(),
@@ -77,7 +82,10 @@ pub(crate) fn render_file_view(
         app.diff.file_view.ensure_highlight_cache(ss, ts, syntax);
         let fv = &app.diff.file_view;
         let total = fv.line_count();
-        let width = total.to_string().len();
+        // Same floor as the diff gutters, so switching between `v` and the diff
+        // view does not shift the body's left edge.
+        let digits = super::gutter::digits_for(total);
+        gutter_width = super::gutter::side_gutter_width(digits);
         // Belt-and-braces: ensure_highlight_cache keeps line_highlights
         // aligned with content.lines().count(), but if that invariant ever
         // slips the slice below would panic. Clamp against the cache length.
@@ -107,30 +115,42 @@ pub(crate) fn render_file_view(
                 } else {
                     Color::Reset
                 };
-                let mut spans = vec![Span::styled(
-                    format!(" {:>width$} ", line_no, width = width),
+                // The number lives in its own paragraph so horizontal scrolling
+                // cannot slide it off the left edge, which is what used to
+                // happen while it shared the body's paragraph.
+                gutter_lines.push(Line::from(Span::styled(
+                    super::gutter::side_gutter_text(Some(line_no as u32), digits),
                     Style::default().fg(Color::DarkGray).bg(bg),
-                )];
-                for seg in segs {
-                    spans.push(Span::styled(
-                        seg.text.as_str(),
-                        Style::default().fg(super::rgb_to_color(seg.rgb)).bg(bg),
-                    ));
-                }
+                )));
+                let spans: Vec<Span> = segs
+                    .iter()
+                    .map(|seg| {
+                        Span::styled(
+                            seg.text.as_str(),
+                            Style::default().fg(super::rgb_to_color(seg.rgb)).bg(bg),
+                        )
+                    })
+                    .collect();
                 Line::from(spans)
             })
             .collect()
     };
 
-    let para = Paragraph::new(lines)
-        .block(
-            Block::default()
-                .borders(Borders::ALL)
-                .title(title)
-                .border_style(border_style),
-        )
-        .scroll((0, app.diff.file_view.scroll_x.min(u16::MAX as usize) as u16));
-    frame.render_widget(para, content_area);
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .title(title)
+        .border_style(border_style);
+    let inner = block.inner(content_area);
+    frame.render_widget(block, content_area);
+    super::gutter::render_gutter_and_body(
+        frame,
+        inner,
+        gutter_width,
+        gutter_lines,
+        lines,
+        app.diff.file_view.scroll_x.min(u16::MAX as usize) as u16,
+        app.diff.wrap,
+    );
 
     if let Some(sa) = search_area {
         super::render_search_bar(

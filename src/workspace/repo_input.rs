@@ -17,7 +17,7 @@ pub enum RepoInputResult {
 
 // Mirrors `PROMPT_BUFFER_MAX_BYTES` so a bracketed paste cannot grow this
 // buffer without bound; comfortably above any realistic filesystem path.
-const REPO_INPUT_MAX_BYTES: usize = 4096;
+pub(super) const REPO_INPUT_MAX_BYTES: usize = 4096;
 
 impl Workspace {
     /// Open the dialog that adds a project tab. Prefilled with the active
@@ -31,6 +31,8 @@ impl Workspace {
             .unwrap_or_default();
         self.repo_input.active = true;
         self.repo_input.prefilled = true;
+        self.repo_input.candidates.clear();
+        self.repo_input.picker = None;
         self.clear_notice(NoticeKind::RepoInput);
     }
 
@@ -38,6 +40,8 @@ impl Workspace {
         self.repo_input.active = false;
         self.repo_input.buf.clear();
         self.repo_input.prefilled = false;
+        self.repo_input.candidates.clear();
+        self.repo_input.picker = None;
         self.clear_notice(NoticeKind::RepoInput);
     }
 
@@ -72,8 +76,30 @@ impl Workspace {
         self.repo_input.active = false;
         self.repo_input.buf.clear();
         self.repo_input.prefilled = false;
+        self.repo_input.candidates.clear();
+        self.repo_input.picker = None;
         self.clear_notice(NoticeKind::RepoInput);
         RepoInputResult::Open(resolved)
+    }
+
+    /// Extend the typed path from disk, and offer the directories it could
+    /// still become. Bound to Tab, which is otherwise inert in a text field —
+    /// and this is the one field where a path is typed with no way to see what
+    /// is actually there.
+    pub fn repo_input_complete(&mut self) {
+        // Tab reads as "extend this path", so an untouched prefill survives
+        // rather than being replaced — the same reading Backspace and → give it.
+        self.repo_input.prefilled = false;
+        let completed = super::path_complete::complete_dir_path(&self.repo_input.buf);
+        // A completion that would breach the cap is dropped whole: applying a
+        // truncated path would silently point somewhere else.
+        if completed.buf.len() > REPO_INPUT_MAX_BYTES {
+            return;
+        }
+        // Any edit invalidates the verdict on the old text, completion included.
+        self.clear_notice(NoticeKind::RepoInput);
+        self.repo_input.buf = completed.buf;
+        self.repo_input.candidates = completed.candidates;
     }
 
     pub fn repo_input_push(&mut self, ch: char) {
@@ -90,6 +116,7 @@ impl Workspace {
         }
         // Any edit invalidates the verdict on the old text.
         self.clear_notice(NoticeKind::RepoInput);
+        self.repo_input.candidates.clear();
         self.repo_input.buf.push(ch);
     }
 
@@ -99,6 +126,7 @@ impl Workspace {
     /// this" without Backspace eating the separator first.
     pub fn repo_input_accept_prefill(&mut self) {
         self.repo_input.prefilled = false;
+        self.repo_input.candidates.clear();
     }
 
     pub fn repo_input_pop(&mut self) {
@@ -106,6 +134,7 @@ impl Workspace {
         // and just leave prefill mode.
         self.repo_input.prefilled = false;
         self.clear_notice(NoticeKind::RepoInput);
+        self.repo_input.candidates.clear();
         self.repo_input.buf.pop();
     }
 }

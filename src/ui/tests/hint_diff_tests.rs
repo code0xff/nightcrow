@@ -77,6 +77,42 @@ fn diff_hint_advertises_view_file_only_with_a_file_target() {
     );
 }
 
+/// `w` is handled for the whole diff focus, so every view it acts in has to
+/// advertise it — the file view most of all, since a long unwrapped line is
+/// what sends you looking for the key. The split view is the one exception:
+/// wrapping is ignored there, and a hint for a no-op key would lie.
+#[test]
+fn every_view_that_wraps_advertises_the_key() {
+    let mut app = app_with_fake_backend();
+    app.focus = Focus::DiffViewer;
+    for view in [DiffPaneView::Diff, DiffPaneView::File] {
+        app.diff.view = view;
+        for zoomed in [false, true] {
+            app.diff.fullscreen = zoomed;
+            let text = hint_text(&app);
+            assert!(
+                text.contains("w: wrap"),
+                "{view:?} legend (zoomed={zoomed}) must offer wrap, got: {text}"
+            );
+        }
+    }
+
+    // Tree mode's right pane is permanently the file view, and wraps the same.
+    let mut tree = app_with_fake_backend();
+    tree.mode = ViewMode::Tree;
+    tree.focus = Focus::DiffViewer;
+    tree.diff.view = DiffPaneView::File;
+    assert!(hint_text(&tree).contains("w: wrap"), "tree file view wraps");
+
+    app.diff.view = DiffPaneView::Split;
+    app.diff.fullscreen = false;
+    let text = hint_text(&app);
+    assert!(
+        !text.contains("w: wrap"),
+        "the split view ignores wrapping, so it must not offer it, got: {text}"
+    );
+}
+
 /// Tree mode's right pane is permanently the file view — `v` never
 /// toggles there, so the file-view legend must not offer `back to diff`.
 #[test]

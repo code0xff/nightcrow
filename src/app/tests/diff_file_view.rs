@@ -37,6 +37,56 @@ fn toggle_diff_file_view_ignores_selection_outside_filter() {
 }
 
 #[test]
+fn cycling_the_diff_view_walks_all_three_and_returns_to_the_start() {
+    let mut app = app_with_files(vec!["a.rs"]);
+    assert_eq!(app.diff.view, DiffPaneView::Diff);
+
+    app.cycle_diff_view();
+    assert_eq!(app.diff.view, DiffPaneView::Split);
+    app.cycle_diff_view();
+    assert_eq!(app.diff.view, DiffPaneView::File);
+    app.cycle_diff_view();
+    assert_eq!(
+        app.diff.view,
+        DiffPaneView::Diff,
+        "the cycle must close so one key can reach every view"
+    );
+}
+
+#[test]
+fn cycling_skips_the_file_view_when_there_is_nothing_to_open() {
+    // Selection outside the filter leaves no resolvable file, the same gate
+    // that makes `v` a no-op. Skipping keeps the press from doing nothing.
+    let mut app = app_with_files(vec!["alpha.rs", "bravo.rs"]);
+    app.status_view.search_query.set("alpha");
+    app.status_view.recompute_filter();
+    app.status_view.selected = 1;
+    assert!(!app.can_open_file_view());
+
+    app.cycle_diff_view();
+    assert_eq!(app.diff.view, DiffPaneView::Split);
+    app.cycle_diff_view();
+    assert_eq!(
+        app.diff.view,
+        DiffPaneView::Diff,
+        "with no file to show the cycle is unified <-> split"
+    );
+}
+
+#[test]
+fn cycling_the_diff_view_does_nothing_in_tree_mode() {
+    // Tree mode's right pane is always the raw file preview, so there is no
+    // cycle to walk — matching `v`/`s`.
+    let mut app = app_with_files(vec!["a.rs"]);
+    app.mode = ViewMode::Tree;
+    app.diff.view = DiffPaneView::File;
+
+    app.cycle_diff_view();
+
+    assert_eq!(app.diff.view, DiffPaneView::File);
+}
+
+#[test]
 fn toggle_diff_split_view_round_trips_and_overrides_file_view() {
     let mut app = app_with_files(vec!["a.rs"]);
 
@@ -128,4 +178,32 @@ fn snapshot_refresh_with_no_filter_matches_clears_file_view() {
     assert!(app.diff.hunks.is_empty());
     assert_eq!(app.diff.view, DiffPaneView::Diff);
     assert!(app.diff.file_view.key.is_none());
+}
+
+#[test]
+fn enabling_wrap_drops_the_stale_horizontal_offset() {
+    // ratatui ignores scroll.x while wrapping, so an offset left behind would
+    // reappear the moment wrap is switched back off.
+    let mut app = app_with_files(vec!["a.rs"]);
+    app.diff.scroll_x = 12;
+    app.diff.file_view.scroll_x = 9;
+
+    app.toggle_diff_wrap();
+
+    assert!(app.diff.wrap);
+    assert_eq!(app.diff.scroll_x, 0);
+    assert_eq!(app.diff.file_view.scroll_x, 0);
+}
+
+#[test]
+fn disabling_wrap_leaves_the_offset_where_it_was_reset() {
+    let mut app = app_with_files(vec!["a.rs"]);
+    app.toggle_diff_wrap();
+    app.toggle_diff_wrap();
+
+    assert!(!app.diff.wrap);
+    assert_eq!(
+        app.diff.scroll_x, 0,
+        "turning wrap off must not resurrect a pre-wrap offset"
+    );
 }

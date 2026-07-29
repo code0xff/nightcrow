@@ -4,6 +4,7 @@ pub mod diff_viewer;
 pub mod file_list;
 pub mod file_view;
 pub mod log_view;
+pub mod path_tree;
 pub mod project_tab;
 pub mod search;
 pub mod splash;
@@ -67,34 +68,30 @@ pub fn draw_empty(
     );
 
     let leader_label = crate::app::leader_label_of(leader);
-    frame.render_widget(
-        Paragraph::new(Line::from(vec![Span::styled(
-            format!("  no project open — {leader_label} o to open a repo"),
-            Style::default().fg(Color::DarkGray),
-        )]))
-        .block(Block::default().borders(Borders::ALL)),
-        rows.body,
-    );
+    match chrome.repo_input.picker.as_ref() {
+        Some(tree) => path_tree::render(frame, tree, rows.body, accent),
+        None => frame.render_widget(
+            Paragraph::new(Line::from(vec![Span::styled(
+                format!("  no project open — {leader_label} o to open a repo"),
+                Style::default().fg(Color::DarkGray),
+            )]))
+            .block(Block::default().borders(Borders::ALL)),
+            rows.body,
+        ),
+    }
 
-    // Matches `render_notice_row`: a notice is the same red wherever it lands.
-    let notice_line = match notice {
-        Some(n) => Line::from(Span::styled(
-            format!(" {}", n.line()),
-            Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
-        )),
-        None => Line::default(),
-    };
+    // Shares `render_notice_row`'s priority order so a notice looks the same
+    // wherever it lands; with no project there is no repo header to fall back
+    // to, so the row just goes empty.
+    let notice_line = notice::notice_or_candidates(notice, chrome.repo_input, rows.notice.width)
+        .unwrap_or_default();
     frame.render_widget(Paragraph::new(notice_line), rows.notice);
 
     // The armed prefix shows the same chip as the project screen: pressing
     // the leader here has to look like it did something, or it reads as a
     // dead key.
     let hint = if chrome.repo_input.active {
-        Line::from(vec![
-            Span::styled("repo: ", Style::default().fg(accent)),
-            Span::raw(chrome.repo_input.buf.clone()),
-            Span::styled("█", Style::default().fg(accent)),
-        ])
+        hint_bar::repo_input_line(chrome.repo_input, accent, rows.hint.width)
     } else if prefix_armed {
         let mut spans = vec![Span::styled(
             PREFIX_CHIP,
@@ -132,17 +129,40 @@ pub fn draw(
         project_tab::render(tabs.repo_paths, tabs.active, rows.tabs, accent),
         rows.tabs,
     );
-    frame.render_widget(render_notice_row(app, accent), notice_area);
+    frame.render_widget(
+        render_notice_row(app, tabs.repo_input, accent, notice_area.width),
+        notice_area,
+    );
+
+    // The browser owns the body while it is open, ahead of every view-mode and
+    // fullscreen branch: the dialog already holds all the keys, so whatever
+    // those branches would draw is inert and would only hide the browse.
+    if let Some(tree) = tabs.repo_input.picker.as_ref() {
+        path_tree::render(frame, tree, body_area, accent);
+        frame.render_widget(
+            render_hint_bar(app, tabs, accent, hint_area.width),
+            hint_area,
+        );
+        // The pane underneath cannot be typed into from here; nothing places a
+        // terminal cursor on this branch.
+        return;
+    }
 
     if app.terminal.fullscreen.fills_body() {
         terminal_tab::render(frame, app, body_area, accent);
-        frame.render_widget(render_hint_bar(app, tabs, accent), hint_area);
+        frame.render_widget(
+            render_hint_bar(app, tabs, accent, hint_area.width),
+            hint_area,
+        );
         return;
     }
 
     if app.diff.fullscreen {
         diff_viewer::render(frame, app, body_area, ss, ts, accent);
-        frame.render_widget(render_hint_bar(app, tabs, accent), hint_area);
+        frame.render_widget(
+            render_hint_bar(app, tabs, accent, hint_area.width),
+            hint_area,
+        );
         return;
     }
 
@@ -152,7 +172,10 @@ pub fn draw(
             ViewMode::Log => commit_list::render(frame, app, body_area, accent),
             ViewMode::Tree => tree_list::render(frame, app, body_area, accent),
         }
-        frame.render_widget(render_hint_bar(app, tabs, accent), hint_area);
+        frame.render_widget(
+            render_hint_bar(app, tabs, accent, hint_area.width),
+            hint_area,
+        );
         return;
     }
 
@@ -178,5 +201,8 @@ pub fn draw(
     }
     diff_viewer::render(frame, app, upper[1], ss, ts, accent);
     terminal_tab::render(frame, app, main[1], accent);
-    frame.render_widget(render_hint_bar(app, tabs, accent), hint_area);
+    frame.render_widget(
+        render_hint_bar(app, tabs, accent, hint_area.width),
+        hint_area,
+    );
 }

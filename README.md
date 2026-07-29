@@ -144,7 +144,21 @@ The diff for a selected file shows the combined working-tree-with-index changes.
 
 **Tree view** (`<prefix> b`) — a read-only directory tree of the whole working tree on the left, with the selected file's raw contents on the right. Unlike the status view (which lists only changed files), the tree lets you browse and read *any* file next to the diff without leaving nightcrow. `j`/`k` move the cursor, `→`/`Enter` expand a directory (read lazily, one level at a time), `←` collapses it or steps up to the parent, and selecting a file previews it. Press `/` while the tree is focused for a recursive filename search across the whole tree — type to filter, `Enter` reveals the selected match in place (expanding its ancestor directories), `Esc` cancels. Focus the file preview with `<prefix> 2`, then press `/` to search within the file contents — `n`/`N` jump to the next/previous match, `Esc` clears the search. `.gitignore`-matched paths (e.g. `target/`, `node_modules/`) are hidden by default — toggle with `[tree] respect_gitignore`. Expanded directories are watched for filesystem changes, so files and folders created, moved, or deleted by another process (an editor, `git`, an LLM CLI) appear without leaving the view; set `[tree] live_watch = false` to refresh only on entry instead. The tree never writes, renames, or deletes anything. Expansion state and the selected path persist across sessions.
 
-**Notice row** — a one-row strip just above the hint bar shows the repo path (home-relative, e.g. `~/projects/myapp`), the current branch, and ahead/behind counts (`↑N ↓M`) when the branch tracks an upstream. When something fails — a git snapshot, a diff load, a terminal pane, or a repo path you typed that doesn't exist — the message takes over this row in red until the problem is resolved or you act on the app again. A rejected repo path therefore appears directly above the input you're correcting.
+**Notice row** — a one-row strip just above the hint bar shows the repo path (home-relative, e.g. `~/projects/myapp`), the current branch, and ahead/behind counts (`↑N ↓M`) when the branch tracks an upstream. When something fails — a git snapshot, a diff load, a terminal pane, or a repo path you typed that doesn't exist — the message takes over this row in red until the problem is resolved or you act on the app again. A rejected repo path therefore appears directly above the input you're correcting. The repo dialog's completion candidates share this row (dimmed, and a notice outranks them), so a list too long for one line ends in `+N more`.
+
+**Path completion in the repo dialog** — `Tab` completes the directory you're typing, so you don't have to know the path by heart. One press extends as far as the names allow; when there's nothing left to extend it lists what's there instead. On a trailing `/` the first press shows that directory's contents, and a unique match gains a trailing `/` so you can keep pressing `Tab` to descend. Only directories are offered (a file can't be a repo), dotted directories stay hidden until you type a leading `.`, and a name that differs only in case is matched and corrected for you. The dialog is a path field, not a shell — `~`, `..` and paths relative to your working directory all work, but `cd`, `$VAR`, and globs don't, and `Enter` always means "open this path".
+
+**Browsing for a repo** — when you don't know the path, press `↓` in the repo dialog to browse instead of typing. (A second `Tab`, once the candidate list is up, opens the same browser: at that point the flat list has told you all it can.) The browser fills the body of the screen, rooted at whatever directory the field currently names, and the field stays visible below it with the keys spelled out.
+
+| Key | Action |
+|-----|--------|
+| `↓` / `j`, `↑` / `k` | Move the cursor |
+| `→` | Expand the selected directory (read lazily, one level at a time) |
+| `←` | Collapse it, or step out — to the parent row, or one level *above the root* when you're already at the top, so a sibling checkout is one press away |
+| `Enter` | Take the selected path into the field and return to it — this does **not** open the repo. Press `Enter` again in the field for that, or keep refining the path with `Tab` first |
+| `Esc` | Leave the browser, keeping the text it started from. A second `Esc` cancels the dialog |
+
+Directories only, hidden ones excluded, and nothing is ever written. Note that `Enter` means *select* here but *open* in the field — the browser's job is to fill the field, so `→` alone expands (unlike the file-tree view, where `Enter` expands too). Paths keep your own notation: browsing out of `~/coding` gives you back `~/coding/…`, not an absolute path. Mouse selection isn't supported; the browser is keyboard-only.
 
 ## Keyboard shortcuts
 
@@ -184,7 +198,7 @@ visible from the terminal pane.
 | `<prefix> l` | Toggle between status view and commit log view |
 | `<prefix> b` | Toggle the read-only file-tree view (returns to status view) |
 | `<prefix> f` | Fullscreen the focused pane. For the terminal it cycles `off → grid (all panes) → zoom (active pane only) → off`; with a single pane it toggles straight off/on. File list and diff viewer toggle off/on |
-| `<prefix> o` | Open a repo in a **project tab** (prefilled with the active project's path — type to replace it, or press `→`/`End` first to extend it). A leading `~` expands to your home directory. If another tab already has that repo open, nightcrow focuses that tab instead of running two copies against one worktree |
+| `<prefix> o` | Open a repo in a **project tab** (prefilled with the active project's path — type to replace it, or press `→`/`End` first to extend it). `Tab` completes the path against your filesystem and `↓` opens a directory browser (see below). A leading `~` expands to your home directory. If another tab already has that repo open, nightcrow focuses that tab instead of running two copies against one worktree |
 | `<prefix> x` | Close the active project tab. Closing the last one leaves nightcrow with no project open, which is a normal state |
 | `<prefix> p` | Cycle accent color (yellow → cyan → green → magenta → blue) |
 | `<prefix> r` | Force a full redraw (clears stray glyphs left by terminal programs) |
@@ -231,7 +245,10 @@ through to the terminal program.
 | `PgUp` / `PgDn` | Scroll 20 lines |
 | `←` / `→` | Horizontal scroll (4 columns) |
 | `v` | Toggle between hunk diff and full file preview |
+| `w` | Toggle soft wrapping of long lines. On, the tail of a long line continues on the next row instead of needing `←`/`→`; the line number folds into the line rather than sitting in its own column, so a continuation row carries no number. Horizontal scrolling is inert while wrapping (and the offset resets when you turn it on). The split view ignores wrapping — halves folding to different heights would stop lining up |
+| `Tab` | Cycle the display: unified diff → side-by-side split → file contents → unified. `v` and `s` each toggle one view against the unified default, so the third stays hidden unless you know it exists; `Tab` walks all three. Skips the file step when there is no file to open, and does nothing in tree view |
 | `s` | Toggle between the unified diff and a side-by-side split view (falls back to unified when the pane is too narrow) |
+| — | **Line numbers** are always shown in a pinned gutter. The unified view shows both sides (old, new) — an added line leaves the old column blank, a removed line leaves the new one blank. The split view numbers each half with the side it shows, and the file view (`v`) numbers the file itself. The gutter stays in place while `←`/`→` scroll the code |
 | `<prefix> f` | Zoom the diff/file pane to full screen (toggle) |
 | `/` | Open search (works in both diff and file preview, including tree mode) |
 | `n` / `N` | Next / previous search match |

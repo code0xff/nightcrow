@@ -88,7 +88,12 @@ fn hint_click_agrees_with_the_rendered_buffer_not_just_the_builder() {
     terminal
         .draw(|frame| {
             frame.render_widget(
-                render_hint_bar(&app, plain_chrome(&RepoInput::default()), Color::Yellow),
+                render_hint_bar(
+                    &app,
+                    plain_chrome(&RepoInput::default()),
+                    Color::Yellow,
+                    frame.area().width,
+                ),
                 frame.area(),
             )
         })

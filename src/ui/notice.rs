@@ -1,18 +1,84 @@
-use crate::app::App;
+use crate::app::{App, Notice};
+use crate::ui::status_view::RepoInput;
 use ratatui::{
     style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::Paragraph,
 };
 
-pub(crate) fn render_notice_row<'a>(app: &'a App, accent: Color) -> Paragraph<'a> {
-    if let Some(notice) = app.notice.as_ref() {
-        return Paragraph::new(Line::from(Span::styled(
+/// Separates candidate names, and sits before the overflow count.
+const CANDIDATE_GAP: &str = "  ";
+
+pub(crate) fn render_notice_row<'a>(
+    app: &'a App,
+    repo_input: &RepoInput,
+    accent: Color,
+    width: u16,
+) -> Paragraph<'a> {
+    match notice_or_candidates(app.notice.as_ref(), repo_input, width) {
+        Some(line) => Paragraph::new(line),
+        None => render_repo_header(app, accent),
+    }
+}
+
+/// The notice row's content when something wants to claim it: a notice first,
+/// then the repo dialog's completion candidates. `None` leaves the row to the
+/// caller's own fallback — the repo header on the project screen, nothing on the
+/// empty one.
+///
+/// A notice outranks the candidates because it explains a rejected action, and
+/// any edit (Tab included) clears it, so the two rarely compete for long.
+pub(crate) fn notice_or_candidates<'a>(
+    notice: Option<&'a Notice>,
+    repo_input: &RepoInput,
+    width: u16,
+) -> Option<Line<'a>> {
+    if let Some(notice) = notice {
+        return Some(Line::from(Span::styled(
             format!(" {}", notice.line()),
             Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
         )));
     }
-    render_repo_header(app, accent)
+    if repo_input.candidates.is_empty() {
+        return None;
+    }
+    // Dim, not red: these are an answer to Tab, and reading them as an error
+    // would undo the point of showing them.
+    Some(Line::from(Span::styled(
+        candidate_line(&repo_input.candidates, width),
+        Style::default().fg(Color::DarkGray),
+    )))
+}
+
+/// Fit as many candidate names as the row holds, reporting the rest as
+/// `+N more`. The row is one line, so a long list has to be cut somewhere and
+/// dropping the tail silently would read as "that is all there is".
+fn candidate_line(candidates: &[String], width: u16) -> String {
+    let width = width as usize;
+    let mut line = String::new();
+    let mut shown = 0;
+    for name in candidates {
+        let next = format!("{}{name}", if shown == 0 { " " } else { CANDIDATE_GAP });
+        // Reserve room for the count this name would push into the overflow, so
+        // the last name placed can never crowd out its own `+N more`.
+        let overflow = overflow_label(candidates.len() - shown - 1);
+        if Span::raw(&line).width() + Span::raw(&next).width() + Span::raw(&overflow).width()
+            > width
+        {
+            break;
+        }
+        line.push_str(&next);
+        shown += 1;
+    }
+    line.push_str(&overflow_label(candidates.len() - shown));
+    line
+}
+
+fn overflow_label(remaining: usize) -> String {
+    if remaining == 0 {
+        return String::new();
+    }
+    format!("{CANDIDATE_GAP}+{remaining} more")
 }
 
 pub(crate) fn render_repo_header<'a>(app: &'a App, accent: Color) -> Paragraph<'a> {

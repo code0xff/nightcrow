@@ -22,6 +22,8 @@ fn match_hunk(lines: &[&str]) -> DiffHunk {
             .map(|s| DiffLine {
                 kind: LineKind::Context,
                 content: (*s).to_string(),
+                old_lineno: None,
+                new_lineno: None,
             })
             .collect(),
         file_path: None,
@@ -77,6 +79,8 @@ fn kinded_hunk(lines: &[(LineKind, &str)]) -> DiffHunk {
             .map(|(kind, s)| DiffLine {
                 kind: *kind,
                 content: (*s).to_string(),
+                old_lineno: None,
+                new_lineno: None,
             })
             .collect(),
         file_path: None,
