@@ -32,6 +32,14 @@ pub enum ClientMessage {
     Reorder {
         order: Vec<PaneId>,
     },
+    /// Take over sizing this repository's panes (see [`ServerMessage::SizeOwner`]).
+    ///
+    /// A PTY has one size, so one client at a time decides it. Attaching takes
+    /// it; this is how a client already attached takes it back, on a keystroke —
+    /// deliberately, rather than by the mere act of looking, which would make
+    /// glancing at a phone repaint everybody's screen.
+    #[serde(rename = "claim_size")]
+    ClaimSize,
     /// The sizes to give the startup terminals, answering [`ServerMessage::Pending`].
     ///
     /// One entry per pending pane, in the order they will be created. A short
@@ -104,6 +112,29 @@ pub enum ServerMessage {
     },
     Exited {
         pane: PaneId,
+    },
+    /// The size a pane's PTY is now set to.
+    ///
+    /// Broadcast, not answered to whoever asked: a PTY has one size and every
+    /// client renders the same grid, so a client that is not the one sizing it
+    /// still has to follow — its emulator has to wrap where the child's does.
+    Resized {
+        pane: PaneId,
+        rows: u16,
+        cols: u16,
+    },
+    /// Whether *this* client is the one whose layout sets the pane sizes.
+    ///
+    /// Addressed rather than broadcast, so the answer needs no identity to
+    /// compare against — the hub knows who each client is, and "am I the owner"
+    /// is the only thing a client does with it.
+    ///
+    /// The size follows the most recent arrival (tmux's `window-size latest`),
+    /// because that is the client someone is looking at; the others become
+    /// spectators until one takes it back with [`ClientMessage::ClaimSize`].
+    #[serde(rename = "size_owner")]
+    SizeOwner {
+        owned: bool,
     },
     Error {
         message: String,

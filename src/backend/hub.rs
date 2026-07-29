@@ -112,6 +112,12 @@ impl TerminalBackend for HubBackend {
                 TerminalMessage::Event(HubServerMessage::Exited { pane }) => {
                     events.push(BackendEvent::Exited { pane })
                 }
+                TerminalMessage::Event(HubServerMessage::Resized { pane, rows, cols }) => {
+                    events.push(BackendEvent::Resized { pane, rows, cols })
+                }
+                TerminalMessage::Event(HubServerMessage::SizeOwner { owned }) => {
+                    events.push(BackendEvent::SizeOwnership { owned })
+                }
                 TerminalMessage::Event(HubServerMessage::Pending { .. }) => {
                     self.size_startup_panes()
                 }

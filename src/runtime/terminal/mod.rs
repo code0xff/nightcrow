@@ -111,6 +111,13 @@ pub struct TerminalState {
     /// `resize_visible_panes`. Panes currently scrolled out of the visible
     /// window keep whatever size they had when they were last visible.
     pub last_content_size: HashMap<PaneId, (u16, u16)>,
+    /// Whether this client's layout is what sets the pane sizes.
+    ///
+    /// True unless a shared session says otherwise: a PTY has one size, so one
+    /// client decides it and the others render the grid they are given. Panes
+    /// this client owns follow its layout; panes it does not follow
+    /// [`BackendEvent::Resized`](crate::backend::BackendEvent::Resized).
+    pub owns_size: bool,
     /// Index of the first pane in the visible split-view window.
     pub visible_start: usize,
     pub max_visible_normal: usize,
@@ -133,6 +140,7 @@ impl TerminalState {
             scroll: HashMap::new(),
             fullscreen: TerminalFullscreen::Off,
             last_content_size: HashMap::new(),
+            owns_size: true,
             visible_start: 0,
             max_visible_normal: MAX_VISIBLE_NORMAL,
             max_visible_fullscreen: MAX_VISIBLE_FULLSCREEN,

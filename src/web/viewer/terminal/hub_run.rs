@@ -117,8 +117,13 @@ impl TerminalHub {
                     Command::Input { pane, data } if self.pane_is_live(pane) => {
                         let _ = backend.send_input(pane, &data);
                     }
-                    Command::Resize { pane, rows, cols } => {
-                        self.resize_pane(&mut backend, pane, rows, cols);
+                    Command::Resize {
+                        pane,
+                        rows,
+                        cols,
+                        client,
+                    } => {
+                        self.resize_pane(&mut backend, pane, rows, cols, client);
                     }
                     Command::Close { pane } if self.pane_is_live(pane) => {
                         backend.destroy_pane(pane);
@@ -133,11 +138,15 @@ impl TerminalHub {
                 match event {
                     BackendEvent::Output { pane, data } => self.record_and_broadcast(pane, data),
                     BackendEvent::Exited { pane } => self.remove_pane_and_announce(pane),
-                    // The hub opens panes through `open_pane`, which answers
-                    // directly, and registers them there. Nothing here creates
-                    // one through the trait, so this cannot arrive.
-                    BackendEvent::Created { pane, .. } => {
-                        tracing::debug!(pane, "hub: unexpected create event");
+                    // The hub owns its PTYs outright: it opens them through
+                    // `open_pane`, which answers directly, and it is what
+                    // decides their size and tells everyone. So none of these
+                    // can come back the other way.
+                    BackendEvent::Created { pane, .. } | BackendEvent::Resized { pane, .. } => {
+                        tracing::debug!(pane, "hub: unexpected event from its own backend");
+                    }
+                    BackendEvent::SizeOwnership { owned } => {
+                        tracing::debug!(owned, "hub: unexpected size ownership event");
                     }
                 }
             }
@@ -207,24 +216,47 @@ impl TerminalHub {
         }
     }
 
-    /// Resize a live pane's PTY and record the size it is now set to.
+    /// Resize a live pane's PTY at the sizing owner's request, record the size it
+    /// is now set to, and tell every client what it is.
     ///
-    /// Both under one lock, and the liveness check with them. `connect` reports
+    /// All under one lock, and the liveness check with them. `connect` reports
     /// each pane's size from this record and the client caches it as "already
     /// applied"; a client that slipped between the two would be told the old
     /// size for a PTY that has the new one, and would then skip the resize that
     /// would have corrected it. The `resize` itself is an ioctl on the master —
     /// far cheaper than the broadcast this lock already covers.
-    fn resize_pane(&self, backend: &mut PtyBackend, pane: PaneId, rows: u16, cols: u16) {
+    fn resize_pane(
+        &self,
+        backend: &mut PtyBackend,
+        pane: PaneId,
+        rows: u16,
+        cols: u16,
+        client: u64,
+    ) {
         let mut state = self.state.lock().expect("terminal state poisoned");
+        // Not this client's to set. Dropped rather than refused: a client can
+        // lose the sizing between laying out a frame and this arriving, which is
+        // ordinary rather than an error worth interrupting anyone over.
+        if state.size_owner != Some(client) {
+            return;
+        }
         // An unknown pane is ignored rather than errored: a client racing a
         // pane exit is normal, not an attack.
         let Some(p) = state.panes.iter_mut().find(|p| p.id == pane) else {
             return;
         };
+        if (p.rows, p.cols) == (rows, cols) {
+            return;
+        }
         backend.resize(pane, rows, cols);
         p.rows = rows;
         p.cols = cols;
+        // Every client's emulator has to wrap where the child now does, so the
+        // size it was actually set to goes to all of them — including the one
+        // that asked, which learns here if its request was clamped.
+        if let Ok(json) = serde_json::to_string(&ServerMessage::Resized { pane, rows, cols }) {
+            broadcast_locked(&mut state.clients, TerminalFrame::Control(json));
+        }
     }
 
     /// Append output to the pane's bounded scrollback and broadcast it, both

@@ -46,6 +46,31 @@ impl TerminalState {
                         tracing::warn!("failed to send terminal reply to pane {pane}: {e}");
                     }
                 }
+                // The session set this pane to a size, which may not be the one
+                // this client asked for — or any it asked for. The emulator has
+                // to wrap where the child does, so it follows.
+                BackendEvent::Resized { pane, rows, cols } => {
+                    let (rows, cols) = crate::runtime::emulator::effective_size(rows, cols);
+                    if let Some(emulator) = self.emulators.get_mut(&pane) {
+                        emulator.resize(rows, cols);
+                    }
+                    // Only when this client is not the one sizing. For the owner
+                    // this map is "what I last asked for", and overwriting it
+                    // with a clamped answer would make the next frame ask again,
+                    // every frame.
+                    if !self.owns_size {
+                        self.last_content_size.insert(pane, (rows, cols));
+                    }
+                }
+                BackendEvent::SizeOwnership { owned } => {
+                    // Gaining it means the panes are this client's layout to
+                    // set, and they are currently at someone else's sizes — so
+                    // forget what was applied and let the next frame fit them.
+                    if owned && !self.owns_size {
+                        self.last_content_size.clear();
+                    }
+                    self.owns_size = owned;
+                }
                 BackendEvent::Exited { pane } => {
                     // Single source of truth for pane removal: `drain_events`
                     // no longer touches the backend's pane map, so we drive
@@ -210,6 +235,12 @@ impl TerminalState {
     /// carries one entry per currently *visible* pane — panes scrolled out of
     /// the split-view window are omitted and keep their `last_content_size`
     /// until they become visible again.
+    ///
+    /// A client that does not own the sizing changes nothing here: the panes are
+    /// at the owner's size and its own emulators are already following
+    /// [`BackendEvent::Resized`](crate::backend::BackendEvent::Resized). Its
+    /// layout still records what it would have asked for, which is the size a
+    /// pane it opens is born at.
     pub fn resize_visible_panes(&mut self, layouts: &[(PaneId, u16, u16)]) {
         let active_id = self.active_pane_id();
         for &(id, rows, cols) in layouts {
@@ -219,6 +250,9 @@ impl TerminalState {
             let (rows, cols) = crate::runtime::emulator::effective_size(rows, cols);
             if Some(id) == active_id {
                 self.size = (rows, cols);
+            }
+            if !self.owns_size {
+                continue;
             }
             if self.last_content_size.get(&id) == Some(&(rows, cols)) {
                 continue;

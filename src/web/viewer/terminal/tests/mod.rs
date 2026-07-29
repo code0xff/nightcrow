@@ -1,4 +1,5 @@
 mod behavior;
+mod size_owner;
 
 use crate::backend::PaneId;
 use crate::web::viewer::limits;

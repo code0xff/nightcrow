@@ -35,9 +35,9 @@ fn pty_backend_drains_output_before_exit_event() {
             match event {
                 BackendEvent::Output { data, .. } => output.extend(data),
                 BackendEvent::Exited { pane } if pane == id => saw_exit = true,
-                // These tests open panes through `open_pane`, which answers
-                // directly, so no create event is queued for them.
-                BackendEvent::Exited { .. } | BackendEvent::Created { .. } => {}
+                // A local backend answers `open_pane` directly and its panes
+                // are nobody else's to size, so none of the rest occur here.
+                _ => {}
             }
         }
         if saw_exit {
@@ -70,9 +70,9 @@ fn pty_backend_runs_startup_command() {
             match event {
                 BackendEvent::Output { data, .. } => output.extend(data),
                 BackendEvent::Exited { pane } if pane == id => saw_exit = true,
-                // These tests open panes through `open_pane`, which answers
-                // directly, so no create event is queued for them.
-                BackendEvent::Exited { .. } | BackendEvent::Created { .. } => {}
+                // A local backend answers `open_pane` directly and its panes
+                // are nobody else's to size, so none of the rest occur here.
+                _ => {}
             }
         }
         if saw_exit {

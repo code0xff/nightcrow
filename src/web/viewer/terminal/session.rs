@@ -59,10 +59,19 @@ impl TerminalSession {
                     pane,
                     rows: size.rows,
                     cols: size.cols,
+                    client: self.id,
                 }
             }
             ClientMessage::Close { pane } => Command::Close { pane },
             ClientMessage::Reorder { order } => Command::Reorder { order },
+            // Off the worker queue for the same reason `start` is: it decides
+            // who may resize, and a backed-up hub must not drop the message that
+            // hands the sizing over — the client would then be a spectator with
+            // no way to find out.
+            ClientMessage::ClaimSize => {
+                self.hub.claim_size(self.id);
+                return;
+            }
             // Handled here rather than on the worker thread: it only queues
             // creates, and routing it through the same queue would let a
             // backed-up hub drop the one message that brings the terminals up.

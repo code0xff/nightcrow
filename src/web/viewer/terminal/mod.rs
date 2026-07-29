@@ -67,6 +67,7 @@ impl TerminalHub {
                 clients: Vec::new(),
                 panes: Vec::new(),
                 reserved: 0,
+                size_owner: None,
             }),
             next_client_id: AtomicU64::new(0),
             stop: Arc::new(AtomicBool::new(false)),
@@ -126,7 +127,13 @@ impl TerminalHub {
             }
         }
         state.clients.push(Client { id, tx });
+        // Arriving takes the sizing: this is the client someone just sat down
+        // at, and the panes should fit its screen. Taken before the lock is
+        // released so two clients connecting at once cannot both end up
+        // believing they own it.
+        let displaced = state.size_owner.replace(id);
         drop(state);
+        self.announce_size_owner(id, displaced);
 
         // Offer the startup terminals to be sized rather than spawning them
         // here. A PTY created before any client has measured its cell is born
@@ -276,11 +283,49 @@ impl TerminalHub {
     }
 
     fn disconnect(&self, id: u64) {
-        self.state
-            .lock()
-            .expect("terminal state poisoned")
-            .clients
-            .retain(|c| c.id != id);
+        let heir = {
+            let mut state = self.state.lock().expect("terminal state poisoned");
+            state.clients.retain(|c| c.id != id);
+            if state.size_owner != Some(id) {
+                return;
+            }
+            // The owner left, so the sizing passes to whoever arrived most
+            // recently among those still here — the same rule that gave it
+            // away in the first place. With nobody left it goes unowned, and
+            // every pane keeps the size it has: there is no client to fit.
+            state.size_owner = state.clients.last().map(|c| c.id);
+            state.size_owner
+        };
+        if let Some(heir) = heir {
+            self.send_to(heir, &ServerMessage::SizeOwner { owned: true });
+        }
+    }
+
+    /// Move the sizing to `client`, at its own request.
+    pub(super) fn claim_size(&self, client: u64) {
+        let displaced = {
+            let mut state = self.state.lock().expect("terminal state poisoned");
+            // A client that has gone cannot take it: its request can arrive
+            // after it disconnected, and handing it the sizing would freeze
+            // every pane at whatever size it left behind.
+            if !state.clients.iter().any(|c| c.id == client) {
+                return;
+            }
+            if state.size_owner == Some(client) {
+                return;
+            }
+            state.size_owner.replace(client)
+        };
+        self.announce_size_owner(client, displaced);
+    }
+
+    /// Tell the new owner it has the sizing, and the one it took it from that it
+    /// no longer does.
+    fn announce_size_owner(&self, owner: u64, displaced: Option<u64>) {
+        self.send_to(owner, &ServerMessage::SizeOwner { owned: true });
+        if let Some(displaced) = displaced.filter(|id| *id != owner) {
+            self.send_to(displaced, &ServerMessage::SizeOwner { owned: false });
+        }
     }
 
     pub fn client_count(&self) -> usize {

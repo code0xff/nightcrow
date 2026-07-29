@@ -30,6 +30,25 @@ pub enum BackendEvent {
     Exited {
         pane: PaneId,
     },
+    /// The size a pane's PTY is now set to.
+    ///
+    /// Only a backend serving a shared session reports this, and it is not
+    /// necessarily what this side asked for: the size belongs to whichever
+    /// client owns the sizing, and one request can be clamped. An emulator has
+    /// to wrap where the child does, so this is what it follows.
+    Resized {
+        pane: PaneId,
+        rows: u16,
+        cols: u16,
+    },
+    /// Whether this side is the one whose layout sets the pane sizes.
+    ///
+    /// A PTY has one size and a child cannot be re-flowed after the fact, so
+    /// one client decides it and the rest watch. Owning a local `PtyBackend`
+    /// means always owning the sizing, which is why nothing reports it there.
+    SizeOwnership {
+        owned: bool,
+    },
 }
 
 pub trait TerminalBackend {
