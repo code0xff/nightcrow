@@ -42,6 +42,13 @@ export function useTerminalSocket({
   setTitles,
 }: UseTerminalSocketArgs) {
   useLayoutEffect(() => {
+    // A terminal this page asked for belongs to the project it was asked in.
+    // The next project replays the panes it already has, and an expectation
+    // left over from the previous one would take the first of them for the
+    // terminal that never arrived — focusing it and remembering it as this
+    // project's last active pane. Cleared here rather than in `connect` so a
+    // reconnect, which is the same project, still adopts the pane it asked for.
+    expectCreateRef.current = 0;
     let closedByUs = false;
     let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
 
