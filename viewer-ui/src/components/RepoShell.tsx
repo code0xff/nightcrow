@@ -135,7 +135,14 @@ export function RepoShell(props: RepoShellProps) {
           } as CSSProperties
         }
       >
+        {/* Keyed by repository so the file tree it holds — listings and
+            expanded directories, all keyed by repository-relative path — goes
+            away with the project. Two projects that share a directory name
+            share a key, and the tree does not refetch a path it already holds,
+            so a cache that outlived the switch would show one project's files
+            under the other until a reload. */}
         <Sidebar
+          key={repo}
           tab={tab}
           setTab={setTab}
           filter={filter}
