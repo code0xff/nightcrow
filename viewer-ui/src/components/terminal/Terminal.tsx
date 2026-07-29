@@ -14,6 +14,7 @@ import { usePaneSizes } from "../../hooks/terminal/usePaneSizes";
 import { useStartupSizes } from "../../hooks/terminal/useStartupSizes";
 import { TerminalCell } from "./TerminalCell";
 import { StartupSlots } from "./StartupSlots";
+import { TermKeyBar } from "./TermKeyBar";
 import { TERM_KEY_BAR, termKeySequence } from "../../lib/termKeys";
 
 export function TerminalPanel({
@@ -48,6 +49,10 @@ export function TerminalPanel({
   const [zoomed, setZoomed] = useState<number | null>(null);
   const [size, setSize] = useState({ w: 0, h: 0 });
   const [titles, setTitles] = useState<Record<number, string>>({});
+  // Whether this page's layout is what sets the pane sizes. A PTY has one size
+  // and the child cannot be re-flowed afterwards, so one client at a time
+  // decides it; the rest render the grid they are given.
+  const [ownsSize, setOwnsSize] = useState(true);
 
   useTerminalSocket({
     repo,
@@ -62,6 +67,7 @@ export function TerminalPanel({
     setActive,
     setZoomed,
     setTitles,
+    setOwnsSize,
   });
 
   useTerminalViews({
@@ -93,6 +99,7 @@ export function TerminalPanel({
     viewsRef,
     bodyRefs,
     sentSizesRef,
+    ownsSize,
   });
 
   useEffect(() => {
@@ -141,6 +148,13 @@ export function TerminalPanel({
     socket.send(JSON.stringify({ type: "create", rows: 24, cols: 80 }));
   };
 
+  // Take the sizing back. Deliberate rather than automatic: the panes belong to
+  // a session someone else may be working in, and merely opening this page must
+  // not repaint their screen.
+  const claimSize = () => {
+    socketRef.current?.send(JSON.stringify({ type: "claim_size" }));
+  };
+
   const closePane = (pane: number) => {
     socketRef.current?.send(JSON.stringify({ type: "close", pane }));
   };
@@ -182,11 +196,20 @@ export function TerminalPanel({
   return (
     <section className={`flex min-h-0 min-w-0 flex-col border-t border-ink-700 ${className}`}>
       <div className="flex shrink-0 items-center gap-2 bg-ink-900 px-2 py-1">
+        {!ownsSize && (
+          <button
+            onClick={claimSize}
+            title="These panes are sized for another client. Resize them to fit this screen."
+            className="ml-auto shrink-0 rounded-sm border border-ink-700 px-1.5 py-0.5 text-xs text-ink-400 hover:border-accent hover:text-accent"
+          >
+            fit to this screen
+          </button>
+        )}
         <button
           onClick={create}
           title="New terminal"
           aria-label="New terminal"
-          className="ml-auto flex shrink-0 items-center rounded-sm px-1.5 py-0.5 text-ink-400 hover:text-accent"
+          className={`flex shrink-0 items-center rounded-sm px-1.5 py-0.5 text-ink-400 hover:text-accent ${ownsSize ? "ml-auto" : ""}`}
         >
           <PlusIcon />
         </button>
@@ -268,21 +291,7 @@ export function TerminalPanel({
           })}
         </div>
       </div>
-      {panes.length > 0 && (
-        <div className="flex shrink-0 items-stretch gap-1 overflow-x-auto border-t border-ink-700 bg-ink-900 px-1 py-1 md:hidden">
-          {TERM_KEY_BAR.map(({ key, label, aria }) => (
-            <button
-              key={key}
-              onPointerDown={(event) => event.preventDefault()}
-              onClick={() => sendKey(key)}
-              aria-label={aria}
-              className="flex min-h-9 min-w-9 shrink-0 items-center justify-center rounded-sm border border-ink-700 bg-ink-850 px-2 text-xs text-ink-200 active:bg-ink-700 active:text-accent"
-            >
-              {label}
-            </button>
-          ))}
-        </div>
-      )}
+      {panes.length > 0 && <TermKeyBar onKey={sendKey} />}
     </section>
   );
 }

@@ -17,6 +17,8 @@ interface UseTerminalSocketArgs {
   setActive: React.Dispatch<React.SetStateAction<number | null>>;
   setZoomed: React.Dispatch<React.SetStateAction<number | null>>;
   setTitles: React.Dispatch<React.SetStateAction<Record<number, string>>>;
+  /** Whether this page's layout is what sets the pane sizes. */
+  setOwnsSize: React.Dispatch<React.SetStateAction<boolean>>;
 }
 
 /// Reset state on repository changes because pane ids are repository-local.
@@ -40,6 +42,7 @@ export function useTerminalSocket({
   setActive,
   setZoomed,
   setTitles,
+  setOwnsSize,
 }: UseTerminalSocketArgs) {
   useLayoutEffect(() => {
     // A terminal this page asked for belongs to the project it was asked in.
@@ -65,6 +68,10 @@ export function useTerminalSocket({
       setActive(null);
       setZoomed(null);
       setTitles({});
+      // Connecting takes the sizing, so this is what the server is about to
+      // confirm. Assumed rather than awaited: starting as a spectator would
+      // leave the panes unfitted for a round trip.
+      setOwnsSize(true);
       disposeAll();
 
       const scheme = location.protocol === "https:" ? "wss:" : "ws:";
@@ -115,6 +122,19 @@ export function useTerminalSocket({
               delete next[message.pane];
               return next;
             });
+          } else if (message.type === "resized") {
+            // The size the PTY is now set to, which this page may not have
+            // asked for: one client at a time decides it. Adopted either way —
+            // the emulator has to wrap where the child does.
+            sentSizesRef.current.set(message.pane, {
+              rows: message.rows,
+              cols: message.cols,
+            });
+            viewsRef.current
+              .get(message.pane)
+              ?.term.resize(message.cols, message.rows);
+          } else if (message.type === "size_owner") {
+            setOwnsSize(message.owned);
           } else if (message.type === "reordered") {
             setPanes((current) => reconcileOrder(current, message.order));
           } else if (message.type === "error") {

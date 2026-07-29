@@ -22,18 +22,26 @@ interface UsePaneSizesArgs {
   viewsRef: MutableRefObject<Map<number, PaneView>>;
   bodyRefs: MutableRefObject<Map<number, HTMLDivElement>>;
   /** Sizes the PTYs are already known to have, so an unchanged size is never
-   *  sent. Seeded from `created` and updated here. */
+   *  sent. Seeded from `created`, updated here and by `resized`. */
   sentSizesRef: MutableRefObject<Map<number, { rows: number; cols: number }>>;
+  /** Whether this page's layout is what sets the pane sizes. When it is not,
+   *  the panes are at another client's size and this page renders that grid
+   *  instead of fitting its own — a PTY has one size, and the child cannot be
+   *  re-flowed after the fact. */
+  ownsSize: boolean;
 }
 
 /**
- * Keep each visible pane fitted to its cell, and tell the server once the
- * layout stops moving.
+ * Give each visible pane the size it should have, and — when this page is the
+ * one deciding that — tell the server once the layout stops moving.
  *
- * The local fit runs immediately — it only reflows xterm's own buffer, costs
- * nothing on the wire, and keeping it in step with the DOM is what makes a
- * drag look right. Only the outbound resize is held back until the geometry
- * settles.
+ * The local fit runs immediately: it only reflows xterm's own buffer, costs
+ * nothing on the wire, and keeping it in step with the DOM is what makes a drag
+ * look right. Only the outbound resize is held back until the geometry settles.
+ *
+ * A page that does not own the sizing fits nothing. It sets each pane to the
+ * size the session reports and lets the cell crop or pad the result, because
+ * the alternative is an emulator wrapping somewhere the child does not.
  */
 export function usePaneSizes({
   panes,
@@ -43,6 +51,7 @@ export function usePaneSizes({
   viewsRef,
   bodyRefs,
   sentSizesRef,
+  ownsSize,
 }: UsePaneSizesArgs) {
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -60,13 +69,21 @@ export function usePaneSizes({
     }
   }, [socketRef, viewsRef, bodyRefs, sentSizesRef]);
 
-  // Fit visible panes after layout changes; never resize hidden cells to zero.
+  // Size visible panes after layout changes; never resize hidden cells to zero.
   useEffect(() => {
     for (const [pane, view] of viewsRef.current) {
       const body = bodyRefs.current.get(pane);
       if (!body || body.clientHeight === 0 || body.clientWidth === 0) continue;
-      view.fit.fit();
+      if (ownsSize) {
+        view.fit.fit();
+        continue;
+      }
+      // A pane created while this page was a spectator starts at xterm's
+      // default until this runs; `resized` covers it from then on.
+      const pty = sentSizesRef.current.get(pane);
+      if (pty) view.term.resize(pty.cols, pty.rows);
     }
+    if (!ownsSize) return;
     // Each layout change restarts the wait, so a run of them costs one resize
     // rather than one apiece.
     if (timerRef.current) clearTimeout(timerRef.current);
@@ -74,5 +91,5 @@ export function usePaneSizes({
     return () => {
       if (timerRef.current) clearTimeout(timerRef.current);
     };
-  }, [panes, zoomed, size, flush, viewsRef, bodyRefs]);
+  }, [panes, zoomed, size, flush, viewsRef, bodyRefs, sentSizesRef, ownsSize]);
 }
