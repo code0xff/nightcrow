@@ -150,7 +150,10 @@ fn handle(message: ClientMessage, id: u64, session: &Session, bridges: &mut Term
         ClientMessage::Hello { version: client } => {
             let daemon = version();
             let reply = if client == daemon {
-                ServerMessage::Hello { version: daemon }
+                ServerMessage::Hello {
+                    version: daemon,
+                    client: id,
+                }
             } else {
                 // Reported, not refused. The two ship in one binary, so a
                 // mismatch means two builds are running at once — worth saying

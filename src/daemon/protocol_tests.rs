@@ -35,6 +35,7 @@ fn every_server_message_survives_the_round_trip() {
     let messages = vec![
         ServerMessage::Hello {
             version: "0.1.0".into(),
+            client: 3,
         },
         ServerMessage::Repos {
             repos: vec![RepoSummary {

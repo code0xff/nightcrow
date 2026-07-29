@@ -1,6 +1,7 @@
 use super::super::frame::{Frame, FrameKind, read_frame, write_frame};
 use super::super::protocol::{ClientMessage, ServerMessage, TerminalOutput, version};
 use super::super::socket::DaemonSocket;
+use crate::backend::PaneId;
 use crate::web::common::auth::Auth;
 use crate::web::viewer::prefs::PrefsStore;
 use crate::web::viewer::server::{ViewerOptions, ViewerState};
@@ -95,6 +96,36 @@ impl Client {
         self.next()
     }
 
+    /// Complete the handshake and return the id the daemon knows this
+    /// connection by.
+    fn hello(&mut self) -> u64 {
+        self.send(ClientMessage::Hello { version: version() });
+        for _ in 0..64 {
+            if let ServerMessage::Hello { client, .. } = self.next() {
+                return client;
+            }
+        }
+        panic!("no hello arrived among the session traffic");
+    }
+
+    /// The next pane the daemon reports, and who it says asked for it.
+    fn next_created(&mut self) -> (PaneId, Option<u64>) {
+        for _ in 0..64 {
+            if let (
+                _,
+                HubServerMessage::Created {
+                    pane,
+                    client: requester,
+                    ..
+                },
+            ) = self.next_terminal_event()
+            {
+                return (pane, requester);
+            }
+        }
+        panic!("no pane was created");
+    }
+
     /// The next terminal event for any repository, skipping the tab list.
     fn next_terminal_event(&mut self) -> (String, HubServerMessage) {
         for _ in 0..64 {
@@ -127,6 +158,17 @@ impl Client {
             }
         }
         panic!("no pane output arrived");
+    }
+
+    /// The catalog ids of the open repositories, asked for rather than waited
+    /// for: the set the daemon volunteers on attach may already have been read
+    /// past by a test that was after something else.
+    fn repo_ids(&mut self) -> Vec<String> {
+        self.send(ClientMessage::ListRepos);
+        match self.next_repos() {
+            ServerMessage::Repos { repos } => repos.into_iter().map(|repo| repo.id).collect(),
+            other => panic!("expected a repo list, got {other:?}"),
+        }
     }
 
     /// The next repository set, skipping terminal traffic.
@@ -170,7 +212,24 @@ fn a_client_that_says_hello_is_answered_with_the_daemon_version() {
 
     let answer = client.ask(ClientMessage::Hello { version: version() });
 
-    assert_eq!(answer, ServerMessage::Hello { version: version() });
+    match answer {
+        ServerMessage::Hello {
+            version: daemon, ..
+        } => assert_eq!(daemon, version()),
+        other => panic!("expected a hello, got {other:?}"),
+    }
+}
+
+#[test]
+fn each_client_is_told_the_id_the_daemon_knows_it_by() {
+    // It is how a client recognises a pane it asked for among the ones every
+    // client is told about, so two attachments must not share one.
+    let dir = tempfile::TempDir::new().unwrap();
+    let daemon = daemon(&dir, &[]);
+    let mut first = Client::attach(daemon.path());
+    let mut second = Client::attach(daemon.path());
+
+    assert_ne!(first.hello(), second.hello());
 }
 
 #[test]
@@ -434,6 +493,37 @@ fn a_pane_one_client_creates_is_streamed_to_another() {
     let output = watcher.next_output();
     assert_eq!(output.repo, id, "and the watcher knows which repository");
     assert!(!output.data.is_empty());
+    drop(repo);
+}
+
+#[test]
+fn a_new_pane_names_its_requester_to_that_client_and_nobody_to_the_others() {
+    // Every client is told about every pane, so "did I ask for this?" is the
+    // only thing that can decide whether it takes the focus — and it has to be
+    // answerable with the id from the client's own handshake, since a client
+    // never learns its per-repository ids inside the daemon.
+    let (repo, path) = crate::test_util::make_repo();
+    let dir = tempfile::TempDir::new().unwrap();
+    let daemon = daemon(&dir, std::slice::from_ref(&path));
+    let mut creator = Client::attach(daemon.path());
+    let mut watcher = Client::attach(daemon.path());
+    let creator_id = creator.hello();
+    let watcher_id = watcher.hello();
+    let repo_id = creator.repo_ids().pop().expect("one repository is open");
+
+    creator.send(ClientMessage::Terminal {
+        repo: repo_id,
+        message: HubClientMessage::Create { rows: 24, cols: 80 },
+    });
+
+    let (pane, requester) = creator.next_created();
+    assert_eq!(requester, Some(creator_id), "the asker's own id");
+    let (same_pane, requester) = watcher.next_created();
+    assert_eq!(same_pane, pane, "both are told about the one pane");
+    assert_eq!(
+        requester, None,
+        "and the other client is not told it asked (its id is {watcher_id})"
+    );
     drop(repo);
 }
 

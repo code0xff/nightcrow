@@ -21,6 +21,13 @@ pub struct TerminalSession {
 }
 
 impl TerminalSession {
+    /// This session's client id, as the hub stamps it on the panes this session
+    /// asked for. The daemon reads it to tell its own client's panes from
+    /// another's while relaying (see the daemon's `TerminalBridges`).
+    pub fn client_id(&self) -> u64 {
+        self.id
+    }
+
     /// Wait up to `timeout` for the next frame to write.
     pub fn next_frame(&self, timeout: Duration) -> Option<TerminalFrame> {
         self.rx

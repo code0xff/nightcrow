@@ -168,9 +168,32 @@ fn server_messages_serialize_with_a_type_tag() {
         pane: 2,
         rows: 40,
         cols: 120,
+        client: None,
     })
     .unwrap();
+    // No requester, no field: the browser reads these already, and a pane
+    // nobody asked for must look to it exactly as it did before.
     assert_eq!(json, r#"{"type":"created","pane":2,"rows":40,"cols":120}"#);
+
+    let json = serde_json::to_string(&ServerMessage::Created {
+        pane: 2,
+        rows: 40,
+        cols: 120,
+        client: Some(7),
+    })
+    .unwrap();
+    assert_eq!(
+        json,
+        r#"{"type":"created","pane":2,"rows":40,"cols":120,"client":7}"#
+    );
+
+    // And back, because the daemon reads these off a hub session to relay them.
+    let created: ServerMessage =
+        serde_json::from_str(r#"{"type":"created","pane":1,"rows":2,"cols":3}"#).unwrap();
+    assert!(matches!(
+        created,
+        ServerMessage::Created { client: None, .. }
+    ));
 
     let json = serde_json::to_string(&ServerMessage::Reordered { order: vec![2, 1] }).unwrap();
     assert_eq!(json, r#"{"type":"reordered","order":[2,1]}"#);

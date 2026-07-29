@@ -44,7 +44,7 @@ impl TerminalHub {
                             continue;
                         }
                         match backend.open_pane(rows, cols, command.as_deref()) {
-                            Ok(pane) => self.register_pane(pane, rows, cols),
+                            Ok(pane) => self.register_pane(pane, rows, cols, Some(client)),
                             Err(err) => {
                                 tracing::warn!(%err, "viewer: could not create a terminal");
                                 self.send_error_to(client, "could not start a terminal");
@@ -92,7 +92,14 @@ impl TerminalHub {
                                 pane.size.cols,
                                 pane.command.as_deref(),
                             ) {
-                                Ok(id) => self.register_pane(id, pane.size.rows, pane.size.cols),
+                                // Registered as nobody's: the configured
+                                // terminals belong to the session, not to
+                                // whichever client happened to measure them
+                                // first, so they must not pull that client's
+                                // focus onto them.
+                                Ok(id) => {
+                                    self.register_pane(id, pane.size.rows, pane.size.cols, None)
+                                }
                                 Err(err) => {
                                     tracing::warn!(%err, "viewer: could not start a terminal");
                                     self.send_error_to(
@@ -178,8 +185,16 @@ impl TerminalHub {
     /// same lock that adds the pane keeps it consistent with `connect`'s replay:
     /// a client either sees this pane via `connect` or via this broadcast, never
     /// both and never neither.
-    fn register_pane(&self, pane: PaneId, rows: u16, cols: u16) {
-        let json = serde_json::to_string(&ServerMessage::Created { pane, rows, cols }).ok();
+    /// `client` is whoever asked for the pane, carried so that client alone can
+    /// treat it as the one it opened. `None` for a pane nobody asked for.
+    fn register_pane(&self, pane: PaneId, rows: u16, cols: u16, client: Option<u64>) {
+        let json = serde_json::to_string(&ServerMessage::Created {
+            pane,
+            rows,
+            cols,
+            client,
+        })
+        .ok();
         let mut state = self.state.lock().expect("terminal state poisoned");
         state.panes.push(PaneState {
             id: pane,

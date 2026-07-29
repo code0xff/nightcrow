@@ -69,7 +69,12 @@ impl DaemonClient {
             let message = read_message(&mut reader)?
                 .context("the daemon closed the connection during the handshake")?;
             match message {
-                ServerMessage::Hello { version: daemon } => {
+                // The id the daemon hands out with it is read once panes are
+                // shared, which is what needs to tell this client's own from
+                // another's.
+                ServerMessage::Hello {
+                    version: daemon, ..
+                } => {
                     if daemon != version() {
                         bail!("daemon is {daemon}, this client is {}", version());
                     }

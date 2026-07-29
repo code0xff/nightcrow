@@ -109,6 +109,10 @@ impl TerminalHub {
                     pane: pane.id,
                     rows: pane.rows,
                     cols: pane.cols,
+                    // A replayed pane predates this client, so nobody here
+                    // asked for it — it must not take the focus of whatever the
+                    // client is already looking at.
+                    client: None,
                 }) {
                     let _ = tx.try_send(TerminalFrame::Control(json));
                 }

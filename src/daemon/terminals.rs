@@ -15,7 +15,9 @@ use super::frame::Frame;
 use super::protocol::{ServerMessage, TerminalOutput};
 use crate::web::viewer::session::SessionRepo;
 use crate::web::viewer::terminal::TerminalSession;
-use crate::web::viewer::terminal::frame::{ClientMessage as HubClientMessage, TerminalFrame};
+use crate::web::viewer::terminal::frame::{
+    ClientMessage as HubClientMessage, ServerMessage as HubServerMessage, TerminalFrame,
+};
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -95,6 +97,7 @@ impl TerminalBridges {
             let stop = Arc::clone(&stop);
             let clients = Arc::clone(&self.clients);
             let client = self.client;
+            let hub_client = session.client_id();
             let repo = repo.to_string();
             std::thread::Builder::new()
                 .name("nightcrow-attach-term".into())
@@ -103,7 +106,7 @@ impl TerminalBridges {
                         let Some(frame) = session.next_frame(BRIDGE_POLL) else {
                             continue;
                         };
-                        clients.send_to(client, tag(&repo, frame));
+                        clients.send_to(client, tag(&repo, frame, hub_client, client));
                     }
                 })
                 .ok()
@@ -117,7 +120,13 @@ impl TerminalBridges {
 }
 
 /// Turn one hub frame into a frame for this client, tagged with its repository.
-fn tag(repo: &str, frame: TerminalFrame) -> Frame {
+///
+/// `hub_client` is this bridge's id at the hub and `attached` is the same
+/// client's id on the attach socket. A pane the hub says `hub_client` asked for
+/// is relayed as one `attached` asked for, so the client can recognise its own
+/// pane by comparing against the id it was given at the handshake — it has no
+/// way to know its per-repository hub ids.
+fn tag(repo: &str, frame: TerminalFrame, hub_client: u64, attached: u64) -> Frame {
     match frame {
         TerminalFrame::Output { pane, data } => Frame::terminal(
             TerminalOutput {
@@ -134,7 +143,7 @@ fn tag(repo: &str, frame: TerminalFrame) -> Frame {
         TerminalFrame::Control(json) => match serde_json::from_str(&json) {
             Ok(event) => encode(&ServerMessage::Terminal {
                 repo: repo.to_string(),
-                event,
+                event: rewrite_requester(event, hub_client, attached),
             }),
             Err(err) => {
                 tracing::debug!(%err, "daemon: unreadable terminal control frame");
@@ -143,6 +152,25 @@ fn tag(repo: &str, frame: TerminalFrame) -> Frame {
                 })
             }
         },
+    }
+}
+
+/// Put a `Created` event's requester into the attach socket's id space, and
+/// leave every other event alone.
+fn rewrite_requester(event: HubServerMessage, hub_client: u64, attached: u64) -> HubServerMessage {
+    match event {
+        HubServerMessage::Created {
+            pane,
+            rows,
+            cols,
+            client,
+        } => HubServerMessage::Created {
+            pane,
+            rows,
+            cols,
+            client: (client == Some(hub_client)).then_some(attached),
+        },
+        other => other,
     }
 }
 

@@ -87,6 +87,20 @@ pub enum ServerMessage {
         pane: PaneId,
         rows: u16,
         cols: u16,
+        /// Which client asked for this pane, in the id space of the connection
+        /// the frame is going out on — a hub client id for the browser, whose
+        /// socket *is* the hub session, and the attached client's id for a
+        /// daemon relay, which is one hop further out (see the daemon's
+        /// `TerminalBridges`). Each recipient compares it against its own id on
+        /// that connection.
+        ///
+        /// `None` means nobody there asked: a pane replayed to a connecting
+        /// client, one another client opened, or a startup terminal, which
+        /// belongs to the session rather than to whoever sized it. Omitted from
+        /// the wire when absent, so the frames the browser already reads are
+        /// unchanged.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        client: Option<u64>,
     },
     Exited {
         pane: PaneId,

@@ -47,7 +47,15 @@ pub enum ClientMessage {
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ServerMessage {
     /// Answer to [`ClientMessage::Hello`], naming the daemon's build.
-    Hello { version: String },
+    Hello {
+        version: String,
+        /// The id this connection is known by, so the client can tell a pane it
+        /// asked for from one that arrived because someone else did. Panes are
+        /// created by request and reported to everybody, so without an identity
+        /// a client cannot tell the two apart — and would move its focus onto
+        /// whatever another client just opened.
+        client: u64,
+    },
     /// The repository set, sent in answer to a list, open, close, or reorder.
     ///
     /// Every mutation answers with the whole set rather than a delta: the set
