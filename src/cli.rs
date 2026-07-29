@@ -10,11 +10,6 @@ use clap::{Parser, Subcommand};
 #[derive(Parser)]
 #[command(version, about, long_about = None)]
 pub(crate) struct Cli {
-    /// Serve this repository. Repeatable, and added to the repositories
-    /// remembered from last time rather than replacing them.
-    #[arg(short, long)]
-    pub(crate) repo: Vec<std::path::PathBuf>,
-
     /// Open a terminal pane running this command at startup. Repeatable;
     /// each --exec adds one pane after any config [[startup_command]] panes.
     #[arg(long = "exec", value_name = "COMMAND")]
@@ -44,27 +39,20 @@ pub(crate) enum Commands {
     /// Attach the TUI to a running nightcrow daemon.
     ///
     /// The session — which repositories are open, and in what order — belongs
-    /// to the daemon, so this starts on whatever it is serving rather than on
-    /// the remembered workspace. Leaving does not end the session.
-    Attach {
-        /// Ask the daemon to open this repository and focus it. Repeatable.
-        #[arg(short, long)]
-        repo: Vec<std::path::PathBuf>,
-    },
+    /// to the daemon, so this starts on whatever it is serving. Repositories
+    /// are opened from inside, with the leader chord's open dialog or the
+    /// browser's folder picker. Leaving does not end the session.
+    Attach,
 }
 
 /// Run the session daemon in the foreground until it is stopped.
 ///
-/// The starting catalog comes from `--repo` plus the remembered workspace —
-/// either may be empty, which starts on an empty catalog. From there the
-/// clients own the set: attaching terminals and the browser open and close
-/// repositories, and the result is written back to the workspace file.
-pub(crate) fn run_daemon(
-    repos: Vec<std::path::PathBuf>,
-    exec: Vec<String>,
-    port: Option<u16>,
-    bind: Option<String>,
-) -> Result<()> {
+/// The starting catalog is whatever was open last time, which may be nothing —
+/// an empty catalog is a normal state, and the way in from there is a client:
+/// the browser's folder picker or an attached TUI's open dialog. There is no
+/// flag for it. Repositories are opened from inside the session, which is the
+/// only place that can open one *and* have every other client see it.
+pub(crate) fn run_daemon(exec: Vec<String>, port: Option<u16>, bind: Option<String>) -> Result<()> {
     // Before anything that can be interrupted. Opening repositories and running
     // the startup shells takes long enough for a stop signal to land in the
     // middle, and until the handlers exist such a signal kills the process
@@ -91,17 +79,14 @@ pub(crate) fn run_daemon(
         eprintln!("  {password}");
     }
 
-    let mut paths = resolve_serve_repos(&repos)?;
-    // Unify with the TUI: restore the previously-open projects so the
-    // viewer does not start blank each launch. Explicit --repo comes first and
-    // wins; remembered repos that still exist fill in after, de-duplicated.
-    if let Some(ws) = crate::workspace::persistence::load_workspace() {
-        for repo in ws.repos {
-            if std::path::Path::new(&repo).is_dir() && !paths.contains(&repo) {
-                paths.push(repo);
-            }
-        }
-    }
+    // Repositories that have been moved or deleted since are dropped rather
+    // than served as broken tabs.
+    let paths: Vec<String> = crate::workspace::persistence::load_workspace()
+        .map(|ws| ws.repos)
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|repo| std::path::Path::new(repo).is_dir())
+        .collect();
     // Resolved before anything is served so a too-many-panes error is a plain
     // stderr line at startup rather than a failure the first client sees.
     let startup = crate::config::resolve_startup_commands(&cfg, &exec)?
@@ -121,7 +106,7 @@ pub(crate) fn run_daemon(
         // no-repository state and can still be reached; the page's folder
         // picker is the way in from there.
         eprintln!(
-            "nightcrow: web viewer serving an empty catalog (no --repo given) at http://{}/",
+            "nightcrow: serving an empty catalog at http://{}/ — open a repository from a client",
             server.addr()
         );
     } else {
@@ -182,27 +167,6 @@ pub(crate) fn run_daemon(
     Ok(())
 }
 
-/// Canonicalize and de-duplicate the `--repo` list for `serve`.
-///
-/// Two spellings of one worktree must collapse to one catalog entry, or the
-/// browser shows the same repository twice under different ids.
-fn resolve_serve_repos(repos: &[std::path::PathBuf]) -> Result<Vec<String>> {
-    let mut out: Vec<String> = Vec::new();
-    for repo in repos {
-        let expanded = crate::platform::paths::expand_tilde(repo);
-        if !expanded.exists() {
-            anyhow::bail!("no such directory: {}", expanded.display());
-        }
-        let resolved = crate::git::resolve_repo_path(&expanded)
-            .to_string_lossy()
-            .into_owned();
-        if !out.contains(&resolved) {
-            out.push(resolved);
-        }
-    }
-    Ok(out)
-}
-
 pub(crate) fn run_init(force: bool) -> Result<()> {
     match crate::config::init_config(force)? {
         crate::config::InitOutcome::Created(path) => {
@@ -217,20 +181,4 @@ pub(crate) fn run_init(force: bool) -> Result<()> {
         }
     }
     Ok(())
-}
-
-/// Resolve `--repo` paths to worktree roots, so two spellings of one
-/// repository collapse to a single request.
-pub(crate) fn resolve_repo_paths(
-    repos: Vec<std::path::PathBuf>,
-) -> Result<Vec<String>, anyhow::Error> {
-    let mut out = Vec::with_capacity(repos.len());
-    for p in repos {
-        out.push(
-            crate::git::resolve_repo_path(crate::platform::paths::expand_tilde(p))
-                .to_string_lossy()
-                .to_string(),
-        );
-    }
-    Ok(out)
 }

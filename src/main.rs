@@ -29,7 +29,7 @@ fn main() -> Result<()> {
     let cli = Cli::parse();
     match cli.command {
         Some(Commands::Init { force }) => run_init(force),
-        Some(Commands::Attach { repo }) => application::attach::run_attach(repo),
-        None => run_daemon(cli.repo, cli.exec, cli.port, cli.bind),
+        Some(Commands::Attach) => application::attach::run_attach(),
+        None => run_daemon(cli.exec, cli.port, cli.bind),
     }
 }

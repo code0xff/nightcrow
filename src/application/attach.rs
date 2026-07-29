@@ -18,15 +18,8 @@ use std::io;
 use syntect::highlighting::ThemeSet;
 
 /// Attach to the daemon and run the TUI until the user leaves or it goes away.
-pub(crate) fn run_attach(repo: Vec<std::path::PathBuf>) -> Result<()> {
-    let mut client = DaemonClient::connect(&crate::daemon::socket::default_socket_path()?)?;
-    // A repository named on the command line is a request like any other: the
-    // daemon decides, and the set comes back with it included. Sent before the
-    // screen is taken over so a refusal is a plain stderr line, not a notice
-    // behind a splash.
-    for path in crate::cli::resolve_repo_paths(repo)? {
-        client.open_repo(&path)?;
-    }
+pub(crate) fn run_attach() -> Result<()> {
+    let client = DaemonClient::connect(&crate::daemon::socket::default_socket_path()?)?;
 
     let cfg = crate::config::load_config()?;
     // Resolved and parsed before the alternate screen so their errors are
@@ -34,8 +27,9 @@ pub(crate) fn run_attach(repo: Vec<std::path::PathBuf>) -> Result<()> {
     let startup_commands = crate::config::resolve_startup_commands(&cfg, &[])?;
     let leader = crate::config::parse_leader(&cfg.input.leader)?;
 
-    // The log anchor cannot follow the tabs, and attached there is no `--repo`
-    // to stand in, so it is the working directory the client was started from.
+    // The log anchor cannot follow the tabs, and there is no repository named
+    // on the command line to stand in, so it is the working directory the
+    // client was started from.
     let anchor = std::env::current_dir()?.to_string_lossy().into_owned();
     let _log_guard = crate::platform::logging::init_logging(&cfg.log, &anchor);
     tracing::info!("attached to the nightcrow daemon");
