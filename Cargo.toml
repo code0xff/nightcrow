@@ -27,6 +27,7 @@ exclude = [
     "release.toml",
     "CLAUDE.md",
     "docs/code-review-2026-05-08.md",
+    "docs/repo-picker-plan.md",
     "docs/status-short-plan.md",
     "docs/web-viewer-plan.md",
 ]
