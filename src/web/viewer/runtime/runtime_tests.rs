@@ -272,3 +272,44 @@ fn a_second_subscriber_does_not_disturb_the_watch() {
     runtime.stop();
     drop(repo);
 }
+
+#[test]
+fn concurrent_arrivals_and_departures_leave_the_watch_matching_the_list() {
+    // Two questions are asked of the same list — "am I the first?" and "am I
+    // the last?" — and the watch is whatever the last answer said. This pins
+    // the state they must agree on: a subscriber attached means the tree is
+    // read, and the subscriber count is not that fact.
+    //
+    // It does not reproduce the interleaving those answers must be taken
+    // together to survive: that window is the few instructions between reading
+    // the list and joining it, and nothing available here forces a thread into
+    // it. See the commit that made both take the lock once.
+    let (repo, path) = crate::test_util::make_repo();
+    let runtime = RepoRuntime::spawn(&path);
+
+    let churn: Vec<_> = (0..8)
+        .map(|_| {
+            let runtime = Arc::clone(&runtime);
+            thread::spawn(move || {
+                for _ in 0..400 {
+                    let held = runtime.subscribe();
+                    drop(held);
+                }
+            })
+        })
+        .collect();
+    let staying = runtime.subscribe();
+    for thread in churn {
+        thread.join().expect("a churning subscriber panicked");
+    }
+
+    assert!(
+        runtime.watch.is_awake(),
+        "a subscriber is attached, so the tree is read"
+    );
+    drop(staying);
+    assert!(!runtime.watch.is_awake(), "and stops when it goes");
+
+    runtime.stop();
+    drop(repo);
+}

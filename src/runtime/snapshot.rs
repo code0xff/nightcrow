@@ -151,6 +151,14 @@ pub struct SnapshotWatch {
 }
 
 impl SnapshotWatch {
+    /// Whether the reading is on. For a test whose claim is that some sequence
+    /// of callers left it in the right state — the count of who wants it read is
+    /// not the same fact as whether it is being read.
+    #[cfg(test)]
+    pub(crate) fn is_awake(&self) -> bool {
+        self.awake.load(Ordering::Acquire)
+    }
+
     pub fn set_awake(&self, awake: bool) {
         self.awake.store(awake, Ordering::Release);
         // Woken rather than left to the interval: resuming means a client is

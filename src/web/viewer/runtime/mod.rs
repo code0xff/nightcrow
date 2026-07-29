@@ -168,22 +168,41 @@ impl RepoRuntime {
     /// the next morning is not a stale detail but a wrong screen.
     pub fn subscribe(self: &Arc<Self>) -> Subscription {
         let id = self.next_subscriber_id.fetch_add(1, Ordering::AcqRel);
-        if self.subscriber_count() == 0 {
-            self.watch.set_awake(true);
-            self.read_and_publish();
-        }
-        let seed = self.latest();
-        let slot = Arc::new(Mutex::new(seed));
+        let slot = Arc::new(Mutex::new(None));
         let (wake, wake_rx) = mpsc::sync_channel(1);
 
-        self.subscribers
-            .lock()
-            .expect("subscribers poisoned")
-            .push(Subscriber {
+        // Joining the list and starting the watch happen under one hold of the
+        // lock, and so does the mirror decision in `unsubscribe`. Counting
+        // outside it leaves a gap: the last client of the moment can leave, find
+        // the list empty, and stop the reading — after which this subscriber is
+        // attached to a repository nobody reads, and nothing but its own
+        // disconnection ever starts it again.
+        let first = {
+            let mut subscribers = self.subscribers.lock().expect("subscribers poisoned");
+            let first = subscribers.is_empty();
+            subscribers.push(Subscriber {
                 id,
                 slot: Arc::clone(&slot),
                 wake,
             });
+            if first {
+                self.watch.set_awake(true);
+            }
+            first
+        };
+        if first {
+            // Outside the lock, which publishing takes.
+            self.read_and_publish();
+        }
+        {
+            // Whatever the publish did not leave here: a repository unchanged
+            // since the last client left publishes nothing, and this subscriber
+            // would render an empty page until something happened.
+            let mut seed = slot.lock().expect("subscriber slot poisoned");
+            if seed.is_none() {
+                *seed = self.latest();
+            }
+        }
 
         Subscription {
             runtime: Arc::clone(self),
@@ -194,15 +213,16 @@ impl RepoRuntime {
     }
 
     fn unsubscribe(&self, id: u64) {
-        let left = {
-            let mut subscribers = self.subscribers.lock().expect("subscribers poisoned");
-            subscribers.retain(|s| s.id != id);
-            subscribers.len()
-        };
-        // Nobody is reading, so stop walking the tree. What was published stays
-        // in `latest` for anything that asks over REST; the next subscriber
-        // replaces it with a reading before it is served (see `subscribe`).
-        if left == 0 {
+        // Under the same hold of the lock as the removal, for the reason given
+        // in `subscribe`: a watch decision taken after letting go of the list can
+        // be overtaken by one taken while holding it.
+        let mut subscribers = self.subscribers.lock().expect("subscribers poisoned");
+        subscribers.retain(|s| s.id != id);
+        if subscribers.is_empty() {
+            // Nobody is reading, so stop walking the tree. What was published
+            // stays in `latest` for anything that asks over REST; the next
+            // subscriber replaces it with a reading before it is served (see
+            // `subscribe`).
             self.watch.set_awake(false);
         }
     }
