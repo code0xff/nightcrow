@@ -73,7 +73,10 @@ pub(crate) fn run_attach() -> Result<()> {
         tracing::info!("nightcrow detached during splash");
         return Ok(());
     }
-    main_loop(
+    // The view state is written whichever way the loop ends. Losing which file
+    // was selected because the daemon stopped would be a second insult, and this
+    // half of the session file is the client's own — see `persist_view_state`.
+    let ended = main_loop(
         &mut terminal,
         &mut ws,
         &ss,
@@ -81,8 +84,9 @@ pub(crate) fn run_attach() -> Result<()> {
         &cfg,
         &ctx,
         SessionLink::new(client),
-    )?;
+    );
     persist_view_state(&ws);
+    ended?;
     tracing::info!("nightcrow detached");
     Ok(())
 }

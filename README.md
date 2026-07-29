@@ -66,6 +66,12 @@ browser, and it appears in the other. There is no flag for opening a
 repository — a session several clients share has one sensible place to do it,
 and that is inside.
 
+If the connection to the session ends under it — the session was stopped, or it
+dropped a client that fell too far behind — the TUI leaves and says so, with a
+non-zero status. What it had selected and scrolled is written back either way, so
+reattaching returns to it. There is no automatic reconnect: reattach when the
+session is up.
+
 Leaving the TUI (`<prefix> q`) detaches: the session, and everything running in
 its terminals, keeps going. Stopping the session is stopping the process you
 started it in — or `kill`ing it, if you used `-d`, in which case its output is

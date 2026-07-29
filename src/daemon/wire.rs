@@ -59,12 +59,29 @@ pub(super) fn pump(
                     return;
                 }
             }
+            // A read that timed out is not a disconnect. A quiet session is the
+            // normal state, and the handshake's timeout can outlive the
+            // handshake — macOS refuses to clear the option once the peer has
+            // gone, so `connect` may hand this loop a socket that still has one.
+            // Inventing a disconnect out of an idle session is the one failure
+            // this whole shape exists to avoid.
+            Err(err) if timed_out(&err) => {}
             Err(err) => {
                 tracing::warn!(%err, "daemon connection ended");
                 return;
             }
         }
     }
+}
+
+/// Whether a failed read was only the socket's timeout expiring.
+fn timed_out(err: &anyhow::Error) -> bool {
+    err.downcast_ref::<std::io::Error>().is_some_and(|err| {
+        matches!(
+            err.kind(),
+            std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut
+        )
+    })
 }
 
 /// Read one frame, filing terminal traffic with `terminals` and handing back

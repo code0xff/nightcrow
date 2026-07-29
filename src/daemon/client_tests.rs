@@ -1,9 +1,12 @@
 use super::DaemonClient;
-use crate::daemon::protocol::ServerMessage;
+use crate::daemon::frame::{Frame, read_frame, write_frame};
+use crate::daemon::protocol::{ServerMessage, version};
 use crate::daemon::socket::DaemonSocket;
 use crate::web::common::auth::Auth;
 use crate::web::viewer::prefs::PrefsStore;
 use crate::web::viewer::server::{ViewerOptions, ViewerState};
+use std::io::Write;
+use std::os::unix::net::UnixListener;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -186,4 +189,44 @@ fn a_daemon_that_goes_away_is_noticed_without_losing_what_it_said() {
         "the set the daemon volunteered survives"
     );
     drop(repo);
+}
+
+#[test]
+fn a_closed_connection_reads_as_gone() {
+    // What an attached TUI watches to know its session is no longer there — and
+    // the only thing that tells it, since a quiet session is otherwise
+    // indistinguishable from an idle one.
+    //
+    // Driven with a bare listener rather than a daemon: what is under test is
+    // this side noticing a close, not any particular reason the other end had
+    // for closing (a stopped daemon, or one dropping a client that fell behind).
+    let dir = tempfile::TempDir::new().unwrap();
+    let path = dir.path().join("bare.sock");
+    let listener = UnixListener::bind(&path).expect("binds");
+    let peer = std::thread::spawn(move || {
+        let (mut stream, _) = listener.accept().expect("accepts");
+        let hello = serde_json::to_vec(&ServerMessage::Hello {
+            version: version(),
+            client: 0,
+        })
+        .expect("encodes");
+        write_frame(&mut stream, &Frame::control(hello)).expect("writes");
+        stream.flush().expect("flushes");
+        // Read what the client said before closing, so the close is what ends
+        // the connection rather than an unread request.
+        let _ = read_frame(&mut stream);
+    });
+
+    let client = DaemonClient::connect(&path).expect("attaches");
+    peer.join().expect("the peer ends");
+
+    // The reader thread ends on the peer's close and clears the flag with it.
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while client.is_connected() && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    assert!(
+        !client.is_connected(),
+        "a closed connection must not still read as attached"
+    );
 }

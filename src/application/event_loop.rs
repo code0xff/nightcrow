@@ -28,7 +28,17 @@ pub(crate) fn main_loop(
         link.sync(ws, ctx);
         if !link.is_connected() {
             tracing::info!("daemon connection lost");
-            return Ok(());
+            // Reported rather than returned quietly. Leaving on a lost
+            // connection looks identical to leaving on purpose — the terminal
+            // comes back with no explanation — and the two are not the same
+            // thing to whoever was working in it. Deliberately not "the session
+            // is gone": the daemon may well be running and have dropped only
+            // this connection (a client that fell too far behind is cut off), so
+            // what is certain is stated and the rest is left to reattaching.
+            anyhow::bail!(
+                "the connection to the session ended. The session may still be running — \
+                 reattach with `nightcrow attach`"
+            );
         }
         // Every project drains its queues, not just the visible one: the
         // snapshot worker and PTY reader produce into unbounded channels

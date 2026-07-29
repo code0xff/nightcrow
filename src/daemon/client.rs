@@ -103,9 +103,15 @@ impl DaemonClient {
                 ServerMessage::Error { message } => bail!("daemon refused the attach: {message}"),
             }
         };
-        reader
-            .set_read_timeout(None)
-            .context("clearing the handshake timeout")?;
+        // Best-effort: macOS rejects the option on a socket whose peer has
+        // already gone, which is exactly the race of attaching as the daemon
+        // stops — and failing the attach over it would report a platform quirk
+        // instead of the plain fact that the daemon went away. A timeout left in
+        // place is harmless: the reader loop treats one as "still waiting"
+        // rather than as a disconnect.
+        if let Err(err) = reader.set_read_timeout(None) {
+            tracing::debug!(%err, "could not clear the handshake timeout");
+        }
 
         let (tx, incoming) = std::sync::mpsc::channel();
         for message in queued {
