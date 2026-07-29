@@ -46,15 +46,22 @@ pub(super) struct Session {
 
 impl Session {
     /// Bring every attached client's subscriptions in line with `repos`.
+    ///
+    /// Oldest client first, because subscribing is what takes a repository's
+    /// pane sizing (the hub gives it to the newest connection): in ascending id
+    /// order the newest client subscribes last, so a repository that has just
+    /// appeared is sized by the same client that sizes all the others rather
+    /// than by whichever one a hash map happened to yield first.
     fn follow_all(&self, repos: &[session::SessionRepo]) {
-        let bridges: Vec<Arc<Mutex<TerminalBridges>>> = self
+        let mut bridges: Vec<(u64, Arc<Mutex<TerminalBridges>>)> = self
             .bridges
             .lock()
             .expect("attach bridges poisoned")
-            .values()
-            .map(Arc::clone)
+            .iter()
+            .map(|(id, bridges)| (*id, Arc::clone(bridges)))
             .collect();
-        for client in bridges {
+        bridges.sort_by_key(|(id, _)| *id);
+        for (_, client) in bridges {
             client
                 .lock()
                 .expect("client bridges poisoned")
