@@ -85,11 +85,28 @@ pub(crate) fn run_attach(repo: Vec<std::path::PathBuf>) -> Result<()> {
         &ts,
         &cfg,
         &ctx,
-        SessionLink::Daemon(Box::new(client)),
+        SessionLink::new(client),
     )?;
-    // Nothing is persisted here. The daemon owns the workspace file, and a
-    // client writing its own view of the tabs on the way out would overwrite
-    // what the session actually has.
+    persist_view_state(&ws);
     tracing::info!("nightcrow detached");
     Ok(())
+}
+
+/// Write this client's view state back, leaving the tab list alone.
+///
+/// The file has two halves and two owners: the daemon writes which
+/// repositories are open and which is active, and a client writes what it had
+/// selected and where it had scrolled. Read-modify-write rather than a whole
+/// rewrite, so detaching cannot roll the session's tab list back to whatever
+/// this client happened to be showing.
+///
+/// The two can still race — a client detaching in the same instant a
+/// repository is opened elsewhere can lose that open until the next change
+/// rewrites it. That is the same self-correcting transient the viewer's
+/// preference writes already accept, and closing it would mean putting a lock
+/// around a file two processes touch seconds apart.
+fn persist_view_state(ws: &Workspace) {
+    let mut stored = crate::workspace::persistence::load_workspace().unwrap_or_default();
+    stored.sessions = ws.view_state();
+    crate::workspace::persistence::save_workspace(&stored);
 }

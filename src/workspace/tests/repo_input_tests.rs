@@ -98,7 +98,7 @@ fn 프로젝트를_열면_빈_화면_공지가_사라진다() {
     ws.raise_notice(NoticeKind::RepoInput, "no such directory");
 
     ws.add(project_at("/a"));
-    ws.close_active();
+    ws.close_repo("/a");
 
     assert!(ws.active().is_none(), "back to the empty screen");
     assert!(ws.empty_notice().is_none());

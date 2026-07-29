@@ -17,7 +17,7 @@ fn 닫은_프로젝트_기억은_상한을_넘지_않는다() {
     let mut ws = Workspace::new(test_leader());
     for i in 0..MAX_REMEMBERED + 5 {
         ws.add(project_at(&format!("/w/p{i}")));
-        ws.close_active();
+        ws.close_repo(&format!("/w/p{i}"));
     }
 
     assert_eq!(ws.remembered.len(), MAX_REMEMBERED);
@@ -35,10 +35,10 @@ fn 마지막_탭을_닫으면_빈_상태가_된다() {
     // empty screen is a real state nightcrow also starts in.
     let mut ws = workspace_on(&["/a"]);
 
-    assert!(ws.close_active());
+    assert!(ws.close_repo("/a"));
 
     assert!(ws.active().is_none());
-    assert!(!ws.close_active(), "nothing left to close");
+    assert!(!ws.close_repo("/a"), "nothing left to close");
 }
 
 #[test]
@@ -74,7 +74,7 @@ fn 가운데_탭을_닫으면_뒤_탭이_활성이_된다() {
     ws.add(project_at("/c"));
     ws.switch(1);
 
-    assert!(ws.close_active());
+    assert!(ws.close_repo("/b"));
 
     assert_eq!(paths(&ws), vec!["/a", "/c"]);
     assert_eq!(ws.active().unwrap().repo_path, "/c");
@@ -85,7 +85,7 @@ fn 마지막_탭을_닫으면_앞_탭이_활성이_된다() {
     let mut ws = workspace_from(project_at("/a"));
     ws.add(project_at("/b"));
 
-    assert!(ws.close_active());
+    assert!(ws.close_repo("/b"));
 
     assert_eq!(paths(&ws), vec!["/a"]);
     assert_eq!(ws.active().unwrap().repo_path, "/a");

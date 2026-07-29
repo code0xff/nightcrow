@@ -62,23 +62,27 @@ impl Workspace {
             .map(|s| &s.state)
     }
 
-    /// Open projects go first so the least-recently-used eviction never drops
-    /// a tab that is currently on screen.
-    pub fn to_persisted(&self) -> WorkspaceState {
-        let mut persisted = WorkspaceState {
-            repos: self.projects.iter().map(|p| p.repo_path.clone()).collect(),
-            active: self.active,
-            sessions: Vec::new(),
-        };
-        // `remember` inserts at the front, so remembered entries go first and
-        // open ones last to leave the open ones foremost.
+    /// Every repository's view state — open tabs and remembered ones — capped
+    /// and ordered for storage.
+    ///
+    /// Only this half. Which repositories are open, and which is active, belong
+    /// to the daemon; a client that wrote those would overwrite the session
+    /// with its own view of it. What is selected and where it is scrolled is
+    /// this client's alone (see the shared/per-client boundary in
+    /// `docs/session-daemon-plan.md`), which is why it is saved here and not
+    /// there.
+    ///
+    /// Open projects go last so the least-recently-used eviction never drops a
+    /// tab that is currently on screen — `remember` inserts at the front.
+    pub fn view_state(&self) -> Vec<RepoSession> {
+        let mut into = WorkspaceState::default();
         for entry in self.remembered.iter().rev() {
-            persisted.remember(&entry.repo, entry.state.clone());
+            into.remember(&entry.repo, entry.state.clone());
         }
         for project in self.projects.iter().rev() {
-            persisted.remember(&project.repo_path, project.session_to_save());
+            into.remember(&project.repo_path, project.session_to_save());
         }
-        persisted
+        into.sessions
     }
 
     /// Matches only the bare leader chord; any extra modifier passes through.
@@ -180,19 +184,6 @@ impl Workspace {
         }
         self.projects.push(project);
         self.active = self.projects.len() - 1;
-        true
-    }
-
-    /// Close the active project and focus its neighbour, leaving the workspace
-    /// empty when it was the last. Returns `false` only when nothing was open.
-    /// Dropping the `App` tears the project down (worker join, child kills);
-    /// there is no field-by-field reset, which is why closing is the only way
-    /// to leave a repo.
-    pub fn close_active(&mut self) -> bool {
-        if self.projects.is_empty() {
-            return false;
-        }
-        self.close_at(self.active);
         true
     }
 

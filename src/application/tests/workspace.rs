@@ -1,27 +1,8 @@
 use super::helpers::*;
 use crate::app::tests::app_with_files;
-use crate::application::event_loop::apply_project_request;
-use crate::application::input::dispatch::{
-    KeyOutcome, ProjectContext, ProjectRequest, dispatch_key, handle_key,
-};
+use crate::application::input::dispatch::{KeyOutcome, ProjectRequest, dispatch_key, handle_key};
 use crate::workspace::Workspace;
 use crossterm::event::{KeyCode, KeyModifiers};
-
-#[test]
-fn opening_a_repo_another_tab_holds_focuses_it_instead_of_duplicating() {
-    let cfg = crate::config::Config::default();
-    let ctx = ProjectContext {
-        cfg: &cfg,
-        startup_commands: &[],
-        leader: leader(),
-    };
-    let mut ws = workspace_on(&["/a", "/b"]);
-
-    apply_project_request(&mut ws, &ctx, ProjectRequest::Open("/a".to_string()));
-
-    assert_eq!(ws.active_index(), 0);
-    assert_eq!(ws.projects().len(), 2);
-}
 
 #[test]
 fn f_key_asks_the_workspace_to_switch_project() {

@@ -1,10 +1,12 @@
-//! Where the tab list comes from.
+//! The client's half of the shared tab list.
 //!
-//! Two answers today. Run on its own, the TUI owns its tabs and mirrors them to
-//! a viewer beside it. Attached, the daemon owns them: this client asks for a
-//! change and adopts whatever comes back, including changes another client
-//! made. The second is where this is going; the first goes away with the
-//! single-process mode.
+//! The daemon owns which repositories are open and in what order. This client
+//! asks for a change and adopts whatever comes back — including changes another
+//! client made, which arrive with nothing having asked.
+//!
+//! What it does *not* ask about is which tab it is looking at. That is the
+//! per-client half of the boundary: two clients on one session may sit on
+//! different projects, so switching is local and immediate.
 
 use crate::application::bootstrap::init_app;
 use crate::application::input::dispatch::{ProjectContext, ProjectRequest};
@@ -12,68 +14,57 @@ use crate::daemon::client::DaemonClient;
 use crate::daemon::protocol::{RepoSummary, ServerMessage};
 use crate::workspace::Workspace;
 
-pub(crate) enum SessionLink {
-    /// The TUI owns its tabs. A viewer beside it follows them.
-    Local {
-        viewer: Option<crate::web::viewer::server::ViewerServer>,
-        /// The set last handed to the viewer; the catalog only needs updating
-        /// when a tab opens or closes, not every frame.
-        served: Vec<String>,
-    },
-    /// The daemon owns the tabs. Requests go out, and the set comes back.
-    Daemon(Box<DaemonClient>),
+pub(crate) struct SessionLink {
+    client: DaemonClient,
+    /// A repository this client asked to open, waiting to be focused.
+    ///
+    /// Opening is a request, so the tab does not exist yet when the request is
+    /// made — and the answer is a whole set, which says nothing about who asked
+    /// for what. Without this, opening a repository from the dialog would leave
+    /// the user on the tab they were already on, and asking for one that is
+    /// *already* open would look like the key did nothing.
+    pending_focus: Option<String>,
 }
 
 impl SessionLink {
-    /// Bring the workspace and the far side into agreement for this tick.
+    pub(crate) fn new(client: DaemonClient) -> Self {
+        Self {
+            client,
+            pending_focus: None,
+        }
+    }
+
+    /// Take in everything the daemon has said since the last tick.
     pub(crate) fn sync(&mut self, ws: &mut Workspace, ctx: &ProjectContext) {
-        match self {
-            SessionLink::Local { viewer, served } => {
-                let Some(viewer) = viewer.as_ref() else {
-                    return;
-                };
-                let current: Vec<String> =
-                    ws.projects().iter().map(|p| p.repo_path.clone()).collect();
-                if &current != served {
-                    viewer.set_repos(&current);
-                    *served = current;
-                }
-            }
-            SessionLink::Daemon(client) => {
-                for message in client.drain() {
-                    match message {
-                        ServerMessage::Repos { repos } => adopt(ws, ctx, &repos),
-                        // A refusal this client asked for — a path that is not a
-                        // directory, or one repository too many. Shown where
-                        // every other refusal is shown.
-                        ServerMessage::Error { message } => {
-                            ws.raise_notice(crate::app::NoticeKind::Project, message);
-                        }
-                        // Answered during the handshake; a later one would mean
-                        // the daemon restarted under this client, which the
-                        // connection loss reports on its own.
-                        ServerMessage::Hello { .. } => {}
+        for message in self.client.drain() {
+            match message {
+                ServerMessage::Repos { repos } => {
+                    adopt(ws, ctx, &repos);
+                    // Only after the set has settled: the tab being focused may
+                    // be one this very message created.
+                    if let Some(path) = self.pending_focus.take() {
+                        focus_if_open(ws, &path);
                     }
                 }
+                // A refusal this client asked for — a path that is not a
+                // directory, or one repository too many. Shown where every
+                // other refusal is shown.
+                ServerMessage::Error { message } => {
+                    self.pending_focus = None;
+                    ws.raise_notice(crate::app::NoticeKind::Project, message);
+                }
+                // Answered during the handshake; a later one would mean the
+                // daemon restarted under this client, which the connection loss
+                // reports on its own.
+                ServerMessage::Hello { .. } => {}
             }
         }
     }
 
-    /// Carry out a tab request, or send it to whoever owns the tabs.
-    pub(crate) fn request(
-        &mut self,
-        ws: &mut Workspace,
-        ctx: &ProjectContext,
-        request: ProjectRequest,
-    ) {
-        let SessionLink::Daemon(client) = self else {
-            crate::application::event_loop::apply_project_request(ws, ctx, request);
-            return;
-        };
-        // Switching tabs and opening the dialog change nothing the daemon owns:
-        // which tab this client looks at is its own business, and every client
-        // may look at a different one.
+    /// Carry out a tab request locally, or send it to the daemon.
+    pub(crate) fn request(&mut self, ws: &mut Workspace, request: ProjectRequest) {
         let sent = match request {
+            // Neither touches anything the daemon owns.
             ProjectRequest::Switch(index) => {
                 ws.switch(index);
                 return;
@@ -82,16 +73,23 @@ impl SessionLink {
                 ws.start_repo_input();
                 return;
             }
-            ProjectRequest::Open(path) => client.open_repo(&path),
+            ProjectRequest::Open(path) => {
+                // Recorded before the send, and by the path as typed: the
+                // daemon resolves it to a worktree root, so the match is made
+                // against the answer rather than assumed here.
+                self.pending_focus = Some(path.clone());
+                self.client.open_repo(&path)
+            }
             // Closing is by id, so a tab with no id is not one the daemon knows
             // about and closing it locally would only hide it until the next
             // broadcast put it back.
             ProjectRequest::Close => match ws.active().and_then(|app| app.repo_id.clone()) {
-                Some(id) => client.close_repo(&id),
+                Some(id) => self.client.close_repo(&id),
                 None => return,
             },
         };
         if let Err(err) = sent {
+            self.pending_focus = None;
             ws.raise_notice(
                 crate::app::NoticeKind::Project,
                 format!("daemon request failed: {err}"),
@@ -99,13 +97,24 @@ impl SessionLink {
         }
     }
 
-    /// Whether the far side is still there. Always true when there is no far
-    /// side to lose.
+    /// Whether the daemon is still there.
     pub(crate) fn is_connected(&self) -> bool {
-        match self {
-            SessionLink::Local { .. } => true,
-            SessionLink::Daemon(client) => client.is_connected(),
+        self.client.is_connected()
+    }
+}
+
+/// Move to the tab on `repo` if there is one. Reports whether there was.
+///
+/// A miss is normal rather than an error: the daemon resolves a path to a
+/// worktree root, so a repository opened as `.` comes back under its real
+/// path, and one that failed to open never arrives at all.
+fn focus_if_open(ws: &mut Workspace, repo: &str) -> bool {
+    match ws.index_of_repo(repo) {
+        Some(index) => {
+            ws.switch(index);
+            true
         }
+        None => false,
     }
 }
 
@@ -161,3 +170,7 @@ fn adopt(ws: &mut Workspace, ctx: &ProjectContext, repos: &[RepoSummary]) {
         ws.set_repo_id(&repo.path, &repo.id);
     }
 }
+
+#[cfg(test)]
+#[path = "session_link_tests.rs"]
+mod tests;

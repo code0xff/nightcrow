@@ -1,5 +1,5 @@
 pub(crate) use crate::application::input::dispatch::ProjectContext;
-use crate::application::input::dispatch::{KeyOutcome, ProjectRequest, dispatch_key};
+use crate::application::input::dispatch::{KeyOutcome, dispatch_key};
 use crate::application::input::mouse::dispatch_mouse;
 use crate::application::input::paste::dispatch_paste;
 use crate::application::session_link::SessionLink;
@@ -137,7 +137,7 @@ pub(crate) fn main_loop(
                 Event::Resize(_, _) => {}
                 Event::Key(key) => {
                     let outcome = dispatch_key(ws, key);
-                    if apply_outcome(terminal, ws, ctx, &mut link, outcome)? {
+                    if apply_outcome(terminal, ws, &mut link, outcome)? {
                         return Ok(());
                     }
                 }
@@ -146,7 +146,7 @@ pub(crate) fn main_loop(
                     let screen = Rect::new(0, 0, size.width, size.height);
                     let outcome =
                         dispatch_mouse(ws, tabs, mouse, screen, &cfg.layout, cfg.mouse.enabled);
-                    if apply_outcome(terminal, ws, ctx, &mut link, outcome)? {
+                    if apply_outcome(terminal, ws, &mut link, outcome)? {
                         return Ok(());
                     }
                 }
@@ -160,7 +160,6 @@ pub(crate) fn main_loop(
 pub(crate) fn apply_outcome(
     terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
     ws: &mut Workspace,
-    ctx: &ProjectContext,
     link: &mut SessionLink,
     outcome: KeyOutcome,
 ) -> anyhow::Result<bool> {
@@ -170,59 +169,7 @@ pub(crate) fn apply_outcome(
         KeyOutcome::Continue => {}
         // Through the link: attached, opening and closing a tab is a request to
         // whoever owns the tab list, not a local edit.
-        KeyOutcome::Project(request) => link.request(ws, ctx, request),
+        KeyOutcome::Project(request) => link.request(ws, request),
     }
     Ok(false)
-}
-
-/// Carry out a workspace-level request produced by a key or click.
-///
-/// Refusals land on the notice row rather than being dropped: a keypress that
-/// appears to do nothing reads as a bug.
-pub(crate) fn apply_project_request(
-    ws: &mut Workspace,
-    ctx: &ProjectContext,
-    request: ProjectRequest,
-) {
-    match request {
-        ProjectRequest::Switch(idx) => ws.switch(idx),
-        ProjectRequest::OpenDialog => ws.start_repo_input(),
-        ProjectRequest::Close => {
-            // `close_active` carries the project's view state into the
-            // remembered set; writing here means a crash later cannot lose it.
-            if ws.close_active() {
-                crate::workspace::persistence::save_workspace(&ws.to_persisted());
-            }
-        }
-        ProjectRequest::Open(repo_path) => {
-            // Focus rather than duplicate: two tabs on one workdir would show
-            // identical git state while racing each other's snapshot workers.
-            if let Some(idx) = ws.index_of_repo(&repo_path) {
-                ws.switch(idx);
-                return;
-            }
-            // Checked before building: `init_app` spawns a PTY backend and runs
-            // the configured startup commands, so constructing a project only
-            // to have `add` refuse it would leave those processes behind.
-            if ws.is_full() {
-                ws.raise_notice(
-                    crate::app::NoticeKind::Project,
-                    format!(
-                        "cannot open more than {} projects",
-                        crate::workspace::MAX_PROJECTS
-                    ),
-                );
-                return;
-            }
-            let saved = ws.session_for(&repo_path).cloned();
-            let project = crate::application::bootstrap::init_app(
-                &repo_path,
-                ctx.cfg,
-                ctx.startup_commands,
-                ctx.leader,
-                saved,
-            );
-            ws.add(project);
-        }
-    }
 }

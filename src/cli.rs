@@ -1,15 +1,17 @@
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 
-/// nightcrow — TUI for Agentic Coding
+/// nightcrow — session daemon for agentic coding
 ///
-/// Opens a git diff viewer (top) and multi-terminal panes (bottom)
-/// in the current directory.
+/// Run with no subcommand to start the session: a git diff viewer and
+/// multi-terminal panes, served to a terminal (`nightcrow attach`) and to a
+/// browser. Runs in the foreground until interrupted; the session outlives any
+/// client that attaches to it.
 #[derive(Parser)]
 #[command(version, about, long_about = None)]
 pub(crate) struct Cli {
-    /// Open this repository in a project tab. Repeatable — each --repo adds
-    /// a tab. With none, nightcrow starts with no project open.
+    /// Serve this repository. Repeatable, and added to the repositories
+    /// remembered from last time rather than replacing them.
     #[arg(short, long)]
     pub(crate) repo: Vec<std::path::PathBuf>,
 
@@ -17,6 +19,15 @@ pub(crate) struct Cli {
     /// each --exec adds one pane after any config [[startup_command]] panes.
     #[arg(long = "exec", value_name = "COMMAND")]
     pub(crate) exec: Vec<String>,
+
+    /// Override the configured browser port.
+    #[arg(long)]
+    pub(crate) port: Option<u16>,
+
+    /// Override the configured bind address. `0.0.0.0` exposes the server —
+    /// and the shells it serves — to the whole network over plain HTTP.
+    #[arg(long)]
+    pub(crate) bind: Option<String>,
 
     #[command(subcommand)]
     pub(crate) command: Option<Commands>,
@@ -40,81 +51,17 @@ pub(crate) enum Commands {
         #[arg(short, long)]
         repo: Vec<std::path::PathBuf>,
     },
-    /// Serve the web viewer without starting the TUI.
-    ///
-    /// Runs in the foreground until interrupted. Unlike the TUI's optional
-    /// viewer, this needs no terminal — the repositories come from --repo.
-    /// --repo is optional: with none, the viewer starts on an empty catalog,
-    /// the same state the TUI starts in when launched without a repository.
-    Serve {
-        /// Repository to serve. Repeatable. Optional — omit to start empty.
-        #[arg(short, long)]
-        repo: Vec<std::path::PathBuf>,
-        /// Override the configured port.
-        #[arg(long)]
-        port: Option<u16>,
-        /// Override the configured bind address. `0.0.0.0` exposes the server
-        /// — and the shells it serves — to the whole network over plain HTTP.
-        #[arg(long)]
-        bind: Option<String>,
-    },
 }
 
-/// Start the viewer alongside the TUI when `[web_viewer] enabled` is set.
-///
-/// A bind failure only disables the viewer with a warning — the local TUI is
-/// the primary interface and must still come up.
-pub(crate) fn start_viewer_if_enabled(
-    cfg: &mut crate::config::Config,
-    repo_paths: &[String],
-) -> Result<Option<crate::web::viewer::server::ViewerServer>> {
-    if !cfg.web_viewer.enabled {
-        return Ok(None);
-    }
-    let path = crate::config::config_file_path()?;
-    if let Some(password) = crate::config::ensure_web_viewer_password(cfg, &path)? {
-        eprintln!(
-            "nightcrow: generated a web viewer password and saved it to {}:",
-            path.display()
-        );
-        eprintln!("  {password}");
-    }
-    // The viewer runs the same configured startup terminals as the TUI (in its
-    // own, independent PTYs), or one bare shell when none are configured.
-    let startup = cfg
-        .startup_commands
-        .iter()
-        .map(|sc| sc.command.clone())
-        .collect();
-    // Alongside the TUI the viewer does not persist: the TUI owns the workspace
-    // file and the catalog already follows its tabs.
-    match crate::web::viewer::server::ViewerServer::start_from_config(
-        &cfg.web_viewer,
-        &cfg.agent_indicator,
-        repo_paths,
-        false,
-        startup,
-    ) {
-        Ok(server) => {
-            eprintln!("nightcrow: web viewer serving at http://{}/", server.addr());
-            Ok(Some(server))
-        }
-        Err(err) => {
-            eprintln!("nightcrow: web viewer disabled — {err:#}");
-            Ok(None)
-        }
-    }
-}
-
-/// Serve the viewer headlessly until interrupted.
+/// Run the session daemon in the foreground until it is stopped.
 ///
 /// The starting catalog comes from `--repo` plus the remembered workspace —
-/// either may be empty, which starts the viewer on an empty catalog just like
-/// the TUI does. From there the browser owns the set: the viewer's own open
-/// and close routes add and drop repositories, and `persist` writes the result
-/// back to the workspace file since no TUI is doing it.
-pub(crate) fn run_serve(
+/// either may be empty, which starts on an empty catalog. From there the
+/// clients own the set: attaching terminals and the browser open and close
+/// repositories, and the result is written back to the workspace file.
+pub(crate) fn run_daemon(
     repos: Vec<std::path::PathBuf>,
+    exec: Vec<String>,
     port: Option<u16>,
     bind: Option<String>,
 ) -> Result<()> {
@@ -155,10 +102,11 @@ pub(crate) fn run_serve(
             }
         }
     }
-    let startup = cfg
-        .startup_commands
-        .iter()
-        .map(|sc| sc.command.clone())
+    // Resolved before anything is served so a too-many-panes error is a plain
+    // stderr line at startup rather than a failure the first client sees.
+    let startup = crate::config::resolve_startup_commands(&cfg, &exec)?
+        .into_iter()
+        .map(|sc| sc.command)
         .collect();
     let server = crate::web::viewer::server::ViewerServer::start_from_config(
         &cfg.web_viewer,
@@ -271,7 +219,8 @@ pub(crate) fn run_init(force: bool) -> Result<()> {
     Ok(())
 }
 
-/// Resolve `--repo` paths to resolved strings, used by `main` before the TUI.
+/// Resolve `--repo` paths to worktree roots, so two spellings of one
+/// repository collapse to a single request.
 pub(crate) fn resolve_repo_paths(
     repos: Vec<std::path::PathBuf>,
 ) -> Result<Vec<String>, anyhow::Error> {
@@ -284,15 +233,4 @@ pub(crate) fn resolve_repo_paths(
         );
     }
     Ok(out)
-}
-
-/// Pick the log anchor path from the resolved repo list or the cwd.
-pub(crate) fn log_anchor_for(repo_paths: &[String]) -> Result<String> {
-    match repo_paths.first() {
-        Some(path) => Ok(path.clone()),
-        None => Ok(std::env::current_dir()
-            .context("cannot determine current directory")?
-            .to_string_lossy()
-            .to_string()),
-    }
 }
