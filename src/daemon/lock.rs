@@ -21,9 +21,9 @@ use std::path::Path;
 /// process ends.
 #[derive(Debug)]
 pub struct InstanceLock {
-    /// Held open for its `flock`; closing the descriptor releases the lock.
-    /// Nothing reads it — the value exists to keep the descriptor alive.
-    _file: File,
+    /// Held open for its `flock`, and released through explicitly on the way
+    /// out — see the `Drop` impl for why closing it is not enough.
+    file: File,
 }
 
 impl InstanceLock {
@@ -45,21 +45,80 @@ impl InstanceLock {
             .truncate(false)
             .open(path)
             .with_context(|| format!("opening the daemon lock {}", path.display()))?;
-        // SAFETY: `flock` takes a valid descriptor, which `file` owns for the
-        // whole call and beyond — the lock lives with the descriptor, so the
-        // file is kept in the returned value rather than dropped here.
-        let locked = unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) };
-        if locked != 0 {
-            let err = std::io::Error::last_os_error();
-            // EWOULDBLOCK is the answer this exists to get: someone else holds
-            // it. Anything else is a real failure and must not be read as
-            // "another daemon is running".
-            if err.kind() == std::io::ErrorKind::WouldBlock {
-                return Ok(None);
+        loop {
+            // SAFETY: `flock` takes a valid descriptor, which `file` owns for
+            // the whole call and beyond — the lock lives with the descriptor,
+            // so the file is kept in the returned value rather than dropped
+            // here.
+            let locked = unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) };
+            if locked == 0 {
+                return Ok(Some(Self { file }));
             }
-            return Err(err).with_context(|| format!("locking {}", path.display()));
+            let err = std::io::Error::last_os_error();
+            match outcome_of(&err) {
+                Attempt::Held => return Ok(None),
+                Attempt::Interrupted => continue,
+                Attempt::Failed => {
+                    return Err(err).with_context(|| format!("locking {}", path.display()));
+                }
+            }
         }
-        Ok(Some(Self { _file: file }))
+    }
+}
+
+/// What a failed `flock` means for the caller.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Attempt {
+    /// Another daemon holds it. The normal negative answer.
+    Held,
+    /// A signal arrived mid-call and the lock was never attempted. Says
+    /// nothing about who holds what, so the only correct response is to ask
+    /// again.
+    Interrupted,
+    /// Something else went wrong, and it must not be reported as either of the
+    /// above.
+    Failed,
+}
+
+/// Read a `flock` failure.
+///
+/// `Interrupted` earns its own arm because this process raises signals at
+/// itself — a stop signal is how the daemon is asked to shut down. A signal
+/// landing on the thread inside `flock` returns EINTR, which says nothing
+/// about who holds the lock; reported as a failure it would refuse to start a
+/// daemon for no reason.
+fn outcome_of(err: &std::io::Error) -> Attempt {
+    match err.kind() {
+        std::io::ErrorKind::WouldBlock => Attempt::Held,
+        std::io::ErrorKind::Interrupted => Attempt::Interrupted,
+        _ => Attempt::Failed,
+    }
+}
+
+impl Drop for InstanceLock {
+    /// Release the lock before the descriptor closes.
+    ///
+    /// Closing does release it — but not synchronously. A `flock` on a freshly
+    /// opened descriptor a millisecond later can still see the lock held,
+    /// which showed up as a daemon refusing to start with "already running"
+    /// moments after the previous one had gone, roughly once in every few
+    /// hundred stop-and-start cycles. `LOCK_UN` releases before this returns,
+    /// so the next daemon's attempt cannot race the last one's exit.
+    fn drop(&mut self) {
+        loop {
+            // SAFETY: `flock` takes a valid descriptor, which `self.file` owns
+            // until this returns and the field is dropped after it.
+            if unsafe { libc::flock(self.file.as_raw_fd(), libc::LOCK_UN) } == 0 {
+                return;
+            }
+            // Retried for the same reason acquiring is: a signal mid-call
+            // leaves the lock exactly as it was. Anything else is not worth
+            // failing a shutdown over — the descriptor is about to close,
+            // which releases it the slower way.
+            if std::io::Error::last_os_error().kind() != std::io::ErrorKind::Interrupted {
+                return;
+            }
+        }
     }
 }
 

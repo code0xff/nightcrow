@@ -136,3 +136,33 @@ fn the_default_path_sits_beside_the_other_nightcrow_state() {
     let path = super::default_socket_path().expect("a home directory exists");
     assert!(path.ends_with(".nightcrow/daemon.sock"), "got {path:?}");
 }
+
+/// Stop and start a daemon hundreds of times over.
+///
+/// This is the regression guard for a release that was not synchronous: the
+/// lock used to be dropped by closing its descriptor, and a `flock` a
+/// millisecond later could still see it held — so restarting the daemon failed
+/// with "already running" for a daemon that had just gone, about once in every
+/// few hundred cycles. One cycle almost never catches that; five hundred do.
+#[test]
+fn the_lock_holds_and_releases_across_many_cycles() {
+    let dir = tempfile::TempDir::new().unwrap();
+    for round in 0..500 {
+        let path = dir.path().join(format!("c{round}.sock"));
+        let first = match DaemonSocket::bind(&path) {
+            Ok(socket) => socket,
+            Err(err) => panic!("round {round}: the first bind failed: {err:#}"),
+        };
+        match DaemonSocket::bind(&path) {
+            Ok(_) => panic!("round {round}: a second daemon bound while the first held the lock"),
+            Err(err) => assert!(
+                err.to_string().contains("already running"),
+                "round {round}: refused for the wrong reason: {err:#}"
+            ),
+        }
+        drop(first);
+        if let Err(err) = DaemonSocket::bind(&path) {
+            panic!("round {round}: the path must be free the instant the first releases: {err:#}");
+        }
+    }
+}
