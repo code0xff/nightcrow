@@ -103,6 +103,7 @@ src/
 │   ├── mod.rs            # Workspace: open projects (Vec<App>) + active index,
 │   │                     #   process-level repo dialog/notice
 │   ├── repo_input.rs     # <prefix> o repo-input modal state
+│   ├── path_complete.rs  # Tab 경로 완성 (read_dir 한 단계, 디렉터리만)
 │   ├── persistence.rs    # workspace + per-repo state (~/.nightcrow/workspace.json)
 │   └── tests/            # workspace + repo_input tests
 ├── runtime/
@@ -357,6 +358,30 @@ pane을 살려두는 탓에 탭 라벨과 셸의 작업 디렉토리가 어긋�
 슬롯도 함께 있다. 반면 `handle_key`는 여전히 `&mut App` 하나만 받는다 —
 `dispatch_key`가 워크스페이스 레벨 경우(다이얼로그, 빈 화면의 두 키)를 먼저
 해소하므로, 프로젝트별 입력 경로 전체가 프로젝트 하나만 아는 채로 유지된다.
+
+**경로 완성** — 다이얼로그의 `Tab`은 `workspace/path_complete.rs`가 처리한다.
+셸을 PTY로 띄우지 않는 이유와 대안 비교는 `docs/repo-picker-plan.md`에 있다 —
+요약하면 Windows에 readline 대응 프리미티브가 없어서 네이티브 완성기가 어차피
+필요하다. 규칙은 무상태 하나다: **확장할 게 있으면 확장하고, 없으면 후보를
+보여준다.** 단 fragment가 비어 있으면(구분자로 끝나는 상태) 확장과 동시에
+목록도 낸다 — 그때의 `Tab`은 "여기 뭐가 있냐"는 질문이라 조용한 확장은 답이
+아니다. Tab 한 번에 `read_dir` 한 단계만 읽고 디렉터리만 후보로 삼는다.
+
+사용자가 입력한 텍스트는 다시 쓰지 않는다. `~`나 상대 경로는 **읽을 때만**
+확장하고 버퍼에는 완성된 컴포넌트만 이어붙인다 — `~/x`를 `/Users/me/x`로
+바꿔 써넣으면 사용자가 타이핑한 적 없는 경로가 화면에 남는다.
+
+`git::tree::read_children`(`ViewMode::Tree`용)을 쓰지 않는다는 점에 주의한다.
+그쪽은 `git2::Repository`가 필수이고 repo-relative 경로만 받으며 워크트리 밖
+경로와 심볼릭 링크를 거부하는데, 피커는 어떤 repo에도 속하지 않는 경로를
+돌아다녀야 하고 프로젝트가 0개일 때도 떠야 한다. 심볼릭 링크 정책도 반대다 —
+트리는 링크를 따라가지 않지만(순환 방지) 피커는 따라간다(링크된 체크아웃이
+실제 repo다).
+
+후보는 notice 행에 표시한다(`ui/notice.rs`). 우선순위는 notice > 후보 >
+repo 헤더다. 플로팅 팝업을 쓰지 않은 이유는 `src/ui/`에 오버레이 인프라가
+없고(모든 surface가 레이아웃 행을 차지한다) 마우스 캡처가 기본 on이라
+`hit_test.rs`에 새 히트 영역이 필요해지기 때문이다.
 
 입력 핸들러는 `&mut App` 하나만 받으므로 탭 목록에 닿을 수 없다. 대신
 워크스페이스 수준 의도를 `KeyOutcome::Project(ProjectRequest)`로 반환하고
