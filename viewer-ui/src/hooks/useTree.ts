@@ -103,7 +103,12 @@ export function useTree({
           if (!requests.isCurrent(path, ticket)) return;
           setCache((c) => withChildren(c, path, r.entries));
         })
-        .catch(handle);
+        .catch((err) => {
+          // A failure from a superseded request says nothing about the listing
+          // now on screen, and `handle` is not quiet — it toasts, and logs the
+          // page out on a 401.
+          if (requests.isCurrent(path, ticket)) handle(err);
+        });
     },
     [repo, handle, requests],
   );
