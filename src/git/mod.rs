@@ -1,3 +1,4 @@
+pub mod clone;
 pub mod diff;
 pub mod path;
 pub mod tree;

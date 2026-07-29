@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { fileViewSource, isMarkdownPath } from "./fileView";
+import {
+  fileViewSource,
+  isHtmlPath,
+  isMarkdownPath,
+  isPreviewablePath,
+} from "./fileView";
 
 describe("isMarkdownPath", () => {
   it("일반적인_마크다운_확장자면_참을_반환한다", () => {
@@ -16,6 +21,39 @@ describe("isMarkdownPath", () => {
     expect(isMarkdownPath("src/main.rs")).toBe(false);
     expect(isMarkdownPath("mdfile")).toBe(false);
     expect(isMarkdownPath("readme.md.bak")).toBe(false);
+  });
+});
+
+describe("isHtmlPath", () => {
+  it("html_확장자면_참을_반환한다", () => {
+    expect(isHtmlPath("index.html")).toBe(true);
+    expect(isHtmlPath("target/coverage/report.htm")).toBe(true);
+  });
+
+  it("확장자_대소문자를_구분하지_않는다", () => {
+    expect(isHtmlPath("INDEX.HTML")).toBe(true);
+    expect(isHtmlPath("Report.Htm")).toBe(true);
+  });
+
+  it("html이_아닌_경로면_거짓을_반환한다", () => {
+    expect(isHtmlPath("src/main.rs")).toBe(false);
+    expect(isHtmlPath("htmlfile")).toBe(false);
+    // The preview renders what the extension claims, so a path that only
+    // contains the extension must not opt into it.
+    expect(isHtmlPath("index.html.bak")).toBe(false);
+    expect(isHtmlPath("notes.md")).toBe(false);
+  });
+});
+
+describe("isPreviewablePath", () => {
+  it("마크다운과_html_모두_미리보기_대상이다", () => {
+    expect(isPreviewablePath("README.md")).toBe(true);
+    expect(isPreviewablePath("index.html")).toBe(true);
+  });
+
+  it("그_외_파일은_미리보기가_없다", () => {
+    expect(isPreviewablePath("src/main.rs")).toBe(false);
+    expect(isPreviewablePath("Cargo.toml")).toBe(false);
   });
 });
 

@@ -29,7 +29,7 @@ pub const MAX_SIDEBAR_WIDTH: u32 = 720;
 /// Everything the viewer remembers for its clients. One shared value, not one
 /// per repository: repo ids are only stable for the process lifetime
 /// (`catalog.rs`), so a per-repo key would drop the preference on restart.
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(default)]
 pub struct ViewerPrefs {
     /// Index into the accent cycle, in the TUI's order (`config::Accent::ALL`).
@@ -38,6 +38,19 @@ pub struct ViewerPrefs {
     /// `[MIN_SIDEBAR_WIDTH, MAX_SIDEBAR_WIDTH]`. Shared across clients like the
     /// accent so every device opens at the same split.
     pub sidebar_width: u32,
+    /// Absolute worktree path of the project a client last selected, so a
+    /// reload lands where the user left off instead of on the first tab.
+    ///
+    /// A **path**, not the repo id the client speaks: ids only live as long as
+    /// the process (`catalog.rs`), so a stored id would name nothing after a
+    /// restart — which is exactly the case this field exists for. The server
+    /// translates in both directions; the client never learns the path.
+    ///
+    /// `None` until a client selects a project. Never cleared by the server: a
+    /// path that stops being served just stops resolving, and the client falls
+    /// back to its first tab — then records whichever project it landed on, so
+    /// what is on file is always somewhere a client actually was.
+    pub active_repo: Option<String>,
 }
 
 impl Default for ViewerPrefs {
@@ -45,6 +58,7 @@ impl Default for ViewerPrefs {
         Self {
             accent: 0,
             sidebar_width: DEFAULT_SIDEBAR_WIDTH,
+            active_repo: None,
         }
     }
 }
@@ -86,7 +100,7 @@ impl PrefsStore {
     }
 
     pub fn get(&self) -> ViewerPrefs {
-        *self.state.lock().expect("prefs poisoned")
+        self.state.lock().expect("prefs poisoned").clone()
     }
 
     /// Apply `change` and persist the result, both while holding the lock, so a
@@ -101,17 +115,24 @@ impl PrefsStore {
         if let Some(path) = &self.path {
             write(path, &state);
         }
-        *state
+        state.clone()
     }
 
     /// Apply any subset of the preferences in one locked write. A request may
-    /// carry several at once (`/api/prefs` accepts both), so they must land
-    /// together — otherwise a concurrent write could interleave and the echo
-    /// would describe a state no single POST produced. `None` leaves a field as
-    /// it is. Accent wraps into range as the TUI wraps it (`Accent::from_index`);
-    /// width clamps so a browser drag past the bounds still yields a usable
-    /// split.
-    pub fn update(&self, accent: Option<usize>, sidebar_width: Option<u32>) -> ViewerPrefs {
+    /// carry several at once (`/api/prefs` accepts any subset), so they must
+    /// land together — otherwise a concurrent write could interleave and the
+    /// echo would describe a state no single POST produced. `None` leaves a
+    /// field as it is. Accent wraps into range as the TUI wraps it
+    /// (`Accent::from_index`); width clamps so a browser drag past the bounds
+    /// still yields a usable split. `active_repo` is taken as given — the
+    /// caller resolved it from a live repository, so there is no range to fold
+    /// it into.
+    pub fn update(
+        &self,
+        accent: Option<usize>,
+        sidebar_width: Option<u32>,
+        active_repo: Option<String>,
+    ) -> ViewerPrefs {
         self.mutate(|state| {
             if let Some(accent) = accent {
                 state.accent = accent % Accent::ALL.len();
@@ -119,18 +140,29 @@ impl PrefsStore {
             if let Some(width) = sidebar_width {
                 state.sidebar_width = width.clamp(MIN_SIDEBAR_WIDTH, MAX_SIDEBAR_WIDTH);
             }
+            if let Some(path) = active_repo {
+                state.active_repo = Some(path);
+            }
         })
     }
 
     /// Store `accent` alone. Thin wrapper over [`update`] so the clamping lives
     /// in one place.
     pub fn set_accent(&self, accent: usize) -> ViewerPrefs {
-        self.update(Some(accent), None)
+        self.update(Some(accent), None, None)
     }
 
     /// Store the sidebar width alone. Thin wrapper over [`update`].
     pub fn set_sidebar_width(&self, width: u32) -> ViewerPrefs {
-        self.update(None, Some(width))
+        self.update(None, Some(width), None)
+    }
+
+    /// Store the active project's absolute path alone. Thin wrapper over
+    /// [`update`]. There is deliberately no way to clear it: closing the last
+    /// project leaves no path worth recording, and keeping the old one means it
+    /// is still the selection when that project is opened again.
+    pub fn set_active_repo(&self, path: String) -> ViewerPrefs {
+        self.update(None, None, Some(path))
     }
 }
 
@@ -178,100 +210,4 @@ fn write(path: &Path, prefs: &ViewerPrefs) {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn an_accent_round_trips_through_the_file() {
-        let dir = tempfile::TempDir::new().unwrap();
-        let path = dir.path().join("nested").join("viewer.json");
-
-        PrefsStore::at(path.clone()).set_accent(3);
-
-        assert_eq!(PrefsStore::at(path).get().accent, 3);
-    }
-
-    #[test]
-    fn an_out_of_range_accent_wraps_instead_of_being_stored_as_given() {
-        // The index comes from a browser, so it is input: storing it verbatim
-        // would hand every later reader a value with no colour behind it.
-        let dir = tempfile::TempDir::new().unwrap();
-        let store = PrefsStore::at(dir.path().join("viewer.json"));
-
-        let stored = store.set_accent(Accent::ALL.len() + 2);
-
-        assert_eq!(stored.accent, 2);
-        assert_eq!(store.get().accent, 2);
-    }
-
-    #[test]
-    fn a_corrupt_file_reads_as_defaults_rather_than_failing() {
-        let dir = tempfile::TempDir::new().unwrap();
-        let path = dir.path().join("viewer.json");
-        std::fs::write(&path, "{not json").unwrap();
-
-        assert_eq!(PrefsStore::at(path).get(), ViewerPrefs::default());
-    }
-
-    #[test]
-    fn a_missing_file_reads_as_defaults() {
-        let dir = tempfile::TempDir::new().unwrap();
-
-        let store = PrefsStore::at(dir.path().join("absent.json"));
-
-        assert_eq!(store.get().accent, 0);
-        assert_eq!(store.get().sidebar_width, DEFAULT_SIDEBAR_WIDTH);
-    }
-
-    #[test]
-    fn a_sidebar_width_round_trips_through_the_file() {
-        let dir = tempfile::TempDir::new().unwrap();
-        let path = dir.path().join("viewer.json");
-
-        PrefsStore::at(path.clone()).set_sidebar_width(500);
-
-        assert_eq!(PrefsStore::at(path).get().sidebar_width, 500);
-    }
-
-    #[test]
-    fn an_out_of_range_sidebar_width_clamps_instead_of_being_stored_as_given() {
-        // The width comes from a browser drag, so it is input: a value past the
-        // bounds would hand a later device a split with no diff pane, or one so
-        // narrow the status letters clip.
-        let dir = tempfile::TempDir::new().unwrap();
-        let store = PrefsStore::at(dir.path().join("viewer.json"));
-
-        assert_eq!(
-            store
-                .set_sidebar_width(MAX_SIDEBAR_WIDTH + 400)
-                .sidebar_width,
-            MAX_SIDEBAR_WIDTH
-        );
-        assert_eq!(store.set_sidebar_width(10).sidebar_width, MIN_SIDEBAR_WIDTH);
-    }
-
-    #[test]
-    fn a_width_outside_the_bounds_in_the_file_is_clamped_on_load() {
-        // A hand-edited file must not smuggle a value past the bounds the write
-        // path enforces — `get` would otherwise serve it and an accent-only
-        // write would echo it back.
-        let dir = tempfile::TempDir::new().unwrap();
-        let path = dir.path().join("viewer.json");
-        std::fs::write(&path, r#"{"accent":0,"sidebar_width":9000}"#).unwrap();
-
-        assert_eq!(PrefsStore::at(path).get().sidebar_width, MAX_SIDEBAR_WIDTH);
-    }
-
-    #[test]
-    fn an_older_file_without_a_width_keeps_its_accent_and_defaults_the_width() {
-        // A `viewer.json` written before the field existed must still load: the
-        // container `#[serde(default)]` fills the missing width, not zero.
-        let dir = tempfile::TempDir::new().unwrap();
-        let path = dir.path().join("viewer.json");
-        std::fs::write(&path, r#"{"accent":3}"#).unwrap();
-
-        let prefs = PrefsStore::at(path).get();
-        assert_eq!(prefs.accent, 3);
-        assert_eq!(prefs.sidebar_width, DEFAULT_SIDEBAR_WIDTH);
-    }
-}
+mod tests;

@@ -1,10 +1,9 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useLayoutEffect, useRef, useState } from "react";
 import { isUnauthorized } from "../api";
 import { toast } from "../lib/toast";
-import { useAccent } from "../hooks/ui/theme";
-import { useSidebarWidth } from "../hooks/ui/sidebar";
 import { useHotClock } from "../hooks/ui/useHotClock";
-import { useRepoPoll } from "../hooks/useRepoPoll";
+import { useViewerPrefs } from "../hooks/useViewerPrefs";
+import { useProjectTabs } from "../hooks/useProjectTabs";
 import { useStatus } from "../hooks/useStatus";
 import { useSidebarDrag } from "../hooks/useSidebarDrag";
 import { usePaneOpeners } from "../hooks/usePaneOpeners";
@@ -12,7 +11,7 @@ import { useLog } from "../hooks/useLog";
 import { useResumeTick } from "../hooks/useResumeTick";
 import { useMaximized } from "../hooks/useMaximized";
 import { useRepoActions } from "../hooks/useRepoActions";
-import { useRepoOrder } from "../hooks/useRepoOrder";
+import { useClone } from "../hooks/useClone";
 import { Header } from "../components/Header";
 import { RepoShell } from "../components/RepoShell";
 import { FolderPicker } from "../components/FolderPicker";
@@ -34,40 +33,22 @@ export function App() {
     paneRequestRef.current += 1;
   }, []);
   const [pickerOpen, setPickerOpen] = useState(false);
-  const { accent, next, cycle: cycleAccent, adopt: adoptAccent } = useAccent();
-  const accentWrites = useRef(0);
-  const cycle = useCallback(() => {
-    accentWrites.current += 1;
-    cycleAccent();
-  }, [cycleAccent]);
   const {
-    width: sidebarWidth,
-    resize: resizeSidebar,
-    commit: commitSidebar,
-    reset: resetSidebar,
-    adopt: adoptSidebarWidth,
-  } = useSidebarWidth();
-  const sidebarWrites = useRef(0);
-  const orderWrites = useRef(0);
-  const repoDraggingRef = useRef(false);
-  const reorderInFlightRef = useRef(false);
-  const pendingReorderRef = useRef<string[] | null>(null);
-  const commitSidebarWidth = useCallback(
-    (px: number) => {
-      sidebarWrites.current += 1;
-      commitSidebar(px);
-    },
-    [commitSidebar],
-  );
-  const resetSidebarWidth = useCallback(() => {
-    sidebarWrites.current += 1;
-    resetSidebar();
-  }, [resetSidebar]);
-  const bumpSidebarWrites = useCallback(() => {
-    sidebarWrites.current += 1;
-  }, []);
+    accent,
+    next,
+    cycle,
+    adoptAccent,
+    accentWrites,
+    sidebarWidth,
+    resizeSidebar,
+    commitSidebarWidth,
+    resetSidebarWidth,
+    bumpSidebarWrites,
+    adoptSidebarWidth,
+    sidebarWrites,
+  } = useViewerPrefs();
   const sidebarRef = useRef<HTMLElement>(null);
-  const [mdRendered, setMdRendered] = useState(true);
+  const [previewRendered, setPreviewRendered] = useState(true);
   const handle = useCallback((err: unknown) => {
     if (isUnauthorized(err)) {
       setAuthed(false);
@@ -100,35 +81,23 @@ export function App() {
     hot,
     clockSkewMs,
     reposLoaded,
-  } = useRepoPoll({
+    canClone,
+    orderWrites,
+    draggingRepo,
+    dragOverRepo,
+    onRepoDragStart,
+    onRepoDragMove,
+    onRepoDragEnd,
+  } = useProjectTabs({
     authed,
     setAuthed,
     handle,
+    resumeTick,
     adoptAccent,
     adoptSidebarWidth,
-    draggingRef,
     accentWrites,
     sidebarWrites,
-    resumeTick,
-    orderWrites,
-    repoDraggingRef,
-    reorderInFlightRef,
-    pendingReorderRef,
-  });
-  const {
-    dragging: draggingRepo,
-    target: dragOverRepo,
-    onStart: onRepoDragStart,
-    onMove: onRepoDragMove,
-    onEnd: onRepoDragEnd,
-  } = useRepoOrder({
-    repos,
-    setRepos,
-    handle,
-    writesRef: orderWrites,
-    draggingRef: repoDraggingRef,
-    inFlightRef: reorderInFlightRef,
-    pendingRef: pendingReorderRef,
+    draggingRef,
   });
 
   const hotWindowMs = hot?.enabled ? hot.window_secs * 1000 : 0;
@@ -168,6 +137,7 @@ export function App() {
       paneRequestRef,
       setCommitDrillDown,
       setMobileView,
+      setPreviewRendered,
     });
 
   const { selectOpenedRepo, closeRepo } = useRepoActions({
@@ -182,7 +152,17 @@ export function App() {
     orderWrites,
   });
 
-  useEffect(() => {
+  // Above the picker on purpose: a clone outlives the dialog that started it,
+  // and outlives the page too — this reattaches to one still running.
+  const { busy: cloning, start: startClone } = useClone(
+    selectOpenedRepo,
+    authed === true,
+  );
+
+  // Before paint: the commits, the open diff and the drill-down all belong to
+  // the project being left, and a passive effect can let them show for a frame
+  // under the new project's name.
+  useLayoutEffect(() => {
     bumpPaneRequest();
     setCommitDrillDown(null);
     setPane({ kind: "empty" });
@@ -219,6 +199,7 @@ export function App() {
         setPane={() => setPane({ kind: "empty" })}
         closeRepo={closeRepo}
         setPickerOpen={setPickerOpen}
+        cloning={cloning}
         accent={accent}
         next={next}
         cycle={cycle}
@@ -274,8 +255,8 @@ export function App() {
           logPagingPaused={logPagingPaused}
           aheadOids={aheadOids}
           visibleCommitFiles={visibleCommitFiles}
-          mdRendered={mdRendered}
-          setMdRendered={setMdRendered}
+          previewRendered={previewRendered}
+          setPreviewRendered={setPreviewRendered}
           maximized={maximized}
           setMaximized={setMaximized}
           mobileView={mobileView}
@@ -293,6 +274,9 @@ export function App() {
         <FolderPicker
           onClose={() => setPickerOpen(false)}
           onOpened={selectOpenedRepo}
+          canClone={canClone}
+          cloning={cloning}
+          onClone={startClone}
         />
       )}
     </div>

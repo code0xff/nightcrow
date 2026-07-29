@@ -66,20 +66,38 @@ pub struct ViewerBootstrapDto {
     /// File-sidebar width in CSS px, stored server-side like the accent so
     /// every device opens at the same split.
     pub sidebar_width: u32,
+    /// Id of the project a client last selected, so a reload lands there
+    /// instead of on the first tab. `None` when nothing has been selected yet
+    /// or the remembered project is not currently served — the client then
+    /// falls back to the first tab. An id, not the path `prefs.rs` stores:
+    /// clients address repositories by id and never learn the path.
+    pub active_repo: Option<String>,
     /// This server's wall clock, for dating [`super::ChangedFileDto::mtime`].
     pub now_ms: u64,
+    /// Whether this server can clone: false when no `git` is on its PATH, so
+    /// the client disables the form instead of starting a job that must fail.
+    pub can_clone: bool,
 }
 
 impl ViewerBootstrapDto {
     /// Stamps `now_ms` at construction — the value is only useful as "the
     /// server's time when this response was built", so no caller is given the
     /// chance to supply a staler one.
-    pub fn new(repos: Vec<RepoDto>, hot: HotConfigDto, accent: usize, sidebar_width: u32) -> Self {
+    pub fn new(
+        repos: Vec<RepoDto>,
+        hot: HotConfigDto,
+        accent: usize,
+        sidebar_width: u32,
+        active_repo: Option<String>,
+        can_clone: bool,
+    ) -> Self {
         Self {
             repos,
             hot,
             accent,
             sidebar_width,
+            active_repo,
+            can_clone,
             now_ms: server_now_millis(),
         }
     }

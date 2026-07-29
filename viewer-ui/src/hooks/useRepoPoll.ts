@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   api,
   isNetworkError,
@@ -6,7 +6,9 @@ import {
   type HotConfig,
   type Repo,
 } from "../api";
+import { resolveActiveRepo } from "../lib/activeRepo";
 import { nextClockOffset } from "../lib/hot";
+import { createSerialWriter } from "../lib/serialWrite";
 import { reconcileOrder } from "../lib/paneOrder";
 
 const REPO_POLL_MS = 3000;
@@ -35,6 +37,8 @@ export interface UseRepoPollResult {
   hot: HotConfig | null;
   clockSkewMs: number | null;
   reposLoaded: boolean;
+  /** Whether the server can clone (it has `git` on PATH). */
+  canClone: boolean;
 }
 
 export function useRepoPoll({
@@ -60,6 +64,14 @@ export function useRepoPoll({
   const [clockSkewMs, setClockSkewMs] = useState<number | null>(null);
   // Keeps the empty catalog from flashing before the first session response.
   const [reposLoaded, setReposLoaded] = useState(false);
+  // Assume cloning works until the server says otherwise, so the form is not
+  // briefly disabled on every load.
+  const [canClone, setCanClone] = useState(true);
+  // One writer for the lifetime of the hook: the queue it holds is what keeps
+  // the selection writes in order.
+  const { current: writeActiveRepo } = useRef(
+    createSerialWriter(api.setActiveRepo),
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -71,9 +83,19 @@ export function useRepoPoll({
       const orderGeneration = orderWrites.current;
       return api
         .repos(controller.signal)
-        .then(({ repos: list, hot, accent, sidebar_width, now_ms }) => {
+        .then((bootstrap) => {
+          const {
+            repos: list,
+            hot,
+            accent,
+            sidebar_width,
+            active_repo,
+            now_ms,
+            can_clone,
+          } = bootstrap;
           if (cancelled) return;
           setHot(hot);
+          setCanClone(can_clone);
           setClockSkewMs((held) => nextClockOffset(held, now_ms, Date.now()));
           if (accentWrites.current === writes) adoptAccent(accent);
           if (sidebarWrites.current === widthWrites && !draggingRef.current)
@@ -99,9 +121,11 @@ export function useRepoPoll({
             });
           }
           setRepo((current) =>
-            current && list.some((r) => r.id === current)
-              ? current
-              : (list[0]?.id ?? null),
+            resolveActiveRepo(
+              current,
+              list.map((r) => r.id),
+              active_repo,
+            ),
           );
           if (!cancelled) timer = setTimeout(refresh, REPO_POLL_MS);
         })
@@ -139,6 +163,27 @@ export function useRepoPoll({
     pendingReorderRef,
   ]);
 
+  // Persist the selection from the one place it settles, rather than from each
+  // of the four callers that change it (a tab click, the picker, closing a
+  // tab, the fallback above) — a caller added later would otherwise be the one
+  // that forgets. That includes the fallback: landing somewhere because the
+  // old tab closed is still where this page now is, and recording it keeps the
+  // server describing a project some client is actually in.
+  //
+  // Deliberately unconditional, so the first load posts back the very project
+  // the server just named. Skipping that write would mean tracking what this
+  // page has sent against what the last poll reported, and those two go out of
+  // step for a poll every time a write is in flight — long enough for the next
+  // switch to read the stale one and skip a write that was needed.
+  //
+  // Serialized rather than fire-and-forget: two POSTs on separate connections
+  // are ordered by arrival, so switching twice quickly could leave the first
+  // selection as the one that lands last and sticks.
+  useEffect(() => {
+    if (!repo) return;
+    writeActiveRepo(repo);
+  }, [repo, writeActiveRepo]);
+
   return {
     repos,
     setRepos,
@@ -147,5 +192,6 @@ export function useRepoPoll({
     hot,
     clockSkewMs,
     reposLoaded,
+    canClone,
   };
 }

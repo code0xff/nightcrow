@@ -1,0 +1,217 @@
+import { useCallback, useEffect, useRef, useState } from "react";
+import { api, isUnauthorized, type Repo } from "../api";
+import { ApiError } from "../api/errors";
+import { toast } from "../lib/toast";
+
+/** How often to ask the server whether the clone has finished. A clone is a
+ *  network transfer measured in seconds at best, so a slower poll than the
+ *  status stream's is right — this only has to notice the end. */
+const POLL_INTERVAL_MS = 1000;
+
+/** How many times to ask what is running before giving up, and how long to
+ *  wait between. Bounded rather than open-ended: this runs on a page that may
+ *  have nothing to attach to at all, and a probe that never stops would keep
+ *  a tab talking to a server it has no business with. Three attempts across a
+ *  few seconds covers the blip that loses one request without becoming a
+ *  background poller. */
+const ATTACH_ATTEMPTS = 3;
+const ATTACH_RETRY_MS = 2000;
+
+/**
+ * Start a clone, follow it to a terminal state, and open what it produced.
+ *
+ * The request that starts a clone returns immediately with a job id, because
+ * the transfer outlives any request a browser will hold open. Polling — rather
+ * than a stream — keeps this on the same self-healing footing as the rest of
+ * the viewer: a phone that suspends mid-clone simply resumes polling, and the
+ * clone itself never depended on the connection staying up.
+ *
+ * Call this *above* the folder picker. The picker only chooses where the clone
+ * lands; the job outlives the dialog, so an observer that unmounts with it
+ * would abandon a clone that is still running — no toast, no repository
+ * opened, and no way to reattach on reopening.
+ *
+ * `enabled` gates the attach on being signed in: the probe is an API call, and
+ * asking before the session exists only earns a 401.
+ */
+export function useClone(onOpened: (repo: Repo) => void, enabled: boolean) {
+  const [busy, setBusy] = useState(false);
+  const busyRef = useRef(false);
+  // Set on unmount so a poll that lands after the owner is gone does nothing.
+  // With the owner above the picker this only trips when the app itself tears
+  // down — closing the dialog no longer abandons the job.
+  const cancelled = useRef(false);
+  useEffect(() => {
+    cancelled.current = false;
+    return () => {
+      cancelled.current = true;
+    };
+  }, []);
+
+  const poll = useCallback(
+    async (job: number) => {
+      while (!cancelled.current) {
+        await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
+        if (cancelled.current) return;
+        let status;
+        try {
+          status = await api.cloneStatus(job);
+        } catch (err) {
+          // Two failures are the end of this job rather than a hiccup, and
+          // both have to be told apart from a dropped request — retrying
+          // either would spin forever with the form stuck on "Cloning…".
+          if (isUnauthorized(err)) {
+            // The session ended under us — expiry, or a server restart. This
+            // is terminal, not a hiccup: retrying would spin at a request a
+            // second behind the login screen with the header stuck on
+            // "Cloning…". Signing back in flips `enabled` and the attach
+            // probe finds the job again if it is still running.
+            busyRef.current = false;
+            // Same cancellation contract as the paths below.
+            if (!cancelled.current) setBusy(false);
+            return;
+          }
+          // The server drops the oldest finished jobs when later clones crowd
+          // them out, so a 404 means this job's progress is gone. Every other
+          // failure is a dropped request over a clone that is still running
+          // server-side, so it is retried.
+          if (err instanceof ApiError && err.status === 404) {
+            // Same cancellation contract as the success path: an owner that
+            // unmounted while this request was in flight gets no toast and no
+            // state write.
+            if (cancelled.current) return;
+            toast.error("the clone's progress is no longer available");
+            busyRef.current = false;
+            setBusy(false);
+            return;
+          }
+          continue;
+        }
+        // Re-checked after the await: the owner can unmount while the request
+        // is in flight, and a `done` landing then must not write to it.
+        if (cancelled.current) return;
+        if (status.state === "done") {
+          try {
+            // A finished clone is just a directory that now exists, so it
+            // opens through the same call a hand-picked folder does.
+            const repo = await api.open(status.path);
+            // The owner can go away during that call too; opening a
+            // repository into a torn-down tree is not a no-op worth risking.
+            if (cancelled.current) return;
+            onOpened(repo);
+          } catch (err) {
+            if (cancelled.current) return;
+            toast.error(err instanceof Error ? err.message : "could not open");
+          } finally {
+            // The clone succeeded even if opening it did not, so the form must
+            // come back rather than sit on "Cloning…" forever.
+            busyRef.current = false;
+            if (!cancelled.current) setBusy(false);
+          }
+          return;
+        }
+        if (status.state === "failed") {
+          // git's own words: "repository not found", "permission denied".
+          toast.error(status.message);
+          busyRef.current = false;
+          setBusy(false);
+          return;
+        }
+      }
+    },
+    [onOpened],
+  );
+
+  // Adopt a clone this page never started. The job id lives only in the tab
+  // that started it, so a reload — or a phone that dropped the tab mid-
+  // transfer — would otherwise leave the clone running with nobody watching,
+  // and the only sign of it would be the 409 refusing the next one.
+  const attach = useCallback(
+    async (isStale: () => boolean = () => false) => {
+      // Retried, because a probe that fails is not an answer. "The next page
+      // load will find it" does not hold: the server reports only a *running*
+      // job, so a clone that finishes before then becomes invisible and its
+      // repository is never opened. A dropped probe is also exactly what the
+      // one after a failed start is up against — the blip that lost the start
+      // response tends to take the probe with it.
+      for (let attempt = 0; attempt < ATTACH_ATTEMPTS; attempt++) {
+        if (attempt > 0) {
+          await new Promise((r) => setTimeout(r, ATTACH_RETRY_MS));
+        }
+        if (busyRef.current || isStale() || cancelled.current) return;
+        let job: number | null;
+        try {
+          ({ job } = await api.runningClone());
+        } catch (err) {
+          // Not signed in yet; `enabled` flipping runs this again.
+          if (isUnauthorized(err)) return;
+          continue;
+        }
+        // An answer, and it says there is nothing to follow. Staying quiet is
+        // deliberate: this probe is about a clone the user may not have
+        // started in this tab.
+        if (job === null) return;
+        if (isStale() || cancelled.current || busyRef.current) return;
+        busyRef.current = true;
+        setBusy(true);
+        void poll(job);
+        return;
+      }
+    },
+    [poll],
+  );
+
+  useEffect(() => {
+    if (!enabled) return;
+    let dropped = false;
+    void attach(() => dropped);
+    return () => {
+      dropped = true;
+    };
+  }, [enabled, attach]);
+
+  const start = useCallback(
+    async (parent: string, url: string) => {
+      if (!url.trim() || busyRef.current) return;
+      // Guarded by a ref, not the state: two submits in one tick would both
+      // read the pre-render value, and the second's rejection would clear the
+      // form while the first clone is still running.
+      busyRef.current = true;
+      setBusy(true);
+      try {
+        const { job } = await api.clone(parent, url.trim());
+        await poll(job);
+      } catch (err) {
+        busyRef.current = false;
+        if (cancelled.current) return;
+        // Only a refusal is a failure. The server starts the clone before it
+        // replies, so anything that goes wrong from the answer onwards — the
+        // connection dropping, a truncated body, a protocol mismatch on an
+        // otherwise fine 200 — leaves a clone that may well be running. Saying
+        // it failed sends the user to retry into a "folder already exists"
+        // they cannot account for. The probe below catches it if it is still
+        // going; this message is for the clone short enough to have finished
+        // first, whose id is gone because the server reports only a running
+        // job.
+        const refused = err instanceof ApiError && err.status >= 400;
+        toast.error(
+          refused
+            ? err.message
+            : "could not confirm the clone started — check this folder before retrying",
+        );
+        setBusy(false);
+        // Probe again. Holding `busyRef` across this request made the attach
+        // probe skip whatever was already running, and a refusal is often
+        // *because* something is — that is what the 409 says. A request that
+        // failed on the way back rather than on the way out leaves a job
+        // running too. Either way this page would otherwise never learn of
+        // it: the effect's dependencies have not changed, so nothing looks
+        // again.
+        void attach();
+      }
+    },
+    [poll, attach],
+  );
+
+  return { busy, start };
+}

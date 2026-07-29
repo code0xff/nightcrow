@@ -3,7 +3,7 @@ mod behavior;
 use crate::backend::PaneId;
 use crate::web::viewer::limits;
 use crate::web::viewer::terminal::frame::{
-    ClientMessage, ServerMessage, TerminalFrame, decode_output, encode_output,
+    ClientMessage, PaneSize, ServerMessage, TerminalFrame, decode_output, encode_output,
 };
 use crate::web::viewer::terminal::hub_helpers::{canonical_order, push_scrollback};
 use std::collections::VecDeque;
@@ -52,6 +52,33 @@ pub(super) fn created_pane(frame: &TerminalFrame) -> Option<PaneId> {
         return value["pane"].as_u64().map(|n| n as PaneId);
     }
     None
+}
+
+/// The pane count a `pending` frame offers for sizing.
+pub(super) fn pending_count(frame: &TerminalFrame) -> Option<usize> {
+    let TerminalFrame::Control(json) = frame else {
+        return None;
+    };
+    let value: serde_json::Value = serde_json::from_str(json).ok()?;
+    if value["type"] != "pending" {
+        return None;
+    }
+    value["count"].as_u64().map(|n| n as usize)
+}
+
+/// The size a `created` frame reports for its pane.
+pub(super) fn created_size(frame: &TerminalFrame) -> Option<(u16, u16)> {
+    let TerminalFrame::Control(json) = frame else {
+        return None;
+    };
+    let value: serde_json::Value = serde_json::from_str(json).ok()?;
+    if value["type"] != "created" {
+        return None;
+    }
+    Some((
+        value["rows"].as_u64()? as u16,
+        value["cols"].as_u64()? as u16,
+    ))
 }
 
 pub(super) fn reordered_order(frame: &TerminalFrame) -> Option<Vec<PaneId>> {
@@ -122,17 +149,66 @@ fn client_messages_parse_from_the_wire_shape() {
         serde_json::from_str(r#"{"type":"reorder","order":[3,1,2]}"#).unwrap();
     assert!(matches!(reorder, ClientMessage::Reorder { order } if order == vec![3, 1, 2]));
 
+    let start: ClientMessage =
+        serde_json::from_str(r#"{"type":"start","sizes":[{"rows":40,"cols":120}]}"#).unwrap();
+    assert!(
+        matches!(start, ClientMessage::Start { sizes } if sizes == vec![PaneSize { rows: 40, cols: 120 }])
+    );
+    // A client that measured nothing still answers, so the panes open.
+    let empty: ClientMessage = serde_json::from_str(r#"{"type":"start","sizes":[]}"#).unwrap();
+    assert!(matches!(empty, ClientMessage::Start { sizes } if sizes.is_empty()));
+
     assert!(serde_json::from_str::<ClientMessage>(r#"{"type":"nope"}"#).is_err());
     assert!(serde_json::from_str::<ClientMessage>(r#"{"type":"create"}"#).is_err());
 }
 
 #[test]
 fn server_messages_serialize_with_a_type_tag() {
-    let json = serde_json::to_string(&ServerMessage::Created { pane: 2 }).unwrap();
-    assert_eq!(json, r#"{"type":"created","pane":2}"#);
+    let json = serde_json::to_string(&ServerMessage::Created {
+        pane: 2,
+        rows: 40,
+        cols: 120,
+    })
+    .unwrap();
+    assert_eq!(json, r#"{"type":"created","pane":2,"rows":40,"cols":120}"#);
 
     let json = serde_json::to_string(&ServerMessage::Reordered { order: vec![2, 1] }).unwrap();
     assert_eq!(json, r#"{"type":"reordered","order":[2,1]}"#);
+
+    let json = serde_json::to_string(&ServerMessage::Pending { count: 2 }).unwrap();
+    assert_eq!(json, r#"{"type":"pending","count":2}"#);
+}
+
+#[test]
+fn a_pane_size_is_clamped_into_the_bounds_a_pty_can_use() {
+    // These arrive from the client's own measurement, so they are input from
+    // outside. Zero gives the child a terminal it cannot draw in and can fail
+    // `openpty`; the far end asks a full-screen program for a screen buffer of
+    // rows * cells.
+    assert_eq!(
+        PaneSize { rows: 0, cols: 0 }.clamped(),
+        PaneSize {
+            rows: limits::MIN_PANE_DIMENSION,
+            cols: limits::MIN_PANE_DIMENSION
+        }
+    );
+    assert_eq!(
+        PaneSize {
+            rows: u16::MAX,
+            cols: u16::MAX
+        }
+        .clamped(),
+        PaneSize {
+            rows: limits::MAX_PANE_ROWS,
+            cols: limits::MAX_PANE_COLS
+        }
+    );
+    // A real display passes through untouched.
+    let real = PaneSize {
+        rows: 48,
+        cols: 210,
+    };
+    assert_eq!(real.clamped(), real);
 }
 
 #[test]

@@ -1,7 +1,22 @@
 import { useCallback, useEffect, useState } from "react";
 import { api, type TreeEntry, type TreeMatch } from "../api";
+import { latestRequest } from "../lib/latestRequest";
+import {
+  ancestorDirs,
+  emptyTreeCache,
+  withChildren,
+  withRevealed,
+  withToggled,
+} from "../lib/treeCache";
 
 const TREE_SEARCH_DEBOUNCE_MS = 180;
+
+interface TreeSearchResult {
+  items: TreeMatch[];
+  truncated: boolean;
+}
+
+const emptyMatches: TreeSearchResult = { items: [], truncated: false };
 
 export interface UseTreeArgs {
   repo: string | null;
@@ -14,11 +29,7 @@ export interface UseTreeArgs {
 
 export interface UseTreeResult {
   treeChildren: Record<string, TreeEntry[]>;
-  setTreeChildren: React.Dispatch<
-    React.SetStateAction<Record<string, TreeEntry[]>>
-  >;
   treeExpanded: Set<string>;
-  setTreeExpanded: React.Dispatch<React.SetStateAction<Set<string>>>;
   treeMatches: TreeMatch[];
   treeTruncated: boolean;
   treeSearchLoading: boolean;
@@ -27,6 +38,13 @@ export interface UseTreeResult {
   revealTreeDir: (path: string) => void;
 }
 
+/**
+ * Everything here — listings, expanded directories, search results — is keyed
+ * by repository-relative path and so belongs to one project only. Nothing
+ * discards it on a repository change because nothing has to: `RepoShell` keys
+ * `Sidebar` by repository, so the switch unmounts this hook with its state, and
+ * a reply from the project just left arrives at an instance nobody is asking.
+ */
 export function useTree({
   repo,
   authed,
@@ -35,27 +53,17 @@ export function useTree({
   filterOpen,
   handle,
 }: UseTreeArgs): UseTreeResult {
-  const [treeChildren, setTreeChildren] = useState<Record<string, TreeEntry[]>>(
-    {},
-  );
-  const [treeExpanded, setTreeExpanded] = useState<Set<string>>(new Set());
-  const [treeMatches, setTreeMatches] = useState<TreeMatch[]>([]);
-  const [treeTruncated, setTreeTruncated] = useState(false);
+  const [cache, setCache] = useState(emptyTreeCache);
+  const [matches, setMatches] = useState<TreeSearchResult>(emptyMatches);
   const [treeSearchLoading, setTreeSearchLoading] = useState(false);
-
-  useEffect(() => {
-    if (!repo || !authed || tab !== "tree") return;
-    api
-      .tree(repo, "")
-      .then((r) => setTreeChildren((cache) => ({ ...cache, "": r.entries })))
-      .catch(handle);
-  }, [repo, authed, tab, handle]);
+  // Lazy state, not a ref: built once, and without allocating a fresh one on
+  // every keystroke that re-renders this hook.
+  const [requests] = useState(latestRequest);
 
   // Avoid tree-search requests until the user has opened a non-empty query.
   useEffect(() => {
     if (!repo || !authed || tab !== "tree" || !filterOpen || !filter) {
-      setTreeMatches([]);
-      setTreeTruncated(false);
+      setMatches(emptyMatches);
       setTreeSearchLoading(false);
       return;
     }
@@ -66,8 +74,7 @@ export function useTree({
         .treeSearch(repo, filter)
         .then((r) => {
           if (!active) return;
-          setTreeMatches(r.matches);
-          setTreeTruncated(r.truncated);
+          setMatches({ items: r.matches, truncated: r.truncated });
         })
         .catch((err) => {
           if (active) handle(err);
@@ -82,57 +89,59 @@ export function useTree({
     };
   }, [repo, authed, tab, filter, filterOpen, handle]);
 
+  // Expanding a directory, collapsing it and expanding it again asks twice,
+  // because the first answer has not arrived to be cached yet. If the answers
+  // then cross, the older one wins for good — the tree does not reread a path
+  // it already holds — so only the newest question's answer is kept.
   const loadTreeChildren = useCallback(
     (path: string) => {
       if (!repo) return;
+      const ticket = requests.start(path);
       api
         .tree(repo, path)
-        .then((r) => setTreeChildren((cache) => ({ ...cache, [path]: r.entries })))
-        .catch(handle);
+        .then((r) => {
+          if (!requests.isCurrent(path, ticket)) return;
+          setCache((c) => withChildren(c, path, r.entries));
+        })
+        .catch((err) => {
+          // A failure from a superseded request says nothing about the listing
+          // now on screen, and `handle` is not quiet — it toasts, and logs the
+          // page out on a 401.
+          if (requests.isCurrent(path, ticket)) handle(err);
+        });
     },
-    [repo, handle],
+    [repo, handle, requests],
   );
+
+  useEffect(() => {
+    if (!repo || !authed || tab !== "tree") return;
+    loadTreeChildren("");
+  }, [repo, authed, tab, loadTreeChildren]);
+
   const toggleTreeDir = useCallback(
     (path: string) => {
-      const willExpand = !treeExpanded.has(path);
-      setTreeExpanded((prev) => {
-        const next = new Set(prev);
-        if (next.has(path)) next.delete(path);
-        else next.add(path);
-        return next;
-      });
-      if (willExpand && !(path in treeChildren)) loadTreeChildren(path);
+      const willExpand = !cache.expanded.has(path);
+      setCache((c) => withToggled(c, path));
+      if (willExpand && !(path in cache.children)) loadTreeChildren(path);
     },
-    [treeExpanded, treeChildren, loadTreeChildren],
+    [cache, loadTreeChildren],
   );
   const revealTreeDir = useCallback(
     (path: string) => {
-      const parts = path.split("/");
-      const dirs: string[] = [];
-      let acc = "";
-      for (const part of parts) {
-        acc = acc ? `${acc}/${part}` : part;
-        dirs.push(acc);
-      }
-      setTreeExpanded((prev) => {
-        const next = new Set(prev);
-        dirs.forEach((d) => next.add(d));
-        return next;
-      });
-      dirs.forEach((d) => {
-        if (!(d in treeChildren)) loadTreeChildren(d);
+      const dirs = ancestorDirs(path);
+      setCache((c) => withRevealed(c, dirs));
+      dirs.forEach((dir) => {
+        if (!(dir in cache.children)) loadTreeChildren(dir);
       });
     },
-    [treeChildren, loadTreeChildren],
+    [cache, loadTreeChildren],
   );
 
   return {
-    treeChildren,
-    setTreeChildren,
-    treeExpanded,
-    setTreeExpanded,
-    treeMatches,
-    treeTruncated,
+    treeChildren: cache.children,
+    treeExpanded: cache.expanded,
+    treeMatches: matches.items,
+    treeTruncated: matches.truncated,
     treeSearchLoading,
     loadTreeChildren,
     toggleTreeDir,

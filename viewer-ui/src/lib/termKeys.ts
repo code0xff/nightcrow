@@ -12,6 +12,7 @@
 export type TermKey =
   | "esc"
   | "tab"
+  | "shift-tab"
   | "ctrl-c"
   | "ctrl-d"
   | "ctrl-z"
@@ -25,10 +26,12 @@ export type TermKey =
 // Control bytes are the letter's position in the alphabet: Ctrl-C is 0x03 (C is
 // the 3rd letter), Ctrl-L 0x0c, and so on. Arrows here are the *normal*-mode CSI
 // cursor sequences (`ESC [ A`…), matching what xterm.js emits with the default
-// cursor-key mode.
+// cursor-key mode. Shift-Tab has no control byte of its own — it is CSI Z
+// (back-tab), the same escape a real keyboard's Shift-Tab produces.
 export const TERM_KEY_SEQUENCES: Record<TermKey, string> = {
   esc: "\x1b",
   tab: "\t",
+  "shift-tab": "\x1b[Z",
   "ctrl-c": "\x03",
   "ctrl-d": "\x04",
   "ctrl-z": "\x1a",
@@ -66,12 +69,13 @@ export function termKeySequence(key: TermKey, applicationCursor = false): string
   return TERM_KEY_SEQUENCES[key];
 }
 
-// The bar's layout, left to right: the two bare keys first, then the common Ctrl
+// The bar's layout, left to right: the bare keys first, then the common Ctrl
 // combinations, then the arrow cluster. `label` is what the button shows;
 // `aria` names it for assistive tech, where "^C" would be read as a caret.
 export const TERM_KEY_BAR: { key: TermKey; label: string; aria: string }[] = [
   { key: "esc", label: "Esc", aria: "Escape" },
   { key: "tab", label: "Tab", aria: "Tab" },
+  { key: "shift-tab", label: "⇧Tab", aria: "Shift Tab" },
   { key: "ctrl-c", label: "^C", aria: "Control C" },
   { key: "ctrl-d", label: "^D", aria: "Control D" },
   { key: "ctrl-z", label: "^Z", aria: "Control Z" },

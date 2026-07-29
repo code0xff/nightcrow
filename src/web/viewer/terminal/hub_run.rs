@@ -1,6 +1,8 @@
 use super::TerminalHub;
 use super::frame::{ServerMessage, TerminalFrame};
-use super::hub_helpers::{Command, PaneState, broadcast_locked, canonical_order, push_scrollback};
+use super::hub_helpers::{
+    Command, PaneState, StartupPane, broadcast_locked, canonical_order, push_scrollback,
+};
 use crate::backend::{BackendEvent, PaneId, PtyBackend, TerminalBackend};
 use crate::web::viewer::limits;
 use std::collections::VecDeque;
@@ -11,6 +13,16 @@ use std::thread;
 use std::time::Duration;
 
 const POLL_INTERVAL: Duration = Duration::from_millis(8);
+
+/// How a startup pane is named back to the client when it could not be opened.
+/// The command text is the operator's own configuration and is what labels the
+/// tab, so it is the name they would recognise.
+fn startup_label(pane: &StartupPane) -> String {
+    match pane.command.as_deref() {
+        Some(command) => format!("`{command}`"),
+        None => "a shell".to_string(),
+    }
+}
 
 impl TerminalHub {
     pub(super) fn run(&self, cwd: &str, commands: Receiver<Command>, stop: Arc<AtomicBool>) {
@@ -25,25 +37,81 @@ impl TerminalHub {
                         client,
                         command,
                     } => {
-                        if self.pane_count() >= limits::MAX_PTYS_PER_REPO {
+                        // Slots reserved for a claimed startup set count here:
+                        // the configured set has first refusal on them.
+                        if !self.has_free_slot() {
                             self.send_error_to(client, "terminal limit reached");
                             continue;
                         }
                         match backend.create_pane(rows, cols, command.as_deref()) {
-                            Ok(pane) => self.register_pane(pane),
+                            Ok(pane) => self.register_pane(pane, rows, cols),
                             Err(err) => {
                                 tracing::warn!(%err, "viewer: could not create a terminal");
                                 self.send_error_to(client, "could not start a terminal");
                             }
                         }
                     }
+                    Command::CreateStartup {
+                        panes,
+                        client,
+                        reserved,
+                    } => {
+                        let mut held = reserved;
+                        let mut remaining = panes.into_iter().peekable();
+                        while let Some(pane) = remaining.next() {
+                            // Spend this pane's own reservation first, so the
+                            // check below sees the slot it is about to take as
+                            // free rather than as still held for itself.
+                            if held > 0 {
+                                self.release_reserved(1);
+                                held -= 1;
+                            }
+                            // The cap still binds. The reservation decides who
+                            // gets a slot, not how many exist — a set larger
+                            // than what was free at claim time comes up short
+                            // here rather than overrunning the ceiling.
+                            if !self.has_free_slot() {
+                                // Name what did not start. The set is spent
+                                // once claimed, so these will not run until
+                                // the hub restarts — the user has to open them
+                                // by hand, and cannot do that without knowing
+                                // which ones they were.
+                                let mut lost = vec![startup_label(&pane)];
+                                lost.extend(remaining.map(|p| startup_label(&p)));
+                                self.send_error_to(
+                                    client,
+                                    &format!(
+                                        "terminal limit reached — {} did not start",
+                                        lost.join(", ")
+                                    ),
+                                );
+                                break;
+                            }
+                            match backend.create_pane(
+                                pane.size.rows,
+                                pane.size.cols,
+                                pane.command.as_deref(),
+                            ) {
+                                Ok(id) => self.register_pane(id, pane.size.rows, pane.size.cols),
+                                Err(err) => {
+                                    tracing::warn!(%err, "viewer: could not start a terminal");
+                                    self.send_error_to(
+                                        client,
+                                        &format!("could not start {}", startup_label(&pane)),
+                                    );
+                                }
+                            }
+                        }
+                        // Whatever the break left holds slots nothing will fill.
+                        self.release_reserved(held);
+                    }
                     // Unknown pane ids are ignored rather than errored: a
                     // client racing a pane exit is normal, not an attack.
                     Command::Input { pane, data } if self.pane_is_live(pane) => {
                         let _ = backend.send_input(pane, &data);
                     }
-                    Command::Resize { pane, rows, cols } if self.pane_is_live(pane) => {
-                        backend.resize(pane, rows, cols);
+                    Command::Resize { pane, rows, cols } => {
+                        self.resize_pane(&mut backend, pane, rows, cols);
                     }
                     Command::Close { pane } if self.pane_is_live(pane) => {
                         backend.destroy_pane(pane);
@@ -84,12 +152,11 @@ impl TerminalHub {
             .clear();
     }
 
-    fn pane_count(&self) -> usize {
-        self.state
-            .lock()
-            .expect("terminal state poisoned")
-            .panes
-            .len()
+    /// Whether another terminal fits under the cap, counting slots already
+    /// held for a startup set that has been claimed but not created yet.
+    fn has_free_slot(&self) -> bool {
+        let state = self.state.lock().expect("terminal state poisoned");
+        state.panes.len() + state.reserved < limits::MAX_PTYS_PER_REPO
     }
 
     fn pane_is_live(&self, pane: PaneId) -> bool {
@@ -105,16 +172,38 @@ impl TerminalHub {
     /// same lock that adds the pane keeps it consistent with `connect`'s replay:
     /// a client either sees this pane via `connect` or via this broadcast, never
     /// both and never neither.
-    fn register_pane(&self, pane: PaneId) {
-        let json = serde_json::to_string(&ServerMessage::Created { pane }).ok();
+    fn register_pane(&self, pane: PaneId, rows: u16, cols: u16) {
+        let json = serde_json::to_string(&ServerMessage::Created { pane, rows, cols }).ok();
         let mut state = self.state.lock().expect("terminal state poisoned");
         state.panes.push(PaneState {
             id: pane,
             scrollback: VecDeque::new(),
+            rows,
+            cols,
         });
         if let Some(json) = json {
             broadcast_locked(&mut state.clients, TerminalFrame::Control(json));
         }
+    }
+
+    /// Resize a live pane's PTY and record the size it is now set to.
+    ///
+    /// Both under one lock, and the liveness check with them. `connect` reports
+    /// each pane's size from this record and the client caches it as "already
+    /// applied"; a client that slipped between the two would be told the old
+    /// size for a PTY that has the new one, and would then skip the resize that
+    /// would have corrected it. The `resize` itself is an ioctl on the master —
+    /// far cheaper than the broadcast this lock already covers.
+    fn resize_pane(&self, backend: &mut PtyBackend, pane: PaneId, rows: u16, cols: u16) {
+        let mut state = self.state.lock().expect("terminal state poisoned");
+        // An unknown pane is ignored rather than errored: a client racing a
+        // pane exit is normal, not an attack.
+        let Some(p) = state.panes.iter_mut().find(|p| p.id == pane) else {
+            return;
+        };
+        backend.resize(pane, rows, cols);
+        p.rows = rows;
+        p.cols = cols;
     }
 
     /// Append output to the pane's bounded scrollback and broadcast it, both

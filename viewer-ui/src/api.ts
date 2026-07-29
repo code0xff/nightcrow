@@ -7,16 +7,24 @@ import { ApiError } from "./api/errors";
 import { get, post, query, request } from "./api/client";
 import type {
   Browse,
+  CloneStatus,
   CommitFiles,
   Diff,
   FileView,
   Log,
   Repo,
+  RunningClone,
   Status,
+  StoredPrefs,
   Tree,
   TreeSearch,
   ViewerBootstrap,
 } from "./api/types";
+
+/** How long a project-selection write may take before it is abandoned so the
+ *  next one can go out. Generous next to a local request, since giving up
+ *  early on a slow link would drop a write that was about to land. */
+const ACTIVE_REPO_WRITE_TIMEOUT_MS = 10_000;
 
 export const api = {
   async login(password: string): Promise<void> {
@@ -39,13 +47,24 @@ export const api = {
   repos: (signal?: AbortSignal) =>
     get<ViewerBootstrap>("/api/repos", signal),
   setAccent: (accent: number) =>
-    post<{ accent: number; sidebar_width: number }>("/api/prefs", {
-      accent,
-    }).then((r) => r.accent),
+    post<StoredPrefs>("/api/prefs", { accent }).then((r) => r.accent),
   setSidebarWidth: (sidebar_width: number) =>
-    post<{ accent: number; sidebar_width: number }>("/api/prefs", {
-      sidebar_width,
-    }).then((r) => r.sidebar_width),
+    post<StoredPrefs>("/api/prefs", { sidebar_width }).then(
+      (r) => r.sidebar_width,
+    ),
+  /** Remember the open project, by id — the server stores the path behind it
+   *  so the choice outlives this process's ids.
+   *
+   *  Bounded, unlike the other preference writes: these are serialized behind
+   *  one another (`lib/serialWrite.ts`), so a request that never settles would
+   *  not just lose itself but stop every later selection from being recorded.
+   *  `fetch` has no timeout of its own. */
+  setActiveRepo: (active_repo: string) =>
+    post<StoredPrefs>(
+      "/api/prefs",
+      { active_repo },
+      AbortSignal.timeout(ACTIVE_REPO_WRITE_TIMEOUT_MS),
+    ).then((r) => r.active_repo),
   status: (repo: string) => get<Status>(`/api/status?${query({ repo })}`),
   tree: (repo: string, path: string) =>
     get<Tree>(`/api/tree?${query({ repo, path })}`),
@@ -75,6 +94,15 @@ export const api = {
   // The server confines names to one plain segment.
   mkdir: (path: string, name: string) =>
     post<{ path: string }>("/api/mkdir", { path, name }).then((r) => r.path),
+  /** Start a clone under `path`. The destination name comes from the URL, and
+   *  the server rejects any scheme that could make `git` run a command. */
+  clone: (path: string, url: string) =>
+    post<{ job: number; name: string }>("/api/clone", { path, url }),
+  cloneStatus: (job: number) =>
+    get<CloneStatus>(`/api/clone?${query({ job: String(job) })}`),
+  /** The job the server is running, so a page that never saw the id — a
+   *  reload, a second tab — can follow the clone anyway. */
+  runningClone: () => get<RunningClone>("/api/clone"),
   open: (path: string) =>
     post<{ repo: Repo }>("/api/repos", { path }).then((r) => r.repo),
   close: async (repo: string) => {

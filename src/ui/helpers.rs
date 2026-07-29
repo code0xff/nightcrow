@@ -35,8 +35,11 @@ pub(crate) fn status_color(status: StatusKind) -> Color {
     }
 }
 
+/// Space-separated because the leader is a *sequence*, not a chord: `^F1` reads
+/// as Ctrl+F1, and that misreading names a real binding — the bare F-keys
+/// select project tabs. Matches how the hint bar already writes `^F t`.
 pub(crate) fn jump_legend(app: &App, digit: char) -> String {
-    format!("{}{}", app.leader_label(), digit)
+    format!("{} {}", app.leader_label(), digit)
 }
 
 pub(crate) fn render_selectable_list(

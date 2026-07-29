@@ -1,12 +1,7 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useState } from "react";
 import type { DiffLine } from "../api";
 
 export type DiffLayout = "unified" | "split";
-
-const STORAGE_KEY = "nightcrow.viewer.diffLayout";
-
-/** Below this width, split falls back to unified. */
-const MIN_SPLIT_WIDTH_PX = 768;
 
 export interface SplitRow {
   left: DiffLine | null;
@@ -42,61 +37,18 @@ export function splitHunkRows(lines: DiffLine[]): SplitRow[] {
   return rows;
 }
 
-function loadLayout(): DiffLayout {
-  try {
-    return localStorage.getItem(STORAGE_KEY) === "split" ? "split" : "unified";
-  } catch {
-    return "unified";
-  }
-}
-
-function storeLayout(layout: DiffLayout) {
-  try {
-    localStorage.setItem(STORAGE_KEY, layout);
-  } catch {
-  }
-}
-
-function matchWide(): boolean {
-  try {
-    return window.matchMedia(`(min-width: ${MIN_SPLIT_WIDTH_PX}px)`).matches;
-  } catch {
-    return true;
-  }
-}
-
-function useIsWide(): boolean {
-  const [wide, setWide] = useState(matchWide);
-
-  useEffect(() => {
-    let mql: MediaQueryList;
-    try {
-      mql = window.matchMedia(`(min-width: ${MIN_SPLIT_WIDTH_PX}px)`);
-    } catch {
-      return;
-    }
-    const onChange = (event: MediaQueryListEvent) => setWide(event.matches);
-    mql.addEventListener("change", onChange);
-    return () => mql.removeEventListener("change", onChange);
-  }, []);
-
-  return wide;
-}
-
-/** Preserve the preference while exposing a viewport-compatible layout. */
+/**
+ * Unified is the default at every width; split is something you reach for on a
+ * diff that needs it, so the choice lasts the session and is not stored — the
+ * same lifetime the TUI gives it. Narrow screens stack the two sides rather
+ * than falling back to unified.
+ */
 export function useDiffLayout() {
-  const [layout, setLayout] = useState<DiffLayout>(loadLayout);
-  const wide = useIsWide();
+  const [layout, setLayout] = useState<DiffLayout>("unified");
 
   const toggle = useCallback(() => {
-    setLayout((current) => {
-      const next = current === "split" ? "unified" : "split";
-      storeLayout(next);
-      return next;
-    });
+    setLayout((current) => (current === "split" ? "unified" : "split"));
   }, []);
 
-  const effective: DiffLayout = layout === "split" && wide ? "split" : "unified";
-
-  return { layout, effective, toggle };
+  return { layout, toggle };
 }

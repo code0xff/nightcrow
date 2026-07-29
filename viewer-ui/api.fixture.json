@@ -1,6 +1,8 @@
 {
   "bootstrap": {
     "accent": 2,
+    "active_repo": "r1",
+    "can_clone": true,
     "hot": {
       "enabled": true,
       "window_secs": 15
@@ -156,6 +158,7 @@
   },
   "storedPrefs": {
     "accent": 2,
+    "active_repo": "r1",
     "sidebar_width": 460
   },
   "tree": {

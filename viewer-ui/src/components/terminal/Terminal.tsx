@@ -1,10 +1,19 @@
-import { useEffect, useRef, useState, type CSSProperties } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+} from "react";
 import { MaximizeIcon, PlusIcon } from "../icons";
 import { planLayout, type PaneView } from "../../lib/terminalLayout";
 import { usePaneDrag } from "../../hooks/terminal/usePaneDrag";
 import { useTerminalSocket } from "../../hooks/terminal/useTerminalSocket";
 import { useTerminalViews } from "../../hooks/terminal/useTerminalViews";
+import { usePaneSizes } from "../../hooks/terminal/usePaneSizes";
+import { useStartupSizes } from "../../hooks/terminal/useStartupSizes";
 import { TerminalCell } from "./TerminalCell";
+import { StartupSlots } from "./StartupSlots";
 import { TERM_KEY_BAR, termKeySequence } from "../../lib/termKeys";
 
 export function TerminalPanel({
@@ -30,6 +39,10 @@ export function TerminalPanel({
   const lastActiveByRepoRef = useRef(new Map<string, number>());
   // Focus only panes created by this client, not replayed panes.
   const expectCreateRef = useRef(0);
+  // Cells rendered for startup terminals the server has not created yet, so
+  // their size can be measured from the slot each will occupy.
+  const slotRefs = useRef(new Map<number, HTMLDivElement>());
+  const [pending, setPending] = useState<number | null>(null);
   const [panes, setPanes] = useState<number[]>([]);
   const [active, setActive] = useState<number | null>(null);
   const [zoomed, setZoomed] = useState<number | null>(null);
@@ -44,6 +57,7 @@ export function TerminalPanel({
     sentSizesRef,
     lastActiveByRepoRef,
     expectCreateRef,
+    setPending,
     setPanes,
     setActive,
     setZoomed,
@@ -52,6 +66,8 @@ export function TerminalPanel({
 
   useTerminalViews({
     panes,
+    size,
+    zoomed,
     socketRef,
     viewsRef,
     bodyRefs,
@@ -59,27 +75,39 @@ export function TerminalPanel({
     setTitles,
   });
 
-  // Fit visible panes after layout changes; never resize hidden cells to zero.
-  useEffect(() => {
-    for (const [pane, view] of viewsRef.current) {
-      const body = bodyRefs.current.get(pane);
-      if (!body || body.clientHeight === 0 || body.clientWidth === 0) continue;
-      view.fit.fit();
-      const { rows, cols } = view.term;
-      const sent = sentSizesRef.current.get(pane);
-      if (sent && sent.rows === rows && sent.cols === cols) continue;
-      sentSizesRef.current.set(pane, { rows, cols });
-      socketRef.current?.send(
-        JSON.stringify({ type: "resize", pane, rows, cols }),
-      );
-    }
-  }, [panes, zoomed, size]);
+  const onAnswered = useCallback(() => setPending(null), []);
+  useStartupSizes({
+    pending,
+    size,
+    socketRef,
+    slotRefs,
+    panesExist: panes.length > 0,
+    onAnswered,
+  });
+
+  usePaneSizes({
+    panes,
+    size,
+    zoomed,
+    socketRef,
+    viewsRef,
+    bodyRefs,
+    sentSizesRef,
+  });
 
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
+    // Keep the same object when the pixels are unchanged. A fresh one is never
+    // `Object.is`-equal, so React would re-render — and every consumer would
+    // re-fit every pane — for observer callbacks that carry no news, which the
+    // browser delivers whenever anything in the subtree relayouts.
     const observer = new ResizeObserver(() => {
-      setSize({ w: container.clientWidth, h: container.clientHeight });
+      const w = container.clientWidth;
+      const h = container.clientHeight;
+      setSize((current) =>
+        current.w === w && current.h === h ? current : { w, h },
+      );
     });
     observer.observe(container);
     return () => observer.disconnect();
@@ -146,7 +174,10 @@ export function TerminalPanel({
       socketRef.current?.send(JSON.stringify({ type: "reorder", order })),
   });
 
-  const layout = planLayout(panes.length, size.w >= size.h);
+  // Before the startup terminals exist the grid is planned for the slots they
+  // will occupy, so what is measured is the cell each pane actually gets.
+  const slots = panes.length > 0 ? panes.length : (pending ?? 0);
+  const layout = planLayout(slots, size.w >= size.h);
 
   return (
     <section className={`flex min-h-0 min-w-0 flex-col border-t border-ink-700 ${className}`}>
@@ -170,7 +201,7 @@ export function TerminalPanel({
         </button>
       </div>
       <div className="relative min-h-0 flex-1 overflow-hidden bg-ink-950 p-1">
-        {panes.length === 0 && (
+        {panes.length === 0 && pending === null && (
           <p className="p-3 text-ink-400">
             No terminal open. Press <span className="text-accent">+</span> above
             to start one.
@@ -188,6 +219,13 @@ export function TerminalPanel({
                 }
           }
         >
+          {panes.length === 0 && pending !== null && (
+            <StartupSlots
+              count={pending}
+              cells={layout.cells}
+              slotRefs={slotRefs}
+            />
+          )}
           {panes.map((pane, index) => {
             const label = titles[pane] ?? `term ${index + 1}`;
             const cell = layout.cells[index];
@@ -208,6 +246,7 @@ export function TerminalPanel({
                 cellStyle={cellStyle}
                 isActive={pane === active}
                 isZoomed={zoomed === pane}
+                showZoom={panes.length > 1}
                 isDragged={draggingPane === pane}
                 isDropTarget={dragOverPane === pane}
                 reorderable={reorderable}

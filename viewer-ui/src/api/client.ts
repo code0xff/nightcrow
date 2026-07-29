@@ -39,12 +39,17 @@ export async function get<T>(path: string, signal?: AbortSignal): Promise<T> {
   return parseBody<T>(response);
 }
 
-export async function post<T>(path: string, payload: unknown): Promise<T> {
+export async function post<T>(
+  path: string,
+  payload: unknown,
+  signal?: AbortSignal,
+): Promise<T> {
   const response = await request(path, {
     method: "POST",
     credentials: "same-origin",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
+    signal,
   });
   return parseBody<T>(response);
 }

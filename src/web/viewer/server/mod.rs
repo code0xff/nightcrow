@@ -26,6 +26,7 @@
 //! targets, and file sizes, so handlers map them to a fixed public string and
 //! log the detail server-side.
 
+mod clone_routes;
 mod dispatch;
 mod handlers;
 mod http_util;
@@ -73,6 +74,12 @@ pub struct ViewerState {
     /// Viewer preferences shared by every client (see `prefs.rs`). Always
     /// written: the file is the viewer's own and no TUI owns it.
     pub(super) prefs: PrefsStore,
+    /// In-flight and recently finished clones (see `clone_jobs.rs`). A clone
+    /// outlives the request that started it, so its result is polled.
+    pub(super) clones: crate::web::viewer::clone_jobs::CloneJobs,
+    /// Whether `git` was on PATH at startup. Reported to clients so the clone
+    /// form is disabled up front rather than failing every job it starts.
+    pub(super) git_available: bool,
 }
 
 pub struct ViewerServer {
@@ -159,6 +166,8 @@ impl ViewerServer {
             sessions: SessionStore::new(),
             limiter: RateLimiter::new(),
             connections: Arc::new(AtomicUsize::new(0)),
+            clones: Default::default(),
+            git_available: crate::git::clone::git_available(),
             persist,
             hot,
             prefs,

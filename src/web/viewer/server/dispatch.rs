@@ -1,3 +1,4 @@
+use super::clone_routes;
 use super::http_util::{json_error, json_response, text_response};
 use super::mutations::{
     handle_close_repo, handle_mkdir, handle_open_repo, handle_reorder_repos, handle_set_prefs,
@@ -122,6 +123,19 @@ fn handle_connection(mut stream: TcpStream, state: Arc<ViewerState>) {
     // repository is: a cross-site page cannot trigger it.
     if head.method == "POST" && head.path == "/api/prefs" {
         let _ = stream.write_all(&handle_set_prefs(&body, &state));
+        return;
+    }
+
+    // Cloning a remote into the browsed directory. The clone outlives this
+    // request, so the response carries a job id the client polls. The URL's
+    // scheme is validated before `git` sees it: `ext::` would execute a command.
+    if head.method == "POST" && head.path == "/api/clone" {
+        let _ = stream.write_all(&clone_routes::handle_clone(&body, &state));
+        return;
+    }
+
+    if head.method == "GET" && head.path == "/api/clone" {
+        let _ = stream.write_all(&clone_routes::handle_clone_status(&head, &state));
         return;
     }
 

@@ -28,6 +28,13 @@ export interface HotConfig {
   window_secs: number;
 }
 
+/** What every `/api/prefs` write echoes back: the full stored set. */
+export interface StoredPrefs {
+  accent: number;
+  sidebar_width: number;
+  active_repo: string | null;
+}
+
 export interface ViewerBootstrap {
   repos: Repo[];
   hot: HotConfig;
@@ -35,8 +42,15 @@ export interface ViewerBootstrap {
   accent: number;
   /** Server-owned sidebar width in CSS pixels. */
   sidebar_width: number;
+  /** Id of the project last selected on any device, so a reload opens it
+   *  instead of the first tab. Null when nothing has been selected yet or the
+   *  remembered project is no longer served. */
+  active_repo: string | null;
   /** Server wall clock used to date file mtimes. */
   now_ms: number;
+  /** False when the server has no `git` on PATH, so the clone form is disabled
+   *  rather than accepting a URL it could only fail on. */
+  can_clone: boolean;
 }
 
 export interface Status {
@@ -115,6 +129,18 @@ export interface FileView {
 export interface BrowseEntry {
   name: string;
   is_repo: boolean;
+}
+
+/** A clone runs past the request that started it, so it is polled by job id. */
+export type CloneStatus =
+  | { state: "running" }
+  | { state: "done"; path: string }
+  | { state: "failed"; message: string };
+
+/** The clone the server is running, if any. How a page that just loaded finds
+ *  the job to follow when the tab that started it is gone. */
+export interface RunningClone {
+  job: number | null;
 }
 
 export interface Browse {

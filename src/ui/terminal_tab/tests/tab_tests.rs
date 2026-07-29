@@ -82,7 +82,7 @@ fn tab_target_agrees_with_the_rendered_buffer_not_just_the_builder() {
         .map(|x| buf[(x, tab_area.y)].symbol())
         .collect();
     let x = (0..cells.len())
-        .find(|&i| cells[i..].concat().starts_with("^F4 Beta"))
+        .find(|&i| cells[i..].concat().starts_with("^F 4 Beta"))
         .expect("second tab rendered") as u16;
 
     assert_eq!(tab_target_at(&app, area, x, tab_area.y), Some(1));
@@ -137,14 +137,14 @@ fn tab_bar_labels_panes_with_leader_digits_in_split_view() {
     // The bare F-keys select project tabs, so the pane legend must name
     // the leader digit that actually reaches this pane.
     assert!(
-        text.contains("^F3 Alpha"),
+        text.contains("^F 3 Alpha"),
         "split view must label the first pane with its <prefix> 3 jump key, got: {text}"
     );
-    // "^F3 Alpha" contains "F3 Alpha" as a substring because the `Ctrl+F`
-    // leader label ends in F; strip the legit legend before checking the
-    // bare function-key legend never appears on its own.
+    // Separating the digit also separates the strings: a bare `F3 Alpha`
+    // legend can no longer hide inside the leader label, so this reads
+    // directly rather than stripping the legitimate legend first.
     assert!(
-        !text.replace("^F3 Alpha", "").contains("F3 Alpha"),
+        !text.contains("F3 Alpha"),
         "the bare F-key must not be advertised for panes, got: {text}"
     );
 }

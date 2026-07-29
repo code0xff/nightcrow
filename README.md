@@ -78,7 +78,7 @@ project keeps running while you work in another.
 
 ```
  F1 nightcrow  F2 api-server  +3          ← project tabs (active one accented)
-┌ ^F1 Files ──────┐┌ ^F2 src/main.rs ────┐
+┌ ^F 1 Files ──────┐┌ ^F 2 src/main.rs ────┐
 ```
 
 - `^F o` opens a repo in a tab, `^F x` closes the active one, and `F1`…`F10`
@@ -312,7 +312,15 @@ also serves its **own** terminals, independent of the TUI's panes.
 
 The served repositories appear as project tabs in the header — `+ open` browses
 the server machine's folders to add one, `×` closes it, and dragging a tab
-reorders them — and each project has its own `status`, `log`, and `tree` tabs on
+reorders them. The same dialog **clones a git URL** into the folder it is
+showing: paste `https://…` or `git@host:path`, and the repository opens as a
+tab when the clone finishes. Cloning runs `git` on the server, so it uses that
+machine's credentials — an SSH agent, a credential helper — and a private
+remote works exactly as it would in a shell there. Local paths and git's
+`ext::` transport are refused. A clone keeps running whether or not you stay to
+watch it: closing the dialog leaves `Cloning…` in the header, and a page you
+reload — or a phone that dropped the tab mid-transfer — picks the same clone
+back up and still opens the repository when it lands. Each project has its own `status`, `log`, and `tree` tabs on
 the left plus a terminal panel below. The order is kept on the server, so every
 device shows the same arrangement; under `nightcrow serve` it also survives a
 restart (alongside the TUI it lasts the session). On a narrow window (phone) the
@@ -358,10 +366,19 @@ list, the content pane, and the terminal — would each shrink to an unusable
 sliver stacked in one column, so instead a bottom bar switches between them:
 tap **Files**, **Diff**, or **Terminal** to give one of them the whole screen.
 Opening a file or commit jumps to the content view automatically. Because a
-soft keyboard can't type Escape, Tab, Ctrl combinations, or the arrows, the
-terminal grows a key bar along its bottom on touch devices that sends those
-straight to the shell — so you can interrupt a process (`^C`), leave `vim`
-(`Esc`), or walk your history (arrows) without a physical keyboard.
+soft keyboard can't type Escape, Tab, Shift-Tab, Ctrl combinations, or the
+arrows, the terminal grows a key bar along its bottom on touch devices that
+sends those straight to the shell — so you can interrupt a process (`^C`),
+leave `vim` (`Esc`), cycle a completion menu backwards (`⇧Tab`), or walk your
+history (arrows) without a physical keyboard.
+
+The viewer ships a web-app manifest and icons, so you can **add it to your home
+screen** and launch it as a standalone, chrome-less window — more room for the
+terminal and one-tap access. On iOS this works over plain HTTP (Safari →
+*Share* → *Add to Home Screen*). Android's install prompt additionally wants a
+service worker and a secure origin, so reach the viewer over HTTPS (a reverse
+proxy or tunnel) to get it there; the viewer has no offline mode either way —
+every screen needs the server.
 
 The `status` list highlights recently touched files the same way the TUI does:
 accent-coloured and bold for the first 5 seconds after a file's mtime, accent
@@ -372,8 +389,14 @@ against the browser's clock, so a device whose time is badly off will fade
 early or late.
 
 Markdown files (`.md`, `.markdown`) opened from the tree render as formatted
-documents by default, with fenced code syntax-highlighted. A toggle (top-right
-of the pane) switches to the raw highlighted source.
+documents by default, with fenced code syntax-highlighted. HTML files
+(`.html`, `.htm`) render too, inside a fully sandboxed frame: scripts do not
+run, and nothing loads from another host. A page that carries its own styling
+inline and embeds images as `data:` URIs shows in full; one that links a
+stylesheet or images as separate files shows without them, since repository
+files are not served to the frame. This previews a self-contained page rather
+than a site. A toggle (top-right of the
+pane) switches either back to the raw highlighted source.
 
 Enable it alongside the TUI under `[web_viewer]`:
 

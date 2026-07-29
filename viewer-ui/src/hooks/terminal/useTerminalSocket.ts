@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useLayoutEffect } from "react";
 import type { MutableRefObject } from "react";
 import { reconcileOrder } from "../../lib/paneOrder";
 import { toast } from "../../lib/toast";
@@ -12,6 +12,7 @@ interface UseTerminalSocketArgs {
   sentSizesRef: MutableRefObject<Map<number, { rows: number; cols: number }>>;
   lastActiveByRepoRef: MutableRefObject<Map<string, number>>;
   expectCreateRef: MutableRefObject<number>;
+  setPending: React.Dispatch<React.SetStateAction<number | null>>;
   setPanes: React.Dispatch<React.SetStateAction<number[]>>;
   setActive: React.Dispatch<React.SetStateAction<number | null>>;
   setZoomed: React.Dispatch<React.SetStateAction<number | null>>;
@@ -19,6 +20,13 @@ interface UseTerminalSocketArgs {
 }
 
 /// Reset state on repository changes because pane ids are repository-local.
+///
+/// A layout effect, not a passive one: the panel is not remounted per
+/// repository (it keeps the per-repo focus memory across switches), so the
+/// render that switches project still commits the previous project's panes and
+/// their xterm DOM. A passive effect may run after that has been painted, which
+/// puts one frame of the old project's terminals on screen; a layout effect
+/// clears them before the browser paints.
 export function useTerminalSocket({
   repo,
   socketRef,
@@ -27,12 +35,20 @@ export function useTerminalSocket({
   sentSizesRef,
   lastActiveByRepoRef,
   expectCreateRef,
+  setPending,
   setPanes,
   setActive,
   setZoomed,
   setTitles,
 }: UseTerminalSocketArgs) {
-  useEffect(() => {
+  useLayoutEffect(() => {
+    // A terminal this page asked for belongs to the project it was asked in.
+    // The next project replays the panes it already has, and an expectation
+    // left over from the previous one would take the first of them for the
+    // terminal that never arrived — focusing it and remembering it as this
+    // project's last active pane. Cleared here rather than in `connect` so a
+    // reconnect, which is the same project, still adopts the pane it asked for.
+    expectCreateRef.current = 0;
     let closedByUs = false;
     let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
 
@@ -44,6 +60,7 @@ export function useTerminalSocket({
     };
 
     const connect = () => {
+      setPending(null);
       setPanes([]);
       setActive(null);
       setZoomed(null);
@@ -58,10 +75,26 @@ export function useTerminalSocket({
       socketRef.current = socket;
 
       socket.onmessage = (event) => {
+        // Pane ids are per repository, so a frame that was already on its way
+        // when the project changed would land on whatever pane holds that id
+        // here. Only the live socket may touch this state.
+        if (socketRef.current !== socket) return;
         if (typeof event.data === "string") {
           const message = JSON.parse(event.data);
-          if (message.type === "created") {
+          if (message.type === "pending") {
+            // Startup terminals the server is holding until this page says how
+            // big to make them. Answered by `useStartupSizes`.
+            setPending(message.count);
+          } else if (message.type === "created") {
             const pane = message.pane;
+            // Adopt the size the PTY already has. Without this the first fit
+            // sends a resize even when it computes the very size the pane is
+            // already set to — and every resize costs the child a full
+            // repaint, which is the flicker a reload used to show.
+            sentSizesRef.current.set(pane, {
+              rows: message.rows,
+              cols: message.cols,
+            });
             setPanes((current) => [...current, pane]);
             if (expectCreateRef.current > 0) {
               expectCreateRef.current -= 1;

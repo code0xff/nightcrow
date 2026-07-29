@@ -6,9 +6,20 @@ import { XIcon } from "./icons";
 export function FolderPicker({
   onClose,
   onOpened,
+  canClone,
+  cloning,
+  onClone,
 }: {
   onClose: () => void;
   onOpened: (repo: Repo) => void;
+  /** False when the server has no `git`, which is what performs the clone. */
+  canClone: boolean;
+  /** Whether a clone is in flight. Owned above this dialog, because the clone
+   *  outlives it — see `onClone`. */
+  cloning: boolean;
+  /** Hand the URL and its destination upward rather than running the clone
+   *  here: closing this dialog must not stop anyone from watching the job. */
+  onClone: (parent: string, url: string) => void;
 }) {
   const [path, setPath] = useState<string | null>(null);
   const [dir, setDir] = useState<Browse | null>(null);
@@ -16,6 +27,7 @@ export function FolderPicker({
   const [busy, setBusy] = useState(false);
   const [newName, setNewName] = useState("");
   const [creating, setCreating] = useState(false);
+  const [cloneUrl, setCloneUrl] = useState("");
   const [reload, setReload] = useState(0);
 
   useEffect(() => {
@@ -137,6 +149,32 @@ export function FolderPicker({
             className="shrink-0 rounded-sm border border-ink-700 px-2 py-1 text-ink-200 hover:bg-ink-850 disabled:opacity-50"
           >
             {creating ? "Creating…" : "Create"}
+          </button>
+        </div>
+        <div className="flex shrink-0 items-center gap-2 border-t border-ink-700 px-3 py-2">
+          <input
+            value={cloneUrl}
+            onChange={(e) => setCloneUrl(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && dir) onClone(dir.path, cloneUrl);
+            }}
+            disabled={!canClone}
+            placeholder={
+              canClone ? "Clone a git URL here" : "git is not installed on the server"
+            }
+            aria-label="git URL to clone"
+            spellCheck={false}
+            autoCapitalize="none"
+            autoCorrect="off"
+            className="min-w-0 flex-1 rounded-sm border border-ink-700 bg-ink-950 px-2 py-1 text-ink-50 placeholder:text-ink-400 focus:border-ink-600 focus:outline-none disabled:opacity-50"
+          />
+          <button
+            onClick={() => dir && onClone(dir.path, cloneUrl)}
+            disabled={!canClone || !dir || !cloneUrl.trim() || cloning}
+            title={canClone ? undefined : "the server has no git on its PATH"}
+            className="shrink-0 rounded-sm border border-ink-700 px-2 py-1 text-ink-200 hover:bg-ink-850 disabled:opacity-50"
+          >
+            {cloning ? "Cloning…" : "Clone"}
           </button>
         </div>
         <div className="flex shrink-0 items-center gap-2 border-t border-ink-700 px-3 py-2">

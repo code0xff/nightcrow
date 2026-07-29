@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { api, subscribeStatus, type Status } from "../api";
 import type { Pane, Tab } from "../types";
 
@@ -38,8 +38,11 @@ export function useStatus({
   const tabRef = useRef(tab);
   tabRef.current = tab;
 
-  // Clear stale data on repo/auth changes, but retain it across resume resubscription.
-  useEffect(() => {
+  // Clear stale data on repo/auth changes, but retain it across resume
+  // resubscription. Before paint, not after: the render that switches project
+  // still holds the previous project's files, and a passive effect can let
+  // them show for a frame.
+  useLayoutEffect(() => {
     setStatus(null);
   }, [repo, authed]);
 

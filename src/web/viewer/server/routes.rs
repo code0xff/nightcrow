@@ -25,14 +25,20 @@ pub(super) fn route(head: &RequestHead, state: &ViewerState) -> Vec<u8> {
             // reaches every device within one interval, and `/api/status` —
             // a hot, deduplicated stream — stays free of configuration.
             let prefs = state.prefs.get();
+            // The remembered project is resolved to an id per response rather
+            // than stored as one, and from the same snapshot as the list it
+            // will be rendered against — see `Catalog::list_with_active`.
+            let (repos, active_repo) = state.catalog.list_with_active(prefs.active_repo.as_deref());
             let bootstrap = ViewerBootstrapDto::new(
-                state.catalog.list(),
+                repos,
                 HotConfigDto {
                     enabled: state.hot.enabled,
                     window_secs: state.hot.hot_window_secs,
                 },
                 prefs.accent,
                 prefs.sidebar_width,
+                active_repo,
+                state.git_available,
             );
             match serde_json::to_string(&Envelope::new(bootstrap)) {
                 Ok(json) => json_response("200 OK", &json, &[]),
