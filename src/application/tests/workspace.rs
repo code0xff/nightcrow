@@ -59,6 +59,26 @@ fn confirming_the_dialog_asks_the_workspace_to_open_that_path() {
 }
 
 #[test]
+fn the_dialog_completes_the_path_on_tab() {
+    // Tab used to fall through to `text_input_char`, which rejects it, so the
+    // key was silently swallowed. This pins the routing, not the completion
+    // rules — those are covered in `workspace::path_complete`.
+    let dir = tempfile::TempDir::new().expect("a temp dir");
+    std::fs::create_dir(dir.path().join("nightcrow")).expect("create dir");
+    let base = format!("{}/", dir.path().to_str().expect("a UTF-8 temp path"));
+    let mut ws = workspace_on(&["/a"]);
+    ws.start_repo_input();
+    for c in format!("{base}night").chars() {
+        ws.repo_input_push(c);
+    }
+
+    let outcome = dispatch_key(&mut ws, press(KeyCode::Tab, KeyModifiers::NONE));
+
+    assert_eq!(outcome, KeyOutcome::Continue);
+    assert_eq!(ws.repo_input.buf, format!("{base}nightcrow/"));
+}
+
+#[test]
 fn confirming_the_dialog_on_a_bad_path_keeps_it_open() {
     let mut ws = workspace_on(&["/a"]);
     ws.start_repo_input();
