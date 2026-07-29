@@ -167,7 +167,7 @@ fn attach(stream: UnixStream, session: &Session) {
         &session::list_session_repos(&session.state),
         session.state.catalog(),
     );
-    session.clients.send_to(id, encode(&repos(&session.state)));
+    send_current_set(id, session);
 
     if let Err(err) = super::requests::read_requests(stream, id, session) {
         // Expected on detach: the client closes mid-read. Logged at debug
@@ -187,6 +187,32 @@ fn attach(stream: UnixStream, session: &Session) {
             writer,
             crate::platform::threading::REAP_TIMEOUT,
         );
+    }
+}
+
+/// Queue the session's current shape to one client, until what was queued
+/// agrees with what the session says.
+///
+/// Reading the session and queueing the frame are two steps, and the watcher
+/// broadcasts from another thread in between them. A change landing in that gap
+/// is queued *ahead* of a frame built before it, leaving the client on the older
+/// state — and the watcher, which records what it has told everyone, will not
+/// say it again. Re-reading after queueing closes it: this stops only once a
+/// read taken after the last frame went out matches it, so every later change is
+/// broadcast after that frame was already in the queue.
+///
+/// Converges immediately unless the session is being changed in exactly this
+/// instant, and the comparison is of a handful of small structs.
+fn send_current_set(id: u64, session: &Session) {
+    let mut sent = repos(&session.state);
+    session.clients.send_to(id, encode(&sent));
+    loop {
+        let current = repos(&session.state);
+        if current == sent {
+            return;
+        }
+        session.clients.send_to(id, encode(&current));
+        sent = current;
     }
 }
 

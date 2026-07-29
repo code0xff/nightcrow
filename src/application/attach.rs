@@ -66,9 +66,13 @@ pub(crate) fn run_attach() -> Result<()> {
         ws.set_remembered(stored.sessions);
     }
 
-    // Read from the session's own file rather than asked of the daemon: the
-    // splash draws before this client has attached, and `[theme]` only names
-    // what a session with no stored colour starts in.
+    // Read from the session's own file rather than taken off the connection.
+    // The socket is open by now and the daemon's first set may already be
+    // queued on it, but draining that here would consume the set `main_loop`
+    // builds its tabs from — and this screen wants one number out of it.
+    // Whatever the file is behind by, the first broadcast corrects a moment
+    // later. `[theme]` only names what a session with no stored colour starts
+    // in.
     let session_accent =
         crate::web::viewer::prefs::PrefsStore::load_seeded(cfg.theme.preset_index())
             .get()

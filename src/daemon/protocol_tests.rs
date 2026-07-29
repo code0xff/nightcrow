@@ -32,6 +32,16 @@ fn every_client_message_survives_the_round_trip() {
 }
 
 #[test]
+fn a_repository_set_without_an_accent_is_refused_rather_than_read_as_yellow() {
+    // What an older daemon sends. Its version string can match this build's, so
+    // the handshake lets it through and this is the only thing left to catch it;
+    // defaulting would paint the session a colour nobody chose.
+    let json = r#"{"type":"repos","repos":[],"active":null}"#;
+
+    assert!(serde_json::from_str::<ServerMessage>(json).is_err());
+}
+
+#[test]
 fn every_server_message_survives_the_round_trip() {
     let messages = vec![
         ServerMessage::Hello {

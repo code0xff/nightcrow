@@ -92,7 +92,14 @@ pub enum ServerMessage {
         /// what it observes differs from what clients were told; a colour picked
         /// in the browser reaches every attached terminal through that same
         /// comparison, with nothing needing to remember to announce it.
-        #[serde(default)]
+        ///
+        /// Required, unlike `active`: a default here would be a colour, and a
+        /// daemon too old to send one would have this client painting the
+        /// session yellow and claiming that was its choice. `None` for `active`
+        /// is a state the session really has; there is no such reading of a
+        /// missing accent. Two builds of the same version can meet — the
+        /// handshake compares version strings — so this is the only thing that
+        /// catches it, and a frame it cannot read ends the connection.
         accent: usize,
     },
     /// A request could not be carried out. The connection stays open: a refused
