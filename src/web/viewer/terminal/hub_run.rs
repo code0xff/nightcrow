@@ -137,7 +137,17 @@ impl TerminalHub {
             for event in backend.drain_events() {
                 match event {
                     BackendEvent::Output { pane, data } => self.record_and_broadcast(pane, data),
-                    BackendEvent::Exited { pane } => self.remove_pane_and_announce(pane),
+                    // Destroyed as well as forgotten. `PtyBackend` leaves pane
+                    // removal to its caller (see its `drain_events`), so a pane
+                    // that ended on its own — the user typed `exit`, or the
+                    // command finished — would keep its entry, its PTY master,
+                    // and its child handle for the hub's whole life. The cap
+                    // counts live panes, not those, so open-and-exit in a loop
+                    // accumulated descriptors with nothing to stop it.
+                    BackendEvent::Exited { pane } => {
+                        backend.destroy_pane(pane);
+                        self.remove_pane_and_announce(pane);
+                    }
                     // The hub owns its PTYs outright: it opens them through
                     // `open_pane`, which answers directly, and it is what
                     // decides their size and tells everyone. So none of these

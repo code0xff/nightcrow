@@ -146,26 +146,26 @@ fn restore_session_prefers_terminal_fullscreen_over_list_fullscreen() {
 
 #[test]
 fn close_last_pane_exits_fullscreen() {
-    let mut app = app_with_files(vec![]);
-    app.terminal.panes = vec![PaneInfo {
-        id: 1,
-        title: "shell".into(),
-    }];
+    // Through a backend, because closing is a request now: a state with none has
+    // nobody to ask, and the pane it was handed is not its to remove.
+    let mut app = app_with_fake_backend();
+    app.terminal.create_pane_now().unwrap();
+    let pane = app.terminal.panes[0].id;
     app.terminal.fullscreen = TerminalFullscreen::Grid;
     app.focus = Focus::Terminal;
-    app.terminal.scroll.insert(1, 3);
-    app.terminal.prompt_bufs.insert(1, "cargo test".to_string());
+    app.terminal.scroll.insert(pane, 3);
     app.terminal
-        .emulators
-        .insert(1, crate::runtime::emulator::PaneEmulator::new(3, 10, 0));
+        .prompt_bufs
+        .insert(pane, "cargo test".to_string());
 
     app.close_active_pane();
+    app.poll_terminal();
 
     assert!(!app.terminal.fullscreen.fills_body());
     assert_eq!(app.focus, Focus::DiffViewer);
-    assert!(!app.terminal.scroll.contains_key(&1));
-    assert!(!app.terminal.prompt_bufs.contains_key(&1));
-    assert!(!app.terminal.emulators.contains_key(&1));
+    assert!(!app.terminal.scroll.contains_key(&pane));
+    assert!(!app.terminal.prompt_bufs.contains_key(&pane));
+    assert!(!app.terminal.emulators.contains_key(&pane));
 }
 
 #[test]

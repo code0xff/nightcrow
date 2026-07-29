@@ -96,7 +96,13 @@ impl crate::backend::TerminalBackend for FakeBackend {
         Ok(())
     }
 
-    fn destroy_pane(&mut self, _id: crate::backend::PaneId) {}
+    /// Echoed as a shared session would: a close is a request, and the pane
+    /// goes when the exit comes back.
+    fn destroy_pane(&mut self, id: crate::backend::PaneId) {
+        self.pending_events
+            .borrow_mut()
+            .push(crate::backend::BackendEvent::Exited { pane: id });
+    }
 
     /// Echoed back as the event a shared session would send, so a test drives
     /// the same round trip the real thing does: a reorder is asked for and

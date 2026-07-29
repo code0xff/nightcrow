@@ -73,13 +73,21 @@ impl TerminalState {
                     self.owns_size = owned;
                 }
                 BackendEvent::Exited { pane } => {
-                    // Single source of truth for pane removal: `drain_events`
-                    // no longer touches the backend's pane map, so we drive
-                    // the teardown here. `destroy_pane` is idempotent against
-                    // a pane that `close_active` already removed.
+                    // Only for a pane this client still has. An exit can arrive
+                    // for one already gone — reported twice, or for a pane
+                    // another client closed and this one never adopted — and
+                    // acting on it would send a close request for a pane that no
+                    // longer exists and clamp focus over nothing.
+                    if !self.panes.iter().any(|p| p.id == pane) {
+                        continue;
+                    }
+                    // Told to the backend as well as forgotten here: a local
+                    // `PtyBackend` leaves pane removal to its caller (see its
+                    // `drain_events`), so this is what releases the PTY.
                     if let Some(backend) = &mut self.backend {
                         backend.destroy_pane(pane);
                     }
+                    tracing::info!(pane, "terminal pane closed");
                     self.remove_pane_state(pane);
                     self.panes.retain(|p| p.id != pane);
                     exited.push(pane);
@@ -184,22 +192,34 @@ impl TerminalState {
         tracing::info!(pane = id, "terminal pane opened");
     }
 
-    /// Remove the currently active pane. Returns `true` when a pane was
-    /// removed so the caller can re-clamp dependent state (focus,
-    /// fullscreen). Returns `false` for an empty list — a benign no-op
-    /// the caller can ignore.
+    /// Ask for the active pane to be closed. Reports whether there was one to
+    /// ask about; an empty list is a benign no-op.
+    ///
+    /// A request, like a create. The pane goes when the session says it did
+    /// ([`BackendEvent::Exited`]), which is also how a pane someone else closed
+    /// arrives. Removing it here instead would show it gone while its process
+    /// kept running — and a close the session never carried out (a full command
+    /// queue drops one) would leave this client unable to see that pane again.
     pub fn close_active(&mut self) -> bool {
         let Some(info) = self.panes.get(self.active) else {
             return false;
         };
         let id = info.id;
-        tracing::info!(pane = id, "terminal pane closed");
-        if let Some(backend) = &mut self.backend {
-            backend.destroy_pane(id);
+        match &mut self.backend {
+            Some(backend) => backend.destroy_pane(id),
+            None => return false,
         }
-        self.remove_pane_state(id);
-        self.panes.remove(self.active);
         true
+    }
+
+    /// Ask for the active pane to be closed and take delivery of it in one step.
+    /// Only for tests; every fake backend reports the exit immediately, so one
+    /// poll applies it.
+    #[cfg(test)]
+    pub fn close_active_now(&mut self) -> bool {
+        let asked = self.close_active();
+        self.poll();
+        asked
     }
 
     /// Ask for the active pane and the pane at `idx` to trade places.

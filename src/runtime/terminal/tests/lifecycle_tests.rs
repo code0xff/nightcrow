@@ -183,7 +183,7 @@ fn closing_pane_drops_its_last_content_size() {
     let id = state.panes[0].id;
     state.resize_visible_panes(&[(id, 10, 40)]);
 
-    state.close_active();
+    state.close_active_now();
 
     assert!(!state.last_content_size.contains_key(&id));
 }
@@ -242,4 +242,36 @@ fn an_order_naming_panes_this_client_does_not_have_still_applies() {
         state.panes[1].id, ids[1],
         "and what was left out keeps its place"
     );
+}
+
+#[test]
+fn a_close_is_asked_for_rather_than_applied_on_the_spot() {
+    // The pane belongs to the session. Removing it here would show it gone while
+    // its process kept running — and a close the session never carried out would
+    // leave this client unable to see that pane again.
+    let mut state = state_with_fake();
+    state.create_pane_now().unwrap();
+    let pane = state.panes[0].id;
+
+    assert!(state.close_active());
+
+    assert_eq!(state.panes.len(), 1, "nothing has gone yet");
+    let exited = state.poll();
+    assert_eq!(exited, vec![pane]);
+    assert!(state.panes.is_empty());
+}
+
+#[test]
+fn an_exit_for_a_pane_this_client_does_not_have_is_dropped() {
+    // Reported twice, or for a pane another client closed before this one ever
+    // adopted it. Acting on it would ask the session to close a pane that is
+    // already gone and clamp focus over nothing.
+    let (mut state, events) = state_with_event_queue();
+    state.create_pane_now().unwrap();
+    events
+        .borrow_mut()
+        .push(crate::backend::BackendEvent::Exited { pane: 9999 });
+
+    assert!(state.poll().is_empty(), "nothing of this client's exited");
+    assert_eq!(state.panes.len(), 1);
 }

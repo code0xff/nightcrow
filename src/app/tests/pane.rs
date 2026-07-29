@@ -64,6 +64,7 @@ fn pane_action_predicates_follow_focus_and_pane_count() {
     assert!(app.can_swap_panes());
 
     app.close_active_pane();
+    app.poll_terminal();
     assert!(
         app.can_close_pane(),
         "close still acts on the last remaining pane"
@@ -115,6 +116,8 @@ fn closing_pane_reclamps_visible_window() {
     // shrink back to contain only the remaining pane.
     for _ in 0..6 {
         app.close_active_pane();
+        // The pane goes when its exit arrives, which is a frame's poll away.
+        app.poll_terminal();
     }
 
     assert_eq!(app.terminal.panes.len(), 1);

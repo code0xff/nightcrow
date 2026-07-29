@@ -57,10 +57,11 @@ impl App {
         !self.terminal.owns_size
     }
 
+    /// Ask the session to close the active pane. Nothing is re-clamped here:
+    /// the pane goes when its exit arrives, and `poll_terminal` clamps focus and
+    /// fullscreen then — the same path a pane another client closed takes.
     pub fn close_active_pane(&mut self) {
-        if self.terminal.close_active() {
-            self.clamp_active_pane_after_removal();
-        }
+        self.terminal.close_active();
     }
 
     // Without terminal focus the active pane is rendered indistinguishable

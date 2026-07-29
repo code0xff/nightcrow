@@ -226,6 +226,8 @@ fn handle_key_leader_w_closes_pane_with_terminal_focus() {
     let before = app.terminal.panes.len();
     let _ = handle_key(&mut app, leader());
     let _ = handle_key(&mut app, press(KeyCode::Char('w'), KeyModifiers::NONE));
+    // Closing is a request; the pane goes when its exit arrives.
+    app.poll_terminal();
     assert_eq!(app.terminal.panes.len(), before - 1);
 }
 
@@ -241,6 +243,8 @@ fn handle_key_leader_w_closes_pane_in_terminal_fullscreen() {
 
     let _ = handle_key(&mut app, leader());
     let _ = handle_key(&mut app, press(KeyCode::Char('w'), KeyModifiers::NONE));
+    // Closing is a request; the pane goes when its exit arrives.
+    app.poll_terminal();
 
     assert_eq!(app.terminal.panes.len(), before - 1);
 }
@@ -256,6 +260,8 @@ fn handle_key_leader_w_is_ignored_without_terminal_focus() {
 
     let _ = handle_key(&mut app, leader());
     let _ = handle_key(&mut app, press(KeyCode::Char('w'), KeyModifiers::NONE));
+    // Closing is a request; the pane goes when its exit arrives.
+    app.poll_terminal();
 
     assert_eq!(
         app.terminal.panes.len(),
