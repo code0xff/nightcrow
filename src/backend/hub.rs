@@ -73,7 +73,10 @@ impl TerminalBackend for HubBackend {
     /// widen the wire format for, and is reported as one.
     fn send_input(&mut self, id: PaneId, data: &[u8]) -> Result<()> {
         let Ok(data) = String::from_utf8(data.to_vec()) else {
-            bail!("pane {id} input is not valid UTF-8: {data:?}");
+            // The bytes themselves stay out of it: this is what the user typed,
+            // and the caller logs the error. The length is what identifies which
+            // encoding produced it.
+            bail!("pane {id} input is not valid UTF-8 ({} bytes)", data.len());
         };
         self.link.send(HubClientMessage::Input { pane: id, data })
     }

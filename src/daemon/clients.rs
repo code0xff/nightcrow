@@ -18,7 +18,7 @@ use super::frame::Frame;
 use std::os::unix::net::UnixStream;
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::mpsc::{self, Receiver, SyncSender};
+use std::sync::mpsc::{self, Receiver, SyncSender, TrySendError};
 
 /// Frames one client may have queued before it is considered wedged.
 ///
@@ -42,13 +42,28 @@ struct Attached {
 }
 
 impl Attached {
-    /// End this connection because it fell too far behind.
-    fn cut_off(&self) {
-        tracing::warn!(
-            client = self.id,
-            "daemon: disconnecting an attached client that stopped keeping up"
-        );
-        let _ = self.socket.shutdown(std::net::Shutdown::Both);
+    /// Queue `frame`, reporting whether this client is still worth keeping.
+    ///
+    /// A full queue means the client stopped draining: it is cut off, because
+    /// the alternative is serving it a stream with a hole in it. A disconnected
+    /// one has already gone — its writer thread ended when the socket broke —
+    /// so it is simply forgotten, not reported as stalled.
+    fn queue(&self, frame: Frame) -> bool {
+        match self.tx.try_send(frame) {
+            Ok(()) => true,
+            Err(TrySendError::Full(_)) => {
+                tracing::warn!(
+                    client = self.id,
+                    "daemon: disconnecting an attached client that stopped keeping up"
+                );
+                let _ = self.socket.shutdown(std::net::Shutdown::Both);
+                false
+            }
+            Err(TrySendError::Disconnected(_)) => {
+                tracing::debug!(client = self.id, "daemon: attached client already gone");
+                false
+            }
+        }
     }
 }
 
@@ -93,13 +108,7 @@ impl AttachedClients {
     /// queue is full is cut off instead — for itself alone.
     pub fn broadcast(&self, frame: Frame) {
         let mut clients = self.inner.lock().expect("attached clients poisoned");
-        clients.retain(|client| {
-            if client.tx.try_send(frame.clone()).is_ok() {
-                return true;
-            }
-            client.cut_off();
-            false
-        });
+        clients.retain(|client| client.queue(frame.clone()));
     }
 
     /// Send `frame` to one client, if it is still attached.
@@ -108,8 +117,7 @@ impl AttachedClients {
         let Some(index) = clients.iter().position(|client| client.id == id) else {
             return;
         };
-        if clients[index].tx.try_send(frame).is_err() {
-            clients[index].cut_off();
+        if !clients[index].queue(frame) {
             clients.remove(index);
         }
     }
