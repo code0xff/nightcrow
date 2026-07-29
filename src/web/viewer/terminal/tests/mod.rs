@@ -1,4 +1,5 @@
 mod behavior;
+mod scrollback_depth;
 mod size_owner;
 
 use crate::backend::PaneId;
