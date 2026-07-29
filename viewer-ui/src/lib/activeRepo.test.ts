@@ -10,9 +10,21 @@ describe("resolveActiveRepo", () => {
     expect(resolveActiveRepo(null, ["r1", "r2"], null)).toBe("r1");
   });
 
-  it("이미_보고_있는_프로젝트가_있으면_기억된_쪽으로_옮기지_않는다", () => {
-    // Another device switched to r2; this page keeps reading r1.
+  it("서버_값이_그대로면_보고_있는_프로젝트를_유지한다", () => {
+    // Nothing changed since the last poll — this page has already adopted r2 or
+    // moved on itself, and re-applying it would fight a switch in flight.
     expect(resolveActiveRepo("r1", ["r1", "r2"], "r2")).toBe("r1");
+  });
+
+  it("다른_클라이언트가_바꾸면_따라간다", () => {
+    // The project in front belongs to the session, so a switch on the terminal
+    // moves this page too.
+    expect(resolveActiveRepo("r1", ["r1", "r2"], "r2", true)).toBe("r2");
+  });
+
+  it("따라갈_프로젝트가_열려_있지_않으면_보던_곳에_머문다", () => {
+    // The set and the selection can arrive a poll apart.
+    expect(resolveActiveRepo("r1", ["r1", "r2"], "r9", true)).toBe("r1");
   });
 
   it("보던_프로젝트가_닫히면_기억된_쪽으로_떨어진다", () => {

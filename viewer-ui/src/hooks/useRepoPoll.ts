@@ -72,6 +72,11 @@ export function useRepoPoll({
   const { current: writeActiveRepo } = useRef(
     createSerialWriter(api.setActiveRepo),
   );
+  // What the session said was in front on the previous poll. The project in
+  // front is shared, so a *change* here is another client switching and this
+  // page follows it — while an unchanged value is one this page has already
+  // adopted, or one its own switch is still writing back.
+  const servedActiveRef = useRef<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -120,11 +125,14 @@ export function useRepoPoll({
               return ids.map((id) => byId.get(id)!).filter(Boolean);
             });
           }
+          const servedChanged = active_repo !== servedActiveRef.current;
+          servedActiveRef.current = active_repo ?? null;
           setRepo((current) =>
             resolveActiveRepo(
               current,
               list.map((r) => r.id),
               active_repo,
+              servedChanged,
             ),
           );
           if (!cancelled) timer = setTimeout(refresh, REPO_POLL_MS);
