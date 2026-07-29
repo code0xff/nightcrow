@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { api, type TreeEntry, type TreeMatch } from "../api";
+import { latestRequest } from "../lib/latestRequest";
 import {
   ancestorDirs,
   emptyTreeCache,
@@ -55,14 +56,9 @@ export function useTree({
   const [cache, setCache] = useState(emptyTreeCache);
   const [matches, setMatches] = useState<TreeSearchResult>(emptyMatches);
   const [treeSearchLoading, setTreeSearchLoading] = useState(false);
-
-  useEffect(() => {
-    if (!repo || !authed || tab !== "tree") return;
-    api
-      .tree(repo, "")
-      .then((r) => setCache((c) => withChildren(c, "", r.entries)))
-      .catch(handle);
-  }, [repo, authed, tab, handle]);
+  // Lazy state, not a ref: built once, and without allocating a fresh one on
+  // every keystroke that re-renders this hook.
+  const [requests] = useState(latestRequest);
 
   // Avoid tree-search requests until the user has opened a non-empty query.
   useEffect(() => {
@@ -93,16 +89,29 @@ export function useTree({
     };
   }, [repo, authed, tab, filter, filterOpen, handle]);
 
+  // Expanding a directory, collapsing it and expanding it again asks twice,
+  // because the first answer has not arrived to be cached yet. If the answers
+  // then cross, the older one wins for good — the tree does not reread a path
+  // it already holds — so only the newest question's answer is kept.
   const loadTreeChildren = useCallback(
     (path: string) => {
       if (!repo) return;
+      const ticket = requests.start(path);
       api
         .tree(repo, path)
-        .then((r) => setCache((c) => withChildren(c, path, r.entries)))
+        .then((r) => {
+          if (!requests.isCurrent(path, ticket)) return;
+          setCache((c) => withChildren(c, path, r.entries));
+        })
         .catch(handle);
     },
-    [repo, handle],
+    [repo, handle, requests],
   );
+
+  useEffect(() => {
+    if (!repo || !authed || tab !== "tree") return;
+    loadTreeChildren("");
+  }, [repo, authed, tab, loadTreeChildren]);
 
   const toggleTreeDir = useCallback(
     (path: string) => {
