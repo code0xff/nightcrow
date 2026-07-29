@@ -88,17 +88,42 @@ impl Worker {
             }
 
             match self.wake_rx.recv_timeout(self.wait(awake, &state)) {
-                Ok(Wake::Changed(paths)) => {
-                    if snapshot_watch::any_matters(state.repo.as_ref(), &roots, &paths) {
-                        state.changed = true;
+                Ok(wake) => {
+                    if !self.absorb(wake, &mut state, &roots) {
+                        return;
+                    }
+                    // Take the whole backlog in one pass. A build queues
+                    // thousands of events while a single read runs, and both the
+                    // memory they sit in and the stop that arrives behind them
+                    // wait on this loop reaching them.
+                    while let Ok(wake) = self.wake_rx.try_recv() {
+                        if !self.absorb(wake, &mut state, &roots) {
+                            return;
+                        }
                     }
                 }
-                Ok(Wake::Stop) | Err(RecvTimeoutError::Disconnected) => return,
+                Err(RecvTimeoutError::Disconnected) => return,
                 // The read came due on its own: either the rate limit expired with
                 // a change waiting, or the interval that guards against missed
                 // events came round.
                 Err(RecvTimeoutError::Timeout) => state.changed = true,
             }
+        }
+    }
+
+    /// Fold one wake into the state. `false` once told to stop.
+    fn absorb(&self, wake: Wake, state: &mut ReadState, roots: &Roots) -> bool {
+        match wake {
+            // Already owed a read: asking git about every further path would be
+            // work whose answer cannot change what happens next.
+            Wake::Changed(paths) => {
+                if !state.changed && snapshot_watch::any_matters(state.repo.as_ref(), roots, &paths)
+                {
+                    state.changed = true;
+                }
+                true
+            }
+            Wake::Stop => false,
         }
     }
 
