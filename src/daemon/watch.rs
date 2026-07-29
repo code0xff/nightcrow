@@ -98,6 +98,19 @@ pub(super) fn watch(
                 active: current.1.clone(),
                 accent: current.2,
             }));
+            // What was sent, not what the session says now. The two can differ:
+            // this frame was built before the queue was reached, so a client
+            // attaching in between can be given something newer and then be
+            // handed this, one step behind. Recording what went out is what
+            // makes that self-correcting — the next pass finds `told` behind the
+            // session and says it again, within a tick.
+            //
+            // The alternative, building this frame while holding the client
+            // registry as `send_built_to` does, would put `follow` inside that
+            // lock or leave it describing a different set than the one
+            // announced — a repository whose terminals are not streaming when
+            // its tab appears, which is the thing `follow` runs first to
+            // prevent.
             told = current;
         }
     }
