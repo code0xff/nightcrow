@@ -234,5 +234,5 @@ fn encode(message: &ServerMessage) -> Frame {
 }
 
 #[cfg(test)]
-#[path = "serve_tests.rs"]
+#[path = "serve_tests/mod.rs"]
 mod tests;

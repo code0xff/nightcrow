@@ -38,6 +38,29 @@ pub fn make_repo() -> (TempDir, String) {
     (dir, path)
 }
 
+/// A session serving `repos`, with no browser listener bound.
+///
+/// The state, not the server: everything the daemon serves hangs off this, so a
+/// test can drive a real session — catalog, terminal hubs and all — without a
+/// TCP port. Never persists, so tests cannot touch the real
+/// `~/.nightcrow/workspace.json`.
+pub fn session_state(repos: &[String]) -> std::sync::Arc<crate::web::viewer::server::ViewerState> {
+    std::sync::Arc::new(crate::web::viewer::server::ViewerState::new(
+        crate::web::viewer::server::ViewerOptions {
+            bind: "127.0.0.1".parse().unwrap(),
+            port: 0,
+            auth: crate::web::common::auth::Auth::from_plaintext("swordfish").unwrap(),
+            repos: repos.to_vec(),
+            persist: false,
+            startup_commands: Vec::new(),
+            hot: crate::config::AgentIndicatorConfig::default(),
+            prefs: crate::web::viewer::prefs::PrefsStore::at(std::path::PathBuf::from(
+                "/nonexistent/nightcrow/viewer.json",
+            )),
+        },
+    ))
+}
+
 /// In-memory `TerminalBackend` for tests: spawns nothing, just records the
 /// command each `create_pane` was asked to run so pane-creation logic can be
 /// asserted deterministically without a real PTY or shell.
