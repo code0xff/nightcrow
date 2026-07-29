@@ -60,8 +60,8 @@ pub struct HotConfigDto {
 pub struct ViewerBootstrapDto {
     pub repos: Vec<RepoDto>,
     pub hot: HotConfigDto,
-    /// Index into the viewer's accent presets, stored server-side so every
-    /// device agrees.
+    /// Index into the accent presets. The session's colour, stored server-side
+    /// so every device — and every attached TUI — agrees.
     pub accent: usize,
     /// File-sidebar width in CSS px, stored server-side like the accent so
     /// every device opens at the same split.

@@ -32,7 +32,7 @@ fn accent_index_from_index_roundtrip_for_every_variant() {
 
 #[test]
 fn accent_from_index_wraps_out_of_range() {
-    // Defensive: a stale session.json with a huge accent_idx must not
+    // Defensive: a hand-edited viewer.json with a huge accent must not
     // panic — `from_index` wraps via `%`. The compile-time guard above
     // keeps `ALL` non-empty so `% len` is sound.
     assert_eq!(

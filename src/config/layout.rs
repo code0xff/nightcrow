@@ -48,9 +48,9 @@ pub enum Accent {
 const _: () = assert!(!Accent::ALL.is_empty(), "Accent::ALL must be non-empty");
 
 impl Accent {
-    // Variant declaration order MUST match this slice so accent_idx values
-    // persisted in pre-existing session.json files keep mapping to the same
-    // color after the strong-enum migration.
+    // Variant declaration order MUST match this slice so accent indices already
+    // written down — the session's in `viewer.json`, and the per-repo ones older
+    // session files still carry — keep mapping to the same color.
     pub const ALL: &'static [Accent] = &[
         Accent::Yellow,
         Accent::Cyan,

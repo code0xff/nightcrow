@@ -1,3 +1,4 @@
+mod accent;
 mod helpers;
 mod mouse;
 mod mouse_clicks;

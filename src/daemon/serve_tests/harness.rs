@@ -168,6 +168,14 @@ impl Client {
         }
     }
 
+    /// The accent the session says it is painted in, from the next set it sends.
+    pub(super) fn next_accent(&mut self) -> usize {
+        match self.next_repos() {
+            ServerMessage::Repos { accent, .. } => accent,
+            other => panic!("expected a repo list, got {other:?}"),
+        }
+    }
+
     /// The next repository set, skipping terminal traffic.
     ///
     /// Subscribing a client to its repositories starts that traffic
