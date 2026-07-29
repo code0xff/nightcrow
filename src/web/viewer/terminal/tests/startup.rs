@@ -232,9 +232,13 @@ fn a_configured_startup_terminal_is_announced_under_its_name() {
     let dir = tempfile::TempDir::new().unwrap();
     let hub = TerminalHub::spawn(
         &dir.path().to_string_lossy(),
+        // Long-lived on purpose, unlike the `printf` the tests above use: this
+        // one checks what a *later* client is replayed, and a pane whose command
+        // has exited is gone from the session by then — under load the exit wins
+        // the race and the replay is empty.
         vec![StartupCommand {
             name: Some("Claude".into()),
-            command: "printf hello".into(),
+            command: "sleep 30".into(),
         }],
     );
     let session = hub.connect();
