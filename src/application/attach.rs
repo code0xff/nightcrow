@@ -27,11 +27,15 @@ pub(crate) fn run_attach() -> Result<()> {
     let startup_commands = crate::config::resolve_startup_commands(&cfg, &[])?;
     let leader = crate::config::parse_leader(&cfg.input.leader)?;
 
-    // The log anchor cannot follow the tabs, and there is no repository named
-    // on the command line to stand in, so it is the working directory the
-    // client was started from.
-    let anchor = std::env::current_dir()?.to_string_lossy().into_owned();
-    let _log_guard = crate::platform::logging::init_logging(&cfg.log, &anchor);
+    // Anchored where the daemon's is, not at the working directory. The
+    // relative default (`.nightcrow/logs`) resolved against the cwd would
+    // create that directory inside whatever repository the client was started
+    // from, and nightcrow writes nothing inside a repository it is only
+    // reading.
+    let _log_guard = crate::platform::logging::init_logging(
+        &cfg.log,
+        &crate::platform::paths::state_dir_anchor(),
+    );
     tracing::info!("attached to the nightcrow daemon");
 
     let _guard = TerminalGuard::enter(cfg.mouse.enabled)?;

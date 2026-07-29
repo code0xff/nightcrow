@@ -70,6 +70,22 @@ pub(crate) fn run_daemon(exec: Vec<String>, port: Option<u16>, bind: Option<Stri
     // the user already said what they want by running this.
     cfg.web_viewer.enabled = true;
 
+    // Logging comes up before anything is served, so a failure while opening
+    // repositories has somewhere to go. Anchored at the nightcrow directory
+    // rather than a repository: the daemon has no one repository, and the
+    // relative default (`.nightcrow/logs`) would otherwise land wherever the
+    // process happened to be started.
+    let _log_guard = crate::platform::logging::init_logging(
+        &cfg.log,
+        &crate::platform::paths::state_dir_anchor(),
+    );
+    tracing::info!(
+        level = cfg.log.level.as_str(),
+        rotation = ?cfg.log.rotation,
+        prompt_log = cfg.log.prompt_log,
+        "logging initialized"
+    );
+
     let path = crate::config::config_file_path()?;
     if let Some(password) = crate::config::ensure_web_viewer_password(&mut cfg, &path)? {
         eprintln!(

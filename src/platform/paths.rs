@@ -21,6 +21,23 @@ pub(crate) fn expand_tilde(path: impl AsRef<Path>) -> PathBuf {
     }
 }
 
+/// The directory a relative state path — the log directory, chiefly — is
+/// resolved against when there is no one repository to anchor it to.
+///
+/// The home directory, so the default `.nightcrow/logs` lands beside the
+/// config and workspace files. Not the working directory: the daemon has no
+/// repository, and a client attaches from inside one it is only reading, where
+/// nightcrow creates nothing. Falls back to the working directory only when
+/// there is no home to find, which is the same fallback everything else here
+/// takes.
+pub(crate) fn state_dir_anchor() -> String {
+    dirs::home_dir()
+        .or_else(|| std::env::current_dir().ok())
+        .unwrap_or_default()
+        .to_string_lossy()
+        .into_owned()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
