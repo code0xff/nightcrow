@@ -68,6 +68,18 @@ pub(super) fn pending_count(frame: &TerminalFrame) -> Option<usize> {
     value["count"].as_u64().map(|n| n as usize)
 }
 
+/// The name a `created` frame gives its pane, if the session named it.
+pub(super) fn created_title(frame: &TerminalFrame) -> Option<String> {
+    let TerminalFrame::Control(json) = frame else {
+        return None;
+    };
+    let value: serde_json::Value = serde_json::from_str(json).ok()?;
+    if value["type"] != "created" {
+        return None;
+    }
+    value["title"].as_str().map(str::to_string)
+}
+
 /// The size a `created` frame reports for its pane.
 pub(super) fn created_size(frame: &TerminalFrame) -> Option<(u16, u16)> {
     let TerminalFrame::Control(json) = frame else {
@@ -171,6 +183,7 @@ fn server_messages_serialize_with_a_type_tag() {
         rows: 40,
         cols: 120,
         client: None,
+        title: None,
     })
     .unwrap();
     // No requester, no field: the browser reads these already, and a pane
@@ -182,6 +195,7 @@ fn server_messages_serialize_with_a_type_tag() {
         rows: 40,
         cols: 120,
         client: Some(7),
+        title: None,
     })
     .unwrap();
     assert_eq!(

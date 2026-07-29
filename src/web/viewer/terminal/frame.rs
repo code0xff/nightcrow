@@ -109,6 +109,12 @@ pub enum ServerMessage {
         /// unchanged.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         client: Option<u64>,
+        /// What the session calls this pane, when it has a name of its own — a
+        /// startup terminal opened under a configured name. Absent for a pane a
+        /// client asked for, which that client names itself, and for one nothing
+        /// has named: a program emitting OSC 0/2 renames either afterwards.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        title: Option<String>,
     },
     Exited {
         pane: PaneId,

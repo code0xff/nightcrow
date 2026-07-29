@@ -125,10 +125,10 @@ pub(crate) fn run_daemon(
         .collect();
     // Resolved before anything is served so a too-many-panes error is a plain
     // stderr line at startup rather than a failure the first client sees.
-    let startup = crate::config::resolve_startup_commands(&cfg, &exec)?
-        .into_iter()
-        .map(|sc| sc.command)
-        .collect();
+    // Names and all: the session is what opens these panes now, so it is what
+    // has to know what they are called. Dropping the configured name here left
+    // every startup pane titled "shell 1" in every client.
+    let startup = crate::config::resolve_startup_commands(&cfg, &exec)?;
     let server = crate::web::viewer::server::ViewerServer::start_from_config(
         &cfg.web_viewer,
         &cfg.agent_indicator,

@@ -102,6 +102,12 @@ export function useTerminalSocket({
               rows: message.rows,
               cols: message.cols,
             });
+            // The session names a configured startup terminal, and calls it the
+            // same thing in every client. A pane this page asked for has no
+            // name until the program in it sets one.
+            if (typeof message.title === "string" && message.title) {
+              setTitles((current) => ({ ...current, [pane]: message.title }));
+            }
             setPanes((current) => [...current, pane]);
             if (expectCreateRef.current > 0) {
               expectCreateRef.current -= 1;

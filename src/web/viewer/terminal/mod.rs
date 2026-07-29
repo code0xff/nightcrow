@@ -47,9 +47,10 @@ pub struct TerminalHub {
     next_client_id: AtomicU64,
     stop: Arc<AtomicBool>,
     worker: Mutex<Option<thread::JoinHandle<()>>>,
-    /// Commands to run in startup terminals, created once a client has sized
-    /// them. Empty means a single bare shell (matching the TUI's default).
-    startup: Vec<String>,
+    /// The terminals to open once a client has sized them, with the names they
+    /// were configured under. Empty means a single bare shell (matching the
+    /// TUI's default).
+    startup: Vec<crate::config::StartupCommand>,
     /// Set when a client claims the startup terminals by answering with their
     /// sizes, so they are created exactly once for the hub's life rather than
     /// on every (re)connection. See [`TerminalHub::claim_startup`].
@@ -59,7 +60,7 @@ pub struct TerminalHub {
 impl TerminalHub {
     /// Start a hub whose terminals run in `cwd`. `startup` is the list of
     /// commands to launch when the first client connects (empty = one shell).
-    pub fn spawn(cwd: &str, startup: Vec<String>) -> Arc<Self> {
+    pub fn spawn(cwd: &str, startup: Vec<crate::config::StartupCommand>) -> Arc<Self> {
         let (commands, command_rx) = mpsc::sync_channel::<Command>(256);
         let hub = Arc::new(Self {
             commands,
@@ -110,6 +111,7 @@ impl TerminalHub {
                     pane: pane.id,
                     rows: pane.rows,
                     cols: pane.cols,
+                    title: pane.title.clone(),
                     // A replayed pane predates this client, so nobody here
                     // asked for it — it must not take the focus of whatever the
                     // client is already looking at.
@@ -182,20 +184,29 @@ impl TerminalHub {
         {
             return;
         }
-        let commands: Vec<Option<String>> = if self.startup.is_empty() {
+        // A bare shell when nothing is configured, matching the TUI's default.
+        let configured: Vec<Option<crate::config::StartupCommand>> = if self.startup.is_empty() {
             vec![None]
         } else {
-            self.startup.iter().map(|c| Some(c.clone())).collect()
+            self.startup.iter().cloned().map(Some).collect()
         };
-        let panes: Vec<StartupPane> = commands
+        let panes: Vec<StartupPane> = configured
             .into_iter()
             .enumerate()
-            .map(|(index, command)| StartupPane {
+            .map(|(index, configured)| StartupPane {
                 // A client that could only measure some cells still gets the
                 // rest; they are simply born at the old default and corrected
                 // by the first fit, which is where every pane started before.
                 size: sizes.get(index).copied().unwrap_or(DEFAULT_PANE_SIZE),
-                command,
+                // The name it was configured under, else the command text: what
+                // the operator would recognise the pane by. A program that emits
+                // OSC 0/2 still renames it afterwards.
+                title: configured.as_ref().map(|sc| {
+                    sc.name
+                        .clone()
+                        .unwrap_or_else(|| sc.command.trim().to_string())
+                }),
+                command: configured.map(|sc| sc.command),
             })
             .collect();
 

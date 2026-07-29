@@ -183,6 +183,9 @@ impl TerminalBackend for PtyBackend {
         // way, and this backend simply knows the answer before it queues it.
         // `requested` is always true — nothing else can create a pane here.
         self.created.push(BackendEvent::Created {
+            // A local backend has no name to give: whoever opened the pane knows
+            // what it is for.
+            title: None,
             pane: id,
             rows,
             cols,

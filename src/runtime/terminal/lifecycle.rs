@@ -24,7 +24,8 @@ impl TerminalState {
                     rows,
                     cols,
                     requested,
-                } => self.adopt_pane(pane, rows, cols, requested),
+                    title,
+                } => self.adopt_pane(pane, rows, cols, requested, title),
                 BackendEvent::Output { pane, data } => {
                     let Some(emulator) = self.emulators.get_mut(&pane) else {
                         continue;
@@ -171,7 +172,14 @@ impl TerminalState {
     /// pane actually turns up. `requested` says whether this client asked: one
     /// it did takes the focus, and one another client opened lands in the list
     /// without moving anybody's cursor.
-    fn adopt_pane(&mut self, id: PaneId, rows: u16, cols: u16, requested: bool) {
+    fn adopt_pane(
+        &mut self,
+        id: PaneId,
+        rows: u16,
+        cols: u16,
+        requested: bool,
+        named: Option<String>,
+    ) {
         if self.panes.iter().any(|pane| pane.id == id) {
             return;
         }
@@ -179,10 +187,17 @@ impl TerminalState {
         self.emulators
             .insert(id, PaneEmulator::new(rows, cols, SCROLLBACK_LINES));
         self.last_content_size.insert(id, (rows, cols));
-        let title = requested
-            .then(|| self.pending_titles.pop_front())
-            .flatten()
-            .flatten()
+        // The session's name first: a configured startup terminal is called the
+        // same thing in every client, and this one did not ask for it and has no
+        // title queued for it. Then this client's own queued title, then the
+        // position.
+        let title = named
+            .or_else(|| {
+                requested
+                    .then(|| self.pending_titles.pop_front())
+                    .flatten()
+                    .flatten()
+            })
             .unwrap_or_else(|| format!("shell {}", self.panes.len() + 1));
         self.panes.push(PaneInfo { id, title });
         if requested {

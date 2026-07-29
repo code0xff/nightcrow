@@ -100,7 +100,7 @@ pub struct ViewerOptions {
     /// Mirror catalog changes into the shared workspace file (headless
     /// `serve` only — alongside the TUI, the TUI owns that file).
     pub persist: bool,
-    pub startup_commands: Vec<String>,
+    pub startup_commands: Vec<crate::config::StartupCommand>,
     pub hot: crate::config::AgentIndicatorConfig,
     pub prefs: PrefsStore,
 }
@@ -154,7 +154,7 @@ impl ViewerServer {
         agent_indicator: &crate::config::AgentIndicatorConfig,
         paths: &[String],
         persist: bool,
-        startup_commands: Vec<String>,
+        startup_commands: Vec<crate::config::StartupCommand>,
     ) -> Result<Self> {
         let auth = if let Some(hash) = viewer.hashed_password.as_deref() {
             Auth::from_hashed(hash)?

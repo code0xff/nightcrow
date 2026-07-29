@@ -113,6 +113,7 @@ mod panes_from_elsewhere {
             rows: 24,
             cols: 80,
             requested: false,
+            title: None,
         });
         state.poll();
 
@@ -137,6 +138,7 @@ mod panes_from_elsewhere {
                 rows: 24,
                 cols: 80,
                 requested: false,
+                title: None,
             });
             state.poll();
         }
@@ -171,6 +173,7 @@ mod panes_from_elsewhere {
             rows: 24,
             cols: 80,
             requested: false,
+            title: None,
         });
         state.poll();
         // Now the requested one arrives and claims the label it was given.

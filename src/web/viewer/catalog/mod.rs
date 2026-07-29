@@ -43,7 +43,7 @@ pub struct Catalog {
     /// Commands each repository's terminal hub runs as startup terminals on the
     /// first client connect (empty = one bare shell). Applied to every hub the
     /// catalog spawns.
-    startup_commands: Vec<String>,
+    startup_commands: Vec<crate::config::StartupCommand>,
 }
 
 impl Catalog {
@@ -53,7 +53,7 @@ impl Catalog {
 
     /// Like [`Catalog::new`], but every terminal hub it spawns runs `startup`
     /// as its startup terminals.
-    pub fn with_startup(startup_commands: Vec<String>) -> Self {
+    pub fn with_startup(startup_commands: Vec<crate::config::StartupCommand>) -> Self {
         Self {
             startup_commands,
             ..Self::default()

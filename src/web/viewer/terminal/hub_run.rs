@@ -44,7 +44,9 @@ impl TerminalHub {
                             continue;
                         }
                         match backend.open_pane(rows, cols, command.as_deref()) {
-                            Ok(pane) => self.register_pane(pane, rows, cols, Some(client)),
+                            // Unnamed: a pane a client asked for is that client's
+                            // to name, and the hub has nothing to add.
+                            Ok(pane) => self.register_pane(pane, rows, cols, Some(client), None),
                             Err(err) => {
                                 tracing::warn!(%err, "viewer: could not create a terminal");
                                 self.send_error_to(client, "could not start a terminal");
@@ -97,9 +99,13 @@ impl TerminalHub {
                                 // whichever client happened to measure them
                                 // first, so they must not pull that client's
                                 // focus onto them.
-                                Ok(id) => {
-                                    self.register_pane(id, pane.size.rows, pane.size.cols, None)
-                                }
+                                Ok(id) => self.register_pane(
+                                    id,
+                                    pane.size.rows,
+                                    pane.size.cols,
+                                    None,
+                                    pane.title.clone(),
+                                ),
                                 Err(err) => {
                                     tracing::warn!(%err, "viewer: could not start a terminal");
                                     self.send_error_to(
@@ -206,17 +212,28 @@ impl TerminalHub {
     /// both and never neither.
     /// `client` is whoever asked for the pane, carried so that client alone can
     /// treat it as the one it opened. `None` for a pane nobody asked for.
-    fn register_pane(&self, pane: PaneId, rows: u16, cols: u16, client: Option<u64>) {
+    /// `title` is the name the session gives it, which only a configured startup
+    /// terminal has.
+    fn register_pane(
+        &self,
+        pane: PaneId,
+        rows: u16,
+        cols: u16,
+        client: Option<u64>,
+        title: Option<String>,
+    ) {
         let json = serde_json::to_string(&ServerMessage::Created {
             pane,
             rows,
             cols,
             client,
+            title: title.clone(),
         })
         .ok();
         let mut state = self.state.lock().expect("terminal state poisoned");
         state.panes.push(PaneState {
             id: pane,
+            title,
             scrollback: VecDeque::new(),
             rows,
             cols,

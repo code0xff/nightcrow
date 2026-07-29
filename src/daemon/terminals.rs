@@ -164,11 +164,13 @@ fn rewrite_requester(event: HubServerMessage, hub_client: u64, attached: u64) ->
             rows,
             cols,
             client,
+            title,
         } => HubServerMessage::Created {
             pane,
             rows,
             cols,
             client: (client == Some(hub_client)).then_some(attached),
+            title,
         },
         other => other,
     }

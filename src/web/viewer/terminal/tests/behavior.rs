@@ -1,11 +1,21 @@
 use super::{
-    collect_created, created_pane, created_size, next_matching, pending_count, reordered_order,
-    wait_for,
+    collect_created, created_pane, created_size, created_title, next_matching, pending_count,
+    reordered_order, wait_for,
 };
 use crate::backend::PaneId;
+use crate::config::StartupCommand;
 use crate::web::viewer::limits;
 use crate::web::viewer::terminal::TerminalHub;
 use crate::web::viewer::terminal::frame::{ClientMessage, PaneSize, TerminalFrame};
+
+/// A startup terminal configured with no name of its own, which is what most of
+/// these tests care about — they assert on panes, not on what they are called.
+fn startup(command: &str) -> StartupCommand {
+    StartupCommand {
+        name: None,
+        command: command.to_string(),
+    }
+}
 
 #[test]
 fn creating_a_terminal_announces_it_and_streams_output() {
@@ -228,10 +238,7 @@ fn a_startup_terminal_is_offered_for_sizing_and_born_at_that_size() {
     // The whole point of the handshake: the child must never draw a frame at a
     // size no client chose, so the PTY does not exist until one has measured.
     let dir = tempfile::TempDir::new().unwrap();
-    let hub = TerminalHub::spawn(
-        &dir.path().to_string_lossy(),
-        vec!["printf hello".to_string()],
-    );
+    let hub = TerminalHub::spawn(&dir.path().to_string_lossy(), vec![startup("printf hello")]);
     let session = hub.connect();
 
     assert_eq!(
@@ -311,10 +318,10 @@ fn a_startup_set_that_fills_the_cap_still_gets_every_terminal() {
     // belongs to another connection's handler thread and has no seam to drive
     // it from here — so what this pins is the outcome, not that interleaving.
     let dir = tempfile::TempDir::new().unwrap();
-    let startup: Vec<String> = (0..limits::MAX_PTYS_PER_REPO)
-        .map(|i| format!("printf startup{i}"))
+    let configured: Vec<StartupCommand> = (0..limits::MAX_PTYS_PER_REPO)
+        .map(|i| startup(&format!("printf startup{i}")))
         .collect();
-    let hub = TerminalHub::spawn(&dir.path().to_string_lossy(), startup);
+    let hub = TerminalHub::spawn(&dir.path().to_string_lossy(), configured);
     let session = hub.connect();
     assert_eq!(
         next_matching(&session, |f| pending_count(f).is_some()).and_then(|f| pending_count(&f)),
@@ -346,10 +353,10 @@ fn a_startup_command_the_cap_turned_away_is_named() {
     // will not run until the hub restarts — the user has to open it by hand,
     // and cannot without being told which one it was.
     let dir = tempfile::TempDir::new().unwrap();
-    let startup: Vec<String> = (0..limits::MAX_PTYS_PER_REPO)
-        .map(|i| format!("printf startup{i}"))
+    let configured: Vec<StartupCommand> = (0..limits::MAX_PTYS_PER_REPO)
+        .map(|i| startup(&format!("printf startup{i}")))
         .collect();
-    let hub = TerminalHub::spawn(&dir.path().to_string_lossy(), startup);
+    let hub = TerminalHub::spawn(&dir.path().to_string_lossy(), configured);
     let session = hub.connect();
     next_matching(&session, |f| pending_count(f).is_some()).expect("no offer");
 
@@ -424,5 +431,65 @@ fn only_the_first_answer_opens_the_startup_terminals() {
         .is_none(),
         "a second answer must not open another terminal"
     );
+    hub.stop();
+}
+
+#[test]
+fn a_configured_startup_terminal_is_announced_under_its_name() {
+    // The session opens these, so the session is what knows what they are
+    // called — every client shows the same name, and none of them has to read
+    // the config to find it. Without this a `[[startup_command]] name` reached
+    // nobody and every startup pane was "shell 1".
+    let dir = tempfile::TempDir::new().unwrap();
+    let hub = TerminalHub::spawn(
+        &dir.path().to_string_lossy(),
+        vec![StartupCommand {
+            name: Some("Claude".into()),
+            command: "printf hello".into(),
+        }],
+    );
+    let session = hub.connect();
+    session.dispatch(ClientMessage::Start {
+        sizes: vec![PaneSize { rows: 24, cols: 80 }],
+    });
+
+    let created = next_matching(&session, |f| created_pane(f).is_some()).expect("no pane");
+    assert_eq!(created_title(&created).as_deref(), Some("Claude"));
+
+    // And a client that connects later is told it too, rather than showing
+    // something the other clients do not call it.
+    let late = hub.connect();
+    let replayed = next_matching(&late, |f| created_pane(f).is_some()).expect("no replay");
+    assert_eq!(created_title(&replayed).as_deref(), Some("Claude"));
+    hub.stop();
+}
+
+#[test]
+fn an_unnamed_startup_terminal_falls_back_to_its_command() {
+    // What the operator wrote is what they would recognise it by.
+    let dir = tempfile::TempDir::new().unwrap();
+    let hub = TerminalHub::spawn(&dir.path().to_string_lossy(), vec![startup("printf hello")]);
+    let session = hub.connect();
+    session.dispatch(ClientMessage::Start {
+        sizes: vec![PaneSize { rows: 24, cols: 80 }],
+    });
+
+    let created = next_matching(&session, |f| created_pane(f).is_some()).expect("no pane");
+    assert_eq!(created_title(&created).as_deref(), Some("printf hello"));
+    hub.stop();
+}
+
+#[test]
+fn a_pane_a_client_opened_is_left_unnamed_by_the_session() {
+    // That client named it, or nothing did — either way the hub has nothing to
+    // add, and stamping a name here would override a title the client chose.
+    let dir = tempfile::TempDir::new().unwrap();
+    let hub = TerminalHub::spawn(&dir.path().to_string_lossy(), Vec::new());
+    let session = hub.connect();
+
+    session.dispatch(ClientMessage::Create { rows: 24, cols: 80 });
+
+    let created = next_matching(&session, |f| created_pane(f).is_some()).expect("no pane");
+    assert_eq!(created_title(&created), None);
     hub.stop();
 }

@@ -1,4 +1,5 @@
 use super::common::*;
+use crate::backend::BackendEvent;
 
 #[test]
 fn create_pane_defaults_to_shell_label_and_no_command() {
@@ -274,4 +275,39 @@ fn an_exit_for_a_pane_this_client_does_not_have_is_dropped() {
 
     assert!(state.poll().is_empty(), "nothing of this client's exited");
     assert_eq!(state.panes.len(), 1);
+}
+
+#[test]
+fn a_pane_the_session_named_keeps_that_name() {
+    // A configured startup terminal is called the same thing in every client:
+    // this one did not ask for it and has no title queued for it, so the name
+    // has to come with the pane.
+    let (mut state, events) = state_with_event_queue();
+    events.borrow_mut().push(BackendEvent::Created {
+        pane: 1,
+        rows: 24,
+        cols: 80,
+        requested: false,
+        title: Some("Claude".into()),
+    });
+
+    state.poll();
+
+    assert_eq!(state.panes[0].title, "Claude");
+}
+
+#[test]
+fn a_pane_nobody_named_falls_back_to_its_position() {
+    let (mut state, events) = state_with_event_queue();
+    events.borrow_mut().push(BackendEvent::Created {
+        pane: 1,
+        rows: 24,
+        cols: 80,
+        requested: false,
+        title: None,
+    });
+
+    state.poll();
+
+    assert_eq!(state.panes[0].title, "shell 1");
 }

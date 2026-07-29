@@ -22,6 +22,11 @@ pub enum BackendEvent {
         /// take the focus away from what this client is looking at — which tab
         /// and pane a client sits on is its own business.
         requested: bool,
+        /// The name the session gives the pane, which only a configured startup
+        /// terminal has. `None` leaves the naming to this client (the title it
+        /// queued for a pane it asked for, else a positional default), and a
+        /// program emitting OSC 0/2 renames it either way.
+        title: Option<String>,
     },
     Output {
         pane: PaneId,

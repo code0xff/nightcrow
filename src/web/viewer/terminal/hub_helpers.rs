@@ -60,10 +60,12 @@ pub enum Command {
     },
 }
 
-/// One startup terminal: the command to run, at the size a client measured.
+/// One startup terminal: the command to run, at the size a client measured, under
+/// the name it was configured with.
 pub struct StartupPane {
     pub(super) size: crate::web::viewer::terminal::frame::PaneSize,
     pub(super) command: Option<String>,
+    pub(super) title: Option<String>,
 }
 
 /// A live terminal and the recent raw bytes it has produced, kept so a client
@@ -71,6 +73,11 @@ pub struct StartupPane {
 /// screen. Bounded by [`limits::MAX_TERMINAL_SCROLLBACK_BYTES`].
 pub(super) struct PaneState {
     pub(super) id: PaneId,
+    /// The name the session gave it, if any — a configured startup terminal has
+    /// one before it runs. Kept so a client that connects later is told it too,
+    /// rather than showing "shell 1" for a pane every other client calls
+    /// something else.
+    pub(super) title: Option<String>,
     pub(super) scrollback: VecDeque<u8>,
     /// The size the PTY is currently set to, tracked so a connecting client
     /// learns it and can skip a resize that would change nothing.

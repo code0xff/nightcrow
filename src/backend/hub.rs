@@ -117,11 +117,13 @@ impl TerminalBackend for HubBackend {
                     rows,
                     cols,
                     client,
+                    title,
                 }) => events.push(BackendEvent::Created {
                     pane,
                     rows,
                     cols,
                     requested: client == Some(self.link.client_id()),
+                    title,
                 }),
                 TerminalMessage::Event(HubServerMessage::Exited { pane }) => {
                     events.push(BackendEvent::Exited { pane })

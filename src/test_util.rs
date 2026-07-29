@@ -92,6 +92,9 @@ impl crate::backend::TerminalBackend for FakeBackend {
                 rows,
                 cols,
                 requested: true,
+                // A local backend gives no name; the caller's queued title or the
+                // position decides.
+                title: None,
             });
         Ok(())
     }

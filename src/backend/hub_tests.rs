@@ -115,6 +115,7 @@ fn a_pane_this_client_asked_for_is_reported_as_its_own() {
         rows: 24,
         cols: 80,
         client: Some(MINE),
+        title: None,
     });
 
     let events = wired.backend.drain_events();
@@ -139,12 +140,14 @@ fn a_pane_another_client_opened_arrives_without_claiming_the_focus() {
         rows: 24,
         cols: 80,
         client: Some(MINE + 1),
+        title: None,
     });
     wired.deliver(HubServerMessage::Created {
         pane: 3,
         rows: 24,
         cols: 80,
         client: None,
+        title: None,
     });
 
     let events = wired.backend.drain_events();

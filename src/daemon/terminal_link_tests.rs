@@ -7,6 +7,7 @@ fn created(pane: PaneId) -> TerminalMessage {
         rows: 24,
         cols: 80,
         client: None,
+        title: None,
     })
 }
 
