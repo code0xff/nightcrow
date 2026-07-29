@@ -13,4 +13,5 @@ pub mod limits;
 pub mod prefs;
 pub mod runtime;
 pub mod server;
+pub mod session;
 pub mod terminal;

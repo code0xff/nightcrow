@@ -1,8 +1,9 @@
 use super::ViewerState;
 use super::http_util::{json_error, json_response};
 use crate::web::common::http::RequestHead;
-use crate::web::viewer::catalog::{AddOutcome, RepoEntry};
+use crate::web::viewer::catalog::RepoEntry;
 use crate::web::viewer::dto::Envelope;
+use crate::web::viewer::session;
 use anyhow::Result;
 use std::sync::Arc;
 
@@ -88,32 +89,18 @@ pub(super) fn handle_open_repo(body: &str, state: &ViewerState) -> Vec<u8> {
         Ok(request) => request,
         Err(_) => return json_error("400 Bad Request", "expected a JSON body with a path"),
     };
-    let raw = request.path.trim();
-    if raw.is_empty() {
-        return json_error("400 Bad Request", "a path is required");
-    }
-    let expanded = crate::platform::paths::expand_tilde(raw);
-    // is_dir() follows symlinks and is false for a missing path — either way it
-    // cannot be served.
-    if !expanded.is_dir() {
-        return json_error("400 Bad Request", "no such directory");
-    }
-    let resolved = crate::git::resolve_repo_path(&expanded)
-        .to_string_lossy()
-        .into_owned();
-
-    match state
-        .catalog
-        .add_path(resolved, crate::workspace::MAX_PROJECTS)
-    {
-        AddOutcome::Added(repo) => {
-            persist_workspace(state);
+    match session::open_repo(state, &request.path) {
+        Ok(repo) => {
             match serde_json::to_string(&Envelope::new(serde_json::json!({ "repo": repo }))) {
                 Ok(json) => json_response("200 OK", &json, &[]),
                 Err(_) => json_error("500 Internal Server Error", "could not encode repository"),
             }
         }
-        AddOutcome::TooMany => json_error(
+        Err(session::OpenError::EmptyPath) => json_error("400 Bad Request", "a path is required"),
+        Err(session::OpenError::NotADirectory) => {
+            json_error("400 Bad Request", "no such directory")
+        }
+        Err(session::OpenError::TooMany) => json_error(
             "409 Conflict",
             "the maximum number of repositories is already open",
         ),
@@ -188,16 +175,17 @@ pub(super) fn handle_mkdir(body: &str) -> Vec<u8> {
 /// Idempotent from the client's view: an unknown id is a 404, a known one is
 /// removed and its runtime/terminals stopped by the catalog rebuild.
 pub(super) fn handle_close_repo(head: &RequestHead, state: &ViewerState) -> Vec<u8> {
-    let entry = match lookup_repo(head, state) {
-        Ok(entry) => entry,
-        Err(response) => return response,
+    let Some(id) = head.query_param("repo") else {
+        return json_error("400 Bad Request", "missing repo parameter");
     };
-    state.catalog.remove_path(&entry.path);
-    persist_workspace(state);
-    let repos = state.catalog.list();
-    match serde_json::to_string(&Envelope::new(serde_json::json!({ "repos": repos }))) {
-        Ok(json) => json_response("200 OK", &json, &[]),
-        Err(_) => json_error("500 Internal Server Error", "could not encode repositories"),
+    match session::close_repo(state, &id) {
+        Ok(repos) => {
+            match serde_json::to_string(&Envelope::new(serde_json::json!({ "repos": repos }))) {
+                Ok(json) => json_response("200 OK", &json, &[]),
+                Err(_) => json_error("500 Internal Server Error", "could not encode repositories"),
+            }
+        }
+        Err(session::CloseError::UnknownRepo) => json_error("404 Not Found", "unknown repository"),
     }
 }
 
@@ -206,36 +194,11 @@ pub(super) fn handle_reorder_repos(body: &str, state: &ViewerState) -> Vec<u8> {
         Ok(request) => request,
         Err(_) => return json_error("400 Bad Request", "expected a JSON body with an order"),
     };
-    let paths: Vec<String> = request
-        .order
-        .iter()
-        .filter_map(|id| state.catalog.get(id).map(|entry| entry.path.clone()))
-        .collect();
-    state.catalog.reorder(&paths);
-    persist_workspace(state);
-    let repos = state.catalog.list();
+    let repos = session::reorder_repos(state, &request.order);
     match serde_json::to_string(&Envelope::new(serde_json::json!({ "repos": repos }))) {
         Ok(json) => json_response("200 OK", &json, &[]),
         Err(_) => json_error("500 Internal Server Error", "could not encode repositories"),
     }
-}
-
-/// Mirror the served set into the shared workspace file so the next launch —
-/// TUI, mirror, or viewer — starts with the same projects. No-op unless the
-/// server was started with `persist` (headless `serve`); alongside the TUI,
-/// the TUI owns that file. The existing per-repo view state and active tab are
-/// preserved; only the open-repo list is rewritten.
-fn persist_workspace(state: &ViewerState) {
-    if !state.persist {
-        return;
-    }
-    let mut ws = crate::workspace::persistence::load_workspace().unwrap_or_default();
-    let active_path = ws.repos.get(ws.active).cloned();
-    ws.repos = state.catalog.paths();
-    ws.active = active_path
-        .and_then(|path| ws.repos.iter().position(|repo| repo == &path))
-        .unwrap_or(0);
-    crate::workspace::persistence::save_workspace(&ws);
 }
 
 /// Resolve the `repo` parameter to an entry, or produce the 404 response.
