@@ -47,7 +47,7 @@ fn await_repos(client: &mut DaemonClient) -> Vec<String> {
     let deadline = Instant::now() + Duration::from_secs(5);
     while Instant::now() < deadline {
         for message in client.drain() {
-            if let ServerMessage::Repos { repos } = message {
+            if let ServerMessage::Repos { repos, .. } = message {
                 return repos.into_iter().map(|repo| repo.path).collect();
             }
         }

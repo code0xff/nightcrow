@@ -1,4 +1,4 @@
-use super::{focus_if_open, notify_repo};
+use super::{focus_repo, notify_repo};
 use crate::app::App;
 use crate::app::tests::app_with_files;
 use crate::workspace::Workspace;
@@ -10,37 +10,44 @@ fn project_at(path: &str) -> App {
     app
 }
 
+/// A workspace with a tab per path, each carrying the catalog id the daemon
+/// would have given it (`r-/a` for `/a`), since that is what a client names a
+/// repository by.
 fn workspace_on(paths: &[&str]) -> Workspace {
     let mut ws = Workspace::new(KeyEvent::new(KeyCode::Char('f'), KeyModifiers::CONTROL));
     for path in paths {
         assert!(ws.add(project_at(path)));
+        ws.set_repo_id(path, &id_of(path));
     }
     ws
 }
 
+fn id_of(path: &str) -> String {
+    format!("r-{path}")
+}
+
 #[test]
-fn asking_for_a_repo_another_tab_already_holds_moves_to_it() {
-    // What the dialog did before the daemon owned the tabs: opening a
-    // repository that is already open focuses it. Through a daemon the open is
-    // a request whose answer is the whole set, which says nothing about who
-    // asked — so the focus has to be applied here or the key looks inert.
+fn the_client_shows_whichever_project_the_session_names() {
+    // Which tab is in front is shared, so this is the whole of how a client
+    // switches: it renders the repository the session says is active, whether
+    // that came from its own keystroke or another client's.
     let mut ws = workspace_on(&["/a", "/b"]);
     ws.switch(1);
 
-    assert!(focus_if_open(&mut ws, "/a"));
+    assert!(focus_repo(&mut ws, &id_of("/a")));
 
     assert_eq!(ws.active_index(), 0);
     assert_eq!(ws.projects().len(), 2, "and does not open a second tab");
 }
 
 #[test]
-fn asking_for_a_repo_that_is_not_open_leaves_the_tabs_alone() {
-    // The daemon resolves a path to its worktree root, so what comes back may
-    // not match what was typed. A miss must be inert, not a jump to tab zero.
+fn a_project_this_client_has_no_tab_for_yet_leaves_the_tabs_alone() {
+    // The session can name a repository in the beat before this client has
+    // built its tab. A miss must be inert, not a jump to tab zero.
     let mut ws = workspace_on(&["/a", "/b"]);
     ws.switch(1);
 
-    assert!(!focus_if_open(&mut ws, "/elsewhere"));
+    assert!(!focus_repo(&mut ws, "r-elsewhere"));
 
     assert_eq!(ws.active_index(), 1);
 }
@@ -49,7 +56,7 @@ fn asking_for_a_repo_that_is_not_open_leaves_the_tabs_alone() {
 fn focusing_in_an_empty_workspace_is_inert() {
     let mut ws = workspace_on(&[]);
 
-    assert!(!focus_if_open(&mut ws, "/a"));
+    assert!(!focus_repo(&mut ws, &id_of("/a")));
 
     assert!(ws.active().is_none());
 }

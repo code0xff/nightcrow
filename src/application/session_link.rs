@@ -4,9 +4,10 @@
 //! asks for a change and adopts whatever comes back — including changes another
 //! client made, which arrive with nothing having asked.
 //!
-//! What it does *not* ask about is which tab it is looking at. That is the
-//! per-client half of the boundary: two clients on one session may sit on
-//! different projects, so switching is local and immediate.
+//! Which tab is in front is the daemon's too, so switching is a request and
+//! every client follows the answer. What stays local is everything *inside* a
+//! project — the view mode, the cursor, the scroll — which is what makes two
+//! clients on one session more than two copies of one screen.
 
 use crate::application::bootstrap::init_app;
 use crate::application::input::dispatch::{ProjectContext, ProjectRequest};
@@ -17,41 +18,30 @@ use crate::workspace::Workspace;
 
 pub(crate) struct SessionLink {
     client: DaemonClient,
-    /// A repository this client asked to open, waiting to be focused.
-    ///
-    /// Opening is a request, so the tab does not exist yet when the request is
-    /// made — and the answer is a whole set, which says nothing about who asked
-    /// for what. Without this, opening a repository from the dialog would leave
-    /// the user on the tab they were already on, and asking for one that is
-    /// *already* open would look like the key did nothing.
-    pending_focus: Option<String>,
 }
 
 impl SessionLink {
     pub(crate) fn new(client: DaemonClient) -> Self {
-        Self {
-            client,
-            pending_focus: None,
-        }
+        Self { client }
     }
 
     /// Take in everything the daemon has said since the last tick.
     pub(crate) fn sync(&mut self, ws: &mut Workspace, ctx: &ProjectContext) {
         for message in self.client.drain() {
             match message {
-                ServerMessage::Repos { repos } => {
+                ServerMessage::Repos { repos, active } => {
                     adopt(ws, ctx, &repos, &self.client);
-                    // Only after the set has settled: the tab being focused may
-                    // be one this very message created.
-                    if let Some(path) = self.pending_focus.take() {
-                        focus_if_open(ws, &path);
+                    // After the set has settled, because the tab to put in front
+                    // may be one this very message created — which is the usual
+                    // case, since opening a repository focuses it.
+                    if let Some(active) = active {
+                        focus_repo(ws, &active);
                     }
                 }
                 // A refusal this client asked for — a path that is not a
                 // directory, or one repository too many. Shown where every
                 // other refusal is shown.
                 ServerMessage::Error { message } => {
-                    self.pending_focus = None;
                     ws.raise_notice(crate::app::NoticeKind::Project, message);
                 }
                 // Answered during the handshake; a later one would mean the
@@ -74,22 +64,26 @@ impl SessionLink {
     /// Carry out a tab request locally, or send it to the daemon.
     pub(crate) fn request(&mut self, ws: &mut Workspace, request: ProjectRequest) {
         let sent = match request {
-            // Neither touches anything the daemon owns.
+            // Which project is in front is the session's, so this asks. Nothing
+            // moves locally in the meantime: switching optimistically and then
+            // being corrected would show a tab flicking past on every switch.
             ProjectRequest::Switch(index) => {
-                ws.switch(index);
-                return;
+                match ws.projects().get(index).and_then(|app| app.repo_id.clone()) {
+                    Some(id) => self.client.focus_repo(&id),
+                    // A tab the daemon has not named yet — it is a beat from
+                    // arriving, and there is nothing to ask about.
+                    None => return,
+                }
             }
+            // The dialog is this client's own; only what it confirms is a
+            // request.
             ProjectRequest::OpenDialog => {
                 ws.start_repo_input();
                 return;
             }
-            ProjectRequest::Open(path) => {
-                // Recorded before the send, and by the path as typed: the
-                // daemon resolves it to a worktree root, so the match is made
-                // against the answer rather than assumed here.
-                self.pending_focus = Some(path.clone());
-                self.client.open_repo(&path)
-            }
+            // Opening focuses in the daemon, so the tab comes forward with the
+            // set rather than needing to be chased here.
+            ProjectRequest::Open(path) => self.client.open_repo(&path),
             // Closing is by id, so a tab with no id is not one the daemon knows
             // about and closing it locally would only hide it until the next
             // broadcast put it back.
@@ -99,7 +93,6 @@ impl SessionLink {
             },
         };
         if let Err(err) = sent {
-            self.pending_focus = None;
             ws.raise_notice(
                 crate::app::NoticeKind::Project,
                 format!("daemon request failed: {err}"),
@@ -113,13 +106,16 @@ impl SessionLink {
     }
 }
 
-/// Move to the tab on `repo` if there is one. Reports whether there was.
+/// Put the tab for `repo` in front, by catalog id. Reports whether there was one.
 ///
-/// A miss is normal rather than an error: the daemon resolves a path to a
-/// worktree root, so a repository opened as `.` comes back under its real
-/// path, and one that failed to open never arrives at all.
-fn focus_if_open(ws: &mut Workspace, repo: &str) -> bool {
-    match ws.index_of_repo(repo) {
+/// A miss is normal rather than an error: the session can name a repository this
+/// client has not built a tab for yet, in the beat between the two.
+fn focus_repo(ws: &mut Workspace, repo: &str) -> bool {
+    match ws
+        .projects()
+        .iter()
+        .position(|app| app.repo_id.as_deref() == Some(repo))
+    {
         Some(index) => {
             ws.switch(index);
             true

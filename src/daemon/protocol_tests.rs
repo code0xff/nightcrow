@@ -42,6 +42,7 @@ fn every_server_message_survives_the_round_trip() {
                 id: "r1".into(),
                 path: "/w/repo".into(),
             }],
+            active: Some("r1".into()),
         },
         ServerMessage::Error {
             message: "no such directory".into(),

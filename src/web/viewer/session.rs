@@ -87,11 +87,56 @@ pub fn open_repo(state: &ViewerState, raw_path: &str) -> Result<RepoDto, OpenErr
         .add_path(resolved, crate::workspace::MAX_PROJECTS)
     {
         AddOutcome::Added(repo) => {
+            // Opening is also a statement about where the client wants to be, so
+            // it focuses. Every client follows the session's active project, and
+            // leaving the focus behind would put the tab someone just asked for
+            // in the background — on their own screen and everyone else's.
+            if let Some(entry) = state.catalog.get(&repo.id) {
+                state.prefs.set_active_repo(entry.path.clone());
+            }
             persist_workspace(state);
             Ok(repo)
         }
         AddOutcome::TooMany => Err(OpenError::TooMany),
     }
+}
+
+/// The repository the session is focused on, as the id clients speak.
+///
+/// Falls back to the first served repository when nothing has been focused yet,
+/// or when what is on file is no longer served. Not `None`: with no answer each
+/// client would pick for itself, and two clients picking independently is the
+/// divergence this is here to remove. `None` only when nothing is open at all.
+///
+/// The stored value is a path, because ids only live as long as the process (see
+/// [`super::prefs`]), so this is where it is translated back.
+pub fn active_repo(state: &ViewerState) -> Option<String> {
+    let stored = state
+        .prefs
+        .get()
+        .active_repo
+        .as_deref()
+        .and_then(|path| state.catalog.id_of_path(path));
+    stored.or_else(|| {
+        state
+            .catalog
+            .id_paths()
+            .into_iter()
+            .next()
+            .map(|(id, _)| id)
+    })
+}
+
+/// Focus the repository named by `id` for the whole session.
+///
+/// Which project is in front is shared, not per-client: the daemon owns it, and
+/// every client renders the one the session names. What each client keeps to
+/// itself is everything *within* that project — the view mode, the cursor, the
+/// scroll (see the plan's shared/per-client boundary).
+pub fn focus_repo(state: &ViewerState, id: &str) -> Result<(), CloseError> {
+    let entry = state.catalog.get(id).ok_or(CloseError::UnknownRepo)?;
+    state.prefs.set_active_repo(entry.path.clone());
+    Ok(())
 }
 
 /// Close the repository named by `id`.

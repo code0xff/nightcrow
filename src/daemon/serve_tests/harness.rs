@@ -155,7 +155,15 @@ impl Client {
     pub(super) fn repo_ids(&mut self) -> Vec<String> {
         self.send(ClientMessage::ListRepos);
         match self.next_repos() {
-            ServerMessage::Repos { repos } => repos.into_iter().map(|repo| repo.id).collect(),
+            ServerMessage::Repos { repos, .. } => repos.into_iter().map(|repo| repo.id).collect(),
+            other => panic!("expected a repo list, got {other:?}"),
+        }
+    }
+
+    /// The repository the session says is in front, from the next set it sends.
+    pub(super) fn next_active(&mut self) -> Option<String> {
+        match self.next_repos() {
+            ServerMessage::Repos { active, .. } => active,
             other => panic!("expected a repo list, got {other:?}"),
         }
     }
@@ -188,7 +196,7 @@ pub(super) fn resolved(path: &str) -> String {
 
 pub(super) fn repo_paths(answer: &ServerMessage) -> Vec<String> {
     match answer {
-        ServerMessage::Repos { repos } => repos.iter().map(|r| r.path.clone()).collect(),
+        ServerMessage::Repos { repos, .. } => repos.iter().map(|r| r.path.clone()).collect(),
         other => panic!("expected a repo list, got {other:?}"),
     }
 }

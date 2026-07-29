@@ -15,17 +15,52 @@ use super::clients::AttachedClients;
 use super::protocol::{RepoSummary, ServerMessage};
 use crate::web::viewer::server::ViewerState;
 use crate::web::viewer::session;
-use std::sync::Arc;
+use std::sync::{Arc, Condvar, Mutex};
 use std::time::Duration;
 
-/// How often the session is re-read.
+/// How long the watcher waits before re-reading the session unprompted.
 ///
-/// Not a latency budget for anything a client does itself — its own requests are
-/// answered on the spot. This bounds only how long a change made *elsewhere*
-/// takes to appear, where the alternative it replaces was "never".
+/// This bounds only changes it cannot be told about — the ones made through the
+/// browser's HTTP handlers — where the alternative it replaces was "never". A
+/// change asked for on an attach socket wakes it immediately (see [`Nudge`]), so
+/// a keystroke never waits on this.
 const TICK: Duration = Duration::from_millis(150);
 
-/// Watch `state` and broadcast the served set whenever it changes.
+/// A way to tell the watcher not to wait out its tick.
+///
+/// A client that just asked for something is watching for it to happen, so the
+/// answer cannot sit behind a poll interval. The change is still *read* from the
+/// session rather than passed through here: this only says "look now", so a
+/// handler that forgets to poke costs latency, never correctness.
+#[derive(Default)]
+pub(super) struct Nudge {
+    poked: Mutex<bool>,
+    wake: Condvar,
+}
+
+impl Nudge {
+    /// Wake the watcher now.
+    pub(super) fn poke(&self) {
+        *self.poked.lock().expect("session nudge poisoned") = true;
+        self.wake.notify_all();
+    }
+
+    /// Wait for a poke, or `timeout`, whichever comes first.
+    fn wait(&self, timeout: Duration) {
+        let mut poked = self.poked.lock().expect("session nudge poisoned");
+        if !*poked {
+            let (guard, _) = self
+                .wake
+                .wait_timeout(poked, timeout)
+                .expect("session nudge poisoned");
+            poked = guard;
+        }
+        *poked = false;
+    }
+}
+
+/// Watch `state` and broadcast the served set whenever it — or which repository
+/// the session is focused on — changes.
 ///
 /// `follow` runs for every client before the set goes out, so a repository that
 /// appeared is already streaming its terminals by the time a client is told the
@@ -33,21 +68,26 @@ const TICK: Duration = Duration::from_millis(150);
 pub(super) fn watch(
     state: Arc<ViewerState>,
     clients: Arc<AttachedClients>,
+    nudge: Arc<Nudge>,
     follow: impl Fn(&[session::SessionRepo]),
 ) {
     // Seeded with the set as it stands, not with nothing: a client is sent the
     // current set when it attaches, so announcing it again on the first tick
     // would be a message that reports no change — and every client would have to
     // treat the arrival of its own starting state as news.
-    let mut told: Vec<RepoSummary> = summarize(&session::list_session_repos(&state));
+    let mut told = (
+        summarize(&session::list_session_repos(&state)),
+        session::active_repo(&state),
+    );
     loop {
-        std::thread::sleep(TICK);
+        nudge.wait(TICK);
         let repos = session::list_session_repos(&state);
-        let current = summarize(&repos);
+        let current = (summarize(&repos), session::active_repo(&state));
         if told != current {
             follow(&repos);
             clients.broadcast(encode(&ServerMessage::Repos {
-                repos: current.clone(),
+                repos: current.0.clone(),
+                active: current.1.clone(),
             }));
             told = current;
         }

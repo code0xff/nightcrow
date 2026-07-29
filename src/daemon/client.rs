@@ -161,6 +161,17 @@ impl DaemonClient {
         )
     }
 
+    /// Ask the daemon to put a repository in front, by catalog id. Every client
+    /// follows, so the answer arrives as a broadcast like any other change.
+    pub fn focus_repo(&mut self, id: &str) -> Result<()> {
+        send(
+            &self.out,
+            &ClientMessage::FocusRepo {
+                repo: id.to_string(),
+            },
+        )
+    }
+
     /// Ask the daemon to close a repository, by catalog id.
     pub fn close_repo(&mut self, id: &str) -> Result<()> {
         send(

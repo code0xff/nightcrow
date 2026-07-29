@@ -70,7 +70,7 @@ fn handle(message: ClientMessage, id: u64, session: &Session) {
         // the others.
         ClientMessage::ListRepos => session.clients.send_to(id, encode(&repos(state))),
         ClientMessage::OpenRepo { path } => match session::open_repo(state, &path) {
-            Ok(_) => {}
+            Ok(_) => changed(session),
             Err(OpenError::EmptyPath) => refuse(id, session, "a path is required"),
             Err(OpenError::NotADirectory) => refuse(id, session, "no such directory"),
             Err(OpenError::TooMany) => refuse(
@@ -80,10 +80,24 @@ fn handle(message: ClientMessage, id: u64, session: &Session) {
             ),
         },
         ClientMessage::CloseRepo { repo } => match session::close_repo(state, &repo) {
-            Ok(()) => {}
+            Ok(()) => changed(session),
             Err(CloseError::UnknownRepo) => refuse(id, session, "unknown repository"),
         },
-        ClientMessage::ReorderRepos { order } => session::reorder_repos(state, &order),
+        ClientMessage::FocusRepo { repo } => {
+            if session::focus_repo(state, &repo).is_ok() {
+                changed(session);
+            } else {
+                // The only way to name a repository the session does not have is
+                // to have raced a close on another client. Answered rather than
+                // dropped, because the asker is waiting to see that tab come
+                // forward and never will.
+                refuse(id, session, "unknown repository");
+            }
+        }
+        ClientMessage::ReorderRepos { order } => {
+            session::reorder_repos(state, &order);
+            changed(session);
+        }
         // Handed straight to the hub, which answers on the subscription rather
         // than here: a pane it creates is news for every client watching that
         // repository, not a reply owed to this one.
@@ -102,6 +116,13 @@ fn handle(message: ClientMessage, id: u64, session: &Session) {
             }
         }
     }
+}
+
+/// Every arm that can have changed the session ends here, so the watcher looks
+/// at once instead of on its next tick. Reading the session is still its job —
+/// this only wakes it.
+fn changed(session: &Session) {
+    session.nudge.poke();
 }
 
 fn refuse(id: u64, session: &Session, message: &str) {

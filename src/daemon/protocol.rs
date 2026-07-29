@@ -27,6 +27,12 @@ pub enum ClientMessage {
     OpenRepo { path: String },
     /// Close the repository with this id.
     CloseRepo { repo: String },
+    /// Put this repository in front, for the whole session.
+    ///
+    /// Which project is active is shared, so switching tabs is a request rather
+    /// than a local move — every client follows the answer. What stays local is
+    /// everything inside a project: the view mode, the cursor, the scroll.
+    FocusRepo { repo: String },
     /// Put the repositories in this order.
     ReorderRepos { order: Vec<String> },
     /// Act on one repository's terminals.
@@ -61,7 +67,19 @@ pub enum ServerMessage {
     /// Every mutation answers with the whole set rather than a delta: the set
     /// is small, bounded by `MAX_PROJECTS`, and another client may have changed
     /// it in between — a delta applied to a stale list silently diverges.
-    Repos { repos: Vec<RepoSummary> },
+    Repos {
+        repos: Vec<RepoSummary>,
+        /// The repository the session is focused on, which every client puts in
+        /// front. `None` when nothing has been focused yet, in which case a
+        /// client keeps whichever tab it is on.
+        ///
+        /// Carried with the set rather than announced separately because the two
+        /// change together — opening a repository focuses it — and a client that
+        /// learned them one at a time would render a tab list without knowing
+        /// which of them to show.
+        #[serde(default)]
+        active: Option<String>,
+    },
     /// A request could not be carried out. The connection stays open: a refused
     /// request is an answer, not a protocol violation.
     Error { message: String },

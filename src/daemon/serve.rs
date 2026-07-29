@@ -39,6 +39,9 @@ pub(super) struct Session {
     /// on it; the watcher can. One lock per client, so following a change for
     /// one never delays another's keystrokes.
     pub(super) bridges: Mutex<HashMap<u64, Arc<Mutex<TerminalBridges>>>>,
+    /// Wakes the watcher when a client has just asked for a change, so the
+    /// answer does not wait out a poll interval.
+    pub(super) nudge: Arc<super::watch::Nudge>,
 }
 
 impl Session {
@@ -73,6 +76,7 @@ pub fn serve(listener: UnixListener, state: Arc<ViewerState>) {
         state,
         clients: Arc::new(AttachedClients::default()),
         bridges: Mutex::new(HashMap::new()),
+        nudge: Arc::new(super::watch::Nudge::default()),
     });
     // The only thing that broadcasts the served set, so there is one record of
     // what clients have been told — and so a change made through the browser
@@ -84,6 +88,7 @@ pub fn serve(listener: UnixListener, state: Arc<ViewerState>) {
             super::watch::watch(
                 Arc::clone(&watched.state),
                 Arc::clone(&watched.clients),
+                Arc::clone(&watched.nudge),
                 |repos| watched.follow_all(repos),
             )
         })
@@ -187,6 +192,7 @@ pub(super) fn repos(state: &ViewerState) -> ServerMessage {
                 path: repo.path,
             })
             .collect(),
+        active: session::active_repo(state),
     }
 }
 
