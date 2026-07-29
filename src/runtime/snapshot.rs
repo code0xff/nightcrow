@@ -1,6 +1,8 @@
 use crate::git::diff::{RepoSnapshot, load_snapshot};
 use std::collections::HashMap;
 use std::path::Path;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, SyncSender};
 use std::thread;
 use std::time::{Duration, SystemTime};
@@ -11,6 +13,13 @@ use std::time::{Duration, SystemTime};
 /// `git2::Repository` after the new channel is in place.
 pub struct SnapshotChannel {
     rx: Receiver<SnapshotMsg>,
+    /// Cleared to stop walking the tree without stopping the worker.
+    ///
+    /// A `git status` on a large repository is not free, and one runs per
+    /// second per channel. A caller that knows nobody is reading — the viewer
+    /// with no client subscribed — turns it off rather than paying for
+    /// snapshots that go straight in the bin.
+    awake: Arc<AtomicBool>,
     // Held in an Option so `Drop` can release it before joining the
     // worker. Dropping the sender unblocks the worker's `recv_timeout`
     // immediately rather than letting it sleep up to the snapshot
@@ -32,6 +41,8 @@ impl SnapshotChannel {
         let (tx, rx) = mpsc::channel::<SnapshotMsg>();
         let (stop_tx, stop_rx) = mpsc::sync_channel::<()>(0);
         let path = repo_path.to_string();
+        let awake = Arc::new(AtomicBool::new(true));
+        let worker_awake = Arc::clone(&awake);
         let handle = thread::spawn(move || {
             // Cache the Repository handle to avoid a fresh `discover` walk
             // every tick, but drop it periodically (and on any load error)
@@ -39,6 +50,17 @@ impl SnapshotChannel {
             let mut repo: Option<git2::Repository> = None;
             let mut ticks_since_open: u32 = 0;
             loop {
+                if !worker_awake.load(Ordering::Acquire) {
+                    // Nobody is reading. Hold the tick without walking the tree,
+                    // and let the cached handle go — a paused repository should
+                    // not keep a `git2::Repository` open either.
+                    repo = None;
+                    ticks_since_open = 0;
+                    match stop_rx.recv_timeout(Duration::from_millis(1000)) {
+                        Ok(()) | Err(mpsc::RecvTimeoutError::Disconnected) => break,
+                        Err(mpsc::RecvTimeoutError::Timeout) => continue,
+                    }
+                }
                 if ticks_since_open >= REOPEN_REPO_EVERY_TICKS {
                     repo = None;
                 }
@@ -94,9 +116,33 @@ impl SnapshotChannel {
         });
         Self {
             rx,
+            awake,
             stop_tx: Some(stop_tx),
             handle: Some(handle),
         }
+    }
+
+    /// A handle for turning the walking on and off from another thread.
+    ///
+    /// Separate from the channel because the channel owns a receiver and cannot
+    /// be shared, while whoever decides that nobody is reading — a server
+    /// counting its subscribers — is on a different thread from the one draining
+    /// it.
+    pub fn watch(&self) -> SnapshotWatch {
+        SnapshotWatch(Arc::clone(&self.awake))
+    }
+
+    /// One snapshot read on the calling thread, for a caller that needs an
+    /// answer now rather than on the next tick — a paused channel has nothing
+    /// in flight to wait for.
+    pub fn read_now(repo_path: &str) -> Option<(RepoSnapshot, HashMap<String, SystemTime>)> {
+        let repo = git2::Repository::discover(repo_path).ok()?;
+        let snapshot = load_snapshot(&repo).ok()?;
+        let mtimes = repo
+            .workdir()
+            .map(|workdir| collect_mtimes(workdir, &snapshot))
+            .unwrap_or_default();
+        Some((snapshot, mtimes))
     }
 
     pub fn try_recv(&self) -> Result<SnapshotMsg, mpsc::TryRecvError> {
@@ -111,6 +157,7 @@ impl SnapshotChannel {
     pub(crate) fn from_endpoints(rx: Receiver<SnapshotMsg>, stop_tx: SyncSender<()>) -> Self {
         Self {
             rx,
+            awake: Arc::new(AtomicBool::new(true)),
             stop_tx: Some(stop_tx),
             handle: None,
         }
@@ -131,6 +178,17 @@ impl Drop for SnapshotChannel {
         if let Some(h) = self.handle.take() {
             crate::platform::threading::try_timed_join(h, crate::platform::threading::REAP_TIMEOUT);
         }
+    }
+}
+
+/// Turns a [`SnapshotChannel`]'s tree walking on and off. Takes effect within
+/// one tick.
+#[derive(Clone)]
+pub struct SnapshotWatch(Arc<AtomicBool>);
+
+impl SnapshotWatch {
+    pub fn set_awake(&self, awake: bool) {
+        self.0.store(awake, Ordering::Release);
     }
 }
 

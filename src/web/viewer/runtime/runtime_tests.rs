@@ -212,3 +212,63 @@ fn stop_is_idempotent() {
     runtime.stop();
     runtime.stop();
 }
+
+#[test]
+fn a_repository_nobody_is_watching_is_not_walked() {
+    // The daemon holds every open repository, and each attached client polls the
+    // same trees for itself. Walking one that nothing is reading is the half of
+    // that cost with nothing to show for it.
+    let (repo, path) = crate::test_util::make_repo();
+    let runtime = RepoRuntime::spawn(&path);
+
+    assert!(!runtime.is_watching(), "opening is not reading");
+    assert!(
+        runtime.latest().is_none(),
+        "and nothing has been published yet"
+    );
+
+    let subscription = runtime.subscribe();
+
+    assert!(runtime.is_watching(), "a subscriber starts the watch");
+    // Seeded from a reading taken on subscribe, not from the tick that has not
+    // happened yet: a page opened after a quiet night must not render what was
+    // true when the last client left.
+    assert!(
+        runtime.latest().is_some(),
+        "the first subscriber is answered with a reading"
+    );
+
+    drop(subscription);
+
+    assert!(
+        !runtime.is_watching(),
+        "the last subscriber leaving stops it again"
+    );
+    runtime.stop();
+    drop(repo);
+}
+
+#[test]
+fn a_second_subscriber_does_not_disturb_the_watch() {
+    // Only the transitions matter; a client arriving while others are reading
+    // must not cost an extra walk on its request thread.
+    let (repo, path) = crate::test_util::make_repo();
+    let runtime = RepoRuntime::spawn(&path);
+    let first = runtime.subscribe();
+    let before = runtime.latest().expect("the first subscriber read once");
+
+    let second = runtime.subscribe();
+
+    assert_eq!(
+        runtime.latest().map(|update| update.seq),
+        Some(before.seq),
+        "nothing was republished"
+    );
+    assert!(runtime.is_watching());
+    drop(second);
+    assert!(runtime.is_watching(), "one subscriber is still reading");
+    drop(first);
+    assert!(!runtime.is_watching());
+    runtime.stop();
+    drop(repo);
+}

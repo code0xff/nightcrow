@@ -18,76 +18,34 @@
 //! writing to the network.
 
 use crate::git::diff::RepoSnapshot;
-use crate::runtime::snapshot::{SnapshotChannel, SnapshotMsg};
+use crate::runtime::snapshot::{SnapshotChannel, SnapshotMsg, SnapshotWatch};
 use crate::web::viewer::dto::{Envelope, StatusDto};
 use crate::web::viewer::limits;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::mpsc::{self, Receiver, SyncSender, TrySendError};
+use std::sync::mpsc::{self, TrySendError};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, SystemTime};
+
+mod subscription;
+
+use subscription::Subscriber;
+pub use subscription::{StatusUpdate, Subscription};
 
 /// How often the runtime thread checks its snapshot channel. The producer ticks
 /// about once a second, so this only bounds how late an update is noticed.
 const POLL_INTERVAL: Duration = Duration::from_millis(100);
 
-/// One published status, already serialized so N subscribers cost one encode.
-#[derive(Debug, Clone)]
-pub struct StatusUpdate {
-    /// Monotonic per repository. Lets a client tell a replayed snapshot from a
-    /// newer one after a reconnect.
-    pub seq: u64,
-    pub json: Arc<String>,
-}
-
-struct Subscriber {
-    id: u64,
-    /// Latest update, overwritten in place. Holding one value is what makes
-    /// this conflated rather than queued.
-    slot: Arc<Mutex<Option<StatusUpdate>>>,
-    /// One-deep wakeup. A pending token already means "something changed", so
-    /// a full channel is success, not backpressure.
-    wake: SyncSender<()>,
-}
-
-/// A client's handle on the stream. Dropping it unregisters the subscriber, so
-/// every exit path — clean close, write error, panic — stops the fan-out.
-pub struct Subscription {
-    runtime: Arc<RepoRuntime>,
-    id: u64,
-    slot: Arc<Mutex<Option<StatusUpdate>>>,
-    wake_rx: Receiver<()>,
-}
-
-impl Subscription {
-    /// Wait up to `timeout` for an update, returning the newest one pending.
-    /// `None` means nothing arrived in time — the caller should send a
-    /// heartbeat and come back, which is how a dead socket gets noticed.
-    pub fn next_update(&self, timeout: Duration) -> Option<StatusUpdate> {
-        // Take first: a subscription is seeded with the current status at
-        // registration, so the first call returns immediately without waiting.
-        if let Some(update) = self.take() {
-            return Some(update);
-        }
-        match self.wake_rx.recv_timeout(timeout) {
-            Ok(()) => self.take(),
-            Err(_) => None,
-        }
-    }
-
-    fn take(&self) -> Option<StatusUpdate> {
-        self.slot.lock().expect("subscriber slot poisoned").take()
-    }
-}
-
-impl Drop for Subscription {
-    fn drop(&mut self) {
-        self.runtime.unsubscribe(self.id);
-    }
-}
-
 pub struct RepoRuntime {
+    /// The repository this watches, kept so a subscriber arriving while the
+    /// watch is paused can be answered with a reading rather than with
+    /// whatever was true when the last client left.
+    path: String,
+    /// Stops and starts the snapshot worker's walking. A `git status` per second
+    /// per repository is the daemon's standing cost, and every attached client
+    /// pays it again for itself — so the half nobody is reading is not paid.
+    watch: SnapshotWatch,
     latest: Mutex<Option<StatusUpdate>>,
     subscribers: Mutex<Vec<Subscriber>>,
     next_seq: AtomicU64,
@@ -100,11 +58,16 @@ impl RepoRuntime {
     /// Start a runtime that watches `repo_path`.
     pub fn spawn(repo_path: &str) -> Arc<Self> {
         let channel = SnapshotChannel::spawn(repo_path);
+        // Asleep from the start: a repository is opened before anyone looks at
+        // it, and the browser subscribes when a page does.
+        channel.watch().set_awake(false);
         Self::start(channel, repo_path.to_string())
     }
 
     fn start(channel: SnapshotChannel, label: String) -> Arc<Self> {
         let runtime = Arc::new(Self {
+            path: label.clone(),
+            watch: channel.watch(),
             latest: Mutex::new(None),
             subscribers: Mutex::new(Vec::new()),
             next_seq: AtomicU64::new(0),
@@ -198,8 +161,17 @@ impl RepoRuntime {
     /// Register a client. The subscription starts seeded with the current
     /// status, so a fresh connection renders immediately instead of waiting for
     /// the next change.
+    ///
+    /// The first subscriber also starts the watch, and is answered from a reading
+    /// taken here rather than from `latest` — while the watch was off, `latest`
+    /// is whatever was true when the last client left, which on a page opened
+    /// the next morning is not a stale detail but a wrong screen.
     pub fn subscribe(self: &Arc<Self>) -> Subscription {
         let id = self.next_subscriber_id.fetch_add(1, Ordering::AcqRel);
+        if self.subscriber_count() == 0 {
+            self.watch.set_awake(true);
+            self.read_and_publish();
+        }
         let seed = self.latest();
         let slot = Arc::new(Mutex::new(seed));
         let (wake, wake_rx) = mpsc::sync_channel(1);
@@ -222,10 +194,36 @@ impl RepoRuntime {
     }
 
     fn unsubscribe(&self, id: u64) {
-        self.subscribers
-            .lock()
-            .expect("subscribers poisoned")
-            .retain(|s| s.id != id);
+        let left = {
+            let mut subscribers = self.subscribers.lock().expect("subscribers poisoned");
+            subscribers.retain(|s| s.id != id);
+            subscribers.len()
+        };
+        // Nobody is reading, so stop walking the tree. What was published stays
+        // in `latest` for anything that asks over REST; the next subscriber
+        // replaces it with a reading before it is served (see `subscribe`).
+        if left == 0 {
+            self.watch.set_awake(false);
+        }
+    }
+
+    /// Whether the tree is being watched, i.e. whether `latest` is being kept up
+    /// to date. False while nothing is subscribed.
+    pub fn is_watching(&self) -> bool {
+        self.subscriber_count() > 0
+    }
+
+    /// Read the repository on this thread and publish it, for a caller that
+    /// needs an answer while the watch is off.
+    pub fn refresh_now(&self) {
+        self.read_and_publish();
+    }
+
+    /// Read the repository on this thread and publish it.
+    fn read_and_publish(&self) {
+        if let Some((snapshot, mtimes)) = SnapshotChannel::read_now(&self.path) {
+            self.publish(&snapshot, &mtimes);
+        }
     }
 
     /// The most recent status, if one has been published.

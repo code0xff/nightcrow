@@ -46,9 +46,17 @@ pub(super) fn route(head: &RequestHead, state: &ViewerState) -> Vec<u8> {
             }
         }
         "/api/status" => with_repo(head, state, |entry| {
-            // Served from the runtime's latest snapshot rather than a fresh
-            // git call: the runtime is already watching, and this keeps a
-            // page refresh from queueing another full status walk.
+            // Served from the runtime's latest snapshot rather than a fresh git
+            // call *while it is watching*: it is already reading the tree every
+            // second, and this keeps a page refresh from queueing another walk.
+            //
+            // While nothing is subscribed the watch is off, and `latest` is
+            // whatever was true when the last client left — so this reads once
+            // rather than answering with it. That is the same walk the watch
+            // would have done, paid only when someone asks.
+            if !entry.runtime.is_watching() {
+                entry.runtime.refresh_now();
+            }
             match entry.runtime.latest() {
                 Some(update) => Ok(json_response("200 OK", &update.json, &[])),
                 None => Ok(json_response(
