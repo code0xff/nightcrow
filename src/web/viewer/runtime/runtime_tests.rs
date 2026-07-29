@@ -10,7 +10,7 @@ fn test_runtime() -> (
 ) {
     let (tx, rx) = mpsc::channel::<SnapshotMsg>();
     let (stop_tx, _stop_rx) = mpsc::sync_channel::<()>(0);
-    let channel = SnapshotChannel::from_endpoints(rx, stop_tx.clone());
+    let channel = SnapshotChannel::from_endpoints(rx);
     let runtime = RepoRuntime::start(channel, "test".to_string());
     // The mpsc Sender is not a SyncSender; wrap through a relay so the test
     // helper returns one uniform type.

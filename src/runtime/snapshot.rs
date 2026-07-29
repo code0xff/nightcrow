@@ -1,175 +1,172 @@
 use crate::git::diff::{RepoSnapshot, load_snapshot};
+use crate::runtime::snapshot_watch::Wake;
 use std::collections::HashMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::mpsc::{self, Receiver, SyncSender};
+use std::sync::mpsc::{self, Receiver, Sender};
 use std::thread;
 use std::time::{Duration, SystemTime};
 
-/// Owns the receiver and stop channel for the background snapshot thread.
+mod worker;
+
+use worker::Worker;
+
+/// Owns the receiver and wake channel for the background snapshot thread.
 /// Dropping the struct signals the worker to exit and joins it before
 /// returning, so a repo switch cannot leave the old-repo worker holding a
 /// `git2::Repository` after the new channel is in place.
 pub struct SnapshotChannel {
     rx: Receiver<SnapshotMsg>,
-    /// Cleared to stop walking the tree without stopping the worker.
+    /// Cleared to stop reading the tree without stopping the worker.
     ///
-    /// A `git status` on a large repository is not free, and one runs per
-    /// second per channel. A caller that knows nobody is reading — the viewer
-    /// with no client subscribed — turns it off rather than paying for
-    /// snapshots that go straight in the bin.
+    /// A `git status` is not free and one runs per channel. A caller that knows
+    /// nobody is reading — the viewer with no client subscribed — turns it off
+    /// rather than paying for snapshots that go straight in the bin. The
+    /// filesystem watch goes with it, so a repository nobody reads holds no
+    /// watch descriptors either.
     awake: Arc<AtomicBool>,
-    // Held in an Option so `Drop` can release it before joining the
-    // worker. Dropping the sender unblocks the worker's `recv_timeout`
-    // immediately rather than letting it sleep up to the snapshot
-    // interval.
-    stop_tx: Option<SyncSender<()>>,
+    /// Whether the worker is being told about changes rather than looking on a
+    /// timer. False while asleep, and on a tree the watcher could not install on.
+    ///
+    /// Nothing in production reads this — a failed watch is reported where it
+    /// happens, and the reader behaves correctly either way. It exists so the
+    /// tests about *absence* (an idle repository is not walked) can tell "the
+    /// watch is doing its job" apart from "this machine could not watch at all".
+    #[cfg(test)]
+    watching: Arc<AtomicBool>,
+    /// Wakes the worker: filesystem events, resumption, and the stop on drop.
+    /// One channel for all three, so an idle repository costs no wake-ups beyond
+    /// the interval that guards against missed events.
+    ///
+    /// Held in an `Option` so `Drop` can release it before joining the worker.
+    wake: Option<Sender<Wake>>,
     // None in test fixtures that construct an inert channel via
     // `from_endpoints` (no real worker to join).
     handle: Option<thread::JoinHandle<()>>,
 }
 
-/// Reopen the cached `git2::Repository` handle every N ticks so we observe
-/// out-of-band repo changes (e.g. `git gc`, packfile rewrites, worktree
-/// moves) that the cached handle would otherwise serve stale. ~30 s at the
-/// current 1 s tick is cheap and predictable.
-const REOPEN_REPO_EVERY_TICKS: u32 = 30;
+/// Shortest gap between two reads.
+///
+/// The rate limit is what makes watching safe: a tree that churns without pause
+/// costs exactly what the old fixed-interval poll cost and never more. Equal to
+/// that old interval for that reason.
+const MIN_READ_INTERVAL: Duration = Duration::from_millis(1000);
+
+/// Longest gap between two reads while awake and watching.
+///
+/// A watcher can miss an event, or install on part of a tree and fail on the
+/// rest, and "stale until the user happens to change something else" is not a
+/// state to leave a file list in. With no watcher at all this is not used: the
+/// reader falls back to [`MIN_READ_INTERVAL`], which is what it did before.
+const IDLE_READ_INTERVAL: Duration = Duration::from_secs(10);
+
+/// Reopen the cached `git2::Repository` handle every N reads so we observe
+/// out-of-band repo changes (e.g. `git gc`, packfile rewrites, worktree moves)
+/// that the cached handle would otherwise serve stale. Counted in reads rather
+/// than in seconds now that reads follow changes — a repository nobody touches
+/// is not read, and does not need reopening either.
+const REOPEN_REPO_EVERY_READS: u32 = 30;
 
 impl SnapshotChannel {
     pub fn spawn(repo_path: &str) -> Self {
         let (tx, rx) = mpsc::channel::<SnapshotMsg>();
-        let (stop_tx, stop_rx) = mpsc::sync_channel::<()>(0);
-        let path = repo_path.to_string();
+        let (wake_tx, wake_rx) = mpsc::channel::<Wake>();
         let awake = Arc::new(AtomicBool::new(true));
-        let worker_awake = Arc::clone(&awake);
-        let handle = thread::spawn(move || {
-            // Cache the Repository handle to avoid a fresh `discover` walk
-            // every tick, but drop it periodically (and on any load error)
-            // so external repo mutations cannot leave us serving stale state.
-            let mut repo: Option<git2::Repository> = None;
-            let mut ticks_since_open: u32 = 0;
-            loop {
-                if !worker_awake.load(Ordering::Acquire) {
-                    // Nobody is reading. Hold the tick without walking the tree,
-                    // and let the cached handle go — a paused repository should
-                    // not keep a `git2::Repository` open either.
-                    repo = None;
-                    ticks_since_open = 0;
-                    match stop_rx.recv_timeout(Duration::from_millis(1000)) {
-                        Ok(()) | Err(mpsc::RecvTimeoutError::Disconnected) => break,
-                        Err(mpsc::RecvTimeoutError::Timeout) => continue,
-                    }
-                }
-                if ticks_since_open >= REOPEN_REPO_EVERY_TICKS {
-                    repo = None;
-                }
-                if repo.is_none() {
-                    match git2::Repository::discover(&path) {
-                        Ok(r) => {
-                            repo = Some(r);
-                            ticks_since_open = 0;
-                        }
-                        Err(e) => {
-                            let msg = SnapshotMsg::Err(format!("not a git repository: {e}"));
-                            if tx.send(msg).is_err() {
-                                break;
-                            }
-                            match stop_rx.recv_timeout(Duration::from_millis(1000)) {
-                                Ok(()) | Err(mpsc::RecvTimeoutError::Disconnected) => break,
-                                Err(mpsc::RecvTimeoutError::Timeout) => {}
-                            }
-                            continue;
-                        }
-                    }
-                }
-                let r = repo.as_ref().expect("repo just opened");
-                let msg = match load_snapshot(r) {
-                    Ok(s) => {
-                        let mtimes = r
-                            .workdir()
-                            .map(|w| collect_mtimes(w, &s))
-                            .unwrap_or_default();
-                        SnapshotMsg::Ok(s, mtimes)
-                    }
-                    Err(e) => {
-                        // Drop the handle: the next tick will re-discover.
-                        // This covers the case where the repo was relocated
-                        // or its internal state became inconsistent. Reset
-                        // the reopen counter alongside the handle so the
-                        // next successful open restarts the cycle cleanly
-                        // instead of carrying over a stale tick count.
-                        repo = None;
-                        ticks_since_open = 0;
-                        SnapshotMsg::Err(e.to_string())
-                    }
-                };
-                ticks_since_open += 1;
-                if tx.send(msg).is_err() {
-                    break;
-                }
-                match stop_rx.recv_timeout(Duration::from_millis(1000)) {
-                    Ok(()) | Err(mpsc::RecvTimeoutError::Disconnected) => break,
-                    Err(mpsc::RecvTimeoutError::Timeout) => {}
-                }
-            }
-        });
+        let watching = Arc::new(AtomicBool::new(false));
+        #[cfg(test)]
+        let channel_watching = Arc::clone(&watching);
+        let worker = Worker {
+            root: PathBuf::from(repo_path),
+            tx,
+            wake_rx,
+            wake_tx: wake_tx.clone(),
+            awake: Arc::clone(&awake),
+            watching: Arc::clone(&watching),
+        };
+        let handle = thread::spawn(move || worker.run());
         Self {
             rx,
             awake,
-            stop_tx: Some(stop_tx),
+            #[cfg(test)]
+            watching: channel_watching,
+            wake: Some(wake_tx),
             handle: Some(handle),
         }
     }
 
-    /// A handle for turning the walking on and off from another thread.
+    /// A handle for turning the reading on and off from another thread.
     ///
     /// Separate from the channel because the channel owns a receiver and cannot
     /// be shared, while whoever decides that nobody is reading — a server
     /// counting its subscribers — is on a different thread from the one draining
     /// it.
     pub fn watch(&self) -> SnapshotWatch {
-        SnapshotWatch(Arc::clone(&self.awake))
+        SnapshotWatch {
+            awake: Arc::clone(&self.awake),
+            wake: self.wake.clone(),
+        }
     }
 
-    /// One snapshot read on the calling thread, for a caller that needs an
-    /// answer now rather than on the next tick — a paused channel has nothing
-    /// in flight to wait for.
+    /// Whether the worker is being told about changes rather than reading on a
+    /// timer. See the field.
+    #[cfg(test)]
+    pub(crate) fn is_watching(&self) -> bool {
+        self.watching.load(Ordering::Acquire)
+    }
+
+    /// One snapshot read on the calling thread, for a caller that needs an answer
+    /// now rather than when the next change arrives.
     pub fn read_now(repo_path: &str) -> Option<(RepoSnapshot, HashMap<String, SystemTime>)> {
         let repo = git2::Repository::discover(repo_path).ok()?;
-        let snapshot = load_snapshot(&repo).ok()?;
-        let mtimes = repo
-            .workdir()
-            .map(|workdir| collect_mtimes(workdir, &snapshot))
-            .unwrap_or_default();
-        Some((snapshot, mtimes))
+        read(&repo).ok()
     }
 
     pub fn try_recv(&self) -> Result<SnapshotMsg, mpsc::TryRecvError> {
         self.rx.try_recv()
     }
 
-    /// Build a `SnapshotChannel` from externally provided endpoints. Lets
-    /// tests construct an inert channel (no worker thread) so they can
-    /// inject snapshots directly via `ingest_snapshot` instead of booting
-    /// the background discoverer.
+    /// Build a `SnapshotChannel` from an externally provided receiver. Lets
+    /// tests construct an inert channel (no worker thread, no watcher) so they
+    /// can inject snapshots directly instead of booting the background reader.
     #[cfg(test)]
-    pub(crate) fn from_endpoints(rx: Receiver<SnapshotMsg>, stop_tx: SyncSender<()>) -> Self {
+    pub(crate) fn from_endpoints(rx: Receiver<SnapshotMsg>) -> Self {
         Self {
             rx,
             awake: Arc::new(AtomicBool::new(true)),
-            stop_tx: Some(stop_tx),
+            watching: Arc::new(AtomicBool::new(false)),
+            wake: None,
             handle: None,
+        }
+    }
+}
+
+/// Turns a [`SnapshotChannel`]'s reading on and off. Takes effect at once.
+#[derive(Clone)]
+pub struct SnapshotWatch {
+    awake: Arc<AtomicBool>,
+    wake: Option<Sender<Wake>>,
+}
+
+impl SnapshotWatch {
+    pub fn set_awake(&self, awake: bool) {
+        self.awake.store(awake, Ordering::Release);
+        // Woken rather than left to the interval: resuming means a client is
+        // waiting to see this repository, and it must not sit behind a timer that
+        // exists for missed events.
+        if let Some(wake) = &self.wake {
+            let _ = wake.send(Wake::Changed(Vec::new()));
         }
     }
 }
 
 impl Drop for SnapshotChannel {
     fn drop(&mut self) {
-        // Release the stop sender first: the worker's `recv_timeout`
-        // observes `Disconnected` immediately rather than sleeping out
-        // the remaining tick interval.
-        drop(self.stop_tx.take());
+        // Release the wake sender first: the worker's `recv_timeout` observes the
+        // stop immediately rather than sitting out the idle interval.
+        if let Some(wake) = self.wake.take() {
+            let _ = wake.send(Wake::Stop);
+        }
         // Wait for the worker to finish its current `load_snapshot` so a
         // `change_repo` doesn't leave the old-repo worker running with a
         // live `git2::Repository` after the new channel is installed.
@@ -181,15 +178,16 @@ impl Drop for SnapshotChannel {
     }
 }
 
-/// Turns a [`SnapshotChannel`]'s tree walking on and off. Takes effect within
-/// one tick.
-#[derive(Clone)]
-pub struct SnapshotWatch(Arc<AtomicBool>);
-
-impl SnapshotWatch {
-    pub fn set_awake(&self, awake: bool) {
-        self.0.store(awake, Ordering::Release);
-    }
+/// One status read plus the mtimes of what it listed.
+pub(super) fn read(
+    repo: &git2::Repository,
+) -> anyhow::Result<(RepoSnapshot, HashMap<String, SystemTime>)> {
+    let snapshot = load_snapshot(repo)?;
+    let mtimes = repo
+        .workdir()
+        .map(|workdir| collect_mtimes(workdir, &snapshot))
+        .unwrap_or_default();
+    Ok((snapshot, mtimes))
 }
 
 pub enum SnapshotMsg {
@@ -213,3 +211,7 @@ fn collect_mtimes(repo_root: &Path, snapshot: &RepoSnapshot) -> HashMap<String, 
     }
     out
 }
+
+#[cfg(test)]
+#[path = "snapshot_tests.rs"]
+mod tests;
