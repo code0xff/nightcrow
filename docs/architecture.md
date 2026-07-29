@@ -185,7 +185,7 @@ src/
         ├── runtime/      # per-repo thread: SnapshotChannel drain + conflated SSE fan-out
         ├── terminal/     # per-repo TerminalHub owning its own PtyBackend
         ├── highlight.rs  # syntect/two-face highlight spans for diff + file payloads
-        ├── prefs/        # ~/.nightcrow/viewer.json: accent, sidebar width, active project
+        ├── prefs/        # ~/.nightcrow/viewer.json: session accent, sidebar width, active project
         ├── server/       # HTTP routes, SSE, /ws/term
         └── assets.rs     # rust-embed of viewer-ui/dist + CSP
 ```
@@ -245,11 +245,17 @@ trait TerminalBackend {
 커서를 내릴 때 TUI 커서도 내려가 "디스플레이별 렌더링"이 의미를 잃고, 전부 로컬이면 같은 세션에
 붙은 두 화면이 서로 다른 것을 보여준다.
 
-- **공유(데몬 소유)**: 저장소 집합과 순서, **활성 프로젝트**, 터미널 pane 집합·내용·순서·크기
-- **클라이언트별**: 뷰 모드(status/log/tree), 커서·선택·스크롤, 포커스, fullscreen, 검색 텍스트,
-  그리고 **accent** — 표시 취향이지 세션 사실이 아니고, TUI에서는 **저장소별**로 기억한다
-  (색으로 탭을 구별하는 것이 목적이므로 세션 전역 값 하나로는 그 기능이 사라진다).
-  뷰어가 accent를 기기 간에 공유하는 것은 자기 표면 안에서다.
+- **공유(데몬 소유)**: 저장소 집합과 순서, **활성 프로젝트**, 터미널 pane 집합·내용·순서·크기,
+  그리고 **accent**
+- **클라이언트별**: 뷰 모드(status/log/tree), 커서·선택·스크롤, 포커스, fullscreen, 검색 텍스트
+
+**accent는 원래 클라이언트별이었다.** TUI는 저장소별로 기억해 색으로 탭을 구별했고, 뷰어는 자기
+표면 안에서만 기기 간에 공유했다. 뒤집은 이유는 한 세션에 표면이 여럿이라는 사실이 그 편의보다
+무겁기 때문이다 — TUI와 브라우저를 나란히 두면 같은 세션이 두 색으로 보였고, 어느 쪽이 이 세션의
+색이냐는 물음에 답할 수 있는 값이 아예 없었다. 저장소별 색이 대신하던 "지금 어느 프로젝트인가"는
+탭 이름과 활성 탭 강조가 이미 답한다. 이제 값은 `viewer.json` 하나에 살고(`web/viewer/prefs`),
+어느 표면에서 바꾸든 세션 전체가 따라온다 — 대신 프로젝트를 바꿔도 색은 그대로다. `[theme] name`은
+아직 한 번도 색을 고르지 않은 세션의 시작색으로 남는다.
 
 **데몬이 세션을 감시한다**(`daemon/watch.rs`). 세션에는 문이 둘이다 — 브라우저의 HTTP 핸들러와
 attach 소켓 — 그래서 브라우저에서 연 저장소는 attach 소켓의 아무것도 깨우지 않는다. watcher

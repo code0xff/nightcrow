@@ -8,7 +8,10 @@ upper_pct = 55       # vertical % for the diff panel (1–99)
 file_list_pct = 25   # horizontal % of upper panel for the file list (1–99)
 
 [theme]
-name = "yellow"      # accent color preset: "yellow" | "cyan" | "green" | "magenta" | "blue"
+# The accent a session starts with, before anyone picks one. Once picked (TUI
+# `<prefix> p` or the viewer's swatch) the choice is the session's and lives in
+# ~/.nightcrow/viewer.json, shared by every attached TUI and open browser.
+name = "yellow"      # "yellow" | "cyan" | "green" | "magenta" | "blue"
 
 [input]
 # Leader (prefix) chord. nightcrow app commands are reached tmux-style by

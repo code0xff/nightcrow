@@ -200,7 +200,7 @@ visible from the terminal pane.
 | `<prefix> f` | Fullscreen the focused pane. For the terminal it cycles `off → grid (all panes) → zoom (active pane only) → off`; with a single pane it toggles straight off/on. File list and diff viewer toggle off/on |
 | `<prefix> o` | Open a repo in a **project tab** (prefilled with the active project's path — type to replace it, or press `→`/`End` first to extend it). `Tab` completes the path against your filesystem and `↓` opens a directory browser (see below). A leading `~` expands to your home directory. If another tab already has that repo open, nightcrow focuses that tab instead of running two copies against one worktree |
 | `<prefix> x` | Close the active project tab. Closing the last one leaves nightcrow with no project open, which is a normal state |
-| `<prefix> p` | Cycle accent color (yellow → cyan → green → magenta → blue) |
+| `<prefix> p` | Cycle accent color (yellow → cyan → green → magenta → blue). The accent belongs to the session, so every attached TUI and every open browser follows |
 | `<prefix> r` | Force a full redraw (clears stray glyphs left by terminal programs) |
 | `<prefix> q` | Quit |
 | `<prefix> 1` / `<prefix> 2` | Focus the file/commit list / diff viewer — **split view only** |
@@ -300,9 +300,11 @@ Configurable under `[agent_indicator]` (see below).
 
 ## Session persistence
 
-nightcrow saves the current state on exit and restores it on the next launch — focus position, selected file, scroll offset, active terminal pane, view mode (status / commit log / tree), fullscreen states, commit-log drill-down position, tree expansion and selection, and accent color.
+nightcrow saves the current state on exit and restores it on the next launch — focus position, selected file, scroll offset, active terminal pane, view mode (status / commit log / tree), fullscreen states, commit-log drill-down position, and tree expansion and selection.
 
-Everything lands in one file, `~/.nightcrow/workspace.json` — which repos were open, which tab was in front, and each repo's view state. Nothing is written inside your repositories: no single repo owns the fact that others were open beside it, and nightcrow shouldn't create directories in a project it is only reading.
+The accent is not in that list. It belongs to the session rather than to one repo's view state, so it lives in `~/.nightcrow/viewer.json` alongside the viewer's other shared preferences and is not restored per repo.
+
+Everything else lands in one file, `~/.nightcrow/workspace.json` — which repos were open, which tab was in front, and each repo's view state. Nothing is written inside your repositories: no single repo owns the fact that others were open beside it, and nightcrow shouldn't create directories in a project it is only reading.
 
 A bare `nightcrow` reopens those tabs and lands on the one that was in front, with each project's selection and scroll where you left them. Repos that have moved or been deleted since are skipped, with a notice saying how many. View state is kept for the 50 most recently used repos.
 
@@ -344,11 +346,12 @@ the TUI it does not follow HEAD, so a commit made in the terminal panel appears
 after leaving and re-entering the tab.
 
 The swatch in the header cycles the accent colour through the same five
-presets as the TUI's `<prefix> p` (yellow → cyan → green → magenta → blue).
-The choice is stored on the server (`~/.nightcrow/viewer.json`), so every
-device that opens the viewer shows the same colour, and a change made on one
-reaches the others within a few seconds. It is **not** read from `[theme]` —
-that setting colours the TUI, and the viewer keeps its own.
+presets as the TUI's `<prefix> p` (yellow → cyan → green → magenta → blue) —
+and it is the same colour, not a parallel one. The choice is stored on the
+server (`~/.nightcrow/viewer.json`), so every device that opens the viewer and
+every attached TUI shows it, and a change made anywhere reaches the browsers
+within a few seconds and attached terminals immediately. `[theme] name` sets
+the colour a session starts with, before anyone has picked one.
 
 Drag the divider between the file list and the diff pane to resize the sidebar,
 or double-click it to reset the default width. The width is stored on the server
@@ -468,7 +471,8 @@ upper_pct = 55       # vertical % for the diff panel (1–99)
 file_list_pct = 25   # horizontal % of upper panel for the file list (1–99)
 
 [theme]
-name = "yellow"      # accent color preset: "yellow" | "cyan" | "green" | "magenta" | "blue"
+name = "yellow"      # accent a session starts with, before anyone picks one:
+                     # "yellow" | "cyan" | "green" | "magenta" | "blue"
 
 [input]
 leader = "ctrl+f"    # leader (prefix) chord for app commands; tmux-style.
