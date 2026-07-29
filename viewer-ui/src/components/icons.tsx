@@ -220,3 +220,31 @@ export function TerminalIcon({ className = "h-4 w-4" }: { className?: string }) 
     </svg>
   );
 }
+
+/**
+ * A monitor with a resize arrow across it: take the panes' size over and fit
+ * them to this screen. Distinct from `MaximizeIcon`, which only grows a panel
+ * already sized for here.
+ */
+export function FitScreenIcon({ className = "h-4 w-4" }: { className?: string }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+      focusable="false"
+      className={`shrink-0 ${className}`}
+    >
+      <rect x="2" y="3" width="20" height="14" rx="2" />
+      <path d="M12 17v4" />
+      <path d="M8 21h8" />
+      <path d="m9 13 6-6" />
+      <path d="M9 10v3h3" />
+      <path d="M15 10V7h-3" />
+    </svg>
+  );
+}

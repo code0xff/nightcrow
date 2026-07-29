@@ -5,7 +5,7 @@ import {
   useState,
   type CSSProperties,
 } from "react";
-import { MaximizeIcon, PlusIcon } from "../icons";
+import { FitScreenIcon, MaximizeIcon, PlusIcon } from "../icons";
 import { planLayout, type PaneView } from "../../lib/terminalLayout";
 import { usePaneDrag } from "../../hooks/terminal/usePaneDrag";
 import { useTerminalSocket } from "../../hooks/terminal/useTerminalSocket";
@@ -200,9 +200,10 @@ export function TerminalPanel({
           <button
             onClick={claimSize}
             title="These panes are sized for another client. Resize them to fit this screen."
-            className="ml-auto shrink-0 rounded-sm border border-ink-700 px-1.5 py-0.5 text-xs text-ink-400 hover:border-accent hover:text-accent"
+            aria-label="Fit the panes to this screen"
+            className="ml-auto flex shrink-0 items-center rounded-sm px-1.5 py-0.5 text-ink-400 hover:text-accent"
           >
-            fit to this screen
+            <FitScreenIcon />
           </button>
         )}
         <button
