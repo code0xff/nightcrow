@@ -127,6 +127,18 @@ The diff for a selected file shows the combined working-tree-with-index changes.
 
 **Path completion in the repo dialog** — `Tab` completes the directory you're typing, so you don't have to know the path by heart. One press extends as far as the names allow; when there's nothing left to extend it lists what's there instead. On a trailing `/` the first press shows that directory's contents, and a unique match gains a trailing `/` so you can keep pressing `Tab` to descend. Only directories are offered (a file can't be a repo), dotted directories stay hidden until you type a leading `.`, and a name that differs only in case is matched and corrected for you. The dialog is a path field, not a shell — `~`, `..` and paths relative to your working directory all work, but `cd`, `$VAR`, and globs don't, and `Enter` always means "open this path".
 
+**Browsing for a repo** — when you don't know the path, press `↓` in the repo dialog to browse instead of typing. (A second `Tab`, once the candidate list is up, opens the same browser: at that point the flat list has told you all it can.) The browser fills the body of the screen, rooted at whatever directory the field currently names, and the field stays visible below it with the keys spelled out.
+
+| Key | Action |
+|-----|--------|
+| `↓` / `j`, `↑` / `k` | Move the cursor |
+| `→` | Expand the selected directory (read lazily, one level at a time) |
+| `←` | Collapse it, or step out — to the parent row, or one level *above the root* when you're already at the top, so a sibling checkout is one press away |
+| `Enter` | Take the selected path into the field and return to it — this does **not** open the repo. Press `Enter` again in the field for that, or keep refining the path with `Tab` first |
+| `Esc` | Leave the browser, keeping the text it started from. A second `Esc` cancels the dialog |
+
+Directories only, hidden ones excluded, and nothing is ever written. Note that `Enter` means *select* here but *open* in the field — the browser's job is to fill the field, so `→` alone expands (unlike the file-tree view, where `Enter` expands too). Paths keep your own notation: browsing out of `~/coding` gives you back `~/coding/…`, not an absolute path. Mouse selection isn't supported; the browser is keyboard-only.
+
 ## Keyboard shortcuts
 
 nightcrow uses a tmux-style **leader (prefix)** key for its app commands. The
@@ -164,7 +176,7 @@ visible from the terminal pane.
 | `<prefix> l` | Toggle between status view and commit log view |
 | `<prefix> b` | Toggle the read-only file-tree view (returns to status view) |
 | `<prefix> f` | Fullscreen the focused pane. For the terminal it cycles `off → grid (all panes) → zoom (active pane only) → off`; with a single pane it toggles straight off/on. File list and diff viewer toggle off/on |
-| `<prefix> o` | Open a repo in a **project tab** (prefilled with the active project's path — type to replace it, or press `→`/`End` first to extend it). `Tab` completes the path against your filesystem (see below). A leading `~` expands to your home directory. If another tab already has that repo open, nightcrow focuses that tab instead of running two copies against one worktree |
+| `<prefix> o` | Open a repo in a **project tab** (prefilled with the active project's path — type to replace it, or press `→`/`End` first to extend it). `Tab` completes the path against your filesystem and `↓` opens a directory browser (see below). A leading `~` expands to your home directory. If another tab already has that repo open, nightcrow focuses that tab instead of running two copies against one worktree |
 | `<prefix> x` | Close the active project tab. Closing the last one leaves nightcrow with no project open, which is a normal state |
 | `<prefix> p` | Cycle accent color (yellow → cyan → green → magenta → blue) |
 | `<prefix> r` | Force a full redraw (clears stray glyphs left by terminal programs) |

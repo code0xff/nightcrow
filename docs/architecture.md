@@ -104,8 +104,10 @@ src/
 │   │                     #   process-level repo dialog/notice
 │   ├── repo_input.rs     # <prefix> o repo-input modal state
 │   ├── path_complete.rs  # Tab 경로 완성 (read_dir 한 단계, 디렉터리만)
+│   ├── path_tree.rs      # ↓ 디렉터리 브라우저 상태 (평면 row 리스트)
+│   ├── repo_picker.rs    # 필드 ↔ 브라우저 전환
 │   ├── persistence.rs    # workspace + per-repo state (~/.nightcrow/workspace.json)
-│   └── tests/            # workspace + repo_input tests
+│   └── tests/            # workspace + repo_input + repo_picker tests
 ├── runtime/
 │   ├── mod.rs
 │   ├── snapshot.rs       # SnapshotChannel: background git status/log worker
@@ -391,6 +393,43 @@ pane을 살려두는 탓에 탭 라벨과 셸의 작업 디렉토리가 어긋�
 repo 헤더다. 플로팅 팝업을 쓰지 않은 이유는 `src/ui/`에 오버레이 인프라가
 없고(모든 surface가 레이아웃 행을 차지한다) 마우스 캡처가 기본 on이라
 `hit_test.rs`에 새 히트 영역이 필요해지기 때문이다.
+
+**디렉터리 브라우저** — `workspace/path_tree.rs`(상태) + `ui/path_tree.rs`(렌더).
+경로를 아는 경우(형제 체크아웃 — prefill이 노리는 케이스)는 타이핑이 빠르고
+모르는 경우는 브라우저가 낫다. 둘은 경쟁이 아니라 계층이다.
+
+- **진입은 `↓`**(또는 `↑`). printable 문자는 전부 합법 경로 문자라 쓸 수 없고,
+  필드의 수평 키(`→`/`End`=prefill 수락)는 이미 "이 경로를 편집한다"는 뜻이라
+  수직 축이 비어 있다 — 브라우저 안에서 `↓`/`j`가 커서를 옮기므로 진입 키와
+  진입 후 조작이 같은 축에 놓이고, 모든 자동완성이 목록을 아래에 두는 관용과도
+  맞는다. `Ctrl+T`는 접었다: `T` 니모닉이 `<prefix> t`(새 터미널)와 겹쳐
+  "충돌하지 않는다"를 설명해야 했고, 다이얼로그의 다른 키가 전부 bare인데
+  Ctrl 화음만 튄다.
+- **후보 목록이 떠 있을 때의 두 번째 `Tab`도 브라우저로 승격한다.** 그 상태의
+  Tab은 같은 목록을 다시 그리는 죽은 키였고, 평면 목록이 실패한 지점이 정확히
+  거기다 — 배울 키 없이 도달하는 경로를 하나 남긴다.
+- **`Enter`는 확정이 아니라 필드로 되돌리며 경로를 채운다.** repo를 실제로 여는
+  지점은 필드의 `Enter` 한 곳뿐이다. 그래서 `Enter`의 의미가 두 surface에서
+  갈리고, 브라우저에서는 확장이 `→` 전용이다(트리 뷰는 `Enter`도 확장한다).
+- **평면 row 리스트**로 들고 있다. 확장은 자식을 부모 뒤에 splice, 접기는 아래
+  깊은 row를 drain — 선택이 화면 인덱스 그대로여서 프레임마다 flatten이 없다.
+- **사용자 표기를 보존한다**(완성기와 같은 이유). `root_text`(타이핑한 그대로)와
+  canonical `PathBuf`를 따로 들고, 고른 경로는 `root_text` 기준으로 조립한다.
+  `←`가 depth 0에서 루트를 한 단계 올릴 때만 예외가 생긴다 — `~`나 Windows
+  드라이브의 부모는 사용자 표기로 표현할 수 없으므로 절대 경로로 대체하되,
+  텍스트 수술을 믿지 않고 `canonicalize` 결과를 실제 부모와 대조해 검증한다.
+- **body 전체를 쓴다**(위의 팝업 부재와 같은 이유). 다이얼로그가 이미 모든 키를
+  소유하므로 view mode·fullscreen 분기보다 앞에서 body를 가로챈다 — 그 분기들이
+  그릴 것은 어차피 inert다. 마우스 클릭 선택은 범위 밖(`hit_test.rs`에 새 히트
+  영역이 필요하다). 세션 저장도 하지 않는다: 필드가 활성 프로젝트 경로로
+  prefill되므로 "지난 위치"가 새 영속 상태 없이 따라온다.
+- 브라우저를 열면 `prefilled`가 해제된다. 브라우저는 버퍼에 전체 경로를 쓰므로,
+  플래그가 살아 있으면 복귀 후 첫 타이핑이 방금 고른 경로를 지운다.
+
+다이얼로그는 hint legend를 통째로 대체하므로(입력 줄이 그 자리를 쓴다) 키를
+알릴 다른 자리가 없다. `hint_bar::repo_input_line`이 커서 뒤에 축약 legend를
+붙이고, 폭이 모자라면 잘라내지 않고 통째로 버린다 — 커서는 반드시 보여야 하고
+반쪽 legend는 렌더 결함으로 읽힌다.
 
 입력 핸들러는 `&mut App` 하나만 받으므로 탭 목록에 닿을 수 없다. 대신
 워크스페이스 수준 의도를 `KeyOutcome::Project(ProjectRequest)`로 반환하고
