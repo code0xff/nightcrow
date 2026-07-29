@@ -135,7 +135,7 @@ pub(crate) fn run_serve(
     }
 
     let mut paths = resolve_serve_repos(&repos)?;
-    // Unify with the TUI/mirror: restore the previously-open projects so the
+    // Unify with the TUI: restore the previously-open projects so the
     // viewer does not start blank each launch. Explicit --repo comes first and
     // wins; remembered repos that still exist fill in after, de-duplicated.
     if let Some(ws) = crate::workspace::persistence::load_workspace() {

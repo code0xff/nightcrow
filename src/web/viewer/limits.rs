@@ -69,8 +69,9 @@ pub const MAX_PANE_COLS: u16 = 1_100;
 /// emulation, which this viewer deliberately does not do (xterm.js is the only
 /// emulator).
 pub const MAX_TERMINAL_SCROLLBACK_BYTES: usize = 256 * 1024;
-/// Live connections the viewer's accept loop will hold. Separate from the
-/// mirror's cap: they are different servers on different ports.
+/// Live connections the viewer's accept loop will hold. Each one costs a
+/// thread, so without a ceiling anything that can reach the port can exhaust
+/// the process.
 pub const MAX_VIEWER_CONNECTIONS: usize = 64;
 
 /// A list that may have been cut short, with the fact recorded.

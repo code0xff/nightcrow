@@ -6,6 +6,7 @@ mod application_tests;
 mod backend;
 mod cli;
 mod config;
+mod daemon;
 mod git;
 mod input;
 mod platform;
