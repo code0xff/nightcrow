@@ -7,6 +7,7 @@
 //! the user can open, so it does not. Keeping the two transports apart is what
 //! keeps that difference from becoming a mistake in a shared code path.
 
+pub(crate) mod client;
 pub(crate) mod clients;
 pub(crate) mod frame;
 pub(crate) mod lock;
