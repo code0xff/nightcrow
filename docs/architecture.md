@@ -191,21 +191,81 @@ src/
 
 ### TerminalBackend Trait
 
-`TerminalBackend`는 PTY 추상화 layer다. 현재 구현체는 `PtyBackend` 하나이며 (이전 TmuxBackend는 제거됨), 추가 backend가 생기더라도 동일한 contract를 따른다.
+`TerminalBackend`는 pane 추상화다. 구현체가 둘이고, 둘의 차이가 이 trait의 모양을 정했다.
 
 ```rust
 trait TerminalBackend {
-    fn create_pane(&mut self, rows: u16, cols: u16, command: Option<&str>) -> Result<PaneId>;
+    fn create_pane(&mut self, rows: u16, cols: u16, command: Option<&str>) -> Result<()>;
     fn destroy_pane(&mut self, id: PaneId);
     fn send_input(&mut self, id: PaneId, data: &[u8]) -> Result<()>;
     fn resize(&mut self, id: PaneId, rows: u16, cols: u16);
-    fn set_cwd(&mut self, path: &Path);
+    fn reorder(&mut self, order: &[PaneId]);   // 기본 no-op
+    fn claim_size(&mut self);                  // 기본 no-op
     fn drain_events(&mut self) -> Vec<BackendEvent>;
+    // Created / Output / Exited / Resized / SizeOwnership / Reordered
 }
 ```
 
-- `PtyBackend`: portable-pty로 PTY 생성, reader 스레드가 `mpsc::Sender`로 출력/Exited 이벤트를 푸시한다. `runtime::emulator::PaneEmulator`(alacritty_terminal 래퍼)가 VT 시퀀스를 그리드로 변환한다.
-- **Pane 생명주기 단일 owner**: `drain_events`는 보고만 하고 제거하지 않는다. `App::poll_terminal`이 Exited 수신 시 `destroy_pane`을 호출해 backend HashMap에서 제거한다. `close_active_pane`도 같은 destroy 경로를 사용해, reader 스레드와의 race로 인한 이중 제거 / 이벤트 누락이 없다.
+- `PtyBackend`: portable-pty로 PTY를 만들고 reader 스레드가 출력·Exited를 채널로 푸시한다.
+  터미널 허브가 **구체 타입으로 소유**하며 `open_pane`으로 id를 직답받는다 — 만든 즉시
+  등록해야 하기 때문이다.
+- `HubBackend`(`backend/hub.rs`): 데몬 소켓 위에 얹은 같은 trait. 저장소당 하나이고 attach
+  연결을 공유한다. 아무것도 소유하지 않고 요청한다.
+
+**소유하지 않는다는 사실이 trait을 세 군데 바꿨다.**
+
+1. **pane은 반환값이 아니라 이벤트로 온다.** id는 PTY가 실제로 사는 곳에서 나오고, 남이 연
+   pane도 같은 경로로 와야 한다. `create_pane`은 "요청"이고 `BackendEvent::Created`가 도착을
+   알린다. 이벤트가 `requested`를 실어 **내가 연 pane만** 포커스를 가져간다 — 어느 pane을 보고
+   있는지는 클라이언트 각자의 일이다. 제목도 같은 규칙으로 큐에 대기했다 도착 시 붙는다.
+2. **크기는 이 클라이언트가 정하는 것이 아닐 수 있다**(아래 세션 공유 참고). `Resized`를 따라가고,
+   소유하지 않으면 `resize`를 보내지 않는다.
+3. **순서도 세션의 것이다.** `swap_active_with`는 `reorder` 요청이고, `panes`는 `Reordered`가
+   투영하는 서버 canonical order다.
+4. VT 에뮬레이션은 어느 쪽이든 **클라이언트가 한다** — `PaneEmulator`가 소켓에서 온 바이트를
+   PTY에서 온 것과 똑같이 먹는다. 뷰어에서 xterm.js가 서 있는 자리와 같다.
+
+- **Pane 생명주기 단일 owner**: `drain_events`는 보고만 하고 제거하지 않는다. `TerminalState::poll`이
+  Exited 수신 시 `destroy_pane`을 호출한다(이미 닫힌 pane에 대해 idempotent). `close_active`도 같은
+  경로를 쓰므로 이중 제거·이벤트 누락이 없다.
+
+### 세션 공유 (데몬 ↔ 클라이언트)
+
+무엇이 공유이고 무엇이 클라이언트별인지가 이 앱의 중심 결정이다. 전부 공유하면 브라우저에서
+커서를 내릴 때 TUI 커서도 내려가 "디스플레이별 렌더링"이 의미를 잃고, 전부 로컬이면 같은 세션에
+붙은 두 화면이 서로 다른 것을 보여준다.
+
+- **공유(데몬 소유)**: 저장소 집합과 순서, **활성 프로젝트**, 터미널 pane 집합·내용·순서·크기
+- **클라이언트별**: 뷰 모드(status/log/tree), 커서·선택·스크롤, 포커스, fullscreen, 검색 텍스트
+
+**데몬이 세션을 감시한다**(`daemon/watch.rs`). 세션에는 문이 둘이다 — 브라우저의 HTTP 핸들러와
+attach 소켓 — 그래서 브라우저에서 연 저장소는 attach 소켓의 아무것도 깨우지 않는다. watcher
+스레드가 틱마다 세션을 다시 읽어 마지막으로 알린 것과 다르면 브로드캐스트한다. **알림(callback)이
+아니라 관측인 이유**: 알림은 나중에 추가된 mutation이 빼먹을 수 있고, 그 실패가 정확히 "브라우저
+변경이 TUI에 안 닿는" 버그로 다시 나타난다. 그래서 브로드캐스트하는 곳이 하나이고(클라이언트가
+무엇을 아는지에 대한 기록이 하나), 새로 생긴 저장소의 터미널을 모든 클라이언트에 구독시키는
+것도 여기다 — 소켓을 읽는 스레드는 `read`에 막혀 있어 할 수 없다. attach 클라이언트의 요청은
+watcher를 **즉시 깨우므로**(`Nudge`) 키 입력이 폴링 간격을 기다리지 않는다.
+
+**PTY 크기는 한 클라이언트가 정한다.** PTY는 데이터가 아니라 자식 프로세스와 맺은 계약이다 —
+자식은 들은 폭에 맞춰 그리고, alternate screen을 쓰는 풀스크린 TUI를 나중에 다시 흘릴 방법은
+없다. 그래서 tmux의 `window-size latest`와 같은 모델을 쓴다: **접속이 곧 소유권 이전**(방금
+앉은 클라이언트에 맞춘다), 이미 붙어 있으면 `claim_size`로 명시적 탈취(TUI `<prefix> z`, 뷰어의
+"fit to this screen"), 소유자가 떠나면 남은 중 가장 최근에게, 아무도 없으면 마지막 크기 유지.
+비소유자의 resize는 버려지고 **실제 적용된 크기가 브로드캐스트된다** — 관전자의 에뮬레이터도
+자식이 감는 곳에서 감아야 하기 때문이다. 소유자도 그것을 읽지만("clamp됐다"를 그렇게 안다)
+"내가 요청한 값" 기록은 유지한다. 그러지 않으면 매 프레임 같은 clamp를 다시 요청한다.
+입력마다 소유권을 옮기는 대안은 기각했다 — 폰으로 잠깐 확인하는 제일 가벼운 행동이 전체
+repaint를 유발하는 제일 비싼 행동이 된다. 부수 효과로 **비소유 클라이언트가 곧 관전자**여서
+별도의 관전 모드가 필요 없고, 영역과 그리드가 다르면 렌더 경로가 clamp로 처리한다(작으면
+여백, 크면 잘라냄).
+
+**스크롤백 깊이는 두 상한이 만나는 자리다** — 허브는 pane당 바이트 링(256 KiB), 클라이언트는
+줄(1000)로 센다. 평범한 출력에서는 바이트 창이 훨씬 넓어 클라이언트의 줄 상한이 먼저 차지만,
+**줄당 ~262바이트를 넘으면 리플레이가 줄 상한을 못 채운다**(토큰마다 색을 바꾸는 하이라이팅이
+거기에 닿는다). 그 지점을 테스트로 고정해 두고 상한은 바꾸지 않았다 — 거기 닿는 출력은 대부분
+텍스트가 아니라 repaint 시퀀스이고, 부족분은 1000줄 중 수백 줄이며, 상한은 저장소×pane마다
+지불된다.
 
 ### Git Diff Pipeline
 
@@ -505,7 +565,7 @@ UI·터미널·저장소 상태, `lib/`는 API 이외의 순수 도메인/레이
 - **경로 검증은 `with_repo` 한 곳에서** 한다. 라우트마다 쓰면 빠뜨린다: 실제로 `/api/diff`가 `../../etc/passwd`를 받아들였다. `load_file_diff`는 경로를 파일이 아니라 git pathspec으로 넘겨 검증기에 닿지 않았고, 빈 hunk와 함께 공격자의 경로를 그대로 되돌려줬다. **라우트가 "어떤 로더를 호출하느냐"에 따라 우연히 안전해서는 안 된다.**
 - **저장소는 opaque id로만 지정**한다(`catalog.rs`). 클라이언트가 디렉토리를 이름 붙일 수 없으므로 "어느 저장소인가"는 검증할 입력이 아니라 성공하거나 404가 되는 조회다. id는 프로세스 수명 동안 안정적이라, 무관한 탭을 열고 닫아도 다른 id가 재배치되지 않는다.
 - **저장소별 런타임**(`runtime.rs`): `SnapshotChannel`은 단일 consumer `mpsc`라 TUI 것을 공유할 수 없어 자기 것을 띄운다. 스냅샷을 wire 페이로드로 한 번만 줄여 팬아웃한다. **팬아웃은 conflate**된다 — 느린 구독자는 최신 상태를 받지, 밀린 과거를 재생하지 않는다(슬롯 1개 + 1-depth 병합 wakeup). 소켓 I/O 중 락을 잡지 않는다. 페이로드가 직전과 동일하면 발행하지 않는다: producer는 변화가 아니라 타이머로 tick하므로, 그러지 않으면 유휴 저장소가 매초 스트리밍하며 seq를 태워 "뭔가 바뀌었나"의 지표로 쓸 수 없게 된다.
-- **터미널**(`terminal.rs`)은 TUI 패인과 **별개 세션**이다. 공유하려면 `App`에 손을 대야 하고 그러면 헤드리스가 깨진다. raw PTY 바이트를 서버측 VT 에뮬레이션 없이 그대로 보낸다(xterm.js가 이미 에뮬레이터다). 4바이트 LE pane id를 앞에 붙인 **바이너리 프레임** — PTY 읽기는 멀티바이트 시퀀스를 일상적으로 쪼개므로 JSON으로 조기 디코딩하면 브라우저가 재조립하기 전에 깨진다. **출력은 conflate하지 않고 큐잉**한다: 최신 status는 완결된 그림이지만 터미널 바이트는 하나만 빠져도 스트림이 깨지므로, 큐를 넘긴 클라이언트는 조용히 버리지 않고 끊는다.
+- **터미널**(`terminal.rs`)은 **세션의 터미널이고, attach한 TUI가 보는 것과 같은 pane**이다(허브가 PTY를 소유하고 두 전송이 같은 허브에 붙는다 — 위 "세션 공유" 참고). raw PTY 바이트를 서버측 VT 에뮬레이션 없이 그대로 보낸다(xterm.js가 이미 에뮬레이터다). 4바이트 LE pane id를 앞에 붙인 **바이너리 프레임** — PTY 읽기는 멀티바이트 시퀀스를 일상적으로 쪼개므로 JSON으로 조기 디코딩하면 브라우저가 재조립하기 전에 깨진다. **출력은 conflate하지 않고 큐잉**한다: 최신 status는 완결된 그림이지만 터미널 바이트는 하나만 빠져도 스트림이 깨지므로, 큐를 넘긴 클라이언트는 조용히 버리지 않고 끊는다.
 - **PTY 크기는 확정된 값만 전달한다**(`usePaneSizes.ts`, `ServerMessage::Created`). 리사이즈는 싼 메시지가 아니다 — 자식은 SIGWINCH를 받고 풀스크린 프로그램은 화면을 통째로 다시 그린다. 그래서 두 가지를 막는다. 첫째, **중간값을 보내지 않는다**: 브라우저는 최종 기하에 도달하기까지 여러 중간 상태를 지난다(두 번째 pane이 생기며 그리드가 쪼개짐, 웹폰트 로딩, 브레이크포인트 전환). `fit()`은 즉시 돌리되 — xterm 자기 버퍼만 reflow하고 선을 타지 않으므로 드래그가 매끄럽다 — 서버로 보내는 것만 레이아웃이 멈춘 뒤로 미룬다. 둘째, **`created`가 pane의 현재 크기를 싣는다**: pane의 크기를 아는 것은 그것을 정한 페이지뿐이라, 재접속한 클라이언트는 아무것도 가정하지 못하고 자기 크기를 보내야 했고 그 값이 같아도 자식은 한 번 다시 그렸다. 이제 클라이언트가 그 크기를 채택하므로 같은 레이아웃으로 리로드하면 리사이즈가 0번이다. 셋째, **크기를 모르는 PTY는 만들지 않는다**: 접속하면 서버가 `pending`으로 "사이즈 대기 중인 startup 터미널 N개"를 알리고, 클라이언트가 그 pane들이 차지할 셀을 placeholder로 렌더해 **실제 DOM을 재서** `start`로 답한 뒤에야 PTY가 생긴다(`useStartupSizes`). 그리드 산술이 아니라 버려지는 xterm 하나를 그 셀에 열어 `proposeDimensions()`로 재는데, gap과 셀 헤더를 다시 유도하다 어긋나면 그 오차가 곧 이 핸드셰이크가 없애려던 "잘못된 크기로 태어남"이기 때문이다. **타임아웃은 두지 않는다** — 임의의 시간 상수는 기기마다 다른 브라우저 레이아웃 타이밍을 하나로 못 박는 것이라, 두 가지로 대신했다. 측정 실패의 fallback은 **클라이언트**에 둔다(실패했음을 아는 쪽이 거기다. 빈 `sizes`로 답하면 서버가 기존 기본값으로 연다). 그리고 `started` 플래그를 접속이 아니라 **`start` 도착 시점에 소비**한다 — 그래서 핸드셰이크 도중 끊긴 페이지가 터미널을 데려가지 못하고, 다음 접속자가 제안을 다시 받는다(제안은 미청구 상태인 동안 모든 접속자에게 간다). 둘이 동시에 답하면 CAS로 첫 번째만 이겨 pane은 정확히 한 번 생긴다.
 - **터미널 pane 순서는 hub가 authoritative하다**(`terminal.rs::reorder_panes`, `viewer-ui/src/lib/paneOrder.ts`). 클라이언트가 pane 헤더를 드래그하면 원하는 전체 순서를 `reorder`로 보내고, hub는 그것을 살아있는 pane에 맞춰 재조정한 뒤(`canonical_order`: 요청 순서 중 실재하는 id를 먼저, 요청이 빠뜨린 live pane은 현재 순서로 뒤에, 모르는 id·중복은 버림) canonical 순서를 `reordered`로 **전 클라이언트에 broadcast**한다. 클라이언트는 낙관적으로 미리 바꾸지 않고 이 echo를 받아 반영해(`reconcileOrder`, create/close와 같은 패턴) 여러 기기가 한 순서로 수렴한다. **순서는 hub의 pane Vec에 살아서** 재접속 replay(`connect`가 그 순서대로 `Created`를 재생)와 다른 기기가 자동으로 따라온다 — 디스크에는 쓰지 않는다. 서버 재시작은 pane 자체를 파기하고 빈 패널로 복귀하므로 영속화할 상태가 없다. DnD는 HTML5 drag가 아니라 pointer 이벤트라(sidebar divider와 같은 선택) 폰 터치도 마우스와 동일하게 동작한다. 재정렬은 pane id·scrollback·PTY를 건드리지 않고 그리드 배치만 바꾸므로 터미널이 끊기지 않는다.
 - **프로젝트 탭 순서도 서버가 authoritative하다**(`catalog.rs::reorder`, `POST /api/repos/order`, `viewer-ui/src/pages/App.tsx`). 헤더 탭을 pointer로 드래그하면(pane 헤더·sidebar divider와 같은 선택이라 폰 터치도 동일) 원하는 id 순서를 보내고, 서버가 그것을 live repo에 맞춰 canonical화한 뒤(pane의 `canonical_order`와 동형 — 재사용한 `reconcileOrder`/`reorderByDrop`을 pane number·repo string 양쪽에 쓰도록 제네릭화) 갱신된 목록을 돌려준다. **pane과 다른 점은 전송 채널이다**: repo 목록에는 전용 WebSocket이 없고 `/api/repos` 폴링뿐이라, broadcast 대신 REST로 순서를 갱신하고 다음 폴링이 그것을 받는다. **순서가 `rebuild`를 견디게** `Catalog`에 명시적 `order` overlay를 두어, `union_paths`가 base+added 자연 순서를 그 위에 정렬한다(순서에 없는 새 repo는 끝에). 폴링이 드래그 직후의 옛 순서를 늦게 들고 와 스냅백하는 것은 세 겹으로 막는다: accent·sidebar 폭과 같은 write-generation 가드(`repoOrderWrites`), 드래그 중 차단(`repoDraggingRef`), 그리고 **reorder POST가 in-flight/큐에 있는 동안 폴링이 순서를 채택하지 않는** pending 가드다(마지막 것이 "카운터는 올랐지만 POST 커밋 전 서버를 읽은 폴링이 generation은 일치하는" 창을 닫는다). 가드가 걸린 폴링은 서버 순서를 버리되 membership(다른 기기의 open/close)은 `reconcileOrder`로 받아들인다. **reorder POST는 클라이언트에서 직렬화**한다(한 번에 하나, 큐에는 최신 순서만) — 두 POST가 별도 커넥션이라 서버 처리 순서가 보장되지 않아, 병렬로 쏘면 서버가 옛 요청을 나중에 커밋해 잘못된 순서로 영속할 수 있기 때문이다. **남는 transient 하나**: 커밋 전 서버를 읽었지만 POST가 정착한 뒤 도착하는 폴링은 여전히 한 번 스냅백할 수 있다 — accent·sidebar 폭이 받아들이는 것과 같은 자기교정(다음 폴링) transient라 서버 revision을 도입하지 않는다(그 둘과 일관된 단순 poll 동기화를 유지). **영속은 open/close와 같은 경계**를 따른다: headless `serve`(`persist=true`)면 `catalog.paths()`가 `workspace.json`의 탭 순서로 저장돼 재시작·다른 기기에 유지되고, TUI 동반 실행에서는 세션 한정이다(그 파일의 주인이 TUI라서). 저장 시 `persist_workspace`는 `ws.active`를 인덱스가 아니라 **이전 활성 path 기준으로 재매핑**한다 — 순서가 바뀌면 같은 인덱스가 다른 repo를 가리키므로, 다음 TUI 실행이 엉뚱한 탭을 활성으로 열지 않게 한다. **한 가지 한계**: `serve`에 `--repo`를 명시하면 그 인자가 시작 순서를 지배해(`main.rs`: "explicit --repo comes first and wins") 그 path들의 저장된 재정렬은 재시작 때 덮인다 — 인자 없는 `serve`(workspace만으로 뜨는 일반적 경우)에서는 저장 순서가 그대로 복원된다. 이는 뷰어 기능이 아니라 기존 startup 우선순위 결정이라 그대로 둔다. 또한 `catalog.reorder`(mutation 락으로 원자적) 자체와 이어지는 `persist_workspace`(파일 IO)는 한 트랜잭션이 아니라, **두 기기가 밀리초 안에 동시에 재정렬하면** 파일이 마지막 라이브 순서보다 한 박자 뒤처질 수 있다(라이브 catalog는 항상 정확, 다음 재정렬이 교정). prefs(accent·폭)의 fire-and-forget 영속 경합과 같은 클래스라, 파일 IO를 catalog 락 안으로 끌어들이는 대신 같은 단순 모델을 유지한다.
