@@ -161,23 +161,19 @@ pub fn validate_config(cfg: &Config) -> Result<()> {
         (1..=1024).contains(&cfg.tree.max_depth),
         "tree.max_depth must be between 1 and 1024"
     );
-    // The web server only needs a valid bind/port when it is enabled; a
-    // disabled section is never acted on, so leave its fields unchecked.
-    if cfg.web_viewer.enabled {
-        anyhow::ensure!(
-            cfg.web_viewer.port != 0,
-            "web_viewer.port must be non-zero when web_viewer.enabled"
-        );
-        cfg.web_viewer
-            .bind
-            .parse::<std::net::IpAddr>()
-            .with_context(|| {
-                format!(
-                    "web_viewer.bind \"{}\" is not a valid IP address",
-                    cfg.web_viewer.bind
-                )
-            })?;
-    }
+    // Always checked: the browser surface is part of the session rather than a
+    // section that may be left switched off, so a bad address is a startup
+    // error and not a setting nobody reaches.
+    anyhow::ensure!(cfg.web_viewer.port != 0, "web_viewer.port must be non-zero");
+    cfg.web_viewer
+        .bind
+        .parse::<std::net::IpAddr>()
+        .with_context(|| {
+            format!(
+                "web_viewer.bind \"{}\" is not a valid IP address",
+                cfg.web_viewer.bind
+            )
+        })?;
     // Surface a bad leader at startup (plain stderr) rather than letting the
     // app fall back to a silent default the user did not ask for.
     parse_leader(&cfg.input.leader)?;

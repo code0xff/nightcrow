@@ -6,9 +6,8 @@ use crate::config::{
 };
 
 #[test]
-fn web_config_defaults_are_off_and_loopback() {
+fn web_config_defaults_to_loopback() {
     let cfg = WebViewerConfig::default();
-    assert!(!cfg.enabled);
     assert_eq!(cfg.bind, "127.0.0.1");
     assert_eq!(cfg.port, 8091);
     assert!(cfg.password.is_none());
@@ -20,13 +19,11 @@ fn web_config_defaults_are_off_and_loopback() {
 fn web_viewer_config_parses_from_toml() {
     let toml = r#"
 [web_viewer]
-enabled = true
 bind = "0.0.0.0"
 port = 9000
 password = "hunter2"
 "#;
     let cfg: Config = toml::from_str(toml).unwrap();
-    assert!(cfg.web_viewer.enabled);
     assert_eq!(cfg.web_viewer.bind, "0.0.0.0");
     assert_eq!(cfg.web_viewer.port, 9000);
     assert_eq!(cfg.web_viewer.password.as_deref(), Some("hunter2"));
@@ -36,10 +33,9 @@ password = "hunter2"
 
 #[test]
 fn config_without_web_table_defaults() {
-    // A pre-existing config file with no [web_viewer] table must still parse and
-    // validate, falling back to the disabled default.
+    // A config file with no [web_viewer] table must still parse and validate,
+    // falling back to the defaults.
     let cfg: Config = toml::from_str("[layout]\nupper_pct = 50\n").unwrap();
-    assert!(!cfg.web_viewer.enabled);
     assert_eq!(cfg.web_viewer.port, 8091);
     validate_config(&cfg).unwrap();
 }
@@ -79,30 +75,19 @@ fn web_has_credential_treats_empty_password_as_missing() {
 }
 
 #[test]
-fn web_validation_rejects_port_zero_when_enabled() {
+fn web_validation_rejects_port_zero() {
     let mut cfg = Config::default();
-    cfg.web_viewer.enabled = true;
     cfg.web_viewer.port = 0;
     assert!(validate_config(&cfg).is_err());
 }
 
 #[test]
-fn web_validation_rejects_bad_bind_when_enabled() {
+fn web_validation_rejects_a_bad_bind_address() {
+    // Always checked now that the browser surface is part of the session:
+    // there is no switched-off state in which a garbage address goes unread.
     let mut cfg = Config::default();
-    cfg.web_viewer.enabled = true;
     cfg.web_viewer.bind = "not-an-ip".into();
     assert!(validate_config(&cfg).is_err());
-}
-
-#[test]
-fn web_validation_ignores_bind_and_port_when_disabled() {
-    // A disabled web section is never acted on, so its fields are not
-    // range-checked — a stale/garbage value must not block startup.
-    let mut cfg = Config::default();
-    cfg.web_viewer.enabled = false;
-    cfg.web_viewer.port = 0;
-    cfg.web_viewer.bind = "not-an-ip".into();
-    assert!(validate_config(&cfg).is_ok());
 }
 
 #[test]
@@ -119,10 +104,10 @@ fn generate_password_has_expected_length_and_alphabet() {
 
 #[test]
 fn insert_password_adds_line_under_existing_header() {
-    let source = "[web_viewer]\nenabled = true\nport = 8091\n";
+    let source = "[web_viewer]\nbind = \"127.0.0.1\"\nport = 8091\n";
     let out = insert_password(source, WEB_VIEWER_TABLE, "secret");
     assert_eq!(
-        out, "[web_viewer]\npassword = \"secret\"\nenabled = true\nport = 8091\n",
+        out, "[web_viewer]\npassword = \"secret\"\nbind = \"127.0.0.1\"\nport = 8091\n",
         "the password line must land right after the [web_viewer] header"
     );
     // The result round-trips and exposes the password.
@@ -193,7 +178,6 @@ fn ensure_web_password_is_noop_when_credential_present() {
     let dir = tempfile::TempDir::new().unwrap();
     let path = dir.path().join("config.toml");
     let mut cfg = Config::default();
-    cfg.web_viewer.enabled = true;
     cfg.web_viewer.password = Some("preset".into());
     let generated = ensure_web_viewer_password(&mut cfg, &path).unwrap();
     assert!(
@@ -212,10 +196,9 @@ fn ensure_web_password_generates_persists_and_sets() {
     let dir = tempfile::TempDir::new().unwrap();
     let path = dir.path().join("nested").join("config.toml");
     std::fs::create_dir_all(path.parent().unwrap()).unwrap();
-    std::fs::write(&path, "[web_viewer]\nenabled = true\n").unwrap();
+    std::fs::write(&path, "[web_viewer]\nport = 8091\n").unwrap();
 
     let mut cfg = Config::default();
-    cfg.web_viewer.enabled = true;
     let generated = ensure_web_viewer_password(&mut cfg, &path).unwrap();
 
     let pw = generated.expect("a password must be generated when none is set");
@@ -230,7 +213,6 @@ fn ensure_web_password_creates_file_when_absent() {
     let dir = tempfile::TempDir::new().unwrap();
     let path = dir.path().join("config.toml");
     let mut cfg = Config::default();
-    cfg.web_viewer.enabled = true;
 
     let pw = ensure_web_viewer_password(&mut cfg, &path)
         .unwrap()

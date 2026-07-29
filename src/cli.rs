@@ -66,10 +66,6 @@ pub(crate) fn run_daemon(exec: Vec<String>, port: Option<u16>, bind: Option<Stri
     if let Some(bind) = bind {
         cfg.web_viewer.bind = bind;
     }
-    // `serve` is an explicit request, so the config toggle is not consulted —
-    // the user already said what they want by running this.
-    cfg.web_viewer.enabled = true;
-
     // Logging comes up before anything is served, so a failure while opening
     // repositories has somewhere to go. Anchored at the nightcrow directory
     // rather than a repository: the daemon has no one repository, and the

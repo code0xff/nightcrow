@@ -20,9 +20,6 @@ pub(super) const PASSWORD_ALPHABET: &[u8] =
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct WebViewerConfig {
-    /// Enable the viewer alongside the TUI. Off by default — it exposes both
-    /// repository contents and interactive terminals.
-    pub enabled: bool,
     /// Address to bind. Loopback by default; the server speaks plain HTTP, so
     /// remote access belongs behind an SSH tunnel or reverse proxy.
     pub bind: String,
@@ -36,7 +33,6 @@ pub struct WebViewerConfig {
 impl Default for WebViewerConfig {
     fn default() -> Self {
         Self {
-            enabled: false,
             bind: DEFAULT_WEB_BIND.to_string(),
             port: DEFAULT_WEB_VIEWER_PORT,
             password: None,
@@ -65,7 +61,7 @@ pub fn generate_password() -> Result<String> {
         .collect())
 }
 
-/// Ensure the enabled viewer has a login credential, generating and persisting
+/// Ensure the viewer has a login credential, generating and persisting
 /// one when the config has none. A no-op when a `password` or `hashed_password`
 /// is already set. Otherwise a random password is generated, written back into
 /// the config file at `path` (creating it if absent, preserving any existing

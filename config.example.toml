@@ -44,7 +44,7 @@ enabled = true
 
 [log]
 enabled = true
-dir = ".nightcrow/logs"   # relative to repo root
+dir = ".nightcrow/logs"   # relative paths resolve under the home directory
 rotation = "daily"        # "daily" | "hourly" | "size"
 max_size_mb = 10          # used when rotation = "size"
 max_days = 7              # delete logs older than N days (0 = keep forever)
@@ -87,19 +87,17 @@ live_watch = true         # watch expanded dirs and refresh the tree live; set f
 # [[startup_command]]
 # command = "cargo test --watch"
 
-# Native web viewer: renders git data as a real web page and serves its own
-# terminals. Also available without the TUI as `nightcrow serve --repo <path>`.
-# Off by default — enabling it exposes repository contents and interactive
-# shells, so treat the bind address and password as security-sensitive.
+# The browser surface: renders git data as a real web page and serves the
+# session's terminals. Always on — it is part of the session, not an add-on —
+# so treat the bind address and password as security-sensitive.
 [web_viewer]
-enabled = false
 bind = "127.0.0.1"        # loopback only by default; set "0.0.0.0" deliberately.
                           # The server speaks plain HTTP — for remote access
                           # prefer an SSH tunnel or a TLS reverse proxy.
 port = 8091
-# Login password. If the viewer is enabled and no password is set here, a random
-# one is generated and written back to this line on first launch (and printed on
-# startup) so it survives restarts and stays readable.
+# Login password. If none is set here, a random one is generated and written
+# back to this line on first launch (and printed on startup) so it survives
+# restarts and stays readable.
 # password = "..."
 # Alternatively store an Argon2 PHC hash instead of a plaintext password; it
 # takes precedence over `password` when both are present.
