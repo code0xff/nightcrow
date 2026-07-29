@@ -2,15 +2,18 @@
 
 ## Overview
 
-nightcrow는 agent-adjacent Rust TUI 애플리케이션이다.
-상단 패널에서 git diff를 실시간 추적하고, 하단 패널에서 임의의 프로세스(주로 LLM CLI나 빌드/테스트 러너)를 동시에 실행한다.
+nightcrow는 **세션 데몬 하나 + 프론트엔드 N개** 구조의 agent-adjacent Rust 애플리케이션이다.
+`nightcrow`가 세션(저장소 집합과 터미널)을 소유하고, 터미널에서 `nightcrow attach`로,
+브라우저에서 웹으로 같은 세션에 붙는다. 클라이언트가 나가도 세션은 산다.
+화면은 상단 패널에서 git diff를 실시간 추적하고, 하단 패널에서 임의의 프로세스(주로 LLM CLI나 빌드/테스트 러너)를 동시에 실행한다.
+전환 과정과 남은 단계는 `docs/session-daemon-plan.md`를 참고한다.
 nightcrow 자체는 AI에 대한 ontology를 갖지 않는다 — agent든 사람이든 동일한 PTY와 파일 mtime을 본다.
 
 **대상 사용자**: 터미널 중심으로 작업하면서, 옆 패널의 LLM CLI(Claude Code, Codex, aider 등)나 빌드/테스트 러너가 만든 코드 변경을 실시간으로 따라잡고 싶은 개발자.
 
 **핵심 기능**: 멀티 프로젝트 탭(최대 10개 저장소, 프로젝트별 git 뷰 + 터미널 pane), 변경 파일 리스트(좌측/키보드 네비게이션), git diff 뷰어(우측/문법 하이라이팅), commit log 뷰, read-only 파일 트리 내비게이터(라이브 워치 + 재귀 파일명 검색 + 마크다운·HTML 렌더 뷰), split-view 멀티 PTY 패널(하단), mtime 기반 hot-file 강조 + idle auto-follow, OSC 0/2 탭 타이틀 캡처, 마우스 캡처(클릭 포커스/포워딩, 휠 라우팅, 클릭 가능한 힌트 바).
 
-**선택적 웹 표면**: 같은 git 데이터를 DOM으로 렌더하고 자기 터미널 세션을 갖는 웹 뷰어(`[web_viewer]` / TUI 없이 `nightcrow serve`). TUI와 포트·쿠키·비밀번호를 공유하지 않는다.
+**웹 표면**: 같은 git 데이터를 DOM으로 렌더하고 세션의 터미널을 서빙하는 웹 뷰어(`[web_viewer]`). 세션의 일부라 항상 뜨며, attach 소켓과 인증 방식이 다르다 — 소켓은 파일 권한, 웹은 Argon2 로그인.
 
 ## Layout
 
@@ -56,12 +59,17 @@ below for the layout and resize rules.
 
 ```
 src/
-├── main.rs               # entry point, TerminalGuard, run()
-├── cli.rs                # Cli/Commands, run_init/run_serve, viewer bootstrap
+├── main.rs               # entry point: dispatch to daemon / attach / init
+├── cli.rs                # Cli/Commands, run_daemon/run_init
+├── daemon/               # the session socket: framing, protocol, accept loop,
+│                         #   single-instance lock, attaching client
 ├── test_util.rs          # #[cfg(test)] git fixture helpers shared across modules
-├── application/          # native TUI process orchestration
+├── application/          # attached TUI orchestration
+│   ├── attach.rs         # `nightcrow attach`: connect, then run the TUI
+│   ├── session_link.rs   # the client's half of the daemon-owned tab list
+│   ├── terminal_guard.rs # raw mode + alternate screen, restored on the way out
 │   ├── bootstrap.rs      # single-project App construction + startup commands
-│   ├── event_loop.rs     # main_loop: poll/render/broadcast/input drain
+│   ├── event_loop.rs     # main_loop: poll/render/input drain
 │   ├── splash.rs         # first-run splash overlay loop
 │   ├── input/            # terminal/browser input routing
 │   │   ├── dispatch.rs   # key dispatch, prefix follow-up, KeyOutcome

@@ -2,6 +2,8 @@
 
 Agent-adjacent terminal workbench — git diff viewer, commit log, and multi-pane terminal multiplexer in one window. Tuned for sitting next to LLM CLIs (Claude Code, Codex, aider) or any process that touches your working tree, but nightcrow itself has no AI ontology — it watches files and PTYs, not agents.
 
+nightcrow runs as a **session**: one process holds the repositories and the terminals, and you reach it from a terminal (`nightcrow attach`) or a browser. Closing a client leaves the session running.
+
 ```
  ~/projects/myapp   main   ↑2 ↓0
 ┌──────────────────────────────────────────────────────┐
@@ -13,7 +15,7 @@ Agent-adjacent terminal workbench — git diff viewer, commit log, and multi-pan
 │ [1] claude  [2] aider  [3] bash                      │
 │ $ cargo test                                         │
 └──────────────────────────────────────────────────────┘
- j/k: scroll | /: search | v: view file | <prefix> q: quit
+ j/k: scroll | /: search | v: view file | <prefix> q: detach
 ```
 
 ## Install
@@ -43,23 +45,31 @@ Requires Rust 1.85+ (edition 2024). `--locked` builds against the committed
 ## Usage
 
 ```bash
-# Reopen the tabs from last time (empty on a first run)
+# Start the session. Runs in the foreground until you stop it (Ctrl-C).
+# It reopens the repositories from last time — nothing, on a first run.
 nightcrow
 
-# Open a repo in a tab
-nightcrow --repo ~/projects/myapp
-
-# Open several at once, one tab each (repeatable)
-nightcrow --repo ~/projects/api --repo ~/projects/web
+# From another terminal: bring up the TUI on that session.
+nightcrow attach
 
 # Launch terminal panes running commands at startup (repeatable)
 nightcrow --exec "claude" --exec "codex"
 ```
 
-Startup panes belong to a project, not to the process: each project opened —
-by `--repo` at launch or by `^F o` later — gets its own set. So
-`nightcrow --exec claude` with no repo opens the empty screen and starts
-`claude` in the first project you open, not before there is one to open it in.
+The session prints the address of its browser view (`http://127.0.0.1:8091/`
+by default) and the socket an attaching terminal uses. Both show the same
+repositories; open one with `<prefix> o` in the TUI or the folder picker in the
+browser, and it appears in the other. There is no flag for opening a
+repository — a session several clients share has one sensible place to do it,
+and that is inside.
+
+Leaving the TUI (`<prefix> q`) detaches: the session, and everything running in
+its terminals, keeps going. Stopping the session is stopping the process you
+started it in.
+
+Startup panes belong to a project, not to the process: each project you open
+gets its own set. So `nightcrow --exec claude` with no repositories starts
+`claude` in the first project opened, not before there is one to open it in.
 
 `--exec` panes open after any `[[startup_command]]` panes from the config
 file; the two sources share a combined cap of 8 panes — the same count the
@@ -91,8 +101,8 @@ project keeps running while you work in another.
   rest behind `+N` markers; clicking a marker jumps to the nearest project
   behind it.
 
-**No project open** is a normal state, not an error — it is how nightcrow
-starts without `--repo`, and where closing the last tab returns you. The screen
+**No project open** is a normal state, not an error — it is how a fresh
+session starts, and where closing the last tab returns you. The screen
 keeps its chrome and offers the only two things that apply: `^F o` to open a
 repo, `^F q` to quit.
 
@@ -267,7 +277,7 @@ Everything lands in one file, `~/.nightcrow/workspace.json` — which repos were
 
 A bare `nightcrow` reopens those tabs and lands on the one that was in front, with each project's selection and scroll where you left them. Repos that have moved or been deleted since are skipped, with a notice saying how many. View state is kept for the 50 most recently used repos.
 
-Passing `--repo` overrides the remembered tab list — it names the repo you want, so restoring extra tabs beside it would be surprising. Each repo's view state is still restored. To start empty, close every tab before quitting: that records an empty list, which is what the next launch restores.
+The two halves have two owners. The session writes which repositories are open and which tab is in front; an attached client writes what it had selected and scrolled, and never the tab list — detaching must not roll the session back to one client's view of it. To start empty, close every tab before stopping the session.
 
 ## Web viewer
 
@@ -288,7 +298,7 @@ watch it: closing the dialog leaves `Cloning…` in the header, and a page you
 reload — or a phone that dropped the tab mid-transfer — picks the same clone
 back up and still opens the repository when it lands. Each project has its own `status`, `log`, and `tree` tabs on
 the left plus a terminal panel below. The order is kept on the server, so every
-device shows the same arrangement; under `nightcrow serve` it also survives a
+device shows the same arrangement, and it survives a
 restart (alongside the TUI it lasts the session). On a narrow window (phone) the
 tab row folds into a dropdown showing the current project.
 
@@ -364,29 +374,25 @@ files are not served to the frame. This previews a self-contained page rather
 than a site. A toggle (top-right of the
 pane) switches either back to the raw highlighted source.
 
-Enable it alongside the TUI under `[web_viewer]`:
+It is always on — it is one of the session's two faces, not an add-on. Configure
+where it listens under `[web_viewer]`:
 
 ```toml
 [web_viewer]
-enabled = true
 bind = "127.0.0.1"   # loopback only; change deliberately
 port = 8091
 # password = "..."   # auto-generated and written here on first launch if unset
 ```
 
-Or run it with no TUI at all:
+`--port` and `--bind` override those for one run:
 
 ```bash
-nightcrow serve --repo ~/code/app --repo ~/code/api
-nightcrow serve --repo . --port 9000
+nightcrow --port 9000
 ```
 
-`serve` runs in the foreground until Ctrl-C (`--bind` overrides the configured
-address alongside `--port`). It starts with the repos from `--repo` plus the
-ones remembered from the last session, and projects opened or closed in the
-browser are written back to `~/.nightcrow/workspace.json`. Because the server
-never touches the TUI's state, it needs no terminal — which is what makes this
-mode possible.
+Repositories opened or closed in the browser reach every attached terminal, and
+are written back to `~/.nightcrow/workspace.json` so the next session starts on
+the same set.
 
 **Authentication.** If no `password` is set when the viewer is enabled, a random
 one is generated and written back into your config (so it survives restarts and
@@ -448,7 +454,6 @@ enabled = true       # capture the mouse: click to focus/forward, wheel scrolls
                      # false = plain-drag selection, no click forwarding.
 
 [web_viewer]
-enabled = false      # serve the native web viewer (off by default)
 bind = "127.0.0.1"   # loopback only by default; plain HTTP, so tunnel/proxy for remote
 port = 8091
 # password = "..."         # auto-generated + saved here on first launch if unset
@@ -456,7 +461,7 @@ port = 8091
 
 [log]
 enabled = true
-dir = ".nightcrow/logs"   # relative to repo root
+dir = ".nightcrow/logs"   # relative paths resolve under the home directory
 rotation = "daily"        # "daily" | "hourly" | "size"
 max_size_mb = 10          # used when rotation = "size"
 max_days = 7              # delete logs older than N days (0 = keep forever)
