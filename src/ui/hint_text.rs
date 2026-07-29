@@ -64,11 +64,14 @@ pub(crate) fn normal_hint_literal(app: &App) -> &'static str {
             // Tree mode's right pane is permanently the file view — `v`
             // can't leave it, so don't advertise a no-op.
             if app.mode == ViewMode::Tree {
-                " <prefix> f: exit zoom | j/k: scroll | pgup/pgdn: page | <prefix> q: quit"
+                " <prefix> f: exit zoom | j/k: scroll | pgup/pgdn: page | w: wrap | <prefix> q: quit"
             } else {
-                " <prefix> f: exit zoom | v: back to diff | j/k: scroll | pgup/pgdn: page | <prefix> q: quit"
+                " <prefix> f: exit zoom | v: back to diff | j/k: scroll | pgup/pgdn: page | w: wrap | <prefix> q: quit"
             }
         } else if app.diff.view == DiffPaneView::Split {
+            // No `w: wrap` here or in the unzoomed split arm: the split view
+            // ignores wrapping (halves folding to different heights would stop
+            // lining up), and a hint for a no-op key would lie.
             " <prefix> f: exit zoom | s: unified diff | j/k: scroll | pgup/pgdn: page | <prefix> q: quit"
         } else if app.diff.search.active {
             " type to search | enter: confirm | esc: cancel"
@@ -134,9 +137,9 @@ pub(crate) fn normal_hint_literal(app: &App) -> &'static str {
                 // Tree mode's right pane is permanently the file view — `v`
                 // can't leave it, so don't advertise a no-op.
                 if app.mode == ViewMode::Tree {
-                    " j/k: scroll | pgup/pgdn: page | /: search | shift+←/→: cycle | <prefix> q: quit"
+                    " j/k: scroll | pgup/pgdn: page | w: wrap | /: search | shift+←/→: cycle | <prefix> q: quit"
                 } else {
-                    " v: back to diff | j/k: scroll | pgup/pgdn: page | /: search | shift+←/→: cycle | <prefix> q: quit"
+                    " v: back to diff | j/k: scroll | pgup/pgdn: page | w: wrap | /: search | shift+←/→: cycle | <prefix> q: quit"
                 }
             } else if app.diff.view == DiffPaneView::Split {
                 " s: unified diff | j/k: scroll | pgup/pgdn: page | shift+←/→: cycle | <prefix> f: zoom | <prefix> q: quit"
