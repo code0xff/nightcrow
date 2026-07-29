@@ -64,6 +64,87 @@ fn notice_row_shows_notices_through_every_overlay() {
     }
 }
 
+fn dialog_offering(candidates: &[&str]) -> crate::ui::status_view::RepoInput {
+    crate::ui::status_view::RepoInput {
+        active: true,
+        buf: "/repos/".to_string(),
+        prefilled: false,
+        candidates: candidates.iter().map(|c| c.to_string()).collect(),
+    }
+}
+
+#[test]
+fn completion_candidates_take_the_notice_row_over_repo_identity() {
+    let mut app = app_with_files(vec![]);
+    app.repo_path = "/tmp/somewhere".to_string();
+
+    let text = notice_text_with(&app, &dialog_offering(&["nightcrow", "nightowl"]));
+
+    assert!(text.contains("nightcrow"), "got: {text}");
+    assert!(text.contains("nightowl"), "got: {text}");
+    assert!(
+        !text.contains("/tmp/somewhere"),
+        "the candidates answer the Tab that is on screen, got: {text}"
+    );
+}
+
+/// A notice explains a rejected action, so it outranks a candidate list — and
+/// because any edit clears it, the two cannot both be stale for long.
+#[test]
+fn a_notice_outranks_the_completion_candidates() {
+    let mut app = app_with_files(vec![]);
+    app.raise_notice(NoticeKind::RepoInput, "no such directory");
+
+    let text = notice_text_with(&app, &dialog_offering(&["nightcrow"]));
+
+    assert!(text.contains("no such directory"), "got: {text}");
+    assert!(!text.contains("nightcrow"), "got: {text}");
+}
+
+#[test]
+fn a_candidate_list_too_wide_for_the_row_reports_what_it_dropped() {
+    let mut terminal =
+        ratatui::Terminal::new(ratatui::backend::TestBackend::new(24, 1)).expect("a terminal");
+    let app = app_with_files(vec![]);
+    let dialog = dialog_offering(&["alpha", "bravo", "charlie", "delta"]);
+
+    terminal
+        .draw(|frame| {
+            frame.render_widget(
+                crate::ui::notice::render_notice_row(
+                    &app,
+                    &dialog,
+                    ratatui::style::Color::Yellow,
+                    frame.area().width,
+                ),
+                frame.area(),
+            )
+        })
+        .expect("draw");
+    let buf = terminal.backend().buffer();
+    let text: String = (0..buf.area.width).map(|x| buf[(x, 0)].symbol()).collect();
+
+    assert!(text.contains("alpha"), "got: {text}");
+    assert!(
+        text.contains("more"),
+        "a truncated list must say the tail exists, got: {text}"
+    );
+    assert!(
+        !text.contains("delta"),
+        "the row is 24 columns wide, got: {text}"
+    );
+}
+
+#[test]
+fn the_empty_screen_shows_completion_candidates_too() {
+    // With no project there is no repo header to fall back to, so the row is
+    // free — but it still has to render the list.
+    let text = drawn_empty(&dialog_offering(&["nightcrow", "nightowl"]), None, false);
+
+    assert!(text.contains("nightcrow"), "got: {text}");
+    assert!(text.contains("nightowl"), "got: {text}");
+}
+
 /// With nothing raised the row is the repo/branch line, and it comes back
 /// intact after a notice is cleared.
 #[test]

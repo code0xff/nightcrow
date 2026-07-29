@@ -76,14 +76,11 @@ pub fn draw_empty(
         rows.body,
     );
 
-    // Matches `render_notice_row`: a notice is the same red wherever it lands.
-    let notice_line = match notice {
-        Some(n) => Line::from(Span::styled(
-            format!(" {}", n.line()),
-            Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
-        )),
-        None => Line::default(),
-    };
+    // Shares `render_notice_row`'s priority order so a notice looks the same
+    // wherever it lands; with no project there is no repo header to fall back
+    // to, so the row just goes empty.
+    let notice_line = notice::notice_or_candidates(notice, chrome.repo_input, rows.notice.width)
+        .unwrap_or_default();
     frame.render_widget(Paragraph::new(notice_line), rows.notice);
 
     // The armed prefix shows the same chip as the project screen: pressing
@@ -132,7 +129,10 @@ pub fn draw(
         project_tab::render(tabs.repo_paths, tabs.active, rows.tabs, accent),
         rows.tabs,
     );
-    frame.render_widget(render_notice_row(app, accent), notice_area);
+    frame.render_widget(
+        render_notice_row(app, tabs.repo_input, accent, notice_area.width),
+        notice_area,
+    );
 
     if app.terminal.fullscreen.fills_body() {
         let cursor = terminal_tab::render(frame, app, body_area, accent);

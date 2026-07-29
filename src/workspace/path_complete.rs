@@ -48,11 +48,8 @@ pub(crate) fn complete_dir_path(buf: &str) -> PathCompletion {
         None => ("", buf, MAIN_SEPARATOR),
     };
 
-    let dir = crate::platform::paths::expand_tilde(if dir_text.is_empty() {
-        "."
-    } else {
-        dir_text
-    });
+    let dir =
+        crate::platform::paths::expand_tilde(if dir_text.is_empty() { "." } else { dir_text });
     // A path that isn't a readable directory yet is the normal mid-typing
     // state, not an error worth reporting.
     let Ok(read) = std::fs::read_dir(&dir) else {
