@@ -1,4 +1,4 @@
-use crate::app::{App, Focus, ViewMode};
+use crate::app::{App, Focus};
 use crate::git::diff::LineKind;
 use crate::ui::diff_pane::SplitRow;
 use ratatui::{
@@ -6,7 +6,7 @@ use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Paragraph},
+    widgets::{Block, Borders},
 };
 use syntect::highlighting::ThemeSet;
 use syntect::parsing::SyntaxSet;
@@ -35,8 +35,16 @@ pub(crate) fn render_split_view(
     app.diff.scroll = scroll_start;
     let scroll_end = scroll_start.saturating_add(visible_height).min(rows.len());
 
+    // Each half carries the number of the side it shows: old on the left, new
+    // on the right. Collected in lockstep with the body lines so the two
+    // paragraphs of a half share one vertical window.
+    let digits = super::gutter::lineno_digits(&app.diff.hunks);
+    let gutter_width = super::gutter::side_gutter_width(digits);
+
     let mut left_lines: Vec<Line> = Vec::with_capacity(visible_height);
     let mut right_lines: Vec<Line> = Vec::with_capacity(visible_height);
+    let mut left_gutter: Vec<Line> = Vec::with_capacity(visible_height);
+    let mut right_gutter: Vec<Line> = Vec::with_capacity(visible_height);
     for row in &rows[scroll_start..scroll_end] {
         match row {
             SplitRow::Header(hi) => {
@@ -51,15 +59,23 @@ pub(crate) fn render_split_view(
                     Style::default().fg(Color::Cyan),
                 )));
                 right_lines.push(Line::from(""));
+                // Blank but present: a header with no gutter cell would start
+                // one column left of the body beneath it.
+                left_gutter.push(Line::from(""));
+                right_gutter.push(Line::from(""));
             }
             SplitRow::Body { left, right } => {
-                left_lines.push(split_side_line(app, *left));
-                right_lines.push(split_side_line(app, *right));
+                let (lg, lb) = split_side_lines(app, *left, digits, Side::Old);
+                let (rg, rb) = split_side_lines(app, *right, digits, Side::New);
+                left_lines.push(lb);
+                right_lines.push(rb);
+                left_gutter.push(lg);
+                right_gutter.push(rg);
             }
         }
     }
 
-    let title = split_title(app);
+    let title = super::title::split_title(app);
     let block = Block::default()
         .borders(Borders::ALL)
         .title(title)
@@ -73,31 +89,58 @@ pub(crate) fn render_split_view(
         .split(inner);
 
     let scroll_x = app.diff.scroll_x.min(u16::MAX as usize) as u16;
-    let left_para = Paragraph::new(left_lines).scroll((0, scroll_x));
-    // A left border on the right column draws the vertical divider between
-    // the two halves and indents the new-side content by one cell.
-    let right_para = Paragraph::new(right_lines)
-        .block(
-            Block::default()
-                .borders(Borders::LEFT)
-                .border_style(border_style),
-        )
-        .scroll((0, scroll_x));
+    super::gutter::render_gutter_and_body(
+        frame,
+        halves[0],
+        gutter_width,
+        left_gutter,
+        left_lines,
+        scroll_x,
+    );
 
-    frame.render_widget(left_para, halves[0]);
-    frame.render_widget(right_para, halves[1]);
+    // A left border on the right column draws the vertical divider between the
+    // two halves and indents the new-side content by one cell. It is rendered
+    // on its own so the gutter and body can split the area inside it.
+    let right_block = Block::default()
+        .borders(Borders::LEFT)
+        .border_style(border_style);
+    let right_inner = right_block.inner(halves[1]);
+    frame.render_widget(right_block, halves[1]);
+    super::gutter::render_gutter_and_body(
+        frame,
+        right_inner,
+        gutter_width,
+        right_gutter,
+        right_lines,
+        scroll_x,
+    );
 }
 
-/// Build one side's `Line` for a split body row. `None` (no counterpart line
-/// on this side) renders as a blank line; otherwise the cell is styled by line
-/// kind and reuses the prebuilt highlight cache, mirroring the unified
-/// renderer's per-line treatment.
-fn split_side_line<'a>(app: &'a App, cell: Option<(usize, usize)>) -> Line<'a> {
+/// Which side's line number a half shows.
+enum Side {
+    Old,
+    New,
+}
+
+/// Build one side's gutter and body `Line` for a split body row, as
+/// `(gutter, body)`. `None` (no counterpart line on this side) renders both as
+/// blank; otherwise the cell is styled by line kind and reuses the prebuilt
+/// highlight cache, mirroring the unified renderer's per-line treatment.
+///
+/// Both lines come from one lookup so they cannot disagree about which
+/// `DiffLine` the row is showing.
+fn split_side_lines<'a>(
+    app: &'a App,
+    cell: Option<(usize, usize)>,
+    digits: usize,
+    side: Side,
+) -> (Line<'a>, Line<'a>) {
+    let blank = || (Line::from(""), Line::from(""));
     let Some((hi, li)) = cell else {
-        return Line::from("");
+        return blank();
     };
     let Some(diff_line) = app.diff.hunks.get(hi).and_then(|h| h.lines.get(li)) else {
-        return Line::from("");
+        return blank();
     };
 
     let bg = match diff_line.kind {
@@ -128,29 +171,14 @@ fn split_side_line<'a>(app: &'a App, cell: Option<(usize, usize)>) -> Line<'a> {
             Style::default().bg(bg),
         ));
     }
-    Line::from(spans)
-}
 
-/// Title for the split pane: the same file/commit label the unified view uses,
-/// tagged `[split]`. Search match counts are omitted because the split view
-/// does not render search highlights.
-fn split_title(app: &App) -> String {
-    let label = match app.mode {
-        ViewMode::Log => {
-            if app.log_view.diff_title.is_empty() {
-                "Diff".to_string()
-            } else {
-                app.log_view.diff_title.clone()
-            }
-        }
-        ViewMode::Status => app
-            .selected_filtered_status_file()
-            .map(|f| f.path.clone())
-            .unwrap_or_else(|| "Diff".to_string()),
-        ViewMode::Tree => app
-            .tree_view
-            .selected_path()
-            .unwrap_or_else(|| "File".to_string()),
+    let lineno = match side {
+        Side::Old => diff_line.old_lineno,
+        Side::New => diff_line.new_lineno,
     };
-    format!(" {} {label} [split] ", super::jump_legend(app, '2'))
+    let gutter = Line::from(Span::styled(
+        super::gutter::side_gutter_text(lineno, digits),
+        Style::default().fg(Color::DarkGray).bg(bg),
+    ));
+    (gutter, Line::from(spans))
 }

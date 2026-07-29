@@ -1,26 +1,38 @@
+#[cfg(test)]
+mod tests;
+
 mod file_view;
+mod gutter;
 mod split_view;
+mod title;
 
 pub(crate) use file_view::render_file_view;
 pub(crate) use split_view::render_split_view;
 
 use crate::app::{App, DiffPaneView, Focus, ViewMode};
 use crate::git::diff::LineKind;
-use crate::ui::{focused_border_style, jump_legend, path_extension, render_search_bar};
+use crate::ui::{focused_border_style, path_extension, render_search_bar};
+use gutter::{lineno_digits, render_gutter_and_body, unified_gutter_text, unified_gutter_width};
 use ratatui::{
     Frame,
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Paragraph},
+    widgets::{Block, Borders},
 };
 use syntect::highlighting::ThemeSet;
 use syntect::parsing::SyntaxSet;
+use title::unified_title;
 
 /// Minimum pane width (columns) for the side-by-side split layout. Below this
 /// each half is too narrow to read, so `Split` view falls back to the unified
 /// diff renderer.
-const MIN_SPLIT_WIDTH: u16 = 80;
+///
+/// Derived: 80 columns used to leave each half ~38 columns of code, and each
+/// half now spends `side_gutter_width(MIN_LINENO_DIGITS)` = 5 of them on its
+/// line-number gutter. Raising the threshold by both gutters keeps the same
+/// readable code width per side rather than silently shrinking it.
+const MIN_SPLIT_WIDTH: u16 = 90;
 
 pub(crate) fn rgb_to_color(rgb: (u8, u8, u8)) -> Color {
     Color::Rgb(rgb.0, rgb.1, rgb.2)
@@ -81,7 +93,21 @@ pub fn render(
     app.diff.scroll = scroll_start;
     let visible_end = scroll_start.saturating_add(visible_height);
 
+    // Gutter width is a property of the whole loaded diff, not of the visible
+    // window, so the body's left edge stays put while scrolling. With no diff
+    // loaded the pane holds only a placeholder message, which has no line to
+    // number — reserving the column there would just indent the message.
+    let digits = lineno_digits(&app.diff.hunks);
+    let gutter_width = if total_lines == 0 {
+        0
+    } else {
+        unified_gutter_width(digits)
+    };
+
     let mut lines: Vec<Line> = Vec::with_capacity(visible_height);
+    // Collected in lockstep with `lines`: same rows, same order, so the two
+    // paragraphs share one vertical window.
+    let mut gutter_lines: Vec<Line> = Vec::with_capacity(visible_height);
     let mut flat_idx: usize = 0;
 
     'outer: for (hi, hunk) in app.diff.hunks.iter().enumerate() {
@@ -95,6 +121,9 @@ pub fn render(
                 hunk.header.as_str(),
                 Style::default().fg(Color::Cyan),
             )));
+            // Blank, but full width: a header row with no gutter cell would
+            // start its `@@` one column left of the body's left edge.
+            gutter_lines.push(Line::from(""));
         }
         flat_idx += 1;
 
@@ -151,6 +180,12 @@ pub fn render(
             }
 
             lines.push(Line::from(spans));
+            // Same background as the row so the number reads as part of it
+            // rather than as a column floating beside the highlight.
+            gutter_lines.push(Line::from(Span::styled(
+                unified_gutter_text(diff_line.old_lineno, diff_line.new_lineno, digits),
+                Style::default().fg(Color::DarkGray).bg(bg),
+            )));
             flat_idx += 1;
         }
     }
@@ -182,75 +217,22 @@ pub fn render(
         )));
     }
 
-    let jump = jump_legend(app, '2');
-    let title = match app.mode {
-        ViewMode::Log => {
-            let label = if app.log_view.diff_title.is_empty() {
-                "Diff"
-            } else {
-                app.log_view.diff_title.as_str()
-            };
-            if has_search {
-                let count = app.diff.search.matches.len();
-                if count == 0 {
-                    format!(" {jump} {label} [no matches] ")
-                } else {
-                    format!(
-                        " {jump} {label} [{}/{}] ",
-                        app.diff.search.cursor + 1,
-                        count
-                    )
-                }
-            } else {
-                format!(" {jump} {label} ")
-            }
-        }
-        ViewMode::Status => {
-            let selected = app.selected_filtered_status_file();
-            if has_search {
-                let count = app.diff.search.matches.len();
-                let file = selected.map(|f| f.path.as_str()).unwrap_or("Diff");
-                if count == 0 {
-                    format!(" {jump} {file} [no matches] ")
-                } else {
-                    format!(" {jump} {file} [{}/{}] ", app.diff.search.cursor + 1, count)
-                }
-            } else if let Some(f) = selected {
-                format!(" {jump} {} ", f.path)
-            } else {
-                format!(" {jump} Diff ")
-            }
-        }
-        ViewMode::Tree => {
-            let path = app.tree_view.selected_path();
-            let label = path.as_deref().unwrap_or("File");
-            if has_search {
-                let count = app.diff.search.matches.len();
-                if count == 0 {
-                    format!(" {jump} {label} [no matches] ")
-                } else {
-                    format!(
-                        " {jump} {label} [{}/{}] ",
-                        app.diff.search.cursor + 1,
-                        count
-                    )
-                }
-            } else {
-                format!(" {jump} {label} ")
-            }
-        }
-    };
-
-    let para = Paragraph::new(lines)
-        .block(
-            Block::default()
-                .borders(Borders::ALL)
-                .title(title)
-                .border_style(border_style),
-        )
-        .scroll((0, app.diff.scroll_x.min(u16::MAX as usize) as u16));
-
-    frame.render_widget(para, diff_area);
+    // The block is rendered on its own rather than attached to a paragraph:
+    // the gutter and the body are two paragraphs sharing one bordered area.
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .title(unified_title(app))
+        .border_style(border_style);
+    let inner = block.inner(diff_area);
+    frame.render_widget(block, diff_area);
+    render_gutter_and_body(
+        frame,
+        inner,
+        gutter_width,
+        gutter_lines,
+        lines,
+        app.diff.scroll_x.min(u16::MAX as usize) as u16,
+    );
 
     if let Some(sa) = search_area {
         render_search_bar(

@@ -212,6 +212,7 @@ through to the terminal program.
 | `←` / `→` | Horizontal scroll (4 columns) |
 | `v` | Toggle between hunk diff and full file preview |
 | `s` | Toggle between the unified diff and a side-by-side split view (falls back to unified when the pane is too narrow) |
+| — | **Line numbers** are always shown in a pinned gutter. The unified view shows both sides (old, new) — an added line leaves the old column blank, a removed line leaves the new one blank. The split view numbers each half with the side it shows, and the file view (`v`) numbers the file itself. The gutter stays in place while `←`/`→` scroll the code |
 | `<prefix> f` | Zoom the diff/file pane to full screen (toggle) |
 | `/` | Open search (works in both diff and file preview, including tree mode) |
 | `n` / `N` | Next / previous search match |

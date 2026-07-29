@@ -152,6 +152,15 @@ pub enum LineKind {
 pub struct DiffLine {
     pub kind: LineKind,
     pub content: String,
+    /// Line number on the pre-image side, as reported by libgit2. `None` for an
+    /// added line, which exists only on the new side — so the gutter can leave
+    /// that column blank instead of inventing a number. Also `None` on
+    /// hand-built fixtures and the synthetic binary-file hunk, where no real
+    /// line numbering exists.
+    pub old_lineno: Option<u32>,
+    /// Line number on the post-image side. `None` for a removed line, which is
+    /// absent from the new side. Same `None` cases as `old_lineno` otherwise.
+    pub new_lineno: Option<u32>,
 }
 
 #[derive(Debug, Clone)]

@@ -210,6 +210,10 @@ trait TerminalBackend {
 - UI 스레드 동기 로드: 파일/커밋 선택이 바뀌면 `load_*_with_repo`를 직접 호출한다. App은 `git2::Repository`를 lazy-cache하므로 매 호출마다 `Repository::discover`를 다시 실행하지 않는다. cache는 프로젝트와 수명을 같이 하므로 무효화 시점이 따로 없다 — 저장소가 바뀌는 유일한 방법이 탭을 닫고 새로 여는 것이기 때문.
 - 경로 검증: 워크트리 안의 파일·디렉토리를 여는 경로는 전부 `git::path::resolve_in_workdir`를 거친다(파일 미리보기와 트리 리스팅 양쪽). plain relative 컴포넌트만 허용하고 `..`·절대경로·NUL·`.git`(대소문자 무시)을 거부하며, 워크디렉토리부터 한 컴포넌트씩 내려가 **모든 깊이의 심링크**를 막고 canonicalize containment로 마무리한다. 지금 호출자는 git이 만들어 낸 경로만 넘기지만, 검증을 호출부가 아니라 파일시스템 경계에 두어야 웹 표면이 요청 문자열을 같은 로더에 태워도 안전하다. 크기 검사와 읽기는 같은 파일 핸들에서, 트리 리스팅은 검증기가 돌려준 경로로 `read_dir`을 수행해 check→use TOCTOU를 닫는다. `.git` 판정은 `is_git_dir_name` 하나로 통일한다 — 대소문자와 후행 점·공백(NTFS가 버리는 문자)까지 흡수하며, 규칙을 두 군데에 따로 적으면 그 틈이 우회로가 된다.
 - 렌더링: 보이는 행(`scroll_start..scroll_start+visible_height`)에 한해 `syntect`로 syntax highlighting을 수행한다. 보이지 않는 라인은 highlighter state만 진행시켜 multi-line construct(블록 주석, 문자열 리터럴)의 syntax 연속성을 유지한다.
+- **줄 번호 gutter**(`ui/diff_viewer/gutter.rs`): `DiffLine`이 libgit2의 `old_lineno`/`new_lineno`를 그대로 들고 다닌다. 추가 줄은 old가, 삭제 줄은 new가 `None`이라 해당 칼럼을 비운다 — hunk 헤더에서 파생시키지 않는 이유는 kind별 카운터를 렌더 층에서 관리하게 되어 상태가 잘못된 층에 놓이기 때문이다. unified은 두 칼럼, split은 좌=old·우=new 한 칼럼씩, file view는 파일 자신의 번호를 보여준다.
+  - **gutter와 본문은 반드시 별개 `Paragraph`여야 한다.** diff 계열은 수평 스크롤을 `Paragraph::scroll((0, x))`로 구현하는데 이건 라인을 통째로 밀기 때문에, 같은 paragraph에 있는 gutter는 `scroll_x > 0`이면 왼쪽으로 사라진다(실제로 file view에 그 버그가 있었다). `Block`을 따로 그리고 `block.inner`를 `Layout::Horizontal`로 쪼개 gutter는 `scroll((0,0))`, 본문만 스크롤한다. 수직 스크롤은 **어느 행을 담았는지**로 표현되므로 두 vector를 같은 루프에서 lockstep으로 채우는 것이 정렬을 지키는 유일한 수단이다.
+  - 폭은 로드된 hunk 전체의 최대 줄 번호에서 파생하고 최소 3자리를 보장한다. 보이는 창 기준으로 계산하면 스크롤 중에 본문 좌측 경계가 흔들린다. hunk 헤더 행도 같은 폭의 빈 gutter를 받아야 `@@`가 본문보다 한 칼럼 왼쪽에서 시작하지 않는다.
+  - `MIN_SPLIT_WIDTH`를 80 → 90으로 올렸다. 각 half가 gutter에 5칼럼을 쓰므로, 문턱을 그대로 두면 side-by-side 진입은 되지만 half당 읽을 수 있는 코드 폭이 조용히 줄어든다.
 
 ### Split-View Terminal Panel
 

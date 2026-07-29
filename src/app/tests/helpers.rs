@@ -90,6 +90,8 @@ pub(crate) fn context_hunk(lines: &[&str]) -> DiffHunk {
             .map(|content| DiffLine {
                 kind: LineKind::Context,
                 content: (*content).to_string(),
+                old_lineno: None,
+                new_lineno: None,
             })
             .collect(),
         file_path: None,
