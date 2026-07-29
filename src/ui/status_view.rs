@@ -103,4 +103,8 @@ pub struct RepoInput {
     /// whole prefill; Backspace clears the flag instead, keeping the text
     /// and entering ordinary editing (the sub-directory case).
     pub prefilled: bool,
+    /// Directory names offered by the last Tab press, shown on the notice row.
+    /// Any edit clears them: the list describes a fragment that no longer
+    /// matches what is in the buffer.
+    pub candidates: Vec<String>,
 }

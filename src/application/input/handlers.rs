@@ -51,6 +51,9 @@ pub(crate) fn handle_repo_input_key(ws: &mut Workspace, key: KeyEvent) -> KeyOut
         // The caret is always at the end of the buffer, so these can't move
         // it; they mean "keep this path and let me extend it".
         KeyCode::Right | KeyCode::End => ws.repo_input_accept_prefill(),
+        // `BackTab` is deliberately unhandled: completion here never cycles, so
+        // there is nothing for a reverse Tab to step back through.
+        KeyCode::Tab => ws.repo_input_complete(),
         _ => {
             if let Some(c) = text_input_char(key) {
                 ws.repo_input_push(c);

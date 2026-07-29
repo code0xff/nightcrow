@@ -68,6 +68,76 @@ fn confirming_a_tilde_path_opens_the_home_relative_directory() {
     );
 }
 
+/// A workspace whose prefill is `<temp dir>/<frag>`, so Tab has a real
+/// directory to complete against.
+fn workspace_completing_in(root: &tempfile::TempDir, frag: &str) -> (Workspace, String) {
+    let base = format!("{}/", root.path().to_str().expect("a UTF-8 temp path"));
+    let mut ws = workspace_on(&[&format!("{base}{frag}")]);
+    ws.start_repo_input();
+    (ws, base)
+}
+
+#[test]
+fn completing_extends_an_untouched_prefill_instead_of_replacing_it() {
+    // Typing over a prefill replaces it, but Tab means "extend this path" —
+    // the same reading Backspace and → already give it.
+    let root = tempfile::TempDir::new().expect("a temp dir");
+    std::fs::create_dir(root.path().join("nightcrow")).expect("create dir");
+    let (mut ws, base) = workspace_completing_in(&root, "night");
+
+    ws.repo_input_complete();
+
+    assert_eq!(ws.repo_input.buf, format!("{base}nightcrow/"));
+    assert!(
+        !ws.repo_input.prefilled,
+        "the prefill is spent, so the next keystroke must append"
+    );
+}
+
+#[test]
+fn completing_at_a_directory_boundary_offers_the_subdirectories() {
+    let root = tempfile::TempDir::new().expect("a temp dir");
+    std::fs::create_dir(root.path().join("alpha")).expect("create dir");
+    std::fs::create_dir(root.path().join("beta")).expect("create dir");
+    let (mut ws, base) = workspace_completing_in(&root, "");
+
+    ws.repo_input_complete();
+
+    assert_eq!(ws.repo_input.buf, base, "nothing shared to extend");
+    assert_eq!(ws.repo_input.candidates, vec!["alpha", "beta"]);
+}
+
+#[test]
+fn editing_after_a_completion_drops_the_stale_candidate_list() {
+    let root = tempfile::TempDir::new().expect("a temp dir");
+    std::fs::create_dir(root.path().join("alpha")).expect("create dir");
+    std::fs::create_dir(root.path().join("beta")).expect("create dir");
+    let (mut ws, _) = workspace_completing_in(&root, "");
+    ws.repo_input_complete();
+    assert_eq!(ws.repo_input.candidates.len(), 2);
+
+    ws.repo_input_push('a');
+
+    assert!(
+        ws.repo_input.candidates.is_empty(),
+        "the list described a fragment the buffer no longer holds"
+    );
+}
+
+#[test]
+fn completing_a_path_that_matches_nothing_raises_no_notice() {
+    // Mid-typing, a path that does not exist yet is the normal state — only
+    // confirming one is an error.
+    let root = tempfile::TempDir::new().expect("a temp dir");
+    let (mut ws, base) = workspace_completing_in(&root, "zzz");
+
+    ws.repo_input_complete();
+
+    assert_eq!(ws.repo_input.buf, format!("{base}zzz"));
+    assert!(ws.repo_input.candidates.is_empty());
+    assert!(ws.empty_notice().is_none());
+}
+
 #[test]
 fn reopening_the_dialog_re_arms_the_prefill() {
     let mut ws = workspace_on(&["/repos/current"]);
