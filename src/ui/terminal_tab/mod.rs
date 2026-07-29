@@ -18,16 +18,15 @@ use crate::ui::terminal_tab::screen::{build_screen_lines, render_cursor};
 use crate::ui::terminal_tab::tab_bar::render_tab_bar;
 use ratatui::{
     Frame,
-    layout::{Position, Rect},
+    layout::Rect,
     style::{Color, Style},
     text::{Line, Span},
     widgets::{Block, Borders, Paragraph},
 };
 
-/// Draw the terminal panel, returning the screen cell the cursor was placed on
-/// (`None` when the panel shows no cursor). See `super::draw` for why the
-/// position is returned rather than left implicit in the frame.
-pub fn render(frame: &mut Frame, app: &App, area: Rect, accent: Color) -> Option<Position> {
+/// Draw the terminal panel, placing the host cursor on the active pane when
+/// that pane shows one.
+pub fn render(frame: &mut Frame, app: &App, area: Rect, accent: Color) {
     let focused = app.focus == Focus::Terminal;
     let border_style = super::focused_border_style(focused, accent);
 
@@ -48,7 +47,9 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect, accent: Color) -> Option
 
     frame.render_widget(block, area);
 
-    let (tab_area, content_area) = terminal_layout(area)?;
+    let Some((tab_area, content_area)) = terminal_layout(area) else {
+        return;
+    };
 
     let pane_count = app.terminal.panes.len();
     let visible = visible_range(
@@ -66,10 +67,9 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect, accent: Color) -> Option
             Style::default().fg(Color::DarkGray),
         ))];
         frame.render_widget(Paragraph::new(screen_lines), content_area);
-        return None;
+        return;
     }
 
-    let mut cursor = None;
     for (offset, cell) in cells.iter().enumerate() {
         let i = visible.start + offset;
         let is_active = i == app.terminal.active;
@@ -102,8 +102,7 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect, accent: Color) -> Option
             build_screen_lines(app, cell.id, cell.content.height, cell.content.width);
         frame.render_widget(Paragraph::new(screen_lines), cell.content);
         if is_active {
-            cursor = render_cursor(frame, app, cell.id, cell.content);
+            render_cursor(frame, app, cell.id, cell.content);
         }
     }
-    cursor
 }

@@ -43,7 +43,7 @@ use crate::app::{App, ViewMode};
 use crate::config::LayoutConfig;
 use ratatui::{
     Frame,
-    layout::{Constraint, Direction, Layout, Position},
+    layout::{Constraint, Direction, Layout},
     style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, Paragraph},
@@ -119,7 +119,7 @@ pub fn draw(
     ts: &ThemeSet,
     layout: &LayoutConfig,
     accent: Color,
-) -> Option<Position> {
+) {
     // Chrome: the project tab row on top, the notice row (repo identity, or a
     // notice covering it) and the hint bar below. The tab row and notice row
     // are rendered here, before any layout branch, so neither is lost to a
@@ -135,15 +135,15 @@ pub fn draw(
     frame.render_widget(render_notice_row(app, accent), notice_area);
 
     if app.terminal.fullscreen.fills_body() {
-        let cursor = terminal_tab::render(frame, app, body_area, accent);
+        terminal_tab::render(frame, app, body_area, accent);
         frame.render_widget(render_hint_bar(app, tabs, accent), hint_area);
-        return cursor;
+        return;
     }
 
     if app.diff.fullscreen {
         diff_viewer::render(frame, app, body_area, ss, ts, accent);
         frame.render_widget(render_hint_bar(app, tabs, accent), hint_area);
-        return None;
+        return;
     }
 
     if app.list_fullscreen {
@@ -153,7 +153,7 @@ pub fn draw(
             ViewMode::Tree => tree_list::render(frame, app, body_area, accent),
         }
         frame.render_widget(render_hint_bar(app, tabs, accent), hint_area);
-        return None;
+        return;
     }
 
     let main = Layout::default()
@@ -177,7 +177,6 @@ pub fn draw(
         ViewMode::Tree => tree_list::render(frame, app, upper[0], accent),
     }
     diff_viewer::render(frame, app, upper[1], ss, ts, accent);
-    let cursor = terminal_tab::render(frame, app, main[1], accent);
+    terminal_tab::render(frame, app, main[1], accent);
     frame.render_widget(render_hint_bar(app, tabs, accent), hint_area);
-    cursor
 }

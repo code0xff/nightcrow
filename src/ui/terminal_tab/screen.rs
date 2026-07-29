@@ -67,24 +67,17 @@ pub(crate) fn build_screen_lines(
         .collect()
 }
 
-pub(crate) fn render_cursor(
-    frame: &mut Frame,
-    app: &App,
-    pane_id: PaneId,
-    area: Rect,
-) -> Option<Position> {
-    if app.focus != Focus::Terminal {
-        return None;
+pub(crate) fn render_cursor(frame: &mut Frame, app: &App, pane_id: PaneId, area: Rect) {
+    if app.focus != Focus::Terminal || app.terminal.is_scrolled() {
+        return;
     }
-    if app.terminal.is_scrolled() {
-        return None;
-    }
-
-    let screen = app.terminal.screen_for_pane(pane_id)?;
-    let position = screen_cursor_position(&screen, area)?;
-
+    let Some(screen) = app.terminal.screen_for_pane(pane_id) else {
+        return;
+    };
+    let Some(position) = screen_cursor_position(&screen, area) else {
+        return;
+    };
     frame.set_cursor_position(position);
-    Some(position)
 }
 
 pub(crate) fn screen_cursor_position(screen: &ScreenView<'_>, area: Rect) -> Option<Position> {
