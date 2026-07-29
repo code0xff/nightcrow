@@ -30,6 +30,11 @@ pub(super) enum Wake {
 /// Start watching `root` and everything under it, or `None` when the platform
 /// refuses. The watcher must be kept alive by the caller; dropping it stops the
 /// watch.
+///
+/// A caller that gets `None` must not retry on a timer: the refusals this hits
+/// (inotify's watch limit, a directory it may not read) are properties of the
+/// machine, and a second attempt a second later re-walks the tree to fail the
+/// same way and log the same line.
 pub(super) fn install(root: &Path, wake: Sender<Wake>) -> Option<RecommendedWatcher> {
     let mut watcher = match notify::recommended_watcher(move |event: notify::Result<Event>| {
         let paths = match event {

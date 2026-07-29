@@ -9,6 +9,7 @@
 
 use super::{IDLE_READ_INTERVAL, MIN_READ_INTERVAL, REOPEN_REPO_EVERY_READS, SnapshotMsg, read};
 use crate::runtime::snapshot_watch::{self, Roots, Wake};
+use notify::RecommendedWatcher;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -24,6 +25,20 @@ pub(super) struct Worker {
     pub(super) wake_tx: Sender<Wake>,
     pub(super) awake: Arc<AtomicBool>,
     pub(super) watching: Arc<AtomicBool>,
+}
+
+/// The watch the worker holds, and whether it has already tried to install it.
+///
+/// The attempt is recorded rather than inferred from the handle: a refusal
+/// leaves no handle, and re-deriving "not installed yet" from that would re-walk
+/// the tree and log the same warning once a second for as long as the session
+/// lives. A failure is answered by falling back to the interval — see
+/// [`install`](snapshot_watch::install) — and retried only when a repository
+/// nobody was reading is picked up again.
+#[derive(Default)]
+struct Watches {
+    tree: Option<RecommendedWatcher>,
+    tree_attempted: bool,
 }
 
 /// What the worker carries between reads.
@@ -42,7 +57,7 @@ impl Worker {
         // Resolved once: the paths the watcher reports are the filesystem's, and
         // on macOS those differ from the path this was opened with.
         let roots = Roots::of(&self.root);
-        let mut watcher = None;
+        let mut watch = Watches::default();
         let mut state = ReadState {
             repo: None,
             reads_since_open: 0,
@@ -54,13 +69,14 @@ impl Worker {
 
         loop {
             let awake = self.awake.load(Ordering::Acquire);
-            if awake && watcher.is_none() {
-                watcher = snapshot_watch::install(&self.root, self.wake_tx.clone());
-                self.watching.store(watcher.is_some(), Ordering::Release);
+            if awake && !watch.tree_attempted {
+                watch.tree_attempted = true;
+                watch.tree = snapshot_watch::install(&self.root, self.wake_tx.clone());
+                self.watching.store(watch.tree.is_some(), Ordering::Release);
                 // Whatever happened while the watch was off went unseen.
                 state.changed = true;
-            } else if !awake && watcher.is_some() {
-                watcher = None;
+            } else if !awake && watch.tree_attempted {
+                watch = Watches::default();
                 self.watching.store(false, Ordering::Release);
                 // Nor hold a repository handle for a tree nobody is reading.
                 state.repo = None;
