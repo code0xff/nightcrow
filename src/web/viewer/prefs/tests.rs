@@ -24,6 +24,38 @@ fn an_out_of_range_accent_wraps_instead_of_being_stored_as_given() {
 }
 
 #[test]
+fn a_session_with_no_file_yet_starts_at_the_configured_accent() {
+    let dir = tempfile::TempDir::new().unwrap();
+
+    let store = PrefsStore::at_or(dir.path().join("viewer.json"), seeded_prefs(3));
+
+    assert_eq!(store.get().accent, 3);
+    assert_eq!(
+        store.get().sidebar_width,
+        DEFAULT_SIDEBAR_WIDTH,
+        "the seed names the accent alone"
+    );
+}
+
+#[test]
+fn a_stored_accent_outranks_the_configured_one() {
+    // Otherwise editing `[theme]` would repaint a session behind whoever had
+    // already picked a colour in it.
+    let dir = tempfile::TempDir::new().unwrap();
+    let path = dir.path().join("viewer.json");
+    PrefsStore::at(path.clone()).set_accent(1);
+
+    let store = PrefsStore::at_or(path, seeded_prefs(3));
+
+    assert_eq!(store.get().accent, 1);
+}
+
+#[test]
+fn an_out_of_range_configured_accent_wraps_into_the_cycle() {
+    assert_eq!(seeded_prefs(Accent::ALL.len() + 4).accent, 4);
+}
+
+#[test]
 fn a_corrupt_file_reads_as_defaults_rather_than_failing() {
     let dir = tempfile::TempDir::new().unwrap();
     let path = dir.path().join("viewer.json");

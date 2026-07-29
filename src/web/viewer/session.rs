@@ -139,6 +139,23 @@ pub fn focus_repo(state: &ViewerState, id: &str) -> Result<(), CloseError> {
     Ok(())
 }
 
+/// The accent every surface of this session paints in.
+pub fn accent(state: &ViewerState) -> usize {
+    state.prefs.get().accent
+}
+
+/// Set the session's accent, returning what was stored.
+///
+/// Shared like the active project rather than kept per surface: a session seen
+/// from a TUI and a browser at once was showing two colours with nothing able to
+/// say which was its own (see the boundary in `docs/architecture.md`). An index
+/// past the end of the cycle wraps rather than being refused, matching
+/// `Accent::from_index`, so a client that drifts out of range self-corrects from
+/// what it reads back.
+pub fn set_accent(state: &ViewerState, accent: usize) -> usize {
+    state.prefs.set_accent(accent).accent
+}
+
 /// Close the repository named by `id`.
 ///
 /// The catalog rebuild stops the closed repository's runtime and terminals.

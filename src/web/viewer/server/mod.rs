@@ -152,6 +152,7 @@ impl ViewerServer {
     pub fn start_from_config(
         viewer: &crate::config::WebViewerConfig,
         agent_indicator: &crate::config::AgentIndicatorConfig,
+        theme: &crate::config::ThemeConfig,
         paths: &[String],
         persist: bool,
         startup_commands: Vec<crate::config::StartupCommand>,
@@ -177,7 +178,9 @@ impl ViewerServer {
             persist,
             startup_commands,
             hot: agent_indicator.clone(),
-            prefs: PrefsStore::load(),
+            // The session's accent outlives any one config edit, so `[theme]`
+            // only names the colour a session with no stored choice starts in.
+            prefs: PrefsStore::load_seeded(theme.preset_index()),
         })
     }
 

@@ -132,6 +132,7 @@ pub(crate) fn run_daemon(
     let server = crate::web::viewer::server::ViewerServer::start_from_config(
         &cfg.web_viewer,
         &cfg.agent_indicator,
+        &cfg.theme,
         &paths,
         true,
         startup,

@@ -1,14 +1,17 @@
-//! Viewer preferences that follow the user rather than the browser.
+//! Preferences that follow the user rather than the browser they arrived in.
 //!
-//! The accent lives here, not in `localStorage`, because the viewer is reached
-//! from several devices — phone, laptop, tablet — and a per-browser copy
-//! means picking the colour again on each one. It is stored in
-//! `~/.nightcrow/`, next to the workspace file, so the viewer never writes
-//! inside a repository it is only reading.
+//! The accent lives here, not in `localStorage`, because a session is reached
+//! from several places at once — phone, laptop, tablet, and the TUI itself —
+//! and a per-surface copy means picking the colour again on each, then seeing
+//! them disagree. It is stored in `~/.nightcrow/`, next to the workspace file,
+//! so nothing is written inside a repository that is only being read.
 //!
-//! Deliberately *not* the TUI's setting: `[theme]` and the TUI's per-repo
-//! `accent_idx` (`session.rs`) stay untouched, keeping the viewer's
-//! separation from the TUI (own port, own cookie, own password) intact.
+//! The accent is the session's, not the viewer's: an attached TUI reads and
+//! writes this same value over the daemon socket (`web/viewer/session.rs`).
+//! That crosses no security boundary — the viewer's separation from the TUI is
+//! its own port, cookie, and password, and each transport still decides who may
+//! ask before reaching the session at all. `sidebar_width` stays the viewer's
+//! alone, having no TUI counterpart to share with.
 
 use crate::config::Accent;
 use serde::{Deserialize, Serialize};
@@ -76,20 +79,37 @@ pub struct PrefsStore {
 impl PrefsStore {
     /// Load from `~/.nightcrow/viewer.json`.
     pub fn load() -> Self {
+        Self::load_seeded(ViewerPrefs::default().accent)
+    }
+
+    /// Load from `~/.nightcrow/viewer.json`, starting at `seed_accent` when
+    /// there is no file to read.
+    ///
+    /// The seed is `[theme] name` — the colour a session that has never been
+    /// given one comes up in. Only a missing or unreadable file takes it: once
+    /// the file exists it records a choice somebody made, and a later config
+    /// edit must not reach back and repaint the session behind them.
+    pub fn load_seeded(seed_accent: usize) -> Self {
+        let seeded = seeded_prefs(seed_accent);
         match default_path() {
-            Some(path) => Self::at(path),
+            Some(path) => Self::at_or(path, seeded),
             None => Self {
                 path: None,
-                state: Mutex::new(ViewerPrefs::default()),
+                state: Mutex::new(seeded),
             },
         }
     }
 
-    /// Load from an explicit path (tests, and the only injection point). A
-    /// hand-edited file can carry a width outside the bounds; clamp it on load
-    /// so `get` never serves a value the write path would have rejected.
+    /// Load from an explicit path (tests, and the only injection point).
     pub fn at(path: PathBuf) -> Self {
-        let mut state = read(&path).unwrap_or_default();
+        Self::at_or(path, ViewerPrefs::default())
+    }
+
+    /// Load from `path`, falling back to `absent` when there is nothing to read.
+    /// A hand-edited file can carry a width outside the bounds; clamp it on load
+    /// so `get` never serves a value the write path would have rejected.
+    fn at_or(path: PathBuf, absent: ViewerPrefs) -> Self {
+        let mut state = read(&path).unwrap_or(absent);
         state.sidebar_width = state
             .sidebar_width
             .clamp(MIN_SIDEBAR_WIDTH, MAX_SIDEBAR_WIDTH);
@@ -163,6 +183,16 @@ impl PrefsStore {
     /// is still the selection when that project is opened again.
     pub fn set_active_repo(&self, path: String) -> ViewerPrefs {
         self.update(None, None, Some(path))
+    }
+}
+
+/// Defaults with the accent a config seed asks for. Wrapped into the cycle here
+/// rather than trusted: `[theme]` is a hand-edited file, and an index with no
+/// colour behind it would reach every reader of the prefs.
+fn seeded_prefs(accent: usize) -> ViewerPrefs {
+    ViewerPrefs {
+        accent: accent % Accent::ALL.len(),
+        ..ViewerPrefs::default()
     }
 }
 
