@@ -57,10 +57,10 @@ pub struct RepoRuntime {
 impl RepoRuntime {
     /// Start a runtime that watches `repo_path`.
     pub fn spawn(repo_path: &str) -> Arc<Self> {
-        let channel = SnapshotChannel::spawn(repo_path);
-        // Asleep from the start: a repository is opened before anyone looks at
-        // it, and the browser subscribes when a page does.
-        channel.watch().set_awake(false);
+        // Asleep from the start, not put to sleep after starting: a repository
+        // is opened before anyone looks at it, and the browser subscribes when a
+        // page does.
+        let channel = SnapshotChannel::spawn_asleep(repo_path);
         Self::start(channel, repo_path.to_string())
     }
 

@@ -222,6 +222,10 @@ fn a_repository_nobody_is_watching_is_not_walked() {
     let runtime = RepoRuntime::spawn(&path);
 
     assert!(!runtime.is_watching(), "opening is not reading");
+    // Given time to happen, rather than checked before it could: the reader used
+    // to be started awake and put to sleep a moment later, and asking straight
+    // away only ever caught the losing side of that race.
+    thread::sleep(Duration::from_millis(300));
     assert!(
         runtime.latest().is_none(),
         "and nothing has been published yet"

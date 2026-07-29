@@ -71,10 +71,26 @@ const IDLE_READ_INTERVAL: Duration = Duration::from_secs(10);
 const REOPEN_REPO_EVERY_READS: u32 = 30;
 
 impl SnapshotChannel {
+    /// Start reading `repo_path` at once, for an owner that is about to show it.
     pub fn spawn(repo_path: &str) -> Self {
+        Self::start(repo_path, true)
+    }
+
+    /// Start without reading, for an owner that knows nobody is looking yet.
+    ///
+    /// Separate from `spawn` followed by `set_awake(false)`, which is a race the
+    /// worker can win: it reads before that clears, which walks a tree nobody
+    /// asked about and leaves the reading queued to be published after a later,
+    /// newer one. The daemon opens every repository in a session and the browser
+    /// subscribes to one of them, so this is the ordinary case, not the odd one.
+    pub fn spawn_asleep(repo_path: &str) -> Self {
+        Self::start(repo_path, false)
+    }
+
+    fn start(repo_path: &str, awake: bool) -> Self {
         let (tx, rx) = mpsc::channel::<SnapshotMsg>();
         let (wake_tx, wake_rx) = mpsc::channel::<Wake>();
-        let awake = Arc::new(AtomicBool::new(true));
+        let awake = Arc::new(AtomicBool::new(awake));
         let watching = Arc::new(AtomicBool::new(false));
         #[cfg(test)]
         let channel_watching = Arc::clone(&watching);
