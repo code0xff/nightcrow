@@ -1,5 +1,5 @@
 use crate::app::{App, AutoFollow, Focus, Notice, NoticeKind, ViewMode};
-use crate::backend::{PtyBackend, TerminalBackend};
+use crate::backend::TerminalBackend;
 use crate::runtime::snapshot::SnapshotChannel;
 use crossterm::event::KeyEvent;
 
@@ -65,15 +65,21 @@ impl App {
         self.notice = None;
     }
 
+    /// Build a project view on `repo_path`, with `backend` behind its terminal
+    /// panes.
+    ///
+    /// The backend comes from the caller because where the panes live is not
+    /// this type's decision: they belong to the session the daemon owns, and
+    /// only the client that connected to it can hand over the right end of that
+    /// connection.
     pub fn new(
         repo_path: String,
         prompt_log: bool,
         startup_commands: &[crate::config::StartupCommand],
         leader: KeyEvent,
+        backend: Box<dyn TerminalBackend>,
     ) -> Self {
         let snapshot = SnapshotChannel::spawn(&repo_path);
-
-        let backend: Box<dyn TerminalBackend> = Box::new(PtyBackend::new(&repo_path));
 
         let mut app = App {
             mode: ViewMode::Status,

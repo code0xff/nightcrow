@@ -165,6 +165,7 @@ fn adopt(ws: &mut Workspace, ctx: &ProjectContext, repos: &[RepoSummary]) {
             ctx.startup_commands,
             ctx.leader,
             saved,
+            Box::new(crate::backend::PtyBackend::new(&repo.path)),
         ));
     }
     ws.reorder_to(&wanted);
