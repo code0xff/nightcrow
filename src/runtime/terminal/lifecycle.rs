@@ -19,6 +19,12 @@ impl TerminalState {
 
         for event in events {
             match event {
+                BackendEvent::Created {
+                    pane,
+                    rows,
+                    cols,
+                    requested,
+                } => self.adopt_pane(pane, rows, cols, requested),
                 BackendEvent::Output { pane, data } => {
                     let Some(emulator) = self.emulators.get_mut(&pane) else {
                         continue;
@@ -87,21 +93,69 @@ impl TerminalState {
             .as_mut()
             .ok_or_else(|| anyhow::anyhow!("no terminal backend available"))?;
 
-        let id = backend.create_pane(rows, cols, command)?;
+        backend.create_pane(rows, cols, command)?;
+        // Title precedence: explicit label → command text → default shell N.
+        // Queued rather than applied, because the pane does not exist yet:
+        // `adopt_pane` takes the front of this line when one arrives that this
+        // client asked for. A pane opened elsewhere finds the queue empty and
+        // falls back to its position.
+        let title = match (label, command) {
+            (Some(l), _) if !l.trim().is_empty() => Some(l.trim().to_string()),
+            (_, Some(c)) if !c.trim().is_empty() => Some(c.trim().to_string()),
+            _ => None,
+        };
+        self.pending_titles.push_back(title);
+        Ok(())
+    }
+
+    /// Open a pane and take delivery of it in one step.
+    ///
+    /// Only for tests. A pane arrives through `poll` now, which is the point —
+    /// but a test that opens one in order to act on it should not have to
+    /// spell the round trip out every time, and every fake backend queues the
+    /// event immediately, so one poll always finds it.
+    #[cfg(test)]
+    pub fn create_pane_now(&mut self) -> anyhow::Result<()> {
+        self.create_pane_with_now(None, None)
+    }
+
+    /// [`create_pane_now`](Self::create_pane_now) with a command and label.
+    #[cfg(test)]
+    pub fn create_pane_with_now(
+        &mut self,
+        command: Option<&str>,
+        label: Option<&str>,
+    ) -> anyhow::Result<()> {
+        self.create_pane_with(command, label)?;
+        self.poll();
+        Ok(())
+    }
+
+    /// Take in a pane the backend reports.
+    ///
+    /// Everything `create_pane_with` used to do on the spot, moved to where the
+    /// pane actually turns up. `requested` says whether this client asked: one
+    /// it did takes the focus, and one another client opened lands in the list
+    /// without moving anybody's cursor.
+    fn adopt_pane(&mut self, id: PaneId, rows: u16, cols: u16, requested: bool) {
+        if self.panes.iter().any(|pane| pane.id == id) {
+            return;
+        }
+        let (rows, cols) = crate::runtime::emulator::effective_size(rows, cols);
         self.emulators
             .insert(id, PaneEmulator::new(rows, cols, SCROLLBACK_LINES));
         self.last_content_size.insert(id, (rows, cols));
-        // Title precedence: explicit label → command text → default shell N.
-        let title = match (label, command) {
-            (Some(l), _) if !l.trim().is_empty() => l.trim().to_string(),
-            (_, Some(c)) if !c.trim().is_empty() => c.trim().to_string(),
-            _ => format!("shell {}", self.panes.len() + 1),
-        };
+        let title = requested
+            .then(|| self.pending_titles.pop_front())
+            .flatten()
+            .flatten()
+            .unwrap_or_else(|| format!("shell {}", self.panes.len() + 1));
         self.panes.push(PaneInfo { id, title });
-        self.active = self.panes.len() - 1;
+        if requested {
+            self.active = self.panes.len() - 1;
+        }
         self.sync_visible_window();
         tracing::info!(pane = id, "terminal pane opened");
-        Ok(())
     }
 
     /// Remove the currently active pane. Returns `true` when a pane was

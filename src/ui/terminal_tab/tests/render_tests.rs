@@ -15,7 +15,9 @@ fn single_pane_render_still_has_no_left_border_character() {
     // one pane, render() must take the no-cell-border branch, matching
     // pre-split-view behaviour exactly (clean copy-paste, no `│`).
     let mut app = crate::app::tests::app_with_fake_backend();
-    app.terminal.create_pane_with(None, Some("Solo")).unwrap();
+    app.terminal
+        .create_pane_with_now(None, Some("Solo"))
+        .unwrap();
     let area = Rect::new(0, 0, 40, 10);
     let mut terminal = Terminal::new(TestBackend::new(40, 10)).unwrap();
 
@@ -40,8 +42,12 @@ fn single_pane_render_still_has_no_left_border_character() {
 #[test]
 fn split_view_renders_multiple_panes_simultaneously() {
     let mut app = crate::app::tests::app_with_fake_backend();
-    app.terminal.create_pane_with(None, Some("Alpha")).unwrap();
-    app.terminal.create_pane_with(None, Some("Beta")).unwrap();
+    app.terminal
+        .create_pane_with_now(None, Some("Alpha"))
+        .unwrap();
+    app.terminal
+        .create_pane_with_now(None, Some("Beta"))
+        .unwrap();
     let mut terminal = Terminal::new(TestBackend::new(60, 20)).unwrap();
 
     terminal
@@ -60,8 +66,12 @@ fn split_view_renders_multiple_panes_simultaneously() {
 #[test]
 fn split_view_borders_active_pane_in_accent_color() {
     let mut app = crate::app::tests::app_with_fake_backend();
-    app.terminal.create_pane_with(None, Some("Alpha")).unwrap();
-    app.terminal.create_pane_with(None, Some("Beta")).unwrap();
+    app.terminal
+        .create_pane_with_now(None, Some("Alpha"))
+        .unwrap();
+    app.terminal
+        .create_pane_with_now(None, Some("Beta"))
+        .unwrap();
     app.focus = Focus::Terminal;
     let accent = Color::Yellow;
     let mut terminal = Terminal::new(TestBackend::new(60, 20)).unwrap();
@@ -91,8 +101,12 @@ fn split_view_active_pane_matches_inactive_style_when_terminal_unfocused() {
     // an inactive pane — no accent, no bold, no lighter gray — otherwise
     // it still reads as focused when it isn't.
     let mut app = crate::app::tests::app_with_fake_backend();
-    app.terminal.create_pane_with(None, Some("Alpha")).unwrap();
-    app.terminal.create_pane_with(None, Some("Beta")).unwrap();
+    app.terminal
+        .create_pane_with_now(None, Some("Alpha"))
+        .unwrap();
+    app.terminal
+        .create_pane_with_now(None, Some("Beta"))
+        .unwrap();
     app.focus = Focus::DiffViewer;
     let accent = Color::Yellow;
     let mut terminal = Terminal::new(TestBackend::new(60, 20)).unwrap();
@@ -124,7 +138,7 @@ fn tab_target_at_resolves_tabs_and_hidden_markers() {
     app.terminal.max_visible_normal = 2;
     for i in 0..4 {
         app.terminal
-            .create_pane_with(None, Some(&format!("P{i}")))
+            .create_pane_with_now(None, Some(&format!("P{i}")))
             .unwrap();
     }
     // Creation leaves pane 3 active with a 2-pane window: [2, 4).

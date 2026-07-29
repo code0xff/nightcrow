@@ -214,13 +214,15 @@ fn handle_key_leader_t_opens_pane() {
     let before = app.terminal.panes.len();
     let _ = handle_key(&mut app, leader());
     let _ = handle_key(&mut app, press(KeyCode::Char('t'), KeyModifiers::NONE));
+    // The pane arrives through the poll the main loop runs every tick.
+    app.poll_terminal();
     assert_eq!(app.terminal.panes.len(), before + 1);
 }
 
 #[test]
 fn handle_key_leader_w_closes_pane_with_terminal_focus() {
     let mut app = app_with_terminal_pane();
-    app.terminal.create_pane().unwrap();
+    app.terminal.create_pane_now().unwrap();
     let before = app.terminal.panes.len();
     let _ = handle_key(&mut app, leader());
     let _ = handle_key(&mut app, press(KeyCode::Char('w'), KeyModifiers::NONE));
@@ -233,7 +235,7 @@ fn handle_key_leader_w_closes_pane_in_terminal_fullscreen() {
     // `w` must keep closing there (focus is Terminal while it fills the
     // body).
     let mut app = app_with_terminal_pane();
-    app.terminal.create_pane().unwrap();
+    app.terminal.create_pane_now().unwrap();
     app.terminal.fullscreen = crate::runtime::terminal::TerminalFullscreen::Grid;
     let before = app.terminal.panes.len();
 

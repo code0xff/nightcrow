@@ -73,6 +73,12 @@ pub struct PtyBackend {
     // Each new pane spawns the shell here so its cwd matches the repo
     // nightcrow is tracking, even when the binary was launched elsewhere.
     cwd: PathBuf,
+    /// Panes created since the last drain, waiting to be reported.
+    ///
+    /// This backend knows the id the moment it makes the pane, but the trait
+    /// reports every pane through the event stream so a caller cannot come to
+    /// depend on an answer a remote backend has no way to give.
+    created: Vec<BackendEvent>,
 }
 
 impl PtyBackend {
@@ -81,12 +87,19 @@ impl PtyBackend {
             panes: BTreeMap::new(),
             next_id: 1,
             cwd: cwd.as_ref().to_path_buf(),
+            created: Vec::new(),
         }
     }
 }
 
-impl TerminalBackend for PtyBackend {
-    fn create_pane(&mut self, rows: u16, cols: u16, command: Option<&str>) -> Result<PaneId> {
+impl PtyBackend {
+    /// Open a pane and say which one it is.
+    ///
+    /// The trait reports panes as events, because a backend serving a shared
+    /// session cannot answer on the spot. This one can, and the terminal hub —
+    /// which owns a `PtyBackend` outright rather than through the trait — needs
+    /// the id to register the pane before anything else happens to it.
+    pub fn open_pane(&mut self, rows: u16, cols: u16, command: Option<&str>) -> Result<PaneId> {
         // Reserve the next id only after every fallible PTY/spawn step succeeds,
         // so a failure here does not consume an id slot.
         let pty_system = NativePtySystem::default();
@@ -161,6 +174,22 @@ impl TerminalBackend for PtyBackend {
         );
         Ok(id)
     }
+}
+
+impl TerminalBackend for PtyBackend {
+    fn create_pane(&mut self, rows: u16, cols: u16, command: Option<&str>) -> Result<()> {
+        let id = self.open_pane(rows, cols, command)?;
+        // Queued rather than returned: the trait reports every pane the same
+        // way, and this backend simply knows the answer before it queues it.
+        // `requested` is always true — nothing else can create a pane here.
+        self.created.push(BackendEvent::Created {
+            pane: id,
+            rows,
+            cols,
+            requested: true,
+        });
+        Ok(())
+    }
 
     fn destroy_pane(&mut self, id: PaneId) {
         // Removing the pane drops it, which runs PtyPane::drop: kill,
@@ -214,7 +243,9 @@ impl TerminalBackend for PtyBackend {
         // one noisy pane (e.g. `yes | head -100000`) from starving its
         // siblings within a single frame; whatever is left lands on the
         // next tick.
-        let mut events = Vec::new();
+        // Ahead of any output: a pane has to exist before bytes can be routed
+        // to it, and both can be queued before the same drain.
+        let mut events: Vec<BackendEvent> = std::mem::take(&mut self.created);
         for (id, pane) in &self.panes {
             let mut budget = PER_PANE_DRAIN_BUDGET;
             while budget > 0 {

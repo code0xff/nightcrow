@@ -25,6 +25,15 @@ impl App {
                 }
             }
         }
+        // Take delivery before focusing. Panes arrive through `poll` now, and
+        // this is startup: there is nothing else running that would do it, and
+        // the focus below has to see the panes it just asked for.
+        //
+        // Legitimate here in a way it would not be mid-session, because a
+        // client backed by a shared session never reaches this code — the
+        // daemon runs the startup commands once, for everyone, rather than
+        // each client running them again.
+        self.terminal.poll();
         // Focus the first pane so keystrokes reach the terminal on first launch.
         // A restored session overrides this later in `restore_session`.
         if !self.terminal.panes.is_empty() {

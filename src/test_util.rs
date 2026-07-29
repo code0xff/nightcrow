@@ -56,15 +56,21 @@ pub struct FakeBackend {
 }
 
 impl crate::backend::TerminalBackend for FakeBackend {
-    fn create_pane(
-        &mut self,
-        _rows: u16,
-        _cols: u16,
-        command: Option<&str>,
-    ) -> anyhow::Result<crate::backend::PaneId> {
+    fn create_pane(&mut self, rows: u16, cols: u16, command: Option<&str>) -> anyhow::Result<()> {
         self.next_id += 1;
         self.launched.push(command.map(str::to_string));
-        Ok(self.next_id)
+        // Queued like the real backend queues it, so a test that polls sees
+        // the pane and one that does not sees the same "not yet" a remote
+        // backend would give.
+        self.pending_events
+            .borrow_mut()
+            .push(crate::backend::BackendEvent::Created {
+                pane: self.next_id,
+                rows,
+                cols,
+                requested: true,
+            });
+        Ok(())
     }
 
     fn destroy_pane(&mut self, _id: crate::backend::PaneId) {}

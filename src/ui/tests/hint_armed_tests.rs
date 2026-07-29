@@ -66,8 +66,8 @@ fn armed_prefix_close_click_target_follows_terminal_focus() {
 #[test]
 fn prefix_hint_advertises_swap_only_when_a_swap_can_act() {
     let mut upper = app_with_fake_backend();
-    upper.terminal.create_pane().unwrap();
-    upper.terminal.create_pane().unwrap();
+    upper.terminal.create_pane_now().unwrap();
+    upper.terminal.create_pane_now().unwrap();
     upper.focus = Focus::FileList;
     upper.arm_prefix();
     assert!(
@@ -76,7 +76,7 @@ fn prefix_hint_advertises_swap_only_when_a_swap_can_act() {
     );
 
     let mut single = app_with_fake_backend();
-    single.terminal.create_pane().unwrap();
+    single.terminal.create_pane_now().unwrap();
     single.focus = Focus::Terminal;
     single.arm_prefix();
     assert!(
@@ -85,8 +85,8 @@ fn prefix_hint_advertises_swap_only_when_a_swap_can_act() {
     );
 
     let mut term = app_with_fake_backend();
-    term.terminal.create_pane().unwrap();
-    term.terminal.create_pane().unwrap();
+    term.terminal.create_pane_now().unwrap();
+    term.terminal.create_pane_now().unwrap();
     term.focus = Focus::Terminal;
     term.arm_prefix();
     assert!(

@@ -35,7 +35,7 @@ pub(super) fn backend_payloads(app: &App) -> Vec<Vec<u8>> {
 /// focus, ready for PTY pass-through assertions.
 pub(super) fn app_with_terminal_pane() -> App {
     let mut app = app_with_fake_backend();
-    app.terminal.create_pane().unwrap();
+    app.terminal.create_pane_now().unwrap();
     app.focus = Focus::Terminal;
     app
 }
@@ -88,7 +88,7 @@ pub(super) fn mouse(kind: MouseEventKind, column: u16, row: u16) -> MouseEvent {
 /// standard test screen, so mouse tests can aim events at real geometry.
 pub(super) fn app_with_two_panes_and_areas() -> (App, Vec<(backend::PaneId, Rect)>) {
     let mut app = app_with_terminal_pane();
-    app.terminal.create_pane().unwrap();
+    app.terminal.create_pane_now().unwrap();
     let layout = crate::config::LayoutConfig::default();
     let areas = crate::ui::terminal_content_areas(&app, MOUSE_TEST_SCREEN, &layout);
     assert_eq!(areas.len(), 2);

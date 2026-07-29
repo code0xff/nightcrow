@@ -48,7 +48,7 @@ fn sync_visible_window_follows_active_when_panes_exceed_max_visible() {
     state.max_visible_normal = 4;
     for i in 0..7 {
         state
-            .create_pane_with(None, Some(&format!("P{i}")))
+            .create_pane_with_now(None, Some(&format!("P{i}")))
             .unwrap();
     }
     // Each create_pane_with call makes the new pane active and syncs the
@@ -63,7 +63,7 @@ fn sync_visible_window_clamps_after_pane_count_shrinks() {
     state.max_visible_normal = 4;
     for i in 0..7 {
         state
-            .create_pane_with(None, Some(&format!("P{i}")))
+            .create_pane_with_now(None, Some(&format!("P{i}")))
             .unwrap();
     }
     // Window is currently sliding near the end; drop back to a single
@@ -77,7 +77,7 @@ fn sync_visible_window_clamps_after_pane_count_shrinks() {
 #[test]
 fn active_pane_rows_uses_pane_specific_size() {
     let mut state = state_with_fake();
-    state.create_pane().unwrap();
+    state.create_pane_now().unwrap();
     let id = state.panes[0].id;
     state.resize_visible_panes(&[(id, 33, 90)]);
     assert_eq!(state.active_pane_rows(), 33);
@@ -86,9 +86,9 @@ fn active_pane_rows_uses_pane_specific_size() {
 #[test]
 fn resize_visible_panes_keeps_default_size_in_sync_with_active_pane() {
     let mut state = state_with_fake();
-    state.create_pane().unwrap();
+    state.create_pane_now().unwrap();
     let first_id = state.panes[0].id;
-    state.create_pane().unwrap();
+    state.create_pane_now().unwrap();
     let second_id = state.panes[1].id;
     state.active = 1;
 

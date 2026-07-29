@@ -10,7 +10,7 @@ fn handle_key_leader_s_then_digit_swaps_active_pane() {
     let mut app = app_with_terminal_pane();
     for i in 1..3 {
         app.terminal
-            .create_pane_with(None, Some(&format!("pane{i}")))
+            .create_pane_with_now(None, Some(&format!("pane{i}")))
             .unwrap();
     }
     assert_eq!(app.terminal.panes.len(), 3);
@@ -42,7 +42,9 @@ fn handle_key_leader_s_then_digit_swaps_active_pane() {
 #[test]
 fn handle_key_leader_s_esc_cancels_without_swapping() {
     let mut app = app_with_terminal_pane();
-    app.terminal.create_pane_with(None, Some("two")).unwrap();
+    app.terminal
+        .create_pane_with_now(None, Some("two"))
+        .unwrap();
     app.switch_pane(0);
     let order: Vec<_> = app.terminal.panes.iter().map(|p| p.id).collect();
 
@@ -61,7 +63,9 @@ fn handle_key_leader_s_non_digit_cancels() {
     // A non-pane follow-up (e.g. a letter) cancels swap mode and is
     // consumed rather than swapping or reaching the PTY.
     let mut app = app_with_terminal_pane();
-    app.terminal.create_pane_with(None, Some("two")).unwrap();
+    app.terminal
+        .create_pane_with_now(None, Some("two"))
+        .unwrap();
     app.switch_pane(0);
     let order: Vec<_> = app.terminal.panes.iter().map(|p| p.id).collect();
 
@@ -78,7 +82,9 @@ fn handle_key_leader_s_non_digit_cancels() {
 #[test]
 fn handle_key_leader_s_without_terminal_focus_does_not_arm() {
     let mut app = app_with_terminal_pane();
-    app.terminal.create_pane_with(None, Some("two")).unwrap();
+    app.terminal
+        .create_pane_with_now(None, Some("two"))
+        .unwrap();
     app.focus = Focus::FileList;
 
     let _ = handle_key(&mut app, leader());

@@ -43,7 +43,7 @@ impl TerminalHub {
                             self.send_error_to(client, "terminal limit reached");
                             continue;
                         }
-                        match backend.create_pane(rows, cols, command.as_deref()) {
+                        match backend.open_pane(rows, cols, command.as_deref()) {
                             Ok(pane) => self.register_pane(pane, rows, cols),
                             Err(err) => {
                                 tracing::warn!(%err, "viewer: could not create a terminal");
@@ -87,7 +87,7 @@ impl TerminalHub {
                                 );
                                 break;
                             }
-                            match backend.create_pane(
+                            match backend.open_pane(
                                 pane.size.rows,
                                 pane.size.cols,
                                 pane.command.as_deref(),
@@ -126,6 +126,12 @@ impl TerminalHub {
                 match event {
                     BackendEvent::Output { pane, data } => self.record_and_broadcast(pane, data),
                     BackendEvent::Exited { pane } => self.remove_pane_and_announce(pane),
+                    // The hub opens panes through `open_pane`, which answers
+                    // directly, and registers them there. Nothing here creates
+                    // one through the trait, so this cannot arrive.
+                    BackendEvent::Created { pane, .. } => {
+                        tracing::debug!(pane, "hub: unexpected create event");
+                    }
                 }
             }
             thread::sleep(POLL_INTERVAL);

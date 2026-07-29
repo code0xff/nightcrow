@@ -25,6 +25,8 @@ fn open_new_pane_moves_focus_to_new_terminal() {
     assert_eq!(app.focus, Focus::FileList);
 
     app.open_new_pane();
+    // The pane arrives through the poll the main loop runs every tick.
+    app.poll_terminal();
 
     assert_eq!(app.terminal.panes.len(), 1);
     assert_eq!(app.focus, Focus::Terminal);
@@ -50,8 +52,8 @@ fn open_new_pane_exits_competing_fullscreen() {
 #[test]
 fn pane_action_predicates_follow_focus_and_pane_count() {
     let mut app = app_with_fake_backend();
-    app.terminal.create_pane().unwrap();
-    app.terminal.create_pane().unwrap();
+    app.terminal.create_pane_now().unwrap();
+    app.terminal.create_pane_now().unwrap();
     assert!(
         !app.can_close_pane() && !app.can_swap_panes(),
         "neither close nor swap may act without terminal focus"
@@ -104,7 +106,7 @@ fn closing_pane_reclamps_visible_window() {
     app.terminal.max_visible_normal = 4;
     for i in 0..7 {
         app.terminal
-            .create_pane_with(None, Some(&format!("P{i}")))
+            .create_pane_with_now(None, Some(&format!("P{i}")))
             .unwrap();
     }
     assert_eq!(app.terminal.active, 6);

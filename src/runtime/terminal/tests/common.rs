@@ -18,7 +18,7 @@ pub(super) fn state_with_event_queue() -> (
 /// row 6.
 pub(super) fn state_with_pane_in_modes(modes: &[u8]) -> (TerminalState, PaneId) {
     let (mut state, events) = state_with_event_queue();
-    state.create_pane().unwrap();
+    state.create_pane_now().unwrap();
     let id = state.panes[0].id;
     state.resize_visible_panes(&[(id, 10, 40)]);
     events.borrow_mut().push(BackendEvent::Output {

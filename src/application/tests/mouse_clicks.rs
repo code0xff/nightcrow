@@ -32,7 +32,7 @@ fn handle_mouse_tab_click_jumps_to_that_pane() {
 fn handle_mouse_tab_click_on_hidden_marker_slides_the_window() {
     let mut app = app_with_terminal_pane();
     for _ in 0..5 {
-        app.terminal.create_pane().unwrap();
+        app.terminal.create_pane_now().unwrap();
     }
     // 6 panes, window of 4: creation leaves pane 5 active, window [2, 6).
     assert_eq!(app.terminal.visible_start, 2);
@@ -147,6 +147,8 @@ fn handle_mouse_hint_click_runs_the_named_leader_command() {
     );
 
     assert!(matches!(outcome, KeyOutcome::Continue));
+    // The pane arrives through the poll the main loop runs every tick.
+    app.poll_terminal();
     assert_eq!(
         app.terminal.panes.len(),
         panes_before + 1,
@@ -207,6 +209,7 @@ fn handle_mouse_arm_click_then_followup_click_runs_the_command() {
         &crate::config::LayoutConfig::default(),
     );
 
+    app.poll_terminal();
     assert_eq!(
         app.terminal.panes.len(),
         panes_before + 1,

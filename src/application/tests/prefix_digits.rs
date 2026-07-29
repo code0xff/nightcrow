@@ -12,13 +12,13 @@ fn handle_key_leader_digits_mirror_focus_and_pane_fkeys() {
     // forwarding it to the PTY.
     let mut app = app_with_terminal_pane();
     app.terminal
-        .create_pane_with(Some("echo two"), Some("two"))
+        .create_pane_with_now(Some("echo two"), Some("two"))
         .unwrap();
     // Pad up to 8 panes so `<prefix> 0` (pane index 7) below is a real
     // switch, not a no-op against an out-of-range index.
     for i in 2..8 {
         app.terminal
-            .create_pane_with(None, Some(&format!("pane{i}")))
+            .create_pane_with_now(None, Some(&format!("pane{i}")))
             .unwrap();
     }
     assert_eq!(app.terminal.panes.len(), 8);

@@ -10,7 +10,7 @@ fn tab_target_at_resolves_tabs_and_hidden_markers() {
     app.terminal.max_visible_normal = 2;
     for i in 0..4 {
         app.terminal
-            .create_pane_with(None, Some(&format!("P{i}")))
+            .create_pane_with_now(None, Some(&format!("P{i}")))
             .unwrap();
     }
     // Creation leaves pane 3 active with a 2-pane window: [2, 4).
@@ -45,7 +45,7 @@ fn tab_target_at_right_marker_reveals_the_next_hidden_pane() {
     app.terminal.max_visible_normal = 2;
     for i in 0..4 {
         app.terminal
-            .create_pane_with(None, Some(&format!("P{i}")))
+            .create_pane_with_now(None, Some(&format!("P{i}")))
             .unwrap();
     }
     // Jump back to pane 0: window slides to [0, 2), marker sits on the right.
@@ -66,8 +66,12 @@ fn tab_target_agrees_with_the_rendered_buffer_not_just_the_builder() {
     // renderer vs hit-test segmentation drift the builder-based
     // position helper cannot see.
     let mut app = crate::app::tests::app_with_fake_backend();
-    app.terminal.create_pane_with(None, Some("Alpha")).unwrap();
-    app.terminal.create_pane_with(None, Some("Beta")).unwrap();
+    app.terminal
+        .create_pane_with_now(None, Some("Alpha"))
+        .unwrap();
+    app.terminal
+        .create_pane_with_now(None, Some("Beta"))
+        .unwrap();
     let area = Rect::new(0, 0, 80, 20);
     let mut terminal = Terminal::new(TestBackend::new(80, 20)).unwrap();
     terminal
@@ -102,7 +106,7 @@ fn tab_bar_marks_hidden_panes_beyond_max_visible() {
     let mut app = crate::app::tests::app_with_fake_backend();
     for i in 0..5 {
         app.terminal
-            .create_pane_with(None, Some(&format!("P{i}")))
+            .create_pane_with_now(None, Some(&format!("P{i}")))
             .unwrap();
     }
     assert_eq!(app.terminal.max_visible_normal, 4);
@@ -124,7 +128,9 @@ fn tab_bar_marks_hidden_panes_beyond_max_visible() {
 #[test]
 fn tab_bar_labels_panes_with_leader_digits_in_split_view() {
     let mut app = crate::app::tests::app_with_fake_backend();
-    app.terminal.create_pane_with(None, Some("Alpha")).unwrap();
+    app.terminal
+        .create_pane_with_now(None, Some("Alpha"))
+        .unwrap();
     let mut terminal = Terminal::new(TestBackend::new(60, 20)).unwrap();
 
     terminal
@@ -154,8 +160,12 @@ fn tab_bar_labels_panes_with_digits_in_fullscreen() {
     // Fullscreen hides the viewer, so the pane legend switches to the
     // `<prefix> 1..8` digits that address panes there.
     let mut app = crate::app::tests::app_with_fake_backend();
-    app.terminal.create_pane_with(None, Some("Alpha")).unwrap();
-    app.terminal.create_pane_with(None, Some("Beta")).unwrap();
+    app.terminal
+        .create_pane_with_now(None, Some("Alpha"))
+        .unwrap();
+    app.terminal
+        .create_pane_with_now(None, Some("Beta"))
+        .unwrap();
     app.terminal.fullscreen = crate::runtime::terminal::TerminalFullscreen::Grid;
     let mut terminal = Terminal::new(TestBackend::new(60, 20)).unwrap();
 

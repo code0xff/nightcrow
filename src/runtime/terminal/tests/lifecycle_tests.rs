@@ -3,7 +3,7 @@ use super::common::*;
 #[test]
 fn create_pane_defaults_to_shell_label_and_no_command() {
     let mut state = state_with_fake();
-    state.create_pane().unwrap();
+    state.create_pane_now().unwrap();
     assert_eq!(state.panes.len(), 1);
     assert_eq!(state.panes[0].title, "shell 1");
 }
@@ -12,7 +12,7 @@ fn create_pane_defaults_to_shell_label_and_no_command() {
 fn create_pane_with_label_sets_title() {
     let mut state = state_with_fake();
     state
-        .create_pane_with(Some("claude --foo"), Some("Claude"))
+        .create_pane_with_now(Some("claude --foo"), Some("Claude"))
         .unwrap();
     assert_eq!(state.panes[0].title, "Claude");
 }
@@ -20,15 +20,19 @@ fn create_pane_with_label_sets_title() {
 #[test]
 fn create_pane_with_falls_back_to_command_text() {
     let mut state = state_with_fake();
-    state.create_pane_with(Some("cargo test"), None).unwrap();
+    state
+        .create_pane_with_now(Some("cargo test"), None)
+        .unwrap();
     assert_eq!(state.panes[0].title, "cargo test");
 }
 
 #[test]
 fn create_pane_with_appends_and_focuses_new_pane() {
     let mut state = state_with_fake();
-    state.create_pane_with(Some("echo hi"), Some("E")).unwrap();
-    state.create_pane().unwrap();
+    state
+        .create_pane_with_now(Some("echo hi"), Some("E"))
+        .unwrap();
+    state.create_pane_now().unwrap();
     assert_eq!(state.panes.len(), 2);
     assert_eq!(state.panes[1].title, "shell 2");
     assert_eq!(state.active, 1);
@@ -37,9 +41,9 @@ fn create_pane_with_appends_and_focuses_new_pane() {
 #[test]
 fn swap_active_with_exchanges_panes_and_follows_focus() {
     let mut state = state_with_fake();
-    state.create_pane_with(None, Some("A")).unwrap();
-    state.create_pane_with(None, Some("B")).unwrap();
-    state.create_pane_with(None, Some("C")).unwrap();
+    state.create_pane_with_now(None, Some("A")).unwrap();
+    state.create_pane_with_now(None, Some("B")).unwrap();
+    state.create_pane_with_now(None, Some("C")).unwrap();
     state.active = 0; // focus pane "A"
     let a_id = state.panes[0].id;
     let c_id = state.panes[2].id;
@@ -57,8 +61,8 @@ fn swap_active_with_exchanges_panes_and_follows_focus() {
 #[test]
 fn swap_active_with_out_of_range_is_noop() {
     let mut state = state_with_fake();
-    state.create_pane_with(None, Some("A")).unwrap();
-    state.create_pane_with(None, Some("B")).unwrap();
+    state.create_pane_with_now(None, Some("A")).unwrap();
+    state.create_pane_with_now(None, Some("B")).unwrap();
     state.active = 0;
 
     assert!(!state.swap_active_with(5));
@@ -70,8 +74,8 @@ fn swap_active_with_out_of_range_is_noop() {
 #[test]
 fn swap_active_with_self_is_noop() {
     let mut state = state_with_fake();
-    state.create_pane_with(None, Some("A")).unwrap();
-    state.create_pane_with(None, Some("B")).unwrap();
+    state.create_pane_with_now(None, Some("A")).unwrap();
+    state.create_pane_with_now(None, Some("B")).unwrap();
     state.active = 1;
 
     assert!(!state.swap_active_with(1));
@@ -82,8 +86,8 @@ fn swap_active_with_self_is_noop() {
 #[test]
 fn swap_active_with_preserves_per_pane_state() {
     let mut state = state_with_fake();
-    state.create_pane_with(None, Some("A")).unwrap();
-    state.create_pane_with(None, Some("B")).unwrap();
+    state.create_pane_with_now(None, Some("A")).unwrap();
+    state.create_pane_with_now(None, Some("B")).unwrap();
     state.active = 0;
     let a_id = state.panes[0].id;
     // Seed scroll/size state keyed by the moving pane's id.
@@ -101,7 +105,7 @@ fn swap_active_with_preserves_per_pane_state() {
 #[test]
 fn pane_size_falls_back_to_default_before_any_resize() {
     let mut state = state_with_fake();
-    state.create_pane().unwrap();
+    state.create_pane_now().unwrap();
     let id = state.panes[0].id;
     assert_eq!(state.pane_size(id), state.size);
 }
@@ -109,7 +113,7 @@ fn pane_size_falls_back_to_default_before_any_resize() {
 #[test]
 fn resize_visible_panes_updates_parser_and_last_content_size() {
     let mut state = state_with_fake();
-    state.create_pane().unwrap();
+    state.create_pane_now().unwrap();
     let id = state.panes[0].id;
 
     state.resize_visible_panes(&[(id, 12, 60)]);
@@ -121,7 +125,7 @@ fn resize_visible_panes_updates_parser_and_last_content_size() {
 #[test]
 fn resize_visible_panes_clamps_zero_to_minimum_grid() {
     let mut state = state_with_fake();
-    state.create_pane().unwrap();
+    state.create_pane_now().unwrap();
     let id = state.panes[0].id;
 
     state.resize_visible_panes(&[(id, 0, 0)]);
@@ -135,10 +139,10 @@ fn resize_visible_panes_clamps_zero_to_minimum_grid() {
 #[test]
 fn resize_visible_panes_ignores_panes_not_listed() {
     let mut state = state_with_fake();
-    state.create_pane().unwrap();
+    state.create_pane_now().unwrap();
     let hidden_id = state.panes[0].id;
     let hidden_size_at_creation = state.pane_size(hidden_id);
-    state.create_pane().unwrap();
+    state.create_pane_now().unwrap();
     let visible_id = state.panes[1].id;
 
     state.resize_visible_panes(&[(visible_id, 15, 70)]);
@@ -156,11 +160,11 @@ fn resize_visible_panes_ignores_panes_not_listed() {
 #[test]
 fn new_pane_seeds_size_from_active_pane_last_content_size() {
     let mut state = state_with_fake();
-    state.create_pane().unwrap();
+    state.create_pane_now().unwrap();
     let first_id = state.panes[0].id;
     state.resize_visible_panes(&[(first_id, 18, 65)]);
 
-    state.create_pane().unwrap();
+    state.create_pane_now().unwrap();
     let second_id = state.panes[1].id;
 
     assert_eq!(state.screen_for_pane(second_id).unwrap().size(), (18, 65));
@@ -175,7 +179,7 @@ fn screen_for_pane_none_for_unknown_id() {
 #[test]
 fn closing_pane_drops_its_last_content_size() {
     let mut state = state_with_fake();
-    state.create_pane().unwrap();
+    state.create_pane_now().unwrap();
     let id = state.panes[0].id;
     state.resize_visible_panes(&[(id, 10, 40)]);
 

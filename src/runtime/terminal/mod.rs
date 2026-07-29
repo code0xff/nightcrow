@@ -115,6 +115,9 @@ pub struct TerminalState {
     pub visible_start: usize,
     pub max_visible_normal: usize,
     pub max_visible_fullscreen: usize,
+    /// Titles for panes this client has asked for and not yet been given, in
+    /// the order they were asked for. See `create_pane_with`.
+    pub(crate) pending_titles: std::collections::VecDeque<Option<String>>,
     pub(crate) emulators: HashMap<PaneId, PaneEmulator>,
     pub(crate) prompt_bufs: HashMap<PaneId, String>,
     pub(super) prompt_log_enabled: bool,
@@ -133,6 +136,7 @@ impl TerminalState {
             visible_start: 0,
             max_visible_normal: MAX_VISIBLE_NORMAL,
             max_visible_fullscreen: MAX_VISIBLE_FULLSCREEN,
+            pending_titles: std::collections::VecDeque::new(),
             emulators: HashMap::new(),
             prompt_bufs: HashMap::new(),
             prompt_log_enabled,

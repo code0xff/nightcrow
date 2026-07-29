@@ -92,8 +92,8 @@ fn scroll_active_ignores_a_zero_line_request() {
 #[test]
 fn scroll_pane_moves_a_non_active_panes_view_immediately() {
     let (mut state, events) = state_with_event_queue();
-    state.create_pane().unwrap();
-    state.create_pane().unwrap();
+    state.create_pane_now().unwrap();
+    state.create_pane_now().unwrap();
     let first = state.panes[0].id;
     state.resize_visible_panes(&[(first, 10, 40)]);
     events.borrow_mut().push(BackendEvent::Output {

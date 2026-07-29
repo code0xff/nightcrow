@@ -4,9 +4,7 @@ use std::time::{Duration, Instant};
 #[test]
 fn pty_backend_create_and_destroy_pane() {
     let mut backend = PtyBackend::new(".");
-    let id = backend
-        .create_pane(24, 80, None)
-        .expect("create_pane failed");
+    let id = backend.open_pane(24, 80, None).expect("open_pane failed");
     assert_eq!(id, 1);
     backend.destroy_pane(id);
     assert!(!backend.panes.contains_key(&id));
@@ -23,9 +21,7 @@ const PTY_TEST_DEADLINE: Duration = Duration::from_secs(15);
 #[test]
 fn pty_backend_drains_output_before_exit_event() {
     let mut backend = PtyBackend::new(".");
-    let id = backend
-        .create_pane(24, 80, None)
-        .expect("create_pane failed");
+    let id = backend.open_pane(24, 80, None).expect("open_pane failed");
 
     backend
         .send_input(id, b"printf nightcrow-pty-output; exit\n")
@@ -39,7 +35,9 @@ fn pty_backend_drains_output_before_exit_event() {
             match event {
                 BackendEvent::Output { data, .. } => output.extend(data),
                 BackendEvent::Exited { pane } if pane == id => saw_exit = true,
-                BackendEvent::Exited { .. } => {}
+                // These tests open panes through `open_pane`, which answers
+                // directly, so no create event is queued for them.
+                BackendEvent::Exited { .. } | BackendEvent::Created { .. } => {}
             }
         }
         if saw_exit {
@@ -61,8 +59,8 @@ fn pty_backend_runs_startup_command() {
     // The command runs itself on launch — no input is sent. `exit` keeps
     // the test bounded by ending the shell after the command prints.
     let id = backend
-        .create_pane(24, 80, Some("printf nightcrow-startup-ran; exit"))
-        .expect("create_pane failed");
+        .open_pane(24, 80, Some("printf nightcrow-startup-ran; exit"))
+        .expect("open_pane failed");
 
     let deadline = Instant::now() + PTY_TEST_DEADLINE;
     let mut output = Vec::new();
@@ -72,7 +70,9 @@ fn pty_backend_runs_startup_command() {
             match event {
                 BackendEvent::Output { data, .. } => output.extend(data),
                 BackendEvent::Exited { pane } if pane == id => saw_exit = true,
-                BackendEvent::Exited { .. } => {}
+                // These tests open panes through `open_pane`, which answers
+                // directly, so no create event is queued for them.
+                BackendEvent::Exited { .. } | BackendEvent::Created { .. } => {}
             }
         }
         if saw_exit {
