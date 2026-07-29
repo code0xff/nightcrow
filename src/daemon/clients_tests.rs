@@ -169,14 +169,28 @@ fn asking_for_the_set_owes_it_again() {
 #[test]
 fn a_broadcast_settles_every_outstanding_request_for_the_set() {
     // It reached all of them, so following it with one each would be the same
-    // set twice.
+    // set twice. Settled by the broadcast itself rather than by a second call,
+    // which a client attaching in between would fall through.
     let clients = AttachedClients::default();
     let (_a, _rx_a, _sock_a) = attach(&clients);
     let (_b, _rx_b, _sock_b) = attach(&clients);
 
-    clients.clear_owed_sets();
+    clients.broadcast(Frame::control(b"repos".to_vec()));
 
     assert!(clients.take_owed_sets().is_empty());
+}
+
+#[test]
+fn a_client_that_attaches_after_a_broadcast_is_still_owed_a_set() {
+    // It was not a recipient — it did not exist yet — so the broadcast cannot
+    // count it told. Missing this leaves a client on an empty screen for as long
+    // as the session happens not to change.
+    let clients = AttachedClients::default();
+    clients.broadcast(Frame::control(b"repos".to_vec()));
+
+    let (late, _rx, _sock) = attach(&clients);
+
+    assert_eq!(clients.take_owed_sets(), vec![late]);
 }
 
 #[test]

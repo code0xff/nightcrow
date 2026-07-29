@@ -110,9 +110,10 @@ pub(super) fn watch(
         };
         if told != current {
             follow(&repos);
+            // Counts everyone it reaches as told, in the same lock hold, so a
+            // client attaching alongside it is either a recipient or still owed
+            // one — never neither.
             clients.broadcast(frame());
-            // Nobody is owed a set any more — that broadcast was one.
-            clients.clear_owed_sets();
             told = current;
         } else {
             // Nothing changed, so this says the same thing again to whoever has

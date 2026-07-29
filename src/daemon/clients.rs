@@ -116,14 +116,29 @@ impl AttachedClients {
         self.inner.lock().expect("attached clients poisoned").len()
     }
 
-    /// Send `frame` to every attached client.
+    /// Send `frame` to every attached client, and count them told: nobody is
+    /// left owed a set by a broadcast that just reached them.
+    ///
+    /// The two are one act, under one lock hold, because a client that attaches
+    /// between them was *not* a recipient — clearing its flag afterwards would
+    /// leave it waiting for a set the watcher has already recorded as sent, and
+    /// with no further change to the session nothing would ever send one. A
+    /// client that attaches after this returns is not in the list, keeps its
+    /// flag, and is served on the next pass.
+    ///
+    /// The served set is the only thing every client is sent at once — a
+    /// repository's pane output goes per subscriber — so there is no broadcast
+    /// this does not settle.
     ///
     /// Never blocks: the lock is held while queueing, and a blocking send would
     /// let one stalled client stop the session for all the others. A client whose
     /// queue is full is cut off instead — for itself alone.
     pub fn broadcast(&self, frame: Frame) {
         let mut clients = self.inner.lock().expect("attached clients poisoned");
-        clients.retain(|client| client.queue(frame.clone()));
+        clients.retain_mut(|client| {
+            client.owed_set = false;
+            client.queue(frame.clone())
+        });
     }
 
     /// Note that `id` is waiting to be told the session's shape, for the watcher
@@ -146,15 +161,6 @@ impl AttachedClients {
             .iter_mut()
             .filter_map(|client| std::mem::take(&mut client.owed_set).then_some(client.id))
             .collect()
-    }
-
-    /// Forget every outstanding request for the set, for a broadcast that is
-    /// about to reach all of them anyway.
-    pub fn clear_owed_sets(&self) {
-        let mut clients = self.inner.lock().expect("attached clients poisoned");
-        for client in clients.iter_mut() {
-            client.owed_set = false;
-        }
     }
 
     /// Send `frame` to one client, if it is still attached.
