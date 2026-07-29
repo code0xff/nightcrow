@@ -19,14 +19,16 @@ pub mod frame;
 mod hub_helpers;
 mod hub_run;
 mod session;
+mod size_owner;
+mod startup;
+mod startup_run;
 
 #[cfg(test)]
 pub use frame::decode_output;
 pub use frame::{ClientMessage, PaneSize, ServerMessage, TerminalFrame, encode_output};
 pub use session::TerminalSession;
 
-use crate::web::viewer::limits;
-use hub_helpers::{Command, Shared, StartupPane};
+use hub_helpers::{Command, Shared};
 use session::Client;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc::{self, SyncSender};
@@ -166,107 +168,6 @@ impl TerminalHub {
         self.startup.len().max(1)
     }
 
-    /// Create the startup terminals at the sizes a client measured, if nobody
-    /// has claimed them yet.
-    ///
-    /// The claim is what makes this once-per-hub-life. It is taken here rather
-    /// than when a client connects because a client that never answers must
-    /// not consume it — the next one to connect is offered the panes again,
-    /// which is what keeps a dropped handshake from being fatal. Two clients
-    /// answering at once is normal (both were offered): the first to arrive
-    /// wins the exchange and the second is ignored, so the panes are created
-    /// exactly once.
-    pub(super) fn claim_startup(&self, client: u64, sizes: &[PaneSize]) {
-        if self
-            .started
-            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
-            .is_err()
-        {
-            return;
-        }
-        // A bare shell when nothing is configured, matching the TUI's default.
-        let configured: Vec<Option<crate::config::StartupCommand>> = if self.startup.is_empty() {
-            vec![None]
-        } else {
-            self.startup.iter().cloned().map(Some).collect()
-        };
-        let panes: Vec<StartupPane> = configured
-            .into_iter()
-            .enumerate()
-            .map(|(index, configured)| StartupPane {
-                // A client that could only measure some cells still gets the
-                // rest; they are simply born at the old default and corrected
-                // by the first fit, which is where every pane started before.
-                size: sizes.get(index).copied().unwrap_or(DEFAULT_PANE_SIZE),
-                // The name it was configured under, else the command text: what
-                // the operator would recognise the pane by. A program that emits
-                // OSC 0/2 still renames it afterwards.
-                title: configured.as_ref().map(|sc| {
-                    sc.name
-                        .clone()
-                        .unwrap_or_else(|| sc.command.trim().to_string())
-                }),
-                command: configured.map(|sc| sc.command),
-            })
-            .collect();
-
-        // Hold the free cap slots before the command is even queued. Another
-        // connection's handler thread can enqueue creates between here and the
-        // worker reaching this batch, and the worker would serve those first;
-        // the reservation is what stops them taking slots this set claimed.
-        // Only what is free — terminals already open are not displaced.
-        let reserved = {
-            let mut state = self.state.lock().expect("terminal state poisoned");
-            let free = limits::MAX_PTYS_PER_REPO.saturating_sub(state.panes.len() + state.reserved);
-            let take = panes.len().min(free);
-            state.reserved += take;
-            take
-        };
-
-        // One command for the whole set, not one per pane. Sent with
-        // `try_send` because a full queue means backpressure the connection
-        // thread must not block on — and as a single message that is
-        // all-or-nothing, so there is no state where some startup terminals
-        // were accepted and the rest were silently lost with the claim already
-        // spent.
-        if self
-            .commands
-            .try_send(Command::CreateStartup {
-                panes,
-                client,
-                reserved,
-            })
-            .is_err()
-        {
-            self.release_reserved(reserved);
-            // Hand the claim back and offer again, or the hub would hold
-            // `started` with no terminals to show for it — the one outcome
-            // this handshake exists to rule out. The re-offer matters as much
-            // as the release: this client has already cleared its pending
-            // state and will not ask again on its own.
-            tracing::warn!("viewer: terminal command queue full, startup deferred");
-            self.started.store(false, Ordering::Release);
-            // To everyone, not just whoever answered. The offer belongs to
-            // whichever client replies first, and the one that just did may be
-            // gone by now — or another may have answered while the claim was
-            // held and had its `start` ignored, clearing its pending state on
-            // the way. Re-offering to only one leaves the rest with no reason
-            // to ask again.
-            self.broadcast_pending();
-        }
-    }
-
-    /// Offer the startup terminals to every connected client.
-    fn broadcast_pending(&self) {
-        let Ok(json) = serde_json::to_string(&ServerMessage::Pending {
-            count: self.startup_count(),
-        }) else {
-            return;
-        };
-        let mut state = self.state.lock().expect("terminal state poisoned");
-        hub_helpers::broadcast_locked(&mut state.clients, TerminalFrame::Control(json));
-    }
-
     /// Give back cap slots a startup batch is no longer going to use.
     pub(super) fn release_reserved(&self, count: usize) {
         if count == 0 {
@@ -309,33 +210,6 @@ impl TerminalHub {
         };
         if let Some(heir) = heir {
             self.send_to(heir, &ServerMessage::SizeOwner { owned: true });
-        }
-    }
-
-    /// Move the sizing to `client`, at its own request.
-    pub(super) fn claim_size(&self, client: u64) {
-        let displaced = {
-            let mut state = self.state.lock().expect("terminal state poisoned");
-            // A client that has gone cannot take it: its request can arrive
-            // after it disconnected, and handing it the sizing would freeze
-            // every pane at whatever size it left behind.
-            if !state.clients.iter().any(|c| c.id == client) {
-                return;
-            }
-            if state.size_owner == Some(client) {
-                return;
-            }
-            state.size_owner.replace(client)
-        };
-        self.announce_size_owner(client, displaced);
-    }
-
-    /// Tell the new owner it has the sizing, and the one it took it from that it
-    /// no longer does.
-    fn announce_size_owner(&self, owner: u64, displaced: Option<u64>) {
-        self.send_to(owner, &ServerMessage::SizeOwner { owned: true });
-        if let Some(displaced) = displaced.filter(|id| *id != owner) {
-            self.send_to(displaced, &ServerMessage::SizeOwner { owned: false });
         }
     }
 

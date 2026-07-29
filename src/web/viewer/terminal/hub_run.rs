@@ -1,8 +1,6 @@
 use super::TerminalHub;
 use super::frame::{ServerMessage, TerminalFrame};
-use super::hub_helpers::{
-    Command, PaneState, StartupPane, broadcast_locked, canonical_order, push_scrollback,
-};
+use super::hub_helpers::{Command, PaneState, broadcast_locked, canonical_order, push_scrollback};
 use crate::backend::{BackendEvent, PaneId, PtyBackend, TerminalBackend};
 use crate::web::viewer::limits;
 use std::collections::VecDeque;
@@ -13,16 +11,6 @@ use std::thread;
 use std::time::Duration;
 
 const POLL_INTERVAL: Duration = Duration::from_millis(8);
-
-/// How a startup pane is named back to the client when it could not be opened.
-/// The command text is the operator's own configuration and is what labels the
-/// tab, so it is the name they would recognise.
-fn startup_label(pane: &StartupPane) -> String {
-    match pane.command.as_deref() {
-        Some(command) => format!("`{command}`"),
-        None => "a shell".to_string(),
-    }
-}
 
 impl TerminalHub {
     pub(super) fn run(&self, cwd: &str, commands: Receiver<Command>, stop: Arc<AtomicBool>) {
@@ -57,67 +45,7 @@ impl TerminalHub {
                         panes,
                         client,
                         reserved,
-                    } => {
-                        let mut held = reserved;
-                        let mut remaining = panes.into_iter().peekable();
-                        while let Some(pane) = remaining.next() {
-                            // Spend this pane's own reservation first, so the
-                            // check below sees the slot it is about to take as
-                            // free rather than as still held for itself.
-                            if held > 0 {
-                                self.release_reserved(1);
-                                held -= 1;
-                            }
-                            // The cap still binds. The reservation decides who
-                            // gets a slot, not how many exist — a set larger
-                            // than what was free at claim time comes up short
-                            // here rather than overrunning the ceiling.
-                            if !self.has_free_slot() {
-                                // Name what did not start. The set is spent
-                                // once claimed, so these will not run until
-                                // the hub restarts — the user has to open them
-                                // by hand, and cannot do that without knowing
-                                // which ones they were.
-                                let mut lost = vec![startup_label(&pane)];
-                                lost.extend(remaining.map(|p| startup_label(&p)));
-                                self.send_error_to(
-                                    client,
-                                    &format!(
-                                        "terminal limit reached — {} did not start",
-                                        lost.join(", ")
-                                    ),
-                                );
-                                break;
-                            }
-                            match backend.open_pane(
-                                pane.size.rows,
-                                pane.size.cols,
-                                pane.command.as_deref(),
-                            ) {
-                                // Registered as nobody's: the configured
-                                // terminals belong to the session, not to
-                                // whichever client happened to measure them
-                                // first, so they must not pull that client's
-                                // focus onto them.
-                                Ok(id) => self.register_pane(
-                                    id,
-                                    pane.size.rows,
-                                    pane.size.cols,
-                                    None,
-                                    pane.title.clone(),
-                                ),
-                                Err(err) => {
-                                    tracing::warn!(%err, "viewer: could not start a terminal");
-                                    self.send_error_to(
-                                        client,
-                                        &format!("could not start {}", startup_label(&pane)),
-                                    );
-                                }
-                            }
-                        }
-                        // Whatever the break left holds slots nothing will fill.
-                        self.release_reserved(held);
-                    }
+                    } => self.open_startup_panes(&mut backend, panes, client, reserved),
                     // Unknown pane ids are ignored rather than errored: a
                     // client racing a pane exit is normal, not an attack.
                     Command::Input { pane, data } if self.pane_is_live(pane) => {
@@ -192,7 +120,7 @@ impl TerminalHub {
 
     /// Whether another terminal fits under the cap, counting slots already
     /// held for a startup set that has been claimed but not created yet.
-    fn has_free_slot(&self) -> bool {
+    pub(super) fn has_free_slot(&self) -> bool {
         let state = self.state.lock().expect("terminal state poisoned");
         state.panes.len() + state.reserved < limits::MAX_PTYS_PER_REPO
     }
@@ -214,7 +142,7 @@ impl TerminalHub {
     /// treat it as the one it opened. `None` for a pane nobody asked for.
     /// `title` is the name the session gives it, which only a configured startup
     /// terminal has.
-    fn register_pane(
+    pub(super) fn register_pane(
         &self,
         pane: PaneId,
         rows: u16,
@@ -348,7 +276,7 @@ impl TerminalHub {
         }
     }
 
-    fn send_error_to(&self, client_id: u64, message: &str) {
+    pub(super) fn send_error_to(&self, client_id: u64, message: &str) {
         let Ok(json) = serde_json::to_string(&ServerMessage::Error {
             message: message.to_string(),
         }) else {

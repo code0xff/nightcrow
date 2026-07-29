@@ -1,6 +1,7 @@
 mod behavior;
 mod scrollback_depth;
 mod size_owner;
+mod startup;
 
 use crate::backend::PaneId;
 use crate::web::viewer::limits;

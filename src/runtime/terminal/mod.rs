@@ -3,8 +3,10 @@ use crate::runtime::emulator::PaneEmulator;
 use std::collections::HashMap;
 
 mod escape;
+mod input;
 mod lifecycle;
 mod scroll;
+mod session_panes;
 mod state;
 
 pub(crate) use escape::strip_escape_sequences;

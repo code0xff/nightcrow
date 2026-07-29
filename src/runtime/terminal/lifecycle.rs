@@ -1,8 +1,6 @@
 use crate::backend::{BackendEvent, PaneId};
 use crate::runtime::emulator::PaneEmulator;
-use crate::runtime::terminal::{
-    PROMPT_BUFFER_MAX_BYTES, PaneInfo, SCROLLBACK_LINES, TerminalState, strip_escape_sequences,
-};
+use crate::runtime::terminal::{PaneInfo, SCROLLBACK_LINES, TerminalState};
 
 impl TerminalState {
     /// Drain pending backend events into pane emulators and pane metadata.
@@ -207,93 +205,6 @@ impl TerminalState {
         tracing::info!(pane = id, "terminal pane opened");
     }
 
-    /// Ask for the active pane to be closed. Reports whether there was one to
-    /// ask about; an empty list is a benign no-op.
-    ///
-    /// A request, like a create. The pane goes when the session says it did
-    /// ([`BackendEvent::Exited`]), which is also how a pane someone else closed
-    /// arrives. Removing it here instead would show it gone while its process
-    /// kept running — and a close the session never carried out (a full command
-    /// queue drops one) would leave this client unable to see that pane again.
-    pub fn close_active(&mut self) -> bool {
-        let Some(info) = self.panes.get(self.active) else {
-            return false;
-        };
-        let id = info.id;
-        match &mut self.backend {
-            Some(backend) => backend.destroy_pane(id),
-            None => return false,
-        }
-        true
-    }
-
-    /// Ask for the active pane to be closed and take delivery of it in one step.
-    /// Only for tests; every fake backend reports the exit immediately, so one
-    /// poll applies it.
-    #[cfg(test)]
-    pub fn close_active_now(&mut self) -> bool {
-        let asked = self.close_active();
-        self.poll();
-        asked
-    }
-
-    /// Ask for the active pane and the pane at `idx` to trade places.
-    ///
-    /// A request, not a move: the order belongs to the session, so it is applied
-    /// when it comes back as [`BackendEvent::Reordered`] — for every client at
-    /// once, rather than here alone. Returns `true` when a request was made and
-    /// `false` for an out-of-range `idx` or a self-swap (both benign no-ops).
-    pub fn swap_active_with(&mut self, idx: usize) -> bool {
-        if idx >= self.panes.len() || idx == self.active {
-            return false;
-        }
-        let mut order: Vec<PaneId> = self.panes.iter().map(|pane| pane.id).collect();
-        order.swap(self.active, idx);
-        match &mut self.backend {
-            Some(backend) => backend.reorder(&order),
-            None => return false,
-        }
-        true
-    }
-
-    /// Put the panes in the order the session gives.
-    ///
-    /// Reconciled rather than applied blindly, because the client and the session
-    /// can disagree for a beat: an id this client has not adopted yet is skipped,
-    /// and a pane the order omits keeps its place at the end. Focus follows the
-    /// *pane* it was on rather than the slot — the point of a swap is to move a
-    /// pane while still looking at it. Per-pane state (emulators, scroll, sizes,
-    /// prompt buffers) is keyed by id, so none of it moves.
-    ///
-    /// Test-only for a locally-backed state, which has no session to be told by;
-    /// [`swap_active_with`](Self::swap_active_with) is what asks in production.
-    pub(crate) fn apply_order(&mut self, order: &[PaneId]) {
-        let active_id = self.active_pane_id();
-        let mut taken: Vec<PaneInfo> = Vec::with_capacity(self.panes.len());
-        for id in order {
-            if let Some(index) = self.panes.iter().position(|pane| pane.id == *id) {
-                taken.push(self.panes.remove(index));
-            }
-        }
-        taken.append(&mut self.panes);
-        self.panes = taken;
-        self.active = active_id
-            .and_then(|id| self.panes.iter().position(|pane| pane.id == id))
-            .unwrap_or(self.active)
-            .min(self.panes.len().saturating_sub(1));
-        self.sync_visible_window();
-    }
-
-    /// Ask for a swap and take delivery of it in one step. Only for tests, which
-    /// should not have to spell the round trip out; every fake backend echoes the
-    /// order immediately, so one poll applies it.
-    #[cfg(test)]
-    pub fn swap_active_with_now(&mut self, idx: usize) -> bool {
-        let asked = self.swap_active_with(idx);
-        self.poll();
-        asked
-    }
-
     pub(super) fn remove_pane_state(&mut self, id: PaneId) {
         self.emulators.remove(&id);
         // Flush any unterminated prompt input so we don't lose the line the
@@ -350,52 +261,6 @@ impl TerminalState {
     pub fn claim_size(&mut self) {
         if let Some(backend) = &mut self.backend {
             backend.claim_size();
-        }
-    }
-
-    pub fn send_input(&mut self, data: &[u8]) {
-        let Some(info) = self.panes.get(self.active) else {
-            return;
-        };
-        let id = info.id;
-        self.scroll.remove(&id);
-        if let Some(backend) = &mut self.backend
-            && let Err(e) = backend.send_input(id, data)
-        {
-            tracing::warn!("failed to send terminal input to pane {id}: {e}");
-        }
-        if self.prompt_log_enabled {
-            self.buffer_prompt_input(id, data);
-        }
-    }
-
-    pub(super) fn buffer_prompt_input(&mut self, pane_id: PaneId, data: &[u8]) {
-        let text = strip_escape_sequences(data);
-        let buf = self.prompt_bufs.entry(pane_id).or_default();
-        for ch in text.chars() {
-            match ch {
-                '\r' | '\n' => {
-                    if !buf.is_empty() {
-                        tracing::info!(target: "prompt", pane = pane_id, text = %buf);
-                        buf.clear();
-                    }
-                }
-                // 0x7f (DEL, sent by Backspace) and 0x08 (BS, sent by Ctrl+H)
-                // both remove the previous typed char. Without this branch the
-                // prompt log would accumulate typos the user already corrected.
-                '\x7f' | '\x08' => {
-                    buf.pop();
-                }
-                _ => {
-                    // Cap to bound memory under degenerate "no-newline" producers
-                    // (progress bars piped through cat, paste of a multi-MB
-                    // string, etc.). Dropping further chars before the next flush
-                    // is preferable to letting the buffer grow without limit.
-                    if buf.len() < PROMPT_BUFFER_MAX_BYTES {
-                        buf.push(ch);
-                    }
-                }
-            }
         }
     }
 

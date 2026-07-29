@@ -31,6 +31,7 @@ mod mode_toggle;
 mod pane;
 mod scroll_misc;
 mod session_restore;
+mod session_restore_fullscreen;
 mod snapshot;
 mod snapshot_refresh;
 mod status_diff;
