@@ -274,6 +274,52 @@ fn a_second_subscriber_does_not_disturb_the_watch() {
 }
 
 #[test]
+fn concurrent_publishers_never_move_the_latest_status_backwards() {
+    // Three threads publish — the runtime's own, a REST handler taking a
+    // reading on demand, and a first subscriber taking one for itself. Deciding
+    // what is new, numbering it, and storing it have to happen together: apart,
+    // two readings can be numbered in one order and stored in the other, and
+    // what everyone keeps is the older of the two under the higher number.
+    let (runtime, _tx, _stop) = test_runtime();
+    let publishers: Vec<_> = (0..4)
+        .map(|thread| {
+            let runtime = Arc::clone(&runtime);
+            std::thread::spawn(move || {
+                for round in 0..300 {
+                    runtime.publish(
+                        &snapshot(&format!("b{thread}-{round}"), 1),
+                        &Default::default(),
+                    );
+                }
+            })
+        })
+        .collect();
+
+    let watcher = {
+        let runtime = Arc::clone(&runtime);
+        std::thread::spawn(move || {
+            let mut highest = 0;
+            for _ in 0..20_000 {
+                if let Some(update) = runtime.latest() {
+                    assert!(
+                        update.seq >= highest,
+                        "the newest status went back to {} from {highest}",
+                        update.seq
+                    );
+                    highest = update.seq;
+                }
+            }
+        })
+    };
+
+    for publisher in publishers {
+        publisher.join().expect("a publisher panicked");
+    }
+    watcher.join().expect("the newest status moved backwards");
+    runtime.stop();
+}
+
+#[test]
 fn concurrent_arrivals_and_departures_leave_the_watch_matching_the_list() {
     // Two questions are asked of the same list — "am I the first?" and "am I
     // the last?" — and the watch is whatever the last answer said. This pins

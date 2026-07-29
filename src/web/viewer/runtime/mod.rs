@@ -127,24 +127,31 @@ impl RepoRuntime {
             return;
         }
 
-        // The snapshot worker ticks on a timer, not on change, so most polls
-        // produce a payload identical to the last. Publishing those would keep
-        // an idle repository streaming once a second forever and burn a
-        // sequence number per tick, making `seq` useless for "did anything
+        // One hold of `latest` from the check to the fan-out. Three threads
+        // publish — the runtime's, a REST handler calling `refresh_now`, and a
+        // first subscriber taking its own reading — and split into separate
+        // critical sections they interleave: two readings each pass the check,
+        // take sequence numbers in one order, and store them in the other, so
+        // the older of the two is what `latest` and every subscriber keep. The
+        // browser then shows a status that has already been superseded, and
+        // `seq` goes backwards under a name that means "newer".
+        let mut latest = self.latest.lock().expect("latest slot poisoned");
+        // The reader publishes only what changed, but `refresh_now` reads on
+        // demand and most of those find nothing new. Publishing them would burn
+        // a sequence number apiece, making `seq` useless for "did anything
         // happen". Only a real change is an event.
-        {
-            let latest = self.latest.lock().expect("latest slot poisoned");
-            if latest.as_ref().is_some_and(|prev| *prev.json == json) {
-                return;
-            }
+        if latest.as_ref().is_some_and(|prev| *prev.json == json) {
+            return;
         }
 
         let update = StatusUpdate {
             seq: self.next_seq.fetch_add(1, Ordering::AcqRel),
             json: Arc::new(json),
         };
-        *self.latest.lock().expect("latest slot poisoned") = Some(update.clone());
+        *latest = Some(update.clone());
 
+        // Held together with `latest`, and taken in that order everywhere:
+        // `latest`, then the subscriber list, then a subscriber's slot.
         let subscribers = self.subscribers.lock().expect("subscribers poisoned");
         for subscriber in subscribers.iter() {
             *subscriber.slot.lock().expect("subscriber slot poisoned") = Some(update.clone());
@@ -194,15 +201,17 @@ impl RepoRuntime {
             // Outside the lock, which publishing takes.
             self.read_and_publish();
         }
-        {
-            // Whatever the publish did not leave here: a repository unchanged
-            // since the last client left publishes nothing, and this subscriber
-            // would render an empty page until something happened.
-            let mut seed = slot.lock().expect("subscriber slot poisoned");
-            if seed.is_none() {
-                *seed = self.latest();
-            }
+        // Whatever the publish did not leave here: a repository unchanged since
+        // the last client left publishes nothing, and this subscriber would
+        // render an empty page until something happened. Read before the slot is
+        // locked, never while — `publish` holds `latest` and reaches for slots,
+        // so taking them the other way round is the two halves of a deadlock.
+        let seed = self.latest();
+        let mut held = slot.lock().expect("subscriber slot poisoned");
+        if held.is_none() {
+            *held = seed;
         }
+        drop(held);
 
         Subscription {
             runtime: Arc::clone(self),
