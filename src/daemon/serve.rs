@@ -9,9 +9,11 @@
 //! costs threads — but with a much lower ceiling. Clients here are terminals a
 //! person is sitting at, not browser tabs.
 
+use anyhow::Context;
+
 use super::clients::AttachedClients;
 use super::frame::{Frame, write_frame};
-use super::protocol::{RepoSummary, ServerMessage};
+use super::protocol::ServerMessage;
 use super::terminals::TerminalBridges;
 use crate::web::viewer::server::ViewerState;
 use crate::web::viewer::session;
@@ -27,7 +29,7 @@ use std::sync::{Arc, Mutex};
 pub const MAX_ATTACHED_CLIENTS: usize = 16;
 
 /// Everything the connection threads share.
-pub(super) struct Session {
+pub struct Session {
     pub(super) state: Arc<ViewerState>,
     pub(super) clients: Arc<AttachedClients>,
     /// Each attached client's terminal subscriptions.
@@ -78,18 +80,23 @@ impl Session {
 /// no destructor. The caller keeps it and drops it on the way out.
 ///
 /// [`DaemonSocket`]: super::socket::DaemonSocket
-pub fn serve(listener: UnixListener, state: Arc<ViewerState>) {
+pub fn start(state: Arc<ViewerState>) -> anyhow::Result<Arc<Session>> {
     let session = Arc::new(Session {
         state,
         clients: Arc::new(AttachedClients::default()),
         bridges: Mutex::new(HashMap::new()),
         nudge: Arc::new(super::watch::Nudge::default()),
     });
-    // The only thing that broadcasts the served set, so there is one record of
-    // what clients have been told — and so a change made through the browser
-    // reaches them at all.
+    // The only thing that sends the served set, so there is one record of what
+    // clients have been told, one order they are told it in, and a change made
+    // through the browser reaches them at all.
+    //
+    // Started here, where it can be refused, rather than inside the accept loop:
+    // a session without a watcher serves clients that never learn what is open —
+    // not even on attach, which is asked of the watcher too — so a daemon that
+    // could not start one must not go on to say it is listening.
     let watched = Arc::clone(&session);
-    if let Err(err) = std::thread::Builder::new()
+    std::thread::Builder::new()
         .name("nightcrow-session-watch".into())
         .spawn(move || {
             super::watch::watch(
@@ -99,12 +106,13 @@ pub fn serve(listener: UnixListener, state: Arc<ViewerState>) {
                 |repos| watched.follow_all(repos),
             )
         })
-    {
-        // Fatal for the session's shape, not for the connection: without it a
-        // client sees its own changes and no one else's, which is worth saying
-        // plainly rather than leaving to be discovered.
-        tracing::error!(%err, "daemon: no session watcher — changes made elsewhere will not arrive");
-    }
+        .context("starting the session watcher")?;
+    Ok(session)
+}
+
+/// Accept attached clients until the process ends. Takes the session [`start`]
+/// prepared.
+pub fn serve(listener: UnixListener, session: Arc<Session>) {
     for stream in listener.incoming() {
         let Ok(stream) = stream else { continue };
         if session.clients.len() >= MAX_ATTACHED_CLIENTS {
@@ -157,17 +165,19 @@ fn attach(stream: UnixStream, session: &Session) {
             }
         });
 
-    // The set as it stands, before this client has asked for anything: it needs
-    // the session's shape to render, and asking for what the daemon already
-    // knows is a round trip for nothing. Subscribed first, so the panes of every
+    // Subscribed before the set can reach this client, so the panes of every
     // open repository are already streaming when it learns the repository
-    // exists. Sent here rather than left to the watcher, which only speaks when
-    // something changes — and nothing has.
+    // exists.
     bridges.lock().expect("client bridges poisoned").follow(
         &session::list_session_repos(&session.state),
         session.state.catalog(),
     );
-    send_current_set(id, session);
+    // The set itself is not sent from here. This client is registered as owed
+    // one (`AttachedClients::connect`) and the watcher answers, which is the
+    // whole of why a client's frames arrive in the order the session changed —
+    // see `watch::watch`. Woken rather than waited for: the poke is what stops
+    // this from sitting behind the tick.
+    session.nudge.poke();
 
     if let Err(err) = super::requests::read_requests(stream, id, session) {
         // Expected on detach: the client closes mid-read. Logged at debug
@@ -187,33 +197,6 @@ fn attach(stream: UnixStream, session: &Session) {
             writer,
             crate::platform::threading::REAP_TIMEOUT,
         );
-    }
-}
-
-/// Give one client the session as it stands.
-///
-/// Built under the client registry rather than before reaching for it, so a
-/// broadcast cannot land between reading the session and queueing what was read
-/// — which would queue the newer state first and leave this client on the older
-/// one for good, the watcher having already recorded that everyone was told. See
-/// [`AttachedClients::send_built_to`].
-fn send_current_set(id: u64, session: &Session) {
-    session
-        .clients
-        .send_built_to(id, || encode(&repos(&session.state)));
-}
-
-pub(super) fn repos(state: &ViewerState) -> ServerMessage {
-    ServerMessage::Repos {
-        repos: session::list_session_repos(state)
-            .into_iter()
-            .map(|repo| RepoSummary {
-                id: repo.id,
-                path: repo.path,
-            })
-            .collect(),
-        active: session::active_repo(state),
-        accent: session::accent(state),
     }
 }
 

@@ -28,7 +28,8 @@ fn attached(dir: &tempfile::TempDir, repos: &[String]) -> (DaemonSocket, DaemonC
     let socket = DaemonSocket::bind(&dir.path().join("d.sock")).expect("binds");
     let listener = socket.listener().try_clone().expect("clones");
     let state = crate::test_util::session_state(repos);
-    std::thread::spawn(move || crate::daemon::serve::serve(listener, state));
+    let session = crate::daemon::serve::start(state).expect("starts the watcher");
+    std::thread::spawn(move || crate::daemon::serve::serve(listener, session));
     let client = DaemonClient::connect(socket.path()).expect("attaches");
     (socket, client)
 }

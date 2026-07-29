@@ -132,3 +132,61 @@ fn client_ids_are_not_reused_after_a_disconnect() {
 
     assert_ne!(first, second);
 }
+
+#[test]
+fn a_client_is_owed_the_set_the_moment_it_attaches() {
+    // It has nothing on screen yet, and the watcher is what hands the session
+    // over — so attaching has to leave a record that it is waiting.
+    let clients = AttachedClients::default();
+    let (a, _rx_a, _sock_a) = attach(&clients);
+    let (b, _rx_b, _sock_b) = attach(&clients);
+
+    assert_eq!(clients.take_owed_sets(), vec![a, b]);
+}
+
+#[test]
+fn taking_the_owed_sets_clears_them() {
+    // Owed exactly once per asking: the watcher is about to send one, and a flag
+    // left standing would repeat the same set on every later pass.
+    let clients = AttachedClients::default();
+    let (_id, _rx, _sock) = attach(&clients);
+    clients.take_owed_sets();
+
+    assert!(clients.take_owed_sets().is_empty());
+}
+
+#[test]
+fn asking_for_the_set_owes_it_again() {
+    let clients = AttachedClients::default();
+    let (id, _rx, _sock) = attach(&clients);
+    clients.take_owed_sets();
+
+    clients.owe_set(id);
+
+    assert_eq!(clients.take_owed_sets(), vec![id]);
+}
+
+#[test]
+fn a_broadcast_settles_every_outstanding_request_for_the_set() {
+    // It reached all of them, so following it with one each would be the same
+    // set twice.
+    let clients = AttachedClients::default();
+    let (_a, _rx_a, _sock_a) = attach(&clients);
+    let (_b, _rx_b, _sock_b) = attach(&clients);
+
+    clients.clear_owed_sets();
+
+    assert!(clients.take_owed_sets().is_empty());
+}
+
+#[test]
+fn owing_the_set_to_a_client_that_has_gone_is_not_an_error() {
+    // It detached between asking and the watcher reading the request.
+    let clients = AttachedClients::default();
+    let (id, _rx, _sock) = attach(&clients);
+    clients.disconnect(id);
+
+    clients.owe_set(id);
+
+    assert!(clients.take_owed_sets().is_empty());
+}

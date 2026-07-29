@@ -39,6 +39,13 @@ struct Attached {
     /// attached. Closing the socket is what turns that into the disconnect it
     /// actually is.
     socket: UnixStream,
+    /// Whether this client is still waiting to be told the session's shape.
+    ///
+    /// Set when it attaches, and when it asks for the set outright. Cleared by
+    /// the watcher, which is the only thing that sends one — a client's frames
+    /// all coming from one thread is what makes their order the order the
+    /// session changed in.
+    owed_set: bool,
 }
 
 impl Attached {
@@ -85,7 +92,15 @@ impl AttachedClients {
         self.inner
             .lock()
             .expect("attached clients poisoned")
-            .push(Attached { id, tx, socket });
+            .push(Attached {
+                id,
+                tx,
+                socket,
+                // It has nothing on screen yet, and the watcher is what hands
+                // the session over. The caller wakes it (`Nudge::poke`) rather
+                // than sending anything itself.
+                owed_set: true,
+            });
         (id, rx)
     }
 
@@ -111,28 +126,34 @@ impl AttachedClients {
         clients.retain(|client| client.queue(frame.clone()));
     }
 
-    /// Send one client a frame built while the registry is held.
-    ///
-    /// For the set a client is given on attach, which has to be built by reading
-    /// the session. Reading and queueing as two steps lets [`broadcast`] land in
-    /// between and be queued *ahead* of a frame describing an older session, so
-    /// the client ends on state everyone else has moved off — and the watcher,
-    /// which records what it has told them, never says it again. Building under
-    /// the same lock broadcasting takes puts the two in some order rather than
-    /// none: whichever goes first, the later frame is the newer one.
-    ///
-    /// `build` must not reach back into this registry, and takes only the
-    /// session's own locks — the watcher releases those before it broadcasts, so
-    /// there is no path holding one while waiting for this.
-    ///
-    /// [`broadcast`]: Self::broadcast
-    pub fn send_built_to(&self, id: u64, build: impl FnOnce() -> Frame) {
+    /// Note that `id` is waiting to be told the session's shape, for the watcher
+    /// to answer on its next pass. Unknown ids are ignored: the client detached
+    /// between asking and this.
+    pub fn owe_set(&self, id: u64) {
         let mut clients = self.inner.lock().expect("attached clients poisoned");
-        let Some(index) = clients.iter().position(|client| client.id == id) else {
-            return;
-        };
-        if !clients[index].queue(build()) {
-            clients.remove(index);
+        if let Some(client) = clients.iter_mut().find(|client| client.id == id) {
+            client.owed_set = true;
+        }
+    }
+
+    /// Take the ids waiting to be told the session's shape, clearing them.
+    ///
+    /// Drained rather than read, so a client is owed a set exactly once per
+    /// asking — the watcher is about to send it one.
+    pub fn take_owed_sets(&self) -> Vec<u64> {
+        let mut clients = self.inner.lock().expect("attached clients poisoned");
+        clients
+            .iter_mut()
+            .filter_map(|client| std::mem::take(&mut client.owed_set).then_some(client.id))
+            .collect()
+    }
+
+    /// Forget every outstanding request for the set, for a broadcast that is
+    /// about to reach all of them anyway.
+    pub fn clear_owed_sets(&self) {
+        let mut clients = self.inner.lock().expect("attached clients poisoned");
+        for client in clients.iter_mut() {
+            client.owed_set = false;
         }
     }
 

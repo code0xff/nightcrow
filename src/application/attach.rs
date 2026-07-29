@@ -66,17 +66,17 @@ pub(crate) fn run_attach() -> Result<()> {
         ws.set_remembered(stored.sessions);
     }
 
-    // The daemon's answer, taken from the set it volunteered while attaching —
-    // read in passing rather than drained, since the message itself belongs to
-    // `main_loop`, which builds the tabs from it. The file is the fallback for
-    // a daemon that answered the handshake before volunteering anything, and
-    // `[theme]` behind that names what a session with no stored colour starts
-    // in.
-    let session_accent = client.session_accent().unwrap_or_else(|| {
+    // Read from the session's file, not asked of the daemon. The set that
+    // carries the accent is sent by the watcher now, which does not race the
+    // handshake to get there first — and this screen draws before `main_loop`,
+    // the only thing that drains the connection. The daemon writes the file on
+    // every change, so it is behind by nothing that matters, and the first set
+    // corrects it either way. `[theme]` names what a session with no stored
+    // colour starts in.
+    let session_accent =
         crate::web::viewer::prefs::PrefsStore::load_seeded(cfg.theme.preset_index())
             .get()
-            .accent
-    });
+            .accent;
     // The splash is not the only screen that draws before the daemon's first
     // set arrives. Without this the first frames of the main view would come up
     // in the default rather than the session's colour, and the splash that just

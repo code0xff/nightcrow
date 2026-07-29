@@ -8,7 +8,7 @@
 
 use super::frame::{FrameKind, read_frame};
 use super::protocol::{ClientMessage, ServerMessage, version};
-use super::serve::{Session, encode, repos};
+use super::serve::{Session, encode};
 use crate::web::viewer::session::{self, CloseError, OpenError};
 use anyhow::Result;
 use std::os::unix::net::UnixStream;
@@ -66,9 +66,14 @@ fn handle(message: ClientMessage, id: u64, session: &Session) {
             };
             session.clients.send_to(id, encode(&reply));
         }
-        // Answered to the asker: nothing changed, so there is nothing to tell
-        // the others.
-        ClientMessage::ListRepos => session.clients.send_to(id, encode(&repos(state))),
+        // Answered to the asker alone — nothing changed, so there is nothing to
+        // tell the others — but not from here. The set is sent from one place so
+        // a client's frames arrive in the order the session changed (see
+        // `watch::watch`); this records that the asker is owed one and wakes it.
+        ClientMessage::ListRepos => {
+            session.clients.owe_set(id);
+            changed(session);
+        }
         ClientMessage::OpenRepo { path } => match session::open_repo(state, &path) {
             Ok(_) => changed(session),
             Err(OpenError::EmptyPath) => refuse(id, session, "a path is required"),

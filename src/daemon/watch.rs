@@ -59,25 +59,35 @@ impl Nudge {
     }
 }
 
-/// Watch `state` and broadcast the served set whenever it — or which repository
-/// the session is focused on, or the accent it is painted in — changes.
+/// Watch `state` and tell attached clients the served set: everyone, when it —
+/// or which repository the session is focused on, or the accent it is painted in
+/// — changes, and whoever is still owed one otherwise.
+///
+/// **The only place a repository set is sent from.** A client that attaches, or
+/// asks for the set outright, is marked as owed one and this is what answers;
+/// neither sends its own. That is what makes the order a client sees the order
+/// the session changed in — one producer per queue, so there is no pair of
+/// frames whose order has to be argued about. Two producers, which is what this
+/// replaced, could queue a newer frame ahead of an older one and leave a client
+/// on state everyone else had moved off.
 ///
 /// `follow` runs for every client before the set goes out, so a repository that
 /// appeared is already streaming its terminals by the time a client is told the
 /// tab exists. It runs on an accent change too, where it has nothing to do: it
 /// skips repositories already followed, so the alternative — deciding here which
 /// kind of change deserves it — would buy a walk over a handful of entries at
-/// the price of a branch that can be wrong.
+/// the price of a branch that can be wrong. The owed-only path does not need it:
+/// those clients followed the set when they attached, and it has not changed.
 pub(super) fn watch(
     state: Arc<ViewerState>,
     clients: Arc<AttachedClients>,
     nudge: Arc<Nudge>,
     follow: impl Fn(&[session::SessionRepo]),
 ) {
-    // Seeded with the set as it stands, not with nothing: a client is sent the
-    // current set when it attaches, so announcing it again on the first tick
-    // would be a message that reports no change — and every client would have to
-    // treat the arrival of its own starting state as news.
+    // Seeded with the set as it stands, not with nothing: an attaching client is
+    // owed its own copy and gets one below, so opening with a broadcast would be
+    // a message that reports no change — and every other client would have to
+    // treat somebody else's arrival as news.
     let mut told = (
         summarize(&session::list_session_repos(&state)),
         session::active_repo(&state),
@@ -91,27 +101,25 @@ pub(super) fn watch(
             session::active_repo(&state),
             session::accent(&state),
         );
-        if told != current {
-            follow(&repos);
-            clients.broadcast(encode(&ServerMessage::Repos {
+        let frame = || {
+            encode(&ServerMessage::Repos {
                 repos: current.0.clone(),
                 active: current.1.clone(),
                 accent: current.2,
-            }));
-            // What was sent, not what the session says now. The two can differ:
-            // this frame was built before the queue was reached, so a client
-            // attaching in between can be given something newer and then be
-            // handed this, one step behind. Recording what went out is what
-            // makes that self-correcting — the next pass finds `told` behind the
-            // session and says it again, within a tick.
-            //
-            // The alternative, building this frame while holding the client
-            // registry as `send_built_to` does, would put `follow` inside that
-            // lock or leave it describing a different set than the one
-            // announced — a repository whose terminals are not streaming when
-            // its tab appears, which is the thing `follow` runs first to
-            // prevent.
+            })
+        };
+        if told != current {
+            follow(&repos);
+            clients.broadcast(frame());
+            // Nobody is owed a set any more — that broadcast was one.
+            clients.clear_owed_sets();
             told = current;
+        } else {
+            // Nothing changed, so this says the same thing again to whoever has
+            // not heard it yet: a client that just attached, or one that asked.
+            for id in clients.take_owed_sets() {
+                clients.send_to(id, frame());
+            }
         }
     }
 }

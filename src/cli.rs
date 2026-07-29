@@ -173,9 +173,13 @@ pub(crate) fn run_daemon(
         .try_clone()
         .context("cloning the daemon listener")?;
     let attach_state = server.state();
+    // Before the accept thread, so a session that cannot watch itself is
+    // reported here — where it can still fail — rather than by an accept loop
+    // nobody is reading the result of.
+    let session = crate::daemon::serve::start(attach_state)?;
     std::thread::Builder::new()
         .name("nightcrow-daemon-accept".into())
-        .spawn(move || crate::daemon::serve::serve(listener, attach_state))
+        .spawn(move || crate::daemon::serve::serve(listener, session))
         .context("spawning the daemon accept thread")?;
 
     if !server.addr().ip().is_loopback() {

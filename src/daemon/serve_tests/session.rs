@@ -248,3 +248,34 @@ fn a_repository_closed_through_the_browser_reaches_it_too() {
     assert!(repo_paths(&client.next_repos()).is_empty());
     drop(repo);
 }
+
+#[test]
+fn asking_for_the_set_answers_the_asker_and_leaves_the_others_alone() {
+    // The set is sent from one place now, which is the watcher — but a question
+    // is still not news. A client that asked nothing must not be woken by
+    // somebody else asking.
+    let (repo, path) = crate::test_util::make_repo();
+    let dir = tempfile::TempDir::new().unwrap();
+    let daemon = daemon(&dir, std::slice::from_ref(&path));
+    let mut asker = Client::attach(daemon.path());
+    let mut quiet = Client::attach(daemon.path());
+
+    asker.send(ClientMessage::ListRepos);
+
+    assert!(matches!(asker.next_repos(), ServerMessage::Repos { .. },));
+    quiet
+        .stream
+        .set_read_timeout(Some(std::time::Duration::from_millis(400)))
+        .expect("sets a timeout");
+    // Terminal traffic is expected — subscribing a repository with a startup
+    // pane offers it to be sized straight away — so this is about the set
+    // alone. Reads until the socket goes quiet.
+    while let Ok(Some(frame)) = crate::daemon::frame::read_frame(&mut quiet.stream) {
+        let heard: Result<ServerMessage, _> = serde_json::from_slice(&frame.payload);
+        assert!(
+            !matches!(heard, Ok(ServerMessage::Repos { .. })),
+            "the other client was sent a set it never asked for"
+        );
+    }
+    drop(repo);
+}

@@ -35,21 +35,48 @@ pub(super) fn daemon(dir: &tempfile::TempDir, repos: &[String]) -> TestDaemon {
     let listener = socket.listener().try_clone().expect("clones");
     let state = crate::test_util::session_state(repos);
     let served = std::sync::Arc::clone(&state);
-    std::thread::spawn(move || crate::daemon::serve::serve(listener, served));
+    let session = crate::daemon::serve::start(served).expect("starts the watcher");
+    std::thread::spawn(move || crate::daemon::serve::serve(listener, session));
     TestDaemon { socket, state }
+}
+
+/// How long a helper waits on the socket for the frame it is after.
+const READ_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
+/// Longer, because this one waits on a shell to start and say something.
+const OUTPUT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
+
+fn decodes_to_repos(frame: &Frame) -> bool {
+    matches!(
+        serde_json::from_slice(&frame.payload),
+        Ok(ServerMessage::Repos { .. })
+    )
+}
+
+fn decodes_to_terminal(frame: &Frame) -> bool {
+    matches!(
+        serde_json::from_slice(&frame.payload),
+        Ok(ServerMessage::Terminal { .. })
+    )
 }
 
 /// A client attached to the daemon at `path`.
 pub(super) struct Client {
     pub(super) stream: UnixStream,
+    /// Frames read while looking for a different one.
+    ///
+    /// The real client routes everything it reads rather than dropping what it
+    /// was not looking for (`wire::read_routed`), so this does too. It matters
+    /// because the set and a repository's terminal traffic interleave, and which
+    /// arrives first is up to the watcher rather than to this client — a helper
+    /// that dropped what it stepped over would make one test's `attach` swallow
+    /// the pane event another test is about to wait for.
+    pending: std::collections::VecDeque<Frame>,
 }
 
 impl Client {
     /// Attach and consume the repository set the daemon sends unprompted.
     pub(super) fn attach(path: &std::path::Path) -> Self {
-        let mut client = Self {
-            stream: UnixStream::connect(path).expect("attaches"),
-        };
+        let mut client = Self::attach_raw(path);
         client.next_repos();
         client
     }
@@ -58,7 +85,45 @@ impl Client {
     pub(super) fn attach_raw(path: &std::path::Path) -> Self {
         Self {
             stream: UnixStream::connect(path).expect("attaches"),
+            pending: std::collections::VecDeque::new(),
         }
+    }
+
+    /// The next frame, from what was stepped over earlier or else the socket.
+    /// `None` when the socket gives nothing within `timeout`.
+    fn next_frame(&mut self, timeout: std::time::Duration) -> Option<Frame> {
+        if let Some(frame) = self.pending.pop_front() {
+            return Some(frame);
+        }
+        self.stream
+            .set_read_timeout(Some(timeout))
+            .expect("sets a timeout");
+        read_frame(&mut self.stream).ok().flatten()
+    }
+
+    /// The first frame `wanted` accepts, keeping everything ahead of it in
+    /// arrival order for whoever asks next.
+    fn find(
+        &mut self,
+        timeout: std::time::Duration,
+        wanted: impl Fn(&Frame) -> bool,
+    ) -> Option<Frame> {
+        let mut stepped_over = Vec::new();
+        let mut found = None;
+        for _ in 0..512 {
+            let Some(frame) = self.next_frame(timeout) else {
+                break;
+            };
+            if wanted(&frame) {
+                found = Some(frame);
+                break;
+            }
+            stepped_over.push(frame);
+        }
+        for frame in stepped_over.into_iter().rev() {
+            self.pending.push_front(frame);
+        }
+        found
     }
 
     pub(super) fn send(&mut self, message: ClientMessage) {
@@ -70,13 +135,9 @@ impl Client {
     /// The next message from the daemon, whether it answers a request of this
     /// client's or reports a change another one made.
     pub(super) fn next(&mut self) -> ServerMessage {
-        self.stream
-            .set_read_timeout(Some(std::time::Duration::from_secs(5)))
-            .expect("sets a timeout");
-        let frame = read_frame(&mut self.stream)
-            .expect("reads")
+        let frame = self
+            .find(READ_TIMEOUT, |frame| frame.kind == FrameKind::Control)
             .expect("the daemon speaks");
-        assert_eq!(frame.kind, FrameKind::Control);
         serde_json::from_slice(&frame.payload).expect("decodes")
     }
 
@@ -115,38 +176,25 @@ impl Client {
         panic!("no pane was created");
     }
 
-    /// The next terminal event for any repository, skipping the tab list.
+    /// The next terminal event for any repository, stepping over the tab list.
     pub(super) fn next_terminal_event(&mut self) -> (String, HubServerMessage) {
-        for _ in 0..64 {
-            let frame = read_frame(&mut self.stream)
-                .expect("reads")
-                .expect("the daemon speaks");
-            if frame.kind != FrameKind::Control {
-                continue;
-            }
-            if let Ok(ServerMessage::Terminal { repo, event }) =
-                serde_json::from_slice(&frame.payload)
-            {
-                return (repo, event);
-            }
+        let frame = self
+            .find(READ_TIMEOUT, |frame| {
+                frame.kind == FrameKind::Control && decodes_to_terminal(frame)
+            })
+            .expect("no terminal event arrived");
+        match serde_json::from_slice(&frame.payload) {
+            Ok(ServerMessage::Terminal { repo, event }) => (repo, event),
+            other => panic!("expected a terminal event, got {other:?}"),
         }
-        panic!("no terminal event arrived");
     }
 
     /// The next chunk of pane output.
     pub(super) fn next_output(&mut self) -> TerminalOutput {
-        for _ in 0..512 {
-            self.stream
-                .set_read_timeout(Some(std::time::Duration::from_secs(10)))
-                .expect("sets a timeout");
-            let frame = read_frame(&mut self.stream)
-                .expect("reads")
-                .expect("the daemon speaks");
-            if frame.kind == FrameKind::Terminal {
-                return TerminalOutput::decode(&frame.payload).expect("a well-formed output frame");
-            }
-        }
-        panic!("no pane output arrived");
+        let frame = self
+            .find(OUTPUT_TIMEOUT, |frame| frame.kind == FrameKind::Terminal)
+            .expect("no pane output arrived");
+        TerminalOutput::decode(&frame.payload).expect("a well-formed output frame")
     }
 
     /// The catalog ids of the open repositories, asked for rather than waited
@@ -176,20 +224,19 @@ impl Client {
         }
     }
 
-    /// The next repository set, skipping terminal traffic.
+    /// The next repository set, stepping over terminal traffic.
     ///
     /// Subscribing a client to its repositories starts that traffic
     /// immediately — a hub with startup terminals offers them to be sized
     /// before anything else happens — so a test about the tab list has to read
     /// past it rather than assume the next frame is the one it wants.
     pub(super) fn next_repos(&mut self) -> ServerMessage {
-        for _ in 0..64 {
-            let message = self.next();
-            if matches!(message, ServerMessage::Repos { .. }) {
-                return message;
-            }
-        }
-        panic!("no repository set arrived among the terminal traffic");
+        let frame = self
+            .find(READ_TIMEOUT, |frame| {
+                frame.kind == FrameKind::Control && decodes_to_repos(frame)
+            })
+            .expect("no repository set arrived among the terminal traffic");
+        serde_json::from_slice(&frame.payload).expect("decodes")
     }
 }
 
