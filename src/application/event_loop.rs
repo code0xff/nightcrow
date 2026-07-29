@@ -98,7 +98,10 @@ pub(crate) fn main_loop(
         let active_tab = ws.active_index();
         let empty_notice = ws.empty_notice().cloned();
         let prefix_armed = ws.prefix_armed();
-        let fallback_accent = crate::config::Accent::from_index(cfg.theme.preset_index()).color();
+        // One colour for the session, so it is read off the workspace and the
+        // empty screen is painted in it too — read before `render_parts` takes
+        // the borrow the projects need.
+        let accent = ws.current_accent();
 
         let (app_opt, repo_input) = ws.render_parts();
         let tabs = crate::ui::Chrome {
@@ -106,10 +109,6 @@ pub(crate) fn main_loop(
             active: active_tab,
             repo_input,
         };
-        let accent = app_opt
-            .as_ref()
-            .map(|app| app.current_accent())
-            .unwrap_or(fallback_accent);
         terminal.draw(|frame| match app_opt {
             Some(app) => {
                 crate::ui::draw(frame, app, tabs, ss, ts, &cfg.layout, accent);

@@ -66,8 +66,16 @@ pub(crate) fn run_attach() -> Result<()> {
         ws.set_remembered(stored.sessions);
     }
 
+    // Read from the session's own file rather than asked of the daemon: the
+    // splash draws before this client has attached, and `[theme]` only names
+    // what a session with no stored colour starts in.
+    let session_accent =
+        crate::web::viewer::prefs::PrefsStore::load_seeded(cfg.theme.preset_index())
+            .get()
+            .accent;
+
     if matches!(
-        splash_loop(&mut terminal, &ws, cfg.theme.preset_index())?,
+        splash_loop(&mut terminal, session_accent)?,
         SplashOutcome::Quit
     ) {
         tracing::info!("nightcrow detached during splash");

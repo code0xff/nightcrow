@@ -34,6 +34,8 @@ pub(crate) enum ProjectRequest {
     /// Raise the open-repo dialog. It lives on the workspace, so a handler
     /// holding one project cannot open it directly.
     OpenDialog,
+    /// Move the session's accent one step along the cycle.
+    CycleAccent,
 }
 
 /// Everything a project needs beyond its repo path.
@@ -159,10 +161,11 @@ pub(super) fn handle_global_action(app: &mut App, action: Action) -> Option<KeyO
             app.toggle_tree_mode();
             Some(KeyOutcome::Continue)
         }
-        Action::CycleTheme => {
-            app.cycle_accent();
-            Some(KeyOutcome::Continue)
-        }
+        // The accent is the session's, so this asks rather than paints. Nothing
+        // changes locally in the meantime, for the reason the tab switch does
+        // not either: being the only surface showing the new colour for a tick
+        // is the flicker, not the wait.
+        Action::CycleTheme => Some(KeyOutcome::Project(ProjectRequest::CycleAccent)),
         Action::Redraw => Some(KeyOutcome::Redraw),
         Action::SwitchPane(n) => {
             app.switch_pane(n);

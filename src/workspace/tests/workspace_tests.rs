@@ -150,3 +150,43 @@ fn 열린_저장소는_경로로_찾을_수_있고_없으면_none이다() {
     assert_eq!(ws.index_of_repo("/b"), Some(1));
     assert_eq!(ws.index_of_repo("/nope"), None);
 }
+
+#[test]
+fn 범위를_벗어난_accent는_순환해서_들어온다() {
+    // The index arrives from the daemon, which takes it from a hand-editable
+    // file — an index with no colour behind it must not reach the renderer.
+    let mut ws = Workspace::new(test_leader());
+
+    ws.set_accent_index(usize::MAX);
+
+    assert_eq!(
+        ws.current_accent(),
+        crate::config::Accent::from_index(usize::MAX % crate::config::Accent::ALL.len()).color()
+    );
+}
+
+#[test]
+fn 다음_accent는_한_칸_앞이고_끝에서_처음으로_돌아온다() {
+    let mut ws = Workspace::new(test_leader());
+
+    ws.set_accent_index(0);
+    assert_eq!(ws.next_accent_index(), 1);
+
+    ws.set_accent_index(crate::config::Accent::ALL.len() - 1);
+    assert_eq!(ws.next_accent_index(), 0);
+}
+
+#[test]
+fn accent는_프로젝트가_없어도_유지된다() {
+    // The empty screen is painted in the session's accent too, so it cannot
+    // live on a project.
+    let mut ws = Workspace::new(test_leader());
+
+    ws.set_accent_index(3);
+
+    assert!(ws.active().is_none());
+    assert_eq!(
+        ws.current_accent(),
+        crate::config::Accent::from_index(3).color()
+    );
+}

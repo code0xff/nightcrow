@@ -98,6 +98,15 @@ fn handle(message: ClientMessage, id: u64, session: &Session) {
             session::reorder_repos(state, &order);
             changed(session);
         }
+        // Not answered to the asker either, though it is the one thing here a
+        // client could paint locally without waiting. It waits with the rest:
+        // the accent is the session's, and a client that painted first would be
+        // the only one showing the new colour for a tick — the same flicker the
+        // tab switch is written to avoid.
+        ClientMessage::SetAccent { accent } => {
+            session::set_accent(state, accent);
+            changed(session);
+        }
         // Handed straight to the hub, which answers on the subscription rather
         // than here: a pane it creates is news for every client watching that
         // repository, not a reply owed to this one.

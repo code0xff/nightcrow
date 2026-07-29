@@ -31,7 +31,6 @@ impl App {
             list_fullscreen: self.list_fullscreen,
             mode: Some(self.mode),
             log_selected: self.log_view.selected,
-            accent_idx: self.accent_idx,
             log_drill_down: self.log_view.drill_down,
             log_file_selected: self.log_view.file_selected,
             tree_selected_path: self.tree_view.selected_path(),
@@ -94,7 +93,6 @@ impl App {
     // file out of a list that's still empty.
     pub fn restore_session(&mut self, state: &SessionState) {
         self.restore_pane_focus(state);
-        self.set_accent_index(state.accent_idx);
 
         // Avoid loading a workdir diff when the saved mode is Log — otherwise
         // we'd waste a load and clamp the scroll against the wrong diff length.

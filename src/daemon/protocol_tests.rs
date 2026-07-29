@@ -24,6 +24,7 @@ fn every_client_message_survives_the_round_trip() {
         ClientMessage::ReorderRepos {
             order: vec!["r2".into(), "r1".into()],
         },
+        ClientMessage::SetAccent { accent: 3 },
     ];
     for message in &messages {
         assert_eq!(&round_trip_client(message), message);
@@ -43,6 +44,7 @@ fn every_server_message_survives_the_round_trip() {
                 path: "/w/repo".into(),
             }],
             active: Some("r1".into()),
+            accent: 3,
         },
         ServerMessage::Error {
             message: "no such directory".into(),

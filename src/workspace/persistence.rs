@@ -18,8 +18,11 @@ pub struct SessionState {
     pub mode: Option<ViewMode>,
     #[serde(default)]
     pub log_selected: usize,
-    #[serde(default)]
-    pub accent_idx: usize,
+    // No accent here: it is the session's, not one repository's view state, and
+    // lives in `viewer.json` (see the boundary in `docs/architecture.md`). An
+    // `accent_idx` left over from before is ignored on read rather than
+    // migrated — one of several per-repo colours cannot answer what the
+    // session's colour is.
     #[serde(default)]
     pub log_drill_down: bool,
     #[serde(default)]

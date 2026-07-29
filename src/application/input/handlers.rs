@@ -23,6 +23,10 @@ pub(crate) fn handle_empty_key(ws: &mut Workspace, key: KeyEvent) -> KeyOutcome 
         }
         return match prefix_action(key) {
             Action::OpenProject => KeyOutcome::Project(ProjectRequest::OpenDialog),
+            // Reachable with nothing open because the accent belongs to the
+            // session rather than to a project: the empty screen is painted in
+            // it too, and so is every other client that does have a tab up.
+            Action::CycleTheme => KeyOutcome::Project(ProjectRequest::CycleAccent),
             Action::Quit => KeyOutcome::Quit,
             _ => KeyOutcome::Continue,
         };

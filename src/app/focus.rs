@@ -75,20 +75,6 @@ impl App {
         tracing::debug!(from = ?from, to = ?self.mode, "tree mode toggled");
     }
 
-    pub fn set_accent_index(&mut self, idx: usize) {
-        // Normalize on entry so out-of-range indices never reach the session
-        // file, even though `current_accent` would tolerate them.
-        self.accent_idx = idx % crate::config::Accent::ALL.len();
-    }
-
-    pub fn cycle_accent(&mut self) {
-        self.accent_idx = (self.accent_idx + 1) % crate::config::Accent::ALL.len();
-    }
-
-    pub fn current_accent(&self) -> ratatui::style::Color {
-        crate::config::Accent::from_index(self.accent_idx).color()
-    }
-
     pub fn cycle_focus_forward(&mut self) {
         if self.diff.fullscreen || self.list_fullscreen {
             return;

@@ -60,11 +60,14 @@ impl Nudge {
 }
 
 /// Watch `state` and broadcast the served set whenever it — or which repository
-/// the session is focused on — changes.
+/// the session is focused on, or the accent it is painted in — changes.
 ///
 /// `follow` runs for every client before the set goes out, so a repository that
 /// appeared is already streaming its terminals by the time a client is told the
-/// tab exists.
+/// tab exists. It runs on an accent change too, where it has nothing to do: it
+/// skips repositories already followed, so the alternative — deciding here which
+/// kind of change deserves it — would buy a walk over a handful of entries at
+/// the price of a branch that can be wrong.
 pub(super) fn watch(
     state: Arc<ViewerState>,
     clients: Arc<AttachedClients>,
@@ -78,16 +81,22 @@ pub(super) fn watch(
     let mut told = (
         summarize(&session::list_session_repos(&state)),
         session::active_repo(&state),
+        session::accent(&state),
     );
     loop {
         nudge.wait(TICK);
         let repos = session::list_session_repos(&state);
-        let current = (summarize(&repos), session::active_repo(&state));
+        let current = (
+            summarize(&repos),
+            session::active_repo(&state),
+            session::accent(&state),
+        );
         if told != current {
             follow(&repos);
             clients.broadcast(encode(&ServerMessage::Repos {
                 repos: current.0.clone(),
                 active: current.1.clone(),
+                accent: current.2,
             }));
             told = current;
         }

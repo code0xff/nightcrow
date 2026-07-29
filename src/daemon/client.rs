@@ -178,6 +178,13 @@ impl DaemonClient {
         )
     }
 
+    /// Ask the daemon to paint the session in `accent`. Every client and the
+    /// browser follow, so the answer arrives as a broadcast like any other
+    /// change.
+    pub fn set_accent(&mut self, accent: usize) -> Result<()> {
+        send(&self.out, &ClientMessage::SetAccent { accent })
+    }
+
     /// Ask the daemon to close a repository, by catalog id.
     pub fn close_repo(&mut self, id: &str) -> Result<()> {
         send(

@@ -38,6 +38,13 @@ pub struct Workspace {
     /// View state for repos not currently open. Open projects are read live
     /// off the `App` at save time rather than stored here.
     remembered: Vec<RepoSession>,
+    /// The session's accent, adopted from the daemon rather than chosen here.
+    ///
+    /// On the workspace and not on a project because it is one colour for the
+    /// whole session — see the shared/per-client boundary in
+    /// `docs/architecture.md`. It also has to survive having no project open,
+    /// which is where the empty screen is drawn from.
+    accent_idx: usize,
 }
 
 impl Workspace {
@@ -51,7 +58,25 @@ impl Workspace {
             leader,
             empty_prefix_armed: false,
             remembered: Vec::new(),
+            accent_idx: 0,
         }
+    }
+
+    /// Adopt the session's accent. Out-of-range indices are wrapped rather than
+    /// refused, matching what the daemon stores.
+    pub fn set_accent_index(&mut self, idx: usize) {
+        self.accent_idx = idx % crate::config::Accent::ALL.len();
+    }
+
+    /// The index the next `<prefix> p` asks for. Derived here rather than by the
+    /// daemon so the request names a colour instead of a step — two clients
+    /// cycling at once would otherwise land somewhere neither asked for.
+    pub fn next_accent_index(&self) -> usize {
+        (self.accent_idx + 1) % crate::config::Accent::ALL.len()
+    }
+
+    pub fn current_accent(&self) -> ratatui::style::Color {
+        crate::config::Accent::from_index(self.accent_idx).color()
     }
 
     /// Seed the remembered view state, once, from the file read at startup.

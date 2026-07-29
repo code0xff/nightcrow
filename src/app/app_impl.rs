@@ -91,7 +91,6 @@ impl App {
             log_view: crate::ui::log_view::LogView::default(),
             tree_view: crate::ui::tree_view::TreeView::default(),
             terminal: crate::runtime::terminal::TerminalState::new(Some(backend), prompt_log),
-            accent_idx: 0,
             tracking: None,
             snapshot,
             pending_snapshot: None,

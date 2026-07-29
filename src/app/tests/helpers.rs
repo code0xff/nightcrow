@@ -48,7 +48,6 @@ pub(crate) fn app_with_files(files: Vec<&str>) -> App {
         log_view: LogView::default(),
         tree_view: TreeView::default(),
         terminal: TerminalState::new(None, false),
-        accent_idx: 0,
         tracking: None,
         snapshot,
         pending_snapshot: None,

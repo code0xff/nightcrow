@@ -35,6 +35,13 @@ pub enum ClientMessage {
     FocusRepo { repo: String },
     /// Put the repositories in this order.
     ReorderRepos { order: Vec<String> },
+    /// Paint the session in this accent, for every client and the browser.
+    ///
+    /// An index into the accent cycle rather than a "next" step: two clients
+    /// cycling at once would otherwise each advance from what they last saw and
+    /// land somewhere neither asked for. An index past the end wraps, so a
+    /// client never has to know the cycle's length to stay in it.
+    SetAccent { accent: usize },
     /// Act on one repository's terminals.
     ///
     /// Carries the hub's own message rather than a parallel set: the browser
@@ -79,6 +86,14 @@ pub enum ServerMessage {
         /// which of them to show.
         #[serde(default)]
         active: Option<String>,
+        /// The accent the whole session paints in.
+        ///
+        /// Rides with the set because the watcher already broadcasts whenever
+        /// what it observes differs from what clients were told; a colour picked
+        /// in the browser reaches every attached terminal through that same
+        /// comparison, with nothing needing to remember to announce it.
+        #[serde(default)]
+        accent: usize,
     },
     /// A request could not be carried out. The connection stays open: a refused
     /// request is an answer, not a protocol violation.

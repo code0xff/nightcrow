@@ -104,7 +104,6 @@ pub struct App {
     pub log_view: LogView,
     pub tree_view: TreeView,
     pub terminal: TerminalState,
-    pub accent_idx: usize,
     pub tracking: Option<TrackingStatus>,
     pub(crate) snapshot: SnapshotChannel,
     // Set by `drain_snapshot` (every project), consumed by `poll_snapshot`

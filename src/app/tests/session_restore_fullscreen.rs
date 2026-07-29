@@ -98,21 +98,6 @@ fn save_session_round_trips_diff_fullscreen() {
 }
 
 #[test]
-fn restore_session_normalizes_accent_index() {
-    let mut app = app_with_files(vec![]);
-
-    app.restore_session(&crate::workspace::persistence::SessionState {
-        accent_idx: usize::MAX,
-        ..Default::default()
-    });
-
-    assert_eq!(
-        app.accent_idx,
-        usize::MAX % crate::config::Accent::ALL.len()
-    );
-}
-
-#[test]
 fn restore_session_keeps_log_scroll_after_loading_commit_diff() {
     let (_dir, path) = make_repo();
     let file_path = Path::new(&path).join("a.rs");

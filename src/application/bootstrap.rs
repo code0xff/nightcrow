@@ -9,7 +9,6 @@ pub(crate) fn init_app(
     backend: Box<dyn crate::backend::TerminalBackend>,
 ) -> App {
     let mut app = App::new(repo_path.to_string(), cfg.log.prompt_log, leader, backend);
-    app.set_accent_index(cfg.theme.preset_index());
     app.cfg_agent_indicator = cfg.agent_indicator.clone();
     app.cfg_tree = cfg.tree.clone();
     app.mouse_enabled = cfg.mouse.enabled;

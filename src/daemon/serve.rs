@@ -200,6 +200,7 @@ pub(super) fn repos(state: &ViewerState) -> ServerMessage {
             })
             .collect(),
         active: session::active_repo(state),
+        accent: session::accent(state),
     }
 }
 

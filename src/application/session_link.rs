@@ -29,7 +29,11 @@ impl SessionLink {
     pub(crate) fn sync(&mut self, ws: &mut Workspace, ctx: &ProjectContext) {
         for message in self.client.drain() {
             match message {
-                ServerMessage::Repos { repos, active } => {
+                ServerMessage::Repos {
+                    repos,
+                    active,
+                    accent,
+                } => {
                     adopt(ws, ctx, &repos, &self.client);
                     // After the set has settled, because the tab to put in front
                     // may be one this very message created — which is the usual
@@ -37,6 +41,9 @@ impl SessionLink {
                     if let Some(active) = active {
                         focus_repo(ws, &active);
                     }
+                    // Adopted whether or not this client asked: the colour may
+                    // have been picked in a browser, or in another terminal.
+                    ws.set_accent_index(accent);
                 }
                 // A refusal this client asked for — a path that is not a
                 // directory, or one repository too many. Shown where every
@@ -91,6 +98,10 @@ impl SessionLink {
                 Some(id) => self.client.close_repo(&id),
                 None => return,
             },
+            // The step is resolved here into the colour it lands on, so two
+            // clients cycling at once agree on the result instead of each
+            // advancing the session from what it last showed them.
+            ProjectRequest::CycleAccent => self.client.set_accent(ws.next_accent_index()),
         };
         if let Err(err) = sent {
             ws.raise_notice(
