@@ -46,6 +46,15 @@ export function StatusList({
           </button>
         </li>
       ))}
+      {status.truncated && (
+        // The ceiling is on what one payload carries, so it is the *received*
+        // count that is capped — not the filtered view of it. Said out loud
+        // because a list that stops without a word reads as a repository where
+        // nothing else changed.
+        <li className="px-3 py-1 text-accent">
+          Showing the first {status.files.length} changed files.
+        </li>
+      )}
     </>
   );
 }
