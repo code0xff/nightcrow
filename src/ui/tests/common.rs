@@ -62,7 +62,10 @@ pub(super) fn hint_text_with(app: &App, chrome: Chrome<'_>) -> String {
     let mut terminal = Terminal::new(TestBackend::new(200, 1)).unwrap();
     terminal
         .draw(|frame| {
-            frame.render_widget(render_hint_bar(app, chrome, Color::Yellow), frame.area())
+            frame.render_widget(
+                render_hint_bar(app, chrome, Color::Yellow, frame.area().width),
+                frame.area(),
+            )
         })
         .unwrap();
     let buf = terminal.backend().buffer();
@@ -82,7 +85,10 @@ pub(super) fn assert_inverted_cells_are_clickable(app: &App) {
     let mut terminal = Terminal::new(TestBackend::new(200, 1)).unwrap();
     terminal
         .draw(|frame| {
-            frame.render_widget(render_hint_bar(app, chrome, Color::Yellow), frame.area())
+            frame.render_widget(
+                render_hint_bar(app, chrome, Color::Yellow, frame.area().width),
+                frame.area(),
+            )
         })
         .unwrap();
     let buf = terminal.backend().buffer();

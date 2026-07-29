@@ -57,7 +57,12 @@ fn hint_bar_inverts_nothing_when_mouse_capture_is_disabled() {
     terminal
         .draw(|frame| {
             frame.render_widget(
-                render_hint_bar(&app, plain_chrome(&RepoInput::default()), Color::Yellow),
+                render_hint_bar(
+                    &app,
+                    plain_chrome(&RepoInput::default()),
+                    Color::Yellow,
+                    frame.area().width,
+                ),
                 frame.area(),
             )
         })

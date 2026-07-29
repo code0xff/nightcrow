@@ -6,8 +6,11 @@
 //! screen; snapshots apply to the active one only.
 
 mod path_complete;
+mod path_tree;
 mod repo_input;
+mod repo_picker;
 
+pub use path_tree::PathTree;
 pub use repo_input::RepoInputResult;
 
 pub(crate) mod persistence;

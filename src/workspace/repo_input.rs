@@ -17,7 +17,7 @@ pub enum RepoInputResult {
 
 // Mirrors `PROMPT_BUFFER_MAX_BYTES` so a bracketed paste cannot grow this
 // buffer without bound; comfortably above any realistic filesystem path.
-const REPO_INPUT_MAX_BYTES: usize = 4096;
+pub(super) const REPO_INPUT_MAX_BYTES: usize = 4096;
 
 impl Workspace {
     /// Open the dialog that adds a project tab. Prefilled with the active
@@ -32,6 +32,7 @@ impl Workspace {
         self.repo_input.active = true;
         self.repo_input.prefilled = true;
         self.repo_input.candidates.clear();
+        self.repo_input.picker = None;
         self.clear_notice(NoticeKind::RepoInput);
     }
 
@@ -40,6 +41,7 @@ impl Workspace {
         self.repo_input.buf.clear();
         self.repo_input.prefilled = false;
         self.repo_input.candidates.clear();
+        self.repo_input.picker = None;
         self.clear_notice(NoticeKind::RepoInput);
     }
 
@@ -75,6 +77,7 @@ impl Workspace {
         self.repo_input.buf.clear();
         self.repo_input.prefilled = false;
         self.repo_input.candidates.clear();
+        self.repo_input.picker = None;
         self.clear_notice(NoticeKind::RepoInput);
         RepoInputResult::Open(resolved)
     }

@@ -107,4 +107,8 @@ pub struct RepoInput {
     /// Any edit clears them: the list describes a fragment that no longer
     /// matches what is in the buffer.
     pub candidates: Vec<String>,
+    /// The directory browser, when open. `Some` takes over the body and the
+    /// dialog's keys; the field stays on screen below it and keeps the text, so
+    /// closing the browser returns to exactly what was being typed.
+    pub picker: Option<crate::workspace::PathTree>,
 }

@@ -43,6 +43,7 @@ fn the_empty_screen_shows_the_dialog_and_its_rejection() {
         buf: "/definitely/not/here".to_string(),
         prefilled: false,
         candidates: Vec::new(),
+        picker: None,
     };
     let notice = crate::app::Notice::new(NoticeKind::RepoInput, "no such directory");
 

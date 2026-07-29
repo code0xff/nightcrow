@@ -6,3 +6,4 @@ mod hint_diff_tests;
 mod hint_legend_tests;
 mod hit_test_tests;
 mod notice_tests;
+mod repo_picker_tests;
