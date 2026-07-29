@@ -10,11 +10,18 @@ use std::os::unix::net::UnixStream;
 /// instance lock stays taken for the duration.
 pub(super) struct TestDaemon {
     socket: DaemonSocket,
+    /// The session itself, so a test can change it the way the browser does —
+    /// through the session functions, with no attach connection involved.
+    state: std::sync::Arc<crate::web::viewer::server::ViewerState>,
 }
 
 impl TestDaemon {
     pub(super) fn path(&self) -> &std::path::Path {
         self.socket.path()
+    }
+
+    pub(super) fn state(&self) -> &crate::web::viewer::server::ViewerState {
+        &self.state
     }
 }
 
@@ -27,8 +34,9 @@ pub(super) fn daemon(dir: &tempfile::TempDir, repos: &[String]) -> TestDaemon {
     let socket = DaemonSocket::bind(&path).expect("binds");
     let listener = socket.listener().try_clone().expect("clones");
     let state = crate::test_util::session_state(repos);
-    std::thread::spawn(move || crate::daemon::serve::serve(listener, state));
-    TestDaemon { socket }
+    let served = std::sync::Arc::clone(&state);
+    std::thread::spawn(move || crate::daemon::serve::serve(listener, served));
+    TestDaemon { socket, state }
 }
 
 /// A client attached to the daemon at `path`.

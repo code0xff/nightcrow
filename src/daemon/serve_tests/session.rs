@@ -215,3 +215,36 @@ fn an_unreadable_request_is_answered_rather_than_fatal() {
         "the connection still serves"
     );
 }
+
+#[test]
+fn a_repository_opened_through_the_browser_reaches_a_client_that_asked_nothing() {
+    // The session has two front doors. A change through the other one wakes
+    // nothing on an attach socket, so without the watcher a client would sit on
+    // a tab list that had quietly gone stale — which is the one thing a shared
+    // session must not do.
+    let (repo, path) = crate::test_util::make_repo();
+    let dir = tempfile::TempDir::new().unwrap();
+    let daemon = daemon(&dir, &[]);
+    let mut client = Client::attach(daemon.path());
+
+    // Straight against the session, the way the viewer's HTTP handler does it —
+    // this client's connection is not involved at all.
+    crate::web::viewer::session::open_repo(daemon.state(), &path).expect("opens");
+
+    assert_eq!(repo_paths(&client.next_repos()), vec![resolved(&path)]);
+    drop(repo);
+}
+
+#[test]
+fn a_repository_closed_through_the_browser_reaches_it_too() {
+    let (repo, path) = crate::test_util::make_repo();
+    let dir = tempfile::TempDir::new().unwrap();
+    let daemon = daemon(&dir, std::slice::from_ref(&path));
+    let mut client = Client::attach(daemon.path());
+    let id = client.repo_ids().pop().expect("one repository is open");
+
+    crate::web::viewer::session::close_repo(daemon.state(), &id).expect("closes");
+
+    assert!(repo_paths(&client.next_repos()).is_empty());
+    drop(repo);
+}

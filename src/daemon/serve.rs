@@ -10,15 +10,15 @@
 //! person is sitting at, not browser tabs.
 
 use super::clients::AttachedClients;
-use super::frame::{Frame, FrameKind, read_frame, write_frame};
-use super::protocol::{ClientMessage, RepoSummary, ServerMessage, version};
+use super::frame::{Frame, write_frame};
+use super::protocol::{RepoSummary, ServerMessage};
 use super::terminals::TerminalBridges;
 use crate::web::viewer::server::ViewerState;
-use crate::web::viewer::session::{self, CloseError, OpenError};
-use anyhow::Result;
+use crate::web::viewer::session;
+use std::collections::HashMap;
 use std::io::Write;
 use std::os::unix::net::{UnixListener, UnixStream};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 /// Clients that may be attached at once.
 ///
@@ -27,9 +27,37 @@ use std::sync::Arc;
 pub const MAX_ATTACHED_CLIENTS: usize = 16;
 
 /// Everything the connection threads share.
-struct Session {
-    state: Arc<ViewerState>,
-    clients: Arc<AttachedClients>,
+pub(super) struct Session {
+    pub(super) state: Arc<ViewerState>,
+    pub(super) clients: Arc<AttachedClients>,
+    /// Each attached client's terminal subscriptions.
+    ///
+    /// Kept here rather than on the thread that reads that client's socket,
+    /// because a repository can appear for reasons that have nothing to do with
+    /// any client's connection — the browser opened it — and it has to start
+    /// streaming for everyone. That thread is blocked in `read` and cannot act
+    /// on it; the watcher can. One lock per client, so following a change for
+    /// one never delays another's keystrokes.
+    pub(super) bridges: Mutex<HashMap<u64, Arc<Mutex<TerminalBridges>>>>,
+}
+
+impl Session {
+    /// Bring every attached client's subscriptions in line with `repos`.
+    fn follow_all(&self, repos: &[session::SessionRepo]) {
+        let bridges: Vec<Arc<Mutex<TerminalBridges>>> = self
+            .bridges
+            .lock()
+            .expect("attach bridges poisoned")
+            .values()
+            .map(Arc::clone)
+            .collect();
+        for client in bridges {
+            client
+                .lock()
+                .expect("client bridges poisoned")
+                .follow(repos, self.state.catalog());
+        }
+    }
 }
 
 /// Serve attached clients until the process ends.
@@ -44,7 +72,27 @@ pub fn serve(listener: UnixListener, state: Arc<ViewerState>) {
     let session = Arc::new(Session {
         state,
         clients: Arc::new(AttachedClients::default()),
+        bridges: Mutex::new(HashMap::new()),
     });
+    // The only thing that broadcasts the served set, so there is one record of
+    // what clients have been told — and so a change made through the browser
+    // reaches them at all.
+    let watched = Arc::clone(&session);
+    if let Err(err) = std::thread::Builder::new()
+        .name("nightcrow-session-watch".into())
+        .spawn(move || {
+            super::watch::watch(
+                Arc::clone(&watched.state),
+                Arc::clone(&watched.clients),
+                |repos| watched.follow_all(repos),
+            )
+        })
+    {
+        // Fatal for the session's shape, not for the connection: without it a
+        // client sees its own changes and no one else's, which is worth saying
+        // plainly rather than leaving to be discovered.
+        tracing::error!(%err, "daemon: no session watcher — changes made elsewhere will not arrive");
+    }
     for stream in listener.incoming() {
         let Ok(stream) = stream else { continue };
         if session.clients.len() >= MAX_ATTACHED_CLIENTS {
@@ -74,9 +122,15 @@ fn attach(stream: UnixStream, session: &Session) {
         return;
     };
     let (id, queue) = session.clients.connect(hangup);
-    // Subscribed before the set is sent, so the panes of every open repository
-    // are already streaming when the client learns the repository exists.
-    let mut bridges = TerminalBridges::new(id, Arc::clone(&session.clients));
+    let bridges = Arc::new(Mutex::new(TerminalBridges::new(
+        id,
+        Arc::clone(&session.clients),
+    )));
+    session
+        .bridges
+        .lock()
+        .expect("attach bridges poisoned")
+        .insert(id, Arc::clone(&bridges));
 
     // The writer owns its half outright, so the reader below can stay blocked
     // in `read` while frames go out.
@@ -93,19 +147,28 @@ fn attach(stream: UnixStream, session: &Session) {
 
     // The set as it stands, before this client has asked for anything: it needs
     // the session's shape to render, and asking for what the daemon already
-    // knows is a round trip for nothing.
-    bridges.follow(
+    // knows is a round trip for nothing. Subscribed first, so the panes of every
+    // open repository are already streaming when it learns the repository
+    // exists. Sent here rather than left to the watcher, which only speaks when
+    // something changes — and nothing has.
+    bridges.lock().expect("client bridges poisoned").follow(
         &session::list_session_repos(&session.state),
         session.state.catalog(),
     );
     session.clients.send_to(id, encode(&repos(&session.state)));
 
-    if let Err(err) = read_requests(stream, id, session, &mut bridges) {
+    if let Err(err) = super::requests::read_requests(stream, id, session) {
         // Expected on detach: the client closes mid-read. Logged at debug
         // because a person quitting is not a fault.
         tracing::debug!(%err, "daemon: attached client ended");
     }
-    // Drops this client's sender, which ends the writer draining it.
+    // Drops this client's sender, which ends the writer draining it, and its
+    // subscriptions, which stops the threads relaying its terminals.
+    session
+        .bridges
+        .lock()
+        .expect("attach bridges poisoned")
+        .remove(&id);
     session.clients.disconnect(id);
     if let Ok(writer) = writer {
         crate::platform::threading::try_timed_join(
@@ -115,103 +178,7 @@ fn attach(stream: UnixStream, session: &Session) {
     }
 }
 
-/// Read requests from one client until it detaches.
-fn read_requests(
-    mut stream: UnixStream,
-    id: u64,
-    session: &Session,
-    bridges: &mut TerminalBridges,
-) -> Result<()> {
-    while let Some(frame) = read_frame(&mut stream)? {
-        // Terminal frames arrive once panes are shared; until then a client has
-        // no pane to write to, and a frame kind with no handler is dropped
-        // rather than closing the connection over it.
-        if frame.kind != FrameKind::Control {
-            tracing::debug!("daemon: ignoring a terminal frame before panes are shared");
-            continue;
-        }
-        match serde_json::from_slice::<ClientMessage>(&frame.payload) {
-            Ok(message) => handle(message, id, session, bridges),
-            // A request this daemon cannot parse is answered, not fatal: the
-            // client stays attached and its next request is still served.
-            Err(err) => session.clients.send_to(
-                id,
-                encode(&ServerMessage::Error {
-                    message: format!("unreadable request: {err}"),
-                }),
-            ),
-        }
-    }
-    Ok(())
-}
-
-/// Carry out one request against the served set.
-///
-/// A state change is broadcast rather than returned: every attached client is
-/// looking at the same session, and the one that asked has no more claim on the
-/// result than the others. Refusals are addressed to the asker alone.
-fn handle(message: ClientMessage, id: u64, session: &Session, bridges: &mut TerminalBridges) {
-    let state = &session.state;
-    match message {
-        ClientMessage::Hello { version: client } => {
-            let daemon = version();
-            let reply = if client == daemon {
-                ServerMessage::Hello {
-                    version: daemon,
-                    client: id,
-                }
-            } else {
-                // Reported, not refused. The two ship in one binary, so a
-                // mismatch means two builds are running at once — worth saying
-                // plainly rather than failing with a decode error later.
-                ServerMessage::Error {
-                    message: format!("client is {client}, daemon is {daemon}"),
-                }
-            };
-            session.clients.send_to(id, encode(&reply));
-        }
-        // Answered to the asker: nothing changed, so there is nothing to tell
-        // the others.
-        ClientMessage::ListRepos => session.clients.send_to(id, encode(&repos(state))),
-        ClientMessage::OpenRepo { path } => match session::open_repo(state, &path) {
-            Ok(_) => session.clients.broadcast(encode(&repos(state))),
-            Err(OpenError::EmptyPath) => refuse(id, session, "a path is required"),
-            Err(OpenError::NotADirectory) => refuse(id, session, "no such directory"),
-            Err(OpenError::TooMany) => refuse(
-                id,
-                session,
-                "the maximum number of repositories is already open",
-            ),
-        },
-        ClientMessage::CloseRepo { repo } => match session::close_repo(state, &repo) {
-            Ok(()) => session.clients.broadcast(encode(&repos(state))),
-            Err(CloseError::UnknownRepo) => refuse(id, session, "unknown repository"),
-        },
-        ClientMessage::ReorderRepos { order } => {
-            session::reorder_repos(state, &order);
-            session.clients.broadcast(encode(&repos(state)));
-        }
-        // Handed straight to the hub, which answers on the subscription rather
-        // than here: a pane it creates is news for every client watching that
-        // repository, not a reply owed to this one.
-        ClientMessage::Terminal { repo, message } => bridges.dispatch(&repo, message),
-    }
-    // After the set may have changed: a repository this request opened needs a
-    // subscription before its startup terminals are offered, and one it closed
-    // has a thread to stop.
-    bridges.follow(&session::list_session_repos(state), state.catalog());
-}
-
-fn refuse(id: u64, session: &Session, message: &str) {
-    session.clients.send_to(
-        id,
-        encode(&ServerMessage::Error {
-            message: message.to_string(),
-        }),
-    );
-}
-
-fn repos(state: &ViewerState) -> ServerMessage {
+pub(super) fn repos(state: &ViewerState) -> ServerMessage {
     ServerMessage::Repos {
         repos: session::list_session_repos(state)
             .into_iter()
@@ -229,7 +196,7 @@ fn repos(state: &ViewerState) -> ServerMessage {
 /// keyed by anything but strings — so a failure would mean a bug in the
 /// protocol definitions rather than anything a client did. It becomes an error
 /// frame so the client sees *something* instead of a silently dropped reply.
-fn encode(message: &ServerMessage) -> Frame {
+pub(super) fn encode(message: &ServerMessage) -> Frame {
     match serde_json::to_vec(message) {
         Ok(json) => Frame::control(json),
         Err(err) => {
