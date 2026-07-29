@@ -179,7 +179,8 @@ pub(super) fn handle_close_repo(head: &RequestHead, state: &ViewerState) -> Vec<
         return json_error("400 Bad Request", "missing repo parameter");
     };
     match session::close_repo(state, &id) {
-        Ok(repos) => {
+        Ok(()) => {
+            let repos = session::list_repos(state);
             match serde_json::to_string(&Envelope::new(serde_json::json!({ "repos": repos }))) {
                 Ok(json) => json_response("200 OK", &json, &[]),
                 Err(_) => json_error("500 Internal Server Error", "could not encode repositories"),
@@ -194,7 +195,8 @@ pub(super) fn handle_reorder_repos(body: &str, state: &ViewerState) -> Vec<u8> {
         Ok(request) => request,
         Err(_) => return json_error("400 Bad Request", "expected a JSON body with an order"),
     };
-    let repos = session::reorder_repos(state, &request.order);
+    session::reorder_repos(state, &request.order);
+    let repos = session::list_repos(state);
     match serde_json::to_string(&Envelope::new(serde_json::json!({ "repos": repos }))) {
         Ok(json) => json_response("200 OK", &json, &[]),
         Err(_) => json_error("500 Internal Server Error", "could not encode repositories"),

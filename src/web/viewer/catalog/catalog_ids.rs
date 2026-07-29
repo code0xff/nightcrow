@@ -7,7 +7,9 @@ use std::sync::Arc;
 /// One served repository: its identity, and the runtime streaming its status.
 pub struct RepoEntry {
     pub id: String,
-    /// Absolute worktree path. Server-side only — never serialized.
+    /// Absolute worktree path. Never serialized to the browser, which has no
+    /// use for it and no access to it; the attach transport does send it, to
+    /// clients reading the same filesystem.
     pub path: String,
     pub name: String,
     pub display_path: String,

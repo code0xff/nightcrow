@@ -235,8 +235,22 @@ impl Catalog {
             .collect()
     }
 
+    /// Ids paired with absolute worktree paths, in order.
+    ///
+    /// For the attach transport, whose clients read those paths from the same
+    /// filesystem the daemon is on. The browser gets [`RepoDto`] instead, which
+    /// carries a home-relative path for display and no absolute one.
+    pub fn id_paths(&self) -> Vec<(String, String)> {
+        self.entries
+            .lock()
+            .expect("catalog poisoned")
+            .iter()
+            .map(|e| (e.id.clone(), e.path.clone()))
+            .collect()
+    }
+
     /// Absolute worktree paths of the served set, in order. Used to persist the
-    /// open projects; never serialized to a client.
+    /// open projects.
     pub fn paths(&self) -> Vec<String> {
         self.entries
             .lock()

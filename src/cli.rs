@@ -174,6 +174,30 @@ pub(crate) fn run_serve(
             server.addr()
         );
     }
+    // The attach socket comes up after the browser listener so a port conflict
+    // is reported before a socket file exists to clean up. A failure here does
+    // abort: unlike the viewer beside the TUI, this *is* the session, and
+    // running on with no way to attach would look like a silent success.
+    let socket_path = crate::daemon::socket::default_socket_path()?;
+    let socket = crate::daemon::socket::DaemonSocket::bind(&socket_path)?;
+    eprintln!(
+        "nightcrow: attach with `nightcrow attach` ({})",
+        socket.path().display()
+    );
+    // The accept loop gets a clone; `socket` stays here so that returning from
+    // this function unlinks it and releases the instance lock. Parked in the
+    // accept thread it would be freed by process exit, which runs no destructor
+    // — and the socket file would outlive every clean shutdown.
+    let listener = socket
+        .listener()
+        .try_clone()
+        .context("cloning the daemon listener")?;
+    let attach_state = server.state();
+    std::thread::Builder::new()
+        .name("nightcrow-daemon-accept".into())
+        .spawn(move || crate::daemon::serve::serve(listener, attach_state))
+        .context("spawning the daemon accept thread")?;
+
     if !server.addr().ip().is_loopback() {
         // Worth saying out loud: this is not the default, it carries shells,
         // and there is no TLS to fall back on.
@@ -193,6 +217,10 @@ pub(crate) fn run_serve(
     eprintln!("nightcrow: {} received, stopping", signal.as_str());
     tracing::info!(signal = signal.as_str(), "shutting down");
     server.shutdown();
+    // Explicit so the order is visible: the socket file goes away and the
+    // instance lock is released only after the session has stopped, so nothing
+    // can attach to a daemon that is already tearing down its terminals.
+    drop(socket);
     Ok(())
 }
 

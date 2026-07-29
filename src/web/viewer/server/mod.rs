@@ -105,6 +105,41 @@ pub struct ViewerOptions {
     pub prefs: PrefsStore,
 }
 
+impl ViewerState {
+    /// Build the served session without binding anything.
+    ///
+    /// Separate from [`ViewerServer::start`] because the session exists whether
+    /// or not a browser listener does: the daemon socket serves this same
+    /// state, and a test drives it without taking a port.
+    pub fn new(options: ViewerOptions) -> Self {
+        let ViewerOptions {
+            bind,
+            port: _,
+            auth,
+            repos,
+            persist,
+            startup_commands,
+            hot,
+            prefs,
+        } = options;
+        let state = Self {
+            catalog: crate::web::viewer::catalog::Catalog::with_startup(startup_commands),
+            bound_loopback: bind.is_loopback(),
+            auth,
+            sessions: SessionStore::new(),
+            limiter: RateLimiter::new(),
+            connections: Arc::new(AtomicUsize::new(0)),
+            clones: Default::default(),
+            git_available: crate::git::clone::git_available(),
+            persist,
+            hot,
+            prefs,
+        };
+        state.catalog.set_paths(&repos);
+        state
+    }
+}
+
 impl ViewerServer {
     /// Bind and start from `[web_viewer]`, building the password verifier from
     /// either `hashed_password` or `password`.
@@ -143,36 +178,16 @@ impl ViewerServer {
     /// Bind and start accepting. The seeded repositories may be replaced later
     /// through [`ViewerServer::set_repos`].
     pub fn start(options: ViewerOptions) -> Result<Self> {
-        let ViewerOptions {
-            bind,
-            port,
-            auth,
-            repos,
-            persist,
-            startup_commands,
-            hot,
-            prefs,
-        } = options;
+        // Copied out before the options are consumed: the listener is bound
+        // first so a port conflict fails before any repository is opened.
+        let (bind, port) = (options.bind, options.port);
         let listener = TcpListener::bind((bind, port))
             .with_context(|| format!("binding viewer server to {bind}:{port}"))?;
         let addr = listener
             .local_addr()
             .unwrap_or_else(|_| SocketAddr::new(bind, port));
 
-        let state = Arc::new(ViewerState {
-            catalog: crate::web::viewer::catalog::Catalog::with_startup(startup_commands),
-            bound_loopback: bind.is_loopback(),
-            auth,
-            sessions: SessionStore::new(),
-            limiter: RateLimiter::new(),
-            connections: Arc::new(AtomicUsize::new(0)),
-            clones: Default::default(),
-            git_available: crate::git::clone::git_available(),
-            persist,
-            hot,
-            prefs,
-        });
-        state.catalog.set_paths(&repos);
+        let state = Arc::new(ViewerState::new(options));
 
         let accept_state = Arc::clone(&state);
         std::thread::Builder::new()
@@ -185,6 +200,12 @@ impl ViewerServer {
 
     pub fn addr(&self) -> SocketAddr {
         self.addr
+    }
+
+    /// The session this server serves, so another transport can serve the same
+    /// one. Shared rather than copied: one session is the whole point.
+    pub fn state(&self) -> Arc<ViewerState> {
+        Arc::clone(&self.state)
     }
 
     /// Replace the served repositories. Safe to call from the TUI main loop on

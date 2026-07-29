@@ -7,10 +7,8 @@
 //! the user can open, so it does not. Keeping the two transports apart is what
 //! keeps that difference from becoming a mistake in a shared code path.
 
-// The transport lands before the accept loop that drives it, so nothing calls
-// into it yet. Removed once the daemon listens (step C of
-// `docs/session-daemon-plan.md`).
-#![allow(dead_code)]
-
 pub(crate) mod frame;
+pub(crate) mod lock;
+pub(crate) mod protocol;
+pub(crate) mod serve;
 pub(crate) mod socket;

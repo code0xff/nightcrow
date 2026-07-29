@@ -65,14 +65,11 @@ fn a_second_daemon_refuses_to_displace_the_first() {
 
 #[test]
 fn a_socket_left_behind_by_a_dead_daemon_is_replaced() {
-    // What a crash or `kill -9` leaves: the file is still there, nothing is
-    // listening. Binding must recover rather than refuse forever.
+    // What a crash or `kill -9` leaves: the socket file is still there and
+    // nothing is listening. Holding the lock is what proves that, so the
+    // leftover is cleared rather than refused forever.
     let dir = tempfile::TempDir::new().unwrap();
     let path = socket_path(&dir);
-    // Bound through the raw listener, not `DaemonSocket`: dropping it closes
-    // the descriptor without unlinking, which is what the kernel leaves behind
-    // when a daemon dies. Leaking a `DaemonSocket` instead would skip the
-    // unlink but keep the descriptor open, and the file would still accept.
     drop(std::os::unix::net::UnixListener::bind(&path).unwrap());
     assert!(path.exists(), "the stale file is still in place");
 
@@ -83,15 +80,32 @@ fn a_socket_left_behind_by_a_dead_daemon_is_replaced() {
 }
 
 #[test]
-fn a_plain_file_in_the_way_is_reported_not_deleted() {
-    // Not a socket at all — connect fails with something other than "refused",
-    // so this must surface rather than silently remove whatever is there.
+fn whatever_sits_at_the_socket_path_is_cleared_once_the_lock_is_held() {
+    // Not a socket at all, but the lock already proved no daemon is serving
+    // this path — so it is debris, and refusing to start over it would strand
+    // the user with a manual cleanup.
     let dir = tempfile::TempDir::new().unwrap();
     let path = socket_path(&dir);
     std::fs::write(&path, b"not a socket").unwrap();
 
+    let socket = DaemonSocket::bind(&path).expect("binds over the debris");
+
+    UnixStream::connect(&path).expect("the daemon answers");
+    drop(socket);
+}
+
+#[test]
+fn the_lock_outlives_the_bind_so_a_second_daemon_still_loses() {
+    // The claim has to be held, not just taken: a lock dropped after binding
+    // would let a second daemon start and displace the socket.
+    let dir = tempfile::TempDir::new().unwrap();
+    let path = socket_path(&dir);
+    let first = DaemonSocket::bind(&path).expect("the first binds");
+
     assert!(DaemonSocket::bind(&path).is_err());
-    assert!(path.exists(), "an unrecognized file must be left alone");
+
+    drop(first);
+    DaemonSocket::bind(&path).expect("the path is free once the first releases");
 }
 
 #[test]

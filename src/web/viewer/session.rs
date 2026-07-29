@@ -35,9 +35,31 @@ pub enum CloseError {
     UnknownRepo,
 }
 
-/// The repositories currently served, in catalog order.
+/// One repository as an attaching client sees it.
+///
+/// Carries the absolute path, which the browser's `RepoDto` deliberately does
+/// not: an attached client reads git from that path itself, on the same
+/// filesystem the daemon is on.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SessionRepo {
+    pub id: String,
+    pub path: String,
+}
+
+/// The repositories currently served, in catalog order, as the browser sees
+/// them.
 pub fn list_repos(state: &ViewerState) -> Vec<RepoDto> {
     state.catalog.list()
+}
+
+/// The same set as an attaching client sees it.
+pub fn list_session_repos(state: &ViewerState) -> Vec<SessionRepo> {
+    state
+        .catalog
+        .id_paths()
+        .into_iter()
+        .map(|(id, path)| SessionRepo { id, path })
+        .collect()
 }
 
 /// Open `raw_path` and add it to the served catalog.
@@ -72,29 +94,31 @@ pub fn open_repo(state: &ViewerState, raw_path: &str) -> Result<RepoDto, OpenErr
     }
 }
 
-/// Close the repository named by `id`, returning the updated set.
+/// Close the repository named by `id`.
 ///
 /// The catalog rebuild stops the closed repository's runtime and terminals.
-pub fn close_repo(state: &ViewerState, id: &str) -> Result<Vec<RepoDto>, CloseError> {
+/// The updated set is not returned: each transport reads it back in its own
+/// projection, and both must do so afterwards anyway since another client can
+/// change the set in between.
+pub fn close_repo(state: &ViewerState, id: &str) -> Result<(), CloseError> {
     let entry = state.catalog.get(id).ok_or(CloseError::UnknownRepo)?;
     state.catalog.remove_path(&entry.path);
     persist_workspace(state);
-    Ok(state.catalog.list())
+    Ok(())
 }
 
-/// Reorder the catalog to `ids`, returning the canonical result.
+/// Reorder the catalog to `ids`.
 ///
 /// Ids that no longer name a repository are dropped rather than refused: the
 /// only way to send one is to have raced a close on another client, and the
 /// catalog canonicalizes the requested order against what is actually live.
-pub fn reorder_repos(state: &ViewerState, ids: &[String]) -> Vec<RepoDto> {
+pub fn reorder_repos(state: &ViewerState, ids: &[String]) {
     let paths: Vec<String> = ids
         .iter()
         .filter_map(|id| state.catalog.get(id).map(|entry| entry.path.clone()))
         .collect();
     state.catalog.reorder(&paths);
     persist_workspace(state);
-    state.catalog.list()
 }
 
 /// Mirror the served set into the shared workspace file so the next launch

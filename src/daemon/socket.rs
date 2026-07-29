@@ -7,9 +7,10 @@
 //! serves. That is why the attach path carries no password while the browser
 //! path does: a TCP port is reachable by anyone who can route to it.
 
+use super::lock::InstanceLock;
 use anyhow::{Context, Result, bail};
 use std::os::unix::fs::PermissionsExt;
-use std::os::unix::net::{UnixListener, UnixStream};
+use std::os::unix::net::UnixListener;
 use std::path::{Path, PathBuf};
 
 /// Socket file name under the nightcrow directory.
@@ -25,44 +26,39 @@ pub fn default_socket_path() -> Result<PathBuf> {
     Ok(home.join(".nightcrow").join(SOCKET_FILE))
 }
 
-/// A bound daemon socket that unlinks itself when dropped.
+/// A bound daemon socket, held together with the claim that makes it ours.
+///
+/// Unlinks the socket when dropped; the lock is released with it.
 #[derive(Debug)]
 pub struct DaemonSocket {
     listener: UnixListener,
     path: PathBuf,
+    /// Kept alive for its `flock`. Dropping it releases the claim, so it must
+    /// outlive the listener rather than be discarded after binding.
+    _lock: InstanceLock,
 }
 
 impl DaemonSocket {
-    /// Bind the socket, refusing to displace a daemon that is already running.
+    /// Bind the socket, refusing to start beside a daemon that already runs.
     ///
-    /// A socket file outliving its process is the normal case after a crash or
-    /// a kill -9, and binding fails on the leftover file rather than replacing
-    /// it. Telling the two apart is a connect attempt: a live daemon accepts,
-    /// while a stale file refuses with `ConnectionRefused` because no process
-    /// is listening on it. Only the refused one is removed — deleting a socket
-    /// that answered would leave the running daemon unreachable while its
-    /// clients stayed connected, which looks exactly like a hang.
+    /// The lock decides, not the socket file. A socket outliving its process is
+    /// the normal case after a crash or a `kill -9`, and it is indistinguishable
+    /// from a live one by inspection — connecting to it can even succeed. So the
+    /// order is: take the lock, and only then treat whatever socket file is
+    /// there as debris, because holding the lock already proves no other daemon
+    /// is serving it.
     pub fn bind(path: &Path) -> Result<Self> {
-        if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent)
-                .with_context(|| format!("creating the daemon directory {}", parent.display()))?;
-        }
+        let lock_path = lock_path_for(path);
+        let Some(lock) = InstanceLock::acquire(&lock_path)? else {
+            bail!(
+                "a nightcrow daemon is already running (holding {})",
+                lock_path.display()
+            );
+        };
+        // Safe now: the lock is ours, so nothing is listening on this path.
         if path.exists() {
-            match UnixStream::connect(path) {
-                Ok(_) => bail!(
-                    "a nightcrow daemon is already running on {}",
-                    path.display()
-                ),
-                Err(err) if err.kind() == std::io::ErrorKind::ConnectionRefused => {
-                    std::fs::remove_file(path)
-                        .with_context(|| format!("removing the stale socket {}", path.display()))?;
-                }
-                Err(err) => {
-                    return Err(err).with_context(|| {
-                        format!("probing the existing socket {}", path.display())
-                    });
-                }
-            }
+            std::fs::remove_file(path)
+                .with_context(|| format!("removing the stale socket {}", path.display()))?;
         }
         let listener = UnixListener::bind(path)
             .with_context(|| format!("binding the daemon socket {}", path.display()))?;
@@ -74,6 +70,7 @@ impl DaemonSocket {
         Ok(Self {
             listener,
             path: path.to_path_buf(),
+            _lock: lock,
         })
     }
 
@@ -86,11 +83,17 @@ impl DaemonSocket {
     }
 }
 
+/// The lock file guarding `socket`: the same name with a `.lock` extension, so
+/// a non-default socket path brings its own lock rather than sharing one.
+fn lock_path_for(socket: &Path) -> PathBuf {
+    socket.with_extension("lock")
+}
+
 impl Drop for DaemonSocket {
     fn drop(&mut self) {
-        // Best effort: a socket file left behind is recoverable — the next bind
-        // probes it, finds nothing listening, and removes it. Failing loudly
-        // here would only add noise to a shutdown that is already ending.
+        // Best effort: a socket file left behind is recoverable — the next
+        // daemon takes the lock and clears it. Failing loudly here would only
+        // add noise to a shutdown that is already ending.
         let _ = std::fs::remove_file(&self.path);
     }
 }
