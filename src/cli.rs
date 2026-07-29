@@ -50,19 +50,10 @@ pub(crate) enum Commands {
     },
 }
 
-/// The optional browser surfaces, which start and stop together with the app.
-///
-/// Grouped because they are always passed as a pair and are the same kind of
-/// thing: an independently-failable server the TUI does not depend on.
-pub(crate) struct WebSurfaces {
-    pub(crate) mirror: Option<crate::web::WebServer>,
-    pub(crate) viewer: Option<crate::web::viewer::server::ViewerServer>,
-}
-
 /// Start the viewer alongside the TUI when `[web_viewer] enabled` is set.
 ///
-/// Like the mirror, a bind failure only disables the viewer with a warning —
-/// the local TUI is the primary interface and must still come up.
+/// A bind failure only disables the viewer with a warning — the local TUI is
+/// the primary interface and must still come up.
 pub(crate) fn start_viewer_if_enabled(
     cfg: &mut crate::config::Config,
     repo_paths: &[String],
@@ -213,37 +204,6 @@ fn resolve_serve_repos(repos: &[std::path::PathBuf]) -> Result<Vec<String>> {
         }
     }
     Ok(out)
-}
-
-/// Bootstrap the web login credential and start the mirror server when enabled.
-///
-/// Runs before the alternate screen so a generated password and any bind error
-/// surface as plain stderr. A bind failure disables the web mirror with a
-/// warning rather than aborting the whole app — the local TUI still runs.
-pub(crate) fn start_web_if_enabled(
-    cfg: &mut crate::config::Config,
-) -> Result<Option<crate::web::WebServer>> {
-    if !cfg.web_mirror.enabled {
-        return Ok(None);
-    }
-    let path = crate::config::config_file_path()?;
-    if let Some(password) = crate::config::ensure_web_mirror_password(cfg, &path)? {
-        eprintln!(
-            "nightcrow web: generated a login password and saved it to {}:",
-            path.display()
-        );
-        eprintln!("  {password}");
-    }
-    match crate::web::WebServer::start_from_config(&cfg.web_mirror) {
-        Ok(server) => {
-            eprintln!("nightcrow web: mirror serving at http://{}/", server.addr());
-            Ok(Some(server))
-        }
-        Err(err) => {
-            eprintln!("nightcrow web: mirror disabled — {err:#}");
-            Ok(None)
-        }
-    }
 }
 
 pub(crate) fn run_init(force: bool) -> Result<()> {

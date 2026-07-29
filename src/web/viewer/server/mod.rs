@@ -1,8 +1,8 @@
 //! The viewer's HTTP server: read-only git routes plus a live status stream.
 //!
-//! Runs on its own port with its own session cookie, entirely separate from the
-//! mirror. Two servers sharing a cookie name on one host would let a session
-//! for one authenticate against the other.
+//! Runs on its own port with its own session cookie. The cookie is named for
+//! this server rather than for nightcrow at large: two servers sharing a cookie
+//! name on one host would let a session for one authenticate against the other.
 //!
 //! Request handling order is deliberate and load-bearing:
 //!
@@ -41,8 +41,8 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicUsize;
 use std::time::Duration;
 
-/// Distinct from the mirror's cookie: same host, different servers, so a
-/// session for one must not authenticate against the other.
+/// Named for this server, not for nightcrow: another server on the same host
+/// must not be able to authenticate with a session issued here.
 pub const VIEWER_SESSION_COOKIE: &str = "nightcrow_viewer_session";
 
 /// How long an idle SSE stream waits before sending a heartbeat. A write is

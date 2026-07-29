@@ -1,13 +1,8 @@
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 
-/// Default TCP port for the web mirror server.
-const DEFAULT_WEB_PORT: u16 = 8090;
-/// Viewer default. Adjacent to the mirror's but distinct: both can run at once.
+/// Default TCP port for the web viewer server.
 const DEFAULT_WEB_VIEWER_PORT: u16 = 8091;
-/// Table name for the mirror's settings. Named for what it is, matching
-/// `[web_viewer]`; `[web]` alone did not say which web surface it meant.
-pub(super) const WEB_MIRROR_TABLE: &str = "web_mirror";
 pub(super) const WEB_VIEWER_TABLE: &str = "web_viewer";
 /// Default bind address: loopback only. Exposing the server on a routable
 /// address is a deliberate opt-in because it grants live control of a shell.
@@ -20,51 +15,9 @@ pub(super) const GENERATED_PASSWORD_LEN: usize = 24;
 pub(super) const PASSWORD_ALPHABET: &[u8] =
     b"abcdefghijkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 
-/// Web mirror server: serve a live, controllable view of this nightcrow over
-/// HTTP so a browser and the local terminal drive the same session.
+/// The native web viewer (`[web_viewer]`): its own port, cookie, and
+/// credential, kept separate from anything else the process may serve.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(default)]
-pub struct WebMirrorConfig {
-    /// Enable the web mirror. Off by default — turning it on exposes live
-    /// view+control of this nightcrow over the network, so it is opt-in.
-    pub enabled: bool,
-    /// Address to bind. Defaults to loopback; set to `0.0.0.0` only
-    /// deliberately, and prefer an SSH tunnel / reverse proxy for remote
-    /// access since the server speaks plain HTTP (no built-in TLS).
-    pub bind: String,
-    /// TCP port for the web server.
-    pub port: u16,
-    /// Plaintext login password. When the web server is enabled and neither
-    /// this nor `hashed_password` is set, a random password is generated and
-    /// written back here so it survives restarts and stays readable.
-    pub password: Option<String>,
-    /// Optional Argon2 PHC hash — an alternative to storing `password` in
-    /// plaintext. Takes precedence over `password` when both are present.
-    pub hashed_password: Option<String>,
-}
-
-impl Default for WebMirrorConfig {
-    fn default() -> Self {
-        Self {
-            enabled: false,
-            bind: DEFAULT_WEB_BIND.to_string(),
-            port: DEFAULT_WEB_PORT,
-            password: None,
-            hashed_password: None,
-        }
-    }
-}
-
-impl WebMirrorConfig {
-    /// Whether a login credential is already configured (either form).
-    pub fn has_credential(&self) -> bool {
-        self.hashed_password.is_some() || self.password.as_deref().is_some_and(|p| !p.is_empty())
-    }
-}
-
-/// The native web viewer (`[web_viewer]`). Independent of the mirror: its own
-/// port, cookie, and credential, so enabling one does not expose the other.
-#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 #[serde(default)]
 pub struct WebViewerConfig {
     /// Enable the viewer alongside the TUI. Off by default — it exposes both
@@ -112,32 +65,13 @@ pub fn generate_password() -> Result<String> {
         .collect())
 }
 
-/// Ensure the enabled web server has a login credential, generating and
-/// persisting one when the config has none. A no-op when a `password` or
-/// `hashed_password` is already set. Otherwise a random password is
-/// generated, written back into the config file at `path` (creating it if
-/// absent, preserving any existing content and comments), and stored on
-/// `cfg` so the running instance uses it. Returns the freshly generated
-/// password so the caller can surface it to the user, or `None` when a
-/// credential already existed.
-pub fn ensure_web_mirror_password(
-    cfg: &mut super::Config,
-    path: &std::path::Path,
-) -> Result<Option<String>> {
-    if cfg.web_mirror.has_credential() {
-        return Ok(None);
-    }
-    let password = generate_password()?;
-    persist_password(path, WEB_MIRROR_TABLE, &password)
-        .with_context(|| format!("persisting generated web password to {}", path.display()))?;
-    cfg.web_mirror.password = Some(password.clone());
-    Ok(Some(password))
-}
-
-/// Same bootstrap for the viewer's own `[web_viewer]` credential. The viewer
-/// gets a *separate* password rather than sharing the mirror's: the two
-/// servers already run on separate ports with separate cookies, and one
-/// credential granting both would make that separation cosmetic.
+/// Ensure the enabled viewer has a login credential, generating and persisting
+/// one when the config has none. A no-op when a `password` or `hashed_password`
+/// is already set. Otherwise a random password is generated, written back into
+/// the config file at `path` (creating it if absent, preserving any existing
+/// content and comments), and stored on `cfg` so the running instance uses it.
+/// Returns the freshly generated password so the caller can surface it to the
+/// user, or `None` when a credential already existed.
 pub fn ensure_web_viewer_password(
     cfg: &mut super::Config,
     path: &std::path::Path,

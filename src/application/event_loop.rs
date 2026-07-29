@@ -2,7 +2,6 @@ pub(crate) use crate::application::input::dispatch::ProjectContext;
 use crate::application::input::dispatch::{KeyOutcome, ProjectRequest, dispatch_key};
 use crate::application::input::mouse::dispatch_mouse;
 use crate::application::input::paste::dispatch_paste;
-use crate::cli::WebSurfaces;
 use crate::workspace::Workspace;
 use crossterm::event::{self, Event};
 use ratatui::layout::Rect;
@@ -19,12 +18,8 @@ pub(crate) fn main_loop(
     ts: &ThemeSet,
     cfg: &crate::config::Config,
     ctx: &ProjectContext,
-    surfaces: WebSurfaces,
+    viewer: Option<crate::web::viewer::server::ViewerServer>,
 ) -> anyhow::Result<()> {
-    let WebSurfaces {
-        mirror: mut web_server,
-        viewer,
-    } = surfaces;
     // Signature of the repository set last handed to the viewer. The catalog
     // only needs updating when a tab opens or closes, not every frame.
     let mut served_repos: Vec<String> = Vec::new();
@@ -106,33 +101,20 @@ pub(crate) fn main_loop(
             .as_ref()
             .map(|app| app.current_accent())
             .unwrap_or(fallback_accent);
-        let mut cursor = None;
-        let completed = terminal.draw(|frame| {
-            cursor = match app_opt {
-                Some(app) => crate::ui::draw(frame, app, tabs, ss, ts, &cfg.layout, accent),
-                None => {
-                    crate::ui::draw_empty(
-                        frame,
-                        tabs,
-                        empty_notice.as_ref(),
-                        ctx.leader,
-                        prefix_armed,
-                        cfg.mouse.enabled,
-                        accent,
-                    );
-                    None
-                }
-            };
+        terminal.draw(|frame| match app_opt {
+            Some(app) => {
+                crate::ui::draw(frame, app, tabs, ss, ts, &cfg.layout, accent);
+            }
+            None => crate::ui::draw_empty(
+                frame,
+                tabs,
+                empty_notice.as_ref(),
+                ctx.leader,
+                prefix_armed,
+                cfg.mouse.enabled,
+                accent,
+            ),
         })?;
-
-        // Mirror the freshly composited frame to any connected browsers. Use the
-        // buffer returned by `draw` — after it swaps buffers, `current_buffer_mut`
-        // points at the next (reset) frame, not the one just rendered. The local
-        // terminal stays the authority for the grid size; the web view renders
-        // the exact same cells.
-        if let Some(server) = web_server.as_mut() {
-            server.broadcast(completed.buffer, cursor);
-        }
 
         // `tabs` above borrows the workspace for the draw; input needs it
         // mutably, so rebuild the same view over a snapshot of the dialog.
@@ -171,55 +153,6 @@ pub(crate) fn main_loop(
                 }
                 _ => {}
             }
-        }
-
-        // Browser input runs through the exact same handlers as local input, so
-        // a web action can never diverge from the equivalent local keypress.
-        if let Some(server) = web_server.as_ref() {
-            let screen = Rect::new(0, 0, size.width, size.height);
-            for event in server.drain_input() {
-                // Rebuilt per event, not reused from the frame: an earlier
-                // event in this batch (or the local input above) may have
-                // opened, closed, or switched a project, and a tab hit-test
-                // against the stale row would select the wrong one.
-                let tab_paths: Vec<String> =
-                    ws.projects().iter().map(|p| p.repo_path.clone()).collect();
-                let active_tab = ws.active_index();
-                let repo_input = ws.repo_input.clone();
-                let tabs = crate::ui::Chrome {
-                    repo_paths: &tab_paths,
-                    active: active_tab,
-                    repo_input: &repo_input,
-                };
-                let outcome =
-                    dispatch_web_event(ws, tabs, event, screen, &cfg.layout, cfg.mouse.enabled);
-                if apply_outcome(terminal, ws, ctx, outcome)? {
-                    return Ok(());
-                }
-            }
-        }
-    }
-}
-
-/// Route a decoded browser input event through the same handlers as local
-/// input. Keeps web and terminal control behaviourally identical.
-fn dispatch_web_event(
-    ws: &mut Workspace,
-    tabs: crate::ui::Chrome<'_>,
-    event: crate::web::protocol::WebInputEvent,
-    screen: Rect,
-    layout: &crate::config::LayoutConfig,
-    mouse_enabled: bool,
-) -> KeyOutcome {
-    use crate::web::protocol::WebInputEvent;
-    match event {
-        WebInputEvent::Key(key) => dispatch_key(ws, key),
-        WebInputEvent::Mouse(mouse) => {
-            dispatch_mouse(ws, tabs, mouse, screen, layout, mouse_enabled)
-        }
-        WebInputEvent::Paste(text) => {
-            dispatch_paste(ws, &text);
-            KeyOutcome::Continue
         }
     }
 }

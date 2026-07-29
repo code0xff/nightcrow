@@ -189,10 +189,6 @@ pub fn response(
     out
 }
 
-pub fn html(status: &str, body: &str) -> Vec<u8> {
-    response(status, "text/html; charset=utf-8", &[], body.as_bytes())
-}
-
 pub fn redirect(location: &str, extra_headers: &[(&str, &str)]) -> Vec<u8> {
     let mut headers = vec![("Location", location)];
     headers.extend_from_slice(extra_headers);

@@ -67,24 +67,6 @@ max_depth = 64            # deepest directory level the tree will expand into (1
 live_watch = true         # watch expanded dirs and refresh the tree live; set false
                           # to refresh only on tree entry (large trees / odd filesystems)
 
-[web_mirror]
-# Web mirror: serve a live, controllable view of this nightcrow in a browser.
-# The browser and the local terminal drive the SAME session and stay in sync.
-# Off by default — enabling it grants remote control of a shell, so treat the
-# bind address and password as security-sensitive.
-enabled = false           # turn the web server on
-bind = "127.0.0.1"        # loopback only by default; set "0.0.0.0" deliberately.
-                          # The server speaks plain HTTP — for remote access
-                          # prefer an SSH tunnel or a TLS reverse proxy.
-port = 8090
-# Login password. If the web server is enabled and no password is set here, a
-# random one is generated and written back to this line on first launch (and
-# printed to the log) so it survives restarts and stays readable.
-# password = "..."
-# Alternatively store an Argon2 PHC hash instead of a plaintext password; it
-# takes precedence over `password` when both are present.
-# hashed_password = "$argon2id$v=19$m=..."
-
 # Reserve startup commands: each [[startup_command]] opens its own terminal
 # pane and runs `command` immediately (via `$SHELL -lc <command>`). Panes are
 # per project, so these run again for every project tab you open, not once
@@ -106,11 +88,19 @@ port = 8090
 # command = "cargo test --watch"
 
 # Native web viewer: renders git data as a real web page and serves its own
-# terminals, separate from the mirror above. Also available without the TUI as
-# `nightcrow serve --repo <path>`.
+# terminals. Also available without the TUI as `nightcrow serve --repo <path>`.
+# Off by default — enabling it exposes repository contents and interactive
+# shells, so treat the bind address and password as security-sensitive.
 [web_viewer]
 enabled = false
-bind = "127.0.0.1"
+bind = "127.0.0.1"        # loopback only by default; set "0.0.0.0" deliberately.
+                          # The server speaks plain HTTP — for remote access
+                          # prefer an SSH tunnel or a TLS reverse proxy.
 port = 8091
-# password = "..."         # generated and written here on first launch if unset
-# hashed_password = "..."  # Argon2 PHC string; takes precedence over password
+# Login password. If the viewer is enabled and no password is set here, a random
+# one is generated and written back to this line on first launch (and printed on
+# startup) so it survives restarts and stays readable.
+# password = "..."
+# Alternatively store an Argon2 PHC hash instead of a plaintext password; it
+# takes precedence over `password` when both are present.
+# hashed_password = "$argon2id$v=19$m=..."

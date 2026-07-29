@@ -33,8 +33,7 @@ use workspace::Workspace;
 
 use crate::application::splash::SplashOutcome;
 use crate::cli::{
-    Cli, Commands, WebSurfaces, log_anchor_for, resolve_repo_paths, run_init, run_serve,
-    start_viewer_if_enabled, start_web_if_enabled,
+    Cli, Commands, log_anchor_for, resolve_repo_paths, run_init, run_serve, start_viewer_if_enabled,
 };
 
 fn main() -> Result<()> {
@@ -50,10 +49,6 @@ fn main() -> Result<()> {
     }
 
     let mut cfg = config::load_config()?;
-    // Bootstrap the web login credential and start the server before the
-    // alternate screen, so a freshly generated password and any bind error
-    // print as plain, copyable stderr text rather than flashing behind the TUI.
-    let web_server = start_web_if_enabled(&mut cfg)?;
     // Resolve before entering the alternate screen so a too-many-panes error
     // surfaces as plain stderr text rather than a flash behind the TUI.
     let startup_commands = config::resolve_startup_commands(&cfg, &cli.exec)?;
@@ -67,10 +62,7 @@ fn main() -> Result<()> {
     // The viewer needs the resolved repository list, so it starts after it is
     // built — still before the alternate screen, so its generated password and
     // any bind error stay readable on stderr.
-    let surfaces = WebSurfaces {
-        mirror: web_server,
-        viewer: start_viewer_if_enabled(&mut cfg, &repo_paths)?,
-    };
+    let viewer = start_viewer_if_enabled(&mut cfg, &repo_paths)?;
 
     // Logs live under a repo by default, so with no project the first one
     // named on the command line stands in; with none at all, the working
@@ -104,7 +96,7 @@ fn main() -> Result<()> {
         cfg,
         startup_commands,
         leader,
-        surfaces,
+        viewer,
     )
 }
 
@@ -164,7 +156,7 @@ fn run(
     cfg: config::Config,
     startup_commands: Vec<config::StartupCommand>,
     leader: crossterm::event::KeyEvent,
-    surfaces: WebSurfaces,
+    viewer: Option<web::viewer::server::ViewerServer>,
 ) -> Result<()> {
     // syntect's bundled defaults omit TypeScript/TSX/TOML/YAML; two-face
     // supplies bat's expanded syntax set (newline variant matches the diff /
@@ -263,7 +255,7 @@ fn run(
         tracing::info!("nightcrow stopped during splash");
         return Ok(());
     }
-    main_loop(terminal, &mut ws, &ss, &ts, &cfg, &ctx, surfaces)?;
+    main_loop(terminal, &mut ws, &ss, &ts, &cfg, &ctx, viewer)?;
 
     // Every open project gets its session written, not just the active one:
     // sessions are stored per repo (`<repo>/.nightcrow/session.json`), so a

@@ -14,9 +14,7 @@ pub use log::{LogConfig, LogRotation};
 pub use panels::{AgentIndicatorConfig, MouseConfig, TreeConfig};
 #[cfg(test)]
 pub use web::generate_password;
-pub use web::{
-    WebMirrorConfig, WebViewerConfig, ensure_web_mirror_password, ensure_web_viewer_password,
-};
+pub use web::{WebViewerConfig, ensure_web_viewer_password};
 
 /// Upper bound on the number of `[[startup_command]]` + `--exec` panes opened
 /// at launch. The value matches the `F3`..`F10` / `<prefix> 3`..`9`,`0` jump-key
@@ -37,7 +35,6 @@ pub struct Config {
     pub input: InputConfig,
     pub tree: TreeConfig,
     pub mouse: MouseConfig,
-    pub web_mirror: WebMirrorConfig,
     pub web_viewer: WebViewerConfig,
     /// Commands launched in their own terminal pane at startup, in order.
     /// Maps from TOML `[[startup_command]]` array-of-tables. Empty by
@@ -166,18 +163,18 @@ pub fn validate_config(cfg: &Config) -> Result<()> {
     );
     // The web server only needs a valid bind/port when it is enabled; a
     // disabled section is never acted on, so leave its fields unchecked.
-    if cfg.web_mirror.enabled {
+    if cfg.web_viewer.enabled {
         anyhow::ensure!(
-            cfg.web_mirror.port != 0,
-            "web_mirror.port must be non-zero when web_mirror.enabled"
+            cfg.web_viewer.port != 0,
+            "web_viewer.port must be non-zero when web_viewer.enabled"
         );
-        cfg.web_mirror
+        cfg.web_viewer
             .bind
             .parse::<std::net::IpAddr>()
             .with_context(|| {
                 format!(
-                    "web_mirror.bind \"{}\" is not a valid IP address",
-                    cfg.web_mirror.bind
+                    "web_viewer.bind \"{}\" is not a valid IP address",
+                    cfg.web_viewer.bind
                 )
             })?;
     }

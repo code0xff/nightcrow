@@ -269,46 +269,12 @@ A bare `nightcrow` reopens those tabs and lands on the one that was in front, wi
 
 Passing `--repo` overrides the remembered tab list — it names the repo you want, so restoring extra tabs beside it would be surprising. Each repo's view state is still restored. To start empty, close every tab before quitting: that records an empty list, which is what the next launch restores.
 
-## Web mirror
-
-nightcrow can serve a live, controllable view of itself in a browser. The
-browser and the local terminal drive the **same** session and stay in sync —
-type on either side, watch both update. It is off by default; enable it under
-`[web_mirror]`:
-
-```toml
-[web_mirror]
-enabled = true
-bind = "127.0.0.1"   # loopback only; change deliberately
-port = 8090
-# password = "..."   # auto-generated and written here on first launch if unset
-```
-
-On launch nightcrow prints the address (e.g. `http://127.0.0.1:8090/`). Open it,
-sign in with the password, and the page renders the exact TUI — file list, diff,
-commit log, and terminal panes — via [xterm.js](https://xtermjs.org/). Keyboard,
-mouse, and paste all work: the leader chord, focus jumps, terminal input, and
-pane clicks behave identically to the local terminal because browser input runs
-through the same handlers. The local terminal stays the authority for the grid
-size; the browser scales that grid to fit its window.
-
-**Authentication.** If no `password` is set when the server is enabled, a random
-one is generated and written back into your config (so it survives restarts and
-stays readable) and printed once at startup. To avoid a plaintext password on
-disk, set `hashed_password` to an Argon2 PHC string instead — it takes
-precedence. Login is rate-limited and grants a session cookie.
-
-> **Security.** Enabling the web mirror grants live control of a shell. It binds
-> to loopback (`127.0.0.1`) by default and speaks plain HTTP with **no built-in
-> TLS**. For remote access, do **not** expose the port directly — tunnel it over
-> SSH (`ssh -L 8090:127.0.0.1:8090 host`) or put it behind a TLS reverse proxy.
-
 ## Web viewer
 
-A second, different browser surface: instead of mirroring the TUI's screen, it
-renders the same git data as a native web page — selectable text, real
-scrolling, clickable paths, and a layout that adapts to a phone (see below). It
-also serves its **own** terminals, independent of the TUI's panes.
+A browser surface that renders the same git data as a native web page —
+selectable text, real scrolling, clickable paths, and a layout that adapts to a
+phone (see below). It also serves its **own** terminals, independent of the
+TUI's panes.
 
 The served repositories appear as project tabs in the header — `+ open` browses
 the server machine's folders to add one, `×` closes it, and dragging a tab
@@ -422,20 +388,17 @@ browser are written back to `~/.nightcrow/workspace.json`. Because the server
 never touches the TUI's state, it needs no terminal — which is what makes this
 mode possible.
 
-**Mirror or viewer?** The mirror is for *driving* nightcrow remotely: it is the
-same session, so what you type appears on both screens. The viewer is for
-*reading* a repository comfortably in a browser, with terminals of its own. They
-run on separate ports with separate passwords and separate session cookies, and
-either can be enabled without the other.
-
-**Authentication.** `[web_viewer]` has its own credential, generated and written
-back on first launch exactly like `[web_mirror]`. A mirror session does not
-authenticate against the viewer, or the reverse.
+**Authentication.** If no `password` is set when the viewer is enabled, a random
+one is generated and written back into your config (so it survives restarts and
+stays readable) and printed once at startup. To avoid a plaintext password on
+disk, set `hashed_password` to an Argon2 PHC string instead — it takes
+precedence. Login is rate-limited and grants a session cookie.
 
 > **Security.** The viewer serves repository contents *and* interactive
-> terminals, so an authenticated session is equivalent to shell access. The same
-> rules as the mirror apply: loopback by default, no built-in TLS, and remote
-> access belongs behind an SSH tunnel or a TLS reverse proxy.
+> terminals, so an authenticated session is equivalent to shell access. It binds
+> to loopback (`127.0.0.1`) by default and speaks plain HTTP with **no built-in
+> TLS**. For remote access, do **not** expose the port directly — tunnel it over
+> SSH (`ssh -L 8091:127.0.0.1:8091 host`) or put it behind a TLS reverse proxy.
 
 ### Developing the frontend
 
@@ -484,18 +447,11 @@ enabled = true       # capture the mouse: click to focus/forward, wheel scrolls
                      # Option in iTerm2, Fn/Option in macOS Terminal.app).
                      # false = plain-drag selection, no click forwarding.
 
-[web_mirror]
-enabled = false      # serve a live, controllable mirror in a browser (off by default)
-bind = "127.0.0.1"   # loopback only by default; plain HTTP, so tunnel/proxy for remote
-port = 8090
-# password = "..."         # auto-generated + saved here on first launch if unset
-# hashed_password = "..."  # Argon2 PHC string; takes precedence over `password`
-
 [web_viewer]
 enabled = false      # serve the native web viewer (off by default)
-bind = "127.0.0.1"   # loopback only by default
+bind = "127.0.0.1"   # loopback only by default; plain HTTP, so tunnel/proxy for remote
 port = 8091
-# password = "..."         # separate credential from the mirror above
+# password = "..."         # auto-generated + saved here on first launch if unset
 # hashed_password = "..."  # Argon2 PHC string; takes precedence over `password`
 
 [log]

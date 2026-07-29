@@ -10,7 +10,7 @@ nightcrow 자체는 AI에 대한 ontology를 갖지 않는다 — agent든 사�
 
 **핵심 기능**: 멀티 프로젝트 탭(최대 10개 저장소, 프로젝트별 git 뷰 + 터미널 pane), 변경 파일 리스트(좌측/키보드 네비게이션), git diff 뷰어(우측/문법 하이라이팅), commit log 뷰, read-only 파일 트리 내비게이터(라이브 워치 + 재귀 파일명 검색 + 마크다운·HTML 렌더 뷰), split-view 멀티 PTY 패널(하단), mtime 기반 hot-file 강조 + idle auto-follow, OSC 0/2 탭 타이틀 캡처, 마우스 캡처(클릭 포커스/포워딩, 휠 라우팅, 클릭 가능한 힌트 바).
 
-**선택적 웹 표면 두 가지**: TUI 화면을 그대로 반사해 원격 조작까지 받는 웹 미러(`[web_mirror]`)와, 같은 git 데이터를 DOM으로 렌더하고 자기 터미널 세션을 갖는 웹 뷰어(`[web_viewer]` / TUI 없이 `nightcrow serve`). 둘은 포트·쿠키·비밀번호를 공유하지 않는다.
+**선택적 웹 표면**: 같은 git 데이터를 DOM으로 렌더하고 자기 터미널 세션을 갖는 웹 뷰어(`[web_viewer]` / TUI 없이 `nightcrow serve`). TUI와 포트·쿠키·비밀번호를 공유하지 않는다.
 
 ## Layout
 
@@ -57,7 +57,7 @@ below for the layout and resize rules.
 ```
 src/
 ├── main.rs               # entry point, TerminalGuard, run()
-├── cli.rs                # Cli/Commands, run_init/run_serve, web surface bootstrap
+├── cli.rs                # Cli/Commands, run_init/run_serve, viewer bootstrap
 ├── test_util.rs          # #[cfg(test)] git fixture helpers shared across modules
 ├── application/          # native TUI process orchestration
 │   ├── bootstrap.rs      # single-project App construction + startup commands
@@ -159,28 +159,24 @@ src/
 │   ├── mod.rs            # Action enum, pub use re-exports
 │   ├── routing.rs        # map_key, prefix_action, prefix_action_fullscreen, vim j/k
 │   └── encode.rs         # encode_key, encode_wheel/button/arrow, CSI/SS3 helpers
-└── web/                  # optional browser mirror ([web_mirror] enabled) — see "Web Mirror"
+└── web/                  # optional browser surface — see "Web Viewer"
     ├── mod.rs            # module root
-    ├── common/           # server-agnostic primitives (no frames, git, or terminals)
-    │   ├── mod.rs        # html_escape
+    ├── common/           # server-agnostic primitives (no git or terminals)
+    │   ├── mod.rs        # module root
     │   ├── auth.rs       # Argon2 password verify, session tokens, login rate limit
     │   ├── http.rs       # minimal HTTP request parse (path + query) + response builders
     │   ├── sse.rs        # SseStream: streaming text/event-stream responses
     │   └── conn.rs       # ConnectionSlot: accept-loop connection accounting
-    ├── viewer/           # native web viewer ([web_viewer] / `serve`) — see "Web Viewer"
-    │   ├── limits.rs     # ceilings: log page, tree entries, diff bytes/lines, PTYs
-    │   ├── dto/          # whitelisted wire types + PROTOCOL_VERSION envelope
-    │   ├── catalog/      # opaque repo ids, atomic swap, per-repo entries
-    │   ├── runtime/      # per-repo thread: SnapshotChannel drain + conflated SSE fan-out
-    │   ├── terminal/     # per-repo TerminalHub owning its own PtyBackend
-    │   ├── highlight.rs  # syntect/two-face highlight spans for diff + file payloads
-    │   ├── prefs/        # ~/.nightcrow/viewer.json: accent, sidebar width, active project
-    │   ├── server/       # HTTP routes, SSE, /ws/term
-    │   └── assets.rs     # rust-embed of viewer-ui/dist + CSP
-    ├── protocol/         # Buffer→ANSI frame encode, JSON→crossterm input decode
-    ├── server/           # sync accept/connection threads, broadcast, WS upgrade
-    ├── frontend.rs       # embedded page assets
-    └── frontend/         # login.html, app.html, vendor/xterm.{js,css}
+    └── viewer/           # native web viewer ([web_viewer] / `serve`)
+        ├── limits.rs     # ceilings: log page, tree entries, diff bytes/lines, PTYs
+        ├── dto/          # whitelisted wire types + PROTOCOL_VERSION envelope
+        ├── catalog/      # opaque repo ids, atomic swap, per-repo entries
+        ├── runtime/      # per-repo thread: SnapshotChannel drain + conflated SSE fan-out
+        ├── terminal/     # per-repo TerminalHub owning its own PtyBackend
+        ├── highlight.rs  # syntect/two-face highlight spans for diff + file payloads
+        ├── prefs/        # ~/.nightcrow/viewer.json: accent, sidebar width, active project
+        ├── server/       # HTTP routes, SSE, /ws/term
+        └── assets.rs     # rust-embed of viewer-ui/dist + CSP
 ```
 
 ## Key Design Decisions
@@ -472,25 +468,19 @@ hint bar는 오버레이(repo 입력·prefix armed·swap target)가 열리면 �
 
 snapshot worker는 매 폴 사이클마다 현재 HEAD oid를 함께 보고한다. UI 스레드는 `poll_snapshot`에서 oid 변동을 감지하면 `refresh_commit_log_after_head_change`로 commit log와 drill-down 상태를 동일 oid 기준으로 재정렬해, 터미널에서 새 커밋·amend·force-push·브랜치 전환이 일어났을 때도 로그 뷰가 즉시 따라잡는다.
 
-### Web Mirror (`src/web/`)
+### 공용 웹 계층 (`src/web/common/`)
 
-`[web_mirror] enabled`이면 nightcrow는 자기 화면을 브라우저에 미러링하고 양방향 제어를 받는 HTTP/WebSocket 서버를 함께 띄운다. 브라우저와 로컬 터미널은 **같은 세션**을 구동하며 실시간으로 동기화된다. async 런타임을 도입하지 않는다 — 동기 서버가 별도 스레드에서 돌고 채널로만 메인 루프와 통신한다.
+인증·HTTP 프레이밍·SSE·연결 회계는 뷰어가 무엇을 서빙하는지와 무관한 프리미티브라
+`common/`에 분리해 둔다. git 데이터도 터미널도 전혀 모르는 계층이며, 웹 표면이 하나
+더 생기더라도 공유는 정확히 여기까지다.
 
-- **단일 그리드 = 단일 권위**: nightcrow 화면 전체가 ratatui가 합성한 하나의 `Buffer`(셀 격자)다. 웹에는 이 격자를 그대로 보낸다. **그리드 크기의 권위는 로컬 tty 하나**다(ratatui가 `terminal.size()`로 렌더). 웹은 프레임에 실린 (cols,rows)에 xterm.js를 맞추고 창에 스케일해 letterbox한다 — 두 클라이언트가 크기를 두고 다투는 smallest-common-size 문제가 없다.
-- **출력 (`protocol::encode_*`)**: ratatui의 `CrosstermBackend`를 그대로 재사용해 `Buffer`를 ANSI로 인코딩한다. 로컬 터미널이 받는 바이트와 **바이트 단위로 동일**하다. 신규 접속자에겐 full frame(빈 버퍼와 diff), 그 외엔 직전 브로드캐스트 버퍼와의 셀 diff만 보낸다. crossterm의 `draw`가 매 호출 끝에 스타일을 리셋하므로 프레임을 이어 붙여도 xterm.js 상태가 어긋나지 않는다.
-  - **커서는 셀이 아니다**: 터미널 패널의 커서는 `Buffer`가 아니라 `frame.set_cursor_position`으로 로컬 터미널에 직접 적용된다. 따라서 `ui::draw`가 자신이 놓은 커서 셀을 `Option<Position>`으로 돌려주고, 미러는 매 청크 끝에 `protocol::encode_cursor`로 이를 재생한다(있으면 이동+표시, 없으면 숨김). 셀 변화가 전혀 없어도 커서만 움직인 프레임은 전송해야 하므로 서버는 `baseline_cursor`를 따로 추적한다.
-  - **주의(버퍼 스왑)**: `terminal.draw()`는 반환 전에 버퍼를 스왑하므로 직후의 `current_buffer_mut()`는 다음(리셋된) 프레임을 가리킨다. 방금 그린 프레임은 `draw()`가 돌려주는 `CompletedFrame.buffer`다 — 미러는 이 쪽을 브로드캐스트해야 한다.
-- **입력 (`protocol::decode_input`)**: 브라우저는 특수/ASCII 키를 **구조화 JSON 이벤트**로 보내고(VT 역파싱 대신), 서버가 crossterm `KeyEvent`/`MouseEvent`/paste로 낮춰 `mpsc`로 메인 루프에 넣는다. 메인 루프는 이를 로컬 입력과 **동일한 `handle_key`/`handle_mouse`/`handle_paste`**로 디스패치한다 — 웹 동작이 로컬 키와 갈라질 수 없다(leader/prefix/focus 라우팅 전부 공유). 한글 등 IME 조합 텍스트는 `compositionend`에서 paste 이벤트로 전달된다.
-- **서버 (`server.rs`)**: accept 스레드가 연결마다 handler 스레드를 하나 띄운다. 프레임(출력)은 클라이언트별 채널로, 입력은 공용 `mpsc`로 메인 루프와 오간다 — **`App`은 스레드 간에 공유되지 않고** 바이트와 디코드된 이벤트만 경계를 넘는다. handler 스레드는 소켓에 read timeout을 걸어 같은 스레드에서 읽기(입력)와 큐된 쓰기(프레임)를 번갈아 처리한다. WebSocket 업그레이드는 요청 head를 라우팅/인증에 쓴 뒤 직접(`derive_accept_key` + 101 응답) 완료하고 `from_raw_socket`으로 넘긴다.
-  연결 수는 `MAX_CONNECTIONS`(64)로 제한한다 — 연결마다 스레드가 하나씩 붙으므로 상한이 없으면 포트에 닿을 수 있는 누구나 프로세스를 고갈시킬 수 있다. 상한 초과분은 accept 루프에서 소켓을 닫는다(거기서 503을 쓰면 멈춘 클라이언트 하나가 뒤의 모든 연결을 막는다). 슬롯은 `common::conn::ConnectionSlot`의 `Drop`으로 반납돼 장수하는 WS handler와 조기 에러 반환 양쪽에서 새지 않는다.
-- **스트리밍 응답 (`common/sse.rs`)**: `http::response`는 항상 `Content-Length`와 `Connection: close`를 실고 `handle_connection`은 응답 1회 후 반환하므로, 소켓을 열어 둔 채 이벤트를 덧붙일 경로가 없다. `SseStream`은 자기 헤드를 직접 쓰고 그 시점부터 연결을 소유한다. 매 쓰기마다 flush하며(버퍼에 남은 이벤트는 전달된 이벤트가 아니다), 쓰기 실패를 그대로 전파한다 — 닫힌 탭은 다음 쓰기가 실패할 때만 알 수 있다. event 이름에 개행이 있으면 거부한다(SSE 필드 위조 가능). data는 개행마다 `data:` 라인으로 쪼개므로 별도 방어가 필요 없다. 미러는 SSE 라우트를 갖지 않는다 — 유일한 소비자는 뷰어의 `GET /api/events`다.
-- **공용 계층 (`common/`)**: 인증·HTTP 프레이밍·연결 회계는 미러 고유 로직이 아니므로 분리해 둔다. 화면 프레임·git 데이터·터미널을 전혀 모르는 계층이며, 웹 뷰어("Web Viewer" 절)가 미러와 공유하는 것은 정확히 이 계층까지다.
-- **인증 (`common/auth.rs`)**: 비밀번호를 Argon2로 검증한다(code-server와 동일 방식). 평문 `password`는 시작 시 메모리에서 해시하고, `hashed_password`(PHC)가 있으면 그쪽이 우선한다. 로그인은 rate-limit(2/분 + 14/시간)되고 성공 시 httpOnly 세션 쿠키를 발급한다. 기본 바인딩은 loopback이며 **TLS는 없다** — 원격은 SSH 터널/리버스 프록시로 감싼다. 서버 활성 시 비밀번호가 없으면 랜덤 생성해 config에 기록하고(주석 보존) 시작 시 1회 출력한다.
-- **프론트엔드 (`frontend/`)**: 벤더링한 xterm.js 5.5.0(MIT)이 셀을 렌더한다. 별도 빌드 파이프라인 없이 `include_str!`로 바이너리에 임베드돼 오프라인·자기완결이다. 로그인 페이지와 터미널 페이지는 손 CSS로 neutral 다크 하우스 룩을 맞춘다.
+- **인증 (`common/auth.rs`)**: 비밀번호를 Argon2로 검증한다(code-server와 동일 방식). 평문 `password`는 시작 시 메모리에서 해시하고, `hashed_password`(PHC)가 있으면 그쪽이 우선한다. 로그인은 rate-limit(2/분 + 14/시간)되고 성공 시 httpOnly 세션 쿠키를 발급한다. **쿠키 이름은 서버가 정한다** — 같은 호스트의 다른 서버가 여기서 발급한 세션으로 인증되면 안 되므로, 이름을 이 계층에 두지 않는다. 기본 바인딩은 loopback이며 **TLS는 없다** — 원격은 SSH 터널/리버스 프록시로 감싼다. 서버 활성 시 비밀번호가 없으면 랜덤 생성해 config에 기록하고(주석 보존) 시작 시 1회 출력한다.
+- **스트리밍 응답 (`common/sse.rs`)**: `http::response`는 항상 `Content-Length`와 `Connection: close`를 실으므로, 소켓을 열어 둔 채 이벤트를 덧붙일 경로가 없다. `SseStream`은 자기 헤드를 직접 쓰고 그 시점부터 연결을 소유한다. 매 쓰기마다 flush하며(버퍼에 남은 이벤트는 전달된 이벤트가 아니다), 쓰기 실패를 그대로 전파한다 — 닫힌 탭은 다음 쓰기가 실패할 때만 알 수 있다. event 이름에 개행이 있으면 거부한다(SSE 필드 위조 가능). data는 개행마다 `data:` 라인으로 쪼개므로 별도 방어가 필요 없다. 유일한 소비자는 뷰어의 `GET /api/events`다.
+- **연결 회계 (`common/conn.rs`)**: 연결마다 스레드가 하나씩 붙으므로 상한이 없으면 포트에 닿을 수 있는 누구나 프로세스를 고갈시킬 수 있다. 상한 초과분은 accept 루프에서 소켓을 닫는다(거기서 503을 쓰면 멈춘 클라이언트 하나가 뒤의 모든 연결을 막는다). 슬롯은 `ConnectionSlot`의 `Drop`으로 반납돼 장수하는 WS handler와 조기 에러 반환 양쪽에서 새지 않는다.
 
 ### Web Viewer (`src/web/viewer/`, `viewer-ui/`)
 
-미러가 TUI 화면을 그대로 반사하는 것과 달리, 뷰어는 **같은 데이터 계층을 읽어 DOM으로 렌더하는 두 번째 프론트엔드**다. `App`/`ui`/`input`을 전혀 참조하지 않으며, 그래서 TUI 없이도(`nightcrow serve`) 동작한다. 별도 포트·별도 쿠키·별도 비밀번호를 쓴다 — 셋 중 하나라도 공유하면 분리가 형식적인 것이 된다.
+뷰어는 TUI와 **같은 데이터 계층을 읽어 DOM으로 렌더하는 두 번째 프론트엔드**다. `App`/`ui`/`input`을 전혀 참조하지 않으며, 그래서 TUI 없이도(`nightcrow serve`) 동작한다. TUI와 별도 포트·별도 쿠키·별도 비밀번호를 쓴다.
 
 `viewer-ui/src`는 화면 조립과 재사용 단위를 분리한다. `pages/`는 화면 조립,
 `components/`는 재사용 UI(terminal/content/feedback 하위 도메인 포함), `hooks/`는
@@ -499,8 +489,8 @@ UI·터미널·저장소 상태, `lib/`는 API 이외의 순수 도메인/레이
 도메인 훅이 쥔다 — 서로만 주고받는 ref들을 App에 늘어놓으면 그 handshake가
 조립 코드에 섞여 하나를 빠뜨렸을 때 원인이 보이지 않는다(`useViewerPrefs`는
 로컬 설정과 폴링 채택을 막는 write 카운터, `useProjectTabs`는 저장소 폴링과
-순서 변경이 공유하는 in-flight·drag·pending ref). `public/`의 SVG는 웹 미러가 `include_str!`로
-직접 포함하는 정적 자산이므로 번들 소스와 분리해 유지한다. `api/`는 서버 wire
+순서 변경이 공유하는 in-flight·drag·pending ref). `public/`의 SVG는 번들이 참조하는 정적 자산이라
+소스와 분리해 유지한다. `api/`는 서버 wire
 계약과 HTTP 클라이언트를 별도로 유지한다.
 
 - **요청 처리 순서가 설계다** (`viewer/server.rs`): ① Host → ② Origin → ③ 정적 번들(인증 불필요) → ④ 인증 → ⑤ 저장소 조회 → ⑥ 경로 검증. Host 검사가 Origin보다 앞이자 별개인 이유: `origin_allowed`는 Origin과 Host가 *일치한다*는 것만 증명하는데, DNS rebinding 공격자는 둘 다 통제하므로 그 조건을 자명하게 만족시킨다. loopback 바인딩일 때 non-loopback Host를 거부해야 rebinding으로 얻는 same-origin 발판이 막힌다(off-loopback이면 운영자가 네트워크 경로를 책임지므로 적용하지 않는다). 인증을 조회보다 **먼저** 하는 이유는, 그러지 않으면 미인증 클라이언트가 404와 401을 비교해 존재하는 repo id를 열거할 수 있기 때문이다. 정적 번들이 인증 앞에 오는 이유는 그것이 로그인 폼을 그리는 주체이기 때문 — 게이팅하면 로그인할 방법 자체가 사라진다.
@@ -583,7 +573,7 @@ Ratatui 레이어와 내부 TUI 간 키보드 이벤트 충돌은 leader(prefix)
 | 설정 파싱 | toml 0.8 + serde |
 | 세션 저장 | serde_json |
 | CLI args | clap 4 (derive) |
-| 웹 미러 서버 | tungstenite 0.29 (sync WS) + argon2 + getrandom, 브라우저는 벤더링한 xterm.js 5.5 |
+| 웹 서버 | tungstenite 0.30 (sync WS) + argon2 + getrandom |
 | 웹 뷰어 번들 임베드 | rust-embed 8 (`viewer-ui/dist`) |
 | 웹 뷰어 프론트엔드 | React 19 + TypeScript 7 + Vite 8 + Tailwind v4 + `@xterm/xterm` 6, 마크다운은 react-markdown(+remark-gfm, rehype-highlight) |
 
@@ -603,10 +593,10 @@ PTY 관리는 portable-pty 기반 `PtyBackend` 단일 구현으로 정리됐다.
 - 터미널 fullscreen 3-state 사이클(Off → Grid → Zoom) + pane swap(`<prefix> s`) + layout-aware jump/swap digit 재매핑
 - 터미널 에뮬레이터 교체: vt100 → alacritty_terminal(쿼리 응답, resize reflow, wide-char 크래시 해소)
 - scroll/mouse routing: 프로그램이 켠 모드 기반 스크롤 싱크 판정, config-gated 마우스 캡처(클릭 포커스/SGR 포워딩), 클릭 가능한 힌트 바·탭 바
-- 웹 미러(`[web_mirror]`): 동기 WS/HTTP 서버로 화면을 브라우저에 미러링하고 로컬 터미널과 양방향 동기화(`Buffer`→ANSI 재사용, 구조화 입력을 기존 핸들러로 라우팅, Argon2 로그인 + 세션 쿠키, 벤더링 xterm.js)
 - 멀티 프로젝트: 한 프로세스가 저장소 10개를 탭으로 열고(`Workspace` = `Vec<App>`, F1–F10), 세션을 `~/.nightcrow/workspace.json` 한 파일로 통합
-- 웹 뷰어(`[web_viewer]` / `nightcrow serve`): 미러와 별개 포트·쿠키·비밀번호로, 같은 git 데이터를 DOM으로 렌더하는 두 번째 프론트엔드(React 19 + Vite + Tailwind v4, SSE 스냅샷 팬아웃, 저장소별 독립 PTY 세션)
+- 웹 뷰어(`[web_viewer]` / `nightcrow serve`): TUI와 별개 포트·쿠키·비밀번호로, 같은 git 데이터를 DOM으로 렌더하는 두 번째 프론트엔드(React 19 + Vite + Tailwind v4, SSE 스냅샷 팬아웃, 저장소별 독립 PTY 세션)
 - 뷰어 기능 확장: commit 파일 드릴다운, diff unified/split 토글, 마크다운 렌더 뷰, mtime 기반 hot-file 강조, 서버 저장(`~/.nightcrow/viewer.json`) accent·사이드바 너비·마지막 프로젝트, 좁은 화면용 프로젝트 드롭다운
+- 웹 미러 제거: 화면을 그대로 반사하던 `[web_mirror]` 서버를 걷어냈다. 세션 데몬 구조에서는 데몬이 화면을 그리지 않아 반사할 대상이 없고, 브라우저는 뷰어로 같은 세션에 붙는다(`docs/session-daemon-plan.md`)
 
 ## Future Refactor Notes
 

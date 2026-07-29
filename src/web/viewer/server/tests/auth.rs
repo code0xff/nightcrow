@@ -210,15 +210,6 @@ fn a_cross_origin_request_is_refused_before_auth() {
 }
 
 #[test]
-fn the_viewer_cookie_is_distinct_from_the_mirrors() {
-    // A mirror session must not authenticate here.
-    assert_ne!(
-        VIEWER_SESSION_COOKIE,
-        crate::web::common::auth::SESSION_COOKIE
-    );
-}
-
-#[test]
 fn an_unknown_repo_id_is_a_404_for_an_authenticated_client() {
     let (dir, path) = make_repo();
     let server = server(&[path]);

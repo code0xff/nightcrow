@@ -1,5 +1,6 @@
-//! Authentication for the web mirror: Argon2 password verification (matching
-//! code-server's scheme), opaque session tokens, and login rate limiting.
+//! Authentication for nightcrow's web servers: Argon2 password verification
+//! (matching code-server's scheme), opaque session tokens, and login rate
+//! limiting. The cookie name belongs to each server, not here.
 
 use anyhow::{Result, anyhow};
 use argon2::password_hash::SaltString;
@@ -7,9 +8,6 @@ use argon2::{Argon2, PasswordHash, PasswordHasher, PasswordVerifier};
 use std::collections::HashSet;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
-
-/// Name of the session cookie set after a successful login.
-pub const SESSION_COOKIE: &str = "nightcrow_session";
 
 /// A verifier for the single configured web password. Plaintext passwords are
 /// hashed once at construction so every check runs through the same

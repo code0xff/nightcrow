@@ -1,11 +1,6 @@
-//! Web mirror: serve a live, controllable view of this nightcrow over HTTP so a
-//! browser and the local terminal drive the same session.
-
-pub mod protocol;
+//! Browser-facing surface: the web viewer reads the same git data and drives the
+//! same terminal sessions nightcrow works with, rendered as a DOM app rather
+//! than a reflected terminal screen.
 
 pub(crate) mod common;
-mod frontend;
-mod server;
 pub(crate) mod viewer;
-
-pub use server::WebServer;

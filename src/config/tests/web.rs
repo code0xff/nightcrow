@@ -1,67 +1,79 @@
 use crate::config::web::{
-    GENERATED_PASSWORD_LEN, PASSWORD_ALPHABET, WEB_MIRROR_TABLE, WEB_VIEWER_TABLE, insert_password,
+    GENERATED_PASSWORD_LEN, PASSWORD_ALPHABET, WEB_VIEWER_TABLE, insert_password,
 };
 use crate::config::{
-    Config, WebMirrorConfig, ensure_web_mirror_password, generate_password, validate_config,
+    Config, WebViewerConfig, ensure_web_viewer_password, generate_password, validate_config,
 };
 
 #[test]
 fn web_config_defaults_are_off_and_loopback() {
-    let cfg = WebMirrorConfig::default();
+    let cfg = WebViewerConfig::default();
     assert!(!cfg.enabled);
     assert_eq!(cfg.bind, "127.0.0.1");
-    assert_eq!(cfg.port, 8090);
+    assert_eq!(cfg.port, 8091);
     assert!(cfg.password.is_none());
     assert!(cfg.hashed_password.is_none());
     assert!(!cfg.has_credential());
 }
 
 #[test]
-fn web_mirror_config_parses_from_toml() {
+fn web_viewer_config_parses_from_toml() {
     let toml = r#"
-[web_mirror]
+[web_viewer]
 enabled = true
 bind = "0.0.0.0"
 port = 9000
 password = "hunter2"
 "#;
     let cfg: Config = toml::from_str(toml).unwrap();
-    assert!(cfg.web_mirror.enabled);
-    assert_eq!(cfg.web_mirror.bind, "0.0.0.0");
-    assert_eq!(cfg.web_mirror.port, 9000);
-    assert_eq!(cfg.web_mirror.password.as_deref(), Some("hunter2"));
-    assert!(cfg.web_mirror.has_credential());
+    assert!(cfg.web_viewer.enabled);
+    assert_eq!(cfg.web_viewer.bind, "0.0.0.0");
+    assert_eq!(cfg.web_viewer.port, 9000);
+    assert_eq!(cfg.web_viewer.password.as_deref(), Some("hunter2"));
+    assert!(cfg.web_viewer.has_credential());
     validate_config(&cfg).unwrap();
 }
 
 #[test]
 fn config_without_web_table_defaults() {
-    // A pre-existing config file with no [web_mirror] table must still parse and
+    // A pre-existing config file with no [web_viewer] table must still parse and
     // validate, falling back to the disabled default.
     let cfg: Config = toml::from_str("[layout]\nupper_pct = 50\n").unwrap();
-    assert!(!cfg.web_mirror.enabled);
-    assert_eq!(cfg.web_mirror.port, 8090);
+    assert!(!cfg.web_viewer.enabled);
+    assert_eq!(cfg.web_viewer.port, 8091);
+    validate_config(&cfg).unwrap();
+}
+
+#[test]
+fn a_removed_sections_settings_are_ignored_not_rejected() {
+    // Configs written before the web mirror was removed still carry its table.
+    // Nothing deserializes with `deny_unknown_fields`, so the stale section is
+    // dropped rather than failing the load of an otherwise valid file.
+    let cfg: Config =
+        toml::from_str("[web_mirror]\nenabled = true\nport = 8090\n\n[layout]\nupper_pct = 50\n")
+            .unwrap();
+    assert_eq!(cfg.layout.upper_pct, 50);
     validate_config(&cfg).unwrap();
 }
 
 #[test]
 fn web_has_credential_treats_empty_password_as_missing() {
-    let empty = WebMirrorConfig {
+    let empty = WebViewerConfig {
         password: Some(String::new()),
-        ..WebMirrorConfig::default()
+        ..WebViewerConfig::default()
     };
     assert!(
         !empty.has_credential(),
         "an empty password is not a credential"
     );
-    let with_pw = WebMirrorConfig {
+    let with_pw = WebViewerConfig {
         password: Some("x".into()),
-        ..WebMirrorConfig::default()
+        ..WebViewerConfig::default()
     };
     assert!(with_pw.has_credential());
-    let with_hash = WebMirrorConfig {
+    let with_hash = WebViewerConfig {
         hashed_password: Some("$argon2id$...".into()),
-        ..WebMirrorConfig::default()
+        ..WebViewerConfig::default()
     };
     assert!(with_hash.has_credential());
 }
@@ -69,16 +81,16 @@ fn web_has_credential_treats_empty_password_as_missing() {
 #[test]
 fn web_validation_rejects_port_zero_when_enabled() {
     let mut cfg = Config::default();
-    cfg.web_mirror.enabled = true;
-    cfg.web_mirror.port = 0;
+    cfg.web_viewer.enabled = true;
+    cfg.web_viewer.port = 0;
     assert!(validate_config(&cfg).is_err());
 }
 
 #[test]
 fn web_validation_rejects_bad_bind_when_enabled() {
     let mut cfg = Config::default();
-    cfg.web_mirror.enabled = true;
-    cfg.web_mirror.bind = "not-an-ip".into();
+    cfg.web_viewer.enabled = true;
+    cfg.web_viewer.bind = "not-an-ip".into();
     assert!(validate_config(&cfg).is_err());
 }
 
@@ -87,9 +99,9 @@ fn web_validation_ignores_bind_and_port_when_disabled() {
     // A disabled web section is never acted on, so its fields are not
     // range-checked — a stale/garbage value must not block startup.
     let mut cfg = Config::default();
-    cfg.web_mirror.enabled = false;
-    cfg.web_mirror.port = 0;
-    cfg.web_mirror.bind = "not-an-ip".into();
+    cfg.web_viewer.enabled = false;
+    cfg.web_viewer.port = 0;
+    cfg.web_viewer.bind = "not-an-ip".into();
     assert!(validate_config(&cfg).is_ok());
 }
 
@@ -107,49 +119,41 @@ fn generate_password_has_expected_length_and_alphabet() {
 
 #[test]
 fn insert_password_adds_line_under_existing_header() {
-    let source = "[web_mirror]\nenabled = true\nport = 8090\n";
-    let out = insert_password(source, WEB_MIRROR_TABLE, "secret");
+    let source = "[web_viewer]\nenabled = true\nport = 8091\n";
+    let out = insert_password(source, WEB_VIEWER_TABLE, "secret");
     assert_eq!(
-        out, "[web_mirror]\npassword = \"secret\"\nenabled = true\nport = 8090\n",
-        "the password line must land right after the [web_mirror] header"
+        out, "[web_viewer]\npassword = \"secret\"\nenabled = true\nport = 8091\n",
+        "the password line must land right after the [web_viewer] header"
     );
     // The result round-trips and exposes the password.
     let cfg: Config = toml::from_str(&out).unwrap();
-    assert_eq!(cfg.web_mirror.password.as_deref(), Some("secret"));
+    assert_eq!(cfg.web_viewer.password.as_deref(), Some("secret"));
 }
 
 #[test]
 fn insert_password_appends_table_when_absent() {
     let source = "[layout]\nupper_pct = 55\n";
-    let out = insert_password(source, WEB_MIRROR_TABLE, "secret");
+    let out = insert_password(source, WEB_VIEWER_TABLE, "secret");
     assert!(out.starts_with(source));
-    assert!(out.contains("\n[web_mirror]\npassword = \"secret\"\n"));
+    assert!(out.contains("\n[web_viewer]\npassword = \"secret\"\n"));
     let cfg: Config = toml::from_str(&out).unwrap();
-    assert_eq!(cfg.web_mirror.password.as_deref(), Some("secret"));
+    assert_eq!(cfg.web_viewer.password.as_deref(), Some("secret"));
 }
 
 #[test]
 fn insert_password_appends_table_into_empty_source() {
-    let out = insert_password("", WEB_MIRROR_TABLE, "secret");
-    assert_eq!(out, "[web_mirror]\npassword = \"secret\"\n");
+    let out = insert_password("", WEB_VIEWER_TABLE, "secret");
+    assert_eq!(out, "[web_viewer]\npassword = \"secret\"\n");
     let cfg: Config = toml::from_str(&out).unwrap();
-    assert_eq!(cfg.web_mirror.password.as_deref(), Some("secret"));
-}
-
-#[test]
-fn the_web_mirror_table_configures_the_mirror() {
-    let cfg: Config = toml::from_str("[web_mirror]\nenabled = true\nport = 8100\n").unwrap();
-
-    assert!(cfg.web_mirror.enabled);
-    assert_eq!(cfg.web_mirror.port, 8100);
+    assert_eq!(cfg.web_viewer.password.as_deref(), Some("secret"));
 }
 
 #[test]
 fn insert_password_targets_the_named_table() {
-    // The viewer's credential must land under [web_viewer], not [web] —
-    // writing it to the wrong table would silently give the mirror a
-    // second password and leave the viewer without one.
-    let source = "[web_mirror]\nport = 8090\n";
+    // The credential must land under the table it was asked for. Writing it
+    // into whichever table comes first would put a password in a section that
+    // has no notion of one, and leave the viewer without one.
+    let source = "[layout]\nupper_pct = 55\n";
 
     let out = insert_password(source, WEB_VIEWER_TABLE, "vsecret");
 
@@ -157,16 +161,16 @@ fn insert_password_targets_the_named_table() {
         out.contains("[web_viewer]\npassword = \"vsecret\""),
         "got: {out}"
     );
-    let web_table = out.split("[web_viewer]").next().unwrap();
+    let before = out.split("[web_viewer]").next().unwrap();
     assert!(
-        !web_table.contains("vsecret"),
-        "the viewer password leaked into [web_mirror]: {out}"
+        !before.contains("vsecret"),
+        "the viewer password leaked into an earlier table: {out}"
     );
 }
 
 #[test]
 fn insert_password_finds_an_existing_viewer_table() {
-    let source = "[web_mirror]\nport = 8090\n\n[web_viewer]\nport = 8091\n";
+    let source = "[layout]\nupper_pct = 55\n\n[web_viewer]\nport = 8091\n";
 
     let out = insert_password(source, WEB_VIEWER_TABLE, "vsecret");
 
@@ -177,11 +181,11 @@ fn insert_password_finds_an_existing_viewer_table() {
 
 #[test]
 fn insert_password_ignores_commented_header() {
-    // A `# [web]` comment is not a real table header, so the password must
-    // be appended as a new table rather than inserted under the comment.
-    let source = "# [web] example\nfoo = 1\n";
-    let out = insert_password(source, WEB_MIRROR_TABLE, "secret");
-    assert!(out.contains("\n[web_mirror]\npassword = \"secret\"\n"));
+    // A `# [web_viewer]` comment is not a real table header, so the password
+    // must be appended as a new table rather than inserted under the comment.
+    let source = "# [web_viewer] example\nfoo = 1\n";
+    let out = insert_password(source, WEB_VIEWER_TABLE, "secret");
+    assert!(out.contains("\n[web_viewer]\npassword = \"secret\"\n"));
 }
 
 #[test]
@@ -189,9 +193,9 @@ fn ensure_web_password_is_noop_when_credential_present() {
     let dir = tempfile::TempDir::new().unwrap();
     let path = dir.path().join("config.toml");
     let mut cfg = Config::default();
-    cfg.web_mirror.enabled = true;
-    cfg.web_mirror.password = Some("preset".into());
-    let generated = ensure_web_mirror_password(&mut cfg, &path).unwrap();
+    cfg.web_viewer.enabled = true;
+    cfg.web_viewer.password = Some("preset".into());
+    let generated = ensure_web_viewer_password(&mut cfg, &path).unwrap();
     assert!(
         generated.is_none(),
         "an existing credential must not be replaced"
@@ -200,7 +204,7 @@ fn ensure_web_password_is_noop_when_credential_present() {
         !path.exists(),
         "no file should be written when a password exists"
     );
-    assert_eq!(cfg.web_mirror.password.as_deref(), Some("preset"));
+    assert_eq!(cfg.web_viewer.password.as_deref(), Some("preset"));
 }
 
 #[test]
@@ -208,17 +212,17 @@ fn ensure_web_password_generates_persists_and_sets() {
     let dir = tempfile::TempDir::new().unwrap();
     let path = dir.path().join("nested").join("config.toml");
     std::fs::create_dir_all(path.parent().unwrap()).unwrap();
-    std::fs::write(&path, "[web_mirror]\nenabled = true\n").unwrap();
+    std::fs::write(&path, "[web_viewer]\nenabled = true\n").unwrap();
 
     let mut cfg = Config::default();
-    cfg.web_mirror.enabled = true;
-    let generated = ensure_web_mirror_password(&mut cfg, &path).unwrap();
+    cfg.web_viewer.enabled = true;
+    let generated = ensure_web_viewer_password(&mut cfg, &path).unwrap();
 
     let pw = generated.expect("a password must be generated when none is set");
-    assert_eq!(cfg.web_mirror.password.as_deref(), Some(pw.as_str()));
+    assert_eq!(cfg.web_viewer.password.as_deref(), Some(pw.as_str()));
     // The persisted file now parses back to the same password.
     let reparsed: Config = toml::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
-    assert_eq!(reparsed.web_mirror.password.as_deref(), Some(pw.as_str()));
+    assert_eq!(reparsed.web_viewer.password.as_deref(), Some(pw.as_str()));
 }
 
 #[test]
@@ -226,13 +230,13 @@ fn ensure_web_password_creates_file_when_absent() {
     let dir = tempfile::TempDir::new().unwrap();
     let path = dir.path().join("config.toml");
     let mut cfg = Config::default();
-    cfg.web_mirror.enabled = true;
+    cfg.web_viewer.enabled = true;
 
-    let pw = ensure_web_mirror_password(&mut cfg, &path)
+    let pw = ensure_web_viewer_password(&mut cfg, &path)
         .unwrap()
         .unwrap();
 
     assert!(path.exists());
     let reparsed: Config = toml::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
-    assert_eq!(reparsed.web_mirror.password.as_deref(), Some(pw.as_str()));
+    assert_eq!(reparsed.web_viewer.password.as_deref(), Some(pw.as_str()));
 }
