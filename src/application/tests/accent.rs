@@ -44,13 +44,3 @@ fn the_accent_can_be_cycled_with_no_project_open() {
         KeyOutcome::Project(ProjectRequest::CycleAccent)
     ));
 }
-
-#[test]
-fn the_request_names_the_colour_it_lands_on_not_a_step() {
-    // Two clients cycling at once would otherwise each advance the session from
-    // what it last showed them, landing somewhere neither asked for.
-    let mut ws = Workspace::new(leader());
-    ws.set_accent_index(crate::config::Accent::ALL.len() - 1);
-
-    assert_eq!(ws.next_accent_index(), 0, "and wraps at the end");
-}

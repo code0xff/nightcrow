@@ -73,6 +73,11 @@ pub(crate) fn run_attach() -> Result<()> {
         crate::web::viewer::prefs::PrefsStore::load_seeded(cfg.theme.preset_index())
             .get()
             .accent;
+    // The splash is not the only screen that draws before the daemon's first
+    // set arrives. Without this the first frames of the main view would come up
+    // in the default rather than the session's colour, and the splash that just
+    // painted correctly would appear to change its mind.
+    ws.set_accent_index(session_accent);
 
     if matches!(
         splash_loop(&mut terminal, session_accent)?,
