@@ -7,7 +7,7 @@
 //! The dialog is not a shell, so only what `confirm_repo_input` itself accepts
 //! is understood here: `~`, `..`, and cwd-relative paths. No `$VAR`, no globs.
 
-use std::path::MAIN_SEPARATOR;
+use std::path::{MAIN_SEPARATOR, Path};
 
 /// What one Tab press does to the buffer.
 pub(crate) struct PathCompletion {
@@ -22,8 +22,39 @@ pub(crate) struct PathCompletion {
 /// Whether `c` ends a path component. `\` counts on Windows only — on Unix it
 /// is a legal filename character, so treating it as a separator there would
 /// split paths that contain one.
-fn is_sep(c: char) -> bool {
+pub(crate) fn is_sep(c: char) -> bool {
     c == '/' || (cfg!(windows) && c == '\\')
+}
+
+/// Split a dialog buffer into the directory text (up to and including the last
+/// separator) and the trailing component being completed. With no separator the
+/// whole buffer is the component and the directory is empty, meaning the process
+/// cwd — the same reading `confirm_repo_input` gives a bare relative path.
+pub(crate) fn split_dir(buf: &str) -> (&str, &str) {
+    match buf.char_indices().rfind(|(_, c)| is_sep(*c)) {
+        Some((i, c)) => (&buf[..i + c.len_utf8()], &buf[i + c.len_utf8()..]),
+        None => ("", buf),
+    }
+}
+
+/// Immediate sub-directory names of `dir`, sorted. A directory that cannot be
+/// read yields nothing: mid-typing that is the normal state for the completer,
+/// and for the browser an unreadable directory is simply one with nothing to
+/// show. Directories only — the dialog opens a repo, and a file cannot be one.
+pub(crate) fn read_dir_names(dir: &Path, show_hidden: bool) -> Vec<String> {
+    let Ok(read) = std::fs::read_dir(dir) else {
+        return Vec::new();
+    };
+    let mut names: Vec<String> = read
+        .flatten()
+        .filter(is_dir_entry)
+        // A non-UTF-8 name cannot round-trip through the `String` buffer, so
+        // completing to it would produce a path that no longer opens.
+        .filter_map(|e| e.file_name().into_string().ok())
+        .filter(|n| show_hidden || !n.starts_with('.'))
+        .collect();
+    names.sort_unstable();
+    names
 }
 
 /// Complete the last component of `buf` against the directory the rest of it
@@ -39,32 +70,14 @@ pub(crate) fn complete_dir_path(buf: &str) -> PathCompletion {
         candidates: Vec::new(),
     };
 
-    // Split at the last separator: everything up to and including it names the
-    // directory to list, and the rest is the prefix being completed.
-    let (dir_text, frag, sep) = match buf.char_indices().rfind(|(_, c)| is_sep(*c)) {
-        Some((i, c)) => (&buf[..i + c.len_utf8()], &buf[i + c.len_utf8()..], c),
-        // No separator at all: complete against the process cwd, matching how
-        // `confirm_repo_input` resolves a bare relative path.
-        None => ("", buf, MAIN_SEPARATOR),
-    };
+    let (dir_text, frag) = split_dir(buf);
+    // Reuse whatever separator is already in the buffer so a path typed with
+    // `/` on Windows does not come back with a `\` spliced into it.
+    let sep = dir_text.chars().next_back().unwrap_or(MAIN_SEPARATOR);
 
     let dir =
         crate::platform::paths::expand_tilde(if dir_text.is_empty() { "." } else { dir_text });
-    // A path that isn't a readable directory yet is the normal mid-typing
-    // state, not an error worth reporting.
-    let Ok(read) = std::fs::read_dir(&dir) else {
-        return unchanged();
-    };
-
-    let show_hidden = frag.starts_with('.');
-    let names: Vec<String> = read
-        .flatten()
-        .filter(is_dir_entry)
-        // A non-UTF-8 name cannot round-trip through the `String` buffer, so
-        // completing to it would produce a path that no longer opens.
-        .filter_map(|e| e.file_name().into_string().ok())
-        .filter(|n| show_hidden || !n.starts_with('.'))
-        .collect();
+    let names = read_dir_names(&dir, frag.starts_with('.'));
 
     let mut matches: Vec<&str> = names
         .iter()
@@ -82,7 +95,7 @@ pub(crate) fn complete_dir_path(buf: &str) -> PathCompletion {
             .filter(|n| n.to_lowercase().starts_with(&lower))
             .collect();
     }
-    matches.sort_unstable();
+    // `read_dir_names` already sorted, and filtering preserves order.
 
     match matches.len() {
         0 => unchanged(),
