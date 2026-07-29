@@ -24,6 +24,14 @@ pub(crate) struct Cli {
     #[arg(long)]
     pub(crate) bind: Option<String>,
 
+    /// Run the session in the background and return to the shell.
+    ///
+    /// It gets its own session, so closing this terminal does not stop it, and
+    /// its output goes to ~/.nightcrow/daemon.out. A service manager should
+    /// start nightcrow *without* this — backgrounding is what it does itself.
+    #[arg(short, long)]
+    pub(crate) detach: bool,
+
     #[command(subcommand)]
     pub(crate) command: Option<Commands>,
 }
@@ -52,7 +60,23 @@ pub(crate) enum Commands {
 /// the browser's folder picker or an attached TUI's open dialog. There is no
 /// flag for it. Repositories are opened from inside the session, which is the
 /// only place that can open one *and* have every other client see it.
-pub(crate) fn run_daemon(exec: Vec<String>, port: Option<u16>, bind: Option<String>) -> Result<()> {
+pub(crate) fn run_daemon(
+    exec: Vec<String>,
+    port: Option<u16>,
+    bind: Option<String>,
+    detach: bool,
+) -> Result<()> {
+    // Before the shutdown handlers and before anything is bound: the
+    // foreground copy hands the whole job over and exits, so it must not have
+    // taken the socket or the instance lock first.
+    if detach && !crate::daemon::detach::is_detached_child() {
+        let log = daemon_output_path()?;
+        let pid = crate::daemon::detach::respawn_in_background(&log)?;
+        eprintln!("nightcrow: session running in the background (pid {pid})");
+        eprintln!("nightcrow: its output goes to {}", log.display());
+        return Ok(());
+    }
+
     // Before anything that can be interrupted. Opening repositories and running
     // the startup shells takes long enough for a stop signal to land in the
     // middle, and until the handlers exist such a signal kills the process
@@ -177,6 +201,16 @@ pub(crate) fn run_daemon(exec: Vec<String>, port: Option<u16>, bind: Option<Stri
     // can attach to a daemon that is already tearing down its terminals.
     drop(socket);
     Ok(())
+}
+
+/// Where a backgrounded session writes what it would have printed.
+///
+/// Beside the socket and the workspace file rather than in the log directory:
+/// this is the startup banner and any bind error, which a person goes looking
+/// for by hand, not the rotated tracing log.
+fn daemon_output_path() -> Result<std::path::PathBuf> {
+    let home = dirs::home_dir().context("cannot determine the home directory")?;
+    Ok(home.join(".nightcrow").join("daemon.out"))
 }
 
 pub(crate) fn run_init(force: bool) -> Result<()> {

@@ -49,6 +49,9 @@ Requires Rust 1.85+ (edition 2024). `--locked` builds against the committed
 # It reopens the repositories from last time — nothing, on a first run.
 nightcrow
 
+# ...or run it in the background and get your shell back.
+nightcrow -d
+
 # From another terminal: bring up the TUI on that session.
 nightcrow attach
 
@@ -65,7 +68,9 @@ and that is inside.
 
 Leaving the TUI (`<prefix> q`) detaches: the session, and everything running in
 its terminals, keeps going. Stopping the session is stopping the process you
-started it in.
+started it in — or `kill`ing it, if you used `-d`, in which case its output is
+in `~/.nightcrow/daemon.out`. Under a service manager, start it *without* `-d`:
+backgrounding is what the manager does itself.
 
 Startup panes belong to a project, not to the process: each project you open
 gets its own set. So `nightcrow --exec claude` with no repositories starts

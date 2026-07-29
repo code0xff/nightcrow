@@ -9,6 +9,7 @@
 
 pub(crate) mod client;
 pub(crate) mod clients;
+pub(crate) mod detach;
 pub(crate) mod frame;
 pub(crate) mod lock;
 pub(crate) mod protocol;

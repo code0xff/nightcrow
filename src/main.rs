@@ -30,6 +30,6 @@ fn main() -> Result<()> {
     match cli.command {
         Some(Commands::Init { force }) => run_init(force),
         Some(Commands::Attach) => application::attach::run_attach(),
-        None => run_daemon(cli.exec, cli.port, cli.bind),
+        None => run_daemon(cli.exec, cli.port, cli.bind, cli.detach),
     }
 }
