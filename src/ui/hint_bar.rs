@@ -145,7 +145,7 @@ pub(crate) fn render_hint_bar<'a>(
 }
 
 /// The click action for `(x, y)` on the empty screen's hint row, or `None`
-/// off it. Only `o` resolves — quitting stays a deliberate keyboard act, as
+/// off it. Only `o` resolves — detaching stays a deliberate keyboard act, as
 /// on the project screen.
 pub(crate) fn empty_hint_click_at(
     screen_area: Rect,

@@ -26,7 +26,7 @@ const HINT_TEST_SCREEN: Rect = Rect::new(0, 0, 300, 40);
 const HINT_ROW: u16 = 39;
 
 #[test]
-fn hint_click_resolves_commands_and_skips_nav_and_quit() {
+fn hint_click_resolves_commands_and_skips_nav_and_detach() {
     // Default state: FileList focus, status view — the row carries both
     // leader commands and nav segments.
     let app = app_with_fake_backend();
@@ -64,7 +64,7 @@ fn hint_click_resolves_commands_and_skips_nav_and_quit() {
         ),
         None
     );
-    let x = hint_x_of(&app, "q: quit");
+    let x = hint_x_of(&app, "q: detach");
     assert_eq!(
         hint_click_at(
             &app,
@@ -74,7 +74,7 @@ fn hint_click_resolves_commands_and_skips_nav_and_quit() {
             HINT_ROW
         ),
         None,
-        "quit must never be one stray click away"
+        "detaching must never be one stray click away"
     );
 }
 
@@ -156,7 +156,7 @@ fn hint_click_armed_row_resolves_bare_followups_after_the_chip() {
         ),
         Some(HintClick::Plain('r'))
     );
-    let x = hint_x_of(&app, "q: quit");
+    let x = hint_x_of(&app, "q: detach");
     assert_eq!(
         hint_click_at(
             &app,

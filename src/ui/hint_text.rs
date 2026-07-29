@@ -2,8 +2,8 @@ use crate::app::{App, DiffPaneView, Focus, ViewMode};
 use crate::runtime::terminal::TerminalFullscreen;
 
 pub(crate) const PREFIX_CHIP: &str = " PREFIX ";
-pub(crate) const EMPTY_HINT: &str = " <prefix> o: open project | <prefix> q: quit";
-pub(crate) const EMPTY_HINT_ARMED: &str = " o: open project | q: quit | esc: cancel";
+pub(crate) const EMPTY_HINT: &str = " <prefix> o: open project | <prefix> q: detach";
+pub(crate) const EMPTY_HINT_ARMED: &str = " o: open project | q: detach | esc: cancel";
 
 pub(crate) fn prefix_armed_hint_text(app: &App) -> String {
     // While the terminal fills the body the digit row addresses panes
@@ -36,7 +36,7 @@ pub(crate) fn prefix_armed_hint_text(app: &App) -> String {
     // reports why on the notice row, so the key always produces a visible
     // result.
     format!(
-        " t: new pane | {close}{swap}{log_toggle} | {tree_toggle} | f: fullscreen | o: open project | x: close project | p: theme | r: redraw | q: quit | {digits} | esc: cancel"
+        " t: new pane | {close}{swap}{log_toggle} | {tree_toggle} | f: fullscreen | o: open project | x: close project | p: theme | r: redraw | q: detach | {digits} | esc: cancel"
     )
 }
 
@@ -49,13 +49,13 @@ pub(crate) fn normal_hint_literal(app: &App) -> &'static str {
         // would look different from Grid; otherwise the cycle skips Zoom and
         // `f` exits.
         TerminalFullscreen::Grid if app.terminal.zoom_distinct_from_grid() => {
-            return " <prefix>: leader | shift+↑/↓: scroll | shift+pgup/dn: page scroll | shift+←/→: cycle pane | <prefix> f: zoom active pane | <prefix> t: new pane | <prefix> w: close pane | <prefix> q: quit";
+            return " <prefix>: leader | shift+↑/↓: scroll | shift+pgup/dn: page scroll | shift+←/→: cycle pane | <prefix> f: zoom active pane | <prefix> t: new pane | <prefix> w: close pane | <prefix> q: detach";
         }
         TerminalFullscreen::Grid => {
-            return " <prefix>: leader | shift+↑/↓: scroll | shift+pgup/dn: page scroll | <prefix> f: exit fullscreen | <prefix> t: new pane | <prefix> w: close pane | <prefix> q: quit";
+            return " <prefix>: leader | shift+↑/↓: scroll | shift+pgup/dn: page scroll | <prefix> f: exit fullscreen | <prefix> t: new pane | <prefix> w: close pane | <prefix> q: detach";
         }
         TerminalFullscreen::Zoom => {
-            return " <prefix>: leader | shift+↑/↓: scroll | shift+pgup/dn: page scroll | shift+←/→: cycle pane | <prefix> f: exit fullscreen | <prefix> t: new pane | <prefix> w: close pane | <prefix> q: quit";
+            return " <prefix>: leader | shift+↑/↓: scroll | shift+pgup/dn: page scroll | shift+←/→: cycle pane | <prefix> f: exit fullscreen | <prefix> t: new pane | <prefix> w: close pane | <prefix> q: detach";
         }
         TerminalFullscreen::Off => {}
     }
@@ -64,37 +64,37 @@ pub(crate) fn normal_hint_literal(app: &App) -> &'static str {
             // Tree mode's right pane is permanently the file view — `v`
             // can't leave it, so don't advertise a no-op.
             if app.mode == ViewMode::Tree {
-                " <prefix> f: exit zoom | j/k: scroll | pgup/pgdn: page | <prefix> q: quit"
+                " <prefix> f: exit zoom | j/k: scroll | pgup/pgdn: page | <prefix> q: detach"
             } else {
-                " <prefix> f: exit zoom | v: back to diff | j/k: scroll | pgup/pgdn: page | <prefix> q: quit"
+                " <prefix> f: exit zoom | v: back to diff | j/k: scroll | pgup/pgdn: page | <prefix> q: detach"
             }
         } else if app.diff.view == DiffPaneView::Split {
-            " <prefix> f: exit zoom | s: unified diff | j/k: scroll | pgup/pgdn: page | <prefix> q: quit"
+            " <prefix> f: exit zoom | s: unified diff | j/k: scroll | pgup/pgdn: page | <prefix> q: detach"
         } else if app.diff.search.active {
             " type to search | enter: confirm | esc: cancel"
         } else if !app.diff.search.query.is_empty() {
             " <prefix> f: exit zoom | n: next match | shift+n: prev match | /: new search | esc: clear"
         } else if app.can_open_file_view() {
-            " <prefix> f: exit zoom | j/k: scroll | v: view file | s: split | /: search | pgup/pgdn: page | <prefix> q: quit"
+            " <prefix> f: exit zoom | j/k: scroll | v: view file | s: split | /: search | pgup/pgdn: page | <prefix> q: detach"
         } else {
             // No file target for `v` — a hint for a no-op key would lie.
-            " <prefix> f: exit zoom | j/k: scroll | s: split | /: search | pgup/pgdn: page | <prefix> q: quit"
+            " <prefix> f: exit zoom | j/k: scroll | s: split | /: search | pgup/pgdn: page | <prefix> q: detach"
         };
         return hint;
     }
     if app.list_fullscreen {
         let hint = match app.mode {
             ViewMode::Log if app.log_view.drill_down => {
-                " <prefix> f: exit zoom | esc: back to commits | j/k: navigate files | <prefix> q: quit"
+                " <prefix> f: exit zoom | esc: back to commits | j/k: navigate files | <prefix> q: detach"
             }
             ViewMode::Log => {
-                " <prefix> f: exit zoom | <prefix> l: status view | <prefix> b: tree view | j/k: navigate commits | enter: view files | <prefix> q: quit"
+                " <prefix> f: exit zoom | <prefix> l: status view | <prefix> b: tree view | j/k: navigate commits | enter: view files | <prefix> q: detach"
             }
             ViewMode::Status => {
-                " <prefix> f: exit zoom | j/k: navigate | /: search | <prefix> l: log view | <prefix> b: tree view | <prefix> q: quit"
+                " <prefix> f: exit zoom | j/k: navigate | /: search | <prefix> l: log view | <prefix> b: tree view | <prefix> q: detach"
             }
             ViewMode::Tree => {
-                " <prefix> f: exit zoom | j/k: navigate | /: search | →/enter: expand | ←: collapse | <prefix> b: status view | <prefix> l: log view | <prefix> q: quit"
+                " <prefix> f: exit zoom | j/k: navigate | /: search | →/enter: expand | ←: collapse | <prefix> b: status view | <prefix> l: log view | <prefix> q: detach"
             }
         };
         return hint;
@@ -103,9 +103,9 @@ pub(crate) fn normal_hint_literal(app: &App) -> &'static str {
         // The `l` toggle names its destination: from Log mode it returns to
         // the status view, from Status/Tree it enters the log view.
         return if app.mode == ViewMode::Log {
-            " <prefix>: leader | shift+↑/↓: scroll | shift+pgup/dn: page scroll | shift+←/→: cycle | <prefix> t: new pane | <prefix> w: close pane | <prefix> f: fullscreen | <prefix> l: status view | <prefix> o: open project | <prefix> q: quit"
+            " <prefix>: leader | shift+↑/↓: scroll | shift+pgup/dn: page scroll | shift+←/→: cycle | <prefix> t: new pane | <prefix> w: close pane | <prefix> f: fullscreen | <prefix> l: status view | <prefix> o: open project | <prefix> q: detach"
         } else {
-            " <prefix>: leader | shift+↑/↓: scroll | shift+pgup/dn: page scroll | shift+←/→: cycle | <prefix> t: new pane | <prefix> w: close pane | <prefix> f: fullscreen | <prefix> l: log view | <prefix> o: open project | <prefix> q: quit"
+            " <prefix>: leader | shift+↑/↓: scroll | shift+pgup/dn: page scroll | shift+←/→: cycle | <prefix> t: new pane | <prefix> w: close pane | <prefix> f: fullscreen | <prefix> l: log view | <prefix> o: open project | <prefix> q: detach"
         };
     }
     match app.focus {
@@ -113,16 +113,16 @@ pub(crate) fn normal_hint_literal(app: &App) -> &'static str {
         Focus::FileList => match app.mode {
             ViewMode::Log => {
                 if app.log_view.drill_down {
-                    " esc: back to commits | j/k: navigate files | shift+←/→: cycle | <prefix> q: quit"
+                    " esc: back to commits | j/k: navigate files | shift+←/→: cycle | <prefix> q: detach"
                 } else {
-                    " shift+←/→: cycle | j/k: navigate commits | enter: view files | <prefix> t: new pane | <prefix> f: fullscreen | <prefix> l: status view | <prefix> b: tree view | <prefix> o: open project | <prefix> q: quit"
+                    " shift+←/→: cycle | j/k: navigate commits | enter: view files | <prefix> t: new pane | <prefix> f: fullscreen | <prefix> l: status view | <prefix> b: tree view | <prefix> o: open project | <prefix> q: detach"
                 }
             }
             ViewMode::Status => {
-                " shift+←/→: cycle | j/k: navigate | /: search | <prefix> t: new pane | <prefix> f: fullscreen | <prefix> l: log view | <prefix> b: tree view | <prefix> o: open project | <prefix> q: quit"
+                " shift+←/→: cycle | j/k: navigate | /: search | <prefix> t: new pane | <prefix> f: fullscreen | <prefix> l: log view | <prefix> b: tree view | <prefix> o: open project | <prefix> q: detach"
             }
             ViewMode::Tree => {
-                " shift+←/→: cycle | j/k: navigate | /: search | →/enter: expand | ←: collapse | <prefix> b: status view | <prefix> l: log view | <prefix> q: quit"
+                " shift+←/→: cycle | j/k: navigate | /: search | →/enter: expand | ←: collapse | <prefix> b: status view | <prefix> l: log view | <prefix> q: detach"
             }
         },
         Focus::DiffViewer => {
@@ -134,12 +134,12 @@ pub(crate) fn normal_hint_literal(app: &App) -> &'static str {
                 // Tree mode's right pane is permanently the file view — `v`
                 // can't leave it, so don't advertise a no-op.
                 if app.mode == ViewMode::Tree {
-                    " j/k: scroll | pgup/pgdn: page | /: search | shift+←/→: cycle | <prefix> q: quit"
+                    " j/k: scroll | pgup/pgdn: page | /: search | shift+←/→: cycle | <prefix> q: detach"
                 } else {
-                    " v: back to diff | j/k: scroll | pgup/pgdn: page | /: search | shift+←/→: cycle | <prefix> q: quit"
+                    " v: back to diff | j/k: scroll | pgup/pgdn: page | /: search | shift+←/→: cycle | <prefix> q: detach"
                 }
             } else if app.diff.view == DiffPaneView::Split {
-                " s: unified diff | j/k: scroll | pgup/pgdn: page | shift+←/→: cycle | <prefix> f: zoom | <prefix> q: quit"
+                " s: unified diff | j/k: scroll | pgup/pgdn: page | shift+←/→: cycle | <prefix> f: zoom | <prefix> q: detach"
             } else if app.diff.search.active {
                 " type to search | enter: confirm | esc: cancel"
             } else if !app.diff.search.query.is_empty() {
@@ -148,16 +148,16 @@ pub(crate) fn normal_hint_literal(app: &App) -> &'static str {
                 // The `l` toggle names its destination (Tree mode never reaches
                 // these arms — its right pane is always the file view).
                 if app.mode == ViewMode::Log {
-                    " shift+←/→: cycle | j/k: scroll | pgup/pgdn: scroll | v: view file | s: split | /: search | <prefix> t: new pane | <prefix> f: zoom | <prefix> l: status view | <prefix> b: tree view | <prefix> o: open project | <prefix> q: quit"
+                    " shift+←/→: cycle | j/k: scroll | pgup/pgdn: scroll | v: view file | s: split | /: search | <prefix> t: new pane | <prefix> f: zoom | <prefix> l: status view | <prefix> b: tree view | <prefix> o: open project | <prefix> q: detach"
                 } else {
-                    " shift+←/→: cycle | j/k: scroll | pgup/pgdn: scroll | v: view file | s: split | /: search | <prefix> t: new pane | <prefix> f: zoom | <prefix> l: log view | <prefix> b: tree view | <prefix> o: open project | <prefix> q: quit"
+                    " shift+←/→: cycle | j/k: scroll | pgup/pgdn: scroll | v: view file | s: split | /: search | <prefix> t: new pane | <prefix> f: zoom | <prefix> l: log view | <prefix> b: tree view | <prefix> o: open project | <prefix> q: detach"
                 }
             } else {
                 // No file target for `v` — a hint for a no-op key would lie.
                 if app.mode == ViewMode::Log {
-                    " shift+←/→: cycle | j/k: scroll | pgup/pgdn: scroll | s: split | /: search | <prefix> t: new pane | <prefix> f: zoom | <prefix> l: status view | <prefix> b: tree view | <prefix> o: open project | <prefix> q: quit"
+                    " shift+←/→: cycle | j/k: scroll | pgup/pgdn: scroll | s: split | /: search | <prefix> t: new pane | <prefix> f: zoom | <prefix> l: status view | <prefix> b: tree view | <prefix> o: open project | <prefix> q: detach"
                 } else {
-                    " shift+←/→: cycle | j/k: scroll | pgup/pgdn: scroll | s: split | /: search | <prefix> t: new pane | <prefix> f: zoom | <prefix> l: log view | <prefix> b: tree view | <prefix> o: open project | <prefix> q: quit"
+                    " shift+←/→: cycle | j/k: scroll | pgup/pgdn: scroll | s: split | /: search | <prefix> t: new pane | <prefix> f: zoom | <prefix> l: log view | <prefix> b: tree view | <prefix> o: open project | <prefix> q: detach"
                 }
             }
         }

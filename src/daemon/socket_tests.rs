@@ -102,10 +102,20 @@ fn the_lock_outlives_the_bind_so_a_second_daemon_still_loses() {
     let path = socket_path(&dir);
     let first = DaemonSocket::bind(&path).expect("the first binds");
 
-    assert!(DaemonSocket::bind(&path).is_err());
+    // Reported rather than asserted bare: which of the three steps failed is
+    // the whole diagnosis if this ever goes intermittent.
+    match DaemonSocket::bind(&path) {
+        Ok(_) => panic!("a second daemon bound while the first held the lock"),
+        Err(err) => assert!(
+            err.to_string().contains("already running"),
+            "refused for the wrong reason: {err:#}"
+        ),
+    }
 
     drop(first);
-    DaemonSocket::bind(&path).expect("the path is free once the first releases");
+    if let Err(err) = DaemonSocket::bind(&path) {
+        panic!("the path must be free once the first releases: {err:#}");
+    }
 }
 
 #[test]

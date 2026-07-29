@@ -20,7 +20,7 @@ fn the_empty_screen_names_the_only_two_things_that_work() {
 
     assert!(text.contains("no project open"), "got: {text}");
     assert!(text.contains("^F o: open project"), "got: {text}");
-    assert!(text.contains("^F q: quit"), "got: {text}");
+    assert!(text.contains("^F q: detach"), "got: {text}");
 }
 
 #[test]
