@@ -27,14 +27,24 @@ fn next_read(channel: &SnapshotChannel) -> SnapshotMsg {
     panic!("no snapshot arrived within {SETTLE:?}");
 }
 
-/// Drain until the reader has been quiet for longer than its rate limit.
+/// Drain until the reader has been quiet for several times its rate limit.
 ///
 /// For a test whose claim is "this change caused a read": a read already owed
 /// when the test acts — starting the second watch owes one — would arrive on its
 /// own and be indistinguishable from the one being asserted.
+///
+/// The window is what makes that hold, so it is wide. An owed read is taken
+/// within `MIN_READ_INTERVAL` of the one before it *plus* however long the
+/// worker waits to be scheduled, which under a full test run has been measured
+/// at hundreds of milliseconds; returning before it arrives would put the read
+/// this is meant to remove right back in the way. Still far below
+/// `IDLE_READ_INTERVAL`, so the safety net cannot be what breaks the silence,
+/// and far below what the caller then waits for a read.
 fn quiesce(channel: &SnapshotChannel) {
-    let quiet_for = MIN_READ_INTERVAL + Duration::from_millis(500);
-    let deadline = Instant::now() + IDLE_READ_INTERVAL - Duration::from_millis(500);
+    let quiet_for = MIN_READ_INTERVAL * 3;
+    // Only reached if reads never stop, which no test here can cause; a failure
+    // of the reader itself, not of the timing.
+    let deadline = Instant::now() + Duration::from_secs(15);
     let mut last_read = Instant::now();
     while Instant::now() < deadline {
         if channel.try_recv().is_ok() {
