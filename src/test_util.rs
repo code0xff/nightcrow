@@ -98,6 +98,17 @@ impl crate::backend::TerminalBackend for FakeBackend {
 
     fn destroy_pane(&mut self, _id: crate::backend::PaneId) {}
 
+    /// Echoed back as the event a shared session would send, so a test drives
+    /// the same round trip the real thing does: a reorder is asked for and
+    /// applied when it comes back.
+    fn reorder(&mut self, order: &[crate::backend::PaneId]) {
+        self.pending_events
+            .borrow_mut()
+            .push(crate::backend::BackendEvent::Reordered {
+                order: order.to_vec(),
+            });
+    }
+
     fn send_input(&mut self, _id: crate::backend::PaneId, data: &[u8]) -> anyhow::Result<()> {
         self.sent.push(data.to_vec());
         Ok(())

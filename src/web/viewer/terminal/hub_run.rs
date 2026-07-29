@@ -145,8 +145,8 @@ impl TerminalHub {
                     BackendEvent::Created { pane, .. } | BackendEvent::Resized { pane, .. } => {
                         tracing::debug!(pane, "hub: unexpected event from its own backend");
                     }
-                    BackendEvent::SizeOwnership { owned } => {
-                        tracing::debug!(owned, "hub: unexpected size ownership event");
+                    BackendEvent::SizeOwnership { .. } | BackendEvent::Reordered { .. } => {
+                        tracing::debug!("hub: unexpected session event from its own backend");
                     }
                 }
             }

@@ -24,12 +24,14 @@ fn handle_key_leader_s_then_digit_swaps_active_pane() {
     assert!(app.awaiting_swap_target(), "leader+s must arm swap mode");
     assert!(!app.prefix_armed(), "swap mode must clear the prefix");
 
-    // The digit resolves the swap.
+    // The digit resolves the swap — as a request to the session, which the tab
+    // list follows once the order comes back.
     let _ = handle_key(&mut app, press(KeyCode::Char('5'), KeyModifiers::NONE));
     assert!(
         !app.awaiting_swap_target(),
         "the digit must disarm swap mode"
     );
+    app.poll_terminal();
     assert_eq!(app.terminal.panes[0].id, target_id);
     assert_eq!(app.terminal.panes[2].id, moving_id);
     assert_eq!(app.terminal.active, 2, "focus follows the moved pane");

@@ -91,6 +91,14 @@ impl TerminalBackend for HubBackend {
         }
     }
 
+    fn reorder(&mut self, order: &[PaneId]) {
+        if let Err(err) = self.link.send(HubClientMessage::Reorder {
+            order: order.to_vec(),
+        }) {
+            tracing::warn!(%err, "could not ask the session to reorder its panes");
+        }
+    }
+
     fn claim_size(&mut self) {
         if let Err(err) = self.link.send(HubClientMessage::ClaimSize) {
             tracing::warn!(%err, "could not ask the session for the pane sizing");
@@ -127,10 +135,8 @@ impl TerminalBackend for HubBackend {
                 TerminalMessage::Event(HubServerMessage::Pending { .. }) => {
                     self.size_startup_panes()
                 }
-                // The canonical pane order. Not yet projected onto the tab's own
-                // order, so a reorder in another client is not reflected here.
                 TerminalMessage::Event(HubServerMessage::Reordered { order }) => {
-                    tracing::debug!(?order, "session reordered its panes");
+                    events.push(BackendEvent::Reordered { order })
                 }
                 // Refusals do not come this way — they are not about a pane, so
                 // the client keeps them on the queue that reaches its notices.

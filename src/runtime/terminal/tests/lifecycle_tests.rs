@@ -48,7 +48,7 @@ fn swap_active_with_exchanges_panes_and_follows_focus() {
     let a_id = state.panes[0].id;
     let c_id = state.panes[2].id;
 
-    assert!(state.swap_active_with(2));
+    assert!(state.swap_active_with_now(2));
 
     // "A" and "C" exchanged slots; focus followed "A" to slot 2.
     assert_eq!(state.panes[0].id, c_id);
@@ -65,7 +65,7 @@ fn swap_active_with_out_of_range_is_noop() {
     state.create_pane_with_now(None, Some("B")).unwrap();
     state.active = 0;
 
-    assert!(!state.swap_active_with(5));
+    assert!(!state.swap_active_with_now(5));
     assert_eq!(state.active, 0);
     assert_eq!(state.panes[0].title, "A");
     assert_eq!(state.panes[1].title, "B");
@@ -78,7 +78,7 @@ fn swap_active_with_self_is_noop() {
     state.create_pane_with_now(None, Some("B")).unwrap();
     state.active = 1;
 
-    assert!(!state.swap_active_with(1));
+    assert!(!state.swap_active_with_now(1));
     assert_eq!(state.active, 1);
     assert_eq!(state.panes[1].title, "B");
 }
@@ -94,7 +94,7 @@ fn swap_active_with_preserves_per_pane_state() {
     state.scroll.insert(a_id, 7);
     state.last_content_size.insert(a_id, (10, 40));
 
-    assert!(state.swap_active_with(1));
+    assert!(state.swap_active_with_now(1));
 
     // Per-pane state is id-keyed, so it survives the reorder unchanged.
     assert_eq!(state.scroll.get(&a_id), Some(&7));
@@ -186,4 +186,60 @@ fn closing_pane_drops_its_last_content_size() {
     state.close_active();
 
     assert!(!state.last_content_size.contains_key(&id));
+}
+
+#[test]
+fn a_swap_is_asked_for_rather_than_applied_on_the_spot() {
+    // The order belongs to the session, so it lands when it comes back — for
+    // every client at once instead of this one alone.
+    let mut state = state_with_fake();
+    state.create_pane_with_now(None, Some("A")).unwrap();
+    state.create_pane_with_now(None, Some("B")).unwrap();
+    state.active = 0;
+
+    assert!(state.swap_active_with(1));
+
+    assert_eq!(state.panes[0].title, "A", "nothing has moved yet");
+    state.poll();
+    assert_eq!(state.panes[0].title, "B");
+    assert_eq!(state.active, 1, "and focus followed the pane it was on");
+}
+
+#[test]
+fn an_order_from_the_session_reprojects_the_tabs_without_moving_the_focus() {
+    // A reorder in the browser reaches every client. The user is still looking
+    // at the same pane, which is now somewhere else in the row.
+    let mut state = state_with_fake();
+    state.create_pane_with_now(None, Some("A")).unwrap();
+    state.create_pane_with_now(None, Some("B")).unwrap();
+    state.create_pane_with_now(None, Some("C")).unwrap();
+    state.active = 1; // looking at "B"
+    let b_id = state.panes[1].id;
+    let ids: Vec<_> = state.panes.iter().map(|pane| pane.id).collect();
+
+    state.apply_order(&[ids[2], ids[1], ids[0]]);
+
+    assert_eq!(state.panes[0].title, "C");
+    assert_eq!(state.panes[2].title, "A");
+    assert_eq!(state.panes[state.active].id, b_id);
+}
+
+#[test]
+fn an_order_naming_panes_this_client_does_not_have_still_applies() {
+    // The session can be a beat ahead — a pane another client just opened, or
+    // one that exited here first. Neither may lose a pane or drop an id.
+    let mut state = state_with_fake();
+    state.create_pane_with_now(None, Some("A")).unwrap();
+    state.create_pane_with_now(None, Some("B")).unwrap();
+    let ids: Vec<_> = state.panes.iter().map(|pane| pane.id).collect();
+
+    // An unknown id in the middle, and "B" left out entirely.
+    state.apply_order(&[9999, ids[0]]);
+
+    assert_eq!(state.panes.len(), 2);
+    assert_eq!(state.panes[0].id, ids[0], "what was named comes first");
+    assert_eq!(
+        state.panes[1].id, ids[1],
+        "and what was left out keeps its place"
+    );
 }

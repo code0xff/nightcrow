@@ -41,6 +41,16 @@ pub enum BackendEvent {
         rows: u16,
         cols: u16,
     },
+    /// The canonical order of the panes.
+    ///
+    /// Only a backend serving a shared session reports this: the order is part
+    /// of what the session owns, so it arrives the same way a pane does — by
+    /// being told, whether or not this side asked. Ids this side does not know
+    /// are ignored and panes the order omits keep their place, so an order that
+    /// raced a create or an exit still applies.
+    Reordered {
+        order: Vec<PaneId>,
+    },
     /// Whether this side is the one whose layout sets the pane sizes.
     ///
     /// A PTY has one size and a child cannot be re-flowed after the fact, so
@@ -64,6 +74,15 @@ pub trait TerminalBackend {
     fn send_input(&mut self, id: PaneId, data: &[u8]) -> Result<()>;
     fn resize(&mut self, id: PaneId, rows: u16, cols: u16);
     fn drain_events(&mut self) -> Vec<BackendEvent>;
+
+    /// Ask for the panes to be put in this order.
+    ///
+    /// A no-op by default: a backend that owns its panes has no one to negotiate
+    /// the order with, and whoever holds the list can put them in order itself.
+    /// A shared session answers with [`BackendEvent::Reordered`].
+    fn reorder(&mut self, order: &[PaneId]) {
+        let _ = order;
+    }
 
     /// Ask to become the client whose layout sets the pane sizes.
     ///

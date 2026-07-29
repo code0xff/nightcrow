@@ -74,8 +74,10 @@ fn handle_mouse_click_completes_an_armed_swap_with_the_clicked_pane() {
     );
 
     // The clicked pane is the swap target, exactly like its digit: the
-    // previously active pane moved into the clicked slot and stays active.
+    // previously active pane moves into the clicked slot and stays active, once
+    // the session answers with the new order.
     assert!(!app.awaiting_swap_target());
+    app.poll_terminal();
     assert_eq!(app.terminal.panes[1].id, first_id);
     assert_eq!(app.terminal.active, 1);
     assert!(
@@ -102,6 +104,7 @@ fn handle_mouse_tab_click_completes_an_armed_swap() {
     );
 
     assert!(!app.awaiting_swap_target());
+    app.poll_terminal();
     assert_eq!(app.terminal.panes[1].id, first_id);
     assert_eq!(app.terminal.active, 1);
 }

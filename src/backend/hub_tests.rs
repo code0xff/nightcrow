@@ -235,3 +235,32 @@ fn claiming_the_sizing_asks_the_session_rather_than_assuming_it() {
         "nothing is granted locally"
     );
 }
+
+#[test]
+fn a_reorder_is_asked_for_and_the_order_comes_back_as_an_event() {
+    // The order is the session's, so this end only requests it — and hears the
+    // result the same way it would hear about a reorder in the browser.
+    let mut wired = wired();
+
+    wired.backend.reorder(&[3, 1, 2]);
+
+    match wired.next_request() {
+        ClientMessage::Terminal {
+            message: HubClientMessage::Reorder { order },
+            ..
+        } => assert_eq!(order, vec![3, 1, 2]),
+        other => panic!("expected a reorder, got {other:?}"),
+    }
+    assert!(
+        wired.backend.drain_events().is_empty(),
+        "nothing is applied locally"
+    );
+
+    wired.deliver(HubServerMessage::Reordered {
+        order: vec![3, 1, 2],
+    });
+    assert!(matches!(
+        wired.backend.drain_events().as_slice(),
+        [BackendEvent::Reordered { order }] if order == &[3, 1, 2]
+    ));
+}

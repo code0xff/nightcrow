@@ -36,6 +36,11 @@ pub(super) fn backend_payloads(app: &App) -> Vec<Vec<u8>> {
 pub(super) fn app_with_terminal_pane() -> App {
     let mut app = app_with_fake_backend();
     app.terminal.create_pane_now().unwrap();
+    // One frame's worth of polling, which is what spends the startup restore
+    // (`pending_terminal`) — it is applied on the first tick after any pane
+    // exists, so leaving it armed would let it re-fire in the middle of a test
+    // and reset the focus these start from.
+    app.poll_terminal();
     app.focus = Focus::Terminal;
     app
 }
