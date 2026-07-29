@@ -333,7 +333,7 @@ background even while scrolled out of the window.
 - **Lower panel focused (terminal)**: leader/예약키가 아닌 모든 키는 active backend의 stdin으로 직접 통과한다(`encode_key`가 화살표/F-key/제어문자를 VT100 시퀀스로 인코딩). 단독 `Ctrl+T/W/L/O/P/Q` 등은 앱 명령이 아니므로 control byte로 PTY에 전달된다(리더 `Ctrl+F`만 prefix를 arm하고 통과하지 않는다). bare F키는 앱이 가로채므로 pane 안 프로그램(htop, mc 등)의 F키 메뉴는 동작하지 않는다 — 수정자를 붙인 `Ctrl+F1`, `Shift+F5` 등은 통과한다.
 - overlay(repo input/search) active 시에는 leader dispatch가 금지되고 overlay가 키를 소유한다. armed 중 overlay가 열리는 경로면 prefix를 취소한다. repo 다이얼로그는 `Workspace` 소유라 `main::dispatch_key`가 per-project 핸들러보다 먼저 처리한다 — 프로젝트가 없을 때도 열려야 하기 때문.
 - **프로젝트가 없을 때**: `main::handle_empty_key`가 leader arming과 `o`/`q`만 해석하고 나머지는 버린다. `<L> <L>`는 여기서도 액션 테이블로 넘어가지 않는다 — 기본 leader가 `ctrl+f`라 follow-up이 `f`에 매칭돼 fullscreen이 토글될 수 있기 때문.
-- 좌측/우측 패널 타이틀에는 현재 포커스 단축키(`F1` / `F2`)가 노출돼 사용자가 즉시 jump 키를 알 수 있다.
+- 좌측/우측 패널 타이틀에는 현재 포커스 단축키(`<L> 1` / `<L> 2`, 기본 leader면 `^F 1` / `^F 2`)가 노출돼 사용자가 즉시 jump 키를 알 수 있다. `ui::jump_legend`가 설정된 leader label과 digit을 **공백으로** 이어 붙인다 — `^F1`로 붙여 쓰면 Ctrl+F1로 읽히고, 그 조합은 앱이 가로채지 않고 PTY로 통과시키는 별개 키라 오해를 만든다. 프로젝트 탭 행이 쓰는 `F1`…`F10` legend와는 다른 축임에 주의한다.
 
 ### Project Boundary (`Workspace` / `App`)
 
