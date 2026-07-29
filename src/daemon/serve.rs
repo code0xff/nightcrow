@@ -67,7 +67,13 @@ fn attach(stream: UnixStream, session: &Session) {
         tracing::debug!("daemon: could not split an attaching client's socket");
         return;
     };
-    let (id, queue) = session.clients.connect();
+    // A third handle, so the set can end this connection if the client stops
+    // draining. Its own two are blocked in `read` and `write`.
+    let Ok(hangup) = stream.try_clone() else {
+        tracing::debug!("daemon: could not split an attaching client's socket");
+        return;
+    };
+    let (id, queue) = session.clients.connect(hangup);
     // Subscribed before the set is sent, so the panes of every open repository
     // are already streaming when the client learns the repository exists.
     let mut bridges = TerminalBridges::new(id, Arc::clone(&session.clients));
