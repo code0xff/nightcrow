@@ -1,12 +1,16 @@
-//! The daemon's accept loop: one thread per attached client.
+//! The daemon's accept loop: one attached client, two threads.
+//!
+//! A client gets a reader and a writer because the daemon speaks unprompted —
+//! the session is shared, so a repository opened in the browser has to reach an
+//! attached TUI that never asked. The reader blocks on the socket; the writer
+//! drains that client's queue.
 //!
 //! Sized like the viewer's accept loop and for the same reason — a connection
-//! costs a thread — but with a much lower ceiling. Clients here are terminals a
-//! person is sitting at, not browser tabs, and a bound that low turns a client
-//! that reconnects in a loop into a refusal rather than an unbounded pile of
-//! threads.
+//! costs threads — but with a much lower ceiling. Clients here are terminals a
+//! person is sitting at, not browser tabs.
 
-use super::frame::{Frame, read_frame, write_frame};
+use super::clients::AttachedClients;
+use super::frame::{Frame, FrameKind, read_frame, write_frame};
 use super::protocol::{ClientMessage, RepoSummary, ServerMessage, version};
 use crate::web::viewer::server::ViewerState;
 use crate::web::viewer::session::{self, CloseError, OpenError};
@@ -21,6 +25,12 @@ use std::sync::Arc;
 /// still bounding a client stuck in a reconnect loop.
 pub const MAX_ATTACHED_CLIENTS: usize = 16;
 
+/// Everything the connection threads share.
+struct Session {
+    state: Arc<ViewerState>,
+    clients: AttachedClients,
+}
+
 /// Serve attached clients until the process ends.
 ///
 /// Takes a *clone* of the listener rather than the [`DaemonSocket`]: the socket
@@ -30,90 +40,145 @@ pub const MAX_ATTACHED_CLIENTS: usize = 16;
 ///
 /// [`DaemonSocket`]: super::socket::DaemonSocket
 pub fn serve(listener: UnixListener, state: Arc<ViewerState>) {
-    let connections = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let session = Arc::new(Session {
+        state,
+        clients: AttachedClients::default(),
+    });
     for stream in listener.incoming() {
         let Ok(stream) = stream else { continue };
-        let Some(slot) =
-            crate::web::common::conn::ConnectionSlot::acquire(&connections, MAX_ATTACHED_CLIENTS)
-        else {
-            tracing::debug!("daemon: refusing an attach over the client cap");
+        if session.clients.len() >= MAX_ATTACHED_CLIENTS {
             // Dropped rather than answered: writing a refusal here would let one
             // stalled client hold up every attach behind it, the same reason the
             // viewer's accept loop closes instead of writing a 503.
+            tracing::debug!("daemon: refusing an attach over the client cap");
             continue;
-        };
-        let state = Arc::clone(&state);
+        }
+        let session = Arc::clone(&session);
         let _ = std::thread::Builder::new()
             .name("nightcrow-attach".into())
-            .spawn(move || {
-                let _slot = slot;
-                if let Err(err) = serve_client(stream, &state) {
-                    // Expected on detach: the client closes mid-read. Logged at
-                    // debug because a person quitting is not a fault.
-                    tracing::debug!(%err, "daemon: attached client ended");
+            .spawn(move || attach(stream, &session));
+    }
+}
+
+/// Serve one client for as long as it stays attached.
+fn attach(stream: UnixStream, session: &Session) {
+    let Ok(write_half) = stream.try_clone() else {
+        tracing::debug!("daemon: could not split an attaching client's socket");
+        return;
+    };
+    let (id, queue) = session.clients.connect();
+
+    // The writer owns its half outright, so the reader below can stay blocked
+    // in `read` while frames go out.
+    let writer = std::thread::Builder::new()
+        .name("nightcrow-attach-tx".into())
+        .spawn(move || {
+            let mut out = write_half;
+            for frame in queue {
+                if write_frame(&mut out, &frame).is_err() || out.flush().is_err() {
+                    break;
                 }
-            });
+            }
+        });
+
+    // The set as it stands, before this client has asked for anything: it needs
+    // the session's shape to render, and asking for what the daemon already
+    // knows is a round trip for nothing.
+    session.clients.send_to(id, encode(&repos(&session.state)));
+
+    if let Err(err) = read_requests(stream, id, session) {
+        // Expected on detach: the client closes mid-read. Logged at debug
+        // because a person quitting is not a fault.
+        tracing::debug!(%err, "daemon: attached client ended");
+    }
+    // Drops this client's sender, which ends the writer draining it.
+    session.clients.disconnect(id);
+    if let Ok(writer) = writer {
+        crate::platform::threading::try_timed_join(
+            writer,
+            crate::platform::threading::REAP_TIMEOUT,
+        );
     }
 }
 
 /// Read requests from one client until it detaches.
-fn serve_client(mut stream: UnixStream, state: &ViewerState) -> Result<()> {
+fn read_requests(mut stream: UnixStream, id: u64, session: &Session) -> Result<()> {
     while let Some(frame) = read_frame(&mut stream)? {
         // Terminal frames arrive once panes are shared; until then a client has
         // no pane to write to, and a frame kind with no handler is dropped
         // rather than closing the connection over it.
-        if frame.kind != super::frame::FrameKind::Control {
+        if frame.kind != FrameKind::Control {
             tracing::debug!("daemon: ignoring a terminal frame before panes are shared");
             continue;
         }
-        let reply = match serde_json::from_slice::<ClientMessage>(&frame.payload) {
-            Ok(message) => handle(message, state),
+        match serde_json::from_slice::<ClientMessage>(&frame.payload) {
+            Ok(message) => handle(message, id, session),
             // A request this daemon cannot parse is answered, not fatal: the
             // client stays attached and its next request is still served.
-            Err(err) => ServerMessage::Error {
-                message: format!("unreadable request: {err}"),
-            },
-        };
-        let json = serde_json::to_vec(&reply)?;
-        write_frame(&mut stream, &Frame::control(json))?;
-        stream.flush()?;
+            Err(err) => session.clients.send_to(
+                id,
+                encode(&ServerMessage::Error {
+                    message: format!("unreadable request: {err}"),
+                }),
+            ),
+        }
     }
     Ok(())
 }
 
 /// Carry out one request against the served set.
-fn handle(message: ClientMessage, state: &ViewerState) -> ServerMessage {
+///
+/// A state change is broadcast rather than returned: every attached client is
+/// looking at the same session, and the one that asked has no more claim on the
+/// result than the others. Refusals are addressed to the asker alone.
+fn handle(message: ClientMessage, id: u64, session: &Session) {
+    let state = &session.state;
     match message {
         ClientMessage::Hello { version: client } => {
             let daemon = version();
-            if client != daemon {
+            let reply = if client == daemon {
+                ServerMessage::Hello { version: daemon }
+            } else {
                 // Reported, not refused. The two ship in one binary, so a
                 // mismatch means two builds are running at once — worth saying
                 // plainly rather than failing with a decode error later.
-                return ServerMessage::Error {
+                ServerMessage::Error {
                     message: format!("client is {client}, daemon is {daemon}"),
-                };
-            }
-            ServerMessage::Hello { version: daemon }
+                }
+            };
+            session.clients.send_to(id, encode(&reply));
         }
-        ClientMessage::ListRepos => repos(state),
+        // Answered to the asker: nothing changed, so there is nothing to tell
+        // the others.
+        ClientMessage::ListRepos => session.clients.send_to(id, encode(&repos(state))),
         ClientMessage::OpenRepo { path } => match session::open_repo(state, &path) {
-            // The whole set, not just the opened repository: the client renders
-            // tabs from it, and another client may have changed it meanwhile.
-            Ok(_) => repos(state),
-            Err(OpenError::EmptyPath) => error("a path is required"),
-            Err(OpenError::NotADirectory) => error("no such directory"),
-            Err(OpenError::TooMany) => error("the maximum number of repositories is already open"),
+            Ok(_) => session.clients.broadcast(encode(&repos(state))),
+            Err(OpenError::EmptyPath) => refuse(id, session, "a path is required"),
+            Err(OpenError::NotADirectory) => refuse(id, session, "no such directory"),
+            Err(OpenError::TooMany) => refuse(
+                id,
+                session,
+                "the maximum number of repositories is already open",
+            ),
         },
         ClientMessage::CloseRepo { repo } => match session::close_repo(state, &repo) {
-            Ok(()) => repos(state),
-            Err(CloseError::UnknownRepo) => error("unknown repository"),
+            Ok(()) => session.clients.broadcast(encode(&repos(state))),
+            Err(CloseError::UnknownRepo) => refuse(id, session, "unknown repository"),
         },
         ClientMessage::ReorderRepos { order } => {
             session::reorder_repos(state, &order);
-            repos(state)
+            session.clients.broadcast(encode(&repos(state)));
         }
     }
+}
+
+fn refuse(id: u64, session: &Session, message: &str) {
+    session.clients.send_to(
+        id,
+        encode(&ServerMessage::Error {
+            message: message.to_string(),
+        }),
+    );
 }
 
 fn repos(state: &ViewerState) -> ServerMessage {
@@ -128,9 +193,19 @@ fn repos(state: &ViewerState) -> ServerMessage {
     }
 }
 
-fn error(message: &str) -> ServerMessage {
-    ServerMessage::Error {
-        message: message.to_string(),
+/// Encode a message into a control frame.
+///
+/// Encoding cannot fail for these types — they are plain data with no maps
+/// keyed by anything but strings — so a failure would mean a bug in the
+/// protocol definitions rather than anything a client did. It becomes an error
+/// frame so the client sees *something* instead of a silently dropped reply.
+fn encode(message: &ServerMessage) -> Frame {
+    match serde_json::to_vec(message) {
+        Ok(json) => Frame::control(json),
+        Err(err) => {
+            tracing::error!(%err, "daemon: could not encode a reply");
+            Frame::control(br#"{"type":"error","message":"reply could not be encoded"}"#.to_vec())
+        }
     }
 }
 

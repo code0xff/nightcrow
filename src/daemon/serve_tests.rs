@@ -52,21 +52,44 @@ struct Client {
 }
 
 impl Client {
+    /// Attach and consume the repository set the daemon sends unprompted.
     fn attach(path: &std::path::Path) -> Self {
+        let mut client = Self {
+            stream: UnixStream::connect(path).expect("attaches"),
+        };
+        client.next();
+        client
+    }
+
+    /// Attach without consuming anything, for tests about the first frame.
+    fn attach_raw(path: &std::path::Path) -> Self {
         Self {
             stream: UnixStream::connect(path).expect("attaches"),
         }
     }
 
-    fn ask(&mut self, message: ClientMessage) -> ServerMessage {
+    fn send(&mut self, message: ClientMessage) {
         let json = serde_json::to_vec(&message).expect("encodes");
         write_frame(&mut self.stream, &Frame::control(json)).expect("writes");
         self.stream.flush().expect("flushes");
+    }
+
+    /// The next message from the daemon, whether it answers a request of this
+    /// client's or reports a change another one made.
+    fn next(&mut self) -> ServerMessage {
+        self.stream
+            .set_read_timeout(Some(std::time::Duration::from_secs(5)))
+            .expect("sets a timeout");
         let frame = read_frame(&mut self.stream)
             .expect("reads")
-            .expect("the daemon answers");
+            .expect("the daemon speaks");
         assert_eq!(frame.kind, FrameKind::Control);
         serde_json::from_slice(&frame.payload).expect("decodes")
+    }
+
+    fn ask(&mut self, message: ClientMessage) -> ServerMessage {
+        self.send(message);
+        self.next()
     }
 }
 
@@ -194,19 +217,58 @@ fn closing_an_unknown_repository_is_refused() {
 }
 
 #[test]
-fn a_repository_one_client_opens_is_visible_to_another() {
-    // The point of the daemon: the session is shared, not per-connection.
+fn a_repository_one_client_opens_reaches_another_without_it_asking() {
+    // The point of the daemon, and the reason it speaks unprompted: the
+    // session is shared, so a change is news for every client, not a reply
+    // owed to the one that made it.
     let (repo, path) = crate::test_util::make_repo();
     let dir = tempfile::TempDir::new().unwrap();
     let daemon = daemon(&dir, &[]);
     let mut first = Client::attach(daemon.path());
     let mut second = Client::attach(daemon.path());
 
-    first.ask(ClientMessage::OpenRepo { path: path.clone() });
-    let seen = second.ask(ClientMessage::ListRepos);
+    first.send(ClientMessage::OpenRepo { path: path.clone() });
 
-    assert_eq!(repo_paths(&seen), vec![resolved(&path)]);
+    assert_eq!(repo_paths(&second.next()), vec![resolved(&path)]);
+    assert_eq!(repo_paths(&first.next()), vec![resolved(&path)]);
     drop(repo);
+}
+
+#[test]
+fn attaching_serves_the_repository_set_before_anything_is_asked() {
+    // A client needs the session's shape to render at all; making it ask for
+    // what the daemon already knows is a round trip for nothing.
+    let (repo, path) = crate::test_util::make_repo();
+    let dir = tempfile::TempDir::new().unwrap();
+    let daemon = daemon(&dir, std::slice::from_ref(&path));
+
+    let mut client = Client::attach_raw(daemon.path());
+
+    assert_eq!(repo_paths(&client.next()), vec![path]);
+    drop(repo);
+}
+
+#[test]
+fn a_refusal_reaches_only_the_client_that_asked() {
+    // A bad path is an answer for one client and noise for the rest; a
+    // broadcast here would make every attached TUI flash an error.
+    let dir = tempfile::TempDir::new().unwrap();
+    let daemon = daemon(&dir, &[]);
+    let mut asker = Client::attach(daemon.path());
+    let mut other = Client::attach(daemon.path());
+
+    let refused = asker.ask(ClientMessage::OpenRepo {
+        path: "/no/such/place".into(),
+    });
+    assert!(matches!(refused, ServerMessage::Error { .. }));
+
+    // The other client has nothing waiting: a short timeout is the only way to
+    // assert an absence, and it must not be mistaken for a slow daemon — so a
+    // request of its own is answered first, proving the connection is live.
+    assert!(matches!(
+        other.ask(ClientMessage::ListRepos),
+        ServerMessage::Repos { .. }
+    ));
 }
 
 #[test]
