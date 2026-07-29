@@ -2,4 +2,5 @@
 
 pub(crate) mod logging;
 pub(crate) mod paths;
+pub(crate) mod signals;
 pub(crate) mod threading;

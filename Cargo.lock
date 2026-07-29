@@ -1253,6 +1253,7 @@ dependencies = [
  "rust-embed",
  "serde",
  "serde_json",
+ "signal-hook 0.4.4",
  "syntect",
  "tempfile",
  "toml",

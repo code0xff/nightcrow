@@ -108,6 +108,12 @@ pub(crate) fn run_serve(
     port: Option<u16>,
     bind: Option<String>,
 ) -> Result<()> {
+    // Before anything that can be interrupted. Opening repositories and running
+    // the startup shells takes long enough for a stop signal to land in the
+    // middle, and until the handlers exist such a signal kills the process
+    // outright — leaving the shells it had already spawned behind.
+    let shutdown = crate::platform::signals::ShutdownWatch::register()?;
+
     let mut cfg = crate::config::load_config()?;
     if let Some(port) = port {
         cfg.web_viewer.port = port;
@@ -179,10 +185,15 @@ pub(crate) fn run_serve(
     }
     eprintln!("nightcrow: press Ctrl-C to stop");
 
-    // The accept loop owns its own threads; park this one until interrupted.
-    loop {
-        std::thread::park();
-    }
+    // The accept loop owns its own threads, so this one only waits for the
+    // stop signal. It must run the shutdown rather than let the process die
+    // under the signal's default disposition: the server owns child shells,
+    // and only `shutdown` walks the catalog to kill them.
+    let signal = shutdown.wait()?;
+    eprintln!("nightcrow: {} received, stopping", signal.as_str());
+    tracing::info!(signal = signal.as_str(), "shutting down");
+    server.shutdown();
+    Ok(())
 }
 
 /// Canonicalize and de-duplicate the `--repo` list for `serve`.

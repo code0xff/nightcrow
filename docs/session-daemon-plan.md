@@ -178,8 +178,11 @@ PTY는 데이터가 아니라 자식 프로세스와 맺은 계약이다. 자식
 
 1. **스크롤백 깊이** — hub의 스크롤백은 바이트 링버퍼, TUI는 1000줄 기준이다. 용량이
    작으면 attach 직후 스크롤백이 지금보다 얕아진다. E에서 실측하고 맞출지 정한다.
-2. **새 의존성** — `-d`의 `setsid`에 `libc` 직접 의존(또는 `daemonize`), SIGTERM 처리에
-   `signal-hook` 후보. C에서 dependencies.md 절차대로 확정한다.
+2. **새 의존성** — `-d`의 `setsid`에 `libc` 직접 의존(또는 `daemonize`)이 남아 있다.
+   데몬화 크레이트 쪽은 표준이 없어 파편화돼 있어(daemonize/daemonize2/daemonizr/fork)
+   재exec + `setsid` 직접 호출과 비교해 C에서 확정한다. **SIGTERM 처리는 `signal-hook`
+   0.4로 확정** — `ctrlc`는 SIGINT만 다루고, signal-hook이 나머지 시그널에서 가장 널리
+   쓰이며(2억+ 다운로드, 2026-04 릴리스, MIT/Apache-2.0) async 런타임을 요구하지 않는다.
 3. **입력 프레임** — 뷰어의 `Input`은 `data: String`인데 TUI는 `encode_key`가 만든
    바이트를 보낸다. UDS 입력을 바이너리로 확장할지 E에서 정한다.
 4. **세션은 하나** — 사용자당 데몬 하나를 전제한다. named session은 넣지 않는다.
