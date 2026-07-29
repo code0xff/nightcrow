@@ -112,8 +112,11 @@ impl Roots {
         }
     }
 
-    pub(super) fn set_external_git_dir(&mut self, git_dir: &Path) {
-        self.git_dir = Some(Prefix::of(git_dir));
+    /// `None` clears it, for a repository that turned out to keep its git
+    /// directory inside the tree after all — a reopen can land on a different
+    /// repository than the last one did.
+    pub(super) fn set_external_git_dir(&mut self, git_dir: Option<&Path>) {
+        self.git_dir = git_dir.map(Prefix::of);
     }
 }
 
@@ -180,14 +183,34 @@ fn matters(repo: Option<&git2::Repository>, roots: &Roots, path: &Path) -> bool 
 fn git_metadata_matters(inside: &Path) -> bool {
     // Objects and reflogs churn on every commit and every fetch, and neither
     // changes a status by itself — the index or ref update that comes with them
-    // does, and that is watched.
-    if inside.starts_with("objects") || inside.starts_with("logs") {
+    // does, and that is watched. A submodule's churn is the same churn, so the
+    // rule is applied to whichever git directory the path is actually in.
+    let own = within_own_git_dir(inside);
+    if own.starts_with("objects") || own.starts_with("logs") {
         return false;
     }
     // Git takes `index.lock` before an operation and removes it after. Reading
     // on that means reading a tree mid-change, and the real event follows
     // immediately.
     inside.extension().is_none_or(|ext| ext != "lock")
+}
+
+/// Strip the `modules/<name>/` prefixes a submodule's git directory is nested
+/// under, leaving a path relative to the git directory it belongs to.
+///
+/// Only a `modules` component *followed by a name* is stripped, so a submodule
+/// called `objects` keeps its own `index` distinguishable from a real object
+/// directory.
+fn within_own_git_dir(inside: &Path) -> &Path {
+    let mut rest = inside;
+    while let Ok(under) = rest.strip_prefix("modules") {
+        let mut after_name = under.components();
+        if after_name.next().is_none() {
+            break;
+        }
+        rest = after_name.as_path();
+    }
+    rest
 }
 
 #[cfg(test)]

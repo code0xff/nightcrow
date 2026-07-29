@@ -139,7 +139,7 @@ fn inside_a_git_directory_of_its_own_the_same_paths_matter() {
     let git_dir = elsewhere.path().to_string_lossy().to_string();
     let repo = crate::test_util::open_repo(&path);
     let mut roots = Roots::of(Path::new(&path));
-    roots.set_external_git_dir(Path::new(&git_dir));
+    roots.set_external_git_dir(Some(Path::new(&git_dir)));
 
     for interesting in ["index", "HEAD", "refs/heads/main", "worktrees/wt/index"] {
         assert!(
@@ -155,6 +155,44 @@ fn inside_a_git_directory_of_its_own_the_same_paths_matter() {
         assert!(
             !any_matters(Some(&repo), &roots, &under(&git_dir, noise)),
             "{noise} does not"
+        );
+    }
+    drop(dir);
+}
+
+#[test]
+fn a_submodules_own_object_churn_does_not_matter_either() {
+    // A submodule keeps a git directory of its own under `modules/<name>/`, and
+    // a fetch inside it writes the same loose objects and reflogs. Judged by the
+    // top-level rule alone they read as `modules/...` — neither `objects` nor
+    // `logs` — and every fetched object would cost a walk of the parent.
+    let (dir, path) = make_repo();
+    let elsewhere = tempfile::TempDir::new().unwrap();
+    let git_dir = elsewhere.path().to_string_lossy().to_string();
+    let repo = crate::test_util::open_repo(&path);
+    let mut roots = Roots::of(Path::new(&path));
+    roots.set_external_git_dir(Some(Path::new(&git_dir)));
+
+    for noise in [
+        "modules/sub/objects/ab/cdef",
+        "modules/sub/logs/HEAD",
+        "modules/outer/modules/inner/objects/ab/cdef",
+    ] {
+        assert!(
+            !any_matters(Some(&repo), &roots, &under(&git_dir, noise)),
+            "{noise} does not change the parent's status"
+        );
+    }
+    for interesting in [
+        "modules/sub/index",
+        "modules/sub/HEAD",
+        // A submodule may be called anything, including `objects`; only a name
+        // *after* `modules` is stripped, so its index is still its index.
+        "modules/objects/index",
+    ] {
+        assert!(
+            any_matters(Some(&repo), &roots, &under(&git_dir, interesting)),
+            "{interesting} does"
         );
     }
     drop(dir);
