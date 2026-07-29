@@ -12,6 +12,7 @@
 use super::clients::AttachedClients;
 use super::frame::{Frame, FrameKind, read_frame, write_frame};
 use super::protocol::{ClientMessage, RepoSummary, ServerMessage, version};
+use super::terminals::TerminalBridges;
 use crate::web::viewer::server::ViewerState;
 use crate::web::viewer::session::{self, CloseError, OpenError};
 use anyhow::Result;
@@ -28,7 +29,7 @@ pub const MAX_ATTACHED_CLIENTS: usize = 16;
 /// Everything the connection threads share.
 struct Session {
     state: Arc<ViewerState>,
-    clients: AttachedClients,
+    clients: Arc<AttachedClients>,
 }
 
 /// Serve attached clients until the process ends.
@@ -42,7 +43,7 @@ struct Session {
 pub fn serve(listener: UnixListener, state: Arc<ViewerState>) {
     let session = Arc::new(Session {
         state,
-        clients: AttachedClients::default(),
+        clients: Arc::new(AttachedClients::default()),
     });
     for stream in listener.incoming() {
         let Ok(stream) = stream else { continue };
@@ -67,6 +68,9 @@ fn attach(stream: UnixStream, session: &Session) {
         return;
     };
     let (id, queue) = session.clients.connect();
+    // Subscribed before the set is sent, so the panes of every open repository
+    // are already streaming when the client learns the repository exists.
+    let mut bridges = TerminalBridges::new(id, Arc::clone(&session.clients));
 
     // The writer owns its half outright, so the reader below can stay blocked
     // in `read` while frames go out.
@@ -84,9 +88,13 @@ fn attach(stream: UnixStream, session: &Session) {
     // The set as it stands, before this client has asked for anything: it needs
     // the session's shape to render, and asking for what the daemon already
     // knows is a round trip for nothing.
+    bridges.follow(
+        &session::list_session_repos(&session.state),
+        session.state.catalog(),
+    );
     session.clients.send_to(id, encode(&repos(&session.state)));
 
-    if let Err(err) = read_requests(stream, id, session) {
+    if let Err(err) = read_requests(stream, id, session, &mut bridges) {
         // Expected on detach: the client closes mid-read. Logged at debug
         // because a person quitting is not a fault.
         tracing::debug!(%err, "daemon: attached client ended");
@@ -102,7 +110,12 @@ fn attach(stream: UnixStream, session: &Session) {
 }
 
 /// Read requests from one client until it detaches.
-fn read_requests(mut stream: UnixStream, id: u64, session: &Session) -> Result<()> {
+fn read_requests(
+    mut stream: UnixStream,
+    id: u64,
+    session: &Session,
+    bridges: &mut TerminalBridges,
+) -> Result<()> {
     while let Some(frame) = read_frame(&mut stream)? {
         // Terminal frames arrive once panes are shared; until then a client has
         // no pane to write to, and a frame kind with no handler is dropped
@@ -112,7 +125,7 @@ fn read_requests(mut stream: UnixStream, id: u64, session: &Session) -> Result<(
             continue;
         }
         match serde_json::from_slice::<ClientMessage>(&frame.payload) {
-            Ok(message) => handle(message, id, session),
+            Ok(message) => handle(message, id, session, bridges),
             // A request this daemon cannot parse is answered, not fatal: the
             // client stays attached and its next request is still served.
             Err(err) => session.clients.send_to(
@@ -131,7 +144,7 @@ fn read_requests(mut stream: UnixStream, id: u64, session: &Session) -> Result<(
 /// A state change is broadcast rather than returned: every attached client is
 /// looking at the same session, and the one that asked has no more claim on the
 /// result than the others. Refusals are addressed to the asker alone.
-fn handle(message: ClientMessage, id: u64, session: &Session) {
+fn handle(message: ClientMessage, id: u64, session: &Session, bridges: &mut TerminalBridges) {
     let state = &session.state;
     match message {
         ClientMessage::Hello { version: client } => {
@@ -169,7 +182,15 @@ fn handle(message: ClientMessage, id: u64, session: &Session) {
             session::reorder_repos(state, &order);
             session.clients.broadcast(encode(&repos(state)));
         }
+        // Handed straight to the hub, which answers on the subscription rather
+        // than here: a pane it creates is news for every client watching that
+        // repository, not a reply owed to this one.
+        ClientMessage::Terminal { repo, message } => bridges.dispatch(&repo, message),
     }
+    // After the set may have changed: a repository this request opened needs a
+    // subscription before its startup terminals are offered, and one it closed
+    // has a thread to stop.
+    bridges.follow(&session::list_session_repos(state), state.catalog());
 }
 
 fn refuse(id: u64, session: &Session, message: &str) {

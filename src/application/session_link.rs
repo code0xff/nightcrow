@@ -57,6 +57,11 @@ impl SessionLink {
                 // daemon restarted under this client, which the connection loss
                 // reports on its own.
                 ServerMessage::Hello { .. } => {}
+                // Panes are not shared yet — the client still runs its own
+                // PTYs, so there is nothing here for these to act on. Dropped
+                // rather than treated as a fault so the daemon can start
+                // sending them before this side reads them.
+                ServerMessage::Terminal { .. } => {}
             }
         }
     }

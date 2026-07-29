@@ -14,13 +14,20 @@ pub(super) struct Client {
 pub struct TerminalSession {
     pub(super) hub: std::sync::Arc<TerminalHub>,
     pub(super) id: u64,
-    pub(super) rx: Receiver<TerminalFrame>,
+    /// Behind a lock so the session can be shared: the daemon reads frames on
+    /// one thread while requests are dispatched from another. Uncontended in
+    /// practice — only the reader ever takes it.
+    pub(super) rx: std::sync::Mutex<Receiver<TerminalFrame>>,
 }
 
 impl TerminalSession {
     /// Wait up to `timeout` for the next frame to write.
     pub fn next_frame(&self, timeout: Duration) -> Option<TerminalFrame> {
-        self.rx.recv_timeout(timeout).ok()
+        self.rx
+            .lock()
+            .expect("terminal session receiver poisoned")
+            .recv_timeout(timeout)
+            .ok()
     }
 
     /// Handle a decoded control message from this client.

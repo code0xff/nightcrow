@@ -78,7 +78,12 @@ impl DaemonClient {
                 // The daemon volunteers the repository set on attach, so it can
                 // arrive before the handshake answer. Kept rather than dropped:
                 // it is the state this client is about to render.
-                other @ ServerMessage::Repos { .. } => queued.push(other),
+                // Terminal traffic can start before the handshake answer, since
+                // the daemon subscribes this client's repositories the moment it
+                // connects. Kept for the same reason the set is.
+                other @ (ServerMessage::Repos { .. } | ServerMessage::Terminal { .. }) => {
+                    queued.push(other)
+                }
                 ServerMessage::Error { message } => bail!("daemon refused the attach: {message}"),
             }
         }

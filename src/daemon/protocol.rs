@@ -6,6 +6,10 @@
 //! except by running two builds at once, which the version in [`Hello`] reports
 //! rather than tries to bridge.
 
+use crate::backend::PaneId;
+use crate::web::viewer::terminal::frame::{
+    ClientMessage as HubClientMessage, ServerMessage as HubServerMessage,
+};
 use serde::{Deserialize, Serialize};
 
 /// A request from an attached client.
@@ -25,6 +29,17 @@ pub enum ClientMessage {
     CloseRepo { repo: String },
     /// Put the repositories in this order.
     ReorderRepos { order: Vec<String> },
+    /// Act on one repository's terminals.
+    ///
+    /// Carries the hub's own message rather than a parallel set: the browser
+    /// and an attached terminal ask for exactly the same things, and two
+    /// definitions of "create a pane" would drift. The repository has to ride
+    /// along because one socket multiplexes every open repository, where the
+    /// browser opens a connection per repository and needs no tag.
+    Terminal {
+        repo: String,
+        message: HubClientMessage,
+    },
 }
 
 /// A message from the daemon.
@@ -42,6 +57,13 @@ pub enum ServerMessage {
     /// A request could not be carried out. The connection stays open: a refused
     /// request is an answer, not a protocol violation.
     Error { message: String },
+    /// Something happened to one repository's terminals — a pane was created,
+    /// exited, or reordered. Output does not come this way; it travels as
+    /// binary frames.
+    Terminal {
+        repo: String,
+        event: HubServerMessage,
+    },
 }
 
 /// One repository in the served set.
@@ -55,6 +77,57 @@ pub struct RepoSummary {
     pub id: String,
     /// Absolute worktree path.
     pub path: String,
+}
+
+/// Bytes a repository's pane produced, and who they belong to.
+///
+/// Carried in a [`FrameKind::Terminal`](super::frame::FrameKind::Terminal)
+/// frame rather than as JSON: PTY output is not guaranteed valid UTF-8 — a
+/// multi-byte sequence is routinely split across reads — so encoding it as
+/// text would corrupt it before any emulator saw it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TerminalOutput {
+    pub repo: String,
+    pub pane: PaneId,
+    pub data: Vec<u8>,
+}
+
+impl TerminalOutput {
+    /// `[repo len][repo][pane id][bytes]`, with the id little-endian to match
+    /// the hub's own binary framing.
+    pub fn encode(&self) -> Vec<u8> {
+        let repo = self.repo.as_bytes();
+        // The id space is the catalog's, which hands out short opaque names;
+        // anything that does not fit a byte is a bug rather than input.
+        let len = u8::try_from(repo.len()).unwrap_or(0);
+        let mut out = Vec::with_capacity(1 + repo.len() + 4 + self.data.len());
+        out.push(len);
+        out.extend_from_slice(&repo[..usize::from(len)]);
+        out.extend_from_slice(&self.pane.to_le_bytes());
+        out.extend_from_slice(&self.data);
+        out
+    }
+
+    /// Read one back, or `None` when the frame is too short to hold a header.
+    ///
+    /// The daemon only encodes; decoding is the attaching client's half, which
+    /// reads these once its panes come from the session rather than its own
+    /// PTYs. Tests drive it in the meantime.
+    #[cfg(test)]
+    pub fn decode(bytes: &[u8]) -> Option<Self> {
+        let (&len, rest) = bytes.split_first()?;
+        let len = usize::from(len);
+        if rest.len() < len + 4 {
+            return None;
+        }
+        let (repo, rest) = rest.split_at(len);
+        let (pane, data) = rest.split_at(4);
+        Some(Self {
+            repo: String::from_utf8(repo.to_vec()).ok()?,
+            pane: PaneId::from_le_bytes(pane.try_into().ok()?),
+            data: data.to_vec(),
+        })
+    }
 }
 
 /// This build's version, reported in the hello exchange.

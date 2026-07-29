@@ -2,9 +2,13 @@ use crate::backend::PaneId;
 use crate::web::viewer::limits;
 use serde::{Deserialize, Serialize};
 
-/// A control message from the browser. Output travels as binary frames
-/// instead, so it never pays JSON escaping or base64 expansion.
-#[derive(Debug, Deserialize)]
+/// A control message from a client. Output travels as binary frames instead,
+/// so it never pays JSON escaping or base64 expansion.
+///
+/// Serialized as well as deserialized: the browser only ever sends these, but
+/// an attaching client is Rust on both ends of the same definition, and the
+/// daemon relays them.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "lowercase")]
 pub enum ClientMessage {
     Create {
@@ -39,7 +43,7 @@ pub enum ClientMessage {
 }
 
 /// One pane's size, as the client measured its cell.
-#[derive(Debug, Deserialize, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq)]
 pub struct PaneSize {
     pub rows: u16,
     pub cols: u16,
@@ -64,8 +68,12 @@ impl PaneSize {
     }
 }
 
-/// A control message to the browser.
-#[derive(Debug, Serialize, PartialEq, Eq)]
+/// A control message to a client.
+///
+/// Deserialized as well as serialized so the daemon can read one back off a
+/// hub session and hand it on to an attached client tagged with its
+/// repository — one definition rather than a parallel set that can drift.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(tag = "type", rename_all = "lowercase")]
 pub enum ServerMessage {
     /// A pane exists, along with the size its PTY is currently set to.

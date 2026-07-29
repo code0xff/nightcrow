@@ -106,6 +106,12 @@ pub struct ViewerOptions {
 }
 
 impl ViewerState {
+    /// The served repositories, for a transport that needs to reach their
+    /// runtimes directly rather than through a route.
+    pub fn catalog(&self) -> &crate::web::viewer::catalog::Catalog {
+        &self.catalog
+    }
+
     /// Build the served session without binding anything.
     ///
     /// Separate from [`ViewerServer::start`] because the session exists whether

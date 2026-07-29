@@ -55,9 +55,6 @@ impl Frame {
         }
     }
 
-    /// Only tests build these so far — nothing writes PTY bytes until panes are
-    /// shared. The kind exists now because the reader must already accept it.
-    #[cfg(test)]
     pub fn terminal(payload: Vec<u8>) -> Self {
         Self {
             kind: FrameKind::Terminal,

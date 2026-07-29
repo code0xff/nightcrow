@@ -1,9 +1,12 @@
 use super::super::frame::{Frame, FrameKind, read_frame, write_frame};
-use super::super::protocol::{ClientMessage, ServerMessage, version};
+use super::super::protocol::{ClientMessage, ServerMessage, TerminalOutput, version};
 use super::super::socket::DaemonSocket;
 use crate::web::common::auth::Auth;
 use crate::web::viewer::prefs::PrefsStore;
 use crate::web::viewer::server::{ViewerOptions, ViewerState};
+use crate::web::viewer::terminal::frame::{
+    ClientMessage as HubClientMessage, ServerMessage as HubServerMessage,
+};
 use std::io::Write;
 use std::os::unix::net::UnixStream;
 use std::sync::Arc;
@@ -57,7 +60,7 @@ impl Client {
         let mut client = Self {
             stream: UnixStream::connect(path).expect("attaches"),
         };
-        client.next();
+        client.next_repos();
         client
     }
 
@@ -90,6 +93,56 @@ impl Client {
     fn ask(&mut self, message: ClientMessage) -> ServerMessage {
         self.send(message);
         self.next()
+    }
+
+    /// The next terminal event for any repository, skipping the tab list.
+    fn next_terminal_event(&mut self) -> (String, HubServerMessage) {
+        for _ in 0..64 {
+            let frame = read_frame(&mut self.stream)
+                .expect("reads")
+                .expect("the daemon speaks");
+            if frame.kind != FrameKind::Control {
+                continue;
+            }
+            if let Ok(ServerMessage::Terminal { repo, event }) =
+                serde_json::from_slice(&frame.payload)
+            {
+                return (repo, event);
+            }
+        }
+        panic!("no terminal event arrived");
+    }
+
+    /// The next chunk of pane output.
+    fn next_output(&mut self) -> TerminalOutput {
+        for _ in 0..512 {
+            self.stream
+                .set_read_timeout(Some(std::time::Duration::from_secs(10)))
+                .expect("sets a timeout");
+            let frame = read_frame(&mut self.stream)
+                .expect("reads")
+                .expect("the daemon speaks");
+            if frame.kind == FrameKind::Terminal {
+                return TerminalOutput::decode(&frame.payload).expect("a well-formed output frame");
+            }
+        }
+        panic!("no pane output arrived");
+    }
+
+    /// The next repository set, skipping terminal traffic.
+    ///
+    /// Subscribing a client to its repositories starts that traffic
+    /// immediately — a hub with startup terminals offers them to be sized
+    /// before anything else happens — so a test about the tab list has to read
+    /// past it rather than assume the next frame is the one it wants.
+    fn next_repos(&mut self) -> ServerMessage {
+        for _ in 0..64 {
+            let message = self.next();
+            if matches!(message, ServerMessage::Repos { .. }) {
+                return message;
+            }
+        }
+        panic!("no repository set arrived among the terminal traffic");
     }
 }
 
@@ -148,9 +201,9 @@ fn listing_serves_the_repositories_the_daemon_was_started_with() {
     let daemon = daemon(&dir, std::slice::from_ref(&path));
     let mut client = Client::attach(daemon.path());
 
-    let answer = client.ask(ClientMessage::ListRepos);
+    client.send(ClientMessage::ListRepos);
 
-    assert_eq!(repo_paths(&answer), vec![path]);
+    assert_eq!(repo_paths(&client.next_repos()), vec![path]);
     drop(repo);
 }
 
@@ -163,9 +216,9 @@ fn opening_a_repository_adds_it_and_answers_with_the_whole_set() {
     let daemon = daemon(&dir, &[]);
     let mut client = Client::attach(daemon.path());
 
-    let answer = client.ask(ClientMessage::OpenRepo { path: path.clone() });
+    client.send(ClientMessage::OpenRepo { path: path.clone() });
 
-    assert_eq!(repo_paths(&answer), vec![resolved(&path)]);
+    assert_eq!(repo_paths(&client.next_repos()), vec![resolved(&path)]);
     drop(repo);
 }
 
@@ -229,8 +282,8 @@ fn a_repository_one_client_opens_reaches_another_without_it_asking() {
 
     first.send(ClientMessage::OpenRepo { path: path.clone() });
 
-    assert_eq!(repo_paths(&second.next()), vec![resolved(&path)]);
-    assert_eq!(repo_paths(&first.next()), vec![resolved(&path)]);
+    assert_eq!(repo_paths(&second.next_repos()), vec![resolved(&path)]);
+    assert_eq!(repo_paths(&first.next_repos()), vec![resolved(&path)]);
     drop(repo);
 }
 
@@ -244,7 +297,7 @@ fn attaching_serves_the_repository_set_before_anything_is_asked() {
 
     let mut client = Client::attach_raw(daemon.path());
 
-    assert_eq!(repo_paths(&client.next()), vec![path]);
+    assert_eq!(repo_paths(&client.next_repos()), vec![path]);
     drop(repo);
 }
 
@@ -265,10 +318,8 @@ fn a_refusal_reaches_only_the_client_that_asked() {
     // The other client has nothing waiting: a short timeout is the only way to
     // assert an absence, and it must not be mistaken for a slow daemon — so a
     // request of its own is answered first, proving the connection is live.
-    assert!(matches!(
-        other.ask(ClientMessage::ListRepos),
-        ServerMessage::Repos { .. }
-    ));
+    other.send(ClientMessage::ListRepos);
+    assert!(matches!(other.next_repos(), ServerMessage::Repos { .. }));
 }
 
 #[test]
@@ -281,8 +332,8 @@ fn a_client_that_detaches_leaves_the_session_running_for_the_others() {
 
     drop(leaving);
 
-    let answer = staying.ask(ClientMessage::ListRepos);
-    assert_eq!(repo_paths(&answer), vec![path]);
+    staying.send(ClientMessage::ListRepos);
+    assert_eq!(repo_paths(&staying.next_repos()), vec![path]);
     drop(repo);
 }
 
@@ -300,8 +351,11 @@ fn an_unreadable_request_is_answered_rather_than_fatal() {
     let answer: ServerMessage = serde_json::from_slice(&frame.payload).unwrap();
     assert!(matches!(answer, ServerMessage::Error { .. }));
 
-    let next = client.ask(ClientMessage::ListRepos);
-    assert!(repo_paths(&next).is_empty(), "the connection still serves");
+    client.send(ClientMessage::ListRepos);
+    assert!(
+        repo_paths(&client.next_repos()).is_empty(),
+        "the connection still serves"
+    );
 }
 
 #[test]
@@ -315,6 +369,89 @@ fn a_terminal_frame_arriving_early_is_ignored_not_fatal() {
     write_frame(&mut client.stream, &Frame::terminal(vec![1, 2, 3])).unwrap();
     client.stream.flush().unwrap();
 
-    let answer = client.ask(ClientMessage::ListRepos);
-    assert!(repo_paths(&answer).is_empty());
+    client.send(ClientMessage::ListRepos);
+    assert!(repo_paths(&client.next_repos()).is_empty());
+}
+
+#[test]
+fn attaching_subscribes_to_the_terminals_of_every_open_repository() {
+    // Without asking. A client renders a tab per repository, and a pane whose
+    // output it never subscribed to would fall behind its own scrollback.
+    let (repo, path) = crate::test_util::make_repo();
+    let dir = tempfile::TempDir::new().unwrap();
+    let daemon = daemon(&dir, std::slice::from_ref(&path));
+
+    let mut client = Client::attach_raw(daemon.path());
+
+    let (id, event) = client.next_terminal_event();
+    assert!(!id.is_empty(), "the event says which repository it is for");
+    // A fresh hub offers its startup terminals to be sized before creating
+    // them, so this is the first thing any client hears.
+    assert!(
+        matches!(event, HubServerMessage::Pending { .. }),
+        "got {event:?}"
+    );
+    drop(repo);
+}
+
+#[test]
+fn a_pane_a_client_creates_streams_its_output_back() {
+    let (repo, path) = crate::test_util::make_repo();
+    let dir = tempfile::TempDir::new().unwrap();
+    let daemon = daemon(&dir, std::slice::from_ref(&path));
+    let mut client = Client::attach(daemon.path());
+    let (id, _) = client.next_terminal_event();
+
+    client.send(ClientMessage::Terminal {
+        repo: id.clone(),
+        message: HubClientMessage::Create { rows: 24, cols: 80 },
+    });
+
+    // The shell says something as soon as it starts — a prompt at the very
+    // least — and it arrives tagged with the repository it belongs to.
+    let output = client.next_output();
+    assert_eq!(output.repo, id);
+    assert!(!output.data.is_empty());
+    drop(repo);
+}
+
+#[test]
+fn a_pane_one_client_creates_is_streamed_to_another() {
+    // The point of sharing the terminals: two clients on one session are
+    // looking at the same shell, not one each.
+    let (repo, path) = crate::test_util::make_repo();
+    let dir = tempfile::TempDir::new().unwrap();
+    let daemon = daemon(&dir, std::slice::from_ref(&path));
+    let mut creator = Client::attach(daemon.path());
+    let mut watcher = Client::attach(daemon.path());
+    let (id, _) = creator.next_terminal_event();
+
+    creator.send(ClientMessage::Terminal {
+        repo: id.clone(),
+        message: HubClientMessage::Create { rows: 24, cols: 80 },
+    });
+
+    let output = watcher.next_output();
+    assert_eq!(output.repo, id, "and the watcher knows which repository");
+    assert!(!output.data.is_empty());
+    drop(repo);
+}
+
+#[test]
+fn a_terminal_request_for_an_unknown_repository_is_dropped_not_fatal() {
+    // The client can be a beat behind a close on another one.
+    let dir = tempfile::TempDir::new().unwrap();
+    let daemon = daemon(&dir, &[]);
+    let mut client = Client::attach(daemon.path());
+
+    client.send(ClientMessage::Terminal {
+        repo: "r-nonexistent".into(),
+        message: HubClientMessage::Create { rows: 24, cols: 80 },
+    });
+
+    client.send(ClientMessage::ListRepos);
+    assert!(
+        repo_paths(&client.next_repos()).is_empty(),
+        "the connection still serves"
+    );
 }

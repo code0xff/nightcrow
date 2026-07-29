@@ -15,7 +15,7 @@
 //! disconnected when it overflows, which is honest, where silently discarding
 //! bytes would leave a subtly wrong screen.
 
-mod frame;
+pub mod frame;
 mod hub_helpers;
 mod hub_run;
 mod session;
@@ -143,7 +143,7 @@ impl TerminalHub {
         TerminalSession {
             hub: Arc::clone(self),
             id,
-            rx,
+            rx: std::sync::Mutex::new(rx),
         }
     }
 
