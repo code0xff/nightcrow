@@ -112,6 +112,34 @@ impl App {
         };
     }
 
+    /// Step to the next display: unified → split → file → unified.
+    ///
+    /// `v` and `s` each toggle one view against the unified default, which
+    /// leaves the third one undiscoverable unless you already know it exists.
+    /// One key that walks all three makes the set visible; the direct toggles
+    /// stay for jumping straight to a known view.
+    ///
+    /// The file step is skipped when there is nothing to open (no selection, or
+    /// a commit whose file cannot be resolved) rather than being a dead press —
+    /// the same gate `can_open_file_view` puts on `v`.
+    pub fn cycle_diff_view(&mut self) {
+        // Tree mode's right pane is always the raw file preview, so there is
+        // no cycle to walk — matching `v`/`s`.
+        if self.mode == ViewMode::Tree {
+            return;
+        }
+        match self.diff.view {
+            DiffPaneView::Diff => self.toggle_diff_split_view(),
+            DiffPaneView::Split => {
+                self.diff.view = DiffPaneView::Diff;
+                if self.can_open_file_view() {
+                    self.toggle_diff_file_view();
+                }
+            }
+            DiffPaneView::File => self.toggle_diff_file_view(),
+        }
+    }
+
     pub(crate) fn load_commit_diff_for_selected(&mut self) {
         let (oid, title) = match self.log_view.commits.get(self.log_view.selected) {
             Some(entry) => (entry.oid, entry.to_string()),

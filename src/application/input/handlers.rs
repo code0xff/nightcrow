@@ -263,6 +263,8 @@ fn handle_unmapped_upper_key(app: &mut App, key: KeyEvent) {
         Focus::DiffViewer => match key.code {
             _ if matches_text_command(key, 'v') => app.toggle_diff_file_view(),
             _ if matches_text_command(key, 's') => app.toggle_diff_split_view(),
+            // Walks all three views; `v`/`s` still jump straight to one.
+            KeyCode::Tab => app.cycle_diff_view(),
             _ if matches_text_command(key, '/') => {
                 exit_split_for_search(app);
                 app.diff.start_search();

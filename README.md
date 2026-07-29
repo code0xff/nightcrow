@@ -211,6 +211,7 @@ through to the terminal program.
 | `PgUp` / `PgDn` | Scroll 20 lines |
 | `←` / `→` | Horizontal scroll (4 columns) |
 | `v` | Toggle between hunk diff and full file preview |
+| `Tab` | Cycle the display: unified diff → side-by-side split → file contents → unified. `v` and `s` each toggle one view against the unified default, so the third stays hidden unless you know it exists; `Tab` walks all three. Skips the file step when there is no file to open, and does nothing in tree view |
 | `s` | Toggle between the unified diff and a side-by-side split view (falls back to unified when the pane is too narrow) |
 | — | **Line numbers** are always shown in a pinned gutter. The unified view shows both sides (old, new) — an added line leaves the old column blank, a removed line leaves the new one blank. The split view numbers each half with the side it shows, and the file view (`v`) numbers the file itself. The gutter stays in place while `←`/`→` scroll the code |
 | `<prefix> f` | Zoom the diff/file pane to full screen (toggle) |

@@ -214,6 +214,7 @@ trait TerminalBackend {
   - **gutter와 본문은 반드시 별개 `Paragraph`여야 한다.** diff 계열은 수평 스크롤을 `Paragraph::scroll((0, x))`로 구현하는데 이건 라인을 통째로 밀기 때문에, 같은 paragraph에 있는 gutter는 `scroll_x > 0`이면 왼쪽으로 사라진다(실제로 file view에 그 버그가 있었다). `Block`을 따로 그리고 `block.inner`를 `Layout::Horizontal`로 쪼개 gutter는 `scroll((0,0))`, 본문만 스크롤한다. 수직 스크롤은 **어느 행을 담았는지**로 표현되므로 두 vector를 같은 루프에서 lockstep으로 채우는 것이 정렬을 지키는 유일한 수단이다.
   - 폭은 로드된 hunk 전체의 최대 줄 번호에서 파생하고 최소 3자리를 보장한다. 보이는 창 기준으로 계산하면 스크롤 중에 본문 좌측 경계가 흔들린다. hunk 헤더 행도 같은 폭의 빈 gutter를 받아야 `@@`가 본문보다 한 칼럼 왼쪽에서 시작하지 않는다.
   - `MIN_SPLIT_WIDTH`를 80 → 90으로 올렸다. 각 half가 gutter에 5칼럼을 쓰므로, 문턱을 그대로 두면 side-by-side 진입은 되지만 half당 읽을 수 있는 코드 폭이 조용히 줄어든다.
+- **표시 방식 전환**: `DiffPaneView`는 `Diff`/`Split`/`File` 세 값인데 `v`(File 토글)와 `s`(Split 토글)는 각각 unified를 기준으로 한 축만 오간다 — 세 번째가 있다는 걸 모르면 발견할 수 없다. `Tab`(`App::cycle_diff_view`)이 `Diff → Split → File → Diff`로 셋을 모두 순회해 집합을 드러내고, `v`/`s`는 아는 뷰로 바로 가는 용도로 남는다. File 단계는 `can_open_file_view`가 거짓이면(선택 없음 / 해석 불가한 커밋 파일) 건너뛴다 — `v`가 no-op이 되는 것과 같은 게이트이며, 순회 중 죽은 입력을 만들지 않기 위함이다. Tree 모드는 우측 pane이 항상 파일 미리보기라 순회 대상이 없어 no-op이다.
 
 ### Split-View Terminal Panel
 

@@ -37,6 +37,56 @@ fn toggle_diff_file_view_ignores_selection_outside_filter() {
 }
 
 #[test]
+fn cycling_the_diff_view_walks_all_three_and_returns_to_the_start() {
+    let mut app = app_with_files(vec!["a.rs"]);
+    assert_eq!(app.diff.view, DiffPaneView::Diff);
+
+    app.cycle_diff_view();
+    assert_eq!(app.diff.view, DiffPaneView::Split);
+    app.cycle_diff_view();
+    assert_eq!(app.diff.view, DiffPaneView::File);
+    app.cycle_diff_view();
+    assert_eq!(
+        app.diff.view,
+        DiffPaneView::Diff,
+        "the cycle must close so one key can reach every view"
+    );
+}
+
+#[test]
+fn cycling_skips_the_file_view_when_there_is_nothing_to_open() {
+    // Selection outside the filter leaves no resolvable file, the same gate
+    // that makes `v` a no-op. Skipping keeps the press from doing nothing.
+    let mut app = app_with_files(vec!["alpha.rs", "bravo.rs"]);
+    app.status_view.search_query.set("alpha");
+    app.status_view.recompute_filter();
+    app.status_view.selected = 1;
+    assert!(!app.can_open_file_view());
+
+    app.cycle_diff_view();
+    assert_eq!(app.diff.view, DiffPaneView::Split);
+    app.cycle_diff_view();
+    assert_eq!(
+        app.diff.view,
+        DiffPaneView::Diff,
+        "with no file to show the cycle is unified <-> split"
+    );
+}
+
+#[test]
+fn cycling_the_diff_view_does_nothing_in_tree_mode() {
+    // Tree mode's right pane is always the raw file preview, so there is no
+    // cycle to walk — matching `v`/`s`.
+    let mut app = app_with_files(vec!["a.rs"]);
+    app.mode = ViewMode::Tree;
+    app.diff.view = DiffPaneView::File;
+
+    app.cycle_diff_view();
+
+    assert_eq!(app.diff.view, DiffPaneView::File);
+}
+
+#[test]
 fn toggle_diff_split_view_round_trips_and_overrides_file_view() {
     let mut app = app_with_files(vec!["a.rs"]);
 
