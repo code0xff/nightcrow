@@ -161,11 +161,14 @@ fn inside_a_git_directory_of_its_own_the_same_paths_matter() {
 }
 
 #[test]
-fn a_submodules_own_object_churn_does_not_matter_either() {
-    // A submodule keeps a git directory of its own under `modules/<name>/`, and
-    // a fetch inside it writes the same loose objects and reflogs. Judged by the
-    // top-level rule alone they read as `modules/...` — neither `objects` nor
-    // `logs` — and every fetched object would cost a walk of the parent.
+fn a_submodules_git_directory_is_read_rather_than_judged() {
+    // A submodule keeps one under `modules/<name>/`, where the same objects and
+    // reflogs churn — but a submodule's name is its path in the tree, slashes
+    // included, so `modules/foo/objects/HEAD` is the `HEAD` of a submodule at
+    // `foo/objects` just as readily as the object store of one at `foo`. The
+    // rule stays at the top level rather than guess: over-reading costs a walk
+    // per second during a fetch, dropping the wrong one costs a change nobody
+    // sees.
     let (dir, path) = make_repo();
     let elsewhere = tempfile::TempDir::new().unwrap();
     let git_dir = elsewhere.path().to_string_lossy().to_string();
@@ -173,26 +176,14 @@ fn a_submodules_own_object_churn_does_not_matter_either() {
     let mut roots = Roots::of(Path::new(&path));
     roots.set_external_git_dir(Some(Path::new(&git_dir)));
 
-    for noise in [
+    for under_a_submodule in [
         "modules/sub/objects/ab/cdef",
-        "modules/sub/logs/HEAD",
-        "modules/outer/modules/inner/objects/ab/cdef",
-    ] {
-        assert!(
-            !any_matters(Some(&repo), &roots, &under(&git_dir, noise)),
-            "{noise} does not change the parent's status"
-        );
-    }
-    for interesting in [
-        "modules/sub/index",
         "modules/sub/HEAD",
-        // A submodule may be called anything, including `objects`; only a name
-        // *after* `modules` is stripped, so its index is still its index.
-        "modules/objects/index",
+        "modules/foo/objects/HEAD",
     ] {
         assert!(
-            any_matters(Some(&repo), &roots, &under(&git_dir, interesting)),
-            "{interesting} does"
+            any_matters(Some(&repo), &roots, &under(&git_dir, under_a_submodule)),
+            "{under_a_submodule} is read rather than judged"
         );
     }
     drop(dir);

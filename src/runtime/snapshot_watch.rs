@@ -180,37 +180,28 @@ fn matters(repo: Option<&git2::Repository>, roots: &Roots, path: &Path) -> bool 
 
 /// Whether a change at `inside` — a path relative to a git directory — could
 /// change what a status says.
+///
+/// **Top level only, on purpose.** A submodule keeps a git directory of its own
+/// under `modules/<name>/`, and the same churn happens there, so extending the
+/// rule to those is tempting. It cannot be done from the path: a submodule's
+/// name is its path in the tree, slashes and all, so `modules/foo/objects/HEAD`
+/// is the `HEAD` of a submodule at `foo/objects` and the objects directory of
+/// one at `foo` — and there is no counting of components that tells them apart.
+/// Guessing costs a real change dropped in one direction and nothing gained in
+/// the other, while admitting them all costs at most one extra read per second
+/// during a submodule fetch, which is what the reader cost before it watched
+/// anything.
 fn git_metadata_matters(inside: &Path) -> bool {
     // Objects and reflogs churn on every commit and every fetch, and neither
     // changes a status by itself — the index or ref update that comes with them
-    // does, and that is watched. A submodule's churn is the same churn, so the
-    // rule is applied to whichever git directory the path is actually in.
-    let own = within_own_git_dir(inside);
-    if own.starts_with("objects") || own.starts_with("logs") {
+    // does, and that is watched.
+    if inside.starts_with("objects") || inside.starts_with("logs") {
         return false;
     }
     // Git takes `index.lock` before an operation and removes it after. Reading
     // on that means reading a tree mid-change, and the real event follows
     // immediately.
     inside.extension().is_none_or(|ext| ext != "lock")
-}
-
-/// Strip the `modules/<name>/` prefixes a submodule's git directory is nested
-/// under, leaving a path relative to the git directory it belongs to.
-///
-/// Only a `modules` component *followed by a name* is stripped, so a submodule
-/// called `objects` keeps its own `index` distinguishable from a real object
-/// directory.
-fn within_own_git_dir(inside: &Path) -> &Path {
-    let mut rest = inside;
-    while let Ok(under) = rest.strip_prefix("modules") {
-        let mut after_name = under.components();
-        if after_name.next().is_none() {
-            break;
-        }
-        rest = after_name.as_path();
-    }
-    rest
 }
 
 #[cfg(test)]

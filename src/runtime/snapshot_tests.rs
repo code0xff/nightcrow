@@ -27,6 +27,26 @@ fn next_read(channel: &SnapshotChannel) -> SnapshotMsg {
     panic!("no snapshot arrived within {SETTLE:?}");
 }
 
+/// Drain until the reader has been quiet for longer than its rate limit.
+///
+/// For a test whose claim is "this change caused a read": a read already owed
+/// when the test acts — starting the second watch owes one — would arrive on its
+/// own and be indistinguishable from the one being asserted.
+fn quiesce(channel: &SnapshotChannel) {
+    let quiet_for = MIN_READ_INTERVAL + Duration::from_millis(500);
+    let deadline = Instant::now() + IDLE_READ_INTERVAL - Duration::from_millis(500);
+    let mut last_read = Instant::now();
+    while Instant::now() < deadline {
+        if channel.try_recv().is_ok() {
+            last_read = Instant::now();
+        } else if last_read.elapsed() >= quiet_for {
+            return;
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    panic!("the reader never went quiet for {quiet_for:?}");
+}
+
 /// How many snapshots arrive over `window`.
 fn reads_during(channel: &SnapshotChannel, window: Duration) -> usize {
     let deadline = Instant::now() + window;
@@ -142,7 +162,9 @@ fn staging_in_a_linked_worktree_is_read_too() {
     let (main, elsewhere, tree) = make_linked_worktree();
     std::fs::write(Path::new(&tree).join("staged.rs"), "fn main() {}").unwrap();
     let channel = watched(&tree);
-    reads_during(&channel, Duration::from_millis(300));
+    // Not a fixed pause: starting the second watch owes a read for the gap it
+    // was not up for, and that read would answer this test on its own.
+    quiesce(&channel);
 
     run_git(&tree, &["add", "staged.rs"]);
 
