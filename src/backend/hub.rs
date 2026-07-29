@@ -91,6 +91,12 @@ impl TerminalBackend for HubBackend {
         }
     }
 
+    fn claim_size(&mut self) {
+        if let Err(err) = self.link.send(HubClientMessage::ClaimSize) {
+            tracing::warn!(%err, "could not ask the session for the pane sizing");
+        }
+    }
+
     fn drain_events(&mut self) -> Vec<BackendEvent> {
         let mut events = Vec::new();
         for message in self.link.drain() {

@@ -38,6 +38,25 @@ impl App {
         self.list_fullscreen = false;
     }
 
+    /// Ask the session to let this client's layout set the pane sizes.
+    ///
+    /// Nothing is assumed here: the answer comes back as the session granting
+    /// it, which is also what tells this client to re-fit its panes. A client
+    /// whose panes are its own already owns the sizing, and the request is a
+    /// no-op there.
+    pub fn claim_pane_sizing(&mut self) {
+        if self.terminal.owns_size {
+            return;
+        }
+        self.terminal.claim_size();
+    }
+
+    /// Whether taking over the sizing would do anything — the terminal hint row
+    /// advertises the key only where it would, since a hint for a no-op lies.
+    pub fn can_claim_pane_sizing(&self) -> bool {
+        !self.terminal.owns_size
+    }
+
     pub fn close_active_pane(&mut self) {
         if self.terminal.close_active() {
             self.clamp_active_pane_after_removal();

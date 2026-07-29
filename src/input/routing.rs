@@ -55,6 +55,7 @@ pub fn prefix_action(event: KeyEvent) -> Action {
             'b' => Action::ToggleTreeView,
             'f' => Action::ToggleFullscreen,
             's' => Action::SwapPanePrompt,
+            'z' => Action::ClaimPaneSizing,
             'o' => Action::OpenProject,
             'x' => Action::CloseProject,
             'p' => Action::CycleTheme,

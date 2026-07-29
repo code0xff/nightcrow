@@ -9,6 +9,12 @@ pub enum Action {
     ClosePane,
     ToggleFullscreen,
     SwitchPane(usize),
+    /// Take over sizing this project's panes.
+    ///
+    /// In a shared session one client's layout sets the PTY sizes and the rest
+    /// render that grid; this asks for it. Inert when this client already has
+    /// it, and when its panes are its own.
+    ClaimPaneSizing,
     /// Arm swap mode: the next digit picks the pane to swap the active pane
     /// with. Emitted by the `<leader> s` follow-up; the digit is resolved in a
     /// separate tick (see `handle_swap_target_followup` in `main`).

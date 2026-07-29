@@ -26,6 +26,13 @@ pub(crate) fn prefix_armed_hint_text(app: &App) -> String {
     } else {
         ""
     };
+    // Only while another client is sizing the panes; with the sizing already
+    // here the key does nothing.
+    let resize = if app.can_claim_pane_sizing() {
+        "z: resize panes here | "
+    } else {
+        ""
+    };
     // The view toggles name their destination from the current mode.
     let (log_toggle, tree_toggle) = match app.mode {
         ViewMode::Log => ("l: status view", "b: tree view"),
@@ -36,7 +43,7 @@ pub(crate) fn prefix_armed_hint_text(app: &App) -> String {
     // reports why on the notice row, so the key always produces a visible
     // result.
     format!(
-        " t: new pane | {close}{swap}{log_toggle} | {tree_toggle} | f: fullscreen | o: open project | x: close project | p: theme | r: redraw | q: detach | {digits} | esc: cancel"
+        " t: new pane | {close}{swap}{resize}{log_toggle} | {tree_toggle} | f: fullscreen | o: open project | x: close project | p: theme | r: redraw | q: detach | {digits} | esc: cancel"
     )
 }
 

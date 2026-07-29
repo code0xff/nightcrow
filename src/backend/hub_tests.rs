@@ -213,3 +213,25 @@ fn the_startup_terminals_are_answered_with_no_sizes_and_no_event() {
         other => panic!("expected a start, got {other:?}"),
     }
 }
+
+#[test]
+fn claiming_the_sizing_asks_the_session_rather_than_assuming_it() {
+    // The answer comes back as the session granting it, which is also what
+    // re-fits the panes. Assuming it here would leave a client resizing panes it
+    // does not own.
+    let mut wired = wired();
+
+    wired.backend.claim_size();
+
+    assert!(matches!(
+        wired.next_request(),
+        ClientMessage::Terminal {
+            message: HubClientMessage::ClaimSize,
+            ..
+        }
+    ));
+    assert!(
+        wired.backend.drain_events().is_empty(),
+        "nothing is granted locally"
+    );
+}

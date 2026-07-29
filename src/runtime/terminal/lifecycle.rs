@@ -267,6 +267,15 @@ impl TerminalState {
         }
     }
 
+    /// Ask the session for the sizing. The answer arrives as
+    /// [`BackendEvent::SizeOwnership`], which is what actually flips
+    /// [`owns_size`](Self::owns_size) and re-fits the panes.
+    pub fn claim_size(&mut self) {
+        if let Some(backend) = &mut self.backend {
+            backend.claim_size();
+        }
+    }
+
     pub fn send_input(&mut self, data: &[u8]) {
         let Some(info) = self.panes.get(self.active) else {
             return;

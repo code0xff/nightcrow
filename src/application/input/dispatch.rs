@@ -188,6 +188,10 @@ fn handle_global_action(app: &mut App, action: Action) -> Option<KeyOutcome> {
             app.open_new_pane();
             Some(KeyOutcome::Continue)
         }
+        Action::ClaimPaneSizing => {
+            app.claim_pane_sizing();
+            Some(KeyOutcome::Continue)
+        }
         Action::ClosePane => {
             // Scoped by `can_close_pane` (terminal focus — the close target
             // is invisible without it). The key is still consumed so it

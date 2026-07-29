@@ -127,6 +127,10 @@ fn prefix_dispatch_maps_app_commands() {
         prefix_action(key(KeyCode::Char('s'))),
         Action::SwapPanePrompt
     );
+    assert_eq!(
+        prefix_action(key(KeyCode::Char('z'))),
+        Action::ClaimPaneSizing
+    );
 }
 
 #[test]
@@ -188,6 +192,7 @@ fn fullscreen_prefix_leaves_non_digit_chords_unchanged() {
         ('t', Action::NewPane),
         ('w', Action::ClosePane),
         ('s', Action::SwapPanePrompt),
+        ('z', Action::ClaimPaneSizing),
         ('q', Action::Quit),
     ] {
         assert_eq!(prefix_action_fullscreen(key(KeyCode::Char(c))), expected);
@@ -202,7 +207,7 @@ fn prefix_dispatch_ignores_modifiers_on_follow_up() {
 
 #[test]
 fn prefix_dispatch_unmapped_key_is_none() {
-    assert_eq!(prefix_action(key(KeyCode::Char('z'))), Action::None);
+    assert_eq!(prefix_action(key(KeyCode::Char('v'))), Action::None);
     assert_eq!(prefix_action(key(KeyCode::Esc)), Action::None);
 }
 

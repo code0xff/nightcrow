@@ -65,6 +65,13 @@ pub trait TerminalBackend {
     fn resize(&mut self, id: PaneId, rows: u16, cols: u16);
     fn drain_events(&mut self) -> Vec<BackendEvent>;
 
+    /// Ask to become the client whose layout sets the pane sizes.
+    ///
+    /// A no-op by default: a backend that owns its PTYs is the only client they
+    /// have, so there is nobody to take them from. Only a backend serving a
+    /// shared session has anything to ask.
+    fn claim_size(&mut self) {}
+
     /// Test hook: byte payloads recorded by a recording backend. Real
     /// backends return `None`; the in-memory test `FakeBackend` overrides
     /// this so input tests can assert exact PTY pass-through bytes.
