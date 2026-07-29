@@ -75,13 +75,12 @@ impl App {
     pub fn new(
         repo_path: String,
         prompt_log: bool,
-        startup_commands: &[crate::config::StartupCommand],
         leader: KeyEvent,
         backend: Box<dyn TerminalBackend>,
     ) -> Self {
         let snapshot = SnapshotChannel::spawn(&repo_path);
 
-        let mut app = App {
+        let app = App {
             mode: ViewMode::Status,
             status_view: crate::ui::status_view::StatusView::default(),
             diff: crate::ui::diff_pane::DiffPane::default(),
@@ -102,6 +101,14 @@ impl App {
             tree_dirty: Default::default(),
             tree_dirty_all: false,
             pending_selection: None,
+            // The fresh-launch rule: the panes are not here yet, and when they
+            // arrive the input focus goes to them, as it did when this view
+            // opened its own PTYs on the spot. A restored session overwrites
+            // this in `restore_pane_focus`.
+            pending_terminal: Some(crate::workspace::persistence::SessionState {
+                focus: Some(Focus::Terminal),
+                ..Default::default()
+            }),
             repo_cache: None,
             cfg_agent_indicator: crate::config::AgentIndicatorConfig::default(),
             cfg_tree: crate::config::TreeConfig::default(),
@@ -119,7 +126,6 @@ impl App {
             mouse_enabled: true,
         };
 
-        app.ensure_initial_terminal(startup_commands);
         tracing::info!(repo = %app.repo_path, "nightcrow started");
         app
     }

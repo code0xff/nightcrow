@@ -44,6 +44,13 @@ impl App {
     // — over a saved `FileList`/`DiffViewer` focus. Idempotent: `restore_session`
     // re-applies it once the snapshot arrives, a no-op against the same state.
     pub(crate) fn restore_pane_focus(&mut self, state: &SessionState) {
+        // Everything below that points *at a pane* — which one was active, the
+        // fullscreen panel, terminal focus — has nothing to point at until the
+        // session reports its panes, and this runs before that. Held so it can
+        // be applied for real when they arrive rather than quietly downgraded
+        // against an empty list; the rest (mode fullscreens, a focus elsewhere)
+        // takes effect now.
+        self.pending_terminal = self.terminal.panes.is_empty().then(|| state.clone());
         self.terminal.active = state
             .active_pane
             .min(self.terminal.panes.len().saturating_sub(1));

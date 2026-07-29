@@ -12,6 +12,7 @@ use crate::application::bootstrap::init_app;
 use crate::application::input::dispatch::{ProjectContext, ProjectRequest};
 use crate::daemon::client::DaemonClient;
 use crate::daemon::protocol::{RepoSummary, ServerMessage};
+use crate::web::viewer::terminal::frame::ServerMessage as HubServerMessage;
 use crate::workspace::Workspace;
 
 pub(crate) struct SessionLink {
@@ -39,7 +40,7 @@ impl SessionLink {
         for message in self.client.drain() {
             match message {
                 ServerMessage::Repos { repos } => {
-                    adopt(ws, ctx, &repos);
+                    adopt(ws, ctx, &repos, &self.client);
                     // Only after the set has settled: the tab being focused may
                     // be one this very message created.
                     if let Some(path) = self.pending_focus.take() {
@@ -57,11 +58,15 @@ impl SessionLink {
                 // daemon restarted under this client, which the connection loss
                 // reports on its own.
                 ServerMessage::Hello { .. } => {}
-                // Panes are not shared yet — the client still runs its own
-                // PTYs, so there is nothing here for these to act on. Dropped
-                // rather than treated as a fault so the daemon can start
-                // sending them before this side reads them.
-                ServerMessage::Terminal { .. } => {}
+                // Only a refusal reaches here. A pane created, exited, or
+                // reordered goes to that repository's backend, which is what
+                // renders it; a refusal is about a request rather than a pane,
+                // so it belongs on the tab that shows notices.
+                ServerMessage::Terminal { repo, event } => {
+                    if let HubServerMessage::Error { message } = event {
+                        notify_repo(ws, &repo, message);
+                    }
+                }
             }
         }
     }
@@ -123,12 +128,30 @@ fn focus_if_open(ws: &mut Workspace, repo: &str) -> bool {
     }
 }
 
+/// Raise a terminal refusal on the tab it came from.
+///
+/// By repository, not on the active tab: the client subscribes to every open
+/// repository's terminals, so a refusal can be about one the user is not looking
+/// at, and putting it on whatever tab is in front would name the wrong project.
+/// A repository with no tab yet falls back to the active one rather than losing
+/// the message.
+fn notify_repo(ws: &mut Workspace, repo: &str, message: String) {
+    match ws
+        .projects_mut()
+        .iter_mut()
+        .find(|project| project.repo_id.as_deref() == Some(repo))
+    {
+        Some(project) => project.raise_notice(crate::app::NoticeKind::Terminal, message),
+        None => ws.raise_notice(crate::app::NoticeKind::Terminal, message),
+    }
+}
+
 /// Make the workspace match the set the daemon reports.
 ///
 /// Membership first, then order, then the ids — a tab that stays open keeps its
 /// terminals, scroll, and selection, so reconciling in place matters more than
 /// it would if this rebuilt from scratch.
-fn adopt(ws: &mut Workspace, ctx: &ProjectContext, repos: &[RepoSummary]) {
+fn adopt(ws: &mut Workspace, ctx: &ProjectContext, repos: &[RepoSummary], client: &DaemonClient) {
     // Closing first frees room under `MAX_PROJECTS` for what is being opened,
     // so a set that swaps one repository for another fits in a single pass.
     let wanted: Vec<&str> = repos.iter().map(|repo| repo.path.as_str()).collect();
@@ -162,10 +185,14 @@ fn adopt(ws: &mut Workspace, ctx: &ProjectContext, repos: &[RepoSummary]) {
         ws.add(init_app(
             &repo.path,
             ctx.cfg,
-            ctx.startup_commands,
             ctx.leader,
             saved,
-            Box::new(crate::backend::PtyBackend::new(&repo.path)),
+            // The tab's panes are the session's. Built with the repository's own
+            // end of the connection, so the terminals it shows are the ones the
+            // daemon is running and the browser is looking at.
+            Box::new(crate::backend::HubBackend::new(
+                client.terminal_link(&repo.id),
+            )),
         ));
     }
     ws.reorder_to(&wanted);
@@ -175,6 +202,10 @@ fn adopt(ws: &mut Workspace, ctx: &ProjectContext, repos: &[RepoSummary]) {
     for repo in repos {
         ws.set_repo_id(&repo.path, &repo.id);
     }
+    // Whatever the daemon has been streaming for a repository that is not in
+    // the set has no tab to reach; its inbox goes with the tab.
+    let ids: Vec<String> = repos.iter().map(|repo| repo.id.clone()).collect();
+    client.retain_repos(&ids);
 }
 
 #[cfg(test)]

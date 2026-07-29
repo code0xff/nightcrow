@@ -62,6 +62,12 @@ pub(crate) fn app_with_files(files: Vec<&str>) -> App {
         tree_dirty: Default::default(),
         tree_dirty_all: false,
         pending_selection: None,
+        // The fresh-launch rule `App::new` starts with: focus the terminals
+        // when they arrive.
+        pending_terminal: Some(crate::workspace::persistence::SessionState {
+            focus: Some(Focus::Terminal),
+            ..Default::default()
+        }),
         repo_cache: None,
         cfg_agent_indicator: crate::config::AgentIndicatorConfig {
             auto_follow: true,

@@ -1,5 +1,7 @@
+pub mod hub;
 pub mod pty;
 
+pub use hub::HubBackend;
 pub use pty::PtyBackend;
 
 use anyhow::Result;

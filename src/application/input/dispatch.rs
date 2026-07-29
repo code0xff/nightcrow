@@ -41,7 +41,6 @@ pub(crate) enum ProjectRequest {
 /// that needs the config, and it borrows it for the duration of one keypress.
 pub(crate) struct ProjectContext<'a> {
     pub(crate) cfg: &'a crate::config::Config,
-    pub(crate) startup_commands: &'a [crate::config::StartupCommand],
     pub(crate) leader: KeyEvent,
 }
 

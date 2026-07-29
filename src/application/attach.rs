@@ -22,9 +22,10 @@ pub(crate) fn run_attach() -> Result<()> {
     let client = DaemonClient::connect(&crate::daemon::socket::default_socket_path()?)?;
 
     let cfg = crate::config::load_config()?;
-    // Resolved and parsed before the alternate screen so their errors are
-    // readable, as in the standalone path.
-    let startup_commands = crate::config::resolve_startup_commands(&cfg, &[])?;
+    // Parsed before the alternate screen so its error is readable. The
+    // configured startup terminals are not read here at all: the daemon runs
+    // them once for the whole session, and a client that resolved its own copy
+    // would only be able to disagree with it.
     let leader = crate::config::parse_leader(&cfg.input.leader)?;
 
     // Anchored where the daemon's is, not at the working directory. The
@@ -53,11 +54,7 @@ pub(crate) fn run_attach() -> Result<()> {
 
     let ss = two_face::syntax::extra_newlines();
     let ts = ThemeSet::load_defaults();
-    let ctx = ProjectContext {
-        cfg: &cfg,
-        startup_commands: &startup_commands,
-        leader,
-    };
+    let ctx = ProjectContext { cfg: &cfg, leader };
     // Starts empty on purpose: the daemon's first message is the set, and
     // seeding from the workspace file would put tabs on screen that the session
     // does not have, only to close them a frame later.

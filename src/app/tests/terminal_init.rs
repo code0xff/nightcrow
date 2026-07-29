@@ -1,70 +1,104 @@
+//! What happens to focus and the restored session when the panes turn up.
+//!
+//! Panes belong to the session the daemon owns, so a fresh project view has
+//! none: they arrive over the connection, after the view has been built and a
+//! saved session applied to it. Everything here is about that gap.
+
 use super::*;
 
-#[test]
-fn ensure_initial_terminal_opens_single_empty_pane_without_commands() {
-    let mut app = app_with_fake_backend();
-    app.ensure_initial_terminal(&[]);
-    assert_eq!(app.terminal.panes.len(), 1);
-    assert_eq!(app.terminal.panes[0].title, "shell 1");
+/// A pane arriving from the session, taken delivery of the way a frame does.
+fn pane_arrives(app: &mut App) {
+    app.terminal.create_pane().expect("asks for a pane");
+    app.poll_terminal();
 }
 
 #[test]
-fn ensure_initial_terminal_focuses_first_pane_on_fresh_launch() {
+fn the_first_pane_to_arrive_takes_the_input_focus_on_a_fresh_launch() {
+    // Otherwise a fresh attach would sit on the file list with terminals on
+    // screen, and the first keystroke would go somewhere the user is not
+    // looking.
     let mut app = app_with_fake_backend();
-    // Helpers construct with FileList focus; a fresh launch must hand the
-    // first pane the input focus so keystrokes reach the terminal program.
-    assert_eq!(app.focus, Focus::FileList);
-    app.ensure_initial_terminal(&[]);
+    assert_eq!(app.focus, Focus::FileList, "nothing to focus yet");
+
+    pane_arrives(&mut app);
+
     assert_eq!(app.focus, Focus::Terminal);
     assert_eq!(app.terminal.active, 0);
 }
 
 #[test]
-fn restore_session_overrides_fresh_launch_terminal_focus() {
+fn a_restored_focus_survives_the_panes_arriving_later() {
+    // The saved focus is applied before any pane exists, so the fresh-launch
+    // rule must not overwrite it when they show up.
     let mut app = app_with_fake_backend();
-    app.ensure_initial_terminal(&[]);
-    assert_eq!(app.focus, Focus::Terminal);
-    // A restored session must win over the fresh-launch terminal focus.
     app.restore_session(&crate::workspace::persistence::SessionState {
         focus: Some(Focus::FileList),
         ..Default::default()
     });
+
+    pane_arrives(&mut app);
+
     assert_eq!(app.focus, Focus::FileList);
 }
 
 #[test]
-fn restore_pane_focus_wins_immediately_without_snapshot() {
-    // The synchronous focus restore (run at startup before the first
-    // snapshot) must already override the fresh-launch terminal focus, so
-    // no keystroke is ever routed to the terminal on a FileList restart.
+fn a_restored_terminal_focus_waits_for_the_pane_it_points_at() {
+    // Focusing the terminal against an empty pane list would route keystrokes
+    // at nothing, so the restore is held until there is a pane to focus.
     let mut app = app_with_fake_backend();
-    app.ensure_initial_terminal(&[]);
-    assert_eq!(app.focus, Focus::Terminal);
-    app.restore_pane_focus(&crate::workspace::persistence::SessionState {
-        focus: Some(Focus::FileList),
+    app.restore_session(&crate::workspace::persistence::SessionState {
+        focus: Some(Focus::Terminal),
         ..Default::default()
     });
-    assert_eq!(app.focus, Focus::FileList);
+    assert_eq!(app.focus, Focus::FileList, "not yet");
+
+    pane_arrives(&mut app);
+
+    assert_eq!(app.focus, Focus::Terminal);
 }
 
 #[test]
-fn ensure_initial_terminal_opens_one_pane_per_startup_command() {
-    use crate::config::StartupCommand;
+fn a_restored_active_pane_is_applied_once_that_many_panes_are_open() {
     let mut app = app_with_fake_backend();
-    let commands = vec![
-        StartupCommand {
-            name: Some("Claude".into()),
-            command: "claude".into(),
-        },
-        StartupCommand {
-            name: None,
-            command: "cargo test".into(),
-        },
-    ];
-    app.ensure_initial_terminal(&commands);
+    app.terminal.create_pane().expect("asks");
+    app.terminal.create_pane().expect("asks");
+    app.restore_session(&crate::workspace::persistence::SessionState {
+        active_pane: 1,
+        focus: Some(Focus::Terminal),
+        ..Default::default()
+    });
+    assert_eq!(app.terminal.active, 0, "no panes to choose between yet");
+
+    app.poll_terminal();
+
     assert_eq!(app.terminal.panes.len(), 2);
-    assert_eq!(app.terminal.panes[0].title, "Claude");
-    assert_eq!(app.terminal.panes[1].title, "cargo test");
-    // Focus clamps to the first reserved pane.
-    assert_eq!(app.terminal.active, 0);
+    assert_eq!(app.terminal.active, 1);
+}
+
+#[test]
+fn a_restored_fullscreen_panel_waits_for_the_panes_too() {
+    let mut app = app_with_fake_backend();
+    app.restore_session(&crate::workspace::persistence::SessionState {
+        terminal_fullscreen: true,
+        ..Default::default()
+    });
+    assert_eq!(app.terminal.fullscreen, TerminalFullscreen::Off);
+
+    pane_arrives(&mut app);
+
+    assert_eq!(app.terminal.fullscreen, TerminalFullscreen::Grid);
+}
+
+#[test]
+fn a_pane_arriving_after_the_restore_is_applied_leaves_the_focus_alone() {
+    // The restore is spent on the first pane. A pane opened later — by this
+    // client or another — must not re-apply it and drag the user back.
+    let mut app = app_with_fake_backend();
+    pane_arrives(&mut app);
+    app.focus = Focus::DiffViewer;
+
+    pane_arrives(&mut app);
+
+    assert_eq!(app.focus, Focus::DiffViewer);
+    assert_eq!(app.terminal.panes.len(), 2);
 }

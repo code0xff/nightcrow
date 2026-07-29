@@ -118,10 +118,8 @@ impl TerminalOutput {
 
     /// Read one back, or `None` when the frame is too short to hold a header.
     ///
-    /// The daemon only encodes; decoding is the attaching client's half, which
-    /// reads these once its panes come from the session rather than its own
-    /// PTYs. Tests drive it in the meantime.
-    #[cfg(test)]
+    /// The daemon only encodes and the attaching client only decodes: output
+    /// travels one way.
     pub fn decode(bytes: &[u8]) -> Option<Self> {
         let (&len, rest) = bytes.split_first()?;
         let len = usize::from(len);

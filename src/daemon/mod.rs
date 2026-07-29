@@ -15,4 +15,6 @@ pub(crate) mod lock;
 pub(crate) mod protocol;
 pub(crate) mod serve;
 pub(crate) mod socket;
+pub(crate) mod terminal_link;
 pub(crate) mod terminals;
+pub(crate) mod wire;

@@ -11,3 +11,7 @@ pub(crate) mod input;
 pub(crate) mod session_link;
 pub(crate) mod splash;
 pub(crate) mod terminal_guard;
+
+#[cfg(test)]
+#[path = "session_terminals_tests.rs"]
+mod session_terminals_tests;

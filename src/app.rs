@@ -122,6 +122,14 @@ pub struct App {
     // Saved selection waiting on the first snapshot. Cannot conflict with user
     // input: an empty list offers nothing to select.
     pub(crate) pending_selection: Option<(String, usize)>,
+    // Terminal focus, active pane, and fullscreen waiting on the panes.
+    //
+    // Panes belong to the session, so a fresh view has none until the daemon
+    // reports them — there is nothing to focus at the moment this would
+    // otherwise be applied. A fresh launch starts with the default here (focus
+    // the terminals when they show up) and a restored session replaces it with
+    // what was saved, so the two cannot fight over the first frame.
+    pub(crate) pending_terminal: Option<crate::workspace::persistence::SessionState>,
     // Cached `git2::Repository` for sync loads. Opened lazily, invalidated in
     // `change_repo`. The snapshot worker keeps its own handle (`!Send`).
     pub(crate) repo_cache: Option<git2::Repository>,

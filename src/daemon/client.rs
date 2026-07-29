@@ -6,15 +6,15 @@
 //! and everything the daemon says lands in a queue the caller drains on its own
 //! schedule. That schedule is a TUI frame, which must never block on a socket.
 
-use super::frame::{Frame, FrameKind, read_frame, write_frame};
 use super::protocol::{ClientMessage, ServerMessage, version};
+use super::terminal_link::{TerminalLink, TerminalRouter};
+use super::wire::{Incoming, Writer, pump, read_routed, send};
 use anyhow::{Context, Result, bail};
-use std::io::Write;
 use std::os::unix::net::UnixStream;
 use std::path::Path;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::Receiver;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 /// How long the opening handshake waits for the daemon to answer.
@@ -28,8 +28,16 @@ const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(5);
 #[derive(Debug)]
 pub struct DaemonClient {
     /// The write half. The reader thread owns the other.
-    out: UnixStream,
+    out: Writer,
     incoming: Receiver<ServerMessage>,
+    /// Terminal traffic, split per repository for the backends that drain it.
+    terminals: Arc<TerminalRouter>,
+    /// This connection's id at the daemon, from the handshake.
+    ///
+    /// Handed to each repository's backend, which compares it against the
+    /// requester a new pane names — the one way to tell a pane this client
+    /// opened from one that appeared because another client did.
+    client: u64,
     /// Cleared by the reader thread when the daemon goes away.
     ///
     /// A separate flag rather than the channel's disconnected state: reading
@@ -56,42 +64,45 @@ impl DaemonClient {
         let mut reader = stream
             .try_clone()
             .context("splitting the daemon connection")?;
-        let mut out = stream;
+        let out: Writer = Arc::new(Mutex::new(stream));
+        let terminals = Arc::new(TerminalRouter::default());
 
-        send(&mut out, &ClientMessage::Hello { version: version() })?;
+        send(&out, &ClientMessage::Hello { version: version() })?;
         // Bounded only for the handshake; cleared before the reader thread takes
         // over, or an idle session would read as a dead one.
         reader
             .set_read_timeout(Some(HANDSHAKE_TIMEOUT))
             .context("setting the handshake timeout")?;
         let mut queued = Vec::new();
-        loop {
-            let message = read_message(&mut reader)?
+        let client = loop {
+            let incoming = read_routed(&mut reader, &terminals)?
                 .context("the daemon closed the connection during the handshake")?;
+            let Incoming::Control(message) = incoming else {
+                // Terminal traffic starts before the handshake answer, because
+                // the daemon subscribes this client's repositories the moment it
+                // connects. Already filed with the router by `read_routed`,
+                // which is where the panes it describes will be looked for.
+                continue;
+            };
             match message {
-                // The id the daemon hands out with it is read once panes are
-                // shared, which is what needs to tell this client's own from
-                // another's.
                 ServerMessage::Hello {
-                    version: daemon, ..
+                    version: daemon,
+                    client,
                 } => {
                     if daemon != version() {
                         bail!("daemon is {daemon}, this client is {}", version());
                     }
-                    break;
+                    break client;
                 }
                 // The daemon volunteers the repository set on attach, so it can
                 // arrive before the handshake answer. Kept rather than dropped:
                 // it is the state this client is about to render.
-                // Terminal traffic can start before the handshake answer, since
-                // the daemon subscribes this client's repositories the moment it
-                // connects. Kept for the same reason the set is.
                 other @ (ServerMessage::Repos { .. } | ServerMessage::Terminal { .. }) => {
                     queued.push(other)
                 }
                 ServerMessage::Error { message } => bail!("daemon refused the attach: {message}"),
             }
-        }
+        };
         reader
             .set_read_timeout(None)
             .context("clearing the handshake timeout")?;
@@ -102,15 +113,11 @@ impl DaemonClient {
         }
         let connected = Arc::new(AtomicBool::new(true));
         let reader_connected = Arc::clone(&connected);
+        let reader_terminals = Arc::clone(&terminals);
         std::thread::Builder::new()
             .name("nightcrow-daemon-rx".into())
             .spawn(move || {
-                // Ends when the daemon closes or the receiver is dropped.
-                while let Ok(Some(message)) = read_message(&mut reader) {
-                    if tx.send(message).is_err() {
-                        break;
-                    }
-                }
+                pump(&mut reader, &reader_terminals, &tx);
                 reader_connected.store(false, Ordering::Release);
             })
             .context("spawning the daemon reader thread")?;
@@ -118,14 +125,36 @@ impl DaemonClient {
         Ok(Self {
             out,
             incoming,
+            terminals,
+            client,
             connected,
         })
+    }
+
+    /// One repository's end of this connection, for the backend behind its
+    /// terminal panes.
+    pub fn terminal_link(&self, repo: &str) -> TerminalLink {
+        TerminalLink::new(
+            repo,
+            Arc::clone(&self.out),
+            Arc::clone(&self.terminals),
+            self.client,
+        )
+    }
+
+    /// Drop the terminal inboxes of repositories that are no longer open.
+    ///
+    /// Called with each set the daemon reports, which is also when the tabs are
+    /// reconciled: a repository that closed has no backend left to drain it, and
+    /// one this client never opened a tab for has an inbox nothing will.
+    pub fn retain_repos(&self, open: &[String]) {
+        self.terminals.retain(open);
     }
 
     /// Ask the daemon to open a repository. The answer arrives as a broadcast.
     pub fn open_repo(&mut self, path: &str) -> Result<()> {
         send(
-            &mut self.out,
+            &self.out,
             &ClientMessage::OpenRepo {
                 path: path.to_string(),
             },
@@ -135,7 +164,7 @@ impl DaemonClient {
     /// Ask the daemon to close a repository, by catalog id.
     pub fn close_repo(&mut self, id: &str) -> Result<()> {
         send(
-            &mut self.out,
+            &self.out,
             &ClientMessage::CloseRepo {
                 repo: id.to_string(),
             },
@@ -160,32 +189,6 @@ impl DaemonClient {
     /// in the queue and are still drained.
     pub fn is_connected(&self) -> bool {
         self.connected.load(Ordering::Acquire)
-    }
-}
-
-/// Write one request.
-fn send(out: &mut UnixStream, message: &ClientMessage) -> Result<()> {
-    let json = serde_json::to_vec(message).context("encoding a daemon request")?;
-    write_frame(out, &Frame::control(json))?;
-    out.flush().context("flushing a daemon request")
-}
-
-/// Read one control message, skipping frame kinds this client has no use for
-/// yet. `None` at a clean end of stream.
-fn read_message(reader: &mut UnixStream) -> Result<Option<ServerMessage>> {
-    loop {
-        let Some(frame) = read_frame(reader)? else {
-            return Ok(None);
-        };
-        if frame.kind != FrameKind::Control {
-            // Terminal frames start arriving once panes are shared. Ignored
-            // rather than fatal so a newer daemon cannot break this client by
-            // sending one early.
-            continue;
-        }
-        let message =
-            serde_json::from_slice(&frame.payload).context("decoding a message from the daemon")?;
-        return Ok(Some(message));
     }
 }
 

@@ -6,48 +6,21 @@ use super::{App, Focus, NoticeKind};
 use crate::runtime::terminal::TerminalFullscreen;
 
 impl App {
-    pub(crate) fn ensure_initial_terminal(
-        &mut self,
-        startup_commands: &[crate::config::StartupCommand],
-    ) {
-        if self.terminal.backend.is_none() {
-            return;
-        }
-        if startup_commands.is_empty() {
-            if let Err(err) = self.terminal.create_pane() {
-                self.raise_notice(NoticeKind::Terminal, err.to_string());
-            }
-        } else {
-            for sc in startup_commands {
-                let label = sc.name.as_deref();
-                if let Err(err) = self.terminal.create_pane_with(Some(&sc.command), label) {
-                    self.raise_notice(NoticeKind::Terminal, err.to_string());
-                }
-            }
-        }
-        // Take delivery before focusing. Panes arrive through `poll` now, and
-        // this is startup: there is nothing else running that would do it, and
-        // the focus below has to see the panes it just asked for.
-        //
-        // Legitimate here in a way it would not be mid-session, because a
-        // client backed by a shared session never reaches this code — the
-        // daemon runs the startup commands once, for everyone, rather than
-        // each client running them again.
-        self.terminal.poll();
-        // Focus the first pane so keystrokes reach the terminal on first launch.
-        // A restored session overrides this later in `restore_session`.
-        if !self.terminal.panes.is_empty() {
-            self.terminal.active = 0;
-            self.terminal.sync_visible_window();
-            self.focus = Focus::Terminal;
-        }
-    }
-
     pub fn poll_terminal(&mut self) {
         // `TerminalState::poll` only signals exited panes; re-clamping focus
         // and fullscreen when the active pane was one of them stays here.
         if !self.terminal.poll().is_empty() {
             self.clamp_active_pane_after_removal();
+        }
+        // The panes arrived, so the terminal half of the session — which pane
+        // was active, whether the panel was fullscreen, whether the input focus
+        // was there — can finally be applied. It waits here rather than at
+        // construction because none of it means anything against an empty pane
+        // list (see `pending_terminal`).
+        if !self.terminal.panes.is_empty()
+            && let Some(state) = self.pending_terminal.take()
+        {
+            self.restore_pane_focus(&state);
         }
     }
 
