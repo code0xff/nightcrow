@@ -8,3 +8,4 @@ pub(crate) mod bootstrap;
 pub(crate) mod event_loop;
 pub(crate) mod input;
 pub(crate) mod splash;
+pub(crate) mod terminal_guard;
