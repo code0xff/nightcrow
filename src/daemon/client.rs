@@ -6,10 +6,6 @@
 //! and everything the daemon says lands in a queue the caller drains on its own
 //! schedule. That schedule is a TUI frame, which must never block on a socket.
 
-// Lands before `nightcrow attach` calls it, so only tests drive it for now.
-// Removed when the subcommand arrives (step D of `docs/session-daemon-plan.md`).
-#![allow(dead_code)]
-
 use super::frame::{Frame, FrameKind, read_frame, write_frame};
 use super::protocol::{ClientMessage, ServerMessage, version};
 use anyhow::{Context, Result, bail};
@@ -132,16 +128,6 @@ impl DaemonClient {
             &mut self.out,
             &ClientMessage::CloseRepo {
                 repo: id.to_string(),
-            },
-        )
-    }
-
-    /// Ask the daemon to put the repositories in this order.
-    pub fn reorder_repos(&mut self, ids: &[String]) -> Result<()> {
-        send(
-            &mut self.out,
-            &ClientMessage::ReorderRepos {
-                order: ids.to_vec(),
             },
         )
     }

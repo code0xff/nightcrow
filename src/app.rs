@@ -95,6 +95,12 @@ pub struct App {
     pub focus: Focus,
     pub notice: Option<Notice>,
     pub repo_path: String,
+    /// The daemon's opaque id for this repository, once attached.
+    ///
+    /// `None` when running without a daemon, and until the first set arrives:
+    /// the id is the daemon's name for the repository, not a property of it,
+    /// so it cannot be derived here.
+    pub repo_id: Option<String>,
     pub log_view: LogView,
     pub tree_view: TreeView,
     pub terminal: TerminalState,

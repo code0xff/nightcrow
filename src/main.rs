@@ -45,6 +45,7 @@ fn main() -> Result<()> {
     match cli.command {
         Some(Commands::Init { force }) => return run_init(force),
         Some(Commands::Serve { repo, port, bind }) => return run_serve(repo, port, bind),
+        Some(Commands::Attach { repo }) => return application::attach::run_attach(repo),
         None => {}
     }
 
@@ -96,7 +97,10 @@ fn main() -> Result<()> {
         cfg,
         startup_commands,
         leader,
-        viewer,
+        application::session_link::SessionLink::Local {
+            viewer,
+            served: Vec::new(),
+        },
     )
 }
 
@@ -106,7 +110,7 @@ fn run(
     cfg: config::Config,
     startup_commands: Vec<config::StartupCommand>,
     leader: crossterm::event::KeyEvent,
-    viewer: Option<web::viewer::server::ViewerServer>,
+    link: application::session_link::SessionLink,
 ) -> Result<()> {
     // syntect's bundled defaults omit TypeScript/TSX/TOML/YAML; two-face
     // supplies bat's expanded syntax set (newline variant matches the diff /
@@ -205,7 +209,7 @@ fn run(
         tracing::info!("nightcrow stopped during splash");
         return Ok(());
     }
-    main_loop(terminal, &mut ws, &ss, &ts, &cfg, &ctx, viewer)?;
+    main_loop(terminal, &mut ws, &ss, &ts, &cfg, &ctx, link)?;
 
     // Every open project gets its session written, not just the active one:
     // sessions are stored per repo (`<repo>/.nightcrow/session.json`), so a

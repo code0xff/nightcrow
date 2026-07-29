@@ -82,6 +82,7 @@ impl App {
             focus: Focus::FileList,
             notice: None,
             repo_path,
+            repo_id: None,
             log_view: crate::ui::log_view::LogView::default(),
             tree_view: crate::ui::tree_view::TreeView::default(),
             terminal: crate::runtime::terminal::TerminalState::new(Some(backend), prompt_log),

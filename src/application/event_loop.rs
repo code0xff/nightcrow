@@ -2,6 +2,7 @@ pub(crate) use crate::application::input::dispatch::ProjectContext;
 use crate::application::input::dispatch::{KeyOutcome, ProjectRequest, dispatch_key};
 use crate::application::input::mouse::dispatch_mouse;
 use crate::application::input::paste::dispatch_paste;
+use crate::application::session_link::SessionLink;
 use crate::workspace::Workspace;
 use crossterm::event::{self, Event};
 use ratatui::layout::Rect;
@@ -18,18 +19,16 @@ pub(crate) fn main_loop(
     ts: &ThemeSet,
     cfg: &crate::config::Config,
     ctx: &ProjectContext,
-    viewer: Option<crate::web::viewer::server::ViewerServer>,
+    mut link: SessionLink,
 ) -> anyhow::Result<()> {
-    // Signature of the repository set last handed to the viewer. The catalog
-    // only needs updating when a tab opens or closes, not every frame.
-    let mut served_repos: Vec<String> = Vec::new();
     loop {
-        if let Some(viewer) = viewer.as_ref() {
-            let current: Vec<String> = ws.projects().iter().map(|p| p.repo_path.clone()).collect();
-            if current != served_repos {
-                viewer.set_repos(&current);
-                served_repos = current;
-            }
+        // Whoever owns the tab list gets the first word each tick: attached,
+        // the set may have changed under this client since the last frame, and
+        // rendering a stale one would show a tab the session no longer has.
+        link.sync(ws, ctx);
+        if !link.is_connected() {
+            tracing::info!("daemon connection lost");
+            return Ok(());
         }
         // Every project drains its queues, not just the visible one: the
         // snapshot worker and PTY reader produce into unbounded channels
@@ -138,7 +137,7 @@ pub(crate) fn main_loop(
                 Event::Resize(_, _) => {}
                 Event::Key(key) => {
                     let outcome = dispatch_key(ws, key);
-                    if apply_outcome(terminal, ws, ctx, outcome)? {
+                    if apply_outcome(terminal, ws, ctx, &mut link, outcome)? {
                         return Ok(());
                     }
                 }
@@ -147,7 +146,7 @@ pub(crate) fn main_loop(
                     let screen = Rect::new(0, 0, size.width, size.height);
                     let outcome =
                         dispatch_mouse(ws, tabs, mouse, screen, &cfg.layout, cfg.mouse.enabled);
-                    if apply_outcome(terminal, ws, ctx, outcome)? {
+                    if apply_outcome(terminal, ws, ctx, &mut link, outcome)? {
                         return Ok(());
                     }
                 }
@@ -162,13 +161,16 @@ pub(crate) fn apply_outcome(
     terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
     ws: &mut Workspace,
     ctx: &ProjectContext,
+    link: &mut SessionLink,
     outcome: KeyOutcome,
 ) -> anyhow::Result<bool> {
     match outcome {
         KeyOutcome::Quit => return Ok(true),
         KeyOutcome::Redraw => terminal.clear()?,
         KeyOutcome::Continue => {}
-        KeyOutcome::Project(request) => apply_project_request(ws, ctx, request),
+        // Through the link: attached, opening and closing a tab is a request to
+        // whoever owns the tab list, not a local edit.
+        KeyOutcome::Project(request) => link.request(ws, ctx, request),
     }
     Ok(false)
 }

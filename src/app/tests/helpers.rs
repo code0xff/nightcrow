@@ -49,6 +49,7 @@ pub(crate) fn app_with_files(files: Vec<&str>) -> App {
         diff: DiffPane::default(),
         focus: Focus::FileList,
         notice: None,
+        repo_id: None,
         repo_path: ".".to_string(),
         log_view: LogView::default(),
         tree_view: TreeView::default(),

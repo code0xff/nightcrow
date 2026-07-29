@@ -192,9 +192,29 @@ impl Workspace {
         if self.projects.is_empty() {
             return false;
         }
+        self.close_at(self.active);
+        true
+    }
+
+    /// Close the tab on `repo`, wherever it sits. Returns whether one was open.
+    ///
+    /// For adopting a set the daemon reports: a repository closed on another
+    /// client is rarely the one this client happens to be looking at, so
+    /// closing cannot go through the active tab.
+    pub fn close_repo(&mut self, repo: &str) -> bool {
+        let Some(index) = self.index_of_repo(repo) else {
+            return false;
+        };
+        self.close_at(index);
+        true
+    }
+
+    /// Remove the tab at `index`, carrying its view state into the remembered
+    /// set and keeping the active tab on the same project where it survives.
+    fn close_at(&mut self, index: usize) {
         // Carry the closing project's view state, or reopening would restore
         // the last-shutdown snapshot instead.
-        let closing = self.projects.remove(self.active);
+        let closing = self.projects.remove(index);
         self.remembered.retain(|s| s.repo != closing.repo_path);
         self.remembered.insert(
             0,
@@ -206,10 +226,41 @@ impl Workspace {
         // Capped here as on disk: a long-lived process opening and closing
         // many repos would otherwise rescan the whole history every save.
         self.remembered.truncate(MAX_REMEMBERED);
-        // Closing the rightmost tab falls back to its left neighbour;
-        // saturates to 0 when now empty.
+        // A tab closed to the left of the active one shifts it; one at or past
+        // it falls back to the neighbour. Saturates to 0 when now empty.
+        if index < self.active {
+            self.active -= 1;
+        }
         self.active = self.active.min(self.projects.len().saturating_sub(1));
-        true
+    }
+
+    /// Put the tabs in `order` (by repository path), keeping the same project
+    /// active.
+    ///
+    /// Paths not open are skipped and open tabs the order does not name keep
+    /// their relative position at the end, so a list that raced a close still
+    /// produces a sane arrangement rather than dropping tabs.
+    pub fn reorder_to(&mut self, order: &[&str]) {
+        let active_path = self.projects.get(self.active).map(|p| p.repo_path.clone());
+        let mut arranged: Vec<App> = Vec::with_capacity(self.projects.len());
+        for path in order {
+            if let Some(index) = self.projects.iter().position(|p| p.repo_path == *path) {
+                arranged.push(self.projects.remove(index));
+            }
+        }
+        arranged.append(&mut self.projects);
+        self.projects = arranged;
+        // By path, not index: the whole point is that indices moved.
+        self.active = active_path
+            .and_then(|path| self.index_of_repo(&path))
+            .unwrap_or(0);
+    }
+
+    /// Record the daemon's id for an open repository.
+    pub fn set_repo_id(&mut self, repo: &str, id: &str) {
+        if let Some(project) = self.projects.iter_mut().find(|p| p.repo_path == repo) {
+            project.repo_id = Some(id.to_string());
+        }
     }
 
     /// Out-of-range indices are ignored so a key or click naming an absent

@@ -30,6 +30,16 @@ pub(crate) enum Commands {
         #[arg(long)]
         force: bool,
     },
+    /// Attach the TUI to a running nightcrow daemon.
+    ///
+    /// The session — which repositories are open, and in what order — belongs
+    /// to the daemon, so this starts on whatever it is serving rather than on
+    /// the remembered workspace. Leaving does not end the session.
+    Attach {
+        /// Ask the daemon to open this repository and focus it. Repeatable.
+        #[arg(short, long)]
+        repo: Vec<std::path::PathBuf>,
+    },
     /// Serve the web viewer without starting the TUI.
     ///
     /// Runs in the foreground until interrupted. Unlike the TUI's optional
