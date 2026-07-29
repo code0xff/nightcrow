@@ -147,3 +147,64 @@ fn tab_target_at_resolves_tabs_and_hidden_markers() {
     let y = tab_area.y;
     let _ = y;
 }
+
+#[test]
+fn a_grid_smaller_than_its_pane_is_padded_rather_than_stretched() {
+    // What a spectator sees. The session's grid belongs to whichever client is
+    // sizing it, and a program that drew for 20 columns cannot be re-flowed to
+    // 40 — so the rest of the pane is left blank instead of filled with a
+    // guess.
+    let mut app = crate::app::tests::app_with_fake_backend();
+    app.terminal.create_pane_now().unwrap();
+    let pane = app.terminal.panes[0].id;
+    app.terminal.owns_size = false;
+    // Sized by "another client" to a grid narrower and shorter than the area.
+    let emulator = app.terminal.emulators.get_mut(&pane).unwrap();
+    emulator.resize(4, 12);
+    emulator.process(b"0123456789ab");
+    let area = Rect::new(0, 0, 40, 10);
+    let mut terminal = Terminal::new(TestBackend::new(40, 10)).unwrap();
+
+    terminal
+        .draw(|frame| {
+            render(frame, &app, area, Color::Yellow);
+        })
+        .unwrap();
+
+    let text = buffer_text(terminal.backend().buffer());
+    assert!(text.contains("0123456789ab"), "the grid is drawn: {text}");
+    // And nothing was invented to the right of it: the row past the grid's
+    // width is blank rather than a repeat or a stretch.
+    let (_, content) = terminal_layout(area).unwrap();
+    let cell = terminal
+        .backend()
+        .buffer()
+        .cell((content.x + 20, content.y))
+        .unwrap();
+    assert_eq!(cell.symbol(), " ");
+}
+
+#[test]
+fn a_grid_larger_than_its_pane_is_cropped_without_panicking() {
+    // The other half of the same case: the owner's screen can be bigger than
+    // this one's. Cropping is honest, and reading past the area must not be
+    // attempted at all.
+    let mut app = crate::app::tests::app_with_fake_backend();
+    app.terminal.create_pane_now().unwrap();
+    let pane = app.terminal.panes[0].id;
+    app.terminal.owns_size = false;
+    let emulator = app.terminal.emulators.get_mut(&pane).unwrap();
+    emulator.resize(40, 200);
+    emulator.process(&b"x".repeat(200));
+    let area = Rect::new(0, 0, 40, 10);
+    let mut terminal = Terminal::new(TestBackend::new(40, 10)).unwrap();
+
+    terminal
+        .draw(|frame| {
+            render(frame, &app, area, Color::Yellow);
+        })
+        .unwrap();
+
+    let text = buffer_text(terminal.backend().buffer());
+    assert!(text.contains("xxxx"), "what fits is drawn: {text}");
+}
