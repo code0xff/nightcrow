@@ -45,6 +45,13 @@ pub struct DaemonClient {
     /// waiting — so asking whether the daemon is there would throw away what it
     /// last said.
     connected: Arc<AtomicBool>,
+    /// The accent carried by the set the daemon volunteered during the
+    /// handshake, noted in passing rather than taken out of the queue.
+    ///
+    /// For a screen that draws before anything drains the connection. The
+    /// message itself stays queued for whoever does. `None` if the daemon
+    /// answered the handshake before volunteering anything.
+    session_accent: Option<usize>,
 }
 
 impl DaemonClient {
@@ -74,6 +81,7 @@ impl DaemonClient {
             .set_read_timeout(Some(HANDSHAKE_TIMEOUT))
             .context("setting the handshake timeout")?;
         let mut queued = Vec::new();
+        let mut session_accent = None;
         let client = loop {
             let incoming = read_routed(&mut reader, &terminals)?
                 .context("the daemon closed the connection during the handshake")?;
@@ -98,6 +106,9 @@ impl DaemonClient {
                 // arrive before the handshake answer. Kept rather than dropped:
                 // it is the state this client is about to render.
                 other @ (ServerMessage::Repos { .. } | ServerMessage::Terminal { .. }) => {
+                    if let ServerMessage::Repos { accent, .. } = &other {
+                        session_accent = Some(*accent);
+                    }
                     queued.push(other)
                 }
                 ServerMessage::Error { message } => bail!("daemon refused the attach: {message}"),
@@ -134,7 +145,18 @@ impl DaemonClient {
             terminals,
             client,
             connected,
+            session_accent,
         })
+    }
+
+    /// The accent the session was painted in when this client attached, if the
+    /// daemon had volunteered its set by then.
+    ///
+    /// Read without draining the connection, for a screen that runs before
+    /// anything else does. Whoever drains it gets the same message, and every
+    /// change after this arrives that way.
+    pub fn session_accent(&self) -> Option<usize> {
+        self.session_accent
     }
 
     /// One repository's end of this connection, for the backend behind its

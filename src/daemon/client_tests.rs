@@ -230,3 +230,44 @@ fn a_closed_connection_reads_as_gone() {
         "a closed connection must not still read as attached"
     );
 }
+
+/// Drain until the session reports `accent`, or give up. Same reasoning as
+/// `await_repos`: the change crosses a socket and the watcher's thread.
+fn await_accent(client: &mut DaemonClient, accent: usize) {
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while Instant::now() < deadline {
+        for message in client.drain() {
+            if let ServerMessage::Repos {
+                accent: reported, ..
+            } = message
+                && reported == accent
+            {
+                return;
+            }
+        }
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    panic!("the session never reported accent {accent}");
+}
+
+#[test]
+fn the_session_accent_is_readable_before_anything_drains_the_connection() {
+    // The splash draws in it, and that runs before the loop that drains this
+    // connection exists. Reading it must not cost the set the tabs are built
+    // from, so the message it was read out of is still queued.
+    let (repo, path) = crate::test_util::make_repo();
+    let dir = tempfile::TempDir::new().unwrap();
+    let daemon = daemon(&dir, std::slice::from_ref(&path));
+    let mut picker = DaemonClient::connect(daemon.path()).expect("attaches");
+    picker.set_accent(3).expect("sends");
+    await_accent(&mut picker, 3);
+
+    let mut arriving = DaemonClient::connect(daemon.path()).expect("attaches");
+
+    assert_eq!(arriving.session_accent(), Some(3));
+    assert!(
+        !await_repos(&mut arriving).is_empty(),
+        "and the set it was read from is still there to drain"
+    );
+    drop(repo);
+}

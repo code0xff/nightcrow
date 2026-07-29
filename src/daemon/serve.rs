@@ -190,30 +190,17 @@ fn attach(stream: UnixStream, session: &Session) {
     }
 }
 
-/// Queue the session's current shape to one client, until what was queued
-/// agrees with what the session says.
+/// Give one client the session as it stands.
 ///
-/// Reading the session and queueing the frame are two steps, and the watcher
-/// broadcasts from another thread in between them. A change landing in that gap
-/// is queued *ahead* of a frame built before it, leaving the client on the older
-/// state — and the watcher, which records what it has told everyone, will not
-/// say it again. Re-reading after queueing closes it: this stops only once a
-/// read taken after the last frame went out matches it, so every later change is
-/// broadcast after that frame was already in the queue.
-///
-/// Converges immediately unless the session is being changed in exactly this
-/// instant, and the comparison is of a handful of small structs.
+/// Built under the client registry rather than before reaching for it, so a
+/// broadcast cannot land between reading the session and queueing what was read
+/// — which would queue the newer state first and leave this client on the older
+/// one for good, the watcher having already recorded that everyone was told. See
+/// [`AttachedClients::send_built_to`].
 fn send_current_set(id: u64, session: &Session) {
-    let mut sent = repos(&session.state);
-    session.clients.send_to(id, encode(&sent));
-    loop {
-        let current = repos(&session.state);
-        if current == sent {
-            return;
-        }
-        session.clients.send_to(id, encode(&current));
-        sent = current;
-    }
+    session
+        .clients
+        .send_built_to(id, || encode(&repos(&session.state)));
 }
 
 pub(super) fn repos(state: &ViewerState) -> ServerMessage {

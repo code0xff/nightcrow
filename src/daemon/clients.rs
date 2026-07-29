@@ -111,6 +111,31 @@ impl AttachedClients {
         clients.retain(|client| client.queue(frame.clone()));
     }
 
+    /// Send one client a frame built while the registry is held.
+    ///
+    /// For the set a client is given on attach, which has to be built by reading
+    /// the session. Reading and queueing as two steps lets [`broadcast`] land in
+    /// between and be queued *ahead* of a frame describing an older session, so
+    /// the client ends on state everyone else has moved off — and the watcher,
+    /// which records what it has told them, never says it again. Building under
+    /// the same lock broadcasting takes puts the two in some order rather than
+    /// none: whichever goes first, the later frame is the newer one.
+    ///
+    /// `build` must not reach back into this registry, and takes only the
+    /// session's own locks — the watcher releases those before it broadcasts, so
+    /// there is no path holding one while waiting for this.
+    ///
+    /// [`broadcast`]: Self::broadcast
+    pub fn send_built_to(&self, id: u64, build: impl FnOnce() -> Frame) {
+        let mut clients = self.inner.lock().expect("attached clients poisoned");
+        let Some(index) = clients.iter().position(|client| client.id == id) else {
+            return;
+        };
+        if !clients[index].queue(build()) {
+            clients.remove(index);
+        }
+    }
+
     /// Send `frame` to one client, if it is still attached.
     pub fn send_to(&self, id: u64, frame: Frame) {
         let mut clients = self.inner.lock().expect("attached clients poisoned");
