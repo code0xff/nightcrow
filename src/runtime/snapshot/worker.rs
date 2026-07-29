@@ -193,7 +193,7 @@ impl Worker {
                     // become one.
                     state.last_read = Some(Instant::now());
                     let msg = SnapshotMsg::Err(format!("not a git repository: {err}"));
-                    return self.tx.send(msg).is_ok();
+                    return self.deliver(msg);
                 }
             }
         }
@@ -215,6 +215,22 @@ impl Worker {
         state.reads_since_open += 1;
         state.changed = false;
         state.last_read = Some(Instant::now());
+        self.deliver(msg)
+    }
+
+    /// Hand a reading over, unless nobody is reading any more. `false` once the
+    /// receiver is gone.
+    ///
+    /// Checked again here rather than only before the walk, which on a large
+    /// tree takes long enough for the last client to leave. A reading nobody
+    /// waited for is worse than wasted: it sits in the channel until whoever
+    /// owns the receiver next drains it, and that is after the next client has
+    /// taken a fresher reading for itself and shown it. The older one then lands
+    /// on top.
+    fn deliver(&self, msg: SnapshotMsg) -> bool {
+        if !self.awake.load(Ordering::Acquire) {
+            return true;
+        }
         self.tx.send(msg).is_ok()
     }
 
