@@ -8,6 +8,7 @@
 #![cfg(test)]
 
 use git2::Repository;
+use std::path::Path;
 use std::process::Command;
 use tempfile::TempDir;
 
@@ -36,6 +37,23 @@ pub fn make_repo() -> (TempDir, String) {
     run_git(&path, &["config", "user.email", "t@t.com"]);
     run_git(&path, &["config", "user.name", "T"]);
     (dir, path)
+}
+
+/// A linked worktree, whose git directory therefore lives outside its own tree.
+///
+/// Returns both temporaries — the main repository's and the one holding the
+/// worktree — and the worktree's path. Both must be kept alive for the duration
+/// of the test: the worktree cannot be read without the repository it points at.
+pub fn make_linked_worktree() -> (TempDir, TempDir, String) {
+    let (main, main_path) = make_repo();
+    // `git worktree add` needs a commit to base the new tree on.
+    std::fs::write(Path::new(&main_path).join("seed.rs"), "fn main() {}").unwrap();
+    run_git(&main_path, &["add", "seed.rs"]);
+    run_git(&main_path, &["commit", "-m", "seed"]);
+    let elsewhere = TempDir::new().unwrap();
+    let tree = elsewhere.path().join("wt").to_string_lossy().to_string();
+    run_git(&main_path, &["worktree", "add", &tree]);
+    (main, elsewhere, tree)
 }
 
 /// A session serving `repos`, with no browser listener bound.

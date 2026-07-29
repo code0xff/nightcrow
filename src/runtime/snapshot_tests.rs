@@ -6,7 +6,7 @@
 //! interval, so a slow machine delays them rather than failing them.
 
 use super::{IDLE_READ_INTERVAL, MIN_READ_INTERVAL, SnapshotChannel, SnapshotMsg};
-use crate::test_util::{make_repo, run_git};
+use crate::test_util::{make_linked_worktree, make_repo, run_git};
 use std::path::Path;
 use std::time::{Duration, Instant};
 
@@ -131,6 +131,31 @@ fn staging_a_file_is_read_even_though_the_work_tree_did_not_change() {
         .expect("the file is still listed");
     assert_eq!(staged.short_code(), "A ", "staged, not untracked");
     drop(dir);
+}
+
+#[test]
+fn staging_in_a_linked_worktree_is_read_too() {
+    // Its index is not in the tree at all — `git worktree add` leaves a `.git`
+    // file pointing at the main repository — so this passes only because the git
+    // directory is watched as well. Bounded well under the ten-second safety net,
+    // which would otherwise hide the gap.
+    let (main, elsewhere, tree) = make_linked_worktree();
+    std::fs::write(Path::new(&tree).join("staged.rs"), "fn main() {}").unwrap();
+    let channel = watched(&tree);
+    reads_during(&channel, Duration::from_millis(300));
+
+    run_git(&tree, &["add", "staged.rs"]);
+
+    let SnapshotMsg::Ok(snapshot, _) = next_read(&channel) else {
+        panic!("the read failed");
+    };
+    let staged = snapshot
+        .files
+        .iter()
+        .find(|f| f.path == "staged.rs")
+        .expect("the file is still listed");
+    assert_eq!(staged.short_code(), "A ", "staged, not untracked");
+    drop((main, elsewhere));
 }
 
 #[test]

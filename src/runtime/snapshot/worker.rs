@@ -27,18 +27,21 @@ pub(super) struct Worker {
     pub(super) watching: Arc<AtomicBool>,
 }
 
-/// The watch the worker holds, and whether it has already tried to install it.
+/// The watches the worker holds, and whether it has already tried to install
+/// them.
 ///
-/// The attempt is recorded rather than inferred from the handle: a refusal
-/// leaves no handle, and re-deriving "not installed yet" from that would re-walk
-/// the tree and log the same warning once a second for as long as the session
-/// lives. A failure is answered by falling back to the interval — see
+/// Attempts are counted rather than inferred from the handles: a refusal leaves
+/// no handle, and re-deriving "not installed yet" from that would re-walk the
+/// tree and log the same warning once a second for as long as the session lives.
+/// A failure is answered by falling back to the interval — see
 /// [`install`](snapshot_watch::install) — and retried only when a repository
 /// nobody was reading is picked up again.
 #[derive(Default)]
 struct Watches {
     tree: Option<RecommendedWatcher>,
     tree_attempted: bool,
+    git_dir: Option<RecommendedWatcher>,
+    git_dir_attempted: bool,
 }
 
 /// What the worker carries between reads.
@@ -56,7 +59,7 @@ impl Worker {
     pub(super) fn run(self) {
         // Resolved once: the paths the watcher reports are the filesystem's, and
         // on macOS those differ from the path this was opened with.
-        let roots = Roots::of(&self.root);
+        let mut roots = Roots::of(&self.root);
         let mut watch = Watches::default();
         let mut state = ReadState {
             repo: None,
@@ -72,8 +75,10 @@ impl Worker {
             if awake && !watch.tree_attempted {
                 watch.tree_attempted = true;
                 watch.tree = snapshot_watch::install(&self.root, self.wake_tx.clone());
-                self.watching.store(watch.tree.is_some(), Ordering::Release);
-                // Whatever happened while the watch was off went unseen.
+                // Not reported as watching yet: whether this tree keeps its git
+                // directory elsewhere cannot be asked without a repository
+                // handle, and until that second watch is up a linked worktree is
+                // told about only half of what can change.
                 state.changed = true;
             } else if !awake && watch.tree_attempted {
                 watch = Watches::default();
@@ -82,9 +87,18 @@ impl Worker {
                 state.repo = None;
             }
 
-            if awake && state.changed && due(state.last_read) && !self.read_once(&mut state) {
-                // The receiver is gone: nobody is left to read this.
-                return;
+            if awake && state.changed && due(state.last_read) {
+                if !self.read_once(&mut state) {
+                    // The receiver is gone: nobody is left to read this.
+                    return;
+                }
+                // Deferred until here because it takes a repository handle to
+                // ask where the git directory is.
+                if !watch.git_dir_attempted && state.repo.is_some() {
+                    watch.git_dir_attempted = true;
+                    let complete = self.watch_git_dir(&state, &mut roots, &mut watch);
+                    self.watching.store(complete, Ordering::Release);
+                }
             }
 
             match self.wake_rx.recv_timeout(self.wait(awake, &state)) {
@@ -125,6 +139,27 @@ impl Worker {
             }
             Wake::Stop => false,
         }
+    }
+
+    /// Watch the git directory too, when the repository keeps it outside the
+    /// work tree — `git worktree add` and `--separate-git-dir` both do. The index
+    /// lives there, so without this a `git add` in such a checkout goes unseen
+    /// until the idle read comes round.
+    ///
+    /// Returns whether every place a change can come from is now watched, which
+    /// is what [`SnapshotChannel::is_watching`](super::SnapshotChannel::is_watching)
+    /// reports and what [`wait`](Self::wait) uses to choose an interval.
+    fn watch_git_dir(&self, state: &ReadState, roots: &mut Roots, watch: &mut Watches) -> bool {
+        let Some(repo) = state.repo.as_ref() else {
+            return false;
+        };
+        let Some(dir) = snapshot_watch::external_git_dir(repo, roots) else {
+            // Inside the tree, so the recursive watch already covers it.
+            return watch.tree.is_some();
+        };
+        roots.set_external_git_dir(&dir);
+        watch.git_dir = snapshot_watch::install(&dir, self.wake_tx.clone());
+        watch.tree.is_some() && watch.git_dir.is_some()
     }
 
     /// Read the tree and send what it says. `false` once the receiver is gone.

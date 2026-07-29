@@ -1,5 +1,5 @@
-use super::{Roots, any_matters};
-use crate::test_util::{make_repo, run_git};
+use super::{Roots, any_matters, external_git_dir};
+use crate::test_util::{make_linked_worktree, make_repo, run_git};
 use std::path::{Path, PathBuf};
 
 fn under(root: &str, relative: &str) -> Vec<PathBuf> {
@@ -95,6 +95,68 @@ fn without_a_repository_handle_everything_matters() {
         &Roots::of(Path::new(&path)),
         &under(&path, "any.rs")
     ));
+    drop(dir);
+}
+
+#[test]
+fn an_ordinary_repository_needs_no_second_watch() {
+    // `.git` is inside the tree, so the recursive watch already covers it and a
+    // second one would only double every event.
+    let (dir, path) = make_repo();
+    let repo = crate::test_util::open_repo(&path);
+
+    assert!(external_git_dir(&repo, &Roots::of(Path::new(&path))).is_none());
+    drop(dir);
+}
+
+#[test]
+fn a_linked_worktree_is_watched_where_its_state_lives() {
+    // `git worktree add` leaves a `.git` *file* pointing at the main
+    // repository's directory, and that is where the index and the refs are. A
+    // watch on the tree alone would never see a `git add`.
+    let (main, elsewhere, tree) = make_linked_worktree();
+    let repo = crate::test_util::open_repo(&tree);
+
+    let watched =
+        external_git_dir(&repo, &Roots::of(Path::new(&tree))).expect("the git dir is elsewhere");
+
+    assert!(
+        watched.join("worktrees").is_dir(),
+        "the main repository's git directory, which holds both trees' state: {}",
+        watched.display()
+    );
+    drop((main, elsewhere));
+}
+
+#[test]
+fn inside_a_git_directory_of_its_own_the_same_paths_matter() {
+    // Once that second watch is installed its events arrive named after a
+    // directory the tree filter cannot place, and "cannot place" means "read
+    // it" — which would turn every loose object into a walk. The git-metadata
+    // rules apply there instead.
+    let (dir, path) = make_repo();
+    let elsewhere = tempfile::TempDir::new().unwrap();
+    let git_dir = elsewhere.path().to_string_lossy().to_string();
+    let repo = crate::test_util::open_repo(&path);
+    let mut roots = Roots::of(Path::new(&path));
+    roots.set_external_git_dir(Path::new(&git_dir));
+
+    for interesting in ["index", "HEAD", "refs/heads/main", "worktrees/wt/index"] {
+        assert!(
+            any_matters(Some(&repo), &roots, &under(&git_dir, interesting)),
+            "{interesting} changes what a status says"
+        );
+    }
+    for noise in [
+        "objects/ab/cdef0123456789",
+        "logs/HEAD",
+        "worktrees/wt/index.lock",
+    ] {
+        assert!(
+            !any_matters(Some(&repo), &roots, &under(&git_dir, noise)),
+            "{noise} does not"
+        );
+    }
     drop(dir);
 }
 

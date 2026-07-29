@@ -60,30 +60,30 @@ pub(super) fn install(root: &Path, wake: Sender<Wake>) -> Option<RecommendedWatc
             tracing::warn!(
                 %err,
                 root = %root.display(),
-                "cannot watch the work tree; reading on a timer"
+                "cannot watch this directory; reading on a timer"
             );
             None
         }
     }
 }
 
-/// The work tree's path as given, and as the filesystem reports it.
+/// A directory as given, and as the filesystem reports it.
 ///
 /// Both, because macOS resolves symlinks in the paths it hands back: a repository
 /// under `/var/folders/...` is reported under `/private/var/folders/...`. A path
 /// that cannot be made relative to the tree is treated as "cannot tell, read it",
 /// so getting this wrong does not break correctness — it silently turns the whole
 /// filter off, which is the same as not having written it.
-pub(super) struct Roots {
+struct Prefix {
     given: PathBuf,
     canonical: PathBuf,
 }
 
-impl Roots {
-    pub(super) fn of(root: &Path) -> Self {
+impl Prefix {
+    fn of(path: &Path) -> Self {
         Self {
-            given: root.to_path_buf(),
-            canonical: root.canonicalize().unwrap_or_else(|_| root.to_path_buf()),
+            given: path.to_path_buf(),
+            canonical: path.canonicalize().unwrap_or_else(|_| path.to_path_buf()),
         }
     }
 
@@ -91,6 +91,44 @@ impl Roots {
         path.strip_prefix(&self.canonical)
             .or_else(|_| path.strip_prefix(&self.given))
             .ok()
+    }
+}
+
+/// The directories an event can arrive from: the work tree, and the git
+/// directory when the repository keeps it somewhere else.
+pub(super) struct Roots {
+    tree: Prefix,
+    /// Set only when the git directory is outside the work tree — `git worktree
+    /// add` and `--separate-git-dir` both do that, and then the index and the
+    /// refs are nowhere the tree's watch can see them.
+    git_dir: Option<Prefix>,
+}
+
+impl Roots {
+    pub(super) fn of(root: &Path) -> Self {
+        Self {
+            tree: Prefix::of(root),
+            git_dir: None,
+        }
+    }
+
+    pub(super) fn set_external_git_dir(&mut self, git_dir: &Path) {
+        self.git_dir = Some(Prefix::of(git_dir));
+    }
+}
+
+/// The repository's common directory when it does not live inside the watched
+/// tree, which is exactly when it needs a watch of its own.
+///
+/// The *common* directory rather than `path()`: a linked worktree's `path()`
+/// holds its index but its refs are in the main repository's, and a commit made
+/// elsewhere on the same branch changes what a status says. The common directory
+/// contains both.
+pub(super) fn external_git_dir(repo: &git2::Repository, roots: &Roots) -> Option<PathBuf> {
+    let common = repo.commondir();
+    match roots.tree.relative(common) {
+        Some(_) => None,
+        None => Some(common.to_path_buf()),
     }
 }
 
@@ -111,13 +149,18 @@ pub(super) fn any_matters(
 }
 
 fn matters(repo: Option<&git2::Repository>, roots: &Roots, path: &Path) -> bool {
-    let Some(relative) = roots.relative(path) else {
-        // Outside the tree, which the watcher should not report. A path that
+    if let Some(git_dir) = &roots.git_dir
+        && let Some(inside) = git_dir.relative(path)
+    {
+        return git_metadata_matters(inside);
+    }
+    let Some(relative) = roots.tree.relative(path) else {
+        // Outside anything watched, which should not be reported. A path that
         // cannot be placed is read rather than dropped.
         return true;
     };
-    if relative.starts_with(".git") {
-        return git_metadata_matters(relative);
+    if let Ok(inside) = relative.strip_prefix(".git") {
+        return git_metadata_matters(inside);
     }
     let Some(repo) = repo else {
         return true;
@@ -132,18 +175,19 @@ fn matters(repo: Option<&git2::Repository>, roots: &Roots, path: &Path) -> bool 
     !repo.is_path_ignored(relative).unwrap_or(false)
 }
 
-/// Whether a change under `.git` could change what a status says.
-fn git_metadata_matters(relative: &Path) -> bool {
+/// Whether a change at `inside` — a path relative to a git directory — could
+/// change what a status says.
+fn git_metadata_matters(inside: &Path) -> bool {
     // Objects and reflogs churn on every commit and every fetch, and neither
     // changes a status by itself — the index or ref update that comes with them
     // does, and that is watched.
-    if relative.starts_with(".git/objects") || relative.starts_with(".git/logs") {
+    if inside.starts_with("objects") || inside.starts_with("logs") {
         return false;
     }
     // Git takes `index.lock` before an operation and removes it after. Reading
     // on that means reading a tree mid-change, and the real event follows
     // immediately.
-    relative.extension().is_none_or(|ext| ext != "lock")
+    inside.extension().is_none_or(|ext| ext != "lock")
 }
 
 #[cfg(test)]

@@ -26,8 +26,10 @@ pub struct SnapshotChannel {
     /// filesystem watch goes with it, so a repository nobody reads holds no
     /// watch descriptors either.
     awake: Arc<AtomicBool>,
-    /// Whether the worker is being told about changes rather than looking on a
-    /// timer. False while asleep, and on a tree the watcher could not install on.
+    /// Whether the worker is being told about *every* place a change can come
+    /// from, rather than looking on a timer. False while asleep, on a tree the
+    /// watcher could not install on, and — until the first read answers where the
+    /// git directory is — on a checkout that keeps it outside the work tree.
     ///
     /// Nothing in production reads this — a failed watch is reported where it
     /// happens, and the reader behaves correctly either way. It exists so the
@@ -108,8 +110,8 @@ impl SnapshotChannel {
         }
     }
 
-    /// Whether the worker is being told about changes rather than reading on a
-    /// timer. See the field.
+    /// Whether the worker is being told about every place a change can come
+    /// from, rather than reading on a timer. See the field.
     #[cfg(test)]
     pub(crate) fn is_watching(&self) -> bool {
         self.watching.load(Ordering::Acquire)
