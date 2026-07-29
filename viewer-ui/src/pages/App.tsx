@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useLayoutEffect, useRef, useState } from "react";
 import { isUnauthorized } from "../api";
 import { toast } from "../lib/toast";
 import { useHotClock } from "../hooks/ui/useHotClock";
@@ -159,7 +159,10 @@ export function App() {
     authed === true,
   );
 
-  useEffect(() => {
+  // Before paint: the commits, the open diff and the drill-down all belong to
+  // the project being left, and a passive effect can let them show for a frame
+  // under the new project's name.
+  useLayoutEffect(() => {
     bumpPaneRequest();
     setCommitDrillDown(null);
     setPane({ kind: "empty" });
