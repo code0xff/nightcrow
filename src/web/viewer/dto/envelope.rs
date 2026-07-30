@@ -1,4 +1,5 @@
 use super::status::server_now_millis;
+use crate::web::viewer::prefs::ViewerPrefs;
 use serde::Serialize;
 
 /// Bumped whenever an existing field changes meaning or disappears. Adding a
@@ -66,6 +67,10 @@ pub struct ViewerBootstrapDto {
     /// File-sidebar width in CSS px, stored server-side like the accent so
     /// every device opens at the same split.
     pub sidebar_width: u32,
+    /// Percent of the vertical split given to the diff panel; the terminal
+    /// panel takes the rest. Shared between browsers like the sidebar width,
+    /// and like it not shared with the TUI — see `prefs::ViewerPrefs`.
+    pub upper_pct: u32,
     /// Id of the project a client last selected, so a reload lands there
     /// instead of on the first tab. `None` when nothing has been selected yet
     /// or the remembered project is not currently served — the client then
@@ -83,19 +88,25 @@ impl ViewerBootstrapDto {
     /// Stamps `now_ms` at construction — the value is only useful as "the
     /// server's time when this response was built", so no caller is given the
     /// chance to supply a staler one.
+    ///
+    /// Takes the whole [`ViewerPrefs`] rather than the fields it needs: several
+    /// of them are `u32`, and a positional list of those is a pair of arguments
+    /// a call site can swap with nothing to catch it. `active_repo` stays
+    /// separate because what goes on the wire is the **id** resolved from
+    /// `prefs.active_repo`, which only the caller's catalog snapshot can supply.
     pub fn new(
         repos: Vec<RepoDto>,
         hot: HotConfigDto,
-        accent: usize,
-        sidebar_width: u32,
+        prefs: &ViewerPrefs,
         active_repo: Option<String>,
         can_clone: bool,
     ) -> Self {
         Self {
             repos,
             hot,
-            accent,
-            sidebar_width,
+            accent: prefs.accent,
+            sidebar_width: prefs.sidebar_width,
+            upper_pct: prefs.upper_pct,
             active_repo,
             can_clone,
             now_ms: server_now_millis(),

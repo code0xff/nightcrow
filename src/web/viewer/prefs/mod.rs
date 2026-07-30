@@ -29,6 +29,17 @@ pub const DEFAULT_SIDEBAR_WIDTH: u32 = 460;
 pub const MIN_SIDEBAR_WIDTH: u32 = 280;
 pub const MAX_SIDEBAR_WIDTH: u32 = 720;
 
+/// The share of the viewer's split the diff panel had before it was
+/// adjustable — the same 55 as the TUI's `layout.upper_pct` default, so both
+/// surfaces still come up looking alike.
+pub const DEFAULT_UPPER_PCT: u32 = 55;
+/// Bounds the split so neither half becomes a sliver. On a typical 800 px
+/// split area, 20 leaves the diff panel its header and several lines, and 85
+/// leaves the terminal about six rows — past either end the panel is no longer
+/// something you read, and "all the way" is what the maximize buttons are for.
+pub const MIN_UPPER_PCT: u32 = 20;
+pub const MAX_UPPER_PCT: u32 = 85;
+
 /// Everything the viewer remembers for its clients. One shared value, not one
 /// per repository: repo ids are only stable for the process lifetime
 /// (`catalog.rs`), so a per-repo key would drop the preference on restart.
@@ -41,6 +52,21 @@ pub struct ViewerPrefs {
     /// `[MIN_SIDEBAR_WIDTH, MAX_SIDEBAR_WIDTH]`. Shared across clients like the
     /// accent so every device opens at the same split.
     pub sidebar_width: u32,
+    /// Share of the viewer's vertical split given to the diff panel, in
+    /// percent, clamped to `[MIN_UPPER_PCT, MAX_UPPER_PCT]`. The terminal panel
+    /// takes the rest.
+    ///
+    /// **The viewer's own, not the session's** — unlike the accent, which an
+    /// attached TUI reads and writes too. The TUI has a counterpart in
+    /// `layout.upper_pct`, but sharing the two was rejected: a percentage means
+    /// a different thing on a 40-row terminal than in a 1400 px window, so
+    /// there is no single answer to converge on, and the PTY size it would
+    /// appear to govern is already decided elsewhere by one owning client
+    /// (`terminal/size_owner.rs`) — so a shared ratio would move a spectator's
+    /// panel without moving the grid inside it. It sits with `fullscreen`,
+    /// which is per-client for the same reason: how much room to give the
+    /// terminal is a question about the screen you are looking at.
+    pub upper_pct: u32,
     /// Absolute worktree path of the project a client last selected, so a
     /// reload lands where the user left off instead of on the first tab.
     ///
@@ -61,6 +87,7 @@ impl Default for ViewerPrefs {
         Self {
             accent: 0,
             sidebar_width: DEFAULT_SIDEBAR_WIDTH,
+            upper_pct: DEFAULT_UPPER_PCT,
             active_repo: None,
         }
     }
@@ -106,13 +133,15 @@ impl PrefsStore {
     }
 
     /// Load from `path`, falling back to `absent` when there is nothing to read.
-    /// A hand-edited file can carry a width outside the bounds; clamp it on load
-    /// so `get` never serves a value the write path would have rejected.
+    /// A hand-edited file can carry a width or a split outside the bounds; clamp
+    /// them on load so `get` never serves a value the write path would have
+    /// rejected.
     fn at_or(path: PathBuf, absent: ViewerPrefs) -> Self {
         let mut state = read(&path).unwrap_or(absent);
         state.sidebar_width = state
             .sidebar_width
             .clamp(MIN_SIDEBAR_WIDTH, MAX_SIDEBAR_WIDTH);
+        state.upper_pct = state.upper_pct.clamp(MIN_UPPER_PCT, MAX_UPPER_PCT);
         Self {
             path: Some(path),
             state: Mutex::new(state),
@@ -155,6 +184,9 @@ impl PrefsStore {
             if let Some(width) = change.sidebar_width {
                 state.sidebar_width = width.clamp(MIN_SIDEBAR_WIDTH, MAX_SIDEBAR_WIDTH);
             }
+            if let Some(pct) = change.upper_pct {
+                state.upper_pct = pct.clamp(MIN_UPPER_PCT, MAX_UPPER_PCT);
+            }
             if let Some(path) = change.active_repo {
                 state.active_repo = Some(path);
             }
@@ -178,6 +210,14 @@ impl PrefsStore {
         })
     }
 
+    /// Store the split percentage alone. Thin wrapper over [`update`].
+    pub fn set_upper_pct(&self, pct: u32) -> ViewerPrefs {
+        self.update(PrefsUpdate {
+            upper_pct: Some(pct),
+            ..PrefsUpdate::default()
+        })
+    }
+
     /// Store the active project's absolute path alone. Thin wrapper over
     /// [`update`]. There is deliberately no way to clear it: closing the last
     /// project leaves no path worth recording, and keeping the old one means it
@@ -197,6 +237,7 @@ impl PrefsStore {
 pub struct PrefsUpdate {
     pub accent: Option<usize>,
     pub sidebar_width: Option<u32>,
+    pub upper_pct: Option<u32>,
     pub active_repo: Option<String>,
 }
 

@@ -114,6 +114,50 @@ fn a_width_outside_the_bounds_in_the_file_is_clamped_on_load() {
 }
 
 #[test]
+fn an_upper_pct_round_trips_through_the_file() {
+    let dir = tempfile::TempDir::new().unwrap();
+    let path = dir.path().join("viewer.json");
+
+    PrefsStore::at(path.clone()).set_upper_pct(30);
+
+    assert_eq!(PrefsStore::at(path).get().upper_pct, 30);
+}
+
+#[test]
+fn an_out_of_range_upper_pct_clamps_instead_of_being_stored_as_given() {
+    // The percentage comes from a browser drag, so it is input: past either
+    // bound one of the two panels stops being something you can read.
+    let dir = tempfile::TempDir::new().unwrap();
+    let store = PrefsStore::at(dir.path().join("viewer.json"));
+
+    assert_eq!(store.set_upper_pct(99).upper_pct, MAX_UPPER_PCT);
+    assert_eq!(store.set_upper_pct(0).upper_pct, MIN_UPPER_PCT);
+}
+
+#[test]
+fn an_upper_pct_outside_the_bounds_in_the_file_is_clamped_on_load() {
+    // Same reason as the width: a hand-edited file must not smuggle a value
+    // past the bounds the write path enforces.
+    let dir = tempfile::TempDir::new().unwrap();
+    let path = dir.path().join("viewer.json");
+    std::fs::write(&path, r#"{"accent":0,"upper_pct":98}"#).unwrap();
+
+    assert_eq!(PrefsStore::at(path).get().upper_pct, MAX_UPPER_PCT);
+}
+
+#[test]
+fn a_file_written_before_the_split_was_adjustable_loads_at_the_default() {
+    // `serde(default)` supplies the field, and the load clamp must not read
+    // that as a zero to push up to the minimum — 55 is the look those sessions
+    // already have.
+    let dir = tempfile::TempDir::new().unwrap();
+    let path = dir.path().join("viewer.json");
+    std::fs::write(&path, r#"{"accent":1,"sidebar_width":460}"#).unwrap();
+
+    assert_eq!(PrefsStore::at(path).get().upper_pct, DEFAULT_UPPER_PCT);
+}
+
+#[test]
 fn an_active_repo_round_trips_through_the_file() {
     let dir = tempfile::TempDir::new().unwrap();
     let path = dir.path().join("viewer.json");

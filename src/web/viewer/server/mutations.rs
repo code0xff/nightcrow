@@ -25,6 +25,7 @@ struct PrefsRequest {
     /// as a silent no-op.
     accent: Option<usize>,
     sidebar_width: Option<u32>,
+    upper_pct: Option<u32>,
     /// Repo **id**, as every other client-supplied repository reference is.
     /// The server translates it to the path `prefs.rs` stores.
     active_repo: Option<String>,
@@ -48,7 +49,10 @@ pub(super) fn handle_set_prefs(body: &str, state: &ViewerState) -> Vec<u8> {
             );
         }
     };
-    if request.accent.is_none() && request.sidebar_width.is_none() && request.active_repo.is_none()
+    if request.accent.is_none()
+        && request.sidebar_width.is_none()
+        && request.upper_pct.is_none()
+        && request.active_repo.is_none()
     {
         return json_error("400 Bad Request", "no known preference in the body");
     }
@@ -68,11 +72,13 @@ pub(super) fn handle_set_prefs(body: &str, state: &ViewerState) -> Vec<u8> {
     let stored = state.prefs.update(PrefsUpdate {
         accent: request.accent,
         sidebar_width: request.sidebar_width,
+        upper_pct: request.upper_pct,
         active_repo: active_path,
     });
     match serde_json::to_string(&Envelope::new(serde_json::json!({
         "accent": stored.accent,
         "sidebar_width": stored.sidebar_width,
+        "upper_pct": stored.upper_pct,
         "active_repo": stored
             .active_repo
             .as_deref()

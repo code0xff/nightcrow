@@ -53,6 +53,35 @@ fn a_stored_sidebar_width_is_clamped_and_served_to_every_later_client() {
 }
 
 #[test]
+fn a_stored_upper_pct_is_clamped_and_served_to_every_later_client() {
+    let dir = tempfile::TempDir::new().unwrap();
+    let server = server_with(
+        &[],
+        crate::config::AgentIndicatorConfig::default(),
+        Some(dir.path()),
+    );
+    let token = login(server.addr());
+
+    // Past the ceiling: the write echoes the clamped percentage, and a later
+    // client's bootstrap opens at the same split rather than the raw ask.
+    let stored = post(
+        server.addr(),
+        "/api/prefs",
+        "{\"upper_pct\":99}",
+        Some(&token),
+    );
+    let echoed: serde_json::Value = serde_json::from_str(body_of(&stored)).unwrap();
+    assert_eq!(
+        echoed["upper_pct"],
+        crate::web::viewer::prefs::MAX_UPPER_PCT
+    );
+
+    let list = get(server.addr(), "/api/repos", Some(&token));
+    let value: serde_json::Value = serde_json::from_str(body_of(&list)).unwrap();
+    assert_eq!(value["upper_pct"], crate::web::viewer::prefs::MAX_UPPER_PCT);
+}
+
+#[test]
 fn mkdir_creates_a_folder_inside_the_browsed_directory() {
     let dir = tempfile::TempDir::new().unwrap();
     let server = server_with(

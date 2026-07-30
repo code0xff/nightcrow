@@ -15,7 +15,8 @@
         "name": "nightcrow"
       }
     ],
-    "sidebar_width": 460
+    "sidebar_width": 460,
+    "upper_pct": 55
   },
   "browse": {
     "entries": [
@@ -163,7 +164,8 @@
   "storedPrefs": {
     "accent": 2,
     "active_repo": "r1",
-    "sidebar_width": 460
+    "sidebar_width": 460,
+    "upper_pct": 55
   },
   "tree": {
     "entries": [

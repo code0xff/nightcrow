@@ -35,8 +35,7 @@ pub(super) fn route(head: &RequestHead, state: &ViewerState) -> Vec<u8> {
                     enabled: state.hot.enabled,
                     window_secs: state.hot.hot_window_secs,
                 },
-                prefs.accent,
-                prefs.sidebar_width,
+                &prefs,
                 active_repo,
                 state.git_available,
             );

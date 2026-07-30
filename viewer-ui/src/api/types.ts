@@ -32,6 +32,7 @@ export interface HotConfig {
 export interface StoredPrefs {
   accent: number;
   sidebar_width: number;
+  upper_pct: number;
   active_repo: string | null;
 }
 
@@ -42,6 +43,9 @@ export interface ViewerBootstrap {
   accent: number;
   /** Server-owned sidebar width in CSS pixels. */
   sidebar_width: number;
+  /** Server-owned percent of the vertical split given to the diff panel; the
+   *  terminal panel takes the rest. Shared between browsers, not with the TUI. */
+  upper_pct: number;
   /** Id of the project last selected on any device, so a reload opens it
    *  instead of the first tab. Null when nothing has been selected yet or the
    *  remembered project is no longer served. */
