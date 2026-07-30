@@ -10,8 +10,11 @@
 //! writes this same value over the daemon socket (`web/viewer/session.rs`).
 //! That crosses no security boundary — the viewer's separation from the TUI is
 //! its own port, cookie, and password, and each transport still decides who may
-//! ask before reaching the session at all. `sidebar_width` stays the viewer's
-//! alone, having no TUI counterpart to share with.
+//! ask before reaching the session at all.
+//!
+//! `sidebar_width` and `upper_pct` stay the viewer's alone: the first has no TUI
+//! counterpart to share with, and the second has one (`layout.upper_pct`) that
+//! it is deliberately not shared with — see the field's own comment.
 
 use crate::config::Accent;
 use serde::{Deserialize, Serialize};

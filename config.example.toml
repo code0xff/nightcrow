@@ -4,6 +4,10 @@
 # optional; omitted fields fall back to the defaults shown below.
 
 [layout]
+# The TUI's layout. The viewer has its own split, dragged from the border
+# between its panels and stored in ~/.nightcrow/viewer.json — the two are
+# deliberately separate, since the same percentage is a different number of
+# rows on a terminal than in a browser window.
 upper_pct = 55       # vertical % for the diff panel (1–99)
 file_list_pct = 25   # horizontal % of upper panel for the file list (1–99)
 

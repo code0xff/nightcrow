@@ -358,6 +358,16 @@ or double-click it to reset the default width. The width is stored on the server
 the same way as the accent, so every device opens at the same split; it is
 bounded so the diff pane always keeps at least half the window.
 
+The border between the diff panel and the terminal panel is a divider too: drag
+it to give the terminal more or less of the window, double-click to go back to
+the default 55/45. It is stored on the server like the sidebar width, so every
+browser opens at the same split, and bounded so neither panel shrinks to a
+sliver — for "all the way" use the maximize buttons on either panel. Unlike the
+accent, this one is **not** shared with an attached TUI: the TUI keeps its own
+`[layout] upper_pct`, because the same percentage means a different number of
+rows on a terminal than in a browser window, and the terminals' actual size is
+already decided by whichever client owns the sizing.
+
 The diff pane has a toggle (top-right of the pane) that switches between the
 inline unified diff and a side-by-side split view, mirroring the TUI's `s`.
 The choice lasts the page, the same lifetime the TUI gives it; on a narrow
@@ -474,7 +484,8 @@ nightcrow init --force    # overwrite an existing file
 
 ```toml
 [layout]
-upper_pct = 55       # vertical % for the diff panel (1–99)
+upper_pct = 55       # vertical % for the diff panel (1–99) — the TUI's own; the
+                     # viewer keeps a separate dragged value in viewer.json
 file_list_pct = 25   # horizontal % of upper panel for the file list (1–99)
 
 [theme]
