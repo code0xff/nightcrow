@@ -34,7 +34,7 @@ function SplitCell({
     return (
       <div className="flex bg-ink-900/40">
         <LineNos nos={[undefined]} digits={digits} tint="bg-ink-900/40" />
-        <span className="whitespace-pre pr-3"> </span>
+        <span className="whitespace-pre pr-3">{" "}</span>
       </div>
     );
   }
@@ -113,37 +113,46 @@ export function DiffView({ diff, split }: { diff: Diff; split: boolean }) {
       {diff.hunks.length === 0 && (
         <p className="p-3 text-ink-400">No changes.</p>
       )}
-      {diff.hunks.map((h, i) => (
-        <div key={i} className="mb-2">
+      {diff.hunks.map((h, i) => {
+        const header = (
           <div className="bg-ink-850 px-3 py-0.5 text-ink-400">
             {h.file_path ? `${h.file_path}  ` : ""}
             {h.header}
           </div>
-          {split ? (
-            <SplitHunk lines={h.lines} digits={digits} />
-          ) : (
-            // `w-max min-w-full` so a row's tint keeps covering it once the
-            // code scrolls past the pane's width.
-            <div className="w-max min-w-full">
-              {h.lines.map((line, j) => {
-                const tint = diffLineBg(line.kind);
-                return (
-                  <div key={j} className={`flex ${tint}`}>
-                    <LineNos
-                      nos={[line.old_lineno, line.new_lineno]}
-                      digits={digits}
-                      tint={tint}
-                    />
-                    <span className="whitespace-pre pr-3">
-                      <DiffLineContent line={line} />
-                    </span>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-      ))}
+        );
+        return (
+          <div key={i} className="mb-2">
+            {split ? (
+              <>
+                {header}
+                <SplitHunk lines={h.lines} digits={digits} />
+              </>
+            ) : (
+              // `w-max min-w-full` so the row tints — and the header band with
+              // them — keep covering their rows once the code scrolls past the
+              // pane's width, instead of stopping at its right edge.
+              <div className="w-max min-w-full">
+                {header}
+                {h.lines.map((line, j) => {
+                  const tint = diffLineBg(line.kind);
+                  return (
+                    <div key={j} className={`flex ${tint}`}>
+                      <LineNos
+                        nos={[line.old_lineno, line.new_lineno]}
+                        digits={digits}
+                        tint={tint}
+                      />
+                      <span className="whitespace-pre pr-3">
+                        <DiffLineContent line={line} />
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        );
+      })}
       {diff.truncated && (
         <p className="p-3 text-accent">
           Diff truncated — it exceeded the server's size ceiling.
