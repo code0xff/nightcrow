@@ -33,7 +33,10 @@ pub(super) fn daemon(dir: &tempfile::TempDir, repos: &[String]) -> TestDaemon {
     let path = dir.path().join("d.sock");
     let socket = DaemonSocket::bind(&path).expect("binds");
     let listener = socket.listener().try_clone().expect("clones");
-    let state = crate::test_util::session_state(repos);
+    // The same directory the socket is in, so this session's preferences — the
+    // accent among them — belong to this test rather than to whichever one wrote
+    // them last.
+    let state = crate::test_util::session_state(repos, dir.path());
     let served = std::sync::Arc::clone(&state);
     let session = crate::daemon::serve::start(served).expect("starts the watcher");
     std::thread::spawn(move || crate::daemon::serve::serve(listener, session));

@@ -20,8 +20,11 @@ pub(super) fn server(paths: &[String]) -> ViewerServer {
 }
 
 /// `prefs_dir` keeps preference writes inside a temp directory. Left `None`
-/// the store still points at the real `~/.nightcrow/viewer.json`, so any
-/// test that *writes* a preference must pass one.
+/// the store points at a fixed path every caller shares, so any test that
+/// *writes* a preference must pass one — the path is not a safe elsewhere. It is
+/// only unwritable for an ordinary user; a suite running as root, which is the
+/// default in a bare container, creates it and then every session left without a
+/// directory reads back what the last one stored.
 pub(super) fn server_with(
     paths: &[String],
     hot: crate::config::AgentIndicatorConfig,

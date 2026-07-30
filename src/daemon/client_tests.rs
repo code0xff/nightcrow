@@ -33,9 +33,10 @@ fn daemon(dir: &tempfile::TempDir, repos: &[String]) -> TestDaemon {
         persist: false,
         startup_commands: Vec::new(),
         hot: crate::config::AgentIndicatorConfig::default(),
-        prefs: PrefsStore::at(std::path::PathBuf::from(
-            "/nonexistent/nightcrow/viewer.json",
-        )),
+        // In the test's own directory, beside the socket: opening a repository
+        // records it as the active one, so this file is written, and a path
+        // shared with another test would make the two one session.
+        prefs: PrefsStore::at(dir.path().join("viewer.json")),
     }));
     let session = crate::daemon::serve::start(state).expect("starts the watcher");
     std::thread::spawn(move || crate::daemon::serve::serve(listener, session));

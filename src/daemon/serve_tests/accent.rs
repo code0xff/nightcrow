@@ -53,6 +53,16 @@ fn an_accent_past_the_end_of_the_cycle_wraps_rather_than_being_refused() {
         accent: crate::config::Accent::ALL.len() + 2,
     });
 
+    // Read back rather than waited for, which is the claim above: the watcher
+    // announces a *difference*, so a session already painted in the colour the
+    // index wraps to answers the change with silence — and a test waiting for a
+    // frame nobody owes it would sit out the read timeout and blame the wrap. A
+    // list is owed an answer whatever the accent is. This connection's requests
+    // are served in order, so the accent is already stored when the list is
+    // recorded as owed, and either frame that can come back — the announcement
+    // or the answer — carries what was stored.
+    client.send(ClientMessage::ListRepos);
+
     assert_eq!(client.next_accent(), 2);
     drop(repo);
 }

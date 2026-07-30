@@ -56,13 +56,31 @@ pub fn make_linked_worktree() -> (TempDir, TempDir, String) {
     (main, elsewhere, tree)
 }
 
-/// A session serving `repos`, with no browser listener bound.
+/// A session serving `repos`, with no browser listener bound, keeping its
+/// preferences in `prefs_dir`.
 ///
 /// The state, not the server: everything the daemon serves hangs off this, so a
 /// test can drive a real session — catalog, terminal hubs and all — without a
-/// TCP port. Never persists, so tests cannot touch the real
+/// TCP port. The workspace file is never written, so tests cannot touch the real
 /// `~/.nightcrow/workspace.json`.
-pub fn session_state(repos: &[String]) -> std::sync::Arc<crate::web::viewer::server::ViewerState> {
+///
+/// `prefs_dir` is required, and must be the caller's own temporary directory.
+/// The accent and the active project *are* preferences, so a session driven from
+/// a test writes this file — and every session pointed at one path is one
+/// session: a test would begin in the colour whichever test ran last chose, and
+/// asking for that same colour is no change at all, which the watcher answers
+/// with silence rather than a frame. Pass the directory that already holds the
+/// test's socket and the file goes away with the test.
+///
+/// This replaced a single fixed path outside any temporary directory, chosen
+/// because it was expected to be unwritable. It is unwritable for an ordinary
+/// user, which is what CI runs as; a test suite running as root — the default in
+/// a bare container — created it and shared it, and the accent tests then
+/// depended on each other's order across whole runs.
+pub fn session_state(
+    repos: &[String],
+    prefs_dir: &Path,
+) -> std::sync::Arc<crate::web::viewer::server::ViewerState> {
     std::sync::Arc::new(crate::web::viewer::server::ViewerState::new(
         crate::web::viewer::server::ViewerOptions {
             bind: "127.0.0.1".parse().unwrap(),
@@ -72,9 +90,7 @@ pub fn session_state(repos: &[String]) -> std::sync::Arc<crate::web::viewer::ser
             persist: false,
             startup_commands: Vec::new(),
             hot: crate::config::AgentIndicatorConfig::default(),
-            prefs: crate::web::viewer::prefs::PrefsStore::at(std::path::PathBuf::from(
-                "/nonexistent/nightcrow/viewer.json",
-            )),
+            prefs: crate::web::viewer::prefs::PrefsStore::at(prefs_dir.join("viewer.json")),
         },
     ))
 }
