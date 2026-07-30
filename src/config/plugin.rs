@@ -4,8 +4,10 @@ use std::collections::{BTreeMap, BTreeSet};
 
 /// An external plugin process (`[[plugin]]`). nightcrow itself knows nothing
 /// about what a plugin does: it launches the executable and speaks its protocol.
-/// A plugin only ever sees a pane whose `[[startup_command]]` opted in by name,
-/// so adding a plugin here does not hand it the whole session.
+/// A plugin only ever sees a pane that opted in — by name in a
+/// `[[startup_command]]`, or, with [`watch_on_signal`](Self::watch_on_signal),
+/// by something inside the pane quoting the pane's own token — so adding a
+/// plugin here does not hand it the whole session.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct PluginConfig {
     /// Name a startup pane refers to in its `plugin =` field.
@@ -30,6 +32,19 @@ pub struct PluginConfig {
     /// Off unless explicitly turned on.
     #[serde(default)]
     pub enabled: bool,
+    /// Whether this plugin may be given a pane no `[[startup_command]]` named
+    /// it in, when a process *inside* that pane reports to it quoting the pane's
+    /// own token.
+    ///
+    /// Off by default, so an existing config keeps the property that the opt-in
+    /// list is the whole of what a plugin can see. Turning it on trades that for
+    /// a narrower one: a pane is reachable once something running in it has
+    /// spoken to the plugin, which a plain shell never does. The token is what
+    /// makes the difference — it is random, per pane, and only in that pane's
+    /// child environment, so it cannot be guessed from outside and the plugin is
+    /// never told which panes exist.
+    #[serde(default)]
+    pub watch_on_signal: bool,
 }
 
 /// Check the `[[plugin]]` list and every startup pane's opt-in against it.

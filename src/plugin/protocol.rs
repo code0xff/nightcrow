@@ -17,7 +17,12 @@ use serde::{Deserialize, Serialize};
 
 /// Bumped when a field changes meaning. A plugin built against a version the
 /// host does not speak is refused rather than half-understood.
-pub const PROTOCOL_VERSION: u32 = 1;
+///
+/// 2 added [`PluginCommand::WatchPane`]. A version-1 plugin cannot ask for a
+/// pane it was never named by, so an old build talking to this host would be
+/// silently less capable rather than wrong — the bump is what makes that
+/// difference loud instead.
+pub const PROTOCOL_VERSION: u32 = 2;
 
 /// Longest line the host will read from a plugin.
 ///
@@ -128,6 +133,15 @@ pub enum PluginCommand {
         deadline_epoch: Option<i64>,
         attempt: u32,
     },
+    /// Ask to be given the pane this token names, so its events start arriving.
+    ///
+    /// The token is the whole of the argument: it is minted per pane and reaches
+    /// only that pane's child processes, so a plugin can present one merely by
+    /// having been told it from inside the pane. Carries no generation — a
+    /// plugin asking for a pane it has never been told about cannot know which
+    /// spawn it is looking at, and the [`PluginEvent::PaneOpened`] the host
+    /// answers with is what says.
+    WatchPane { v: u32, token: PaneToken },
     /// A line for the host's log.
     Log {
         v: u32,
@@ -152,6 +166,7 @@ impl PluginCommand {
             Self::SendInput { v, .. }
             | Self::Relaunch { v, .. }
             | Self::Status { v, .. }
+            | Self::WatchPane { v, .. }
             | Self::Log { v, .. } => *v,
         }
     }
@@ -163,18 +178,23 @@ impl PluginCommand {
         match self {
             Self::SendInput { token, .. }
             | Self::Relaunch { token, .. }
-            | Self::Status { token, .. } => Some(token),
+            | Self::Status { token, .. }
+            | Self::WatchPane { token, .. } => Some(token),
             Self::Log { .. } => None,
         }
     }
 
     /// Which spawn of the slot this addresses, paired with [`Self::token`].
+    ///
+    /// `None` for [`Self::WatchPane`] as well as [`Self::Log`]: naming a slot
+    /// and naming a spawn within it are separate claims, and that command makes
+    /// only the first.
     pub fn generation(&self) -> Option<PaneGeneration> {
         match self {
             Self::SendInput { generation, .. }
             | Self::Relaunch { generation, .. }
             | Self::Status { generation, .. } => Some(*generation),
-            Self::Log { .. } => None,
+            Self::WatchPane { .. } | Self::Log { .. } => None,
         }
     }
 
@@ -243,5 +263,5 @@ pub fn decode_command(line: &str) -> Result<PluginCommand> {
 }
 
 #[cfg(test)]
-#[path = "protocol_tests.rs"]
+#[path = "protocol_tests/mod.rs"]
 mod tests;

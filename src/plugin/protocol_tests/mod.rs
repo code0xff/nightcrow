@@ -1,8 +1,10 @@
-use super::{
-    LogLevel, MAX_INPUT_BYTES, MAX_LINE_BYTES, PROTOCOL_VERSION, PluginCommand, PluginEvent,
-    decode_command, encode_event, is_blank_line,
-};
+//! The wire contract, and the fixtures both halves of it share: this file pins
+//! the shapes and names, `bounds` beside it pins what is refused.
+
+use super::{LogLevel, PROTOCOL_VERSION, PluginCommand, PluginEvent, decode_command, encode_event};
 use crate::backend::{PaneGeneration, PaneToken};
+
+mod bounds;
 
 const TOKEN: &str = "0123456789abcdef0123456789abcdef";
 const GENERATION: PaneGeneration = 2;
@@ -77,6 +79,10 @@ fn every_command() -> Vec<PluginCommand> {
             deadline_epoch: Some(1_700_000_000),
             attempt: 1,
         },
+        PluginCommand::WatchPane {
+            v: PROTOCOL_VERSION,
+            token: token(),
+        },
         PluginCommand::Log {
             v: PROTOCOL_VERSION,
             level: LogLevel::Warn,
@@ -140,7 +146,7 @@ fn an_events_json_shape_is_the_wire_contract() {
     assert_eq!(
         encode_event(&event).unwrap(),
         format!(
-            r#"{{"event":"pane_idle","v":1,"token":"{TOKEN}","generation":2,"idle_ms":30000}}"#
+            r#"{{"event":"pane_idle","v":2,"token":"{TOKEN}","generation":2,"idle_ms":30000}}"#
         )
     );
 }
@@ -155,7 +161,7 @@ fn a_commands_json_shape_is_the_wire_contract() {
     };
     assert_eq!(
         serde_json::to_string(&command).unwrap(),
-        format!(r#"{{"cmd":"send_input","v":1,"token":"{TOKEN}","generation":2,"data":"go"}}"#)
+        format!(r#"{{"cmd":"send_input","v":2,"token":"{TOKEN}","generation":2,"data":"go"}}"#)
     );
 }
 
@@ -174,98 +180,18 @@ fn a_log_levels_json_shape_is_lowercase() {
 }
 
 #[test]
-fn a_command_from_another_protocol_version_is_refused_and_both_versions_named() {
-    let line = format!(
-        r#"{{"cmd":"log","v":{},"level":"info","message":"hi"}}"#,
-        PROTOCOL_VERSION + 1
-    );
-    let err = decode_command(&line).expect_err("refused");
-    let message = err.to_string();
-    assert!(
-        message.contains(&(PROTOCOL_VERSION + 1).to_string())
-            && message.contains(&PROTOCOL_VERSION.to_string()),
-        "message names only one version: {message}"
-    );
-}
-
-#[test]
-fn a_line_over_the_length_limit_is_refused_before_it_is_parsed() {
-    // Refused on length alone, so nothing here depends on the payload being
-    // valid JSON — an unbounded line must not become an unbounded parse.
-    let line = "x".repeat(MAX_LINE_BYTES + 1);
-    let message = decode_command(&line).expect_err("refused").to_string();
-    assert!(message.contains(&MAX_LINE_BYTES.to_string()), "{message}");
-}
-
-#[test]
-fn a_line_at_the_length_limit_is_parsed() {
-    let padding = "p".repeat(MAX_INPUT_BYTES);
-    let line = format!(r#"{{"cmd":"log","v":1,"level":"debug","message":"{padding}"}}"#);
-    assert!(line.len() <= MAX_LINE_BYTES);
-    assert!(decode_command(&line).is_ok());
-}
-
-#[test]
-fn an_unknown_cmd_is_refused_rather_than_guessed() {
-    let message = decode_command(r#"{"cmd":"drop_everything","v":1}"#)
-        .expect_err("refused")
-        .to_string();
-    assert!(message.contains("drop_everything"), "{message}");
-    assert!(message.contains("cmd"), "{message}");
-}
-
-#[test]
-fn a_command_missing_a_required_field_is_refused() {
-    assert!(decode_command(r#"{"cmd":"send_input","v":1}"#).is_err());
-}
-
-#[test]
-fn send_input_data_over_the_input_limit_is_refused() {
-    let command = PluginCommand::SendInput {
-        v: PROTOCOL_VERSION,
-        token: token(),
-        generation: GENERATION,
-        data: "y".repeat(MAX_INPUT_BYTES + 1),
-    };
-    let message = command.validate().expect_err("refused").to_string();
-    assert!(message.contains(&MAX_INPUT_BYTES.to_string()), "{message}");
-
-    let line = serde_json::to_string(&command).unwrap();
-    assert!(
-        line.len() <= MAX_LINE_BYTES,
-        "the length cap would mask this"
-    );
-    assert!(decode_command(&line).is_err());
-}
-
-#[test]
-fn send_input_data_at_the_input_limit_is_accepted() {
-    let command = PluginCommand::SendInput {
-        v: PROTOCOL_VERSION,
-        token: token(),
-        generation: GENERATION,
-        data: "y".repeat(MAX_INPUT_BYTES),
-    };
-    assert!(command.validate().is_ok());
-}
-
-#[test]
-fn a_blank_line_is_recognised_as_blank_and_carries_no_command() {
-    for line in ["", "   ", "\t", "\r\n"] {
-        assert!(is_blank_line(line), "not seen as blank: {line:?}");
-        assert!(decode_command(line).is_err());
-    }
-    assert!(!is_blank_line(
-        r#"{"cmd":"log","v":1,"level":"info","message":"x"}"#
-    ));
-}
-
-#[test]
 fn only_a_pane_scoped_command_reports_an_identity() {
     for command in &every_command() {
         match command {
             PluginCommand::Log { .. } => {
                 assert_eq!(command.token(), None);
+                assert_eq!(command.generation(), None);
+            }
+            // Names a slot but not a spawn within it: the plugin is asking about
+            // a pane the host has never described to it, so there is no
+            // generation it could honestly claim.
+            PluginCommand::WatchPane { .. } => {
+                assert_eq!(command.token(), Some(&token()));
                 assert_eq!(command.generation(), None);
             }
             _ => {
@@ -274,4 +200,18 @@ fn only_a_pane_scoped_command_reports_an_identity() {
             }
         }
     }
+}
+
+#[test]
+fn a_watch_pane_commands_json_shape_is_the_wire_contract() {
+    // Pinned literally, like the events above: a plugin that cannot be rebuilt
+    // with this host writes this exact line, and there is no generation in it.
+    let command = PluginCommand::WatchPane {
+        v: PROTOCOL_VERSION,
+        token: token(),
+    };
+    assert_eq!(
+        serde_json::to_string(&command).unwrap(),
+        format!(r#"{{"cmd":"watch_pane","v":2,"token":"{TOKEN}"}}"#)
+    );
 }

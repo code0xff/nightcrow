@@ -94,6 +94,26 @@ fn a_pane_running_something_else_is_not_watched_at_all() {
 }
 
 #[test]
+fn every_signal_kind_names_the_adapter_whose_helper_minted_it() {
+    // A pane with no command line of its own — the shell somebody typed `claude`
+    // into — has only the signal to go on, and the signal's kind is enough: each
+    // one is written by exactly one provider's helper.
+    for kind in [SignalKind::StopFailure, SignalKind::RateLimits] {
+        let provider =
+            detect_from_signal(kind).unwrap_or_else(|| panic!("{kind:?} names an adapter"));
+        assert_eq!(provider.name(), "claude");
+    }
+}
+
+#[test]
+fn a_signal_binds_an_adapter_where_the_command_line_cannot() {
+    // The pair that makes the late-adoption path work at all: `detect` gives up
+    // on a pane with no command, and the signal is what answers instead.
+    assert!(detect(None).is_none());
+    assert!(detect_from_signal(SignalKind::StopFailure).is_some());
+}
+
+#[test]
 fn a_signal_kind_round_trips_through_its_wire_name() {
     for kind in [SignalKind::StopFailure, SignalKind::RateLimits] {
         assert_eq!(SignalKind::from_wire(kind.as_wire()), Some(kind));

@@ -159,6 +159,25 @@ pub fn detect(command: Option<&str>) -> Option<Box<dyn Provider>> {
     }
 }
 
+/// Pick an adapter from a signal that arrived over the IPC socket, for a pane
+/// whose command line says nothing — the shell somebody opened and then started
+/// a provider CLI inside by hand.
+///
+/// Sound because a [`SignalKind`] is minted by exactly one provider's helper:
+/// a `stop_failure` line can only have come from the Claude Code hook this
+/// binary installed into Claude Code's own settings. The signal is therefore
+/// evidence of what the pane is running, in a way terminal text never is — which
+/// is why this is a lookup on the wire kind and deliberately not a second
+/// sniffing path. A kind added later has to be classified here rather than
+/// falling through to a guess.
+pub fn detect_from_signal(kind: SignalKind) -> Option<Box<dyn Provider>> {
+    match kind {
+        SignalKind::StopFailure | SignalKind::RateLimits => {
+            Some(Box::new(claude::Claude::default()))
+        }
+    }
+}
+
 /// The command's program name without its directory, so `/usr/local/bin/claude`
 /// and `claude --foo` both resolve to `claude`.
 fn first_word(command: &str) -> Option<&str> {

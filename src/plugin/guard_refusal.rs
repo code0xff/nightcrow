@@ -38,8 +38,19 @@ pub enum Refused {
     ControlCharacter { pane: PaneId, code: u32 },
     /// A relaunch for a pane whose process is still running.
     PaneStillRunning { pane: PaneId },
+    /// A relaunch for a pane the host never launched a command for.
+    ///
+    /// Its own reason rather than one of `ResumeArgsRejected`'s, because nothing
+    /// about the arguments is wrong: the pane is a bare shell, so there is no
+    /// invocation to append them to and no amount of retrying changes that.
+    NoLaunchCommand { pane: PaneId },
     /// The resume arguments did not survive the command-line rules.
     ResumeArgsRejected { pane: PaneId, reason: String },
+    /// A plugin asked for a pane it was never named by, without the config
+    /// switch that allows it.
+    WatchNotAllowed { pane: PaneId, token: PaneToken },
+    /// A plugin asked for a pane another plugin already has.
+    PaneWatchedByAnother { pane: PaneId },
     RateLimited {
         pane: PaneId,
         action: RateAction,
@@ -91,8 +102,21 @@ impl fmt::Display for Refused {
                     "pane {pane} is still running, so it cannot be relaunched"
                 )
             }
+            Self::NoLaunchCommand { pane } => write!(
+                f,
+                "pane {pane} was launched with no command, so there is nothing to relaunch"
+            ),
             Self::ResumeArgsRejected { pane, reason } => {
                 write!(f, "relaunch of pane {pane} refused: {reason}")
+            }
+            Self::WatchNotAllowed { pane, token } => write!(
+                f,
+                "pane {pane} (token {}) was not opted in, and this plugin's config \
+                 does not let it watch a pane on a signal",
+                token.as_str()
+            ),
+            Self::PaneWatchedByAnother { pane } => {
+                write!(f, "pane {pane} is already watched by another plugin")
             }
             Self::RateLimited {
                 pane,

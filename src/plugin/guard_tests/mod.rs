@@ -8,6 +8,7 @@ mod budget;
 mod identity;
 mod input;
 mod relaunch;
+mod watch;
 
 pub(super) const PANE: PaneId = 4;
 pub(super) const GENERATION: PaneGeneration = 9;
@@ -28,9 +29,24 @@ pub(super) fn facts() -> PaneFacts {
         pane: PANE,
         generation: GENERATION,
         opted_in: true,
+        watched_by_another: false,
+        may_watch_on_signal: false,
         alive: true,
         idle: MIN_IDLE,
         launch_command: Some(LAUNCH.to_string()),
+    }
+}
+
+/// A live pane no plugin has yet, in a session where the asking plugin is
+/// allowed to ask — the one shape [`watch`] is meant to be approved for.
+pub(super) fn adoptable_facts() -> PaneFacts {
+    PaneFacts {
+        opted_in: false,
+        may_watch_on_signal: true,
+        // A pane somebody started a CLI in by hand: the host launched no command
+        // of its own in it.
+        launch_command: None,
+        ..facts()
     }
 }
 
@@ -69,6 +85,13 @@ pub(super) fn status(token: &PaneToken) -> PluginCommand {
         detail: None,
         deadline_epoch: Some(42),
         attempt: 2,
+    }
+}
+
+pub(super) fn watch(token: &PaneToken) -> PluginCommand {
+    PluginCommand::WatchPane {
+        v: PROTOCOL_VERSION,
+        token: token.clone(),
     }
 }
 

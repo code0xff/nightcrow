@@ -186,6 +186,11 @@ impl Plugins {
                     // one plugin must not be able to act through another's
                     // opt-in.
                     opted_in: self.owners.get(&pane).is_some_and(|name| name == plugin),
+                    // The same lookup read the other way, which is a different
+                    // question: an unclaimed pane may be asked for, one somebody
+                    // else claimed may not.
+                    watched_by_another: self.owners.get(&pane).is_some_and(|name| name != plugin),
+                    may_watch_on_signal: self.watch_on_signal.contains(plugin),
                     alive: backend.is_process_alive(pane),
                     idle: slot.idle_for(now),
                     launch_command: slot.launch.command.clone(),

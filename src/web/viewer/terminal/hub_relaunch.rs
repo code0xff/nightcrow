@@ -79,10 +79,50 @@ impl TerminalHub {
                         attempt,
                     );
                 }
+                Ok(Approved::WatchPane { pane }) => {
+                    self.watch_pane_for_plugin(backend, plugins, &plugin, pane)
+                }
                 Ok(Approved::Log { level, message }) => log_plugin_line(&plugin, level, &message),
                 Err(refused) => log_refusal(&plugin, &refused),
             }
         }
+    }
+
+    /// Hand `pane` to `plugin` and announce it, so the plugin can start from the
+    /// same `PaneOpened` a configured pane begins with.
+    ///
+    /// Announcing is the whole point of the request: the association alone tells
+    /// the plugin nothing, and only a `PaneOpened` carries the generation every
+    /// later command has to name. The pane's history is not replayed — output
+    /// events carry fresh bytes only — so a plugin taken on mid-session sees the
+    /// pane from here forward, which is exactly what the signal that brought it
+    /// here is about.
+    fn watch_pane_for_plugin(
+        &self,
+        backend: &PtyBackend,
+        plugins: &mut Plugins,
+        plugin: &str,
+        pane: PaneId,
+    ) {
+        // The pane's name as the clients know it, so a plugin sees the same title
+        // whichever way it was given the pane. A client-opened pane has none.
+        let title = self.pane_spot(pane).and_then(|spot| spot.title);
+        if !plugins.adopt(pane, plugin) {
+            // Only reachable if the plugin's host died between the command being
+            // queued and this tick, since a dead host produces no commands.
+            tracing::debug!(
+                plugin = %plugin,
+                pane,
+                "viewer: nothing to hand a pane to; the plugin's host is gone"
+            );
+            return;
+        }
+        tracing::info!(
+            plugin = %plugin,
+            pane,
+            "viewer: a plugin was given a pane by the token something inside it quoted"
+        );
+        plugins.pane_opened(backend, pane, title.as_deref());
     }
 
     /// Put a process back into the slot a plugin was holding.
@@ -214,9 +254,10 @@ fn log_plugin_line(plugin: &str, level: LogLevel, message: &str) {
 /// Log a refusal at the level that says whether anyone should look into it.
 ///
 /// A plugin decides asynchronously, so being late is ordinary traffic rather
-/// than a fault: the pane moved on, or is not quiet yet. The rest mean the
-/// plugin asked for something it was never allowed — a pane that is not its, an
-/// oversized or control-laden payload, a flag the config does not list, or more
+/// than a fault: the pane moved on, is not quiet yet, or was claimed by another
+/// plugin first. The rest mean the plugin asked for something it was never
+/// allowed — a pane that is not its, an oversized or control-laden payload, a
+/// flag the config does not list, a bare shell it wanted to relaunch, or more
 /// attempts than the budget allows — and that is worth an operator's attention.
 /// Matched exhaustively on purpose, so a new refusal has to be classified rather
 /// than defaulting to silence.
@@ -226,11 +267,14 @@ fn log_refusal(plugin: &str, refused: &Refused) {
         | Refused::StaleGeneration { .. }
         | Refused::PaneNotRunning { .. }
         | Refused::PaneBusy { .. }
-        | Refused::PaneStillRunning { .. } => true,
+        | Refused::PaneStillRunning { .. }
+        | Refused::PaneWatchedByAnother { .. } => true,
         Refused::NotOptedIn { .. }
         | Refused::InputTooLarge { .. }
         | Refused::ControlCharacter { .. }
+        | Refused::NoLaunchCommand { .. }
         | Refused::ResumeArgsRejected { .. }
+        | Refused::WatchNotAllowed { .. }
         | Refused::RateLimited { .. } => false,
     };
     if ordinary {

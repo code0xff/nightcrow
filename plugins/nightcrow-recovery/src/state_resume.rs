@@ -31,6 +31,11 @@ fn is_safe_arg_char(c: char) -> bool {
     c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-' | ':' | '/' | '=' | '@' | '+')
 }
 
+/// Said of a pane the host launched no command in, so the person reading the
+/// status line learns why the wait ended without a resume.
+const NO_COMMAND_TO_RELAUNCH: &str =
+    "this pane has no command to relaunch; start the session again by hand";
+
 fn args_are_safe(args: &[String]) -> bool {
     !args.is_empty()
         && args.len() <= MAX_RESUME_ARGS
@@ -68,7 +73,7 @@ impl PaneRecovery {
                 self.goto(RecoveryState::NeedsAttention)
             }
             ResumePlan::Input(data) => self.send_input(data, now_epoch, now),
-            ResumePlan::Relaunch(args) => self.relaunch(args, now),
+            ResumePlan::Relaunch(args) => self.relaunch(args, ctx, now),
         }
     }
 
@@ -94,11 +99,24 @@ impl PaneRecovery {
         self.spend_attempt(command, now)
     }
 
-    fn relaunch(&mut self, args: Vec<String>, now: Instant) -> Vec<PluginCommand> {
+    fn relaunch(
+        &mut self,
+        args: Vec<String>,
+        ctx: &PaneContext,
+        now: Instant,
+    ) -> Vec<PluginCommand> {
         if self.alive {
             // The host refuses a relaunch of a live pane, so wait for the exit
             // rather than spending an attempt learning that again.
             return Vec::new();
+        }
+        if ctx.command.is_none() {
+            // A pane with no command of its own is a shell somebody started the
+            // provider inside by hand. Putting a process back would start the
+            // shell again, not the session, so the host refuses it outright —
+            // and there is nothing to wait for that would change that.
+            self.detail = Some(NO_COMMAND_TO_RELAUNCH.to_string());
+            return self.goto(RecoveryState::NeedsAttention);
         }
         if !args_are_safe(&args) {
             self.detail = Some("adapter offered resume args the host would refuse".to_string());

@@ -108,7 +108,8 @@ live_watch = true         # watch expanded dirs and refresh the tree live; set f
 # section fits any provider or tool.
 #
 # Nothing here runs unless you both add an entry AND set enabled = true, and a
-# plugin can only act on panes whose [[startup_command]] named it.
+# plugin can only act on panes whose [[startup_command]] named it — unless you
+# also set watch_on_signal, described further down.
 #
 # The bundled "recovery" plugin watches an opted-in pane for its provider's
 # usage-limit message, waits for the stated reset time to pass, and then resumes
@@ -126,11 +127,31 @@ live_watch = true         # watch expanded dirs and refresh the tree live; set f
 # Leave it empty (the default) and the plugin can still wait and type into a
 # live pane, but never relaunch one.
 #
+# watch_on_signal covers the pane you did not configure: you opened a shell with
+# <leader> t and started a coding CLI in it by hand. nightcrow gives every pane a
+# random token and puts it in that pane's environment only, so the CLI's own hook
+# — a child of the CLI, a grandchild of the pane — can quote it back to the
+# plugin. The plugin then asks nightcrow for "the pane this token names", and
+# nightcrow checks the token really is one of its panes before handing it over.
+#
+# What you are turning on, precisely: a pane becomes plugin-visible once
+# something running inside it has spoken to that plugin. A plain shell never
+# does, so your shells stay untouched — but anything you start in a pane that
+# talks to this plugin is consenting on that pane's behalf. The plugin is never
+# given a list of your panes and cannot ask for one it has not been told about,
+# and a pane another plugin already watches is not taken away. Leave it off if
+# you want the [[startup_command]] list to be the whole of what a plugin sees.
+#
+# A pane taken on this way can be waited for and typed into, but never
+# relaunched: nightcrow never launched a command in it, so there is nothing to
+# put back. allowed_resume_flags has no effect on such a pane.
+#
 # [[plugin]]
 # name = "recovery"                 # required; the name panes opt in with
 # command = "nightcrow-recovery"    # required; found on PATH or in the plugin dir
 # args = []                         # passed to the plugin verbatim
 # enabled = false                   # off by default; set true to actually run it
+# watch_on_signal = false           # off by default; see the paragraphs above
 # allowed_resume_flags = ["--resume", "resume", "--session"]
 #                                   # empty by default, which refuses relaunches.
 #                                   # These three are what the bundled recovery

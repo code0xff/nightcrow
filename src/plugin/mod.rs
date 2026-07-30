@@ -6,6 +6,12 @@
 //! pane identity it names — before anything acts on it. This module is types
 //! and parsing only: no IO, no process spawning, no threads.
 //!
+//! Which panes a plugin may see is settled here too. It is normally the
+//! operator's list, and a plugin can add to it only by quoting a pane's own
+//! token back — something only a process inside that pane can know — and only
+//! where the operator turned that on. A plugin is never handed a list of panes
+//! to choose from.
+//!
 //! The contract is deliberately provider-agnostic. It speaks of panes, output,
 //! idleness and relaunching, and never of any particular tool; which program a
 //! pane runs stays the host's knowledge, which is what keeps
@@ -23,6 +29,7 @@ pub mod registry;
 mod guard_budget;
 mod guard_refusal;
 mod guard_text;
+mod guard_watch;
 mod host_pump;
 
 pub use guard::{Approved, Guard, PaneFacts};

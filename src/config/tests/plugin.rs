@@ -50,6 +50,34 @@ fn plugin_args_and_env_default_to_empty_when_omitted() {
 }
 
 #[test]
+fn watch_on_signal_is_off_unless_the_config_asks_for_it() {
+    // The default is what every existing config gets, and it has to keep meaning
+    // "the opt-in list is the whole of what this plugin can see".
+    let cfg: Config =
+        toml::from_str("[[plugin]]\nname = \"recovery\"\ncommand = \"run-me\"\n").unwrap();
+    assert!(!cfg.plugins[0].watch_on_signal);
+
+    let cfg: Config = toml::from_str(
+        "[[plugin]]\nname = \"recovery\"\ncommand = \"run-me\"\nwatch_on_signal = true\n",
+    )
+    .unwrap();
+    assert!(cfg.plugins[0].watch_on_signal);
+    validate_config(&cfg).unwrap();
+}
+
+#[test]
+fn a_plugin_that_watches_on_signal_needs_no_pane_to_name_it() {
+    // Its panes are the ones that will speak to it, and none of them can be known
+    // in advance — so requiring an opt-in here would make the switch unusable.
+    let cfg: Config = toml::from_str(
+        "[[plugin]]\nname = \"recovery\"\ncommand = \"run-me\"\n\
+         enabled = true\nwatch_on_signal = true\n",
+    )
+    .unwrap();
+    validate_config(&cfg).unwrap();
+}
+
+#[test]
 fn a_plugin_without_name_or_command_fails_to_deserialize() {
     assert!(toml::from_str::<Config>("[[plugin]]\ncommand = \"run-me\"\n").is_err());
     assert!(toml::from_str::<Config>("[[plugin]]\nname = \"recovery\"\n").is_err());

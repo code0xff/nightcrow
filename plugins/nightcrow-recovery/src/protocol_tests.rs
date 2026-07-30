@@ -4,7 +4,7 @@ const TOKEN: &str = "0123456789abcdef0123456789abcdef";
 
 fn opened_line() -> String {
     format!(
-        r#"{{"event":"pane_opened","v":1,"token":"{TOKEN}","generation":2,"title":null,"command":"claude","cwd":"/w/repo"}}"#
+        r#"{{"event":"pane_opened","v":{PROTOCOL_VERSION},"token":"{TOKEN}","generation":2,"title":null,"command":"claude","cwd":"/w/repo"}}"#
     )
 }
 
@@ -28,23 +28,42 @@ fn a_host_event_is_parsed_from_its_wire_shape() {
 
 #[test]
 fn an_event_from_another_protocol_version_is_refused_and_both_versions_named() {
-    let line = opened_line().replace("\"v\":1", "\"v\":2");
+    let alien = PROTOCOL_VERSION + 1;
+    let line = opened_line().replace(
+        &format!("\"v\":{PROTOCOL_VERSION}"),
+        &format!("\"v\":{alien}"),
+    );
     let err = decode_event(&line)
         .expect_err("a version this build cannot speak")
         .to_string();
-    assert!(err.contains('2') && err.contains('1'), "{err}");
+    assert!(
+        err.contains(&alien.to_string()) && err.contains(&PROTOCOL_VERSION.to_string()),
+        "{err}"
+    );
+}
+
+#[test]
+fn an_event_from_the_previous_protocol_version_is_refused_too() {
+    // Refused in both directions on purpose. A host still speaking 1 has no
+    // `watch_pane` to honour, so the panes this plugin exists for would silently
+    // never be watched — better to fail at the first line than halfway.
+    let line = opened_line().replace(&format!("\"v\":{PROTOCOL_VERSION}"), "\"v\":1");
+    assert!(decode_event(&line).is_err());
 }
 
 #[test]
 fn an_unknown_event_is_refused_rather_than_guessed() {
-    let line = r#"{"event":"pane_teleported","v":1,"token":"abc","generation":1}"#;
-    assert!(decode_event(line).is_err());
+    let line = format!(
+        r#"{{"event":"pane_teleported","v":{PROTOCOL_VERSION},"token":"abc","generation":1}}"#
+    );
+    assert!(decode_event(&line).is_err());
 }
 
 #[test]
 fn an_event_missing_a_required_field_is_refused() {
-    let line = r#"{"event":"pane_idle","v":1,"token":"abc","generation":1}"#;
-    assert!(decode_event(line).is_err(), "idle_ms is required");
+    let line =
+        format!(r#"{{"event":"pane_idle","v":{PROTOCOL_VERSION},"token":"abc","generation":1}}"#);
+    assert!(decode_event(&line).is_err(), "idle_ms is required");
 }
 
 #[test]
@@ -56,7 +75,8 @@ fn a_line_over_the_length_limit_is_refused_before_it_is_parsed() {
 
 #[test]
 fn a_shutdown_names_no_pane() {
-    let event = decode_event(r#"{"event":"shutdown","v":1}"#).expect("a shutdown");
+    let event = decode_event(&format!(r#"{{"event":"shutdown","v":{PROTOCOL_VERSION}}}"#))
+        .expect("a shutdown");
     assert_eq!(event.token(), None);
     assert_eq!(event.generation(), None);
 }
@@ -72,7 +92,25 @@ fn a_command_is_encoded_as_one_line_tagged_with_its_name() {
     .expect("encodable");
     assert!(!line.contains('\n'));
     assert!(line.contains("\"cmd\":\"relaunch\""), "{line}");
-    assert!(line.contains("\"v\":1"), "{line}");
+    assert!(
+        line.contains(&format!("\"v\":{PROTOCOL_VERSION}")),
+        "{line}"
+    );
+}
+
+#[test]
+fn a_watch_pane_request_carries_only_the_token() {
+    // Deliberately no generation: this is asked about a pane the host has never
+    // described to us, so any generation we put here would be invented — and the
+    // host would be right to refuse it.
+    let line = encode_command(&watch_pane(TOKEN.to_string())).expect("encodable");
+    assert!(line.contains("\"cmd\":\"watch_pane\""), "{line}");
+    assert!(line.contains(&format!("\"token\":\"{TOKEN}\"")), "{line}");
+    assert!(!line.contains("generation"), "{line}");
+    assert!(
+        line.contains(&format!("\"v\":{PROTOCOL_VERSION}")),
+        "{line}"
+    );
 }
 
 #[test]
@@ -133,7 +171,7 @@ fn the_hosts_copy_of_the_contract_still_says_the_same_thing() {
     let source = std::fs::read_to_string(host)
         .unwrap_or_else(|e| panic!("cannot read the host's protocol at {host}: {e}"));
 
-    assert_eq!(host_const(&source, "PROTOCOL_VERSION"), "1");
+    assert_eq!(host_const(&source, "PROTOCOL_VERSION"), "2");
     assert_eq!(host_const(&source, "MAX_LINE_BYTES"), "64 * 1024");
     assert_eq!(host_const(&source, "MAX_INPUT_BYTES"), "8 * 1024");
     assert_eq!(

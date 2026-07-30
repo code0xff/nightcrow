@@ -10,7 +10,8 @@
 //! on every exit would then loop with nothing to stop it. The token is what
 //! survives a relaunch, so it is what the ceiling has to be attached to.
 
-use crate::backend::PaneToken;
+use super::guard_refusal::Refused;
+use crate::backend::{PaneId, PaneToken};
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
@@ -76,7 +77,7 @@ impl Budgets {
     /// Nothing is recorded when there is not, so a refusal here costs the slot
     /// nothing beyond the refusal itself. Each list is capped at its limit by
     /// construction, so this stays O(limit).
-    pub(super) fn try_spend(
+    fn try_spend(
         &mut self,
         token: &PaneToken,
         action: RateAction,
@@ -94,6 +95,36 @@ impl Budgets {
         }
         stamps.push(now);
         true
+    }
+
+    /// Charge the budget, as the last check before an approval.
+    ///
+    /// Only approvals spend, deliberately: the budget bounds what a plugin
+    /// *does* to a pane, and a refused command did nothing. Charging refusals
+    /// would let noise — a stale generation the plugin could not have known
+    /// about, a flag config forbids — eat the budget a legitimate action needs,
+    /// losing the pane's one real attempt to a race. Spam is bounded elsewhere
+    /// and more cheaply: the outbound queue drops and every refusal is logged.
+    pub(super) fn spend(
+        &mut self,
+        token: &PaneToken,
+        pane: PaneId,
+        action: RateAction,
+        limits: &RateLimits,
+        now: Instant,
+    ) -> Result<(), Refused> {
+        if self.try_spend(token, action, limits, now) {
+            return Ok(());
+        }
+        Err(Refused::RateLimited {
+            pane,
+            action,
+            limit: match action {
+                RateAction::SendInput => limits.max_sends_per_window,
+                RateAction::Relaunch => limits.max_relaunches_per_window,
+            },
+            window: limits.window,
+        })
     }
 
     pub(super) fn clear(&mut self, token: &PaneToken) {

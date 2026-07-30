@@ -5,10 +5,14 @@
 //! [`Guard::judge`], which returns either an [`Approved`] action naming a real
 //! [`PaneId`] or a [`Refused`] saying why not. There is no other way through: a
 //! [`PluginCommand`] carries a token, and only the guard turns one into a pane.
+//!
+//! That includes gaining a pane in the first place: `guard_watch` beside this
+//! file holds the only rule that can widen what a plugin is allowed to see.
 
 use super::guard_budget::{Budgets, RateAction, RateLimits};
 use super::guard_refusal::Refused;
 use super::guard_text::{is_forbidden_control, truncate_message};
+use super::guard_watch::judge_watch;
 use super::protocol::{LogLevel, MAX_INPUT_BYTES, PluginCommand};
 use crate::backend::slot::resume_command_line;
 use crate::backend::{PaneGeneration, PaneId, PaneToken};
@@ -22,8 +26,17 @@ use std::time::{Duration, Instant};
 pub struct PaneFacts {
     pub pane: PaneId,
     pub generation: PaneGeneration,
-    /// The pane's `[[startup_command]]` named *this* plugin.
+    /// This plugin already has the pane, by opt-in or by an earlier
+    /// [`PluginCommand::WatchPane`].
     pub opted_in: bool,
+    /// Some *other* plugin has the pane. Distinct from `!opted_in`, which is
+    /// equally true of a pane no plugin has at all — and those two answer
+    /// [`PluginCommand::WatchPane`] differently.
+    pub watched_by_another: bool,
+    /// The requesting plugin's `watch_on_signal`: whether the operator allowed
+    /// it to be given a pane it was never named by. A property of the plugin
+    /// rather than of the pane, carried here so the rules stay one struct wide.
+    pub may_watch_on_signal: bool,
     /// The pane's process is still running.
     pub alive: bool,
     /// Since the pane last produced output.
@@ -56,6 +69,11 @@ pub enum Approved {
         detail: Option<String>,
         deadline_epoch: Option<i64>,
         attempt: u32,
+    },
+    /// The plugin may be given this pane. Recording that, and telling the
+    /// plugin, is the caller's job.
+    WatchPane {
+        pane: PaneId,
     },
     Log {
         level: LogLevel,
@@ -127,6 +145,10 @@ impl Guard {
                 let facts = pane_facts(&token, generation, facts)?;
                 self.judge_relaunch(&token, facts, resume_args, allowed_resume_flags, now)
             }
+            // Deliberately outside `pane_facts`: this is the one command whose
+            // whole point is a pane that has *not* opted in, and it names no
+            // generation to check.
+            PluginCommand::WatchPane { token, .. } => judge_watch(&token, facts),
             PluginCommand::Status {
                 token,
                 generation,
@@ -183,7 +205,8 @@ impl Guard {
                 code: bad as u32,
             });
         }
-        self.spend(token, pane, RateAction::SendInput, now)?;
+        self.budgets
+            .spend(token, pane, RateAction::SendInput, &self.limits, now)?;
         Ok(Approved::SendInput {
             pane,
             data: data.into_bytes(),
@@ -204,6 +227,15 @@ impl Guard {
             // recovery acts on live panes, relaunch only on exited ones.
             return Err(Refused::PaneStillRunning { pane });
         }
+        if facts.launch_command.is_none() {
+            // A bare shell. Putting a process back here would start the shell
+            // again, not whatever the person ran inside it, and the resume
+            // arguments would have nothing to attach to — so the pane's only
+            // recovery is the one typed into it while it is still alive. Checked
+            // before `resume_command_line`, which also refuses this, so the log
+            // says the pane was never relaunchable rather than blaming the args.
+            return Err(Refused::NoLaunchCommand { pane });
+        }
         let command_line = resume_command_line(
             facts.launch_command.as_deref(),
             &resume_args,
@@ -213,40 +245,12 @@ impl Guard {
             pane,
             reason: e.to_string(),
         })?;
-        self.spend(token, pane, RateAction::Relaunch, now)?;
+        self.budgets
+            .spend(token, pane, RateAction::Relaunch, &self.limits, now)?;
         Ok(Approved::Relaunch {
             pane,
             resume_args,
             command_line,
-        })
-    }
-
-    /// Charge the budget, as the last check before approval.
-    ///
-    /// Only approvals spend, deliberately: the budget bounds what a plugin
-    /// *does* to a pane, and a refused command did nothing. Charging refusals
-    /// would let noise — a stale generation the plugin could not have known
-    /// about, a flag config forbids — eat the budget a legitimate action needs,
-    /// losing the pane's one real attempt to a race. Spam is bounded elsewhere
-    /// and more cheaply: the outbound queue drops and every refusal is logged.
-    fn spend(
-        &mut self,
-        token: &PaneToken,
-        pane: PaneId,
-        action: RateAction,
-        now: Instant,
-    ) -> Result<(), Refused> {
-        if self.budgets.try_spend(token, action, &self.limits, now) {
-            return Ok(());
-        }
-        Err(Refused::RateLimited {
-            pane,
-            action,
-            limit: match action {
-                RateAction::SendInput => self.limits.max_sends_per_window,
-                RateAction::Relaunch => self.limits.max_relaunches_per_window,
-            },
-            window: self.limits.window,
         })
     }
 }

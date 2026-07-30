@@ -185,6 +185,59 @@ fn an_adapter_offering_unsafe_resume_args_is_refused_without_asking_the_host() {
     assert!(action(&out).is_none());
 }
 
+/// A pane the host launched no command in: the plain shell somebody started a
+/// provider CLI inside by hand, which is the only kind of pane this plugin can be
+/// given on a signal.
+fn bare_shell() -> PaneContext {
+    PaneContext {
+        command: None,
+        ..ctx()
+    }
+}
+
+#[test]
+fn a_pane_the_host_launched_no_command_in_is_never_relaunched() {
+    // Putting a process back would start the shell again, not the session, so the
+    // host refuses it outright — and no amount of waiting changes that, which is
+    // why this ends in needs_attention instead of another backoff.
+    let mut rec = recovery();
+    let provider = FakeProvider::relaunch_only();
+    let mono = Instant::now();
+    rec.note_limit(usage(Some(SESSION), Some(RESET)), T0, mono);
+    rec.on_event(&exited(1)).expect("current generation");
+    let out = rec.tick(
+        &provider,
+        &bare_shell(),
+        T0 + AFTER_RESET,
+        at(mono, AFTER_RESET),
+    );
+    assert_eq!(rec.state(), RecoveryState::NeedsAttention);
+    assert!(action(&out).is_none(), "the host is asked for nothing");
+    assert_eq!(rec.attempt(), 0, "and no attempt is spent learning that");
+}
+
+#[test]
+fn a_pane_with_no_command_is_still_typed_into_while_its_process_lives() {
+    // The other half of the same rule: typed input is the whole of the recovery
+    // such a pane can get, so the missing command line must not cost it that too.
+    let mut rec = recovery();
+    let provider = FakeProvider::default();
+    let mono = Instant::now();
+    rec.note_limit(usage(Some(SESSION), Some(RESET)), T0, mono);
+    rec.on_event(&went_idle(1)).expect("current generation");
+    let out = rec.tick(
+        &provider,
+        &bare_shell(),
+        T0 + AFTER_RESET,
+        at(mono, AFTER_RESET),
+    );
+    assert_eq!(rec.state(), RecoveryState::Resuming);
+    match action(&out) {
+        Some(PluginCommand::SendInput { data, .. }) => assert_eq!(data, "continue\r"),
+        other => panic!("expected typed input, got {other:?}"),
+    }
+}
+
 #[test]
 fn an_adapter_with_nothing_to_say_costs_one_attempt_and_backs_off() {
     let mut rec = recovery();
