@@ -360,8 +360,15 @@ bounded so the diff pane always keeps at least half the window.
 
 The diff pane has a toggle (top-right of the pane) that switches between the
 inline unified diff and a side-by-side split view, mirroring the TUI's `s`.
-The choice is stored per browser; on a narrow window (phone) it always renders
-unified, since two code columns can't both stay legible there.
+The choice lasts the page, the same lifetime the TUI gives it; on a narrow
+window (phone) the two sides stack — removed above added — rather than sitting
+side by side, since neither column would have the width to read.
+
+**Line numbers** ride in a pinned gutter as they do in the TUI: the unified
+view shows both sides (old, new), leaving a column blank where the line does
+not exist on that side; each split half shows the side it renders; and a file
+opened from the tree is numbered by its own lines. The gutter stays put while
+the code scrolls sideways, and the numbers stay out of anything you copy.
 
 Drag a terminal pane by its header onto another to reorder the split-view grid;
 it works with touch as well as a mouse. The order is kept on the server, so a
