@@ -17,6 +17,14 @@ pub struct DiffLineDto {
     pub kind: String,
     /// Syntax-highlighted content as coloured spans.
     pub spans: Vec<SpanDto>,
+    /// Line number on the pre-image side, absent on an added line (which
+    /// exists only on the new side) — the client leaves that column blank
+    /// rather than deriving a number the line does not have.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub old_lineno: Option<u32>,
+    /// Line number on the post-image side, absent on a removed line.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub new_lineno: Option<u32>,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -79,6 +87,8 @@ impl DiffDto {
                 kept.push(DiffLineDto {
                     kind: line_code(line.kind).to_string(),
                     spans: lighter.line(&line.content),
+                    old_lineno: line.old_lineno,
+                    new_lineno: line.new_lineno,
                 });
             }
             out.push(DiffHunkDto {

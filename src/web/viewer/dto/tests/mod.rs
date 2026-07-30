@@ -215,6 +215,46 @@ fn diff_dto_maps_line_kinds_to_wire_codes() {
 }
 
 #[test]
+fn diff_dto_carries_the_line_numbers_of_the_side_each_line_exists_on() {
+    let hunks = vec![DiffHunk {
+        header: "@@ -1,2 +1,2 @@".to_string(),
+        file_path: None,
+        lines: vec![
+            crate::git::diff::DiffLine {
+                kind: LineKind::Added,
+                content: "new".into(),
+                old_lineno: None,
+                new_lineno: Some(1),
+            },
+            crate::git::diff::DiffLine {
+                kind: LineKind::Removed,
+                content: "old".into(),
+                old_lineno: Some(1),
+                new_lineno: None,
+            },
+            crate::git::diff::DiffLine {
+                kind: LineKind::Context,
+                content: "same".into(),
+                old_lineno: Some(2),
+                new_lineno: Some(2),
+            },
+        ],
+    }];
+
+    let dto = DiffDto::from_hunks("a.rs", &hunks);
+
+    let linenos: Vec<_> = dto.hunks[0]
+        .lines
+        .iter()
+        .map(|l| (l.old_lineno, l.new_lineno))
+        .collect();
+    assert_eq!(
+        linenos,
+        vec![(None, Some(1)), (Some(1), None), (Some(2), Some(2))]
+    );
+}
+
+#[test]
 fn diff_dto_caps_across_hunks_not_within_one() {
     // Each hunk is under the ceiling alone; together they exceed it. A
     // per-hunk cap would let the total through unbounded.

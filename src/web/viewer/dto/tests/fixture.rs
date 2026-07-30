@@ -113,10 +113,14 @@ fn wire_fixture() -> serde_json::Value {
                         DiffLineDto {
                             kind: " ".to_string(),
                             spans: vec![span("fn main() {", "#c9d1d9")],
+                            old_lineno: Some(1),
+                            new_lineno: Some(1),
                         },
                         DiffLineDto {
                             kind: "+".to_string(),
                             spans: vec![span("    ", ""), span("run()", "#79c0ff")],
+                            old_lineno: None,
+                            new_lineno: Some(2),
                         },
                     ],
                 },
@@ -126,6 +130,8 @@ fn wire_fixture() -> serde_json::Value {
                     lines: vec![DiffLineDto {
                         kind: "-".to_string(),
                         spans: vec![span("mod old;", "#ff7b72")],
+                        old_lineno: Some(10),
+                        new_lineno: None,
                     }],
                 },
             ],

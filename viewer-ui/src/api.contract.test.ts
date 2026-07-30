@@ -87,6 +87,17 @@ describe("wire contract", () => {
       undefined,
       "src/lib.rs",
     ]);
+    // 줄 번호는 그 줄이 존재하는 쪽에만 실린다 — 추가 줄엔 old가, 삭제 줄엔
+    // new가 없어야 gutter가 해당 칼럼을 비운다.
+    expect(
+      diff.hunks.flatMap((h) =>
+        h.lines.map((l) => [l.old_lineno, l.new_lineno]),
+      ),
+    ).toEqual([
+      [1, 1],
+      [undefined, 2],
+      [10, undefined],
+    ]);
     expect(file.lines[0]?.[0]?.t).toBe("# nightcrow");
   });
 

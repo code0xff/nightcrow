@@ -106,6 +106,10 @@ export interface TreeSearch {
 export interface DiffLine {
   kind: string;
   spans: Span[];
+  /** Absent on an added line, which exists only on the new side. */
+  old_lineno?: number;
+  /** Absent on a removed line, which is gone from the new side. */
+  new_lineno?: number;
 }
 
 export interface DiffHunk {
