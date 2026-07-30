@@ -1,5 +1,5 @@
 use super::{
-    collect_created, created_pane, created_size, next_matching, reordered_order, wait_for,
+    collect_created, created_pane, created_size, next_matching, reordered_order, resized_size,
 };
 use crate::backend::PaneId;
 use crate::web::viewer::limits;
@@ -168,14 +168,29 @@ fn a_replayed_pane_reports_the_size_it_was_last_resized_to() {
         rows: 40,
         cols: 120,
     });
-    // The resize is applied by the worker thread, so wait for the size to
-    // reach a fresh connection rather than assuming it has landed.
-    let replayed = wait_for(|| {
-        let session = hub.connect();
-        next_matching(&session, |f| created_pane(f) == Some(pane))
-            .and_then(|f| created_size(&f))
-            .filter(|size| *size == (40, 120))
-    });
+    // Wait for the resize to be *applied* before connecting, and wait for it on
+    // the client that asked — the `resized` broadcast is the worker saying it
+    // has landed.
+    //
+    // Retrying the connection instead would destroy what it waits for.
+    // Connecting takes the sizing (`window-size latest`), and a resize from a
+    // client that no longer owns it is dropped rather than queued
+    // (`hub_run.rs::apply_resize`). So a `connect` that beats the worker to this
+    // still-pending resize discards it for good, and no amount of retrying
+    // brings the size the test is waiting for — it just spends the whole
+    // deadline. Normally the worker wins that race, which is what made the
+    // failure rare and load-dependent rather than constant.
+    let applied =
+        next_matching(&first, |f| resized_size(f).is_some()).and_then(|f| resized_size(&f));
+    assert_eq!(
+        applied,
+        Some((40, 120)),
+        "the owner is told the size its resize was applied at"
+    );
+
+    let session = hub.connect();
+    let replayed =
+        next_matching(&session, |f| created_pane(f) == Some(pane)).and_then(|f| created_size(&f));
 
     assert_eq!(
         replayed,

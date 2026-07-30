@@ -4,7 +4,7 @@
 //! and nothing can re-flow an alternate-screen program afterwards. So the size
 //! is one value with one owner, and these are the rules for who holds it.
 
-use super::next_matching;
+use super::{next_matching, resized_size};
 use crate::web::viewer::terminal::TerminalHub;
 use crate::web::viewer::terminal::TerminalSession;
 use crate::web::viewer::terminal::frame::{ClientMessage, PaneSize, TerminalFrame};
@@ -19,21 +19,6 @@ fn owned(frame: &TerminalFrame) -> Option<bool> {
         return None;
     }
     value["owned"].as_bool()
-}
-
-/// The size a `resized` frame reports.
-fn resized(frame: &TerminalFrame) -> Option<(u16, u16)> {
-    let TerminalFrame::Control(json) = frame else {
-        return None;
-    };
-    let value: serde_json::Value = serde_json::from_str(json).ok()?;
-    if value["type"] != "resized" {
-        return None;
-    }
-    Some((
-        value["rows"].as_u64()? as u16,
-        value["cols"].as_u64()? as u16,
-    ))
 }
 
 /// Where this session stands now: the last ownership verdict in its queue.
@@ -158,14 +143,14 @@ fn only_the_owner_resizes_the_pty_and_everyone_is_told_the_size() {
 
     // So the first `resized` to come back is the owner's — the other request
     // reached the hub first and was dropped.
-    let applied = next_matching(&second, |f| resized(f).is_some())
-        .and_then(|f| resized(&f))
+    let applied = next_matching(&second, |f| resized_size(f).is_some())
+        .and_then(|f| resized_size(&f))
         .expect("the owner's resize was not applied");
     assert_eq!(applied, (30, 100));
     // And the client that no longer owns the sizing is told what the size is,
     // because its emulator has to wrap where the child now does.
-    let told = next_matching(&first, |f| resized(f).is_some())
-        .and_then(|f| resized(&f))
+    let told = next_matching(&first, |f| resized_size(f).is_some())
+        .and_then(|f| resized_size(&f))
         .expect("a spectator was not told the new size");
     assert_eq!(told, (30, 100));
     hub.stop();

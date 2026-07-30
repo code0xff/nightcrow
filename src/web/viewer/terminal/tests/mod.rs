@@ -96,6 +96,23 @@ pub(super) fn created_size(frame: &TerminalFrame) -> Option<(u16, u16)> {
     ))
 }
 
+/// The size a `resized` frame reports. Broadcast once the worker has actually
+/// applied a resize, so a test that needs the new size to be in effect waits
+/// for this rather than guessing at the worker's timing.
+pub(super) fn resized_size(frame: &TerminalFrame) -> Option<(u16, u16)> {
+    let TerminalFrame::Control(json) = frame else {
+        return None;
+    };
+    let value: serde_json::Value = serde_json::from_str(json).ok()?;
+    if value["type"] != "resized" {
+        return None;
+    }
+    Some((
+        value["rows"].as_u64()? as u16,
+        value["cols"].as_u64()? as u16,
+    ))
+}
+
 pub(super) fn reordered_order(frame: &TerminalFrame) -> Option<Vec<PaneId>> {
     let TerminalFrame::Control(json) = frame else {
         return None;
