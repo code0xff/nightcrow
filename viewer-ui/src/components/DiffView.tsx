@@ -1,5 +1,7 @@
 import { splitHunkRows } from "../lib/diffLayout";
+import { linenoDigits } from "../lib/gutter";
 import { diffLineBg } from "../lib/utils";
+import { LineNos } from "./LineNos";
 import type { Diff, DiffLine } from "../api";
 
 function DiffLineContent({ line }: { line: DiffLine }) {
@@ -15,13 +17,38 @@ function DiffLineContent({ line }: { line: DiffLine }) {
   );
 }
 
-function SplitCell({ line }: { line: DiffLine | null }) {
+/// A split half numbers the side it shows: the left column carries the old
+/// file's numbers, the right the new one's. A row with no counterpart on this
+/// side still gets its (blank) gutter cell, or the two halves would stop
+/// lining up.
+function SplitCell({
+  line,
+  digits,
+  side,
+}: {
+  line: DiffLine | null;
+  digits: number;
+  side: "old" | "new";
+}) {
   if (line === null) {
-    return <div className="whitespace-pre bg-ink-900/40 px-3">{" "}</div>;
+    return (
+      <div className="flex bg-ink-900/40">
+        <LineNos nos={[undefined]} digits={digits} tint="bg-ink-900/40" />
+        <span className="whitespace-pre pr-3"> </span>
+      </div>
+    );
   }
+  const tint = diffLineBg(line.kind);
   return (
-    <div className={`whitespace-pre px-3 ${diffLineBg(line.kind)}`}>
-      <DiffLineContent line={line} />
+    <div className={`flex ${tint}`}>
+      <LineNos
+        nos={[side === "old" ? line.old_lineno : line.new_lineno]}
+        digits={digits}
+        tint={tint}
+      />
+      <span className="whitespace-pre pr-3">
+        <DiffLineContent line={line} />
+      </span>
     </div>
   );
 }
@@ -30,9 +57,13 @@ function SplitCell({ line }: { line: DiffLine | null }) {
 /// stacked, the usual left rule once they sit side by side.
 function SplitColumn({
   cells,
+  digits,
+  side,
   border,
 }: {
   cells: (DiffLine | null)[];
+  digits: number;
+  side: "old" | "new";
   border: boolean;
 }) {
   const divider = border
@@ -44,7 +75,7 @@ function SplitColumn({
     >
       <div className="w-max min-w-full">
         {cells.map((line, i) => (
-          <SplitCell key={i} line={line} />
+          <SplitCell key={i} line={line} digits={digits} side={side} />
         ))}
       </div>
     </div>
@@ -53,17 +84,30 @@ function SplitColumn({
 
 /// Side by side needs width no phone has, so narrow screens stack the removed
 /// side above the added one instead of dropping split view entirely.
-function SplitHunk({ lines }: { lines: DiffLine[] }) {
+function SplitHunk({ lines, digits }: { lines: DiffLine[]; digits: number }) {
   const rows = splitHunkRows(lines);
   return (
     <div className="flex flex-col md:flex-row">
-      <SplitColumn cells={rows.map((r) => r.left)} border={false} />
-      <SplitColumn cells={rows.map((r) => r.right)} border={true} />
+      <SplitColumn
+        cells={rows.map((r) => r.left)}
+        digits={digits}
+        side="old"
+        border={false}
+      />
+      <SplitColumn
+        cells={rows.map((r) => r.right)}
+        digits={digits}
+        side="new"
+        border={true}
+      />
     </div>
   );
 }
 
 export function DiffView({ diff, split }: { diff: Diff; split: boolean }) {
+  // One width for the whole diff, not per hunk: a gutter that resized at each
+  // hunk boundary would step the code's left edge as you scrolled past one.
+  const digits = linenoDigits(diff.hunks);
   return (
     <div className="p-1">
       {diff.hunks.length === 0 && (
@@ -76,16 +120,27 @@ export function DiffView({ diff, split }: { diff: Diff; split: boolean }) {
             {h.header}
           </div>
           {split ? (
-            <SplitHunk lines={h.lines} />
+            <SplitHunk lines={h.lines} digits={digits} />
           ) : (
-            h.lines.map((line, j) => (
-              <div
-                key={j}
-                className={`px-3 whitespace-pre ${diffLineBg(line.kind)}`}
-              >
-                <DiffLineContent line={line} />
-              </div>
-            ))
+            // `w-max min-w-full` so a row's tint keeps covering it once the
+            // code scrolls past the pane's width.
+            <div className="w-max min-w-full">
+              {h.lines.map((line, j) => {
+                const tint = diffLineBg(line.kind);
+                return (
+                  <div key={j} className={`flex ${tint}`}>
+                    <LineNos
+                      nos={[line.old_lineno, line.new_lineno]}
+                      digits={digits}
+                      tint={tint}
+                    />
+                    <span className="whitespace-pre pr-3">
+                      <DiffLineContent line={line} />
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
           )}
         </div>
       ))}

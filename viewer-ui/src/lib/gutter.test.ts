@@ -1,5 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { digitsFor, sideGutterWidth } from "./gutter";
+import { digitsFor, linenoDigits } from "./gutter";
+import type { DiffHunk, DiffLine } from "../api";
+
+function hunk(lines: DiffLine[]): DiffHunk {
+  return { header: "@@", lines };
+}
+
+function line(old?: number, added?: number): DiffLine {
+  return { kind: " ", spans: [], old_lineno: old, new_lineno: added };
+}
 
 describe("digitsFor", () => {
   it("빈_파일도_최소_폭을_받는다", () => {
@@ -26,9 +35,22 @@ describe("digitsFor", () => {
   });
 });
 
-describe("sideGutterWidth", () => {
-  it("숫자_칼럼_양옆에_한_칸씩_더한_폭을_준다", () => {
-    expect(sideGutterWidth(3)).toBe("5ch");
-    expect(sideGutterWidth(5)).toBe("7ch");
+describe("linenoDigits", () => {
+  it("hunk이_없으면_최소_폭을_준다", () => {
+    expect(linenoDigits([])).toBe(3);
+  });
+
+  it("양쪽_번호_중_가장_큰_값을_기준으로_삼는다", () => {
+    expect(linenoDigits([hunk([line(9, 9), line(1200, 8)])])).toBe(4);
+    expect(linenoDigits([hunk([line(9, 9)]), hunk([line(70000, 8)])])).toBe(5);
+  });
+
+  it("한쪽에만_있는_줄도_폭_계산에_들어간다", () => {
+    expect(linenoDigits([hunk([line(undefined, 1000)])])).toBe(4);
+    expect(linenoDigits([hunk([line(1000, undefined)])])).toBe(4);
+  });
+
+  it("번호가_전혀_없는_diff는_최소_폭으로_떨어진다", () => {
+    expect(linenoDigits([hunk([line(), line()])])).toBe(3);
   });
 });

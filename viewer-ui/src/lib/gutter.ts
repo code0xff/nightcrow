@@ -1,16 +1,14 @@
 /**
- * Line-number gutter geometry, mirroring the TUI's `ui/diff_viewer/gutter.rs`
- * so the same file reads the same width in both frontends.
+ * Line-number gutter arithmetic, mirroring the TUI's `ui/diff_viewer/gutter.rs`
+ * so the same file reads the same width in both frontends. The geometry the
+ * digits feed lives in `components/LineNos.tsx`.
  */
+import type { DiffHunk } from "../api";
 
 /** Minimum digits reserved for one line-number column. Keeps the gutter — and
  *  with it the body's left edge — from twitching between a 99-line file and a
  *  100-line one. */
 const MIN_LINENO_DIGITS = 3;
-
-/** One padding space on each side of a number column: it lifts the digits off
- *  the pane edge and off the code that follows. */
-const LINENO_PAD = 2;
 
 /** Digits needed to print `maxLineno`, floored at `MIN_LINENO_DIGITS`.
  *
@@ -21,7 +19,16 @@ export function digitsFor(maxLineno: number): number {
   return Math.max(digits, MIN_LINENO_DIGITS);
 }
 
-/** CSS width of a one-column gutter, in `ch` so it tracks the mono font. */
-export function sideGutterWidth(digits: number): string {
-  return `${digits + LINENO_PAD}ch`;
+/** Digits for a whole diff: the widest line number on either side of any hunk.
+ *
+ *  Derived from the loaded diff rather than the rows currently on screen, so
+ *  scrolling cannot change the gutter width and shift the body sideways. */
+export function linenoDigits(hunks: DiffHunk[]): number {
+  let max = 0;
+  for (const hunk of hunks) {
+    for (const line of hunk.lines) {
+      max = Math.max(max, line.old_lineno ?? 0, line.new_lineno ?? 0);
+    }
+  }
+  return digitsFor(max);
 }
