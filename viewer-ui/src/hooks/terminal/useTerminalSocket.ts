@@ -1,6 +1,7 @@
 import { useLayoutEffect } from "react";
 import type { MutableRefObject } from "react";
 import { reconcileOrder } from "../../lib/paneOrder";
+import { applyRecovery, type RecoveryByPane } from "../../lib/recovery";
 import { toast } from "../../lib/toast";
 import type { PaneView } from "../../lib/terminalLayout";
 
@@ -19,6 +20,7 @@ interface UseTerminalSocketArgs {
   setTitles: React.Dispatch<React.SetStateAction<Record<number, string>>>;
   /** Whether this page's layout is what sets the pane sizes. */
   setOwnsSize: React.Dispatch<React.SetStateAction<boolean>>;
+  setRecovery: React.Dispatch<React.SetStateAction<RecoveryByPane>>;
 }
 
 /// Reset state on repository changes because pane ids are repository-local.
@@ -43,6 +45,7 @@ export function useTerminalSocket({
   setZoomed,
   setTitles,
   setOwnsSize,
+  setRecovery,
 }: UseTerminalSocketArgs) {
   useLayoutEffect(() => {
     // A terminal this page asked for belongs to the project it was asked in.
@@ -72,6 +75,8 @@ export function useTerminalSocket({
       // confirm. Assumed rather than awaited: starting as a spectator would
       // leave the panes unfitted for a round trip.
       setOwnsSize(true);
+      // Reports are keyed by pane id, which is repository-local.
+      setRecovery({});
       disposeAll();
 
       const scheme = location.protocol === "https:" ? "wss:" : "ws:";
@@ -139,6 +144,11 @@ export function useTerminalSocket({
             viewsRef.current
               .get(message.pane)
               ?.term.resize(message.cols, message.rows);
+          } else if (message.type === "recovery") {
+            // Deliberately survives the pane's `exited`: the report that matters
+            // most arrives while the process is gone and its slot is held for a
+            // relaunch. The server's own `cancelled` report is what clears it.
+            setRecovery((current) => applyRecovery(current, message));
           } else if (message.type === "size_owner") {
             setOwnsSize(message.owned);
           } else if (message.type === "reordered") {

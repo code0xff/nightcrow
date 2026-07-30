@@ -53,6 +53,9 @@ impl TerminalHub {
                         .clone()
                         .unwrap_or_else(|| sc.command.trim().to_string())
                 }),
+                // The opt-in, carried through so the worker can record it. Only
+                // a configured pane can have one; nothing else ever gains it.
+                plugin: configured.as_ref().and_then(|sc| sc.plugin.clone()),
                 command: configured.map(|sc| sc.command),
             })
             .collect();

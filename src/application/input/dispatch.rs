@@ -131,6 +131,12 @@ pub(super) fn handle_global_action(app: &mut App, action: Action) -> Option<KeyO
             app.claim_pane_sizing();
             Some(KeyOutcome::Continue)
         }
+        // Inert with nothing pending, and the key is still consumed — a
+        // follow-up must never fall through to the PTY.
+        Action::CancelRecovery => {
+            app.cancel_pane_recovery();
+            Some(KeyOutcome::Continue)
+        }
         Action::ClosePane => {
             // Scoped by `can_close_pane` (terminal focus — the close target
             // is invisible without it). The key is still consumed so it

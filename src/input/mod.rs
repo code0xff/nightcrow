@@ -15,6 +15,11 @@ pub enum Action {
     /// render that grid; this asks for it. Inert when this client already has
     /// it, and when its panes are its own.
     ClaimPaneSizing,
+    /// Give up on the recovery a plugin has pending for a pane.
+    ///
+    /// Inert when nothing is pending. Behind the leader like every other app
+    /// command: a bare key in a terminal pane belongs to the program in it.
+    CancelRecovery,
     /// Arm swap mode: the next digit picks the pane to swap the active pane
     /// with. Emitted by the `<leader> s` follow-up; the digit is resolved in a
     /// separate tick (see `handle_swap_target_followup` in `main`).

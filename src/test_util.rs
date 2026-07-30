@@ -136,6 +136,21 @@ impl crate::backend::TerminalBackend for FakeBackend {
             });
     }
 
+    /// Echoed back like `destroy_pane` and `reorder`: a cancel is a request, and
+    /// the report a session broadcasts is what actually clears the pane's state.
+    /// A test therefore proves the request was made by polling for the answer.
+    fn cancel_recovery(&mut self, pane: crate::backend::PaneId) {
+        self.pending_events
+            .borrow_mut()
+            .push(crate::backend::BackendEvent::Recovery {
+                pane,
+                state: "cancelled".to_string(),
+                detail: None,
+                deadline_epoch: None,
+                attempt: 0,
+            });
+    }
+
     fn send_input(&mut self, _id: crate::backend::PaneId, data: &[u8]) -> anyhow::Result<()> {
         self.sent.push(data.to_vec());
         Ok(())

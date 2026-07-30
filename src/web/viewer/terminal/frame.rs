@@ -40,6 +40,16 @@ pub enum ClientMessage {
     /// glancing at a phone repaint everybody's screen.
     #[serde(rename = "claim_size")]
     ClaimSize,
+    /// Give up on whatever recovery is pending for `pane`.
+    ///
+    /// A person deciding the wait is over outranks the plugin still waiting: the
+    /// hold on the pane's slot is dropped and the slot retired, so nothing can
+    /// be relaunched into it afterwards. Harmless for a pane with no recovery in
+    /// flight — a client can be a beat behind the hold expiring.
+    #[serde(rename = "cancel_recovery")]
+    CancelRecovery {
+        pane: PaneId,
+    },
     /// The sizes to give the startup terminals, answering [`ServerMessage::Pending`].
     ///
     /// One entry per pending pane, in the order they will be created. A short
@@ -158,6 +168,29 @@ pub enum ServerMessage {
     /// leave the hub with no terminals and no way to ever get them.
     Pending {
         count: usize,
+    },
+    /// What a plugin reports about a pane it is nursing back, relayed verbatim.
+    ///
+    /// Pane metadata rather than screen content: nothing here is drawn into a
+    /// terminal grid, and a client that ignores it renders exactly as before.
+    /// `state` is the plugin's own short label; the hub neither interprets it nor
+    /// keeps it, so this is a broadcast of the latest word and not a state
+    /// machine. The one label the hub itself sends is
+    /// [`RECOVERY_CANCELLED`](super::hub_recovery::RECOVERY_CANCELLED), which a
+    /// client treats as "there is nothing pending any more".
+    Recovery {
+        pane: PaneId,
+        state: String,
+        /// A short human line, absent when the plugin gave none. Never carries
+        /// transcript or payload text.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        detail: Option<String>,
+        /// When the wait ends, in **unix epoch seconds**, absent when the plugin
+        /// is not waiting on a clock. A client renders it in its own local zone;
+        /// an absent one must render nothing rather than a guess.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        deadline_epoch: Option<i64>,
+        attempt: u32,
     },
 }
 

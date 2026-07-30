@@ -40,6 +40,7 @@ export function StartupSlots({
         isDragged={false}
         isDropTarget={false}
         reorderable={false}
+        onCancelRecovery={() => {}}
         onFocus={() => {}}
         onToggleZoom={() => {}}
         onClose={() => {}}

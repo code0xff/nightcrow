@@ -48,7 +48,7 @@ fn the_client_that_just_arrived_owns_the_sizing() {
     // tmux's `window-size latest`: the newest client is the one someone is
     // sitting at, so the panes should fit its screen.
     let dir = tempfile::TempDir::new().unwrap();
-    let hub = TerminalHub::spawn(&dir.path().to_string_lossy(), Vec::new());
+    let hub = TerminalHub::spawn(&dir.path().to_string_lossy(), Vec::new(), Vec::new());
 
     let first = hub.connect();
     assert!(verdict(&first), "the only client owns it");
@@ -65,7 +65,7 @@ fn the_sizing_passes_to_the_newest_client_still_attached() {
     // Somebody has to hold it, or the panes stay frozen at the size of a client
     // that has gone.
     let dir = tempfile::TempDir::new().unwrap();
-    let hub = TerminalHub::spawn(&dir.path().to_string_lossy(), Vec::new());
+    let hub = TerminalHub::spawn(&dir.path().to_string_lossy(), Vec::new(), Vec::new());
     let first = hub.connect();
     let second = hub.connect();
     let third = hub.connect();
@@ -84,7 +84,7 @@ fn a_client_can_take_the_sizing_back_on_request() {
     // sizing, asking for it does. Otherwise glancing at a phone would repaint
     // everybody's screen.
     let dir = tempfile::TempDir::new().unwrap();
-    let hub = TerminalHub::spawn(&dir.path().to_string_lossy(), Vec::new());
+    let hub = TerminalHub::spawn(&dir.path().to_string_lossy(), Vec::new(), Vec::new());
     let first = hub.connect();
     let second = hub.connect();
     assert!(verdict(&second));
@@ -100,7 +100,7 @@ fn a_client_can_take_the_sizing_back_on_request() {
 #[test]
 fn claiming_what_this_client_already_owns_says_nothing() {
     let dir = tempfile::TempDir::new().unwrap();
-    let hub = TerminalHub::spawn(&dir.path().to_string_lossy(), Vec::new());
+    let hub = TerminalHub::spawn(&dir.path().to_string_lossy(), Vec::new(), Vec::new());
     let only = hub.connect();
     assert!(verdict(&only));
 
@@ -119,7 +119,7 @@ fn only_the_owner_resizes_the_pty_and_everyone_is_told_the_size() {
     // Two clients fitting one PTY to two layouts would leave the child drawing
     // for a width neither of them has.
     let dir = tempfile::TempDir::new().unwrap();
-    let hub = TerminalHub::spawn(&dir.path().to_string_lossy(), Vec::new());
+    let hub = TerminalHub::spawn(&dir.path().to_string_lossy(), Vec::new(), Vec::new());
     let first = hub.connect();
     first.dispatch(ClientMessage::Start {
         sizes: vec![PaneSize { rows: 24, cols: 80 }],

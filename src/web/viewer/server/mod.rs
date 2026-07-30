@@ -118,6 +118,17 @@ impl ViewerState {
     /// or not a browser listener does: the daemon socket serves this same
     /// state, and a test drives it without taking a port.
     pub fn new(options: ViewerOptions) -> Self {
+        Self::with_plugins(options, Vec::new())
+    }
+
+    /// Like [`ViewerState::new`], with the `[[plugin]]` table the session's
+    /// startup panes may hand themselves to.
+    ///
+    /// Taken here rather than as a [`ViewerOptions`] field because it has to
+    /// reach the catalog before [`crate::web::viewer::catalog::Catalog::set_paths`]
+    /// spawns the first hub — a plugin association is decided when a pane is
+    /// created, not afterwards.
+    pub fn with_plugins(options: ViewerOptions, plugins: Vec<crate::config::PluginConfig>) -> Self {
         let ViewerOptions {
             bind,
             port: _,
@@ -129,7 +140,10 @@ impl ViewerState {
             prefs,
         } = options;
         let state = Self {
-            catalog: crate::web::viewer::catalog::Catalog::with_startup(startup_commands),
+            catalog: crate::web::viewer::catalog::Catalog::with_startup_and_plugins(
+                startup_commands,
+                plugins,
+            ),
             bound_loopback: bind.is_loopback(),
             auth,
             sessions: SessionStore::new(),
@@ -149,6 +163,10 @@ impl ViewerState {
 impl ViewerServer {
     /// Bind and start from `[web_viewer]`, building the password verifier from
     /// either `hashed_password` or `password`.
+    ///
+    /// `plugins` is `config.toml`'s `[[plugin]]` table; an empty list means no
+    /// pane can be plugin-managed, which is the default.
+    #[allow(clippy::too_many_arguments)]
     pub fn start_from_config(
         viewer: &crate::config::WebViewerConfig,
         agent_indicator: &crate::config::AgentIndicatorConfig,
@@ -156,6 +174,7 @@ impl ViewerServer {
         paths: &[String],
         persist: bool,
         startup_commands: Vec<crate::config::StartupCommand>,
+        plugins: Vec<crate::config::PluginConfig>,
     ) -> Result<Self> {
         let auth = if let Some(hash) = viewer.hashed_password.as_deref() {
             Auth::from_hashed(hash)?
@@ -170,23 +189,34 @@ impl ViewerServer {
                 viewer.bind
             )
         })?;
-        Self::start(ViewerOptions {
-            bind,
-            port: viewer.port,
-            auth,
-            repos: paths.to_vec(),
-            persist,
-            startup_commands,
-            hot: agent_indicator.clone(),
-            // The session's accent outlives any one config edit, so `[theme]`
-            // only names the colour a session with no stored choice starts in.
-            prefs: PrefsStore::load_seeded(theme.preset_index()),
-        })
+        Self::start_with_plugins(
+            ViewerOptions {
+                bind,
+                port: viewer.port,
+                auth,
+                repos: paths.to_vec(),
+                persist,
+                startup_commands,
+                hot: agent_indicator.clone(),
+                // The session's accent outlives any one config edit, so `[theme]`
+                // only names the colour a session with no stored choice starts in.
+                prefs: PrefsStore::load_seeded(theme.preset_index()),
+            },
+            plugins,
+        )
     }
 
     /// Bind and start accepting. The seeded repositories may be replaced later
     /// through [`ViewerServer::set_repos`].
     pub fn start(options: ViewerOptions) -> Result<Self> {
+        Self::start_with_plugins(options, Vec::new())
+    }
+
+    /// Like [`ViewerServer::start`], with the `[[plugin]]` table.
+    pub fn start_with_plugins(
+        options: ViewerOptions,
+        plugins: Vec<crate::config::PluginConfig>,
+    ) -> Result<Self> {
         // Copied out before the options are consumed: the listener is bound
         // first so a port conflict fails before any repository is opened.
         let (bind, port) = (options.bind, options.port);
@@ -196,7 +226,7 @@ impl ViewerServer {
             .local_addr()
             .unwrap_or_else(|_| SocketAddr::new(bind, port));
 
-        let state = Arc::new(ViewerState::new(options));
+        let state = Arc::new(ViewerState::with_plugins(options, plugins));
 
         let accept_state = Arc::clone(&state);
         std::thread::Builder::new()

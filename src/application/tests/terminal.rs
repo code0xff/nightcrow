@@ -36,3 +36,46 @@ fn handle_key_terminal_ctrl_app_keys_all_pass_through() {
         );
     }
 }
+
+#[test]
+fn handle_key_leader_then_c_cancels_the_pane_recovery() {
+    // The fake backend answers a cancel the way a session does — by reporting the
+    // pane `cancelled` — so the badge clearing on the next poll is proof the
+    // request actually went out.
+    let mut app = app_with_terminal_pane();
+    let pane = app.terminal.panes[0].id;
+    app.terminal.recovery.insert(
+        pane,
+        crate::runtime::terminal::PaneRecovery {
+            state: "waiting_for_reset".to_string(),
+            detail: None,
+            deadline_epoch: Some(1_700_000_000),
+            attempt: 1,
+        },
+    );
+    assert!(app.can_cancel_recovery(), "the hint must be advertised");
+
+    let _ = handle_key(&mut app, leader());
+    let _ = handle_key(&mut app, press(KeyCode::Char('c'), KeyModifiers::NONE));
+    app.poll_terminal();
+
+    assert!(
+        !app.can_cancel_recovery(),
+        "`<leader> c` must reach the session"
+    );
+    assert!(
+        backend_payloads(&app).is_empty(),
+        "a leader follow-up must never leak into the PTY"
+    );
+}
+
+#[test]
+fn handle_key_bare_c_in_a_terminal_pane_reaches_the_program() {
+    // The cancel binding is leader-prefixed precisely so a bare `c` is still
+    // ordinary typing in whatever the pane is running.
+    let mut app = app_with_terminal_pane();
+
+    let _ = handle_key(&mut app, press(KeyCode::Char('c'), KeyModifiers::NONE));
+
+    assert_eq!(backend_payloads(&app), vec![b"c".to_vec()]);
+}

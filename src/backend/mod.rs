@@ -1,7 +1,10 @@
 pub mod hub;
+pub mod identity;
 pub mod pty;
+pub mod slot;
 
 pub use hub::HubBackend;
+pub use identity::{PaneGeneration, PaneToken};
 pub use pty::PtyBackend;
 
 use anyhow::Result;
@@ -64,6 +67,22 @@ pub enum BackendEvent {
     SizeOwnership {
         owned: bool,
     },
+    /// What a plugin driving `pane` reports about getting it running again.
+    ///
+    /// Only a backend serving a shared session reports this: the plugins run
+    /// beside the session's panes, not beside this client. Pane metadata, not
+    /// screen content — nothing here reaches an emulator.
+    Recovery {
+        pane: PaneId,
+        /// The plugin's own short label. Uninterpreted here; the one value with a
+        /// meaning is `"cancelled"`, which ends the report.
+        state: String,
+        detail: Option<String>,
+        /// When the wait ends, in unix epoch seconds, or `None` when no clock is
+        /// involved.
+        deadline_epoch: Option<i64>,
+        attempt: u32,
+    },
 }
 
 pub trait TerminalBackend {
@@ -95,6 +114,15 @@ pub trait TerminalBackend {
     /// have, so there is nobody to take them from. Only a backend serving a
     /// shared session has anything to ask.
     fn claim_size(&mut self) {}
+
+    /// Ask the session to give up on a pane's pending recovery.
+    ///
+    /// A no-op by default: a backend that owns its PTYs has no plugin nursing one
+    /// back, so there is nothing pending to abandon. The session answers with a
+    /// [`BackendEvent::Recovery`] whose state is `"cancelled"`.
+    fn cancel_recovery(&mut self, pane: PaneId) {
+        let _ = pane;
+    }
 
     /// Test hook: byte payloads recorded by a recording backend. Real
     /// backends return `None`; the in-memory test `FakeBackend` overrides

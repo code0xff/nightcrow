@@ -64,6 +64,7 @@ impl TerminalSession {
             }
             ClientMessage::Close { pane } => Command::Close { pane },
             ClientMessage::Reorder { order } => Command::Reorder { order },
+            ClientMessage::CancelRecovery { pane } => Command::CancelRecovery { pane },
             // Off the worker queue for the same reason `start` is: it decides
             // who may resize, and a backed-up hub must not drop the message that
             // hands the sizing over — the client would then be a spectator with

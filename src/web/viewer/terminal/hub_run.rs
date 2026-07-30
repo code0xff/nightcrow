@@ -1,6 +1,7 @@
 use super::TerminalHub;
 use super::frame::{ServerMessage, TerminalFrame};
-use super::hub_helpers::{Command, PaneState, broadcast_locked, canonical_order, push_scrollback};
+use super::hub_helpers::{Command, PaneState, broadcast_locked, push_scrollback};
+use super::hub_plugins::Plugins;
 use crate::backend::{BackendEvent, PaneId, PtyBackend, TerminalBackend};
 use crate::web::viewer::limits;
 use std::collections::VecDeque;
@@ -8,13 +9,17 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::Receiver;
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 const POLL_INTERVAL: Duration = Duration::from_millis(8);
 
 impl TerminalHub {
     pub(super) fn run(&self, cwd: &str, commands: Receiver<Command>, stop: Arc<AtomicBool>) {
         let mut backend = PtyBackend::new(cwd);
+        // Before the loop, because a pane can be created on the first iteration
+        // and a plugin has to exist to be told about it. Only the plugins some
+        // configured pane opted into are launched (see `Plugins::start`).
+        let mut plugins = Plugins::start(cwd, &self.plugins, &self.startup);
 
         while !stop.load(Ordering::Acquire) {
             while let Ok(command) = commands.try_recv() {
@@ -33,7 +38,9 @@ impl TerminalHub {
                         }
                         match backend.open_pane(rows, cols, command.as_deref()) {
                             // Unnamed: a pane a client asked for is that client's
-                            // to name, and the hub has nothing to add.
+                            // to name, and the hub has nothing to add. No plugin
+                            // association either, ever — a shell a client opened
+                            // is nobody's to drive but the person at it.
                             Ok(pane) => self.register_pane(pane, rows, cols, Some(client), None),
                             Err(err) => {
                                 tracing::warn!(%err, "viewer: could not create a terminal");
@@ -45,10 +52,18 @@ impl TerminalHub {
                         panes,
                         client,
                         reserved,
-                    } => self.open_startup_panes(&mut backend, panes, client, reserved),
+                    } => {
+                        self.open_startup_panes(&mut backend, &mut plugins, panes, client, reserved)
+                    }
                     // Unknown pane ids are ignored rather than errored: a
                     // client racing a pane exit is normal, not an attack.
                     Command::Input { pane, data } if self.pane_is_live(pane) => {
+                        // A person at the keyboard has taken the pane back, so
+                        // its plugin is told and everything it had planned for
+                        // the pane is dropped — before the bytes land, so the
+                        // cancellation cannot be overtaken by a decision made
+                        // from the output this input produces.
+                        plugins.user_input(&backend, pane);
                         let _ = backend.send_input(pane, &data);
                     }
                     Command::Resize {
@@ -60,17 +75,34 @@ impl TerminalHub {
                         self.resize_pane(&mut backend, pane, rows, cols, client);
                     }
                     Command::Close { pane } if self.pane_is_live(pane) => {
+                        // Closed for good, unlike an exit: the slot goes with
+                        // the process, so there is nothing left to relaunch.
+                        if plugins.owner(pane).is_some() {
+                            plugins.pane_closed(&backend, pane);
+                            plugins.forget(&backend, pane);
+                            backend.retire_slot(pane);
+                            self.end_recovery(pane);
+                        }
                         backend.destroy_pane(pane);
                         self.remove_pane_and_announce(pane);
                     }
                     Command::Reorder { order } => self.reorder_panes(order),
+                    // Deliberately not gated on the pane being live: a pane with
+                    // a recovery pending is one whose process has already ended,
+                    // so it is no longer in the client-visible list.
+                    Command::CancelRecovery { pane } => {
+                        self.cancel_recovery(&mut backend, &mut plugins, pane)
+                    }
                     _ => {}
                 }
             }
 
             for event in backend.drain_events() {
                 match event {
-                    BackendEvent::Output { pane, data } => self.record_and_broadcast(pane, data),
+                    BackendEvent::Output { pane, data } => {
+                        plugins.pane_output(&backend, pane, &data);
+                        self.record_and_broadcast(pane, data);
+                    }
                     // Destroyed as well as forgotten. `PtyBackend` leaves pane
                     // removal to its caller (see its `drain_events`), so a pane
                     // that ended on its own — the user typed `exit`, or the
@@ -79,8 +111,7 @@ impl TerminalHub {
                     // counts live panes, not those, so open-and-exit in a loop
                     // accumulated descriptors with nothing to stop it.
                     BackendEvent::Exited { pane } => {
-                        backend.destroy_pane(pane);
-                        self.remove_pane_and_announce(pane);
+                        self.pane_exited(&mut backend, &mut plugins, pane)
                     }
                     // The hub owns its PTYs outright: it opens them through
                     // `open_pane`, which answers directly, and it is what
@@ -89,13 +120,31 @@ impl TerminalHub {
                     BackendEvent::Created { pane, .. } | BackendEvent::Resized { pane, .. } => {
                         tracing::debug!(pane, "hub: unexpected event from its own backend");
                     }
-                    BackendEvent::SizeOwnership { .. } | BackendEvent::Reordered { .. } => {
+                    BackendEvent::SizeOwnership { .. }
+                    | BackendEvent::Reordered { .. }
+                    | BackendEvent::Recovery { .. } => {
                         tracing::debug!("hub: unexpected session event from its own backend");
                     }
                 }
             }
+
+            if !plugins.is_inert() {
+                let now = Instant::now();
+                plugins.notify_idle(&backend, now);
+                self.dispatch_plugin_commands(&mut backend, &mut plugins, now);
+                // Told to the clients, or one that was shown a deadline keeps
+                // counting down to a moment that has already passed.
+                for pane in plugins.expire_pending(&mut backend, now) {
+                    self.end_recovery(pane);
+                }
+            }
             thread::sleep(POLL_INTERVAL);
         }
+
+        // Ahead of the panes: a plugin child is not one of `PtyBackend`'s panes,
+        // so this is the only place it is ever reaped, and telling it to stop
+        // before its panes disappear beneath it is the courteous order.
+        plugins.shutdown();
 
         let ids: Vec<PaneId> = self
             .state
@@ -171,49 +220,6 @@ impl TerminalHub {
         }
     }
 
-    /// Resize a live pane's PTY at the sizing owner's request, record the size it
-    /// is now set to, and tell every client what it is.
-    ///
-    /// All under one lock, and the liveness check with them. `connect` reports
-    /// each pane's size from this record and the client caches it as "already
-    /// applied"; a client that slipped between the two would be told the old
-    /// size for a PTY that has the new one, and would then skip the resize that
-    /// would have corrected it. The `resize` itself is an ioctl on the master —
-    /// far cheaper than the broadcast this lock already covers.
-    fn resize_pane(
-        &self,
-        backend: &mut PtyBackend,
-        pane: PaneId,
-        rows: u16,
-        cols: u16,
-        client: u64,
-    ) {
-        let mut state = self.state.lock().expect("terminal state poisoned");
-        // Not this client's to set. Dropped rather than refused: a client can
-        // lose the sizing between laying out a frame and this arriving, which is
-        // ordinary rather than an error worth interrupting anyone over.
-        if state.size_owner != Some(client) {
-            return;
-        }
-        // An unknown pane is ignored rather than errored: a client racing a
-        // pane exit is normal, not an attack.
-        let Some(p) = state.panes.iter_mut().find(|p| p.id == pane) else {
-            return;
-        };
-        if (p.rows, p.cols) == (rows, cols) {
-            return;
-        }
-        backend.resize(pane, rows, cols);
-        p.rows = rows;
-        p.cols = cols;
-        // Every client's emulator has to wrap where the child now does, so the
-        // size it was actually set to goes to all of them — including the one
-        // that asked, which learns here if its request was clamped.
-        if let Ok(json) = serde_json::to_string(&ServerMessage::Resized { pane, rows, cols }) {
-            broadcast_locked(&mut state.clients, TerminalFrame::Control(json));
-        }
-    }
-
     /// Append output to the pane's bounded scrollback and broadcast it, both
     /// under one lock so a concurrently connecting client cannot slip a replay
     /// snapshot between the append and the broadcast.
@@ -228,7 +234,7 @@ impl TerminalHub {
     /// Drop a pane and tell every client, but only if it was still live — a pane
     /// closed by command and then reported `Exited` by the backend must announce
     /// once, not twice.
-    fn remove_pane_and_announce(&self, pane: PaneId) {
+    pub(super) fn remove_pane_and_announce(&self, pane: PaneId) {
         let json = serde_json::to_string(&ServerMessage::Exited { pane }).ok();
         let mut state = self.state.lock().expect("terminal state poisoned");
         let existed = state.panes.iter().any(|p| p.id == pane);
@@ -237,41 +243,6 @@ impl TerminalHub {
         }
         state.panes.retain(|p| p.id != pane);
         if let Some(json) = json {
-            broadcast_locked(&mut state.clients, TerminalFrame::Control(json));
-        }
-    }
-
-    /// Reorder the live panes to match `order` and tell every client the
-    /// result.
-    ///
-    /// `order` is a full desired sequence of pane ids. It is reconciled
-    /// against what is actually live so a reorder is robust to races with
-    /// create/close: unknown ids are dropped and any live pane the request
-    /// omits (e.g. one another client created in the same beat) is kept,
-    /// appended in its current order (see [`canonical_order`]). The hub
-    /// converges on that one canonical order and broadcasts it, so the
-    /// sender and every other device end up with the same layout. Reordering
-    /// only restyles the grid — pane ids, scrollback, and the live PTYs are
-    /// untouched. A no-op reorder sends nothing.
-    fn reorder_panes(&self, order: Vec<PaneId>) {
-        let mut state = self.state.lock().expect("terminal state poisoned");
-        let before: Vec<PaneId> = state.panes.iter().map(|p| p.id).collect();
-        let target = canonical_order(&before, &order);
-        if target == before {
-            return;
-        }
-        // `target` is a permutation of `before`, so every id resolves and `old`
-        // ends empty. Move each `PaneState` rather than clone it — it owns the
-        // pane's scrollback.
-        let mut old = std::mem::take(&mut state.panes);
-        let mut reordered = Vec::with_capacity(old.len());
-        for id in &target {
-            if let Some(pos) = old.iter().position(|p| p.id == *id) {
-                reordered.push(old.remove(pos));
-            }
-        }
-        state.panes = reordered;
-        if let Ok(json) = serde_json::to_string(&ServerMessage::Reordered { order: target }) {
             broadcast_locked(&mut state.clients, TerminalFrame::Control(json));
         }
     }

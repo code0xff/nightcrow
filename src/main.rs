@@ -10,6 +10,7 @@ mod daemon;
 mod git;
 mod input;
 mod platform;
+pub mod plugin;
 mod runtime;
 #[cfg(test)]
 mod test_util;
@@ -30,6 +31,7 @@ fn main() -> Result<()> {
     match cli.command {
         Some(Commands::Init { force }) => run_init(force),
         Some(Commands::Attach) => application::attach::run_attach(),
+        Some(Commands::Plugin { command }) => cli::plugin_cmd::run_plugin(command),
         None => run_daemon(cli.exec, cli.port, cli.bind, cli.detach),
     }
 }
