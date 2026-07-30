@@ -5,7 +5,6 @@ import {
   useState,
   type CSSProperties,
 } from "react";
-import { FitScreenIcon, MaximizeIcon, PlusIcon } from "../icons";
 import { planLayout, type PaneView } from "../../lib/terminalLayout";
 import { usePaneDrag } from "../../hooks/terminal/usePaneDrag";
 import { useTerminalSocket } from "../../hooks/terminal/useTerminalSocket";
@@ -15,6 +14,8 @@ import { useStartupSizes } from "../../hooks/terminal/useStartupSizes";
 import { TerminalCell } from "./TerminalCell";
 import { StartupSlots } from "./StartupSlots";
 import { TermKeyBar } from "./TermKeyBar";
+import { PanelDivider, type PanelDividerProps } from "./PanelDivider";
+import { PanelToolbar } from "./PanelToolbar";
 import { TERM_KEY_BAR, termKeySequence } from "../../lib/termKeys";
 
 export function TerminalPanel({
@@ -22,12 +23,16 @@ export function TerminalPanel({
   maximized,
   onToggleMaximized,
   className = "",
+  sectionRef,
+  ...divider
 }: {
   repo: string;
   maximized: boolean;
   onToggleMaximized: () => void;
   className?: string;
-}) {
+  /** The panel's own element, the bottom edge of the region the split divides. */
+  sectionRef: React.RefObject<HTMLElement | null>;
+} & PanelDividerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const socketRef = useRef<WebSocket | null>(null);
   const viewsRef = useRef(new Map<number, PaneView>());
@@ -194,36 +199,18 @@ export function TerminalPanel({
   const layout = planLayout(slots, size.w >= size.h);
 
   return (
-    <section className={`flex min-h-0 min-w-0 flex-col border-t border-ink-700 ${className}`}>
-      <div className="flex shrink-0 items-center gap-2 bg-ink-900 px-2 py-1">
-        {!ownsSize && (
-          <button
-            onClick={claimSize}
-            title="These panes are sized for another client. Resize them to fit this screen."
-            aria-label="Fit the panes to this screen"
-            className="ml-auto flex shrink-0 items-center rounded-sm px-1.5 py-0.5 text-ink-400 hover:text-accent"
-          >
-            <FitScreenIcon />
-          </button>
-        )}
-        <button
-          onClick={create}
-          title="New terminal"
-          aria-label="New terminal"
-          className={`flex shrink-0 items-center rounded-sm px-1.5 py-0.5 text-ink-400 hover:text-accent ${ownsSize ? "ml-auto" : ""}`}
-        >
-          <PlusIcon />
-        </button>
-        <button
-          onClick={onToggleMaximized}
-          aria-pressed={maximized}
-          title={maximized ? "Restore panel height" : "Maximize the panel"}
-          aria-label={maximized ? "Restore panel height" : "Maximize the panel"}
-          className="hidden shrink-0 items-center rounded-sm px-1.5 py-0.5 text-ink-400 hover:text-accent md:flex"
-        >
-          <MaximizeIcon maximized={maximized} />
-        </button>
-      </div>
+    <section
+      ref={sectionRef}
+      className={`relative flex min-h-0 min-w-0 flex-col border-t border-ink-700 ${className}`}
+    >
+      <PanelDivider {...divider} />
+      <PanelToolbar
+        ownsSize={ownsSize}
+        maximized={maximized}
+        onClaimSize={claimSize}
+        onCreate={create}
+        onToggleMaximized={onToggleMaximized}
+      />
       <div className="relative min-h-0 flex-1 overflow-hidden bg-ink-950 p-1">
         {panes.length === 0 && pending === null && (
           <p className="p-3 text-ink-400">

@@ -45,6 +45,15 @@ export interface RepoShellProps {
   onSidebarDragMove: (e: ReactPointerEvent) => void;
   onSidebarDragEnd: () => void;
   onSidebarDragCancel: () => void;
+  /** The diff panel and the terminal panel — the two edges of the vertical
+   *  split the divider between them measures against. */
+  upperRef: React.RefObject<HTMLElement | null>;
+  lowerRef: React.RefObject<HTMLElement | null>;
+  draggingUpper: boolean;
+  onUpperDragStart: (e: ReactPointerEvent) => void;
+  onUpperDragMove: (e: ReactPointerEvent) => void;
+  onUpperDragEnd: () => void;
+  onUpperDragCancel: () => void;
   filesMax: boolean;
   bumpPaneRequest: () => void;
   commits: Commit[];
@@ -97,6 +106,13 @@ export function RepoShell(props: RepoShellProps) {
     onSidebarDragMove,
     onSidebarDragEnd,
     onSidebarDragCancel,
+    upperRef,
+    lowerRef,
+    draggingUpper,
+    onUpperDragStart,
+    onUpperDragMove,
+    onUpperDragEnd,
+    onUpperDragCancel,
     filesMax,
     bumpPaneRequest,
     commits,
@@ -129,10 +145,12 @@ export function RepoShell(props: RepoShellProps) {
     <>
       {/* Keep the resize cursor and prevent selection during dragging. */}
       {draggingSidebar && <div className="fixed inset-0 z-50 cursor-col-resize" />}
+      {draggingUpper && <div className="fixed inset-0 z-50 cursor-row-resize" />}
       <main
+        ref={upperRef}
         className={`grid min-h-0 grid-cols-1 md:grid-cols-[var(--nc-sidebar)_1fr] ${
           mobileView === "terminal" ? "hidden md:grid" : ""
-        } ${draggingSidebar ? "select-none" : ""}`}
+        } ${draggingSidebar || draggingUpper ? "select-none" : ""}`}
         style={
           {
             "--nc-sidebar": filesMax
@@ -209,6 +227,16 @@ export function RepoShell(props: RepoShellProps) {
             setMaximized((m) => (m === "terminal" ? "none" : "terminal"))
           }
           className={mobileView === "terminal" ? "flex" : "hidden md:flex"}
+          sectionRef={lowerRef}
+          // Only when both panels are on screen at their stored ratio: a
+          // maximized panel has literal grid tracks the percentage does not
+          // feed, and below `md` one view fills the screen instead.
+          showDivider={maximized === "none"}
+          draggingUpper={draggingUpper}
+          onUpperDragStart={onUpperDragStart}
+          onUpperDragMove={onUpperDragMove}
+          onUpperDragEnd={onUpperDragEnd}
+          onUpperDragCancel={onUpperDragCancel}
         />
       </Suspense>
 

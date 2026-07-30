@@ -9,11 +9,15 @@ export interface UseProjectTabsArgs {
   resumeTick: number;
   adoptAccent: (accent: number) => void;
   adoptSidebarWidth: (px: number) => void;
+  adoptUpperPct: (pct: number) => void;
   accentWrites: React.MutableRefObject<number>;
   sidebarWrites: React.MutableRefObject<number>;
+  upperPctWrites: React.MutableRefObject<number>;
   /** True while the sidebar divider is being dragged, so a poll does not adopt
    *  a width the user is still choosing. */
   draggingRef: React.MutableRefObject<boolean>;
+  /** The same, for the panel-split divider. */
+  upperDraggingRef: React.MutableRefObject<boolean>;
 }
 
 /**
@@ -34,9 +38,12 @@ export function useProjectTabs({
   resumeTick,
   adoptAccent,
   adoptSidebarWidth,
+  adoptUpperPct,
   accentWrites,
   sidebarWrites,
+  upperPctWrites,
   draggingRef,
+  upperDraggingRef,
 }: UseProjectTabsArgs): UseRepoPollResult & {
   orderWrites: React.MutableRefObject<number>;
   draggingRepo: string | null;
@@ -56,9 +63,12 @@ export function useProjectTabs({
     handle,
     adoptAccent,
     adoptSidebarWidth,
+    adoptUpperPct,
     draggingRef,
+    upperDraggingRef,
     accentWrites,
     sidebarWrites,
+    upperPctWrites,
     resumeTick,
     orderWrites,
     repoDraggingRef,

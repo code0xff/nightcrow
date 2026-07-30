@@ -19,9 +19,12 @@ export interface UseRepoPollArgs {
   handle: (err: unknown) => void;
   adoptAccent: (accent: number) => void;
   adoptSidebarWidth: (px: number) => void;
+  adoptUpperPct: (pct: number) => void;
   draggingRef: React.MutableRefObject<boolean>;
+  upperDraggingRef: React.MutableRefObject<boolean>;
   accentWrites: React.MutableRefObject<number>;
   sidebarWrites: React.MutableRefObject<number>;
+  upperPctWrites: React.MutableRefObject<number>;
   resumeTick: number;
   orderWrites: React.MutableRefObject<number>;
   repoDraggingRef: React.MutableRefObject<boolean>;
@@ -47,9 +50,12 @@ export function useRepoPoll({
   handle,
   adoptAccent,
   adoptSidebarWidth,
+  adoptUpperPct,
   draggingRef,
+  upperDraggingRef,
   accentWrites,
   sidebarWrites,
+  upperPctWrites,
   resumeTick,
   orderWrites,
   repoDraggingRef,
@@ -85,6 +91,7 @@ export function useRepoPoll({
     const refresh = () => {
       const writes = accentWrites.current;
       const widthWrites = sidebarWrites.current;
+      const splitWrites = upperPctWrites.current;
       const orderGeneration = orderWrites.current;
       return api
         .repos(controller.signal)
@@ -94,6 +101,7 @@ export function useRepoPoll({
             hot,
             accent,
             sidebar_width,
+            upper_pct,
             active_repo,
             now_ms,
             can_clone,
@@ -105,6 +113,8 @@ export function useRepoPoll({
           if (accentWrites.current === writes) adoptAccent(accent);
           if (sidebarWrites.current === widthWrites && !draggingRef.current)
             adoptSidebarWidth(sidebar_width);
+          if (upperPctWrites.current === splitWrites && !upperDraggingRef.current)
+            adoptUpperPct(upper_pct);
           setAuthed(true);
           setReposLoaded(true);
           const reorderPending =
@@ -161,10 +171,13 @@ export function useRepoPoll({
     handle,
     adoptAccent,
     adoptSidebarWidth,
+    adoptUpperPct,
     resumeTick,
     accentWrites,
     sidebarWrites,
+    upperPctWrites,
     draggingRef,
+    upperDraggingRef,
     orderWrites,
     repoDraggingRef,
     reorderInFlightRef,

@@ -1,13 +1,14 @@
 import { useCallback, useRef } from "react";
 import { useAccent } from "./ui/theme";
 import { useSidebarWidth } from "./ui/sidebar";
+import { useUpperPct } from "./ui/upperPct";
 
 /**
  * The preferences this page owns locally, and the bookkeeping that keeps the
  * repository poll from undoing them.
  *
- * Accent and sidebar width live on the server so every device agrees, and the
- * poll adopts what it reads. But a value the user just changed here is newer
+ * Accent, sidebar width and the panel split live on the server so every device
+ * agrees, and the poll adopts what it reads. But a value the user just changed here is newer
  * than anything a request in flight can carry, so every local write bumps a
  * counter; the poll compares the counter it started with and skips adopting
  * when it moved. Wrapping each setter with its bump is why they are exposed
@@ -23,8 +24,16 @@ export function useViewerPrefs() {
     reset: resetSidebar,
     adopt: adoptSidebarWidth,
   } = useSidebarWidth();
+  const {
+    pct: upperPct,
+    resize: resizeUpperPct,
+    commit: commitUpper,
+    reset: resetUpper,
+    adopt: adoptUpperPct,
+  } = useUpperPct();
   const accentWrites = useRef(0);
   const sidebarWrites = useRef(0);
+  const upperPctWrites = useRef(0);
 
   const cycle = useCallback(() => {
     accentWrites.current += 1;
@@ -45,6 +54,20 @@ export function useViewerPrefs() {
   const bumpSidebarWrites = useCallback(() => {
     sidebarWrites.current += 1;
   }, []);
+  const commitUpperPct = useCallback(
+    (pct: number) => {
+      upperPctWrites.current += 1;
+      commitUpper(pct);
+    },
+    [commitUpper],
+  );
+  const resetUpperPct = useCallback(() => {
+    upperPctWrites.current += 1;
+    resetUpper();
+  }, [resetUpper]);
+  const bumpUpperPctWrites = useCallback(() => {
+    upperPctWrites.current += 1;
+  }, []);
 
   return {
     accent,
@@ -59,5 +82,12 @@ export function useViewerPrefs() {
     bumpSidebarWrites,
     adoptSidebarWidth,
     sidebarWrites,
+    upperPct,
+    resizeUpperPct,
+    commitUpperPct,
+    resetUpperPct,
+    bumpUpperPctWrites,
+    adoptUpperPct,
+    upperPctWrites,
   };
 }

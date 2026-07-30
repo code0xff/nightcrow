@@ -1,11 +1,16 @@
-import { useCallback, useLayoutEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+} from "react";
 import { isUnauthorized } from "../api";
 import { toast } from "../lib/toast";
 import { useHotClock } from "../hooks/ui/useHotClock";
-import { useViewerPrefs } from "../hooks/useViewerPrefs";
+import { useShellLayout } from "../hooks/useShellLayout";
 import { useProjectTabs } from "../hooks/useProjectTabs";
 import { useStatus } from "../hooks/useStatus";
-import { useSidebarDrag } from "../hooks/useSidebarDrag";
 import { usePaneOpeners } from "../hooks/usePaneOpeners";
 import { useLog } from "../hooks/useLog";
 import { useResumeTick } from "../hooks/useResumeTick";
@@ -33,21 +38,7 @@ export function App() {
     paneRequestRef.current += 1;
   }, []);
   const [pickerOpen, setPickerOpen] = useState(false);
-  const {
-    accent,
-    next,
-    cycle,
-    adoptAccent,
-    accentWrites,
-    sidebarWidth,
-    resizeSidebar,
-    commitSidebarWidth,
-    resetSidebarWidth,
-    bumpSidebarWrites,
-    adoptSidebarWidth,
-    sidebarWrites,
-  } = useViewerPrefs();
-  const sidebarRef = useRef<HTMLElement>(null);
+  const { accent, next, cycle, upperPct, shell, guards } = useShellLayout();
   const [previewRendered, setPreviewRendered] = useState(true);
   const handle = useCallback((err: unknown) => {
     if (isUnauthorized(err)) {
@@ -58,21 +49,6 @@ export function App() {
   }, []);
 
   const resumeTick = useResumeTick();
-  const {
-    draggingSidebar,
-    onSidebarDragStart,
-    onSidebarDragMove,
-    onSidebarDragEnd,
-    onSidebarDragCancel,
-    draggingRef,
-  } = useSidebarDrag({
-    sidebarRef,
-    sidebarWidth,
-    resizeSidebar,
-    commitSidebarWidth,
-    resetSidebarWidth,
-    bumpSidebarWrites,
-  });
   const {
     repos,
     setRepos,
@@ -93,11 +69,7 @@ export function App() {
     setAuthed,
     handle,
     resumeTick,
-    adoptAccent,
-    adoptSidebarWidth,
-    accentWrites,
-    sidebarWrites,
-    draggingRef,
+    ...guards,
   });
 
   const hotWindowMs = hot?.enabled ? hot.window_secs * 1000 : 0;
@@ -188,7 +160,17 @@ export function App() {
   const rows = appRows(repo, maximized);
 
   return (
-    <div className={`nc-fade grid h-full ${rows}`}>
+    <div
+      className={`nc-fade grid h-full ${rows}`}
+      style={
+        {
+          // Percentages as `fr` pairs so the two panels divide the space
+          // between them and nothing else has to know the total.
+          "--nc-upper": `${upperPct}fr`,
+          "--nc-lower": `${100 - upperPct}fr`,
+        } as CSSProperties
+      }
+    >
       <Header
         repos={repos}
         repo={repo}
@@ -234,13 +216,7 @@ export function App() {
           openCommitFiles={openCommitFiles}
           authed={authed}
           handle={handle}
-          sidebarWidth={sidebarWidth}
-          sidebarRef={sidebarRef}
-          draggingSidebar={draggingSidebar}
-          onSidebarDragStart={onSidebarDragStart}
-          onSidebarDragMove={onSidebarDragMove}
-          onSidebarDragEnd={onSidebarDragEnd}
-          onSidebarDragCancel={onSidebarDragCancel}
+          {...shell}
           filesMax={filesMax}
           bumpPaneRequest={bumpPaneRequest}
           commits={commits}
