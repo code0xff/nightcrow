@@ -47,3 +47,5 @@
 # Vitest run from the repo root drops a cache here
 /node_modules/
 /viewer-ui/tsconfig.tsbuildinfo
+# Agent tool scratch state
+/.atl/
