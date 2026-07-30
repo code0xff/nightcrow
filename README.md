@@ -316,10 +316,12 @@ The two halves have two owners. The session writes which repositories are open a
 nightcrow itself knows nothing about the CLIs you run in its panes — an agent
 and a person get the same PTY. Behaviour that *does* need to know a particular
 tool lives in a plugin: a separate executable that nightcrow launches and talks
-to over a pipe. Plugins are off unless you turn one on, and one can only ever
-see a pane you handed it by name.
+to over a pipe. Plugins are off unless you turn one on, and one only ever sees a
+pane you handed it by name — or, if you also set `watch_on_signal`, a pane that
+something running inside it spoke to the plugin from. A plugin is never given a
+list of your panes either way.
 
-The bundled plugin is `nightcrow-recovery`. When an opted-in pane's CLI hits its
+The bundled plugin is `nightcrow-recovery`. When a watched pane's CLI hits its
 usage limit, it waits for the reset time the provider reported and then re-opens
 that exact session. It only waits — it does not bypass, raise, or work around
 any provider limit, and it sends nothing while a limit is in effect. Claude
@@ -354,18 +356,33 @@ allowed_resume_flags = ["--resume", "resume", "--session"]
 [[startup_command]]
 name = "Claude"
 command = "claude"
-plugin = "recovery"      # without this line, no plugin ever sees this pane
+plugin = "recovery"      # without this line, no plugin sees this pane unless
+                         # watch_on_signal is set (see below)
 ```
+
+That covers the panes you configured. For the pane you did not — you opened a
+shell with `<prefix> t` and typed `claude` into it yourself — add
+`watch_on_signal = true` to the `[[plugin]]` block. nightcrow puts a random token
+in each pane's environment and nowhere else, so the CLI's own hook can quote it
+back and the plugin can ask for "the pane this token names"; a plain shell never
+speaks to a plugin, so your shells stay untouched. It is off by default. Such a
+pane can be waited for and typed into but never relaunched — nightcrow launched
+no command in it, so there is nothing to put back.
 
 For Claude Code, let the plugin install its hook and statusline entries so it
 can read the exact session id and reset time instead of guessing from what is
-printed on screen. It merges into your existing `~/.claude/settings.json` and
-backs it up first:
+printed on screen. With a reset time it waits exactly once; without one it falls
+back to retrying on a backoff, which can give up. It merges into your existing
+`~/.claude/settings.json` and backs it up first:
 
 ```bash
 nightcrow-recovery install-hooks
 nightcrow-recovery uninstall-hooks    # removes only what it added
 ```
+
+Claude Code's `statusLine` holds one command, so installing does replace yours —
+but it is then run from the plugin's own statusline with the same input, and what
+it prints is what you see. `uninstall-hooks` puts it back.
 
 A pane that is waiting shows its state and deadline on its tab. Cancel it with
 `<prefix>` then the recovery key (see [Leader commands](#leader-commands-press-prefix-then-the-key)),
@@ -609,19 +626,25 @@ live_watch = true         # watch expanded dirs and refresh the tree live; set f
 name = "Claude"           # optional tab label; falls back to the command text
 command = "claude"        # required; must not be empty
 plugin = "recovery"       # optional; names the [[plugin]] allowed to act on this
-                          # pane. Omitted — the default — means no plugin ever
-                          # sees it.
+                          # pane. Omitted — the default — means no plugin sees
+                          # it unless that plugin sets watch_on_signal.
 
 [[startup_command]]
 command = "cargo test --watch"
 
 # External plugin processes — see "Plugins" above. Up to 8 entries, names unique.
-# Nothing runs unless an entry exists AND enabled = true AND a pane opted in.
+# Nothing runs unless an entry exists AND enabled = true AND either a pane opted
+# in or watch_on_signal is set.
 [[plugin]]
 name = "recovery"                 # the name panes opt in with
 command = "nightcrow-recovery"    # found on PATH or in ~/.nightcrow/plugins
 args = []                         # passed to the plugin verbatim
 enabled = false                   # off by default
+watch_on_signal = false           # off by default; when true, a pane no
+                                  # [[startup_command]] named is also handed over
+                                  # once something inside it quotes that pane's
+                                  # token to this plugin. Such a pane is never
+                                  # relaunched, only typed into while it lives.
 allowed_resume_flags = []         # flags the plugin may append to re-open a
                                   # session; empty refuses every relaunch
 

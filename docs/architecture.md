@@ -169,6 +169,7 @@ src/
 │   ├── host_pump.rs      # stdin/stdout/stderr pump threads + capped line reader
 │   ├── guard.rs          # the trust boundary: PluginCommand -> Approved | Refused
 │   ├── guard_budget.rs   # per-slot rate ceilings, keyed by PaneToken
+│   ├── guard_watch.rs    # the one rule that can widen what a plugin sees
 │   └── registry.rs       # ~/.nightcrow/plugins: install / list / remove
 ├── git/
 │   ├── mod.rs
@@ -739,19 +740,116 @@ OpenCode를 아는 코드는 `plugins/nightcrow-recovery`에 산다. 코어 `src
   버전이 어긋나는 순간 UB다. cargo feature 게이트는 재컴파일을 요구하므로 "설치·제거 가능"이
   아니다. 남는 것은 프로세스 경계이고, 그 편이 신뢰 모델도 정직하다 — plugin은 우리 주소 공간에
   없다. 프레이밍은 stdin/stdout의 개행 구분 JSON이고 버전(`v`)이 맞지 않는 줄은 거부한다.
-- **opt-in이 곧 도달 범위**: plugin은 `[[startup_command]]`이 `plugin = "이름"`으로 지목한 pane만
-  본다. 클라이언트가 직접 연 pane에는 연결이 생기지 않는다 — 임의의 셸 pane이 자동으로 감지되고
-  조작되는 일은 구조적으로 불가능하다. `[[plugin]]`은 `enabled = false`가 기본이다.
+- **도달 범위의 기본은 opt-in, 확장은 증거로만**: plugin은 `[[startup_command]]`이
+  `plugin = "이름"`으로 지목한 pane을 본다. 여기에 `[[plugin]]`의 `watch_on_signal`(기본
+  `false`)을 켜면 두 번째 경로가 열린다 — **pane 자신의 토큰을 제시한 요청**, 즉
+  `PluginCommand::WatchPane { token }`이다. 토큰은 spawn 시각에 그 pane의 자식 환경에만 들어가고
+  (`pty_spawn.rs`, 명령 없이 연 pane도 예외 없이) 자식들이 상속하므로, 토큰을 말할 수 있는 것은
+  그 pane 안에서 도는 프로세스뿐이다. 근거가 열거가 아니라 증명이라는 것이 핵심이다: plugin에게
+  pane 목록을 주는 경로는 여전히 없고, 맨 셸은 어떤 provider helper도 띄우지 않으므로 영원히
+  채택되지 않는다. "임의의 셸 pane이 자동으로 조작되는 일은 없다"는 성질은 pane을 숨기는 것이
+  아니라 이 증명 요구로 유지된다. `[[plugin]]`은 `enabled = false`가 기본이다.
+- **왜 그 확장이 필요했나**: 실제로 압도적으로 흔한 사용은 `<leader> t`로 셸을 열고 `claude`를
+  손으로 치는 것이다. 그 pane은 `create_pane_with(None, None)`으로 열려 launch command가 없고,
+  `detect(None)`은 어떤 provider도 붙이지 못한다 — 그래서 이 경우 recovery는 **아무것도** 하지
+  않았다. `WatchPane`은 그 구멍만 메운다. `PROTOCOL_VERSION`은 그래서 2가 되었고, 이 명령은
+  `generation`을 싣지 않는다: 들어본 적 없는 pane에 대해 어느 spawn인지 정직하게 주장할 수
+  없으므로, 답으로 오는 `PaneOpened`가 그것을 말한다. `Plugins::start`도 그래서 조건이 둘이다 —
+  enabled이고 **(opt-in됐거나 `watch_on_signal`이거나)**. 후자의 pane은 앞으로 말을 걸어올
+  pane이므로 host가 그보다 먼저 떠 있어야 하고, 오지 않을 opt-in을 기다리면 스위치가 아무 뜻도
+  갖지 못한다.
+- **요청은 plugin 쪽에서 먼저 줄인다**(`runloop_adopt.rs`): 거부는 응답이 없는 것과 구별되지
+  않으므로, 답을 못 받은 요청이 타이트 루프가 되거나 낯선 토큰마다 상태를 남기면 안 된다.
+  미해결 요청은 `MAX_PENDING`개까지만 들고(초과분은 새 것을 버려 실패를 닫힌 방향으로 낸다),
+  같은 토큰은 `REQUEST_COOLDOWN` 동안 다시 묻지 않는다 — Claude Code의 statusline은 매 렌더마다
+  돌기 때문에, 이것이 없으면 남의 pane 하나가 초당 몇 번씩 명령을 써서 host의 tick당 예산을
+  정작 필요한 요청과 함께 태운다. 그리고 요청을 정당화한 **신호는 버리지 않고 들고 있다가
+  `PaneOpened` 뒤에 재생한다**: 신호가 pane보다 먼저 도착하고(그 신호가 pane이 도착한 이유다)
+  host는 새로 넘긴 pane에 어떤 history도 재생해 주지 않으므로, 버리면 지금 복구해야 할 그 한도가
+  사라져 provider가 다시 실패할 때까지 pane이 방치된다. 이때 provider는 명령줄이 아니라
+  `detect_from_signal`이 고른다 — `SignalKind`는 정확히 한 adapter의 helper만 발행하므로 신호
+  종류 자체가 무엇이 돌고 있는지에 대한 증거이고, 그래서 두 번째 sniffing 경로가 아니라 wire
+  kind에 대한 lookup이다.
+- **늦게 채택된 pane은 relaunch되지 않는다**: launch command가 `None`이므로 프로세스를 되돌려
+  놓으면 provider가 아니라 셸이 다시 뜬다. guard는 이것을 `Refused::NoLaunchCommand`로 —
+  인자 문제와 구별되는 자기 이유로 — 거부하고, `allowed_resume_flags`를 어떻게 열어도 통과하지
+  않는다. hub도 같은 판단을 한다: watched pane이 종료했을 때 `is_relaunchable`이 거짓이면
+  `PENDING_RELAUNCH_TTL` 동안 slot을 붙잡는 대신 곧바로 닫는 경로를 탄다 — 되돌릴 것이 없는
+  slot을 9일 붙잡을 이유가 없다. 이런 pane이 받을 수 있는 recovery는 살아 있는 프로세스에
+  타이핑하는 것 하나뿐이고, plugin 쪽도 같은 결론을 미리 내려 `NeedsAttention`으로 간다
+  (`state_resume.rs`).
 - **신뢰 경계는 `guard.rs` 하나다**: `protocol::decode_command`는 모양과 크기만 본다. 권한은
   `Guard::judge`만 판단하고, plugin이 우회할 경로가 없다. 규칙: pane이 존재하고 opt-in했는가,
   `generation`이 현재와 같은가(이것이 교체된 프로세스에 대한 결정이 후임에게 닿는 것을 막는다),
-  살아 있고 조용할 때만 입력을 넣는가, 죽었을 때만 relaunch하는가, 제어문자가 섞이지 않았는가,
-  slot당 횟수 상한 안인가. 거부는 로그로 남고 재시도되지 않는다.
+  살아 있고 조용할 때만 입력을 넣는가, 죽었을 때만 relaunch하는가, 되돌릴 명령이 있는가,
+  제어문자가 섞이지 않았는가, slot당 횟수 상한 안인가. 거부는 로그로 남고 재시도되지 않는다.
+- **pane을 얻는 규칙만 따로 산다**(`guard_watch.rs`): 나머지 규칙이 모두 "이미 배정된 pane"에서
+  출발하는 데 반해 이것은 배정 자체를 만드는 유일한 자리라, 큰 판단 안의 분기가 아니라 조건
+  목록 하나로 읽히게 분리했다. 순서대로 — 토큰이 아는 pane인가, `watch_on_signal`이 켜졌는가,
+  다른 plugin이 이미 보고 있지 않은가(pane 하나에 watcher 하나. 둘이 같은 키보드를 몰면 서로가
+  바꾸는 상태 위에서 recovery가 섞인다), 프로세스가 살아 있는가. 예산은 청구하지 않는다 —
+  pane을 받는 것은 pane에 하는 일이 아니고, 이어질 행위는 각각 청구되므로 여기서 세면 곧 쓸
+  allowance를 미리 태우게 된다. 이미 자기 것인 pane을 다시 물으면 **거부가 아니라 승인**이다:
+  명령줄로는 안에 있는 것을 알아볼 수 없었던 opt-in pane이 다시 시도할 유일한 방법이
+  `PaneOpened`를 한 번 더 받는 것이기 때문이다. 알 수 없는 토큰이 압도적 다수라는 것도 이
+  설계의 전제다 — 같은 사용자의 다른 nightcrow 세션 pane들이 같은 소켓에 닿는다.
 - **`PaneToken`이 정체성인 이유**: `PaneId`는 backend별 카운터라 backend가 다시 만들어지면 1로
   돌아간다. 프로세스 밖에서 pane을 가리키기에 부적합하고, cwd도 답이 못 된다 — 한 저장소에
   여러 pane을 두는 것이 지원되는 레이아웃이다. 그래서 난수 토큰을 spawn 시각에 자식 환경
   (`NIGHTCROW_PANE_TOKEN`)으로 넣는다. provider가 띄우는 hook/statusline 자식들이 이를 상속하므로,
   plugin은 어떤 pane에서 온 사건인지 추측 없이 안다.
+- **provider의 설정 파일은 병합만 한다**(`hooks.rs` / `hooks_merge.rs`): `~/.claude/settings.json`은
+  사용자 것이고 우리가 모르는 키와 hook event를 담고 있을 수 있으므로, 모든 수정은 우리가 넣지
+  않은 것을 보존하는 병합이고, 파일을 이해할 수 없으면(JSON이 아니거나 top-level이 object가
+  아니면) 추측하는 대신 멈춘다. 쓰기는 같은 디렉터리의 temp file → rename이고 모드 `0600`은
+  rename 전에 건다(대상이 잠깐이라도 world-readable이 되지 않도록), 첫 쓰기 전에 `.bak`을
+  남긴다. 등록하는 hook event는 정확히 하나다 — `HOOK_EVENT = "StopFailure"`,
+  `HOOK_MATCHER = "rate_limit"` 아래
+  `{"type":"command","command":"<exe> hook","timeout":5}`. 최소 권한이라서 그렇다:
+  `authentication_failed`·`billing_error` 같은 무관한 실패의 payload는 이 프로세스에 아예
+  도달하지 않고, 그 대가로 일시적 `overloaded`/`server_error`는 pane 출력에서 알아본다.
+  `statusLine`도 같은 자리에서 등록한다. 우리 엔트리를 알아보는 표시는 `command` 문자열에
+  `MARKER`가 들어 있는지 하나뿐이다 — provider의 스키마에서 자유 텍스트를 넣을 수 있는 필드가
+  거기뿐이고, 우리 마음대로 만든 키는 provider가 unknown으로 거부하거나 경고할 수 있다. 그래서
+  install은 `current_exe()`로 해석한 절대 경로가 `MARKER`를 담지 않으면 **거부한다**: 나중에
+  uninstall이 자기 엔트리를 알아볼 수 없게 되기 때문이다. 경로를 `argv[0]`이 아니라 해석해서
+  쓰는 이유는 그 파일을 읽는 것이 작업 디렉터리가 다른 다른 프로세스라는 것이다.
+- **helper는 provider의 임계 경로에 있으므로 최소한만 한다**(`helper.rs`): 등록되는 명령은 이
+  plugin의 바이너리를 내부 서브커맨드로 다시 부르는 것(`main.rs`의 `Mode::Hook` /
+  `Mode::Statusline`)이다. `hook()`은 stdin을 상한까지만 읽고
+  `["session_id","error_type","hook_event_name"]`만 통과시킨다 — whitelisting이 프라이버시
+  경계다. `StopFailure` payload는 transcript 파일 경로와 provider의 에러 산문을 담으므로,
+  상태 기계가 실제로 읽는 필드만 소켓을 건넌다. pane은 `NIGHTCROW_PANE_TOKEN`에서 읽고, 한 줄을
+  unix socket으로 보내고 끝난다. 어느 실패도 호출자에게 보고하지 않는다 — 돌지 않는 recovery
+  plugin은 설치되지 않은 것과 정확히 같아 보여야 한다.
+- **IPC 랑데부는 경로 규칙 하나다**(`ipc.rs`): `$XDG_RUNTIME_DIR/nightcrow/recovery.sock`,
+  없으면 `~/.nightcrow/run/recovery.sock`. 디렉터리는 `0700`, 소켓은 `0600`이고 bind마다 다시
+  건다. 남아 있는 소켓 파일은 **아무도 듣고 있지 않을 때만** unlink한다(살아 있는 listener를
+  가로채지 않기 위해). `parse_line`은 줄 크기, JSON object 여부, `v` 일치, 토큰의 문자 집합과
+  길이, 아는 `kind`, object payload를 모두 검사하고 실패마다 무엇이 틀렸는지 말한다 —
+  여기가 untrusted input이 상태가 되는 경계이므로 조용히 강제 변환하는 필드가 곧 버그다.
+  **토큰은 correlation key이고 authorisation이 아니다**: 소켓에 닿을 수 있는 것은 아무 pane이나
+  주장할 수 있고, 위조된 메시지가 할 수 있는 최대는 이 plugin이 host에게 무언가를 묻게 만드는
+  것이며 그것은 guard가 처음부터 다시 판단한다.
+- **statusline은 가로채지 않고 이어붙인다**(`helper_statusline.rs` / `helper_delegate.rs`):
+  `statusLine`은 목록이 아니라 명령 하나라 install은 사용자 것을 반드시 밀어낸다. 예전에는
+  거기서 끝나 사용자가 자기 statusline을 잃었다. 지금은 `helper::statusline()`이 pass-through다 —
+  stdin 바이트를 **그대로** 보관하고, 사본만 파싱해 `rate_limits`를 IPC로 넘기고, install이
+  sidecar에 기록해 둔 밀려난 명령을 그 원본 바이트를 stdin으로 주어 실행한 뒤 그 stdout을
+  출력한다. 재직렬화하지 않는 이유는 키 순서와 숫자 표기가 provider의 것이고, 우리가 생기기
+  전부터 그 입력을 읽던 명령이 재배열된 것을 보면 안 되기 때문이다. 실행은 `sh -c`로 한다 —
+  Claude Code가 `statusLine` 명령은 셸에서 돈다고 문서화하고 자기 예시가 `~`, `jq` 파이프,
+  인라인 `$(...)`에 의존하므로 우리가 argv로 쪼개면 사용자가 쓴 뜻이 조용히 바뀐다. `$SHELL`이
+  아니라 `sh`인 것은 대화형 셸이면 refresh마다 rc 파일을 읽기 때문이다. 예산은 2초이고 넘기면
+  죽이고 우리 줄로 떨어진다 — provider는 statusline에 timeout을 문서화하지 않았지만 300ms로
+  debounce하고 다음 갱신이 오면 진행 중 스크립트를 취소하므로, 이 상한은 반대 방향(끝나지 않는
+  명령이 이 프로세스를 불멸로 만들지 않게)을 위한 것이다. stderr는 버린다(로그용 경고가
+  statusline으로 렌더링되면 안 된다). sidecar에 든 것이 우리 자신의 바이너리면 다시 실행하지
+  않는다(install/uninstall이 쓰는 `is_ours`를 그대로 재사용하므로, 거부되는 것이 그 둘이 자기
+  것으로 아는 것과 정확히 같다). 모든 실패 경로는 plugin 자신의 줄로 격하된다 — 에러를 띄우는
+  statusline은 평범한 statusline보다 나쁘다. 비자명한 함정 하나: 밀어낼 `statusLine`이 애초에
+  없었으면 `merge_into`가 `Some(Value::Null)`을 돌려주므로 **sidecar가 `null`을 담을 수 있다**.
+  없음(sidecar 없음/읽기 실패)만이 빈 경우가 아니고, `null`도 "실행할 것이 없다"로 읽어야 한다.
 - **횟수 상한은 slot(토큰) 기준으로 센다**: relaunch는 반드시 새 `PaneId`를 만든다. 상한을 id로
   세면 relaunch마다 예산이 새로 생겨서, 즉시 끝나는 명령과 매 종료마다 relaunch하는 plugin이
   만나면 상한에 영원히 닿지 않는다. 토큰은 relaunch를 건너 살아남는 유일한 값이라 상한이
@@ -772,6 +870,17 @@ OpenCode를 아는 코드는 `plugins/nightcrow-recovery`에 산다. 코어 `src
   걸친 escape는 완전히 제거되지 않는다. 이것이 허용되는 이유는 출력 텍스트가 언제나 fallback
   신호일 뿐이라는 것이다 — Claude는 hook과 statusline, Codex는 rollout JSONL, OpenCode는 로컬
   서버의 세션 상태가 1차 신호다.
+- **신호의 역할은 분리돼 있고, 이것이 하중을 받는 사실이다**(`provider/claude.rs`): 한도를
+  **선언**할 수 있는 것은 `StopFailure`(`on_stop_failure`)와 출력 fallback뿐이다. statusline은
+  정확한 reset epoch만 공급하고 결코 선언하지 않는다 — `on_rate_limits`는 `resets_at`만 기억하고
+  `used_percentage`는 100이어도 의도적으로 무시한다(꽉 찬 창은 한도를 뒷받침하지만 선언하지는
+  않는다). 여러 창이 보고되면 가장 이른 것이 유용한 deadline이다. 이 분리의 결과가
+  `state_clock.rs`의 `arm_wait`에서 갈린다: `LimitKind::UsageLimit`이고 `resets_at`이 알려져
+  있으면 `WaitingForReset`으로 **정확히 한 번** 기다리고 resume attempt를 쓰지 않는다(아직 아무
+  것도 시도하지 않았으므로). 모르면 `arm_backoff`로 떨어지고, 그쪽은 attempt 예산에 묶인
+  재시도 루프라 `MAX_RESUME_ATTEMPTS`에 닿으면 `NeedsAttention`으로 끝난다. 그래서 hook과
+  statusline을 둘 다 설치하는 것의 실질적 이득은 "감지"가 아니라 **기다림이 정확해지고 예산을
+  쓰지 않는다**는 것이다.
 - **OpenCode에는 개입하지 않는다**: 자체 재시도가 상한 없이 계속되므로 "재시도 소진"을 기다리는
   설계가 성립하지 않는다. 프로세스가 끝났거나 상태가 `idle`로 바뀐 뒤에만 손을 댄다.
 - **와이어 계약이 두 벌 있다**: plugin은 독립 빌드라 `plugins/nightcrow-recovery`가 프로토콜
