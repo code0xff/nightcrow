@@ -19,6 +19,7 @@ fn startup(command: &str) -> StartupCommand {
     StartupCommand {
         name: None,
         command: command.to_string(),
+        plugin: None,
     }
 }
 
@@ -27,7 +28,10 @@ fn a_startup_terminal_is_offered_for_sizing_and_born_at_that_size() {
     // The whole point of the handshake: the child must never draw a frame at a
     // size no client chose, so the PTY does not exist until one has measured.
     let dir = tempfile::TempDir::new().unwrap();
-    let hub = TerminalHub::spawn(&dir.path().to_string_lossy(), vec![startup("printf hello")]);
+    let hub = TerminalHub::spawn(
+        &dir.path().to_string_lossy(),
+        vec![startup("printf hello")],
+    );
     let session = hub.connect();
 
     assert_eq!(
@@ -239,6 +243,7 @@ fn a_configured_startup_terminal_is_announced_under_its_name() {
         vec![StartupCommand {
             name: Some("Claude".into()),
             command: "sleep 30".into(),
+            plugin: None,
         }],
     );
     let session = hub.connect();
@@ -261,7 +266,10 @@ fn a_configured_startup_terminal_is_announced_under_its_name() {
 fn an_unnamed_startup_terminal_falls_back_to_its_command() {
     // What the operator wrote is what they would recognise it by.
     let dir = tempfile::TempDir::new().unwrap();
-    let hub = TerminalHub::spawn(&dir.path().to_string_lossy(), vec![startup("printf hello")]);
+    let hub = TerminalHub::spawn(
+        &dir.path().to_string_lossy(),
+        vec![startup("printf hello")],
+    );
     let session = hub.connect();
     session.dispatch(ClientMessage::Start {
         sizes: vec![PaneSize { rows: 24, cols: 80 }],

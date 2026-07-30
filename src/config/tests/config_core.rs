@@ -81,6 +81,7 @@ fn startup_command_validation_rejects_empty_command() {
     cfg.startup_commands.push(StartupCommand {
         name: Some("blank".into()),
         command: "   ".into(),
+        plugin: None,
     });
     assert!(validate_config(&cfg).is_err());
 }
@@ -92,6 +93,7 @@ fn startup_command_validation_rejects_too_many() {
         cfg.startup_commands.push(StartupCommand {
             name: None,
             command: format!("echo {i}"),
+            plugin: None,
         });
     }
     assert!(validate_config(&cfg).is_err());
@@ -104,6 +106,7 @@ fn startup_command_validation_accepts_max() {
         cfg.startup_commands.push(StartupCommand {
             name: None,
             command: format!("echo {i}"),
+            plugin: None,
         });
     }
     assert!(validate_config(&cfg).is_ok());

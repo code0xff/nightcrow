@@ -168,4 +168,8 @@ pub struct StartupCommand {
     pub name: Option<String>,
     /// Shell command run in the pane immediately on launch.
     pub command: String,
+    /// Name of the `[[plugin]]` that may act on this pane. `None` — the default —
+    /// means no plugin ever receives this pane's events or can act on it.
+    #[serde(default)]
+    pub plugin: Option<String>,
 }
