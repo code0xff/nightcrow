@@ -1,3 +1,9 @@
+# The root package is also the workspace root: `plugins/*` are separate builds
+# that speak the plugin protocol over a pipe, never link against nightcrow, and
+# are excluded from the published crate.
+[workspace]
+members = [".", "plugins/nightcrow-recovery"]
+
 [package]
 name = "nightcrow"
 version = "0.1.0"
@@ -21,6 +27,7 @@ exclude = [
     "viewer-ui/package-lock.json",
     "viewer-ui/tsconfig.json",
     "viewer-ui/vite.config.ts",
+    "plugins",
     ".claude",
     ".github",
     ".githooks",

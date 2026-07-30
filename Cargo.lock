@@ -1266,6 +1266,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "nightcrow-recovery"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "serde",
+ "serde_json",
+ "tempfile",
+]
+
+[[package]]
 name = "nix"
 version = "0.28.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
