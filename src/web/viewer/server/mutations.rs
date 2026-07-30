@@ -3,6 +3,7 @@ use super::http_util::{json_error, json_response};
 use crate::web::common::http::RequestHead;
 use crate::web::viewer::catalog::RepoEntry;
 use crate::web::viewer::dto::Envelope;
+use crate::web::viewer::prefs::PrefsUpdate;
 use crate::web::viewer::session;
 use anyhow::Result;
 use std::sync::Arc;
@@ -64,9 +65,11 @@ pub(super) fn handle_set_prefs(body: &str, state: &ViewerState) -> Vec<u8> {
     };
     // One locked write for whatever the body carried, so a request naming
     // several preferences lands atomically rather than as racing updates.
-    let stored = state
-        .prefs
-        .update(request.accent, request.sidebar_width, active_path);
+    let stored = state.prefs.update(PrefsUpdate {
+        accent: request.accent,
+        sidebar_width: request.sidebar_width,
+        active_repo: active_path,
+    });
     match serde_json::to_string(&Envelope::new(serde_json::json!({
         "accent": stored.accent,
         "sidebar_width": stored.sidebar_width,

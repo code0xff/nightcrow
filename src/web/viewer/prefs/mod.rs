@@ -147,20 +147,15 @@ impl PrefsStore {
     /// still yields a usable split. `active_repo` is taken as given — the
     /// caller resolved it from a live repository, so there is no range to fold
     /// it into.
-    pub fn update(
-        &self,
-        accent: Option<usize>,
-        sidebar_width: Option<u32>,
-        active_repo: Option<String>,
-    ) -> ViewerPrefs {
+    pub fn update(&self, change: PrefsUpdate) -> ViewerPrefs {
         self.mutate(|state| {
-            if let Some(accent) = accent {
+            if let Some(accent) = change.accent {
                 state.accent = accent % Accent::ALL.len();
             }
-            if let Some(width) = sidebar_width {
+            if let Some(width) = change.sidebar_width {
                 state.sidebar_width = width.clamp(MIN_SIDEBAR_WIDTH, MAX_SIDEBAR_WIDTH);
             }
-            if let Some(path) = active_repo {
+            if let Some(path) = change.active_repo {
                 state.active_repo = Some(path);
             }
         })
@@ -169,12 +164,18 @@ impl PrefsStore {
     /// Store `accent` alone. Thin wrapper over [`update`] so the clamping lives
     /// in one place.
     pub fn set_accent(&self, accent: usize) -> ViewerPrefs {
-        self.update(Some(accent), None, None)
+        self.update(PrefsUpdate {
+            accent: Some(accent),
+            ..PrefsUpdate::default()
+        })
     }
 
     /// Store the sidebar width alone. Thin wrapper over [`update`].
     pub fn set_sidebar_width(&self, width: u32) -> ViewerPrefs {
-        self.update(None, Some(width), None)
+        self.update(PrefsUpdate {
+            sidebar_width: Some(width),
+            ..PrefsUpdate::default()
+        })
     }
 
     /// Store the active project's absolute path alone. Thin wrapper over
@@ -182,8 +183,21 @@ impl PrefsStore {
     /// project leaves no path worth recording, and keeping the old one means it
     /// is still the selection when that project is opened again.
     pub fn set_active_repo(&self, path: String) -> ViewerPrefs {
-        self.update(None, None, Some(path))
+        self.update(PrefsUpdate {
+            active_repo: Some(path),
+            ..PrefsUpdate::default()
+        })
     }
+}
+
+/// The preferences a single write may carry, each `None` when the request left
+/// it alone. A struct rather than positional arguments because several fields
+/// share a type — two adjacent `Option<u32>` at a call site would swap silently.
+#[derive(Debug, Clone, Default)]
+pub struct PrefsUpdate {
+    pub accent: Option<usize>,
+    pub sidebar_width: Option<u32>,
+    pub active_repo: Option<String>,
 }
 
 /// Defaults with the accent a config seed asks for. Wrapped into the cycle here

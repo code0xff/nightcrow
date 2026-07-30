@@ -132,7 +132,11 @@ fn selecting_a_project_leaves_the_other_preferences_as_they_were() {
     // project must not reset the look the user chose earlier.
     let dir = tempfile::TempDir::new().unwrap();
     let store = PrefsStore::at(dir.path().join("viewer.json"));
-    store.update(Some(3), Some(500), None);
+    store.update(PrefsUpdate {
+        accent: Some(3),
+        sidebar_width: Some(500),
+        ..PrefsUpdate::default()
+    });
 
     let stored = store.set_active_repo("/w/api".to_string());
 
