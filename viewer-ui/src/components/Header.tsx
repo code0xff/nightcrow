@@ -1,6 +1,6 @@
 import { Mark } from "./Mark";
 import { ProjectMenu } from "./ProjectMenu";
-import { PlusIcon, XIcon } from "./icons";
+import { LogOutIcon, PlusIcon, XIcon } from "./icons";
 import type { Repo } from "../api";
 
 export interface HeaderProps {
@@ -135,8 +135,13 @@ export function Header({
           className="h-3 w-3 rounded-full bg-accent ring-1 ring-ink-600"
         />
       </button>
-      <a href="/logout" className="pl-2 text-ink-400 hover:text-ink-200">
-        sign out
+      <a
+        href="/logout"
+        title="Sign out"
+        aria-label="sign out"
+        className="ml-1 flex h-6 w-6 shrink-0 items-center justify-center rounded-sm text-ink-400 hover:bg-ink-700 hover:text-ink-200"
+      >
+        <LogOutIcon className="h-3.5 w-3.5" />
       </a>
     </header>
   );
