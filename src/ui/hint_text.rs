@@ -33,6 +33,14 @@ pub(crate) fn prefix_armed_hint_text(app: &App) -> String {
     } else {
         ""
     };
+    // Only while a plugin actually has a recovery pending, which is rare — an
+    // always-present hint for it would spend a scarce row on a key that is
+    // usually inert.
+    let cancel = if app.can_cancel_recovery() {
+        "c: cancel recovery | "
+    } else {
+        ""
+    };
     // The view toggles name their destination from the current mode.
     let (log_toggle, tree_toggle) = match app.mode {
         ViewMode::Log => ("l: status view", "b: tree view"),
@@ -43,7 +51,7 @@ pub(crate) fn prefix_armed_hint_text(app: &App) -> String {
     // reports why on the notice row, so the key always produces a visible
     // result.
     format!(
-        " t: new pane | {close}{swap}{resize}{log_toggle} | {tree_toggle} | f: fullscreen | o: open project | x: close project | p: theme | r: redraw | q: detach | {digits} | esc: cancel"
+        " t: new pane | {close}{swap}{resize}{cancel}{log_toggle} | {tree_toggle} | f: fullscreen | o: open project | x: close project | p: theme | r: redraw | q: detach | {digits} | esc: cancel"
     )
 }
 

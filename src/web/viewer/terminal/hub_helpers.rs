@@ -58,6 +58,12 @@ pub enum Command {
     Reorder {
         order: Vec<PaneId>,
     },
+    /// Abandon a pane's pending relaunch. On the worker queue because carrying it
+    /// out needs the backend and the plugin bookkeeping, both of which are
+    /// worker-local.
+    CancelRecovery {
+        pane: PaneId,
+    },
 }
 
 /// One startup terminal: the command to run, at the size a client measured, under
@@ -66,6 +72,11 @@ pub struct StartupPane {
     pub(super) size: crate::web::viewer::terminal::frame::PaneSize,
     pub(super) command: Option<String>,
     pub(super) title: Option<String>,
+    /// The `[[plugin]]` this pane's configuration handed it to, if any. Carried
+    /// only as far as the worker, which records it in a map of its own — it is
+    /// deliberately absent from [`PaneState`] and from every `ServerMessage`, so
+    /// no client learns which panes a plugin can act on.
+    pub(super) plugin: Option<String>,
 }
 
 /// A live terminal and the recent raw bytes it has produced, kept so a client

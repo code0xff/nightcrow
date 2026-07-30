@@ -6,6 +6,7 @@
 
 use super::TerminalHub;
 use super::hub_helpers::StartupPane;
+use super::hub_plugins::Plugins;
 use crate::backend::PtyBackend;
 
 /// How a startup pane is named back to the client when it could not be opened.
@@ -27,6 +28,7 @@ impl TerminalHub {
     pub(super) fn open_startup_panes(
         &self,
         backend: &mut PtyBackend,
+        plugins: &mut Plugins,
         panes: Vec<StartupPane>,
         client: u64,
         reserved: usize,
@@ -66,7 +68,23 @@ impl TerminalHub {
                 // first, so they must not pull that client's
                 // focus onto them.
                 Ok(id) => {
-                    self.register_pane(id, pane.size.rows, pane.size.cols, None, pane.title.clone())
+                    self.register_pane(
+                        id,
+                        pane.size.rows,
+                        pane.size.cols,
+                        None,
+                        pane.title.clone(),
+                    );
+                    // Only here, and only from the pane's own configuration:
+                    // this is the single place a pane ever becomes visible to a
+                    // plugin. `adopt` refuses when the named plugin has no live
+                    // host, so a pane whose plugin failed to launch stays an
+                    // ordinary terminal.
+                    if let Some(name) = pane.plugin.as_deref()
+                        && plugins.adopt(id, name)
+                    {
+                        plugins.pane_opened(backend, id, pane.title.as_deref());
+                    }
                 }
                 Err(err) => {
                     tracing::warn!(%err, "viewer: could not start a terminal");

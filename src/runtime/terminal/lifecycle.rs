@@ -62,6 +62,13 @@ impl TerminalState {
                     }
                 }
                 BackendEvent::Reordered { order } => self.apply_order(&order),
+                BackendEvent::Recovery {
+                    pane,
+                    state,
+                    detail,
+                    deadline_epoch,
+                    attempt,
+                } => self.apply_recovery(pane, state, detail, deadline_epoch, attempt),
                 BackendEvent::SizeOwnership { owned } => {
                     // Gaining it means the panes are this client's layout to
                     // set, and they are currently at someone else's sizes — so

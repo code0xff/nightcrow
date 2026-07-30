@@ -105,6 +105,15 @@ impl TerminalBackend for HubBackend {
         }
     }
 
+    fn cancel_recovery(&mut self, id: PaneId) {
+        if let Err(err) = self
+            .link
+            .send(HubClientMessage::CancelRecovery { pane: id })
+        {
+            tracing::warn!(%err, pane = id, "could not cancel a pane's recovery");
+        }
+    }
+
     fn drain_events(&mut self) -> Vec<BackendEvent> {
         let mut events = Vec::new();
         for message in self.link.drain() {
@@ -140,6 +149,19 @@ impl TerminalBackend for HubBackend {
                 TerminalMessage::Event(HubServerMessage::Reordered { order }) => {
                     events.push(BackendEvent::Reordered { order })
                 }
+                TerminalMessage::Event(HubServerMessage::Recovery {
+                    pane,
+                    state,
+                    detail,
+                    deadline_epoch,
+                    attempt,
+                }) => events.push(BackendEvent::Recovery {
+                    pane,
+                    state,
+                    detail,
+                    deadline_epoch,
+                    attempt,
+                }),
                 // Refusals do not come this way — they are not about a pane, so
                 // the client keeps them on the queue that reaches its notices.
                 TerminalMessage::Event(HubServerMessage::Error { message }) => {

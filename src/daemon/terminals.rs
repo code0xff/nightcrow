@@ -197,3 +197,7 @@ impl Drop for Bridge {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "terminals_tests.rs"]
+mod tests;

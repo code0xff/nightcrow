@@ -16,7 +16,12 @@
 //! bytes would leave a subtly wrong screen.
 
 pub mod frame;
+mod hub_events;
 mod hub_helpers;
+mod hub_layout;
+mod hub_plugins;
+mod hub_recovery;
+mod hub_relaunch;
 mod hub_run;
 mod session;
 mod size_owner;
@@ -53,6 +58,11 @@ pub struct TerminalHub {
     /// were configured under. Empty means a single bare shell (matching the
     /// TUI's default).
     startup: Vec<crate::config::StartupCommand>,
+    /// The `[[plugin]]` table. The worker launches a host for each entry that is
+    /// enabled *and* that some `startup` entry opted into, and nothing else — a
+    /// plugin no pane named is never started, so declaring one costs nothing
+    /// until a pane hands itself over.
+    plugins: Vec<crate::config::PluginConfig>,
     /// Set when a client claims the startup terminals by answering with their
     /// sizes, so they are created exactly once for the hub's life rather than
     /// on every (re)connection. See [`TerminalHub::claim_startup`].
@@ -61,8 +71,13 @@ pub struct TerminalHub {
 
 impl TerminalHub {
     /// Start a hub whose terminals run in `cwd`. `startup` is the list of
-    /// commands to launch when the first client connects (empty = one shell).
-    pub fn spawn(cwd: &str, startup: Vec<crate::config::StartupCommand>) -> Arc<Self> {
+    /// commands to launch when the first client connects (empty = one shell),
+    /// and `plugins` the configured plugin table those commands may opt into.
+    pub fn spawn(
+        cwd: &str,
+        startup: Vec<crate::config::StartupCommand>,
+        plugins: Vec<crate::config::PluginConfig>,
+    ) -> Arc<Self> {
         let (commands, command_rx) = mpsc::sync_channel::<Command>(256);
         let hub = Arc::new(Self {
             commands,
@@ -76,6 +91,7 @@ impl TerminalHub {
             stop: Arc::new(AtomicBool::new(false)),
             worker: Mutex::new(None),
             startup,
+            plugins,
             started: AtomicBool::new(false),
         });
 

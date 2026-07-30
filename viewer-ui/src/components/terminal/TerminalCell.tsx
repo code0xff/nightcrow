@@ -1,5 +1,7 @@
 import type { CSSProperties } from "react";
 import { MaximizeIcon, XIcon } from "../icons";
+import { RecoveryChip } from "./RecoveryChip";
+import type { PaneRecovery } from "../../lib/recovery";
 import { TAB_TITLE_MAX_CELLS, truncateCells } from "../../lib/terminalLayout";
 
 interface TerminalCellProps {
@@ -13,6 +15,9 @@ interface TerminalCellProps {
   isDragged: boolean;
   isDropTarget: boolean;
   reorderable: boolean;
+  /** What this pane's plugin last reported about recovering it, if anything. */
+  recovery?: PaneRecovery;
+  onCancelRecovery: () => void;
   onFocus: () => void;
   onToggleZoom: () => void;
   onClose: () => void;
@@ -34,6 +39,8 @@ export function TerminalCell({
   isDragged,
   isDropTarget,
   reorderable,
+  recovery,
+  onCancelRecovery,
   onFocus,
   onToggleZoom,
   onClose,
@@ -78,6 +85,9 @@ export function TerminalCell({
         >
           {truncateCells(label, TAB_TITLE_MAX_CELLS)}
         </span>
+        {recovery && (
+          <RecoveryChip report={recovery} onCancel={onCancelRecovery} />
+        )}
         {showZoom && (
           <button
             onMouseDown={(e) => e.stopPropagation()}

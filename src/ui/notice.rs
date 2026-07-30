@@ -1,5 +1,6 @@
 use crate::app::{App, Notice};
 use crate::ui::status_view::RepoInput;
+use crate::ui::wall_clock::local_hour_minute;
 use ratatui::{
     style::{Color, Modifier, Style},
     text::{Line, Span},
@@ -103,7 +104,39 @@ pub(crate) fn render_repo_header<'a>(app: &'a App, accent: Color) -> Paragraph<'
             Style::default().fg(Color::Cyan),
         ));
     }
+    if let Some(chip) = recovery_chip(app) {
+        spans.push(Span::styled(
+            chip,
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD),
+        ));
+    }
     Paragraph::new(Line::from(spans))
+}
+
+/// The full recovery report as one chip: which pane, the plugin's state, the
+/// deadline as a local wall-clock time, the attempts spent, and the detail line.
+///
+/// On this row rather than in a row or overlay of its own for the reason the
+/// notices are: a row that appears and disappears resizes every open PTY. It is
+/// the last chip, so an actual notice still covers the whole line — a rejected
+/// action needs explaining more than a wait does. The pane it describes is the
+/// one `<leader> c` would cancel (see `TerminalState::recovery_focus`).
+fn recovery_chip(app: &App) -> Option<String> {
+    let (pane, report) = app.terminal.recovery_focus()?;
+    let mut chip = format!(" pane {pane}: {}", report.state);
+    if let Some(at) = report.deadline_epoch.and_then(local_hour_minute) {
+        chip.push_str(&format!(" until {at}"));
+    }
+    if report.attempt > 0 {
+        chip.push_str(&format!(" (attempt {})", report.attempt));
+    }
+    if let Some(detail) = report.detail.as_deref() {
+        chip.push_str(&format!(" — {detail}"));
+    }
+    chip.push(' ');
+    Some(chip)
 }
 
 pub(crate) fn home_relative_path(path: &str) -> String {

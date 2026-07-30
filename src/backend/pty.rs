@@ -1,13 +1,17 @@
+use super::slot::{PaneSlot, PaneSlots};
 use super::{BackendEvent, PaneId, TerminalBackend};
 use crate::platform::threading::try_timed_join;
 use anyhow::Result;
-use portable_pty::{CommandBuilder, NativePtySystem, PtySize, PtySystem};
+use portable_pty::PtySize;
 use std::collections::BTreeMap;
-use std::io::{Read, Write};
+use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::sync::mpsc::{self, Receiver};
+use std::sync::mpsc::Receiver;
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
+
+#[path = "pty_spawn.rs"]
+mod spawn;
 
 /// Reap window for PTY reader / wait threads. Bigger than the commit-log
 /// REAP_TIMEOUT because `read()` on a PTY master can stay blocked if a
@@ -21,21 +25,21 @@ const PTY_REAP_TIMEOUT: Duration = Duration::from_millis(50);
 /// the round-robin cap bounds the work per pane to a small constant.
 const PER_PANE_DRAIN_BUDGET: usize = 64;
 
-enum PtyEvent {
+pub(super) enum PtyEvent {
     Output(Vec<u8>),
     Exited,
 }
 
-struct PtyPane {
+pub(super) struct PtyPane {
     // master/writer are wrapped in Option so `Drop` can release them
     // before joining the reader thread — the reader blocks in `read()`
     // and only unblocks when both sides of the PTY are closed.
-    master: Option<Box<dyn portable_pty::MasterPty>>,
-    writer: Option<Box<dyn Write + Send>>,
-    killer: Box<dyn portable_pty::ChildKiller + Send + Sync>,
-    rx: Receiver<PtyEvent>,
-    reader_handle: Option<thread::JoinHandle<()>>,
-    wait_handle: Option<thread::JoinHandle<()>>,
+    pub(super) master: Option<Box<dyn portable_pty::MasterPty>>,
+    pub(super) writer: Option<Box<dyn Write + Send>>,
+    pub(super) killer: Box<dyn portable_pty::ChildKiller + Send + Sync>,
+    pub(super) rx: Receiver<PtyEvent>,
+    pub(super) reader_handle: Option<thread::JoinHandle<()>>,
+    pub(super) wait_handle: Option<thread::JoinHandle<()>>,
 }
 
 impl Drop for PtyPane {
@@ -68,11 +72,15 @@ pub struct PtyBackend {
     // and stays deterministic across runs. HashMap iteration was random
     // per process, which made inter-pane event ordering unobservable
     // and could mask fairness regressions in tests.
-    panes: BTreeMap<PaneId, PtyPane>,
-    next_id: PaneId,
+    pub(super) panes: BTreeMap<PaneId, PtyPane>,
+    /// Slot bookkeeping — identity, launch, idle clock — kept beside `panes`
+    /// rather than inside `PtyPane` because a relaunch replaces the `PtyPane`
+    /// while the slot has to survive it.
+    pub(super) slots: PaneSlots,
+    pub(super) next_id: PaneId,
     // Each new pane spawns the shell here so its cwd matches the repo
     // nightcrow is tracking, even when the binary was launched elsewhere.
-    cwd: PathBuf,
+    pub(super) cwd: PathBuf,
     /// Panes created since the last drain, waiting to be reported.
     ///
     /// This backend knows the id the moment it makes the pane, but the trait
@@ -85,94 +93,44 @@ impl PtyBackend {
     pub fn new(cwd: impl AsRef<Path>) -> Self {
         Self {
             panes: BTreeMap::new(),
+            slots: PaneSlots::default(),
             next_id: 1,
             cwd: cwd.as_ref().to_path_buf(),
             created: Vec::new(),
         }
     }
-}
 
-impl PtyBackend {
-    /// Open a pane and say which one it is.
+    /// The slot behind a live pane, or `None` once the pane is gone.
+    pub fn slot(&self, id: PaneId) -> Option<&PaneSlot> {
+        self.slots.get(id)
+    }
+
+    /// Which live pane a token names.
+    pub fn pane_for_token(&self, token: &super::PaneToken) -> Option<PaneId> {
+        self.slots.find_by_token(token)
+    }
+
+    /// Whether the pane still has a running process.
+    pub fn is_process_alive(&self, id: PaneId) -> bool {
+        self.panes.contains_key(&id)
+    }
+
+    /// Let go of a pane's process while keeping its slot.
     ///
-    /// The trait reports panes as events, because a backend serving a shared
-    /// session cannot answer on the spot. This one can, and the terminal hub —
-    /// which owns a `PtyBackend` outright rather than through the trait — needs
-    /// the id to register the pane before anything else happens to it.
-    pub fn open_pane(&mut self, rows: u16, cols: u16, command: Option<&str>) -> Result<PaneId> {
-        // Reserve the next id only after every fallible PTY/spawn step succeeds,
-        // so a failure here does not consume an id slot.
-        let pty_system = NativePtySystem::default();
-        let pair = pty_system.openpty(PtySize {
-            rows,
-            cols,
-            pixel_width: 0,
-            pixel_height: 0,
-        })?;
+    /// Splitting this out of `destroy_pane` is what makes waiting for a reset
+    /// affordable: a wait can run for hours, and holding the dead child's fds
+    /// and threads open for that long to preserve the token would be pure
+    /// waste. The slot is small, and it is the only part a relaunch needs.
+    pub fn release_process(&mut self, id: PaneId) {
+        self.panes.remove(&id);
+    }
 
-        let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".to_string());
-        let mut cmd = CommandBuilder::new(&shell);
-        // A reserved startup command runs through the login shell's `-lc`:
-        // the command text is passed as a single argv item, so the shell —
-        // not us — handles its quoting/word-splitting. This avoids the race
-        // of spawning a shell and later injecting `command\r`, and avoids any
-        // string interpolation into a wrapper on our side.
-        if let Some(command) = command {
-            cmd.arg("-lc");
-            cmd.arg(command);
-        }
-        cmd.env("TERM", "xterm-256color");
-        // Only set cwd if the directory actually exists; otherwise inherit
-        // ours so spawn does not fail outright (matters for unit tests that
-        // pass placeholder paths).
-        if let Ok(canonical) = self.cwd.canonicalize() {
-            cmd.cwd(canonical);
-        }
-        let mut child = pair.slave.spawn_command(cmd)?;
-        let killer = child.clone_killer();
-        drop(pair.slave);
-
-        let mut reader = pair.master.try_clone_reader()?;
-        let writer = pair.master.take_writer()?;
-
-        let id = self.next_id;
-        let next = id
-            .checked_add(1)
-            .ok_or_else(|| anyhow::anyhow!("pane id counter overflow"))?;
-        self.next_id = next;
-
-        let (tx, rx) = mpsc::channel();
-        let reader_handle = thread::spawn(move || {
-            let mut buf = [0u8; 4096];
-            loop {
-                match reader.read(&mut buf) {
-                    Ok(0) | Err(_) => break,
-                    Ok(n) => {
-                        if tx.send(PtyEvent::Output(buf[..n].to_vec())).is_err() {
-                            break;
-                        }
-                    }
-                }
-            }
-            let _ = tx.send(PtyEvent::Exited);
-        });
-
-        let wait_handle = thread::spawn(move || {
-            let _ = child.wait();
-        });
-
-        self.panes.insert(
-            id,
-            PtyPane {
-                master: Some(pair.master),
-                writer: Some(writer),
-                killer,
-                rx,
-                reader_handle: Some(reader_handle),
-                wait_handle: Some(wait_handle),
-            },
-        );
-        Ok(id)
+    /// Drop a slot for good, retiring its token.
+    ///
+    /// Called when nothing more is expected of the pane — the wait was
+    /// abandoned, the pane was closed, or the session is going away.
+    pub fn retire_slot(&mut self, id: PaneId) {
+        self.slots.remove(id);
     }
 }
 
@@ -198,6 +156,9 @@ impl TerminalBackend for PtyBackend {
         // Removing the pane drops it, which runs PtyPane::drop: kill,
         // release master/writer, join reader/wait threads.
         self.panes.remove(&id);
+        // The slot goes with it, retiring its token. A relaunch keeps the slot
+        // by going through `relaunch_pane` instead of destroy-then-open.
+        self.slots.remove(id);
     }
 
     fn send_input(&mut self, id: PaneId, data: &[u8]) -> Result<()> {
@@ -249,11 +210,17 @@ impl TerminalBackend for PtyBackend {
         // Ahead of any output: a pane has to exist before bytes can be routed
         // to it, and both can be queued before the same drain.
         let mut events: Vec<BackendEvent> = std::mem::take(&mut self.created);
+        let now = Instant::now();
         for (id, pane) in &self.panes {
             let mut budget = PER_PANE_DRAIN_BUDGET;
             while budget > 0 {
                 match pane.rx.try_recv() {
                     Ok(PtyEvent::Output(data)) => {
+                        // One timestamp for the whole drain: the bytes arrived
+                        // between this tick and the last, and a per-event clock
+                        // read would claim a precision the 8 ms poll does not
+                        // have.
+                        self.slots.mark_output(*id, now);
                         events.push(BackendEvent::Output { pane: *id, data });
                     }
                     Ok(PtyEvent::Exited) => {

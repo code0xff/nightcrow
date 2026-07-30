@@ -44,6 +44,10 @@ pub struct Catalog {
     /// first client connect (empty = one bare shell). Applied to every hub the
     /// catalog spawns.
     startup_commands: Vec<crate::config::StartupCommand>,
+    /// The `[[plugin]]` table, handed to every hub the catalog spawns. A hub only
+    /// launches the ones its own startup commands opted into, so an entry here is
+    /// an offer rather than a process.
+    plugins: Vec<crate::config::PluginConfig>,
 }
 
 impl Catalog {
@@ -56,6 +60,24 @@ impl Catalog {
     pub fn with_startup(startup_commands: Vec<crate::config::StartupCommand>) -> Self {
         Self {
             startup_commands,
+            ..Self::default()
+        }
+    }
+
+    /// Like [`Catalog::with_startup`], and every hub is also given the
+    /// `[[plugin]]` table its startup commands may name.
+    ///
+    /// Paired with the startup commands rather than set separately, because the
+    /// two are one decision: a plugin is only ever reachable through a startup
+    /// command's `plugin =`, so a catalog with one and not the other is a
+    /// half-configured session.
+    pub fn with_startup_and_plugins(
+        startup_commands: Vec<crate::config::StartupCommand>,
+        plugins: Vec<crate::config::PluginConfig>,
+    ) -> Self {
+        Self {
+            startup_commands,
+            plugins,
             ..Self::default()
         }
     }
@@ -160,7 +182,11 @@ impl Catalog {
                         name: repo_name(&path),
                         display_path: display_path(&path),
                         runtime: RepoRuntime::spawn(&path),
-                        terminals: TerminalHub::spawn(&path, self.startup_commands.clone()),
+                        terminals: TerminalHub::spawn(
+                            &path,
+                            self.startup_commands.clone(),
+                            self.plugins.clone(),
+                        ),
                         id,
                         path,
                     })),

@@ -31,6 +31,7 @@ fn a_startup_terminal_is_offered_for_sizing_and_born_at_that_size() {
     let hub = TerminalHub::spawn(
         &dir.path().to_string_lossy(),
         vec![startup("printf hello")],
+        Vec::new(),
     );
     let session = hub.connect();
 
@@ -60,7 +61,7 @@ fn a_startup_terminal_is_offered_for_sizing_and_born_at_that_size() {
 #[test]
 fn an_empty_startup_offers_one_shell() {
     let dir = tempfile::TempDir::new().unwrap();
-    let hub = TerminalHub::spawn(&dir.path().to_string_lossy(), Vec::new());
+    let hub = TerminalHub::spawn(&dir.path().to_string_lossy(), Vec::new(), Vec::new());
     let session = hub.connect();
 
     assert_eq!(
@@ -84,7 +85,7 @@ fn a_startup_size_of_zero_is_clamped_rather_than_reaching_openpty() {
     // spent by then — the hub would hold `started` with no terminal to show
     // for it and never offer them again.
     let dir = tempfile::TempDir::new().unwrap();
-    let hub = TerminalHub::spawn(&dir.path().to_string_lossy(), Vec::new());
+    let hub = TerminalHub::spawn(&dir.path().to_string_lossy(), Vec::new(), Vec::new());
     let session = hub.connect();
     next_matching(&session, |f| pending_count(f).is_some()).expect("no offer");
 
@@ -114,7 +115,7 @@ fn a_startup_set_that_fills_the_cap_still_gets_every_terminal() {
     let configured: Vec<StartupCommand> = (0..limits::MAX_PTYS_PER_REPO)
         .map(|i| startup(&format!("printf startup{i}")))
         .collect();
-    let hub = TerminalHub::spawn(&dir.path().to_string_lossy(), configured);
+    let hub = TerminalHub::spawn(&dir.path().to_string_lossy(), configured, Vec::new());
     let session = hub.connect();
     assert_eq!(
         next_matching(&session, |f| pending_count(f).is_some()).and_then(|f| pending_count(&f)),
@@ -149,7 +150,7 @@ fn a_startup_command_the_cap_turned_away_is_named() {
     let configured: Vec<StartupCommand> = (0..limits::MAX_PTYS_PER_REPO)
         .map(|i| startup(&format!("printf startup{i}")))
         .collect();
-    let hub = TerminalHub::spawn(&dir.path().to_string_lossy(), configured);
+    let hub = TerminalHub::spawn(&dir.path().to_string_lossy(), configured, Vec::new());
     let session = hub.connect();
     next_matching(&session, |f| pending_count(f).is_some()).expect("no offer");
 
@@ -181,7 +182,7 @@ fn an_unanswered_offer_is_made_again_to_the_next_client() {
     // Nothing consumes the offer but an answer, so the hub cannot end up with
     // no terminals and no way to ever open them.
     let dir = tempfile::TempDir::new().unwrap();
-    let hub = TerminalHub::spawn(&dir.path().to_string_lossy(), Vec::new());
+    let hub = TerminalHub::spawn(&dir.path().to_string_lossy(), Vec::new(), Vec::new());
 
     let abandoned = hub.connect();
     assert!(
@@ -204,7 +205,7 @@ fn only_the_first_answer_opens_the_startup_terminals() {
     // Both clients were offered the panes, so both may answer. Creating them
     // twice would double every configured command.
     let dir = tempfile::TempDir::new().unwrap();
-    let hub = TerminalHub::spawn(&dir.path().to_string_lossy(), Vec::new());
+    let hub = TerminalHub::spawn(&dir.path().to_string_lossy(), Vec::new(), Vec::new());
     let first = hub.connect();
     let second = hub.connect();
 
@@ -245,6 +246,7 @@ fn a_configured_startup_terminal_is_announced_under_its_name() {
             command: "sleep 30".into(),
             plugin: None,
         }],
+        Vec::new(),
     );
     let session = hub.connect();
     session.dispatch(ClientMessage::Start {
@@ -269,6 +271,7 @@ fn an_unnamed_startup_terminal_falls_back_to_its_command() {
     let hub = TerminalHub::spawn(
         &dir.path().to_string_lossy(),
         vec![startup("printf hello")],
+        Vec::new(),
     );
     let session = hub.connect();
     session.dispatch(ClientMessage::Start {
@@ -285,7 +288,7 @@ fn a_pane_a_client_opened_is_left_unnamed_by_the_session() {
     // That client named it, or nothing did — either way the hub has nothing to
     // add, and stamping a name here would override a title the client chose.
     let dir = tempfile::TempDir::new().unwrap();
-    let hub = TerminalHub::spawn(&dir.path().to_string_lossy(), Vec::new());
+    let hub = TerminalHub::spawn(&dir.path().to_string_lossy(), Vec::new(), Vec::new());
     let session = hub.connect();
 
     session.dispatch(ClientMessage::Create { rows: 24, cols: 80 });

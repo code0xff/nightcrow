@@ -9,7 +9,7 @@ use crate::web::viewer::terminal::frame::{ClientMessage, PaneSize, TerminalFrame
 #[test]
 fn creating_a_terminal_announces_it_and_streams_output() {
     let dir = tempfile::TempDir::new().unwrap();
-    let hub = TerminalHub::spawn(&dir.path().to_string_lossy(), Vec::new());
+    let hub = TerminalHub::spawn(&dir.path().to_string_lossy(), Vec::new(), Vec::new());
     let session = hub.connect();
 
     session.dispatch(ClientMessage::Create { rows: 24, cols: 80 });
@@ -40,7 +40,7 @@ fn creating_a_terminal_announces_it_and_streams_output() {
 #[test]
 fn the_per_repo_terminal_cap_is_enforced() {
     let dir = tempfile::TempDir::new().unwrap();
-    let hub = TerminalHub::spawn(&dir.path().to_string_lossy(), Vec::new());
+    let hub = TerminalHub::spawn(&dir.path().to_string_lossy(), Vec::new(), Vec::new());
     let session = hub.connect();
 
     for _ in 0..limits::MAX_PTYS_PER_REPO + 2 {
@@ -61,7 +61,7 @@ fn the_per_repo_terminal_cap_is_enforced() {
 #[test]
 fn a_dropped_session_stops_receiving() {
     let dir = tempfile::TempDir::new().unwrap();
-    let hub = TerminalHub::spawn(&dir.path().to_string_lossy(), Vec::new());
+    let hub = TerminalHub::spawn(&dir.path().to_string_lossy(), Vec::new(), Vec::new());
 
     let session = hub.connect();
     assert_eq!(hub.client_count(), 1);
@@ -74,7 +74,7 @@ fn a_dropped_session_stops_receiving() {
 #[test]
 fn reordering_panes_echoes_the_order_and_replays_it_to_a_later_joiner() {
     let dir = tempfile::TempDir::new().unwrap();
-    let hub = TerminalHub::spawn(&dir.path().to_string_lossy(), Vec::new());
+    let hub = TerminalHub::spawn(&dir.path().to_string_lossy(), Vec::new(), Vec::new());
     let first = hub.connect();
 
     // The startup shell (claimed with a size, as a client does) plus one
@@ -111,7 +111,7 @@ fn reordering_panes_echoes_the_order_and_replays_it_to_a_later_joiner() {
 #[test]
 fn a_reconnecting_client_receives_existing_panes_and_scrollback() {
     let dir = tempfile::TempDir::new().unwrap();
-    let hub = TerminalHub::spawn(&dir.path().to_string_lossy(), Vec::new());
+    let hub = TerminalHub::spawn(&dir.path().to_string_lossy(), Vec::new(), Vec::new());
     let first = hub.connect();
 
     first.dispatch(ClientMessage::Create { rows: 24, cols: 80 });
@@ -151,7 +151,7 @@ fn a_replayed_pane_reports_the_size_it_was_last_resized_to() {
     // this reported the birth size instead, every reload would send a resize
     // the PTY does not need and cost the child a full repaint.
     let dir = tempfile::TempDir::new().unwrap();
-    let hub = TerminalHub::spawn(&dir.path().to_string_lossy(), Vec::new());
+    let hub = TerminalHub::spawn(&dir.path().to_string_lossy(), Vec::new(), Vec::new());
     let first = hub.connect();
 
     first.dispatch(ClientMessage::Create { rows: 24, cols: 80 });
@@ -205,7 +205,7 @@ fn input_for_an_unknown_pane_is_ignored() {
     // A client racing a pane exit is normal traffic, not an error worth
     // tearing the connection down for.
     let dir = tempfile::TempDir::new().unwrap();
-    let hub = TerminalHub::spawn(&dir.path().to_string_lossy(), Vec::new());
+    let hub = TerminalHub::spawn(&dir.path().to_string_lossy(), Vec::new(), Vec::new());
     let session = hub.connect();
 
     session.dispatch(ClientMessage::Input {
@@ -232,7 +232,7 @@ fn input_for_an_unknown_pane_is_ignored() {
 #[test]
 fn stop_is_idempotent() {
     let dir = tempfile::TempDir::new().unwrap();
-    let hub = TerminalHub::spawn(&dir.path().to_string_lossy(), Vec::new());
+    let hub = TerminalHub::spawn(&dir.path().to_string_lossy(), Vec::new(), Vec::new());
     hub.stop();
     hub.stop();
 }

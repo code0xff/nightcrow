@@ -56,6 +56,10 @@ pub fn prefix_action(event: KeyEvent) -> Action {
             'f' => Action::ToggleFullscreen,
             's' => Action::SwapPanePrompt,
             'z' => Action::ClaimPaneSizing,
+            // `c` for cancel. Bare, not `ctrl+c`: the follow-up handler treats
+            // `ctrl+c` as the universal prefix cancel, and it has to keep doing
+            // so whatever leader is configured.
+            'c' => Action::CancelRecovery,
             'o' => Action::OpenProject,
             'x' => Action::CloseProject,
             'p' => Action::CycleTheme,

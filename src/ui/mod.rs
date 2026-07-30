@@ -23,6 +23,7 @@ mod hit_test;
 mod notice;
 #[cfg(test)]
 mod tests;
+mod wall_clock;
 
 pub(crate) use chrome::{Chrome, chrome_rows, main_content_constraints};
 pub(crate) use helpers::{

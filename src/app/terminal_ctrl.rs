@@ -57,6 +57,19 @@ impl App {
         !self.terminal.owns_size
     }
 
+    /// Give up on the recovery a plugin has pending, releasing the slot it was
+    /// holding. The session decides and tells every client; nothing is assumed
+    /// here (see `TerminalState::cancel_recovery`).
+    pub fn cancel_pane_recovery(&mut self) {
+        self.terminal.cancel_recovery();
+    }
+
+    /// Whether the cancel key would do anything — the hint rows advertise it only
+    /// where it would, since a hint for a no-op lies.
+    pub fn can_cancel_recovery(&self) -> bool {
+        self.terminal.can_cancel_recovery()
+    }
+
     /// Ask the session to close the active pane. Nothing is re-clamped here:
     /// the pane goes when its exit arrives, and `poll_terminal` clamps focus and
     /// fullscreen then — the same path a pane another client closed takes.

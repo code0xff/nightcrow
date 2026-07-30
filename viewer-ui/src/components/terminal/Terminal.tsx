@@ -10,6 +10,7 @@ import { usePaneDrag } from "../../hooks/terminal/usePaneDrag";
 import { useTerminalSocket } from "../../hooks/terminal/useTerminalSocket";
 import { useTerminalViews } from "../../hooks/terminal/useTerminalViews";
 import { usePaneSizes } from "../../hooks/terminal/usePaneSizes";
+import { usePaneRecovery } from "../../hooks/terminal/usePaneRecovery";
 import { useStartupSizes } from "../../hooks/terminal/useStartupSizes";
 import { TerminalCell } from "./TerminalCell";
 import { StartupSlots } from "./StartupSlots";
@@ -58,6 +59,7 @@ export function TerminalPanel({
   // and the child cannot be re-flowed afterwards, so one client at a time
   // decides it; the rest render the grid they are given.
   const [ownsSize, setOwnsSize] = useState(true);
+  const { recovery, setRecovery, cancelRecovery } = usePaneRecovery(socketRef);
 
   useTerminalSocket({
     repo,
@@ -73,6 +75,7 @@ export function TerminalPanel({
     setZoomed,
     setTitles,
     setOwnsSize,
+    setRecovery,
   });
 
   useTerminalViews({
@@ -207,6 +210,9 @@ export function TerminalPanel({
       <PanelToolbar
         ownsSize={ownsSize}
         maximized={maximized}
+        recovery={recovery}
+        panes={panes}
+        onCancelRecovery={cancelRecovery}
         onClaimSize={claimSize}
         onCreate={create}
         onToggleMaximized={onToggleMaximized}
@@ -261,6 +267,8 @@ export function TerminalPanel({
                 isDragged={draggingPane === pane}
                 isDropTarget={dragOverPane === pane}
                 reorderable={reorderable}
+                recovery={recovery[pane]}
+                onCancelRecovery={() => cancelRecovery(pane)}
                 onFocus={() => focusPane(pane)}
                 onToggleZoom={() =>
                   setZoomed((z) => (z === pane ? null : pane))

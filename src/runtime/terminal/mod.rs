@@ -5,11 +5,13 @@ use std::collections::HashMap;
 mod escape;
 mod input;
 mod lifecycle;
+mod recovery;
 mod scroll;
 mod session_panes;
 mod state;
 
 pub(crate) use escape::strip_escape_sequences;
+pub use recovery::PaneRecovery;
 
 /// Upper bound on a pane's in-flight prompt buffer before further chars are
 /// dropped. Prevents unbounded growth when a program writes a stream of bytes
@@ -120,6 +122,12 @@ pub struct TerminalState {
     /// this client owns follow its layout; panes it does not follow
     /// [`BackendEvent::Resized`](crate::backend::BackendEvent::Resized).
     pub owns_size: bool,
+    /// What each pane's plugin last reported about recovering it, for the panes
+    /// any has spoken about. Deliberately outlives a pane's process: the report
+    /// that matters most arrives while the pane is gone and its slot is held for
+    /// a relaunch. Cleared only by a `cancelled` report (see
+    /// [`recovery::RECOVERY_CANCELLED`]).
+    pub(crate) recovery: HashMap<PaneId, PaneRecovery>,
     /// Index of the first pane in the visible split-view window.
     pub visible_start: usize,
     pub max_visible_normal: usize,
@@ -143,6 +151,7 @@ impl TerminalState {
             fullscreen: TerminalFullscreen::Off,
             last_content_size: HashMap::new(),
             owns_size: true,
+            recovery: HashMap::new(),
             visible_start: 0,
             max_visible_normal: MAX_VISIBLE_NORMAL,
             max_visible_fullscreen: MAX_VISIBLE_FULLSCREEN,

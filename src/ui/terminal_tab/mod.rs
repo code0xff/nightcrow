@@ -1,5 +1,6 @@
 mod cells;
 mod layout;
+mod recovery;
 mod screen;
 mod tab_bar;
 #[cfg(test)]
@@ -11,9 +12,8 @@ pub(crate) use tab_bar::tab_target_at;
 use crate::app::{App, Focus};
 use crate::runtime::terminal::visible_range;
 use crate::ui::terminal_tab::cells::visible_pane_cells;
-use crate::ui::terminal_tab::layout::{
-    TAB_TITLE_MAX_CHARS, TERMINAL_BORDERS, terminal_layout, truncate_tab_title,
-};
+use crate::ui::terminal_tab::layout::{TERMINAL_BORDERS, terminal_layout};
+use crate::ui::terminal_tab::recovery::pane_label;
 use crate::ui::terminal_tab::screen::{build_screen_lines, render_cursor};
 use crate::ui::terminal_tab::tab_bar::render_tab_bar;
 use ratatui::{
@@ -83,12 +83,7 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect, accent: Color) {
             } else {
                 Style::default().fg(Color::DarkGray)
             };
-            let pane_title = app
-                .terminal
-                .panes
-                .get(i)
-                .map(|p| truncate_tab_title(&p.title, TAB_TITLE_MAX_CHARS))
-                .unwrap_or_default();
+            let pane_title = pane_label(app, i);
             let cell_block = Block::default()
                 .borders(Borders::ALL)
                 .border_style(pane_border_style)

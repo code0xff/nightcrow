@@ -1,6 +1,8 @@
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 
+pub(crate) mod plugin_cmd;
+
 /// nightcrow — session daemon for agentic coding
 ///
 /// Run with no subcommand to start the session: a git diff viewer and
@@ -51,6 +53,14 @@ pub(crate) enum Commands {
     /// are opened from inside, with the leader chord's open dialog or the
     /// browser's folder picker. Leaving does not end the session.
     Attach,
+    /// Manage plugin executables in ~/.nightcrow/plugins.
+    ///
+    /// Installing one only puts the binary in place; it stays inert until
+    /// config.toml declares it and a startup pane opts in by name.
+    Plugin {
+        #[command(subcommand)]
+        command: plugin_cmd::PluginCommands,
+    },
 }
 
 /// Run the session daemon in the foreground until it is stopped.
@@ -136,6 +146,7 @@ pub(crate) fn run_daemon(
         &paths,
         true,
         startup,
+        cfg.plugins.clone(),
     )?;
     if paths.is_empty() {
         // An empty catalog is a legitimate state — the same one the TUI starts

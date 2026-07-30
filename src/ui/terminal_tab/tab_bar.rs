@@ -1,8 +1,7 @@
 use crate::app::App;
 use crate::runtime::terminal::visible_range;
-use crate::ui::terminal_tab::layout::{
-    JUMP_KEY_PANE_COUNT, TAB_TITLE_MAX_CHARS, terminal_layout, truncate_tab_title,
-};
+use crate::ui::terminal_tab::layout::{JUMP_KEY_PANE_COUNT, terminal_layout};
+use crate::ui::terminal_tab::recovery::pane_label;
 use ratatui::{
     Frame,
     layout::{Position, Rect},
@@ -64,14 +63,16 @@ pub(crate) fn tab_segments(
         ));
     }
     segments.extend(app.terminal.panes[visible.clone()].iter().enumerate().map(
-        |(offset, pane)| {
+        |(offset, _pane)| {
             let i = visible.start + offset;
             // Panes 0..=7 carry a jump key: `<prefix> 1..8` in fullscreen,
             // `<prefix> 3..9,0` in the split view (the digit row is
             // layout-aware). Panes past the 8th have no jump key, so they
             // carry no hint to avoid implying an unbound shortcut. The bare
             // F-keys are NOT advertised here: they select project tabs.
-            let title = truncate_tab_title(&pane.title, TAB_TITLE_MAX_CHARS);
+            // Carries the recovery marker when the pane has one, so a pane its
+            // plugin is nursing back is visible without leaving the tab row.
+            let title = pane_label(app, i);
             let label = if i < JUMP_KEY_PANE_COUNT {
                 // Split view runs 3,4..9 then wraps to 0 for the eighth pane.
                 let digit = if fullscreen {

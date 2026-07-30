@@ -1,4 +1,5 @@
 use super::*;
+use crate::runtime::terminal::PaneRecovery;
 use crate::ui::terminal_tab::layout::terminal_layout;
 use crate::ui::terminal_tab::render;
 use crate::ui::terminal_tab::tab_bar::tab_target_at;
@@ -184,4 +185,62 @@ fn tab_bar_labels_panes_with_digits_in_fullscreen() {
         !text.contains("F3"),
         "fullscreen must not show the split-view F-key legend, got: {text}"
     );
+}
+
+#[test]
+fn a_tab_label_carries_a_recovery_marker_only_while_one_is_reported() {
+    let mut app = crate::app::tests::app_with_fake_backend();
+    app.terminal
+        .create_pane_with_now(None, Some("agent"))
+        .unwrap();
+    let pane = app.terminal.panes[0].id;
+    let visible = 0..1;
+
+    let plain = tab_segments(&app, visible.clone())[0].0.clone();
+    assert!(plain.contains("agent"), "{plain}");
+    assert!(
+        !plain.contains('⏳'),
+        "an unwatched pane must carry no marker"
+    );
+
+    app.terminal.recovery.insert(
+        pane,
+        PaneRecovery {
+            state: "waiting_for_reset".to_string(),
+            detail: Some("provider window closed".to_string()),
+            deadline_epoch: Some(1_700_000_000),
+            attempt: 3,
+        },
+    );
+
+    let marked = tab_segments(&app, visible)[0].0.clone();
+    assert!(marked.contains("agent"), "the title must survive: {marked}");
+    assert!(marked.contains('⏳'), "{marked}");
+    assert!(marked.contains("⚠3"), "{marked}");
+    // The deadline is a wall-clock time, so the label carries a `HH:MM` colon
+    // that the plain label did not.
+    assert!(marked.contains(':'), "{marked}");
+}
+
+#[test]
+fn a_long_title_loses_characters_before_a_recovery_marker_does() {
+    let mut app = crate::app::tests::app_with_fake_backend();
+    let long = "a-very-long-program-title-indeed";
+    app.terminal.create_pane_with_now(None, Some(long)).unwrap();
+    let pane = app.terminal.panes[0].id;
+    app.terminal.recovery.insert(
+        pane,
+        PaneRecovery {
+            state: "backoff".to_string(),
+            detail: None,
+            deadline_epoch: None,
+            attempt: 7,
+        },
+    );
+
+    let label = tab_segments(&app, 0..1)[0].0.clone();
+
+    assert!(label.contains("⚠7"), "the marker must survive: {label}");
+    assert!(label.contains('…'), "the title must be cut: {label}");
+    assert!(!label.contains(long), "{label}");
 }
