@@ -1,0 +1,19 @@
+[package]
+name = "nightcrow-recovery"
+version = "0.1.0"
+edition = "2024"
+description = "nightcrow plugin: notices a coding CLI hit its usage limit and resumes it when the limit resets"
+license = "Apache-2.0"
+publish = false
+
+[dependencies]
+# Deliberately the same versions the host uses, and nothing more: this process
+# reads lines, parses JSON and waits on a clock, so an async runtime or an HTTP
+# client would be weight with no purpose.
+anyhow = "1"
+clap = { version = "4", features = ["derive"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[dev-dependencies]
+tempfile = "3"
