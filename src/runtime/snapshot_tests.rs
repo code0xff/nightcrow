@@ -29,9 +29,10 @@ fn next_read(channel: &SnapshotChannel) -> SnapshotMsg {
 
 /// Drain until the reader has been quiet for several times its rate limit.
 ///
-/// For a test whose claim is "this change caused a read": a read already owed
-/// when the test acts — starting the second watch owes one — would arrive on its
-/// own and be indistinguishable from the one being asserted.
+/// For a test whose claim is about which reads happen: a read already owed when
+/// the test acts — starting a watch owes one — would arrive on its own, and is
+/// indistinguishable from the read being asserted, or from one the test says
+/// must not happen at all.
 ///
 /// The window is what makes that hold, so it is wide. An owed read is taken
 /// within `MIN_READ_INTERVAL` of the one before it *plus* however long the
@@ -107,6 +108,11 @@ fn a_repository_nothing_happens_in_is_not_read_again() {
     // every second spent finding nothing.
     let (dir, path) = make_repo();
     let channel = watched(&path);
+    // Starting the watch owes a read for the gap it was not up for, and that
+    // read lands a second or more later — inside the window below, where it
+    // would read as the walk this test says must not happen. Wait for silence
+    // rather than for a duration, so the count is only of idleness.
+    quiesce(&channel);
 
     let reads = reads_during(&channel, SETTLE);
 
@@ -222,7 +228,11 @@ fn changes_git_ignores_do_not_cause_a_read() {
     std::fs::write(Path::new(&path).join(".gitignore"), "out/\n").unwrap();
     std::fs::create_dir_all(Path::new(&path).join("out")).unwrap();
     let channel = watched(&path);
-    reads_during(&channel, Duration::from_millis(300));
+    // The read the watch owes arrives well after a fixed 300 ms pause would
+    // have returned, and it cannot be told apart from a walk the ignored writes
+    // caused. Waiting for the reader to go quiet first leaves the loop below as
+    // the only thing that could break the silence.
+    quiesce(&channel);
 
     for i in 0..200 {
         std::fs::write(
