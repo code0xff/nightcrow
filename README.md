@@ -311,6 +311,68 @@ A bare `nightcrow` reopens those tabs and lands on the one that was in front, wi
 
 The two halves have two owners. The session writes which repositories are open and which tab is in front; an attached client writes what it had selected and scrolled, and never the tab list — detaching must not roll the session back to one client's view of it. To start empty, close every tab before stopping the session.
 
+## Plugins
+
+nightcrow itself knows nothing about the CLIs you run in its panes — an agent
+and a person get the same PTY. Behaviour that *does* need to know a particular
+tool lives in a plugin: a separate executable that nightcrow launches and talks
+to over a pipe. Plugins are off unless you turn one on, and one can only ever
+see a pane you handed it by name.
+
+The bundled plugin is `nightcrow-recovery`. When an opted-in pane's CLI hits its
+usage limit, it waits for the reset time the provider reported and then re-opens
+that exact session. It only waits — it does not bypass, raise, or work around
+any provider limit, and it sends nothing while a limit is in effect. Claude
+Code, Codex CLI, and OpenCode are supported; OpenCode is only ever observed,
+never interrupted, because it retries on its own.
+
+```bash
+cargo build --release -p nightcrow-recovery
+nightcrow plugin install target/release/nightcrow-recovery --name recovery
+nightcrow plugin list        # what is installed, and how config refers to it
+nightcrow plugin remove recovery
+```
+
+`install` prints the exact `[[plugin]]` block to paste, using whatever `--name`
+you chose — that name is what a pane opts in with, so keep the two in step.
+
+Installing only puts the binary in `~/.nightcrow/plugins`. It stays inert until
+you edit `~/.nightcrow/config.toml` yourself — enabling something that can type
+into a terminal should be a change you read before it takes effect:
+
+```toml
+[[plugin]]
+name = "recovery"
+command = "nightcrow-recovery"
+enabled = true
+# Flags the plugin may append to re-open a session. Empty by default, which
+# refuses every relaunch. nightcrow cannot know what a CLI's flags mean, so it
+# will not add one you did not list — that is what keeps a plugin from changing
+# how a CLI asks for your approval.
+allowed_resume_flags = ["--resume", "resume", "--session"]
+
+[[startup_command]]
+name = "Claude"
+command = "claude"
+plugin = "recovery"      # without this line, no plugin ever sees this pane
+```
+
+For Claude Code, let the plugin install its hook and statusline entries so it
+can read the exact session id and reset time instead of guessing from what is
+printed on screen. It merges into your existing `~/.claude/settings.json` and
+backs it up first:
+
+```bash
+nightcrow-recovery install-hooks
+nightcrow-recovery uninstall-hooks    # removes only what it added
+```
+
+A pane that is waiting shows its state and deadline on its tab. Cancel it with
+`<prefix>` then the recovery key (see [Leader commands](#leader-commands-press-prefix-then-the-key)),
+or from the web viewer; typing into the pane yourself also cancels it.
+
+Design and trust boundary: [`docs/architecture.md`](docs/architecture.md) → "Plugin Host".
+
 ## Web viewer
 
 A browser surface that renders the same git data as a native web page —
@@ -546,9 +608,25 @@ live_watch = true         # watch expanded dirs and refresh the tree live; set f
 [[startup_command]]
 name = "Claude"           # optional tab label; falls back to the command text
 command = "claude"        # required; must not be empty
+plugin = "recovery"       # optional; names the [[plugin]] allowed to act on this
+                          # pane. Omitted — the default — means no plugin ever
+                          # sees it.
 
 [[startup_command]]
 command = "cargo test --watch"
+
+# External plugin processes — see "Plugins" above. Up to 8 entries, names unique.
+# Nothing runs unless an entry exists AND enabled = true AND a pane opted in.
+[[plugin]]
+name = "recovery"                 # the name panes opt in with
+command = "nightcrow-recovery"    # found on PATH or in ~/.nightcrow/plugins
+args = []                         # passed to the plugin verbatim
+enabled = false                   # off by default
+allowed_resume_flags = []         # flags the plugin may append to re-open a
+                                  # session; empty refuses every relaunch
+
+[plugin.env]                      # plugin process only, never terminal panes
+NIGHTCROW_RECOVERY_LOG = "info"
 ```
 
 ## License
