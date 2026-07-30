@@ -4,6 +4,9 @@
 //! while nothing happens, so most of these are about *absence*: how many reads
 //! arrive, not what they say. They use short windows against a ten-second idle
 //! interval, so a slow machine delays them rather than failing them.
+//!
+//! The helpers that count reads are `pub(super)`: the same claim is made about a
+//! path with no repository in it, and those tests sit beside the worker.
 
 use super::{IDLE_READ_INTERVAL, MIN_READ_INTERVAL, SnapshotChannel, SnapshotMsg};
 use crate::test_util::{make_linked_worktree, make_repo, run_git};
@@ -12,11 +15,11 @@ use std::time::{Duration, Instant};
 
 /// Long enough for a filesystem event to travel and a read to happen, without
 /// reaching the idle interval that would make the assertion meaningless.
-const SETTLE: Duration = Duration::from_millis(2_500);
+pub(super) const SETTLE: Duration = Duration::from_millis(2_500);
 
 /// Wait for one snapshot, or fail. Errors count: what is being timed is the read,
 /// not what it found.
-fn next_read(channel: &SnapshotChannel) -> SnapshotMsg {
+pub(super) fn next_read(channel: &SnapshotChannel) -> SnapshotMsg {
     let deadline = Instant::now() + SETTLE;
     while Instant::now() < deadline {
         match channel.try_recv() {
@@ -59,7 +62,7 @@ fn quiesce(channel: &SnapshotChannel) {
 }
 
 /// How many snapshots arrive over `window`.
-fn reads_during(channel: &SnapshotChannel, window: Duration) -> usize {
+pub(super) fn reads_during(channel: &SnapshotChannel, window: Duration) -> usize {
     let deadline = Instant::now() + window;
     let mut reads = 0;
     while Instant::now() < deadline {

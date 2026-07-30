@@ -91,7 +91,7 @@ impl Worker {
             }
 
             if awake && state.changed && due(state.last_read) {
-                if !self.read_once(&mut state) {
+                if !self.read_once(&mut state, &watch) {
                     // The receiver is gone: nobody is left to read this.
                     return;
                 }
@@ -153,6 +153,8 @@ impl Worker {
     /// reports and what [`wait`](Self::wait) reads to choose an interval.
     fn follow_git_dir(&self, state: &mut ReadState, roots: &mut Roots, watch: &mut Watches) {
         let Some(repo) = state.repo.as_ref() else {
+            // No handle to ask, and nothing to correct: the read that dropped it
+            // has already said what is being watched.
             return;
         };
         // None means it is inside the work tree, where the recursive watch
@@ -177,7 +179,10 @@ impl Worker {
     }
 
     /// Read the tree and send what it says. `false` once the receiver is gone.
-    fn read_once(&self, state: &mut ReadState) -> bool {
+    ///
+    /// `watch` is read for one answer only: what is left watching a directory
+    /// that turns out to hold no repository — see the failure below.
+    fn read_once(&self, state: &mut ReadState, watch: &Watches) -> bool {
         if state.reads_since_open >= REOPEN_REPO_EVERY_READS {
             state.repo = None;
         }
@@ -188,9 +193,23 @@ impl Worker {
                     state.reads_since_open = 0;
                 }
                 Err(err) => {
-                    // `changed` is left standing, so the next permitted slot
-                    // retries — a directory that is not a repository yet may
-                    // become one.
+                    // Counted as a read taken, `changed` and all. A directory that
+                    // is not a repository yet may become one, but leaving
+                    // `changed` standing to retry for that held the reader at
+                    // `MIN_READ_INTERVAL` and sent this same error every second for
+                    // as long as the session lived — the cost watching exists to
+                    // remove, and enough on its own to make a test counting reads
+                    // wait for a silence that never came.
+                    //
+                    // The watch is what notices instead: `git init` and a checkout
+                    // appearing both write inside the tree being watched. And that
+                    // watch is the whole of what can be watched here — the second
+                    // one follows the git directory of a repository, and there is
+                    // no repository — which is what earns the idle interval rather
+                    // than the fixed fallback for a tree nothing reports on. See
+                    // [`wait`](Self::wait).
+                    state.changed = false;
+                    self.watching.store(watch.tree.is_some(), Ordering::Release);
                     state.last_read = Some(Instant::now());
                     let msg = SnapshotMsg::Err(format!("not a git repository: {err}"));
                     return self.deliver(msg);
@@ -259,3 +278,7 @@ impl Worker {
 fn due(last_read: Option<Instant>) -> bool {
     last_read.is_none_or(|last| last.elapsed() >= MIN_READ_INTERVAL)
 }
+
+#[cfg(test)]
+#[path = "worker_tests.rs"]
+mod tests;
