@@ -12,6 +12,11 @@
 //! carries whatever else the provider decided to include. Only the fields the
 //! state machine actually reads cross the socket, so nothing else can be
 //! accidentally logged, buffered, or written down later.
+//!
+//! The one thing that leaves this process whole is the statusline payload handed
+//! to the command we displaced (see [`status_line`]) — and that command was being
+//! given the same bytes by Claude Code before this plugin was installed. We
+//! narrow what we keep; we do not narrow what someone else was already told.
 
 use crate::ipc::{IpcMessage, send, socket_path};
 use crate::protocol::PANE_TOKEN_ENV;
@@ -19,6 +24,10 @@ use crate::provider::SignalKind;
 use serde_json::{Map, Value};
 use std::io::Read;
 use std::process::ExitCode;
+use std::time::Duration;
+
+#[path = "helper_statusline.rs"]
+mod status_line;
 
 /// Most stdin a helper will read.
 ///
@@ -35,16 +44,11 @@ const STOP_FAILURE_FIELDS: [&str; 3] = ["session_id", "error_type", "hook_event_
 /// The only statusline field this plugin wants.
 const RATE_LIMITS_FIELD: &str = "rate_limits";
 
-/// Shown when the statusline payload carries no usage numbers — which is normal:
-/// `rate_limits` is absent for accounts without a subscription window and before
-/// the session's first response.
-const STATUSLINE_FALLBACK: &str = "nightcrow: watching";
-
 /// Forward a `StopFailure` payload. Always succeeds from the caller's point of
 /// view; `StopFailure` ignores our exit code anyway, and a hook that fails
 /// loudly would be worse than one that does nothing.
 pub fn hook() -> ExitCode {
-    if let Some((token, payload)) = read_stdin_object().and_then(|body| {
+    if let Some((token, payload)) = parse_object(&read_stdin_bytes()).and_then(|body| {
         let token = pane_token()?;
         Some((token, pick(&body, &STOP_FAILURE_FIELDS)))
     }) {
@@ -60,16 +64,15 @@ pub fn hook() -> ExitCode {
     ExitCode::SUCCESS
 }
 
-/// Forward the statusline's `rate_limits` and print a line, so installing this
-/// plugin does not cost the user their statusline.
+/// Forward the statusline's `rate_limits` and print a line — the line the user's
+/// own statusline command printed, whenever installing this plugin displaced one.
+/// Claude Code's `statusLine` holds a single command, so the only way not to cost
+/// the user their statusline is to run it from ours; see [`status_line`].
 pub fn statusline() -> ExitCode {
-    let body = read_stdin_object();
-    let rate_limits = body
-        .as_ref()
-        .and_then(|b| b.get(RATE_LIMITS_FIELD))
-        .and_then(Value::as_object)
-        .cloned();
-    if let (Some(token), Some(limits)) = (pane_token(), rate_limits.clone()) {
+    let raw = read_stdin_bytes();
+    let displaced = status_line::displaced();
+    let refresh = refresh(&raw, displaced.as_ref(), status_line::BUDGET);
+    if let (Some(token), Some(limits)) = (pane_token(), refresh.rate_limits) {
         let _ = send(
             &socket_path().unwrap_or_default(),
             &IpcMessage {
@@ -79,30 +82,30 @@ pub fn statusline() -> ExitCode {
             },
         );
     }
-    println!("{}", render_statusline(rate_limits.as_ref()));
+    println!("{}", refresh.line);
     ExitCode::SUCCESS
 }
 
-/// A short line built only from fields whose meaning is documented: the usage
-/// percentage of each window the provider reported.
-fn render_statusline(rate_limits: Option<&Map<String, Value>>) -> String {
-    let Some(limits) = rate_limits else {
-        return STATUSLINE_FALLBACK.to_string();
-    };
-    let mut parts = Vec::new();
-    for (label, key) in [("5h", "five_hour"), ("7d", "seven_day")] {
-        if let Some(used) = limits
-            .get(key)
-            .and_then(|w| w.get("used_percentage"))
-            .and_then(Value::as_f64)
-        {
-            parts.push(format!("{label} {}%", used.round() as i64));
-        }
-    }
-    if parts.is_empty() {
-        return STATUSLINE_FALLBACK.to_string();
-    }
-    parts.join(" | ")
+/// What one statusline refresh comes to: the usage numbers to forward, and the
+/// line to print.
+struct Refresh {
+    rate_limits: Option<Map<String, Value>>,
+    line: String,
+}
+
+/// Decide both halves of a refresh without touching the socket or stdout, so
+/// every way a displaced command can disappoint us stays testable — and so the
+/// usage numbers are read out of the payload before anything is delegated, which
+/// is what keeps a misbehaving statusline command from costing us them.
+fn refresh(raw: &[u8], displaced: Option<&Value>, budget: Duration) -> Refresh {
+    let rate_limits = parse_object(raw).and_then(rate_limits_of);
+    let line = status_line::line(displaced, raw, rate_limits.as_ref(), budget);
+    Refresh { rate_limits, line }
+}
+
+/// The usage windows of a statusline payload, when it reported any.
+fn rate_limits_of(body: Map<String, Value>) -> Option<Map<String, Value>> {
+    body.get(RATE_LIMITS_FIELD)?.as_object().cloned()
 }
 
 /// The pane this helper belongs to, from the environment its provider inherited.
@@ -114,13 +117,24 @@ fn pane_token() -> Option<String> {
         .filter(|t| !t.trim().is_empty())
 }
 
-fn read_stdin_object() -> Option<Map<String, Value>> {
-    let mut body = String::new();
-    std::io::stdin()
+/// Every byte the provider wrote, kept exactly as it wrote them. The statusline
+/// helper hands these on to the command it displaced, and a re-serialised copy is
+/// not the same thing: key order and number formatting are the provider's to
+/// choose, and a command that was reading its input before we existed should not
+/// find it rearranged now. A read that fails part-way keeps what did arrive —
+/// unparseable, and treated as such below.
+fn read_stdin_bytes() -> Vec<u8> {
+    let mut raw = Vec::new();
+    let _ = std::io::stdin()
         .take(MAX_HELPER_STDIN_BYTES)
-        .read_to_string(&mut body)
-        .ok()?;
-    match serde_json::from_str::<Value>(&body) {
+        .read_to_end(&mut raw);
+    raw
+}
+
+/// The payload as an object, when that is what it is. Anything else is not an
+/// error here: there is simply nothing of ours to forward out of it.
+fn parse_object(raw: &[u8]) -> Option<Map<String, Value>> {
+    match serde_json::from_slice::<Value>(raw) {
         Ok(Value::Object(map)) => Some(map),
         _ => None,
     }

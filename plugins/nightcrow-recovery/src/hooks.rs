@@ -17,6 +17,11 @@ mod merge;
 
 use merge::{MARKER, STATUSLINE_KEY};
 
+/// Re-exported for the statusline helper, which must recognise our own command in
+/// order to refuse chaining to it — the same check install and uninstall use to
+/// recognise our entries.
+pub(crate) use merge::is_ours;
+
 const CLAUDE_DIR: &str = ".claude";
 const SETTINGS_FILE: &str = "settings.json";
 const BACKUP_FILE: &str = "settings.json.bak";
@@ -124,6 +129,16 @@ pub fn uninstall(paths: &SettingsPaths) -> Result<Vec<String>> {
             .with_context(|| format!("cannot delete {}", paths.sidecar.display()))?;
     }
     Ok(changes)
+}
+
+/// The `statusLine` install displaced, for the statusline helper to chain to.
+///
+/// Read on every refresh, which is why it stays this cheap: one small file, and
+/// any trouble reading it means no chain rather than a failure. The value can be
+/// JSON `null` — that is what install records when it found no `statusLine` to
+/// displace — so a caller must decide what a null means to it.
+pub fn displaced_statusline(paths: &SettingsPaths) -> Option<Value> {
+    read_sidecar(&paths.sidecar)
 }
 
 /// Absent or empty means "no settings yet"; anything that is not a JSON object

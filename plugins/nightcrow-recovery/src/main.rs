@@ -43,7 +43,8 @@ enum Mode {
     /// payload on stdin and forwards a few fields to the running plugin.
     Hook,
     /// Internal: the command Claude Code runs for its statusline. Forwards the
-    /// usage windows to the running plugin and prints a short line.
+    /// usage windows to the running plugin, then prints the statusline this
+    /// plugin displaced at install time, or a short line of its own.
     Statusline,
 }
 

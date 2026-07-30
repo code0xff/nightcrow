@@ -1,6 +1,8 @@
-//! The whitelisting and the statusline text. Reading stdin and connecting to the
-//! socket are covered by `ipc_tests`; what matters here is that nothing outside
-//! the whitelist can be forwarded, whatever a provider puts in its payload.
+//! The whitelisting, and what one refresh decides. Reading stdin and connecting
+//! to the socket are covered by `ipc_tests`; what matters here is that nothing
+//! outside the whitelist can be forwarded, whatever a provider puts in its
+//! payload, and that nothing a displaced statusline command does can lose the
+//! usage numbers on the way. Which command gets to print is `helper_statusline`'s.
 
 use super::*;
 
@@ -61,34 +63,69 @@ fn a_payload_missing_every_whitelisted_field_forwards_nothing() {
     assert!(pick(&Map::new(), &STOP_FAILURE_FIELDS).is_empty());
 }
 
-#[test]
-fn a_statusline_reports_the_usage_of_every_window_the_provider_gave() {
-    let limits = match serde_json::json!({
-        "five_hour": {"used_percentage": 23.5, "resets_at": 1_767_225_600i64},
-        "seven_day": {"used_percentage": 41.2, "resets_at": 1_767_657_600i64}
-    }) {
-        Value::Object(map) => map,
-        _ => unreachable!("the fixture is an object"),
-    };
-    assert_eq!(render_statusline(Some(&limits)), "5h 24% | 7d 41%");
+/// A statusline payload with usage numbers in it, as the bytes a provider would
+/// have written them.
+const STATUSLINE_BODY: &[u8] =
+    br#"{"session_id":"s","rate_limits":{"five_hour":{"used_percentage":40.0}}}"#;
+
+/// Only the command that hangs spends this, and no assertion below turns on
+/// whether the others managed to print in time.
+const BUDGET: Duration = Duration::from_millis(200);
+
+/// A generous budget, for the cases that are about what a command printed.
+const ENOUGH: Duration = Duration::from_secs(5);
+
+fn statusline_entry(command: &str) -> Value {
+    serde_json::json!({ "type": "command", "command": command })
+}
+
+fn five_hour(refresh: &Refresh) -> Option<&Value> {
+    refresh.rate_limits.as_ref()?.get("five_hour")
 }
 
 #[test]
-fn a_statusline_with_one_window_reports_only_that_window() {
-    let limits = match serde_json::json!({"seven_day": {"used_percentage": 8.0}}) {
-        Value::Object(map) => map,
-        _ => unreachable!("the fixture is an object"),
-    };
-    assert_eq!(render_statusline(Some(&limits)), "7d 8%");
+fn a_refresh_forwards_the_usage_numbers_whatever_the_displaced_command_does() {
+    let expected = serde_json::json!({"used_percentage": 40.0});
+    for displaced in [
+        Value::Null,
+        statusline_entry("echo theirs"),
+        statusline_entry("exit 1"),
+        statusline_entry("sleep 30"),
+        statusline_entry("/x/nightcrow-recovery statusline"),
+        serde_json::json!({"type": "some-future-kind"}),
+    ] {
+        let refresh = refresh(STATUSLINE_BODY, Some(&displaced), BUDGET);
+
+        let forwarded = five_hour(&refresh);
+
+        assert_eq!(forwarded, Some(&expected), "lost them for {displaced}");
+    }
 }
 
 #[test]
-fn a_statusline_still_prints_a_line_when_the_provider_reported_no_windows() {
-    assert_eq!(render_statusline(None), STATUSLINE_FALLBACK);
-    assert_eq!(render_statusline(Some(&Map::new())), STATUSLINE_FALLBACK);
-    let unusable = match serde_json::json!({"five_hour": {"used_percentage": "lots"}}) {
-        Value::Object(map) => map,
-        _ => unreachable!("the fixture is an object"),
-    };
-    assert_eq!(render_statusline(Some(&unusable)), STATUSLINE_FALLBACK);
+fn a_refresh_prints_the_displaced_statuslines_line_rather_than_our_own() {
+    let displaced = statusline_entry("echo theirs");
+
+    let refresh = refresh(STATUSLINE_BODY, Some(&displaced), ENOUGH);
+
+    assert_eq!(refresh.line, "theirs");
+}
+
+#[test]
+fn a_refresh_with_nothing_displaced_prints_the_numbers_it_forwarded() {
+    let refresh = refresh(STATUSLINE_BODY, None, BUDGET);
+
+    assert_eq!(refresh.line, "5h 40%");
+}
+
+#[test]
+fn a_body_we_cannot_parse_still_reaches_the_displaced_command() {
+    // Parsing is for the fields we forward; the bytes are the displaced command's
+    // business, and a payload we cannot read may well be one it can.
+    let displaced = statusline_entry("cat");
+
+    let refresh = refresh(b"not json at all", Some(&displaced), ENOUGH);
+
+    assert!(refresh.rate_limits.is_none());
+    assert_eq!(refresh.line, "not json at all");
 }
