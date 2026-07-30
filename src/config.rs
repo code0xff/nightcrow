@@ -5,6 +5,7 @@ use std::path::PathBuf;
 mod layout;
 mod log;
 mod panels;
+mod plugin;
 mod web;
 
 pub use layout::{Accent, InputConfig, LayoutConfig, StartupCommand, ThemeConfig, parse_leader};
@@ -12,6 +13,7 @@ pub use layout::{Accent, InputConfig, LayoutConfig, StartupCommand, ThemeConfig,
 pub use log::LogLevel;
 pub use log::{LogConfig, LogRotation};
 pub use panels::{AgentIndicatorConfig, MouseConfig, TreeConfig};
+pub use plugin::PluginConfig;
 #[cfg(test)]
 pub use web::generate_password;
 pub use web::{WebViewerConfig, ensure_web_viewer_password};
@@ -24,6 +26,12 @@ pub use web::{WebViewerConfig, ensure_web_viewer_password};
 /// by this — they may exceed eight, in which case the extras past the eighth
 /// are reachable by focus cycling (`Shift+←/→`) rather than a jump key.
 pub const MAX_STARTUP_COMMANDS: usize = 8;
+
+/// Upper bound on `[[plugin]]` entries. Each one is a child process the host
+/// keeps alive for the whole session, and a pane opts into exactly one of them,
+/// so the bound tracks `MAX_STARTUP_COMMANDS` rather than being independently
+/// generous.
+pub const MAX_PLUGINS: usize = 8;
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(default)]
@@ -41,6 +49,11 @@ pub struct Config {
     /// default, which preserves the single empty-shell startup behaviour.
     #[serde(rename = "startup_command")]
     pub startup_commands: Vec<StartupCommand>,
+    /// External plugin processes, from TOML `[[plugin]]`. Empty by default, and
+    /// every entry is additionally off until it sets `enabled = true`, so no
+    /// plugin runs unless the user asked for it twice over.
+    #[serde(rename = "plugin")]
+    pub plugins: Vec<PluginConfig>,
 }
 
 fn default_config_path() -> Option<PathBuf> {
@@ -157,6 +170,7 @@ pub fn validate_config(cfg: &Config) -> Result<()> {
             "startup_command[{i}].command must not be empty"
         );
     }
+    plugin::validate_plugins(cfg)?;
     anyhow::ensure!(
         (1..=1024).contains(&cfg.tree.max_depth),
         "tree.max_depth must be between 1 and 1024"
@@ -195,6 +209,8 @@ pub fn resolve_startup_commands(cfg: &Config, cli_exec: &[String]) -> Result<Vec
         resolved.push(StartupCommand {
             name: None,
             command: command.clone(),
+            // `--exec` panes are ad-hoc, so they never opt into a plugin.
+            plugin: None,
         });
     }
     anyhow::ensure!(

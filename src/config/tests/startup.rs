@@ -37,6 +37,7 @@ fn resolve_startup_commands_appends_cli_exec_after_config() {
     cfg.startup_commands.push(StartupCommand {
         name: Some("Claude".into()),
         command: "claude".into(),
+        plugin: None,
     });
     let resolved =
         resolve_startup_commands(&cfg, &["codex".to_string(), "vim".to_string()]).unwrap();
@@ -68,6 +69,7 @@ fn resolve_startup_commands_caps_combined_total() {
         cfg.startup_commands.push(StartupCommand {
             name: None,
             command: format!("echo {i}"),
+            plugin: None,
         });
     }
     // 4 config + 5 CLI = 9 > MAX_STARTUP_COMMANDS (8).
