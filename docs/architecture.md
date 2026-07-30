@@ -8,6 +8,9 @@ nightcrow는 **세션 데몬 하나 + 프론트엔드 N개** 구조의 agent-adj
 화면은 상단 패널에서 git diff를 실시간 추적하고, 하단 패널에서 임의의 프로세스(주로 LLM CLI나 빌드/테스트 러너)를 동시에 실행한다.
 전환 과정과 남은 단계는 `docs/session-daemon-plan.md`를 참고한다.
 nightcrow 자체는 AI에 대한 ontology를 갖지 않는다 — agent든 사람이든 동일한 PTY와 파일 mtime을 본다.
+provider를 아는 동작(예: rate limit이 풀릴 때까지 기다렸다 세션을 재개하는 것)이 필요하면 코어가 아니라
+**plugin**이 갖는다. 코어는 pane을 외부 프로세스에 보여주고 그 프로세스가 요청한 것을 검증할 뿐,
+어떤 CLI가 무엇을 출력하는지는 끝까지 모른다 — `### Plugin Host` 참고.
 
 **대상 사용자**: 터미널 중심으로 작업하면서, 옆 패널의 LLM CLI(Claude Code, Codex, aider 등)나 빌드/테스트 러너가 만든 코드 변경을 실시간으로 따라잡고 싶은 개발자.
 
@@ -155,7 +158,18 @@ src/
 │   └── tests/            # ui integration tests (chrome, hint, hit-test, notice)
 ├── backend/
 │   ├── mod.rs            # TerminalBackend trait + BackendEvent
-│   └── pty.rs            # PtyBackend (portable-pty, the only backend)
+│   ├── identity.rs       # PaneToken / PaneGeneration: a pane slot's name outside this process
+│   ├── slot.rs           # per-slot bookkeeping (launch, idle clock) + resume arg validation
+│   ├── pty.rs            # PtyBackend (portable-pty, the only backend)
+│   └── pty_spawn.rs      # open_pane / relaunch_pane: the spawn path and env injection
+├── plugin/               # provider-agnostic plugin host — see "Plugin Host"
+│   ├── mod.rs            # module root; states the trust posture
+│   ├── protocol.rs       # NDJSON wire contract (events out, commands in)
+│   ├── host.rs           # one long-lived child per plugin
+│   ├── host_pump.rs      # stdin/stdout/stderr pump threads + capped line reader
+│   ├── guard.rs          # the trust boundary: PluginCommand -> Approved | Refused
+│   ├── guard_budget.rs   # per-slot rate ceilings, keyed by PaneToken
+│   └── registry.rs       # ~/.nightcrow/plugins: install / list / remove
 ├── git/
 │   ├── mod.rs
 │   ├── diff.rs           # module root: pub use re-exports, MAX_FILE_VIEW_BYTES
@@ -502,7 +516,7 @@ background even while scrolled out of the window.
 
 라우팅은 leader(prefix) 모델을 따른다. 1순위 사용자는 패널에서 LLM CLI를 굴리는 cockpit 사용자이므로, `Ctrl+W`/`Ctrl+L` 같은 프롬프트 편집 Ctrl 키가 nightcrow에 가로채이지 않고 PTY로 통과해야 한다. 앱 전역 명령은 leader 뒤에 한 키를 눌러야만 실행된다.
 
-- **Leader (prefix)**: 기본값 `Ctrl+F`, `[input] leader`로 변경 가능(`config.rs::parse_leader`가 `ctrl+<letter>`만 허용하고 예약키·인코딩 불가 chord는 거부). leader를 누르면 `App.prefix_armed` 플래그가 켜지고, 다음 키 한 개가 앱 명령(`input::prefix_action`)으로 해석된다. **타임아웃은 없다** — armed 상태는 follow-up 키나 `Esc`/`Ctrl+C`로만 해제된다. 해제 경로는 셋뿐이다: 매핑된 키 → Action 실행 후 해제, 미매핑 키 → 소비 후 해제, `Esc`/`Ctrl+C` → 취소. `<L> <L>`는 terminal focus에서 leader를 `encode_key`로 리터럴 PTY 전송한다. prefix 매핑: `t`=NewPane, `w`=ClosePane(terminal focus 한정 — unfocus 시 active pane이 다른 pane과 동일하게 그려져 닫힐 대상이 보이지 않으므로, 키는 소비하되 no-op이고 힌트 바에도 노출하지 않는다), `s`=pane swap 대기 모드 arm(같은 terminal-focus 스코프 + pane 2개 이상 필요 — 상세는 "Split-View Terminal Panel"의 swap 항목), `l`=ToggleLogView, `b`=ToggleTreeView(트리 뷰 ↔ status 뷰), `f`=ToggleFullscreen, `o`=OpenProject(저장소를 새 프로젝트 탭으로 — 제자리 교체 명령은 없다), `x`=CloseProject, `p`=CycleTheme, `r`=Redraw, `q`=Quit. 숫자는 지금 body가 보여주는 것을 지시한다: `1`=FocusList, `2`=FocusDiff, `3`–`9`,`0`=pane 0–7로 focus 이동(`0`은 digit이 9까지뿐이라 8번째 pane을 가리킨다). bare F키는 별개 축이며 프로젝트 탭을 고르므로 이 digit들과 충돌하지 않고, 서로 자리를 비워줄 필요도 없다. pane 포커스 이동은 tab 전환이 아니라 어떤 pane이 active인지만 바꾼다 — split-view grid는 이동 전후로 계속 여러 pane을 동시에 그린다.
+- **Leader (prefix)**: 기본값 `Ctrl+F`, `[input] leader`로 변경 가능(`config.rs::parse_leader`가 `ctrl+<letter>`만 허용하고 예약키·인코딩 불가 chord는 거부). leader를 누르면 `App.prefix_armed` 플래그가 켜지고, 다음 키 한 개가 앱 명령(`input::prefix_action`)으로 해석된다. **타임아웃은 없다** — armed 상태는 follow-up 키나 `Esc`/`Ctrl+C`로만 해제된다. 해제 경로는 셋뿐이다: 매핑된 키 → Action 실행 후 해제, 미매핑 키 → 소비 후 해제, `Esc`/`Ctrl+C` → 취소. `<L> <L>`는 terminal focus에서 leader를 `encode_key`로 리터럴 PTY 전송한다. prefix 매핑: `t`=NewPane, `w`=ClosePane(terminal focus 한정 — unfocus 시 active pane이 다른 pane과 동일하게 그려져 닫힐 대상이 보이지 않으므로, 키는 소비하되 no-op이고 힌트 바에도 노출하지 않는다), `s`=pane swap 대기 모드 arm(같은 terminal-focus 스코프 + pane 2개 이상 필요 — 상세는 "Split-View Terminal Panel"의 swap 항목), `c`=CancelRecovery(plugin이 대기 중인 pane recovery를 포기 — 대기 중인 것이 있을 때만 힌트에 노출된다), `l`=ToggleLogView, `b`=ToggleTreeView(트리 뷰 ↔ status 뷰), `f`=ToggleFullscreen, `o`=OpenProject(저장소를 새 프로젝트 탭으로 — 제자리 교체 명령은 없다), `x`=CloseProject, `p`=CycleTheme, `r`=Redraw, `q`=Quit. 숫자는 지금 body가 보여주는 것을 지시한다: `1`=FocusList, `2`=FocusDiff, `3`–`9`,`0`=pane 0–7로 focus 이동(`0`은 digit이 9까지뿐이라 8번째 pane을 가리킨다). bare F키는 별개 축이며 프로젝트 탭을 고르므로 이 digit들과 충돌하지 않고, 서로 자리를 비워줄 필요도 없다. pane 포커스 이동은 tab 전환이 아니라 어떤 pane이 active인지만 바꾼다 — split-view grid는 이동 전후로 계속 여러 pane을 동시에 그린다.
 - **No-prefix 예약키**: `F1`–`F10`(프로젝트 탭 1–10 전환 — layout에 따라 바뀌지 않는 유일한 점프 축), `Shift+←/→`(focus cycle — terminal focus 상태에서는 active pane을 앞/뒤로 이동), `Shift+↑/↓`·`Shift+PgUp/PgDn`(터미널 스크롤, active pane 기준 — 전달 방식은 "Scroll Routing" 참조)는 leader 없이 항상 앱이 먼저 처리한다. modifier 또는 F-key라서 프롬프트 텍스트와 혼동되지 않는다.
 - **Upper panel focused**: leader 명령과 no-prefix 예약키를 제외한 나머지는 로컬 네비게이션(`j`/`k`, `/`, `v`, `n`/`N`, `Enter`, `Esc`, 화살표, `PgUp`/`PgDn`)으로 처리된다. `j`/`k`는 upper-pane handler 내부에서 vim navigation으로 변환되며, `map_key`는 plain character로 통과시켜 terminal focus에서 PTY로 그대로 전달되게 한다.
 - **Lower panel focused (terminal)**: leader/예약키가 아닌 모든 키는 active backend의 stdin으로 직접 통과한다(`encode_key`가 화살표/F-key/제어문자를 VT100 시퀀스로 인코딩). 단독 `Ctrl+T/W/L/O/P/Q` 등은 앱 명령이 아니므로 control byte로 PTY에 전달된다(리더 `Ctrl+F`만 prefix를 arm하고 통과하지 않는다). bare F키는 앱이 가로채므로 pane 안 프로그램(htop, mc 등)의 F키 메뉴는 동작하지 않는다 — 수정자를 붙인 `Ctrl+F1`, `Shift+F5` 등은 통과한다.
@@ -649,7 +663,7 @@ worker, commit-log fetch, PTY당 reader/wait 쌍). 60개 자체는 문제가 아
 
 ### Notice Row
 
-힌트 바 바로 위 한 행. 평상시에는 `ui::mod::render_repo_header`가 repo 경로(`~/...` 형식으로 home-relative 표기), 현재 브랜치, upstream tracking 상태(`↑N ↓M`)를 노출한다. 브랜치/추적 정보는 snapshot worker가 채워주고, detached HEAD/unborn branch처럼 값이 없으면 해당 칩만 생략한다.
+힌트 바 바로 위 한 행. 평상시에는 `ui::mod::render_repo_header`가 repo 경로(`~/...` 형식으로 home-relative 표기), 현재 브랜치, upstream tracking 상태(`↑N ↓M`)를 노출한다. 브랜치/추적 정보는 snapshot worker가 채워주고, detached HEAD/unborn branch처럼 값이 없으면 해당 칩만 생략한다. 마지막 칩은 plugin이 보고한 pane recovery(state·deadline·attempt·detail)이며, 대기 중인 것이 있을 때만 나타난다 — 자세한 내용은 "Recovery Surface" 참고.
 
 **알림(`App::notice`)이 올라오면 이 행을 덮는다.** 전용 행을 따로 만들지 않은 이유는 알림이 뜨고 사라질 때마다 body가 한 행씩 줄었다 늘어나면서 **열려 있는 모든 PTY가 리사이즈**되기 때문이다(전체화면 프로그램이 매번 다시 그려진다). 이 행의 내용은 매 프레임 `App`에서 다시 계산되는 ambient 정보라 잠시 덮어도 잃는 것이 없다 — 반대로 아래 hint bar는 사용자가 편집 중인 repo 입력 텍스트를 담고 있어 덮으면 안 된다.
 
@@ -708,6 +722,95 @@ hint bar는 오버레이(repo 입력·prefix armed·swap target)가 열리면 �
 ### HEAD Change Detection
 
 snapshot worker는 매 폴 사이클마다 현재 HEAD oid를 함께 보고한다. UI 스레드는 `poll_snapshot`에서 oid 변동을 감지하면 `refresh_commit_log_after_head_change`로 commit log와 drill-down 상태를 동일 oid 기준으로 재정렬해, 터미널에서 새 커밋·amend·force-push·브랜치 전환이 일어났을 때도 로그 뷰가 즉시 따라잡는다.
+
+### Plugin Host (`src/plugin/`, `plugins/`)
+
+어떤 CLI가 사용량 한도에 걸렸는지 알아보고 한도가 풀린 뒤 세션을 재개하는 일은 provider를
+아는 동작이다. `## Overview`가 못박은 대로 코어는 그런 ontology를 갖지 않으므로, 그 지식은
+**별도 프로세스로 분리한다**. 코어에는 provider를 모르는 host만 두고, Claude Code / Codex /
+OpenCode를 아는 코드는 `plugins/nightcrow-recovery`에 산다. 코어 `src/plugin/` 어디에도 그
+세 이름은 나오지 않으며, 그것이 이 경계가 지켜지고 있다는 검사 가능한 조건이다.
+
+**이 기능은 provider의 한도를 우회하지 않는다.** 하는 일은 사람이 손으로 하던 것 —
+한도가 풀릴 시각까지 기다렸다가 같은 세션을 다시 열는 것 — 을 대신하는 것뿐이다.
+한도를 늘리거나 회피하거나 감지를 피하는 경로는 없고, 있어서도 안 된다.
+
+- **왜 자식 프로세스 + NDJSON인가**: Rust에는 안정 ABI가 없어 `libloading` 기반 dylib plugin은
+  버전이 어긋나는 순간 UB다. cargo feature 게이트는 재컴파일을 요구하므로 "설치·제거 가능"이
+  아니다. 남는 것은 프로세스 경계이고, 그 편이 신뢰 모델도 정직하다 — plugin은 우리 주소 공간에
+  없다. 프레이밍은 stdin/stdout의 개행 구분 JSON이고 버전(`v`)이 맞지 않는 줄은 거부한다.
+- **opt-in이 곧 도달 범위**: plugin은 `[[startup_command]]`이 `plugin = "이름"`으로 지목한 pane만
+  본다. 클라이언트가 직접 연 pane에는 연결이 생기지 않는다 — 임의의 셸 pane이 자동으로 감지되고
+  조작되는 일은 구조적으로 불가능하다. `[[plugin]]`은 `enabled = false`가 기본이다.
+- **신뢰 경계는 `guard.rs` 하나다**: `protocol::decode_command`는 모양과 크기만 본다. 권한은
+  `Guard::judge`만 판단하고, plugin이 우회할 경로가 없다. 규칙: pane이 존재하고 opt-in했는가,
+  `generation`이 현재와 같은가(이것이 교체된 프로세스에 대한 결정이 후임에게 닿는 것을 막는다),
+  살아 있고 조용할 때만 입력을 넣는가, 죽었을 때만 relaunch하는가, 제어문자가 섞이지 않았는가,
+  slot당 횟수 상한 안인가. 거부는 로그로 남고 재시도되지 않는다.
+- **`PaneToken`이 정체성인 이유**: `PaneId`는 backend별 카운터라 backend가 다시 만들어지면 1로
+  돌아간다. 프로세스 밖에서 pane을 가리키기에 부적합하고, cwd도 답이 못 된다 — 한 저장소에
+  여러 pane을 두는 것이 지원되는 레이아웃이다. 그래서 난수 토큰을 spawn 시각에 자식 환경
+  (`NIGHTCROW_PANE_TOKEN`)으로 넣는다. provider가 띄우는 hook/statusline 자식들이 이를 상속하므로,
+  plugin은 어떤 pane에서 온 사건인지 추측 없이 안다.
+- **횟수 상한은 slot(토큰) 기준으로 센다**: relaunch는 반드시 새 `PaneId`를 만든다. 상한을 id로
+  세면 relaunch마다 예산이 새로 생겨서, 즉시 끝나는 명령과 매 종료마다 relaunch하는 plugin이
+  만나면 상한에 영원히 닿지 않는다. 토큰은 relaunch를 건너 살아남는 유일한 값이라 상한이
+  붙어야 하는 곳이다.
+- **relaunch는 같은 id를 되살리지 않는다**: id는 단조 증가하고 모든 클라이언트가 `Exited`를
+  그 id의 종결로 취급한다. 그래서 교체는 새 id로 태어나되 토큰을 물려받고 generation이 오른다.
+  레이아웃은 새 pane을 원래 인덱스에 넣고 기존 `Reordered`를 브로드캐스트해 보존한다 — 와이어
+  포맷에 relaunch 전용 메시지를 추가하지 않는다.
+- **프로세스 해제와 slot 폐기를 분리한다**: 한도 대기는 몇 시간일 수 있다. 죽은 자식의 fd와
+  스레드를 그 시간 내내 붙잡고 토큰만 보존하는 것은 낭비이므로, `release_process`는 PTY를 놓고
+  slot만 남긴다. 아무도 relaunch하지 않으면 `PENDING_RELAUNCH_TTL`에 slot을 폐기한다.
+- **권한 인자는 사용자가 선언한다**: relaunch가 덧붙일 수 있는 플래그는 `[[plugin]]`의
+  `allowed_resume_flags`뿐이고 기본은 빈 목록이다. 코어가 특정 CLI의 위험 플래그 이름을
+  하드코딩하는 대안은 곧 코어가 provider를 아는 것이라 택하지 않았다. 인자는 셸 메타문자를
+  거부한 뒤 개별로 quote되며, 원래 명령 문자열은 수정되지 않는다(다음 relaunch가 인자를
+  누적하지 않도록 보존되는 것도 원래 명령이다).
+- **관측 부담을 지지 않는 쪽으로**: 출력 텍스트는 chunk 단위로 escape를 벗겨 넘기므로 두 read에
+  걸친 escape는 완전히 제거되지 않는다. 이것이 허용되는 이유는 출력 텍스트가 언제나 fallback
+  신호일 뿐이라는 것이다 — Claude는 hook과 statusline, Codex는 rollout JSONL, OpenCode는 로컬
+  서버의 세션 상태가 1차 신호다.
+- **OpenCode에는 개입하지 않는다**: 자체 재시도가 상한 없이 계속되므로 "재시도 소진"을 기다리는
+  설계가 성립하지 않는다. 프로세스가 끝났거나 상태가 `idle`로 바뀐 뒤에만 손을 댄다.
+- **와이어 계약이 두 벌 있다**: plugin은 독립 빌드라 `plugins/nightcrow-recovery`가 프로토콜
+  타입을 따로 갖는다. `PROTOCOL_VERSION`을 진짜 주장으로 만들려면 그래야 하고, 양쪽 모두 JSON
+  모양을 리터럴로 고정한 테스트가 있어 드리프트는 테스트 실패로 나타난다.
+
+#### Recovery Surface (사람이 보고 취소하는 쪽)
+
+plugin의 `status` 보고는 `ServerMessage::Recovery { pane, state, detail?, deadline_epoch?,
+attempt }`로 모든 클라이언트에 브로드캐스트되고, 사람은 `ClientMessage::CancelRecovery { pane }`로
+되돌려 준다. 설계 결정은 다음과 같다.
+
+- **hub는 보고를 보관하지 않는다**: 도착한 그대로 브로드캐스트하고 잊는다. hub가 소유하는 것은
+  hold(exited pane의 slot)뿐이고, 사람이 빼앗을 수 있는 것도 그것뿐이다. 따라서 표시 상태는
+  클라이언트가 최신 보고를 들고 있는 것으로 성립한다.
+- **`state`는 해석하지 않는다**: plugin이 고른 짧은 문자열이며 코어는 뜻을 모른다. 유일한 예외가
+  hub 자신이 보내는 `"cancelled"`(`hub_recovery::RECOVERY_CANCELLED`)이고, 클라이언트는 이것을
+  "이 pane에 더는 대기 중인 것이 없다"로 읽어 엔트리를 **지운다**.
+- **hold가 끝나는 모든 경로가 `cancelled`를 보낸다**: 취소, TTL 만료, relaunch 성공, 명시적
+  close. 하나라도 빠지면 클라이언트에 지나간 deadline이 영구히 남는다.
+- **취소는 hold를 근거로 판정한다**: `claim_pending`이 비면 아무 일도 하지 않는다(에러가 아니다 —
+  클라이언트는 만료보다 한 박자 늦을 수 있다). hold가 있으면 `pane_closed` → `Plugins::forget` →
+  `retire_slot` 순서다. `forget`이 slot의 토큰으로 예산을 지우므로 `retire_slot`보다 앞이어야 한다.
+- **TUI는 행을 추가하지 않는다**: 표시는 (1) pane 탭 라벨의 짧은 마커(`⏳17:45` / `⚠3`,
+  `ui/terminal_tab/recovery.rs`)와 (2) notice row 마지막 칩(state·deadline·attempt·detail,
+  `ui/notice.rs`)뿐이다. 전용 행이나 오버레이를 만들지 않은 이유는 "Layout"·"Notice Row"와
+  같다 — 행이 생겼다 사라지면 열려 있는 모든 PTY가 리사이즈된다. 좁은 pane에서는 제목이
+  먼저 잘리고 마커가 남는다(`RECOVERY_TITLE_MAX_CHARS`).
+- **취소 키는 leader 뒤에 있다**: `<leader> c`. bare 키는 pane 안 프로그램의 것이라는 "Keyboard
+  Routing" 규칙 그대로이며, 대기 중인 것이 있을 때만 힌트에 노출된다.
+- **탭이 없는 pane도 가리킬 수 있어야 한다**: 프로세스가 끝나고 slot만 남은 pane은 클라이언트의
+  pane 목록에 없다. 그래서 표시·취소 대상은 "focus된 pane의 보고, 없으면 목록에 없는 pane의
+  보고(가장 낮은 id)"로 정의된다(`TerminalState::recovery_focus`, 웹은
+  `lib/recovery.ts::orphanRecovery`). 웹에서는 그런 보고가 pane 셀 대신 패널 툴바에 뜬다.
+- **deadline은 절대 추측하지 않는다**: `deadline_epoch`가 없으면 시각을 아무것도 그리지 않는다.
+  틀린 벽시계 시각은 사실처럼 읽힌다. TUI는 날짜 크레이트 없이 `libc::localtime_r`로 `HH:MM`만
+  만들고(`ui/wall_clock.rs`), unix가 아닌 플랫폼에서는 UTC로 떨어진다.
+- **터미널 렌더링과 결합하지 않는다**: 화면 내용이 아니라 pane 메타데이터이므로 emulator/xterm
+  경로에 닿지 않는다. TUI는 `TerminalState.recovery` 맵, 웹은 컨트롤 프레임에서 파생된 상태다.
 
 ### 공용 웹 계층 (`src/web/common/`)
 

@@ -93,6 +93,51 @@ live_watch = true         # watch expanded dirs and refresh the tree live; set f
 #
 # [[startup_command]]
 # command = "cargo test --watch"
+#
+# A pane may hand itself to a plugin (see [[plugin]] below) by naming one. Only
+# panes that name a plugin are ever visible to it — everything else, including
+# your plain shells, stays untouched:
+#
+# [[startup_command]]
+# name = "Claude"
+# command = "claude"
+# plugin = "recovery"       # optional; omitted means no plugin sees this pane
+
+# External plugin processes. nightcrow launches each enabled entry and speaks
+# its protocol; it knows nothing about what the plugin is for, so the same
+# section fits any provider or tool.
+#
+# Nothing here runs unless you both add an entry AND set enabled = true, and a
+# plugin can only act on panes whose [[startup_command]] named it.
+#
+# The bundled "recovery" plugin watches an opted-in pane for its provider's
+# usage-limit message, waits for the stated reset time to pass, and then resumes
+# the pane. It only waits — it does not bypass, raise, or work around any
+# provider limit, and it sends nothing while a limit is in effect.
+#
+# Up to 8 entries; names must be unique, since that name is what a pane opts in
+# with. `env` applies to the plugin process only, never to terminal panes.
+#
+# To let a plugin re-open an exited pane's session you must also list the flags
+# it may append. nightcrow does not know what any CLI's flags mean, so it will
+# not invent that permission: a flag you have not listed here cannot reach the
+# pane's command line. That is what stops a plugin from quietly changing how a
+# CLI asks for your approval — do not list a flag that weakens it.
+# Leave it empty (the default) and the plugin can still wait and type into a
+# live pane, but never relaunch one.
+#
+# [[plugin]]
+# name = "recovery"                 # required; the name panes opt in with
+# command = "nightcrow-recovery"    # required; found on PATH or in the plugin dir
+# args = []                         # passed to the plugin verbatim
+# enabled = false                   # off by default; set true to actually run it
+# allowed_resume_flags = ["--resume", "resume", "--session"]
+#                                   # empty by default, which refuses relaunches.
+#                                   # These three are what the bundled recovery
+#                                   # plugin needs for Claude/Codex/OpenCode.
+#
+# [plugin.env]
+# NIGHTCROW_RECOVERY_LOG = "info"
 
 # The browser surface: renders git data as a real web page and serves the
 # session's terminals. Always on — it is part of the session, not an add-on —
