@@ -5,8 +5,12 @@ Agent-adjacent Rust TUI: 상단은 git diff/commit log 뷰어, 하단은 split-v
 
 ## 구조
 
-- `.claude/rules/` — 개발 규칙 (코드 품질, 테스트, 보안, 커밋, 문서, 의존성, 토큰 절약). 모든 작업에 항상 적용된다.
-- `.claude/skills/` — `/plan`, `/self-review`, `/security-review`
+- `.agents/rules/` — 개발 규칙 (코드 품질, 테스트, 보안, 커밋, 문서, 의존성, 토큰 절약). 모든 작업에 항상 적용된다.
+- `.agents/skills/` — `/plan`, `/self-review`, `/security-review`
+- `.claude/rules`, `.claude/skills` — 위 두 디렉터리를 가리키는 symlink. 에이전트 설정의 원본은
+  `.agents/`이고, 도구별 디렉터리는 링크만 둔다. 새 도구를 붙일 때도 `.agents/`를 복사하지 말고
+  링크한다. (Windows에서 symlink를 체크아웃하려면 개발자 모드 + `git config core.symlinks true`가
+  필요하고, 없으면 링크가 경로 문자열이 담긴 일반 파일로 풀린다.)
 
 ## 개발 흐름
 
