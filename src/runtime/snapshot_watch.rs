@@ -13,7 +13,8 @@
 //! install is not fatal: the reader falls back to the fixed interval it used
 //! before this existed.
 
-use notify::{Event, RecommendedWatcher, RecursiveMode, Watcher};
+use notify::event::{AccessKind, AccessMode};
+use notify::{Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::Sender;
 
@@ -37,12 +38,8 @@ pub(super) enum Wake {
 /// same way and log the same line.
 pub(super) fn install(root: &Path, wake: Sender<Wake>) -> Option<RecommendedWatcher> {
     let mut watcher = match notify::recommended_watcher(move |event: notify::Result<Event>| {
-        let paths = match event {
-            Ok(event) => event.paths,
-            Err(err) => {
-                tracing::debug!(%err, "filesystem watcher error; reading anyway");
-                Vec::new()
-            }
+        let Some(paths) = changed_paths(event) else {
+            return;
         };
         // The worker is gone once this fails, which is not this thread's
         // business to report.
@@ -64,6 +61,40 @@ pub(super) fn install(root: &Path, wake: Sender<Wake>) -> Option<RecommendedWatc
             );
             None
         }
+    }
+}
+
+/// The paths worth waking the reader for, or `None` when the event cannot mean
+/// the tree changed.
+///
+/// **Reading is an event too, on Linux.** inotify's mask includes `IN_OPEN`, and
+/// every status read opens things inside the watched roots: libgit2 reads `HEAD`
+/// and the branch ref, and the untracked walk opens the work-tree directory
+/// itself. All of those clear the significance filter below, so forwarding them
+/// made the reader its own event source — each read scheduled the next one a
+/// second later, forever, for as long as a repository was on screen. It went
+/// unnoticed in development because FSEvents and `ReadDirectoryChangesW` do not
+/// report a file being opened, and only the inotify backend emits
+/// [`EventKind::Access`] at all.
+fn changed_paths(event: notify::Result<Event>) -> Option<Vec<PathBuf>> {
+    let event = match event {
+        Ok(event) => event,
+        Err(err) => {
+            tracing::debug!(%err, "filesystem watcher error; reading anyway");
+            // It may have missed events, and naming none of them is how that is
+            // said — see [`Wake::Changed`].
+            return Some(Vec::new());
+        }
+    };
+    match event.kind {
+        // The one access that is not somebody looking: the file was open for
+        // writing and is now finished, which is `IN_CLOSE_WRITE` and a change.
+        EventKind::Access(AccessKind::Close(AccessMode::Write)) => Some(event.paths),
+        EventKind::Access(_) => None,
+        // Everything else as before, [`EventKind::Other`] included: an inotify
+        // queue overflow arrives as `Other` naming no paths, and that empty list
+        // is what forces the re-read a dropped event calls for.
+        _ => Some(event.paths),
     }
 }
 

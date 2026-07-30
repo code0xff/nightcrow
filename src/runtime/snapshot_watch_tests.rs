@@ -1,9 +1,22 @@
-use super::{Roots, any_matters, external_git_dir};
+use super::{Roots, any_matters, changed_paths, external_git_dir};
 use crate::test_util::{make_linked_worktree, make_repo, run_git};
+use notify::event::{AccessKind, AccessMode, CreateKind, Event, EventKind, Flag, ModifyKind};
 use std::path::{Path, PathBuf};
 
 fn under(root: &str, relative: &str) -> Vec<PathBuf> {
     vec![Path::new(root).join(relative)]
+}
+
+/// The whole gate the watcher applies: the kind decides whether the event is
+/// forwarded at all, and the paths then decide whether it is worth a read.
+fn wakes_the_reader(root: &str, event: notify::Result<Event>) -> bool {
+    let repo = crate::test_util::open_repo(root);
+    changed_paths(event)
+        .is_some_and(|paths| any_matters(Some(&repo), &Roots::of(Path::new(root)), &paths))
+}
+
+fn at(kind: EventKind, root: &str, relative: &str) -> notify::Result<Event> {
+    Ok(Event::new(kind).add_path(Path::new(root).join(relative)))
 }
 
 #[test]
@@ -202,5 +215,69 @@ fn a_path_outside_the_tree_matters() {
         &Roots::of(Path::new(&path)),
         &[PathBuf::from("/elsewhere/file.rs")]
     ));
+    drop(dir);
+}
+
+#[test]
+fn an_open_caused_by_the_read_itself_does_not_wake_the_reader() {
+    // The loop this closes. A status read opens `HEAD`, the branch ref and the
+    // work-tree root, inotify reports each of those as an open, and every one of
+    // them clears the filter above — so the reader kept re-reading at the rate
+    // limit for as long as a repository was on screen.
+    let (dir, path) = make_repo();
+
+    for opened in [".git/HEAD", ".git/refs/heads/main", "src/main.rs", ""] {
+        let event = at(
+            EventKind::Access(AccessKind::Open(AccessMode::Any)),
+            &path,
+            opened,
+        );
+        assert!(
+            !wakes_the_reader(&path, event),
+            "opening {opened} is a read, not a change"
+        );
+    }
+    drop(dir);
+}
+
+#[test]
+fn a_finished_write_wakes_the_reader() {
+    // `IN_CLOSE_WRITE` is the one access that is not somebody looking, so it
+    // cannot go with the rest: dropping it would lose real changes on Linux.
+    let (dir, path) = make_repo();
+    let closed = EventKind::Access(AccessKind::Close(AccessMode::Write));
+
+    assert!(wakes_the_reader(&path, at(closed, &path, ".git/HEAD")));
+    assert!(wakes_the_reader(&path, at(closed, &path, "src/main.rs")));
+    drop(dir);
+}
+
+#[test]
+fn an_ordinary_write_or_creation_wakes_the_reader() {
+    // Nothing outside `Access` was touched; this is what says so.
+    let (dir, path) = make_repo();
+
+    for kind in [
+        EventKind::Modify(ModifyKind::Any),
+        EventKind::Create(CreateKind::File),
+    ] {
+        assert!(
+            wakes_the_reader(&path, at(kind, &path, "src/main.rs")),
+            "{kind:?} changes what a status says"
+        );
+    }
+    drop(dir);
+}
+
+#[test]
+fn a_dropped_events_signal_wakes_the_reader() {
+    // An inotify queue overflow arrives as `Other` with the rescan flag and no
+    // paths at all, and a watcher error names nothing either. Both mean events
+    // were missed, so both must still reach the worker.
+    let (dir, path) = make_repo();
+
+    let overflowed = Ok(Event::new(EventKind::Other).set_flag(Flag::Rescan));
+    assert!(wakes_the_reader(&path, overflowed));
+    assert!(wakes_the_reader(&path, Err(notify::Error::generic("boom"))));
     drop(dir);
 }
