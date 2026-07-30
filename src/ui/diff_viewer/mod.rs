@@ -115,7 +115,6 @@ pub fn render(
             break;
         }
 
-        // Hunk header
         if flat_idx >= scroll_start && flat_idx < visible_end {
             lines.push(Line::from(Span::styled(
                 hunk.header.as_str(),

@@ -154,9 +154,8 @@ impl TerminalState {
     pub(super) fn sync_scroll_pane(&mut self, id: PaneId) {
         let offset = self.scroll.get(&id).copied().unwrap_or(0);
         let actual = match self.emulators.get_mut(&id) {
-            // The emulator clamps the offset to the actual scrollback
-            // buffer size internally, so we can pass the full request
-            // through and read back what was applied.
+            // The emulator clamps internally, so pass the full request through
+            // and read back what was applied.
             Some(emulator) => emulator.set_scroll_offset(offset),
             None => return,
         };

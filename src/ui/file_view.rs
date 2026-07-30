@@ -68,8 +68,6 @@ impl FileViewState {
         self.error = None;
     }
 
-    /// Largest legal `scroll` value: one less than `line_count`, or 0 when
-    /// the file is empty.
     pub fn max_scroll(&self) -> usize {
         self.line_count().saturating_sub(1)
     }

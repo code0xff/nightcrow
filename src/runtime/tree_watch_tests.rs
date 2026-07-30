@@ -11,7 +11,6 @@ fn inert_watcher_tracks_desired_set_without_os_calls() {
     w.sync(root, &desired);
     assert_eq!(w.watched, desired);
 
-    // Reconcile down to just the root.
     let mut smaller = BTreeSet::new();
     smaller.insert(String::new());
     w.sync(root, &smaller);
@@ -52,7 +51,6 @@ fn drain_changed_reports_the_directories_that_changed_and_clears() {
         BTreeSet::from(["src".to_string(), String::new()]),
         "the repo root is the empty relative path"
     );
-    // Drained: a second poll with nothing new reports no change.
     assert!(w.drain_changed().is_empty());
 }
 

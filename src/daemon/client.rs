@@ -24,7 +24,6 @@ use std::time::Duration;
 /// invented out of an idle session.
 const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(5);
 
-/// A connection to the session daemon.
 #[derive(Debug)]
 pub struct DaemonClient {
     /// The write half. The reader thread owns the other.

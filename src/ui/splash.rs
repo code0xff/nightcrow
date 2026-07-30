@@ -54,7 +54,6 @@ pub fn draw(frame: &mut Frame, state: &SplashState, accent: Color) {
     );
 
     let logo_h = LOGO.len() as u16;
-    // logo + gap + tagline + gap + bar
     let content_h = logo_h + 1 + 1 + 1 + 1;
 
     let outer = Layout::default()
@@ -93,7 +92,6 @@ pub fn draw(frame: &mut Frame, state: &SplashState, accent: Color) {
         inner[0],
     );
 
-    // Tagline
     let version = env!("CARGO_PKG_VERSION");
     frame.render_widget(
         Paragraph::new(Line::from(vec![
@@ -109,7 +107,6 @@ pub fn draw(frame: &mut Frame, state: &SplashState, accent: Color) {
         inner[2],
     );
 
-    // Loading bar
     let filled = ((progress * BAR_WIDTH as f64) as usize).min(BAR_WIDTH);
     let empty = BAR_WIDTH - filled;
     let bar = format!("{}{}", "█".repeat(filled), "░".repeat(empty));

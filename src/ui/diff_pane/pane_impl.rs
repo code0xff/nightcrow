@@ -16,13 +16,11 @@ impl DiffPane {
         self.line_count().saturating_sub(1)
     }
 
-    /// Move the active horizontal scroll target left by one tab stop.
     pub fn scroll_left(&mut self) {
         let target = self.scroll_x_target_mut();
         *target = target.saturating_sub(4);
     }
 
-    /// Move the active horizontal scroll target right by one tab stop.
     /// Capped at `u16::MAX` because ratatui's `Paragraph::scroll` takes `u16`.
     pub fn scroll_right(&mut self) {
         let target = self.scroll_x_target_mut();

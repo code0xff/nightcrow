@@ -131,7 +131,6 @@ impl TreeWatcher {
     /// was deleted between the listing and this call) is skipped, not retried,
     /// and never enters `watched`.
     pub fn sync(&mut self, workdir: &Path, desired: &BTreeSet<String>) {
-        // Remembered so `drain_changed` can make event paths repo-relative.
         self.root = Some(workdir.to_path_buf());
         let Some(debouncer) = self.debouncer.as_mut() else {
             // Inert watcher: track intent only so behaviour is observable in
@@ -140,7 +139,6 @@ impl TreeWatcher {
             return;
         };
         let watcher = debouncer.watcher();
-        // Drop paths no longer desired.
         let stale: Vec<String> = self.watched.difference(desired).cloned().collect();
         for rel in stale {
             let abs = join_rel(workdir, &rel);
@@ -149,7 +147,6 @@ impl TreeWatcher {
             let _ = watcher.unwatch(&abs);
             self.watched.remove(&rel);
         }
-        // Add newly desired paths.
         let fresh: Vec<String> = desired.difference(&self.watched).cloned().collect();
         for rel in fresh {
             let abs = join_rel(workdir, &rel);
