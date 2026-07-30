@@ -4,7 +4,7 @@
 //! at the length this project splits at, and borrowing their helpers: the claim
 //! is the same kind — how many reads arrive, not what they say.
 
-use crate::runtime::snapshot::tests::{SETTLE, next_read, reads_during};
+use crate::runtime::snapshot::tests::{SETTLE, next_read, quiesce, reads_during};
 use crate::runtime::snapshot::{MIN_READ_INTERVAL, SnapshotChannel, SnapshotMsg};
 use crate::test_util::run_git;
 
@@ -36,6 +36,11 @@ fn a_path_with_no_repository_is_reported_once_rather_than_every_second() {
         channel.is_watching(),
         "this directory could not be watched, so this machine cannot run this test"
     );
+    // Starting the watch owes a read for the gap it was not up for, and that read
+    // would be counted below as the once-a-second cadence this denies. Wait for the
+    // reader to actually go quiet rather than trusting it already is.
+    quiesce(&channel);
+
     assert_eq!(
         reads_during(&channel, SETTLE),
         0,

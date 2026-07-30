@@ -44,7 +44,7 @@ pub(super) fn next_read(channel: &SnapshotChannel) -> SnapshotMsg {
 /// this is meant to remove right back in the way. Still far below
 /// `IDLE_READ_INTERVAL`, so the safety net cannot be what breaks the silence,
 /// and far below what the caller then waits for a read.
-fn quiesce(channel: &SnapshotChannel) {
+pub(super) fn quiesce(channel: &SnapshotChannel) {
     let quiet_for = MIN_READ_INTERVAL * 3;
     // Only reached if reads never stop, which no test here can cause; a failure
     // of the reader itself, not of the timing.
