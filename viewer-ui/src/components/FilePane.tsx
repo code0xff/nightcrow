@@ -1,10 +1,11 @@
 import { Suspense, lazy } from "react";
 import { useDiffLayout } from "../lib/diffLayout";
 import { fileViewSource, isHtmlPath, isPreviewablePath } from "../lib/fileView";
+import { digitsFor, sideGutterWidth } from "../lib/gutter";
 import { MaximizeIcon, PreviewIcon, SplitViewIcon } from "./icons";
 import { DiffView } from "./DiffView";
 import { PathLabel } from "./PathLabel";
-import type { Status } from "../api";
+import type { Span, Status } from "../api";
 import type { Pane } from "../types";
 
 // Keep the markdown pipeline out of the initial chunk.
@@ -14,6 +15,39 @@ const MarkdownView = lazy(() =>
 const HtmlView = lazy(() =>
   import("./content/Html").then((m) => ({ default: m.HtmlView })),
 );
+
+/// The number rides in a `sticky` column instead of inline with the code: the
+/// pane scrolls horizontally, and an inline number would slide off the left
+/// edge — the same reason the TUI keeps its gutter in a paragraph of its own.
+/// Sticky demands an opaque background, or the code passing underneath shows
+/// through. `select-none` keeps the numbers out of copied code, matching how
+/// the diff treats its `+`/`-` markers.
+function FileLines({ lines }: { lines: Span[][] }) {
+  const width = sideGutterWidth(digitsFor(lines.length));
+  return (
+    <pre className="w-max min-w-full py-2 text-ink-200">
+      {lines.map((line, i) => (
+        <div key={i} className="flex">
+          <span
+            className="sticky left-0 shrink-0 select-none bg-ink-950 pr-[1ch] text-right text-ink-400"
+            style={{ width }}
+          >
+            {i + 1}
+          </span>
+          <span className="whitespace-pre">
+            {line.length === 0
+              ? " "
+              : line.map((s, j) => (
+                  <span key={j} style={{ color: s.c }}>
+                    {s.t}
+                  </span>
+                ))}
+          </span>
+        </div>
+      ))}
+    </pre>
+  );
+}
 
 export interface FilePaneProps {
   pane: Pane;
@@ -106,19 +140,7 @@ export function FilePane({
                 )}
               </Suspense>
             ) : (
-              <pre className="p-3 whitespace-pre text-ink-200">
-                {pane.value.lines.map((line, i) => (
-                  <div key={i}>
-                    {line.length === 0
-                      ? " "
-                      : line.map((s, j) => (
-                          <span key={j} style={{ color: s.c }}>
-                            {s.t}
-                          </span>
-                        ))}
-                  </div>
-                ))}
-              </pre>
+              <FileLines lines={pane.value.lines} />
             )}
             {pane.value.truncated && (
               <p className="p-3 text-accent">
