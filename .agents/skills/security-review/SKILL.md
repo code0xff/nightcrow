@@ -23,7 +23,7 @@ user-invocable: true
 - `git diff <base>..HEAD`로 push되지 않은 커밋의 전체 변경 범위를 파악한다.
 - uncommitted 변경이 있으면 사용자에게 알리고, 리뷰 범위에 포함할지 확인한다. 포함하면 `git diff` + `git diff --staged`도 함께 수집한다. 포함하지 않으면 커밋된 변경만 리뷰한다. 리뷰 중 수정 사항을 커밋할 때는 리뷰 수정분만 staging하여 uncommitted 작업이 섞이지 않게 한다.
 - 변경된 파일의 전체 내용을 읽는다. diff만으로는 주변 컨텍스트를 놓칠 수 있다. 단, 바이너리 파일, lockfile, 자동 생성물은 제외한다.
-- `.claude/rules/security.md`를 읽어 프로젝트의 보안 규칙을 확인한다.
+- `.agents/rules/security.md`를 읽어 프로젝트의 보안 규칙을 확인한다.
 
 ## 2. 보안 심층 분석 (thinking mode)
 

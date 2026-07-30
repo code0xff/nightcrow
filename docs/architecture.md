@@ -57,7 +57,7 @@ below for the layout and resize rules.
 
 ## Module Structure
 
-모든 소스 파일은 300줄 이하(LOC 규칙, `.claude/rules/guardrails.md` 참고). 테스트는
+모든 소스 파일은 300줄 이하(LOC 규칙, `.agents/rules/guardrails.md` 참고). 테스트는
 `#[cfg(test)] mod tests;`로 별도 파일에 분리한다.
 
 ```
