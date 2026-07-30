@@ -8,10 +8,23 @@ export const MIN_UPPER_PCT = 20;
 export const MAX_UPPER_PCT = 85;
 export const DEFAULT_UPPER_PCT = 55;
 
-/** Round as well as clamp: the stored value is an integer percent, and the TUI
- *  counterpart it mirrors (`layout.upper_pct`) is one too. */
+/** Clamp without rounding, for the value the drag shows as it moves.
+ *
+ *  A non-finite input falls back to the default rather than propagating: this
+ *  runs on what a server response and `localStorage` hand over, and `NaN` here
+ *  would reach the grid as `NaNfr` and collapse the layout with nothing to
+ *  correct it. */
+export function clampUpperPctExact(pct: number): number {
+  if (!Number.isFinite(pct)) return DEFAULT_UPPER_PCT;
+  return Math.min(Math.max(pct, MIN_UPPER_PCT), MAX_UPPER_PCT);
+}
+
+/** Round as well as clamp: what gets stored is an integer percent, as the TUI
+ *  counterpart it mirrors (`layout.upper_pct`) is. Only the stored value is
+ *  rounded — rounding what the drag displays would step the divider a whole
+ *  percent at a time, which on a tall window is a visible dozen pixels. */
 export function clampUpperPct(pct: number): number {
-  return Math.min(Math.max(Math.round(pct), MIN_UPPER_PCT), MAX_UPPER_PCT);
+  return Math.round(clampUpperPctExact(pct));
 }
 
 /**
@@ -23,6 +36,8 @@ export function clampUpperPct(pct: number): number {
  * element of its own, so the caller measures the first track's top and the
  * second's bottom. A region with no height yields the current value rather
  * than a division by zero: a drag cannot start on something not laid out yet.
+ *
+ * Unrounded, so the divider tracks the pointer; the commit rounds.
  */
 export function upperPctAt(
   clientY: number,
@@ -31,6 +46,6 @@ export function upperPctAt(
   current: number,
 ): number {
   const height = bottom - top;
-  if (height <= 0) return clampUpperPct(current);
-  return clampUpperPct(((clientY - top) / height) * 100);
+  if (height <= 0) return clampUpperPctExact(current);
+  return clampUpperPctExact(((clientY - top) / height) * 100);
 }

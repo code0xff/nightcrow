@@ -141,6 +141,17 @@ export function RepoShell(props: RepoShellProps) {
   // the overlay below to swallow every click for good.
   useEffect(() => onSidebarDragCancel, [repo, onSidebarDragCancel]);
 
+  // The panel-split divider needs the same cleanup for a narrower case, and on
+  // a narrower trigger. It lives in the terminal panel, which is *not* keyed by
+  // repository, so a project switch leaves it mounted and its pointerup still
+  // arrives — cancelling on every switch would abort a drag the user is in the
+  // middle of. But closing the last project unmounts this whole shell, and then
+  // the release never comes: the guard that stops a poll from adopting a split
+  // mid-drag would stay raised for the rest of the page's life, and this
+  // preference would never sync again. Depending only on the (stable) callback
+  // makes this cleanup run on unmount and nowhere else.
+  useEffect(() => onUpperDragCancel, [onUpperDragCancel]);
+
   return (
     <>
       {/* Keep the resize cursor and prevent selection during dragging. */}

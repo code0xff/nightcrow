@@ -2,7 +2,11 @@
 
 import { useCallback, useState } from "react";
 import { api } from "../../api";
-import { DEFAULT_UPPER_PCT, clampUpperPct } from "../../lib/upperPct";
+import {
+  DEFAULT_UPPER_PCT,
+  clampUpperPct,
+  clampUpperPctExact,
+} from "../../lib/upperPct";
 
 const STORAGE_KEY = "nightcrow.upperPct";
 
@@ -34,10 +38,10 @@ function storePct(pct: number) {
 export function useUpperPct() {
   const [pct, setPct] = useState(loadPct);
 
+  // Exact while dragging so the divider stays under the pointer; what lands in
+  // storage is the rounded value the release commits.
   const resize = useCallback((next: number) => {
-    const clamped = clampUpperPct(next);
-    setPct(clamped);
-    storePct(clamped);
+    setPct(clampUpperPctExact(next));
   }, []);
 
   const commit = useCallback((next: number) => {
