@@ -5,8 +5,7 @@
       "WebFetch",
       "Bash(*)",
       "Write(**)",
-      "Edit(**)",
-      "MultiEdit(**)"
+      "Edit(**)"
     ]
   }
 }

@@ -39,6 +39,7 @@ mod strip_escape;
 mod terminal_init;
 mod terminal_scrollback;
 mod tree;
+mod tree_open;
 mod tree_session;
 mod tree_watcher;
 

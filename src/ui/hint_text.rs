@@ -112,7 +112,7 @@ pub(crate) fn normal_hint_literal(app: &App) -> &'static str {
                 " <prefix> f: exit zoom | j/k: navigate | /: search | <prefix> l: log view | <prefix> b: tree view | <prefix> q: detach"
             }
             ViewMode::Tree => {
-                " <prefix> f: exit zoom | j/k: navigate | /: search | →/enter: expand | ←: collapse | <prefix> b: status view | <prefix> l: log view | <prefix> q: detach"
+                " <prefix> f: exit zoom | j/k: navigate | /: search | →: expand | ←: collapse | enter: open file | <prefix> b: status view | <prefix> l: log view | <prefix> q: detach"
             }
         };
         return hint;
@@ -140,7 +140,7 @@ pub(crate) fn normal_hint_literal(app: &App) -> &'static str {
                 " shift+←/→: cycle | j/k: navigate | /: search | <prefix> t: new pane | <prefix> f: fullscreen | <prefix> l: log view | <prefix> b: tree view | <prefix> o: open project | <prefix> q: detach"
             }
             ViewMode::Tree => {
-                " shift+←/→: cycle | j/k: navigate | /: search | →/enter: expand | ←: collapse | <prefix> b: status view | <prefix> l: log view | <prefix> q: detach"
+                " shift+←/→: cycle | j/k: navigate | /: search | →: expand | ←: collapse | enter: open file | <prefix> b: status view | <prefix> l: log view | <prefix> q: detach"
             }
         },
         Focus::DiffViewer => {
