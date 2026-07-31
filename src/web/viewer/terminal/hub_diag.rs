@@ -57,11 +57,7 @@ impl ClearWatch {
             return;
         };
         if let Some(total) = note.previous_burst_total {
-            tracing::info!(
-                pane,
-                total,
-                "viewer: end of a run of screen-clearing input"
-            );
+            tracing::info!(pane, total, "viewer: end of a run of screen-clearing input");
         }
         if note.suppressed {
             return;
