@@ -289,10 +289,12 @@ fn is_executable(path: &Path) -> bool {
     let pathext = std::env::var_os("PATHEXT").unwrap_or_else(|| {
         std::ffi::OsString::from(".EXE;.CMD;.BAT;.COM;.PS1;.VBS;.VBE;.JS;.JSE;.WSF;.WSH;.MSC")
     });
-    let ext_upper = ext.to_ascii_uppercase();
+    // `path.extension()` returns the extension without the leading dot, but
+    // PATHEXT entries include it. Prepend a dot so the comparison matches.
+    let ext_dotted = format!(".{}", ext.to_ascii_uppercase());
     pathext
         .to_str()
-        .map(|s| s.split(';').any(|e| e.eq_ignore_ascii_case(&ext_upper)))
+        .map(|s| s.split(';').any(|e| e.eq_ignore_ascii_case(&ext_dotted)))
         .unwrap_or(false)
 }
 

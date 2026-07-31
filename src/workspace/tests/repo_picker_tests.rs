@@ -13,6 +13,15 @@ fn dialog_on(dirs: &[&str]) -> (TempDir, crate::workspace::Workspace) {
         std::fs::create_dir(root.path().join(d)).expect("create dir");
     }
     let canonical = std::fs::canonicalize(root.path()).expect("canonical temp path");
+    // Strip `\\\\?\\` so the path can round-trip through `canonicalize` again
+    // inside `PathTree::open` — verbatim paths reject `..` and trailing slashes.
+    // Also normalise to forward slashes so test assertions are platform-consistent.
+    #[cfg(windows)]
+    let canonical = {
+        let s = canonical.to_string_lossy();
+        let stripped = s.strip_prefix(r"\\?\").unwrap_or(&s);
+        std::path::PathBuf::from(stripped.replace('\\', "/"))
+    };
     let mut ws = workspace_on(&[canonical.to_str().expect("a UTF-8 temp path")]);
     ws.start_repo_input();
     (root, ws)
