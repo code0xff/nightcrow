@@ -60,6 +60,12 @@ pub enum ClientMessage {
         repo: String,
         message: HubClientMessage,
     },
+    /// Ask the daemon to stop. Sent by `nightcrow stop`.
+    ///
+    /// The daemon runs the same shutdown sequence as SIGINT/SIGTERM — reaping
+    /// every child shell — and then closes the connection. No reply is sent;
+    /// the connection closing is the acknowledgment.
+    Shutdown,
 }
 
 /// A message from the daemon.

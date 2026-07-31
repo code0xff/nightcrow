@@ -1,5 +1,6 @@
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
+use std::path::PathBuf;
 
 pub(crate) mod plugin_cmd;
 
@@ -61,6 +62,16 @@ pub(crate) enum Commands {
         #[command(subcommand)]
         command: plugin_cmd::PluginCommands,
     },
+    /// Ask a running daemon to shut down.
+    ///
+    /// Sends a graceful shutdown request via the daemon socket. The daemon
+    /// runs the same shutdown sequence as SIGINT/SIGTERM — reaping every
+    /// child shell — and then exits. No force kill is attempted.
+    Stop {
+        /// Path to the daemon socket. Defaults to the standard location.
+        #[arg(long)]
+        socket: Option<PathBuf>,
+    },
 }
 
 /// Run the session daemon in the foreground until it is stopped.
@@ -92,6 +103,24 @@ pub(crate) fn run_daemon(
     // middle, and until the handlers exist such a signal kills the process
     // outright — leaving the shells it had already spawned behind.
     let shutdown = crate::platform::signals::ShutdownWatch::register()?;
+
+    // A channel so both the signal path and the socket path converge on one
+    // shutdown trigger. The sender goes to the session so `nightcrow stop` can
+    // reach it; the receiver is what the main thread waits on.
+    let (shutdown_tx, shutdown_rx) =
+        std::sync::mpsc::sync_channel::<crate::platform::signals::Shutdown>(1);
+
+    // Forward the signal watch onto the channel, so the main thread waits on
+    // one thing regardless of where the stop came from.
+    let signal_tx = shutdown_tx.clone();
+    std::thread::Builder::new()
+        .name("nightcrow-signal-forward".into())
+        .spawn(move || {
+            if let Ok(signal) = shutdown.wait() {
+                let _ = signal_tx.send(signal);
+            }
+        })
+        .context("spawning the signal-forwarding thread")?;
 
     let mut cfg = crate::config::load_config()?;
     if let Some(port) = port {
@@ -191,7 +220,7 @@ pub(crate) fn run_daemon(
     // Before the accept thread, so a session that cannot watch itself is
     // reported here — where it can still fail — rather than by an accept loop
     // nobody is reading the result of.
-    let session = crate::daemon::serve::start(attach_state)?;
+    let session = crate::daemon::serve::start(attach_state, shutdown_tx)?;
     std::thread::Builder::new()
         .name("nightcrow-daemon-accept".into())
         .spawn(move || crate::daemon::serve::serve(listener, session))
@@ -208,11 +237,12 @@ pub(crate) fn run_daemon(
     }
     eprintln!("nightcrow: press Ctrl-C to stop");
 
-    // The accept loop owns its own threads, so this one only waits for the
-    // stop signal. It must run the shutdown rather than let the process die
-    // under the signal's default disposition: the server owns child shells,
-    // and only `shutdown` walks the catalog to kill them.
-    let signal = shutdown.wait()?;
+    // Wait for a stop signal — from the OS (forwarded by the signal thread) or
+    // from `nightcrow stop` (sent by the request handler). Both converge on the
+    // same channel, so the shutdown sequence is identical regardless of source.
+    let signal = shutdown_rx
+        .recv()
+        .context("the shutdown channel closed without a signal")?;
     eprintln!("nightcrow: {} received, stopping", signal.as_str());
     tracing::info!(signal = signal.as_str(), "shutting down");
     server.shutdown();
@@ -247,4 +277,77 @@ pub(crate) fn run_init(force: bool) -> Result<()> {
         }
     }
     Ok(())
+}
+
+/// Send a shutdown request to a running daemon via its socket.
+///
+/// Connects to the daemon socket, sends `ClientMessage::Shutdown`, and waits
+/// for the connection to close — which is the daemon's acknowledgment. Does
+/// NOT attempt a force kill; the daemon runs the same graceful shutdown
+/// sequence as SIGINT/SIGTERM.
+pub(crate) fn run_stop(socket: Option<PathBuf>) -> Result<()> {
+    use crate::daemon::frame::{read_frame, write_frame};
+    use crate::daemon::protocol::ClientMessage;
+    use crate::daemon::transport::UnixStream;
+    use std::io::Write;
+
+    let path = match socket {
+        Some(p) => p,
+        None => crate::daemon::socket::default_socket_path()?,
+    };
+
+    if !path.exists() {
+        anyhow::bail!(
+            "no daemon socket at {} — is a nightcrow daemon running?",
+            path.display()
+        );
+    }
+
+    let mut stream = UnixStream::connect(&path).with_context(|| {
+        format!(
+            "could not connect to the daemon socket at {} — the daemon may have stopped",
+            path.display()
+        )
+    })?;
+
+    let json =
+        serde_json::to_vec(&ClientMessage::Shutdown).context("encoding the shutdown request")?;
+    write_frame(&mut stream, &crate::daemon::frame::Frame::control(json))
+        .context("sending the shutdown request")?;
+    stream.flush().context("flushing the shutdown request")?;
+
+    // The daemon closes the connection as its acknowledgment. Wait for that
+    // rather than for a reply: the Shutdown message carries no answer by design.
+    // A read that returns Ok(None) means the daemon closed cleanly.
+    match read_frame(&mut stream) {
+        Ok(None) => {
+            println!("nightcrow: daemon is shutting down");
+            Ok(())
+        }
+        Ok(Some(_)) => {
+            // The daemon sent something before closing — unexpected, but the
+            // shutdown was still delivered.
+            println!("nightcrow: daemon is shutting down");
+            Ok(())
+        }
+        Err(err) => {
+            // A read error after sending Shutdown is expected: the daemon may
+            // close the connection before we finish reading. Treat it as success
+            // as long as the send succeeded.
+            let io_err = err.downcast_ref::<std::io::Error>();
+            if io_err.is_some_and(|e| {
+                matches!(
+                    e.kind(),
+                    std::io::ErrorKind::ConnectionReset
+                        | std::io::ErrorKind::ConnectionAborted
+                        | std::io::ErrorKind::UnexpectedEof
+                )
+            }) {
+                println!("nightcrow: daemon is shutting down");
+                Ok(())
+            } else {
+                Err(err).context("waiting for the daemon to acknowledge the shutdown")
+            }
+        }
+    }
 }

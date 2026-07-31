@@ -40,7 +40,8 @@ fn daemon(dir: &tempfile::TempDir, repos: &[String]) -> TestDaemon {
         // shared with another test would make the two one session.
         prefs: PrefsStore::at(dir.path().join("viewer.json")),
     }));
-    let session = crate::daemon::serve::start(state).expect("starts the watcher");
+    let (shutdown_tx, _shutdown_rx) = std::sync::mpsc::sync_channel(1);
+    let session = crate::daemon::serve::start(state, shutdown_tx).expect("starts the watcher");
     std::thread::spawn(move || crate::daemon::serve::serve(listener, session));
     TestDaemon { socket }
 }
