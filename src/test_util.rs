@@ -16,12 +16,23 @@ pub fn open_repo(path: &str) -> Repository {
     Repository::discover(path).expect("discover test repo")
 }
 
+/// Git exports `GIT_DIR`/`GIT_INDEX_FILE` as *relative* paths to its hooks, so a
+/// suite run from `.githooks/pre-commit` would resolve them inside the temp repo
+/// and fail. Strip them so a test means the same thing wherever it runs.
+const LEAKED_GIT_ENV: [&str; 5] = [
+    "GIT_DIR",
+    "GIT_WORK_TREE",
+    "GIT_INDEX_FILE",
+    "GIT_COMMON_DIR",
+    "GIT_PREFIX",
+];
+
 pub fn run_git(repo_path: &str, args: &[&str]) {
-    let output = Command::new("git")
-        .args(args)
-        .current_dir(repo_path)
-        .output()
-        .unwrap();
+    let mut command = Command::new("git");
+    for key in LEAKED_GIT_ENV {
+        command.env_remove(key);
+    }
+    let output = command.args(args).current_dir(repo_path).output().unwrap();
     assert!(
         output.status.success(),
         "git {} failed: {}",
