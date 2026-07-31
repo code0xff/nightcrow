@@ -132,6 +132,7 @@ fn the_summary_agrees_with_its_own_counts() {
         plugins: 1,
         startup_commands: 1,
         repos: 1,
+        unreachable: 0,
     };
     assert_eq!(
         one.summary(),
@@ -142,6 +143,7 @@ fn the_summary_agrees_with_its_own_counts() {
         plugins: 2,
         startup_commands: 3,
         repos: 4,
+        unreachable: 0,
     };
     assert_eq!(
         many.summary(),
@@ -152,9 +154,38 @@ fn the_summary_agrees_with_its_own_counts() {
         plugins: 0,
         startup_commands: 0,
         repos: 0,
+        unreachable: 0,
     };
     assert_eq!(
         none.summary(),
         "config reloaded: 0 plugins across 0 open projects; no startup panes configured"
+    );
+}
+
+/// A repository that could not be told keeps its plugin children, so the sentence
+/// must not read as if every open project had been re-applied.
+#[test]
+fn the_summary_owns_up_to_the_repositories_it_could_not_tell() {
+    let one = ReloadReport {
+        plugins: 1,
+        startup_commands: 1,
+        repos: 2,
+        unreachable: 1,
+    };
+    assert_eq!(
+        one.summary(),
+        "config reloaded: 1 plugin across 2 open projects (1 was too busy to be told); \
+         1 startup pane applies to newly opened projects"
+    );
+    let many = ReloadReport {
+        plugins: 1,
+        startup_commands: 1,
+        repos: 0,
+        unreachable: 3,
+    };
+    assert_eq!(
+        many.summary(),
+        "config reloaded: 1 plugin across 0 open projects (3 were too busy to be told); \
+         1 startup pane applies to newly opened projects"
     );
 }

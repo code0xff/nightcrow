@@ -52,6 +52,11 @@ pub struct ReloadReport {
     pub startup_commands: usize,
     /// Repositories whose plugins were re-applied.
     pub repos: usize,
+    /// Repositories that could not even be asked, because their terminal worker
+    /// was too far behind to take the request. Counted separately and said out
+    /// loud: those keep the plugin children they had, and a report that called
+    /// that a success would be claiming a change the session did not make.
+    pub unreachable: usize,
 }
 
 impl ReloadReport {
@@ -72,8 +77,15 @@ impl ReloadReport {
                 self.startup_commands
             )
         };
+        // Named only when it happened: a parenthesis on every ordinary reload
+        // would be noise about a case that almost never occurs.
+        let busy = match self.unreachable {
+            0 => String::new(),
+            1 => " (1 was too busy to be told)".to_string(),
+            n => format!(" ({n} were too busy to be told)"),
+        };
         format!(
-            "config reloaded: {} plugin{} across {} open project{}; {panes}",
+            "config reloaded: {} plugin{} across {} open project{}{busy}; {panes}",
             self.plugins,
             if self.plugins == 1 { "" } else { "s" },
             self.repos,
@@ -124,20 +136,29 @@ pub fn reload_config_at(
     // plugin child — so this returns before the children have finished being
     // replaced. That is deliberate: waiting would mean blocking whoever asked on
     // every repository's queue.
-    for entry in &entries {
-        entry.terminals.reload_plugins(cfg.plugins.clone());
-    }
+    //
+    // A hub too far behind to take the request is counted rather than retried:
+    // its queue being full means its worker is wedged or being hammered, and
+    // neither blocking on it nor pretending it complied is honest. It keeps the
+    // plugins it had, and the report says so.
+    let asked = entries
+        .iter()
+        .filter(|entry| entry.terminals.reload_plugins(cfg.plugins.clone()))
+        .count();
+    let unreachable = entries.len() - asked;
 
     tracing::info!(
         plugins = cfg.plugins.len(),
         startup_commands = cfg.startup_commands.len(),
-        repos = entries.len(),
+        repos = asked,
+        unreachable,
         "session: re-read the config file"
     );
     Ok(ReloadReport {
         plugins: cfg.plugins.len(),
         startup_commands: cfg.startup_commands.len(),
-        repos: entries.len(),
+        repos: asked,
+        unreachable,
     })
 }
 

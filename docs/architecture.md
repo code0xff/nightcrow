@@ -520,6 +520,12 @@ plugin 자신이 나가면서 몇 개를 포기했는지 로그에 남긴다(`ru
 문구는 서버가 만든다(`ReloadReport::summary`) — 같은 reload에 대해 TUI notice와 브라우저 toast가
 다른 말을 하지 않도록.
 
+**닿지 못한 저장소는 보고에 드러낸다.** hub에게는 명령 큐로 *부탁만* 하므로, 큐가 가득 찬 hub는
+요청을 받지 못한다(worker가 막혔거나 클라이언트에게 두들겨 맞는 중이라는 뜻이다). 막고 기다리면
+그 하나 때문에 세션의 나머지 저장소가 전부 밀리므로 기다리지 않는다. 대신 세지 않고 넘기면 그
+저장소는 이전 plugin 자식을 그대로 둔 채 성공으로 보고되므로, `ReloadReport::unreachable`로 세어
+문장에 `(1 was too busy to be told)`로 덧붙인다.
+
 ### Git Diff Pipeline
 
 - 백그라운드 worker 스레드: `SnapshotChannel`이 1초 간격으로 `load_snapshot`을 호출해 변경 파일 + tracking status를 `mpsc` 채널로 푸시한다.

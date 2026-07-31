@@ -60,14 +60,20 @@ impl TerminalHub {
     /// (see [`super::hub_plugins`]). A full queue drops the request and says so —
     /// a hub that far behind is being hammered by a client, and blocking a
     /// reload behind it would hold up every other repository in the session.
-    pub(crate) fn reload_plugins(&self, plugins: Vec<PluginConfig>) {
+    ///
+    /// Reports whether the worker took it. The caller counts the refusals into
+    /// its report: this hub keeps the plugin children it had, so calling the
+    /// reload a success for it would claim a change that did not happen.
+    pub(crate) fn reload_plugins(&self, plugins: Vec<PluginConfig>) -> bool {
         if self
             .commands
             .try_send(Command::ReloadPlugins { plugins })
             .is_err()
         {
             tracing::warn!("viewer: a hub's queue was full; its plugins were not reloaded");
+            return false;
         }
+        true
     }
 
     /// Carry out a queued reload on the worker thread.

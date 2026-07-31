@@ -182,6 +182,7 @@ fn wire_fixture() -> serde_json::Value {
                 plugins: 1,
                 startup_commands: 2,
                 repos: 1,
+                unreachable: 0,
             }
             .summary(),
         }),
