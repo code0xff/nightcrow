@@ -77,6 +77,15 @@ impl TerminalSession {
             ClientMessage::Close { pane } => Command::Close { pane },
             ClientMessage::Reorder { order } => Command::Reorder { order },
             ClientMessage::CancelRecovery { pane } => Command::CancelRecovery { pane },
+            // Off the worker queue like `claim_size`: it rearranges the panel
+            // and never reaches a PTY, so the queue that serializes work against
+            // the backend has nothing to offer it — and a backed-up hub must not
+            // drop the message, or the client stays laid out one way while every
+            // other client is laid out the other.
+            ClientMessage::Zoom { pane } => {
+                self.hub.set_zoom(pane);
+                return;
+            }
             // Off the worker queue for the same reason `start` is: it decides
             // who may resize, and a backed-up hub must not drop the message that
             // hands the sizing over — the client would then be a spectator with

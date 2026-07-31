@@ -54,6 +54,15 @@ impl TerminalHub {
                     needs_repaint.push(pane.id);
                 }
             }
+            // After the panes, because it names one of them: a client told to
+            // zoom a pane it has not been given yet has nothing to act on. Sent
+            // only when something is zoomed — nothing zoomed is where a client
+            // starts, so saying so would be a frame that changes nothing.
+            if let Some(pane) = state.zoomed
+                && let Ok(json) = serde_json::to_string(&ServerMessage::Zoomed { pane: Some(pane) })
+            {
+                let _ = tx.try_send(TerminalFrame::Control(json));
+            }
         }
         // Registered with the session while the hub's lock is still held, so a
         // resize cannot reach `resize_pane` before this connection is known to

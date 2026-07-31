@@ -14,6 +14,7 @@ mod scrollback_depth;
 mod size_owner;
 mod startup;
 mod wire;
+mod zoom;
 
 use crate::backend::PaneId;
 use crate::web::viewer::terminal::frame::TerminalFrame;
@@ -147,6 +148,21 @@ pub(super) fn reordered_order(frame: &TerminalFrame) -> Option<Vec<PaneId>> {
             .filter_map(|v| v.as_u64().map(|n| n as PaneId))
             .collect(),
     )
+}
+
+/// What a `zoomed` frame says fills the panel: `Some(None)` is the frame that
+/// says nothing does, `None` is not a `zoomed` frame at all. The two have to be
+/// told apart — "no zoom" is a state the hub announces, not only one it starts
+/// in.
+pub(super) fn zoomed_pane(frame: &TerminalFrame) -> Option<Option<PaneId>> {
+    let TerminalFrame::Control(json) = frame else {
+        return None;
+    };
+    let value: serde_json::Value = serde_json::from_str(json).ok()?;
+    if value["type"] != "zoomed" {
+        return None;
+    }
+    Some(value["pane"].as_u64().map(|n| n as PaneId))
 }
 
 /// Collect the ids of the first `n` distinct panes announced to `session`,

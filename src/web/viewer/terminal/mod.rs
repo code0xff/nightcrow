@@ -35,6 +35,7 @@ mod hub_reload;
 mod hub_reload_hosts;
 mod hub_repaint;
 mod hub_run;
+mod hub_zoom;
 mod session;
 #[cfg(test)]
 mod session_tests;
@@ -108,6 +109,7 @@ impl TerminalHub {
                 clients: Vec::new(),
                 panes: Vec::new(),
                 reserved: 0,
+                zoomed: None,
             }),
             next_client_id: AtomicU64::new(0),
             stop: Arc::new(AtomicBool::new(false)),

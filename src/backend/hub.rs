@@ -162,6 +162,13 @@ impl TerminalBackend for HubBackend {
                     deadline_epoch,
                     attempt,
                 }),
+                // Deliberately dropped: a browser's zoom is not this client's.
+                // The TUI has a zoom of its own that means something else — it
+                // follows *its* active pane and takes the body from the diff
+                // viewer with it (`TerminalFullscreen::Zoom`), so letting a page
+                // drive it would let someone at a browser hide a panel here.
+                // The panes are shared; what fills a screen is each screen's.
+                TerminalMessage::Event(HubServerMessage::Zoomed { .. }) => {}
                 // Refusals do not come this way — they are not about a pane, so
                 // the client keeps them on the queue that reaches its notices.
                 TerminalMessage::Event(HubServerMessage::Error { message }) => {

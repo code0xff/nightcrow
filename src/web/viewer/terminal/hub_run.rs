@@ -4,6 +4,7 @@ use super::hub_helpers::{Command, PaneState, broadcast_locked, push_scrollback};
 use super::hub_modes::PaneModeTracker;
 use super::hub_plugins::Plugins;
 use super::hub_repaint::Repaints;
+use super::hub_zoom::clear_zoom_locked;
 use super::{DEFAULT_PANE_SIZE, TerminalHub};
 use crate::backend::{BackendEvent, PaneId, PtyBackend, TerminalBackend};
 use crate::runtime::emulator::PaneModes;
@@ -257,6 +258,11 @@ impl TerminalHub {
         if let Some(json) = json {
             broadcast_locked(&mut state.clients, TerminalFrame::Control(json));
         }
+        // A pane nobody can see is not a terminal. Whatever was filling the
+        // panel gives way to the one that just opened, under the same lock that
+        // added it so no client is told about the pane while still zoomed past
+        // it.
+        clear_zoom_locked(&mut state);
     }
 
     /// Append output to the pane's bounded scrollback, record the terminal state
@@ -285,6 +291,11 @@ impl TerminalHub {
         state.panes.retain(|p| p.id != pane);
         if let Some(json) = json {
             broadcast_locked(&mut state.clients, TerminalFrame::Control(json));
+        }
+        // The zoomed pane is the one that just left, so the panel has nothing to
+        // fill it with.
+        if state.zoomed == Some(pane) {
+            clear_zoom_locked(&mut state);
         }
     }
 

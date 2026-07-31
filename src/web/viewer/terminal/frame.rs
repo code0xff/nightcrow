@@ -32,6 +32,18 @@ pub enum ClientMessage {
     Reorder {
         order: Vec<PaneId>,
     },
+    /// Fill the terminal panel with one pane, or `None` to go back to the grid.
+    ///
+    /// Which pane is zoomed is the repository's answer rather than each page's,
+    /// for the same reason the pane *order* is (see
+    /// [`super::TerminalHub::reorder_panes`]): every client shows the same
+    /// terminals, and one that laid them out differently from the rest is a
+    /// screen nobody asked for. Unlike the order, it is not a request to be
+    /// reconciled — the last one to ask wins outright, because there is nothing
+    /// to merge.
+    Zoom {
+        pane: Option<PaneId>,
+    },
     /// Take over sizing this repository's panes (see [`ServerMessage::SizeOwner`]).
     ///
     /// A PTY has one size, so one client at a time decides it. Attaching takes
@@ -189,6 +201,16 @@ pub enum ServerMessage {
     /// the sender and any other device converge on the same layout.
     Reordered {
         order: Vec<PaneId>,
+    },
+    /// Which pane now fills the terminal panel, `None` for none.
+    ///
+    /// Broadcast like [`Reordered`](Self::Reordered) and replayed to a client on
+    /// connect, so a page that reloads comes back zoomed where it left off and
+    /// another device follows. `null` is sent rather than omitted: "nothing is
+    /// zoomed" is a state a client has to be able to be *told*, not only one it
+    /// starts in.
+    Zoomed {
+        pane: Option<PaneId>,
     },
     /// This many startup terminals are waiting to be sized before they are
     /// created. The client answers with [`ClientMessage::Start`].

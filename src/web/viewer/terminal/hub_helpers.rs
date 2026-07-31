@@ -135,6 +135,11 @@ pub struct Shared {
     /// on real processes per repository stays what it says it is — the
     /// reservation decides *who* gets a slot, never how many there are.
     pub(super) reserved: usize,
+    /// The pane filling the panel, when one is (see [`hub_zoom`](super::hub_zoom)).
+    ///
+    /// Beside `panes` and under the same lock because the two have to agree: a
+    /// zoom naming a pane that is not in the list is a client rendering nothing.
+    pub(super) zoomed: Option<PaneId>,
 }
 
 /// Queue a frame for every client, dropping any that has fallen too far behind.
