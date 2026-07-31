@@ -85,6 +85,21 @@ pub fn remember(list: &mut Vec<RepoMaximized>, repo: &str, panel: Option<Maximiz
     }
 }
 
+/// Hold a list that came off disk to what a write would have produced.
+///
+/// A file is not necessarily one this build wrote: it can be hand-edited, or
+/// left by a version with a different cap. `remember` only ever trims the list
+/// it just pushed onto, so without this an oversized one would stay oversized
+/// through every later write, and a duplicated repository would keep whichever
+/// entry `panel_of` happened to reach first.
+pub fn normalize(list: &mut Vec<RepoMaximized>) {
+    let mut seen = std::collections::HashSet::new();
+    // First wins, so a duplicate resolves to the same entry `panel_of` would
+    // have found — normalizing must not change what the file means.
+    list.retain(|entry| seen.insert(entry.repo.clone()));
+    list.truncate(MAX_REMEMBERED_MAXIMIZED);
+}
+
 /// What `repo` was left maximized in, if anything.
 pub fn panel_of(list: &[RepoMaximized], repo: &str) -> Option<MaximizedPanel> {
     list.iter()

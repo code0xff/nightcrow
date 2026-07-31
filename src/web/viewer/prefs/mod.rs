@@ -149,13 +149,17 @@ impl PrefsStore {
     /// Load from `path`, falling back to `absent` when there is nothing to read.
     /// A hand-edited file can carry a width or a split outside the bounds; clamp
     /// them on load so `get` never serves a value the write path would have
-    /// rejected.
+    /// rejected. The remembered arrangements are held to the same bound for the
+    /// same reason: a file that arrived with more than the cap — hand-edited, or
+    /// written by a build whose cap was higher — would otherwise stay that long
+    /// forever, since the write path only trims what it just pushed onto.
     fn at_or(path: PathBuf, absent: ViewerPrefs) -> Self {
         let mut state = read(&path).unwrap_or(absent);
         state.sidebar_width = state
             .sidebar_width
             .clamp(MIN_SIDEBAR_WIDTH, MAX_SIDEBAR_WIDTH);
         state.upper_pct = state.upper_pct.clamp(MIN_UPPER_PCT, MAX_UPPER_PCT);
+        maximized::normalize(&mut state.maximized);
         Self {
             path: Some(path),
             state: Mutex::new(state),

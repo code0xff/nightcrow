@@ -105,3 +105,50 @@ fn every_panel_survives_a_round_trip_through_its_wire_form() {
         assert_eq!(MaximizedPanel::parse(panel.as_str()), Some(panel));
     }
 }
+
+/// A file this build did not write: hand-edited, or left by one whose cap was
+/// higher. `remember` only trims what it just pushed onto, so the load path is
+/// the only thing that can bring such a list back inside the bound.
+#[test]
+fn a_list_off_disk_is_held_to_the_same_bounds_a_write_would_be() {
+    let mut list: Vec<RepoMaximized> = (0..MAX_REMEMBERED_MAXIMIZED + 20)
+        .map(|i| RepoMaximized {
+            repo: format!("/repo{i}"),
+            panel: MaximizedPanel::Files,
+        })
+        .collect();
+
+    normalize(&mut list);
+
+    assert_eq!(list.len(), MAX_REMEMBERED_MAXIMIZED);
+    assert_eq!(list[0].repo, "/repo0", "the newest end is kept");
+}
+
+#[test]
+fn a_duplicated_project_normalizes_to_the_entry_a_lookup_would_have_found() {
+    let mut list = vec![
+        RepoMaximized {
+            repo: "/a".into(),
+            panel: MaximizedPanel::Terminal,
+        },
+        RepoMaximized {
+            repo: "/b".into(),
+            panel: MaximizedPanel::Files,
+        },
+        RepoMaximized {
+            repo: "/a".into(),
+            panel: MaximizedPanel::Files,
+        },
+    ];
+    let before = panel_of(&list, "/a");
+
+    normalize(&mut list);
+
+    assert_eq!(list.len(), 2);
+    assert_eq!(
+        panel_of(&list, "/a"),
+        before,
+        "the file still means the same"
+    );
+    assert_eq!(panel_of(&list, "/b"), Some(MaximizedPanel::Files));
+}
