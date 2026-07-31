@@ -1,18 +1,15 @@
 ---
 name: self-review
-description: 구현 완료 후 thinking mode 심층 리뷰 — 즉시 반영 항목을 수정하고 결과를 보고한다. clean pass까지 반복이 필요하면 ralph를 통해 실행한다
+description: 구현 완료 후 thinking mode 심층 리뷰 — 즉시 반영 항목을 수정하고 결과를 보고한다
 user-invocable: true
 ---
 
 # Self Review
 
-구현 완료 후 thinking mode로 변경 사항을 심층 분석하고 타당한 개선을 코드에 반영한다.
-반복 실행이 필요하면 `/ralph /self-review`로 ralph에 위임한다.
+절차(대상 수집, 수정 적용, 중단, 보고)는 `.agents/skills/_shared/review-protocol.md`를 읽고
+그대로 따른다. 이 문서는 무엇을 볼지만 정한다.
 
-대상 수집, 수정 적용, 중단, 보고 절차는 `.agents/skills/_shared/review-protocol.md`를
-읽고 그대로 따른다. 이 문서는 무엇을 볼지만 정한다.
-
-추가로 읽을 것: 현재 작업의 scope 문서가 있으면 함께 읽어 범위를 확인한다.
+현재 작업의 scope 문서가 있으면 함께 읽어 범위를 확인한다.
 
 ## 분석 렌즈 (extended thinking)
 
