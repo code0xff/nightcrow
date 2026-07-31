@@ -87,6 +87,13 @@ live_watch = true         # watch expanded dirs and refresh the tree live; set f
 # command text is used. With no [[startup_command]] entries, nightcrow opens a
 # single empty shell.
 #
+# Editing this table does not need a restart: <leader> u in the TUI, or the
+# reload button in the browser header, re-reads this file. Startup commands take
+# effect on the next project you open — a project that is already open keeps the
+# panes it started, because those are live processes. [[plugin]] below is
+# re-applied to every open project immediately. See "Reloading the config" in
+# the README for what else a reload does and does not reach.
+#
 # [[startup_command]]
 # name = "Claude"           # optional tab label; falls back to the command text
 # command = "claude"        # required; must not be empty

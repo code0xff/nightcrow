@@ -204,6 +204,7 @@ src/
         ├── terminal/     # per-repo TerminalHub owning its own PtyBackend
         ├── highlight.rs  # syntect/two-face highlight spans for diff + file payloads
         ├── prefs/        # ~/.nightcrow/viewer.json: session accent, sidebar width, active project
+        ├── reload.rs     # re-read config.toml into a live session (both transports)
         ├── server/       # HTTP routes, SSE, /ws/term
         └── assets.rs     # rust-embed of viewer-ui/dist + CSP
 ```
@@ -426,6 +427,67 @@ id·개수·동승한 바이트 수·직전 프레임과의 간격·연속 구�
 것과 타이밍뿐이다. 보고는 클라이언트가 하는 말이므로 페이지가 로그를 마음대로 쓰지 못하도록
 분당 상한을 두고, `code`는 ASCII 영숫자 16자로 깎는다(줄바꿈이 들어오면 로그 한 줄을 위조할 수
 있다). 원인이 특정되면 이 계측은 지운다.
+
+### Config Reload (`web/viewer/reload.rs`)
+
+`config.toml`을 고칠 때마다 데몬을 내렸다 올리면 살아 있는 pane이 전부 죽는다 — agent CLI가
+작업 중이던 것까지. 그래서 **두 테이블만 다시 읽는다.** 무엇이 즉시 닿고 무엇이 안 닿는지는
+"그 값을 이미 무엇에 썼는가"가 정한다.
+
+- **`[[plugin]]` — 열려 있는 모든 프로젝트에 즉시.** plugin은 pane이 아니라 자식 프로세스라
+  교체 비용이 세션에 없다. hub별로 diff한다(`terminal/hub_reload.rs`): 새로 원하게 된 것을
+  띄우고, 아닌 것을 멈추고, **`command`/`args`/`env`가 바뀐 것만** 프로세스를 갈아치운다.
+  `allowed_resume_flags`·`watch_on_signal`만 바뀌면 살아 있는 자식을 건드리지 않는데, 그 둘은
+  판정마다 이쪽에서 읽는 값이고 plugin은 몇 시간짜리 대기 중일 수 있기 때문이다.
+- **`[[startup_command]]` — 이후에 여는 프로젝트부터.** hub는 startup pane을 자기 수명에
+  **딱 한 번** 만든다(`started: AtomicBool`). 이미 열린 프로젝트가 그 목록에 쓴 pane은 살아 있는
+  자식이라, 파일 편집을 근거로 교체할 수 있는 대상이 아니다. Catalog의 목록만 바뀌고
+  (`catalog/config_tables.rs`) 그 뒤 `rebuild`가 띄우는 hub가 새 목록을 받는다.
+- **나머지는 재시작이 필요하다**: `[web_viewer]`(리스너가 이미 바인드됨), `[log]`, 그리고
+  클라이언트 소유인 `[layout]`·`[input]`·`[tree]`·`[mouse]`(attach 시 각 TUI가 읽는다).
+
+**전송 계층에 독립적이다.** `session.rs`와 같은 자리에 같은 이유로 둔다 — 브라우저는
+`POST /api/reload`, attach한 TUI는 `ClientMessage::ReloadConfig`로 닿고, 둘이 **같은 상태 변경**에
+착지해야 한다. 여기서 인증하지 않는 것도 `session.rs`와 같다(누가 물어볼 수 있는지는 각 전송이
+정한다: 한쪽은 세션 쿠키, 다른쪽은 0600 소켓의 주인이라는 사실). 요청은 **아무것도 실어 나르지
+않는다** — 파일 자체가 요청이다. 내용을 실어 보내게 하면 클라이언트가 지어낸 설정으로 세션을
+재구성할 수 있고, 이 방식이면 데몬은 언제나 사용자가 쓴 디스크의 파일만 읽는다.
+
+**절반만 적용되지 않는다.** 파일 전체를 파싱·검증한 뒤에야 아무것이든 건드리므로, 어디의 오타든
+세션은 그대로 남고 메시지가 틀린 키를 지목한다. **파일이 사라진 경우는 거부한다** — 시작 시에는
+"아직 설정 없음"이 정상 상태지만 reload 시점에는 실수이고, 기본값으로 읽으면 파일을 지우고
+reload하는 것이 모든 plugin을 조용히 멈추는 경로가 된다. `--exec` pane은 파일에 없으므로 Catalog가
+따로 기억해 다시 병합한다(`config::merge_startup_commands`).
+
+**hub에서 무엇이 plugin을 원하는지는 그 hub의 opt-in으로 판정한다** — 새 파일의 것이 아니다.
+편집으로 추가된 `[[startup_command]]`는 이미 뜬 hub에 pane이 없고 앞으로도 생기지 않으니, 그것이
+가리키는 plugin을 띄우면 영영 아무것도 받을 수 없는 자식 프로세스가 된다. 반대로 **살아 있는 pane을
+보고 있는 plugin은 아무것도 그것을 지명하지 않아도 유지한다**: 파일에서 opt-in을 지워도 pane은
+없어지지 않고, 살아 있는 agent 터미널을 조용히 감시 해제하는 쪽이 파일이 더는 요청하지 않는 host를
+남기는 쪽보다 나쁘다. 멈추라는 뜻은 `enabled = false`이고 그건 따른다.
+
+**pane의 opt-in은 host가 없어도 기록한다**(`hub_plugins.rs`의 `intended`). 이것이 세션 중간에
+plugin을 켰을 때 그것이 꺼져 있는 동안 만들어진 pane에 닿게 하는 유일한 경로다 — 이 기능이 존재하는
+이유가 그 경우다. 그 자체로는 아무 권한도 주지 않는다: pane에 실제로 작용하는 것은 `owners`뿐이라,
+host 없는 opt-in은 relaunch 경로에도 오르지 않고 이벤트도 받지 않는다(`adopt`가 원래 그런 연결을
+거부하는 이유와 같다). reload로 멈춘 plugin은 pane을 놓아주되 opt-in은 남기므로, **끄고 다시 켜면
+처음 켜는 것과 같은 자리에 착지한다** — 안 그러면 `enabled`가 마지막으로 어느 방향으로
+뒤집혔는지에 따라 다른 뜻이 된다.
+
+**guard는 절대 재생성하지 않는다.** relaunch 예산은 pane의 token으로 키를 잡는데, 그것이 exit마다
+relaunch로 답하는 plugin을 묶는 유일한 상한이다. reload마다 새 allowance를 발급하면 그 상한에
+영영 닿지 않는다 — `take_over`가 spent budget을 그대로 두는 것과 같은 근거다.
+
+**동시 reload는 직렬화한다**(`ViewerState::reload_lock`). 두 클라이언트가 동시에 누르면 한쪽의
+테이블 교체와 다른쪽의 hub fan-out이 끼어들어, 세션의 저장소들이 서로 다른 파일을 전달받은 상태로
+남을 수 있다.
+
+**답은 물어본 클라이언트에게만 간다** — 세트 변경과 달리 브로드캐스트하지 않는다. reload가 하는
+일은 다른 클라이언트가 보고 있는 화면에 아무것도 드러나지 않으므로(startup 목록은 나중에 여는
+프로젝트에만, plugin 교체는 아무도 안 보는 자식 프로세스), 전부에게 알리면 자기가 하지도 않았고
+볼 수도 없는 일에 대한 알림이 된다. 그래서 브라우저에도 화면 변화가 없고 **toast가 피드백 전부**다.
+문구는 서버가 만든다(`ReloadReport::summary`) — 같은 reload에 대해 TUI notice와 브라우저 toast가
+다른 말을 하지 않도록.
 
 ### Git Diff Pipeline
 
