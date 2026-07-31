@@ -1,7 +1,8 @@
 use super::clone_routes;
 use super::http_util::{json_error, json_response, text_response};
 use super::mutations::{
-    handle_close_repo, handle_mkdir, handle_open_repo, handle_reorder_repos, handle_set_prefs,
+    handle_close_repo, handle_mkdir, handle_open_repo, handle_reload_config, handle_reorder_repos,
+    handle_set_prefs,
 };
 use super::routes::route;
 use super::{VIEWER_SESSION_COOKIE, ViewerState};
@@ -156,6 +157,16 @@ fn handle_connection(mut stream: TcpStream, state: Arc<ViewerState>) {
 
     if head.method == "POST" && head.path == "/api/repos/order" {
         let _ = stream.write_all(&handle_reorder_repos(&body, &state));
+        return;
+    }
+
+    // Re-reading config.toml. POST for the same CSRF reasoning as the others, and
+    // the body is ignored: what is read is the file on this machine's disk, so this
+    // cannot be used to hand the session a configuration of the caller's own
+    // making. An authenticated user can already open a shell here, so re-reading a
+    // file they wrote stays within the same trust boundary.
+    if head.method == "POST" && head.path == "/api/reload" {
+        let _ = stream.write_all(&handle_reload_config(&state));
         return;
     }
 

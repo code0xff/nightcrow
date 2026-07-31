@@ -3,6 +3,7 @@ mod auth;
 mod clone;
 mod commit_routes;
 mod prefs;
+mod reload;
 mod reorder;
 mod routes;
 mod terminals;

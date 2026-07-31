@@ -212,6 +212,33 @@ pub(super) fn handle_reorder_repos(body: &str, state: &ViewerState) -> Vec<u8> {
     }
 }
 
+/// Re-read `config.toml` and report what was applied.
+///
+/// The body is ignored and no configuration is accepted from the request: the
+/// file on the server's disk is what is read, so a browser cannot reconfigure the
+/// session from something it made up. Deciding who may ask happened before this —
+/// the route is behind the same session cookie as every other mutation.
+///
+/// A refusal is the operator's own message, not a redacted one. These name the
+/// offending key in their own config file, which is the whole value of showing it;
+/// they carry no repository contents, no filesystem layout beyond the config path
+/// the operator already knows, and no credential — the web password is never part
+/// of what a reload reports.
+pub(super) fn handle_reload_config(state: &ViewerState) -> Vec<u8> {
+    match crate::web::viewer::reload::reload_config(state) {
+        Ok(report) => {
+            let body = Envelope::new(serde_json::json!({ "summary": report.summary() }));
+            match serde_json::to_string(&body) {
+                Ok(json) => json_response("200 OK", &json, &[]),
+                Err(_) => json_error("500 Internal Server Error", "could not encode the report"),
+            }
+        }
+        // 422 rather than 400: the request was well-formed, and what could not be
+        // processed is the file it points the server at.
+        Err(err) => json_error("422 Unprocessable Entity", &err.to_string()),
+    }
+}
+
 /// Resolve the `repo` parameter to an entry, or produce the 404 response.
 pub(super) fn lookup_repo(
     head: &RequestHead,
