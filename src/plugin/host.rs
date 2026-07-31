@@ -255,6 +255,15 @@ fn resolve_program(command: &str, plugin_dir: Option<&Path>) -> PathBuf {
         if candidate.is_file() {
             return candidate;
         }
+        // On Windows, an installed plugin is stored as `name.exe` but
+        // configured as `name`. Try the extension before falling back to PATH.
+        #[cfg(windows)]
+        {
+            let exe = dir.join(format!("{command}.exe"));
+            if exe.is_file() {
+                return exe;
+            }
+        }
     }
     PathBuf::from(command)
 }
