@@ -3,6 +3,7 @@ import type { MutableRefObject } from "react";
 import { reconcileOrder } from "../../lib/paneOrder";
 import { applyRecovery, type RecoveryByPane } from "../../lib/recovery";
 import { toast } from "../../lib/toast";
+import { takeClaim, viewerId } from "../../lib/viewerId";
 import type { PaneView } from "../../lib/terminalLayout";
 
 interface UseTerminalSocketArgs {
@@ -71,17 +72,24 @@ export function useTerminalSocket({
       setActive(null);
       setZoomed(null);
       setTitles({});
-      // Connecting takes the sizing, so this is what the server is about to
-      // confirm. Assumed rather than awaited: starting as a spectator would
-      // leave the panes unfitted for a round trip.
-      setOwnsSize(true);
+      // Only a page someone just opened takes the sizing, and only then is it
+      // worth assuming rather than awaiting — starting as a spectator would
+      // leave that page's panes unfitted for a round trip. A switch or a
+      // reconnect keeps whatever this page already had; the server confirms it
+      // either way.
+      const arriving = takeClaim();
+      if (arriving) setOwnsSize(true);
       // Reports are keyed by pane id, which is repository-local.
       setRecovery({});
       disposeAll();
 
       const scheme = location.protocol === "https:" ? "wss:" : "ws:";
+      // The page names itself, so the session can tell one screen's sockets
+      // coming and going from a new screen arriving.
+      const query = new URLSearchParams({ repo, viewer: viewerId() });
+      if (arriving) query.set("claim", "1");
       const socket = new WebSocket(
-        `${scheme}//${location.host}/ws/term?repo=${encodeURIComponent(repo)}`,
+        `${scheme}//${location.host}/ws/term?${query}`,
       );
       socket.binaryType = "arraybuffer";
       socketRef.current = socket;
