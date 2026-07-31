@@ -66,7 +66,11 @@ impl PathTree {
             "."
         } else {
             let t = text.trim_end_matches(|c| c == '/' || c == '\\');
-            if t.is_empty() || t.ends_with(':') { text } else { t }
+            if t.is_empty() || t.ends_with(':') {
+                text
+            } else {
+                t
+            }
         };
         let root = std::fs::canonicalize(expand_tilde(text_clean)).ok()?;
         if !root.is_dir() {
