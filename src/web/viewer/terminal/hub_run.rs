@@ -1,7 +1,10 @@
-use super::TerminalHub;
+use super::hub_modes::PaneModeTracker;
+use super::hub_repaint::Repaints;
+use super::{DEFAULT_PANE_SIZE, TerminalHub};
 use super::frame::{ServerMessage, TerminalFrame};
 use super::hub_helpers::{Command, PaneState, broadcast_locked, push_scrollback};
 use super::hub_plugins::Plugins;
+use crate::runtime::emulator::PaneModes;
 use crate::backend::{BackendEvent, PaneId, PtyBackend, TerminalBackend};
 use crate::web::viewer::limits;
 use std::collections::VecDeque;
@@ -20,6 +23,12 @@ impl TerminalHub {
         // and a plugin has to exist to be told about it. Only the plugins some
         // configured pane opted into are launched (see `Plugins::start`).
         let mut plugins = Plugins::start(cwd, &self.plugins, &self.startup);
+        // What each pane's program has done to its terminal, so a client that
+        // attaches later can be told rather than left to infer it from a replay
+        // the setup bytes fell out of.
+        let mut modes = PaneModeTracker::default();
+        // Repaints asked for by attaching clients, and the sizes owed back.
+        let mut repaints = Repaints::default();
 
         while !stop.load(Ordering::Acquire) {
             while let Ok(command) = commands.try_recv() {
@@ -93,6 +102,9 @@ impl TerminalHub {
                     Command::CancelRecovery { pane } => {
                         self.cancel_recovery(&mut backend, &mut plugins, pane)
                     }
+                    Command::Repaint { panes } => {
+                        self.start_repaints(&mut backend, &mut repaints, &panes, Instant::now())
+                    }
                     _ => {}
                 }
             }
@@ -101,7 +113,13 @@ impl TerminalHub {
                 match event {
                     BackendEvent::Output { pane, data } => {
                         plugins.pane_output(&backend, pane, &data);
-                        self.record_and_broadcast(pane, data);
+                        // Before the lock: opening a pane's tracking emulator
+                        // reads the shared state for its size.
+                        let modes = modes.observe(pane, &data, || {
+                            self.pane_size(pane)
+                                .unwrap_or((DEFAULT_PANE_SIZE.rows, DEFAULT_PANE_SIZE.cols))
+                        });
+                        self.record_and_broadcast(pane, data, modes);
                     }
                     // Destroyed as well as forgotten. `PtyBackend` leaves pane
                     // removal to its caller (see its `drain_events`), so a pane
@@ -111,6 +129,8 @@ impl TerminalHub {
                     // counts live panes, not those, so open-and-exit in a loop
                     // accumulated descriptors with nothing to stop it.
                     BackendEvent::Exited { pane } => {
+                        modes.forget(pane);
+                        self.forget_repaints(&mut repaints, pane);
                         self.pane_exited(&mut backend, &mut plugins, pane)
                     }
                     // The hub owns its PTYs outright: it opens them through
@@ -126,6 +146,10 @@ impl TerminalHub {
                         tracing::debug!("hub: unexpected session event from its own backend");
                     }
                 }
+            }
+
+            if !repaints.is_idle() {
+                self.finish_repaints(&mut backend, &mut repaints, Instant::now());
             }
 
             if !plugins.is_inert() {
@@ -214,19 +238,22 @@ impl TerminalHub {
             scrollback: VecDeque::new(),
             rows,
             cols,
+            modes: PaneModes::default(),
         });
         if let Some(json) = json {
             broadcast_locked(&mut state.clients, TerminalFrame::Control(json));
         }
     }
 
-    /// Append output to the pane's bounded scrollback and broadcast it, both
-    /// under one lock so a concurrently connecting client cannot slip a replay
-    /// snapshot between the append and the broadcast.
-    fn record_and_broadcast(&self, pane: PaneId, data: Vec<u8>) {
+    /// Append output to the pane's bounded scrollback, record the terminal state
+    /// it left the pane in, and broadcast it — all under one lock so a
+    /// concurrently connecting client cannot slip a replay snapshot between the
+    /// append and the broadcast.
+    fn record_and_broadcast(&self, pane: PaneId, data: Vec<u8>, modes: PaneModes) {
         let mut state = self.state.lock().expect("terminal state poisoned");
         if let Some(p) = state.panes.iter_mut().find(|p| p.id == pane) {
             push_scrollback(&mut p.scrollback, &data);
+            p.modes = modes;
         }
         broadcast_locked(&mut state.clients, TerminalFrame::Output { pane, data });
     }

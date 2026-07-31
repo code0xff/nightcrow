@@ -10,6 +10,18 @@ use super::hub_helpers::{broadcast_locked, canonical_order};
 use crate::backend::{PaneId, PtyBackend, TerminalBackend};
 
 impl TerminalHub {
+    /// The size a pane's PTY is recorded as having, or `None` once the pane is
+    /// gone. The one reader of that record outside the resize path itself, shared
+    /// by everything that has to act on the size a pane actually has.
+    pub(super) fn pane_size(&self, pane: PaneId) -> Option<(u16, u16)> {
+        let state = self.state.lock().expect("terminal state poisoned");
+        state
+            .panes
+            .iter()
+            .find(|p| p.id == pane)
+            .map(|p| (p.rows, p.cols))
+    }
+
     /// Resize a live pane's PTY at the sizing owner's request, record the size it
     /// is now set to, and tell every client what it is.
     ///

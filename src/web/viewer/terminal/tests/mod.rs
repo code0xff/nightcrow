@@ -6,6 +6,7 @@ mod plugin_rules;
 mod plugin_slots;
 mod plugin_watch;
 mod plugins;
+mod reattach;
 mod recovery;
 mod scrollback_depth;
 mod size_owner;
