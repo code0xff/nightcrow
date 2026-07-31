@@ -19,7 +19,7 @@ pub struct RequestHead {
     /// rather than parsing it again at each call site.
     ///
     /// The mirror's routes take no parameters; this exists for the viewer's
-    /// `?repo=&path=` routes (step 6 of `docs/web-viewer-plan.md`).
+    /// `?repo=&path=` routes.
     #[allow(dead_code)]
     pub query: String,
     pub headers: Vec<(String, String)>,

@@ -18,7 +18,7 @@ categories = ["command-line-utilities", "development-tools"]
 # The published crate needs the viewer's *built* bundle (rust-embed reads
 # viewer-ui/dist at compile time) but not its sources or toolchain files —
 # those live in git. Keeps the crate small without breaking `cargo install`.
-# Repo-only tooling (agent rules, CI, hooks, planning notes) is dropped too.
+# Repo-only tooling (agent rules, CI, hooks) is dropped too.
 exclude = [
     "viewer-ui/node_modules",
     "viewer-ui/src",
@@ -33,10 +33,6 @@ exclude = [
     ".githooks",
     "release.toml",
     "CLAUDE.md",
-    "docs/code-review-2026-05-08.md",
-    "docs/repo-picker-plan.md",
-    "docs/status-short-plan.md",
-    "docs/web-viewer-plan.md",
 ]
 
 [dependencies]
@@ -71,7 +67,7 @@ signal-hook = "0.4"
 # `flock` for the daemon's single-instance lock — the one POSIX call std does
 # not expose. Already in the tree through several dependencies, so this only
 # names it directly; the daemonize crates were not adopted (see
-# docs/session-daemon-plan.md).
+# docs/decisions.md).
 libc = "0.2"
 
 [dev-dependencies]
