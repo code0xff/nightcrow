@@ -6,28 +6,46 @@
 //! interval, so a slow machine delays them rather than failing them.
 //!
 //! The helpers that count reads are `pub(super)`: the same claim is made about a
-//! path with no repository in it, and those tests sit beside the worker.
+//! path with no repository in it, and those tests sit beside the worker. That
+//! "delays rather than fails" only holds for the absence windows; waiting for
+//! something to arrive is bounded separately, by [`ARRIVAL`].
 
 use super::{IDLE_READ_INTERVAL, MIN_READ_INTERVAL, SnapshotChannel, SnapshotMsg};
 use crate::test_util::{make_linked_worktree, make_repo, run_git};
 use std::path::Path;
 use std::time::{Duration, Instant};
 
-/// Long enough for a filesystem event to travel and a read to happen, without
-/// reaching the idle interval that would make the assertion meaningless.
+/// How long an *absence* is observed for: long enough for a filesystem event to
+/// travel and a read to happen, without reaching the idle interval that would
+/// make the assertion meaningless.
+///
+/// Only for windows a read must not appear in. A wait for one to *arrive* uses
+/// [`ARRIVAL`] — bounding that by this same value is what makes a loaded machine
+/// fail the test rather than delay it.
 pub(super) const SETTLE: Duration = Duration::from_millis(2_500);
+
+/// How long something expected is waited for before the reader is declared
+/// broken.
+///
+/// A backstop, not a measurement: nothing here asserts that a read arrived
+/// *quickly*, only that it arrived, so the value has to sit far above the rate
+/// limit that paces one — the same reasoning as [`quiesce`]'s own ceiling. At
+/// `SETTLE` it sat at two and a half rate limits, and the suite's own parallelism
+/// was enough to spend that, which showed up as reads that "never arrived" in a
+/// reader that was merely waiting its turn on the CPU.
+const ARRIVAL: Duration = Duration::from_secs(15);
 
 /// Wait for one snapshot, or fail. Errors count: what is being timed is the read,
 /// not what it found.
 pub(super) fn next_read(channel: &SnapshotChannel) -> SnapshotMsg {
-    let deadline = Instant::now() + SETTLE;
+    let deadline = Instant::now() + ARRIVAL;
     while Instant::now() < deadline {
         match channel.try_recv() {
             Ok(msg) => return msg,
             Err(_) => std::thread::sleep(Duration::from_millis(10)),
         }
     }
-    panic!("no snapshot arrived within {SETTLE:?}");
+    panic!("no snapshot arrived within {ARRIVAL:?}");
 }
 
 /// Drain until the reader has been quiet for several times its rate limit.
@@ -82,7 +100,7 @@ pub(super) fn reads_during(channel: &SnapshotChannel, window: Duration) -> usize
 fn watched(path: &str) -> SnapshotChannel {
     let channel = SnapshotChannel::spawn(path);
     next_read(&channel);
-    let deadline = Instant::now() + SETTLE;
+    let deadline = Instant::now() + ARRIVAL;
     while !channel.is_watching() && Instant::now() < deadline {
         std::thread::sleep(Duration::from_millis(10));
     }
@@ -261,7 +279,7 @@ fn a_repository_nobody_is_reading_is_neither_read_nor_watched() {
     let channel = watched(&path);
 
     channel.watch().set_awake(false);
-    let deadline = Instant::now() + SETTLE;
+    let deadline = Instant::now() + ARRIVAL;
     while channel.is_watching() && Instant::now() < deadline {
         std::thread::sleep(Duration::from_millis(10));
     }
