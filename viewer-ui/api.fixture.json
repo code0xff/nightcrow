@@ -171,7 +171,8 @@
     "accent": 2,
     "active_repo": "r1",
     "maximized": {
-      "r1": "terminal"
+      "r1": "terminal",
+      "r2": "files"
     },
     "sidebar_width": 460,
     "upper_pct": 55

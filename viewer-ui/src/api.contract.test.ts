@@ -30,6 +30,7 @@ import {
   type Reloaded,
   type Repo,
   type Status,
+  type StoredPrefs,
   type Tree,
   type TreeSearch,
   type ViewerBootstrap,
@@ -42,6 +43,10 @@ import {
  * to its union the way every other field is bound to its type. The drift this
  * would otherwise catch — a variant renamed on the Rust side — is caught here
  * instead, at runtime, against the same generated fixture.
+ *
+ * Only the values the fixture actually carries are checked, so the fixture
+ * carries every variant (`storedPrefs`); one of them alone would let the other
+ * be renamed with nothing failing.
  */
 function panels(raw: Record<string, string>): MaximizedByRepo {
   for (const panel of Object.values(raw)) {
@@ -133,12 +138,20 @@ describe("wire contract", () => {
 
   it("쓰기_응답이_돌려주는_모양과_맞는다", () => {
     const opened: { repo: Repo } = fixture.openedRepo;
-    const stored: { accent: number; sidebar_width: number; upper_pct: number } =
-      fixture.storedPrefs;
+    // Bound to the interface itself, like every other payload: an inline shape
+    // here would only restate the fields it happened to list, which is how
+    // `active_repo` and `maximized` went unchecked when they were added.
+    const stored: StoredPrefs = {
+      ...fixture.storedPrefs,
+      maximized: panels(fixture.storedPrefs.maximized),
+    };
     expect(opened.repo.display_path).toBe("~/code/scratch");
     expect(stored.accent).toBe(2);
     expect(stored.sidebar_width).toBe(460);
     expect(stored.upper_pct).toBe(55);
+    expect(stored.active_repo).toBe("r1");
+    // Both variants, so renaming either on the Rust side fails here.
+    expect(stored.maximized).toEqual({ r1: "terminal", r2: "files" });
   });
 
   it("reload_응답이_Reloaded와_맞는다", () => {
