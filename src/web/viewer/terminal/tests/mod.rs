@@ -2,6 +2,7 @@
 //! hub test reads its assertions through. The tests themselves live beside it.
 
 mod behavior;
+mod plugin_reload;
 mod plugin_rules;
 mod plugin_slots;
 mod plugin_watch;

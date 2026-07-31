@@ -13,7 +13,7 @@ use crate::web::viewer::terminal::frame::{ClientMessage, PaneSize, TerminalFrame
 use std::path::{Path, PathBuf};
 
 /// Env var the fake plugin appends the events it receives to.
-const LOG_ENV: &str = "NC_TEST_PLUGIN_LOG";
+pub(super) const LOG_ENV: &str = "NC_TEST_PLUGIN_LOG";
 /// Env var holding the protocol version the fake plugin answers with, so no
 /// script hard-codes a number a version bump would silently invalidate.
 const VERSION_ENV: &str = "NC_TEST_PLUGIN_V";

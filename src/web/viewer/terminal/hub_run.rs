@@ -109,6 +109,9 @@ impl TerminalHub {
                     Command::Repaint { panes } => {
                         self.start_repaints(&mut backend, &mut repaints, &panes, Instant::now())
                     }
+                    Command::ReloadPlugins { plugins: configs } => {
+                        self.reload_hub_plugins(&mut backend, &mut plugins, &configs)
+                    }
                     _ => {}
                 }
             }

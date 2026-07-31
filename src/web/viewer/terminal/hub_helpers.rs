@@ -76,6 +76,13 @@ pub enum Command {
     Repaint {
         panes: Vec<PaneId>,
     },
+    /// Bring this hub's plugin children in line with a re-read `[[plugin]]`
+    /// table. On the queue because every plugin host is worker-local — a plugin
+    /// can drive a pane's keyboard, so nothing outside the worker may touch one
+    /// (see [`hub_reload`](super::hub_reload)).
+    ReloadPlugins {
+        plugins: Vec<crate::config::PluginConfig>,
+    },
 }
 
 /// One startup terminal: the command to run, at the size a client measured, under
