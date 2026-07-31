@@ -127,6 +127,7 @@ src/
 │   ├── tree_watch.rs     # notify-based watcher for expanded tree directories
 │   ├── emulator/
 │   │   ├── mod.rs        # PaneEmulator: alacritty_terminal wrapper, ScrollSink
+│   │   ├── modes.rs      # PaneModes: the modes a program set, and the prelude that restores them
 │   │   └── view.rs       # ScreenView/CellView: grid read access, color mapping
 │   └── terminal/
 │       ├── mod.rs        # TerminalState struct, constants, PaneInfo, TerminalFullscreen
@@ -384,6 +385,28 @@ runtime 스레드의 100 ms 폴 안에 구독이 들어오는 경우) 오래된 
 거기에 닿는다). 그 지점을 테스트로 고정해 두고 상한은 바꾸지 않았다 — 거기 닿는 출력은 대부분
 텍스트가 아니라 repaint 시퀀스이고, 부족분은 1000줄 중 수백 줄이며, 상한은 저장소×pane마다
 지불된다.
+
+**붙는 클라이언트에게는 기록이 아니라 상태를 준다**(`web/viewer/terminal/hub_modes.rs`,
+`hub_repaint.rs`, `runtime/emulator/modes.rs`). 바이트 링은 역사이지 스냅샷이 아니어서, 창보다
+앞에서 일어난 일은 그 안에 없다. 프로그램이 시작할 때 한 번 켜고 다시 말하지 않는 것들(alternate
+screen, 마우스 리포팅, bracketed paste, DECCKM)이 정확히 그 부류다 — 하루 지난 pane에 다시 붙으면
+그 바이트는 이미 밀려나 있고, 클라이언트는 **프로그램이 설정한 적 없는 터미널**이 된다(스크롤·클릭
+죽음, 화살표 인코딩 불일치, 붙여넣기 깨짐). 그래서 허브가 pane당 에뮬레이터를 **모드 확인 용도로만**
+돌려(그리드는 읽지 않는다) 현재 모드를 `PaneState`에 적어두고, `connect`가 history보다 **먼저**
+`PaneModes::prelude`를 보낸다. 프렐류드는 12개 모드를 h/l로 **전부 명시**한다 — 받는 쪽은 xterm.js고
+그 기본값은 이 에뮬레이터의 것이 아니다(`1007`이 실제로 다르다). 그리고 alternate screen pane은
+**링을 아예 replay하지 않는다**: 그 바이트는 이 클라이언트에 없는 화면에 대한 셀 갱신이라 조각만
+그려지고, 전사(transcript)는 프로그램 자신의 메모리에 있다. 대신 **프로그램에게 다시 그리게 한다** —
+크기를 한 행 줄였다가 tick 뒤에 되돌린다. `SIGWINCH`는 크기가 실제로 바뀔 때만 가고, 두 resize를
+연달아 하면 자식의 핸들러가 최종 크기를 읽어 "안 바뀜"으로 보기 때문에(측정함: 같은 `$LINES`가 두
+번) **간격이 필요하다**. 중간 크기는 클라이언트에 알리지 않고(기록된 크기는 그대로, 복원 직후의
+repaint가 전 행을 덮는다), 복원은 그 시점의 기록된 크기로 한다(그 사이 sizing을 가져간
+클라이언트가 마지막 말을 한다). pane당 최소 간격을 두어, 소켓이 계속 끊기는 폰이 재접속 루프로
+repaint를 반복시키지 못하게 한다. **이 전제를 잃었던 것이 실제 사고를 만들었다**: 예전에는 "붙자마자
+클라이언트가 보내는 resize에서 풀스크린 프로그램이 알아서 다시 그린다"에 기대고 있었는데, 리로드
+플리커를 없애려 같은 크기면 resize를 생략하게 되면서(아래 "PTY 크기는 확정된 값만 전달한다") 그
+repaint가 사라졌다. 남은 깨진 화면에 사용자가 누르는 복구 키가 `Ctrl+L`이고, fullscreen 렌더링의
+Claude Code는 그것을 2초 안에 두 번 받으면 `/clear`를 실행한다 — 그렇게 대화가 연달아 지워졌다.
 
 ### Git Diff Pipeline
 
@@ -950,8 +973,8 @@ UI·터미널·저장소 상태, `lib/`는 API 이외의 순수 도메인/레이
 - **경로 검증은 `with_repo` 한 곳에서** 한다. 라우트마다 쓰면 빠뜨린다: 실제로 `/api/diff`가 `../../etc/passwd`를 받아들였다. `load_file_diff`는 경로를 파일이 아니라 git pathspec으로 넘겨 검증기에 닿지 않았고, 빈 hunk와 함께 공격자의 경로를 그대로 되돌려줬다. **라우트가 "어떤 로더를 호출하느냐"에 따라 우연히 안전해서는 안 된다.**
 - **저장소는 opaque id로만 지정**한다(`catalog.rs`). 클라이언트가 디렉토리를 이름 붙일 수 없으므로 "어느 저장소인가"는 검증할 입력이 아니라 성공하거나 404가 되는 조회다. id는 프로세스 수명 동안 안정적이라, 무관한 탭을 열고 닫아도 다른 id가 재배치되지 않는다.
 - **저장소별 런타임**(`runtime.rs`): `SnapshotChannel`은 단일 consumer `mpsc`라 TUI 것을 공유할 수 없어 자기 것을 띄운다. 스냅샷을 wire 페이로드로 한 번만 줄여 팬아웃한다. **팬아웃은 conflate**된다 — 느린 구독자는 최신 상태를 받지, 밀린 과거를 재생하지 않는다(슬롯 1개 + 1-depth 병합 wakeup). 소켓 I/O 중 락을 잡지 않는다. 페이로드가 직전과 동일하면 발행하지 않는다: producer는 변화가 아니라 타이머로 tick하므로, 그러지 않으면 유휴 저장소가 매초 스트리밍하며 seq를 태워 "뭔가 바뀌었나"의 지표로 쓸 수 없게 된다.
-- **터미널**(`terminal.rs`)은 **세션의 터미널이고, attach한 TUI가 보는 것과 같은 pane**이다(허브가 PTY를 소유하고 두 전송이 같은 허브에 붙는다 — 위 "세션 공유" 참고). raw PTY 바이트를 서버측 VT 에뮬레이션 없이 그대로 보낸다(xterm.js가 이미 에뮬레이터다). 4바이트 LE pane id를 앞에 붙인 **바이너리 프레임** — PTY 읽기는 멀티바이트 시퀀스를 일상적으로 쪼개므로 JSON으로 조기 디코딩하면 브라우저가 재조립하기 전에 깨진다. **출력은 conflate하지 않고 큐잉**한다: 최신 status는 완결된 그림이지만 터미널 바이트는 하나만 빠져도 스트림이 깨지므로, 큐를 넘긴 클라이언트는 조용히 버리지 않고 끊는다.
-- **PTY 크기는 확정된 값만 전달한다**(`usePaneSizes.ts`, `ServerMessage::Created`). 리사이즈는 싼 메시지가 아니다 — 자식은 SIGWINCH를 받고 풀스크린 프로그램은 화면을 통째로 다시 그린다. 그래서 두 가지를 막는다. 첫째, **중간값을 보내지 않는다**: 브라우저는 최종 기하에 도달하기까지 여러 중간 상태를 지난다(두 번째 pane이 생기며 그리드가 쪼개짐, 웹폰트 로딩, 브레이크포인트 전환). `fit()`은 즉시 돌리되 — xterm 자기 버퍼만 reflow하고 선을 타지 않으므로 드래그가 매끄럽다 — 서버로 보내는 것만 레이아웃이 멈춘 뒤로 미룬다. 둘째, **`created`가 pane의 현재 크기를 싣는다**: pane의 크기를 아는 것은 그것을 정한 페이지뿐이라, 재접속한 클라이언트는 아무것도 가정하지 못하고 자기 크기를 보내야 했고 그 값이 같아도 자식은 한 번 다시 그렸다. 이제 클라이언트가 그 크기를 채택하므로 같은 레이아웃으로 리로드하면 리사이즈가 0번이다. 셋째, **크기를 모르는 PTY는 만들지 않는다**: 접속하면 서버가 `pending`으로 "사이즈 대기 중인 startup 터미널 N개"를 알리고, 클라이언트가 그 pane들이 차지할 셀을 placeholder로 렌더해 **실제 DOM을 재서** `start`로 답한 뒤에야 PTY가 생긴다(`useStartupSizes`). 그리드 산술이 아니라 버려지는 xterm 하나를 그 셀에 열어 `proposeDimensions()`로 재는데, gap과 셀 헤더를 다시 유도하다 어긋나면 그 오차가 곧 이 핸드셰이크가 없애려던 "잘못된 크기로 태어남"이기 때문이다. **타임아웃은 두지 않는다** — 임의의 시간 상수는 기기마다 다른 브라우저 레이아웃 타이밍을 하나로 못 박는 것이라, 두 가지로 대신했다. 측정 실패의 fallback은 **클라이언트**에 둔다(실패했음을 아는 쪽이 거기다. 빈 `sizes`로 답하면 서버가 기존 기본값으로 연다). 그리고 `started` 플래그를 접속이 아니라 **`start` 도착 시점에 소비**한다 — 그래서 핸드셰이크 도중 끊긴 페이지가 터미널을 데려가지 못하고, 다음 접속자가 제안을 다시 받는다(제안은 미청구 상태인 동안 모든 접속자에게 간다). 둘이 동시에 답하면 CAS로 첫 번째만 이겨 pane은 정확히 한 번 생긴다.
+- **터미널**(`terminal.rs`)은 **세션의 터미널이고, attach한 TUI가 보는 것과 같은 pane**이다(허브가 PTY를 소유하고 두 전송이 같은 허브에 붙는다 — 위 "세션 공유" 참고). raw PTY 바이트를 그대로 보낸다 — **화면은 서버가 그리지 않는다**(xterm.js가 이미 에뮬레이터다). 허브가 스트림을 파싱하는 것은 딱 한 가지, 다른 방법으로는 알 수 없는 **pane의 모드**를 위해서다(`hub_modes.rs`, 위 "붙는 클라이언트에게는 기록이 아니라 상태를 준다"). 4바이트 LE pane id를 앞에 붙인 **바이너리 프레임** — PTY 읽기는 멀티바이트 시퀀스를 일상적으로 쪼개므로 JSON으로 조기 디코딩하면 브라우저가 재조립하기 전에 깨진다. **출력은 conflate하지 않고 큐잉**한다: 최신 status는 완결된 그림이지만 터미널 바이트는 하나만 빠져도 스트림이 깨지므로, 큐를 넘긴 클라이언트는 조용히 버리지 않고 끊는다.
+- **PTY 크기는 확정된 값만 전달한다**(`usePaneSizes.ts`, `ServerMessage::Created`). 리사이즈는 싼 메시지가 아니다 — 자식은 SIGWINCH를 받고 풀스크린 프로그램은 화면을 통째로 다시 그린다. 그래서 두 가지를 막는다. 첫째, **중간값을 보내지 않는다**: 브라우저는 최종 기하에 도달하기까지 여러 중간 상태를 지난다(두 번째 pane이 생기며 그리드가 쪼개짐, 웹폰트 로딩, 브레이크포인트 전환). `fit()`은 즉시 돌리되 — xterm 자기 버퍼만 reflow하고 선을 타지 않으므로 드래그가 매끄럽다 — 서버로 보내는 것만 레이아웃이 멈춘 뒤로 미룬다. 둘째, **`created`가 pane의 현재 크기를 싣는다**: pane의 크기를 아는 것은 그것을 정한 페이지뿐이라, 재접속한 클라이언트는 아무것도 가정하지 못하고 자기 크기를 보내야 했고 그 값이 같아도 자식은 한 번 다시 그렸다. 이제 클라이언트가 그 크기를 채택하므로 같은 레이아웃으로 리로드하면 리사이즈가 0번이다. **그 0번이 화면 복원을 대신 하고 있었다** — 재접속 시 풀스크린 프로그램이 다시 그리는 계기가 바로 그 리사이즈였고, 그것을 없앤 뒤로는 깨진 화면이 남았다. 지금은 화면 복원을 리사이즈의 부수 효과에 기대지 않고 허브가 명시적으로 요청하므로(위 "붙는 클라이언트에게는 기록이 아니라 상태를 준다") 이 최적화는 그대로 유지된다. 셋째, **크기를 모르는 PTY는 만들지 않는다**: 접속하면 서버가 `pending`으로 "사이즈 대기 중인 startup 터미널 N개"를 알리고, 클라이언트가 그 pane들이 차지할 셀을 placeholder로 렌더해 **실제 DOM을 재서** `start`로 답한 뒤에야 PTY가 생긴다(`useStartupSizes`). 그리드 산술이 아니라 버려지는 xterm 하나를 그 셀에 열어 `proposeDimensions()`로 재는데, gap과 셀 헤더를 다시 유도하다 어긋나면 그 오차가 곧 이 핸드셰이크가 없애려던 "잘못된 크기로 태어남"이기 때문이다. **타임아웃은 두지 않는다** — 임의의 시간 상수는 기기마다 다른 브라우저 레이아웃 타이밍을 하나로 못 박는 것이라, 두 가지로 대신했다. 측정 실패의 fallback은 **클라이언트**에 둔다(실패했음을 아는 쪽이 거기다. 빈 `sizes`로 답하면 서버가 기존 기본값으로 연다). 그리고 `started` 플래그를 접속이 아니라 **`start` 도착 시점에 소비**한다 — 그래서 핸드셰이크 도중 끊긴 페이지가 터미널을 데려가지 못하고, 다음 접속자가 제안을 다시 받는다(제안은 미청구 상태인 동안 모든 접속자에게 간다). 둘이 동시에 답하면 CAS로 첫 번째만 이겨 pane은 정확히 한 번 생긴다.
 - **터미널 pane 순서는 hub가 authoritative하다**(`terminal.rs::reorder_panes`, `viewer-ui/src/lib/paneOrder.ts`). 클라이언트가 pane 헤더를 드래그하면 원하는 전체 순서를 `reorder`로 보내고, hub는 그것을 살아있는 pane에 맞춰 재조정한 뒤(`canonical_order`: 요청 순서 중 실재하는 id를 먼저, 요청이 빠뜨린 live pane은 현재 순서로 뒤에, 모르는 id·중복은 버림) canonical 순서를 `reordered`로 **전 클라이언트에 broadcast**한다. 클라이언트는 낙관적으로 미리 바꾸지 않고 이 echo를 받아 반영해(`reconcileOrder`, create/close와 같은 패턴) 여러 기기가 한 순서로 수렴한다. **순서는 hub의 pane Vec에 살아서** 재접속 replay(`connect`가 그 순서대로 `Created`를 재생)와 다른 기기가 자동으로 따라온다 — 디스크에는 쓰지 않는다. 서버 재시작은 pane 자체를 파기하고 빈 패널로 복귀하므로 영속화할 상태가 없다. DnD는 HTML5 drag가 아니라 pointer 이벤트라(sidebar divider와 같은 선택) 폰 터치도 마우스와 동일하게 동작한다. 재정렬은 pane id·scrollback·PTY를 건드리지 않고 그리드 배치만 바꾸므로 터미널이 끊기지 않는다.
 - **프로젝트 탭 순서도 서버가 authoritative하다**(`catalog.rs::reorder`, `POST /api/repos/order`, `viewer-ui/src/pages/App.tsx`). 헤더 탭을 pointer로 드래그하면(pane 헤더·sidebar divider와 같은 선택이라 폰 터치도 동일) 원하는 id 순서를 보내고, 서버가 그것을 live repo에 맞춰 canonical화한 뒤(pane의 `canonical_order`와 동형 — 재사용한 `reconcileOrder`/`reorderByDrop`을 pane number·repo string 양쪽에 쓰도록 제네릭화) 갱신된 목록을 돌려준다. **pane과 다른 점은 전송 채널이다**: repo 목록에는 전용 WebSocket이 없고 `/api/repos` 폴링뿐이라, broadcast 대신 REST로 순서를 갱신하고 다음 폴링이 그것을 받는다. **순서가 `rebuild`를 견디게** `Catalog`에 명시적 `order` overlay를 두어, `union_paths`가 base+added 자연 순서를 그 위에 정렬한다(순서에 없는 새 repo는 끝에). 폴링이 드래그 직후의 옛 순서를 늦게 들고 와 스냅백하는 것은 세 겹으로 막는다: accent·sidebar 폭과 같은 write-generation 가드(`repoOrderWrites`), 드래그 중 차단(`repoDraggingRef`), 그리고 **reorder POST가 in-flight/큐에 있는 동안 폴링이 순서를 채택하지 않는** pending 가드다(마지막 것이 "카운터는 올랐지만 POST 커밋 전 서버를 읽은 폴링이 generation은 일치하는" 창을 닫는다). 가드가 걸린 폴링은 서버 순서를 버리되 membership(다른 기기의 open/close)은 `reconcileOrder`로 받아들인다. **reorder POST는 클라이언트에서 직렬화**한다(한 번에 하나, 큐에는 최신 순서만) — 두 POST가 별도 커넥션이라 서버 처리 순서가 보장되지 않아, 병렬로 쏘면 서버가 옛 요청을 나중에 커밋해 잘못된 순서로 영속할 수 있기 때문이다. **남는 transient 하나**: 커밋 전 서버를 읽었지만 POST가 정착한 뒤 도착하는 폴링은 여전히 한 번 스냅백할 수 있다 — accent·sidebar 폭이 받아들이는 것과 같은 자기교정(다음 폴링) transient라 서버 revision을 도입하지 않는다(그 둘과 일관된 단순 poll 동기화를 유지). **영속은 open/close와 같은 경계**를 따른다: headless `serve`(`persist=true`)면 `catalog.paths()`가 `workspace.json`의 탭 순서로 저장돼 재시작·다른 기기에 유지되고, TUI 동반 실행에서는 세션 한정이다(그 파일의 주인이 TUI라서). 저장 시 `persist_workspace`는 `ws.active`를 인덱스가 아니라 **이전 활성 path 기준으로 재매핑**한다 — 순서가 바뀌면 같은 인덱스가 다른 repo를 가리키므로, 다음 TUI 실행이 엉뚱한 탭을 활성으로 열지 않게 한다. **한 가지 한계**: `serve`에 `--repo`를 명시하면 그 인자가 시작 순서를 지배해(`main.rs`: "explicit --repo comes first and wins") 그 path들의 저장된 재정렬은 재시작 때 덮인다 — 인자 없는 `serve`(workspace만으로 뜨는 일반적 경우)에서는 저장 순서가 그대로 복원된다. 이는 뷰어 기능이 아니라 기존 startup 우선순위 결정이라 그대로 둔다. 또한 `catalog.reorder`(mutation 락으로 원자적) 자체와 이어지는 `persist_workspace`(파일 IO)는 한 트랜잭션이 아니라, **두 기기가 밀리초 안에 동시에 재정렬하면** 파일이 마지막 라이브 순서보다 한 박자 뒤처질 수 있다(라이브 catalog는 항상 정확, 다음 재정렬이 교정). prefs(accent·폭)의 fire-and-forget 영속 경합과 같은 클래스라, 파일 IO를 catalog 락 안으로 끌어들이는 대신 같은 단순 모델을 유지한다.
 - **자원 상한**(`limits.rs`)은 전부 `truncated`로 보고된다. 잘린 목록이 전체인 척하지 않는다.
