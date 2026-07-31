@@ -82,7 +82,7 @@ pub(crate) fn complete_dir_path(buf: &str) -> PathCompletion {
     let dir_str = if dir_text.is_empty() {
         "."
     } else {
-        let trimmed = dir_text.trim_end_matches(|c| c == '/' || c == '\\');
+        let trimmed = dir_text.trim_end_matches(['/', '\\']);
         if trimmed.is_empty() || trimmed.ends_with(':') {
             dir_text
         } else {

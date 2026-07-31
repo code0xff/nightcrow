@@ -65,7 +65,7 @@ impl PathTree {
         let text_clean = if text.is_empty() {
             "."
         } else {
-            let t = text.trim_end_matches(|c| c == '/' || c == '\\');
+            let t = text.trim_end_matches(['/', '\\']);
             if t.is_empty() || t.ends_with(':') {
                 text
             } else {

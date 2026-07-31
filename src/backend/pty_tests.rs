@@ -1,9 +1,9 @@
 use super::*;
 use crate::backend::identity::FIRST_GENERATION;
 use crate::config::ShellConfig;
-use std::time::{Duration, Instant};
 
 /// Long enough that a `printf` and its exit are certainly drained.
+#[cfg(unix)]
 const RELAUNCH_MARKER: &str = "nightcrow-relaunched";
 
 #[test]
@@ -21,6 +21,7 @@ fn pty_backend_create_and_destroy_pane() {
 /// once — under load a 3 s budget was measurably flaky (~2/25 runs).
 /// A generous bound only delays the failure verdict; passing runs
 /// still finish as soon as the events arrive.
+#[cfg(unix)]
 const PTY_TEST_DEADLINE: Duration = Duration::from_secs(15);
 
 #[test]
