@@ -6,7 +6,7 @@
 //! `config.toml` — and reaches only the hubs spawned afterwards.
 
 use super::Catalog;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 impl Catalog {
     /// Like [`Catalog::new`], but every terminal hub it spawns runs `startup`
@@ -63,21 +63,33 @@ impl Catalog {
     /// Only the hubs spawned after this see the startup list. Telling the ones
     /// already running is the caller's job (see
     /// [`crate::web::viewer::reload`]) because it means restarting plugin
-    /// children, which is not a catalog concern.
+    /// children, which is not a catalog concern. The entries to tell are returned
+    /// rather than fetched afterwards, which is what makes the split safe — see
+    /// below.
+    ///
+    /// Taken under the mutation lock, the same one every rebuild holds. Without
+    /// it a repository opened in the same beat could fall between the two halves:
+    /// its hub reads the old tables while the swap is still to come, and the
+    /// swap's snapshot is taken while its entry is still to be installed. Nobody
+    /// would then tell that hub, and it would run the previous `[[plugin]]` table
+    /// for as long as it stayed open. Holding the lock leaves only the two
+    /// orderings that are both correct: the open lands first and is in the
+    /// snapshot, or it lands second and reads the new tables.
     pub fn set_config_tables(
         &self,
         file_startup: &[crate::config::StartupCommand],
         plugins: Vec<crate::config::PluginConfig>,
-    ) -> anyhow::Result<()> {
-        // Merged before either lock is taken, so a refusal leaves both tables
+    ) -> anyhow::Result<Vec<Arc<super::RepoEntry>>> {
+        // Merged before any lock is taken, so a refusal leaves both tables
         // exactly as they were.
         let merged = crate::config::merge_startup_commands(file_startup, &self.cli_startup)?;
+        let _mutation = self.mutation.lock().expect("catalog mutation poisoned");
         *self
             .startup_commands
             .lock()
             .expect("catalog startup poisoned") = merged;
         *self.plugins.lock().expect("catalog plugins poisoned") = plugins;
-        Ok(())
+        Ok(self.entries())
     }
 
     /// The `[[plugin]]` table as it stands, for the caller that has to tell the

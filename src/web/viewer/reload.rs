@@ -111,7 +111,10 @@ pub fn reload_config_at(
     // yet" state a fresh install starts in.
     let cfg = crate::config::read_config_file(path).map_err(ReloadError::Config)?;
 
-    state
+    // The entries come back from the swap rather than being fetched after it: a
+    // repository opened in the same beat must either be in this list or have been
+    // spawned from the new tables, never neither.
+    let entries = state
         .catalog
         .set_config_tables(&cfg.startup_commands, cfg.plugins.clone())
         .map_err(ReloadError::Config)?;
@@ -121,7 +124,6 @@ pub fn reload_config_at(
     // plugin child — so this returns before the children have finished being
     // replaced. That is deliberate: waiting would mean blocking whoever asked on
     // every repository's queue.
-    let entries = state.catalog.entries();
     for entry in &entries {
         entry.terminals.reload_plugins(cfg.plugins.clone());
     }

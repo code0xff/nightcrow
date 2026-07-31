@@ -11,6 +11,14 @@ fn startup(command: &str) -> crate::config::StartupCommand {
     }
 }
 
+fn plugin(name: &str) -> crate::config::PluginConfig {
+    crate::config::PluginConfig {
+        name: name.to_string(),
+        command: "nightcrow-recovery".to_string(),
+        ..Default::default()
+    }
+}
+
 #[test]
 fn swapping_the_config_tables_keeps_the_cli_startup_panes() {
     let catalog = Catalog::with_startup_plugins_and_exec(
@@ -52,6 +60,25 @@ fn a_refused_swap_replaces_neither_table() {
     // Neither list moved: a reload does not half-apply.
     assert_eq!(catalog.startup_commands(), vec![startup("claude")]);
     assert!(catalog.plugins().is_empty());
+}
+
+#[test]
+fn a_swap_hands_back_the_repositories_the_caller_must_tell() {
+    let (dir, path) = make_repo();
+    let catalog = Catalog::with_startup_and_plugins(vec![startup("claude")], Vec::new());
+    catalog.set_paths(std::slice::from_ref(&path));
+
+    let told = catalog
+        .set_config_tables(&[startup("cargo watch")], vec![plugin("recovery")])
+        .expect("the merge fits the cap");
+
+    // The fan-out list is the served set as of the swap itself, not one fetched
+    // afterwards: that is what stops a repository opened in the same beat from
+    // falling between the two and running the previous plugin table for good.
+    assert_eq!(told.len(), 1);
+    assert!(Arc::ptr_eq(&told[0], &catalog.entries()[0]));
+    catalog.shutdown();
+    drop(dir);
 }
 
 #[test]
