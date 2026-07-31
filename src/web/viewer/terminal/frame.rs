@@ -58,6 +58,36 @@ pub enum ClientMessage {
     Start {
         sizes: Vec<PaneSize>,
     },
+    /// How a `Ctrl+L` a client just forwarded came to be — see
+    /// [`hub_diag`](super::hub_diag) for why anyone is asking.
+    ///
+    /// Carries no input, only the provenance of one byte: whether a real key
+    /// event produced it, whether that event was the browser's own or something
+    /// dispatched at the page, and whether it was a key being held down. Logged
+    /// and otherwise ignored; nothing in the hub reads it.
+    #[serde(rename = "clear_key_report")]
+    ClearKeyReport {
+        pane: PaneId,
+        /// `None` when no key event preceded the byte — a paste, an input method,
+        /// or a script writing straight into the terminal.
+        key: Option<ClearKeyFacts>,
+    },
+}
+
+/// What the browser said about the key event behind a forwarded `Ctrl+L`.
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+pub struct ClearKeyFacts {
+    /// `KeyboardEvent.isTrusted`: false means a script dispatched it, which no
+    /// keyboard can do.
+    pub trusted: bool,
+    /// `KeyboardEvent.repeat`: the key is being held down and the OS is
+    /// repeating it.
+    pub repeat: bool,
+    /// `KeyboardEvent.code`, e.g. `KeyL`. Sanitized before it is logged — it
+    /// arrives from the page like everything else on this socket.
+    pub code: String,
+    /// Milliseconds between that key event and the byte it produced.
+    pub since_ms: u32,
 }
 
 /// One pane's size, as the client measured its cell.

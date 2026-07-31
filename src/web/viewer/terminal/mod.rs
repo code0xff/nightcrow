@@ -20,6 +20,9 @@
 
 pub mod frame;
 mod hub_events;
+mod hub_diag;
+#[cfg(test)]
+mod hub_diag_tests;
 mod hub_helpers;
 mod hub_layout;
 mod hub_modes;
@@ -29,6 +32,8 @@ mod hub_relaunch;
 mod hub_repaint;
 mod hub_run;
 mod session;
+#[cfg(test)]
+mod session_tests;
 mod size_owner;
 mod startup;
 mod startup_run;
@@ -40,7 +45,7 @@ pub use session::TerminalSession;
 
 use crate::backend::PaneId;
 use hub_helpers::{Command, Replayed, Shared, replay_pane};
-use session::Client;
+use session::{Client, ReportBudget};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc::{self, SyncSender};
 use std::sync::{Arc, Mutex};
@@ -185,6 +190,7 @@ impl TerminalHub {
             hub: Arc::clone(self),
             id,
             rx: std::sync::Mutex::new(rx),
+            reports: std::sync::Mutex::new(ReportBudget::new(std::time::Instant::now())),
         }
     }
 

@@ -3,7 +3,7 @@
 
 use crate::web::viewer::limits;
 use crate::web::viewer::terminal::frame::{
-    ClientMessage, PaneSize, ServerMessage, decode_output, encode_output,
+    ClearKeyFacts, ClientMessage, PaneSize, ServerMessage, decode_output, encode_output,
 };
 use crate::web::viewer::terminal::hub_helpers::{canonical_order, push_scrollback};
 use std::collections::VecDeque;
@@ -65,6 +65,35 @@ fn client_messages_parse_from_the_wire_shape() {
 
     assert!(serde_json::from_str::<ClientMessage>(r#"{"type":"nope"}"#).is_err());
     assert!(serde_json::from_str::<ClientMessage>(r#"{"type":"create"}"#).is_err());
+}
+
+#[test]
+fn a_clear_key_report_parses_with_and_without_a_key_event() {
+    let keyed: ClientMessage = serde_json::from_str(
+        r#"{"type":"clear_key_report","pane":2,"key":{"trusted":false,"repeat":true,"code":"KeyL","since_ms":3}}"#,
+    )
+    .unwrap();
+    assert_eq!(
+        keyed,
+        ClientMessage::ClearKeyReport {
+            pane: 2,
+            key: Some(ClearKeyFacts {
+                trusted: false,
+                repeat: true,
+                code: "KeyL".to_string(),
+                since_ms: 3,
+            }),
+        }
+    );
+
+    // A byte with nothing behind it — a paste, an input method, or a script
+    // writing into the terminal — is the report that matters most.
+    let keyless: ClientMessage =
+        serde_json::from_str(r#"{"type":"clear_key_report","pane":2,"key":null}"#).unwrap();
+    assert_eq!(
+        keyless,
+        ClientMessage::ClearKeyReport { pane: 2, key: None }
+    );
 }
 
 #[test]

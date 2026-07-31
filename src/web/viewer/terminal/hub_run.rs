@@ -1,4 +1,5 @@
 use super::hub_modes::PaneModeTracker;
+use super::hub_diag::ClearWatch;
 use super::hub_repaint::Repaints;
 use super::{DEFAULT_PANE_SIZE, TerminalHub};
 use super::frame::{ServerMessage, TerminalFrame};
@@ -29,6 +30,8 @@ impl TerminalHub {
         let mut modes = PaneModeTracker::default();
         // Repaints asked for by attaching clients, and the sizes owed back.
         let mut repaints = Repaints::default();
+        // Why this is here at all: `hub_diag`.
+        let mut clears = ClearWatch::default();
 
         while !stop.load(Ordering::Acquire) {
             while let Ok(command) = commands.try_recv() {
@@ -66,7 +69,8 @@ impl TerminalHub {
                     }
                     // Unknown pane ids are ignored rather than errored: a
                     // client racing a pane exit is normal, not an attack.
-                    Command::Input { pane, data } if self.pane_is_live(pane) => {
+                    Command::Input { pane, data, client } if self.pane_is_live(pane) => {
+                        clears.note_input(pane, client, &data, Instant::now());
                         // A person at the keyboard has taken the pane back, so
                         // its plugin is told and everything it had planned for
                         // the pane is dropped — before the bytes land, so the
@@ -130,6 +134,7 @@ impl TerminalHub {
                     // accumulated descriptors with nothing to stop it.
                     BackendEvent::Exited { pane } => {
                         modes.forget(pane);
+                        clears.forget(pane);
                         self.forget_repaints(&mut repaints, pane);
                         self.pane_exited(&mut backend, &mut plugins, pane)
                     }

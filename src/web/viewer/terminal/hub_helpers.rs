@@ -41,9 +41,13 @@ pub enum Command {
         client: u64,
         reserved: usize,
     },
+    /// `client` rides along for the arrival log only (see
+    /// [`hub_diag`](super::hub_diag)); input is honoured from whoever sends it,
+    /// unlike a resize.
     Input {
         pane: PaneId,
         data: Vec<u8>,
+        client: u64,
     },
     /// `client` rides along because a resize is only honoured from the client
     /// that owns the sizing (see [`Shared::size_owner`]).

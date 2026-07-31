@@ -4,6 +4,7 @@ import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import type { PaneView } from "../../lib/terminalLayout";
 import { terminalFontOptions } from "../../lib/termFont";
+import { ClearKeyProbe } from "../../lib/clearKeyProbe";
 
 interface UseTerminalViewsArgs {
   panes: number[];
@@ -47,9 +48,25 @@ export function useTerminalViews({
       });
       const fit = new FitAddon();
       term.loadAddon(fit);
-      term.onData((data) =>
-        socketRef.current?.send(JSON.stringify({ type: "input", pane, data })),
-      );
+      // Why the probe is here: `lib/clearKeyProbe.ts`. It observes and reports;
+      // the handler always returns true, so xterm keeps handling every key
+      // exactly as it did.
+      const probe = new ClearKeyProbe();
+      term.attachCustomKeyEventHandler((event) => {
+        probe.noteKey(event, performance.now());
+        return true;
+      });
+      term.onData((data) => {
+        const socket = socketRef.current;
+        if (!socket) return;
+        socket.send(JSON.stringify({ type: "input", pane, data }));
+        const report = probe.report(data, performance.now());
+        if (report) {
+          socket.send(
+            JSON.stringify({ type: "clear_key_report", pane, ...report }),
+          );
+        }
+      });
       // Preserve the previous label when OSC provides an empty title.
       term.onTitleChange((title) => {
         const cleaned = title.replace(/\s+/g, " ").trim();
