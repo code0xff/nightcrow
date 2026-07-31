@@ -2,6 +2,7 @@ import { useCallback, useRef } from "react";
 import { useAccent } from "./ui/theme";
 import { useSidebarWidth } from "./ui/sidebar";
 import { useUpperPct } from "./ui/upperPct";
+import { useMaximized } from "./useMaximized";
 
 /**
  * The preferences this page owns locally, and the bookkeeping that keeps the
@@ -31,6 +32,9 @@ export function useViewerPrefs() {
     reset: resetUpper,
     adopt: adoptUpperPct,
   } = useUpperPct();
+  // Owns its own write counter, so it is passed through whole rather than
+  // rewrapped here like the scalars below.
+  const maximized = useMaximized();
   const accentWrites = useRef(0);
   const sidebarWrites = useRef(0);
   const upperPctWrites = useRef(0);
@@ -89,5 +93,9 @@ export function useViewerPrefs() {
     bumpUpperPctWrites,
     adoptUpperPct,
     upperPctWrites,
+    maximizedPanelOf: maximized.panelOf,
+    setMaximizedFor: maximized.setFor,
+    adoptMaximized: maximized.adopt,
+    maximizedWrites: maximized.writes,
   };
 }

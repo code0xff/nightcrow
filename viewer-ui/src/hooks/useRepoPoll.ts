@@ -10,6 +10,7 @@ import { resolveActiveRepo } from "../lib/activeRepo";
 import { nextClockOffset } from "../lib/hot";
 import { createSerialWriter } from "../lib/serialWrite";
 import { reconcileOrder } from "../lib/paneOrder";
+import type { MaximizedByRepo } from "../api";
 
 const REPO_POLL_MS = 3000;
 
@@ -20,11 +21,13 @@ export interface UseRepoPollArgs {
   adoptAccent: (accent: number) => void;
   adoptSidebarWidth: (px: number) => void;
   adoptUpperPct: (pct: number) => void;
+  adoptMaximized: (remote: MaximizedByRepo) => void;
   draggingRef: React.MutableRefObject<boolean>;
   upperDraggingRef: React.MutableRefObject<boolean>;
   accentWrites: React.MutableRefObject<number>;
   sidebarWrites: React.MutableRefObject<number>;
   upperPctWrites: React.MutableRefObject<number>;
+  maximizedWrites: React.MutableRefObject<number>;
   resumeTick: number;
   orderWrites: React.MutableRefObject<number>;
   repoDraggingRef: React.MutableRefObject<boolean>;
@@ -51,11 +54,13 @@ export function useRepoPoll({
   adoptAccent,
   adoptSidebarWidth,
   adoptUpperPct,
+  adoptMaximized,
   draggingRef,
   upperDraggingRef,
   accentWrites,
   sidebarWrites,
   upperPctWrites,
+  maximizedWrites,
   resumeTick,
   orderWrites,
   repoDraggingRef,
@@ -92,6 +97,7 @@ export function useRepoPoll({
       const writes = accentWrites.current;
       const widthWrites = sidebarWrites.current;
       const splitWrites = upperPctWrites.current;
+      const panelWrites = maximizedWrites.current;
       const orderGeneration = orderWrites.current;
       return api
         .repos(controller.signal)
@@ -103,6 +109,7 @@ export function useRepoPoll({
             sidebar_width,
             upper_pct,
             active_repo,
+            maximized,
             now_ms,
             can_clone,
           } = bootstrap;
@@ -115,6 +122,7 @@ export function useRepoPoll({
             adoptSidebarWidth(sidebar_width);
           if (upperPctWrites.current === splitWrites && !upperDraggingRef.current)
             adoptUpperPct(upper_pct);
+          if (maximizedWrites.current === panelWrites) adoptMaximized(maximized);
           setAuthed(true);
           setReposLoaded(true);
           const reorderPending =

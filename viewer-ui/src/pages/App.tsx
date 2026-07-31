@@ -14,7 +14,6 @@ import { useStatus } from "../hooks/useStatus";
 import { usePaneOpeners } from "../hooks/usePaneOpeners";
 import { useLog } from "../hooks/useLog";
 import { useResumeTick } from "../hooks/useResumeTick";
-import { useMaximized } from "../hooks/useMaximized";
 import { useRepoActions } from "../hooks/useRepoActions";
 import { useClone } from "../hooks/useClone";
 import { Header } from "../components/Header";
@@ -22,7 +21,7 @@ import { RepoShell } from "../components/RepoShell";
 import { FolderPicker } from "../components/FolderPicker";
 import { LoadingSplash } from "../components/LoadingSplash";
 import { Login } from "../components/Login";
-import type { MobileView, Pane, Tab } from "../types";
+import type { Maximized, MobileView, Pane, Tab } from "../types";
 import { appRows } from "../layout/appLayout";
 
 export function App() {
@@ -38,7 +37,16 @@ export function App() {
     paneRequestRef.current += 1;
   }, []);
   const [pickerOpen, setPickerOpen] = useState(false);
-  const { accent, next, cycle, upperPct, shell, guards } = useShellLayout();
+  const {
+    accent,
+    next,
+    cycle,
+    upperPct,
+    maximizedPanelOf,
+    setMaximizedFor,
+    shell,
+    guards,
+  } = useShellLayout();
   const [previewRendered, setPreviewRendered] = useState(true);
   const handle = useCallback((err: unknown) => {
     if (isUnauthorized(err)) {
@@ -86,7 +94,14 @@ export function App() {
     paneRequestRef,
   });
   const now = useHotClock(status?.files, hotWindowMs, clockSkewMs ?? 0);
-  const { maximized, setMaximized, dropMaximized } = useMaximized(repo);
+  // Bound here rather than inside the hook: the state has to be owned above
+  // `useProjectTabs`, which is what produces `repo` in the first place.
+  const maximized = maximizedPanelOf(repo);
+  const setMaximized = useCallback(
+    (next: Maximized | ((prev: Maximized) => Maximized)) =>
+      setMaximizedFor(repo, next),
+    [setMaximizedFor, repo],
+  );
 
   const {
     commits,
@@ -119,7 +134,6 @@ export function App() {
     setPane,
     setTab,
     setPickerOpen,
-    dropMaximized,
     handle,
     orderWrites,
   });

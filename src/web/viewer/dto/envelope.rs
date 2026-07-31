@@ -77,6 +77,12 @@ pub struct ViewerBootstrapDto {
     /// falls back to the first tab. An id, not the path `prefs.rs` stores:
     /// clients address repositories by id and never learn the path.
     pub active_repo: Option<String>,
+    /// Which panel each *currently served* project was left maximized in, by
+    /// id. Projects with no arrangement are absent, as are remembered ones this
+    /// session is not serving — ids, like `active_repo`, are resolved from the
+    /// same catalog snapshot as the list beside them
+    /// (`Catalog::list_with_active`), so every id here is one the list carries.
+    pub maximized: std::collections::HashMap<String, &'static str>,
     /// This server's wall clock, for dating [`super::ChangedFileDto::mtime`].
     pub now_ms: u64,
     /// Whether this server can clone: false when no `git` is on its PATH, so
@@ -94,11 +100,13 @@ impl ViewerBootstrapDto {
     /// a call site can swap with nothing to catch it. `active_repo` stays
     /// separate because what goes on the wire is the **id** resolved from
     /// `prefs.active_repo`, which only the caller's catalog snapshot can supply.
+    /// `maximized` is separate for the same reason.
     pub fn new(
         repos: Vec<RepoDto>,
         hot: HotConfigDto,
         prefs: &ViewerPrefs,
         active_repo: Option<String>,
+        maximized: std::collections::HashMap<String, &'static str>,
         can_clone: bool,
     ) -> Self {
         Self {
@@ -108,6 +116,7 @@ impl ViewerBootstrapDto {
             sidebar_width: prefs.sidebar_width,
             upper_pct: prefs.upper_pct,
             active_repo,
+            maximized,
             can_clone,
             now_ms: server_now_millis(),
         }

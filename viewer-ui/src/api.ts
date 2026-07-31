@@ -22,10 +22,15 @@ import type {
   ViewerBootstrap,
 } from "./api/types";
 
-/** How long a project-selection write may take before it is abandoned so the
- *  next one can go out. Generous next to a local request, since giving up
- *  early on a slow link would drop a write that was about to land. */
-const ACTIVE_REPO_WRITE_TIMEOUT_MS = 10_000;
+/** How long a serialized preference write may take before it is abandoned so
+ *  the next one can go out. Generous next to a local request, since giving up
+ *  early on a slow link would drop a write that was about to land.
+ *
+ *  Every write held behind a queue needs one: `createSerialWriter` gives the
+ *  slot to one request at a time, and `fetch` has no timeout of its own, so one
+ *  that never settles would stop everything queued behind it from ever being
+ *  sent. */
+const SERIAL_WRITE_TIMEOUT_MS = 10_000;
 
 export const api = {
   async login(password: string): Promise<void> {
@@ -66,8 +71,22 @@ export const api = {
     post<StoredPrefs>(
       "/api/prefs",
       { active_repo },
-      AbortSignal.timeout(ACTIVE_REPO_WRITE_TIMEOUT_MS),
+      AbortSignal.timeout(SERIAL_WRITE_TIMEOUT_MS),
     ).then((r) => r.active_repo),
+
+  /** Record which panel a project is maximized in, or `null` for none. Echoes
+   *  the full set back so a client that maximized on another device converges
+   *  without a second request.
+   *
+   *  Bounded like the selection write, and for the same reason: these are
+   *  serialized per project (`useMaximized`), so one that never settles would
+   *  stop that project's later arrangements from being recorded at all. */
+  setMaximized: (repo: string, panel: "files" | "terminal" | null) =>
+    post<StoredPrefs>(
+      "/api/prefs",
+      { maximized: { repo, panel } },
+      AbortSignal.timeout(SERIAL_WRITE_TIMEOUT_MS),
+    ).then((r) => r.maximized),
   status: (repo: string) => get<Status>(`/api/status?${query({ repo })}`),
   tree: (repo: string, path: string) =>
     get<Tree>(`/api/tree?${query({ repo, path })}`),

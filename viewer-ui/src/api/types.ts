@@ -28,12 +28,18 @@ export interface HotConfig {
   window_secs: number;
 }
 
+/** Which panel a project is maximized in, keyed by repo id. A project with
+ *  nothing maximized is absent rather than present with a "none" — that is the
+ *  ordinary state, and the server does not store a row for it. */
+export type MaximizedByRepo = Record<string, "files" | "terminal">;
+
 /** What every `/api/prefs` write echoes back: the full stored set. */
 export interface StoredPrefs {
   accent: number;
   sidebar_width: number;
   upper_pct: number;
   active_repo: string | null;
+  maximized: MaximizedByRepo;
 }
 
 /** What `/api/reload` answers.
@@ -59,6 +65,11 @@ export interface ViewerBootstrap {
    *  instead of the first tab. Null when nothing has been selected yet or the
    *  remembered project is no longer served. */
   active_repo: string | null;
+  /** Which panel each served project was left maximized in, by id. Only the
+   *  projects this session is serving appear: the server stores them by path
+   *  and resolves ids per response, so a remembered project that is not open
+   *  has no id to name it by and keeps its entry for next time. */
+  maximized: MaximizedByRepo;
   /** Server wall clock used to date file mtimes. */
   now_ms: number;
   /** False when the server has no `git` on PATH, so the clone form is disabled

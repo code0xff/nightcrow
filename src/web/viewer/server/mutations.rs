@@ -3,7 +3,7 @@ use super::http_util::{json_error, json_response};
 use crate::web::common::http::RequestHead;
 use crate::web::viewer::catalog::RepoEntry;
 use crate::web::viewer::dto::Envelope;
-use crate::web::viewer::prefs::PrefsUpdate;
+use crate::web::viewer::prefs::{MaximizedPanel, MaximizedUpdate, PrefsUpdate};
 use crate::web::viewer::session;
 use anyhow::Result;
 use std::sync::Arc;
@@ -29,6 +29,21 @@ struct PrefsRequest {
     /// Repo **id**, as every other client-supplied repository reference is.
     /// The server translates it to the path `prefs.rs` stores.
     active_repo: Option<String>,
+    /// How one project's screen is arranged. Names its own repository rather
+    /// than riding on `active_repo`: maximizing is about the project the client
+    /// is looking at, and inferring that from a second field would tie two
+    /// writes together that a client may well send separately.
+    maximized: Option<MaximizedRequest>,
+}
+
+#[derive(serde::Deserialize)]
+struct MaximizedRequest {
+    /// Repo id, translated to a path before it is stored.
+    repo: String,
+    /// `"files"`, `"terminal"`, or absent/null for nothing maximized. Absent
+    /// and "nothing" mean the same here, unlike in the enclosing request, where
+    /// absent means the write said nothing about maximizing at all.
+    panel: Option<String>,
 }
 
 /// Store one or more viewer preferences and echo back the full stored set.
@@ -53,6 +68,7 @@ pub(super) fn handle_set_prefs(body: &str, state: &ViewerState) -> Vec<u8> {
         && request.sidebar_width.is_none()
         && request.upper_pct.is_none()
         && request.active_repo.is_none()
+        && request.maximized.is_none()
     {
         return json_error("400 Bad Request", "no known preference in the body");
     }
@@ -67,6 +83,28 @@ pub(super) fn handle_set_prefs(body: &str, state: &ViewerState) -> Vec<u8> {
         },
         None => None,
     };
+    // Resolved before the write for the same reason, and refused the same way:
+    // a panel this server cannot render is a client that has drifted, and
+    // storing nothing behind a 200 would claim an arrangement was kept.
+    let maximized = match request.maximized {
+        Some(change) => {
+            let Some(entry) = state.catalog.get(&change.repo) else {
+                return json_error("400 Bad Request", "unknown repo");
+            };
+            let panel = match change.panel.as_deref() {
+                None => None,
+                Some(name) => match MaximizedPanel::parse(name) {
+                    Some(panel) => Some(panel),
+                    None => return json_error("400 Bad Request", "unknown panel"),
+                },
+            };
+            Some(MaximizedUpdate {
+                repo: entry.path.clone(),
+                panel,
+            })
+        }
+        None => None,
+    };
     // One locked write for whatever the body carried, so a request naming
     // several preferences lands atomically rather than as racing updates.
     let stored = state.prefs.update(PrefsUpdate {
@@ -74,15 +112,20 @@ pub(super) fn handle_set_prefs(body: &str, state: &ViewerState) -> Vec<u8> {
         sidebar_width: request.sidebar_width,
         upper_pct: request.upper_pct,
         active_repo: active_path,
+        maximized,
     });
+    // One snapshot for both, as the bootstrap does: the two are read together
+    // by the client, and an id in one that is missing from the other describes
+    // a served set that never existed.
+    let served = state
+        .catalog
+        .list_with_active(stored.active_repo.as_deref(), &stored.maximized);
     match serde_json::to_string(&Envelope::new(serde_json::json!({
         "accent": stored.accent,
         "sidebar_width": stored.sidebar_width,
         "upper_pct": stored.upper_pct,
-        "active_repo": stored
-            .active_repo
-            .as_deref()
-            .and_then(|path| state.catalog.id_of_path(path)),
+        "active_repo": served.active,
+        "maximized": served.maximized,
     }))) {
         Ok(json) => json_response("200 OK", &json, &[]),
         Err(_) => json_error("500 Internal Server Error", "could not encode preferences"),

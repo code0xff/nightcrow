@@ -3,6 +3,7 @@ use super::super::{
     DiffLineDto, FileDto, HotConfigDto, LogDto, PROTOCOL_VERSION, RepoDto, SpanDto, StatusDto,
     TrackingDto, TreeDto, TreeEntryDto, TreeMatchDto, TreeSearchDto, ViewerBootstrapDto,
 };
+use crate::web::viewer::prefs::MaximizedPanel;
 
 /// Where the wire fixture lives. At the `viewer-ui` root rather than under
 /// `viewer-ui/src` (which the published crate excludes) so it ships in the
@@ -55,6 +56,17 @@ fn wire_fixture() -> serde_json::Value {
             sidebar_width: 460,
             upper_pct: 55,
             active_repo: Some("r1".to_string()),
+            // Only the served projects appear, by id — a remembered one this
+            // session is not serving has no id to name it by.
+            //
+            // Read off the enum rather than spelled out, here and below: the
+            // client checks these strings against its own union, and a literal
+            // would keep saying "terminal" after the variant behind it was
+            // renamed — leaving both sides passing while the wire disagreed.
+            maximized: std::collections::HashMap::from([(
+                "r1".to_string(),
+                MaximizedPanel::Terminal.as_str(),
+            )]),
             // Literal, not `server_now_millis()`: a fixture that moved every
             // run could not be committed.
             now_ms: 1_700_000_000_500,
@@ -171,6 +183,14 @@ fn wire_fixture() -> serde_json::Value {
             "sidebar_width": 460,
             "upper_pct": 55,
             "active_repo": "r1",
+            // Both panels, so the client's union is exercised whole: the
+            // variants are only checked against the values that actually
+            // appear here, and one of them alone would let the other be
+            // renamed on this side without anything failing.
+            "maximized": {
+                "r1": MaximizedPanel::Terminal.as_str(),
+                "r2": MaximizedPanel::Files.as_str(),
+            },
         }),
         // What `/api/reload` answers. A sentence rather than counts, because it
         // is the whole of what the browser has to show: a reload changes nothing

@@ -242,3 +242,68 @@ fn a_malformed_preference_body_is_rejected_without_changing_anything() {
     let value: serde_json::Value = serde_json::from_str(body_of(&list)).unwrap();
     assert_eq!(value["accent"], 0);
 }
+
+/// The point of the field: the arrangement outlives the page that set it.
+#[test]
+fn a_projects_arrangement_is_served_to_every_later_client() {
+    let prefs_dir = tempfile::TempDir::new().unwrap();
+    let (repo_dir, repo) = crate::test_util::make_repo();
+    let server = server_with(
+        std::slice::from_ref(&repo),
+        crate::config::AgentIndicatorConfig::default(),
+        Some(prefs_dir.path()),
+    );
+    let token = login(server.addr());
+    let list = get(server.addr(), "/api/repos", Some(&token));
+    let value: serde_json::Value = serde_json::from_str(body_of(&list)).unwrap();
+    let id = value["repos"][0]["id"].as_str().unwrap().to_string();
+    assert_eq!(value["maximized"], serde_json::json!({}), "nothing yet");
+
+    let body = serde_json::json!({ "maximized": { "repo": id, "panel": "terminal" } });
+    let stored = post(server.addr(), "/api/prefs", &body.to_string(), Some(&token));
+    let echoed: serde_json::Value = serde_json::from_str(body_of(&stored)).unwrap();
+    assert_eq!(echoed["maximized"][&id], "terminal");
+
+    // A later client — a refresh, or another device — opens arranged the same.
+    let again = get(server.addr(), "/api/repos", Some(&token));
+    let value: serde_json::Value = serde_json::from_str(body_of(&again)).unwrap();
+    assert_eq!(value["maximized"][&id], "terminal");
+
+    // And un-maximizing takes it back off, rather than storing a "none".
+    let body = serde_json::json!({ "maximized": { "repo": id, "panel": null } });
+    let stored = post(server.addr(), "/api/prefs", &body.to_string(), Some(&token));
+    let echoed: serde_json::Value = serde_json::from_str(body_of(&stored)).unwrap();
+    assert_eq!(echoed["maximized"], serde_json::json!({}));
+    drop((repo_dir, prefs_dir));
+}
+
+#[test]
+fn an_arrangement_naming_something_the_server_cannot_render_is_refused() {
+    let prefs_dir = tempfile::TempDir::new().unwrap();
+    let (repo_dir, repo) = crate::test_util::make_repo();
+    let server = server_with(
+        std::slice::from_ref(&repo),
+        crate::config::AgentIndicatorConfig::default(),
+        Some(prefs_dir.path()),
+    );
+    let token = login(server.addr());
+    let list = get(server.addr(), "/api/repos", Some(&token));
+    let value: serde_json::Value = serde_json::from_str(body_of(&list)).unwrap();
+    let id = value["repos"][0]["id"].as_str().unwrap().to_string();
+
+    // A panel that is not one of the two. Refused rather than stored, or a
+    // later client would be handed an arrangement it cannot apply.
+    let body = serde_json::json!({ "maximized": { "repo": id, "panel": "diff" } });
+    let refused = post(server.addr(), "/api/prefs", &body.to_string(), Some(&token));
+    assert!(refused.starts_with("HTTP/1.1 400"), "got: {refused}");
+
+    // A repository this session is not serving, the same way `active_repo` is.
+    let body = serde_json::json!({ "maximized": { "repo": "r9999", "panel": "files" } });
+    let refused = post(server.addr(), "/api/prefs", &body.to_string(), Some(&token));
+    assert!(refused.starts_with("HTTP/1.1 400"), "got: {refused}");
+
+    let again = get(server.addr(), "/api/repos", Some(&token));
+    let value: serde_json::Value = serde_json::from_str(body_of(&again)).unwrap();
+    assert_eq!(value["maximized"], serde_json::json!({}), "nothing stored");
+    drop((repo_dir, prefs_dir));
+}
