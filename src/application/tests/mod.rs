@@ -1,4 +1,5 @@
 mod accent;
+mod enter_fullscreen;
 mod helpers;
 mod mouse;
 mod mouse_clicks;
