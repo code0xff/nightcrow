@@ -1,23 +1,34 @@
 use super::TerminalHub;
 use super::frame::TerminalFrame;
-use super::frame::{ClientMessage, PaneSize};
+use super::frame::{ClearKeyFacts, ClientMessage, PaneSize};
 use super::hub_helpers::Command;
+use crate::backend::PaneId;
 use std::sync::mpsc::{Receiver, SyncSender, TrySendError};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 pub(super) struct Client {
     pub(super) id: u64,
     pub(super) tx: SyncSender<TerminalFrame>,
+    /// This connection's registration with the session's size ownership. Kept
+    /// beside the hub's own id because the two answer different questions: the
+    /// id names a connection to *this* repository, the registration names the
+    /// screen behind it, which the session tracks across every repository.
+    pub(super) connection: u64,
 }
 
 /// A client's connection to a repository's terminals.
 pub struct TerminalSession {
     pub(super) hub: std::sync::Arc<TerminalHub>,
     pub(super) id: u64,
+    /// See [`Client::connection`].
+    pub(super) connection: u64,
     /// Behind a lock so the session can be shared: the daemon reads frames on
     /// one thread while requests are dispatched from another. Uncontended in
     /// practice — only the reader ever takes it.
     pub(super) rx: std::sync::Mutex<Receiver<TerminalFrame>>,
+    /// How many diagnostic notes this client has left this window (see
+    /// [`TerminalSession::log_clear_key`]).
+    pub(super) reports: std::sync::Mutex<ReportBudget>,
 }
 
 impl TerminalSession {
@@ -52,6 +63,7 @@ impl TerminalSession {
             ClientMessage::Input { pane, data } => Command::Input {
                 pane,
                 data: data.into_bytes(),
+                client: self.id,
             },
             ClientMessage::Resize { pane, rows, cols } => {
                 let size = PaneSize { rows, cols }.clamped();
@@ -70,7 +82,7 @@ impl TerminalSession {
             // hands the sizing over — the client would then be a spectator with
             // no way to find out.
             ClientMessage::ClaimSize => {
-                self.hub.claim_size(self.id);
+                self.hub.claim_size(self.connection);
                 return;
             }
             // Handled here rather than on the worker thread: it only queues
@@ -79,6 +91,12 @@ impl TerminalSession {
             ClientMessage::Start { sizes } => {
                 let sizes: Vec<PaneSize> = sizes.into_iter().map(PaneSize::clamped).collect();
                 self.hub.claim_startup(self.id, &sizes);
+                return;
+            }
+            // A note for the log, not an instruction: it reaches no pane and no
+            // worker, so it stays here.
+            ClientMessage::ClearKeyReport { pane, key } => {
+                self.log_clear_key(pane, key);
                 return;
             }
         };
@@ -93,6 +111,94 @@ impl TerminalSession {
         }
     }
 }
+
+impl TerminalSession {
+    /// Write down what the client says produced a `Ctrl+L` it forwarded.
+    ///
+    /// Rate limited and sanitized because this is a client talking: the socket is
+    /// authenticated, but a page that can be scripted from a browser extension is
+    /// exactly the suspect here, and it must not be able to write the log at will
+    /// or put arbitrary text in it.
+    fn log_clear_key(&self, pane: PaneId, key: Option<ClearKeyFacts>) {
+        if !self
+            .reports
+            .lock()
+            .expect("terminal session report budget poisoned")
+            .allow(Instant::now())
+        {
+            return;
+        }
+        match key {
+            Some(facts) => tracing::info!(
+                pane,
+                client = self.id,
+                trusted = facts.trusted,
+                repeat = facts.repeat,
+                code = %sanitized_code(&facts.code),
+                since_ms = facts.since_ms,
+                "viewer: a client reports the key event behind a screen-clearing byte"
+            ),
+            None => tracing::info!(
+                pane,
+                client = self.id,
+                "viewer: a client reports a screen-clearing byte with no key event behind it"
+            ),
+        }
+    }
+}
+
+/// Reports one client may log per window. Generous next to a burst worth
+/// investigating (tens of events over seconds), small enough that a page cannot
+/// fill the disk with them.
+const REPORTS_PER_WINDOW: u32 = 120;
+const REPORT_WINDOW: Duration = Duration::from_secs(60);
+
+/// A fixed window rather than a sliding one: this bounds the log, and the extra
+/// state a sliding window costs buys nothing here.
+pub(super) struct ReportBudget {
+    window_start: Instant,
+    spent: u32,
+}
+
+impl ReportBudget {
+    pub(super) fn new(now: Instant) -> Self {
+        Self {
+            window_start: now,
+            spent: 0,
+        }
+    }
+
+    pub(super) fn allow(&mut self, now: Instant) -> bool {
+        if now.duration_since(self.window_start) >= REPORT_WINDOW {
+            self.window_start = now;
+            self.spent = 0;
+        }
+        if self.spent >= REPORTS_PER_WINDOW {
+            return false;
+        }
+        self.spent += 1;
+        true
+    }
+}
+
+/// A `KeyboardEvent.code` reduced to what one can be: ASCII letters and digits,
+/// briefly. Anything else is dropped rather than escaped — the field exists to
+/// say `KeyL`, and a log line is not the place to find out what else a page
+/// might put there.
+pub(super) fn sanitized_code(raw: &str) -> String {
+    let cleaned: String = raw
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric())
+        .take(MAX_CODE_LEN)
+        .collect();
+    if cleaned.is_empty() {
+        "unknown".to_string()
+    } else {
+        cleaned
+    }
+}
+
+const MAX_CODE_LEN: usize = 16;
 
 impl Drop for TerminalSession {
     fn drop(&mut self) {

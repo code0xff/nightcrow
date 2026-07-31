@@ -63,6 +63,10 @@ pub fn prefix_action(event: KeyEvent) -> Action {
             'o' => Action::OpenProject,
             'x' => Action::CloseProject,
             'p' => Action::CycleTheme,
+            // `u` for update-from-file. Not `r`, which is already Redraw, and not
+            // `R` — the follow-up is matched on the bare character (below), so
+            // upper and lower case cannot be told apart here.
+            'u' => Action::ReloadConfig,
             'r' => Action::Redraw,
             'q' => Action::Quit,
             '1' => Action::FocusList,

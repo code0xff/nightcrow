@@ -2,10 +2,13 @@
 //! hub test reads its assertions through. The tests themselves live beside it.
 
 mod behavior;
+mod plugin_reload;
+mod plugin_reload_panes;
 mod plugin_rules;
 mod plugin_slots;
 mod plugin_watch;
 mod plugins;
+mod reattach;
 mod recovery;
 mod scrollback_depth;
 mod size_owner;
@@ -159,4 +162,30 @@ pub(super) fn collect_created(session: &TerminalSession, n: usize) -> Vec<PaneId
         }
     }
     ids
+}
+
+/// A hub with a size ownership of its own.
+///
+/// Every test but the size-ownership ones wants an isolated session, so this is
+/// the default: two hubs from two calls share nothing, exactly as two separate
+/// sessions would. A test that needs one session across several repositories
+/// builds the `SizeOwnership` itself and calls `TerminalHub::spawn`.
+pub(super) fn spawn_hub(
+    cwd: &str,
+    startup: Vec<crate::config::StartupCommand>,
+    plugins: Vec<crate::config::PluginConfig>,
+) -> std::sync::Arc<super::TerminalHub> {
+    super::TerminalHub::spawn(cwd, startup, plugins, Default::default())
+}
+
+/// A client arriving at `hub` — a page someone just opened, which is what every
+/// test that is not about ownership means by connecting.
+pub(super) fn attach(hub: &std::sync::Arc<super::TerminalHub>) -> TerminalSession {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static NEXT: AtomicU64 = AtomicU64::new(0);
+    let id = crate::web::viewer::size_owner::ViewerId::Browser(format!(
+        "test-{}",
+        NEXT.fetch_add(1, Ordering::Relaxed)
+    ));
+    hub.connect(id, true)
 }

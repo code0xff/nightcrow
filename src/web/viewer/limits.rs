@@ -62,12 +62,21 @@ pub const MIN_PANE_DIMENSION: u16 = 1;
 pub const MAX_PANE_ROWS: u16 = 500;
 pub const MAX_PANE_COLS: u16 = 1_100;
 /// Raw PTY bytes retained per terminal to replay to a (re)connecting client.
-/// Restore is best-effort, not an exact snapshot: replaying only a byte-window
-/// means a terminal mode set before that window (alternate screen, persistent
-/// SGR) can be lost. A full-screen program repaints on the resize every client
-/// sends right after connecting; a true fix would need server-side VT
-/// emulation, which this viewer deliberately does not do (xterm.js is the only
-/// emulator).
+///
+/// A byte window is history, not a snapshot: whatever a program did before the
+/// window is not in it. Two things fall out of it, and neither is left to this
+/// cap to solve. The modes a program set at startup are tracked separately and
+/// restored explicitly (`terminal::hub_modes`). The screen of a program drawing
+/// on the alternate screen is not replayed from here at all — its bytes are cell
+/// updates against a screen the new client does not have — and the program is
+/// asked to draw it again instead (`terminal::hub_repaint`).
+///
+/// This used to say a full-screen program repaints on the resize every client
+/// sends right after connecting. It does not: a client that reconnects into the
+/// same layout deliberately sends no resize (`usePaneSizes.ts`), and a resize to
+/// the size the PTY already has signals nobody. What that left on screen was
+/// fragments, and the redraw key people reach for then is `Ctrl+L` — which
+/// Claude Code in fullscreen rendering runs `/clear` on, twice pressed.
 pub const MAX_TERMINAL_SCROLLBACK_BYTES: usize = 256 * 1024;
 /// Live connections the viewer's accept loop will hold. Each one costs a
 /// thread, so without a ceiling anything that can reach the port can exhaust

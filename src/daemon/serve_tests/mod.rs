@@ -6,5 +6,6 @@
 mod accent;
 mod active;
 mod harness;
+mod reload;
 mod session;
 mod terminals;

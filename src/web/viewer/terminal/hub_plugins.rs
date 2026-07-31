@@ -14,12 +14,11 @@
 //! property of the code. A shell stays untouched by doing what a shell does:
 //! saying nothing to any plugin.
 
-use super::hub_helpers::PaneState;
-use crate::backend::{PaneId, PtyBackend};
+use crate::backend::PaneId;
 use crate::config::{PluginConfig, StartupCommand};
 use crate::plugin::{Guard, PluginHost, RateLimits};
 use std::collections::{HashMap, HashSet};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 /// How long a pane must be quiet before its plugin is told it is idle.
 ///
@@ -29,24 +28,6 @@ use std::time::{Duration, Instant};
 /// CLI takes mid-answer and well short of a wait a person would notice.
 pub(super) const PANE_IDLE_THRESHOLD: Duration = Duration::from_secs(10);
 
-/// How long an exited pane's slot is kept so a relaunch can still reuse its
-/// token.
-///
-/// This is a backstop against a plugin that died or lost interest, so it has to
-/// outlast every wait a plugin may legitimately be in the middle of. Providers
-/// quote windows in hours *and* in days — a weekly quota is a real case — so a
-/// value picked around the five-hour window would silently throw the pane's
-/// identity away days before the wait paid off, and the relaunch it was being
-/// kept for would fail. Nine days clears the longest window a bundled plugin
-/// will wait out (`nightcrow-recovery`'s own clamp is eight days) with slack for
-/// a reset that lands late.
-///
-/// Holding it that long is cheap on purpose: a token, a generation and a command
-/// string. The process, its fds and its threads were let go the moment it exited
-/// (see [`PtyBackend::release_process`]), and closing the pane or stopping the
-/// session retires the slot immediately either way.
-pub(super) const PENDING_RELAUNCH_TTL: Duration = Duration::from_secs(9 * 24 * 60 * 60);
-
 /// Commands taken from any one plugin per loop iteration.
 ///
 /// One thread serves every pane in the repository, so a plugin that writes
@@ -54,41 +35,29 @@ pub(super) const PENDING_RELAUNCH_TTL: Duration = Duration::from_secs(9 * 24 * 6
 /// a second — far past anything a legitimate plugin needs, and bounded.
 pub(super) const MAX_COMMANDS_PER_TICK: usize = 8;
 
-/// Where a pane sat and what it looked like, captured before it is removed.
-pub(super) struct PaneSpot {
-    /// Its position in the client-visible order, so a relaunch lands back where
-    /// the operator left it instead of at the end of the row.
-    pub(super) index: usize,
-    pub(super) rows: u16,
-    pub(super) cols: u16,
-    pub(super) title: Option<String>,
-}
-
-impl PaneSpot {
-    pub(super) fn of(index: usize, pane: &PaneState) -> Self {
-        Self {
-            index,
-            rows: pane.rows,
-            cols: pane.cols,
-            title: pane.title.clone(),
-        }
-    }
-}
-
-/// A pane whose process exited while a plugin was watching it, held so that
-/// plugin still has something to relaunch.
-pub(super) struct Pending {
-    pub(super) spot: PaneSpot,
-    /// When the slot is given up on. See [`PENDING_RELAUNCH_TTL`].
-    deadline: Instant,
-}
-
 pub(super) struct Plugins {
     /// Live plugin children, by configured name. A plugin that failed to launch
     /// is absent, and its panes are therefore never adopted below.
     pub(super) hosts: HashMap<String, PluginHost>,
+    /// What each live host was launched from, so a config reload can tell a
+    /// plugin whose process must be replaced from one whose rules merely
+    /// changed. Kept beside the hosts rather than read back off the child, which
+    /// knows only its pipes.
+    pub(super) launched: HashMap<String, PluginConfig>,
     /// Which plugin owns which pane. The authority for `opted_in`.
     pub(super) owners: HashMap<PaneId, String>,
+    /// Which plugin a pane's *configuration* named, recorded whether or not that
+    /// plugin had a host at the time.
+    ///
+    /// Separate from `owners` because it grants nothing: a pane is only ever
+    /// acted on through `owners`, so an entry here with no host behind it puts
+    /// the pane on no relaunch path and sends no events — the reason `adopt`
+    /// refuses such an association in the first place. What it is for is a config
+    /// reload: enabling a plugin whose panes were created while it was off has to
+    /// be able to find them, and the opt-in is the only record that they were
+    /// ever meant for it. A pane closing takes its entry with it, so this is
+    /// bounded by the live panes and never by the session's history.
+    pub(super) intended: HashMap<PaneId, String>,
     /// Each plugin's `allowed_resume_flags`, as the guard needs them.
     pub(super) allowed_flags: HashMap<String, Vec<String>>,
     /// The plugins whose config set `watch_on_signal`: those the operator allowed
@@ -97,7 +66,7 @@ pub(super) struct Plugins {
     /// hash probe on the same footing as every other fact it gathers.
     pub(super) watch_on_signal: HashSet<String>,
     pub(super) guard: Guard,
-    pub(super) pending: HashMap<PaneId, Pending>,
+    pub(super) pending: HashMap<PaneId, super::hub_plugins_slots::Pending>,
     /// Panes whose plugin has already been told about the current quiet period,
     /// so it is told once rather than on every tick.
     pub(super) idle_announced: HashSet<PaneId>,
@@ -124,6 +93,7 @@ impl Plugins {
             })
             .ok();
         let mut hosts = HashMap::new();
+        let mut launched = HashMap::new();
         let mut allowed_flags = HashMap::new();
         let mut watch_on_signal = HashSet::new();
         for cfg in configs {
@@ -139,6 +109,7 @@ impl Plugins {
                     if cfg.watch_on_signal {
                         watch_on_signal.insert(cfg.name.clone());
                     }
+                    launched.insert(cfg.name.clone(), cfg.clone());
                     hosts.insert(cfg.name.clone(), host);
                 }
                 Err(error) => tracing::warn!(
@@ -150,7 +121,9 @@ impl Plugins {
         }
         Self {
             hosts,
+            launched,
             owners: HashMap::new(),
+            intended: HashMap::new(),
             allowed_flags,
             watch_on_signal,
             guard: Guard::new(PANE_IDLE_THRESHOLD, RateLimits::default()),
@@ -166,6 +139,10 @@ impl Plugins {
     /// can act on would put the pane on the relaunch path — its slot kept alive
     /// after an exit for a plugin that will never ask — for no benefit.
     pub(super) fn adopt(&mut self, pane: PaneId, plugin: &str) -> bool {
+        // Recorded either way: what the pane asked for is a fact about the pane,
+        // and a reload that later enables this plugin has no other way to learn
+        // it. It grants nothing on its own — see `intended`.
+        self.intended.insert(pane, plugin.to_string());
         if !self.hosts.contains_key(plugin) {
             return false;
         }
@@ -178,6 +155,16 @@ impl Plugins {
         self.owners.get(&pane).map(String::as_str)
     }
 
+    /// Turn `name`'s `watch_on_signal` permission on or off, as a config reload
+    /// may. Held as a set membership, so this is the whole of the switch.
+    pub(super) fn set_watch_on_signal(&mut self, name: &str, allowed: bool) {
+        if allowed {
+            self.watch_on_signal.insert(name.to_string());
+        } else {
+            self.watch_on_signal.remove(name);
+        }
+    }
+
     /// Whether there is nothing for the per-tick work to do, which is the common
     /// case: no host means no pane can be watched and no command can arrive.
     ///
@@ -187,80 +174,6 @@ impl Plugins {
     /// commands pile up unread with nothing to bound them.
     pub(super) fn is_inert(&self) -> bool {
         self.hosts.is_empty()
-    }
-
-    /// Hold `pane`'s slot open for a relaunch. Nothing is held for a pane no
-    /// plugin watches — that pane's slot is gone by the time this is reached.
-    pub(super) fn hold_for_relaunch(&mut self, pane: PaneId, spot: PaneSpot, now: Instant) {
-        if !self.owners.contains_key(&pane) {
-            return;
-        }
-        self.idle_announced.remove(&pane);
-        self.pending.insert(
-            pane,
-            Pending {
-                spot,
-                deadline: now + PENDING_RELAUNCH_TTL,
-            },
-        );
-    }
-
-    /// Take the hold on `pane`, if it is still within its window.
-    pub(super) fn claim_pending(&mut self, pane: PaneId) -> Option<Pending> {
-        self.pending.remove(&pane)
-    }
-
-    /// Put a hold back after a relaunch attempt failed, so the pane keeps its
-    /// remaining window instead of being retired by a single bad try.
-    pub(super) fn restore_pending(&mut self, pane: PaneId, pending: Pending) {
-        self.pending.insert(pane, pending);
-    }
-
-    /// Move a pane's association onto the process that replaced it.
-    ///
-    /// The spent budget is deliberately left alone. It is keyed by the slot's
-    /// token, which a relaunch preserves, and that is the only thing bounding a
-    /// plugin that answers every exit with another relaunch — clearing it here
-    /// would hand out a fresh allowance on every attempt and the ceiling would
-    /// never be reached.
-    pub(super) fn take_over(&mut self, old: PaneId, new: PaneId) {
-        if let Some(plugin) = self.owners.remove(&old) {
-            self.owners.insert(new, plugin);
-        }
-        self.idle_announced.remove(&old);
-    }
-
-    /// Forget `pane` entirely. The caller still has to retire its slot.
-    ///
-    /// Takes the backend because the budget is keyed by the slot's token, so it
-    /// has to be read before the slot is retired.
-    pub(super) fn forget(&mut self, backend: &PtyBackend, pane: PaneId) {
-        self.owners.remove(&pane);
-        self.pending.remove(&pane);
-        self.idle_announced.remove(&pane);
-        if let Some(slot) = backend.slot(pane) {
-            self.guard.cancel(&slot.identity.token.clone());
-        }
-    }
-
-    /// Retire the slots nobody relaunched in time, reporting which panes those
-    /// were so the caller can tell the clients still showing their deadlines.
-    pub(super) fn expire_pending(&mut self, backend: &mut PtyBackend, now: Instant) -> Vec<PaneId> {
-        let expired: Vec<PaneId> = self
-            .pending
-            .iter()
-            .filter(|(_, held)| now >= held.deadline)
-            .map(|(pane, _)| *pane)
-            .collect();
-        for pane in &expired {
-            tracing::info!(
-                pane,
-                "viewer: no relaunch within the window; retiring the pane's slot"
-            );
-            self.forget(backend, *pane);
-            backend.retire_slot(*pane);
-        }
-        expired
     }
 
     /// Stop every plugin child.

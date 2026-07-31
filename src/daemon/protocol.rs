@@ -42,6 +42,13 @@ pub enum ClientMessage {
     /// land somewhere neither asked for. An index past the end wraps, so a
     /// client never has to know the cycle's length to stay in it.
     SetAccent { accent: usize },
+    /// Re-read `config.toml` and apply the tables the session owns.
+    ///
+    /// Carries nothing: the file is the request. Sending its contents instead
+    /// would let a client reconfigure the session from something it made up,
+    /// where this way the daemon only ever acts on a file on its own disk that
+    /// the user wrote.
+    ReloadConfig,
     /// Act on one repository's terminals.
     ///
     /// Carries the hub's own message rather than a parallel set: the browser
@@ -105,6 +112,19 @@ pub enum ServerMessage {
     /// A request could not be carried out. The connection stays open: a refused
     /// request is an answer, not a protocol violation.
     Error { message: String },
+    /// A reload was carried out, described for the person who asked.
+    ///
+    /// Answered to the asker alone, unlike a change to the served set. Nothing a
+    /// reload does is visible in what the other clients are looking at — the
+    /// startup list only reaches repositories opened later, and a plugin being
+    /// replaced is a child process nobody is watching — so telling them would be
+    /// a notice about something they did not do and cannot see. A refusal is
+    /// reported the same way as any other, through [`ServerMessage::Error`].
+    Reloaded {
+        /// One line for the client to show. Built by the session so a browser
+        /// toast and a terminal notice say the same thing.
+        summary: String,
+    },
     /// Something happened to one repository's terminals — a pane was created,
     /// exited, or reordered. Output does not come this way; it travels as
     /// binary frames.

@@ -51,6 +51,13 @@ impl SessionLink {
                 ServerMessage::Error { message } => {
                     ws.raise_notice(crate::app::NoticeKind::Project, message);
                 }
+                // Shown where the refusal above is shown, because the two are the
+                // same answer to the same request — a reload either applied or it
+                // did not, and both are news for the client that asked and for
+                // nobody else.
+                ServerMessage::Reloaded { summary } => {
+                    ws.raise_notice(crate::app::NoticeKind::Session, summary);
+                }
                 // Answered during the handshake; a later one would mean the
                 // daemon restarted under this client, which the connection loss
                 // reports on its own.
@@ -102,6 +109,11 @@ impl SessionLink {
             // clients cycling at once agree on the result instead of each
             // advancing the session from what it last showed them.
             ProjectRequest::CycleAccent => self.client.set_accent(ws.next_accent_index()),
+            // Nothing is shown optimistically. Unlike the accent this is not a
+            // wait to avoid a flicker — there is simply nothing to show until the
+            // session says what it read, and guessing would mean claiming a file
+            // applied before anything had parsed it.
+            ProjectRequest::ReloadConfig => self.client.reload_config(),
         };
         if let Err(err) = sent {
             ws.raise_notice(

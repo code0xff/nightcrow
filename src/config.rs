@@ -107,13 +107,26 @@ pub(super) fn write_config_template(path: &std::path::Path, force: bool) -> Resu
     Ok(InitOutcome::Created(path.to_path_buf()))
 }
 
+/// The config as it stands, or the defaults when there is no file yet.
+///
+/// A missing file is a normal starting state, so this does not fail on one. A
+/// *reload* takes the stricter path ([`read_config_file`]): at that point the
+/// file having gone missing is a mistake worth reporting, not an instruction to
+/// run as if nothing were configured.
 pub fn load_config() -> Result<Config> {
     let path = match default_config_path() {
         Some(p) if p.exists() => p,
         _ => return Ok(Config::default()),
     };
+    read_config_file(&path)
+}
 
-    let text = std::fs::read_to_string(&path)
+/// Parse and validate the config at `path`, which must exist.
+///
+/// Path-explicit so the reload path is testable against a temp file rather than
+/// the caller's real `~/.nightcrow/config.toml`.
+pub fn read_config_file(path: &std::path::Path) -> Result<Config> {
+    let text = std::fs::read_to_string(path)
         .with_context(|| format!("reading config file {}", path.display()))?;
     let cfg: Config =
         toml::from_str(&text).with_context(|| format!("parsing config file {}", path.display()))?;
@@ -200,7 +213,21 @@ pub fn validate_config(cfg: &Config) -> Result<()> {
 /// count is held to `MAX_STARTUP_COMMANDS`, and empty `--exec` values are
 /// rejected — config entries were already validated by `validate_config`.
 pub fn resolve_startup_commands(cfg: &Config, cli_exec: &[String]) -> Result<Vec<StartupCommand>> {
-    let mut resolved = cfg.startup_commands.clone();
+    merge_startup_commands(&cfg.startup_commands, cli_exec)
+}
+
+/// The merge itself, over the two lists rather than a whole [`Config`].
+///
+/// Split out because a reload re-reads only the file's `[[startup_command]]`
+/// table while the `--exec` panes stay whatever the daemon was started with:
+/// they are not in the file, so a reload that resolved from a fresh `Config`
+/// alone would drop them. One merge rule, reached from both places, is what
+/// keeps the reloaded list ordered and capped exactly like the launch one.
+pub fn merge_startup_commands(
+    configured: &[StartupCommand],
+    cli_exec: &[String],
+) -> Result<Vec<StartupCommand>> {
+    let mut resolved = configured.to_vec();
     for (i, command) in cli_exec.iter().enumerate() {
         anyhow::ensure!(
             !command.trim().is_empty(),

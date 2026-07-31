@@ -1,8 +1,12 @@
-use super::TerminalHub;
 use super::frame::{ServerMessage, TerminalFrame};
+use super::hub_diag::ClearWatch;
 use super::hub_helpers::{Command, PaneState, broadcast_locked, push_scrollback};
+use super::hub_modes::PaneModeTracker;
 use super::hub_plugins::Plugins;
+use super::hub_repaint::Repaints;
+use super::{DEFAULT_PANE_SIZE, TerminalHub};
 use crate::backend::{BackendEvent, PaneId, PtyBackend, TerminalBackend};
+use crate::runtime::emulator::PaneModes;
 use crate::web::viewer::limits;
 use std::collections::VecDeque;
 use std::sync::Arc;
@@ -20,6 +24,14 @@ impl TerminalHub {
         // and a plugin has to exist to be told about it. Only the plugins some
         // configured pane opted into are launched (see `Plugins::start`).
         let mut plugins = Plugins::start(cwd, &self.plugins, &self.startup);
+        // What each pane's program has done to its terminal, so a client that
+        // attaches later can be told rather than left to infer it from a replay
+        // the setup bytes fell out of.
+        let mut modes = PaneModeTracker::default();
+        // Repaints asked for by attaching clients, and the sizes owed back.
+        let mut repaints = Repaints::default();
+        // Why this is here at all: `hub_diag`.
+        let mut clears = ClearWatch::default();
 
         while !stop.load(Ordering::Acquire) {
             while let Ok(command) = commands.try_recv() {
@@ -57,7 +69,8 @@ impl TerminalHub {
                     }
                     // Unknown pane ids are ignored rather than errored: a
                     // client racing a pane exit is normal, not an attack.
-                    Command::Input { pane, data } if self.pane_is_live(pane) => {
+                    Command::Input { pane, data, client } if self.pane_is_live(pane) => {
+                        clears.note_input(pane, client, &data, Instant::now());
                         // A person at the keyboard has taken the pane back, so
                         // its plugin is told and everything it had planned for
                         // the pane is dropped — before the bytes land, so the
@@ -93,6 +106,12 @@ impl TerminalHub {
                     Command::CancelRecovery { pane } => {
                         self.cancel_recovery(&mut backend, &mut plugins, pane)
                     }
+                    Command::Repaint { panes } => {
+                        self.start_repaints(&mut backend, &mut repaints, &panes, Instant::now())
+                    }
+                    Command::ReloadPlugins { plugins: configs } => {
+                        self.reload_hub_plugins(&mut backend, &mut plugins, &configs)
+                    }
                     _ => {}
                 }
             }
@@ -101,7 +120,13 @@ impl TerminalHub {
                 match event {
                     BackendEvent::Output { pane, data } => {
                         plugins.pane_output(&backend, pane, &data);
-                        self.record_and_broadcast(pane, data);
+                        // Before the lock: opening a pane's tracking emulator
+                        // reads the shared state for its size.
+                        let modes = modes.observe(pane, &data, || {
+                            self.pane_size(pane)
+                                .unwrap_or((DEFAULT_PANE_SIZE.rows, DEFAULT_PANE_SIZE.cols))
+                        });
+                        self.record_and_broadcast(pane, data, modes);
                     }
                     // Destroyed as well as forgotten. `PtyBackend` leaves pane
                     // removal to its caller (see its `drain_events`), so a pane
@@ -111,6 +136,9 @@ impl TerminalHub {
                     // counts live panes, not those, so open-and-exit in a loop
                     // accumulated descriptors with nothing to stop it.
                     BackendEvent::Exited { pane } => {
+                        modes.forget(pane);
+                        clears.forget(pane);
+                        self.forget_repaints(&mut repaints, pane);
                         self.pane_exited(&mut backend, &mut plugins, pane)
                     }
                     // The hub owns its PTYs outright: it opens them through
@@ -128,6 +156,10 @@ impl TerminalHub {
                 }
             }
 
+            if !repaints.is_idle() {
+                self.finish_repaints(&mut backend, &mut repaints, Instant::now());
+            }
+
             if !plugins.is_inert() {
                 let now = Instant::now();
                 plugins.notify_idle(&backend, now);
@@ -138,6 +170,12 @@ impl TerminalHub {
                     self.end_recovery(pane);
                 }
             }
+
+            // A sizing owner that disconnected is held for a grace, so that
+            // switching repositories — which closes one socket and opens
+            // another — does not re-fit every pane there and back. Nothing runs
+            // on its own to end that, so the tick does.
+            self.settle_size_owner(Instant::now());
             thread::sleep(POLL_INTERVAL);
         }
 
@@ -214,19 +252,22 @@ impl TerminalHub {
             scrollback: VecDeque::new(),
             rows,
             cols,
+            modes: PaneModes::default(),
         });
         if let Some(json) = json {
             broadcast_locked(&mut state.clients, TerminalFrame::Control(json));
         }
     }
 
-    /// Append output to the pane's bounded scrollback and broadcast it, both
-    /// under one lock so a concurrently connecting client cannot slip a replay
-    /// snapshot between the append and the broadcast.
-    fn record_and_broadcast(&self, pane: PaneId, data: Vec<u8>) {
+    /// Append output to the pane's bounded scrollback, record the terminal state
+    /// it left the pane in, and broadcast it — all under one lock so a
+    /// concurrently connecting client cannot slip a replay snapshot between the
+    /// append and the broadcast.
+    fn record_and_broadcast(&self, pane: PaneId, data: Vec<u8>, modes: PaneModes) {
         let mut state = self.state.lock().expect("terminal state poisoned");
         if let Some(p) = state.panes.iter_mut().find(|p| p.id == pane) {
             push_scrollback(&mut p.scrollback, &data);
+            p.modes = modes;
         }
         broadcast_locked(&mut state.clients, TerminalFrame::Output { pane, data });
     }

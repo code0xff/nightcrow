@@ -11,7 +11,8 @@ use super::plugin_rules::{
 use super::plugins::{fixture, logged, logged_event, recorder};
 use crate::backend::{PtyBackend, TerminalBackend};
 use crate::plugin::{Approved, RateLimits, Refused};
-use crate::web::viewer::terminal::hub_plugins::{PENDING_RELAUNCH_TTL, PaneSpot, Plugins};
+use crate::web::viewer::terminal::hub_plugins::Plugins;
+use crate::web::viewer::terminal::hub_plugins_slots::{PENDING_RELAUNCH_TTL, PaneSpot};
 use std::time::Instant;
 
 #[test]

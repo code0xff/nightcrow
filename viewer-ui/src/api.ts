@@ -12,6 +12,7 @@ import type {
   Diff,
   FileView,
   Log,
+  Reloaded,
   Repo,
   RunningClone,
   Status,
@@ -121,6 +122,15 @@ export const api = {
    *  request against the live repos. */
   reorderRepos: (order: string[]) =>
     post<{ repos: Repo[] }>("/api/repos/order", { order }).then((r) => r.repos),
+  /** Re-read the server's `config.toml`.
+   *
+   *  Sends no configuration — the file on the server is what is read, so this
+   *  page cannot hand the session settings of its own. Nothing here changes as a
+   *  result: `[[plugin]]` is re-applied to child processes the page never sees,
+   *  and `[[startup_command]]` only reaches projects opened afterwards. The
+   *  summary is the whole of what there is to show. */
+  reloadConfig: () =>
+    post<Reloaded>("/api/reload", {}).then((r) => r.summary),
 };
 
 export function subscribeStatus(

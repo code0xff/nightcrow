@@ -26,6 +26,7 @@ import {
   type Diff,
   type FileView,
   type Log,
+  type Reloaded,
   type Repo,
   type Status,
   type Tree,
@@ -118,5 +119,11 @@ describe("wire contract", () => {
     expect(stored.accent).toBe(2);
     expect(stored.sidebar_width).toBe(460);
     expect(stored.upper_pct).toBe(55);
+  });
+
+  it("reload_응답이_Reloaded와_맞는다", () => {
+    const reloaded: Reloaded = fixture.reloaded;
+    // 문구는 서버가 만든다 — 브라우저 토스트와 TUI notice가 같은 말을 하도록.
+    expect(reloaded.summary).toContain("config reloaded");
   });
 });

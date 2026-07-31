@@ -27,6 +27,10 @@ pub(crate) fn handle_empty_key(ws: &mut Workspace, key: KeyEvent) -> KeyOutcome 
             // session rather than to a project: the empty screen is painted in
             // it too, and so is every other client that does have a tab up.
             Action::CycleTheme => KeyOutcome::Project(ProjectRequest::CycleAccent),
+            // Reachable with nothing open for the same reason: the config is the
+            // session's, and a reload is worth having before opening the first
+            // project — that is when the startup list it replaces takes effect.
+            Action::ReloadConfig => KeyOutcome::Project(ProjectRequest::ReloadConfig),
             Action::Quit => KeyOutcome::Quit,
             _ => KeyOutcome::Continue,
         };

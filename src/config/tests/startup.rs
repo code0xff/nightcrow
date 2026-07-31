@@ -1,5 +1,6 @@
 use crate::config::{
-    Config, MAX_STARTUP_COMMANDS, StartupCommand, resolve_startup_commands, validate_config,
+    Config, MAX_STARTUP_COMMANDS, StartupCommand, merge_startup_commands, resolve_startup_commands,
+    validate_config,
 };
 
 #[test]
@@ -60,6 +61,42 @@ fn resolve_startup_commands_empty_when_nothing_configured() {
 fn resolve_startup_commands_rejects_empty_exec() {
     let resolved = resolve_startup_commands(&Config::default(), &["  ".to_string()]);
     assert!(resolved.is_err());
+}
+
+/// The reload path reaches the merge with the file's table alone, so the two
+/// entry points have to agree — a reload that resolved differently would give a
+/// newly opened repository a different pane list than a restart would.
+#[test]
+fn merging_the_two_lists_matches_resolving_the_whole_config() {
+    let mut cfg = Config::default();
+    cfg.startup_commands.push(StartupCommand {
+        name: Some("Claude".into()),
+        command: "claude".into(),
+        plugin: None,
+    });
+    let cli = ["codex".to_string()];
+    assert_eq!(
+        merge_startup_commands(&cfg.startup_commands, &cli).unwrap(),
+        resolve_startup_commands(&cfg, &cli).unwrap()
+    );
+}
+
+#[test]
+fn merge_startup_commands_keeps_the_cli_panes_when_the_table_is_replaced() {
+    // What a reload does: a fresh file table, the same `--exec` list the daemon
+    // started with. The CLI panes are not in the file and must survive it.
+    let reloaded = merge_startup_commands(
+        &[StartupCommand {
+            name: None,
+            command: "cargo watch".into(),
+            plugin: None,
+        }],
+        &["codex".to_string()],
+    )
+    .unwrap();
+    assert_eq!(reloaded.len(), 2);
+    assert_eq!(reloaded[0].command, "cargo watch");
+    assert_eq!(reloaded[1].command, "codex");
 }
 
 #[test]

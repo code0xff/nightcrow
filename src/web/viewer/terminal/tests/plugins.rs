@@ -5,15 +5,17 @@
 //! the hub actually sent rather than what it meant to send — and a pane the hub
 //! must never mention simply never appears in that file.
 
-use super::{collect_created, created_pane, exited_pane, next_matching, reordered_order, wait_for};
+use super::{
+    attach, collect_created, created_pane, exited_pane, next_matching, reordered_order, spawn_hub,
+    wait_for,
+};
 use crate::config::{PluginConfig, StartupCommand};
 use crate::plugin::protocol::PROTOCOL_VERSION;
-use crate::web::viewer::terminal::TerminalHub;
 use crate::web::viewer::terminal::frame::{ClientMessage, PaneSize, TerminalFrame};
 use std::path::{Path, PathBuf};
 
 /// Env var the fake plugin appends the events it receives to.
-const LOG_ENV: &str = "NC_TEST_PLUGIN_LOG";
+pub(super) const LOG_ENV: &str = "NC_TEST_PLUGIN_LOG";
 /// Env var holding the protocol version the fake plugin answers with, so no
 /// script hard-codes a number a version bump would silently invalidate.
 const VERSION_ENV: &str = "NC_TEST_PLUGIN_V";
@@ -133,7 +135,7 @@ fn a_pane_that_did_not_opt_in_is_never_shown_to_a_plugin() {
     // watched pane's `pane_opened` therefore proves the plain one was not
     // announced, rather than merely not announced yet.
     let f = fixture();
-    let hub = TerminalHub::spawn(
+    let hub = spawn_hub(
         &f.cwd(),
         vec![
             pane("plain", "printf plain-is-done", None),
@@ -141,7 +143,7 @@ fn a_pane_that_did_not_opt_in_is_never_shown_to_a_plugin() {
         ],
         vec![recorder("watch", &f.log)],
     );
-    let session = hub.connect();
+    let session = attach(&hub);
     session.dispatch(ClientMessage::Start { sizes: Vec::new() });
     let ids = collect_created(&session, 2);
 
@@ -168,7 +170,7 @@ fn a_pane_that_did_not_opt_in_is_never_shown_to_a_plugin() {
 #[test]
 fn two_opted_in_panes_are_tracked_under_separate_tokens_that_do_not_cross() {
     let f = fixture();
-    let hub = TerminalHub::spawn(
+    let hub = spawn_hub(
         &f.cwd(),
         vec![
             pane("alpha", "printf ALPHA-MARK; sleep 30", Some("watch")),
@@ -176,7 +178,7 @@ fn two_opted_in_panes_are_tracked_under_separate_tokens_that_do_not_cross() {
         ],
         vec![recorder("watch", &f.log)],
     );
-    let session = hub.connect();
+    let session = attach(&hub);
     session.dispatch(ClientMessage::Start {
         sizes: vec![PaneSize { rows: 24, cols: 80 }; 2],
     });
@@ -207,7 +209,7 @@ fn a_relaunch_reuses_the_token_advances_the_generation_and_lands_back_at_its_ind
     // The pane that exits is first in the order, so a replacement left at the
     // end would show up as a wrong order rather than pass unnoticed.
     let f = fixture();
-    let hub = TerminalHub::spawn(
+    let hub = spawn_hub(
         &f.cwd(),
         vec![
             pane("recovered", "printf gone; exit 0", Some("watch")),
@@ -215,7 +217,7 @@ fn a_relaunch_reuses_the_token_advances_the_generation_and_lands_back_at_its_ind
         ],
         vec![shell_plugin("watch", relaunch_script(), &f.log, &f.once)],
     );
-    let session = hub.connect();
+    let session = attach(&hub);
     session.dispatch(ClientMessage::Start { sizes: Vec::new() });
     let ids = collect_created(&session, 2);
 
@@ -254,7 +256,7 @@ fn a_plugin_that_cannot_be_launched_leaves_the_terminal_session_working() {
     let f = fixture();
     let mut broken = recorder("watch", &f.log);
     broken.command = "/nonexistent/nightcrow-test-plugin".to_string();
-    let hub = TerminalHub::spawn(
+    let hub = spawn_hub(
         &f.cwd(),
         vec![pane(
             "watched",
@@ -263,7 +265,7 @@ fn a_plugin_that_cannot_be_launched_leaves_the_terminal_session_working() {
         )],
         vec![broken],
     );
-    let session = hub.connect();
+    let session = attach(&hub);
     session.dispatch(ClientMessage::Start { sizes: Vec::new() });
 
     let created = next_matching(&session, |frame| created_pane(frame).is_some())

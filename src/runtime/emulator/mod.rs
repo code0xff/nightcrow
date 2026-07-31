@@ -188,6 +188,26 @@ impl PaneEmulator {
     pub fn app_cursor(&self) -> bool {
         self.term.mode().contains(TermMode::APP_CURSOR)
     }
+
+    /// The modes a later-attaching client has to be told about. See
+    /// [`PaneModes`].
+    pub fn modes(&self) -> PaneModes {
+        let mode = self.term.mode();
+        PaneModes {
+            alt_screen: mode.contains(TermMode::ALT_SCREEN),
+            app_cursor: mode.contains(TermMode::APP_CURSOR),
+            bracketed_paste: mode.contains(TermMode::BRACKETED_PASTE),
+            show_cursor: mode.contains(TermMode::SHOW_CURSOR),
+            line_wrap: mode.contains(TermMode::LINE_WRAP),
+            mouse_click: mode.contains(TermMode::MOUSE_REPORT_CLICK),
+            mouse_drag: mode.contains(TermMode::MOUSE_DRAG),
+            mouse_motion: mode.contains(TermMode::MOUSE_MOTION),
+            sgr_mouse: mode.contains(TermMode::SGR_MOUSE),
+            utf8_mouse: mode.contains(TermMode::UTF8_MOUSE),
+            alternate_scroll: mode.contains(TermMode::ALTERNATE_SCROLL),
+            focus_in_out: mode.contains(TermMode::FOCUS_IN_OUT),
+        }
+    }
 }
 
 /// Clamp a requested pane size to alacritty's supported minimum grid.
@@ -210,9 +230,13 @@ fn term_size(rows: u16, cols: u16) -> TermSize {
     TermSize::new(usize::from(cols), usize::from(rows))
 }
 
+mod modes;
 mod view;
 
+pub use modes::PaneModes;
 pub use view::{CellView, ScreenView};
 
+#[cfg(test)]
+mod modes_tests;
 #[cfg(test)]
 mod tests;

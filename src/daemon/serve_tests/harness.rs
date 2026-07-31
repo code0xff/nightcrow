@@ -227,6 +227,23 @@ impl Client {
         }
     }
 
+    /// Whether an answer to a reload — applied or refused — reaches this client
+    /// within `window`.
+    ///
+    /// For the tests that pin an answer as the asker's alone. Only decidable once
+    /// the daemon has already answered the client that *did* ask, which is what
+    /// says the request has been handled rather than merely sent.
+    pub(super) fn hears_a_reload_answer_within(&mut self, window: std::time::Duration) -> bool {
+        self.find(window, |frame| {
+            frame.kind == FrameKind::Control
+                && matches!(
+                    serde_json::from_slice(&frame.payload),
+                    Ok(ServerMessage::Reloaded { .. } | ServerMessage::Error { .. })
+                )
+        })
+        .is_some()
+    }
+
     /// The next repository set, stepping over terminal traffic.
     ///
     /// Subscribing a client to its repositories starts that traffic

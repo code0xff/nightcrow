@@ -10,6 +10,18 @@ use super::hub_helpers::{broadcast_locked, canonical_order};
 use crate::backend::{PaneId, PtyBackend, TerminalBackend};
 
 impl TerminalHub {
+    /// The size a pane's PTY is recorded as having, or `None` once the pane is
+    /// gone. The one reader of that record outside the resize path itself, shared
+    /// by everything that has to act on the size a pane actually has.
+    pub(super) fn pane_size(&self, pane: PaneId) -> Option<(u16, u16)> {
+        let state = self.state.lock().expect("terminal state poisoned");
+        state
+            .panes
+            .iter()
+            .find(|p| p.id == pane)
+            .map(|p| (p.rows, p.cols))
+    }
+
     /// Resize a live pane's PTY at the sizing owner's request, record the size it
     /// is now set to, and tell every client what it is.
     ///
@@ -27,13 +39,19 @@ impl TerminalHub {
         cols: u16,
         client: u64,
     ) {
-        let mut state = self.state.lock().expect("terminal state poisoned");
+        // Asked before the hub's lock, because the answer is the session's and
+        // taking the two in the other order would invert the ordering `connect`
+        // uses (hub lock, then ownership).
+        let Some(connection) = self.connection_of(client) else {
+            return;
+        };
         // Not this client's to set. Dropped rather than refused: a client can
         // lose the sizing between laying out a frame and this arriving, which is
         // ordinary rather than an error worth interrupting anyone over.
-        if state.size_owner != Some(client) {
+        if !self.owns_size(connection) {
             return;
         }
+        let mut state = self.state.lock().expect("terminal state poisoned");
         // An unknown pane is ignored rather than errored: a client racing a
         // pane exit is normal, not an attack.
         let Some(p) = state.panes.iter_mut().find(|p| p.id == pane) else {

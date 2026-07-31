@@ -172,6 +172,20 @@ fn wire_fixture() -> serde_json::Value {
             "upper_pct": 55,
             "active_repo": "r1",
         }),
+        // What `/api/reload` answers. A sentence rather than counts, because it
+        // is the whole of what the browser has to show: a reload changes nothing
+        // on the page, so this text is the only evidence the button did anything.
+        // Built by `reload::ReloadReport::summary`, so the TUI's notice and this
+        // toast cannot drift apart.
+        "reloaded": serde_json::json!({
+            "summary": crate::web::viewer::reload::ReloadReport {
+                plugins: 1,
+                startup_commands: 2,
+                repos: 1,
+                unreachable: 0,
+            }
+            .summary(),
+        }),
     })
 }
 

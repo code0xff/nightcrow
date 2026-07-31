@@ -100,6 +100,12 @@ impl DaemonClient {
                     queued.push(other)
                 }
                 ServerMessage::Error { message } => bail!("daemon refused the attach: {message}"),
+                // Nobody has asked for a reload yet — this client has not
+                // finished attaching. Dropped rather than queued: it would be an
+                // answer to a request that was never made.
+                ServerMessage::Reloaded { .. } => {
+                    tracing::debug!("attach: a reload answer arrived before the handshake");
+                }
             }
         };
         // Best-effort: macOS rejects the option on a socket whose peer has
@@ -182,6 +188,15 @@ impl DaemonClient {
     /// change.
     pub fn set_accent(&mut self, accent: usize) -> Result<()> {
         send(&self.out, &ClientMessage::SetAccent { accent })
+    }
+
+    /// Ask the daemon to re-read `config.toml`.
+    ///
+    /// Answered to this client alone, as a [`ServerMessage::Reloaded`] or an
+    /// error: nothing a reload does is visible in what the other clients are
+    /// looking at.
+    pub fn reload_config(&mut self) -> Result<()> {
+        send(&self.out, &ClientMessage::ReloadConfig)
     }
 
     /// Ask the daemon to close a repository, by catalog id.

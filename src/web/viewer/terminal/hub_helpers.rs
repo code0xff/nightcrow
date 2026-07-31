@@ -1,8 +1,9 @@
-use super::frame::TerminalFrame;
+use super::frame::{ServerMessage, TerminalFrame};
 use crate::backend::PaneId;
+use crate::runtime::emulator::PaneModes;
 use crate::web::viewer::limits;
 use std::collections::VecDeque;
-use std::sync::mpsc::TrySendError;
+use std::sync::mpsc::{SyncSender, TrySendError};
 
 use super::session::Client;
 
@@ -40,9 +41,13 @@ pub enum Command {
         client: u64,
         reserved: usize,
     },
+    /// `client` rides along for the arrival log only (see
+    /// [`hub_diag`](super::hub_diag)); input is honoured from whoever sends it,
+    /// unlike a resize.
     Input {
         pane: PaneId,
         data: Vec<u8>,
+        client: u64,
     },
     /// `client` rides along because a resize is only honoured from the client
     /// that owns the sizing (see [`Shared::size_owner`]).
@@ -63,6 +68,20 @@ pub enum Command {
     /// worker-local.
     CancelRecovery {
         pane: PaneId,
+    },
+    /// Make these panes' programs draw their whole screen again, because a
+    /// client has just attached and what it was replayed cannot show it (see
+    /// [`hub_repaint`](super::hub_repaint)). Queued by `connect`, which holds no
+    /// backend of its own.
+    Repaint {
+        panes: Vec<PaneId>,
+    },
+    /// Bring this hub's plugin children in line with a re-read `[[plugin]]`
+    /// table. On the queue because every plugin host is worker-local — a plugin
+    /// can drive a pane's keyboard, so nothing outside the worker may touch one
+    /// (see [`hub_reload`](super::hub_reload)).
+    ReloadPlugins {
+        plugins: Vec<crate::config::PluginConfig>,
     },
 }
 
@@ -94,6 +113,11 @@ pub(super) struct PaneState {
     /// learns it and can skip a resize that would change nothing.
     pub(super) rows: u16,
     pub(super) cols: u16,
+    /// The terminal state the pane's program has established, kept because the
+    /// bytes that established it are not in `scrollback` any more (see
+    /// [`PaneModeTracker`](super::hub_modes::PaneModeTracker)). A pane that has
+    /// printed nothing yet is a freshly opened terminal.
+    pub(super) modes: PaneModes,
 }
 
 /// Hub state shared between the worker thread (which mutates panes and
@@ -105,14 +129,6 @@ pub(super) struct PaneState {
 pub struct Shared {
     pub(super) clients: Vec<Client>,
     pub(super) panes: Vec<PaneState>,
-    /// The client whose layout decides the pane sizes, if any is connected.
-    ///
-    /// A PTY is a contract with a child process, not data: the child draws for
-    /// the width it was told, and no one can re-flow an alternate-screen program
-    /// afterwards. So the size has to be one value, and this is who sets it —
-    /// the most recent client to arrive, until another takes it back. `None`
-    /// when nobody is connected, which leaves every pane at its last size.
-    pub(super) size_owner: Option<u64>,
     /// Cap slots held for startup panes that are claimed but not created yet.
     ///
     /// Counted against the same cap rather than exempt from it, so the ceiling
@@ -157,6 +173,59 @@ pub(super) fn canonical_order(current: &[PaneId], requested: &[PaneId]) -> Vec<P
         }
     }
     out
+}
+
+/// Whether putting a pane in front of a new client was enough.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum Replayed {
+    /// The client has everything: the pane's modes and the history that is its
+    /// screen.
+    Whole,
+    /// The modes are restored, but only the program can produce the screen —
+    /// see [`hub_repaint`](super::hub_repaint).
+    NeedsRepaint,
+}
+
+/// Announce `pane` to an attaching client and give it what the pane's record can:
+/// the modes its program established, and then its history — unless the program
+/// draws on the alternate screen, whose recorded bytes are cell updates against a
+/// screen this client does not have. Replaying those paints fragments over a blank
+/// screen, which is exactly the mess that makes someone reach for the redraw key.
+///
+/// Frames go straight onto the client's queue rather than through a broadcast:
+/// this runs while the caller holds the state lock, before the client is eligible
+/// for broadcasts at all (see [`TerminalHub::connect`](super::TerminalHub::connect)).
+pub(super) fn replay_pane(tx: &SyncSender<TerminalFrame>, pane: &PaneState) -> Replayed {
+    if let Ok(json) = serde_json::to_string(&ServerMessage::Created {
+        pane: pane.id,
+        rows: pane.rows,
+        cols: pane.cols,
+        title: pane.title.clone(),
+        // A replayed pane predates this client, so nobody here asked for it — it
+        // must not take the focus of whatever the client is already looking at.
+        client: None,
+    }) {
+        let _ = tx.try_send(TerminalFrame::Control(json));
+    }
+    // Ahead of any history: these are the modes the pane's program set once, at
+    // startup, and the history is what no longer contains them. Without this a
+    // reattaching client is a terminal the program never configured — mouse
+    // reporting off, arrows in the wrong encoding, paste unbracketed.
+    let _ = tx.try_send(TerminalFrame::Output {
+        pane: pane.id,
+        data: pane.modes.prelude(),
+    });
+    if pane.modes.alt_screen {
+        return Replayed::NeedsRepaint;
+    }
+    if !pane.scrollback.is_empty() {
+        let data: Vec<u8> = pane.scrollback.iter().copied().collect();
+        let _ = tx.try_send(TerminalFrame::Output {
+            pane: pane.id,
+            data,
+        });
+    }
+    Replayed::Whole
 }
 
 /// Append raw PTY bytes to a pane's scrollback, evicting the oldest bytes to

@@ -100,6 +100,7 @@ pub fn session_state(
             repos: repos.to_vec(),
             persist: false,
             startup_commands: Vec::new(),
+            cli_startup: Vec::new(),
             hot: crate::config::AgentIndicatorConfig::default(),
             prefs: crate::web::viewer::prefs::PrefsStore::at(prefs_dir.join("viewer.json")),
         },

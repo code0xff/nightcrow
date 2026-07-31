@@ -14,6 +14,7 @@ use super::clients::AttachedClients;
 use super::frame::Frame;
 use super::protocol::{ServerMessage, TerminalOutput};
 use crate::web::viewer::session::SessionRepo;
+use crate::web::viewer::size_owner::ViewerId;
 use crate::web::viewer::terminal::TerminalSession;
 use crate::web::viewer::terminal::frame::{
     ClientMessage as HubClientMessage, ServerMessage as HubServerMessage, TerminalFrame,
@@ -34,6 +35,14 @@ pub struct TerminalBridges {
     client: u64,
     clients: Arc<AttachedClients>,
     open: HashMap<String, Bridge>,
+    /// Whether this client's first subscription has been made.
+    ///
+    /// Attaching is a person sitting down, and that is the one moment this
+    /// client takes the session's sizing. Every subscription after it follows a
+    /// set that changed — a repository opened in a browser is not an arrival
+    /// here, and reading it as one would pull the sizing off whoever is actually
+    /// looking.
+    arrived: bool,
 }
 
 struct Bridge {
@@ -48,6 +57,7 @@ impl TerminalBridges {
             client,
             clients,
             open: HashMap::new(),
+            arrived: false,
         }
     }
 
@@ -69,8 +79,10 @@ impl TerminalBridges {
             let Some(entry) = catalog.get(&repo.id) else {
                 continue;
             };
-            self.open
-                .insert(repo.id.clone(), self.subscribe(&repo.id, &entry.terminals));
+            let arriving = !self.arrived;
+            self.arrived = true;
+            let bridge = self.subscribe(&repo.id, arriving, &entry.terminals);
+            self.open.insert(repo.id.clone(), bridge);
         }
     }
 
@@ -85,12 +97,19 @@ impl TerminalBridges {
     fn subscribe(
         &self,
         repo: &str,
+        arriving: bool,
         hub: &Arc<crate::web::viewer::terminal::TerminalHub>,
     ) -> Bridge {
         // Connecting replays the panes and their scrollback before any live
         // frame, so the thread below forwards a usable history first and the
         // client's emulators start from the same place the browser's do.
-        let session = Arc::new(hub.connect());
+        //
+        // One viewer across every repository it subscribes to: this client is a
+        // single terminal showing one project at a time, not one screen per
+        // repository. Only the first of these subscriptions is an arrival — the
+        // rest follow a set that changed, and a repository opening elsewhere is
+        // not a person sitting down here.
+        let session = Arc::new(hub.connect(ViewerId::Attached(self.client), arriving));
         let stop = Arc::new(AtomicBool::new(false));
         let worker = {
             let session = Arc::clone(&session);

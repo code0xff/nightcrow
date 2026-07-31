@@ -3,6 +3,7 @@ mod auth;
 mod clone;
 mod commit_routes;
 mod prefs;
+mod reload;
 mod reorder;
 mod routes;
 mod terminals;
@@ -45,6 +46,7 @@ pub(super) fn server_with(
         // ~/.nightcrow/workspace.json.
         persist: false,
         startup_commands: Vec::new(),
+        cli_startup: Vec::new(),
         hot,
         prefs,
     })

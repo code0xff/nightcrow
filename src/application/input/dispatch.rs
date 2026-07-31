@@ -36,6 +36,8 @@ pub(crate) enum ProjectRequest {
     OpenDialog,
     /// Move the session's accent one step along the cycle.
     CycleAccent,
+    /// Ask the session to re-read `config.toml`.
+    ReloadConfig,
 }
 
 /// Everything a project needs beyond its repo path.
@@ -172,6 +174,11 @@ pub(super) fn handle_global_action(app: &mut App, action: Action) -> Option<KeyO
         // not either: being the only surface showing the new colour for a tick
         // is the flicker, not the wait.
         Action::CycleTheme => Some(KeyOutcome::Project(ProjectRequest::CycleAccent)),
+        // The config belongs to the session, so this asks too. What comes back is
+        // a notice rather than anything on screen: a reload replaces plugin
+        // children and the list future projects open with, neither of which this
+        // client is looking at.
+        Action::ReloadConfig => Some(KeyOutcome::Project(ProjectRequest::ReloadConfig)),
         Action::Redraw => Some(KeyOutcome::Redraw),
         Action::SwitchPane(n) => {
             app.switch_pane(n);

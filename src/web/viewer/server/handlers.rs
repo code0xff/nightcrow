@@ -5,6 +5,7 @@ use crate::web::common::conn;
 use crate::web::common::sse::SseStream;
 use crate::web::viewer::catalog::RepoEntry;
 use crate::web::viewer::dto::Envelope;
+use crate::web::viewer::size_owner::ViewerId;
 use crate::web::viewer::terminal::{self, ClientMessage, TerminalFrame};
 use anyhow::{Context, Result};
 use std::io::Write;
@@ -161,6 +162,44 @@ pub(super) fn serve_events(
     // `subscription` drops here, unregistering from the fan-out.
 }
 
+/// The longest `viewer` id accepted. Long enough for a UUID with room to spare;
+/// the value is only ever compared, never shown.
+const MAX_VIEWER_ID: usize = 64;
+
+/// A page's identity for the session's size ownership, from what it called
+/// itself.
+///
+/// The page generates this once per tab and sends it on every socket, so its
+/// connections can come and go — a repository switch, a reconnect — without the
+/// session reading them as somebody new sitting down.
+///
+/// A boundary input, so it is held to what an id can be: a short run of plain
+/// characters. An id that is missing or malformed gets one of its own rather
+/// than a refusal — the page still works, it simply behaves as it did before it
+/// could name itself, and a stale cached bundle is the likely reason.
+fn browser_viewer(head: &crate::web::common::http::RequestHead) -> ViewerId {
+    let named = head.query_param("viewer").filter(|id| {
+        !id.is_empty()
+            && id.len() <= MAX_VIEWER_ID
+            && id
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+    });
+    match named {
+        Some(id) => ViewerId::Browser(id),
+        None => {
+            tracing::debug!("viewer: a terminal socket did not name its page");
+            ViewerId::Browser(anonymous_viewer())
+        }
+    }
+}
+
+fn anonymous_viewer() -> String {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static NEXT: AtomicU64 = AtomicU64::new(0);
+    format!("conn-{}", NEXT.fetch_add(1, Ordering::Relaxed))
+}
+
 /// Hand this connection to the repository's terminal hub.
 ///
 /// Auth and Origin were already enforced by `handle_connection`, before the
@@ -187,7 +226,11 @@ pub(super) fn serve_terminal(
     let Some(mut ws) = conn::websocket_handshake(stream, head) else {
         return;
     };
-    let session = entry.terminals.connect();
+    // `claim` is the page saying a person just opened it, as opposed to a
+    // repository switch or a reconnect. Absent means no — a socket that does not
+    // say it arrived must not take the sizing off whoever is looking.
+    let arriving = head.query_param("claim").as_deref() == Some("1");
+    let session = entry.terminals.connect(browser_viewer(head), arriving);
 
     loop {
         // Drain everything queued for us before blocking on the socket, so
@@ -229,4 +272,61 @@ pub(super) fn serve_terminal(
         }
     }
     // `session` drops here, unregistering from the hub.
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::web::common::http::RequestHead;
+
+    fn head(query: &str) -> RequestHead {
+        crate::web::common::http::parse_request_head(&format!(
+            "GET /ws/term?{query} HTTP/1.1\r\nHost: h\r\n\r\n"
+        ))
+        .expect("a well-formed request line")
+    }
+
+    #[test]
+    fn a_page_that_names_itself_is_taken_at_its_word() {
+        assert_eq!(
+            browser_viewer(&head("repo=r1&viewer=tab-9f2c")),
+            ViewerId::Browser("tab-9f2c".to_string())
+        );
+    }
+
+    /// The whole point of the id is that the same page keeps it across sockets.
+    #[test]
+    fn the_same_page_is_the_same_viewer_on_every_socket() {
+        assert_eq!(
+            browser_viewer(&head("repo=r1&viewer=tab-1")),
+            browser_viewer(&head("repo=r2&viewer=tab-1")),
+        );
+    }
+
+    /// A stale bundle, or something that is not a page at all. It still works —
+    /// it just behaves as a browser did before it could name itself.
+    #[test]
+    fn a_socket_with_no_usable_id_gets_one_of_its_own() {
+        let long = "a".repeat(MAX_VIEWER_ID + 1);
+        for query in [
+            "repo=r1".to_string(),
+            "repo=r1&viewer=".to_string(),
+            "repo=r1&viewer=has%20space".to_string(),
+            "repo=r1&viewer=semi;colon".to_string(),
+            format!("repo=r1&viewer={long}"),
+        ] {
+            let first = browser_viewer(&head(&query));
+            let second = browser_viewer(&head(&query));
+            assert_ne!(first, second, "each must be its own screen: {query}");
+        }
+    }
+
+    #[test]
+    fn an_id_at_the_cap_is_still_accepted() {
+        let id = "a".repeat(MAX_VIEWER_ID);
+        assert_eq!(
+            browser_viewer(&head(&format!("repo=r1&viewer={id}"))),
+            ViewerId::Browser(id)
+        );
+    }
 }

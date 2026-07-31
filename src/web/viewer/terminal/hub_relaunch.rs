@@ -8,7 +8,8 @@
 use super::TerminalHub;
 use super::frame::{ServerMessage, TerminalFrame};
 use super::hub_helpers::broadcast_locked;
-use super::hub_plugins::{PaneSpot, Plugins};
+use super::hub_plugins::Plugins;
+use super::hub_plugins_slots::PaneSpot;
 use crate::backend::{PaneId, PtyBackend, TerminalBackend};
 use crate::plugin::protocol::LogLevel;
 use crate::plugin::{Approved, Refused};
