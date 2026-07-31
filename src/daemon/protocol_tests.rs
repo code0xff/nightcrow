@@ -25,6 +25,7 @@ fn every_client_message_survives_the_round_trip() {
             order: vec!["r2".into(), "r1".into()],
         },
         ClientMessage::SetAccent { accent: 3 },
+        ClientMessage::ReloadConfig,
     ];
     for message in &messages {
         assert_eq!(&round_trip_client(message), message);
@@ -59,6 +60,9 @@ fn every_server_message_survives_the_round_trip() {
         ServerMessage::Error {
             message: "no such directory".into(),
         },
+        ServerMessage::Reloaded {
+            summary: "config reloaded: 1 plugin across 2 open projects".into(),
+        },
     ];
     for message in &messages {
         assert_eq!(&round_trip_server(message), message);
@@ -84,6 +88,15 @@ fn a_message_missing_a_required_field_is_refused() {
     // Reaching the socket is authorization, not a promise of well-formed
     // input: a client bug must be a refused request, not a panic.
     assert!(serde_json::from_str::<ClientMessage>(r#"{"type":"open_repo"}"#).is_err());
+}
+
+/// A reload carries nothing on the way out: the file on the daemon's disk is the
+/// request. An encoding that admitted a payload would be a client reconfiguring
+/// the session from something it made up.
+#[test]
+fn a_reload_request_carries_no_configuration() {
+    let json = serde_json::to_string(&ClientMessage::ReloadConfig).unwrap();
+    assert_eq!(json, r#"{"type":"reload_config"}"#);
 }
 
 #[test]

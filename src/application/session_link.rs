@@ -51,6 +51,13 @@ impl SessionLink {
                 ServerMessage::Error { message } => {
                     ws.raise_notice(crate::app::NoticeKind::Project, message);
                 }
+                // Shown where the refusal above is shown, because the two are the
+                // same answer to the same request — a reload either applied or it
+                // did not, and both are news for the client that asked and for
+                // nobody else.
+                ServerMessage::Reloaded { summary } => {
+                    ws.raise_notice(crate::app::NoticeKind::Session, summary);
+                }
                 // Answered during the handshake; a later one would mean the
                 // daemon restarted under this client, which the connection loss
                 // reports on its own.

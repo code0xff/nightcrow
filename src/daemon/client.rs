@@ -100,6 +100,12 @@ impl DaemonClient {
                     queued.push(other)
                 }
                 ServerMessage::Error { message } => bail!("daemon refused the attach: {message}"),
+                // Nobody has asked for a reload yet — this client has not
+                // finished attaching. Dropped rather than queued: it would be an
+                // answer to a request that was never made.
+                ServerMessage::Reloaded { .. } => {
+                    tracing::debug!("attach: a reload answer arrived before the handshake");
+                }
             }
         };
         // Best-effort: macOS rejects the option on a socket whose peer has

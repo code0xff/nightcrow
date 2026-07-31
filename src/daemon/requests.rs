@@ -112,6 +112,25 @@ fn handle(message: ClientMessage, id: u64, session: &Session) {
             session::set_accent(state, accent);
             changed(session);
         }
+        // Answered to the asker alone, unlike a change to the served set.
+        // Nothing a reload does shows up in what the other clients are looking
+        // at — the startup list only reaches repositories opened later, and a
+        // plugin being replaced is a child process nobody is watching — so
+        // telling them would be a notice about something they did not do and
+        // cannot see.
+        ClientMessage::ReloadConfig => {
+            let reply = match crate::web::viewer::reload::reload_config(state) {
+                Ok(report) => ServerMessage::Reloaded {
+                    summary: report.summary(),
+                },
+                // The message names the offending key, which is the whole value
+                // of reporting it rather than saying the file was bad.
+                Err(err) => ServerMessage::Error {
+                    message: err.to_string(),
+                },
+            };
+            session.clients.send_to(id, encode(&reply));
+        }
         // Handed straight to the hub, which answers on the subscription rather
         // than here: a pane it creates is news for every client watching that
         // repository, not a reply owed to this one.
