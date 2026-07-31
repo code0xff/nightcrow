@@ -7,6 +7,9 @@
       "enabled": true,
       "window_secs": 15
     },
+    "maximized": {
+      "r1": "terminal"
+    },
     "now_ms": 1700000000500,
     "repos": [
       {
@@ -167,6 +170,9 @@
   "storedPrefs": {
     "accent": 2,
     "active_repo": "r1",
+    "maximized": {
+      "r1": "terminal"
+    },
     "sidebar_width": 460,
     "upper_pct": 55
   },

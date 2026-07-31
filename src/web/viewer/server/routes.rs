@@ -37,6 +37,7 @@ pub(super) fn route(head: &RequestHead, state: &ViewerState) -> Vec<u8> {
                 },
                 &prefs,
                 active_repo,
+                crate::web::viewer::session::maximized_ids(state, &prefs.maximized),
                 state.git_available,
             );
             match serde_json::to_string(&Envelope::new(bootstrap)) {

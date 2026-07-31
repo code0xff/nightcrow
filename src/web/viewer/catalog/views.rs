@@ -83,7 +83,9 @@ impl Catalog {
     ///
     /// For the attach transport, whose clients read those paths from the same
     /// filesystem the daemon is on. The browser gets [`RepoDto`] instead, which
-    /// carries a home-relative path for display and no absolute one.
+    /// carries a home-relative path for display and no absolute one — but the
+    /// browser's own response builder reads this too, to turn a preference
+    /// stored by path back into the ids it speaks.
     pub fn id_paths(&self) -> Vec<(String, String)> {
         self.entries
             .lock()

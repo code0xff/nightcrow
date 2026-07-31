@@ -26,6 +26,7 @@ import {
   type Diff,
   type FileView,
   type Log,
+  type MaximizedByRepo,
   type Reloaded,
   type Repo,
   type Status,
@@ -34,18 +35,37 @@ import {
   type ViewerBootstrap,
 } from "./api";
 
+/**
+ * Re-check a union the annotations cannot.
+ *
+ * A JSON import widens `"terminal"` to `string`, so `maximized` cannot be bound
+ * to its union the way every other field is bound to its type. The drift this
+ * would otherwise catch — a variant renamed on the Rust side — is caught here
+ * instead, at runtime, against the same generated fixture.
+ */
+function panels(raw: Record<string, string>): MaximizedByRepo {
+  for (const panel of Object.values(raw)) {
+    expect(["files", "terminal"]).toContain(panel);
+  }
+  return raw as MaximizedByRepo;
+}
+
 describe("wire contract", () => {
   it("서버가_보내는_프로토콜_버전과_클라이언트_상수가_같다", () => {
     expect(fixture.version).toBe(PROTOCOL_VERSION);
   });
 
   it("부트스트랩_페이로드가_ViewerBootstrap과_맞는다", () => {
-    const bootstrap: ViewerBootstrap = fixture.bootstrap;
+    const bootstrap: ViewerBootstrap = {
+      ...fixture.bootstrap,
+      maximized: panels(fixture.bootstrap.maximized),
+    };
     expect(bootstrap.repos).toHaveLength(1);
     expect(bootstrap.hot.window_secs).toBeGreaterThan(0);
     expect(bootstrap.now_ms).toBeGreaterThan(0);
     expect(bootstrap.sidebar_width).toBeGreaterThan(0);
     expect(bootstrap.upper_pct).toBeGreaterThan(0);
+    expect(bootstrap.maximized).toEqual({ r1: "terminal" });
   });
 
   it("status_페이로드가_Status와_맞는다", () => {

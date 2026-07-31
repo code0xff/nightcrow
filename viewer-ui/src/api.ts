@@ -68,6 +68,14 @@ export const api = {
       { active_repo },
       AbortSignal.timeout(ACTIVE_REPO_WRITE_TIMEOUT_MS),
     ).then((r) => r.active_repo),
+
+  /** Record which panel a project is maximized in, or `null` for none. Echoes
+   *  the full set back so a client that maximized on another device converges
+   *  without a second request. */
+  setMaximized: (repo: string, panel: "files" | "terminal" | null) =>
+    post<StoredPrefs>("/api/prefs", { maximized: { repo, panel } }).then(
+      (r) => r.maximized,
+    ),
   status: (repo: string) => get<Status>(`/api/status?${query({ repo })}`),
   tree: (repo: string, path: string) =>
     get<Tree>(`/api/tree?${query({ repo, path })}`),

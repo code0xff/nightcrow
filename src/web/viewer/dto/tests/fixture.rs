@@ -55,6 +55,9 @@ fn wire_fixture() -> serde_json::Value {
             sidebar_width: 460,
             upper_pct: 55,
             active_repo: Some("r1".to_string()),
+            // Only the served projects appear, by id — a remembered one this
+            // session is not serving has no id to name it by.
+            maximized: std::collections::HashMap::from([("r1".to_string(), "terminal")]),
             // Literal, not `server_now_millis()`: a fixture that moved every
             // run could not be committed.
             now_ms: 1_700_000_000_500,
@@ -171,6 +174,7 @@ fn wire_fixture() -> serde_json::Value {
             "sidebar_width": 460,
             "upper_pct": 55,
             "active_repo": "r1",
+            "maximized": { "r1": "terminal" },
         }),
         // What `/api/reload` answers. A sentence rather than counts, because it
         // is the whole of what the browser has to show: a reload changes nothing
