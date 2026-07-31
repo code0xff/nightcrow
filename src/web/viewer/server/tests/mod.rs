@@ -45,6 +45,7 @@ pub(super) fn server_with(
         // ~/.nightcrow/workspace.json.
         persist: false,
         startup_commands: Vec::new(),
+        cli_startup: Vec::new(),
         hot,
         prefs,
     })

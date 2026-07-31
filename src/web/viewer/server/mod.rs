@@ -101,6 +101,10 @@ pub struct ViewerOptions {
     /// `serve` only — alongside the TUI, the TUI owns that file).
     pub persist: bool,
     pub startup_commands: Vec<crate::config::StartupCommand>,
+    /// The `--exec` commands already merged into `startup_commands`, remembered
+    /// so a config reload can arrive at the same combined list. Empty for every
+    /// caller that has none.
+    pub cli_startup: Vec<String>,
     pub hot: crate::config::AgentIndicatorConfig,
     pub prefs: PrefsStore,
 }
@@ -136,13 +140,15 @@ impl ViewerState {
             repos,
             persist,
             startup_commands,
+            cli_startup,
             hot,
             prefs,
         } = options;
         let state = Self {
-            catalog: crate::web::viewer::catalog::Catalog::with_startup_and_plugins(
+            catalog: crate::web::viewer::catalog::Catalog::with_startup_plugins_and_exec(
                 startup_commands,
                 plugins,
+                cli_startup,
             ),
             bound_loopback: bind.is_loopback(),
             auth,
@@ -174,6 +180,7 @@ impl ViewerServer {
         paths: &[String],
         persist: bool,
         startup_commands: Vec<crate::config::StartupCommand>,
+        cli_startup: Vec<String>,
         plugins: Vec<crate::config::PluginConfig>,
     ) -> Result<Self> {
         let auth = if let Some(hash) = viewer.hashed_password.as_deref() {
@@ -197,6 +204,7 @@ impl ViewerServer {
                 repos: paths.to_vec(),
                 persist,
                 startup_commands,
+                cli_startup,
                 hot: agent_indicator.clone(),
                 // The session's accent outlives any one config edit, so `[theme]`
                 // only names the colour a session with no stored choice starts in.

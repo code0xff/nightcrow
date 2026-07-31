@@ -18,6 +18,23 @@ impl Catalog {
             .map(Arc::clone)
     }
 
+    /// Every served entry, for a caller that needs the runtimes themselves
+    /// rather than a client-facing projection — a config reload has to reach each
+    /// repository's terminal hub.
+    ///
+    /// A snapshot: the `Arc`s are cloned out and the lock released, so a
+    /// repository retired while the caller is working through the list is one
+    /// whose hub has already stopped, and telling a stopped hub anything is a
+    /// no-op rather than a race.
+    pub fn entries(&self) -> Vec<Arc<RepoEntry>> {
+        self.entries
+            .lock()
+            .expect("catalog poisoned")
+            .iter()
+            .map(Arc::clone)
+            .collect()
+    }
+
     /// The served list and, from that same snapshot, the id standing for
     /// `remembered`.
     ///

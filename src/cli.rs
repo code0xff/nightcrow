@@ -146,6 +146,9 @@ pub(crate) fn run_daemon(
         &paths,
         true,
         startup,
+        // Remembered rather than folded away: a config reload re-reads the file's
+        // `[[startup_command]]` table, and these panes are not in the file.
+        exec,
         cfg.plugins.clone(),
     )?;
     if paths.is_empty() {

@@ -20,6 +20,7 @@ use std::path::Path;
 use std::sync::{Arc, Mutex};
 
 mod catalog_ids;
+mod config_tables;
 mod ordering;
 use catalog_ids::IdAssigner;
 pub use catalog_ids::{AddOutcome, RepoEntry};
@@ -43,43 +44,30 @@ pub struct Catalog {
     /// Commands each repository's terminal hub runs as startup terminals on the
     /// first client connect (empty = one bare shell). Applied to every hub the
     /// catalog spawns.
-    startup_commands: Vec<crate::config::StartupCommand>,
+    ///
+    /// Behind a lock because a config reload replaces it. What that reaches is
+    /// only the hubs spawned *after* it: a hub creates its startup panes once
+    /// for its life, so a repository already open has spent this list, and the
+    /// panes it spent it on are running children nobody may replace on the
+    /// strength of a file edit.
+    startup_commands: Mutex<Vec<crate::config::StartupCommand>>,
+    /// The `--exec` panes the daemon was started with, appended after the
+    /// configured ones. Not behind a lock: these came from the command line, and
+    /// a reload of the config file cannot change what that said.
+    cli_startup: Vec<String>,
     /// The `[[plugin]]` table, handed to every hub the catalog spawns. A hub only
     /// launches the ones its own startup commands opted into, so an entry here is
     /// an offer rather than a process.
-    plugins: Vec<crate::config::PluginConfig>,
+    ///
+    /// Replaced by a reload like the list above, but with a further reach: the
+    /// hubs already running are told as well, because a plugin is a child process
+    /// rather than a pane and restarting one costs the session nothing.
+    plugins: Mutex<Vec<crate::config::PluginConfig>>,
 }
 
 impl Catalog {
     pub fn new() -> Self {
         Self::default()
-    }
-
-    /// Like [`Catalog::new`], but every terminal hub it spawns runs `startup`
-    /// as its startup terminals.
-    pub fn with_startup(startup_commands: Vec<crate::config::StartupCommand>) -> Self {
-        Self {
-            startup_commands,
-            ..Self::default()
-        }
-    }
-
-    /// Like [`Catalog::with_startup`], and every hub is also given the
-    /// `[[plugin]]` table its startup commands may name.
-    ///
-    /// Paired with the startup commands rather than set separately, because the
-    /// two are one decision: a plugin is only ever reachable through a startup
-    /// command's `plugin =`, so a catalog with one and not the other is a
-    /// half-configured session.
-    pub fn with_startup_and_plugins(
-        startup_commands: Vec<crate::config::StartupCommand>,
-        plugins: Vec<crate::config::PluginConfig>,
-    ) -> Self {
-        Self {
-            startup_commands,
-            plugins,
-            ..Self::default()
-        }
     }
 
     /// Replace the base served set — CLI `--repo` args or the TUI workspace's
@@ -161,6 +149,15 @@ impl Catalog {
     /// genuinely removed ones stop.
     fn rebuild(&self) {
         let deduped = self.union_paths();
+        // Read once, before the entries lock: every hub this pass spawns is
+        // given the same tables, so a reload landing mid-rebuild cannot leave two
+        // repositories opened in the same beat configured differently.
+        let startup = self
+            .startup_commands
+            .lock()
+            .expect("catalog startup poisoned")
+            .clone();
+        let plugins = self.plugins.lock().expect("catalog plugins poisoned").clone();
 
         let assigned: Vec<(String, String)> = {
             let mut ids = self.ids.lock().expect("catalog ids poisoned");
@@ -182,11 +179,7 @@ impl Catalog {
                         name: repo_name(&path),
                         display_path: display_path(&path),
                         runtime: RepoRuntime::spawn(&path),
-                        terminals: TerminalHub::spawn(
-                            &path,
-                            self.startup_commands.clone(),
-                            self.plugins.clone(),
-                        ),
+                        terminals: TerminalHub::spawn(&path, startup.clone(), plugins.clone()),
                         id,
                         path,
                     })),

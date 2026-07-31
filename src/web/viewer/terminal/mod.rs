@@ -117,6 +117,16 @@ impl TerminalHub {
         hub
     }
 
+    /// The startup panes this hub was spawned with.
+    ///
+    /// Fixed for its life: the panes are created once and a config reload does
+    /// not replace them, so this stays what the repository was opened under.
+    /// Read by the plugin reload, which decides what a plugin may see on *this*
+    /// hub from the opt-ins this list carries rather than from the new file's.
+    pub(crate) fn startup_commands(&self) -> &[crate::config::StartupCommand] {
+        &self.startup
+    }
+
     /// Register a client and put the current terminals in front of it before it
     /// is eligible for broadcasts.
     ///

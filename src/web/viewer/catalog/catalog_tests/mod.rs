@@ -293,3 +293,5 @@ fn repo_name_ignores_a_trailing_separator() {
     assert_eq!(repo_name("/code/app/"), "app");
     assert_eq!(repo_name("/code/app"), "app");
 }
+
+mod config_tables;
