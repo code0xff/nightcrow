@@ -46,11 +46,29 @@ import {
  *
  * Only the values the fixture actually carries are checked, so the fixture
  * carries every variant (`storedPrefs`); one of them alone would let the other
- * be renamed with nothing failing.
+ * be renamed with nothing failing. And the list checked against is tied to the
+ * union itself, so a rename on this side is caught too.
  */
+const PANELS = ["files", "terminal"] as const;
+
+// Ties the list above to the union in both directions, at compile time. Without
+// this the list is a third hand-written copy of the protocol: renaming the
+// variant on *this* side would leave the fixture's value still in the list, and
+// the cast below would swallow the mismatch. Either half drifting fails here.
+type PanelsAreAllInTheUnion =
+  (typeof PANELS)[number] extends MaximizedByRepo[string] ? true : never;
+type UnionIsAllInPanels =
+  MaximizedByRepo[string] extends (typeof PANELS)[number] ? true : never;
+function panelsMatchTheUnion(): [PanelsAreAllInTheUnion, UnionIsAllInPanels] {
+  return [true, true];
+}
+
 function panels(raw: Record<string, string>): MaximizedByRepo {
+  // Calling it is what keeps the assertion above from being dead code the
+  // compiler skips; its return value has nothing to say.
+  panelsMatchTheUnion();
   for (const panel of Object.values(raw)) {
-    expect(["files", "terminal"]).toContain(panel);
+    expect(PANELS).toContain(panel);
   }
   return raw as MaximizedByRepo;
 }
