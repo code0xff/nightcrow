@@ -15,7 +15,7 @@
 //! keeping up is disconnected, the same trade the hub makes one layer in.
 
 use super::frame::Frame;
-use std::os::unix::net::UnixStream;
+use super::transport::UnixStream;
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc::{self, Receiver, SyncSender, TrySendError};

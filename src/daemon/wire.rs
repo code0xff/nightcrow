@@ -11,7 +11,7 @@ use super::terminal_link::{TerminalMessage, TerminalRouter};
 use crate::web::viewer::terminal::frame::ServerMessage as HubServerMessage;
 use anyhow::{Context, Result};
 use std::io::Write;
-use std::os::unix::net::UnixStream;
+use super::transport::UnixStream;
 use std::sync::mpsc::Sender;
 use std::sync::{Arc, Mutex};
 

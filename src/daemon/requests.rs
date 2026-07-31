@@ -11,7 +11,7 @@ use super::protocol::{ClientMessage, ServerMessage, version};
 use super::serve::{Session, encode};
 use crate::web::viewer::session::{self, CloseError, OpenError};
 use anyhow::Result;
-use std::os::unix::net::UnixStream;
+use super::transport::UnixStream;
 use std::sync::Arc;
 
 /// Read requests from one client until it detaches.

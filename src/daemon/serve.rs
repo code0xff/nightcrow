@@ -19,7 +19,7 @@ use crate::web::viewer::server::ViewerState;
 use crate::web::viewer::session;
 use std::collections::HashMap;
 use std::io::Write;
-use std::os::unix::net::{UnixListener, UnixStream};
+use super::transport::{UnixListener, UnixStream};
 use std::sync::{Arc, Mutex};
 
 /// Clients that may be attached at once.

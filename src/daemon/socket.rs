@@ -10,7 +10,7 @@
 use super::lock::InstanceLock;
 use anyhow::{Context, Result, bail};
 use std::os::unix::fs::PermissionsExt;
-use std::os::unix::net::UnixListener;
+use super::transport::UnixListener;
 use std::path::{Path, PathBuf};
 
 /// Socket file name under the nightcrow directory.
