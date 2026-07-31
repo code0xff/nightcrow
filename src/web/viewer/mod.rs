@@ -15,4 +15,5 @@ pub mod reload;
 pub mod runtime;
 pub mod server;
 pub mod session;
+pub mod size_owner;
 pub mod terminal;

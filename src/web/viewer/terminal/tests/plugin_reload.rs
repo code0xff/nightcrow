@@ -12,7 +12,7 @@
 //! decision has been made and a missing announcement is a real one.
 
 use super::plugins::{Fixture, LOG_ENV, fixture, logged, logged_event, shell_plugin};
-use super::{collect_created, wait_for};
+use super::{attach, collect_created, spawn_hub, wait_for};
 use crate::config::{PluginConfig, StartupCommand};
 use crate::web::viewer::terminal::TerminalHub;
 use crate::web::viewer::terminal::frame::ClientMessage;
@@ -88,7 +88,7 @@ fn hub_with_two_watched_panes(
 ) {
     let subject = plugin_with_log(f, "subject");
     let anchor = plugin_with_log(f, "anchor");
-    let hub = TerminalHub::spawn(
+    let hub = spawn_hub(
         &f.cwd(),
         vec![
             watched_pane("subject-pane", "subject"),
@@ -96,7 +96,7 @@ fn hub_with_two_watched_panes(
         ],
         vec![subject.0.clone(), anchor.0.clone()],
     );
-    let session = hub.connect();
+    let session = attach(&hub);
     session.dispatch(ClientMessage::Start { sizes: Vec::new() });
     collect_created(&session, 2);
     logged_event(&subject.1, |e| is(e, "pane_opened")).expect("the subject pane was not announced");
@@ -110,12 +110,12 @@ fn hub_with_two_watched_panes(
 fn enabling_a_plugin_hands_it_the_panes_that_opted_in_while_it_was_off() {
     let f = fixture();
     let (cfg, log) = plugin_with_log(&f, "watch");
-    let hub = TerminalHub::spawn(
+    let hub = spawn_hub(
         &f.cwd(),
         vec![watched_pane("agent", "watch")],
         vec![disabled(&cfg)],
     );
-    let session = hub.connect();
+    let session = attach(&hub);
     session.dispatch(ClientMessage::Start { sizes: Vec::new() });
     collect_created(&session, 1);
 

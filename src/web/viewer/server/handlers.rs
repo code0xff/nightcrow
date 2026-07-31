@@ -161,6 +161,21 @@ pub(super) fn serve_events(
     // `subscription` drops here, unregistering from the fan-out.
 }
 
+/// A page's identity for the session's size ownership.
+///
+/// One per connection for now, which keeps a browser behaving exactly as it did
+/// before ownership moved to the session: every socket is a new screen that
+/// takes the sizing. The page names itself in the next step, which is what makes
+/// switching repositories stop moving it.
+fn browser_viewer() -> crate::web::viewer::size_owner::ViewerId {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static NEXT: AtomicU64 = AtomicU64::new(0);
+    crate::web::viewer::size_owner::ViewerId::Browser(format!(
+        "conn-{}",
+        NEXT.fetch_add(1, Ordering::Relaxed)
+    ))
+}
+
 /// Hand this connection to the repository's terminal hub.
 ///
 /// Auth and Origin were already enforced by `handle_connection`, before the
@@ -187,7 +202,7 @@ pub(super) fn serve_terminal(
     let Some(mut ws) = conn::websocket_handshake(stream, head) else {
         return;
     };
-    let session = entry.terminals.connect();
+    let session = entry.terminals.connect(browser_viewer(), true);
 
     loop {
         // Drain everything queued for us before blocking on the socket, so

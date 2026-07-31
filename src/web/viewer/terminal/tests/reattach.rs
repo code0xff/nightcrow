@@ -6,7 +6,7 @@
 //! the two answers the hub gives instead: state it tracked, and a repaint it asks
 //! the program for.
 
-use super::{created_pane, next_matching};
+use super::{attach, created_pane, next_matching, spawn_hub};
 use crate::backend::PaneId;
 use crate::web::viewer::terminal::TerminalHub;
 use crate::web::viewer::terminal::TerminalSession;
@@ -58,8 +58,8 @@ struct Running {
 
 fn pane_running(sequences: &str) -> Running {
     let dir = tempfile::TempDir::new().unwrap();
-    let hub = TerminalHub::spawn(&dir.path().to_string_lossy(), Vec::new(), Vec::new());
-    let session = hub.connect();
+    let hub = spawn_hub(&dir.path().to_string_lossy(), Vec::new(), Vec::new());
+    let session = attach(&hub);
     session.dispatch(ClientMessage::Create {
         rows: ROWS,
         cols: COLS,
@@ -92,7 +92,7 @@ fn a_reattaching_client_is_told_the_modes_its_pane_is_in() {
     let running = pane_running(ENTER_FULLSCREEN);
     let (hub, pane) = (&running.hub, running.pane);
 
-    let second = hub.connect();
+    let second = attach(hub);
     let replay = String::from_utf8_lossy(&output_for(&second, pane)).to_string();
 
     // Nothing in the pane's history says these are on any more; the hub does.
@@ -110,7 +110,7 @@ fn an_alternate_screen_panes_history_is_not_replayed() {
     let running = pane_running(ENTER_FULLSCREEN);
     let (hub, pane) = (&running.hub, running.pane);
 
-    let second = hub.connect();
+    let second = attach(hub);
     let replay = String::from_utf8_lossy(&output_for(&second, pane)).to_string();
 
     // Those bytes are cell updates against a screen this client does not have.
@@ -127,11 +127,10 @@ fn an_alternate_screen_panes_history_is_not_replayed() {
 fn a_reattaching_client_makes_an_alternate_screen_program_draw_again() {
     // A program cannot be asked to repaint in the abstract: what it is told is
     // that its size changed. The trap stands in for a program's redraw.
-    let running =
-        pane_running("trap 'printf REDR%sEW' WINCH; printf '\\033[?1049hPAINT%sED'\n");
+    let running = pane_running("trap 'printf REDR%sEW' WINCH; printf '\\033[?1049hPAINT%sED'\n");
     let (hub, pane) = (&running.hub, running.pane);
 
-    let second = hub.connect();
+    let second = attach(hub);
     let redrew = next_matching(&second, |f| {
         matches!(f, TerminalFrame::Output { pane: p, data }
             if *p == pane && String::from_utf8_lossy(data).contains("REDREW"))
@@ -151,7 +150,7 @@ fn a_plain_shells_history_is_still_replayed() {
     let running = pane_running("printf 'PAINT%sED'\n");
     let (hub, pane) = (&running.hub, running.pane);
 
-    let second = hub.connect();
+    let second = attach(hub);
     let replay = String::from_utf8_lossy(&output_for(&second, pane)).to_string();
 
     assert!(

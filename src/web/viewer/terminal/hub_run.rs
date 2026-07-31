@@ -1,12 +1,12 @@
-use super::hub_modes::PaneModeTracker;
+use super::frame::{ServerMessage, TerminalFrame};
 use super::hub_diag::ClearWatch;
+use super::hub_helpers::{Command, PaneState, broadcast_locked, push_scrollback};
+use super::hub_modes::PaneModeTracker;
+use super::hub_plugins::Plugins;
 use super::hub_repaint::Repaints;
 use super::{DEFAULT_PANE_SIZE, TerminalHub};
-use super::frame::{ServerMessage, TerminalFrame};
-use super::hub_helpers::{Command, PaneState, broadcast_locked, push_scrollback};
-use super::hub_plugins::Plugins;
-use crate::runtime::emulator::PaneModes;
 use crate::backend::{BackendEvent, PaneId, PtyBackend, TerminalBackend};
+use crate::runtime::emulator::PaneModes;
 use crate::web::viewer::limits;
 use std::collections::VecDeque;
 use std::sync::Arc;
@@ -170,6 +170,12 @@ impl TerminalHub {
                     self.end_recovery(pane);
                 }
             }
+
+            // A sizing owner that disconnected is held for a grace, so that
+            // switching repositories — which closes one socket and opens
+            // another — does not re-fit every pane there and back. Nothing runs
+            // on its own to end that, so the tick does.
+            self.settle_size_owner(Instant::now());
             thread::sleep(POLL_INTERVAL);
         }
 

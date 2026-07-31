@@ -5,14 +5,14 @@
 
 use super::plugin_rules::{COLS, LONG_RUNNING, PLUGIN, ROWS, opt_in, token_of};
 use super::plugins::{Fixture, fixture, logged_event, shell_plugin};
-use super::{collect_created, created_pane, next_matching};
+use super::{attach, collect_created, created_pane, next_matching, spawn_hub};
 use crate::backend::{PaneId, PtyBackend};
 use crate::config::{PluginConfig, StartupCommand};
+use crate::web::viewer::terminal::TerminalSession;
 use crate::web::viewer::terminal::frame::{ClientMessage, TerminalFrame};
 use crate::web::viewer::terminal::hub_plugins::Plugins;
 use crate::web::viewer::terminal::hub_plugins_slots::{PENDING_RELAUNCH_TTL, PaneSpot};
 use crate::web::viewer::terminal::hub_recovery::RECOVERY_CANCELLED;
-use crate::web::viewer::terminal::{TerminalHub, TerminalSession};
 use std::path::Path;
 use std::time::{Duration, Instant};
 
@@ -91,12 +91,12 @@ fn recovery(frame: &TerminalFrame) -> Option<Report> {
 #[test]
 fn a_plugin_status_report_reaches_a_client_as_a_recovery_frame() {
     let f = fixture();
-    let hub = TerminalHub::spawn(
+    let hub = spawn_hub(
         &f.cwd(),
         vec![watched("watched", LONG_RUNNING)],
         vec![reporter(PLUGIN, &f)],
     );
-    let session = hub.connect();
+    let session = attach(&hub);
     session.dispatch(ClientMessage::Start { sizes: Vec::new() });
     let ids = collect_created(&session, 1);
 
@@ -123,13 +123,13 @@ fn cancelling_a_recovery_releases_the_hold_and_tells_every_client() {
     // Two clients, because the point of broadcasting `cancelled` is that the one
     // who did not press the key stops showing a deadline too.
     let f = fixture();
-    let hub = TerminalHub::spawn(
+    let hub = spawn_hub(
         &f.cwd(),
         vec![watched("watched", "printf gone; exit 0")],
         vec![reporter(PLUGIN, &f)],
     );
-    let presser = hub.connect();
-    let watcher = hub.connect();
+    let presser = attach(&hub);
+    let watcher = attach(&hub);
     presser.dispatch(ClientMessage::Start { sizes: Vec::new() });
     let ids = collect_created(&presser, 1);
 
@@ -167,12 +167,12 @@ fn cancelling_a_recovery_releases_the_hold_and_tells_every_client() {
 #[test]
 fn cancelling_a_pane_with_nothing_pending_is_harmless() {
     let f = fixture();
-    let hub = TerminalHub::spawn(
+    let hub = spawn_hub(
         &f.cwd(),
         vec![watched("watched", "printf STILL-HERE; sleep 30")],
         vec![reporter(PLUGIN, &f)],
     );
-    let session = hub.connect();
+    let session = attach(&hub);
     session.dispatch(ClientMessage::Start { sizes: Vec::new() });
     let ids = collect_created(&session, 1);
 

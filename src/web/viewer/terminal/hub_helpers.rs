@@ -129,14 +129,6 @@ pub(super) struct PaneState {
 pub struct Shared {
     pub(super) clients: Vec<Client>,
     pub(super) panes: Vec<PaneState>,
-    /// The client whose layout decides the pane sizes, if any is connected.
-    ///
-    /// A PTY is a contract with a child process, not data: the child draws for
-    /// the width it was told, and no one can re-flow an alternate-screen program
-    /// afterwards. So the size has to be one value, and this is who sets it —
-    /// the most recent client to arrive, until another takes it back. `None`
-    /// when nobody is connected, which leaves every pane at its last size.
-    pub(super) size_owner: Option<u64>,
     /// Cap slots held for startup panes that are claimed but not created yet.
     ///
     /// Counted against the same cap rather than exempt from it, so the ceiling

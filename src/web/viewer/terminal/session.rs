@@ -9,12 +9,19 @@ use std::time::{Duration, Instant};
 pub(super) struct Client {
     pub(super) id: u64,
     pub(super) tx: SyncSender<TerminalFrame>,
+    /// This connection's registration with the session's size ownership. Kept
+    /// beside the hub's own id because the two answer different questions: the
+    /// id names a connection to *this* repository, the registration names the
+    /// screen behind it, which the session tracks across every repository.
+    pub(super) connection: u64,
 }
 
 /// A client's connection to a repository's terminals.
 pub struct TerminalSession {
     pub(super) hub: std::sync::Arc<TerminalHub>,
     pub(super) id: u64,
+    /// See [`Client::connection`].
+    pub(super) connection: u64,
     /// Behind a lock so the session can be shared: the daemon reads frames on
     /// one thread while requests are dispatched from another. Uncontended in
     /// practice — only the reader ever takes it.
@@ -75,7 +82,7 @@ impl TerminalSession {
             // hands the sizing over — the client would then be a spectator with
             // no way to find out.
             ClientMessage::ClaimSize => {
-                self.hub.claim_size(self.id);
+                self.hub.claim_size(self.connection);
                 return;
             }
             // Handled here rather than on the worker thread: it only queues

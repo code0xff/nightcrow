@@ -19,10 +19,10 @@
 //! bytes would leave a subtly wrong screen.
 
 pub mod frame;
-mod hub_events;
 mod hub_diag;
 #[cfg(test)]
 mod hub_diag_tests;
+mod hub_events;
 mod hub_helpers;
 mod hub_layout;
 mod hub_modes;
@@ -47,12 +47,14 @@ pub use frame::{ClientMessage, PaneSize, ServerMessage, TerminalFrame, encode_ou
 pub use session::TerminalSession;
 
 use crate::backend::PaneId;
+use crate::web::viewer::size_owner::{SizeOwnership, ViewerId};
 use hub_helpers::{Command, Replayed, Shared, replay_pane};
 use session::{Client, ReportBudget};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc::{self, SyncSender};
 use std::sync::{Arc, Mutex};
 use std::thread;
+use std::time::Instant;
 
 /// Output frames a client may fall behind by before it is dropped.
 const CLIENT_QUEUE_DEPTH: usize = 256;
@@ -81,16 +83,25 @@ pub struct TerminalHub {
     /// sizes, so they are created exactly once for the hub's life rather than
     /// on every (re)connection. See [`TerminalHub::claim_startup`].
     started: AtomicBool,
+    /// Which screen the session's panes are fitted to. The session's rather than
+    /// this hub's, because every client shows the same repository — see
+    /// [`SizeOwnership`].
+    ownership: Arc<SizeOwnership>,
 }
 
 impl TerminalHub {
     /// Start a hub whose terminals run in `cwd`. `startup` is the list of
     /// commands to launch when the first client connects (empty = one shell),
     /// and `plugins` the configured plugin table those commands may opt into.
+    ///
+    /// `ownership` is the session's, shared with every other hub: which screen
+    /// the panes are fitted to is one answer for the whole session, not one per
+    /// repository.
     pub fn spawn(
         cwd: &str,
         startup: Vec<crate::config::StartupCommand>,
         plugins: Vec<crate::config::PluginConfig>,
+        ownership: Arc<SizeOwnership>,
     ) -> Arc<Self> {
         let (commands, command_rx) = mpsc::sync_channel::<Command>(256);
         let hub = Arc::new(Self {
@@ -99,7 +110,6 @@ impl TerminalHub {
                 clients: Vec::new(),
                 panes: Vec::new(),
                 reserved: 0,
-                size_owner: None,
             }),
             next_client_id: AtomicU64::new(0),
             stop: Arc::new(AtomicBool::new(false)),
@@ -107,6 +117,7 @@ impl TerminalHub {
             startup,
             plugins,
             started: AtomicBool::new(false),
+            ownership,
         });
 
         let worker_hub = Arc::clone(&hub);
@@ -143,7 +154,12 @@ impl TerminalHub {
     /// pane's history exactly once and in order ahead of the live stream. A fresh
     /// hub (e.g. after a server restart) has no panes, so a reconnecting client
     /// correctly comes back to an empty panel.
-    pub fn connect(self: &Arc<Self>) -> TerminalSession {
+    ///
+    /// `viewer` names who this connection belongs to and `arriving` says whether
+    /// a person just sat down at it — a page opening rather than a repository
+    /// switch or a reconnect. Only the second takes the sizing; see
+    /// [`SizeOwnership`].
+    pub fn connect(self: &Arc<Self>, viewer: ViewerId, arriving: bool) -> TerminalSession {
         let id = self.next_client_id.fetch_add(1, Ordering::AcqRel);
         let (tx, rx) = mpsc::sync_channel(CLIENT_QUEUE_DEPTH);
         let mut state = self.state.lock().expect("terminal state poisoned");
@@ -164,14 +180,19 @@ impl TerminalHub {
                 }
             }
         }
-        state.clients.push(Client { id, tx });
-        // Arriving takes the sizing: this is the client someone just sat down
-        // at, and the panes should fit its screen. Taken before the lock is
-        // released so two clients connecting at once cannot both end up
-        // believing they own it.
-        let displaced = state.size_owner.replace(id);
+        // Registered with the session while the hub's lock is still held, so a
+        // resize cannot reach `resize_pane` before this connection is known to
+        // the ownership it is about to be judged against.
+        //
+        // After the replay above: the sizing verdict rides the same queue as the
+        // pane history, and a client that learned it owned the sizing before it
+        // knew there were panes would have nothing to fit.
+        let registration = self
+            .ownership
+            .join(viewer, arriving, tx.clone(), Instant::now());
+        let connection = registration.connection;
+        state.clients.push(Client { id, tx, connection });
         drop(state);
-        self.announce_size_owner(id, displaced);
 
         // Off the lock: this reaches the worker, which needs the backend. A full
         // queue means the worker is already far behind, and a repaint is the one
@@ -202,8 +223,9 @@ impl TerminalHub {
         TerminalSession {
             hub: Arc::clone(self),
             id,
+            connection,
             rx: std::sync::Mutex::new(rx),
-            reports: std::sync::Mutex::new(ReportBudget::new(std::time::Instant::now())),
+            reports: std::sync::Mutex::new(ReportBudget::new(Instant::now())),
         }
     }
 
@@ -240,21 +262,15 @@ impl TerminalHub {
     }
 
     fn disconnect(&self, id: u64) {
-        let heir = {
+        let connection = {
             let mut state = self.state.lock().expect("terminal state poisoned");
-            state.clients.retain(|c| c.id != id);
-            if state.size_owner != Some(id) {
-                return;
-            }
-            // The owner left, so the sizing passes to whoever arrived most
-            // recently among those still here — the same rule that gave it
-            // away in the first place. With nobody left it goes unowned, and
-            // every pane keeps the size it has: there is no client to fit.
-            state.size_owner = state.clients.last().map(|c| c.id);
-            state.size_owner
+            let found = state.clients.iter().position(|c| c.id == id);
+            found.map(|index| state.clients.remove(index).connection)
         };
-        if let Some(heir) = heir {
-            self.send_to(heir, &ServerMessage::SizeOwner { owned: true });
+        // Off the hub's lock: what happens to the sizing is the session's
+        // business, and it may have to tell clients on other hubs.
+        if let Some(connection) = connection {
+            self.ownership.leave(connection, Instant::now());
         }
     }
 

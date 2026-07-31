@@ -63,6 +63,15 @@ pub struct Catalog {
     /// hubs already running are told as well, because a plugin is a child process
     /// rather than a pane and restarting one costs the session nothing.
     plugins: Mutex<Vec<crate::config::PluginConfig>>,
+    /// Which screen this session's panes are fitted to, shared by every hub the
+    /// catalog spawns.
+    ///
+    /// One value for the session rather than one per repository: every client
+    /// shows the same repository (the daemon owns which is in front), so "which
+    /// screen is this fitted to" has a single answer. Asked per hub, it was
+    /// re-answered on every switch — see
+    /// [`crate::web::viewer::size_owner`].
+    ownership: Arc<crate::web::viewer::size_owner::SizeOwnership>,
 }
 
 impl Catalog {
@@ -183,7 +192,12 @@ impl Catalog {
                         name: repo_name(&path),
                         display_path: display_path(&path),
                         runtime: RepoRuntime::spawn(&path),
-                        terminals: TerminalHub::spawn(&path, startup.clone(), plugins.clone()),
+                        terminals: TerminalHub::spawn(
+                            &path,
+                            startup.clone(),
+                            plugins.clone(),
+                            Arc::clone(&self.ownership),
+                        ),
                         id,
                         path,
                     })),
