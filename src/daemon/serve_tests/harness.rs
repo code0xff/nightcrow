@@ -2,9 +2,9 @@ use crate::backend::PaneId;
 use crate::daemon::frame::{Frame, FrameKind, read_frame, write_frame};
 use crate::daemon::protocol::{ClientMessage, ServerMessage, TerminalOutput, version};
 use crate::daemon::socket::DaemonSocket;
+use crate::daemon::transport::UnixStream;
 use crate::web::viewer::terminal::frame::ServerMessage as HubServerMessage;
 use std::io::Write;
-use std::os::unix::net::UnixStream;
 
 /// A running daemon. Held by the test so its socket stays bound and its
 /// instance lock stays taken for the duration.

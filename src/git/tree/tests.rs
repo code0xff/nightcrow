@@ -119,6 +119,7 @@ fn read_children_refuses_traversal_that_stays_inside_the_worktree() {
     drop(dir);
 }
 
+#[cfg(unix)]
 #[test]
 fn read_children_refuses_to_descend_a_symlinked_directory() {
     let (dir, path) = make_repo();
@@ -130,6 +131,43 @@ fn read_children_refuses_to_descend_a_symlinked_directory() {
     let repo = open_repo(&path);
     // Expanding the symlink path directly (as a stale session or swapped
     // cache entry could ask to) must be rejected, not followed.
+    let err = read_children(&repo, root, "link_dir", false).unwrap_err();
+    assert!(
+        err.to_string().contains("symlinks are not followed"),
+        "unexpected error: {err}"
+    );
+    // The real directory still reads normally.
+    assert!(read_children(&repo, root, "real_dir", false).is_ok());
+    drop(dir);
+}
+
+#[cfg(windows)]
+fn junction(link: &Path, target: &Path) -> bool {
+    std::process::Command::new("cmd")
+        .args(["/C", "mklink", "/J"])
+        .arg(link)
+        .arg(target)
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+        .is_ok_and(|s| s.success())
+}
+
+#[cfg(windows)]
+#[test]
+fn read_children_refuses_to_descend_a_junction() {
+    let (dir, path) = make_repo();
+    let root = StdPath::new(&path);
+    std::fs::create_dir(root.join("real_dir")).unwrap();
+    std::fs::write(root.join("real_dir").join("secret.txt"), "x").unwrap();
+    let link = root.join("link_dir");
+    if !junction(&link, &root.join("real_dir")) {
+        eprintln!("skipping junction test: mklink /J failed (FAT32 or missing privilege?)");
+        drop(dir);
+        return;
+    }
+
+    let repo = open_repo(&path);
     let err = read_children(&repo, root, "link_dir", false).unwrap_err();
     assert!(
         err.to_string().contains("symlinks are not followed"),

@@ -124,6 +124,7 @@ fn resolve_in_workdir_rejects_a_nul_byte() {
     assert!(err.to_string().contains("NUL"), "unexpected error: {err}");
 }
 
+#[cfg(unix)]
 #[test]
 fn resolve_in_workdir_rejects_a_symlinked_leaf() {
     let (_dir, root) = workdir();
@@ -138,6 +139,7 @@ fn resolve_in_workdir_rejects_a_symlinked_leaf() {
     );
 }
 
+#[cfg(unix)]
 #[test]
 fn resolve_in_workdir_rejects_a_symlinked_parent_directory() {
     // The leaf is an ordinary file; only the directory above it is a link.
@@ -146,6 +148,38 @@ fn resolve_in_workdir_rejects_a_symlinked_parent_directory() {
     std::fs::write(outside.path().join("secrets.txt"), "token").unwrap();
     let (_dir, root) = workdir();
     std::os::unix::fs::symlink(outside.path(), root.join("escape")).unwrap();
+
+    let err = resolve_in_workdir(&root, "escape/secrets.txt").unwrap_err();
+
+    assert!(
+        err.to_string().contains("symlink"),
+        "unexpected error: {err}"
+    );
+}
+
+#[cfg(windows)]
+fn junction(link: &Path, target: &Path) -> bool {
+    std::process::Command::new("cmd")
+        .args(["/C", "mklink", "/J"])
+        .arg(link)
+        .arg(target)
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+        .is_ok_and(|s| s.success())
+}
+
+#[cfg(windows)]
+#[test]
+fn resolve_in_workdir_rejects_a_junction_out_of_the_worktree() {
+    let outside = tempfile::TempDir::new().unwrap();
+    std::fs::write(outside.path().join("secrets.txt"), "token").unwrap();
+    let (_dir, root) = workdir();
+    let link = root.join("escape");
+    if !junction(&link, outside.path()) {
+        eprintln!("skipping junction test: mklink /J failed (FAT32 or missing privilege?)");
+        return;
+    }
 
     let err = resolve_in_workdir(&root, "escape/secrets.txt").unwrap_err();
 

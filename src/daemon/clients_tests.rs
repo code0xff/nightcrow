@@ -1,7 +1,7 @@
 use super::AttachedClients;
 use crate::daemon::frame::Frame;
+use crate::daemon::transport::UnixStream;
 use std::io::Read;
-use std::os::unix::net::UnixStream;
 
 /// Attach a client, keeping the far end of its socket so a test can watch what
 /// the daemon does to the connection.

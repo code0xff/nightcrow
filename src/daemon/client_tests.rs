@@ -2,11 +2,11 @@ use super::DaemonClient;
 use crate::daemon::frame::{Frame, read_frame, write_frame};
 use crate::daemon::protocol::{ServerMessage, version};
 use crate::daemon::socket::DaemonSocket;
+use crate::daemon::transport::UnixListener;
 use crate::web::common::auth::Auth;
 use crate::web::viewer::prefs::PrefsStore;
 use crate::web::viewer::server::{ViewerOptions, ViewerState};
 use std::io::Write;
-use std::os::unix::net::UnixListener;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
