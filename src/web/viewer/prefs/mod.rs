@@ -65,7 +65,7 @@ pub struct ViewerPrefs {
     /// a different thing on a 40-row terminal than in a 1400 px window, so
     /// there is no single answer to converge on, and the PTY size it would
     /// appear to govern is already decided elsewhere by one owning client
-    /// (`terminal/size_owner.rs`) — so a shared ratio would move a spectator's
+    /// (`web/viewer/size_owner.rs`) — so a shared ratio would move a spectator's
     /// panel without moving the grid inside it. It sits with `fullscreen`,
     /// which is per-client for the same reason: how much room to give the
     /// terminal is a question about the screen you are looking at.

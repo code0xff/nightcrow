@@ -194,7 +194,7 @@ visible from the terminal pane.
 | `<prefix> t` | Open new terminal pane |
 | `<prefix> w` | Close active terminal pane — terminal focus only, since without it no pane is highlighted as the close target |
 | `<prefix> s` then `3`…`9`,`0` | Swap the active terminal pane with pane 1…8 (focus follows the pane; same pane numbering as the jump keys, so in terminal fullscreen the swap digits are `1`…`8`) — terminal focus only, like `w`, and needs at least two panes |
-| `<prefix> z` | Resize this project's terminal panes to fit this screen. The session gives the sizing to whichever client attached most recently — a PTY has one size, and a program drawing on an alternate screen cannot be re-flowed afterwards — so while another client (a second terminal, or the browser) holds it, this one renders that grid: padded if it is smaller than the pane, cropped if larger. Advertised in the hint bar only while that is the case |
+| `<prefix> z` | Resize the session's terminal panes to fit this screen. A PTY has one size and a program drawing on an alternate screen cannot be re-flowed afterwards, so one screen decides it for the whole session — whichever viewer opened most recently, until another asks. While someone else holds it (a second terminal, or a browser tab) this one renders that grid: padded if it is smaller than the pane, cropped if larger. Advertised in the hint bar only while that is the case |
 | `<prefix> c` | Give up on the recovery a plugin has pending for a pane — the held slot is released, so nothing can be relaunched into it, and every attached client is told. Targets the focused pane's recovery, or the pane whose process has already ended while its slot was being held (that pane has no tab to focus). Advertised in the hint bar only while something is actually pending |
 | `<prefix> l` | Toggle between status view and commit log view |
 | `<prefix> b` | Toggle the read-only file-tree view (returns to status view) |
@@ -460,6 +460,15 @@ view shows both sides (old, new), leaving a column blank where the line does
 not exist on that side; each split half shows the side it renders; and a file
 opened from the tree is numbered by its own lines. The gutter stays put while
 the code scrolls sideways, and the numbers stay out of anything you copy.
+
+Each terminal pane's toolbar has a **fit to this screen** button, the browser's
+half of the TUI's `<prefix> z`. It is offered only while another screen holds
+the sizing, because a PTY has one size for the whole session: the panes are
+fitted to whichever viewer opened most recently, and everyone else renders that
+grid until someone asks for it. Switching projects does not move it, and neither
+does a dropped connection coming back — a tab is one screen however many sockets
+it opens. Reloading the page counts as opening it, so it takes the sizing again,
+as a new tab would.
 
 Drag a terminal pane by its header onto another to reorder the split-view grid;
 it works with touch as well as a mouse. The order is kept on the server, so a
