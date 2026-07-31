@@ -13,7 +13,13 @@ use std::time::{Duration, Instant};
 
 /// A POSIX shell, resolved on `PATH`. Not `$SHELL`: an interactive shell would
 /// read the user's rc files on every single refresh.
+///
+/// On Windows, `cmd.exe` is used instead of `sh` — the recovery plugin runs
+/// alongside the host, and the host's panes use the configured shell.
+#[cfg(not(windows))]
 const SHELL: &str = "sh";
+#[cfg(windows)]
+const SHELL: &str = "cmd.exe";
 
 /// Most stdout to take from a displaced command. A statusline is one short line;
 /// this only stops a runaway script from growing this process.

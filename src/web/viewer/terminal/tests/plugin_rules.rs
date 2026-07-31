@@ -8,7 +8,7 @@
 
 use super::plugins::{fixture, recorder};
 use crate::backend::{PaneId, PaneToken, PtyBackend, TerminalBackend};
-use crate::config::StartupCommand;
+use crate::config::{ShellConfig, StartupCommand};
 use crate::plugin::Refused;
 use crate::plugin::protocol::{PROTOCOL_VERSION, PluginCommand};
 use crate::web::viewer::terminal::hub_plugins::{PANE_IDLE_THRESHOLD, Plugins};
@@ -92,7 +92,7 @@ fn a_plugin_that_will_not_launch_leaves_its_panes_unmanaged() {
 #[test]
 fn a_command_for_a_pane_that_did_not_opt_in_is_refused() {
     let f = fixture();
-    let mut backend = PtyBackend::new(f.cwd());
+    let mut backend = PtyBackend::new(f.cwd(), ShellConfig::default());
     let mut plugins = Plugins::start(&f.cwd(), &[recorder(PLUGIN, &f.log)], &[opt_in()]);
     let pane = backend
         .open_pane(ROWS, COLS, Some(LONG_RUNNING))
@@ -112,7 +112,7 @@ fn a_command_for_a_pane_that_did_not_opt_in_is_refused() {
 #[test]
 fn a_command_naming_a_stale_generation_is_refused_and_leaves_the_replacement_alone() {
     let f = fixture();
-    let mut backend = PtyBackend::new(f.cwd());
+    let mut backend = PtyBackend::new(f.cwd(), ShellConfig::default());
     let mut plugins = Plugins::start(&f.cwd(), &[recorder(PLUGIN, &f.log)], &[opt_in()]);
     let pane = backend
         .open_pane(ROWS, COLS, Some(LONG_RUNNING))

@@ -81,15 +81,17 @@ impl PtyBackend {
             pixel_height: 0,
         })?;
 
-        let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".to_string());
+        let shell = self.shell.resolved_program();
         let mut cmd = CommandBuilder::new(&shell);
-        // A reserved startup command runs through the login shell's `-lc`:
+        // A reserved startup command runs through the shell's configured args:
         // the command text is passed as a single argv item, so the shell —
         // not us — handles its quoting/word-splitting. This avoids the race
         // of spawning a shell and later injecting `command\r`, and avoids any
         // string interpolation into a wrapper on our side.
         if let Some(command) = command {
-            cmd.arg("-lc");
+            for arg in self.shell.command_args() {
+                cmd.arg(arg);
+            }
             cmd.arg(command);
         }
         cmd.env("TERM", "xterm-256color");

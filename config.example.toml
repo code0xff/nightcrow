@@ -74,8 +74,23 @@ max_depth = 64            # deepest directory level the tree will expand into (1
 live_watch = true         # watch expanded dirs and refresh the tree live; set false
                           # to refresh only on tree entry (large trees / odd filesystems)
 
+# The shell every terminal pane is spawned with. When the whole section is
+# absent, the platform default is used:
+#
+#   Unix    → $SHELL if set, else /bin/sh, with args ["-lc"]
+#   Windows → %ComSpec% if set, else cmd.exe, with args ["/C"]
+#
+# `command_args` is the flag list placed *after* the shell name. The command
+# text is always the last single argv item, so the shell — not us — handles
+# its quoting/word-splitting. Interpolation like `["-c", "{}"]` is not
+# supported: that would break the contract that the shell owns quoting.
+#
+# [shell]
+# program = "C:\\Program Files\\Git\\bin\\bash.exe"   # optional; platform default when omitted
+# command_args = ["-lc"]                               # optional; platform default when omitted
+
 # Reserve startup commands: each [[startup_command]] opens its own terminal
-# pane and runs `command` immediately (via `$SHELL -lc <command>`). Panes are
+# pane and runs `command` immediately (via the configured shell). Panes are
 # per project, so these run again for every project tab you open, not once
 # per process.
 # Up to 8 entries (combined with CLI --exec). 8 matches the <leader> 3–9,0

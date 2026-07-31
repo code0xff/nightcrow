@@ -143,6 +143,7 @@ pub(crate) fn run_daemon(
         &cfg.web_viewer,
         &cfg.agent_indicator,
         &cfg.theme,
+        &cfg.shell,
         &paths,
         true,
         startup,

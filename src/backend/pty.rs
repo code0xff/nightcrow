@@ -1,5 +1,6 @@
 use super::slot::{PaneSlot, PaneSlots};
 use super::{BackendEvent, PaneId, TerminalBackend};
+use crate::config::ShellConfig;
 use crate::platform::threading::try_timed_join;
 use anyhow::Result;
 use portable_pty::PtySize;
@@ -87,16 +88,19 @@ pub struct PtyBackend {
     /// reports every pane through the event stream so a caller cannot come to
     /// depend on an answer a remote backend has no way to give.
     created: Vec<BackendEvent>,
+    /// The shell every terminal pane is spawned with.
+    pub(super) shell: ShellConfig,
 }
 
 impl PtyBackend {
-    pub fn new(cwd: impl AsRef<Path>) -> Self {
+    pub fn new(cwd: impl AsRef<Path>, shell: ShellConfig) -> Self {
         Self {
             panes: BTreeMap::new(),
             slots: PaneSlots::default(),
             next_id: 1,
             cwd: cwd.as_ref().to_path_buf(),
             created: Vec::new(),
+            shell,
         }
     }
 

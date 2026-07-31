@@ -7,7 +7,7 @@ use super::plugin_rules::{COLS, LONG_RUNNING, PLUGIN, ROWS, opt_in, token_of};
 use super::plugins::{Fixture, fixture, logged_event, shell_plugin};
 use super::{attach, collect_created, created_pane, next_matching, spawn_hub};
 use crate::backend::{PaneId, PtyBackend};
-use crate::config::{PluginConfig, StartupCommand};
+use crate::config::{PluginConfig, ShellConfig, StartupCommand};
 use crate::web::viewer::terminal::TerminalSession;
 use crate::web::viewer::terminal::frame::{ClientMessage, TerminalFrame};
 use crate::web::viewer::terminal::hub_plugins::Plugins;
@@ -222,7 +222,7 @@ fn a_hold_that_runs_out_of_time_reports_the_pane_it_gave_up_on() {
     // so an expiry that retires the slot silently would leave every client
     // counting down to a moment that has passed.
     let f = fixture();
-    let mut backend = PtyBackend::new(f.cwd());
+    let mut backend = PtyBackend::new(f.cwd(), ShellConfig::default());
     let mut plugins = Plugins::start(&f.cwd(), &[reporter(PLUGIN, &f)], &[opt_in()]);
     let pane = backend
         .open_pane(ROWS, COLS, Some(LONG_RUNNING))

@@ -9,7 +9,7 @@
 use super::plugin_rules::{COLS, LONG_RUNNING, PLUGIN, ROWS, opt_in, token_of};
 use super::plugins::{fixture, recorder};
 use crate::backend::{PaneId, PaneToken, PtyBackend, TerminalBackend};
-use crate::config::PluginConfig;
+use crate::config::{PluginConfig, ShellConfig};
 use crate::plugin::protocol::{PROTOCOL_VERSION, PluginCommand};
 use crate::plugin::{Approved, Refused};
 use crate::web::viewer::terminal::hub_plugins::Plugins;
@@ -52,7 +52,7 @@ fn a_plugin_that_watches_on_signal_is_launched_with_no_pane_opted_in() {
 #[test]
 fn a_watch_request_bearing_a_live_panes_token_is_approved_and_the_pane_handed_over() {
     let f = fixture();
-    let mut backend = PtyBackend::new(f.cwd());
+    let mut backend = PtyBackend::new(f.cwd(), ShellConfig::default());
     let mut plugins = Plugins::start(&f.cwd(), &[signal_watcher(PLUGIN, &f.log)], &[]);
     let pane = backend
         .open_pane(ROWS, COLS, Some(LONG_RUNNING))
@@ -76,7 +76,7 @@ fn a_watch_request_from_a_plugin_without_the_switch_is_refused() {
     // The identical request, refused purely because the operator did not ask for
     // it: this is the only thing standing between a signal and a new association.
     let f = fixture();
-    let mut backend = PtyBackend::new(f.cwd());
+    let mut backend = PtyBackend::new(f.cwd(), ShellConfig::default());
     let mut plugins = Plugins::start(&f.cwd(), &[recorder(PLUGIN, &f.log)], &[opt_in()]);
     let pane = bare_pane(&mut backend);
     let token = token_of(&backend, pane);
@@ -97,7 +97,7 @@ fn a_watch_request_from_a_plugin_without_the_switch_is_refused() {
 fn a_watch_request_for_a_pane_another_plugin_holds_is_refused() {
     const OTHER: &str = "other";
     let f = fixture();
-    let mut backend = PtyBackend::new(f.cwd());
+    let mut backend = PtyBackend::new(f.cwd(), ShellConfig::default());
     let mut plugins = Plugins::start(
         &f.cwd(),
         &[
@@ -127,7 +127,7 @@ fn a_watch_request_for_a_token_this_host_never_minted_is_refused() {
     // A helper from another nightcrow session on the same machine: the socket is
     // per-user, so its tokens do reach us, and they must resolve to nothing.
     let f = fixture();
-    let backend = PtyBackend::new(f.cwd());
+    let backend = PtyBackend::new(f.cwd(), ShellConfig::default());
     let mut plugins = Plugins::start(&f.cwd(), &[signal_watcher(PLUGIN, &f.log)], &[]);
     let stranger = PaneToken::new().expect("OS RNG");
 
@@ -144,7 +144,7 @@ fn a_pane_handed_over_on_a_signal_can_never_be_relaunched() {
     // nothing: the pane is a shell, so a relaunch would restart the shell rather
     // than the session the plugin was recovering.
     let f = fixture();
-    let mut backend = PtyBackend::new(f.cwd());
+    let mut backend = PtyBackend::new(f.cwd(), ShellConfig::default());
     let mut plugins = Plugins::start(&f.cwd(), &[signal_watcher(PLUGIN, &f.log)], &[]);
     let pane = bare_pane(&mut backend);
     let token = token_of(&backend, pane);
@@ -180,7 +180,7 @@ fn an_exited_pane_with_no_command_is_not_worth_holding_a_slot_for() {
     // can never be relaunched must take the closing path instead — otherwise a
     // shell that exited would keep its slot for the whole window.
     let f = fixture();
-    let mut backend = PtyBackend::new(f.cwd());
+    let mut backend = PtyBackend::new(f.cwd(), ShellConfig::default());
     let bare = bare_pane(&mut backend);
     let launched = backend
         .open_pane(ROWS, COLS, Some(LONG_RUNNING))

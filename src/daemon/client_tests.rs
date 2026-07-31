@@ -33,6 +33,7 @@ fn daemon(dir: &tempfile::TempDir, repos: &[String]) -> TestDaemon {
         persist: false,
         startup_commands: Vec::new(),
         cli_startup: Vec::new(),
+        shell: crate::config::ShellConfig::default(),
         hot: crate::config::AgentIndicatorConfig::default(),
         // In the test's own directory, beside the socket: opening a repository
         // records it as the active one, so this file is written, and a path

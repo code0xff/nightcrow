@@ -98,10 +98,31 @@ live_watch = true         # watch expanded dirs and refresh the tree live; set f
                           # to refresh only on tree entry (large trees / odd filesystems)
 ```
 
+## `[shell]`
+
+The shell every terminal pane is spawned with. When the whole section is absent,
+the platform default is used:
+
+| Platform | `program`                     | `command_args` |
+|----------|-------------------------------|----------------|
+| Unix     | `$SHELL` env var or `/bin/sh` | `["-lc"]`      |
+| Windows  | `%ComSpec%` or `cmd.exe`      | `["/C"]`       |
+
+`command_args` is the flag list placed *after* the shell name. The command text
+is always the last single argv item, so the shell — not us — handles its
+quoting/word-splitting. Interpolation like `["-c", "{}"]` is not supported: that
+would break the contract that the shell owns quoting.
+
+```toml
+[shell]
+# program = "C:\\Program Files\\Git\\bin\\bash.exe"   # optional; platform default when omitted
+# command_args = ["-lc"]                               # optional; platform default when omitted
+```
+
 ## `[[startup_command]]`
 
 Each entry opens its own terminal pane at launch and runs `command` immediately
-(via `$SHELL -lc <command>`). Up to 8 entries combined with CLI `--exec` — 8
+(via the configured shell). Up to 8 entries combined with CLI `--exec` — 8
 matches the `<prefix> 3`–`9`,`0` jump keys, so every startup pane is reachable by
 a direct key. This caps only the startup batch; open more anytime with
 `<prefix> t`. With no entries, nightcrow opens a single empty shell.

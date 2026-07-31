@@ -8,7 +8,7 @@
 use super::plugin_reload::{plugin_with_log, respawning};
 use super::plugins::fixture;
 use crate::backend::{PtyBackend, TerminalBackend};
-use crate::config::PluginConfig;
+use crate::config::{PluginConfig, ShellConfig};
 use crate::web::viewer::terminal::hub_plugins::Plugins;
 use std::collections::HashMap;
 
@@ -22,7 +22,7 @@ use std::collections::HashMap;
 #[test]
 fn a_plugin_no_startup_pane_names_is_kept_while_it_watches_a_live_pane() {
     let f = fixture();
-    let mut backend = PtyBackend::new(f.cwd());
+    let mut backend = PtyBackend::new(f.cwd(), ShellConfig::default());
     let watcher = PluginConfig {
         watch_on_signal: true,
         ..plugin_with_log(&f, "signal").0
@@ -68,7 +68,7 @@ fn a_replaced_plugin_does_not_leave_a_relaunch_hold_behind() {
     use std::time::Instant;
 
     let f = fixture();
-    let mut backend = PtyBackend::new(f.cwd());
+    let mut backend = PtyBackend::new(f.cwd(), ShellConfig::default());
     let (cfg, _log) = plugin_with_log(&f, "recovery");
     // `opt_in()` names the plugin `plugin_rules` uses, so match it.
     let cfg = PluginConfig {
@@ -131,7 +131,7 @@ fn a_replacement_that_will_not_spawn_gives_up_the_panes_it_was_keeping() {
     use super::plugin_rules::{COLS, LONG_RUNNING, ROWS, opt_in};
 
     let f = fixture();
-    let mut backend = PtyBackend::new(f.cwd());
+    let mut backend = PtyBackend::new(f.cwd(), ShellConfig::default());
     let (cfg, _log) = plugin_with_log(&f, "recovery");
     let cfg = PluginConfig {
         name: opt_in().plugin.clone().expect("the fixture opts in"),
