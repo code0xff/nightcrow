@@ -60,8 +60,17 @@ impl DaemonSocket {
             std::fs::remove_file(path)
                 .with_context(|| format!("removing the stale socket {}", path.display()))?;
         }
-        let listener = UnixListener::bind(path)
-            .with_context(|| format!("binding the daemon socket {}", path.display()))?;
+        let listener = UnixListener::bind(path).with_context(|| {
+            let len = path.as_os_str().len();
+            if len >= 108 {
+                format!(
+                    "binding the daemon socket {} — the path is {len} bytes, over the ~107 byte AF_UNIX limit",
+                    path.display()
+                )
+            } else {
+                format!("binding the daemon socket {}", path.display())
+            }
+        })?;
         // Narrowed after binding, which is the only order available: bind
         // creates the file. The window is between two syscalls in a directory
         // the user already owns, and the umask usually closes it first anyway.

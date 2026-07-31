@@ -9,7 +9,6 @@
 use anyhow::{Context, Result};
 use serde_json::{Map, Value, json};
 use std::fs;
-use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 
 #[path = "hooks_merge.rs"]
@@ -30,8 +29,22 @@ const BACKUP_FILE: &str = "settings.json.bak";
 const SIDECAR_FILE: &str = "nightcrow-recovery.displaced.json";
 
 /// `settings.json` is user configuration in the user's home directory: readable
-/// and writable by its owner only.
+/// and writable by its owner only. On Windows the default ACL on a user-home
+/// file already suffices, so the mode is only applied on Unix.
 const SETTINGS_MODE: u32 = 0o600;
+
+/// Restrict a path to its owner on platforms where that is meaningful.
+#[cfg(unix)]
+fn restrict_to_owner(path: &Path, mode: u32) -> Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+    fs::set_permissions(path, fs::Permissions::from_mode(mode))
+        .map_err(|e| anyhow::anyhow!("cannot set mode on {}: {e}", path.display()))
+}
+
+#[cfg(not(unix))]
+fn restrict_to_owner(_path: &Path, _mode: u32) -> Result<()> {
+    Ok(())
+}
 
 /// Where the Claude Code settings we edit live. A struct so tests can point at a
 /// temp dir instead of the real home directory.
@@ -54,15 +67,11 @@ impl SettingsPaths {
         }
     }
 
-    /// Resolves `$HOME`, erroring when it is unset.
+    /// Resolves the home directory, erroring when it cannot be determined.
     pub fn discover() -> Result<Self> {
-        let home = std::env::var("HOME")
-            .map_err(|_| anyhow::anyhow!("HOME is unset, so ~/{CLAUDE_DIR} cannot be located"))?;
-        anyhow::ensure!(
-            !home.is_empty(),
-            "HOME is empty, so ~/{CLAUDE_DIR} cannot be located"
-        );
-        Ok(Self::from_home(Path::new(&home)))
+        let home =
+            dirs::home_dir().context("no home directory, so ~/{CLAUDE_DIR} cannot be located")?;
+        Ok(Self::from_home(&home))
     }
 }
 
@@ -207,8 +216,8 @@ fn write_json(path: &Path, value: &Value) -> Result<()> {
     let temp = path.with_extension("json.tmp");
     fs::write(&temp, &text).map_err(|e| anyhow::anyhow!("cannot write {}: {e}", temp.display()))?;
     // Mode is set before the rename, so the target is never briefly world-readable.
-    fs::set_permissions(&temp, fs::Permissions::from_mode(SETTINGS_MODE))
-        .map_err(|e| anyhow::anyhow!("cannot set mode on {}: {e}", temp.display()))?;
+    // On Windows the default ACL on a user-home file already suffices.
+    restrict_to_owner(&temp, SETTINGS_MODE)?;
     fs::rename(&temp, path).map_err(|e| {
         anyhow::anyhow!(
             "cannot rename {} to {}: {e}",
