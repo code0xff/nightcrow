@@ -64,10 +64,9 @@ rust-embed = { version = "8.12.0", features = ["interpolate-folder-path", "mime-
 # and `ctrlc` handles only SIGINT. signal-hook is the widely-adopted crate for
 # the rest and needs no async runtime.
 signal-hook = "0.4"
-# `flock` for the daemon's single-instance lock — the one POSIX call std does
-# not expose. Already in the tree through several dependencies, so this only
-# names it directly; the daemonize crates were not adopted (see
-# docs/decisions.md).
+# `localtime_r` for the wall clock and `access(X_OK)` for plugin executability
+# — the two POSIX calls std does not expose. The single-instance lock used to
+# be here too; it moved to std's `File::try_lock` (see src/daemon/lock.rs).
 libc = "0.2"
 
 [dev-dependencies]
