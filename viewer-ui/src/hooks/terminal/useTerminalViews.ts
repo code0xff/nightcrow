@@ -80,6 +80,15 @@ export function useTerminalViews({
       if (queued) {
         for (const chunk of queued) term.write(chunk);
         pendingRef.current.delete(pane);
+        // A replayed pane is history, and what a person wants from history is
+        // its end — the last thing the program said, not wherever the write
+        // happened to leave the viewport.
+        //
+        // Queued behind the replay rather than run after the loop: `write`
+        // parses on a later task, so scrolling here directly would run while
+        // the parser was still catching up and land on a buffer that had not
+        // finished growing.
+        term.write("", () => term.scrollToBottom());
       }
     }
 

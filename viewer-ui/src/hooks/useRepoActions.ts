@@ -9,7 +9,6 @@ export interface UseRepoActionsArgs {
   setPane: React.Dispatch<React.SetStateAction<Pane>>;
   setTab: React.Dispatch<React.SetStateAction<Tab>>;
   setPickerOpen: React.Dispatch<React.SetStateAction<boolean>>;
-  dropMaximized: (id: string) => void;
   handle: (err: unknown) => void;
   orderWrites: React.MutableRefObject<number>;
 }
@@ -21,7 +20,6 @@ export function useRepoActions({
   setPane,
   setTab,
   setPickerOpen,
-  dropMaximized,
   handle,
   orderWrites,
 }: UseRepoActionsArgs) {
@@ -50,12 +48,11 @@ export function useRepoActions({
         setRepo((current) =>
           current === id ? (remaining[0]?.id ?? null) : current,
         );
-        dropMaximized(id);
       } catch (err) {
         handle(err);
       }
     },
-    [repos, setRepos, setRepo, dropMaximized, handle, orderWrites],
+    [repos, setRepos, setRepo, handle, orderWrites],
   );
 
   return { selectOpenedRepo, closeRepo };

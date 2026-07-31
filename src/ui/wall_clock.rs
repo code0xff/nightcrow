@@ -1,9 +1,9 @@
 //! Turning a unix epoch second into the `HH:MM` a person reads off their own
 //! clock.
 //!
-//! Hand-rolled because nightcrow has no date crate and a deadline is the only
-//! absolute time it ever renders: adding `chrono`/`time` for two integers would
-//! buy a dependency and its transitive tree for one format string.
+//! Hand-rolled because nightcrow has no date crate: adding `chrono`/`time` for
+//! a handful of integers would buy a dependency and its transitive tree for two
+//! format strings.
 
 #[cfg(any(not(unix), test))]
 const SECS_PER_MINUTE: i64 = 60;
@@ -18,15 +18,34 @@ const SECS_PER_DAY: i64 = 86_400;
 /// `None` rather than a fallback on purpose: a wrong wall-clock time reads as
 /// fact, and the caller is expected to show nothing instead.
 pub(crate) fn local_hour_minute(epoch: i64) -> Option<String> {
-    let (hour, minute) = local_hm(epoch)?;
-    Some(format!("{hour:02}:{minute:02}"))
+    let t = local_parts(epoch)?;
+    Some(format!("{:02}:{:02}", t.hour, t.minute))
+}
+
+/// `YYYY-MM-DD HH:MM` in the machine's local zone, with the same `None`
+/// contract as [`local_hour_minute`].
+pub(crate) fn local_date_time(epoch: i64) -> Option<String> {
+    let t = local_parts(epoch)?;
+    Some(format!(
+        "{:04}-{:02}-{:02} {:02}:{:02}",
+        t.year, t.month, t.day, t.hour, t.minute
+    ))
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) struct DateTimeParts {
+    pub year: i64,
+    pub month: u32,
+    pub day: u32,
+    pub hour: u32,
+    pub minute: u32,
 }
 
 // The conversion is identity where `time_t` is 64-bit and a real narrowing check
 // where it is 32-bit, so it has to stay even though it looks redundant here.
 #[allow(clippy::useless_conversion)]
 #[cfg(unix)]
-fn local_hm(epoch: i64) -> Option<(u32, u32)> {
+fn local_parts(epoch: i64) -> Option<DateTimeParts> {
     let seconds: libc::time_t = epoch.try_into().ok()?;
     let mut parts: libc::tm = unsafe { std::mem::zeroed() };
     // SAFETY: `seconds` is a live `time_t` and `parts` a live `tm` for the whole
@@ -36,18 +55,22 @@ fn local_hm(epoch: i64) -> Option<(u32, u32)> {
     if filled.is_null() {
         return None;
     }
-    Some((
-        u32::try_from(parts.tm_hour).ok()?,
-        u32::try_from(parts.tm_min).ok()?,
-    ))
+    Some(DateTimeParts {
+        // `tm` counts years from 1900 and months from 0.
+        year: i64::from(parts.tm_year) + 1900,
+        month: u32::try_from(parts.tm_mon).ok()? + 1,
+        day: u32::try_from(parts.tm_mday).ok()?,
+        hour: u32::try_from(parts.tm_hour).ok()?,
+        minute: u32::try_from(parts.tm_min).ok()?,
+    })
 }
 
 /// UTC on platforms with no `localtime_r`. The zone database is the OS's to
 /// expose, and guessing an offset would be worse than being explicit about the
 /// one this falls back to.
 #[cfg(not(unix))]
-fn local_hm(epoch: i64) -> Option<(u32, u32)> {
-    utc_hm(epoch)
+fn local_parts(epoch: i64) -> Option<DateTimeParts> {
+    utc_parts(epoch)
 }
 
 /// `HH:MM` in UTC, which is what the epoch already counts.
@@ -55,27 +78,83 @@ fn local_hm(epoch: i64) -> Option<(u32, u32)> {
 /// `epoch.rem_euclid` rather than `%` so a pre-1970 timestamp lands on the right
 /// side of midnight instead of producing a negative hour.
 #[cfg(any(not(unix), test))]
-fn utc_hm(epoch: i64) -> Option<(u32, u32)> {
+fn utc_parts(epoch: i64) -> Option<DateTimeParts> {
     let into_day = epoch.rem_euclid(SECS_PER_DAY);
+    let (year, month, day) = civil_from_days(epoch.div_euclid(SECS_PER_DAY))?;
+    Some(DateTimeParts {
+        year,
+        month,
+        day,
+        hour: u32::try_from(into_day / SECS_PER_HOUR).ok()?,
+        minute: u32::try_from((into_day % SECS_PER_HOUR) / SECS_PER_MINUTE).ok()?,
+    })
+}
+
+/// Days since the epoch to a proleptic Gregorian date, via Howard Hinnant's
+/// `civil_from_days`: shift the era to start in March so the leap day lands at
+/// the end of a year and the month arithmetic needs no table.
+#[cfg(any(not(unix), test))]
+fn civil_from_days(days: i64) -> Option<(i64, u32, u32)> {
+    let z = days + 719_468;
+    let era = z.div_euclid(146_097);
+    let doe = z.rem_euclid(146_097);
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+    let y = yoe + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
     Some((
-        u32::try_from(into_day / SECS_PER_HOUR).ok()?,
-        u32::try_from((into_day % SECS_PER_HOUR) / SECS_PER_MINUTE).ok()?,
+        if m <= 2 { y + 1 } else { y },
+        u32::try_from(m).ok()?,
+        u32::try_from(d).ok()?,
     ))
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{local_hour_minute, utc_hm};
+    use super::{civil_from_days, local_date_time, local_hour_minute, utc_parts};
+
+    fn hm(epoch: i64) -> Option<(u32, u32)> {
+        utc_parts(epoch).map(|t| (t.hour, t.minute))
+    }
 
     #[test]
     fn the_epoch_itself_is_midnight_utc() {
-        assert_eq!(utc_hm(0), Some((0, 0)));
+        assert_eq!(hm(0), Some((0, 0)));
     }
 
     #[test]
     fn a_timestamp_before_the_epoch_stays_inside_the_day() {
         // One minute before 1970 is 23:59, not a negative hour.
-        assert_eq!(utc_hm(-60), Some((23, 59)));
+        assert_eq!(hm(-60), Some((23, 59)));
+    }
+
+    #[test]
+    fn the_epoch_itself_is_the_first_of_january_1970() {
+        assert_eq!(civil_from_days(0), Some((1970, 1, 1)));
+    }
+
+    #[test]
+    fn a_day_before_the_epoch_is_the_last_of_december_1969() {
+        assert_eq!(civil_from_days(-1), Some((1969, 12, 31)));
+    }
+
+    #[test]
+    fn a_leap_day_is_placed_on_the_twenty_ninth_of_february() {
+        // 2024-02-29 00:00 UTC.
+        assert_eq!(civil_from_days(19_782), Some((2024, 2, 29)));
+    }
+
+    #[test]
+    fn a_commit_time_renders_as_a_date_and_a_clock() {
+        let rendered = local_date_time(1_700_000_000).expect("a plausible commit time must render");
+        assert_eq!(rendered.len(), 16, "{rendered}");
+    }
+
+    #[test]
+    fn a_commit_time_no_platform_clock_can_place_renders_nothing() {
+        assert_eq!(local_date_time(i64::MIN), None);
     }
 
     #[test]

@@ -166,6 +166,7 @@ fn snapshot_refresh_with_no_filter_matches_clears_file_view() {
             tracking: None,
             head_oid: None,
             branch_name: None,
+            refs_fingerprint: 0,
         },
         HashMap::new(),
     ))

@@ -9,6 +9,7 @@ fn snapshot_with(paths: &[&str]) -> RepoSnapshot {
         tracking: None,
         head_oid: None,
         branch_name: None,
+        refs_fingerprint: 0,
     }
 }
 

@@ -1,6 +1,7 @@
 import { useRef } from "react";
 import { useRepoPoll, type UseRepoPollResult } from "./useRepoPoll";
 import { useRepoOrder } from "./useRepoOrder";
+import type { MaximizedByRepo } from "../api";
 
 export interface UseProjectTabsArgs {
   authed: boolean | null;
@@ -10,9 +11,11 @@ export interface UseProjectTabsArgs {
   adoptAccent: (accent: number) => void;
   adoptSidebarWidth: (px: number) => void;
   adoptUpperPct: (pct: number) => void;
+  adoptMaximized: (remote: MaximizedByRepo) => void;
   accentWrites: React.MutableRefObject<number>;
   sidebarWrites: React.MutableRefObject<number>;
   upperPctWrites: React.MutableRefObject<number>;
+  maximizedWrites: React.MutableRefObject<number>;
   /** True while the sidebar divider is being dragged, so a poll does not adopt
    *  a width the user is still choosing. */
   draggingRef: React.MutableRefObject<boolean>;
@@ -39,9 +42,11 @@ export function useProjectTabs({
   adoptAccent,
   adoptSidebarWidth,
   adoptUpperPct,
+  adoptMaximized,
   accentWrites,
   sidebarWrites,
   upperPctWrites,
+  maximizedWrites,
   draggingRef,
   upperDraggingRef,
 }: UseProjectTabsArgs): UseRepoPollResult & {
@@ -64,11 +69,13 @@ export function useProjectTabs({
     adoptAccent,
     adoptSidebarWidth,
     adoptUpperPct,
+    adoptMaximized,
     draggingRef,
     upperDraggingRef,
     accentWrites,
     sidebarWrites,
     upperPctWrites,
+    maximizedWrites,
     resumeTick,
     orderWrites,
     repoDraggingRef,

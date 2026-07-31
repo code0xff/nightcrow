@@ -127,6 +127,17 @@ pub fn active_repo(state: &ViewerState) -> Option<String> {
     })
 }
 
+/// Record how the project named by `id` is arranged. `None` un-maximizes.
+pub fn set_maximized(
+    state: &ViewerState,
+    id: &str,
+    panel: Option<crate::web::viewer::prefs::MaximizedPanel>,
+) -> Result<(), CloseError> {
+    let entry = state.catalog.get(id).ok_or(CloseError::UnknownRepo)?;
+    state.prefs.set_maximized(entry.path.clone(), panel);
+    Ok(())
+}
+
 /// Focus the repository named by `id` for the whole session.
 ///
 /// Which project is in front is shared, not per-client: the daemon owns it, and

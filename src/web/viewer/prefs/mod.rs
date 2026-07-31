@@ -16,6 +16,9 @@
 //! counterpart to share with, and the second has one (`layout.upper_pct`) that
 //! it is deliberately not shared with — see the field's own comment.
 
+pub mod maximized;
+pub use maximized::{MaximizedPanel, RepoMaximized};
+
 use crate::config::Accent;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
@@ -43,9 +46,13 @@ pub const DEFAULT_UPPER_PCT: u32 = 55;
 pub const MIN_UPPER_PCT: u32 = 20;
 pub const MAX_UPPER_PCT: u32 = 85;
 
-/// Everything the viewer remembers for its clients. One shared value, not one
-/// per repository: repo ids are only stable for the process lifetime
-/// (`catalog.rs`), so a per-repo key would drop the preference on restart.
+/// Everything the viewer remembers for its clients.
+///
+/// One shared value each, with `maximized` the single exception — and the
+/// reason the others are not per repository is worth keeping in view: repo ids
+/// are only stable for the process lifetime (`catalog.rs`), so a per-repo key
+/// would drop the preference on restart. What makes the exception safe is that
+/// it is keyed by **path**, as `active_repo` already is.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(default)]
 pub struct ViewerPrefs {
@@ -83,6 +90,9 @@ pub struct ViewerPrefs {
     /// back to its first tab — then records whichever project it landed on, so
     /// what is on file is always somewhere a client actually was.
     pub active_repo: Option<String>,
+    /// Which panel each project was left maximized in, most recently set
+    /// first. Empty until someone maximizes something; see [`maximized`].
+    pub maximized: Vec<RepoMaximized>,
 }
 
 impl Default for ViewerPrefs {
@@ -92,6 +102,7 @@ impl Default for ViewerPrefs {
             sidebar_width: DEFAULT_SIDEBAR_WIDTH,
             upper_pct: DEFAULT_UPPER_PCT,
             active_repo: None,
+            maximized: Vec::new(),
         }
     }
 }
@@ -138,13 +149,17 @@ impl PrefsStore {
     /// Load from `path`, falling back to `absent` when there is nothing to read.
     /// A hand-edited file can carry a width or a split outside the bounds; clamp
     /// them on load so `get` never serves a value the write path would have
-    /// rejected.
+    /// rejected. The remembered arrangements are held to the same bound for the
+    /// same reason: a file that arrived with more than the cap — hand-edited, or
+    /// written by a build whose cap was higher — would otherwise stay that long
+    /// forever, since the write path only trims what it just pushed onto.
     fn at_or(path: PathBuf, absent: ViewerPrefs) -> Self {
         let mut state = read(&path).unwrap_or(absent);
         state.sidebar_width = state
             .sidebar_width
             .clamp(MIN_SIDEBAR_WIDTH, MAX_SIDEBAR_WIDTH);
         state.upper_pct = state.upper_pct.clamp(MIN_UPPER_PCT, MAX_UPPER_PCT);
+        maximized::normalize(&mut state.maximized);
         Self {
             path: Some(path),
             state: Mutex::new(state),
@@ -193,6 +208,19 @@ impl PrefsStore {
             if let Some(path) = change.active_repo {
                 state.active_repo = Some(path);
             }
+            if let Some(change) = change.maximized {
+                maximized::remember(&mut state.maximized, &change.repo, change.panel);
+            }
+        })
+    }
+
+    /// Record how one project's screen is arranged. Thin wrapper over
+    /// [`update`], taking the absolute path the caller resolved from a live
+    /// repository. `None` un-maximizes.
+    pub fn set_maximized(&self, repo: String, panel: Option<MaximizedPanel>) -> ViewerPrefs {
+        self.update(PrefsUpdate {
+            maximized: Some(MaximizedUpdate { repo, panel }),
+            ..PrefsUpdate::default()
         })
     }
 
@@ -242,6 +270,18 @@ pub struct PrefsUpdate {
     pub sidebar_width: Option<u32>,
     pub upper_pct: Option<u32>,
     pub active_repo: Option<String>,
+    pub maximized: Option<MaximizedUpdate>,
+}
+
+/// One project's arrangement, as a write carries it. Two `Option`s deep because
+/// the outer one means "this request said nothing about maximizing" and the
+/// inner one means "this project is no longer maximized" — collapsing them
+/// would make un-maximizing indistinguishable from not mentioning it.
+#[derive(Debug, Clone)]
+pub struct MaximizedUpdate {
+    /// Absolute worktree path, resolved by the caller from a live repository.
+    pub repo: String,
+    pub panel: Option<MaximizedPanel>,
 }
 
 /// Defaults with the accent a config seed asks for. Wrapped into the cycle here

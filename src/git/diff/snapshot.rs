@@ -64,6 +64,7 @@ pub fn load_snapshot(repo: &Repository) -> Result<RepoSnapshot> {
         tracking,
         head_oid,
         branch_name,
+        refs_fingerprint: crate::git::diff::refs::refs_fingerprint(repo),
     })
 }
 

@@ -889,6 +889,33 @@ hint bar는 오버레이(repo 입력·prefix armed·swap target)가 열리면 �
 
 snapshot worker는 매 폴 사이클마다 현재 HEAD oid를 함께 보고한다. UI 스레드는 `poll_snapshot`에서 oid 변동을 감지하면 `refresh_commit_log_after_head_change`로 commit log와 drill-down 상태를 동일 oid 기준으로 재정렬해, 터미널에서 새 커밋·amend·force-push·브랜치 전환이 일어났을 때도 로그 뷰가 즉시 따라잡는다.
 
+### Commit Log Decoration
+
+`git log --decorate`가 주는 방향 감각을 로그 뷰에 옮긴 것이다. `src/git/diff/refs.rs`가
+`repo.references()`를 한 번 걸어 `Oid -> Vec<RefLabel>` 맵을 만들고, HEAD·로컬 브랜치·태그·
+원격 브랜치를 구분해 커밋 행에 chip으로 그린다. 비용은 커밋 수가 아니라 **ref 수**에
+비례하고, annotated tag은 `peel_to_commit`으로 가리키는 커밋에 붙인다.
+
+- **재생성 시점은 refs fingerprint가 정한다**: fetch가 `origin/dev`를 옮기면 HEAD는
+  그대로여도 chip은 달라져야 한다. snapshot worker가 매 폴마다 ref 이름·타깃의 다이제스트를
+  `RepoSnapshot::refs_fingerprint`로 실어 보내고, UI 스레드는 그 값이 바뀔 때만 맵을 다시
+  만든다. 재생성 실패는 이전 맵을 유지한다 — 일시적 읽기 오류로 chip이 사라지는 것보다
+  낫다.
+- **ahead/behind는 위치가 아니라 oid 집합으로 판정한다**: 이전 구현은 "위에서 N개가
+  ahead"라는 위치 가정이었고, anchor가 HEAD가 아니거나 필터가 걸리면 마커가 엉뚱한 행에
+  붙었다. 지금은 `revwalk.push(local)` + `hide(upstream)`(과 그 반대)로 각 방향의 oid
+  집합을 만들어 멤버십으로 판정한다. 집합은 방향당 `MAX_DIVERGENCE_OIDS`개로 끊는다 —
+  walk가 최신순이므로 잘리는 쪽은 화면에 닿지 않는 꼬리다.
+- **1 커밋 = 1 행을 유지한다**: `log_view.selected`가 커밋 인덱스이자 화면 위치라는 전제를
+  선택·스크롤·tail prefetch가 공유한다. 여유 공간은 행이 아니라 **컬럼**으로 쓴다.
+  `area.width >= MIN_DETAIL_WIDTH`이면 상대 시각 대신 절대 시각, author에 email, short_id
+  10자, chip 무절단으로 넓힌다. 판정 기준이 `list_fullscreen` 플래그가 아니라 폭인 이유는
+  넓은 모니터에서는 fullscreen이 아니어도 자리가 남기 때문이고, 이는
+  `diff_viewer::MIN_SPLIT_WIDTH`가 이미 세운 선례와 같은 모양이다.
+- **commit graph는 범위 밖이다**: lane graph는 topological 정렬을 전제하는데 현재 revwalk에는
+  `set_sorting`이 없고, 정렬을 바꾸면 위의 anchor+skip 페이지네이션 계약까지 함께 다시
+  설계해야 한다.
+
 ### Plugin Host (`src/plugin/`, `plugins/`)
 
 어떤 CLI가 사용량 한도에 걸렸는지 알아보고 한도가 풀린 뒤 세션을 재개하는 일은 provider를
@@ -1135,6 +1162,12 @@ UI·터미널·저장소 상태, `lib/`는 API 이외의 순수 도메인/레이
 - **줄 번호 gutter는 sticky 칼럼이다**(`viewer-ui/src/components/LineNos.tsx`, `lib/gutter.ts`). TUI가 gutter를 본문과 별개 `Paragraph`로 두는 이유 — 수평 스크롤이 라인을 통째로 밀어 번호가 왼쪽으로 사라진다 — 는 웹에도 그대로 있고, 그 대응물이 `position: sticky; left: 0`이다. 그래서 셀에는 **불투명 배경이 필수**다: kind 틴트(`bg-added/10`)가 반투명이라 베이스가 없으면 밑을 지나가는 코드가 번호 위로 비친다. 셀은 불투명 베이스 위에 행과 같은 틴트를 한 겹 더 얹어, 파낸 홈이 아니라 행의 일부로 읽히게 한다. 폭은 `linenoDigits`가 **diff 전체**의 최대 번호에서 뽑는다(hunk마다 다시 계산하면 hunk 경계를 지날 때 코드의 좌측 경계가 계단진다). 최소 3자리는 TUI의 `MIN_LINENO_DIGITS`와 같은 값이다. 번호는 `select-none`이라 코드를 복사해도 딸려오지 않는다 — `+`/`-` 마커와 같은 처리다. **파일 뷰의 번호는 프로토콜에 없다**: 인덱스가 곧 번호라 서버가 실어 보낼 이유가 없고, `old_lineno`/`new_lineno`는 diff에만 붙는다(`dto/diff.rs`, optional이라 그 줄이 없는 쪽은 필드 자체가 빠진다). hunk 헤더는 TUI와 달리 gutter 자리를 비우지 않고 폭 전체를 쓰는 띠로 남긴다 — 웹에서는 헤더가 배경으로 구분되는 별도 띠라, `@@`를 본문 좌측 경계에 맞출 이유가 사라진다.
 
 - **사이드바 너비는 divider 드래그로 조절한다**(`viewer-ui/src/hooks/ui/sidebar.ts`). 파일 목록과 diff pane 사이 경계에 얇은 핸들을 두고, 드래그하면 pointer의 사이드바 왼쪽 모서리 기준 거리로 폭을 잡는다(원점은 드래그 시작에 한 번만 재서, 중간 re-layout이 pointer 아래로 원점을 옮기지 못하게 한다). **저장은 accent와 같은 서버 전역**(`~/.nightcrow/viewer.json`, `prefs.rs`)이라 폰·노트북이 같은 split으로 열리고, 첫 페인트 캐시로 localStorage도 함께 쓴다. **저장값은 절대 `[280, 720]px`뿐**(서버가 방어, `adopt`/load도 이 범위로만 clamp)이라, 넓은 화면에서 정한 폭이 좁은 화면에서 읽혀도 잘려 사라지지 않는다. **뷰포트 50% 상한은 표시에만 건다** — grid track이 `min(px, 50vw)`라 창이 좁아지면 폴링이나 드래그를 기다리지 않고 즉시 diff pane이 최소 절반을 지키고, 넓히면 저장값까지 곧바로 회복한다(폰에서 실제로 걸리는 건 이 비율, 큰 모니터에서 720px). 드래그 입력(`resize`)에도 같은 50% 상한을 걸어 divider가 pointer를 놓치지 않게 한다. 드래그 중에는 로컬 상태만 갱신해 pixel마다 요청하지 않고, 놓는 순간(`commit`) 한 번 `POST /api/prefs`로 쓴다 — 단 **가로로 유의미하게(≥`SIDEBAR_DRAG_THRESHOLD_PX`) 움직였을 때만** 커밋한다. 순수 클릭이나 세로 흔들림은 커밋하지 않는데, 표시폭이 `50vw`로 잘린 상태에서 그런 입력이 잘린 값을 절대 저장값에 덮어쓰는 걸 막기 위해서다. 순서 문제는 accent와 같은 방식으로 막는다 — 드래그 직전 출발한 폴링이 옛 폭을 늦게 들고 오면 스냅백하므로 `useViewerPrefs`가 로컬 쓰기 횟수를 세어 자기보다 오래된 응답의 width를 버리고, 드래그가 살아 있는 동안(`draggingRef`)은 어떤 폴링도 채택하지 않는다. **남는 한계도 accent와 동일**하다: 쓰기는 fire-and-forget이라 커밋 직후 POST가 서버에 닿기 전 출발한 폴링 한 번은 옛 폭을 읽어 잠깐 스냅백할 수 있고(다음 폴링이 교정), 빠른 두 드래그의 POST가 역순 도착하면 서버가 옛 값으로 남을 수 있다. 이 전이는 스스로 수렴하고 여러 기기를 동시에 만지는 단일 사용자의 드문 경우라, accent와 같은 단순한 poll 동기화를 유지하려 write-generation/시퀀싱을 넣지 않는다. **divider 더블클릭은 기본 폭(460)으로 복구**한다 — resize 핸들의 관례다. 복구는 뷰포트 캡이 아니라 절대 기본값을 저장해(좁은 화면에서 눌러도 460), 표시는 CSS `min`이 캡한다. 더블클릭은 네이티브 `dblclick` 대신 pointer 핸들러 안에서 판정하는데, 드래그의 `preventDefault`가 합성 click 이벤트를 삼킬 수 있어서다. primary 버튼·완결된(취소 아닌) 클릭 쌍만 인정한다. divider는 md+ 2컬럼 레이아웃에서만 뜬다(그 아래는 스택 단일 컬럼), pane maximize 시엔 숨는다.
+
+- **패널 최대화는 프로젝트별로 저장한다**(`prefs/maximized.rs`). 브라우저의 ⤢ 버튼은 순수 React 상태여서 새로고침이면 사라졌다. "이 프로젝트의 화면을 어떻게 배치했나"는 **view state**이고, TUI는 그것을 세션 파일에 프로젝트별로(`terminal_fullscreen`·`diff_fullscreen`·`list_fullscreen`) 이미 오래 들고 있었다. 이것이 브라우저 쪽 절반이다.
+
+  **TUI의 파일에 쓰지 않고 공유하지도 않는다.** `workspace.json`은 TUI가 붙어 있는 동안 TUI 소유이고(`ViewerState::persist`), 40행 터미널의 최대화와 1400px 창의 최대화는 애초에 같은 답이 아니다 — `upper_pct`를 `layout.upper_pct`와 나누어 둔 근거 그대로다. **키는 절대 경로**로, `active_repo`와 같은 이유다: repo id는 프로세스 수명만큼만 살아서 디스크에 적으면 재시작 후 아무것도 못 가리키는데, 바로 그 재시작을 넘기려고 있는 값이다. 서버가 응답마다 id로 번역하고 클라이언트는 경로를 모른다. 상한은 TUI와 같은 50개 — 없으면 한 번이라도 연 저장소마다 한 줄씩 쌓인다.
+
+  **"아무것도 최대화 안 됨"은 항목의 부재로 표현한다.** 그게 압도적으로 흔한 상태라, 저장하면 스쳐 지나간 프로젝트마다 "none" 한 줄이 남는다. 클라이언트 쪽 상태는 다른 서버 소유 preference와 같은 자리(`useViewerPrefs`)에 두는데, 현재 프로젝트를 만들어 내는 `useProjectTabs`보다 **위에서** 소유해야 하기 때문이다 — 훅은 맵 전체를 들고, 화면의 프로젝트에 묶는 것은 호출부의 몫이다. poll이 방금 누른 것을 되돌리지 않도록 write counter도 나머지 셋과 같은 방식으로 붙는다. 다만 **localStorage 첫 페인트 캐시는 두지 않는다**: 나머지는 키가 없지만 이것은 repo id가 키이고, id는 프로세스 수명만큼만 사니 캐시된 맵은 재시작 후 엉뚱한 프로젝트를 가리킨다.
 
 - **터미널 패널 높이도 divider 드래그로 조절한다**(`viewer-ui/src/lib/upperPct.ts`, `hooks/ui/upperPct.ts`, `components/terminal/PanelDivider.tsx`). diff 패널과 터미널 패널이 공유하는 경계에 핸들을 두고, 드래그하면 diff 패널이 차지할 **퍼센트**를 잡는다. **재야 하는 구간이 두 grid track에 걸쳐 있고 그 구간에 해당하는 element가 없어서**, 위쪽 끝은 `<main>`에서, 아래쪽 끝은 터미널 `<section>`에서 각각 잰다 — 사이드바가 한쪽 모서리만 재는 것과 다른 지점이고, 둘 다 드래그 시작에 한 번만 재는 이유는 같다(드래그가 두 element를 모두 움직이므로 매 프레임 재면 측정 기준이 따라 움직인다). 제스처 자체(threshold, 드래그 중에는 로컬만 갱신하고 놓을 때 한 번 커밋, 더블클릭 복구, once-only 종료)는 사이드바와 **같은 `useDividerDrag`**를 쓰고 축과 측정만 다르다. **저장은 `~/.nightcrow/viewer.json`의 `upper_pct`**(`[20, 85]`로 write와 load 양쪽에서 clamp, 기본 55)이고 첫 페인트 캐시로 localStorage도 함께 쓴다. 절대 px이던 사이드바 폭과 달리 **뷰포트 상한이 필요 없다** — 퍼센트는 이미 읽는 화면 기준이다. 폴링 스냅백은 accent·폭과 같은 write-generation 가드와 드래그 중 차단으로 막고, 남는 transient(커밋 직후 POST가 서버에 닿기 전 출발한 폴링 한 번)도 그 둘과 똑같이 받아들인다.
   - **사이드바 폭과 달리 TUI와 공유하지 않는다.** TUI에는 대응 값이 있다(`config.layout.upper_pct`, 기본 55 — 뷰어가 하드코딩하고 있던 `11fr/9fr`과 같은 숫자다). 그래도 accent처럼 세션 소유로 올리지 않은 이유가 셋이다. (1) 퍼센트는 40행 터미널과 1400px 창에서 서로 다른 것을 가리키므로 **수렴할 단일 답이 없다** — accent를 클라이언트별에서 세션 소유로 뒤집은 근거("어느 쪽이 이 세션의 색이냐는 물음에 답할 수 있는 값이 아예 없었다")가 여기서는 성립하지 않는다. (2) 이 값이 지배하는 것처럼 보이는 PTY 크기는 이미 **한 클라이언트가 정한다**(`web/viewer/size_owner.rs`) — 비소유 클라이언트는 resize를 보내지 않으므로, 비율을 공유하면 관전자의 **패널만 움직이고 그 안의 그리드는 그대로**여서 여백이나 잘림만 늘어난다. (3) "터미널에 화면을 얼마나 줄까"는 보고 있는 화면에 대한 질문이라 위 목록의 **fullscreen과 같은 계열**이다 — 이산 버전(maximize)이 클라이언트별인데 연속 버전을 공유로 두면 어긋난다. 그래서 `config.toml`의 `upper_pct`는 `[theme] name`처럼 "아직 아무도 고르지 않은 세션의 시작값"이 되지 않고 **그 머신 TUI의 레이아웃 설정으로 그대로 남는다.**

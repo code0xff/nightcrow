@@ -28,15 +28,18 @@ pub(super) fn route(head: &RequestHead, state: &ViewerState) -> Vec<u8> {
             // The remembered project is resolved to an id per response rather
             // than stored as one, and from the same snapshot as the list it
             // will be rendered against — see `Catalog::list_with_active`.
-            let (repos, active_repo) = state.catalog.list_with_active(prefs.active_repo.as_deref());
+            let served = state
+                .catalog
+                .list_with_active(prefs.active_repo.as_deref(), &prefs.maximized);
             let bootstrap = ViewerBootstrapDto::new(
-                repos,
+                served.list,
                 HotConfigDto {
                     enabled: state.hot.enabled,
                     window_secs: state.hot.hot_window_secs,
                 },
                 &prefs,
-                active_repo,
+                served.active,
+                served.maximized,
                 state.git_available,
             );
             match serde_json::to_string(&Envelope::new(bootstrap)) {

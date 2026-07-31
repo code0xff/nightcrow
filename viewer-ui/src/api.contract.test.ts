@@ -26,13 +26,52 @@ import {
   type Diff,
   type FileView,
   type Log,
+  type MaximizedByRepo,
   type Reloaded,
   type Repo,
   type Status,
+  type StoredPrefs,
   type Tree,
   type TreeSearch,
   type ViewerBootstrap,
 } from "./api";
+
+/**
+ * Re-check a union the annotations cannot.
+ *
+ * A JSON import widens `"terminal"` to `string`, so `maximized` cannot be bound
+ * to its union the way every other field is bound to its type. The drift this
+ * would otherwise catch — a variant renamed on the Rust side — is caught here
+ * instead, at runtime, against the same generated fixture.
+ *
+ * Only the values the fixture actually carries are checked, so the fixture
+ * carries every variant (`storedPrefs`); one of them alone would let the other
+ * be renamed with nothing failing. And the list checked against is tied to the
+ * union itself, so a rename on this side is caught too.
+ */
+const PANELS = ["files", "terminal"] as const;
+
+// Ties the list above to the union in both directions, at compile time. Without
+// this the list is a third hand-written copy of the protocol: renaming the
+// variant on *this* side would leave the fixture's value still in the list, and
+// the cast below would swallow the mismatch. Either half drifting fails here.
+type PanelsAreAllInTheUnion =
+  (typeof PANELS)[number] extends MaximizedByRepo[string] ? true : never;
+type UnionIsAllInPanels =
+  MaximizedByRepo[string] extends (typeof PANELS)[number] ? true : never;
+function panelsMatchTheUnion(): [PanelsAreAllInTheUnion, UnionIsAllInPanels] {
+  return [true, true];
+}
+
+function panels(raw: Record<string, string>): MaximizedByRepo {
+  // Calling it is what keeps the assertion above from being dead code the
+  // compiler skips; its return value has nothing to say.
+  panelsMatchTheUnion();
+  for (const panel of Object.values(raw)) {
+    expect(PANELS).toContain(panel);
+  }
+  return raw as MaximizedByRepo;
+}
 
 describe("wire contract", () => {
   it("서버가_보내는_프로토콜_버전과_클라이언트_상수가_같다", () => {
@@ -40,12 +79,16 @@ describe("wire contract", () => {
   });
 
   it("부트스트랩_페이로드가_ViewerBootstrap과_맞는다", () => {
-    const bootstrap: ViewerBootstrap = fixture.bootstrap;
+    const bootstrap: ViewerBootstrap = {
+      ...fixture.bootstrap,
+      maximized: panels(fixture.bootstrap.maximized),
+    };
     expect(bootstrap.repos).toHaveLength(1);
     expect(bootstrap.hot.window_secs).toBeGreaterThan(0);
     expect(bootstrap.now_ms).toBeGreaterThan(0);
     expect(bootstrap.sidebar_width).toBeGreaterThan(0);
     expect(bootstrap.upper_pct).toBeGreaterThan(0);
+    expect(bootstrap.maximized).toEqual({ r1: "terminal" });
   });
 
   it("status_페이로드가_Status와_맞는다", () => {
@@ -113,12 +156,20 @@ describe("wire contract", () => {
 
   it("쓰기_응답이_돌려주는_모양과_맞는다", () => {
     const opened: { repo: Repo } = fixture.openedRepo;
-    const stored: { accent: number; sidebar_width: number; upper_pct: number } =
-      fixture.storedPrefs;
+    // Bound to the interface itself, like every other payload: an inline shape
+    // here would only restate the fields it happened to list, which is how
+    // `active_repo` and `maximized` went unchecked when they were added.
+    const stored: StoredPrefs = {
+      ...fixture.storedPrefs,
+      maximized: panels(fixture.storedPrefs.maximized),
+    };
     expect(opened.repo.display_path).toBe("~/code/scratch");
     expect(stored.accent).toBe(2);
     expect(stored.sidebar_width).toBe(460);
     expect(stored.upper_pct).toBe(55);
+    expect(stored.active_repo).toBe("r1");
+    // Both variants, so renaming either on the Rust side fails here.
+    expect(stored.maximized).toEqual({ r1: "terminal", r2: "files" });
   });
 
   it("reload_응답이_Reloaded와_맞는다", () => {

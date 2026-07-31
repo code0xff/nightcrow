@@ -141,6 +141,11 @@ pub struct App {
     pub list_fullscreen: bool,
     // `None` for detached HEAD / unborn branch / bare repo.
     pub branch_name: Option<String>,
+    // Ref chips and ahead/behind sets for the Log view. Rebuilt only when
+    // `last_refs_fingerprint` disagrees with the newest snapshot's, so a fetch
+    // that moves `origin/dev` refreshes it but an idle poll does not.
+    pub log_decorations: crate::git::diff::LogDecorations,
+    pub(crate) last_refs_fingerprint: Option<u64>,
     pub leader: KeyEvent,
     // No timeout: stays armed until a follow-up key or `Esc`/`Ctrl+C` resolves it.
     pub prefix_armed: bool,

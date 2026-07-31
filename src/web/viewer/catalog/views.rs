@@ -6,7 +6,17 @@
 //! the fallback, overwriting what was remembered.
 
 use super::{Catalog, RepoEntry};
+use std::collections::HashMap;
 use std::sync::Arc;
+
+/// One snapshot of the served set, in the three shapes a response needs it in.
+pub struct ServedView {
+    pub list: Vec<crate::web::viewer::dto::RepoDto>,
+    /// Id standing for the remembered project, when it is served.
+    pub active: Option<String>,
+    /// Which panel each served project was left maximized in, by id.
+    pub maximized: HashMap<String, &'static str>,
+}
 
 impl Catalog {
     pub fn get(&self, id: &str) -> Option<Arc<RepoEntry>> {
@@ -46,7 +56,8 @@ impl Catalog {
     pub fn list_with_active(
         &self,
         remembered: Option<&str>,
-    ) -> (Vec<crate::web::viewer::dto::RepoDto>, Option<String>) {
+        maximized: &[crate::web::viewer::prefs::RepoMaximized],
+    ) -> ServedView {
         let entries = self.entries.lock().expect("catalog poisoned");
         let list = entries.iter().map(|e| e.to_dto()).collect();
         let active = remembered.and_then(|path| {
@@ -55,7 +66,21 @@ impl Catalog {
                 .find(|e| e.path == path)
                 .map(|e| e.id.clone())
         });
-        (list, active)
+        // From the same snapshot for the same reason: a repository opened
+        // between two reads would be in the list with no arrangement beside it,
+        // or have one under an id the list does not carry.
+        let arrangements = entries
+            .iter()
+            .filter_map(|e| {
+                crate::web::viewer::prefs::maximized::panel_of(maximized, &e.path)
+                    .map(|panel| (e.id.clone(), panel.as_str()))
+            })
+            .collect();
+        ServedView {
+            list,
+            active,
+            maximized: arrangements,
+        }
     }
 
     /// The id currently standing for `path`, or `None` when that path is not
@@ -83,7 +108,9 @@ impl Catalog {
     ///
     /// For the attach transport, whose clients read those paths from the same
     /// filesystem the daemon is on. The browser gets [`RepoDto`] instead, which
-    /// carries a home-relative path for display and no absolute one.
+    /// carries a home-relative path for display and no absolute one — but the
+    /// browser's own response builder reads this too, to turn a preference
+    /// stored by path back into the ids it speaks.
     pub fn id_paths(&self) -> Vec<(String, String)> {
         self.entries
             .lock()
