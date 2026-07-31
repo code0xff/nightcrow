@@ -193,6 +193,10 @@ pub struct RepoSnapshot {
     /// `None` for detached HEAD, unborn branch, or bare repo so the header
     /// can decide whether to render the branch chip.
     pub branch_name: Option<String>,
+    /// Digest over every ref name and target. Refs move without HEAD moving
+    /// (a fetch advances `origin/dev`), so the Log view rebuilds its ref
+    /// decoration map when this changes rather than on HEAD changes alone.
+    pub refs_fingerprint: u64,
 }
 
 #[derive(Debug, Clone)]
@@ -205,7 +209,12 @@ pub struct CommitEntry {
     /// keystroke. Mirrors `ChangedFile::search_lower`.
     pub summary_lower: String,
     pub author: String,
+    /// Author email, shown only in the wide layout. Empty when the commit
+    /// carries none.
+    pub author_email: String,
     pub time: i64,
+    /// Number of parents. `> 1` marks a merge commit; 0 marks a root commit.
+    pub parent_count: usize,
 }
 
 impl CommitEntry {
@@ -217,8 +226,22 @@ impl CommitEntry {
             summary,
             summary_lower,
             author,
+            author_email: String::new(),
             time,
+            parent_count: 1,
         }
+    }
+
+    /// Attach the fields that come off the same `git2::Commit` object as the
+    /// rest of the entry, so the loader pays no extra ODB lookup for them.
+    pub fn with_commit_meta(mut self, author_email: String, parent_count: usize) -> Self {
+        self.author_email = author_email;
+        self.parent_count = parent_count;
+        self
+    }
+
+    pub fn is_merge(&self) -> bool {
+        self.parent_count > 1
     }
 }
 

@@ -1,5 +1,6 @@
 mod commit_log;
 mod diff_load;
+mod refs;
 mod snapshot;
 mod types;
 
@@ -12,6 +13,7 @@ pub use diff_load::{
     load_commit_diff, load_commit_file_blob, load_commit_file_diff, load_commit_files,
     load_file_diff, load_workdir_file, parse_hunk_new_start,
 };
+pub use refs::{LogDecorations, RefKind, RefLabel, load_log_decorations};
 pub use snapshot::load_snapshot;
 #[cfg(test)]
 pub use types::DiffLine;

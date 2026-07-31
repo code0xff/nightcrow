@@ -67,9 +67,14 @@ pub fn load_commit_log_from(
         let oid = oid_result.context("revwalk error")?;
         let commit = repo.find_commit(oid).context("failed to find commit")?;
         let summary = commit.summary().ok().flatten().unwrap_or("").to_string();
-        let author = commit.author().name().unwrap_or("Unknown").to_string();
+        let signature = commit.author();
+        let author = signature.name().unwrap_or("Unknown").to_string();
+        let email = signature.email().unwrap_or("").to_string();
         let time = commit.time().seconds();
-        entries.push(CommitEntry::new(oid, short_oid(oid), summary, author, time));
+        entries.push(
+            CommitEntry::new(oid, short_oid(oid), summary, author, time)
+                .with_commit_meta(email, commit.parent_count()),
+        );
     }
     Ok(entries)
 }
