@@ -1,6 +1,21 @@
 #!/usr/bin/env bash
-# Runs the same gates as .github/workflows/ci.yml before allowing a commit,
-# so a commit never lands a failure that CI would catch.
+# The fast gate: formatting only.
+#
+# Everything expensive — clippy, build, test — lives in `pre-push`, scoped to the
+# range actually being contributed. The reason is what this gate exists to
+# prevent: a red CI run. CI triggers on `pull_request` and on a push to `main`,
+# so that failure becomes real when a branch reaches the remote, not when a local
+# commit is made. A full test run per commit bought nothing pre-push does not,
+# and it taxed exactly the milestone commits `.agents/rules/commits.md` asks for.
+#
+# Formatting stays here because it is the one gate cheap enough to run
+# unconditionally and annoying enough to fix late: a `cargo fmt` at push time
+# would rewrite files under commits already made.
+#
+# Caveat this shares with any pre-commit hook: it reads the working tree, not the
+# staged index, so a partially staged commit can pass on code it is not
+# committing. Tolerable for formatting — the fix is one command — and a further
+# reason the heavy gates do not belong here.
 #
 # Enable once per clone:  git config core.hooksPath .githooks
 # Bypass for one commit:  git commit --no-verify
@@ -8,18 +23,11 @@ set -euo pipefail
 
 cd "$(git rev-parse --show-toplevel)"
 
-run() {
-	printf '\033[1m▶ %s\033[0m\n' "$*"
-	if ! "$@"; then
-		printf '\033[31m✗ pre-commit gate failed: %s\033[0m\n' "$*" >&2
-		printf '  fix it, or bypass with: git commit --no-verify\n' >&2
-		exit 1
-	fi
-}
+if ! cargo fmt --all --check; then
+	printf '\033[31m✗ pre-commit: formatting\033[0m\n' >&2
+	printf '  run: cargo fmt --all\n' >&2
+	printf '  or bypass with: git commit --no-verify\n' >&2
+	exit 1
+fi
 
-run cargo fmt --check
-run cargo clippy --locked -- -D warnings
-run cargo build --locked
-run cargo test --locked
-
-printf '\033[32m✓ all CI gates passed\033[0m\n'
+printf '\033[32m✓ formatting\033[0m\n'

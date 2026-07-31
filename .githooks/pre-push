@@ -1,0 +1,191 @@
+#!/usr/bin/env bash
+# The CI-parity gate, run once per push and scoped to what is being contributed.
+#
+# Why here rather than pre-commit: this exists to stop a push from turning into a
+# red CI run, and CI only runs on `pull_request` and on a push to `main`. The risk
+# is a push-time risk, so the gate is a push-time gate. Local milestone commits
+# stay free.
+#
+# What "scoped" means. The range about to reach the remote is compared against the
+# branch it will be integrated into — `upstream/dev` when this clone is a fork of
+# the canonical repository, `origin`'s default branch otherwise. From that diff:
+#
+#   * no Rust and no manifest touched  -> every cargo invocation is skipped, so a
+#     docs-only push costs nothing
+#   * only `plugins/` touched          -> just that crate is checked. Sound because
+#     `nightcrow-recovery` does not depend on `nightcrow`: it speaks the plugin
+#     protocol over a pipe and shares no code (see its Cargo.toml)
+#   * only the host touched            -> just `nightcrow`
+#   * a manifest or lockfile touched   -> the whole workspace, since a dependency
+#     change can reach either crate
+#
+# The flags mirror `.github/workflows/ci.yml` exactly. The gate this replaced did
+# not: bare `cargo build`/`test`/`clippy` resolve to the workspace's default
+# members, which is `nightcrow` alone, so the plugin's 43 files were never checked
+# at all — and clippy without `--all-targets` never linted a test.
+#
+# What this deliberately does NOT check: that every commit in the range builds on
+# its own. Only the tip is verified. `.agents/rules/commits.md` still asks each
+# commit to be green and `git bisect` still depends on it, but that is the
+# author's discipline; enforcing it here would multiply the cost by the number of
+# commits. Set NIGHTCROW_VERIFY_EACH_COMMIT=1 to check them all before a push
+# that history will be bisected through.
+#
+# Enable once per clone:  git config core.hooksPath .githooks
+# Bypass for one push:    git push --no-verify
+set -euo pipefail
+
+cd "$(git rev-parse --show-toplevel)"
+
+# The branch contributions are ultimately integrated into. `upstream` wins when
+# it exists: in a fork, `origin` is a staging area and `upstream` is the thing a
+# PR actually targets, so it is the honest baseline for "what am I contributing".
+integration_ref() {
+	local remote
+	for remote in upstream origin; do
+		if git rev-parse --verify --quiet "refs/remotes/$remote/HEAD" >/dev/null 2>&1; then
+			git symbolic-ref --short "refs/remotes/$remote/HEAD"
+			return 0
+		fi
+		if git rev-parse --verify --quiet "refs/remotes/$remote/dev" >/dev/null 2>&1; then
+			printf '%s/dev\n' "$remote"
+			return 0
+		fi
+	done
+	return 1
+}
+
+run() {
+	printf '\033[1m▶ %s\033[0m\n' "$*"
+	if ! "$@"; then
+		printf '\033[31m✗ pre-push gate failed: %s\033[0m\n' "$*" >&2
+		printf '  fix it, or bypass with: git push --no-verify\n' >&2
+		exit 1
+	fi
+}
+
+is_zero_sha() { [[ "$1" =~ ^0+$ ]]; }
+
+# Everything about to reach the remote, as a `git diff` base for each ref being
+# pushed. A brand-new branch has no remote counterpart, so it is measured from
+# where it left the integration branch rather than from its own root commit —
+# otherwise the first push of a branch would re-check the entire repository.
+collect_bases() {
+	local local_ref local_sha remote_ref remote_sha base
+	local saw_line=0
+	while read -r local_ref local_sha remote_ref remote_sha; do
+		saw_line=1
+		# A deletion pushes nothing to check.
+		is_zero_sha "$local_sha" && continue
+		if is_zero_sha "$remote_sha"; then
+			base="$INTEGRATION"
+		else
+			base="$remote_sha"
+		fi
+		printf '%s %s\n' "$base" "$local_sha"
+	done
+	# Run by hand, or by a git that offered no stdin: fall back to this branch
+	# against the integration branch.
+	if [ "$saw_line" -eq 0 ]; then
+		printf '%s %s\n' "$INTEGRATION" HEAD
+	fi
+}
+
+if ! INTEGRATION="$(integration_ref)"; then
+	printf '\033[33m! pre-push: no upstream or origin default branch to compare against\033[0m\n' >&2
+	printf '  falling back to the full workspace gate\n' >&2
+	INTEGRATION=""
+fi
+
+changed=""
+if [ -n "$INTEGRATION" ]; then
+	while read -r base tip; do
+		# Three dots: only what this side added, ignoring commits the base gained
+		# meanwhile. A push is not responsible for those.
+		#
+		# A base can be unreachable — a force-push replaced it, or the remote is
+		# ahead of what was fetched. Falling back to the integration branch keeps
+		# the gate wide rather than silently empty, because an empty diff here
+		# would read as "nothing to check".
+		if ! diff_out="$(git diff --name-only "$base...$tip" 2>/dev/null)"; then
+			if ! diff_out="$(git diff --name-only "$INTEGRATION...$tip" 2>/dev/null)"; then
+				printf '\033[33m! pre-push: cannot diff %s — gating the whole workspace\033[0m\n' "$tip" >&2
+				INTEGRATION=""
+				break
+			fi
+		fi
+		changed+="$diff_out"$'\n'
+	done < <(collect_bases)
+	changed="$(printf '%s' "$changed" | sed '/^$/d' | sort -u)"
+fi
+
+# No comparison was possible: check everything rather than nothing.
+if [ -z "$INTEGRATION" ]; then
+	scope=(--workspace)
+else
+	# The frontend is its own CI job, and its own way to go red: `viewer-ui/dist`
+	# is committed because `rust-embed` reads it at compile time, so a source
+	# change without a rebuilt bundle ships a frontend that does not match the
+	# source. Checked before the Rust gate because it is the faster failure.
+	ui="$(printf '%s\n' "$changed" | grep -E '^viewer-ui/' | grep -Ev '^viewer-ui/dist/' || true)"
+	if [ -n "$ui" ]; then
+		if ! command -v npm >/dev/null 2>&1; then
+			printf '\033[33m! pre-push: viewer-ui changed but npm is not on PATH — bundle not verified\033[0m\n' >&2
+		elif [ ! -d viewer-ui/node_modules ]; then
+			printf '\033[33m! pre-push: viewer-ui changed but node_modules is missing\033[0m\n' >&2
+			printf '  run: npm --prefix viewer-ui ci\n' >&2
+		else
+			run npm --prefix viewer-ui run build
+			if ! git diff --quiet -- viewer-ui/dist; then
+				printf '\033[31m✗ pre-push: viewer-ui/dist is stale\033[0m\n' >&2
+				printf '  the rebuild above changed it — stage the result and amend\n' >&2
+				git diff --stat -- viewer-ui/dist >&2
+				exit 1
+			fi
+			printf '\033[32m✓ viewer-ui bundle matches its source\033[0m\n'
+		fi
+	fi
+
+	rust="$(printf '%s\n' "$changed" | grep -E '\.rs$|(^|/)Cargo\.(toml|lock)$|(^|/)rust-toolchain(\.toml)?$' || true)"
+	if [ -z "$rust" ]; then
+		printf '\033[32m✓ pre-push: no Rust or manifest changes vs %s — nothing further to gate\033[0m\n' "$INTEGRATION"
+		exit 0
+	fi
+	manifest="$(printf '%s\n' "$rust" | grep -E '(^|/)Cargo\.(toml|lock)$|rust-toolchain' || true)"
+	host="$(printf '%s\n' "$rust" | grep -Ev '^plugins/' || true)"
+	plugin="$(printf '%s\n' "$rust" | grep -E '^plugins/' || true)"
+
+	if [ -n "$manifest" ] || { [ -n "$host" ] && [ -n "$plugin" ]; }; then
+		scope=(--workspace)
+	elif [ -n "$plugin" ]; then
+		scope=(-p nightcrow-recovery)
+	else
+		scope=(-p nightcrow)
+	fi
+fi
+
+printf '\033[1mpre-push: gating %s vs %s\033[0m\n' "${scope[*]}" "${INTEGRATION:-<all>}"
+
+if [ "${NIGHTCROW_VERIFY_EACH_COMMIT:-0}" = "1" ] && [ -n "$INTEGRATION" ]; then
+	# For a history that will be bisected: every commit, not just the tip. Leaves
+	# the working tree where it started even when a commit fails.
+	start="$(git rev-parse --abbrev-ref HEAD)"
+	trap 'git checkout --quiet "$start"' EXIT
+	while read -r commit; do
+		printf '\033[1m▶ commit %s\033[0m\n' "$(git log -1 --format='%h %s' "$commit")"
+		git checkout --quiet "$commit"
+		run cargo clippy --locked "${scope[@]}" --all-targets --all-features -- -D warnings
+		run cargo build --locked "${scope[@]}"
+		run cargo test --locked "${scope[@]}"
+	done < <(git rev-list --reverse "$INTEGRATION..HEAD")
+else
+	run cargo clippy --locked "${scope[@]}" --all-targets --all-features -- -D warnings
+	run cargo build --locked "${scope[@]}"
+	run cargo test --locked "${scope[@]}"
+fi
+
+# The lockfile gate CI runs as its own job. Cheap, and it is the one failure that
+# is invisible locally: a manifest edit without a matching lockfile update.
+run cargo metadata --locked --format-version 1
+
+printf '\033[32m✓ all CI gates passed\033[0m\n'
