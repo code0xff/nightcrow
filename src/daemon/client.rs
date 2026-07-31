@@ -8,9 +8,9 @@
 
 use super::protocol::{ClientMessage, ServerMessage, version};
 use super::terminal_link::{TerminalLink, TerminalRouter};
+use super::transport::UnixStream;
 use super::wire::{Incoming, Writer, pump, read_routed, send};
 use anyhow::{Context, Result, bail};
-use super::transport::UnixStream;
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::Receiver;

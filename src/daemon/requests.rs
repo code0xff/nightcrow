@@ -9,9 +9,9 @@
 use super::frame::{FrameKind, read_frame};
 use super::protocol::{ClientMessage, ServerMessage, version};
 use super::serve::{Session, encode};
+use super::transport::UnixStream;
 use crate::web::viewer::session::{self, CloseError, OpenError};
 use anyhow::Result;
-use super::transport::UnixStream;
 use std::sync::Arc;
 
 /// Read requests from one client until it detaches.

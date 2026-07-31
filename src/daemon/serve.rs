@@ -15,11 +15,11 @@ use super::clients::AttachedClients;
 use super::frame::{Frame, write_frame};
 use super::protocol::ServerMessage;
 use super::terminals::TerminalBridges;
+use super::transport::{UnixListener, UnixStream};
 use crate::web::viewer::server::ViewerState;
 use crate::web::viewer::session;
 use std::collections::HashMap;
 use std::io::Write;
-use super::transport::{UnixListener, UnixStream};
 use std::sync::{Arc, Mutex};
 
 /// Clients that may be attached at once.

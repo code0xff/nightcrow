@@ -8,8 +8,8 @@
 //! path does: a TCP port is reachable by anyone who can route to it.
 
 use super::lock::InstanceLock;
-use anyhow::{Context, Result, bail};
 use super::transport::UnixListener;
+use anyhow::{Context, Result, bail};
 use std::path::{Path, PathBuf};
 
 /// Socket file name under the nightcrow directory.
