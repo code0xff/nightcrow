@@ -11,13 +11,13 @@ import { useTerminalSocket } from "../../hooks/terminal/useTerminalSocket";
 import { useTerminalViews } from "../../hooks/terminal/useTerminalViews";
 import { usePaneSizes } from "../../hooks/terminal/usePaneSizes";
 import { usePaneRecovery } from "../../hooks/terminal/usePaneRecovery";
+import { usePaneCommands } from "../../hooks/terminal/usePaneCommands";
 import { useStartupSizes } from "../../hooks/terminal/useStartupSizes";
 import { TerminalCell } from "./TerminalCell";
 import { StartupSlots } from "./StartupSlots";
 import { TermKeyBar } from "./TermKeyBar";
 import { PanelDivider, type PanelDividerProps } from "./PanelDivider";
 import { PanelToolbar } from "./PanelToolbar";
-import { TERM_KEY_BAR, termKeySequence } from "../../lib/termKeys";
 
 export function TerminalPanel({
   repo,
@@ -148,47 +148,14 @@ export function TerminalPanel({
     lastActiveByRepoRef.current.set(repo, pane);
   };
 
-  const create = () => {
-    const socket = socketRef.current;
-    if (!socket) return;
-    expectCreateRef.current += 1;
-    socket.send(JSON.stringify({ type: "create", rows: 24, cols: 80 }));
-  };
-
-  // Asked for, not applied. The zoom belongs to the repository rather than to
-  // this page (the server keeps it, so a reload comes back to it), so this
-  // waits for the echo like a reorder does — and every other client turns with
-  // it. Ending the zoom when a pane opens is the server's too: it knows about
-  // panes this page did not ask for.
-  const toggleZoom = (pane: number) => {
-    socketRef.current?.send(
-      JSON.stringify({ type: "zoom", pane: zoomed === pane ? null : pane }),
-    );
-  };
-
-  // Take the sizing back. Deliberate rather than automatic: the panes belong to
-  // a session someone else may be working in, and merely opening this page must
-  // not repaint their screen.
-  const claimSize = () => {
-    socketRef.current?.send(JSON.stringify({ type: "claim_size" }));
-  };
-
-  const closePane = (pane: number) => {
-    socketRef.current?.send(JSON.stringify({ type: "close", pane }));
-  };
-
-  const sendKey = (key: (typeof TERM_KEY_BAR)[number]["key"]) => {
-    if (active === null) return;
-    const appCursor =
-      viewsRef.current.get(active)?.term.modes.applicationCursorKeysMode ?? false;
-    socketRef.current?.send(
-      JSON.stringify({
-        type: "input",
-        pane: active,
-        data: termKeySequence(key, appCursor),
-      }),
-    );
-  };
+  const { create, toggleZoom, claimSize, closePane, reorder, sendKey } =
+    usePaneCommands({
+      socketRef,
+      viewsRef,
+      expectCreateRef,
+      zoomed,
+      active,
+    });
 
   const {
     draggingPane,
@@ -202,8 +169,7 @@ export function TerminalPanel({
     panes,
     zoomed,
     onFocus: focusPane,
-    onReorder: (order) =>
-      socketRef.current?.send(JSON.stringify({ type: "reorder", order })),
+    onReorder: reorder,
   });
 
   // Before the startup terminals exist the grid is planned for the slots they
