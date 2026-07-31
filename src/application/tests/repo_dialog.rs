@@ -6,7 +6,6 @@ use super::helpers::*;
 use crate::application::input::dispatch::{KeyOutcome, dispatch_key};
 use crate::workspace::Workspace;
 use crossterm::event::{KeyCode, KeyModifiers};
-use std::path::MAIN_SEPARATOR;
 use tempfile::TempDir;
 
 /// The dialog open on a real temp directory holding `dirs`, plus its canonical
