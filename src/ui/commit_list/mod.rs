@@ -21,8 +21,6 @@ fn render_commit_list(frame: &mut Frame, app: &App, area: Rect, accent: Color) {
     let focused = app.focus == Focus::FileList;
     let border_style = super::focused_border_style(focused, accent);
 
-    let ahead_count = app.tracking.as_ref().map_or(0, |t| t.ahead);
-
     let show_search =
         app.log_view.commit_search_active || !app.log_view.commit_search_query.is_empty();
 
@@ -45,7 +43,13 @@ fn render_commit_list(frame: &mut Frame, app: &App, area: Rect, accent: Color) {
         .iter()
         .map(|&i| {
             let entry = &app.log_view.commits[i];
-            ListItem::new(row::commit_row(entry, i < ahead_count, scroll_x, accent))
+            ListItem::new(row::commit_row(
+                entry,
+                &app.log_decorations,
+                list_area.width,
+                scroll_x,
+                accent,
+            ))
         })
         .collect();
 
