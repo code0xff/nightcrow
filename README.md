@@ -677,7 +677,7 @@ What a reload applies:
 
 | Table | When it takes effect |
 | --- | --- |
-| `[[plugin]]` | **Immediately, in every open project.** Newly enabled plugins start and are handed the panes that opted into them; disabled or removed ones stop and their panes carry on unwatched. A plugin whose `command`, `args` or `env` changed gets a new process; changing only `allowed_resume_flags` or `watch_on_signal` leaves the running one alone, so a plugin part-way through a long wait is not disturbed |
+| `[[plugin]]` | **Immediately, in every open project.** Newly enabled plugins start and are handed the panes that opted into them; disabled or removed ones stop and their panes carry on unwatched. A plugin whose `command`, `args` or `env` changed gets a new process; changing only `allowed_resume_flags` or `watch_on_signal` leaves the running one alone, so a plugin part-way through a long wait is not disturbed. A replacement that will not start (a command that is not there) leaves its panes unwatched too, exactly as removing it would |
 | `[[startup_command]]` | **On the next project you open.** A project that is already open keeps the panes it started with — those are live processes, and no file edit replaces them |
 | Everything else | Needs a restart: `[web_viewer]` (the listener is already bound), `[log]`, and the client-owned `[layout]`, `[input]`, `[tree]`, `[mouse]` sections, which each TUI reads when it attaches |
 
@@ -705,6 +705,11 @@ Notes:
   relaunch gives that slot up when its plugin is stopped or replaced. The
   successor is never handed the pane's token, so nothing could honour the hold;
   the countdown ends instead of running out its window.
+- If the result says **`(1 was too busy to be told)`**, that project kept the
+  plugins it had. Its terminals were too far behind to take the request, and
+  waiting on one project would have held up every other. Nothing else about the
+  reload is affected — reload again once it has caught up. The server log names
+  the project.
 
 ## License
 
