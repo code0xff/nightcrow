@@ -24,6 +24,7 @@ fn pty_backend_create_and_destroy_pane() {
 const PTY_TEST_DEADLINE: Duration = Duration::from_secs(15);
 
 #[test]
+#[cfg(unix)]
 fn pty_backend_drains_output_before_exit_event() {
     let mut backend = PtyBackend::new(".", ShellConfig::default());
     let id = backend.open_pane(24, 80, None).expect("open_pane failed");
@@ -105,6 +106,7 @@ fn relaunching_a_pane_keeps_the_token_and_advances_the_generation() {
 }
 
 #[test]
+#[cfg(unix)]
 fn a_relaunch_reproduces_the_original_command() {
     let mut backend = PtyBackend::new(".", ShellConfig::default());
     let first = backend
@@ -226,6 +228,7 @@ fn destroying_a_pane_retires_its_token() {
 }
 
 #[test]
+#[cfg(unix)]
 fn a_panes_child_process_sees_its_token_in_the_environment() {
     let mut backend = PtyBackend::new(".", ShellConfig::default());
     let id = backend
@@ -258,6 +261,7 @@ fn a_panes_child_process_sees_its_token_in_the_environment() {
 }
 
 #[test]
+#[cfg(unix)]
 fn pty_backend_runs_startup_command() {
     let mut backend = PtyBackend::new(".", ShellConfig::default());
     // The command runs itself on launch — no input is sent. `exit` keeps

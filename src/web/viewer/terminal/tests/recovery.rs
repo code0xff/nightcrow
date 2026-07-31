@@ -2,6 +2,10 @@
 //!
 //! Driven through a real hub and a real plugin child, like `plugins.rs`: what is
 //! asserted is the frame that actually left the hub, not what it meant to send.
+//!
+//! These tests are Unix-only: the fake plugin is `/bin/sh` and the test commands
+//! use Unix shell syntax (`printf`, `sed`, `$VAR` expansion).
+#![cfg(unix)]
 
 use super::plugin_rules::{COLS, LONG_RUNNING, PLUGIN, ROWS, opt_in, token_of};
 use super::plugins::{Fixture, fixture, logged_event, shell_plugin};

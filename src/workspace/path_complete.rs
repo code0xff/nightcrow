@@ -75,8 +75,21 @@ pub(crate) fn complete_dir_path(buf: &str) -> PathCompletion {
     // `/` on Windows does not come back with a `\` spliced into it.
     let sep = dir_text.chars().next_back().unwrap_or(MAIN_SEPARATOR);
 
-    let dir =
-        crate::platform::paths::expand_tilde(if dir_text.is_empty() { "." } else { dir_text });
+    // `dir_text` always ends with a separator (or is empty). Strip it so
+    // `read_dir` sees the directory itself — a trailing-separator form fails
+    // on Windows verbatim paths (`\\?\C:\...\`). Root paths keep their
+    // separator: stripping `/` or `C:\` would lose the root.
+    let dir_str = if dir_text.is_empty() {
+        "."
+    } else {
+        let trimmed = dir_text.trim_end_matches(|c| c == '/' || c == '\\');
+        if trimmed.is_empty() || trimmed.ends_with(':') {
+            dir_text
+        } else {
+            trimmed
+        }
+    };
+    let dir = crate::platform::paths::expand_tilde(dir_str);
     let names = read_dir_names(&dir, frag.starts_with('.'));
 
     let mut matches: Vec<&str> = names

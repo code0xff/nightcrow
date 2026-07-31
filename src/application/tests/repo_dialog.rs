@@ -6,6 +6,7 @@ use super::helpers::*;
 use crate::application::input::dispatch::{KeyOutcome, dispatch_key};
 use crate::workspace::Workspace;
 use crossterm::event::{KeyCode, KeyModifiers};
+use std::path::MAIN_SEPARATOR;
 use tempfile::TempDir;
 
 /// The dialog open on a real temp directory holding `dirs`, plus its canonical
@@ -88,7 +89,7 @@ fn the_browser_takes_the_keys_the_field_would_have_had() {
     send(&mut ws, KeyCode::Enter);
 
     assert!(ws.repo_input.picker.is_none(), "Enter selects and returns");
-    assert_eq!(ws.repo_input.buf, format!("{text}/alpha/inner/"));
+    assert_eq!(ws.repo_input.buf, format!("{text}{MAIN_SEPARATOR}alpha{MAIN_SEPARATOR}inner{MAIN_SEPARATOR}"));
     assert!(ws.repo_input.active, "selecting must not open the repo");
 }
 
@@ -130,5 +131,5 @@ fn j_and_k_move_the_browser_without_reaching_the_field() {
     send(&mut ws, KeyCode::Char('k'));
     send(&mut ws, KeyCode::Enter);
 
-    assert_eq!(ws.repo_input.buf, format!("{text}/alpha/"));
+    assert_eq!(ws.repo_input.buf, format!("{text}{MAIN_SEPARATOR}alpha{MAIN_SEPARATOR}"));
 }

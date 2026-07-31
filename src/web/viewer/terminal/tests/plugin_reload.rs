@@ -10,6 +10,10 @@
 //! whose effect is observable is queued behind the one under test — the worker
 //! drains its queue in order, so by the time that effect arrives the earlier
 //! decision has been made and a missing announcement is a real one.
+//!
+//! These tests are Unix-only: the fake plugin is `/bin/sh` and the test commands
+//! use Unix shell syntax.
+#![cfg(unix)]
 
 use super::plugins::{Fixture, LOG_ENV, fixture, logged, logged_event, shell_plugin};
 use super::{attach, collect_created, spawn_hub, wait_for};

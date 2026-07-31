@@ -4,6 +4,10 @@
 //! case has a shape at the hub's command queue: one needs a pane adopted with no
 //! opt-in (which goes through the token path), the other a pane whose process has
 //! already exited while its slot is held.
+//!
+//! These tests are Unix-only: they spawn real PTY processes with Unix commands
+//! (`sleep 30`) and `/bin/sh`-based plugins.
+#![cfg(unix)]
 
 use super::plugin_reload::{plugin_with_log, respawning};
 use super::plugins::fixture;

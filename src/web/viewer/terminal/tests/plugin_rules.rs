@@ -5,6 +5,10 @@
 //! `now` as a parameter, so the clock is an input and nothing here has to wait
 //! for time to pass. The hub's *routing* — which of these calls it makes on an
 //! exit — is pinned by the integration tests in `plugins.rs`.
+//!
+//! These tests are Unix-only: they spawn real PTY processes with Unix commands
+//! (`sleep 30`) and `/bin/sh`-based plugins.
+#![cfg(unix)]
 
 use super::plugins::{fixture, recorder};
 use crate::backend::{PaneId, PaneToken, PtyBackend, TerminalBackend};

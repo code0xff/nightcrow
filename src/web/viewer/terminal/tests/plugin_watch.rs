@@ -5,6 +5,10 @@
 //! does not own. What *is* pinned here is everything the host decides once a token
 //! comes back — which pane it names, whether the operator allowed it, and what
 //! being given the pane does and does not entitle a plugin to.
+//!
+//! These tests are Unix-only: they spawn real PTY processes with Unix commands
+//! (`sleep 30`) and `/bin/sh`-based plugins.
+#![cfg(unix)]
 
 use super::plugin_rules::{COLS, LONG_RUNNING, PLUGIN, ROWS, opt_in, token_of};
 use super::plugins::{fixture, recorder};

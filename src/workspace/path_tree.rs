@@ -60,8 +60,15 @@ impl PathTree {
         } else {
             split_dir(trimmed).0
         };
-        let root =
-            std::fs::canonicalize(expand_tilde(if text.is_empty() { "." } else { text })).ok()?;
+        // Strip trailing separators so `canonicalize` works on Windows verbatim
+        // paths (`\\?\C:\...\`). Root paths keep their separator.
+        let text_clean = if text.is_empty() {
+            "."
+        } else {
+            let t = text.trim_end_matches(|c| c == '/' || c == '\\');
+            if t.is_empty() || t.ends_with(':') { text } else { t }
+        };
+        let root = std::fs::canonicalize(expand_tilde(text_clean)).ok()?;
         if !root.is_dir() {
             return None;
         }

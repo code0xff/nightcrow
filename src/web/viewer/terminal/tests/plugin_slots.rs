@@ -4,6 +4,10 @@
 //! plugin is allowed to ask for, these about what the worker keeps, gives up on
 //! its own, or hands back to a person. Both drive a real `PtyBackend` with the
 //! clock as an input.
+//!
+//! These tests are Unix-only: they spawn real PTY processes with Unix commands
+//! (`sleep 30`) and `/bin/sh`-based plugins.
+#![cfg(unix)]
 
 use super::plugin_rules::{
     COLS, LONG_RUNNING, PLUGIN, ROWS, opt_in, send_input, token_of, well_idle,
