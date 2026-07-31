@@ -1,4 +1,5 @@
 import { useCallback, useRef, useState } from "react";
+import { createSerialWriter } from "../lib/serialWrite";
 import { api } from "../api";
 import type { MaximizedByRepo } from "../api";
 import type { Maximized } from "../types";
@@ -23,32 +24,50 @@ import type { Maximized } from "../types";
  * "nothing maximized" that waiting for the bootstrap costs.
  */
 export function useMaximized() {
-  const [byRepo, setByRepo] = useState<MaximizedByRepo>({});
+  const [byRepo, setByRepoState] = useState<MaximizedByRepo>({});
+  // The same map, readable synchronously. What a toggle sends has to be decided
+  // before the state updater runs, because React may run an updater more than
+  // once and a request made from inside one is a request made an unknown number
+  // of times. Every write goes through `setByRepo` so the two never part.
+  const byRepoRef = useRef(byRepo);
+  const setByRepo = useCallback((next: MaximizedByRepo) => {
+    byRepoRef.current = next;
+    setByRepoState(next);
+  }, []);
   // Bumped on every local write, so the repository poll can tell a value this
   // page just set from an older one still in flight. See `useViewerPrefs`.
   const writes = useRef(0);
 
+  // One writer per project, made on first use. Serialized like the remembered
+  // selection is (`api.setActiveRepo`) and for the same reason: two
+  // fire-and-forget POSTs travel on separate connections, so toggling twice
+  // quickly can leave the *first* state as the one that lands last and sticks.
+  // Per project rather than one queue for all of them, because a serial writer
+  // collapses what is queued behind it — correct for one piece of state, and
+  // silently lossy across two projects' arrangements.
+  const writers = useRef(new Map<string, (panel: Maximized) => void>());
+  const writerFor = useCallback((repo: string) => {
+    const existing = writers.current.get(repo);
+    if (existing) return existing;
+    const writer = createSerialWriter<Maximized>((panel) =>
+      api.setMaximized(repo, panel === "none" ? null : panel),
+    );
+    writers.current.set(repo, writer);
+    return writer;
+  }, []);
+
   const setFor = useCallback(
     (repo: string | null, next: Maximized | ((prev: Maximized) => Maximized)) => {
       if (repo == null) return;
+      const prev = byRepoRef.current;
+      const value =
+        typeof next === "function" ? next(prev[repo] ?? "none") : next;
       writes.current += 1;
-      setByRepo((prev) => {
-        const current = prev[repo] ?? "none";
-        const value = typeof next === "function" ? next(current) : next;
-        // Fire-and-forget, as every other preference write is: the layout has
-        // already moved locally, and a failed write costs the memory of it
-        // rather than the change itself.
-        void api
-          .setMaximized(repo, value === "none" ? null : value)
-          .catch(() => {});
-        if (value === "none") {
-          const { [repo]: _dropped, ...rest } = prev;
-          return rest;
-        }
-        return { ...prev, [repo]: value };
-      });
+      writerFor(repo)(value);
+      const { [repo]: _dropped, ...rest } = prev;
+      setByRepo(value === "none" ? rest : { ...prev, [repo]: value });
     },
-    [],
+    [writerFor, setByRepo],
   );
 
   /** What `repo` is maximized in right now. */
@@ -62,14 +81,22 @@ export function useMaximized() {
    * arrangement against the project's *path*, which is what lets reopening it
    * come back to the layout it was left in.
    */
-  const drop = useCallback((id: string) => {
-    setByRepo(({ [id]: _closed, ...rest }) => rest);
-  }, []);
+  const drop = useCallback(
+    (id: string) => {
+      const { [id]: _closed, ...rest } = byRepoRef.current;
+      setByRepo(rest);
+    },
+    [setByRepo],
+  );
 
   /** Take what the server reports, without echoing it back. */
-  const adopt = useCallback((remote: MaximizedByRepo) => {
-    setByRepo((current) => (same(current, remote) ? current : remote));
-  }, []);
+  const adopt = useCallback(
+    (remote: MaximizedByRepo) => {
+      if (same(byRepoRef.current, remote)) return;
+      setByRepo(remote);
+    },
+    [setByRepo],
+  );
 
   return { panelOf, setFor, drop, adopt, writes };
 }
