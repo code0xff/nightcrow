@@ -216,7 +216,9 @@ fn assert_refused(original: &str, expected_in_error: &str) {
 }
 
 #[test]
+#[cfg(unix)]
 fn installing_backs_up_the_previous_file_and_writes_mode_0600() {
+    use std::os::unix::fs::PermissionsExt;
     let (_dir, paths) = home();
     let original = r#"{"model":"opus"}"#;
     write_settings(&paths, original);

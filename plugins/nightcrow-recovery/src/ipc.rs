@@ -15,13 +15,12 @@
 
 use crate::protocol::PaneToken;
 use crate::provider::{OutOfBand, SignalKind};
+use crate::transport::{UnixListener, UnixStream};
 use anyhow::{Context, Result, bail, ensure};
 use serde_json::Value;
 use std::ffi::OsStr;
 use std::fs;
 use std::io::{BufRead, BufReader, Read, Write};
-use std::os::unix::fs::PermissionsExt;
-use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
@@ -40,6 +39,20 @@ const HOME_RUNTIME_DIR: &str = ".nightcrow/run";
 /// another local user inject one.
 const DIR_MODE: u32 = 0o700;
 const SOCKET_MODE: u32 = 0o600;
+
+/// Restrict a path to its owner on platforms where that is meaningful.
+/// On Windows the default ACL on a user-owned directory already suffices.
+#[cfg(unix)]
+fn restrict_to_owner(path: &Path, mode: u32) -> Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+    fs::set_permissions(path, fs::Permissions::from_mode(mode))
+        .with_context(|| format!("cannot restrict {} to its owner", path.display()))
+}
+
+#[cfg(not(unix))]
+fn restrict_to_owner(_path: &Path, _mode: u32) -> Result<()> {
+    Ok(())
+}
 
 /// Longest IPC line accepted. Both senders forward a whitelist of small scalar
 /// fields, so anything larger is a bug or an attempt to make this process
@@ -82,7 +95,7 @@ impl IpcMessage {
 pub fn socket_path() -> Result<PathBuf> {
     socket_path_from(
         std::env::var_os("XDG_RUNTIME_DIR").as_deref(),
-        std::env::var_os("HOME").as_deref(),
+        dirs::home_dir().map(std::ffi::OsString::from).as_deref(),
     )
 }
 
@@ -93,7 +106,7 @@ fn socket_path_from(runtime_dir: Option<&OsStr>, home: Option<&OsStr>) -> Result
         return Ok(PathBuf::from(dir).join(RUNTIME_DIR).join(SOCKET_FILE));
     }
     let home = home.filter(|h| !h.is_empty()).context(
-        "neither XDG_RUNTIME_DIR nor HOME is set, so there is nowhere to put the socket",
+        "neither XDG_RUNTIME_DIR nor a home directory is set, so there is nowhere to put the socket",
     )?;
     Ok(PathBuf::from(home).join(HOME_RUNTIME_DIR).join(SOCKET_FILE))
 }
@@ -198,17 +211,24 @@ impl Ipc {
             .context("socket path has no parent directory")?;
         fs::create_dir_all(dir)
             .with_context(|| format!("cannot create runtime directory {}", dir.display()))?;
-        fs::set_permissions(dir, fs::Permissions::from_mode(DIR_MODE))
-            .with_context(|| format!("cannot restrict {} to its owner", dir.display()))?;
+        restrict_to_owner(dir, DIR_MODE)?;
         // A socket file left by a crashed run refuses bind with EADDRINUSE, and
         // there is no live listener behind it to protect.
         if path.exists() && UnixStream::connect(&path).is_err() {
             let _ = fs::remove_file(&path);
         }
-        let listener = UnixListener::bind(&path)
-            .with_context(|| format!("cannot listen on {}", path.display()))?;
-        fs::set_permissions(&path, fs::Permissions::from_mode(SOCKET_MODE))
-            .with_context(|| format!("cannot restrict {} to its owner", path.display()))?;
+        let listener = UnixListener::bind(&path).with_context(|| {
+            let len = path.as_os_str().len();
+            if len >= 108 {
+                format!(
+                    "cannot listen on {} — the path is {len} bytes, over the ~107 byte AF_UNIX limit",
+                    path.display()
+                )
+            } else {
+                format!("cannot listen on {}", path.display())
+            }
+        })?;
+        restrict_to_owner(&path, SOCKET_MODE)?;
         Ok(Self { path, listener })
     }
 

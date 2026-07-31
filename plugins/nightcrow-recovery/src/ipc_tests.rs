@@ -132,7 +132,7 @@ fn a_process_with_neither_variable_set_has_nowhere_to_put_the_socket() {
         .expect_err("nowhere to put it")
         .to_string();
     assert!(
-        err.contains("XDG_RUNTIME_DIR") && err.contains("HOME"),
+        err.contains("XDG_RUNTIME_DIR") && err.contains("home directory"),
         "{err}"
     );
     assert!(socket_path_from(Some(OsStr::new("")), Some(OsStr::new(""))).is_err());
@@ -169,7 +169,7 @@ fn a_malformed_line_is_dropped_without_ending_the_listener() {
     let (tx, rx) = channel();
     ipc.serve(move |msg| tx.send(msg).is_ok()).expect("serving");
 
-    let mut stream = std::os::unix::net::UnixStream::connect(&path).expect("connected");
+    let mut stream = UnixStream::connect(&path).expect("connected");
     stream.write_all(b"garbage\n").expect("wrote");
     drop(stream);
 
@@ -181,7 +181,9 @@ fn a_malformed_line_is_dropped_without_ending_the_listener() {
 }
 
 #[test]
+#[cfg(unix)]
 fn the_socket_is_readable_only_by_its_owner_and_removed_on_exit() {
+    use std::os::unix::fs::PermissionsExt;
     let dir = tempfile::tempdir().expect("a temp dir");
     let path = dir.path().join("recovery.sock");
     {
