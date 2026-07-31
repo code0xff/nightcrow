@@ -148,6 +148,15 @@ fn handle(message: ClientMessage, id: u64, session: &Session) {
                     .dispatch(&repo, message);
             }
         }
+        // The daemon runs the same shutdown sequence as SIGINT/SIGTERM — reaping
+        // every child shell — and then closes the connection. No reply is sent;
+        // the connection closing is the acknowledgment.
+        ClientMessage::Shutdown => {
+            tracing::info!("daemon: shutdown requested by attached client {id}");
+            let _ = session
+                .shutdown_tx
+                .send(crate::platform::signals::Shutdown::Terminate);
+        }
     }
 }
 

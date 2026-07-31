@@ -21,7 +21,7 @@ mod workspace;
 use anyhow::Result;
 use clap::Parser;
 
-use crate::cli::{Cli, Commands, run_daemon, run_init};
+use crate::cli::{Cli, Commands, run_daemon, run_init, run_stop};
 
 /// Every path here runs to completion and returns; nothing in this process
 /// takes over the terminal. The session runs headless and `attach` is a
@@ -32,6 +32,7 @@ fn main() -> Result<()> {
         Some(Commands::Init { force }) => run_init(force),
         Some(Commands::Attach) => application::attach::run_attach(),
         Some(Commands::Plugin { command }) => cli::plugin_cmd::run_plugin(command),
+        Some(Commands::Stop { socket }) => run_stop(socket),
         None => run_daemon(cli.exec, cli.port, cli.bind, cli.detach),
     }
 }
