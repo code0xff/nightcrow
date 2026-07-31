@@ -227,3 +227,48 @@ fn an_older_file_without_a_width_keeps_its_accent_and_defaults_the_width() {
     assert_eq!(prefs.accent, 3);
     assert_eq!(prefs.sidebar_width, DEFAULT_SIDEBAR_WIDTH);
 }
+
+#[test]
+fn a_projects_arrangement_round_trips_through_the_file() {
+    let dir = tempfile::TempDir::new().unwrap();
+    let path = dir.path().join("viewer.json");
+
+    let stored = PrefsStore::at(path.clone())
+        .set_maximized("/work/api".into(), Some(MaximizedPanel::Terminal));
+    assert_eq!(
+        maximized::panel_of(&stored.maximized, "/work/api"),
+        Some(MaximizedPanel::Terminal)
+    );
+
+    // The point of the field: a later process reads it back. Keyed by path
+    // rather than repo id precisely so this survives the restart.
+    let reloaded = PrefsStore::at(path).get();
+    assert_eq!(
+        maximized::panel_of(&reloaded.maximized, "/work/api"),
+        Some(MaximizedPanel::Terminal)
+    );
+}
+
+#[test]
+fn an_older_file_without_any_arrangement_loads_with_none() {
+    let dir = tempfile::TempDir::new().unwrap();
+    let path = dir.path().join("viewer.json");
+    std::fs::write(&path, r#"{"accent":1,"upper_pct":40}"#).unwrap();
+
+    let prefs = PrefsStore::at(path).get();
+    assert_eq!(prefs.upper_pct, 40);
+    assert!(prefs.maximized.is_empty());
+}
+
+#[test]
+fn arranging_one_project_leaves_the_other_preferences_as_they_were() {
+    let dir = tempfile::TempDir::new().unwrap();
+    let store = PrefsStore::at(dir.path().join("viewer.json"));
+    store.set_accent(4);
+    store.set_upper_pct(30);
+
+    let stored = store.set_maximized("/work/api".into(), Some(MaximizedPanel::Files));
+
+    assert_eq!(stored.accent, 4);
+    assert_eq!(stored.upper_pct, 30);
+}

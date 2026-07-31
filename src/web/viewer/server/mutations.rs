@@ -74,6 +74,7 @@ pub(super) fn handle_set_prefs(body: &str, state: &ViewerState) -> Vec<u8> {
         sidebar_width: request.sidebar_width,
         upper_pct: request.upper_pct,
         active_repo: active_path,
+        maximized: None,
     });
     match serde_json::to_string(&Envelope::new(serde_json::json!({
         "accent": stored.accent,
