@@ -1,3 +1,5 @@
+mod row;
+
 use crate::app::{App, Focus};
 use ratatui::{
     Frame,
@@ -6,34 +8,6 @@ use ratatui::{
     text::{Line, Span},
     widgets::ListItem,
 };
-use std::time::{SystemTime, UNIX_EPOCH};
-
-const SECS_PER_MINUTE: i64 = 60;
-const SECS_PER_HOUR: i64 = 3_600;
-const SECS_PER_DAY: i64 = 86_400;
-const SECS_PER_MONTH: i64 = SECS_PER_DAY * 30;
-const SECS_PER_YEAR: i64 = SECS_PER_DAY * 365;
-
-fn format_relative_time(ts: i64) -> String {
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_secs() as i64)
-        .unwrap_or(0);
-    let secs = now.saturating_sub(ts).max(0);
-    if secs < SECS_PER_MINUTE {
-        format!("{secs}s")
-    } else if secs < SECS_PER_HOUR {
-        format!("{}m", secs / SECS_PER_MINUTE)
-    } else if secs < SECS_PER_DAY {
-        format!("{}h", secs / SECS_PER_HOUR)
-    } else if secs < SECS_PER_MONTH {
-        format!("{}d", secs / SECS_PER_DAY)
-    } else if secs < SECS_PER_YEAR {
-        format!("{}mo", secs / SECS_PER_MONTH)
-    } else {
-        format!("{}y", secs / SECS_PER_YEAR)
-    }
-}
 
 pub fn render(frame: &mut Frame, app: &App, area: Rect, accent: Color) {
     if app.log_view.drill_down {
@@ -71,24 +45,7 @@ fn render_commit_list(frame: &mut Frame, app: &App, area: Rect, accent: Color) {
         .iter()
         .map(|&i| {
             let entry = &app.log_view.commits[i];
-            let time_str = format_relative_time(entry.time);
-            let author_short: String = entry.author.chars().take(10).collect();
-            let marker = if i < ahead_count { "↑ " } else { "  " };
-            let summary = super::char_offset(&entry.summary, scroll_x);
-            let line = Line::from(vec![
-                Span::styled(marker, Style::default().fg(Color::Green)),
-                Span::styled(format!("{} ", entry.short_id), Style::default().fg(accent)),
-                Span::styled(
-                    format!("{:>4} ", time_str),
-                    Style::default().fg(Color::Gray),
-                ),
-                Span::styled(
-                    format!("{:<10} ", author_short),
-                    Style::default().fg(Color::Cyan),
-                ),
-                Span::raw(summary),
-            ]);
-            ListItem::new(line)
+            ListItem::new(row::commit_row(entry, i < ahead_count, scroll_x, accent))
         })
         .collect();
 
@@ -225,14 +182,7 @@ fn truncate_title(title: &str, max_chars: usize) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{format_relative_time, truncate_title};
-
-    #[test]
-    fn format_relative_time_handles_far_future_timestamp() {
-        // Corrupt/malicious commit timestamps must not panic on i64 underflow.
-        let s = format_relative_time(i64::MAX);
-        assert_eq!(s, "0s");
-    }
+    use super::truncate_title;
 
     #[test]
     fn truncate_title_handles_multibyte_text() {
