@@ -889,6 +889,33 @@ hint bar는 오버레이(repo 입력·prefix armed·swap target)가 열리면 �
 
 snapshot worker는 매 폴 사이클마다 현재 HEAD oid를 함께 보고한다. UI 스레드는 `poll_snapshot`에서 oid 변동을 감지하면 `refresh_commit_log_after_head_change`로 commit log와 drill-down 상태를 동일 oid 기준으로 재정렬해, 터미널에서 새 커밋·amend·force-push·브랜치 전환이 일어났을 때도 로그 뷰가 즉시 따라잡는다.
 
+### Commit Log Decoration
+
+`git log --decorate`가 주는 방향 감각을 로그 뷰에 옮긴 것이다. `src/git/diff/refs.rs`가
+`repo.references()`를 한 번 걸어 `Oid -> Vec<RefLabel>` 맵을 만들고, HEAD·로컬 브랜치·태그·
+원격 브랜치를 구분해 커밋 행에 chip으로 그린다. 비용은 커밋 수가 아니라 **ref 수**에
+비례하고, annotated tag은 `peel_to_commit`으로 가리키는 커밋에 붙인다.
+
+- **재생성 시점은 refs fingerprint가 정한다**: fetch가 `origin/dev`를 옮기면 HEAD는
+  그대로여도 chip은 달라져야 한다. snapshot worker가 매 폴마다 ref 이름·타깃의 다이제스트를
+  `RepoSnapshot::refs_fingerprint`로 실어 보내고, UI 스레드는 그 값이 바뀔 때만 맵을 다시
+  만든다. 재생성 실패는 이전 맵을 유지한다 — 일시적 읽기 오류로 chip이 사라지는 것보다
+  낫다.
+- **ahead/behind는 위치가 아니라 oid 집합으로 판정한다**: 이전 구현은 "위에서 N개가
+  ahead"라는 위치 가정이었고, anchor가 HEAD가 아니거나 필터가 걸리면 마커가 엉뚱한 행에
+  붙었다. 지금은 `revwalk.push(local)` + `hide(upstream)`(과 그 반대)로 각 방향의 oid
+  집합을 만들어 멤버십으로 판정한다. 집합은 방향당 `MAX_DIVERGENCE_OIDS`개로 끊는다 —
+  walk가 최신순이므로 잘리는 쪽은 화면에 닿지 않는 꼬리다.
+- **1 커밋 = 1 행을 유지한다**: `log_view.selected`가 커밋 인덱스이자 화면 위치라는 전제를
+  선택·스크롤·tail prefetch가 공유한다. 여유 공간은 행이 아니라 **컬럼**으로 쓴다.
+  `area.width >= MIN_DETAIL_WIDTH`이면 상대 시각 대신 절대 시각, author에 email, short_id
+  10자, chip 무절단으로 넓힌다. 판정 기준이 `list_fullscreen` 플래그가 아니라 폭인 이유는
+  넓은 모니터에서는 fullscreen이 아니어도 자리가 남기 때문이고, 이는
+  `diff_viewer::MIN_SPLIT_WIDTH`가 이미 세운 선례와 같은 모양이다.
+- **commit graph는 범위 밖이다**: lane graph는 topological 정렬을 전제하는데 현재 revwalk에는
+  `set_sorting`이 없고, 정렬을 바꾸면 위의 anchor+skip 페이지네이션 계약까지 함께 다시
+  설계해야 한다.
+
 ### Plugin Host (`src/plugin/`, `plugins/`)
 
 어떤 CLI가 사용량 한도에 걸렸는지 알아보고 한도가 풀린 뒤 세션을 재개하는 일은 provider를
