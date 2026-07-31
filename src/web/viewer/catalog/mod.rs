@@ -63,6 +63,9 @@ pub struct Catalog {
     /// hubs already running are told as well, because a plugin is a child process
     /// rather than a pane and restarting one costs the session nothing.
     plugins: Mutex<Vec<crate::config::PluginConfig>>,
+    /// The shell every terminal pane is spawned with. Fixed for the session's
+    /// life: a config reload does not replace the shell of a running hub.
+    shell: crate::config::ShellConfig,
     /// Which screen this session's panes are fitted to, shared by every hub the
     /// catalog spawns.
     ///
@@ -196,6 +199,7 @@ impl Catalog {
                             &path,
                             startup.clone(),
                             plugins.clone(),
+                            self.shell.clone(),
                             Arc::clone(&self.ownership),
                         ),
                         id,

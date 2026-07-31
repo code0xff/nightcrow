@@ -101,6 +101,7 @@ pub fn session_state(
             persist: false,
             startup_commands: Vec::new(),
             cli_startup: Vec::new(),
+            shell: crate::config::ShellConfig::default(),
             hot: crate::config::AgentIndicatorConfig::default(),
             prefs: crate::web::viewer::prefs::PrefsStore::at(prefs_dir.join("viewer.json")),
         },

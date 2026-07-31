@@ -5,6 +5,7 @@
 //! is one value with one owner, and these are the rules for who holds it.
 
 use super::{attach, next_matching, resized_size, spawn_hub};
+use crate::config::ShellConfig;
 use crate::web::viewer::terminal::frame::{ClientMessage, PaneSize, TerminalFrame};
 use crate::web::viewer::terminal::{TerminalHub, TerminalSession};
 
@@ -105,8 +106,20 @@ fn one_answer_covers_every_repository_in_the_session() {
     let cwd = dir.path().to_string_lossy().to_string();
     let ownership: std::sync::Arc<crate::web::viewer::size_owner::SizeOwnership> =
         Default::default();
-    let one = TerminalHub::spawn(&cwd, Vec::new(), Vec::new(), ownership.clone());
-    let two = TerminalHub::spawn(&cwd, Vec::new(), Vec::new(), ownership);
+    let one = TerminalHub::spawn(
+        &cwd,
+        Vec::new(),
+        Vec::new(),
+        ShellConfig::default(),
+        ownership.clone(),
+    );
+    let two = TerminalHub::spawn(
+        &cwd,
+        Vec::new(),
+        Vec::new(),
+        ShellConfig::default(),
+        ownership,
+    );
 
     // An attached terminal subscribes to every open repository at once. Those
     // are one screen, so only its first subscription is an arrival.

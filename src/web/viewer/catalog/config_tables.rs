@@ -52,6 +52,23 @@ impl Catalog {
         }
     }
 
+    /// Like [`Catalog::with_startup_plugins_and_exec`], also setting the shell
+    /// every terminal pane is spawned with.
+    pub fn with_startup_plugins_exec_and_shell(
+        startup_commands: Vec<crate::config::StartupCommand>,
+        plugins: Vec<crate::config::PluginConfig>,
+        cli_startup: Vec<String>,
+        shell: crate::config::ShellConfig,
+    ) -> Self {
+        Self {
+            startup_commands: Mutex::new(startup_commands),
+            plugins: Mutex::new(plugins),
+            cli_startup,
+            shell,
+            ..Self::default()
+        }
+    }
+
     /// Replace both configured tables, as a config reload does.
     ///
     /// `file_startup` is the file's `[[startup_command]]` table alone; the

@@ -175,7 +175,13 @@ pub(super) fn spawn_hub(
     startup: Vec<crate::config::StartupCommand>,
     plugins: Vec<crate::config::PluginConfig>,
 ) -> std::sync::Arc<super::TerminalHub> {
-    super::TerminalHub::spawn(cwd, startup, plugins, Default::default())
+    super::TerminalHub::spawn(
+        cwd,
+        startup,
+        plugins,
+        crate::config::ShellConfig::default(),
+        Default::default(),
+    )
 }
 
 /// A client arriving at `hub` — a page someone just opened, which is what every

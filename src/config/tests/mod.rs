@@ -3,6 +3,7 @@ mod input;
 mod log;
 mod panels;
 mod plugin;
+mod shell;
 mod startup;
 mod theme;
 mod tree;

@@ -110,6 +110,7 @@ pub struct ViewerOptions {
     /// so a config reload can arrive at the same combined list. Empty for every
     /// caller that has none.
     pub cli_startup: Vec<String>,
+    pub shell: crate::config::ShellConfig,
     pub hot: crate::config::AgentIndicatorConfig,
     pub prefs: PrefsStore,
 }
@@ -146,14 +147,16 @@ impl ViewerState {
             persist,
             startup_commands,
             cli_startup,
+            shell,
             hot,
             prefs,
         } = options;
         let state = Self {
-            catalog: crate::web::viewer::catalog::Catalog::with_startup_plugins_and_exec(
+            catalog: crate::web::viewer::catalog::Catalog::with_startup_plugins_exec_and_shell(
                 startup_commands,
                 plugins,
                 cli_startup,
+                shell,
             ),
             bound_loopback: bind.is_loopback(),
             auth,
@@ -183,6 +186,7 @@ impl ViewerServer {
         viewer: &crate::config::WebViewerConfig,
         agent_indicator: &crate::config::AgentIndicatorConfig,
         theme: &crate::config::ThemeConfig,
+        shell: &crate::config::ShellConfig,
         paths: &[String],
         persist: bool,
         startup_commands: Vec<crate::config::StartupCommand>,
@@ -211,6 +215,7 @@ impl ViewerServer {
                 persist,
                 startup_commands,
                 cli_startup,
+                shell: shell.clone(),
                 hot: agent_indicator.clone(),
                 // The session's accent outlives any one config edit, so `[theme]`
                 // only names the colour a session with no stored choice starts in.

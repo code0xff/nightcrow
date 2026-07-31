@@ -10,6 +10,7 @@ use super::plugin_rules::{
 };
 use super::plugins::{fixture, logged, logged_event, recorder};
 use crate::backend::{PtyBackend, TerminalBackend};
+use crate::config::ShellConfig;
 use crate::plugin::{Approved, RateLimits, Refused};
 use crate::web::viewer::terminal::hub_plugins::Plugins;
 use crate::web::viewer::terminal::hub_plugins_slots::{PENDING_RELAUNCH_TTL, PaneSpot};
@@ -21,7 +22,7 @@ fn an_exited_watched_pane_keeps_its_token_while_a_plain_pane_loses_its() {
     // what makes a relaunch possible at all; `destroy_pane` is what makes an
     // ordinary pane unaddressable the moment it ends.
     let f = fixture();
-    let mut backend = PtyBackend::new(f.cwd());
+    let mut backend = PtyBackend::new(f.cwd(), ShellConfig::default());
     let watched = backend
         .open_pane(ROWS, COLS, Some(LONG_RUNNING))
         .expect("open a pane");
@@ -49,7 +50,7 @@ fn an_exited_watched_pane_keeps_its_token_while_a_plain_pane_loses_its() {
 #[test]
 fn a_hold_that_runs_out_of_time_retires_the_slot() {
     let f = fixture();
-    let mut backend = PtyBackend::new(f.cwd());
+    let mut backend = PtyBackend::new(f.cwd(), ShellConfig::default());
     let mut plugins = Plugins::start(&f.cwd(), &[recorder(PLUGIN, &f.log)], &[opt_in()]);
     let pane = backend
         .open_pane(ROWS, COLS, Some(LONG_RUNNING))
@@ -86,7 +87,7 @@ fn a_hold_that_runs_out_of_time_retires_the_slot() {
 #[test]
 fn a_human_typing_into_a_watched_pane_clears_what_its_plugin_had_spent() {
     let f = fixture();
-    let mut backend = PtyBackend::new(f.cwd());
+    let mut backend = PtyBackend::new(f.cwd(), ShellConfig::default());
     let mut plugins = Plugins::start(&f.cwd(), &[recorder(PLUGIN, &f.log)], &[opt_in()]);
     let pane = backend
         .open_pane(ROWS, COLS, Some(LONG_RUNNING))
@@ -127,7 +128,7 @@ fn a_human_typing_into_a_watched_pane_clears_what_its_plugin_had_spent() {
 #[test]
 fn a_quiet_pane_is_announced_idle_once_until_it_speaks_again() {
     let f = fixture();
-    let mut backend = PtyBackend::new(f.cwd());
+    let mut backend = PtyBackend::new(f.cwd(), ShellConfig::default());
     let mut plugins = Plugins::start(&f.cwd(), &[recorder(PLUGIN, &f.log)], &[opt_in()]);
     let pane = backend
         .open_pane(ROWS, COLS, Some(LONG_RUNNING))
