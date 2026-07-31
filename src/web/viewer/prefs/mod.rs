@@ -90,7 +90,7 @@ pub struct ViewerPrefs {
     /// back to its first tab — then records whichever project it landed on, so
     /// what is on file is always somewhere a client actually was.
     pub active_repo: Option<String>,
-    /// Which panel each project was left maximized in, most recently touched
+    /// Which panel each project was left maximized in, most recently set
     /// first. Empty until someone maximizes something; see [`maximized`].
     pub maximized: Vec<RepoMaximized>,
 }

@@ -19,9 +19,14 @@
 
 use serde::{Deserialize, Serialize};
 
-/// How many projects' arrangement to remember. Past this the least recently
-/// touched entries go, so the file cannot grow for every repository ever
-/// opened. The same bound the TUI puts on its own per-repo state
+/// How many projects' arrangement to remember. Past this the entries whose
+/// arrangement was set longest ago go, so the file cannot grow for every
+/// repository ever opened.
+///
+/// Ordered by when the arrangement was *set*, not when the project was last
+/// looked at. Use-ordering would mean a preference write on every project
+/// switch, to save a project that has had fifty others maximized after it —
+/// which is the only way to reach the cap at all. The same bound the TUI puts on its own per-repo state
 /// (`workspace::persistence::MAX_REMEMBERED`), for the same reason — stated
 /// again rather than imported, because nothing would make the two wrong
 /// together if one changed.
@@ -66,7 +71,7 @@ pub struct RepoMaximized {
     pub panel: MaximizedPanel,
 }
 
-/// Record `panel` for `repo`, most recently touched first.
+/// Record `panel` for `repo`, most recently set first.
 ///
 /// `None` un-maximizes: the entry goes rather than being stored as a "nothing"
 /// state, so the list stays the set of projects that actually have an
