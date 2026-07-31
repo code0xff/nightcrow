@@ -93,6 +93,17 @@ git 데이터도 터미널도 전혀 모르는 계층이며, 웹 표면이 하�
   순서로 수렴한다. 순서는 hub의 pane Vec에 살아 재접속 replay와 다른 기기가 자동으로 따라오고
   디스크에는 쓰지 않는다. DnD는 HTML5 drag가 아니라 pointer 이벤트라(sidebar divider와 같은 선택)
   폰 터치도 마우스와 동일하다.
+- **어느 pane이 패널을 채우는지(zoom)**(`terminal/hub_zoom.rs`, `lib/zoom.ts`): 순서와 같은 자리·같은
+  이유다. 클라이언트는 `zoom`을 보낸 뒤 `zoomed` echo로만 반영하고, `connect`가 현재 zoom을 재생해
+  **새로고침한 페이지가 zoom한 채로 돌아온다** — 전에는 한 페이지의 `useState`에 살아 리로드마다
+  사라졌다. **프레임 순서가 계약이다**: `Created`보다 zoom 해제가 먼저, replay에서는 pane보다 zoom이
+  먼저 간다(각각 "새 pane이 zoom 뒤에 숨는 렌더"와 "grid로 정착했다가 전 PTY를 다시 리사이즈"를
+  막는다). 클라이언트는 무엇을 그릴지를 raw 값이 아니라 살아있는 pane 목록에서 파생시켜
+  (`renderedZoom`) 두 프레임 사이의 렌더에서 빈 패널이 나오지 않게 한다. **디스크에는 쓰지 않으며 쓸
+  수도 없다** — zoom은 pane을 가리키고 pane은 데몬의 자식이라 재시작하면 가리킬 대상이 없다. 패널
+  단위 maximize(`prefs/maximized.rs`)가 파일에 남는 것과의 차이가 이것이다. **attach한 TUI는
+  통보받고 무시한다**(`backend/hub.rs`): TUI의 zoom은 자기 활성 pane을 따르고 diff 뷰어까지 덮는 다른
+  질문이다.
 - **프로젝트 탭 순서**(`catalog/`, `POST /api/repos/order`): 같은 모양이되 **전송 채널이 다르다** —
   repo 목록에는 전용 WebSocket이 없고 `/api/repos` 폴링뿐이라 broadcast 대신 REST로 갱신하고 다음
   폴링이 그것을 받는다. **순서가 `rebuild`를 견디게** `Catalog`에 명시적 `order` overlay를 두어
