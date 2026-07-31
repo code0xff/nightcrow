@@ -82,7 +82,7 @@ impl Workspace {
     /// to the daemon; a client that wrote those would overwrite the session
     /// with its own view of it. What is selected and where it is scrolled is
     /// this client's alone (see the shared/per-client boundary in
-    /// `docs/session-daemon-plan.md`), which is why it is saved here and not
+    /// `docs/architecture/session.md`), which is why it is saved here and not
     /// there.
     ///
     /// Open projects go last so the least-recently-used eviction never drops a

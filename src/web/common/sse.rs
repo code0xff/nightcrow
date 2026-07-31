@@ -9,10 +9,9 @@
 //! Generic over [`Write`] so the framing is unit-testable against a buffer
 //! and the same code drives a real `TcpStream`.
 //!
-//! Nothing routes an SSE response yet — the viewer's `/api/events` is step 6
-//! of `docs/web-viewer-plan.md`, while this framing is step 2. The module is
-//! built and tested ahead of its caller so each step stays small, hence the
-//! blanket dead-code allowance; drop it once a route constructs an `SseStream`.
+//! The framing landed ahead of its caller (the viewer's `/api/events`) so each
+//! step stayed small, hence the blanket dead-code allowance; drop it once a
+//! route constructs an `SseStream`.
 #![allow(dead_code)]
 
 use std::io::{self, Write};
