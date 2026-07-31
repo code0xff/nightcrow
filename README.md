@@ -202,6 +202,7 @@ visible from the terminal pane.
 | `<prefix> o` | Open a repo in a **project tab** (prefilled with the active project's path — type to replace it, or press `→`/`End` first to extend it). `Tab` completes the path against your filesystem and `↓` opens a directory browser (see below). A leading `~` expands to your home directory. If another tab already has that repo open, nightcrow focuses that tab instead of running two copies against one worktree |
 | `<prefix> x` | Close the active project tab. Closing the last one leaves nightcrow with no project open, which is a normal state |
 | `<prefix> p` | Cycle accent color (yellow → cyan → green → magenta → blue). The accent belongs to the session, so every attached TUI and every open browser follows |
+| `<prefix> u` | Re-read `config.toml` without restarting the session. `[[plugin]]` is re-applied to every open project immediately; `[[startup_command]]` applies to projects you open afterwards, because the panes an open project already started are live processes. Everything else in the file still needs a restart. The result appears on the notice row — see [Reloading the config](#reloading-the-config) |
 | `<prefix> r` | Force a full redraw (clears stray glyphs left by terminal programs) |
 | `<prefix> q` | Quit |
 | `<prefix> 1` / `<prefix> 2` | Focus the file/commit list / diff viewer — **split view only** |
@@ -651,6 +652,39 @@ allowed_resume_flags = []         # flags the plugin may append to re-open a
 [plugin.env]                      # plugin process only, never terminal panes
 NIGHTCROW_RECOVERY_LOG = "info"
 ```
+
+### Reloading the config
+
+Editing `config.toml` normally means restarting the session — which kills every
+pane, including whatever an agent CLI was in the middle of. Two of the tables
+can be re-read instead, without stopping anything:
+
+- **In the TUI**: `<prefix> u`. The result appears on the notice row.
+- **In the browser**: the ⟳ button in the header, next to sign out. It reloads
+  the *config*, not the page — nothing on screen changes, and the result comes
+  back as a toast.
+
+What a reload applies:
+
+| Table | When it takes effect |
+| --- | --- |
+| `[[plugin]]` | **Immediately, in every open project.** Newly enabled plugins start and are handed the panes that opted into them; disabled or removed ones stop and their panes carry on unwatched. A plugin whose `command`, `args` or `env` changed gets a new process; changing only `allowed_resume_flags` or `watch_on_signal` leaves the running one alone, so a plugin part-way through a long wait is not disturbed |
+| `[[startup_command]]` | **On the next project you open.** A project that is already open keeps the panes it started with — those are live processes, and no file edit replaces them |
+| Everything else | Needs a restart: `[web_viewer]` (the listener is already bound), `[log]`, and the client-owned `[layout]`, `[input]`, `[tree]`, `[mouse]` sections, which each TUI reads when it attaches |
+
+Notes:
+
+- **Nothing half-applies.** The whole file is parsed and validated first, so a
+  typo anywhere leaves the session exactly as it was, and the message names the
+  key that was wrong.
+- **A missing file is refused** rather than read as "nothing is configured" —
+  otherwise deleting the file and reloading would be a quiet way to stop every
+  plugin.
+- Panes opened with `--exec` are kept: they are not in the file, so a reload
+  merges them back where a restart would have put them.
+- Disabling a plugin and enabling it again lands where enabling it the first
+  time would — the pane's opt-in survives, so `enabled` means the same thing
+  whichever way it was last flipped.
 
 ## License
 

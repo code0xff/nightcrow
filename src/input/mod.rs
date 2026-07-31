@@ -41,6 +41,9 @@ pub enum Action {
     ToggleLogView,
     ToggleTreeView,
     CycleTheme,
+    /// Ask the session to re-read `config.toml`. A session-wide request rather
+    /// than a local one — the daemon owns the plugins and the startup list.
+    ReloadConfig,
     Redraw,
     None,
 }

@@ -109,6 +109,11 @@ impl SessionLink {
             // clients cycling at once agree on the result instead of each
             // advancing the session from what it last showed them.
             ProjectRequest::CycleAccent => self.client.set_accent(ws.next_accent_index()),
+            // Nothing is shown optimistically. Unlike the accent this is not a
+            // wait to avoid a flicker — there is simply nothing to show until the
+            // session says what it read, and guessing would mean claiming a file
+            // applied before anything had parsed it.
+            ProjectRequest::ReloadConfig => self.client.reload_config(),
         };
         if let Err(err) = sent {
             ws.raise_notice(

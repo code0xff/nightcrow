@@ -190,6 +190,15 @@ impl DaemonClient {
         send(&self.out, &ClientMessage::SetAccent { accent })
     }
 
+    /// Ask the daemon to re-read `config.toml`.
+    ///
+    /// Answered to this client alone, as a [`ServerMessage::Reloaded`] or an
+    /// error: nothing a reload does is visible in what the other clients are
+    /// looking at.
+    pub fn reload_config(&mut self) -> Result<()> {
+        send(&self.out, &ClientMessage::ReloadConfig)
+    }
+
     /// Ask the daemon to close a repository, by catalog id.
     pub fn close_repo(&mut self, id: &str) -> Result<()> {
         send(
