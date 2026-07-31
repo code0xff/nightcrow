@@ -31,6 +31,7 @@ mod hub_plugins_slots;
 mod hub_recovery;
 mod hub_relaunch;
 mod hub_reload;
+mod hub_reload_hosts;
 mod hub_repaint;
 mod hub_run;
 mod session;

@@ -13,12 +13,9 @@
 
 use super::plugins::{Fixture, LOG_ENV, fixture, logged, logged_event, shell_plugin};
 use super::{collect_created, wait_for};
-use crate::backend::{PtyBackend, TerminalBackend};
 use crate::config::{PluginConfig, StartupCommand};
 use crate::web::viewer::terminal::TerminalHub;
 use crate::web::viewer::terminal::frame::ClientMessage;
-use crate::web::viewer::terminal::hub_plugins::Plugins;
-use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -43,7 +40,7 @@ fn watched_pane(name: &str, plugin: &str) -> StartupCommand {
 
 /// A plugin with its own log, so which child received an event is decided by
 /// which file it landed in.
-fn plugin_with_log(f: &Fixture, name: &str) -> (PluginConfig, PathBuf) {
+pub(super) fn plugin_with_log(f: &Fixture, name: &str) -> (PluginConfig, PathBuf) {
     let log = f.log.with_file_name(format!("{name}.ndjson"));
     let cfg = shell_plugin(name, farewell_script(), &log, Path::new("/dev/null"));
     (cfg, log)
@@ -51,7 +48,7 @@ fn plugin_with_log(f: &Fixture, name: &str) -> (PluginConfig, PathBuf) {
 
 /// The same plugin with a different argv, which is what forces its child to be
 /// replaced. The extra argument is inert — `/bin/sh -c script` ignores it.
-fn respawning(cfg: &PluginConfig) -> PluginConfig {
+pub(super) fn respawning(cfg: &PluginConfig) -> PluginConfig {
     let mut next = cfg.clone();
     next.args.push("ignored-extra-arg".to_string());
     next
@@ -222,46 +219,6 @@ fn a_reload_that_changes_nothing_leaves_every_child_alone() {
         "an unchanged plugin must not be restarted"
     );
     hub.stop();
-}
-
-/// The arm of the decision that only a `watch_on_signal` plugin can reach:
-/// nothing in the startup list names it, so being told to stop watching on signal
-/// would leave it wanted by nothing — except the pane it is already watching.
-///
-/// Driven against `Plugins` directly, because getting a pane adopted without an
-/// opt-in means going through the token path, which has no shape at the hub's
-/// command queue.
-#[test]
-fn a_plugin_no_startup_pane_names_is_kept_while_it_watches_a_live_pane() {
-    let f = fixture();
-    let mut backend = PtyBackend::new(f.cwd());
-    let watcher = PluginConfig {
-        watch_on_signal: true,
-        ..plugin_with_log(&f, "signal").0
-    };
-    let mut plugins = Plugins::start(&f.cwd(), std::slice::from_ref(&watcher), &[]);
-    let pane = backend
-        .open_pane(24, 80, Some("sleep 30"))
-        .expect("open a pane");
-    assert!(plugins.adopt(pane, "signal"), "the host must be live");
-    let titles = HashMap::from([(pane, None)]);
-
-    // The operator's switch goes off. No opt-in names this plugin, so the only
-    // thing that can keep it is the pane it is already watching.
-    let mut off = watcher;
-    off.watch_on_signal = false;
-    let outcome = plugins.reload(&mut backend, &[off], &[], &titles);
-
-    assert!(
-        outcome.stopped.is_empty(),
-        "a plugin watching a live pane must be kept: {outcome:?}"
-    );
-    assert_eq!(
-        plugins.owner(pane),
-        Some("signal"),
-        "and it must keep the pane"
-    );
-    backend.destroy_pane(pane);
 }
 
 #[test]

@@ -478,6 +478,22 @@ host 없는 opt-in은 relaunch 경로에도 오르지 않고 이벤트도 받지
 relaunch로 답하는 plugin을 묶는 유일한 상한이다. reload마다 새 allowance를 발급하면 그 상한에
 영영 닿지 않는다 — `take_over`가 spent budget을 그대로 두는 것과 같은 근거다.
 
+**relaunch hold는 그것을 쥐고 있던 자식과 함께 죽는다** — 교체든 정지든. hold는 프로세스가 이미
+끝난 pane을 *그 plugin이* 되살릴 수 있도록 붙잡아 둔 슬롯이고, 후계자는 **hub에 아직 남아 있는
+pane만** 건네받는다(`start_host`가 `titles`로 걸러낸다 — 끝난 pane은 그 목록에 없다). 즉 그 token은
+그것을 받았던 자식과 함께 사라진다. 그대로 두면 슬롯이 아무도 이행할 수 없는 9일 창을 끝까지
+앉아 있고, 그동안 모든 클라이언트가 오지 않을 relaunch를 향해 카운트다운한다.
+
+**plugin을 재시작하면 그 plugin이 진행 중이던 것은 사라진다.** plugin의 상태는 그 프로세스 안에
+살기 때문이다 — `nightcrow-recovery`의 `panes: HashMap`은 메모리뿐이고 디스크에 남기지 않으므로,
+재시작하면 quota reset을 몇 시간 기다리던 pane은 감시에서 빠지고 아무것도 그것을 재개하지 않는다.
+plugin 자신이 나가면서 몇 개를 포기했는지 로그에 남긴다(`runloop.rs::farewell`이 이미 이 사실을
+전제로 쓰여 있다). host가 대신 경고할 수는 없다 — **살아 있는** pane에 대한 대기는 plugin 안에만
+있고 host의 `pending`에는 없어서, host는 그것이 기다리는 중인지 알 방법이 없다. 그래서 이 손실의
+범위를 좁히는 것이 `spec_changed`의 진짜 값이다: 그 plugin 자신의 `command`/`args`/`env`를 고쳤을
+때만 프로세스가 갈리고, 다른 plugin 추가·startup command 변경·플래그 조정은 대기 중인 자식을
+건드리지 않는다.
+
 **동시 reload는 직렬화한다**(`ViewerState::reload_lock`). 두 클라이언트가 동시에 누르면 한쪽의
 테이블 교체와 다른쪽의 hub fan-out이 끼어들어, 세션의 저장소들이 서로 다른 파일을 전달받은 상태로
 남을 수 있다.

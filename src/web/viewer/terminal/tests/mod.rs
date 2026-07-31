@@ -3,6 +3,7 @@
 
 mod behavior;
 mod plugin_reload;
+mod plugin_reload_panes;
 mod plugin_rules;
 mod plugin_slots;
 mod plugin_watch;

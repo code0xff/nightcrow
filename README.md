@@ -685,6 +685,17 @@ Notes:
 - Disabling a plugin and enabling it again lands where enabling it the first
   time would — the pane's opt-in survives, so `enabled` means the same thing
   whichever way it was last flipped.
+- **Restarting a plugin discards whatever it was in the middle of.** A plugin's
+  state lives in its process, so replacing that process loses it — for
+  `nightcrow-recovery` a pane parked on a quota reset hours away simply stops
+  being watched, and nothing will resume it. The plugin logs how many panes it
+  abandoned on the way out. This only happens when you change *that plugin's*
+  own `command`, `args` or `env`; every other edit — a new plugin, a startup
+  command, another plugin's flags — leaves a waiting one running.
+- A pane whose process had already exited and whose slot was being held for a
+  relaunch gives that slot up when its plugin is stopped or replaced. The
+  successor is never handed the pane's token, so nothing could honour the hold;
+  the countdown ends instead of running out its window.
 
 ## License
 
