@@ -19,6 +19,12 @@ fn executable_fixture(path: &Path) {
 /// one temp dir that is removed when the returned handle drops.
 fn workspace() -> (TempDir, PathBuf, PathBuf) {
     let root = TempDir::new().expect("a temp dir");
+    // On Windows the source needs a PATHEXT extension so `is_executable`
+    // accepts it. The installed name is always explicit (`Some("watcher")`)
+    // so the extension does not leak into the plugin directory.
+    #[cfg(windows)]
+    let source = root.path().join("watcher.bat");
+    #[cfg(not(windows))]
     let source = root.path().join("watcher");
     executable_fixture(&source);
     let base = root.path().join("plugins");
@@ -52,6 +58,9 @@ fn installing_copies_the_file_sets_owner_only_mode_and_reports_created() {
 fn installing_over_an_existing_name_without_force_is_refused_and_keeps_the_original_bytes() {
     let (_root, source, base) = workspace();
     install(&base, &source, Some("watcher"), false).unwrap();
+    #[cfg(windows)]
+    let other = source.parent().unwrap().join("other.bat");
+    #[cfg(not(windows))]
     let other = source.parent().unwrap().join("other");
     executable_fixture(&other);
 
@@ -70,6 +79,9 @@ fn installing_over_an_existing_name_without_force_is_refused_and_keeps_the_origi
 fn installing_with_force_replaces_the_installed_plugin() {
     let (_root, source, base) = workspace();
     install(&base, &source, Some("watcher"), false).unwrap();
+    #[cfg(windows)]
+    let other = source.parent().unwrap().join("other.bat");
+    #[cfg(not(windows))]
     let other = source.parent().unwrap().join("other");
     executable_fixture(&other);
 
@@ -221,6 +233,10 @@ fn removing_a_name_that_is_not_installed_reports_not_installed() {
 #[test]
 fn the_default_name_is_derived_from_the_source_file_stem() {
     let (_root, source, base) = workspace();
+    // Use an extension that `is_executable` accepts on every platform.
+    #[cfg(windows)]
+    let stemmed = source.parent().unwrap().join("my-plugin.bat");
+    #[cfg(not(windows))]
     let stemmed = source.parent().unwrap().join("my-plugin.sh");
     std::fs::copy(&source, &stemmed).unwrap();
     executable_fixture(&stemmed);

@@ -22,7 +22,7 @@ pub(crate) fn expand_tilde(path: impl AsRef<Path>) -> PathBuf {
     }
 }
 
-/// Strip the verbatim prefix for display.
+/// Strip the verbatim prefix and normalise separators for display.
 ///
 /// Storage and comparison use the canonical form as-is. Mixing them would
 /// silently break `starts_with`-based boundary checks — git/path's worktree
@@ -31,13 +31,18 @@ pub(crate) fn for_display(path: &Path) -> Cow<'_, str> {
     let s = path.to_string_lossy();
     // `\\\\?\\` is the verbatim prefix Windows prepends to canonicalized paths.
     // Strip it so the user sees `C:\Users\...` instead of `\\?\C:\Users\...`.
+    // Backslashes are also normalised to forward slashes so display paths are
+    // consistent across platforms — the browser client and TUI both show `/`.
     #[cfg(windows)]
     {
-        if let Some(rest) = s.strip_prefix(r"\\?\") {
-            return Cow::Owned(rest.to_string());
-        }
+        let stripped = s.strip_prefix(r"\\?\").unwrap_or(&s);
+        let normalized = stripped.replace('\\', "/");
+        Cow::Owned(normalized)
     }
-    s
+    #[cfg(not(windows))]
+    {
+        s
+    }
 }
 
 /// The directory a relative state path — the log directory, chiefly — is

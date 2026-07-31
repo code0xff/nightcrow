@@ -250,9 +250,19 @@ pub(super) fn display_path(path: &str) -> String {
     let Some(home) = dirs::home_dir() else {
         return display.into_owned();
     };
-    match std::path::Path::new(display.as_ref()).strip_prefix(&home) {
+    // Normalise the home directory to forward slashes so strip_prefix works
+    // against the already-normalised display path on Windows.
+    let home_display = crate::platform::paths::for_display(&home);
+    match std::path::Path::new(display.as_ref())
+        .strip_prefix(std::path::Path::new(home_display.as_ref()))
+    {
         Ok(rest) if rest.as_os_str().is_empty() => "~".to_string(),
-        Ok(rest) => format!("~/{}", rest.display()),
+        Ok(rest) => {
+            // Use the string representation directly so the separator stays `/`
+            // on Windows — `Path::display()` would re-introduce backslashes.
+            let rest_str = rest.to_string_lossy();
+            format!("~/{}", rest_str)
+        }
         Err(_) => display.into_owned(),
     }
 }

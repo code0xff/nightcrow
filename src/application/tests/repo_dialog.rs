@@ -21,11 +21,17 @@ fn dialog_on(dirs: &[&str]) -> (TempDir, Workspace, String) {
             }
         }
     }
-    let text = std::fs::canonicalize(root.path())
-        .expect("canonical temp path")
-        .to_str()
-        .expect("a UTF-8 temp path")
-        .to_string();
+    let canonical = std::fs::canonicalize(root.path()).expect("canonical temp path");
+    // Strip `\\\\?\\` and normalise to forward slashes so the path can
+    // round-trip through `PathTree::open` and test assertions are consistent.
+    #[cfg(windows)]
+    let text = {
+        let s = canonical.to_string_lossy();
+        let stripped = s.strip_prefix(r"\\?\").unwrap_or(&s);
+        stripped.replace('\\', "/")
+    };
+    #[cfg(not(windows))]
+    let text = canonical.to_str().expect("a UTF-8 temp path").to_string();
     let mut ws = workspace_on(&["/a"]);
     ws.start_repo_input();
     ws.repo_input.buf = text.clone();

@@ -46,10 +46,31 @@ repositories — open one with `<prefix> o` in the TUI or the folder picker in t
 browser, and it appears in the other.
 
 The leader (prefix) key is `Ctrl+F` by default. Press it, then one key:
-`o` opens a repo, `t` a terminal pane, `l` the commit log, `b` the file tree,
-`f` fullscreen, `q` quits. Every other key — including Ctrl chords — passes
-straight through to the focused terminal, so the CLI running there receives them
-unchanged.
+`<prefix> o` opens a repo, `<prefix> t` a terminal pane, `<prefix> l` the commit log,
+`<prefix> b` the file tree, `<prefix> f` fullscreen, `<prefix> q` quits. Every other
+key — including Ctrl chords — passes straight through to the focused terminal, so
+the CLI running there receives them unchanged.
+
+| Key | Action |
+|-----|--------|
+| `<prefix> t` | New terminal pane |
+| `<prefix> w` | Close pane |
+| `<prefix> l` | Toggle commit log |
+| `<prefix> b` | Toggle file tree |
+| `<prefix> f` | Toggle fullscreen |
+| `<prefix> s` | Swap pane prompt |
+| `<prefix> z` | Claim pane sizing |
+| `<prefix> c` | Cancel recovery |
+| `<prefix> o` | Open project |
+| `<prefix> x` | Close project |
+| `<prefix> p` | Cycle theme |
+| `<prefix> u` | Reload config |
+| `<prefix> r` | Redraw |
+| `<prefix> q` | Quit |
+| `<prefix> 1` | Focus file list |
+| `<prefix> 2` | Focus diff viewer |
+| `<prefix> 3`…`<prefix> 9` | Switch to pane 0–6 |
+| `<prefix> 0` | Switch to pane 7 |
 
 ## What it does
 
