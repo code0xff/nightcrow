@@ -176,7 +176,6 @@ impl Plugins {
         self.hosts.is_empty()
     }
 
-
     /// Stop every plugin child.
     ///
     /// The only place that happens: a plugin is not one of `PtyBackend`'s panes,

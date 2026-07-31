@@ -157,7 +157,11 @@ impl Catalog {
             .lock()
             .expect("catalog startup poisoned")
             .clone();
-        let plugins = self.plugins.lock().expect("catalog plugins poisoned").clone();
+        let plugins = self
+            .plugins
+            .lock()
+            .expect("catalog plugins poisoned")
+            .clone();
 
         let assigned: Vec<(String, String)> = {
             let mut ids = self.ids.lock().expect("catalog ids poisoned");

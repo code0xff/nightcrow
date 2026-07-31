@@ -1,6 +1,6 @@
 use crate::config::{
-    Config, MAX_STARTUP_COMMANDS, StartupCommand, merge_startup_commands,
-    resolve_startup_commands, validate_config,
+    Config, MAX_STARTUP_COMMANDS, StartupCommand, merge_startup_commands, resolve_startup_commands,
+    validate_config,
 };
 
 #[test]

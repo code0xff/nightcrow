@@ -121,10 +121,7 @@ fn prefix_dispatch_maps_app_commands() {
     );
     assert_eq!(prefix_action(key(KeyCode::Char('o'))), Action::OpenProject);
     assert_eq!(prefix_action(key(KeyCode::Char('p'))), Action::CycleTheme);
-    assert_eq!(
-        prefix_action(key(KeyCode::Char('u'))),
-        Action::ReloadConfig
-    );
+    assert_eq!(prefix_action(key(KeyCode::Char('u'))), Action::ReloadConfig);
     assert_eq!(prefix_action(key(KeyCode::Char('r'))), Action::Redraw);
     assert_eq!(prefix_action(key(KeyCode::Char('q'))), Action::Quit);
     assert_eq!(
