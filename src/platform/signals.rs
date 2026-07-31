@@ -13,6 +13,11 @@ pub enum Shutdown {
     /// Ctrl-C in the terminal the process was started from.
     Interrupt,
     /// `kill`, or a service manager stopping the unit.
+    ///
+    /// Windows has no SIGTERM equivalent — the console control handler only
+    /// produces `Interrupt`. This variant is still constructed on Unix and may
+    /// be used by the `nightcrow stop` protocol path on both platforms.
+    #[cfg_attr(windows, allow(dead_code))]
     Terminate,
 }
 
