@@ -193,11 +193,10 @@ impl TerminalHub {
         }
         // Drop the pane records too: the hub struct can outlive its worker
         // behind an `Arc`, and a late `connect` must not replay these now-dead
-        // terminals.
-        self.state
-            .lock()
-            .expect("terminal state poisoned")
-            .panes
-            .clear();
+        // terminals. The zoom goes with them — it names one of these panes, and
+        // nothing may be left holding a name for a pane that is gone.
+        let mut state = self.state.lock().expect("terminal state poisoned");
+        state.panes.clear();
+        state.zoomed = None;
     }
 }

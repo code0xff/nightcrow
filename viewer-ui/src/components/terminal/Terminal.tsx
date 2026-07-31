@@ -60,6 +60,12 @@ export function TerminalPanel({
   // decides it; the rest render the grid they are given.
   const [ownsSize, setOwnsSize] = useState(true);
   const { recovery, setRecovery, cancelRecovery } = usePaneRecovery(socketRef);
+  // A zoom only means something while the pane it names is on screen. The
+  // server ends one whose pane has gone, but that is a second message — and for
+  // the frame between the two, a raw `zoomed` would hide every cell and leave
+  // the panel blank. Derived rather than corrected in the handler, so the
+  // panel cannot render a state the pane list does not support at all.
+  const zoom = zoomed !== null && panes.includes(zoomed) ? zoomed : null;
 
   useTerminalSocket({
     repo,
@@ -81,7 +87,7 @@ export function TerminalPanel({
   useTerminalViews({
     panes,
     size,
-    zoomed,
+    zoomed: zoom,
     socketRef,
     viewsRef,
     bodyRefs,
@@ -102,7 +108,7 @@ export function TerminalPanel({
   usePaneSizes({
     panes,
     size,
-    zoomed,
+    zoomed: zoom,
     socketRef,
     viewsRef,
     bodyRefs,
@@ -139,6 +145,19 @@ export function TerminalPanel({
     }
   }, [active, panes, repo]);
 
+  // While one pane fills the panel it is the only one that can be seen, so it
+  // has to be the one being typed into. Enforced here rather than at the toggle
+  // because a zoom no longer needs a click on this page to happen: it is
+  // replayed on connect and set by other clients, and either would otherwise
+  // leave the keyboard — and the key bar, which types into the active pane —
+  // pointed at a terminal that is not on screen.
+  useEffect(() => {
+    if (zoom !== null && zoom !== active) {
+      setActive(zoom);
+      lastActiveByRepoRef.current.set(repo, zoom);
+    }
+  }, [zoom, active, repo]);
+
   useEffect(() => {
     if (active !== null) viewsRef.current.get(active)?.term.focus();
   }, [active]);
@@ -153,7 +172,7 @@ export function TerminalPanel({
       socketRef,
       viewsRef,
       expectCreateRef,
-      zoomed,
+      zoomed: zoom,
       active,
     });
 
@@ -167,7 +186,7 @@ export function TerminalPanel({
     onPaneDragEnd,
   } = usePaneDrag({
     panes,
-    zoomed,
+    zoomed: zoom,
     onFocus: focusPane,
     onReorder: reorder,
   });
@@ -204,7 +223,7 @@ export function TerminalPanel({
           ref={containerRef}
           className="grid h-full gap-1"
           style={
-            zoomed !== null
+            zoom !== null
               ? { gridTemplateColumns: "1fr", gridTemplateRows: "1fr" }
               : {
                   gridTemplateColumns: `repeat(${layout.cols}, minmax(0, 1fr))`,
@@ -223,8 +242,8 @@ export function TerminalPanel({
             const label = titles[pane] ?? `term ${index + 1}`;
             const cell = layout.cells[index];
             const cellStyle: CSSProperties =
-              zoomed !== null
-                ? { display: pane === zoomed ? "flex" : "none" }
+              zoom !== null
+                ? { display: pane === zoom ? "flex" : "none" }
                 : {
                     display: "flex",
                     gridColumn: `${cell.colStart} / span ${cell.colSpan}`,
@@ -238,7 +257,7 @@ export function TerminalPanel({
                 label={label}
                 cellStyle={cellStyle}
                 isActive={pane === active}
-                isZoomed={zoomed === pane}
+                isZoomed={zoom === pane}
                 showZoom={panes.length > 1}
                 isDragged={draggingPane === pane}
                 isDropTarget={dragOverPane === pane}
