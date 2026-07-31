@@ -151,9 +151,19 @@ export function TerminalPanel({
   const create = () => {
     const socket = socketRef.current;
     if (!socket) return;
-    setZoomed(null);
     expectCreateRef.current += 1;
     socket.send(JSON.stringify({ type: "create", rows: 24, cols: 80 }));
+  };
+
+  // Asked for, not applied. The zoom belongs to the repository rather than to
+  // this page (the server keeps it, so a reload comes back to it), so this
+  // waits for the echo like a reorder does — and every other client turns with
+  // it. Ending the zoom when a pane opens is the server's too: it knows about
+  // panes this page did not ask for.
+  const toggleZoom = (pane: number) => {
+    socketRef.current?.send(
+      JSON.stringify({ type: "zoom", pane: zoomed === pane ? null : pane }),
+    );
   };
 
   // Take the sizing back. Deliberate rather than automatic: the panes belong to
@@ -270,9 +280,7 @@ export function TerminalPanel({
                 recovery={recovery[pane]}
                 onCancelRecovery={() => cancelRecovery(pane)}
                 onFocus={() => focusPane(pane)}
-                onToggleZoom={() =>
-                  setZoomed((z) => (z === pane ? null : pane))
-                }
+                onToggleZoom={() => toggleZoom(pane)}
                 onClose={() => closePane(pane)}
                 onPaneDragStart={(e) => onPaneDragStart(e, pane)}
                 onPaneDragMove={onPaneDragMove}

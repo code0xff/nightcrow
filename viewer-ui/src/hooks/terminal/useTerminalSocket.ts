@@ -132,7 +132,9 @@ export function useTerminalSocket({
           } else if (message.type === "exited") {
             setPanes((current) => current.filter((p) => p !== message.pane));
             setActive((current) => (current === message.pane ? null : current));
-            setZoomed((current) => (current === message.pane ? null : current));
+            // The zoom is not cleared here: a pane leaving ends it on the
+            // server, which says so in a `zoomed` of its own. Doing it locally
+            // as well would be this page answering a question it does not own.
             pendingRef.current.delete(message.pane);
             sentSizesRef.current.delete(message.pane);
             setTitles((current) => {
@@ -161,6 +163,13 @@ export function useTerminalSocket({
             setOwnsSize(message.owned);
           } else if (message.type === "reordered") {
             setPanes((current) => reconcileOrder(current, message.order));
+          } else if (message.type === "zoomed") {
+            // Which pane fills the panel is the repository's answer, so this is
+            // the only thing that sets it — including for the page that asked.
+            // Sent on connect too, which is what brings a reloaded page back to
+            // the zoom it left. `null` is a value here, not an absent field:
+            // it is how the panel is told to go back to the grid.
+            setZoomed(message.pane ?? null);
           } else if (message.type === "error") {
             expectCreateRef.current = 0;
             toast.error(message.message);
