@@ -141,11 +141,22 @@ pub fn reload_config_at(
     // its queue being full means its worker is wedged or being hammered, and
     // neither blocking on it nor pretending it complied is honest. It keeps the
     // plugins it had, and the report says so.
-    let asked = entries
-        .iter()
-        .filter(|entry| entry.terminals.reload_plugins(cfg.plugins.clone()))
-        .count();
-    let unreachable = entries.len() - asked;
+    let mut unreachable = 0;
+    for entry in &entries {
+        if entry.terminals.reload_plugins(cfg.plugins.clone()) {
+            continue;
+        }
+        unreachable += 1;
+        // Which repository, logged here rather than in the hub — the hub does not
+        // keep its own path, and the summary is one sentence for a person, too
+        // short to carry a list. The operator who reads "1 was too busy" finds
+        // the name here.
+        tracing::warn!(
+            repo = %entry.path,
+            "session: a repository's queue was full; its plugins were not re-applied"
+        );
+    }
+    let asked = entries.len() - unreachable;
 
     tracing::info!(
         plugins = cfg.plugins.len(),

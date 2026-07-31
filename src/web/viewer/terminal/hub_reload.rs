@@ -63,17 +63,13 @@ impl TerminalHub {
     ///
     /// Reports whether the worker took it. The caller counts the refusals into
     /// its report: this hub keeps the plugin children it had, so calling the
-    /// reload a success for it would claim a change that did not happen.
+    /// reload a success for it would claim a change that did not happen. Saying
+    /// so is the caller's job too — a hub does not keep its own path, and
+    /// "which repository" is the first thing a skipped one raises.
     pub(crate) fn reload_plugins(&self, plugins: Vec<PluginConfig>) -> bool {
-        if self
-            .commands
+        self.commands
             .try_send(Command::ReloadPlugins { plugins })
-            .is_err()
-        {
-            tracing::warn!("viewer: a hub's queue was full; its plugins were not reloaded");
-            return false;
-        }
-        true
+            .is_ok()
     }
 
     /// Carry out a queued reload on the worker thread.
