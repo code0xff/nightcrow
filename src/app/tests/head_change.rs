@@ -10,6 +10,7 @@ fn snapshot_with_head(repo_path: &str) -> RepoSnapshot {
         tracking: None,
         head_oid: head,
         branch_name: None,
+        refs_fingerprint: 0,
     }
 }
 
