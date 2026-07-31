@@ -54,8 +54,10 @@ pub(super) fn server_with(
 /// Send a raw request and return the full response text.
 pub(super) fn request(addr: SocketAddr, raw: &str) -> String {
     let mut stream = TcpStream::connect(addr).unwrap();
+    // Only a hang guard, never a latency assertion: /login verifies an Argon2
+    // hash, so a loaded machine running the suite in parallel needs the slack.
     stream
-        .set_read_timeout(Some(Duration::from_secs(2)))
+        .set_read_timeout(Some(Duration::from_secs(30)))
         .unwrap();
     stream.write_all(raw.as_bytes()).unwrap();
     let mut buf = Vec::new();
