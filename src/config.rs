@@ -200,7 +200,21 @@ pub fn validate_config(cfg: &Config) -> Result<()> {
 /// count is held to `MAX_STARTUP_COMMANDS`, and empty `--exec` values are
 /// rejected — config entries were already validated by `validate_config`.
 pub fn resolve_startup_commands(cfg: &Config, cli_exec: &[String]) -> Result<Vec<StartupCommand>> {
-    let mut resolved = cfg.startup_commands.clone();
+    merge_startup_commands(&cfg.startup_commands, cli_exec)
+}
+
+/// The merge itself, over the two lists rather than a whole [`Config`].
+///
+/// Split out because a reload re-reads only the file's `[[startup_command]]`
+/// table while the `--exec` panes stay whatever the daemon was started with:
+/// they are not in the file, so a reload that resolved from a fresh `Config`
+/// alone would drop them. One merge rule, reached from both places, is what
+/// keeps the reloaded list ordered and capped exactly like the launch one.
+pub fn merge_startup_commands(
+    configured: &[StartupCommand],
+    cli_exec: &[String],
+) -> Result<Vec<StartupCommand>> {
+    let mut resolved = configured.to_vec();
     for (i, command) in cli_exec.iter().enumerate() {
         anyhow::ensure!(
             !command.trim().is_empty(),

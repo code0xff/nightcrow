@@ -162,7 +162,7 @@ pub fn parse_leader(spec: &str) -> Result<KeyEvent> {
 
 /// A single reserved startup command. `name` labels the pane's tab; when
 /// absent the command text is used as the label.
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct StartupCommand {
     /// Optional tab label. Falls back to `command` when omitted.
     pub name: Option<String>,
