@@ -79,8 +79,9 @@ pub struct ViewerBootstrapDto {
     pub active_repo: Option<String>,
     /// Which panel each *currently served* project was left maximized in, by
     /// id. Projects with no arrangement are absent, as are remembered ones this
-    /// session is not serving — ids, like `active_repo`, are resolved per
-    /// response from the same catalog snapshot as the list beside them.
+    /// session is not serving — ids, like `active_repo`, are resolved from the
+    /// same catalog snapshot as the list beside them
+    /// (`Catalog::list_with_active`), so every id here is one the list carries.
     pub maximized: std::collections::HashMap<String, &'static str>,
     /// This server's wall clock, for dating [`super::ChangedFileDto::mtime`].
     pub now_ms: u64,

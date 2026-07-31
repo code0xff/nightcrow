@@ -114,15 +114,18 @@ pub(super) fn handle_set_prefs(body: &str, state: &ViewerState) -> Vec<u8> {
         active_repo: active_path,
         maximized,
     });
+    // One snapshot for both, as the bootstrap does: the two are read together
+    // by the client, and an id in one that is missing from the other describes
+    // a served set that never existed.
+    let served = state
+        .catalog
+        .list_with_active(stored.active_repo.as_deref(), &stored.maximized);
     match serde_json::to_string(&Envelope::new(serde_json::json!({
         "accent": stored.accent,
         "sidebar_width": stored.sidebar_width,
         "upper_pct": stored.upper_pct,
-        "active_repo": stored
-            .active_repo
-            .as_deref()
-            .and_then(|path| state.catalog.id_of_path(path)),
-        "maximized": crate::web::viewer::session::maximized_ids(state, &stored.maximized),
+        "active_repo": served.active,
+        "maximized": served.maximized,
     }))) {
         Ok(json) => json_response("200 OK", &json, &[]),
         Err(_) => json_error("500 Internal Server Error", "could not encode preferences"),

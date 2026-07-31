@@ -127,31 +127,6 @@ pub fn active_repo(state: &ViewerState) -> Option<String> {
     })
 }
 
-/// Which panel each *served* project was left maximized in, by id.
-///
-/// The stored keys are paths, for the same reason `active_repo`'s is, so this
-/// is where they are translated back. A remembered project this session is not
-/// serving simply does not appear: there is no id to name it by, and the entry
-/// stays on file for whenever it is opened again.
-///
-/// Takes the stored list rather than reading it, so a caller that has just
-/// written one echoes back the snapshot it produced instead of whatever a
-/// concurrent write left behind a moment later.
-pub fn maximized_ids(
-    state: &ViewerState,
-    stored: &[crate::web::viewer::prefs::RepoMaximized],
-) -> std::collections::HashMap<String, &'static str> {
-    state
-        .catalog
-        .id_paths()
-        .into_iter()
-        .filter_map(|(id, path)| {
-            crate::web::viewer::prefs::maximized::panel_of(stored, &path)
-                .map(|panel| (id, panel.as_str()))
-        })
-        .collect()
-}
-
 /// Record how the project named by `id` is arranged. `None` un-maximizes.
 pub fn set_maximized(
     state: &ViewerState,
