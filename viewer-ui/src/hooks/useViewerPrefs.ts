@@ -95,7 +95,6 @@ export function useViewerPrefs() {
     upperPctWrites,
     maximizedPanelOf: maximized.panelOf,
     setMaximizedFor: maximized.setFor,
-    dropMaximized: maximized.drop,
     adoptMaximized: maximized.adopt,
     maximizedWrites: maximized.writes,
   };

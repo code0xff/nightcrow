@@ -44,7 +44,6 @@ export function App() {
     upperPct,
     maximizedPanelOf,
     setMaximizedFor,
-    dropMaximized,
     shell,
     guards,
   } = useShellLayout();
@@ -135,7 +134,6 @@ export function App() {
     setPane,
     setTab,
     setPickerOpen,
-    dropMaximized,
     handle,
     orderWrites,
   });

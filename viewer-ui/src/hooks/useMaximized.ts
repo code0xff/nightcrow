@@ -17,6 +17,12 @@ import type { Maximized } from "../types";
  * server-owned preferences and hand the poll its guards before any project has
  * been chosen. Binding it to the project on screen is the call site's job.
  *
+ * Closing a project is not a write. The server keeps the arrangement against
+ * the project's *path*, ids are never reused for a different one, and the poll
+ * carries only the served set — so a closed project's entry leaves on the next
+ * response, and one closed and reopened is still arranged as it was left
+ * without waiting for that response to come back.
+ *
  * No `localStorage` first-paint cache, though the other server-owned
  * preferences have one. Theirs are keyed by nothing; this is keyed by repo id,
  * and ids only live as long as the server process — a cached map would name
@@ -76,19 +82,6 @@ export function useMaximized() {
     [byRepo],
   );
 
-  /**
-   * Forget a project that is no longer open. Local only: the server keeps the
-   * arrangement against the project's *path*, which is what lets reopening it
-   * come back to the layout it was left in.
-   */
-  const drop = useCallback(
-    (id: string) => {
-      const { [id]: _closed, ...rest } = byRepoRef.current;
-      setByRepo(rest);
-    },
-    [setByRepo],
-  );
-
   /** Take what the server reports, without echoing it back. */
   const adopt = useCallback(
     (remote: MaximizedByRepo) => {
@@ -98,7 +91,7 @@ export function useMaximized() {
     [setByRepo],
   );
 
-  return { panelOf, setFor, drop, adopt, writes };
+  return { panelOf, setFor, adopt, writes };
 }
 
 /** Whether adopting `remote` would change anything. Returning the identical

@@ -41,7 +41,6 @@ export function useShellLayout() {
     upperPctWrites,
     maximizedPanelOf,
     setMaximizedFor,
-    dropMaximized,
     adoptMaximized,
     maximizedWrites,
   } = useViewerPrefs();
@@ -79,7 +78,6 @@ export function useShellLayout() {
      *  this hook runs before one has been chosen. */
     maximizedPanelOf,
     setMaximizedFor,
-    dropMaximized,
     /** Everything `RepoShell` needs to render and drive both dividers. */
     shell: {
       sidebarWidth,
