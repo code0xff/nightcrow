@@ -9,7 +9,6 @@
 
 use super::lock::InstanceLock;
 use anyhow::{Context, Result, bail};
-use std::os::unix::fs::PermissionsExt;
 use super::transport::UnixListener;
 use std::path::{Path, PathBuf};
 
@@ -65,8 +64,7 @@ impl DaemonSocket {
         // Narrowed after binding, which is the only order available: bind
         // creates the file. The window is between two syscalls in a directory
         // the user already owns, and the umask usually closes it first anyway.
-        std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))
-            .with_context(|| format!("restricting the daemon socket {}", path.display()))?;
+        restrict_to_owner(path)?;
         Ok(Self {
             listener,
             path: path.to_path_buf(),
@@ -81,6 +79,27 @@ impl DaemonSocket {
     pub fn path(&self) -> &Path {
         &self.path
     }
+}
+
+fn restrict_to_owner(path: &Path) -> Result<()> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))
+            .with_context(|| format!("restricting the daemon socket {}", path.display()))?;
+    }
+    #[cfg(windows)]
+    {
+        // Windows has no mode bits — the posture depends on the directory's
+        // inherited ACL. %USERPROFILE%\.nightcrow's default ACL allows write
+        // only to owner and admins, so the practical posture holds.
+        //
+        // This dependency breaks if the socket path is placed outside the
+        // user profile. Explicit ACL setting is tracked as a separate task
+        // (docs/internal plan decision C).
+        let _ = path;
+    }
+    Ok(())
 }
 
 /// The lock file guarding `socket`: the same name with a `.lock` extension, so
