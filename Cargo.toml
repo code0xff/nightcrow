@@ -79,6 +79,9 @@ uds_windows = "1"
 # Console control events (Ctrl-C / Ctrl-Break) in place of SIGINT. signal-hook
 # builds on Windows but its `iterator` module is Unix-only.
 ctrlc = "3"
+# `GetLocalTime` for the wall clock. Already in the lockfile transitively;
+# adding it directly here so the feature gate is explicit.
+windows-sys = { version = "0.61", features = ["Win32_System_Time", "Win32_Storage_FileSystem", "Win32_Foundation"] }
 
 [dev-dependencies]
 tempfile = "3"

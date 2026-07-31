@@ -100,7 +100,7 @@ pub(super) fn handle_clone(body: &str, state: &Arc<ViewerState>) -> Vec<u8> {
 fn run_and_record(state: &ViewerState, id: u64, url: &str, dest: PathBuf) {
     let result = run_clone(url, &dest);
     let outcome = match result {
-        Ok(()) => CloneState::Done(dest.to_string_lossy().into_owned()),
+        Ok(()) => CloneState::Done(crate::platform::paths::for_display(&dest).into_owned()),
         Err(err) => {
             // The destination was created here, so a failed clone would leave
             // a directory behind that blocks a retry under the same name.

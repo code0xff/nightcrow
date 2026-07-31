@@ -257,8 +257,10 @@ fn list_directories(path: &std::path::Path) -> anyhow::Result<BrowseDto> {
     }
     entries.sort_by(|a, b| a.name.cmp(&b.name));
     Ok(BrowseDto {
-        path: canonical.to_string_lossy().into_owned(),
-        parent: canonical.parent().map(|p| p.to_string_lossy().into_owned()),
+        path: crate::platform::paths::for_display(&canonical).into_owned(),
+        parent: canonical
+            .parent()
+            .map(|p| crate::platform::paths::for_display(p).into_owned()),
         entries,
         truncated,
     })

@@ -5,11 +5,11 @@
 //! a handful of integers would buy a dependency and its transitive tree for two
 //! format strings.
 
-#[cfg(any(not(unix), test))]
+#[cfg(any(not(any(unix, windows)), test))]
 const SECS_PER_MINUTE: i64 = 60;
-#[cfg(any(not(unix), test))]
+#[cfg(any(not(any(unix, windows)), test))]
 const SECS_PER_HOUR: i64 = 3_600;
-#[cfg(any(not(unix), test))]
+#[cfg(any(not(any(unix, windows)), test))]
 const SECS_PER_DAY: i64 = 86_400;
 
 /// `HH:MM` in the machine's local zone, or `None` when the timestamp is one the
@@ -65,10 +65,61 @@ fn local_parts(epoch: i64) -> Option<DateTimeParts> {
     })
 }
 
+/// Windows: convert the epoch through `FileTimeToLocalFileTime` so the
+/// machine's current time-zone rules apply. Pre-1970 timestamps cannot be
+/// represented as an unsigned `FILETIME` and return `None` — the caller
+/// already handles that.
+#[cfg(windows)]
+fn local_parts(epoch: i64) -> Option<DateTimeParts> {
+    use windows_sys::Win32::Foundation::{FILETIME, SYSTEMTIME};
+    use windows_sys::Win32::Storage::FileSystem::FileTimeToLocalFileTime;
+    use windows_sys::Win32::System::Time::FileTimeToSystemTime;
+
+    // Windows FILETIME counts 100-nanosecond intervals since 1601-01-01 UTC.
+    // Unix epoch is 1970-01-01. The offset is 11,644,473,600 seconds.
+    const EPOCH_OFFSET_SECS: u64 = 11_644_473_600;
+    const HNS_PER_SEC: u64 = 10_000_000;
+
+    let epoch_u64 = u64::try_from(epoch).ok()?;
+    let hns = epoch_u64
+        .checked_add(EPOCH_OFFSET_SECS)?
+        .checked_mul(HNS_PER_SEC)?;
+
+    let ft = FILETIME {
+        dwLowDateTime: (hns & 0xFFFF_FFFF) as u32,
+        dwHighDateTime: (hns >> 32) as u32,
+    };
+
+    let mut local_ft = FILETIME {
+        dwLowDateTime: 0,
+        dwHighDateTime: 0,
+    };
+    let mut st: SYSTEMTIME = unsafe { std::mem::zeroed() };
+
+    // SAFETY: local_ft and st are live stack variables; the functions write
+    // only into them and need no shared state.
+    let ok = unsafe {
+        FileTimeToLocalFileTime(&ft, &mut local_ft) != 0
+            && FileTimeToSystemTime(&local_ft, &mut st) != 0
+    };
+
+    if !ok {
+        return None;
+    }
+
+    Some(DateTimeParts {
+        year: i64::from(st.wYear),
+        month: u32::from(st.wMonth),
+        day: u32::from(st.wDay),
+        hour: u32::from(st.wHour),
+        minute: u32::from(st.wMinute),
+    })
+}
+
 /// UTC on platforms with no `localtime_r`. The zone database is the OS's to
 /// expose, and guessing an offset would be worse than being explicit about the
 /// one this falls back to.
-#[cfg(not(unix))]
+#[cfg(not(any(unix, windows)))]
 fn local_parts(epoch: i64) -> Option<DateTimeParts> {
     utc_parts(epoch)
 }
@@ -77,7 +128,7 @@ fn local_parts(epoch: i64) -> Option<DateTimeParts> {
 ///
 /// `epoch.rem_euclid` rather than `%` so a pre-1970 timestamp lands on the right
 /// side of midnight instead of producing a negative hour.
-#[cfg(any(not(unix), test))]
+#[cfg(any(not(any(unix, windows)), test))]
 fn utc_parts(epoch: i64) -> Option<DateTimeParts> {
     let into_day = epoch.rem_euclid(SECS_PER_DAY);
     let (year, month, day) = civil_from_days(epoch.div_euclid(SECS_PER_DAY))?;
@@ -93,7 +144,7 @@ fn utc_parts(epoch: i64) -> Option<DateTimeParts> {
 /// Days since the epoch to a proleptic Gregorian date, via Howard Hinnant's
 /// `civil_from_days`: shift the era to start in March so the leap day lands at
 /// the end of a year and the month arithmetic needs no table.
-#[cfg(any(not(unix), test))]
+#[cfg(any(not(any(unix, windows)), test))]
 fn civil_from_days(days: i64) -> Option<(i64, u32, u32)> {
     let z = days + 719_468;
     let era = z.div_euclid(146_097);

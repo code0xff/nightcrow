@@ -1,5 +1,6 @@
 //! Filesystem path helpers that do not belong to a domain module.
 
+use std::borrow::Cow;
 use std::path::{Path, PathBuf};
 
 /// Expand a leading `~` to the user's home directory.
@@ -19,6 +20,24 @@ pub(crate) fn expand_tilde(path: impl AsRef<Path>) -> PathBuf {
         Some(home) => home.join(rest),
         None => path.to_path_buf(),
     }
+}
+
+/// Strip the verbatim prefix for display.
+///
+/// Storage and comparison use the canonical form as-is. Mixing them would
+/// silently break `starts_with`-based boundary checks — git/path's worktree
+/// gate depends on exactly that comparison.
+pub(crate) fn for_display(path: &Path) -> Cow<'_, str> {
+    let s = path.to_string_lossy();
+    // `\\\\?\\` is the verbatim prefix Windows prepends to canonicalized paths.
+    // Strip it so the user sees `C:\Users\...` instead of `\\?\C:\Users\...`.
+    #[cfg(windows)]
+    {
+        if let Some(rest) = s.strip_prefix(r"\\?\") {
+            return Cow::Owned(rest.to_string());
+        }
+    }
+    s
 }
 
 /// The directory a relative state path — the log directory, chiefly — is

@@ -1297,6 +1297,7 @@ dependencies = [
  "tungstenite",
  "two-face",
  "uds_windows",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

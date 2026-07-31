@@ -242,13 +242,14 @@ pub(super) fn display_path(path: &str) -> String {
     // libgit2 hands back a workdir with a trailing separator; a path shown to
     // a person should not carry it.
     let path = path.trim_end_matches('/');
+    let display = crate::platform::paths::for_display(std::path::Path::new(path));
     let Some(home) = dirs::home_dir() else {
-        return path.to_string();
+        return display.into_owned();
     };
-    match Path::new(path).strip_prefix(&home) {
+    match std::path::Path::new(display.as_ref()).strip_prefix(&home) {
         Ok(rest) if rest.as_os_str().is_empty() => "~".to_string(),
         Ok(rest) => format!("~/{}", rest.display()),
-        Err(_) => path.to_string(),
+        Err(_) => display.into_owned(),
     }
 }
 
