@@ -154,7 +154,13 @@ impl Plugins {
                 self.set_watch_on_signal(&cfg.name, cfg.watch_on_signal);
                 continue;
             }
-            self.start_host(cfg, backend, titles, &mut outcome);
+            // A child that never came up leaves nothing behind. When this was a
+            // replacement, `stop_host` kept the live panes for a successor that
+            // has now failed to arrive, and an owner with no host is worse than
+            // no owner at all — see [`Plugins::abandon`].
+            if !self.start_host(cfg, backend, titles, &mut outcome) {
+                self.abandon(backend, &cfg.name, &mut outcome);
+            }
         }
         outcome
     }
@@ -169,9 +175,7 @@ impl Plugins {
         let opted_in = startup
             .iter()
             .any(|sc| sc.plugin.as_deref() == Some(cfg.name.as_str()));
-        opted_in
-            || cfg.watch_on_signal
-            || self.owners.values().any(|owner| owner == &cfg.name)
+        opted_in || cfg.watch_on_signal || self.owners.values().any(|owner| owner == &cfg.name)
     }
 
     /// Whether a live host's child would have to be replaced to match `cfg`.
@@ -182,9 +186,7 @@ impl Plugins {
     /// wait.
     fn spec_changed(&self, cfg: &PluginConfig) -> bool {
         match self.launched.get(&cfg.name) {
-            Some(was) => {
-                was.command != cfg.command || was.args != cfg.args || was.env != cfg.env
-            }
+            Some(was) => was.command != cfg.command || was.args != cfg.args || was.env != cfg.env,
             // Nothing to replace — it has to be started either way.
             None => false,
         }

@@ -4,20 +4,23 @@
 //! carry the awkward part: what happens to the panes a plugin was watching, which
 //! differs by whether a replacement is about to take its place.
 
-use super::hub_reload::PluginReload;
 use super::hub_plugins::Plugins;
+use super::hub_reload::PluginReload;
 use crate::backend::{PaneId, PtyBackend};
 use crate::config::PluginConfig;
 use std::collections::HashMap;
 
 impl Plugins {
+    /// Launch `cfg`'s child and hand it the panes it owns. Reports whether the
+    /// child came up — a caller that stopped a predecessor for this one has to
+    /// know it never arrived.
     pub(super) fn start_host(
         &mut self,
         cfg: &PluginConfig,
         backend: &PtyBackend,
         titles: &HashMap<PaneId, Option<String>>,
         outcome: &mut PluginReload,
-    ) {
+    ) -> bool {
         let dir = crate::plugin::registry::default_plugins_dir().ok();
         match crate::plugin::PluginHost::spawn(cfg, dir.as_deref()) {
             Ok(host) => {
@@ -48,14 +51,18 @@ impl Plugins {
                     self.pane_opened(backend, pane, title);
                 }
                 outcome.started.push(cfg.name.clone());
+                true
             }
             // Left out exactly as at startup: its panes behave like unwatched
             // ones, so a broken plugin costs a warning rather than a terminal.
-            Err(error) => tracing::warn!(
-                plugin = %cfg.name,
-                %error,
-                "viewer: plugin did not relaunch on reload; its panes run unwatched"
-            ),
+            Err(error) => {
+                tracing::warn!(
+                    plugin = %cfg.name,
+                    %error,
+                    "viewer: plugin did not relaunch on reload; its panes run unwatched"
+                );
+                false
+            }
         }
     }
 
@@ -106,12 +113,31 @@ impl Plugins {
             outcome.restarted.push(name.to_string());
             return;
         }
+        self.abandon(backend, name, outcome);
+    }
+
+    /// Let go of everything `name` still holds: its rules, and the panes it was
+    /// watching.
+    ///
+    /// Reached two ways — a plugin the file dropped, and a replacement whose
+    /// child never came up. The second is why this is separate: [`stop_host`]
+    /// keeps the live panes when a successor is on the way, and if the spawn then
+    /// fails those panes are owned by a name with no host. Left that way, the
+    /// pane's next exit takes the relaunch path — its slot held open for a plugin
+    /// that cannot ask — and on a hub whose only plugin this was, nothing even
+    /// runs to expire the hold, so the client counts down to a deadline that
+    /// never arrives.
+    ///
+    /// [`stop_host`]: Self::stop_host
+    pub(super) fn abandon(&mut self, backend: &PtyBackend, name: &str, outcome: &mut PluginReload) {
         self.allowed_flags.remove(name);
         self.set_watch_on_signal(name, false);
         let owned: Vec<PaneId> = self.panes_of(name);
         for pane in owned {
             self.release_pane(backend, pane);
         }
+        // Whatever `stop_host` recorded as a restart was not one.
+        outcome.restarted.retain(|plugin| plugin != name);
         outcome.stopped.push(name.to_string());
     }
 

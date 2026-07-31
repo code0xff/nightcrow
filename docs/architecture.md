@@ -474,6 +474,13 @@ host 없는 opt-in은 relaunch 경로에도 오르지 않고 이벤트도 받지
 처음 켜는 것과 같은 자리에 착지한다** — 안 그러면 `enabled`가 마지막으로 어느 방향으로
 뒤집혔는지에 따라 다른 뜻이 된다.
 
+**후계자가 뜨지 못하면 그 pane들도 놓아준다.** 교체는 멈춘 plugin이 살아 있는 pane을 계속 붙잡고
+있는 유일한 경우인데, 그 근거는 곧 후계자가 온다는 것뿐이다. spawn이 실패하면 그 약속을 도로
+거둔다(`Plugins::abandon`) — 안 그러면 host 없는 이름이 pane을 소유한 채로 남고, 그 pane이 다음에
+끝날 때 relaunch 경로에 올라 아무도 부탁할 수 없는 9일짜리 hold가 된다. plugin이 그것 하나뿐인
+hub라면 hold를 만료시키는 per-tick 작업 자체가 돌지 않으므로(`is_inert`), 클라이언트는 영영 오지
+않는 deadline을 향해 카운트다운한다.
+
 **guard는 절대 재생성하지 않는다.** relaunch 예산은 pane의 token으로 키를 잡는데, 그것이 exit마다
 relaunch로 답하는 plugin을 묶는 유일한 상한이다. reload마다 새 allowance를 발급하면 그 상한에
 영영 닿지 않는다 — `take_over`가 spent budget을 그대로 두는 것과 같은 근거다.

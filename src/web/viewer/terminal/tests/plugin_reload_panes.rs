@@ -117,3 +117,52 @@ fn a_replaced_plugin_does_not_leave_a_relaunch_hold_behind() {
         "a hold no child can honour must not outlive the one that held it"
     );
 }
+
+/// A replacement is the one case where a stopped plugin keeps its live panes, on
+/// the promise that a successor is a moment away. When the successor will not
+/// spawn, that promise has to be taken back.
+///
+/// Left owned, the pane's next exit would take the relaunch path — a slot held
+/// open for nine days for a plugin that has no child to ask with — and on a hub
+/// whose only plugin this was, the per-tick work that expires such holds does not
+/// run at all, so the client would count down to a deadline nothing ever reaches.
+#[test]
+fn a_replacement_that_will_not_spawn_gives_up_the_panes_it_was_keeping() {
+    use super::plugin_rules::{COLS, LONG_RUNNING, ROWS, opt_in};
+
+    let f = fixture();
+    let mut backend = PtyBackend::new(f.cwd());
+    let (cfg, _log) = plugin_with_log(&f, "recovery");
+    let cfg = PluginConfig {
+        name: opt_in().plugin.clone().expect("the fixture opts in"),
+        ..cfg
+    };
+    let mut plugins = Plugins::start(&f.cwd(), std::slice::from_ref(&cfg), &[opt_in()]);
+    let pane = backend
+        .open_pane(ROWS, COLS, Some(LONG_RUNNING))
+        .expect("open a pane");
+    assert!(plugins.adopt(pane, &cfg.name), "the host must be live");
+    let titles = HashMap::from([(pane, None)]);
+
+    // A changed command, so the child must be replaced — and one nothing can
+    // execute, which is a config a reload accepts: validation reads the table,
+    // not the filesystem.
+    let broken = PluginConfig {
+        command: "nightcrow-no-such-plugin-binary".to_string(),
+        ..respawning(&cfg)
+    };
+    let outcome = plugins.reload(&mut backend, &[broken], &[opt_in()], &titles);
+
+    assert_eq!(
+        plugins.owner(pane),
+        None,
+        "a pane owned by a plugin with no host is on a relaunch path nobody can walk"
+    );
+    assert_eq!(
+        outcome.stopped,
+        std::slice::from_ref(&cfg.name),
+        "and the outcome must say stopped, not restarted: {outcome:?}"
+    );
+    assert!(outcome.restarted.is_empty(), "{outcome:?}");
+    backend.destroy_pane(pane);
+}
