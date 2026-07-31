@@ -3,8 +3,14 @@
    detection treats the previous build's own output as source. Class names then
    outlive their removal by one build — deleted markup keeps its CSS until the
    build after — and any stray file under dist/ can inject rules. Scan only the
-   handwritten sources. */
-@source not "../dist";
+   handwritten sources.
+
+   Relative to *this file*, so it has to climb out of `styles/` as well as
+   `src/`. It was written as `../dist` when this file sat at `src/index.css`,
+   and moving it down a directory quietly aimed it at `src/dist`, which does not
+   exist — the guard did nothing from then until it was noticed by a rebuild
+   that would not reproduce the committed bundle. */
+@source not "../../dist";
 @import "@xterm/xterm/css/xterm.css";
 
 /* Neutral dark, carried over from the TUI. A single accent carries selection
