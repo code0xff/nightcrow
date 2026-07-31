@@ -20,6 +20,7 @@ fn successful_snapshot_preserves_terminal_status() {
             tracking: None,
             head_oid: None,
             branch_name: None,
+            refs_fingerprint: 0,
         },
         HashMap::new(),
     ))
@@ -48,6 +49,7 @@ fn successful_snapshot_clears_git_status() {
             tracking: None,
             head_oid: None,
             branch_name: None,
+            refs_fingerprint: 0,
         },
         HashMap::new(),
     ))
@@ -77,6 +79,7 @@ fn snapshot_refresh_clamps_selection_to_active_filter() {
             tracking: None,
             head_oid: None,
             branch_name: None,
+            refs_fingerprint: 0,
         },
         HashMap::new(),
     ))
@@ -113,6 +116,7 @@ fn snapshot_invalidates_path_width_cache_on_same_length_rename() {
             tracking: None,
             head_oid: None,
             branch_name: None,
+            refs_fingerprint: 0,
         },
         HashMap::new(),
     ))
@@ -147,6 +151,7 @@ fn snapshot_refresh_with_no_filter_matches_clears_stale_diff() {
             tracking: None,
             head_oid: None,
             branch_name: None,
+            refs_fingerprint: 0,
         },
         HashMap::new(),
     ))

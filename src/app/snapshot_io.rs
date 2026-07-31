@@ -51,6 +51,7 @@ impl App {
             });
         let new_head = snapshot.head_oid;
         self.branch_name = snapshot.branch_name;
+        self.refresh_log_decorations(snapshot.refs_fingerprint);
         self.status_view.set_files(snapshot.files);
         self.status_view.recompute_filter();
         self.tracking = snapshot.tracking;
@@ -84,6 +85,22 @@ impl App {
             && self.selected_filtered_status_path().as_deref() == Some(path.as_str())
         {
             self.diff.scroll = scroll.min(self.diff.max_scroll());
+        }
+    }
+
+    // Rebuilding walks every ref and peels each one, so it is gated on the
+    // fingerprint rather than run per poll. A failure leaves the previous map in
+    // place: stale chips beat chips vanishing on a transient read error.
+    fn refresh_log_decorations(&mut self, fingerprint: u64) {
+        if self.last_refs_fingerprint == Some(fingerprint) {
+            return;
+        }
+        match self.with_repo(crate::git::diff::load_log_decorations) {
+            Ok(decorations) => {
+                self.log_decorations = decorations;
+                self.last_refs_fingerprint = Some(fingerprint);
+            }
+            Err(e) => tracing::warn!(error = %e, "failed to load ref decorations"),
         }
     }
 

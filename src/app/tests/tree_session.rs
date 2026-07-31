@@ -102,6 +102,7 @@ fn tree_preview_survives_status_snapshot() {
             tracking: None,
             head_oid: None,
             branch_name: None,
+            refs_fingerprint: 0,
         },
         HashMap::new(),
     ))

@@ -18,6 +18,7 @@ fn drain_snapshot_empties_the_queue_without_applying_it() {
                 tracking: None,
                 head_oid: None,
                 branch_name: None,
+                refs_fingerprint: 0,
             },
             HashMap::new(),
         )
@@ -65,6 +66,7 @@ fn a_saved_mode_lands_immediately_and_survives_being_changed() {
             tracking: None,
             head_oid: None,
             branch_name: None,
+            refs_fingerprint: 0,
         },
         HashMap::new(),
     ))
@@ -100,6 +102,7 @@ fn a_saved_selection_is_restored_by_the_first_snapshot() {
             tracking: None,
             head_oid: None,
             branch_name: None,
+            refs_fingerprint: 0,
         },
         HashMap::new(),
     ))

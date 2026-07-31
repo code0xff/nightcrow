@@ -74,6 +74,8 @@ pub(crate) fn app_with_files(files: Vec<&str>) -> App {
         auto_follow: AutoFollow::default(),
         list_fullscreen: false,
         branch_name: None,
+        log_decorations: Default::default(),
+        last_refs_fingerprint: None,
         leader: KeyEvent::new(KeyCode::Char('f'), KeyModifiers::CONTROL),
         prefix_armed: false,
         awaiting_swap_target: false,
