@@ -64,11 +64,12 @@ impl ReloadReport {
     pub fn summary(&self) -> String {
         let panes = if self.startup_commands == 0 {
             "no startup panes configured".to_string()
+        } else if self.startup_commands == 1 {
+            "1 startup pane applies to newly opened projects".to_string()
         } else {
             format!(
-                "{} startup pane{} apply to newly opened projects",
-                self.startup_commands,
-                if self.startup_commands == 1 { "" } else { "s" }
+                "{} startup panes apply to newly opened projects",
+                self.startup_commands
             )
         };
         format!(

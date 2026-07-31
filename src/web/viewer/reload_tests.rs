@@ -122,3 +122,39 @@ fn a_reload_refused_by_the_pane_cap_replaces_neither_table() {
     state.catalog.shutdown();
     drop(dir);
 }
+
+/// The summary is shown to a person in two places, so its grammar is part of the
+/// contract. A live run read back "1 startup pane apply", which is what sent this
+/// case here.
+#[test]
+fn the_summary_agrees_with_its_own_counts() {
+    let one = ReloadReport {
+        plugins: 1,
+        startup_commands: 1,
+        repos: 1,
+    };
+    assert_eq!(
+        one.summary(),
+        "config reloaded: 1 plugin across 1 open project; \
+         1 startup pane applies to newly opened projects"
+    );
+    let many = ReloadReport {
+        plugins: 2,
+        startup_commands: 3,
+        repos: 4,
+    };
+    assert_eq!(
+        many.summary(),
+        "config reloaded: 2 plugins across 4 open projects; \
+         3 startup panes apply to newly opened projects"
+    );
+    let none = ReloadReport {
+        plugins: 0,
+        startup_commands: 0,
+        repos: 0,
+    };
+    assert_eq!(
+        none.summary(),
+        "config reloaded: 0 plugins across 0 open projects; no startup panes configured"
+    );
+}
