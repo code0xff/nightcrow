@@ -1,0 +1,442 @@
+# Web Surface
+
+브라우저 표면은 두 층으로 나뉜다. `src/web/common/`은 무엇을 서빙하는지 모르는 프리미티브
+(인증·HTTP 프레이밍·SSE·연결 회계)이고, `src/web/viewer/` + `viewer-ui/`가 실제 뷰어다. 뷰어는
+TUI와 **같은 데이터 계층을 읽어 DOM으로 렌더하는 두 번째 프론트엔드**로, `App`/`ui`/`input`을 전혀
+참조하지 않아 TUI 없이도(`nightcrow serve`) 동작하고 TUI와 별도 포트·쿠키·비밀번호를 쓴다.
+
+## 공용 웹 계층 (`src/web/common/`)
+
+git 데이터도 터미널도 전혀 모르는 계층이며, 웹 표면이 하나 더 생기더라도 공유는 정확히 여기까지다.
+
+- **인증 (`common/auth.rs`)**: 비밀번호를 Argon2로 검증한다(code-server와 동일 방식). 평문
+  `password`는 시작 시 메모리에서 해시하고, `hashed_password`(PHC)가 있으면 그쪽이 우선한다. 로그인은
+  rate-limit(2/분 + 14/시간)되고 성공 시 httpOnly 세션 쿠키를 발급한다. **쿠키 이름은 서버가
+  정한다** — 같은 호스트의 다른 서버가 여기서 발급한 세션으로 인증되면 안 되므로 이름을 이 계층에
+  두지 않는다. 기본 바인딩은 loopback이며 **TLS는 없다** — 원격은 SSH 터널/리버스 프록시로 감싼다.
+  서버 활성 시 비밀번호가 없으면 랜덤 생성해 config에 기록하고(주석 보존) 시작 시 1회 출력한다.
+- **스트리밍 응답 (`common/sse.rs`)**: `http::response`는 항상 `Content-Length`와 `Connection: close`를
+  실으므로 소켓을 열어 둔 채 이벤트를 덧붙일 경로가 없다. `SseStream`은 자기 헤드를 직접 쓰고 그
+  시점부터 연결을 소유한다. 매 쓰기마다 flush하며(버퍼에 남은 이벤트는 전달된 이벤트가 아니다) 쓰기
+  실패를 그대로 전파한다 — 닫힌 탭은 다음 쓰기가 실패할 때만 알 수 있다. event 이름에 개행이 있으면
+  거부한다(SSE 필드 위조 가능). data는 개행마다 `data:` 라인으로 쪼개므로 별도 방어가 필요 없다.
+- **연결 회계 (`common/conn.rs`)**: 연결마다 스레드가 하나씩 붙으므로 상한이 없으면 포트에 닿을 수
+  있는 누구나 프로세스를 고갈시킬 수 있다. 상한 초과분은 accept 루프에서 소켓을 닫는다(거기서 503을
+  쓰면 멈춘 클라이언트 하나가 뒤의 모든 연결을 막는다). 슬롯은 `ConnectionSlot`의 `Drop`으로 반납돼
+  장수하는 WS handler와 조기 에러 반환 양쪽에서 새지 않는다.
+
+## 서버 (`src/web/viewer/`)
+
+**요청 처리 순서가 설계다**(`viewer/server/`): ① Host → ② Origin → ③ 정적 번들(인증 불필요) →
+④ 인증 → ⑤ 저장소 조회 → ⑥ 경로 검증.
+
+- Host 검사가 Origin보다 앞이자 별개인 이유: `origin_allowed`는 Origin과 Host가 *일치한다*는 것만
+  증명하는데, DNS rebinding 공격자는 둘 다 통제하므로 그 조건을 자명하게 만족시킨다. loopback
+  바인딩일 때 non-loopback Host를 거부해야 rebinding으로 얻는 same-origin 발판이 막힌다.
+- 인증을 조회보다 **먼저** 하는 이유는, 그러지 않으면 미인증 클라이언트가 404와 401을 비교해 존재하는
+  repo id를 열거할 수 있기 때문이다. 정적 번들이 인증 앞에 오는 이유는 그것이 로그인 폼을 그리는
+  주체이기 때문 — 게이팅하면 로그인할 방법 자체가 사라진다.
+- **경로 검증은 `with_repo` 한 곳에서** 한다. 라우트마다 쓰면 빠뜨린다: 실제로 `/api/diff`가
+  `../../etc/passwd`를 받아들였다. `load_file_diff`가 경로를 파일이 아니라 git pathspec으로 넘겨
+  검증기에 닿지 않았고 공격자의 경로를 그대로 되돌려줬다. **라우트가 "어떤 로더를 호출하느냐"에 따라
+  우연히 안전해서는 안 된다.**
+- **저장소는 opaque id로만 지정**한다(`catalog/`). 클라이언트가 디렉토리를 이름 붙일 수 없으므로
+  "어느 저장소인가"는 검증할 입력이 아니라 성공하거나 404가 되는 조회다. id는 프로세스 수명 동안
+  안정적이라 무관한 탭을 열고 닫아도 다른 id가 재배치되지 않는다.
+- **저장소별 런타임**(`runtime/`): `SnapshotChannel`은 단일 consumer `mpsc`라 자기 것을 띄운다.
+  스냅샷을 wire 페이로드로 한 번만 줄여 팬아웃한다. **팬아웃은 conflate**된다 — 느린 구독자는 최신
+  상태를 받지 밀린 과거를 재생하지 않는다(슬롯 1개 + 1-depth 병합 wakeup). 소켓 I/O 중 락을 잡지
+  않는다. 페이로드가 직전과 동일하면 발행하지 않는다: producer는 변화가 아니라 타이머로 tick하므로,
+  그러지 않으면 유휴 저장소가 매초 스트리밍하며 seq를 태워 "뭔가 바뀌었나"의 지표로 쓸 수 없게 된다.
+- **터미널**(`terminal/`)은 **세션의 터미널이고 attach한 TUI가 보는 것과 같은 pane**이다
+  ([session.md](session.md#세션-공유-데몬--클라이언트) 참고). raw PTY 바이트를 그대로 보낸다 —
+  **화면은 서버가 그리지 않는다**(xterm.js가 이미 에뮬레이터다). 허브가 스트림을 파싱하는 것은 딱
+  한 가지, 다른 방법으로는 알 수 없는 **pane의 모드**를 위해서다. 4바이트 LE pane id를 앞에 붙인
+  **바이너리 프레임** — PTY 읽기는 멀티바이트 시퀀스를 일상적으로 쪼개므로 JSON으로 조기 디코딩하면
+  브라우저가 재조립하기 전에 깨진다. **출력은 conflate하지 않고 큐잉**한다: 최신 status는 완결된
+  그림이지만 터미널 바이트는 하나만 빠져도 스트림이 깨지므로, 큐를 넘긴 클라이언트는 조용히 버리지
+  않고 끊는다.
+- **자원 상한**(`limits.rs`)은 전부 `truncated`로 보고된다. 잘린 목록이 전체인 척하지 않는다.
+
+### PTY 크기는 확정된 값만 전달한다 (`usePaneSizes.ts`, `ServerMessage::Created`)
+
+리사이즈는 싼 메시지가 아니다 — 자식은 SIGWINCH를 받고 풀스크린 프로그램은 화면을 통째로 다시
+그린다. 그래서 세 가지를 막는다.
+
+1. **중간값을 보내지 않는다**: 브라우저는 최종 기하에 도달하기까지 여러 중간 상태를 지난다(두 번째
+   pane이 생기며 그리드가 쪼개짐, 웹폰트 로딩, 브레이크포인트 전환). `fit()`은 즉시 돌리되 — xterm
+   자기 버퍼만 reflow하고 선을 타지 않으므로 드래그가 매끄럽다 — 서버로 보내는 것만 레이아웃이 멈춘
+   뒤로 미룬다.
+2. **`created`가 pane의 현재 크기를 싣는다**: pane의 크기를 아는 것은 그것을 정한 페이지뿐이라,
+   재접속한 클라이언트는 자기 크기를 보내야 했고 값이 같아도 자식은 한 번 다시 그렸다. 이제
+   클라이언트가 그 크기를 채택하므로 같은 레이아웃으로 리로드하면 리사이즈가 0번이다. **그 0번이
+   화면 복원을 대신 하고 있었다** — 이 전제를 잃어 실제 사고가 났고(자세한 것은
+   [session.md](session.md#스크롤백과-재접속)), 지금은 허브가 repaint를 명시적으로 요청하므로 이
+   최적화는 그대로 유지된다.
+3. **크기를 모르는 PTY는 만들지 않는다**: 접속하면 서버가 `pending`으로 "사이즈 대기 중인 startup
+   터미널 N개"를 알리고, 클라이언트가 그 pane들이 차지할 셀을 placeholder로 렌더해 **실제 DOM을
+   재서** `start`로 답한 뒤에야 PTY가 생긴다(`useStartupSizes`). 그리드 산술이 아니라 버려지는 xterm
+   하나를 그 셀에 열어 `proposeDimensions()`로 재는데, gap과 셀 헤더를 다시 유도하다 어긋나면 그
+   오차가 곧 이 핸드셰이크가 없애려던 "잘못된 크기로 태어남"이기 때문이다. **타임아웃은 두지
+   않는다** — 임의의 시간 상수는 기기마다 다른 브라우저 레이아웃 타이밍을 하나로 못 박는다. 측정
+   실패의 fallback은 **클라이언트**에 두고(실패했음을 아는 쪽이 거기다), `started` 플래그를 접속이
+   아니라 **`start` 도착 시점에 소비**한다 — 핸드셰이크 도중 끊긴 페이지가 터미널을 데려가지 못한다.
+   둘이 동시에 답하면 CAS로 첫 번째만 이겨 pane은 정확히 한 번 생긴다.
+
+### 순서는 서버가 authoritative하다
+
+- **터미널 pane 순서**(`terminal.rs::reorder_panes`, `lib/paneOrder.ts`): 클라이언트가 pane 헤더를
+  드래그하면 원하는 전체 순서를 `reorder`로 보내고, hub가 살아있는 pane에 맞춰 재조정한 뒤
+  (`canonical_order`: 요청 순서 중 실재하는 id 먼저, 요청이 빠뜨린 live pane은 현재 순서로 뒤에,
+  모르는 id·중복은 버림) canonical 순서를 `reordered`로 **전 클라이언트에 broadcast**한다.
+  클라이언트는 낙관적으로 미리 바꾸지 않고 이 echo를 받아 반영해(`reconcileOrder`) 여러 기기가 한
+  순서로 수렴한다. 순서는 hub의 pane Vec에 살아 재접속 replay와 다른 기기가 자동으로 따라오고
+  디스크에는 쓰지 않는다. DnD는 HTML5 drag가 아니라 pointer 이벤트라(sidebar divider와 같은 선택)
+  폰 터치도 마우스와 동일하다.
+- **프로젝트 탭 순서**(`catalog/`, `POST /api/repos/order`): 같은 모양이되 **전송 채널이 다르다** —
+  repo 목록에는 전용 WebSocket이 없고 `/api/repos` 폴링뿐이라 broadcast 대신 REST로 갱신하고 다음
+  폴링이 그것을 받는다. **순서가 `rebuild`를 견디게** `Catalog`에 명시적 `order` overlay를 두어
+  `union_paths`가 base+added 자연 순서를 그 위에 정렬한다(순서에 없는 새 repo는 끝에). 폴링 스냅백은
+  세 겹으로 막는다: write-generation 가드(`repoOrderWrites`), 드래그 중 차단(`repoDraggingRef`),
+  그리고 **reorder POST가 in-flight/큐에 있는 동안 폴링이 순서를 채택하지 않는** pending 가드. 가드가
+  걸린 폴링은 서버 순서를 버리되 membership은 `reconcileOrder`로 받아들인다. **reorder POST는
+  클라이언트에서 직렬화**한다(한 번에 하나, 큐에는 최신 순서만) — 두 POST가 별도 커넥션이라 서버가
+  옛 요청을 나중에 커밋해 잘못된 순서로 영속할 수 있다. **남는 transient 하나**: 커밋 전 서버를
+  읽었지만 POST가 정착한 뒤 도착하는 폴링은 한 번 스냅백할 수 있다 — 자기교정되는 클래스라 서버
+  revision을 도입하지 않는다.
+- **영속은 open/close와 같은 경계**를 따른다: headless `serve`(`persist=true`)면 `catalog.paths()`가
+  `workspace.json`의 탭 순서로 저장되고, TUI 동반 실행에서는 세션 한정이다(그 파일의 주인이 TUI다).
+  저장 시 `persist_workspace`는 `ws.active`를 인덱스가 아니라 **이전 활성 path 기준으로
+  재매핑**한다. **한계**: `serve`에 `--repo`를 명시하면 그 인자가 시작 순서를 지배해 저장된 재정렬이
+  재시작 때 덮인다. 또 `catalog.reorder`와 이어지는 `persist_workspace`(파일 IO)는 한 트랜잭션이
+  아니라 두 기기가 밀리초 안에 동시에 재정렬하면 파일이 한 박자 뒤처질 수 있다(라이브 catalog는
+  항상 정확).
+
+### 와이어 계약은 fixture로 고정한다
+
+`dto/` → `viewer-ui/api.fixture.json` → `api.contract.test.ts`. Rust DTO와 TS interface가 같은
+프로토콜을 손으로 두 번 적고 있어 한쪽만 고치면 화면이 조용히 빈 값으로 렌더된다.
+`PROTOCOL_VERSION`은 **의도적인** 호환성 단절을 알릴 뿐 실수를 잡지 못한다. 그래서 서버가 모든
+페이로드의 예시를 fixture에 굽고(`UPDATE_API_FIXTURE=1 cargo test the_wire_fixture`) 커밋한 뒤, TS
+테스트가 그 JSON을 각 interface에 **대입**한다 — 검사는 `expect`가 아니라 타입 주석이 하고
+`npm run build`의 `tsc -b`에서 실패한다. Rust 쪽 변경은 fixture diff로, TS 쪽 미반영은 컴파일
+실패로 드러나는 **쌍**이 핵심이다. optional 필드는 있는 경우와 없는 경우를 모두 넣어
+`skip_serializing_if`가 멈춘 것도 보이게 한다. **필드 추가는 TS 쪽에서 잡히지 않는다** — 그건 Rust
+fixture assertion이 잡는다. codegen(`ts-rs` 등)은 이 규모에서 얻는 게 fixture 한 장과 같아 쓰지 않는다.
+
+**`GET /api/repos`는 부트스트랩이다**(`ViewerBootstrapDto`). 저장소 목록에 `hot` 설정·`accent`·
+`now_ms`가 얹히면서 이 응답은 "클라이언트가 렌더를 시작하기 전에 서버와 맞춰야 하는 것 전부"가 됐다.
+서버 전역 값에 각각 엔드포인트를 주지 않는 이유는 **클라이언트가 이미 3초마다 이걸 폴링하기
+때문**이다. 반대로 `/api/status`에 얹지 않는 이유는 그쪽이 바이트 동일성으로 dedup되는 hot 스트림이라
+설정이 낄 자리가 아니기 때문이다.
+
+### commit log 페이지네이션 (`/api/log`)
+
+클라이언트가 목록 끝에 다다르면 다음 페이지를 요청한다(`IntersectionObserver` 센티넬 — TUI의
+prefetch에 대응). 페이지 크기는 `MAX_LOG_PAGE = 100`으로 TUI 기본값과 맞췄다.
+
+- **`skip`만으로 페이지를 나누지 않는다**: skip은 한 walk 안의 offset이라 페이지 사이에 커밋이 생기면
+  이후 offset이 전부 밀려 중복·누락이 생긴다 — 바로 아래 터미널 패널에서 커밋하는 것이 이 뷰어의
+  일상이다. 첫 응답이 walk 시작 커밋을 `head`로 실어 보내고 이후 요청은 `from=<oid>`로 고정한다.
+  `from`이 잘못된 oid면 HEAD로 조용히 넘어가지 않고 **400**이다.
+- **커서 방식은 채택하지 않았다**: 병합 히스토리에서 특정 커밋부터 walk하면 그 커밋의 *조상만*
+  나오므로, HEAD 기준 날짜순 walk에 끼어 있던 병렬 브랜치 커밋이 영구히 누락된다.
+- **"더 있는가"는 한 페이지보다 1개 더 요청해 판정한다**: 정확히 한 페이지를 가져와 같은 수로
+  capping하면 `truncated`가 참이 될 수 없어, 이전 구현은 항상 `false`를 보고했다.
+- **`skip`에는 상한을 두지 않는다.** 순회량은 `skip + page`와 히스토리 길이 중 **작은 쪽**으로 이미
+  제한된다. 여기까지 온 클라이언트는 **이미 인증을 통과해 대화형 셸을 받은 상태**라, 그가 시킬 수
+  있는 일 중 revwalk 한 번은 가장 가벼운 축이다. 인증이 신뢰 경계이고 그 뒤에서 자원 사용을 다투는
+  것은 방어가 아니라 불편이다. **알려진 대가**: 페이지 i는 앞의 `i × MAX_LOG_PAGE`개를 다시
+  건너뛰므로 총비용이 히스토리 길이에 제곱으로 는다. anchor별 서버측 스냅샷 캐시로 없앨 수 있지만
+  "요청마다 상태가 없다"는 이 서버의 성질을 포기해야 하고, 스크롤로 닿는 깊이에서 페이지당 비용이
+  밀리초 단위라 그 교환은 하지 않았다.
+- **자동 페이징은 렌더된 행 수에 반응한다**(`visibleCommits.length`): `IntersectionObserver`는
+  intersection *변화*만 보고하는데 페이지가 붙어도 센티넬이 제자리에 남을 수 있어 매 페이지마다
+  재관찰해야 한다.
+- **필터가 걸린 동안에는 페이징을 멈춘다**: log 필터는 *로드된 것*을 좁히는 것이지 서버 검색이
+  아니므로 매치를 찾아 히스토리 전체를 걸어 들어가면 안 된다. "보이는 행 수" 기준만으로는 부족하다 —
+  페이지마다 매치가 하나라도 있으면 계속 재무장된다. 센티넬 자리에는 "로드된 N개를 필터 중"이라는
+  행을 그린다.
+- **페이지 실패는 `logDone`이 아니라 `logStalled`다**: 둘을 합치면 일시적 오류가 히스토리의 끝으로
+  보고되고, footer 에러는 다음 폴링에 지워져 흔적조차 남지 않는다. 실패 시 retry 행을 그린다.
+- **로그는 탭 진입 시점의 스냅샷이다** — TUI와 달리 HEAD 변경을 감지해 자동 갱신하지 않으며, 탭을
+  떠나면 페이지가 버려진다.
+
+## 프론트엔드 (`viewer-ui/`)
+
+React 19 + TypeScript 7 + Vite 8 + Tailwind v4 + `@xterm/xterm` 6, 마크다운은 react-markdown
+(+remark-gfm, rehype-highlight). shadcn/ui는 쓰지 않는다 — 기본 톤이 TUI 밀도와 맞지 않아 덮어쓸
+것이 더 많았다. `dist/`를 커밋해 `cargo install`에 Node를 요구하지 않는다(build.rs에서 npm을 부르면
+Node 없는 설치가 전부 깨진다). CI가 재빌드해 커밋된 번들과 다르면 실패시킨다.
+
+`viewer-ui/src`는 화면 조립과 재사용 단위를 분리한다. `pages/`는 화면 조립, `components/`는 재사용
+UI, `hooks/`는 UI·터미널·저장소 상태, `lib/`는 API 이외의 순수 도메인/레이아웃 유틸리티, `api/`는
+서버 wire 계약과 HTTP 클라이언트, `styles/`는 전역 스타일이다. `pages/App.tsx`는 조립만 하고 상태
+배선은 도메인 훅이 쥔다 — 서로만 주고받는 ref들을 App에 늘어놓으면 그 handshake가 조립 코드에 섞여
+하나를 빠뜨렸을 때 원인이 보이지 않는다.
+
+### 서버 저장 preference
+
+- **accent는 세션의 것이고 브라우저는 그것을 칠한다**(`hooks/ui/theme.ts`). 헤더 스와치가 TUI의
+  `<prefix> p`와 같은 순서로 5색을 순환한다. 브라우저에는 ratatui 팔레트 대응물이 없어 hex를
+  고정하는데, 눈대중이 아니라 기존 amber `#d9a441`(OKLCH L=0.751 C=0.130 h=79.8)의 **명도·채도를
+  유지한 채 hue만 돌려** 파생시킨다 — 어느 프리셋을 골라도 ink 스케일 위에서 가독성이 같다. 적용은
+  root의 `--color-accent` 오버라이드 하나로 끝난다. 저장은 `~/.nightcrow/viewer.json`
+  (`viewer/prefs/`), **저장소별이 아니라 세션 전역**이다: 뷰어는 여러 기기에서 열리고, repo id는
+  프로세스 수명 동안만 안정적이라 저장소별 키는 재시작마다 사라진다. 전달은 3초 `/api/repos` 폴링에
+  얹고 쓰기는 `POST /api/prefs`(cross-site가 트리거할 수 없도록 GET이 아닌 POST, 인증 뒤). 순서
+  문제는 `useViewerPrefs`가 로컬 변경 횟수를 세어 자기보다 오래된 응답의 accent만 버리는 것으로
+  막는다. localStorage는 **첫 페인트 캐시**로만 남는다: CSP가 인라인 스크립트를 막아
+  (`script-src 'self'`) 번들 실행 전에는 칠할 수 없는데 폴링 왕복까지 기다리면 매 로드마다 기본
+  amber가 번쩍인다. **이 값은 TUI의 것이기도 하다** — 경계와 뒤집은 이유는
+  [session.md](session.md#세션-공유-데몬--클라이언트).
+- **마지막으로 보던 프로젝트를 서버가 기억한다**(`prefs::active_repo`, `lib/activeRepo.ts`).
+  **저장은 id가 아니라 worktree path다** — repo id는 프로세스 수명 동안만 안정적이라 재시작 뒤에는
+  아무것도 가리키지 않거나, 더 나쁘게는 *다른* 프로젝트를 가리킨다. 정작 이 기능이 필요한 순간이
+  재시작이다. 클라이언트는 path를 절대 보지 않는다(카탈로그의 불변식): 서버가 POST에서 id→path로,
+  GET에서 path→id로 옮긴다. **목록과 활성 id는 한 스냅샷에서 뽑는다**(`list_with_active`) — 따로
+  읽으면 목록에 없는 id가 실려 나가고, 그것을 받은 클라이언트는 첫 탭으로 폴백한 뒤 그것을 기록해
+  기억을 영영 덮는다. 살아 있지 않은 id를 보내면 **400**이다. **채택 규칙은 accent·폭과 다르다**:
+  활성 프로젝트는 **우선순위 폴백**이라 이미 살아 있는 프로젝트를 보고 있는 페이지는 그대로 둔다
+  (`resolveActiveRepo`: 현재 선택 → 기억된 것 → 첫 탭). 폰에서 탭을 바꿨다고 노트북이 읽던 화면에서
+  끌려 나오면 안 된다. 그래서 write-generation 가드도 필요 없다. **쓰기는 선택이 정해지는 한
+  곳**(`useRepoPoll`의 effect)에서만 하고 **클라이언트에서 직렬화**한다(`lib/serialWrite.ts`) —
+  accent·폭은 도착 역전을 감수하지만(다음 폴링이 UI를 서버 값으로 되돌린다) 활성 프로젝트는 폴링이
+  UI를 되돌리지 않으므로 **화면과 서버가 조용히 갈라진 채 다음 로드까지 간다**. 직렬화의 대가로
+  **`send`는 반드시 끝나야 하므로** 이 쓰기에만 `AbortSignal.timeout`을 건다. 쓰기는 **조건 없이**
+  나간다 — "이미 서버 값이면 건너뛰기"는 실제로 시도했다 되돌렸다(A→B→A를 3초 안에 하면 서버에 B가
+  남는다). localStorage 캐시는 쓰지 않는다.
+- **사이드바 너비는 divider 드래그로 조절한다**(`hooks/ui/sidebar.ts`). 드래그 원점은 시작에 한 번만
+  재서 중간 re-layout이 원점을 옮기지 못하게 한다. 저장은 accent와 같은 서버 전역이고 첫 페인트
+  캐시로 localStorage도 쓴다. **저장값은 절대 `[280, 720]px`뿐**(서버·`adopt`·load 모두 clamp)이라
+  넓은 화면에서 정한 폭이 좁은 화면에서 잘려 사라지지 않는다. **뷰포트 50% 상한은 표시에만 건다** —
+  grid track이 `min(px, 50vw)`라 창이 좁아지면 즉시 diff pane이 최소 절반을 지키고 넓히면 저장값까지
+  회복한다. 드래그 중에는 로컬 상태만 갱신하고 놓는 순간 한 번 POST하되, **가로로 유의미하게
+  (≥`SIDEBAR_DRAG_THRESHOLD_PX`) 움직였을 때만** 커밋한다(순수 클릭이 `50vw`로 잘린 값을 절대
+  저장값에 덮어쓰지 않도록). **더블클릭은 기본 폭(460)으로 복구**하되 뷰포트 캡이 아니라 절대
+  기본값을 저장한다. 더블클릭은 네이티브 `dblclick`이 아니라 pointer 핸들러 안에서 판정한다 —
+  드래그의 `preventDefault`가 합성 click을 삼킬 수 있어서다. divider는 md+ 2컬럼에서만 뜨고 pane
+  maximize 시엔 숨는다.
+- **터미널 패널 높이도 divider 드래그로 조절한다**(`lib/upperPct.ts`, `hooks/ui/upperPct.ts`,
+  `components/terminal/PanelDivider.tsx`). **재야 하는 구간이 두 grid track에 걸쳐 있고 그 구간에
+  해당하는 element가 없어서** 위쪽 끝은 `<main>`, 아래쪽 끝은 터미널 `<section>`에서 각각 잰다(둘 다
+  드래그 시작에 한 번만). 제스처 자체는 사이드바와 **같은 `useDividerDrag`**를 쓰고 축과 측정만
+  다르다. 저장은 `viewer.json`의 `upper_pct`(`[20, 85]` clamp, 기본 55)이고, 퍼센트라 뷰포트 상한이
+  필요 없다.
+  - **사이드바 폭과 달리 TUI와 공유하지 않는다.** TUI에 대응 값이 있는데도(`config.layout.upper_pct`,
+    기본 55) accent처럼 세션 소유로 올리지 않은 이유가 셋이다. (1) 퍼센트는 40행 터미널과 1400px
+    창에서 서로 다른 것을 가리키므로 **수렴할 단일 답이 없다**. (2) 이 값이 지배하는 것처럼 보이는
+    PTY 크기는 이미 한 클라이언트가 정하므로, 비율을 공유하면 관전자의 **패널만 움직이고 그 안의
+    그리드는 그대로**여서 여백이나 잘림만 늘어난다. (3) "터미널에 화면을 얼마나 줄까"는 보고 있는
+    화면에 대한 질문이라 **fullscreen과 같은 계열**이다 — 이산 버전(maximize)이 클라이언트별인데
+    연속 버전을 공유로 두면 어긋난다.
+  - **divider는 앱 grid의 다섯 번째 자식이 될 수 없다.** 최상위 grid는 DOM 자식 순서에 걸린
+    auto-placement로 매 브레이크포인트에서 보이는 4개를 같은 track에 떨어뜨리므로, element를 하나 더
+    넣으면 나머지가 엉뚱한 track으로 밀린다. 그래서 터미널 패널 **안에서** 그 패널이 이미 그리는
+    `border-t` 위에 absolute로 얹는다. maximize 중과 `md` 미만에서는 렌더하지 않는다.
+- **패널 최대화는 프로젝트별로 저장한다**(`prefs/maximized.rs`). "이 프로젝트의 화면을 어떻게
+  배치했나"는 **view state**이고 TUI는 그것을 세션 파일에 프로젝트별로 이미 들고 있었다.
+  **TUI의 파일에 쓰지 않고 공유하지도 않는다** — `workspace.json`은 TUI가 붙어 있는 동안 TUI 소유이고,
+  40행 터미널의 최대화와 1400px 창의 최대화는 애초에 같은 답이 아니다. **키는 절대 경로**로
+  (`active_repo`와 같은 이유), 상한은 TUI와 같은 50개. **"아무것도 최대화 안 됨"은 항목의 부재로
+  표현한다** — 그게 압도적으로 흔한 상태라 저장하면 스쳐 지나간 프로젝트마다 "none" 한 줄이 남는다.
+  클라이언트 상태는 `useViewerPrefs`에 두는데, 현재 프로젝트를 만들어 내는 `useProjectTabs`보다
+  **위에서** 소유해야 하기 때문이다. localStorage 첫 페인트 캐시는 두지 않는다: 키가 repo id라
+  캐시된 맵은 재시작 후 엉뚱한 프로젝트를 가리킨다.
+
+### 렌더링
+
+- **diff는 unified/split 두 레이아웃을 토글한다**(`lib/diffLayout.ts`). 백엔드를 건드리지 않는다 —
+  JSON `Diff` payload가 이미 라인별 `kind`와 하이라이트 span을 담고 있어 `splitHunkRows`가 TUI의
+  `split_rows`/`flush_split_blocks`를 그대로 포팅해 순서만으로 좌/우 행을 만든다. **저장하지
+  않는다** — 기본은 unified고 split은 그 diff에 필요할 때 눌러서 보는 것이라 선택이 페이지 로드를
+  넘지 않는다(TUI의 `DiffPaneView`와 같은 수명). **좁은 화면에서는 split을 포기하는 대신 두 면을
+  상하로 쌓는다**(`flex-col md:flex-row`, removed 위 / added 아래, 가르는 선도 방향을 따라간다).
+  unified로 접으면 **선호를 켠 채로 토글이 아무 일도 하지 않는** 상태가 되어 화면이 고장난 것처럼
+  보인다. 그래서 뷰어에는 TUI의 `MIN_SPLIT_WIDTH` 대응 문턱이 없다(JS 미디어 쿼리 없이 CSS
+  클래스로만). **행 패딩은 스택에서도 유지한다** — blank 셀을 지우면 두 면의 행이 어긋나 오히려 읽기
+  어려워진다.
+- **줄 번호 gutter는 sticky 칼럼이다**(`components/LineNos.tsx`, `lib/gutter.ts`). TUI가 gutter를
+  본문과 별개 `Paragraph`로 두는 이유가 웹에도 그대로 있고, 그 대응물이 `position: sticky; left: 0`이다.
+  그래서 셀에는 **불투명 배경이 필수**다: kind 틴트(`bg-added/10`)가 반투명이라 베이스가 없으면 밑을
+  지나가는 코드가 번호 위로 비친다. 폭은 `linenoDigits`가 **diff 전체**의 최대 번호에서 뽑는다(hunk마다
+  다시 계산하면 코드의 좌측 경계가 계단진다). 최소 3자리는 TUI의 `MIN_LINENO_DIGITS`와 같은 값이다.
+  번호는 `select-none`. **파일 뷰의 번호는 프로토콜에 없다**: 인덱스가 곧 번호라 서버가 실어 보낼
+  이유가 없다. hunk 헤더는 TUI와 달리 gutter 자리를 비우지 않고 폭 전체를 쓰는 띠로 남긴다.
+- **사이드바 목록은 잘라내지 않고 가로로 스크롤한다**. `truncate`를 쓰지 않는 이유는 두 행을 구분하는
+  것이 대개 경로의 **꼬리**이기 때문이다 — `src/web/viewer/server.rs`와 `terminal.rs`는 말줄임이
+  지우는 바로 그 부분에서만 갈린다. 단 TUI는 접두 컬럼을 고정한 채 가변 텍스트만 미는 반면 뷰어는
+  **행 전체가 함께 스크롤된다**(VS Code 탐색기와 같은 동작). `position: sticky` 접두 고정은 sticky
+  요소가 자기 배경과 hover 상태까지 따라가야 해서 기각했다.
+- **hot-file 강조는 mtime을 절대 시각으로 실어 보내고 브라우저가 식힌다**(`lib/hot.ts`). 각 파일에
+  `mtime`(Unix ms)을 붙이고 클라이언트가 TUI의 `classify_hot`과 같은 단계로 나눈다(<5s =
+  accent+bold, hot window 내 = accent, 그 밖 = 기본). **나이가 아니라 절대 시각인 이유**: status
+  페이로드는 바이트 동일성으로 dedup되어 발행되므로 매 tick 값이 변하는 필드를 넣으면 유휴 저장소가
+  영구 이벤트 스트림이 된다. 대가로 **두 시계를 맞춰야 한다**: hot window 기본값이 15초라 몇 초의
+  어긋남도 눈에 보인다. 그래서 `/api/repos`에 서버 시각 `now_ms`를 실어 offset을 계산하고
+  (`nextClockOffset`) 이후 판정을 `Date.now() + offset`으로 한다. `hot_until`이나 age를 서버가
+  계산하는 대안은 각각 dedup을 깨거나 어긋남을 전혀 줄이지 못한다. **첫 측정은 크기와 무관하게
+  채택하고 이후 `CLOCK_SKEW_EPSILON_MS`(1 tick) 미만의 *변화*만 버린다** — epsilon은 네트워크 지터가
+  매 폴링 fade tick을 재시작시키는 것을 막기 위한 것이지 보정 여부를 정하는 문턱이 아니다. 목록은
+  스스로 초당 re-render하되 **tick은 hot 파일이 있는 스냅샷에서만 시작하고 마지막 파일이 식으면 스스로
+  멈춘다**. commit 파일 목록에는 `mtime`을 싣지 않는다.
+- **마크다운은 렌더 뷰로 연다**(`components/content/Markdown.tsx`, `fileView.ts`). `.md`/`.markdown`이면
+  pane 헤더에 rendered/raw 토글이 붙고 **파일을 열 때마다 rendered에서 시작한다**(`openFile`이 리셋).
+  raw는 일회성 확인이라 그 선택이 다음 파일까지 따라오면 왜 raw로 열렸는지 모른 채 되돌려야 한다.
+  리셋을 `openFile`에 두는 것은 그 경로가 **사용자가 파일을 여는 동작에만** 있기 때문이다 — 폴링이나
+  자동 갱신에는 없으므로 읽는 도중 뷰가 뒤집히지 않는다. 렌더는 `react-markdown`이 AST를 React
+  엘리먼트로 만들어 수행한다 — `dangerouslySetInnerHTML`가 없어 별도 sanitize 없이 XSS 표면이 없고,
+  번들 자체 포함이라 `default-src 'self'` CSP와 맞는다. 원문은 새 API 없이 `/api/file`의 하이라이트
+  span에서 복원한다(span은 색만 담고 문자를 바꾸지 않는다). **줄 단위로는 무손실이지만 바이트
+  단위로는 아니다** — 서버가 `str::lines()`로 쪼개므로 CRLF의 `\r`와 파일 끝 개행이 사라진다. Terminal처럼
+  lazy-load다. **한계**: 문서 내 외부 이미지는 CSP `default-src 'self'`가 막는다. **이 한계를 풀지
+  말 것** — 아래 HTML 프리뷰가 "외부로 아무것도 요청하지 않는다"를 이 CSP에 기대고 있어, `img-src`를
+  원격으로 여는 순간 저장소의 HTML 한 장이 비콘이 된다.
+- **HTML은 sandbox iframe으로만 연다**(`components/content/Html.tsx`). `.html`/`.htm`도 같은 토글을
+  갖지만(`previewRendered` 플래그 공유) **렌더 방식이 다른 이유가 있다**: 마크다운은 원문의 HTML이
+  애초에 DOM에 닿지 않지만, HTML 파일은 "렌더한다 = 실행한다"이다. 그리고 **이 origin에는 터미널
+  WebSocket이 붙어 있다** — 여기서 스크립트가 돌면 인증된 세션으로 셸을 띄울 수 있고, 클론 기능이
+  있어 "남의 저장소를 열어본다"가 실제 경로다. 그래서 `<iframe sandbox="" srcdoc>`에 넣는다: 빈
+  `sandbox`는 모든 제약이 켜진 상태이고, 이건 브라우저가 주는 보장이지 우리가 매번 이겨야 하는
+  블랙리스트가 아니다. **`rehype-raw` + sanitize로 인라인 렌더하지 않는 이유가 그것이다** —
+  sanitizer가 뚫렸을 때 대가가 이 origin에서는 셸이다.
+  - **역할 분담**: 스크립트 실행을 막는 것은 sandbox이고, **외부로 아무것도 요청하지 않게 하는 것은
+    상속된 CSP다**. sandbox는 `<img src="https://…">` 같은 수동적 요청을 막지 않으므로
+    `img-src`/`style-src`를 원격으로 여는 변경은 파일을 누르는 것만으로 원격에 신호가 가는 경로를
+    만든다. `data:`를 받는 것은 `img-src 'self' data:` 하나뿐이다. 외부 스타일시트·이미지·중첩
+    iframe이 전부 거부되고 리스너에 요청이 0건인 것을 실제 브라우저로 확인했다.
+  - **프레임 이동은 두 수단이 나눠 막는다** — 사용자가 누른 링크는 상속 CSP가 거부하고(`frame-src`
+    자리를 `default-src`가 대신), 상호작용 없이 뜨는 `<meta http-equiv="refresh">`는 **sandbox가**
+    거부한다(브라우저가 script성 탐색으로 보아 `allow-scripts`를 요구). "프레임은 자기 자신은
+    이동시킬 수 있지 않나"는 이 구성이 부르는 오독이라 근거를 남겨둔다.
+  - **`srcdoc`에 base URL이 없다는 말은 틀렸다** — `srcdoc` 문서의 base URL은 임베더의 것이라 상대
+    경로는 해석되고 실제로 이 서버로 요청이 나간다. 다만 이 서버는 앱 번들과 API만 서빙하고 **저장소
+    파일은 서빙하지 않아** 404다. 그 요청들은 **인증되지 않는다** — sandbox가 프레임에 opaque origin을
+    주고 세션 쿠키가 `SameSite=Strict`라, 프레임 안에서 `GET /logout`을 걸어도 세션이 살아 있는 것을
+    확인했다. **받아들인 제약**: 스크립트가 필요한 페이지는 동작하지 않고(그게 안전의 근거다),
+    CSS·이미지를 별도 파일로 링크한 문서는 그것들 없이 뜬다. **자기완결 문서 한 장의 미리보기**지
+    사이트 프리뷰가 아니다.
+- **트리 캐시는 프로젝트와 함께 사라진다**(`RepoShell.tsx`의 `<Sidebar key={repo}>`). 디렉토리 목록의
+  키는 저장소 상대 경로라 **어느 프로젝트 것인지가 키에 없다.** 게다가 트리는 **이미 가진 경로는 다시
+  읽지 않으므로** 새로고침 전까지 고정된다. 원인은 캐시가 아니라 **캐시가 프로젝트보다 오래 산
+  것**이었다. `Sidebar`를 저장소로 keying하면 전환이 훅 인스턴스를 통째로 버리므로 **초기화가 effect가
+  아니라 렌더 시점에 동기로** 일어나고(남의 파일이 한 프레임도 그려지지 않는다) 늦게 도착한 응답도
+  아무도 듣지 않는 인스턴스로 간다. `Sidebar`에는 `useTree` 말고 다른 상태가 없어 이 key가 버리는 것은
+  정확히 트리 상태뿐이다. 대신 **divider 드래그 중 전환**은 뒷정리가 필요하다: 분리선이 keyed
+  `Sidebar` 안에 있어 unmount되면 pointerup이 오지 않아 리사이즈 커서 오버레이가 영영 남는다
+  (`RepoShell`이 `onSidebarDragCancel`을 부른다). 한 프로젝트 안에서는 **경로별로 마지막 질문의 답만
+  받는다**(`lib/latestRequest.ts`). 파일명 검색 결과도 같은 훅 안이라 따로 태그할 필요가 없다. 대신 이
+  방식은 **저장소별 트리 상태 유지를 포기**한다. status/log는 부모가 들고 있어 이 key가 건드리지
+  않으므로 그 초기화를 **layout effect로** 돌린다 — passive effect는 페인트 뒤에 돌아 새 프로젝트 이름
+  아래 남의 내용이 한 프레임 보인다. **터미널 소켓도 같은 계열이다**(`useTerminalSocket.ts`): pane id는
+  저장소 안에서만 의미가 있어 전환 순간 날아오던 프레임이 새 프로젝트의 같은 id pane에 붙을 수 있으므로
+  `onmessage`가 자기 소켓이 아직 살아 있는지 먼저 확인한다. 터미널 패널에는 key를 줄 수 없어서(저장소별
+  마지막 포커스 pane 기억이 함께 사라진다) 정리는 여기서도 layout effect다.
+- **끊긴 연결은 조용히 self-heal한다**(`api.ts`, `App.tsx`). 모바일 브라우저는 화면이 꺼지면 진행 중이던
+  fetch를 끊는데, 복귀 시 그 요청이 네트워크 실패로 reject된다(Chrome "Failed to fetch", Safari "Load
+  failed"). 이걸 **fetch 경계에서 `NetworkError`로 감싸** HTTP 오류(`ApiError`)나 응답 처리 중의
+  `TypeError`(진짜 결함이라 반드시 노출)와 구분한다. `NetworkError`는 친절한 메시지를 담아 `err.message`를
+  직접 보여주는 경로도 raw 메시지를 새지 않는다. **3초 폴링은 네트워크 오류를 아예 삼킨다**; 사용자가
+  탭한 일회성 로드(diff/file)는 자동 재시도가 없으므로 `handle`이 toast로 알린다. **복귀는 즉시
+  회복시킨다**: `visibilitychange`(visible)·`online`에 `resumeTick`을 올려 폴링을 한 번 돌리고
+  (`AbortController`로 suspend된 in-flight 요청을 버린다) status SSE도 다시 구독한다. 재구독은 status를
+  `null`로 비우지 않아 **`Loading…` 깜빡임 없이** 마지막 스냅샷을 유지하다 새 replay로 갈아끼운다.
+
+### 좁은 화면
+
+- **폰에서는 세 영역을 동시에 쌓지 않고 하나만 채운다**(`mobileView`). 폰 세로 화면에서 셋을 함께
+  두면 각각 쥐꼬리만 한 스크롤 박스가 된다. `md` 미만에서는 하단 세그먼트 바가 셋 중 하나를 골라
+  풀스크린으로 채운다. **레이아웃 전환은 CSS 클래스로만 한다**(JS 브레이크포인트 훅 없음): 최상위
+  grid는 데스크톱·모바일 **양쪽 다 4-track**이라 DOM 자식 순서(header·main·terminal·세그먼트바·footer)에
+  걸린 auto-placement가 **명시적 row 배치 없이** 매 브레이크포인트에서 보이는 4개를 같은 트랙에
+  떨어뜨린다. `mobileView`는 transient 뷰 상태이고 데스크톱은 읽지 않는다 — 파일/커밋을 열면
+  `setMobileView("diff")`를 무조건 호출해도 데스크톱에선 `md:` 규칙이 덮으므로 분기가 필요 없다(단,
+  커밋 목록 탭은 drill-down 목록을 사이드바에 유지해야 하므로 전환하지 않는다).
+- **좁은 화면에서 프로젝트 탭은 드롭다운으로 접힌다**(`ProjectMenu`). 탭 행은 `md`(768px) 이상에서만
+  보이고 그 미만에서는 현재 프로젝트명 selector로 대체된다. 드롭다운이 전환·닫기(×)·`+ open`을 모두
+  담아 어포던스를 유지한다. 바깥 클릭(투명 backdrop)이나 Esc로 닫힌다.
+- **폰 터미널에는 소프트키보드가 못 내는 키를 얹는다**(`lib/termKeys.ts`, `Terminal.tsx`). `Ctrl-C`
+  없이는 멈춘 프로세스를 못 죽이고 `Esc` 없이는 vim을 못 빠져나와 pane 파기(=세션 파기)밖에 없다.
+  터미널 패널 하단의 온스크린 키 바(`md:hidden`, pane이 열렸을 때만)가 각 키를 실제 키보드가 보낼
+  **원시 바이트**로 매핑해(`termKeySequence`: Esc=`\x1b`, `^C`=`\x03`, ↑=`\x1b[A`, ⇧Tab=`\x1b[Z` —
+  Shift-Tab은 자기 제어바이트가 없어 back-tab escape) `term.onData`와 **같은 wire 메시지**로 흘린다.
+  버튼은 `onPointerDown`+`preventDefault`로 눌러 포커스를 xterm textarea에서 떼지 않는다(소프트키보드가
+  닫히지 않게). **모디파이어를 sticky로 두지 않고 자주 쓰는 조합(`^C`/`^D`/`^Z`/`^L`/`^R`)을 개별
+  버튼으로** 둔 것은, sticky Ctrl이 다음 입력을 가로채 변환해야 해(xterm이 textarea를 소유) 얻는 것보다
+  복잡하기 때문이다. 바에는 소프트키보드가 **못 내는** 키만 담는다. 터치 기기에선 xterm 폰트도 한
+  포인트 키운다(`pointer: coarse`, 12→13px).
+- **폰 터치 타겟을 넓힌다**: 목록 행·사이드바 탭·pane 버튼·`ProjectMenu` 항목은 `md` 미만에서 세로
+  패딩과 히트 영역을 키우고 `md:`로 기존 밀도를 복원한다. hover가 안 먹는 터치를 위해 `active:` 상태를
+  병행한다.
+
+## 클론 (`src/git/clone.rs`, `web/viewer/clone_jobs/`, `server/clone_routes.rs`)
+
+폴더 피커가 보고 있는 디렉토리에 원격을 클론하고, 끝나면 그 경로를 repo로 연다.
+
+- **URL로 클론하는 것은 `git` 바이너리에 위임한다. libgit2를 쓰지 않는다** — 벤더링된 빌드에 SSH
+  전송이 없어(`libgit2-sys`가 `libssh2-sys`를 끌어오지 않음) 가장 흔한 `git@host:path`가 아예 해석되지
+  않고, credential helper·`insteadOf`·에이전트가 쥔 키도 libgit2는 모른다. 이것은 프로젝트가 피하는
+  "git 출력 파싱"이 아니다 — stdout을 읽지 않고 종료 상태와 실패 시 stderr만 본다. 대가로 런타임에
+  `git`이 PATH에 있어야 하는데, 그 여부를 시작 시 한 번 재서 `/api/repos`의 `can_clone`으로 실어 보내
+  클라이언트가 반드시 실패할 job을 시작하는 대신 폼을 비활성화한다(서버 실행 중 git을 설치하면 재시작
+  전까지 반영되지 않는다). 서버 쪽 검사는 그대로 남아 버튼은 UX일 뿐 유일한 방어가 아니다.
+- **URL 스킴 화이트리스트는 보안 경계다**(`validate_clone_url`). git은 `ext::<command>`를 **그 명령을
+  실행해서** 해석하므로 검증하지 않은 URL은 서버에서의 원격 코드 실행이다. **URL을 `--` 뒤 argv
+  항목으로 넘기는 것으로는 막히지 않는다** — 스킴은 인자 파싱이 끝난 뒤에 해석된다. 그래서
+  `https`/`http`/`ssh`/`git+ssh`와 scp 형식(`user@host:path`)만 통과시키고 `file://`와 로컬 경로도
+  뺀다(로컬 디렉토리는 피커로 이미 닿는다). **`git://`도 뺐다** — 인증도 암호화도 없어 경로 위의
+  누구든 임의 코드를 클론시킬 수 있고, git이 stall 제어를 주지 않는 유일한 전송이라 죽은 원격이 클론
+  슬롯을 재시작까지 쥔다.
+- 대상 디렉토리 이름은 **클라이언트가 주지 않고 URL에서 파생**하며 `mkdir`과 같은 규칙(단일 평범
+  세그먼트, 숨김 아님)을 통과해야 한다. 부모를 먼저 canonicalize하고 **목적지는 `exists()`로 검사하는
+  대신 `create_dir`로 선점한다** — 검사와 사용 사이에 심볼릭 링크가 끼어들 수 있고 git은 그걸 따라가
+  부모 밖에 쓴다. `create_dir`는 원자적이고 마지막 경로 요소의 링크를 따라가지 않는다. 실패한 클론은
+  그 디렉토리를 **재귀가 아니라 `remove_dir`로** 지운다 — 그 사이 다른 무언가가 그 경로를 차지했더라도
+  내용을 파괴할 수 없게. **비어 있지 않으면 남는다**: checkout 단계에서 실패하면 git은 저장소를
+  의도적으로 보존한다(`JUNK_LEAVE_REPO`). 남은 디렉토리가 같은 이름의 재시도를 막지만 그건 눈에 보이는
+  불편이고 남의 파일을 지우는 것은 아니다.
+- **남는 한계 (수용)**: `create_dir` 성공 이후 `git`이 그 경로를 여는 사이에, 부모에 쓸 수 있는 로컬
+  프로세스가 목적지를 심볼릭 링크로 바꿔치면 git이 부모 밖에 쓸 수 있다. 경로가 아니라 열린 핸들로
+  작업해야 닫히는 창인데 `git`은 별도 프로세스라 경로로만 받는다. 같은 UID라면 새로운 권한이 아니지만
+  **부모가 공유 디렉토리(`/tmp` 등)면 다른 UID도 해당된다** — 즉 "이미 할 수 있는 일"이라는 논리는 같은
+  UID에만 성립한다. 공유 디렉토리를 부모로 고르지 않는 것으로 피한다.
+- **클론은 자기를 시작한 요청보다 오래 산다**(`clone_jobs/`). `POST /api/clone`은 스레드를 띄우고 job
+  id로 답한 뒤 클라이언트가 `GET /api/clone?job=<id>`로 폴링한다. 연결이 끊겨도 클론은 취소되지 않는다 —
+  터미널 hub가 PTY를 유지하는 것과 같은 선택이다. **동시 클론은 하나로 제한**하고 판정과 등록을 **같은 락
+  안에서** 한다(`try_start`) — 밖에서 묻고 나중에 넣으면 병렬 요청이 저마다 빈 레지스트리를 보는
+  check-then-act 경합이 된다. 끝난 job은 다음 시작 때 정리하되 **running인 job은 절대 evict하지
+  않는다**. 정리된 job을 뒤늦게 폴링하면 404가 나는데 클라이언트는 이를 **네트워크 오류와 구분해 종료로
+  취급**한다(재시도하면 폼이 "Cloning…"에 영원히 걸린다).
+- 인증이 필요한 원격에서 멈추지 않도록 `GIT_TERMINAL_PROMPT=0`으로 돌린다. 죽은 연결은
+  `http.lowSpeedLimit=1024`/`lowSpeedTime=60`이 끊는다 — 정책 문턱이라 정당하지만 극단적으로 느린 전송도
+  함께 끊긴다. **벽시계 타임아웃을 두지 않은 이유**는 그것이 "느린 것"과 "멈춘 것"을 전혀 구분하지 못하기
+  때문이다 — 큰 저장소는 정당하게 몇 십 분이 걸린다. ssh에는 `GIT_SSH_COMMAND`로
+  `ConnectTimeout`/`ServerAliveInterval`/`CountMax`를 건다. **남는 한계**: 이것들은 *멈춘* 것을 끊을 뿐
+  완료를 보장하는 상한이 아니다. 실패 메시지는 redact하지 않고 git의 마지막 줄을 그대로 보낸다 —
+  "repository not found"는 사용자가 친 URL에 대한 원격의 말이지 서버 내부 정보가 아니다.
+- **진행 중인 클론은 job id 없이도 찾을 수 있다**(`CloneJobs::running`). job id를 아는 것은 클론을
+  시작한 그 페이지뿐인데 그 페이지는 리로드되거나 닫힐 수 있다. `job` 없는 조회는 지금 running인 job의
+  id로(없으면 `null`로) 답한다 — 동시 클론이 하나이므로 모호하지 않다. `null`은 에러가 아니라 "붙을
+  것이 없다"는 명시적 답이다. 숫자로 파싱되지 않는 `job`은 여전히 400 — 오타가 조용히 "무엇이 돌고
+  있나"로 바뀌면 그 클라이언트는 남의 job에 붙는다.
+- **클론 job의 주인은 폴더 피커가 아니라 그 위다**(`useClone`을 `App.tsx`에서 호출). 훅을 피커 안에서
+  부르면 다이얼로그를 닫는 순간 관측자가 unmount되어 완료 토스트도 실패 메시지도 없고 끝난 repo도 열리지
+  않는다. 피커는 `(부모 경로, URL)`을 올리기만 한다. **로그인 직후 진행 중인 job에 자동으로 붙는다** —
+  붙을 게 없거나 probe가 실패하면 조용히 넘어간다.
+
+## 알려진 잔여 위험 (수용 또는 후속)
+
+- **저장소 루트가 넓어질 수 있다.** 핸들러는 `Repository::discover`로 저장소를 열고 `repo.workdir()`
+  기준으로 경로를 푼다. `discover`는 상위로 올라가므로, 저장소가 아닌 디렉토리를 서빙하면
+  (`serve --repo ~/notes`, `$HOME`이 저장소일 때) 브라우징 루트가 `$HOME`으로 넓어진다. traversal은
+  여전히 불가능하지만 운영자가 지정한 범위보다 넓다. 후속으로 `entry.path`에서 workdir을 파생시켜야 한다.
+- **로그인 rate limiter가 프로세스 전역**이라 미인증 요청 3회/분으로 정당한 사용자의 로그인을 잠글 수
+  있다. 단일 비밀번호 모델의 대가.
+- **터미널은 클라이언트 간 격리가 없다.** 연결된 어느 클라이언트든 그 저장소의 아무 pane에
+  입력·리사이즈·종료할 수 있다. 단일 공유 비밀번호에서는 일관되지만 pane 소유권 개념이 없다는 뜻이다.
+- **PTY는 연결이 끊겨도 회수되지 않는다**(재접속 시 세션 유지 목적). 저장소당 최대 8개가 프로세스 수명
+  동안 남는다.
+- **세션에 절대 TTL이 없다.** 로그아웃은 서버측에서 취소하지만 방치된 세션은 프로세스 종료까지 유효하다.
+- **`Secure` 쿠키 플래그 없음.** loopback 기본값에서는 맞지만 `bind`를 바꾸면 평문 HTTP로 토큰이 나간다.
+
+← [Architecture index](../architecture.md)
