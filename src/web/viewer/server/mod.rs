@@ -80,6 +80,11 @@ pub struct ViewerState {
     /// Whether `git` was on PATH at startup. Reported to clients so the clone
     /// form is disabled up front rather than failing every job it starts.
     pub(super) git_available: bool,
+    /// Held for the length of a config reload (see
+    /// [`crate::web::viewer::reload`]). Two clients pressing at once would
+    /// otherwise interleave one's table swap with the other's fan-out to the
+    /// hubs, leaving the session's repositories told about different files.
+    pub(super) reload_lock: std::sync::Mutex<()>,
 }
 
 pub struct ViewerServer {
@@ -157,6 +162,7 @@ impl ViewerState {
             connections: Arc::new(AtomicUsize::new(0)),
             clones: Default::default(),
             git_available: crate::git::clone::git_available(),
+            reload_lock: std::sync::Mutex::new(()),
             persist,
             hot,
             prefs,

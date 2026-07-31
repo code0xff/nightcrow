@@ -11,6 +11,7 @@ pub mod dto;
 pub mod highlight;
 pub mod limits;
 pub mod prefs;
+pub mod reload;
 pub mod runtime;
 pub mod server;
 pub mod session;

@@ -107,13 +107,26 @@ pub(super) fn write_config_template(path: &std::path::Path, force: bool) -> Resu
     Ok(InitOutcome::Created(path.to_path_buf()))
 }
 
+/// The config as it stands, or the defaults when there is no file yet.
+///
+/// A missing file is a normal starting state, so this does not fail on one. A
+/// *reload* takes the stricter path ([`read_config_file`]): at that point the
+/// file having gone missing is a mistake worth reporting, not an instruction to
+/// run as if nothing were configured.
 pub fn load_config() -> Result<Config> {
     let path = match default_config_path() {
         Some(p) if p.exists() => p,
         _ => return Ok(Config::default()),
     };
+    read_config_file(&path)
+}
 
-    let text = std::fs::read_to_string(&path)
+/// Parse and validate the config at `path`, which must exist.
+///
+/// Path-explicit so the reload path is testable against a temp file rather than
+/// the caller's real `~/.nightcrow/config.toml`.
+pub fn read_config_file(path: &std::path::Path) -> Result<Config> {
+    let text = std::fs::read_to_string(path)
         .with_context(|| format!("reading config file {}", path.display()))?;
     let cfg: Config =
         toml::from_str(&text).with_context(|| format!("parsing config file {}", path.display()))?;
