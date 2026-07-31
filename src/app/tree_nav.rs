@@ -84,22 +84,19 @@ impl App {
         }
     }
 
-    // Enter toggles a directory open/closed; on a file row it (re)loads the
-    // preview, mirroring selection behaviour.
-    pub fn tree_toggle(&mut self) {
+    // Enter opens the selected file: load it into the file view and zoom the
+    // diff pane so reading is the whole screen. Expansion stays on `→`/`←`, so
+    // a directory row does nothing here.
+    pub fn tree_open_selected(&mut self) {
         let selected = self.tree_view.selected;
         let Some(row) = self.tree_view.visible_rows().into_iter().nth(selected) else {
             return;
         };
         if row.is_dir {
-            if self.tree_view.expanded.contains(&row.path) {
-                self.tree_collapse();
-            } else {
-                self.tree_expand();
-            }
-        } else {
-            self.preview_tree_selected();
+            return;
         }
+        self.preview_tree_selected();
+        self.set_diff_fullscreen(true);
     }
 
     // Walk the whole tree once to build the search index, then keep showing

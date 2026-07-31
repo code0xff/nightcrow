@@ -175,7 +175,13 @@ impl App {
     }
 
     pub fn toggle_diff_fullscreen(&mut self) {
-        self.diff.fullscreen = !self.diff.fullscreen;
+        self.set_diff_fullscreen(!self.diff.fullscreen);
+    }
+
+    // Entering diff fullscreen has to clear the two competing fullscreens;
+    // callers that force it on (Tree `Enter`) share that rule with the toggle.
+    pub(crate) fn set_diff_fullscreen(&mut self, on: bool) {
+        self.diff.fullscreen = on;
         if self.diff.fullscreen {
             self.focus = Focus::DiffViewer;
             self.terminal.fullscreen = TerminalFullscreen::Off;

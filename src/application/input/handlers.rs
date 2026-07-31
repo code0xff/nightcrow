@@ -195,11 +195,11 @@ fn handle_unmapped_upper_key(app: &mut App, key: KeyEvent) {
             KeyCode::Enter if app.mode == ViewMode::Log && !app.log_view.drill_down => {
                 app.log_drill_in()
             }
-            // Tree navigation: Enter toggles a directory (or re-previews a
-            // file), Right expands, Left collapses / steps to the parent. These
-            // guarded arms shadow the generic Left/Right horizontal-scroll arms
-            // below while in Tree mode.
-            KeyCode::Enter if app.mode == ViewMode::Tree => app.tree_toggle(),
+            // Tree navigation: Enter opens the selected file fullscreen (no-op
+            // on a directory), Right expands, Left collapses / steps to the
+            // parent. These guarded arms shadow the generic Left/Right
+            // horizontal-scroll arms below while in Tree mode.
+            KeyCode::Enter if app.mode == ViewMode::Tree => app.tree_open_selected(),
             KeyCode::Right if app.mode == ViewMode::Tree => app.tree_expand(),
             KeyCode::Left if app.mode == ViewMode::Tree => app.tree_collapse(),
             // Log search Esc precedence sits ahead of `log_drill_out` so the
@@ -235,6 +235,9 @@ fn handle_unmapped_upper_key(app: &mut App, key: KeyEvent) {
             _ => {}
         },
         Focus::DiffViewer => match key.code {
+            // Counterpart to Tree `Enter`: the same key that zoomed the pane in
+            // zooms it back out.
+            KeyCode::Enter => app.toggle_diff_fullscreen(),
             _ if matches_text_command(key, 'v') => app.toggle_diff_file_view(),
             _ if matches_text_command(key, 's') => app.toggle_diff_split_view(),
             _ if matches_text_command(key, 'w') => app.toggle_diff_wrap(),
