@@ -1,6 +1,7 @@
 import { Mark } from "./Mark";
 import { ProjectMenu } from "./ProjectMenu";
-import { LogOutIcon, PlusIcon, XIcon } from "./icons";
+import { LogOutIcon, PlusIcon, RefreshIcon, XIcon } from "./icons";
+import { useReloadConfig } from "../hooks/useReloadConfig";
 import type { Repo } from "../api";
 
 export interface HeaderProps {
@@ -40,6 +41,9 @@ export function Header({
   onRepoDragMove,
   onRepoDragEnd,
 }: HeaderProps) {
+  // Kept here rather than threaded down from `App`: a reload changes nothing this
+  // component's parents render, so there is no state for them to hold.
+  const { reload, pending: reloading } = useReloadConfig();
   return (
     <header className="flex items-center gap-2 border-b border-ink-700 bg-ink-900 px-[12.8px] py-[8.8px]">
       <Mark className="h-[22px] w-[22px] shrink-0" />
@@ -133,6 +137,20 @@ export function Header({
         <span
           aria-hidden="true"
           className="h-3 w-3 rounded-full bg-accent ring-1 ring-ink-600"
+        />
+      </button>
+      {/* The title says "config" because the shape does not: a circular arrow
+          reads as a browser refresh, and this reloads the server's config.toml
+          while leaving the page exactly as it is. */}
+      <button
+        onClick={reload}
+        disabled={reloading}
+        title="Reload config.toml on the server (does not reload this page)"
+        aria-label="reload the server config"
+        className="ml-1 flex h-6 w-6 shrink-0 items-center justify-center rounded-sm text-ink-400 hover:bg-ink-700 hover:text-ink-200 disabled:cursor-progress disabled:text-ink-500 disabled:hover:bg-transparent"
+      >
+        <RefreshIcon
+          className={`h-3.5 w-3.5 ${reloading ? "animate-spin" : ""}`}
         />
       </button>
       <a

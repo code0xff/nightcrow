@@ -138,6 +138,9 @@
       "name": "scratch"
     }
   },
+  "reloaded": {
+    "summary": "config reloaded: 1 plugin across 1 open project; 2 startup panes apply to newly opened projects"
+  },
   "status": {
     "branch": "dev",
     "files": [

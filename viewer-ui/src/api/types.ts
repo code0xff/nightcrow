@@ -36,6 +36,15 @@ export interface StoredPrefs {
   active_repo: string | null;
 }
 
+/** What `/api/reload` answers.
+ *
+ *  A sentence rather than counts, and the server writes it: a reload changes
+ *  nothing on the page, so this text is the only evidence the button did
+ *  anything — and an attached TUI shows the same words for the same reload. */
+export interface Reloaded {
+  summary: string;
+}
+
 export interface ViewerBootstrap {
   repos: Repo[];
   hot: HotConfig;
