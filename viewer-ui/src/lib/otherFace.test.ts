@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { hasWorkingCopy, otherFace } from "./otherFace";
+import { hasWorkingCopy, otherFace, showsText } from "./otherFace";
+import type { DiffLine } from "../api";
 import type { FileSource, Pane } from "../types";
+
+const line = (new_lineno?: number): DiffLine => ({
+  kind: " ",
+  spans: [],
+  new_lineno,
+});
 
 const diff = (source?: FileSource): Pane => ({
   kind: "diff",
@@ -77,5 +84,29 @@ describe("hasWorkingCopy", () => {
     // this will not offer to open it; of the two mistakes available, a missing
     // offer beats a button that only errors.
     expect(hasWorkingCopy(file("D", " "))).toBe(false);
+  });
+});
+
+describe("showsText", () => {
+  const withLines = (n: number) => ({
+    path: "a.rs",
+    hunks: [{ header: "@@", lines: Array.from({ length: n }, () => line(1)) }],
+    truncated: false,
+  });
+
+  it("sees text where the diff has lines", () => {
+    expect(showsText(withLines(3))).toBe(true);
+  });
+
+  it("sees none for a diff with no hunks at all", () => {
+    // A changed binary: git produces nothing to show, and the file endpoint
+    // refuses it. The toggle would only be able to fail.
+    expect(showsText({ path: "logo.png", hunks: [], truncated: false })).toBe(
+      false,
+    );
+  });
+
+  it("sees none for hunks that carry no lines", () => {
+    expect(showsText(withLines(0))).toBe(false);
   });
 });

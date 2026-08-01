@@ -1,4 +1,4 @@
-import type { ChangedFile } from "../api";
+import type { ChangedFile, Diff } from "../api";
 import type { FileSource, Pane } from "../types";
 
 /**
@@ -39,4 +39,21 @@ export function otherFace(
  */
 export function hasWorkingCopy(file: ChangedFile): boolean {
   return file.index !== "D" && file.worktree !== "D";
+}
+
+/**
+ * Whether a diff has text behind it — that is, whether the whole file can be
+ * shown at all.
+ *
+ * Read off the diff rather than asked of the server: a binary file produces no
+ * hunks, and `/api/file` refuses it outright ("binary or non-utf8 file"), so
+ * offering the toggle for a changed PNG is a button whose only outcome is an
+ * error.
+ *
+ * A proxy, and it costs one case: a mode-only change (`chmod`) also produces no
+ * hunks, and its file is perfectly readable. That is a missing offer, which is
+ * the side to be wrong on — the same trade the deleted-path check makes.
+ */
+export function showsText(diff: Diff): boolean {
+  return diff.hunks.some((hunk) => hunk.lines.length > 0);
 }

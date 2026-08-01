@@ -3,7 +3,7 @@ import { api, type Commit, type Diff, type FileView, type Status } from "../api"
 import type { CommitDrillDown } from "./useLog";
 import type { Pane } from "../types";
 import { anchorLine, anchorOffset } from "../lib/diffAnchor";
-import { hasWorkingCopy, otherFace } from "../lib/otherFace";
+import { hasWorkingCopy, otherFace, showsText } from "../lib/otherFace";
 import type { MobileView } from "../types";
 
 export interface UsePaneOpenersArgs {
@@ -63,7 +63,10 @@ export function usePaneOpeners({
             setPane({
               kind: "diff",
               value: v,
-              source: worktreeHas(path) ? { kind: "workdir", path } : undefined,
+              source:
+                worktreeHas(path) && showsText(v)
+                  ? { kind: "workdir", path }
+                  : undefined,
             });
         })
         .catch((err) => {
@@ -117,7 +120,9 @@ export function usePaneOpeners({
             setPane({
               kind: "diff",
               value: v,
-              source: { kind: "commit", oid, path },
+              // Nothing to read whole behind a binary change, and the endpoint
+              // that would serve it refuses one.
+              source: showsText(v) ? { kind: "commit", oid, path } : undefined,
             });
         })
         .catch((err) => {

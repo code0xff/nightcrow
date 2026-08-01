@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { api, subscribeStatus, type Status } from "../api";
 import type { Pane, Tab } from "../types";
-import { hasWorkingCopy } from "../lib/otherFace";
+import { hasWorkingCopy, showsText } from "../lib/otherFace";
 
 export type { Pane, Tab };
 
@@ -88,7 +88,10 @@ export function useStatus({
           setPane({
             kind: "diff",
             value: v,
-            source: hasWorkingCopy(row) ? { kind: "workdir", path } : undefined,
+            source:
+              hasWorkingCopy(row) && showsText(v)
+                ? { kind: "workdir", path }
+                : undefined,
           });
       })
       .catch((err) => {
