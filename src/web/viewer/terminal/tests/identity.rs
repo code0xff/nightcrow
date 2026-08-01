@@ -1,8 +1,8 @@
 //! Telling one client's own pane from another's.
 
 use super::{
-    attach, collect_created, created_pane, created_requester, hello_client, hello_panes,
-    next_matching, spawn_hub,
+    attach, collect_created, created_pane, created_requester, exited_pane, hello_client,
+    hello_panes, next_matching, spawn_hub,
 };
 use crate::web::viewer::terminal::frame::ClientMessage;
 
@@ -61,6 +61,28 @@ fn the_greeting_counts_the_panes_the_replay_then_delivers() {
         "and the replay must deliver exactly that many"
     );
     hub.stop();
+}
+
+#[test]
+fn a_retired_hub_tells_its_clients_their_panes_are_gone() {
+    // `connect` skips the replay for a stopped hub, but that guard cannot be
+    // airtight: a connection that took the state lock first read `stop` before
+    // it was set and has already been handed every pane. Announcing the panes
+    // as they are dropped is what closes the window from the other side, so a
+    // client is never left holding terminals that can produce nothing.
+    let dir = tempfile::TempDir::new().unwrap();
+    let hub = spawn_hub(&dir.path().to_string_lossy(), Vec::new(), Vec::new());
+    let session = attach(&hub);
+    session.dispatch(ClientMessage::Create { rows: 24, cols: 80 });
+    let pane = collect_created(&session, 1)[0];
+
+    hub.stop();
+
+    assert_eq!(
+        next_matching(&session, |f| exited_pane(f).is_some()).and_then(|f| exited_pane(&f)),
+        Some(pane),
+        "a hub that retires its panes must say so"
+    );
 }
 
 #[test]

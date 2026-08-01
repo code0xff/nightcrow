@@ -1,5 +1,6 @@
+use super::frame::{ServerMessage, TerminalFrame};
 use super::hub_diag::ClearWatch;
-use super::hub_helpers::Command;
+use super::hub_helpers::{Command, broadcast_locked};
 use super::hub_modes::PaneModeTracker;
 use super::hub_plugins::Plugins;
 use super::hub_repaint::Repaints;
@@ -195,8 +196,21 @@ impl TerminalHub {
         // behind an `Arc`, and a late `connect` must not replay these now-dead
         // terminals. The zoom goes with them — it names one of these panes, and
         // nothing may be left holding a name for a pane that is gone.
+        //
+        // Announced rather than dropped in silence, because `connect`'s guard
+        // against replaying them cannot be airtight: a connection that took the
+        // state lock first read `stop` before it was set, and by the time this
+        // runs it has already been handed every pane. Telling it here is what
+        // closes that window from the other side — the guard keeps the common
+        // case cheap, and this makes the outcome correct either way.
         let mut state = self.state.lock().expect("terminal state poisoned");
+        let gone: Vec<PaneId> = state.panes.iter().map(|p| p.id).collect();
         state.panes.clear();
         state.zoomed = None;
+        for pane in gone {
+            if let Ok(json) = serde_json::to_string(&ServerMessage::Exited { pane }) {
+                broadcast_locked(&mut state.clients, TerminalFrame::Control(json));
+            }
+        }
     }
 }
