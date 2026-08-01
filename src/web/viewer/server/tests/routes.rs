@@ -149,46 +149,6 @@ fn tree_search_with_an_empty_query_returns_no_matches() {
 }
 
 #[test]
-fn a_traversal_path_is_refused_by_every_route_that_takes_one() {
-    let (dir, server, token, id) = seeded_server();
-
-    for route in ["tree", "file", "diff"] {
-        for attack in ["../../etc/passwd", ".git/config", "src/../.git/config"] {
-            let encoded = attack.replace('/', "%2F");
-            let response = get(
-                server.addr(),
-                &format!("/api/{route}?repo={id}&path={encoded}"),
-                Some(&token),
-            );
-            assert!(
-                response.starts_with("HTTP/1.1 400"),
-                "{route} accepted {attack:?}: {response}"
-            );
-        }
-    }
-    drop(dir);
-}
-
-#[test]
-fn an_error_response_leaks_no_filesystem_detail() {
-    let (dir, server, token, id) = seeded_server();
-
-    let response = get(
-        server.addr(),
-        &format!("/api/file?repo={id}&path=nope.txt"),
-        Some(&token),
-    );
-
-    let body = body_of(&response);
-    assert!(!body.contains('/'), "a path leaked into the error: {body}");
-    assert!(
-        !body.contains("No such file"),
-        "the io error leaked: {body}"
-    );
-    drop(dir);
-}
-
-#[test]
 fn file_returns_worktree_content() {
     let (dir, server, token, id) = seeded_server();
 

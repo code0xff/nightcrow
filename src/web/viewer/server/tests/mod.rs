@@ -3,6 +3,7 @@ mod auth;
 mod clone;
 mod closing;
 mod commit_routes;
+mod path_gate;
 mod prefs;
 mod reload;
 mod reorder;

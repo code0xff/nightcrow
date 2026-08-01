@@ -122,13 +122,15 @@ pub(super) fn route(head: &RequestHead, state: &ViewerState) -> Vec<u8> {
                 &[],
             ))
         }),
-        "/api/diff" => with_repo(head, state, |entry| {
-            let path = required_path(head)?;
+        // Through the git gate, not the worktree one: a file the working tree no
+        // longer holds still has a diff — its deletion — and requiring it to be
+        // on disk is what made a deleted path a 400 in a list that shows it.
+        "/api/diff" => with_repo_git_path(head, state, |entry, path| {
             let repo = open_repo(&entry.path)?;
-            let hunks = diff::load_file_diff(&repo, &path)?;
+            let hunks = diff::load_file_diff(&repo, path)?;
             Ok(json_response(
                 "200 OK",
-                &encode(&DiffDto::from_hunks(&path, &hunks))?,
+                &encode(&DiffDto::from_hunks(path, &hunks))?,
                 &[],
             ))
         }),
