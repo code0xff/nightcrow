@@ -61,7 +61,7 @@ fn listing_serves_the_repositories_the_daemon_was_started_with() {
 
     client.send(ClientMessage::ListRepos);
 
-    assert_eq!(repo_paths(&client.next_repos()), vec![path]);
+    assert_eq!(repo_paths(&client.next_repos()), vec![resolved(&path)]);
     drop(repo);
 }
 
@@ -155,7 +155,7 @@ fn attaching_serves_the_repository_set_before_anything_is_asked() {
 
     let mut client = Client::attach_raw(daemon.path());
 
-    assert_eq!(repo_paths(&client.next_repos()), vec![path]);
+    assert_eq!(repo_paths(&client.next_repos()), vec![resolved(&path)]);
     drop(repo);
 }
 
@@ -191,7 +191,7 @@ fn a_client_that_detaches_leaves_the_session_running_for_the_others() {
     drop(leaving);
 
     staying.send(ClientMessage::ListRepos);
-    assert_eq!(repo_paths(&staying.next_repos()), vec![path]);
+    assert_eq!(repo_paths(&staying.next_repos()), vec![resolved(&path)]);
     drop(repo);
 }
 

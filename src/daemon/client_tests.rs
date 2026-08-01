@@ -75,7 +75,12 @@ fn attaching_completes_the_handshake_and_keeps_the_volunteered_set() {
 
     let mut client = DaemonClient::connect(daemon.path()).expect("attaches");
 
-    assert_eq!(await_repos(&mut client), vec![path]);
+    // The path the daemon serves is the one spelling a worktree has, not
+    // necessarily the string the temporary directory was created under.
+    let resolved = crate::git::resolve_repo_path(std::path::Path::new(&path))
+        .to_string_lossy()
+        .into_owned();
+    assert_eq!(await_repos(&mut client), vec![resolved]);
     assert!(client.is_connected());
     drop(repo);
 }

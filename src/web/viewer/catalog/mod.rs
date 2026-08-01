@@ -13,6 +13,14 @@
 //! is built, swapped in, and only then are the dropped runtimes stopped — a
 //! runtime shutdown joins a thread, and holding the catalog lock across that
 //! would stall every in-flight request.
+//!
+//! **Every path in here is the one `resolve_repo_path` produces**, normalised on
+//! the way in rather than by each caller (see [`Catalog::normalized`]). Two
+//! spellings of one worktree are two strings, and the whole catalog — the served
+//! set, `hidden`, `order` — decides identity by comparing them, so a path that
+//! arrived spelled differently opened a second tab on a repository already open.
+//! Holding the invariant at the boundary is what keeps the next entry point from
+//! having to remember.
 
 use crate::web::viewer::runtime::RepoRuntime;
 use crate::web::viewer::terminal::TerminalHub;
@@ -82,6 +90,19 @@ impl Catalog {
         Self::default()
     }
 
+    /// One worktree's single spelling: what `git` calls the working directory,
+    /// or the canonical directory when there is no repository there.
+    ///
+    /// Applied to everything entering the catalog. `add_path`'s caller resolves
+    /// too, and doing it twice costs one `discover` on a path a person just
+    /// asked for — cheap next to the alternative, which is this invariant
+    /// depending on every caller having remembered.
+    fn normalized(path: &str) -> String {
+        crate::git::resolve_repo_path(Path::new(path))
+            .to_string_lossy()
+            .into_owned()
+    }
+
     /// Replace the base served set — CLI `--repo` args or the TUI workspace's
     /// open tabs. Browser-opened repositories ([`Catalog::add_path`]) survive
     /// this, so a workspace change does not close a tab a viewer opened.
@@ -89,7 +110,11 @@ impl Catalog {
         let _mutation = self.mutation.lock().expect("catalog mutation poisoned");
         {
             let mut base = self.base.lock().expect("catalog base poisoned");
-            *base = paths.to_vec();
+            // The one entry point that took paths from outside untouched: a
+            // `--repo` argument and a workspace file hold whatever spelling was
+            // typed or last written, which is not necessarily what a client
+            // opening the same repository will send.
+            *base = paths.iter().map(|p| Self::normalized(p)).collect();
         }
         self.rebuild();
     }
@@ -100,6 +125,7 @@ impl Catalog {
     /// disturbing its runtime. Refused with [`AddOutcome::TooMany`] once the
     /// served set is at `max`, so a client cannot spawn unbounded runtimes.
     pub fn add_path(&self, path: String, max: usize) -> AddOutcome {
+        let path = Self::normalized(&path);
         let _mutation = self.mutation.lock().expect("catalog mutation poisoned");
         // Opening a path clears any prior close, so a previously removed repo
         // comes back rather than staying suppressed by `hidden`.
@@ -132,6 +158,7 @@ impl Catalog {
     /// and remembered in `hidden` so a `base` re-sync will not bring it back;
     /// `rebuild` then stops its runtime and terminals.
     pub fn remove_path(&self, path: &str) {
+        let path = &Self::normalized(path);
         let _mutation = self.mutation.lock().expect("catalog mutation poisoned");
         {
             let mut added = self.added.lock().expect("catalog added poisoned");
