@@ -116,7 +116,25 @@ dropped connection coming back — a tab is one screen however many sockets it
 opens. Reloading the page counts as opening it, so it takes the sizing again, as
 a new tab would.
 
-Drag a terminal pane by its header onto another to reorder the split-view grid;
+The panel draws its panes either side by side, as the TUI does, or one at a time
+behind a tab strip. The button beside **+** switches between the two, and a
+narrow screen starts on tabs — a split grid gives each pane fewer columns than a
+command line needs. Once you pick, that choice sticks on that device, rotation
+included; it is stored in the browser rather than on the server, because what a
+phone should do with four panes is not what the desktop beside it should do.
+
+Tabs change nothing about the session: **+** still opens a terminal that every
+client sees, the tabs sit in pane order, and a tab you are not looking at is a
+running program whose output keeps arriving. Every pane is also held at the
+panel's full size while tabbed, so switching tabs costs no resize — which is the
+same reason a tabbed browser and an attached TUI cannot both be right about how
+wide a pane is. Give the sizing to whichever screen you are working on with the
+button above, or leave the TUI holding it and read the panes at its width.
+
+A tabbed panel shows no **zoom** button — it already shows one pane — and a zoom
+another client set does not move the keyboard here.
+
+Drag a terminal pane by its header, or by its tab, onto another to reorder them;
 it works with touch as well as a mouse. The order is kept on the server, so a
 refresh, a reconnect, or another device opening the same repository all show the
 same arrangement. (It is not written to disk — a server restart clears the

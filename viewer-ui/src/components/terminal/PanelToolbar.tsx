@@ -1,9 +1,16 @@
+import type { ReactNode } from "react";
 import { PlusIcon } from "../icons/actions";
-import { FitScreenIcon, MaximizeIcon } from "../icons/layout";
+import { FitScreenIcon, MaximizeIcon, SplitViewIcon, TabViewIcon } from "../icons/layout";
 import { RecoveryChip } from "./RecoveryChip";
 import { orphanRecovery, type RecoveryByPane } from "../../lib/recovery";
+import type { PaneViewMode } from "../../lib/paneViewMode";
 
 export interface PanelToolbarProps {
+  mode: PaneViewMode;
+  onToggleMode: () => void;
+  /** The tab strip, in tabs mode. It shares this row so `+` reads as "add a
+   *  tab" rather than "split the panel again". */
+  tabs?: ReactNode;
   /** Whether this page's layout is what sets the pane sizes. When it is not,
    *  the button that takes the sizing back appears. */
   ownsSize: boolean;
@@ -23,6 +30,9 @@ export interface PanelToolbarProps {
  *  first, so the row stays right-aligned whether or not the sizing one is
  *  showing. */
 export function PanelToolbar({
+  mode,
+  onToggleMode,
+  tabs,
   ownsSize,
   maximized,
   recovery,
@@ -44,6 +54,7 @@ export function PanelToolbar({
           onCancel={() => onCancelRecovery(pane)}
         />
       ))}
+      {tabs}
       {!ownsSize && (
         <button
           onClick={onClaimSize}
@@ -61,6 +72,17 @@ export function PanelToolbar({
         className={`${button} ${ownsSize ? "ml-auto" : ""}`}
       >
         <PlusIcon />
+      </button>
+      <button
+        onClick={onToggleMode}
+        aria-pressed={mode === "tabs"}
+        title={mode === "tabs" ? "Show the panes side by side" : "Show one pane per tab"}
+        aria-label={
+          mode === "tabs" ? "Show the panes side by side" : "Show one pane per tab"
+        }
+        className={button}
+      >
+        {mode === "tabs" ? <SplitViewIcon /> : <TabViewIcon />}
       </button>
       <button
         onClick={onToggleMaximized}
