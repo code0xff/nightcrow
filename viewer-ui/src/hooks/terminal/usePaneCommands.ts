@@ -1,6 +1,8 @@
+import { useRef } from "react";
 import type { MutableRefObject } from "react";
 import type { PaneView } from "../../lib/terminalLayout";
 import { TERM_KEY_BAR, termKeySequence } from "../../lib/termKeys";
+import { zoomRequest } from "../../lib/zoom";
 
 interface UsePaneCommandsArgs {
   socketRef: MutableRefObject<WebSocket | null>;
@@ -31,6 +33,17 @@ export function usePaneCommands({
   const send = (message: unknown) =>
     socketRef.current?.send(JSON.stringify(message));
 
+  // What this page last asked the zoom to be, while the answer is outstanding.
+  // `undefined` is "nothing asked" — distinct from `null`, which is a request to
+  // go back to the grid. Dropped the moment the server speaks, below, so it can
+  // never outlive the round trip it exists to cover.
+  const askedZoomRef = useRef<number | null | undefined>(undefined);
+  const lastEchoRef = useRef(zoomed);
+  if (lastEchoRef.current !== zoomed) {
+    lastEchoRef.current = zoomed;
+    askedZoomRef.current = undefined;
+  }
+
   // The pane that comes back names this connection as its requester, which is
   // how the socket hook knows to focus it (`hello`).
   const create = () => send({ type: "create", rows: 24, cols: 80 });
@@ -40,8 +53,13 @@ export function usePaneCommands({
   // waits for the echo like a reorder does, and every other client turns with
   // it. Ending the zoom when a pane opens is the server's job too: it knows
   // about panes this page did not ask for.
-  const toggleZoom = (pane: number) =>
-    send({ type: "zoom", pane: zoomed === pane ? null : pane });
+  const toggleZoom = (pane: number) => {
+    const current =
+      askedZoomRef.current === undefined ? zoomed : askedZoomRef.current;
+    const next = zoomRequest(current, pane);
+    askedZoomRef.current = next;
+    send({ type: "zoom", pane: next });
+  };
 
   // Take the sizing back. Deliberate rather than automatic: the panes belong to
   // a session someone else may be working in, and merely opening this page must

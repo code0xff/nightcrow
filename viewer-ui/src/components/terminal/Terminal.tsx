@@ -18,6 +18,7 @@ import { StartupSlots } from "./StartupSlots";
 import { TermKeyBar } from "./TermKeyBar";
 import { PanelDivider, type PanelDividerProps } from "./PanelDivider";
 import { PanelToolbar } from "./PanelToolbar";
+import { renderedZoom } from "../../lib/zoom";
 
 export function TerminalPanel({
   repo,
@@ -58,12 +59,9 @@ export function TerminalPanel({
   // decides it; the rest render the grid they are given.
   const [ownsSize, setOwnsSize] = useState(true);
   const { recovery, setRecovery, cancelRecovery } = usePaneRecovery(socketRef);
-  // A zoom only means something while the pane it names is on screen. The
-  // server ends one whose pane has gone, but that is a second message — and for
-  // the frame between the two, a raw `zoomed` would hide every cell and leave
-  // the panel blank. Derived rather than corrected in the handler, so the
-  // panel cannot render a state the pane list does not support at all.
-  const zoom = zoomed !== null && panes.includes(zoomed) ? zoomed : null;
+  // Derived rather than corrected in the handler, so the panel cannot render a
+  // state its pane list does not support at all. See `lib/zoom.ts`.
+  const zoom = renderedZoom(zoomed, panes);
 
   useTerminalSocket({
     repo,
