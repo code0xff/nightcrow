@@ -20,24 +20,32 @@ fn served(path: &str) -> String {
 #[test]
 fn one_worktree_reached_two_ways_is_one_repository() {
     let (dir, path) = make_repo();
-    let resolved = crate::git::resolve_repo_path(std::path::Path::new(&path))
+    // A spelling that differs on every platform, rather than one that happens
+    // to: a temporary directory sits under a symlink on macOS and does not on
+    // Linux, so relying on canonicalization to change the string at all would
+    // make this prove nothing on half the machines that run it. Reaching a
+    // worktree by a directory inside it is the everyday version — someone opens
+    // the folder they were working in.
+    let nested = std::path::Path::new(&path)
+        .join("src")
         .to_string_lossy()
         .into_owned();
-    assert_ne!(
-        resolved, path,
-        "the two spellings must actually differ, or this proves nothing"
-    );
+    std::fs::create_dir(&nested).unwrap();
+    let resolved = served(&path);
+    assert_ne!(nested, resolved, "the two spellings must actually differ");
 
     let catalog = Catalog::new();
-    catalog.set_paths(std::slice::from_ref(&path));
+    // What a `--repo` argument or a workspace file holds, against what a client
+    // opening the same repository sends.
+    catalog.set_paths(std::slice::from_ref(&nested));
     catalog.add_path(resolved, 10);
 
-    let served = catalog.list();
+    let served_now = catalog.list();
     assert_eq!(
-        served.len(),
+        served_now.len(),
         1,
         "one worktree must not occupy two tabs: {:?}",
-        served
+        served_now
             .iter()
             .map(|r| r.display_path.clone())
             .collect::<Vec<_>>()

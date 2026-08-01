@@ -27,8 +27,13 @@ pub fn resolve_repo_path(path: impl AsRef<Path>) -> PathBuf {
     // directory. Making the guarantee ours costs one `stat` and does not depend
     // on behaviour no test here can reach.
     //
-    // Canonicalization can only fail for a path that does not exist, which the
-    // caller has already rejected; such a path is returned as typed.
+    // A path that cannot be canonicalized is returned as it came. That is
+    // almost always one that does not exist, which the caller has already
+    // rejected — but a directory the process cannot open would land here too,
+    // and for it the single-spelling guarantee is off. Opening the repository
+    // and letting git report what is wrong beats refusing to show it at all,
+    // and the cost of being wrong is the duplicate tab this exists to prevent,
+    // not anything lost.
     crate::platform::paths::canonicalize_clean(candidate)
         .unwrap_or_else(|_| candidate.to_path_buf())
 }
