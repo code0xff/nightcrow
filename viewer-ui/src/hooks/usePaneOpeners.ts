@@ -19,7 +19,9 @@ export interface UsePaneOpenersArgs {
 }
 
 export interface UsePaneOpenersResult {
-  openDiff: (path: string) => void;
+  /// `hasFile` says whether the working tree still holds it — a deletion has a
+  /// diff and nothing to read whole, so it gets no source and no toggle.
+  openDiff: (path: string, hasFile: boolean) => void;
   openFile: (path: string) => void;
   openCommit: (oid: string) => void;
   openCommitFileDiff: (oid: string, path: string) => void;
@@ -38,7 +40,7 @@ export function usePaneOpeners({
   setPreviewRendered,
 }: UsePaneOpenersArgs): UsePaneOpenersResult {
   const openDiff = useCallback(
-    (path: string) => {
+    (path: string, hasFile: boolean) => {
       if (!repo) return;
       setMobileView("diff");
       const request = (paneRequestRef.current += 1);
@@ -49,7 +51,7 @@ export function usePaneOpeners({
             setPane({
               kind: "diff",
               value: v,
-              source: { kind: "workdir", path },
+              source: hasFile ? { kind: "workdir", path } : undefined,
             });
         })
         .catch((err) => {

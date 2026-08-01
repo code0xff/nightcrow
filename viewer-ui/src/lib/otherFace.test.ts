@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { otherFace } from "./otherFace";
+import { hasWorkingCopy, otherFace } from "./otherFace";
 import type { FileSource, Pane } from "../types";
 
 const diff = (source?: FileSource): Pane => ({
@@ -47,5 +47,25 @@ describe("otherFace", () => {
 
   it("has nothing to offer for an empty pane", () => {
     expect(otherFace({ kind: "empty" })).toBeNull();
+  });
+});
+
+describe("hasWorkingCopy", () => {
+  const file = (index: string, worktree: string) => ({
+    path: "a.rs",
+    index,
+    worktree,
+  });
+
+  it("sees a copy for an ordinary modification", () => {
+    expect(hasWorkingCopy(file(" ", "M"))).toBe(true);
+    expect(hasWorkingCopy(file("M", " "))).toBe(true);
+    expect(hasWorkingCopy(file("A", " "))).toBe(true);
+    expect(hasWorkingCopy(file("?", "?"))).toBe(true);
+  });
+
+  it("sees none for a deletion, staged or not", () => {
+    expect(hasWorkingCopy(file("D", " "))).toBe(false);
+    expect(hasWorkingCopy(file(" ", "D"))).toBe(false);
   });
 });

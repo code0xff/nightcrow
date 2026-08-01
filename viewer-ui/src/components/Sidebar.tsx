@@ -22,7 +22,7 @@ export interface SidebarProps {
   now: number;
   hotWindowMs: number;
   setPane: React.Dispatch<React.SetStateAction<Pane>>;
-  openDiff: (path: string) => void;
+  openDiff: (path: string, hasFile: boolean) => void;
   openFile: (path: string) => void;
   openCommit: (oid: string) => void;
   openCommitFileDiff: (oid: string, path: string) => void;
