@@ -49,19 +49,27 @@ impl TerminalHub {
         // once the lock is released.
         let mut needs_repaint: Vec<PaneId> = Vec::new();
         if !self.stop.load(Ordering::Acquire) {
-            for pane in &state.panes {
-                if replay_pane(&tx, pane) == Replayed::NeedsRepaint {
-                    needs_repaint.push(pane.id);
-                }
-            }
-            // After the panes, because it names one of them: a client told to
-            // zoom a pane it has not been given yet has nothing to act on. Sent
-            // only when something is zoomed — nothing zoomed is where a client
-            // starts, so saying so would be a frame that changes nothing.
+            // Ahead of the panes, though it names one of them. A client holds
+            // its outbound resize until the layout stops moving, and replaying
+            // several panes' histories can outlast that wait — so a page that
+            // learned the zoom last could settle on the grid, size every PTY to
+            // a cell, and then resize them all again when the zoom arrived.
+            // That is two SIGWINCH repaints for every client, which is the cost
+            // `Created` carrying its pane's size exists to avoid.
+            //
+            // Safe in this order because the panel derives what it renders from
+            // the pane list it has: a zoom naming a pane not delivered yet
+            // simply does not apply until that pane arrives. Sent only when
+            // something is zoomed — nothing zoomed is where a client starts.
             if let Some(pane) = state.zoomed
                 && let Ok(json) = serde_json::to_string(&ServerMessage::Zoomed { pane: Some(pane) })
             {
                 let _ = tx.try_send(TerminalFrame::Control(json));
+            }
+            for pane in &state.panes {
+                if replay_pane(&tx, pane) == Replayed::NeedsRepaint {
+                    needs_repaint.push(pane.id);
+                }
             }
         }
         // Registered with the session while the hub's lock is still held, so a

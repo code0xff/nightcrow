@@ -39,11 +39,19 @@ fn zooming_a_pane_echoes_it_and_replays_it_to_a_later_joiner() {
     // A page that reloads is a new connection to the same hub: it must come back
     // to the zoom rather than to the grid. This is the whole point — a zoom used
     // to live in one page's state and was lost with it.
+    //
+    // Ahead of the panes, and that order is the contract: a client that learned
+    // the zoom after replaying their histories could settle its layout on the
+    // grid first and resize every PTY twice.
     let second = attach(&hub);
+    let first = next_matching(&second, |f| {
+        zoomed_pane(f).is_some() || created_pane(f).is_some()
+    })
+    .expect("a connecting client was told neither the panes nor the zoom");
     assert_eq!(
-        next_zoom(&second),
+        zoomed_pane(&first),
         Some(Some(ids[0])),
-        "the zoom must survive a fresh connection"
+        "the zoom must survive a fresh connection, and arrive before the panes"
     );
     hub.stop();
 }
