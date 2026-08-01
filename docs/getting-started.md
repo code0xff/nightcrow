@@ -21,8 +21,8 @@ Once published to crates.io this will also work:
 cargo install nightcrow --locked
 ```
 
-Requires Rust 1.85+ (edition 2024). `--locked` builds against the committed
-`Cargo.lock` for a reproducible install.
+Requires Rust 1.85+ (edition 2024) on macOS, Linux, or Windows. `--locked`
+builds against the committed `Cargo.lock` for a reproducible install.
 
 ## Running a session
 
@@ -31,6 +31,10 @@ terminals, and you reach it from a terminal (`nightcrow attach`) or a browser.
 Closing a client leaves the session running.
 
 ```bash
+# The usual way in: start the session in the background and attach the TUI.
+# An already-running session is attached to as-is, not duplicated.
+nightcrow -d attach
+
 # Start the session. Runs in the foreground until you stop it (Ctrl-C).
 # It reopens the repositories from last time — nothing, on a first run.
 nightcrow
