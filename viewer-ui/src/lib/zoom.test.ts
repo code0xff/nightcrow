@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { renderedZoom, zoomRequest } from "./zoom";
+import { renderedZoom, zoomPending, zoomRequest } from "./zoom";
 
 describe("renderedZoom", () => {
   it("fills the panel with the pane the server named", () => {
@@ -43,5 +43,21 @@ describe("zoomRequest", () => {
     const first = zoomRequest(null, 3);
     expect(first).toBe(3);
     expect(zoomRequest(first, 3)).toBeNull();
+  });
+});
+
+describe("zoomPending", () => {
+  it("waits while the pane a replayed zoom names has not arrived", () => {
+    expect(zoomPending(2, [])).toBe(true);
+    expect(zoomPending(2, [1])).toBe(true);
+  });
+
+  it("stops waiting once that pane is here", () => {
+    expect(zoomPending(2, [1, 2])).toBe(false);
+  });
+
+  it("never waits when nothing is zoomed", () => {
+    expect(zoomPending(null, [])).toBe(false);
+    expect(zoomPending(null, [1, 2])).toBe(false);
   });
 });

@@ -18,7 +18,7 @@ import { StartupSlots } from "./StartupSlots";
 import { TermKeyBar } from "./TermKeyBar";
 import { PanelDivider, type PanelDividerProps } from "./PanelDivider";
 import { PanelToolbar } from "./PanelToolbar";
-import { renderedZoom } from "../../lib/zoom";
+import { renderedZoom, zoomPending } from "../../lib/zoom";
 
 export function TerminalPanel({
   repo,
@@ -134,6 +134,10 @@ export function TerminalPanel({
   }, []);
 
   useEffect(() => {
+    // Not while a replay has named a zoom whose pane has not arrived: the panes
+    // come one at a time, and focusing an earlier one would put the keyboard in
+    // a terminal that is about to be replaced by the zoomed one.
+    if (zoomPending(zoomed, panes)) return;
     if (active === null && panes.length > 0) {
       const remembered = lastActiveByRepoRef.current.get(repo);
       setActive(
@@ -142,7 +146,7 @@ export function TerminalPanel({
           : panes[panes.length - 1],
       );
     }
-  }, [active, panes, repo]);
+  }, [active, panes, repo, zoomed]);
 
   // While one pane fills the panel it is the only one that can be seen, so it
   // has to be the one being typed into. Enforced here rather than at the toggle

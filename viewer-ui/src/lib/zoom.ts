@@ -19,6 +19,20 @@ export function renderedZoom(
 }
 
 /**
+ * Whether the panel is waiting for a pane it already knows will fill it.
+ *
+ * True during a replay that has named a zoom but not yet delivered its pane:
+ * the panes arrive one at a time, each followed by its history, so an earlier
+ * one can be on screen for a while first. Nothing should be focused in that
+ * window — whatever is showing is about to be replaced by the zoomed pane, and
+ * anything typed meanwhile would go into a terminal the person is not going to
+ * be looking at.
+ */
+export function zoomPending(zoomed: number | null, panes: number[]): boolean {
+  return zoomed !== null && renderedZoom(zoomed, panes) === null;
+}
+
+/**
  * What to ask the server for when the zoom button on `pane` is pressed.
  *
  * `current` is what the panel believes fills it — which is what this page last
