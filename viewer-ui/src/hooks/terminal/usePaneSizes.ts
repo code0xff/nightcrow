@@ -78,20 +78,26 @@ export function usePaneSizes({
 
   // Size visible panes after layout changes; never resize hidden cells to zero.
   useEffect(() => {
-    if (layoutPending) return;
     for (const [pane, view] of viewsRef.current) {
       const body = bodyRefs.current.get(pane);
       if (!body || body.clientHeight === 0 || body.clientWidth === 0) continue;
-      if (ownsSize) {
-        view.fit.fit();
+      // Take the size the PTY actually has whenever this page's cells are not
+      // the answer: it is a spectator, or its layout has not resolved yet. Not
+      // merely "skip the fit" — an emulator left at its 80×24 default parses
+      // the replay that is arriving right now at the wrong width, and what was
+      // drawn outside it is gone. A pane created while this page was a
+      // spectator starts at that default until this runs; `resized` covers it
+      // from then on.
+      if (!ownsSize || layoutPending) {
+        const pty = sentSizesRef.current.get(pane);
+        if (pty) view.term.resize(pty.cols, pty.rows);
         continue;
       }
-      // A pane created while this page was a spectator starts at xterm's
-      // default until this runs; `resized` covers it from then on.
-      const pty = sentSizesRef.current.get(pane);
-      if (pty) view.term.resize(pty.cols, pty.rows);
+      view.fit.fit();
     }
-    if (!ownsSize) return;
+    // Nothing goes out while the layout is still resolving: what would be
+    // measured is a grid about to be replaced.
+    if (!ownsSize || layoutPending) return;
     // Each layout change restarts the wait, so a run of them costs one resize
     // rather than one apiece.
     if (timerRef.current) clearTimeout(timerRef.current);
