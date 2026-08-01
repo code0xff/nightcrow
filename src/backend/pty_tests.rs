@@ -21,8 +21,91 @@ fn pty_backend_create_and_destroy_pane() {
 /// once — under load a 3 s budget was measurably flaky (~2/25 runs).
 /// A generous bound only delays the failure verdict; passing runs
 /// still finish as soon as the events arrive.
-#[cfg(unix)]
 const PTY_TEST_DEADLINE: Duration = Duration::from_secs(15);
+
+/// Answer the pseudoconsole's cursor-position query.
+///
+/// Windows ConPTY is created with `PSUEDOCONSOLE_INHERIT_CURSOR`, so the host
+/// emits `ESC[6n` and holds the console session until a Device Status Report
+/// comes back — the child does not run a single instruction before that.
+/// In the app the emulator answers (`TerminalState::poll` writes
+/// `events.pty_writes` back); a test driving the backend directly has to do
+/// the same or nothing ever starts. On Unix the query never arrives and this
+/// is inert.
+fn answer_cursor_query(backend: &mut PtyBackend, id: PaneId, data: &[u8]) {
+    if data.windows(4).any(|w| w == b"\x1b[6n") {
+        let _ = backend.send_input(id, b"\x1b[1;1R");
+    }
+}
+
+/// Drain until the pane reports its exit, answering the cursor query on the
+/// way. Returns how many `Exited` events were seen, and leaves the backend
+/// drained up to that point.
+fn drain_until_exit(backend: &mut PtyBackend, id: PaneId) -> usize {
+    let deadline = Instant::now() + PTY_TEST_DEADLINE;
+    let mut exits = 0;
+    while Instant::now() < deadline && exits == 0 {
+        for event in backend.drain_events() {
+            match event {
+                BackendEvent::Output { pane, data } if pane == id => {
+                    answer_cursor_query(backend, id, &data);
+                }
+                BackendEvent::Exited { pane } if pane == id => exits += 1,
+                _ => {}
+            }
+        }
+        thread::sleep(Duration::from_millis(10));
+    }
+    exits
+}
+
+/// A pane whose shell exits must report `Exited`, on every platform.
+///
+/// Windows has no second signal to fall back on: the master stays readable
+/// while we hold it (the pseudoconsole releases the pipe only on
+/// `ClosePseudoConsole`), so the reader thread never reaches EOF and the
+/// child's own death is the sole cue. `exit` is spelled the same for
+/// `cmd /C` and `sh -lc`, so one test covers both.
+#[test]
+fn a_pane_whose_shell_exits_reports_it() {
+    let mut backend = PtyBackend::new(".", ShellConfig::default());
+    let id = backend.open_pane(24, 80, Some("exit")).expect("open_pane");
+
+    assert_eq!(
+        drain_until_exit(&mut backend, id),
+        1,
+        "pane did not report its shell's exit"
+    );
+}
+
+/// The exit is reported once. `drain_events` keeps being called after it —
+/// the caller destroys the pane in response, and a backend that re-reported
+/// on every subsequent drain would make that cleanup racy.
+#[test]
+fn a_reported_exit_is_not_reported_again() {
+    let mut backend = PtyBackend::new(".", ShellConfig::default());
+    let id = backend.open_pane(24, 80, Some("exit")).expect("open_pane");
+
+    assert_eq!(
+        drain_until_exit(&mut backend, id),
+        1,
+        "exit was not reported exactly once"
+    );
+
+    // Keep draining past the first report — this is the window a re-report
+    // would land in.
+    for _ in 0..20 {
+        thread::sleep(Duration::from_millis(10));
+        for event in backend.drain_events() {
+            assert!(
+                !matches!(event, BackendEvent::Exited { pane } if pane == id),
+                "exit was reported a second time"
+            );
+        }
+    }
+
+    backend.destroy_pane(id);
+}
 
 #[test]
 #[cfg(unix)]

@@ -1,4 +1,4 @@
-use super::{PtyBackend, PtyEvent, PtyPane};
+use super::{ExitPhase, PtyBackend, PtyEvent, PtyPane};
 use crate::backend::PaneId;
 use crate::backend::identity::{PANE_TOKEN_ENV, PaneIdentity};
 use crate::backend::slot::{PaneLaunch, resume_command_line};
@@ -120,6 +120,7 @@ impl PtyBackend {
         self.next_id = next;
 
         let (tx, rx) = mpsc::channel();
+        let exit_tx = tx.clone();
         let reader_handle = thread::spawn(move || {
             let mut buf = [0u8; 4096];
             loop {
@@ -135,8 +136,12 @@ impl PtyBackend {
             let _ = tx.send(PtyEvent::Exited);
         });
 
+        // The child's death is reported, not just awaited: on Windows the
+        // pseudoconsole holds the pipe open until the master drops, so the
+        // reader above never reaches EOF. `ExitPhase` handles the draining.
         let wait_handle = thread::spawn(move || {
             let _ = child.wait();
+            let _ = exit_tx.send(PtyEvent::ChildExited);
         });
 
         self.panes.insert(
@@ -148,6 +153,7 @@ impl PtyBackend {
                 rx,
                 reader_handle: Some(reader_handle),
                 wait_handle: Some(wait_handle),
+                exit: ExitPhase::Running,
             },
         );
         self.slots.insert(id, identity, launch, Instant::now());
