@@ -6,6 +6,8 @@ use ratatui::{
     style::{Color, Modifier, Style},
     widgets::{Block, Borders, List, ListItem, ListState, Paragraph},
 };
+use std::sync::OnceLock;
+use std::time::{Duration, Instant};
 
 pub(crate) fn path_extension(path: &str) -> &str {
     std::path::Path::new(path)
@@ -74,6 +76,22 @@ pub(crate) fn render_selectable_list(
     frame.render_stateful_widget(list, area, &mut state);
 }
 
+/// Full on-off period of the search caret — the Windows console's default.
+pub(crate) const CARET_BLINK: Duration = Duration::from_millis(530);
+
+/// Whether the caret is in the lit half of its cycle. Driven by our own clock
+/// because `Modifier::SLOW_BLINK` is widely ignored (Windows conhost among
+/// them); the event loop's unconditional 16 ms redraw is the frame clock.
+pub(crate) fn caret_lit(elapsed: Duration) -> bool {
+    (elapsed.as_millis() / (CARET_BLINK.as_millis() / 2)).is_multiple_of(2)
+}
+
+/// One origin for all frames, so every caret blinks in step.
+fn blink_phase() -> Duration {
+    static ORIGIN: OnceLock<Instant> = OnceLock::new();
+    ORIGIN.get_or_init(Instant::now).elapsed()
+}
+
 pub(crate) fn render_search_bar(
     frame: &mut Frame,
     query: &str,
@@ -81,7 +99,12 @@ pub(crate) fn render_search_bar(
     area: Rect,
     accent: Color,
 ) {
-    let cursor = if is_active { "█" } else { "" };
+    // A blank in the dark half keeps the cell, so the row does not shift.
+    let cursor = match (is_active, caret_lit(blink_phase())) {
+        (false, _) => "",
+        (true, true) => "█",
+        (true, false) => " ",
+    };
     let style = if is_active {
         Style::default().fg(accent)
     } else {
