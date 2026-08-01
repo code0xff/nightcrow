@@ -181,6 +181,24 @@ pub enum ServerMessage {
         rows: u16,
         cols: u16,
     },
+    /// Who this client is, in the id space [`Created::client`] is stamped in.
+    ///
+    /// Addressed, and the first thing a connection is told. Without it a client
+    /// cannot tell a pane it asked for from one that arrived while it was
+    /// asking: the id is on every `created`, but there was nothing to compare it
+    /// against, so the browser counted its outstanding creates instead and
+    /// credited itself with whichever pane came back first — another client's,
+    /// if that one won the race.
+    ///
+    /// A connection's id, not a viewer's: it is minted per connection
+    /// (`next_client_id`) and a reconnect gets a new one. That is the right
+    /// lifetime — panes from before the reconnect are replayed with no requester
+    /// at all, so nothing should match them.
+    ///
+    /// [`Created::client`]: Self::Created::client
+    Hello {
+        client: u64,
+    },
     /// Whether *this* client is the one whose layout sets the pane sizes.
     ///
     /// Addressed rather than broadcast, so the answer needs no identity to

@@ -44,8 +44,6 @@ export function TerminalPanel({
   const pendingRef = useRef(new Map<number, Uint8Array[]>());
   // Restore focus when returning to a repository.
   const lastActiveByRepoRef = useRef(new Map<string, number>());
-  // Focus only panes created by this client, not replayed panes.
-  const expectCreateRef = useRef(0);
   // Cells rendered for startup terminals the server has not created yet, so
   // their size can be measured from the slot each will occupy.
   const slotRefs = useRef(new Map<number, HTMLDivElement>());
@@ -74,7 +72,6 @@ export function TerminalPanel({
     pendingRef,
     sentSizesRef,
     lastActiveByRepoRef,
-    expectCreateRef,
     setPending,
     setPanes,
     setActive,
@@ -171,7 +168,6 @@ export function TerminalPanel({
     usePaneCommands({
       socketRef,
       viewsRef,
-      expectCreateRef,
       zoomed: zoom,
       active,
     });

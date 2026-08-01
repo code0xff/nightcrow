@@ -2,6 +2,7 @@
 //! hub test reads its assertions through. The tests themselves live beside it.
 
 mod behavior;
+mod identity;
 mod plugin_reload;
 mod plugin_reload_panes;
 mod plugin_rules;
@@ -148,6 +149,31 @@ pub(super) fn reordered_order(frame: &TerminalFrame) -> Option<Vec<PaneId>> {
             .filter_map(|v| v.as_u64().map(|n| n as PaneId))
             .collect(),
     )
+}
+
+/// The id a `hello` frame gives the client it is addressed to.
+pub(super) fn hello_client(frame: &TerminalFrame) -> Option<u64> {
+    let TerminalFrame::Control(json) = frame else {
+        return None;
+    };
+    let value: serde_json::Value = serde_json::from_str(json).ok()?;
+    if value["type"] != "hello" {
+        return None;
+    }
+    value["client"].as_u64()
+}
+
+/// Who a `created` frame names as having asked for the pane, and `Some(None)`
+/// when it names nobody — a replayed pane, or one another client opened.
+pub(super) fn created_requester(frame: &TerminalFrame) -> Option<Option<u64>> {
+    let TerminalFrame::Control(json) = frame else {
+        return None;
+    };
+    let value: serde_json::Value = serde_json::from_str(json).ok()?;
+    if value["type"] != "created" {
+        return None;
+    }
+    Some(value["client"].as_u64())
 }
 
 /// What a `zoomed` frame says fills the panel: `Some(None)` is the frame that

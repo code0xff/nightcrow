@@ -5,9 +5,6 @@ import { TERM_KEY_BAR, termKeySequence } from "../../lib/termKeys";
 interface UsePaneCommandsArgs {
   socketRef: MutableRefObject<WebSocket | null>;
   viewsRef: MutableRefObject<Map<number, PaneView>>;
-  /** Bumped per create so the pane that comes back can be focused as this
-   *  page's own, rather than as one replayed or opened elsewhere. */
-  expectCreateRef: MutableRefObject<number>;
   /** The pane filling the panel, needed to know what a toggle should ask for. */
   zoomed: number | null;
   /** The pane a key from the on-screen bar is typed into. */
@@ -28,18 +25,15 @@ interface UsePaneCommandsArgs {
 export function usePaneCommands({
   socketRef,
   viewsRef,
-  expectCreateRef,
   zoomed,
   active,
 }: UsePaneCommandsArgs) {
   const send = (message: unknown) =>
     socketRef.current?.send(JSON.stringify(message));
 
-  const create = () => {
-    if (!socketRef.current) return;
-    expectCreateRef.current += 1;
-    send({ type: "create", rows: 24, cols: 80 });
-  };
+  // The pane that comes back names this connection as its requester, which is
+  // how the socket hook knows to focus it (`hello`).
+  const create = () => send({ type: "create", rows: 24, cols: 80 });
 
   // Asked for, not applied. The zoom belongs to the repository rather than to
   // this page — the server keeps it, so a reload comes back to it — so this

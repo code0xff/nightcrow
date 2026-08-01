@@ -1,4 +1,4 @@
-import { useLayoutEffect } from "react";
+import { useLayoutEffect, useRef } from "react";
 import type { MutableRefObject } from "react";
 import { reconcileOrder } from "../../lib/paneOrder";
 import { applyRecovery, type RecoveryByPane } from "../../lib/recovery";
@@ -13,7 +13,6 @@ interface UseTerminalSocketArgs {
   pendingRef: MutableRefObject<Map<number, Uint8Array[]>>;
   sentSizesRef: MutableRefObject<Map<number, { rows: number; cols: number }>>;
   lastActiveByRepoRef: MutableRefObject<Map<string, number>>;
-  expectCreateRef: MutableRefObject<number>;
   setPending: React.Dispatch<React.SetStateAction<number | null>>;
   setPanes: React.Dispatch<React.SetStateAction<number[]>>;
   setActive: React.Dispatch<React.SetStateAction<number | null>>;
@@ -39,7 +38,6 @@ export function useTerminalSocket({
   pendingRef,
   sentSizesRef,
   lastActiveByRepoRef,
-  expectCreateRef,
   setPending,
   setPanes,
   setActive,
@@ -48,14 +46,12 @@ export function useTerminalSocket({
   setOwnsSize,
   setRecovery,
 }: UseTerminalSocketArgs) {
+  // Who the hub calls this connection, so a `created` naming a requester can be
+  // read as this page's or somebody else's. Minted per connection, so it is
+  // cleared with the socket rather than with the project.
+  const clientIdRef = useRef<number | null>(null);
+
   useLayoutEffect(() => {
-    // A terminal this page asked for belongs to the project it was asked in.
-    // The next project replays the panes it already has, and an expectation
-    // left over from the previous one would take the first of them for the
-    // terminal that never arrived — focusing it and remembering it as this
-    // project's last active pane. Cleared here rather than in `connect` so a
-    // reconnect, which is the same project, still adopts the pane it asked for.
-    expectCreateRef.current = 0;
     let closedByUs = false;
     let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
 
@@ -67,6 +63,7 @@ export function useTerminalSocket({
     };
 
     const connect = () => {
+      clientIdRef.current = null;
       setPending(null);
       setPanes([]);
       setActive(null);
@@ -101,7 +98,11 @@ export function useTerminalSocket({
         if (socketRef.current !== socket) return;
         if (typeof event.data === "string") {
           const message = JSON.parse(event.data);
-          if (message.type === "pending") {
+          if (message.type === "hello") {
+            // The first frame on a connection, ahead of anything that names a
+            // requester.
+            clientIdRef.current = message.client;
+          } else if (message.type === "pending") {
             // Startup terminals the server is holding until this page says how
             // big to make them. Answered by `useStartupSizes`.
             setPending(message.count);
@@ -122,8 +123,12 @@ export function useTerminalSocket({
               setTitles((current) => ({ ...current, [pane]: message.title }));
             }
             setPanes((current) => [...current, pane]);
-            if (expectCreateRef.current > 0) {
-              expectCreateRef.current -= 1;
+            // Focus it only if this page is the one that asked. The hub stamps
+            // every pane with its requester and told us our own id on connect
+            // (`hello`), so two pages creating at once each take their own —
+            // where counting outstanding creates took whichever came back
+            // first, which could be the other page's terminal.
+            if (message.client != null && message.client === clientIdRef.current) {
               setActive(pane);
               lastActiveByRepoRef.current.set(repo, pane);
             } else if (lastActiveByRepoRef.current.get(repo) === pane) {
@@ -171,7 +176,6 @@ export function useTerminalSocket({
             // it is how the panel is told to go back to the grid.
             setZoomed(message.pane ?? null);
           } else if (message.type === "error") {
-            expectCreateRef.current = 0;
             toast.error(message.message);
           }
           return;
