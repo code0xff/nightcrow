@@ -68,7 +68,7 @@ browser, and it appears in the other.
 
 The leader (prefix) key is `Ctrl+F` by default. Press it, then one key:
 `<prefix> o` opens a repo, `<prefix> t` a terminal pane, `<prefix> l` the commit log,
-`<prefix> b` the file tree, `<prefix> f` fullscreen, `<prefix> q` quits. Every other
+`<prefix> b` the file tree, `<prefix> f` fullscreen, `<prefix> q` detaches. Every other
 key — including Ctrl chords — passes straight through to the focused terminal, so
 the CLI running there receives them unchanged.
 
@@ -87,7 +87,7 @@ the CLI running there receives them unchanged.
 | `<prefix> p` | Cycle theme |
 | `<prefix> u` | Reload config |
 | `<prefix> r` | Redraw |
-| `<prefix> q` | Quit |
+| `<prefix> q` | Detach (the session keeps running) |
 | `<prefix> 1` | Focus file list |
 | `<prefix> 2` | Focus diff viewer |
 | `<prefix> 3`…`<prefix> 9` | Switch to pane 0–6 |

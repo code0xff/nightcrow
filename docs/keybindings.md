@@ -25,7 +25,8 @@ visible from the terminal pane.
 > behind the leader. `Ctrl+T/W/L/O/P/Q` are now `<prefix> t/w/l/o/p/q` and pass
 > through to the terminal program instead; `Ctrl+F` is now the leader itself
 > (`<prefix> f` toggles fullscreen). The old `Ctrl+Q`-twice quit confirmation is
-> gone; quit with `<prefix> q`.
+> gone; leave with `<prefix> q`, which now detaches rather than ending the
+> session — stop the session itself with `nightcrow stop`.
 
 ## Leader commands
 
@@ -47,7 +48,7 @@ Press `<prefix>`, then the key.
 | `<prefix> p` | Cycle accent color (yellow → cyan → green → magenta → blue). The accent belongs to the session, so every attached TUI and every open browser follows |
 | `<prefix> u` | Re-read `config.toml` without restarting the session. `[[plugin]]` is re-applied to every open project immediately; `[[startup_command]]` applies to projects you open afterwards, because the panes an open project already started are live processes. Everything else in the file still needs a restart. The result appears on the notice row — see [Reloading the config](configuration.md#reloading-the-config) |
 | `<prefix> r` | Force a full redraw (clears stray glyphs left by terminal programs) |
-| `<prefix> q` | Quit |
+| `<prefix> q` | Detach — the TUI leaves and the session keeps running, terminals and all. Reattach with `nightcrow attach`; end the session itself with `nightcrow stop` |
 | `<prefix> 1` / `<prefix> 2` | Focus the file/commit list / diff viewer — **split view only** |
 | `<prefix> 3`…`<prefix> 9`, `<prefix> 0` | Jump to terminal pane 1…8 (`0` addresses pane 8) |
 | `<prefix> 1`…`<prefix> 8` (terminal fullscreen) | Jump to terminal pane 1…8. With the viewer hidden the digit row addresses panes by natural numbering; `9`/`0` are unused. The only way back to the list/diff is `<prefix> f` to leave fullscreen |
@@ -159,7 +160,7 @@ nightcrow captures the mouse by default (`[mouse]` in the
   pressed the keys they name. Clickable hints render inverted (reverse video)
   across their whole label so they stand out from informational hints; the
   inversion disappears when `[mouse]` is disabled. Navigation hints and
-  `q: quit` are not clickable (quitting stays a deliberate two-key act).
+  `q: detach` are not clickable (detaching stays a deliberate two-key act).
 - **Select text with a bypass modifier + drag.** While the mouse is captured,
   the outer terminal performs its native selection and copy only when you hold
   its bypass modifier while dragging. The modifier depends on the terminal:

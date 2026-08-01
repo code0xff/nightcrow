@@ -153,7 +153,7 @@ macOS Terminal.app Fn/Option). 끄면 마우스는 바깥 터미널 소유로 �
   이산 명령(`<prefix> t/w/f/l/b/o`, armed row의 follow-up, `v`/`s`/`/`)만 클릭 가능하고, 연속
   내비게이션·digit legend·`esc`는 비클릭이다. bare `<prefix>: leader` 라벨도 클릭 가능하며 leader
   chord keypress를 합성해 프리픽스를 arm한다 — "leader 클릭 → 명령 클릭"의 마우스-only 플로우가
-  이어진다. **`q: quit`은 오클릭 한 번으로 세션이 끝나지 않도록 의도적으로 제외**했다. 디스패치는
+  이어진다. **`q: detach`는 오클릭 한 번으로 TUI가 떨어져 나가지 않도록 의도적으로 제외**했다. 디스패치는
   라벨이 가리키는 키 입력을 그대로 합성해 `handle_key`로 보낸다 — 클릭과 실제 키가 모든 가드와
   코드 경로를 공유하므로 클릭이 키와 다른 동작을 할 수 없다. `r: redraw`의 `KeyOutcome` 전파를
   위해 `handle_mouse`도 `KeyOutcome`을 반환한다. 클릭 가능한 세그먼트는 `hint_spans`가
