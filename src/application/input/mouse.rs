@@ -83,10 +83,10 @@ pub(crate) fn handle_mouse(
     }
     // Pane-swap mode: a press names the swap target the way a digit does.
     // Wheel events fall through (like a paste): they don't name a pane.
-    if app.awaiting_swap_target()
+    if app.interaction.awaiting_swap_target
         && let MouseEventKind::Down(button) = mouse.kind
     {
-        app.cancel_swap_target();
+        app.interaction.awaiting_swap_target = false;
         if button == crossterm::event::MouseButton::Left {
             let target = crate::ui::pane_at(app, screen, layout, mouse.column, mouse.row)
                 .and_then(|(id, _)| app.terminal.panes.iter().position(|p| p.id == id))
@@ -104,13 +104,13 @@ pub(crate) fn handle_mouse(
             if button == crossterm::event::MouseButton::Left
                 && let Some(idx) = crate::ui::project_tab_at(tabs, screen, mouse.column, mouse.row)
             {
-                app.cancel_prefix();
+                app.interaction.prefix_armed = false;
                 return KeyOutcome::Project(ProjectRequest::Switch(idx));
             }
             if let Some(focus) =
                 crate::ui::upper_panel_at(app, screen, layout, mouse.column, mouse.row)
             {
-                app.cancel_prefix();
+                app.interaction.prefix_armed = false;
                 app.focus = focus;
             } else if button == crossterm::event::MouseButton::Left {
                 if let Some(idx) =
@@ -118,7 +118,7 @@ pub(crate) fn handle_mouse(
                 {
                     // A tab click is a jump-key press with the pointer: same
                     // prefix resolution and focus/fullscreen handling.
-                    app.cancel_prefix();
+                    app.interaction.prefix_armed = false;
                     app.switch_pane(idx);
                 } else if let Some(click) =
                     crate::ui::hint_click_at(app, tabs, screen, mouse.column, mouse.row)
@@ -136,7 +136,7 @@ pub(crate) fn handle_mouse(
         MouseEventKind::Down(button) => {
             focus_clicked_pane(app, id);
             if app.terminal.click_pane(id, button, true, col, row) {
-                app.pending_mouse_press = Some((id, button, col, row));
+                app.interaction.pending_mouse_press = Some((id, button, col, row));
             }
         }
         MouseEventKind::ScrollUp => {
@@ -167,11 +167,11 @@ fn dispatch_hint_click(app: &mut App, click: crate::ui::HintClick) -> KeyOutcome
     let plain = |c| KeyEvent::new(KeyCode::Char(c), KeyModifiers::NONE);
     match click {
         crate::ui::HintClick::Arm => {
-            let leader = app.leader;
+            let leader = app.interaction.leader;
             handle_key(app, leader)
         }
         crate::ui::HintClick::Leader(c) => {
-            let leader = app.leader;
+            let leader = app.interaction.leader;
             match handle_key(app, leader) {
                 KeyOutcome::Continue => {}
                 other => return other,
@@ -195,10 +195,10 @@ fn release_pending_press(
     x: u16,
     y: u16,
 ) {
-    let Some((id, pressed, _, _)) = app.pending_mouse_press else {
+    let Some((id, pressed, _, _)) = app.interaction.pending_mouse_press else {
         return;
     };
-    app.pending_mouse_press = None;
+    app.interaction.pending_mouse_press = None;
     let Some(rect) = crate::ui::terminal_content_areas(app, screen, layout)
         .into_iter()
         .find_map(|(pid, rect)| (pid == id).then_some(rect))
@@ -220,7 +220,7 @@ fn release_pending_press(
 /// a jump key does. A click is also a non-command event while the prefix is
 /// armed, so resolve the prefix first (same rule as `handle_paste`).
 fn focus_clicked_pane(app: &mut App, id: crate::backend::PaneId) {
-    app.cancel_prefix();
+    app.interaction.prefix_armed = false;
     let Some(idx) = app.terminal.panes.iter().position(|p| p.id == id) else {
         return;
     };

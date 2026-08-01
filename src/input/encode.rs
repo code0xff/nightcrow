@@ -1,7 +1,10 @@
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseButton};
 
 /// Encode a crossterm KeyEvent as VT100/ANSI bytes for terminal pass-through.
-pub fn encode_key(key: KeyEvent) -> Option<Vec<u8>> {
+/// `app_cursor` is the active pane's DECCKM state; it changes unmodified arrow
+/// keys from CSI (`ESC [ A`) to SS3 (`ESC O A`). Modified arrows keep xterm's
+/// CSI modifier form.
+pub fn encode_key(key: KeyEvent, app_cursor: bool) -> Option<Vec<u8>> {
     let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
     let alt = key.modifiers.contains(KeyModifiers::ALT);
 
@@ -46,10 +49,10 @@ pub fn encode_key(key: KeyEvent) -> Option<Vec<u8>> {
         KeyCode::Esc => Some(vec![0x1b]),
         KeyCode::Tab => Some(vec![b'\t']),
         KeyCode::BackTab => Some(b"\x1b[Z".to_vec()),
-        KeyCode::Up => Some(csi_cursor(b'A', key.modifiers)),
-        KeyCode::Down => Some(csi_cursor(b'B', key.modifiers)),
-        KeyCode::Right => Some(csi_cursor(b'C', key.modifiers)),
-        KeyCode::Left => Some(csi_cursor(b'D', key.modifiers)),
+        KeyCode::Up => Some(cursor_arrow(b'A', key.modifiers, app_cursor)),
+        KeyCode::Down => Some(cursor_arrow(b'B', key.modifiers, app_cursor)),
+        KeyCode::Right => Some(cursor_arrow(b'C', key.modifiers, app_cursor)),
+        KeyCode::Left => Some(cursor_arrow(b'D', key.modifiers, app_cursor)),
         KeyCode::Home => Some(csi_cursor(b'H', key.modifiers)),
         KeyCode::End => Some(csi_cursor(b'F', key.modifiers)),
         KeyCode::PageUp => Some(csi_tilde(5, key.modifiers)),
@@ -102,8 +105,7 @@ pub fn encode_button(button: MouseButton, press: bool, col: u16, row: u16) -> Ve
 /// that DECCKM-enabled programs expect over the default CSI form (`ESC [ A`).
 pub fn encode_arrow(up: bool, app_cursor: bool) -> Vec<u8> {
     let final_byte = if up { b'A' } else { b'B' };
-    let introducer = if app_cursor { b'O' } else { b'[' };
-    vec![0x1b, introducer, final_byte]
+    cursor_arrow(final_byte, KeyModifiers::NONE, app_cursor)
 }
 
 /// xterm modifier parameter for CSI sequences: `1 + (shift=1 | alt=2 | ctrl=4 |
@@ -137,6 +139,14 @@ fn csi_cursor(final_byte: u8, mods: KeyModifiers) -> Vec<u8> {
             bytes
         }
         None => vec![0x1b, b'[', final_byte],
+    }
+}
+
+fn cursor_arrow(final_byte: u8, mods: KeyModifiers, app_cursor: bool) -> Vec<u8> {
+    if mods.is_empty() && app_cursor {
+        vec![0x1b, b'O', final_byte]
+    } else {
+        csi_cursor(final_byte, mods)
     }
 }
 

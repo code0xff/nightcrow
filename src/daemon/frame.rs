@@ -5,6 +5,7 @@
 //! text, and routing them through JSON would pay escaping and base64 expansion
 //! on the hottest path there is.
 
+use super::protocol::ServerMessage;
 use anyhow::{Context, Result, bail};
 use std::io::{Read, Write};
 
@@ -57,6 +58,37 @@ impl Frame {
         Self {
             kind: FrameKind::Terminal,
             payload,
+        }
+    }
+}
+
+/// Encode a daemon response as one control frame.
+///
+/// Serialization is shared here so every producer has the same fallback, while
+/// `context` keeps the failing operation visible in the log instead of reducing
+/// a session update, reply, and terminal relay to the same diagnostic.
+pub(super) fn encode_server(
+    message: &ServerMessage,
+    context: &'static str,
+    fallback_message: &'static str,
+) -> Frame {
+    match serde_json::to_vec(message) {
+        Ok(json) => Frame::control(json),
+        Err(err) => {
+            tracing::error!(%err, context, "daemon: could not encode a server message");
+            let fallback = ServerMessage::Error {
+                message: fallback_message.to_string(),
+            };
+            Frame::control(
+                serde_json::to_vec(&fallback).unwrap_or_else(|fallback_err| {
+                    tracing::error!(
+                        %fallback_err,
+                        context,
+                        "daemon: could not encode the fallback server error"
+                    );
+                    br#"{"type":"error","message":"server message could not be encoded"}"#.to_vec()
+                }),
+            )
         }
     }
 }

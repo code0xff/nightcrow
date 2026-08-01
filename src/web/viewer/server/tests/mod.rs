@@ -9,9 +9,9 @@ mod routes;
 mod terminals;
 
 use super::{VIEWER_SESSION_COOKIE, ViewerOptions, ViewerServer};
+use crate::session::prefs::PrefsStore;
 use crate::test_util::{make_repo, run_git};
 use crate::web::common::auth::Auth;
-use crate::web::viewer::prefs::PrefsStore;
 use std::io::{Read, Write};
 use std::net::{SocketAddr, TcpStream};
 use std::time::Duration;
@@ -41,15 +41,16 @@ pub(super) fn server_with(
         bind: "127.0.0.1".parse().unwrap(),
         port: 0,
         auth: Auth::from_plaintext("swordfish").unwrap(),
-        repos: paths.to_vec(),
-        // Never persist from tests — they must not touch the real
-        // ~/.nightcrow/workspace.json.
-        persist: false,
-        startup_commands: Vec::new(),
-        cli_startup: Vec::new(),
-        shell: crate::config::ShellConfig::default(),
         hot,
-        prefs,
+        session: crate::session::SessionOptions {
+            repos: paths.to_vec(),
+            persist: false,
+            startup_commands: Vec::new(),
+            cli_startup: Vec::new(),
+            shell: crate::config::ShellConfig::default(),
+            prefs,
+            status_encoder: crate::web::viewer::status_payload::encode,
+        },
     })
     .unwrap()
 }

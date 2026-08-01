@@ -1,5 +1,5 @@
 use super::*;
-use crate::web::viewer::terminal::frame::ServerMessage as HubServerMessage;
+use crate::session::terminal::frame::ServerMessage as HubServerMessage;
 
 fn created(pane: PaneId) -> TerminalMessage {
     TerminalMessage::Event(HubServerMessage::Created {

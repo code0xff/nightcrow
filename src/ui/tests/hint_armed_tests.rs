@@ -12,7 +12,7 @@ use ratatui::layout::Rect;
 #[test]
 fn prefix_hint_advertises_close_only_with_terminal_focus() {
     let mut upper = app_with_fake_backend();
-    upper.arm_prefix();
+    upper.interaction.prefix_armed = true;
     assert!(
         !hint_text(&upper).contains("w: close"),
         "armed row must not offer close without terminal focus"
@@ -20,7 +20,7 @@ fn prefix_hint_advertises_close_only_with_terminal_focus() {
 
     let mut term = app_with_fake_backend();
     term.focus = Focus::Terminal;
-    term.arm_prefix();
+    term.interaction.prefix_armed = true;
     assert!(
         hint_text(&term).contains("w: close"),
         "armed row must offer close with terminal focus"
@@ -45,14 +45,14 @@ fn armed_prefix_close_click_target_follows_terminal_focus() {
 
     let mut term = app_with_fake_backend();
     term.focus = Focus::Terminal;
-    term.arm_prefix();
+    term.interaction.prefix_armed = true;
     assert!(
         clicks(&term) > 0,
         "terminal-focused armed row must offer a close click target"
     );
 
     let mut upper = app_with_fake_backend();
-    upper.arm_prefix();
+    upper.interaction.prefix_armed = true;
     assert_eq!(
         clicks(&upper),
         0,
@@ -69,7 +69,7 @@ fn prefix_hint_advertises_swap_only_when_a_swap_can_act() {
     upper.terminal.create_pane_now().unwrap();
     upper.terminal.create_pane_now().unwrap();
     upper.focus = Focus::FileList;
-    upper.arm_prefix();
+    upper.interaction.prefix_armed = true;
     assert!(
         !hint_text(&upper).contains("s: swap pane"),
         "armed row must not offer swap without terminal focus"
@@ -78,7 +78,7 @@ fn prefix_hint_advertises_swap_only_when_a_swap_can_act() {
     let mut single = app_with_fake_backend();
     single.terminal.create_pane_now().unwrap();
     single.focus = Focus::Terminal;
-    single.arm_prefix();
+    single.interaction.prefix_armed = true;
     assert!(
         !hint_text(&single).contains("s: swap pane"),
         "armed row must not offer swap with a single pane"
@@ -88,7 +88,7 @@ fn prefix_hint_advertises_swap_only_when_a_swap_can_act() {
     term.terminal.create_pane_now().unwrap();
     term.terminal.create_pane_now().unwrap();
     term.focus = Focus::Terminal;
-    term.arm_prefix();
+    term.interaction.prefix_armed = true;
     assert!(
         hint_text(&term).contains("s: swap pane"),
         "armed row must offer swap with terminal focus and two panes"
@@ -101,7 +101,7 @@ fn prefix_hint_advertises_swap_only_when_a_swap_can_act() {
 #[test]
 fn prefix_hint_names_view_toggle_destinations_by_mode() {
     let mut app = app_with_fake_backend();
-    app.arm_prefix();
+    app.interaction.prefix_armed = true;
 
     let text = hint_text(&app);
     assert!(

@@ -64,9 +64,21 @@ fn encode_arrow_follows_application_cursor_mode() {
 }
 
 #[test]
+fn encode_key_uses_application_cursor_mode_for_unmodified_arrows() {
+    let up = KeyEvent::new(KeyCode::Up, KeyModifiers::NONE);
+    assert_eq!(super::encode_key(up, true), Some(b"\x1bOA".to_vec()));
+
+    let modified = KeyEvent::new(KeyCode::Up, KeyModifiers::CONTROL);
+    assert_eq!(
+        super::encode_key(modified, true),
+        Some(b"\x1b[1;5A".to_vec())
+    );
+}
+
+#[test]
 fn encode_key_emits_xterm_modifier_sequences() {
     use KeyModifiers as M;
-    let enc = |code, mods| encode_key(KeyEvent::new(code, mods)).unwrap();
+    let enc = |code, mods| encode_key(KeyEvent::new(code, mods), false).unwrap();
 
     // Unmodified cursor/F-keys keep their legacy sequences.
     assert_eq!(enc(KeyCode::Up, M::NONE), b"\x1b[A");
@@ -87,31 +99,31 @@ fn encode_key_emits_xterm_modifier_sequences() {
 
 #[test]
 fn encode_printable_char() {
-    assert_eq!(encode_key(key(KeyCode::Char('a'))), Some(b"a".to_vec()));
+    assert_eq!(
+        encode_key(key(KeyCode::Char('a')), false),
+        Some(b"a".to_vec())
+    );
 }
 
 #[test]
 fn encode_ctrl_c_as_etx() {
-    assert_eq!(encode_key(ctrl(KeyCode::Char('c'))), Some(vec![0x03]));
+    assert_eq!(
+        encode_key(ctrl(KeyCode::Char('c')), false),
+        Some(vec![0x03])
+    );
 }
 
 #[test]
 fn encode_ctrl_non_ascii_does_not_truncate_to_control_byte() {
     assert_eq!(
-        encode_key(ctrl(KeyCode::Char('ŀ'))),
+        encode_key(ctrl(KeyCode::Char('ŀ')), false),
         Some("ŀ".as_bytes().to_vec())
     );
 }
 
 #[test]
-fn encode_arrow_keys() {
-    assert_eq!(encode_key(key(KeyCode::Up)), Some(b"\x1b[A".to_vec()));
-    assert_eq!(encode_key(key(KeyCode::Down)), Some(b"\x1b[B".to_vec()));
-}
-
-#[test]
 fn encode_enter_as_cr() {
-    assert_eq!(encode_key(key(KeyCode::Enter)), Some(vec![b'\r']));
+    assert_eq!(encode_key(key(KeyCode::Enter), false), Some(vec![b'\r']));
 }
 
 #[test]
@@ -119,7 +131,7 @@ fn encode_alt_enter_as_esc_cr() {
     // A pane program cannot tell "newline" from "submit" if the modifier is
     // dropped; ESC+CR is the Meta-prefixed form TUIs read as newline.
     assert_eq!(
-        encode_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::ALT)),
+        encode_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::ALT), false),
         Some(vec![0x1b, b'\r'])
     );
 }
@@ -128,7 +140,10 @@ fn encode_alt_enter_as_esc_cr() {
 fn encode_ctrl_space_as_nul() {
     // xterm convention: Ctrl+Space → NUL. The generic `c - '@'` formula
     // wraps for space (0x20 < 0x40), so this case needs special handling.
-    assert_eq!(encode_key(ctrl(KeyCode::Char(' '))), Some(vec![0x00]));
+    assert_eq!(
+        encode_key(ctrl(KeyCode::Char(' ')), false),
+        Some(vec![0x00])
+    );
 }
 
 #[test]
@@ -136,13 +151,19 @@ fn encode_ctrl_slash_as_us() {
     // Ctrl+/ is conventionally 0x1F (US) on xterm; vim/less/emacs
     // bindings depend on it. Without the explicit mapping the slash
     // fell through as a literal '/' character.
-    assert_eq!(encode_key(ctrl(KeyCode::Char('/'))), Some(vec![0x1F]));
+    assert_eq!(
+        encode_key(ctrl(KeyCode::Char('/')), false),
+        Some(vec![0x1F])
+    );
 }
 
 #[test]
 fn encode_ctrl_question_as_del() {
     // Ctrl+? is conventionally DEL (0x7F).
-    assert_eq!(encode_key(ctrl(KeyCode::Char('?'))), Some(vec![0x7F]));
+    assert_eq!(
+        encode_key(ctrl(KeyCode::Char('?')), false),
+        Some(vec![0x7F])
+    );
 }
 
 #[test]
@@ -150,7 +171,10 @@ fn encode_ctrl_right_bracket_via_formula() {
     // Sanity check: the `c.to_ascii_uppercase() - '@'` formula already
     // covered Ctrl+]. Pin it so a future refactor of the special-case
     // table doesn't accidentally regress it.
-    assert_eq!(encode_key(ctrl(KeyCode::Char(']'))), Some(vec![0x1D]));
+    assert_eq!(
+        encode_key(ctrl(KeyCode::Char(']')), false),
+        Some(vec![0x1D])
+    );
 }
 
 #[test]
@@ -160,5 +184,5 @@ fn encode_ctrl_alt_char_prefixes_esc_to_control_byte() {
         KeyCode::Char('c'),
         KeyModifiers::CONTROL | KeyModifiers::ALT,
     );
-    assert_eq!(encode_key(key), Some(vec![0x1b, 0x03]));
+    assert_eq!(encode_key(key, false), Some(vec![0x1b, 0x03]));
 }

@@ -76,11 +76,10 @@ pub(crate) fn app_with_files(files: Vec<&str>) -> App {
         branch_name: None,
         log_decorations: Default::default(),
         last_refs_fingerprint: None,
-        leader: KeyEvent::new(KeyCode::Char('f'), KeyModifiers::CONTROL),
-        prefix_armed: false,
-        awaiting_swap_target: false,
-        pending_mouse_press: None,
-        mouse_enabled: true,
+        interaction: InteractionState::new(KeyEvent::new(
+            KeyCode::Char('f'),
+            KeyModifiers::CONTROL,
+        )),
     }
 }
 

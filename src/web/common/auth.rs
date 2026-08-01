@@ -5,7 +5,7 @@
 use anyhow::{Result, anyhow};
 use argon2::password_hash::SaltString;
 use argon2::{Argon2, PasswordHash, PasswordHasher, PasswordVerifier};
-use std::collections::HashSet;
+use std::collections::{HashSet, VecDeque};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
@@ -114,7 +114,7 @@ fn hex(bytes: &[u8]) -> String {
 /// 14 per hour (2/min baseline plus 12 additional/hour). Shared across all
 /// clients since there is a single password.
 pub struct RateLimiter {
-    attempts: Mutex<Vec<Instant>>,
+    attempts: Mutex<VecDeque<Instant>>,
 }
 
 const MAX_PER_MINUTE: usize = 2;
@@ -123,7 +123,7 @@ const MAX_PER_HOUR: usize = 14;
 impl RateLimiter {
     pub fn new() -> Self {
         Self {
-            attempts: Mutex::new(Vec::new()),
+            attempts: Mutex::new(VecDeque::with_capacity(MAX_PER_HOUR)),
         }
     }
 
@@ -138,7 +138,10 @@ impl RateLimiter {
             .filter(|t| now.duration_since(**t) < Duration::from_secs(60))
             .count();
         let allowed = last_minute < MAX_PER_MINUTE && attempts.len() < MAX_PER_HOUR;
-        attempts.push(now);
+        attempts.push_back(now);
+        if attempts.len() > MAX_PER_HOUR {
+            attempts.pop_front();
+        }
         allowed
     }
 }
@@ -241,5 +244,20 @@ mod tests {
         let blocked =
             limiter.check_and_record(t0 + Duration::from_secs((MAX_PER_HOUR as u64) * 40));
         assert!(!blocked, "the 15th attempt in an hour is blocked");
+    }
+
+    #[test]
+    fn rejected_login_flood_keeps_bounded_history() {
+        let limiter = RateLimiter::new();
+        let t0 = Instant::now();
+
+        let allowed = (0..4_000)
+            .map(|i| limiter.check_and_record(t0 + Duration::from_secs(i)))
+            .last()
+            .unwrap();
+
+        let attempts = limiter.attempts.lock().unwrap();
+        assert!(!allowed, "a continuing flood must remain rate-limited");
+        assert_eq!(attempts.len(), MAX_PER_HOUR);
     }
 }

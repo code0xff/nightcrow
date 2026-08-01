@@ -1,4 +1,4 @@
-use crate::app::{App, AutoFollow, Focus, Notice, NoticeKind, ViewMode};
+use crate::app::{App, AutoFollow, Focus, InteractionState, Notice, NoticeKind, ViewMode};
 use crate::backend::TerminalBackend;
 use crate::runtime::snapshot::SnapshotChannel;
 use crossterm::event::KeyEvent;
@@ -56,7 +56,7 @@ impl App {
     // record would leave that program in a drag/selection state with no
     // release ever coming.
     pub fn release_pending_press_in_place(&mut self) {
-        if let Some((id, button, col, row)) = self.pending_mouse_press.take() {
+        if let Some((id, button, col, row)) = self.interaction.pending_mouse_press.take() {
             self.terminal.click_pane(id, button, false, col, row);
         }
     }
@@ -120,27 +120,11 @@ impl App {
             branch_name: None,
             log_decorations: Default::default(),
             last_refs_fingerprint: None,
-            leader,
-            prefix_armed: false,
-            awaiting_swap_target: false,
-            pending_mouse_press: None,
-            mouse_enabled: true,
+            interaction: InteractionState::new(leader),
         };
 
         tracing::info!(repo = %app.repo_path, "nightcrow started");
         app
-    }
-
-    pub fn prefix_armed(&self) -> bool {
-        self.prefix_armed
-    }
-
-    pub fn arm_prefix(&mut self) {
-        self.prefix_armed = true;
-    }
-
-    pub fn cancel_prefix(&mut self) {
-        self.prefix_armed = false;
     }
 
     // The repo dialog is process-level, so the full modal test lives on
@@ -152,31 +136,5 @@ impl App {
             || self.diff.search.active
             || self.log_view.commit_search_active
             || self.log_view.file_search_active
-    }
-
-    pub fn awaiting_swap_target(&self) -> bool {
-        self.awaiting_swap_target
-    }
-
-    // Clears the prefix so the two follow-up states never overlap.
-    pub fn begin_swap_target(&mut self) {
-        self.prefix_armed = false;
-        self.awaiting_swap_target = true;
-    }
-
-    pub fn cancel_swap_target(&mut self) {
-        self.awaiting_swap_target = false;
-    }
-
-    pub fn leader_label(&self) -> String {
-        crate::app::leader_label_of(self.leader)
-    }
-
-    // Any modifier beyond the leader's own (Alt, Shift, Super, Hyper, Meta —
-    // enhanced keyboard protocols report the latter three) makes it a different
-    // chord that passes straight through to the PTY, so compare the full
-    // modifier set exactly.
-    pub fn is_leader_key(&self, key: KeyEvent) -> bool {
-        key.code == self.leader.code && key.modifiers == self.leader.modifiers
     }
 }

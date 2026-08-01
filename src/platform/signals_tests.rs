@@ -1,5 +1,8 @@
 use super::Shutdown;
 
+#[cfg(windows)]
+const SECOND_INTERRUPT_CHILD: &str = "NIGHTCROW_TEST_SECOND_INTERRUPT_CHILD";
+
 // `as_str` / Shutdown 의 Eq 같은 순수 부분은 양쪽에서 돈다.
 // 이벤트 전달 자체는 Unix 에서만 검증한다: Windows 의 콘솔 제어 이벤트는
 // 프로세스 그룹 전체로 가므로 테스트 러너를 함께 죽인다.
@@ -67,4 +70,25 @@ mod signal_delivery {
 fn each_stop_signal_names_itself() {
     assert_eq!(Shutdown::Interrupt.as_str(), "SIGINT");
     assert_eq!(Shutdown::Terminate.as_str(), "SIGTERM");
+}
+
+#[cfg(windows)]
+#[test]
+fn windows_interrupts_notify_once_then_hard_exit() {
+    if std::env::var_os(SECOND_INTERRUPT_CHILD).is_some() {
+        super::windows_hard_exit_after_two_interrupts_for_test();
+    }
+
+    let status = std::process::Command::new(std::env::current_exe().expect("current test binary"))
+        .args([
+            "--exact",
+            "platform::signals::tests::windows_interrupts_notify_once_then_hard_exit",
+        ])
+        .env(SECOND_INTERRUPT_CHILD, "1")
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+        .expect("run the isolated hard-exit contract");
+
+    assert_eq!(status.code(), Some(130));
 }

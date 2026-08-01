@@ -11,13 +11,12 @@
 use anyhow::Context;
 
 use super::clients::AttachedClients;
-use super::frame::{Frame, write_frame};
-use super::protocol::ServerMessage;
+use super::frame::write_frame;
 use super::terminals::TerminalBridges;
 use super::transport::{UnixListener, UnixStream};
 use crate::platform::signals::Shutdown;
-use crate::web::viewer::server::ViewerState;
-use crate::web::viewer::session;
+use crate::session;
+use crate::session::SessionState;
 use std::collections::HashMap;
 use std::io::Write;
 use std::sync::mpsc::SyncSender;
@@ -30,7 +29,7 @@ pub const MAX_ATTACHED_CLIENTS: usize = 16;
 
 /// Everything the connection threads share.
 pub struct Session {
-    pub(super) state: Arc<ViewerState>,
+    pub(super) state: Arc<SessionState>,
     pub(super) clients: Arc<AttachedClients>,
     /// Each attached client's terminal subscriptions. Kept here rather than on
     /// the thread that reads that client's socket, because a repository can
@@ -81,7 +80,7 @@ impl Session {
 ///
 /// [`DaemonSocket`]: super::socket::DaemonSocket
 pub fn start(
-    state: Arc<ViewerState>,
+    state: Arc<SessionState>,
     shutdown_tx: SyncSender<Shutdown>,
 ) -> anyhow::Result<Arc<Session>> {
     let session = Arc::new(Session {
@@ -116,12 +115,6 @@ pub fn start(
 pub fn serve(listener: UnixListener, session: Arc<Session>) {
     for stream in listener.incoming() {
         let Ok(stream) = stream else { continue };
-        if session.clients.len() >= MAX_ATTACHED_CLIENTS {
-            // Dropped rather than answered: writing a refusal here would let one
-            // stalled client hold up every attach behind it.
-            tracing::debug!("daemon: refusing an attach over the client cap");
-            continue;
-        }
         let session = Arc::clone(&session);
         let _ = std::thread::Builder::new()
             .name("nightcrow-attach".into())
@@ -141,7 +134,12 @@ fn attach(stream: UnixStream, session: &Session) {
         tracing::debug!("daemon: could not split an attaching client's socket");
         return;
     };
-    let (id, queue) = session.clients.connect(hangup);
+    let Some((id, queue)) = session.clients.try_connect(hangup, MAX_ATTACHED_CLIENTS) else {
+        // Dropped rather than answered: writing a refusal here would let one
+        // stalled client hold up every attach behind it.
+        tracing::debug!("daemon: refusing an attach over the client cap");
+        return;
+    };
     let bridges = Arc::new(Mutex::new(TerminalBridges::new(
         id,
         Arc::clone(&session.clients),
@@ -197,22 +195,6 @@ fn attach(stream: UnixStream, session: &Session) {
             writer,
             crate::platform::threading::REAP_TIMEOUT,
         );
-    }
-}
-
-/// Encode a message into a control frame.
-///
-/// Encoding cannot fail for these types — they are plain data with no maps
-/// keyed by anything but strings — so a failure would mean a bug in the
-/// protocol definitions rather than anything a client did. It becomes an error
-/// frame so the client sees *something* instead of a silently dropped reply.
-pub(super) fn encode(message: &ServerMessage) -> Frame {
-    match serde_json::to_vec(message) {
-        Ok(json) => Frame::control(json),
-        Err(err) => {
-            tracing::error!(%err, "daemon: could not encode a reply");
-            Frame::control(br#"{"type":"error","message":"reply could not be encoded"}"#.to_vec())
-        }
     }
 }
 

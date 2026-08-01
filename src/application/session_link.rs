@@ -10,7 +10,7 @@ use crate::application::bootstrap::init_app;
 use crate::application::input::dispatch::{ProjectContext, ProjectRequest};
 use crate::daemon::client::DaemonClient;
 use crate::daemon::protocol::{RepoSummary, ServerMessage};
-use crate::web::viewer::terminal::frame::ServerMessage as HubServerMessage;
+use crate::session::terminal::frame::ServerMessage as HubServerMessage;
 use crate::workspace::Workspace;
 
 pub(crate) struct SessionLink {

@@ -39,10 +39,10 @@ into a terminal should be a change you read before it takes effect:
 name = "recovery"
 command = "nightcrow-recovery"
 enabled = true
-# Flags the plugin may append to re-open a session. Empty by default, which
-# refuses every relaunch. nightcrow cannot know what a CLI's flags mean, so it
-# will not add one you did not list — that is what keeps a plugin from changing
-# how a CLI asks for your approval.
+# Resume flags or subcommands the plugin may append. Empty by default, which
+# refuses every relaunch with arguments. nightcrow cannot know what a CLI's
+# control tokens mean, so it will not add one you did not list — that is what
+# keeps a plugin from changing how a CLI asks for your approval.
 allowed_resume_flags = ["--resume", "resume", "--session"]
 
 [[startup_command]]

@@ -9,9 +9,11 @@ mod config;
 mod daemon;
 mod git;
 mod input;
+mod persistence;
 mod platform;
 pub mod plugin;
 mod runtime;
+mod session;
 #[cfg(test)]
 mod test_util;
 mod ui;

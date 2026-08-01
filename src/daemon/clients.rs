@@ -75,26 +75,36 @@ pub struct AttachedClients {
 }
 
 impl AttachedClients {
-    /// Register a client, returning its id and the queue its writer drains.
+    /// Register a client when the set is below `capacity`, returning its id and
+    /// the queue its writer drains.
     ///
     /// `socket` is a handle on the client's connection, used only to close it if
     /// the client stops draining.
-    pub fn connect(&self, socket: UnixStream) -> (u64, Receiver<Frame>) {
+    ///
+    /// The capacity check and insertion share one lock hold. Checking `len`
+    /// before a connection thread starts would let a burst of threads all see
+    /// the same free slot and then register past the limit.
+    pub fn try_connect(
+        &self,
+        socket: UnixStream,
+        capacity: usize,
+    ) -> Option<(u64, Receiver<Frame>)> {
+        let mut clients = self.inner.lock().expect("attached clients poisoned");
+        if clients.len() >= capacity {
+            return None;
+        }
         let id = self.next_id.fetch_add(1, Ordering::AcqRel);
         let (tx, rx) = mpsc::sync_channel(CLIENT_QUEUE_DEPTH);
-        self.inner
-            .lock()
-            .expect("attached clients poisoned")
-            .push(Attached {
-                id,
-                tx,
-                socket,
-                // It has nothing on screen yet, and the watcher is what hands
-                // the session over. The caller wakes it (`Nudge::poke`) rather
-                // than sending anything itself.
-                owed_set: true,
-            });
-        (id, rx)
+        clients.push(Attached {
+            id,
+            tx,
+            socket,
+            // It has nothing on screen yet, and the watcher is what hands
+            // the session over. The caller wakes it (`Nudge::poke`) rather
+            // than sending anything itself.
+            owed_set: true,
+        });
+        Some((id, rx))
     }
 
     /// Forget a client. Dropping its sender ends the writer draining it.
@@ -105,6 +115,7 @@ impl AttachedClients {
             .retain(|client| client.id != id);
     }
 
+    #[cfg(test)]
     pub fn len(&self) -> usize {
         self.inner.lock().expect("attached clients poisoned").len()
     }

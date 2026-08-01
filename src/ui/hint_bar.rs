@@ -1,4 +1,4 @@
-use crate::app::App;
+use crate::app::{App, leader_label_of};
 use crate::ui::chrome::{Chrome, chrome_rows};
 use crate::ui::hint_text::{
     EMPTY_HINT, EMPTY_HINT_ARMED, PREFIX_CHIP, normal_hint_literal, prefix_armed_hint_text,
@@ -91,14 +91,14 @@ pub(crate) fn repo_input_line<'a>(
 ) -> Line<'a> {
     const PROMPT: &str = "repo: ";
     let legend = if repo_input.picker.is_some() {
-        "  ↓↑/jk: move | →: open | ←: up | enter: select | esc: back"
+        "  up/dn/jk: move | right: open | left: up | enter: select | esc: back"
     } else {
-        "  ↓: browse | tab: complete | enter: open | esc: cancel"
+        "  down: browse | tab: complete | enter: open | esc: cancel"
     };
     let mut spans = vec![
         Span::styled(PROMPT, Style::default().fg(accent)),
         Span::raw(repo_input.buf.as_str()),
-        Span::styled("█", Style::default().fg(accent)),
+        Span::styled("|", Style::default().fg(accent)),
     ];
     // Display columns, not bytes: a path can hold wide or combining characters.
     let used: usize = spans.iter().map(Span::width).sum();
@@ -119,7 +119,8 @@ pub(crate) fn render_hint_bar<'a>(
         // stays the input line plus its own legend.
         return Paragraph::new(repo_input_line(chrome.repo_input, accent, width));
     }
-    if app.prefix_armed() {
+    let leader = leader_label_of(app.interaction.leader);
+    if app.interaction.prefix_armed {
         let mut spans = vec![Span::styled(
             PREFIX_CHIP,
             Style::default()
@@ -129,12 +130,12 @@ pub(crate) fn render_hint_bar<'a>(
         )];
         spans.extend(hint_spans(
             &prefix_armed_hint_text(app),
-            &app.leader_label(),
-            app.mouse_enabled,
+            &leader,
+            app.interaction.mouse_enabled,
         ));
         return Paragraph::new(Line::from(spans));
     }
-    if app.awaiting_swap_target() {
+    if app.interaction.awaiting_swap_target {
         // The swap-target digits follow the same layout-aware mapping as the
         // focus jumps: `1-8` while the terminal fills the body, `3-9,0` in
         // the split view.
@@ -161,8 +162,8 @@ pub(crate) fn render_hint_bar<'a>(
     // footer names the actual key to press rather than an abstract word.
     Paragraph::new(Line::from(hint_spans(
         normal_hint_literal(app),
-        &app.leader_label(),
-        app.mouse_enabled,
+        &leader,
+        app.interaction.mouse_enabled,
     )))
 }
 
@@ -226,7 +227,7 @@ pub(crate) fn hint_click_at(
     // With mouse capture off no click can reach us anyway, but the bar also
     // renders no inverted labels (`hint_spans`) — keep the affordance and the
     // hit test in agreement rather than relying on the caller.
-    if !app.mouse_enabled {
+    if !app.interaction.mouse_enabled {
         return None;
     }
     let hint_area = chrome_rows(screen_area).hint;
@@ -238,15 +239,15 @@ pub(crate) fn hint_click_at(
     // click would resolve against a row the user isn't looking at.
     let (chip, text) = if chrome.repo_input.active {
         return None;
-    } else if app.prefix_armed() {
+    } else if app.interaction.prefix_armed {
         (PREFIX_CHIP, prefix_armed_hint_text(app))
-    } else if app.awaiting_swap_target() {
+    } else if app.interaction.awaiting_swap_target {
         return None;
     } else {
         ("", normal_hint_literal(app).to_string())
     };
 
-    let leader = app.leader_label();
+    let leader = leader_label_of(app.interaction.leader);
     let mut cursor = hint_area.x + Span::raw(chip).width() as u16;
     for (i, segment) in text.split(" | ").enumerate() {
         if i > 0 {

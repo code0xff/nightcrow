@@ -66,8 +66,9 @@ OSC 0/2 탭 타이틀 캡처, 마우스 캡처(클릭 포커스/포워딩, 휠 �
 ```
 src/
 ├── main.rs               # entry point: dispatch to daemon / attach / serve / init
-├── cli.rs, cli/          # Cli/Commands, run_daemon/run_init, `nightcrow plugin`
+├── cli.rs, cli/          # Cli/Commands + attach/daemon/init/stop/plugin command handlers
 ├── test_util.rs          # #[cfg(test)] git fixture helpers shared across modules
+├── persistence.rs        # typed JSON reads + same-directory atomic replacement
 ├── daemon/               # the session socket
 │   ├── socket.rs, lock.rs, detach.rs  # 0600 socket + stale handling, flock single-
 │   │                     #   instance lock, backgrounding by re-exec (not fork)
@@ -90,8 +91,8 @@ src/
 │                         #   logging.rs (file logger, rotation + retention), paths.rs
 │                         #   (tilde expansion), signals.rs (SIGINT/SIGTERM shutdown),
 │                         #   threading.rs (try_timed_join)
-├── app.rs, app/          # App struct + per-feature impls: auto_follow, commit-log
-│                         #   fetch/pagination/apply, diff & file-view loaders, focus,
+├── app.rs, app/          # App aggregate + InteractionState; per-feature impls: auto_follow,
+│                         #   commit-log fetch/pagination/apply, diff & file-view loaders, focus,
 │                         #   navigation, log_nav, scroll, session_io, snapshot_io,
 │                         #   terminal_ctrl, tree, tree_nav
 ├── config.rs, config/    # config.toml root + layout/theme/input, log, panels,
@@ -140,7 +141,8 @@ src/
 │   ├── guard_budget.rs   # per-slot rate ceilings, keyed by PaneToken
 │   ├── guard_watch.rs    # the one rule that can widen what a plugin sees
 │   ├── guard_refusal.rs, guard_text.rs  # refusal reasons; bounding plugin-supplied text
-│   └── registry.rs       # ~/.nightcrow/plugins: install / list / remove
+│   └── registry.rs, registry/  # ~/.nightcrow/plugins: config snippets, executable
+│                         #   resolution, atomic install/list/remove storage
 ├── git/
 │   ├── diff.rs, diff/    # types, snapshot loader, diff/commit loaders, commit_log, refs
 │   ├── clone.rs, clone/  # delegate `git clone` to the binary; URL scheme whitelist
@@ -149,22 +151,22 @@ src/
 ├── input/                # Action enum (mod.rs), routing.rs (map_key, prefix_action,
 │                         #   prefix_action_fullscreen, vim j/k), encode.rs (encode_key,
 │                         #   encode_wheel/button/arrow, CSI/SS3 helpers)
-└── web/                  # browser surface
-    ├── common/           # server-agnostic primitives (no git or terminals): auth.rs
-    │                     #   (Argon2 verify, session tokens, login rate limit), http.rs,
-    │                     #   sse.rs (SseStream), conn.rs (ConnectionSlot accounting)
+├── session/              # daemon-owned, transport-neutral shared session core
+│   ├── state.rs, operations.rs, reload.rs  # ownership, mutations, live config reload
+│   ├── catalog/          # opaque repo ids, atomic swap, ordering, config tables
+│   ├── runtime/          # SnapshotChannel drain + conflated status fan-out
+│   ├── terminal/         # TerminalHub, PtyBackend ownership, shared terminal frames
+│   ├── size_owner.rs     # which client screen the session PTYs are fitted to
+│   └── prefs/            # persisted accent, active repo, browser arrangements
+└── web/                  # browser transport
+    ├── common/           # HTTP primitives: auth, parsing, SSE, connection slots
     └── viewer/           # native web viewer ([web_viewer] / `serve`)
-        ├── limits.rs     # ceilings: log page, tree entries, diff bytes/lines, PTYs
-        ├── dto/          # whitelisted wire types + PROTOCOL_VERSION envelope
-        ├── catalog/      # opaque repo ids, atomic swap, ordering, config tables
-        ├── runtime/      # per-repo thread: SnapshotChannel drain + conflated SSE fan-out
-        ├── terminal/     # per-repo TerminalHub owning its own PtyBackend
-        ├── session.rs, reload.rs, size_owner.rs  # transport-independent session ops;
-        │                 #   live config.toml re-read; which screen the PTYs are fitted to
-        ├── prefs/        # ~/.nightcrow/viewer.json: accent, widths, active repo, maximized
-        ├── clone_jobs.rs, clone_jobs/  # in-flight clone tracking (one at a time)
-        ├── highlight.rs, assets.rs  # syntect spans for payloads; rust-embed of dist + CSP
-        └── server/       # HTTP routes, dispatch, mutations, SSE, /ws/term
+        ├── limits.rs     # HTTP/git serialization ceilings
+        ├── dto/          # whitelisted browser wire types + PROTOCOL_VERSION
+        ├── status_payload.rs  # status encoder injected into the session runtime
+        ├── clone_jobs.rs, clone_jobs/  # in-flight clone tracking
+        ├── highlight.rs, assets.rs  # syntect spans; embedded frontend bundle
+        └── server/       # HTTP-only state; handlers split by HTTP/repo/SSE/terminal
 ```
 
 ## Stack
@@ -218,7 +220,8 @@ PTY 관리는 portable-pty 기반 `PtyBackend` 단일 구현으로 정리됐다.
 
 ## Future Refactor Notes
 
-- `App`은 도메인별 sub-struct(`StatusView`, `LogView`, `DiffPane`, `TerminalState`, `RepoInput`)와
+- `App`은 도메인별 sub-struct(`StatusView`, `LogView`, `DiffPane`, `TerminalState`,
+  `InteractionState`, `RepoInput`)와
   `app/` 서브모듈로 impl 책임이 나뉘어 있지만, 여전히 한 구조체가 모든 sub-state를 들고 있다. 추가
   분리가 필요해지면 sub-struct별 명시적 manager로 승격하는 게 다음 단계다.
 - 대형 diff에서 j/k 빠른 탐색 시 동기 diff 로드가 여전히 ms 단위 블로킹을 만들 수 있다. Repository

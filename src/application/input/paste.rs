@@ -31,7 +31,7 @@ pub(crate) fn handle_paste(app: &mut App, text: &str) {
     // PREFIX indicator stuck and make the next key resolve as a follow-up.
     // Resolve the prefix first (tmux treats a non-command event as a cancel),
     // then route the paste normally.
-    app.cancel_prefix();
+    app.interaction.prefix_armed = false;
     if app.focus == Focus::FileList && app.status_view.search_active {
         for ch in text.chars().filter(|c| !c.is_control()) {
             app.search_push(ch);

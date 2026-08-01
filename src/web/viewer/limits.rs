@@ -2,7 +2,7 @@
 //!
 //! Every route reads from a repository whose size the server does not control.
 //! Without a ceiling, one request turns into an unbounded allocation. Truncation
-//! is always reported — [`Capped::truncated`] rides along into the DTO so the UI
+//! is always reported -- [`Capped::truncated`] rides along into the DTO so the UI
 //! can say "showing the first N".
 
 /// Commits returned by one page of `/api/log`. Matches the TUI's
@@ -35,29 +35,6 @@ pub const MAX_DIFF_LINES: usize = 20_000;
 /// Bytes of a single SSE payload. Status is conflated to the latest value, so
 /// this bounds one snapshot, not a backlog.
 pub const MAX_SSE_PAYLOAD_BYTES: usize = 1024 * 1024;
-/// Terminals one repository may hold open at once.
-pub const MAX_PTYS_PER_REPO: usize = 8;
-/// Bounds on a PTY's size. The client measures these from its own layout, so
-/// they are clamped rather than trusted.
-///
-/// The ceilings are set just past the widest real display rather than at a
-/// round large number, because the cost being bounded is the *child's*
-/// allocation and it grows with the area. A 6K screen at a 6px cell is 1024
-/// columns, and 4K of height at a 6px line is 360 rows — so a full-screen pane
-/// at an unreadable font still fits, while the worst case one message can ask
-/// for is `MAX_PANE_ROWS * MAX_PANE_COLS` cells rather than u16::MAX squared.
-pub const MIN_PANE_DIMENSION: u16 = 1;
-pub const MAX_PANE_ROWS: u16 = 500;
-pub const MAX_PANE_COLS: u16 = 1_100;
-/// Raw PTY bytes retained per terminal to replay to a (re)connecting client.
-///
-/// A byte window is history, not a snapshot: whatever a program did before the
-/// window is not in it. The modes a program set at startup are tracked
-/// separately and restored explicitly. The screen of a program drawing on the
-/// alternate screen is not replayed from here at all — its bytes are cell
-/// updates against a screen the new client does not have — and the program is
-/// asked to draw it again instead.
-pub const MAX_TERMINAL_SCROLLBACK_BYTES: usize = 256 * 1024;
 /// Live connections the viewer's accept loop will hold. Each one costs a
 /// thread, so without a ceiling anything that can reach the port can exhaust
 /// the process.
@@ -80,14 +57,6 @@ impl<T> Capped<T> {
         }
         Self { items, truncated }
     }
-
-    /// A list that fits by construction.
-    pub fn untruncated(items: Vec<T>) -> Self {
-        Self {
-            items,
-            truncated: false,
-        }
-    }
 }
 
 /// Cut `text` to at most `max_bytes`, never splitting a UTF-8 character. The
@@ -103,28 +72,6 @@ pub fn cap_text(text: &str, max_bytes: usize) -> (String, bool) {
         end -= 1;
     }
     (text[..end].to_string(), true)
-}
-
-/// Cut `text` to at most `max_lines` lines *and* `max_bytes` bytes, whichever
-/// binds first. A single enormous line is as unrenderable as a million small
-/// ones, so a diff needs both ceilings.
-pub fn cap_diff(text: &str, max_lines: usize, max_bytes: usize) -> (String, bool) {
-    let mut kept = String::new();
-    let mut truncated = false;
-    for (index, line) in text.lines().enumerate() {
-        if index >= max_lines {
-            truncated = true;
-            break;
-        }
-        // +1 for the newline this line will contribute.
-        if kept.len() + line.len() + 1 > max_bytes {
-            truncated = true;
-            break;
-        }
-        kept.push_str(line);
-        kept.push('\n');
-    }
-    (kept, truncated)
 }
 
 #[cfg(test)]
@@ -186,47 +133,5 @@ mod tests {
         let (kept, truncated) = cap_text("한", 2);
         assert_eq!(kept, "");
         assert!(truncated);
-    }
-
-    #[test]
-    fn cap_diff_stops_at_the_line_ceiling() {
-        let text = (0..100).map(|i| format!("line{i}\n")).collect::<String>();
-
-        let (kept, truncated) = cap_diff(&text, 10, usize::MAX);
-
-        assert_eq!(kept.lines().count(), 10);
-        assert!(truncated);
-        assert!(kept.starts_with("line0\n"));
-    }
-
-    #[test]
-    fn cap_diff_stops_at_the_byte_ceiling_on_one_huge_line() {
-        // A single line far past the byte ceiling must not be emitted just
-        // because the line count is fine.
-        let text = format!("{}\n", "x".repeat(10_000));
-
-        let (kept, truncated) = cap_diff(&text, 1_000, 100);
-
-        assert!(kept.is_empty());
-        assert!(truncated);
-    }
-
-    #[test]
-    fn cap_diff_leaves_content_that_fits_both_ceilings() {
-        let text = "a\nb\nc\n";
-
-        let (kept, truncated) = cap_diff(text, 10, 1_000);
-
-        assert_eq!(kept, "a\nb\nc\n");
-        assert!(!truncated);
-    }
-
-    #[test]
-    fn cap_diff_normalizes_a_missing_trailing_newline() {
-        // `lines()` drops the distinction, and the viewer renders line-wise, so
-        // the output is deliberately newline-terminated either way.
-        let (kept, truncated) = cap_diff("a\nb", 10, 1_000);
-        assert_eq!(kept, "a\nb\n");
-        assert!(!truncated);
     }
 }

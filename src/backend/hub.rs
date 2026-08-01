@@ -11,7 +11,7 @@
 
 use super::{BackendEvent, PaneId, TerminalBackend};
 use crate::daemon::terminal_link::{TerminalLink, TerminalMessage};
-use crate::web::viewer::terminal::frame::{
+use crate::session::terminal::frame::{
     ClientMessage as HubClientMessage, ServerMessage as HubServerMessage,
 };
 use anyhow::{Result, bail};

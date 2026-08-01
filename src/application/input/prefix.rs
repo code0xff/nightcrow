@@ -12,15 +12,18 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 /// Resolve the single key pressed while the prefix is armed. The prefix is
 /// always disarmed before returning (tmux-style: one follow-up per leader).
 pub(super) fn handle_prefix_followup(app: &mut App, key: KeyEvent) -> KeyOutcome {
-    app.cancel_prefix();
+    app.interaction.prefix_armed = false;
     // `<L> <L>`: send the leader chord literally to the focused PTY so the
     // running program still sees the prefix key when the user means it. This
     // is resolved before the Esc/Ctrl+C cancel below so that a `ctrl+c` leader
     // can still deliver a literal Ctrl+C via `<leader><leader>` (Esc remains a
     // universal cancel regardless of the configured leader).
-    if app.is_leader_key(key) {
+    if app.interaction.is_leader_key(key) {
         if app.focus == Focus::Terminal
-            && let Some(data) = encode_key(app.leader)
+            && let Some(data) = encode_key(
+                app.interaction.leader,
+                app.terminal.active_pane_app_cursor(),
+            )
         {
             app.terminal.send_input(&data);
         }
@@ -49,7 +52,7 @@ pub(super) fn handle_prefix_followup(app: &mut App, key: KeyEvent) -> KeyOutcome
 /// mapping is reused from `prefix_action` so it matches the focus-jump digits
 /// one-for-one (`3`..`9`,`0` → panes `0`..`7`).
 pub(super) fn handle_swap_target_followup(app: &mut App, key: KeyEvent) -> KeyOutcome {
-    app.cancel_swap_target();
+    app.interaction.awaiting_swap_target = false;
 
     let is_ctrl_c = key.code == KeyCode::Char('c') && key.modifiers.contains(KeyModifiers::CONTROL);
     if key.code == KeyCode::Esc || is_ctrl_c {

@@ -9,12 +9,15 @@ use ratatui::{Terminal, backend::TestBackend, layout::Rect, style::Color, text::
 /// x column where `needle` starts on the rendered hint row, measured in
 /// display cells over exactly the text the renderer draws.
 fn hint_x_of(app: &App, needle: &str) -> u16 {
-    let (chip, text) = if app.prefix_armed() {
+    let (chip, text) = if app.interaction.prefix_armed {
         (PREFIX_CHIP, prefix_armed_hint_text(app))
     } else {
         (
             "",
-            normal_hint_literal(app).replace("<prefix>", &app.leader_label()),
+            normal_hint_literal(app).replace(
+                "<prefix>",
+                &crate::app::leader_label_of(app.interaction.leader),
+            ),
         )
     };
     let full = format!("{chip}{text}");
@@ -137,7 +140,7 @@ fn hint_click_misses_off_the_hint_row() {
 #[test]
 fn hint_click_armed_row_resolves_bare_followups_after_the_chip() {
     let mut app = app_with_fake_backend();
-    app.arm_prefix();
+    app.interaction.prefix_armed = true;
 
     let x = hint_x_of(&app, "t: new pane");
     assert_eq!(
@@ -188,7 +191,7 @@ fn hint_click_armed_row_resolves_bare_followups_after_the_chip() {
 #[test]
 fn hint_click_none_on_modal_rows() {
     let mut swap = app_with_fake_backend();
-    swap.begin_swap_target();
+    swap.interaction.begin_swap_target();
     assert!((0..HINT_TEST_SCREEN.width).all(|x| {
         hint_click_at(
             &swap,

@@ -11,8 +11,9 @@
 가로채이지 않고 PTY로 통과해야 하므로, 앱 전역 명령은 leader 뒤에 한 키를 눌러야만 실행된다.
 
 - **Leader (prefix)**: 기본값 `Ctrl+F`, `[input] leader`로 변경 가능(`config.rs::parse_leader`가
-  `ctrl+<letter>`만 허용하고 예약키·인코딩 불가 chord는 거부). leader를 누르면 `App.prefix_armed`가
-  켜지고 다음 키 한 개가 앱 명령(`input::prefix_action`)으로 해석된다. **타임아웃은 없다** — 해제
+  `ctrl+<letter>`만 허용하고 예약키·인코딩 불가 chord는 거부). leader를 누르면
+  `App.interaction.prefix_armed`가 켜지고 다음 키 한 개가 앱 명령(`input::prefix_action`)으로
+  해석된다. **타임아웃은 없다** — 해제
   경로는 셋뿐이다: 매핑된 키 → Action 실행 후 해제, 미매핑 키 → 소비 후 해제, `Esc`/`Ctrl+C` →
   취소. `<L> <L>`는 terminal focus에서 leader를 `encode_key`로 리터럴 PTY 전송한다.
 - **prefix 매핑**: `t`=NewPane, `w`=ClosePane(terminal focus 한정 — unfocus 시 active pane이 다른

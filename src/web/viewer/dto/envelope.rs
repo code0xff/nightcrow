@@ -1,5 +1,5 @@
 use super::status::server_now_millis;
-use crate::web::viewer::prefs::ViewerPrefs;
+use crate::session::prefs::ViewerPrefs;
 use serde::Serialize;
 
 /// Bumped whenever an existing field changes meaning or disappears. Adding a
@@ -33,6 +33,16 @@ pub struct RepoDto {
     /// Home-relative path for display (`~/code/app`). The absolute path is not
     /// sent: the client never needs it.
     pub display_path: String,
+}
+
+impl From<crate::session::catalog::RepoInfo> for RepoDto {
+    fn from(repo: crate::session::catalog::RepoInfo) -> Self {
+        Self {
+            id: repo.id,
+            name: repo.name,
+            display_path: repo.display_path,
+        }
+    }
 }
 
 /// The part of `[agent_indicator]` the browser can act on. `auto_follow` is

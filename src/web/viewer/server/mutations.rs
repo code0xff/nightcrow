@@ -1,10 +1,10 @@
 use super::ViewerState;
 use super::http_util::{json_error, json_response};
+use crate::session;
+use crate::session::catalog::RepoEntry;
+use crate::session::prefs::{MaximizedPanel, MaximizedUpdate, PrefsUpdate};
 use crate::web::common::http::RequestHead;
-use crate::web::viewer::catalog::RepoEntry;
 use crate::web::viewer::dto::Envelope;
-use crate::web::viewer::prefs::{MaximizedPanel, MaximizedUpdate, PrefsUpdate};
-use crate::web::viewer::session;
 use anyhow::Result;
 use std::sync::Arc;
 
@@ -68,7 +68,7 @@ pub(super) fn handle_set_prefs(body: &str, state: &ViewerState) -> Vec<u8> {
     // Resolved before the write, because what is stored is the path behind the
     // id. An id no longer in the catalog is rejected rather than dropped.
     let active_path = match request.active_repo {
-        Some(id) => match state.catalog.get(&id) {
+        Some(id) => match state.session.catalog().get(&id) {
             Some(entry) => Some(entry.path.clone()),
             None => return json_error("400 Bad Request", "unknown repo"),
         },
@@ -77,7 +77,7 @@ pub(super) fn handle_set_prefs(body: &str, state: &ViewerState) -> Vec<u8> {
     // Resolved before the write for the same reason, and refused the same way.
     let maximized = match request.maximized {
         Some(change) => {
-            let Some(entry) = state.catalog.get(&change.repo) else {
+            let Some(entry) = state.session.catalog().get(&change.repo) else {
                 return json_error("400 Bad Request", "unknown repo");
             };
             let panel = match change.panel.as_deref() {
@@ -95,7 +95,7 @@ pub(super) fn handle_set_prefs(body: &str, state: &ViewerState) -> Vec<u8> {
         None => None,
     };
     // One locked write for whatever the body carried.
-    let stored = state.prefs.update(PrefsUpdate {
+    let stored = state.session.prefs().update(PrefsUpdate {
         accent: request.accent,
         sidebar_width: request.sidebar_width,
         upper_pct: request.upper_pct,
@@ -106,14 +106,20 @@ pub(super) fn handle_set_prefs(body: &str, state: &ViewerState) -> Vec<u8> {
     // by the client, and an id in one that is missing from the other describes
     // a served set that never existed.
     let served = state
-        .catalog
+        .session
+        .catalog()
         .list_with_active(stored.active_repo.as_deref(), &stored.maximized);
+    let maximized: std::collections::HashMap<_, _> = served
+        .maximized
+        .into_iter()
+        .map(|(id, panel)| (id, panel.as_str()))
+        .collect();
     match serde_json::to_string(&Envelope::new(serde_json::json!({
         "accent": stored.accent,
         "sidebar_width": stored.sidebar_width,
         "upper_pct": stored.upper_pct,
         "active_repo": served.active,
-        "maximized": served.maximized,
+        "maximized": maximized,
     }))) {
         Ok(json) => json_response("200 OK", &json, &[]),
         Err(_) => json_error("500 Internal Server Error", "could not encode preferences"),
@@ -129,8 +135,9 @@ pub(super) fn handle_open_repo(body: &str, state: &ViewerState) -> Vec<u8> {
         Ok(request) => request,
         Err(_) => return json_error("400 Bad Request", "expected a JSON body with a path"),
     };
-    match session::open_repo(state, &request.path) {
+    match session::open_repo(state.session(), &request.path) {
         Ok(repo) => {
+            let repo = crate::web::viewer::dto::RepoDto::from(repo);
             match serde_json::to_string(&Envelope::new(serde_json::json!({ "repo": repo }))) {
                 Ok(json) => json_response("200 OK", &json, &[]),
                 Err(_) => json_error("500 Internal Server Error", "could not encode repository"),
@@ -213,9 +220,12 @@ pub(super) fn handle_close_repo(head: &RequestHead, state: &ViewerState) -> Vec<
     let Some(id) = head.query_param("repo") else {
         return json_error("400 Bad Request", "missing repo parameter");
     };
-    match session::close_repo(state, &id) {
+    match session::close_repo(state.session(), &id) {
         Ok(()) => {
-            let repos = session::list_repos(state);
+            let repos: Vec<crate::web::viewer::dto::RepoDto> = session::list_repos(state.session())
+                .into_iter()
+                .map(Into::into)
+                .collect();
             match serde_json::to_string(&Envelope::new(serde_json::json!({ "repos": repos }))) {
                 Ok(json) => json_response("200 OK", &json, &[]),
                 Err(_) => json_error("500 Internal Server Error", "could not encode repositories"),
@@ -230,8 +240,11 @@ pub(super) fn handle_reorder_repos(body: &str, state: &ViewerState) -> Vec<u8> {
         Ok(request) => request,
         Err(_) => return json_error("400 Bad Request", "expected a JSON body with an order"),
     };
-    session::reorder_repos(state, &request.order);
-    let repos = session::list_repos(state);
+    session::reorder_repos(state.session(), &request.order);
+    let repos: Vec<crate::web::viewer::dto::RepoDto> = session::list_repos(state.session())
+        .into_iter()
+        .map(Into::into)
+        .collect();
     match serde_json::to_string(&Envelope::new(serde_json::json!({ "repos": repos }))) {
         Ok(json) => json_response("200 OK", &json, &[]),
         Err(_) => json_error("500 Internal Server Error", "could not encode repositories"),
@@ -249,7 +262,7 @@ pub(super) fn handle_reorder_repos(body: &str, state: &ViewerState) -> Vec<u8> {
 /// offending key in their own config file; they carry no repository contents or
 /// credentials.
 pub(super) fn handle_reload_config(state: &ViewerState) -> Vec<u8> {
-    match crate::web::viewer::reload::reload_config(state) {
+    match crate::session::reload::reload_config(state.session()) {
         Ok(report) => {
             let body = Envelope::new(serde_json::json!({ "summary": report.summary() }));
             match serde_json::to_string(&body) {
@@ -272,7 +285,8 @@ pub(super) fn lookup_repo(
         .query_param("repo")
         .ok_or_else(|| json_error("400 Bad Request", "missing repo parameter"))?;
     state
-        .catalog
+        .session
+        .catalog()
         .get(&id)
         .ok_or_else(|| json_error("404 Not Found", "unknown repository"))
 }

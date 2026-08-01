@@ -3,9 +3,6 @@ use crate::daemon::frame::{Frame, read_frame, write_frame};
 use crate::daemon::protocol::{ServerMessage, version};
 use crate::daemon::socket::DaemonSocket;
 use crate::daemon::transport::UnixListener;
-use crate::web::common::auth::Auth;
-use crate::web::viewer::prefs::PrefsStore;
-use crate::web::viewer::server::{ViewerOptions, ViewerState};
 use std::io::Write;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -25,21 +22,17 @@ fn daemon(dir: &tempfile::TempDir, repos: &[String]) -> TestDaemon {
     let path = dir.path().join("d.sock");
     let socket = DaemonSocket::bind(&path).expect("binds");
     let listener = socket.listener().try_clone().expect("clones");
-    let state = Arc::new(ViewerState::new(ViewerOptions {
-        bind: "127.0.0.1".parse().unwrap(),
-        port: 0,
-        auth: Auth::from_plaintext("swordfish").unwrap(),
-        repos: repos.to_vec(),
-        persist: false,
-        startup_commands: Vec::new(),
-        cli_startup: Vec::new(),
-        shell: crate::config::ShellConfig::default(),
-        hot: crate::config::AgentIndicatorConfig::default(),
-        // In the test's own directory, beside the socket: opening a repository
-        // records it as the active one, so this file is written, and a path
-        // shared with another test would make the two one session.
-        prefs: PrefsStore::at(dir.path().join("viewer.json")),
-    }));
+    let state = Arc::new(crate::session::SessionState::new(
+        crate::session::SessionOptions {
+            repos: repos.to_vec(),
+            persist: false,
+            startup_commands: Vec::new(),
+            cli_startup: Vec::new(),
+            shell: crate::config::ShellConfig::default(),
+            prefs: crate::session::prefs::PrefsStore::at(dir.path().join("viewer.json")),
+            status_encoder: crate::session::test_status_encoder,
+        },
+    ));
     let (shutdown_tx, _shutdown_rx) = std::sync::mpsc::sync_channel(1);
     let session = crate::daemon::serve::start(state, shutdown_tx).expect("starts the watcher");
     std::thread::spawn(move || crate::daemon::serve::serve(listener, session));

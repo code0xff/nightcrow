@@ -3,9 +3,10 @@
 //! ship in one binary, so version mismatch is reported rather than bridged.
 
 use crate::backend::PaneId;
-use crate::web::viewer::terminal::frame::{
+use crate::session::terminal::frame::{
     ClientMessage as HubClientMessage, ServerMessage as HubServerMessage,
 };
+use anyhow::{Result, bail};
 use serde::{Deserialize, Serialize};
 
 /// A request from an attached client.
@@ -139,20 +140,28 @@ pub struct TerminalOutput {
 impl TerminalOutput {
     /// `[repo len][repo][pane id][bytes]`, with the id little-endian to match
     /// the hub's own binary framing.
-    pub fn encode(&self) -> Vec<u8> {
+    ///
+    /// Refuses repository ids longer than 255 bytes instead of truncating the
+    /// payload into a frame the receiver would misinterpret.
+    pub fn encode(&self) -> Result<Vec<u8>> {
         let repo = self.repo.as_bytes();
-        // The id space is the catalog's, which hands out short opaque names;
-        // anything that does not fit a byte is a bug rather than input.
-        let len = u8::try_from(repo.len()).unwrap_or(0);
+        let Ok(len) = u8::try_from(repo.len()) else {
+            bail!(
+                "terminal output repository id is {} bytes; the protocol limit is {}",
+                repo.len(),
+                u8::MAX
+            );
+        };
         let mut out = Vec::with_capacity(1 + repo.len() + 4 + self.data.len());
         out.push(len);
-        out.extend_from_slice(&repo[..usize::from(len)]);
+        out.extend_from_slice(repo);
         out.extend_from_slice(&self.pane.to_le_bytes());
         out.extend_from_slice(&self.data);
-        out
+        Ok(out)
     }
 
-    /// Read one back, or `None` when the frame is too short to hold a header.
+    /// Read one back, or `None` when the header is truncated or its repository
+    /// id is not valid UTF-8.
     ///
     /// The daemon only encodes and the attaching client only decodes: output
     /// travels one way.

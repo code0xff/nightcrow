@@ -9,7 +9,7 @@ use super::frame::{Frame, FrameKind, read_frame, write_frame};
 use super::protocol::{ClientMessage, ServerMessage, TerminalOutput};
 use super::terminal_link::{TerminalMessage, TerminalRouter};
 use super::transport::UnixStream;
-use crate::web::viewer::terminal::frame::ServerMessage as HubServerMessage;
+use crate::session::terminal::frame::ServerMessage as HubServerMessage;
 use anyhow::{Context, Result};
 use std::io::Write;
 use std::sync::mpsc::Sender;

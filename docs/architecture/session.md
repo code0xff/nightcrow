@@ -70,7 +70,7 @@ trait TerminalBackend {
 편의보다 무겁기 때문이다 — TUI와 브라우저를 나란히 두면 같은 세션이 두 색으로 보였고, 어느
 쪽이 이 세션의 색이냐는 물음에 답할 수 있는 값이 아예 없었다. 저장소별 색이 대신하던 "지금 어느
 프로젝트인가"는 탭 이름과 활성 탭 강조가 이미 답한다. 값은 `viewer.json` 하나에 살고
-(`web/viewer/prefs`), 어느 표면에서 바꾸든 세션 전체가 따라온다 — 대신 프로젝트를 바꿔도 색은
+(`session/prefs`), 어느 표면에서 바꾸든 세션 전체가 따라온다 — 대신 프로젝트를 바꿔도 색은
 그대로다. `[theme] name`은 아직 한 번도 색을 고르지 않은 세션의 시작색으로 남는다.
 
 ### 데몬이 세션을 감시한다 (`daemon/watch.rs`)
@@ -100,7 +100,7 @@ alternate screen을 쓰는 풀스크린 TUI를 나중에 다시 흘릴 방법은
 `claim_size`로 명시적 탈취(TUI `<prefix> z`, 뷰어의 "fit to this screen" 버튼), 소유자가 떠나면
 남은 중 가장 최근에게, 아무도 없으면 마지막 크기 유지.
 
-- **소유권은 hub별이 아니라 세션 하나가 갖는다**(`web/viewer/size_owner.rs`). 어느 repo가 앞에
+- **소유권은 hub별이 아니라 세션 하나가 갖는다**(`session/size_owner.rs`). 어느 repo가 앞에
   있는지는 세션 공유라 "이 세션은 어느 화면에 맞춰져 있나"는 질문이 하나다. hub마다 따로
   답하던 때는 탭을 옮길 때마다 붙어 있는 모든 페이지가 동시에 재접속해 소유권이 **핸드셰이크가
   늦게 끝난 쪽**으로 갔다.
@@ -179,7 +179,7 @@ awake를 한 번 더 보고 잠들었으면 결과를 넘기지 않는다. 첫 �
 지점을 테스트로 고정해 두고 상한은 바꾸지 않았다 — 거기 닿는 출력은 대부분 텍스트가 아니라
 repaint 시퀀스이고, 상한은 저장소×pane마다 지불된다.
 
-**붙는 클라이언트에게는 기록이 아니라 상태를 준다**(`web/viewer/terminal/hub_modes.rs`,
+**붙는 클라이언트에게는 기록이 아니라 상태를 준다**(`session/terminal/hub_modes.rs`,
 `hub_repaint.rs`, `runtime/emulator/modes.rs`). 바이트 링은 역사이지 스냅샷이 아니어서, 프로그램이
 시작할 때 한 번 켜고 다시 말하지 않는 것들(alternate screen, 마우스 리포팅, bracketed paste,
 DECCKM)은 하루 지난 pane에서 이미 밀려나 있다. 그러면 클라이언트는 **프로그램이 설정한 적 없는
@@ -201,7 +201,7 @@ DECCKM)은 하루 지난 pane에서 이미 밀려나 있다. 그러면 클라이
   값만 전달한다") 그 repaint가 사라졌다. 사용자가 깨진 화면에 누르는 복구 키가 `Ctrl+L`이고
   fullscreen Claude Code는 그것을 2초 안에 두 번 받으면 `/clear`를 실행한다 — 대화가 연달아 지워졌다.
 
-**입력의 출처를 기록한다**(`web/viewer/terminal/hub_diag.rs`, `session.rs`,
+**입력의 출처를 기록한다**(`session/terminal/hub_diag.rs`, `session.rs`,
 `viewer-ui/src/lib/clearKeyProbe.ts`). 특정 사건 때문에 존재하는 계측이다 — 5초 사이에 대화가
 14번 지워졌는데 `0x0c`가 30번쯤 기계적 간격으로 들어왔다는 뜻이고, **무엇이 보냈는지 알 수
 없었다**. nightcrow가 합성하는 입력은 스크롤·마우스 리포트와 plugin의 `continue`뿐이고 후자는 그
@@ -218,7 +218,7 @@ DECCKM)은 하루 지난 pane에서 이미 밀려나 있다. 그러면 클라이
   말이므로 분당 상한을 두고, `code`는 ASCII 영숫자 16자로 깎는다(줄바꿈이 들어오면 로그 한 줄을
   위조할 수 있다). 원인이 특정되면 이 계측은 지운다.
 
-## Config Reload (`web/viewer/reload.rs`)
+## Config Reload (`session/reload.rs`)
 
 `config.toml`을 고칠 때마다 데몬을 내렸다 올리면 살아 있는 pane이 전부 죽는다 — agent CLI가
 작업 중이던 것까지. 그래서 **두 테이블만 다시 읽는다.** 무엇이 즉시 닿고 무엇이 안 닿는지는
@@ -271,7 +271,7 @@ DECCKM)은 하루 지난 pane에서 이미 밀려나 있다. 그러면 클라이
   때문이다 — `nightcrow-recovery`의 `panes: HashMap`은 메모리뿐이다. host가 대신 경고할 수 없다:
   **살아 있는** pane에 대한 대기는 plugin 안에만 있고 host의 `pending`에는 없다. 그래서 이 손실의
   범위를 좁히는 것이 `spec_changed`의 진짜 값이다.
-- **동시 reload는 직렬화한다**(`ViewerState::reload_lock`). 두 클라이언트가 동시에 누르면 세션의
+- **동시 reload는 직렬화한다**(`SessionState::reload_lock`). 두 클라이언트가 동시에 누르면 세션의
   저장소들이 서로 다른 파일을 전달받은 상태로 남을 수 있다.
 - **reload와 프로젝트 열기의 경합은 Catalog의 mutation lock이 막는다.** 테이블 교체와 "알려줄
   저장소 목록" 스냅샷을 **같은 락 안에서** 처리하고 그 목록을 호출자에게 돌려준다

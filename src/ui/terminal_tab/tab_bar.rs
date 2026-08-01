@@ -1,4 +1,4 @@
-use crate::app::App;
+use crate::app::{App, leader_label_of};
 use crate::runtime::terminal::visible_range;
 use crate::ui::terminal_tab::layout::{JUMP_KEY_PANE_COUNT, terminal_layout};
 use crate::ui::terminal_tab::recovery::pane_label;
@@ -44,7 +44,10 @@ pub(crate) fn tab_segments(
 ) -> Vec<(String, TabSegment)> {
     if app.terminal.panes.is_empty() {
         return vec![(
-            format!(" {} t: new terminal ", app.leader_label()),
+            format!(
+                " {} t: new terminal ",
+                leader_label_of(app.interaction.leader)
+            ),
             TabSegment::Legend,
         )];
     }
@@ -80,7 +83,12 @@ pub(crate) fn tab_segments(
                 } else {
                     char::from_digit((i as u32 + 3) % 10, 10).unwrap_or('?')
                 };
-                format!(" {} {} {} ", app.leader_label(), digit, title)
+                format!(
+                    " {} {} {} ",
+                    leader_label_of(app.interaction.leader),
+                    digit,
+                    title
+                )
             } else {
                 format!(" {} ", title)
             };

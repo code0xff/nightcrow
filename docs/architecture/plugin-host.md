@@ -78,10 +78,11 @@ relaunch하는가, 되돌릴 명령이 있는가, 제어문자가 섞이지 않�
 - **프로세스 해제와 slot 폐기를 분리한다**: 한도 대기는 몇 시간일 수 있다. 죽은 자식의 fd와 스레드를
   그 시간 내내 붙잡는 것은 낭비이므로 `release_process`는 PTY를 놓고 slot만 남긴다. 아무도
   relaunch하지 않으면 `PENDING_RELAUNCH_TTL`에 slot을 폐기한다.
-- **권한 인자는 사용자가 선언한다**: relaunch가 덧붙일 수 있는 플래그는 `[[plugin]]`의
-  `allowed_resume_flags`뿐이고 기본은 빈 목록이다. 코어가 특정 CLI의 위험 플래그 이름을 하드코딩하는
-  대안은 곧 코어가 provider를 아는 것이라 택하지 않았다. 인자는 셸 메타문자를 거부한 뒤 개별로
-  quote되며, 원래 명령 문자열은 수정되지 않는다(다음 relaunch가 인자를 누적하지 않도록).
+- **권한 인자는 사용자가 선언한다**: relaunch의 첫 토큰(플래그 또는 subcommand)과 `-`/`/`로
+  시작하는 option 토큰은 `[[plugin]].allowed_resume_flags`에 있어야 하며 기본은 빈 목록이다. 코어가
+  특정 CLI의 위험 플래그 이름을 하드코딩하면 provider 경계를 깨므로 택하지 않았다. 허용 문자는 POSIX
+  shell과 `cmd.exe`에서 그대로 전달되는 안전한 공통 집합으로 제한하며 별도 quote 문자를 넣지 않는다.
+  원래 명령 문자열은 수정하지 않아 다음 relaunch에 인자가 누적되지 않는다.
 - **와이어 계약이 두 벌 있다**: plugin은 독립 빌드라 `plugins/nightcrow-recovery`가 프로토콜 타입을
   따로 갖는다. `PROTOCOL_VERSION`을 진짜 주장으로 만들려면 그래야 하고, 양쪽 모두 JSON 모양을
   리터럴로 고정한 테스트가 있어 드리프트는 테스트 실패로 나타난다.

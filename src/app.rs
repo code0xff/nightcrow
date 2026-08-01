@@ -7,6 +7,7 @@ mod commit_log_pagination;
 mod diff_load;
 mod file_view_load;
 mod focus;
+mod interaction;
 mod log_nav;
 mod navigation;
 mod scroll;
@@ -28,7 +29,7 @@ pub use crate::ui::file_view::{FileViewKey, FileViewState};
 pub use crate::ui::log_view::LogView;
 pub use crate::ui::status_view::StatusView;
 pub use crate::ui::tree_view::TreeView;
-use crossterm::event::{KeyEvent, KeyModifiers};
+pub(crate) use interaction::{InteractionState, leader_label_of};
 use std::time::Instant;
 
 pub(crate) const LIST_PAGE_SIZE: usize = 10;
@@ -51,17 +52,6 @@ pub enum NoticeKind {
 pub struct Notice {
     pub kind: NoticeKind,
     pub text: String,
-}
-
-// Free function so the empty screen (no project) can label its hints too.
-pub fn leader_label_of(leader: KeyEvent) -> String {
-    match leader.code {
-        crossterm::event::KeyCode::Char(c) if leader.modifiers.contains(KeyModifiers::CONTROL) => {
-            format!("^{}", c.to_ascii_uppercase())
-        }
-        crossterm::event::KeyCode::Char(c) => c.to_string(),
-        _ => "<prefix>".to_string(),
-    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize, Default)]
@@ -136,21 +126,7 @@ pub struct App {
     // `last_refs_fingerprint` disagrees with the newest snapshot's.
     pub log_decorations: crate::git::diff::LogDecorations,
     pub(crate) last_refs_fingerprint: Option<u64>,
-    pub leader: KeyEvent,
-    // No timeout: stays armed until a follow-up key or `Esc`/`Ctrl+C` resolves it.
-    pub prefix_armed: bool,
-    // Mutually exclusive with `prefix_armed` (arming this clears the prefix).
-    pub awaiting_swap_target: bool,
-    // A release pairs with the press's pane, not the pane under the pointer.
-    // Single slot — a second press overwrites (no multi-button).
-    pub pending_mouse_press: Option<(
-        crate::backend::PaneId,
-        crossterm::event::MouseButton,
-        u16,
-        u16,
-    )>,
-    // Mirror of `[mouse] enabled`. Gates only the hint bar's clickability.
-    pub mouse_enabled: bool,
+    pub(crate) interaction: InteractionState,
 }
 
 #[cfg(test)]

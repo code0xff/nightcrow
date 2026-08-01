@@ -8,12 +8,12 @@
 //! `MAX_ATTACHED_CLIENTS` × `MAX_PROJECTS`.
 
 use super::clients::AttachedClients;
-use super::frame::Frame;
+use super::frame::{Frame, encode_server};
 use super::protocol::{ServerMessage, TerminalOutput};
-use crate::web::viewer::session::SessionRepo;
-use crate::web::viewer::size_owner::ViewerId;
-use crate::web::viewer::terminal::TerminalSession;
-use crate::web::viewer::terminal::frame::{
+use crate::session::SessionRepo;
+use crate::session::size_owner::ViewerId;
+use crate::session::terminal::TerminalSession;
+use crate::session::terminal::frame::{
     ClientMessage as HubClientMessage, ServerMessage as HubServerMessage, TerminalFrame,
 };
 use std::collections::HashMap;
@@ -57,11 +57,7 @@ impl TerminalBridges {
     /// Subscribe to repositories that appeared and drop the ones that went.
     /// Called with every set the client is told about, so a repository opened
     /// on another client starts streaming here without this one asking.
-    pub fn follow(
-        &mut self,
-        repos: &[SessionRepo],
-        catalog: &crate::web::viewer::catalog::Catalog,
-    ) {
+    pub fn follow(&mut self, repos: &[SessionRepo], catalog: &crate::session::catalog::Catalog) {
         self.open
             .retain(|id, _| repos.iter().any(|repo| &repo.id == id));
         for repo in repos {
@@ -98,7 +94,7 @@ impl TerminalBridges {
         &self,
         repo: &str,
         arriving: bool,
-        hub: &Arc<crate::web::viewer::terminal::TerminalHub>,
+        hub: &Arc<crate::session::terminal::TerminalHub>,
     ) -> Option<Bridge> {
         let stop = Arc::new(AtomicBool::new(false));
         // The thread first, and the subscription only once it exists.
@@ -165,28 +161,48 @@ impl TerminalBridges {
 /// way to know its per-repository hub ids.
 fn tag(repo: &str, frame: TerminalFrame, hub_client: u64, attached: u64) -> Frame {
     match frame {
-        TerminalFrame::Output { pane, data } => Frame::terminal(
-            TerminalOutput {
+        TerminalFrame::Output { pane, data } => {
+            let output = TerminalOutput {
                 repo: repo.to_string(),
                 pane,
                 data,
+            };
+            match output.encode() {
+                Ok(payload) => Frame::terminal(payload),
+                Err(err) => {
+                    tracing::error!(%err, repo, "daemon: could not tag terminal output");
+                    encode_server(
+                        &ServerMessage::Error {
+                            message: "terminal output could not be relayed".into(),
+                        },
+                        "terminal output relay error",
+                        "terminal output could not be relayed",
+                    )
+                }
             }
-            .encode(),
-        ),
+        }
         // Parsed and re-encoded rather than passed through as text: the client
         // reads one message type, and a control frame smuggled through as an
         // opaque string would make the repository tag unreadable without
         // parsing it there instead.
         TerminalFrame::Control(json) => match serde_json::from_str(&json) {
-            Ok(event) => encode(&ServerMessage::Terminal {
-                repo: repo.to_string(),
-                event: rewrite_requester(event, hub_client, attached),
-            }),
+            Ok(event) => encode_server(
+                &ServerMessage::Terminal {
+                    repo: repo.to_string(),
+                    event: rewrite_requester(event, hub_client, attached),
+                },
+                "terminal event",
+                "event could not be encoded",
+            ),
             Err(err) => {
                 tracing::debug!(%err, "daemon: unreadable terminal control frame");
-                encode(&ServerMessage::Error {
-                    message: "terminal event could not be relayed".into(),
-                })
+                encode_server(
+                    &ServerMessage::Error {
+                        message: "terminal event could not be relayed".into(),
+                    },
+                    "terminal relay error",
+                    "event could not be encoded",
+                )
             }
         },
     }
@@ -210,16 +226,6 @@ fn rewrite_requester(event: HubServerMessage, hub_client: u64, attached: u64) ->
             title,
         },
         other => other,
-    }
-}
-
-fn encode(message: &ServerMessage) -> Frame {
-    match serde_json::to_vec(message) {
-        Ok(json) => Frame::control(json),
-        Err(err) => {
-            tracing::error!(%err, "daemon: could not encode a terminal event");
-            Frame::control(br#"{"type":"error","message":"event could not be encoded"}"#.to_vec())
-        }
     }
 }
 

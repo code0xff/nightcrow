@@ -82,19 +82,16 @@ pub fn make_linked_worktree() -> (TempDir, TempDir, String) {
 pub fn session_state(
     repos: &[String],
     prefs_dir: &Path,
-) -> std::sync::Arc<crate::web::viewer::server::ViewerState> {
-    std::sync::Arc::new(crate::web::viewer::server::ViewerState::new(
-        crate::web::viewer::server::ViewerOptions {
-            bind: "127.0.0.1".parse().unwrap(),
-            port: 0,
-            auth: crate::web::common::auth::Auth::from_plaintext("swordfish").unwrap(),
+) -> std::sync::Arc<crate::session::SessionState> {
+    std::sync::Arc::new(crate::session::SessionState::new(
+        crate::session::SessionOptions {
             repos: repos.to_vec(),
             persist: false,
             startup_commands: Vec::new(),
             cli_startup: Vec::new(),
             shell: crate::config::ShellConfig::default(),
-            hot: crate::config::AgentIndicatorConfig::default(),
-            prefs: crate::web::viewer::prefs::PrefsStore::at(prefs_dir.join("viewer.json")),
+            prefs: crate::session::prefs::PrefsStore::at(prefs_dir.join("viewer.json")),
+            status_encoder: crate::session::test_status_encoder,
         },
     ))
 }

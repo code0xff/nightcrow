@@ -15,7 +15,10 @@ fn handle_key_overlay_blocks_leader_when_diff_search_active() {
     let before = app.mode;
 
     let _ = handle_key(&mut app, leader());
-    assert!(!app.prefix_armed(), "leader must not arm behind an overlay");
+    assert!(
+        !app.interaction.prefix_armed,
+        "leader must not arm behind an overlay"
+    );
     let _ = handle_key(&mut app, press(KeyCode::Char('l'), KeyModifiers::NONE));
 
     assert_eq!(

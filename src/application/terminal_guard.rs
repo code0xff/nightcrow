@@ -6,10 +6,13 @@ use crossterm::event::{
     DisableBracketedPaste, DisableMouseCapture, EnableBracketedPaste, EnableMouseCapture,
 };
 use crossterm::{
-    execute,
-    terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
+    Command, execute,
+    terminal::{
+        DisableLineWrap, EnableLineWrap, EnterAlternateScreen, LeaveAlternateScreen,
+        disable_raw_mode, enable_raw_mode,
+    },
 };
-use std::io;
+use std::io::{self, Write};
 
 pub(crate) struct TerminalGuard;
 
@@ -20,19 +23,20 @@ impl TerminalGuard {
         // `Event::Paste(String)` instead of a flood of `Event::Key` chars —
         // the latter would each be filtered as control chars by the search
         // handler and silently drop newlines.
-        match execute!(io::stdout(), EnterAlternateScreen, EnableBracketedPaste) {
-            Ok(()) => {}
-            Err(err) if err.kind() == io::ErrorKind::Unsupported => {
+        // Ratatui positions every changed cell itself. Host-side autowrap is
+        // therefore both unnecessary and dangerous: writing the bottom-right
+        // cell can scroll the physical screen while Ratatui's back buffer still
+        // describes the pre-scroll frame, leaving duplicated rows and stale
+        // fragments on subsequent partial draws.
+        if let Err(err) = execute!(io::stdout(), EnterAlternateScreen, DisableLineWrap) {
+            restore_terminal();
+            return Err(err.into());
+        }
+        if let Err(err) = execute!(io::stdout(), EnableBracketedPaste) {
+            if err.kind() == io::ErrorKind::Unsupported {
                 tracing::warn!("bracketed paste unavailable; multi-line paste will be degraded");
-                // EnterAlternateScreen may have succeeded before EnableBracketedPaste failed.
-                // Retry it — alternate screen entry is idempotent.
-                execute!(io::stdout(), EnterAlternateScreen).map_err(|err| {
-                    let _ = disable_raw_mode();
-                    err
-                })?;
-            }
-            Err(err) => {
-                let _ = disable_raw_mode();
+            } else {
+                restore_terminal();
                 return Err(err.into());
             }
         }
@@ -45,13 +49,7 @@ impl TerminalGuard {
             // failed), and no TerminalGuard exists yet to undo it on drop —
             // send the disable explicitly; it is harmless when capture never
             // took effect.
-            let _ = execute!(
-                io::stdout(),
-                DisableMouseCapture,
-                DisableBracketedPaste,
-                LeaveAlternateScreen
-            );
-            let _ = disable_raw_mode();
+            restore_terminal();
             return Err(err.into());
         }
 
@@ -61,14 +59,79 @@ impl TerminalGuard {
 
 impl Drop for TerminalGuard {
     fn drop(&mut self) {
-        // DisableMouseCapture is unconditional: it merely writes the reset
-        // sequences, which are harmless when capture was never enabled.
-        let _ = execute!(
-            io::stdout(),
-            DisableMouseCapture,
-            DisableBracketedPaste,
-            LeaveAlternateScreen
-        );
-        let _ = disable_raw_mode();
+        restore_terminal();
+    }
+}
+
+/// Restore every terminal mode nightcrow may have enabled.
+///
+/// The reset sequences and `disable_raw_mode` are safe to repeat, which lets
+/// the panic hook restore the terminal immediately while `TerminalGuard` still
+/// performs the same cleanup during unwinding.
+pub(crate) fn restore_terminal() {
+    let _ = write_terminal_restore(io::stdout());
+    let _ = disable_raw_mode();
+}
+
+fn write_terminal_restore(mut writer: impl Write) -> io::Result<()> {
+    #[cfg(windows)]
+    {
+        // Mouse capture is a WinAPI console-input mode even when output VT
+        // sequences are supported. Restore it through WinAPI unconditionally;
+        // emitting its ANSI spelling does not restore that saved input mode.
+        let mouse = DisableMouseCapture.execute_winapi();
+        if EnableLineWrap.is_ansi_code_supported() {
+            let ansi = write_terminal_restore_ansi(&mut writer);
+            return mouse.and(ansi);
+        }
+
+        // Bracketed paste has no legacy WinAPI equivalent. Run the remaining
+        // restores independently so its Unsupported error cannot prevent the
+        // line-wrap or screen-buffer restoration.
+        let wrap = EnableLineWrap.execute_winapi();
+        let screen = LeaveAlternateScreen.execute_winapi();
+        mouse.and(wrap).and(screen)
+    }
+
+    #[cfg(not(windows))]
+    {
+        write_terminal_restore_ansi(&mut writer)
+    }
+}
+
+fn write_terminal_restore_ansi(mut writer: impl Write) -> io::Result<()> {
+    // Mouse capture is unconditional: the reset sequences are harmless when
+    // capture was never enabled.
+    let mut commands = String::new();
+    DisableMouseCapture
+        .write_ansi(&mut commands)
+        .map_err(io::Error::other)?;
+    DisableBracketedPaste
+        .write_ansi(&mut commands)
+        .map_err(io::Error::other)?;
+    EnableLineWrap
+        .write_ansi(&mut commands)
+        .map_err(io::Error::other)?;
+    LeaveAlternateScreen
+        .write_ansi(&mut commands)
+        .map_err(io::Error::other)?;
+    writer.write_all(commands.as_bytes())?;
+    writer.flush()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::write_terminal_restore_ansi;
+
+    #[test]
+    fn terminal_restore_disables_paste_and_leaves_the_alternate_screen() {
+        let mut output = Vec::new();
+
+        write_terminal_restore_ansi(&mut output).unwrap();
+
+        let output = String::from_utf8(output).unwrap();
+        assert!(output.contains("\u{1b}[?2004l"));
+        assert!(output.contains("\u{1b}[?7h"));
+        assert!(output.contains("\u{1b}[?1049l"));
     }
 }

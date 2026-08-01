@@ -199,9 +199,13 @@ Node 없는 설치가 전부 깨진다). CI가 재빌드해 커밋된 번들과 
 
 `viewer-ui/src`는 화면 조립과 재사용 단위를 분리한다. `pages/`는 화면 조립, `components/`는 재사용
 UI, `hooks/`는 UI·터미널·저장소 상태, `lib/`는 API 이외의 순수 도메인/레이아웃 유틸리티, `api/`는
-서버 wire 계약과 HTTP 클라이언트, `styles/`는 전역 스타일이다. `pages/App.tsx`는 조립만 하고 상태
-배선은 도메인 훅이 쥔다 — 서로만 주고받는 ref들을 App에 늘어놓으면 그 handshake가 조립 코드에 섞여
-하나를 빠뜨렸을 때 원인이 보이지 않는다.
+서버 wire 계약과 HTTP 클라이언트, `styles/`는 전역 스타일이다. `pages/App.tsx`는 조립만 하고
+`useAppViewModel`이 인증·프로젝트·clone을, `useRepoWorkspace`가 선택한 저장소의 status/log/pane을
+소유한다. 서로만 주고받는 ref들을 App에 늘어놓으면 그 handshake가 조립 코드에 섞여 하나를 빠뜨렸을
+때 원인이 보이지 않는다. `RepoShell`은 flat prop bag 대신 repository/sidebar/filePane/layout 계약을
+받는다.
+터미널 WebSocket 메시지는 `api/terminal.ts`가 decode/encode하는 단일 경계를 두고, 각 terminal hook은
+검증된 discriminated union만 처리한다. wire 문자열을 hook마다 다시 해석하거나 조립하지 않는다.
 
 ### 서버 저장 preference
 
@@ -210,7 +214,7 @@ UI, `hooks/`는 UI·터미널·저장소 상태, `lib/`는 API 이외의 순수 
   고정하는데, 눈대중이 아니라 기존 amber `#d9a441`(OKLCH L=0.751 C=0.130 h=79.8)의 **명도·채도를
   유지한 채 hue만 돌려** 파생시킨다 — 어느 프리셋을 골라도 ink 스케일 위에서 가독성이 같다. 적용은
   root의 `--color-accent` 오버라이드 하나로 끝난다. 저장은 `~/.nightcrow/viewer.json`
-  (`viewer/prefs/`), **저장소별이 아니라 세션 전역**이다: 뷰어는 여러 기기에서 열리고, repo id는
+  (`session/prefs/`), **저장소별이 아니라 세션 전역**이다: 뷰어는 여러 기기에서 열리고, repo id는
   프로세스 수명 동안만 안정적이라 저장소별 키는 재시작마다 사라진다. 전달은 3초 `/api/repos` 폴링에
   얹고 쓰기는 `POST /api/prefs`(cross-site가 트리거할 수 없도록 GET이 아닌 POST, 인증 뒤). 순서
   문제는 `useViewerPrefs`가 로컬 변경 횟수를 세어 자기보다 오래된 응답의 accent만 버리는 것으로
@@ -360,7 +364,7 @@ UI, `hooks/`는 UI·터미널·저장소 상태, `lib/`는 API 이외의 순수 
   저장소 안에서만 의미가 있어 전환 순간 날아오던 프레임이 새 프로젝트의 같은 id pane에 붙을 수 있으므로
   `onmessage`가 자기 소켓이 아직 살아 있는지 먼저 확인한다. 터미널 패널에는 key를 줄 수 없어서(저장소별
   마지막 포커스 pane 기억이 함께 사라진다) 정리는 여기서도 layout effect다.
-- **끊긴 연결은 조용히 self-heal한다**(`api.ts`, `App.tsx`). 모바일 브라우저는 화면이 꺼지면 진행 중이던
+- **끊긴 연결은 조용히 self-heal한다**(`api.ts`, `useAppViewModel.ts`). 모바일 브라우저는 화면이 꺼지면 진행 중이던
   fetch를 끊는데, 복귀 시 그 요청이 네트워크 실패로 reject된다(Chrome "Failed to fetch", Safari "Load
   failed"). 이걸 **fetch 경계에서 `NetworkError`로 감싸** HTTP 오류(`ApiError`)나 응답 처리 중의
   `TypeError`(진짜 결함이라 반드시 노출)와 구분한다. `NetworkError`는 친절한 메시지를 담아 `err.message`를
@@ -447,7 +451,7 @@ UI, `hooks/`는 UI·터미널·저장소 상태, `lib/`는 API 이외의 순수 
   id로(없으면 `null`로) 답한다 — 동시 클론이 하나이므로 모호하지 않다. `null`은 에러가 아니라 "붙을
   것이 없다"는 명시적 답이다. 숫자로 파싱되지 않는 `job`은 여전히 400 — 오타가 조용히 "무엇이 돌고
   있나"로 바뀌면 그 클라이언트는 남의 job에 붙는다.
-- **클론 job의 주인은 폴더 피커가 아니라 그 위다**(`useClone`을 `App.tsx`에서 호출). 훅을 피커 안에서
+- **클론 job의 주인은 폴더 피커가 아니라 그 위다**(`useClone`을 `useAppViewModel`에서 호출). 훅을 피커 안에서
   부르면 다이얼로그를 닫는 순간 관측자가 unmount되어 완료 토스트도 실패 메시지도 없고 끝난 repo도 열리지
   않는다. 피커는 `(부모 경로, URL)`을 올리기만 한다. **로그인 직후 진행 중인 job에 자동으로 붙는다** —
   붙을 게 없거나 probe가 실패하면 조용히 넘어간다.

@@ -229,7 +229,7 @@ fn a_repository_opened_through_the_browser_reaches_a_client_that_asked_nothing()
 
     // Straight against the session, the way the viewer's HTTP handler does it —
     // this client's connection is not involved at all.
-    crate::web::viewer::session::open_repo(daemon.state(), &path).expect("opens");
+    crate::session::open_repo(daemon.state(), &path).expect("opens");
 
     assert_eq!(repo_paths(&client.next_repos()), vec![resolved(&path)]);
     drop(repo);
@@ -243,7 +243,7 @@ fn a_repository_closed_through_the_browser_reaches_it_too() {
     let mut client = Client::attach(daemon.path());
     let id = client.repo_ids().pop().expect("one repository is open");
 
-    crate::web::viewer::session::close_repo(daemon.state(), &id).expect("closes");
+    crate::session::close_repo(daemon.state(), &id).expect("closes");
 
     assert!(repo_paths(&client.next_repos()).is_empty());
     drop(repo);

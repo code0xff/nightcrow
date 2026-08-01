@@ -7,7 +7,7 @@
 
 use super::rewrite_requester;
 use crate::daemon::protocol::ServerMessage;
-use crate::web::viewer::terminal::frame::ServerMessage as HubServerMessage;
+use crate::session::terminal::frame::ServerMessage as HubServerMessage;
 
 const HUB_CLIENT: u64 = 4;
 const ATTACHED_CLIENT: u64 = 91;

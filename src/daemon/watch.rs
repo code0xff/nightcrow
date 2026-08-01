@@ -11,9 +11,10 @@
 //! is a comparison of a handful of small structs at a rate nobody can see.
 
 use super::clients::AttachedClients;
+use super::frame::encode_server;
 use super::protocol::{RepoSummary, ServerMessage};
-use crate::web::viewer::server::ViewerState;
-use crate::web::viewer::session;
+use crate::session;
+use crate::session::SessionState;
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::Duration;
 
@@ -75,7 +76,7 @@ impl Nudge {
 /// the price of a branch that can be wrong. The owed-only path does not need it:
 /// those clients followed the set when they attached, and it has not changed.
 pub(super) fn watch(
-    state: Arc<ViewerState>,
+    state: Arc<SessionState>,
     clients: Arc<AttachedClients>,
     nudge: Arc<Nudge>,
     follow: impl Fn(&[session::SessionRepo]),
@@ -98,11 +99,15 @@ pub(super) fn watch(
             session::accent(&state),
         );
         let frame = || {
-            encode(&ServerMessage::Repos {
-                repos: current.0.clone(),
-                active: current.1.clone(),
-                accent: current.2,
-            })
+            encode_server(
+                &ServerMessage::Repos {
+                    repos: current.0.clone(),
+                    active: current.1.clone(),
+                    accent: current.2,
+                },
+                "session change",
+                "session change could not be encoded",
+            )
         };
         if told != current {
             follow(&repos);
@@ -129,16 +134,4 @@ fn summarize(repos: &[session::SessionRepo]) -> Vec<RepoSummary> {
             path: repo.path.clone(),
         })
         .collect()
-}
-
-fn encode(message: &ServerMessage) -> super::frame::Frame {
-    match serde_json::to_vec(message) {
-        Ok(json) => super::frame::Frame::control(json),
-        Err(err) => {
-            tracing::error!(%err, "daemon: could not encode a session change");
-            super::frame::Frame::control(
-                br#"{"type":"error","message":"session change could not be encoded"}"#.to_vec(),
-            )
-        }
-    }
 }

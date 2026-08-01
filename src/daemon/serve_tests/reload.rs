@@ -1,6 +1,6 @@
 //! Asking the daemon to re-read its config file.
 //!
-//! The applying itself is pinned in `web::viewer::reload`, against a temp file.
+//! The applying itself is pinned in `session::reload`, against a temp file.
 //! What is left here is the request path: who is answered.
 
 use super::harness::*;

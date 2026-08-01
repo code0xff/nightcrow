@@ -102,3 +102,19 @@ fn active_pane_rows_falls_back_to_default_with_no_panes() {
     let state = state_with_fake();
     assert_eq!(state.active_pane_rows(), state.size.0 as usize);
 }
+
+#[test]
+fn active_pane_application_cursor_mode_tracks_its_emulator() {
+    let mut state = state_with_fake();
+    assert!(!state.active_pane_app_cursor());
+    state.create_pane_now().unwrap();
+    let pane = state.panes[0].id;
+
+    state
+        .emulators
+        .get_mut(&pane)
+        .expect("pane emulator")
+        .process(b"\x1b[?1h");
+
+    assert!(state.active_pane_app_cursor());
+}

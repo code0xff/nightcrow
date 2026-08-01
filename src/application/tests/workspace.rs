@@ -114,7 +114,7 @@ fn dialog_swallows_the_leader_instead_of_arming_the_prefix() {
     // The dispatcher gives the dialog every key, so the leader is typed
     // (and rejected as a control char) rather than arming a prefix behind
     // the modal.
-    assert!(!ws.active().unwrap().prefix_armed());
+    assert!(!ws.active().unwrap().interaction.prefix_armed);
     assert!(ws.repo_input.active);
 }
 

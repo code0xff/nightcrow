@@ -93,9 +93,8 @@ pub fn load_workspace() -> Option<WorkspaceState> {
 }
 
 fn load_workspace_at(path: &Path) -> Option<WorkspaceState> {
-    let text = std::fs::read_to_string(path).ok()?;
-    match serde_json::from_str(&text) {
-        Ok(state) => Some(state),
+    match crate::persistence::read_json(path) {
+        Ok(state) => state,
         Err(e) => {
             tracing::warn!("corrupted workspace file, ignoring: {e}");
             None
@@ -117,28 +116,8 @@ pub fn save_workspace(state: &WorkspaceState) {
 }
 
 fn save_workspace_at(path: &Path, state: &WorkspaceState) {
-    if let Some(dir) = path.parent()
-        && let Err(e) = std::fs::create_dir_all(dir)
-    {
-        tracing::warn!("failed to create workspace directory: {e}");
-        return;
-    }
-    let text = match serde_json::to_string(state) {
-        Ok(t) => t,
-        Err(e) => {
-            tracing::warn!("failed to serialize workspace: {e}");
-            return;
-        }
-    };
-    // Atomic replace, same reasoning as `save_session`.
-    let tmp_path = path.with_extension("json.tmp");
-    if let Err(e) = std::fs::write(&tmp_path, &text) {
-        tracing::warn!("failed to write workspace tmp: {e}");
-        return;
-    }
-    if let Err(e) = std::fs::rename(&tmp_path, path) {
-        tracing::warn!("failed to rename workspace tmp into place: {e}");
-        let _ = std::fs::remove_file(&tmp_path);
+    if let Err(e) = crate::persistence::write_json(path, state) {
+        tracing::warn!("failed to save workspace: {e:#}");
     }
 }
 

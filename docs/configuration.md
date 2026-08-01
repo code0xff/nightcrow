@@ -156,8 +156,8 @@ watch_on_signal = false           # off by default; when true, a pane no
                                   # once something inside it quotes that pane's
                                   # token to this plugin. Such a pane is never
                                   # relaunched, only typed into while it lives.
-allowed_resume_flags = []         # flags the plugin may append to re-open a
-                                  # session; empty refuses every relaunch
+allowed_resume_flags = []         # flags/subcommands the plugin may append to
+                                  # re-open a session; empty refuses arguments
 
 [plugin.env]                      # plugin process only, never terminal panes
 NIGHTCROW_RECOVERY_LOG = "info"

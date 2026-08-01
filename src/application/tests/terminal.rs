@@ -79,3 +79,18 @@ fn handle_key_bare_c_in_a_terminal_pane_reaches_the_program() {
 
     assert_eq!(backend_payloads(&app), vec![b"c".to_vec()]);
 }
+
+#[test]
+fn terminal_arrow_uses_the_active_panes_application_cursor_mode() {
+    let mut app = app_with_terminal_pane();
+    let pane = app.terminal.panes[0].id;
+    app.terminal
+        .emulators
+        .get_mut(&pane)
+        .expect("pane emulator")
+        .process(b"\x1b[?1h");
+
+    let _ = handle_key(&mut app, press(KeyCode::Up, KeyModifiers::NONE));
+
+    assert_eq!(backend_payloads(&app), vec![b"\x1bOA".to_vec()]);
+}

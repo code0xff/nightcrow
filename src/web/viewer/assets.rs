@@ -93,6 +93,7 @@ pub fn serve(path: &str) -> Option<Vec<u8>> {
 
 /// Whether the frontend was built into this binary. A source checkout with no
 /// `dist` still compiles; the server then says so rather than 404ing blankly.
+#[cfg(test)]
 pub fn is_present() -> bool {
     Assets::get("index.html").is_some()
 }

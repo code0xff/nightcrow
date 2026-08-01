@@ -96,12 +96,12 @@ fn 프로젝트를_추가해도_이전_프로젝트의_press가_버려진다() {
     // `add` makes the new project active, so the outgoing project's press
     // is released in place — same reasoning as `switch`.
     let mut ws = workspace_on(&["/a"]);
-    ws.active_mut().unwrap().pending_mouse_press =
+    ws.active_mut().unwrap().interaction.pending_mouse_press =
         Some((1, crossterm::event::MouseButton::Left, 1, 1));
 
     ws.add(project_at("/b"));
 
-    assert!(ws.projects()[0].pending_mouse_press.is_none());
+    assert!(ws.projects()[0].interaction.pending_mouse_press.is_none());
 }
 
 #[test]
@@ -109,14 +109,14 @@ fn 전환하면_이전_프로젝트의_대기중인_마우스_press가_버려진
     let mut ws = workspace_from(project_at("/a"));
     ws.add(project_at("/b"));
     ws.switch(0);
-    ws.active_mut().unwrap().pending_mouse_press =
+    ws.active_mut().unwrap().interaction.pending_mouse_press =
         Some((1, crossterm::event::MouseButton::Left, 1, 1));
 
     ws.switch(1);
 
     // /a's press can never be paired now, so it is released where it
     // happened rather than left to match an unrelated release later.
-    assert!(ws.projects()[0].pending_mouse_press.is_none());
+    assert!(ws.projects()[0].interaction.pending_mouse_press.is_none());
 }
 
 #[test]
@@ -124,11 +124,11 @@ fn 같은_인덱스로_전환하면_대기중인_press를_유지한다() {
     // A no-op switch must not disturb an in-flight press/release pair.
     let mut ws = workspace_from(project_at("/a"));
     let press = Some((1, crossterm::event::MouseButton::Left, 1, 1));
-    ws.active_mut().unwrap().pending_mouse_press = press;
+    ws.active_mut().unwrap().interaction.pending_mouse_press = press;
 
     ws.switch(0);
 
-    assert_eq!(ws.active().unwrap().pending_mouse_press, press);
+    assert_eq!(ws.active().unwrap().interaction.pending_mouse_press, press);
 }
 
 #[test]

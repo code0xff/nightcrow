@@ -62,7 +62,7 @@ fn handle_mouse_click_completes_an_armed_swap_with_the_clicked_pane() {
     let first_id = app.terminal.panes[0].id;
     let (clicked_id, rect) = areas[1];
     assert_ne!(clicked_id, first_id);
-    app.begin_swap_target();
+    app.interaction.begin_swap_target();
 
     let down = MouseEventKind::Down(crossterm::event::MouseButton::Left);
     handle_mouse(
@@ -76,7 +76,7 @@ fn handle_mouse_click_completes_an_armed_swap_with_the_clicked_pane() {
     // The clicked pane is the swap target, exactly like its digit: the
     // previously active pane moves into the clicked slot and stays active, once
     // the session answers with the new order.
-    assert!(!app.awaiting_swap_target());
+    assert!(!app.interaction.awaiting_swap_target);
     app.poll_terminal();
     assert_eq!(app.terminal.panes[1].id, first_id);
     assert_eq!(app.terminal.active, 1);
@@ -91,7 +91,7 @@ fn handle_mouse_tab_click_completes_an_armed_swap() {
     let (mut app, _) = app_with_two_panes_and_areas();
     app.terminal.active = 0;
     let first_id = app.terminal.panes[0].id;
-    app.begin_swap_target();
+    app.interaction.begin_swap_target();
     let (x, y) = tab_xy_for(&app, 1);
 
     let down = MouseEventKind::Down(crossterm::event::MouseButton::Left);
@@ -103,7 +103,7 @@ fn handle_mouse_tab_click_completes_an_armed_swap() {
         &crate::config::LayoutConfig::default(),
     );
 
-    assert!(!app.awaiting_swap_target());
+    assert!(!app.interaction.awaiting_swap_target);
     app.poll_terminal();
     assert_eq!(app.terminal.panes[1].id, first_id);
     assert_eq!(app.terminal.active, 1);
@@ -113,7 +113,7 @@ fn handle_mouse_tab_click_completes_an_armed_swap() {
 fn handle_mouse_press_elsewhere_cancels_an_armed_swap() {
     let (mut app, _) = app_with_two_panes_and_areas();
     app.terminal.active = 0;
-    app.begin_swap_target();
+    app.interaction.begin_swap_target();
     let order_before: Vec<_> = app.terminal.panes.iter().map(|p| p.id).collect();
 
     // (0, 0) is the header row: it names no pane, so the press must
@@ -128,7 +128,7 @@ fn handle_mouse_press_elsewhere_cancels_an_armed_swap() {
         &crate::config::LayoutConfig::default(),
     );
 
-    assert!(!app.awaiting_swap_target());
+    assert!(!app.interaction.awaiting_swap_target);
     let order_after: Vec<_> = app.terminal.panes.iter().map(|p| p.id).collect();
     assert_eq!(order_before, order_after);
     assert_eq!(app.terminal.active, 0);
@@ -158,7 +158,7 @@ fn handle_mouse_hint_click_runs_the_named_leader_command() {
         "clicking `<prefix> t: new pane` must run the same command as the keys"
     );
     assert!(
-        !app.prefix_armed(),
+        !app.interaction.prefix_armed,
         "the synthesized prefix must not linger"
     );
 }
@@ -179,7 +179,7 @@ fn handle_mouse_hint_click_on_the_leader_label_arms_the_prefix() {
 
     assert!(matches!(outcome, KeyOutcome::Continue));
     assert!(
-        app.prefix_armed(),
+        app.interaction.prefix_armed,
         "clicking `<prefix>: leader` must arm the prefix exactly like the chord"
     );
     assert!(
@@ -218,13 +218,16 @@ fn handle_mouse_arm_click_then_followup_click_runs_the_command() {
         panes_before + 1,
         "arm click + `t` click must open a pane like the key sequence"
     );
-    assert!(!app.prefix_armed(), "the follow-up must consume the prefix");
+    assert!(
+        !app.interaction.prefix_armed,
+        "the follow-up must consume the prefix"
+    );
 }
 
 #[test]
 fn handle_mouse_hint_click_propagates_redraw_from_the_armed_row() {
     let mut app = app_with_terminal_pane();
-    app.arm_prefix();
+    app.interaction.prefix_armed = true;
     let x = hint_x_for(&app, crate::ui::HintClick::Plain('r'));
 
     let down = MouseEventKind::Down(crossterm::event::MouseButton::Left);
@@ -237,7 +240,10 @@ fn handle_mouse_hint_click_propagates_redraw_from_the_armed_row() {
     );
 
     assert!(matches!(outcome, KeyOutcome::Redraw));
-    assert!(!app.prefix_armed(), "the follow-up must consume the prefix");
+    assert!(
+        !app.interaction.prefix_armed,
+        "the follow-up must consume the prefix"
+    );
 }
 
 #[test]

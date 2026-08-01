@@ -46,11 +46,11 @@ pub(super) fn format_relative_time(ts: i64) -> String {
     }
 }
 
-/// Divergence glyph (`↑` ahead of upstream, `v` behind) and shape glyph
+/// Divergence glyph (`^` ahead of upstream, `v` behind) and shape glyph
 /// (`*` HEAD, `Y` merge). Two fixed cells so rows stay column-aligned.
 fn glyphs(entry: &CommitEntry, decorations: &LogDecorations) -> (Span<'static>, Span<'static>) {
     let divergence = if decorations.is_ahead(entry.oid) {
-        Span::styled("↑", Style::default().fg(Color::Green))
+        Span::styled("^", Style::default().fg(Color::Green))
     } else if decorations.is_behind(entry.oid) {
         Span::styled("v", Style::default().fg(Color::Yellow))
     } else {

@@ -9,7 +9,7 @@ mod tests;
 pub(crate) use cells::visible_pane_content_areas;
 pub(crate) use tab_bar::tab_target_at;
 
-use crate::app::{App, Focus};
+use crate::app::{App, Focus, leader_label_of};
 use crate::runtime::terminal::visible_range;
 use crate::ui::terminal_tab::cells::visible_pane_cells;
 use crate::ui::terminal_tab::layout::{TERMINAL_BORDERS, terminal_layout};
@@ -63,7 +63,10 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect, accent: Color) {
     let cells = visible_pane_cells(app, content_area);
     if cells.is_empty() {
         let screen_lines = vec![Line::from(Span::styled(
-            format!(" No terminal — press {} t to open one ", app.leader_label()),
+            format!(
+                " No terminal — press {} t to open one ",
+                leader_label_of(app.interaction.leader)
+            ),
             Style::default().fg(Color::DarkGray),
         ))];
         frame.render_widget(Paragraph::new(screen_lines), content_area);

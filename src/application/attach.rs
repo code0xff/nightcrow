@@ -7,7 +7,7 @@
 use crate::application::event_loop::{ProjectContext, main_loop};
 use crate::application::session_link::SessionLink;
 use crate::application::splash::{SplashOutcome, splash_loop};
-use crate::application::terminal_guard::TerminalGuard;
+use crate::application::terminal_guard::{TerminalGuard, restore_terminal};
 use crate::daemon::client::DaemonClient;
 use crate::workspace::Workspace;
 use anyhow::Result;
@@ -38,12 +38,7 @@ pub(crate) fn run_attach() -> Result<()> {
     let _guard = TerminalGuard::enter(cfg.mouse.enabled)?;
     let original_hook = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {
-        let _ = crossterm::terminal::disable_raw_mode();
-        let _ = crossterm::execute!(
-            io::stdout(),
-            crossterm::event::DisableMouseCapture,
-            crossterm::terminal::LeaveAlternateScreen
-        );
+        restore_terminal();
         original_hook(info);
     }));
     let mut terminal = Terminal::new(CrosstermBackend::new(io::stdout()))?;
@@ -67,10 +62,9 @@ pub(crate) fn run_attach() -> Result<()> {
     // handshake to get there first — and this screen draws before `main_loop`,
     // the only thing that drains the connection. `[theme]` names what a session
     // with no stored colour starts in.
-    let session_accent =
-        crate::web::viewer::prefs::PrefsStore::load_seeded(cfg.theme.preset_index())
-            .get()
-            .accent;
+    let session_accent = crate::session::prefs::PrefsStore::load_seeded(cfg.theme.preset_index())
+        .get()
+        .accent;
     // The splash is not the only screen that draws before the daemon's first
     // set arrives. Without this the first frames of the main view would come up
     // in the default rather than the session's colour.

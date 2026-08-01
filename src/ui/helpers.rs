@@ -1,4 +1,4 @@
-use crate::app::App;
+use crate::app::{App, leader_label_of};
 use crate::git::diff::StatusKind;
 use ratatui::{
     Frame,
@@ -41,7 +41,7 @@ pub(crate) fn status_color(status: StatusKind) -> Color {
 /// as Ctrl+F1, and that misreading names a real binding — the bare F-keys
 /// select project tabs. Matches how the hint bar already writes `^F t`.
 pub(crate) fn jump_legend(app: &App, digit: char) -> String {
-    format!("{} {}", app.leader_label(), digit)
+    format!("{} {}", leader_label_of(app.interaction.leader), digit)
 }
 
 pub(crate) fn render_selectable_list(
@@ -102,7 +102,7 @@ pub(crate) fn render_search_bar(
     // A blank in the dark half keeps the cell, so the row does not shift.
     let cursor = match (is_active, caret_lit(blink_phase())) {
         (false, _) => "",
-        (true, true) => "█",
+        (true, true) => "|",
         (true, false) => " ",
     };
     let style = if is_active {

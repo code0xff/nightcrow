@@ -45,7 +45,7 @@ fn handle_mouse_release_follows_the_pressed_pane_when_the_pointer_moves_away() {
         backend_payloads(&app),
         vec![b"\x1b[<0;1;1M".to_vec(), release]
     );
-    assert!(app.pending_mouse_press.is_none());
+    assert!(app.interaction.pending_mouse_press.is_none());
 }
 
 #[test]
@@ -84,7 +84,7 @@ fn handle_mouse_completes_a_pending_release_even_while_the_repo_modal_is_open() 
         backend_payloads(&app),
         vec![b"\x1b[<0;1;1M".to_vec(), b"\x1b[<0;1;1m".to_vec()]
     );
-    assert!(app.pending_mouse_press.is_none());
+    assert!(app.interaction.pending_mouse_press.is_none());
 }
 
 #[test]
@@ -122,5 +122,5 @@ fn handle_mouse_release_pairs_by_the_stored_press_button() {
         backend_payloads(&app),
         vec![b"\x1b[<2;1;1M".to_vec(), b"\x1b[<2;1;1m".to_vec()]
     );
-    assert!(app.pending_mouse_press.is_none());
+    assert!(app.interaction.pending_mouse_press.is_none());
 }
