@@ -94,13 +94,21 @@ pub fn load_commit_file(repo: &Repository, oid: Oid, file_path: &str) -> Result<
         Ok(entry) => entry,
         // Not in this commit's tree: the commit is what removed it, so the
         // contents worth showing are the ones it removed.
-        Err(_) => commit
+        //
+        // Only for a path that is genuinely absent. Any other failure — a tree
+        // object that cannot be read — must not fall through to the parent,
+        // which would answer with the previous commit's contents as though they
+        // were this one's.
+        Err(err) if err.code() == git2::ErrorCode::NotFound => commit
             .parent(0)
             .context("failed to find the parent of a commit that removed this path")?
             .tree()
             .context("failed to get parent tree")?
             .get_path(path)
             .with_context(|| format!("path not in commit: {file_path}"))?,
+        Err(err) => {
+            return Err(err).with_context(|| format!("failed to read tree for {file_path}"));
+        }
     };
     read_blob(repo, entry.id())
 }
