@@ -101,8 +101,9 @@ impl PtyBackend {
         cmd.env(PANE_TOKEN_ENV, identity.token.as_str());
         // Only set cwd if the directory actually exists; otherwise inherit
         // ours so spawn does not fail outright (matters for unit tests that
-        // pass placeholder paths).
-        if let Ok(canonical) = self.cwd.canonicalize() {
+        // pass placeholder paths). The clean canonicalize strips the Windows
+        // verbatim prefix (`\\?\`) that cmd.exe rejects as a UNC path.
+        if let Ok(canonical) = crate::platform::paths::canonicalize_clean(&self.cwd) {
             cmd.cwd(canonical);
         }
         let mut child = pair.slave.spawn_command(cmd)?;

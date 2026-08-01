@@ -45,6 +45,27 @@ pub(crate) fn for_display(path: &Path) -> Cow<'_, str> {
     }
 }
 
+/// Canonicalize a path and strip the Windows verbatim prefix.
+///
+/// `std::fs::canonicalize` on Windows prepends `\\?\` to the result. That
+/// verbatim form breaks `cmd.exe`, which treats it as a UNC path and falls
+/// back to `C:\Windows`. This wrapper strips the prefix so the canonical path
+/// works as a process working directory and as stored repo path. Native
+/// separators are preserved — this is for filesystem/spawn use, not display.
+pub(crate) fn canonicalize_clean(path: impl AsRef<Path>) -> std::io::Result<PathBuf> {
+    let canonical = std::fs::canonicalize(path)?;
+    #[cfg(windows)]
+    {
+        let s = canonical.to_string_lossy();
+        let stripped = s.strip_prefix(r"\\?\").unwrap_or(&s);
+        Ok(PathBuf::from(stripped))
+    }
+    #[cfg(not(windows))]
+    {
+        Ok(canonical)
+    }
+}
+
 /// The directory a relative state path — the log directory, chiefly — is
 /// resolved against when there is no one repository to anchor it to.
 ///
