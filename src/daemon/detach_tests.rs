@@ -1,5 +1,5 @@
-use super::{background_command, child_args, is_detached_child};
-use std::ffi::OsString;
+use super::{background_command, child_args, marker_says_detached};
+use std::ffi::{OsStr, OsString};
 
 fn args(list: &[&str]) -> Vec<OsString> {
     list.iter().map(OsString::from).collect()
@@ -10,9 +10,25 @@ fn args(list: &[&str]) -> Vec<OsString> {
 /// hypothetical: it happened, and 46 tests failed while dozens of copies of the
 /// harness fought over the same machine. The spawn itself is covered by running
 /// the real thing, not from in here.
+/// The marker is passed in rather than read from the environment: a suite run
+/// from inside a nightcrow pane inherits it from the daemon that spawned the
+/// pane, and asking the environment here would fail on the machine rather than
+/// on the rule.
 #[test]
 fn a_process_with_no_marker_is_the_foreground_copy() {
-    assert!(!is_detached_child());
+    assert!(!marker_says_detached(None));
+}
+
+#[test]
+fn a_process_carrying_the_marker_is_the_background_copy() {
+    assert!(marker_says_detached(Some(OsStr::new("1"))));
+}
+
+#[test]
+fn the_marker_counts_by_being_set_rather_than_by_its_value() {
+    // The child is spawned with "1", but nothing downstream reads the value —
+    // so an empty one must not read as the foreground copy and detach again.
+    assert!(marker_says_detached(Some(OsStr::new(""))));
 }
 
 #[test]

@@ -17,7 +17,18 @@ const ALREADY_DETACHED: &str = "NIGHTCROW_DETACHED";
 
 /// Whether this process is the backgrounded copy.
 pub fn is_detached_child() -> bool {
-    std::env::var_os(ALREADY_DETACHED).is_some()
+    marker_says_detached(std::env::var_os(ALREADY_DETACHED).as_deref())
+}
+
+/// The rule the marker carries, split from reading it.
+///
+/// Reading the environment inside the rule made the test answer for the
+/// machine it ran on: a suite started from inside a nightcrow pane inherits
+/// the marker from the daemon that spawned the pane, and the foreground case
+/// then failed while saying nothing about the rule. Presence is what counts —
+/// the child is spawned with `"1"`, but an empty value is still a marker.
+fn marker_says_detached(marker: Option<&std::ffi::OsStr>) -> bool {
+    marker.is_some()
 }
 
 /// Re-exec this binary in its own session and return.
