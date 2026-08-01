@@ -1,3 +1,11 @@
+# Check text files out with LF everywhere, whatever a contributor's
+# `core.autocrlf` says. Windows CI defaults it to `true`, which rewrites the
+# working tree to CRLF — and `viewer-ui/api.fixture.json` is compared byte for
+# byte against a payload serialized with `\n`, so the checkout alone failed the
+# wire-fixture test. Every text file in the index is already LF, so this changes
+# no content; it only stops the checkout from changing it.
+* text=auto eol=lf
+
 # The viewer's built bundle is committed so `cargo install` needs no Node
 # toolchain (see src/web/viewer/assets.rs). Vite names every chunk by content
 # hash, so any change under viewer-ui/src rewrites these files wholesale and
