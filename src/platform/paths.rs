@@ -57,12 +57,33 @@ pub(crate) fn canonicalize_clean(path: impl AsRef<Path>) -> std::io::Result<Path
     #[cfg(windows)]
     {
         let s = canonical.to_string_lossy();
-        let stripped = s.strip_prefix(r"\\?\").unwrap_or(&s);
-        Ok(PathBuf::from(stripped))
+        Ok(PathBuf::from(strip_verbatim_prefix(&s).as_ref()))
     }
     #[cfg(not(windows))]
     {
         Ok(canonical)
+    }
+}
+
+/// A canonicalized Windows path with its verbatim prefix taken off.
+///
+/// `std::fs::canonicalize` answers in the `\\?\` form, which is not what a
+/// person typed and not what most tools accept. Removing it is two rules, not
+/// one: a network share canonicalizes to `\\?\UNC\server\share`, and taking
+/// only `\\?\` off that leaves `UNC\server\share` — a *relative* path, which
+/// no longer names the share and cannot be served or made a working directory.
+///
+/// Defined and tested on every platform even though the strings are Windows'.
+/// The rule is not platform-specific, and gating it away would leave the case
+/// that was wrong unverified anywhere but a machine with a share to try.
+#[cfg_attr(not(windows), allow(dead_code))]
+pub(crate) fn strip_verbatim_prefix(path: &str) -> std::borrow::Cow<'_, str> {
+    if let Some(share) = path.strip_prefix(r"\\?\UNC\") {
+        return std::borrow::Cow::Owned(format!(r"\\{share}"));
+    }
+    match path.strip_prefix(r"\\?\") {
+        Some(rest) => std::borrow::Cow::Borrowed(rest),
+        None => std::borrow::Cow::Borrowed(path),
     }
 }
 
@@ -111,5 +132,26 @@ mod tests {
     #[test]
     fn expand_tilde_leaves_a_user_qualified_tilde_alone() {
         assert_eq!(expand_tilde("~other/x"), PathBuf::from("~other/x"));
+    }
+    #[test]
+    fn a_verbatim_drive_path_loses_only_its_prefix() {
+        assert_eq!(strip_verbatim_prefix(r"\\?\C:\code\app"), r"C:\code\app");
+    }
+
+    #[test]
+    fn a_verbatim_share_stays_a_share() {
+        // Taking `\\?\` off alone leaves `UNC\server\share`, which is relative:
+        // it names no share, cannot be served, and cannot be a working
+        // directory. The share form has to be put back.
+        assert_eq!(
+            strip_verbatim_prefix(r"\\?\UNC\server\share\project"),
+            r"\\server\share\project"
+        );
+    }
+
+    #[test]
+    fn a_path_without_the_prefix_is_left_alone() {
+        assert_eq!(strip_verbatim_prefix(r"C:\code\app"), r"C:\code\app");
+        assert_eq!(strip_verbatim_prefix("/home/x/code"), "/home/x/code");
     }
 }
