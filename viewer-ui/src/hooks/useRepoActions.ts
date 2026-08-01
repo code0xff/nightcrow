@@ -1,5 +1,6 @@
 import { useCallback } from "react";
 import { api, type Repo } from "../api";
+import { successorOf } from "../lib/successor";
 import type { Pane, Tab } from "../types";
 
 export interface UseRepoActionsArgs {
@@ -43,11 +44,16 @@ export function useRepoActions({
       try {
         await api.close(id);
         orderWrites.current += 1;
-        const remaining = repos.filter((r) => r.id !== id);
-        setRepos(remaining);
-        setRepo((current) =>
-          current === id ? (remaining[0]?.id ?? null) : current,
+        // Picked here as well as on the server, which is what lasts: the poll
+        // that carries the server's answer is seconds away, and until it lands
+        // the person is looking at whichever project this chose. Same rule, so
+        // the answer that arrives changes nothing.
+        const successor = successorOf(
+          repos.map((r) => r.id),
+          id,
         );
+        setRepos(repos.filter((r) => r.id !== id));
+        setRepo((current) => (current === id ? successor : current));
       } catch (err) {
         handle(err);
       }
