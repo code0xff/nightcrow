@@ -1,4 +1,3 @@
-use crate::web::viewer::dto::Envelope;
 use anyhow::{Context, Result};
 
 pub(in crate::web::viewer::server) fn required_path(
@@ -45,8 +44,4 @@ pub(in crate::web::viewer::server) fn required_oid(
         .query_param("oid")
         .ok_or_else(|| anyhow::anyhow!("missing oid parameter"))?;
     git2::Oid::from_str(&oid_text).context("malformed oid")
-}
-
-pub(in crate::web::viewer::server) fn encode<T: serde::Serialize>(payload: &T) -> Result<String> {
-    serde_json::to_string(&Envelope::new(payload)).context("failed to encode payload")
 }

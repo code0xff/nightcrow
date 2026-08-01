@@ -1,7 +1,7 @@
 /**
  * Contract test against the server's own output.
  *
- * `api.ts` and `src/web/viewer/dto.rs` describe one protocol twice, by hand, so
+ * `api.ts` and `src/web/viewer/dto/` describe one protocol twice, by hand, so
  * a field renamed on one side goes unnoticed until something renders blank.
  * `api.fixture.json` is generated from the Rust DTOs
  * (`UPDATE_API_FIXTURE=1 cargo test the_wire_fixture`) and committed; the

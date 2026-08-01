@@ -1,4 +1,10 @@
 use crate::web::common::http;
+use crate::web::viewer::dto::Envelope;
+use anyhow::{Context, Result};
+
+pub(super) fn encode<T: serde::Serialize>(payload: &T) -> Result<String> {
+    serde_json::to_string(&Envelope::new(payload)).context("failed to encode payload")
+}
 
 pub(super) fn json_response(status: &str, body: &str, extra: &[(&str, &str)]) -> Vec<u8> {
     let mut headers = vec![("X-Content-Type-Options", "nosniff")];

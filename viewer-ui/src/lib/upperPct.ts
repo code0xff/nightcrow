@@ -3,7 +3,7 @@
 // pointer bookkeeping.
 
 // Keep these bounds aligned with the server preference limits
-// (`web/viewer/prefs`), which clamp again on write and on load.
+// (`src/session/prefs/`), which clamp again on write and on load.
 export const MIN_UPPER_PCT = 20;
 export const MAX_UPPER_PCT = 85;
 export const DEFAULT_UPPER_PCT = 55;

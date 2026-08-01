@@ -2,7 +2,6 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   decodeTerminalControlFrame,
   decodeTerminalOutputFrame,
-  encodeTerminalClientMessage,
   sendTerminalMessage,
   type TerminalClientMessage,
   type TerminalServerMessage,
@@ -63,18 +62,13 @@ describe("terminal control protocol", () => {
     ).toBeNull();
   });
 
-  it("encodes typed client controls and sends only on an open socket", () => {
+  it("sends typed client controls only on an open socket", () => {
     vi.stubGlobal("WebSocket", { OPEN: 1, CONNECTING: 0 });
     const message: TerminalClientMessage = {
       type: "clear_key_report",
       pane: 7,
       key: { trusted: true, repeat: false, code: "KeyL", since_ms: 3 },
     };
-    const encoded =
-      `{"type":"clear_key_report","pane":7,"key":` +
-      `{"trusted":true,"repeat":false,"code":"KeyL","since_ms":3}}`;
-    expect(encodeTerminalClientMessage(message)).toBe(encoded);
-
     const sent: string[] = [];
     const open = {
       readyState: WebSocket.OPEN,
@@ -88,7 +82,8 @@ describe("terminal control protocol", () => {
     expect(sendTerminalMessage(open, message)).toBe(true);
     expect(sendTerminalMessage(connecting, message)).toBe(false);
     expect(sendTerminalMessage(null, message)).toBe(false);
-    expect(sent).toEqual([encoded]);
+    expect(sent).toHaveLength(1);
+    expect(JSON.parse(sent[0])).toEqual(message);
   });
 });
 

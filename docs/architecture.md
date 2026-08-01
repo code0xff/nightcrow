@@ -180,13 +180,22 @@ src/
 | 터미널 에뮬레이션 | alacritty_terminal 0.26 |
 | 파일시스템 감시 | notify 8.2 + notify-debouncer-mini 0.7 |
 | 파일 로깅 | tracing + tracing-subscriber + tracing-appender |
-| 설정 파싱 | toml 0.9 + serde |
-| 세션 저장 | serde_json |
+| 설정 파싱 | toml 1 + serde |
+| 형식 보존 설정 편집 | toml_edit 0.25 |
+| 세션 JSON 저장 | serde_json |
+| 임시 파일 기반 교체 | tempfile 3 |
 | CLI args | clap 4 (derive) |
 | 프로세스 제어 | libc (`flock`) + signal-hook 0.4 (SIGTERM/SIGINT) |
 | 웹 서버 | tungstenite 0.30 (sync WS) + argon2 0.5 + getrandom 0.4 |
 | 웹 뷰어 번들 임베드 | rust-embed 8.12 (`viewer-ui/dist`) |
 | 웹 뷰어 프론트엔드 | React 19 + TypeScript 7 + Vite 8 + Tailwind v4 + `@xterm/xterm` 6, 마크다운은 react-markdown 10(+remark-gfm, rehype-highlight), 테스트는 vitest 4 |
+
+`toml_edit`는 생성한 웹 비밀번호만 바꾸면서 기존 TOML의 주석·공백·키 순서를 보존하려고 쓴다.
+`toml`로 전체 문서를 다시 직렬화하거나 문자열을 직접 고치는 대안은 서식을 잃거나 동등한 table 표현을
+빠뜨릴 수 있어 채택하지 않았다. `tempfile`은 상태와 설정을 대상 디렉터리의 충돌 방지 임시 파일에 쓴 뒤
+`persist`로 교체하는 데 쓴다. 같은 디렉터리를 쓰면 부분 기록과 파일시스템 간 이동 위험을 줄이지만,
+교체의 원자성은 파일시스템과 플랫폼에 달려 있다. `std::fs`만 쓰는 대안은 고유 이름의 배타적 생성,
+실패 시 정리, Windows 교체 동작을 직접 구현해야 하므로 채택하지 않았다.
 
 PTY 관리는 portable-pty 기반 `PtyBackend` 단일 구현으로 정리됐다. 초기에는 tmux control-mode
 백엔드(`TmuxBackend`)도 병행 지원했으나, 중첩 TUI 키보드 라우팅 문제를 leader(prefix) 모델로

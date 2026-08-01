@@ -114,19 +114,13 @@ export function decodeTerminalControlFrame(
   return valid ? (message as TerminalServerMessage) : null;
 }
 
-export function encodeTerminalClientMessage(
-  message: TerminalClientMessage,
-): string {
-  return JSON.stringify(message);
-}
-
 /** Send only while the socket can accept a control frame; reconnects do not queue. */
 export function sendTerminalMessage(
   socket: WebSocket | null,
   message: TerminalClientMessage,
 ): boolean {
   if (!socket || socket.readyState !== WebSocket.OPEN) return false;
-  socket.send(encodeTerminalClientMessage(message));
+  socket.send(JSON.stringify(message));
   return true;
 }
 
