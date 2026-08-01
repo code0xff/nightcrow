@@ -74,6 +74,11 @@ export function useRepoWorkspace({
   );
 
   const log = useLog({ repo, authed, tab, filter, handle });
+  // Read by the pane openers at the moment they act, so "does this still have a
+  // working copy" is answered from now rather than from whenever a callback was
+  // built.
+  const statusRef = useRef(status);
+  statusRef.current = status;
   const openers = usePaneOpeners({
     repo,
     handle,
@@ -82,6 +87,7 @@ export function useRepoWorkspace({
     setCommitDrillDown: log.setCommitDrillDown,
     setMobileView,
     setPreviewRendered,
+    statusRef,
   });
 
   // A repository switch invalidates every view tied to the one being left.

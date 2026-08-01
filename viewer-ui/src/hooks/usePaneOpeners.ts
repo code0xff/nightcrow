@@ -1,9 +1,9 @@
 import { useCallback } from "react";
-import { api, type Commit, type Diff, type FileView } from "../api";
+import { api, type Commit, type Diff, type FileView, type Status } from "../api";
 import type { CommitDrillDown } from "./useLog";
 import type { Pane } from "../types";
 import { anchorLine, anchorOffset } from "../lib/diffAnchor";
-import { otherFace } from "../lib/otherFace";
+import { hasWorkingCopy, otherFace } from "../lib/otherFace";
 import type { MobileView } from "../types";
 
 export interface UsePaneOpenersArgs {
@@ -16,12 +16,14 @@ export interface UsePaneOpenersArgs {
   /// Raw is a one-off "what does the source say" check, so opening a file
   /// starts from the rendered view again rather than inheriting the last choice.
   setPreviewRendered: (rendered: boolean) => void;
+  /// The latest status, read at the moment a pane is opened rather than closed
+  /// over: whether a path still has a working copy is a fact about now, and a
+  /// file can go while its own pane is on screen.
+  statusRef: React.MutableRefObject<Status | null>;
 }
 
 export interface UsePaneOpenersResult {
-  /// `hasFile` says whether the working tree still holds it — a deletion has a
-  /// diff and nothing to read whole, so it gets no source and no toggle.
-  openDiff: (path: string, hasFile: boolean) => void;
+  openDiff: (path: string) => void;
   openFile: (path: string) => void;
   openCommit: (oid: string) => void;
   openCommitFileDiff: (oid: string, path: string) => void;
@@ -38,9 +40,19 @@ export function usePaneOpeners({
   setCommitDrillDown,
   setMobileView,
   setPreviewRendered,
+  statusRef,
 }: UsePaneOpenersArgs): UsePaneOpenersResult {
+  // Whether the working tree still holds `path`, as of now. A deletion has a
+  // diff and nothing to read whole, so it gets no source and no toggle.
+  const worktreeHas = useCallback(
+    (path: string) => {
+      const row = statusRef.current?.files.find((f) => f.path === path);
+      return row ? hasWorkingCopy(row) : false;
+    },
+    [statusRef],
+  );
   const openDiff = useCallback(
-    (path: string, hasFile: boolean) => {
+    (path: string) => {
       if (!repo) return;
       setMobileView("diff");
       const request = (paneRequestRef.current += 1);
@@ -51,14 +63,14 @@ export function usePaneOpeners({
             setPane({
               kind: "diff",
               value: v,
-              source: hasFile ? { kind: "workdir", path } : undefined,
+              source: worktreeHas(path) ? { kind: "workdir", path } : undefined,
             });
         })
         .catch((err) => {
           if (request === paneRequestRef.current) handle(err);
         });
     },
-    [repo, handle, setPane, paneRequestRef, setMobileView],
+    [repo, handle, setPane, paneRequestRef, setMobileView, worktreeHas],
   );
   const openFile = useCallback(
     (path: string) => {
@@ -177,14 +189,24 @@ export function usePaneOpeners({
                   source,
                   anchor: line === null ? undefined : anchorOffset(line) + 1,
                 }
-              : { kind: "diff", value: value as Diff, source },
+              : {
+                  kind: "diff",
+                  value: value as Diff,
+                  // Judged again, not carried back: the file can have gone
+                  // while its own pane was on screen, and the status refresh
+                  // that would have noticed only looks at diffs.
+                  source:
+                    source.kind === "workdir" && !worktreeHas(source.path)
+                      ? undefined
+                      : source,
+                },
           );
         })
         .catch((err) => {
           if (request === paneRequestRef.current) handle(err);
         });
     },
-    [repo, handle, setPane, paneRequestRef, setPreviewRendered],
+    [repo, handle, setPane, paneRequestRef, setPreviewRendered, worktreeHas],
   );
   return {
     openDiff,

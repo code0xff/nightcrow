@@ -3,14 +3,13 @@ import { HOT_CLASS } from "../hooks/ui/useHotClock";
 import { classifyHot } from "../lib/hot";
 import { statusColor } from "../lib/utils";
 import type { ChangedFile, Status } from "../api";
-import { hasWorkingCopy } from "../lib/otherFace";
 
 export interface StatusListProps {
   status: Status | null;
   files: ChangedFile[];
   now: number;
   hotWindowMs: number;
-  openDiff: (path: string, hasFile: boolean) => void;
+  openDiff: (path: string) => void;
 }
 
 export function StatusList({
@@ -28,7 +27,7 @@ export function StatusList({
       {files.map((f) => (
         <li key={f.path}>
           <button
-            onClick={() => openDiff(f.path, hasWorkingCopy(f))}
+            onClick={() => openDiff(f.path)}
             className="flex w-max min-w-full gap-2 px-3 py-0.5 text-left hover:bg-ink-850"
           >
             <span className="shrink-0">

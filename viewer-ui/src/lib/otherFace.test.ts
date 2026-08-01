@@ -70,11 +70,12 @@ describe("hasWorkingCopy", () => {
     expect(hasWorkingCopy(file("D", "D"))).toBe(false);
   });
 
-  it("sees the copy a staged deletion left behind", () => {
-    // `git rm --cached f` then recreating `f`: the deletion is staged and the
-    // file is sitting there. Reading the index column alone would refuse to
-    // open something that exists.
-    expect(hasWorkingCopy(file("D", "?"))).toBe(true);
-    expect(hasWorkingCopy(file("D", "A"))).toBe(true);
+  it("refuses the ambiguous staged deletion rather than guess", () => {
+    // `git rm --cached f` then recreating `f` arrives as `D ` — the same row a
+    // real deletion produces, because the one-row-per-path model keeps the
+    // index side rather than masking it as untracked. The file is there and
+    // this will not offer to open it; of the two mistakes available, a missing
+    // offer beats a button that only errors.
+    expect(hasWorkingCopy(file("D", " "))).toBe(false);
   });
 });

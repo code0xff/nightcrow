@@ -22,18 +22,21 @@ export function otherFace(
  *
  * A deletion has a diff and nothing behind it: offering the toggle would be a
  * button whose only outcome is an error. The columns are git's short `XY`, and
- * it is the **worktree** one that says what is on disk — `D` there is the file
- * gone. An index-side `D` alone is a staged deletion, which means the file is
- * gone only when the worktree column reports nothing further: `git rm --cached`
- * followed by recreating the path leaves `D` staged with the file present, and
- * reading the index column on its own would refuse to open a file that is
- * sitting right there.
+ * `D` on either side is read as gone.
+ *
+ * **`D ` is ambiguous and refused anyway.** A staged deletion whose path was
+ * recreated — `git rm --cached f`, then `f` again — is `INDEX_DELETED | WT_NEW`
+ * to git, and this session's one-row-per-path model deliberately keeps the
+ * index side rather than masking it as untracked (`git::diff::snapshot`), so it
+ * arrives as `D ` exactly like a file that is really gone. The columns cannot
+ * tell them apart, and of the two mistakes — refusing to open a file that is
+ * there, and offering to open one that is not — the first is a missing offer
+ * and the second is a broken button.
  *
  * The TUI is looser, letting `v` try and reporting the failure. A key that says
  * nothing about itself is not the same as a button that says "open this": one
  * is a question, the other is an offer.
  */
 export function hasWorkingCopy(file: ChangedFile): boolean {
-  if (file.worktree === "D") return false;
-  return !(file.index === "D" && file.worktree === " ");
+  return file.index !== "D" && file.worktree !== "D";
 }
