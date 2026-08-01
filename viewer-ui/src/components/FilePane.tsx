@@ -105,8 +105,12 @@ export function FilePane({
       leftAt.current = {
         key: placeKey(pane.source),
         top: container.scrollTop,
-        // Sideways too: a split column scrolled right is as much where someone
-        // was as how far down they had got.
+        // Sideways as far as this container owns it, which is the unified
+        // view — its rows are `w-max` inside this scroller. A split column
+        // scrolls itself (`overflow-x-auto` per half), and that offset is not
+        // kept: restoring it means addressing each column across a remount, for
+        // a position that matters far less than how far down the reader had
+        // got.
         left: container.scrollLeft,
       };
     }
