@@ -42,21 +42,25 @@ impl TerminalHub {
         // behind the `Arc` a racing connection resolved, but its panes are dead
         // and will never emit another frame. Skip the replay so the client is
         // not handed phantom terminals it can never receive output or an exit
-        // for.
-        //
+        // for — and say so in the greeting, which promises exactly what follows.
+        let replaying = !self.stop.load(Ordering::Acquire);
+        let to_replay = if replaying { state.panes.len() } else { 0 };
+        // Before anything that carries a requester id, so the client can judge
+        // every one it is about to see, and before the panes it counts. Straight
+        // onto the queue rather than through `send_to`, which would need this
+        // client to be registered — and it must not be until the replay below is
+        // on the queue ahead of any broadcast.
+        if let Ok(json) = serde_json::to_string(&ServerMessage::Hello {
+            client: id,
+            panes: to_replay,
+        }) {
+            let _ = tx.try_send(TerminalFrame::Control(json));
+        }
         // `needs_repaint` collects, under the lock, the panes whose program has
         // to draw again before this client can see anything; the request goes out
         // once the lock is released.
-        // Before anything that carries a requester id, so the client can judge
-        // every one it is about to see. Straight onto the queue rather than
-        // through `send_to`, which would need this client to be registered —
-        // and it must not be until the replay below is on the queue ahead of any
-        // broadcast.
-        if let Ok(json) = serde_json::to_string(&ServerMessage::Hello { client: id }) {
-            let _ = tx.try_send(TerminalFrame::Control(json));
-        }
         let mut needs_repaint: Vec<PaneId> = Vec::new();
-        if !self.stop.load(Ordering::Acquire) {
+        if replaying {
             // Ahead of the panes, though it names one of them. A client holds
             // its outbound resize until the layout stops moving, and replaying
             // several panes' histories can outlast that wait — so a page that

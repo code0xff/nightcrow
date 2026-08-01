@@ -29,6 +29,12 @@ interface UsePaneSizesArgs {
    *  instead of fitting its own — a PTY has one size, and the child cannot be
    *  re-flowed after the fact. */
   ownsSize: boolean;
+  /** Whether the layout is still resolving and nothing should be fitted to it
+   *  yet. True while a replayed zoom is waiting for the pane it names: the
+   *  panel will end up filled by that one pane, so anything fitted to a grid
+   *  cell meanwhile is measured against a layout that is about to be replaced —
+   *  and, being hidden by then, keeps the size it was wrongly given. */
+  layoutPending: boolean;
 }
 
 /**
@@ -52,6 +58,7 @@ export function usePaneSizes({
   bodyRefs,
   sentSizesRef,
   ownsSize,
+  layoutPending,
 }: UsePaneSizesArgs) {
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -74,16 +81,23 @@ export function usePaneSizes({
     for (const [pane, view] of viewsRef.current) {
       const body = bodyRefs.current.get(pane);
       if (!body || body.clientHeight === 0 || body.clientWidth === 0) continue;
-      if (ownsSize) {
-        view.fit.fit();
+      // Take the size the PTY actually has whenever this page's cells are not
+      // the answer: it is a spectator, or its layout has not resolved yet. Not
+      // merely "skip the fit" — an emulator left at its 80×24 default parses
+      // the replay that is arriving right now at the wrong width, and what was
+      // drawn outside it is gone. A pane created while this page was a
+      // spectator starts at that default until this runs; `resized` covers it
+      // from then on.
+      if (!ownsSize || layoutPending) {
+        const pty = sentSizesRef.current.get(pane);
+        if (pty) view.term.resize(pty.cols, pty.rows);
         continue;
       }
-      // A pane created while this page was a spectator starts at xterm's
-      // default until this runs; `resized` covers it from then on.
-      const pty = sentSizesRef.current.get(pane);
-      if (pty) view.term.resize(pty.cols, pty.rows);
+      view.fit.fit();
     }
-    if (!ownsSize) return;
+    // Nothing goes out while the layout is still resolving: what would be
+    // measured is a grid about to be replaced.
+    if (!ownsSize || layoutPending) return;
     // Each layout change restarts the wait, so a run of them costs one resize
     // rather than one apiece.
     if (timerRef.current) clearTimeout(timerRef.current);
@@ -91,5 +105,15 @@ export function usePaneSizes({
     return () => {
       if (timerRef.current) clearTimeout(timerRef.current);
     };
-  }, [panes, zoomed, size, flush, viewsRef, bodyRefs, sentSizesRef, ownsSize]);
+  }, [
+    panes,
+    zoomed,
+    size,
+    flush,
+    viewsRef,
+    bodyRefs,
+    sentSizesRef,
+    ownsSize,
+    layoutPending,
+  ]);
 }

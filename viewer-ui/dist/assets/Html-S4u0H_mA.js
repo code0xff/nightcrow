@@ -1,0 +1,1 @@
+import{a as e}from"./index-Bla_aIeg.js";var t=e();function n({source:e}){return(0,t.jsx)(`iframe`,{title:`HTML preview`,sandbox:``,srcDoc:e,className:`h-full w-full border-0 bg-white`})}export{n as HtmlView};

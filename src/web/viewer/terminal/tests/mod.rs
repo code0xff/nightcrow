@@ -163,6 +163,18 @@ pub(super) fn hello_client(frame: &TerminalFrame) -> Option<u64> {
     value["client"].as_u64()
 }
 
+/// How many panes a `hello` frame promises the replay will deliver.
+pub(super) fn hello_panes(frame: &TerminalFrame) -> Option<usize> {
+    let TerminalFrame::Control(json) = frame else {
+        return None;
+    };
+    let value: serde_json::Value = serde_json::from_str(json).ok()?;
+    if value["type"] != "hello" {
+        return None;
+    }
+    value["panes"].as_u64().map(|n| n as usize)
+}
+
 /// Who a `created` frame names as having asked for the pane, and `Some(None)`
 /// when it names nobody — a replayed pane, or one another client opened.
 pub(super) fn created_requester(frame: &TerminalFrame) -> Option<Option<u64>> {
