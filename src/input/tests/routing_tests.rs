@@ -1,9 +1,28 @@
 use super::common::{ctrl, key};
 use super::*;
 use crossterm::event::KeyCode;
-/// The README, read at compile time. A missing or moved file is a build
-/// error rather than a test that silently stops checking anything.
-const README: &str = include_str!("../../../README.md");
+/// Every guide a user reads, concatenated at compile time. A missing or moved
+/// file is a build error rather than a test that silently stops checking
+/// anything — which is what happened when the keybinding tables left the README
+/// for a guide of their own and this kept scanning the README alone.
+///
+/// All of them rather than the keybinding page, because the second direction
+/// below only guards what it reads: a `<prefix>` key named in passing anywhere
+/// else could be renamed out from under its mention and nothing would say so.
+/// `docs/architecture/` and `docs/decisions.md` are deliberately out — they
+/// record how the thing was built and what was decided, including keys that no
+/// longer exist, which is not drift.
+const DOCS: &str = concat!(
+    include_str!("../../../README.md"),
+    include_str!("../../../docs/getting-started.md"),
+    include_str!("../../../docs/projects.md"),
+    include_str!("../../../docs/views.md"),
+    include_str!("../../../docs/keybindings.md"),
+    include_str!("../../../docs/session-state.md"),
+    include_str!("../../../docs/web-viewer.md"),
+    include_str!("../../../docs/plugins.md"),
+    include_str!("../../../docs/configuration.md"),
+);
 
 const PREFIX_TOKEN: &str = "`<prefix> ";
 
@@ -21,18 +40,18 @@ fn leader_commands() -> Vec<char> {
         .collect()
 }
 
-/// Every `<prefix> c` the README spells out, with ranges expanded.
+/// Every `<prefix> c` the docs spell out, with ranges expanded.
 ///
 /// `<prefix> 3`…`<prefix> 9` documents seven keys, not two — the interior
 /// ones never appear on their own, so without expanding them a removed
-/// `<prefix> 5` would leave the README claiming a key that does nothing.
+/// `<prefix> 5` would leave the docs claiming a key that does nothing.
 fn documented_prefix_keys() -> Vec<char> {
     let mut found = Vec::new();
     let mut idx = 0;
-    while let Some(offset) = README[idx..].find(PREFIX_TOKEN) {
+    while let Some(offset) = DOCS[idx..].find(PREFIX_TOKEN) {
         let start = idx + offset + PREFIX_TOKEN.len();
         idx = start;
-        let rest = &README[start..];
+        let rest = &DOCS[start..];
         let mut chars = rest.chars();
         let (Some(c), Some('`')) = (chars.next(), chars.next()) else {
             // `<prefix>` alone, or prose rather than a key.
@@ -56,7 +75,7 @@ fn documented_prefix_keys() -> Vec<char> {
 }
 
 /// Doc drift is silent: a renamed command leaves the old key sitting in a
-/// table nobody re-reads. These two tests make the README answerable to
+/// table nobody re-reads. These two tests make the docs answerable to
 /// `prefix_action` in both directions.
 #[test]
 fn every_leader_command_is_documented() {
@@ -66,7 +85,7 @@ fn every_leader_command_is_documented() {
     for c in commands {
         assert!(
             documented.contains(&c),
-            "`<prefix> {c}` works but the README never mentions it"
+            "`<prefix> {c}` works but the docs never mention it"
         );
     }
 }
@@ -82,7 +101,7 @@ fn every_documented_leader_key_still_works() {
         let e = key(KeyCode::Char(c));
         assert!(
             prefix_action(e) != Action::None || prefix_action_fullscreen(e) != Action::None,
-            "the README documents `<prefix> {c}`, which maps to nothing"
+            "the docs document `<prefix> {c}`, which maps to nothing"
         );
     }
 }
