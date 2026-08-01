@@ -20,7 +20,8 @@ Windows에서 링크를 체크아웃하려면 개발자 모드 + `git config cor
 1. **Plan** — 변경이 단순하지 않으면 `/plan`으로 사용자와 정렬한 뒤 구현한다.
    단순한 버그 수정·설정 변경은 바로 구현한다.
 2. **Implement** — `docs/architecture.md`의 설계 제약을 따른다. 구현이 문서와 어긋나면
-   문서를 먼저 갱신하거나 구현을 조정한다.
+   문서를 먼저 갱신하거나 구현을 조정한다. 코드는 macOS·Linux·Windows 세 곳에서
+   도는 것을 목표로 한다 — 플랫폼 seam과 게이팅 규칙은 `.agents/rules/guardrails.md`.
 3. **Verify** — `cargo build`, `cargo test`,
    `cargo clippy --all-targets --all-features -- -D warnings`가 통과해야 한다.
    훅은 두 단계로 나뉜다 (`git config core.hooksPath .githooks`).

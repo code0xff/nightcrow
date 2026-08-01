@@ -103,10 +103,10 @@ what changed.
 
 ### Verifying on the other platform
 
-nightcrow targets both Unix and Windows. If you are on one platform, the
-`std::os::unix` / `std::os::windows` cfg gates mean the other platform's code
-does not compile locally — so a green build on your machine is not proof that
-the other platform is green.
+nightcrow targets macOS, Linux, and Windows, and CI runs the gates on all
+three. If you are on one platform, the `std::os::unix` / `std::os::windows`
+cfg gates mean the other platform's code does not compile locally — so a green
+build on your machine is not proof that the others are green.
 
 Use the Docker gate to run all four gates on Linux from a Windows machine
 (or vice versa, with the right image):
