@@ -1,7 +1,7 @@
 import { useCallback } from "react";
-import { api, type Commit } from "../api";
+import { api, type Commit, type Diff, type FileView } from "../api";
 import type { CommitDrillDown } from "./useLog";
-import type { Pane } from "../types";
+import type { FileSource, Pane } from "../types";
 import type { MobileView } from "../types";
 
 export interface UsePaneOpenersArgs {
@@ -22,6 +22,8 @@ export interface UsePaneOpenersResult {
   openCommit: (oid: string) => void;
   openCommitFileDiff: (oid: string, path: string) => void;
   openCommitFiles: (commit: Commit) => Promise<void>;
+  /// Swap a single-file pane between its diff and its whole contents.
+  showOtherFace: (pane: Pane) => void;
 }
 
 export function usePaneOpeners({
@@ -41,7 +43,12 @@ export function usePaneOpeners({
       api
         .diff(repo, path)
         .then((v) => {
-          if (request === paneRequestRef.current) setPane({ kind: "diff", value: v });
+          if (request === paneRequestRef.current)
+            setPane({
+              kind: "diff",
+              value: v,
+              source: { kind: "workdir", path },
+            });
         })
         .catch((err) => {
           if (request === paneRequestRef.current) handle(err);
@@ -90,7 +97,12 @@ export function usePaneOpeners({
       api
         .commitFileDiff(repo, oid, path)
         .then((v) => {
-          if (request === paneRequestRef.current) setPane({ kind: "diff", value: v });
+          if (request === paneRequestRef.current)
+            setPane({
+              kind: "diff",
+              value: v,
+              source: { kind: "commit", oid, path },
+            });
         })
         .catch((err) => {
           if (request === paneRequestRef.current) handle(err);
@@ -122,5 +134,46 @@ export function usePaneOpeners({
     },
     [repo, handle, setPane, paneRequestRef, setCommitDrillDown, setMobileView],
   );
-  return { openDiff, openFile, openCommit, openCommitFileDiff, openCommitFiles };
+  // Show the other face of what is already open: the whole file from a diff,
+  // the diff from a file. Which one to fetch is read off the pane's source, so
+  // a pane without one — a whole-commit diff, a file opened from the tree —
+  // simply has nothing to show and no control offered for it.
+  const showOtherFace = useCallback(
+    (pane: Pane) => {
+      if (!repo || pane.kind === "empty" || !pane.source) return;
+      const source: FileSource = pane.source;
+      const wantFile = pane.kind === "diff";
+      const request = (paneRequestRef.current += 1);
+      const fetched =
+        source.kind === "workdir"
+          ? wantFile
+            ? api.file(repo, source.path)
+            : api.diff(repo, source.path)
+          : wantFile
+            ? api.commitFile(repo, source.oid, source.path)
+            : api.commitFileDiff(repo, source.oid, source.path);
+      if (wantFile) setPreviewRendered(true);
+      fetched
+        .then((value) => {
+          if (request !== paneRequestRef.current) return;
+          setPane(
+            wantFile
+              ? { kind: "file", value: value as FileView, source }
+              : { kind: "diff", value: value as Diff, source },
+          );
+        })
+        .catch((err) => {
+          if (request === paneRequestRef.current) handle(err);
+        });
+    },
+    [repo, handle, setPane, paneRequestRef, setPreviewRendered],
+  );
+  return {
+    openDiff,
+    openFile,
+    openCommit,
+    openCommitFileDiff,
+    openCommitFiles,
+    showOtherFace,
+  };
 }

@@ -2,7 +2,12 @@ import { Suspense, lazy } from "react";
 import { useDiffLayout } from "../lib/diffLayout";
 import { fileViewSource, isHtmlPath, isPreviewablePath } from "../lib/fileView";
 import { digitsFor } from "../lib/gutter";
-import { MaximizeIcon, PreviewIcon, SplitViewIcon } from "./icons/layout";
+import {
+  MaximizeIcon,
+  PreviewIcon,
+  SplitViewIcon,
+  WholeFileIcon,
+} from "./icons/layout";
 import { DiffView } from "./DiffView";
 import { LineNos } from "./LineNos";
 import { PathLabel } from "./PathLabel";
@@ -47,6 +52,9 @@ export interface FilePaneProps {
   setPreviewRendered: React.Dispatch<React.SetStateAction<boolean>>;
   filesMax: boolean;
   setMaximized: (next: "none" | "files" | "terminal") => void;
+  /// Swap between the diff and the whole file. Offered only for a pane that
+  /// has both faces to show — see `FileSource`.
+  showOtherFace: () => void;
   status: Status | null;
   className?: string;
 }
@@ -57,6 +65,7 @@ export function FilePane({
   setPreviewRendered,
   filesMax,
   setMaximized,
+  showOtherFace,
   status,
   className = "",
 }: FilePaneProps) {
@@ -66,6 +75,27 @@ export function FilePane({
       <div className="flex shrink-0 items-center gap-2 bg-ink-850 px-3 py-0.5 text-ink-400">
         {pane.kind === "file" && <PathLabel path={pane.value.path} />}
         <div className="ml-auto flex shrink-0 items-center gap-1">
+          {pane.kind !== "empty" && pane.source && (
+            <button
+              onClick={showOtherFace}
+              aria-pressed={pane.kind === "file"}
+              title={
+                pane.kind === "file"
+                  ? "Back to the diff"
+                  : "Open the whole file at this change"
+              }
+              aria-label={
+                pane.kind === "file"
+                  ? "Back to the diff"
+                  : "Open the whole file at this change"
+              }
+              className={`flex shrink-0 items-center rounded-sm px-1.5 py-0.5 hover:text-accent ${
+                pane.kind === "file" ? "text-accent" : ""
+              }`}
+            >
+              <WholeFileIcon />
+            </button>
+          )}
           {pane.kind === "diff" && (
             <button
               onClick={diffLayout.toggle}

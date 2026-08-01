@@ -149,7 +149,14 @@ export function useRepoWorkspace({
             aheadOids,
             visibleCommitFiles,
           },
-          filePane: { pane, previewRendered, setPreviewRendered },
+          filePane: {
+            pane,
+            previewRendered,
+            setPreviewRendered,
+            // Bound to the pane here rather than in the component, which has no
+            // business knowing what a pane is made of.
+            showOtherFace: () => openers.showOtherFace(pane),
+          },
           layout: {
             ...shell,
             maximized,

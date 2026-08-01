@@ -111,6 +111,9 @@ export const api = {
     get<CommitFiles>(`/api/commit/files?${query({ repo, oid })}`),
   commitFileDiff: (repo: string, oid: string, path: string) =>
     get<Diff>(`/api/commit/file-diff?${query({ repo, oid, path })}`),
+  /// The file as that commit left it, not as the working tree has it since.
+  commitFile: (repo: string, oid: string, path: string) =>
+    get<FileView>(`/api/commit/file?${query({ repo, oid, path })}`),
   browse: (path?: string) =>
     get<Browse>(`/api/browse${path ? `?${query({ path })}` : ""}`),
   // The server confines names to one plain segment.
