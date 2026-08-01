@@ -14,7 +14,7 @@ import { DiffView } from "./DiffView";
 import { LineNos } from "./LineNos";
 import { PathLabel } from "./PathLabel";
 import type { Span, Status } from "../api";
-import type { Pane } from "../types";
+import type { FileSource, Pane } from "../types";
 
 // Keep the markdown pipeline out of the initial chunk.
 const MarkdownView = lazy(() =>
@@ -49,6 +49,10 @@ function FileLines({ lines }: { lines: Span[][] }) {
 }
 
 export interface FilePaneProps {
+  /// The repository on screen. Part of what identifies a remembered scroll
+  /// position: two projects can hold the same path, and this pane outlives a
+  /// switch between them.
+  repo: string | null;
   pane: Pane;
   previewRendered: boolean;
   setPreviewRendered: React.Dispatch<React.SetStateAction<boolean>>;
@@ -62,6 +66,7 @@ export interface FilePaneProps {
 }
 
 export function FilePane({
+  repo,
   pane,
   previewRendered,
   setPreviewRendered,
@@ -78,7 +83,14 @@ export function FilePane({
   // faces share one scroller: without this the file's offset carries over and a
   // shorter diff clamps to its bottom, which is not where anyone left it. Keyed
   // by the file, so it is never restored onto a different diff.
-  const leftAt = useRef<{ key: string; top: number } | null>(null);
+  const leftAt = useRef<{
+    key: string;
+    top: number;
+    left: number;
+  } | null>(null);
+  // Both the file and the repository, or the same path in another project would
+  // be handed the offset this one was left at.
+  const placeKey = (source: FileSource) => `${repo ?? ""}\u0000${sourceKey(source)}`;
   // Which hunk the diff is scrolled to, measured only when the switch is asked
   // for. The offsets come from the DOM; which of them wins is `hunkAtTop`.
   const visibleHunk = () => {
@@ -91,8 +103,11 @@ export function FilePane({
     );
     if (pane.kind === "diff" && pane.source) {
       leftAt.current = {
-        key: sourceKey(pane.source),
+        key: placeKey(pane.source),
         top: container.scrollTop,
+        // Sideways too: a split column scrolled right is as much where someone
+        // was as how far down they had got.
+        left: container.scrollLeft,
       };
     }
     return hunkAtTop(offsets, container.scrollTop);
@@ -107,8 +122,9 @@ export function FilePane({
     // Back on the diff this left: put it where it was.
     if (pane.kind === "diff" && pane.source) {
       const left = leftAt.current;
-      if (left && left.key === sourceKey(pane.source)) {
+      if (left && left.key === placeKey(pane.source)) {
         container.scrollTop = left.top;
+        container.scrollLeft = left.left;
         leftAt.current = null;
       }
       return;

@@ -156,6 +156,7 @@ export function useRepoWorkspace({
             visibleCommitFiles,
           },
           filePane: {
+            repo,
             pane,
             previewRendered,
             setPreviewRendered,
