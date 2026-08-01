@@ -55,16 +55,24 @@ export function hasWorkingCopy(file: ChangedFile): boolean {
  * no line numbering (`git::diff::snapshot::binary_diff_hunk`). Counting lines
  * therefore said yes to exactly the case this exists to exclude.
  *
- * A truncated diff counts even with nothing left to show: the ceiling was hit,
- * which means there was text, and that is the case where the whole file is most
- * worth reaching.
+ * Truncation is not taken as proof of anything. A diff cut at its ceiling did
+ * have text, but the two ceilings are not the same one — the diff stops at
+ * 1 MiB and the file loader refuses past 5 MiB — so a diff truncated to nothing
+ * is as likely to belong to a file the loader will reject as to one it will
+ * serve. A retained numbered line answers for itself; nothing else does.
  *
  * It costs one case: a mode-only change (`chmod`) has no numbered lines and its
  * file is readable. That is a missing offer, which is the side to be wrong on —
  * the same trade the deleted-path check makes.
+ *
+ * The line this and [`hasWorkingCopy`] draw is *knowably* impossible, not
+ * never-fails. A one-line change to a 6 MiB text file looks like any other
+ * diff, and the loader's 5 MiB ceiling is not on the wire to check against; a
+ * file can also go between the last poll and the click. Those fail like any
+ * other request that fails. What is excluded is what the client already has the
+ * facts to rule out.
  */
 export function showsText(diff: Diff): boolean {
-  if (diff.truncated) return true;
   return diff.hunks.some((hunk) =>
     hunk.lines.some(
       (line) => line.old_lineno !== undefined || line.new_lineno !== undefined,

@@ -114,9 +114,11 @@ describe("showsText", () => {
     expect(showsText({ path: "a.rs", hunks: [], truncated: false })).toBe(false);
   });
 
-  it("sees text in a diff truncated to nothing", () => {
-    // The ceiling was hit, so there was text — and that is the case where
-    // reaching the whole file matters most.
-    expect(showsText({ path: "big.rs", hunks: [], truncated: true })).toBe(true);
+  it("does not take truncation as proof of a readable file", () => {
+    // The diff stops at 1 MiB and the file loader refuses past 5 MiB. A diff
+    // cut to nothing is as likely to belong to a file the loader will reject.
+    expect(showsText({ path: "big.rs", hunks: [], truncated: true })).toBe(
+      false,
+    );
   });
 });

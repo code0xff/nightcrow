@@ -29,7 +29,8 @@ export interface UsePaneOpenersResult {
   openCommitFileDiff: (oid: string, path: string) => void;
   openCommitFiles: (commit: Commit) => Promise<void>;
   /// Swap a single-file pane between its diff and its whole contents.
-  showOtherFace: (pane: Pane) => void;
+  /// `fromHunk` is the hunk the diff was scrolled to, so the file opens there.
+  showOtherFace: (pane: Pane, fromHunk?: number) => void;
 }
 
 export function usePaneOpeners({
@@ -160,7 +161,7 @@ export function usePaneOpeners({
   // a pane without one — a whole-commit diff, a file opened from the tree —
   // simply has nothing to show and no control offered for it.
   const showOtherFace = useCallback(
-    (pane: Pane) => {
+    (pane: Pane, fromHunk = 0) => {
       const other = otherFace(pane);
       if (!repo || !other) return;
       const { source } = other;
@@ -168,7 +169,9 @@ export function usePaneOpeners({
       // Read before the fetch, off the diff being left — it is the only thing
       // that knows which change was being looked at.
       const line =
-        wantFile && pane.kind === "diff" ? anchorLine(pane.value) : null;
+        wantFile && pane.kind === "diff"
+          ? anchorLine(pane.value, fromHunk)
+          : null;
       const request = (paneRequestRef.current += 1);
       const fetched =
         source.kind === "workdir"

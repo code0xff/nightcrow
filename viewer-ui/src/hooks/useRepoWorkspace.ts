@@ -161,7 +161,8 @@ export function useRepoWorkspace({
             setPreviewRendered,
             // Bound to the pane here rather than in the component, which has no
             // business knowing what a pane is made of.
-            showOtherFace: () => openers.showOtherFace(pane),
+            showOtherFace: (fromHunk: number) =>
+              openers.showOtherFace(pane, fromHunk),
           },
           layout: {
             ...shell,

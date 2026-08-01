@@ -121,7 +121,7 @@ export function DiffView({ diff, split }: { diff: Diff; split: boolean }) {
           </div>
         );
         return (
-          <div key={i} className="mb-2">
+          <div key={i} data-hunk={i} className="mb-2">
             {split ? (
               <>
                 {header}

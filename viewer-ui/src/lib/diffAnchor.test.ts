@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { anchorLine, anchorOffset, anchorWithin } from "./diffAnchor";
+import {
+  anchorLine,
+  anchorOffset,
+  anchorWithin,
+  hunkAtTop,
+} from "./diffAnchor";
 import type { Diff, DiffLine } from "../api";
 
 const line = (new_lineno?: number): DiffLine => ({
@@ -92,5 +97,52 @@ describe("anchorWithin", () => {
 
   it("has nowhere to go in an empty file", () => {
     expect(anchorWithin(3, 0)).toBeNull();
+  });
+});
+
+describe("hunkAtTop", () => {
+  it("opens on the first hunk when nothing has scrolled", () => {
+    expect(hunkAtTop([0, 400, 900], 0)).toBe(0);
+  });
+
+  it("takes the last hunk that has reached the top", () => {
+    expect(hunkAtTop([0, 400, 900], 400)).toBe(1);
+    expect(hunkAtTop([0, 400, 900], 899)).toBe(1);
+    expect(hunkAtTop([0, 400, 900], 900)).toBe(2);
+  });
+
+  it("counts a hunk half off the top as the one being read", () => {
+    expect(hunkAtTop([0, 400, 900], 500)).toBe(1);
+  });
+
+  it("has nowhere to choose from in an empty diff", () => {
+    expect(hunkAtTop([], 120)).toBe(0);
+  });
+});
+
+describe("anchorLine from a hunk", () => {
+  it("anchors on the hunk that was on screen, not the first", () => {
+    expect(
+      anchorLine(
+        diff([
+          { header: "@@", lines: [line(3)] },
+          { header: "@@", lines: [line(870)] },
+        ]),
+        1,
+      ),
+    ).toBe(870);
+  });
+
+  it("walks on when that hunk is all removals", () => {
+    expect(
+      anchorLine(
+        diff([
+          { header: "@@", lines: [line(3)] },
+          { header: "@@", lines: [line(), line()] },
+          { header: "@@", lines: [line(910)] },
+        ]),
+        1,
+      ),
+    ).toBe(910);
   });
 });

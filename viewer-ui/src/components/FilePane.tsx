@@ -2,7 +2,7 @@ import { Suspense, lazy, useEffect, useRef } from "react";
 import { useDiffLayout } from "../lib/diffLayout";
 import { fileViewSource, isHtmlPath, isPreviewablePath } from "../lib/fileView";
 import { digitsFor } from "../lib/gutter";
-import { anchorWithin } from "../lib/diffAnchor";
+import { anchorWithin, hunkAtTop } from "../lib/diffAnchor";
 import { otherFace } from "../lib/otherFace";
 import {
   MaximizeIcon,
@@ -56,7 +56,7 @@ export interface FilePaneProps {
   setMaximized: (next: "none" | "files" | "terminal") => void;
   /// Swap between the diff and the whole file. Offered only for a pane that
   /// has both faces to show — see `FileSource`.
-  showOtherFace: () => void;
+  showOtherFace: (fromHunk: number) => void;
   status: Status | null;
   className?: string;
 }
@@ -74,6 +74,18 @@ export function FilePane({
   const diffLayout = useDiffLayout();
   const scroller = useRef<HTMLDivElement>(null);
   const anchor = pane.kind === "file" ? pane.anchor : undefined;
+  // Which hunk the diff is scrolled to, measured only when the switch is asked
+  // for. The offsets come from the DOM; which of them wins is `hunkAtTop`.
+  const visibleHunk = () => {
+    const container = scroller.current;
+    if (!container) return 0;
+    const top = container.getBoundingClientRect().top;
+    const offsets = Array.from(
+      container.querySelectorAll<HTMLElement>("[data-hunk]"),
+      (el) => el.getBoundingClientRect().top - top + container.scrollTop,
+    );
+    return hunkAtTop(offsets, container.scrollTop);
+  };
   // Put the anchored line at the top of the pane. Measured against the
   // scroller rather than `scrollIntoView`, which would also scroll whatever
   // else on the page happens to be scrollable. Keyed on the pane object, so it
@@ -95,7 +107,7 @@ export function FilePane({
         <div className="ml-auto flex shrink-0 items-center gap-1">
           {otherFace(pane) && (
             <button
-              onClick={showOtherFace}
+              onClick={() => showOtherFace(visibleHunk())}
               aria-pressed={pane.kind === "file"}
               title={
                 pane.kind === "file"
