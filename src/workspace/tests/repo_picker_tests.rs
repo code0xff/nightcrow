@@ -34,9 +34,8 @@ fn browsing_opens_on_the_prefilled_path() {
     ws.repo_input_browse();
 
     let picker = ws.repo_input.picker.as_ref().expect("the browser is open");
-    // `.` and `..` sit at the head of the root list, then the real entries.
-    assert_eq!(picker.rows().len(), 3);
-    assert_eq!(picker.rows()[2].name, "alpha");
+    assert_eq!(picker.rows().len(), 1);
+    assert_eq!(picker.rows()[0].name, "alpha");
 }
 
 #[test]
@@ -44,9 +43,6 @@ fn browsing_leaves_prefill_mode_so_the_picked_path_survives_typing() {
     let (_guard, mut ws) = dialog_on(&["alpha"]);
 
     ws.repo_input_browse();
-    // Step past `.` and `..` to alpha before picking.
-    ws.repo_picker_move(true);
-    ws.repo_picker_move(true);
     ws.repo_input_pick();
     ws.repo_input_push('x');
 
@@ -63,13 +59,62 @@ fn picking_a_row_closes_the_browser_and_fills_the_field() {
     let before = ws.repo_input.buf.clone();
 
     ws.repo_input_browse();
-    // Step past `.` and `..` to alpha before picking.
-    ws.repo_picker_move(true);
-    ws.repo_picker_move(true);
     ws.repo_input_pick();
 
     assert!(ws.repo_input.picker.is_none(), "back to the field");
     assert_eq!(ws.repo_input.buf, format!("{before}/alpha/"));
+}
+
+/// `←` at depth 0 is the only way out of the directory the browse started in,
+/// so this is the whole case for a moving root: reach a *sibling* checkout
+/// without leaving the browser or retyping the path.
+#[test]
+fn stepping_out_reaches_a_sibling_project() {
+    let (guard, mut ws) = dialog_on(&["proj-a", "proj-b"]);
+    std::fs::create_dir(guard.path().join("proj-a").join("sub")).expect("create sub");
+    // The prefill is replaceable until it is accepted, so a bare push would
+    // wipe the temp path instead of extending it.
+    ws.repo_input_accept_prefill();
+    for c in "/proj-a".chars() {
+        ws.repo_input_push(c);
+    }
+
+    // From inside `proj-a` the sibling is not on screen at all.
+    ws.repo_input_browse();
+    let rows = row_names(&ws);
+    assert_eq!(rows, ["sub"]);
+
+    // `←` re-roots to the parent and lands on the directory just left, so the
+    // step reads as "out of here" rather than "jump somewhere".
+    ws.repo_picker_collapse();
+    assert_eq!(row_names(&ws), ["proj-a", "proj-b"]);
+    let picker = ws.repo_input.picker.as_ref().expect("still browsing");
+    assert_eq!(picker.rows()[picker.selected()].name, "proj-a");
+
+    // One step down is the sibling, and Enter answers with it.
+    ws.repo_picker_move(true);
+    ws.repo_input_pick();
+
+    assert!(
+        ws.repo_input.picker.is_none(),
+        "picking returns to the field"
+    );
+    assert!(
+        ws.repo_input.buf.ends_with("/proj-b/"),
+        "the sibling has to be what the field ends up naming: {}",
+        ws.repo_input.buf
+    );
+}
+
+fn row_names(ws: &crate::workspace::Workspace) -> Vec<String> {
+    ws.repo_input
+        .picker
+        .as_ref()
+        .expect("the browser is open")
+        .rows()
+        .iter()
+        .map(|r| r.name.clone())
+        .collect()
 }
 
 #[test]
