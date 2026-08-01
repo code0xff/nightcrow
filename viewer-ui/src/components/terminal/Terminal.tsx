@@ -12,6 +12,7 @@ import { useTerminalViews } from "../../hooks/terminal/useTerminalViews";
 import { usePaneSizes } from "../../hooks/terminal/usePaneSizes";
 import { usePaneRecovery } from "../../hooks/terminal/usePaneRecovery";
 import { usePaneCommands } from "../../hooks/terminal/usePaneCommands";
+import { usePaneFocus } from "../../hooks/terminal/usePaneFocus";
 import { useStartupSizes } from "../../hooks/terminal/useStartupSizes";
 import { TerminalCell } from "./TerminalCell";
 import { StartupSlots } from "./StartupSlots";
@@ -139,37 +140,16 @@ export function TerminalPanel({
     return () => observer.disconnect();
   }, []);
 
-  useEffect(() => {
-    // Not while a replay has named a zoom whose pane has not arrived: the panes
-    // come one at a time, and focusing an earlier one would put the keyboard in
-    // a terminal that is about to be replaced by the zoomed one.
-    if (zoomPending(zoomed, panes)) return;
-    if (active === null && panes.length > 0) {
-      const remembered = lastActiveByRepoRef.current.get(repo);
-      setActive(
-        remembered !== undefined && panes.includes(remembered)
-          ? remembered
-          : panes[panes.length - 1],
-      );
-    }
-  }, [active, panes, repo, zoomed]);
-
-  // While one pane fills the panel it is the only one that can be seen, so it
-  // has to be the one being typed into. Enforced here rather than at the toggle
-  // because a zoom no longer needs a click on this page to happen: it is
-  // replayed on connect and set by other clients, and either would otherwise
-  // leave the keyboard — and the key bar, which types into the active pane —
-  // pointed at a terminal that is not on screen.
-  useEffect(() => {
-    if (zoom !== null && zoom !== active) {
-      setActive(zoom);
-      lastActiveByRepoRef.current.set(repo, zoom);
-    }
-  }, [zoom, active, repo]);
-
-  useEffect(() => {
-    if (active !== null) viewsRef.current.get(active)?.term.focus();
-  }, [active]);
+  usePaneFocus({
+    repo,
+    panes,
+    active,
+    setActive,
+    zoomed,
+    zoom,
+    viewsRef,
+    lastActiveByRepoRef,
+  });
 
   const focusPane = (pane: number) => {
     setActive(pane);
