@@ -10,18 +10,32 @@ use std::path::{Path, PathBuf};
 /// surface the git error in its status bar.
 pub fn resolve_repo_path(path: impl AsRef<Path>) -> PathBuf {
     let path = path.as_ref();
-    git2::Repository::discover(path)
+    // The worktree git says this path belongs to, or the path itself when there
+    // is no repository there.
+    let found = git2::Repository::discover(path)
         .ok()
-        .and_then(|repo| repo.workdir().map(Path::to_path_buf))
-        // Not a git repo: fall back to the directory itself, canonicalized so
-        // two spellings of one directory (`/w` vs `/w/`, a relative path vs
-        // its absolute form) produce the same string. Project de-duplication
-        // compares these paths, so differing spellings would open a second tab
-        // on the same worktree. Canonicalization can only fail for a path that
-        // does not exist, which the caller has already rejected.
-        .unwrap_or_else(|| {
-            crate::platform::paths::canonicalize_clean(path).unwrap_or_else(|_| path.to_path_buf())
-        })
+        .and_then(|repo| repo.workdir().map(Path::to_path_buf));
+    let candidate = found.as_deref().unwrap_or(path);
+    // Canonicalized whichever branch produced it, so one worktree has exactly
+    // one spelling. Project de-duplication compares these strings, and a
+    // second spelling opens a second tab on a repository already open.
+    //
+    // Applied to libgit2's answer too, rather than trusting it: what `workdir`
+    // returns is platform-specific — a trailing separator, symlinks resolved on
+    // some systems and not others, and on Windows the casing as it was asked
+    // for rather than as it is on disk, where `C:\Code` and `c:\code` are one
+    // directory. Making the guarantee ours costs one `stat` and does not depend
+    // on behaviour no test here can reach.
+    //
+    // A path that cannot be canonicalized is returned as it came. That is
+    // almost always one that does not exist, which the caller has already
+    // rejected — but a directory the process cannot open would land here too,
+    // and for it the single-spelling guarantee is off. Opening the repository
+    // and letting git report what is wrong beats refusing to show it at all,
+    // and the cost of being wrong is the duplicate tab this exists to prevent,
+    // not anything lost.
+    crate::platform::paths::canonicalize_clean(candidate)
+        .unwrap_or_else(|_| candidate.to_path_buf())
 }
 
 #[cfg(test)]
@@ -37,14 +51,11 @@ mod tests {
 
         let resolved = resolve_repo_path(&nested);
 
-        // libgit2 returns the workdir with platform-specific symlink resolution
-        // (e.g. macOS surfaces /private/var instead of /var) and a trailing
-        // separator. Canonicalize both sides so the assertion checks structural
-        // equality rather than literal byte equality.
-        assert_eq!(
-            resolved.canonicalize().unwrap(),
-            PathBuf::from(repo_path).canonicalize().unwrap()
-        );
+        // Compared literally. What libgit2 hands back is platform-specific — a
+        // trailing separator, symlinks resolved on some systems and not others
+        // — so this used to canonicalize both sides to compare structurally;
+        // now the function does that itself, which is the point of it.
+        assert_eq!(resolved, resolve_repo_path(&repo_path));
     }
 
     #[test]
@@ -54,6 +65,23 @@ mod tests {
         let path = PathBuf::from("/not/a/repo");
 
         assert_eq!(resolve_repo_path(&path), path);
+    }
+
+    #[test]
+    fn every_spelling_of_one_worktree_resolves_alike() {
+        // The de-duplication this exists for: a repository reached by a nested
+        // directory, with a trailing separator, or through `.` is one tab.
+        let (_dir, repo_path) = make_repo();
+        let nested = Path::new(&repo_path).join("src");
+        std::fs::create_dir(&nested).unwrap();
+        let resolved = resolve_repo_path(&repo_path);
+
+        assert_eq!(resolve_repo_path(&nested), resolved);
+        assert_eq!(
+            resolve_repo_path(PathBuf::from(format!("{repo_path}/"))),
+            resolved
+        );
+        assert_eq!(resolve_repo_path(Path::new(&repo_path).join(".")), resolved);
     }
 
     #[test]

@@ -43,6 +43,11 @@ git 데이터도 터미널도 전혀 모르는 계층이며, 웹 표면이 하�
 - **저장소는 opaque id로만 지정**한다(`src/session/catalog/`). 클라이언트가 디렉토리를 이름 붙일 수 없으므로
   "어느 저장소인가"는 검증할 입력이 아니라 성공하거나 404가 되는 조회다. id는 프로세스 수명 동안
   안정적이라 무관한 탭을 열고 닫아도 다른 id가 재배치되지 않는다.
+- **카탈로그 경로는 경계에서 정규화**한다(`Catalog::normalized`). `set_paths`·`add_path`·`remove_path`·
+  `reorder`가 모두 `resolve_repo_path`의 단일 철자를 사용한다. served 집합·`hidden`·`order`가 문자열로
+  동일성을 판단하므로, 중첩 디렉터리·심링크·끝 슬래시로 같은 worktree를 다시 열어도 탭이 중복되지 않는다.
+  기존 저장 상태의 옛 철자는 다음 쓰기에서 정규화되며, 일시적으로 active/pane preference가 기본값으로
+  돌아올 수는 있어도 영구 마이그레이션 코드를 두지는 않는다.
 - **저장소별 런타임**(`src/session/runtime/`): `SnapshotChannel`은 단일 consumer `mpsc`라 자기 것을 띄운다.
   스냅샷을 wire 페이로드로 한 번만 줄여 팬아웃한다. **팬아웃은 conflate**된다 — 느린 구독자는 최신
   상태를 받지 밀린 과거를 재생하지 않는다(슬롯 1개 + 1-depth 병합 wakeup). 소켓 I/O 중 락을 잡지

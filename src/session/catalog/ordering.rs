@@ -35,10 +35,13 @@ impl Catalog {
     }
 
     pub fn reorder(&self, desired: &[String]) {
+        // Normalised like every other path entering the catalog, so an order
+        // given in a different spelling still names the repositories it means.
+        let desired: Vec<String> = desired.iter().map(|p| Self::normalized(p)).collect();
         let _mutation = self.mutation.lock().expect("catalog mutation poisoned");
         let served = self.union_paths();
         let mut next = Vec::with_capacity(served.len());
-        for path in desired {
+        for path in &desired {
             if served.iter().any(|served| served == path) && !next.contains(path) {
                 next.push(path.clone());
             }

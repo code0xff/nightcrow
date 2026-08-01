@@ -1,5 +1,59 @@
 use super::*;
 use crate::test_util::make_repo;
+
+/// The one spelling the catalog keeps for a worktree, which is not the string a
+/// temporary directory was created under: git reports a worktree with a trailing
+/// slash, and on macOS the parent of a temporary directory is a symlink. Tests
+/// that assert on served paths compare against this, because a path arriving in
+/// any other spelling is exactly what the catalog now normalises away.
+fn served(path: &str) -> String {
+    crate::git::resolve_repo_path(std::path::Path::new(path))
+        .to_string_lossy()
+        .into_owned()
+}
+
+/// One worktree, two spellings — a workspace file or a `--repo` argument holds
+/// the path as it was typed, and a client opening the same repository sends what
+/// `resolve_repo_path` makes of it. The catalog decides identity by comparing
+/// those strings, so before they were normalised on the way in this opened a
+/// second tab on a repository already open.
+#[test]
+fn one_worktree_reached_two_ways_is_one_repository() {
+    let (dir, path) = make_repo();
+    // A spelling that differs on every platform, rather than one that happens
+    // to: a temporary directory sits under a symlink on macOS and does not on
+    // Linux, so relying on canonicalization to change the string at all would
+    // make this prove nothing on half the machines that run it. Reaching a
+    // worktree by a directory inside it is the everyday version — someone opens
+    // the folder they were working in.
+    let nested = std::path::Path::new(&path)
+        .join("src")
+        .to_string_lossy()
+        .into_owned();
+    std::fs::create_dir(&nested).unwrap();
+    let resolved = served(&path);
+    assert_ne!(nested, resolved, "the two spellings must actually differ");
+
+    let catalog = Catalog::new();
+    // What a `--repo` argument or a workspace file holds, against what a client
+    // opening the same repository sends.
+    catalog.set_paths(std::slice::from_ref(&nested));
+    catalog.add_path(resolved, 10);
+
+    let served_now = catalog.list();
+    assert_eq!(
+        served_now.len(),
+        1,
+        "one worktree must not occupy two tabs: {:?}",
+        served_now
+            .iter()
+            .map(|r| r.display_path.clone())
+            .collect::<Vec<_>>()
+    );
+    catalog.shutdown();
+    drop(dir);
+}
+
 #[test]
 fn ids_are_stable_across_catalog_updates() {
     let (dir_a, a) = make_repo();
@@ -31,7 +85,7 @@ fn a_path_that_leaves_and_returns_keeps_its_id() {
     catalog.set_paths(&[b.clone(), a.clone()]);
 
     let reopened = catalog.get(&a_id).expect("the id must still resolve");
-    assert_eq!(reopened.path, a);
+    assert_eq!(reopened.path, served(&a));
     catalog.shutdown();
     drop((dir_a, dir_b));
 }
@@ -164,74 +218,6 @@ fn removing_a_path_drops_it_from_lookup() {
 }
 
 #[test]
-fn reorder_puts_the_tabs_in_the_requested_order() {
-    let (dir_a, a) = make_repo();
-    let (dir_b, b) = make_repo();
-    let (dir_c, c) = make_repo();
-    let catalog = Catalog::new();
-    catalog.set_paths(&[a.clone(), b.clone(), c.clone()]);
-
-    catalog.reorder(&[c.clone(), a.clone(), b.clone()]);
-
-    assert_eq!(catalog.paths(), vec![c, a, b]);
-    catalog.shutdown();
-    drop((dir_a, dir_b, dir_c));
-}
-
-#[test]
-fn reorder_drops_unknown_paths_and_appends_omitted_paths() {
-    let (dir_a, a) = make_repo();
-    let (dir_b, b) = make_repo();
-    let (dir_c, c) = make_repo();
-    let catalog = Catalog::new();
-    catalog.set_paths(&[a.clone(), b.clone(), c.clone()]);
-
-    catalog.reorder(&[b.clone(), "/no/such/repo".to_string()]);
-
-    assert_eq!(catalog.paths(), vec![b, a, c]);
-    catalog.shutdown();
-    drop((dir_a, dir_b, dir_c));
-}
-
-#[test]
-fn a_reordering_survives_a_later_rebuild() {
-    let (dir_a, a) = make_repo();
-    let (dir_b, b) = make_repo();
-    let (dir_c, c) = make_repo();
-    let catalog = Catalog::new();
-    catalog.set_paths(&[a.clone(), b.clone()]);
-    catalog.reorder(&[b.clone(), a.clone()]);
-
-    catalog.set_paths(&[a.clone(), b.clone()]);
-    assert_eq!(catalog.paths(), vec![b.clone(), a.clone()]);
-    assert!(matches!(
-        catalog.add_path(c.clone(), 10),
-        AddOutcome::Added(_)
-    ));
-    assert_eq!(catalog.paths(), vec![b, a, c]);
-    catalog.shutdown();
-    drop((dir_a, dir_b, dir_c));
-}
-
-#[test]
-fn reorder_keeps_ids_stable() {
-    let (dir_a, a) = make_repo();
-    let (dir_b, b) = make_repo();
-    let catalog = Catalog::new();
-    catalog.set_paths(&[a.clone(), b.clone()]);
-    let a_id = catalog.list()[0].id.clone();
-    let b_id = catalog.list()[1].id.clone();
-
-    catalog.reorder(&[b, a]);
-
-    let after = catalog.list();
-    assert_eq!(after[0].id, b_id);
-    assert_eq!(after[1].id, a_id);
-    catalog.shutdown();
-    drop((dir_a, dir_b));
-}
-
-#[test]
 fn duplicate_paths_collapse_to_one_entry() {
     let (dir_a, a) = make_repo();
     let catalog = Catalog::new();
@@ -298,3 +284,4 @@ fn repo_name_ignores_a_trailing_separator() {
 }
 
 mod config_tables;
+mod ordering;
