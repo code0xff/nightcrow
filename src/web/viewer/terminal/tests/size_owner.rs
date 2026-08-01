@@ -124,8 +124,8 @@ fn one_answer_covers_every_repository_in_the_session() {
     // An attached terminal subscribes to every open repository at once. Those
     // are one screen, so only its first subscription is an arrival.
     let tui = crate::web::viewer::size_owner::ViewerId::Attached(1);
-    let tui_one = one.connect(tui.clone(), true);
-    let tui_two = two.connect(tui, false);
+    let tui_one = one.connect(tui.clone(), true, None);
+    let tui_two = two.connect(tui, false, None);
     assert!(verdict(&tui_one));
     assert!(verdict(&tui_two), "both of its ends hold the sizing");
 

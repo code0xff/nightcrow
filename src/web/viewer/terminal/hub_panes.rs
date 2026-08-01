@@ -127,6 +127,7 @@ impl TerminalHub {
                 .try_send(TerminalFrame::Control(json))
                 .is_err()
         {
+            state.clients[index].cut_off();
             state.clients.remove(index);
         }
     }

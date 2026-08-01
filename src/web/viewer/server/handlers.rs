@@ -223,6 +223,9 @@ pub(super) fn serve_terminal(
     // into a poll that services both directions.
     let _ = stream.set_read_timeout(Some(TERM_POLL_TIMEOUT));
     let _ = stream.set_write_timeout(Some(SSE_HEARTBEAT));
+    // Taken before the stream is moved into the websocket, which owns it from
+    // there on.
+    let evict_handle = stream.try_clone();
     let Some(mut ws) = conn::websocket_handshake(stream, head) else {
         return;
     };
@@ -230,7 +233,13 @@ pub(super) fn serve_terminal(
     // repository switch or a reconnect. Absent means no — a socket that does not
     // say it arrived must not take the sizing off whoever is looking.
     let arriving = head.query_param("claim").as_deref() == Some("1");
-    let session = entry.terminals.connect(browser_viewer(head), arriving);
+    // A second handle, kept by the hub only to end this connection if the page
+    // stops draining its queue: the loop below is then parked in `ws.read()` and
+    // nothing else would wake it. A clone that could not be made costs the hub
+    // that ability and nothing else.
+    let session = entry
+        .terminals
+        .connect(browser_viewer(head), arriving, evict_handle.ok());
 
     loop {
         // Drain everything queued for us before blocking on the socket, so

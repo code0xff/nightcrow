@@ -1,6 +1,7 @@
 //! The hub's test harness: the shared deadline and the frame accessors every
 //! hub test reads its assertions through. The tests themselves live beside it.
 
+mod backpressure;
 mod behavior;
 mod identity;
 mod plugin_reload;
@@ -247,5 +248,30 @@ pub(super) fn attach(hub: &std::sync::Arc<super::TerminalHub>) -> TerminalSessio
         "test-{}",
         NEXT.fetch_add(1, Ordering::Relaxed)
     ));
-    hub.connect(id, true)
+    hub.connect(id, true, None)
+}
+
+/// A client arriving over a real socket, with the peer end returned so a test
+/// can watch what the hub does to the connection itself.
+///
+/// The served end is returned too, and a test must hold it: the hub is given a
+/// *clone*, exactly as `serve_terminal` gives it one while the connection thread
+/// keeps the original. Letting the hub's clone be the only handle would close
+/// the connection when the client record drops, which is not what production
+/// does and would make a test pass without the shutdown it means to check.
+pub(super) fn attach_over_socket(
+    hub: &std::sync::Arc<super::TerminalHub>,
+) -> (TerminalSession, std::net::TcpStream, std::net::TcpStream) {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static NEXT: AtomicU64 = AtomicU64::new(0);
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("no loopback listener");
+    let addr = listener.local_addr().expect("no local address");
+    let peer = std::net::TcpStream::connect(addr).expect("could not dial the listener");
+    let (served, _) = listener.accept().expect("no inbound connection");
+    let id = crate::web::viewer::size_owner::ViewerId::Browser(format!(
+        "socket-{}",
+        NEXT.fetch_add(1, Ordering::Relaxed)
+    ));
+    let handed = served.try_clone().expect("could not clone the served end");
+    (hub.connect(id, true, Some(handed)), peer, served)
 }

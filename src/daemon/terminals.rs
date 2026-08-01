@@ -109,7 +109,11 @@ impl TerminalBridges {
         // repository. Only the first of these subscriptions is an arrival — the
         // rest follow a set that changed, and a repository opening elsewhere is
         // not a person sitting down here.
-        let session = Arc::new(hub.connect(ViewerId::Attached(self.client), arriving));
+        // No socket to hand over: the loop below drains this session and passes
+        // frames on without blocking, so it cannot fall behind here. The
+        // backpressure that matters to an attached client is applied where it
+        // does own a socket (`AttachedClients::queue`).
+        let session = Arc::new(hub.connect(ViewerId::Attached(self.client), arriving, None));
         let stop = Arc::new(AtomicBool::new(false));
         let worker = {
             let session = Arc::clone(&session);

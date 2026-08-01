@@ -34,7 +34,16 @@ impl TerminalHub {
     /// a person just sat down at it — a page opening rather than a repository
     /// switch or a reconnect. Only the second takes the sizing; see
     /// [`SizeOwnership`](crate::web::viewer::size_owner::SizeOwnership).
-    pub fn connect(self: &Arc<Self>, viewer: ViewerId, arriving: bool) -> TerminalSession {
+    ///
+    /// `socket` is a handle on the connection to end if this client stops
+    /// keeping up, and `None` for one that has no socket here at all — see
+    /// [`Client::socket`](super::session::Client::socket).
+    pub fn connect(
+        self: &Arc<Self>,
+        viewer: ViewerId,
+        arriving: bool,
+        socket: Option<std::net::TcpStream>,
+    ) -> TerminalSession {
         let id = self.next_client_id.fetch_add(1, Ordering::AcqRel);
         let (tx, rx) = mpsc::sync_channel(CLIENT_QUEUE_DEPTH);
         let mut state = self.state.lock().expect("terminal state poisoned");
@@ -95,7 +104,12 @@ impl TerminalHub {
             .ownership
             .join(viewer, arriving, tx.clone(), Instant::now());
         let connection = registration.connection;
-        state.clients.push(Client { id, tx, connection });
+        state.clients.push(Client {
+            id,
+            tx,
+            connection,
+            socket,
+        });
         drop(state);
 
         // Off the lock: this reaches the worker, which needs the backend. A full
@@ -146,6 +160,7 @@ impl TerminalHub {
                 .try_send(TerminalFrame::Control(json))
                 .is_err()
         {
+            state.clients[index].cut_off();
             state.clients.remove(index);
         }
     }

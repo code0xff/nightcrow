@@ -144,15 +144,20 @@ pub struct Shared {
 
 /// Queue a frame for every client, dropping any that has fallen too far behind.
 /// Terminal bytes cannot be skipped, so an overfull client is disconnected
-/// rather than served a corrupted stream. Operates on an already-locked client
-/// list so the caller can pair it with a pane mutation atomically.
+/// rather than served a corrupted stream — and disconnected outright, socket and
+/// all (see [`Client::cut_off`]), because leaving it off the list alone would
+/// leave it holding a panel that has quietly stopped being true. Operates on an
+/// already-locked client list so the caller can pair it with a pane mutation
+/// atomically.
 pub(super) fn broadcast_locked(clients: &mut Vec<Client>, frame: TerminalFrame) {
     clients.retain(|client| match client.tx.try_send(frame.clone()) {
         Ok(()) => true,
         Err(TrySendError::Full(_)) => {
             tracing::debug!(id = client.id, "viewer: terminal client too slow, dropping");
+            client.cut_off();
             false
         }
+        // Already gone: its session dropped, which is what closed the receiver.
         Err(TrySendError::Disconnected(_)) => false,
     });
 }

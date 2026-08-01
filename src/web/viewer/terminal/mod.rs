@@ -57,7 +57,7 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 
 /// Output frames a client may fall behind by before it is dropped.
-const CLIENT_QUEUE_DEPTH: usize = 256;
+pub(crate) const CLIENT_QUEUE_DEPTH: usize = 256;
 
 /// The size a pane is born at when no client measured one for it. Only reached
 /// when a client answers `Pending` with fewer sizes than there are panes; the

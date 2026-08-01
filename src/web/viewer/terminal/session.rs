@@ -9,11 +9,41 @@ use std::time::{Duration, Instant};
 pub(super) struct Client {
     pub(super) id: u64,
     pub(super) tx: SyncSender<TerminalFrame>,
+    /// A second handle on this client's socket, only ever used to end the
+    /// connection when its queue overflows.
+    ///
+    /// Dropping it from the broadcast list alone stops the frames but leaves the
+    /// connection thread parked in its read, so the client goes quiet while
+    /// still believing it is attached — a panel frozen mid-session, with no
+    /// close for the page's reconnect to fire on. Closing the socket is what
+    /// turns that into the disconnect it already claims to be. The same handle
+    /// the daemon keeps on an attached client, for the same reason
+    /// (`daemon::clients`).
+    ///
+    /// `None` for a client with no socket of its own: the daemon's bridge reads
+    /// this hub from a thread and hands frames on without blocking, so it cannot
+    /// fall behind here — the backpressure that matters to it is applied a layer
+    /// out, where it does own a socket.
+    pub(super) socket: Option<std::net::TcpStream>,
     /// This connection's registration with the session's size ownership. Kept
     /// beside the hub's own id because the two answer different questions: the
     /// id names a connection to *this* repository, the registration names the
     /// screen behind it, which the session tracks across every repository.
     pub(super) connection: u64,
+}
+
+impl Client {
+    /// End this client's connection, because it stopped keeping up.
+    ///
+    /// Only for that: a session leaving of its own accord is already tearing its
+    /// socket down, and shutting one it no longer owns down is not this side's
+    /// business. Errors are ignored — a socket that is already gone is the
+    /// outcome this is asking for.
+    pub(super) fn cut_off(&self) {
+        if let Some(socket) = &self.socket {
+            let _ = socket.shutdown(std::net::Shutdown::Both);
+        }
+    }
 }
 
 /// A client's connection to a repository's terminals.
