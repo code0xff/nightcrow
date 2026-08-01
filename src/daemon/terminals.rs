@@ -80,8 +80,22 @@ impl TerminalBridges {
                 continue;
             };
             let arriving = !self.arrived;
+            let Some(bridge) = self.subscribe(&repo.id, arriving, &entry.terminals) else {
+                // Left out of `open`, and the arrival left unspent, so the next
+                // set this client is told about tries again as if this had not
+                // been attempted — which, deliberately, it has not.
+                //
+                // "Next set" is the limit: this is called on attach and when the
+                // repository set changes, so a repository that fails here shows
+                // in the client's tabs with no terminals until something else
+                // moves. Left as is rather than given a retry of its own —
+                // reaching here means a thread could not be spawned, which on
+                // this daemon means the next connection cannot be served either,
+                // and a repository that streams nothing is the smaller half of
+                // that problem.
+                continue;
+            };
             self.arrived = true;
-            let bridge = self.subscribe(&repo.id, arriving, &entry.terminals);
             self.open.insert(repo.id.clone(), bridge);
         }
     }
@@ -94,37 +108,38 @@ impl TerminalBridges {
         }
     }
 
+    /// `None` when the relay thread could not be started, in which case nothing
+    /// has happened at all — see the ordering below.
     fn subscribe(
         &self,
         repo: &str,
         arriving: bool,
         hub: &Arc<crate::web::viewer::terminal::TerminalHub>,
-    ) -> Bridge {
-        // Connecting replays the panes and their scrollback before any live
-        // frame, so the thread below forwards a usable history first and the
-        // client's emulators start from the same place the browser's do.
-        //
-        // One viewer across every repository it subscribes to: this client is a
-        // single terminal showing one project at a time, not one screen per
-        // repository. Only the first of these subscriptions is an arrival — the
-        // rest follow a set that changed, and a repository opening elsewhere is
-        // not a person sitting down here.
-        // No socket to hand over: the loop below drains this session and passes
-        // frames on without blocking, so it cannot fall behind here. The
-        // backpressure that matters to an attached client is applied where it
-        // does own a socket (`AttachedClients::queue`).
-        let session = Arc::new(hub.connect(ViewerId::Attached(self.client), arriving, None));
+    ) -> Option<Bridge> {
         let stop = Arc::new(AtomicBool::new(false));
+        // The thread first, and the subscription only once it exists.
+        // Subscribing is not free of consequence: it registers this client with
+        // the session's size ownership and, on an arrival, takes the sizing off
+        // whoever had it. Done in the other order, a thread that failed to start
+        // left a subscription nobody reads — the sizing displaced for the
+        // release grace, this client's one arrival spent, and the hub evicting a
+        // bridge it can never reach. Handing the session over afterwards is what
+        // lets the order be this way round.
+        let (hand_over, take) = std::sync::mpsc::channel::<Arc<TerminalSession>>();
         let worker = {
-            let session = Arc::clone(&session);
             let stop = Arc::clone(&stop);
             let clients = Arc::clone(&self.clients);
             let client = self.client;
-            let hub_client = session.client_id();
             let repo = repo.to_string();
             std::thread::Builder::new()
                 .name("nightcrow-attach-term".into())
                 .spawn(move || {
+                    // The one send below, or nothing at all if this bridge was
+                    // abandoned before it was handed anything.
+                    let Ok(session) = take.recv() else {
+                        return;
+                    };
+                    let hub_client = session.client_id();
                     while !stop.load(Ordering::Acquire) {
                         let Some(frame) = session.next_frame(BRIDGE_POLL) else {
                             continue;
@@ -132,13 +147,35 @@ impl TerminalBridges {
                         clients.send_to(client, tag(&repo, frame, hub_client, client));
                     }
                 })
-                .ok()
         };
-        Bridge {
+        let worker = match worker {
+            Ok(handle) => handle,
+            Err(err) => {
+                tracing::warn!(%err, repo, "daemon: could not start a terminal relay");
+                return None;
+            }
+        };
+        // Connecting replays the panes and their scrollback before any live
+        // frame, so the thread above forwards a usable history first and the
+        // client's emulators start from the same place the browser's do.
+        //
+        // One viewer across every repository it subscribes to: this client is a
+        // single terminal showing one project at a time, not one screen per
+        // repository. Only the first of these subscriptions is an arrival — the
+        // rest follow a set that changed, and a repository opening elsewhere is
+        // not a person sitting down here.
+        //
+        // No socket to hand over: the loop above drains this session and passes
+        // frames on without blocking, so it cannot fall behind here. The
+        // backpressure that matters to an attached client is applied where it
+        // does own a socket (`AttachedClients::queue`).
+        let session = Arc::new(hub.connect(ViewerId::Attached(self.client), arriving, None));
+        let _ = hand_over.send(Arc::clone(&session));
+        Some(Bridge {
             session,
             stop,
-            worker,
-        }
+            worker: Some(worker),
+        })
     }
 }
 

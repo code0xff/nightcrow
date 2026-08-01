@@ -165,16 +165,24 @@ impl TerminalHub {
         }
     }
 
-    pub(super) fn disconnect(&self, id: u64) {
-        let connection = {
-            let mut state = self.state.lock().expect("terminal state poisoned");
-            let found = state.clients.iter().position(|c| c.id == id);
-            found.map(|index| state.clients.remove(index).connection)
-        };
+    /// Unregister a session that is going away.
+    ///
+    /// `connection` comes from the session rather than from the client record,
+    /// because the record may already be gone: every eviction path removes it
+    /// the moment the client stops keeping up. Reading the registration out of
+    /// the list meant an evicted client never released the sizing — it stayed
+    /// present forever, so a viewer that had it kept it after its page had
+    /// closed and no other screen could take it back.
+    pub(super) fn disconnect(&self, id: u64, connection: u64) {
+        self.state
+            .lock()
+            .expect("terminal state poisoned")
+            .clients
+            .retain(|c| c.id != id);
         // Off the hub's lock: what happens to the sizing is the session's
-        // business, and it may have to tell clients on other hubs.
-        if let Some(connection) = connection {
-            self.ownership.leave(connection, Instant::now());
-        }
+        // business, and it may have to tell clients on other hubs. Unconditional
+        // — `leave` ignores a connection it does not know, which is the case
+        // when this runs twice for one session.
+        self.ownership.leave(connection, Instant::now());
     }
 }

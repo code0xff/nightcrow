@@ -46,3 +46,50 @@ fn a_client_that_stops_draining_has_its_connection_ended() {
     );
     hub.stop();
 }
+
+#[test]
+fn an_evicted_client_still_releases_the_sizing_when_its_session_ends() {
+    // Its record is gone from the broadcast list by the time the session drops,
+    // so reading the size-ownership registration back out of that list found
+    // nothing and released nothing. The viewer then stayed present for good: it
+    // held the sizing after its page was closed, and no other screen could take
+    // it back, because the grace that hands it on only starts once its last
+    // connection leaves.
+    let dir = tempfile::TempDir::new().unwrap();
+    let cwd = dir.path().to_string_lossy().to_string();
+    let ownership: std::sync::Arc<crate::web::viewer::size_owner::SizeOwnership> =
+        Default::default();
+    let hub = crate::web::viewer::terminal::TerminalHub::spawn(
+        &cwd,
+        Vec::new(),
+        Vec::new(),
+        crate::config::ShellConfig::default(),
+        ownership.clone(),
+    );
+
+    let evicted = crate::web::viewer::size_owner::ViewerId::Browser("evicted".to_string());
+    let session = hub.connect(evicted.clone(), true, None);
+    assert_eq!(ownership.owner(), Some(evicted.clone()), "it arrived last");
+
+    session.dispatch(ClientMessage::Create { rows: 24, cols: 80 });
+    let pane = next_matching(&session, |f| created_pane(f).is_some())
+        .and_then(|f| created_pane(&f))
+        .expect("no created message");
+    for i in 0..CLIENT_QUEUE_DEPTH + 8 {
+        let target = if i % 2 == 0 { Some(pane) } else { None };
+        session.dispatch(ClientMessage::Zoom { pane: target });
+    }
+
+    // Whoever is left takes the sizing once the departed owner's grace runs out.
+    let waiting = crate::web::viewer::size_owner::ViewerId::Browser("waiting".to_string());
+    let _other = hub.connect(waiting.clone(), false, None);
+    drop(session);
+    ownership.settle(std::time::Instant::now() + crate::web::viewer::size_owner::RELEASE_GRACE * 2);
+
+    assert_eq!(
+        ownership.owner(),
+        Some(waiting),
+        "an evicted client must not hold the sizing after its session ends"
+    );
+    hub.stop();
+}

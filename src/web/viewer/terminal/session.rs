@@ -241,6 +241,6 @@ const MAX_CODE_LEN: usize = 16;
 
 impl Drop for TerminalSession {
     fn drop(&mut self) {
-        self.hub.disconnect(self.id);
+        self.hub.disconnect(self.id, self.connection);
     }
 }

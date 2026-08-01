@@ -237,9 +237,22 @@ pub(super) fn serve_terminal(
     // stops draining its queue: the loop below is then parked in `ws.read()` and
     // nothing else would wake it. A clone that could not be made costs the hub
     // that ability and nothing else.
+    let evict_handle = match evict_handle {
+        Ok(handle) => Some(handle),
+        Err(err) => {
+            // Degrades to what this did before there was a handle at all: the
+            // client is dropped from the broadcast list but its socket stays
+            // open. Logged rather than passed over, because the page then holds
+            // a panel that has stopped updating and nothing else says so — and
+            // because a clone that fails means descriptors are exhausted, which
+            // is worth knowing on its own.
+            tracing::warn!(%err, "viewer: a terminal socket cannot be cut off if it stalls");
+            None
+        }
+    };
     let session = entry
         .terminals
-        .connect(browser_viewer(head), arriving, evict_handle.ok());
+        .connect(browser_viewer(head), arriving, evict_handle);
 
     loop {
         // Drain everything queued for us before blocking on the socket, so
