@@ -113,6 +113,16 @@ refresh, a reconnect, or another device opening the same repository all show the
 same arrangement. (It is not written to disk — a server restart clears the
 terminals themselves, so there is nothing to persist.)
 
+The **zoom** button on a pane's toolbar fills the panel with that one terminal,
+and the keyboard follows it. Like the order, and for the same reason, it is kept
+on the server: a refresh comes back to the pane you had zoomed, and another
+device showing the same project follows. Opening a terminal ends the zoom — the
+new one would be behind it otherwise — and so does closing the zoomed pane. It
+is not written to disk either, and cannot be: a zoom names a pane, and
+restarting the session ends the panes. An attached TUI keeps its own
+`<prefix> f` zoom rather than following this one — the panes are shared, but
+what fills a screen is that screen's.
+
 ## On a phone
 
 The three regions the desktop shows at once — the file/commit list, the content

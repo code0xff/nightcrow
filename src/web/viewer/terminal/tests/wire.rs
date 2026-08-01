@@ -68,6 +68,37 @@ fn client_messages_parse_from_the_wire_shape() {
 }
 
 #[test]
+fn a_zoom_parses_both_with_a_pane_and_without_one() {
+    let zoom: ClientMessage = serde_json::from_str(r#"{"type":"zoom","pane":3}"#).unwrap();
+    assert_eq!(zoom, ClientMessage::Zoom { pane: Some(3) });
+
+    // Going back to the grid, which is the same message and not a second one.
+    let off: ClientMessage = serde_json::from_str(r#"{"type":"zoom","pane":null}"#).unwrap();
+    assert_eq!(off, ClientMessage::Zoom { pane: None });
+
+    // An absent `pane` reads as `null` — serde fills an `Option` field that is
+    // not there. Pinned rather than tightened: the value it lands on is the
+    // harmless one (back to the grid), and a malformed zoom that un-zooms is
+    // nothing a client cannot undo.
+    let absent: ClientMessage = serde_json::from_str(r#"{"type":"zoom"}"#).unwrap();
+    assert_eq!(absent, ClientMessage::Zoom { pane: None });
+}
+
+#[test]
+fn the_zoomed_announcement_carries_a_null_rather_than_omitting_the_pane() {
+    // The client cannot infer "nothing is zoomed" from a missing field — it has
+    // to be told, or a pane that stops filling the panel never stops on screen.
+    assert_eq!(
+        serde_json::to_string(&ServerMessage::Zoomed { pane: Some(2) }).unwrap(),
+        r#"{"type":"zoomed","pane":2}"#
+    );
+    assert_eq!(
+        serde_json::to_string(&ServerMessage::Zoomed { pane: None }).unwrap(),
+        r#"{"type":"zoomed","pane":null}"#
+    );
+}
+
+#[test]
 fn a_clear_key_report_parses_with_and_without_a_key_event() {
     let keyed: ClientMessage = serde_json::from_str(
         r#"{"type":"clear_key_report","pane":2,"key":{"trusted":false,"repeat":true,"code":"KeyL","since_ms":3}}"#,

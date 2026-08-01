@@ -1,14 +1,10 @@
-use super::frame::{ServerMessage, TerminalFrame};
 use super::hub_diag::ClearWatch;
-use super::hub_helpers::{Command, PaneState, broadcast_locked, push_scrollback};
+use super::hub_helpers::Command;
 use super::hub_modes::PaneModeTracker;
 use super::hub_plugins::Plugins;
 use super::hub_repaint::Repaints;
 use super::{DEFAULT_PANE_SIZE, TerminalHub};
 use crate::backend::{BackendEvent, PaneId, PtyBackend, TerminalBackend};
-use crate::runtime::emulator::PaneModes;
-use crate::web::viewer::limits;
-use std::collections::VecDeque;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::Receiver;
@@ -197,111 +193,10 @@ impl TerminalHub {
         }
         // Drop the pane records too: the hub struct can outlive its worker
         // behind an `Arc`, and a late `connect` must not replay these now-dead
-        // terminals.
-        self.state
-            .lock()
-            .expect("terminal state poisoned")
-            .panes
-            .clear();
-    }
-
-    /// Whether another terminal fits under the cap, counting slots already
-    /// held for a startup set that has been claimed but not created yet.
-    pub(super) fn has_free_slot(&self) -> bool {
-        let state = self.state.lock().expect("terminal state poisoned");
-        state.panes.len() + state.reserved < limits::MAX_PTYS_PER_REPO
-    }
-
-    fn pane_is_live(&self, pane: PaneId) -> bool {
-        self.state
-            .lock()
-            .expect("terminal state poisoned")
-            .panes
-            .iter()
-            .any(|p| p.id == pane)
-    }
-
-    /// Record a new pane and announce it to every client. Broadcasting under the
-    /// same lock that adds the pane keeps it consistent with `connect`'s replay:
-    /// a client either sees this pane via `connect` or via this broadcast, never
-    /// both and never neither.
-    /// `client` is whoever asked for the pane, carried so that client alone can
-    /// treat it as the one it opened. `None` for a pane nobody asked for.
-    /// `title` is the name the session gives it, which only a configured startup
-    /// terminal has.
-    pub(super) fn register_pane(
-        &self,
-        pane: PaneId,
-        rows: u16,
-        cols: u16,
-        client: Option<u64>,
-        title: Option<String>,
-    ) {
-        let json = serde_json::to_string(&ServerMessage::Created {
-            pane,
-            rows,
-            cols,
-            client,
-            title: title.clone(),
-        })
-        .ok();
+        // terminals. The zoom goes with them — it names one of these panes, and
+        // nothing may be left holding a name for a pane that is gone.
         let mut state = self.state.lock().expect("terminal state poisoned");
-        state.panes.push(PaneState {
-            id: pane,
-            title,
-            scrollback: VecDeque::new(),
-            rows,
-            cols,
-            modes: PaneModes::default(),
-        });
-        if let Some(json) = json {
-            broadcast_locked(&mut state.clients, TerminalFrame::Control(json));
-        }
-    }
-
-    /// Append output to the pane's bounded scrollback, record the terminal state
-    /// it left the pane in, and broadcast it — all under one lock so a
-    /// concurrently connecting client cannot slip a replay snapshot between the
-    /// append and the broadcast.
-    fn record_and_broadcast(&self, pane: PaneId, data: Vec<u8>, modes: PaneModes) {
-        let mut state = self.state.lock().expect("terminal state poisoned");
-        if let Some(p) = state.panes.iter_mut().find(|p| p.id == pane) {
-            push_scrollback(&mut p.scrollback, &data);
-            p.modes = modes;
-        }
-        broadcast_locked(&mut state.clients, TerminalFrame::Output { pane, data });
-    }
-
-    /// Drop a pane and tell every client, but only if it was still live — a pane
-    /// closed by command and then reported `Exited` by the backend must announce
-    /// once, not twice.
-    pub(super) fn remove_pane_and_announce(&self, pane: PaneId) {
-        let json = serde_json::to_string(&ServerMessage::Exited { pane }).ok();
-        let mut state = self.state.lock().expect("terminal state poisoned");
-        let existed = state.panes.iter().any(|p| p.id == pane);
-        if !existed {
-            return;
-        }
-        state.panes.retain(|p| p.id != pane);
-        if let Some(json) = json {
-            broadcast_locked(&mut state.clients, TerminalFrame::Control(json));
-        }
-    }
-
-    pub(super) fn send_error_to(&self, client_id: u64, message: &str) {
-        let Ok(json) = serde_json::to_string(&ServerMessage::Error {
-            message: message.to_string(),
-        }) else {
-            return;
-        };
-        let mut state = self.state.lock().expect("terminal state poisoned");
-        if let Some(index) = state.clients.iter().position(|c| c.id == client_id)
-            && state.clients[index]
-                .tx
-                .try_send(TerminalFrame::Control(json))
-                .is_err()
-        {
-            state.clients.remove(index);
-        }
+        state.panes.clear();
+        state.zoomed = None;
     }
 }

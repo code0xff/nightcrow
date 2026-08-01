@@ -11,13 +11,14 @@ import { useTerminalSocket } from "../../hooks/terminal/useTerminalSocket";
 import { useTerminalViews } from "../../hooks/terminal/useTerminalViews";
 import { usePaneSizes } from "../../hooks/terminal/usePaneSizes";
 import { usePaneRecovery } from "../../hooks/terminal/usePaneRecovery";
+import { usePaneCommands } from "../../hooks/terminal/usePaneCommands";
 import { useStartupSizes } from "../../hooks/terminal/useStartupSizes";
 import { TerminalCell } from "./TerminalCell";
 import { StartupSlots } from "./StartupSlots";
 import { TermKeyBar } from "./TermKeyBar";
 import { PanelDivider, type PanelDividerProps } from "./PanelDivider";
 import { PanelToolbar } from "./PanelToolbar";
-import { TERM_KEY_BAR, termKeySequence } from "../../lib/termKeys";
+import { renderedZoom, zoomPending } from "../../lib/zoom";
 
 export function TerminalPanel({
   repo,
@@ -44,8 +45,9 @@ export function TerminalPanel({
   const pendingRef = useRef(new Map<number, Uint8Array[]>());
   // Restore focus when returning to a repository.
   const lastActiveByRepoRef = useRef(new Map<string, number>());
-  // Focus only panes created by this client, not replayed panes.
-  const expectCreateRef = useRef(0);
+  // A zoom this page has asked for and not yet been answered. Held here because
+  // both halves need it: the commands read it, the socket clears it.
+  const zoomAskedRef = useRef<number | null | undefined>(undefined);
   // Cells rendered for startup terminals the server has not created yet, so
   // their size can be measured from the slot each will occupy.
   const slotRefs = useRef(new Map<number, HTMLDivElement>());
@@ -60,6 +62,9 @@ export function TerminalPanel({
   // decides it; the rest render the grid they are given.
   const [ownsSize, setOwnsSize] = useState(true);
   const { recovery, setRecovery, cancelRecovery } = usePaneRecovery(socketRef);
+  // Derived rather than corrected in the handler, so the panel cannot render a
+  // state its pane list does not support at all. See `lib/zoom.ts`.
+  const zoom = renderedZoom(zoomed, panes);
 
   useTerminalSocket({
     repo,
@@ -68,7 +73,7 @@ export function TerminalPanel({
     pendingRef,
     sentSizesRef,
     lastActiveByRepoRef,
-    expectCreateRef,
+    zoomAskedRef,
     setPending,
     setPanes,
     setActive,
@@ -81,7 +86,7 @@ export function TerminalPanel({
   useTerminalViews({
     panes,
     size,
-    zoomed,
+    zoomed: zoom,
     socketRef,
     viewsRef,
     bodyRefs,
@@ -102,7 +107,7 @@ export function TerminalPanel({
   usePaneSizes({
     panes,
     size,
-    zoomed,
+    zoomed: zoom,
     socketRef,
     viewsRef,
     bodyRefs,
@@ -129,6 +134,10 @@ export function TerminalPanel({
   }, []);
 
   useEffect(() => {
+    // Not while a replay has named a zoom whose pane has not arrived: the panes
+    // come one at a time, and focusing an earlier one would put the keyboard in
+    // a terminal that is about to be replaced by the zoomed one.
+    if (zoomPending(zoomed, panes)) return;
     if (active === null && panes.length > 0) {
       const remembered = lastActiveByRepoRef.current.get(repo);
       setActive(
@@ -137,7 +146,20 @@ export function TerminalPanel({
           : panes[panes.length - 1],
       );
     }
-  }, [active, panes, repo]);
+  }, [active, panes, repo, zoomed]);
+
+  // While one pane fills the panel it is the only one that can be seen, so it
+  // has to be the one being typed into. Enforced here rather than at the toggle
+  // because a zoom no longer needs a click on this page to happen: it is
+  // replayed on connect and set by other clients, and either would otherwise
+  // leave the keyboard — and the key bar, which types into the active pane —
+  // pointed at a terminal that is not on screen.
+  useEffect(() => {
+    if (zoom !== null && zoom !== active) {
+      setActive(zoom);
+      lastActiveByRepoRef.current.set(repo, zoom);
+    }
+  }, [zoom, active, repo]);
 
   useEffect(() => {
     if (active !== null) viewsRef.current.get(active)?.term.focus();
@@ -148,37 +170,14 @@ export function TerminalPanel({
     lastActiveByRepoRef.current.set(repo, pane);
   };
 
-  const create = () => {
-    const socket = socketRef.current;
-    if (!socket) return;
-    setZoomed(null);
-    expectCreateRef.current += 1;
-    socket.send(JSON.stringify({ type: "create", rows: 24, cols: 80 }));
-  };
-
-  // Take the sizing back. Deliberate rather than automatic: the panes belong to
-  // a session someone else may be working in, and merely opening this page must
-  // not repaint their screen.
-  const claimSize = () => {
-    socketRef.current?.send(JSON.stringify({ type: "claim_size" }));
-  };
-
-  const closePane = (pane: number) => {
-    socketRef.current?.send(JSON.stringify({ type: "close", pane }));
-  };
-
-  const sendKey = (key: (typeof TERM_KEY_BAR)[number]["key"]) => {
-    if (active === null) return;
-    const appCursor =
-      viewsRef.current.get(active)?.term.modes.applicationCursorKeysMode ?? false;
-    socketRef.current?.send(
-      JSON.stringify({
-        type: "input",
-        pane: active,
-        data: termKeySequence(key, appCursor),
-      }),
-    );
-  };
+  const { create, toggleZoom, claimSize, closePane, reorder, sendKey } =
+    usePaneCommands({
+      socketRef,
+      viewsRef,
+      zoomed: zoom,
+      zoomAskedRef,
+      active,
+    });
 
   const {
     draggingPane,
@@ -190,10 +189,9 @@ export function TerminalPanel({
     onPaneDragEnd,
   } = usePaneDrag({
     panes,
-    zoomed,
+    zoomed: zoom,
     onFocus: focusPane,
-    onReorder: (order) =>
-      socketRef.current?.send(JSON.stringify({ type: "reorder", order })),
+    onReorder: reorder,
   });
 
   // Before the startup terminals exist the grid is planned for the slots they
@@ -228,7 +226,7 @@ export function TerminalPanel({
           ref={containerRef}
           className="grid h-full gap-1"
           style={
-            zoomed !== null
+            zoom !== null
               ? { gridTemplateColumns: "1fr", gridTemplateRows: "1fr" }
               : {
                   gridTemplateColumns: `repeat(${layout.cols}, minmax(0, 1fr))`,
@@ -247,8 +245,8 @@ export function TerminalPanel({
             const label = titles[pane] ?? `term ${index + 1}`;
             const cell = layout.cells[index];
             const cellStyle: CSSProperties =
-              zoomed !== null
-                ? { display: pane === zoomed ? "flex" : "none" }
+              zoom !== null
+                ? { display: pane === zoom ? "flex" : "none" }
                 : {
                     display: "flex",
                     gridColumn: `${cell.colStart} / span ${cell.colSpan}`,
@@ -262,7 +260,7 @@ export function TerminalPanel({
                 label={label}
                 cellStyle={cellStyle}
                 isActive={pane === active}
-                isZoomed={zoomed === pane}
+                isZoomed={zoom === pane}
                 showZoom={panes.length > 1}
                 isDragged={draggingPane === pane}
                 isDropTarget={dragOverPane === pane}
@@ -270,9 +268,7 @@ export function TerminalPanel({
                 recovery={recovery[pane]}
                 onCancelRecovery={() => cancelRecovery(pane)}
                 onFocus={() => focusPane(pane)}
-                onToggleZoom={() =>
-                  setZoomed((z) => (z === pane ? null : pane))
-                }
+                onToggleZoom={() => toggleZoom(pane)}
                 onClose={() => closePane(pane)}
                 onPaneDragStart={(e) => onPaneDragStart(e, pane)}
                 onPaneDragMove={onPaneDragMove}

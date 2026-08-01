@@ -1,4 +1,4 @@
-import { useLayoutEffect } from "react";
+import { useLayoutEffect, useRef } from "react";
 import type { MutableRefObject } from "react";
 import { reconcileOrder } from "../../lib/paneOrder";
 import { applyRecovery, type RecoveryByPane } from "../../lib/recovery";
@@ -13,7 +13,11 @@ interface UseTerminalSocketArgs {
   pendingRef: MutableRefObject<Map<number, Uint8Array[]>>;
   sentSizesRef: MutableRefObject<Map<number, { rows: number; cols: number }>>;
   lastActiveByRepoRef: MutableRefObject<Map<string, number>>;
-  expectCreateRef: MutableRefObject<number>;
+  /** What the page last asked the zoom to be (see `usePaneCommands`). Cleared
+   *  here because this is what knows when a request has been answered and when
+   *  the connection carrying it is gone — including a repository switch, whose
+   *  pane ids belong to a different project entirely. */
+  zoomAskedRef: MutableRefObject<number | null | undefined>;
   setPending: React.Dispatch<React.SetStateAction<number | null>>;
   setPanes: React.Dispatch<React.SetStateAction<number[]>>;
   setActive: React.Dispatch<React.SetStateAction<number | null>>;
@@ -39,7 +43,7 @@ export function useTerminalSocket({
   pendingRef,
   sentSizesRef,
   lastActiveByRepoRef,
-  expectCreateRef,
+  zoomAskedRef,
   setPending,
   setPanes,
   setActive,
@@ -48,14 +52,12 @@ export function useTerminalSocket({
   setOwnsSize,
   setRecovery,
 }: UseTerminalSocketArgs) {
+  // Who the hub calls this connection, so a `created` naming a requester can be
+  // read as this page's or somebody else's. Minted per connection, so it is
+  // cleared with the socket rather than with the project.
+  const clientIdRef = useRef<number | null>(null);
+
   useLayoutEffect(() => {
-    // A terminal this page asked for belongs to the project it was asked in.
-    // The next project replays the panes it already has, and an expectation
-    // left over from the previous one would take the first of them for the
-    // terminal that never arrived — focusing it and remembering it as this
-    // project's last active pane. Cleared here rather than in `connect` so a
-    // reconnect, which is the same project, still adopts the pane it asked for.
-    expectCreateRef.current = 0;
     let closedByUs = false;
     let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
 
@@ -67,6 +69,10 @@ export function useTerminalSocket({
     };
 
     const connect = () => {
+      clientIdRef.current = null;
+      // Anything asked for on the socket that just went is unanswerable, and a
+      // switch has moved to pane ids that mean something else.
+      zoomAskedRef.current = undefined;
       setPending(null);
       setPanes([]);
       setActive(null);
@@ -101,7 +107,11 @@ export function useTerminalSocket({
         if (socketRef.current !== socket) return;
         if (typeof event.data === "string") {
           const message = JSON.parse(event.data);
-          if (message.type === "pending") {
+          if (message.type === "hello") {
+            // The first frame on a connection, ahead of anything that names a
+            // requester.
+            clientIdRef.current = message.client;
+          } else if (message.type === "pending") {
             // Startup terminals the server is holding until this page says how
             // big to make them. Answered by `useStartupSizes`.
             setPending(message.count);
@@ -122,8 +132,12 @@ export function useTerminalSocket({
               setTitles((current) => ({ ...current, [pane]: message.title }));
             }
             setPanes((current) => [...current, pane]);
-            if (expectCreateRef.current > 0) {
-              expectCreateRef.current -= 1;
+            // Focus it only if this page is the one that asked. The hub stamps
+            // every pane with its requester and told us our own id on connect
+            // (`hello`), so two pages creating at once each take their own —
+            // where counting outstanding creates took whichever came back
+            // first, which could be the other page's terminal.
+            if (message.client != null && message.client === clientIdRef.current) {
               setActive(pane);
               lastActiveByRepoRef.current.set(repo, pane);
             } else if (lastActiveByRepoRef.current.get(repo) === pane) {
@@ -132,7 +146,9 @@ export function useTerminalSocket({
           } else if (message.type === "exited") {
             setPanes((current) => current.filter((p) => p !== message.pane));
             setActive((current) => (current === message.pane ? null : current));
-            setZoomed((current) => (current === message.pane ? null : current));
+            // The zoom is not cleared here: a pane leaving ends it on the
+            // server, which says so in a `zoomed` of its own. Doing it locally
+            // as well would be this page answering a question it does not own.
             pendingRef.current.delete(message.pane);
             sentSizesRef.current.delete(message.pane);
             setTitles((current) => {
@@ -161,8 +177,16 @@ export function useTerminalSocket({
             setOwnsSize(message.owned);
           } else if (message.type === "reordered") {
             setPanes((current) => reconcileOrder(current, message.order));
+          } else if (message.type === "zoomed") {
+            // The server has spoken, so what this page asked for is spent.
+            zoomAskedRef.current = undefined;
+            // Which pane fills the panel is the repository's answer, so this is
+            // the only thing that sets it — including for the page that asked.
+            // Sent on connect too, which is what brings a reloaded page back to
+            // the zoom it left. `null` is a value here, not an absent field:
+            // it is how the panel is told to go back to the grid.
+            setZoomed(message.pane ?? null);
           } else if (message.type === "error") {
-            expectCreateRef.current = 0;
             toast.error(message.message);
           }
           return;
