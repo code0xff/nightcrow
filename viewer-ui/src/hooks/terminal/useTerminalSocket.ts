@@ -19,6 +19,8 @@ interface UseTerminalSocketArgs {
    *  pane ids belong to a different project entirely. */
   zoomAskedRef: MutableRefObject<number | null | undefined>;
   setPending: React.Dispatch<React.SetStateAction<number | null>>;
+  /** Panes the replay has promised and not yet delivered. */
+  setReplayLeft: React.Dispatch<React.SetStateAction<number>>;
   setPanes: React.Dispatch<React.SetStateAction<number[]>>;
   setActive: React.Dispatch<React.SetStateAction<number | null>>;
   setZoomed: React.Dispatch<React.SetStateAction<number | null>>;
@@ -45,6 +47,7 @@ export function useTerminalSocket({
   lastActiveByRepoRef,
   zoomAskedRef,
   setPending,
+  setReplayLeft,
   setPanes,
   setActive,
   setZoomed,
@@ -70,6 +73,7 @@ export function useTerminalSocket({
 
     const connect = () => {
       clientIdRef.current = null;
+      setReplayLeft(0);
       // Anything asked for on the socket that just went is unanswerable, and a
       // switch has moved to pane ids that mean something else.
       zoomAskedRef.current = undefined;
@@ -109,8 +113,9 @@ export function useTerminalSocket({
           const message = JSON.parse(event.data);
           if (message.type === "hello") {
             // The first frame on a connection, ahead of anything that names a
-            // requester.
+            // requester and ahead of the panes it counts.
             clientIdRef.current = message.client;
+            setReplayLeft(message.panes);
           } else if (message.type === "pending") {
             // Startup terminals the server is holding until this page says how
             // big to make them. Answered by `useStartupSizes`.
@@ -132,6 +137,10 @@ export function useTerminalSocket({
               setTitles((current) => ({ ...current, [pane]: message.title }));
             }
             setPanes((current) => [...current, pane]);
+            // One of the replayed panes has landed, so the grid holds one fewer
+            // cell open. Counted rather than compared against the pane list: a
+            // pane exiting mid-replay must not leave a cell open forever.
+            setReplayLeft((left) => (left > 0 ? left - 1 : 0));
             // Focus it only if this page is the one that asked. The hub stamps
             // every pane with its requester and told us our own id on connect
             // (`hello`), so two pages creating at once each take their own —

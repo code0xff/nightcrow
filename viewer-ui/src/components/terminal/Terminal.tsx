@@ -52,6 +52,10 @@ export function TerminalPanel({
   // their size can be measured from the slot each will occupy.
   const slotRefs = useRef(new Map<number, HTMLDivElement>());
   const [pending, setPending] = useState<number | null>(null);
+  // Panes the replay has promised but not yet delivered. The grid is planned for
+  // them too, so each pane arrives into the cell it will keep instead of being
+  // given the whole panel and shrunk by the next one.
+  const [replayLeft, setReplayLeft] = useState(0);
   const [panes, setPanes] = useState<number[]>([]);
   const [active, setActive] = useState<number | null>(null);
   const [zoomed, setZoomed] = useState<number | null>(null);
@@ -75,6 +79,7 @@ export function TerminalPanel({
     lastActiveByRepoRef,
     zoomAskedRef,
     setPending,
+    setReplayLeft,
     setPanes,
     setActive,
     setZoomed,
@@ -113,6 +118,7 @@ export function TerminalPanel({
     bodyRefs,
     sentSizesRef,
     ownsSize,
+    layoutPending: zoomPending(zoomed, panes),
   });
 
   useEffect(() => {
@@ -195,8 +201,11 @@ export function TerminalPanel({
   });
 
   // Before the startup terminals exist the grid is planned for the slots they
-  // will occupy, so what is measured is the cell each pane actually gets.
-  const slots = panes.length > 0 ? panes.length : (pending ?? 0);
+  // will occupy, so what is measured is the cell each pane actually gets. The
+  // same for a replay in progress: its remaining panes hold their cells open,
+  // which is what keeps the ones already here from being laid out twice.
+  const slots =
+    panes.length + replayLeft > 0 ? panes.length + replayLeft : (pending ?? 0);
   const layout = planLayout(slots, size.w >= size.h);
 
   return (

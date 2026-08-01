@@ -29,6 +29,12 @@ interface UsePaneSizesArgs {
    *  instead of fitting its own — a PTY has one size, and the child cannot be
    *  re-flowed after the fact. */
   ownsSize: boolean;
+  /** Whether the layout is still resolving and nothing should be fitted to it
+   *  yet. True while a replayed zoom is waiting for the pane it names: the
+   *  panel will end up filled by that one pane, so anything fitted to a grid
+   *  cell meanwhile is measured against a layout that is about to be replaced —
+   *  and, being hidden by then, keeps the size it was wrongly given. */
+  layoutPending: boolean;
 }
 
 /**
@@ -52,6 +58,7 @@ export function usePaneSizes({
   bodyRefs,
   sentSizesRef,
   ownsSize,
+  layoutPending,
 }: UsePaneSizesArgs) {
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -71,6 +78,7 @@ export function usePaneSizes({
 
   // Size visible panes after layout changes; never resize hidden cells to zero.
   useEffect(() => {
+    if (layoutPending) return;
     for (const [pane, view] of viewsRef.current) {
       const body = bodyRefs.current.get(pane);
       if (!body || body.clientHeight === 0 || body.clientWidth === 0) continue;
@@ -91,5 +99,15 @@ export function usePaneSizes({
     return () => {
       if (timerRef.current) clearTimeout(timerRef.current);
     };
-  }, [panes, zoomed, size, flush, viewsRef, bodyRefs, sentSizesRef, ownsSize]);
+  }, [
+    panes,
+    zoomed,
+    size,
+    flush,
+    viewsRef,
+    bodyRefs,
+    sentSizesRef,
+    ownsSize,
+    layoutPending,
+  ]);
 }
