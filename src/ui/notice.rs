@@ -100,7 +100,7 @@ pub(crate) fn render_repo_header<'a>(app: &'a App, accent: Color) -> Paragraph<'
         && (t.ahead > 0 || t.behind > 0)
     {
         spans.push(Span::styled(
-            format!(" ↑{} ↓{} ", t.ahead, t.behind),
+            format!(" ^{} v{} ", t.ahead, t.behind),
             Style::default().fg(Color::Cyan),
         ));
     }
@@ -140,13 +140,17 @@ fn recovery_chip(app: &App) -> Option<String> {
 }
 
 pub(crate) fn home_relative_path(path: &str) -> String {
-    let trimmed = path.trim_end_matches('/');
-    let display = crate::platform::paths::for_display(std::path::Path::new(trimmed));
-    if let Some(home) = dirs::home_dir() {
-        let home_display = crate::platform::paths::for_display(&home);
-        if let Some(rest) = display.strip_prefix(home_display.as_ref()) {
-            return format!("~{rest}");
+    // Rebuilding from components removes a cosmetic trailing separator without
+    // turning filesystem roots (`/`, `C:\\`, UNC shares) into different paths.
+    let normalized: std::path::PathBuf = std::path::Path::new(path).components().collect();
+    let path = normalized.as_path();
+    if let Some(home) = dirs::home_dir()
+        && let Ok(rest) = path.strip_prefix(home)
+    {
+        if rest.as_os_str().is_empty() {
+            return "~".to_owned();
         }
+        return format!("~/{}", crate::platform::paths::for_display(rest));
     }
-    display.into_owned()
+    crate::platform::paths::for_display(path).into_owned()
 }

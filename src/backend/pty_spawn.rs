@@ -5,6 +5,8 @@ use crate::backend::slot::{PaneLaunch, resume_command_line};
 use anyhow::Result;
 use portable_pty::{CommandBuilder, NativePtySystem, PtySize, PtySystem};
 use std::io::Read;
+#[cfg(windows)]
+use std::path::{Component, Path, Prefix};
 use std::sync::mpsc;
 use std::thread;
 use std::time::Instant;
@@ -104,6 +106,8 @@ impl PtyBackend {
         // pass placeholder paths). The clean canonicalize strips the Windows
         // verbatim prefix (`\\?\`) that cmd.exe rejects as a UNC path.
         if let Ok(canonical) = crate::platform::paths::canonicalize_clean(&self.cwd) {
+            #[cfg(windows)]
+            ensure_windows_shell_supports_cwd(&shell, &canonical)?;
             cmd.cwd(canonical);
         }
         let mut child = pair.slave.spawn_command(cmd)?;
@@ -158,5 +162,46 @@ impl PtyBackend {
         );
         self.slots.insert(id, identity, launch, Instant::now());
         Ok(id)
+    }
+}
+
+#[cfg(windows)]
+fn ensure_windows_shell_supports_cwd(shell: &str, cwd: &Path) -> Result<()> {
+    let is_cmd = Path::new(shell)
+        .file_name()
+        .and_then(|name| name.to_str())
+        .is_some_and(|name| {
+            name.eq_ignore_ascii_case("cmd") || name.eq_ignore_ascii_case("cmd.exe")
+        });
+    let is_unc = matches!(
+        cwd.components().next(),
+        Some(Component::Prefix(prefix))
+            if matches!(prefix.kind(), Prefix::UNC(_, _) | Prefix::VerbatimUNC(_, _))
+    );
+    if is_cmd && is_unc {
+        anyhow::bail!(
+            "cmd.exe cannot use UNC working directory {}; configure [shell].program to PowerShell or another UNC-capable shell",
+            cwd.display()
+        );
+    }
+    Ok(())
+}
+
+#[cfg(all(test, windows))]
+mod windows_cwd_tests {
+    use super::ensure_windows_shell_supports_cwd;
+    use std::path::Path;
+
+    #[test]
+    fn cmd_rejects_unc_but_not_drive_working_directories() {
+        assert!(
+            ensure_windows_shell_supports_cwd("cmd.exe", Path::new(r"\\server\share\repo"))
+                .is_err()
+        );
+        assert!(ensure_windows_shell_supports_cwd("cmd.exe", Path::new(r"C:\repo")).is_ok());
+        assert!(
+            ensure_windows_shell_supports_cwd("pwsh.exe", Path::new(r"\\server\share\repo"))
+                .is_ok()
+        );
     }
 }

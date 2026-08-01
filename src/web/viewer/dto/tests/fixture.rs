@@ -3,7 +3,7 @@ use super::super::{
     DiffLineDto, FileDto, HotConfigDto, LogDto, PROTOCOL_VERSION, RepoDto, SpanDto, StatusDto,
     TrackingDto, TreeDto, TreeEntryDto, TreeMatchDto, TreeSearchDto, ViewerBootstrapDto,
 };
-use crate::web::viewer::prefs::MaximizedPanel;
+use crate::session::prefs::MaximizedPanel;
 
 /// Where the wire fixture lives. At the `viewer-ui` root rather than under
 /// `viewer-ui/src` (which the published crate excludes) so it ships in the
@@ -198,7 +198,7 @@ fn wire_fixture() -> serde_json::Value {
         // Built by `reload::ReloadReport::summary`, so the TUI's notice and this
         // toast cannot drift apart.
         "reloaded": serde_json::json!({
-            "summary": crate::web::viewer::reload::ReloadReport {
+            "summary": crate::session::reload::ReloadReport {
                 plugins: 1,
                 startup_commands: 2,
                 repos: 1,

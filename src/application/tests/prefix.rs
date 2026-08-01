@@ -28,11 +28,14 @@ fn handle_key_leader_then_q_quits() {
 
     let first = handle_key(&mut app, leader());
     assert!(matches!(first, KeyOutcome::Continue));
-    assert!(app.prefix_armed(), "leader must arm the prefix");
+    assert!(app.interaction.prefix_armed, "leader must arm the prefix");
 
     let second = handle_key(&mut app, press(KeyCode::Char('q'), KeyModifiers::NONE));
     assert!(matches!(second, KeyOutcome::Quit));
-    assert!(!app.prefix_armed(), "prefix must disarm after follow-up");
+    assert!(
+        !app.interaction.prefix_armed,
+        "prefix must disarm after follow-up"
+    );
 }
 
 #[test]
@@ -44,7 +47,10 @@ fn handle_key_bare_ctrl_f_arms_prefix_and_does_not_quit() {
     let outcome = handle_key(&mut app, press(KeyCode::Char('f'), KeyModifiers::CONTROL));
 
     assert!(matches!(outcome, KeyOutcome::Continue));
-    assert!(app.prefix_armed(), "the leader press arms the prefix");
+    assert!(
+        app.interaction.prefix_armed,
+        "the leader press arms the prefix"
+    );
 }
 
 #[test]
@@ -55,7 +61,10 @@ fn leader_x_asks_the_workspace_to_close_the_project() {
     let outcome = handle_key(&mut app, press(KeyCode::Char('x'), KeyModifiers::NONE));
 
     assert_eq!(outcome, KeyOutcome::Project(ProjectRequest::Close));
-    assert!(!app.prefix_armed(), "prefix must disarm after follow-up");
+    assert!(
+        !app.interaction.prefix_armed,
+        "prefix must disarm after follow-up"
+    );
 }
 
 #[test]
@@ -88,22 +97,28 @@ fn a_doubled_leader_on_the_empty_screen_does_not_quit() {
 fn handle_key_leader_esc_cancels() {
     let mut app = app_with_files(vec!["a.rs"]);
     let _ = handle_key(&mut app, leader());
-    assert!(app.prefix_armed());
+    assert!(app.interaction.prefix_armed);
 
     let outcome = handle_key(&mut app, press(KeyCode::Esc, KeyModifiers::NONE));
     assert!(matches!(outcome, KeyOutcome::Continue));
-    assert!(!app.prefix_armed(), "Esc must cancel the armed prefix");
+    assert!(
+        !app.interaction.prefix_armed,
+        "Esc must cancel the armed prefix"
+    );
 }
 
 #[test]
 fn handle_key_leader_ctrl_c_cancels() {
     let mut app = app_with_terminal_pane();
     let _ = handle_key(&mut app, leader());
-    assert!(app.prefix_armed());
+    assert!(app.interaction.prefix_armed);
 
     let outcome = handle_key(&mut app, press(KeyCode::Char('c'), KeyModifiers::CONTROL));
     assert!(matches!(outcome, KeyOutcome::Continue));
-    assert!(!app.prefix_armed(), "Ctrl+C must cancel the armed prefix");
+    assert!(
+        !app.interaction.prefix_armed,
+        "Ctrl+C must cancel the armed prefix"
+    );
     // The cancel is consumed, never leaked to the PTY.
     assert!(
         backend_payloads(&app).is_empty(),
@@ -112,50 +127,18 @@ fn handle_key_leader_ctrl_c_cancels() {
 }
 
 #[test]
-fn handle_key_ctrl_super_leader_passes_through() {
-    // A Super/Hyper/Meta bit on top of Ctrl+<leader> (enhanced keyboard
-    // protocols report these) is a different chord, so it must reach the
-    // PTY rather than arm the prefix.
-    let mut app = app_with_terminal_pane();
+fn leader_with_an_extra_modifier_passes_through() {
+    for extra in [KeyModifiers::ALT, KeyModifiers::SUPER] {
+        let mut app = app_with_terminal_pane();
+        let outcome = handle_key(
+            &mut app,
+            press(KeyCode::Char('f'), KeyModifiers::CONTROL | extra),
+        );
 
-    let outcome = handle_key(
-        &mut app,
-        press(
-            KeyCode::Char('f'),
-            KeyModifiers::CONTROL | KeyModifiers::SUPER,
-        ),
-    );
-
-    assert!(matches!(outcome, KeyOutcome::Continue));
-    assert!(
-        !app.prefix_armed(),
-        "Ctrl+Super+leader must not arm the prefix"
-    );
-}
-
-#[test]
-fn handle_key_ctrl_alt_leader_passes_through() {
-    // Ctrl+Alt+<leader> carries an extra modifier, so it is NOT the leader
-    // chord — it must reach the PTY rather than arm the prefix.
-    let mut app = app_with_terminal_pane();
-
-    let outcome = handle_key(
-        &mut app,
-        press(
-            KeyCode::Char('f'),
-            KeyModifiers::CONTROL | KeyModifiers::ALT,
-        ),
-    );
-
-    assert!(matches!(outcome, KeyOutcome::Continue));
-    assert!(
-        !app.prefix_armed(),
-        "Ctrl+Alt+leader must not arm the prefix"
-    );
-    assert!(
-        !backend_payloads(&app).is_empty(),
-        "Ctrl+Alt+leader must pass through to the PTY"
-    );
+        assert!(matches!(outcome, KeyOutcome::Continue));
+        assert!(!app.interaction.prefix_armed);
+        assert!(!backend_payloads(&app).is_empty());
+    }
 }
 
 #[test]
@@ -164,14 +147,14 @@ fn leader_leader_sends_literal_leader_even_when_leader_is_ctrl_c() {
     // as a literal Ctrl+C (0x03); the leader-again path takes precedence
     // over the Ctrl+C cancel path.
     let mut app = app_with_terminal_pane();
-    app.leader = press(KeyCode::Char('c'), KeyModifiers::CONTROL);
+    app.interaction.leader = press(KeyCode::Char('c'), KeyModifiers::CONTROL);
 
     let _ = handle_key(&mut app, press(KeyCode::Char('c'), KeyModifiers::CONTROL));
-    assert!(app.prefix_armed());
+    assert!(app.interaction.prefix_armed);
 
     let outcome = handle_key(&mut app, press(KeyCode::Char('c'), KeyModifiers::CONTROL));
     assert!(matches!(outcome, KeyOutcome::Continue));
-    assert!(!app.prefix_armed());
+    assert!(!app.interaction.prefix_armed);
     assert_eq!(
         backend_payloads(&app).concat(),
         vec![0x03],
@@ -183,11 +166,11 @@ fn leader_leader_sends_literal_leader_even_when_leader_is_ctrl_c() {
 fn handle_key_leader_unmapped_followup_cancels() {
     let mut app = app_with_terminal_pane();
     let _ = handle_key(&mut app, leader());
-    assert!(app.prefix_armed());
+    assert!(app.interaction.prefix_armed);
 
     let outcome = handle_key(&mut app, press(KeyCode::Char('z'), KeyModifiers::NONE));
     assert!(matches!(outcome, KeyOutcome::Continue));
-    assert!(!app.prefix_armed());
+    assert!(!app.interaction.prefix_armed);
     // The unmapped follow-up is consumed, NOT forwarded to the PTY.
     assert!(
         backend_payloads(&app).is_empty(),
@@ -199,11 +182,11 @@ fn handle_key_leader_unmapped_followup_cancels() {
 fn handle_key_double_leader_sends_literal_to_pty() {
     let mut app = app_with_terminal_pane();
     let _ = handle_key(&mut app, leader());
-    assert!(app.prefix_armed());
+    assert!(app.interaction.prefix_armed);
 
     let outcome = handle_key(&mut app, leader());
     assert!(matches!(outcome, KeyOutcome::Continue));
-    assert!(!app.prefix_armed());
+    assert!(!app.interaction.prefix_armed);
     // Ctrl+F encodes to 0x06 (ACK) — the literal leader byte.
     assert_eq!(backend_payloads(&app), vec![vec![0x06]]);
 }
@@ -268,7 +251,7 @@ fn handle_key_leader_w_is_ignored_without_terminal_focus() {
         before,
         "leader+w must be a no-op outside terminal focus"
     );
-    assert!(!app.prefix_armed());
+    assert!(!app.interaction.prefix_armed);
     assert!(
         backend_payloads(&app).is_empty(),
         "the consumed follow-up must not reach the PTY"

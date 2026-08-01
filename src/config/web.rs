@@ -1,9 +1,11 @@
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
+use std::io::Write;
+use toml_edit::{DocumentMut, Item, Table, Value};
 
 /// Default TCP port for the web viewer server.
 const DEFAULT_WEB_VIEWER_PORT: u16 = 8091;
-pub(super) const WEB_VIEWER_TABLE: &str = "web_viewer";
+const WEB_VIEWER_TABLE: &str = "web_viewer";
 /// Default bind address: loopback only. Exposing the server on a routable
 /// address is a deliberate opt-in because it grants live control of a shell.
 const DEFAULT_WEB_BIND: &str = "127.0.0.1";
@@ -76,7 +78,7 @@ pub fn ensure_web_viewer_password(
         return Ok(None);
     }
     let password = generate_password()?;
-    persist_password(path, WEB_VIEWER_TABLE, &password).with_context(|| {
+    persist_password(path, &password).with_context(|| {
         format!(
             "persisting generated web viewer password to {}",
             path.display()
@@ -86,70 +88,88 @@ pub fn ensure_web_viewer_password(
     Ok(Some(password))
 }
 
-/// Write `password` into the `[{table}]` table of the TOML file at `path`.
-fn persist_password(path: &std::path::Path, table: &str, password: &str) -> Result<()> {
+/// Write `password` into the `[web_viewer]` table of the TOML file at `path`.
+fn persist_password(path: &std::path::Path, password: &str) -> Result<()> {
     let existing = if path.exists() {
         std::fs::read_to_string(path)
             .with_context(|| format!("reading config file {}", path.display()))?
     } else {
         String::new()
     };
-    let updated = insert_password(&existing, table, password);
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent)
-            .with_context(|| format!("creating config directory {}", parent.display()))?;
-    }
-    std::fs::write(path, &updated)
+    let updated = upsert_password(&existing, password)?;
+    let parent = path
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+        .unwrap_or_else(|| std::path::Path::new("."));
+    std::fs::create_dir_all(parent)
+        .with_context(|| format!("creating config directory {}", parent.display()))?;
+
+    let mut pending = tempfile::NamedTempFile::new_in(parent)
+        .with_context(|| format!("creating a temporary file in {}", parent.display()))?;
+    pending
+        .write_all(updated.as_bytes())
         .with_context(|| format!("writing config file {}", path.display()))?;
-    restrict_permissions(path);
+    pending
+        .as_file_mut()
+        .flush()
+        .with_context(|| format!("flushing config file {}", path.display()))?;
+    restrict_permissions(pending.path())?;
+    pending
+        .persist(path)
+        .map_err(|error| error.error)
+        .with_context(|| format!("replacing config file {}", path.display()))?;
     Ok(())
 }
 
-/// Pure text transform behind `persist_web_password`, isolated for testing.
-pub(super) fn insert_password(source: &str, table: &str, password: &str) -> String {
-    let line = format!("password = \"{password}\"");
-    if let Some(insert_at) = table_header_line_end(source, table) {
-        let mut out = String::with_capacity(source.len() + line.len() + 1);
-        out.push_str(&source[..insert_at]);
-        out.push('\n');
-        out.push_str(&line);
-        out.push_str(&source[insert_at..]);
-        out
+/// Format-preserving TOML transform behind [`persist_password`].
+pub(super) fn upsert_password(source: &str, password: &str) -> Result<String> {
+    let uses_crlf = source.contains("\r\n");
+    let mut document = source
+        .parse::<DocumentMut>()
+        .context("parsing config before persisting the web viewer password")?;
+
+    if document.get(WEB_VIEWER_TABLE).is_none() {
+        document.insert(WEB_VIEWER_TABLE, Item::Table(Table::new()));
+    }
+
+    let table_item = document
+        .get_mut(WEB_VIEWER_TABLE)
+        .expect("the web viewer table was inserted above");
+    let table = table_item
+        .as_table_like_mut()
+        .context("web_viewer must be a TOML table")?;
+
+    if let Some(existing) = table.get_mut("password") {
+        let decor = existing
+            .as_value()
+            .context("web_viewer.password must be a TOML value")?
+            .decor()
+            .clone();
+        let mut replacement = Value::from(password);
+        *replacement.decor_mut() = decor;
+        *existing = Item::Value(replacement);
     } else {
-        let mut out = String::with_capacity(source.len() + line.len() + 16);
-        out.push_str(source);
-        if !out.is_empty() && !out.ends_with('\n') {
-            out.push('\n');
-        }
-        if !out.is_empty() {
-            out.push('\n');
-        }
-        out.push_str(&format!("[{table}]\n"));
-        out.push_str(&line);
-        out.push('\n');
-        out
+        table.insert("password", Item::Value(Value::from(password)));
     }
+
+    let output = document.to_string();
+    Ok(if uses_crlf {
+        output.replace('\n', "\r\n")
+    } else {
+        output
+    })
 }
 
-fn table_header_line_end(source: &str, table: &str) -> Option<usize> {
-    let mut offset = 0;
-    for line in source.split_inclusive('\n') {
-        if line.trim() == format!("[{table}]") {
-            return Some(offset + line.trim_end_matches('\n').len());
-        }
-        offset += line.len();
-    }
-    None
-}
-
-fn restrict_permissions(path: &std::path::Path) {
+fn restrict_permissions(path: &std::path::Path) -> Result<()> {
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        let _ = std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600));
+        std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))
+            .with_context(|| format!("restricting config permissions on {}", path.display()))?;
     }
     #[cfg(not(unix))]
     {
         let _ = path;
     }
+    Ok(())
 }

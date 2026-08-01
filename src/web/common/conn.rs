@@ -26,8 +26,8 @@ pub const MAX_BODY_BYTES: usize = 64 * 1024;
 pub const HEAD_READ_TIMEOUT: Duration = Duration::from_secs(15);
 /// Wall-clock budget for the *whole* request. The socket timeout above only
 /// bounds one `read`, and it re-arms on every byte — a client dribbling one
-/// byte per timeout would otherwise hold a connection slot for days, and 64 of
-/// those starve the accept loop. This is the deadline that actually ends it.
+/// byte per timeout would otherwise hold a connection slot for days. This is
+/// the deadline that actually ends it.
 pub const REQUEST_DEADLINE: Duration = Duration::from_secs(30);
 
 /// Read the request head (up to CRLFCRLF) plus any declared body. Both
@@ -39,11 +39,8 @@ pub fn read_request(stream: &mut TcpStream) -> Result<(RequestHead, String)> {
     let mut buf = Vec::new();
     let mut chunk = [0u8; 4096];
     let head_end = loop {
-        if let Some(pos) = find_subsequence(&buf, b"\r\n\r\n") {
-            break pos + 4;
-        }
-        if buf.len() > MAX_HEAD_BYTES {
-            anyhow::bail!("request head exceeds {MAX_HEAD_BYTES} bytes");
+        if let Some(head_end) = request_head_end(&buf)? {
+            break head_end;
         }
         if Instant::now() >= deadline {
             anyhow::bail!("request head did not arrive within {REQUEST_DEADLINE:?}");
@@ -77,13 +74,24 @@ pub fn read_request(stream: &mut TcpStream) -> Result<(RequestHead, String)> {
     Ok((head, String::from_utf8_lossy(&body).into_owned()))
 }
 
+fn request_head_end(buf: &[u8]) -> Result<Option<usize>> {
+    if let Some(pos) = find_subsequence(buf, b"\r\n\r\n") {
+        let head_end = pos + 4;
+        if head_end > MAX_HEAD_BYTES {
+            anyhow::bail!("request head exceeds {MAX_HEAD_BYTES} bytes");
+        }
+        return Ok(Some(head_end));
+    }
+    if buf.len() >= MAX_HEAD_BYTES {
+        anyhow::bail!("request head exceeds {MAX_HEAD_BYTES} bytes");
+    }
+    Ok(None)
+}
+
 /// Whether a request's `Origin` is acceptable.
 ///
-/// An absent Origin (a native client, which cannot carry a browser's cookie)
-/// is allowed; a present one must match the request `Host` authority, else it
-/// is a cross-site request and is refused. `SameSite=Strict` already keeps the
-/// session cookie off cross-site requests, so a hijack fails auth anyway —
-/// this refuses it outright.
+/// An absent Origin (a native client) is allowed; a present one must match the
+/// request `Host` authority, else it is a cross-site request and is refused.
 pub fn origin_allowed(head: &RequestHead) -> bool {
     match head.header("origin") {
         None => true,
@@ -102,14 +110,12 @@ pub fn origin_allowed(head: &RequestHead) -> bool {
 /// [`origin_allowed`] only proves Origin and Host *agree*, which a DNS-rebound
 /// attacker satisfies trivially: they control both. Rebinding `evil.example` to
 /// 127.0.0.1 would otherwise give their page a same-origin position from which
-/// to POST `/login` and read the reply — and a hit yields repository contents
-/// plus interactive shells.
+/// to POST `/login` and read the reply.
 ///
-/// A loopback-bound server can only legitimately be addressed as loopback (or,
-/// through a tunnel, as whatever the operator configured), so any other Host is
-/// refused. When bound off-loopback the operator has taken responsibility for
-/// the network path, and the check would reject legitimate proxied hosts, so it
-/// does not apply.
+/// A loopback-bound server can only legitimately be addressed as loopback, so
+/// any other Host is refused. When bound off-loopback the operator has taken
+/// responsibility for the network path, and the check would reject legitimate
+/// proxied hosts, so it does not apply.
 pub fn host_allowed(head: &RequestHead, bound_loopback: bool) -> bool {
     if !bound_loopback {
         return true;
@@ -215,85 +221,4 @@ pub fn websocket_handshake(
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn head_with(headers: &[(&str, &str)]) -> RequestHead {
-        let mut text = String::from("GET / HTTP/1.1\r\n");
-        for (name, value) in headers {
-            text.push_str(&format!("{name}: {value}\r\n"));
-        }
-        text.push_str("\r\n");
-        http::parse_request_head(&text).unwrap()
-    }
-
-    #[test]
-    fn host_allowed_accepts_loopback_spellings() {
-        for host in [
-            "localhost:8091",
-            "LOCALHOST",
-            "127.0.0.1:8091",
-            "127.0.0.1",
-            "[::1]:8091",
-            "127.0.0.2",
-        ] {
-            assert!(
-                host_allowed(&head_with(&[("Host", host)]), true),
-                "{host} must be accepted"
-            );
-        }
-    }
-
-    #[test]
-    fn host_allowed_refuses_a_rebound_name_on_a_loopback_bind() {
-        // The attacker controls both headers, so origin_allowed passes; only
-        // the Host check stops the same-origin foothold.
-        let head = head_with(&[("Host", "evil.example"), ("Origin", "http://evil.example")]);
-
-        assert!(origin_allowed(&head), "precondition: origin matches host");
-        assert!(!host_allowed(&head, true), "a rebound name must be refused");
-    }
-
-    #[test]
-    fn host_allowed_defers_when_bound_off_loopback() {
-        // The operator chose the network path; rejecting their proxy's Host
-        // would break a legitimate deployment.
-        let head = head_with(&[("Host", "nightcrow.internal")]);
-
-        assert!(!host_allowed(&head, true));
-        assert!(host_allowed(&head, false));
-    }
-
-    #[test]
-    fn connection_slot_refuses_over_the_cap() {
-        let counter = Arc::new(AtomicUsize::new(0));
-
-        let held: Vec<_> = (0..2)
-            .map(|_| ConnectionSlot::acquire(&counter, 2).expect("under the cap"))
-            .collect();
-
-        assert!(
-            ConnectionSlot::acquire(&counter, 2).is_none(),
-            "a third connection must be refused"
-        );
-        assert_eq!(
-            counter.load(Ordering::Acquire),
-            2,
-            "a refused connection must not leak a slot"
-        );
-        drop(held);
-    }
-
-    #[test]
-    fn connection_slot_releases_on_drop() {
-        let counter = Arc::new(AtomicUsize::new(0));
-
-        drop(ConnectionSlot::acquire(&counter, 1).expect("under the cap"));
-
-        assert_eq!(counter.load(Ordering::Acquire), 0);
-        assert!(
-            ConnectionSlot::acquire(&counter, 1).is_some(),
-            "the freed slot must be reusable"
-        );
-    }
-}
+mod tests;

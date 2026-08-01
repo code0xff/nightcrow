@@ -1,6 +1,6 @@
 //! The browser's reload route.
 //!
-//! What a reload *applies* is pinned in `web::viewer::reload`, against a temp
+//! What a reload *applies* is pinned in `session::reload`, against a temp
 //! file. What is left here is the route: that it is gated, that it takes no
 //! configuration from the caller, and that a GET is not a way to trigger it.
 //!

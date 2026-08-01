@@ -46,6 +46,14 @@ impl TerminalState {
             .unwrap_or(self.size.0 as usize)
     }
 
+    /// Whether the active pane requested application cursor keys (DECCKM).
+    /// With no pane or emulator, terminal input uses the normal CSI form.
+    pub fn active_pane_app_cursor(&self) -> bool {
+        self.active_pane_id()
+            .and_then(|id| self.emulators.get(&id))
+            .is_some_and(PaneEmulator::app_cursor)
+    }
+
     /// Re-clamp `visible_start` against the current active pane and pane
     /// count. Must be called after anything that changes `active` or
     /// `panes.len()` (focus jumps, pane create/close, session restore) so

@@ -1,6 +1,4 @@
-use crate::config::web::{
-    GENERATED_PASSWORD_LEN, PASSWORD_ALPHABET, WEB_VIEWER_TABLE, insert_password,
-};
+use crate::config::web::{GENERATED_PASSWORD_LEN, PASSWORD_ALPHABET, upsert_password};
 use crate::config::{
     Config, WebViewerConfig, ensure_web_viewer_password, generate_password, validate_config,
 };
@@ -103,22 +101,21 @@ fn generate_password_has_expected_length_and_alphabet() {
 }
 
 #[test]
-fn insert_password_adds_line_under_existing_header() {
+fn upsert_password_adds_missing_key_to_existing_table() {
     let source = "[web_viewer]\nbind = \"127.0.0.1\"\nport = 8091\n";
-    let out = insert_password(source, WEB_VIEWER_TABLE, "secret");
-    assert_eq!(
-        out, "[web_viewer]\npassword = \"secret\"\nbind = \"127.0.0.1\"\nport = 8091\n",
-        "the password line must land right after the [web_viewer] header"
-    );
-    // The result round-trips and exposes the password.
+    let out = upsert_password(source, "secret").unwrap();
+
+    assert!(out.starts_with(source));
+    assert_eq!(out.matches("password =").count(), 1);
     let cfg: Config = toml::from_str(&out).unwrap();
     assert_eq!(cfg.web_viewer.password.as_deref(), Some("secret"));
 }
 
 #[test]
-fn insert_password_appends_table_when_absent() {
+fn upsert_password_appends_table_when_absent() {
     let source = "[layout]\nupper_pct = 55\n";
-    let out = insert_password(source, WEB_VIEWER_TABLE, "secret");
+    let out = upsert_password(source, "secret").unwrap();
+
     assert!(out.starts_with(source));
     assert!(out.contains("\n[web_viewer]\npassword = \"secret\"\n"));
     let cfg: Config = toml::from_str(&out).unwrap();
@@ -126,51 +123,49 @@ fn insert_password_appends_table_when_absent() {
 }
 
 #[test]
-fn insert_password_appends_table_into_empty_source() {
-    let out = insert_password("", WEB_VIEWER_TABLE, "secret");
+fn upsert_password_appends_table_into_empty_source() {
+    let out = upsert_password("", "secret").unwrap();
+
     assert_eq!(out, "[web_viewer]\npassword = \"secret\"\n");
     let cfg: Config = toml::from_str(&out).unwrap();
     assert_eq!(cfg.web_viewer.password.as_deref(), Some("secret"));
 }
 
 #[test]
-fn insert_password_targets_the_named_table() {
-    // The credential must land under the table it was asked for. Writing it
-    // into whichever table comes first would put a password in a section that
-    // has no notion of one, and leave the viewer without one.
-    let source = "[layout]\nupper_pct = 55\n";
-
-    let out = insert_password(source, WEB_VIEWER_TABLE, "vsecret");
-
-    assert!(
-        out.contains("[web_viewer]\npassword = \"vsecret\""),
-        "got: {out}"
-    );
-    let before = out.split("[web_viewer]").next().unwrap();
-    assert!(
-        !before.contains("vsecret"),
-        "the viewer password leaked into an earlier table: {out}"
-    );
-}
-
-#[test]
-fn insert_password_finds_an_existing_viewer_table() {
-    let source = "[layout]\nupper_pct = 55\n\n[web_viewer]\nport = 8091\n";
-
-    let out = insert_password(source, WEB_VIEWER_TABLE, "vsecret");
-
-    let viewer = out.split("[web_viewer]").nth(1).unwrap();
-    assert!(viewer.contains("password = \"vsecret\""), "got: {out}");
-    assert_eq!(out.matches("[web_viewer]").count(), 1, "no duplicate table");
-}
-
-#[test]
-fn insert_password_ignores_commented_header() {
+fn upsert_password_ignores_commented_header() {
     // A `# [web_viewer]` comment is not a real table header, so the password
     // must be appended as a new table rather than inserted under the comment.
     let source = "# [web_viewer] example\nfoo = 1\n";
-    let out = insert_password(source, WEB_VIEWER_TABLE, "secret");
+    let out = upsert_password(source, "secret").unwrap();
+
     assert!(out.contains("\n[web_viewer]\npassword = \"secret\"\n"));
+}
+
+#[test]
+fn upsert_password_replaces_value_without_losing_decor() {
+    let source = "[web_viewer]\npassword   =   ''  # generated on first use\nport = 8091\n";
+
+    let out = upsert_password(source, "secret").unwrap();
+
+    assert_eq!(out.matches("password").count(), 1);
+    assert!(out.contains("password   =   \"secret\"  # generated on first use"));
+    assert_eq!(out.matches("[web_viewer]").count(), 1);
+}
+
+#[test]
+fn upsert_password_preserves_crlf_when_appending_table() {
+    let source = "[layout]\r\nupper_pct = 55\r\n";
+
+    let out = upsert_password(source, "secret").unwrap();
+
+    assert!(
+        out.contains("\r\n[web_viewer]\r\npassword = \"secret\"\r\n"),
+        "unexpected CRLF output: {out:?}"
+    );
+    assert!(
+        !out.replace("\r\n", "").contains('\n'),
+        "output contains a bare LF: {out:?}"
+    );
 }
 
 #[test]
@@ -206,6 +201,28 @@ fn ensure_web_password_generates_persists_and_sets() {
     // The persisted file now parses back to the same password.
     let reparsed: Config = toml::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
     assert_eq!(reparsed.web_viewer.password.as_deref(), Some(pw.as_str()));
+}
+
+#[test]
+fn ensure_web_password_replaces_an_empty_password_key() {
+    let dir = tempfile::TempDir::new().unwrap();
+    let path = dir.path().join("config.toml");
+    let source = "[web_viewer]\npassword = \"\" # generated on first use\nport = 8091\n";
+    std::fs::write(&path, source).unwrap();
+    let mut cfg: Config = toml::from_str(source).unwrap();
+
+    let password = ensure_web_viewer_password(&mut cfg, &path)
+        .unwrap()
+        .expect("an empty password must be replaced");
+
+    let saved = std::fs::read_to_string(&path).unwrap();
+    assert_eq!(saved.matches("password =").count(), 1);
+    assert!(saved.contains("# generated on first use"));
+    let reparsed: Config = toml::from_str(&saved).unwrap();
+    assert_eq!(
+        reparsed.web_viewer.password.as_deref(),
+        Some(password.as_str())
+    );
 }
 
 #[test]

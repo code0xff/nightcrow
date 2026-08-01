@@ -3,17 +3,16 @@ use crate::application::input::dispatch::{KeyOutcome, dispatch_key};
 use crate::application::input::mouse::dispatch_mouse;
 use crate::application::input::paste::dispatch_paste;
 use crate::application::session_link::SessionLink;
+use crate::application::terminal_guard::TuiTerminal;
 use crate::workspace::Workspace;
 use crossterm::event::{self, Event};
 use ratatui::layout::Rect;
-use ratatui::{Terminal, backend::CrosstermBackend};
-use std::io;
 use std::time::Duration;
 use syntect::highlighting::ThemeSet;
 use syntect::parsing::SyntaxSet;
 
 pub(crate) fn main_loop(
-    terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
+    terminal: &mut TuiTerminal,
     ws: &mut Workspace,
     ss: &SyntaxSet,
     ts: &ThemeSet,
@@ -23,18 +22,15 @@ pub(crate) fn main_loop(
 ) -> anyhow::Result<()> {
     loop {
         // Whoever owns the tab list gets the first word each tick: attached,
-        // the set may have changed under this client since the last frame, and
-        // rendering a stale one would show a tab the session no longer has.
+        // the set may have changed under this client since the last frame.
         link.sync(ws, ctx);
         if !link.is_connected() {
             tracing::info!("daemon connection lost");
             // Reported rather than returned quietly. Leaving on a lost
             // connection looks identical to leaving on purpose — the terminal
-            // comes back with no explanation — and the two are not the same
-            // thing to whoever was working in it. Deliberately not "the session
+            // comes back with no explanation. Deliberately not "the session
             // is gone": the daemon may well be running and have dropped only
-            // this connection (a client that fell too far behind is cut off), so
-            // what is certain is stated and the rest is left to reattaching.
+            // this connection.
             anyhow::bail!(
                 "the connection to the session ended. The session may still be running — \
                  reattach with `nightcrow attach`"
@@ -42,23 +38,17 @@ pub(crate) fn main_loop(
         }
         // Every project drains its queues, not just the visible one: the
         // snapshot worker and PTY reader produce into unbounded channels
-        // regardless of which tab is on screen, so skipping the background
-        // ones would let them grow until the user switched back.
+        // regardless of which tab is on screen.
         //
-        // Only the active project *applies* its snapshot, though. That runs a
-        // full `refresh_diff`, and doing it for every open project would put
-        // several repositories' git diffs on the UI thread every tick. A
-        // background snapshot waits in `pending_snapshot` until its tab is
-        // shown (see `App::drain_snapshot`).
+        // Only the active project *applies* its snapshot, though. A background
+        // snapshot waits in `pending_snapshot` until its tab is shown.
         let active = ws.active_index();
         for (i, project) in ws.projects_mut().iter_mut().enumerate() {
             if i == active {
                 project.poll_snapshot();
                 // Applying a commit-log page can trigger a further prefetch and
                 // load a commit diff synchronously, so it stays with the
-                // snapshot as active-only work. A hidden project's in-flight
-                // fetch is capped at one by `CommitLogPagination`, so its reply
-                // can wait in the channel without growing.
+                // snapshot as active-only work.
                 project.poll_commit_log_page_fetch();
             } else {
                 project.drain_snapshot();
@@ -66,8 +56,7 @@ pub(crate) fn main_loop(
             // Both are cheap drains that must run everywhere: the tree watcher
             // to keep OS filesystem events from piling up, the terminal to
             // consume PTY output before the pipe fills and blocks the child.
-            // Acting on a watcher event rereads directories and previews a
-            // file, so like the snapshot that is active-only; a hidden project
+            // Acting on a watcher event is active-only; a hidden project
             // records the event and refreshes when its tab comes forward.
             if i == active {
                 project.poll_tree_watcher();
@@ -167,7 +156,7 @@ pub(crate) fn main_loop(
 
 /// Carry out a handler's outcome. Returns `true` when the app should quit.
 pub(crate) fn apply_outcome(
-    terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
+    terminal: &mut TuiTerminal,
     ws: &mut Workspace,
     link: &mut SessionLink,
     outcome: KeyOutcome,

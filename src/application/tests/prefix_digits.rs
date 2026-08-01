@@ -45,7 +45,7 @@ fn handle_key_leader_digits_mirror_focus_and_pane_fkeys() {
     assert_eq!(app.terminal.active, 7, "leader+0 must mirror F10 → pane 7");
 
     assert!(
-        !app.prefix_armed(),
+        !app.interaction.prefix_armed,
         "a mapped follow-up must disarm the prefix"
     );
     assert!(

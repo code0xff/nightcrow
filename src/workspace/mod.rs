@@ -2,8 +2,7 @@
 //! Closing a tab drops the `App`, which tears down its worker and panes — no
 //! field-by-field reset to keep in sync. The list may be empty, so `active()`
 //! yields an `Option` and the open-repo dialog lives here rather than on a
-//! project. Every project drains its queues each tick whether or not it is on
-//! screen; snapshots apply to the active one only.
+//! project.
 
 mod accent;
 mod path_complete;
@@ -21,8 +20,7 @@ use crate::app::{App, Notice, NoticeKind};
 use crate::ui::status_view::RepoInput;
 use crossterm::event::KeyEvent;
 
-/// Upper bound on open projects, matching the F1..F10 switch keys. A tab you
-/// cannot reach by key is hard to find, so the key space sets the limit.
+/// Upper bound on open projects, matching the F1..F10 switch keys.
 pub const MAX_PROJECTS: usize = 10;
 
 pub struct Workspace {
@@ -39,17 +37,13 @@ pub struct Workspace {
     /// View state for repos not currently open. Open projects are read live
     /// off the `App` at save time rather than stored here.
     remembered: Vec<RepoSession>,
-    /// The session's accent, adopted from the daemon rather than chosen here.
-    ///
-    /// On the workspace and not on a project because it is one colour for the
-    /// whole session — see the shared/per-client boundary in
-    /// `docs/architecture.md`. It also has to survive having no project open,
-    /// which is where the empty screen is drawn from.
+    /// The session's accent, adopted from the daemon. On the workspace and not
+    /// on a project because it is one colour for the whole session and has to
+    /// survive having no project open.
     accent_idx: usize,
 }
 
 impl Workspace {
-    /// Open a workspace with no projects.
     pub fn new(leader: KeyEvent) -> Self {
         Self {
             projects: Vec::new(),
@@ -63,7 +57,7 @@ impl Workspace {
         }
     }
 
-    /// Seed the remembered view state, once, from the file read at startup.
+    /// Seed the remembered view state from the file read at startup.
     pub fn set_remembered(&mut self, sessions: Vec<RepoSession>) {
         self.remembered = sessions;
     }
@@ -76,14 +70,9 @@ impl Workspace {
     }
 
     /// Every repository's view state — open tabs and remembered ones — capped
-    /// and ordered for storage.
-    ///
-    /// Only this half. Which repositories are open, and which is active, belong
-    /// to the daemon; a client that wrote those would overwrite the session
-    /// with its own view of it. What is selected and where it is scrolled is
-    /// this client's alone (see the shared/per-client boundary in
-    /// `docs/architecture/session.md`), which is why it is saved here and not
-    /// there.
+    /// and ordered for storage. Only this half: which repos are open and which
+    /// is active belong to the daemon; what is selected and where it is scrolled
+    /// is this client's alone (see `docs/architecture/session.md`).
     ///
     /// Open projects go last so the least-recently-used eviction never drops a
     /// tab that is currently on screen — `remember` inserts at the front.
@@ -99,7 +88,6 @@ impl Workspace {
     }
 
     /// Matches only the bare leader chord; any extra modifier passes through.
-    /// See `App::is_leader_key`.
     pub fn is_leader_key(&self, key: KeyEvent) -> bool {
         key.code == self.leader.code && key.modifiers == self.leader.modifiers
     }
@@ -135,8 +123,7 @@ impl Workspace {
         (self.projects.get_mut(self.active), &self.repo_input)
     }
 
-    /// Raise a notice on the active project or the empty screen; callers need
-    /// not know which case they are in.
+    /// Raise a notice on the active project or the empty screen.
     pub fn raise_notice(&mut self, kind: NoticeKind, text: impl Into<String>) {
         match self.projects.get_mut(self.active) {
             Some(project) => project.raise_notice(kind, text),
@@ -161,7 +148,7 @@ impl Workspace {
         self.empty_notice.as_ref()
     }
 
-    /// All open projects in tab order, for the tab row and end-of-run saves.
+    /// All open projects in tab order.
     pub fn projects(&self) -> &[App] {
         &self.projects
     }
@@ -175,14 +162,14 @@ impl Workspace {
         &mut self.projects
     }
 
-    /// Checked before *building* a project: construction spawns PTYs and runs
+    /// Checked before building a project: construction spawns PTYs and runs
     /// startup commands, which must not happen for a tab `add` will refuse.
     pub fn is_full(&self) -> bool {
         self.projects.len() >= MAX_PROJECTS
     }
 
     /// Open `project` in a new tab and make it active. Returns `false` at
-    /// `MAX_PROJECTS`, leaving the workspace untouched.
+    /// `MAX_PROJECTS`.
     pub fn add(&mut self, project: App) -> bool {
         if self.projects.len() >= MAX_PROJECTS {
             return false;
@@ -239,11 +226,8 @@ impl Workspace {
     }
 
     /// Put the tabs in `order` (by repository path), keeping the same project
-    /// active.
-    ///
-    /// Paths not open are skipped and open tabs the order does not name keep
-    /// their relative position at the end, so a list that raced a close still
-    /// produces a sane arrangement rather than dropping tabs.
+    /// active. Paths not open are skipped and open tabs the order does not name
+    /// keep their relative position at the end.
     pub fn reorder_to(&mut self, order: &[&str]) {
         let active_path = self.projects.get(self.active).map(|p| p.repo_path.clone());
         let mut arranged: Vec<App> = Vec::with_capacity(self.projects.len());

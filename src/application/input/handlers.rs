@@ -54,7 +54,8 @@ pub(crate) fn handle_terminal_key(app: &mut App, key: KeyEvent, action: Action) 
         Action::TermScrollLineUp => app.terminal.scroll_active(true, SCROLL_LINE_STEP),
         Action::TermScrollLineDown => app.terminal.scroll_active(false, SCROLL_LINE_STEP),
         _ => {
-            if let Some(data) = encode_key(key) {
+            let app_cursor = app.terminal.active_pane_app_cursor();
+            if let Some(data) = encode_key(key, app_cursor) {
                 app.terminal.send_input(&data);
             }
         }

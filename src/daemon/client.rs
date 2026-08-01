@@ -1,10 +1,8 @@
-//! The attaching side of the daemon socket.
-//!
-//! Shaped around the fact that the daemon speaks first. A client cannot sit in
-//! a request/response loop — the session changes under it, and terminal output
-//! will arrive with nothing having asked — so requests are sent and forgotten,
-//! and everything the daemon says lands in a queue the caller drains on its own
-//! schedule. That schedule is a TUI frame, which must never block on a socket.
+//! The attaching side of the daemon socket. The daemon speaks first — the
+//! session changes under the client, and terminal output arrives unprompted —
+//! so requests are sent and forgotten, and everything the daemon says lands in
+//! a queue the caller drains on its own schedule (a TUI frame, which must never
+//! block on a socket).
 
 use super::protocol::{ClientMessage, ServerMessage, version};
 use super::terminal_link::{TerminalLink, TerminalRouter};
@@ -17,42 +15,32 @@ use std::sync::mpsc::Receiver;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-/// How long the opening handshake waits for the daemon to answer.
-///
-/// Only the handshake is bounded. After it the connection is event-driven and a
-/// quiet daemon is the normal state, so a timeout there would be a disconnect
-/// invented out of an idle session.
+/// How long the opening handshake waits for the daemon to answer. Only the
+/// handshake is bounded — after it the connection is event-driven and a quiet
+/// daemon is the normal state.
 const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(5);
 
 #[derive(Debug)]
 pub struct DaemonClient {
-    /// The write half. The reader thread owns the other.
     out: Writer,
     incoming: Receiver<ServerMessage>,
     /// Terminal traffic, split per repository for the backends that drain it.
     terminals: Arc<TerminalRouter>,
-    /// This connection's id at the daemon, from the handshake.
-    ///
-    /// Handed to each repository's backend, which compares it against the
-    /// requester a new pane names — the one way to tell a pane this client
-    /// opened from one that appeared because another client did.
+    /// This connection's id at the daemon, from the handshake. Handed to each
+    /// repository's backend to tell a pane this client opened from one that
+    /// appeared because another client did.
     client: u64,
-    /// Cleared by the reader thread when the daemon goes away.
-    ///
-    /// A separate flag rather than the channel's disconnected state: reading
-    /// that means calling `try_recv`, which consumes a message when one is
-    /// waiting — so asking whether the daemon is there would throw away what it
-    /// last said.
+    /// Cleared by the reader thread when the daemon goes away. A separate flag
+    /// rather than the channel's disconnected state: reading that means calling
+    /// `try_recv`, which consumes a message when one is waiting.
     connected: Arc<AtomicBool>,
 }
 
 impl DaemonClient {
-    /// Attach to the daemon listening on `path`.
-    ///
-    /// Completes the version handshake before returning, so a caller that gets
-    /// a `DaemonClient` knows it is talking to a daemon of this build. The
-    /// repository set the daemon volunteers on attach is not waited for — it is
-    /// queued like any other message and drained with the rest.
+    /// Attach to the daemon listening on `path`. Completes the version handshake
+    /// before returning, so a caller that gets a `DaemonClient` knows it is
+    /// talking to a daemon of this build. The repository set the daemon
+    /// volunteers on attach is queued like any other message.
     pub fn connect(path: &Path) -> Result<Self> {
         let stream = UnixStream::connect(path).with_context(|| {
             format!(
@@ -153,11 +141,9 @@ impl DaemonClient {
         )
     }
 
-    /// Drop the terminal inboxes of repositories that are no longer open.
-    ///
-    /// Called with each set the daemon reports, which is also when the tabs are
-    /// reconciled: a repository that closed has no backend left to drain it, and
-    /// one this client never opened a tab for has an inbox nothing will.
+    /// Drop the terminal inboxes of repositories that are no longer open. Called
+    /// with each set the daemon reports, which is also when the tabs are
+    /// reconciled.
     pub fn retain_repos(&self, open: &[String]) {
         self.terminals.retain(open);
     }
@@ -173,7 +159,7 @@ impl DaemonClient {
     }
 
     /// Ask the daemon to put a repository in front, by catalog id. Every client
-    /// follows, so the answer arrives as a broadcast like any other change.
+    /// follows, so the answer arrives as a broadcast.
     pub fn focus_repo(&mut self, id: &str) -> Result<()> {
         send(
             &self.out,
@@ -184,17 +170,13 @@ impl DaemonClient {
     }
 
     /// Ask the daemon to paint the session in `accent`. Every client and the
-    /// browser follow, so the answer arrives as a broadcast like any other
-    /// change.
+    /// browser follow, so the answer arrives as a broadcast.
     pub fn set_accent(&mut self, accent: usize) -> Result<()> {
         send(&self.out, &ClientMessage::SetAccent { accent })
     }
 
-    /// Ask the daemon to re-read `config.toml`.
-    ///
-    /// Answered to this client alone, as a [`ServerMessage::Reloaded`] or an
-    /// error: nothing a reload does is visible in what the other clients are
-    /// looking at.
+    /// Ask the daemon to re-read `config.toml`. Answered to this client alone,
+    /// as a [`ServerMessage::Reloaded`] or an error.
     pub fn reload_config(&mut self) -> Result<()> {
         send(&self.out, &ClientMessage::ReloadConfig)
     }

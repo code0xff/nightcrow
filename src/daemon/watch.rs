@@ -1,9 +1,8 @@
 //! Telling attached clients about changes nobody on their connection asked for.
-//!
 //! The session has two front doors. A repository opened in the browser goes
 //! through the HTTP handlers, and nothing on an attach socket is woken by it —
 //! so a client that asks for nothing would sit on a tab list that quietly went
-//! stale, which is the one thing a shared session must not do.
+//! stale.
 //!
 //! This is a thread that re-reads the session on a tick and tells everyone when
 //! it differs from what they were last told. Observing rather than being
@@ -12,26 +11,24 @@
 //! is a comparison of a handful of small structs at a rate nobody can see.
 
 use super::clients::AttachedClients;
+use super::frame::encode_server;
 use super::protocol::{RepoSummary, ServerMessage};
-use crate::web::viewer::server::ViewerState;
-use crate::web::viewer::session;
+use crate::session;
+use crate::session::SessionState;
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::Duration;
 
-/// How long the watcher waits before re-reading the session unprompted.
-///
-/// This bounds only changes it cannot be told about — the ones made through the
+/// How long the watcher waits before re-reading the session unprompted. This
+/// bounds only changes it cannot be told about — the ones made through the
 /// browser's HTTP handlers — where the alternative it replaces was "never". A
-/// change asked for on an attach socket wakes it immediately (see [`Nudge`]), so
-/// a keystroke never waits on this.
+/// change asked for on an attach socket wakes it immediately (see [`Nudge`]).
 const TICK: Duration = Duration::from_millis(150);
 
-/// A way to tell the watcher not to wait out its tick.
-///
-/// A client that just asked for something is watching for it to happen, so the
-/// answer cannot sit behind a poll interval. The change is still *read* from the
-/// session rather than passed through here: this only says "look now", so a
-/// handler that forgets to poke costs latency, never correctness.
+/// A way to tell the watcher not to wait out its tick. A client that just asked
+/// for something is watching for it to happen, so the answer cannot sit behind a
+/// poll interval. The change is still *read* from the session rather than passed
+/// through here: this only says "look now", so a handler that forgets to poke
+/// costs latency, never correctness.
 #[derive(Default)]
 pub(super) struct Nudge {
     poked: Mutex<bool>,
@@ -79,7 +76,7 @@ impl Nudge {
 /// the price of a branch that can be wrong. The owed-only path does not need it:
 /// those clients followed the set when they attached, and it has not changed.
 pub(super) fn watch(
-    state: Arc<ViewerState>,
+    state: Arc<SessionState>,
     clients: Arc<AttachedClients>,
     nudge: Arc<Nudge>,
     follow: impl Fn(&[session::SessionRepo]),
@@ -102,11 +99,15 @@ pub(super) fn watch(
             session::accent(&state),
         );
         let frame = || {
-            encode(&ServerMessage::Repos {
-                repos: current.0.clone(),
-                active: current.1.clone(),
-                accent: current.2,
-            })
+            encode_server(
+                &ServerMessage::Repos {
+                    repos: current.0.clone(),
+                    active: current.1.clone(),
+                    accent: current.2,
+                },
+                "session change",
+                "session change could not be encoded",
+            )
         };
         if told != current {
             follow(&repos);
@@ -133,16 +134,4 @@ fn summarize(repos: &[session::SessionRepo]) -> Vec<RepoSummary> {
             path: repo.path.clone(),
         })
         .collect()
-}
-
-fn encode(message: &ServerMessage) -> super::frame::Frame {
-    match serde_json::to_vec(message) {
-        Ok(json) => super::frame::Frame::control(json),
-        Err(err) => {
-            tracing::error!(%err, "daemon: could not encode a session change");
-            super::frame::Frame::control(
-                br#"{"type":"error","message":"session change could not be encoded"}"#.to_vec(),
-            )
-        }
-    }
 }

@@ -3,6 +3,10 @@ import type { MutableRefObject } from "react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { terminalFontOptions } from "../../lib/termFont";
+import {
+  sendTerminalMessage,
+  type PaneSize,
+} from "../../api/terminal";
 
 interface UseStartupSizesArgs {
   /** How many startup terminals the server is holding, or null when there is
@@ -53,14 +57,15 @@ export function useStartupSizes({
         // server opens the startup terminals at its default — rather than
         // leave them unclaimed for the life of the hub.
         if (!panesExist) return; // Just not laid out yet; a later pass retries.
-        socket.send(JSON.stringify({ type: "start", sizes: [] }));
-        onAnswered();
+        if (sendTerminalMessage(socket, { type: "start", sizes: [] })) {
+          onAnswered();
+        }
         return;
       }
       slots.push(node);
     }
 
-    let sizes: { rows: number; cols: number }[] = [];
+    let sizes: PaneSize[] = [];
     try {
       sizes = slots.map((node) => {
         const term = new Terminal(terminalFontOptions());
@@ -80,7 +85,6 @@ export function useStartupSizes({
       sizes = [];
     }
 
-    socket.send(JSON.stringify({ type: "start", sizes }));
-    onAnswered();
+    if (sendTerminalMessage(socket, { type: "start", sizes })) onAnswered();
   }, [pending, size, socketRef, slotRefs, panesExist, onAnswered]);
 }

@@ -1,12 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
   applyRecovery,
-  cancelRecoveryFrame,
   deadlineLabel,
   forgetRecovery,
   orphanRecovery,
   recoverySummary,
-  sendCancelRecovery,
   type RecoveryByPane,
 } from "./recovery";
 
@@ -136,19 +134,6 @@ describe("forgetRecovery", () => {
   it("보고가_없던_pane이면_같은_객체를_돌려준다", () => {
     const held: RecoveryByPane = {};
     expect(forgetRecovery(held, 6)).toBe(held);
-  });
-});
-
-describe("sendCancelRecovery", () => {
-  it("취소_컨트롤이_서버가_읽는_프레임을_보낸다", () => {
-    const sent: string[] = [];
-    sendCancelRecovery({ send: (data) => sent.push(data) }, 6);
-    expect(sent).toEqual([`{"type":"cancel_recovery","pane":6}`]);
-    expect(sent[0]).toBe(cancelRecoveryFrame(6));
-  });
-
-  it("소켓이_없으면_조용히_아무것도_하지_않는다", () => {
-    expect(() => sendCancelRecovery(null, 6)).not.toThrow();
   });
 });
 

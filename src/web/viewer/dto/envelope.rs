@@ -1,5 +1,5 @@
 use super::status::server_now_millis;
-use crate::web::viewer::prefs::ViewerPrefs;
+use crate::session::prefs::ViewerPrefs;
 use serde::Serialize;
 
 /// Bumped whenever an existing field changes meaning or disappears. Adding a
@@ -31,9 +31,18 @@ pub struct RepoDto {
     /// Final path component, for a tab label.
     pub name: String,
     /// Home-relative path for display (`~/code/app`). The absolute path is not
-    /// sent: the client never needs it, and it is the one field here that says
-    /// something about the machine rather than the repository.
+    /// sent: the client never needs it.
     pub display_path: String,
+}
+
+impl From<crate::session::catalog::RepoInfo> for RepoDto {
+    fn from(repo: crate::session::catalog::RepoInfo) -> Self {
+        Self {
+            id: repo.id,
+            name: repo.name,
+            display_path: repo.display_path,
+        }
+    }
 }
 
 /// The part of `[agent_indicator]` the browser can act on. `auto_follow` is
@@ -51,12 +60,10 @@ pub struct HotConfigDto {
 /// repositories — `POST` opens one, `DELETE` closes one — but the `GET` grew
 /// into the session's bootstrap, because a client that already polls it every
 /// few seconds is the cheapest carrier for anything server-wide it must agree
-/// with. The path stays as it is so opening and closing keep their home; this
-/// type is where the payload's real job is written down.
+/// with.
 ///
 /// Every field here belongs in `ViewerBootstrap` in `viewer-ui/src/api.ts` too.
-/// Renaming or retyping one without doing so fails the fixture contract test;
-/// a purely additive field does not, so add it to both while it is in hand.
+/// Renaming or retyping one without doing so fails the fixture contract test.
 #[derive(Debug, Clone, Serialize)]
 pub struct ViewerBootstrapDto {
     pub repos: Vec<RepoDto>,
@@ -64,36 +71,31 @@ pub struct ViewerBootstrapDto {
     /// Index into the accent presets. The session's colour, stored server-side
     /// so every device — and every attached TUI — agrees.
     pub accent: usize,
-    /// File-sidebar width in CSS px, stored server-side like the accent so
-    /// every device opens at the same split.
+    /// File-sidebar width in CSS px, stored server-side like the accent.
     pub sidebar_width: u32,
     /// Percent of the vertical split given to the diff panel; the terminal
-    /// panel takes the rest. Shared between browsers like the sidebar width,
-    /// and like it not shared with the TUI — see `prefs::ViewerPrefs`.
+    /// panel takes the rest. Shared between browsers, not shared with the TUI —
+    /// see `prefs::ViewerPrefs`.
     pub upper_pct: u32,
     /// Id of the project a client last selected, so a reload lands there
     /// instead of on the first tab. `None` when nothing has been selected yet
-    /// or the remembered project is not currently served — the client then
-    /// falls back to the first tab. An id, not the path `prefs.rs` stores:
-    /// clients address repositories by id and never learn the path.
+    /// or the remembered project is not currently served. An id, not the path
+    /// `prefs.rs` stores: clients address repositories by id and never learn
+    /// the path.
     pub active_repo: Option<String>,
     /// Which panel each *currently served* project was left maximized in, by
     /// id. Projects with no arrangement are absent, as are remembered ones this
-    /// session is not serving — ids, like `active_repo`, are resolved from the
-    /// same catalog snapshot as the list beside them
-    /// (`Catalog::list_with_active`), so every id here is one the list carries.
+    /// session is not serving.
     pub maximized: std::collections::HashMap<String, &'static str>,
     /// This server's wall clock, for dating [`super::ChangedFileDto::mtime`].
     pub now_ms: u64,
-    /// Whether this server can clone: false when no `git` is on its PATH, so
-    /// the client disables the form instead of starting a job that must fail.
+    /// Whether this server can clone: false when no `git` is on its PATH.
     pub can_clone: bool,
 }
 
 impl ViewerBootstrapDto {
     /// Stamps `now_ms` at construction — the value is only useful as "the
-    /// server's time when this response was built", so no caller is given the
-    /// chance to supply a staler one.
+    /// server's time when this response was built".
     ///
     /// Takes the whole [`ViewerPrefs`] rather than the fields it needs: several
     /// of them are `u32`, and a positional list of those is a pair of arguments

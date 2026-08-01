@@ -24,22 +24,27 @@ pub(super) fn route(head: &RequestHead, state: &ViewerState) -> Vec<u8> {
             // already polls it every few seconds, so a setting changed here
             // reaches every device within one interval, and `/api/status` —
             // a hot, deduplicated stream — stays free of configuration.
-            let prefs = state.prefs.get();
+            let prefs = state.session.prefs().get();
             // The remembered project is resolved to an id per response rather
             // than stored as one, and from the same snapshot as the list it
             // will be rendered against — see `Catalog::list_with_active`.
             let served = state
-                .catalog
+                .session
+                .catalog()
                 .list_with_active(prefs.active_repo.as_deref(), &prefs.maximized);
             let bootstrap = ViewerBootstrapDto::new(
-                served.list,
+                served.list.into_iter().map(Into::into).collect(),
                 HotConfigDto {
                     enabled: state.hot.enabled,
                     window_secs: state.hot.hot_window_secs,
                 },
                 &prefs,
                 served.active,
-                served.maximized,
+                served
+                    .maximized
+                    .into_iter()
+                    .map(|(id, panel)| (id, panel.as_str()))
+                    .collect(),
                 state.git_available,
             );
             match serde_json::to_string(&Envelope::new(bootstrap)) {

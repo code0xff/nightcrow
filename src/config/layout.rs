@@ -2,13 +2,11 @@ use anyhow::Result;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use serde::{Deserialize, Serialize};
 
-/// Default leader chord. `Ctrl+F` is a one-handed left-hand chord that avoids
-/// tmux's `Ctrl+B` (so nightcrow can run inside tmux) AND the Ctrl chords an
-/// inner Claude Code pane reserves (`Ctrl+G` = external editor, plus
-/// `Ctrl+O/R/S/T/L/…`). It also dodges terminal flow control (`Ctrl+Q`/`Ctrl+S`
-/// = XON/XOFF) and the shell signals `Ctrl+C/D/Z`. Its only collision is
-/// `Ctrl+F` as forward-char (readline) / page-forward (vim), which users
-/// almost always reach via the arrow keys / PageDown instead; when needed it
+/// Default leader chord. `Ctrl+F` avoids tmux's `Ctrl+B` (so nightcrow can
+/// run inside tmux) and the Ctrl chords an inner Claude Code pane reserves.
+/// It also dodges terminal flow control (`Ctrl+Q`/`Ctrl+S`) and shell signals
+/// (`Ctrl+C/D/Z`). Its only collision is `Ctrl+F` as forward-char / page-forward,
+/// which users almost always reach via arrow keys / PageDown; when needed it
 /// stays reachable via `<leader><leader>`.
 pub(super) const DEFAULT_LEADER: &str = "ctrl+f";
 
@@ -42,15 +40,12 @@ pub enum Accent {
 }
 
 // Compile-time guard: a future refactor must not shrink `Accent::ALL` to
-// empty, or `from_index` would rely on a runtime fallback we'd rather not
-// exercise. `const` items don't accept `_` inside an `impl` block, so this
-// lives at module scope.
+// empty, or `from_index` would rely on a runtime fallback.
 const _: () = assert!(!Accent::ALL.is_empty(), "Accent::ALL must be non-empty");
 
 impl Accent {
     // Variant declaration order MUST match this slice so accent indices already
-    // written down — the session's in `viewer.json`, and the per-repo ones older
-    // session files still carry — keep mapping to the same color.
+    // written down keep mapping to the same color.
     pub const ALL: &'static [Accent] = &[
         Accent::Yellow,
         Accent::Cyan,
@@ -72,13 +67,11 @@ impl Accent {
 
     pub fn index(self) -> usize {
         // Fall back to 0 when a variant is missing from `ALL` — should be
-        // unreachable, but a runtime panic on a UI helper is worse than a
-        // silently miscoloured tile. The roundtrip test pins the invariant.
+        // unreachable, but a runtime panic on a UI helper is worse.
         Self::ALL.iter().position(|&a| a == self).unwrap_or(0)
     }
 
     pub fn from_index(idx: usize) -> Accent {
-        // The compile-time guard above keeps `len > 0`, so `% len` is sound.
         Self::ALL
             .get(idx % Self::ALL.len())
             .copied()
@@ -103,9 +96,7 @@ impl ThemeConfig {
 #[serde(default)]
 pub struct InputConfig {
     /// The leader (prefix) chord. Every app command is reached by pressing
-    /// this key, then a follow-up (tmux-style). Accepts a single
-    /// `ctrl+<ascii>` chord; the parser rejects anything that doubles as a
-    /// no-prefix reserved key (F1..F10, Shift+arrows, Shift+PgUp/PgDn).
+    /// this key, then a follow-up (tmux-style).
     pub leader: String,
 }
 

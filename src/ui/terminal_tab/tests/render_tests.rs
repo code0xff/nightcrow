@@ -133,22 +133,6 @@ fn split_view_active_pane_matches_inactive_style_when_terminal_unfocused() {
 }
 
 #[test]
-fn tab_target_at_resolves_tabs_and_hidden_markers() {
-    let mut app = crate::app::tests::app_with_fake_backend();
-    app.terminal.max_visible_normal = 2;
-    for i in 0..4 {
-        app.terminal
-            .create_pane_with_now(None, Some(&format!("P{i}")))
-            .unwrap();
-    }
-    // Creation leaves pane 3 active with a 2-pane window: [2, 4).
-    let area = Rect::new(0, 0, 80, 20);
-    let (tab_area, _) = terminal_layout(area).unwrap();
-    let y = tab_area.y;
-    let _ = y;
-}
-
-#[test]
 fn a_grid_smaller_than_its_pane_is_padded_rather_than_stretched() {
     // What a spectator sees. The session's grid belongs to whichever client is
     // sizing it, and a program that drew for 20 columns cannot be re-flowed to

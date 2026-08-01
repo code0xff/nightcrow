@@ -8,6 +8,7 @@
 
 use crate::protocol::{PaneGeneration, PaneToken};
 use serde_json::Value;
+use std::path::Path;
 
 pub mod claude;
 pub mod codex;
@@ -107,7 +108,6 @@ pub enum ResumePlan {
     Hold(&'static str),
 }
 
-#[allow(unused_variables)]
 pub trait Provider {
     /// Stable adapter name, reported in `status` and used in logs.
     fn name(&self) -> &'static str;
@@ -115,29 +115,34 @@ pub trait Provider {
     /// Terminal text the pane produced. This is the least reliable source —
     /// wording changes between releases — so an adapter uses it only as a
     /// documented fallback.
-    fn on_output(&mut self, ctx: &PaneContext, text: &str, now_epoch: i64) -> Option<LimitEvent> {
+    fn on_output(
+        &mut self,
+        _ctx: &PaneContext,
+        _text: &str,
+        _now_epoch: i64,
+    ) -> Option<LimitEvent> {
         None
     }
 
     /// A signal that arrived over the IPC socket.
     fn on_signal(
         &mut self,
-        ctx: &PaneContext,
-        signal: &OutOfBand,
-        now_epoch: i64,
+        _ctx: &PaneContext,
+        _signal: &OutOfBand,
+        _now_epoch: i64,
     ) -> Option<LimitEvent> {
         None
     }
 
     /// Called on the plugin's timer, for an adapter that has to look somewhere
     /// itself (a rollout file, an HTTP endpoint).
-    fn poll(&mut self, ctx: &PaneContext, now_epoch: i64) -> Option<LimitEvent> {
+    fn poll(&mut self, _ctx: &PaneContext, _now_epoch: i64) -> Option<LimitEvent> {
         None
     }
 
     /// The pane's process has ended. Adapters that must not act while a
     /// provider is retrying internally use this as their gate.
-    fn on_exit(&mut self, ctx: &PaneContext) {}
+    fn on_exit(&mut self, _ctx: &PaneContext) {}
 
     /// How to resume, or `None` when this adapter cannot say safely.
     ///
@@ -150,7 +155,15 @@ pub trait Provider {
 /// something this plugin knows nothing about — in which case the plugin stays
 /// out of the pane entirely.
 pub fn detect(command: Option<&str>) -> Option<Box<dyn Provider>> {
-    let program = first_word(command?)?;
+    let word = first_word(command?)?;
+    let program = Path::new(word).file_name()?.to_str()?;
+    #[cfg(windows)]
+    let program = program.to_ascii_lowercase();
+    #[cfg(windows)]
+    let program = [".exe", ".cmd", ".bat", ".com", ".ps1"]
+        .iter()
+        .find_map(|suffix| program.strip_suffix(suffix))
+        .unwrap_or(&program);
     match program {
         "claude" => Some(Box::new(claude::Claude::default())),
         "codex" => Some(Box::new(codex::Codex::default())),
@@ -178,12 +191,21 @@ pub fn detect_from_signal(kind: SignalKind) -> Option<Box<dyn Provider>> {
     }
 }
 
-/// The command's program name without its directory, so `/usr/local/bin/claude`
-/// and `claude --foo` both resolve to `claude`.
+/// The command's first shell word, including a quoted executable path.
 fn first_word(command: &str) -> Option<&str> {
-    let first = command.split_whitespace().next()?;
-    let base = first.rsplit('/').next().unwrap_or(first);
-    (!base.is_empty()).then_some(base)
+    let command = command.trim_start();
+    let quote = command.chars().next()?;
+    if quote == '"' || (cfg!(not(windows)) && quote == '\'') {
+        let quoted = &command[quote.len_utf8()..];
+        let end = quoted.find(quote)?;
+        let trailing = &quoted[end + quote.len_utf8()..];
+        if !trailing.is_empty() && !trailing.starts_with(char::is_whitespace) {
+            return None;
+        }
+        return (!quoted[..end].is_empty()).then_some(&quoted[..end]);
+    }
+
+    command.split_whitespace().next()
 }
 
 /// Furthest ahead a reported reset time is believed.

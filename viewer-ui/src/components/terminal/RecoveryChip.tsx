@@ -1,4 +1,4 @@
-import { XIcon } from "../icons";
+import { XIcon } from "../icons/actions";
 import { recoverySummary, type PaneRecovery } from "../../lib/recovery";
 
 interface RecoveryChipProps {

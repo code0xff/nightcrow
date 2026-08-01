@@ -3,42 +3,31 @@
 //! Newline-delimited JSON over the plugin child's stdin and stdout: the host
 //! writes one [`PluginEvent`] per line, the plugin writes one
 //! [`PluginCommand`] per line. A line is the framing, so nothing here may emit
-//! an embedded newline — [`encode_event`] refuses rather than corrupt the
-//! stream.
+//! an embedded newline.
 //!
-//! Unlike the daemon's control protocol, the two sides here are separate
-//! builds: a plugin is written against a version of this contract and shipped
-//! independently. That makes [`PROTOCOL_VERSION`] a real negotiation, and a
-//! mismatch is refused rather than half-understood.
+//! Unlike the daemon's control protocol, the two sides are separate builds: a
+//! plugin is shipped independently against a version of this contract. That
+//! makes [`PROTOCOL_VERSION`] a real negotiation — a mismatch is refused.
 
 use crate::backend::{PaneGeneration, PaneToken};
 use anyhow::{Result, anyhow, bail};
 use serde::{Deserialize, Serialize};
 
 /// Bumped when a field changes meaning. A plugin built against a version the
-/// host does not speak is refused rather than half-understood.
+/// host does not speak is refused.
 ///
-/// 2 added [`PluginCommand::WatchPane`]. A version-1 plugin cannot ask for a
-/// pane it was never named by, so an old build talking to this host would be
-/// silently less capable rather than wrong — the bump is what makes that
-/// difference loud instead.
+/// 2 added [`PluginCommand::WatchPane`].
 pub const PROTOCOL_VERSION: u32 = 2;
 
-/// Longest line the host will read from a plugin.
-///
-/// The plugin is untrusted input on a stream with no length prefix, so without
-/// a cap a plugin that never writes a newline makes the host's reader allocate
-/// without bound. 64 KiB is far above any legitimate command — the largest is a
-/// [`PluginCommand::SendInput`] bounded by [`MAX_INPUT_BYTES`] plus JSON
-/// escaping and a token — while still being a single small allocation.
+/// Longest line the host will read from a plugin. Without a cap a plugin that
+/// never writes a newline makes the host's reader allocate without bound.
 pub const MAX_LINE_BYTES: usize = 64 * 1024;
 
 /// Longest `data` a single [`PluginCommand::SendInput`] may carry.
 ///
-/// Typed input stands in for a human at a keyboard: a prompt, a confirmation,
-/// a pasted snippet. 8 KiB covers that with room to spare and keeps one command
-/// from filling a PTY's input buffer, which would block the writer and stall
-/// every other pane behind it.
+/// Typed input stands in for a human at a keyboard. 8 KiB covers that and keeps
+/// one command from filling a PTY's input buffer, which would stall every other
+/// pane behind it.
 pub const MAX_INPUT_BYTES: usize = 8 * 1024;
 
 /// Sentinel [`decode_command`] answers a blank line with. Prefer

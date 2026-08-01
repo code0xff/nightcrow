@@ -3,7 +3,7 @@ use crate::daemon::frame::{Frame, FrameKind, read_frame, write_frame};
 use crate::daemon::protocol::{ClientMessage, ServerMessage, TerminalOutput, version};
 use crate::daemon::socket::DaemonSocket;
 use crate::daemon::transport::UnixStream;
-use crate::web::viewer::terminal::frame::ServerMessage as HubServerMessage;
+use crate::session::terminal::frame::ServerMessage as HubServerMessage;
 use std::io::Write;
 
 /// A running daemon. Held by the test so its socket stays bound and its
@@ -12,7 +12,7 @@ pub(super) struct TestDaemon {
     socket: DaemonSocket,
     /// The session itself, so a test can change it the way the browser does —
     /// through the session functions, with no attach connection involved.
-    state: std::sync::Arc<crate::web::viewer::server::ViewerState>,
+    state: std::sync::Arc<crate::session::SessionState>,
 }
 
 impl TestDaemon {
@@ -20,7 +20,7 @@ impl TestDaemon {
         self.socket.path()
     }
 
-    pub(super) fn state(&self) -> &crate::web::viewer::server::ViewerState {
+    pub(super) fn state(&self) -> &crate::session::SessionState {
         &self.state
     }
 }

@@ -12,7 +12,7 @@ use crate::git::diff::{ChangedFile, CommitEntry, RepoSnapshot, StatusKind, load_
 use crate::runtime::snapshot::SnapshotMsg;
 use crate::runtime::terminal::{PaneInfo, SCROLLBACK_LINES, TerminalFullscreen};
 use crate::test_util::{make_repo, open_repo, run_git};
-use crossterm::event::{KeyCode, KeyModifiers};
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use std::collections::HashMap;
 use std::path::Path;
 use std::sync::mpsc;

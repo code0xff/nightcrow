@@ -90,6 +90,10 @@ export function useRepoPoll({
   const servedActiveRef = useRef<string | null>(null);
 
   useEffect(() => {
+    // `null` performs the initial authentication probe. A successful login
+    // changes this back to `true`, which starts a fresh polling effect.
+    if (authed === false) return;
+
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
     const controller = new AbortController();
@@ -160,6 +164,7 @@ export function useRepoPoll({
           if (isUnauthorized(err)) {
             setAuthed(false);
             setReposLoaded(false);
+            return;
           } else if (!isNetworkError(err)) {
             handle(err);
           }
@@ -184,8 +189,10 @@ export function useRepoPoll({
     accentWrites,
     sidebarWrites,
     upperPctWrites,
+    maximizedWrites,
     draggingRef,
     upperDraggingRef,
+    adoptMaximized,
     orderWrites,
     repoDraggingRef,
     reorderInFlightRef,

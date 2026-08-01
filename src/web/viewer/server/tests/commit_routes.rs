@@ -52,7 +52,7 @@ fn commit_file_diff_returns_only_the_selected_path() {
 fn commit_file_diff_allows_a_deleted_path_without_worktree_lookup() {
     let (dir, server, token, id) = seeded_server();
     let repo_path = {
-        let entry = server.state.catalog.get(&id).unwrap();
+        let entry = server.state.session.catalog().get(&id).unwrap();
         entry.path.clone()
     };
     let gone = std::path::Path::new(&repo_path).join("gone.txt");
@@ -112,7 +112,7 @@ fn diff_returns_hunks_for_a_changed_file() {
     let (dir, server, token, id) = seeded_server();
     // Mutate the committed file so a worktree diff exists.
     let repo_path = {
-        let entry = server.state.catalog.get(&id).unwrap();
+        let entry = server.state.session.catalog().get(&id).unwrap();
         entry.path.clone()
     };
     std::fs::write(

@@ -1,13 +1,9 @@
 //! One long-lived child process per enabled plugin.
 //!
-//! The host owns the process and three pump threads (see
-//! [`host_pump`](super::host_pump)) and exposes only two non-blocking
+//! The host owns the process and three pump threads and exposes two non-blocking
 //! operations: queue an event, take a decoded command. Nothing a plugin does can
-//! make either of those block, because the terminal hub calls them on the thread
-//! that also serves every pane.
-//!
-//! A plugin child is not one of `PtyBackend`'s panes, so [`PluginHost`] is the
-//! only place it is ever reaped — hence `shutdown` running from `Drop` too.
+//! make either block — the terminal hub calls them on the thread that also
+//! serves every pane.
 
 use super::host_pump;
 use super::protocol::{PROTOCOL_VERSION, PluginCommand, PluginEvent, encode_event};

@@ -7,8 +7,7 @@ use std::time::{Duration, SystemTime};
 use tracing_appender::non_blocking::WorkerGuard;
 use tracing_subscriber::{EnvFilter, fmt, layer::SubscriberExt};
 
-/// The directory nightcrow keeps its own files in, inside a repository. Only
-/// a log directory under this one gets an ignore file written into it.
+/// The directory nightcrow keeps its own files in, inside a repository.
 const NIGHTCROW_DIR: &str = ".nightcrow";
 
 const LOG_FILE_PREFIX: &str = "nightcrow.log";
@@ -41,8 +40,7 @@ pub fn init_logging(config: &LogConfig, repo_path: &str) -> Option<LogGuard> {
     let level = config.level.as_str();
     // `prompt` is a dedicated tracing target for terminal prompt capture. We
     // pin it at info regardless of the global level so that enabling
-    // `prompt_log` always produces output, even when the rest of the app is
-    // restricted to e.g. "warn".
+    // `prompt_log` always produces output.
     let filter_str = if config.prompt_log {
         format!("{level},prompt=info")
     } else {
@@ -95,15 +93,13 @@ pub fn init_logging(config: &LogConfig, repo_path: &str) -> Option<LogGuard> {
 
 /// Drop a self-ignoring `.gitignore` in the log directory so logs never
 /// pollute the user's `git status` — the default `.nightcrow/logs` sits inside
-/// the repo. A directory whose whole contents are ignored is not reported as
-/// untracked, so this covers the `.nightcrow/` wrapper too.
+/// the repo.
 ///
 /// Only into a directory nightcrow owns, meaning one under `.nightcrow`. The
 /// pattern is `*`, which has to ignore the ignore file itself to hide the
 /// directory — harmless in our own folder, but writing that into a directory
-/// the user pointed `[log] dir` at (their repo root, a shared logs folder)
-/// would make Git ignore everything untracked there, their own `.gitignore`
-/// included. A custom location is the user's to manage.
+/// the user pointed `[log] dir` at would make Git ignore everything untracked
+/// there. A custom location is the user's to manage.
 ///
 /// Only written when missing: a user-edited file should not be clobbered.
 fn write_log_gitignore(log_dir: &Path) {
@@ -142,8 +138,7 @@ fn cleanup_old_logs(log_dir: &Path, max_days: u32) {
     // First pass: collect candidate files with mtimes so we can identify the
     // newest one and preserve it. SizeRollingAppender resumes its highest
     // existing index on startup, so the latest log file may itself be older
-    // than the cutoff if write rate is low — deleting it would lose the
-    // active session's tail.
+    // than the cutoff — deleting it would lose the active session's tail.
     let mut candidates: Vec<(PathBuf, SystemTime)> = Vec::new();
     for entry in entries.flatten() {
         let path = entry.path();

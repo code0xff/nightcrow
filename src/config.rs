@@ -22,17 +22,11 @@ pub use web::{WebViewerConfig, ensure_web_viewer_password};
 
 /// Upper bound on the number of `[[startup_command]]` + `--exec` panes opened
 /// at launch. The value matches the `F3`..`F10` / `<prefix> 3`..`9`,`0` jump-key
-/// range, so every startup pane is reachable by a direct key: `F1`/`F2` reach
-/// the upper panels (file list, diff) and `F3`..`F10` reach all eight terminal
-/// panes. Runtime panes (opened one at a time by `<leader> t`) are not bounded
-/// by this — they may exceed eight, in which case the extras past the eighth
-/// are reachable by focus cycling (`Shift+←/→`) rather than a jump key.
+/// range, so every startup pane is reachable by a direct key.
 pub const MAX_STARTUP_COMMANDS: usize = 8;
 
-/// Upper bound on `[[plugin]]` entries. Each one is a child process the host
-/// keeps alive for the whole session, and a pane opts into exactly one of them,
-/// so the bound tracks `MAX_STARTUP_COMMANDS` rather than being independently
-/// generous.
+/// Upper bound on `[[plugin]]` entries. Tracks `MAX_STARTUP_COMMANDS` rather
+/// than being independently generous.
 pub const MAX_PLUGINS: usize = 8;
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -47,17 +41,14 @@ pub struct Config {
     pub mouse: MouseConfig,
     pub web_viewer: WebViewerConfig,
     /// The shell every terminal pane is spawned with. When absent, the platform
-    /// default is used: `$SHELL` or `/bin/sh` on Unix, `%ComSpec%` or `cmd.exe`
-    /// on Windows.
+    /// default is used.
     pub shell: ShellConfig,
     /// Commands launched in their own terminal pane at startup, in order.
-    /// Maps from TOML `[[startup_command]]` array-of-tables. Empty by
-    /// default, which preserves the single empty-shell startup behaviour.
+    /// Maps from TOML `[[startup_command]]` array-of-tables.
     #[serde(rename = "startup_command")]
     pub startup_commands: Vec<StartupCommand>,
-    /// External plugin processes, from TOML `[[plugin]]`. Empty by default, and
-    /// every entry is additionally off until it sets `enabled = true`, so no
-    /// plugin runs unless the user asked for it twice over.
+    /// External plugin processes, from TOML `[[plugin]]`. Every entry is
+    /// additionally off until it sets `enabled = true`.
     #[serde(rename = "plugin")]
     pub plugins: Vec<PluginConfig>,
 }
@@ -67,19 +58,13 @@ fn default_config_path() -> Option<PathBuf> {
 }
 
 /// The path nightcrow reads/writes its config at (`~/.nightcrow/config.toml`),
-/// resolved regardless of whether the file exists yet. Errors only when the
-/// home directory cannot be determined. Used by the web-password bootstrap,
-/// which may need to create the file to persist a generated credential.
+/// resolved regardless of whether the file exists yet.
 pub fn config_file_path() -> Result<PathBuf> {
     default_config_path()
         .ok_or_else(|| anyhow::anyhow!("cannot determine home directory for config path"))
 }
 
-/// The shipped, commented configuration template, embedded at compile time so
-/// a standalone binary (with no source checkout alongside it) can still hand
-/// the user a starting file. `nightcrow init` writes this verbatim, and
-/// `example_config_parses_and_validates` guards that it always parses and
-/// validates against the current `Config`.
+/// The shipped, commented configuration template, embedded at compile time.
 pub const EXAMPLE_CONFIG: &str = include_str!("../config.example.toml");
 
 /// Result of `init_config`, so the caller can report precisely which path was
@@ -91,7 +76,7 @@ pub enum InitOutcome {
 
 /// Write the embedded template to `~/.nightcrow/config.toml`, creating the
 /// parent directory if needed. An existing file is preserved unless `force`
-/// is set, so re-running `init` never clobbers a user's edits by accident.
+/// is set.
 pub fn init_config(force: bool) -> Result<InitOutcome> {
     let path = default_config_path()
         .ok_or_else(|| anyhow::anyhow!("cannot determine home directory for config path"))?;
@@ -99,7 +84,7 @@ pub fn init_config(force: bool) -> Result<InitOutcome> {
 }
 
 /// Path-explicit core of `init_config` (no `$HOME` lookup) so the write/skip
-/// behaviour is unit-testable against a temp directory.
+/// behaviour is unit-testable.
 pub(super) fn write_config_template(path: &std::path::Path, force: bool) -> Result<InitOutcome> {
     if path.exists() && !force {
         return Ok(InitOutcome::AlreadyExists(path.to_path_buf()));
@@ -117,8 +102,7 @@ pub(super) fn write_config_template(path: &std::path::Path, force: bool) -> Resu
 ///
 /// A missing file is a normal starting state, so this does not fail on one. A
 /// *reload* takes the stricter path ([`read_config_file`]): at that point the
-/// file having gone missing is a mistake worth reporting, not an instruction to
-/// run as if nothing were configured.
+/// file having gone missing is a mistake worth reporting.
 pub fn load_config() -> Result<Config> {
     let path = match default_config_path() {
         Some(p) if p.exists() => p,
@@ -128,9 +112,6 @@ pub fn load_config() -> Result<Config> {
 }
 
 /// Parse and validate the config at `path`, which must exist.
-///
-/// Path-explicit so the reload path is testable against a temp file rather than
-/// the caller's real `~/.nightcrow/config.toml`.
 pub fn read_config_file(path: &std::path::Path) -> Result<Config> {
     let text = std::fs::read_to_string(path)
         .with_context(|| format!("reading config file {}", path.display()))?;

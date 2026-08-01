@@ -1,36 +1,23 @@
-//! Noticing that a working tree changed, so the status reader can stop guessing.
-//!
-//! A `git status` walk lstats every tracked file — 3 ms on a small repository,
-//! 129 ms on one with fifty thousand files (measured) — and running it on a timer
-//! spends that whether or not anything happened. This watches instead, so an idle
-//! repository costs nothing and a changed one is read at once.
-//!
-//! **Recursive, unlike the file-tree watcher next door.** That one watches only
-//! the directories a user expanded, because a listing is per-directory; a status
-//! covers the whole tree, so there is no smaller set that would answer the
-//! question. The cost of that is real on Linux — one inotify descriptor per
-//! directory, and a large checkout can be refused outright — so a failure to
-//! install is not fatal: the reader falls back to the fixed interval it used
-//! before this existed.
+//! Recursive filesystem watcher for the whole working tree, so the status reader
+//! can react to changes instead of polling. Failure to install is not fatal: the
+//! reader falls back to a fixed interval. One inotify descriptor per directory on
+//! Linux means a large checkout can be refused outright.
 
 use notify::event::{AccessKind, AccessMode};
 use notify::{Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::Sender;
 
-/// What the snapshot worker waits for.
 pub(super) enum Wake {
-    /// The filesystem reported these paths. An empty list means something
-    /// changed that the watcher could not name — including its own error — which
-    /// is a reason to look rather than a reason to stop.
+    /// Filesystem paths that changed. An empty list means something changed that
+    /// the watcher could not name — including its own error — which is a reason
+    /// to look rather than a reason to stop.
     Changed(Vec<PathBuf>),
-    /// The channel is going away.
     Stop,
 }
 
-/// Start watching `root` and everything under it, or `None` when the platform
-/// refuses. The watcher must be kept alive by the caller; dropping it stops the
-/// watch.
+/// Start watching `root` recursively, or `None` when the platform refuses.
+/// The watcher must be kept alive by the caller; dropping it stops the watch.
 ///
 /// A caller that gets `None` must not retry on a timer: the refusals this hits
 /// (inotify's watch limit, a directory it may not read) are properties of the
@@ -67,15 +54,12 @@ pub(super) fn install(root: &Path, wake: Sender<Wake>) -> Option<RecommendedWatc
 /// The paths worth waking the reader for, or `None` when the event cannot mean
 /// the tree changed.
 ///
-/// **Reading is an event too, on Linux.** inotify's mask includes `IN_OPEN`, and
-/// every status read opens things inside the watched roots: libgit2 reads `HEAD`
-/// and the branch ref, and the untracked walk opens the work-tree directory
-/// itself. All of those clear the significance filter below, so forwarding them
-/// made the reader its own event source — each read scheduled the next one a
-/// second later, forever, for as long as a repository was on screen. It went
-/// unnoticed in development because FSEvents and `ReadDirectoryChangesW` do not
-/// report a file being opened, and only the inotify backend emits
-/// [`EventKind::Access`] at all.
+/// **Reading is an event too, on Linux.** inotify reports `IN_OPEN`, and every
+/// status read opens files inside the watched roots (libgit2 reads `HEAD`, the
+/// branch ref, and the untracked walk opens the work-tree directory). Without
+/// this filter the reader became its own event source — each read scheduled the
+/// next one a second later, forever. FSEvents and `ReadDirectoryChangesW` do not
+/// report file opens, so this went unnoticed in development.
 fn changed_paths(event: notify::Result<Event>) -> Option<Vec<PathBuf>> {
     let event = match event {
         Ok(event) => event,
@@ -102,10 +86,9 @@ fn changed_paths(event: notify::Result<Event>) -> Option<Vec<PathBuf>> {
 ///
 /// Both, because macOS resolves symlinks in the paths it hands back: a repository
 /// under `/var/folders/...` is reported under `/private/var/folders/...`. Windows
-/// does the same to 8.3 short names, reporting `runneradmin` where the path said
-/// `RUNNER~1`. A path that cannot be made relative to the tree is treated as
-/// "cannot tell, read it", so getting this wrong does not break correctness — it
-/// silently turns the whole filter off, which is the same as not having written it.
+/// does the same to 8.3 short names. A path that cannot be made relative to the
+/// tree is treated as "cannot tell, read it", so getting this wrong silently turns
+/// the whole filter off — the same as not having written it.
 struct Prefix {
     given: PathBuf,
     canonical: PathBuf,
@@ -150,17 +133,14 @@ impl Roots {
     }
 
     /// `None` clears it, for a repository that turned out to keep its git
-    /// directory inside the tree after all — a reopen can land on a different
-    /// repository than the last one did.
+    /// directory inside the tree after all.
     pub(super) fn set_external_git_dir(&mut self, git_dir: Option<&Path>) {
         self.git_dir = git_dir.map(Prefix::of);
     }
 }
 
 /// The repository's common directory when it does not live inside the watched
-/// tree, which is exactly when it needs a watch of its own.
-///
-/// The *common* directory rather than `path()`: a linked worktree's `path()`
+/// tree. The *common* directory rather than `path()`: a linked worktree's `path()`
 /// holds its index but its refs are in the main repository's, and a commit made
 /// elsewhere on the same branch changes what a status says. The common directory
 /// contains both.
@@ -207,8 +187,7 @@ fn matters(repo: Option<&git2::Repository>, roots: &Roots, path: &Path) -> bool 
     };
     // Build output is the loudest thing in a working tree and the one thing git
     // has been told to disregard: a `cargo build` writes thousands of files that
-    // cannot appear in a status. Skipping them is what makes this worth having,
-    // since a pane running a build is nightcrow's ordinary state.
+    // cannot appear in a status. Skipping them is what makes this worth having.
     //
     // A tracked file inside an ignored directory (added with `-f`) is the case
     // this skips wrongly. The idle read is what still catches it.

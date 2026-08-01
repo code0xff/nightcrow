@@ -6,9 +6,8 @@ use ratatui::{
     widgets::{Paragraph, Wrap},
 };
 
-/// Minimum digits reserved for one line-number column. Keeps the gutter — and
-/// with it the body's left edge — from twitching between a 1-digit and a
-/// 2-digit file, the way `delta`/`diff-so-fancy` reserve a fixed column.
+/// Minimum digits reserved for one line-number column. Keeps the gutter from
+/// twitching between a 1-digit and a 2-digit file.
 const MIN_LINENO_DIGITS: usize = 3;
 
 /// One padding space on each side of a number column: it lifts the digits off
@@ -30,13 +29,10 @@ pub(crate) fn digits_for(max_lineno: usize) -> usize {
 
 /// Gutter digit count for a whole loaded diff: the widest line number that
 /// appears on either side of any hunk. Derived from the loaded hunks, never
-/// from the visible window, so scrolling cannot change the gutter width and
-/// shift the body sideways mid-scroll.
+/// from the visible window, so scrolling cannot change the gutter width.
 ///
 /// Recomputed per frame instead of cached: it is one allocation-free pass over
-/// the same lines `ensure_highlight_cache` already walks for its fingerprint,
-/// and a cache would need invalidating at every `DiffPane::hunks` mutation —
-/// a missed one renders numbers against the wrong column width.
+/// the same lines `ensure_highlight_cache` already walks for its fingerprint.
 pub(crate) fn lineno_digits(hunks: &[DiffHunk]) -> usize {
     let max = hunks
         .iter()
@@ -83,15 +79,13 @@ fn lineno_text(no: Option<u32>) -> String {
 ///
 /// The two are separate `Paragraph`s: `Paragraph::scroll` shifts the whole
 /// line, so a gutter span living in the body's paragraph would slide off the
-/// left edge as soon as `scroll_x > 0`. Vertical scroll is instead expressed
-/// by *which* lines the caller collected, so passing windows built from the
-/// same rows is what keeps numbers aligned with their content.
+/// left edge. Vertical scroll is instead expressed by *which* lines the caller
+/// collected.
 ///
-/// With `wrap` set that split is abandoned for the opposite reason: a wrapped
-/// body line occupies several screen rows while its gutter line still occupies
-/// one, which would desynchronise every row below it. The number is folded into
-/// the body line instead, where wrapping carries it along. That is safe only
-/// because wrapping and horizontal scrolling cannot both be active.
+/// With `wrap` set that split is abandoned: a wrapped body line occupies
+/// several screen rows while its gutter line still occupies one, which would
+/// desynchronise every row below it. The number is folded into the body line
+/// instead, where wrapping carries it along.
 pub(crate) fn render_gutter_and_body(
     frame: &mut Frame,
     inner: Rect,

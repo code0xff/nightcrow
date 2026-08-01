@@ -21,14 +21,20 @@ fn handle_key_leader_s_then_digit_swaps_active_pane() {
     // `<leader> s` arms swap mode without acting.
     let _ = handle_key(&mut app, leader());
     let _ = handle_key(&mut app, press(KeyCode::Char('s'), KeyModifiers::NONE));
-    assert!(app.awaiting_swap_target(), "leader+s must arm swap mode");
-    assert!(!app.prefix_armed(), "swap mode must clear the prefix");
+    assert!(
+        app.interaction.awaiting_swap_target,
+        "leader+s must arm swap mode"
+    );
+    assert!(
+        !app.interaction.prefix_armed,
+        "swap mode must clear the prefix"
+    );
 
     // The digit resolves the swap — as a request to the session, which the tab
     // list follows once the order comes back.
     let _ = handle_key(&mut app, press(KeyCode::Char('5'), KeyModifiers::NONE));
     assert!(
-        !app.awaiting_swap_target(),
+        !app.interaction.awaiting_swap_target,
         "the digit must disarm swap mode"
     );
     app.poll_terminal();
@@ -54,7 +60,7 @@ fn handle_key_leader_s_esc_cancels_without_swapping() {
     let _ = handle_key(&mut app, press(KeyCode::Char('s'), KeyModifiers::NONE));
     let _ = handle_key(&mut app, press(KeyCode::Esc, KeyModifiers::NONE));
 
-    assert!(!app.awaiting_swap_target());
+    assert!(!app.interaction.awaiting_swap_target);
     assert_eq!(app.terminal.active, 0);
     let after: Vec<_> = app.terminal.panes.iter().map(|p| p.id).collect();
     assert_eq!(order, after, "esc must leave pane order unchanged");
@@ -75,7 +81,7 @@ fn handle_key_leader_s_non_digit_cancels() {
     let _ = handle_key(&mut app, press(KeyCode::Char('s'), KeyModifiers::NONE));
     let _ = handle_key(&mut app, press(KeyCode::Char('z'), KeyModifiers::NONE));
 
-    assert!(!app.awaiting_swap_target());
+    assert!(!app.interaction.awaiting_swap_target);
     let after: Vec<_> = app.terminal.panes.iter().map(|p| p.id).collect();
     assert_eq!(order, after);
     assert!(backend_payloads(&app).is_empty());
@@ -93,11 +99,11 @@ fn handle_key_leader_s_without_terminal_focus_does_not_arm() {
     let _ = handle_key(&mut app, press(KeyCode::Char('s'), KeyModifiers::NONE));
 
     assert!(
-        !app.awaiting_swap_target(),
+        !app.interaction.awaiting_swap_target,
         "leader+s must not arm swap mode without terminal focus"
     );
     assert!(
-        !app.prefix_armed(),
+        !app.interaction.prefix_armed,
         "the follow-up must still disarm the prefix"
     );
     assert!(
@@ -115,7 +121,7 @@ fn handle_key_leader_s_with_single_pane_does_not_arm() {
     let _ = handle_key(&mut app, press(KeyCode::Char('s'), KeyModifiers::NONE));
 
     assert!(
-        !app.awaiting_swap_target(),
+        !app.interaction.awaiting_swap_target,
         "leader+s must not arm swap mode with a single pane"
     );
     assert!(backend_payloads(&app).is_empty());

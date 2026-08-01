@@ -13,18 +13,16 @@ mod worker;
 use worker::Worker;
 
 /// Owns the receiver and wake channel for the background snapshot thread.
-/// Dropping the struct signals the worker to exit and joins it before
-/// returning, so a repo switch cannot leave the old-repo worker holding a
-/// `git2::Repository` after the new channel is in place.
+/// Dropping the struct signals the worker to exit and joins it, so a repo switch
+/// cannot leave the old-repo worker holding a `git2::Repository` after the new
+/// channel is in place.
 pub struct SnapshotChannel {
     rx: Receiver<SnapshotMsg>,
     /// Cleared to stop reading the tree without stopping the worker.
     ///
     /// A `git status` is not free and one runs per channel. A caller that knows
-    /// nobody is reading — the viewer with no client subscribed — turns it off
-    /// rather than paying for snapshots that go straight in the bin. The
-    /// filesystem watch goes with it, so a repository nobody reads holds no
-    /// watch descriptors either.
+    /// nobody is reading turns it off rather than paying for snapshots that go
+    /// straight in the bin. The filesystem watch goes with it.
     awake: Arc<AtomicBool>,
     /// Whether the worker is being told about *every* place a change can come
     /// from, rather than looking on a timer. False while asleep, on a tree the
@@ -48,11 +46,9 @@ pub struct SnapshotChannel {
     handle: Option<thread::JoinHandle<()>>,
 }
 
-/// Shortest gap between two reads.
-///
-/// The rate limit is what makes watching safe: a tree that churns without pause
-/// costs exactly what the old fixed-interval poll cost and never more. Equal to
-/// that old interval for that reason.
+/// Shortest gap between two reads. The rate limit is what makes watching safe:
+/// a tree that churns without pause costs exactly what the old fixed-interval
+/// poll cost and never more.
 const MIN_READ_INTERVAL: Duration = Duration::from_millis(1000);
 
 /// Longest gap between two reads while awake and watching.
@@ -60,7 +56,7 @@ const MIN_READ_INTERVAL: Duration = Duration::from_millis(1000);
 /// A watcher can miss an event, or install on part of a tree and fail on the
 /// rest, and "stale until the user happens to change something else" is not a
 /// state to leave a file list in. With no watcher at all this is not used: the
-/// reader falls back to [`MIN_READ_INTERVAL`], which is what it did before.
+/// reader falls back to [`MIN_READ_INTERVAL`].
 const IDLE_READ_INTERVAL: Duration = Duration::from_secs(10);
 
 /// Reopen the cached `git2::Repository` handle every N reads so we observe
@@ -82,7 +78,7 @@ impl SnapshotChannel {
     /// worker can win: it reads before that clears, which walks a tree nobody
     /// asked about and leaves the reading queued to be published after a later,
     /// newer one. The daemon opens every repository in a session and the browser
-    /// subscribes to one of them, so this is the ordinary case, not the odd one.
+    /// subscribes to one of them, so this is the ordinary case.
     pub fn spawn_asleep(repo_path: &str) -> Self {
         Self::start(repo_path, false)
     }
@@ -167,14 +163,6 @@ pub struct SnapshotWatch {
 }
 
 impl SnapshotWatch {
-    /// Whether the reading is on. For a test whose claim is that some sequence
-    /// of callers left it in the right state — the count of who wants it read is
-    /// not the same fact as whether it is being read.
-    #[cfg(test)]
-    pub(crate) fn is_awake(&self) -> bool {
-        self.awake.load(Ordering::Acquire)
-    }
-
     pub fn set_awake(&self, awake: bool) {
         self.awake.store(awake, Ordering::Release);
         // Woken rather than left to the interval: resuming means a client is

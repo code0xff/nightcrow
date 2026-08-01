@@ -3,6 +3,12 @@ use crate::app::App;
 use crate::app::NoticeKind;
 use crate::app::tests::{app_with_fake_backend, app_with_files};
 
+#[cfg(windows)]
+#[test]
+fn repo_header_preserves_a_windows_drive_root() {
+    assert_eq!(crate::ui::notice::home_relative_path(r"C:\"), "C:/");
+}
+
 #[test]
 fn repo_input_reports_a_rejected_path_on_the_notice_row() {
     let mut ws = test_workspace();
@@ -50,8 +56,8 @@ fn repo_input_notice_clears_once_the_path_is_edited() {
 #[test]
 fn notice_row_shows_notices_through_every_overlay() {
     for setup in [
-        (|app: &mut App| app.arm_prefix()) as fn(&mut App),
-        |app: &mut App| app.begin_swap_target(),
+        (|app: &mut App| app.interaction.prefix_armed = true) as fn(&mut App),
+        |app: &mut App| app.interaction.begin_swap_target(),
     ] {
         let mut app = app_with_fake_backend();
         setup(&mut app);

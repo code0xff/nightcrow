@@ -8,12 +8,12 @@ use crate::application::input::paste::{dispatch_paste, handle_paste};
 fn paste_while_prefix_armed_cancels_prefix() {
     let mut app = app_with_terminal_pane();
     let _ = handle_key(&mut app, leader());
-    assert!(app.prefix_armed());
+    assert!(app.interaction.prefix_armed);
 
     handle_paste(&mut app, "hello");
 
     assert!(
-        !app.prefix_armed(),
+        !app.interaction.prefix_armed,
         "a paste must resolve (cancel) the armed prefix"
     );
 }

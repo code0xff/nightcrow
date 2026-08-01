@@ -173,6 +173,21 @@ fn home_relative_keeps_paths_outside_home_unchanged() {
 }
 
 #[test]
+fn home_relative_does_not_strip_a_sibling_with_the_same_text_prefix() {
+    let home = dirs::home_dir().expect("home dir for test host");
+    let sibling = home.with_file_name(format!(
+        "{}-sibling",
+        home.file_name().unwrap().to_string_lossy()
+    ));
+    let sibling = sibling.join("repo");
+
+    assert_eq!(
+        home_relative_path(sibling.to_str().unwrap()),
+        crate::platform::paths::for_display(&sibling)
+    );
+}
+
+#[test]
 fn main_content_split_preserves_lower_panel_at_high_upper_ratio() {
     let cfg = LayoutConfig {
         upper_pct: 99,

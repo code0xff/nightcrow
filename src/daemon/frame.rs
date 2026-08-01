@@ -1,21 +1,20 @@
-//! Framing for the daemon socket.
-//!
-//! A Unix socket is a byte stream with no message boundaries, so every message
-//! carries its own length. The kind byte splits control messages from terminal
-//! output for the same reason the viewer's WebSocket splits text frames from
-//! binary ones: PTY bytes are not text, and routing them through JSON would pay
-//! escaping and base64 expansion on the hottest path there is.
+//! Framing for the daemon socket. A Unix socket is a byte stream with no
+//! message boundaries, so every message carries its own length. The kind byte
+//! splits control messages from terminal output for the same reason the
+//! viewer's WebSocket splits text frames from binary ones: PTY bytes are not
+//! text, and routing them through JSON would pay escaping and base64 expansion
+//! on the hottest path there is.
 
+use super::protocol::ServerMessage;
 use anyhow::{Context, Result, bail};
 use std::io::{Read, Write};
 
-/// Largest payload one frame may carry.
-///
-/// The reader allocates whatever length the frame announces, so this is the
-/// ceiling on what a single message can make the process allocate. It is set
-/// above the largest payload the protocol actually produces — a terminal
-/// scrollback replay, capped at `MAX_TERMINAL_SCROLLBACK_BYTES` (256 KiB) per
-/// pane — with room for a control message describing every pane at once.
+/// Largest payload one frame may carry. The reader allocates whatever length
+/// the frame announces, so this is the ceiling on what a single message can make
+/// the process allocate. Set above the largest payload the protocol actually
+/// produces — a terminal scrollback replay, capped at
+/// `MAX_TERMINAL_SCROLLBACK_BYTES` (256 KiB) per pane — with room for a control
+/// message describing every pane at once.
 pub const MAX_FRAME_BYTES: usize = 4 * 1024 * 1024;
 
 /// What a frame carries. Encoded as the first byte on the wire, so an unknown
@@ -59,6 +58,37 @@ impl Frame {
         Self {
             kind: FrameKind::Terminal,
             payload,
+        }
+    }
+}
+
+/// Encode a daemon response as one control frame.
+///
+/// Serialization is shared here so every producer has the same fallback, while
+/// `context` keeps the failing operation visible in the log instead of reducing
+/// a session update, reply, and terminal relay to the same diagnostic.
+pub(super) fn encode_server(
+    message: &ServerMessage,
+    context: &'static str,
+    fallback_message: &'static str,
+) -> Frame {
+    match serde_json::to_vec(message) {
+        Ok(json) => Frame::control(json),
+        Err(err) => {
+            tracing::error!(%err, context, "daemon: could not encode a server message");
+            let fallback = ServerMessage::Error {
+                message: fallback_message.to_string(),
+            };
+            Frame::control(
+                serde_json::to_vec(&fallback).unwrap_or_else(|fallback_err| {
+                    tracing::error!(
+                        %fallback_err,
+                        context,
+                        "daemon: could not encode the fallback server error"
+                    );
+                    br#"{"type":"error","message":"server message could not be encoded"}"#.to_vec()
+                }),
+            )
         }
     }
 }

@@ -6,10 +6,8 @@ use std::time::{Duration, Instant};
 
 /// What it takes to put a pane's process back after it exits.
 ///
-/// The hub discards the startup command once a pane is spawned, which is fine
-/// until something wants to replace the process rather than the pane: a shell
-/// cannot be asked what it was told to run. Keeping the text here is what makes
-/// a relaunch reproduce the original launch instead of guessing at it.
+/// The hub discards the startup command once a pane is spawned. Keeping the text
+/// here is what makes a relaunch reproduce the original launch.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PaneLaunch {
     /// Startup command exactly as configured, or `None` for a bare shell.
@@ -28,8 +26,7 @@ impl PaneSlot {
     /// How long the pane has been quiet.
     ///
     /// Measured from the last byte the child produced, not from the last thing
-    /// written to it: a CLI that is mid-answer keeps emitting, and typing into
-    /// it then would interleave with what it is drawing.
+    /// written to it.
     pub fn idle_for(&self, now: Instant) -> Duration {
         now.saturating_duration_since(self.last_output)
     }
@@ -38,8 +35,7 @@ impl PaneSlot {
 /// Per-pane slot bookkeeping, held beside the live PTYs.
 ///
 /// Separate from the PTY map because the two have different lifetimes: a
-/// relaunch replaces the PTY while the slot — and so the token an outside
-/// observer holds — has to survive it.
+/// relaunch replaces the PTY while the slot has to survive it.
 #[derive(Debug, Default)]
 pub struct PaneSlots(BTreeMap<PaneId, PaneSlot>);
 
@@ -98,19 +94,18 @@ const MAX_RESUME_ARG_LEN: usize = 256;
 /// Deliberately narrower than "anything the shell can be made to swallow": the
 /// argument is appended to a command line that a login shell parses, so a value
 /// carrying a space, quote, backtick, `$`, or `;` is refused outright rather
-/// than trusted to survive quoting. Quoting is applied as well — this is the
-/// belt to that braces.
+/// than escaped differently by every supported shell.
 fn is_safe_arg_char(c: char) -> bool {
     c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-' | ':' | '/' | '=' | '@' | '+')
 }
 
 /// Build the command line for a relaunch.
 ///
-/// `allowed_flags` is the plugin's declared list from config. Anything that
-/// looks like a flag must appear there, which is how the core refuses to weaken
-/// a CLI's permission posture without knowing what any particular CLI's
-/// permission flags are called — the user names what a plugin may pass, and a
-/// flag they did not name cannot be smuggled in.
+/// `allowed_flags` is the plugin's declared list from config. The first token
+/// (flag or subcommand) and every option-like token must appear there. Values
+/// following an approved control token remain provider data such as a session
+/// id. This lets the core refuse an unapproved relaunch mode without knowing a
+/// particular CLI's grammar.
 pub fn resume_command_line(
     base: Option<&str>,
     resume_args: &[String],
@@ -132,7 +127,7 @@ pub fn resume_command_line(
     }
 
     let mut line = String::from(base);
-    for arg in resume_args {
+    for (index, arg) in resume_args.iter().enumerate() {
         if arg.is_empty() {
             bail!("relaunch argument must not be empty");
         }
@@ -145,34 +140,20 @@ pub fn resume_command_line(
         if !arg.chars().all(is_safe_arg_char) {
             bail!("relaunch argument {arg:?} holds characters that are not allowed");
         }
-        if arg.starts_with('-') && !allowed_flags.iter().any(|f| f == arg) {
+        let requires_approval = index == 0 || arg.starts_with(['-', '/']);
+        if requires_approval && !allowed_flags.iter().any(|allowed| allowed == arg) {
             bail!(
-                "relaunch flag {arg:?} is not in the plugin's allowed_resume_flags; \
+                "relaunch token {arg:?} is not in the plugin's allowed_resume_flags; \
                  add it there if the plugin is meant to pass it"
             );
         }
         line.push(' ');
-        line.push_str(&shell_quote(arg));
+        // Every permitted character is literal in both POSIX shells and
+        // `cmd.exe`. Adding POSIX single quotes here would make those quote
+        // bytes part of the argument on Windows.
+        line.push_str(arg);
     }
     Ok(line)
-}
-
-/// Wrap a value so a login shell reads it as one literal word.
-///
-/// Single quotes suspend every expansion the shell would otherwise perform, so
-/// the only character needing care is the quote itself.
-fn shell_quote(arg: &str) -> String {
-    let mut out = String::with_capacity(arg.len() + 2);
-    out.push('\'');
-    for c in arg.chars() {
-        if c == '\'' {
-            out.push_str("'\\''");
-        } else {
-            out.push(c);
-        }
-    }
-    out.push('\'');
-    out
 }
 
 #[cfg(test)]

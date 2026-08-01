@@ -66,8 +66,9 @@ OSC 0/2 탭 타이틀 캡처, 마우스 캡처(클릭 포커스/포워딩, 휠 �
 ```
 src/
 ├── main.rs               # entry point: dispatch to daemon / attach / serve / init
-├── cli.rs, cli/          # Cli/Commands, run_daemon/run_init, `nightcrow plugin`
+├── cli.rs, cli/          # Cli/Commands + attach/daemon/init/stop/plugin command handlers
 ├── test_util.rs          # #[cfg(test)] git fixture helpers shared across modules
+├── persistence.rs        # typed JSON reads + same-directory atomic replacement
 ├── daemon/               # the session socket
 │   ├── socket.rs, lock.rs, detach.rs  # 0600 socket + stale handling, flock single-
 │   │                     #   instance lock, backgrounding by re-exec (not fork)
@@ -90,8 +91,8 @@ src/
 │                         #   logging.rs (file logger, rotation + retention), paths.rs
 │                         #   (tilde expansion), signals.rs (SIGINT/SIGTERM shutdown),
 │                         #   threading.rs (try_timed_join)
-├── app.rs, app/          # App struct + per-feature impls: auto_follow, commit-log
-│                         #   fetch/pagination/apply, diff & file-view loaders, focus,
+├── app.rs, app/          # App aggregate + InteractionState; per-feature impls: auto_follow,
+│                         #   commit-log fetch/pagination/apply, diff & file-view loaders, focus,
 │                         #   navigation, log_nav, scroll, session_io, snapshot_io,
 │                         #   terminal_ctrl, tree, tree_nav
 ├── config.rs, config/    # config.toml root + layout/theme/input, log, panels,
@@ -140,7 +141,8 @@ src/
 │   ├── guard_budget.rs   # per-slot rate ceilings, keyed by PaneToken
 │   ├── guard_watch.rs    # the one rule that can widen what a plugin sees
 │   ├── guard_refusal.rs, guard_text.rs  # refusal reasons; bounding plugin-supplied text
-│   └── registry.rs       # ~/.nightcrow/plugins: install / list / remove
+│   └── registry.rs, registry/  # ~/.nightcrow/plugins: config snippets, executable
+│                         #   resolution, atomic install/list/remove storage
 ├── git/
 │   ├── diff.rs, diff/    # types, snapshot loader, diff/commit loaders, commit_log, refs
 │   ├── clone.rs, clone/  # delegate `git clone` to the binary; URL scheme whitelist
@@ -149,22 +151,22 @@ src/
 ├── input/                # Action enum (mod.rs), routing.rs (map_key, prefix_action,
 │                         #   prefix_action_fullscreen, vim j/k), encode.rs (encode_key,
 │                         #   encode_wheel/button/arrow, CSI/SS3 helpers)
-└── web/                  # browser surface
-    ├── common/           # server-agnostic primitives (no git or terminals): auth.rs
-    │                     #   (Argon2 verify, session tokens, login rate limit), http.rs,
-    │                     #   sse.rs (SseStream), conn.rs (ConnectionSlot accounting)
+├── session/              # daemon-owned, transport-neutral shared session core
+│   ├── state.rs, operations.rs, reload.rs  # ownership, mutations, live config reload
+│   ├── catalog/          # opaque repo ids, atomic swap, ordering, config tables
+│   ├── runtime/          # SnapshotChannel drain + conflated status fan-out
+│   ├── terminal/         # TerminalHub, PtyBackend ownership, shared terminal frames
+│   ├── size_owner.rs     # which client screen the session PTYs are fitted to
+│   └── prefs/            # persisted accent, active repo, browser arrangements
+└── web/                  # browser transport
+    ├── common/           # HTTP primitives: auth, parsing, SSE, connection slots
     └── viewer/           # native web viewer ([web_viewer] / `serve`)
-        ├── limits.rs     # ceilings: log page, tree entries, diff bytes/lines, PTYs
-        ├── dto/          # whitelisted wire types + PROTOCOL_VERSION envelope
-        ├── catalog/      # opaque repo ids, atomic swap, ordering, config tables
-        ├── runtime/      # per-repo thread: SnapshotChannel drain + conflated SSE fan-out
-        ├── terminal/     # per-repo TerminalHub owning its own PtyBackend
-        ├── session.rs, reload.rs, size_owner.rs  # transport-independent session ops;
-        │                 #   live config.toml re-read; which screen the PTYs are fitted to
-        ├── prefs/        # ~/.nightcrow/viewer.json: accent, widths, active repo, maximized
-        ├── clone_jobs.rs, clone_jobs/  # in-flight clone tracking (one at a time)
-        ├── highlight.rs, assets.rs  # syntect spans for payloads; rust-embed of dist + CSP
-        └── server/       # HTTP routes, dispatch, mutations, SSE, /ws/term
+        ├── limits.rs     # HTTP/git serialization ceilings
+        ├── dto/          # whitelisted browser wire types + PROTOCOL_VERSION
+        ├── status_payload.rs  # status encoder injected into the session runtime
+        ├── clone_jobs.rs, clone_jobs/  # in-flight clone tracking
+        ├── highlight.rs, assets.rs  # syntect spans; embedded frontend bundle
+        └── server/       # HTTP-only state; handlers split by HTTP/repo/SSE/terminal
 ```
 
 ## Stack
@@ -178,13 +180,22 @@ src/
 | 터미널 에뮬레이션 | alacritty_terminal 0.26 |
 | 파일시스템 감시 | notify 8.2 + notify-debouncer-mini 0.7 |
 | 파일 로깅 | tracing + tracing-subscriber + tracing-appender |
-| 설정 파싱 | toml 0.9 + serde |
-| 세션 저장 | serde_json |
+| 설정 파싱 | toml 1 + serde |
+| 형식 보존 설정 편집 | toml_edit 0.25 |
+| 세션 JSON 저장 | serde_json |
+| 임시 파일 기반 교체 | tempfile 3 |
 | CLI args | clap 4 (derive) |
 | 프로세스 제어 | libc (`flock`) + signal-hook 0.4 (SIGTERM/SIGINT) |
 | 웹 서버 | tungstenite 0.30 (sync WS) + argon2 0.5 + getrandom 0.4 |
 | 웹 뷰어 번들 임베드 | rust-embed 8.12 (`viewer-ui/dist`) |
 | 웹 뷰어 프론트엔드 | React 19 + TypeScript 7 + Vite 8 + Tailwind v4 + `@xterm/xterm` 6, 마크다운은 react-markdown 10(+remark-gfm, rehype-highlight), 테스트는 vitest 4 |
+
+`toml_edit`는 생성한 웹 비밀번호만 바꾸면서 기존 TOML의 주석·공백·키 순서를 보존하려고 쓴다.
+`toml`로 전체 문서를 다시 직렬화하거나 문자열을 직접 고치는 대안은 서식을 잃거나 동등한 table 표현을
+빠뜨릴 수 있어 채택하지 않았다. `tempfile`은 상태와 설정을 대상 디렉터리의 충돌 방지 임시 파일에 쓴 뒤
+`persist`로 교체하는 데 쓴다. 같은 디렉터리를 쓰면 부분 기록과 파일시스템 간 이동 위험을 줄이지만,
+교체의 원자성은 파일시스템과 플랫폼에 달려 있다. `std::fs`만 쓰는 대안은 고유 이름의 배타적 생성,
+실패 시 정리, Windows 교체 동작을 직접 구현해야 하므로 채택하지 않았다.
 
 PTY 관리는 portable-pty 기반 `PtyBackend` 단일 구현으로 정리됐다. 초기에는 tmux control-mode
 백엔드(`TmuxBackend`)도 병행 지원했으나, 중첩 TUI 키보드 라우팅 문제를 leader(prefix) 모델로
@@ -218,7 +229,8 @@ PTY 관리는 portable-pty 기반 `PtyBackend` 단일 구현으로 정리됐다.
 
 ## Future Refactor Notes
 
-- `App`은 도메인별 sub-struct(`StatusView`, `LogView`, `DiffPane`, `TerminalState`, `RepoInput`)와
+- `App`은 도메인별 sub-struct(`StatusView`, `LogView`, `DiffPane`, `TerminalState`,
+  `InteractionState`, `RepoInput`)와
   `app/` 서브모듈로 impl 책임이 나뉘어 있지만, 여전히 한 구조체가 모든 sub-state를 들고 있다. 추가
   분리가 필요해지면 sub-struct별 명시적 manager로 승격하는 게 다음 단계다.
 - 대형 diff에서 j/k 빠른 탐색 시 동기 diff 로드가 여전히 ms 단위 블로킹을 만들 수 있다. Repository

@@ -17,7 +17,6 @@ pub enum Shutdown {
     /// Windows has no SIGTERM equivalent — the console control handler only
     /// produces `Interrupt`. This variant is still constructed on Unix and may
     /// be used by the `nightcrow stop` protocol path on both platforms.
-    #[cfg_attr(windows, allow(dead_code))]
     Terminate,
 }
 
@@ -63,7 +62,37 @@ mod imp {
 mod imp {
     use super::Shutdown;
     use anyhow::{Context, Result};
-    use std::sync::mpsc::{Receiver, sync_channel};
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::mpsc::{Receiver, SyncSender, sync_channel};
+
+    const INTERRUPT_EXIT_CODE: i32 = 130;
+
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    enum InterruptAction {
+        Notify,
+        Exit,
+    }
+
+    fn next_interrupt(seen: &AtomicBool) -> InterruptAction {
+        if seen.swap(true, Ordering::AcqRel) {
+            InterruptAction::Exit
+        } else {
+            InterruptAction::Notify
+        }
+    }
+
+    fn handle_interrupt(seen: &AtomicBool, tx: &SyncSender<Shutdown>) {
+        match next_interrupt(seen) {
+            InterruptAction::Notify => {
+                let _ = tx.try_send(Shutdown::Interrupt);
+            }
+            // `ctrlc` keeps its Windows console handler installed after our
+            // receiver is consumed. Returning here would swallow every later
+            // Ctrl-C, so a second event is the explicit escape from a wedged
+            // graceful shutdown.
+            InterruptAction::Exit => std::process::exit(INTERRUPT_EXIT_CODE),
+        }
+    }
 
     /// Windows 는 시그널 대신 콘솔 제어 이벤트를 쓴다. 콜백을 채널로 옮겨
     /// register/wait 분리를 Unix 와 동일하게 유지한다 — 등록 시점부터 도착한
@@ -76,12 +105,10 @@ mod imp {
 
     impl Watch {
         pub(super) fn register() -> Result<Self> {
-            // 깊이 1: 두 번째 Ctrl-C 는 기본 처분(즉시 종료)에 맡긴다.
-            // 셧다운이 스스로 멈춰버린 경우의 탈출구가 되어야 한다 —
-            // Unix 쪽 `wait` 가 self 를 consume 하는 것과 같은 의도.
             let (tx, rx) = sync_channel(1);
+            let seen = AtomicBool::new(false);
             ctrlc::set_handler(move || {
-                let _ = tx.try_send(Shutdown::Interrupt);
+                handle_interrupt(&seen, &tx);
             })
             .context("installing the console control handler")?;
             Ok(Self(rx))
@@ -92,6 +119,16 @@ mod imp {
                 .recv()
                 .context("the console control handler went away")
         }
+    }
+
+    #[cfg(test)]
+    pub(super) fn hard_exit_after_two_interrupts_for_test() -> ! {
+        let seen = AtomicBool::new(false);
+        let (tx, rx) = sync_channel(1);
+        handle_interrupt(&seen, &tx);
+        assert_eq!(rx.try_recv(), Ok(Shutdown::Interrupt));
+        handle_interrupt(&seen, &tx);
+        unreachable!("the second interrupt exits the process")
     }
 }
 
@@ -114,13 +151,18 @@ impl ShutdownWatch {
     /// Block until a stop signal has arrived — including one that arrived
     /// before this call, which is held from registration onward.
     ///
-    /// Consumes the watch: the handlers come down with it, so a second stop
-    /// signal after this returns takes its default disposition. That is
-    /// deliberate — Ctrl-C during a shutdown that has itself wedged should
-    /// still end the process.
+    /// Consumes the watch after the first stop request. On Windows the `ctrlc`
+    /// crate keeps its process-global handler installed, so that handler tracks
+    /// the first event and hard-exits on the second instead of swallowing it.
+    /// This keeps Ctrl-C as an escape from a shutdown that has itself wedged.
     pub fn wait(self) -> Result<Shutdown> {
         self.0.wait()
     }
+}
+
+#[cfg(all(test, windows))]
+pub(super) fn windows_hard_exit_after_two_interrupts_for_test() -> ! {
+    imp::hard_exit_after_two_interrupts_for_test()
 }
 
 #[cfg(test)]

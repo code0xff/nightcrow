@@ -1,16 +1,14 @@
-//! Carrying out one attached client's requests.
-//!
-//! A request is either a question — answered to the asker — or a change to the
-//! session, which is not answered here at all: every client is looking at the
-//! same session, so the watcher tells them all from one record of what they have
-//! been told. Refusals go to the asker alone; a client must not flash an error
-//! for somebody else's typo.
+//! Carrying out one attached client's requests. A request is either a question
+//! — answered to the asker — or a change to the session, which is not answered
+//! here at all: every client is looking at the same session, so the watcher
+//! tells them all from one record of what they have been told. Refusals go to
+//! the asker alone; a client must not flash an error for somebody else's typo.
 
-use super::frame::{FrameKind, read_frame};
+use super::frame::{FrameKind, encode_server, read_frame};
 use super::protocol::{ClientMessage, ServerMessage, version};
-use super::serve::{Session, encode};
+use super::serve::Session;
 use super::transport::UnixStream;
-use crate::web::viewer::session::{self, CloseError, OpenError};
+use crate::session::{self, CloseError, OpenError};
 use anyhow::Result;
 use std::sync::Arc;
 
@@ -30,7 +28,7 @@ pub(super) fn read_requests(mut stream: UnixStream, id: u64, session: &Session) 
             // client stays attached and its next request is still served.
             Err(err) => session.clients.send_to(
                 id,
-                encode(&ServerMessage::Error {
+                encode_reply(&ServerMessage::Error {
                     message: format!("unreadable request: {err}"),
                 }),
             ),
@@ -64,7 +62,7 @@ fn handle(message: ClientMessage, id: u64, session: &Session) {
                     message: format!("client is {client}, daemon is {daemon}"),
                 }
             };
-            session.clients.send_to(id, encode(&reply));
+            session.clients.send_to(id, encode_reply(&reply));
         }
         // Answered to the asker alone — nothing changed, so there is nothing to
         // tell the others — but not from here. The set is sent from one place so
@@ -119,7 +117,7 @@ fn handle(message: ClientMessage, id: u64, session: &Session) {
         // telling them would be a notice about something they did not do and
         // cannot see.
         ClientMessage::ReloadConfig => {
-            let reply = match crate::web::viewer::reload::reload_config(state) {
+            let reply = match crate::session::reload::reload_config(state) {
                 Ok(report) => ServerMessage::Reloaded {
                     summary: report.summary(),
                 },
@@ -129,7 +127,7 @@ fn handle(message: ClientMessage, id: u64, session: &Session) {
                     message: err.to_string(),
                 },
             };
-            session.clients.send_to(id, encode(&reply));
+            session.clients.send_to(id, encode_reply(&reply));
         }
         // Handed straight to the hub, which answers on the subscription rather
         // than here: a pane it creates is news for every client watching that
@@ -170,8 +168,12 @@ fn changed(session: &Session) {
 fn refuse(id: u64, session: &Session, message: &str) {
     session.clients.send_to(
         id,
-        encode(&ServerMessage::Error {
+        encode_reply(&ServerMessage::Error {
             message: message.to_string(),
         }),
     );
+}
+
+fn encode_reply(message: &ServerMessage) -> super::frame::Frame {
+    encode_server(message, "reply", "reply could not be encoded")
 }

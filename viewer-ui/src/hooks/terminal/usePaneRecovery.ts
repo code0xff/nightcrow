@@ -1,6 +1,7 @@
 import { useCallback, useState } from "react";
 import type { MutableRefObject } from "react";
-import { sendCancelRecovery, type RecoveryByPane } from "../../lib/recovery";
+import type { RecoveryByPane } from "../../lib/recovery";
+import { sendTerminalMessage } from "../../api/terminal";
 
 /// Per-pane recovery reports, and the one control that acts on them.
 ///
@@ -17,9 +18,8 @@ export function usePaneRecovery(
   const [recovery, setRecovery] = useState<RecoveryByPane>({});
   // Nothing is cleared here: the entry goes when the server broadcasts
   // `cancelled`, which is also what tells every other client.
-  const cancelRecovery = useCallback(
-    (pane: number) => sendCancelRecovery(socketRef.current, pane),
-    [socketRef],
-  );
+  const cancelRecovery = useCallback((pane: number) => {
+    sendTerminalMessage(socketRef.current, { type: "cancel_recovery", pane });
+  }, [socketRef]);
   return { recovery, setRecovery, cancelRecovery };
 }

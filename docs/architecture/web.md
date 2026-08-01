@@ -40,27 +40,20 @@ git 데이터도 터미널도 전혀 모르는 계층이며, 웹 표면이 하�
   `../../etc/passwd`를 받아들였다. `load_file_diff`가 경로를 파일이 아니라 git pathspec으로 넘겨
   검증기에 닿지 않았고 공격자의 경로를 그대로 되돌려줬다. **라우트가 "어떤 로더를 호출하느냐"에 따라
   우연히 안전해서는 안 된다.**
-- **저장소는 opaque id로만 지정**한다(`catalog/`). 클라이언트가 디렉토리를 이름 붙일 수 없으므로
+- **저장소는 opaque id로만 지정**한다(`src/session/catalog/`). 클라이언트가 디렉토리를 이름 붙일 수 없으므로
   "어느 저장소인가"는 검증할 입력이 아니라 성공하거나 404가 되는 조회다. id는 프로세스 수명 동안
   안정적이라 무관한 탭을 열고 닫아도 다른 id가 재배치되지 않는다.
-- **카탈로그에 들어오는 모든 경로는 `resolve_repo_path`의 것 하나로 정규화된다**(`Catalog::normalized`).
-  카탈로그는 served 집합·`hidden`·`order` 전부를 **문자열 비교**로 동일성을 판단하므로, 한 worktree가
-  두 철자로 들어오면 두 탭이 된다. 실제로 그랬다 — 클라이언트가 여는 경로(`add_path`)만 정규화를
-  거치고 시작 시 base(`set_paths`: `--repo` 인자와 `workspace.json`)는 날것이라, 심링크를 지나거나
-  끝 슬래시가 다른 같은 저장소가 탭 두 개를 차지했다. 정규화는 호출부가 아니라 **경계 안쪽**에 둔다:
-  입구가 넷이고(`set_paths`·`add_path`·`remove_path`·`reorder`) 호출부마다 기억하게 하면 다음 입구가
-  또 빠뜨린다. **기존 `workspace.json`은 저절로 낫는다** — 로드할 때 정규화되고 저장할 때 정규화된
-  형태로 다시 쓰인다. **경로를 키로 쓰는 나머지는 업그레이드 시 한 번 어긋난다** — `viewer.json`의
-  `active_repo`와 프로젝트별 maximized(`prefs/maximized.rs`), 그리고 TUI가 기억한 뷰
-  상태(`session_for`)가 옛 철자로 저장돼 있으면 매칭되지 않는다. 결과는 그 프로젝트가 한 번
-  첫 화면으로 돌아오는 것뿐이고(active는 첫 repo로 폴백, 나머지는 기본값), 쓰면 다시 쌓인다.
-  마이그레이션 코드는 영구히 남는 데 비해 되찾는 것이 그 정도라 두지 않았다.
-- **저장소별 런타임**(`runtime/`): `SnapshotChannel`은 단일 consumer `mpsc`라 자기 것을 띄운다.
+- **카탈로그 경로는 경계에서 정규화**한다(`Catalog::normalized`). `set_paths`·`add_path`·`remove_path`·
+  `reorder`가 모두 `resolve_repo_path`의 단일 철자를 사용한다. served 집합·`hidden`·`order`가 문자열로
+  동일성을 판단하므로, 중첩 디렉터리·심링크·끝 슬래시로 같은 worktree를 다시 열어도 탭이 중복되지 않는다.
+  기존 저장 상태의 옛 철자는 다음 쓰기에서 정규화되며, 일시적으로 active/pane preference가 기본값으로
+  돌아올 수는 있어도 영구 마이그레이션 코드를 두지는 않는다.
+- **저장소별 런타임**(`src/session/runtime/`): `SnapshotChannel`은 단일 consumer `mpsc`라 자기 것을 띄운다.
   스냅샷을 wire 페이로드로 한 번만 줄여 팬아웃한다. **팬아웃은 conflate**된다 — 느린 구독자는 최신
   상태를 받지 밀린 과거를 재생하지 않는다(슬롯 1개 + 1-depth 병합 wakeup). 소켓 I/O 중 락을 잡지
   않는다. 페이로드가 직전과 동일하면 발행하지 않는다: producer는 변화가 아니라 타이머로 tick하므로,
   그러지 않으면 유휴 저장소가 매초 스트리밍하며 seq를 태워 "뭔가 바뀌었나"의 지표로 쓸 수 없게 된다.
-- **터미널**(`terminal/`)은 **세션의 터미널이고 attach한 TUI가 보는 것과 같은 pane**이다
+- **터미널**(`src/session/terminal/`)은 **세션의 터미널이고 attach한 TUI가 보는 것과 같은 pane**이다
   ([session.md](session.md#세션-공유-데몬--클라이언트) 참고). raw PTY 바이트를 그대로 보낸다 —
   **화면은 서버가 그리지 않는다**(xterm.js가 이미 에뮬레이터다). 허브가 스트림을 파싱하는 것은 딱
   한 가지, 다른 방법으로는 알 수 없는 **pane의 모드**를 위해서다. 4바이트 LE pane id를 앞에 붙인
@@ -114,7 +107,7 @@ git 데이터도 터미널도 전혀 모르는 계층이며, 웹 표면이 하�
 
 ### 순서는 서버가 authoritative하다
 
-- **터미널 pane 순서**(`terminal.rs::reorder_panes`, `lib/paneOrder.ts`): 클라이언트가 pane 헤더를
+- **터미널 pane 순서**(`src/session/terminal/hub_layout.rs::reorder_panes`, `lib/paneOrder.ts`): 클라이언트가 pane 헤더를
   드래그하면 원하는 전체 순서를 `reorder`로 보내고, hub가 살아있는 pane에 맞춰 재조정한 뒤
   (`canonical_order`: 요청 순서 중 실재하는 id 먼저, 요청이 빠뜨린 live pane은 현재 순서로 뒤에,
   모르는 id·중복은 버림) canonical 순서를 `reordered`로 **전 클라이언트에 broadcast**한다.
@@ -122,7 +115,7 @@ git 데이터도 터미널도 전혀 모르는 계층이며, 웹 표면이 하�
   순서로 수렴한다. 순서는 hub의 pane Vec에 살아 재접속 replay와 다른 기기가 자동으로 따라오고
   디스크에는 쓰지 않는다. DnD는 HTML5 drag가 아니라 pointer 이벤트라(sidebar divider와 같은 선택)
   폰 터치도 마우스와 동일하다.
-- **어느 pane이 패널을 채우는지(zoom)**(`terminal/hub_zoom.rs`, `lib/zoom.ts`): 순서와 같은 자리·같은
+- **어느 pane이 패널을 채우는지(zoom)**(`src/session/terminal/hub_zoom.rs`, `lib/zoom.ts`): 순서와 같은 자리·같은
   이유다. 클라이언트는 `zoom`을 보낸 뒤 `zoomed` echo로만 반영하고, `connect`가 현재 zoom을 재생해
   **새로고침한 페이지가 zoom한 채로 돌아온다** — 전에는 한 페이지의 `useState`에 살아 리로드마다
   사라졌다. **프레임 순서가 계약이다**: `Created`보다 zoom 해제가 먼저, replay에서는 pane보다 zoom이
@@ -130,10 +123,10 @@ git 데이터도 터미널도 전혀 모르는 계층이며, 웹 표면이 하�
   막는다). 클라이언트는 무엇을 그릴지를 raw 값이 아니라 살아있는 pane 목록에서 파생시켜
   (`renderedZoom`) 두 프레임 사이의 렌더에서 빈 패널이 나오지 않게 한다. **디스크에는 쓰지 않으며 쓸
   수도 없다** — zoom은 pane을 가리키고 pane은 데몬의 자식이라 재시작하면 가리킬 대상이 없다. 패널
-  단위 maximize(`prefs/maximized.rs`)가 파일에 남는 것과의 차이가 이것이다. **attach한 TUI는
+  단위 maximize(`src/session/prefs/maximized.rs`)가 파일에 남는 것과의 차이가 이것이다. **attach한 TUI는
   통보받고 무시한다**(`backend/hub.rs`): TUI의 zoom은 자기 활성 pane을 따르고 diff 뷰어까지 덮는 다른
   질문이다.
-- **프로젝트 탭 순서**(`catalog/`, `POST /api/repos/order`): 같은 모양이되 **전송 채널이 다르다** —
+- **프로젝트 탭 순서**(`src/session/catalog/`, `POST /api/repos/order`): 같은 모양이되 **전송 채널이 다르다** —
   repo 목록에는 전용 WebSocket이 없고 `/api/repos` 폴링뿐이라 broadcast 대신 REST로 갱신하고 다음
   폴링이 그것을 받는다. **순서가 `rebuild`를 견디게** `Catalog`에 명시적 `order` overlay를 두어
   `union_paths`가 base+added 자연 순서를 그 위에 정렬한다(순서에 없는 새 repo는 끝에). 폴링 스냅백은
@@ -211,9 +204,13 @@ Node 없는 설치가 전부 깨진다). CI가 재빌드해 커밋된 번들과 
 
 `viewer-ui/src`는 화면 조립과 재사용 단위를 분리한다. `pages/`는 화면 조립, `components/`는 재사용
 UI, `hooks/`는 UI·터미널·저장소 상태, `lib/`는 API 이외의 순수 도메인/레이아웃 유틸리티, `api/`는
-서버 wire 계약과 HTTP 클라이언트, `styles/`는 전역 스타일이다. `pages/App.tsx`는 조립만 하고 상태
-배선은 도메인 훅이 쥔다 — 서로만 주고받는 ref들을 App에 늘어놓으면 그 handshake가 조립 코드에 섞여
-하나를 빠뜨렸을 때 원인이 보이지 않는다.
+서버 wire 계약과 HTTP 클라이언트, `styles/`는 전역 스타일이다. `pages/App.tsx`는 조립만 하고
+`useAppViewModel`이 인증·프로젝트·clone을, `useRepoWorkspace`가 선택한 저장소의 status/log/pane을
+소유한다. 서로만 주고받는 ref들을 App에 늘어놓으면 그 handshake가 조립 코드에 섞여 하나를 빠뜨렸을
+때 원인이 보이지 않는다. `RepoShell`은 flat prop bag 대신 repository/sidebar/filePane/layout 계약을
+받는다.
+터미널 WebSocket 메시지는 `api/terminal.ts`가 decode/encode하는 단일 경계를 두고, 각 terminal hook은
+검증된 discriminated union만 처리한다. wire 문자열을 hook마다 다시 해석하거나 조립하지 않는다.
 
 ### 서버 저장 preference
 
@@ -222,7 +219,7 @@ UI, `hooks/`는 UI·터미널·저장소 상태, `lib/`는 API 이외의 순수 
   고정하는데, 눈대중이 아니라 기존 amber `#d9a441`(OKLCH L=0.751 C=0.130 h=79.8)의 **명도·채도를
   유지한 채 hue만 돌려** 파생시킨다 — 어느 프리셋을 골라도 ink 스케일 위에서 가독성이 같다. 적용은
   root의 `--color-accent` 오버라이드 하나로 끝난다. 저장은 `~/.nightcrow/viewer.json`
-  (`viewer/prefs/`), **저장소별이 아니라 세션 전역**이다: 뷰어는 여러 기기에서 열리고, repo id는
+  (`src/session/prefs/`), **저장소별이 아니라 세션 전역**이다: 뷰어는 여러 기기에서 열리고, repo id는
   프로세스 수명 동안만 안정적이라 저장소별 키는 재시작마다 사라진다. 전달은 3초 `/api/repos` 폴링에
   얹고 쓰기는 `POST /api/prefs`(cross-site가 트리거할 수 없도록 GET이 아닌 POST, 인증 뒤). 순서
   문제는 `useViewerPrefs`가 로컬 변경 횟수를 세어 자기보다 오래된 응답의 accent만 버리는 것으로
@@ -274,7 +271,7 @@ UI, `hooks/`는 UI·터미널·저장소 상태, `lib/`는 API 이외의 순수 
     auto-placement로 매 브레이크포인트에서 보이는 4개를 같은 track에 떨어뜨리므로, element를 하나 더
     넣으면 나머지가 엉뚱한 track으로 밀린다. 그래서 터미널 패널 **안에서** 그 패널이 이미 그리는
     `border-t` 위에 absolute로 얹는다. maximize 중과 `md` 미만에서는 렌더하지 않는다.
-- **패널 최대화는 프로젝트별로 저장한다**(`prefs/maximized.rs`). "이 프로젝트의 화면을 어떻게
+- **패널 최대화는 프로젝트별로 저장한다**(`src/session/prefs/maximized.rs`). "이 프로젝트의 화면을 어떻게
   배치했나"는 **view state**이고 TUI는 그것을 세션 파일에 프로젝트별로 이미 들고 있었다.
   **TUI의 파일에 쓰지 않고 공유하지도 않는다** — `workspace.json`은 TUI가 붙어 있는 동안 TUI 소유이고,
   40행 터미널의 최대화와 1400px 창의 최대화는 애초에 같은 답이 아니다. **키는 절대 경로**로
@@ -304,7 +301,8 @@ UI, `hooks/`는 UI·터미널·저장소 상태, `lib/`는 API 이외의 순수 
   번호는 `select-none`. **파일 뷰의 번호는 프로토콜에 없다**: 인덱스가 곧 번호라 서버가 실어 보낼
   이유가 없다. hunk 헤더는 TUI와 달리 gutter 자리를 비우지 않고 폭 전체를 쓰는 띠로 남긴다.
 - **사이드바 목록은 잘라내지 않고 가로로 스크롤한다**. `truncate`를 쓰지 않는 이유는 두 행을 구분하는
-  것이 대개 경로의 **꼬리**이기 때문이다 — `src/web/viewer/server.rs`와 `terminal.rs`는 말줄임이
+  것이 대개 경로의 **꼬리**이기 때문이다 — `src/session/terminal/hub_layout.rs`와
+  `src/session/terminal/hub_zoom.rs`는 말줄임이
   지우는 바로 그 부분에서만 갈린다. 단 TUI는 접두 컬럼을 고정한 채 가변 텍스트만 미는 반면 뷰어는
   **행 전체가 함께 스크롤된다**(VS Code 탐색기와 같은 동작). `position: sticky` 접두 고정은 sticky
   요소가 자기 배경과 hover 상태까지 따라가야 해서 기각했다.
@@ -372,7 +370,7 @@ UI, `hooks/`는 UI·터미널·저장소 상태, `lib/`는 API 이외의 순수 
   저장소 안에서만 의미가 있어 전환 순간 날아오던 프레임이 새 프로젝트의 같은 id pane에 붙을 수 있으므로
   `onmessage`가 자기 소켓이 아직 살아 있는지 먼저 확인한다. 터미널 패널에는 key를 줄 수 없어서(저장소별
   마지막 포커스 pane 기억이 함께 사라진다) 정리는 여기서도 layout effect다.
-- **끊긴 연결은 조용히 self-heal한다**(`api.ts`, `App.tsx`). 모바일 브라우저는 화면이 꺼지면 진행 중이던
+- **끊긴 연결은 조용히 self-heal한다**(`api.ts`, `useAppViewModel.ts`). 모바일 브라우저는 화면이 꺼지면 진행 중이던
   fetch를 끊는데, 복귀 시 그 요청이 네트워크 실패로 reject된다(Chrome "Failed to fetch", Safari "Load
   failed"). 이걸 **fetch 경계에서 `NetworkError`로 감싸** HTTP 오류(`ApiError`)나 응답 처리 중의
   `TypeError`(진짜 결함이라 반드시 노출)와 구분한다. `NetworkError`는 친절한 메시지를 담아 `err.message`를
@@ -459,7 +457,7 @@ UI, `hooks/`는 UI·터미널·저장소 상태, `lib/`는 API 이외의 순수 
   id로(없으면 `null`로) 답한다 — 동시 클론이 하나이므로 모호하지 않다. `null`은 에러가 아니라 "붙을
   것이 없다"는 명시적 답이다. 숫자로 파싱되지 않는 `job`은 여전히 400 — 오타가 조용히 "무엇이 돌고
   있나"로 바뀌면 그 클라이언트는 남의 job에 붙는다.
-- **클론 job의 주인은 폴더 피커가 아니라 그 위다**(`useClone`을 `App.tsx`에서 호출). 훅을 피커 안에서
+- **클론 job의 주인은 폴더 피커가 아니라 그 위다**(`useClone`을 `useAppViewModel`에서 호출). 훅을 피커 안에서
   부르면 다이얼로그를 닫는 순간 관측자가 unmount되어 완료 토스트도 실패 메시지도 없고 끝난 repo도 열리지
   않는다. 피커는 `(부모 경로, URL)`을 올리기만 한다. **로그인 직후 진행 중인 job에 자동으로 붙는다** —
   붙을 게 없거나 probe가 실패하면 조용히 넘어간다.

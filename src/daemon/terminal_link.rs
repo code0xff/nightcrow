@@ -9,7 +9,7 @@
 use super::protocol::ClientMessage;
 use super::wire::{Writer, send};
 use crate::backend::PaneId;
-use crate::web::viewer::terminal::frame::{
+use crate::session::terminal::frame::{
     ClientMessage as HubClientMessage, ServerMessage as HubServerMessage,
 };
 use anyhow::Result;

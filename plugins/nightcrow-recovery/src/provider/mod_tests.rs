@@ -76,6 +76,19 @@ fn each_known_provider_is_recognised_from_its_command_line() {
     }
 }
 
+#[cfg(windows)]
+#[test]
+fn windows_executable_paths_and_wrapper_shims_are_recognised() {
+    for (command, name) in [
+        (r"C:\Tools\claude.exe --model opus", "claude"),
+        (r#""C:\Program Files\OpenAI\codex.cmd" resume"#, "codex"),
+        (r"C:\Tools\opencode.PS1", "opencode"),
+    ] {
+        let provider = detect(Some(command)).unwrap_or_else(|| panic!("{command} is known"));
+        assert_eq!(provider.name(), name);
+    }
+}
+
 #[test]
 fn a_pane_running_something_else_is_not_watched_at_all() {
     for command in [
@@ -85,6 +98,8 @@ fn a_pane_running_something_else_is_not_watched_at_all() {
         Some("bash"),
         Some("zsh -l"),
         Some("claudette"),
+        Some(r#""C:\Tools\claude.exe"suffix"#),
+        Some(r#""C:\Tools\claude.exe"#),
     ] {
         assert!(
             detect(command).is_none(),

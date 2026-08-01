@@ -21,6 +21,11 @@ const SHELL: &str = "sh";
 #[cfg(windows)]
 const SHELL: &str = "cmd.exe";
 
+#[cfg(not(windows))]
+const SHELL_COMMAND_ARG: &str = "-c";
+#[cfg(windows)]
+const SHELL_COMMAND_ARG: &str = "/C";
+
 /// Most stdout to take from a displaced command. A statusline is one short line;
 /// this only stops a runaway script from growing this process.
 const MAX_DELEGATED_STDOUT_BYTES: u64 = 64 * 1024;
@@ -31,15 +36,16 @@ const EXIT_POLL: Duration = Duration::from_millis(2);
 /// Run `command` with `raw` on its stdin and bring back what it printed, or
 /// `None` if it could not be started, did not end well, or overran `budget`.
 ///
-/// Through `sh -c`, not an argv we split ourselves: the provider documents that a
-/// `statusLine` command "runs in a shell", and its own examples rely on it — a `~`
-/// path, a `jq` pipeline, an inline `$(...)`. Re-splitting the string the user wrote
-/// would quietly change what it means. This is the user's own configuration rather
+/// Through the platform shell's command mode (`sh -c` or `cmd.exe /C`), not an
+/// argv we split ourselves: the provider documents that a `statusLine` command
+/// "runs in a shell", and its own examples rely on it — a `~` path, a `jq`
+/// pipeline, an inline `$(...)`. Re-splitting the string the user wrote would
+/// quietly change what it means. This is the user's own configuration rather
 /// than input from a stranger, but it is also not ours to reinterpret.
 pub(super) fn capture(command: &str, raw: &[u8], budget: Duration) -> Option<String> {
     let deadline = Instant::now() + budget;
     let mut child = Command::new(SHELL)
-        .arg("-c")
+        .arg(SHELL_COMMAND_ARG)
         .arg(command)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -119,4 +125,17 @@ fn abandon(mut child: Child) -> Option<String> {
 
 fn remaining(deadline: Instant) -> Duration {
     deadline.saturating_duration_since(Instant::now())
+}
+
+#[cfg(all(test, windows))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn capture_executes_the_displaced_command_through_cmd() {
+        assert_eq!(
+            capture("echo delegated", b"{}", Duration::from_secs(5)).as_deref(),
+            Some("delegated")
+        );
+    }
 }

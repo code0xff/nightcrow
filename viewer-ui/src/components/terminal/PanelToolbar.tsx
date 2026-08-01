@@ -1,4 +1,5 @@
-import { FitScreenIcon, MaximizeIcon, PlusIcon } from "../icons";
+import { PlusIcon } from "../icons/actions";
+import { FitScreenIcon, MaximizeIcon } from "../icons/layout";
 import { RecoveryChip } from "./RecoveryChip";
 import { orphanRecovery, type RecoveryByPane } from "../../lib/recovery";
 

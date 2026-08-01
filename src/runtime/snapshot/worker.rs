@@ -1,11 +1,6 @@
 //! The reader thread: watch the tree, read it when something changed, and stop
-//! when nobody is listening.
-//!
-//! Everything here answers one question — is it time to read? — from three
-//! inputs: what the filesystem reported, how long ago the last read was, and
-//! whether anyone is reading at all. The bounds it works within are documented on
-//! [`MIN_READ_INTERVAL`](super::MIN_READ_INTERVAL) and
-//! [`IDLE_READ_INTERVAL`](super::IDLE_READ_INTERVAL).
+//! when nobody is listening. Bounded by [`MIN_READ_INTERVAL`](super::MIN_READ_INTERVAL)
+//! and [`IDLE_READ_INTERVAL`](super::IDLE_READ_INTERVAL).
 
 use super::{IDLE_READ_INTERVAL, MIN_READ_INTERVAL, REOPEN_REPO_EVERY_READS, SnapshotMsg, read};
 use crate::runtime::snapshot_watch::{self, Roots, Wake};
@@ -21,7 +16,6 @@ pub(super) struct Worker {
     pub(super) root: PathBuf,
     pub(super) tx: Sender<SnapshotMsg>,
     pub(super) wake_rx: Receiver<Wake>,
-    /// Handed to each watcher it installs.
     pub(super) wake_tx: Sender<Wake>,
     pub(super) awake: Arc<AtomicBool>,
     pub(super) watching: Arc<AtomicBool>,
@@ -31,18 +25,16 @@ pub(super) struct Worker {
 ///
 /// What was tried is recorded rather than inferred from the handles: a refusal
 /// leaves no handle, and re-deriving "not installed yet" from that would re-walk
-/// the tree and log the same warning once a second for as long as the session
-/// lives. A failure is answered by falling back to the interval — see
-/// [`install`](snapshot_watch::install) — and retried only when what is wanted
-/// changes, or when a repository nobody was reading is picked up again.
+/// the tree and log the same warning once a second. A failure is answered by
+/// falling back to the interval and retried only when what is wanted changes.
 #[derive(Default)]
 struct Watches {
     tree: Option<RecommendedWatcher>,
     tree_attempted: bool,
     git_dir: Option<RecommendedWatcher>,
     /// Whether the git directory has been looked for at all, and where it was
-    /// when it last was. Both, because "nowhere separate to watch" is an answer
-    /// and must not read as "not asked yet".
+    /// when it last was. "nowhere separate to watch" is an answer and must not
+    /// read as "not asked yet".
     git_dir_settled: bool,
     git_dir_at: Option<PathBuf>,
 }
@@ -53,7 +45,6 @@ struct ReadState {
     /// dropped whenever a read fails or the tree stops being watched.
     repo: Option<git2::Repository>,
     reads_since_open: u32,
-    /// Something happened that has not been read yet.
     changed: bool,
     last_read: Option<Instant>,
 }
@@ -142,10 +133,9 @@ impl Worker {
         }
     }
 
-    /// Keep a second watch on the git directory, for a repository that keeps it
-    /// outside the work tree — `git worktree add` and `--separate-git-dir` both
-    /// do. The index lives there, so without this a `git add` in such a checkout
-    /// goes unseen until the idle read comes round.
+    /// Keep a second watch on the git directory when it lives outside the work
+    /// tree — `git worktree add` and `--separate-git-dir` both do. The index
+    /// lives there, so without this a `git add` goes unseen until the idle read.
     ///
     /// Also settles `watching`, which says whether *every* place a change can
     /// come from is watched: it is what
@@ -193,21 +183,11 @@ impl Worker {
                     state.reads_since_open = 0;
                 }
                 Err(err) => {
-                    // Counted as a read taken, `changed` and all. A directory that
-                    // is not a repository yet may become one, but leaving
-                    // `changed` standing to retry for that held the reader at
-                    // `MIN_READ_INTERVAL` and sent this same error every second for
-                    // as long as the session lived — the cost watching exists to
-                    // remove, and enough on its own to make a test counting reads
-                    // wait for a silence that never came.
-                    //
-                    // The watch is what notices instead: `git init` and a checkout
-                    // appearing both write inside the tree being watched. And that
-                    // watch is the whole of what can be watched here — the second
-                    // one follows the git directory of a repository, and there is
-                    // no repository — which is what earns the idle interval rather
-                    // than the fixed fallback for a tree nothing reports on. See
-                    // [`wait`](Self::wait).
+                    // A directory that is not a repository yet may become one,
+                    // but leaving `changed` standing to retry held the reader at
+                    // `MIN_READ_INTERVAL` and sent this same error every second.
+                    // The watch notices `git init` and checkouts appearing, so
+                    // the idle interval is enough — see [`wait`](Self::wait).
                     state.changed = false;
                     self.watching.store(watch.tree.is_some(), Ordering::Release);
                     state.last_read = Some(Instant::now());

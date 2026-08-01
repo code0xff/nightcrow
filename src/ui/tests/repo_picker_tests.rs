@@ -71,7 +71,7 @@ fn the_dialog_advertises_its_keys_on_the_input_row() {
 
     assert!(line.contains("/repos/current"), "the path itself: {line}");
     assert!(
-        line.contains("↓: browse"),
+        line.contains("down: browse"),
         "the way into the browser: {line}"
     );
     assert!(line.contains("tab: complete"), "{line}");
@@ -84,8 +84,8 @@ fn the_browsers_own_keys_replace_the_fields_on_the_input_row() {
     let line = repo_input_line(&repo_input, Color::Yellow, 200).to_string();
 
     assert!(line.contains("enter: select"), "not `enter: open`: {line}");
-    assert!(line.contains("←: up"), "{line}");
-    assert!(!line.contains("↓: browse"), "already browsing: {line}");
+    assert!(line.contains("left: up"), "{line}");
+    assert!(!line.contains("down: browse"), "already browsing: {line}");
 }
 
 #[test]
@@ -99,5 +99,5 @@ fn a_path_too_long_for_the_legend_drops_it_whole_and_keeps_the_caret() {
         !line.contains("browse"),
         "a half legend reads as a glitch: {line}"
     );
-    assert!(line.ends_with('█'), "the caret has to survive: {line}");
+    assert!(line.ends_with('|'), "the caret has to survive: {line}");
 }

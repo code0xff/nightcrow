@@ -78,7 +78,7 @@ fn a_relaunch_with_an_allowed_flag_carries_the_built_command_line() {
         Approved::Relaunch {
             pane: PANE,
             resume_args: vec!["--resume".to_string(), "abc123".to_string()],
-            command_line: format!("{LAUNCH} '--resume' 'abc123'"),
+            command_line: format!("{LAUNCH} --resume abc123"),
         }
     );
 }

@@ -9,11 +9,6 @@
 //! Generic over [`Write`] so the framing is unit-testable against a buffer
 //! and the same code drives a real `TcpStream`.
 //!
-//! The framing landed ahead of its caller (the viewer's `/api/events`) so each
-//! step stayed small, hence the blanket dead-code allowance; drop it once a
-//! route constructs an `SseStream`.
-#![allow(dead_code)]
-
 use std::io::{self, Write};
 
 /// Written when a client subscribes, before any event.

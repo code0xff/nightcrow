@@ -15,7 +15,7 @@ use std::sync::Arc;
 
 #[derive(serde::Deserialize)]
 struct CloneRequest {
-    /// The directory to clone into — the one the picker is showing.
+    /// The directory to clone into.
     path: String,
     /// The remote address. Validated by `git::clone::validate_clone_url`.
     url: String,
@@ -24,10 +24,9 @@ struct CloneRequest {
 /// Start a clone under the browsed directory and return its job id.
 ///
 /// The destination is derived from the URL, never supplied by the client, and
-/// is a single plain segment by construction — so, as with `mkdir`, the clone
-/// can only land directly under the canonicalized parent. The URL's scheme is
-/// checked before `git` sees it: `ext::` executes a command, so an unfiltered
-/// URL here would be remote code execution on the server.
+/// is a single plain segment by construction. The URL's scheme is checked before
+/// `git` sees it: `ext::` executes a command, so an unfiltered URL here would be
+/// remote code execution on the server.
 pub(super) fn handle_clone(body: &str, state: &Arc<ViewerState>) -> Vec<u8> {
     let request: CloneRequest = match serde_json::from_str(body) {
         Ok(request) => request,
@@ -55,15 +54,13 @@ pub(super) fn handle_clone(body: &str, state: &Arc<ViewerState>) -> Vec<u8> {
     };
     let dest = base.join(&name);
     // One at a time, admitted atomically — a check followed by a separate
-    // insert would let parallel requests each see an idle registry and every
-    // one of them spawn a clone.
+    // insert would let parallel requests each see an idle registry.
     let Some(id) = state.clones.try_start() else {
         return json_error("409 Conflict", "a clone is already running");
     };
     // Claim the destination by creating it rather than testing `exists()`
     // first: `create_dir` is atomic and does not follow a symlink in the final
-    // component, so it cannot be raced into pointing outside `base`. git is
-    // content to clone into a directory it finds empty.
+    // component, so it cannot be raced into pointing outside `base`.
     if let Err(err) = std::fs::create_dir(&dest) {
         state.clones.finish(
             id,

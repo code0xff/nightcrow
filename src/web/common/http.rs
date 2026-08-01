@@ -18,9 +18,6 @@ pub struct RequestHead {
     /// the target carried none. Read it through [`RequestHead::query_param`]
     /// rather than parsing it again at each call site.
     ///
-    /// The mirror's routes take no parameters; this exists for the viewer's
-    /// `?repo=&path=` routes.
-    #[allow(dead_code)]
     pub query: String,
     pub headers: Vec<(String, String)>,
     /// Declared body length from `Content-Length`, 0 when absent/invalid.
@@ -43,7 +40,6 @@ impl RequestHead {
     /// The result is decoded exactly once. Callers that turn a parameter into a
     /// filesystem path must validate *this* value — decoding again afterwards
     /// would let `%252e%252e` become `..` after the check.
-    #[allow(dead_code)] // First caller is the viewer's git routes; see `query`.
     pub fn query_param(&self, name: &str) -> Option<String> {
         parse_form(&self.query)
             .into_iter()

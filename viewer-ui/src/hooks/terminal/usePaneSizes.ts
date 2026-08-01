@@ -1,6 +1,10 @@
 import { useCallback, useEffect, useRef } from "react";
 import type { MutableRefObject } from "react";
 import type { PaneView } from "../../lib/terminalLayout";
+import {
+  sendTerminalMessage,
+  type PaneSize,
+} from "../../api/terminal";
 
 /** How long the layout must hold still before the PTY is told its new size.
  *
@@ -23,7 +27,7 @@ interface UsePaneSizesArgs {
   bodyRefs: MutableRefObject<Map<number, HTMLDivElement>>;
   /** Sizes the PTYs are already known to have, so an unchanged size is never
    *  sent. Seeded from `created`, updated here and by `resized`. */
-  sentSizesRef: MutableRefObject<Map<number, { rows: number; cols: number }>>;
+  sentSizesRef: MutableRefObject<Map<number, PaneSize>>;
   /** Whether this page's layout is what sets the pane sizes. When it is not,
    *  the panes are at another client's size and this page renders that grid
    *  instead of fitting its own — a PTY has one size, and the child cannot be
@@ -69,10 +73,16 @@ export function usePaneSizes({
       const { rows, cols } = view.term;
       const sent = sentSizesRef.current.get(pane);
       if (sent && sent.rows === rows && sent.cols === cols) continue;
-      sentSizesRef.current.set(pane, { rows, cols });
-      socketRef.current?.send(
-        JSON.stringify({ type: "resize", pane, rows, cols }),
-      );
+      if (
+        sendTerminalMessage(socketRef.current, {
+          type: "resize",
+          pane,
+          rows,
+          cols,
+        })
+      ) {
+        sentSizesRef.current.set(pane, { rows, cols });
+      }
     }
   }, [socketRef, viewsRef, bodyRefs, sentSizesRef]);
 

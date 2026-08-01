@@ -1,18 +1,14 @@
-//! State for the read-only file-tree navigator (`ViewMode::Tree`).
-//! `TreeView` holds a per-directory child cache plus the set of expanded
-//! directories; the visible row list is *derived* from those on demand
-//! (`visible_rows`), so expansion state and the flattened view can never
-//! drift. All directory I/O lives in `App` (`app/tree.rs`); this module is
-//! pure given a populated cache, which keeps the flattening logic
-//! unit-testable without a filesystem.
+//! File-tree navigator state (`ViewMode::Tree`). The visible row list is
+//! derived from a cache + expansion set so the two can never drift. All
+//! directory I/O lives in `App`; this module is pure given a populated cache,
+//! keeping the flattening logic unit-testable without a filesystem.
 
 use crate::git::tree::TreeEntry;
 use crate::ui::SearchQuery;
 use std::cell::Cell;
 use std::collections::{BTreeSet, HashMap, HashSet};
 
-/// One flattened, currently-visible tree row. `path` is repo-relative;
-/// `expanded` is only ever `true` for directories.
+/// One flattened, currently-visible tree row.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct VisibleRow {
     pub path: String,
@@ -22,8 +18,8 @@ pub struct VisibleRow {
     pub expanded: bool,
 }
 
-/// One entry in the flat filename-search index. Built once when search opens
-/// (see `App::build_tree_index`) and discarded when it closes.
+/// One entry in the flat filename-search index. Built when search opens,
+/// discarded when it closes.
 #[derive(Debug, Clone)]
 pub(crate) struct TreeIndexEntry {
     pub path: String,
@@ -33,26 +29,23 @@ pub(crate) struct TreeIndexEntry {
 #[derive(Default)]
 pub struct TreeView {
     pub selected: usize,
-    /// Horizontal scroll offset (chars). Reset to 0 when the selection moves.
+    /// Horizontal scroll offset (chars).
     pub scroll_x: usize,
     /// Repo-relative expanded directory paths. The root (`""`) is implicitly
     /// expanded and never stored here.
     pub expanded: BTreeSet<String>,
-    /// Lazily-populated children, keyed by repo-relative directory path (`""`
-    /// for the root). Absent = unread; empty vec = read and genuinely empty.
+    /// Lazily-populated children, keyed by repo-relative directory path.
+    /// Absent = unread; empty vec = read and genuinely empty.
     pub cache: HashMap<String, Vec<TreeEntry>>,
-    /// Memoized longest visible-row char width, keyed by row count. Invalidated
-    /// implicitly because structural changes also change the row count.
+    /// Memoized longest visible-row char width, keyed by row count.
     pub(crate) row_width_cache: Cell<Option<(usize, usize)>>,
-    /// While active *and* the query is non-empty (`search_filtering`),
-    /// `visible_rows` returns the filtered tree instead of the expansion view.
     pub search_active: bool,
     pub search_query: SearchQuery,
-    /// Flat index of every entry under the root, built when search opens.
+    /// Flat index of every entry under the root.
     pub(crate) index: Vec<TreeIndexEntry>,
     /// Repo-relative paths to display while filtering: matches plus ancestors.
     show_set: HashSet<String>,
-    /// Count of entries matching the current query (`(m/n)` badge numerator).
+    /// Count of entries matching the current query.
     pub(crate) match_count: usize,
 }
 

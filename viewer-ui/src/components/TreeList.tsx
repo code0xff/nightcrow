@@ -1,4 +1,4 @@
-import { ChevronIcon } from "./icons";
+import { ChevronIcon } from "./icons/navigation";
 import type { TreeMatch } from "../api";
 import type { TreeRow } from "../lib/tree";
 

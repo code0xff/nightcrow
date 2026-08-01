@@ -3,16 +3,16 @@ use super::*;
 #[test]
 fn leader_label_renders_ctrl_chord_as_caret_uppercase() {
     let mut app = app_with_files(vec!["a.rs"]);
-    assert_eq!(app.leader_label(), "^F");
-    app.leader = KeyEvent::new(KeyCode::Char('b'), KeyModifiers::CONTROL);
-    assert_eq!(app.leader_label(), "^B");
+    assert_eq!(leader_label_of(app.interaction.leader), "^F");
+    app.interaction.leader = KeyEvent::new(KeyCode::Char('b'), KeyModifiers::CONTROL);
+    assert_eq!(leader_label_of(app.interaction.leader), "^B");
 }
 
 #[test]
 fn leader_label_without_ctrl_prints_raw_char() {
     let mut app = app_with_files(vec!["a.rs"]);
-    app.leader = KeyEvent::new(KeyCode::Char('x'), KeyModifiers::NONE);
-    assert_eq!(app.leader_label(), "x");
+    app.interaction.leader = KeyEvent::new(KeyCode::Char('x'), KeyModifiers::NONE);
+    assert_eq!(leader_label_of(app.interaction.leader), "x");
 }
 
 /// Expiry is keyed on the notice's kind. The previous design matched the

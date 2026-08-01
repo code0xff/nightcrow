@@ -25,26 +25,18 @@ pub(crate) enum KeyOutcome {
 /// A workspace-level action requested by a key or click.
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) enum ProjectRequest {
-    /// Focus the tab at this index. Out-of-range indices are inert.
     Switch(usize),
-    /// Close the active tab. Refused when it is the only one.
     Close,
-    /// Open this resolved repo path as a tab, or focus the tab already on it.
     Open(String),
-    /// Raise the open-repo dialog. It lives on the workspace, so a handler
-    /// holding one project cannot open it directly.
     OpenDialog,
-    /// Move the session's accent one step along the cycle.
     CycleAccent,
-    /// Ask the session to re-read `config.toml`.
     ReloadConfig,
 }
 
 /// Everything a project needs beyond its repo path.
 ///
 /// Threaded to the input handlers rather than stored on `Workspace` so the
-/// workspace stays a pure state container: opening a tab is the only thing
-/// that needs the config, and it borrows it for the duration of one keypress.
+/// workspace stays a pure state container.
 pub(crate) struct ProjectContext<'a> {
     pub(crate) cfg: &'a crate::config::Config,
     pub(crate) leader: KeyEvent,
@@ -67,9 +59,9 @@ pub(crate) fn handle_key(app: &mut App, key: KeyEvent) -> KeyOutcome {
     // the user resumed typing. Runs before dispatch so an action that raises
     // a *new* notice still leaves it standing.
     if app.search_overlay_active()
-        || app.prefix_armed()
-        || app.awaiting_swap_target()
-        || app.is_leader_key(key)
+        || app.interaction.prefix_armed
+        || app.interaction.awaiting_swap_target
+        || app.interaction.is_leader_key(key)
         || app.focus != Focus::Terminal
     {
         app.dismiss_notice_on_app_input();
@@ -83,8 +75,8 @@ pub(crate) fn handle_key(app: &mut App, key: KeyEvent) -> KeyOutcome {
         // A prefix (or swap-target) could only be armed if an overlay opened
         // out from under it; disarm both so neither indicator lingers behind a
         // modal.
-        app.cancel_prefix();
-        app.cancel_swap_target();
+        app.interaction.prefix_armed = false;
+        app.interaction.awaiting_swap_target = false;
         // Search overlays are handled inside the focus-local upper handler.
         handle_upper_key(app, key, Action::None);
         return KeyOutcome::Continue;
@@ -93,20 +85,20 @@ pub(crate) fn handle_key(app: &mut App, key: KeyEvent) -> KeyOutcome {
     // Swap-target mode is armed (`<leader> s`): this key is the digit naming
     // the pane to swap the active pane with. Checked before the prefix so its
     // dedicated follow-up handler owns the key.
-    if app.awaiting_swap_target() {
+    if app.interaction.awaiting_swap_target {
         return handle_swap_target_followup(app, key);
     }
 
     // Prefix is armed: this key is the single follow-up. Resolve it three
     // ways — Esc/Ctrl+C cancels, the leader again sends a literal leader to
     // the PTY, a mapped key runs its action; any other key is consumed.
-    if app.prefix_armed() {
+    if app.interaction.prefix_armed {
         return handle_prefix_followup(app, key);
     }
 
     // The leader chord arms the prefix; nothing else happens this tick.
-    if app.is_leader_key(key) {
-        app.arm_prefix();
+    if app.interaction.is_leader_key(key) {
+        app.interaction.prefix_armed = true;
         return KeyOutcome::Continue;
     }
 
@@ -188,7 +180,7 @@ pub(super) fn handle_global_action(app: &mut App, action: Action) -> Option<KeyO
             // Scoped by `can_swap_panes` (terminal focus plus a second pane).
             // The key is still consumed either way.
             if app.can_swap_panes() {
-                app.begin_swap_target();
+                app.interaction.begin_swap_target();
             }
             Some(KeyOutcome::Continue)
         }

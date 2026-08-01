@@ -8,10 +8,9 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 /// across terminals, and Shift+arrow / Shift+PgUp/PgDn carry a modifier.
 pub fn map_key(event: KeyEvent) -> Action {
     // Match reserved chords on their EXACT modifier set so any extra modifier
-    // falls through to the PTY: Shift+arrow must be shift-only (not
-    // Ctrl+Shift+arrow), and bare F-keys / arrows must carry no modifier at
-    // all — including Super/Hyper/Meta, so e.g. Super+F3 passes straight
-    // through instead of triggering a focus jump.
+    // falls through to the PTY: Shift+arrow must be shift-only, and bare
+    // F-keys / arrows must carry no modifier at all — including
+    // Super/Hyper/Meta, so e.g. Super+F3 passes straight through.
     let shift_only = event.modifiers == KeyModifiers::SHIFT;
     let no_mods = event.modifiers.is_empty();
 
@@ -38,14 +37,12 @@ pub fn map_key(event: KeyEvent) -> Action {
     }
 }
 
-/// Classify the single follow-up key pressed after the leader. Returns the
-/// app `Action`, or `Action::None` for an unmapped follow-up (which the
-/// dispatcher consumes and drops). The follow-up is matched on the bare
-/// character regardless of modifiers so `<L> t` works whether or not the
-/// user is still holding a modifier from the leader chord. The digit row
-/// addresses whatever the body is showing: `1` = file list, `2` = diff
-/// viewer, `3`..`9`,`0` = terminal panes `0`..`7`. The bare F-keys are a
-/// separate axis (project tabs), so the two never collide.
+/// Classify the single follow-up key pressed after the leader. The follow-up
+/// is matched on the bare character regardless of modifiers so `<L> t` works
+/// whether or not the user is still holding a modifier from the leader chord.
+/// The digit row addresses whatever the body is showing: `1` = file list,
+/// `2` = diff viewer, `3`..`9`,`0` = terminal panes `0`..`7`. The bare F-keys
+/// are a separate axis (project tabs), so the two never collide.
 pub fn prefix_action(event: KeyEvent) -> Action {
     match event.code {
         KeyCode::Char(c) => match c.to_ascii_lowercase() {
@@ -57,15 +54,12 @@ pub fn prefix_action(event: KeyEvent) -> Action {
             's' => Action::SwapPanePrompt,
             'z' => Action::ClaimPaneSizing,
             // `c` for cancel. Bare, not `ctrl+c`: the follow-up handler treats
-            // `ctrl+c` as the universal prefix cancel, and it has to keep doing
-            // so whatever leader is configured.
+            // `ctrl+c` as the universal prefix cancel.
             'c' => Action::CancelRecovery,
             'o' => Action::OpenProject,
             'x' => Action::CloseProject,
             'p' => Action::CycleTheme,
-            // `u` for update-from-file. Not `r`, which is already Redraw, and not
-            // `R` — the follow-up is matched on the bare character (below), so
-            // upper and lower case cannot be told apart here.
+            // `u` for update-from-file. Not `r`, which is already Redraw.
             'u' => Action::ReloadConfig,
             'r' => Action::Redraw,
             'q' => Action::Quit,

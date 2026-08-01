@@ -19,7 +19,7 @@ fn hint_bar_inverts_only_clickable_key_labels() {
 #[test]
 fn armed_prefix_hint_advertises_the_project_keys() {
     let mut app = app_with_fake_backend();
-    app.arm_prefix();
+    app.interaction.prefix_armed = true;
 
     let text = hint_text(&app);
 
@@ -46,13 +46,13 @@ fn bare_prefix_segment_resolves_to_an_arm_click() {
 #[test]
 fn armed_prefix_hint_bar_inverts_only_clickable_key_labels() {
     let mut app = app_with_fake_backend();
-    app.arm_prefix();
+    app.interaction.prefix_armed = true;
     assert_inverted_cells_are_clickable(&app);
 }
 #[test]
 fn hint_bar_inverts_nothing_when_mouse_capture_is_disabled() {
     let mut app = app_with_fake_backend();
-    app.mouse_enabled = false;
+    app.interaction.mouse_enabled = false;
     let mut terminal = Terminal::new(TestBackend::new(200, 1)).unwrap();
     terminal
         .draw(|frame| {
@@ -84,7 +84,7 @@ fn hint_bar_inverts_nothing_when_mouse_capture_is_disabled() {
 fn hint_click_resolves_nothing_when_mouse_capture_is_disabled() {
     let mut app = app_with_fake_backend();
     app.focus = Focus::Terminal;
-    app.mouse_enabled = false;
+    app.interaction.mouse_enabled = false;
     let screen = Rect::new(0, 0, 200, 3);
     for x in 0..200u16 {
         assert_eq!(
@@ -97,7 +97,7 @@ fn hint_click_resolves_nothing_when_mouse_capture_is_disabled() {
 #[test]
 fn swap_hint_advertises_split_view_digits_by_default() {
     let mut app = app_with_fake_backend();
-    app.begin_swap_target();
+    app.interaction.begin_swap_target();
 
     assert!(
         hint_text(&app).contains("3-9,0: swap active pane"),
@@ -109,7 +109,7 @@ fn swap_hint_advertises_split_view_digits_by_default() {
 fn swap_hint_advertises_fullscreen_digits_when_terminal_fills_body() {
     let mut app = app_with_fake_backend();
     app.terminal.fullscreen = TerminalFullscreen::Grid;
-    app.begin_swap_target();
+    app.interaction.begin_swap_target();
 
     let text = hint_text(&app);
     assert!(
@@ -124,7 +124,7 @@ fn swap_hint_advertises_fullscreen_digits_when_terminal_fills_body() {
 #[test]
 fn prefix_hint_switches_pane_digit_legend_by_layout() {
     let mut split = app_with_fake_backend();
-    split.arm_prefix();
+    split.interaction.prefix_armed = true;
     assert!(
         hint_text(&split).contains("1-9: focus/pane"),
         "split view prefix hint must advertise focus/pane digits"
@@ -132,7 +132,7 @@ fn prefix_hint_switches_pane_digit_legend_by_layout() {
 
     let mut full = app_with_fake_backend();
     full.terminal.fullscreen = TerminalFullscreen::Grid;
-    full.arm_prefix();
+    full.interaction.prefix_armed = true;
     let text = hint_text(&full);
     assert!(
         text.contains("1-8: pane"),

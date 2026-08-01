@@ -61,10 +61,8 @@ pub(crate) fn dispatch_mouse(
 /// Route a captured mouse event to the pane under the pointer. Releases pair
 /// with the press's pane (not the pointer pane); wheel scrolls the pane under
 /// the pointer; a left press outside pane content can focus an upper panel,
-/// jump via a tab/`+N` marker, or run a hint-bar shortcut (dispatched as
-/// synthesized keypresses so click and key share the path). In swap mode a
-/// left click names the swap target. Drag/motion reports are not forwarded —
-/// inner-program text selection stays with the outer terminal's Shift+drag.
+/// jump via a tab/`+N` marker, or run a hint-bar shortcut. In swap mode a
+/// left click names the swap target. Drag/motion reports are not forwarded.
 pub(crate) fn handle_mouse(
     app: &mut App,
     tabs: crate::ui::Chrome<'_>,
@@ -73,26 +71,22 @@ pub(crate) fn handle_mouse(
     layout: &crate::config::LayoutConfig,
 ) -> KeyOutcome {
     // Releases route by the pending press, not the pointer, so they must be
-    // handled before the hit test — the pointer may have left the pane. They
-    // also bypass the modal guard: the press happened before the modal opened,
-    // and swallowing the release would leave the pending slot stale.
+    // handled before the hit test — the pointer may have left the pane.
     if let MouseEventKind::Up(_) = mouse.kind {
         release_pending_press(app, screen, layout, mouse.column, mouse.row);
         return KeyOutcome::Continue;
     }
     // Modal overlays own all other input while open — same rule as the key
-    // handler: a click behind a modal must not move focus or reach a pane.
+    // handler.
     if app.search_overlay_active() {
         return KeyOutcome::Continue;
     }
     // Pane-swap mode: a press names the swap target the way a digit does.
-    // Without this branch a click would change the active pane while leaving
-    // swap mode armed, so a later digit would swap the wrong pane. Wheel
-    // events fall through (like a paste): they don't name a pane.
-    if app.awaiting_swap_target()
+    // Wheel events fall through (like a paste): they don't name a pane.
+    if app.interaction.awaiting_swap_target
         && let MouseEventKind::Down(button) = mouse.kind
     {
-        app.cancel_swap_target();
+        app.interaction.awaiting_swap_target = false;
         if button == crossterm::event::MouseButton::Left {
             let target = crate::ui::pane_at(app, screen, layout, mouse.column, mouse.row)
                 .and_then(|(id, _)| app.terminal.panes.iter().position(|p| p.id == id))
@@ -110,13 +104,13 @@ pub(crate) fn handle_mouse(
             if button == crossterm::event::MouseButton::Left
                 && let Some(idx) = crate::ui::project_tab_at(tabs, screen, mouse.column, mouse.row)
             {
-                app.cancel_prefix();
+                app.interaction.prefix_armed = false;
                 return KeyOutcome::Project(ProjectRequest::Switch(idx));
             }
             if let Some(focus) =
                 crate::ui::upper_panel_at(app, screen, layout, mouse.column, mouse.row)
             {
-                app.cancel_prefix();
+                app.interaction.prefix_armed = false;
                 app.focus = focus;
             } else if button == crossterm::event::MouseButton::Left {
                 if let Some(idx) =
@@ -124,7 +118,7 @@ pub(crate) fn handle_mouse(
                 {
                     // A tab click is a jump-key press with the pointer: same
                     // prefix resolution and focus/fullscreen handling.
-                    app.cancel_prefix();
+                    app.interaction.prefix_armed = false;
                     app.switch_pane(idx);
                 } else if let Some(click) =
                     crate::ui::hint_click_at(app, tabs, screen, mouse.column, mouse.row)
@@ -142,7 +136,7 @@ pub(crate) fn handle_mouse(
         MouseEventKind::Down(button) => {
             focus_clicked_pane(app, id);
             if app.terminal.click_pane(id, button, true, col, row) {
-                app.pending_mouse_press = Some((id, button, col, row));
+                app.interaction.pending_mouse_press = Some((id, button, col, row));
             }
         }
         MouseEventKind::ScrollUp => {
@@ -173,11 +167,11 @@ fn dispatch_hint_click(app: &mut App, click: crate::ui::HintClick) -> KeyOutcome
     let plain = |c| KeyEvent::new(KeyCode::Char(c), KeyModifiers::NONE);
     match click {
         crate::ui::HintClick::Arm => {
-            let leader = app.leader;
+            let leader = app.interaction.leader;
             handle_key(app, leader)
         }
         crate::ui::HintClick::Leader(c) => {
-            let leader = app.leader;
+            let leader = app.interaction.leader;
             match handle_key(app, leader) {
                 KeyOutcome::Continue => {}
                 other => return other,
@@ -201,10 +195,10 @@ fn release_pending_press(
     x: u16,
     y: u16,
 ) {
-    let Some((id, pressed, _, _)) = app.pending_mouse_press else {
+    let Some((id, pressed, _, _)) = app.interaction.pending_mouse_press else {
         return;
     };
-    app.pending_mouse_press = None;
+    app.interaction.pending_mouse_press = None;
     let Some(rect) = crate::ui::terminal_content_areas(app, screen, layout)
         .into_iter()
         .find_map(|(pid, rect)| (pid == id).then_some(rect))
@@ -226,7 +220,7 @@ fn release_pending_press(
 /// a jump key does. A click is also a non-command event while the prefix is
 /// armed, so resolve the prefix first (same rule as `handle_paste`).
 fn focus_clicked_pane(app: &mut App, id: crate::backend::PaneId) {
-    app.cancel_prefix();
+    app.interaction.prefix_armed = false;
     let Some(idx) = app.terminal.panes.iter().position(|p| p.id == id) else {
         return;
     };

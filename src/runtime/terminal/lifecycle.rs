@@ -5,8 +5,7 @@ use crate::runtime::terminal::{PaneInfo, SCROLLBACK_LINES, TerminalState};
 impl TerminalState {
     /// Drain pending backend events into pane emulators and pane metadata.
     /// Returns the pane ids the backend signalled as exited so the caller
-    /// can run cross-cutting cleanup (focus redirect, fullscreen reset)
-    /// that depends on state outside this struct.
+    /// can run cross-cutting cleanup (focus redirect, fullscreen reset).
     pub fn poll(&mut self) -> Vec<PaneId> {
         let mut exited = Vec::new();
         let events: Vec<BackendEvent> = self
@@ -103,8 +102,7 @@ impl TerminalState {
         exited
     }
 
-    /// Allocate a new bare interactive-shell pane. Thin wrapper over
-    /// `create_pane_with` for the common "open an empty terminal" path.
+    /// Allocate a new bare interactive-shell pane.
     pub fn create_pane(&mut self) -> anyhow::Result<()> {
         self.create_pane_with(None, None)
     }
@@ -112,8 +110,7 @@ impl TerminalState {
     /// Allocate a new backend pane and matching emulator. `command`, when
     /// present, is run in the pane's shell immediately; `label` sets the
     /// initial tab title (a program that emits OSC 0/2 can still override it
-    /// later). Both default sensibly when `None`. The caller is expected to
-    /// surface any error to the user.
+    /// later). Both default sensibly when `None`.
     pub fn create_pane_with(
         &mut self,
         command: Option<&str>,
@@ -173,10 +170,9 @@ impl TerminalState {
 
     /// Take in a pane the backend reports.
     ///
-    /// Everything `create_pane_with` used to do on the spot, moved to where the
-    /// pane actually turns up. `requested` says whether this client asked: one
-    /// it did takes the focus, and one another client opened lands in the list
-    /// without moving anybody's cursor.
+    /// `requested` says whether this client asked: one it did takes the focus,
+    /// and one another client opened lands in the list without moving anybody's
+    /// cursor.
     fn adopt_pane(
         &mut self,
         id: PaneId,

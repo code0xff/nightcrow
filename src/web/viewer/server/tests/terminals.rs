@@ -1,5 +1,5 @@
 use super::{VIEWER_SESSION_COOKIE, get, request, seeded_server};
-use crate::web::viewer::terminal;
+use crate::session::terminal;
 use std::io::{Read, Write};
 use std::net::TcpStream;
 use std::time::Duration;

@@ -11,7 +11,7 @@ pub(crate) fn init_app(
     let mut app = App::new(repo_path.to_string(), cfg.log.prompt_log, leader, backend);
     app.cfg_agent_indicator = cfg.agent_indicator.clone();
     app.cfg_tree = cfg.tree.clone();
-    app.mouse_enabled = cfg.mouse.enabled;
+    app.interaction.mouse_enabled = cfg.mouse.enabled;
     if cfg.tree.live_watch {
         app.tree_watch = crate::runtime::tree_watch::TreeWatcher::new();
     }

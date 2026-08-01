@@ -1,16 +1,15 @@
 import { Mark } from "./Mark";
 import { ProjectMenu } from "./ProjectMenu";
-import { LogOutIcon, PlusIcon, RefreshIcon, XIcon } from "./icons";
+import { LogOutIcon, PlusIcon, RefreshIcon, XIcon } from "./icons/actions";
 import { useReloadConfig } from "../hooks/useReloadConfig";
 import type { Repo } from "../api";
 
 export interface HeaderProps {
   repos: Repo[];
   repo: string | null;
-  setRepo: (id: string) => void;
-  setPane: () => void;
-  closeRepo: (id: string) => void;
-  setPickerOpen: (open: boolean) => void;
+  onSelectRepo: (id: string) => void;
+  onCloseRepo: (id: string) => void;
+  onOpenPicker: () => void;
   /** A clone is running on the server. Shown here rather than in the folder
    *  picker because the job outlives that dialog. */
   cloning: boolean;
@@ -27,10 +26,9 @@ export interface HeaderProps {
 export function Header({
   repos,
   repo,
-  setRepo,
-  setPane,
-  closeRepo,
-  setPickerOpen,
+  onSelectRepo,
+  onCloseRepo,
+  onOpenPicker,
   cloning,
   accent,
   next,
@@ -55,12 +53,9 @@ export function Header({
         className="md:hidden"
         repos={repos}
         currentId={repo}
-        onSelect={(id) => {
-          setRepo(id);
-          setPane();
-        }}
-        onCloseProject={closeRepo}
-        onOpenPicker={() => setPickerOpen(true)}
+        onSelect={onSelectRepo}
+        onCloseProject={onCloseRepo}
+        onOpenPicker={onOpenPicker}
       />
       <nav className="-my-[8.8px] hidden items-stretch self-stretch overflow-x-auto pl-1 md:flex">
         {repos.map((r) => (
@@ -85,8 +80,7 @@ export function Header({
           >
             <button
               onClick={() => {
-                setRepo(r.id);
-                setPane();
+                onSelectRepo(r.id);
               }}
               className="self-stretch pl-3 pr-1"
             >
@@ -95,7 +89,7 @@ export function Header({
             <button
               onClick={(e) => {
                 e.stopPropagation();
-                closeRepo(r.id);
+                onCloseRepo(r.id);
               }}
               data-tab-close
               title="Close project"
@@ -108,7 +102,7 @@ export function Header({
         ))}
       </nav>
       <button
-        onClick={() => setPickerOpen(true)}
+        onClick={onOpenPicker}
         title="Open a project"
         className="hidden shrink-0 items-center gap-1 rounded-sm px-2 py-0.5 text-ink-400 hover:text-ink-200 md:inline-flex"
       >

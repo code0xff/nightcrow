@@ -1,22 +1,19 @@
-//! Wiring one attached client to every open repository's terminals.
-//!
-//! The hubs are the browser's too — one per repository, already fanning output
-//! out to whoever has connected. An attaching client subscribes to all of them
-//! at once, because it renders a tab per repository and a pane whose output it
-//! stopped reading would fall behind its own scrollback.
+//! Wiring one attached client to every open repository's terminals. The hubs
+//! are the browser's too — one per repository, already fanning output out to
+//! whoever has connected. An attaching client subscribes to all of them at once,
+//! because it renders a tab per repository and a pane whose output it stopped
+//! reading would fall behind its own scrollback.
 //!
 //! That costs a thread per client per repository. Bounded by
-//! `MAX_ATTACHED_CLIENTS` × `MAX_PROJECTS`, and in practice one or two people
-//! at terminals with a handful of repositories open — but it is a product, and
-//! the ceiling is worth knowing before either factor is raised.
+//! `MAX_ATTACHED_CLIENTS` × `MAX_PROJECTS`.
 
 use super::clients::AttachedClients;
-use super::frame::Frame;
+use super::frame::{Frame, encode_server};
 use super::protocol::{ServerMessage, TerminalOutput};
-use crate::web::viewer::session::SessionRepo;
-use crate::web::viewer::size_owner::ViewerId;
-use crate::web::viewer::terminal::TerminalSession;
-use crate::web::viewer::terminal::frame::{
+use crate::session::SessionRepo;
+use crate::session::size_owner::ViewerId;
+use crate::session::terminal::TerminalSession;
+use crate::session::terminal::frame::{
     ClientMessage as HubClientMessage, ServerMessage as HubServerMessage, TerminalFrame,
 };
 use std::collections::HashMap;
@@ -25,9 +22,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 /// How long a bridge waits on its hub before checking whether it should stop.
-///
 /// Only bounds how quickly a closed repository's thread notices; output is
-/// delivered the moment it arrives, not on this tick.
+/// delivered the moment it arrives.
 const BRIDGE_POLL: Duration = Duration::from_millis(100);
 
 /// One client's subscriptions, one per open repository.
@@ -35,13 +31,10 @@ pub struct TerminalBridges {
     client: u64,
     clients: Arc<AttachedClients>,
     open: HashMap<String, Bridge>,
-    /// Whether this client's first subscription has been made.
-    ///
-    /// Attaching is a person sitting down, and that is the one moment this
-    /// client takes the session's sizing. Every subscription after it follows a
-    /// set that changed — a repository opened in a browser is not an arrival
-    /// here, and reading it as one would pull the sizing off whoever is actually
-    /// looking.
+    /// Whether this client's first subscription has been made. Attaching is a
+    /// person sitting down, and that is the one moment this client takes the
+    /// session's sizing. Every subscription after it follows a set that changed
+    /// — a repository opened in a browser is not an arrival here.
     arrived: bool,
 }
 
@@ -62,14 +55,9 @@ impl TerminalBridges {
     }
 
     /// Subscribe to repositories that appeared and drop the ones that went.
-    ///
     /// Called with every set the client is told about, so a repository opened
     /// on another client starts streaming here without this one asking.
-    pub fn follow(
-        &mut self,
-        repos: &[SessionRepo],
-        catalog: &crate::web::viewer::catalog::Catalog,
-    ) {
+    pub fn follow(&mut self, repos: &[SessionRepo], catalog: &crate::session::catalog::Catalog) {
         self.open
             .retain(|id, _| repos.iter().any(|repo| &repo.id == id));
         for repo in repos {
@@ -82,17 +70,10 @@ impl TerminalBridges {
             let arriving = !self.arrived;
             let Some(bridge) = self.subscribe(&repo.id, arriving, &entry.terminals) else {
                 // Left out of `open`, and the arrival left unspent, so the next
-                // set this client is told about tries again as if this had not
-                // been attempted — which, deliberately, it has not.
-                //
-                // "Next set" is the limit: this is called on attach and when the
-                // repository set changes, so a repository that fails here shows
-                // in the client's tabs with no terminals until something else
-                // moves. Left as is rather than given a retry of its own —
-                // reaching here means a thread could not be spawned, which on
-                // this daemon means the next connection cannot be served either,
-                // and a repository that streams nothing is the smaller half of
-                // that problem.
+                // set this client is told about tries again. "Next set" is the
+                // limit: this is called on attach and when the repository set
+                // changes, so a repository that fails here shows in the client's
+                // tabs with no terminals until something else moves.
                 continue;
             };
             self.arrived = true;
@@ -108,23 +89,20 @@ impl TerminalBridges {
         }
     }
 
-    /// `None` when the relay thread could not be started, in which case nothing
-    /// has happened at all — see the ordering below.
+    /// `None` when the relay thread could not be started.
     fn subscribe(
         &self,
         repo: &str,
         arriving: bool,
-        hub: &Arc<crate::web::viewer::terminal::TerminalHub>,
+        hub: &Arc<crate::session::terminal::TerminalHub>,
     ) -> Option<Bridge> {
         let stop = Arc::new(AtomicBool::new(false));
         // The thread first, and the subscription only once it exists.
-        // Subscribing is not free of consequence: it registers this client with
-        // the session's size ownership and, on an arrival, takes the sizing off
-        // whoever had it. Done in the other order, a thread that failed to start
-        // left a subscription nobody reads — the sizing displaced for the
-        // release grace, this client's one arrival spent, and the hub evicting a
-        // bridge it can never reach. Handing the session over afterwards is what
-        // lets the order be this way round.
+        // Subscribing registers this client with the session's size ownership
+        // and, on an arrival, takes the sizing off whoever had it. Done in the
+        // other order, a thread that failed to start left a subscription nobody
+        // reads — the sizing displaced, this client's one arrival spent, and
+        // the hub evicting a bridge it can never reach.
         let (hand_over, take) = std::sync::mpsc::channel::<Arc<TerminalSession>>();
         let worker = {
             let stop = Arc::clone(&stop);
@@ -160,15 +138,10 @@ impl TerminalBridges {
         // client's emulators start from the same place the browser's do.
         //
         // One viewer across every repository it subscribes to: this client is a
-        // single terminal showing one project at a time, not one screen per
-        // repository. Only the first of these subscriptions is an arrival — the
-        // rest follow a set that changed, and a repository opening elsewhere is
-        // not a person sitting down here.
-        //
-        // No socket to hand over: the loop above drains this session and passes
-        // frames on without blocking, so it cannot fall behind here. The
-        // backpressure that matters to an attached client is applied where it
-        // does own a socket (`AttachedClients::queue`).
+        // single terminal showing one project at a time. Only the first of
+        // these subscriptions is an arrival — the rest follow a set that
+        // changed, and a repository opening elsewhere is not a person sitting
+        // down here.
         let session = Arc::new(hub.connect(ViewerId::Attached(self.client), arriving, None));
         let _ = hand_over.send(Arc::clone(&session));
         Some(Bridge {
@@ -188,28 +161,48 @@ impl TerminalBridges {
 /// way to know its per-repository hub ids.
 fn tag(repo: &str, frame: TerminalFrame, hub_client: u64, attached: u64) -> Frame {
     match frame {
-        TerminalFrame::Output { pane, data } => Frame::terminal(
-            TerminalOutput {
+        TerminalFrame::Output { pane, data } => {
+            let output = TerminalOutput {
                 repo: repo.to_string(),
                 pane,
                 data,
+            };
+            match output.encode() {
+                Ok(payload) => Frame::terminal(payload),
+                Err(err) => {
+                    tracing::error!(%err, repo, "daemon: could not tag terminal output");
+                    encode_server(
+                        &ServerMessage::Error {
+                            message: "terminal output could not be relayed".into(),
+                        },
+                        "terminal output relay error",
+                        "terminal output could not be relayed",
+                    )
+                }
             }
-            .encode(),
-        ),
+        }
         // Parsed and re-encoded rather than passed through as text: the client
         // reads one message type, and a control frame smuggled through as an
         // opaque string would make the repository tag unreadable without
         // parsing it there instead.
         TerminalFrame::Control(json) => match serde_json::from_str(&json) {
-            Ok(event) => encode(&ServerMessage::Terminal {
-                repo: repo.to_string(),
-                event: rewrite_requester(event, hub_client, attached),
-            }),
+            Ok(event) => encode_server(
+                &ServerMessage::Terminal {
+                    repo: repo.to_string(),
+                    event: rewrite_requester(event, hub_client, attached),
+                },
+                "terminal event",
+                "event could not be encoded",
+            ),
             Err(err) => {
                 tracing::debug!(%err, "daemon: unreadable terminal control frame");
-                encode(&ServerMessage::Error {
-                    message: "terminal event could not be relayed".into(),
-                })
+                encode_server(
+                    &ServerMessage::Error {
+                        message: "terminal event could not be relayed".into(),
+                    },
+                    "terminal relay error",
+                    "event could not be encoded",
+                )
             }
         },
     }
@@ -233,16 +226,6 @@ fn rewrite_requester(event: HubServerMessage, hub_client: u64, attached: u64) ->
             title,
         },
         other => other,
-    }
-}
-
-fn encode(message: &ServerMessage) -> Frame {
-    match serde_json::to_vec(message) {
-        Ok(json) => Frame::control(json),
-        Err(err) => {
-            tracing::error!(%err, "daemon: could not encode a terminal event");
-            Frame::control(br#"{"type":"error","message":"event could not be encoded"}"#.to_vec())
-        }
     }
 }
 

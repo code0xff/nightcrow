@@ -12,7 +12,9 @@ fn attach(clients: &AttachedClients) -> (u64, std::sync::mpsc::Receiver<Frame>, 
     // these tests go on to check for.
     far.set_read_timeout(Some(std::time::Duration::from_secs(1)))
         .expect("sets a timeout");
-    let (id, rx) = clients.connect(near);
+    let (id, rx) = clients
+        .try_connect(near, usize::MAX)
+        .expect("test client fits");
     (id, rx, far)
 }
 
@@ -131,6 +133,51 @@ fn client_ids_are_not_reused_after_a_disconnect() {
     let (second, _rx_second, _sock_second) = attach(&clients);
 
     assert_ne!(first, second);
+}
+
+#[test]
+fn the_capacity_boundary_rejects_the_next_client() {
+    let clients = AttachedClients::default();
+    let mut peers = Vec::new();
+    for _ in 0..2 {
+        let (near, far) = UnixStream::pair().expect("a socket pair");
+        peers.push(far);
+        assert!(clients.try_connect(near, 2).is_some());
+    }
+    let (near, _far) = UnixStream::pair().expect("a socket pair");
+
+    assert!(clients.try_connect(near, 2).is_none());
+    assert_eq!(clients.len(), 2);
+}
+
+#[test]
+fn concurrent_connections_cannot_overrun_the_capacity() {
+    const CAPACITY: usize = 4;
+    const CONTENDERS: usize = 24;
+
+    let clients = std::sync::Arc::new(AttachedClients::default());
+    let barrier = std::sync::Arc::new(std::sync::Barrier::new(CONTENDERS));
+    let workers: Vec<_> = (0..CONTENDERS)
+        .map(|_| {
+            let clients = std::sync::Arc::clone(&clients);
+            let barrier = std::sync::Arc::clone(&barrier);
+            std::thread::spawn(move || {
+                let (near, far) = UnixStream::pair().expect("a socket pair");
+                barrier.wait();
+                let connected = clients.try_connect(near, CAPACITY).is_some();
+                (connected, far)
+            })
+        })
+        .collect();
+
+    let connected = workers
+        .into_iter()
+        .map(|worker| worker.join().expect("connection worker").0)
+        .filter(|connected| *connected)
+        .count();
+
+    assert_eq!(connected, CAPACITY);
+    assert_eq!(clients.len(), CAPACITY);
 }
 
 #[test]

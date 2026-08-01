@@ -81,11 +81,30 @@ fn no_resume_arguments_leaves_the_original_command_untouched() {
 }
 
 #[test]
-fn an_allowed_flag_and_its_value_are_appended_quoted() {
+fn an_allowed_flag_and_its_value_are_appended_as_shell_neutral_words() {
     let args = vec!["--resume".to_string(), "abc-123".to_string()];
     let allowed = vec!["--resume".to_string()];
     let line = resume_command_line(Some("agent"), &args, &allowed).expect("allowed");
-    assert_eq!(line, "agent '--resume' 'abc-123'");
+    assert_eq!(line, "agent --resume abc-123");
+}
+
+#[cfg(windows)]
+#[test]
+fn resume_arguments_reach_cmd_without_posix_quote_bytes() {
+    let args = vec!["--resume".to_string(), "abc-123".to_string()];
+    let allowed = vec!["--resume".to_string()];
+    let line = resume_command_line(Some("echo"), &args, &allowed).expect("allowed");
+
+    let output = std::process::Command::new("cmd.exe")
+        .args(["/D", "/S", "/C", &line])
+        .output()
+        .expect("cmd.exe executes the relaunch line");
+
+    assert!(output.status.success());
+    assert_eq!(
+        String::from_utf8_lossy(&output.stdout).trim(),
+        "--resume abc-123"
+    );
 }
 
 #[test]
@@ -99,6 +118,23 @@ fn a_flag_the_plugin_was_not_allowed_to_pass_is_refused() {
         err.to_string().contains("allowed_resume_flags"),
         "error should point at the allowlist: {err}"
     );
+}
+
+#[test]
+fn an_unapproved_resume_subcommand_is_refused() {
+    let args = vec!["resume".to_string(), "abc-123".to_string()];
+    let err = resume_command_line(Some("codex"), &args, &[]).unwrap_err();
+    assert!(err.to_string().contains("allowed_resume_flags"));
+
+    let line = resume_command_line(Some("codex"), &args, &["resume".to_string()]).unwrap();
+    assert_eq!(line, "codex resume abc-123");
+}
+
+#[test]
+fn an_unapproved_windows_style_option_is_refused_in_any_position() {
+    let args = vec!["resume".to_string(), "/dangerous".to_string()];
+    let err = resume_command_line(Some("agent"), &args, &["resume".to_string()]).unwrap_err();
+    assert!(err.to_string().contains("/dangerous"));
 }
 
 #[test]
@@ -147,11 +183,4 @@ fn a_pane_with_no_startup_command_cannot_be_relaunched() {
     // A bare shell has no session to resume, and nothing to reproduce.
     let err = resume_command_line(None, &args, &allowed).unwrap_err();
     assert!(err.to_string().contains("no startup command"), "{err}");
-}
-
-#[test]
-fn quoting_neutralises_an_embedded_single_quote() {
-    // Reached only if the charset check is ever loosened; the quoting has to be
-    // correct on its own rather than relying on that check.
-    assert_eq!(shell_quote("a'b"), "'a'\\''b'");
 }

@@ -59,7 +59,13 @@ fn the_dialog_still_lets_a_pending_release_through() {
         &crate::config::LayoutConfig::default(),
         true,
     );
-    assert!(ws.active().unwrap().pending_mouse_press.is_some());
+    assert!(
+        ws.active()
+            .unwrap()
+            .interaction
+            .pending_mouse_press
+            .is_some()
+    );
 
     ws.start_repo_input();
     dispatch_mouse(
@@ -72,7 +78,11 @@ fn the_dialog_still_lets_a_pending_release_through() {
     );
 
     assert!(
-        ws.active().unwrap().pending_mouse_press.is_none(),
+        ws.active()
+            .unwrap()
+            .interaction
+            .pending_mouse_press
+            .is_none(),
         "the dialog must not swallow the release"
     );
 }
@@ -103,12 +113,18 @@ fn switching_projects_releases_a_pending_press_to_its_own_pane() {
         &crate::config::LayoutConfig::default(),
         true,
     );
-    assert!(ws.active().unwrap().pending_mouse_press.is_some());
+    assert!(
+        ws.active()
+            .unwrap()
+            .interaction
+            .pending_mouse_press
+            .is_some()
+    );
 
     ws.add(app_with_files(vec!["b.rs"]));
 
     let old = &ws.projects()[0];
-    assert!(old.pending_mouse_press.is_none());
+    assert!(old.interaction.pending_mouse_press.is_none());
     assert_eq!(
         backend_payloads(old),
         vec![b"\x1b[<0;1;1M".to_vec(), b"\x1b[<0;1;1m".to_vec()],

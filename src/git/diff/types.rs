@@ -3,9 +3,7 @@ use std::borrow::Cow;
 
 /// State of a single git status column. `index` (X) compares HEAD with the
 /// staged tree, `worktree` (Y) compares the staged tree with the working
-/// directory. Either column can be `Unmodified` — that is what the old
-/// single-status `ChangeStatus` could not express. Mirrors the codes used by
-/// `git status --short`.
+/// directory. Either column can be `Unmodified`. Mirrors `git status --short`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StatusKind {
     Unmodified,
@@ -56,16 +54,14 @@ pub struct ChangedFile {
     /// New/effective path. Used for diff loading, file preview, hot-file
     /// tracking, and selection restoration.
     pub path: String,
-    /// Old path for renames (display/search metadata only). `None` otherwise.
+    /// Old path for renames (display/search metadata only).
     pub old_path: Option<String>,
     /// Index column (X): HEAD vs staged.
     pub index: StatusKind,
     /// Working-tree column (Y): staged vs working directory.
     pub worktree: StatusKind,
-    /// Pre-computed lowercase search text. For renames it contains both old and
-    /// new paths so either side matches the `contains` filter; otherwise it is
-    /// the lowercased `path`. Set on construction so the file-list filter
-    /// doesn't lowercase on every keystroke.
+    /// Pre-computed lowercase search text. For renames contains both old and
+    /// new paths so either side matches a `contains` filter.
     pub search_lower: String,
 }
 
@@ -98,8 +94,7 @@ impl ChangedFile {
     }
 
     /// Two-character Git short status code (`XY`). Untracked is special-cased
-    /// to `??` and conflicts to `UU` to match git rather than emitting ` ?`
-    /// from a blank index plus untracked worktree.
+    /// to `??` and conflicts to `UU` to match git.
     pub fn short_code(&self) -> String {
         if self.index == StatusKind::Untracked || self.worktree == StatusKind::Untracked {
             return "??".to_string();
@@ -152,14 +147,11 @@ pub enum LineKind {
 pub struct DiffLine {
     pub kind: LineKind,
     pub content: String,
-    /// Line number on the pre-image side, as reported by libgit2. `None` for an
-    /// added line, which exists only on the new side — so the gutter can leave
-    /// that column blank instead of inventing a number. Also `None` on
-    /// hand-built fixtures and the synthetic binary-file hunk, where no real
-    /// line numbering exists.
+    /// Line number on the pre-image side. `None` for added lines (which exist
+    /// only on the new side), hand-built fixtures, and synthetic binary hunks.
     pub old_lineno: Option<u32>,
-    /// Line number on the post-image side. `None` for a removed line, which is
-    /// absent from the new side. Same `None` cases as `old_lineno` otherwise.
+    /// Line number on the post-image side. `None` for removed lines and the
+    /// same cases as `old_lineno`.
     pub new_lineno: Option<u32>,
 }
 
@@ -167,9 +159,7 @@ pub struct DiffLine {
 pub struct DiffHunk {
     pub header: String,
     pub lines: Vec<DiffLine>,
-    /// File this hunk belongs to. `Some` for hunks emitted by the diff
-    /// collectors below; `None` for hand-built fixtures in tests where the
-    /// path is irrelevant. Used by the renderer to pick a per-hunk syntax
+    /// File this hunk belongs to. Used by the renderer to pick per-hunk syntax
     /// in commit diffs (one commit can touch multiple file types).
     pub file_path: Option<String>,
 }
@@ -184,18 +174,15 @@ pub struct TrackingStatus {
 pub struct RepoSnapshot {
     pub files: Vec<ChangedFile>,
     pub tracking: Option<TrackingStatus>,
-    /// HEAD commit oid at the moment the snapshot was taken. `None` for
-    /// empty or detached repositories with no resolvable HEAD. The main
-    /// thread compares this against `App::last_head_oid` to detect new
-    /// commits and refresh the Log view's cached commit list.
+    /// HEAD commit oid at snapshot time. `None` for empty or detached repos.
+    /// Compared against `App::last_head_oid` to detect new commits.
     pub head_oid: Option<Oid>,
-    /// Current branch shorthand (e.g. `main`) when HEAD points at a branch.
-    /// `None` for detached HEAD, unborn branch, or bare repo so the header
-    /// can decide whether to render the branch chip.
+    /// Current branch shorthand (e.g. `main`). `None` for detached HEAD,
+    /// unborn branch, or bare repo.
     pub branch_name: Option<String>,
     /// Digest over every ref name and target. Refs move without HEAD moving
     /// (a fetch advances `origin/dev`), so the Log view rebuilds its ref
-    /// decoration map when this changes rather than on HEAD changes alone.
+    /// decoration map when this changes.
     pub refs_fingerprint: u64,
 }
 
@@ -205,8 +192,6 @@ pub struct CommitEntry {
     pub short_id: String,
     pub summary: String,
     /// Pre-computed lowercase form of `summary` for case-insensitive search.
-    /// Set on construction so the commit-log filter doesn't lowercase on every
-    /// keystroke. Mirrors `ChangedFile::search_lower`.
     pub summary_lower: String,
     pub author: String,
     /// Author email, shown only in the wide layout. Empty when the commit

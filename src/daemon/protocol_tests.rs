@@ -1,4 +1,4 @@
-use super::{ClientMessage, RepoSummary, ServerMessage, version};
+use super::{ClientMessage, RepoSummary, ServerMessage, TerminalOutput, version};
 
 fn round_trip_client(message: &ClientMessage) -> ClientMessage {
     let json = serde_json::to_string(message).expect("encodes");
@@ -103,4 +103,38 @@ fn a_reload_request_carries_no_configuration() {
 fn the_reported_version_is_this_build() {
     assert_eq!(version(), env!("CARGO_PKG_VERSION"));
     assert!(!version().is_empty());
+}
+
+#[test]
+fn terminal_output_accepts_empty_and_maximum_length_repository_ids() {
+    for repo in [String::new(), "r".repeat(u8::MAX as usize)] {
+        let output = TerminalOutput {
+            repo,
+            pane: 0x0102_0304,
+            data: vec![0xff, 0x00],
+        };
+
+        let encoded = output.encode().expect("repository id fits");
+        assert_eq!(TerminalOutput::decode(&encoded), Some(output));
+    }
+}
+
+#[test]
+fn terminal_output_rejects_a_repository_id_over_the_wire_limit() {
+    let output = TerminalOutput {
+        repo: "r".repeat(u8::MAX as usize + 1),
+        pane: 1,
+        data: Vec::new(),
+    };
+
+    let error = output.encode().expect_err("repository id is too long");
+    assert!(error.to_string().contains("256 bytes"), "{error:#}");
+}
+
+#[test]
+fn terminal_output_rejects_truncated_or_non_utf8_headers() {
+    assert_eq!(TerminalOutput::decode(&[]), None);
+    assert_eq!(TerminalOutput::decode(&[0, 1, 2, 3]), None);
+    assert_eq!(TerminalOutput::decode(&[2, b'r']), None);
+    assert_eq!(TerminalOutput::decode(&[1, 0xff, 0, 0, 0, 0]), None);
 }

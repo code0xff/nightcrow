@@ -175,7 +175,8 @@ live_watch = true         # watch expanded dirs and refresh the tree live; set f
 # enabled = false                   # off by default; set true to actually run it
 # watch_on_signal = false           # off by default; see the paragraphs above
 # allowed_resume_flags = ["--resume", "resume", "--session"]
-#                                   # empty by default, which refuses relaunches.
+#                                   # empty by default, which refuses relaunch
+#                                   # arguments. Entries are flags/subcommands.
 #                                   # These three are what the bundled recovery
 #                                   # plugin needs for Claude/Codex/OpenCode.
 #

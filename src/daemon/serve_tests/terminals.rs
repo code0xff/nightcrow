@@ -1,7 +1,7 @@
 use super::harness::*;
 use crate::daemon::frame::{Frame, write_frame};
 use crate::daemon::protocol::ClientMessage;
-use crate::web::viewer::terminal::frame::{
+use crate::session::terminal::frame::{
     ClientMessage as HubClientMessage, ServerMessage as HubServerMessage,
 };
 use std::io::Write;
