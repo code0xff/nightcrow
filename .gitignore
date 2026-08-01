@@ -52,3 +52,6 @@
 
 # Internal-only notes: not part of the published documentation.
 /docs/internal/
+
+# opencode runtime state
+.opencode/
