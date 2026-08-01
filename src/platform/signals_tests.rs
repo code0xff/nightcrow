@@ -6,8 +6,8 @@ use super::Shutdown;
 
 #[cfg(unix)]
 mod signal_delivery {
-    use crate::platform::signals::ShutdownWatch;
     use super::Shutdown;
+    use crate::platform::signals::ShutdownWatch;
     use signal_hook::consts::signal::{SIGINT, SIGTERM};
 
     /// Raising a signal reaches every registered watch in the process, so the
