@@ -1,4 +1,3 @@
-import { useRef } from "react";
 import type { MutableRefObject } from "react";
 import type { PaneView } from "../../lib/terminalLayout";
 import { TERM_KEY_BAR, termKeySequence } from "../../lib/termKeys";
@@ -9,6 +8,12 @@ interface UsePaneCommandsArgs {
   viewsRef: MutableRefObject<Map<number, PaneView>>;
   /** The pane filling the panel, needed to know what a toggle should ask for. */
   zoomed: number | null;
+  /** What this page last asked the zoom to be, while the answer is outstanding.
+   *  `undefined` is "nothing asked" — distinct from `null`, a request to go back
+   *  to the grid. Owned by the socket, which drops it the moment the server
+   *  speaks and whenever a connection starts, so it can never outlive either the
+   *  round trip or the repository it was asked in. */
+  zoomAskedRef: MutableRefObject<number | null | undefined>;
   /** The pane a key from the on-screen bar is typed into. */
   active: number | null;
 }
@@ -28,21 +33,12 @@ export function usePaneCommands({
   socketRef,
   viewsRef,
   zoomed,
+  zoomAskedRef,
   active,
 }: UsePaneCommandsArgs) {
   const send = (message: unknown) =>
     socketRef.current?.send(JSON.stringify(message));
 
-  // What this page last asked the zoom to be, while the answer is outstanding.
-  // `undefined` is "nothing asked" — distinct from `null`, which is a request to
-  // go back to the grid. Dropped the moment the server speaks, below, so it can
-  // never outlive the round trip it exists to cover.
-  const askedZoomRef = useRef<number | null | undefined>(undefined);
-  const lastEchoRef = useRef(zoomed);
-  if (lastEchoRef.current !== zoomed) {
-    lastEchoRef.current = zoomed;
-    askedZoomRef.current = undefined;
-  }
 
   // The pane that comes back names this connection as its requester, which is
   // how the socket hook knows to focus it (`hello`).
@@ -55,9 +51,9 @@ export function usePaneCommands({
   // about panes this page did not ask for.
   const toggleZoom = (pane: number) => {
     const current =
-      askedZoomRef.current === undefined ? zoomed : askedZoomRef.current;
+      zoomAskedRef.current === undefined ? zoomed : zoomAskedRef.current;
     const next = zoomRequest(current, pane);
-    askedZoomRef.current = next;
+    zoomAskedRef.current = next;
     send({ type: "zoom", pane: next });
   };
 

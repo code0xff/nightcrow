@@ -6,17 +6,23 @@ use crate::web::viewer::terminal::frame::ClientMessage;
 #[test]
 fn a_connecting_client_is_told_its_own_id_first() {
     // First, because everything that follows can carry a requester id and the
-    // client has to be able to judge it. A pane replayed to this connection is
-    // announced with no requester at all, so nothing it is handed on arrival
-    // could be mistaken for its own.
+    // client has to be able to judge it.
+    //
+    // The hub is given a pane before this client arrives, so the replay puts a
+    // `created` on the queue too and the assertion is about *order* rather than
+    // about `hello` merely turning up: registering the client ahead of the hello
+    // would put a broadcast in front of it and this must fail.
     let dir = tempfile::TempDir::new().unwrap();
     let hub = spawn_hub(&dir.path().to_string_lossy(), Vec::new(), Vec::new());
-    let session = attach(&hub);
+    let existing = attach(&hub);
+    existing.dispatch(ClientMessage::Create { rows: 24, cols: 80 });
+    next_matching(&existing, |f| created_pane(f).is_some()).expect("no created message");
 
+    let session = attach(&hub);
     let first = next_matching(&session, |f| {
         hello_client(f).is_some() || created_pane(f).is_some()
     })
-    .expect("no hello");
+    .expect("neither a hello nor the replayed pane arrived");
     assert_eq!(
         hello_client(&first),
         Some(session.client_id()),

@@ -45,6 +45,9 @@ export function TerminalPanel({
   const pendingRef = useRef(new Map<number, Uint8Array[]>());
   // Restore focus when returning to a repository.
   const lastActiveByRepoRef = useRef(new Map<string, number>());
+  // A zoom this page has asked for and not yet been answered. Held here because
+  // both halves need it: the commands read it, the socket clears it.
+  const zoomAskedRef = useRef<number | null | undefined>(undefined);
   // Cells rendered for startup terminals the server has not created yet, so
   // their size can be measured from the slot each will occupy.
   const slotRefs = useRef(new Map<number, HTMLDivElement>());
@@ -70,6 +73,7 @@ export function TerminalPanel({
     pendingRef,
     sentSizesRef,
     lastActiveByRepoRef,
+    zoomAskedRef,
     setPending,
     setPanes,
     setActive,
@@ -167,6 +171,7 @@ export function TerminalPanel({
       socketRef,
       viewsRef,
       zoomed: zoom,
+      zoomAskedRef,
       active,
     });
 

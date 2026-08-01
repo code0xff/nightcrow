@@ -13,6 +13,11 @@ interface UseTerminalSocketArgs {
   pendingRef: MutableRefObject<Map<number, Uint8Array[]>>;
   sentSizesRef: MutableRefObject<Map<number, { rows: number; cols: number }>>;
   lastActiveByRepoRef: MutableRefObject<Map<string, number>>;
+  /** What the page last asked the zoom to be (see `usePaneCommands`). Cleared
+   *  here because this is what knows when a request has been answered and when
+   *  the connection carrying it is gone — including a repository switch, whose
+   *  pane ids belong to a different project entirely. */
+  zoomAskedRef: MutableRefObject<number | null | undefined>;
   setPending: React.Dispatch<React.SetStateAction<number | null>>;
   setPanes: React.Dispatch<React.SetStateAction<number[]>>;
   setActive: React.Dispatch<React.SetStateAction<number | null>>;
@@ -38,6 +43,7 @@ export function useTerminalSocket({
   pendingRef,
   sentSizesRef,
   lastActiveByRepoRef,
+  zoomAskedRef,
   setPending,
   setPanes,
   setActive,
@@ -64,6 +70,9 @@ export function useTerminalSocket({
 
     const connect = () => {
       clientIdRef.current = null;
+      // Anything asked for on the socket that just went is unanswerable, and a
+      // switch has moved to pane ids that mean something else.
+      zoomAskedRef.current = undefined;
       setPending(null);
       setPanes([]);
       setActive(null);
@@ -169,6 +178,8 @@ export function useTerminalSocket({
           } else if (message.type === "reordered") {
             setPanes((current) => reconcileOrder(current, message.order));
           } else if (message.type === "zoomed") {
+            // The server has spoken, so what this page asked for is spent.
+            zoomAskedRef.current = undefined;
             // Which pane fills the panel is the repository's answer, so this is
             // the only thing that sets it — including for the page that asked.
             // Sent on connect too, which is what brings a reloaded page back to
