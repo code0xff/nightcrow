@@ -79,3 +79,17 @@ export function showsText(diff: Diff): boolean {
     ),
   );
 }
+
+/**
+ * A stable name for the file a source points at, for remembering something
+ * about it across a switch.
+ *
+ * The two faces of a pane share one scroll container, so where the diff was
+ * left has to be recognised when it comes back — and not restored onto a
+ * different file's diff, which is what a bare "last scroll position" would do.
+ */
+export function sourceKey(source: FileSource): string {
+  return source.kind === "workdir"
+    ? `workdir:${source.path}`
+    : `commit:${source.oid}:${source.path}`;
+}

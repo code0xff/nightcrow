@@ -3,7 +3,7 @@ import { useDiffLayout } from "../lib/diffLayout";
 import { fileViewSource, isHtmlPath, isPreviewablePath } from "../lib/fileView";
 import { digitsFor } from "../lib/gutter";
 import { anchorWithin, hunkAtTop } from "../lib/diffAnchor";
-import { otherFace } from "../lib/otherFace";
+import { otherFace, sourceKey } from "../lib/otherFace";
 import {
   MaximizeIcon,
   PreviewIcon,
@@ -74,6 +74,11 @@ export function FilePane({
   const diffLayout = useDiffLayout();
   const scroller = useRef<HTMLDivElement>(null);
   const anchor = pane.kind === "file" ? pane.anchor : undefined;
+  // Where the diff was left, so coming back from the file lands there. The two
+  // faces share one scroller: without this the file's offset carries over and a
+  // shorter diff clamps to its bottom, which is not where anyone left it. Keyed
+  // by the file, so it is never restored onto a different diff.
+  const leftAt = useRef<{ key: string; top: number } | null>(null);
   // Which hunk the diff is scrolled to, measured only when the switch is asked
   // for. The offsets come from the DOM; which of them wins is `hunkAtTop`.
   const visibleHunk = () => {
@@ -84,6 +89,12 @@ export function FilePane({
       container.querySelectorAll<HTMLElement>("[data-hunk]"),
       (el) => el.getBoundingClientRect().top - top + container.scrollTop,
     );
+    if (pane.kind === "diff" && pane.source) {
+      leftAt.current = {
+        key: sourceKey(pane.source),
+        top: container.scrollTop,
+      };
+    }
     return hunkAtTop(offsets, container.scrollTop);
   };
   // Put the anchored line at the top of the pane. Measured against the
@@ -92,7 +103,17 @@ export function FilePane({
   // runs when a switch produces a new one and not on every render.
   useEffect(() => {
     const container = scroller.current;
-    if (!container || anchor === undefined || pane.kind !== "file") return;
+    if (!container) return;
+    // Back on the diff this left: put it where it was.
+    if (pane.kind === "diff" && pane.source) {
+      const left = leftAt.current;
+      if (left && left.key === sourceKey(pane.source)) {
+        container.scrollTop = left.top;
+        leftAt.current = null;
+      }
+      return;
+    }
+    if (anchor === undefined || pane.kind !== "file") return;
     const within = anchorWithin(anchor, pane.value.lines.length);
     if (within === null) return;
     const line = container.querySelector<HTMLElement>(`[data-line="${within}"]`);

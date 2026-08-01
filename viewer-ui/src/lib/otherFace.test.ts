@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { hasWorkingCopy, otherFace, showsText } from "./otherFace";
+import {
+  hasWorkingCopy,
+  otherFace,
+  showsText,
+  sourceKey,
+} from "./otherFace";
 import type { DiffLine } from "../api";
 import type { FileSource, Pane } from "../types";
 
@@ -119,6 +124,32 @@ describe("showsText", () => {
     // cut to nothing is as likely to belong to a file the loader will reject.
     expect(showsText({ path: "big.rs", hunks: [], truncated: true })).toBe(
       false,
+    );
+  });
+});
+
+describe("sourceKey", () => {
+  it("tells two files apart", () => {
+    expect(sourceKey({ kind: "workdir", path: "a.rs" })).not.toBe(
+      sourceKey({ kind: "workdir", path: "b.rs" }),
+    );
+  });
+
+  it("tells the same path at two commits apart", () => {
+    expect(sourceKey({ kind: "commit", oid: "aaa", path: "a.rs" })).not.toBe(
+      sourceKey({ kind: "commit", oid: "bbb", path: "a.rs" }),
+    );
+  });
+
+  it("tells a working copy from the same path in a commit", () => {
+    expect(sourceKey({ kind: "workdir", path: "a.rs" })).not.toBe(
+      sourceKey({ kind: "commit", oid: "aaa", path: "a.rs" }),
+    );
+  });
+
+  it("gives one file one name", () => {
+    expect(sourceKey({ kind: "workdir", path: "a.rs" })).toBe(
+      sourceKey({ kind: "workdir", path: "a.rs" }),
     );
   });
 });
