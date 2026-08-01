@@ -158,6 +158,16 @@ column, so instead a bottom bar switches between them: tap **Files**, **Diff**,
 or **Terminal** to give one of them the whole screen. Opening a file or commit
 jumps to the content view automatically.
 
+**Drag a pane to scroll it.** A finger dragged up or down the terminal turns the
+same wheel a mouse would, so where it goes is up to the program in the pane: an
+agent or a pager that reads the wheel itself scrolls its own view, `less` and
+`man` get the arrow keys they expect under alternate scroll, and a plain shell
+scrolls the emulator's scrollback. That routing is the browser terminal's, matching
+what the TUI does with `Shift+↑/↓` — which is why a full-screen program that keeps
+its transcript in its own memory scrolls at all, rather than dragging an empty
+scrollback around. A short drag is still a tap, so tapping to place the cursor and
+pinching to zoom both survive.
+
 Because a soft keyboard can't type Escape, Tab, Shift-Tab, Ctrl combinations, or
 the arrows, the terminal grows a key bar along its bottom on touch devices that
 sends those straight to the shell — so you can interrupt a process (`^C`), leave

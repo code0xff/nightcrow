@@ -11,6 +11,7 @@ import { useStartupSizes } from "../../hooks/terminal/useStartupSizes";
 import { PaneGrid } from "./PaneGrid";
 import { PaneTabs } from "./PaneTabs";
 import { TermKeyBar } from "./TermKeyBar";
+import { useTouchScroll } from "../../hooks/terminal/useTouchScroll";
 import { usePaneViewMode } from "../../hooks/ui/paneViewMode";
 import { shownTab } from "../../lib/paneViewMode";
 import { PanelDivider, type PanelDividerProps } from "./PanelDivider";
@@ -66,6 +67,7 @@ export function TerminalPanel({
   // Derived rather than corrected in the handler, so the panel cannot render a
   // state its pane list does not support at all. See `lib/zoom.ts`.
   const zoom = renderedZoom(zoomed, panes);
+  const bodyTouch = useTouchScroll({ viewsRef, bodyRefs });
   const { mode, toggle: toggleMode } = usePaneViewMode();
   const tabs = mode === "tabs";
   // A tabbed panel renders no zoom — it already shows one pane — so nothing in
@@ -249,6 +251,7 @@ export function TerminalPanel({
           draggingPane={draggingPane}
           dragOverPane={dragOverPane}
           reorderable={reorderable}
+          bodyTouch={bodyTouch}
           slotRefs={slotRefs}
           bodyRefs={bodyRefs}
           onFocus={focusPane}
