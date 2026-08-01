@@ -89,7 +89,13 @@ fn the_diff_of_a_deleted_file_is_served() {
 /// records a symlink as a blob holding the *name* it points at, so the diff
 /// discloses the link — which is the repository's own content, already visible
 /// in its tree — and never what the link points to.
+///
+/// Unix-only because creating a symlink on Windows needs developer mode or an
+/// elevated process, which a test run cannot assume. What goes unverified there
+/// is git's rendering of a link, not the gate: the routes are the same, and the
+/// deleted-file tests above cover them on every platform.
 #[test]
+#[cfg(unix)]
 fn a_diff_through_a_symlink_shows_the_link_not_its_target() {
     let (dir, server, token, id) = seeded_server();
     let repo_path = {
@@ -109,6 +115,17 @@ fn a_diff_through_a_symlink_shows_the_link_not_its_target() {
         Some(&token),
     );
 
+    // Both halves matter. Without the first, a route that answered 400 for
+    // every symlink would satisfy this test while having stopped serving the
+    // diffs it exists to serve.
+    assert!(
+        response.starts_with("HTTP/1.1 200"),
+        "a link is repository content and has a diff: {response}"
+    );
+    assert!(
+        response.contains("outside-secret.txt"),
+        "the diff of a link is the name it holds: {response}"
+    );
     assert!(
         !response.contains("TOP SECRET"),
         "a symlink must not leak what it points at: {response}"
