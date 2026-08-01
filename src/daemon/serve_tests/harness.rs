@@ -220,6 +220,31 @@ impl Client {
         }
     }
 
+    /// Wait for the session to advertise `want` as the project in front.
+    ///
+    /// Not the *next* set: the watcher tells clients on a tick, and a close is
+    /// two steps — the project leaves the catalog, then its successor is
+    /// recorded. A tick landing between them advertises the fallback, which is
+    /// correct of that instant and not the answer. Waiting for the settled one
+    /// is what the client does; asserting the first snapshot would fail on
+    /// timing rather than on behaviour.
+    pub(super) fn wait_for_active(&mut self, want: Option<&str>) {
+        let deadline = std::time::Instant::now() + READ_TIMEOUT;
+        let mut last = None;
+        while std::time::Instant::now() < deadline {
+            let Some(ServerMessage::Repos { active, .. }) = self.try_next_repos() else {
+                // The watcher only speaks when something changes, so running
+                // out of sets means it has settled — on `last`.
+                break;
+            };
+            last = active;
+            if last.as_deref() == want {
+                return;
+            }
+        }
+        panic!("the session settled on {last:?} in front, not {want:?}");
+    }
+
     /// The accent the session says it is painted in, from the next set it sends.
     pub(super) fn next_accent(&mut self) -> usize {
         match self.next_repos() {
@@ -252,12 +277,17 @@ impl Client {
     /// before anything else happens — so a test about the tab list has to read
     /// past it rather than assume the next frame is the one it wants.
     pub(super) fn next_repos(&mut self) -> ServerMessage {
-        let frame = self
-            .find(READ_TIMEOUT, |frame| {
-                frame.kind == FrameKind::Control && decodes_to_repos(frame)
-            })
-            .expect("no repository set arrived among the terminal traffic");
-        serde_json::from_slice(&frame.payload).expect("decodes")
+        self.try_next_repos()
+            .expect("no repository set arrived among the terminal traffic")
+    }
+
+    /// [`next_repos`](Self::next_repos) without the panic, for a caller that
+    /// treats "nothing more arrived" as an answer rather than a failure.
+    pub(super) fn try_next_repos(&mut self) -> Option<ServerMessage> {
+        let frame = self.find(READ_TIMEOUT, |frame| {
+            frame.kind == FrameKind::Control && decodes_to_repos(frame)
+        })?;
+        Some(serde_json::from_slice(&frame.payload).expect("decodes"))
     }
 }
 

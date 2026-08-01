@@ -101,20 +101,25 @@ pub fn open_repo(state: &SessionState, raw_path: &str) -> Result<RepoInfo, OpenE
 /// at all. The stored value is a path, because ids only live as long as the
 /// process (see [`super::prefs`]), so this is where it is translated back.
 pub fn active_repo(state: &SessionState) -> Option<String> {
-    let stored = state
-        .prefs
-        .get()
-        .active_repo
-        .as_deref()
-        .and_then(|path| state.catalog.id_of_path(path));
-    stored.or_else(|| {
-        state
-            .catalog
-            .id_paths()
-            .into_iter()
-            .next()
-            .map(|(id, _)| id)
-    })
+    active_repo_from(state, state.prefs.get().active_repo.as_deref())
+}
+
+/// [`active_repo`] against a `stored` value the caller already has.
+///
+/// For a caller that must not read the preference twice: what it decides and
+/// what it later writes against have to come from one read, or a focus landing
+/// between the two is mistaken for the value the decision was made against.
+fn active_repo_from(state: &SessionState, stored: Option<&str>) -> Option<String> {
+    stored
+        .and_then(|path| state.catalog.id_of_path(path))
+        .or_else(|| {
+            state
+                .catalog
+                .id_paths()
+                .into_iter()
+                .next()
+                .map(|(id, _)| id)
+        })
 }
 
 /// Focus the repository named by `id` for the whole session.
@@ -149,21 +154,26 @@ pub fn set_accent(state: &SessionState, accent: usize) -> usize {
 /// change the set in between.
 pub fn close_repo(state: &SessionState, id: &str) -> Result<(), CloseError> {
     let entry = state.catalog.get(id).ok_or(CloseError::UnknownRepo)?;
+    // One read of the preference, and both the decision and the condition on
+    // the write are made from it. Reading it twice would leave a gap: a focus
+    // landing between them would be taken for the value this decided against,
+    // and then overwritten by a successor chosen before it existed.
+    //
+    // Not necessarily the closing path, which is why the condition is this
+    // rather than a comparison against it. Nothing may have been selected at
+    // all, in which case the project in front is the first served one and the
+    // preference is still empty; or it may name a project this session does not
+    // serve. The successor has to be recorded in both, and comparing against
+    // the closing path skipped them silently — the fallback answered correctly
+    // for as long as the successor stayed first, then handed the front to
+    // whatever had taken its place.
+    let focus_before = state.prefs.get().active_repo;
     // Read before the close, because it is a position in the set that is about
     // to change, and only interesting when the tab being closed is the one in
     // front — closing a background project must leave the focus where it is.
-    let successor = (active_repo(state).as_deref() == Some(id))
+    let successor = (active_repo_from(state, focus_before.as_deref()).as_deref() == Some(id))
         .then(|| successor_of(state, id))
         .flatten();
-    // What the preference held when that was decided — which is not necessarily
-    // the closing path. Nothing may have been selected at all, in which case
-    // `active_repo` named this project by its first-served fallback and the
-    // preference is still empty; or it may name a project this session does not
-    // serve. Either way the successor has to be recorded, and comparing against
-    // the closing path would silently skip it: the fallback would answer
-    // correctly for a while and then, on the first reorder, hand the front to
-    // whatever had become first.
-    let focus_before = state.prefs.get().active_repo;
     state.catalog.remove_path(&entry.path);
     // Said outright rather than left to `active_repo`'s fallback. That fallback
     // answers "nothing has been focused yet, or what is on file is no longer

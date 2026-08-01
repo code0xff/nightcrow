@@ -63,10 +63,7 @@ fn closing_the_project_in_front_tells_an_attached_client_its_successor() {
 
     crate::session::close_repo(daemon.state(), &ids[1]).expect("closes");
 
-    assert_eq!(
-        client.next_active(),
-        Some(ids[2].clone()),
-        "the tab after the closed one is what the session advertises"
-    );
+    // The tab after the closed one is what the session settles on.
+    client.wait_for_active(Some(&ids[2]));
     drop((repo_a, repo_b, repo_c));
 }
