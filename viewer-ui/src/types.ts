@@ -20,5 +20,13 @@ export type FileSource =
 
 export type Pane =
   | { kind: "diff"; value: Diff; source?: FileSource }
-  | { kind: "file"; value: FileView; source?: FileSource }
+  | {
+      kind: "file";
+      value: FileView;
+      source?: FileSource;
+      /// The 1-based line to put at the top, when this file was opened from a
+      /// diff. Landing at the top of a long file after asking about a change
+      /// near its end is the same as not having gone anywhere.
+      anchor?: number;
+    }
   | { kind: "empty" };

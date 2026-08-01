@@ -1,4 +1,4 @@
-import { Suspense, lazy } from "react";
+import { Suspense, lazy, useEffect, useRef } from "react";
 import { useDiffLayout } from "../lib/diffLayout";
 import { fileViewSource, isHtmlPath, isPreviewablePath } from "../lib/fileView";
 import { digitsFor } from "../lib/gutter";
@@ -29,7 +29,7 @@ function FileLines({ lines }: { lines: Span[][] }) {
   return (
     <pre className="w-max min-w-full py-2 text-ink-200">
       {lines.map((line, i) => (
-        <div key={i} className="flex">
+        <div key={i} data-line={i + 1} className="flex">
           <LineNos nos={[i + 1]} digits={digits} />
           <span className="whitespace-pre pr-3">
             {line.length === 0
@@ -70,6 +70,20 @@ export function FilePane({
   className = "",
 }: FilePaneProps) {
   const diffLayout = useDiffLayout();
+  const scroller = useRef<HTMLDivElement>(null);
+  const anchor = pane.kind === "file" ? pane.anchor : undefined;
+  // Put the anchored line at the top of the pane. Measured against the
+  // scroller rather than `scrollIntoView`, which would also scroll whatever
+  // else on the page happens to be scrollable. Keyed on the pane object, so it
+  // runs when a switch produces a new one and not on every render.
+  useEffect(() => {
+    const container = scroller.current;
+    if (!container || anchor === undefined) return;
+    const line = container.querySelector<HTMLElement>(`[data-line="${anchor}"]`);
+    if (!line) return;
+    container.scrollTop +=
+      line.getBoundingClientRect().top - container.getBoundingClientRect().top;
+  }, [pane, anchor]);
   return (
     <section className={`min-h-0 min-w-0 flex-col ${className}`}>
       <div className="flex shrink-0 items-center gap-2 bg-ink-850 px-3 py-0.5 text-ink-400">
@@ -145,7 +159,7 @@ export function FilePane({
           </button>
         </div>
       </div>
-      <div className="min-h-0 flex-1 overflow-auto">
+      <div ref={scroller} className="min-h-0 flex-1 overflow-auto">
         {pane.kind === "empty" && (
           <p className="p-4 text-ink-400">
             {status === null ? "Loading…" : "Select a file or commit."}

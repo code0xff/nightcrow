@@ -2,6 +2,7 @@ import { useCallback } from "react";
 import { api, type Commit, type Diff, type FileView } from "../api";
 import type { CommitDrillDown } from "./useLog";
 import type { FileSource, Pane } from "../types";
+import { anchorLine, anchorOffset } from "../lib/diffAnchor";
 import type { MobileView } from "../types";
 
 export interface UsePaneOpenersArgs {
@@ -143,6 +144,9 @@ export function usePaneOpeners({
       if (!repo || pane.kind === "empty" || !pane.source) return;
       const source: FileSource = pane.source;
       const wantFile = pane.kind === "diff";
+      // Read before the fetch, off the diff being left — it is the only thing
+      // that knows which change was being looked at.
+      const line = wantFile ? anchorLine(pane.value as Diff) : null;
       const request = (paneRequestRef.current += 1);
       const fetched =
         source.kind === "workdir"
@@ -152,13 +156,22 @@ export function usePaneOpeners({
           : wantFile
             ? api.commitFile(repo, source.oid, source.path)
             : api.commitFileDiff(repo, source.oid, source.path);
-      if (wantFile) setPreviewRendered(true);
+      // Raw, not rendered. "Show me around this change" is a question about the
+      // source; a rendered page has no line to land on and does not answer it.
+      // Opening a file from the tree still starts rendered — that is a different
+      // question.
+      if (wantFile) setPreviewRendered(false);
       fetched
         .then((value) => {
           if (request !== paneRequestRef.current) return;
           setPane(
             wantFile
-              ? { kind: "file", value: value as FileView, source }
+              ? {
+                  kind: "file",
+                  value: value as FileView,
+                  source,
+                  anchor: line === null ? undefined : anchorOffset(line) + 1,
+                }
               : { kind: "diff", value: value as Diff, source },
           );
         })
