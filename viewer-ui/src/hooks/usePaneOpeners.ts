@@ -197,13 +197,16 @@ export function usePaneOpeners({
               : {
                   kind: "diff",
                   value: value as Diff,
-                  // Judged again, not carried back: the file can have gone
-                  // while its own pane was on screen, and the status refresh
-                  // that would have noticed only looks at diffs.
+                  // Judged again, not carried back. The file can have gone —
+                  // or turned into something with no text in it — while its own
+                  // pane was on screen, and the status refresh that would have
+                  // noticed only looks at diffs. Same two questions `openDiff`
+                  // asks, so the answer cannot drift between the two ways in.
                   source:
-                    source.kind === "workdir" && !worktreeHas(source.path)
-                      ? undefined
-                      : source,
+                    showsText(value as Diff) &&
+                    (source.kind !== "workdir" || worktreeHas(source.path))
+                      ? source
+                      : undefined,
                 },
           );
         })

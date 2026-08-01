@@ -45,15 +45,29 @@ export function hasWorkingCopy(file: ChangedFile): boolean {
  * Whether a diff has text behind it — that is, whether the whole file can be
  * shown at all.
  *
- * Read off the diff rather than asked of the server: a binary file produces no
- * hunks, and `/api/file` refuses it outright ("binary or non-utf8 file"), so
- * offering the toggle for a changed PNG is a button whose only outcome is an
- * error.
+ * Read off the diff rather than asked of the server: `/api/file` refuses a
+ * binary outright ("binary or non-utf8 file"), so offering the toggle for a
+ * changed PNG is a button whose only outcome is an error.
  *
- * A proxy, and it costs one case: a mode-only change (`chmod`) also produces no
- * hunks, and its file is perfectly readable. That is a missing offer, which is
- * the side to be wrong on — the same trade the deleted-path check makes.
+ * The signal is a line that belongs to a *side*, not a line at all. A binary
+ * change is not hunkless — it arrives as one synthetic line, "Binary files
+ * differ", carrying neither an old nor a new number, because a binary file has
+ * no line numbering (`git::diff::snapshot::binary_diff_hunk`). Counting lines
+ * therefore said yes to exactly the case this exists to exclude.
+ *
+ * A truncated diff counts even with nothing left to show: the ceiling was hit,
+ * which means there was text, and that is the case where the whole file is most
+ * worth reaching.
+ *
+ * It costs one case: a mode-only change (`chmod`) has no numbered lines and its
+ * file is readable. That is a missing offer, which is the side to be wrong on —
+ * the same trade the deleted-path check makes.
  */
 export function showsText(diff: Diff): boolean {
-  return diff.hunks.some((hunk) => hunk.lines.length > 0);
+  if (diff.truncated) return true;
+  return diff.hunks.some((hunk) =>
+    hunk.lines.some(
+      (line) => line.old_lineno !== undefined || line.new_lineno !== undefined,
+    ),
+  );
 }

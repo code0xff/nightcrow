@@ -88,25 +88,35 @@ describe("hasWorkingCopy", () => {
 });
 
 describe("showsText", () => {
-  const withLines = (n: number) => ({
-    path: "a.rs",
-    hunks: [{ header: "@@", lines: Array.from({ length: n }, () => line(1)) }],
-    truncated: false,
+  const hunk = (lines: DiffLine[]) => ({ header: "@@", lines });
+
+  it("sees text where a line belongs to a side", () => {
+    expect(
+      showsText({ path: "a.rs", hunks: [hunk([line(3)])], truncated: false }),
+    ).toBe(true);
   });
 
-  it("sees text where the diff has lines", () => {
-    expect(showsText(withLines(3))).toBe(true);
+  it("sees none in a binary change, which is one unnumbered line", () => {
+    // Not hunkless: git's binary delta arrives as a synthetic "Binary files
+    // differ" line with neither an old nor a new number. Counting lines said
+    // yes to exactly the case this exists to exclude.
+    const synthetic: DiffLine = { kind: " ", spans: [] };
+    expect(
+      showsText({
+        path: "logo.png",
+        hunks: [hunk([synthetic])],
+        truncated: false,
+      }),
+    ).toBe(false);
   });
 
   it("sees none for a diff with no hunks at all", () => {
-    // A changed binary: git produces nothing to show, and the file endpoint
-    // refuses it. The toggle would only be able to fail.
-    expect(showsText({ path: "logo.png", hunks: [], truncated: false })).toBe(
-      false,
-    );
+    expect(showsText({ path: "a.rs", hunks: [], truncated: false })).toBe(false);
   });
 
-  it("sees none for hunks that carry no lines", () => {
-    expect(showsText(withLines(0))).toBe(false);
+  it("sees text in a diff truncated to nothing", () => {
+    // The ceiling was hit, so there was text — and that is the case where
+    // reaching the whole file matters most.
+    expect(showsText({ path: "big.rs", hunks: [], truncated: true })).toBe(true);
   });
 });
