@@ -49,6 +49,15 @@ choice lasts the page, the same lifetime the TUI gives it; on a narrow window th
 two sides stack — removed above added — rather than sitting side by side, since
 neither column would have the width to read.
 
+Beside it, a **whole file** toggle swaps the diff for the file it belongs to,
+opened at the change that was on screen — the browser's half of the TUI's `v`.
+It shows the file as the commit left it when you reached the diff from the log,
+and the working copy when you reached it from the status list, so what you read
+is what the diff was describing. Press it again for the diff. It appears only
+where there is a second face to show: a whole-commit diff spans several files,
+so "which one" has no answer, and a file opened from the tree has no diff behind
+it. The TUI draws the same two lines.
+
 **Line numbers** ride in a pinned gutter as they do in the TUI: the unified view
 shows both sides (old, new), leaving a column blank where the line does not exist
 on that side; each split half shows the side it renders; and a file opened from
