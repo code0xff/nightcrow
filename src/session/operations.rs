@@ -155,6 +155,15 @@ pub fn close_repo(state: &SessionState, id: &str) -> Result<(), CloseError> {
     let successor = (active_repo(state).as_deref() == Some(id))
         .then(|| successor_of(state, id))
         .flatten();
+    // What the preference held when that was decided — which is not necessarily
+    // the closing path. Nothing may have been selected at all, in which case
+    // `active_repo` named this project by its first-served fallback and the
+    // preference is still empty; or it may name a project this session does not
+    // serve. Either way the successor has to be recorded, and comparing against
+    // the closing path would silently skip it: the fallback would answer
+    // correctly for a while and then, on the first reorder, hand the front to
+    // whatever had become first.
+    let focus_before = state.prefs.get().active_repo;
     state.catalog.remove_path(&entry.path);
     // Said outright rather than left to `active_repo`'s fallback. That fallback
     // answers "nothing has been focused yet, or what is on file is no longer
@@ -169,7 +178,7 @@ pub fn close_repo(state: &SessionState, id: &str) -> Result<(), CloseError> {
         // fallback, which is the first tab this exists to stop landing on.
         && state.catalog.id_of_path(&path).is_some()
     {
-        // Only while the focus is still the project this decided about.
+        // Only while the preference is still what it was when this decided.
         // Compared inside the preference store's own locked write, so against
         // another focus it is atomic; what it cannot see is the catalog, which
         // has a lock of its own that this must not hold at the same time.
@@ -183,7 +192,7 @@ pub fn close_repo(state: &SessionState, id: &str) -> Result<(), CloseError> {
         // nothing after the fact, so for it this holds outright.
         state
             .prefs
-            .set_active_repo_if(Some(entry.path.as_str()), path);
+            .set_active_repo_if(focus_before.as_deref(), path);
     }
     persist_workspace(state);
     Ok(())

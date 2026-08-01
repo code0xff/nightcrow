@@ -118,3 +118,44 @@ fn closing_the_only_project_leaves_nothing_in_front() {
         "an empty session has no project in front"
     );
 }
+
+/// Closing the project a *fallback* put in front still records the successor.
+///
+/// Nothing has been selected in a fresh session, so the preference is empty and
+/// `session::active_repo` names the first served project by falling back to it.
+/// Recording the successor only when the preference already named the closing
+/// project skipped exactly that case, and it is the case every session starts
+/// in — the preference stayed empty, and the front was then whatever happened
+/// to be first from then on.
+///
+/// Read through the served `active_repo`, which reports only what the
+/// preference resolves to: null while nothing has been recorded, and the
+/// successor once the close has recorded it.
+#[test]
+fn closing_a_project_that_was_active_by_fallback_still_records_the_successor() {
+    let prefs = tempfile::TempDir::new().unwrap();
+    let (_a, a) = make_repo();
+    let (_b, b) = make_repo();
+    let (_c, c) = make_repo();
+    let server = server_at(prefs.path(), &[a, b, c]);
+    let token = login(server.addr());
+    let ids = served_ids(server.addr(), &token);
+    // Deliberately no `select`: nothing has named a project yet.
+    assert_eq!(
+        served_active(server.addr(), &token),
+        serde_json::Value::Null,
+        "nothing is recorded until something records it"
+    );
+
+    delete(
+        server.addr(),
+        &format!("/api/repos?repo={}", ids[0]),
+        Some(&token),
+    );
+
+    assert_eq!(
+        served_active(server.addr(), &token),
+        serde_json::json!(ids[1]),
+        "the close must record its successor even when it was in front by fallback"
+    );
+}
