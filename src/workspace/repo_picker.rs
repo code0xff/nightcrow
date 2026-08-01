@@ -10,10 +10,6 @@ impl Workspace {
     /// Open the browser on whatever directory the field names. Bound to `↓`,
     /// where every autocomplete puts its list.
     pub fn repo_input_browse(&mut self) {
-        // Browsing is an edit intent, so an untouched prefill stops being
-        // replaceable — otherwise the first key typed after returning would
-        // wipe what was just picked.
-        self.repo_input.prefilled = false;
         // The candidate row answers the same question the browser does.
         self.repo_input.candidates.clear();
         match PathTree::open(&self.repo_input.buf) {

@@ -3,23 +3,23 @@ use super::*;
 use crate::app::tests::app_with_files;
 
 #[test]
-fn first_typed_char_replaces_the_prefilled_repo_path() {
+fn typing_extends_the_prefilled_repo_path() {
     let mut ws = workspace_on(&["/repos/current"]);
     ws.start_repo_input();
     assert_eq!(ws.repo_input.buf, "/repos/current");
 
-    for c in "/tmp".chars() {
+    for c in "/sub".chars() {
         ws.repo_input_push(c);
     }
 
     assert_eq!(
-        ws.repo_input.buf, "/tmp",
-        "typing over an untouched prefill must replace it, not append"
+        ws.repo_input.buf, "/repos/current/sub",
+        "typing must extend the prefill, never replace it"
     );
 }
 
 #[test]
-fn backspace_leaves_prefill_mode_without_dropping_the_path() {
+fn backspace_edits_the_path_without_dropping_it() {
     let mut ws = workspace_on(&["/repos/current"]);
     ws.start_repo_input();
 
@@ -33,25 +33,17 @@ fn backspace_leaves_prefill_mode_without_dropping_the_path() {
 }
 
 #[test]
-fn accepting_the_prefill_appends_instead_of_replacing() {
-    let mut ws = workspace_on(&["/repos/current/"]);
-    ws.start_repo_input();
-
-    ws.repo_input_accept_prefill();
-    for c in "src".chars() {
-        ws.repo_input_push(c);
-    }
-
-    assert_eq!(ws.repo_input.buf, "/repos/current/src");
-}
-
-#[test]
 fn confirming_a_tilde_path_opens_the_home_relative_directory() {
     // The dialog never passes through a shell, so an unexpanded `~` would
     // be rejected as "no such directory".
     let home = dirs::home_dir().expect("a home directory");
     let mut ws = workspace_on(&["/repos/current"]);
     ws.start_repo_input();
+    // Typing extends the prefill, so an unrelated absolute path starts by
+    // backspacing the field empty — the gesture a user makes.
+    while !ws.repo_input.buf.is_empty() {
+        ws.repo_input_pop();
+    }
     for c in "~".chars() {
         ws.repo_input_push(c);
     }
@@ -78,9 +70,7 @@ fn workspace_completing_in(root: &tempfile::TempDir, frag: &str) -> (Workspace, 
 }
 
 #[test]
-fn completing_extends_an_untouched_prefill_instead_of_replacing_it() {
-    // Typing over a prefill replaces it, but Tab means "extend this path" —
-    // the same reading Backspace and → already give it.
+fn completing_extends_the_prefill() {
     let root = tempfile::TempDir::new().expect("a temp dir");
     std::fs::create_dir(root.path().join("nightcrow")).expect("create dir");
     let (mut ws, base) = workspace_completing_in(&root, "night");
@@ -88,10 +78,6 @@ fn completing_extends_an_untouched_prefill_instead_of_replacing_it() {
     ws.repo_input_complete();
 
     assert_eq!(ws.repo_input.buf, format!("{base}nightcrow/"));
-    assert!(
-        !ws.repo_input.prefilled,
-        "the prefill is spent, so the next keystroke must append"
-    );
 }
 
 #[test]
@@ -139,15 +125,18 @@ fn completing_a_path_that_matches_nothing_raises_no_notice() {
 }
 
 #[test]
-fn reopening_the_dialog_re_arms_the_prefill() {
+fn cancelling_discards_the_edit_and_reopening_starts_from_the_repo_path() {
     let mut ws = workspace_on(&["/repos/current"]);
     ws.start_repo_input();
     ws.repo_input_push('x');
     ws.cancel_repo_input();
 
     ws.start_repo_input();
-    ws.repo_input_push('y');
-    assert_eq!(ws.repo_input.buf, "y");
+
+    assert_eq!(
+        ws.repo_input.buf, "/repos/current",
+        "Esc is how a path is discarded, so the next open is clean"
+    );
 }
 
 #[test]

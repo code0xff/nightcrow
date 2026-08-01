@@ -1,9 +1,5 @@
 use super::*;
 
-/// Backspace is the "edit this path" gesture — the sub-directory case
-/// depends on the prefill surviving it.
-/// →/End keeps the prefill and appends, which is what the sub-directory
-/// case needs: Backspace would eat the trailing separator first.
 #[test]
 fn successful_snapshot_preserves_terminal_status() {
     let (snapshot, tx) = dummy_snapshot_channel();

@@ -97,12 +97,6 @@ impl StatusView {
 pub struct RepoInput {
     pub active: bool,
     pub buf: String,
-    /// Whether `buf` is still the untouched prefill the dialog opened with.
-    /// The first typed character replaces it rather than appending, so
-    /// switching to an unrelated path doesn't start with backspacing the
-    /// whole prefill; Backspace clears the flag instead, keeping the text
-    /// and entering ordinary editing (the sub-directory case).
-    pub prefilled: bool,
     /// Directory names offered by the last Tab press, shown on the notice row.
     /// Any edit clears them: the list describes a fragment that no longer
     /// matches what is in the buffer.

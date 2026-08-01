@@ -39,7 +39,7 @@ fn browsing_opens_on_the_prefilled_path() {
 }
 
 #[test]
-fn browsing_leaves_prefill_mode_so_the_picked_path_survives_typing() {
+fn typing_after_a_pick_extends_the_picked_path() {
     let (_guard, mut ws) = dialog_on(&["alpha"]);
 
     ws.repo_input_browse();
@@ -72,9 +72,6 @@ fn picking_a_row_closes_the_browser_and_fills_the_field() {
 fn stepping_out_reaches_a_sibling_project() {
     let (guard, mut ws) = dialog_on(&["proj-a", "proj-b"]);
     std::fs::create_dir(guard.path().join("proj-a").join("sub")).expect("create sub");
-    // The prefill is replaceable until it is accepted, so a bare push would
-    // wipe the temp path instead of extending it.
-    ws.repo_input_accept_prefill();
     for c in "/proj-a".chars() {
         ws.repo_input_push(c);
     }

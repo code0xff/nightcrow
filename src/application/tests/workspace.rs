@@ -20,6 +20,11 @@ fn confirming_the_dialog_asks_the_workspace_to_open_that_path() {
     let (_dir, path) = crate::test_util::make_repo();
     let mut ws = workspace_on(&["/a"]);
     ws.start_repo_input();
+    // Typing extends the prefill, so an unrelated absolute path starts by
+    // backspacing the field empty — the gesture a user makes.
+    while !ws.repo_input.buf.is_empty() {
+        ws.repo_input_pop();
+    }
     for c in path.chars() {
         ws.repo_input_push(c);
     }
@@ -49,6 +54,11 @@ fn the_dialog_completes_the_path_on_tab() {
     let base = format!("{}/", dir.path().to_str().expect("a UTF-8 temp path"));
     let mut ws = workspace_on(&["/a"]);
     ws.start_repo_input();
+    // Typing extends the prefill, so an unrelated absolute path starts by
+    // backspacing the field empty — the gesture a user makes.
+    while !ws.repo_input.buf.is_empty() {
+        ws.repo_input_pop();
+    }
     for c in format!("{base}night").chars() {
         ws.repo_input_push(c);
     }
