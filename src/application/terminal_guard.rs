@@ -12,7 +12,32 @@ use crossterm::{
         disable_raw_mode, enable_raw_mode,
     },
 };
-use std::io::{self, Write};
+use ratatui::{Terminal, backend::CrosstermBackend};
+use std::io::{self, BufWriter, Write};
+
+/// The render target for every screen the TUI draws.
+///
+/// `io::stdout()` is line buffered, and a Ratatui frame carries no newlines —
+/// so a frame leaves this process in buffer-sized pieces rather than as one
+/// write. On Windows each piece is its own console write that the host has to
+/// re-parse, which is both the expensive path and the one where a frame can be
+/// split. Buffering a whole frame collapses that to a single write per
+/// `flush`, which Ratatui already performs exactly once per `draw`.
+pub(crate) type TuiTerminal = Terminal<CrosstermBackend<BufWriter<io::Stdout>>>;
+
+/// Sized so a full-screen redraw with per-cell styling never has to be split:
+/// worst case is roughly one SGR sequence per cell, and a large window is a few
+/// hundred thousand bytes of those.
+const FRAME_BUFFER_BYTES: usize = 1 << 20;
+
+/// Build the buffered terminal. Enter [`TerminalGuard`] first — this only opens
+/// the writer, it does not touch the terminal's modes.
+pub(crate) fn open_terminal() -> io::Result<TuiTerminal> {
+    Terminal::new(CrosstermBackend::new(BufWriter::with_capacity(
+        FRAME_BUFFER_BYTES,
+        io::stdout(),
+    )))
+}
 
 pub(crate) struct TerminalGuard;
 

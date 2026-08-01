@@ -1,6 +1,5 @@
+use crate::application::terminal_guard::TuiTerminal;
 use crossterm::event::{self, Event, KeyCode, KeyEventKind};
-use ratatui::{Terminal, backend::CrosstermBackend};
-use std::io;
 
 pub(crate) enum SplashOutcome {
     Enter,
@@ -14,7 +13,7 @@ pub(crate) enum SplashOutcome {
 /// that carries the colour has not arrived yet. Reading it here is what keeps
 /// the splash and the view a moment later from being two different colours.
 pub(crate) fn splash_loop(
-    terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
+    terminal: &mut TuiTerminal,
     accent_idx: usize,
 ) -> anyhow::Result<SplashOutcome> {
     let splash = crate::ui::splash::SplashState::new();

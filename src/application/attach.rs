@@ -7,12 +7,10 @@
 use crate::application::event_loop::{ProjectContext, main_loop};
 use crate::application::session_link::SessionLink;
 use crate::application::splash::{SplashOutcome, splash_loop};
-use crate::application::terminal_guard::{TerminalGuard, restore_terminal};
+use crate::application::terminal_guard::{TerminalGuard, open_terminal, restore_terminal};
 use crate::daemon::client::DaemonClient;
 use crate::workspace::Workspace;
 use anyhow::Result;
-use ratatui::{Terminal, backend::CrosstermBackend};
-use std::io;
 use syntect::highlighting::ThemeSet;
 
 /// Attach to the daemon and run the TUI until the user leaves or it goes away.
@@ -41,7 +39,7 @@ pub(crate) fn run_attach() -> Result<()> {
         restore_terminal();
         original_hook(info);
     }));
-    let mut terminal = Terminal::new(CrosstermBackend::new(io::stdout()))?;
+    let mut terminal = open_terminal()?;
 
     let ss = two_face::syntax::extra_newlines();
     let ts = ThemeSet::load_defaults();

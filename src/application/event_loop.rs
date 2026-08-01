@@ -3,17 +3,16 @@ use crate::application::input::dispatch::{KeyOutcome, dispatch_key};
 use crate::application::input::mouse::dispatch_mouse;
 use crate::application::input::paste::dispatch_paste;
 use crate::application::session_link::SessionLink;
+use crate::application::terminal_guard::TuiTerminal;
 use crate::workspace::Workspace;
 use crossterm::event::{self, Event};
 use ratatui::layout::Rect;
-use ratatui::{Terminal, backend::CrosstermBackend};
-use std::io;
 use std::time::Duration;
 use syntect::highlighting::ThemeSet;
 use syntect::parsing::SyntaxSet;
 
 pub(crate) fn main_loop(
-    terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
+    terminal: &mut TuiTerminal,
     ws: &mut Workspace,
     ss: &SyntaxSet,
     ts: &ThemeSet,
@@ -157,7 +156,7 @@ pub(crate) fn main_loop(
 
 /// Carry out a handler's outcome. Returns `true` when the app should quit.
 pub(crate) fn apply_outcome(
-    terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
+    terminal: &mut TuiTerminal,
     ws: &mut Workspace,
     link: &mut SessionLink,
     outcome: KeyOutcome,
