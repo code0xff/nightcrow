@@ -31,12 +31,8 @@ Windows에서 링크를 체크아웃하려면 개발자 모드 + `git config cor
    훅은 push되는 tip만 검증한다. **각 commit이 개별적으로 green이어야 한다는 요구는
    여전히 작성자의 몫이다** (`commits.md`). bisect할 history라면
    `NIGHTCROW_VERIFY_EACH_COMMIT=1 git push`로 범위 내 모든 commit을 검증한다.
-
-   **Unix 게이트를 Windows에서 로컬로 돌리기**: Windows 개발 머신에서 Unix 회귀를
-   push 전에 잡으려면 `docker compose run --rm unix-gate`를 쓴다. `docker-compose.yml`이
-   `rust:latest` 컨테이너 안에서 4게이트(fmt·clippy·build·test)를 돌린다. cargo registry와
-   target 캐시는 named volume으로 보존되어 재실행 시 몇 초 만에 끝난다. CI가
-   `ubuntu-latest`에서 같은 게이트를 돌리지만, 로컬에서 먼저 잡으면 push-기다림이 없다.
+   빌드·테스트 절차와 다른 플랫폼 게이트 돌리는 법은 `docs/getting-started.md`의
+   "Building and testing" 섹션에 있다.
 4. **Review** — `/self-review`로 자체 점검하고, 인증/보안/공개 API 등 민감한 변경이면
    `/security-review`도 실행한다.
 5. **Commit** — `.agents/rules/commits.md`를 따른다. push는 사용자가 결정한다.
