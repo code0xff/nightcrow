@@ -31,6 +31,16 @@ fn the_long_form_of_the_flag_is_dropped_too() {
 }
 
 #[test]
+fn the_attach_subcommand_is_dropped_so_the_child_runs_the_daemon() {
+    // `nightcrow -d attach` starts the session here and attaches from the
+    // foreground copy; a child that inherited `attach` would attach to the
+    // daemon that does not exist yet instead of being it.
+    let filtered = child_args(args(&["-d", "attach"]).into_iter());
+
+    assert!(filtered.is_empty(), "{filtered:?}");
+}
+
+#[test]
 fn every_other_argument_is_passed_through_in_order() {
     let given = args(&["--exec", "a", "--exec", "b", "--port", "1"]);
 

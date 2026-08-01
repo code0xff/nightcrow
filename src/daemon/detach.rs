@@ -38,10 +38,11 @@ pub fn respawn_in_background(log_path: &std::path::Path) -> Result<u32> {
 }
 
 /// The arguments to hand the background copy: everything this one got, minus
-/// the flag that sent it there. Without the filter the child would detach
-/// again, and again.
+/// the flag that sent it there — otherwise it would detach again, and again —
+/// and minus `attach`. The background copy is always the daemon; `-d attach`
+/// starts it from here and then attaches in *this* process.
 fn child_args(args: impl Iterator<Item = std::ffi::OsString>) -> Vec<std::ffi::OsString> {
-    args.filter(|arg| arg != "-d" && arg != "--detach")
+    args.filter(|arg| arg != "-d" && arg != "--detach" && arg != "attach")
         .collect()
 }
 

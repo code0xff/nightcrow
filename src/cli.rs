@@ -1,6 +1,7 @@
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
+use std::time::Duration;
 
 pub(crate) mod plugin_cmd;
 
@@ -32,6 +33,9 @@ pub(crate) struct Cli {
     /// It gets its own session, so closing this terminal does not stop it, and
     /// its output goes to ~/.nightcrow/daemon.out. A service manager should
     /// start nightcrow *without* this — backgrounding is what it does itself.
+    ///
+    /// With `attach`, this starts the session if none is running and then
+    /// attaches to it, so `nightcrow -d attach` is the one-command way in.
     #[arg(short, long)]
     pub(crate) detach: bool,
 
@@ -53,6 +57,8 @@ pub(crate) enum Commands {
     /// to the daemon, so this starts on whatever it is serving. Repositories
     /// are opened from inside, with the leader chord's open dialog or the
     /// browser's folder picker. Leaving does not end the session.
+    ///
+    /// Requires a running daemon; pass `-d` to start one first if none is.
     Attach,
     /// Manage plugin executables in ~/.nightcrow/plugins.
     ///
@@ -253,6 +259,54 @@ pub(crate) fn run_daemon(
     Ok(())
 }
 
+/// How long `-d attach` waits for the session it just started to accept.
+/// Generous because startup opens every remembered repository and runs the
+/// configured startup panes before the socket is bound.
+const DAEMON_READY_TIMEOUT: Duration = Duration::from_secs(20);
+
+/// `nightcrow -d attach`: start a session if none is running, then attach.
+///
+/// An already-running daemon is attached to as-is — spawning a second would
+/// only lose the instance lock and leave a confusing line in daemon.out.
+pub(crate) fn run_attach_detached() -> Result<()> {
+    let socket = crate::daemon::socket::default_socket_path()?;
+    if daemon_accepts(&socket) {
+        return crate::application::attach::run_attach();
+    }
+
+    let log = daemon_output_path()?;
+    let pid = crate::daemon::detach::respawn_in_background(&log)?;
+    eprintln!("nightcrow: started a session in the background (pid {pid})");
+    eprintln!("nightcrow: its output goes to {}", log.display());
+    wait_for_daemon(&socket, &log)?;
+    crate::application::attach::run_attach()
+}
+
+/// Whether something is listening on the socket *now*. Connecting rather than
+/// checking for the file: a crashed daemon leaves the path behind on Unix, and
+/// a stale one would send `attach` into a connect error.
+fn daemon_accepts(socket: &std::path::Path) -> bool {
+    crate::daemon::transport::UnixStream::connect(socket).is_ok()
+}
+
+/// Poll until the session accepts, or give up and say where to look. The socket
+/// is bound late in startup, so an early failure shows up here as a timeout
+/// rather than as an error we can quote.
+fn wait_for_daemon(socket: &std::path::Path, log: &std::path::Path) -> Result<()> {
+    let deadline = std::time::Instant::now() + DAEMON_READY_TIMEOUT;
+    while std::time::Instant::now() < deadline {
+        if daemon_accepts(socket) {
+            return Ok(());
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    anyhow::bail!(
+        "the session did not start within {}s — see {}",
+        DAEMON_READY_TIMEOUT.as_secs(),
+        log.display()
+    )
+}
+
 /// Where a backgrounded session writes what it would have printed.
 ///
 /// Beside the socket and the workspace file rather than in the log directory:
@@ -349,5 +403,38 @@ pub(crate) fn run_stop(socket: Option<PathBuf>) -> Result<()> {
                 Err(err).context("waiting for the daemon to acknowledge the shutdown")
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Connecting, not `Path::exists`: a daemon that died leaves the socket
+    /// file behind on Unix, and `-d attach` would then skip the spawn and send
+    /// `attach` into a connect error.
+    #[test]
+    fn an_unbound_socket_path_does_not_read_as_a_running_daemon() {
+        let dir = tempfile::TempDir::new().expect("a temp dir");
+        let path = dir.path().join("nightcrow.sock");
+
+        assert!(!daemon_accepts(&path), "nothing is listening there");
+
+        // A plain file standing where the socket would be is still not a
+        // daemon — this is the shape a stale Unix socket leaves behind.
+        std::fs::write(&path, b"").expect("write");
+        assert!(!daemon_accepts(&path));
+    }
+
+    #[test]
+    fn a_bound_socket_reads_as_a_running_daemon() {
+        let dir = tempfile::TempDir::new().expect("a temp dir");
+        let path = dir.path().join("live.sock");
+        let _listener =
+            crate::daemon::transport::UnixListener::bind(&path).expect("bind the probe socket");
+
+        assert!(daemon_accepts(&path));
+        // And the wait returns at once rather than burning its timeout.
+        wait_for_daemon(&path, dir.path()).expect("already accepting");
     }
 }
