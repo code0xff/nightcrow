@@ -9,7 +9,10 @@ import { usePaneCommands } from "../../hooks/terminal/usePaneCommands";
 import { usePaneFocus } from "../../hooks/terminal/usePaneFocus";
 import { useStartupSizes } from "../../hooks/terminal/useStartupSizes";
 import { PaneGrid } from "./PaneGrid";
+import { PaneTabs } from "./PaneTabs";
 import { TermKeyBar } from "./TermKeyBar";
+import { usePaneViewMode } from "../../hooks/ui/paneViewMode";
+import { shownTab } from "../../lib/paneViewMode";
 import { PanelDivider, type PanelDividerProps } from "./PanelDivider";
 import { PanelToolbar } from "./PanelToolbar";
 import { renderedZoom, zoomPending } from "../../lib/zoom";
@@ -63,6 +66,16 @@ export function TerminalPanel({
   // Derived rather than corrected in the handler, so the panel cannot render a
   // state its pane list does not support at all. See `lib/zoom.ts`.
   const zoom = renderedZoom(zoomed, panes);
+  const { mode, toggle: toggleMode } = usePaneViewMode();
+  const tabs = mode === "tabs";
+  // A tabbed panel renders no zoom — it already shows one pane — so nothing in
+  // it waits on one, and the zoomed pane is just another tab. Feeding the real
+  // zoom to the hooks below would drag the keyboard onto that pane on every
+  // render and take tab switching away from this page.
+  const zoomShown = tabs ? null : zoom;
+  const zoomServer = tabs ? null : zoomed;
+  // What the panel puts on screen: the focused tab, or the zoom in the grid.
+  const shown = tabs ? shownTab(active, panes) : zoom;
 
   useTerminalSocket({
     repo,
@@ -85,7 +98,7 @@ export function TerminalPanel({
   useTerminalViews({
     panes,
     size,
-    zoomed: zoom,
+    zoomed: zoomShown,
     socketRef,
     viewsRef,
     bodyRefs,
@@ -106,13 +119,13 @@ export function TerminalPanel({
   usePaneSizes({
     panes,
     size,
-    zoomed: zoom,
+    zoomed: zoomShown,
     socketRef,
     viewsRef,
     bodyRefs,
     sentSizesRef,
     ownsSize,
-    layoutPending: zoomPending(zoomed, panes),
+    layoutPending: zoomPending(zoomServer, panes),
   });
 
   useEffect(() => {
@@ -138,8 +151,8 @@ export function TerminalPanel({
     panes,
     active,
     setActive,
-    zoomed,
-    zoom,
+    zoomed: zoomServer,
+    zoom: zoomShown,
     viewsRef,
     lastActiveByRepoRef,
   });
@@ -168,7 +181,7 @@ export function TerminalPanel({
     onPaneDragEnd,
   } = usePaneDrag({
     panes,
-    zoomed: zoom,
+    zoomed: zoomShown,
     onFocus: focusPane,
     onReorder: reorder,
   });
@@ -188,6 +201,25 @@ export function TerminalPanel({
     >
       <PanelDivider {...divider} />
       <PanelToolbar
+        mode={mode}
+        onToggleMode={toggleMode}
+        tabs={
+          tabs && panes.length > 0 ? (
+            <PaneTabs
+              panes={panes}
+              titles={titles}
+              shown={shown}
+              reorderable={reorderable}
+              draggingPane={draggingPane}
+              dragOverPane={dragOverPane}
+              onClose={closePane}
+              onPaneDragStart={onPaneDragStart}
+              onPaneDragMove={onPaneDragMove}
+              onPaneDragEnd={onPaneDragEnd}
+              onPaneDragCancel={endPaneDrag}
+            />
+          ) : undefined
+        }
         ownsSize={ownsSize}
         maximized={maximized}
         recovery={recovery}
@@ -206,10 +238,11 @@ export function TerminalPanel({
         )}
         <PaneGrid
           containerRef={containerRef}
+          mode={mode}
           panes={panes}
           titles={titles}
           active={active}
-          zoom={zoom}
+          shown={shown}
           layout={layout}
           pending={pending}
           recovery={recovery}
