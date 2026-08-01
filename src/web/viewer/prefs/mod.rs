@@ -1,20 +1,9 @@
 //! Preferences that follow the user rather than the browser they arrived in.
 //!
-//! The accent lives here, not in `localStorage`, because a session is reached
-//! from several places at once — phone, laptop, tablet, and the TUI itself —
-//! and a per-surface copy means picking the colour again on each, then seeing
-//! them disagree. It is stored in `~/.nightcrow/`, next to the workspace file,
-//! so nothing is written inside a repository that is only being read.
-//!
-//! The accent is the session's, not the viewer's: an attached TUI reads and
-//! writes this same value over the daemon socket (`web/viewer/session.rs`).
-//! That crosses no security boundary — the viewer's separation from the TUI is
-//! its own port, cookie, and password, and each transport still decides who may
-//! ask before reaching the session at all.
-//!
-//! `sidebar_width` and `upper_pct` stay the viewer's alone: the first has no TUI
-//! counterpart to share with, and the second has one (`layout.upper_pct`) that
-//! it is deliberately not shared with — see the field's own comment.
+//! Stored in `~/.nightcrow/viewer.json`. The accent is the session's (shared
+//! with an attached TUI); `sidebar_width` and `upper_pct` are the viewer's alone
+//! — the first has no TUI counterpart, and the second is deliberately not shared
+//! because a percentage means different things on a terminal vs a browser window.
 
 pub mod maximized;
 pub use maximized::{MaximizedPanel, RepoMaximized};
@@ -24,74 +13,43 @@ use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
-/// The sidebar width the layout used before it was adjustable; a client that
-/// has never dragged the divider (or an older `viewer.json` without the field)
-/// gets this.
+/// Default sidebar width before the divider was dragged.
 pub const DEFAULT_SIDEBAR_WIDTH: u32 = 460;
-/// Bounds the stored sidebar width so a value from any client keeps both panes
-/// usable: never so narrow the status letters clip, never so wide the diff is
-/// squeezed out. The browser additionally caps it to a share of the viewport
-/// while dragging, which is the bound that actually bites on a small screen.
+/// Bounds the stored sidebar width so both panes stay usable.
 pub const MIN_SIDEBAR_WIDTH: u32 = 280;
 pub const MAX_SIDEBAR_WIDTH: u32 = 720;
 
-/// The share of the viewer's split the diff panel had before it was
-/// adjustable — the same 55 as the TUI's `layout.upper_pct` default, so both
-/// surfaces still come up looking alike.
+/// Default split share for the diff panel (matches the TUI's `layout.upper_pct`).
 pub const DEFAULT_UPPER_PCT: u32 = 55;
-/// Bounds the split so neither half becomes a sliver. On a typical 800 px
-/// split area, 20 leaves the diff panel its header and several lines, and 85
-/// leaves the terminal about six rows — past either end the panel is no longer
-/// something you read, and "all the way" is what the maximize buttons are for.
+/// Bounds the split so neither half becomes a sliver.
 pub const MIN_UPPER_PCT: u32 = 20;
 pub const MAX_UPPER_PCT: u32 = 85;
 
 /// Everything the viewer remembers for its clients.
 ///
-/// One shared value each, with `maximized` the single exception — and the
-/// reason the others are not per repository is worth keeping in view: repo ids
-/// are only stable for the process lifetime (`catalog.rs`), so a per-repo key
-/// would drop the preference on restart. What makes the exception safe is that
-/// it is keyed by **path**, as `active_repo` already is.
+/// Preferences are shared across clients, with `maximized` the single exception.
+/// Repo ids are only stable for the process lifetime, so per-repo keys are stored
+/// by **path** instead — the same reason `active_repo` is a path.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(default)]
 pub struct ViewerPrefs {
-    /// Index into the accent cycle, in the TUI's order (`config::Accent::ALL`).
+    /// Index into the accent cycle (`config::Accent::ALL`).
     pub accent: usize,
-    /// File-sidebar width in CSS px, clamped to
-    /// `[MIN_SIDEBAR_WIDTH, MAX_SIDEBAR_WIDTH]`. Shared across clients like the
-    /// accent so every device opens at the same split.
+    /// File-sidebar width in CSS px, clamped to `[MIN, MAX]`.
     pub sidebar_width: u32,
-    /// Share of the viewer's vertical split given to the diff panel, in
-    /// percent, clamped to `[MIN_UPPER_PCT, MAX_UPPER_PCT]`. The terminal panel
-    /// takes the rest.
+    /// Share of the vertical split given to the diff panel, in percent.
     ///
-    /// **The viewer's own, not the session's** — unlike the accent, which an
-    /// attached TUI reads and writes too. The TUI has a counterpart in
-    /// `layout.upper_pct`, but sharing the two was rejected: a percentage means
-    /// a different thing on a 40-row terminal than in a 1400 px window, so
-    /// there is no single answer to converge on, and the PTY size it would
-    /// appear to govern is already decided elsewhere by one owning client
-    /// (`web/viewer/size_owner.rs`) — so a shared ratio would move a spectator's
-    /// panel without moving the grid inside it. It sits with `fullscreen`,
-    /// which is per-client for the same reason: how much room to give the
-    /// terminal is a question about the screen you are looking at.
+    /// The viewer's own, not the session's — unlike the accent. A percentage
+    /// means different things on a terminal vs a browser window, so sharing with
+    /// the TUI's `layout.upper_pct` was rejected.
     pub upper_pct: u32,
-    /// Absolute worktree path of the project a client last selected, so a
-    /// reload lands where the user left off instead of on the first tab.
+    /// Absolute worktree path of the last-selected project.
     ///
-    /// A **path**, not the repo id the client speaks: ids only live as long as
-    /// the process (`catalog.rs`), so a stored id would name nothing after a
-    /// restart — which is exactly the case this field exists for. The server
-    /// translates in both directions; the client never learns the path.
-    ///
-    /// `None` until a client selects a project. Never cleared by the server: a
-    /// path that stops being served just stops resolving, and the client falls
-    /// back to its first tab — then records whichever project it landed on, so
-    /// what is on file is always somewhere a client actually was.
+    /// A **path**, not the repo id: ids only live as long as the process, so a
+    /// stored id would name nothing after a restart. The server translates; the
+    /// client never learns the path. `None` until a client selects a project.
     pub active_repo: Option<String>,
-    /// Which panel each project was left maximized in, most recently set
-    /// first. Empty until someone maximizes something; see [`maximized`].
+    /// Which panel each project was left maximized in, most recently set first.
     pub maximized: Vec<RepoMaximized>,
 }
 
@@ -107,12 +65,11 @@ impl Default for ViewerPrefs {
     }
 }
 
-/// The stored preferences plus the file they are written to. A missing,
-/// unreadable, or corrupt file yields defaults — a colour preference is never
-/// worth failing a request over.
+/// The stored preferences plus the file they are written to. A missing or
+/// corrupt file yields defaults.
 pub struct PrefsStore {
-    /// `None` when the home directory cannot be determined, in which case
-    /// preferences apply for the process lifetime but are not persisted.
+    /// `None` when the home directory cannot be determined (preferences apply
+    /// for the process lifetime but are not persisted).
     path: Option<PathBuf>,
     state: Mutex<ViewerPrefs>,
 }
@@ -124,12 +81,8 @@ impl PrefsStore {
     }
 
     /// Load from `~/.nightcrow/viewer.json`, starting at `seed_accent` when
-    /// there is no file to read.
-    ///
-    /// The seed is `[theme] name` — the colour a session that has never been
-    /// given one comes up in. Only a missing or unreadable file takes it: once
-    /// the file exists it records a choice somebody made, and a later config
-    /// edit must not reach back and repaint the session behind them.
+    /// there is no file to read. The seed is `[theme] name` — only a missing or
+    /// unreadable file takes it; once the file exists it records a choice.
     pub fn load_seeded(seed_accent: usize) -> Self {
         let seeded = seeded_prefs(seed_accent);
         match default_path() {
@@ -141,18 +94,14 @@ impl PrefsStore {
         }
     }
 
-    /// Load from an explicit path (tests, and the only injection point).
+    /// Load from an explicit path (tests).
     pub fn at(path: PathBuf) -> Self {
         Self::at_or(path, ViewerPrefs::default())
     }
 
     /// Load from `path`, falling back to `absent` when there is nothing to read.
-    /// A hand-edited file can carry a width or a split outside the bounds; clamp
-    /// them on load so `get` never serves a value the write path would have
-    /// rejected. The remembered arrangements are held to the same bound for the
-    /// same reason: a file that arrived with more than the cap — hand-edited, or
-    /// written by a build whose cap was higher — would otherwise stay that long
-    /// forever, since the write path only trims what it just pushed onto.
+    /// Clamps widths and splits on load so `get` never serves a value the write
+    /// path would have rejected.
     fn at_or(path: PathBuf, absent: ViewerPrefs) -> Self {
         let mut state = read(&path).unwrap_or(absent);
         state.sidebar_width = state
@@ -170,12 +119,9 @@ impl PrefsStore {
         self.state.lock().expect("prefs poisoned").clone()
     }
 
-    /// Apply `change` and persist the result, both while holding the lock, so a
-    /// second writer cannot race a stale snapshot to disk after this one: file
-    /// and memory stay in step. Returns the stored value so the caller echoes
-    /// back what was actually kept. A failed write is logged and the in-memory
-    /// value still applies — the change the user just made must not appear to do
-    /// nothing.
+    /// Apply `change` and persist the result under the lock, so file and memory
+    /// stay in step. A failed write is logged and the in-memory value still
+    /// applies.
     fn mutate(&self, change: impl FnOnce(&mut ViewerPrefs)) -> ViewerPrefs {
         let mut state = self.state.lock().expect("prefs poisoned");
         change(&mut state);
@@ -185,15 +131,8 @@ impl PrefsStore {
         state.clone()
     }
 
-    /// Apply any subset of the preferences in one locked write. A request may
-    /// carry several at once (`/api/prefs` accepts any subset), so they must
-    /// land together — otherwise a concurrent write could interleave and the
-    /// echo would describe a state no single POST produced. `None` leaves a
-    /// field as it is. Accent wraps into range as the TUI wraps it
-    /// (`Accent::from_index`); width clamps so a browser drag past the bounds
-    /// still yields a usable split. `active_repo` is taken as given — the
-    /// caller resolved it from a live repository, so there is no range to fold
-    /// it into.
+    /// Apply any subset of the preferences in one locked write. `None` leaves a
+    /// field as it is. Accent wraps into range; width clamps.
     pub fn update(&self, change: PrefsUpdate) -> ViewerPrefs {
         self.mutate(|state| {
             if let Some(accent) = change.accent {
@@ -214,9 +153,7 @@ impl PrefsStore {
         })
     }
 
-    /// Record how one project's screen is arranged. Thin wrapper over
-    /// [`update`], taking the absolute path the caller resolved from a live
-    /// repository. `None` un-maximizes.
+    /// Record how one project's screen is arranged. `None` un-maximizes.
     pub fn set_maximized(&self, repo: String, panel: Option<MaximizedPanel>) -> ViewerPrefs {
         self.update(PrefsUpdate {
             maximized: Some(MaximizedUpdate { repo, panel }),
@@ -224,8 +161,7 @@ impl PrefsStore {
         })
     }
 
-    /// Store `accent` alone. Thin wrapper over [`update`] so the clamping lives
-    /// in one place.
+    /// Store `accent` alone.
     pub fn set_accent(&self, accent: usize) -> ViewerPrefs {
         self.update(PrefsUpdate {
             accent: Some(accent),
@@ -233,7 +169,7 @@ impl PrefsStore {
         })
     }
 
-    /// Store the sidebar width alone. Thin wrapper over [`update`].
+    /// Store the sidebar width alone.
     pub fn set_sidebar_width(&self, width: u32) -> ViewerPrefs {
         self.update(PrefsUpdate {
             sidebar_width: Some(width),
@@ -241,7 +177,7 @@ impl PrefsStore {
         })
     }
 
-    /// Store the split percentage alone. Thin wrapper over [`update`].
+    /// Store the split percentage alone.
     pub fn set_upper_pct(&self, pct: u32) -> ViewerPrefs {
         self.update(PrefsUpdate {
             upper_pct: Some(pct),
@@ -249,10 +185,10 @@ impl PrefsStore {
         })
     }
 
-    /// Store the active project's absolute path alone. Thin wrapper over
-    /// [`update`]. There is deliberately no way to clear it: closing the last
-    /// project leaves no path worth recording, and keeping the old one means it
-    /// is still the selection when that project is opened again.
+    /// Store the active project's absolute path alone. There is deliberately no
+    /// way to clear it: closing the last project leaves no path worth recording,
+    /// and keeping the old one means it is still the selection when that project
+    /// is opened again.
     pub fn set_active_repo(&self, path: String) -> ViewerPrefs {
         self.update(PrefsUpdate {
             active_repo: Some(path),

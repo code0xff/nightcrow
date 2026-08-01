@@ -25,26 +25,18 @@ pub(crate) enum KeyOutcome {
 /// A workspace-level action requested by a key or click.
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) enum ProjectRequest {
-    /// Focus the tab at this index. Out-of-range indices are inert.
     Switch(usize),
-    /// Close the active tab. Refused when it is the only one.
     Close,
-    /// Open this resolved repo path as a tab, or focus the tab already on it.
     Open(String),
-    /// Raise the open-repo dialog. It lives on the workspace, so a handler
-    /// holding one project cannot open it directly.
     OpenDialog,
-    /// Move the session's accent one step along the cycle.
     CycleAccent,
-    /// Ask the session to re-read `config.toml`.
     ReloadConfig,
 }
 
 /// Everything a project needs beyond its repo path.
 ///
 /// Threaded to the input handlers rather than stored on `Workspace` so the
-/// workspace stays a pure state container: opening a tab is the only thing
-/// that needs the config, and it borrows it for the duration of one keypress.
+/// workspace stays a pure state container.
 pub(crate) struct ProjectContext<'a> {
     pub(crate) cfg: &'a crate::config::Config,
     pub(crate) leader: KeyEvent,

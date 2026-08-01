@@ -1,11 +1,8 @@
 //! Lazy, read-only directory listing for the file-tree navigator.
 //!
-//! Each call reads exactly one directory level (`std::fs::read_dir`); the
-//! caller decides when to descend, so an unexpanded subtree is never walked.
-//! Listing is filtered against `.gitignore` (via libgit2) and repository
-//! metadata, and symlinks are reported as non-directories so the navigator
-//! never follows one — this is what keeps the tree free of cycles without a
-//! visited-set.
+//! Each call reads one directory level; the caller decides when to descend.
+//! Symlinks are reported as non-directories so the navigator never follows
+//! one — keeping the tree free of cycles without a visited-set.
 
 use anyhow::{Context, Result};
 use git2::Repository;
@@ -24,14 +21,9 @@ pub struct TreeEntry {
 /// workdir root). Entries are filtered and returned sorted with directories
 /// first, then case-sensitive alphabetical by name.
 ///
-/// Filtering rules:
-/// - `.git` is skipped at every level (repository metadata / object storage).
-/// - When `respect_gitignore` is set, ignored paths are dropped via
-///   `Repository::is_path_ignored`.
-/// - Non-UTF-8 names are skipped: the file-view loader keys on `&str` paths and
-///   cannot losslessly address them.
-/// - Individual entries whose metadata cannot be read are skipped rather than
-///   failing the whole listing.
+/// `.git` is skipped at every level. Non-UTF-8 names are skipped because the
+/// file-view loader keys on `&str` paths. Individual entries whose metadata
+/// cannot be read are skipped rather than failing the whole listing.
 pub fn read_children(
     repo: &Repository,
     workdir: &Path,
@@ -108,19 +100,14 @@ pub struct TreeMatch {
 }
 
 /// Recursively search the worktree for entries whose basename contains `query`
-/// (case-insensitive substring), mirroring the TUI's tree search
-/// (`App::build_tree_index` + `recompute_filter`): a full walk from the root,
-/// one [`read_children`] call per directory, depth-capped at `max_depth` and
-/// gitignore-filtered. Symlinked directories report `is_dir == false` and so are
-/// never descended (the same cycle guard that browsing relies on).
+/// (case-insensitive substring). Depth-capped at `max_depth`, gitignore-filtered,
+/// and symlink-safe (symlinked directories are never descended).
 ///
-/// Results are sorted by path for a stable listing and capped at `limit`.
 /// `max_visits` bounds how many entries the walk may inspect: unlike the TUI's
-/// single-user in-process index, this runs per web request, so the traversal —
-/// not just the retained results — must be bounded against a pathological or
-/// hostile tree. `truncated` is true when either budget cut the walk short or
-/// more matches existed than were returned. An empty `query` matches every
-/// entry, so callers gate on non-empty input.
+/// in-process index, this runs per web request, so the traversal must be bounded
+/// against a pathological tree. `truncated` is true when either budget cut the
+/// walk short or more matches existed than were returned. An empty `query`
+/// matches every entry, so callers gate on non-empty input.
 pub fn search_tree(
     repo: &Repository,
     workdir: &Path,

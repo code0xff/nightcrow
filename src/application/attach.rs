@@ -1,10 +1,8 @@
 //! `nightcrow attach`: run the TUI against a session the daemon owns.
 //!
-//! The difference from running standalone is where the tabs come from. Here
-//! the daemon has them, so nothing is restored from the workspace file and
+//! The daemon has the tabs, so nothing is restored from the workspace file and
 //! nothing is written back to it — the daemon is doing that. This client starts
-//! with no projects and adopts the set the daemon volunteers on attach, which
-//! is also how it learns about every change afterwards.
+//! with no projects and adopts the set the daemon volunteers on attach.
 
 use crate::application::event_loop::{ProjectContext, main_loop};
 use crate::application::session_link::SessionLink;
@@ -24,15 +22,13 @@ pub(crate) fn run_attach() -> Result<()> {
     let cfg = crate::config::load_config()?;
     // Parsed before the alternate screen so its error is readable. The
     // configured startup terminals are not read here at all: the daemon runs
-    // them once for the whole session, and a client that resolved its own copy
-    // would only be able to disagree with it.
+    // them once for the whole session.
     let leader = crate::config::parse_leader(&cfg.input.leader)?;
 
     // Anchored where the daemon's is, not at the working directory. The
     // relative default (`.nightcrow/logs`) resolved against the cwd would
     // create that directory inside whatever repository the client was started
-    // from, and nightcrow writes nothing inside a repository it is only
-    // reading.
+    // from.
     let _log_guard = crate::platform::logging::init_logging(
         &cfg.log,
         &crate::platform::paths::state_dir_anchor(),
@@ -57,11 +53,11 @@ pub(crate) fn run_attach() -> Result<()> {
     let ctx = ProjectContext { cfg: &cfg, leader };
     // Starts empty on purpose: the daemon's first message is the set, and
     // seeding from the workspace file would put tabs on screen that the session
-    // does not have, only to close them a frame later.
+    // does not have.
     let mut ws = Workspace::new(leader);
     // View state is still this client's to remember — which file was selected
-    // in a repository is not part of the shared session (see the plan's
-    // shared/per-client boundary), so it is read from the same file as before.
+    // in a repository is not part of the shared session, so it is read from the
+    // same file as before.
     if let Some(stored) = crate::workspace::persistence::load_workspace() {
         ws.set_remembered(stored.sessions);
     }
@@ -69,18 +65,15 @@ pub(crate) fn run_attach() -> Result<()> {
     // Read from the session's file, not asked of the daemon. The set that
     // carries the accent is sent by the watcher now, which does not race the
     // handshake to get there first — and this screen draws before `main_loop`,
-    // the only thing that drains the connection. The daemon writes the file on
-    // every change, so it is behind by nothing that matters, and the first set
-    // corrects it either way. `[theme]` names what a session with no stored
-    // colour starts in.
+    // the only thing that drains the connection. `[theme]` names what a session
+    // with no stored colour starts in.
     let session_accent =
         crate::web::viewer::prefs::PrefsStore::load_seeded(cfg.theme.preset_index())
             .get()
             .accent;
     // The splash is not the only screen that draws before the daemon's first
     // set arrives. Without this the first frames of the main view would come up
-    // in the default rather than the session's colour, and the splash that just
-    // painted correctly would appear to change its mind.
+    // in the default rather than the session's colour.
     ws.set_accent_index(session_accent);
 
     if matches!(
@@ -92,7 +85,7 @@ pub(crate) fn run_attach() -> Result<()> {
     }
     // The view state is written whichever way the loop ends. Losing which file
     // was selected because the daemon stopped would be a second insult, and this
-    // half of the session file is the client's own — see `persist_view_state`.
+    // half of the session file is the client's own.
     let ended = main_loop(
         &mut terminal,
         &mut ws,

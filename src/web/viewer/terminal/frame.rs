@@ -2,12 +2,9 @@ use crate::backend::PaneId;
 use crate::web::viewer::limits;
 use serde::{Deserialize, Serialize};
 
-/// A control message from a client. Output travels as binary frames instead,
-/// so it never pays JSON escaping or base64 expansion.
-///
-/// Serialized as well as deserialized: the browser only ever sends these, but
-/// an attaching client is Rust on both ends of the same definition, and the
-/// daemon relays them.
+/// A control message from a client. Output travels as binary frames to avoid
+/// JSON escaping or base64 expansion. Serialized as well as deserialized so the
+/// daemon can relay them between Rust clients.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "lowercase")]
 pub enum ClientMessage {
@@ -27,56 +24,37 @@ pub enum ClientMessage {
     Close {
         pane: PaneId,
     },
-    /// A full desired sequence of the live pane ids, sent when a client drags a
-    /// pane to a new slot. The hub reconciles it (see [`super::TerminalHub::reorder_panes`]).
+    /// A client's desired pane order after a drag. The hub reconciles it
+    /// (see [`super::TerminalHub::reorder_panes`]).
     Reorder {
         order: Vec<PaneId>,
     },
     /// Fill the terminal panel with one pane, or `None` to go back to the grid.
-    ///
-    /// Which pane is zoomed is the repository's answer rather than each page's,
-    /// for the same reason the pane *order* is (see
-    /// [`super::TerminalHub::reorder_panes`]): every client shows the same
-    /// terminals, and one that laid them out differently from the rest is a
-    /// screen nobody asked for. Unlike the order, it is not a request to be
-    /// reconciled — the last one to ask wins outright, because there is nothing
-    /// to merge.
+    /// The last client to ask wins — unlike pane order, there is nothing to merge.
     Zoom {
         pane: Option<PaneId>,
     },
     /// Take over sizing this repository's panes (see [`ServerMessage::SizeOwner`]).
-    ///
     /// A PTY has one size, so one client at a time decides it. Attaching takes
-    /// it; this is how a client already attached takes it back, on a keystroke —
-    /// deliberately, rather than by the mere act of looking, which would make
-    /// glancing at a phone repaint everybody's screen.
+    /// it; this is how a client already attached takes it back on a keystroke.
     #[serde(rename = "claim_size")]
     ClaimSize,
-    /// Give up on whatever recovery is pending for `pane`.
-    ///
-    /// A person deciding the wait is over outranks the plugin still waiting: the
-    /// hold on the pane's slot is dropped and the slot retired, so nothing can
-    /// be relaunched into it afterwards. Harmless for a pane with no recovery in
-    /// flight — a client can be a beat behind the hold expiring.
+    /// Give up on whatever recovery is pending for `pane`. The person's decision
+    /// outranks the plugin: the hold on the pane's slot is dropped and the slot
+    /// retired, so nothing can be relaunched into it afterwards.
     #[serde(rename = "cancel_recovery")]
     CancelRecovery {
         pane: PaneId,
     },
     /// The sizes to give the startup terminals, answering [`ServerMessage::Pending`].
-    ///
-    /// One entry per pending pane, in the order they will be created. A short
-    /// list leaves the rest at the default, so a client that could only measure
-    /// some of them still gets terminals.
+    /// One entry per pending pane, in order. A short list leaves the rest at the
+    /// default, so a client that could only measure some still gets terminals.
     Start {
         sizes: Vec<PaneSize>,
     },
     /// How a `Ctrl+L` a client just forwarded came to be — see
-    /// [`hub_diag`](super::hub_diag) for why anyone is asking.
-    ///
-    /// Carries no input, only the provenance of one byte: whether a real key
-    /// event produced it, whether that event was the browser's own or something
-    /// dispatched at the page, and whether it was a key being held down. Logged
-    /// and otherwise ignored; nothing in the hub reads it.
+    /// [`hub_diag`](super::hub_diag) for why anyone is asking. Carries only the
+    /// provenance of one byte. Logged and otherwise ignored.
     #[serde(rename = "clear_key_report")]
     ClearKeyReport {
         pane: PaneId,
@@ -89,14 +67,11 @@ pub enum ClientMessage {
 /// What the browser said about the key event behind a forwarded `Ctrl+L`.
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub struct ClearKeyFacts {
-    /// `KeyboardEvent.isTrusted`: false means a script dispatched it, which no
-    /// keyboard can do.
+    /// `KeyboardEvent.isTrusted`: false means a script dispatched it.
     pub trusted: bool,
-    /// `KeyboardEvent.repeat`: the key is being held down and the OS is
-    /// repeating it.
+    /// `KeyboardEvent.repeat`: the key is being held down.
     pub repeat: bool,
-    /// `KeyboardEvent.code`, e.g. `KeyL`. Sanitized before it is logged — it
-    /// arrives from the page like everything else on this socket.
+    /// `KeyboardEvent.code`, e.g. `KeyL`. Sanitized before logging.
     pub code: String,
     /// Milliseconds between that key event and the byte it produced.
     pub since_ms: u32,
@@ -110,12 +85,9 @@ pub struct PaneSize {
 }
 
 impl PaneSize {
-    /// Bring a size the client sent inside [`limits`]' bounds.
-    ///
-    /// Every path that reaches `openpty` goes through here — `create`,
-    /// `resize`, and each entry of `start` — because they are all the same
-    /// thing arriving from the same untrusted side, and a clamp that only some
-    /// of them apply is the one the next path forgets.
+    /// Bring a size the client sent inside [`limits`]' bounds. Every path that
+    /// reaches `openpty` goes through here — `create`, `resize`, and each entry
+    /// of `start` — because they all arrive from the same untrusted side.
     pub fn clamped(self) -> Self {
         Self {
             rows: self
@@ -128,99 +100,61 @@ impl PaneSize {
     }
 }
 
-/// A control message to a client.
-///
-/// Deserialized as well as serialized so the daemon can read one back off a
-/// hub session and hand it on to an attached client tagged with its
-/// repository — one definition rather than a parallel set that can drift.
+/// A control message to a client. Deserialized as well as serialized so the
+/// daemon can read one back off a hub session and relay it to an attached client.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(tag = "type", rename_all = "lowercase")]
 pub enum ServerMessage {
-    /// A pane exists, along with the size its PTY is currently set to.
-    ///
-    /// The size rides along because the client is not the only source of it:
-    /// a pane replayed to a reconnecting page, or one another device sized,
-    /// already has a size this client never chose. Without it the client must
-    /// assume nothing and send its own size on attach, and every such resize
-    /// costs the child a full repaint — even when the two agree.
+    /// A pane exists, along with the size its PTY is currently set to. The size
+    /// rides along because the client is not the only source of it: a pane
+    /// replayed to a reconnecting page, or one another device sized, already has
+    /// a size this client never chose. Without it the client must assume nothing
+    /// and send its own size on attach, costing the child a full repaint.
     Created {
         pane: PaneId,
         rows: u16,
         cols: u16,
         /// Which client asked for this pane, in the id space of the connection
-        /// the frame is going out on — a hub client id for the browser, whose
-        /// socket *is* the hub session, and the attached client's id for a
-        /// daemon relay, which is one hop further out (see the daemon's
-        /// `TerminalBridges`). Each recipient compares it against its own id on
-        /// that connection.
-        ///
-        /// `None` means nobody there asked: a pane replayed to a connecting
-        /// client, one another client opened, or a startup terminal, which
-        /// belongs to the session rather than to whoever sized it. Omitted from
-        /// the wire when absent, so the frames the browser already reads are
-        /// unchanged.
+        /// the frame is going out on. Each recipient compares it against its own
+        /// id on that connection. `None` means nobody there asked: a replayed
+        /// pane, one another client opened, or a startup terminal.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         client: Option<u64>,
         /// What the session calls this pane, when it has a name of its own — a
         /// startup terminal opened under a configured name. Absent for a pane a
-        /// client asked for, which that client names itself, and for one nothing
-        /// has named: a program emitting OSC 0/2 renames either afterwards.
+        /// client asked for, and for one nothing has named.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         title: Option<String>,
     },
     Exited {
         pane: PaneId,
     },
-    /// The size a pane's PTY is now set to.
-    ///
-    /// Broadcast, not answered to whoever asked: a PTY has one size and every
-    /// client renders the same grid, so a client that is not the one sizing it
-    /// still has to follow — its emulator has to wrap where the child's does.
+    /// The size a pane's PTY is now set to. Broadcast, not answered to whoever
+    /// asked: a PTY has one size and every client renders the same grid, so a
+    /// client that is not the one sizing it still has to follow.
     Resized {
         pane: PaneId,
         rows: u16,
         cols: u16,
     },
     /// Who this client is, in the id space [`Created::client`] is stamped in.
-    ///
-    /// Addressed, and the first thing a connection is told. Without it a client
-    /// cannot tell a pane it asked for from one that arrived while it was
-    /// asking: the id is on every `created`, but there was nothing to compare it
-    /// against, so the browser counted its outstanding creates instead and
-    /// credited itself with whichever pane came back first — another client's,
-    /// if that one won the race.
-    ///
-    /// A connection's id, not a viewer's: it is minted per connection
-    /// (`next_client_id`) and a reconnect gets a new one. That is the right
-    /// lifetime — panes from before the reconnect are replayed with no requester
-    /// at all, so nothing should match them.
+    /// Addressed, and the first thing a connection is told. A connection's id,
+    /// not a viewer's: minted per connection and a reconnect gets a new one.
     ///
     /// [`Created::client`]: Self::Created::client
     Hello {
         client: u64,
-        /// How many `Created` frames the replay is about to deliver.
-        ///
-        /// Exact, because `connect` queues the whole replay under the hub's lock
-        /// and only registers the client afterwards: no broadcast can land among
-        /// those frames, so the next `panes` of them are the replay and nothing
-        /// else.
-        ///
-        /// A client that knows the count can lay its grid out for the panes it
-        /// is *going* to have rather than the ones it has so far. Without it the
-        /// first pane is given the whole panel, fitted to it, and then shrunk
-        /// when the second arrives — a reflow and a PTY resize that the size
-        /// carried by `Created` exists to make unnecessary.
+        /// How many `Created` frames the replay is about to deliver. Exact,
+        /// because `connect` queues the whole replay under the hub's lock and
+        /// only registers the client afterwards. A client that knows the count
+        /// can lay its grid out for the panes it is *going* to have rather than
+        /// the ones it has so far.
         panes: usize,
     },
     /// Whether *this* client is the one whose layout sets the pane sizes.
-    ///
-    /// Addressed rather than broadcast, so the answer needs no identity to
-    /// compare against — the hub knows who each client is, and "am I the owner"
-    /// is the only thing a client does with it.
-    ///
-    /// The size follows the most recent arrival (tmux's `window-size latest`),
-    /// because that is the client someone is looking at; the others become
-    /// spectators until one takes it back with [`ClientMessage::ClaimSize`].
+    /// Addressed rather than broadcast. The size follows the most recent arrival
+    /// (tmux's `window-size latest`); others become spectators until one takes
+    /// it back with [`ClientMessage::ClaimSize`].
     #[serde(rename = "size_owner")]
     SizeOwner {
         owned: bool,
@@ -228,27 +162,21 @@ pub enum ServerMessage {
     Error {
         message: String,
     },
-    /// The canonical pane order after a reorder, broadcast to every client so
-    /// the sender and any other device converge on the same layout.
+    /// The canonical pane order after a reorder, broadcast to every client.
     Reordered {
         order: Vec<PaneId>,
     },
-    /// Which pane now fills the terminal panel, `None` for none.
-    ///
-    /// Broadcast like [`Reordered`](Self::Reordered) and replayed to a client on
-    /// connect, so a page that reloads comes back zoomed where it left off and
-    /// another device follows. `null` is sent rather than omitted: "nothing is
-    /// zoomed" is a state a client has to be able to be *told*, not only one it
-    /// starts in.
+    /// Which pane now fills the terminal panel, `None` for none. Broadcast like
+    /// [`Reordered`](Self::Reordered) and replayed on connect. `null` is sent
+    /// rather than omitted: "nothing is zoomed" is a state a client has to be
+    /// told, not only one it starts in.
     Zoomed {
         pane: Option<PaneId>,
     },
     /// This many startup terminals are waiting to be sized before they are
-    /// created. The client answers with [`ClientMessage::Start`].
-    ///
-    /// Sent to every client that connects while they are still unclaimed, not
-    /// only the first: a client that disconnects mid-handshake would otherwise
-    /// leave the hub with no terminals and no way to ever get them.
+    /// created. The client answers with [`ClientMessage::Start`]. Sent to every
+    /// client that connects while they are still unclaimed, so one that drops
+    /// mid-handshake does not leave the hub terminal-less forever.
     Pending {
         count: usize,
     },

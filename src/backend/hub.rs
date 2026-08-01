@@ -4,12 +4,10 @@
 //! asks. One per repository, all sharing the connection the client attached
 //! with, so the panes it reports are the same ones the browser is looking at.
 //!
-//! The consequences of not owning them show up in three places. A pane arrives
-//! as an event instead of a return value, because its id comes from where the
-//! PTY actually lives and because a pane another client opened has to arrive the
-//! same way. Its size is not this client's to assume. And VT emulation still
-//! happens here: the bytes are raw either way, so `PaneEmulator` reads them from
-//! a socket exactly as it read them from a PTY.
+//! A pane arrives as an event instead of a return value, because its id comes
+//! from where the PTY actually lives. Its size is not this client's to assume.
+//! VT emulation still happens here: the bytes are raw either way, so
+//! `PaneEmulator` reads them from a socket exactly as it read them from a PTY.
 
 use super::{BackendEvent, PaneId, TerminalBackend};
 use crate::daemon::terminal_link::{TerminalLink, TerminalMessage};
@@ -33,8 +31,7 @@ impl HubBackend {
     /// Answered with no sizes at all, because this client has measured nothing:
     /// the offer arrives on attach, before the first frame has laid out a single
     /// pane. The hub opens them at its own default and the first layout corrects
-    /// it — one repaint, in the same beat as the shell's first prompt, which is
-    /// where every locally-opened pane used to start too.
+    /// it.
     fn size_startup_panes(&self) {
         if let Err(err) = self
             .link

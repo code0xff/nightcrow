@@ -3,8 +3,7 @@
 //! [`decode_command`](super::protocol::decode_command) checked shape and bounds;
 //! it never checked authority. Everything a plugin asks for passes through
 //! [`Guard::judge`], which returns either an [`Approved`] action naming a real
-//! [`PaneId`] or a [`Refused`] saying why not. There is no other way through: a
-//! [`PluginCommand`] carries a token, and only the guard turns one into a pane.
+//! [`PaneId`] or a [`Refused`] saying why not. There is no other way through.
 //!
 //! That includes gaining a pane in the first place: `guard_watch` beside this
 //! file holds the only rule that can widen what a plugin is allowed to see.
@@ -34,8 +33,7 @@ pub struct PaneFacts {
     /// [`PluginCommand::WatchPane`] differently.
     pub watched_by_another: bool,
     /// The requesting plugin's `watch_on_signal`: whether the operator allowed
-    /// it to be given a pane it was never named by. A property of the plugin
-    /// rather than of the pane, carried here so the rules stay one struct wide.
+    /// it to be given a pane it was never named by.
     pub may_watch_on_signal: bool,
     /// The pane's process is still running.
     pub alive: bool,

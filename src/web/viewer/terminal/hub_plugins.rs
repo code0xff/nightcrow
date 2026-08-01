@@ -8,11 +8,9 @@
 //!
 //! A pane appears here only two ways: its `[[startup_command]]` named a plugin
 //! by hand, or a plugin asked for it by quoting the pane's own token and the
-//! guard allowed it (see `plugin::guard_watch`). Neither can be reached
-//! by a plugin enumerating panes, because nothing ever tells a plugin what panes
-//! exist — which is what keeps "an arbitrary shell is never plugin-controlled" a
-//! property of the code. A shell stays untouched by doing what a shell does:
-//! saying nothing to any plugin.
+//! guard allowed it. Neither can be reached by a plugin enumerating panes,
+//! because nothing ever tells a plugin what panes exist — which is what keeps
+//! "an arbitrary shell is never plugin-controlled" a property of the code.
 
 use crate::backend::PaneId;
 use crate::config::{PluginConfig, StartupCommand};
@@ -21,49 +19,35 @@ use std::collections::{HashMap, HashSet};
 use std::time::Duration;
 
 /// How long a pane must be quiet before its plugin is told it is idle.
-///
 /// Deliberately the same value the guard requires before it will let a plugin
-/// type into that pane: announcing idleness any earlier would only invite
-/// commands the guard is bound to refuse. Ten seconds is well past the pause a
-/// CLI takes mid-answer and well short of a wait a person would notice.
+/// type into that pane. Ten seconds is well past the pause a CLI takes
+/// mid-answer and well short of a wait a person would notice.
 pub(super) const PANE_IDLE_THRESHOLD: Duration = Duration::from_secs(10);
 
-/// Commands taken from any one plugin per loop iteration.
-///
-/// One thread serves every pane in the repository, so a plugin that writes
-/// without pause must not be able to hold it. Eight per 8 ms tick is a thousand
-/// a second — far past anything a legitimate plugin needs, and bounded.
+/// Commands taken from any one plugin per loop iteration. One thread serves
+/// every pane in the repository, so a plugin that writes without pause must not
+/// be able to hold it. Eight per 8 ms tick is a thousand a second — far past
+/// anything a legitimate plugin needs, and bounded.
 pub(super) const MAX_COMMANDS_PER_TICK: usize = 8;
 
 pub(super) struct Plugins {
-    /// Live plugin children, by configured name. A plugin that failed to launch
-    /// is absent, and its panes are therefore never adopted below.
+    /// Live plugin children, by configured name.
     pub(super) hosts: HashMap<String, PluginHost>,
     /// What each live host was launched from, so a config reload can tell a
-    /// plugin whose process must be replaced from one whose rules merely
-    /// changed. Kept beside the hosts rather than read back off the child, which
-    /// knows only its pipes.
+    /// plugin whose process must be replaced from one whose rules merely changed.
     pub(super) launched: HashMap<String, PluginConfig>,
     /// Which plugin owns which pane. The authority for `opted_in`.
     pub(super) owners: HashMap<PaneId, String>,
     /// Which plugin a pane's *configuration* named, recorded whether or not that
-    /// plugin had a host at the time.
-    ///
-    /// Separate from `owners` because it grants nothing: a pane is only ever
-    /// acted on through `owners`, so an entry here with no host behind it puts
-    /// the pane on no relaunch path and sends no events — the reason `adopt`
-    /// refuses such an association in the first place. What it is for is a config
-    /// reload: enabling a plugin whose panes were created while it was off has to
-    /// be able to find them, and the opt-in is the only record that they were
-    /// ever meant for it. A pane closing takes its entry with it, so this is
-    /// bounded by the live panes and never by the session's history.
+    /// plugin had a host at the time. Separate from `owners` because it grants
+    /// nothing: a pane is only ever acted on through `owners`. What it is for is
+    /// a config reload — enabling a plugin whose panes were created while it was
+    /// off has to be able to find them.
     pub(super) intended: HashMap<PaneId, String>,
     /// Each plugin's `allowed_resume_flags`, as the guard needs them.
     pub(super) allowed_flags: HashMap<String, Vec<String>>,
     /// The plugins whose config set `watch_on_signal`: those the operator allowed
-    /// to be given a pane they were never named by. Held as the set of names
-    /// rather than looked up in the config list, so the judgement reads it as a
-    /// hash probe on the same footing as every other fact it gathers.
+    /// to be given a pane they were never named by.
     pub(super) watch_on_signal: HashSet<String>,
     pub(super) guard: Guard,
     pub(super) pending: HashMap<PaneId, super::hub_plugins_slots::Pending>,

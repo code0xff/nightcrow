@@ -6,10 +6,8 @@ use std::time::{Duration, Instant};
 
 /// What it takes to put a pane's process back after it exits.
 ///
-/// The hub discards the startup command once a pane is spawned, which is fine
-/// until something wants to replace the process rather than the pane: a shell
-/// cannot be asked what it was told to run. Keeping the text here is what makes
-/// a relaunch reproduce the original launch instead of guessing at it.
+/// The hub discards the startup command once a pane is spawned. Keeping the text
+/// here is what makes a relaunch reproduce the original launch.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PaneLaunch {
     /// Startup command exactly as configured, or `None` for a bare shell.
@@ -28,8 +26,7 @@ impl PaneSlot {
     /// How long the pane has been quiet.
     ///
     /// Measured from the last byte the child produced, not from the last thing
-    /// written to it: a CLI that is mid-answer keeps emitting, and typing into
-    /// it then would interleave with what it is drawing.
+    /// written to it.
     pub fn idle_for(&self, now: Instant) -> Duration {
         now.saturating_duration_since(self.last_output)
     }
@@ -38,8 +35,7 @@ impl PaneSlot {
 /// Per-pane slot bookkeeping, held beside the live PTYs.
 ///
 /// Separate from the PTY map because the two have different lifetimes: a
-/// relaunch replaces the PTY while the slot — and so the token an outside
-/// observer holds — has to survive it.
+/// relaunch replaces the PTY while the slot has to survive it.
 #[derive(Debug, Default)]
 pub struct PaneSlots(BTreeMap<PaneId, PaneSlot>);
 

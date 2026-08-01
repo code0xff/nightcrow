@@ -16,12 +16,10 @@ pub use recovery::PaneRecovery;
 /// Upper bound on a pane's in-flight prompt buffer before further chars are
 /// dropped. Prevents unbounded growth when a program writes a stream of bytes
 /// without ever sending `\r` / `\n` (progress bars, large pastes, `yes` piped
-/// to cat). 4 KiB easily exceeds any realistic shell prompt line.
+/// to cat).
 const PROMPT_BUFFER_MAX_BYTES: usize = 4096;
 
-/// Scrollback line cap for every pane emulator. Lifted here so the terminal
-/// state machine — which owns emulator creation now — defines its own budget
-/// rather than reading it from `app`.
+/// Scrollback line cap for every pane emulator.
 pub const SCROLLBACK_LINES: usize = 1000;
 
 /// Lines moved by a single line-scroll keypress (`Shift+Up`/`Shift+Down`).
@@ -46,17 +44,13 @@ pub const MAX_VISIBLE_NORMAL: usize = 4;
 pub const MAX_VISIBLE_FULLSCREEN: usize = 8;
 
 /// Fullscreen state of the lower terminal panel. `<leader> f` cycles through
-/// these while the terminal is focused: `Off → Grid → Zoom → Off`.
+/// `Off → Grid → Zoom → Off`.
 /// - `Off`: normal split — top viewer above, terminal split-view below.
 /// - `Grid`: terminal fills the body; up to `MAX_VISIBLE_FULLSCREEN` panes.
-/// - `Zoom`: terminal fills the body showing only the active pane. Rendered
-///   by the same grid path with a visible cap of 1, so no dedicated render
-///   branch is needed.
+/// - `Zoom`: terminal fills the body showing only the active pane.
 ///
 /// `Grid` and `Zoom` are visually identical whenever `Grid` would show a
-/// single pane, so the cycle skips `Zoom` in that case (see
-/// `TerminalState::zoom_distinct_from_grid` and
-/// `App::toggle_terminal_fullscreen`).
+/// single pane, so the cycle skips `Zoom` in that case.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum TerminalFullscreen {
     #[default]
@@ -76,10 +70,9 @@ impl TerminalFullscreen {
 /// Compute the visible pane-index window `[start, start+len)` for a split
 /// grid capped at `max_visible` panes. `prev_start` is the previous window's
 /// start (0 for a fresh terminal); the window is nudged the minimum amount
-/// needed to keep `active` inside it, rather than re-centering every call —
-/// so paging through panes one at a time doesn't reshuffle the whole grid.
-/// Shared by `TerminalState::sync_visible_window` (state update) and
-/// `ui::terminal_tab` (rendering) so both always agree on what's visible.
+/// needed to keep `active` inside it, rather than re-centering every call.
+/// Shared by `TerminalState::sync_visible_window` and `ui::terminal_tab` so
+/// both always agree on what's visible.
 pub(crate) fn visible_range(
     prev_start: usize,
     active: usize,
@@ -106,21 +99,18 @@ pub struct TerminalState {
     pub panes: Vec<PaneInfo>,
     pub active: usize,
     /// Default size used to create a pane before any layout resize has run
-    /// (e.g. the very first pane on startup). Once a pane has a real content
-    /// Rect, its size lives in `last_content_size` instead.
+    /// (e.g. the very first pane on startup).
     pub size: (u16, u16),
     pub scroll: HashMap<PaneId, usize>,
     pub fullscreen: TerminalFullscreen,
     /// Last (rows, cols) applied to each pane's backend + emulator via
-    /// `resize_visible_panes`. Panes currently scrolled out of the visible
-    /// window keep whatever size they had when they were last visible.
+    /// `resize_visible_panes`. Panes scrolled out of the visible window keep
+    /// whatever size they had when they were last visible.
     pub last_content_size: HashMap<PaneId, (u16, u16)>,
     /// Whether this client's layout is what sets the pane sizes.
     ///
     /// True unless a shared session says otherwise: a PTY has one size, so one
-    /// client decides it and the others render the grid they are given. Panes
-    /// this client owns follow its layout; panes it does not follow
-    /// [`BackendEvent::Resized`](crate::backend::BackendEvent::Resized).
+    /// client decides it and the others render the grid they are given.
     pub owns_size: bool,
     /// What each pane's plugin last reported about recovering it, for the panes
     /// any has spoken about. Deliberately outlives a pane's process: the report

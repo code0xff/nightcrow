@@ -1,8 +1,6 @@
 //! Pane geometry and ordering: the two worker operations that change how the
-//! panes are arranged rather than what is in them.
-//!
-//! Split out of `hub_run.rs` so the worker loop stays readable; the behaviour is
-//! unchanged.
+//! panes are arranged rather than what is in them. Split out of `hub_run.rs` so
+//! the worker loop stays readable.
 
 use super::TerminalHub;
 use super::frame::{ServerMessage, TerminalFrame};
@@ -11,8 +9,7 @@ use crate::backend::{PaneId, PtyBackend, TerminalBackend};
 
 impl TerminalHub {
     /// The size a pane's PTY is recorded as having, or `None` once the pane is
-    /// gone. The one reader of that record outside the resize path itself, shared
-    /// by everything that has to act on the size a pane actually has.
+    /// gone.
     pub(super) fn pane_size(&self, pane: PaneId) -> Option<(u16, u16)> {
         let state = self.state.lock().expect("terminal state poisoned");
         state
@@ -22,15 +19,12 @@ impl TerminalHub {
             .map(|p| (p.rows, p.cols))
     }
 
-    /// Resize a live pane's PTY at the sizing owner's request, record the size it
-    /// is now set to, and tell every client what it is.
-    ///
-    /// All under one lock, and the liveness check with them. `connect` reports
-    /// each pane's size from this record and the client caches it as "already
-    /// applied"; a client that slipped between the two would be told the old
-    /// size for a PTY that has the new one, and would then skip the resize that
-    /// would have corrected it. The `resize` itself is an ioctl on the master —
-    /// far cheaper than the broadcast this lock already covers.
+    /// Resize a live pane's PTY at the sizing owner's request, record the size,
+    /// and tell every client what it is. All under one lock, with the liveness
+    /// check — `connect` reports each pane's size from this record and the
+    /// client caches it as "already applied"; a client that slipped between the
+    /// two would be told the old size for a PTY that has the new one, and would
+    /// then skip the resize that would have corrected it.
     pub(super) fn resize_pane(
         &self,
         backend: &mut PtyBackend,
@@ -46,14 +40,13 @@ impl TerminalHub {
             return;
         };
         // Not this client's to set. Dropped rather than refused: a client can
-        // lose the sizing between laying out a frame and this arriving, which is
-        // ordinary rather than an error worth interrupting anyone over.
+        // lose the sizing between laying out a frame and this arriving.
         if !self.owns_size(connection) {
             return;
         }
         let mut state = self.state.lock().expect("terminal state poisoned");
         // An unknown pane is ignored rather than errored: a client racing a
-        // pane exit is normal, not an attack.
+        // pane exit is normal.
         let Some(p) = state.panes.iter_mut().find(|p| p.id == pane) else {
             return;
         };

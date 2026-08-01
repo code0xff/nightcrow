@@ -1,8 +1,7 @@
-//! Starting and stopping one plugin's child during a reload.
-//!
-//! Split from the diff that decides *which* children should run, because these
-//! carry the awkward part: what happens to the panes a plugin was watching, which
-//! differs by whether a replacement is about to take its place.
+//! Starting and stopping one plugin's child during a reload. Split from the
+//! diff that decides *which* children should run, because these carry the
+//! awkward part: what happens to the panes a plugin was watching, which differs
+//! by whether a replacement is about to take its place.
 
 use super::hub_plugins::Plugins;
 use super::hub_reload::PluginReload;
@@ -12,8 +11,7 @@ use std::collections::HashMap;
 
 impl Plugins {
     /// Launch `cfg`'s child and hand it the panes it owns. Reports whether the
-    /// child came up — a caller that stopped a predecessor for this one has to
-    /// know it never arrived.
+    /// child came up.
     pub(super) fn start_host(
         &mut self,
         cfg: &PluginConfig,
@@ -66,14 +64,11 @@ impl Plugins {
         }
     }
 
-    /// Stop watching `pane` without forgetting what it opted into.
-    ///
-    /// The narrower half of [`Plugins::forget`], for a pane that is still there:
-    /// the association, any relaunch hold and the spent budget go, so the pane
-    /// becomes an ordinary terminal, but the opt-in stays. That is what makes
-    /// disabling a plugin and enabling it again land where enabling it the first
-    /// time would — the alternative is a switch that means something different
-    /// depending on which way it was last flipped.
+    /// Stop watching `pane` without forgetting what it opted into. The narrower
+    /// half of [`Plugins::forget`], for a pane that is still there: the
+    /// association, any relaunch hold and the spent budget go, but the opt-in
+    /// stays. That is what makes disabling a plugin and enabling it again land
+    /// where enabling it the first time would.
     fn release_pane(&mut self, backend: &PtyBackend, pane: PaneId) {
         self.owners.remove(&pane);
         self.pending.remove(&pane);
@@ -117,16 +112,10 @@ impl Plugins {
     }
 
     /// Let go of everything `name` still holds: its rules, and the panes it was
-    /// watching.
-    ///
-    /// Reached two ways — a plugin the file dropped, and a replacement whose
-    /// child never came up. The second is why this is separate: [`stop_host`]
-    /// keeps the live panes when a successor is on the way, and if the spawn then
-    /// fails those panes are owned by a name with no host. Left that way, the
-    /// pane's next exit takes the relaunch path — its slot held open for a plugin
-    /// that cannot ask — and on a hub whose only plugin this was, nothing even
-    /// runs to expire the hold, so the client counts down to a deadline that
-    /// never arrives.
+    /// watching. Reached two ways — a plugin the file dropped, and a replacement
+    /// whose child never came up. The second is why this is separate:
+    /// [`stop_host`] keeps the live panes when a successor is on the way, and if
+    /// the spawn then fails those panes are owned by a name with no host.
     ///
     /// [`stop_host`]: Self::stop_host
     pub(super) fn abandon(&mut self, backend: &PtyBackend, name: &str, outcome: &mut PluginReload) {

@@ -4,14 +4,9 @@
 //! Opening, closing, and reordering are session operations, not HTTP ones. The
 //! browser reaches them over HTTP and an attaching client reaches them over the
 //! daemon socket, and both must land on exactly the same state change — so the
-//! change lives here and each transport keeps only its own translation: status
-//! codes and JSON envelopes on one side, frames on the other.
+//! change lives here and each transport keeps only its own translation.
 //!
-//! Nothing here authenticates. Deciding who may ask is the transport's job,
-//! and the two transports answer it differently: the browser presents a session
-//! cookie, while reaching the socket already required being the user who owns
-//! it. Folding that decision in here would put a single "trusted" flag in the
-//! one place both paths share.
+//! Nothing here authenticates. Deciding who may ask is the transport's job.
 
 use super::server::ViewerState;
 use crate::web::viewer::catalog::AddOutcome;
@@ -38,8 +33,7 @@ pub enum CloseError {
 /// One repository as an attaching client sees it.
 ///
 /// Carries the absolute path, which the browser's `RepoDto` deliberately does
-/// not: an attached client reads git from that path itself, on the same
-/// filesystem the daemon is on.
+/// not: an attached client reads git from that path itself.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SessionRepo {
     pub id: String,
@@ -66,7 +60,7 @@ pub fn list_session_repos(state: &ViewerState) -> Vec<SessionRepo> {
 ///
 /// The path arrives from outside, so it is expanded, checked, and resolved to
 /// the worktree root before the catalog ever sees it — two spellings of one
-/// repository must collapse to a single entry rather than open twice.
+/// repository must collapse to a single entry.
 pub fn open_repo(state: &ViewerState, raw_path: &str) -> Result<RepoDto, OpenError> {
     let raw = raw_path.trim();
     if raw.is_empty() {
@@ -104,12 +98,9 @@ pub fn open_repo(state: &ViewerState, raw_path: &str) -> Result<RepoDto, OpenErr
 /// The repository the session is focused on, as the id clients speak.
 ///
 /// Falls back to the first served repository when nothing has been focused yet,
-/// or when what is on file is no longer served. Not `None`: with no answer each
-/// client would pick for itself, and two clients picking independently is the
-/// divergence this is here to remove. `None` only when nothing is open at all.
-///
-/// The stored value is a path, because ids only live as long as the process (see
-/// [`super::prefs`]), so this is where it is translated back.
+/// or when what is on file is no longer served. `None` only when nothing is open
+/// at all. The stored value is a path, because ids only live as long as the
+/// process (see [`super::prefs`]), so this is where it is translated back.
 pub fn active_repo(state: &ViewerState) -> Option<String> {
     let stored = state
         .prefs
@@ -141,9 +132,7 @@ pub fn set_maximized(
 /// Focus the repository named by `id` for the whole session.
 ///
 /// Which project is in front is shared, not per-client: the daemon owns it, and
-/// every client renders the one the session names. What each client keeps to
-/// itself is everything *within* that project — the view mode, the cursor, the
-/// scroll (see the plan's shared/per-client boundary).
+/// every client renders the one the session names.
 pub fn focus_repo(state: &ViewerState, id: &str) -> Result<(), CloseError> {
     let entry = state.catalog.get(id).ok_or(CloseError::UnknownRepo)?;
     state.prefs.set_active_repo(entry.path.clone());
@@ -157,12 +146,9 @@ pub fn accent(state: &ViewerState) -> usize {
 
 /// Set the session's accent, returning what was stored.
 ///
-/// Shared like the active project rather than kept per surface: a session seen
-/// from a TUI and a browser at once was showing two colours with nothing able to
-/// say which was its own (see the boundary in `docs/architecture.md`). An index
-/// past the end of the cycle wraps rather than being refused, matching
-/// `Accent::from_index`, so a client that drifts out of range self-corrects from
-/// what it reads back.
+/// Shared like the active project rather than kept per surface. An index past
+/// the end of the cycle wraps rather than being refused, matching
+/// `Accent::from_index`.
 pub fn set_accent(state: &ViewerState, accent: usize) -> usize {
     state.prefs.set_accent(accent).accent
 }

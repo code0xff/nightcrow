@@ -1,9 +1,7 @@
 //! Tab completion for the repo dialog's path field.
 //!
-//! One `read_dir` per Tab press, against the single directory the buffer names
-//! — a deep tree is never walked. Directories only: the dialog opens a repo and
-//! a file can never be one.
-//!
+//! One `read_dir` per Tab press, against the single directory the buffer names.
+//! Directories only: the dialog opens a repo and a file can never be one.
 //! The dialog is not a shell, so only what `confirm_repo_input` itself accepts
 //! is understood here: `~`, `..`, and cwd-relative paths. No `$VAR`, no globs.
 
@@ -14,22 +12,18 @@ pub(crate) struct PathCompletion {
     /// The buffer after completion — unchanged when nothing matched.
     pub buf: String,
     /// Directory names to offer. Empty when the completion was unambiguous,
-    /// when nothing matched, or when the buffer grew: a list is only worth
-    /// showing once typing can no longer narrow things down.
+    /// when nothing matched, or when the buffer grew.
     pub candidates: Vec<String>,
 }
 
 /// Whether `c` ends a path component. `\` counts on Windows only — on Unix it
-/// is a legal filename character, so treating it as a separator there would
-/// split paths that contain one.
+/// is a legal filename character.
 pub(crate) fn is_sep(c: char) -> bool {
     c == '/' || (cfg!(windows) && c == '\\')
 }
 
 /// Split a dialog buffer into the directory text (up to and including the last
-/// separator) and the trailing component being completed. With no separator the
-/// whole buffer is the component and the directory is empty, meaning the process
-/// cwd — the same reading `confirm_repo_input` gives a bare relative path.
+/// separator) and the trailing component being completed.
 pub(crate) fn split_dir(buf: &str) -> (&str, &str) {
     match buf.char_indices().rfind(|(_, c)| is_sep(*c)) {
         Some((i, c)) => (&buf[..i + c.len_utf8()], &buf[i + c.len_utf8()..]),
@@ -37,10 +31,7 @@ pub(crate) fn split_dir(buf: &str) -> (&str, &str) {
     }
 }
 
-/// Immediate sub-directory names of `dir`, sorted. A directory that cannot be
-/// read yields nothing: mid-typing that is the normal state for the completer,
-/// and for the browser an unreadable directory is simply one with nothing to
-/// show. Directories only — the dialog opens a repo, and a file cannot be one.
+/// Immediate sub-directory names of `dir`, sorted. Directories only.
 pub(crate) fn read_dir_names(dir: &Path, show_hidden: bool) -> Vec<String> {
     let Ok(read) = std::fs::read_dir(dir) else {
         return Vec::new();
@@ -58,12 +49,9 @@ pub(crate) fn read_dir_names(dir: &Path, show_hidden: bool) -> Vec<String> {
 }
 
 /// Complete the last component of `buf` against the directory the rest of it
-/// names. See the module docs for the rules; the caller owns the length cap and
-/// decides whether to apply the result.
-///
-/// The user's own text is never rewritten: a leading `~` or a relative path is
-/// expanded for reading only, and the returned buffer keeps the typed prefix
-/// with just the completed component appended.
+/// names. The user's own text is never rewritten: a leading `~` or a relative
+/// path is expanded for reading only, and the returned buffer keeps the typed
+/// prefix with just the completed component appended.
 pub(crate) fn complete_dir_path(buf: &str) -> PathCompletion {
     let unchanged = || PathCompletion {
         buf: buf.to_string(),

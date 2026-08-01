@@ -1,9 +1,6 @@
-//! The project tab row across the top of the screen. Mirrors
-//! `terminal_tab`'s tab bar: one `tab_segments` builder feeds both the
-//! renderer and the click hit-test, so a label and its click box can never
-//! disagree. The two rows differ only in what they address — panes below,
-//! projects above — and in their key legends (leader digits for panes, bare
-//! F-keys for projects).
+//! The project tab row across the top of the screen. One `tab_segments`
+//! builder feeds both the renderer and the click hit-test, so a label and its
+//! click box can never disagree.
 
 use ratatui::{
     layout::Rect,
@@ -12,19 +9,15 @@ use ratatui::{
     widgets::Paragraph,
 };
 
-/// Per-tab character budget for the project name. Shorter than the pane
-/// budget: up to ten tabs share one row.
+/// Per-tab character budget for the project name.
 const TAB_TITLE_MAX_CHARS: usize = 14;
 
-/// Width of a `+N` overflow marker. One digit is enough: at most
-/// `MAX_PROJECTS` (10) tabs exist, so at most 9 can be hidden on one side.
+/// Width of a `+N` overflow marker.
 const MARKER_WIDTH: u16 = 4;
 
-/// The name shown for a repo path — its final component, which distinguishes
-/// sibling checkouts (`~/work/api` vs `~/work/web`). Goes through `Path`
+/// The name shown for a repo path — its final component. Goes through `Path`
 /// rather than splitting on `/` so a Windows path (`C:\work\api`) yields
-/// `api` too. Falls back to the path itself for a filesystem root, and to a
-/// placeholder when empty — a blank tab would look unclickable.
+/// `api` too.
 pub(crate) fn tab_label(repo_path: &str) -> String {
     let path = std::path::Path::new(repo_path);
     let name = path
@@ -37,8 +30,7 @@ pub(crate) fn tab_label(repo_path: &str) -> String {
     truncate(&name, TAB_TITLE_MAX_CHARS)
 }
 
-/// Truncate to at most `max` characters, appending `…` when cut. Char-based
-/// rather than display-width, matching `terminal_tab::truncate_tab_title`.
+/// Truncate to at most `max` characters, appending `…` when cut.
 fn truncate(s: &str, max: usize) -> String {
     if s.chars().count() <= max {
         return s.to_string();

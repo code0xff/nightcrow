@@ -1,22 +1,17 @@
 //! Terminals owned by the viewer, one hub per repository.
 //!
-//! These are **not** the TUI's panes. Sharing them would mean reaching into
-//! `App`, which would break both the "server never touches App" rule and the
-//! headless mode. The viewer owns its own [`PtyBackend`], so `nightcrow serve`
-//! offers terminals with no TUI running at all.
+//! These are **not** the TUI's panes — the viewer owns its own [`PtyBackend`],
+//! so `nightcrow serve` offers terminals with no TUI running at all.
 //!
-//! Raw PTY bytes go to the browser untouched — the hub renders no screen.
-//! xterm.js is a terminal emulator already; the mirror only composes a grid
-//! because it has to match a ratatui screen, and this has no such constraint.
-//! The hub does parse the stream for one thing it cannot get any other way: the
-//! modes each pane's program has set, which an attaching client has to be told
-//! because the bytes that set them are long gone (see [`hub_modes`]).
+//! Raw PTY bytes go to the browser untouched. The hub does parse the stream for
+//! one thing it cannot get any other way: the modes each pane's program has set,
+//! which an attaching client has to be told because the bytes that set them are
+//! long gone (see [`hub_modes`]).
 //!
 //! **Output is queued, not conflated.** Status updates can drop intermediates
 //! because the newest is a complete picture; terminal bytes cannot — dropping
 //! any corrupts the stream. Each client gets a bounded queue and is
-//! disconnected when it overflows, which is honest, where silently discarding
-//! bytes would leave a subtly wrong screen.
+//! disconnected when it overflows.
 
 pub mod frame;
 mod hub_connect;
@@ -59,9 +54,9 @@ use std::thread;
 /// Output frames a client may fall behind by before it is dropped.
 pub(crate) const CLIENT_QUEUE_DEPTH: usize = 256;
 
-/// The size a pane is born at when no client measured one for it. Only reached
-/// when a client answers `Pending` with fewer sizes than there are panes; the
-/// first fit corrects it at the cost of one repaint.
+/// Default pane size when no client measured one. Only reached when a client
+/// answers `Pending` with fewer sizes than there are panes; the first fit
+/// corrects it at the cost of one repaint.
 const DEFAULT_PANE_SIZE: PaneSize = PaneSize { rows: 24, cols: 80 };
 
 pub struct TerminalHub {
@@ -70,24 +65,20 @@ pub struct TerminalHub {
     next_client_id: AtomicU64,
     stop: Arc<AtomicBool>,
     worker: Mutex<Option<thread::JoinHandle<()>>>,
-    /// The terminals to open once a client has sized them, with the names they
-    /// were configured under. Empty means a single bare shell (matching the
-    /// TUI's default).
+    /// The terminals to open once a client has sized them. Empty means a single
+    /// bare shell (matching the TUI's default).
     startup: Vec<crate::config::StartupCommand>,
     /// The `[[plugin]]` table. The worker launches a host for each entry that is
-    /// enabled *and* that some `startup` entry opted into, and nothing else — a
-    /// plugin no pane named is never started, so declaring one costs nothing
-    /// until a pane hands itself over.
+    /// enabled *and* that some `startup` entry opted into — a plugin no pane
+    /// named is never started.
     plugins: Vec<crate::config::PluginConfig>,
     /// The shell every terminal pane is spawned with.
     shell: crate::config::ShellConfig,
     /// Set when a client claims the startup terminals by answering with their
-    /// sizes, so they are created exactly once for the hub's life rather than
-    /// on every (re)connection. See [`TerminalHub::claim_startup`].
+    /// sizes, so they are created exactly once for the hub's life.
     started: AtomicBool,
-    /// Which screen the session's panes are fitted to. The session's rather than
-    /// this hub's, because every client shows the same repository — see
-    /// [`SizeOwnership`].
+    /// Which screen the session's panes are fitted to — shared with every other
+    /// hub because the answer is one per session, not one per repository.
     ownership: Arc<SizeOwnership>,
 }
 
@@ -96,9 +87,7 @@ impl TerminalHub {
     /// commands to launch when the first client connects (empty = one shell),
     /// and `plugins` the configured plugin table those commands may opt into.
     ///
-    /// `ownership` is the session's, shared with every other hub: which screen
-    /// the panes are fitted to is one answer for the whole session, not one per
-    /// repository.
+    /// `ownership` is the session's, shared with every other hub.
     pub fn spawn(
         cwd: &str,
         startup: Vec<crate::config::StartupCommand>,
@@ -136,12 +125,8 @@ impl TerminalHub {
         hub
     }
 
-    /// The startup panes this hub was spawned with.
-    ///
-    /// Fixed for its life: the panes are created once and a config reload does
-    /// not replace them, so this stays what the repository was opened under.
-    /// Read by the plugin reload, which decides what a plugin may see on *this*
-    /// hub from the opt-ins this list carries rather than from the new file's.
+    /// The startup panes this hub was spawned with. Fixed for its life: the
+    /// panes are created once and a config reload does not replace them.
     pub(crate) fn startup_commands(&self) -> &[crate::config::StartupCommand] {
         &self.startup
     }

@@ -1,11 +1,8 @@
-//! Putting the daemon into the background.
-//!
-//! Re-exec rather than fork. By the time this is decided the process has not
-//! started its worker threads yet, but the pattern is the trap either way:
-//! `fork` in a threaded process gives the child one thread and every lock in
-//! whatever state it was in, and the daemonize crates exist mostly to be
-//! careful about that. Spawning a fresh copy of this binary has no such state
-//! to inherit.
+//! Putting the daemon into the background. Re-exec rather than fork: by the
+//! time this is decided the process has not started its worker threads yet, but
+//! the pattern is the trap either way — `fork` in a threaded process gives the
+//! child one thread and every lock in whatever state it was in. Spawning a fresh
+//! copy of this binary has no such state to inherit.
 //!
 //! The child gets its own session (`setsid`), so closing the terminal that
 //! started it does not send it SIGHUP along with the shell's other children.

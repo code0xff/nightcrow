@@ -61,10 +61,8 @@ pub(crate) fn dispatch_mouse(
 /// Route a captured mouse event to the pane under the pointer. Releases pair
 /// with the press's pane (not the pointer pane); wheel scrolls the pane under
 /// the pointer; a left press outside pane content can focus an upper panel,
-/// jump via a tab/`+N` marker, or run a hint-bar shortcut (dispatched as
-/// synthesized keypresses so click and key share the path). In swap mode a
-/// left click names the swap target. Drag/motion reports are not forwarded —
-/// inner-program text selection stays with the outer terminal's Shift+drag.
+/// jump via a tab/`+N` marker, or run a hint-bar shortcut. In swap mode a
+/// left click names the swap target. Drag/motion reports are not forwarded.
 pub(crate) fn handle_mouse(
     app: &mut App,
     tabs: crate::ui::Chrome<'_>,
@@ -73,22 +71,18 @@ pub(crate) fn handle_mouse(
     layout: &crate::config::LayoutConfig,
 ) -> KeyOutcome {
     // Releases route by the pending press, not the pointer, so they must be
-    // handled before the hit test — the pointer may have left the pane. They
-    // also bypass the modal guard: the press happened before the modal opened,
-    // and swallowing the release would leave the pending slot stale.
+    // handled before the hit test — the pointer may have left the pane.
     if let MouseEventKind::Up(_) = mouse.kind {
         release_pending_press(app, screen, layout, mouse.column, mouse.row);
         return KeyOutcome::Continue;
     }
     // Modal overlays own all other input while open — same rule as the key
-    // handler: a click behind a modal must not move focus or reach a pane.
+    // handler.
     if app.search_overlay_active() {
         return KeyOutcome::Continue;
     }
     // Pane-swap mode: a press names the swap target the way a digit does.
-    // Without this branch a click would change the active pane while leaving
-    // swap mode armed, so a later digit would swap the wrong pane. Wheel
-    // events fall through (like a paste): they don't name a pane.
+    // Wheel events fall through (like a paste): they don't name a pane.
     if app.awaiting_swap_target()
         && let MouseEventKind::Down(button) = mouse.kind
     {

@@ -16,34 +16,17 @@ pub enum Command {
         client: u64,
         command: Option<String>,
     },
-    /// Every startup pane in one command, so *queueing* the set is
-    /// all-or-nothing: sending them one by one could spend the claim on some
-    /// and lose the rest with nothing left to retry from.
-    ///
-    /// `reserved` is how many cap slots [`Shared::reserved`] is holding for
-    /// this batch, released as the panes take them. Every connection has its
-    /// own handler thread, so between the claim and this command reaching the
-    /// queue another client can enqueue creates that the worker would serve
-    /// first — the reservation is what keeps those from taking slots the
-    /// configured set already claimed.
-    ///
-    /// The set can still come up short of what was configured, because the
-    /// reservation only holds what was free at claim time: terminals already
-    /// open when the claim happened are not displaced, and any one `openpty`
-    /// can still fail. The claim is spent by then, so a command lost that way
-    /// does not run until the hub restarts; the client is told which it was
-    /// (`terminal limit reached`, `could not start a terminal`). Going further
-    /// would mean deciding that a configured command outranks a terminal the
-    /// user already opened, which is a question about what the cap means
-    /// rather than a race to close.
+    /// Every startup pane in one command, so queueing the set is all-or-nothing.
+    /// `reserved` is how many cap slots [`Shared::reserved`] is holding for this
+    /// batch, released as the panes take them. The reservation keeps other
+    /// clients' creates from taking slots the configured set already claimed.
     CreateStartup {
         panes: Vec<StartupPane>,
         client: u64,
         reserved: usize,
     },
     /// `client` rides along for the arrival log only (see
-    /// [`hub_diag`](super::hub_diag)); input is honoured from whoever sends it,
-    /// unlike a resize.
+    /// [`hub_diag`](super::hub_diag)); input is honoured from whoever sends it.
     Input {
         pane: PaneId,
         data: Vec<u8>,
@@ -64,8 +47,7 @@ pub enum Command {
         order: Vec<PaneId>,
     },
     /// Abandon a pane's pending relaunch. On the worker queue because carrying it
-    /// out needs the backend and the plugin bookkeeping, both of which are
-    /// worker-local.
+    /// out needs the backend and the plugin bookkeeping, both worker-local.
     CancelRecovery {
         pane: PaneId,
     },
@@ -78,8 +60,7 @@ pub enum Command {
     },
     /// Bring this hub's plugin children in line with a re-read `[[plugin]]`
     /// table. On the queue because every plugin host is worker-local — a plugin
-    /// can drive a pane's keyboard, so nothing outside the worker may touch one
-    /// (see [`hub_reload`](super::hub_reload)).
+    /// can drive a pane's keyboard, so nothing outside the worker may touch one.
     ReloadPlugins {
         plugins: Vec<crate::config::PluginConfig>,
     },
@@ -92,21 +73,19 @@ pub struct StartupPane {
     pub(super) command: Option<String>,
     pub(super) title: Option<String>,
     /// The `[[plugin]]` this pane's configuration handed it to, if any. Carried
-    /// only as far as the worker, which records it in a map of its own — it is
-    /// deliberately absent from [`PaneState`] and from every `ServerMessage`, so
-    /// no client learns which panes a plugin can act on.
+    /// only as far as the worker — deliberately absent from [`PaneState`] and
+    /// from every `ServerMessage`, so no client learns which panes a plugin can
+    /// act on.
     pub(super) plugin: Option<String>,
 }
 
 /// A live terminal and the recent raw bytes it has produced, kept so a client
-/// that connects (or reconnects after a refresh) can be replayed the current
-/// screen. Bounded by [`limits::MAX_TERMINAL_SCROLLBACK_BYTES`].
+/// that connects can be replayed the current screen. Bounded by
+/// [`limits::MAX_TERMINAL_SCROLLBACK_BYTES`].
 pub(super) struct PaneState {
     pub(super) id: PaneId,
     /// The name the session gave it, if any — a configured startup terminal has
-    /// one before it runs. Kept so a client that connects later is told it too,
-    /// rather than showing "shell 1" for a pane every other client calls
-    /// something else.
+    /// one before it runs. Kept so a client that connects later is told it too.
     pub(super) title: Option<String>,
     pub(super) scrollback: VecDeque<u8>,
     /// The size the PTY is currently set to, tracked so a connecting client
@@ -115,40 +94,30 @@ pub(super) struct PaneState {
     pub(super) cols: u16,
     /// The terminal state the pane's program has established, kept because the
     /// bytes that established it are not in `scrollback` any more (see
-    /// [`PaneModeTracker`](super::hub_modes::PaneModeTracker)). A pane that has
-    /// printed nothing yet is a freshly opened terminal.
+    /// [`PaneModeTracker`](super::hub_modes::PaneModeTracker)).
     pub(super) modes: PaneModes,
 }
 
 /// Hub state shared between the worker thread (which mutates panes and
 /// broadcasts) and connection threads (which register/unregister clients and
 /// snapshot scrollback on connect). Held under one mutex so a connecting
-/// client's replay is atomic with the worker's append-and-broadcast: it sees
-/// each pane's scrollback exactly once, with no gap before or duplicate of the
-/// live output that follows.
+/// client's replay is atomic with the worker's append-and-broadcast.
 pub struct Shared {
     pub(super) clients: Vec<Client>,
     pub(super) panes: Vec<PaneState>,
     /// Cap slots held for startup panes that are claimed but not created yet.
-    ///
     /// Counted against the same cap rather than exempt from it, so the ceiling
-    /// on real processes per repository stays what it says it is — the
-    /// reservation decides *who* gets a slot, never how many there are.
+    /// on real processes per repository stays what it says it is.
     pub(super) reserved: usize,
     /// The pane filling the panel, when one is (see [`hub_zoom`](super::hub_zoom)).
-    ///
-    /// Beside `panes` and under the same lock because the two have to agree: a
-    /// zoom naming a pane that is not in the list is a client rendering nothing.
+    /// Beside `panes` and under the same lock because the two have to agree.
     pub(super) zoomed: Option<PaneId>,
 }
 
 /// Queue a frame for every client, dropping any that has fallen too far behind.
 /// Terminal bytes cannot be skipped, so an overfull client is disconnected
-/// rather than served a corrupted stream — and disconnected outright, socket and
-/// all (see [`Client::cut_off`]), because leaving it off the list alone would
-/// leave it holding a panel that has quietly stopped being true. Operates on an
-/// already-locked client list so the caller can pair it with a pane mutation
-/// atomically.
+/// outright (see [`Client::cut_off`]). Operates on an already-locked client list
+/// so the caller can pair it with a pane mutation atomically.
 pub(super) fn broadcast_locked(clients: &mut Vec<Client>, frame: TerminalFrame) {
     clients.retain(|client| match client.tx.try_send(frame.clone()) {
         Ok(()) => true,
@@ -164,9 +133,9 @@ pub(super) fn broadcast_locked(clients: &mut Vec<Client>, frame: TerminalFrame) 
 
 /// The canonical pane order for a reorder request: the requested ids that are
 /// actually live, in the requested order, followed by any live pane the request
-/// omitted, in its current order. Unknown requested ids are dropped. The result
-/// is always a permutation of `current`, which is what makes a reorder safe
-/// against a create or close that raced the request.
+/// omitted, in its current order. The result is always a permutation of
+/// `current`, which is what makes a reorder safe against a create or close that
+/// raced the request.
 pub(super) fn canonical_order(current: &[PaneId], requested: &[PaneId]) -> Vec<PaneId> {
     let mut out: Vec<PaneId> = Vec::with_capacity(current.len());
     // Requested ids first: live, and each taken once (a repeated id would make

@@ -2,16 +2,13 @@
 //!
 //! A plugin is a child process rather than a pane, so unlike a startup terminal
 //! it can be replaced without costing the session anything a person was using.
-//! That is the whole reason a config reload reaches this far: the panes stay,
-//! their processes stay, and only the thing watching them is rebuilt.
 //!
 //! Three rules the diff below is written around.
 //!
 //! **The opt-ins are this hub's, not the new file's.** A hub creates its startup
 //! panes once for its life, so a `[[startup_command]]` added by the edit has no
-//! pane here and will not get one — launching the plugin it names would be a
-//! child process with nothing it could ever be given. What decides is the list
-//! this hub was spawned with ([`TerminalHub::startup_commands`]).
+//! pane here and will not get one. What decides is the list this hub was spawned
+//! with ([`TerminalHub::startup_commands`]).
 //!
 //! **A plugin that is watching something stays.** Removing a pane's opt-in from
 //! the file does not remove the pane, and silently un-watching a live agent
@@ -21,8 +18,7 @@
 //! **The guard is never rebuilt.** Its relaunch budget is keyed by a pane's
 //! token, which is what bounds a plugin that answers every exit with another
 //! relaunch. Rebuilding it here would hand out a fresh allowance on every
-//! reload, so the ceiling would never be reached — the same reasoning as
-//! [`Plugins::take_over`](super::hub_plugins::Plugins::take_over).
+//! reload, so the ceiling would never be reached.
 
 use super::TerminalHub;
 use super::hub_helpers::Command;
@@ -41,8 +37,7 @@ pub(super) struct PluginReload {
     /// Same plugin, new process — its command, arguments or environment changed.
     pub(super) restarted: Vec<String>,
     /// Panes whose held relaunch was given up because the plugin holding it is
-    /// gone. The caller tells the clients, which are counting down to a deadline
-    /// nothing will act on.
+    /// gone.
     pub(super) retired: Vec<PaneId>,
 }
 
@@ -53,31 +48,22 @@ impl PluginReload {
 }
 
 impl TerminalHub {
-    /// Ask the worker to re-apply `plugins`.
+    /// Ask the worker to re-apply `plugins`. Queued rather than done here: a
+    /// plugin can drive a pane's keyboard, so every plugin host is worker-local
+    /// and the command queue is the only way in. A full queue drops the request
+    /// and says so — a hub that far behind is being hammered by a client, and
+    /// blocking a reload behind it would hold up every other repository.
     ///
-    /// Queued rather than done here: a plugin can drive a pane's keyboard, so
-    /// every plugin host is worker-local and the command queue is the only way in
-    /// (see [`super::hub_plugins`]). A full queue drops the request and says so —
-    /// a hub that far behind is being hammered by a client, and blocking a
-    /// reload behind it would hold up every other repository in the session.
-    ///
-    /// Reports whether the worker took it. The caller counts the refusals into
-    /// its report: this hub keeps the plugin children it had, so calling the
-    /// reload a success for it would claim a change that did not happen. Saying
-    /// so is the caller's job too — a hub does not keep its own path, and
-    /// "which repository" is the first thing a skipped one raises.
+    /// Reports whether the worker took it.
     pub(crate) fn reload_plugins(&self, plugins: Vec<PluginConfig>) -> bool {
         self.commands
             .try_send(Command::ReloadPlugins { plugins })
             .is_ok()
     }
 
-    /// Carry out a queued reload on the worker thread.
-    ///
-    /// The pane titles are read here rather than inside the diff because they
-    /// live in the hub's shared state: a plugin that is (re)started is handed the
-    /// panes it owns again, and a pane announced without its title would show up
-    /// under a different name than the one the operator sees.
+    /// Carry out a queued reload on the worker thread. The pane titles are read
+    /// here rather than inside the diff because they live in the hub's shared
+    /// state.
     pub(super) fn reload_hub_plugins(
         &self,
         backend: &mut PtyBackend,

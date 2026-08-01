@@ -1,9 +1,7 @@
 //! Reading the served set: the projections each surface needs of it.
 //!
 //! Each snapshots the same map under one lock. Reading it in two calls lets a
-//! repository opened in between appear in one and not the other — and a client
-//! handed a selection that is not in the list it was sent falls back and records
-//! the fallback, overwriting what was remembered.
+//! repository opened in between appear in one and not the other.
 
 use super::{Catalog, RepoEntry};
 use std::collections::HashMap;
@@ -29,13 +27,9 @@ impl Catalog {
     }
 
     /// Every served entry, for a caller that needs the runtimes themselves
-    /// rather than a client-facing projection — a config reload has to reach each
-    /// repository's terminal hub.
+    /// rather than a client-facing projection.
     ///
-    /// A snapshot: the `Arc`s are cloned out and the lock released, so a
-    /// repository retired while the caller is working through the list is one
-    /// whose hub has already stopped, and telling a stopped hub anything is a
-    /// no-op rather than a race.
+    /// A snapshot: the `Arc`s are cloned out and the lock released.
     pub fn entries(&self) -> Vec<Arc<RepoEntry>> {
         self.entries
             .lock()
@@ -49,10 +43,8 @@ impl Catalog {
     /// `remembered`.
     ///
     /// One lock for both, because a client renders them together: a repository
-    /// opened between two separate reads would yield an active id that is
-    /// missing from the list beside it, and the client — seeing a selection it
-    /// cannot show — would fall back to its first tab and record *that*,
-    /// dropping the remembered project for good.
+    /// opened between two separate reads would yield an active id missing from
+    /// the list beside it.
     pub fn list_with_active(
         &self,
         remembered: Option<&str>,

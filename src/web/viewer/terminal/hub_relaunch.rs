@@ -1,9 +1,7 @@
-//! Carrying out what a plugin was allowed to do.
-//!
-//! Everything here runs on the worker thread and acts only on an [`Approved`]
-//! value. There is no path from a [`PluginCommand`](crate::plugin::protocol::PluginCommand)
-//! to a pane that does not pass through [`Plugins::judge`] first, and a
-//! [`Refused`] is logged and dropped — never retried, never acted on.
+//! Carrying out what a plugin was allowed to do. Everything here runs on the
+//! worker thread and acts only on an [`Approved`] value. There is no path from a
+//! [`PluginCommand`](crate::plugin::protocol::PluginCommand) to a pane that does
+//! not pass through [`Plugins::judge`] first.
 
 use super::TerminalHub;
 use super::frame::{ServerMessage, TerminalFrame};
@@ -90,14 +88,9 @@ impl TerminalHub {
     }
 
     /// Hand `pane` to `plugin` and announce it, so the plugin can start from the
-    /// same `PaneOpened` a configured pane begins with.
-    ///
-    /// Announcing is the whole point of the request: the association alone tells
-    /// the plugin nothing, and only a `PaneOpened` carries the generation every
-    /// later command has to name. The pane's history is not replayed — output
-    /// events carry fresh bytes only — so a plugin taken on mid-session sees the
-    /// pane from here forward, which is exactly what the signal that brought it
-    /// here is about.
+    /// same `PaneOpened` a configured pane begins with. The pane's history is not
+    /// replayed — output events carry fresh bytes only — so a plugin taken on
+    /// mid-session sees the pane from here forward.
     fn watch_pane_for_plugin(
         &self,
         backend: &PtyBackend,
@@ -126,11 +119,9 @@ impl TerminalHub {
         plugins.pane_opened(backend, pane, title.as_deref());
     }
 
-    /// Put a process back into the slot a plugin was holding.
-    ///
-    /// Only for a pane the hub is actually holding: that hold is the proof the
-    /// pane exited and is still inside its window, and without it the slot has
-    /// either been retired or never belonged to this flow at all.
+    /// Put a process back into the slot a plugin was holding. Only for a pane
+    /// the hub is actually holding: that hold is the proof the pane exited and
+    /// is still inside its window.
     fn relaunch_for_plugin(
         &self,
         backend: &mut PtyBackend,
@@ -208,11 +199,8 @@ impl TerminalHub {
     }
 
     /// Put `pane` back at `index` in the client-visible order and tell every
-    /// client the result.
-    ///
-    /// The order *is* `Shared::panes`, so this is how a relaunched pane keeps
-    /// its predecessor's place without a new wire message: clients already
-    /// apply `Reordered`.
+    /// client the result. The order *is* `Shared::panes`, so this is how a
+    /// relaunched pane keeps its predecessor's place without a new wire message.
     fn restore_pane_index(&self, pane: PaneId, index: usize) {
         let mut state = self.state.lock().expect("terminal state poisoned");
         let Some(from) = state.panes.iter().position(|p| p.id == pane) else {

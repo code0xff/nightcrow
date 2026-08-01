@@ -9,8 +9,6 @@ pub fn load_commit_log(repo: &Repository, max_count: usize) -> Result<Vec<Commit
 /// Load a slice of the commit log walking back from HEAD.
 ///
 /// `skip` discards the most recent commits before collecting `limit` entries.
-/// Callers paginating the log pass the count already loaded as `skip` so the
-/// next slice continues from the existing tail.
 pub fn load_commit_log_page(
     repo: &Repository,
     skip: usize,
@@ -20,14 +18,8 @@ pub fn load_commit_log_page(
 }
 
 /// Load a slice of the commit log walking back from `anchor`, or from HEAD when
-/// it is `None`.
-///
-/// The anchor exists for callers that page across separate requests. `skip` is
-/// an offset into one walk, so it only identifies the same commits as long as
-/// the walk starts where it did before — and HEAD moves whenever a commit lands
-/// while the pages are being collected, which silently shifts every subsequent
-/// offset and duplicates or drops entries. Pinning the start makes a sequence of
-/// pages describe one history rather than a moving one.
+/// it is `None`. Pinning the start makes a sequence of pages describe one
+/// history rather than a moving one (HEAD moves whenever a commit lands).
 pub fn load_commit_log_from(
     repo: &Repository,
     anchor: Option<Oid>,
@@ -81,13 +73,10 @@ pub fn load_commit_log_from(
 
 /// Render a commit oid as the conventional 7-character abbreviated form.
 ///
-/// Previously this used `repo.find_object(...).short_id()`, which asks
-/// libgit2 to compute the *minimum unique prefix length* — at the cost of
-/// roughly O(log n) ODB lookups per commit. For a repo with thousands of
-/// commits that cost was paid on every initial commit log load. git's own
-/// default `core.abbrev` is 7, so a fixed 7-char prefix matches the
-/// familiar form while making this an O(1) operation. Oid hex strings are
-/// always 40 ASCII bytes, so the slice is sound.
+/// Previously used `repo.find_object(...).short_id()`, which computes the
+/// minimum unique prefix at O(log n) ODB lookups per commit. git's own default
+/// `core.abbrev` is 7, so a fixed 7-char prefix matches the familiar form
+/// while making this O(1).
 pub(crate) fn short_oid(oid: Oid) -> String {
     let s = oid.to_string();
     s.get(..7).unwrap_or(&s).to_string()

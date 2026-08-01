@@ -1,9 +1,8 @@
-//! Which pane belongs to which plugin, and how long an exited one's slot is kept.
-//!
-//! Split from the host lifecycle beside it because the two are bounded by
-//! different things. Whether a plugin child runs is decided by the config; whether
-//! a pane is still reachable is decided by that pane's own process and by the
-//! window a relaunch has left, which is what everything here measures.
+//! Which pane belongs to which plugin, and how long an exited one's slot is
+//! kept. Split from the host lifecycle beside it because the two are bounded by
+//! different things: whether a plugin child runs is decided by the config;
+//! whether a pane is still reachable is decided by that pane's own process and
+//! by the window a relaunch has left.
 
 use super::hub_helpers::PaneState;
 use super::hub_plugins::Plugins;

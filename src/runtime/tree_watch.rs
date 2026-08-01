@@ -1,20 +1,11 @@
 //! Filesystem watcher for the file-tree navigator (`ViewMode::Tree`).
 //!
-//! The tree caches one directory level at a time and only re-reads on Tree-mode
-//! entry; this watcher closes the gap so a folder created/moved/renamed/deleted
-//! while Tree mode is open shows up without leaving and re-entering. It watches
-//! only the directories the user has actually expanded (plus the root) —
+//! Watches only the directories the user has actually expanded (plus the root) —
 //! NON-recursively — mirroring yazi/broot/nvim-tree. A recursive watch over the
 //! whole work tree would consume one inotify watch per directory and fall over
-//! on large repositories (the reason broot keeps recursive watching off by
-//! default), so the watch set is bounded to what is visible.
-//!
-//! Events are coalesced by `notify-debouncer-mini` over a short window and
-//! reported as the set of repo-relative directories whose contents changed, so
-//! the navigator can re-read just those instead of the whole cache.
-//! Refresh-on-entry remains the fallback when the watcher cannot start (e.g. a
-//! platform/filesystem where native events never arrive), so this layer is
-//! strictly additive — its absence degrades to the previous behaviour.
+//! on large repositories. Events are coalesced by `notify-debouncer-mini` and
+//! reported as the set of repo-relative directories whose contents changed.
+//! Refresh-on-entry remains the fallback when the watcher cannot start.
 
 use notify::RecursiveMode;
 use notify_debouncer_mini::{DebounceEventResult, Debouncer, new_debouncer};
@@ -33,8 +24,8 @@ const DEBOUNCE: Duration = Duration::from_millis(300);
 /// repo-relative directories. Dropping it stops the watcher thread.
 ///
 /// The working-tree root is supplied to `sync` per call rather than stored, so
-/// a repo switch needs only a fresh `TreeWatcher` (no stale root to carry) and
-/// construction does not depend on a repository handle being open yet.
+/// a repo switch needs only a fresh `TreeWatcher` and construction does not
+/// depend on a repository handle being open yet.
 ///
 /// In tests (and when the watcher fails to start) `debouncer` is `None`: the
 /// receiver still exists so `App` polling is uniform, and watch/unwatch calls
@@ -98,8 +89,7 @@ impl TreeWatcher {
 
     /// An inert watcher that never observes anything: no OS watcher is created
     /// and `sync` performs no filesystem calls. Used when live watching is
-    /// disabled by config so the feature costs nothing (no watcher thread, no
-    /// inotify descriptors), with refresh-on-entry carrying the navigator.
+    /// disabled by config, with refresh-on-entry carrying the navigator.
     pub fn disabled() -> Self {
         // A dropped sender makes `drain_changed` see `Disconnected` and report
         // no changes; the field shape stays uniform with the active watcher.

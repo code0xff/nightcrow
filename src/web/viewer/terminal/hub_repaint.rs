@@ -11,14 +11,12 @@
 //! PTY already has reaches nobody. Two `resize` calls back to back do not work
 //! either: both complete before the child's handler runs, so it reads the final
 //! size, sees no change, and a program that repaints on a *changed* size does
-//! nothing (measured — the shell reported the same `$LINES` twice). So the pane
-//! is made one row shorter, and put back a tick later, once the program has had
-//! time to see it. That is one wasted intermediate repaint, on reattach only.
+//! nothing. So the pane is made one row shorter, and put back a tick later, once
+//! the program has had time to see it.
 //!
-//! Clients are not told about the intermediate size. It exists for a tenth of a
+//! Clients are not told about the intermediate size — it exists for a tenth of a
 //! second, the recorded size never changes, and the repaint that follows the
-//! restore covers every row — telling them would cost two extra `resized`
-//! round trips and a visible reflow for a size nobody chose.
+//! restore covers every row.
 
 use super::TerminalHub;
 use crate::backend::{PaneId, PtyBackend, TerminalBackend};
@@ -27,8 +25,7 @@ use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
 /// How long the shorter size stays in effect. Long enough that the child's
-/// `SIGWINCH` handler has run and read it (30 ms already sufficed in testing,
-/// with the margin here for a loaded machine), short enough to be over before
+/// `SIGWINCH` handler has run and read it, short enough to be over before
 /// anyone has read a line of the screen.
 const RESTORE_AFTER: Duration = Duration::from_millis(100);
 
@@ -101,12 +98,10 @@ impl TerminalHub {
         }
     }
 
-    /// Give back the size of every pane whose gap has elapsed.
-    ///
-    /// The size restored is whatever the pane's record says *now*, not what it
-    /// was when the repaint started: a client that took the sizing and resized
-    /// the pane in between has the last word, and putting the old size back
-    /// would undo a size somebody actually chose.
+    /// Give back the size of every pane whose gap has elapsed. The size
+    /// restored is whatever the pane's record says *now*, not what it was when
+    /// the repaint started — a client that resized the pane in between has the
+    /// last word.
     pub(super) fn finish_repaints(
         &self,
         backend: &mut PtyBackend,
@@ -129,8 +124,7 @@ impl TerminalHub {
         }
     }
 
-    /// Drop a gone pane's repaint bookkeeping, so a shrink is never restored
-    /// onto a slot a relaunch has reused.
+    /// Drop a gone pane's repaint bookkeeping.
     pub(super) fn forget_repaints(&self, repaints: &mut Repaints, pane: PaneId) {
         repaints.forget(pane);
     }

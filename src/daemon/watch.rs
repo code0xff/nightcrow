@@ -1,9 +1,8 @@
 //! Telling attached clients about changes nobody on their connection asked for.
-//!
 //! The session has two front doors. A repository opened in the browser goes
 //! through the HTTP handlers, and nothing on an attach socket is woken by it —
 //! so a client that asks for nothing would sit on a tab list that quietly went
-//! stale, which is the one thing a shared session must not do.
+//! stale.
 //!
 //! This is a thread that re-reads the session on a tick and tells everyone when
 //! it differs from what they were last told. Observing rather than being
@@ -18,20 +17,17 @@ use crate::web::viewer::session;
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::Duration;
 
-/// How long the watcher waits before re-reading the session unprompted.
-///
-/// This bounds only changes it cannot be told about — the ones made through the
+/// How long the watcher waits before re-reading the session unprompted. This
+/// bounds only changes it cannot be told about — the ones made through the
 /// browser's HTTP handlers — where the alternative it replaces was "never". A
-/// change asked for on an attach socket wakes it immediately (see [`Nudge`]), so
-/// a keystroke never waits on this.
+/// change asked for on an attach socket wakes it immediately (see [`Nudge`]).
 const TICK: Duration = Duration::from_millis(150);
 
-/// A way to tell the watcher not to wait out its tick.
-///
-/// A client that just asked for something is watching for it to happen, so the
-/// answer cannot sit behind a poll interval. The change is still *read* from the
-/// session rather than passed through here: this only says "look now", so a
-/// handler that forgets to poke costs latency, never correctness.
+/// A way to tell the watcher not to wait out its tick. A client that just asked
+/// for something is watching for it to happen, so the answer cannot sit behind a
+/// poll interval. The change is still *read* from the session rather than passed
+/// through here: this only says "look now", so a handler that forgets to poke
+/// costs latency, never correctness.
 #[derive(Default)]
 pub(super) struct Nudge {
     poked: Mutex<bool>,

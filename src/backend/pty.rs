@@ -16,14 +16,10 @@ mod spawn;
 
 /// Reap window for PTY reader / wait threads. Bigger than the commit-log
 /// REAP_TIMEOUT because `read()` on a PTY master can stay blocked if a
-/// daemonized grandchild inherited the slave fd — portable_pty does not
-/// guarantee CLOEXEC on every platform, so the join must be detachable.
+/// daemonized grandchild inherited the slave fd.
 const PTY_REAP_TIMEOUT: Duration = Duration::from_millis(50);
 
 /// Max events drained from any one pane in a single `drain_events` call.
-/// A pane that produces output faster than the UI loop consumes it would
-/// otherwise monopolize the per-frame drain and starve sibling panes —
-/// the round-robin cap bounds the work per pane to a small constant.
 const PER_PANE_DRAIN_BUDGET: usize = 64;
 
 /// How long a pane whose child has exited keeps draining before the exit is
@@ -45,7 +41,7 @@ pub(super) enum PtyEvent {
 /// The child's death is not: on Windows `ClosePseudoConsole` only runs when
 /// the master is dropped, so `read()` never returns EOF and the child's exit
 /// is the *only* signal a pane gets. `Draining` holds the exit back until the
-/// channel is dry, so the last output still reaches the emulator.
+/// channel is dry.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum ExitPhase {
     /// No exit signal seen.
@@ -96,9 +92,7 @@ impl Drop for PtyPane {
 pub struct PtyBackend {
     // BTreeMap (not HashMap) so per-frame event drain visits panes in
     // PaneId order — IDs are monotonic, so this matches creation order
-    // and stays deterministic across runs. HashMap iteration was random
-    // per process, which made inter-pane event ordering unobservable
-    // and could mask fairness regressions in tests.
+    // and stays deterministic across runs.
     pub(super) panes: BTreeMap<PaneId, PtyPane>,
     /// Slot bookkeeping — identity, launch, idle clock — kept beside `panes`
     /// rather than inside `PtyPane` because a relaunch replaces the `PtyPane`
@@ -106,7 +100,7 @@ pub struct PtyBackend {
     pub(super) slots: PaneSlots,
     pub(super) next_id: PaneId,
     // Each new pane spawns the shell here so its cwd matches the repo
-    // nightcrow is tracking, even when the binary was launched elsewhere.
+    // nightcrow is tracking.
     pub(super) cwd: PathBuf,
     /// Panes created since the last drain, waiting to be reported.
     ///

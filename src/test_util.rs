@@ -2,8 +2,7 @@
 //!
 //! Several modules drive a real `git` binary against a `TempDir` to verify
 //! repository discovery, commit walking, etc. Centralizing the setup here
-//! keeps the helpers in one place instead of duplicating them per test
-//! module.
+//! keeps the helpers in one place.
 
 #![cfg(test)]
 
@@ -54,7 +53,7 @@ pub fn make_repo() -> (TempDir, String) {
 ///
 /// Returns both temporaries — the main repository's and the one holding the
 /// worktree — and the worktree's path. Both must be kept alive for the duration
-/// of the test: the worktree cannot be read without the repository it points at.
+/// of the test.
 pub fn make_linked_worktree() -> (TempDir, TempDir, String) {
     let (main, main_path) = make_repo();
     // `git worktree add` needs a commit to base the new tree on.
@@ -78,16 +77,8 @@ pub fn make_linked_worktree() -> (TempDir, TempDir, String) {
 /// `prefs_dir` is required, and must be the caller's own temporary directory.
 /// The accent and the active project *are* preferences, so a session driven from
 /// a test writes this file — and every session pointed at one path is one
-/// session: a test would begin in the colour whichever test ran last chose, and
-/// asking for that same colour is no change at all, which the watcher answers
-/// with silence rather than a frame. Pass the directory that already holds the
-/// test's socket and the file goes away with the test.
-///
-/// This replaced a single fixed path outside any temporary directory, chosen
-/// because it was expected to be unwritable. It is unwritable for an ordinary
-/// user, which is what CI runs as; a test suite running as root — the default in
-/// a bare container — created it and shared it, and the accent tests then
-/// depended on each other's order across whole runs.
+/// session. Pass the directory that already holds the test's socket and the
+/// file goes away with the test.
 pub fn session_state(
     repos: &[String],
     prefs_dir: &Path,
@@ -109,15 +100,12 @@ pub fn session_state(
 }
 
 /// In-memory `TerminalBackend` for tests: spawns nothing, just records the
-/// command each `create_pane` was asked to run so pane-creation logic can be
-/// asserted deterministically without a real PTY or shell.
+/// command each `create_pane` was asked to run.
 #[derive(Default)]
 pub struct FakeBackend {
     next_id: crate::backend::PaneId,
     pub launched: Vec<Option<String>>,
-    /// Byte payloads passed to `send_input`, in call order. Lets input tests
-    /// assert the exact bytes forwarded to the PTY (pass-through, literal
-    /// leader) without a real terminal.
+    /// Byte payloads passed to `send_input`, in call order.
     pub sent: Vec<Vec<u8>>,
     /// Events handed out by the next `drain_events` call. Shared handle so a
     /// test can keep a clone and inject synthetic pane output/exit after the

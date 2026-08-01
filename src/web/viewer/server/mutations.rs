@@ -21,8 +21,7 @@ struct ReorderRequest {
 #[derive(serde::Deserialize)]
 struct PrefsRequest {
     /// Each preference is optional so one write touches one setting and leaves
-    /// the rest as they are; a body naming none is rejected rather than treated
-    /// as a silent no-op.
+    /// the rest as they are.
     accent: Option<usize>,
     sidebar_width: Option<u32>,
     upper_pct: Option<u32>,
@@ -31,8 +30,7 @@ struct PrefsRequest {
     active_repo: Option<String>,
     /// How one project's screen is arranged. Names its own repository rather
     /// than riding on `active_repo`: maximizing is about the project the client
-    /// is looking at, and inferring that from a second field would tie two
-    /// writes together that a client may well send separately.
+    /// is looking at.
     maximized: Option<MaximizedRequest>,
 }
 
@@ -40,18 +38,13 @@ struct PrefsRequest {
 struct MaximizedRequest {
     /// Repo id, translated to a path before it is stored.
     repo: String,
-    /// `"files"`, `"terminal"`, or absent/null for nothing maximized. Absent
-    /// and "nothing" mean the same here, unlike in the enclosing request, where
-    /// absent means the write said nothing about maximizing at all.
+    /// `"files"`, `"terminal"`, or absent/null for nothing maximized.
     panel: Option<String>,
 }
 
 /// Store one or more viewer preferences and echo back the full stored set.
 ///
-/// A value with a range is wrapped or clamped into it rather than rejected — an
-/// accent index past the end of the cycle gets a colour back (as the TUI does
-/// with `Accent::from_index`), and a width past the bounds gets a usable split
-/// back — so a client that drifts out of range self-corrects from the response.
+/// A value with a range is wrapped or clamped into it rather than rejected.
 /// `active_repo` is the exception: it names a repository rather than sitting in
 /// a range, and there is no nearest valid project to fold an unknown id onto.
 pub(super) fn handle_set_prefs(body: &str, state: &ViewerState) -> Vec<u8> {
@@ -73,9 +66,7 @@ pub(super) fn handle_set_prefs(body: &str, state: &ViewerState) -> Vec<u8> {
         return json_error("400 Bad Request", "no known preference in the body");
     }
     // Resolved before the write, because what is stored is the path behind the
-    // id. An id no longer in the catalog is rejected rather than dropped: the
-    // only way to send one is to have raced a close on another device, and
-    // storing nothing while answering 200 would claim a selection was kept.
+    // id. An id no longer in the catalog is rejected rather than dropped.
     let active_path = match request.active_repo {
         Some(id) => match state.catalog.get(&id) {
             Some(entry) => Some(entry.path.clone()),
@@ -83,9 +74,7 @@ pub(super) fn handle_set_prefs(body: &str, state: &ViewerState) -> Vec<u8> {
         },
         None => None,
     };
-    // Resolved before the write for the same reason, and refused the same way:
-    // a panel this server cannot render is a client that has drifted, and
-    // storing nothing behind a 200 would claim an arrangement was kept.
+    // Resolved before the write for the same reason, and refused the same way.
     let maximized = match request.maximized {
         Some(change) => {
             let Some(entry) = state.catalog.get(&change.repo) else {
@@ -105,8 +94,7 @@ pub(super) fn handle_set_prefs(body: &str, state: &ViewerState) -> Vec<u8> {
         }
         None => None,
     };
-    // One locked write for whatever the body carried, so a request naming
-    // several preferences lands atomically rather than as racing updates.
+    // One locked write for whatever the body carried.
     let stored = state.prefs.update(PrefsUpdate {
         accent: request.accent,
         sidebar_width: request.sidebar_width,
@@ -135,7 +123,7 @@ pub(super) fn handle_set_prefs(body: &str, state: &ViewerState) -> Vec<u8> {
 /// Open a repository from the browser and add it to the served catalog.
 ///
 /// The path is user-supplied but the response is public, so a bad path yields a
-/// generic message rather than echoing what was tried.
+/// generic message.
 pub(super) fn handle_open_repo(body: &str, state: &ViewerState) -> Vec<u8> {
     let request: OpenRequest = match serde_json::from_str(body) {
         Ok(request) => request,
@@ -161,8 +149,7 @@ pub(super) fn handle_open_repo(body: &str, state: &ViewerState) -> Vec<u8> {
 
 #[derive(serde::Deserialize)]
 struct MkdirRequest {
-    /// The directory to create the new folder inside — the one the picker is
-    /// currently showing.
+    /// The directory to create the new folder inside.
     path: String,
     /// The new folder's name. Must be a single plain path segment.
     name: String,
@@ -170,12 +157,11 @@ struct MkdirRequest {
 
 /// Create a new folder inside a directory the picker is browsing.
 ///
-/// The parent is confined only as much as `browse` is (any directory an
-/// authenticated user can already reach), but `name` is held to a single plain
-/// segment: separators, `..`, a leading `.` (which also rules out `.git` and the
-/// hidden entries the picker never lists), and NUL are all rejected. Combined
-/// with canonicalizing the parent first, the created folder can only ever land
-/// directly under the browsed directory, never escape it via a symlink or `..`.
+/// The parent is confined only as much as `browse` is, but `name` is held to a
+/// single plain segment: separators, `..`, a leading `.` (which also rules out
+/// `.git`), and NUL are all rejected. Combined with canonicalizing the parent
+/// first, the created folder can only ever land directly under the browsed
+/// directory.
 pub(super) fn handle_mkdir(body: &str) -> Vec<u8> {
     let request: MkdirRequest = match serde_json::from_str(body) {
         Ok(request) => request,
@@ -196,8 +182,7 @@ pub(super) fn handle_mkdir(body: &str) -> Vec<u8> {
         return json_error("400 Bad Request", "invalid folder name");
     }
     let parent = crate::platform::paths::expand_tilde(request.path.trim());
-    // is_dir() follows symlinks and is false for a missing path — the same gate
-    // `open` uses for the directory it is handed.
+    // is_dir() follows symlinks and is false for a missing path.
     if !parent.is_dir() {
         return json_error("400 Bad Request", "no such directory");
     }
@@ -224,8 +209,6 @@ pub(super) fn handle_mkdir(body: &str) -> Vec<u8> {
 }
 
 /// Close a repository named by the `repo` id and return the updated set.
-/// Idempotent from the client's view: an unknown id is a 404, a known one is
-/// removed and its runtime/terminals stopped by the catalog rebuild.
 pub(super) fn handle_close_repo(head: &RequestHead, state: &ViewerState) -> Vec<u8> {
     let Some(id) = head.query_param("repo") else {
         return json_error("400 Bad Request", "missing repo parameter");
@@ -258,15 +241,13 @@ pub(super) fn handle_reorder_repos(body: &str, state: &ViewerState) -> Vec<u8> {
 /// Re-read `config.toml` and report what was applied.
 ///
 /// The body is ignored and no configuration is accepted from the request: the
-/// file on the server's disk is what is read, so a browser cannot reconfigure the
-/// session from something it made up. Deciding who may ask happened before this —
-/// the route is behind the same session cookie as every other mutation.
+/// file on the server's disk is what is read. Deciding who may ask happened
+/// before this — the route is behind the same session cookie as every other
+/// mutation.
 ///
 /// A refusal is the operator's own message, not a redacted one. These name the
-/// offending key in their own config file, which is the whole value of showing it;
-/// they carry no repository contents, no filesystem layout beyond the config path
-/// the operator already knows, and no credential — the web password is never part
-/// of what a reload reports.
+/// offending key in their own config file; they carry no repository contents or
+/// credentials.
 pub(super) fn handle_reload_config(state: &ViewerState) -> Vec<u8> {
     match crate::web::viewer::reload::reload_config(state) {
         Ok(report) => {

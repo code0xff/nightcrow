@@ -1,14 +1,11 @@
-//! Wiring one attached client to every open repository's terminals.
-//!
-//! The hubs are the browser's too — one per repository, already fanning output
-//! out to whoever has connected. An attaching client subscribes to all of them
-//! at once, because it renders a tab per repository and a pane whose output it
-//! stopped reading would fall behind its own scrollback.
+//! Wiring one attached client to every open repository's terminals. The hubs
+//! are the browser's too — one per repository, already fanning output out to
+//! whoever has connected. An attaching client subscribes to all of them at once,
+//! because it renders a tab per repository and a pane whose output it stopped
+//! reading would fall behind its own scrollback.
 //!
 //! That costs a thread per client per repository. Bounded by
-//! `MAX_ATTACHED_CLIENTS` × `MAX_PROJECTS`, and in practice one or two people
-//! at terminals with a handful of repositories open — but it is a product, and
-//! the ceiling is worth knowing before either factor is raised.
+//! `MAX_ATTACHED_CLIENTS` × `MAX_PROJECTS`.
 
 use super::clients::AttachedClients;
 use super::frame::Frame;
@@ -25,9 +22,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 /// How long a bridge waits on its hub before checking whether it should stop.
-///
 /// Only bounds how quickly a closed repository's thread notices; output is
-/// delivered the moment it arrives, not on this tick.
+/// delivered the moment it arrives.
 const BRIDGE_POLL: Duration = Duration::from_millis(100);
 
 /// One client's subscriptions, one per open repository.
@@ -35,13 +31,10 @@ pub struct TerminalBridges {
     client: u64,
     clients: Arc<AttachedClients>,
     open: HashMap<String, Bridge>,
-    /// Whether this client's first subscription has been made.
-    ///
-    /// Attaching is a person sitting down, and that is the one moment this
-    /// client takes the session's sizing. Every subscription after it follows a
-    /// set that changed — a repository opened in a browser is not an arrival
-    /// here, and reading it as one would pull the sizing off whoever is actually
-    /// looking.
+    /// Whether this client's first subscription has been made. Attaching is a
+    /// person sitting down, and that is the one moment this client takes the
+    /// session's sizing. Every subscription after it follows a set that changed
+    /// — a repository opened in a browser is not an arrival here.
     arrived: bool,
 }
 
@@ -62,7 +55,6 @@ impl TerminalBridges {
     }
 
     /// Subscribe to repositories that appeared and drop the ones that went.
-    ///
     /// Called with every set the client is told about, so a repository opened
     /// on another client starts streaming here without this one asking.
     pub fn follow(
@@ -82,17 +74,10 @@ impl TerminalBridges {
             let arriving = !self.arrived;
             let Some(bridge) = self.subscribe(&repo.id, arriving, &entry.terminals) else {
                 // Left out of `open`, and the arrival left unspent, so the next
-                // set this client is told about tries again as if this had not
-                // been attempted — which, deliberately, it has not.
-                //
-                // "Next set" is the limit: this is called on attach and when the
-                // repository set changes, so a repository that fails here shows
-                // in the client's tabs with no terminals until something else
-                // moves. Left as is rather than given a retry of its own —
-                // reaching here means a thread could not be spawned, which on
-                // this daemon means the next connection cannot be served either,
-                // and a repository that streams nothing is the smaller half of
-                // that problem.
+                // set this client is told about tries again. "Next set" is the
+                // limit: this is called on attach and when the repository set
+                // changes, so a repository that fails here shows in the client's
+                // tabs with no terminals until something else moves.
                 continue;
             };
             self.arrived = true;
@@ -108,8 +93,7 @@ impl TerminalBridges {
         }
     }
 
-    /// `None` when the relay thread could not be started, in which case nothing
-    /// has happened at all — see the ordering below.
+    /// `None` when the relay thread could not be started.
     fn subscribe(
         &self,
         repo: &str,
@@ -118,13 +102,11 @@ impl TerminalBridges {
     ) -> Option<Bridge> {
         let stop = Arc::new(AtomicBool::new(false));
         // The thread first, and the subscription only once it exists.
-        // Subscribing is not free of consequence: it registers this client with
-        // the session's size ownership and, on an arrival, takes the sizing off
-        // whoever had it. Done in the other order, a thread that failed to start
-        // left a subscription nobody reads — the sizing displaced for the
-        // release grace, this client's one arrival spent, and the hub evicting a
-        // bridge it can never reach. Handing the session over afterwards is what
-        // lets the order be this way round.
+        // Subscribing registers this client with the session's size ownership
+        // and, on an arrival, takes the sizing off whoever had it. Done in the
+        // other order, a thread that failed to start left a subscription nobody
+        // reads — the sizing displaced, this client's one arrival spent, and
+        // the hub evicting a bridge it can never reach.
         let (hand_over, take) = std::sync::mpsc::channel::<Arc<TerminalSession>>();
         let worker = {
             let stop = Arc::clone(&stop);
@@ -160,15 +142,10 @@ impl TerminalBridges {
         // client's emulators start from the same place the browser's do.
         //
         // One viewer across every repository it subscribes to: this client is a
-        // single terminal showing one project at a time, not one screen per
-        // repository. Only the first of these subscriptions is an arrival — the
-        // rest follow a set that changed, and a repository opening elsewhere is
-        // not a person sitting down here.
-        //
-        // No socket to hand over: the loop above drains this session and passes
-        // frames on without blocking, so it cannot fall behind here. The
-        // backpressure that matters to an attached client is applied where it
-        // does own a socket (`AttachedClients::queue`).
+        // single terminal showing one project at a time. Only the first of
+        // these subscriptions is an arrival — the rest follow a set that
+        // changed, and a repository opening elsewhere is not a person sitting
+        // down here.
         let session = Arc::new(hub.connect(ViewerId::Attached(self.client), arriving, None));
         let _ = hand_over.send(Arc::clone(&session));
         Some(Bridge {

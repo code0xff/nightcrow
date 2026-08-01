@@ -2,11 +2,8 @@
 //!
 //! Wraps `Term` + the ANSI `Processor` + an event proxy behind the narrow
 //! contract the rest of nightcrow needs — feed PTY bytes, resize, scroll,
-//! query cells/cursor/modes — so no module outside this file touches
-//! alacritty internals except through `ScreenView`/`CellView`. This replaced
-//! the vt100 crate, whose resize path panicked when a wide character was
-//! truncated at the last column (vt100-rust issue #28) and whose upstream
-//! had stalled on that class of boundary bugs.
+//! query cells/cursor/modes. This replaced the vt100 crate, whose resize path
+//! panicked when a wide character was truncated at the last column.
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -21,20 +18,17 @@ use alacritty_terminal::vte::ansi::Processor;
 #[derive(Default)]
 pub struct EmulatorEvents {
     /// Most recent OSC 0/2 window title in the processed chunk, already
-    /// stripped of control characters and surrounding whitespace. `None`
-    /// when the chunk set no (non-empty) title.
+    /// stripped of control characters and surrounding whitespace.
     pub title: Option<String>,
     /// Terminal query responses (DA, DSR, ...) the emulator produced while
-    /// processing. Must be written back to the pane's PTY so programs that
-    /// interrogate their terminal (vim, tmux, ...) receive an answer.
+    /// processing. Must be written back to the pane's PTY.
     pub pty_writes: Vec<u8>,
 }
 
 /// Where a scroll request for a pane must be delivered. A program that owns
 /// its viewport keeps its transcript in its own memory, not in the emulator's
 /// scrollback, so scrolling the grid would move nothing; the scroll has to
-/// reach the program as input instead. Which input it expects is announced by
-/// the modes the program itself enabled.
+/// reach the program as input instead.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ScrollSink {
     /// The program tracks the mouse and reports in SGR (1006) form: send it
@@ -45,8 +39,7 @@ pub enum ScrollSink {
     ArrowKeys,
     /// Nothing claimed the scroll, so the emulator's own scrollback owns it.
     /// Interactive shells land here — the default, and the only branch that
-    /// writes nothing to the PTY. A shell would echo an unbound escape
-    /// sequence straight into its prompt, so this branch must stay silent.
+    /// writes nothing to the PTY.
     Scrollback,
 }
 
@@ -109,8 +102,7 @@ impl PaneEmulator {
     }
 
     /// Feed raw PTY output through the emulator, updating the screen state.
-    /// Returns the side effects (title change, terminal query responses)
-    /// the caller must apply.
+    /// Returns the side effects (title change, terminal query responses).
     pub fn process(&mut self, bytes: &[u8]) -> EmulatorEvents {
         self.processor.advance(&mut self.term, bytes);
         let mut state = self.proxy.0.borrow_mut();
@@ -154,14 +146,12 @@ impl PaneEmulator {
     }
 
     /// Which input, if any, a scroll request for this pane must be turned
-    /// into. See `ScrollSink`. Mouse reporting wins over `alternateScroll`
-    /// because a program that asked for wheel events wants them even on the
-    /// alternate screen — that is also the order xterm resolves them in.
+    /// into. Mouse reporting wins over `alternateScroll` because a program
+    /// that asked for wheel events wants them even on the alternate screen.
     ///
     /// `MOUSE_MODE` alone is not enough: without `SGR_MOUSE` the program
     /// expects the legacy X10 encoding, which cannot address columns past
-    /// 223. Rather than emit a second encoding for a case no modern TUI
-    /// uses, such a pane falls back to `Scrollback`.
+    /// 223. Such a pane falls back to `Scrollback`.
     pub fn scroll_sink(&self) -> ScrollSink {
         let mode = self.term.mode();
         if mode.intersects(TermMode::MOUSE_MODE) && mode.contains(TermMode::SGR_MOUSE) {
@@ -174,10 +164,8 @@ impl PaneEmulator {
     }
 
     /// Whether the program asked for mouse button reports in SGR form —
-    /// the gate for forwarding clicks. The mode set is the same one that
-    /// routes wheel scrolls to `ScrollSink::MouseWheel`, but it is a
-    /// separate predicate because the meaning differs: a click has no
-    /// scrollback fallback, it is either claimed by the program or dropped.
+    /// the gate for forwarding clicks. A click has no scrollback fallback,
+    /// it is either claimed by the program or dropped.
     pub fn wants_mouse_buttons(&self) -> bool {
         let mode = self.term.mode();
         mode.intersects(TermMode::MOUSE_MODE) && mode.contains(TermMode::SGR_MOUSE)
@@ -211,9 +199,7 @@ impl PaneEmulator {
 }
 
 /// Clamp a requested pane size to alacritty's supported minimum grid.
-/// `Term` expects its embedder to enforce `MIN_COLUMNS`/`MIN_SCREEN_LINES`
-/// (the alacritty app clamps its window the same way); in particular a
-/// 1-column grid makes wide-character reflow loop forever on resize.
+/// A 1-column grid makes wide-character reflow loop forever on resize.
 ///
 /// `TerminalState` applies the same clamp to the backend PTY size and its
 /// `last_content_size` bookkeeping, so the PTY, the emulator grid, and the

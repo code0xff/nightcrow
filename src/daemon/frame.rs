@@ -1,21 +1,19 @@
-//! Framing for the daemon socket.
-//!
-//! A Unix socket is a byte stream with no message boundaries, so every message
-//! carries its own length. The kind byte splits control messages from terminal
-//! output for the same reason the viewer's WebSocket splits text frames from
-//! binary ones: PTY bytes are not text, and routing them through JSON would pay
-//! escaping and base64 expansion on the hottest path there is.
+//! Framing for the daemon socket. A Unix socket is a byte stream with no
+//! message boundaries, so every message carries its own length. The kind byte
+//! splits control messages from terminal output for the same reason the
+//! viewer's WebSocket splits text frames from binary ones: PTY bytes are not
+//! text, and routing them through JSON would pay escaping and base64 expansion
+//! on the hottest path there is.
 
 use anyhow::{Context, Result, bail};
 use std::io::{Read, Write};
 
-/// Largest payload one frame may carry.
-///
-/// The reader allocates whatever length the frame announces, so this is the
-/// ceiling on what a single message can make the process allocate. It is set
-/// above the largest payload the protocol actually produces — a terminal
-/// scrollback replay, capped at `MAX_TERMINAL_SCROLLBACK_BYTES` (256 KiB) per
-/// pane — with room for a control message describing every pane at once.
+/// Largest payload one frame may carry. The reader allocates whatever length
+/// the frame announces, so this is the ceiling on what a single message can make
+/// the process allocate. Set above the largest payload the protocol actually
+/// produces — a terminal scrollback replay, capped at
+/// `MAX_TERMINAL_SCROLLBACK_BYTES` (256 KiB) per pane — with room for a control
+/// message describing every pane at once.
 pub const MAX_FRAME_BYTES: usize = 4 * 1024 * 1024;
 
 /// What a frame carries. Encoded as the first byte on the wire, so an unknown

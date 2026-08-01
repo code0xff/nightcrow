@@ -1,18 +1,12 @@
 //! The set of repositories the viewer serves, and their runtimes.
 //!
-//! Clients address a repository by an opaque `id`, never by path. That is the
-//! whole point: a request cannot name a directory, only pick one the server
-//! already decided to expose, so "which repository" is not an input to
-//! validate — it is a lookup that either hits or 404s.
-//!
-//! Ids are stable for the process lifetime. A path keeps its id across catalog
-//! updates, so opening or closing an unrelated tab does not renumber the others
-//! and invalidate a client's bookmarks mid-session.
+//! Clients address a repository by an opaque `id`, never by path — a request
+//! cannot name a directory, only pick one the server already decided to expose.
+//! Ids are stable for the process lifetime, so opening or closing an unrelated
+//! tab does not renumber the others.
 //!
 //! Replacement is atomic and does no blocking work under the lock: the new list
-//! is built, swapped in, and only then are the dropped runtimes stopped — a
-//! runtime shutdown joins a thread, and holding the catalog lock across that
-//! would stall every in-flight request.
+//! is built, swapped in, and only then are the dropped runtimes stopped.
 
 use crate::web::viewer::runtime::RepoRuntime;
 use crate::web::viewer::terminal::TerminalHub;
@@ -33,46 +27,28 @@ pub struct Catalog {
     /// Repositories supplied by the CLI (`serve --repo`) or pushed from the TUI
     /// workspace. Replaced wholesale by [`Catalog::set_paths`].
     base: Mutex<Vec<String>>,
-    /// Repositories opened from the browser. Kept across `base` updates so a
-    /// workspace tab change in the TUI does not drop them.
+    /// Repositories opened from the browser. Kept across `base` updates.
     added: Mutex<Vec<String>>,
     /// Repositories closed from the browser. Subtracted from the served set so
-    /// a `base` re-sync (a TUI tab change) does not resurrect a closed repo;
-    /// re-opening a path clears it from here.
+    /// a `base` re-sync does not resurrect a closed repo.
     hidden: Mutex<Vec<String>>,
     order: Mutex<Vec<String>>,
     /// Commands each repository's terminal hub runs as startup terminals on the
-    /// first client connect (empty = one bare shell). Applied to every hub the
-    /// catalog spawns.
-    ///
-    /// Behind a lock because a config reload replaces it. What that reaches is
-    /// only the hubs spawned *after* it: a hub creates its startup panes once
-    /// for its life, so a repository already open has spent this list, and the
-    /// panes it spent it on are running children nobody may replace on the
-    /// strength of a file edit.
+    /// first client connect. Behind a lock because a config reload replaces it;
+    /// only hubs spawned *after* the reload see the new list.
     startup_commands: Mutex<Vec<crate::config::StartupCommand>>,
     /// The `--exec` panes the daemon was started with, appended after the
-    /// configured ones. Not behind a lock: these came from the command line, and
-    /// a reload of the config file cannot change what that said.
+    /// configured ones. Not behind a lock: these came from the command line.
     cli_startup: Vec<String>,
-    /// The `[[plugin]]` table, handed to every hub the catalog spawns. A hub only
-    /// launches the ones its own startup commands opted into, so an entry here is
-    /// an offer rather than a process.
-    ///
-    /// Replaced by a reload like the list above, but with a further reach: the
-    /// hubs already running are told as well, because a plugin is a child process
-    /// rather than a pane and restarting one costs the session nothing.
+    /// The `[[plugin]]` table, handed to every hub the catalog spawns. Replaced
+    /// by a reload; the hubs already running are told as well, because a plugin
+    /// is a child process and restarting one costs the session nothing.
     plugins: Mutex<Vec<crate::config::PluginConfig>>,
     /// The shell every terminal pane is spawned with. Fixed for the session's
     /// life: a config reload does not replace the shell of a running hub.
     shell: crate::config::ShellConfig,
-    /// Which screen this session's panes are fitted to, shared by every hub the
-    /// catalog spawns.
-    ///
-    /// One value for the session rather than one per repository: every client
-    /// shows the same repository (the daemon owns which is in front), so "which
-    /// screen is this fitted to" has a single answer. Asked per hub, it was
-    /// re-answered on every switch — see
+    /// Which screen this session's panes are fitted to, shared by every hub.
+    /// One value for the session rather than one per repository — see
     /// [`crate::web::viewer::size_owner`].
     ownership: Arc<crate::web::viewer::size_owner::SizeOwnership>,
 }

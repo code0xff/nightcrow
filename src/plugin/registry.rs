@@ -1,14 +1,9 @@
 //! The on-disk set of installed plugin executables (`~/.nightcrow/plugins`).
 //!
-//! Installing a binary here does not switch it on: the host only ever launches
-//! a plugin that `config.toml` declares in a `[[plugin]]` table *and* that some
-//! pane can reach — either a `[[startup_command]]` opted one in by name, or
-//! `watch_on_signal` lets a provider signal name one. That edit is left to the
-//! user on purpose — a plugin can drive a pane's terminal, so the file that
-//! grants it that has to be one a person read.
-//!
-//! Every function takes the plugins directory as a parameter so the filesystem
-//! behaviour is testable against a temp directory.
+//! Installing a binary here does not switch it on: the host only launches a
+//! plugin that `config.toml` declares in a `[[plugin]]` table *and* that some
+//! pane can reach. That edit is left to the user — a plugin can drive a pane's
+//! terminal, so the file that grants it that has to be one a person read.
 
 use anyhow::{Context, Result};
 use std::path::{Path, PathBuf};

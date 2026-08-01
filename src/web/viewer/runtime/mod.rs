@@ -2,20 +2,14 @@
 //!
 //! The thread owns that repository's [`SnapshotChannel`], reduces each snapshot
 //! to a wire payload once, and hands it to every subscribed SSE client.
-//!
-//! `SnapshotChannel` is a single-consumer `mpsc`, so the viewer cannot share
-//! the TUI's — it spawns its own. That is the cost of the server never
-//! referencing `App`, which is also what lets it run headless.
+//! `SnapshotChannel` is a single-consumer `mpsc`, so the viewer spawns its own —
+//! the cost of the server never referencing `App`, which is also what lets it
+//! run headless.
 //!
 //! **Fan-out is conflated, not queued.** A subscriber that writes slowly gets
 //! the newest status, never a backlog of stale ones: each holds a single slot
 //! that the publisher overwrites, plus a one-deep wakeup channel that coalesces.
-//! Both are bounded by construction, so a stalled client costs one payload of
-//! memory rather than growing without limit.
-//!
-//! No lock here is ever held across socket I/O: the publisher writes slots and
-//! returns, and each client thread takes its update out of its own slot before
-//! writing to the network.
+//! No lock here is ever held across socket I/O.
 
 use crate::git::diff::RepoSnapshot;
 use crate::runtime::snapshot::{SnapshotChannel, SnapshotMsg, SnapshotWatch};

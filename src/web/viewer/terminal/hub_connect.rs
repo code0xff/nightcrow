@@ -1,8 +1,5 @@
 //! Clients coming and going: the replay that puts the current terminals in
 //! front of one, and the two sends that address a single client.
-//!
-//! Split out of `mod.rs` so that file stays about the hub itself; the behaviour
-//! is unchanged.
 
 use super::frame::{ServerMessage, TerminalFrame};
 use super::hub_helpers::{Command, Replayed, replay_pane};

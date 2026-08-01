@@ -1,13 +1,12 @@
-//! The set of attached clients, and how a change reaches all of them.
-//!
-//! The session is shared, so a change one client makes is news for every other:
-//! a repository opened in the browser has to appear in an attached TUI without
-//! it having asked. That rules out plain request/response — the daemon speaks
+//! The set of attached clients, and how a change reaches all of them. The
+//! session is shared, so a change one client makes is news for every other: a
+//! repository opened in the browser has to appear in an attached TUI without it
+//! having asked. That rules out plain request/response — the daemon speaks
 //! first — so each client gets a queue and a thread that drains it, and state
 //! changes are broadcast rather than returned.
 //!
 //! Refusals are not broadcast. "No such directory" is an answer to the client
-//! that asked and noise to everyone else, so it is addressed.
+//! that asked and noise to everyone else.
 //!
 //! **Nothing here is ever skipped.** These queues carry pane output, and a
 //! client that misses one frame of it renders every frame after that from a
@@ -20,41 +19,35 @@ use std::sync::Mutex;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc::{self, Receiver, SyncSender, TrySendError};
 
-/// Frames one client may have queued before it is considered wedged.
-///
-/// Matches the hub's own client queue, because since the terminals were shared
-/// this carries the same thing: a burst of pane output, where the depth is what
-/// absorbs the gap between a hub broadcasting and a socket accepting. Reaching
-/// the end of it means the client is not behind but stuck.
+/// Frames one client may have queued before it is considered wedged. Matches
+/// the hub's own client queue, since this carries the same thing: a burst of
+/// pane output, where the depth absorbs the gap between a hub broadcasting and
+/// a socket accepting. Reaching the end means the client is not behind but
+/// stuck.
 const CLIENT_QUEUE_DEPTH: usize = 256;
 
 struct Attached {
     id: u64,
     tx: SyncSender<Frame>,
-    /// A third handle on this client's socket, only ever used to end the
-    /// connection when its queue overflows.
-    ///
-    /// Dropping the sender alone would stop the writer thread and leave the
-    /// reader blocked, so the client would go quiet while still believing it was
-    /// attached. Closing the socket is what turns that into the disconnect it
-    /// actually is.
+    /// A third handle on this client's socket, used only to end the connection
+    /// when its queue overflows. Dropping the sender alone would stop the
+    /// writer thread and leave the reader blocked, so the client would go quiet
+    /// while still believing it was attached. Closing the socket turns that
+    /// into the disconnect it actually is.
     socket: UnixStream,
-    /// Whether this client is still waiting to be told the session's shape.
-    ///
-    /// Set when it attaches, and when it asks for the set outright. Cleared by
-    /// the watcher, which is the only thing that sends one — a client's frames
-    /// all coming from one thread is what makes their order the order the
-    /// session changed in.
+    /// Whether this client is still waiting to be told the session's shape. Set
+    /// when it attaches, and when it asks for the set outright. Cleared by the
+    /// watcher, which is the only thing that sends one — a client's frames all
+    /// coming from one thread is what makes their order the order the session
+    /// changed in.
     owed_set: bool,
 }
 
 impl Attached {
-    /// Queue `frame`, reporting whether this client is still worth keeping.
-    ///
-    /// A full queue means the client stopped draining: it is cut off, because
-    /// the alternative is serving it a stream with a hole in it. A disconnected
-    /// one has already gone — its writer thread ended when the socket broke —
-    /// so it is simply forgotten, not reported as stalled.
+    /// Queue `frame`, reporting whether this client is still worth keeping. A
+    /// full queue means the client stopped draining: it is cut off, because the
+    /// alternative is serving it a stream with a hole in it. A disconnected one
+    /// has already gone — its writer thread ended when the socket broke.
     fn queue(&self, frame: Frame) -> bool {
         match self.tx.try_send(frame) {
             Ok(()) => true,

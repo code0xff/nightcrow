@@ -1,21 +1,16 @@
 //! Ceilings on everything the viewer will serialize or hold open.
 //!
 //! Every route reads from a repository whose size the server does not control.
-//! Without a ceiling, one request turns into an unbounded allocation and a
-//! response no browser can render. Each limit below is the point past which
-//! more data stops being useful to a human reading a diff.
-//!
-//! Truncation is always reported — [`Capped::truncated`] rides along into the
-//! DTO so the UI can say "showing the first N", never silently imply it showed
-//! everything.
+//! Without a ceiling, one request turns into an unbounded allocation. Truncation
+//! is always reported — [`Capped::truncated`] rides along into the DTO so the UI
+//! can say "showing the first N".
 
 /// Commits returned by one page of `/api/log`. Matches the TUI's
-/// `commit_log_page_size` default so both surfaces move through history at the
-/// same pace.
+/// `commit_log_page_size` default.
 pub const MAX_LOG_PAGE: usize = 100;
 // `/api/log?skip=` deliberately has no ceiling. A ceiling here would look
 // prudent and protect nothing: the skip feeds `Iterator::skip` on a revwalk, so
-// a request walks at most `skip + page` *or* the whole history, whichever is
+// a request walks at most `skip + page` or the whole history, whichever is
 // smaller. An absurd skip costs what walking the repository costs and no more,
 // while a ceiling would turn the deep end of a long history into a page the
 // client can see exists and can never fetch.
@@ -23,16 +18,13 @@ pub const MAX_LOG_PAGE: usize = 100;
 pub const MAX_COMMIT_FILES: usize = 2_000;
 /// Entries returned for one directory level of `/api/tree`.
 pub const MAX_TREE_ENTRIES: usize = 2_000;
-/// Depth cap for the recursive `/api/tree/search` walk. Matches the TUI tree's
-/// `max_depth` (`config.rs`).
+/// Depth cap for the recursive `/api/tree/search` walk.
 pub const MAX_TREE_SEARCH_DEPTH: usize = 64;
-/// Entries one `/api/tree/search` walk may inspect before it stops and reports
-/// the listing as incomplete. Bounds filesystem work per request.
+/// Entries one `/api/tree/search` walk may inspect before it stops.
 pub const MAX_TREE_SEARCH_VISITS: usize = 100_000;
 /// Matches returned by one `/api/tree/search` request.
 pub const MAX_TREE_SEARCH_RESULTS: usize = 500;
-/// Longest accepted `/api/tree/search` query. Anything past this is rejected
-/// at the boundary rather than matched against every basename.
+/// Longest accepted `/api/tree/search` query.
 pub const MAX_TREE_SEARCH_QUERY_BYTES: usize = 256;
 /// Changed files reported in one status payload.
 pub const MAX_STATUS_FILES: usize = 2_000;
@@ -43,40 +35,28 @@ pub const MAX_DIFF_LINES: usize = 20_000;
 /// Bytes of a single SSE payload. Status is conflated to the latest value, so
 /// this bounds one snapshot, not a backlog.
 pub const MAX_SSE_PAYLOAD_BYTES: usize = 1024 * 1024;
-/// Terminals one repository may hold open at once. Each is a real process.
+/// Terminals one repository may hold open at once.
 pub const MAX_PTYS_PER_REPO: usize = 8;
 /// Bounds on a PTY's size. The client measures these from its own layout, so
-/// they are input from outside and are clamped rather than trusted: a zero
-/// dimension gives the child a terminal it cannot draw in (and can fail
-/// `openpty` outright), and the far end lets one message ask a full-screen
-/// program to allocate a screen buffer of `rows * cols` cells.
+/// they are clamped rather than trusted.
 ///
 /// The ceilings are set just past the widest real display rather than at a
 /// round large number, because the cost being bounded is the *child's*
-/// allocation and it grows with the area. A 6K screen (6144px) at a 6px cell
-/// is 1024 columns, and 4K of height (2160px) at a 6px line is 360 rows — so
-/// a full-screen pane at an unreadable font still fits, while the worst case
-/// one message can ask for is `MAX_PANE_ROWS * MAX_PANE_COLS` cells rather
-/// than u16::MAX squared (four billion).
+/// allocation and it grows with the area. A 6K screen at a 6px cell is 1024
+/// columns, and 4K of height at a 6px line is 360 rows — so a full-screen pane
+/// at an unreadable font still fits, while the worst case one message can ask
+/// for is `MAX_PANE_ROWS * MAX_PANE_COLS` cells rather than u16::MAX squared.
 pub const MIN_PANE_DIMENSION: u16 = 1;
 pub const MAX_PANE_ROWS: u16 = 500;
 pub const MAX_PANE_COLS: u16 = 1_100;
 /// Raw PTY bytes retained per terminal to replay to a (re)connecting client.
 ///
 /// A byte window is history, not a snapshot: whatever a program did before the
-/// window is not in it. Two things fall out of it, and neither is left to this
-/// cap to solve. The modes a program set at startup are tracked separately and
-/// restored explicitly (`terminal::hub_modes`). The screen of a program drawing
-/// on the alternate screen is not replayed from here at all — its bytes are cell
+/// window is not in it. The modes a program set at startup are tracked
+/// separately and restored explicitly. The screen of a program drawing on the
+/// alternate screen is not replayed from here at all — its bytes are cell
 /// updates against a screen the new client does not have — and the program is
-/// asked to draw it again instead (`terminal::hub_repaint`).
-///
-/// This used to say a full-screen program repaints on the resize every client
-/// sends right after connecting. It does not: a client that reconnects into the
-/// same layout deliberately sends no resize (`usePaneSizes.ts`), and a resize to
-/// the size the PTY already has signals nobody. What that left on screen was
-/// fragments, and the redraw key people reach for then is `Ctrl+L` — which
-/// Claude Code in fullscreen rendering runs `/clear` on, twice pressed.
+/// asked to draw it again instead.
 pub const MAX_TERMINAL_SCROLLBACK_BYTES: usize = 256 * 1024;
 /// Live connections the viewer's accept loop will hold. Each one costs a
 /// thread, so without a ceiling anything that can reach the port can exhaust

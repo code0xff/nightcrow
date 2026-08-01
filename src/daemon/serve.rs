@@ -1,9 +1,8 @@
-//! The daemon's accept loop: one attached client, two threads.
-//!
-//! A client gets a reader and a writer because the daemon speaks unprompted —
-//! the session is shared, so a repository opened in the browser has to reach an
-//! attached TUI that never asked. The reader blocks on the socket; the writer
-//! drains that client's queue.
+//! The daemon's accept loop: one attached client, two threads. A client gets a
+//! reader and a writer because the daemon speaks unprompted — the session is
+//! shared, so a repository opened in the browser has to reach an attached TUI
+//! that never asked. The reader blocks on the socket; the writer drains that
+//! client's queue.
 //!
 //! Sized like the viewer's accept loop and for the same reason — a connection
 //! costs threads — but with a much lower ceiling. Clients here are terminals a
@@ -24,24 +23,21 @@ use std::io::Write;
 use std::sync::mpsc::SyncSender;
 use std::sync::{Arc, Mutex};
 
-/// Clients that may be attached at once.
-///
-/// Each is a person at a terminal, so this is generous for the real case while
-/// still bounding a client stuck in a reconnect loop.
+/// Clients that may be attached at once. Each is a person at a terminal, so
+/// this is generous for the real case while still bounding a client stuck in a
+/// reconnect loop.
 pub const MAX_ATTACHED_CLIENTS: usize = 16;
 
 /// Everything the connection threads share.
 pub struct Session {
     pub(super) state: Arc<ViewerState>,
     pub(super) clients: Arc<AttachedClients>,
-    /// Each attached client's terminal subscriptions.
-    ///
-    /// Kept here rather than on the thread that reads that client's socket,
-    /// because a repository can appear for reasons that have nothing to do with
-    /// any client's connection — the browser opened it — and it has to start
-    /// streaming for everyone. That thread is blocked in `read` and cannot act
-    /// on it; the watcher can. One lock per client, so following a change for
-    /// one never delays another's keystrokes.
+    /// Each attached client's terminal subscriptions. Kept here rather than on
+    /// the thread that reads that client's socket, because a repository can
+    /// appear for reasons that have nothing to do with any client's connection
+    /// — the browser opened it — and it has to start streaming for everyone.
+    /// One lock per client, so following a change for one never delays
+    /// another's keystrokes.
     pub(super) bridges: Mutex<HashMap<u64, Arc<Mutex<TerminalBridges>>>>,
     /// Wakes the watcher when a client has just asked for a change, so the
     /// answer does not wait out a poll interval.
@@ -57,8 +53,7 @@ impl Session {
     /// Oldest client first, because subscribing is what takes a repository's
     /// pane sizing (the hub gives it to the newest connection): in ascending id
     /// order the newest client subscribes last, so a repository that has just
-    /// appeared is sized by the same client that sizes all the others rather
-    /// than by whichever one a hash map happened to yield first.
+    /// appeared is sized by the same client that sizes all the others.
     fn follow_all(&self, repos: &[session::SessionRepo]) {
         let mut bridges: Vec<(u64, Arc<Mutex<TerminalBridges>>)> = self
             .bridges
@@ -98,12 +93,9 @@ pub fn start(
     });
     // The only thing that sends the served set, so there is one record of what
     // clients have been told, one order they are told it in, and a change made
-    // through the browser reaches them at all.
-    //
-    // Started here, where it can be refused, rather than inside the accept loop:
-    // a session without a watcher serves clients that never learn what is open —
-    // not even on attach, which is asked of the watcher too — so a daemon that
-    // could not start one must not go on to say it is listening.
+    // through the browser reaches them at all. Started here, where it can be
+    // refused, rather than inside the accept loop: a session without a watcher
+    // serves clients that never learn what is open.
     let watched = Arc::clone(&session);
     std::thread::Builder::new()
         .name("nightcrow-session-watch".into())
@@ -126,8 +118,7 @@ pub fn serve(listener: UnixListener, session: Arc<Session>) {
         let Ok(stream) = stream else { continue };
         if session.clients.len() >= MAX_ATTACHED_CLIENTS {
             // Dropped rather than answered: writing a refusal here would let one
-            // stalled client hold up every attach behind it, the same reason the
-            // viewer's accept loop closes instead of writing a 503.
+            // stalled client hold up every attach behind it.
             tracing::debug!("daemon: refusing an attach over the client cap");
             continue;
         }

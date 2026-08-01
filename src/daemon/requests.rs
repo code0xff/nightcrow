@@ -1,10 +1,8 @@
-//! Carrying out one attached client's requests.
-//!
-//! A request is either a question — answered to the asker — or a change to the
-//! session, which is not answered here at all: every client is looking at the
-//! same session, so the watcher tells them all from one record of what they have
-//! been told. Refusals go to the asker alone; a client must not flash an error
-//! for somebody else's typo.
+//! Carrying out one attached client's requests. A request is either a question
+//! — answered to the asker — or a change to the session, which is not answered
+//! here at all: every client is looking at the same session, so the watcher
+//! tells them all from one record of what they have been told. Refusals go to
+//! the asker alone; a client must not flash an error for somebody else's typo.
 
 use super::frame::{FrameKind, read_frame};
 use super::protocol::{ClientMessage, ServerMessage, version};

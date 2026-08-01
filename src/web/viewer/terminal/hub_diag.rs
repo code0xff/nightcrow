@@ -1,22 +1,20 @@
 //! Recording where a pane's screen-clearing input came from.
 //!
 //! This exists because of a specific unexplained event: a pane running Claude
-//! Code had its conversation cleared fourteen times in five seconds. In
-//! fullscreen rendering Claude Code runs `/clear` when it receives `Ctrl+L`
-//! twice within two seconds, and the transcript showed the clears arriving as a
-//! shortcut rather than as typed input — so `0x0c` reached the pane about thirty
-//! times, at a machine-like cadence, and nobody knows what sent it. nightcrow
-//! itself does not: the only bytes it synthesizes are scroll and mouse reports
-//! and a plugin's `continue`, and that one is logged where it happens. That
-//! leaves a client's own input, which arrives here.
+//! Code had its conversation cleared fourteen times in five seconds. Claude Code
+//! runs `/clear` when it receives `Ctrl+L` twice within two seconds, and the
+//! transcript showed the clears arriving as a shortcut rather than as typed
+//! input — so `0x0c` reached the pane about thirty times, at a machine-like
+//! cadence, and nobody knows what sent it. nightcrow itself does not: the only
+//! bytes it synthesizes are scroll and mouse reports and a plugin's `continue`,
+//! and that one is logged where it happens. That leaves a client's own input.
 //!
 //! So this notes the arrival and its shape, and the client says what produced it
 //! (`ClientMessage::ClearKeyReport`, logged in `session.rs`). Between them, the
 //! next occurrence names its source instead of being reconstructed afterwards.
 //!
 //! **No input content is logged, ever** — only the byte's count, how much else
-//! rode with it, and the timing. What someone types into a pane is not
-//! diagnostic data.
+//! rode with it, and the timing.
 
 use crate::backend::PaneId;
 use std::collections::HashMap;
@@ -27,14 +25,11 @@ use std::time::{Duration, Instant};
 pub(super) const CLEAR_SCREEN: u8 = 0x0c;
 
 /// Quiet gap that ends a burst. Two seconds is Claude Code's own window for
-/// treating a second `Ctrl+L` as `/clear`, so anything inside it is what would
-/// have counted as one run.
+/// treating a second `Ctrl+L` as `/clear`.
 pub(super) const BURST_GAP: Duration = Duration::from_secs(2);
 
 /// Lines one burst may write before the rest are counted silently. A held key
-/// repeats tens of times a second; the shape is clear long before that, and a
-/// log that scrolls itself away is worse than one that says how much it left
-/// out.
+/// repeats tens of times a second; the shape is clear long before that.
 pub(super) const MAX_LINES_PER_BURST: u32 = 40;
 
 struct Burst {
@@ -50,8 +45,7 @@ pub(super) struct ClearWatch {
 }
 
 impl ClearWatch {
-    /// Note an input frame on its way to `pane` and log what it says. Called for
-    /// every frame, so the no-clear path is a scan and nothing else.
+    /// Note an input frame on its way to `pane` and log what it says.
     pub(super) fn note_input(&mut self, pane: PaneId, client: u64, data: &[u8], now: Instant) {
         let Some(note) = self.record(pane, data, now) else {
             return;

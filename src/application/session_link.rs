@@ -2,12 +2,9 @@
 //!
 //! The daemon owns which repositories are open and in what order. This client
 //! asks for a change and adopts whatever comes back — including changes another
-//! client made, which arrive with nothing having asked.
-//!
-//! Which tab is in front is the daemon's too, so switching is a request and
-//! every client follows the answer. What stays local is everything *inside* a
-//! project — the view mode, the cursor, the scroll — which is what makes two
-//! clients on one session more than two copies of one screen.
+//! client made. Which tab is in front is the daemon's too, so switching is a
+//! request and every client follows the answer. What stays local is everything
+//! *inside* a project — the view mode, the cursor, the scroll.
 
 use crate::application::bootstrap::init_app;
 use crate::application::input::dispatch::{ProjectContext, ProjectRequest};
@@ -46,26 +43,20 @@ impl SessionLink {
                     ws.set_accent_index(accent);
                 }
                 // A refusal this client asked for — a path that is not a
-                // directory, or one repository too many. Shown where every
-                // other refusal is shown.
+                // directory, or one repository too many.
                 ServerMessage::Error { message } => {
                     ws.raise_notice(crate::app::NoticeKind::Project, message);
                 }
                 // Shown where the refusal above is shown, because the two are the
-                // same answer to the same request — a reload either applied or it
-                // did not, and both are news for the client that asked and for
-                // nobody else.
+                // same answer to the same request.
                 ServerMessage::Reloaded { summary } => {
                     ws.raise_notice(crate::app::NoticeKind::Session, summary);
                 }
                 // Answered during the handshake; a later one would mean the
-                // daemon restarted under this client, which the connection loss
-                // reports on its own.
+                // daemon restarted under this client.
                 ServerMessage::Hello { .. } => {}
                 // Only a refusal reaches here. A pane created, exited, or
-                // reordered goes to that repository's backend, which is what
-                // renders it; a refusal is about a request rather than a pane,
-                // so it belongs on the tab that shows notices.
+                // reordered goes to that repository's backend.
                 ServerMessage::Terminal { repo, event } => {
                     if let HubServerMessage::Error { message } = event {
                         notify_repo(ws, &repo, message);

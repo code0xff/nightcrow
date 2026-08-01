@@ -1,26 +1,22 @@
 //! Which screen the session's PTYs are fitted to.
 //!
-//! A PTY is a contract with a child process, not data: the child draws for the
-//! width it was told, and nothing can re-flow an alternate-screen program
-//! afterwards. So the size is one value with one owner — the most recent viewer
-//! to arrive (tmux's `window-size latest`), until another takes it.
+//! A PTY is a contract with a child process: the child draws for the width it
+//! was told, and nothing can re-flow an alternate-screen program afterwards. So
+//! the size is one value with one owner — the most recent viewer to arrive
+//! (tmux's `window-size latest`), until another takes it.
 //!
 //! **Why this is the session's and not each hub's.** Which repository is in
-//! front is shared by the whole session ([`ClientMessage::FocusRepo`]), so every
-//! client shows the same one. "Which screen is this session fitted to" is
-//! therefore one question, not one per repository. Asked per hub, it was
-//! re-answered from scratch on every switch — a browser's terminal socket is
-//! tied to the repository it shows, so moving tabs made every attached page
-//! reconnect at once and the sizing fell to whichever handshake finished last.
+//! front is shared by the whole session, so "which screen is this session fitted
+//! to" is one question, not one per repository. Asked per hub, it was re-answered
+//! from scratch on every switch — a browser's terminal socket is tied to the
+//! repository it shows, so moving tabs made every attached page reconnect at once
+//! and the sizing fell to whichever handshake finished last.
 //!
-//! **A viewer is not a connection.** `connect = the owner arrived` reads an
-//! intention out of a socket opening, and a socket opens for reasons that are
-//! not a person sitting down: a repository switch, a page reload, a network blip.
-//! So a viewer names itself ([`ViewerId`]) and says outright whether it is newly
-//! arrived; the session never infers it. Connections then come and go beneath a
+//! **A viewer is not a connection.** A socket opens for reasons that are not a
+//! person sitting down: a repository switch, a page reload, a network blip. So a
+//! viewer names itself ([`ViewerId`]) and says outright whether it is newly
+//! arrived; the session never infers it. Connections come and go beneath a
 //! viewer without moving anything.
-//!
-//! [`ClientMessage::FocusRepo`]: crate::daemon::protocol::ClientMessage::FocusRepo
 
 use crate::web::viewer::terminal::frame::{ServerMessage, TerminalFrame};
 use std::collections::HashMap;
@@ -33,25 +29,19 @@ use std::time::{Duration, Instant};
 /// Switching repositories closes one terminal socket and opens another, and for
 /// the moment in between the owner is not connected to anything. Handing the
 /// sizing away there and back again would re-fit every pane twice for a viewer
-/// that never went anywhere — and for an alternate-screen program that is a
-/// forced repaint each way.
-///
-/// Only the *release* is delayed; nothing claims by waiting. A viewer that has
-/// really gone costs the next one this long before its panes fit, which is the
-/// cheaper of the two mistakes.
+/// that never went anywhere. Only the *release* is delayed; nothing claims by
+/// waiting.
 pub const RELEASE_GRACE: Duration = Duration::from_secs(2);
 
 /// Who a client is, across however many connections it holds.
 ///
-/// Two variants rather than one opaque string so a browser cannot name itself an
-/// attached terminal: the browser half is client-supplied, the other is minted
-/// by the daemon from its own client counter.
+/// Two variants so a browser cannot name itself an attached terminal: the
+/// browser half is client-supplied, the other is minted by the daemon.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum ViewerId {
     /// One browser tab, by the id it generated for itself.
     Browser(String),
-    /// One attached TUI, by its daemon client id. Its subscriptions to every
-    /// open repository share this — they are one viewer, not one per tab.
+    /// One attached TUI, by its daemon client id.
     Attached(u64),
 }
 
@@ -63,15 +53,12 @@ struct Announce {
 
 #[derive(Default)]
 struct Inner {
-    /// How many connections each present viewer holds. A viewer is present
-    /// while this is non-zero.
+    /// How many connections each present viewer holds.
     present: HashMap<ViewerId, usize>,
-    /// Present viewers in the order they arrived, so the sizing can pass to the
-    /// most recent one still here. Newest last.
+    /// Present viewers in arrival order, newest last.
     arrival: Vec<ViewerId>,
     owner: Option<ViewerId>,
-    /// When the owner's last connection went, if it has none now. `Some` is what
-    /// [`SizeOwnership::settle`] is counting down.
+    /// When the owner's last connection went, if it has none now.
     owner_absent_since: Option<Instant>,
     /// Every live connection, by the id the registrar handed out.
     announce: HashMap<u64, Announce>,
@@ -85,8 +72,7 @@ pub struct SizeOwnership {
 }
 
 /// A connection's registration. Dropping it is not enough — the holder calls
-/// [`SizeOwnership::leave`], because a hub also has its own client list to
-/// unwind at the same moment.
+/// [`SizeOwnership::leave`].
 pub struct Registration {
     /// The key to unregister with.
     pub connection: u64,
@@ -103,8 +89,7 @@ impl SizeOwnership {
     ///
     /// `arriving` is the client's own word for "a person just sat down here" —
     /// a page opening rather than a repository switch or a reconnect. Only that
-    /// takes the sizing. A viewer already present adds a connection and nothing
-    /// moves, which is what makes switching repositories free.
+    /// takes the sizing.
     pub fn join(
         &self,
         viewer: ViewerId,
@@ -179,8 +164,7 @@ impl SizeOwnership {
     }
 
     /// Take the sizing at a viewer's own request — the fit button, or the TUI's
-    /// chord. Unlike arriving, this is unconditional: it is the way a client
-    /// that has been here all along says the panes should fit *its* screen.
+    /// chord. Unlike arriving, this is unconditional.
     pub fn claim(&self, connection: u64, now: Instant) {
         let mut inner = self.inner.lock().unwrap_or_else(|e| e.into_inner());
         inner.expire_absent_owner(now);
@@ -212,8 +196,7 @@ impl SizeOwnership {
     /// Hand the sizing on if its owner has been gone past the grace.
     ///
     /// Called from the hubs' worker tick rather than a timer of its own: the
-    /// grace only has to end promptly while someone is there to notice, and a
-    /// session with no hub running has nobody to fit.
+    /// grace only has to end promptly while someone is there to notice.
     pub fn settle(&self, now: Instant) {
         // Cheap on the common path: the owner is present, so nothing is pending.
         let mut inner = self.inner.lock().unwrap_or_else(|e| e.into_inner());

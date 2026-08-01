@@ -1,30 +1,19 @@
 //! The viewer's HTTP server: read-only git routes plus a live status stream.
 //!
-//! Runs on its own port with its own session cookie. The cookie is named for
-//! this server rather than for nightcrow at large: two servers sharing a cookie
-//! name on one host would let a session for one authenticate against the other.
+//! Runs on its own port with its own session cookie. Request handling order:
 //!
-//! Request handling order is deliberate and load-bearing:
-//!
-//! 1. **Host, then Origin** — a rebound name or a cross-site request is
-//!    refused before anything else runs. Origin alone only proves Origin and
-//!    Host agree, which a DNS-rebinding attacker satisfies trivially.
-//! 2. **Static assets** — the built bundle is public. It holds no repository
-//!    data and renders the login form, so gating it would leave no way in.
-//! 3. **Auth** — checked *before* the repository is looked up, so an
-//!    unauthenticated request cannot probe which ids exist by comparing a 404
-//!    against a 401.
+//! 1. **Host, then Origin** — a rebound name or cross-site request is refused
+//!    before anything else runs.
+//! 2. **Static assets** — the built bundle is public.
+//! 3. **Auth** — checked before the repository is looked up, so an
+//!    unauthenticated request cannot probe which ids exist.
 //! 4. **Lookup** — an opaque id resolves to a repository, or 404s.
 //! 5. **Path validation** — any `path` parameter goes through
 //!    [`crate::git::path::resolve_in_workdir`] before touching the filesystem.
 //!
-//! Each git request opens its own `git2::Repository`. Handler threads are
-//! short-lived, so a per-thread cache would be discarded with the thread; the
-//! per-repo runtime thread owns the long-lived watching instead.
-//!
-//! Errors are redacted: git and io messages carry absolute paths, symlink
-//! targets, and file sizes, so handlers map them to a fixed public string and
-//! log the detail server-side.
+//! Each git request opens its own `git2::Repository`. Errors are redacted: git
+//! and io messages carry absolute paths, so handlers map them to a fixed public
+//! string and log the detail server-side.
 
 mod clone_routes;
 mod dispatch;
@@ -45,45 +34,36 @@ use std::time::Duration;
 /// must not be able to authenticate with a session issued here.
 pub const VIEWER_SESSION_COOKIE: &str = "nightcrow_viewer_session";
 
-/// How long an idle SSE stream waits before sending a heartbeat. A write is
-/// the only way to find out a socket is dead.
+/// How long an idle SSE stream waits before sending a heartbeat.
 pub(super) const SSE_HEARTBEAT: Duration = Duration::from_secs(15);
 
-/// Read timeout on a terminal socket. Bounds how long queued output waits
-/// behind a blocked read; terminal latency is felt directly.
+/// Read timeout on a terminal socket.
 pub(super) const TERM_POLL_TIMEOUT: Duration = Duration::from_millis(10);
 
 pub struct ViewerState {
     pub(super) catalog: crate::web::viewer::catalog::Catalog,
     /// Whether the listener is on a loopback address. Gates the Host check:
-    /// off-loopback, the operator owns the network path and may front this
-    /// with a proxy under any name.
+    /// off-loopback, the operator may front this with a proxy under any name.
     pub(super) bound_loopback: bool,
     pub(super) auth: Auth,
     pub(super) sessions: SessionStore,
     pub(super) limiter: RateLimiter,
     pub(super) connections: Arc<AtomicUsize>,
     /// Whether catalog changes are mirrored to the shared workspace file. On in
-    /// headless `serve` (so opens/closes are remembered), off alongside the TUI
-    /// (which owns that file).
+    /// headless `serve`, off alongside the TUI (which owns that file).
     pub(super) persist: bool,
-    /// The TUI's recently-touched settings, served to the client so the file
-    /// list fades on the same window the TUI does. `auto_follow` is not sent:
-    /// it moves the TUI's selection, which the viewer has no analogue for.
+    /// The TUI's recently-touched settings, served to the client. `auto_follow`
+    /// is not sent: it moves the TUI's selection, which the viewer has no
+    /// analogue for.
     pub(super) hot: crate::config::AgentIndicatorConfig,
-    /// Viewer preferences shared by every client (see `prefs.rs`). Always
-    /// written: the file is the viewer's own and no TUI owns it.
+    /// Viewer preferences shared by every client.
     pub(super) prefs: PrefsStore,
-    /// In-flight and recently finished clones (see `clone_jobs.rs`). A clone
-    /// outlives the request that started it, so its result is polled.
+    /// In-flight and recently finished clones.
     pub(super) clones: crate::web::viewer::clone_jobs::CloneJobs,
-    /// Whether `git` was on PATH at startup. Reported to clients so the clone
-    /// form is disabled up front rather than failing every job it starts.
+    /// Whether `git` was on PATH at startup.
     pub(super) git_available: bool,
-    /// Held for the length of a config reload (see
-    /// [`crate::web::viewer::reload`]). Two clients pressing at once would
-    /// otherwise interleave one's table swap with the other's fan-out to the
-    /// hubs, leaving the session's repositories told about different files.
+    /// Held for the length of a config reload. Two clients pressing at once
+    /// would otherwise interleave one's table swap with the other's fan-out.
     pub(super) reload_lock: std::sync::Mutex<()>,
 }
 
@@ -93,22 +73,20 @@ pub struct ViewerServer {
 }
 
 /// Everything [`ViewerServer::start`] needs. A struct rather than a parameter
-/// list: the server is configured from three unrelated places (`[web_viewer]`,
-/// `[agent_indicator]`, the CLI), and positional arguments of the same types
-/// were becoming easy to transpose silently.
+/// list: the server is configured from three unrelated places, and positional
+/// arguments of the same types were easy to transpose silently.
 pub struct ViewerOptions {
     pub bind: IpAddr,
     pub port: u16,
     pub auth: Auth,
     /// Absolute repository paths seeding the catalog; may be empty.
     pub repos: Vec<String>,
-    /// Mirror catalog changes into the shared workspace file (headless
-    /// `serve` only — alongside the TUI, the TUI owns that file).
+    /// Mirror catalog changes into the shared workspace file (headless `serve`
+    /// only — alongside the TUI, the TUI owns that file).
     pub persist: bool,
     pub startup_commands: Vec<crate::config::StartupCommand>,
     /// The `--exec` commands already merged into `startup_commands`, remembered
-    /// so a config reload can arrive at the same combined list. Empty for every
-    /// caller that has none.
+    /// so a config reload can arrive at the same combined list.
     pub cli_startup: Vec<String>,
     pub shell: crate::config::ShellConfig,
     pub hot: crate::config::AgentIndicatorConfig,
@@ -117,7 +95,7 @@ pub struct ViewerOptions {
 
 impl ViewerState {
     /// The served repositories, for a transport that needs to reach their
-    /// runtimes directly rather than through a route.
+    /// runtimes directly.
     pub fn catalog(&self) -> &crate::web::viewer::catalog::Catalog {
         &self.catalog
     }
@@ -125,19 +103,13 @@ impl ViewerState {
     /// Build the served session without binding anything.
     ///
     /// Separate from [`ViewerServer::start`] because the session exists whether
-    /// or not a browser listener does: the daemon socket serves this same
-    /// state, and a test drives it without taking a port.
+    /// or not a browser listener does: the daemon socket serves this same state.
     pub fn new(options: ViewerOptions) -> Self {
         Self::with_plugins(options, Vec::new())
     }
 
     /// Like [`ViewerState::new`], with the `[[plugin]]` table the session's
     /// startup panes may hand themselves to.
-    ///
-    /// Taken here rather than as a [`ViewerOptions`] field because it has to
-    /// reach the catalog before [`crate::web::viewer::catalog::Catalog::set_paths`]
-    /// spawns the first hub — a plugin association is decided when a pane is
-    /// created, not afterwards.
     pub fn with_plugins(options: ViewerOptions, plugins: Vec<crate::config::PluginConfig>) -> Self {
         let ViewerOptions {
             bind,
@@ -178,9 +150,6 @@ impl ViewerState {
 impl ViewerServer {
     /// Bind and start from `[web_viewer]`, building the password verifier from
     /// either `hashed_password` or `password`.
-    ///
-    /// `plugins` is `config.toml`'s `[[plugin]]` table; an empty list means no
-    /// pane can be plugin-managed, which is the default.
     #[allow(clippy::too_many_arguments)]
     pub fn start_from_config(
         viewer: &crate::config::WebViewerConfig,

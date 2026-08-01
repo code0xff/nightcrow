@@ -1,8 +1,6 @@
 //! Turning pane activity into plugin events, and plugin commands into judged
-//! actions.
-//!
-//! Every function here is a no-op for a pane no plugin owns, so the ordinary
-//! terminal path pays one hash lookup and nothing else.
+//! actions. Every function here is a no-op for a pane no plugin owns, so the
+//! ordinary terminal path pays one hash lookup and nothing else.
 
 use super::hub_plugins::{MAX_COMMANDS_PER_TICK, PANE_IDLE_THRESHOLD, Plugins};
 use crate::backend::{PaneGeneration, PaneId, PaneToken, PtyBackend};
@@ -13,11 +11,8 @@ use std::time::Instant;
 
 impl Plugins {
     /// Send one pane-scoped event to whichever plugin owns `pane`, stamped with
-    /// the pane's current identity.
-    ///
-    /// A dropped event is logged and nothing else: a plugin that cannot keep up
-    /// must never stall the pane it is watching, which is why
-    /// [`crate::plugin::PluginHost::send`] does not block.
+    /// the pane's current identity. A dropped event is logged and nothing else —
+    /// a plugin that cannot keep up must never stall the pane it is watching.
     fn send_for(
         &self,
         backend: &PtyBackend,
@@ -40,7 +35,7 @@ impl Plugins {
     }
 
     /// Announce a pane a plugin has just been given, including one that a
-    /// relaunch has just put back — the generation is what tells them apart.
+    /// relaunch has just put back — the generation tells them apart.
     pub(super) fn pane_opened(&self, backend: &PtyBackend, pane: PaneId, title: Option<&str>) {
         let command = backend
             .slot(pane)
@@ -56,12 +51,11 @@ impl Plugins {
         });
     }
 
-    /// Feed a pane's output to its plugin as plain text.
-    ///
-    /// Stripped per chunk, which makes it best-effort: an escape sequence split
-    /// across two reads survives in fragments. Acceptable because output text is
-    /// only ever a fallback signal — nothing happens to a pane unless the plugin
-    /// asks, and every ask goes through the guard.
+    /// Feed a pane's output to its plugin as plain text. Stripped per chunk,
+    /// which makes it best-effort: an escape sequence split across two reads
+    /// survives in fragments. Acceptable because output text is only ever a
+    /// fallback signal — nothing happens to a pane unless the plugin asks, and
+    /// every ask goes through the guard.
     pub(super) fn pane_output(&mut self, backend: &PtyBackend, pane: PaneId, data: &[u8]) {
         if !self.owners.contains_key(&pane) {
             return;

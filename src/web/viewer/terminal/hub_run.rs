@@ -17,13 +17,10 @@ const POLL_INTERVAL: Duration = Duration::from_millis(8);
 impl TerminalHub {
     pub(super) fn run(&self, cwd: &str, commands: Receiver<Command>, stop: Arc<AtomicBool>) {
         let mut backend = PtyBackend::new(cwd, self.shell.clone());
-        // Before the loop, because a pane can be created on the first iteration
-        // and a plugin has to exist to be told about it. Only the plugins some
-        // configured pane opted into are launched (see `Plugins::start`).
+        // Only the plugins some configured pane opted into are launched.
         let mut plugins = Plugins::start(cwd, &self.plugins, &self.startup);
         // What each pane's program has done to its terminal, so a client that
-        // attaches later can be told rather than left to infer it from a replay
-        // the setup bytes fell out of.
+        // attaches later can be told rather than left to infer it from a replay.
         let mut modes = PaneModeTracker::default();
         // Repaints asked for by attaching clients, and the sizes owed back.
         let mut repaints = Repaints::default();
@@ -39,17 +36,16 @@ impl TerminalHub {
                         client,
                         command,
                     } => {
-                        // Slots reserved for a claimed startup set count here:
-                        // the configured set has first refusal on them.
+                        // Slots reserved for a claimed startup set count here.
                         if !self.has_free_slot() {
                             self.send_error_to(client, "terminal limit reached");
                             continue;
                         }
                         match backend.open_pane(rows, cols, command.as_deref()) {
                             // Unnamed: a pane a client asked for is that client's
-                            // to name, and the hub has nothing to add. No plugin
-                            // association either, ever — a shell a client opened
-                            // is nobody's to drive but the person at it.
+                            // to name. No plugin association either — a shell a
+                            // client opened is nobody's to drive but the person
+                            // at it.
                             Ok(pane) => self.register_pane(pane, rows, cols, Some(client), None),
                             Err(err) => {
                                 tracing::warn!(%err, "viewer: could not create a terminal");

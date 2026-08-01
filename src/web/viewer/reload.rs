@@ -4,32 +4,26 @@
 //! Sits beside [`session`](super::session) and for the same reason: the browser
 //! reaches this over HTTP and an attached terminal over the daemon socket, and
 //! both must land on exactly the same state change. Neither transport
-//! authenticates here — deciding who may ask is theirs, and they answer it
-//! differently (a session cookie on one side, being the user who owns a 0600
-//! socket on the other).
+//! authenticates here — deciding who may ask is theirs.
 //!
 //! **What a reload is, and what it is not.** It re-reads two tables and nothing
 //! else. `[[plugin]]` reaches even the repositories that are already open,
 //! because a plugin is a child process and replacing one costs the session
 //! nothing. `[[startup_command]]` reaches only the repositories opened
-//! afterwards: a hub creates its startup panes once for its life, and the panes a
-//! running repository already spent that list on are live children — an agent
-//! CLI mid-task — that no file edit may replace. Everything else in the file
-//! (the listener's address and password, logging, the client-owned layout and
-//! input sections) is read once at startup and still needs a restart.
+//! afterwards: a hub creates its startup panes once for its life, and the panes
+//! a running repository already spent that list on are live children that no
+//! file edit may replace. Everything else in the file is read once at startup
+//! and still needs a restart.
 //!
 //! **It does not half-apply.** The whole file is parsed and validated first, so a
-//! typo anywhere leaves the session exactly as it was and the error goes back to
-//! whoever asked.
+//! typo anywhere leaves the session exactly as it was.
 
 use super::server::ViewerState;
 
 /// Why a reload could not be carried out. The session is untouched in every case.
 #[derive(Debug)]
 pub enum ReloadError {
-    /// The file could not be read, did not parse, or failed validation. Carries
-    /// the message as written for the operator — these name the offending key,
-    /// which is the whole value of reporting it.
+    /// The file could not be read, did not parse, or failed validation.
     Config(anyhow::Error),
 }
 
@@ -53,9 +47,7 @@ pub struct ReloadReport {
     /// Repositories whose plugins were re-applied.
     pub repos: usize,
     /// Repositories that could not even be asked, because their terminal worker
-    /// was too far behind to take the request. Counted separately and said out
-    /// loud: those keep the plugin children they had, and a report that called
-    /// that a success would be claiming a change the session did not make.
+    /// was too far behind to take the request.
     pub unreachable: usize,
 }
 

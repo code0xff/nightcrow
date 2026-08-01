@@ -45,14 +45,10 @@ pub(crate) fn segment_click(keyspec: &str) -> Option<HintClick> {
 }
 
 /// Build the styled spans for a hint legend, inverting (`REVERSED`) every
-/// clickable segment — the whole `key: description` label, matching the click
-/// target exactly — so the bar itself shows which hints respond to a click.
+/// clickable segment so the bar itself shows which hints respond to a click.
 /// Consumes the same literal and `" | "` segmentation as `hint_click_at` and
 /// decides clickability with the same `segment_click`, so an inverted label
-/// can never disagree with the hit test. Only styles change; the rendered
-/// text (and thus every column offset) stays identical. `mark_clickable` is
-/// `[mouse] enabled`: with capture off a click can never arrive, so no label
-/// may advertise one.
+/// can never disagree with the hit test. `mark_clickable` is `[mouse] enabled`.
 pub(crate) fn hint_spans(text: &str, leader: &str, mark_clickable: bool) -> Vec<Span<'static>> {
     let base = Style::default().fg(Color::DarkGray);
     let inverted = base.add_modifier(Modifier::REVERSED);
@@ -84,13 +80,10 @@ pub(crate) fn hint_spans(text: &str, leader: &str, mark_clickable: bool) -> Vec<
     spans
 }
 
-/// The dialog's input line, with its keys spelled out after the caret. Nothing
-/// else advertises them: the dialog replaces the hint legend entirely, so a key
-/// missing from this line cannot be found anywhere on screen.
-///
-/// The legend is dropped whole when the path leaves no room for it, rather than
-/// clipped — the caret has to stay visible, and half a legend reads as a glitch.
-/// `width` is the hint row's; 0 means "unknown", which keeps the legend.
+/// The dialog's input line, with its keys spelled out after the caret.
+/// The legend is dropped whole when the path leaves no room for it, rather
+/// than clipped — the caret has to stay visible. `width` is the hint row's;
+/// 0 means "unknown", which keeps the legend.
 pub(crate) fn repo_input_line<'a>(
     repo_input: &'a RepoInput,
     accent: Color,

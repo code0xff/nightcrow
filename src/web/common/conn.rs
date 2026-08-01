@@ -26,8 +26,8 @@ pub const MAX_BODY_BYTES: usize = 64 * 1024;
 pub const HEAD_READ_TIMEOUT: Duration = Duration::from_secs(15);
 /// Wall-clock budget for the *whole* request. The socket timeout above only
 /// bounds one `read`, and it re-arms on every byte — a client dribbling one
-/// byte per timeout would otherwise hold a connection slot for days, and 64 of
-/// those starve the accept loop. This is the deadline that actually ends it.
+/// byte per timeout would otherwise hold a connection slot for days. This is
+/// the deadline that actually ends it.
 pub const REQUEST_DEADLINE: Duration = Duration::from_secs(30);
 
 /// Read the request head (up to CRLFCRLF) plus any declared body. Both
@@ -79,11 +79,8 @@ pub fn read_request(stream: &mut TcpStream) -> Result<(RequestHead, String)> {
 
 /// Whether a request's `Origin` is acceptable.
 ///
-/// An absent Origin (a native client, which cannot carry a browser's cookie)
-/// is allowed; a present one must match the request `Host` authority, else it
-/// is a cross-site request and is refused. `SameSite=Strict` already keeps the
-/// session cookie off cross-site requests, so a hijack fails auth anyway —
-/// this refuses it outright.
+/// An absent Origin (a native client) is allowed; a present one must match the
+/// request `Host` authority, else it is a cross-site request and is refused.
 pub fn origin_allowed(head: &RequestHead) -> bool {
     match head.header("origin") {
         None => true,
@@ -102,14 +99,12 @@ pub fn origin_allowed(head: &RequestHead) -> bool {
 /// [`origin_allowed`] only proves Origin and Host *agree*, which a DNS-rebound
 /// attacker satisfies trivially: they control both. Rebinding `evil.example` to
 /// 127.0.0.1 would otherwise give their page a same-origin position from which
-/// to POST `/login` and read the reply — and a hit yields repository contents
-/// plus interactive shells.
+/// to POST `/login` and read the reply.
 ///
-/// A loopback-bound server can only legitimately be addressed as loopback (or,
-/// through a tunnel, as whatever the operator configured), so any other Host is
-/// refused. When bound off-loopback the operator has taken responsibility for
-/// the network path, and the check would reject legitimate proxied hosts, so it
-/// does not apply.
+/// A loopback-bound server can only legitimately be addressed as loopback, so
+/// any other Host is refused. When bound off-loopback the operator has taken
+/// responsibility for the network path, and the check would reject legitimate
+/// proxied hosts, so it does not apply.
 pub fn host_allowed(head: &RequestHead, bound_loopback: bool) -> bool {
     if !bound_loopback {
         return true;

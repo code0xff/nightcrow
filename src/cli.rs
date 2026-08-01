@@ -8,9 +8,7 @@ pub(crate) mod plugin_cmd;
 /// nightcrow — session daemon for agentic coding
 ///
 /// Run with no subcommand to start the session: a git diff viewer and
-/// multi-terminal panes, served to a terminal (`nightcrow attach`) and to a
-/// browser. Runs in the foreground until interrupted; the session outlives any
-/// client that attaches to it.
+/// multi-terminal panes, served to a terminal and to a browser.
 #[derive(Parser)]
 #[command(version, about, long_about = None)]
 pub(crate) struct Cli {
@@ -23,19 +21,19 @@ pub(crate) struct Cli {
     #[arg(long)]
     pub(crate) port: Option<u16>,
 
-    /// Override the configured bind address. `0.0.0.0` exposes the server —
-    /// and the shells it serves — to the whole network over plain HTTP.
+    /// Override the configured bind address. `0.0.0.0` exposes the server
+    /// to the whole network over plain HTTP.
     #[arg(long)]
     pub(crate) bind: Option<String>,
 
     /// Run the session in the background and return to the shell.
     ///
-    /// It gets its own session, so closing this terminal does not stop it, and
-    /// its output goes to ~/.nightcrow/daemon.out. A service manager should
-    /// start nightcrow *without* this — backgrounding is what it does itself.
+    /// It gets its own session, so closing this terminal does not stop it.
+    /// A service manager should start nightcrow *without* this — backgrounding
+    /// is what it does itself.
     ///
     /// With `attach`, this starts the session if none is running and then
-    /// attaches to it, so `nightcrow -d attach` is the one-command way in.
+    /// attaches to it.
     #[arg(short, long)]
     pub(crate) detach: bool,
 
@@ -54,9 +52,8 @@ pub(crate) enum Commands {
     /// Attach the TUI to a running nightcrow daemon.
     ///
     /// The session — which repositories are open, and in what order — belongs
-    /// to the daemon, so this starts on whatever it is serving. Repositories
-    /// are opened from inside, with the leader chord's open dialog or the
-    /// browser's folder picker. Leaving does not end the session.
+    /// to the daemon, so this starts on whatever it is serving. Leaving does
+    /// not end the session.
     ///
     /// Requires a running daemon; pass `-d` to start one first if none is.
     Attach,
@@ -71,8 +68,7 @@ pub(crate) enum Commands {
     /// Ask a running daemon to shut down.
     ///
     /// Sends a graceful shutdown request via the daemon socket. The daemon
-    /// runs the same shutdown sequence as SIGINT/SIGTERM — reaping every
-    /// child shell — and then exits. No force kill is attempted.
+    /// runs the same shutdown sequence as SIGINT/SIGTERM.
     Stop {
         /// Path to the daemon socket. Defaults to the standard location.
         #[arg(long)]
@@ -83,10 +79,9 @@ pub(crate) enum Commands {
 /// Run the session daemon in the foreground until it is stopped.
 ///
 /// The starting catalog is whatever was open last time, which may be nothing —
-/// an empty catalog is a normal state, and the way in from there is a client:
-/// the browser's folder picker or an attached TUI's open dialog. There is no
-/// flag for it. Repositories are opened from inside the session, which is the
-/// only place that can open one *and* have every other client see it.
+/// an empty catalog is a normal state. Repositories are opened from inside the
+/// session, which is the only place that can open one *and* have every other
+/// client see it.
 pub(crate) fn run_daemon(
     exec: Vec<String>,
     port: Option<u16>,

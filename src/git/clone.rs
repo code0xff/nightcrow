@@ -1,32 +1,20 @@
-//! Clone a remote repository by handing the URL to the `git` binary.
+//! Clone a remote repository by delegating to the `git` binary.
 //!
-//! libgit2 is not used here. The vendored build carries no SSH transport
-//! (`libgit2-sys` pulls no `libssh2-sys`), so `git@host:path` — the form most
-//! remotes are written in — would not resolve at all, and libgit2 also knows
-//! nothing of credential helpers, `insteadOf` rewrites, or an agent-held key.
-//! Delegating to `git` inherits that whole stack. This is not the "parse git's
-//! output" pattern the project avoids: nothing here reads stdout, only the exit
-//! status and stderr-on-failure.
+//! libgit2 is not used: the vendored build carries no SSH transport, knows
+//! nothing of credential helpers or `insteadOf` rewrites, and cannot resolve
+//! `git@host:path` remotes. Delegating to `git` inherits that whole stack.
+//! Nothing here reads stdout — only exit status and stderr-on-failure.
 
 use std::path::Path;
 use std::process::Command;
 
-/// URL schemes the clone form accepts.
-///
-/// This list is a security boundary, not a convenience. git resolves
-/// `ext::<command>` by **executing that command**, so an unfiltered URL is
-/// remote code execution — and passing the URL as an argv item behind `--`
-/// does not help, because the scheme is interpreted after argument parsing.
-/// `file://` and bare local paths are excluded too: the caller reaches local
-/// directories through the folder picker, so accepting them here would only
-/// widen what a URL can name.
-///
-/// `git://` is excluded as well. It carries neither authentication nor
-/// encryption — anything in the path can serve arbitrary code as the clone —
-/// and it is the one transport git gives no stall control for, so a dead
-/// remote would hold the single clone slot until the server restarts. Hosts
-/// have been retiring it for years; `https://` covers the same anonymous
-/// fetch with both problems solved.
+/// URL schemes the clone form accepts. This is a security boundary: git
+/// resolves `ext::<command>` by executing that command, so an unfiltered URL
+/// is remote code execution. `file://` and bare local paths are excluded
+/// because the caller reaches local directories through the folder picker.
+/// `git://` is excluded too — it carries no authentication or encryption, and
+/// git gives no stall control for it, so a dead remote would hold the clone
+/// slot indefinitely.
 const ALLOWED_SCHEMES: [&str; 4] = ["https://", "http://", "ssh://", "git+ssh://"];
 
 /// Longest URL accepted, to keep a hostile client from parking megabytes in a

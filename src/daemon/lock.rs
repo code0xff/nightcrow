@@ -1,11 +1,9 @@
-//! The single-instance lock.
-//!
-//! Two daemons on one socket would each serve half the attaching clients, and
-//! the second to bind would displace the first. Deciding which is running has
-//! to be exact, which rules out asking the socket: a `connect` that succeeds
-//! does not prove a listener is alive — on macOS it can succeed against a
-//! socket whose listener has closed, and the reset only shows up on the next
-//! read. Probing that way was flaky in exactly the case it exists for.
+//! The single-instance lock. Two daemons on one socket would each serve half
+//! the attaching clients, and the second to bind would displace the first.
+//! Deciding which is running has to be exact, which rules out asking the socket:
+//! a `connect` that succeeds does not prove a listener is alive — on macOS it
+//! can succeed against a socket whose listener has closed, and the reset only
+//! shows up on the next read.
 //!
 //! An advisory lock answers instead. The kernel holds it for as long as the
 //! descriptor is open and releases it when the process ends — including a
@@ -26,12 +24,11 @@ pub struct InstanceLock {
 }
 
 impl InstanceLock {
-    /// Take the lock, or report that another daemon holds it.
-    ///
-    /// The lock file is never removed. Unlinking it on release would let a
-    /// second daemon lock a file the first had already deleted, and both would
-    /// then believe they hold it — the classic lockfile race. An empty file
-    /// left behind costs nothing; the lock is the advisory lock, not the file.
+    /// Take the lock, or report that another daemon holds it. The lock file is
+    /// never removed — unlinking it on release would let a second daemon lock a
+    /// file the first had already deleted, and both would then believe they hold
+    /// it. An empty file left behind costs nothing; the lock is the advisory
+    /// lock, not the file.
     pub fn acquire(path: &Path) -> Result<Option<Self>> {
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)
@@ -63,24 +60,20 @@ impl InstanceLock {
 /// What a failed lock means for the caller.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Attempt {
-    /// Another daemon holds it. The normal negative answer.
+    /// Another daemon holds it.
     Held,
-    /// A signal arrived mid-call and the lock was never attempted. Says
-    /// nothing about who holds what, so the only correct response is to ask
-    /// again.
+    /// A signal arrived mid-call and the lock was never attempted. Says nothing
+    /// about who holds what, so the only correct response is to ask again.
     Interrupted,
-    /// Something else went wrong, and it must not be reported as either of the
-    /// above.
+    /// Something else went wrong.
     Failed,
 }
 
-/// Read a lock failure.
-///
-/// `Interrupted` earns its own arm because this process raises signals at
-/// itself — a stop signal is how the daemon is asked to shut down. A signal
-/// landing on the thread inside the lock call returns EINTR, which says nothing
-/// about who holds the lock; reported as a failure it would refuse to start a
-/// daemon for no reason.
+/// Read a lock failure. `Interrupted` earns its own arm because this process
+/// raises signals at itself — a stop signal is how the daemon is asked to shut
+/// down. A signal landing on the thread inside the lock call returns EINTR,
+/// which says nothing about who holds the lock; reported as a failure it would
+/// refuse to start a daemon for no reason.
 ///
 /// std 가 EINTR 를 내부에서 재시도하는지는 문서화되어 있지 않다.
 /// 재시도한다면 이 arm 은 도달하지 않을 뿐 해가 없고, 재시도하지

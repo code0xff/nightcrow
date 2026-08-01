@@ -5,17 +5,16 @@
 /// The terminal modes a program sets once, at startup, and never repeats.
 ///
 /// A client that attaches later cannot learn these from the output it is
-/// replayed: the bytes that set them are long gone from the pane's history, and
-/// no program re-announces them. Carried as plain flags so a caller outside this
-/// module can hold and compare them, and turned back into the sequences that
-/// reproduce them by [`PaneModes::prelude`].
+/// replayed: the bytes that set them are long gone from the pane's history.
+/// Carried as plain flags so a caller outside this module can hold and compare
+/// them, and turned back into the sequences that reproduce them by
+/// [`PaneModes::prelude`].
 ///
 /// [`Default`] is a *freshly opened* terminal rather than all-false: `25`
 /// (visible cursor), `7` (autowrap) and `1007` (alternate scroll) are on until a
-/// program turns them off. `a_freshly_opened_pane_matches_the_default` pins it to
-/// what the emulator actually starts with, so an emulator upgrade that changes
-/// its initial mode set fails there rather than silently mis-describing a pane
-/// that has printed nothing yet.
+/// program turns them off. Pinned to what the emulator actually starts with, so
+/// an emulator upgrade that changes its initial mode set fails there rather than
+/// silently mis-describing a pane that has printed nothing yet.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PaneModes {
     /// DECSET 1049: the program draws on the alternate screen (vim, htop,
@@ -38,8 +37,7 @@ pub struct PaneModes {
     pub mouse_drag: bool,
     /// DECSET 1003: report every motion.
     pub mouse_motion: bool,
-    /// DECSET 1006: report in SGR form. Without it a client's reports use the
-    /// legacy encoding the program is not expecting.
+    /// DECSET 1006: report in SGR form.
     pub sgr_mouse: bool,
     /// DECSET 1005.
     pub utf8_mouse: bool,

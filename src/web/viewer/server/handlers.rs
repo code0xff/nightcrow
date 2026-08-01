@@ -16,10 +16,7 @@ use tungstenite::Message;
 /// Look the repository up, validate any `path` parameter, then run `body`.
 ///
 /// Validation happens here rather than in each handler so no route can forget
-/// it. Not every downstream touches the filesystem — `load_file_diff` passes
-/// the path to git as a pathspec — but a route must not be safe only by
-/// accident of which loader it happens to call. A traversal path is refused
-/// uniformly, and never echoed back in a response.
+/// it. A traversal path is refused uniformly, and never echoed back.
 pub(super) fn with_repo(
     head: &crate::web::common::http::RequestHead,
     state: &ViewerState,
@@ -47,8 +44,7 @@ pub(super) fn with_repo(
 /// Variant of [`with_repo`] for a path inside a historical git object.
 ///
 /// A deleted commit path cannot be resolved in the current worktree, so this
-/// validates its syntax without statting it. The route passes it only to an
-/// exact git pathspec; it never opens a filesystem path.
+/// validates its syntax without statting it.
 pub(super) fn with_repo_commit_path(
     head: &crate::web::common::http::RequestHead,
     state: &ViewerState,
@@ -81,8 +77,7 @@ pub(super) fn required_path(head: &crate::web::common::http::RequestHead) -> Res
 /// An oid query parameter that may be absent, but must parse when present.
 ///
 /// Absent and malformed are kept apart deliberately: silently walking from HEAD
-/// after a typo would answer a different question than the one asked, and the
-/// client pages against the value it gets back.
+/// after a typo would answer a different question than the one asked.
 pub(super) fn optional_oid(
     head: &crate::web::common::http::RequestHead,
     name: &str,
@@ -162,21 +157,20 @@ pub(super) fn serve_events(
     // `subscription` drops here, unregistering from the fan-out.
 }
 
-/// The longest `viewer` id accepted. Long enough for a UUID with room to spare;
-/// the value is only ever compared, never shown.
+/// The longest `viewer` id accepted. Long enough for a UUID with room to spare.
 const MAX_VIEWER_ID: usize = 64;
 
 /// A page's identity for the session's size ownership, from what it called
 /// itself.
 ///
 /// The page generates this once per tab and sends it on every socket, so its
-/// connections can come and go — a repository switch, a reconnect — without the
-/// session reading them as somebody new sitting down.
+/// connections can come and go without the session reading them as somebody new
+/// sitting down.
 ///
 /// A boundary input, so it is held to what an id can be: a short run of plain
 /// characters. An id that is missing or malformed gets one of its own rather
 /// than a refusal — the page still works, it simply behaves as it did before it
-/// could name itself, and a stale cached bundle is the likely reason.
+/// could name itself.
 fn browser_viewer(head: &crate::web::common::http::RequestHead) -> ViewerId {
     let named = head.query_param("viewer").filter(|id| {
         !id.is_empty()

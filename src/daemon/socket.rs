@@ -15,18 +15,16 @@ use std::path::{Path, PathBuf};
 /// Socket file name under the nightcrow directory.
 const SOCKET_FILE: &str = "daemon.sock";
 
-/// Default path: `~/.nightcrow/daemon.sock`.
-///
-/// Beside the config and workspace files rather than in `/tmp` or a runtime
-/// directory: those are cleaned by the system on schedules that differ per OS,
-/// and a socket that disappears under a running daemon strands every client.
+/// Default path: `~/.nightcrow/daemon.sock`. Beside the config and workspace
+/// files rather than in `/tmp` or a runtime directory: those are cleaned by the
+/// system on schedules that differ per OS, and a socket that disappears under a
+/// running daemon strands every client.
 pub fn default_socket_path() -> Result<PathBuf> {
     let home = dirs::home_dir().context("cannot determine the home directory")?;
     Ok(home.join(".nightcrow").join(SOCKET_FILE))
 }
 
 /// A bound daemon socket, held together with the claim that makes it ours.
-///
 /// Unlinks the socket when dropped; the lock is released with it.
 #[derive(Debug)]
 pub struct DaemonSocket {

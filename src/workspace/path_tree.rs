@@ -1,18 +1,12 @@
 //! Directory browser for the repo dialog's path field.
 //!
 //! A flat row list, not a nested tree: expanding splices a directory's children
-//! in after it and collapsing removes the rows below it, so the selection is a
-//! plain index into what is on screen and no flatten pass runs per frame.
-//!
-//! The root moves: `←` on a collapsed depth-0 row re-roots to the parent. That
-//! is the only way out, and why there is no `..` row — every row here answers
-//! "this is the path I want", so a row meaning "go up" would split Enter.
-//!
-//! Directories only, and nothing here writes: the browser fills the field, and
-//! the field's own Enter stays the single place a repo is actually opened. It
-//! deliberately does not reuse `git::tree`, which requires a `git2::Repository`
-//! and refuses paths outside a worktree — the browser has to walk directories
-//! belonging to no repo, with possibly no project open at all.
+//! in after it and collapsing removes the rows below it. The root moves: `←` on
+//! a collapsed depth-0 row re-roots to the parent. Directories only, and nothing
+//! here writes — the browser fills the field, and the field's own Enter stays the
+//! single place a repo is actually opened. It deliberately does not reuse
+//! `git::tree`, which requires a `git2::Repository` and refuses paths outside a
+//! worktree.
 
 use super::path_complete::{is_sep, read_dir_names, split_dir};
 use crate::platform::paths::expand_tilde;
@@ -24,22 +18,20 @@ pub struct PathRow {
     pub name: String,
     pub depth: usize,
     /// Whether this row's children are spliced in below it. Set even when the
-    /// directory turned out to have none, so the marker shows it was read
-    /// rather than leaving the user pressing `→` at an unchanging row.
+    /// directory turned out to have none, so the marker shows it was read.
     pub expanded: bool,
 }
 
 #[derive(Debug, Clone)]
 pub struct PathTree {
-    /// The root exactly as the user typed it (`~/coding`, `..`, or `""` for the
-    /// cwd). Kept beside `root` so a picked path is assembled from the user's
-    /// own notation — the dialog never rewrites their `~` into an absolute path.
+    /// The root exactly as the user typed it. Kept beside `root` so a picked
+    /// path is assembled from the user's own notation — the dialog never
+    /// rewrites their `~` into an absolute path.
     root_text: String,
     /// The canonicalized root. Canonical because stepping the root up walks
     /// `parent()`, which yields nothing useful for a relative path like `.`.
     root: PathBuf,
-    /// Separator to assemble picked paths with: whatever the field already uses,
-    /// so a path typed with `/` on Windows doesn't come back with a `\` in it.
+    /// Separator to assemble picked paths with: whatever the field already uses.
     sep: char,
     rows: Vec<PathRow>,
     selected: usize,
@@ -47,8 +39,7 @@ pub struct PathTree {
 
 impl PathTree {
     /// Open the browser on the directory the field currently names. `None` when
-    /// that cannot be read, which the caller reports on the notice row — with no
-    /// rows and no root there is nothing to draw.
+    /// that cannot be read.
     pub(crate) fn open(buf: &str) -> Option<Self> {
         let trimmed = buf.trim();
         let sep = trimmed
@@ -90,8 +81,7 @@ impl PathTree {
         })
     }
 
-    /// The root as the user's own text, for the browser's title. `""` means the
-    /// cwd, which reads as `.` on screen.
+    /// The root as the user's own text, for the browser's title.
     pub fn root_label(&self) -> &str {
         if self.root_text.is_empty() {
             "."
@@ -108,8 +98,7 @@ impl PathTree {
         self.selected
     }
 
-    /// Clamped rather than wrapping: the list is a path being narrowed down, and
-    /// wrapping from the last row back to the first loses the user's place.
+    /// Clamped rather than wrapping: the list is a path being narrowed down.
     pub(crate) fn move_selection(&mut self, down: bool) {
         if self.rows.is_empty() {
             return;
@@ -121,9 +110,7 @@ impl PathTree {
         };
     }
 
-    /// Read the selected directory's children and splice them in below it. One
-    /// `read_dir` per press, against that directory only — an unexpanded subtree
-    /// is never walked.
+    /// Read the selected directory's children and splice them in below it.
     pub(crate) fn expand(&mut self) {
         let Some(row) = self.rows.get(self.selected) else {
             return;
@@ -170,8 +157,7 @@ impl PathTree {
         self.re_root();
     }
 
-    /// The picked path in the user's own notation, with a trailing separator so
-    /// Tab can carry on descending from it once the field has it back.
+    /// The picked path in the user's own notation, with a trailing separator.
     pub(crate) fn selected_path(&self) -> String {
         let mut out = self.root_text.clone();
         if !self.rows.is_empty() {
@@ -193,10 +179,8 @@ impl PathTree {
         out
     }
 
-    /// Step the root up one level, so a browse that started deep in one checkout
-    /// can still reach a sibling. Expansion below is dropped — the rows are
-    /// rebuilt from the new root — and the directory just left is selected, so
-    /// the key reads as "step out" rather than "jump somewhere".
+    /// Step the root up one level. Expansion below is dropped — the rows are
+    /// rebuilt from the new root — and the directory just left is selected.
     fn re_root(&mut self) {
         let Some(parent) = self.root.parent().map(Path::to_path_buf) else {
             return;
@@ -246,8 +230,7 @@ impl PathTree {
     }
 }
 
-/// Hidden directories are left out, matching the completer's default: a home
-/// directory full of dot-directories would bury the checkouts being looked for.
+/// Hidden directories are left out, matching the completer's default.
 fn list_rows(dir: &Path, depth: usize) -> Vec<PathRow> {
     read_dir_names(dir, false)
         .into_iter()

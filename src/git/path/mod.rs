@@ -1,10 +1,9 @@
 //! Validation for repository-relative paths that reach the filesystem.
 //!
-//! Every path that names a file *inside* a worktree goes through
-//! [`resolve_in_workdir`] before being opened. Today's callers pass paths that
-//! git itself produced, but the web surfaces route caller-supplied strings to
-//! the same loaders, so the check lives at the filesystem boundary rather than
-//! at each call site.
+//! Every path that names a file inside a worktree goes through
+//! [`resolve_in_workdir`] before being opened. The web surfaces route
+//! caller-supplied strings to the same loaders, so the check lives at the
+//! filesystem boundary rather than at each call site.
 
 use anyhow::{Result, anyhow};
 use std::path::{Component, Path, PathBuf};

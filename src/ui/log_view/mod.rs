@@ -12,25 +12,20 @@ pub struct LogView {
     pub file_selected: usize,
     pub commit_scroll_x: usize,
     pub file_scroll_x: usize,
-    /// Memoized longest-summary char width, keyed by `commits.len()`. See
-    /// `StatusView::path_width_cache` for the invalidation contract.
+    /// Memoized longest-summary char width, keyed by `commits.len()`.
     pub(crate) commit_width_cache: Cell<Option<(usize, usize)>>,
     /// Memoized longest-path char width for `commit_files`.
     pub(crate) commit_files_width_cache: Cell<Option<(usize, usize)>>,
-    /// Count of commits currently loaded. Kept as a discrete field (in lockstep
-    /// with `commits.len()`) so the worker channel can compare against an
-    /// expected `skip` when results arrive and drop stale pages.
+    /// Kept in lockstep with `commits.len()` so the worker channel can compare
+    /// against an expected `skip` and drop stale pages.
     pub(crate) loaded_count: usize,
-    /// A background page fetch is in flight. Guards against duplicate requests.
+    /// Guards against duplicate page-fetch requests.
     pub(crate) pending_fetch: bool,
-    /// The previous fetch returned fewer entries than requested, so no further
-    /// pages exist. Cleared by `reset_pagination`.
+    /// The previous fetch returned fewer entries than requested.
     pub(crate) fully_loaded: bool,
-    /// Commit-list incremental search. Mirrors `StatusView::search_query` /
-    /// `search_active` / `filter_cache`: the cache contains indices into
-    /// `commits` whose summary matches the lowercased query (or `0..len`
-    /// when the query is empty). Recomputed only when commits or the query
-    /// change.
+    /// Commit-list incremental search. The cache holds indices into `commits`
+    /// whose summary matches the lowercased query. Recomputed only when
+    /// commits or the query change.
     pub commit_search_query: SearchQuery,
     pub commit_search_active: bool,
     pub(crate) commits_filter_cache: Vec<usize>,
@@ -42,8 +37,7 @@ pub struct LogView {
 }
 
 impl LogView {
-    /// Replace `commits` and invalidate the summary-width cache. See
-    /// `StatusView::set_files` for the same-length rationale. Also resets
+    /// Replace `commits` and invalidate the summary-width cache. Also resets
     /// pagination bookkeeping because `commits` is no longer the result of
     /// the previous page sequence.
     pub(crate) fn set_commits(&mut self, commits: Vec<CommitEntry>) {
@@ -55,16 +49,14 @@ impl LogView {
         self.recompute_commit_filter();
     }
 
-    /// Install a freshly-fetched first page. Computes `fully_loaded` from the
-    /// page length so the callsite doesn't repeat the short-page sentinel.
+    /// Install a freshly-fetched first page.
     pub(crate) fn set_commits_from_first_page(&mut self, page: Vec<CommitEntry>, page_size: usize) {
         let fully_loaded = page.len() < page_size;
         self.set_commits(page);
         self.fully_loaded = fully_loaded;
     }
 
-    /// Append a freshly-fetched page to the tail. A short result means we've
-    /// reached the end.
+    /// Append a freshly-fetched page to the tail.
     pub(crate) fn append_page(&mut self, mut page: Vec<CommitEntry>, page_size: usize) {
         let received = page.len();
         if received > 0 {
@@ -79,8 +71,7 @@ impl LogView {
         }
     }
 
-    /// Mark a fetch as in flight. Returns `false` if one was already pending
-    /// so the caller should not spawn another worker.
+    /// Mark a fetch as in flight. Returns `false` if one was already pending.
     pub(crate) fn mark_pending(&mut self) -> bool {
         if self.pending_fetch {
             return false;
@@ -89,24 +80,19 @@ impl LogView {
         true
     }
 
-    /// Clear the pending flag without appending a page. Used when a worker
-    /// result is discarded (stale skip, repo switch).
+    /// Clear the pending flag without appending a page.
     pub(crate) fn clear_pending(&mut self) {
         self.pending_fetch = false;
     }
 
-    /// Replace `commit_files` and invalidate the file-width cache so a
-    /// same-length drill-in into a different commit doesn't reuse the
-    /// previous commit's max path width.
+    /// Replace `commit_files` and invalidate the file-width cache.
     pub(crate) fn set_commit_files(&mut self, files: Vec<ChangedFile>) {
         self.commit_files = files;
         self.commit_files_width_cache.set(None);
         self.recompute_file_filter();
     }
 
-    /// Exit drill-down so the upper pane shows the commit list again. Clears
-    /// the file list and resets file-side cursors/scroll so a later drill-in
-    /// starts clean.
+    /// Exit drill-down so the upper pane shows the commit list again.
     pub fn reset_drill_down(&mut self) {
         self.drill_down = false;
         self.commit_files.clear();
@@ -121,8 +107,6 @@ impl LogView {
     }
 
     /// Refresh `commits_filter_cache` from `commits` and the current query.
-    /// Callers must invoke this after mutating `commits` or
-    /// `commit_search_query`; otherwise the cache will diverge.
     pub(crate) fn recompute_commit_filter(&mut self) {
         self.commits_filter_cache.clear();
         if self.commit_search_query.is_empty() {
@@ -158,9 +142,7 @@ impl LogView {
         self.commit_search_active = true;
     }
 
-    /// Exit the commit-list search bar and clear any active query. Always
-    /// recomputes the filter so the caller can refresh the diff against the
-    /// now-unfiltered list without inspecting prior state.
+    /// Exit the commit-list search bar and clear any active query.
     pub fn cancel_commit_search(&mut self) {
         self.commit_search_active = false;
         self.commit_search_query.clear();
@@ -168,8 +150,7 @@ impl LogView {
     }
 
     /// Hide the commit-list search bar. Returns `true` when the query was
-    /// empty and the call collapsed to a cancel (so the caller knows to
-    /// refresh the diff for the now-unfiltered list).
+    /// empty and the call collapsed to a cancel.
     pub fn confirm_commit_search(&mut self) -> bool {
         if self.commit_search_query.is_empty() {
             self.cancel_commit_search();
