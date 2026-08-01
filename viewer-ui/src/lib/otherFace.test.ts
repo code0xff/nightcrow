@@ -67,5 +67,14 @@ describe("hasWorkingCopy", () => {
   it("sees none for a deletion, staged or not", () => {
     expect(hasWorkingCopy(file("D", " "))).toBe(false);
     expect(hasWorkingCopy(file(" ", "D"))).toBe(false);
+    expect(hasWorkingCopy(file("D", "D"))).toBe(false);
+  });
+
+  it("sees the copy a staged deletion left behind", () => {
+    // `git rm --cached f` then recreating `f`: the deletion is staged and the
+    // file is sitting there. Reading the index column alone would refuse to
+    // open something that exists.
+    expect(hasWorkingCopy(file("D", "?"))).toBe(true);
+    expect(hasWorkingCopy(file("D", "A"))).toBe(true);
   });
 });

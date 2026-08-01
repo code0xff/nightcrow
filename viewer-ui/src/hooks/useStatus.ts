@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { api, subscribeStatus, type Status } from "../api";
 import type { Pane, Tab } from "../types";
+import { hasWorkingCopy } from "../lib/otherFace";
 
 export type { Pane, Tab };
 
@@ -57,7 +58,8 @@ export function useStatus({
     const current = paneRef.current;
     if (tabRef.current !== "status" || current.kind !== "diff") return;
     const path = current.value.path;
-    if (!status.files.some((f) => f.path === path)) {
+    const row = status.files.find((f) => f.path === path);
+    if (!row) {
       setPane({ kind: "empty" });
       return;
     }
@@ -77,15 +79,16 @@ export function useStatus({
       .diff(repo, path)
       .then((v) => {
         // The source rides along, or the whole-file toggle would vanish from a
-        // diff the next worktree change refreshed. Stated rather than carried
-        // over from the old pane: this path only ever refreshes the status
-        // view's working-tree diff, and a stale commit source would outlive
-        // what it named.
+        // diff the next worktree change refreshed — and is judged again off the
+        // refreshed row, or it would reappear on a file that has since been
+        // deleted. Stated rather than carried over from the old pane: this path
+        // only ever refreshes the status view's working-tree diff, and a stale
+        // commit source would outlive what it named.
         if (stillOurs())
           setPane({
             kind: "diff",
             value: v,
-            source: { kind: "workdir", path },
+            source: hasWorkingCopy(row) ? { kind: "workdir", path } : undefined,
           });
       })
       .catch((err) => {

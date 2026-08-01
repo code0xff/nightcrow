@@ -18,17 +18,22 @@ export function otherFace(
 }
 
 /**
- * Whether a changed file still has a working copy to show whole.
+ * Whether a changed file still has a working copy to read whole.
  *
- * A deletion has a diff and nothing to read: offering the toggle for it would
- * be a button whose only outcome is an error. The status columns are git's
- * short `XY` — `D` on either side is the file being gone from the tree, staged
- * or not.
+ * A deletion has a diff and nothing behind it: offering the toggle would be a
+ * button whose only outcome is an error. The columns are git's short `XY`, and
+ * it is the **worktree** one that says what is on disk — `D` there is the file
+ * gone. An index-side `D` alone is a staged deletion, which means the file is
+ * gone only when the worktree column reports nothing further: `git rm --cached`
+ * followed by recreating the path leaves `D` staged with the file present, and
+ * reading the index column on its own would refuse to open a file that is
+ * sitting right there.
  *
- * The TUI is looser here, letting `v` try and reporting the failure. A key that
- * says nothing is not the same as a button that says "open this": one is a
- * question, the other is an offer.
+ * The TUI is looser, letting `v` try and reporting the failure. A key that says
+ * nothing about itself is not the same as a button that says "open this": one
+ * is a question, the other is an offer.
  */
 export function hasWorkingCopy(file: ChangedFile): boolean {
-  return file.index !== "D" && file.worktree !== "D";
+  if (file.worktree === "D") return false;
+  return !(file.index === "D" && file.worktree === " ");
 }
