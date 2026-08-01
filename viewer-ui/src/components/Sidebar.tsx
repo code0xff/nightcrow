@@ -1,5 +1,5 @@
 import type { PointerEvent as ReactPointerEvent } from "react";
-import { SearchIcon } from "./icons";
+import { SearchIcon } from "./icons/actions";
 import { useTree } from "../hooks/useTree";
 import { buildTreeRows } from "../lib/tree";
 import { StatusList } from "./StatusList";

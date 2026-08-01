@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { XIcon } from "../icons";
+import { XIcon } from "../icons/actions";
 import {
   dismissToast,
   subscribeToasts,

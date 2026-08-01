@@ -1,5 +1,6 @@
 import type { CSSProperties } from "react";
-import { MaximizeIcon, XIcon } from "../icons";
+import { XIcon } from "../icons/actions";
+import { MaximizeIcon } from "../icons/layout";
 import { RecoveryChip } from "./RecoveryChip";
 import type { PaneRecovery } from "../../lib/recovery";
 import { TAB_TITLE_MAX_CELLS, truncateCells } from "../../lib/terminalLayout";

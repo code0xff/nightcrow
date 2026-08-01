@@ -5,13 +5,18 @@ import { applyRecovery, type RecoveryByPane } from "../../lib/recovery";
 import { toast } from "../../lib/toast";
 import { takeClaim, viewerId } from "../../lib/viewerId";
 import type { PaneView } from "../../lib/terminalLayout";
+import {
+  decodeTerminalControlFrame,
+  decodeTerminalOutputFrame,
+  type PaneSize,
+} from "../../api/terminal";
 
 interface UseTerminalSocketArgs {
   repo: string;
   socketRef: MutableRefObject<WebSocket | null>;
   viewsRef: MutableRefObject<Map<number, PaneView>>;
   pendingRef: MutableRefObject<Map<number, Uint8Array[]>>;
-  sentSizesRef: MutableRefObject<Map<number, { rows: number; cols: number }>>;
+  sentSizesRef: MutableRefObject<Map<number, PaneSize>>;
   lastActiveByRepoRef: MutableRefObject<Map<string, number>>;
   /** What the page last asked the zoom to be (see `usePaneCommands`). Cleared
    *  here because this is what knows when a request has been answered and when
@@ -110,7 +115,8 @@ export function useTerminalSocket({
         // here. Only the live socket may touch this state.
         if (socketRef.current !== socket) return;
         if (typeof event.data === "string") {
-          const message = JSON.parse(event.data);
+          const message = decodeTerminalControlFrame(event.data);
+          if (!message) return;
           if (message.type === "hello") {
             // The first frame on a connection, ahead of anything that names a
             // requester and ahead of the panes it counts.
@@ -133,8 +139,9 @@ export function useTerminalSocket({
             // The session names a configured startup terminal, and calls it the
             // same thing in every client. A pane this page asked for has no
             // name until the program in it sets one.
-            if (typeof message.title === "string" && message.title) {
-              setTitles((current) => ({ ...current, [pane]: message.title }));
+            const title = message.title;
+            if (title) {
+              setTitles((current) => ({ ...current, [pane]: title }));
             }
             setPanes((current) => [...current, pane]);
             // One of the replayed panes has landed, so the grid holds one fewer
@@ -197,13 +204,16 @@ export function useTerminalSocket({
             setZoomed(message.pane ?? null);
           } else if (message.type === "error") {
             toast.error(message.message);
+          } else {
+            const unreachable: never = message;
+            return unreachable;
           }
           return;
         }
-        const frame = new Uint8Array(event.data as ArrayBuffer);
-        if (frame.length < 4) return;
-        const pane = new DataView(frame.buffer).getUint32(0, true);
-        const bytes = frame.subarray(4);
+        if (!(event.data instanceof ArrayBuffer)) return;
+        const frame = decodeTerminalOutputFrame(event.data);
+        if (!frame) return;
+        const { pane, data: bytes } = frame;
         const view = viewsRef.current.get(pane);
         if (view) {
           view.term.write(bytes);

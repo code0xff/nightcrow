@@ -5,6 +5,7 @@ import { FitAddon } from "@xterm/addon-fit";
 import type { PaneView } from "../../lib/terminalLayout";
 import { terminalFontOptions } from "../../lib/termFont";
 import { ClearKeyProbe } from "../../lib/clearKeyProbe";
+import { sendTerminalMessage } from "../../api/terminal";
 
 interface UseTerminalViewsArgs {
   panes: number[];
@@ -57,14 +58,16 @@ export function useTerminalViews({
         return true;
       });
       term.onData((data) => {
-        const socket = socketRef.current;
-        if (!socket) return;
-        socket.send(JSON.stringify({ type: "input", pane, data }));
         const report = probe.report(data, performance.now());
-        if (report) {
-          socket.send(
-            JSON.stringify({ type: "clear_key_report", pane, ...report }),
-          );
+        if (
+          sendTerminalMessage(socketRef.current, { type: "input", pane, data }) &&
+          report
+        ) {
+          sendTerminalMessage(socketRef.current, {
+            type: "clear_key_report",
+            pane,
+            ...report,
+          });
         }
       });
       // Preserve the previous label when OSC provides an empty title.

@@ -2,7 +2,7 @@ import { Suspense, lazy } from "react";
 import { useDiffLayout } from "../lib/diffLayout";
 import { fileViewSource, isHtmlPath, isPreviewablePath } from "../lib/fileView";
 import { digitsFor } from "../lib/gutter";
-import { MaximizeIcon, PreviewIcon, SplitViewIcon } from "./icons";
+import { MaximizeIcon, PreviewIcon, SplitViewIcon } from "./icons/layout";
 import { DiffView } from "./DiffView";
 import { LineNos } from "./LineNos";
 import { PathLabel } from "./PathLabel";

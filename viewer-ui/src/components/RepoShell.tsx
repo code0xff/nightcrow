@@ -1,14 +1,14 @@
 import { Suspense, lazy, useEffect } from "react";
 import type { CSSProperties } from "react";
 import { MAX_SIDEBAR_VIEWPORT_FRACTION } from "../hooks/ui/sidebar";
-import type { PointerEvent as ReactPointerEvent } from "react";
 import { Sidebar } from "./Sidebar";
+import type { SidebarProps } from "./Sidebar";
 import { FilePane } from "./FilePane";
-import type { ChangedFile, Commit, Repo, Status } from "../api";
-import type { CommitDrillDown } from "../hooks/useLog";
-import type { Maximized, Pane, Tab } from "../types";
-import type { MobileView } from "../types";
-import { FileTextIcon, ListIcon, TerminalIcon } from "./icons";
+import type { FilePaneProps } from "./FilePane";
+import type { Repo, Status } from "../api";
+import type { ShellLayout } from "../hooks/useShellLayout";
+import type { Maximized, MobileView } from "../types";
+import { RepoMobileNav } from "./RepoMobileNav";
 
 // Keep xterm out of the initial login and git-viewer bundle.
 const TerminalPanel = lazy(() =>
@@ -16,89 +16,43 @@ const TerminalPanel = lazy(() =>
 );
 
 export interface RepoShellProps {
-  repo: string;
-  repos: Repo[];
-  current: Repo | undefined;
-  status: Status | null;
-  files: ChangedFile[];
-  now: number;
-  hotWindowMs: number;
-  pane: Pane;
-  setPane: React.Dispatch<React.SetStateAction<Pane>>;
-  tab: Tab;
-  setTab: (t: Tab) => void;
-  filter: string;
-  setFilter: (v: string) => void;
-  filterOpen: boolean;
-  setFilterOpen: React.Dispatch<React.SetStateAction<boolean>>;
-  openDiff: (path: string) => void;
-  openFile: (path: string) => void;
-  openCommit: (oid: string) => void;
-  openCommitFileDiff: (oid: string, path: string) => void;
-  openCommitFiles: (commit: Commit) => void;
-  authed: boolean | null;
-  handle: (err: unknown) => void;
-  sidebarWidth: number;
-  sidebarRef: React.RefObject<HTMLElement | null>;
-  draggingSidebar: boolean;
-  onSidebarDragStart: (e: ReactPointerEvent) => void;
-  onSidebarDragMove: (e: ReactPointerEvent) => void;
-  onSidebarDragEnd: () => void;
-  onSidebarDragCancel: () => void;
-  /** The diff panel and the terminal panel — the two edges of the vertical
-   *  split the divider between them measures against. */
-  upperRef: React.RefObject<HTMLElement | null>;
-  lowerRef: React.RefObject<HTMLElement | null>;
-  draggingUpper: boolean;
-  onUpperDragStart: (e: ReactPointerEvent) => void;
-  onUpperDragMove: (e: ReactPointerEvent) => void;
-  onUpperDragEnd: () => void;
-  onUpperDragCancel: () => void;
-  filesMax: boolean;
-  bumpPaneRequest: () => void;
-  commits: Commit[];
-  logDone: boolean;
-  logStalled: boolean;
-  setLogStalled: (v: boolean | ((prev: boolean) => boolean)) => void;
-  commitDrillDown: CommitDrillDown | null;
-  setCommitDrillDown: (v: CommitDrillDown | null) => void;
-  resetLog: () => void;
-  logSentinelRef: React.RefObject<HTMLLIElement | null>;
-  visibleCommits: Commit[];
-  logPagingPaused: boolean;
-  aheadOids: Set<string>;
-  visibleCommitFiles: CommitDrillDown["files"];
-  previewRendered: boolean;
-  setPreviewRendered: React.Dispatch<React.SetStateAction<boolean>>;
-  maximized: Maximized;
-  setMaximized: (next: Maximized | ((prev: Maximized) => Maximized)) => void;
-  mobileView: MobileView;
-  setMobileView: (view: MobileView) => void;
+  repository: {
+    id: string;
+    current: Repo | undefined;
+    status: Status | null;
+  };
+  sidebar: Omit<
+    SidebarProps,
+    | "sidebarRef"
+    | "draggingSidebar"
+    | "onSidebarDragStart"
+    | "onSidebarDragMove"
+    | "onSidebarDragEnd"
+    | "onSidebarDragCancel"
+    | "filesMax"
+    | "mobileView"
+    | "repo"
+    | "status"
+  >;
+  filePane: Pick<
+    FilePaneProps,
+    "pane" | "previewRendered" | "setPreviewRendered"
+  >;
+  layout: ShellLayout & {
+    maximized: Maximized;
+    setMaximized: (
+      next: Maximized | ((previous: Maximized) => Maximized),
+    ) => void;
+    mobileView: MobileView;
+    setMobileView: (view: MobileView) => void;
+  };
 }
 
-export function RepoShell(props: RepoShellProps) {
-  const {
-    repo,
-    current,
-    status,
-    files,
-    now,
-    hotWindowMs,
-    pane,
-    setPane,
-    tab,
-    setTab,
-    filter,
-    setFilter,
-    filterOpen,
-    setFilterOpen,
-    openDiff,
-    openFile,
-    openCommit,
-    openCommitFileDiff,
-    openCommitFiles,
-    authed,
-    handle,
+export function RepoShell({
+  repository: { id: repo, current, status },
+  sidebar,
+  filePane,
+  layout: {
     sidebarWidth,
     sidebarRef,
     draggingSidebar,
@@ -113,28 +67,13 @@ export function RepoShell(props: RepoShellProps) {
     onUpperDragMove,
     onUpperDragEnd,
     onUpperDragCancel,
-    filesMax,
-    bumpPaneRequest,
-    commits,
-    logDone,
-    logStalled,
-    setLogStalled,
-    commitDrillDown,
-    setCommitDrillDown,
-    resetLog,
-    logSentinelRef,
-    visibleCommits,
-    logPagingPaused,
-    aheadOids,
-    visibleCommitFiles,
-    previewRendered,
-    setPreviewRendered,
     maximized,
     setMaximized,
     mobileView,
     setMobileView,
-  } = props;
-
+  },
+}: RepoShellProps) {
+  const filesMax = maximized === "files";
   // The drag separator lives inside the keyed `Sidebar`, and the project can
   // change without the user letting go — another device switches it. The
   // separator then unmounts mid-drag and its pointerup never arrives, leaving
@@ -178,25 +117,9 @@ export function RepoShell(props: RepoShellProps) {
             under the other until a reload. */}
         <Sidebar
           key={repo}
-          tab={tab}
-          setTab={setTab}
-          filter={filter}
-          setFilter={setFilter}
-          filterOpen={filterOpen}
-          setFilterOpen={setFilterOpen}
-          status={status}
-          files={files}
-          now={now}
-          hotWindowMs={hotWindowMs}
-          setPane={setPane}
-          openDiff={openDiff}
-          openFile={openFile}
-          openCommit={openCommit}
-          openCommitFileDiff={openCommitFileDiff}
-          openCommitFiles={openCommitFiles}
+          {...sidebar}
           repo={repo}
-          authed={authed}
-          handle={handle}
+          status={status}
           sidebarRef={sidebarRef}
           draggingSidebar={draggingSidebar}
           onSidebarDragStart={onSidebarDragStart}
@@ -204,25 +127,10 @@ export function RepoShell(props: RepoShellProps) {
           onSidebarDragEnd={onSidebarDragEnd}
           onSidebarDragCancel={onSidebarDragCancel}
           filesMax={filesMax}
-          bumpPaneRequest={bumpPaneRequest}
-          commits={commits}
-          logDone={logDone}
-          logStalled={logStalled}
-          setLogStalled={setLogStalled}
-          commitDrillDown={commitDrillDown}
-          setCommitDrillDown={setCommitDrillDown}
-          resetLog={resetLog}
-          logSentinelRef={logSentinelRef}
-          visibleCommits={visibleCommits}
-          logPagingPaused={logPagingPaused}
-          aheadOids={aheadOids}
-          visibleCommitFiles={visibleCommitFiles}
           mobileView={mobileView}
         />
         <FilePane
-          pane={pane}
-          previewRendered={previewRendered}
-          setPreviewRendered={setPreviewRendered}
+          {...filePane}
           filesMax={filesMax}
           setMaximized={setMaximized}
           status={status}
@@ -251,32 +159,7 @@ export function RepoShell(props: RepoShellProps) {
         />
       </Suspense>
 
-      <nav
-        aria-label="Switch view"
-        className="flex shrink-0 items-stretch border-t border-ink-700 bg-ink-900 md:hidden"
-      >
-        {(
-          [
-            ["files", "Files", ListIcon],
-            ["diff", "Diff", FileTextIcon],
-            ["terminal", "Terminal", TerminalIcon],
-          ] as [MobileView, string, typeof ListIcon][]
-        ).map(([key, label, Icon]) => (
-          <button
-            key={key}
-            onClick={() => setMobileView(key)}
-            aria-current={mobileView === key ? "page" : undefined}
-            className={`flex min-h-11 flex-1 flex-col items-center justify-center gap-0.5 py-1 text-[11px] ${
-              mobileView === key
-                ? "text-accent shadow-[inset_0_2px_0_0_var(--color-accent)]"
-                : "text-ink-400"
-            }`}
-          >
-            <Icon className="h-5 w-5" />
-            {label}
-          </button>
-        ))}
-      </nav>
+      <RepoMobileNav view={mobileView} onSelect={setMobileView} />
 
       <footer className="flex shrink-0 items-center gap-3 border-t border-ink-700 bg-ink-900 px-3 py-1 text-ink-400">
         <span className="truncate">{current?.display_path}</span>

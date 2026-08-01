@@ -1,5 +1,9 @@
 import type { MutableRefObject } from "react";
 import type { PaneView } from "../../lib/terminalLayout";
+import {
+  sendTerminalMessage,
+  type TerminalClientMessage,
+} from "../../api/terminal";
 import { TERM_KEY_BAR, termKeySequence } from "../../lib/termKeys";
 import { zoomRequest } from "../../lib/zoom";
 
@@ -36,9 +40,8 @@ export function usePaneCommands({
   zoomAskedRef,
   active,
 }: UsePaneCommandsArgs) {
-  const send = (message: unknown) =>
-    socketRef.current?.send(JSON.stringify(message));
-
+  const send = (message: TerminalClientMessage) =>
+    sendTerminalMessage(socketRef.current, message);
 
   // The pane that comes back names this connection as its requester, which is
   // how the socket hook knows to focus it (`hello`).
@@ -53,8 +56,7 @@ export function usePaneCommands({
     const current =
       zoomAskedRef.current === undefined ? zoomed : zoomAskedRef.current;
     const next = zoomRequest(current, pane);
-    zoomAskedRef.current = next;
-    send({ type: "zoom", pane: next });
+    if (send({ type: "zoom", pane: next })) zoomAskedRef.current = next;
   };
 
   // Take the sizing back. Deliberate rather than automatic: the panes belong to

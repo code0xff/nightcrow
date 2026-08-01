@@ -18,7 +18,7 @@ export interface PaneRecovery {
 }
 
 /// The `recovery` control frame as the wire delivers it.
-interface RecoveryFrame {
+export interface RecoveryFrame {
   pane: number;
   state: string;
   detail?: string;
@@ -99,25 +99,4 @@ export function recoverySummary(report: PaneRecovery): string {
   if (at) parts.push(`until ${at}`);
   if (report.attempt > 0) parts.push(`attempt ${report.attempt}`);
   return parts.join(" · ");
-}
-
-/// The frame that asks the server to give up on a pane's recovery.
-export function cancelRecoveryFrame(pane: number): string {
-  return JSON.stringify({ type: "cancel_recovery", pane });
-}
-
-/// Anything that can take a control frame — a live `WebSocket`, or nothing at all
-/// while the socket is reconnecting.
-interface FrameSink {
-  send(data: string): void;
-}
-
-/// Ask the server to give up on `pane`'s recovery.
-///
-/// Nothing is cleared locally: the badge goes when the server broadcasts
-/// `cancelled`, which is also what tells every other client. With no socket there
-/// is nobody to ask, and that is not an error — the page reconnects and the
-/// server still holds the truth.
-export function sendCancelRecovery(sink: FrameSink | null, pane: number): void {
-  sink?.send(cancelRecoveryFrame(pane));
 }

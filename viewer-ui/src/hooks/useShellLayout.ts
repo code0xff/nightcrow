@@ -110,3 +110,5 @@ export function useShellLayout() {
     },
   };
 }
+
+export type ShellLayout = ReturnType<typeof useShellLayout>["shell"];
