@@ -149,9 +149,44 @@ pub fn set_accent(state: &SessionState, accent: usize) -> usize {
 /// change the set in between.
 pub fn close_repo(state: &SessionState, id: &str) -> Result<(), CloseError> {
     let entry = state.catalog.get(id).ok_or(CloseError::UnknownRepo)?;
+    // Read before the close, because it is a position in the set that is about
+    // to change, and only interesting when the tab being closed is the one in
+    // front — closing a background project must leave the focus where it is.
+    let successor = (active_repo(state).as_deref() == Some(id))
+        .then(|| successor_of(state, id))
+        .flatten();
     state.catalog.remove_path(&entry.path);
+    // Said outright rather than left to `active_repo`'s fallback. That fallback
+    // answers "nothing has been focused yet, or what is on file is no longer
+    // served" with the first repository, which is right for a fresh session and
+    // wrong for a close: it sent everyone to the first tab from wherever they
+    // were. The TUI has picked the neighbour since it had tabs
+    // (`workspace::close_at`) and was overruled by this a beat later.
+    if let Some(path) = successor {
+        state.prefs.set_active_repo(path);
+    }
     persist_workspace(state);
     Ok(())
+}
+
+/// The tab to put in front once `id` closes: the one after it, or the one
+/// before when it is last. Its *path*, because that is what the preference
+/// stores and the id is about to stop naming anything.
+///
+/// The same rule browsers use, and the same one `workspace::close_at` already
+/// applies on the TUI — so the answer this records is the one that client had
+/// picked for itself, and adopting it moves nothing.
+///
+/// `None` when the set holds nothing else, which is the empty screen. Nothing
+/// is written then: there is no tab to name, and the stale entry costs nothing
+/// because it no longer resolves.
+fn successor_of(state: &SessionState, id: &str) -> Option<String> {
+    let served = state.catalog.id_paths();
+    let closing = served.iter().position(|(served_id, _)| served_id == id)?;
+    served
+        .get(closing + 1)
+        .or_else(|| closing.checked_sub(1).and_then(|before| served.get(before)))
+        .map(|(_, path)| path.clone())
 }
 
 /// Reorder the catalog to `ids`.
