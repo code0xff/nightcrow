@@ -1,10 +1,4 @@
-import {
-  useCallback,
-  useEffect,
-  useRef,
-  useState,
-  type CSSProperties,
-} from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { planLayout, type PaneView } from "../../lib/terminalLayout";
 import { usePaneDrag } from "../../hooks/terminal/usePaneDrag";
 import { useTerminalSocket } from "../../hooks/terminal/useTerminalSocket";
@@ -14,8 +8,7 @@ import { usePaneRecovery } from "../../hooks/terminal/usePaneRecovery";
 import { usePaneCommands } from "../../hooks/terminal/usePaneCommands";
 import { usePaneFocus } from "../../hooks/terminal/usePaneFocus";
 import { useStartupSizes } from "../../hooks/terminal/useStartupSizes";
-import { TerminalCell } from "./TerminalCell";
-import { StartupSlots } from "./StartupSlots";
+import { PaneGrid } from "./PaneGrid";
 import { TermKeyBar } from "./TermKeyBar";
 import { PanelDivider, type PanelDividerProps } from "./PanelDivider";
 import { PanelToolbar } from "./PanelToolbar";
@@ -211,66 +204,29 @@ export function TerminalPanel({
             to start one.
           </p>
         )}
-        <div
-          ref={containerRef}
-          className="grid h-full gap-1"
-          style={
-            zoom !== null
-              ? { gridTemplateColumns: "1fr", gridTemplateRows: "1fr" }
-              : {
-                  gridTemplateColumns: `repeat(${layout.cols}, minmax(0, 1fr))`,
-                  gridTemplateRows: `repeat(${layout.rows}, minmax(0, 1fr))`,
-                }
-          }
-        >
-          {panes.length === 0 && pending !== null && (
-            <StartupSlots
-              count={pending}
-              cells={layout.cells}
-              slotRefs={slotRefs}
-            />
-          )}
-          {panes.map((pane, index) => {
-            const label = titles[pane] ?? `term ${index + 1}`;
-            const cell = layout.cells[index];
-            const cellStyle: CSSProperties =
-              zoom !== null
-                ? { display: pane === zoom ? "flex" : "none" }
-                : {
-                    display: "flex",
-                    gridColumn: `${cell.colStart} / span ${cell.colSpan}`,
-                    gridRow: `${cell.row}`,
-                  };
-            return (
-              <TerminalCell
-                key={pane}
-                pane={pane}
-                index={index}
-                label={label}
-                cellStyle={cellStyle}
-                isActive={pane === active}
-                isZoomed={zoom === pane}
-                showZoom={panes.length > 1}
-                isDragged={draggingPane === pane}
-                isDropTarget={dragOverPane === pane}
-                reorderable={reorderable}
-                recovery={recovery[pane]}
-                onCancelRecovery={() => cancelRecovery(pane)}
-                onFocus={() => focusPane(pane)}
-                onToggleZoom={() => toggleZoom(pane)}
-                onClose={() => closePane(pane)}
-                onPaneDragStart={(e) => onPaneDragStart(e, pane)}
-                onPaneDragMove={onPaneDragMove}
-                onPaneDragEnd={onPaneDragEnd}
-                onPaneDragCancel={endPaneDrag}
-                bodyRef={(node) => {
-                  if (node) bodyRefs.current.set(pane, node);
-                  else bodyRefs.current.delete(pane);
-                }}
-              />
-            );
-          })}
-        </div>
+        <PaneGrid
+          containerRef={containerRef}
+          panes={panes}
+          titles={titles}
+          active={active}
+          zoom={zoom}
+          layout={layout}
+          pending={pending}
+          recovery={recovery}
+          draggingPane={draggingPane}
+          dragOverPane={dragOverPane}
+          reorderable={reorderable}
+          slotRefs={slotRefs}
+          bodyRefs={bodyRefs}
+          onFocus={focusPane}
+          onToggleZoom={toggleZoom}
+          onClose={closePane}
+          onCancelRecovery={cancelRecovery}
+          onPaneDragStart={onPaneDragStart}
+          onPaneDragMove={onPaneDragMove}
+          onPaneDragEnd={onPaneDragEnd}
+          onPaneDragCancel={endPaneDrag}
+        />
       </div>
       {panes.length > 0 && <TermKeyBar onKey={sendKey} />}
     </section>
