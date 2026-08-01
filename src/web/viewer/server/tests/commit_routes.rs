@@ -1,6 +1,17 @@
 use super::{body_of, get, seeded_server};
 use crate::test_util::run_git;
 
+/// The file's text, flattened out of the highlighted spans `FileDto` carries.
+fn file_text(value: &serde_json::Value) -> String {
+    value["lines"]
+        .as_array()
+        .expect("a file payload has lines")
+        .iter()
+        .flat_map(|line| line.as_array().expect("a line is spans").iter())
+        .map(|span| span["t"].as_str().unwrap_or_default())
+        .collect()
+}
+
 #[test]
 fn commit_files_returns_the_selected_commits_changed_paths() {
     let (dir, server, token, id) = seeded_server();
@@ -139,6 +150,100 @@ fn diff_returns_hunks_for_a_changed_file() {
     assert!(
         kinds.contains(&"+") && kinds.contains(&"-"),
         "got: {kinds:?}"
+    );
+    drop(dir);
+}
+
+#[test]
+fn commit_file_serves_the_contents_as_of_that_commit() {
+    // Not the working tree's: the point of reading a file from the log is to
+    // see what it was, and the two differ the moment anything is edited after.
+    let (dir, server, token, id) = seeded_server();
+    let repo_path = {
+        let entry = server.state.session.catalog().get(&id).unwrap();
+        entry.path.clone()
+    };
+    let file = std::path::Path::new(&repo_path).join("history.txt");
+    std::fs::write(&file, "as committed\n").unwrap();
+    run_git(&repo_path, &["add", "history.txt"]);
+    run_git(&repo_path, &["commit", "-m", "add history"]);
+    std::fs::write(&file, "edited since\n").unwrap();
+
+    let log = get(server.addr(), &format!("/api/log?repo={id}"), Some(&token));
+    let value: serde_json::Value = serde_json::from_str(body_of(&log)).unwrap();
+    let oid = value["commits"][0]["oid"].as_str().unwrap();
+    let response = get(
+        server.addr(),
+        &format!("/api/commit/file?repo={id}&oid={oid}&path=history.txt"),
+        Some(&token),
+    );
+    let value: serde_json::Value = serde_json::from_str(body_of(&response)).unwrap();
+
+    assert!(response.starts_with("HTTP/1.1 200"), "got: {response}");
+    assert_eq!(value["path"], "history.txt");
+    let text = file_text(&value);
+    assert!(
+        text.contains("as committed"),
+        "expected the committed contents: {text:?}"
+    );
+    assert!(
+        !text.contains("edited since"),
+        "the working tree must not leak into a historical read: {text:?}"
+    );
+    drop(dir);
+}
+
+#[test]
+fn commit_file_reads_a_deleted_path_from_the_commit_that_removed_it() {
+    // A deleted path is not in its own commit's tree. The server works that out
+    // rather than being told, so a client cannot be wrong about it.
+    let (dir, server, token, id) = seeded_server();
+    let repo_path = {
+        let entry = server.state.session.catalog().get(&id).unwrap();
+        entry.path.clone()
+    };
+    let gone = std::path::Path::new(&repo_path).join("gone.txt");
+    std::fs::write(&gone, "what it held\n").unwrap();
+    run_git(&repo_path, &["add", "gone.txt"]);
+    run_git(&repo_path, &["commit", "-m", "add gone"]);
+    run_git(&repo_path, &["rm", "gone.txt"]);
+    run_git(&repo_path, &["commit", "-m", "delete gone"]);
+
+    let log = get(server.addr(), &format!("/api/log?repo={id}"), Some(&token));
+    let value: serde_json::Value = serde_json::from_str(body_of(&log)).unwrap();
+    let oid = value["commits"][0]["oid"].as_str().unwrap();
+    let response = get(
+        server.addr(),
+        &format!("/api/commit/file?repo={id}&oid={oid}&path=gone.txt"),
+        Some(&token),
+    );
+    let value: serde_json::Value = serde_json::from_str(body_of(&response)).unwrap();
+
+    assert!(response.starts_with("HTTP/1.1 200"), "got: {response}");
+    let text = file_text(&value);
+    assert!(
+        text.contains("what it held"),
+        "expected the contents the commit removed: {text:?}"
+    );
+    drop(dir);
+}
+
+#[test]
+fn commit_file_refuses_a_path_that_commit_never_had() {
+    let (dir, server, token, id) = seeded_server();
+    let log = get(server.addr(), &format!("/api/log?repo={id}"), Some(&token));
+    let value: serde_json::Value = serde_json::from_str(body_of(&log)).unwrap();
+    let oid = value["commits"][0]["oid"].as_str().unwrap();
+
+    let response = get(
+        server.addr(),
+        &format!("/api/commit/file?repo={id}&oid={oid}&path=never%2Fexisted.rs"),
+        Some(&token),
+    );
+
+    assert!(
+        !response.starts_with("HTTP/1.1 200"),
+        "a path the commit never had must not answer with contents: {response}"
     );
     drop(dir);
 }

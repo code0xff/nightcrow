@@ -1,5 +1,6 @@
 mod commit_log;
 mod diff_load;
+mod file_load;
 mod refs;
 mod snapshot;
 mod types;
@@ -10,9 +11,10 @@ pub use commit_log::{
     head_commit_oid, load_commit_log, load_commit_log_from, load_commit_log_page,
 };
 pub use diff_load::{
-    load_commit_diff, load_commit_file_blob, load_commit_file_diff, load_commit_files,
-    load_file_diff, load_workdir_file, parse_hunk_new_start,
+    load_commit_diff, load_commit_file_diff, load_commit_files, load_file_diff,
+    parse_hunk_new_start,
 };
+pub use file_load::{load_commit_file, load_commit_file_blob, load_workdir_file};
 pub use refs::{LogDecorations, RefKind, RefLabel, load_log_decorations};
 pub use snapshot::load_snapshot;
 #[cfg(test)]

@@ -4,8 +4,6 @@ use anyhow::{Context, Result};
 use git2::{Diff, DiffDelta, DiffOptions, Oid, Repository};
 use std::cell::RefCell;
 
-pub const MAX_FILE_VIEW_BYTES: usize = 5 * 1024 * 1024;
-
 /// Parse the new-side starting line from a unified-diff hunk header like
 /// `@@ -1,3 +5,7 @@ context`. Returns `None` for synthetic headers
 /// (`diff <path>`, `Binary file ...`) or anything malformed.
@@ -17,71 +15,6 @@ pub fn parse_hunk_new_start(header: &str) -> Option<usize> {
         return None;
     }
     token.parse().ok()
-}
-
-fn decode_file_view(bytes: &[u8]) -> Result<String> {
-    if bytes.len() > MAX_FILE_VIEW_BYTES {
-        return Err(anyhow::anyhow!(
-            "file too large to preview: {} bytes",
-            bytes.len()
-        ));
-    }
-    std::str::from_utf8(bytes)
-        .map(String::from)
-        .map_err(|_| anyhow::anyhow!("binary or non-utf8 file"))
-}
-
-pub fn load_workdir_file(repo: &Repository, file_path: &str) -> Result<String> {
-    let workdir = repo
-        .workdir()
-        .ok_or_else(|| anyhow::anyhow!("bare repository"))?;
-    let full = crate::git::path::resolve_in_workdir(workdir, file_path)?;
-    // Size-check through the open handle rather than a second path lookup, so
-    // the file that gets read is the one that was measured.
-    let file = std::fs::File::open(&full).with_context(|| format!("failed to open {file_path}"))?;
-    let len = file
-        .metadata()
-        .with_context(|| format!("failed to stat {file_path}"))?
-        .len();
-    // Reject a multi-GB log file or build artifact before it ever materializes
-    // into memory: `decode_file_view`'s post-read length check would otherwise
-    // allocate the full buffer before bailing.
-    if len > MAX_FILE_VIEW_BYTES as u64 {
-        return Err(anyhow::anyhow!("file too large to preview: {len} bytes"));
-    }
-    let mut bytes = Vec::with_capacity(len as usize);
-    {
-        use std::io::Read;
-        // Cap the read itself: `len` came from the handle, but a file that
-        // grows between the stat and the read would otherwise be read in full.
-        file.take(MAX_FILE_VIEW_BYTES as u64 + 1)
-            .read_to_end(&mut bytes)
-            .with_context(|| format!("failed to read {file_path}"))?;
-    }
-    decode_file_view(&bytes)
-}
-
-pub fn load_commit_file_blob(
-    repo: &Repository,
-    oid: Oid,
-    file_path: &str,
-    status: StatusKind,
-) -> Result<String> {
-    let commit = repo.find_commit(oid).context("failed to find commit")?;
-    let tree = if status == StatusKind::Deleted {
-        commit
-            .parent(0)
-            .context("deleted file has no parent commit")?
-            .tree()
-            .context("failed to get parent tree")?
-    } else {
-        commit.tree().context("failed to get commit tree")?
-    };
-    let entry = tree
-        .get_path(std::path::Path::new(file_path))
-        .with_context(|| format!("path not in commit: {file_path}"))?;
-    let blob = repo.find_blob(entry.id()).context("failed to read blob")?;
-    decode_file_view(blob.content())
 }
 
 pub fn load_file_diff(repo: &Repository, file_path: &str) -> Result<Vec<DiffHunk>> {

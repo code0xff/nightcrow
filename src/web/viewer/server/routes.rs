@@ -205,6 +205,16 @@ pub(super) fn route(head: &RequestHead, state: &ViewerState) -> Vec<u8> {
                 &[],
             ))
         }),
+        "/api/commit/file" => with_repo_commit_path(head, state, |entry, path| {
+            let oid = required_oid(head)?;
+            let repo = open_repo(&entry.path)?;
+            let content = diff::load_commit_file(&repo, oid, path)?;
+            Ok(json_response(
+                "200 OK",
+                &encode(&FileDto::new(path, &content))?,
+                &[],
+            ))
+        }),
         "/api/browse" => browse(head),
         _ => json_error("404 Not Found", "no such route"),
     }
