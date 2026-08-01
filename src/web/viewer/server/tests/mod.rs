@@ -1,6 +1,7 @@
 mod active_repo;
 mod auth;
 mod clone;
+mod closing;
 mod commit_routes;
 mod prefs;
 mod reload;

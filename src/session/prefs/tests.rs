@@ -272,3 +272,27 @@ fn arranging_one_project_leaves_the_other_preferences_as_they_were() {
     assert_eq!(stored.accent, 4);
     assert_eq!(stored.upper_pct, 30);
 }
+
+#[test]
+fn a_conditional_focus_move_lands_only_while_the_focus_is_where_it_was() {
+    // What a close uses: it picks a successor from the set it read a moment
+    // ago, and another client can move the focus in between. The move must not
+    // overwrite that.
+    let dir = tempfile::TempDir::new().unwrap();
+    let prefs = PrefsStore::at(dir.path().join("viewer.json"));
+    prefs.set_active_repo("/a".to_string());
+
+    let moved = prefs.set_active_repo_if(Some("/a"), "/b".to_string());
+    assert_eq!(
+        moved.active_repo.as_deref(),
+        Some("/b"),
+        "the focus was where the caller expected, so it moves"
+    );
+
+    let refused = prefs.set_active_repo_if(Some("/a"), "/c".to_string());
+    assert_eq!(
+        refused.active_repo.as_deref(),
+        Some("/b"),
+        "somebody else moved it; this must leave it alone"
+    );
+}

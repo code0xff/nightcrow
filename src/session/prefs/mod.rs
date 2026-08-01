@@ -149,6 +149,22 @@ impl PrefsStore {
         })
     }
 
+    /// Move the focus, but only while it is still what `expected` says.
+    ///
+    /// For a close, which decides the successor from a set it read a moment
+    /// earlier: another client can focus something else in between, and this
+    /// must not overwrite that. The comparison happens inside the same locked
+    /// read-modify-write as the store, so against another preference write it is
+    /// atomic — what it cannot see is a catalog change, which has a lock of its
+    /// own and would cost a deadlock to hold with this one.
+    pub fn set_active_repo_if(&self, expected: Option<&str>, next: String) -> ViewerPrefs {
+        self.mutate(|state| {
+            if state.active_repo.as_deref() == expected {
+                state.active_repo = Some(next);
+            }
+        })
+    }
+
     /// Record how one project's screen is arranged. `None` un-maximizes.
     #[cfg(test)]
     pub fn set_maximized(&self, repo: String, panel: Option<MaximizedPanel>) -> ViewerPrefs {

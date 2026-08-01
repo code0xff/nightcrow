@@ -163,17 +163,27 @@ pub fn close_repo(state: &SessionState, id: &str) -> Result<(), CloseError> {
     // were. The TUI has picked the neighbour since it had tabs
     // (`workspace::close_at`) and was overruled by this a beat later.
     if let Some(path) = successor
-        // Still the project this decision was made about. Another client can
-        // focus something else while this close is in flight, and the two are
-        // not one transaction — the catalog and the preferences have their own
-        // locks, and taking both in order to close a tab invites the deadlock
-        // that costs more than the race. Checking is not atomic either, but it
-        // turns "always overwrite a focus made meanwhile" into a window of a
-        // few instructions, and the loser of it is corrected by the next thing
-        // either client does.
-        && state.prefs.get().active_repo.as_deref() == Some(entry.path.as_str())
+        // Still served. The successor was read from the set before the close,
+        // and another client can have closed it in between — recording a path
+        // nothing resolves would leave every surface on `active_repo`'s
+        // fallback, which is the first tab this exists to stop landing on.
+        && state.catalog.id_of_path(&path).is_some()
     {
-        state.prefs.set_active_repo(path);
+        // Only while the focus is still the project this decided about.
+        // Compared inside the preference store's own locked write, so against
+        // another focus it is atomic; what it cannot see is the catalog, which
+        // has a lock of its own that this must not hold at the same time.
+        //
+        // What this guarantees is that *the close* does not overwrite a focus
+        // made meanwhile — not that such a focus survives. A browser that
+        // closed the tab then records where it landed, from the one place its
+        // selection settles (`useRepoPoll`), and that write is a client saying
+        // where it is rather than a close deciding for everyone. Last assertion
+        // wins there, as it does for every other switch. A TUI close asserts
+        // nothing after the fact, so for it this holds outright.
+        state
+            .prefs
+            .set_active_repo_if(Some(entry.path.as_str()), path);
     }
     persist_workspace(state);
     Ok(())
