@@ -76,7 +76,17 @@ export function useStatus({
     api
       .diff(repo, path)
       .then((v) => {
-        if (stillOurs()) setPane({ kind: "diff", value: v });
+        // The source rides along, or the whole-file toggle would vanish from a
+        // diff the next worktree change refreshed. Stated rather than carried
+        // over from the old pane: this path only ever refreshes the status
+        // view's working-tree diff, and a stale commit source would outlive
+        // what it named.
+        if (stillOurs())
+          setPane({
+            kind: "diff",
+            value: v,
+            source: { kind: "workdir", path },
+          });
       })
       .catch((err) => {
         if (stillOurs()) handle(err);

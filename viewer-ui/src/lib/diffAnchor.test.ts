@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { anchorLine, anchorOffset } from "./diffAnchor";
+import { anchorLine, anchorOffset, anchorWithin } from "./diffAnchor";
 import type { Diff, DiffLine } from "../api";
 
 const line = (new_lineno?: number): DiffLine => ({
@@ -33,6 +33,20 @@ describe("anchorLine", () => {
     expect(anchorLine(diff([{ header: "@@", lines: [line(), line()] }]))).toBeNull();
   });
 
+  it("anchors a single-file commit diff, whose hunks name their file", () => {
+    // Every hunk from a commit carries `file_path`, including the one-file diff
+    // the log asks for. Reading its presence as "several files" refused an
+    // anchor for the case this is most for.
+    expect(
+      anchorLine(
+        diff([
+          { header: "@@", file_path: "a.rs", lines: [line(12)] },
+          { header: "@@", file_path: "a.rs", lines: [line(40)] },
+        ]),
+      ),
+    ).toBe(12);
+  });
+
   it("has no answer for a diff spanning several files", () => {
     // The numbers belong to whichever file each hunk came from, so reading them
     // as one sequence would land somewhere meaningless.
@@ -61,5 +75,22 @@ describe("anchorOffset", () => {
     expect(anchorOffset(2)).toBe(0);
     expect(anchorOffset(3)).toBe(0);
     expect(anchorOffset(4)).toBe(1);
+  });
+});
+
+describe("anchorWithin", () => {
+  it("leaves an anchor the file reaches alone", () => {
+    expect(anchorWithin(38, 200)).toBe(38);
+  });
+
+  it("falls back to the last line of a file that stops short", () => {
+    // The server truncates at a size ceiling; the diff that named the line knew
+    // nothing of that. The end of what there is beats opening at the top, which
+    // reads as the switch having done nothing.
+    expect(anchorWithin(9000, 120)).toBe(120);
+  });
+
+  it("has nowhere to go in an empty file", () => {
+    expect(anchorWithin(3, 0)).toBeNull();
   });
 });

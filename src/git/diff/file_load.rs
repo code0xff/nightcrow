@@ -71,8 +71,7 @@ pub fn load_commit_file_blob(
     let entry = tree
         .get_path(std::path::Path::new(file_path))
         .with_context(|| format!("path not in commit: {file_path}"))?;
-    let blob = repo.find_blob(entry.id()).context("failed to read blob")?;
-    decode_file_view(blob.content())
+    read_blob(repo, entry.id())
 }
 
 /// The file's contents as of `oid`.
@@ -103,6 +102,24 @@ pub fn load_commit_file(repo: &Repository, oid: Oid, file_path: &str) -> Result<
             .get_path(path)
             .with_context(|| format!("path not in commit: {file_path}"))?,
     };
-    let blob = repo.find_blob(entry.id()).context("failed to read blob")?;
+    read_blob(repo, entry.id())
+}
+
+/// A blob as text, refusing one too large to show *before* it is loaded.
+///
+/// The size comes from the object database's header rather than from the blob,
+/// because reading the blob is what there is to avoid: a repository can hold an
+/// object larger than this process should hold in memory, and finding that out
+/// from `Blob::content()` means having already paid for it. The working-tree
+/// path guards the same way, off the file's metadata.
+fn read_blob(repo: &Repository, oid: Oid) -> Result<String> {
+    let odb = repo.odb().context("failed to open the object database")?;
+    let (size, _) = odb
+        .read_header(oid)
+        .context("failed to read the blob header")?;
+    if size > MAX_FILE_VIEW_BYTES {
+        anyhow::bail!("file is too large to display");
+    }
+    let blob = repo.find_blob(oid).context("failed to read blob")?;
     decode_file_view(blob.content())
 }

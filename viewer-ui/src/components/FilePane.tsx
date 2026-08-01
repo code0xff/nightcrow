@@ -2,6 +2,8 @@ import { Suspense, lazy, useEffect, useRef } from "react";
 import { useDiffLayout } from "../lib/diffLayout";
 import { fileViewSource, isHtmlPath, isPreviewablePath } from "../lib/fileView";
 import { digitsFor } from "../lib/gutter";
+import { anchorWithin } from "../lib/diffAnchor";
+import { otherFace } from "../lib/otherFace";
 import {
   MaximizeIcon,
   PreviewIcon,
@@ -78,8 +80,10 @@ export function FilePane({
   // runs when a switch produces a new one and not on every render.
   useEffect(() => {
     const container = scroller.current;
-    if (!container || anchor === undefined) return;
-    const line = container.querySelector<HTMLElement>(`[data-line="${anchor}"]`);
+    if (!container || anchor === undefined || pane.kind !== "file") return;
+    const within = anchorWithin(anchor, pane.value.lines.length);
+    if (within === null) return;
+    const line = container.querySelector<HTMLElement>(`[data-line="${within}"]`);
     if (!line) return;
     container.scrollTop +=
       line.getBoundingClientRect().top - container.getBoundingClientRect().top;
@@ -89,7 +93,7 @@ export function FilePane({
       <div className="flex shrink-0 items-center gap-2 bg-ink-850 px-3 py-0.5 text-ink-400">
         {pane.kind === "file" && <PathLabel path={pane.value.path} />}
         <div className="ml-auto flex shrink-0 items-center gap-1">
-          {pane.kind !== "empty" && pane.source && (
+          {otherFace(pane) && (
             <button
               onClick={showOtherFace}
               aria-pressed={pane.kind === "file"}

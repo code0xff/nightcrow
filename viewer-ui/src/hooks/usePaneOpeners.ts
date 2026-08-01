@@ -1,8 +1,9 @@
 import { useCallback } from "react";
 import { api, type Commit, type Diff, type FileView } from "../api";
 import type { CommitDrillDown } from "./useLog";
-import type { FileSource, Pane } from "../types";
+import type { Pane } from "../types";
 import { anchorLine, anchorOffset } from "../lib/diffAnchor";
+import { otherFace } from "../lib/otherFace";
 import type { MobileView } from "../types";
 
 export interface UsePaneOpenersArgs {
@@ -141,12 +142,14 @@ export function usePaneOpeners({
   // simply has nothing to show and no control offered for it.
   const showOtherFace = useCallback(
     (pane: Pane) => {
-      if (!repo || pane.kind === "empty" || !pane.source) return;
-      const source: FileSource = pane.source;
-      const wantFile = pane.kind === "diff";
+      const other = otherFace(pane);
+      if (!repo || !other) return;
+      const { source } = other;
+      const wantFile = other.want === "file";
       // Read before the fetch, off the diff being left — it is the only thing
       // that knows which change was being looked at.
-      const line = wantFile ? anchorLine(pane.value as Diff) : null;
+      const line =
+        wantFile && pane.kind === "diff" ? anchorLine(pane.value) : null;
       const request = (paneRequestRef.current += 1);
       const fetched =
         source.kind === "workdir"
