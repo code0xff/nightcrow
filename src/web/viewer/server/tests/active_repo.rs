@@ -288,13 +288,25 @@ fn closing_the_only_project_leaves_nothing_in_front() {
     let server = server_at(prefs.path(), &[a]);
     let token = login(server.addr());
     let ids = served_ids(server.addr(), &token);
+    // Selected first, or this would watch a null that was already null and pass
+    // whether or not the close did anything.
+    select(server.addr(), &ids[0], &token);
+    assert_eq!(
+        served_active(server.addr(), &token),
+        serde_json::json!(ids[0])
+    );
 
-    delete(
+    let closed = delete(
         server.addr(),
         &format!("/api/repos?repo={}", ids[0]),
         Some(&token),
     );
 
+    assert!(closed.starts_with("HTTP/1.1 200"), "got: {closed}");
+    assert!(
+        served_ids(server.addr(), &token).is_empty(),
+        "the project must actually be gone"
+    );
     assert_eq!(
         served_active(server.addr(), &token),
         serde_json::Value::Null,

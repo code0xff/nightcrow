@@ -1,4 +1,4 @@
-import { useCallback } from "react";
+import { useCallback, useRef } from "react";
 import { api, type Repo } from "../api";
 import { successorOf } from "../lib/successor";
 import type { Pane, Tab } from "../types";
@@ -24,6 +24,14 @@ export function useRepoActions({
   handle,
   orderWrites,
 }: UseRepoActionsArgs) {
+  // The same list, readable after an await. `repos` here is the render's copy,
+  // and a close waits on the server — a poll landing meanwhile leaves that copy
+  // a version behind, and acting on it would drop whatever it carried and pick
+  // a successor from an order nobody has any more. Assigned during render, so
+  // the render that poll causes updates it. Same reason `useMaximized` keeps
+  // one.
+  const reposRef = useRef(repos);
+  reposRef.current = repos;
   // Select a newly opened repository immediately instead of waiting for polling.
   const selectOpenedRepo = useCallback(
     (opened: Repo) => {
@@ -49,16 +57,16 @@ export function useRepoActions({
         // the person is looking at whichever project this chose. Same rule, so
         // the answer that arrives changes nothing.
         const successor = successorOf(
-          repos.map((r) => r.id),
+          reposRef.current.map((r) => r.id),
           id,
         );
-        setRepos(repos.filter((r) => r.id !== id));
+        setRepos((current) => current.filter((r) => r.id !== id));
         setRepo((current) => (current === id ? successor : current));
       } catch (err) {
         handle(err);
       }
     },
-    [repos, setRepos, setRepo, handle, orderWrites],
+    [setRepos, setRepo, handle, orderWrites],
   );
 
   return { selectOpenedRepo, closeRepo };

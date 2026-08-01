@@ -162,7 +162,17 @@ pub fn close_repo(state: &SessionState, id: &str) -> Result<(), CloseError> {
     // wrong for a close: it sent everyone to the first tab from wherever they
     // were. The TUI has picked the neighbour since it had tabs
     // (`workspace::close_at`) and was overruled by this a beat later.
-    if let Some(path) = successor {
+    if let Some(path) = successor
+        // Still the project this decision was made about. Another client can
+        // focus something else while this close is in flight, and the two are
+        // not one transaction — the catalog and the preferences have their own
+        // locks, and taking both in order to close a tab invites the deadlock
+        // that costs more than the race. Checking is not atomic either, but it
+        // turns "always overwrite a focus made meanwhile" into a window of a
+        // few instructions, and the loser of it is corrected by the next thing
+        // either client does.
+        && state.prefs.get().active_repo.as_deref() == Some(entry.path.as_str())
+    {
         state.prefs.set_active_repo(path);
     }
     persist_workspace(state);
