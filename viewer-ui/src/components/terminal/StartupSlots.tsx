@@ -15,11 +15,13 @@ export function StartupSlots({
   count,
   slotStyle,
   showHeader,
+  bodyTouch,
   slotRefs,
 }: {
   count: number;
   slotStyle: (slot: number) => CSSProperties;
   showHeader: boolean;
+  bodyTouch: React.ComponentProps<typeof TerminalCell>["bodyTouch"];
   slotRefs: MutableRefObject<Map<number, HTMLDivElement>>;
 }) {
   return Array.from({ length: count }, (_, slot) => (
@@ -37,6 +39,7 @@ export function StartupSlots({
       isDropTarget={false}
       reorderable={false}
       showHeader={showHeader}
+      bodyTouch={bodyTouch}
       onCancelRecovery={() => {}}
       onFocus={() => {}}
       onToggleZoom={() => {}}

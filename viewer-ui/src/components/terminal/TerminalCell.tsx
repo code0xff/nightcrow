@@ -30,6 +30,14 @@ interface TerminalCellProps {
   onPaneDragEnd: () => void;
   onPaneDragCancel: () => void;
   bodyRef: (node: HTMLDivElement | null) => void;
+  /** Pointer handlers that turn a finger dragged across the pane into scrolling.
+   *  On the body rather than the cell so the header's reorder drag keeps its own. */
+  bodyTouch: {
+    onPointerDown: (e: React.PointerEvent) => void;
+    onPointerMove: (e: React.PointerEvent) => void;
+    onPointerUp: (e: React.PointerEvent) => void;
+    onPointerCancel: (e: React.PointerEvent) => void;
+  };
 }
 
 export function TerminalCell({
@@ -54,6 +62,7 @@ export function TerminalCell({
   onPaneDragEnd,
   onPaneDragCancel,
   bodyRef,
+  bodyTouch,
 }: TerminalCellProps) {
   const borderClass = isDropTarget
     ? "border-accent ring-1 ring-accent"
@@ -125,7 +134,12 @@ export function TerminalCell({
           </button>
         </div>
       )}
-      <div ref={bodyRef} className="min-h-0 flex-1" />
+      <div
+        ref={bodyRef}
+        {...bodyTouch}
+        // Panning is ours; a pinch is still the browser's.
+        className="min-h-0 flex-1 touch-pinch-zoom"
+      />
     </div>
   );
 }

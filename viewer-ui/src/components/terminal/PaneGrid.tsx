@@ -22,6 +22,7 @@ export interface PaneGridProps {
   draggingPane: number | null;
   dragOverPane: number | null;
   reorderable: boolean;
+  bodyTouch: React.ComponentProps<typeof TerminalCell>["bodyTouch"];
   slotRefs: MutableRefObject<Map<number, HTMLDivElement>>;
   bodyRefs: MutableRefObject<Map<number, HTMLDivElement>>;
   onFocus: (pane: number) => void;
@@ -55,6 +56,7 @@ export function PaneGrid({
   draggingPane,
   dragOverPane,
   reorderable,
+  bodyTouch,
   slotRefs,
   bodyRefs,
   onFocus,
@@ -100,6 +102,7 @@ export function PaneGrid({
         <StartupSlots
           count={pending}
           showHeader={!tabs}
+          bodyTouch={bodyTouch}
           // The first slot stands for the tab that will be on screen; the rest
           // are measured behind it, at the same size.
           slotStyle={(slot) =>
@@ -122,6 +125,7 @@ export function PaneGrid({
           isDropTarget={dragOverPane === pane}
           reorderable={reorderable}
           showHeader={!tabs}
+          bodyTouch={bodyTouch}
           recovery={recovery[pane]}
           onCancelRecovery={() => onCancelRecovery(pane)}
           onFocus={() => onFocus(pane)}
