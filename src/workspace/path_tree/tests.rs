@@ -52,7 +52,7 @@ fn opening_on_a_directory_lists_its_sub_directories_sorted() {
 
     assert_eq!(
         names(&picker),
-        vec![(0, "alpha"), (0, "zeta")],
+        vec![(0, "."), (0, ".."), (0, "alpha"), (0, "zeta")],
         "sorted, directories only, hidden left out"
     );
 }
@@ -64,7 +64,7 @@ fn opening_on_a_half_typed_name_falls_back_to_its_directory() {
     let picker = PathTree::open(&format!("{}/alp", text(&root))).expect("a readable root");
 
     assert_eq!(picker.root_label(), format!("{}/", text(&root)));
-    assert_eq!(names(&picker), vec![(0, "alpha")]);
+    assert_eq!(names(&picker), vec![(0, "."), (0, ".."), (0, "alpha")]);
 }
 
 #[test]
@@ -79,42 +79,54 @@ fn expanding_splices_children_below_their_parent() {
     let (_guard, root) = tree(&["alpha/inner", "zeta"]);
     let mut picker = PathTree::open(&text(&root)).expect("a readable root");
 
+    // Skip `.` and `..` to reach "alpha" at index 2.
+    picker.move_selection(true);
+    picker.move_selection(true);
     picker.expand();
 
     assert_eq!(
         names(&picker),
-        vec![(0, "alpha"), (1, "inner"), (0, "zeta")]
+        vec![(0, "."), (0, ".."), (0, "alpha"), (1, "inner"), (0, "zeta")]
     );
-    assert!(picker.rows()[0].expanded);
+    assert!(picker.rows()[2].expanded);
 }
 
 #[test]
 fn collapsing_removes_the_whole_subtree_below_the_row() {
     let (_guard, root) = tree(&["alpha/inner/deepest", "zeta"]);
     let mut picker = PathTree::open(&text(&root)).expect("a readable root");
+    // Skip `.` and `..` to reach "alpha" at index 2.
+    picker.move_selection(true);
+    picker.move_selection(true);
     picker.expand();
     picker.move_selection(true);
     picker.expand();
-    assert_eq!(picker.rows().len(), 4, "alpha, inner, deepest, zeta");
+    assert_eq!(picker.rows().len(), 6, "., .., alpha, inner, deepest, zeta");
 
     picker.move_selection(false);
     picker.collapse_or_up();
 
-    assert_eq!(names(&picker), vec![(0, "alpha"), (0, "zeta")]);
-    assert!(!picker.rows()[0].expanded);
+    assert_eq!(
+        names(&picker),
+        vec![(0, "."), (0, ".."), (0, "alpha"), (0, "zeta")]
+    );
+    assert!(!picker.rows()[2].expanded);
 }
 
 #[test]
 fn left_on_a_collapsed_child_steps_to_its_parent_row() {
     let (_guard, root) = tree(&["alpha/inner"]);
     let mut picker = PathTree::open(&text(&root)).expect("a readable root");
+    // Skip `.` and `..` to reach "alpha" at index 2.
+    picker.move_selection(true);
+    picker.move_selection(true);
     picker.expand();
     picker.move_selection(true);
-    assert_eq!(picker.selected(), 1);
+    assert_eq!(picker.selected(), 3);
 
     picker.collapse_or_up();
 
-    assert_eq!(picker.selected(), 0, "the nearest shallower row above it");
+    assert_eq!(picker.selected(), 2, "the nearest shallower row above it");
 }
 
 #[test]
@@ -153,6 +165,9 @@ fn re_rooting_keeps_the_users_own_notation() {
 fn picking_a_row_returns_the_typed_root_plus_a_trailing_separator() {
     let (_guard, root) = tree(&["alpha/inner"]);
     let mut picker = PathTree::open(&format!("{}/", text(&root))).expect("a readable root");
+    // Skip `.` and `..` to reach "alpha" at index 2, then expand and reach "inner" at index 3.
+    picker.move_selection(true);
+    picker.move_selection(true);
     picker.expand();
     picker.move_selection(true);
 
@@ -168,7 +183,7 @@ fn picking_in_an_empty_directory_yields_the_root_itself() {
     let (_guard, root) = tree(&[]);
     let picker = PathTree::open(&text(&root)).expect("a readable root");
 
-    assert!(picker.rows().is_empty());
+    assert_eq!(names(&picker), vec![(0, "."), (0, "..")]);
     assert_eq!(picker.selected_path(), format!("{}/", text(&root)));
 }
 
@@ -181,9 +196,12 @@ fn moving_the_selection_clamps_at_both_ends() {
     assert_eq!(picker.selected(), 0);
     picker.move_selection(true);
     picker.move_selection(true);
+    picker.move_selection(true);
+    picker.move_selection(true);
+    picker.move_selection(true);
     assert_eq!(
         picker.selected(),
-        1,
+        3,
         "clamped, not wrapped to the first row"
     );
 }

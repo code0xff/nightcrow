@@ -34,8 +34,9 @@ fn browsing_opens_on_the_prefilled_path() {
     ws.repo_input_browse();
 
     let picker = ws.repo_input.picker.as_ref().expect("the browser is open");
-    assert_eq!(picker.rows().len(), 1);
-    assert_eq!(picker.rows()[0].name, "alpha");
+    // `.` and `..` sit at the head of the root list, then the real entries.
+    assert_eq!(picker.rows().len(), 3);
+    assert_eq!(picker.rows()[2].name, "alpha");
 }
 
 #[test]
@@ -43,6 +44,9 @@ fn browsing_leaves_prefill_mode_so_the_picked_path_survives_typing() {
     let (_guard, mut ws) = dialog_on(&["alpha"]);
 
     ws.repo_input_browse();
+    // Step past `.` and `..` to alpha before picking.
+    ws.repo_picker_move(true);
+    ws.repo_picker_move(true);
     ws.repo_input_pick();
     ws.repo_input_push('x');
 
@@ -59,6 +63,9 @@ fn picking_a_row_closes_the_browser_and_fills_the_field() {
     let before = ws.repo_input.buf.clone();
 
     ws.repo_input_browse();
+    // Step past `.` and `..` to alpha before picking.
+    ws.repo_picker_move(true);
+    ws.repo_picker_move(true);
     ws.repo_input_pick();
 
     assert!(ws.repo_input.picker.is_none(), "back to the field");

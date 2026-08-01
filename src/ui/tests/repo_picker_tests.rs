@@ -56,12 +56,18 @@ fn the_browser_fills_the_body_with_the_directories_it_read() {
 }
 
 #[test]
-fn an_empty_directory_says_so_rather_than_drawing_a_blank_box() {
+fn an_empty_directory_shows_navigation_rows_rather_than_a_blank_box() {
     let (_guard, repo_input) = browsing(&[]);
 
     let screen = drawn_empty(&repo_input, None, false);
 
-    assert!(screen.contains("no sub-directories"), "{screen}");
+    // `.` and `..` are always at the root for navigation, so even an empty
+    // directory has something actionable on screen rather than a blank box.
+    assert!(!screen.contains("no sub-directories"), "{screen}");
+    assert!(
+        screen.contains(".."),
+        "the parent shortcut is visible: {screen}"
+    );
 }
 
 #[test]

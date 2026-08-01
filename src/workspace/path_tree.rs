@@ -127,6 +127,13 @@ impl PathTree {
         if row.expanded {
             return;
         }
+        // `.` and `..` are navigation shortcuts, not expandable directories:
+        // expanding `.` re-reads the same directory, and `..` would splice the
+        // parent's children at the wrong depth. Both are reached via Enter
+        // (pick) or ← (collapse_or_up) instead.
+        if row.name == "." || row.name == ".." {
+            return;
+        }
         let depth = row.depth;
         let children = list_rows(&self.abs_of(self.selected), depth + 1);
         self.rows[self.selected].expanded = true;
@@ -172,6 +179,11 @@ impl PathTree {
         let mut out = self.root_text.clone();
         if !self.rows.is_empty() {
             for name in self.components_of(self.selected) {
+                // `.` is a no-op in a path, so skip it: `root/.` should read
+                // as `root/`, not `root/.//`.
+                if name == "." {
+                    continue;
+                }
                 if !out.is_empty() && !out.ends_with(is_sep) {
                     out.push(self.sep);
                 }
@@ -245,14 +257,36 @@ impl PathTree {
 /// Hidden directories are left out, matching the completer's default: a home
 /// directory full of dot-directories would bury the checkouts being looked for.
 fn list_rows(dir: &Path, depth: usize) -> Vec<PathRow> {
-    read_dir_names(dir, false)
+    let mut rows: Vec<PathRow> = read_dir_names(dir, false)
         .into_iter()
         .map(|name| PathRow {
             name,
             depth,
             expanded: false,
         })
-        .collect()
+        .collect();
+    // Show `.` and `..` at the root only: they let the user pick the current
+    // directory or step up without leaving the browser, matching every file
+    // manager. At deeper levels they would clutter and risk infinite recursion.
+    if depth == 0 {
+        rows.insert(
+            0,
+            PathRow {
+                name: "..".to_string(),
+                depth: 0,
+                expanded: false,
+            },
+        );
+        rows.insert(
+            0,
+            PathRow {
+                name: ".".to_string(),
+                depth: 0,
+                expanded: false,
+            },
+        );
+    }
+    rows
 }
 
 /// The user's root text one level up, or `None` when their notation cannot

@@ -36,17 +36,9 @@ pub(crate) fn handle_repo_input_key(ws: &mut Workspace, key: KeyEvent) -> KeyOut
         KeyCode::Down | KeyCode::Up => ws.repo_input_browse(),
         // `BackTab` is deliberately unhandled: completion here never cycles, so
         // there is nothing for a reverse Tab to step back through.
-        KeyCode::Tab => {
-            // A Tab that can no longer extend the path has already shown the
-            // candidate list, so a second one has nothing left to do — that
-            // dead press is exactly the moment the flat list proved too little,
-            // so it escalates to the browser instead.
-            if ws.repo_input.candidates.is_empty() {
-                ws.repo_input_complete();
-            } else {
-                ws.repo_input_browse();
-            }
-        }
+        // Tab only completes the path — the browser opens with ↓ alone, so
+        // repeated Tab presses never leave the field.
+        KeyCode::Tab => ws.repo_input_complete(),
         _ => {
             if let Some(c) = text_input_char(key) {
                 ws.repo_input_push(c);

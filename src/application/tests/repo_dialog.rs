@@ -55,10 +55,10 @@ fn down_in_the_field_opens_the_browser() {
 }
 
 #[test]
-fn a_second_tab_escalates_from_the_candidate_list_to_the_browser() {
-    // The first Tab cannot extend past the shared prefix, so it lists; the
-    // second would repeat that list, which is the moment the list proved too
-    // little.
+fn a_second_tab_stays_in_the_field_without_opening_the_browser() {
+    // Tab only completes the path; the browser opens with ↓ alone. So a
+    // second Tab when the list is already up just re-runs completion — it
+    // must never leave the field.
     let (_guard, mut ws, _) = dialog_on(&["alpha", "another"]);
     ws.repo_input.buf.push('/');
 
@@ -69,7 +69,10 @@ fn a_second_tab_escalates_from_the_candidate_list_to_the_browser() {
     );
 
     send(&mut ws, KeyCode::Tab);
-    assert!(ws.repo_input.picker.is_some(), "the second Tab escalates");
+    assert!(
+        ws.repo_input.picker.is_none(),
+        "the second Tab stays in the field — the browser opens with ↓ only"
+    );
 }
 
 #[test]
@@ -89,6 +92,9 @@ fn the_browser_takes_the_keys_the_field_would_have_had() {
     send(&mut ws, KeyCode::Down);
 
     // In the field these would edit the buffer; here they drive the tree.
+    // `.` and `..` sit at the head of the list, so step past them to alpha.
+    send(&mut ws, KeyCode::Down);
+    send(&mut ws, KeyCode::Down);
     send(&mut ws, KeyCode::Right);
     send(&mut ws, KeyCode::Down);
     send(&mut ws, KeyCode::Enter);
@@ -134,6 +140,9 @@ fn j_and_k_move_the_browser_without_reaching_the_field() {
         "`j` moves the cursor rather than typing a `j`"
     );
     send(&mut ws, KeyCode::Char('k'));
+    // `.` and `..` sit at the head of the list, so step past them to alpha.
+    send(&mut ws, KeyCode::Char('j'));
+    send(&mut ws, KeyCode::Char('j'));
     send(&mut ws, KeyCode::Enter);
 
     assert_eq!(ws.repo_input.buf, format!("{text}/alpha/"));
