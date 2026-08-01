@@ -20,9 +20,21 @@ impl TerminalGuard {
         // `Event::Paste(String)` instead of a flood of `Event::Key` chars —
         // the latter would each be filtered as control chars by the search
         // handler and silently drop newlines.
-        if let Err(err) = execute!(io::stdout(), EnterAlternateScreen, EnableBracketedPaste) {
-            let _ = disable_raw_mode();
-            return Err(err.into());
+        match execute!(io::stdout(), EnterAlternateScreen, EnableBracketedPaste) {
+            Ok(()) => {}
+            Err(err) if err.kind() == io::ErrorKind::Unsupported => {
+                tracing::warn!("bracketed paste unavailable; multi-line paste will be degraded");
+                // EnterAlternateScreen may have succeeded before EnableBracketedPaste failed.
+                // Retry it — alternate screen entry is idempotent.
+                execute!(io::stdout(), EnterAlternateScreen).map_err(|err| {
+                    let _ = disable_raw_mode();
+                    err
+                })?;
+            }
+            Err(err) => {
+                let _ = disable_raw_mode();
+                return Err(err.into());
+            }
         }
         // Mouse capture is config-gated (`[mouse] enabled`): while captured,
         // the outer terminal only selects text with Shift held, so users who

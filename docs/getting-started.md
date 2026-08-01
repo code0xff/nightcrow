@@ -21,8 +21,8 @@ Once published to crates.io this will also work:
 cargo install nightcrow --locked
 ```
 
-Requires Rust 1.85+ (edition 2024). `--locked` builds against the committed
-`Cargo.lock` for a reproducible install.
+Requires Rust 1.85+ (edition 2024) on macOS, Linux, or Windows. `--locked`
+builds against the committed `Cargo.lock` for a reproducible install.
 
 ## Running a session
 
@@ -31,6 +31,10 @@ terminals, and you reach it from a terminal (`nightcrow attach`) or a browser.
 Closing a client leaves the session running.
 
 ```bash
+# The usual way in: start the session in the background and attach the TUI.
+# An already-running session is attached to as-is, not duplicated.
+nightcrow -d attach
+
 # Start the session. Runs in the foreground until you stop it (Ctrl-C).
 # It reopens the repositories from last time — nothing, on a first run.
 nightcrow
@@ -85,3 +89,41 @@ not capped; any past the eighth are reached by focus cycling (`Shift+←/→`).
 - [Views](views.md) — what each panel shows
 - [Keyboard and mouse](keybindings.md) — the full binding reference
 - [Configuration](configuration.md) — `nightcrow init` and every setting
+
+## Building and testing
+
+### Prerequisites
+
+Requires Rust 1.85+ (edition 2024). The viewer bundle is committed, so a
+plain build needs no Node toolchain. Building the viewer from source needs
+Node 22 — see `viewer-ui/`.
+
+### The four gates
+
+`cargo build`, `cargo test`, `cargo clippy --all-targets --all-features -- -D
+warnings`, and `cargo fmt --all --check` must all pass. The pre-push hook
+(`git config core.hooksPath .githooks`) runs the same gates CI does, scoped to
+what changed.
+
+### Verifying on the other platform
+
+nightcrow targets macOS, Linux, and Windows, and CI runs the gates on all
+three. If you are on one platform, the `std::os::unix` / `std::os::windows`
+cfg gates mean the other platform's code does not compile locally — so a green
+build on your machine is not proof that the others are green.
+
+Use the Docker gate to run all four gates on Linux from a Windows machine
+(or vice versa, with the right image):
+
+```bash
+docker compose run --rm unix-gate
+```
+
+`compose.yml` runs `rust:latest` with named-volume caches for the cargo
+registry and `target/`, so reruns finish in seconds rather than rebuilding
+every dependency. CI runs the same gates on `ubuntu-latest`, but catching a
+regression locally avoids the push-and-wait cycle.
+
+**Known flaky test in Docker**: `a_reattaching_client_makes_an_alternate_screen_program_draw_again`
+can fail in a container due to PTY timing under load. It passes on `dev` and
+in CI (`ubuntu-latest`), so it is not a regression signal.

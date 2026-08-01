@@ -79,6 +79,8 @@ pub struct TerminalHub {
     /// plugin no pane named is never started, so declaring one costs nothing
     /// until a pane hands itself over.
     plugins: Vec<crate::config::PluginConfig>,
+    /// The shell every terminal pane is spawned with.
+    shell: crate::config::ShellConfig,
     /// Set when a client claims the startup terminals by answering with their
     /// sizes, so they are created exactly once for the hub's life rather than
     /// on every (re)connection. See [`TerminalHub::claim_startup`].
@@ -101,6 +103,7 @@ impl TerminalHub {
         cwd: &str,
         startup: Vec<crate::config::StartupCommand>,
         plugins: Vec<crate::config::PluginConfig>,
+        shell: crate::config::ShellConfig,
         ownership: Arc<SizeOwnership>,
     ) -> Arc<Self> {
         let (commands, command_rx) = mpsc::sync_channel::<Command>(256);
@@ -117,6 +120,7 @@ impl TerminalHub {
             worker: Mutex::new(None),
             startup,
             plugins,
+            shell,
             started: AtomicBool::new(false),
             ownership,
         });

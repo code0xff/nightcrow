@@ -41,7 +41,6 @@ fn the_empty_screen_shows_the_dialog_and_its_rejection() {
     let repo_input = RepoInput {
         active: true,
         buf: "/definitely/not/here".to_string(),
-        prefilled: false,
         candidates: Vec::new(),
         picker: None,
     };

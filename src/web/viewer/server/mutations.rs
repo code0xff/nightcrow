@@ -210,7 +210,7 @@ pub(super) fn handle_mkdir(body: &str) -> Vec<u8> {
     let target = base.join(name);
     match std::fs::create_dir(&target) {
         Ok(()) => {
-            let path = target.to_string_lossy().into_owned();
+            let path = crate::platform::paths::for_display(&target).into_owned();
             match serde_json::to_string(&Envelope::new(serde_json::json!({ "path": path }))) {
                 Ok(json) => json_response("200 OK", &json, &[]),
                 Err(_) => json_error("500 Internal Server Error", "could not encode the folder"),

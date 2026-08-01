@@ -5,6 +5,10 @@
 //! (for a program drawing on the alternate screen) the screen itself. These are
 //! the two answers the hub gives instead: state it tracked, and a repaint it asks
 //! the program for.
+//!
+//! These tests are Unix-only: they use `printf`, `trap`, and ANSI escape
+//! sequences that require a Unix shell.
+#![cfg(unix)]
 
 use super::{attach, created_pane, next_matching, spawn_hub};
 use crate::backend::PaneId;

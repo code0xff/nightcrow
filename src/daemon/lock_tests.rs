@@ -78,42 +78,31 @@ fn an_unopenable_path_is_an_error_not_a_refusal() {
     assert!(InstanceLock::acquire(&path).is_err());
 }
 
-/// The three things a failed `flock` can mean, told apart by errno alone —
-/// deterministic, where reproducing the real interruption means racing a
-/// signal against a syscall.
 mod failure_meanings {
     use crate::daemon::lock::{Attempt, outcome_of};
+    use std::fs::TryLockError;
     use std::io::{Error, ErrorKind};
 
     #[test]
     fn a_lock_someone_else_holds_is_the_normal_negative_answer() {
-        assert_eq!(
-            outcome_of(&Error::from(ErrorKind::WouldBlock)),
-            Attempt::Held
-        );
+        assert_eq!(outcome_of(&TryLockError::WouldBlock), Attempt::Held);
     }
 
     #[test]
     fn a_signal_mid_call_means_ask_again_rather_than_give_up() {
-        // The lock was never attempted, so this says nothing about who holds
-        // it. Reported as a failure it becomes a daemon refusing to start for
-        // no reason — which is exactly what it did.
-        assert_eq!(
-            outcome_of(&Error::from(ErrorKind::Interrupted)),
-            Attempt::Interrupted
-        );
+        let err = TryLockError::Error(Error::from(ErrorKind::Interrupted));
+        assert_eq!(outcome_of(&err), Attempt::Interrupted);
     }
 
     #[test]
     fn anything_else_is_a_failure_and_not_a_daemon() {
-        // Must not be read as "another daemon is running": that would send the
-        // user looking for a process that is not there.
         for kind in [
             ErrorKind::PermissionDenied,
             ErrorKind::NotFound,
             ErrorKind::InvalidInput,
         ] {
-            assert_eq!(outcome_of(&Error::from(kind)), Attempt::Failed, "{kind:?}");
+            let err = TryLockError::Error(Error::from(kind));
+            assert_eq!(outcome_of(&err), Attempt::Failed, "{kind:?}");
         }
     }
 }

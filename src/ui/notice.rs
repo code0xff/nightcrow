@@ -141,11 +141,12 @@ fn recovery_chip(app: &App) -> Option<String> {
 
 pub(crate) fn home_relative_path(path: &str) -> String {
     let trimmed = path.trim_end_matches('/');
-    if let Some(home) = dirs::home_dir()
-        && let Some(home_str) = home.to_str()
-        && let Some(rest) = trimmed.strip_prefix(home_str)
-    {
-        return format!("~{rest}");
+    let display = crate::platform::paths::for_display(std::path::Path::new(trimmed));
+    if let Some(home) = dirs::home_dir() {
+        let home_display = crate::platform::paths::for_display(&home);
+        if let Some(rest) = display.strip_prefix(home_display.as_ref()) {
+            return format!("~{rest}");
+        }
     }
-    trimmed.to_string()
+    display.into_owned()
 }

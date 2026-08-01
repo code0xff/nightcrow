@@ -1,18 +1,37 @@
 use super::*;
-use std::os::unix::fs::PermissionsExt;
 use tempfile::TempDir;
+
+#[cfg(unix)]
+use std::os::unix::fs::PermissionsExt;
+
+#[cfg(unix)]
+fn executable_fixture(path: &Path) {
+    std::fs::write(path, b"#!/bin/sh\nexit 0\n").unwrap();
+    std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755)).unwrap();
+}
+
+#[cfg(windows)]
+fn executable_fixture(path: &Path) {
+    std::fs::write(path, b"@echo off\r\nexit /b 0\r\n").unwrap();
+}
 
 /// Source executable plus the plugins directory it installs into, both inside
 /// one temp dir that is removed when the returned handle drops.
 fn workspace() -> (TempDir, PathBuf, PathBuf) {
     let root = TempDir::new().expect("a temp dir");
+    // On Windows the source needs a PATHEXT extension so `is_executable`
+    // accepts it. The installed name is always explicit (`Some("watcher")`)
+    // so the extension does not leak into the plugin directory.
+    #[cfg(windows)]
+    let source = root.path().join("watcher.bat");
+    #[cfg(not(windows))]
     let source = root.path().join("watcher");
-    std::fs::write(&source, b"#!/bin/sh\nexit 0\n").unwrap();
-    std::fs::set_permissions(&source, std::fs::Permissions::from_mode(0o755)).unwrap();
+    executable_fixture(&source);
     let base = root.path().join("plugins");
     (root, source, base)
 }
 
+#[cfg(unix)]
 fn mode_of(path: &Path) -> u32 {
     std::fs::metadata(path).unwrap().permissions().mode() & 0o777
 }
@@ -31,6 +50,7 @@ fn installing_copies_the_file_sets_owner_only_mode_and_reports_created() {
         std::fs::read(&path).unwrap(),
         std::fs::read(&source).unwrap()
     );
+    #[cfg(unix)]
     assert_eq!(mode_of(&path), 0o700);
 }
 
@@ -38,9 +58,11 @@ fn installing_copies_the_file_sets_owner_only_mode_and_reports_created() {
 fn installing_over_an_existing_name_without_force_is_refused_and_keeps_the_original_bytes() {
     let (_root, source, base) = workspace();
     install(&base, &source, Some("watcher"), false).unwrap();
+    #[cfg(windows)]
+    let other = source.parent().unwrap().join("other.bat");
+    #[cfg(not(windows))]
     let other = source.parent().unwrap().join("other");
-    std::fs::write(&other, b"#!/bin/sh\nexit 1\n").unwrap();
-    std::fs::set_permissions(&other, std::fs::Permissions::from_mode(0o755)).unwrap();
+    executable_fixture(&other);
 
     let outcome = install(&base, &other, Some("watcher"), false).expect("no error, a report");
 
@@ -57,9 +79,11 @@ fn installing_over_an_existing_name_without_force_is_refused_and_keeps_the_origi
 fn installing_with_force_replaces_the_installed_plugin() {
     let (_root, source, base) = workspace();
     install(&base, &source, Some("watcher"), false).unwrap();
+    #[cfg(windows)]
+    let other = source.parent().unwrap().join("other.bat");
+    #[cfg(not(windows))]
     let other = source.parent().unwrap().join("other");
-    std::fs::write(&other, b"#!/bin/sh\nexit 1\n").unwrap();
-    std::fs::set_permissions(&other, std::fs::Permissions::from_mode(0o755)).unwrap();
+    executable_fixture(&other);
 
     let outcome = install(&base, &other, Some("watcher"), true).expect("install to succeed");
 
@@ -70,6 +94,7 @@ fn installing_with_force_replaces_the_installed_plugin() {
         std::fs::read(&path).unwrap(),
         std::fs::read(&other).unwrap()
     );
+    #[cfg(unix)]
     assert_eq!(mode_of(&path), 0o700);
 }
 
@@ -133,6 +158,7 @@ fn a_source_that_is_a_directory_is_rejected() {
     );
 }
 
+#[cfg(unix)]
 #[test]
 fn a_source_that_is_not_executable_is_rejected() {
     let (_root, source, base) = workspace();
@@ -207,9 +233,13 @@ fn removing_a_name_that_is_not_installed_reports_not_installed() {
 #[test]
 fn the_default_name_is_derived_from_the_source_file_stem() {
     let (_root, source, base) = workspace();
+    // Use an extension that `is_executable` accepts on every platform.
+    #[cfg(windows)]
+    let stemmed = source.parent().unwrap().join("my-plugin.bat");
+    #[cfg(not(windows))]
     let stemmed = source.parent().unwrap().join("my-plugin.sh");
     std::fs::copy(&source, &stemmed).unwrap();
-    std::fs::set_permissions(&stemmed, std::fs::Permissions::from_mode(0o755)).unwrap();
+    executable_fixture(&stemmed);
 
     install(&base, &stemmed, None, false).expect("install to succeed");
 

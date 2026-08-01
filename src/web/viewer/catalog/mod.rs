@@ -63,6 +63,9 @@ pub struct Catalog {
     /// hubs already running are told as well, because a plugin is a child process
     /// rather than a pane and restarting one costs the session nothing.
     plugins: Mutex<Vec<crate::config::PluginConfig>>,
+    /// The shell every terminal pane is spawned with. Fixed for the session's
+    /// life: a config reload does not replace the shell of a running hub.
+    shell: crate::config::ShellConfig,
     /// Which screen this session's panes are fitted to, shared by every hub the
     /// catalog spawns.
     ///
@@ -196,6 +199,7 @@ impl Catalog {
                             &path,
                             startup.clone(),
                             plugins.clone(),
+                            self.shell.clone(),
                             Arc::clone(&self.ownership),
                         ),
                         id,
@@ -242,13 +246,24 @@ pub(super) fn display_path(path: &str) -> String {
     // libgit2 hands back a workdir with a trailing separator; a path shown to
     // a person should not carry it.
     let path = path.trim_end_matches('/');
+    let display = crate::platform::paths::for_display(std::path::Path::new(path));
     let Some(home) = dirs::home_dir() else {
-        return path.to_string();
+        return display.into_owned();
     };
-    match Path::new(path).strip_prefix(&home) {
+    // Normalise the home directory to forward slashes so strip_prefix works
+    // against the already-normalised display path on Windows.
+    let home_display = crate::platform::paths::for_display(&home);
+    match std::path::Path::new(display.as_ref())
+        .strip_prefix(std::path::Path::new(home_display.as_ref()))
+    {
         Ok(rest) if rest.as_os_str().is_empty() => "~".to_string(),
-        Ok(rest) => format!("~/{}", rest.display()),
-        Err(_) => path.to_string(),
+        Ok(rest) => {
+            // Use the string representation directly so the separator stays `/`
+            // on Windows — `Path::display()` would re-introduce backslashes.
+            let rest_str = rest.to_string_lossy();
+            format!("~/{}", rest_str)
+        }
+        Err(_) => display.into_owned(),
     }
 }
 

@@ -19,7 +19,9 @@ pub fn resolve_repo_path(path: impl AsRef<Path>) -> PathBuf {
         // compares these paths, so differing spellings would open a second tab
         // on the same worktree. Canonicalization can only fail for a path that
         // does not exist, which the caller has already rejected.
-        .unwrap_or_else(|| path.canonicalize().unwrap_or_else(|_| path.to_path_buf()))
+        .unwrap_or_else(|| {
+            crate::platform::paths::canonicalize_clean(path).unwrap_or_else(|_| path.to_path_buf())
+        })
 }
 
 #[cfg(test)]

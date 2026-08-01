@@ -101,10 +101,11 @@ fn changed_paths(event: notify::Result<Event>) -> Option<Vec<PathBuf>> {
 /// A directory as given, and as the filesystem reports it.
 ///
 /// Both, because macOS resolves symlinks in the paths it hands back: a repository
-/// under `/var/folders/...` is reported under `/private/var/folders/...`. A path
-/// that cannot be made relative to the tree is treated as "cannot tell, read it",
-/// so getting this wrong does not break correctness — it silently turns the whole
-/// filter off, which is the same as not having written it.
+/// under `/var/folders/...` is reported under `/private/var/folders/...`. Windows
+/// does the same to 8.3 short names, reporting `runneradmin` where the path said
+/// `RUNNER~1`. A path that cannot be made relative to the tree is treated as
+/// "cannot tell, read it", so getting this wrong does not break correctness — it
+/// silently turns the whole filter off, which is the same as not having written it.
 struct Prefix {
     given: PathBuf,
     canonical: PathBuf,
@@ -114,7 +115,12 @@ impl Prefix {
     fn of(path: &Path) -> Self {
         Self {
             given: path.to_path_buf(),
-            canonical: path.canonicalize().unwrap_or_else(|_| path.to_path_buf()),
+            // Cleaned, not raw: `canonicalize` returns the verbatim (`\\?\`)
+            // form on Windows, and neither libgit2 nor the watcher ever produces
+            // one — so the raw form is a prefix of nothing and this second
+            // spelling silently stops being a second spelling.
+            canonical: crate::platform::paths::canonicalize_clean(path)
+                .unwrap_or_else(|_| path.to_path_buf()),
         }
     }
 

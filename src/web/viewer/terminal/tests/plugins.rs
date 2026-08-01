@@ -4,6 +4,10 @@
 //! every event it is handed to a file the test polls, so what is asserted is what
 //! the hub actually sent rather than what it meant to send — and a pane the hub
 //! must never mention simply never appears in that file.
+//!
+//! These tests are Unix-only: the fake plugin is `/bin/sh` and the test commands
+//! use Unix shell syntax (`printf`, `sleep`, `$VAR` expansion).
+#![cfg(unix)]
 
 use super::{
     attach, collect_created, created_pane, exited_pane, next_matching, reordered_order, spawn_hub,

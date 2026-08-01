@@ -77,8 +77,7 @@ fn handle_paste_into_diff_search_strips_control_chars() {
 fn paste_into_the_dialog_strips_control_chars() {
     let mut ws = workspace_on(&["/a"]);
     ws.start_repo_input();
-    // `start_repo_input` prefills with the active repo path, and
-    // `repo_input_push` preserves existing content, so reset first.
+    // The dialog opens prefilled and typing extends it, so reset first.
     ws.repo_input.buf.clear();
 
     dispatch_paste(&mut ws, "/tmp\n/repo\x07");

@@ -4,6 +4,10 @@ use tempfile::TempDir;
 /// A temp directory with `dirs` created inside it (slash-separated paths are
 /// created level by level), plus its canonical path — macOS hands out temp paths
 /// under a symlinked `/var`, and the browser reports canonical roots.
+///
+/// On Windows the verbatim `\\\\?\\` prefix is stripped so the path can be
+/// re-canonicalised by `PathTree::open` (which rejects verbatim paths with
+/// trailing slashes or `..` components).
 fn tree(dirs: &[&str]) -> (TempDir, PathBuf) {
     let root = TempDir::new().expect("a temp dir");
     for d in dirs {
@@ -16,11 +20,21 @@ fn tree(dirs: &[&str]) -> (TempDir, PathBuf) {
         }
     }
     let canonical = std::fs::canonicalize(root.path()).expect("canonical temp path");
+    // Strip `\\\\?\\` so the path can round-trip through `canonicalize` again.
+    #[cfg(windows)]
+    let canonical = {
+        let s = canonical.to_string_lossy();
+        PathBuf::from(s.strip_prefix(r"\\?\").unwrap_or(&s))
+    };
     (root, canonical)
 }
 
 fn text(path: &Path) -> String {
-    path.to_str().expect("a UTF-8 temp path").to_string()
+    let s = path.to_str().expect("a UTF-8 temp path").to_string();
+    // Normalise to forward slashes so test assertions are platform-consistent.
+    #[cfg(windows)]
+    let s = s.replace('\\', "/");
+    s
 }
 
 fn names(tree: &PathTree) -> Vec<(usize, &str)> {

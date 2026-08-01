@@ -15,11 +15,13 @@ use super::clients::AttachedClients;
 use super::frame::{Frame, write_frame};
 use super::protocol::ServerMessage;
 use super::terminals::TerminalBridges;
+use super::transport::{UnixListener, UnixStream};
+use crate::platform::signals::Shutdown;
 use crate::web::viewer::server::ViewerState;
 use crate::web::viewer::session;
 use std::collections::HashMap;
 use std::io::Write;
-use std::os::unix::net::{UnixListener, UnixStream};
+use std::sync::mpsc::SyncSender;
 use std::sync::{Arc, Mutex};
 
 /// Clients that may be attached at once.
@@ -44,6 +46,9 @@ pub struct Session {
     /// Wakes the watcher when a client has just asked for a change, so the
     /// answer does not wait out a poll interval.
     pub(super) nudge: Arc<super::watch::Nudge>,
+    /// Signals the main thread to stop. Sent by the `Shutdown` client message
+    /// handler, and also by the signal-forwarding thread in `cli.rs`.
+    pub(super) shutdown_tx: SyncSender<Shutdown>,
 }
 
 impl Session {
@@ -80,12 +85,16 @@ impl Session {
 /// no destructor. The caller keeps it and drops it on the way out.
 ///
 /// [`DaemonSocket`]: super::socket::DaemonSocket
-pub fn start(state: Arc<ViewerState>) -> anyhow::Result<Arc<Session>> {
+pub fn start(
+    state: Arc<ViewerState>,
+    shutdown_tx: SyncSender<Shutdown>,
+) -> anyhow::Result<Arc<Session>> {
     let session = Arc::new(Session {
         state,
         clients: Arc::new(AttachedClients::default()),
         bridges: Mutex::new(HashMap::new()),
         nudge: Arc::new(super::watch::Nudge::default()),
+        shutdown_tx,
     });
     // The only thing that sends the served set, so there is one record of what
     // clients have been told, one order they are told it in, and a change made

@@ -16,7 +16,7 @@ const POLL_INTERVAL: Duration = Duration::from_millis(8);
 
 impl TerminalHub {
     pub(super) fn run(&self, cwd: &str, commands: Receiver<Command>, stop: Arc<AtomicBool>) {
-        let mut backend = PtyBackend::new(cwd);
+        let mut backend = PtyBackend::new(cwd, self.shell.clone());
         // Before the loop, because a pane can be created on the first iteration
         // and a plugin has to exist to be told about it. Only the plugins some
         // configured pane opted into are launched (see `Plugins::start`).

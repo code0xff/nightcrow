@@ -21,11 +21,17 @@ fn dialog_on(dirs: &[&str]) -> (TempDir, Workspace, String) {
             }
         }
     }
-    let text = std::fs::canonicalize(root.path())
-        .expect("canonical temp path")
-        .to_str()
-        .expect("a UTF-8 temp path")
-        .to_string();
+    let canonical = std::fs::canonicalize(root.path()).expect("canonical temp path");
+    // Strip `\\\\?\\` and normalise to forward slashes so the path can
+    // round-trip through `PathTree::open` and test assertions are consistent.
+    #[cfg(windows)]
+    let text = {
+        let s = canonical.to_string_lossy();
+        let stripped = s.strip_prefix(r"\\?\").unwrap_or(&s);
+        stripped.replace('\\', "/")
+    };
+    #[cfg(not(windows))]
+    let text = canonical.to_str().expect("a UTF-8 temp path").to_string();
     let mut ws = workspace_on(&["/a"]);
     ws.start_repo_input();
     ws.repo_input.buf = text.clone();
@@ -49,10 +55,10 @@ fn down_in_the_field_opens_the_browser() {
 }
 
 #[test]
-fn a_second_tab_escalates_from_the_candidate_list_to_the_browser() {
-    // The first Tab cannot extend past the shared prefix, so it lists; the
-    // second would repeat that list, which is the moment the list proved too
-    // little.
+fn a_second_tab_stays_in_the_field_without_opening_the_browser() {
+    // Tab only completes the path; the browser opens with ↓ alone. So a
+    // second Tab when the list is already up just re-runs completion — it
+    // must never leave the field.
     let (_guard, mut ws, _) = dialog_on(&["alpha", "another"]);
     ws.repo_input.buf.push('/');
 
@@ -63,7 +69,10 @@ fn a_second_tab_escalates_from_the_candidate_list_to_the_browser() {
     );
 
     send(&mut ws, KeyCode::Tab);
-    assert!(ws.repo_input.picker.is_some(), "the second Tab escalates");
+    assert!(
+        ws.repo_input.picker.is_none(),
+        "the second Tab stays in the field — the browser opens with ↓ only"
+    );
 }
 
 #[test]

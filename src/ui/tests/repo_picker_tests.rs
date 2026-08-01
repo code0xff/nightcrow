@@ -22,7 +22,6 @@ fn browsing(dirs: &[&str]) -> (TempDir, RepoInput) {
         RepoInput {
             active: true,
             buf,
-            prefilled: false,
             candidates: Vec::new(),
             picker: Some(picker),
         },
@@ -33,7 +32,6 @@ fn field_only() -> RepoInput {
     RepoInput {
         active: true,
         buf: "/repos/current".to_string(),
-        prefilled: true,
         candidates: Vec::new(),
         picker: None,
     }

@@ -9,9 +9,9 @@
 use super::frame::{FrameKind, read_frame};
 use super::protocol::{ClientMessage, ServerMessage, version};
 use super::serve::{Session, encode};
+use super::transport::UnixStream;
 use crate::web::viewer::session::{self, CloseError, OpenError};
 use anyhow::Result;
-use std::os::unix::net::UnixStream;
 use std::sync::Arc;
 
 /// Read requests from one client until it detaches.
@@ -147,6 +147,15 @@ fn handle(message: ClientMessage, id: u64, session: &Session) {
                     .expect("client bridges poisoned")
                     .dispatch(&repo, message);
             }
+        }
+        // The daemon runs the same shutdown sequence as SIGINT/SIGTERM — reaping
+        // every child shell — and then closes the connection. No reply is sent;
+        // the connection closing is the acknowledgment.
+        ClientMessage::Shutdown => {
+            tracing::info!("daemon: shutdown requested by attached client {id}");
+            let _ = session
+                .shutdown_tx
+                .send(crate::platform::signals::Shutdown::Terminate);
         }
     }
 }

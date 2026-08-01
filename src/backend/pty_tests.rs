@@ -1,13 +1,14 @@
 use super::*;
 use crate::backend::identity::FIRST_GENERATION;
-use std::time::{Duration, Instant};
+use crate::config::ShellConfig;
 
 /// Long enough that a `printf` and its exit are certainly drained.
+#[cfg(unix)]
 const RELAUNCH_MARKER: &str = "nightcrow-relaunched";
 
 #[test]
 fn pty_backend_create_and_destroy_pane() {
-    let mut backend = PtyBackend::new(".");
+    let mut backend = PtyBackend::new(".", ShellConfig::default());
     let id = backend.open_pane(24, 80, None).expect("open_pane failed");
     assert_eq!(id, 1);
     backend.destroy_pane(id);
@@ -22,9 +23,94 @@ fn pty_backend_create_and_destroy_pane() {
 /// still finish as soon as the events arrive.
 const PTY_TEST_DEADLINE: Duration = Duration::from_secs(15);
 
+/// Answer the pseudoconsole's cursor-position query.
+///
+/// Windows ConPTY is created with `PSUEDOCONSOLE_INHERIT_CURSOR`, so the host
+/// emits `ESC[6n` and holds the console session until a Device Status Report
+/// comes back — the child does not run a single instruction before that.
+/// In the app the emulator answers (`TerminalState::poll` writes
+/// `events.pty_writes` back); a test driving the backend directly has to do
+/// the same or nothing ever starts. On Unix the query never arrives and this
+/// is inert.
+fn answer_cursor_query(backend: &mut PtyBackend, id: PaneId, data: &[u8]) {
+    if data.windows(4).any(|w| w == b"\x1b[6n") {
+        let _ = backend.send_input(id, b"\x1b[1;1R");
+    }
+}
+
+/// Drain until the pane reports its exit, answering the cursor query on the
+/// way. Returns how many `Exited` events were seen, and leaves the backend
+/// drained up to that point.
+fn drain_until_exit(backend: &mut PtyBackend, id: PaneId) -> usize {
+    let deadline = Instant::now() + PTY_TEST_DEADLINE;
+    let mut exits = 0;
+    while Instant::now() < deadline && exits == 0 {
+        for event in backend.drain_events() {
+            match event {
+                BackendEvent::Output { pane, data } if pane == id => {
+                    answer_cursor_query(backend, id, &data);
+                }
+                BackendEvent::Exited { pane } if pane == id => exits += 1,
+                _ => {}
+            }
+        }
+        thread::sleep(Duration::from_millis(10));
+    }
+    exits
+}
+
+/// A pane whose shell exits must report `Exited`, on every platform.
+///
+/// Windows has no second signal to fall back on: the master stays readable
+/// while we hold it (the pseudoconsole releases the pipe only on
+/// `ClosePseudoConsole`), so the reader thread never reaches EOF and the
+/// child's own death is the sole cue. `exit` is spelled the same for
+/// `cmd /C` and `sh -lc`, so one test covers both.
 #[test]
+fn a_pane_whose_shell_exits_reports_it() {
+    let mut backend = PtyBackend::new(".", ShellConfig::default());
+    let id = backend.open_pane(24, 80, Some("exit")).expect("open_pane");
+
+    assert_eq!(
+        drain_until_exit(&mut backend, id),
+        1,
+        "pane did not report its shell's exit"
+    );
+}
+
+/// The exit is reported once. `drain_events` keeps being called after it —
+/// the caller destroys the pane in response, and a backend that re-reported
+/// on every subsequent drain would make that cleanup racy.
+#[test]
+fn a_reported_exit_is_not_reported_again() {
+    let mut backend = PtyBackend::new(".", ShellConfig::default());
+    let id = backend.open_pane(24, 80, Some("exit")).expect("open_pane");
+
+    assert_eq!(
+        drain_until_exit(&mut backend, id),
+        1,
+        "exit was not reported exactly once"
+    );
+
+    // Keep draining past the first report — this is the window a re-report
+    // would land in.
+    for _ in 0..20 {
+        thread::sleep(Duration::from_millis(10));
+        for event in backend.drain_events() {
+            assert!(
+                !matches!(event, BackendEvent::Exited { pane } if pane == id),
+                "exit was reported a second time"
+            );
+        }
+    }
+
+    backend.destroy_pane(id);
+}
+
+#[test]
+#[cfg(unix)]
 fn pty_backend_drains_output_before_exit_event() {
-    let mut backend = PtyBackend::new(".");
+    let mut backend = PtyBackend::new(".", ShellConfig::default());
     let id = backend.open_pane(24, 80, None).expect("open_pane failed");
 
     backend
@@ -59,7 +145,7 @@ fn pty_backend_drains_output_before_exit_event() {
 
 #[test]
 fn opening_a_pane_gives_it_a_token_at_the_first_generation() {
-    let mut backend = PtyBackend::new(".");
+    let mut backend = PtyBackend::new(".", ShellConfig::default());
     let id = backend.open_pane(24, 80, None).expect("open_pane failed");
 
     let identity = backend.slot(id).expect("pane has a slot").identity.clone();
@@ -71,7 +157,7 @@ fn opening_a_pane_gives_it_a_token_at_the_first_generation() {
 
 #[test]
 fn a_token_resolves_to_the_pane_holding_it() {
-    let mut backend = PtyBackend::new(".");
+    let mut backend = PtyBackend::new(".", ShellConfig::default());
     let id = backend.open_pane(24, 80, None).expect("open_pane failed");
     let token = backend.slot(id).expect("slot").identity.token.clone();
 
@@ -82,7 +168,7 @@ fn a_token_resolves_to_the_pane_holding_it() {
 
 #[test]
 fn relaunching_a_pane_keeps_the_token_and_advances_the_generation() {
-    let mut backend = PtyBackend::new(".");
+    let mut backend = PtyBackend::new(".", ShellConfig::default());
     let first = backend
         .open_pane(24, 80, Some("printf first; exit"))
         .expect("open_pane failed");
@@ -104,8 +190,9 @@ fn relaunching_a_pane_keeps_the_token_and_advances_the_generation() {
 }
 
 #[test]
+#[cfg(unix)]
 fn a_relaunch_reproduces_the_original_command() {
-    let mut backend = PtyBackend::new(".");
+    let mut backend = PtyBackend::new(".", ShellConfig::default());
     let first = backend
         .open_pane(24, 80, Some(&format!("printf {RELAUNCH_MARKER}; exit")))
         .expect("open_pane failed");
@@ -138,7 +225,7 @@ fn a_relaunch_reproduces_the_original_command() {
 
 #[test]
 fn a_relaunch_keeps_the_original_command_rather_than_accumulating_resume_args() {
-    let mut backend = PtyBackend::new(".");
+    let mut backend = PtyBackend::new(".", ShellConfig::default());
     let allowed = vec!["--flag".to_string()];
     let args = vec!["--flag".to_string()];
     let first = backend
@@ -171,7 +258,7 @@ fn a_relaunch_keeps_the_original_command_rather_than_accumulating_resume_args() 
 
 #[test]
 fn relaunching_a_pane_that_is_gone_is_refused() {
-    let mut backend = PtyBackend::new(".");
+    let mut backend = PtyBackend::new(".", ShellConfig::default());
     let id = backend.open_pane(24, 80, Some("true")).expect("open_pane");
     backend.destroy_pane(id);
 
@@ -181,7 +268,7 @@ fn relaunching_a_pane_that_is_gone_is_refused() {
 
 #[test]
 fn a_refused_relaunch_leaves_the_pane_running() {
-    let mut backend = PtyBackend::new(".");
+    let mut backend = PtyBackend::new(".", ShellConfig::default());
     let id = backend
         .open_pane(24, 80, Some("sleep 30"))
         .expect("open_pane");
@@ -199,7 +286,7 @@ fn a_refused_relaunch_leaves_the_pane_running() {
 
 #[test]
 fn two_panes_get_distinct_tokens() {
-    let mut backend = PtyBackend::new(".");
+    let mut backend = PtyBackend::new(".", ShellConfig::default());
     let a = backend.open_pane(24, 80, None).expect("open_pane failed");
     let b = backend.open_pane(24, 80, None).expect("open_pane failed");
 
@@ -215,7 +302,7 @@ fn two_panes_get_distinct_tokens() {
 
 #[test]
 fn destroying_a_pane_retires_its_token() {
-    let mut backend = PtyBackend::new(".");
+    let mut backend = PtyBackend::new(".", ShellConfig::default());
     let id = backend.open_pane(24, 80, None).expect("open_pane failed");
     backend.destroy_pane(id);
 
@@ -225,8 +312,9 @@ fn destroying_a_pane_retires_its_token() {
 }
 
 #[test]
+#[cfg(unix)]
 fn a_panes_child_process_sees_its_token_in_the_environment() {
-    let mut backend = PtyBackend::new(".");
+    let mut backend = PtyBackend::new(".", ShellConfig::default());
     let id = backend
         .open_pane(24, 80, Some("printf %s \"$NIGHTCROW_PANE_TOKEN\"; exit"))
         .expect("open_pane failed");
@@ -257,8 +345,9 @@ fn a_panes_child_process_sees_its_token_in_the_environment() {
 }
 
 #[test]
+#[cfg(unix)]
 fn pty_backend_runs_startup_command() {
-    let mut backend = PtyBackend::new(".");
+    let mut backend = PtyBackend::new(".", ShellConfig::default());
     // The command runs itself on launch — no input is sent. `exit` keeps
     // the test bounded by ending the shell after the command prints.
     let id = backend

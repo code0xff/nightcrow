@@ -1,14 +1,13 @@
-//! Keys for the open-repo dialog: the path field, and the directory browser it
-//! can open. The dialog owns every key while it is up, so these are all bare
-//! keys — no leader, and no chord to keep clear of the app's own bindings.
+//! Keys for the open-repo dialog. It owns every key while up, so all bindings
+//! here are bare.
 
 use crate::application::input::dispatch::{KeyOutcome, ProjectRequest, text_input_char};
 use crate::workspace::Workspace;
 use crossterm::event::{KeyCode, KeyEvent};
 
 pub(crate) fn handle_repo_input_key(ws: &mut Workspace, key: KeyEvent) -> KeyOutcome {
-    // The browser takes the keys while it is open; the field is still on screen
-    // below it, but its text cannot change until the browser hands a path back.
+    // The browser takes the keys while open; the field's text cannot change
+    // until it hands a path back.
     if ws.repo_input.picker.is_some() {
         handle_picker_key(ws, key);
         return KeyOutcome::Continue;
@@ -27,26 +26,11 @@ pub(crate) fn handle_repo_input_key(ws: &mut Workspace, key: KeyEvent) -> KeyOut
                 ws.repo_input_pop();
             }
         }
-        // The caret is always at the end of the buffer, so these can't move
-        // it; they mean "keep this path and let me extend it".
-        KeyCode::Right | KeyCode::End => ws.repo_input_accept_prefill(),
-        // Down opens the browser, matching where every autocomplete puts its
-        // list. Up too: reaching for either vertical key means "the list",
-        // and neither can mean anything else in a single-line field.
+        // Either vertical key means "the list" in a single-line field.
         KeyCode::Down | KeyCode::Up => ws.repo_input_browse(),
-        // `BackTab` is deliberately unhandled: completion here never cycles, so
-        // there is nothing for a reverse Tab to step back through.
-        KeyCode::Tab => {
-            // A Tab that can no longer extend the path has already shown the
-            // candidate list, so a second one has nothing left to do — that
-            // dead press is exactly the moment the flat list proved too little,
-            // so it escalates to the browser instead.
-            if ws.repo_input.candidates.is_empty() {
-                ws.repo_input_complete();
-            } else {
-                ws.repo_input_browse();
-            }
-        }
+        // Tab only completes; the browser opens with ↓ alone. `BackTab` is
+        // unhandled because completion never cycles.
+        KeyCode::Tab => ws.repo_input_complete(),
         _ => {
             if let Some(c) = text_input_char(key) {
                 ws.repo_input_push(c);
@@ -56,15 +40,12 @@ pub(crate) fn handle_repo_input_key(ws: &mut Workspace, key: KeyEvent) -> KeyOut
     KeyOutcome::Continue
 }
 
-/// `Enter` selects here rather than opening — the browser fills the field, and
-/// the field's Enter remains the single place a repo is opened. That splits the
-/// meaning of Enter between the two surfaces, which is why `→` alone expands
-/// (unlike the in-repo tree view, where Enter expands too).
+/// Enter selects here rather than opening: the field's Enter stays the single
+/// place a repo is opened, so `→` alone expands.
 fn handle_picker_key(ws: &mut Workspace, key: KeyEvent) {
     match key.code {
-        // One Esc leaves the browser, a second cancels the dialog: the field's
-        // text survives the first, so a browse can be abandoned without
-        // retyping the path it started from.
+        // One Esc leaves the browser with the field's text intact, a second
+        // cancels the dialog.
         KeyCode::Esc => ws.repo_input_close_browser(),
         KeyCode::Enter => ws.repo_input_pick(),
         KeyCode::Down | KeyCode::Char('j') => ws.repo_picker_move(true),

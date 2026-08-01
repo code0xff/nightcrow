@@ -1,5 +1,6 @@
 //! Filesystem path helpers that do not belong to a domain module.
 
+use std::borrow::Cow;
 use std::path::{Path, PathBuf};
 
 /// Expand a leading `~` to the user's home directory.
@@ -18,6 +19,50 @@ pub(crate) fn expand_tilde(path: impl AsRef<Path>) -> PathBuf {
     match dirs::home_dir() {
         Some(home) => home.join(rest),
         None => path.to_path_buf(),
+    }
+}
+
+/// Strip the verbatim prefix and normalise separators for display.
+///
+/// Storage and comparison use the canonical form as-is. Mixing them would
+/// silently break `starts_with`-based boundary checks — git/path's worktree
+/// gate depends on exactly that comparison.
+pub(crate) fn for_display(path: &Path) -> Cow<'_, str> {
+    let s = path.to_string_lossy();
+    // `\\\\?\\` is the verbatim prefix Windows prepends to canonicalized paths.
+    // Strip it so the user sees `C:\Users\...` instead of `\\?\C:\Users\...`.
+    // Backslashes are also normalised to forward slashes so display paths are
+    // consistent across platforms — the browser client and TUI both show `/`.
+    #[cfg(windows)]
+    {
+        let stripped = s.strip_prefix(r"\\?\").unwrap_or(&s);
+        let normalized = stripped.replace('\\', "/");
+        Cow::Owned(normalized)
+    }
+    #[cfg(not(windows))]
+    {
+        s
+    }
+}
+
+/// Canonicalize a path and strip the Windows verbatim prefix.
+///
+/// `std::fs::canonicalize` on Windows prepends `\\?\` to the result. That
+/// verbatim form breaks `cmd.exe`, which treats it as a UNC path and falls
+/// back to `C:\Windows`. This wrapper strips the prefix so the canonical path
+/// works as a process working directory and as stored repo path. Native
+/// separators are preserved — this is for filesystem/spawn use, not display.
+pub(crate) fn canonicalize_clean(path: impl AsRef<Path>) -> std::io::Result<PathBuf> {
+    let canonical = std::fs::canonicalize(path)?;
+    #[cfg(windows)]
+    {
+        let s = canonical.to_string_lossy();
+        let stripped = s.strip_prefix(r"\\?\").unwrap_or(&s);
+        Ok(PathBuf::from(stripped))
+    }
+    #[cfg(not(windows))]
+    {
+        Ok(canonical)
     }
 }
 

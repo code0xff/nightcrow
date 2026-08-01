@@ -1,0 +1,47 @@
+# Unix verification gate for Windows developers.
+#
+# Runs the four AGENTS.md gates (build, test, clippy, fmt) inside a Linux
+# container so a Windows-only machine can confirm there is no Unix
+# regression before pushing. CI runs the same gates on ubuntu-latest, but
+# this lets you catch a regression locally without waiting for a push.
+#
+# Usage:
+#   docker compose run --rm unix-gate
+#
+# The workspace is bind-mounted, so edits on the host are seen immediately.
+# Cargo registry and target caches are named volumes to speed up reruns.
+#
+# What this is NOT: a production build environment. It has no Node.js, so
+# the viewer-ui bundle is not rebuilt here. The Rust gates are the scope.
+
+services:
+  unix-gate:
+    image: rust:latest
+    working_dir: /workspace
+    volumes:
+      # The repo is bind-mounted read-write so cargo can write target/.
+      - .:/workspace
+      # Persist the cargo registry across runs so dependencies are not
+      # re-downloaded every time. Named volumes survive container removal.
+      - cargo-registry:/usr/local/cargo/registry
+      # Persist the build cache. Without this, every run recompiles every
+      # dependency from scratch (~5 min). With it, incremental builds are
+      # seconds.
+      - cargo-target:/workspace/target
+    command: >
+      bash -c "
+        rustup component add clippy rustfmt &&
+        echo '=== cargo fmt --all --check ===' &&
+        cargo fmt --all --check &&
+        echo '=== cargo clippy ===' &&
+        cargo clippy --locked --workspace --all-targets --all-features -- -D warnings &&
+        echo '=== cargo build ===' &&
+        cargo build --locked --workspace &&
+        echo '=== cargo test ===' &&
+        cargo test --locked --workspace &&
+        echo '=== ALL GATES PASSED ==='
+      "
+
+volumes:
+  cargo-registry:
+  cargo-target:

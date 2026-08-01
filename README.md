@@ -4,6 +4,8 @@ Agent-adjacent terminal workbench — git diff viewer, commit log, and multi-pan
 
 nightcrow runs as a **session**: one process holds the repositories and the terminals, and you reach it from a terminal (`nightcrow attach`) or a browser. Closing a client leaves the session running.
 
+Runs on **macOS, Linux, and Windows** — one Rust binary, the same TUI and the same browser view on all three.
+
 ```
  ~/projects/myapp   main   ↑2 ↓0
 ┌──────────────────────────────────────────────────────┐
@@ -26,19 +28,38 @@ The built viewer bundle is committed, so this needs no Node toolchain:
 cargo install --git https://github.com/code0xff/nightcrow --locked
 ```
 
-Requires Rust 1.85+ (edition 2024). Other install routes are in
-[Getting started](docs/getting-started.md#install).
+Requires Rust 1.85+ (edition 2024) on macOS, Linux, or Windows. Other install
+routes are in [Getting started](docs/getting-started.md#install).
 
 ## Quick start
 
 ```bash
-# Start the session (foreground; -d to background it).
-# It reopens the repositories from last time.
-nightcrow
+# The one-command way in: background the session and attach the TUI to it.
+# If a session is already running, it attaches to that one instead of
+# starting a second. It reopens the repositories from last time.
+nightcrow -d attach
+```
+
+The pieces on their own, when you want them separately:
+
+```bash
+# Just the session, backgrounded — returns your shell.
+nightcrow -d
 
 # From another terminal: bring up the TUI on that session.
 nightcrow attach
+
+# Foreground, for a service manager or to watch the startup output.
+nightcrow
+
+# Ask a running session to shut down.
+nightcrow stop
 ```
+
+`-d` gives the session its own process group, so closing the terminal you
+started it from does not stop it; what it would have printed goes to
+`~/.nightcrow/daemon.out`. Under a service manager, start it *without* `-d` —
+backgrounding is what the manager does itself.
 
 The session prints the address of its browser view (`http://127.0.0.1:8091/` by
 default) and the socket an attaching terminal uses. Both show the same
@@ -46,10 +67,31 @@ repositories — open one with `<prefix> o` in the TUI or the folder picker in t
 browser, and it appears in the other.
 
 The leader (prefix) key is `Ctrl+F` by default. Press it, then one key:
-`o` opens a repo, `t` a terminal pane, `l` the commit log, `b` the file tree,
-`f` fullscreen, `q` quits. Every other key — including Ctrl chords — passes
-straight through to the focused terminal, so the CLI running there receives them
-unchanged.
+`<prefix> o` opens a repo, `<prefix> t` a terminal pane, `<prefix> l` the commit log,
+`<prefix> b` the file tree, `<prefix> f` fullscreen, `<prefix> q` detaches. Every other
+key — including Ctrl chords — passes straight through to the focused terminal, so
+the CLI running there receives them unchanged.
+
+| Key | Action |
+|-----|--------|
+| `<prefix> t` | New terminal pane |
+| `<prefix> w` | Close pane |
+| `<prefix> l` | Toggle commit log |
+| `<prefix> b` | Toggle file tree |
+| `<prefix> f` | Toggle fullscreen |
+| `<prefix> s` | Swap pane prompt |
+| `<prefix> z` | Claim pane sizing |
+| `<prefix> c` | Cancel recovery |
+| `<prefix> o` | Open project |
+| `<prefix> x` | Close project |
+| `<prefix> p` | Cycle theme |
+| `<prefix> u` | Reload config |
+| `<prefix> r` | Redraw |
+| `<prefix> q` | Detach (the session keeps running) |
+| `<prefix> 1` | Focus file list |
+| `<prefix> 2` | Focus diff viewer |
+| `<prefix> 3`…`<prefix> 9` | Switch to pane 0–6 |
+| `<prefix> 0` | Switch to pane 7 |
 
 ## What it does
 

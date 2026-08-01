@@ -45,7 +45,7 @@ portable-pty = "0.9"
 clap = { version = "4", features = ["derive"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-toml = "0.9"
+toml = "1"
 dirs = "6"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
@@ -60,15 +60,28 @@ tungstenite = "0.30"
 argon2 = "0.5"
 getrandom = "0.4"
 rust-embed = { version = "8.12.0", features = ["interpolate-folder-path", "mime-guess"] }
+# `localtime_r` for the wall clock and `access(X_OK)` for plugin executability
+# — the two POSIX calls std does not expose. The single-instance lock used to
+# be here too; it moved to std's `File::try_lock` (see src/daemon/lock.rs).
+libc = "0.2"
+
+[target.'cfg(unix)'.dependencies]
 # Stop signals for the headless server: SIGTERM is what a service manager sends,
 # and `ctrlc` handles only SIGINT. signal-hook is the widely-adopted crate for
 # the rest and needs no async runtime.
 signal-hook = "0.4"
-# `flock` for the daemon's single-instance lock — the one POSIX call std does
-# not expose. Already in the tree through several dependencies, so this only
-# names it directly; the daemonize crates were not adopted (see
-# docs/decisions.md).
-libc = "0.2"
+
+[target.'cfg(windows)'.dependencies]
+# Windows 는 AF_UNIX SOCK_STREAM 을 지원하지만 std 가 노출하지 않는다.
+# API 표면이 std::os::unix::net 과 동일해 daemon 전송 계층을 타입 교체만으로
+# 이식할 수 있다. 대안 비교는 docs/decisions.md 참조.
+uds_windows = "1"
+# Console control events (Ctrl-C / Ctrl-Break) in place of SIGINT. signal-hook
+# builds on Windows but its `iterator` module is Unix-only.
+ctrlc = "3"
+# `GetLocalTime` for the wall clock. Already in the lockfile transitively;
+# adding it directly here so the feature gate is explicit.
+windows-sys = { version = "0.61", features = ["Win32_System_Time", "Win32_Storage_FileSystem", "Win32_Foundation"] }
 
 [dev-dependencies]
 tempfile = "3"

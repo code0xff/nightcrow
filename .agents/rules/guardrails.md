@@ -5,6 +5,20 @@
 - 분할은 동작을 바꾸지 않는 순수 리팩토링이어야 한다. 모듈, 순수 함수, 컴포넌트/훅으로 쪼갠다.
 - 생성물(`target/`, `viewer-ui/dist/`)과 벤더링한 서드파티는 제외한다.
 
+## Platforms
+
+- macOS, Linux, Windows 세 곳 모두에서 도는 것을 목표로 한다. 한 곳에서만 도는 코드는
+  기능이 아니라 미완성이다. CI도 세 OS를 모두 돈다 (`.github/workflows/ci.yml`).
+- 플랫폼 분기는 호출부에 흩지 않고 seam 한 곳에 모은다 — 경로·시그널·스레드·로깅은
+  `src/platform/`, 소켓 타입은 `src/daemon/transport.rs`. 새 분기가 필요하면 seam을
+  늘리기 전에 기존 것에 들어갈 수 있는지 먼저 본다.
+- 한쪽에만 있는 API(`PermissionsExt`, `setsid`, ConPTY 동작 차이)는 대응물을 찾거나
+  seam 뒤에 감춘다. 대응물이 없어 동작이 달라지면 무엇을 포기했는지 문서에 남긴다.
+- 테스트를 `#[cfg(unix)]`로 막는 것은 최후 수단이다. 막는 순간 그 동작은 나머지
+  플랫폼에서 검증되지 않으므로, 왜 막았는지 주석으로 남긴다.
+- Windows에서 작업 중이면 Unix 게이트는 `docker compose run --rm unix-gate`로 돌린다
+  (`docs/getting-started.md`).
+
 ## Architecture
 
 - `docs/architecture.md`가 설계 결정의 기준이다. 구현이 문서와 어긋나면 문서를 먼저 고치거나 구현을 조정한다.

@@ -1,4 +1,4 @@
-use super::{PtyBackend, PtyEvent, PtyPane};
+use super::{ExitPhase, PtyBackend, PtyEvent, PtyPane};
 use crate::backend::PaneId;
 use crate::backend::identity::{PANE_TOKEN_ENV, PaneIdentity};
 use crate::backend::slot::{PaneLaunch, resume_command_line};
@@ -81,15 +81,17 @@ impl PtyBackend {
             pixel_height: 0,
         })?;
 
-        let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".to_string());
+        let shell = self.shell.resolved_program();
         let mut cmd = CommandBuilder::new(&shell);
-        // A reserved startup command runs through the login shell's `-lc`:
+        // A reserved startup command runs through the shell's configured args:
         // the command text is passed as a single argv item, so the shell —
         // not us — handles its quoting/word-splitting. This avoids the race
         // of spawning a shell and later injecting `command\r`, and avoids any
         // string interpolation into a wrapper on our side.
         if let Some(command) = command {
-            cmd.arg("-lc");
+            for arg in self.shell.command_args() {
+                cmd.arg(arg);
+            }
             cmd.arg(command);
         }
         cmd.env("TERM", "xterm-256color");
@@ -99,8 +101,9 @@ impl PtyBackend {
         cmd.env(PANE_TOKEN_ENV, identity.token.as_str());
         // Only set cwd if the directory actually exists; otherwise inherit
         // ours so spawn does not fail outright (matters for unit tests that
-        // pass placeholder paths).
-        if let Ok(canonical) = self.cwd.canonicalize() {
+        // pass placeholder paths). The clean canonicalize strips the Windows
+        // verbatim prefix (`\\?\`) that cmd.exe rejects as a UNC path.
+        if let Ok(canonical) = crate::platform::paths::canonicalize_clean(&self.cwd) {
             cmd.cwd(canonical);
         }
         let mut child = pair.slave.spawn_command(cmd)?;
@@ -117,6 +120,7 @@ impl PtyBackend {
         self.next_id = next;
 
         let (tx, rx) = mpsc::channel();
+        let exit_tx = tx.clone();
         let reader_handle = thread::spawn(move || {
             let mut buf = [0u8; 4096];
             loop {
@@ -132,8 +136,12 @@ impl PtyBackend {
             let _ = tx.send(PtyEvent::Exited);
         });
 
+        // The child's death is reported, not just awaited: on Windows the
+        // pseudoconsole holds the pipe open until the master drops, so the
+        // reader above never reaches EOF. `ExitPhase` handles the draining.
         let wait_handle = thread::spawn(move || {
             let _ = child.wait();
+            let _ = exit_tx.send(PtyEvent::ChildExited);
         });
 
         self.panes.insert(
@@ -145,6 +153,7 @@ impl PtyBackend {
                 rx,
                 reader_handle: Some(reader_handle),
                 wait_handle: Some(wait_handle),
+                exit: ExitPhase::Running,
             },
         );
         self.slots.insert(id, identity, launch, Instant::now());

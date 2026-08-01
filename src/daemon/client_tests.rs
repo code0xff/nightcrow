@@ -2,11 +2,11 @@ use super::DaemonClient;
 use crate::daemon::frame::{Frame, read_frame, write_frame};
 use crate::daemon::protocol::{ServerMessage, version};
 use crate::daemon::socket::DaemonSocket;
+use crate::daemon::transport::UnixListener;
 use crate::web::common::auth::Auth;
 use crate::web::viewer::prefs::PrefsStore;
 use crate::web::viewer::server::{ViewerOptions, ViewerState};
 use std::io::Write;
-use std::os::unix::net::UnixListener;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -33,13 +33,15 @@ fn daemon(dir: &tempfile::TempDir, repos: &[String]) -> TestDaemon {
         persist: false,
         startup_commands: Vec::new(),
         cli_startup: Vec::new(),
+        shell: crate::config::ShellConfig::default(),
         hot: crate::config::AgentIndicatorConfig::default(),
         // In the test's own directory, beside the socket: opening a repository
         // records it as the active one, so this file is written, and a path
         // shared with another test would make the two one session.
         prefs: PrefsStore::at(dir.path().join("viewer.json")),
     }));
-    let session = crate::daemon::serve::start(state).expect("starts the watcher");
+    let (shutdown_tx, _shutdown_rx) = std::sync::mpsc::sync_channel(1);
+    let session = crate::daemon::serve::start(state, shutdown_tx).expect("starts the watcher");
     std::thread::spawn(move || crate::daemon::serve::serve(listener, session));
     TestDaemon { socket }
 }

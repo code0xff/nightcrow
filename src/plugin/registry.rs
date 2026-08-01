@@ -145,7 +145,18 @@ pub fn list(base: &Path) -> Result<Vec<String>> {
         if !std::fs::metadata(entry.path()).is_ok_and(|m| m.is_file()) {
             continue;
         }
-        names.push(entry.file_name().to_string_lossy().into_owned());
+        let raw = entry.file_name().to_string_lossy().into_owned();
+        // On Windows, strip the `.exe` extension so the config references the
+        // bare name. The extension is re-attached after validation in `remove`
+        // and `resolve_program`.
+        #[cfg(windows)]
+        let name = raw
+            .strip_suffix(".exe")
+            .map(|s| s.to_string())
+            .unwrap_or(raw);
+        #[cfg(not(windows))]
+        let name = raw;
+        names.push(name);
     }
     names.sort();
     Ok(names)
@@ -154,13 +165,31 @@ pub fn list(base: &Path) -> Result<Vec<String>> {
 /// Delete an installed plugin.
 pub fn remove(base: &Path, name: &str) -> Result<RemoveOutcome> {
     validate_name(name)?;
-    let path = base.join(name);
+    let path = resolve_installed_path(base, name);
     if path.symlink_metadata().is_err() {
         return Ok(RemoveOutcome::NotInstalled(name.to_string()));
     }
     std::fs::remove_file(&path)
         .with_context(|| format!("removing installed plugin {}", path.display()))?;
     Ok(RemoveOutcome::Removed(path))
+}
+
+/// Resolve a validated name to the on-disk path, attaching `.exe` on Windows
+/// when the bare name does not exist. Called after `validate_name` so the
+/// extension cannot be used to escape the plugins directory.
+fn resolve_installed_path(base: &Path, name: &str) -> PathBuf {
+    let bare = base.join(name);
+    if bare.symlink_metadata().is_ok() {
+        return bare;
+    }
+    #[cfg(windows)]
+    {
+        let exe = base.join(format!("{name}.exe"));
+        if exe.symlink_metadata().is_ok() {
+            return exe;
+        }
+    }
+    bare
 }
 
 /// What the loaded config says about `name`.
@@ -249,8 +278,24 @@ fn is_executable(path: &Path) -> bool {
 }
 
 #[cfg(not(unix))]
-fn is_executable(_path: &Path) -> bool {
-    true
+fn is_executable(path: &Path) -> bool {
+    // Windows: check the extension against the PATHEXT list. A file without
+    // one of these extensions will not be launched by `Command::new`, so
+    // accepting it would let the user install a non-executable and wonder why
+    // it never starts.
+    let Some(ext) = path.extension().and_then(|e| e.to_str()) else {
+        return false;
+    };
+    let pathext = std::env::var_os("PATHEXT").unwrap_or_else(|| {
+        std::ffi::OsString::from(".EXE;.CMD;.BAT;.COM;.PS1;.VBS;.VBE;.JS;.JSE;.WSF;.WSH;.MSC")
+    });
+    // `path.extension()` returns the extension without the leading dot, but
+    // PATHEXT entries include it. Prepend a dot so the comparison matches.
+    let ext_dotted = format!(".{}", ext.to_ascii_uppercase());
+    pathext
+        .to_str()
+        .map(|s| s.split(';').any(|e| e.eq_ignore_ascii_case(&ext_dotted)))
+        .unwrap_or(false)
 }
 
 fn restrict_permissions(path: &Path) -> Result<()> {

@@ -20,6 +20,7 @@ mod runloop;
 mod runloop_adopt;
 mod runloop_io;
 mod state;
+pub(crate) mod transport;
 mod wait;
 
 use clap::{Parser, Subcommand};

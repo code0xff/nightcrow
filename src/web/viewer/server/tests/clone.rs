@@ -227,6 +227,7 @@ fn parallel_starts_admit_only_one_clone() {
     assert_eq!(admitted, 1, "exactly one may start: {responses:?}");
 }
 
+#[cfg(unix)]
 #[test]
 fn a_destination_taken_by_a_symlink_is_refused() {
     // The destination is claimed with `create_dir`, which does not follow a

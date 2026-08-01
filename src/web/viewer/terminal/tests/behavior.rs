@@ -7,6 +7,7 @@ use crate::web::viewer::limits;
 use crate::web::viewer::terminal::frame::{ClientMessage, PaneSize, TerminalFrame};
 
 #[test]
+#[cfg(unix)]
 fn creating_a_terminal_announces_it_and_streams_output() {
     let dir = tempfile::TempDir::new().unwrap();
     let hub = spawn_hub(&dir.path().to_string_lossy(), Vec::new(), Vec::new());

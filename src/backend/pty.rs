@@ -1,5 +1,6 @@
 use super::slot::{PaneSlot, PaneSlots};
 use super::{BackendEvent, PaneId, TerminalBackend};
+use crate::config::ShellConfig;
 use crate::platform::threading::try_timed_join;
 use anyhow::Result;
 use portable_pty::PtySize;
@@ -25,9 +26,34 @@ const PTY_REAP_TIMEOUT: Duration = Duration::from_millis(50);
 /// the round-robin cap bounds the work per pane to a small constant.
 const PER_PANE_DRAIN_BUDGET: usize = 64;
 
+/// How long a pane whose child has exited keeps draining before the exit is
+/// reported. The caller destroys the pane the moment it sees `Exited`, so
+/// reporting at once would drop output the ConPTY host is still copying.
+const EXIT_DRAIN_GRACE: Duration = Duration::from_millis(50);
+
 pub(super) enum PtyEvent {
     Output(Vec<u8>),
+    /// The pane's process is gone. Says nothing about output still in flight.
+    ChildExited,
+    /// End of the master: no further output can arrive.
     Exited,
+}
+
+/// How far a pane has moved through its shutdown.
+///
+/// The two end signals are not interchangeable. EOF on the master is final.
+/// The child's death is not: on Windows `ClosePseudoConsole` only runs when
+/// the master is dropped, so `read()` never returns EOF and the child's exit
+/// is the *only* signal a pane gets. `Draining` holds the exit back until the
+/// channel is dry, so the last output still reaches the emulator.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum ExitPhase {
+    /// No exit signal seen.
+    Running,
+    /// The child is gone; its remaining output is still being drained.
+    Draining { since: Instant },
+    /// `BackendEvent::Exited` has been emitted — never emit a second one.
+    Reported,
 }
 
 pub(super) struct PtyPane {
@@ -40,6 +66,7 @@ pub(super) struct PtyPane {
     pub(super) rx: Receiver<PtyEvent>,
     pub(super) reader_handle: Option<thread::JoinHandle<()>>,
     pub(super) wait_handle: Option<thread::JoinHandle<()>>,
+    pub(super) exit: ExitPhase,
 }
 
 impl Drop for PtyPane {
@@ -87,16 +114,19 @@ pub struct PtyBackend {
     /// reports every pane through the event stream so a caller cannot come to
     /// depend on an answer a remote backend has no way to give.
     created: Vec<BackendEvent>,
+    /// The shell every terminal pane is spawned with.
+    pub(super) shell: ShellConfig,
 }
 
 impl PtyBackend {
-    pub fn new(cwd: impl AsRef<Path>) -> Self {
+    pub fn new(cwd: impl AsRef<Path>, shell: ShellConfig) -> Self {
         Self {
             panes: BTreeMap::new(),
             slots: PaneSlots::default(),
             next_id: 1,
             cwd: cwd.as_ref().to_path_buf(),
             created: Vec::new(),
+            shell,
         }
     }
 
@@ -203,6 +233,9 @@ impl TerminalBackend for PtyBackend {
         // surfaced by an earlier iteration of the outer try_recv loop — no
         // separate post-Exited drain is needed.
         //
+        // `ChildExited` carries no such ordering — it can overtake output the
+        // child already wrote — so it only moves the pane to `Draining`.
+        //
         // Each pane is drained up to PER_PANE_DRAIN_BUDGET events to keep
         // one noisy pane (e.g. `yes | head -100000`) from starving its
         // siblings within a single frame; whatever is left lands on the
@@ -211,7 +244,7 @@ impl TerminalBackend for PtyBackend {
         // to it, and both can be queued before the same drain.
         let mut events: Vec<BackendEvent> = std::mem::take(&mut self.created);
         let now = Instant::now();
-        for (id, pane) in &self.panes {
+        for (id, pane) in &mut self.panes {
             let mut budget = PER_PANE_DRAIN_BUDGET;
             while budget > 0 {
                 match pane.rx.try_recv() {
@@ -223,11 +256,30 @@ impl TerminalBackend for PtyBackend {
                         self.slots.mark_output(*id, now);
                         events.push(BackendEvent::Output { pane: *id, data });
                     }
+                    Ok(PtyEvent::ChildExited) => {
+                        if pane.exit == ExitPhase::Running {
+                            pane.exit = ExitPhase::Draining { since: now };
+                        }
+                    }
                     Ok(PtyEvent::Exited) => {
-                        events.push(BackendEvent::Exited { pane: *id });
+                        // EOF is final, so nothing is held back.
+                        if pane.exit != ExitPhase::Reported {
+                            pane.exit = ExitPhase::Reported;
+                            events.push(BackendEvent::Exited { pane: *id });
+                        }
                         break;
                     }
-                    Err(_) => break,
+                    Err(_) => {
+                        // Dry for now. For a dead child that is the cue to
+                        // report — once the grace has let late output land.
+                        if let ExitPhase::Draining { since } = pane.exit
+                            && now.duration_since(since) >= EXIT_DRAIN_GRACE
+                        {
+                            pane.exit = ExitPhase::Reported;
+                            events.push(BackendEvent::Exited { pane: *id });
+                        }
+                        break;
+                    }
                 }
                 budget -= 1;
             }

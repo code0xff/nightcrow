@@ -73,6 +73,7 @@ const STATUSLINE_BODY: &[u8] =
 const BUDGET: Duration = Duration::from_millis(200);
 
 /// A generous budget, for the cases that are about what a command printed.
+#[cfg(unix)]
 const ENOUGH: Duration = Duration::from_secs(5);
 
 fn statusline_entry(command: &str) -> Value {
@@ -102,6 +103,7 @@ fn a_refresh_forwards_the_usage_numbers_whatever_the_displaced_command_does() {
     }
 }
 
+#[cfg(unix)]
 #[test]
 fn a_refresh_prints_the_displaced_statuslines_line_rather_than_our_own() {
     let displaced = statusline_entry("echo theirs");
@@ -118,6 +120,7 @@ fn a_refresh_with_nothing_displaced_prints_the_numbers_it_forwarded() {
     assert_eq!(refresh.line, "5h 40%");
 }
 
+#[cfg(unix)]
 #[test]
 fn a_body_we_cannot_parse_still_reaches_the_displaced_command() {
     // Parsing is for the fields we forward; the bytes are the displaced command's

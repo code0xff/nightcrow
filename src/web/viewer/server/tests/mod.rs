@@ -47,6 +47,7 @@ pub(super) fn server_with(
         persist: false,
         startup_commands: Vec::new(),
         cli_startup: Vec::new(),
+        shell: crate::config::ShellConfig::default(),
         hot,
         prefs,
     })

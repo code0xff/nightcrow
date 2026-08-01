@@ -1,6 +1,7 @@
 use super::DaemonSocket;
+use crate::daemon::transport::{UnixListener, UnixStream};
+#[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
-use std::os::unix::net::UnixStream;
 
 /// Socket paths have a length limit (~104 bytes on macOS), so tests bind
 /// directly in the temp directory root rather than nesting.
@@ -32,6 +33,7 @@ fn binding_creates_the_parent_directory() {
     drop(socket);
 }
 
+#[cfg(unix)]
 #[test]
 fn the_socket_is_readable_only_by_its_owner() {
     // The socket is the authentication: reaching it grants the shells the
@@ -70,7 +72,7 @@ fn a_socket_left_behind_by_a_dead_daemon_is_replaced() {
     // leftover is cleared rather than refused forever.
     let dir = tempfile::TempDir::new().unwrap();
     let path = socket_path(&dir);
-    drop(std::os::unix::net::UnixListener::bind(&path).unwrap());
+    drop(UnixListener::bind(&path).unwrap());
     assert!(path.exists(), "the stale file is still in place");
 
     let fresh = DaemonSocket::bind(&path).expect("a stale socket is not a live daemon");

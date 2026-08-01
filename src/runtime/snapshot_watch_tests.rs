@@ -122,6 +122,32 @@ fn an_ordinary_repository_needs_no_second_watch() {
     drop(dir);
 }
 
+/// `Prefix` keeps a canonical form precisely so a root spelled one way still
+/// places paths that arrive spelled another — which is the normal case, since
+/// libgit2 and the watcher both hand back the resolved path rather than the
+/// spelling the root was opened with. On Windows `canonicalize` returns the
+/// verbatim (`\\?\`) form, and nothing else in the process ever produces one,
+/// so that fallback matched nothing at all and only the literal spelling was
+/// left to carry the comparison.
+#[test]
+fn a_root_spelled_canonically_still_places_a_plainly_spelled_path() {
+    let (dir, path) = make_repo();
+    let spelled_one_way = std::fs::canonicalize(&path).expect("the repo exists");
+    let spelled_another =
+        crate::platform::paths::canonicalize_clean(&path).expect("the repo exists");
+
+    let roots = Roots::of(&spelled_one_way);
+
+    assert!(
+        roots
+            .tree
+            .relative(&spelled_another.join("src/main.rs"))
+            .is_some(),
+        "one spelling of the root must place the other's paths"
+    );
+    drop(dir);
+}
+
 #[test]
 fn a_linked_worktree_is_watched_where_its_state_lives() {
     // `git worktree add` leaves a `.git` *file* pointing at the main

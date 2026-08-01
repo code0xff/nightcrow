@@ -24,7 +24,7 @@ project keeps running while you work in another.
 **No project open** is a normal state, not an error — it is how a fresh
 session starts, and where closing the last tab returns you. The screen
 keeps its chrome and offers the only two things that apply: `^F o` to open a
-repo, `^F q` to quit.
+repo, `^F q` to detach.
 
 Each project keeps its own session file (see
 [Session state](session-state.md)), so tabs restore independently.

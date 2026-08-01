@@ -6,6 +6,7 @@ mod layout;
 mod log;
 mod panels;
 mod plugin;
+mod shell;
 mod web;
 
 pub use layout::{Accent, InputConfig, LayoutConfig, StartupCommand, ThemeConfig, parse_leader};
@@ -14,6 +15,7 @@ pub use log::LogLevel;
 pub use log::{LogConfig, LogRotation};
 pub use panels::{AgentIndicatorConfig, MouseConfig, TreeConfig};
 pub use plugin::PluginConfig;
+pub use shell::ShellConfig;
 #[cfg(test)]
 pub use web::generate_password;
 pub use web::{WebViewerConfig, ensure_web_viewer_password};
@@ -44,6 +46,10 @@ pub struct Config {
     pub tree: TreeConfig,
     pub mouse: MouseConfig,
     pub web_viewer: WebViewerConfig,
+    /// The shell every terminal pane is spawned with. When absent, the platform
+    /// default is used: `$SHELL` or `/bin/sh` on Unix, `%ComSpec%` or `cmd.exe`
+    /// on Windows.
+    pub shell: ShellConfig,
     /// Commands launched in their own terminal pane at startup, in order.
     /// Maps from TOML `[[startup_command]]` array-of-tables. Empty by
     /// default, which preserves the single empty-shell startup behaviour.

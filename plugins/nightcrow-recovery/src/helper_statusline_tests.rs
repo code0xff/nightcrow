@@ -5,6 +5,7 @@
 //! stderr — is only worth pinning if a real one gets to do it.
 
 use super::*;
+#[cfg(unix)]
 use std::time::Instant;
 
 /// A budget no test in here is meant to reach. Only the wedged case waits.
@@ -12,6 +13,7 @@ const ENOUGH: Duration = Duration::from_secs(5);
 
 /// The budget for a command that will never finish. Short enough not to be felt,
 /// long enough that expiry is a decision rather than a lost race with `sh`.
+#[cfg(unix)]
 const BRIEF: Duration = Duration::from_millis(150);
 
 /// What `render_statusline` makes of [`limits`], so `OURS` in an assertion reads
@@ -37,6 +39,7 @@ fn rendered(displaced: &Value, raw: &[u8], budget: Duration) -> String {
     line(Some(displaced), raw, Some(&limits()), budget)
 }
 
+#[cfg(unix)]
 #[test]
 fn the_displaced_commands_own_line_becomes_our_line() {
     let displaced = entry("echo 'hud | main | 12%'");
@@ -46,6 +49,7 @@ fn the_displaced_commands_own_line_becomes_our_line() {
     assert_eq!(printed, "hud | main | 12%");
 }
 
+#[cfg(unix)]
 #[test]
 fn the_bytes_claude_code_sent_reach_the_displaced_command_unchanged() {
     // Key order, number formatting and string escapes are all the provider's, and
@@ -57,6 +61,7 @@ fn the_bytes_claude_code_sent_reach_the_displaced_command_unchanged() {
     assert_eq!(printed.as_bytes(), raw);
 }
 
+#[cfg(unix)]
 #[test]
 fn a_displaced_statusline_recorded_as_a_bare_string_is_run_too() {
     let displaced = Value::String("echo theirs".to_string());
@@ -64,6 +69,7 @@ fn a_displaced_statusline_recorded_as_a_bare_string_is_run_too() {
     assert_eq!(rendered(&displaced, b"{}", ENOUGH), "theirs");
 }
 
+#[cfg(unix)]
 #[test]
 fn a_multi_line_displaced_statusline_keeps_its_own_line_breaks() {
     let displaced = entry("printf 'top\\nbottom\\n'");
@@ -81,6 +87,7 @@ fn with_nothing_displaced_our_own_line_is_printed() {
     assert_eq!(line(None, b"{}", None, ENOUGH), STATUSLINE_FALLBACK);
 }
 
+#[cfg(unix)]
 #[test]
 fn a_displaced_command_that_fails_falls_back_however_much_it_printed() {
     let displaced = entry("echo half-a-line; exit 3");
@@ -88,6 +95,7 @@ fn a_displaced_command_that_fails_falls_back_however_much_it_printed() {
     assert_eq!(rendered(&displaced, b"{}", ENOUGH), OURS);
 }
 
+#[cfg(unix)]
 #[test]
 fn a_displaced_command_that_cannot_be_run_falls_back() {
     let displaced = entry("/nonexistent/statusline-c0ffee --now");
@@ -95,6 +103,7 @@ fn a_displaced_command_that_cannot_be_run_falls_back() {
     assert_eq!(rendered(&displaced, b"{}", ENOUGH), OURS);
 }
 
+#[cfg(unix)]
 #[test]
 fn a_displaced_command_that_prints_nothing_usable_falls_back() {
     for silent in ["true", "printf '\\n\\n'", "printf '   '"] {
@@ -104,6 +113,7 @@ fn a_displaced_command_that_prints_nothing_usable_falls_back() {
     }
 }
 
+#[cfg(unix)]
 #[test]
 fn a_displaced_commands_stderr_never_reaches_the_statusline() {
     let displaced = entry("echo noise >&2; echo theirs");
@@ -111,6 +121,7 @@ fn a_displaced_commands_stderr_never_reaches_the_statusline() {
     assert_eq!(rendered(&displaced, b"{}", ENOUGH), "theirs");
 }
 
+#[cfg(unix)]
 #[test]
 fn a_displaced_command_that_never_finishes_is_given_up_on_and_falls_back() {
     let displaced = entry("sleep 30");

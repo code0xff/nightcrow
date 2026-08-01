@@ -12,7 +12,6 @@
 //! That is the whole difference from `&`.
 
 use anyhow::{Context, Result};
-use std::os::unix::process::CommandExt;
 use std::process::{Command, Stdio};
 
 /// Environment marker telling a re-exec'd child it is already the background
@@ -39,10 +38,11 @@ pub fn respawn_in_background(log_path: &std::path::Path) -> Result<u32> {
 }
 
 /// The arguments to hand the background copy: everything this one got, minus
-/// the flag that sent it there. Without the filter the child would detach
-/// again, and again.
+/// the flag that sent it there — otherwise it would detach again, and again —
+/// and minus `attach`. The background copy is always the daemon; `-d attach`
+/// starts it from here and then attaches in *this* process.
 fn child_args(args: impl Iterator<Item = std::ffi::OsString>) -> Vec<std::ffi::OsString> {
-    args.filter(|arg| arg != "-d" && arg != "--detach")
+    args.filter(|arg| arg != "-d" && arg != "--detach" && arg != "attach")
         .collect()
 }
 
@@ -81,16 +81,34 @@ fn background_command(
         .stdin(Stdio::null())
         .stdout(Stdio::from(out))
         .stderr(Stdio::from(err));
-    // SAFETY: `pre_exec` runs between fork and exec, where only
-    // async-signal-safe calls are allowed. `setsid` is one, and it is the only
-    // call made here.
-    unsafe {
-        command.pre_exec(|| {
-            if libc::setsid() == -1 {
-                return Err(std::io::Error::last_os_error());
-            }
-            Ok(())
-        });
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        // SAFETY: `pre_exec` runs between fork and exec, where only
+        // async-signal-safe calls are allowed. `setsid` is one, and it is the
+        // only call made here.
+        unsafe {
+            command.pre_exec(|| {
+                if libc::setsid() == -1 {
+                    return Err(std::io::Error::last_os_error());
+                }
+                Ok(())
+            });
+        }
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        // setsid 의 Windows 대응. DETACHED_PROCESS 는 콘솔을 물려주지 않아
+        // 이 터미널이 닫혀도 daemon 이 함께 죽지 않고, NEW_PROCESS_GROUP 은
+        // 이 셸에 간 Ctrl-C 가 daemon 까지 가지 않게 한다.
+        //
+        // 대가: 콘솔이 없으므로 SetConsoleCtrlHandler 로 받을 이벤트가
+        // 애초에 도착하지 않는다. 백그라운드 daemon 을 멈추는 경로는
+        // 시그널이 아니라 `nightcrow stop` 이다 (PR 8).
+        const DETACHED_PROCESS: u32 = 0x0000_0008;
+        const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
+        command.creation_flags(DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP);
     }
     Ok(command)
 }

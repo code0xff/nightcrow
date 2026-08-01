@@ -2,7 +2,7 @@ use super::*;
 use crate::daemon::frame::{FrameKind, read_frame};
 use crate::daemon::protocol::ClientMessage;
 use crate::daemon::terminal_link::TerminalRouter;
-use std::os::unix::net::UnixStream;
+use crate::daemon::transport::UnixStream;
 use std::sync::{Arc, Mutex};
 
 const REPO: &str = "r1";
