@@ -58,6 +58,15 @@ impl TerminalHub {
         })
         .ok();
         let mut state = self.state.lock().expect("terminal state poisoned");
+        // A pane nobody can see is not a terminal, so whatever was filling the
+        // panel gives way to the one about to open.
+        //
+        // Ahead of the announcement rather than after it, though both go out
+        // under this one lock. They are two frames, and a client renders between
+        // them: told about the pane while still zoomed past it, it spends that
+        // render with the new terminal hidden — and moves the keyboard onto the
+        // pane filling the panel instead of the one it just asked for.
+        clear_zoom_locked(&mut state);
         state.panes.push(PaneState {
             id: pane,
             title,
@@ -69,11 +78,6 @@ impl TerminalHub {
         if let Some(json) = json {
             broadcast_locked(&mut state.clients, TerminalFrame::Control(json));
         }
-        // A pane nobody can see is not a terminal. Whatever was filling the
-        // panel gives way to the one that just opened, under the same lock that
-        // added it so no client is told about the pane while still zoomed past
-        // it.
-        clear_zoom_locked(&mut state);
     }
 
     /// Append output to the pane's bounded scrollback, record the terminal state

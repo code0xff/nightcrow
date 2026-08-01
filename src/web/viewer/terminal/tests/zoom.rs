@@ -1,6 +1,6 @@
 //! Which pane fills the panel: the hub's answer, broadcast and replayed.
 
-use super::{attach, collect_created, next_matching, spawn_hub, zoomed_pane};
+use super::{attach, collect_created, created_pane, next_matching, spawn_hub, zoomed_pane};
 use crate::web::viewer::terminal::TerminalSession;
 use crate::web::viewer::terminal::frame::{ClientMessage, PaneSize};
 
@@ -91,9 +91,14 @@ fn zooming_a_pane_that_does_not_exist_is_ignored() {
 }
 
 #[test]
-fn opening_a_pane_ends_the_zoom() {
+fn opening_a_pane_ends_the_zoom_before_announcing_it() {
     // Otherwise the terminal somebody just asked for opens behind a pane filling
     // the panel, and nothing on screen says it is there.
+    //
+    // The order is the contract, not merely that both frames arrive: a client
+    // renders between the two, and one told about the pane while still zoomed
+    // past it hides the new terminal for that render — and points the keyboard
+    // at the pane filling the panel rather than the one it just opened.
     let dir = tempfile::TempDir::new().unwrap();
     let hub = spawn_hub(&dir.path().to_string_lossy(), Vec::new(), Vec::new());
     let session = attach(&hub);
@@ -104,10 +109,14 @@ fn opening_a_pane_ends_the_zoom() {
 
     session.dispatch(ClientMessage::Create { rows: 24, cols: 80 });
 
+    let first = next_matching(&session, |f| {
+        zoomed_pane(f).is_some() || created_pane(f).is_some()
+    })
+    .expect("neither the un-zoom nor the new pane arrived");
     assert_eq!(
-        next_zoom(&session),
+        zoomed_pane(&first),
         Some(None),
-        "opening a pane must end the zoom that would hide it"
+        "the zoom must end before the pane that ends it is announced"
     );
     hub.stop();
 }
