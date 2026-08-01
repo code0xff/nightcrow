@@ -33,11 +33,19 @@ pub(in crate::web::viewer::server) fn with_repo(
     }
 }
 
-/// Variant of [`with_repo`] for a path inside a historical git object.
+/// Serve a route whose `path` is handed to *git*, not opened.
 ///
-/// A deleted commit path cannot be resolved in the current worktree, so this
-/// validates its syntax without statting it.
-pub(in crate::web::viewer::server) fn with_repo_commit_path(
+/// Validated as a pathspec — traversal, `.git`, NUL — and no further. The
+/// stricter [`with_repo`] adds refusing symlinks and requiring the path to
+/// exist, which are what protect a file this process is about to open; git
+/// reads a symlink as a blob holding the target's name, never the target's
+/// contents, and a path that is gone is exactly what a deletion diff is about.
+///
+/// Named for what the path is *for* rather than where it came from. A commit's
+/// file and a deleted worktree file need the same rule for the same reason —
+/// neither is on disk to be resolved — and calling it "commit" sent the second
+/// one to the gate that turned it into a 400.
+pub(in crate::web::viewer::server) fn with_repo_git_path(
     head: &crate::web::common::http::RequestHead,
     state: &ViewerState,
     body: impl FnOnce(&RepoEntry, &str) -> Result<Vec<u8>>,

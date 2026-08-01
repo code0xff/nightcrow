@@ -1,7 +1,7 @@
 use super::ViewerState;
 use super::handlers::{
     encode, open_repo, optional_count, optional_oid, required_oid, required_path, with_repo,
-    with_repo_commit_path,
+    with_repo_git_path,
 };
 use super::http_util::{json_error, json_response};
 use super::mutations::redact;
@@ -195,7 +195,7 @@ pub(super) fn route(head: &RequestHead, state: &ViewerState) -> Vec<u8> {
                 &[],
             ))
         }),
-        "/api/commit/file-diff" => with_repo_commit_path(head, state, |entry, path| {
+        "/api/commit/file-diff" => with_repo_git_path(head, state, |entry, path| {
             let oid = required_oid(head)?;
             let repo = open_repo(&entry.path)?;
             let hunks = diff::load_commit_file_diff(&repo, oid, path)?;
@@ -205,7 +205,7 @@ pub(super) fn route(head: &RequestHead, state: &ViewerState) -> Vec<u8> {
                 &[],
             ))
         }),
-        "/api/commit/file" => with_repo_commit_path(head, state, |entry, path| {
+        "/api/commit/file" => with_repo_git_path(head, state, |entry, path| {
             let oid = required_oid(head)?;
             let repo = open_repo(&entry.path)?;
             let content = diff::load_commit_file(&repo, oid, path)?;
