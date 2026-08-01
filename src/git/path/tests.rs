@@ -223,3 +223,44 @@ fn validate_commit_path_keeps_the_worktree_safety_rules() {
         assert!(validate_commit_path(path).is_err(), "{path:?} was accepted");
     }
 }
+
+/// Windows reads a component without its trailing dots and spaces, so a name
+/// Rust parsed as ordinary can still be `..`.
+#[test]
+fn validate_commit_path_rejects_traversal_spelled_with_padding() {
+    for attack in [".. /etc/passwd", "sub/.. /..", ".. ", "..."] {
+        assert!(
+            validate_commit_path(attack).is_err(),
+            "accepted a traversal: {attack:?}"
+        );
+    }
+}
+
+/// `.git` has more than one spelling that opens it.
+#[test]
+fn validate_commit_path_rejects_every_spelling_of_the_git_dir() {
+    for attack in [
+        ".git/config",
+        "GIT~1/config",
+        "git~1/config",
+        ".GIT./config",
+    ] {
+        assert!(
+            validate_commit_path(attack).is_err(),
+            "accepted the git directory: {attack:?}"
+        );
+    }
+}
+
+#[test]
+fn validate_commit_path_still_accepts_an_ordinary_name() {
+    for ok in [
+        "src/main.rs",
+        "a.b.c",
+        "..hidden",
+        "git~10/x",
+        "my.git.notes",
+    ] {
+        assert!(validate_commit_path(ok).is_ok(), "refused: {ok:?}");
+    }
+}

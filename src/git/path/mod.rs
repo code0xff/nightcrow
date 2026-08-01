@@ -17,20 +17,41 @@ const GIT_DIR: &str = ".git";
 /// same way (`core.protectNTFS`).
 const NAME_PADDING: [char; 2] = ['.', ' '];
 
+/// 8.3 short name NTFS generates for `.git`. It opens the same directory, so a
+/// rule that only knows the long spelling is one `dir /x` away from a bypass —
+/// git blocks this exact name for the same reason (`is_ntfs_dotgit`).
+const GIT_SHORT_DIR: &str = "git~1";
+
 /// True when `name` refers to the git directory on *any* filesystem this could
-/// run on: case-insensitively (macOS, Windows) and ignoring the trailing dots
-/// and spaces that NTFS discards.
+/// run on: case-insensitively (macOS, Windows), ignoring the trailing dots and
+/// spaces that NTFS discards, and including the 8.3 short name.
 ///
 /// Every place that decides whether a name is git's own directory must use this
 /// — a second, looser spelling of the rule is how a bypass gets in.
 pub fn is_git_dir_name(name: &str) -> bool {
-    name.trim_end_matches(NAME_PADDING)
-        .eq_ignore_ascii_case(GIT_DIR)
+    let name = name.trim_end_matches(NAME_PADDING);
+    name.eq_ignore_ascii_case(GIT_DIR) || name.eq_ignore_ascii_case(GIT_SHORT_DIR)
 }
 
 fn is_git_dir(part: &std::ffi::OsStr) -> bool {
     // A non-UTF-8 name cannot equal the ASCII `.git` under any of these rules.
     part.to_str().is_some_and(is_git_dir_name)
+}
+
+/// True when the filesystem would read `part` as `.` or `..` even though Rust
+/// parsed it as an ordinary name.
+///
+/// Windows drops trailing dots and spaces from every component, so `.. ` names
+/// the parent directory and `..` reaches it — but `Path::components` sees one
+/// `Normal(".. ")` and the `..` arm below never runs. The escape this whole
+/// module exists to stop would then be spelled with one extra space.
+///
+/// It costs a name like `...`, legal on Unix and unnameable on Windows anyway.
+fn is_traversal_after_trimming(part: &std::ffi::OsStr) -> bool {
+    part.to_str().is_some_and(|name| {
+        let trimmed = name.trim_end_matches(NAME_PADDING);
+        trimmed.is_empty() || trimmed == "." || trimmed == ".."
+    })
 }
 
 /// Validate a path used only to address an object *inside a git commit*.
@@ -49,10 +70,13 @@ pub fn validate_commit_path(relative: &str) -> Result<()> {
 
     for component in Path::new(relative).components() {
         match component {
-            Component::Normal(part) if !is_git_dir(part) => {}
-            Component::Normal(_) => {
+            Component::Normal(part) if is_git_dir(part) => {
                 return Err(anyhow!("path enters the git directory: {relative}"));
             }
+            Component::Normal(part) if is_traversal_after_trimming(part) => {
+                return Err(anyhow!("path is not a plain relative path: {relative}"));
+            }
+            Component::Normal(_) => {}
             // `..`/`.`/absolute paths must not be accepted as git pathspecs.
             _ => return Err(anyhow!("path is not a plain relative path: {relative}")),
         }
