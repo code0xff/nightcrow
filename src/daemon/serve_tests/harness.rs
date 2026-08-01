@@ -1,9 +1,7 @@
-use crate::backend::PaneId;
 use crate::daemon::frame::{Frame, FrameKind, read_frame, write_frame};
-use crate::daemon::protocol::{ClientMessage, ServerMessage, TerminalOutput, version};
+use crate::daemon::protocol::{ClientMessage, ServerMessage, version};
 use crate::daemon::socket::DaemonSocket;
 use crate::daemon::transport::UnixStream;
-use crate::session::terminal::frame::ServerMessage as HubServerMessage;
 use std::io::Write;
 
 /// A running daemon. Held by the test so its socket stays bound and its
@@ -45,9 +43,9 @@ pub(super) fn daemon(dir: &tempfile::TempDir, repos: &[String]) -> TestDaemon {
 }
 
 /// How long a helper waits on the socket for the frame it is after.
-const READ_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
+pub(super) const READ_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
 /// Longer, because this one waits on a shell to start and say something.
-const OUTPUT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
+pub(super) const OUTPUT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
 
 fn decodes_to_repos(frame: &Frame) -> bool {
     matches!(
@@ -56,7 +54,7 @@ fn decodes_to_repos(frame: &Frame) -> bool {
     )
 }
 
-fn decodes_to_terminal(frame: &Frame) -> bool {
+pub(super) fn decodes_to_terminal(frame: &Frame) -> bool {
     matches!(
         serde_json::from_slice(&frame.payload),
         Ok(ServerMessage::Terminal { .. })
@@ -107,7 +105,7 @@ impl Client {
 
     /// The first frame `wanted` accepts, keeping everything ahead of it in
     /// arrival order for whoever asks next.
-    fn find(
+    pub(super) fn find(
         &mut self,
         timeout: std::time::Duration,
         wanted: impl Fn(&Frame) -> bool,
@@ -162,45 +160,6 @@ impl Client {
         panic!("no hello arrived among the session traffic");
     }
 
-    /// The next pane the daemon reports, and who it says asked for it.
-    pub(super) fn next_created(&mut self) -> (PaneId, Option<u64>) {
-        for _ in 0..64 {
-            if let (
-                _,
-                HubServerMessage::Created {
-                    pane,
-                    client: requester,
-                    ..
-                },
-            ) = self.next_terminal_event()
-            {
-                return (pane, requester);
-            }
-        }
-        panic!("no pane was created");
-    }
-
-    /// The next terminal event for any repository, stepping over the tab list.
-    pub(super) fn next_terminal_event(&mut self) -> (String, HubServerMessage) {
-        let frame = self
-            .find(READ_TIMEOUT, |frame| {
-                frame.kind == FrameKind::Control && decodes_to_terminal(frame)
-            })
-            .expect("no terminal event arrived");
-        match serde_json::from_slice(&frame.payload) {
-            Ok(ServerMessage::Terminal { repo, event }) => (repo, event),
-            other => panic!("expected a terminal event, got {other:?}"),
-        }
-    }
-
-    /// The next chunk of pane output.
-    pub(super) fn next_output(&mut self) -> TerminalOutput {
-        let frame = self
-            .find(OUTPUT_TIMEOUT, |frame| frame.kind == FrameKind::Terminal)
-            .expect("no pane output arrived");
-        TerminalOutput::decode(&frame.payload).expect("a well-formed output frame")
-    }
-
     /// The catalog ids of the open repositories, asked for rather than waited
     /// for: the set the daemon volunteers on attach may already have been read
     /// past by a test that was after something else.
@@ -220,15 +179,18 @@ impl Client {
         }
     }
 
-    /// Wait for the session to advertise `want` as the project in front.
+    /// Wait until the session advertises `want` as the project in front.
     ///
     /// Not the *next* set: the watcher tells clients on a tick, and a close is
     /// two steps — the project leaves the catalog, then its successor is
     /// recorded. A tick landing between them advertises the fallback, which is
-    /// correct of that instant and not the answer. Waiting for the settled one
-    /// is what the client does; asserting the first snapshot would fail on
-    /// timing rather than on behaviour.
-    pub(super) fn wait_for_active(&mut self, want: Option<&str>) {
+    /// true of that instant and not the answer, so asserting the first snapshot
+    /// would fail on timing rather than on behaviour.
+    ///
+    /// Proves `want` is reached, not that nothing follows it. Enough for a
+    /// close, where the transient is exactly what is being tolerated and the
+    /// watcher speaks only on change — but do not read it as "and stayed".
+    pub(super) fn wait_until_active(&mut self, want: Option<&str>) {
         let deadline = std::time::Instant::now() + READ_TIMEOUT;
         let mut last = None;
         while std::time::Instant::now() < deadline {
