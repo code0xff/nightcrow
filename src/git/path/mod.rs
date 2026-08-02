@@ -47,10 +47,15 @@ const HFS_IGNORABLE: [char; 16] = [
 /// cannot slip past `..` either — on HFS+ a `.` with an ignorable between the
 /// dots is still the parent directory.
 fn effective_name(name: &str) -> String {
-    name.split(':')
-        .next()
-        .unwrap_or_default()
-        .chars()
+    // Only when something precedes it: a stream suffix hangs off a name, so a
+    // leading `:` is not one. Cutting there unconditionally left nothing to
+    // judge, and `:f.rs` — an ordinary file on Unix, unnameable on Windows —
+    // came back as a traversal.
+    let base = match name.split(':').next() {
+        Some(before) if !before.is_empty() => before,
+        _ => name,
+    };
+    base.chars()
         .filter(|c| !HFS_IGNORABLE.contains(c))
         .collect::<String>()
         .trim_end_matches(NAME_PADDING)

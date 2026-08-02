@@ -291,7 +291,16 @@ fn validate_commit_path_judges_the_name_the_filesystem_opens() {
 /// The rewrites must not swallow names that mean themselves.
 #[test]
 fn validate_commit_path_keeps_names_that_only_look_like_the_rules() {
-    for ok in ["a:b.rs", "src/x:y", "gitignore~1", "..hidden/a\u{200c}b.rs"] {
+    // `:f.rs` is the one that has to keep working: a stream suffix hangs off a
+    // name, so a leading colon is not one, and git addresses the file fine.
+    for ok in [
+        "a:b.rs",
+        "src/x:y",
+        ":f.rs",
+        "src/:odd",
+        "gitignore~1",
+        "..hidden/a\u{200c}b.rs",
+    ] {
         assert!(validate_commit_path(ok).is_ok(), "refused: {ok:?}");
     }
 }
