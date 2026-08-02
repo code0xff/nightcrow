@@ -72,3 +72,40 @@ fn a_conflict_without_markers_names_itself() {
     );
     drop(dir);
 }
+
+/// A path both sides created has no common version, and must not be described
+/// as though it had one.
+///
+/// Binary, because that is what reaches the summary: a text add/add gets
+/// markers written into it and diffs like anything else. git keeps ours byte
+/// for byte here, so the summary is the only thing that says what happened.
+#[test]
+fn a_path_both_sides_added_is_not_called_modified() {
+    let (dir, path) = make_repo();
+    let file = Path::new(&path).join("a.bin");
+    std::fs::write(Path::new(&path).join("seed.txt"), "seed\n").unwrap();
+    run_git(&path, &["add", "."]);
+    run_git(&path, &["commit", "-m", "seed"]);
+    run_git(&path, &["checkout", "-b", "other"]);
+    std::fs::write(&file, [0u8, 159, 146, 150]).unwrap();
+    run_git(&path, &["add", "-A"]);
+    run_git(&path, &["commit", "-m", "they add it"]);
+    run_git(&path, &["checkout", "-"]);
+    std::fs::write(&file, [0u8, 1, 2, 3]).unwrap();
+    run_git(&path, &["add", "-A"]);
+    run_git(&path, &["commit", "-m", "we add it"]);
+    run_git_expecting_conflict(&path, &["merge", "other"]);
+
+    let hunks = load_file_diff(&open_repo(&path), "a.bin").unwrap();
+    let text = hunks
+        .iter()
+        .flat_map(|hunk| hunk.lines.iter())
+        .map(|line| line.content.as_str())
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert!(
+        text.contains("both added"),
+        "a path neither side had before was described as: {text:?}"
+    );
+    drop(dir);
+}

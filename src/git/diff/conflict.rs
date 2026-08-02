@@ -31,7 +31,11 @@ fn describe(repo: &Repository, path: &str) -> Option<&'static str> {
             entry.our.is_some(),
             entry.their.is_some(),
         ) {
-            (_, true, true) => "both modified",
+            (true, true, true) => "both modified",
+            // No ancestor means neither side is modifying anything — the path
+            // is new to both. Folding this into "both modified" told the reader
+            // a common version exists for a file that never had one.
+            (false, true, true) => "both added",
             (true, true, false) => "deleted by them",
             (true, false, true) => "deleted by us",
             (false, true, false) => "added by us",
