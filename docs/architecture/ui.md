@@ -39,6 +39,13 @@
   `Ctrl+T/W/L/O/P/Q` 등은 control byte로 PTY에 간다(리더 `Ctrl+F`만 arm하고 통과하지 않는다). bare
   F키는 앱이 가로채므로 pane 안 프로그램(htop, mc 등)의 F키 메뉴는 동작하지 않는다 — 수정자를 붙인
   `Ctrl+F1`, `Shift+F5` 등은 통과한다.
+- **Paste**: `Event::Paste`는 `dispatch_paste`로 가고, terminal focus면 ESC·NUL을 걷어낸 뒤 pane
+  프로그램이 DECSET 2004를 켰을 때만 `ESC[200~ … ESC[201~`으로 감싼다(`input::paste`).
+  **Windows에는 paste input record가 없어** 문자 단위 key burst로 들어오므로 5 ms 간극까지 이어
+  훑어(최대 8192건 / 250 ms) synthetic `Event::Paste`로 바꾼다(`input::burst`). 콘솔이 붙여넣기를
+  점진적으로 넣기 때문에 zero-wait poll은 단어 중간에서 끊긴다. 판정은
+  좁다 — 수정자 없는 문자/Enter press만이고 Enter+다른 문자이거나 문자 16개 초과일 때만 paste.
+  타이핑을 삼키는 오탐이 더 비싸기 때문이고, 어긋나면 순서 그대로 평소 dispatch로 되돌린다.
 - overlay(repo input/search)가 활성이면 leader dispatch가 금지되고 overlay가 키를 소유한다. armed
   중 overlay가 열리는 경로면 prefix를 취소한다. repo 다이얼로그는 `Workspace` 소유라
   `main::dispatch_key`가 per-project 핸들러보다 먼저 처리한다 — 프로젝트가 없을 때도 열려야 하기

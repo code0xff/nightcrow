@@ -49,6 +49,14 @@ pub(crate) fn run_daemon(
         "logging initialized"
     );
 
+    // Here rather than in the TUI: this process spawns the panes, `attach` only
+    // forwards keystrokes over the socket. Must precede the first pane, which
+    // `ViewerServer::start_from_config` below can open. A failure only degrades
+    // Ctrl-C inside panes, so it must not stop the session from starting.
+    if let Err(err) = crate::platform::console::inherit_ctrl_c_as_an_event() {
+        tracing::warn!(error = %err, "Ctrl-C in panes will not interrupt running programs");
+    }
+
     let config_path = crate::config::config_file_path()?;
     if let Some(password) = crate::config::ensure_web_viewer_password(&mut cfg, &config_path)? {
         eprintln!(

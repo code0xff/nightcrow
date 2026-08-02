@@ -6,6 +6,7 @@ mod mouse_clicks;
 mod mouse_empty;
 mod mouse_release;
 mod paste;
+mod paste_burst;
 mod prefix;
 mod prefix_digits;
 mod reload;

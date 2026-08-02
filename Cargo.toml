@@ -83,4 +83,6 @@ uds_windows = "1"
 ctrlc = "3"
 # `GetLocalTime` for the wall clock. Already in the lockfile transitively;
 # adding it directly here so the feature gate is explicit.
-windows-sys = { version = "0.61", features = ["Win32_System_Time", "Win32_Storage_FileSystem", "Win32_Foundation"] }
+# `SetConsoleCtrlHandler` for `Win32_System_Console`: clearing the inherited
+# ignore-Ctrl-C flag so panes get an interrupt, not just the 0x03 byte.
+windows-sys = { version = "0.61", features = ["Win32_System_Time", "Win32_Storage_FileSystem", "Win32_Foundation", "Win32_System_Console"] }
