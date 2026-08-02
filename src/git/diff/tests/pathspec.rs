@@ -68,6 +68,13 @@ fn a_directory_is_not_a_file_and_answers_with_nothing() {
     run_git(&path, &["add", "-A"]);
     run_git(&path, &["commit", "-m", "change both"]);
 
+    // And again in the working tree, so both loaders are covered: the status
+    // pane reads `load_file_diff` and the log drill-down `load_commit_file_diff`,
+    // and each narrows a diff of its own.
+    for name in ["a.rs", "b.rs"] {
+        std::fs::write(Path::new(&path).join("src").join(name), "fn x() { z(); }\n").unwrap();
+    }
+
     let repo = open_repo(&path);
     let oid = load_commit_log(&repo, 1).unwrap()[0].oid;
     assert!(
@@ -75,12 +82,17 @@ fn a_directory_is_not_a_file_and_answers_with_nothing() {
             .unwrap()
             .is_empty()
     );
+    assert!(!load_file_diff(&repo, "src/a.rs").unwrap().is_empty());
     for directory in ["src", "src/"] {
         assert!(
             load_commit_file_diff(&repo, oid, directory)
                 .unwrap()
                 .is_empty(),
-            "a directory answered as if it were a file: {directory}"
+            "a commit directory answered as if it were a file: {directory}"
+        );
+        assert!(
+            load_file_diff(&repo, directory).unwrap().is_empty(),
+            "a worktree directory answered as if it were a file: {directory}"
         );
     }
     drop(dir);
@@ -100,9 +112,6 @@ fn a_renamed_file_answers_to_both_of_its_names() {
     std::fs::write(Path::new(&path).join("before.rs"), "fn x() {}\n").unwrap();
     run_git(&path, &["add", "."]);
     run_git(&path, &["commit", "-m", "init"]);
-    // A pure move, so git records one rename delta. Editing the file too would
-    // leave a delete plus an add, whose delta still carries `before.rs` as its
-    // own path — and the test would pass without matching old names at all.
     run_git(&path, &["mv", "before.rs", "after.rs"]);
     run_git(&path, &["add", "-A"]);
     run_git(&path, &["commit", "-m", "rename"]);

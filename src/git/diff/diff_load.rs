@@ -121,8 +121,6 @@ fn diff_options(pathspec: Option<&str>) -> DiffOptions {
     opts
 }
 
-/// Shared hunk/line accumulation logic. `on_file` returns `Some(hunk)` to prepend a
-/// synthetic header entry per file (used by commit diff), or `None` to skip (status diff).
 /// True when `delta` is about `wanted`, under either of the names it carries.
 ///
 /// The two sides differ only where git paired a rename, and it pairs one only
@@ -138,11 +136,16 @@ fn delta_is_about(delta: &DiffDelta<'_>, wanted: &str) -> bool {
         .any(|path| path == std::path::Path::new(wanted))
 }
 
-/// Shared accumulation. `only` narrows the result to one file: git's pathspec
-/// still matches a directory as a prefix of everything beneath it, so asking
-/// for `src` answered with every changed file under `src` labelled as `src`.
-/// Turning that off is not an option — it is how the pathspec addresses a file
-/// at all — so the deltas it over-collects are dropped here.
+/// Shared hunk/line accumulation.
+///
+/// `on_file` returns `Some(hunk)` to prepend a synthetic header entry per file
+/// (used by commit diff), or `None` to skip (status diff).
+///
+/// `only` narrows the result to one file: git's pathspec still matches a
+/// directory as a prefix of everything beneath it, so asking for `src` answered
+/// with every changed file under `src` labelled as `src`. Turning that off is
+/// not an option — it is how the pathspec addresses a file at all — so the
+/// deltas it over-collects are dropped here.
 fn collect_hunks(
     diff: &Diff<'_>,
     mut on_file: impl FnMut(DiffDelta<'_>) -> Option<DiffHunk>,
