@@ -154,6 +154,42 @@ fn diff_returns_hunks_for_a_changed_file() {
     drop(dir);
 }
 
+/// The route answers about the file it was asked for, not the directory the
+/// name happens to be a prefix of.
+///
+/// git matches a directory pathspec against everything beneath it, so this once
+/// answered with every changed file under `src` — hunks from several files,
+/// under the one name the caller supplied. Pinned at the route because that is
+/// where the name in the answer is set.
+#[test]
+fn diff_of_a_directory_is_not_the_files_under_it() {
+    let (dir, server, token, id) = seeded_server();
+    let repo_path = {
+        let entry = server.state.session.catalog().get(&id).unwrap();
+        entry.path.clone()
+    };
+    std::fs::write(
+        std::path::Path::new(&repo_path).join("src/main.rs"),
+        "fn main() { println!(\"hi\"); }\n",
+    )
+    .unwrap();
+
+    let response = get(
+        server.addr(),
+        &format!("/api/diff?repo={id}&path=src"),
+        Some(&token),
+    );
+    let value: serde_json::Value = serde_json::from_str(body_of(&response)).unwrap();
+
+    assert!(response.starts_with("HTTP/1.1 200"), "got: {response}");
+    assert_eq!(value["path"], "src");
+    assert!(
+        value["hunks"].as_array().unwrap().is_empty(),
+        "a directory answered with the files under it: {value}"
+    );
+    drop(dir);
+}
+
 #[test]
 fn commit_file_serves_the_contents_as_of_that_commit() {
     // Not the working tree's: the point of reading a file from the log is to
