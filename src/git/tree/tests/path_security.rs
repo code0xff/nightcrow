@@ -126,3 +126,33 @@ fn read_children_reports_symlinked_dir_as_non_dir() {
     assert!(real.is_dir);
     drop(dir);
 }
+
+/// What the listing offers must be what the gate opens.
+///
+/// A `...` directory is a name Windows drops the padding from, so the path
+/// validator refuses it — and the tree used to list it anyway. Clicking the row
+/// answered "not a plain relative path", and a search for anything beneath it
+/// came back empty with no sign the subtree existed.
+///
+/// Unix-only because Windows cannot create the directory this is about.
+#[test]
+#[cfg(unix)]
+fn a_name_the_path_gate_refuses_is_not_listed_or_searched() {
+    let (dir, path) = make_repo();
+    let root = StdPath::new(&path);
+    std::fs::create_dir(root.join("...")).unwrap();
+    std::fs::write(root.join("...").join("deep.rs"), "fn deep() {}\n").unwrap();
+    std::fs::create_dir(root.join("kept")).unwrap();
+    std::fs::write(root.join("kept").join("deep.rs"), "fn deep() {}\n").unwrap();
+    run_git(&path, &["add", "-A"]);
+    run_git(&path, &["commit", "-m", "add both"]);
+
+    let repo = open_repo(&path);
+    let entries = read_children(&repo, root, "", false).unwrap();
+    assert!(!names(&entries).contains(&"..."), "{:?}", names(&entries));
+    assert!(names(&entries).contains(&"kept"));
+
+    let (found, _) = search_tree(&repo, root, "deep", 64, 10_000, 100).unwrap();
+    assert_eq!(paths(&found), vec!["kept/deep.rs"]);
+    drop(dir);
+}

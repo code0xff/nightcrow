@@ -110,6 +110,16 @@ fn is_traversal_after_trimming(part: &std::ffi::OsStr) -> bool {
     })
 }
 
+/// True when no path may contain `name` as a component.
+///
+/// The listing surfaces share this with the validator so that what is offered
+/// is what can be opened: the file tree used to show a `...` directory that the
+/// gate then refused, and search silently dropped everything under it.
+pub fn is_refused_component(name: &str) -> bool {
+    let part = std::ffi::OsStr::new(name);
+    is_git_dir_name(name) || is_traversal_after_trimming(part) || is_a_path_of_its_own(part)
+}
+
 /// Validate a path used only to address an object *inside a git commit*.
 ///
 /// Unlike [`resolve_in_workdir`], this deliberately does not stat the path:

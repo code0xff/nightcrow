@@ -58,11 +58,13 @@ pub fn read_children(
         let Ok(name) = entry.file_name().into_string() else {
             continue;
         };
-        // `.git` is repository metadata, not browsable project content. git
-        // does not list it in `.gitignore`, so it must be skipped explicitly.
-        // Shares the rule with the path validator: an exact `== ".git"` here
-        // would still list `.GIT` on a case-insensitive filesystem.
-        if crate::git::path::is_git_dir_name(&name) {
+        // Whatever the path gate will not accept has no row here: `.git` is
+        // repository metadata rather than browsable content, and the rest are
+        // names no request can carry. Shares the rule with the validator so a
+        // listed row can always be opened — an exact `== ".git"` here would
+        // still list `.GIT` on a case-insensitive filesystem, and listing a
+        // `...` directory left a row that answered "not a plain relative path".
+        if crate::git::path::is_refused_component(&name) {
             continue;
         }
         // `file_type()` does NOT follow symlinks, so a symlinked directory
