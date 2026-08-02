@@ -1,7 +1,7 @@
 //! What a merge conflict looks like through the diff loaders.
 
 use crate::git::diff::load_file_diff;
-use crate::test_util::{make_repo, open_repo, run_git, run_git_expecting_failure};
+use crate::test_util::{make_repo, open_repo, run_git, run_git_expecting_conflict};
 use std::path::Path;
 
 /// A conflicted file has the most to say and used to say nothing.
@@ -22,7 +22,7 @@ fn a_conflicted_file_shows_the_conflict() {
     run_git(&path, &["checkout", "-"]);
     std::fs::write(&file, "ours\n").unwrap();
     run_git(&path, &["commit", "-am", "ours"]);
-    run_git_expecting_failure(&path, &["merge", "other"]);
+    run_git_expecting_conflict(&path, &["merge", "other"]);
 
     let hunks = load_file_diff(&open_repo(&path), "c.txt").unwrap();
     let text: String = hunks
@@ -34,6 +34,41 @@ fn a_conflicted_file_shows_the_conflict() {
     assert!(
         text.contains("<<<<<<<") && text.contains("theirs"),
         "a conflicted file answered without its conflict: {text:?}"
+    );
+    drop(dir);
+}
+
+/// A conflict with nothing to diff still has something to say.
+///
+/// git keeps our version byte for byte in a modify/delete, so HEAD and the
+/// working tree agree and there is no text to show — the pane was blank for a
+/// row the status list shows as unmerged. What is worth reading there is the
+/// shape of the conflict, which the index still holds.
+#[test]
+fn a_conflict_without_markers_names_itself() {
+    let (dir, path) = make_repo();
+    let file = Path::new(&path).join("keep.txt");
+    std::fs::write(&file, "base\n").unwrap();
+    run_git(&path, &["add", "."]);
+    run_git(&path, &["commit", "-m", "base"]);
+    run_git(&path, &["checkout", "-b", "other"]);
+    std::fs::remove_file(&file).unwrap();
+    run_git(&path, &["commit", "-am", "they delete it"]);
+    run_git(&path, &["checkout", "-"]);
+    std::fs::write(&file, "ours\n").unwrap();
+    run_git(&path, &["commit", "-am", "we modify it"]);
+    run_git_expecting_conflict(&path, &["merge", "other"]);
+
+    let hunks = load_file_diff(&open_repo(&path), "keep.txt").unwrap();
+    let text = hunks
+        .iter()
+        .flat_map(|hunk| hunk.lines.iter())
+        .map(|line| line.content.as_str())
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert!(
+        text.contains("deleted by them"),
+        "a modify/delete conflict answered with nothing to read: {hunks:?}"
     );
     drop(dir);
 }

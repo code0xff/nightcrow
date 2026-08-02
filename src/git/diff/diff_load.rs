@@ -33,17 +33,25 @@ pub fn load_file_diff(repo: &Repository, file_path: &str) -> Result<Vec<DiffHunk
     // wants to read came back blank, indistinguishable from unchanged. Asking
     // the working tree directly skips the index and shows HEAD against what is
     // on disk, conflict markers and all, which is what the file now says.
-    if diff
+    let conflicted = diff
         .deltas()
-        .any(|delta| delta.status() == git2::Delta::Conflicted)
-    {
+        .any(|delta| delta.status() == git2::Delta::Conflicted);
+    if conflicted {
         let mut diff_opts = diff_options(Some(file_path));
         diff = repo
             .diff_tree_to_workdir(head_tree.as_ref(), Some(&mut diff_opts))
             .context("failed to diff a conflicted path against the working tree")?;
     }
 
-    collect_diff_hunks(&diff, file_path)
+    let mut hunks = collect_diff_hunks(&diff, file_path)?;
+    // Markers are not the only way to be conflicted. A modify/delete keeps our
+    // version byte for byte, and so does a binary clash, so HEAD and the
+    // working tree agree and this is still empty — for a row the status list
+    // shows as unmerged. Say what the conflict is rather than nothing.
+    if conflicted && hunks.is_empty() {
+        hunks.extend(super::conflict::summary_hunk(repo, file_path));
+    }
+    Ok(hunks)
 }
 
 fn commit_diff<'repo>(

@@ -40,18 +40,26 @@ pub fn run_git(repo_path: &str, args: &[&str]) {
     );
 }
 
-/// Run git where a non-zero exit is part of the case under test — a merge that
-/// conflicts, for one. [`run_git`] asserts success and cannot express it.
-pub fn run_git_expecting_failure(repo_path: &str, args: &[&str]) {
+/// Run git where the command is meant to end in conflict — a merge that cannot
+/// be resolved. [`run_git`] asserts success and cannot express it.
+///
+/// Exit code 1 exactly, not merely non-zero: git answers 1 for "this did not
+/// resolve" and 128 for "I could not run this at all". Accepting both would let
+/// a typo'd branch name or an unsupported flag leave the repository clean while
+/// the setup looks like it worked, and the test would then pass while checking
+/// nothing.
+pub fn run_git_expecting_conflict(repo_path: &str, args: &[&str]) {
     let mut command = Command::new("git");
     for key in LEAKED_GIT_ENV {
         command.env_remove(key);
     }
     let output = command.args(args).current_dir(repo_path).output().unwrap();
-    assert!(
-        !output.status.success(),
-        "git {} was expected to fail but did not",
-        args.join(" ")
+    assert_eq!(
+        output.status.code(),
+        Some(1),
+        "git {} did not end in conflict: {}",
+        args.join(" "),
+        String::from_utf8_lossy(&output.stderr)
     );
 }
 

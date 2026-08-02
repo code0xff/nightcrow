@@ -127,6 +127,32 @@ fn a_file_replaced_by_a_directory_of_its_name_still_answers() {
     drop(dir);
 }
 
+/// And the mirror: a directory replaced by a file of its name.
+///
+/// `bar/x` moved to `bar` pairs the same way under the pathspec `bar`, with the
+/// *new* side the only one equal to the request. Both arms of the match are
+/// load-bearing, each for one of these two shapes.
+#[test]
+fn a_directory_replaced_by_a_file_of_its_name_still_answers() {
+    let (dir, path) = make_repo();
+    std::fs::create_dir(Path::new(&path).join("bar")).unwrap();
+    std::fs::write(Path::new(&path).join("bar/x"), "hello\n").unwrap();
+    run_git(&path, &["add", "."]);
+    run_git(&path, &["commit", "-m", "init"]);
+    std::fs::remove_dir_all(Path::new(&path).join("bar")).unwrap();
+    std::fs::write(Path::new(&path).join("bar"), "hello\n").unwrap();
+    run_git(&path, &["add", "-A"]);
+    run_git(&path, &["commit", "-m", "bar becomes a file"]);
+
+    let repo = open_repo(&path);
+    let oid = load_commit_log(&repo, 1).unwrap()[0].oid;
+    assert!(
+        !load_commit_file_diff(&repo, oid, "bar").unwrap().is_empty(),
+        "the file the commit moved into place answered with nothing"
+    );
+    drop(dir);
+}
+
 /// A moved file answers under either of its names.
 ///
 /// The contract, not the mechanism: a commit's file list carries the old name

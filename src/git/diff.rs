@@ -1,4 +1,5 @@
 mod commit_log;
+mod conflict;
 mod diff_load;
 mod file_load;
 mod refs;
