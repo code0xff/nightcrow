@@ -58,12 +58,16 @@ pub fn read_children(
         let Ok(name) = entry.file_name().into_string() else {
             continue;
         };
-        // Whatever the path gate will not accept has no row here: `.git` is
-        // repository metadata rather than browsable content, and the rest are
-        // names no request can carry. Shares the rule with the validator so a
-        // listed row can always be opened — an exact `== ".git"` here would
-        // still list `.GIT` on a case-insensitive filesystem, and listing a
-        // `...` directory left a row that answered "not a plain relative path".
+        // No row for a name the path gate will not accept: `.git` is repository
+        // metadata rather than browsable content, and the rest are names no
+        // request can carry. Sharing the rule is the point — an exact
+        // `== ".git"` here would still list `.GIT` on a case-insensitive
+        // filesystem, and listing a `...` directory left a row that answered
+        // "not a plain relative path" when clicked.
+        //
+        // Only names. A symlink still gets a row and refuses to open, because
+        // that is the open gate's own rule and nothing about how this name is
+        // spelled.
         if crate::git::path::is_refused_component(&name) {
             continue;
         }

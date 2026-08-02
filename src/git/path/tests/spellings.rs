@@ -82,7 +82,9 @@ fn validate_commit_path_keeps_names_that_only_look_like_the_rules() {
         // that name is a path with a prefix there, not a file — and this list
         // has to hold on all three platforms.
         "ab:c.rs",
-        "src/x:y",
+        // Not `src/x:y` either: a component is judged on its own, and on its
+        // own `x:y` is the same one-letter drive shape as `a:b.rs`.
+        "src/xy:z",
         ":f.rs",
         "src/:odd",
         "gitignore~1",

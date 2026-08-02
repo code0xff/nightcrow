@@ -82,15 +82,6 @@ fn is_git_dir(part: &std::ffi::OsStr) -> bool {
     part.to_str().is_some_and(is_git_dir_name)
 }
 
-/// True when the filesystem would read `part` as `.` or `..` even though Rust
-/// parsed it as an ordinary name.
-///
-/// `Path::components` judges the name as written, so `.. ` on Windows and
-/// `.<U+200C>.` on HFS+ both arrive here as one `Normal` and the `..` arm below
-/// never runs. The escape this module exists to stop would then be spelled with
-/// one extra character.
-///
-/// It costs a name like `...`, legal on Unix and unnameable on Windows anyway.
 /// True when `part` is more than the one ordinary name `Path::components` said
 /// it was, once parsed on its own.
 ///
@@ -107,6 +98,15 @@ fn is_a_path_of_its_own(part: &std::ffi::OsStr) -> bool {
     !matches!(components.next(), Some(Component::Normal(_))) || components.next().is_some()
 }
 
+/// True when the filesystem would read `part` as `.` or `..` even though Rust
+/// parsed it as an ordinary name.
+///
+/// `Path::components` judges the name as written, so `.. ` on Windows and
+/// `.<U+200C>.` on HFS+ both arrive here as one `Normal` and the `..` arm below
+/// never runs. The escape this module exists to stop would then be spelled with
+/// one extra character.
+///
+/// It costs a name like `...`, legal on Unix and unnameable on Windows anyway.
 fn is_traversal_after_trimming(part: &std::ffi::OsStr) -> bool {
     part.to_str().is_some_and(|name| {
         let name = effective_name(name);
@@ -116,9 +116,12 @@ fn is_traversal_after_trimming(part: &std::ffi::OsStr) -> bool {
 
 /// True when no path may contain `name` as a component.
 ///
-/// The listing surfaces share this with the validator so that what is offered
-/// is what can be opened: the file tree used to show a `...` directory that the
-/// gate then refused, and search silently dropped everything under it.
+/// The listing surfaces share this with the validator so that no row is offered
+/// under a name the gate will refuse: the file tree used to show a `...`
+/// directory that the gate then refused, and search silently dropped everything
+/// under it. Names only — whether the thing behind the name can be opened is
+/// [`resolve_in_workdir`]'s question, and it still refuses a symlink that is
+/// listed.
 pub fn is_refused_component(name: &str) -> bool {
     let part = std::ffi::OsStr::new(name);
     is_git_dir_name(name) || is_traversal_after_trimming(part) || is_a_path_of_its_own(part)
