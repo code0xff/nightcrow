@@ -6,15 +6,17 @@ use std::path::Path;
 
 /// A path is a path here, never a pattern.
 ///
-/// `diff_options` sets `disable_pathspec_match`, so the string names one file
-/// rather than being matched as a glob. That is what lets a route hand a
-/// caller's string straight to git and still answer about the file it was asked
-/// about: without the flag, `*.rs` returns every Rust file's changes under the
-/// name the caller supplied. Pinned here because it is one option away.
+/// A route hands a caller's string straight to git and must still answer about
+/// the file it was asked about, so `*.rs` names a file called `*.rs` and
+/// nothing else. Two things hold that now — `disable_pathspec_match` stops the
+/// glob from matching, and the narrowing in `collect_hunks` drops whatever a
+/// match would have collected — and this test passes with either one removed.
+/// It pins the contract, not either mechanism; the flag still earns its place
+/// by keeping the work undone rather than done and discarded.
 ///
 /// Git's own pathspec magic (`:(glob)`, `:(exclude)`, `:/`) is in the list for
 /// completeness only — libgit2 does not implement it, so those strings are just
-/// filenames nothing is called, with the flag or without it.
+/// filenames nothing is called, either way.
 #[test]
 fn a_pathspec_is_matched_literally_and_never_as_magic() {
     let (dir, path) = make_repo();
@@ -98,14 +100,41 @@ fn a_directory_is_not_a_file_and_answers_with_nothing() {
     drop(dir);
 }
 
+/// A file that became a directory still answers under its own name.
+///
+/// `foo` moved to `foo/x` is one delta, and git pairs it as a rename because
+/// the pathspec `foo` reaches both halves by prefix. Only the *old* side equals
+/// what was asked for, so narrowing on the new side alone answers nothing about
+/// a file the caller can plainly see in the commit's list.
+#[test]
+fn a_file_replaced_by_a_directory_of_its_name_still_answers() {
+    let (dir, path) = make_repo();
+    std::fs::write(Path::new(&path).join("foo"), "hello\n").unwrap();
+    run_git(&path, &["add", "."]);
+    run_git(&path, &["commit", "-m", "init"]);
+    std::fs::remove_file(Path::new(&path).join("foo")).unwrap();
+    std::fs::create_dir(Path::new(&path).join("foo")).unwrap();
+    std::fs::write(Path::new(&path).join("foo/x"), "hello\n").unwrap();
+    run_git(&path, &["add", "-A"]);
+    run_git(&path, &["commit", "-m", "foo becomes a directory"]);
+
+    let repo = open_repo(&path);
+    let oid = load_commit_log(&repo, 1).unwrap()[0].oid;
+    assert!(
+        !load_commit_file_diff(&repo, oid, "foo").unwrap().is_empty(),
+        "the file the commit moved away answered with nothing"
+    );
+    drop(dir);
+}
+
 /// A moved file answers under either of its names.
 ///
 /// The contract, not the mechanism: a commit's file list carries the old name
 /// beside the new, and narrowing the diff to the requested path must not make
-/// one of them answer with nothing. Today each name arrives as its own delta —
-/// git pairs a rename only when nothing narrowed the diff — so this passes
-/// whichever side the filter reads; it is here to keep it passing if that
-/// changes.
+/// one of them answer with nothing. Here the pathspec reaches one half only, so
+/// git leaves the halves unpaired and each carries its own name on both sides —
+/// which is why this passes whichever side the filter reads, and why the case
+/// above is the one that needs both.
 #[test]
 fn a_renamed_file_answers_to_both_of_its_names() {
     let (dir, path) = make_repo();

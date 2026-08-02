@@ -123,12 +123,13 @@ fn diff_options(pathspec: Option<&str>) -> DiffOptions {
 
 /// True when `delta` is about `wanted`, under either of the names it carries.
 ///
-/// The two sides differ only where git paired a rename, and it pairs one only
-/// when nothing narrowed the diff: with a pathspec, each half arrives as its
-/// own `Deleted` or `Added` delta holding that half's path on both sides. So
-/// the old side never decides the answer here — it is matched because the
-/// question is whether the delta concerns the path, and a delta that names it
-/// on either side does.
+/// The two sides differ only in a rename git paired, which it does when the
+/// pathspec reached both halves — otherwise each half arrives as its own
+/// `Deleted` or `Added` delta holding that half's path on both sides. Prefix
+/// matching is what reaches both, so this is not only the directory case: a
+/// file replaced by a directory of the same name (`foo` becoming `foo/x`)
+/// pairs under the pathspec `foo`, and there the old side is the only side
+/// that equals what was asked for.
 fn delta_is_about(delta: &DiffDelta<'_>, wanted: &str) -> bool {
     [delta.new_file().path(), delta.old_file().path()]
         .into_iter()
@@ -153,36 +154,32 @@ fn collect_hunks(
     only: Option<&str>,
 ) -> Result<Vec<DiffHunk>> {
     let hunks: RefCell<Vec<DiffHunk>> = RefCell::new(Vec::new());
-    // Tracks the current file's path between callbacks. libgit2 invokes
-    // file_cb once per delta, followed by hunk_cb/line_cb for that file —
-    // hunk_cb itself isn't given the delta, so we stash the path here.
-    let current_path: RefCell<Option<String>> = RefCell::new(None);
-    // Set by `file_cb` and read by the callbacks that follow it, which are told
-    // which file they belong to only by having come after it.
-    let skipping = RefCell::new(false);
+    // Every callback is handed the delta it belongs to, so each one answers the
+    // `only` question for itself. Deciding once in `file_cb` and remembering it
+    // would make the result depend on a callback order libgit2 is free to
+    // change, for nothing.
+    let wanted = |delta: &DiffDelta<'_>| only.is_none_or(|only| delta_is_about(delta, only));
 
     diff.foreach(
         &mut |delta, _| {
-            *skipping.borrow_mut() = only.is_some_and(|wanted| !delta_is_about(&delta, wanted));
-            if *skipping.borrow() {
+            if !wanted(&delta) {
                 return true;
             }
-            *current_path.borrow_mut() = path_from_delta(&delta);
             if let Some(h) = on_file(delta) {
                 hunks.borrow_mut().push(h);
             }
             true
         },
         Some(&mut |delta, _| {
-            if *skipping.borrow() {
+            if !wanted(&delta) {
                 return true;
             }
             let path = path_from_delta(&delta).unwrap_or_else(|| binary_fallback.to_string());
             hunks.borrow_mut().push(binary_diff_hunk(&path));
             true
         }),
-        Some(&mut |_, hunk| {
-            if *skipping.borrow() {
+        Some(&mut |delta, hunk| {
+            if !wanted(&delta) {
                 return true;
             }
             let header = std::str::from_utf8(hunk.header())
@@ -192,12 +189,12 @@ fn collect_hunks(
             hunks.borrow_mut().push(DiffHunk {
                 header,
                 lines: Vec::new(),
-                file_path: current_path.borrow().clone(),
+                file_path: path_from_delta(&delta),
             });
             true
         }),
-        Some(&mut |_, _, line| {
-            if *skipping.borrow() {
+        Some(&mut |delta, _, line| {
+            if !wanted(&delta) {
                 return true;
             }
             let content = std::str::from_utf8(line.content())
