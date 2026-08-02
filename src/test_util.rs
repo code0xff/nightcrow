@@ -40,6 +40,21 @@ pub fn run_git(repo_path: &str, args: &[&str]) {
     );
 }
 
+/// Run git where a non-zero exit is part of the case under test — a merge that
+/// conflicts, for one. [`run_git`] asserts success and cannot express it.
+pub fn run_git_expecting_failure(repo_path: &str, args: &[&str]) {
+    let mut command = Command::new("git");
+    for key in LEAKED_GIT_ENV {
+        command.env_remove(key);
+    }
+    let output = command.args(args).current_dir(repo_path).output().unwrap();
+    assert!(
+        !output.status.success(),
+        "git {} was expected to fail but did not",
+        args.join(" ")
+    );
+}
+
 pub fn make_repo() -> (TempDir, String) {
     let dir = TempDir::new().unwrap();
     let path = dir.path().to_string_lossy().to_string();

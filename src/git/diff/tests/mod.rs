@@ -1,4 +1,5 @@
 mod commit_log;
+mod conflict;
 mod diff_lineno;
 mod diff_load;
 mod pathspec;

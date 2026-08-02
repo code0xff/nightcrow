@@ -28,6 +28,21 @@ pub fn load_file_diff(repo: &Repository, file_path: &str) -> Result<Vec<DiffHunk
     diff.find_similar(None)
         .context("failed to detect renamed files")?;
 
+    // A conflicted path has no stage-0 index entry, and the index-aware diff
+    // answers with a delta that carries no hunks — so the file the user most
+    // wants to read came back blank, indistinguishable from unchanged. Asking
+    // the working tree directly skips the index and shows HEAD against what is
+    // on disk, conflict markers and all, which is what the file now says.
+    if diff
+        .deltas()
+        .any(|delta| delta.status() == git2::Delta::Conflicted)
+    {
+        let mut diff_opts = diff_options(Some(file_path));
+        diff = repo
+            .diff_tree_to_workdir(head_tree.as_ref(), Some(&mut diff_opts))
+            .context("failed to diff a conflicted path against the working tree")?;
+    }
+
     collect_diff_hunks(&diff, file_path)
 }
 
