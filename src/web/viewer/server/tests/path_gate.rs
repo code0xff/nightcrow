@@ -13,15 +13,18 @@ fn a_traversal_path_is_refused_by_every_route_that_takes_one() {
     let (dir, server, token, id) = seeded_server();
 
     for route in ["tree", "file", "diff"] {
-        // The last two are the same two attacks in the spellings a filesystem
-        // resolves for you: Windows drops a component's trailing spaces, and
-        // NTFS gives `.git` an 8.3 short name.
+        // The rest are those same two attacks in the spellings a filesystem
+        // resolves for you: Windows drops a component's trailing spaces, NTFS
+        // gives `.git` an 8.3 short name and reads `::$…` as a stream suffix,
+        // and HFS+ ignores the zero-width joiner outright.
         for attack in [
             "../../etc/passwd",
             ".git/config",
             "src/../.git/config",
             ".. /.. /etc/passwd",
             "GIT~1/config",
+            ".git::$INDEX_ALLOCATION/config",
+            ".gi\u{200c}t/config",
         ] {
             let encoded = attack.replace('/', "%2F");
             let response = get(

@@ -264,3 +264,34 @@ fn validate_commit_path_still_accepts_an_ordinary_name() {
         assert!(validate_commit_path(ok).is_ok(), "refused: {ok:?}");
     }
 }
+
+/// A filesystem can hand back a different file than the name asked for.
+///
+/// Each of these is a documented rewrite — an NTFS alternate-stream suffix, the
+/// code points HFS+ ignores, the trailing padding Windows drops — and each one
+/// spells `.git` or `..` in a way a literal comparison does not see.
+#[test]
+fn validate_commit_path_judges_the_name_the_filesystem_opens() {
+    for attack in [
+        ".git::$INDEX_ALLOCATION/config",
+        ".git:whatever/config",
+        "\u{200c}.git/config",
+        ".gi\u{200c}t/config",
+        ".git\u{feff}/config",
+        ".\u{200c}./etc/passwd",
+        "..\u{200d}/.. /passwd",
+    ] {
+        assert!(
+            validate_commit_path(attack).is_err(),
+            "accepted a rewritten name: {attack:?}"
+        );
+    }
+}
+
+/// The rewrites must not swallow names that mean themselves.
+#[test]
+fn validate_commit_path_keeps_names_that_only_look_like_the_rules() {
+    for ok in ["a:b.rs", "src/x:y", "gitignore~1", "..hidden/a\u{200c}b.rs"] {
+        assert!(validate_commit_path(ok).is_ok(), "refused: {ok:?}");
+    }
+}

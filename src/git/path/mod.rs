@@ -20,16 +20,51 @@ const NAME_PADDING: [char; 2] = ['.', ' '];
 /// 8.3 short name NTFS generates for `.git`. It opens the same directory, so a
 /// rule that only knows the long spelling is one `dir /x` away from a bypass —
 /// git blocks this exact name for the same reason (`is_ntfs_dotgit`).
+///
+/// Only `~1`, which is git's scope too: NTFS hands out `~1` first, and a
+/// repository's `.git` exists before any content that could have taken it.
 const GIT_SHORT_DIR: &str = "git~1";
 
+/// Code points HFS+ ignores inside a filename, so that `.gi<U+200C>t` opens
+/// `.git`. Apple's list (TN1150), and the one git carries for `core.protectHFS`.
+const HFS_IGNORABLE: [char; 16] = [
+    '\u{200c}', '\u{200d}', '\u{200e}', '\u{200f}', '\u{202a}', '\u{202b}', '\u{202c}', '\u{202d}',
+    '\u{202e}', '\u{206a}', '\u{206b}', '\u{206c}', '\u{206d}', '\u{206e}', '\u{206f}', '\u{feff}',
+];
+
+/// The name a filesystem will actually open, given the name that was asked for.
+///
+/// Three rewrites, each a documented way to name one file and be handed
+/// another, and each already defended by git (`core.protectNTFS`,
+/// `core.protectHFS`):
+///
+/// - everything from a `:` on is an NTFS alternate-stream suffix, and
+///   `.git::$INDEX_ALLOCATION` opens the directory `.git`
+/// - HFS+ drops the ignorable code points above, so `.gi<U+200C>t` is `.git`
+/// - Windows drops trailing dots and spaces, so `.git.` is `.git`
+///
+/// Applied to every component before *any* rule judges it, so a rewritten name
+/// cannot slip past `..` either — on HFS+ a `.` with an ignorable between the
+/// dots is still the parent directory.
+fn effective_name(name: &str) -> String {
+    name.split(':')
+        .next()
+        .unwrap_or_default()
+        .chars()
+        .filter(|c| !HFS_IGNORABLE.contains(c))
+        .collect::<String>()
+        .trim_end_matches(NAME_PADDING)
+        .to_string()
+}
+
 /// True when `name` refers to the git directory on *any* filesystem this could
-/// run on: case-insensitively (macOS, Windows), ignoring the trailing dots and
-/// spaces that NTFS discards, and including the 8.3 short name.
+/// run on: case-insensitively (macOS, Windows), under every rewrite
+/// [`effective_name`] undoes, and including the 8.3 short name.
 ///
 /// Every place that decides whether a name is git's own directory must use this
 /// — a second, looser spelling of the rule is how a bypass gets in.
 pub fn is_git_dir_name(name: &str) -> bool {
-    let name = name.trim_end_matches(NAME_PADDING);
+    let name = effective_name(name);
     name.eq_ignore_ascii_case(GIT_DIR) || name.eq_ignore_ascii_case(GIT_SHORT_DIR)
 }
 
@@ -41,16 +76,16 @@ fn is_git_dir(part: &std::ffi::OsStr) -> bool {
 /// True when the filesystem would read `part` as `.` or `..` even though Rust
 /// parsed it as an ordinary name.
 ///
-/// Windows drops trailing dots and spaces from every component, so `.. ` names
-/// the parent directory and `..` reaches it — but `Path::components` sees one
-/// `Normal(".. ")` and the `..` arm below never runs. The escape this whole
-/// module exists to stop would then be spelled with one extra space.
+/// `Path::components` judges the name as written, so `.. ` on Windows and
+/// `.<U+200C>.` on HFS+ both arrive here as one `Normal` and the `..` arm below
+/// never runs. The escape this module exists to stop would then be spelled with
+/// one extra character.
 ///
 /// It costs a name like `...`, legal on Unix and unnameable on Windows anyway.
 fn is_traversal_after_trimming(part: &std::ffi::OsStr) -> bool {
     part.to_str().is_some_and(|name| {
-        let trimmed = name.trim_end_matches(NAME_PADDING);
-        trimmed.is_empty() || trimmed == "." || trimmed == ".."
+        let name = effective_name(name);
+        name.is_empty() || name == "." || name == ".."
     })
 }
 
