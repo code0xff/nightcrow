@@ -128,27 +128,38 @@ pub(crate) fn main_loop(
         // OS-level wait when nothing is happening, so the higher cap doesn't
         // burn CPU at idle.
         if event::poll(Duration::from_millis(16))? {
-            match event::read()? {
-                // Ratatui's next draw will pick up the new size from
-                // `Frame::area()`. An explicit clear() here only adds a
-                // visible flash on resize without improving correctness.
-                Event::Resize(_, _) => {}
-                Event::Key(key) => {
-                    let outcome = dispatch_key(ws, key);
-                    if apply_outcome(terminal, ws, &mut link, outcome)? {
-                        return Ok(());
+            let first = event::read()?;
+            // Unix gets a real `Event::Paste` from crossterm; Windows never
+            // does, so a paste burst is drained and rewritten into one here
+            // (`input::burst`) for the same arm below to route.
+            #[cfg(windows)]
+            let events = crate::application::input::burst::coalesce_paste(first)?;
+            #[cfg(not(windows))]
+            let events = [first];
+
+            for event in events {
+                match event {
+                    // Ratatui's next draw will pick up the new size from
+                    // `Frame::area()`. An explicit clear() here only adds a
+                    // visible flash on resize without improving correctness.
+                    Event::Resize(_, _) => {}
+                    Event::Key(key) => {
+                        let outcome = dispatch_key(ws, key);
+                        if apply_outcome(terminal, ws, &mut link, outcome)? {
+                            return Ok(());
+                        }
                     }
-                }
-                Event::Paste(text) => dispatch_paste(ws, &text),
-                Event::Mouse(mouse) => {
-                    let screen = Rect::new(0, 0, size.width, size.height);
-                    let outcome =
-                        dispatch_mouse(ws, tabs, mouse, screen, &cfg.layout, cfg.mouse.enabled);
-                    if apply_outcome(terminal, ws, &mut link, outcome)? {
-                        return Ok(());
+                    Event::Paste(text) => dispatch_paste(ws, &text),
+                    Event::Mouse(mouse) => {
+                        let screen = Rect::new(0, 0, size.width, size.height);
+                        let outcome =
+                            dispatch_mouse(ws, tabs, mouse, screen, &cfg.layout, cfg.mouse.enabled);
+                        if apply_outcome(terminal, ws, &mut link, outcome)? {
+                            return Ok(());
+                        }
                     }
+                    _ => {}
                 }
-                _ => {}
             }
         }
     }

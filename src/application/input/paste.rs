@@ -24,8 +24,9 @@ pub(crate) fn dispatch_paste(ws: &mut Workspace, text: &str) {
 /// Its search overlays accept the text after stripping control characters —
 /// the same rule the typed-key handlers enforce. The terminal pane receives
 /// the paste re-wrapped in `ESC [200~ ... ESC [201~` so the inner shell can
-/// distinguish multi-line paste from interactive input (crossterm consumes the
-/// outer markers when surfacing `Event::Paste`).
+/// distinguish multi-line paste from interactive input. `text` never carries
+/// the outer markers: crossterm strips them on Unix, and on Windows there are
+/// none — `input::burst` synthesises the event from keys.
 pub(crate) fn handle_paste(app: &mut App, text: &str) {
     // A paste arriving while the prefix is armed would otherwise leave the
     // PREFIX indicator stuck and make the next key resolve as a follow-up.

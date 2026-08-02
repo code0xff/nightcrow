@@ -1,5 +1,6 @@
 //! Translate terminal and browser input into application actions.
 
+pub(crate) mod burst;
 pub(crate) mod dispatch;
 mod handlers;
 pub(crate) mod mouse;

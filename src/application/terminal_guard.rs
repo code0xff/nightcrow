@@ -47,7 +47,8 @@ impl TerminalGuard {
         // EnableBracketedPaste makes crossterm surface paste as
         // `Event::Paste(String)` instead of a flood of `Event::Key` chars —
         // the latter would each be filtered as control chars by the search
-        // handler and silently drop newlines.
+        // handler and silently drop newlines. Unix only — the Windows console
+        // has no paste record, so `input::burst` reassembles the flood.
         // Ratatui positions every changed cell itself. Host-side autowrap is
         // therefore both unnecessary and dangerous: writing the bottom-right
         // cell can scroll the physical screen while Ratatui's back buffer still
