@@ -101,12 +101,12 @@ pub fn load_commit_file_diff(
     file_path: &str,
 ) -> Result<Vec<DiffHunk>> {
     let diff = commit_diff(repo, oid, Some(file_path))?;
-    collect_commit_diff_hunks(&diff)
+    collect_commit_diff_hunks(&diff, Some(file_path))
 }
 
 pub fn load_commit_diff(repo: &Repository, oid: Oid) -> Result<Vec<DiffHunk>> {
     let diff = commit_diff(repo, oid, None)?;
-    collect_commit_diff_hunks(&diff)
+    collect_commit_diff_hunks(&diff, None)
 }
 
 fn diff_options(pathspec: Option<&str>) -> DiffOptions {
@@ -123,19 +123,47 @@ fn diff_options(pathspec: Option<&str>) -> DiffOptions {
 
 /// Shared hunk/line accumulation logic. `on_file` returns `Some(hunk)` to prepend a
 /// synthetic header entry per file (used by commit diff), or `None` to skip (status diff).
+/// True when `delta` is about `wanted`, under either of the names it carries.
+///
+/// The two sides differ only where git paired a rename, and it pairs one only
+/// when nothing narrowed the diff: with a pathspec, each half arrives as its
+/// own `Deleted` or `Added` delta holding that half's path on both sides. So
+/// the old side never decides the answer here — it is matched because the
+/// question is whether the delta concerns the path, and a delta that names it
+/// on either side does.
+fn delta_is_about(delta: &DiffDelta<'_>, wanted: &str) -> bool {
+    [delta.new_file().path(), delta.old_file().path()]
+        .into_iter()
+        .flatten()
+        .any(|path| path == std::path::Path::new(wanted))
+}
+
+/// Shared accumulation. `only` narrows the result to one file: git's pathspec
+/// still matches a directory as a prefix of everything beneath it, so asking
+/// for `src` answered with every changed file under `src` labelled as `src`.
+/// Turning that off is not an option — it is how the pathspec addresses a file
+/// at all — so the deltas it over-collects are dropped here.
 fn collect_hunks(
     diff: &Diff<'_>,
     mut on_file: impl FnMut(DiffDelta<'_>) -> Option<DiffHunk>,
     binary_fallback: &str,
+    only: Option<&str>,
 ) -> Result<Vec<DiffHunk>> {
     let hunks: RefCell<Vec<DiffHunk>> = RefCell::new(Vec::new());
     // Tracks the current file's path between callbacks. libgit2 invokes
     // file_cb once per delta, followed by hunk_cb/line_cb for that file —
     // hunk_cb itself isn't given the delta, so we stash the path here.
     let current_path: RefCell<Option<String>> = RefCell::new(None);
+    // Set by `file_cb` and read by the callbacks that follow it, which are told
+    // which file they belong to only by having come after it.
+    let skipping = RefCell::new(false);
 
     diff.foreach(
         &mut |delta, _| {
+            *skipping.borrow_mut() = only.is_some_and(|wanted| !delta_is_about(&delta, wanted));
+            if *skipping.borrow() {
+                return true;
+            }
             *current_path.borrow_mut() = path_from_delta(&delta);
             if let Some(h) = on_file(delta) {
                 hunks.borrow_mut().push(h);
@@ -143,11 +171,17 @@ fn collect_hunks(
             true
         },
         Some(&mut |delta, _| {
+            if *skipping.borrow() {
+                return true;
+            }
             let path = path_from_delta(&delta).unwrap_or_else(|| binary_fallback.to_string());
             hunks.borrow_mut().push(binary_diff_hunk(&path));
             true
         }),
         Some(&mut |_, hunk| {
+            if *skipping.borrow() {
+                return true;
+            }
             let header = std::str::from_utf8(hunk.header())
                 .unwrap_or("@@")
                 .trim_end_matches('\n')
@@ -160,6 +194,9 @@ fn collect_hunks(
             true
         }),
         Some(&mut |_, _, line| {
+            if *skipping.borrow() {
+                return true;
+            }
             let content = std::str::from_utf8(line.content())
                 .unwrap_or("")
                 .trim_end_matches('\n')
@@ -185,11 +222,11 @@ fn collect_hunks(
     Ok(hunks.into_inner())
 }
 
-fn collect_diff_hunks(diff: &Diff<'_>, fallback_path: &str) -> Result<Vec<DiffHunk>> {
-    collect_hunks(diff, |_| None, fallback_path)
+fn collect_diff_hunks(diff: &Diff<'_>, requested_path: &str) -> Result<Vec<DiffHunk>> {
+    collect_hunks(diff, |_| None, requested_path, Some(requested_path))
 }
 
-fn collect_commit_diff_hunks(diff: &Diff<'_>) -> Result<Vec<DiffHunk>> {
+fn collect_commit_diff_hunks(diff: &Diff<'_>, only: Option<&str>) -> Result<Vec<DiffHunk>> {
     collect_hunks(
         diff,
         |delta| {
@@ -201,5 +238,6 @@ fn collect_commit_diff_hunks(diff: &Diff<'_>) -> Result<Vec<DiffHunk>> {
             })
         },
         "unknown",
+        only,
     )
 }
