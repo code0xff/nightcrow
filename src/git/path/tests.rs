@@ -304,3 +304,19 @@ fn validate_commit_path_keeps_names_that_only_look_like_the_rules() {
         assert!(validate_commit_path(ok).is_ok(), "refused: {ok:?}");
     }
 }
+
+/// Windows reads one letter before a colon as a drive, wherever the name sits.
+///
+/// `Path::components` only reports the prefix at the start of a path, so `c:x`
+/// arrives as one ordinary component — and `PathBuf::push` parses it again and
+/// replaces the buffer it was extending.
+#[test]
+#[cfg(windows)]
+fn validate_commit_path_rejects_a_component_windows_reads_as_a_drive() {
+    for attack in ["src/c:x", "src/c:/x", "a/b/z:secret"] {
+        assert!(
+            validate_commit_path(attack).is_err(),
+            "accepted a drive-relative component: {attack:?}"
+        );
+    }
+}

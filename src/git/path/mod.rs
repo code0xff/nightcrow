@@ -87,6 +87,22 @@ fn is_git_dir(part: &std::ffi::OsStr) -> bool {
 /// one extra character.
 ///
 /// It costs a name like `...`, legal on Unix and unnameable on Windows anyway.
+/// True when `part` is more than the one ordinary name `Path::components` said
+/// it was, once parsed on its own.
+///
+/// Windows reads `c:x` as drive `C:` plus `x`, but only at the start of a path —
+/// so as the second component of `src/c:x` it arrives here as one `Normal`.
+/// `PathBuf::push` then parses it again, finds the prefix, and *replaces the
+/// whole buffer*, throwing away the worktree the walk had built up. Refusing it
+/// keeps the component walk honest instead of leaning on the final containment
+/// check to notice.
+///
+/// A no-op on Unix, where a colon is an ordinary character in a name.
+fn is_a_path_of_its_own(part: &std::ffi::OsStr) -> bool {
+    let mut components = Path::new(part).components();
+    !matches!(components.next(), Some(Component::Normal(_))) || components.next().is_some()
+}
+
 fn is_traversal_after_trimming(part: &std::ffi::OsStr) -> bool {
     part.to_str().is_some_and(|name| {
         let name = effective_name(name);
@@ -113,7 +129,9 @@ pub fn validate_commit_path(relative: &str) -> Result<()> {
             Component::Normal(part) if is_git_dir(part) => {
                 return Err(anyhow!("path enters the git directory: {relative}"));
             }
-            Component::Normal(part) if is_traversal_after_trimming(part) => {
+            Component::Normal(part)
+                if is_traversal_after_trimming(part) || is_a_path_of_its_own(part) =>
+            {
                 return Err(anyhow!("path is not a plain relative path: {relative}"));
             }
             Component::Normal(_) => {}
@@ -166,8 +184,10 @@ pub fn resolve_in_workdir(workdir: &Path, relative: &str) -> Result<PathBuf> {
         }
     }
 
-    // Belt and braces: the component walk already rejected every link, so this
-    // can only fail if the worktree moved mid-walk.
+    // Not redundant, even though the walk rejected every link: `push` re-parses
+    // each component, and one that carries a Windows prefix would replace the
+    // buffer outright rather than extend it. `is_a_path_of_its_own` refuses
+    // those up front, and this is what catches it if a spelling gets past.
     if !resolved.starts_with(&base) {
         return Err(anyhow!("path escapes the worktree: {relative}"));
     }
