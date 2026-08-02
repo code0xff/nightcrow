@@ -35,8 +35,12 @@ const HFS_IGNORABLE: [char; 16] = [
 /// The name a filesystem will actually open, given the name that was asked for.
 ///
 /// Three rewrites, each a documented way to name one file and be handed
-/// another, and each already defended by git (`core.protectNTFS`,
-/// `core.protectHFS`):
+/// another, and each defended by git too (`core.protectNTFS`,
+/// `core.protectHFS`) — though not identically: git tests *every* colon-
+/// delimited segment of a name and this tests the first. The difference is
+/// unreachable, because a later segment names a stream hanging off the earlier
+/// one rather than a directory, so `x:.git` is a stream on `x` and never git's
+/// own directory.
 ///
 /// - everything from a `:` on is an NTFS alternate-stream suffix, and
 ///   `.git::$INDEX_ALLOCATION` opens the directory `.git`
