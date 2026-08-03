@@ -6,7 +6,7 @@
 //! the sizing and how long it has been unattended, and spreading them across a
 //! module boundary would mean opening those fields up to reach them.
 
-use super::{RELEASE_GRACE, Registration, ViewerId};
+use super::{RELEASE_GRACE, Registration, ViewerId, audit};
 use crate::session::terminal::frame::{ServerMessage, TerminalFrame};
 use std::collections::HashMap;
 use std::sync::mpsc::SyncSender;
@@ -61,13 +61,28 @@ impl Inner {
             },
         );
 
+        audit::joined(&viewer, connection, arriving);
+
         // Arriving is not the only way in. An unowned sizing displaces nobody,
         // so the caution that stops a reconnect from taking a screen it never
         // claimed has nothing to protect — see the invariant in the module doc.
-        let took = (arriving || self.owner.is_none()) && self.owner.as_ref() != Some(&viewer);
+        let unowned = self.owner.is_none();
+        let took = (arriving || unowned) && self.owner.as_ref() != Some(&viewer);
         if took {
             self.owner_absent_since = None;
             let displaced = self.owner.replace(viewer.clone());
+            // Both hold for the first page of a session. Naming the arrival
+            // there keeps the other reason meaning what it is worth reading:
+            // a connection that took the sizing without anyone sitting down.
+            audit::moved(
+                displaced.as_ref(),
+                Some(&viewer),
+                if arriving {
+                    "a viewer arrived"
+                } else {
+                    "nobody owned it"
+                },
+            );
             // Every one of the new owner's connections, and of the displaced
             // one's: each holds its own repository's panes to re-fit or stop
             // sizing.
@@ -100,6 +115,7 @@ impl Inner {
             }
             None => false,
         };
+        audit::left(&gone.viewer, connection, !still_present);
         if still_present {
             return;
         }
@@ -122,6 +138,7 @@ impl Inner {
         }
         self.owner_absent_since = None;
         let displaced = self.owner.replace(viewer.clone());
+        audit::moved(displaced.as_ref(), Some(&viewer), "a viewer asked");
         self.tell(&viewer, true);
         if let Some(displaced) = displaced {
             self.tell(&displaced, false);
@@ -152,7 +169,9 @@ impl Inner {
         // The same rule that gave it away in the first place. With nobody left
         // it goes unowned and every pane keeps the size it has — there is no
         // client to fit, and the next viewer to connect picks it up.
+        let gone = self.owner.take();
         self.owner = self.arrival.last().cloned();
+        audit::moved(gone.as_ref(), self.owner.as_ref(), "the owner stayed gone");
         if let Some(owner) = self.owner.clone() {
             self.tell(&owner, true);
         }

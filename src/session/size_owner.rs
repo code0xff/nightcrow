@@ -33,6 +33,8 @@ use std::sync::mpsc::SyncSender;
 use std::sync::{Mutex, MutexGuard};
 use std::time::{Duration, Instant};
 
+#[path = "size_owner_audit.rs"]
+mod audit;
 #[path = "size_owner_state.rs"]
 mod state;
 
