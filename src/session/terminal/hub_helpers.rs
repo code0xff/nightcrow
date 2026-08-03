@@ -122,7 +122,11 @@ pub(super) fn broadcast_locked(clients: &mut Vec<Client>, frame: TerminalFrame) 
     clients.retain(|client| match client.tx.try_send(frame.clone()) {
         Ok(()) => true,
         Err(TrySendError::Full(_)) => {
-            tracing::debug!(id = client.id, "viewer: terminal client too slow, dropping");
+            // At WARN, not DEBUG: this is the one place a client is disconnected
+            // against its will, and it answers by rebuilding every pane from the
+            // replay. A person watches that happen, so the default log level has
+            // to be able to say why it did.
+            tracing::warn!(id = client.id, "viewer: terminal client too slow, dropping");
             client.cut_off();
             false
         }

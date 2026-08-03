@@ -74,6 +74,15 @@ fn stalled_not_gone(err: &tungstenite::Error) -> bool {
     )
 }
 
+/// Say why a terminal socket ended.
+///
+/// At INFO, and unconditional: the page answers a closed socket by replaying
+/// every pane from scratch, which a person sees, and nothing else in the log
+/// says it happened.
+fn note_end(err: &tungstenite::Error, during: &'static str) {
+    tracing::info!(%err, during, "viewer: terminal socket ended");
+}
+
 /// Hand this connection to the repository's terminal hub.
 ///
 /// Auth and Origin were already enforced by `handle_connection`, before the
@@ -152,14 +161,14 @@ pub(in crate::web::viewer::server) fn serve_terminal(
                     unflushed = true;
                     break;
                 }
-                Err(_) => return,
+                Err(err) => return note_end(&err, "write"),
             }
         }
         if unflushed {
             match ws.flush() {
                 Ok(()) => unflushed = false,
                 Err(err) if stalled_not_gone(&err) => {}
-                Err(_) => return,
+                Err(err) => return note_end(&err, "flush"),
             }
         }
 
@@ -170,12 +179,15 @@ pub(in crate::web::viewer::server) fn serve_terminal(
                 // not take the terminal down with it.
                 Err(err) => tracing::debug!(%err, "viewer: bad terminal message"),
             },
-            Ok(Message::Close(_)) => return,
+            Ok(Message::Close(_)) => {
+                tracing::info!("viewer: terminal socket closed by the page");
+                return;
+            }
             Ok(_) => {}
             // A poll timeout surfaces as WouldBlock on macOS and TimedOut on
             // Linux; neither means the client is gone.
             Err(err) if stalled_not_gone(&err) => {}
-            Err(_) => return,
+            Err(err) => return note_end(&err, "read"),
         }
     }
     // `session` drops here, unregistering from the hub.
