@@ -99,9 +99,11 @@ fn pane_running(sequences: &str) -> Running {
         next_matching(&session, |f| created_pane(f).is_some()).expect("no created message");
     let pane = created_pane(&created).unwrap();
 
+    // Ubuntu's `/etc/bash.bashrc` puts an OSC title in `PS1`, so every prompt
+    // redraw would overwrite whatever `sequences` set the pane's title to.
     session.dispatch(ClientMessage::Input {
         pane,
-        data: sequences.to_string(),
+        data: format!("PS1='$ '\nunset PROMPT_COMMAND\n{sequences}"),
     });
     // The tracker only knows what it has seen, so the assertions have to wait
     // for the program's own bytes to come back.
