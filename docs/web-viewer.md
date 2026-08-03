@@ -116,6 +116,11 @@ dropped connection coming back — a tab is one screen however many sockets it
 opens. Reloading the page counts as opening it, so it takes the sizing again, as
 a new tab would.
 
+Nobody holding the sizing is a state for a session with nobody in it. If every
+screen goes and one comes back — a phone that slept long enough for its socket
+to die — it takes the sizing rather than returning as a spectator, because there
+is no other screen to take it from.
+
 The panel draws its panes either side by side, as the TUI does, or one at a time
 behind a tab strip. The button beside **+** switches between the two, and a
 narrow screen starts on tabs — a split grid gives each pane fewer columns than a

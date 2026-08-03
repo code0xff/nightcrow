@@ -142,6 +142,48 @@ fn the_last_viewer_leaving_leaves_the_sizing_unowned() {
     );
 }
 
+/// The phone that kept coming back a spectator. Its page is never reloaded, so
+/// the socket that returns is not an arrival — and while it was asleep there
+/// was nobody to hand the sizing to. Somebody is here now.
+#[test]
+fn a_viewer_returning_to_a_session_nobody_owns_is_not_left_a_spectator() {
+    let ownership = SizeOwnership::new();
+    let now = Instant::now();
+    let (tx, rx) = channel();
+    let only = ownership.join(viewer("a"), true, tx.clone(), now);
+    let _ = verdicts(&rx);
+
+    // Asleep past the grace, which lets the sizing go.
+    ownership.leave(only.connection, now);
+    ownership.settle(now + RELEASE_GRACE);
+    assert_eq!(ownership.owner(), None);
+
+    let back = ownership.join(viewer("a"), false, tx, now + RELEASE_GRACE);
+
+    assert!(back.owned);
+    assert_eq!(ownership.owner(), Some(viewer("a")));
+    assert_eq!(verdicts(&rx), [true], "and it has to know to fit its panes");
+}
+
+/// Not only the viewer that used to have it: an unowned sizing displaces
+/// nobody, so it goes to whoever is here.
+#[test]
+fn a_new_viewer_joining_a_session_nobody_owns_takes_the_sizing() {
+    let ownership = SizeOwnership::new();
+    let now = Instant::now();
+    let (a_tx, _a_rx) = channel();
+    let (b_tx, b_rx) = channel();
+    let a = ownership.join(viewer("a"), true, a_tx, now);
+    ownership.leave(a.connection, now);
+    ownership.settle(now + RELEASE_GRACE);
+
+    let b = ownership.join(viewer("b"), false, b_tx, now + RELEASE_GRACE);
+
+    assert!(b.owned);
+    assert_eq!(ownership.owner(), Some(viewer("b")));
+    assert_eq!(verdicts(&b_rx), [true]);
+}
+
 /// One viewer, several connections — an attached TUI subscribes to every open
 /// repository at once. Those are one screen, not one per repository.
 #[test]

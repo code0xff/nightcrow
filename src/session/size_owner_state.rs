@@ -61,7 +61,10 @@ impl Inner {
             },
         );
 
-        let took = arriving && self.owner.as_ref() != Some(&viewer);
+        // Arriving is not the only way in. An unowned sizing displaces nobody,
+        // so the caution that stops a reconnect from taking a screen it never
+        // claimed has nothing to protect — see the invariant in the module doc.
+        let took = (arriving || self.owner.is_none()) && self.owner.as_ref() != Some(&viewer);
         if took {
             self.owner_absent_since = None;
             let displaced = self.owner.replace(viewer.clone());
@@ -148,7 +151,7 @@ impl Inner {
         self.owner_absent_since = None;
         // The same rule that gave it away in the first place. With nobody left
         // it goes unowned and every pane keeps the size it has — there is no
-        // client to fit.
+        // client to fit, and the next viewer to connect picks it up.
         self.owner = self.arrival.last().cloned();
         if let Some(owner) = self.owner.clone() {
             self.tell(&owner, true);

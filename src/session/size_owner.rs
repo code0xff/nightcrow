@@ -18,6 +18,13 @@
 //! arrived; the session never infers it. Connections come and go beneath a
 //! viewer without moving anything.
 //!
+//! **Unowned means empty.** The sizing has no owner only while nobody is here:
+//! there is no screen to fit, so the panes keep the size they have. The moment
+//! a viewer is present, one of them owns it. A session with a person in it and
+//! nobody sizing for them is not a state worth having — it renders their panes
+//! at a departed screen's size and makes them press the fit button to undo it,
+//! which is what a phone did every time it woke up.
+//!
 //! This file is the facade — locking, and the contract each caller sees. The
 //! rules themselves live with the state they read, in [`state`].
 
