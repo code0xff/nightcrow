@@ -176,28 +176,9 @@ fn a_failing_clone_reports_gits_own_message() {
 
     let err = run_clone(missing.to_str().unwrap(), &dest).expect_err("must fail");
 
-    assert!(!err.to_string().is_empty());
+    // git's diagnostic, not the advice it wraps up with — see
+    // `message::actionable`.
+    let message = err.to_string();
+    assert!(message.contains("fatal:"), "unexpected message: {message}");
     assert!(!dest.exists() || std::fs::read_dir(&dest).unwrap().next().is_none());
-}
-
-#[test]
-fn stderr_is_kept_to_its_tail() {
-    // A remote controls this stream through `remote:` sidebands, so it must
-    // not be collected unbounded — and the tail is the part that matters.
-    let noise = "x".repeat(MAX_STDERR_BYTES * 2);
-    let wanted = "\nfatal: repository not found";
-    let input = format!("{noise}{wanted}");
-
-    let kept = tail_of(input.as_bytes());
-
-    assert!(kept.len() <= MAX_STDERR_BYTES, "kept {} bytes", kept.len());
-    assert!(
-        kept.ends_with("fatal: repository not found"),
-        "the last line must survive the cap"
-    );
-}
-
-#[test]
-fn stderr_shorter_than_the_cap_is_kept_whole() {
-    assert_eq!(tail_of(b"fatal: nope".as_slice()), "fatal: nope");
 }

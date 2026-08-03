@@ -5,6 +5,8 @@
 //! `git@host:path` remotes. Delegating to `git` inherits that whole stack.
 //! Nothing here reads stdout — only exit status and stderr-on-failure.
 
+mod message;
+
 use std::path::Path;
 use std::process::Command;
 
@@ -150,44 +152,13 @@ pub fn git_available() -> bool {
         .unwrap_or(false)
 }
 
-/// Most stderr kept from a failing clone. A remote controls this stream —
-/// `remote:` sidebands are printed verbatim — so it cannot be collected
-/// unbounded. Only the tail is wanted anyway: git's last line is the reason.
-const MAX_STDERR_BYTES: usize = 64 * 1024;
-
-/// Read `reader` to EOF, keeping only the last [`MAX_STDERR_BYTES`].
-///
-/// Draining to the end matters as much as the cap: stopping early would fill
-/// the pipe and block the child forever.
-fn tail_of<R: std::io::Read>(mut reader: R) -> String {
-    let mut kept: Vec<u8> = Vec::new();
-    let mut chunk = [0u8; 8192];
-    loop {
-        match reader.read(&mut chunk) {
-            Ok(0) => break,
-            // A signal can cut a read short; giving up there would drop the
-            // rest of git's message and close the pipe under a child that is
-            // still writing.
-            Err(err) if err.kind() == std::io::ErrorKind::Interrupted => continue,
-            Err(_) => break,
-            Ok(n) => {
-                kept.extend_from_slice(&chunk[..n]);
-                if kept.len() > MAX_STDERR_BYTES {
-                    kept.drain(..kept.len() - MAX_STDERR_BYTES);
-                }
-            }
-        }
-    }
-    String::from_utf8_lossy(&kept).into_owned()
-}
-
 /// Run `git clone -- <url> <dest>` to completion.
 ///
 /// The URL is an argv item behind `--`, never a shell word, so no quoting or
 /// escaping question arises; [`validate_clone_url`] has already ruled out the
 /// schemes that would make argv placement insufficient. On failure the error
-/// carries git's stderr, which is what tells the user "repository not found"
-/// or "permission denied".
+/// carries the actionable part of git's stderr, which is what tells the user
+/// "repository not found" or "permission denied".
 pub fn run_clone(url: &str, dest: &Path) -> anyhow::Result<()> {
     let mut child = Command::new("git")
         // Without this a remote that wants credentials makes git open
@@ -227,20 +198,21 @@ pub fn run_clone(url: &str, dest: &Path) -> anyhow::Result<()> {
         })?;
     // Read before waiting: a child that fills the pipe blocks until it is
     // drained, so waiting first could deadlock.
-    let stderr = child.stderr.take().map(tail_of).unwrap_or_default();
+    let stderr = child
+        .stderr
+        .take()
+        .map(message::tail_of)
+        .unwrap_or_default();
     let status = child
         .wait()
         .map_err(|err| anyhow::anyhow!("could not wait for git: {err}"))?;
     if status.success() {
         return Ok(());
     }
-    let detail = stderr.trim();
-    if detail.is_empty() {
-        anyhow::bail!("git clone failed");
+    match message::actionable(&stderr) {
+        Some(detail) => anyhow::bail!("{detail}"),
+        None => anyhow::bail!("git clone failed"),
     }
-    // git's own last line is the actionable part; earlier lines are progress.
-    let last = detail.lines().next_back().unwrap_or(detail);
-    anyhow::bail!("{last}")
 }
 
 #[cfg(test)]
