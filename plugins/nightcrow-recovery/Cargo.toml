@@ -1,6 +1,6 @@
 [package]
 name = "nightcrow-recovery"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2024"
 description = "nightcrow plugin: notices a coding CLI hit its usage limit and resumes it when the limit resets"
 license = "Apache-2.0"
