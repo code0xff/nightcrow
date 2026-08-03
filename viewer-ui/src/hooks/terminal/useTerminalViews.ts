@@ -3,6 +3,7 @@ import type { MutableRefObject } from "react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import type { PaneView } from "../../lib/terminalLayout";
+import type { PaneViewMode } from "../../lib/paneViewMode";
 import { terminalFontOptions } from "../../lib/termFont";
 import { ClearKeyProbe } from "../../lib/clearKeyProbe";
 import { sendTerminalMessage } from "../../api/terminal";
@@ -12,10 +13,12 @@ interface UseTerminalViewsArgs {
   // Reveal signals: opening xterm inside a hidden (display:none) cell caches a
   // 0x0 character-cell measurement that fit() can never recover, so creation
   // waits until the cell has size. Re-run on the layout changes that can reveal
-  // a cell — the container resizing (`size`) or a zoom toggle (`zoomed`) — which
-  // mirrors the fit effect's own dependency set.
+  // a cell — the container resizing (`size`), a zoom toggle (`zoomed`), or the
+  // arrangement changing under them (`mode`) — which mirrors the fit effect's
+  // own dependency set.
   size: { w: number; h: number };
   zoomed: number | null;
+  mode: PaneViewMode;
   socketRef: MutableRefObject<WebSocket | null>;
   viewsRef: MutableRefObject<Map<number, PaneView>>;
   bodyRefs: MutableRefObject<Map<number, HTMLDivElement>>;
@@ -27,6 +30,7 @@ export function useTerminalViews({
   panes,
   size,
   zoomed,
+  mode,
   socketRef,
   viewsRef,
   bodyRefs,
@@ -101,5 +105,5 @@ export function useTerminalViews({
         viewsRef.current.delete(pane);
       }
     }
-  }, [panes, size, zoomed]);
+  }, [panes, size, zoomed, mode]);
 }

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef } from "react";
 import type { MutableRefObject } from "react";
 import type { PaneView } from "../../lib/terminalLayout";
+import type { PaneViewMode } from "../../lib/paneViewMode";
 import {
   sendTerminalMessage,
   type PaneSize,
@@ -22,6 +23,13 @@ interface UsePaneSizesArgs {
   panes: number[];
   size: { w: number; h: number };
   zoomed: number | null;
+  /** How the panel arranges its panes, read here as a relayout signal. The
+   *  arrangement decides every pane's box — a tab is the whole panel and carries
+   *  no header of its own, a grid cell is a fraction of it minus that header —
+   *  while the container holding them keeps its pixels either way. So switching
+   *  moves nothing else this hook watches, and without it the panes would keep
+   *  the size the other arrangement gave them. */
+  mode: PaneViewMode;
   socketRef: MutableRefObject<WebSocket | null>;
   viewsRef: MutableRefObject<Map<number, PaneView>>;
   bodyRefs: MutableRefObject<Map<number, HTMLDivElement>>;
@@ -57,6 +65,7 @@ export function usePaneSizes({
   panes,
   size,
   zoomed,
+  mode,
   socketRef,
   viewsRef,
   bodyRefs,
@@ -118,6 +127,7 @@ export function usePaneSizes({
   }, [
     panes,
     zoomed,
+    mode,
     size,
     flush,
     viewsRef,
