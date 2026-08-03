@@ -39,8 +39,8 @@ pub(crate) struct Cli {
     /// A service manager should start nightcrow *without* this — backgrounding
     /// is what it does itself.
     ///
-    /// With `attach`, this starts the session if none is running and then
-    /// attaches to it.
+    /// With `attach` it makes no difference: attaching starts a backgrounded
+    /// session on its own when none is running.
     #[arg(short, long)]
     pub(crate) detach: bool,
 
@@ -56,13 +56,14 @@ pub(crate) enum Commands {
         #[arg(long)]
         force: bool,
     },
-    /// Attach the TUI to a running nightcrow daemon.
+    /// Attach the TUI to the nightcrow session, starting one if none is running.
     ///
     /// The session — which repositories are open, and in what order — belongs
     /// to the daemon, so this starts on whatever it is serving. Leaving does
     /// not end the session.
     ///
-    /// Requires a running daemon; pass `-d` to start one first if none is.
+    /// A session started this way runs in the background, so it outlives the
+    /// TUI that caused it to exist.
     Attach,
     /// Manage plugin executables in ~/.nightcrow/plugins.
     ///

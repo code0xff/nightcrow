@@ -32,9 +32,12 @@ fn main() -> Result<()> {
     let cli = Cli::parse();
     match cli.command {
         Some(Commands::Init { force }) => run_init(force),
-        // `-d` with `attach` means "start one if there isn't one, then attach".
-        Some(Commands::Attach) if cli.detach => run_attach_detached(),
-        Some(Commands::Attach) => application::attach::run_attach(),
+        // Attach starts a session when none is running, with or without `-d`:
+        // the first command of the day should not have to be two commands, and
+        // a session that has to exist for the TUI to draw is not a choice the
+        // user was making. `-d` still says how the session runs — in the
+        // background — which is what it already does here.
+        Some(Commands::Attach) => run_attach_detached(),
         Some(Commands::Plugin { command }) => cli::plugin_cmd::run_plugin(command),
         Some(Commands::Stop { socket }) => run_stop(socket),
         None => run_daemon(cli.exec, cli.port, cli.bind, cli.detach),

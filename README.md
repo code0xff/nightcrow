@@ -34,10 +34,10 @@ routes are in [Getting started](docs/getting-started.md#install).
 ## Quick start
 
 ```bash
-# The one-command way in: background the session and attach the TUI to it.
-# If a session is already running, it attaches to that one instead of
-# starting a second. It reopens the repositories from last time.
-nightcrow -d attach
+# The one-command way in: attach the TUI, starting a backgrounded session
+# first if none is running. If one already is, it attaches to that one
+# instead of starting a second. It reopens the repositories from last time.
+nightcrow attach
 ```
 
 The pieces on their own, when you want them separately:
@@ -47,7 +47,7 @@ The pieces on their own, when you want them separately:
 nightcrow -d
 
 # From another terminal: bring up the TUI on that session.
-nightcrow attach
+nightcrow attach  # same command — it attaches to the session already running
 
 # Foreground, for a service manager or to watch the startup output.
 nightcrow
