@@ -38,6 +38,21 @@ pub fn resolve_repo_path(path: impl AsRef<Path>) -> PathBuf {
         .unwrap_or_else(|_| candidate.to_path_buf())
 }
 
+/// Format a `git2::Error` from `Repository::discover` for user-facing display.
+///
+/// When the error is a "not a repository" / `NotFound` error of class
+/// `Repository`, the internal libgit2 diagnostic (`; class=Repository (6);
+/// code=NotFound (-3)`) is stripped — users cannot act on it. All other
+/// errors preserve the full `error.to_string()` so the diagnostic is
+/// available for debugging.
+pub fn format_discover_error(error: &git2::Error) -> String {
+    if error.class() == git2::ErrorClass::Repository && error.code() == git2::ErrorCode::NotFound {
+        error.message().to_string()
+    } else {
+        error.to_string()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -98,5 +113,75 @@ mod tests {
 
         assert_eq!(resolve_repo_path(&with_trailing_slash), resolved);
         assert_eq!(resolve_repo_path(&via_dot), resolved);
+    }
+
+    #[test]
+    fn not_found_레포지토리_에러에서_class_code_가_제거된다() {
+        let err = git2::Error::new(
+            git2::ErrorCode::NotFound,
+            git2::ErrorClass::Repository,
+            "not a git repository: could not find repository at '/some/path'",
+        );
+        let formatted = format_discover_error(&err);
+        assert!(
+            !formatted.contains("class="),
+            "should not contain class=: {formatted}"
+        );
+        assert!(
+            !formatted.contains("code="),
+            "should not contain code=: {formatted}"
+        );
+    }
+
+    #[test]
+    fn not_found_레포지토리_에러에_경로가_남아_있다() {
+        let err = git2::Error::new(
+            git2::ErrorCode::NotFound,
+            git2::ErrorClass::Repository,
+            "not a git repository: could not find repository at '/opt/data/.config/jcode'",
+        );
+        let formatted = format_discover_error(&err);
+        assert!(
+            formatted.contains("/opt/data/.config/jcode"),
+            "should contain the path: {formatted}",
+        );
+    }
+
+    #[test]
+    fn 다른_에러_클래스는_전체_진단_정보를_유지한다() {
+        // Auth + Repository: non-NotFound code, non-NotFound class.
+        let err = git2::Error::new(
+            git2::ErrorCode::Auth,
+            git2::ErrorClass::Repository,
+            "authentication failed",
+        );
+        let formatted = format_discover_error(&err);
+        assert!(
+            formatted.contains("class="),
+            "should contain class=: {formatted}"
+        );
+        assert!(
+            formatted.contains("code="),
+            "should contain code=: {formatted}"
+        );
+    }
+
+    #[test]
+    fn not_found지만_레포지토리가_아닌_클래스는_전체_진단을_유지한다() {
+        // NotFound + non-Repository class should keep the full diagnostic.
+        let err = git2::Error::new(
+            git2::ErrorCode::NotFound,
+            git2::ErrorClass::Config,
+            "config file not found: /etc/gitconfig",
+        );
+        let formatted = format_discover_error(&err);
+        assert!(
+            formatted.contains("class="),
+            "should contain class=: {formatted}"
+        );
+        assert!(
+            formatted.contains("code="),
+            "should contain code=: {formatted}"
+        );
     }
 }

@@ -161,8 +161,127 @@ fn notice_row_falls_back_to_repo_identity() {
     assert!(before.contains("/tmp/somewhere"), "got: {before}");
 
     app.raise_notice(NoticeKind::Tree, "boom");
-    assert!(!notice_text(&app).contains("/tmp/somewhere"));
+    let during = notice_text(&app);
+    assert!(
+        during.contains("/tmp/somewhere"),
+        "path must stay visible alongside notice, got: {during}"
+    );
+    assert!(
+        during.contains("boom"),
+        "notice text must be visible, got: {during}"
+    );
 
     app.clear_notice(NoticeKind::Tree);
     assert_eq!(notice_text(&app), before);
+}
+
+/// A notice raised on a project with a repo path shows both the path and the
+/// notice text on the same line.
+#[test]
+fn 공지가_뜨면_저장소_경로도_함께_보인다() {
+    let mut app = app_with_files(vec![]);
+    app.repo_path = "/tmp/my-project".to_string();
+    app.raise_notice(NoticeKind::Git, "not a git repository");
+
+    let text = notice_text(&app);
+    assert!(
+        text.contains("/tmp/my-project"),
+        "repo path must be visible, got: {text}"
+    );
+    assert!(
+        text.contains("git error: not a git repository"),
+        "notice text must be visible, got: {text}"
+    );
+}
+
+/// When the terminal is too narrow to fit both path and notice, the path is
+/// kept and the notice is truncated with `…`.
+#[test]
+fn 좁은_너비에서는_경로가_남고_공지가_잘린다() {
+    let mut app = app_with_files(vec![]);
+    app.repo_path = "/tmp/p".to_string();
+    app.raise_notice(NoticeKind::Git, "not a git repository");
+
+    let mut terminal =
+        ratatui::Terminal::new(ratatui::backend::TestBackend::new(20, 1)).expect("a terminal");
+    terminal
+        .draw(|frame| {
+            frame.render_widget(
+                crate::ui::notice::render_notice_row(
+                    &app,
+                    &crate::ui::status_view::RepoInput::default(),
+                    ratatui::style::Color::Yellow,
+                    frame.area().width,
+                ),
+                frame.area(),
+            )
+        })
+        .expect("draw");
+    let buf = terminal.backend().buffer();
+    let text: String = (0..buf.area.width).map(|x| buf[(x, 0)].symbol()).collect();
+
+    assert!(text.contains("/tmp/p"), "path must be visible, got: {text}");
+    assert!(
+        text.contains('\u{2026}'),
+        "truncated notice must show ellipsis, got: {text}"
+    );
+}
+
+/// Even with only one column left over, the notice is not dropped silently:
+/// the ellipsis alone says something was cut.
+#[test]
+fn 공지_자리가_한_칸뿐이어도_잘렸다는_표시는_남는다() {
+    let mut app = app_with_files(vec![]);
+    app.repo_path = "/tmp/p".to_string();
+    app.raise_notice(NoticeKind::Git, "not a git repository");
+
+    // `/tmp/p` renders as " /tmp/p ", so 9 columns leave exactly one.
+    let mut terminal =
+        ratatui::Terminal::new(ratatui::backend::TestBackend::new(9, 1)).expect("a terminal");
+    terminal
+        .draw(|frame| {
+            frame.render_widget(
+                crate::ui::notice::render_notice_row(
+                    &app,
+                    &crate::ui::status_view::RepoInput::default(),
+                    ratatui::style::Color::Yellow,
+                    frame.area().width,
+                ),
+                frame.area(),
+            )
+        })
+        .expect("draw");
+    let buf = terminal.backend().buffer();
+    let text: String = (0..buf.area.width).map(|x| buf[(x, 0)].symbol()).collect();
+
+    assert!(text.contains("/tmp/p"), "path must be visible, got: {text}");
+    assert!(
+        text.contains('\u{2026}'),
+        "the cut notice must still be marked, got: {text}"
+    );
+}
+
+/// Completion candidates still replace the repo header entirely (no regression).
+#[test]
+fn 자동_완성_후보는_저장소_헤더를_대체한다() {
+    let mut app = app_with_files(vec![]);
+    app.repo_path = "/tmp/somewhere".to_string();
+
+    let text = notice_text_with(&app, &dialog_offering(&["nightcrow", "nightowl"]));
+
+    assert!(text.contains("nightcrow"), "got: {text}");
+    assert!(text.contains("nightowl"), "got: {text}");
+    assert!(
+        !text.contains("/tmp/somewhere"),
+        "candidates must replace repo header, got: {text}"
+    );
+}
+
+/// No notice and no candidates shows the repo header (no regression).
+#[test]
+fn 공지도_후보도_없으면_저장소_헤더가_보인다() {
+    let mut app = app_with_files(vec![]);
+    app.repo_path = "/tmp/somewhere".to_string();
+    let text = notice_text(&app);
+    assert!(text.contains("/tmp/somewhere"), "got: {text}");
 }

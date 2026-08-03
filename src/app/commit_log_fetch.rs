@@ -79,7 +79,7 @@ impl App {
         let handle = thread::spawn(move || {
             let result = match Repository::discover(&repo_path) {
                 Ok(repo) => load_commit_log_page(&repo, skip, page_size).map_err(|e| e.to_string()),
-                Err(e) => Err(e.to_string()),
+                Err(e) => Err(crate::git::format_discover_error(&e).to_string()),
             };
             let _ = tx.send(CommitLogPageMsg {
                 kind,
