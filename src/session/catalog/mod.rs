@@ -136,15 +136,22 @@ impl Catalog {
         }
     }
 
-    /// Close a repository opened or shown in the browser. Removed from `added`
-    /// and remembered in `hidden` so a `base` re-sync will not bring it back;
-    /// `rebuild` then stops its runtime and terminals.
+    /// Close a repository opened or shown in the browser. Dropped from every
+    /// list that decides the served set and remembered in `hidden` so a `base`
+    /// re-sync will not bring it back; `rebuild` then stops its runtime and
+    /// terminals.
+    ///
+    /// A close forgets the slot the repository held, `base` and `order` included.
+    /// Leaving it in either meant [`Catalog::add_path`] found the path already in
+    /// `union_paths` and never appended it, so re-opening put the tab back in the
+    /// middle of the strip rather than at the end where it was just asked for.
     pub fn remove_path(&self, path: &str) {
         let path = &Self::normalized(path);
         let _mutation = self.mutation.lock().expect("catalog mutation poisoned");
-        {
-            let mut added = self.added.lock().expect("catalog added poisoned");
-            added.retain(|p| p != path);
+        for list in [&self.added, &self.base, &self.order] {
+            list.lock()
+                .expect("catalog path list poisoned")
+                .retain(|p| p != path);
         }
         {
             let mut hidden = self.hidden.lock().expect("catalog hidden poisoned");

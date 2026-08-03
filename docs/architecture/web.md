@@ -164,8 +164,12 @@ git 데이터도 터미널도 전혀 모르는 계층이며, 웹 표면이 하�
 - **프로젝트 탭 순서**(`src/session/catalog/`, `POST /api/repos/order`): 같은 모양이되 **전송 채널이 다르다** —
   repo 목록에는 전용 WebSocket이 없고 `/api/repos` 폴링뿐이라 broadcast 대신 REST로 갱신하고 다음
   폴링이 그것을 받는다. **순서가 `rebuild`를 견디게** `Catalog`에 명시적 `order` overlay를 두어
-  `union_paths`가 base+added 자연 순서를 그 위에 정렬한다(순서에 없는 새 repo는 끝에). 폴링 스냅백은
-  세 겹으로 막는다: write-generation 가드(`repoOrderWrites`), 드래그 중 차단(`repoDraggingRef`),
+  `union_paths`가 base+added 자연 순서를 그 위에 정렬한다(순서에 없는 새 repo는 끝에). **닫으면 자리도
+  잊는다** — `remove_path`가 `hidden`에 넣을 때 `added`뿐 아니라 `base`·`order`에서도 지운다. 남겨두면
+  `add_path`가 이미 union에 있는 경로로 보고 append하지 않아 다시 연 탭이 방금 연 자리(끝)가 아니라
+  예전 자리로 되돌아가는데, `base`는 데몬 수명 동안 시작 시 한 번만 쓰이므로 그 기억은 스스로
+  사라지지 않는다. 폴링 스냅백은 세 겹으로 막는다: write-generation 가드(`repoOrderWrites`),
+  드래그 중 차단(`repoDraggingRef`),
   그리고 **reorder POST가 in-flight/큐에 있는 동안 폴링이 순서를 채택하지 않는** pending 가드. 가드가
   걸린 폴링은 서버 순서를 버리되 membership은 `reconcileOrder`로 받아들인다. **reorder POST는
   클라이언트에서 직렬화**한다(한 번에 하나, 큐에는 최신 순서만) — 두 POST가 별도 커넥션이라 서버가
