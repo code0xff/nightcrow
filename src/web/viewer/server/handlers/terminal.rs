@@ -45,6 +45,35 @@ fn anonymous_viewer() -> String {
     format!("conn-{}", NEXT.fetch_add(1, Ordering::Relaxed))
 }
 
+/// Whether a failed socket operation leaves the connection usable.
+///
+/// A timeout is not a departure. Both directions carry one -- reads poll at
+/// [`TERM_POLL_TIMEOUT`] so the loop can service the other side, writes get
+/// [`SSE_HEARTBEAT`] so a stalled reader cannot wedge this thread forever -- and
+/// each surfaces as `WouldBlock` on macOS and `TimedOut` on Linux.
+///
+/// The write side counting that as fatal is what made the panel rebuild itself
+/// out of nowhere: a page that stopped reading for fifteen seconds -- a phone
+/// asleep, a tunnel renegotiating, a handover between networks -- had its socket
+/// closed under it, reconnected, and replayed every pane's history from scratch.
+/// tungstenite draws the line in the same place: an `Io` error is fatal "except
+/// for WouldBlock", and the frame that could not go out is held in its write
+/// buffer for the next `write` or `flush` to finish.
+///
+/// A client that has genuinely stopped keeping up is still cut off — by the
+/// hub, once its queue fills (`broadcast_locked`). That is where the cap
+/// belongs; a single slow write is not evidence of one.
+fn stalled_not_gone(err: &tungstenite::Error) -> bool {
+    matches!(
+        err,
+        tungstenite::Error::Io(err)
+            if matches!(
+                err.kind(),
+                std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut
+            )
+    )
+}
+
 /// Hand this connection to the repository's terminal hub.
 ///
 /// Auth and Origin were already enforced by `handle_connection`, before the
@@ -99,10 +128,13 @@ pub(in crate::web::viewer::server) fn serve_terminal(
         .terminals
         .connect(browser_viewer(head), arriving, evict_handle);
 
+    // Set when a write could not go out in full. tungstenite is then holding
+    // the rest, and only a later flush moves it -- so this has to be retried
+    // even if no new output ever arrives.
+    let mut unflushed = false;
     loop {
         // Drain everything queued for us before blocking on the socket, so
         // output is not held back waiting for the client to say something.
-        let mut wrote = false;
         while let Some(frame) = session.next_frame(Duration::from_millis(1)) {
             let message = match frame {
                 TerminalFrame::Output { pane, data } => {
@@ -110,13 +142,25 @@ pub(in crate::web::viewer::server) fn serve_terminal(
                 }
                 TerminalFrame::Control(json) => Message::Text(json.into()),
             };
-            if ws.send(message).is_err() {
-                return;
+            match ws.send(message) {
+                Ok(()) => unflushed = false,
+                // Stop pulling from the hub while the socket will not take it,
+                // so what is still queued backs up where the cap is: the hub's
+                // own queue, whose overflow is what disconnects a client that
+                // has really stopped keeping up.
+                Err(err) if stalled_not_gone(&err) => {
+                    unflushed = true;
+                    break;
+                }
+                Err(_) => return,
             }
-            wrote = true;
         }
-        if wrote && ws.flush().is_err() {
-            return;
+        if unflushed {
+            match ws.flush() {
+                Ok(()) => unflushed = false,
+                Err(err) if stalled_not_gone(&err) => {}
+                Err(_) => return,
+            }
         }
 
         match ws.read() {
@@ -130,11 +174,7 @@ pub(in crate::web::viewer::server) fn serve_terminal(
             Ok(_) => {}
             // A poll timeout surfaces as WouldBlock on macOS and TimedOut on
             // Linux; neither means the client is gone.
-            Err(tungstenite::Error::Io(err))
-                if matches!(
-                    err.kind(),
-                    std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut
-                ) => {}
+            Err(err) if stalled_not_gone(&err) => {}
             Err(_) => return,
         }
     }
@@ -195,5 +235,37 @@ mod tests {
             browser_viewer(&head(&format!("repo=r1&viewer={id}"))),
             ViewerId::Browser(id)
         );
+    }
+
+    fn io(kind: std::io::ErrorKind) -> tungstenite::Error {
+        tungstenite::Error::Io(std::io::Error::from(kind))
+    }
+
+    /// The write timeout expiring on a page that stopped reading. Ending the
+    /// connection there costs it every pane, replayed from scratch, for a stall
+    /// it would have ridden out. macOS reports one kind, Linux the other.
+    #[test]
+    fn an_operation_that_timed_out_leaves_the_connection_usable() {
+        for kind in [std::io::ErrorKind::WouldBlock, std::io::ErrorKind::TimedOut] {
+            assert!(
+                stalled_not_gone(&io(kind)),
+                "{kind:?} is a stall, not a end"
+            );
+        }
+    }
+
+    #[test]
+    fn a_socket_that_actually_failed_ends_the_connection() {
+        for err in [
+            io(std::io::ErrorKind::BrokenPipe),
+            io(std::io::ErrorKind::ConnectionReset),
+            tungstenite::Error::ConnectionClosed,
+            tungstenite::Error::AlreadyClosed,
+        ] {
+            assert!(
+                !stalled_not_gone(&err),
+                "{err} is not something to wait out"
+            );
+        }
     }
 }
