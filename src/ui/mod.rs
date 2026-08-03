@@ -84,8 +84,9 @@ pub fn draw_empty(
     // Shares `render_notice_row`'s priority order so a notice looks the same
     // wherever it lands; with no project there is no repo header to fall back
     // to, so the row just goes empty.
-    let notice_line = notice::notice_or_candidates(notice, chrome.repo_input, rows.notice.width)
-        .unwrap_or_default();
+    let notice_line =
+        notice::notice_or_candidates(notice, chrome.repo_input, None, rows.notice.width)
+            .unwrap_or_default();
     frame.render_widget(Paragraph::new(notice_line), rows.notice);
 
     // The armed prefix shows the same chip as the project screen: pressing

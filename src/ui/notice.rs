@@ -16,7 +16,7 @@ pub(crate) fn render_notice_row<'a>(
     accent: Color,
     width: u16,
 ) -> Paragraph<'a> {
-    match notice_or_candidates(app.notice.as_ref(), repo_input, width) {
+    match notice_or_candidates(app.notice.as_ref(), repo_input, Some(&app.repo_path), width) {
         Some(line) => Paragraph::new(line),
         None => render_repo_header(app, accent),
     }
@@ -29,16 +29,52 @@ pub(crate) fn render_notice_row<'a>(
 ///
 /// A notice outranks the candidates because it explains a rejected action, and
 /// any edit (Tab included) clears it, so the two rarely compete for long.
+///
+/// When a notice is present and a `repo_path` is available, the repo path is
+/// shown on the same line alongside the notice text. If the combined width
+/// exceeds the available space, the path is kept and the notice is truncated
+/// with `…`.
 pub(crate) fn notice_or_candidates<'a>(
     notice: Option<&'a Notice>,
     repo_input: &RepoInput,
+    repo_path: Option<&str>,
     width: u16,
 ) -> Option<Line<'a>> {
     if let Some(notice) = notice {
-        return Some(Line::from(Span::styled(
-            format!(" {}", notice.line()),
-            Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
-        )));
+        let notice_text = format!(" {}", notice.line());
+        let notice_style = Style::default().fg(Color::Red).add_modifier(Modifier::BOLD);
+
+        if let Some(path) = repo_path {
+            let display_path = home_relative_path(path);
+            let path_str = format!(" {display_path} ");
+            let path_style = Style::default()
+                .fg(Color::Gray)
+                .add_modifier(Modifier::BOLD);
+            let path_width = Span::raw(&path_str).width();
+            let notice_width = Span::raw(&notice_text).width();
+
+            if path_width + notice_width <= width as usize {
+                return Some(Line::from(vec![
+                    Span::styled(path_str, path_style),
+                    Span::styled(notice_text, notice_style),
+                ]));
+            }
+
+            // Truncate notice to fit alongside the path.
+            let available = (width as usize).saturating_sub(path_width);
+            // One column is enough for the ellipsis alone: a notice cut to
+            // nothing must still say it was there, as `+N more` does.
+            if available == 0 {
+                return Some(Line::from(vec![Span::styled(path_str, path_style)]));
+            }
+            let truncated = truncate_with_ellipsis(&notice_text, available);
+            return Some(Line::from(vec![
+                Span::styled(path_str, path_style),
+                Span::styled(truncated, notice_style),
+            ]));
+        }
+
+        return Some(Line::from(Span::styled(notice_text, notice_style)));
     }
     if repo_input.candidates.is_empty() {
         return None;
@@ -80,6 +116,32 @@ fn overflow_label(remaining: usize) -> String {
         return String::new();
     }
     format!("{CANDIDATE_GAP}+{remaining} more")
+}
+
+/// Truncate `text` to fit within `max_width` columns, appending `…` when
+/// truncation is needed. The ellipsis itself counts toward the width.
+fn truncate_with_ellipsis(text: &str, max_width: usize) -> String {
+    if Span::raw(text).width() <= max_width {
+        return text.to_string();
+    }
+    let ellipsis = "\u{2026}";
+    let ellipsis_width = Span::raw(ellipsis).width();
+    if max_width <= ellipsis_width {
+        return ellipsis.to_string();
+    }
+    let target = max_width - ellipsis_width;
+    let mut result = String::with_capacity(text.len());
+    let mut w = 0usize;
+    for ch in text.chars() {
+        let cw = Span::raw(ch.to_string()).width();
+        if w + cw > target {
+            break;
+        }
+        w += cw;
+        result.push(ch);
+    }
+    result.push_str(ellipsis);
+    result
 }
 
 pub(crate) fn render_repo_header<'a>(app: &'a App, accent: Color) -> Paragraph<'a> {

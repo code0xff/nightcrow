@@ -24,7 +24,7 @@ impl App {
     ) -> anyhow::Result<R> {
         if self.repo_cache.is_none() {
             let repo = git2::Repository::discover(self.repo_path.as_str())
-                .map_err(|e| anyhow::anyhow!("not a git repository: {e}"))?;
+                .map_err(|e| anyhow::anyhow!("{}", crate::git::format_discover_error(&e)))?;
             self.repo_cache = Some(repo);
         }
         let result = f(self.repo_cache.as_ref().unwrap());
