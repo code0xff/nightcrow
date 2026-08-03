@@ -115,11 +115,11 @@ impl TerminalHub {
                         plugins.pane_output(&backend, pane, &data);
                         // Before the lock: opening a pane's tracking emulator
                         // reads the shared state for its size.
-                        let modes = modes.observe(pane, &data, || {
+                        let observed = modes.observe(pane, &data, || {
                             self.pane_size(pane)
                                 .unwrap_or((DEFAULT_PANE_SIZE.rows, DEFAULT_PANE_SIZE.cols))
                         });
-                        self.record_and_broadcast(pane, data, modes);
+                        self.record_and_broadcast(pane, data, observed);
                     }
                     // Destroyed as well as forgotten. `PtyBackend` leaves pane
                     // removal to its caller (see its `drain_events`), so a pane

@@ -84,8 +84,11 @@ pub struct StartupPane {
 /// [`limits::MAX_TERMINAL_SCROLLBACK_BYTES`].
 pub(super) struct PaneState {
     pub(super) id: PaneId,
-    /// The name the session gave it, if any — a configured startup terminal has
-    /// one before it runs. Kept so a client that connects later is told it too.
+    /// What this pane goes by: the name the session gave a configured startup
+    /// terminal, and then whatever its program has titled itself since (OSC 0/2,
+    /// followed in [`hub_modes`](super::hub_modes)). Kept so a client that
+    /// connects later is told it too — the bytes that set it leave `scrollback`
+    /// within seconds, so nothing else could tell that client.
     pub(super) title: Option<String>,
     pub(super) scrollback: VecDeque<u8>,
     /// The size the PTY is currently set to, tracked so a connecting client

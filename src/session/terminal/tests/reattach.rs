@@ -10,7 +10,7 @@
 //! sequences that require a Unix shell.
 #![cfg(unix)]
 
-use super::{attach, created_pane, next_matching};
+use super::{attach, created_pane, created_title, next_matching};
 use crate::backend::PaneId;
 use crate::session::terminal::TerminalHub;
 use crate::session::terminal::TerminalSession;
@@ -35,6 +35,21 @@ const COLS: u16 = 80;
 const ENTER_FULLSCREEN: &str =
     "printf '\\033[?1049h\\033[?1002h\\033[?1006h\\033[?2004hPAINT%sED'\n";
 const PAINTED: &str = "PAINTED";
+
+/// A program naming itself. Written with the same `%s` marker so the assertion
+/// waits for the program's bytes: the shell's echo of this command line carries
+/// the *text* `\033]2;` rather than an escape, so it cannot set a title.
+fn set_title(title: &str) -> String {
+    format!("printf '\\033]2;{title}\\007PAINT%sED'\n")
+}
+
+/// What a client that was not there is told the pane is called.
+fn title_on_attach(hub: &std::sync::Arc<TerminalHub>) -> Option<String> {
+    let second = attach(hub);
+    let created =
+        next_matching(&second, |f| created_pane(f).is_some()).expect("the pane was not announced");
+    created_title(&created)
+}
 
 /// Output this session has been sent for `pane`, read until it falls quiet.
 fn output_for(session: &TerminalSession, pane: PaneId) -> Vec<u8> {
@@ -175,4 +190,16 @@ fn a_plain_shells_history_is_still_replayed() {
         "and be told it is on the normal buffer, got: {replay:?}"
     );
     hub.stop();
+}
+
+/// A program sets its title once, with an OSC that is out of the ring within
+/// seconds. Left to each client to notice, that made the pane running an agent
+/// read `term 1` on every page that arrived after it -- and on the same page
+/// after any reconnect, which is a thing that happens.
+#[test]
+fn a_reattaching_client_is_told_what_the_pane_calls_itself() {
+    let running = pane_running(&set_title("agent"));
+
+    assert_eq!(title_on_attach(&running.hub).as_deref(), Some("agent"));
+    running.hub.stop();
 }

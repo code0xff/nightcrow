@@ -4,6 +4,7 @@
 mod backpressure;
 mod behavior;
 mod identity;
+mod modes;
 mod plugin_reload;
 mod plugin_reload_panes;
 mod plugin_rules;

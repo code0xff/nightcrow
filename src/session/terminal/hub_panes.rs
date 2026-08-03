@@ -10,6 +10,7 @@
 use super::TerminalHub;
 use super::frame::{ServerMessage, TerminalFrame};
 use super::hub_helpers::{PaneState, broadcast_locked, push_scrollback};
+use super::hub_modes::Observed;
 use super::hub_zoom::clear_zoom_locked;
 use crate::backend::PaneId;
 use crate::runtime::emulator::PaneModes;
@@ -80,15 +81,22 @@ impl TerminalHub {
         }
     }
 
-    /// Append output to the pane's bounded scrollback, record the terminal state
-    /// it left the pane in, and broadcast it — all under one lock so a
+    /// Append output to the pane's bounded scrollback, record what the output
+    /// says about the pane, and broadcast it — all under one lock so a
     /// concurrently connecting client cannot slip a replay snapshot between the
     /// append and the broadcast.
-    pub(super) fn record_and_broadcast(&self, pane: PaneId, data: Vec<u8>, modes: PaneModes) {
+    ///
+    /// The clients already attached are not told the new title: they are being
+    /// handed the very bytes that set it, and each runs the emulator that reads
+    /// them. What this record is for is the client that is not here yet.
+    pub(super) fn record_and_broadcast(&self, pane: PaneId, data: Vec<u8>, observed: Observed) {
         let mut state = self.state.lock().expect("terminal state poisoned");
         if let Some(p) = state.panes.iter_mut().find(|p| p.id == pane) {
             push_scrollback(&mut p.scrollback, &data);
-            p.modes = modes;
+            p.modes = observed.modes;
+            if let Some(title) = observed.title {
+                p.title = Some(title);
+            }
         }
         broadcast_locked(&mut state.clients, TerminalFrame::Output { pane, data });
     }

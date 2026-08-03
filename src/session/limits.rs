@@ -11,3 +11,8 @@ pub const MAX_PANE_COLS: u16 = 1_100;
 
 /// Raw PTY bytes retained per terminal for a reconnecting client.
 pub const MAX_TERMINAL_SCROLLBACK_BYTES: usize = 256 * 1024;
+
+/// Characters kept of a title a pane's program set for itself. The child picks
+/// the string and every connecting client is handed it, so it is bounded on the
+/// way in; tabs are far narrower than this anyway.
+pub const MAX_PANE_TITLE_CHARS: usize = 256;
