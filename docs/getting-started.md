@@ -31,9 +31,10 @@ terminals, and you reach it from a terminal (`nightcrow attach`) or a browser.
 Closing a client leaves the session running.
 
 ```bash
-# The usual way in: start the session in the background and attach the TUI.
-# An already-running session is attached to as-is, not duplicated.
-nightcrow -d attach
+# The usual way in: attach the TUI, starting a backgrounded session first if
+# none is running. An already-running session is attached to as-is, not
+# duplicated.
+nightcrow attach
 
 # Start the session. Runs in the foreground until you stop it (Ctrl-C).
 # It reopens the repositories from last time — nothing, on a first run.
@@ -42,7 +43,7 @@ nightcrow
 # ...or run it in the background and get your shell back.
 nightcrow -d
 
-# From another terminal: bring up the TUI on that session.
+# From another terminal: bring up the TUI on that session (same command).
 nightcrow attach
 
 # Launch terminal panes running commands at startup (repeatable)
