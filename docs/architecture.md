@@ -136,10 +136,11 @@ src/
 │   ├── file_list.rs, commit_list/, tree_list.rs  # the three upper-left row renderers
 │   ├── path_tree.rs, file_view.rs, search.rs, splash/, wall_clock.rs  # repo-dialog
 │   │                     #   browser, file preview state, SearchQuery newtype, the night
-│   │                     #   scene (scene.rs: fixed crow/bough/moon art + a twinkling
-│   │                     #   star table, night.rs: ink → palette, bottom-anchored crop,
-│   │                     #   build id; the startup splash and the empty terminal pane
-│   │                     #   both draw it), unix epoch → HH:MM without a date crate
+│   │                     #   scene (scene.rs: sprites as glyph art + an aligned ink map
+│   │                     #   — shading in ░▒▓█, surface in the map — plus a twinkling
+│   │                     #   star table; night.rs: ink → 256-colour palette, bottom-
+│   │                     #   anchored crop, build id; the startup splash and the empty
+│   │                     #   terminal pane both draw it), unix epoch → HH:MM, no date crate
 │   ├── diff_pane/, diff_viewer/  # DiffPane state (hunks/scroll/search/split); the
 │   │                     #   upper-right widget, gutter, split view, file preview
 │   └── terminal_tab/, project_tab/  # pane grid + tab bar + recovery markers (with no

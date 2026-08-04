@@ -2,7 +2,7 @@ use super::scene::{self, Cell, Ink};
 use ratatui::{
     Frame,
     layout::{Alignment, Rect},
-    style::{Color, Modifier, Style},
+    style::{Color, Style},
     text::{Line, Span},
     widgets::Paragraph,
 };
@@ -73,15 +73,28 @@ fn paint_row(row: &[Cell], accent: Color) -> Line<'static> {
     Line::from(spans)
 }
 
+/// The palette. 256-colour indices rather than the sixteen named colours: a crow
+/// needs several near-blacks that read apart on a black background, and the sky
+/// and the bough need hues the named set does not have. Terminals limited to
+/// sixteen colours approximate them.
 fn style(ink: Ink, accent: Color) -> Style {
-    match ink {
-        Ink::Sky => Style::default(),
-        Ink::Bird => Style::default().fg(accent),
-        Ink::Bough => Style::default().fg(accent).add_modifier(Modifier::DIM),
-        Ink::Moon => Style::default().fg(Color::LightYellow),
-        Ink::Star { bright: true } => Style::default().fg(Color::White),
-        Ink::Star { bright: false } => Style::default().fg(Color::DarkGray),
-    }
+    let fg = match ink {
+        Ink::Sky => return Style::default(),
+        // The eye is the one cell in the accent, so the session's colour is on
+        // screen without painting the bird itself an unbirdlike hue.
+        Ink::Eye => accent,
+        Ink::Star { bright: true } => Color::Indexed(255),
+        Ink::Star { bright: false } => Color::Indexed(244),
+        Ink::Moon => Color::Indexed(230),
+        Ink::BirdShade => Color::Indexed(236),
+        Ink::Bird => Color::Indexed(240),
+        Ink::BirdWing => Color::Indexed(245),
+        Ink::BirdLit => Color::Indexed(252),
+        Ink::BoughShade => Color::Indexed(58),
+        Ink::Bough => Color::Indexed(94),
+        Ink::BoughLit => Color::Indexed(137),
+    };
+    Style::default().fg(fg)
 }
 
 /// Fill an empty terminal pane: the night scene over `hint` and the build id.
