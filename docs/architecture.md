@@ -72,6 +72,10 @@ OSC 0/2 탭 타이틀 캡처, 마우스 캡처(클릭 포커스/포워딩, 휠 �
 `#[cfg(test)] mod tests;`로 별도 파일/디렉터리에 분리한다(아래 트리에서는 생략).
 
 ```
+build.rs                  # stamps NIGHTCROW_COMMIT: the commit a binary was built from,
+                          #   shown beside the version on the splash and the empty pane.
+                          #   No git metadata (crates.io package) → "unknown"; a dirty
+                          #   work tree → a trailing "+"
 src/
 ├── main.rs               # entry point: dispatch to daemon / attach / serve / init
 ├── cli.rs, cli/          # Cli/Commands + attach/daemon/init/stop/plugin command handlers
@@ -133,9 +137,9 @@ src/
 │   ├── path_tree.rs, file_view.rs, search.rs, splash/, wall_clock.rs  # repo-dialog
 │   │                     #   browser, file preview state, SearchQuery newtype, the night
 │   │                     #   scene (scene.rs: fixed crow/bough/moon art + a twinkling
-│   │                     #   star table, night.rs: ink → palette, bottom-anchored
-│   │                     #   crop; the startup splash and the empty terminal pane both
-│   │                     #   draw it), unix epoch → HH:MM without a date crate
+│   │                     #   star table, night.rs: ink → palette, bottom-anchored crop,
+│   │                     #   build id; the startup splash and the empty terminal pane
+│   │                     #   both draw it), unix epoch → HH:MM without a date crate
 │   ├── diff_pane/, diff_viewer/  # DiffPane state (hunks/scroll/search/split); the
 │   │                     #   upper-right widget, gutter, split view, file preview
 │   └── terminal_tab/, project_tab/  # pane grid + tab bar + recovery markers (with no

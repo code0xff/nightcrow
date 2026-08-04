@@ -1,4 +1,4 @@
-use super::{draw, draw_idle, scene};
+use super::{build_id, draw, draw_idle, scene};
 use ratatui::{Terminal, backend::TestBackend, style::Color, text::Line};
 
 fn rows(width: u16, height: u16, draw_into: impl FnOnce(&mut ratatui::Frame)) -> Vec<String> {
@@ -45,7 +45,7 @@ fn the_splash_shows_the_crow_the_moon_and_the_stars() {
 }
 
 #[test]
-fn the_splash_names_the_version_and_the_way_out() {
+fn the_splash_names_the_build_and_the_way_out() {
     let text = splash(0).join("\n");
     assert!(text.contains("nightcrow"), "missing product name:\n{text}");
     assert!(
@@ -53,9 +53,24 @@ fn the_splash_names_the_version_and_the_way_out() {
         "missing version:\n{text}"
     );
     assert!(
+        text.contains(env!("NIGHTCROW_COMMIT")),
+        "missing commit {}:\n{text}",
+        env!("NIGHTCROW_COMMIT")
+    );
+    assert!(
         text.contains("Press any key to continue"),
         "missing dismissal prompt:\n{text}"
     );
+}
+
+#[test]
+fn the_build_id_carries_both_the_version_and_the_commit() {
+    let id = build_id();
+    assert!(
+        id.starts_with(&format!("v{}", env!("CARGO_PKG_VERSION"))),
+        "{id}"
+    );
+    assert!(id.ends_with(env!("NIGHTCROW_COMMIT")), "{id}");
 }
 
 #[test]
@@ -90,20 +105,32 @@ fn a_terminal_too_small_for_the_scene_still_draws() {
 }
 
 #[test]
-fn an_empty_pane_puts_the_hint_under_the_scene() {
+fn an_empty_pane_puts_the_hint_and_the_build_id_under_the_scene() {
     let rows = idle(72, 22);
     let text = rows.join("\n");
     assert!(text.contains('●'), "the crow is missing:\n{text}");
 
     let bough = bough_row(&rows);
     let hint = rows.iter().position(|row| row.contains("hint")).unwrap();
-    assert!(bough < hint, "expected the scene above the hint");
+    let build = rows
+        .iter()
+        .position(|row| row.contains(env!("NIGHTCROW_COMMIT")))
+        .expect("the build id is drawn");
+    assert!(
+        bough < hint && hint < build,
+        "expected scene, hint, build id; got rows {bough}, {hint}, {build}"
+    );
 }
 
 #[test]
 fn a_short_empty_pane_keeps_the_hint_and_drops_the_scene() {
-    let text = idle(72, 6).join("\n");
+    let rows = idle(72, 6);
+    let text = rows.join("\n");
     assert!(text.contains("hint"), "the hint must survive:\n{text}");
+    assert!(
+        text.contains(env!("NIGHTCROW_COMMIT")),
+        "the build id must survive:\n{text}"
+    );
     assert!(!text.contains('●'), "no room for the crow here:\n{text}");
 }
 

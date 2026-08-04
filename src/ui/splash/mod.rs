@@ -17,7 +17,8 @@ use ratatui::{
 /// Rows the splash needs under the scene: gap, name, tagline, gap, prompt.
 const FOOTER_HEIGHT: u16 = 5;
 
-/// Draw the splash screen: the night scene, the version, and how to leave.
+/// Draw the splash screen: the night scene, which build this is, and how to
+/// leave.
 ///
 /// `tick` advances once per twinkle frame and drives the stars; it wraps, so any
 /// value is valid. Nothing here dismisses the splash — it stays until the user
@@ -66,7 +67,7 @@ pub fn draw(frame: &mut Frame, accent: Color, tick: usize) {
                     .add_modifier(Modifier::BOLD),
             ),
             Span::styled(
-                format!("  v{}", env!("CARGO_PKG_VERSION")),
+                format!("  {}", build_id()),
                 Style::default().fg(Color::DarkGray),
             ),
         ]))
@@ -95,4 +96,25 @@ pub fn draw(frame: &mut Frame, accent: Color, tick: usize) {
         .alignment(Alignment::Center),
         inner[5],
     );
+}
+
+/// Version and the commit it was built from, e.g. `v0.1.1 · 816b8c3f3`. A `+`
+/// after the commit means the work tree had uncommitted changes; `unknown`
+/// stands in when the build had no git metadata to read (see `build.rs`).
+pub(crate) fn build_id() -> String {
+    format!(
+        "v{} · {}",
+        env!("CARGO_PKG_VERSION"),
+        env!("NIGHTCROW_COMMIT")
+    )
+}
+
+/// The build id as its own dim line, for screens that show nothing else.
+fn build_line() -> Line<'static> {
+    Line::from(Span::styled(
+        build_id(),
+        Style::default()
+            .fg(Color::DarkGray)
+            .add_modifier(Modifier::DIM),
+    ))
 }

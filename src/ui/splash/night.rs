@@ -84,7 +84,7 @@ fn style(ink: Ink, accent: Color) -> Style {
     }
 }
 
-/// Fill an empty terminal pane: the night scene over `hint`.
+/// Fill an empty terminal pane: the night scene over `hint` and the build id.
 ///
 /// The sky runs off the shared clock, so this needs no frame counter from the
 /// caller — it twinkles as long as the event loop keeps redrawing.
@@ -95,7 +95,10 @@ pub fn draw_idle(frame: &mut Frame, area: Rect, accent: Color, hint: Line<'_>) {
 
     let scene_h = scene_height(area);
     let gap = if scene_h > 0 { GAP } else { 0 };
-    let block_h = scene_h + gap + 1;
+    // The build id is what tells a stale client apart from a fresh one, so it is
+    // dropped only when there is genuinely no room for a second line.
+    let build = u16::from(area.height >= scene_h + gap + 2);
+    let block_h = scene_h + gap + 1 + build;
     let top = area.y + area.height.saturating_sub(block_h) / 2;
 
     if scene_h > 0 {
@@ -107,16 +110,23 @@ pub fn draw_idle(frame: &mut Frame, area: Rect, accent: Color, hint: Line<'_>) {
         );
     }
 
+    let hint_y = top + scene_h + gap;
     frame.render_widget(
         Paragraph::new(hint).alignment(Alignment::Center),
-        Rect::new(area.x, top + scene_h + gap, area.width, 1),
+        Rect::new(area.x, hint_y, area.width, 1),
     );
+    if build == 1 {
+        frame.render_widget(
+            Paragraph::new(super::build_line()).alignment(Alignment::Center),
+            Rect::new(area.x, hint_y + 1, area.width, 1),
+        );
+    }
 }
 
-/// Rows to give the scene in `area`, leaving room for the hint; 0 when the pane
-/// cannot hold the bird at all.
+/// Rows to give the scene in `area`, leaving room for the footer; 0 when the
+/// pane cannot hold the bird at all.
 fn scene_height(area: Rect) -> u16 {
-    let spare = area.height.saturating_sub(GAP + 1);
+    let spare = area.height.saturating_sub(GAP + 2);
     if area.width < scene::WIDTH as u16 || spare < MIN_SCENE_HEIGHT {
         return 0;
     }
@@ -148,12 +158,12 @@ mod tests {
 
     #[test]
     fn a_short_pane_crops_the_sky_instead_of_overflowing() {
-        let height = MIN_SCENE_HEIGHT + 2;
+        let height = MIN_SCENE_HEIGHT + 4;
         let shown = scene_height(Rect::new(0, 0, 80, height));
         assert!(shown < SCENE_HEIGHT, "expected a cropped sky, got {shown}");
         assert!(
-            shown + 2 <= height,
-            "the scene and its hint must fit in {height}"
+            shown + 3 <= height,
+            "the scene and its footer must fit in {height}"
         );
     }
 
