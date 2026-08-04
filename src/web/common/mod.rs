@@ -7,4 +7,5 @@
 pub mod auth;
 pub mod conn;
 pub mod http;
+pub mod sessions;
 pub mod sse;
