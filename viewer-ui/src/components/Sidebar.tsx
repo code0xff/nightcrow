@@ -119,7 +119,12 @@ export function Sidebar(props: SidebarProps) {
           onPointerUp={onSidebarDragEnd}
           onPointerCancel={onSidebarDragCancel}
           onLostPointerCapture={onSidebarDragEnd}
-          className={`absolute -right-px top-0 z-10 hidden h-full w-1.5 cursor-col-resize touch-none md:block ${
+          // A tier above the list's own sticky chrome, not level with it. The
+          // commit drill-down's header is `sticky z-10` with a background, and at
+          // equal z-index the later element in the DOM wins — so it painted over
+          // the divider, and the highlight that says "you are dragging this" broke
+          // for exactly the height of that header.
+          className={`absolute -right-px top-0 z-20 hidden h-full w-1.5 cursor-col-resize touch-none md:block ${
             draggingSidebar ? "bg-accent" : "hover:bg-accent"
           }`}
         />
