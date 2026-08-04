@@ -13,6 +13,7 @@ mod plugin_watch;
 mod plugins;
 mod reattach;
 mod recovery;
+mod screen_replay;
 mod scrollback_depth;
 mod size_owner;
 mod startup;
