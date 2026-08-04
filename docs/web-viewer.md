@@ -212,7 +212,10 @@ the same set.
 one is generated and written back into your config (so it survives restarts and
 stays readable) and printed once at startup. To avoid a plaintext password on
 disk, set `hashed_password` to an Argon2 PHC string instead — it takes
-precedence. Login is rate-limited and grants a session cookie.
+precedence. Login is rate-limited and grants a session cookie. Sessions survive
+a daemon restart: tokens are persisted to `~/.nightcrow/sessions` with a 24-hour
+TTL and owner-only file permissions. Logout revokes the token server-side, so
+clearing the cookie alone is not enough to invalidate a session.
 
 > **Security.** The viewer serves repository contents *and* interactive
 > terminals, so an authenticated session is equivalent to shell access. It binds
