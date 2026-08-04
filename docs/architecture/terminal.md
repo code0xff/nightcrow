@@ -69,7 +69,9 @@
 
 `runtime::emulator::PaneEmulator`가 pane당 하나씩 alacritty_terminal의 `Term` + ANSI `Processor`를
 감싸고, 렌더러는 `ScreenView`/`CellView`로만 화면을 조회한다. alacritty 타입은 이 모듈 밖으로
-노출되지 않으므로 에뮬레이터 교체·업그레이드의 영향 범위가 이 파일 하나로 국소화된다.
+노출되지 않으므로 에뮬레이터 교체·업그레이드의 영향 범위가 이 파일 하나로 국소화된다 —
+그리드를 ANSI 바이트로 되돌리는 `screen_snapshot`(`snapshot.rs`)이 이 모듈 안에 있는 이유도
+그것이다. 그 스냅샷이 무엇에 쓰이는지는 [session.md](session.md#스크롤백과-재접속).
 
 원래는 vt100 크레이트를 썼으나 alacritty_terminal 0.26으로 교체했다. 근거: vt100은 (1) 스크롤백
 underflow panic, (2) 스크롤 offset 초과 panic, (3) wide char(한글 등)가 마지막 컬럼에 걸린 채 화면이
