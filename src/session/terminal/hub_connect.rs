@@ -80,7 +80,18 @@ impl TerminalHub {
                 let _ = tx.try_send(TerminalFrame::Control(json));
             }
             for pane in &state.panes {
-                replay_pane(&tx, pane);
+                if !replay_pane(&tx, pane) {
+                    // The queue is this client's own and empty until now, and a
+                    // whole replay of the largest panes allowed fits it (see
+                    // `REPLAY_CHUNK_BYTES`) -- so this is a broken assumption
+                    // rather than a busy moment, and the client is left showing a
+                    // screen with a hole in it that nothing else would explain.
+                    tracing::warn!(
+                        pane = pane.id,
+                        client = id,
+                        "viewer: a pane's screen did not fit the replay queue"
+                    );
+                }
             }
         }
         // Registered with the session while the hub's lock is still held, so a

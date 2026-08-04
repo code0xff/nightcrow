@@ -11,10 +11,15 @@ use std::io::{Read, Write};
 
 /// Largest payload one frame may carry. The reader allocates whatever length
 /// the frame announces, so this is the ceiling on what a single message can make
-/// the process allocate. Set above the largest payload the protocol actually
-/// produces — a terminal scrollback replay, capped at
-/// `MAX_TERMINAL_SCROLLBACK_BYTES` (256 KiB) per pane — with room for a control
-/// message describing every pane at once.
+/// the process allocate.
+///
+/// Set above the largest payload the protocol actually produces. Terminal output
+/// stays under it by being split where it could not: a pane's replay is cut into
+/// frames of `REPLAY_CHUNK_BYTES` (1 MiB) because a client concatenates them
+/// anyway, which is what keeps an alternate-screen pane's screen — the one payload
+/// that grows with the pane's area rather than with a fixed cap — from ever
+/// reaching this limit. A control message describing every pane at once fits with
+/// room to spare.
 pub const MAX_FRAME_BYTES: usize = 4 * 1024 * 1024;
 
 /// What a frame carries. Encoded as the first byte on the wire, so an unknown
