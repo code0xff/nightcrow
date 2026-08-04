@@ -1,3 +1,7 @@
+mod crow;
+#[cfg(test)]
+mod tests;
+
 use ratatui::{
     Frame,
     layout::{Alignment, Constraint, Direction, Layout},
@@ -5,37 +9,17 @@ use ratatui::{
     text::{Line, Span},
     widgets::{Block, Paragraph},
 };
+use std::time::Duration;
 
-/// A perched crow silhouette — head with a beak and eye on the upper-left,
-/// body sweeping down to a pointed tail on the lower-right, sitting on a branch.
-const CROW: &[&str] = &[
-    "      ▄▄▄",
-    "    ▄█▀ ▀█▄",
-    "   ▄█  ●  █▄",
-    "   █▀▀   ▀▀█▄▄▄",
-    "    ██████████████▄",
-    "     ███████████████▄",
-    "      ████████████████▄",
-    "       █████████████████▄",
-    "        ██████████████████▄",
-    "         ███████████████████",
-    "          ████████████████▀",
-    "           ██████████████▀",
-    "            ████████████▀",
-    "             ██████████▀",
-    "              ████████▀",
-    "               ██████▀",
-    "                ████▀",
-    "                 ██▀",
-];
+/// How long one wing position is held.
+pub const FLAP_FRAME: Duration = Duration::from_millis(110);
 
-const BRANCH: &str = "      ───────────────────────────";
-
-/// Draw the splash screen: crow logo, version, and a key-press prompt.
+/// Draw the splash screen: the flapping crow, version, and a key-press prompt.
 ///
-/// There is no timer — the splash stays until the user presses a key
-/// (handled by [`crate::application::splash::splash_loop`]).
-pub fn draw(frame: &mut Frame, accent: Color) {
+/// `tick` advances once per animation frame and drives the flap; it wraps, so
+/// any value is valid. Nothing here dismisses the splash — it stays until the
+/// user presses a key (handled by [`crate::application::splash::splash_loop`]).
+pub fn draw(frame: &mut Frame, accent: Color, tick: usize) {
     let area = frame.area();
 
     frame.render_widget(
@@ -44,7 +28,7 @@ pub fn draw(frame: &mut Frame, accent: Color) {
     );
 
     let version = env!("CARGO_PKG_VERSION");
-    let logo_h = CROW.len() as u16;
+    let logo_h = crow::HEIGHT as u16;
     // crow + branch + gap + version + gap + prompt
     let content_h = logo_h + 1 + 1 + 1 + 1 + 1;
 
@@ -69,20 +53,21 @@ pub fn draw(frame: &mut Frame, accent: Color) {
         ])
         .split(outer[1]);
 
-    // Crow logo
-    let logo_lines: Vec<Line> = CROW
-        .iter()
-        .map(|&row| Line::from(Span::styled(row, Style::default().fg(accent))))
+    // Crow logo. Every row is padded to the same width by `crow::frame`, so
+    // Paragraph's per-line centring lands them all on the same column.
+    let logo_lines: Vec<Line> = crow::frame(tick)
+        .into_iter()
+        .map(|row| Line::from(Span::styled(row, Style::default().fg(accent))))
         .collect();
     frame.render_widget(
         Paragraph::new(logo_lines).alignment(Alignment::Center),
         inner[0],
     );
 
-    // Branch under the crow
+    // Branch under the crow, spanning the logo's width
     frame.render_widget(
         Paragraph::new(Line::from(Span::styled(
-            BRANCH,
+            "─".repeat(crow::WIDTH),
             Style::default().fg(accent).add_modifier(Modifier::DIM),
         )))
         .alignment(Alignment::Center),

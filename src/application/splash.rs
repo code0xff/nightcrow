@@ -1,12 +1,17 @@
 use crate::application::terminal_guard::TuiTerminal;
+use crate::ui::splash::FLAP_FRAME;
 use crossterm::event::{self, Event, KeyCode, KeyEventKind};
+use std::time::Instant;
 
 pub(crate) enum SplashOutcome {
     Enter,
     Quit,
 }
 
-/// Draw the splash once, then block until the user presses a key.
+/// Flap the crow until the user presses a key.
+///
+/// There is no dismissal timer — only the animation is timed, so the splash
+/// waits as long as the user does.
 ///
 /// `accent_idx` is the session's, read from its file rather than taken from the
 /// daemon: the splash draws before this client has attached, so the broadcast
@@ -17,12 +22,21 @@ pub(crate) fn splash_loop(
     accent_idx: usize,
 ) -> anyhow::Result<SplashOutcome> {
     let accent = crate::config::Accent::from_index(accent_idx).color();
-    terminal.draw(|frame| {
-        crate::ui::splash::draw(frame, accent);
-    })?;
+    let mut tick = 0usize;
+    let mut next_frame = Instant::now();
 
     loop {
-        if event::poll(std::time::Duration::from_millis(100))? {
+        if Instant::now() >= next_frame {
+            terminal.draw(|frame| {
+                crate::ui::splash::draw(frame, accent, tick);
+            })?;
+            tick = tick.wrapping_add(1);
+            next_frame = Instant::now() + FLAP_FRAME;
+        }
+
+        // Wait out the rest of the frame rather than a fixed slice, so input
+        // stays responsive and mouse traffic cannot race the animation ahead.
+        if event::poll(next_frame.saturating_duration_since(Instant::now()))? {
             match event::read()? {
                 // Honour Esc so the user can abort during the splash instead
                 // of being forced to wait for it to clear and quit from the
@@ -37,9 +51,7 @@ pub(crate) fn splash_loop(
                 }
                 Event::Resize(_, _) => {
                     terminal.clear()?;
-                    terminal.draw(|frame| {
-                        crate::ui::splash::draw(frame, accent);
-                    })?;
+                    next_frame = Instant::now();
                 }
                 _ => {}
             }
