@@ -131,12 +131,14 @@ src/
 │   │                     #   commits + drill-down, child cache + expanded set)
 │   ├── file_list.rs, commit_list/, tree_list.rs  # the three upper-left row renderers
 │   ├── path_tree.rs, file_view.rs, search.rs, splash/, wall_clock.rs  # repo-dialog
-│   │                     #   browser, file preview state, SearchQuery newtype, first-run
-│   │                     #   overlay (crow.rs: body silhouette + wing flap frames),
-│   │                     #   unix epoch → HH:MM without a date crate
+│   │                     #   browser, file preview state, SearchQuery newtype, the crow
+│   │                     #   (crow.rs: silhouette + flap frames, perch.rs: crow on its
+│   │                     #   branch — startup splash and the empty terminal pane both
+│   │                     #   draw it), unix epoch → HH:MM without a date crate
 │   ├── diff_pane/, diff_viewer/  # DiffPane state (hunks/scroll/search/split); the
 │   │                     #   upper-right widget, gutter, split view, file preview
-│   └── terminal_tab/, project_tab/  # pane grid + tab bar + recovery markers;
+│   └── terminal_tab/, project_tab/  # pane grid + tab bar + recovery markers (with no
+│                         #   pane the grid gives way to splash::draw_idle);
 │                         #   project tab row rendering + click targets
 ├── backend/
 │   ├── mod.rs            # TerminalBackend trait + BackendEvent

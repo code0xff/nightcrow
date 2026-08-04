@@ -1,7 +1,11 @@
 mod crow;
+mod perch;
 #[cfg(test)]
 mod tests;
 
+pub use perch::{FLAP_FRAME, draw_idle};
+
+use perch::{PERCH_HEIGHT, draw_perch};
 use ratatui::{
     Frame,
     layout::{Alignment, Constraint, Direction, Layout},
@@ -9,10 +13,6 @@ use ratatui::{
     text::{Line, Span},
     widgets::{Block, Paragraph},
 };
-use std::time::Duration;
-
-/// How long one wing position is held.
-pub const FLAP_FRAME: Duration = Duration::from_millis(110);
 
 /// Draw the splash screen: the flapping crow, version, and a key-press prompt.
 ///
@@ -28,9 +28,8 @@ pub fn draw(frame: &mut Frame, accent: Color, tick: usize) {
     );
 
     let version = env!("CARGO_PKG_VERSION");
-    let logo_h = crow::HEIGHT as u16;
-    // crow + branch + gap + version + gap + prompt
-    let content_h = logo_h + 1 + 1 + 1 + 1 + 1;
+    // crow + branch, gap, version, gap, prompt
+    let content_h = PERCH_HEIGHT + 1 + 1 + 1 + 1;
 
     let outer = Layout::default()
         .direction(Direction::Vertical)
@@ -44,35 +43,15 @@ pub fn draw(frame: &mut Frame, accent: Color, tick: usize) {
     let inner = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(logo_h), // crow
-            Constraint::Length(1),      // branch
-            Constraint::Length(1),      // gap
-            Constraint::Length(1),      // version + subtitle
-            Constraint::Length(1),      // gap
-            Constraint::Length(1),      // prompt
+            Constraint::Length(PERCH_HEIGHT), // crow + branch
+            Constraint::Length(1),            // gap
+            Constraint::Length(1),            // version + subtitle
+            Constraint::Length(1),            // gap
+            Constraint::Length(1),            // prompt
         ])
         .split(outer[1]);
 
-    // Crow logo. Every row is padded to the same width by `crow::frame`, so
-    // Paragraph's per-line centring lands them all on the same column.
-    let logo_lines: Vec<Line> = crow::frame(tick)
-        .into_iter()
-        .map(|row| Line::from(Span::styled(row, Style::default().fg(accent))))
-        .collect();
-    frame.render_widget(
-        Paragraph::new(logo_lines).alignment(Alignment::Center),
-        inner[0],
-    );
-
-    // Branch under the crow, spanning the logo's width
-    frame.render_widget(
-        Paragraph::new(Line::from(Span::styled(
-            "─".repeat(crow::WIDTH),
-            Style::default().fg(accent).add_modifier(Modifier::DIM),
-        )))
-        .alignment(Alignment::Center),
-        inner[1],
-    );
+    draw_perch(frame, inner[0], accent, tick);
 
     // Version + tagline
     frame.render_widget(
@@ -96,7 +75,7 @@ pub fn draw(frame: &mut Frame, accent: Color, tick: usize) {
             ),
         ]))
         .alignment(Alignment::Center),
-        inner[3],
+        inner[2],
     );
 
     // Key-press prompt
@@ -108,6 +87,6 @@ pub fn draw(frame: &mut Frame, accent: Color, tick: usize) {
                 .add_modifier(Modifier::DIM),
         )))
         .alignment(Alignment::Center),
-        inner[5],
+        inner[4],
     );
 }
