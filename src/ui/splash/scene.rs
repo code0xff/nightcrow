@@ -1,7 +1,7 @@
 //! The night scene: a crow perched on a bough under a crescent moon.
 //!
-//! Everything but the sky is fixed art — the bird never moves. Only the stars
-//! change from frame to frame, which is what keeps the screen alive without
+//! The bird is fixed art and stays put: between frames only the stars twinkle
+//! and, now and then, the eye blinks. That is what keeps the screen alive without
 //! turning it into an animation.
 //!
 //! A sprite is a grid of glyphs plus an aligned ink map, one legend letter per
@@ -172,6 +172,17 @@ const STARS: &[(usize, usize, usize)] = &[
 /// Frames in one twinkle cycle.
 const CYCLE: usize = 10;
 
+/// The eye shuts for a single frame this often — rare enough to read as a blink
+/// rather than a tic. `BLINK_AT` is where in the cycle it falls, and it is not 0
+/// so that frame 0, the first thing anyone sees, has the bird looking back.
+const BLINK_CYCLE: usize = 15;
+const BLINK_AT: usize = 7;
+const EYE_SHUT: char = '─';
+
+/// Frames before the whole scene repeats: the twinkle and the blink together.
+#[cfg(test)]
+const PERIOD: usize = CYCLE * BLINK_CYCLE;
+
 pub(super) const WIDTH: usize = 48;
 pub(super) const HEIGHT: usize = 13;
 
@@ -195,7 +206,27 @@ pub(super) fn frame(tick: usize) -> Vec<Vec<Cell>> {
         }
     }
 
+    if tick % BLINK_CYCLE == BLINK_AT
+        && let Some((row, col)) = eye()
+    {
+        grid[row][col].0 = EYE_SHUT;
+    }
+
     grid
+}
+
+/// Where the eye sits, found once from the painted scene. `None` only if the art
+/// lost its eye, which `the_crow_has_an_eye_to_blink` rules out.
+fn eye() -> Option<(usize, usize)> {
+    static EYE: OnceLock<Option<(usize, usize)>> = OnceLock::new();
+    *EYE.get_or_init(|| {
+        fixed().iter().enumerate().find_map(|(row, cells)| {
+            cells
+                .iter()
+                .position(|&(_, ink)| ink == Ink::Eye)
+                .map(|col| (row, col))
+        })
+    })
 }
 
 /// Everything that never changes, drawn once.
@@ -250,7 +281,9 @@ impl Sprite {
 
 #[cfg(test)]
 mod tests {
-    use super::{BOUGH, CROW, CYCLE, HEIGHT, Ink, Paint, SPRITES, SUBJECT_HEIGHT, WIDTH, frame};
+    use super::{
+        BOUGH, CROW, CYCLE, HEIGHT, Ink, PERIOD, Paint, SPRITES, SUBJECT_HEIGHT, WIDTH, frame,
+    };
 
     fn inks(tick: usize) -> Vec<Vec<Ink>> {
         frame(tick)
@@ -335,14 +368,19 @@ mod tests {
         }
     }
 
+    /// The bird holds still: the sky twinkles and the eye blinks, and nothing else
+    /// may differ from one frame to the next.
     #[test]
-    fn only_the_sky_changes_between_frames() {
+    fn only_the_sky_and_the_blink_change_between_frames() {
         let first = frame(0);
-        for tick in 1..CYCLE {
+        for tick in 1..PERIOD {
             let other = frame(tick);
             for (row, (a, b)) in first.iter().zip(other.iter()).enumerate() {
                 for (col, (x, y)) in a.iter().zip(b.iter()).enumerate() {
                     if !x.1.is_fixed() && !y.1.is_fixed() {
+                        continue;
+                    }
+                    if x.1 == Ink::Eye && y.1 == Ink::Eye {
                         continue;
                     }
                     assert_eq!(
@@ -351,6 +389,31 @@ mod tests {
                     );
                 }
             }
+        }
+    }
+
+    #[test]
+    fn the_crow_has_an_eye_to_blink() {
+        let (row, col) = super::eye().expect("the crow has an eye");
+        assert_eq!(frame(0)[row][col], ('●', Ink::Eye));
+    }
+
+    #[test]
+    fn the_eye_shuts_for_one_frame_and_opens_again() {
+        let (row, col) = super::eye().unwrap();
+        let glyph = |tick: usize| frame(tick)[row][col].0;
+
+        let shut: Vec<usize> = (0..PERIOD)
+            .filter(|&tick| glyph(tick) == super::EYE_SHUT)
+            .collect();
+        assert_eq!(
+            shut.len(),
+            PERIOD / super::BLINK_CYCLE,
+            "expected one blink per blink cycle, got {shut:?}"
+        );
+        for tick in shut {
+            assert_eq!(glyph(tick + 1), '●', "the eye stayed shut after {tick}");
+            assert_eq!(glyph(tick - 1), '●', "the eye was shut before {tick}");
         }
     }
 
@@ -410,6 +473,6 @@ mod tests {
     #[test]
     fn a_wrapped_tick_still_renders() {
         assert_eq!(frame(usize::MAX).len(), HEIGHT);
-        assert_eq!(frame(CYCLE), frame(0));
+        assert_eq!(frame(PERIOD), frame(0));
     }
 }
