@@ -6,7 +6,7 @@ pub(crate) enum SplashOutcome {
     Quit,
 }
 
-/// Run the splash until it times out or a key dismisses it.
+/// Draw the splash once, then block until the user presses a key.
 ///
 /// `accent_idx` is the session's, read from its file rather than taken from the
 /// daemon: the splash draws before this client has attached, so the broadcast
@@ -16,16 +16,13 @@ pub(crate) fn splash_loop(
     terminal: &mut TuiTerminal,
     accent_idx: usize,
 ) -> anyhow::Result<SplashOutcome> {
-    let splash = crate::ui::splash::SplashState::new();
     let accent = crate::config::Accent::from_index(accent_idx).color();
+    terminal.draw(|frame| {
+        crate::ui::splash::draw(frame, accent);
+    })?;
+
     loop {
-        terminal.draw(|frame| {
-            crate::ui::splash::draw(frame, &splash, accent);
-        })?;
-        if splash.is_done() {
-            break;
-        }
-        if event::poll(std::time::Duration::from_millis(16))? {
+        if event::poll(std::time::Duration::from_millis(100))? {
             match event::read()? {
                 // Honour Esc so the user can abort during the splash instead
                 // of being forced to wait for it to clear and quit from the
@@ -38,11 +35,17 @@ pub(crate) fn splash_loop(
                     }
                     break;
                 }
-                Event::Resize(_, _) => terminal.clear()?,
+                Event::Resize(_, _) => {
+                    terminal.clear()?;
+                    terminal.draw(|frame| {
+                        crate::ui::splash::draw(frame, accent);
+                    })?;
+                }
                 _ => {}
             }
         }
     }
+
     terminal.clear()?;
     Ok(SplashOutcome::Enter)
 }
