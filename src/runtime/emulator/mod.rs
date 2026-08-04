@@ -145,6 +145,15 @@ impl PaneEmulator {
         ScreenView { term: &self.term }
     }
 
+    /// The bytes that reproduce this screen on another terminal.
+    ///
+    /// What a client attaching to a pane whose program draws on the alternate
+    /// screen is given, because that pane's recorded bytes cannot rebuild a
+    /// screen. See [`snapshot`] for what a snapshot does and does not carry.
+    pub fn screen_snapshot(&self) -> Vec<u8> {
+        snapshot::screen_snapshot(&self.term)
+    }
+
     /// Which input, if any, a scroll request for this pane must be turned
     /// into. Mouse reporting wins over `alternateScroll` because a program
     /// that asked for wheel events wants them even on the alternate screen.
@@ -217,6 +226,7 @@ fn term_size(rows: u16, cols: u16) -> TermSize {
 }
 
 mod modes;
+mod snapshot;
 mod view;
 
 pub use modes::PaneModes;
@@ -224,5 +234,7 @@ pub use view::{CellView, ScreenView};
 
 #[cfg(test)]
 mod modes_tests;
+#[cfg(test)]
+mod snapshot_tests;
 #[cfg(test)]
 mod tests;

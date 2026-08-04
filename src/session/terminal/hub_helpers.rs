@@ -51,13 +51,6 @@ pub enum Command {
     CancelRecovery {
         pane: PaneId,
     },
-    /// Make these panes' programs draw their whole screen again, because a
-    /// client has just attached and what it was replayed cannot show it (see
-    /// [`hub_repaint`](super::hub_repaint)). Queued by `connect`, which holds no
-    /// backend of its own.
-    Repaint {
-        panes: Vec<PaneId>,
-    },
     /// Bring this hub's plugin children in line with a re-read `[[plugin]]`
     /// table. On the queue because every plugin host is worker-local — a plugin
     /// can drive a pane's keyboard, so nothing outside the worker may touch one.
@@ -79,9 +72,18 @@ pub struct StartupPane {
     pub(super) plugin: Option<String>,
 }
 
-/// A live terminal and the recent raw bytes it has produced, kept so a client
-/// that connects can be replayed the current screen. Bounded by
-/// [`limits::MAX_TERMINAL_SCROLLBACK_BYTES`].
+/// A live terminal and what a client that connects has to be given to see it.
+///
+/// Which of the two records below is the pane's screen depends on the mode its
+/// program is in, and only one of them is written at a time:
+///
+/// - **Normal screen** — `scrollback`, the raw bytes the pane has produced. They
+///   *are* the screen and the history behind it, so replaying them rebuilds both.
+/// - **Alternate screen** — `screen` + `since`. The raw bytes are cell updates
+///   against a screen a new client does not have, so what is kept instead is the
+///   screen itself, serialized (`hub_modes::PaneModeTracker::snapshot`). While a
+///   program is on the alternate screen `scrollback` is left frozen, holding the
+///   normal screen it will be returned to.
 pub(super) struct PaneState {
     pub(super) id: PaneId,
     /// What this pane goes by: the name the session gave a configured startup
@@ -91,6 +93,18 @@ pub(super) struct PaneState {
     /// within seconds, so nothing else could tell that client.
     pub(super) title: Option<String>,
     pub(super) scrollback: VecDeque<u8>,
+    /// This pane's screen as of the last snapshot, empty unless its program is on
+    /// the alternate screen.
+    pub(super) screen: Vec<u8>,
+    /// Bytes broadcast since `screen` was taken. A snapshot is refreshed once per
+    /// worker tick, so a client can connect between the broadcast of a chunk and
+    /// the refresh that accounts for it; replaying `screen` then `since` is what
+    /// makes the two add up to exactly what every other client has seen.
+    ///
+    /// **Never dropped, only superseded.** Terminal bytes cannot be skipped, so
+    /// outgrowing [`limits::MAX_TERMINAL_SCROLLBACK_BYTES`] forces a fresh
+    /// snapshot (which empties this) rather than evicting from the front.
+    pub(super) since: VecDeque<u8>,
     /// The size the PTY is currently set to, tracked so a connecting client
     /// learns it and can skip a resize that would change nothing.
     pub(super) rows: u16,
@@ -161,27 +175,19 @@ pub(super) fn canonical_order(current: &[PaneId], requested: &[PaneId]) -> Vec<P
     out
 }
 
-/// Whether putting a pane in front of a new client was enough.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum Replayed {
-    /// The client has everything: the pane's modes and the history that is its
-    /// screen.
-    Whole,
-    /// The modes are restored, but only the program can produce the screen —
-    /// see [`hub_repaint`](super::hub_repaint).
-    NeedsRepaint,
-}
+/// Back to the normal screen. Sent ahead of a normal-screen replay for a pane
+/// whose program is on the alternate one, because the prelude that follows is
+/// what switches away from it.
+const LEAVE_ALT_SCREEN: &[u8] = b"\x1b[?1049l";
 
-/// Announce `pane` to an attaching client and give it what the pane's record can:
-/// the modes its program established, and then its history — unless the program
-/// draws on the alternate screen, whose recorded bytes are cell updates against a
-/// screen this client does not have. Replaying those paints fragments over a blank
-/// screen, which is exactly the mess that makes someone reach for the redraw key.
+/// Announce `pane` to an attaching client and put its screen in front of it: the
+/// modes its program established, and then whichever record holds that program's
+/// screen (see [`PaneState`]).
 ///
 /// Frames go straight onto the client's queue rather than through a broadcast:
 /// this runs while the caller holds the state lock, before the client is eligible
 /// for broadcasts at all (see [`TerminalHub::connect`](super::TerminalHub::connect)).
-pub(super) fn replay_pane(tx: &SyncSender<TerminalFrame>, pane: &PaneState) -> Replayed {
+pub(super) fn replay_pane(tx: &SyncSender<TerminalFrame>, pane: &PaneState) {
     if let Ok(json) = serde_json::to_string(&ServerMessage::Created {
         pane: pane.id,
         rows: pane.rows,
@@ -193,25 +199,47 @@ pub(super) fn replay_pane(tx: &SyncSender<TerminalFrame>, pane: &PaneState) -> R
     }) {
         let _ = tx.try_send(TerminalFrame::Control(json));
     }
-    // Ahead of any history: these are the modes the pane's program set once, at
-    // startup, and the history is what no longer contains them. Without this a
-    // reattaching client is a terminal the program never configured — mouse
-    // reporting off, arrows in the wrong encoding, paste unbracketed.
-    let _ = tx.try_send(TerminalFrame::Output {
-        pane: pane.id,
-        data: pane.modes.prelude(),
-    });
-    if pane.modes.alt_screen {
-        return Replayed::NeedsRepaint;
-    }
-    if !pane.scrollback.is_empty() {
-        let data: Vec<u8> = pane.scrollback.iter().copied().collect();
+    // The normal screen first, for a pane whose program has left it: `scrollback`
+    // was frozen where the program switched away, so it is what the client will be
+    // returned to the moment that program exits. Without it, quitting a
+    // full-screen program left a client that attached during it looking at a blank
+    // screen. Explicitly on the normal buffer, because the prelude below is what
+    // switches off it.
+    if pane.modes.alt_screen && !pane.scrollback.is_empty() {
+        let mut data = Vec::with_capacity(LEAVE_ALT_SCREEN.len() + pane.scrollback.len());
+        data.extend_from_slice(LEAVE_ALT_SCREEN);
+        data.extend(pane.scrollback.iter().copied());
         let _ = tx.try_send(TerminalFrame::Output {
             pane: pane.id,
             data,
         });
     }
-    Replayed::Whole
+    // Ahead of the screen: these are the modes the pane's program set once, at
+    // startup, and no record of them survives in what follows. Without this a
+    // reattaching client is a terminal the program never configured — mouse
+    // reporting off, arrows in the wrong encoding, paste unbracketed. It leads
+    // with `1049`, so it is also what puts the client on the buffer the program is
+    // drawing on before that buffer's contents arrive.
+    let _ = tx.try_send(TerminalFrame::Output {
+        pane: pane.id,
+        data: pane.modes.prelude(),
+    });
+    let data: Vec<u8> = if pane.modes.alt_screen {
+        // The screen, then everything broadcast since it was taken — together they
+        // are exactly what every client already attached has seen.
+        let mut data = Vec::with_capacity(pane.screen.len() + pane.since.len());
+        data.extend_from_slice(&pane.screen);
+        data.extend(pane.since.iter().copied());
+        data
+    } else {
+        pane.scrollback.iter().copied().collect()
+    };
+    if !data.is_empty() {
+        let _ = tx.try_send(TerminalFrame::Output {
+            pane: pane.id,
+            data,
+        });
+    }
 }
 
 /// Append raw PTY bytes to a pane's scrollback, evicting the oldest bytes to

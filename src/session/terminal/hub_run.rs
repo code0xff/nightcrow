@@ -3,7 +3,6 @@ use super::hub_diag::ClearWatch;
 use super::hub_helpers::{Command, broadcast_locked};
 use super::hub_modes::PaneModeTracker;
 use super::hub_plugins::Plugins;
-use super::hub_repaint::Repaints;
 use super::{DEFAULT_PANE_SIZE, TerminalHub};
 use crate::backend::{BackendEvent, PaneId, PtyBackend, TerminalBackend};
 use std::sync::Arc;
@@ -22,8 +21,6 @@ impl TerminalHub {
         // What each pane's program has done to its terminal, so a client that
         // attaches later can be told rather than left to infer it from a replay.
         let mut modes = PaneModeTracker::default();
-        // Repaints asked for by attaching clients, and the sizes owed back.
-        let mut repaints = Repaints::default();
         // Why this is here at all: `hub_diag`.
         let mut clears = ClearWatch::default();
 
@@ -78,7 +75,7 @@ impl TerminalHub {
                         cols,
                         client,
                     } => {
-                        self.resize_pane(&mut backend, pane, rows, cols, client);
+                        self.resize_pane(&mut backend, &mut modes, pane, rows, cols, client);
                     }
                     Command::Close { pane } if self.pane_is_live(pane) => {
                         // Closed for good, unlike an exit: the slot goes with
@@ -99,9 +96,6 @@ impl TerminalHub {
                     Command::CancelRecovery { pane } => {
                         self.cancel_recovery(&mut backend, &mut plugins, pane)
                     }
-                    Command::Repaint { panes } => {
-                        self.start_repaints(&mut backend, &mut repaints, &panes, Instant::now())
-                    }
                     Command::ReloadPlugins { plugins: configs } => {
                         self.reload_hub_plugins(&mut backend, &mut plugins, &configs)
                     }
@@ -109,6 +103,11 @@ impl TerminalHub {
                 }
             }
 
+            // Alternate-screen panes whose screen this tick's output has moved on.
+            // Snapshotted once at the end rather than per chunk: a busy program
+            // sends many small chunks and serializing a grid for each of them
+            // would be the most expensive thing on this path.
+            let mut restless: Vec<PaneId> = Vec::new();
             for event in backend.drain_events() {
                 match event {
                     BackendEvent::Output { pane, data } => {
@@ -119,7 +118,29 @@ impl TerminalHub {
                             self.pane_size(pane)
                                 .unwrap_or((DEFAULT_PANE_SIZE.rows, DEFAULT_PANE_SIZE.cols))
                         });
-                        self.record_and_broadcast(pane, data, observed);
+                        let alt = observed.modes.alt_screen;
+                        // A chunk that moved the pane onto the alternate screen
+                        // carries the switch and the first paint together, so its
+                        // screen is taken in the same breath as the record. Waiting
+                        // for the end of the tick would leave a window in which a
+                        // connecting client is owed bytes against a screen from
+                        // before the switch.
+                        let screen = (alt && observed.alt_changed)
+                            .then(|| modes.snapshot(pane))
+                            .flatten();
+                        let crowded = self.record_and_broadcast(pane, data, observed, screen);
+                        if alt {
+                            // Refreshed now rather than at the end of the tick: what
+                            // a connecting client is handed on top of the screen has
+                            // to stay bounded, and only a fresh screen bounds it.
+                            if crowded {
+                                if let Some(screen) = modes.snapshot(pane) {
+                                    self.store_screen(pane, screen);
+                                }
+                            } else if !restless.contains(&pane) {
+                                restless.push(pane);
+                            }
+                        }
                     }
                     // Destroyed as well as forgotten. `PtyBackend` leaves pane
                     // removal to its caller (see its `drain_events`), so a pane
@@ -131,7 +152,6 @@ impl TerminalHub {
                     BackendEvent::Exited { pane } => {
                         modes.forget(pane);
                         clears.forget(pane);
-                        self.forget_repaints(&mut repaints, pane);
                         self.pane_exited(&mut backend, &mut plugins, pane)
                     }
                     // The hub owns its PTYs outright: it opens them through
@@ -149,8 +169,13 @@ impl TerminalHub {
                 }
             }
 
-            if !repaints.is_idle() {
-                self.finish_repaints(&mut backend, &mut repaints, Instant::now());
+            // Once per tick, for every alternate-screen pane this tick moved: the
+            // screen a connecting client is given, and the point at which what it
+            // is owed on top of that screen goes back to nothing.
+            for pane in restless {
+                if let Some(screen) = modes.snapshot(pane) {
+                    self.store_screen(pane, screen);
+                }
             }
 
             if !plugins.is_inert() {

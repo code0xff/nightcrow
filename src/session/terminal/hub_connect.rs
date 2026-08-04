@@ -2,10 +2,9 @@
 //! front of one, and the two sends that address a single client.
 
 use super::frame::{ServerMessage, TerminalFrame};
-use super::hub_helpers::{Command, Replayed, replay_pane};
+use super::hub_helpers::replay_pane;
 use super::session::{Client, ReportBudget};
 use super::{CLIENT_QUEUE_DEPTH, TerminalHub, TerminalSession};
-use crate::backend::PaneId;
 use crate::session::size_owner::ViewerId;
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
@@ -17,15 +16,15 @@ impl TerminalHub {
     /// is eligible for broadcasts.
     ///
     /// Per live pane: a `Created`, the modes its program has set
-    /// ([`PaneModes::prelude`](crate::runtime::emulator::PaneModes::prelude)),
-    /// and then either its recorded history or — for a program drawing on the
-    /// alternate screen, whose recorded bytes cannot rebuild a screen — a request
-    /// that the program draw again (see [`hub_repaint`](super::hub_repaint)). Done
-    /// under the state lock so this snapshot cannot interleave with the worker's
-    /// append-and-broadcast (see [`Shared`](super::hub_helpers::Shared)); the
-    /// client therefore receives every pane's history exactly once and in order
-    /// ahead of the live stream. A fresh hub (e.g. after a server restart) has no
-    /// panes, so a reconnecting client correctly comes back to an empty panel.
+    /// ([`PaneModes::prelude`](crate::runtime::emulator::PaneModes::prelude)), and
+    /// then that pane's screen — its recorded bytes, or for a program drawing on
+    /// the alternate screen the serialized screen those bytes produced (see
+    /// [`replay_pane`]). Done under the state lock so this snapshot cannot
+    /// interleave with the worker's append-and-broadcast (see
+    /// [`Shared`](super::hub_helpers::Shared)); the client therefore receives every
+    /// pane's screen exactly once and in order ahead of the live stream. A fresh
+    /// hub (e.g. after a server restart) has no panes, so a reconnecting client
+    /// correctly comes back to an empty panel.
     ///
     /// `viewer` names who this connection belongs to and `arriving` says whether
     /// a person just sat down at it — a page opening rather than a repository
@@ -62,10 +61,6 @@ impl TerminalHub {
         }) {
             let _ = tx.try_send(TerminalFrame::Control(json));
         }
-        // `needs_repaint` collects, under the lock, the panes whose program has
-        // to draw again before this client can see anything; the request goes out
-        // once the lock is released.
-        let mut needs_repaint: Vec<PaneId> = Vec::new();
         if replaying {
             // Ahead of the panes, though it names one of them. A client holds
             // its outbound resize until the layout stops moving, and replaying
@@ -85,9 +80,7 @@ impl TerminalHub {
                 let _ = tx.try_send(TerminalFrame::Control(json));
             }
             for pane in &state.panes {
-                if replay_pane(&tx, pane) == Replayed::NeedsRepaint {
-                    needs_repaint.push(pane.id);
-                }
+                replay_pane(&tx, pane);
             }
         }
         // Registered with the session while the hub's lock is still held, so a
@@ -108,16 +101,6 @@ impl TerminalHub {
             socket,
         });
         drop(state);
-
-        // Off the lock: this reaches the worker, which needs the backend. A full
-        // queue means the worker is already far behind, and a repaint is the one
-        // thing worth losing there — the pane is still live and the next attach
-        // asks again.
-        if !needs_repaint.is_empty() {
-            let _ = self.commands.try_send(Command::Repaint {
-                panes: needs_repaint,
-            });
-        }
 
         // Offer the startup terminals to be sized rather than spawning them
         // here. A PTY created before any client has measured its cell is born

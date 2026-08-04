@@ -72,6 +72,8 @@ impl TerminalHub {
             id: pane,
             title,
             scrollback: VecDeque::new(),
+            screen: Vec::new(),
+            since: VecDeque::new(),
             rows,
             cols,
             modes: PaneModes::default(),
@@ -81,24 +83,71 @@ impl TerminalHub {
         }
     }
 
-    /// Append output to the pane's bounded scrollback, record what the output
-    /// says about the pane, and broadcast it — all under one lock so a
-    /// concurrently connecting client cannot slip a replay snapshot between the
-    /// append and the broadcast.
+    /// Record output against the pane and broadcast it — under one lock, so a
+    /// concurrently connecting client cannot slip a replay between the record and
+    /// the broadcast and end up with the pane's screen missing this chunk or
+    /// carrying it twice.
+    ///
+    /// Where the output is recorded depends on the mode the chunk leaves the pane
+    /// in (see [`PaneState`](super::hub_helpers::PaneState)). `screen` is the
+    /// serialized screen when the caller has one to hand over, which it takes
+    /// before locking — the emulator it comes from is not `Send`.
+    ///
+    /// Returns whether this pane's screen wants refreshing sooner than the end of
+    /// the tick, because `since` has outgrown its cap.
     ///
     /// The clients already attached are not told the new title: they are being
     /// handed the very bytes that set it, and each runs the emulator that reads
     /// them. What this record is for is the client that is not here yet.
-    pub(super) fn record_and_broadcast(&self, pane: PaneId, data: Vec<u8>, observed: Observed) {
+    pub(super) fn record_and_broadcast(
+        &self,
+        pane: PaneId,
+        data: Vec<u8>,
+        observed: Observed,
+        screen: Option<Vec<u8>>,
+    ) -> bool {
         let mut state = self.state.lock().expect("terminal state poisoned");
+        let mut crowded = false;
         if let Some(p) = state.panes.iter_mut().find(|p| p.id == pane) {
-            push_scrollback(&mut p.scrollback, &data);
+            if observed.modes.alt_screen {
+                match screen {
+                    // The snapshot already accounts for this chunk, so nothing is
+                    // owed after it.
+                    Some(screen) => {
+                        p.screen = screen;
+                        p.since.clear();
+                    }
+                    None => {
+                        p.since.extend(data.iter().copied());
+                        crowded = p.since.len() > limits::MAX_TERMINAL_SCROLLBACK_BYTES;
+                    }
+                }
+            } else {
+                // Back on the normal screen — or never left it — so the ring is the
+                // screen again and whatever was kept for the alternate one is spent.
+                if observed.alt_changed {
+                    p.screen = Vec::new();
+                    p.since.clear();
+                }
+                push_scrollback(&mut p.scrollback, &data);
+            }
             p.modes = observed.modes;
             if let Some(title) = observed.title {
                 p.title = Some(title);
             }
         }
         broadcast_locked(&mut state.clients, TerminalFrame::Output { pane, data });
+        crowded
+    }
+
+    /// Replace a pane's recorded screen, forgetting what was owed on top of the
+    /// one before it. A pane that has gone since the snapshot was taken is ignored.
+    pub(super) fn store_screen(&self, pane: PaneId, screen: Vec<u8>) {
+        let mut state = self.state.lock().expect("terminal state poisoned");
+        if let Some(p) = state.panes.iter_mut().find(|p| p.id == pane) {
+            p.screen = screen;
+            p.since.clear();
+        }
     }
 
     /// Drop a pane and tell every client, but only if it was still live — a pane

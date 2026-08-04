@@ -2,9 +2,11 @@
 //!
 //! The pane's recorded history is a byte window, so everything a program did
 //! before that window is unrecoverable from it — the modes it set at startup, and
-//! (for a program drawing on the alternate screen) the screen itself. These are
-//! the two answers the hub gives instead: state it tracked, and a repaint it asks
-//! the program for.
+//! (for a program drawing on the alternate screen) the screen itself. Both are
+//! answered from state the hub tracked: the modes it followed, and the screen its
+//! own emulator holds, serialized. **The pane's program is never asked for
+//! anything** — it may be blocked, or slow, or unwilling, and none of that may
+//! decide whether a person sees their terminal.
 //!
 //! These tests are Unix-only: they use `printf`, `trap`, and ANSI escape
 //! sequences that require a Unix shell.
@@ -71,11 +73,17 @@ struct Running {
     pane: PaneId,
     /// The client that opened the pane. Kept connected: a pane's only client
     /// going away is a different situation from a second one arriving.
-    _first: TerminalSession,
+    first: TerminalSession,
     _dir: tempfile::TempDir,
 }
 
 fn pane_running(sequences: &str) -> Running {
+    pane_running_awaiting(sequences, PAINTED)
+}
+
+/// The same, waiting for a marker of the caller's choosing — for a fixture whose
+/// first command is not the one that paints.
+fn pane_running_awaiting(sequences: &str, marker: &str) -> Running {
     let dir = tempfile::TempDir::new().unwrap();
     // These assertions exercise the hub's repaint protocol, not the user's rc
     // files or shell-specific trap syntax. Bash is present on both supported
@@ -109,13 +117,13 @@ fn pane_running(sequences: &str) -> Running {
     // for the program's own bytes to come back.
     let echoed = next_matching(&session, |f| {
         matches!(f, TerminalFrame::Output { pane: p, data }
-            if *p == pane && String::from_utf8_lossy(data).contains(PAINTED))
+            if *p == pane && String::from_utf8_lossy(data).contains(marker))
     });
     assert!(echoed.is_some(), "the pane never produced its output");
     Running {
         hub,
         pane,
-        _first: session,
+        first: session,
         _dir: dir,
     }
 }
@@ -139,36 +147,105 @@ fn a_reattaching_client_is_told_the_modes_its_pane_is_in() {
 }
 
 #[test]
-fn an_alternate_screen_panes_history_is_not_replayed() {
+fn an_alternate_screen_pane_is_replayed_its_screen() {
     let running = pane_running(ENTER_FULLSCREEN);
     let (hub, pane) = (&running.hub, running.pane);
 
     let second = attach(hub);
     let replay = String::from_utf8_lossy(&output_for(&second, pane)).to_string();
 
-    // Those bytes are cell updates against a screen this client does not have.
-    // Replaying them paints fragments; the repaint that was asked for instead is
-    // what puts a screen there.
+    // Not the recorded bytes -- those are cell updates against a screen this
+    // client does not have. What arrives is the screen those updates produced,
+    // written out as an absolute repaint.
     assert!(
-        !replay.contains(PAINTED),
-        "an alternate-screen pane must not have its paint bytes replayed, got: {replay:?}"
+        replay.contains(PAINTED),
+        "an alternate-screen pane must be replayed its screen, got: {replay:?}"
     );
     hub.stop();
 }
 
+/// The mechanism this replaced: the hub used to shrink the pane by a row and put
+/// it back, so the program would answer `SIGWINCH` by drawing again. It was a
+/// request, and a request can go unanswered -- a program blocked on the network
+/// draws nothing, and the per-pane floor that kept a reconnecting phone from
+/// repainting continuously would also starve the connection that finally stuck.
+/// The screen is the hub's to give now, so nothing is asked of the program.
 #[test]
-fn a_reattaching_client_makes_an_alternate_screen_program_draw_again() {
-    // A program cannot be asked to repaint in the abstract: what it is told is
-    // that its size changed. The trap stands in for a program's redraw.
+fn an_alternate_screen_program_is_not_asked_to_draw_again() {
     let running = pane_running("trap 'printf REDR%sEW' WINCH; printf '\\033[?1049hPAINT%sED'\n");
     let (hub, pane) = (&running.hub, running.pane);
 
     let second = attach(hub);
-    let redrew = String::from_utf8_lossy(&output_for(&second, pane)).to_string();
+    let replay = String::from_utf8_lossy(&output_for(&second, pane)).to_string();
 
     assert!(
-        redrew.contains("REDREW"),
-        "attaching must make the pane's program draw its screen again, got: {redrew:?}"
+        replay.contains(PAINTED),
+        "the screen must still arrive, got: {replay:?}"
+    );
+    assert!(
+        !replay.contains("REDREW"),
+        "attaching must not make the pane's program redraw, got: {replay:?}"
+    );
+    hub.stop();
+}
+
+/// The failure this whole path exists to remove. Recovering from a dropped
+/// network means reconnecting on a timer, and the attempts that do not stick come
+/// seconds apart; every one of them has to be given the screen, because any one of
+/// them may be the one the person is left looking at.
+#[test]
+fn every_reattach_in_a_row_is_replayed_the_screen() {
+    let running = pane_running(ENTER_FULLSCREEN);
+    let (hub, pane) = (&running.hub, running.pane);
+
+    for attempt in 1..=3 {
+        let client = attach(hub);
+        let replay = String::from_utf8_lossy(&output_for(&client, pane)).to_string();
+        assert!(
+            replay.contains(PAINTED),
+            "attempt {attempt} must be replayed the screen, got: {replay:?}"
+        );
+    }
+    hub.stop();
+}
+
+/// A full-screen program leaves the normal screen as it found it, and quitting
+/// returns to it. A client that attached during the program has to have been given
+/// that screen too, or the moment the program exits it is looking at nothing.
+#[test]
+fn an_alternate_screen_pane_is_replayed_the_normal_screen_under_it() {
+    // Two commands rather than one, because a chunk is recorded whole: text that
+    // arrives *together with* the switch to the alternate screen is part of the
+    // screen, not of the normal screen under it. Waiting for the first marker is
+    // what makes the switch a chunk of its own.
+    let running = pane_running_awaiting("printf 'BEFO%sRE\\n'\n", "BEFORE");
+    let (hub, pane) = (&running.hub, running.pane);
+    running.first.dispatch(ClientMessage::Input {
+        pane,
+        data: ENTER_FULLSCREEN.to_string(),
+    });
+    let painted = next_matching(&running.first, |f| {
+        matches!(f, TerminalFrame::Output { pane: p, data }
+            if *p == pane && String::from_utf8_lossy(data).contains(PAINTED))
+    });
+    assert!(painted.is_some(), "the program never reached its paint");
+
+    let second = attach(hub);
+    let replay = String::from_utf8_lossy(&output_for(&second, pane)).to_string();
+
+    assert!(
+        replay.contains("BEFORE"),
+        "the normal screen under the program must be replayed too, got: {replay:?}"
+    );
+    // Ahead of the prelude that switches to the alternate screen: it has to land on
+    // the buffer the program will be returned to.
+    let normal = replay.find("BEFORE").expect("just asserted");
+    let alternate = replay
+        .find("\x1b[?1049h")
+        .expect("the prelude must be there");
+    assert!(
+        normal < alternate,
+        "the normal screen must arrive before the switch away from it, got: {replay:?}"
     );
     hub.stop();
 }

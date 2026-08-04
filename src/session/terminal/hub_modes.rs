@@ -16,21 +16,25 @@
 //!
 //! Kept on the worker thread rather than in [`Shared`](super::Shared): a
 //! `PaneEmulator` holds `Rc`, so it is not `Send` and cannot live behind the
-//! state mutex. What crosses the lock is the plain flag set the worker writes
-//! into `PaneState` after each chunk.
+//! state mutex. What crosses the lock is what the worker writes into `PaneState`
+//! after each chunk — the flag set, and for an alternate-screen pane the
+//! serialized screen (see [`PaneModeTracker::snapshot`]).
 //!
-//! **The grid is not consulted.** An emulator needs one to parse into, and this
-//! one is opened at the pane's size and then left alone — resizes are not
-//! followed, because nothing here reads a cell. Anything that starts reading the
-//! screen has to start following them.
+//! **The grid is read, so resizes have to be followed.** These emulators used to
+//! exist only to answer "which modes is this pane in", and their grids were
+//! scratch space for the parser; now `snapshot` reads the cells, so a grid at the
+//! wrong width would parse this pane's output wrapping where the child does not
+//! and hand a connecting client a screen laid out differently from every other
+//! client's. `resize` is what keeps it in step, and `hub_layout::resize_pane` is
+//! the one place that has to call it.
 
 use crate::backend::PaneId;
 use crate::runtime::emulator::{PaneEmulator, PaneModes};
 use std::collections::HashMap;
 
-/// Scrollback for the tracking emulators: none. Their grids exist so the parser
-/// has somewhere to put what it parses, and history would be paid for per pane
-/// on top of the ring the hub already keeps.
+/// Scrollback for the tracking emulators: none. A snapshot is the screen, not the
+/// history behind it — the byte ring in `PaneState` is what carries history, and
+/// paying for it twice per pane would buy nothing.
 const NO_HISTORY: usize = 0;
 
 /// What one chunk of a pane's output said about it.
@@ -40,11 +44,18 @@ pub(super) struct Observed {
     /// "cleared": the emulator already drops empty and whitespace-only titles,
     /// which programs emit to mean leave it alone.
     pub(super) title: Option<String>,
+    /// Whether this chunk moved the pane onto or off the alternate screen. The
+    /// two sides are recorded differently — a screen against a byte ring — so the
+    /// worker has to know the moment it changes rather than discover it later.
+    pub(super) alt_changed: bool,
 }
 
 #[derive(Default)]
 pub(super) struct PaneModeTracker {
     emulators: HashMap<PaneId, PaneEmulator>,
+    /// Whether each pane was on the alternate screen as of its last chunk, so a
+    /// change can be reported without the caller having to remember.
+    alt_screen: HashMap<PaneId, bool>,
 }
 
 impl PaneModeTracker {
@@ -65,8 +76,17 @@ impl PaneModeTracker {
             PaneEmulator::new(rows, cols, NO_HISTORY)
         });
         let events = emulator.process(data);
+        let modes = emulator.modes();
+        // A pane nothing has been observed for counts as being on the normal
+        // screen, which is where every program starts.
+        let was_alt = self
+            .alt_screen
+            .insert(pane, modes.alt_screen)
+            .unwrap_or(false);
+        let alt_changed = was_alt != modes.alt_screen;
         Observed {
-            modes: emulator.modes(),
+            modes,
+            alt_changed,
             // Bounded here rather than where it is shown: this one goes into
             // every connecting client's greeting, and the child process chooses
             // it.
@@ -79,10 +99,28 @@ impl PaneModeTracker {
         }
     }
 
+    /// Give a pane's emulator the size its PTY was just set to, so the grid the
+    /// snapshot is read from wraps where the child does.
+    ///
+    /// A pane that has produced nothing has no emulator yet; it opens at the
+    /// current size on its first chunk, so there is nothing to correct here.
+    pub(super) fn resize(&mut self, pane: PaneId, rows: u16, cols: u16) {
+        if let Some(emulator) = self.emulators.get_mut(&pane) {
+            emulator.resize(rows, cols);
+        }
+    }
+
+    /// The bytes that reproduce this pane's screen, or `None` for a pane that has
+    /// produced no output yet — there is no emulator, and nothing to show.
+    pub(super) fn snapshot(&self, pane: PaneId) -> Option<Vec<u8>> {
+        self.emulators.get(&pane).map(|e| e.screen_snapshot())
+    }
+
     /// Forget a pane whose process is gone. A relaunch comes back under a new
     /// pane id and opens a fresh emulator on its first chunk, which is correct:
     /// the modes belong to the program, not to the slot.
     pub(super) fn forget(&mut self, pane: PaneId) {
         self.emulators.remove(&pane);
+        self.alt_screen.remove(&pane);
     }
 }

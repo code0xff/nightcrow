@@ -25,9 +25,13 @@ impl TerminalHub {
     /// client caches it as "already applied"; a client that slipped between the
     /// two would be told the old size for a PTY that has the new one, and would
     /// then skip the resize that would have corrected it.
+    /// `modes` is resized with the PTY: the grid a connecting client's screen is
+    /// read from has to wrap where the child now does (see
+    /// [`hub_modes`](super::hub_modes)).
     pub(super) fn resize_pane(
         &self,
         backend: &mut PtyBackend,
+        modes: &mut super::hub_modes::PaneModeTracker,
         pane: PaneId,
         rows: u16,
         cols: u16,
@@ -54,6 +58,7 @@ impl TerminalHub {
             return;
         }
         backend.resize(pane, rows, cols);
+        modes.resize(pane, rows, cols);
         p.rows = rows;
         p.cols = cols;
         // Every client's emulator has to wrap where the child now does, so the
