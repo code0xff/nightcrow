@@ -1,11 +1,11 @@
 //! Authentication for nightcrow's web servers: Argon2 password verification
-//! (matching code-server's scheme), opaque session tokens, and login rate
-//! limiting. The cookie name belongs to each server, not here.
+//! (matching code-server's scheme) and login rate limiting. Session tokens
+//! live in `sessions.rs`. The cookie name belongs to each server, not here.
 
 use anyhow::{Result, anyhow};
 use argon2::password_hash::SaltString;
 use argon2::{Argon2, PasswordHash, PasswordHasher, PasswordVerifier};
-use std::collections::{HashSet, VecDeque};
+use std::collections::VecDeque;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
@@ -49,65 +49,6 @@ impl Auth {
             Err(_) => false,
         }
     }
-}
-
-/// A set of live session tokens. Tokens are opaque 256-bit random strings and
-/// stay valid until the process exits (a fresh launch invalidates all sessions,
-/// which is the desired behaviour for a dev tool).
-pub struct SessionStore {
-    tokens: Mutex<HashSet<String>>,
-}
-
-impl SessionStore {
-    pub fn new() -> Self {
-        Self {
-            tokens: Mutex::new(HashSet::new()),
-        }
-    }
-
-    /// Mint a new session token and remember it.
-    pub fn issue(&self) -> Result<String> {
-        let mut bytes = [0u8; 32];
-        getrandom::fill(&mut bytes)
-            .map_err(|e| anyhow!("OS RNG unavailable for session token: {e}"))?;
-        let token = hex(&bytes);
-        self.tokens
-            .lock()
-            .expect("session store mutex poisoned")
-            .insert(token.clone());
-        Ok(token)
-    }
-
-    /// Invalidate a token server-side. Clearing the cookie alone leaves a
-    /// leaked token usable until the process exits, which makes logout a
-    /// suggestion rather than a revocation.
-    pub fn revoke(&self, token: &str) {
-        self.tokens
-            .lock()
-            .expect("session store mutex poisoned")
-            .remove(token);
-    }
-
-    pub fn is_valid(&self, token: &str) -> bool {
-        self.tokens
-            .lock()
-            .expect("session store mutex poisoned")
-            .contains(token)
-    }
-}
-
-impl Default for SessionStore {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-fn hex(bytes: &[u8]) -> String {
-    let mut s = String::with_capacity(bytes.len() * 2);
-    for b in bytes {
-        s.push_str(&format!("{b:02x}"));
-    }
-    s
 }
 
 /// Login rate limiter mirroring code-server: at most 2 attempts per minute and
@@ -180,34 +121,6 @@ mod tests {
     #[test]
     fn from_hashed_rejects_garbage() {
         assert!(Auth::from_hashed("not-a-phc-string").is_err());
-    }
-
-    #[test]
-    fn session_tokens_are_unique_and_validate() {
-        let store = SessionStore::new();
-        let a = store.issue().unwrap();
-        let b = store.issue().unwrap();
-        assert_ne!(a, b);
-        assert_eq!(a.len(), 64, "32 random bytes hex-encode to 64 chars");
-        assert!(store.is_valid(&a));
-        assert!(store.is_valid(&b));
-        assert!(!store.is_valid("unknown"));
-    }
-
-    #[test]
-    fn a_revoked_session_stops_validating() {
-        let store = SessionStore::new();
-        let token = store.issue().unwrap();
-        assert!(store.is_valid(&token));
-
-        store.revoke(&token);
-
-        assert!(
-            !store.is_valid(&token),
-            "a leaked token must stop working at logout, not at process exit"
-        );
-        // Revoking an unknown token is a no-op, not a panic.
-        store.revoke("never-issued");
     }
 
     #[test]
