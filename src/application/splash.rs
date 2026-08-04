@@ -1,5 +1,5 @@
 use crate::application::terminal_guard::TuiTerminal;
-use crate::ui::splash::FLAP_FRAME;
+use crate::ui::splash::TWINKLE_FRAME;
 use crossterm::event::{self, Event, KeyCode, KeyEventKind};
 use std::time::Instant;
 
@@ -8,9 +8,9 @@ pub(crate) enum SplashOutcome {
     Quit,
 }
 
-/// Flap the crow until the user presses a key.
+/// Show the night scene until the user presses a key.
 ///
-/// There is no dismissal timer — only the animation is timed, so the splash
+/// There is no dismissal timer — only the twinkling sky is timed, so the splash
 /// waits as long as the user does.
 ///
 /// `accent_idx` is the session's, read from its file rather than taken from the
@@ -31,7 +31,7 @@ pub(crate) fn splash_loop(
                 crate::ui::splash::draw(frame, accent, tick);
             })?;
             tick = tick.wrapping_add(1);
-            next_frame = Instant::now() + FLAP_FRAME;
+            next_frame = Instant::now() + TWINKLE_FRAME;
         }
 
         // Wait out the rest of the frame rather than a fixed slice, so input

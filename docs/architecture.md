@@ -92,8 +92,8 @@ src/
 │   │                     #   daemon-owned tab list
 │   ├── terminal_guard.rs # raw mode + alternate screen, restored on the way out
 │   ├── bootstrap.rs, event_loop.rs, splash.rs  # App construction + startup commands,
-│   │                     #   main_loop (poll/render/input drain), splash flap loop
-│   │                     #   (timed frames, dismissed only by a key press)
+│   │                     #   main_loop (poll/render/input drain), splash loop (timed
+│   │                     #   sky frames, dismissed only by a key press)
 │   └── input/            # dispatch, ViewMode handlers, prefix follow-up,
 │                         #   mouse, paste, repo-dialog keys
 ├── platform/             # OS-adjacent services shared by domain layers:
@@ -131,9 +131,10 @@ src/
 │   │                     #   commits + drill-down, child cache + expanded set)
 │   ├── file_list.rs, commit_list/, tree_list.rs  # the three upper-left row renderers
 │   ├── path_tree.rs, file_view.rs, search.rs, splash/, wall_clock.rs  # repo-dialog
-│   │                     #   browser, file preview state, SearchQuery newtype, the crow
-│   │                     #   (crow.rs: silhouette + flap frames, perch.rs: crow on its
-│   │                     #   branch — startup splash and the empty terminal pane both
+│   │                     #   browser, file preview state, SearchQuery newtype, the night
+│   │                     #   scene (scene.rs: fixed crow/bough/moon art + a twinkling
+│   │                     #   star table, night.rs: ink → palette, bottom-anchored
+│   │                     #   crop; the startup splash and the empty terminal pane both
 │   │                     #   draw it), unix epoch → HH:MM without a date crate
 │   ├── diff_pane/, diff_viewer/  # DiffPane state (hunks/scroll/search/split); the
 │   │                     #   upper-right widget, gutter, split view, file preview
