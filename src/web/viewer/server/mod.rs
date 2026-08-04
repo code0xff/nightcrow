@@ -13,7 +13,9 @@ mod routes;
 
 use crate::session::prefs::PrefsStore;
 use crate::session::{SessionOptions, SessionState};
-use crate::web::common::auth::{Auth, RateLimiter, SessionStore};
+use crate::web::common::auth::{Auth, RateLimiter};
+use crate::web::common::sessions;
+use crate::web::common::sessions::SessionStore;
 use anyhow::{Context, Result};
 use std::net::{IpAddr, SocketAddr, TcpListener};
 use std::sync::Arc;
@@ -51,6 +53,7 @@ pub struct ViewerOptions {
     pub bind: IpAddr,
     pub port: u16,
     pub auth: Auth,
+    pub sessions: SessionStore,
     pub hot: crate::config::AgentIndicatorConfig,
     pub session: SessionOptions,
 }
@@ -77,7 +80,7 @@ impl ViewerState {
         Self {
             bound_loopback: options.bind.is_loopback(),
             auth: options.auth,
-            sessions: SessionStore::new(),
+            sessions: options.sessions,
             limiter: RateLimiter::new(),
             connections: Arc::new(AtomicUsize::new(0)),
             hot: options.hot,
@@ -105,11 +108,18 @@ impl ViewerServer {
                 viewer.bind
             )
         })?;
+        let session_store = sessions::session_store_path()
+            .map(SessionStore::load)
+            .unwrap_or_else(|err| {
+                tracing::warn!(%err, "could not open session store; starting in-memory");
+                SessionStore::new()
+            });
         Self::start_with_plugins(
             ViewerOptions {
                 bind,
                 port: viewer.port,
                 auth,
+                sessions: session_store,
                 hot: launch.agent_indicator.clone(),
                 session: SessionOptions {
                     repos: launch.paths.to_vec(),

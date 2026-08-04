@@ -14,6 +14,7 @@ use super::{VIEWER_SESSION_COOKIE, ViewerOptions, ViewerServer};
 use crate::session::prefs::PrefsStore;
 use crate::test_util::{make_repo, run_git};
 use crate::web::common::auth::Auth;
+use crate::web::common::sessions::SessionStore;
 use std::io::{Read, Write};
 use std::net::{SocketAddr, TcpStream};
 use std::time::Duration;
@@ -43,6 +44,7 @@ pub(super) fn server_with(
         bind: "127.0.0.1".parse().unwrap(),
         port: 0,
         auth: Auth::from_plaintext("swordfish").unwrap(),
+        sessions: SessionStore::new(),
         hot,
         session: crate::session::SessionOptions {
             repos: paths.to_vec(),
