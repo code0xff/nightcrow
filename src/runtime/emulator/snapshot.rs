@@ -30,6 +30,7 @@ use alacritty_terminal::index::{Column, Line, Point};
 use alacritty_terminal::term::Term;
 use alacritty_terminal::term::cell::{Cell, Flags};
 use alacritty_terminal::vte::ansi::{Color, NamedColor};
+use std::fmt::Write as _;
 
 /// How a cell looks. The remaining flags describe the grid's own bookkeeping
 /// (wide-char spacers, wrap continuation) rather than anything a terminal can be
@@ -52,6 +53,16 @@ impl Pen {
     }
 }
 
+/// Whether a cell is indistinguishable from one that was never written, so a run
+/// of them at the end of a row can be erased instead of spelled out.
+///
+/// Held to *every* attribute rather than just the background: a space carrying a
+/// foreground colour looks the same but is not the same cell, and erasing it would
+/// hand a client a screen that differs from the one it is replacing.
+fn is_blank(cell: &Cell) -> bool {
+    cell.c == ' ' && cell.zerowidth().is_none() && Pen::of(cell) == Pen::of(&Cell::default())
+}
+
 fn rendered_flags() -> Flags {
     Flags::INVERSE
         | Flags::BOLD
@@ -66,7 +77,12 @@ fn rendered_flags() -> Flags {
 pub(super) fn screen_snapshot(term: &Term<EventProxy>) -> Vec<u8> {
     let grid = term.grid();
     let (rows, cols) = (grid.screen_lines(), grid.columns());
-    let mut out = String::from("\x1b[m\x1b[2J");
+    // One escape and one glyph per cell is the floor; the slack covers each row's
+    // `CUP` and the attribute runs. Reserved up front because a snapshot of a large
+    // pane is taken on the worker's tick, where a dozen reallocations of a
+    // megabyte-long string is the whole cost.
+    let mut out = String::with_capacity(rows * cols + rows * 16 + 32);
+    out.push_str("\x1b[m\x1b[2J");
     // Carried across rows: `SGR` survives a `CUP`, so a run of equal attributes
     // spanning a row boundary still costs one escape.
     let mut pen: Option<Pen> = None;
@@ -77,8 +93,20 @@ pub(super) fn screen_snapshot(term: &Term<EventProxy>) -> Vec<u8> {
         // cancels it — which is also why a full row of cells can never scroll
         // the screen. Grid line 0 is the top of the live screen whatever the
         // display offset is, so this does not depend on the emulator's scroll.
-        out.push_str(&format!("\x1b[{};1H", row + 1));
-        for col in 0..cols {
+        let _ = write!(out, "\x1b[{};1H", row + 1);
+        // Everything past the last cell worth naming is erased rather than spelled
+        // out. On a screen that is mostly empty — which most screens are, and a
+        // large pane especially — this is the difference between a snapshot of a
+        // few kilobytes and one of several hundred.
+        let last = (0..cols)
+            .rev()
+            .find(|&col| !is_blank(&grid[Point::new(Line(row as i32), Column(col))]));
+        let Some(last) = last else {
+            out.push_str(ERASE_TO_END_OF_ROW);
+            pen = Some(Pen::of(&Cell::default()));
+            continue;
+        };
+        for col in 0..=last {
             let cell = &grid[Point::new(Line(row as i32), Column(col))];
             // The second half of a wide character, or the filler left before one
             // that wrapped: the glyph already covers this column, and emitting
@@ -91,7 +119,7 @@ pub(super) fn screen_snapshot(term: &Term<EventProxy>) -> Vec<u8> {
             }
             let cell_pen = Pen::of(cell);
             if pen != Some(cell_pen) {
-                out.push_str(&sgr(cell_pen));
+                write_sgr(&mut out, cell_pen);
                 pen = Some(cell_pen);
             }
             out.push(cell.c);
@@ -99,24 +127,41 @@ pub(super) fn screen_snapshot(term: &Term<EventProxy>) -> Vec<u8> {
                 out.extend(zerowidth);
             }
         }
+        // Only when the row was not written to its last column: there the cursor is
+        // left pending-wrap *on* that column, and erasing to the end of the line
+        // from there would wipe the cell just written.
+        if last + 1 < cols {
+            out.push_str(ERASE_TO_END_OF_ROW);
+            pen = Some(Pen::of(&Cell::default()));
+        }
     }
 
     // The pen the program left set, so the next thing it writes looks the way it
     // means to rather than inheriting the last cell of the screen.
-    out.push_str(&sgr(Pen::of(&grid.cursor.template)));
+    write_sgr(&mut out, Pen::of(&grid.cursor.template));
     let point = grid.cursor.point;
-    out.push_str(&format!(
+    let _ = write!(
+        out,
         "\x1b[{};{}H",
         point.line.0.max(0) + 1,
         point.column.0 + 1
-    ));
+    );
     out.into_bytes()
 }
 
-/// One absolute `SGR`. Leads with `0` so the sequence states the whole pen
-/// rather than a change from whatever the reader had.
-fn sgr(pen: Pen) -> String {
-    let mut params = vec!["0".to_string()];
+/// Erase the rest of the row to blank cells. The reset leads because `EL` erases
+/// with the *current* background, and what it has to leave behind is the default
+/// one — which is what makes the erased cells equal the cells they stand in for.
+const ERASE_TO_END_OF_ROW: &str = "\x1b[m\x1b[K";
+
+/// One absolute `SGR`. Leads with `0` so the sequence states the whole pen rather
+/// than a change from whatever the reader had.
+///
+/// Appended in place rather than returned: on a densely coloured screen this runs
+/// once per cell, and building a string per call was measurably the cost of the
+/// whole snapshot.
+fn write_sgr(out: &mut String, pen: Pen) {
+    out.push_str("\x1b[0");
     for (flag, param) in [
         (Flags::BOLD, "1"),
         (Flags::DIM, "2"),
@@ -131,61 +176,66 @@ fn sgr(pen: Pen) -> String {
         (Flags::STRIKEOUT, "9"),
     ] {
         if pen.flags.contains(flag) {
-            params.push(param.to_string());
+            out.push(';');
+            out.push_str(param);
         }
     }
-    if let Some(param) = color_param(pen.fg, true) {
-        params.push(param);
-    }
-    if let Some(param) = color_param(pen.bg, false) {
-        params.push(param);
-    }
-    format!("\x1b[{}m", params.join(";"))
+    write_color(out, pen.fg, true);
+    write_color(out, pen.bg, false);
+    out.push('m');
 }
 
-/// The `SGR` parameter selecting `color`, or `None` when the default is right —
-/// every sequence starts from a reset, so the default needs saying nothing.
+/// The `SGR` parameter selecting `color`. The default is written as nothing at
+/// all — every sequence starts from a reset, so it needs no saying.
 ///
 /// A named colour with no fixed palette slot (`Cursor`, `BrightForeground`,
 /// `DimForeground`) defers to the default for the same reason
 /// [`to_ratatui_color`](super::view::to_ratatui_color) renders it as `Reset`:
 /// where it lands is the host terminal's business, not this snapshot's.
-fn color_param(color: Color, foreground: bool) -> Option<String> {
+fn write_color(out: &mut String, color: Color, foreground: bool) {
     let (basic, bright, extended) = if foreground {
         (30, 90, 38)
     } else {
         (40, 100, 48)
     };
     match color {
-        Color::Spec(rgb) => Some(format!("{extended};2;{};{};{}", rgb.r, rgb.g, rgb.b)),
-        Color::Indexed(index) => Some(indexed_param(index, basic, bright, extended)),
+        Color::Spec(rgb) => {
+            let _ = write!(out, ";{extended};2;{};{};{}", rgb.r, rgb.g, rgb.b);
+        }
+        Color::Indexed(index) => write_indexed(out, index, basic, bright, extended),
         Color::Named(named) => {
             let index = named as usize;
             if index < 16 {
-                Some(indexed_param(index as u8, basic, bright, extended))
-            } else {
-                match named {
-                    NamedColor::DimBlack => Some(indexed_param(0, basic, bright, extended)),
-                    NamedColor::DimRed => Some(indexed_param(1, basic, bright, extended)),
-                    NamedColor::DimGreen => Some(indexed_param(2, basic, bright, extended)),
-                    NamedColor::DimYellow => Some(indexed_param(3, basic, bright, extended)),
-                    NamedColor::DimBlue => Some(indexed_param(4, basic, bright, extended)),
-                    NamedColor::DimMagenta => Some(indexed_param(5, basic, bright, extended)),
-                    NamedColor::DimCyan => Some(indexed_param(6, basic, bright, extended)),
-                    NamedColor::DimWhite => Some(indexed_param(7, basic, bright, extended)),
-                    _ => None,
-                }
+                write_indexed(out, index as u8, basic, bright, extended);
+            } else if let Some(dim) = dim_slot(named) {
+                write_indexed(out, dim, basic, bright, extended);
             }
         }
     }
 }
 
-fn indexed_param(index: u8, basic: u8, bright: u8, extended: u8) -> String {
+/// The palette slot a dim named colour stands for. `CellView::dim` carries the dim
+/// attribute itself, matching how the renderers read it.
+fn dim_slot(named: NamedColor) -> Option<u8> {
+    match named {
+        NamedColor::DimBlack => Some(0),
+        NamedColor::DimRed => Some(1),
+        NamedColor::DimGreen => Some(2),
+        NamedColor::DimYellow => Some(3),
+        NamedColor::DimBlue => Some(4),
+        NamedColor::DimMagenta => Some(5),
+        NamedColor::DimCyan => Some(6),
+        NamedColor::DimWhite => Some(7),
+        _ => None,
+    }
+}
+
+fn write_indexed(out: &mut String, index: u8, basic: u8, bright: u8, extended: u8) {
     if index < 8 {
-        format!("{}", basic + index)
+        let _ = write!(out, ";{}", basic + index);
     } else if index < 16 {
-        format!("{}", bright + (index - 8))
+        let _ = write!(out, ";{}", bright + (index - 8));
     } else {
-        format!("{extended};5;{index}")
+        let _ = write!(out, ";{extended};5;{index}");
     }
 }

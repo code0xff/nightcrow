@@ -201,3 +201,33 @@ fn the_pen_the_program_left_set_is_restored() {
 
     assert_eq!(screen(&replayed), screen(&origin));
 }
+
+/// A space carrying a colour looks like an empty cell but is not one. Erasing the
+/// end of a row is only allowed where what it leaves behind is identical.
+#[test]
+fn trailing_spaces_that_carry_attributes_are_not_erased() {
+    for (input, what) in [
+        ("\x1b[41m      ", "trailing spaces with a background"),
+        ("\x1b[4m      ", "trailing underlined spaces"),
+        ("\x1b[7m      ", "trailing reversed spaces"),
+    ] {
+        assert_same_screen(input, what);
+    }
+}
+
+/// What the erasing is for. A large pane is mostly empty most of the time, and
+/// spelling every blank cell out is what a replay pays for.
+#[test]
+fn a_mostly_empty_screen_costs_far_less_than_its_cells() {
+    let (rows, cols) = (100u16, 300u16);
+    let mut emulator = PaneEmulator::new(rows, cols, 0);
+    emulator.process(b"\x1b[?1049h\x1b[2J\x1b[50;10Hjust this");
+
+    let snapshot = emulator.screen_snapshot();
+    let cells = usize::from(rows) * usize::from(cols);
+    assert!(
+        snapshot.len() < cells / 4,
+        "a screen of {cells} cells with one line on it must not cost {} bytes",
+        snapshot.len()
+    );
+}
