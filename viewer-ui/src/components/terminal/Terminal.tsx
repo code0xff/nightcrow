@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { planLayout, type PaneView } from "../../lib/terminalLayout";
 import { usePaneDrag } from "../../hooks/terminal/usePaneDrag";
 import { useTerminalSocket } from "../../hooks/terminal/useTerminalSocket";
@@ -8,6 +8,7 @@ import { usePaneRecovery } from "../../hooks/terminal/usePaneRecovery";
 import { usePaneCommands } from "../../hooks/terminal/usePaneCommands";
 import { usePaneFocus } from "../../hooks/terminal/usePaneFocus";
 import { useStartupSizes } from "../../hooks/terminal/useStartupSizes";
+import { usePanelSize } from "../../hooks/terminal/usePanelSize";
 import { PaneGrid } from "./PaneGrid";
 import { PaneTabs } from "./PaneTabs";
 import { TermKeyBar } from "./TermKeyBar";
@@ -57,12 +58,12 @@ export function TerminalPanel({
   const [panes, setPanes] = useState<number[]>([]);
   const [active, setActive] = useState<number | null>(null);
   const [zoomed, setZoomed] = useState<number | null>(null);
-  const [size, setSize] = useState({ w: 0, h: 0 });
   const [titles, setTitles] = useState<Record<number, string>>({});
   // Whether this page's layout is what sets the pane sizes. A PTY has one size
   // and the child cannot be re-flowed afterwards, so one client at a time
   // decides it; the rest render the grid they are given.
   const [ownsSize, setOwnsSize] = useState(true);
+  const size = usePanelSize(containerRef);
   const { recovery, setRecovery, cancelRecovery } = usePaneRecovery(socketRef);
   // Derived rather than corrected in the handler, so the panel cannot render a
   // state its pane list does not support at all. See `lib/zoom.ts`.
@@ -131,24 +132,6 @@ export function TerminalPanel({
     ownsSize,
     layoutPending: zoomPending(zoomServer, panes),
   });
-
-  useEffect(() => {
-    const container = containerRef.current;
-    if (!container) return;
-    // Keep the same object when the pixels are unchanged. A fresh one is never
-    // `Object.is`-equal, so React would re-render — and every consumer would
-    // re-fit every pane — for observer callbacks that carry no news, which the
-    // browser delivers whenever anything in the subtree relayouts.
-    const observer = new ResizeObserver(() => {
-      const w = container.clientWidth;
-      const h = container.clientHeight;
-      setSize((current) =>
-        current.w === w && current.h === h ? current : { w, h },
-      );
-    });
-    observer.observe(container);
-    return () => observer.disconnect();
-  }, []);
 
   usePaneFocus({
     repo,
