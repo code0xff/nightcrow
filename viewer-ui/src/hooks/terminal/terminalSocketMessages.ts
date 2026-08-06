@@ -5,6 +5,7 @@ import {
   type PaneSize,
   type TerminalServerMessage,
 } from "../../api/terminal";
+import type { LinkState } from "../../lib/attachStatus";
 import { reconcileOrder } from "../../lib/paneOrder";
 import { applyRecovery, type RecoveryByPane } from "../../lib/recovery";
 import type { PaneView } from "../../lib/terminalLayout";
@@ -20,6 +21,9 @@ export interface TerminalMessageContext {
   sentSizesRef: MutableRefObject<Map<number, PaneSize>>;
   lastActiveByRepoRef: MutableRefObject<Map<string, number>>;
   zoomAskedRef: MutableRefObject<number | null | undefined>;
+  /** Not a plain setter: the socket hook remembers whether this page has ever
+   *  been attached, so a link it loses reads as a reconnect. */
+  setLink: (state: LinkState) => void;
   setPending: Setter<number | null>;
   setReplayLeft: Setter<number>;
   setPanes: Setter<number[]>;
@@ -60,6 +64,7 @@ function handleControlMessage(
   switch (message.type) {
     case "hello":
       context.clientIdRef.current = message.client;
+      context.setLink("live");
       context.setReplayLeft(message.panes);
       return;
     case "pending":

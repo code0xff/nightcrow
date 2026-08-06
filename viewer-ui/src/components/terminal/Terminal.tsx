@@ -9,6 +9,7 @@ import { usePaneCommands } from "../../hooks/terminal/usePaneCommands";
 import { usePaneFocus } from "../../hooks/terminal/usePaneFocus";
 import { useStartupSizes } from "../../hooks/terminal/useStartupSizes";
 import { usePanelSize } from "../../hooks/terminal/usePanelSize";
+import { AttachNotice } from "./AttachNotice";
 import { PaneGrid } from "./PaneGrid";
 import { PaneTabs } from "./PaneTabs";
 import { TermKeyBar } from "./TermKeyBar";
@@ -18,6 +19,11 @@ import { shownTab } from "../../lib/paneViewMode";
 import { PanelDivider, type PanelDividerProps } from "./PanelDivider";
 import { PanelToolbar } from "./PanelToolbar";
 import { renderedZoom, zoomPending } from "../../lib/zoom";
+import {
+  attachLabel,
+  attachStatus,
+  type LinkState,
+} from "../../lib/attachStatus";
 
 export function TerminalPanel({
   repo,
@@ -51,6 +57,10 @@ export function TerminalPanel({
   // their size can be measured from the slot each will occupy.
   const slotRefs = useRef(new Map<number, HTMLDivElement>());
   const [pending, setPending] = useState<number | null>(null);
+  // Where the socket is. Held here rather than inferred from the pane list,
+  // which is empty both while attaching and when the session really has no
+  // terminal — the two the panel used to render identically.
+  const [link, setLink] = useState<LinkState>("connecting");
   // Panes the replay has promised but not yet delivered. The grid is planned for
   // them too, so each pane arrives into the cell it will keep instead of being
   // given the whole panel and shrunk by the next one.
@@ -88,6 +98,7 @@ export function TerminalPanel({
     sentSizesRef,
     lastActiveByRepoRef,
     zoomAskedRef,
+    setLink,
     setPending,
     setReplayLeft,
     setPanes,
@@ -181,6 +192,16 @@ export function TerminalPanel({
     panes.length + replayLeft > 0 ? panes.length + replayLeft : (pending ?? 0);
   const layout = planLayout(slots, size.w >= size.h);
 
+  // Said in two places because neither covers both: `AttachNotice` needs an
+  // empty panel to sit in, so once panes fill it — the session's, or a dead
+  // socket's still on screen — the toolbar chip is what is left.
+  const status = attachStatus({
+    link,
+    panes: panes.length,
+    replayLeft,
+    pending,
+  });
+
   return (
     <section
       ref={sectionRef}
@@ -209,6 +230,7 @@ export function TerminalPanel({
         }
         ownsSize={ownsSize}
         maximized={maximized}
+        waiting={panes.length > 0 ? attachLabel(status) : null}
         recovery={recovery}
         panes={panes}
         onCancelRecovery={cancelRecovery}
@@ -217,12 +239,7 @@ export function TerminalPanel({
         onToggleMaximized={onToggleMaximized}
       />
       <div className="relative min-h-0 flex-1 overflow-hidden bg-ink-950 p-1">
-        {panes.length === 0 && pending === null && (
-          <p className="p-3 text-ink-400">
-            No terminal open. Press <span className="text-accent">+</span> above
-            to start one.
-          </p>
-        )}
+        {panes.length === 0 && <AttachNotice status={status} />}
         <PaneGrid
           containerRef={containerRef}
           mode={mode}

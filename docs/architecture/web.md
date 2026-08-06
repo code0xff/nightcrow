@@ -466,6 +466,17 @@ UI, `hooks/`는 UI·터미널·저장소 상태, `lib/`는 API 이외의 순수 
   회복시킨다**: `visibilitychange`(visible)·`online`에 `resumeTick`을 올려 폴링을 한 번 돌리고
   (`AbortController`로 suspend된 in-flight 요청을 버린다) status SSE도 다시 구독한다. 재구독은 status를
   `null`로 비우지 않아 **`Loading…` 깜빡임 없이** 마지막 스냅샷을 유지하다 새 replay로 갈아끼운다.
+- **터미널 패널만은 조용히 낫지 못한다**(`lib/attachStatus.ts`). 위의 폴링과 달리 재연결은 마지막
+  스냅샷을 유지할 수 없다 — `connect`가 pane 목록을 비우고 xterm을 dispose한 뒤 replay가 pane을 하나씩
+  다시 세우므로(스크롤백까지 실려 오면 수 초), 그동안 패널은 **비어 있다**. 그런데 비어 있는 패널이
+  하던 말은 "No terminal open. Press + to start one"이었다 — 벌어지는 일의 정반대다. 그래서 소켓의
+  위치(`LinkState`: `hello` 전/후, 잃은 뒤)를 pane 목록과 함께 하나의 상태로 파생시켜
+  (`attachStatus`) 두 자리에 그린다: **패널이 비었으면 그 자리에**(`AttachNotice`), **pane이 이미
+  있으면 툴바 칩으로**. 후자가 필요한 이유는 소켓이 끊긴 뒤 재연결까지의 1초 동안 **죽은 소켓의
+  pane이 멀쩡한 얼굴로 남아 있기** 때문이다(입력은 아무 데도 가지 않는다). 그래서 `link`가 pane보다
+  우선한다. 폰에서는 이것이 예외가 아니라 일상이다 — 15초 못 읽은 페이지는 소켓이 닫히고 전 pane이
+  replay로 다시 선다(위 "느린 클라이언트"). 첫 접속(`Connecting…`)과 잃었던 연결(`Reconnecting…`)을
+  구분하는 것도 그래서다. 그 사실은 저장소마다 새로 센다 — 프로젝트를 바꾼 것은 재연결이 아니다.
 
 ### 좁은 화면
 

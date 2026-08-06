@@ -1,5 +1,6 @@
 import { useLayoutEffect, useRef } from "react";
 import type { MutableRefObject } from "react";
+import type { LinkState } from "../../lib/attachStatus";
 import type { RecoveryByPane } from "../../lib/recovery";
 import { takeClaim, viewerId } from "../../lib/viewerId";
 import type { PaneView } from "../../lib/terminalLayout";
@@ -18,6 +19,9 @@ interface UseTerminalSocketArgs {
    *  the connection carrying it is gone — including a repository switch, whose
    *  pane ids belong to a different project entirely. */
   zoomAskedRef: MutableRefObject<number | null | undefined>;
+  /** Where the socket is, so the panel can say it is attaching rather than
+   *  leave a blank panel reading as "no terminal open". */
+  setLink: React.Dispatch<React.SetStateAction<LinkState>>;
   setPending: React.Dispatch<React.SetStateAction<number | null>>;
   /** Panes the replay has promised and not yet delivered. */
   setReplayLeft: React.Dispatch<React.SetStateAction<number>>;
@@ -46,6 +50,7 @@ export function useTerminalSocket({
   sentSizesRef,
   lastActiveByRepoRef,
   zoomAskedRef,
+  setLink,
   setPending,
   setReplayLeft,
   setPanes,
@@ -63,6 +68,17 @@ export function useTerminalSocket({
   useLayoutEffect(() => {
     let closedByUs = false;
     let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
+    // Whether this page has ever been attached to *this* repository's session.
+    // A link lost after that is a reconnect, which is a different thing to be
+    // told than a first attach; the effect restarts per repository, so
+    // switching projects says "connecting" again rather than inheriting the
+    // previous project's link.
+    let everLive = false;
+    const linkTo = (state: LinkState) => {
+      if (state === "live") everLive = true;
+      setLink(state);
+    };
+    const waiting = (): LinkState => (everLive ? "reconnecting" : "connecting");
     const messageContext = {
       repo,
       clientIdRef,
@@ -71,6 +87,7 @@ export function useTerminalSocket({
       sentSizesRef,
       lastActiveByRepoRef,
       zoomAskedRef,
+      setLink: linkTo,
       setPending,
       setReplayLeft,
       setPanes,
@@ -90,6 +107,7 @@ export function useTerminalSocket({
 
     const connect = () => {
       clientIdRef.current = null;
+      linkTo(waiting());
       setReplayLeft(0);
       // Anything asked for on the socket that just went is unanswerable, and a
       // switch has moved to pane ids that mean something else.
@@ -130,6 +148,10 @@ export function useTerminalSocket({
       };
       socket.onclose = () => {
         if (closedByUs) return;
+        // Said here rather than left to `connect`: the panes of the socket that
+        // just went stay on screen for the second in between, and typing into
+        // them reaches nothing.
+        linkTo(waiting());
         reconnectTimer = setTimeout(connect, 1000);
       };
     };

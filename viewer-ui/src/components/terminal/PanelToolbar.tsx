@@ -15,6 +15,10 @@ export interface PanelToolbarProps {
    *  the button that takes the sizing back appears. */
   ownsSize: boolean;
   maximized: boolean;
+  /** What the panel is still waiting for, if anything. Only set while panes are
+   *  on screen — there the body has no room to say it, and it is exactly then
+   *  that a stale pane looks like a working one (see `AttachNotice`). */
+  waiting: string | null;
   /** Every pane's recovery report, and the panes this page still lists. Reports
    *  for panes it does not — a process that ended while its slot is held for a
    *  relaunch — have no cell to sit in, so they surface here. */
@@ -35,6 +39,7 @@ export function PanelToolbar({
   tabs,
   ownsSize,
   maximized,
+  waiting,
   recovery,
   panes,
   onCancelRecovery,
@@ -46,6 +51,15 @@ export function PanelToolbar({
     "flex shrink-0 items-center rounded-sm px-1.5 py-0.5 text-ink-400 hover:text-accent";
   return (
     <div className="flex shrink-0 items-center gap-2 bg-ink-900 px-2 py-1 text-xs">
+      {waiting && (
+        <span
+          role="status"
+          className="flex min-w-0 shrink items-center gap-1 rounded-sm bg-ink-800 px-1 text-ink-400"
+        >
+          <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-accent" />
+          <span className="truncate">{waiting}</span>
+        </span>
+      )}
       {orphanRecovery(recovery, panes).map((pane) => (
         <RecoveryChip
           key={pane}
