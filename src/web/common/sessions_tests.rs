@@ -79,6 +79,42 @@ fn expired_tokens_are_not_loaded() {
 }
 
 #[test]
+fn writing_forgets_a_token_that_expired_while_the_daemon_ran() {
+    let path = tmp_path("persist-sweep");
+    let store = SessionStore::load(path.clone());
+    // A session nobody asks about again: the browser holding that cookie never
+    // came back, so no `is_valid` call will ever reach this token.
+    let stale = "stale-token";
+    store.tokens.lock().unwrap().insert(
+        stale.to_string(),
+        SystemTime::now() - Duration::from_secs(1),
+    );
+    let live = store.issue().unwrap();
+
+    let data = std::fs::read_to_string(&path).unwrap();
+    assert!(
+        !data.contains(stale),
+        "the file still claims an expired session: {data}"
+    );
+    assert!(data.contains(&live));
+    assert!(!store.is_valid(stale));
+    let _ = std::fs::remove_file(&path);
+}
+
+#[test]
+fn sweeping_keeps_what_is_still_live() {
+    let now = SystemTime::now();
+    let mut tokens = HashMap::from([
+        ("past".to_string(), now - Duration::from_secs(1)),
+        // Expiry is not "still live": `is_valid` demands strictly later.
+        ("exactly-now".to_string(), now),
+        ("future".to_string(), now + Duration::from_secs(1)),
+    ]);
+    sweep(&mut tokens, now);
+    assert_eq!(tokens.keys().collect::<Vec<_>>(), vec!["future"]);
+}
+
+#[test]
 fn corrupt_file_starts_empty() {
     let path = tmp_path("persist-corrupt");
     std::fs::write(&path, "garbage no tab\n???\n").unwrap();

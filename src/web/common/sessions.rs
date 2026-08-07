@@ -6,6 +6,11 @@
 //! enough because a leaked token would remain usable until expiry. Revocation
 //! removes the token from both memory and the on-disk store.
 //!
+//! Expired tokens are forgotten opportunistically: every write sweeps the whole
+//! set, and loading discards what has already run out. Nothing is scheduled —
+//! the file only changes when someone logs in, logs out, or presents a token
+//! that has expired, and those are the moments worth paying for the sweep.
+//!
 //! The file is written with owner-only permissions (0o600 on Unix); see
 //! `platform::fs`. On Windows the permission call is a no-op (documented
 //! there), so operators should place the state directory in a restricted
@@ -45,17 +50,14 @@ impl SessionStore {
     pub fn load(path: PathBuf) -> Self {
         let mut tokens = HashMap::new();
         if let Ok(data) = std::fs::read_to_string(&path) {
-            let now = SystemTime::now();
             for line in data.lines() {
                 if let Some((token, expiry_str)) = line.split_once('\t')
                     && let Ok(secs) = expiry_str.trim().parse::<u64>()
                 {
-                    let expiry = UNIX_EPOCH + Duration::from_secs(secs);
-                    if expiry > now {
-                        tokens.insert(token.to_string(), expiry);
-                    }
+                    tokens.insert(token.to_string(), UNIX_EPOCH + Duration::from_secs(secs));
                 }
             }
+            sweep(&mut tokens, SystemTime::now());
         }
         Self {
             tokens: Mutex::new(tokens),
@@ -90,13 +92,13 @@ impl SessionStore {
     }
 
     pub fn is_valid(&self, token: &str) -> bool {
-        let mut tokens = self.tokens.lock().expect("session store mutex poisoned");
+        let tokens = self.tokens.lock().expect("session store mutex poisoned");
         let now = SystemTime::now();
         match tokens.get(token) {
             Some(expiry) if *expiry > now => true,
             Some(_) => {
-                // Expired — remove lazily.
-                tokens.remove(token);
+                // Expired. Dropping it is left to the write below, which forgets
+                // this one and every other token that has run out with it.
                 drop(tokens);
                 self.persist();
                 false
@@ -110,27 +112,43 @@ impl SessionStore {
     /// — the user just loses restart-survival, not access.
     fn persist(&self) {
         let Some(path) = &self.store_path else { return };
-        let data = self.serialize();
+        let data = {
+            let mut tokens = self.tokens.lock().expect("session store mutex poisoned");
+            // Swept here because this is the one place that already holds every
+            // token and is about to write them down. `is_valid` only reaches the
+            // token it was asked about, and a session nobody asks about again —
+            // the browser holding that cookie never came back — would otherwise
+            // sit in memory and on disk until the daemon restarts, so the file
+            // would claim sessions that cannot log anyone in.
+            sweep(&mut tokens, SystemTime::now());
+            serialize(&tokens)
+        };
         if let Err(err) = platform::fs::write_atomic(path, data.as_bytes()) {
             tracing::warn!(%err, ?path, "could not persist session store");
         }
     }
+}
 
-    fn serialize(&self) -> String {
-        let tokens = self.tokens.lock().expect("session store mutex poisoned");
-        let mut out = String::new();
-        for (token, expiry) in tokens.iter() {
-            let secs = expiry
-                .duration_since(UNIX_EPOCH)
-                .map(|d| d.as_secs())
-                .unwrap_or(0);
-            out.push_str(token);
-            out.push('\t');
-            out.push_str(&secs.to_string());
-            out.push('\n');
-        }
-        out
+/// Forget every token whose expiry has passed. One rule, one place: loading and
+/// writing both apply it, so a token's being on disk means the same thing as its
+/// being in memory.
+fn sweep(tokens: &mut HashMap<String, SystemTime>, now: SystemTime) {
+    tokens.retain(|_, expiry| *expiry > now);
+}
+
+fn serialize(tokens: &HashMap<String, SystemTime>) -> String {
+    let mut out = String::new();
+    for (token, expiry) in tokens.iter() {
+        let secs = expiry
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+        out.push_str(token);
+        out.push('\t');
+        out.push_str(&secs.to_string());
+        out.push('\n');
     }
+    out
 }
 
 impl Default for SessionStore {
