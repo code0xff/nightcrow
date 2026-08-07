@@ -51,10 +51,16 @@ impl SessionStore {
         let mut tokens = HashMap::new();
         if let Ok(data) = std::fs::read_to_string(&path) {
             for line in data.lines() {
+                // `checked_add`, because `SystemTime + Duration` panics on
+                // overflow: a file naming an expiry no clock can hold would
+                // otherwise take the server down on the way up, which is the one
+                // thing reading this file is not allowed to do. A line like that
+                // is corrupt, so it is dropped like any other unreadable one.
                 if let Some((token, expiry_str)) = line.split_once('\t')
                     && let Ok(secs) = expiry_str.trim().parse::<u64>()
+                    && let Some(expiry) = UNIX_EPOCH.checked_add(Duration::from_secs(secs))
                 {
-                    tokens.insert(token.to_string(), UNIX_EPOCH + Duration::from_secs(secs));
+                    tokens.insert(token.to_string(), expiry);
                 }
             }
             sweep(&mut tokens, SystemTime::now());

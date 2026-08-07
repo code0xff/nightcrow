@@ -139,3 +139,12 @@ fn corrupt_file_starts_empty() {
     assert!(store.is_valid(&token));
     let _ = std::fs::remove_file(&path);
 }
+
+#[test]
+fn a_nonsense_expiry_does_not_stop_the_server_from_starting() {
+    let path = tmp_path("persist-overflow");
+    std::fs::write(&path, format!("wild\t{}\n", u64::MAX)).unwrap();
+    let store = SessionStore::load(path.clone());
+    assert!(!store.is_valid("wild"));
+    let _ = std::fs::remove_file(&path);
+}
