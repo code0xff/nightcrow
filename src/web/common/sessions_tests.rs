@@ -102,6 +102,22 @@ fn writing_forgets_a_token_that_expired_while_the_daemon_ran() {
 }
 
 #[test]
+fn a_store_without_a_file_forgets_expired_tokens_too() {
+    // The fallback when the state directory cannot be opened. It keeps the same
+    // map, and nothing restarts into a swept file to correct it.
+    let store = SessionStore::new();
+    store.tokens.lock().unwrap().insert(
+        "stale-token".to_string(),
+        SystemTime::now() - Duration::from_secs(1),
+    );
+    let live = store.issue().unwrap();
+    assert_eq!(
+        store.tokens.lock().unwrap().keys().collect::<Vec<_>>(),
+        vec![&live]
+    );
+}
+
+#[test]
 fn sweeping_keeps_what_is_still_live() {
     let now = SystemTime::now();
     let mut tokens = HashMap::from([

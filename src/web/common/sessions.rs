@@ -111,7 +111,6 @@ impl SessionStore {
     /// propagated: a session that fails to persist is still valid in memory
     /// — the user just loses restart-survival, not access.
     fn persist(&self) {
-        let Some(path) = &self.store_path else { return };
         let data = {
             let mut tokens = self.tokens.lock().expect("session store mutex poisoned");
             // Swept here because this is the one place that already holds every
@@ -120,9 +119,15 @@ impl SessionStore {
             // the browser holding that cookie never came back — would otherwise
             // sit in memory and on disk until the daemon restarts, so the file
             // would claim sessions that cannot log anyone in.
+            //
+            // Ahead of the store having a file: a store without one (the
+            // fallback when the state directory cannot be opened) holds the same
+            // tokens in the same map, and is the one that cannot be fixed by a
+            // restart reading a swept file.
             sweep(&mut tokens, SystemTime::now());
             serialize(&tokens)
         };
+        let Some(path) = &self.store_path else { return };
         if let Err(err) = platform::fs::write_atomic(path, data.as_bytes()) {
             tracing::warn!(%err, ?path, "could not persist session store");
         }
