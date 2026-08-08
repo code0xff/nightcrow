@@ -51,12 +51,16 @@ export function PanelToolbar({
     "flex shrink-0 items-center rounded-sm px-1.5 py-0.5 text-ink-400 hover:text-accent";
   return (
     <div className="flex shrink-0 items-center gap-2 bg-ink-900 px-2 py-1 text-xs">
+      {/* The chip pulses whole, matching `AttachNotice`: the panel says the same
+          thing in two places depending on whether it has panes to show, and a
+          waiting state that pulses in one and sits still in the other reads as
+          two different states. */}
       {waiting && (
         <span
           role="status"
-          className="flex min-w-0 shrink items-center gap-1 rounded-sm bg-ink-800 px-1 text-ink-400"
+          className="flex min-w-0 shrink animate-pulse items-center gap-1 rounded-sm bg-ink-800 px-1 text-ink-400"
         >
-          <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-accent" />
+          <span className="h-1.5 w-1.5 rounded-full bg-accent" />
           <span className="truncate">{waiting}</span>
         </span>
       )}

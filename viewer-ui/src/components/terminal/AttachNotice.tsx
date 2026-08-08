@@ -29,8 +29,11 @@ export function AttachNotice({ status }: { status: AttachStatus }) {
       role="status"
       className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center p-6"
     >
-      <span className="flex items-center gap-2 text-[0.72rem] tracking-[0.18em] text-ink-400 uppercase">
-        <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-accent" />
+      {/* The pulse carries the label, not just the dot beside it: a 6px dot
+          breathing in the middle of an empty panel is easy to read as part of
+          the layout, and the thing worth noticing is the sentence. */}
+      <span className="flex animate-pulse items-center gap-2 text-[0.72rem] tracking-[0.18em] text-ink-400 uppercase">
+        <span className="h-1.5 w-1.5 rounded-full bg-accent" />
         {label}
       </span>
     </div>
