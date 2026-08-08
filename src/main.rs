@@ -23,13 +23,15 @@ mod workspace;
 use anyhow::Result;
 use clap::Parser;
 
-use crate::cli::{Cli, Commands, run_attach_detached, run_daemon, run_init, run_stop};
+use crate::cli::{Cli, Commands, run_attach_detached, run_daemon, run_init, run_stop, run_update};
 
 /// Every path here runs to completion and returns; nothing in this process
 /// takes over the terminal. The session runs headless and `attach` is a
 /// separate invocation, which is the one that draws.
 fn main() -> Result<()> {
     let cli = Cli::parse();
+    // Collect binaries an update parked but could not delete while they ran.
+    crate::platform::self_replace::sweep_beside_current_exe();
     match cli.command {
         Some(Commands::Init { force }) => run_init(force),
         // Attach starts a session when none is running, with or without `-d`:
@@ -40,6 +42,7 @@ fn main() -> Result<()> {
         Some(Commands::Attach) => run_attach_detached(),
         Some(Commands::Plugin { command }) => cli::plugin_cmd::run_plugin(command),
         Some(Commands::Stop { socket }) => run_stop(socket),
+        Some(Commands::Update { path, git }) => run_update(path, git),
         None => run_daemon(cli.exec, cli.port, cli.bind, cli.detach),
     }
 }

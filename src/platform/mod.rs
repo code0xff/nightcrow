@@ -4,5 +4,6 @@ pub(crate) mod console;
 pub(crate) mod fs;
 pub(crate) mod logging;
 pub(crate) mod paths;
+pub(crate) mod self_replace;
 pub(crate) mod signals;
 pub(crate) mod threading;
