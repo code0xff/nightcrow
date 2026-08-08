@@ -1,6 +1,6 @@
 use super::common::*;
-use crate::app::App;
 use crate::app::tests::app_with_fake_backend;
+use crate::app::{App, Focus};
 use crate::ui::hint_bar::{HintClick, hint_click_at, render_hint_bar};
 use crate::ui::hint_text::{PREFIX_CHIP, normal_hint_literal, prefix_armed_hint_text};
 use crate::ui::status_view::RepoInput;
@@ -186,6 +186,70 @@ fn hint_click_armed_row_resolves_bare_followups_after_the_chip() {
         ),
         None
     );
+}
+
+/// The armed row's remaining commands. They sit beside `x`/`p`/`r`, which have
+/// always dispatched, so a click landing on one of these and doing nothing was
+/// the row contradicting itself. `z` and `c` render only under their
+/// availability predicates, so the state has to make them appear first.
+#[test]
+fn hint_click_armed_row_resolves_the_remaining_commands() {
+    let mut app = app_with_fake_backend();
+    app.interaction.prefix_armed = true;
+    app.terminal.owns_size = false;
+    app.terminal.recovery.insert(
+        0,
+        crate::runtime::terminal::PaneRecovery {
+            state: "waiting_for_reset".to_string(),
+            detail: None,
+            deadline_epoch: None,
+            attempt: 1,
+        },
+    );
+
+    for (needle, key) in [
+        ("u: reload config", 'u'),
+        ("z: resize panes here", 'z'),
+        ("c: cancel recovery", 'c'),
+    ] {
+        let x = hint_x_of(&app, needle);
+        assert_eq!(
+            hint_click_at(
+                &app,
+                plain_chrome(&RepoInput::default()),
+                HINT_TEST_SCREEN,
+                x,
+                HINT_ROW
+            ),
+            Some(HintClick::Plain(key)),
+            "`{needle}` names a command, so a click must dispatch it"
+        );
+    }
+}
+
+/// The match-stepping keys, on the row a search leaves behind. `shift+n` is the
+/// one chord that resolves: its handler matches on the character, so the click
+/// carries `N`.
+#[test]
+fn hint_click_resolves_the_search_match_keys() {
+    let mut app = app_with_fake_backend();
+    app.focus = Focus::DiffViewer;
+    app.diff.search.query.set("foo");
+
+    for (needle, key) in [("n: next match", 'n'), ("shift+n: prev match", 'N')] {
+        let x = hint_x_of(&app, needle);
+        assert_eq!(
+            hint_click_at(
+                &app,
+                plain_chrome(&RepoInput::default()),
+                HINT_TEST_SCREEN,
+                x,
+                HINT_ROW
+            ),
+            Some(HintClick::Plain(key)),
+            "`{needle}` names a command, so a click must dispatch it"
+        );
+    }
 }
 
 #[test]

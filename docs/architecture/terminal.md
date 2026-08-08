@@ -152,8 +152,10 @@ macOS Terminal.app Fn/Option). 끄면 마우스는 바깥 터미널 소유로 �
   `sync_visible_window`가 창을 한 칸만 슬라이드한다.
 - **힌트 바 클릭**: 최하단 행의 press는 `ui::hint_click_at`이 렌더러와 동일한 힌트 텍스트
   (`normal_hint_literal`/`prefix_armed_hint_text` 공유)를 display width로 세그먼트화해 판정한다.
-  이산 명령(`<prefix> t/w/f/l/b/o`, armed row의 follow-up, `v`/`s`/`/`)만 클릭 가능하고, 연속
-  내비게이션·digit legend·`esc`는 비클릭이다. bare `<prefix>: leader` 라벨도 클릭 가능하며 leader
+  이산 명령(`<prefix> t/w/f/l/b/o`, armed row의 follow-up, 포커스된 패널이 프리픽스 없이 받는
+  `v`/`s`/`/`/`n`/`shift+n`)만 클릭 가능하고, 연속 내비게이션·digit legend·`esc`는 비클릭이다.
+  대상은 `segment_click`의 명시적 키 목록이다 — 힌트 텍스트만으로는 명령과 내비게이션을 구분할 수
+  없으므로, `hint_text`에 명령을 추가해도 이 목록에 넣기 전까지는 조용히 비클릭으로 남는다. bare `<prefix>: leader` 라벨도 클릭 가능하며 leader
   chord keypress를 합성해 프리픽스를 arm한다 — "leader 클릭 → 명령 클릭"의 마우스-only 플로우가
   이어진다. **`q: detach`는 오클릭 한 번으로 TUI가 떨어져 나가지 않도록 의도적으로 제외**했다. 디스패치는
   라벨이 가리키는 키 입력을 그대로 합성해 `handle_key`로 보낸다 — 클릭과 실제 키가 모든 가드와

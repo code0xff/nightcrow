@@ -18,6 +18,23 @@ pub(crate) enum HintClick {
     Plain(char),
 }
 
+/// Leader follow-ups a `<prefix> x` segment can name and still be clicked.
+const CLICKABLE_LEADER_KEYS: &str = "twflbo";
+/// Keys a bare segment can name and still be clicked: the leader follow-ups as
+/// they appear on the armed row (`t`, `w`, `s`, `z`, `c`, `o`, `x`, `p`, `u`,
+/// `r`), plus the commands the focused panel handles unprefixed (`l`, `b`, `f`,
+/// `v`, `/`, `n`).
+const CLICKABLE_PLAIN_KEYS: &str = "twslbfoxpruvzcn/";
+
+/// The click a hint segment's keyspec resolves to, or `None` for a segment
+/// that is not clickable.
+///
+/// The rule is the one `docs/keybindings.md` states: command hints dispatch,
+/// navigation hints do not, and `q: detach` is held back so detaching stays a
+/// deliberate two-key act. The keys are listed rather than derived because
+/// nothing in the hint text tells a command apart from a navigation hint —
+/// which means a command added to `hint_text` stays silently unclickable until
+/// it is listed here. This list has already had that gap.
 pub(crate) fn segment_click(keyspec: &str) -> Option<HintClick> {
     let spec = keyspec.trim();
     if spec == "<prefix>" {
@@ -26,18 +43,21 @@ pub(crate) fn segment_click(keyspec: &str) -> Option<HintClick> {
     if let Some(rest) = spec.strip_prefix("<prefix> ") {
         let mut chars = rest.chars();
         if let (Some(c), None) = (chars.next(), chars.next())
-            && matches!(c, 't' | 'w' | 'f' | 'l' | 'b' | 'o')
+            && CLICKABLE_LEADER_KEYS.contains(c)
         {
             return Some(HintClick::Leader(c));
         }
         return None;
     }
+    // The one chord in the list. `handlers.rs` reads it with
+    // `matches_text_command(key, 'N')`, which looks at the character alone, so
+    // the click carries `N` and no shift has to be synthesized to match.
+    if spec == "shift+n" {
+        return Some(HintClick::Plain('N'));
+    }
     let mut chars = spec.chars();
     if let (Some(c), None) = (chars.next(), chars.next())
-        && matches!(
-            c,
-            't' | 'w' | 's' | 'l' | 'b' | 'f' | 'o' | 'x' | 'p' | 'r' | 'v' | '/'
-        )
+        && CLICKABLE_PLAIN_KEYS.contains(c)
     {
         return Some(HintClick::Plain(c));
     }
