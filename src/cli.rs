@@ -6,11 +6,13 @@ mod daemon;
 mod init;
 pub(crate) mod plugin_cmd;
 mod stop;
+mod update;
 
 pub(crate) use attach::run_attach_detached;
 pub(crate) use daemon::run_daemon;
 pub(crate) use init::run_init;
 pub(crate) use stop::run_stop;
+pub(crate) use update::run_update;
 
 /// nightcrow — session daemon for agentic coding
 ///
@@ -81,5 +83,20 @@ pub(crate) enum Commands {
         /// Path to the daemon socket. Defaults to the standard location.
         #[arg(long)]
         socket: Option<PathBuf>,
+    },
+    /// Reinstall nightcrow, replacing the binary this command is running from.
+    ///
+    /// Runs `cargo install --locked --force`, so it needs a Rust toolchain.
+    /// The installed binary is moved aside first: Windows refuses to overwrite
+    /// an executable while a session is running from it, but does allow the
+    /// rename. A running session keeps its own version until it is restarted.
+    Update {
+        /// Install from a local checkout instead of the upstream repository.
+        #[arg(long, value_name = "DIR")]
+        path: Option<PathBuf>,
+
+        /// Install from this git repository instead of the upstream one.
+        #[arg(long, value_name = "URL", conflicts_with = "path")]
+        git: Option<String>,
     },
 }
