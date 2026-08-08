@@ -24,6 +24,41 @@ cargo install nightcrow --locked
 Requires Rust 1.85+ (edition 2024) on macOS, Linux, or Windows. `--locked`
 builds against the committed `Cargo.lock` for a reproducible install.
 
+## Updating
+
+```bash
+nightcrow update
+```
+
+This reinstalls from the upstream repository. `--path <DIR>` installs from a
+local checkout instead, and `--git <URL>` from a different repository. It runs
+`cargo install` underneath, so it needs the same Rust toolchain the first
+install did.
+
+Prefer this over rerunning `cargo install` by hand, because on Windows the
+plain install fails while a session is running:
+
+```
+error: failed to move `...\nightcrow.exe` to `...\nightcrow.exe`
+Caused by: Access is denied. (os error 5)
+```
+
+Windows holds a lock on the file behind every running process, so the
+installer cannot write over it — unlike macOS and Linux, where overwriting a
+running binary is allowed and the plain `cargo install` works as-is. `update`
+sidesteps the lock by renaming the installed binary out of the way first,
+which Windows *does* permit, leaving the install path free. If the old binary
+is still in use it is left beside the new one and removed the next time
+nightcrow starts.
+
+A running session keeps the version it started with. Restart it to pick up the
+new one:
+
+```bash
+nightcrow stop
+nightcrow attach
+```
+
 ## Running a session
 
 nightcrow runs as a **session**: one process holds the repositories and the

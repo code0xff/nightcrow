@@ -31,6 +31,10 @@ cargo install --git https://github.com/code0xff/nightcrow --locked
 Requires Rust 1.85+ (edition 2024) on macOS, Linux, or Windows. Other install
 routes are in [Getting started](docs/getting-started.md#install).
 
+To update later, use `nightcrow update` rather than rerunning the install: on
+Windows the plain install cannot overwrite the binary while a session is
+running. See [Updating](docs/getting-started.md#updating).
+
 ## Quick start
 
 ```bash
