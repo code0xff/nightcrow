@@ -93,6 +93,23 @@ export function useTerminalViews({
       // resize reaches the child, nothing makes it repaint, and what was lost
       // stays lost until it next draws by itself: a full-screen program sitting
       // at a prompt leaves the pane blank for as long as it waits.
+      //
+      // The pane's grid *now*, even for output that has been queueing since an
+      // older one — a cell can stay sizeless long enough to be resized under it.
+      // Splitting the queue at each resize and parsing each part at its own grid
+      // is not the improvement it sounds like: `write` parses on a later task
+      // while `resize` applies at once, so honouring a boundary means waiting on
+      // a write callback, and an emulator written to across several tasks would
+      // have to be exclusive to that loop — which it cannot be. The fit runs in
+      // the very next effect and the socket keeps delivering, and both of them
+      // reach this terminal.
+      //
+      // That is also the limit of what this line promises. It is the grid the
+      // replay is *handed to*, not one it is guaranteed to be read at: the fit
+      // can resize again before the parser has caught up. In the case this is
+      // here for — a screen returning to panes it already sized — the fit lands
+      // on the size the PTY already has and changes nothing, which is exactly
+      // why nothing else was going to correct the default either.
       const pty = ptySizesRef.current.get(pane);
       if (pty) term.resize(pty.cols, pty.rows);
       viewsRef.current.set(pane, { term, fit });
