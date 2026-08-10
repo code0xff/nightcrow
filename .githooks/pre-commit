@@ -3,7 +3,7 @@
 #
 # Everything expensive — clippy, build, test — lives in `pre-push`, scoped to the
 # range actually being contributed. The reason is what this gate exists to
-# prevent: a red CI run. CI triggers on `pull_request` and on a push to `main`,
+# prevent: a red CI run. CI triggers on `pull_request` and on a push to `dev`,
 # so that failure becomes real when a branch reaches the remote, not when a local
 # commit is made. A full test run per commit bought nothing pre-push does not,
 # and it taxed exactly the milestone commits `.agents/rules/commits.md` asks for.

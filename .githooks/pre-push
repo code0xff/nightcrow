@@ -2,7 +2,7 @@
 # The CI-parity gate, run once per push and scoped to what is being contributed.
 #
 # Why here rather than pre-commit: this exists to stop a push from turning into a
-# red CI run, and CI only runs on `pull_request` and on a push to `main`. The risk
+# red CI run, and CI only runs on `pull_request` and on a push to `dev`. The risk
 # is a push-time risk, so the gate is a push-time gate. Local milestone commits
 # stay free.
 #
