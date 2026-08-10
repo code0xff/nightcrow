@@ -84,6 +84,10 @@ jobs:
           cache-dependency-path: viewer-ui/package-lock.json
       - run: npm ci
         working-directory: viewer-ui
+      # Before the build, so a failing helper is reported as a failing helper
+      # rather than as whatever the bundle does with it.
+      - run: npm test
+        working-directory: viewer-ui
       - run: npm run build
         working-directory: viewer-ui
       # dist/ is committed so `cargo install` needs no Node. If a rebuild here

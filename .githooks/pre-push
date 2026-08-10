@@ -123,18 +123,21 @@ fi
 if [ -z "$INTEGRATION" ]; then
 	scope=(--workspace)
 else
-	# The frontend is its own CI job, and its own way to go red: `viewer-ui/dist`
-	# is committed because `rust-embed` reads it at compile time, so a source
-	# change without a rebuilt bundle ships a frontend that does not match the
-	# source. Checked before the Rust gate because it is the faster failure.
+	# The frontend is its own CI job, and has two ways to go red. Its tests are
+	# the `src/lib` helpers, which nothing else covers — the Rust suite cannot
+	# reach them. And `viewer-ui/dist` is committed because `rust-embed` reads it
+	# at compile time, so a source change without a rebuilt bundle ships a
+	# frontend that does not match the source. Both run before the Rust gate
+	# because they are the faster failure.
 	ui="$(printf '%s\n' "$changed" | grep -E '^viewer-ui/' | grep -Ev '^viewer-ui/dist/' || true)"
 	if [ -n "$ui" ]; then
 		if ! command -v npm >/dev/null 2>&1; then
-			printf '\033[33m! pre-push: viewer-ui changed but npm is not on PATH — bundle not verified\033[0m\n' >&2
+			printf '\033[33m! pre-push: viewer-ui changed but npm is not on PATH — tests and bundle not verified\033[0m\n' >&2
 		elif [ ! -d viewer-ui/node_modules ]; then
 			printf '\033[33m! pre-push: viewer-ui changed but node_modules is missing\033[0m\n' >&2
 			printf '  run: npm --prefix viewer-ui ci\n' >&2
 		else
+			run npm --prefix viewer-ui test
 			run npm --prefix viewer-ui run build
 			if ! git diff --quiet -- viewer-ui/dist; then
 				printf '\033[31m✗ pre-push: viewer-ui/dist is stale\033[0m\n' >&2
@@ -142,7 +145,7 @@ else
 				git diff --stat -- viewer-ui/dist >&2
 				exit 1
 			fi
-			printf '\033[32m✓ viewer-ui bundle matches its source\033[0m\n'
+			printf '\033[32m✓ viewer-ui tests pass and the bundle matches its source\033[0m\n'
 		fi
 	fi
 

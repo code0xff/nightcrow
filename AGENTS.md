@@ -24,6 +24,8 @@ Windows에서 링크를 체크아웃하려면 개발자 모드 + `git config cor
    도는 것을 목표로 한다 — 플랫폼 seam과 게이팅 규칙은 `.agents/rules/guardrails.md`.
 3. **Verify** — `cargo build`, `cargo test`,
    `cargo clippy --all-targets --all-features -- -D warnings`가 통과해야 한다.
+   `viewer-ui/src`를 건드렸으면 `npm --prefix viewer-ui test`와
+   `npm --prefix viewer-ui run build`(dist가 안 바뀌어야 한다)도 통과해야 한다.
    훅은 두 단계로 나뉜다 (`git config core.hooksPath .githooks`).
    `pre-commit`은 `cargo fmt --all --check`만 돌려 커밋을 가볍게 유지하고,
    `pre-push`가 CI와 동일한 게이트를 실행한다. 막으려는 실패(붉은 CI)는 push 시점에
