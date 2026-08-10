@@ -73,6 +73,43 @@ fn web_has_credential_treats_empty_password_as_missing() {
 }
 
 #[test]
+fn a_config_that_names_no_session_lifetime_keeps_the_day_long_one() {
+    let cfg: Config = toml::from_str("[web_viewer]\nport = 8091\n").unwrap();
+    assert_eq!(cfg.web_viewer.session_ttl_hours, 24);
+    assert_eq!(
+        cfg.web_viewer.session_ttl(),
+        Some(std::time::Duration::from_secs(86400))
+    );
+    validate_config(&cfg).unwrap();
+}
+
+#[test]
+fn a_session_lifetime_of_zero_means_the_login_never_expires() {
+    let cfg: Config = toml::from_str("[web_viewer]\nsession_ttl_hours = 0\n").unwrap();
+    assert_eq!(cfg.web_viewer.session_ttl(), None);
+    validate_config(&cfg).unwrap();
+}
+
+#[test]
+fn a_configured_session_lifetime_is_read_in_hours() {
+    let cfg: Config = toml::from_str("[web_viewer]\nsession_ttl_hours = 168\n").unwrap();
+    assert_eq!(
+        cfg.web_viewer.session_ttl(),
+        Some(std::time::Duration::from_secs(168 * 3600))
+    );
+    validate_config(&cfg).unwrap();
+}
+
+#[test]
+fn web_validation_rejects_a_session_lifetime_past_ten_years() {
+    let mut cfg = Config::default();
+    cfg.web_viewer.session_ttl_hours = 87_600;
+    validate_config(&cfg).expect("ten years is the ceiling, not past it");
+    cfg.web_viewer.session_ttl_hours = 87_601;
+    assert!(validate_config(&cfg).is_err());
+}
+
+#[test]
 fn web_validation_rejects_port_zero() {
     let mut cfg = Config::default();
     cfg.web_viewer.port = 0;

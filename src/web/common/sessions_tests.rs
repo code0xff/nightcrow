@@ -10,7 +10,7 @@ fn tmp_path(name: &str) -> PathBuf {
 /// The lifetime most tests do not care about: finite, and long enough that
 /// nothing expires while the test runs.
 fn a_day() -> Option<Duration> {
-    Some(DEFAULT_SESSION_TTL)
+    Some(Duration::from_secs(24 * 3600))
 }
 
 #[test]

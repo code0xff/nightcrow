@@ -159,6 +159,13 @@ pub fn validate_config(cfg: &Config) -> Result<()> {
         cfg.log.max_days <= 3650,
         "log.max_days must be at most 3650 (10 years); 0 = keep forever"
     );
+    // `0` is the "never expires" sentinel, as it is for `log.max_days`. The
+    // ceiling is 10 years: anything past it is a unit mix-up, and the value is
+    // multiplied into seconds, which is where an unbounded one would overflow.
+    anyhow::ensure!(
+        cfg.web_viewer.session_ttl_hours <= 87_600,
+        "web_viewer.session_ttl_hours must be at most 87600 (10 years); 0 = never expires"
+    );
     anyhow::ensure!(
         cfg.startup_commands.len() <= MAX_STARTUP_COMMANDS,
         "at most {MAX_STARTUP_COMMANDS} [[startup_command]] entries are allowed, found {}",

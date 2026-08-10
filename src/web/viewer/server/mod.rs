@@ -108,7 +108,7 @@ impl ViewerServer {
                 viewer.bind
             )
         })?;
-        let session_ttl = Some(sessions::DEFAULT_SESSION_TTL);
+        let session_ttl = viewer.session_ttl();
         let session_store = sessions::session_store_path()
             .map(|path| SessionStore::load(path, session_ttl))
             .unwrap_or_else(|err| {

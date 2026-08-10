@@ -9,6 +9,11 @@ const WEB_VIEWER_TABLE: &str = "web_viewer";
 /// Default bind address: loopback only. Exposing the server on a routable
 /// address is a deliberate opt-in because it grants live control of a shell.
 const DEFAULT_WEB_BIND: &str = "127.0.0.1";
+/// How long a browser login lasts by default.
+const DEFAULT_SESSION_TTL_HOURS: u64 = 24;
+/// `session_ttl_hours = 0` means no expiry, the same sentinel `log.max_days`
+/// uses for "keep forever".
+const NO_SESSION_EXPIRY: u64 = 0;
 /// Length (characters) of an auto-generated web password.
 pub(super) const GENERATED_PASSWORD_LEN: usize = 24;
 /// Alphabet for generated passwords: alphanumeric minus visually ambiguous
@@ -30,6 +35,11 @@ pub struct WebViewerConfig {
     pub password: Option<String>,
     /// Optional Argon2 PHC hash. Takes precedence over `password`.
     pub hashed_password: Option<String>,
+    /// How long a browser login lasts before it has to be repeated. `0` means
+    /// it never expires on its own — whoever runs the daemon decides how much
+    /// of a re-login this surface is worth, and on a loopback-bound session
+    /// there may be no one to re-authenticate against.
+    pub session_ttl_hours: u64,
 }
 
 impl Default for WebViewerConfig {
@@ -39,6 +49,7 @@ impl Default for WebViewerConfig {
             port: DEFAULT_WEB_VIEWER_PORT,
             password: None,
             hashed_password: None,
+            session_ttl_hours: DEFAULT_SESSION_TTL_HOURS,
         }
     }
 }
@@ -46,6 +57,12 @@ impl Default for WebViewerConfig {
 impl WebViewerConfig {
     pub fn has_credential(&self) -> bool {
         self.hashed_password.is_some() || self.password.as_deref().is_some_and(|p| !p.is_empty())
+    }
+
+    /// The configured login lifetime, or `None` when it never expires.
+    pub fn session_ttl(&self) -> Option<std::time::Duration> {
+        (self.session_ttl_hours != NO_SESSION_EXPIRY)
+            .then(|| std::time::Duration::from_secs(self.session_ttl_hours * 3600))
     }
 }
 

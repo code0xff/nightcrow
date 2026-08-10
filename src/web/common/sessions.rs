@@ -31,9 +31,6 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-/// Session lifetime used when the config names none.
-pub const DEFAULT_SESSION_TTL: Duration = Duration::from_secs(86400);
-
 /// Browsers refuse to keep a cookie beyond 400 days (RFC 6265bis, enforced by
 /// Chrome 104+ and Safari), so that is the ceiling on `Max-Age` however long
 /// the server is willing to honour the token behind it.
@@ -235,12 +232,6 @@ fn serialize(tokens: &HashMap<String, Expiry>) -> String {
         out.push('\n');
     }
     out
-}
-
-impl Default for SessionStore {
-    fn default() -> Self {
-        Self::new(Some(DEFAULT_SESSION_TTL))
-    }
 }
 
 fn hex(bytes: &[u8]) -> String {
