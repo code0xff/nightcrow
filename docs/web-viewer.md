@@ -230,9 +230,11 @@ cookie opens. Two things to know either way:
   each one's deadline is brought down to the new lifetime. Raising it never
   pushes an existing deadline further away; only a fresh login gets the longer
   one.
-- **The browser keeps the cookie for at most 400 days** whatever the setting
-  says, because browsers refuse to hold one longer. A session with no expiry is
-  still valid on the server past that; the browser will just have forgotten it.
+- **The cookie asks for at most 400 days** whatever the setting says. That is
+  the ceiling RFC 6265bis puts on `Max-Age`, and Chrome has enforced it since
+  version 104, so asking for more would be silently reduced there and honoured
+  elsewhere. A session with no expiry stays valid on the server past that — it
+  is the browser that will have forgotten the cookie, so you log in again.
 
 `[web_viewer]` is not re-read by a config reload — the listener is already
 bound — so a change here takes effect when the session restarts.

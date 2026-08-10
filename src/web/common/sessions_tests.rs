@@ -225,6 +225,33 @@ fn tightening_the_lifetime_cuts_tokens_that_outlast_it_short() {
 }
 
 #[test]
+fn a_tightened_lifetime_reaches_the_file_before_the_next_login_does() {
+    // Otherwise the file still names the old deadline, and a session restarted
+    // more often than its own lifetime would be measured afresh every time —
+    // the tightening would never take hold.
+    let path = tmp_path("persist-clamp-written");
+    let token = {
+        let store = SessionStore::load(path.clone(), None);
+        store.issue().unwrap()
+    };
+
+    let hour = Duration::from_secs(3600);
+    drop(SessionStore::load(path.clone(), Some(hour)));
+
+    let data = std::fs::read_to_string(&path).unwrap();
+    assert!(
+        !data.contains(NEVER),
+        "the file still hands out an unbounded session: {data}"
+    );
+
+    // A second restart measures from what is written, not from scratch.
+    let ceiling = SystemTime::now() + hour;
+    let store = SessionStore::load(path.clone(), Some(hour));
+    assert!(store.tokens.lock().unwrap()[&token].unwrap() <= ceiling);
+    let _ = std::fs::remove_file(&path);
+}
+
+#[test]
 fn a_restart_never_extends_a_token_that_is_nearly_out() {
     let path = tmp_path("persist-clamp-noextend");
     let nearly = SystemTime::now() + Duration::from_secs(60);

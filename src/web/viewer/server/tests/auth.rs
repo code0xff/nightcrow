@@ -173,6 +173,33 @@ fn a_rebound_host_is_refused_on_a_loopback_bind() {
 }
 
 #[test]
+fn the_login_cookie_lasts_as_long_as_the_configured_session() {
+    // The cookie's Max-Age has to come from the store's lifetime rather than a
+    // literal, or configuring the lifetime would move the server's deadline
+    // while leaving the browser holding the cookie for the old one.
+    let server = server(&[]);
+    let body = "password=swordfish";
+    let response = request(
+        server.addr(),
+        &format!(
+            "POST /login HTTP/1.1\r\nHost: 127.0.0.1\r\n\
+             Content-Type: application/x-www-form-urlencoded\r\n\
+             Content-Length: {}\r\nConnection: close\r\n\r\n{body}",
+            body.len()
+        ),
+    );
+
+    let configured = crate::config::WebViewerConfig::default()
+        .session_ttl()
+        .expect("the default lifetime is finite")
+        .as_secs();
+    assert!(
+        response.contains(&format!("Max-Age={configured}")),
+        "the cookie must expire with the session: {response}"
+    );
+}
+
+#[test]
 fn logout_revokes_the_session_server_side() {
     // Clearing the cookie is not enough: cookies are not port-isolated, so
     // another loopback service is same-site and may already hold the token.

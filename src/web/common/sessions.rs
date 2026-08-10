@@ -31,9 +31,10 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-/// Browsers refuse to keep a cookie beyond 400 days (RFC 6265bis, enforced by
-/// Chrome 104+ and Safari), so that is the ceiling on `Max-Age` however long
-/// the server is willing to honour the token behind it.
+/// The longest lifetime a cookie may usefully ask for: RFC 6265bis caps
+/// `Max-Age` at 400 days and Chrome has enforced it since 104. Asking for more
+/// is silently reduced there and honoured elsewhere, so the ceiling is applied
+/// here to keep what is sent equal to what any browser will do with it.
 const MAX_COOKIE_AGE: Duration = Duration::from_secs(400 * 86400);
 
 /// On-disk marker for a token with no expiry. Not a number, so a build that
@@ -66,6 +67,7 @@ impl SessionStore {
     /// file should not prevent the server from starting.
     pub fn load(path: PathBuf, ttl: Option<Duration>) -> Self {
         let mut tokens = HashMap::new();
+        let mut shortened = false;
         if let Ok(data) = std::fs::read_to_string(&path) {
             for line in data.lines() {
                 if let Some((token, expiry_str)) = line.split_once('\t')
@@ -75,14 +77,23 @@ impl SessionStore {
                 }
             }
             let now = SystemTime::now();
-            clamp(&mut tokens, ttl, now);
+            shortened = clamp(&mut tokens, ttl, now);
             sweep(&mut tokens, now);
         }
-        Self {
+        let store = Self {
             tokens: Mutex::new(tokens),
             store_path: Some(path),
             ttl,
+        };
+        // Write the shortened deadlines down now instead of leaving them to the
+        // next login. Until they are on disk the file still names the old ones,
+        // so a second restart would read them and measure a fresh lifetime from
+        // there — a tightened policy would never take hold on a session that
+        // restarts more often than the lifetime it is being held to.
+        if shortened {
+            store.persist();
         }
+        store
     }
 
     /// Mint a new session token and remember it.
@@ -196,15 +207,21 @@ fn parse_expiry(field: &str) -> Option<Expiry> {
 /// it is the one edit that has to reach sessions already handed out. A token
 /// already closer to running out keeps its own earlier deadline, so a restart
 /// never extends anything.
-fn clamp(tokens: &mut HashMap<String, Expiry>, ttl: Option<Duration>, now: SystemTime) {
+///
+/// Reports whether anything moved, which is what tells the caller the file no
+/// longer matches the tokens.
+fn clamp(tokens: &mut HashMap<String, Expiry>, ttl: Option<Duration>, now: SystemTime) -> bool {
     let Some(ceiling) = ttl.and_then(|ttl| now.checked_add(ttl)) else {
-        return;
+        return false;
     };
+    let mut shortened = false;
     for expiry in tokens.values_mut() {
         if expiry.is_none_or(|at| at > ceiling) {
             *expiry = Some(ceiling);
+            shortened = true;
         }
     }
+    shortened
 }
 
 /// Forget every token whose expiry has passed. One rule, one place: loading and
