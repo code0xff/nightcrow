@@ -1,5 +1,5 @@
 import { Component, type ErrorInfo, type ReactNode } from "react";
-import { isStaleBundleError } from "../../lib/chunkError";
+import { isChunkLoadError } from "../../lib/chunkError";
 
 /**
  * Keeps one failed subtree from taking the page with it.
@@ -23,10 +23,19 @@ interface Props {
   /// Names the region in the fallback, so a failed pane does not read as a
   /// failed application.
   region?: string;
+  /// Display and visibility for the fallback, which stands where the child
+  /// stood and inherits none of its classes. A panel the layout hides at this
+  /// width must stay hidden when it fails, or failing is how it appears.
+  /// Carries the display class itself (default `flex`), so a caller passing
+  /// `hidden md:flex` is not fighting a `flex` baked in here — which class wins
+  /// would then be CSS source order, not the call site's intent.
+  className?: string;
 }
 
 interface State {
   error: unknown;
+  /// Separate from `error` because `throw null` is legal: what was thrown does
+  /// not say whether anything was.
   failed: boolean;
 }
 
@@ -47,26 +56,42 @@ export class ErrorBoundary extends Component<Props, State> {
     if (!this.state.failed) return this.props.children;
     return (
       <Fallback
-        stale={isStaleBundleError(this.state.error)}
+        chunk={isChunkLoadError(this.state.error)}
         region={this.props.region}
+        className={this.props.className}
       />
     );
   }
 }
 
-function Fallback({ stale, region }: { stale: boolean; region?: string }) {
+function Fallback({
+  chunk,
+  region,
+  className,
+}: {
+  chunk: boolean;
+  region?: string;
+  className?: string;
+}) {
   return (
     <div
       role="alert"
-      className="flex h-full min-h-0 flex-col items-start gap-3 p-4 text-ink-400"
+      className={`h-full min-h-0 flex-col items-start gap-3 p-4 text-ink-400 ${className ?? "flex"}`}
     >
-      {stale ? (
+      {chunk ? (
         <>
-          <p className="text-accent">A new version was deployed.</p>
+          <p className="text-accent">Part of the app could not be loaded.</p>
+          {/*
+            Which of the two it is cannot be known from here — a removed chunk
+            and an unreachable server arrive as the same error — so both are
+            named, likeliest first, and the reload settles it either way.
+          */}
           <p>
-            This tab is running the older one and cannot load the rest of it.
-            Reloading picks up the new version — the session, its repositories,
-            and its terminals are on the server and are not affected.
+            Most likely the server was updated while this tab was open, and
+            reloading picks up the current version. If the reload fails too, the
+            server is not reachable from here. Either way nothing on the server
+            is affected — the session, its repositories, and its terminals are
+            untouched.
           </p>
         </>
       ) : (

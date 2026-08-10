@@ -139,7 +139,15 @@ export function RepoShell({
         />
       </main>
 
-      <ErrorBoundary region="terminal panel">
+      {/*
+        The fallback stands in the panel's grid row, so it takes the panel's
+        visibility with it: below `md` this row is only on screen when the
+        terminal is the chosen view, and a failure must not be what puts it there.
+      */}
+      <ErrorBoundary
+        region="terminal panel"
+        className={mobileView === "terminal" ? "flex" : "hidden md:flex"}
+      >
         <Suspense fallback={null}>
           <TerminalPanel
             repo={repo}

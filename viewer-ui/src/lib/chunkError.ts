@@ -1,6 +1,6 @@
 /**
- * Recognising the one render failure that is not a bug in this page: the code
- * it is asking for is no longer on the server.
+ * Recognising the one render failure that is not a bug in this page: a chunk it
+ * asked for did not arrive.
  *
  * The app loads three chunks on demand — the markdown renderer, the HTML
  * preview, and the terminal panel. Their filenames carry a content hash, so a
@@ -9,10 +9,16 @@
  * swapping the binary under an open tab does exactly this, and so does a
  * `viewer-ui` rebuild against a debug server, which reads `dist` from disk.
  *
- * There is no recovering in place: the HTML spec has browsers cache a failed
- * module fetch so a script cannot run twice, which means retrying the same
- * import returns the same failure for the life of the page. Only a reload
- * fetches the new document and, with it, the new names.
+ * **What this cannot tell you is why the fetch failed.** Every engine reports a
+ * removed chunk and an unreachable server with the same bare `TypeError`, and a
+ * viewer reached over an SSH tunnel loses that server as easily as it outlives a
+ * build. So this answers "the chunk did not arrive" and nothing more — naming
+ * the cause is left to wording that offers both, in the order they happen.
+ *
+ * Either way there is no recovering in place: the HTML spec has browsers cache a
+ * failed module fetch so a script cannot run twice, which means retrying the
+ * same import returns the same failure for the life of the page. Only a reload
+ * fetches the document again and, with it, whatever the server now has.
  */
 
 /// Fragments of what each engine says when a dynamic import cannot be fetched.
@@ -32,13 +38,14 @@ const SIGNATURES = [
 ];
 
 /**
- * Whether `error` means "this tab is running a build the server has replaced".
+ * Whether `error` is a chunk that failed to load, rather than something the
+ * page did wrong.
  *
  * Deliberately narrow. Anything it does not recognise is reported as an
- * ordinary failure, because telling someone to reload does not fix a bug in the
- * component they were looking at — it just loses their place.
+ * ordinary failure, because offering a reload does not fix a bug in the
+ * component someone was looking at — it just loses their place.
  */
-export function isStaleBundleError(error: unknown): boolean {
+export function isChunkLoadError(error: unknown): boolean {
   const message =
     error instanceof Error
       ? error.message

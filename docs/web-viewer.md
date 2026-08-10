@@ -265,9 +265,11 @@ CI rebuilds the bundle and fails if it differs from what is committed.
 a content hash, so a build replaces them rather than overwriting them, and the
 markdown renderer, the HTML preview, and the terminal panel are each fetched
 only when first needed — which is why this usually surfaces as opening a preview
-rather than at page load. The page says a new version was deployed and offers a
-reload; nothing on the server is affected, so the reload comes back to the same
-repositories and the same terminals. Against a debug server the rebuild alone
+rather than at page load. The pane says part of the app could not be loaded and
+offers a reload; nothing on the server is affected, so the reload comes back to
+the same repositories and the same terminals. (The same message covers a server
+that has become unreachable, since the browser reports both the same way — if
+the reload fails too, that is which one it was.) Against a debug server the rebuild alone
 does it, since `dist` is read from disk there; against a release binary it takes
 [an update](getting-started.md#updating) replacing the binary under the tab.
 
