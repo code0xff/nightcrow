@@ -9,6 +9,7 @@ import type { Repo, Status } from "../api";
 import type { ShellLayout } from "../hooks/useShellLayout";
 import type { Maximized, MobileView } from "../types";
 import { RepoMobileNav } from "./RepoMobileNav";
+import { ErrorBoundary } from "./feedback/ErrorBoundary";
 
 // Keep xterm out of the initial login and git-viewer bundle.
 const TerminalPanel = lazy(() =>
@@ -138,26 +139,28 @@ export function RepoShell({
         />
       </main>
 
-      <Suspense fallback={null}>
-        <TerminalPanel
-          repo={repo}
-          maximized={maximized === "terminal"}
-          onToggleMaximized={() =>
-            setMaximized((m) => (m === "terminal" ? "none" : "terminal"))
-          }
-          className={mobileView === "terminal" ? "flex" : "hidden md:flex"}
-          sectionRef={lowerRef}
-          // Only when both panels are on screen at their stored ratio: a
-          // maximized panel has literal grid tracks the percentage does not
-          // feed, and below `md` one view fills the screen instead.
-          showDivider={maximized === "none"}
-          draggingUpper={draggingUpper}
-          onUpperDragStart={onUpperDragStart}
-          onUpperDragMove={onUpperDragMove}
-          onUpperDragEnd={onUpperDragEnd}
-          onUpperDragCancel={onUpperDragCancel}
-        />
-      </Suspense>
+      <ErrorBoundary region="terminal panel">
+        <Suspense fallback={null}>
+          <TerminalPanel
+            repo={repo}
+            maximized={maximized === "terminal"}
+            onToggleMaximized={() =>
+              setMaximized((m) => (m === "terminal" ? "none" : "terminal"))
+            }
+            className={mobileView === "terminal" ? "flex" : "hidden md:flex"}
+            sectionRef={lowerRef}
+            // Only when both panels are on screen at their stored ratio: a
+            // maximized panel has literal grid tracks the percentage does not
+            // feed, and below `md` one view fills the screen instead.
+            showDivider={maximized === "none"}
+            draggingUpper={draggingUpper}
+            onUpperDragStart={onUpperDragStart}
+            onUpperDragMove={onUpperDragMove}
+            onUpperDragEnd={onUpperDragEnd}
+            onUpperDragCancel={onUpperDragCancel}
+          />
+        </Suspense>
+      </ErrorBoundary>
 
       <RepoMobileNav view={mobileView} onSelect={setMobileView} />
 

@@ -11,6 +11,7 @@ import {
   WholeFileIcon,
 } from "./icons/layout";
 import { DiffView } from "./DiffView";
+import { ErrorBoundary } from "./feedback/ErrorBoundary";
 import { LineNos } from "./LineNos";
 import { PathLabel } from "./PathLabel";
 import type { Span, Status } from "../api";
@@ -225,13 +226,19 @@ export function FilePane({
         {pane.kind === "file" && (
           <>
             {isPreviewablePath(pane.value.path) && previewRendered ? (
-              <Suspense fallback={<p className="p-4 text-ink-400">Rendering…</p>}>
-                {isHtmlPath(pane.value.path) ? (
-                  <HtmlView source={fileViewSource(pane.value.lines)} />
-                ) : (
-                  <MarkdownView source={fileViewSource(pane.value.lines)} />
-                )}
-              </Suspense>
+              // Keyed by the file so the next one starts clean: the renderers
+              // are separate chunks, and losing one says nothing about the other.
+              <ErrorBoundary key={pane.value.path} region="preview">
+                <Suspense
+                  fallback={<p className="p-4 text-ink-400">Rendering…</p>}
+                >
+                  {isHtmlPath(pane.value.path) ? (
+                    <HtmlView source={fileViewSource(pane.value.lines)} />
+                  ) : (
+                    <MarkdownView source={fileViewSource(pane.value.lines)} />
+                  )}
+                </Suspense>
+              </ErrorBoundary>
             ) : (
               <FileLines lines={pane.value.lines} />
             )}
