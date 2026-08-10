@@ -56,6 +56,7 @@ bind = "127.0.0.1"   # loopback only by default; plain HTTP, so tunnel/proxy for
 port = 8091
 # password = "..."         # auto-generated + saved here on first launch if unset
 # hashed_password = "..."  # Argon2 PHC string; takes precedence over `password`
+session_ttl_hours = 24     # how long a browser login lasts (0 = never expires)
 ```
 
 See [Web viewer → Configuration and access](web-viewer.md#configuration-and-access).

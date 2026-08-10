@@ -196,6 +196,7 @@ Configure where it listens under `[web_viewer]`:
 bind = "127.0.0.1"   # loopback only; change deliberately
 port = 8091
 # password = "..."   # auto-generated and written here on first launch if unset
+session_ttl_hours = 24   # how long a login lasts; 0 = never expires
 ```
 
 `--port` and `--bind` override those for one run:
@@ -213,9 +214,28 @@ one is generated and written back into your config (so it survives restarts and
 stays readable) and printed once at startup. To avoid a plaintext password on
 disk, set `hashed_password` to an Argon2 PHC string instead — it takes
 precedence. Login is rate-limited and grants a session cookie. Sessions survive
-a daemon restart: tokens are persisted to `~/.nightcrow/sessions` with a 24-hour
-TTL and owner-only file permissions. Logout revokes the token server-side, so
-clearing the cookie alone is not enough to invalidate a session.
+a daemon restart: tokens are persisted to `~/.nightcrow/sessions` with
+owner-only file permissions. Logout revokes the token server-side, so clearing
+the cookie alone is not enough to invalidate a session.
+
+**How long a login lasts** is `session_ttl_hours`, 24 hours by default.
+`session_ttl_hours = 0` means it never expires on its own — logging out, or
+deleting `~/.nightcrow/sessions`, is then the only thing that ends a session.
+Whether repeating the login buys anything is a judgement about your own setup:
+on a loopback-bound session there may be nobody to re-authenticate against,
+while a viewer reachable from another machine is shell access that a stolen
+cookie opens. Two things to know either way:
+
+- **Lowering it reaches logins already handed out**, from the next restart —
+  each one's deadline is brought down to the new lifetime. Raising it never
+  pushes an existing deadline further away; only a fresh login gets the longer
+  one.
+- **The browser keeps the cookie for at most 400 days** whatever the setting
+  says, because browsers refuse to hold one longer. A session with no expiry is
+  still valid on the server past that; the browser will just have forgotten it.
+
+`[web_viewer]` is not re-read by a config reload — the listener is already
+bound — so a change here takes effect when the session restarts.
 
 > **Security.** The viewer serves repository contents *and* interactive
 > terminals, so an authenticated session is equivalent to shell access. It binds

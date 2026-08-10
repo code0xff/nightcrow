@@ -198,3 +198,10 @@ port = 8091
 # Alternatively store an Argon2 PHC hash instead of a plaintext password; it
 # takes precedence over `password` when both are present.
 # hashed_password = "$argon2id$v=19$m=..."
+# How long a browser login lasts before it has to be repeated. 0 = never
+# expires, in which case only logging out ends a session. Whether re-logging in
+# buys anything is yours to judge: on a loopback-bound session there may be
+# nobody to re-authenticate against, while a viewer reachable from elsewhere is
+# a shell that a stolen cookie opens. Lowering it also shortens the logins
+# already handed out, from the next restart.
+session_ttl_hours = 24
