@@ -153,11 +153,20 @@ export function TerminalPanel({
     zoom: zoomShown,
     viewsRef,
     lastActiveByRepoRef,
+    panelRef: containerRef,
+    size,
+    mode,
   });
 
   const focusPane = (pane: number) => {
     setActive(pane);
     lastActiveByRepoRef.current.set(repo, pane);
+    // Directly, because a click on the pane that is already active changes no
+    // state and so runs no effect — and that click is exactly what someone
+    // whose keyboard is not reaching the terminal will try. Clicking the body
+    // works without this, but only because xterm focuses itself on mousedown;
+    // the header and the tab strip are outside it.
+    viewsRef.current.get(pane)?.term.focus();
   };
 
   const { create, toggleZoom, claimSize, closePane, reorder, sendKey } =
