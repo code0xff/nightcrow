@@ -269,6 +269,25 @@ UI, `hooks/`는 UI·터미널·저장소 상태, `lib/`는 API 이외의 순수 
 터미널 WebSocket 메시지는 `api/terminal.ts`가 decode/encode하는 단일 경계를 두고, 각 terminal hook은
 검증된 discriminated union만 처리한다. wire 문자열을 hook마다 다시 해석하거나 조립하지 않는다.
 
+**렌더 실패가 페이지를 가져가지 않게 한다**(`components/feedback/ErrorBoundary.tsx`,
+`lib/chunkError.ts`). boundary가 하나도 없으면 React는 어떤 렌더 에러에도 트리 전체를 unmount하고,
+보는 사람 입장에서 그것은 **서버가 죽은 것과 구분되지 않는다.** 실제로 사라진 청크가 그 모양으로
+왔다: on-demand 청크(markdown 렌더러·HTML preview·터미널 패널)는 content hash가 붙은 이름으로
+받으므로, 빌드 이전에 열린 탭은 그 빌드가 지운 이름을 요구한다. release에서는 `nightcrow update`가
+탭 밑에서 바이너리를 갈아치울 때, debug에서는 `dist`를 디스크에서 읽으므로 재빌드만으로도 그렇게 된다.
+
+- **그 자리에서 재시도할 수 없다.** HTML spec이 실패한 module fetch를 캐시하게 하므로(스크립트가
+  두 번 도는 것을 막기 위해) 같은 import는 그 페이지가 사는 동안 계속 같은 실패를 준다. 복구는
+  리로드뿐이고, 그래서 fallback이 내미는 것도 재시도가 아니라 리로드다.
+- **판정은 `lib/chunkError.ts`의 순수 함수가 한다.** vitest가 `environment: "node"`라 컴포넌트는
+  테스트할 수 없으므로, 테스트 가능한 곳에 로직을 두고 boundary는 그것을 부르는 껍데기로 남긴다.
+  판정은 **좁게** 잡는다 — 알아보지 못한 것은 일반 실패로 보고한다. 보고 있던 컴포넌트의 버그에
+  리로드를 권하는 것은 고쳐주는 것이 없으면서 읽던 자리만 잃게 한다.
+- **preview boundary는 파일로 key를 잡는다.** 렌더러가 서로 다른 청크라 하나를 잃은 것이 다른
+  하나에 대해 말해주는 바가 없는데, boundary는 remount 전까지 에러 상태를 붙들기 때문이다.
+- Vite의 `vite:preloadError`를 따로 듣지 않는다. `preventDefault`하지 않으면 어차피 throw되어
+  import promise를 reject시키므로 boundary가 두 경로를 다 받는다 — 메커니즘을 하나로 둔다.
+
 ### 서버 저장 preference
 
 - **accent는 세션의 것이고 브라우저는 그것을 칠한다**(`hooks/ui/theme.ts`). 헤더 스와치가 TUI의

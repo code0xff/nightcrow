@@ -261,4 +261,14 @@ npm --prefix viewer-ui run build   # rebuild dist/ — commit the result
 
 CI rebuilds the bundle and fails if it differs from what is committed.
 
+**A tab open across a rebuild asks for files that are gone.** Chunk names carry
+a content hash, so a build replaces them rather than overwriting them, and the
+markdown renderer, the HTML preview, and the terminal panel are each fetched
+only when first needed — which is why this usually surfaces as opening a preview
+rather than at page load. The page says a new version was deployed and offers a
+reload; nothing on the server is affected, so the reload comes back to the same
+repositories and the same terminals. Against a debug server the rebuild alone
+does it, since `dist` is read from disk there; against a release binary it takes
+[an update](getting-started.md#updating) replacing the binary under the tab.
+
 Design notes: [Architecture → Web layer](architecture/web.md).
