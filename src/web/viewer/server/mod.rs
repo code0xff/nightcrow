@@ -108,11 +108,12 @@ impl ViewerServer {
                 viewer.bind
             )
         })?;
+        let session_ttl = Some(sessions::DEFAULT_SESSION_TTL);
         let session_store = sessions::session_store_path()
-            .map(SessionStore::load)
+            .map(|path| SessionStore::load(path, session_ttl))
             .unwrap_or_else(|err| {
                 tracing::warn!(%err, "could not open session store; starting in-memory");
-                SessionStore::new()
+                SessionStore::new(session_ttl)
             });
         Self::start_with_plugins(
             ViewerOptions {

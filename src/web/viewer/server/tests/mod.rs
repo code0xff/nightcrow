@@ -44,7 +44,7 @@ pub(super) fn server_with(
         bind: "127.0.0.1".parse().unwrap(),
         port: 0,
         auth: Auth::from_plaintext("swordfish").unwrap(),
-        sessions: SessionStore::new(),
+        sessions: SessionStore::default(),
         hot,
         session: crate::session::SessionOptions {
             repos: paths.to_vec(),

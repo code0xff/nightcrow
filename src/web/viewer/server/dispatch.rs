@@ -190,7 +190,8 @@ fn handle_login(body: &str, state: &ViewerState) -> Vec<u8> {
     match state.sessions.issue() {
         Ok(token) => {
             let cookie = format!(
-                "{VIEWER_SESSION_COOKIE}={token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=86400"
+                "{VIEWER_SESSION_COOKIE}={token}; HttpOnly; SameSite=Strict; Path=/; Max-Age={}",
+                state.sessions.cookie_max_age_secs()
             );
             json_response("200 OK", "{\"ok\":true}", &[("Set-Cookie", &cookie)])
         }
