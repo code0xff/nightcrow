@@ -118,6 +118,7 @@ export function TerminalPanel({
     viewsRef,
     bodyRefs,
     pendingRef,
+    sentSizesRef,
     setTitles,
   });
 

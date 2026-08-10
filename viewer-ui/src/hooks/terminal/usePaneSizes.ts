@@ -102,11 +102,11 @@ export function usePaneSizes({
       if (!body || body.clientHeight === 0 || body.clientWidth === 0) continue;
       // Take the size the PTY actually has whenever this page's cells are not
       // the answer: it is a spectator, or its layout has not resolved yet. Not
-      // merely "skip the fit" — an emulator left at its 80×24 default parses
-      // the replay that is arriving right now at the wrong width, and what was
-      // drawn outside it is gone. A pane created while this page was a
-      // spectator starts at that default until this runs; `resized` covers it
-      // from then on.
+      // merely "skip the fit" — an emulator at any other size renders this
+      // pane wrapping where the child does not. A pane opens at the PTY's size
+      // (`useTerminalViews`) and `resized` follows it from then on, so this is
+      // what covers the rest: a layout change here, and a page that has just
+      // lost the sizing while its panes are at its own fit.
       if (!ownsSize || layoutPending) {
         const pty = sentSizesRef.current.get(pane);
         if (pty) view.term.resize(pty.cols, pty.rows);

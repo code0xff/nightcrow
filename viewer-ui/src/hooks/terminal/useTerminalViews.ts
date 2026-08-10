@@ -6,7 +6,7 @@ import type { PaneView } from "../../lib/terminalLayout";
 import type { PaneViewMode } from "../../lib/paneViewMode";
 import { terminalFontOptions } from "../../lib/termFont";
 import { ClearKeyProbe } from "../../lib/clearKeyProbe";
-import { sendTerminalMessage } from "../../api/terminal";
+import { sendTerminalMessage, type PaneSize } from "../../api/terminal";
 
 interface UseTerminalViewsArgs {
   panes: number[];
@@ -23,6 +23,9 @@ interface UseTerminalViewsArgs {
   viewsRef: MutableRefObject<Map<number, PaneView>>;
   bodyRefs: MutableRefObject<Map<number, HTMLDivElement>>;
   pendingRef: MutableRefObject<Map<number, Uint8Array[]>>;
+  /** What each PTY's grid is, from `created` and `resized`. Read here as the
+   *  size a pane's replay has to be parsed at. */
+  sentSizesRef: MutableRefObject<Map<number, PaneSize>>;
   setTitles: React.Dispatch<React.SetStateAction<Record<number, string>>>;
 }
 
@@ -35,6 +38,7 @@ export function useTerminalViews({
   viewsRef,
   bodyRefs,
   pendingRef,
+  sentSizesRef,
   setTitles,
 }: UseTerminalViewsArgs) {
   useEffect(() => {
@@ -81,6 +85,16 @@ export function useTerminalViews({
         setTitles((current) => ({ ...current, [pane]: cleaned }));
       });
       term.open(body);
+      // Before a byte is written: what follows was drawn against the PTY's
+      // grid, and xterm opens at its own 80×24 default. Parsed at the default,
+      // everything the program put outside that box is gone — and the fit that
+      // runs after this sends nothing when it lands on the size the PTY already
+      // has, which is the usual outcome of returning to the same screen. So no
+      // resize reaches the child, nothing makes it repaint, and what was lost
+      // stays lost until it next draws by itself: a full-screen program sitting
+      // at a prompt leaves the pane blank for as long as it waits.
+      const pty = sentSizesRef.current.get(pane);
+      if (pty) term.resize(pty.cols, pty.rows);
       viewsRef.current.set(pane, { term, fit });
 
       const queued = pendingRef.current.get(pane);
