@@ -72,7 +72,9 @@ function Fallback({ stale, region }: { stale: boolean; region?: string }) {
       ) : (
         <>
           <p className="text-removed">
-            {region ? `The ${region} stopped responding.` : "Something broke."}
+            {region
+              ? `The ${region} could not be rendered.`
+              : "Something went wrong."}
           </p>
           <p>The details are in the browser console.</p>
         </>
