@@ -19,6 +19,7 @@ import { shownTab } from "../../lib/paneViewMode";
 import { PanelDivider, type PanelDividerProps } from "./PanelDivider";
 import { PanelToolbar } from "./PanelToolbar";
 import { renderedZoom, zoomPending } from "../../lib/zoom";
+import type { PaneSize } from "../../api/terminal";
 import {
   attachLabel,
   attachStatus,
@@ -44,8 +45,14 @@ export function TerminalPanel({
   const socketRef = useRef<WebSocket | null>(null);
   const viewsRef = useRef(new Map<number, PaneView>());
   const bodyRefs = useRef(new Map<number, HTMLDivElement>());
-  // Avoid redundant PTY resize frames.
-  const sentSizesRef = useRef(new Map<number, { rows: number; cols: number }>());
+  // Each pane's grid as the server has confirmed it — `created` and `resized`,
+  // never a size this page has merely asked for. What a pane is rendered at is
+  // read from here, and the server drops a resize from a page that lost the
+  // sizing mid-flight, so a request must not be recorded as fact.
+  const ptySizesRef = useRef(new Map<number, PaneSize>());
+  // What this page last asked each pane's size to be, so an unchanged layout
+  // does not send the same resize again.
+  const askedSizesRef = useRef(new Map<number, PaneSize>());
   // Buffer scrollback received before the corresponding xterm exists.
   const pendingRef = useRef(new Map<number, Uint8Array[]>());
   // Restore focus when returning to a repository.
@@ -95,7 +102,8 @@ export function TerminalPanel({
     socketRef,
     viewsRef,
     pendingRef,
-    sentSizesRef,
+    ptySizesRef,
+    askedSizesRef,
     lastActiveByRepoRef,
     zoomAskedRef,
     setLink,
@@ -118,7 +126,7 @@ export function TerminalPanel({
     viewsRef,
     bodyRefs,
     pendingRef,
-    sentSizesRef,
+    ptySizesRef,
     setTitles,
   });
 
@@ -140,7 +148,8 @@ export function TerminalPanel({
     socketRef,
     viewsRef,
     bodyRefs,
-    sentSizesRef,
+    ptySizesRef,
+    askedSizesRef,
     ownsSize,
     layoutPending: zoomPending(zoomServer, panes),
   });

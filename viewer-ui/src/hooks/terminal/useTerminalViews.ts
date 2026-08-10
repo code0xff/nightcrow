@@ -25,7 +25,7 @@ interface UseTerminalViewsArgs {
   pendingRef: MutableRefObject<Map<number, Uint8Array[]>>;
   /** What each PTY's grid is, from `created` and `resized`. Read here as the
    *  size a pane's replay has to be parsed at. */
-  sentSizesRef: MutableRefObject<Map<number, PaneSize>>;
+  ptySizesRef: MutableRefObject<Map<number, PaneSize>>;
   setTitles: React.Dispatch<React.SetStateAction<Record<number, string>>>;
 }
 
@@ -38,7 +38,7 @@ export function useTerminalViews({
   viewsRef,
   bodyRefs,
   pendingRef,
-  sentSizesRef,
+  ptySizesRef,
   setTitles,
 }: UseTerminalViewsArgs) {
   useEffect(() => {
@@ -93,7 +93,7 @@ export function useTerminalViews({
       // resize reaches the child, nothing makes it repaint, and what was lost
       // stays lost until it next draws by itself: a full-screen program sitting
       // at a prompt leaves the pane blank for as long as it waits.
-      const pty = sentSizesRef.current.get(pane);
+      const pty = ptySizesRef.current.get(pane);
       if (pty) term.resize(pty.cols, pty.rows);
       viewsRef.current.set(pane, { term, fit });
 

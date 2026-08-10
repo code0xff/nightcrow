@@ -12,7 +12,8 @@ interface UseTerminalSocketArgs {
   socketRef: MutableRefObject<WebSocket | null>;
   viewsRef: MutableRefObject<Map<number, PaneView>>;
   pendingRef: MutableRefObject<Map<number, Uint8Array[]>>;
-  sentSizesRef: MutableRefObject<Map<number, PaneSize>>;
+  ptySizesRef: MutableRefObject<Map<number, PaneSize>>;
+  askedSizesRef: MutableRefObject<Map<number, PaneSize>>;
   lastActiveByRepoRef: MutableRefObject<Map<string, number>>;
   /** What the page last asked the zoom to be (see `usePaneCommands`). Cleared
    *  here because this is what knows when a request has been answered and when
@@ -47,7 +48,8 @@ export function useTerminalSocket({
   socketRef,
   viewsRef,
   pendingRef,
-  sentSizesRef,
+  ptySizesRef,
+  askedSizesRef,
   lastActiveByRepoRef,
   zoomAskedRef,
   setLink,
@@ -84,7 +86,8 @@ export function useTerminalSocket({
       clientIdRef,
       viewsRef,
       pendingRef,
-      sentSizesRef,
+      ptySizesRef,
+      askedSizesRef,
       lastActiveByRepoRef,
       zoomAskedRef,
       setLink: linkTo,
@@ -102,7 +105,8 @@ export function useTerminalSocket({
       viewsRef.current.forEach((view) => view.term.dispose());
       viewsRef.current.clear();
       pendingRef.current.clear();
-      sentSizesRef.current.clear();
+      ptySizesRef.current.clear();
+      askedSizesRef.current.clear();
     };
 
     const connect = () => {

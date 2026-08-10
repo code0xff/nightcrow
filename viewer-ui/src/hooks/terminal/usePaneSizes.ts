@@ -33,9 +33,16 @@ interface UsePaneSizesArgs {
   socketRef: MutableRefObject<WebSocket | null>;
   viewsRef: MutableRefObject<Map<number, PaneView>>;
   bodyRefs: MutableRefObject<Map<number, HTMLDivElement>>;
-  /** Sizes the PTYs are already known to have, so an unchanged size is never
-   *  sent. Seeded from `created`, updated here and by `resized`. */
-  sentSizesRef: MutableRefObject<Map<number, PaneSize>>;
+  /** Each pane's grid as the server has confirmed it, from `created` and
+   *  `resized`. Read here for the panes this page is not sizing. */
+  ptySizesRef: MutableRefObject<Map<number, PaneSize>>;
+  /** What this page has already asked for, so an unchanged layout is not sent
+   *  twice. Separate from the confirmed sizes because a request is not an
+   *  outcome: the server drops one from a page that lost the sizing between
+   *  laying the frame out and the message arriving, and recording that as the
+   *  pane's size would render every client's view of it at a grid the child
+   *  never had. */
+  askedSizesRef: MutableRefObject<Map<number, PaneSize>>;
   /** Whether this page's layout is what sets the pane sizes. When it is not,
    *  the panes are at another client's size and this page renders that grid
    *  instead of fitting its own — a PTY has one size, and the child cannot be
@@ -69,7 +76,8 @@ export function usePaneSizes({
   socketRef,
   viewsRef,
   bodyRefs,
-  sentSizesRef,
+  ptySizesRef,
+  askedSizesRef,
   ownsSize,
   layoutPending,
 }: UsePaneSizesArgs) {
@@ -80,8 +88,8 @@ export function usePaneSizes({
       const body = bodyRefs.current.get(pane);
       if (!body || body.clientHeight === 0 || body.clientWidth === 0) continue;
       const { rows, cols } = view.term;
-      const sent = sentSizesRef.current.get(pane);
-      if (sent && sent.rows === rows && sent.cols === cols) continue;
+      const asked = askedSizesRef.current.get(pane);
+      if (asked && asked.rows === rows && asked.cols === cols) continue;
       if (
         sendTerminalMessage(socketRef.current, {
           type: "resize",
@@ -90,10 +98,10 @@ export function usePaneSizes({
           cols,
         })
       ) {
-        sentSizesRef.current.set(pane, { rows, cols });
+        askedSizesRef.current.set(pane, { rows, cols });
       }
     }
-  }, [socketRef, viewsRef, bodyRefs, sentSizesRef]);
+  }, [socketRef, viewsRef, bodyRefs, askedSizesRef]);
 
   // Size visible panes after layout changes; never resize hidden cells to zero.
   useEffect(() => {
@@ -108,7 +116,7 @@ export function usePaneSizes({
       // what covers the rest: a layout change here, and a page that has just
       // lost the sizing while its panes are at its own fit.
       if (!ownsSize || layoutPending) {
-        const pty = sentSizesRef.current.get(pane);
+        const pty = ptySizesRef.current.get(pane);
         if (pty) view.term.resize(pty.cols, pty.rows);
         continue;
       }
@@ -132,7 +140,7 @@ export function usePaneSizes({
     flush,
     viewsRef,
     bodyRefs,
-    sentSizesRef,
+    ptySizesRef,
     ownsSize,
     layoutPending,
   ]);

@@ -18,7 +18,8 @@ export interface TerminalMessageContext {
   clientIdRef: MutableRefObject<number | null>;
   viewsRef: MutableRefObject<Map<number, PaneView>>;
   pendingRef: MutableRefObject<Map<number, Uint8Array[]>>;
-  sentSizesRef: MutableRefObject<Map<number, PaneSize>>;
+  ptySizesRef: MutableRefObject<Map<number, PaneSize>>;
+  askedSizesRef: MutableRefObject<Map<number, PaneSize>>;
   lastActiveByRepoRef: MutableRefObject<Map<string, number>>;
   zoomAskedRef: MutableRefObject<number | null | undefined>;
   /** Not a plain setter: the socket hook remembers whether this page has ever
@@ -72,7 +73,7 @@ function handleControlMessage(
       return;
     case "created": {
       const pane = message.pane;
-      context.sentSizesRef.current.set(pane, {
+      context.ptySizesRef.current.set(pane, {
         rows: message.rows,
         cols: message.cols,
       });
@@ -104,7 +105,8 @@ function handleControlMessage(
         current === message.pane ? null : current,
       );
       context.pendingRef.current.delete(message.pane);
-      context.sentSizesRef.current.delete(message.pane);
+      context.ptySizesRef.current.delete(message.pane);
+      context.askedSizesRef.current.delete(message.pane);
       context.setTitles((current) => {
         if (!(message.pane in current)) return current;
         const next = { ...current };
@@ -113,7 +115,7 @@ function handleControlMessage(
       });
       return;
     case "resized":
-      context.sentSizesRef.current.set(message.pane, {
+      context.ptySizesRef.current.set(message.pane, {
         rows: message.rows,
         cols: message.cols,
       });
@@ -125,6 +127,14 @@ function handleControlMessage(
       context.setRecovery((current) => applyRecovery(current, message));
       return;
     case "size_owner":
+      // Gaining it means the panes are this page's to size and are currently at
+      // someone else's, so what was asked before says nothing about what to ask
+      // now — including a request the server dropped because this page had
+      // already lost the sizing when it arrived. Without this, reclaiming and
+      // fitting back to a size asked for earlier would be skipped as a repeat
+      // and never reach the child. The TUI clears its own record on the same
+      // event, for the same reason.
+      if (message.owned) context.askedSizesRef.current.clear();
       context.setOwnsSize(message.owned);
       return;
     case "reordered":
