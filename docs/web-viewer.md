@@ -43,11 +43,11 @@ many are loaded, and clearing the filter resumes loading. The list is the histor
 as of entering the tab: unlike the TUI it does not follow HEAD, so a commit made
 in the terminal panel appears after leaving and re-entering the tab.
 
-The diff pane has a toggle (top-right of the pane) that switches between the
-inline unified diff and a side-by-side split view, mirroring the TUI's `s`. The
-choice lasts the page, the same lifetime the TUI gives it; on a narrow window the
-two sides stack — removed above added — rather than sitting side by side, since
-neither column would have the width to read.
+With a diff showing, the content pane has a toggle (top-right) that switches
+between the inline unified diff and a side-by-side split view, mirroring the
+TUI's `s`. The choice lasts the page, the same lifetime the TUI gives it; on a
+narrow window the two sides stack — removed above added — rather than sitting
+side by side, since neither column would have the width to read.
 
 Beside it, a **whole file** toggle swaps the diff for the file it belongs to,
 opened at the change that was on screen — the browser's half of the TUI's `v`.
@@ -90,12 +90,12 @@ attached TUI shows it, and a change made anywhere reaches the browsers within a
 few seconds and attached terminals immediately. `[theme] name` sets the colour a
 session starts with, before anyone has picked one.
 
-Drag the divider between the file list and the diff pane to resize the sidebar,
+Drag the divider between the sidebar and the content pane to resize the sidebar,
 or double-click it to reset the default width. The width is stored on the server
 the same way as the accent, so every device opens at the same split; it is
-bounded so the diff pane always keeps at least half the window.
+bounded so the content pane always keeps at least half the window.
 
-The border between the diff panel and the terminal panel is a divider too: drag
+The border between the upper panel and the terminal panel is a divider too: drag
 it to give the terminal more or less of the window, double-click to go back to
 the default 55/45. It is stored on the server like the sidebar width, so every
 browser opens at the same split, and bounded so neither panel shrinks to a sliver
@@ -157,11 +157,13 @@ what fills a screen is that screen's.
 
 ## On a phone
 
-The three regions the desktop shows at once — the file/commit list, the content
-pane, and the terminal — would each shrink to an unusable sliver stacked in one
-column, so instead a bottom bar switches between them: tap **Repo**, **Content**,
-or **Terminal** to give one of them the whole screen. Opening a file or commit
-jumps to the content view automatically.
+The three regions the desktop shows at once — the sidebar, the content pane, and
+the terminal — would each shrink to an unusable sliver stacked in one column, so
+instead a bottom bar switches between them: tap **Repo**, **Content**, or
+**Terminal** to give one of them the whole screen. The labels name the regions
+rather than what is in them: the sidebar is `status`, `log`, or `tree`, and the
+content pane holds a diff, a whole file, or nothing yet. Opening a file or commit
+jumps to the content pane automatically.
 
 **Drag a pane to scroll it.** A finger dragged up or down the terminal turns the
 same wheel a mouse would, so where it goes is up to the program in the pane: an

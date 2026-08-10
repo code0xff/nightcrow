@@ -1,6 +1,8 @@
 import type { Maximized } from "../types";
 
-/** Grid tracks for the app shell: header, diff panel, terminal panel, footer.
+/** Grid tracks for the app shell: header, upper panel, terminal panel, footer.
+ * The upper one is the sidebar plus the content pane, which is why it is not
+ * named after the diff — that is one of the things the content pane can hold.
  *
  * The split between the two panels is a CSS variable rather than a literal
  * ratio, because it is a dragged preference — `App.tsx` sets `--nc-upper` and
