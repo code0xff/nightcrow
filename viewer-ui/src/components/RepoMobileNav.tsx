@@ -9,8 +9,11 @@ interface MobileDestination {
 }
 
 const DESTINATIONS: MobileDestination[] = [
-  { key: "files", label: "Files", icon: ListIcon },
-  { key: "diff", label: "Diff", icon: FileTextIcon },
+  // Labels name the region, not one of the things it can hold: the left one is
+  // `status`/`log`/`tree`, so it is not always files, and the right one is a
+  // diff, a whole file, or nothing at all.
+  { key: "files", label: "Repo", icon: ListIcon },
+  { key: "diff", label: "Content", icon: FileTextIcon },
   { key: "terminal", label: "Terminal", icon: TerminalIcon },
 ];
 

@@ -19,7 +19,7 @@ export function ChevronIcon({ open }: { open: boolean }) {
 
 /**
  * List glyph, traced from Lucide's `list` (same provenance as above). Labels the
- * Files leg of the mobile view switcher — the file/commit list is what it opens.
+ * Repo leg of the mobile view switcher — the file/commit list is what it opens.
  */
 export function ListIcon({ className = "h-4 w-4" }: { className?: string }) {
   return (
@@ -46,7 +46,7 @@ export function ListIcon({ className = "h-4 w-4" }: { className?: string }) {
 
 /**
  * Document glyph, traced from Lucide's `file-text` (same provenance as above).
- * Labels the Diff leg of the mobile view switcher — the content pane, whether it
+ * Labels the Content leg of the mobile view switcher — the content pane, whether it
  * holds a diff or a file view.
  */
 export function FileTextIcon({ className = "h-4 w-4" }: { className?: string }) {

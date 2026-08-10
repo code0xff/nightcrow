@@ -159,7 +159,7 @@ what fills a screen is that screen's.
 
 The three regions the desktop shows at once — the file/commit list, the content
 pane, and the terminal — would each shrink to an unusable sliver stacked in one
-column, so instead a bottom bar switches between them: tap **Files**, **Diff**,
+column, so instead a bottom bar switches between them: tap **Repo**, **Content**,
 or **Terminal** to give one of them the whole screen. Opening a file or commit
 jumps to the content view automatically.
 
