@@ -149,6 +149,13 @@ edit without a rebuild ships a frontend that does not match its source. Both
 need `node_modules`; the hook says so and moves on rather than failing when
 Node is absent, since a plain build never needs it.
 
+It does stop, though, for a `node_modules` that is present but no longer the
+one `package-lock.json` pins — run `npm --prefix viewer-ui ci` and push again.
+Both gates above pass against whatever happens to be installed, so drift does
+not fail here, it just makes the bundle they approve the wrong one; CI installs
+from the lockfile and reports it as a stale bundle listing assets you never
+touched.
+
 ### Verifying on the other platform
 
 nightcrow targets macOS, Linux, and Windows, and CI runs the gates on all

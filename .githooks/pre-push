@@ -136,6 +136,23 @@ else
 		elif [ ! -d viewer-ui/node_modules ]; then
 			printf '\033[33m! pre-push: viewer-ui changed but node_modules is missing\033[0m\n' >&2
 			printf '  run: npm --prefix viewer-ui ci\n' >&2
+		elif ! installed="$(npm --prefix viewer-ui ls --depth=0 2>&1)"; then
+			# A `node_modules` that merely exists is not the one the lockfile
+			# pins, and the gap is invisible from here: the test and build below
+			# run against whatever is installed and go green, so what gets
+			# committed is a bundle built from versions the project does not
+			# use. CI installs with `npm ci`, so it surfaces there instead — as
+			# a stale-bundle failure naming assets nobody touched, which reads
+			# like anything but a dependency problem.
+			#
+			# A hard stop rather than the warning a missing `node_modules` gets:
+			# that one verifies nothing and says so, while this one verifies the
+			# wrong thing and calls it a pass.
+			printf '\033[31m✗ pre-push: viewer-ui/node_modules does not match the lockfile\033[0m\n' >&2
+			printf '%s\n' "$installed" | grep -E 'invalid|missing|extraneous' >&2 ||
+				printf '%s\n' "$installed" >&2
+			printf '  run: npm --prefix viewer-ui ci\n' >&2
+			exit 1
 		else
 			run npm --prefix viewer-ui test
 			run npm --prefix viewer-ui run build
