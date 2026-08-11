@@ -1,21 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
+import { stubSessionStorage } from "./fakeSessionStorage";
 import { resetClaimForTest, takeClaim, viewerId } from "./viewerId";
-
-// The suite runs on `node` by design (see `vitest.config.ts`: the tests are pure
-// helpers, so there is no jsdom). `sessionStorage` is the one browser global
-// this helper needs, and a Map is the whole of what it uses.
-function stubSessionStorage(): void {
-  const store = new Map<string, string>();
-  Object.defineProperty(globalThis, "sessionStorage", {
-    configurable: true,
-    value: {
-      getItem: (key: string) => store.get(key) ?? null,
-      setItem: (key: string, value: string) => void store.set(key, value),
-      removeItem: (key: string) => void store.delete(key),
-      clear: () => store.clear(),
-    },
-  });
-}
 
 describe("viewerId", () => {
   beforeEach(() => {

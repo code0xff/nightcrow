@@ -14,7 +14,6 @@ interface UseTerminalSocketArgs {
   pendingRef: MutableRefObject<Map<number, Uint8Array[]>>;
   ptySizesRef: MutableRefObject<Map<number, PaneSize>>;
   askedSizesRef: MutableRefObject<Map<number, PaneSize>>;
-  lastActiveByRepoRef: MutableRefObject<Map<string, number>>;
   /** What the page last asked the zoom to be (see `usePaneCommands`). Cleared
    *  here because this is what knows when a request has been answered and when
    *  the connection carrying it is gone — including a repository switch, whose
@@ -50,7 +49,6 @@ export function useTerminalSocket({
   pendingRef,
   ptySizesRef,
   askedSizesRef,
-  lastActiveByRepoRef,
   zoomAskedRef,
   setLink,
   setPending,
@@ -88,7 +86,6 @@ export function useTerminalSocket({
       pendingRef,
       ptySizesRef,
       askedSizesRef,
-      lastActiveByRepoRef,
       zoomAskedRef,
       setLink: linkTo,
       setPending,

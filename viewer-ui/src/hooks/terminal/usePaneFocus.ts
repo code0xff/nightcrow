@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 import type { MutableRefObject } from "react";
 import type { PaneView } from "../../lib/terminalLayout";
 import type { PaneViewMode } from "../../lib/paneViewMode";
+import { lastPaneOf, rememberPane } from "../../lib/lastPane";
 import { focusHolder, focusIsTakeable, focusStep } from "../../lib/paneFocus";
 import { zoomPending } from "../../lib/zoom";
 
@@ -17,10 +18,6 @@ interface UsePaneFocusArgs {
   /** The zoom actually being rendered, or null for the grid. */
   zoom: number | null;
   viewsRef: MutableRefObject<Map<number, PaneView>>;
-  /** The pane each repository was last typed into, so returning to one comes
-   *  back to it. Written here as well as by a click, because a zoom moves the
-   *  keyboard too. */
-  lastActiveByRepoRef: MutableRefObject<Map<string, number>>;
   /** The element the panes are laid out in. Read to tell the panel's own
    *  elements from the rest of the page, and re-measured — with `mode` — as the
    *  signal that a cell has been revealed. */
@@ -37,6 +34,10 @@ interface UsePaneFocusArgs {
  * typed into; and the active pane keeps the actual DOM focus — not just when it
  * becomes active, but for as long as the layout lets it hold one.
  *
+ * Which pane the first rule picks is whichever this screen last had the keyboard
+ * on, kept in `lib/lastPane` — outside the page, because a reload is exactly
+ * when the answer is needed and a reload is what used to lose it.
+ *
  * The middle rule is the one that is easy to miss. A zoom no longer needs a
  * click on this page to happen — it is replayed on connect and set by other
  * clients — so nothing else would move the keyboard off a pane that is no
@@ -51,7 +52,6 @@ export function usePaneFocus({
   zoomed,
   zoom,
   viewsRef,
-  lastActiveByRepoRef,
   panelRef,
   size,
   mode,
@@ -62,21 +62,21 @@ export function usePaneFocus({
     // a terminal that is about to be replaced by the zoomed one.
     if (zoomPending(zoomed, panes)) return;
     if (active === null && panes.length > 0) {
-      const remembered = lastActiveByRepoRef.current.get(repo);
+      const remembered = lastPaneOf(repo);
       setActive(
         remembered !== undefined && panes.includes(remembered)
           ? remembered
           : panes[panes.length - 1],
       );
     }
-  }, [active, panes, repo, zoomed, setActive, lastActiveByRepoRef]);
+  }, [active, panes, repo, zoomed, setActive]);
 
   useEffect(() => {
     if (zoom !== null && zoom !== active) {
       setActive(zoom);
-      lastActiveByRepoRef.current.set(repo, zoom);
+      rememberPane(repo, zoom);
     }
-  }, [zoom, active, repo, setActive, lastActiveByRepoRef]);
+  }, [zoom, active, repo, setActive]);
 
   // Where the keyboard actually is.
   //

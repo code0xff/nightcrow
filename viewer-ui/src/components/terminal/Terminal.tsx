@@ -15,6 +15,7 @@ import { PaneTabs } from "./PaneTabs";
 import { TermKeyBar } from "./TermKeyBar";
 import { useTouchScroll } from "../../hooks/terminal/useTouchScroll";
 import { usePaneViewMode } from "../../hooks/ui/paneViewMode";
+import { rememberPane } from "../../lib/lastPane";
 import { shownTab } from "../../lib/paneViewMode";
 import { PanelDivider, type PanelDividerProps } from "./PanelDivider";
 import { PanelToolbar } from "./PanelToolbar";
@@ -55,8 +56,6 @@ export function TerminalPanel({
   const askedSizesRef = useRef(new Map<number, PaneSize>());
   // Buffer scrollback received before the corresponding xterm exists.
   const pendingRef = useRef(new Map<number, Uint8Array[]>());
-  // Restore focus when returning to a repository.
-  const lastActiveByRepoRef = useRef(new Map<string, number>());
   // A zoom this page has asked for and not yet been answered. Held here because
   // both halves need it: the commands read it, the socket clears it.
   const zoomAskedRef = useRef<number | null | undefined>(undefined);
@@ -104,7 +103,6 @@ export function TerminalPanel({
     pendingRef,
     ptySizesRef,
     askedSizesRef,
-    lastActiveByRepoRef,
     zoomAskedRef,
     setLink,
     setPending,
@@ -162,7 +160,6 @@ export function TerminalPanel({
     zoomed: zoomServer,
     zoom: zoomShown,
     viewsRef,
-    lastActiveByRepoRef,
     panelRef: containerRef,
     size,
     mode,
@@ -170,7 +167,7 @@ export function TerminalPanel({
 
   const focusPane = (pane: number) => {
     setActive(pane);
-    lastActiveByRepoRef.current.set(repo, pane);
+    rememberPane(repo, pane);
     // Directly, because a click on the pane that is already active changes no
     // state and so runs no effect — and that click is exactly what someone
     // whose keyboard is not reaching the terminal will try. Clicking the body

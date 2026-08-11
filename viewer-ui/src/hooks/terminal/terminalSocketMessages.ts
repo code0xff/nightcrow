@@ -6,6 +6,7 @@ import {
   type TerminalServerMessage,
 } from "../../api/terminal";
 import type { LinkState } from "../../lib/attachStatus";
+import { forgetPane, lastPaneOf, rememberPane } from "../../lib/lastPane";
 import { reconcileOrder } from "../../lib/paneOrder";
 import { applyRecovery, type RecoveryByPane } from "../../lib/recovery";
 import type { PaneView } from "../../lib/terminalLayout";
@@ -20,7 +21,6 @@ export interface TerminalMessageContext {
   pendingRef: MutableRefObject<Map<number, Uint8Array[]>>;
   ptySizesRef: MutableRefObject<Map<number, PaneSize>>;
   askedSizesRef: MutableRefObject<Map<number, PaneSize>>;
-  lastActiveByRepoRef: MutableRefObject<Map<string, number>>;
   zoomAskedRef: MutableRefObject<number | null | undefined>;
   /** Not a plain setter: the socket hook remembers whether this page has ever
    *  been attached, so a link it loses reads as a reconnect. */
@@ -91,8 +91,8 @@ function handleControlMessage(
         message.client === context.clientIdRef.current
       ) {
         context.setActive(pane);
-        context.lastActiveByRepoRef.current.set(context.repo, pane);
-      } else if (context.lastActiveByRepoRef.current.get(context.repo) === pane) {
+        rememberPane(context.repo, pane);
+      } else if (lastPaneOf(context.repo) === pane) {
         context.setActive(pane);
       }
       return;
@@ -107,6 +107,7 @@ function handleControlMessage(
       context.pendingRef.current.delete(message.pane);
       context.ptySizesRef.current.delete(message.pane);
       context.askedSizesRef.current.delete(message.pane);
+      forgetPane(context.repo, message.pane);
       context.setTitles((current) => {
         if (!(message.pane in current)) return current;
         const next = { ...current };
