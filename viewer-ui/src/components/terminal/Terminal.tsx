@@ -155,6 +155,7 @@ export function TerminalPanel({
   usePaneFocus({
     repo,
     panes,
+    replayLeft,
     active,
     setActive,
     zoomed: zoomServer,

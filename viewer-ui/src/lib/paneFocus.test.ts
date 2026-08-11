@@ -1,9 +1,51 @@
 import { describe, expect, it } from "vitest";
-import { focusIsTakeable, focusStep, type FocusHolder } from "./paneFocus";
+import {
+  focusIsTakeable,
+  focusOnAttach,
+  focusStep,
+  type FocusHolder,
+} from "./paneFocus";
 
 function holder(over: Partial<FocusHolder> = {}): FocusHolder {
   return { tagName: "DIV", editable: false, insidePanel: false, ...over };
 }
+
+describe("focusOnAttach", () => {
+  it("comes back to the pane this screen last had the keyboard on", () => {
+    expect(focusOnAttach(null, [1, 2, 3], 0, 2)).toBe(2);
+  });
+
+  it("takes the first pane when nothing is remembered", () => {
+    // What the panel is already showing: `shownTab` puts the first pane on
+    // screen while it waits for a focus.
+    expect(focusOnAttach(null, [4, 5, 6], 0, undefined)).toBe(4);
+  });
+
+  it("takes the first pane when the remembered one is gone", () => {
+    // A pane closed while this screen was away, or a session that has since
+    // started numbering afresh.
+    expect(focusOnAttach(null, [4, 5, 6], 0, 9)).toBe(4);
+  });
+
+  it("waits for the rest of the replay before guessing", () => {
+    // The panes arrive one at a time. Guessing from the ones here would hold
+    // the keyboard on a pane nobody chose for the rest of the replay — and the
+    // remembered pane may be among the ones still coming.
+    expect(focusOnAttach(null, [4], 2, undefined)).toBeNull();
+    expect(focusOnAttach(null, [4], 2, 6)).toBeNull();
+  });
+
+  it("leaves the keyboard where it is once a pane has it", () => {
+    // The socket makes the remembered pane active as it arrives, which is what
+    // this must not talk over.
+    expect(focusOnAttach(2, [1, 2, 3], 0, 3)).toBeNull();
+  });
+
+  it("focuses nothing when there are no panes", () => {
+    expect(focusOnAttach(null, [], 0, undefined)).toBeNull();
+    expect(focusOnAttach(null, [], 0, 2)).toBeNull();
+  });
+});
 
 describe("focusStep", () => {
   it("focuses the active pane when the panel holds nothing", () => {

@@ -1,9 +1,10 @@
-/// What the terminal panel is allowed to take the keyboard from.
+/// Which pane the terminal panel puts the keyboard on, and what it is allowed
+/// to take it from.
 ///
 /// The panel re-asserts focus whenever the layout could have taken it away (see
 /// `usePaneFocus`), which means it asks at moments when the person may be doing
 /// something else entirely. Which of those moments it may act on is decided
-/// here, away from the DOM, so the rule can be read and tested on its own.
+/// here, away from the DOM, so the rules can be read and tested on their own.
 
 /** What holds the keyboard now, reduced to what the decision needs. */
 export interface FocusHolder {
@@ -35,6 +36,37 @@ export function focusIsTakeable(holder: FocusHolder | null): boolean {
   if (!holder) return true;
   if (holder.insidePanel) return true;
   return !TEXT_ENTRY.has(holder.tagName) && !holder.editable;
+}
+
+/**
+ * Which pane the keyboard goes to when the panel has none, or null for nothing
+ * to do on this signal.
+ *
+ * `remembered` is the pane this screen last had the keyboard on
+ * (`lib/lastPane`), which only counts while the session still has it. Otherwise
+ * the first pane, because that is what the rest of the panel already answers:
+ * `shownTab` shows the first pane while it waits for a focus, and the TUI starts
+ * on it too — it moves its own focus only to a pane it asked for. Anything else
+ * is the panel disagreeing with what it is showing.
+ *
+ * Nothing to do while `replayLeft` says panes are still on their way: they
+ * arrive one at a time, so `panes` is part of a list and the remembered pane may
+ * be in the part that has not landed. A screen that remembers one does not wait
+ * for this — the socket makes that pane active as its `created` arrives, which
+ * is the answer rather than a guess at it. What waits is the guess.
+ *
+ * Nothing to do either when a pane is already active, or when there are no panes
+ * to choose from.
+ */
+export function focusOnAttach(
+  active: number | null,
+  panes: number[],
+  replayLeft: number,
+  remembered: number | undefined,
+): number | null {
+  if (active !== null || replayLeft > 0) return null;
+  if (remembered !== undefined && panes.includes(remembered)) return remembered;
+  return panes[0] ?? null;
 }
 
 /** Whether the panel puts the keyboard on a pane, and which pane it then holds. */

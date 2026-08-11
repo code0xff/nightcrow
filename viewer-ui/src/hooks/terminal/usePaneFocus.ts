@@ -3,12 +3,19 @@ import type { MutableRefObject } from "react";
 import type { PaneView } from "../../lib/terminalLayout";
 import type { PaneViewMode } from "../../lib/paneViewMode";
 import { lastPaneOf, rememberPane } from "../../lib/lastPane";
-import { focusHolder, focusIsTakeable, focusStep } from "../../lib/paneFocus";
+import {
+  focusHolder,
+  focusIsTakeable,
+  focusOnAttach,
+  focusStep,
+} from "../../lib/paneFocus";
 import { zoomPending } from "../../lib/zoom";
 
 interface UsePaneFocusArgs {
   repo: string;
   panes: number[];
+  /** Panes the replay has promised and not yet delivered. */
+  replayLeft: number;
   active: number | null;
   setActive: React.Dispatch<React.SetStateAction<number | null>>;
   /** What the server says fills the panel, before it is checked against the
@@ -36,7 +43,10 @@ interface UsePaneFocusArgs {
  *
  * Which pane the first rule picks is whichever this screen last had the keyboard
  * on, kept in `lib/lastPane` — outside the page, because a reload is exactly
- * when the answer is needed and a reload is what used to lose it.
+ * when the answer is needed and a reload is what used to lose it. The socket
+ * restores it as its pane arrives; what is left to `focusOnAttach` here is the
+ * screen that has no such pane. Either way the pane it settles on is written
+ * back, so what is remembered always names a pane the session has.
  *
  * The middle rule is the one that is easy to miss. A zoom no longer needs a
  * click on this page to happen — it is replayed on connect and set by other
@@ -47,6 +57,7 @@ interface UsePaneFocusArgs {
 export function usePaneFocus({
   repo,
   panes,
+  replayLeft,
   active,
   setActive,
   zoomed,
@@ -57,19 +68,25 @@ export function usePaneFocus({
   mode,
 }: UsePaneFocusArgs) {
   useEffect(() => {
-    // Not while a replay has named a zoom whose pane has not arrived: the panes
-    // come one at a time, and focusing an earlier one would put the keyboard in
-    // a terminal that is about to be replaced by the zoomed one.
+    // Not while a replay has named a zoom whose pane has not arrived: focusing
+    // an earlier one would put the keyboard in a terminal that is about to be
+    // replaced by the zoomed one. The rest of the waiting — for the panes
+    // themselves — is `focusOnAttach`'s, and it is safe to wait on `replayLeft`
+    // because the count is exact: `hello` says how many panes follow, and the
+    // hub queues the whole replay under its lock before the client can be
+    // broadcast to.
     if (zoomPending(zoomed, panes)) return;
-    if (active === null && panes.length > 0) {
-      const remembered = lastPaneOf(repo);
-      setActive(
-        remembered !== undefined && panes.includes(remembered)
-          ? remembered
-          : panes[panes.length - 1],
-      );
-    }
-  }, [active, panes, repo, zoomed, setActive]);
+    const chosen = focusOnAttach(active, panes, replayLeft, lastPaneOf(repo));
+    if (chosen === null) return;
+    setActive(chosen);
+    // Written even though nobody chose it, because what is remembered has to
+    // name a pane of the session on screen. Left pointing at a pane this
+    // session does not have, it would be matched again the moment something
+    // hands that id out — a new session starts numbering afresh — and the
+    // keyboard would leave the pane this page is on for a terminal another
+    // client just opened.
+    rememberPane(repo, chosen);
+  }, [active, panes, replayLeft, repo, zoomed, setActive]);
 
   useEffect(() => {
     if (zoom !== null && zoom !== active) {
