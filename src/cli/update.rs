@@ -75,7 +75,10 @@ fn install(path: Option<&Path>, git: Option<&str>) -> Result<()> {
             command.arg("--path").arg(path);
         }
         None => {
-            command.arg("--git").arg(git.unwrap_or(DEFAULT_GIT_URL));
+            command
+                .arg("--git")
+                .arg(git.unwrap_or(DEFAULT_GIT_URL))
+                .arg("nightcrow");
         }
     }
 
