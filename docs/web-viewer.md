@@ -261,16 +261,29 @@ npm --prefix viewer-ui run build   # rebuild dist/ — commit the result
 
 CI rebuilds the bundle and fails if it differs from what is committed.
 
-**A tab open across a rebuild asks for files that are gone.** Chunk names carry
-a content hash, so a build replaces them rather than overwriting them, and the
-markdown renderer, the HTML preview, and the terminal panel are each fetched
-only when first needed — which is why this usually surfaces as opening a preview
-rather than at page load. The pane says part of the app could not be loaded and
-offers a reload; nothing on the server is affected, so the reload comes back to
-the same repositories and the same terminals. (The same message covers a server
-that has become unreachable, since the browser reports both the same way — if
-the reload fails too, that is which one it was.) Against a debug server the rebuild alone
-does it, since `dist` is read from disk there; against a release binary it takes
-[an update](getting-started.md#updating) replacing the binary under the tab.
+**A tab open across a rebuild is told so.** Every reply to the poll the page
+already makes names the build it was served with, so within a few seconds of a
+rebuild the tab raises a notice with a **Reload** button and keeps it up until
+you act on it. Nothing reloads itself: a tab that did would take away whatever
+was being typed into a terminal, and being one build behind is not urgent enough
+to interrupt anyone.
+
+**Until you do, the tab is still running the bundle it loaded.** Chunk names
+carry a content hash, so a build replaces them rather than overwriting them, and
+the markdown renderer, the HTML preview, and the terminal panel are each fetched
+only when first needed — so one you open after the rebuild is simply gone. That
+pane then says part of the app could not be loaded and offers the same reload.
+(The same message covers a server that has become unreachable, since the browser
+reports both the same way — if the reload fails too, that is which one it was.)
+
+**What counts as a rebuild depends on the server.** A debug server reads `dist`
+from disk, so `npm --prefix viewer-ui run build` is the whole of it — reload the
+tab and you are current. A release binary carries the bundle inside it and a
+running process keeps the one it started with, so
+[an update](getting-started.md#updating) changes nothing until the session is
+restarted; that is the heavier move, since stopping the session ends its
+terminals, and it is why the notice can only appear afterwards. Reloading the
+tab never costs you anything — the same repositories, the same terminals, and
+the pane you were typing in.
 
 Design notes: [Architecture → Web layer](architecture/web.md).

@@ -42,13 +42,15 @@ function ToastItem({ toast }: { toast: Toast }) {
   const [paused, setPaused] = useState(false);
 
   useEffect(() => {
-    if (paused) return;
+    // A sticky toast reports a condition rather than an event: it is still true
+    // after any timeout would have run, so it waits to be dismissed.
+    if (paused || toast.sticky) return;
     const timer = setTimeout(
       () => dismissToast(toast.id),
       DURATION_MS[toast.kind],
     );
     return () => clearTimeout(timer);
-  }, [toast.id, toast.kind, toast.bump, paused]);
+  }, [toast.id, toast.kind, toast.bump, toast.sticky, paused]);
 
   return (
     <div
@@ -60,6 +62,15 @@ function ToastItem({ toast }: { toast: Toast }) {
       <span className={`min-w-0 flex-1 break-words ${TEXT[toast.kind]}`}>
         {toast.message}
       </span>
+      {toast.action && (
+        <button
+          type="button"
+          onClick={toast.action.run}
+          className="shrink-0 rounded-sm border border-ink-700 px-1.5 py-0.5 text-ink-200 hover:border-accent hover:text-accent"
+        >
+          {toast.action.label}
+        </button>
+      )}
       <button
         type="button"
         onClick={() => dismissToast(toast.id)}

@@ -10,6 +10,7 @@ import { resolveActiveRepo } from "../lib/activeRepo";
 import { nextClockOffset } from "../lib/hot";
 import { createSerialWriter } from "../lib/serialWrite";
 import { reconcileOrder } from "../lib/paneOrder";
+import { noteViewerBuild } from "../lib/viewerBuild";
 import type { MaximizedByRepo } from "../api";
 
 const REPO_POLL_MS = 3000;
@@ -116,8 +117,12 @@ export function useRepoPoll({
             maximized,
             now_ms,
             can_clone,
+            viewer_build,
           } = bootstrap;
           if (cancelled) return;
+          // Not state: what it decides is whether this document is out of date,
+          // which nothing here renders. See `lib/viewerBuild.ts`.
+          noteViewerBuild(viewer_build);
           setHot(hot);
           setCanClone(can_clone);
           setClockSkewMs((held) => nextClockOffset(held, now_ms, Date.now()));
