@@ -155,6 +155,14 @@ restarting the session ends the panes. An attached TUI keeps its own
 `<prefix> f` zoom rather than following this one — the panes are shared, but
 what fills a screen is that screen's.
 
+To copy from a pane, select with the mouse and press the copy key your browser
+already uses. A plain drag selects only while the pane's program is not reading
+the mouse itself; most full-screen programs do read it, and then a drag is
+theirs — that is how clicking a menu in one of them works at all. Hold a
+modifier to take the drag back for a selection: **Option** on a Mac, **Shift**
+everywhere else. There is nothing to copy until something is selected, so
+without the modifier the copy key looks broken rather than empty.
+
 ## On a phone
 
 The three regions the desktop shows at once — the sidebar, the content pane, and

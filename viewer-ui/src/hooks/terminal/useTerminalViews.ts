@@ -54,6 +54,15 @@ export function useTerminalViews({
         ...terminalFontOptions(),
         theme: { background: "#0b0b0d", foreground: "#e6e6ec" },
         cursorBlink: true,
+        // Without this there is no way to select text on a Mac in a pane whose
+        // program reads the mouse — which is most of what this panel is opened
+        // for. xterm turns its own selection off while a program is tracking
+        // the mouse, and offers one way back: a modifier that forces the drag
+        // to be a selection. Off a Mac that modifier is Shift and needs no
+        // option; on one it is Option, and only if this is set. So it stays
+        // off, drags reach the program, nothing is ever selected, and Cmd+C
+        // copies nothing — a copy that fails with no way to tell why.
+        macOptionClickForcesSelection: true,
       });
       const fit = new FitAddon();
       term.loadAddon(fit);
