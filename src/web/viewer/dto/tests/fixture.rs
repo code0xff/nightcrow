@@ -71,6 +71,9 @@ fn wire_fixture() -> serde_json::Value {
             // run could not be committed.
             now_ms: 1_700_000_000_500,
             can_clone: true,
+            // Literal for the same reason — this one moves with every rebuild
+            // of the bundle, which is the whole point of it.
+            viewer_build: Some("3f6a1c04".to_string()),
         },
         "status": StatusDto {
             branch: Some("dev".to_string()),

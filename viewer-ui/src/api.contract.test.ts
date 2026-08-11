@@ -89,6 +89,9 @@ describe("wire contract", () => {
     expect(bootstrap.sidebar_width).toBeGreaterThan(0);
     expect(bootstrap.upper_pct).toBeGreaterThan(0);
     expect(bootstrap.maximized).toEqual({ r1: "terminal" });
+    // 이 페이지가 어느 빌드에서 왔는지 비교할 값. 없으면 서버가 갱신돼도
+    // 탭은 옛 번들로 계속 돈다.
+    expect(bootstrap.viewer_build).toBeTruthy();
   });
 
   it("status_페이로드가_Status와_맞는다", () => {

@@ -75,6 +75,11 @@ export interface ViewerBootstrap {
   /** False when the server has no `git` on PATH, so the clone form is disabled
    *  rather than accepting a URL it could only fail on. */
   can_clone: boolean;
+  /** Names the frontend build this response was served alongside. A page holds
+   *  the first one it sees and watches for it to change, which is how it learns
+   *  the server was updated under it — see `lib/viewerBuild.ts`. Null when the
+   *  server cannot name its own build. */
+  viewer_build: string | null;
 }
 
 export interface Status {

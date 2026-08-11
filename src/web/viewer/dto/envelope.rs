@@ -91,11 +91,19 @@ pub struct ViewerBootstrapDto {
     pub now_ms: u64,
     /// Whether this server can clone: false when no `git` is on its PATH.
     pub can_clone: bool,
+    /// Names the frontend build this response was served alongside (see
+    /// [`assets::build_id`](crate::web::viewer::assets::build_id)). A page
+    /// compares it against the one it first saw, so it can tell that the server
+    /// has been replaced under it and say so — otherwise a tab keeps running
+    /// the old bundle until something it lazily loads is missing, which may be
+    /// never. `None` when the server cannot name its own build.
+    pub viewer_build: Option<String>,
 }
 
 impl ViewerBootstrapDto {
-    /// Stamps `now_ms` at construction — the value is only useful as "the
-    /// server's time when this response was built".
+    /// Stamps `now_ms` and `viewer_build` at construction — both are only
+    /// useful as facts about the response being built, not as arguments a
+    /// caller could get wrong.
     ///
     /// Takes the whole [`ViewerPrefs`] rather than the fields it needs: several
     /// of them are `u32`, and a positional list of those is a pair of arguments
@@ -121,6 +129,7 @@ impl ViewerBootstrapDto {
             maximized,
             can_clone,
             now_ms: server_now_millis(),
+            viewer_build: crate::web::viewer::assets::build_id(),
         }
     }
 }

@@ -47,11 +47,14 @@ pub fn serve(path: &str) -> Option<Vec<u8>> {
         ("Referrer-Policy", "no-referrer"),
     ];
     let trimmed = path.trim_start_matches('/');
-    let candidate = if trimmed.is_empty() {
-        "index.html"
-    } else {
-        trimmed
-    };
+    let candidate = if trimmed.is_empty() { SHELL } else { trimmed };
+
+    // The shell is the one asset that is not served as it is stored; see
+    // `shell`. Answered before the lookup below so `/` and `/index.html` are
+    // one case.
+    if candidate == SHELL {
+        return shell(&headers);
+    }
 
     // `rust_embed` resolves names against the embedded map, so a `..` in the
     // request simply misses; there is no filesystem lookup to escape.
@@ -82,134 +85,102 @@ pub fn serve(path: &str) -> Option<Vec<u8>> {
         ));
     }
 
-    let shell = Assets::get("index.html")?;
-    Some(http::response(
-        "200 OK",
-        shell.metadata.mimetype(),
-        &headers,
-        shell.data.as_ref(),
-    ))
+    shell(&headers)
+}
+
+/// The document every asset above is loaded from.
+const SHELL: &str = "index.html";
+
+/// Where the build id is stamped, and the name the page reads it back by.
+const BUILD_META: &str = "nightcrow-build";
+
+/// The app shell, carrying the id of the build it is part of.
+///
+/// Stamped rather than left to the client to work out, because what the page
+/// needs is the build **it** is running, and the only moment that is certain is
+/// the one it is handed over. Inferring it from the first API response it
+/// happens to get is wrong for a tab that sits on the login screen across a
+/// rebuild: the build it adopts is then the new one, and it never learns it is
+/// running the old.
+///
+/// The id names the stored file, not these bytes — the stamp is derived from
+/// what it is stamped into, so it cannot also be part of it.
+/// One read, not two: a debug server reads `dist` from disk, so reading the
+/// bytes and then asking [`build_id`] again could stamp the build that landed
+/// in between onto the document that preceded it — a page that would then
+/// believe it was current for as long as it stayed open.
+fn shell(headers: &[(&str, &str)]) -> Option<Vec<u8>> {
+    let file = Assets::get(SHELL)?;
+    let id = id_of(file.metadata.sha256_hash());
+    let stamped = stamp_build(file.data.as_ref(), &id);
+    let mimetype = file.metadata.mimetype().to_string();
+    Some(http::response("200 OK", &mimetype, headers, &stamped))
+}
+
+/// Put the build id in the head of `html`.
+///
+/// Returns the document untouched when there is no head to put it in, which is
+/// a shell this server did not build. The page then has no id to compare and
+/// says nothing, rather than being told it is out of date forever.
+fn stamp_build(html: &[u8], id: &str) -> Vec<u8> {
+    const HEAD: &[u8] = b"<head>";
+    let Some(at) = html
+        .windows(HEAD.len())
+        .position(|window| window == HEAD)
+        .map(|start| start + HEAD.len())
+    else {
+        return html.to_vec();
+    };
+    let tag = format!("\n    <meta name=\"{BUILD_META}\" content=\"{id}\" />");
+    let mut stamped = Vec::with_capacity(html.len() + tag.len());
+    stamped.extend_from_slice(&html[..at]);
+    stamped.extend_from_slice(tag.as_bytes());
+    stamped.extend_from_slice(&html[at..]);
+    stamped
+}
+
+/// How much of the hash names a build. Long enough that two builds never
+/// collide in practice, short enough to read in a log line; this tells builds
+/// apart, it does not authenticate one.
+const BUILD_ID_BYTES: usize = 4;
+
+/// Names the built frontend this server is serving.
+///
+/// The hash of `index.html`, because that file names the code: every chunk and
+/// stylesheet Vite emits carries a content hash in its filename, so a change to
+/// any of them changes a name in the shell. A page can compare what it was
+/// served against what the server has now and offer a reload.
+///
+/// What that leaves out is `public/`, which is copied under fixed names — an
+/// icon or the manifest can change without moving this. Deliberately: what the
+/// comparison is for is a page running code the server has replaced, and a file
+/// nothing imports cannot put a page in that state.
+///
+/// Read per call rather than held: only a release build embeds `dist`, and a
+/// debug server reads it from disk — a rebuild under a running daemon is
+/// exactly the case this exists to report.
+///
+/// `None` when the shell is missing, which is a build that cannot load at all.
+/// Saying nothing is the honest answer there; a placeholder would be a build id
+/// that never changes.
+pub fn build_id() -> Option<String> {
+    Some(id_of(Assets::get(SHELL)?.metadata.sha256_hash()))
+}
+
+fn id_of(hash: [u8; 32]) -> String {
+    hash[..BUILD_ID_BYTES]
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect()
 }
 
 /// Whether the frontend was built into this binary. A source checkout with no
 /// `dist` still compiles; the server then says so rather than 404ing blankly.
 #[cfg(test)]
 pub fn is_present() -> bool {
-    Assets::get("index.html").is_some()
+    Assets::get(SHELL).is_some()
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn text(response: &[u8]) -> String {
-        String::from_utf8_lossy(response).into_owned()
-    }
-
-    #[test]
-    fn the_frontend_is_embedded() {
-        assert!(
-            is_present(),
-            "viewer-ui/dist must be committed and built; run `npm --prefix viewer-ui run build`"
-        );
-    }
-
-    #[test]
-    fn the_root_serves_the_app_shell() {
-        let response = serve("/").expect("index.html");
-        let text = text(&response);
-
-        assert!(text.starts_with("HTTP/1.1 200 OK"));
-        assert!(text.contains("text/html"));
-        assert!(text.contains("<div id=\"root\">"), "not the app shell");
-    }
-
-    #[test]
-    fn assets_carry_a_strict_csp_and_nosniff() {
-        let text = text(&serve("/").unwrap());
-
-        assert!(text.contains("Content-Security-Policy: default-src 'self'"));
-        assert!(text.contains("frame-ancestors 'none'"));
-        assert!(text.contains("X-Content-Type-Options: nosniff"));
-    }
-
-    #[test]
-    fn a_traversal_request_cannot_escape_the_embedded_map() {
-        // There is no filesystem lookup here, so a `..` simply misses and the
-        // app shell is served instead of anything outside the bundle.
-        let text = text(&serve("/../../etc/passwd").unwrap());
-
-        assert!(text.contains("<div id=\"root\">"), "expected the app shell");
-        assert!(!text.contains("root:x:"), "a system file leaked");
-    }
-
-    #[test]
-    fn a_missing_asset_is_a_404_not_the_app_shell() {
-        // A named file that is not embedded must 404, not fall back to
-        // index.html: serving HTML under an <img>/module request fails silently
-        // (the mark rendered as a blank accent tile when a stale build lacked
-        // crow-mono.svg). A loud 404 surfaces the missing asset instead.
-        let text = text(&serve("/crow-mono-does-not-exist.svg").unwrap());
-
-        assert!(text.starts_with("HTTP/1.1 404"), "got: {text}");
-        assert!(
-            !text.contains("<div id=\"root\">"),
-            "must not serve the shell"
-        );
-    }
-
-    #[test]
-    fn an_embedded_svg_asset_is_served_as_an_image() {
-        // The crow mark's source: present in the bundle and served with an image
-        // type, so the <img> actually renders it.
-        let text = text(&serve("/crow-mono.svg").unwrap());
-
-        assert!(text.starts_with("HTTP/1.1 200"), "got: {text}");
-        assert!(text.contains("image/svg+xml"), "wrong content type");
-    }
-
-    #[test]
-    fn an_extensionless_route_falls_back_to_the_shell() {
-        // A client-side route (no file extension) still gets the app shell so
-        // the SPA loads; only named-file misses 404.
-        let text = text(&serve("/some/route").unwrap());
-
-        assert!(text.contains("<div id=\"root\">"), "expected the app shell");
-    }
-
-    #[test]
-    fn the_pwa_manifest_is_served_as_a_manifest() {
-        // The install manifest must be reachable and typed as JSON so the
-        // browser parses it rather than downloading it as an opaque blob.
-        let text = text(&serve("/manifest.webmanifest").unwrap());
-
-        assert!(text.starts_with("HTTP/1.1 200"), "got: {text}");
-        assert!(
-            text.contains("json"),
-            "manifest served with a non-JSON type"
-        );
-    }
-
-    #[test]
-    fn a_pwa_icon_is_served_as_a_png() {
-        // Home-screen install needs raster icons the launcher can render.
-        let text = text(&serve("/icon-512.png").unwrap());
-
-        assert!(text.starts_with("HTTP/1.1 200"), "got: {text}");
-        assert!(text.contains("image/png"), "wrong content type");
-    }
-
-    #[test]
-    fn a_javascript_bundle_is_served_with_a_script_mime() {
-        // The build hashes the filename, so find it rather than hard-coding.
-        let name = Assets::iter()
-            .find(|f| f.ends_with(".js"))
-            .expect("a built bundle");
-        let text = text(&serve(&format!("/{name}")).unwrap());
-
-        assert!(
-            text.contains("javascript"),
-            "a script served as the wrong type will be refused by the CSP"
-        );
-    }
-}
+#[path = "assets_tests.rs"]
+mod tests;
