@@ -6,6 +6,8 @@ import type { PaneView } from "../../lib/terminalLayout";
 import type { PaneViewMode } from "../../lib/paneViewMode";
 import { terminalFontOptions } from "../../lib/termFont";
 import { ClearKeyProbe } from "../../lib/clearKeyProbe";
+import { OSC_CLIPBOARD } from "../../lib/osc52";
+import { receivePaneClipboard } from "../../lib/paneClipboard";
 import { sendTerminalMessage, type PaneSize } from "../../api/terminal";
 
 interface UseTerminalViewsArgs {
@@ -86,6 +88,24 @@ export function useTerminalViews({
             ...report,
           });
         }
+      });
+      // A program in the pane asks for the clipboard this way, and it is the
+      // only path that reaches whoever is reading — the host's own clipboard is
+      // a different machine's whenever this panel is open from somewhere else.
+      // xterm drops the sequence unless something claims it, while the program
+      // reports a copy either way. See `lib/osc52.ts`. Answered synchronously
+      // with the work left running: a handler may return a promise, and the
+      // parser then holds the whole stream until it settles — which would stop
+      // the pane painting behind a clipboard permission prompt. Returning true
+      // claims the sequence so it is not also treated as unrecognised output.
+      term.parser.registerOscHandler(OSC_CLIPBOARD, (payload) => {
+        void receivePaneClipboard(payload).catch((error: unknown) => {
+          // Dropping the promise is the point; dropping a rejection with it
+          // would make a DOM failure here an unhandled rejection with no name
+          // on it.
+          console.error("nightcrow: a pane's clipboard request failed", error);
+        });
+        return true;
       });
       // Preserve the previous label when OSC provides an empty title.
       term.onTitleChange((title) => {

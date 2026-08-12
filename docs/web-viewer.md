@@ -163,6 +163,21 @@ modifier to take the drag back for a selection: **Option** on a Mac, **Shift**
 everywhere else. There is nothing to copy until something is selected, so
 without the modifier the copy key looks broken rather than empty.
 
+A program running in a pane can also copy on its own — Claude Code's `/copy`,
+vim's OSC 52 clipboard, tmux's `copy-pipe`. That copy reaches *this* page, not
+the machine hosting the session, which is what makes it worth having: the
+`pbcopy` such a program also runs writes to a clipboard nobody at this end can
+reach. Most of the time it simply happens, including over plain `http://`.
+
+When the browser refuses to fill the clipboard without being asked — Safari
+wants a press for it, and any browser may — a notice appears with a **Copy**
+button instead, and pressing it is the press it wanted. It stays up until the
+text is across, so it is still there if you come back to it.
+
+A program asking to *read* the clipboard is never answered. It would hand
+whatever was last copied — a password, a token — to whatever is running in the
+pane, and unlike writing that is something a program could not otherwise get.
+
 ## On a phone
 
 The three regions the desktop shows at once — the sidebar, the content pane, and
