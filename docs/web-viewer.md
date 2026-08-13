@@ -201,8 +201,22 @@ pinching to zoom both survive.
 Because a soft keyboard can't type Escape, Tab, Shift-Tab, Ctrl combinations, or
 the arrows, the terminal grows a key bar along its bottom on touch devices that
 sends those straight to the shell — so you can interrupt a process (`^C`), leave
-`vim` (`Esc`), cycle a completion menu backwards (`⇧Tab`), or walk your history
-(arrows) without a physical keyboard.
+`vim` (`Esc`), reach a tmux session's prefix (`^B`), cycle a completion menu
+backwards (`⇧Tab`), or walk your history (arrows) without a physical keyboard.
+
+**`Ctrl` on the bar is a latch, not a key.** More combinations matter than there
+are buttons for, so tapping `Ctrl` lights it up — and puts the keyboard back in
+the pane, since what spends it is the next character you *type* — after which
+that character leaves as the combination: `Ctrl` then `a` is `^A`, and so on for
+anything a terminal has a control byte for, `Ctrl+Space` and `Ctrl+[` included.
+Type something with no such byte — Hangul, an emoji, more than one character —
+and it goes through as you typed it. Some input leaves the latch alone
+altogether — an Escape or an arrow from a hardware keyboard — because what the
+program in the pane reports back to the browser arrives looking the same, and a
+latch spent on that would die before you typed anything. So the light is what to
+read:
+`Ctrl` is armed for exactly as long as its button is lit, and tapping it again,
+tapping any other key on the bar, or hiding the bar puts it out.
 
 **The bar is not a phone-width thing** — a tablet is as wide as a laptop and
 types the same way, so what turns it on is the pointer: any device whose primary

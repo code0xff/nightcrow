@@ -4,7 +4,7 @@ import {
   sendTerminalMessage,
   type TerminalClientMessage,
 } from "../../api/terminal";
-import { TERM_KEY_BAR, termKeySequence } from "../../lib/termKeys";
+import { termKeySequence, type TermKey } from "../../lib/termKeys";
 import { zoomRequest } from "../../lib/zoom";
 
 interface UsePaneCommandsArgs {
@@ -68,7 +68,7 @@ export function usePaneCommands({
 
   const reorder = (order: number[]) => send({ type: "reorder", order });
 
-  const sendKey = (key: (typeof TERM_KEY_BAR)[number]["key"]) => {
+  const sendKey = (key: TermKey) => {
     if (active === null) return;
     // The same key is different bytes depending on what the program has put the
     // terminal in, so it is read off the emulator rather than assumed.

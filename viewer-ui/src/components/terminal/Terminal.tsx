@@ -7,6 +7,7 @@ import { usePaneSizes } from "../../hooks/terminal/usePaneSizes";
 import { usePaneRecovery } from "../../hooks/terminal/usePaneRecovery";
 import { usePaneCommands } from "../../hooks/terminal/usePaneCommands";
 import { usePaneFocus } from "../../hooks/terminal/usePaneFocus";
+import { useCtrlLatch } from "../../hooks/terminal/useCtrlLatch";
 import { useStartupSizes } from "../../hooks/terminal/useStartupSizes";
 import { usePanelSize } from "../../hooks/terminal/usePanelSize";
 import { AttachNotice } from "./AttachNotice";
@@ -88,6 +89,7 @@ export function TerminalPanel({
   const bodyTouch = useTouchScroll({ viewsRef, bodyRefs });
   const { mode, toggle: toggleMode } = usePaneViewMode();
   const keyBar = useTermKeyBar();
+  const ctrl = useCtrlLatch();
   const tabs = mode === "tabs";
   // A tabbed panel renders no zoom — it already shows one pane — so nothing in
   // it waits on one, and the zoomed pane is just another tab. Feeding the real
@@ -127,6 +129,7 @@ export function TerminalPanel({
     bodyRefs,
     pendingRef,
     ptySizesRef,
+    consumeCtrl: ctrl.consume,
     setTitles,
   });
 
@@ -178,6 +181,8 @@ export function TerminalPanel({
     // the header and the tab strip are outside it.
     viewsRef.current.get(pane)?.term.focus();
   };
+
+  const focusActive = () => active !== null && focusPane(active);
 
   const { create, toggleZoom, claimSize, closePane, reorder, sendKey } =
     usePaneCommands({
@@ -287,7 +292,9 @@ export function TerminalPanel({
           onPaneDragCancel={endPaneDrag}
         />
       </div>
-      {panes.length > 0 && keyBar.shown && <TermKeyBar onKey={sendKey} />}
+      {panes.length > 0 && keyBar.shown && (
+        <TermKeyBar onKey={sendKey} ctrl={ctrl} onArm={focusActive} />
+      )}
     </section>
   );
 }

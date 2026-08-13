@@ -28,6 +28,11 @@ interface UseTerminalViewsArgs {
   /** What each PTY's grid is, from `created` and `resized`. Read here as the
    *  size a pane's replay has to be parsed at. */
   ptySizesRef: MutableRefObject<Map<number, PaneSize>>;
+  /** What the key bar's Ctrl latch makes of a typed character (`useCtrlLatch`).
+   *  Every pane's input passes through it, because the latch belongs to the bar
+   *  rather than to a pane and the next character may be typed into any of
+   *  them. */
+  consumeCtrl: (typed: string) => string;
   setTitles: React.Dispatch<React.SetStateAction<Record<number, string>>>;
 }
 
@@ -41,6 +46,7 @@ export function useTerminalViews({
   bodyRefs,
   pendingRef,
   ptySizesRef,
+  consumeCtrl,
   setTitles,
 }: UseTerminalViewsArgs) {
   useEffect(() => {
@@ -77,9 +83,20 @@ export function useTerminalViews({
         return true;
       });
       term.onData((data) => {
+        // The probe is asked about what was typed, not about what the latch
+        // turns it into. It pairs a clear byte with the keydown behind it, and a
+        // byte the bar made has no such keydown — it would be filed as "arrived
+        // with no key event", which is the shape of the thing being hunted. The
+        // bar's own `^L` is already outside the probe for the same reason: it
+        // never goes through a terminal at all.
         const report = probe.report(data, performance.now());
+        const input = consumeCtrl(data);
         if (
-          sendTerminalMessage(socketRef.current, { type: "input", pane, data }) &&
+          sendTerminalMessage(socketRef.current, {
+            type: "input",
+            pane,
+            data: input,
+          }) &&
           report
         ) {
           sendTerminalMessage(socketRef.current, {
