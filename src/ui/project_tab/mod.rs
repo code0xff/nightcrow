@@ -9,7 +9,10 @@ use ratatui::{
     widgets::Paragraph,
 };
 
-/// Per-tab character budget for the project name.
+/// Per-tab character budget for the project name. The viewer's tab row applies
+/// the same budget by the same rule (`viewer-ui/src/lib/tabLabel.ts`), so a
+/// project is called the same thing on both screens — widening one without the
+/// other is how they come to disagree.
 const TAB_TITLE_MAX_CHARS: usize = 14;
 
 /// Width of a `+N` overflow marker.

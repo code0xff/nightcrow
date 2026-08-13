@@ -2,6 +2,7 @@ import { Mark } from "./Mark";
 import { ProjectMenu } from "./ProjectMenu";
 import { LogOutIcon, PlusIcon, RefreshIcon, XIcon } from "./icons/actions";
 import { useReloadConfig } from "../hooks/useReloadConfig";
+import { tabLabel } from "../lib/tabLabel";
 import type { Repo } from "../api";
 
 export interface HeaderProps {
@@ -78,13 +79,16 @@ export function Header({
             }`}
             title={r.display_path}
           >
+            {/* Shortened here, not by the server: `name` is what the project
+                menu and the labels below read out, and those want it whole. */}
             <button
               onClick={() => {
                 onSelectRepo(r.id);
               }}
+              aria-label={r.name}
               className="self-stretch pl-3 pr-1"
             >
-              {r.name}
+              {tabLabel(r.name)}
             </button>
             <button
               onClick={(e) => {
