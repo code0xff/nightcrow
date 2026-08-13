@@ -1,3 +1,4 @@
+import { useLayoutEffect, useRef } from "react";
 import type { ReactNode } from "react";
 import { PlusIcon } from "../icons/actions";
 import {
@@ -9,6 +10,7 @@ import {
 } from "../icons/layout";
 import { RecoveryChip } from "./RecoveryChip";
 import { orphanRecovery, type RecoveryByPane } from "../../lib/recovery";
+import { focusFillsEmptyPanel } from "../../lib/paneFocus";
 import type { PaneViewMode } from "../../lib/paneViewMode";
 
 export interface PanelToolbarProps {
@@ -61,6 +63,19 @@ export function PanelToolbar({
   onToggleKeyBar,
   onToggleMaximized,
 }: PanelToolbarProps) {
+  // Where the keyboard goes when the panel empties. Counted here rather than
+  // watched, because the elements it was on are gone by the time this runs and
+  // the body cannot say which of them it fell from.
+  const createRef = useRef<HTMLButtonElement>(null);
+  const beforeRef = useRef(panes.length);
+  useLayoutEffect(() => {
+    const before = beforeRef.current;
+    beforeRef.current = panes.length;
+    const onBody =
+      document.activeElement === null || document.activeElement === document.body;
+    if (focusFillsEmptyPanel(panes.length, before, onBody)) createRef.current?.focus();
+  }, [panes.length]);
+
   const button =
     "flex shrink-0 items-center rounded-sm px-1.5 py-0.5 text-ink-400 hover:text-accent";
   return (
@@ -98,6 +113,7 @@ export function PanelToolbar({
         </button>
       )}
       <button
+        ref={createRef}
         onClick={onCreate}
         title="New terminal"
         aria-label="New terminal"

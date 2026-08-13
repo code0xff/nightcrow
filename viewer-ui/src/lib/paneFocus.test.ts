@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  focusFillsEmptyPanel,
   focusIsTakeable,
   focusOnAttach,
   focusStep,
@@ -127,5 +128,30 @@ describe("focusIsTakeable", () => {
     expect(focusIsTakeable(holder({ editable: true, insidePanel: true }))).toBe(
       true,
     );
+  });
+});
+
+describe("focusFillsEmptyPanel", () => {
+  it("hands the keyboard to `+` when the last pane leaves it nowhere", () => {
+    expect(focusFillsEmptyPanel(0, 1, true)).toBe(true);
+  });
+
+  it("leaves focus that is somewhere else alone", () => {
+    // The pane can die while the person is typing in the file filter. Their
+    // caret is not what the panel emptying took away.
+    expect(focusFillsEmptyPanel(0, 1, false)).toBe(false);
+  });
+
+  it("does nothing for a panel that was already empty", () => {
+    // Every render of an empty panel would otherwise pull the keyboard back to
+    // `+` — including the one where someone has just tabbed off it.
+    expect(focusFillsEmptyPanel(0, 0, true)).toBe(false);
+  });
+
+  it("does nothing while panes remain", () => {
+    // Closing one of several leaves the panel with a pane to focus, which is
+    // `focusOnAttach`'s answer rather than this one.
+    expect(focusFillsEmptyPanel(2, 3, true)).toBe(false);
+    expect(focusFillsEmptyPanel(1, 0, true)).toBe(false);
   });
 });

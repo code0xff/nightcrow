@@ -69,6 +69,29 @@ export function focusOnAttach(
   return panes[0] ?? null;
 }
 
+/**
+ * Whether the panel that has just emptied should put the keyboard on the button
+ * that fills it again.
+ *
+ * The last pane leaving takes with it everything the keyboard could have been
+ * on: its own xterm, the key bar under it, the toggle for that bar. An element
+ * that stops being rendered is blurred to the body, and from the body a Tab
+ * starts over at the top of the page — so the panel hands the keyboard to `+`,
+ * which is the one thing left to do here.
+ *
+ * `onBody` is the whole guard. Focus anywhere else was not lost to this, and
+ * moving it would be the panel interrupting someone — narrower than
+ * `focusIsTakeable`, which may take a button because the button in that case is
+ * the one that revealed the panel.
+ */
+export function focusFillsEmptyPanel(
+  panes: number,
+  before: number,
+  onBody: boolean,
+): boolean {
+  return onBody && panes === 0 && before > 0;
+}
+
 /** Whether the panel puts the keyboard on a pane, and which pane it then holds. */
 export interface FocusStep {
   focus: boolean;
