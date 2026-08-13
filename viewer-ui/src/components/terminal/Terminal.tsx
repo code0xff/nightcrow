@@ -15,6 +15,7 @@ import { PaneTabs } from "./PaneTabs";
 import { TermKeyBar } from "./TermKeyBar";
 import { useTouchScroll } from "../../hooks/terminal/useTouchScroll";
 import { usePaneViewMode } from "../../hooks/ui/paneViewMode";
+import { useTermKeyBar } from "../../hooks/ui/termKeyBar";
 import { rememberPane } from "../../lib/lastPane";
 import { shownTab } from "../../lib/paneViewMode";
 import { PanelDivider, type PanelDividerProps } from "./PanelDivider";
@@ -86,6 +87,7 @@ export function TerminalPanel({
   const zoom = renderedZoom(zoomed, panes);
   const bodyTouch = useTouchScroll({ viewsRef, bodyRefs });
   const { mode, toggle: toggleMode } = usePaneViewMode();
+  const keyBar = useTermKeyBar();
   const tabs = mode === "tabs";
   // A tabbed panel renders no zoom — it already shows one pane — so nothing in
   // it waits on one, and the zoomed pane is just another tab. Feeding the real
@@ -247,12 +249,14 @@ export function TerminalPanel({
         }
         ownsSize={ownsSize}
         maximized={maximized}
+        keyBarShown={keyBar.shown}
         waiting={panes.length > 0 ? attachLabel(status) : null}
         recovery={recovery}
         panes={panes}
         onCancelRecovery={cancelRecovery}
         onClaimSize={claimSize}
         onCreate={create}
+        onToggleKeyBar={keyBar.toggle}
         onToggleMaximized={onToggleMaximized}
       />
       <div className="relative min-h-0 flex-1 overflow-hidden bg-ink-950 p-1">
@@ -283,7 +287,7 @@ export function TerminalPanel({
           onPaneDragCancel={endPaneDrag}
         />
       </div>
-      {panes.length > 0 && <TermKeyBar onKey={sendKey} />}
+      {panes.length > 0 && keyBar.shown && <TermKeyBar onKey={sendKey} />}
     </section>
   );
 }

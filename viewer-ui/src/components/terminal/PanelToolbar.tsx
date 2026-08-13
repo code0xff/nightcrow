@@ -1,6 +1,12 @@
 import type { ReactNode } from "react";
 import { PlusIcon } from "../icons/actions";
-import { FitScreenIcon, MaximizeIcon, SplitViewIcon, TabViewIcon } from "../icons/layout";
+import {
+  FitScreenIcon,
+  KeyboardIcon,
+  MaximizeIcon,
+  SplitViewIcon,
+  TabViewIcon,
+} from "../icons/layout";
 import { RecoveryChip } from "./RecoveryChip";
 import { orphanRecovery, type RecoveryByPane } from "../../lib/recovery";
 import type { PaneViewMode } from "../../lib/paneViewMode";
@@ -15,6 +21,11 @@ export interface PanelToolbarProps {
    *  the button that takes the sizing back appears. */
   ownsSize: boolean;
   maximized: boolean;
+  /** Whether the on-screen key bar is under the panes. Its toggle lives here
+   *  rather than on the bar, which would otherwise have no way back once it was
+   *  dismissed — and only while there are panes, which is when there is a bar
+   *  for it to speak for. */
+  keyBarShown: boolean;
   /** What the panel is still waiting for, if anything. Only set while panes are
    *  on screen — there the body has no room to say it, and it is exactly then
    *  that a stale pane looks like a working one (see `AttachNotice`). */
@@ -27,6 +38,7 @@ export interface PanelToolbarProps {
   onCancelRecovery: (pane: number) => void;
   onClaimSize: () => void;
   onCreate: () => void;
+  onToggleKeyBar: () => void;
   onToggleMaximized: () => void;
 }
 
@@ -39,12 +51,14 @@ export function PanelToolbar({
   tabs,
   ownsSize,
   maximized,
+  keyBarShown,
   waiting,
   recovery,
   panes,
   onCancelRecovery,
   onClaimSize,
   onCreate,
+  onToggleKeyBar,
   onToggleMaximized,
 }: PanelToolbarProps) {
   const button =
@@ -102,6 +116,21 @@ export function PanelToolbar({
       >
         {mode === "tabs" ? <SplitViewIcon /> : <TabViewIcon />}
       </button>
+      {/* Only alongside the bar it speaks for. The bar needs a pane to send its
+          keys to, so an empty panel has none — and a control that reads "hide
+          the key bar", pressed, over a panel with no key bar in it is naming
+          something that is not there. */}
+      {panes.length > 0 && (
+        <button
+          onClick={onToggleKeyBar}
+          aria-pressed={keyBarShown}
+          title={keyBarShown ? "Hide the key bar" : "Show the key bar"}
+          aria-label={keyBarShown ? "Hide the key bar" : "Show the key bar"}
+          className={`${button} ${keyBarShown ? "text-accent" : ""}`}
+        >
+          <KeyboardIcon />
+        </button>
+      )}
       <button
         onClick={onToggleMaximized}
         aria-pressed={maximized}

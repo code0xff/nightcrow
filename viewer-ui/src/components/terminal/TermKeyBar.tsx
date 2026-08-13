@@ -1,7 +1,11 @@
 import { TERM_KEY_BAR } from "../../lib/termKeys";
 
 /**
- * The keys a touch keyboard does not have, for the panes on a phone.
+ * The keys a soft keyboard does not have, for the panes on a touch device.
+ *
+ * Shown at every width — a tablet is as wide as a desktop and types like a
+ * phone, so the breakpoint was never the question (`defaultKeyBarShown`).
+ * Whether it is here at all is the panel toolbar's toggle.
  *
  * `onPointerDown` is prevented so the tap does not blur the terminal: losing
  * focus would send the key to nothing.
@@ -12,7 +16,7 @@ export function TermKeyBar({
   onKey: (key: (typeof TERM_KEY_BAR)[number]["key"]) => void;
 }) {
   return (
-    <div className="flex shrink-0 items-stretch gap-1 overflow-x-auto border-t border-ink-700 bg-ink-900 px-1 py-1 md:hidden">
+    <div className="flex shrink-0 items-stretch gap-1 overflow-x-auto border-t border-ink-700 bg-ink-900 px-1 py-1">
       {TERM_KEY_BAR.map(({ key, label, aria }) => (
         <button
           key={key}

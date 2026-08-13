@@ -606,9 +606,9 @@ OSC 52는 출력과 함께 흘러 **출력이 보이는 곳에서 끝나는** �
 - **좁은 화면에서 프로젝트 탭은 드롭다운으로 접힌다**(`ProjectMenu`). 탭 행은 `md`(768px) 이상에서만
   보이고 그 미만에서는 현재 프로젝트명 selector로 대체된다. 드롭다운이 전환·닫기(×)·`+ open`을 모두
   담아 어포던스를 유지한다. 바깥 클릭(투명 backdrop)이나 Esc로 닫힌다.
-- **폰 터미널에는 소프트키보드가 못 내는 키를 얹는다**(`lib/termKeys.ts`, `Terminal.tsx`). `Ctrl-C`
+- **터치 기기 터미널에는 소프트키보드가 못 내는 키를 얹는다**(`lib/termKeys.ts`, `Terminal.tsx`). `Ctrl-C`
   없이는 멈춘 프로세스를 못 죽이고 `Esc` 없이는 vim을 못 빠져나와 pane 파기(=세션 파기)밖에 없다.
-  터미널 패널 하단의 온스크린 키 바(`md:hidden`, pane이 열렸을 때만)가 각 키를 실제 키보드가 보낼
+  터미널 패널 하단의 온스크린 키 바(pane이 열렸을 때만)가 각 키를 실제 키보드가 보낼
   **원시 바이트**로 매핑해(`termKeySequence`: Esc=`\x1b`, `^C`=`\x03`, ↑=`\x1b[A`, ⇧Tab=`\x1b[Z` —
   Shift-Tab은 자기 제어바이트가 없어 back-tab escape) `term.onData`와 **같은 wire 메시지**로 흘린다.
   버튼은 `onPointerDown`+`preventDefault`로 눌러 포커스를 xterm textarea에서 떼지 않는다(소프트키보드가
@@ -616,6 +616,12 @@ OSC 52는 출력과 함께 흘러 **출력이 보이는 곳에서 끝나는** �
   버튼으로** 둔 것은, sticky Ctrl이 다음 입력을 가로채 변환해야 해(xterm이 textarea를 소유) 얻는 것보다
   복잡하기 때문이다. 바에는 소프트키보드가 **못 내는** 키만 담는다. 터치 기기에선 xterm 폰트도 한
   포인트 키운다(`pointer: coarse`, 12→13px).
+- **키 바를 켜는 기준은 폭이 아니라 포인터다**(`defaultKeyBarShown`, `hooks/ui/termKeyBar.ts`). 바가
+  `md:hidden`이던 동안 **아이패드는 아무 키도 못 받았다** — `md`보다 넓은데 타이핑은 유리판으로 하는
+  기기이기 때문이다. 그래서 기본값은 `pointer: coarse`(xterm 폰트가 이미 묻는 그 질문) **또는** `md`
+  미만 폭이고, 포인터를 못 읽는 브라우저는 폭이 대신 답한다. 토글은 패널 툴바에 두어 —
+  바 자신에 달면 한 번 감춘 뒤 되돌릴 손잡이가 없다 — 선택은 기기별 `localStorage`에 남는다
+  (`nightcrow.termKeyBar`, pane view mode와 같은 override 패턴: 사람이 정한 뒤에는 회전해도 안 뒤집힌다).
 - **폰 터치 타겟을 넓힌다**: 목록 행·사이드바 탭·pane 버튼·`ProjectMenu` 항목은 `md` 미만에서 세로
   패딩과 히트 영역을 키우고 `md:`로 기존 밀도를 복원한다. hover가 안 먹는 터치를 위해 `active:` 상태를
   병행한다.

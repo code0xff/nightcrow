@@ -1,5 +1,5 @@
-// The on-screen key bar for the terminal on touch devices. A phone's soft
-// keyboard cannot produce Escape, Tab, the Ctrl combinations, or the arrow keys,
+// The on-screen key bar for the terminal on touch devices. A soft keyboard
+// cannot produce Escape, Tab, the Ctrl combinations, or the arrow keys,
 // yet those are exactly the keys an interactive shell needs — without Ctrl-C you
 // cannot interrupt a runaway process, and without Escape you cannot leave vim.
 // Each key here maps to the raw byte sequence a real keyboard would send, which
@@ -67,6 +67,35 @@ export function termKeySequence(key: TermKey, applicationCursor = false): string
     if (ss3) return ss3;
   }
   return TERM_KEY_SEQUENCES[key];
+}
+
+/** Tailwind's `md`. A window this narrow belongs to a phone whatever it reports
+ *  about its pointer, so the bar defaults on below it either way. */
+export const KEYBOARD_MIN_VIEWPORT_PX = 768;
+
+export type KeyBarPref = "shown" | "hidden";
+
+/** What was stored, or null for anything this version does not recognise. */
+export function parseKeyBarPref(raw: string | null): KeyBarPref | null {
+  return raw === "shown" || raw === "hidden" ? raw : null;
+}
+
+/**
+ * Whether to show the bar on a screen nobody has chosen for yet.
+ *
+ * A coarse pointer is the question that actually matters — "is what types here a
+ * pane of glass" — and it is the one a tablet answers differently from the
+ * desktop it is as wide as. Width alone would have left an iPad, which is wider
+ * than the `md` the bar used to hide at, with no Escape and no Ctrl-C. Width
+ * still decides for anything a pointer cannot: a phone in desktop mode, a
+ * browser that reports nothing. Same question the terminal font asks
+ * (`termFont.ts`).
+ */
+export function defaultKeyBarShown(
+  coarsePointer: boolean,
+  viewportWidth: number,
+): boolean {
+  return coarsePointer || viewportWidth < KEYBOARD_MIN_VIEWPORT_PX;
 }
 
 // The bar's layout, left to right: the bare keys first, then the common Ctrl

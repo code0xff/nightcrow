@@ -204,6 +204,14 @@ sends those straight to the shell — so you can interrupt a process (`^C`), lea
 `vim` (`Esc`), cycle a completion menu backwards (`⇧Tab`), or walk your history
 (arrows) without a physical keyboard.
 
+**The bar is not a phone-width thing** — a tablet is as wide as a laptop and
+types the same way, so what turns it on is the pointer: any device whose primary
+pointer is a finger gets it, at any width, along with every window narrower than
+768px. The keyboard button in the terminal panel's toolbar turns it off and on
+from there, and this browser remembers which — so a desktop that wants the keys
+anyway can keep them, and a tablet with a hardware keyboard attached can drop
+them.
+
 The viewer ships a web-app manifest and icons, so you can **add it to your home
 screen** and launch it as a standalone, chrome-less window — more room for the
 terminal and one-tap access. On iOS this works over plain HTTP (Safari → *Share*
