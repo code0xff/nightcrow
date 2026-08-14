@@ -173,14 +173,26 @@ export function RepoShell({
       <RepoMobileNav view={mobileView} onSelect={setMobileView} />
 
       <footer className="flex shrink-0 items-center gap-3 border-t border-ink-700 bg-ink-900 px-3 py-1 text-ink-400">
-        <span className="truncate">{current?.display_path}</span>
-        {status?.branch && <span className="text-accent">{status.branch}</span>}
+        {/* Both names are cut by the bar rather than allowed to set its size.
+            A branch name is one unbroken token, so left to itself it wraps the
+            footer onto a second line or pushes what follows off the end — on a
+            phone that is most of the bar. Both give way, because the two counts
+            after them do not and the bar is only so wide: a name that could not
+            shrink would still push them off a narrow enough screen. Half the
+            bar is as much as the branch may hold when there is room, so a long
+            one cannot take the path's place entirely. */}
+        <span className="min-w-0 truncate">{current?.display_path}</span>
+        {status?.branch && (
+          <span className="min-w-0 max-w-[50%] truncate text-accent">
+            {status.branch}
+          </span>
+        )}
         {status?.tracking && (
-          <span>
+          <span className="shrink-0">
             ↑{status.tracking.ahead} ↓{status.tracking.behind}
           </span>
         )}
-        <span className="ml-auto">
+        <span className="ml-auto shrink-0">
           {status ? <span className="text-added">● live</span> : "connecting…"}
         </span>
       </footer>
