@@ -170,6 +170,12 @@ snapshot worker가 채워주고, detached HEAD/unborn branch처럼 값이 없으
 칩은 plugin이 보고한 pane recovery(state·deadline·attempt·detail)이며 대기 중인 것이 있을 때만
 나타난다 — [plugin-host.md](plugin-host.md)의 Recovery Surface 참고.
 
+**행에 안 들어가면 줄어드는 쪽은 두 이름이다**(`fit_names`). 경로와 브랜치는 `…`로 잘리고, 그
+뒤의 `↑N ↓M`과 recovery 칩은 제 폭을 지킨다 — 짧고, 이 행에서만 하는 말이기 때문이다. 브랜치는
+남은 자리의 **절반까지만** 가져가 긴 브랜치가 경로 자리를 통째로 먹지 않게 하고, 절반이 0이면
+아예 뺀다(`…` 하나는 브랜치 이름이 아니면서 칸은 차지한다). 절반이라는 몫은 web viewer의 footer와
+같다(`RepoShell.tsx`) — 같은 저장소가 두 화면에서 같게 읽혀야 한다.
+
 **알림(`App::notice`)이 올라오면 이 행을 덮는다.** 전용 행을 따로 만들지 않은 이유는 알림이 뜨고
 사라질 때마다 body가 한 행씩 줄었다 늘어나면서 **열려 있는 모든 PTY가 리사이즈**되기 때문이다.
 이 행의 내용은 매 프레임 `App`에서 다시 계산되는 ambient 정보라 잠시 덮어도 잃는 것이 없다 —

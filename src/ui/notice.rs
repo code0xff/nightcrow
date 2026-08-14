@@ -18,7 +18,7 @@ pub(crate) fn render_notice_row<'a>(
 ) -> Paragraph<'a> {
     match notice_or_candidates(app.notice.as_ref(), repo_input, Some(&app.repo_path), width) {
         Some(line) => Paragraph::new(line),
-        None => render_repo_header(app, accent),
+        None => render_repo_header(app, accent, width),
     }
 }
 
@@ -120,6 +120,12 @@ fn overflow_label(remaining: usize) -> String {
 
 /// Truncate `text` to fit within `max_width` columns, appending `…` when
 /// truncation is needed. The ellipsis itself counts toward the width.
+///
+/// Width is summed per character, so a sequence whose width is not the sum of
+/// its parts — a variation selector, a combining mark — can come out a column
+/// over. Measuring the string again after each character would make this row
+/// quadratic in its own width on every frame, and what it buys is a column at
+/// the end of a line the terminal clips anyway.
 fn truncate_with_ellipsis(text: &str, max_width: usize) -> String {
     if Span::raw(text).width() <= max_width {
         return text.to_string();
@@ -144,29 +150,82 @@ fn truncate_with_ellipsis(text: &str, max_width: usize) -> String {
     result
 }
 
-pub(crate) fn render_repo_header<'a>(app: &'a App, accent: Color) -> Paragraph<'a> {
-    let display_path = home_relative_path(&app.repo_path);
+/// How much of the room left for the two names the branch may take when the
+/// path wants it as well. The web footer splits it the same way
+/// (`RepoShell.tsx`), so the same repository reads the same on both screens.
+const BRANCH_NAME_SHARE: usize = 2;
+
+/// The path and the branch as the row can hold them, cut with `…` rather than
+/// pushed off the end.
+///
+/// `budget` is what the counts after them have left. Both give way, because
+/// those counts do not: a name allowed to keep its length would take the row
+/// from `↑N ↓M` and the recovery chip, which are the part of this row that is
+/// news. The branch is held to half of what there is so a long one does not
+/// take the path's place entirely, and dropped altogether when half is nothing
+/// — an ellipsis alone names no branch and still costs the column it is cut to
+/// fit.
+pub(crate) fn fit_names(
+    path: &str,
+    branch: Option<&str>,
+    budget: usize,
+) -> (String, Option<String>) {
+    // Nothing left is nothing shown. `truncate_with_ellipsis` never returns
+    // less than the ellipsis, which on a row this full is a column taken from
+    // the chip it was making room for.
+    if budget == 0 {
+        return (String::new(), None);
+    }
+    let path = format!(" {path} ");
+    let Some(branch) = branch else {
+        return (truncate_with_ellipsis(&path, budget), None);
+    };
+    let branch = format!(" {branch} ");
+    let share = (budget / BRANCH_NAME_SHARE).min(Span::raw(&branch).width());
+    if share == 0 {
+        return (truncate_with_ellipsis(&path, budget), None);
+    }
+    let branch = truncate_with_ellipsis(&branch, share);
+    let left = budget.saturating_sub(Span::raw(&branch).width());
+    (truncate_with_ellipsis(&path, left), Some(branch))
+}
+
+pub(crate) fn render_repo_header<'a>(app: &'a App, accent: Color, width: u16) -> Paragraph<'a> {
+    let tracking = app
+        .tracking
+        .as_ref()
+        .filter(|t| t.ahead > 0 || t.behind > 0)
+        .map(|t| format!(" ^{} v{} ", t.ahead, t.behind));
+    let chip = recovery_chip(app);
+    // The counts and the chip keep their room: each is short, and each says
+    // something no other row does.
+    let kept: usize = [tracking.as_deref(), chip.as_deref()]
+        .into_iter()
+        .flatten()
+        .map(|text| Span::raw(text).width())
+        .sum();
+    let (path, branch) = fit_names(
+        &home_relative_path(&app.repo_path),
+        app.branch_name.as_deref(),
+        (width as usize).saturating_sub(kept),
+    );
+
     let mut spans: Vec<Span<'a>> = vec![Span::styled(
-        format!(" {display_path} "),
+        path,
         Style::default()
             .fg(Color::Gray)
             .add_modifier(Modifier::BOLD),
     )];
-    if let Some(branch) = app.branch_name.as_deref() {
+    if let Some(branch) = branch {
         spans.push(Span::styled(
-            format!(" {branch} "),
+            branch,
             Style::default().fg(accent).add_modifier(Modifier::BOLD),
         ));
     }
-    if let Some(t) = &app.tracking
-        && (t.ahead > 0 || t.behind > 0)
-    {
-        spans.push(Span::styled(
-            format!(" ^{} v{} ", t.ahead, t.behind),
-            Style::default().fg(Color::Cyan),
-        ));
+    if let Some(tracking) = tracking {
+        spans.push(Span::styled(tracking, Style::default().fg(Color::Cyan)));
     }
-    if let Some(chip) = recovery_chip(app) {
+    if let Some(chip) = chip {
         spans.push(Span::styled(
             chip,
             Style::default()

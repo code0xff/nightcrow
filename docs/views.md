@@ -72,7 +72,9 @@ selected path persist across sessions.
 
 A one-row strip just above the hint bar shows the repo path (home-relative, e.g.
 `~/projects/myapp`), the current branch, and ahead/behind counts (`↑N ↓M`) when
-the branch tracks an upstream.
+the branch tracks an upstream. A path or a branch too long for the row is cut
+with `…` — the counts and the recovery chip after them keep their room, so a
+long name shortens itself rather than pushing them off the end.
 
 When something fails — a git snapshot, a diff load, a terminal pane, or a repo
 path you typed that doesn't exist — the message takes over this row in red until
