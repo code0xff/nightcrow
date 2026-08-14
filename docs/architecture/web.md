@@ -269,6 +269,16 @@ UI, `hooks/`는 UI·터미널·저장소 상태, `lib/`는 API 이외의 순수 
 터미널 WebSocket 메시지는 `api/terminal.ts`가 decode/encode하는 단일 경계를 두고, 각 terminal hook은
 검증된 discriminated union만 처리한다. wire 문자열을 hook마다 다시 해석하거나 조립하지 않는다.
 
+**테스트는 두 층이다.** `src/lib`의 순수 함수는 vitest 기본 환경(`node`)에서, React 훅은
+`@testing-library/react`의 `renderHook`으로 DOM 환경에서 돈다 — DOM이 필요한 테스트 파일만 첫 줄
+`// @vitest-environment happy-dom`로 스스로 선언하고, 나머지는 빠른 node에 남는다. 훅 층을
+들인 계기는 view 기억 기능이다: 결함이 전부 훅 배선(복원↔기록 순서, 프로젝트 전환 레이스)에
+있었는데 그 층에 테스트가 없어 리뷰로만 검증됐다. 환경은 **happy-dom** — jsdom보다 수 배 빠르고
+Vitest 쪽 권장이며, 결정적으로 `window.matchMedia`를 구현한다(jsdom은 없어서 mock이 필요한데
+`useTermKeyBar`·`termFont`가 그걸 읽는다). fidelity가 모자란 테스트는 jsdom을 들여 같은 파일 단위
+방식으로 옮기면 된다. `@testing-library/react` 16은 `@testing-library/dom`을 peer로 요구해 함께
+설치했다; `user-event`·`jest-dom`은 훅 테스트에 불필요해 컴포넌트 테스트를 시작할 때로 미뤘다.
+
 **렌더 실패가 페이지를 가져가지 않게 한다**(`components/feedback/ErrorBoundary.tsx`,
 `lib/chunkError.ts`). boundary가 하나도 없으면 React는 어떤 렌더 에러에도 트리 전체를 unmount하고,
 보는 사람 입장에서 그것은 **서버가 죽은 것과 구분되지 않는다.** 실제로 사라진 청크가 그 모양으로
@@ -280,8 +290,8 @@ UI, `hooks/`는 UI·터미널·저장소 상태, `lib/`는 API 이외의 순수 
 - **그 자리에서 재시도할 수 없다.** HTML spec이 실패한 module fetch를 캐시하게 하므로(스크립트가
   두 번 도는 것을 막기 위해) 같은 import는 그 페이지가 사는 동안 계속 같은 실패를 준다. 복구는
   리로드뿐이고, 그래서 fallback이 내미는 것도 재시도가 아니라 리로드다.
-- **판정은 `lib/chunkError.ts`의 순수 함수가 한다.** vitest가 `environment: "node"`라 컴포넌트는
-  테스트할 수 없으므로, 테스트 가능한 곳에 로직을 두고 boundary는 그것을 부르는 껍데기로 남긴다.
+- **판정은 `lib/chunkError.ts`의 순수 함수가 한다.** 로직을 테스트하기 가장 쉬운 곳(순수 함수)에
+  두고 boundary는 그것을 부르는 껍데기로 남긴다 — 훅 테스트 환경이 생긴 지금도 이 배치가 낫다.
   판정은 **좁게** 잡는다 — 알아보지 못한 것은 일반 실패로 보고한다. 보고 있던 컴포넌트의 버그에
   리로드를 권하는 것은 고쳐주는 것이 없으면서 읽던 자리만 잃게 한다.
 - **왜 실패했는지는 알 수 없고, 아는 척하지 않는다.** 지워진 청크와 닿지 않는 서버는 어느
@@ -335,7 +345,7 @@ OSC 52는 출력과 함께 흘러 **출력이 보이는 곳에서 끝나는** �
   파싱·base64 디코드·provider 호출인데, 기본 provider가 `navigator.clipboard`뿐이라 아래 이유로
   어차피 우리 provider가 필요하다. 남는 것을 위해 `js-base64` transitive dependency와 xterm 6
   peer 미선언을 떠안는 대신 `parser.registerOscHandler(52, …)`로 직접 받는다. 디코드는 `atob` +
-  `TextDecoder`로 되고, **파싱이 순수 함수로 남아 vitest(`environment: "node"`)에서 검증된다** —
+  `TextDecoder`로 되고, **파싱이 순수 함수로 남아 vitest 기본 환경(node)에서 검증된다** —
   addon을 썼으면 테스트할 수 있는 것은 provider 껍데기뿐이었다.
 - **읽기 질의(`c;?`)에는 답하지 않는다.** 답하면 읽는 사람이 마지막으로 복사한 것 — 비밀번호,
   토큰 — 이 **터미널 입력으로** pane 안의 프로그램에게 간다. **쓰기 허용은 귀결이 아니라 거래다**:

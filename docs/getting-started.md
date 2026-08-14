@@ -143,7 +143,9 @@ what changed.
 
 Changing anything under `viewer-ui/src` adds two more, run before the Rust ones
 because they fail faster: `npm --prefix viewer-ui test` covers the `src/lib`
-helpers, which no Rust test can reach, and `npm --prefix viewer-ui run build`
+helpers and the React hooks (a test that needs a DOM opts into happy-dom with a
+first-line `// @vitest-environment happy-dom`; the rest run in plain node),
+which no Rust test can reach, and `npm --prefix viewer-ui run build`
 must leave `viewer-ui/dist` unchanged — the bundle is committed, so a source
 edit without a rebuild ships a frontend that does not match its source. Both
 need `node_modules`; the hook says so and moves on rather than failing when
