@@ -3,6 +3,7 @@ import { useAccent } from "./ui/theme";
 import { useSidebarWidth } from "./ui/sidebar";
 import { useUpperPct } from "./ui/upperPct";
 import { useMaximized } from "./useMaximized";
+import { useRepoView } from "./useRepoView";
 
 /**
  * The preferences this page owns locally, and the bookkeeping that keeps the
@@ -32,9 +33,10 @@ export function useViewerPrefs() {
     reset: resetUpper,
     adopt: adoptUpperPct,
   } = useUpperPct();
-  // Owns its own write counter, so it is passed through whole rather than
+  // Own their own write counters, so they are passed through whole rather than
   // rewrapped here like the scalars below.
   const maximized = useMaximized();
+  const view = useRepoView();
   const accentWrites = useRef(0);
   const sidebarWrites = useRef(0);
   const upperPctWrites = useRef(0);
@@ -97,5 +99,11 @@ export function useViewerPrefs() {
     setMaximizedFor: maximized.setFor,
     adoptMaximized: maximized.adopt,
     maximizedWrites: maximized.writes,
+    viewOf: view.viewOf,
+    rememberedViewFor: view.rememberedFor,
+    rememberView: view.remember,
+    adoptViews: view.adopt,
+    viewCovers: view.covers,
+    viewWrites: view.writes,
   };
 }

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { api, type TreeEntry, type TreeMatch } from "../api";
+import { api, isUnauthorized, type TreeEntry, type TreeMatch } from "../api";
 import { latestRequest } from "../lib/latestRequest";
 import {
   ancestorDirs,
@@ -36,6 +36,7 @@ export interface UseTreeResult {
   loadTreeChildren: (path: string) => void;
   toggleTreeDir: (path: string) => void;
   revealTreeDir: (path: string) => void;
+  seedTreeExpanded: (dirs: string[]) => void;
 }
 
 /**
@@ -94,7 +95,7 @@ export function useTree({
   // then cross, the older one wins for good — the tree does not reread a path
   // it already holds — so only the newest question's answer is kept.
   const loadTreeChildren = useCallback(
-    (path: string) => {
+    (path: string, options?: { restoring?: boolean }) => {
       if (!repo) return;
       const ticket = requests.start(path);
       api
@@ -105,9 +106,20 @@ export function useTree({
         })
         .catch((err) => {
           // A failure from a superseded request says nothing about the listing
-          // now on screen, and `handle` is not quiet — it toasts, and logs the
-          // page out on a 401.
-          if (requests.isCurrent(path, ticket)) handle(err);
+          // now on screen, and `handle` is not quiet — it toasts. An expired
+          // session is the exception: that is not about the listing.
+          if (!requests.isCurrent(path, ticket)) {
+            return isUnauthorized(err) ? handle(err) : undefined;
+          }
+          // Nobody asked for a directory being put back from a remembered
+          // shape, so a failure to list it is worth neither a toast nor a
+          // change: it stays expanded and empty, and stays in the shape that is
+          // recorded. A directory that is really gone costs one failed request
+          // per visit; forgetting it on a server that merely stumbled would
+          // cost the shape itself, and the server answers both the same way.
+          // An expired session still has to be noticed, quiet request or not.
+          if (options?.restoring) return isUnauthorized(err) ? handle(err) : undefined;
+          handle(err);
         });
     },
     [repo, handle, requests],
@@ -123,6 +135,25 @@ export function useTree({
       const willExpand = !cache.expanded.has(path);
       setCache((c) => withToggled(c, path));
       if (willExpand && !(path in cache.children)) loadTreeChildren(path);
+    },
+    [cache, loadTreeChildren],
+  );
+  /**
+   * Put the tree into exactly the shape `dirs` describes, and fetch what that
+   * shape needs to draw.
+   *
+   * The set is taken as given rather than revealed one path at a time: a
+   * directory can be collapsed while a directory inside it stays in the set —
+   * that is what `withToggled` leaves behind — and expanding ancestors on the
+   * way to each entry would open the very directory the person had closed.
+   * What is stored is the shape; this is that shape.
+   */
+  const seedTreeExpanded = useCallback(
+    (dirs: string[]) => {
+      setCache((c) => ({ ...c, expanded: new Set(dirs) }));
+      dirs.forEach((dir) => {
+        if (!(dir in cache.children)) loadTreeChildren(dir, { restoring: true });
+      });
     },
     [cache, loadTreeChildren],
   );
@@ -146,5 +177,6 @@ export function useTree({
     loadTreeChildren,
     toggleTreeDir,
     revealTreeDir,
+    seedTreeExpanded,
   };
 }

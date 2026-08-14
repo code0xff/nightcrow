@@ -4,6 +4,8 @@ import { successorOf } from "../lib/successor";
 import type { Pane, Tab } from "../types";
 
 export interface UseRepoActionsArgs {
+  /** The project on screen, so opening the one already open changes nothing. */
+  repo: string | null;
   repos: Repo[];
   setRepos: React.Dispatch<React.SetStateAction<Repo[]>>;
   setRepo: React.Dispatch<React.SetStateAction<string | null>>;
@@ -15,6 +17,7 @@ export interface UseRepoActionsArgs {
 }
 
 export function useRepoActions({
+  repo,
   repos,
   setRepos,
   setRepo,
@@ -32,6 +35,11 @@ export function useRepoActions({
   // one.
   const reposRef = useRef(repos);
   reposRef.current = repos;
+  // The project on screen, read the same way and for the same reason: this
+  // callback outlives its render across the `api.open()` await, and a poll can
+  // have switched the screen to the very project it is about to report opened.
+  const repoRef = useRef(repo);
+  repoRef.current = repo;
   // Select a newly opened repository immediately instead of waiting for polling.
   const selectOpenedRepo = useCallback(
     (opened: Repo) => {
@@ -40,8 +48,13 @@ export function useRepoActions({
         prev.some((r) => r.id === opened.id) ? prev : [...prev, opened],
       );
       setRepo(opened.id);
-      setPane({ kind: "empty" });
-      setTab("status");
+      // Opening the project already on screen is not a change. Clearing its
+      // pane and tab would leave the screen saying one thing and its record
+      // another, for a tap that asked for nothing.
+      if (opened.id !== repoRef.current) {
+        setPane({ kind: "empty" });
+        setTab("status");
+      }
       setPickerOpen(false);
     },
     [setRepos, setRepo, setPane, setTab, setPickerOpen, orderWrites],

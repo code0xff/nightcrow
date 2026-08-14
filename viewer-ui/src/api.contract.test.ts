@@ -29,10 +29,13 @@ import {
   type MaximizedByRepo,
   type Reloaded,
   type Repo,
+  type RepoView,
+  type RepoViewByRepo,
   type Status,
   type StoredPrefs,
   type Tree,
   type TreeSearch,
+  type ViewFile,
   type ViewerBootstrap,
 } from "./api";
 
@@ -63,6 +66,48 @@ function panelsMatchTheUnion(): [PanelsAreAllInTheUnion, UnionIsAllInPanels] {
   return [true, true];
 }
 
+/** The same for the two unions a remembered view carries. */
+const TABS = ["status", "log", "tree"] as const;
+const FACES = ["diff", "source"] as const;
+
+type TabsAreAllInTheUnion = (typeof TABS)[number] extends RepoView["tab"]
+  ? true
+  : never;
+type UnionIsAllInTabs = RepoView["tab"] extends (typeof TABS)[number]
+  ? true
+  : never;
+type FacesAreAllInTheUnion = (typeof FACES)[number] extends ViewFile["face"]
+  ? true
+  : never;
+type UnionIsAllInFaces = ViewFile["face"] extends (typeof FACES)[number]
+  ? true
+  : never;
+function viewNamesMatchTheUnions(): [
+  TabsAreAllInTheUnion,
+  UnionIsAllInTabs,
+  FacesAreAllInTheUnion,
+  UnionIsAllInFaces,
+] {
+  return [true, true, true, true];
+}
+
+/** The fixture's shape for one remembered view, before the unions are checked:
+ *  a JSON import widens `"tree"` and `"source"` to `string`. */
+type RawView = {
+  tab: string;
+  file: { path: string; commit: string | null; face: string } | null;
+  tree_expanded: string[];
+};
+
+function views(raw: Record<string, RawView>): RepoViewByRepo {
+  viewNamesMatchTheUnions();
+  for (const view of Object.values(raw)) {
+    expect(TABS).toContain(view.tab);
+    if (view.file) expect(FACES).toContain(view.file.face);
+  }
+  return raw as RepoViewByRepo;
+}
+
 function panels(raw: Record<string, string>): MaximizedByRepo {
   // Calling it is what keeps the assertion above from being dead code the
   // compiler skips; its return value has nothing to say.
@@ -82,6 +127,7 @@ describe("wire contract", () => {
     const bootstrap: ViewerBootstrap = {
       ...fixture.bootstrap,
       maximized: panels(fixture.bootstrap.maximized),
+      last_view: views(fixture.bootstrap.last_view),
     };
     expect(bootstrap.repos).toHaveLength(1);
     expect(bootstrap.hot.window_secs).toBeGreaterThan(0);
@@ -89,6 +135,9 @@ describe("wire contract", () => {
     expect(bootstrap.sidebar_width).toBeGreaterThan(0);
     expect(bootstrap.upper_pct).toBeGreaterThan(0);
     expect(bootstrap.maximized).toEqual({ r1: "terminal" });
+    // 프로젝트를 다시 열었을 때 무엇을 열어야 하는지. 서버는 서빙 중인
+    // 프로젝트만 id로 실어 보낸다.
+    expect(bootstrap.last_view.r1?.file?.path).toBe("src/main.rs");
     // 이 페이지가 어느 빌드에서 왔는지 비교할 값. 없으면 서버가 갱신돼도
     // 탭은 옛 번들로 계속 돈다.
     expect(bootstrap.viewer_build).toBeTruthy();
@@ -165,6 +214,7 @@ describe("wire contract", () => {
     const stored: StoredPrefs = {
       ...fixture.storedPrefs,
       maximized: panels(fixture.storedPrefs.maximized),
+      last_view: views(fixture.storedPrefs.last_view),
     };
     expect(opened.repo.display_path).toBe("~/code/scratch");
     expect(stored.accent).toBe(2);
@@ -173,6 +223,11 @@ describe("wire contract", () => {
     expect(stored.active_repo).toBe("r1");
     // Both variants, so renaming either on the Rust side fails here.
     expect(stored.maximized).toEqual({ r1: "terminal", r2: "files" });
+    // 워킹 트리의 파일과 커밋에서 연 파일이 함께 있어, optional한 `commit`이
+    // 있을 때와 없을 때를 모두 통과시킨다.
+    expect(stored.last_view.r1?.file?.commit).toBeNull();
+    expect(stored.last_view.r2?.file?.commit).toBeTruthy();
+    expect(stored.last_view.r1?.tree_expanded).toEqual(["src", "src/ui"]);
   });
 
   it("reload_응답이_Reloaded와_맞는다", () => {

@@ -43,6 +43,12 @@ export function useShellLayout() {
     setMaximizedFor,
     adoptMaximized,
     maximizedWrites,
+    viewOf,
+    rememberedViewFor,
+    rememberView,
+    adoptViews,
+    viewCovers,
+    viewWrites,
   } = useViewerPrefs();
 
   const sidebarRef = useRef<HTMLElement>(null);
@@ -78,6 +84,12 @@ export function useShellLayout() {
      *  this hook runs before one has been chosen. */
     maximizedPanelOf,
     setMaximizedFor,
+    /** What each project was last showing, bound to the project on screen by
+     *  the call site for the same reason the maximize is. */
+    viewOf,
+    rememberedViewFor,
+    rememberView,
+    viewCovers,
     /** Everything `RepoShell` needs to render and drive both dividers. */
     shell: {
       sidebarWidth,
@@ -101,10 +113,12 @@ export function useShellLayout() {
       adoptSidebarWidth,
       adoptUpperPct,
       adoptMaximized,
+      adoptViews,
       accentWrites,
       sidebarWrites,
       upperPctWrites,
       maximizedWrites,
+      viewWrites,
       draggingRef: sidebar.draggingRef,
       upperDraggingRef: split.upperDraggingRef,
     },

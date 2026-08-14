@@ -33,6 +33,29 @@ export interface HotConfig {
  *  ordinary state, and the server does not store a row for it. */
 export type MaximizedByRepo = Record<string, "files" | "terminal">;
 
+/** The file a project was showing, and which of its two faces. `commit` is the
+ *  commit it was read from, or null for the working tree's copy. */
+export interface ViewFile {
+  path: string;
+  commit: string | null;
+  face: "diff" | "source";
+}
+
+/** What a project was last showing, so opening it again opens it: the tab, the
+ *  file, and the shape the tree was in. The TUI keeps the same per repository
+ *  in its own session file. */
+export interface RepoView {
+  tab: "status" | "log" | "tree";
+  file: ViewFile | null;
+  /** Repository-relative directories the tree had open. */
+  tree_expanded: string[];
+}
+
+/** Every project's last view, keyed by repo id. A project nothing has been
+ *  looked at in is absent, as is a remembered one this session is not serving —
+ *  the server stores them by path and has no id to name those by. */
+export type RepoViewByRepo = Record<string, RepoView>;
+
 /** What every `/api/prefs` write echoes back: the full stored set. */
 export interface StoredPrefs {
   accent: number;
@@ -40,6 +63,7 @@ export interface StoredPrefs {
   upper_pct: number;
   active_repo: string | null;
   maximized: MaximizedByRepo;
+  last_view: RepoViewByRepo;
 }
 
 /** What `/api/reload` answers.
@@ -70,6 +94,9 @@ export interface ViewerBootstrap {
    *  and resolves ids per response, so a remembered project that is not open
    *  has no id to name it by and keeps its entry for next time. */
   maximized: MaximizedByRepo;
+  /** What each served project was last showing, by id, so opening one again
+   *  opens what was open. Same id-per-response rule as `maximized`. */
+  last_view: RepoViewByRepo;
   /** Server wall clock used to date file mtimes. */
   now_ms: number;
   /** False when the server has no `git` on PATH, so the clone form is disabled

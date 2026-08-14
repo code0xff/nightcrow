@@ -1,5 +1,12 @@
 import { useCallback } from "react";
-import { api, type Commit, type Diff, type FileView, type Status } from "../api";
+import {
+  api,
+  isUnauthorized,
+  type Commit,
+  type Diff,
+  type FileView,
+  type Status,
+} from "../api";
 import type { CommitDrillDown } from "./useLog";
 import type { Pane } from "../types";
 import { anchorLine, anchorOffset } from "../lib/diffAnchor";
@@ -22,11 +29,24 @@ export interface UsePaneOpenersArgs {
   statusRef: React.MutableRefObject<Status | null>;
 }
 
+/**
+ * How an open nobody asked for differs from a tap.
+ *
+ * Restoring a project's last view opens a file the person is not, at that
+ * moment, asking to read: so it leaves a phone on the list it just showed
+ * instead of jumping into the file, and a file that has gone since it was
+ * remembered leaves an empty pane rather than an error about a path nobody
+ * typed.
+ */
+export interface OpenOptions {
+  restoring?: boolean;
+}
+
 export interface UsePaneOpenersResult {
-  openDiff: (path: string) => void;
-  openFile: (path: string) => void;
+  openDiff: (path: string, options?: OpenOptions) => void;
+  openFile: (path: string, options?: OpenOptions) => void;
   openCommit: (oid: string) => void;
-  openCommitFileDiff: (oid: string, path: string) => void;
+  openCommitFileDiff: (oid: string, path: string, options?: OpenOptions) => void;
   openCommitFiles: (commit: Commit) => Promise<void>;
   /// Swap a single-file pane between its diff and its whole contents.
   /// `fromHunk` is the hunk the diff was scrolled to, so the file opens there.
@@ -53,9 +73,9 @@ export function usePaneOpeners({
     [statusRef],
   );
   const openDiff = useCallback(
-    (path: string) => {
+    (path: string, options?: OpenOptions) => {
       if (!repo) return;
-      setMobileView("diff");
+      if (!options?.restoring) setMobileView("diff");
       const request = (paneRequestRef.current += 1);
       api
         .diff(repo, path)
@@ -71,15 +91,29 @@ export function usePaneOpeners({
             });
         })
         .catch((err) => {
-          if (request === paneRequestRef.current) handle(err);
+          // A superseded request has been overtaken by another open, which owns
+          // the pane now, so its failure says nothing about what is on screen.
+          // An expired session is still worth saying, whoever asked.
+          if (request !== paneRequestRef.current) {
+            return isUnauthorized(err) ? handle(err) : undefined;
+          }
+          if (!options?.restoring) return handle(err);
+          // Nobody asked for this one, so it says nothing out loud — except an
+          // expired session, which the page has to know about however it found
+          // out. Why it failed is beyond telling anyway: the server answers a
+          // deleted path and a repository it could not read alike. Nothing is
+          // recorded either way; what a restore could not put back stays
+          // remembered, and stays worth trying next time.
+          if (isUnauthorized(err)) handle(err);
+          setPane({ kind: "empty" });
         });
     },
     [repo, handle, setPane, paneRequestRef, setMobileView, worktreeHas],
   );
   const openFile = useCallback(
-    (path: string) => {
+    (path: string, options?: OpenOptions) => {
       if (!repo) return;
-      setMobileView("diff");
+      if (!options?.restoring) setMobileView("diff");
       setPreviewRendered(true);
       const request = (paneRequestRef.current += 1);
       api
@@ -88,7 +122,21 @@ export function usePaneOpeners({
           if (request === paneRequestRef.current) setPane({ kind: "file", value: v });
         })
         .catch((err) => {
-          if (request === paneRequestRef.current) handle(err);
+          // A superseded request has been overtaken by another open, which owns
+          // the pane now, so its failure says nothing about what is on screen.
+          // An expired session is still worth saying, whoever asked.
+          if (request !== paneRequestRef.current) {
+            return isUnauthorized(err) ? handle(err) : undefined;
+          }
+          if (!options?.restoring) return handle(err);
+          // Nobody asked for this one, so it says nothing out loud — except an
+          // expired session, which the page has to know about however it found
+          // out. Why it failed is beyond telling anyway: the server answers a
+          // deleted path and a repository it could not read alike. Nothing is
+          // recorded either way; what a restore could not put back stays
+          // remembered, and stays worth trying next time.
+          if (isUnauthorized(err)) handle(err);
+          setPane({ kind: "empty" });
         });
     },
     [repo, handle, setPane, paneRequestRef, setMobileView, setPreviewRendered],
@@ -110,9 +158,9 @@ export function usePaneOpeners({
     [repo, handle, setPane, paneRequestRef, setMobileView],
   );
   const openCommitFileDiff = useCallback(
-    (oid: string, path: string) => {
+    (oid: string, path: string, options?: OpenOptions) => {
       if (!repo) return;
-      setMobileView("diff");
+      if (!options?.restoring) setMobileView("diff");
       const request = (paneRequestRef.current += 1);
       api
         .commitFileDiff(repo, oid, path)
@@ -127,7 +175,21 @@ export function usePaneOpeners({
             });
         })
         .catch((err) => {
-          if (request === paneRequestRef.current) handle(err);
+          // A superseded request has been overtaken by another open, which owns
+          // the pane now, so its failure says nothing about what is on screen.
+          // An expired session is still worth saying, whoever asked.
+          if (request !== paneRequestRef.current) {
+            return isUnauthorized(err) ? handle(err) : undefined;
+          }
+          if (!options?.restoring) return handle(err);
+          // Nobody asked for this one, so it says nothing out loud — except an
+          // expired session, which the page has to know about however it found
+          // out. Why it failed is beyond telling anyway: the server answers a
+          // deleted path and a repository it could not read alike. Nothing is
+          // recorded either way; what a restore could not put back stays
+          // remembered, and stays worth trying next time.
+          if (isUnauthorized(err)) handle(err);
+          setPane({ kind: "empty" });
         });
     },
     [repo, handle, setPane, paneRequestRef, setMobileView],

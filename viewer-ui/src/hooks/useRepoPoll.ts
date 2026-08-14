@@ -11,7 +11,7 @@ import { nextClockOffset } from "../lib/hot";
 import { createSerialWriter } from "../lib/serialWrite";
 import { reconcileOrder } from "../lib/paneOrder";
 import { noteViewerBuild } from "../lib/viewerBuild";
-import type { MaximizedByRepo } from "../api";
+import type { MaximizedByRepo, RepoViewByRepo } from "../api";
 
 const REPO_POLL_MS = 3000;
 
@@ -23,12 +23,14 @@ export interface UseRepoPollArgs {
   adoptSidebarWidth: (px: number) => void;
   adoptUpperPct: (pct: number) => void;
   adoptMaximized: (remote: MaximizedByRepo) => void;
+  adoptViews: (remote: RepoViewByRepo, served: string[]) => void;
   draggingRef: React.MutableRefObject<boolean>;
   upperDraggingRef: React.MutableRefObject<boolean>;
   accentWrites: React.MutableRefObject<number>;
   sidebarWrites: React.MutableRefObject<number>;
   upperPctWrites: React.MutableRefObject<number>;
   maximizedWrites: React.MutableRefObject<number>;
+  viewWrites: React.MutableRefObject<number>;
   resumeTick: number;
   orderWrites: React.MutableRefObject<number>;
   repoDraggingRef: React.MutableRefObject<boolean>;
@@ -56,12 +58,14 @@ export function useRepoPoll({
   adoptSidebarWidth,
   adoptUpperPct,
   adoptMaximized,
+  adoptViews,
   draggingRef,
   upperDraggingRef,
   accentWrites,
   sidebarWrites,
   upperPctWrites,
   maximizedWrites,
+  viewWrites,
   resumeTick,
   orderWrites,
   repoDraggingRef,
@@ -103,6 +107,7 @@ export function useRepoPoll({
       const widthWrites = sidebarWrites.current;
       const splitWrites = upperPctWrites.current;
       const panelWrites = maximizedWrites.current;
+      const lastViewWrites = viewWrites.current;
       const orderGeneration = orderWrites.current;
       return api
         .repos(controller.signal)
@@ -115,6 +120,7 @@ export function useRepoPoll({
             upper_pct,
             active_repo,
             maximized,
+            last_view,
             now_ms,
             can_clone,
             viewer_build,
@@ -132,6 +138,10 @@ export function useRepoPoll({
           if (upperPctWrites.current === splitWrites && !upperDraggingRef.current)
             adoptUpperPct(upper_pct);
           if (maximizedWrites.current === panelWrites) adoptMaximized(maximized);
+          // `?? {}` because an older server does not send the field at all,
+          // and the map's absence must not stop the page from loading.
+          if (viewWrites.current === lastViewWrites)
+            adoptViews(last_view ?? {}, list.map((item) => item.id));
           setAuthed(true);
           setReposLoaded(true);
           const reorderPending =
@@ -195,9 +205,11 @@ export function useRepoPoll({
     sidebarWrites,
     upperPctWrites,
     maximizedWrites,
+    viewWrites,
     draggingRef,
     upperDraggingRef,
     adoptMaximized,
+    adoptViews,
     orderWrites,
     repoDraggingRef,
     reorderInFlightRef,

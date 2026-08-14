@@ -29,10 +29,17 @@ export function withChildren(
   return { ...cache, children: { ...cache.children, [path]: entries } };
 }
 
+/** The expanded set `path` being toggled produces. Separate from the cache so
+ *  a caller can say what a tap *will* mean without waiting for the state it
+ *  sets — what gets remembered is the choice, not the render after it. */
+export function toggled(expanded: Set<string>, path: string): Set<string> {
+  const next = new Set(expanded);
+  if (!next.delete(path)) next.add(path);
+  return next;
+}
+
 export function withToggled(cache: TreeCache, path: string): TreeCache {
-  const expanded = new Set(cache.expanded);
-  if (!expanded.delete(path)) expanded.add(path);
-  return { ...cache, expanded };
+  return { ...cache, expanded: toggled(cache.expanded, path) };
 }
 
 export function withRevealed(cache: TreeCache, dirs: string[]): TreeCache {

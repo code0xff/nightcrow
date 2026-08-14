@@ -14,6 +14,7 @@ import type {
   Log,
   Reloaded,
   Repo,
+  RepoView,
   RunningClone,
   Status,
   StoredPrefs,
@@ -87,6 +88,16 @@ export const api = {
       { maximized: { repo, panel } },
       AbortSignal.timeout(SERIAL_WRITE_TIMEOUT_MS),
     ).then((r) => r.maximized),
+
+  /** Record what a project is showing, so opening it again opens it. Bounded
+   *  and echoing the full set for the same reasons as the arrangement write,
+   *  and serialized per project the same way (`useRepoView`). */
+  setRepoView: (repo: string, view: RepoView) =>
+    post<StoredPrefs>(
+      "/api/prefs",
+      { view: { repo, ...view } },
+      AbortSignal.timeout(SERIAL_WRITE_TIMEOUT_MS),
+    ).then((r) => r.last_view),
   status: (repo: string) => get<Status>(`/api/status?${query({ repo })}`),
   tree: (repo: string, path: string) =>
     get<Tree>(`/api/tree?${query({ repo, path })}`),

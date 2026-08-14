@@ -63,10 +63,11 @@ trait TerminalBackend {
 - **공유(데몬 소유)**: 저장소 집합과 순서, **활성 프로젝트**, 터미널 pane 집합·내용·순서·크기,
   그리고 **accent**
 - **뷰어 안에서만 공유(브라우저 간, TUI와는 공유 안 함)**: 사이드바 폭(`sidebar_width`), 터미널
-  패널 높이(`upper_pct`). 둘 다 `viewer.json`에 살지만 attach한 TUI는 읽지 않는다 — 앞은 TUI에
-  대응 값이 없어서, 뒤는 대응 값(`config.layout.upper_pct`)이 있어도 공유가 틀린 답이어서다
-  ([web.md](web.md)의 터미널 패널 높이 항목 참고).
-- **클라이언트별**: 뷰 모드(status/log/tree), 커서·선택·스크롤, 포커스, fullscreen, 검색 텍스트
+  패널 높이(`upper_pct`), 그리고 **프로젝트별 마지막 뷰**(`views` — 탭, 열려 있던 파일, 트리
+  펼침). 모두 `viewer.json`에 살지만 attach한 TUI는 읽지 않는다 — 폭은 TUI에 대응 값이 없어서,
+  높이는 대응 값(`config.layout.upper_pct`)이 있어도 공유가 틀린 답이어서, 마지막 뷰는 TUI가
+  **같은 것을 자기 파일에 이미 들고 있고 그 파일의 주인이 TUI라서**다([web.md](web.md)).
+- **클라이언트별**: 커서·스크롤 위치, 포커스, fullscreen, 검색 텍스트
 
 **accent는 원래 클라이언트별이었다.** 뒤집은 이유는 한 세션에 표면이 여럿이라는 사실이 그
 편의보다 무겁기 때문이다 — TUI와 브라우저를 나란히 두면 같은 세션이 두 색으로 보였고, 어느

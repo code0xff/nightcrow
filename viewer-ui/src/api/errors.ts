@@ -20,3 +20,4 @@ export class NetworkError extends Error {
 }
 
 export const isNetworkError = (error: unknown) => error instanceof NetworkError;
+

@@ -31,6 +31,18 @@ current project.
 
 ## Views
 
+**A project opens onto what it was last showing.** The tab you were in, the file
+you had open, and the directories the tree had expanded come back when you open
+that project again — on the next visit, after a reload, and on whatever device
+you pick up next, since the server keeps it. The TUI has done this since it had a
+session file; this is the same idea in the browser, kept in the viewer's own file
+rather than the TUI's, so the two do not overwrite each other. A file that has
+gone since you left simply does not open: the project comes back to its list, not
+to an error, and keeps asking for it next time — the server answers a deleted
+file and one it could not read the same way, so forgetting on the first sign of
+trouble would throw away a perfectly good memory. On a phone, restoring does not move you: whichever of the three
+views you were on is the one you stay on, with the file waiting behind it.
+
 In the `log` tab, selecting a commit opens its changed-file list alongside the
 complete commit diff. Select a file to view only that file's change; use `< log`
 to return or `all changes` to restore the complete commit diff.

@@ -39,11 +39,16 @@ export function useAppViewModel() {
     resumeTick,
     handle,
     shell: layout.shell,
+    viewKnown: layout.viewCovers(tabs.repo),
+    rememberedView: layout.viewOf(tabs.repo),
+    latestView: layout.rememberedViewFor,
+    rememberView: layout.rememberView,
     maximizedPanelOf: layout.maximizedPanelOf,
     setMaximizedFor: layout.setMaximizedFor,
   });
 
   const { selectOpenedRepo, closeRepo } = useRepoActions({
+    repo: tabs.repo,
     repos: tabs.repos,
     setRepos: tabs.setRepos,
     setRepo: tabs.setRepo,
@@ -61,10 +66,14 @@ export function useAppViewModel() {
 
   const selectRepo = useCallback(
     (id: string) => {
+      // Choosing the project already on screen is not a change: clearing its
+      // pane would leave the screen saying one thing and its record another,
+      // for a tap that asked for nothing.
+      if (id === tabs.repo) return;
       tabs.setRepo(id);
       workspace.clearPane();
     },
-    [tabs.setRepo, workspace.clearPane],
+    [tabs.repo, tabs.setRepo, workspace.clearPane],
   );
   const openPicker = useCallback(() => setPickerOpen(true), []);
   const closePicker = useCallback(() => setPickerOpen(false), []);

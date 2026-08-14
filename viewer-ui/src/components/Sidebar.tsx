@@ -1,13 +1,15 @@
+import { useEffect, useRef } from "react";
 import type { PointerEvent as ReactPointerEvent } from "react";
 import { SearchIcon } from "./icons/actions";
 import { useTree } from "../hooks/useTree";
 import { buildTreeRows } from "../lib/tree";
+import { ancestorDirs, toggled } from "../lib/treeCache";
 import { StatusList } from "./StatusList";
 import { LogList } from "./LogList";
 import { TreeList } from "./TreeList";
 import type { ChangedFile, Commit, Status } from "../api";
 import type { CommitDrillDown } from "../hooks/useLog";
-import type { Pane, Tab } from "../types";
+import type { Tab } from "../types";
 import type { MobileView } from "../types";
 
 export interface SidebarProps {
@@ -21,7 +23,6 @@ export interface SidebarProps {
   files: ChangedFile[];
   now: number;
   hotWindowMs: number;
-  setPane: React.Dispatch<React.SetStateAction<Pane>>;
   openDiff: (path: string) => void;
   openFile: (path: string) => void;
   openCommit: (oid: string) => void;
@@ -51,6 +52,25 @@ export interface SidebarProps {
   aheadOids: Set<string>;
   visibleCommitFiles: CommitDrillDown["files"];
   mobileView: MobileView;
+  /** Directories the tree had open when this project was last looked at.
+   *  Restored here rather than by the hook that restores the tab and the file,
+   *  because the tree cache lives in this component — it is keyed by repository
+   *  so the listings go with the project (`useTree`). */
+  restoreTree: string[];
+  /** Whether the server has answered about this project yet. Until it has, an
+   *  empty `restoreTree` means "not asked", not "nothing was open". */
+  restoreKnown: boolean;
+  /** Report the shape a tap on a directory puts the tree in, so it is
+   *  remembered with the rest of the view. Reported from the tap rather than
+   *  from watching the cache: the cache is also what a restore plants, and a
+   *  plant is not a choice. */
+  onTreeExpanded: (dirs: string[]) => void;
+  /** Leave the content pane showing nothing — coming back out of a commit's
+   *  file list. A choice like any other, so it is recorded like one. */
+  clearPane: () => void;
+  /** Whether this project's screen already has a choice in it, in which case
+   *  there is nothing to restore over. */
+  touched: boolean;
 }
 
 export function Sidebar(props: SidebarProps) {
@@ -65,7 +85,6 @@ export function Sidebar(props: SidebarProps) {
     files,
     now,
     hotWindowMs,
-    setPane,
     openDiff,
     openFile,
     openCommit,
@@ -95,11 +114,55 @@ export function Sidebar(props: SidebarProps) {
     aheadOids,
     visibleCommitFiles,
     mobileView,
+    restoreTree,
+    restoreKnown,
+    onTreeExpanded,
+    clearPane,
+    touched,
   } = props;
 
   const tree = useTree({ repo, authed, tab, filter, filterOpen, handle });
   const treeSearching = tab === "tree" && filterOpen && filter !== "";
   const treeRows = buildTreeRows(tree.treeChildren, tree.treeExpanded);
+
+  // Once per project. This component is keyed by repository, so a mount is a
+  // project being opened — and reopening what someone has since collapsed would
+  // be the tree undoing them.
+  const { seedTreeExpanded } = tree;
+  const restored = useRef(false);
+  useEffect(() => {
+    if (restored.current) return;
+    // Not before the server has spoken for this project: an empty remembered
+    // shape and one that has not arrived look the same from here. And not over
+    // someone who has already been in this project — including in the window
+    // before that response, which is exactly when this would otherwise fire.
+    if (!restoreKnown || touched) return;
+    // Only once the tree is what is being looked at. Planting it earlier would
+    // fetch a listing per remembered directory for a screen showing the status
+    // list, and the shape is worth nothing until it is on screen.
+    if (tab !== "tree") return;
+    // Once the server has spoken, an empty shape is a real answer — nothing was
+    // open — and the restore is done. Marked done even then: a shape another
+    // browser records later is news, not this visit's restore, and planting it
+    // would reshape a tree someone here is already looking at.
+    restored.current = true;
+    if (restoreTree.length === 0) return;
+    seedTreeExpanded(restoreTree);
+  }, [tab, restoreKnown, touched, restoreTree, seedTreeExpanded]);
+
+  // Every way the tree's shape changes by choice, each saying what it will be
+  // rather than leaving it to be read off the cache afterwards — the cache is
+  // also what a restore plants.
+  const toggleAndNote = (path: string) => {
+    onTreeExpanded([...toggled(tree.treeExpanded, path)]);
+    tree.toggleTreeDir(path);
+  };
+  const revealAndNote = (path: string) => {
+    const next = new Set(tree.treeExpanded);
+    ancestorDirs(path).forEach((dir) => next.add(dir));
+    onTreeExpanded([...next]);
+    tree.revealTreeDir(path);
+  };
 
   return (
     <section
@@ -141,8 +204,10 @@ export function Sidebar(props: SidebarProps) {
                 // Re-entering the log must use a fresh history snapshot.
                 resetLog();
               }
+              // Both halves of one choice: the list to show, and the pane it
+              // leaves empty behind it.
               setTab(t);
-              setPane({ kind: "empty" });
+              clearPane();
             }}
             aria-current={t === tab ? "page" : undefined}
             className={`-mb-px border-b-2 px-2 py-1 ${
@@ -204,7 +269,7 @@ export function Sidebar(props: SidebarProps) {
             openCommit={openCommit}
             openCommitFileDiff={openCommitFileDiff}
             setCommitDrillDown={setCommitDrillDown}
-            setPaneEmpty={() => setPane({ kind: "empty" })}
+            setPaneEmpty={clearPane}
             bumpPaneRequest={bumpPaneRequest}
           />
         )}
@@ -217,8 +282,8 @@ export function Sidebar(props: SidebarProps) {
             treeRows={treeRows}
             treeExpanded={tree.treeExpanded}
             openFile={openFile}
-            revealTreeDir={tree.revealTreeDir}
-            toggleTreeDir={tree.toggleTreeDir}
+            revealTreeDir={revealAndNote}
+            toggleTreeDir={toggleAndNote}
           />
         )}
       </ul>
