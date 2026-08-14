@@ -7,6 +7,17 @@
       "enabled": true,
       "window_secs": 15
     },
+    "last_view": {
+      "r1": {
+        "file": {
+          "commit": null,
+          "face": "diff",
+          "path": "src/main.rs"
+        },
+        "tab": "status",
+        "tree_expanded": []
+      }
+    },
     "maximized": {
       "r1": "terminal"
     },
@@ -171,6 +182,29 @@
   "storedPrefs": {
     "accent": 2,
     "active_repo": "r1",
+    "last_view": {
+      "r1": {
+        "file": {
+          "commit": null,
+          "face": "source",
+          "path": "src/ui/mod.rs"
+        },
+        "tab": "tree",
+        "tree_expanded": [
+          "src",
+          "src/ui"
+        ]
+      },
+      "r2": {
+        "file": {
+          "commit": "9a3bc2cf0e1d2a3b4c5d6e7f8a9b0c1d2e3f4a5b",
+          "face": "diff",
+          "path": "src/app.rs"
+        },
+        "tab": "log",
+        "tree_expanded": []
+      }
+    },
     "maximized": {
       "r1": "terminal",
       "r2": "files"

@@ -45,6 +45,45 @@ impl From<crate::session::catalog::RepoInfo> for RepoDto {
     }
 }
 
+/// What one project was last showing, as the wire carries it.
+///
+/// Its own type rather than `prefs::RepoView` because that names its project by
+/// absolute path, and a client is told ids: the path is the key this arrives
+/// under, not part of what is sent.
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct RepoViewDto {
+    /// `"status"`, `"log"`, or `"tree"`.
+    pub tab: &'static str,
+    pub file: Option<ViewFileDto>,
+    /// Repository-relative directories the tree had open.
+    pub tree_expanded: Vec<String>,
+}
+
+/// The file that was open in it.
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct ViewFileDto {
+    /// Repository-relative path.
+    pub path: String,
+    /// The commit it was read from, absent for the working tree's copy.
+    pub commit: Option<String>,
+    /// `"diff"` or `"source"` — which face of the file was on screen.
+    pub face: &'static str,
+}
+
+impl From<crate::session::prefs::RepoView> for RepoViewDto {
+    fn from(view: crate::session::prefs::RepoView) -> Self {
+        Self {
+            tab: view.tab.as_str(),
+            file: view.file.map(|file| ViewFileDto {
+                path: file.path,
+                commit: file.commit,
+                face: file.face.as_str(),
+            }),
+            tree_expanded: view.tree_expanded,
+        }
+    }
+}
+
 /// The part of `[agent_indicator]` the browser can act on. `auto_follow` is
 /// omitted: it moves a TUI selection, and the viewer has no analogue.
 #[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
@@ -87,6 +126,11 @@ pub struct ViewerBootstrapDto {
     /// id. Projects with no arrangement are absent, as are remembered ones this
     /// session is not serving.
     pub maximized: std::collections::HashMap<String, &'static str>,
+    /// What each *currently served* project was last showing, by id, so opening
+    /// one again opens what was open. Absent for a project nothing has been
+    /// looked at in, and for a remembered project this session is not serving —
+    /// which keeps its entry on file for when it is.
+    pub last_view: std::collections::HashMap<String, RepoViewDto>,
     /// This server's wall clock, for dating [`super::ChangedFileDto::mtime`].
     pub now_ms: u64,
     /// Whether this server can clone: false when no `git` is on its PATH.
@@ -110,13 +154,14 @@ impl ViewerBootstrapDto {
     /// a call site can swap with nothing to catch it. `active_repo` stays
     /// separate because what goes on the wire is the **id** resolved from
     /// `prefs.active_repo`, which only the caller's catalog snapshot can supply.
-    /// `maximized` is separate for the same reason.
+    /// `maximized` and `last_view` are separate for the same reason.
     pub fn new(
         repos: Vec<RepoDto>,
         hot: HotConfigDto,
         prefs: &ViewerPrefs,
         active_repo: Option<String>,
         maximized: std::collections::HashMap<String, &'static str>,
+        last_view: std::collections::HashMap<String, RepoViewDto>,
         can_clone: bool,
     ) -> Self {
         Self {
@@ -127,6 +172,7 @@ impl ViewerBootstrapDto {
             upper_pct: prefs.upper_pct,
             active_repo,
             maximized,
+            last_view,
             can_clone,
             now_ms: server_now_millis(),
             viewer_build: crate::web::viewer::assets::build_id(),

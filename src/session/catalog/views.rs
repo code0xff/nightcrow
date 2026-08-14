@@ -14,6 +14,8 @@ pub struct ServedView {
     pub active: Option<String>,
     /// Which panel each served project was left maximized in, by id.
     pub maximized: HashMap<String, crate::session::prefs::MaximizedPanel>,
+    /// What each served project was last showing, by id.
+    pub views: HashMap<String, crate::session::prefs::RepoView>,
 }
 
 impl Catalog {
@@ -49,6 +51,7 @@ impl Catalog {
         &self,
         remembered: Option<&str>,
         maximized: &[crate::session::prefs::RepoMaximized],
+        views: &[crate::session::prefs::RepoView],
     ) -> ServedView {
         let entries = self.entries.lock().expect("catalog poisoned");
         let list = entries.iter().map(|e| e.info()).collect();
@@ -68,10 +71,21 @@ impl Catalog {
                     .map(|panel| (e.id.clone(), panel))
             })
             .collect();
+        // And the same again for what each was showing. A project the session
+        // is not serving keeps its entry on file — there is no id to name it by
+        // here, and it will want it back when it is opened.
+        let last_views = entries
+            .iter()
+            .filter_map(|e| {
+                crate::session::prefs::repo_view::view_of(views, &e.path)
+                    .map(|view| (e.id.clone(), view.clone()))
+            })
+            .collect();
         ServedView {
             list,
             active,
             maximized: arrangements,
+            views: last_views,
         }
     }
 

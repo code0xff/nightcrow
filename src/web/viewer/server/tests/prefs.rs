@@ -1,6 +1,7 @@
 use super::{ViewerServer, body_of, get, login, post, server_with};
 
 mod arrangement;
+mod last_view;
 mod mkdir;
 mod preferences;
 

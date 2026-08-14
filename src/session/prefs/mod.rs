@@ -6,7 +6,9 @@
 //! because a percentage means different things on a terminal vs a browser window.
 
 pub mod maximized;
+pub mod repo_view;
 pub use maximized::{MaximizedPanel, RepoMaximized};
+pub use repo_view::{RepoView, ViewFace, ViewFile, ViewTab};
 
 use crate::config::Accent;
 use serde::{Deserialize, Serialize};
@@ -51,6 +53,10 @@ pub struct ViewerPrefs {
     pub active_repo: Option<String>,
     /// Which panel each project was left maximized in, most recently set first.
     pub maximized: Vec<RepoMaximized>,
+    /// What each project was last showing — its tab, the file that was open,
+    /// the tree's shape. Most recently set first. The TUI keeps the same thing
+    /// in its own session file; see `repo_view` for why it is not shared.
+    pub views: Vec<RepoView>,
 }
 
 impl Default for ViewerPrefs {
@@ -61,6 +67,7 @@ impl Default for ViewerPrefs {
             upper_pct: DEFAULT_UPPER_PCT,
             active_repo: None,
             maximized: Vec::new(),
+            views: Vec::new(),
         }
     }
 }
@@ -105,6 +112,7 @@ impl PrefsStore {
             .clamp(MIN_SIDEBAR_WIDTH, MAX_SIDEBAR_WIDTH);
         state.upper_pct = state.upper_pct.clamp(MIN_UPPER_PCT, MAX_UPPER_PCT);
         maximized::normalize(&mut state.maximized);
+        repo_view::normalize(&mut state.views);
         Self {
             path: Some(path),
             state: Mutex::new(state),
@@ -146,6 +154,9 @@ impl PrefsStore {
             if let Some(change) = change.maximized {
                 maximized::remember(&mut state.maximized, &change.repo, change.panel);
             }
+            if let Some(view) = change.view {
+                repo_view::remember(&mut state.views, view);
+            }
         })
     }
 
@@ -170,6 +181,15 @@ impl PrefsStore {
     pub fn set_maximized(&self, repo: String, panel: Option<MaximizedPanel>) -> ViewerPrefs {
         self.update(PrefsUpdate {
             maximized: Some(MaximizedUpdate { repo, panel }),
+            ..PrefsUpdate::default()
+        })
+    }
+
+    /// Record what one project was last showing.
+    #[cfg(test)]
+    pub fn set_view(&self, view: RepoView) -> ViewerPrefs {
+        self.update(PrefsUpdate {
+            view: Some(view),
             ..PrefsUpdate::default()
         })
     }
@@ -222,6 +242,11 @@ pub struct PrefsUpdate {
     pub upper_pct: Option<u32>,
     pub active_repo: Option<String>,
     pub maximized: Option<MaximizedUpdate>,
+    /// What the project was showing when this write was made. Carries its own
+    /// repository (by path), like `maximized` and for the same reason: it is
+    /// about the project the client is looking at rather than the one it last
+    /// selected.
+    pub view: Option<RepoView>,
 }
 
 /// One project's arrangement, as a write carries it. Two `Option`s deep because

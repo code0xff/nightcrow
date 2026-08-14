@@ -21,7 +21,9 @@ pub use diff::{DiffDto, FileDto, SpanDto};
 pub use diff::{DiffHunkDto, DiffLineDto};
 #[cfg(test)]
 pub use envelope::PROTOCOL_VERSION;
-pub use envelope::{Envelope, HotConfigDto, RepoDto, ViewerBootstrapDto};
+#[cfg(test)]
+pub use envelope::ViewFileDto;
+pub use envelope::{Envelope, HotConfigDto, RepoDto, RepoViewDto, ViewerBootstrapDto};
 #[cfg(test)]
 pub use log::CommitDto;
 pub use log::{CommitFilesDto, LogDto};

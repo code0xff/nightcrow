@@ -1,9 +1,10 @@
 use super::super::{
     BrowseDto, BrowseEntryDto, ChangedFileDto, CommitDto, CommitFilesDto, DiffDto, DiffHunkDto,
-    DiffLineDto, FileDto, HotConfigDto, LogDto, PROTOCOL_VERSION, RepoDto, SpanDto, StatusDto,
-    TrackingDto, TreeDto, TreeEntryDto, TreeMatchDto, TreeSearchDto, ViewerBootstrapDto,
+    DiffLineDto, FileDto, HotConfigDto, LogDto, PROTOCOL_VERSION, RepoDto, RepoViewDto, SpanDto,
+    StatusDto, TrackingDto, TreeDto, TreeEntryDto, TreeMatchDto, TreeSearchDto, ViewFileDto,
+    ViewerBootstrapDto,
 };
-use crate::session::prefs::MaximizedPanel;
+use crate::session::prefs::{MaximizedPanel, ViewFace, ViewTab};
 
 /// Where the wire fixture lives. At the `viewer-ui` root rather than under
 /// `viewer-ui/src` (which the published crate excludes) so it ships in the
@@ -66,6 +67,23 @@ fn wire_fixture() -> serde_json::Value {
             maximized: std::collections::HashMap::from([(
                 "r1".to_string(),
                 MaximizedPanel::Terminal.as_str(),
+            )]),
+            // What the project was showing, by id and for the served set only,
+            // for the same reasons. The three tabs and both faces are spread
+            // across this and `storedPrefs` below, so the client's unions are
+            // exercised whole.
+            last_view: std::collections::HashMap::from([(
+                "r1".to_string(),
+                RepoViewDto {
+                    tab: ViewTab::Status.as_str(),
+                    file: Some(ViewFileDto {
+                        path: "src/main.rs".to_string(),
+                        // The working tree's copy: no commit to read it from.
+                        commit: None,
+                        face: ViewFace::Diff.as_str(),
+                    }),
+                    tree_expanded: Vec::new(),
+                },
             )]),
             // Literal, not `server_now_millis()`: a fixture that moved every
             // run could not be committed.
@@ -193,6 +211,30 @@ fn wire_fixture() -> serde_json::Value {
             "maximized": {
                 "r1": MaximizedPanel::Terminal.as_str(),
                 "r2": MaximizedPanel::Files.as_str(),
+            },
+            // The tabs and the face the bootstrap above does not carry, so
+            // between them every variant appears somewhere.
+            "last_view": {
+                "r1": RepoViewDto {
+                    tab: ViewTab::Tree.as_str(),
+                    file: Some(ViewFileDto {
+                        path: "src/ui/mod.rs".to_string(),
+                        commit: None,
+                        face: ViewFace::Source.as_str(),
+                    }),
+                    tree_expanded: vec!["src".to_string(), "src/ui".to_string()],
+                },
+                "r2": RepoViewDto {
+                    tab: ViewTab::Log.as_str(),
+                    // Read from a commit rather than the working tree, so the
+                    // optional `commit` appears present as well as absent.
+                    file: Some(ViewFileDto {
+                        path: "src/app.rs".to_string(),
+                        commit: Some("9a3bc2cf0e1d2a3b4c5d6e7f8a9b0c1d2e3f4a5b".to_string()),
+                        face: ViewFace::Diff.as_str(),
+                    }),
+                    tree_expanded: Vec::new(),
+                },
             },
         }),
         // What `/api/reload` answers. A sentence rather than counts, because it
