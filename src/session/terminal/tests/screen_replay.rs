@@ -13,6 +13,7 @@
 use super::{SHELL_TEST_DEADLINE, attach, created_pane, next_matching};
 use crate::backend::PaneId;
 use crate::runtime::emulator::PaneEmulator;
+use crate::session::limits::MAX_TERMINAL_SCROLLBACK_BYTES;
 use crate::session::terminal::TerminalSession;
 use crate::session::terminal::frame::{ClientMessage, TerminalFrame};
 use std::time::{Duration, Instant};
@@ -104,14 +105,10 @@ fn rendered(stream: &[u8]) -> PaneEmulator {
     emulator
 }
 
-/// The whole point, end to end: a client that was not there sees what the client
-/// that was there sees.
-#[test]
-fn a_reattaching_client_ends_up_with_the_same_screen_as_the_original() {
-    let dir = tempfile::TempDir::new().unwrap();
-    // Bash for a deterministic fixture: an interactive zsh's rc chain would paint
-    // over the screen being compared.
-    let hub = super::super::TerminalHub::spawn(
+/// Bash for a deterministic fixture: an interactive zsh's rc chain would paint
+/// over the screen being compared.
+fn bash_hub(dir: &tempfile::TempDir) -> std::sync::Arc<super::super::TerminalHub> {
+    super::super::TerminalHub::spawn(
         &dir.path().to_string_lossy(),
         Vec::new(),
         Vec::new(),
@@ -120,7 +117,15 @@ fn a_reattaching_client_ends_up_with_the_same_screen_as_the_original() {
             command_args: Vec::new(),
         },
         Default::default(),
-    );
+    )
+}
+
+/// The whole point, end to end: a client that was not there sees what the client
+/// that was there sees.
+#[test]
+fn a_reattaching_client_ends_up_with_the_same_screen_as_the_original() {
+    let dir = tempfile::TempDir::new().unwrap();
+    let hub = bash_hub(&dir);
 
     let original = attach(&hub);
     original.dispatch(ClientMessage::Create {
@@ -157,5 +162,66 @@ fn a_reattaching_client_ends_up_with_the_same_screen_as_the_original() {
         from_replay.view().cursor_position(),
         from_live.view().cursor_position(),
         "and its cursor must be in the same cell"
+    );
+}
+
+/// The idle-churn scenario the normal-screen snapshot exists for: content at the
+/// top of the screen, then a program that repaints only its bottom row — the
+/// shape of Claude Code's prompt box or any spinner — until the byte ring has
+/// evicted the bytes that painted the top. When the ring was the whole record, a
+/// client reattaching then saw only the bottom box over blank rows.
+#[test]
+fn a_client_reattaching_after_normal_screen_churn_still_sees_the_whole_screen() {
+    let dir = tempfile::TempDir::new().unwrap();
+    let hub = bash_hub(&dir);
+
+    let original = attach(&hub);
+    original.dispatch(ClientMessage::Create {
+        rows: ROWS,
+        cols: COLS,
+    });
+    let created =
+        next_matching(&original, |f| created_pane(f).is_some()).expect("no created message");
+    let pane = created_pane(&created).unwrap();
+
+    // Each repaint is ~26 bytes; this many of them is a few rings' worth, so the
+    // bytes that painted the top line cannot survive in the ring. One printf
+    // repeats its format per argument, and the arguments come from a literal
+    // brace expansion — a shell loop of this many separate writes was measured
+    // at ~1000/s through the PTY, which does not fit the test deadline.
+    let repaints = MAX_TERMINAL_SCROLLBACK_BYTES / 10;
+    let churn = format!(
+        concat!(
+            "printf '\\033[2J\\033[1;1HTRANS%sCRIPT'; ",
+            "printf '\\033[24;1H\\033[K> spin %06d' {{1..{}}}; ",
+            "printf '\\033[10;5HCHU%sRNED'\n"
+        ),
+        repaints
+    );
+    original.dispatch(ClientMessage::Input {
+        pane,
+        data: format!("PS1='$ '\nunset PROMPT_COMMAND\n{churn}"),
+    });
+    let live = output_through(&original, pane, "CHURNED");
+    assert!(
+        live.len() > MAX_TERMINAL_SCROLLBACK_BYTES,
+        "the churn must overflow the ring, or this proves nothing"
+    );
+
+    let reattached = attach(&hub);
+    let replay = output_through(&reattached, pane, "CHURNED");
+    hub.stop();
+
+    let from_live = rendered(&live);
+    let from_replay = rendered(&replay);
+    assert_eq!(
+        drawn(&from_replay),
+        drawn(&from_live),
+        "the churned-away top of the screen must come back from the snapshot"
+    );
+    assert_eq!(
+        from_replay.view().cursor_position(),
+        from_live.view().cursor_position(),
+        "and the cursor must be in the same cell"
     );
 }
