@@ -14,8 +14,8 @@ use crate::backend::PaneId;
 use crate::runtime::emulator::PaneModes;
 use crate::session::terminal::TerminalSession;
 use crate::session::terminal::frame::TerminalFrame;
-use crate::session::terminal::hub_helpers::REPLAY_CHUNK_BYTES;
 use crate::session::terminal::hub_modes::Observed;
+use crate::session::terminal::hub_replay::REPLAY_CHUNK_BYTES;
 use std::time::Duration;
 
 const PANE: PaneId = 7;

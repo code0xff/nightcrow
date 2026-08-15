@@ -2,7 +2,7 @@
 //! front of one, and the two sends that address a single client.
 
 use super::frame::{ServerMessage, TerminalFrame};
-use super::hub_helpers::replay_pane;
+use super::hub_replay::replay_pane;
 use super::session::{Client, ReportBudget};
 use super::{CLIENT_QUEUE_DEPTH, TerminalHub, TerminalSession};
 use crate::session::size_owner::ViewerId;
