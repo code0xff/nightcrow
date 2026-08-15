@@ -23,16 +23,23 @@ use std::collections::VecDeque;
 const ROWS: u16 = 24;
 const COLS: u16 = 80;
 
-/// Push `lines` copies of `line` through the hub's own eviction, then replay the
-/// ring into a fresh client's emulator and report the history it ends up with.
+/// Push `lines` copies of `line` through the hub's own eviction — moving the
+/// covered mark on a crowded ring, as the worker's snapshot does — then replay
+/// the ring into a fresh client's emulator and report the history it ends up
+/// with. The snapshot itself is left out of the replay: it repaints the screen
+/// without scrolling, so it cannot add or remove history lines.
 fn depth_after_replay(line: &str, lines: usize) -> usize {
     let mut ring: VecDeque<u8> = VecDeque::new();
+    let mut covered = 0;
     for _ in 0..lines {
-        push_scrollback(&mut ring, line.as_bytes());
+        if push_scrollback(&mut ring, &mut covered, line.as_bytes())
+            > limits::MAX_TERMINAL_SCROLLBACK_BYTES
+        {
+            covered = ring.len();
+        }
     }
-    assert_eq!(
-        ring.len(),
-        limits::MAX_TERMINAL_SCROLLBACK_BYTES,
+    assert!(
+        ring.len() >= limits::MAX_TERMINAL_SCROLLBACK_BYTES,
         "the ring must be saturated for this to measure anything"
     );
     let replay: Vec<u8> = ring.iter().copied().collect();

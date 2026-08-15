@@ -3,10 +3,12 @@
 //! These are **not** the TUI's panes — the viewer owns its own [`PtyBackend`],
 //! so `nightcrow serve` offers terminals with no TUI running at all.
 //!
-//! Raw PTY bytes go to the browser untouched. The hub does parse the stream for
-//! one thing it cannot get any other way: the modes each pane's program has set,
-//! which an attaching client has to be told because the bytes that set them are
-//! long gone (see [`hub_modes`]).
+//! Raw PTY bytes go to the browser untouched. The hub does parse the stream —
+//! through a per-pane emulator — for what it cannot get any other way: the
+//! modes each pane's program has set, which an attaching client has to be told
+//! because the bytes that set them are long gone (see [`hub_modes`]), and the
+//! screen itself wherever the recorded bytes cannot rebuild it (see
+//! [`hub_replay`] and [`PaneState`](hub_helpers::PaneState)).
 //!
 //! **Output is queued, not conflated.** Status updates can drop intermediates
 //! because the newest is a complete picture; terminal bytes cannot — dropping

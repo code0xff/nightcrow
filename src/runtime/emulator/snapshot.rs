@@ -2,9 +2,12 @@
 //!
 //! A pane's byte ring is history, not a screen. For a program drawing on the
 //! alternate screen the recorded bytes are cell updates against a screen the
-//! reader does not have, so replaying them paints fragments — but the emulator
-//! the hub already runs to follow the pane's modes is holding the screen those
-//! updates produced. This turns its grid back into the bytes that paint it.
+//! reader does not have, so replaying them paints fragments — and a
+//! normal-screen program that repaints in place hits the same wall from the
+//! other side: its repaints rotate the byte-bounded ring until the bytes that
+//! painted the rest of the screen are evicted. Either way the emulator the hub
+//! already runs to follow the pane's modes is holding the screen those bytes
+//! produced. This turns its grid back into the bytes that paint it.
 //!
 //! Written as an **absolute repaint**: the screen is cleared with default
 //! attributes, every row is positioned by `CUP`, and each run of equal
@@ -20,8 +23,9 @@
 //! places each row independently — so a row that wrapped arrives as two rows and
 //! a later resize reflows it differently from the original. Nothing reads that
 //! difference today: alternate-screen programs redraw on resize, and a
-//! normal-screen pane is replayed from its byte ring, which keeps wrapping
-//! intact. Underline colour, hyperlinks (OSC 8) and the scrolling region
+//! normal-screen pane's history is still replayed from its byte ring, which
+//! keeps its wrapping intact — the snapshot stands in only for the screen
+//! itself. Underline colour, hyperlinks (OSC 8) and the scrolling region
 //! (DECSTBM) are not carried either.
 
 use super::EventProxy;

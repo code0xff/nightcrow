@@ -82,6 +82,7 @@ pub struct PaneEmulator {
     term: Term<EventProxy>,
     processor: Processor,
     proxy: EventProxy,
+    boundary: boundary::StreamBoundary,
 }
 
 impl PaneEmulator {
@@ -98,12 +99,14 @@ impl PaneEmulator {
             term,
             processor: Processor::new(),
             proxy,
+            boundary: boundary::StreamBoundary::default(),
         }
     }
 
     /// Feed raw PTY output through the emulator, updating the screen state.
     /// Returns the side effects (title change, terminal query responses).
     pub fn process(&mut self, bytes: &[u8]) -> EmulatorEvents {
+        self.boundary.feed(bytes);
         self.processor.advance(&mut self.term, bytes);
         let mut state = self.proxy.0.borrow_mut();
         EmulatorEvents {
@@ -147,11 +150,36 @@ impl PaneEmulator {
 
     /// The bytes that reproduce this screen on another terminal.
     ///
-    /// What a client attaching to a pane whose program draws on the alternate
-    /// screen is given, because that pane's recorded bytes cannot rebuild a
-    /// screen. See [`snapshot`] for what a snapshot does and does not carry.
+    /// What a client attaching to a pane is given in place of the recorded
+    /// bytes that cannot rebuild its screen: all of them for a program drawing
+    /// on the alternate screen, the evicted front of the ring for one on the
+    /// normal screen. See [`snapshot`] for what a snapshot does and does not
+    /// carry.
     pub fn screen_snapshot(&self) -> Vec<u8> {
         snapshot::screen_snapshot(&self.term)
+    }
+
+    /// Whether everything processed so far has reached the screen and ends with
+    /// every escape sequence and multi-byte character closed. A screen snapshot
+    /// may only be anchored at such a point: it is spliced into the recorded
+    /// stream on replay, and a seam inside a sequence hands a reattaching
+    /// client the sequence's tail as ordinary input (see [`boundary`]).
+    ///
+    /// "Reached the screen" is [`screen_current`](Self::screen_current); the
+    /// closed-sequences half is the [`boundary`] tracker. They are separate
+    /// questions because a caller forcing a snapshot over a torn seam may still
+    /// never take one of a grid with bytes missing.
+    pub fn at_boundary(&self) -> bool {
+        self.screen_current() && self.boundary.at_boundary()
+    }
+
+    /// Whether the grid holds everything processed. False while a synchronized
+    /// update (DEC 2026) is open: the processor buffers its bytes without
+    /// applying them, so a snapshot taken then is missing bytes the record
+    /// would count as covered. Always becomes true again — the update ends with
+    /// `ESU` or at the processor's own buffer cap.
+    pub fn screen_current(&self) -> bool {
+        self.processor.sync_bytes_count() == 0
     }
 
     /// Which input, if any, a scroll request for this pane must be turned
@@ -225,6 +253,7 @@ fn term_size(rows: u16, cols: u16) -> TermSize {
     TermSize::new(usize::from(cols), usize::from(rows))
 }
 
+mod boundary;
 mod modes;
 mod snapshot;
 mod view;
@@ -232,6 +261,8 @@ mod view;
 pub use modes::PaneModes;
 pub use view::{CellView, ScreenView};
 
+#[cfg(test)]
+mod boundary_tests;
 #[cfg(test)]
 mod modes_tests;
 #[cfg(test)]

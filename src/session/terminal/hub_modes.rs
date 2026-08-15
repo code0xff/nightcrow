@@ -17,8 +17,8 @@
 //! Kept on the worker thread rather than in [`Shared`](super::Shared): a
 //! `PaneEmulator` holds `Rc`, so it is not `Send` and cannot live behind the
 //! state mutex. What crosses the lock is what the worker writes into `PaneState`
-//! after each chunk — the flag set, and for an alternate-screen pane the
-//! serialized screen (see [`PaneModeTracker::snapshot`]).
+//! after each chunk — the flag set, and whenever a pane's record asks for one
+//! the serialized screen (see [`PaneModeTracker::snapshot`]).
 //!
 //! **The grid is read, so resizes have to be followed.** These emulators used to
 //! exist only to answer "which modes is this pane in", and their grids were
@@ -114,6 +114,26 @@ impl PaneModeTracker {
     /// produced no output yet — there is no emulator, and nothing to show.
     pub(super) fn snapshot(&self, pane: PaneId) -> Option<Vec<u8>> {
         self.emulators.get(&pane).map(|e| e.screen_snapshot())
+    }
+
+    /// Whether this pane's output so far ends with every sequence closed — the
+    /// gate on anchoring a snapshot into its records. A chunk can end
+    /// mid-sequence, and a snapshot spliced in there would hand a reattaching
+    /// client the sequence's tail as ordinary input; the caller defers to the
+    /// next chunk that ends clean instead (see
+    /// [`PaneEmulator::at_boundary`](crate::runtime::emulator::PaneEmulator::at_boundary)).
+    /// A pane with no output yet is trivially at one.
+    pub(super) fn at_boundary(&self, pane: PaneId) -> bool {
+        self.emulators.get(&pane).is_none_or(|e| e.at_boundary())
+    }
+
+    /// The other half of [`at_boundary`](Self::at_boundary) on its own: whether
+    /// this pane's grid holds everything recorded. The worker's desperation
+    /// rule may force a snapshot over a torn sequence, but never over a grid
+    /// with bytes missing — a seam is garbage on the screen once, a missing
+    /// update is a screen that is simply wrong.
+    pub(super) fn screen_current(&self, pane: PaneId) -> bool {
+        self.emulators.get(&pane).is_none_or(|e| e.screen_current())
     }
 
     /// Forget a pane whose process is gone. A relaunch comes back under a new

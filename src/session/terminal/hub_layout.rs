@@ -61,6 +61,23 @@ impl TerminalHub {
         modes.resize(pane, rows, cols);
         p.rows = rows;
         p.cols = cols;
+        // The grid just reflowed, so a snapshot taken before it wraps where the
+        // child no longer does. Refreshed into whichever record the pane is on
+        // — the emulator's active grid is that screen. Skipped when the last
+        // chunk ended mid-sequence (`at_boundary`): a snapshot anchored there
+        // would splice into an open sequence on replay, and a stale-size screen
+        // is the smaller harm — the next output refreshes it.
+        if modes.at_boundary(pane)
+            && let Some(screen) = modes.snapshot(pane)
+        {
+            if p.modes.alt_screen {
+                p.screen = screen;
+                p.since.clear();
+            } else {
+                p.covered = p.scrollback.len();
+                p.normal_screen = screen;
+            }
+        }
         // Every client's emulator has to wrap where the child now does, so the
         // size it was actually set to goes to all of them — including the one
         // that asked, which learns here if its request was clamped.

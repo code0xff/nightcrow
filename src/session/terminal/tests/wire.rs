@@ -1,12 +1,12 @@
-//! Contracts that need no hub: the wire encodings, the size clamp, and the two
-//! pure helpers the worker leans on.
+//! Contracts that need no hub: the wire encodings, the size clamp, and the
+//! reorder reconciliation the worker leans on. The byte ring's own mechanics
+//! live in [`ring`](super::ring).
 
 use crate::session::limits;
 use crate::session::terminal::frame::{
     ClearKeyFacts, ClientMessage, PaneSize, ServerMessage, decode_output, encode_output,
 };
-use crate::session::terminal::hub_helpers::{canonical_order, push_scrollback};
-use std::collections::VecDeque;
+use crate::session::terminal::hub_helpers::canonical_order;
 
 #[test]
 fn output_frames_round_trip_through_the_binary_encoding() {
@@ -260,21 +260,4 @@ fn canonical_order_reconciles_a_request_against_the_live_panes() {
     assert_eq!(canonical_order(&[1, 2], &[2, 2, 1]), vec![2, 1]);
     // An empty request leaves the order untouched.
     assert_eq!(canonical_order(&[1, 2], &[]), vec![1, 2]);
-}
-
-#[test]
-fn scrollback_is_bounded_and_keeps_the_most_recent_bytes() {
-    let cap = limits::MAX_TERMINAL_SCROLLBACK_BYTES;
-    let mut buf = VecDeque::new();
-    for _ in 0..(cap / 1000 + 5) {
-        push_scrollback(&mut buf, &vec![b'x'; 1000]);
-    }
-    assert_eq!(buf.len(), cap, "scrollback must be capped");
-
-    // The tail is what restores the visible screen, so the newest bytes must
-    // survive eviction.
-    push_scrollback(&mut buf, b"TAIL");
-    assert_eq!(buf.len(), cap);
-    let contents: Vec<u8> = buf.iter().copied().collect();
-    assert!(contents.ends_with(b"TAIL"), "newest bytes must be retained");
 }

@@ -74,16 +74,25 @@ pub struct StartupPane {
 
 /// A live terminal and what a client that connects has to be given to see it.
 ///
-/// Which of the two records below is the pane's screen depends on the mode its
-/// program is in, and only one of them is written at a time:
+/// Which record is the pane's screen depends on the mode its program is in, and
+/// only one side is written at a time:
 ///
-/// - **Normal screen** — `scrollback`, the raw bytes the pane has produced. They
-///   *are* the screen and the history behind it, so replaying them rebuilds both.
+/// - **Normal screen** — `scrollback`, the raw bytes the pane has produced, with
+///   `normal_screen` + `covered` marking a serialized screen partway through
+///   them. The ring alone was the record once, but it is byte-bounded and a
+///   program that repaints in place — a prompt box, a spinner, a status line —
+///   rotates it without ever scrolling: after a long idle the bytes that painted
+///   the top of the screen had been evicted, and a replay rebuilt only the
+///   repeatedly-redrawn bottom. So replay is `scrollback[..covered]` (history),
+///   then `normal_screen` (the screen as of that point, an absolute repaint),
+///   then `scrollback[covered..]` — the front of the ring may be evicted freely
+///   and the screen still arrives whole (see
+///   [`replay_pane`](super::hub_replay::replay_pane)).
 /// - **Alternate screen** — `screen` + `since`. The raw bytes are cell updates
 ///   against a screen a new client does not have, so what is kept instead is the
 ///   screen itself, serialized (`hub_modes::PaneModeTracker::snapshot`). While a
-///   program is on the alternate screen `scrollback` is left frozen, holding the
-///   normal screen it will be returned to.
+///   program is on the alternate screen the normal-screen record is left frozen,
+///   holding the screen it will be returned to.
 pub(super) struct PaneState {
     pub(super) id: PaneId,
     /// What this pane goes by: the name the session gave a configured startup
@@ -93,6 +102,16 @@ pub(super) struct PaneState {
     /// within seconds, so nothing else could tell that client.
     pub(super) title: Option<String>,
     pub(super) scrollback: VecDeque<u8>,
+    /// The pane's normal screen as of `covered` bytes into `scrollback`,
+    /// serialized the way `screen` is. Empty until the worker first takes one —
+    /// a ring that has never evicted rebuilds the screen on its own.
+    pub(super) normal_screen: Vec<u8>,
+    /// How many bytes at the front of `scrollback` `normal_screen` accounts for.
+    /// Only those may be evicted: they are history whose effect on the screen the
+    /// snapshot already carries. The bytes past the mark are what a replay
+    /// applies *on top of* the snapshot, and dropping any of them would hand a
+    /// connecting client a screen missing an update nothing would ever repair.
+    pub(super) covered: usize,
     /// This pane's screen as of the last snapshot, empty unless its program is on
     /// the alternate screen.
     pub(super) screen: Vec<u8>,
@@ -176,11 +195,23 @@ pub(super) fn canonical_order(current: &[PaneId], requested: &[PaneId]) -> Vec<P
 }
 
 /// Append raw PTY bytes to a pane's scrollback, evicting the oldest bytes to
-/// stay within [`limits::MAX_TERMINAL_SCROLLBACK_BYTES`].
-pub(super) fn push_scrollback(buf: &mut VecDeque<u8>, data: &[u8]) {
+/// stay within [`limits::MAX_TERMINAL_SCROLLBACK_BYTES`] — but never past the
+/// `covered` mark, whose tail a replay cannot do without (see
+/// [`PaneState::covered`]). `covered` moves back with the bytes it counts.
+///
+/// Reports the uncovered tail's length. Past the cap, only a fresh snapshot
+/// that moves the mark can bring the ring back under it: terminal bytes cannot
+/// be skipped, so until then the ring runs over rather than dropping any — the
+/// same rule [`PaneState::since`] lives by. The length rather than a flag,
+/// because the caller weighs *how far* over (see the worker's crowded and
+/// desperate thresholds in [`hub_run`](super::TerminalHub::run)).
+pub(super) fn push_scrollback(buf: &mut VecDeque<u8>, covered: &mut usize, data: &[u8]) -> usize {
     buf.extend(data.iter().copied());
     if buf.len() > limits::MAX_TERMINAL_SCROLLBACK_BYTES {
         let excess = buf.len() - limits::MAX_TERMINAL_SCROLLBACK_BYTES;
-        buf.drain(0..excess);
+        let evicted = excess.min(*covered);
+        buf.drain(0..evicted);
+        *covered -= evicted;
     }
+    buf.len() - *covered
 }

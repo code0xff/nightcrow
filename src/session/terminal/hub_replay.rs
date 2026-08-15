@@ -50,6 +50,21 @@ fn send_replay(tx: &SyncSender<TerminalFrame>, pane: PaneId, data: &[u8]) -> boo
     })
 }
 
+/// The bytes that rebuild a pane's normal screen: the ring up to the mark
+/// (history — its screen state is superseded by the snapshot, but its scrolled-off
+/// lines are still worth scrolling back to), the snapshot itself (an absolute
+/// repaint, so whatever viewport the truncated history left behind is erased and
+/// the screen arrives whole), then everything recorded since the snapshot was
+/// taken. A pane with no snapshot yet has `covered == 0` and an empty
+/// `normal_screen`, which makes this the plain ring.
+fn normal_record(pane: &PaneState) -> Vec<u8> {
+    let mut data = Vec::with_capacity(pane.scrollback.len() + pane.normal_screen.len());
+    data.extend(pane.scrollback.iter().copied().take(pane.covered));
+    data.extend_from_slice(&pane.normal_screen);
+    data.extend(pane.scrollback.iter().copied().skip(pane.covered));
+    data
+}
+
 /// Announce `pane` to an attaching client and put its screen in front of it: the
 /// modes its program established, and then whichever record holds that program's
 /// screen (see [`PaneState`](super::hub_helpers::PaneState)).
@@ -74,16 +89,16 @@ pub(super) fn replay_pane(tx: &SyncSender<TerminalFrame>, pane: &PaneState) -> b
     }) {
         whole &= tx.try_send(TerminalFrame::Control(json)).is_ok();
     }
-    // The normal screen first, for a pane whose program has left it: `scrollback`
+    // The normal screen first, for a pane whose program has left it: its record
     // was frozen where the program switched away, so it is what the client will be
     // returned to the moment that program exits. Without it, quitting a
     // full-screen program left a client that attached during it looking at a blank
     // screen. Explicitly on the normal buffer, because the prelude below is what
     // switches off it.
-    if pane.modes.alt_screen && !pane.scrollback.is_empty() {
+    if pane.modes.alt_screen && !(pane.scrollback.is_empty() && pane.normal_screen.is_empty()) {
         let mut data = Vec::with_capacity(LEAVE_ALT_SCREEN.len() + pane.scrollback.len());
         data.extend_from_slice(LEAVE_ALT_SCREEN);
-        data.extend(pane.scrollback.iter().copied());
+        data.extend(normal_record(pane));
         whole &= send_replay(tx, pane.id, &data);
     }
     // Ahead of the screen: these are the modes the pane's program set once, at
@@ -94,14 +109,17 @@ pub(super) fn replay_pane(tx: &SyncSender<TerminalFrame>, pane: &PaneState) -> b
     // drawing on before that buffer's contents arrive.
     whole &= send_replay(tx, pane.id, &pane.modes.prelude());
     let data: Vec<u8> = if pane.modes.alt_screen {
-        // The screen, then everything broadcast since it was taken — together they
-        // are exactly what every client already attached has seen.
+        // The screen, then everything broadcast since it was taken — the same
+        // bytes every client already attached has seen. (When an entry snapshot
+        // was deferred, `since` opens with the switch chunk itself, whose
+        // pre-switch text this client plays on the wrong buffer until the next
+        // paint covers it — the price of never splicing into an open sequence.)
         let mut data = Vec::with_capacity(pane.screen.len() + pane.since.len());
         data.extend_from_slice(&pane.screen);
         data.extend(pane.since.iter().copied());
         data
     } else {
-        pane.scrollback.iter().copied().collect()
+        normal_record(pane)
     };
     whole &= send_replay(tx, pane.id, &data);
     whole

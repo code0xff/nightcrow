@@ -72,6 +72,8 @@ impl TerminalHub {
             id: pane,
             title,
             scrollback: VecDeque::new(),
+            normal_screen: Vec::new(),
+            covered: 0,
             screen: Vec::new(),
             since: VecDeque::new(),
             rows,
@@ -93,8 +95,10 @@ impl TerminalHub {
     /// serialized screen when the caller has one to hand over, which it takes
     /// before locking — the emulator it comes from is not `Send`.
     ///
-    /// Returns whether this pane's screen wants refreshing sooner than the end of
-    /// the tick, because `since` has outgrown its cap.
+    /// Returns how many recorded bytes a fresh snapshot would supersede — the
+    /// uncovered tail on the normal screen (see [`push_scrollback`]), `since` on
+    /// the alternate one. The worker reads the pane's appetite for a snapshot
+    /// off this count (crowded past the cap, desperate well past it).
     ///
     /// The clients already attached are not told the new title: they are being
     /// handed the very bytes that set it, and each runs the emulator that reads
@@ -105,9 +109,9 @@ impl TerminalHub {
         data: Vec<u8>,
         observed: Observed,
         screen: Option<Vec<u8>>,
-    ) -> bool {
+    ) -> usize {
         let mut state = self.state.lock().expect("terminal state poisoned");
-        let mut crowded = false;
+        let mut owed = 0;
         if let Some(p) = state.panes.iter_mut().find(|p| p.id == pane) {
             if observed.modes.alt_screen {
                 match screen {
@@ -119,17 +123,20 @@ impl TerminalHub {
                     }
                     None => {
                         p.since.extend(data.iter().copied());
-                        crowded = p.since.len() > limits::MAX_TERMINAL_SCROLLBACK_BYTES;
+                        owed = p.since.len();
                     }
                 }
             } else {
-                // Back on the normal screen — or never left it — so the ring is the
-                // screen again and whatever was kept for the alternate one is spent.
+                // Back on the normal screen — or never left it — so the normal
+                // record is in charge again and whatever was kept for the
+                // alternate one is spent. The frozen `normal_screen` + `covered`
+                // stay: the program's normal grid was preserved across the
+                // alternate screen, so they are as valid as when it left.
                 if observed.alt_changed {
                     p.screen = Vec::new();
                     p.since.clear();
                 }
-                push_scrollback(&mut p.scrollback, &data);
+                owed = push_scrollback(&mut p.scrollback, &mut p.covered, &data);
             }
             p.modes = observed.modes;
             if let Some(title) = observed.title {
@@ -137,7 +144,7 @@ impl TerminalHub {
             }
         }
         broadcast_locked(&mut state.clients, TerminalFrame::Output { pane, data });
-        crowded
+        owed
     }
 
     /// Replace a pane's recorded screen, forgetting what was owed on top of the
@@ -147,6 +154,19 @@ impl TerminalHub {
         if let Some(p) = state.panes.iter_mut().find(|p| p.id == pane) {
             p.screen = screen;
             p.since.clear();
+        }
+    }
+
+    /// Replace a pane's normal-screen snapshot, marking everything recorded so
+    /// far as covered by it. Correct only because the worker is the sole writer
+    /// of output: the snapshot the caller took has seen exactly the chunks the
+    /// ring holds, so the mark lands on a chunk boundary. A pane that has gone
+    /// since is ignored.
+    pub(super) fn store_normal_screen(&self, pane: PaneId, screen: Vec<u8>) {
+        let mut state = self.state.lock().expect("terminal state poisoned");
+        if let Some(p) = state.panes.iter_mut().find(|p| p.id == pane) {
+            p.covered = p.scrollback.len();
+            p.normal_screen = screen;
         }
     }
 

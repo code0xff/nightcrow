@@ -17,8 +17,9 @@ impl TerminalHub {
     ///
     /// Per live pane: a `Created`, the modes its program has set
     /// ([`PaneModes::prelude`](crate::runtime::emulator::PaneModes::prelude)), and
-    /// then that pane's screen — its recorded bytes, or for a program drawing on
-    /// the alternate screen the serialized screen those bytes produced (see
+    /// then that pane's screen — its recorded bytes anchored to the serialized
+    /// screen they build on, or for a program drawing on the alternate screen
+    /// that serialized screen and what is owed on top of it (see
     /// [`replay_pane`]). Done under the state lock so this snapshot cannot
     /// interleave with the worker's append-and-broadcast (see
     /// [`Shared`](super::hub_helpers::Shared)); the client therefore receives every
