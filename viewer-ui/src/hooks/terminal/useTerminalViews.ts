@@ -6,6 +6,7 @@ import type { PaneView } from "../../lib/terminalLayout";
 import type { PaneViewMode } from "../../lib/paneViewMode";
 import { terminalFontOptions } from "../../lib/termFont";
 import { ClearKeyProbe } from "../../lib/clearKeyProbe";
+import { overriddenKeySequence } from "../../lib/hardwareKeys";
 import { OSC_CLIPBOARD } from "../../lib/osc52";
 import { receivePaneClipboard } from "../../lib/paneClipboard";
 import { sendTerminalMessage, type PaneSize } from "../../api/terminal";
@@ -80,7 +81,14 @@ export function useTerminalViews({
       const probe = new ClearKeyProbe();
       term.attachCustomKeyEventHandler((event) => {
         probe.noteKey(event, performance.now());
-        return true;
+        const overridden = overriddenKeySequence(event);
+        if (overridden === null) return true;
+        // Back through xterm's own input path rather than straight to the
+        // socket, so the bytes meet everything a typed key does — the probe's
+        // report, the Ctrl latch — and the pane scrolls to the bottom the way
+        // typing into it does.
+        term.input(overridden);
+        return false;
       });
       term.onData((data) => {
         // The probe is asked about what was typed, not about what the latch
