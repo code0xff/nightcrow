@@ -14,17 +14,24 @@ use std::time::{Duration, Instant};
 /// A POSIX shell, resolved on `PATH`. Not `$SHELL`: an interactive shell would
 /// read the user's rc files on every single refresh.
 ///
-/// On Windows, `cmd.exe` is used instead of `sh` — the recovery plugin runs
-/// alongside the host, and the host's panes use the configured shell.
-#[cfg(not(windows))]
+/// Windows included, and deliberately so. The command being run here is one
+/// Claude Code was running before this plugin displaced it, and Claude Code runs
+/// a `statusLine` through a POSIX shell on every platform — its own documented
+/// examples are `$(...)`, `jq` pipelines and `~` paths, and the ones people
+/// actually have installed reach for `stty`, `awk` and MSYS-style `/c/...`
+/// paths. Handing such a line to `cmd.exe` does not run it differently; it fails
+/// to run it at all, and the user silently loses their statusline. Which shell
+/// the *host's panes* use is a separate setting and not this decision.
 const SHELL: &str = "sh";
-#[cfg(windows)]
-const SHELL: &str = "cmd.exe";
-
-#[cfg(not(windows))]
 const SHELL_COMMAND_ARG: &str = "-c";
+
+/// Used only when `sh` cannot be spawned at all, which on Windows means no Git
+/// Bash on `PATH`. A command written for `cmd.exe` is the only kind that can
+/// work there, so it is worth one attempt before giving the caller nothing.
 #[cfg(windows)]
-const SHELL_COMMAND_ARG: &str = "/C";
+const FALLBACK_SHELL: &str = "cmd.exe";
+#[cfg(windows)]
+const FALLBACK_SHELL_COMMAND_ARG: &str = "/C";
 
 /// Most stdout to take from a displaced command. A statusline is one short line;
 /// this only stops a runaway script from growing this process.
@@ -44,17 +51,7 @@ const EXIT_POLL: Duration = Duration::from_millis(2);
 /// than input from a stranger, but it is also not ours to reinterpret.
 pub(super) fn capture(command: &str, raw: &[u8], budget: Duration) -> Option<String> {
     let deadline = Instant::now() + budget;
-    let mut child = Command::new(SHELL)
-        .arg(SHELL_COMMAND_ARG)
-        .arg(command)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        // Claude Code reads our stdout for the statusline, and a chatty script's
-        // stderr shares the terminal with it. Discarded, so a warning meant for a
-        // log cannot end up rendered as the statusline.
-        .stderr(Stdio::null())
-        .spawn()
-        .ok()?;
+    let mut child = spawn_shell(command)?;
 
     // Each pipe gets its own thread. Writing the payload first would deadlock
     // against a command that answers before draining its input, and reading first
@@ -98,6 +95,35 @@ pub(super) fn capture(command: &str, raw: &[u8], budget: Duration) -> Option<Str
     Some(printed.to_string())
 }
 
+/// Start `command` under a shell, with the pipes the caller needs.
+///
+/// stderr is discarded: Claude Code reads our stdout for the statusline, and a
+/// chatty script's stderr shares the terminal with it, so a warning meant for a
+/// log must not end up rendered as the line.
+fn spawn_shell(command: &str) -> Option<Child> {
+    match shell_child(SHELL, SHELL_COMMAND_ARG, command) {
+        Ok(child) => Some(child),
+        // Only a missing shell is worth a second try. A command that starts and
+        // then fails is a command that ran, and running it again under a shell
+        // it was not written for would just fail differently.
+        #[cfg(windows)]
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            shell_child(FALLBACK_SHELL, FALLBACK_SHELL_COMMAND_ARG, command).ok()
+        }
+        Err(_) => None,
+    }
+}
+
+fn shell_child(shell: &str, arg: &str, command: &str) -> std::io::Result<Child> {
+    Command::new(shell)
+        .arg(arg)
+        .arg(command)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+}
+
 /// Whether the child finished, and finished happily, before `deadline`.
 ///
 /// Polled rather than waited on: `wait` has no timeout, and a command that closes
@@ -127,15 +153,38 @@ fn remaining(deadline: Instant) -> Duration {
     deadline.saturating_duration_since(Instant::now())
 }
 
-#[cfg(all(test, windows))]
+#[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn capture_executes_the_displaced_command_through_cmd() {
+    fn capture_executes_the_displaced_command_through_a_shell() {
         assert_eq!(
             capture("echo delegated", b"{}", Duration::from_secs(5)).as_deref(),
             Some("delegated")
+        );
+    }
+
+    /// The case that cost a user their statusline: a real one is POSIX shell,
+    /// and `cmd.exe` cannot run it on any platform.
+    #[test]
+    fn capture_runs_posix_shell_syntax() {
+        assert_eq!(
+            capture(
+                "value=$(echo hud); export COLUMNS=${COLUMNS:-80}; echo \"${value}\"",
+                b"{}",
+                Duration::from_secs(5)
+            )
+            .as_deref(),
+            Some("hud")
+        );
+    }
+
+    #[test]
+    fn capture_hands_the_payload_to_the_command_on_stdin() {
+        assert_eq!(
+            capture("cat", b"from-claude", Duration::from_secs(5)).as_deref(),
+            Some("from-claude")
         );
     }
 }
