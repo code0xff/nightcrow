@@ -88,6 +88,14 @@ pub(super) fn status(token: &PaneToken) -> PluginCommand {
     }
 }
 
+pub(super) fn attention(token: &PaneToken) -> PluginCommand {
+    PluginCommand::Attention {
+        v: PROTOCOL_VERSION,
+        token: token.clone(),
+        generation: GENERATION,
+    }
+}
+
 pub(super) fn watch(token: &PaneToken) -> PluginCommand {
     PluginCommand::WatchPane {
         v: PROTOCOL_VERSION,

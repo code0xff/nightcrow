@@ -27,6 +27,10 @@ fn statusline_cmd() -> String {
     format!("{EXE} statusline")
 }
 
+fn turn_end_cmd() -> String {
+    format!("{EXE} turn-end")
+}
+
 #[test]
 fn installing_with_no_settings_file_creates_one_holding_only_our_entries() {
     let (_dir, paths) = home();
@@ -41,6 +45,10 @@ fn installing_with_no_settings_file_creates_one_holding_only_our_entries() {
                 "StopFailure": [{
                     "matcher": "rate_limit",
                     "hooks": [{ "type": "command", "command": hook_cmd(), "timeout": 5 }],
+                }],
+                "Stop": [{
+                    "matcher": "",
+                    "hooks": [{ "type": "command", "command": turn_end_cmd(), "timeout": 5 }],
                 }],
             },
             "statusLine": { "type": "command", "command": statusline_cmd(), "padding": 2 },

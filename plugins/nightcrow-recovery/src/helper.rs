@@ -64,6 +64,27 @@ pub fn hook() -> ExitCode {
     ExitCode::SUCCESS
 }
 
+/// Report that a turn ended, so the host can raise the pane's attention marker.
+///
+/// Sends no payload: `Stop` fires whatever the outcome, and which outcome it was
+/// is not something the marker distinguishes. Reading stdin is still necessary —
+/// Claude Code writes the hook payload there and a helper that never drained it
+/// would leave the provider writing into a full pipe.
+pub fn turn_end() -> ExitCode {
+    let _ = read_stdin_bytes();
+    if let Some(token) = pane_token() {
+        let _ = send(
+            &socket_path().unwrap_or_default(),
+            &IpcMessage {
+                token,
+                kind: SignalKind::TurnEnd,
+                payload: Value::Null,
+            },
+        );
+    }
+    ExitCode::SUCCESS
+}
+
 /// Forward the statusline's `rate_limits` and print a line — the line the user's
 /// own statusline command printed, whenever installing this plugin displaced one.
 /// Claude Code's `statusLine` holds a single command, so the only way not to cost

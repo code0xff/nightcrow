@@ -73,6 +73,10 @@ pub enum Approved {
     WatchPane {
         pane: PaneId,
     },
+    /// Raise this pane's attention marker on the clients watching it.
+    Attention {
+        pane: PaneId,
+    },
     Log {
         level: LogLevel,
         message: String,
@@ -147,6 +151,15 @@ impl Guard {
             // whole point is a pane that has *not* opted in, and it names no
             // generation to check.
             PluginCommand::WatchPane { token, .. } => judge_watch(&token, facts),
+            // Pane-scoped like `Status`, and like it not rate-limited: the
+            // effect is one unread bit that the next look at the tab clears,
+            // so a plugin repeating itself costs a redraw and nothing else.
+            PluginCommand::Attention {
+                token, generation, ..
+            } => {
+                let facts = pane_facts(&token, generation, facts)?;
+                Ok(Approved::Attention { pane: facts.pane })
+            }
             PluginCommand::Status {
                 token,
                 generation,

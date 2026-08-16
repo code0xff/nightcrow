@@ -162,6 +162,9 @@ impl Provider for Claude {
                 None
             }
             SignalKind::StopFailure => self.on_stop_failure(&signal.payload),
+            // Intercepted before a provider ever sees it: a turn ending is a
+            // fact about the person's attention, not about usage limits.
+            SignalKind::TurnEnd => None,
         }
     }
 

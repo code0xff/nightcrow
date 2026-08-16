@@ -12,8 +12,10 @@ either way.
 
 ## The bundled plugin: `nightcrow-recovery`
 
-When a watched pane's CLI hits its usage limit, it waits for the reset time the
-provider reported and then re-opens that exact session. It only waits — it does
+Two jobs. It marks a project tab when a pane's agent finishes a turn — Claude
+Code, via the `Stop` hook below. And when a watched pane's CLI hits its usage
+limit, it waits for the reset time the provider reported and then re-opens that
+exact session. It only waits — it does
 not bypass, raise, or work around any provider limit, and it sends nothing while
 a limit is in effect. Claude Code, Codex CLI, and OpenCode are supported;
 OpenCode is only ever observed, never interrupted, because it retries on its own.
@@ -80,6 +82,14 @@ nightcrow-recovery uninstall-hooks    # removes only what it added
 Claude Code's `statusLine` holds one command, so installing does replace yours —
 but it is then run from the plugin's own statusline with the same input, and what
 it prints is what you see. `uninstall-hooks` puts it back.
+
+Installing also adds a `Stop` hook, which fires as every turn ends and marks that
+pane's project tab (see [Projects](projects.md)). This exists because the marker
+is otherwise inferred from what crosses the PTY — a terminal bell, or a burst of
+title changes — and Claude Code reports a finished turn through desktop
+notifications instead, which cross neither. The hook says so directly, so the
+marker no longer depends on how long the turn was or how often the title moved.
+It carries no payload: that the turn ended is the whole message.
 
 ## Cancelling a pending recovery
 

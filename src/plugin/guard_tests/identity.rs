@@ -124,3 +124,22 @@ fn a_status_command_is_approved_with_its_fields_intact() {
         }
     );
 }
+
+#[test]
+fn an_attention_command_is_approved_for_the_pane_it_names() {
+    let mut g = guard();
+    assert_eq!(
+        g.judge(attention(&token()), Some(&facts()), &[], Instant::now())
+            .expect("allowed"),
+        Approved::Attention { pane: PANE }
+    );
+}
+
+#[test]
+fn an_attention_command_for_a_pane_that_did_not_opt_in_is_refused() {
+    let mut g = guard();
+    assert!(matches!(
+        g.judge(attention(&token()), None, &[], Instant::now()),
+        Err(Refused::UnknownPane { .. })
+    ));
+}

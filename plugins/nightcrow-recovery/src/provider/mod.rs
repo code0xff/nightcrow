@@ -70,6 +70,11 @@ pub enum SignalKind {
     StopFailure,
     /// The `rate_limits` object from Claude Code's statusline payload.
     RateLimits,
+    /// Claude Code's `Stop` hook: a turn ended, however it ended. Carries no
+    /// payload — the fact that it fired is the whole message — and never
+    /// reaches a provider, because wanting the person back is not a provider
+    /// question.
+    TurnEnd,
 }
 
 impl SignalKind {
@@ -78,6 +83,7 @@ impl SignalKind {
         match self {
             Self::StopFailure => "stop_failure",
             Self::RateLimits => "rate_limits",
+            Self::TurnEnd => "turn_end",
         }
     }
 
@@ -85,6 +91,7 @@ impl SignalKind {
         match s {
             "stop_failure" => Some(Self::StopFailure),
             "rate_limits" => Some(Self::RateLimits),
+            "turn_end" => Some(Self::TurnEnd),
             _ => None,
         }
     }
@@ -185,7 +192,7 @@ pub fn detect(command: Option<&str>) -> Option<Box<dyn Provider>> {
 /// falling through to a guess.
 pub fn detect_from_signal(kind: SignalKind) -> Option<Box<dyn Provider>> {
     match kind {
-        SignalKind::StopFailure | SignalKind::RateLimits => {
+        SignalKind::StopFailure | SignalKind::RateLimits | SignalKind::TurnEnd => {
             Some(Box::new(claude::Claude::default()))
         }
     }

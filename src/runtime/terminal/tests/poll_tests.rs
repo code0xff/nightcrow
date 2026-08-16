@@ -160,6 +160,35 @@ fn a_terminal_bell_marks_attention_until_acknowledged() {
 }
 
 #[test]
+fn a_plugin_attention_event_marks_the_pane_this_client_holds() {
+    let (mut state, events) = state_with_event_queue();
+    state.create_pane_now().unwrap();
+    let pane = state.panes[0].id;
+
+    events.borrow_mut().push(BackendEvent::Attention { pane });
+    state.poll();
+
+    assert!(state.has_unread_attention());
+}
+
+#[test]
+fn a_plugin_attention_event_for_an_unknown_pane_is_ignored() {
+    let (mut state, events) = state_with_event_queue();
+    state.create_pane_now().unwrap();
+    let absent = state.panes[0].id + 1;
+
+    events
+        .borrow_mut()
+        .push(BackendEvent::Attention { pane: absent });
+    state.poll();
+
+    assert!(
+        !state.has_unread_attention(),
+        "a marker for a pane this client has nothing to show for"
+    );
+}
+
+#[test]
 fn a_pane_exit_marks_attention_after_removing_the_pane() {
     let (mut state, events) = state_with_event_queue();
     state.create_pane_now().unwrap();

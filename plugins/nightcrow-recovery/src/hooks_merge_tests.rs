@@ -12,14 +12,22 @@ fn our_group(settings: &Value) -> &Value {
 }
 
 #[test]
-fn merging_into_an_empty_object_adds_one_matcher_group_and_a_statusline() {
+fn merging_into_an_empty_object_adds_both_hooks_and_a_statusline() {
     let mut settings = json!({});
 
     let (changes, displaced) = merge_into(&mut settings, EXE).unwrap();
 
-    assert_eq!(changes.len(), 2, "{changes:?}");
+    assert_eq!(changes.len(), 3, "{changes:?}");
     assert_eq!(displaced, Some(Value::Null));
     assert_eq!(our_group(&settings)["matcher"], json!(HOOK_MATCHER));
+    assert_eq!(
+        settings[HOOKS_KEY][TURN_END_EVENT][0]["matcher"],
+        json!(TURN_END_MATCHER)
+    );
+    assert_eq!(
+        settings[HOOKS_KEY][TURN_END_EVENT][0][HOOKS_KEY][0]["command"],
+        json!(format!("{EXE} turn-end"))
+    );
     assert_eq!(
         settings[STATUSLINE_KEY]["command"],
         json!(format!("{EXE} statusline"))
@@ -199,4 +207,14 @@ fn stripping_a_non_object_root_is_refused() {
 
     assert!(error.contains("settings root"), "{error}");
     assert!(error.contains("array"), "{error}");
+}
+
+#[test]
+fn stripping_removes_the_turn_end_hook_as_well() {
+    let mut settings = json!({});
+    merge_into(&mut settings, EXE).unwrap();
+
+    strip_from(&mut settings, Some(Value::Null)).unwrap();
+
+    assert_eq!(settings.get(HOOKS_KEY), None, "both events went with it");
 }

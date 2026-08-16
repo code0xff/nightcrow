@@ -43,6 +43,9 @@ enum Mode {
     /// Internal: the command Claude Code runs for StopFailure. Reads the hook
     /// payload on stdin and forwards a few fields to the running plugin.
     Hook,
+    /// Internal: the command Claude Code runs when a turn ends. Tells the
+    /// running plugin, which asks the host to mark the pane's project tab.
+    TurnEnd,
     /// Internal: the command Claude Code runs for its statusline. Forwards the
     /// usage windows to the running plugin, then prints the statusline this
     /// plugin displaced at install time, or a short line of its own.
@@ -55,6 +58,7 @@ fn main() -> ExitCode {
         Some(Mode::InstallHooks) => report(install()),
         Some(Mode::UninstallHooks) => report(uninstall()),
         Some(Mode::Hook) => helper::hook(),
+        Some(Mode::TurnEnd) => helper::turn_end(),
         Some(Mode::Statusline) => helper::statusline(),
     }
 }

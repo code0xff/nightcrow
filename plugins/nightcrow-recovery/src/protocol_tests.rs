@@ -171,7 +171,7 @@ fn the_hosts_copy_of_the_contract_still_says_the_same_thing() {
     let source = std::fs::read_to_string(host)
         .unwrap_or_else(|e| panic!("cannot read the host's protocol at {host}: {e}"));
 
-    assert_eq!(host_const(&source, "PROTOCOL_VERSION"), "2");
+    assert_eq!(host_const(&source, "PROTOCOL_VERSION"), "3");
     assert_eq!(host_const(&source, "MAX_LINE_BYTES"), "64 * 1024");
     assert_eq!(host_const(&source, "MAX_INPUT_BYTES"), "8 * 1024");
     assert_eq!(

@@ -63,6 +63,11 @@ pub enum BackendEvent {
     ///
     /// Only a backend serving a shared session reports this: the plugins run
     /// beside the session's panes, not beside this client.
+    /// A plugin reported that this pane wants attention. Client-local from
+    /// here: it raises the project tab's unread marker.
+    Attention {
+        pane: PaneId,
+    },
     Recovery {
         pane: PaneId,
         /// The plugin's own short label. Uninterpreted here; the one value with a
