@@ -137,6 +137,26 @@ fn encode_alt_enter_as_esc_cr() {
 }
 
 #[test]
+fn encode_ctrl_enter_as_lf() {
+    // Ctrl+J is LF, and Ctrl+Enter is the same chord under another name — the
+    // byte a TUI reads as newline. Terminals that report the modifier (Windows'
+    // console API, the kitty protocol) get here; the ones that do not already
+    // send LF themselves, so both ends agree.
+    assert_eq!(encode_key(ctrl(KeyCode::Enter), false), Some(vec![b'\n']));
+}
+
+#[test]
+fn encode_ctrl_alt_enter_as_esc_lf() {
+    assert_eq!(
+        encode_key(
+            KeyEvent::new(KeyCode::Enter, KeyModifiers::CONTROL | KeyModifiers::ALT),
+            false
+        ),
+        Some(vec![0x1b, b'\n'])
+    );
+}
+
+#[test]
 fn encode_ctrl_space_as_nul() {
     // xterm convention: Ctrl+Space → NUL. The generic `c - '@'` formula
     // wraps for space (0x20 < 0x40), so this case needs special handling.
