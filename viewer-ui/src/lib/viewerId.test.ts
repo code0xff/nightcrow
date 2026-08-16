@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { stubSessionStorage } from "./fakeSessionStorage";
+import { stubSessionStorage } from "./fakeStorage";
 import { resetClaimForTest, takeClaim, viewerId } from "./viewerId";
 
 describe("viewerId", () => {
