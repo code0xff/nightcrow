@@ -2,13 +2,20 @@
 //
 // The first hook-level test, and deliberately the one that leans on what the
 // DOM environment has to provide beyond `document`: `window.matchMedia` (which
-// jsdom does not implement), `localStorage`, and resize events. If the
-// environment loses any of those, this file is where it shows.
+// jsdom does not implement) and resize events. If the environment loses either,
+// this file is where it shows.
+//
+// Storage is the exception and comes from a stub, because no environment can
+// win it: Node defines a `localStorage` of its own that is unusable without
+// `--localstorage-file`, and vitest populates a DOM by skipping every global
+// Node has already defined — so happy-dom's storage never lands, on any Node
+// new enough to ship one (26 here).
 
 import { act, cleanup, renderHook } from "@testing-library/react";
 import type { Window as HappyDOMWindow } from "happy-dom";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { useTermKeyBar } from "./termKeyBar";
+import { stubLocalStorage } from "../../lib/fakeStorage";
 import { KEYBOARD_MIN_VIEWPORT_PX } from "../../lib/termKeys";
 
 const WIDE = KEYBOARD_MIN_VIEWPORT_PX + 300;
@@ -18,6 +25,9 @@ function resizeTo(width: number) {
   (window as unknown as HappyDOMWindow).happyDOM.setViewport({ width });
   window.dispatchEvent(new Event("resize"));
 }
+
+// A fresh store per test, which also keeps the stub from outliving the file.
+beforeEach(stubLocalStorage);
 
 afterEach(() => {
   localStorage.clear();

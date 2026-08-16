@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { stubSessionStorage } from "./fakeSessionStorage";
+import { stubSessionStorage } from "./fakeStorage";
 import { forgetPane, lastPaneOf, rememberPane } from "./lastPane";
 
 describe("lastPane", () => {
