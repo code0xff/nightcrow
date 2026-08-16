@@ -20,15 +20,15 @@ fn read_value(path: &Path) -> Value {
 }
 
 fn hook_cmd() -> String {
-    format!("{EXE} hook")
+    format!("'{EXE}' hook")
 }
 
 fn statusline_cmd() -> String {
-    format!("{EXE} statusline")
+    format!("'{EXE}' statusline")
 }
 
 fn turn_end_cmd() -> String {
-    format!("{EXE} turn-end")
+    format!("'{EXE}' turn-end")
 }
 
 #[test]

@@ -43,16 +43,32 @@ const HOOK_TIMEOUT_SECS: u64 = 5;
 /// the terminal edge. Matches the value in Claude Code's own documented example.
 const STATUSLINE_PADDING: u64 = 2;
 
+/// Quote a path for the POSIX shell these commands are run in.
+///
+/// Claude Code runs a hook and a `statusLine` through a shell, on every platform
+/// — its own documented examples are shell one-liners, and the entries other
+/// tools install here are `if [ -f '...' ]; then ...`. So a Windows path cannot
+/// be written bare: the shell reads each backslash as an escape, so
+/// `C:\Users\me\plugin` arrives as `C:Usersmeplugin` and is simply not found.
+/// Single quotes suspend every interpretation the shell would otherwise make,
+/// which covers spaces in the path as well.
+///
+/// A single quote cannot appear inside single quotes, so an embedded one is
+/// closed, escaped on its own, and reopened.
+fn shell_quoted(path: &str) -> String {
+    format!("'{}'", path.replace('\'', r"'\''"))
+}
+
 pub(crate) fn hook_command(exe: &str) -> String {
-    format!("{exe} hook")
+    format!("{} hook", shell_quoted(exe))
 }
 
 pub(crate) fn turn_end_command(exe: &str) -> String {
-    format!("{exe} turn-end")
+    format!("{} turn-end", shell_quoted(exe))
 }
 
 pub(crate) fn statusline_command(exe: &str) -> String {
-    format!("{exe} statusline")
+    format!("{} statusline", shell_quoted(exe))
 }
 
 pub(crate) fn is_ours(command: &str) -> bool {
