@@ -20,12 +20,12 @@ const TAB_TITLE_MAX_CHARS: usize = 14;
 const MARKER_WIDTH: u16 = 4;
 
 const ATTENTION_GLYPH: char = '•';
-const ATTENTION_BLINK_HALF_PERIOD: Duration = Duration::from_millis(500);
+const ATTENTION_BLINK_INTERVAL: Duration = Duration::from_secs(1);
 
 /// Bright/dim phase for the unread marker. Only style changes between phases,
 /// so the row and its pointer hit boxes never move while it blinks.
 pub(crate) fn blink_is_bright(elapsed: Duration) -> bool {
-    (elapsed.as_millis() / ATTENTION_BLINK_HALF_PERIOD.as_millis()).is_multiple_of(2)
+    (elapsed.as_millis() / ATTENTION_BLINK_INTERVAL.as_millis()).is_multiple_of(2)
 }
 
 /// The name shown for a repo path — its final component. Goes through `Path`
@@ -63,15 +63,12 @@ fn tab_texts(repo_paths: &[String], attention: &[bool]) -> Vec<String> {
         .enumerate()
         .map(|(i, path)| {
             let name = tab_label(path);
-            let marker = attention
-                .get(i)
-                .copied()
-                .unwrap_or(false)
-                .then_some(format!("{ATTENTION_GLYPH} "))
-                .unwrap_or_default();
-            match i.checked_add(1).filter(|n| *n <= 10) {
-                Some(n) => format!(" F{n} {marker}{name} "),
-                None => format!(" {marker}{name} "),
+            let unread = attention.get(i).copied().unwrap_or(false);
+            match (i.checked_add(1).filter(|n| *n <= 10), unread) {
+                (Some(n), true) => format!(" F{n}{ATTENTION_GLYPH}{name} "),
+                (Some(n), false) => format!(" F{n} {name} "),
+                (None, true) => format!(" {ATTENTION_GLYPH}{name}"),
+                (None, false) => format!(" {name} "),
             }
         })
         .collect()

@@ -205,10 +205,14 @@ fn unread_attention_is_one_fixed_width_blinking_dot() {
         phases.push((text, buf[(dot, 0)].style().fg));
     }
 
-    assert!(phases[0].0.contains("F2 • web"));
+    assert!(phases[0].0.contains("F2•web"));
     assert_eq!(phases[0].0, phases[1].0, "blink must not move the row");
     assert_eq!(phases[0].1, Some(Color::Yellow));
     assert_eq!(phases[1].1, Some(Color::DarkGray));
+
+    let plain = tab_texts(&repo_paths, &[false, false]);
+    let unread = tab_texts(&repo_paths, &[false, true]);
+    assert_eq!(Span::raw(&plain[1]).width(), Span::raw(&unread[1]).width());
 }
 
 #[test]
@@ -232,10 +236,12 @@ fn a_dot_in_a_project_name_is_not_treated_as_attention() {
 }
 
 #[test]
-fn attention_blink_alternates_every_half_second() {
+fn attention_blink_alternates_every_second() {
     assert!(blink_is_bright(Duration::ZERO));
-    assert!(!blink_is_bright(Duration::from_millis(500)));
-    assert!(blink_is_bright(Duration::from_secs(1)));
+    assert!(blink_is_bright(Duration::from_millis(999)));
+    assert!(!blink_is_bright(Duration::from_secs(1)));
+    assert!(!blink_is_bright(Duration::from_millis(1_999)));
+    assert!(blink_is_bright(Duration::from_secs(2)));
 }
 
 #[test]
