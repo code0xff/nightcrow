@@ -146,3 +146,31 @@ fn shifted_characters_stay_in_the_paste() {
 
     assert_eq!(pasted(events).as_deref(), Some("Hi\rY"));
 }
+
+#[test]
+fn a_typed_line_ending_in_enter_is_not_a_paste() {
+    let events = vec![ch('h'), ch('i'), key(KeyCode::Enter, KeyModifiers::NONE)];
+
+    assert!(
+        pasted(events).is_none(),
+        "the Enter that submits a typed line must stay a keypress"
+    );
+}
+
+#[test]
+fn a_multi_line_paste_keeps_its_trailing_enter() {
+    let events = vec![
+        ch('h'),
+        ch('i'),
+        key(KeyCode::Enter, KeyModifiers::NONE),
+        ch('y'),
+        ch('o'),
+        key(KeyCode::Enter, KeyModifiers::NONE),
+    ];
+
+    assert_eq!(
+        pasted(events).as_deref(),
+        Some("hi\ryo\r"),
+        "content between the Enters still marks the burst a paste"
+    );
+}
