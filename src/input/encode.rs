@@ -43,7 +43,16 @@ pub fn encode_key(key: KeyEvent, app_cursor: bool) -> Option<Vec<u8>> {
         // read ESC+CR as "insert a newline, don't submit" — it is what Claude
         // Code binds its newline to — so dropping the modifier here made the
         // two indistinguishable and every Alt+Enter submitted instead.
-        KeyCode::Enter => Some(if alt { vec![0x1b, b'\r'] } else { vec![b'\r'] }),
+        //
+        // Ctrl+Enter is LF for the same reason. A terminal that cannot tell the
+        // chord from a bare Enter sends Ctrl+J (LF) for it and nightcrow never
+        // sees the modifier; one that can — the Windows console API, the kitty
+        // keyboard protocol — delivers `Enter + CONTROL`, and encoding that as
+        // CR submitted the line on exactly the platforms that report it.
+        KeyCode::Enter => {
+            let byte = if ctrl { b'\n' } else { b'\r' };
+            Some(if alt { vec![0x1b, byte] } else { vec![byte] })
+        }
         KeyCode::Backspace => Some(vec![0x7f]),
         KeyCode::Delete => Some(csi_tilde(3, key.modifiers)),
         KeyCode::Esc => Some(vec![0x1b]),
