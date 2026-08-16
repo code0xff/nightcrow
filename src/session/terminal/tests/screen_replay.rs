@@ -50,11 +50,21 @@ fn output_through(session: &TerminalSession, pane: PaneId, marker: &str) -> Vec<
     let deadline = Instant::now() + SHELL_TEST_DEADLINE;
     let mut out = Vec::new();
     let mut arrived = false;
+    // Where the next search starts, held back by the marker so one split across
+    // two chunks is still found. Scanning the whole of `out` per frame is what
+    // the overlap replaces: the churn fixture arrives as hundreds of thousands
+    // of bytes in small chunks, and re-reading them all each time costs enough
+    // per frame that the hub declares this client too slow and cuts it off —
+    // after which the marker can never arrive at all.
+    let mut scanned = 0;
     while Instant::now() < deadline {
         match session.next_frame(QUIET) {
             Some(TerminalFrame::Output { pane: p, data }) if p == pane => {
                 out.extend(data);
-                arrived = arrived || String::from_utf8_lossy(&out).contains(marker);
+                if !arrived {
+                    arrived = String::from_utf8_lossy(&out[scanned..]).contains(marker);
+                    scanned = out.len().saturating_sub(marker.len().saturating_sub(1));
+                }
             }
             Some(_) => {}
             // Quiet. Everything the pane had to say about `marker` is in hand.
