@@ -31,6 +31,7 @@
 use crate::backend::PaneId;
 use crate::runtime::emulator::{PaneEmulator, PaneModes};
 use std::collections::HashMap;
+use std::time::Instant;
 
 /// Scrollback for the tracking emulators: none. A snapshot is the screen, not the
 /// history behind it — the byte ring in `PaneState` is what carries history, and
@@ -77,20 +78,49 @@ impl PaneModeTracker {
         });
         let events = emulator.process(data);
         let modes = emulator.modes();
+        self.observed(pane, modes, events.title)
+    }
+
+    /// End every pane's synchronized update (DEC 2026) that has outlived its
+    /// timeout as of `now`, and report what closing it said about those panes.
+    ///
+    /// A program killed mid-update never closes it, and these emulators see
+    /// nothing but what their pane produces — so without a clock a pane's
+    /// modes, its title, and the grid every snapshot is read from would all
+    /// stay at the moment the update opened. See `runtime::emulator::sync`.
+    pub(super) fn settle_sync(&mut self, now: Instant) -> Vec<(PaneId, Observed)> {
+        let expired: Vec<PaneId> = self
+            .emulators
+            .iter()
+            .filter(|(_, emulator)| emulator.sync_expired(now))
+            .map(|(pane, _)| *pane)
+            .collect();
+        expired
+            .into_iter()
+            .filter_map(|pane| {
+                let emulator = self.emulators.get_mut(&pane)?;
+                let events = emulator.settle_sync();
+                let modes = emulator.modes();
+                Some((pane, self.observed(pane, modes, events.title)))
+            })
+            .collect()
+    }
+
+    /// What a pane's emulator says about it now, against what it said last.
+    fn observed(&mut self, pane: PaneId, modes: PaneModes, title: Option<String>) -> Observed {
         // A pane nothing has been observed for counts as being on the normal
         // screen, which is where every program starts.
         let was_alt = self
             .alt_screen
             .insert(pane, modes.alt_screen)
             .unwrap_or(false);
-        let alt_changed = was_alt != modes.alt_screen;
         Observed {
             modes,
-            alt_changed,
+            alt_changed: was_alt != modes.alt_screen,
             // Bounded here rather than where it is shown: this one goes into
             // every connecting client's greeting, and the child process chooses
             // it.
-            title: events.title.map(|title| {
+            title: title.map(|title| {
                 title
                     .chars()
                     .take(crate::session::limits::MAX_PANE_TITLE_CHARS)

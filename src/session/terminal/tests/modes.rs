@@ -142,3 +142,35 @@ fn last_row_of_snapshot(tracker: &PaneModeTracker) -> u16 {
 fn a_pane_that_has_produced_nothing_has_no_screen() {
     assert!(PaneModeTracker::default().snapshot(PANE).is_none());
 }
+
+/// Past vte's window for an open synchronized update, so a test can reach an
+/// expired one without sleeping through it.
+const PAST_SYNC_WINDOW: std::time::Duration = std::time::Duration::from_millis(200);
+
+/// A program killed between `BSU` and `ESU` leaves the update open forever, and
+/// everything the hub reads off the grid — the modes it hands a connecting
+/// client, the screen it snapshots — stops at that moment until the clock ends
+/// it.
+#[test]
+fn an_update_the_program_never_closed_is_read_once_the_clock_ends_it() {
+    let mut tracker = PaneModeTracker::default();
+    let held = tracker.observe(PANE, b"\x1b[?2026h\x1b[?1049hpainted", || SIZE);
+    assert!(!held.modes.alt_screen, "the switch is still held back");
+    assert!(!tracker.screen_current(PANE));
+
+    let settled = tracker.settle_sync(std::time::Instant::now() + PAST_SYNC_WINDOW);
+
+    let (pane, observed) = settled.into_iter().next().expect("one pane settled");
+    assert_eq!(pane, PANE);
+    assert!(observed.modes.alt_screen);
+    assert!(observed.alt_changed, "the switch reads as a change now");
+    assert!(tracker.screen_current(PANE));
+}
+
+#[test]
+fn a_synchronized_update_inside_its_window_is_left_open() {
+    let mut tracker = PaneModeTracker::default();
+    tracker.observe(PANE, b"\x1b[?2026h\x1b[?1049hpainted", || SIZE);
+
+    assert!(tracker.settle_sync(std::time::Instant::now()).is_empty());
+}

@@ -108,6 +108,10 @@ impl PaneEmulator {
     pub fn process(&mut self, bytes: &[u8]) -> EmulatorEvents {
         self.boundary.feed(bytes);
         self.processor.advance(&mut self.term, bytes);
+        self.take_events()
+    }
+
+    fn take_events(&mut self) -> EmulatorEvents {
         let mut state = self.proxy.0.borrow_mut();
         EmulatorEvents {
             title: state.title.take(),
@@ -176,8 +180,9 @@ impl PaneEmulator {
     /// Whether the grid holds everything processed. False while a synchronized
     /// update (DEC 2026) is open: the processor buffers its bytes without
     /// applying them, so a snapshot taken then is missing bytes the record
-    /// would count as covered. Always becomes true again — the update ends with
-    /// `ESU` or at the processor's own buffer cap.
+    /// would count as covered. An update ends with `ESU`, at the processor's
+    /// own buffer cap, or — for one the program never closed — when its owner
+    /// ticks [`settle_sync`](Self::settle_sync).
     pub fn screen_current(&self) -> bool {
         self.processor.sync_bytes_count() == 0
     }
@@ -256,6 +261,7 @@ fn term_size(rows: u16, cols: u16) -> TermSize {
 mod boundary;
 mod modes;
 mod snapshot;
+mod sync;
 mod view;
 
 pub use modes::PaneModes;
@@ -269,5 +275,7 @@ mod modes_tests;
 mod snapshot_cost_tests;
 #[cfg(test)]
 mod snapshot_tests;
+#[cfg(test)]
+mod sync_tests;
 #[cfg(test)]
 mod tests;

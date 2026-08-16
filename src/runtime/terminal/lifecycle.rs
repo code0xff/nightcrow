@@ -28,21 +28,7 @@ impl TerminalState {
                         continue;
                     };
                     let events = emulator.process(&data);
-                    if let Some(title) = events.title
-                        && let Some(info) = self.panes.iter_mut().find(|p| p.id == pane)
-                    {
-                        info.title = title;
-                    }
-                    // Terminal query responses (DA, DSR, ...) go back to the
-                    // program that asked. Bypasses `send_input` on purpose:
-                    // an emulator-generated reply must not clear the user's
-                    // scroll position or land in the prompt log.
-                    if !events.pty_writes.is_empty()
-                        && let Some(backend) = &mut self.backend
-                        && let Err(e) = backend.send_input(pane, &events.pty_writes)
-                    {
-                        tracing::warn!("failed to send terminal reply to pane {pane}: {e}");
-                    }
+                    self.apply_emulator_events(pane, events);
                 }
                 // The session set this pane to a size, which may not be the one
                 // this client asked for — or any it asked for. The emulator has
@@ -99,6 +85,9 @@ impl TerminalState {
                 }
             }
         }
+        // After the drain, so an update this tick's own output closed is never
+        // cut short by the clock.
+        self.settle_sync_updates(std::time::Instant::now());
         exited
     }
 
