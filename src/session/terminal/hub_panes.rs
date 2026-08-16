@@ -147,6 +147,30 @@ impl TerminalHub {
         owed
     }
 
+    /// Fold into a pane's record a synchronized update that ended on the clock
+    /// instead of on a byte.
+    ///
+    /// No output arrived — the record already holds the bytes the emulator was
+    /// keeping off its grid — but the grid has caught up with them, so what it
+    /// says about the pane supersedes what the record was last told. A pane
+    /// that has gone since is ignored.
+    pub(super) fn store_settled(&self, pane: PaneId, observed: Observed) {
+        let mut state = self.state.lock().expect("terminal state poisoned");
+        let Some(p) = state.panes.iter_mut().find(|p| p.id == pane) else {
+            return;
+        };
+        // Coming off the alternate screen spends what was kept for it, exactly
+        // as a chunk carrying the switch would (see `record_and_broadcast`).
+        if observed.alt_changed && !observed.modes.alt_screen {
+            p.screen = Vec::new();
+            p.since.clear();
+        }
+        p.modes = observed.modes;
+        if let Some(title) = observed.title {
+            p.title = Some(title);
+        }
+    }
+
     /// Replace a pane's recorded screen, forgetting what was owed on top of the
     /// one before it. A pane that has gone since the snapshot was taken is ignored.
     pub(super) fn store_screen(&self, pane: PaneId, screen: Vec<u8>) {

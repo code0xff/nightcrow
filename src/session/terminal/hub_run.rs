@@ -204,6 +204,19 @@ impl TerminalHub {
                 }
             }
 
+            // A program killed inside a synchronized update never closes it, and
+            // the pane it leaves behind never produces enough to close it at the
+            // processor's buffer cap either. Ended here on the clock, so a grid
+            // no byte will ever release stops holding the pane's modes and every
+            // snapshot taken from it.
+            for (pane, observed) in modes.settle_sync(Instant::now()) {
+                let alt = observed.modes.alt_screen;
+                self.store_settled(pane, observed);
+                if alt && !restless.contains(&pane) {
+                    restless.push(pane);
+                }
+            }
+
             // Once per tick, for every alternate-screen pane this tick moved: the
             // screen a connecting client is given, and the point at which what it
             // is owed on top of that screen goes back to nothing. A pane whose

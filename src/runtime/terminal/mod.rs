@@ -9,6 +9,7 @@ mod recovery;
 mod scroll;
 mod session_panes;
 mod state;
+mod sync;
 
 pub(crate) use escape::strip_escape_sequences;
 pub use recovery::PaneRecovery;
