@@ -7,6 +7,10 @@ impl TerminalState {
     /// Returns the pane ids the backend signalled as exited so the caller
     /// can run cross-cutting cleanup (focus redirect, fullscreen reset).
     pub fn poll(&mut self) -> Vec<PaneId> {
+        self.poll_at(std::time::Instant::now())
+    }
+
+    pub(crate) fn poll_at(&mut self, now: std::time::Instant) -> Vec<PaneId> {
         let mut exited = Vec::new();
         let events: Vec<BackendEvent> = self
             .backend
@@ -28,7 +32,7 @@ impl TerminalState {
                         continue;
                     };
                     let events = emulator.process(&data);
-                    self.apply_emulator_events(pane, events);
+                    self.apply_emulator_events(pane, events, now);
                 }
                 // The session set this pane to a size, which may not be the one
                 // this client asked for — or any it asked for. The emulator has
@@ -72,6 +76,7 @@ impl TerminalState {
                     if !self.panes.iter().any(|p| p.id == pane) {
                         continue;
                     }
+                    self.raise_attention();
                     // Told to the backend as well as forgotten here: a local
                     // `PtyBackend` leaves pane removal to its caller (see its
                     // `drain_events`), so this is what releases the PTY.
@@ -87,7 +92,8 @@ impl TerminalState {
         }
         // After the drain, so an update this tick's own output closed is never
         // cut short by the clock.
-        self.settle_sync_updates(std::time::Instant::now());
+        self.settle_sync_updates(now);
+        self.settle_title_attention(now);
         exited
     }
 
@@ -208,6 +214,7 @@ impl TerminalState {
         }
         self.scroll.remove(&id);
         self.last_content_size.remove(&id);
+        self.title_activity.remove(&id);
     }
 
     /// Resize each listed pane's backend PTY and emulator to its own

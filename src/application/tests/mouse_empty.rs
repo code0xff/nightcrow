@@ -16,6 +16,8 @@ fn clicking_a_project_tab_asks_the_workspace_to_switch() {
         &mut app,
         crate::ui::Chrome {
             repo_paths: &tabs,
+            attention: &[],
+            attention_bright: true,
             active: 1,
             repo_input: &crate::ui::status_view::RepoInput::default(),
         },

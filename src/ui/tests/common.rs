@@ -48,6 +48,8 @@ pub(super) fn test_workspace() -> crate::workspace::Workspace {
 pub(super) fn plain_chrome(repo_input: &RepoInput) -> Chrome<'_> {
     Chrome {
         repo_paths: &[],
+        attention: &[],
+        attention_bright: true,
         active: 0,
         repo_input,
     }
@@ -117,6 +119,8 @@ pub(super) fn drawn_text(app: &mut App, tab_paths: &[String], active: usize) -> 
         .draw(|frame| {
             let tabs = Chrome {
                 repo_paths: tab_paths,
+                attention: &[],
+                attention_bright: true,
                 active,
                 repo_input: &RepoInput::default(),
             };
@@ -156,6 +160,8 @@ pub(super) fn drawn_empty(
         .draw(|frame| {
             let chrome = Chrome {
                 repo_paths: &[],
+                attention: &[],
+                attention_bright: true,
                 active: 0,
                 repo_input,
             };

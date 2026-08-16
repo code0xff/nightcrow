@@ -100,7 +100,8 @@ the CLI running there receives them unchanged.
 ## What it does
 
 - **Up to 10 repositories at once**, each a project tab with its own git views,
-  snapshot worker, and terminal panes. → [Projects](docs/projects.md)
+  snapshot worker, terminal panes, and a blinking dot when background terminal
+  activity needs attention. → [Projects](docs/projects.md)
 - **Three views** over each repo — changed files with a syntax-highlighted diff,
   a tig-like commit log, and a read-only file tree you can browse and search.
   → [Views](docs/views.md)

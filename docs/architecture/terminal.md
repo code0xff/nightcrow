@@ -86,6 +86,13 @@ underflow panic, (2) 스크롤 offset 초과 panic, (3) wide char(한글 등)가
   수집해 반환하고, `TerminalState::poll`이 `PaneInfo.title`에 반영해 탭 바에서 노출한다.
   claude/vim/ssh처럼 자체 타이틀을 갱신하는 프로그램은 자동으로 적절한 라벨이 붙고, 타이틀을 보내지
   않는 셸은 기본 라벨을 유지한다.
+- **프로젝트 attention은 클라이언트 로컬이다**: 숨은 프로젝트의 pane이 BEL을 울리거나, OSC 제목이
+  최소 세 번·600ms 이상 연속으로 바뀐 뒤 800ms 동안 안정되거나, pane 프로세스가 종료되면
+  `TerminalState.unread_attention`을 세운다. 제목 조건은 Codex 같은 animated title을 provider 이름이나
+  spinner 글리프를 하드코딩하지 않고 관측하는 좁은 heuristic이다. 단순 출력 idle은 완료의 증거가
+  아니므로 쓰지 않는다. 활성 프로젝트는 매 poll 뒤 attention과 진행 중 title 관측을 지운다 — 이미
+  화면에 보인 활동이 사용자가 다른 탭으로 간 뒤 새 알림으로 되살아나면 안 된다. daemon/session에
+  저장하지 않는 이유는 attach한 TUI와 브라우저가 서로의 읽음 상태를 지우면 안 되기 때문이다.
 - **Terminal query replies**: DSR/DA처럼 내부 프로그램이 터미널에 묻는 쿼리에 대해 에뮬레이터가
   생성한 응답(`Event::PtyWrite`)을 `TerminalState::poll`이 해당 pane의 PTY로 되돌려준다. vt100
   시절에는 응답이 불가능해 쿼리가 무시됐다.

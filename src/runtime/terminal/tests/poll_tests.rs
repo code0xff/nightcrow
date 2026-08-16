@@ -1,6 +1,7 @@
 use super::common::*;
 use super::*;
 use crate::backend::BackendEvent;
+use std::time::{Duration, Instant};
 
 #[test]
 fn poll_applies_osc_title_to_pane() {
@@ -81,6 +82,94 @@ fn later_title_replaces_earlier_within_one_poll() {
     state.poll();
 
     assert_eq!(state.panes[0].title, "second");
+}
+
+fn title_event(pane: crate::backend::PaneId, title: &str) -> BackendEvent {
+    BackendEvent::Output {
+        pane,
+        data: format!("\x1b]2;{title}\x07").into_bytes(),
+    }
+}
+
+#[test]
+fn an_animated_title_settling_marks_attention() {
+    let (mut state, events) = state_with_event_queue();
+    state.create_pane_now().unwrap();
+    let pane = state.panes[0].id;
+    let start = Instant::now();
+
+    for (offset, title) in [(0, "⠋ repo"), (300, "⠙ repo"), (600, "⠹ repo")] {
+        events.borrow_mut().push(title_event(pane, title));
+        state.poll_at(start + Duration::from_millis(offset));
+    }
+    assert!(!state.has_unread_attention(), "animation is still active");
+
+    state.poll_at(start + Duration::from_millis(1_400));
+
+    assert!(state.has_unread_attention());
+}
+
+#[test]
+fn acknowledging_an_animation_prevents_a_stale_attention_event() {
+    let (mut state, events) = state_with_event_queue();
+    state.create_pane_now().unwrap();
+    let pane = state.panes[0].id;
+    let start = Instant::now();
+
+    for (offset, title) in [(0, "⠋ repo"), (300, "⠙ repo"), (600, "⠹ repo")] {
+        events.borrow_mut().push(title_event(pane, title));
+        state.poll_at(start + Duration::from_millis(offset));
+    }
+    state.acknowledge_attention();
+    state.poll_at(start + Duration::from_millis(1_400));
+
+    assert!(!state.has_unread_attention());
+}
+
+#[test]
+fn ordinary_sparse_title_changes_do_not_mark_attention() {
+    let (mut state, events) = state_with_event_queue();
+    state.create_pane_now().unwrap();
+    let pane = state.panes[0].id;
+    let start = Instant::now();
+
+    events.borrow_mut().push(title_event(pane, "editor"));
+    state.poll_at(start);
+    events.borrow_mut().push(title_event(pane, "shell"));
+    state.poll_at(start + Duration::from_millis(300));
+    state.poll_at(start + Duration::from_millis(1_100));
+
+    assert!(!state.has_unread_attention());
+}
+
+#[test]
+fn a_terminal_bell_marks_attention_until_acknowledged() {
+    let (mut state, events) = state_with_event_queue();
+    state.create_pane_now().unwrap();
+    let pane = state.panes[0].id;
+
+    events.borrow_mut().push(BackendEvent::Output {
+        pane,
+        data: b"\x07".to_vec(),
+    });
+    state.poll();
+
+    assert!(state.has_unread_attention());
+    state.acknowledge_attention();
+    assert!(!state.has_unread_attention());
+}
+
+#[test]
+fn a_pane_exit_marks_attention_after_removing_the_pane() {
+    let (mut state, events) = state_with_event_queue();
+    state.create_pane_now().unwrap();
+    let pane = state.panes[0].id;
+
+    events.borrow_mut().push(BackendEvent::Exited { pane });
+    state.poll();
+
+    assert!(state.panes.is_empty());
+    assert!(state.has_unread_attention());
 }
 
 /// A pane the backend reports without this client having asked for it — what

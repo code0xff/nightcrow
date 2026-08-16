@@ -75,6 +75,8 @@ static CLOSED_DIALOG: std::sync::LazyLock<crate::ui::status_view::RepoInput> =
 pub(super) fn test_tab_view(paths: &[String]) -> crate::ui::Chrome<'_> {
     crate::ui::Chrome {
         repo_paths: paths,
+        attention: &[],
+        attention_bright: true,
         active: 0,
         repo_input: &CLOSED_DIALOG,
     }

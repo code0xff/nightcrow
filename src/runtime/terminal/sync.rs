@@ -19,11 +19,27 @@ impl TerminalState {
     /// Replies bypass [`send_input`](Self::send_input) on purpose: an
     /// emulator-generated answer must not clear the user's scroll position or
     /// land in the prompt log.
-    pub(super) fn apply_emulator_events(&mut self, pane: PaneId, events: EmulatorEvents) {
-        if let Some(title) = events.title
-            && let Some(info) = self.panes.iter_mut().find(|p| p.id == pane)
-        {
-            info.title = title;
+    pub(super) fn apply_emulator_events(
+        &mut self,
+        pane: PaneId,
+        events: EmulatorEvents,
+        now: Instant,
+    ) {
+        if events.bell {
+            self.raise_attention();
+        }
+        if let Some(title) = events.title {
+            let changed = self
+                .panes
+                .iter()
+                .find(|info| info.id == pane)
+                .is_some_and(|info| info.title != title);
+            if changed {
+                self.note_title_change(pane, now);
+            }
+            if let Some(info) = self.panes.iter_mut().find(|info| info.id == pane) {
+                info.title = title;
+            }
         }
         if !events.pty_writes.is_empty()
             && let Some(backend) = &mut self.backend
@@ -47,7 +63,7 @@ impl TerminalState {
                 continue;
             };
             let events = emulator.settle_sync();
-            self.apply_emulator_events(pane, events);
+            self.apply_emulator_events(pane, events, now);
         }
     }
 }

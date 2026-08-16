@@ -20,6 +20,7 @@ pub(crate) fn main_loop(
     ctx: &ProjectContext,
     mut link: SessionLink,
 ) -> anyhow::Result<()> {
+    let blink_started = std::time::Instant::now();
     loop {
         // Whoever owns the tab list gets the first word each tick: attached,
         // the set may have changed under this client since the last frame.
@@ -65,6 +66,10 @@ pub(crate) fn main_loop(
             }
             project.poll_terminal();
         }
+        // Project-tab attention is client-local and means "not seen on this
+        // screen". The project in front has just consumed its terminal events,
+        // so everything through this tick is visible and acknowledged.
+        ws.acknowledge_active_attention();
 
         let size = terminal.size()?;
         let screen = Rect::new(0, 0, size.width, size.height);
@@ -84,6 +89,11 @@ pub(crate) fn main_loop(
         // by `MAX_PROJECTS`, so the per-frame clone is a handful of short
         // strings.
         let tab_paths: Vec<String> = ws.projects().iter().map(|p| p.repo_path.clone()).collect();
+        let tab_attention: Vec<bool> = ws
+            .projects()
+            .iter()
+            .map(|project| project.terminal.has_unread_attention())
+            .collect();
         let active_tab = ws.active_index();
         let empty_notice = ws.empty_notice().cloned();
         let prefix_armed = ws.prefix_armed();
@@ -95,6 +105,8 @@ pub(crate) fn main_loop(
         let (app_opt, repo_input) = ws.render_parts();
         let tabs = crate::ui::Chrome {
             repo_paths: &tab_paths,
+            attention: &tab_attention,
+            attention_bright: crate::ui::project_tab::blink_is_bright(blink_started.elapsed()),
             active: active_tab,
             repo_input,
         };
@@ -119,6 +131,8 @@ pub(crate) fn main_loop(
         let repo_input = ws.repo_input.clone();
         let tabs = crate::ui::Chrome {
             repo_paths: &tab_paths,
+            attention: &tab_attention,
+            attention_bright: crate::ui::project_tab::blink_is_bright(blink_started.elapsed()),
             active: active_tab,
             repo_input: &repo_input,
         };

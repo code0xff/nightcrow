@@ -96,6 +96,8 @@ fn project_tab_at_matches_the_rendered_row() {
 
     let tabs = Chrome {
         repo_paths: &paths,
+        attention: &[],
+        attention_bright: true,
         active: 0,
         repo_input: &RepoInput::default(),
     };
@@ -122,6 +124,8 @@ fn panels_advertise_the_leader_digit_not_the_bare_f_key() {
                 &mut app,
                 Chrome {
                     repo_paths: &tab_paths,
+                    attention: &[],
+                    attention_bright: true,
                     active: 0,
                     repo_input: &RepoInput::default(),
                 },
