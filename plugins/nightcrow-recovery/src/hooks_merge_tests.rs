@@ -4,7 +4,7 @@ use super::*;
 const EXE: &str = "/opt/nightcrow/libexec/nightcrow-recovery";
 
 fn hook_cmd() -> String {
-    format!("{EXE} hook")
+    format!("'{EXE}' hook")
 }
 
 fn our_group(settings: &Value) -> &Value {
@@ -26,11 +26,11 @@ fn merging_into_an_empty_object_adds_both_hooks_and_a_statusline() {
     );
     assert_eq!(
         settings[HOOKS_KEY][TURN_END_EVENT][0][HOOKS_KEY][0]["command"],
-        json!(format!("{EXE} turn-end"))
+        json!(format!("'{EXE}' turn-end"))
     );
     assert_eq!(
         settings[STATUSLINE_KEY]["command"],
-        json!(format!("{EXE} statusline"))
+        json!(format!("'{EXE}' statusline"))
     );
 }
 
@@ -217,4 +217,24 @@ fn stripping_removes_the_turn_end_hook_as_well() {
     strip_from(&mut settings, Some(Value::Null)).unwrap();
 
     assert_eq!(settings.get(HOOKS_KEY), None, "both events went with it");
+}
+
+/// The bug that cost a user their statusline and both hooks: an unquoted
+/// Windows path reaches the shell with every backslash eaten.
+#[test]
+fn a_windows_path_is_quoted_so_the_shell_keeps_its_separators() {
+    let exe = r"C:\Users\me\.nightcrow\plugins\nightcrow-recovery";
+
+    let command = hook_command(exe);
+
+    assert_eq!(command, format!("'{exe}' hook"));
+    assert!(is_ours(&command), "quoting must not hide our marker");
+}
+
+#[test]
+fn a_quote_in_the_path_is_escaped_rather_than_ending_the_quoting() {
+    assert_eq!(
+        hook_command("/opt/it's/nightcrow-recovery"),
+        r"'/opt/it'\''s/nightcrow-recovery' hook"
+    );
 }
