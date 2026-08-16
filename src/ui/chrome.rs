@@ -37,6 +37,8 @@ pub(crate) fn main_content_constraints(layout: &LayoutConfig) -> [Constraint; 2]
 #[derive(Clone, Copy)]
 pub struct Chrome<'a> {
     pub repo_paths: &'a [String],
+    pub attention: &'a [bool],
+    pub attention_bright: bool,
     pub active: usize,
     pub repo_input: &'a RepoInput,
 }

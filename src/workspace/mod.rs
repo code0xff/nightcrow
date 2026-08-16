@@ -117,6 +117,13 @@ impl Workspace {
         self.projects.get_mut(self.active)
     }
 
+    /// Mark terminal events on the project currently on screen as seen.
+    pub(crate) fn acknowledge_active_attention(&mut self) {
+        if let Some(project) = self.projects.get_mut(self.active) {
+            project.terminal.acknowledge_attention();
+        }
+    }
+
     /// The active project and the dialog together, borrowed from disjoint
     /// fields so a frame can render both without a borrow-checker conflict.
     pub fn render_parts(&mut self) -> (Option<&mut App>, &RepoInput) {
@@ -254,7 +261,11 @@ impl Workspace {
     /// Out-of-range indices are ignored so a key or click naming an absent
     /// tab is inert rather than a panic.
     pub fn switch(&mut self, index: usize) {
-        if index >= self.projects.len() || index == self.active {
+        if index >= self.projects.len() {
+            return;
+        }
+        if index == self.active {
+            self.acknowledge_active_attention();
             return;
         }
         // A press still awaiting its release can no longer be paired: the
@@ -265,6 +276,7 @@ impl Workspace {
         // unrelated release later.
         self.projects[self.active].release_pending_press_in_place();
         self.active = index;
+        self.acknowledge_active_attention();
     }
 
     /// Lets the caller focus an open project instead of opening a second tab

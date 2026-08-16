@@ -142,6 +142,20 @@ fn 범위를_벗어난_전환은_활성을_바꾸지_않는다() {
 }
 
 #[test]
+fn 활성_프로젝트_확인은_그_프로젝트의_알림만_지운다() {
+    let mut ws = workspace_from(project_at("/a"));
+    ws.add(project_at("/b"));
+    for project in ws.projects_mut() {
+        project.terminal.raise_attention();
+    }
+
+    ws.switch(0);
+
+    assert!(!ws.projects()[0].terminal.has_unread_attention());
+    assert!(ws.projects()[1].terminal.has_unread_attention());
+}
+
+#[test]
 fn 열린_저장소는_경로로_찾을_수_있고_없으면_none이다() {
     let mut ws = workspace_from(project_at("/a"));
     ws.add(project_at("/b"));

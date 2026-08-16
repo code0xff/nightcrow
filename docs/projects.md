@@ -20,6 +20,9 @@ project keeps running while you work in another.
 - When the tabs outgrow the row, it scrolls around the active tab and folds the
   rest behind `+N` markers; clicking a marker jumps to the nearest project
   behind it.
+- A blinking `•` marks a background project whose terminal needs attention.
+  Opening that project acknowledges everything seen so far; later activity can
+  light it again.
 
 **No project open** is a normal state, not an error — it is how a fresh
 session starts, and where closing the last tab returns you. The screen

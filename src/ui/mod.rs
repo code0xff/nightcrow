@@ -64,7 +64,14 @@ pub fn draw_empty(
 ) {
     let rows = chrome_rows(frame.area());
     frame.render_widget(
-        project_tab::render(chrome.repo_paths, chrome.active, rows.tabs, accent),
+        project_tab::render(
+            chrome.repo_paths,
+            chrome.attention,
+            chrome.active,
+            rows.tabs,
+            accent,
+            chrome.attention_bright,
+        ),
         rows.tabs,
     );
 
@@ -128,7 +135,14 @@ pub fn draw(
     let (body_area, notice_area, hint_area) = (rows.body, rows.notice, rows.hint);
 
     frame.render_widget(
-        project_tab::render(tabs.repo_paths, tabs.active, rows.tabs, accent),
+        project_tab::render(
+            tabs.repo_paths,
+            tabs.attention,
+            tabs.active,
+            rows.tabs,
+            accent,
+            tabs.attention_bright,
+        ),
         rows.tabs,
     );
     frame.render_widget(

@@ -8,6 +8,7 @@ use ratatui::{
     text::{Line, Span},
     widgets::Paragraph,
 };
+use std::time::Duration;
 
 /// Per-tab character budget for the project name. The viewer's tab row applies
 /// the same budget by the same rule (`viewer-ui/src/lib/tabLabel.ts`), so a
@@ -17,6 +18,15 @@ const TAB_TITLE_MAX_CHARS: usize = 14;
 
 /// Width of a `+N` overflow marker.
 const MARKER_WIDTH: u16 = 4;
+
+const ATTENTION_GLYPH: char = '•';
+const ATTENTION_BLINK_HALF_PERIOD: Duration = Duration::from_millis(500);
+
+/// Bright/dim phase for the unread marker. Only style changes between phases,
+/// so the row and its pointer hit boxes never move while it blinks.
+pub(crate) fn blink_is_bright(elapsed: Duration) -> bool {
+    (elapsed.as_millis() / ATTENTION_BLINK_HALF_PERIOD.as_millis()).is_multiple_of(2)
+}
 
 /// The name shown for a repo path — its final component. Goes through `Path`
 /// rather than splitting on `/` so a Windows path (`C:\work\api`) yields
@@ -47,15 +57,21 @@ fn truncate(s: &str, max: usize) -> String {
 /// its `F#` legend because the F-key row addresses projects directly and
 /// layout-independently. Projects past the tenth have no key, so they carry
 /// no legend rather than implying an unbound one.
-fn tab_texts(repo_paths: &[String]) -> Vec<String> {
+fn tab_texts(repo_paths: &[String], attention: &[bool]) -> Vec<String> {
     repo_paths
         .iter()
         .enumerate()
         .map(|(i, path)| {
             let name = tab_label(path);
+            let marker = attention
+                .get(i)
+                .copied()
+                .unwrap_or(false)
+                .then_some(format!("{ATTENTION_GLYPH} "))
+                .unwrap_or_default();
             match i.checked_add(1).filter(|n| *n <= 10) {
-                Some(n) => format!(" F{n} {name} "),
-                None => format!(" {name} "),
+                Some(n) => format!(" F{n} {marker}{name} "),
+                None => format!(" {marker}{name} "),
             }
         })
         .collect()
@@ -107,14 +123,27 @@ fn visible_window(widths: &[u16], width: u16, active: usize) -> std::ops::Range<
 /// selects. Single source for `render` and `tab_at`, so the hit boxes always
 /// match what is on screen. A `+N` marker selects the nearest project hidden
 /// on its side, so the overflow is reachable by pointer as well as by F-key.
-fn tab_segments(repo_paths: &[String], active: usize, width: u16) -> Vec<(String, usize)> {
-    let texts = tab_texts(repo_paths);
+fn tab_segments(
+    repo_paths: &[String],
+    attention: &[bool],
+    active: usize,
+    width: u16,
+) -> Vec<(String, usize)> {
+    let texts = tab_texts(repo_paths, attention);
     let widths: Vec<u16> = texts.iter().map(|t| Span::raw(t).width() as u16).collect();
     let visible = visible_window(&widths, width, active);
 
     let mut segments = Vec::with_capacity(visible.len() + 2);
     if visible.start > 0 {
-        segments.push((format!(" +{} ", visible.start), visible.start - 1));
+        let marker = if attention[..visible.start.min(attention.len())]
+            .iter()
+            .any(|unread| *unread)
+        {
+            format!(" +{}{ATTENTION_GLYPH}", visible.start)
+        } else {
+            format!(" +{} ", visible.start)
+        };
+        segments.push((marker, visible.start - 1));
     }
     segments.extend(
         texts[visible.clone()]
@@ -124,7 +153,15 @@ fn tab_segments(repo_paths: &[String], active: usize, width: u16) -> Vec<(String
     );
     let hidden_after = texts.len() - visible.end;
     if hidden_after > 0 {
-        segments.push((format!(" +{hidden_after} "), visible.end));
+        let marker = if attention
+            .get(visible.end..)
+            .is_some_and(|hidden| hidden.iter().any(|unread| *unread))
+        {
+            format!(" +{hidden_after}{ATTENTION_GLYPH}")
+        } else {
+            format!(" +{hidden_after} ")
+        };
+        segments.push((marker, visible.end));
     }
     segments
 }
@@ -134,26 +171,56 @@ fn tab_segments(repo_paths: &[String], active: usize, width: u16) -> Vec<(String
 /// exactly what the row is for. `accent` marks the active tab.
 pub(crate) fn render(
     repo_paths: &[String],
+    attention: &[bool],
     active: usize,
     area: Rect,
     accent: Color,
+    attention_bright: bool,
 ) -> Paragraph<'static> {
-    let spans: Vec<Span> = tab_segments(repo_paths, active, area.width)
+    let spans: Vec<Span> = tab_segments(repo_paths, attention, active, area.width)
         .into_iter()
-        .map(|(text, index)| {
+        .flat_map(|(text, index)| {
             // A `+N` marker is never the active tab, so accent stays a
             // reliable "this is the project you are in" signal.
-            let style = if index == active && !text.starts_with(" +") {
-                Style::default()
-                    .fg(Color::Black)
-                    .bg(accent)
-                    .add_modifier(Modifier::BOLD)
-            } else if text.starts_with(" +") {
+            if index == active && !text.starts_with(" +") {
+                return vec![Span::styled(
+                    text,
+                    Style::default()
+                        .fg(Color::Black)
+                        .bg(accent)
+                        .add_modifier(Modifier::BOLD),
+                )];
+            }
+            let base = if text.starts_with(" +") {
                 Style::default().fg(Color::DarkGray)
             } else {
                 Style::default().fg(Color::Gray)
             };
-            Span::styled(text, style)
+            let has_attention = if text.starts_with(" +") {
+                text.ends_with(ATTENTION_GLYPH)
+            } else {
+                attention.get(index).copied().unwrap_or(false)
+            };
+            if !has_attention {
+                return vec![Span::styled(text, base)];
+            }
+
+            let marker_start = text
+                .find(ATTENTION_GLYPH)
+                .expect("attention segment must contain its marker");
+            let marker_end = marker_start + ATTENTION_GLYPH.len_utf8();
+            let marker_style = Style::default()
+                .fg(if attention_bright {
+                    accent
+                } else {
+                    Color::DarkGray
+                })
+                .add_modifier(Modifier::BOLD);
+            vec![
+                Span::styled(text[..marker_start].to_string(), base),
+                Span::styled(ATTENTION_GLYPH.to_string(), marker_style),
+                Span::styled(text[marker_end..].to_string(), base),
+            ]
         })
         .collect();
     Paragraph::new(Line::from(spans))
@@ -163,6 +230,7 @@ pub(crate) fn render(
 /// the row or past the last tab. `area` is the tab row Rect.
 pub(crate) fn tab_at(
     repo_paths: &[String],
+    attention: &[bool],
     active: usize,
     area: Rect,
     x: u16,
@@ -175,7 +243,7 @@ pub(crate) fn tab_at(
         return None;
     }
     let mut cursor = area.x;
-    for (text, index) in tab_segments(repo_paths, active, area.width) {
+    for (text, index) in tab_segments(repo_paths, attention, active, area.width) {
         let width = Span::raw(text).width() as u16;
         if x < cursor.saturating_add(width) {
             return Some(index);

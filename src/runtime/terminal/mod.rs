@@ -2,6 +2,7 @@ use crate::backend::{PaneId, TerminalBackend};
 use crate::runtime::emulator::PaneEmulator;
 use std::collections::HashMap;
 
+mod attention;
 mod escape;
 mod input;
 mod lifecycle;
@@ -128,6 +129,10 @@ pub struct TerminalState {
     pub(crate) pending_titles: std::collections::VecDeque<Option<String>>,
     pub(crate) emulators: HashMap<PaneId, PaneEmulator>,
     pub(crate) prompt_bufs: HashMap<PaneId, String>,
+    /// Title animations currently being observed, keyed by stable pane id.
+    title_activity: HashMap<PaneId, attention::TitleActivity>,
+    /// Whether this client has an unseen terminal event for the project.
+    unread_attention: bool,
     pub(super) prompt_log_enabled: bool,
     pub(crate) backend: Option<Box<dyn TerminalBackend>>,
 }
@@ -149,6 +154,8 @@ impl TerminalState {
             pending_titles: std::collections::VecDeque::new(),
             emulators: HashMap::new(),
             prompt_bufs: HashMap::new(),
+            title_activity: HashMap::new(),
+            unread_attention: false,
             prompt_log_enabled,
             backend,
         }

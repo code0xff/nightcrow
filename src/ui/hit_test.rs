@@ -6,6 +6,7 @@ use ratatui::layout::{Constraint, Direction, Layout, Position, Rect};
 pub(crate) fn project_tab_at(tabs: Chrome<'_>, screen_area: Rect, x: u16, y: u16) -> Option<usize> {
     crate::ui::project_tab::tab_at(
         tabs.repo_paths,
+        tabs.attention,
         tabs.active,
         chrome_rows(screen_area).tabs,
         x,

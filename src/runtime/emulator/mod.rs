@@ -20,6 +20,8 @@ pub struct EmulatorEvents {
     /// Most recent OSC 0/2 window title in the processed chunk, already
     /// stripped of control characters and surrounding whitespace.
     pub title: Option<String>,
+    /// Whether this chunk rang the terminal bell at least once.
+    pub bell: bool,
     /// Terminal query responses (DA, DSR, ...) the emulator produced while
     /// processing. Must be written back to the pane's PTY.
     pub pty_writes: Vec<u8>,
@@ -46,6 +48,7 @@ pub enum ScrollSink {
 #[derive(Default)]
 struct ProxyState {
     title: Option<String>,
+    bell: bool,
     pty_writes: Vec<u8>,
 }
 
@@ -71,8 +74,9 @@ impl EventListener for EventProxy {
                     .pty_writes
                     .extend_from_slice(text.as_bytes());
             }
-            // Clipboard, bell, damage and child-process events are not part
-            // of nightcrow's pane contract; drop them.
+            Event::Bell => self.0.borrow_mut().bell = true,
+            // Clipboard, damage and child-process events are not part of
+            // nightcrow's pane contract; drop them.
             _ => {}
         }
     }
@@ -115,6 +119,7 @@ impl PaneEmulator {
         let mut state = self.proxy.0.borrow_mut();
         EmulatorEvents {
             title: state.title.take(),
+            bell: std::mem::take(&mut state.bell),
             pty_writes: std::mem::take(&mut state.pty_writes),
         }
     }
