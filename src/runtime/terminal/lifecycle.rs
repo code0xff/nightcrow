@@ -50,6 +50,14 @@ impl TerminalState {
                         self.last_content_size.insert(pane, (rows, cols));
                     }
                 }
+                // Only for a pane this client holds, like `Exited`: a marker
+                // for a pane that is not on any of this client's tabs would
+                // have nothing to point at.
+                BackendEvent::Attention { pane } => {
+                    if self.panes.iter().any(|p| p.id == pane) {
+                        self.raise_attention();
+                    }
+                }
                 BackendEvent::Reordered { order } => self.apply_order(&order),
                 BackendEvent::Recovery {
                     pane,

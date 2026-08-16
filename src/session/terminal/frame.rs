@@ -189,6 +189,12 @@ pub enum ServerMessage {
     /// machine. The one label the hub itself sends is
     /// [`RECOVERY_CANCELLED`](super::hub_recovery::RECOVERY_CANCELLED), which a
     /// client treats as "there is nothing pending any more".
+    /// A plugin says this pane wants the person back. Carries no reason and no
+    /// text: the client turns it into that project tab's unread marker, which
+    /// says "something happened here" and nothing more.
+    Attention {
+        pane: PaneId,
+    },
     Recovery {
         pane: PaneId,
         state: String,

@@ -146,7 +146,7 @@ fn an_events_json_shape_is_the_wire_contract() {
     assert_eq!(
         encode_event(&event).unwrap(),
         format!(
-            r#"{{"event":"pane_idle","v":2,"token":"{TOKEN}","generation":2,"idle_ms":30000}}"#
+            r#"{{"event":"pane_idle","v":3,"token":"{TOKEN}","generation":2,"idle_ms":30000}}"#
         )
     );
 }
@@ -161,7 +161,7 @@ fn a_commands_json_shape_is_the_wire_contract() {
     };
     assert_eq!(
         serde_json::to_string(&command).unwrap(),
-        format!(r#"{{"cmd":"send_input","v":2,"token":"{TOKEN}","generation":2,"data":"go"}}"#)
+        format!(r#"{{"cmd":"send_input","v":3,"token":"{TOKEN}","generation":2,"data":"go"}}"#)
     );
 }
 
@@ -212,6 +212,6 @@ fn a_watch_pane_commands_json_shape_is_the_wire_contract() {
     };
     assert_eq!(
         serde_json::to_string(&command).unwrap(),
-        format!(r#"{{"cmd":"watch_pane","v":2,"token":"{TOKEN}"}}"#)
+        format!(r#"{{"cmd":"watch_pane","v":3,"token":"{TOKEN}"}}"#)
     );
 }

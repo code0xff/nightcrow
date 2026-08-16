@@ -36,14 +36,14 @@ fn a_line_over_the_length_limit_is_refused_before_it_is_parsed() {
 #[test]
 fn a_line_at_the_length_limit_is_parsed() {
     let padding = "p".repeat(MAX_INPUT_BYTES);
-    let line = format!(r#"{{"cmd":"log","v":2,"level":"debug","message":"{padding}"}}"#);
+    let line = format!(r#"{{"cmd":"log","v":3,"level":"debug","message":"{padding}"}}"#);
     assert!(line.len() <= MAX_LINE_BYTES);
     assert!(decode_command(&line).is_ok());
 }
 
 #[test]
 fn an_unknown_cmd_is_refused_rather_than_guessed() {
-    let message = decode_command(r#"{"cmd":"drop_everything","v":2}"#)
+    let message = decode_command(r#"{"cmd":"drop_everything","v":3}"#)
         .expect_err("refused")
         .to_string();
     assert!(message.contains("drop_everything"), "{message}");
@@ -52,7 +52,7 @@ fn an_unknown_cmd_is_refused_rather_than_guessed() {
 
 #[test]
 fn a_command_missing_a_required_field_is_refused() {
-    assert!(decode_command(r#"{"cmd":"send_input","v":2}"#).is_err());
+    assert!(decode_command(r#"{"cmd":"send_input","v":3}"#).is_err());
 }
 
 #[test]
@@ -101,6 +101,6 @@ fn a_blank_line_is_recognised_as_blank_and_carries_no_command() {
         assert!(decode_command(line).is_err());
     }
     assert!(!is_blank_line(
-        r#"{"cmd":"log","v":2,"level":"info","message":"x"}"#
+        r#"{"cmd":"log","v":3,"level":"info","message":"x"}"#
     ));
 }

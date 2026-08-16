@@ -52,6 +52,15 @@ impl TerminalHub {
         broadcast_locked(&mut state.clients, TerminalFrame::Control(json));
     }
 
+    /// Tell every client a plugin wants a person back at `pane`.
+    pub(super) fn broadcast_attention(&self, pane: PaneId) {
+        let Ok(json) = serde_json::to_string(&ServerMessage::Attention { pane }) else {
+            return;
+        };
+        let mut state = self.state.lock().expect("terminal state poisoned");
+        broadcast_locked(&mut state.clients, TerminalFrame::Control(json));
+    }
+
     /// Tell every client there is nothing pending for `pane` any more. Sent
     /// wherever a hold ends without leaving one behind — cancelled, expired,
     /// relaunched, or closed for good.

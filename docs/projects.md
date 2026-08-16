@@ -22,7 +22,9 @@ project keeps running while you work in another.
   behind it.
 - A blinking `•` marks a background project whose terminal needs attention.
   Opening that project acknowledges everything seen so far; later activity can
-  light it again.
+  light it again. A terminal bell raises it, as does a pane exiting or a burst
+  of title changes settling. A tool that reports finishing some other way can
+  say so directly through a plugin — see [Plugins](plugins.md#claude-code-hooks).
 
 **No project open** is a normal state, not an error — it is how a fresh
 session starts, and where closing the last tab returns you. The screen

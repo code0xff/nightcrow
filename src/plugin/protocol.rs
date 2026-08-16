@@ -17,7 +17,8 @@ use serde::{Deserialize, Serialize};
 /// host does not speak is refused.
 ///
 /// 2 added [`PluginCommand::WatchPane`].
-pub const PROTOCOL_VERSION: u32 = 2;
+/// 3 added [`PluginCommand::Attention`].
+pub const PROTOCOL_VERSION: u32 = 3;
 
 /// Longest line the host will read from a plugin. Without a cap a plugin that
 /// never writes a newline makes the host's reader allocate without bound.
@@ -131,6 +132,20 @@ pub enum PluginCommand {
     /// spawn it is looking at, and the [`PluginEvent::PaneOpened`] the host
     /// answers with is what says.
     WatchPane { v: u32, token: PaneToken },
+    /// The pane's program says it wants the person back — a coding agent that
+    /// finished its turn, say. The host raises that pane's project tab marker
+    /// on every attached client that is not already looking at it.
+    ///
+    /// This exists because the marker is otherwise inferred from what crosses
+    /// the PTY — a bell, or a burst of title changes — and a tool that signals
+    /// completion through its own notification channel crosses neither. A
+    /// plugin sitting on that tool's turn-end hook knows exactly, and says so
+    /// rather than leaving the host to guess from output.
+    Attention {
+        v: u32,
+        token: PaneToken,
+        generation: PaneGeneration,
+    },
     /// A line for the host's log.
     Log {
         v: u32,
@@ -156,6 +171,7 @@ impl PluginCommand {
             | Self::Relaunch { v, .. }
             | Self::Status { v, .. }
             | Self::WatchPane { v, .. }
+            | Self::Attention { v, .. }
             | Self::Log { v, .. } => *v,
         }
     }
@@ -168,7 +184,8 @@ impl PluginCommand {
             Self::SendInput { token, .. }
             | Self::Relaunch { token, .. }
             | Self::Status { token, .. }
-            | Self::WatchPane { token, .. } => Some(token),
+            | Self::WatchPane { token, .. }
+            | Self::Attention { token, .. } => Some(token),
             Self::Log { .. } => None,
         }
     }
@@ -182,7 +199,8 @@ impl PluginCommand {
         match self {
             Self::SendInput { generation, .. }
             | Self::Relaunch { generation, .. }
-            | Self::Status { generation, .. } => Some(*generation),
+            | Self::Status { generation, .. }
+            | Self::Attention { generation, .. } => Some(*generation),
             Self::WatchPane { .. } | Self::Log { .. } => None,
         }
     }

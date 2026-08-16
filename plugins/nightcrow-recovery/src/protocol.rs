@@ -13,7 +13,7 @@ use serde::{Deserialize, Serialize};
 /// 2 is the first version with [`PluginCommand::WatchPane`], which this plugin
 /// needs: a pane somebody started a provider CLI in by hand is never named to
 /// us, so asking for it is the only way to watch it at all.
-pub const PROTOCOL_VERSION: u32 = 2;
+pub const PROTOCOL_VERSION: u32 = 3;
 
 /// Longest line the host will read from us; also the cap we apply to what we
 /// read, so a corrupt stream cannot make this process allocate without bound.
@@ -136,6 +136,13 @@ pub enum PluginCommand {
     /// about a pane the host has never described to us, so we cannot know which
     /// spawn it is on — the `PaneOpened` the host answers with is what says.
     WatchPane { v: u32, token: PaneToken },
+    /// The pane's program wants the person back. The host raises that pane's
+    /// project tab marker; it carries no reason and no text.
+    Attention {
+        v: u32,
+        token: PaneToken,
+        generation: PaneGeneration,
+    },
     Log {
         v: u32,
         level: LogLevel,
@@ -199,6 +206,14 @@ pub fn watch_pane(token: PaneToken) -> PluginCommand {
     PluginCommand::WatchPane {
         v: PROTOCOL_VERSION,
         token,
+    }
+}
+
+pub fn attention(token: PaneToken, generation: PaneGeneration) -> PluginCommand {
+    PluginCommand::Attention {
+        v: PROTOCOL_VERSION,
+        token,
+        generation,
     }
 }
 

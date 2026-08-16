@@ -11,8 +11,8 @@
 //! [`runloop_io`](crate::runloop_io), which owns both ends of that stream.
 
 use crate::ipc::{Ipc, IpcMessage, socket_path};
-use crate::protocol::{LogLevel, PluginEvent, log};
-use crate::provider::{OutOfBand, PaneContext, Provider, detect, detect_from_signal};
+use crate::protocol::{LogLevel, PluginEvent, attention, log};
+use crate::provider::{OutOfBand, PaneContext, Provider, SignalKind, detect, detect_from_signal};
 use crate::runloop_adopt::Adoptions;
 use crate::runloop_io::{Message, emit, emit_all, spawn_stdin_reader};
 use crate::state::{PaneRecovery, RecoveryState};
@@ -268,6 +268,12 @@ fn deliver_signal(
     let Some(watch) = panes.get_mut(token) else {
         return Ok(());
     };
+    // Never reaches a provider: a turn ending says nothing about usage limits,
+    // and the recovery state machine has no opinion about it. It is passed
+    // straight through to the host as the one thing it means.
+    if signal.kind == SignalKind::TurnEnd {
+        return emit(&attention(token.to_string(), watch.ctx.generation));
+    }
     let now = now_epoch();
     if let Some(limit) = watch.provider.on_signal(&watch.ctx, signal, now) {
         let commands = watch.recovery.note_limit(limit, now, Instant::now());
