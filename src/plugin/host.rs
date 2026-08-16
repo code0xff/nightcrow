@@ -61,6 +61,28 @@ pub struct PluginHost {
     shut_down: bool,
 }
 
+/// Keep a plugin from opening a console window of its own.
+///
+/// A backgrounded session runs `DETACHED_PROCESS`, so it has no console to hand
+/// down. Windows answers that by allocating a *new* console for a
+/// console-subsystem child — one visible window per plugin, and a window the
+/// user can close, which kills the plugin under it. Every pipe this child uses
+/// is one the spawn opened, so it has nothing to show a console for.
+///
+/// Unix inherits no console this way and needs no flag.
+fn no_console_window(command: &mut Command) {
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        command.creation_flags(CREATE_NO_WINDOW);
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = command;
+    }
+}
+
 impl PluginHost {
     /// Launch `cfg.command` and start pumping.
     ///
@@ -83,20 +105,21 @@ impl PluginHost {
         depth: usize,
     ) -> Result<PluginHost> {
         let program = resolve_program(&cfg.command, plugin_dir);
-        let mut child = Command::new(&program)
+        let mut command = Command::new(&program);
+        command
             .args(&cfg.args)
             .envs(&cfg.env)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .with_context(|| {
-                format!(
-                    "cannot launch plugin \"{}\" from {}",
-                    cfg.name,
-                    program.display()
-                )
-            })?;
+            .stderr(Stdio::piped());
+        no_console_window(&mut command);
+        let mut child = command.spawn().with_context(|| {
+            format!(
+                "cannot launch plugin \"{}\" from {}",
+                cfg.name,
+                program.display()
+            )
+        })?;
 
         // Every pipe was requested above, so these are present; the context
         // still says which one is missing rather than unwrapping blind.
