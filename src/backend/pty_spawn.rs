@@ -1,6 +1,6 @@
 use super::{ExitPhase, PtyBackend, PtyEvent, PtyPane};
 use crate::backend::PaneId;
-use crate::backend::identity::{PANE_TOKEN_ENV, PaneIdentity};
+use crate::backend::identity::{PANE_TOKEN_ENV, PLUGIN_RUNTIME_DIR_ENV, PaneIdentity};
 use crate::backend::slot::{PaneLaunch, resume_command_line};
 use anyhow::Result;
 use portable_pty::{CommandBuilder, NativePtySystem, PtySize, PtySystem};
@@ -101,6 +101,15 @@ impl PtyBackend {
         // provider's own helper processes inherit it — that inheritance is what
         // lets an out-of-process observer name the pane an event came from.
         cmd.env(PANE_TOKEN_ENV, identity.token.as_str());
+        // Alongside the token and inherited the same way: a provider's hook is
+        // told which pane it is in *and* where that pane's plugins listen. The
+        // plugin spawn derives this from the same hub path, so the two agree
+        // without either being told by the other.
+        if let Some(dir) =
+            crate::backend::identity::plugin_runtime_dir(std::path::Path::new(&self.cwd))
+        {
+            cmd.env(PLUGIN_RUNTIME_DIR_ENV, dir);
+        }
         // Only set cwd if the directory actually exists; otherwise inherit
         // ours so spawn does not fail outright (matters for unit tests that
         // pass placeholder paths). The clean canonicalize strips the Windows

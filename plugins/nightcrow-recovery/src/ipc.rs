@@ -90,9 +90,25 @@ impl IpcMessage {
     }
 }
 
-/// Where the socket lives: `$XDG_RUNTIME_DIR/nightcrow/` when the system offers
-/// one, else `~/.nightcrow/run/`.
+/// Env var the host sets on a plugin process and on the panes of the same hub,
+/// naming the directory they share. See nightcrow's `PLUGIN_RUNTIME_DIR_ENV`.
+pub const RUNTIME_DIR_ENV: &str = "NIGHTCROW_PLUGIN_RUNTIME_DIR";
+
+/// Where the socket lives.
+///
+/// The host's directory when it named one, because a plugin process belongs to
+/// one hub and a hub is per repository: a session with several projects runs
+/// several of this binary, and one fixed path would let only the first bind.
+/// The rest would find the address taken and run without a socket, and a
+/// helper inside a pane would reach whichever instance won rather than the one
+/// watching it.
+///
+/// Falling back to the old fixed location keeps this runnable by hand and under
+/// a host too old to say — one instance, one socket, as before.
 pub fn socket_path() -> Result<PathBuf> {
+    if let Some(dir) = std::env::var_os(RUNTIME_DIR_ENV).filter(|d| !d.is_empty()) {
+        return Ok(PathBuf::from(dir).join(SOCKET_FILE));
+    }
     socket_path_from(
         std::env::var_os("XDG_RUNTIME_DIR").as_deref(),
         dirs::home_dir().map(std::ffi::OsString::from).as_deref(),

@@ -95,13 +95,18 @@ impl PluginHost {
     /// No pane token is passed in the environment. A plugin learns which panes
     /// exist only from the events it is sent, which is what keeps a plugin from
     /// addressing a pane that never opted in to it.
-    pub fn spawn(cfg: &PluginConfig, plugin_dir: Option<&Path>) -> Result<PluginHost> {
-        Self::spawn_with_queue_depth(cfg, plugin_dir, OUTBOUND_QUEUE_DEPTH)
+    pub fn spawn(
+        cfg: &PluginConfig,
+        plugin_dir: Option<&Path>,
+        runtime_dir: Option<&Path>,
+    ) -> Result<PluginHost> {
+        Self::spawn_with_queue_depth(cfg, plugin_dir, runtime_dir, OUTBOUND_QUEUE_DEPTH)
     }
 
     fn spawn_with_queue_depth(
         cfg: &PluginConfig,
         plugin_dir: Option<&Path>,
+        runtime_dir: Option<&Path>,
         depth: usize,
     ) -> Result<PluginHost> {
         let program = resolve_program(&cfg.command, plugin_dir);
@@ -112,6 +117,12 @@ impl PluginHost {
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
+        // After `cfg.env`, so this is not something a config can point at
+        // another hub's socket: which hub a plugin belongs to is the host's to
+        // say. See `PLUGIN_RUNTIME_DIR_ENV`.
+        if let Some(dir) = runtime_dir {
+            command.env(crate::backend::identity::PLUGIN_RUNTIME_DIR_ENV, dir);
+        }
         no_console_window(&mut command);
         let mut child = command.spawn().with_context(|| {
             format!(
