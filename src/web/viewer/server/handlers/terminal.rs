@@ -136,6 +136,15 @@ pub(in crate::web::viewer::server) fn serve_terminal(
     let session = entry
         .terminals
         .connect(browser_viewer(head), arriving, evict_handle);
+    // Paired with `note_end`: between the two the log holds this connection's
+    // whole span, and the repo names which panel it was — a page cycling
+    // sockets shows here as rapid attach lines for one viewer.
+    tracing::info!(
+        repo = head.query_param("repo").as_deref().unwrap_or("?"),
+        viewer = ?browser_viewer(head),
+        arriving,
+        "viewer: terminal socket attached"
+    );
 
     // Set when a write could not go out in full. tungstenite is then holding
     // the rest, and only a later flush moves it -- so this has to be retried

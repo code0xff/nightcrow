@@ -114,6 +114,16 @@ pub(in crate::web::viewer::server) fn handle_set_prefs(body: &str, state: &Viewe
         None => None,
     };
 
+    // The project in front is shared, so a write that changes it re-points
+    // every open page — and two pages tugging it back and forth would show
+    // here as alternating switches. No-op writes (a page confirming what is
+    // already in front) stay silent.
+    if let Some(path) = &active_path {
+        let before = state.session.prefs().get().active_repo;
+        if before.as_deref() != Some(path.as_str()) {
+            tracing::info!(from = ?before, to = %path, "viewer: active repo switched");
+        }
+    }
     let stored = state.session.prefs().update(PrefsUpdate {
         accent: request.accent,
         sidebar_width: request.sidebar_width,
