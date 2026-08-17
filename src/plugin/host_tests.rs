@@ -74,7 +74,7 @@ fn an_event_reaches_the_plugin_and_the_command_it_answers_with_is_decoded() {
     // receiving it proves both directions.
     let cfg =
         shell_plugin(r#"read line; case "$line" in *pane_opened*) printf '%s\n' "$CANNED";; esac"#);
-    let mut host = PluginHost::spawn(&cfg, None).expect("spawn");
+    let mut host = PluginHost::spawn(&cfg, None, None).expect("spawn");
     assert!(host.send(&pane_opened()));
     assert_is_canned(wait_for_command(&host));
     host.shutdown();
@@ -84,7 +84,7 @@ fn an_event_reaches_the_plugin_and_the_command_it_answers_with_is_decoded() {
 #[test]
 fn a_blank_line_from_the_plugin_is_skipped_rather_than_ending_the_stream() {
     let cfg = shell_plugin(r#"printf '\n   \n%s\n' "$CANNED""#);
-    let mut host = PluginHost::spawn(&cfg, None).expect("spawn");
+    let mut host = PluginHost::spawn(&cfg, None, None).expect("spawn");
     assert_is_canned(wait_for_command(&host));
     host.shutdown();
 }
@@ -92,7 +92,7 @@ fn a_blank_line_from_the_plugin_is_skipped_rather_than_ending_the_stream() {
 #[test]
 fn a_line_the_host_cannot_decode_does_not_stop_later_commands() {
     let cfg = shell_plugin(r#"printf 'not json\n{"cmd":"nope"}\n%s\n' "$CANNED""#);
-    let mut host = PluginHost::spawn(&cfg, None).expect("spawn");
+    let mut host = PluginHost::spawn(&cfg, None, None).expect("spawn");
     assert_is_canned(wait_for_command(&host));
     host.shutdown();
 }
@@ -107,7 +107,7 @@ fn an_over_long_line_is_discarded_and_the_stream_resynchronises() {
     let cfg = shell_plugin(
         r#"i=0; while [ $i -lt 70 ]; do printf '%01000d' 0; i=$((i+1)); done; printf '\n'; printf '%s\n' "$CANNED""#,
     );
-    let mut host = PluginHost::spawn(&cfg, None).expect("spawn");
+    let mut host = PluginHost::spawn(&cfg, None, None).expect("spawn");
     assert_is_canned(wait_for_command(&host));
     host.shutdown();
 }
@@ -115,7 +115,7 @@ fn an_over_long_line_is_discarded_and_the_stream_resynchronises() {
 #[test]
 fn a_plugin_that_exits_at_once_is_reported_not_alive_and_shuts_down_cleanly() {
     let cfg = shell_plugin("exit 0");
-    let mut host = PluginHost::spawn(&cfg, None).expect("spawn");
+    let mut host = PluginHost::spawn(&cfg, None, None).expect("spawn");
     let deadline = Instant::now() + HOST_TEST_DEADLINE;
     while host.is_alive() && Instant::now() < deadline {
         thread::sleep(POLL);
@@ -128,7 +128,7 @@ fn a_plugin_that_exits_at_once_is_reported_not_alive_and_shuts_down_cleanly() {
 #[test]
 fn shutting_down_twice_is_safe() {
     let cfg = shell_plugin("cat");
-    let mut host = PluginHost::spawn(&cfg, None).expect("spawn");
+    let mut host = PluginHost::spawn(&cfg, None, None).expect("spawn");
     assert!(host.is_alive());
     host.shutdown();
     host.shutdown();
@@ -142,7 +142,7 @@ fn a_full_outbound_queue_drops_events_instead_of_blocking() {
     // Depth 1 against a plugin that never reads: the pipe fills, the writer
     // blocks inside its write, and every further event has nowhere to go.
     let cfg = shell_plugin("sleep 30");
-    let mut host = PluginHost::spawn_with_queue_depth(&cfg, None, 1).expect("spawn");
+    let mut host = PluginHost::spawn_with_queue_depth(&cfg, None, None, 1).expect("spawn");
     let bulky = PluginEvent::PaneOutput {
         v: PROTOCOL_VERSION,
         token: PaneToken::new().expect("OS RNG"),
@@ -166,7 +166,7 @@ fn a_command_named_by_path_is_launched_from_that_path() {
     // "/bin/sh" holds a separator, so it is used as given rather than searched
     // for in the plugin directory.
     let cfg = shell_plugin("exit 0");
-    let host = PluginHost::spawn(&cfg, Some(Path::new("/nonexistent"))).expect("spawn");
+    let host = PluginHost::spawn(&cfg, Some(Path::new("/nonexistent")), None).expect("spawn");
     assert_eq!(host.name(), "test-plugin");
 }
 
@@ -174,7 +174,7 @@ fn a_command_named_by_path_is_launched_from_that_path() {
 fn a_plugin_that_cannot_be_launched_is_reported_rather_than_ignored() {
     let mut cfg = shell_plugin("exit 0");
     cfg.command = "/nonexistent/plugin-binary".to_string();
-    let Err(err) = PluginHost::spawn(&cfg, None) else {
+    let Err(err) = PluginHost::spawn(&cfg, None, None) else {
         panic!("launching a missing binary should have failed");
     };
     assert!(err.to_string().contains("cannot launch plugin"));

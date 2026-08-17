@@ -10,6 +10,54 @@ use serde::{Deserialize, Serialize};
 /// identifies the project rather than the pane.
 pub const PANE_TOKEN_ENV: &str = "NIGHTCROW_PANE_TOKEN";
 
+/// Env var naming the directory a hub's plugins put their runtime sockets in.
+///
+/// A plugin process belongs to one [`TerminalHub`](crate::session::terminal),
+/// and a hub is per repository — so a session with six projects runs six of
+/// each plugin. A plugin that picks one fixed socket path is therefore not
+/// wrong about its own instance but about how many there are: the first binds,
+/// the rest find the address taken and run without their socket, and a helper
+/// inside a pane reaches whichever instance won rather than the one watching
+/// it.
+///
+/// Both sides derive this from the hub's working directory, so nothing has to
+/// be handed from the plugin spawn to the pane spawn: they compute the same
+/// directory from the same input. The pane's children inherit it exactly as
+/// they inherit [`PANE_TOKEN_ENV`], which is what lets a provider's hook find
+/// the instance that is watching the pane it runs in.
+pub const PLUGIN_RUNTIME_DIR_ENV: &str = "NIGHTCROW_PLUGIN_RUNTIME_DIR";
+
+/// The directory the plugins of the hub rooted at `cwd` use for their sockets.
+///
+/// `None` when there is nowhere to put one, which leaves a plugin on whatever
+/// default it had — degraded exactly as it is today rather than refused.
+///
+/// The hub's path is hashed rather than spelled out. AF_UNIX paths are capped
+/// near 107 bytes and a repository path can be most of that on its own, so a
+/// fixed-width digest is what keeps the socket bindable; it also keeps a
+/// directory name from carrying where someone's code lives.
+pub fn plugin_runtime_dir(cwd: &std::path::Path) -> Option<std::path::PathBuf> {
+    let base = match std::env::var_os("XDG_RUNTIME_DIR").filter(|d| !d.is_empty()) {
+        Some(dir) => std::path::PathBuf::from(dir).join("nightcrow"),
+        None => dirs::home_dir()?.join(".nightcrow").join("run"),
+    };
+    Some(base.join(hub_key(cwd)))
+}
+
+/// A stable, filesystem-safe, fixed-width name for a hub. FNV-1a: this needs to
+/// agree across processes and runs, not to resist anyone — the directory it
+/// names is already owner-only.
+fn hub_key(cwd: &std::path::Path) -> String {
+    const OFFSET: u64 = 0xcbf2_9ce4_8422_2325;
+    const PRIME: u64 = 0x0000_0100_0000_01b3;
+    let mut hash = OFFSET;
+    for byte in cwd.to_string_lossy().as_bytes() {
+        hash ^= u64::from(*byte);
+        hash = hash.wrapping_mul(PRIME);
+    }
+    format!("{hash:016x}")
+}
+
 /// Entropy behind a pane token, matching the viewer's session tokens at half
 /// the width: a session holds a handful of panes, not thousands.
 const TOKEN_BYTES: usize = 16;

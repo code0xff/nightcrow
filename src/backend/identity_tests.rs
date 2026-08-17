@@ -45,3 +45,39 @@ fn a_token_serialises_as_a_plain_string() {
     let back: PaneToken = serde_json::from_str(&json).expect("deserialise");
     assert_eq!(back, token);
 }
+
+/// The bug this exists for: one hub per repository means one plugin process
+/// per repository, and they must not all bind the same socket.
+#[test]
+fn two_hubs_get_different_plugin_runtime_directories() {
+    let one = plugin_runtime_dir(std::path::Path::new("/work/alpha"));
+    let two = plugin_runtime_dir(std::path::Path::new("/work/beta"));
+
+    assert!(one.is_some() && two.is_some());
+    assert_ne!(one, two);
+}
+
+#[test]
+fn the_same_hub_resolves_to_the_same_directory_every_time() {
+    // The plugin spawn and the pane spawn derive this independently, so a
+    // digest that moved between the two would silently split them.
+    assert_eq!(
+        plugin_runtime_dir(std::path::Path::new("/work/alpha")),
+        plugin_runtime_dir(std::path::Path::new("/work/alpha"))
+    );
+}
+
+#[test]
+fn a_hub_directory_name_is_fixed_width_and_hides_the_path() {
+    let dir = plugin_runtime_dir(std::path::Path::new("/very/long/path/to/some/repository"))
+        .expect("a home directory in the test environment");
+    let name = dir
+        .file_name()
+        .expect("a leaf")
+        .to_string_lossy()
+        .into_owned();
+
+    assert_eq!(name.len(), 16, "AF_UNIX paths are capped near 107 bytes");
+    assert!(name.chars().all(|c| c.is_ascii_hexdigit()));
+    assert!(!name.contains("repository"));
+}

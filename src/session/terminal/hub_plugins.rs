@@ -44,6 +44,9 @@ pub(super) struct Plugins {
     /// a config reload — enabling a plugin whose panes were created while it was
     /// off has to be able to find them.
     pub(super) intended: HashMap<PaneId, String>,
+    /// Where this hub's plugins listen. Held so a config reload starts a host
+    /// on the same socket directory the running panes were told about.
+    pub(super) runtime_dir: Option<std::path::PathBuf>,
     /// Each plugin's `allowed_resume_flags`, as the guard needs them.
     pub(super) allowed_flags: HashMap<String, Vec<String>>,
     /// The plugins whose config set `watch_on_signal`: those the operator allowed
@@ -76,6 +79,10 @@ impl Plugins {
                 tracing::debug!(%error, "viewer: no plugin directory; resolving plugins on PATH");
             })
             .ok();
+        // Derived from the hub's own path, exactly as the pane spawn derives
+        // it, so this hub's plugins and this hub's panes agree on where the
+        // sockets are without one telling the other.
+        let runtime_dir = crate::backend::identity::plugin_runtime_dir(std::path::Path::new(cwd));
         let mut hosts = HashMap::new();
         let mut launched = HashMap::new();
         let mut allowed_flags = HashMap::new();
@@ -87,7 +94,7 @@ impl Plugins {
             if !cfg.enabled || !(opted_in || cfg.watch_on_signal) {
                 continue;
             }
-            match PluginHost::spawn(cfg, dir.as_deref()) {
+            match PluginHost::spawn(cfg, dir.as_deref(), runtime_dir.as_deref()) {
                 Ok(host) => {
                     allowed_flags.insert(cfg.name.clone(), cfg.allowed_resume_flags.clone());
                     if cfg.watch_on_signal {
@@ -106,6 +113,7 @@ impl Plugins {
         Self {
             hosts,
             launched,
+            runtime_dir,
             owners: HashMap::new(),
             intended: HashMap::new(),
             allowed_flags,

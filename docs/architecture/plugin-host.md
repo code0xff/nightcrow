@@ -12,6 +12,20 @@
 
 ## 프로세스 경계와 도달 범위
 
+- **plugin 프로세스는 저장소마다 하나다**: `Plugins::start`는 `TerminalHub::run` 안에 있고 hub은
+  저장소마다 하나이므로(`session/catalog`), 프로젝트가 여섯이면 켜 둔 plugin도 여섯 벌 뜬다. 이것이
+  경계의 형태다 — pane과 마찬가지로 plugin도 저장소 단위로 격리된다. 그 대가로 **plugin은 자신이
+  유일하다고 가정할 수 없다**. host는 hub의 경로에서 runtime 디렉터리를 유도해
+  `NIGHTCROW_PLUGIN_RUNTIME_DIR`로 plugin 자식과 그 hub의 pane 양쪽에 심는다
+  (`backend::identity::plugin_runtime_dir`). 양쪽이 같은 입력에서 같은 값을 계산하므로 한쪽이
+  다른 쪽에게 알려줄 배관이 없고, pane 안의 helper는 토큰을 읽듯 이 값을 읽어 **자기 pane을 보고
+  있는 인스턴스**의 소켓으로 간다. 경로 대신 고정 폭 digest를 쓰는 이유는 AF_UNIX 경로 상한이
+  107바이트 부근이고 저장소 경로만으로 그 대부분을 쓸 수 있기 때문이다.
+- **Windows에서 plugin은 콘솔을 열지 않는다**: 백그라운드 세션은 `DETACHED_PROCESS`로 도므로 물려줄
+  콘솔이 없고, Windows는 그럴 때 콘솔 subsystem 자식에게 **새 콘솔을 할당한다**. plugin마다 창이 하나씩
+  뜨고 그 창을 닫으면 plugin이 죽는다. 자식의 파이프는 전부 host가 열어주므로 콘솔이 필요 없어
+  `CREATE_NO_WINDOW`로 막는다(`plugin/host.rs`).
+
 - **왜 자식 프로세스 + NDJSON인가**: Rust에는 안정 ABI가 없어 `libloading` 기반 dylib plugin은
   버전이 어긋나는 순간 UB다. cargo feature 게이트는 재컴파일을 요구하므로 "설치·제거 가능"이
   아니다. 남는 것은 프로세스 경계이고, 그 편이 신뢰 모델도 정직하다 — plugin은 우리 주소 공간에
