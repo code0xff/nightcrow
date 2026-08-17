@@ -81,6 +81,23 @@ impl TerminalHub {
                 let _ = tx.try_send(TerminalFrame::Control(json));
             }
             for pane in &state.panes {
+                // The shape of what was replayed, so a client that reports an
+                // incomplete screen can be told apart from a record that was
+                // already missing it — the record is gone by the time anyone
+                // asks.
+                tracing::info!(
+                    client = id,
+                    pane = pane.id,
+                    alt = pane.modes.alt_screen,
+                    ring = pane.scrollback.len(),
+                    covered = pane.covered,
+                    normal_screen = pane.normal_screen.len(),
+                    screen = pane.screen.len(),
+                    since = pane.since.len(),
+                    rows = pane.rows,
+                    cols = pane.cols,
+                    "viewer: replaying a pane's record"
+                );
                 if !replay_pane(&tx, pane) {
                     // The queue is this client's own and empty until now, and a
                     // whole replay of the largest panes allowed fits it (see
