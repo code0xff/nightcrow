@@ -93,6 +93,13 @@ export function useRepoPoll({
   // page follows it — while an unchanged value is one this page has already
   // adopted, or one its own switch is still writing back.
   const servedActiveRef = useRef<string | null>(null);
+  // The value the poll most recently made this page follow, held so the write
+  // effect below can tell a followed value from a chosen one. A value rather
+  // than a flag: state updates batch, and a boolean set by the poll could
+  // still be standing when a person's own switch becomes the final value of
+  // the same render — silently swallowing the one write that mattered. The
+  // value survives that: it only ever matches what the poll itself set.
+  const adoptedRef = useRef<string | null>(null);
 
   useEffect(() => {
     // `null` performs the initial authentication probe. A successful login
@@ -162,15 +169,26 @@ export function useRepoPoll({
               return ids.map((id) => byId.get(id)!).filter(Boolean);
             });
           }
+          const ids = list.map((r) => r.id);
           const servedChanged = active_repo !== servedActiveRef.current;
           servedActiveRef.current = active_repo ?? null;
+          // A switch onto the *served* value is the page following the
+          // session, not the person at this page choosing — marked so the
+          // write below stays quiet about it. Landing anywhere else (the
+          // first-tab fallback when nothing served resolves) is this page's
+          // own doing and is still written, which keeps the server describing
+          // a project some client is actually in.
+          //
+          // Decided here rather than inside the state updater: an updater can
+          // run for a render that never commits, and a mark left behind by
+          // one would suppress a real write later. The decision needs no
+          // `current` — a changed served value that is open wins in
+          // `resolveActiveRepo` regardless of it.
+          if (servedChanged && active_repo && ids.includes(active_repo)) {
+            adoptedRef.current = active_repo;
+          }
           setRepo((current) =>
-            resolveActiveRepo(
-              current,
-              list.map((r) => r.id),
-              active_repo,
-              servedChanged,
-            ),
+            resolveActiveRepo(current, ids, active_repo, servedChanged),
           );
           if (!cancelled) timer = setTimeout(refresh, REPO_POLL_MS);
         })
@@ -217,23 +235,36 @@ export function useRepoPoll({
   ]);
 
   // Persist the selection from the one place it settles, rather than from each
-  // of the four callers that change it (a tab click, the picker, closing a
-  // tab, the fallback above) — a caller added later would otherwise be the one
-  // that forgets. That includes the fallback: landing somewhere because the
-  // old tab closed is still where this page now is, and recording it keeps the
-  // server describing a project some client is actually in.
+  // of the callers that change it (a tab click, the picker, closing a tab) —
+  // a caller added later would otherwise be the one that forgets.
   //
-  // Deliberately unconditional, so the first load posts back the very project
-  // the server just named. Skipping that write would mean tracking what this
-  // page has sent against what the last poll reported, and those two go out of
-  // step for a poll every time a write is in flight — long enough for the next
-  // switch to read the stale one and skip a write that was needed.
+  // But only this page's own switches are written. A value the poll adopted
+  // is the session talking, and echoing it back turned two open pages into a
+  // feedback loop: each page followed the other's write, wrote back what it
+  // had just followed, and the front repository oscillated between them once
+  // a second for as long as both pages lived — every flip tearing both
+  // terminal panels down mid-replay, which a person saw as panes with no
+  // history. The session already knows an adopted value; only a choice made
+  // at this page is news.
+  //
+  // This is not "skip when it matches the server", which was tried and
+  // reverted (A→B→A inside one poll left B on the server): the mark is the
+  // one value the poll set, and a person's write clears it, so returning to
+  // a followed project is still recorded.
   //
   // Serialized rather than fire-and-forget: two POSTs on separate connections
   // are ordered by arrival, so switching twice quickly could leave the first
   // selection as the one that lands last and sticks.
   useEffect(() => {
-    if (!repo) return;
+    if (!repo) {
+      // Losing the selection outlives any adoption: without this, a mark left
+      // from before every tab closed could match the first-tab fallback of a
+      // later reopen and swallow the write that should record it.
+      adoptedRef.current = null;
+      return;
+    }
+    if (repo === adoptedRef.current) return;
+    adoptedRef.current = null;
     writeActiveRepo(repo);
   }, [repo, writeActiveRepo]);
 
