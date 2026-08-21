@@ -12,20 +12,29 @@ const CANDIDATE_GAP: &str = "  ";
 
 pub(crate) fn render_notice_row<'a>(
     app: &'a App,
-    repo_input: &RepoInput,
+    repo_input: &'a RepoInput,
     accent: Color,
     width: u16,
 ) -> Paragraph<'a> {
+    // The open dialog takes the header's row whole: the header names the repo
+    // being left, the input names the one being opened. Notices and the Tab
+    // candidates follow the dialog down to the hint row for the duration
+    // (`repo_dialog_hint_line`), so nothing covers the path being typed.
+    if repo_input.active {
+        return Paragraph::new(crate::ui::repo_dialog::repo_input_line(
+            repo_input, accent, width,
+        ));
+    }
     match notice_or_candidates(app.notice.as_ref(), repo_input, Some(&app.repo_path), width) {
         Some(line) => Paragraph::new(line),
         None => render_repo_header(app, accent, width),
     }
 }
 
-/// The notice row's content when something wants to claim it: a notice first,
-/// then the repo dialog's completion candidates. `None` leaves the row to the
-/// caller's own fallback — the repo header on the project screen, nothing on the
-/// empty one.
+/// The row's content when something wants to claim it: a notice first, then
+/// the repo dialog's completion candidates. `None` leaves the row to the
+/// caller's own fallback — the repo header on the notice row, the dialog's key
+/// legend on the hint row, nothing on the empty screen.
 ///
 /// A notice outranks the candidates because it explains a rejected action, and
 /// any edit (Tab included) clears it, so the two rarely compete for long.

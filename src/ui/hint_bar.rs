@@ -3,7 +3,7 @@ use crate::ui::chrome::{Chrome, chrome_rows};
 use crate::ui::hint_text::{
     EMPTY_HINT, EMPTY_HINT_ARMED, PREFIX_CHIP, normal_hint_literal, prefix_armed_hint_text,
 };
-use crate::ui::status_view::RepoInput;
+use crate::ui::repo_dialog::repo_dialog_hint_line;
 use ratatui::{
     layout::{Position, Rect},
     style::{Color, Modifier, Style},
@@ -100,34 +100,6 @@ pub(crate) fn hint_spans(text: &str, leader: &str, mark_clickable: bool) -> Vec<
     spans
 }
 
-/// The dialog's input line, with its keys spelled out after the caret.
-/// The legend is dropped whole when the path leaves no room for it, rather
-/// than clipped — the caret has to stay visible. `width` is the hint row's;
-/// 0 means "unknown", which keeps the legend.
-pub(crate) fn repo_input_line<'a>(
-    repo_input: &'a RepoInput,
-    accent: Color,
-    width: u16,
-) -> Line<'a> {
-    const PROMPT: &str = "repo: ";
-    let legend = if repo_input.picker.is_some() {
-        "  up/dn/jk: move | right: open | left: up | enter: select | esc: back"
-    } else {
-        "  down: browse | tab: complete | enter: open | esc: cancel"
-    };
-    let mut spans = vec![
-        Span::styled(PROMPT, Style::default().fg(accent)),
-        Span::raw(repo_input.buf.as_str()),
-        Span::styled("|", Style::default().fg(accent)),
-    ];
-    // Display columns, not bytes: a path can hold wide or combining characters.
-    let used: usize = spans.iter().map(Span::width).sum();
-    if width == 0 || used + Span::raw(legend).width() <= usize::from(width) {
-        spans.push(Span::styled(legend, Style::default().fg(Color::DarkGray)));
-    }
-    Line::from(spans)
-}
-
 pub(crate) fn render_hint_bar<'a>(
     app: &'a App,
     chrome: Chrome<'a>,
@@ -135,9 +107,13 @@ pub(crate) fn render_hint_bar<'a>(
     width: u16,
 ) -> Paragraph<'a> {
     if chrome.repo_input.active {
-        // A rejected path is reported on the notice row above, so this row
-        // stays the input line plus its own legend.
-        return Paragraph::new(repo_input_line(chrome.repo_input, accent, width));
+        // The input itself sits on the notice row, where the repo header was;
+        // this row carries the dialog's keys and its reports.
+        return Paragraph::new(repo_dialog_hint_line(
+            app.notice.as_ref(),
+            chrome.repo_input,
+            width,
+        ));
     }
     let leader = leader_label_of(app.interaction.leader);
     if app.interaction.prefix_armed {

@@ -1,5 +1,5 @@
 use super::common::*;
-use crate::ui::hint_bar::repo_input_line;
+use crate::ui::repo_dialog::{repo_dialog_hint_line, repo_input_line};
 use crate::ui::status_view::RepoInput;
 use crate::workspace::PathTree;
 use ratatui::style::Color;
@@ -63,13 +63,12 @@ fn an_empty_directory_says_so_rather_than_drawing_a_blank_box() {
 }
 
 #[test]
-fn the_dialog_advertises_its_keys_on_the_input_row() {
+fn the_dialog_advertises_its_keys_on_the_hint_row() {
     // Nothing else can: the dialog replaces the hint legend entirely, so an
     // unadvertised key is unfindable.
     let field = field_only();
-    let line = repo_input_line(&field, Color::Yellow, 90).to_string();
+    let line = repo_dialog_hint_line(None, &field, 90).to_string();
 
-    assert!(line.contains("/repos/current"), "the path itself: {line}");
     assert!(
         line.contains("down: browse"),
         "the way into the browser: {line}"
@@ -78,10 +77,10 @@ fn the_dialog_advertises_its_keys_on_the_input_row() {
 }
 
 #[test]
-fn the_browsers_own_keys_replace_the_fields_on_the_input_row() {
+fn the_browsers_own_keys_replace_the_fields_on_the_hint_row() {
     let (_guard, repo_input) = browsing(&["alpha"]);
 
-    let line = repo_input_line(&repo_input, Color::Yellow, 200).to_string();
+    let line = repo_dialog_hint_line(None, &repo_input, 200).to_string();
 
     assert!(line.contains("enter: select"), "not `enter: open`: {line}");
     assert!(line.contains("left: up"), "{line}");
@@ -89,15 +88,78 @@ fn the_browsers_own_keys_replace_the_fields_on_the_input_row() {
 }
 
 #[test]
-fn a_path_too_long_for_the_legend_drops_it_whole_and_keeps_the_caret() {
+fn the_input_row_carries_the_path_and_the_caret_and_nothing_else() {
+    // The legend lives on its own row now, so even a path that would once
+    // have crowded it out shares its line with nothing.
     let mut field = field_only();
     field.buf = "/a".repeat(30);
 
-    let line = repo_input_line(&field, Color::Yellow, 40).to_string();
+    let line = repo_input_line(&field, Color::Yellow, 90).to_string();
 
+    assert!(line.contains(&field.buf), "the path itself: {line}");
     assert!(
         !line.contains("browse"),
-        "a half legend reads as a glitch: {line}"
+        "the legend belongs to the hint row: {line}"
     );
     assert!(line.ends_with('|'), "the caret has to survive: {line}");
+}
+
+#[test]
+fn a_path_longer_than_the_row_shows_its_tail_and_keeps_the_caret() {
+    // The caret marks where typing lands, so it is the end of the path that
+    // must survive — the front folds into a `…` instead of pushing the caret
+    // off the row.
+    let mut field = field_only();
+    field.buf = format!("{}/the-repo", "/a".repeat(30));
+
+    let line = repo_input_line(&field, Color::Yellow, 40).to_string();
+
+    assert!(line.ends_with("/the-repo|"), "got: {line}");
+    assert!(line.contains('\u{2026}'), "the cut must be marked: {line}");
+    assert!(
+        ratatui::text::Span::raw(line.as_str()).width() <= 40,
+        "the line must fit the row it was cut for: {line}"
+    );
+}
+
+#[test]
+fn a_tail_holding_a_width_shifting_sequence_still_fits_the_row() {
+    // Per-character width sums miss context-sensitive sequences (an emoji
+    // with a variation selector); the invariant is what matters: whatever the
+    // tail holds, the built line never exceeds the row it was cut for.
+    let mut field = field_only();
+    field.buf = format!("{}\u{2764}\u{FE0F}end", "/a".repeat(30));
+
+    let line = repo_input_line(&field, Color::Yellow, 40).to_string();
+
+    assert!(line.ends_with("end|"), "the caret has to survive: {line}");
+    assert!(
+        ratatui::text::Span::raw(line.as_str()).width() <= 40,
+        "the line must fit the row it was cut for: {line}"
+    );
+}
+
+#[test]
+fn a_row_too_narrow_for_any_path_keeps_the_prompt_and_caret_alone() {
+    // ` repo: ` + `|` is 8 columns; at exactly that width no path fits, and
+    // an ellipsis would itself push the caret off the end it protects.
+    let field = field_only();
+
+    let line = repo_input_line(&field, Color::Yellow, 8).to_string();
+
+    assert_eq!(line, " repo: |", "got: {line}");
+}
+
+#[test]
+fn a_rejection_takes_the_dialogs_hint_row_over_the_legend() {
+    // The same priority the notice row applies when the dialog is closed: the
+    // rejection explains the enter that just did nothing, and any edit clears
+    // it, so the legend is never gone for long.
+    let field = field_only();
+    let notice = crate::app::Notice::new(crate::app::NoticeKind::RepoInput, "no such directory");
+
+    let line = repo_dialog_hint_line(Some(&notice), &field, 90).to_string();
+
+    assert!(line.contains("no such directory"), "{line}");
+    assert!(!line.contains("tab: complete"), "{line}");
 }

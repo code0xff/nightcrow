@@ -10,7 +10,7 @@ fn repo_header_preserves_a_windows_drive_root() {
 }
 
 #[test]
-fn repo_input_reports_a_rejected_path_on_the_notice_row() {
+fn repo_input_reports_a_rejected_path_on_the_hint_row() {
     let mut ws = test_workspace();
     ws.start_repo_input();
     ws.repo_input.buf = "/definitely/not/here".to_string();
@@ -20,18 +20,18 @@ fn repo_input_reports_a_rejected_path_on_the_notice_row() {
         ws.repo_input.active,
         "a rejected path must leave the dialog open for correction"
     );
-    // With a project open the rejection lands on that project's notice row,
-    // directly above the input still holding the text to correct.
-    let notice = notice_text(ws.active().unwrap());
-    assert!(
-        notice.contains("no such directory"),
-        "the notice row must say why the confirm was rejected, got: {notice}"
-    );
     let repo_input = ws.repo_input.clone();
+    // The input holds the notice row while the dialog is open, so the
+    // rejection lands on the hint row, directly below the text to correct.
+    let notice = notice_text_with(ws.active().unwrap(), &repo_input);
+    assert!(
+        notice.contains("/definitely/not/here"),
+        "the rejected text must stay in the input, got: {notice}"
+    );
     let hint = hint_text_with(ws.active().unwrap(), plain_chrome(&repo_input));
     assert!(
-        hint.contains("/definitely/not/here"),
-        "the rejected text must stay in the input, got: {hint}"
+        hint.contains("no such directory"),
+        "the hint row must say why the confirm was rejected, got: {hint}"
     );
 }
 
@@ -80,16 +80,16 @@ fn dialog_offering(candidates: &[&str]) -> crate::ui::status_view::RepoInput {
 }
 
 #[test]
-fn completion_candidates_take_the_notice_row_over_repo_identity() {
-    let mut app = app_with_files(vec![]);
-    app.repo_path = "/tmp/somewhere".to_string();
+fn completion_candidates_take_the_hint_row_over_the_legend() {
+    let app = app_with_files(vec![]);
+    let dialog = dialog_offering(&["nightcrow", "nightowl"]);
 
-    let text = notice_text_with(&app, &dialog_offering(&["nightcrow", "nightowl"]));
+    let text = hint_text_with(&app, plain_chrome(&dialog));
 
     assert!(text.contains("nightcrow"), "got: {text}");
     assert!(text.contains("nightowl"), "got: {text}");
     assert!(
-        !text.contains("/tmp/somewhere"),
+        !text.contains("tab: complete"),
         "the candidates answer the Tab that is on screen, got: {text}"
     );
 }
@@ -100,8 +100,9 @@ fn completion_candidates_take_the_notice_row_over_repo_identity() {
 fn a_notice_outranks_the_completion_candidates() {
     let mut app = app_with_files(vec![]);
     app.raise_notice(NoticeKind::RepoInput, "no such directory");
+    let dialog = dialog_offering(&["nightcrow"]);
 
-    let text = notice_text_with(&app, &dialog_offering(&["nightcrow"]));
+    let text = hint_text_with(&app, plain_chrome(&dialog));
 
     assert!(text.contains("no such directory"), "got: {text}");
     assert!(!text.contains("nightcrow"), "got: {text}");
@@ -117,9 +118,9 @@ fn a_candidate_list_too_wide_for_the_row_reports_what_it_dropped() {
     terminal
         .draw(|frame| {
             frame.render_widget(
-                crate::ui::notice::render_notice_row(
+                crate::ui::hint_bar::render_hint_bar(
                     &app,
-                    &dialog,
+                    plain_chrome(&dialog),
                     ratatui::style::Color::Yellow,
                     frame.area().width,
                 ),
@@ -261,19 +262,23 @@ fn 공지_자리가_한_칸뿐이어도_잘렸다는_표시는_남는다() {
     );
 }
 
-/// Completion candidates still replace the repo header entirely (no regression).
+/// The open dialog replaces the repo header entirely: the header names the
+/// repo being left, the input names the one being opened.
 #[test]
-fn 자동_완성_후보는_저장소_헤더를_대체한다() {
+fn 다이얼로그가_열리면_입력이_저장소_헤더를_대체한다() {
     let mut app = app_with_files(vec![]);
     app.repo_path = "/tmp/somewhere".to_string();
 
     let text = notice_text_with(&app, &dialog_offering(&["nightcrow", "nightowl"]));
 
-    assert!(text.contains("nightcrow"), "got: {text}");
-    assert!(text.contains("nightowl"), "got: {text}");
+    assert!(text.contains("repo: /repos/"), "got: {text}");
     assert!(
         !text.contains("/tmp/somewhere"),
-        "candidates must replace repo header, got: {text}"
+        "the input must replace the repo header, got: {text}"
+    );
+    assert!(
+        !text.contains("nightcrow"),
+        "the candidates belong to the hint row, got: {text}"
     );
 }
 

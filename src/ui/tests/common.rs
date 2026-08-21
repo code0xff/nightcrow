@@ -18,8 +18,8 @@ pub(super) fn notice_text(app: &App) -> String {
     notice_text_with(app, &RepoInput::default())
 }
 
-/// The notice row with a dialog state that can be claiming it — completion
-/// candidates share the row with notices and the repo header.
+/// The notice row with a dialog state that can be claiming it — an open
+/// dialog's input takes the row in the repo header's place.
 pub(super) fn notice_text_with(app: &App, repo_input: &RepoInput) -> String {
     let mut terminal = Terminal::new(TestBackend::new(200, 1)).unwrap();
     terminal

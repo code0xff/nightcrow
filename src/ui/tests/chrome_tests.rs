@@ -53,6 +53,62 @@ fn the_empty_screen_shows_the_dialog_and_its_rejection() {
 }
 
 #[test]
+fn the_project_screen_puts_the_dialog_on_the_notice_row_and_its_reports_below() {
+    // The wiring, not the helpers: the input must land on the notice row in
+    // the repo header's place, and the rejection on the hint row under it.
+    let mut app = app_with_files(vec!["a.rs"]);
+    app.repo_path = "/tmp/somewhere".to_string();
+    app.raise_notice(NoticeKind::RepoInput, "no such directory");
+    let repo_input = RepoInput {
+        active: true,
+        buf: "/definitely/not/here".to_string(),
+        candidates: Vec::new(),
+        picker: None,
+    };
+    let paths = vec![".".to_string()];
+    let mut terminal = Terminal::new(TestBackend::new(120, 20)).unwrap();
+    let ss = two_face::syntax::extra_newlines();
+    let ts = ThemeSet::load_defaults();
+    terminal
+        .draw(|frame| {
+            draw(
+                frame,
+                &mut app,
+                Chrome {
+                    repo_paths: &paths,
+                    attention: &[],
+                    attention_bright: true,
+                    active: 0,
+                    repo_input: &repo_input,
+                },
+                &ss,
+                &ts,
+                &LayoutConfig::default(),
+                Color::Yellow,
+            );
+        })
+        .unwrap();
+
+    let buf = terminal.backend().buffer();
+    let row = |y: u16| -> String { (0..buf.area.width).map(|x| buf[(x, y)].symbol()).collect() };
+    let notice_row = row(buf.area.height - 2);
+    let hint_row = row(buf.area.height - 1);
+
+    assert!(
+        notice_row.contains("repo: /definitely/not/here"),
+        "the input takes the notice row, got: {notice_row}"
+    );
+    assert!(
+        !notice_row.contains("/tmp/somewhere"),
+        "the repo header stands aside for the dialog, got: {notice_row}"
+    );
+    assert!(
+        hint_row.contains("no such directory"),
+        "the rejection lands on the hint row, got: {hint_row}"
+    );
+}
+
+#[test]
 fn the_project_tab_row_survives_every_fullscreen_mode() {
     // Chrome is rendered before the layout branches precisely so no view
     // mode can strand the user without knowing which project they are in.

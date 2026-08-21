@@ -198,7 +198,8 @@ repo-relative 전용이며, `tree_list::render`는 `&App`·`app.focus`에 의존
   있었다. 후보 목록이 떠 있을 때의 두 번째 `Tab`도 같은 곳으로 승격한다.
 - **hint 행에 키 legend를 붙였다** (계획에 없던 항목). 다이얼로그가 hint legend를 통째로 입력
   줄로 대체해서 `Tab` 완성조차 화면에 안 나오고 있었다. 진입 키를 아무리 잘 골라도 광고할 자리가
-  없으면 못 찾는다.
+  없으면 못 찾는다. (이후 입력이 notice 행의 repo 헤더 자리로 올라가면서 legend가 hint 행을
+  통째로 갖게 됐다 — [architecture/ui.md](architecture/ui.md)의 저장소 열기 다이얼로그 절.)
 - **상태는 `BTreeSet` + children 캐시가 아니라 평면 row 리스트다.** 확장이 자식을 부모 뒤에
   splice하고 접기가 아래 깊은 row를 drain하면 선택이 화면 인덱스 그대로여서 visible_rows 계산도
   캐시 무효화도 필요 없다. 계획이 트리 뷰의 구조를 따라가려 했지만 그쪽 복잡도는 repo-relative

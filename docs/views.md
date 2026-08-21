@@ -78,10 +78,14 @@ long name shortens itself rather than pushing them off the end.
 
 When something fails — a git snapshot, a diff load, a terminal pane, or a repo
 path you typed that doesn't exist — the message takes over this row in red until
-the problem is resolved or you act on the app again. A rejected repo path
-therefore appears directly above the input you're correcting. The repo dialog's
-completion candidates share this row (dimmed, and a notice outranks them), so a
-list too long for one line ends in `+N more`.
+the problem is resolved or you act on the app again.
+
+While the repo dialog is open, its input takes this row in the header's place —
+you are deciding which repo the header will name next — and the messages move
+down to the hint row: a rejected path appears directly below the input you're
+correcting, and the dialog's completion candidates show there too (dimmed, and
+a notice outranks them), so a list too long for one line ends in `+N more`.
+When neither is up, the hint row spells out the dialog's keys.
 
 ## The repo dialog
 

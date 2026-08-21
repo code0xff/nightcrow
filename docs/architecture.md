@@ -124,6 +124,7 @@ src/
 │   ├── chrome.rs         # ChromeRows, chrome_rows, main_content_constraints
 │   ├── helpers.rs        # shared widget/style helpers (status_color, char_offset, …)
 │   ├── notice.rs         # notice row + repo header rendering
+│   ├── repo_dialog.rs    # repo dialog rows: input line, key legend / reports
 │   ├── hint_text.rs, hint_bar.rs  # hint literals; render, segment_click, hint_click_at
 │   ├── hit_test.rs       # pane_at, tab_click_at, upper_panel_at, terminal_content_areas
 │   ├── status_view.rs, log_view/, tree_view/  # per-ViewMode state (filter/search cache,

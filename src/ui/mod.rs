@@ -21,6 +21,7 @@ mod hint_bar;
 mod hint_text;
 mod hit_test;
 mod notice;
+mod repo_dialog;
 #[cfg(test)]
 mod tests;
 mod wall_clock;
@@ -88,19 +89,23 @@ pub fn draw_empty(
         ),
     }
 
-    // Shares `render_notice_row`'s priority order so a notice looks the same
-    // wherever it lands; with no project there is no repo header to fall back
-    // to, so the row just goes empty.
-    let notice_line =
+    // Shares `render_notice_row`'s row assignment so the dialog looks the same
+    // wherever it opens: the input on this row, its reports and keys on the
+    // hint row. With no project there is no repo header to fall back to, so
+    // outside the dialog the row carries a notice or goes empty.
+    let notice_line = if chrome.repo_input.active {
+        repo_dialog::repo_input_line(chrome.repo_input, accent, rows.notice.width)
+    } else {
         notice::notice_or_candidates(notice, chrome.repo_input, None, rows.notice.width)
-            .unwrap_or_default();
+            .unwrap_or_default()
+    };
     frame.render_widget(Paragraph::new(notice_line), rows.notice);
 
     // The armed prefix shows the same chip as the project screen: pressing
     // the leader here has to look like it did something, or it reads as a
     // dead key.
     let hint = if chrome.repo_input.active {
-        hint_bar::repo_input_line(chrome.repo_input, accent, rows.hint.width)
+        repo_dialog::repo_dialog_hint_line(notice, chrome.repo_input, rows.hint.width)
     } else if prefix_armed {
         let mut spans = vec![Span::styled(
             PREFIX_CHIP,

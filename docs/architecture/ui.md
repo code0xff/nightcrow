@@ -100,9 +100,10 @@ join하고 `TerminalState`가 자식 프로세스를 정리하므로, 손으로 
   필수이고 repo-relative 경로만 받으며 워크트리 밖 경로와 심볼릭 링크를 거부하는데, 피커는 어떤
   repo에도 속하지 않는 경로를 돌아다녀야 하고 프로젝트가 0개일 때도 떠야 한다. 심볼릭 링크 정책도
   반대다 — 트리는 따라가지 않지만(순환 방지) 피커는 따라간다(링크된 체크아웃이 실제 repo다).
-- 후보는 notice 행에 표시한다(`ui/notice.rs`). 우선순위는 notice > 후보 > repo 헤더. 플로팅 팝업을
-  쓰지 않은 이유는 `src/ui/`에 오버레이 인프라가 없고(모든 surface가 레이아웃 행을 차지한다) 마우스
-  캡처가 기본 on이라 `hit_test.rs`에 새 히트 영역이 필요해지기 때문이다.
+- 후보는 hint 행에 표시한다(`repo_dialog::repo_dialog_hint_line`). 우선순위는 notice > 후보 >
+  legend — notice 행이 자유로울 때 적용하는 것과 같은 순서다. 플로팅 팝업을 쓰지 않은 이유는
+  `src/ui/`에 오버레이 인프라가 없고(모든 surface가 레이아웃 행을 차지한다) 마우스 캡처가 기본
+  on이라 `hit_test.rs`에 새 히트 영역이 필요해지기 때문이다.
 
 ### 디렉터리 브라우저 (`workspace/path_tree.rs` + `ui/path_tree.rs`)
 
@@ -129,9 +130,12 @@ join하고 `TerminalState`가 자식 프로세스를 정리하므로, 손으로 
 - 브라우저를 열면 `prefilled`가 해제된다. 브라우저는 버퍼에 전체 경로를 쓰므로, 플래그가 살아
   있으면 복귀 후 첫 타이핑이 방금 고른 경로를 지운다.
 
-다이얼로그는 hint legend를 통째로 대체하므로 키를 알릴 다른 자리가 없다.
-`hint_bar::repo_input_line`이 커서 뒤에 축약 legend를 붙이고, 폭이 모자라면 잘라내지 않고 통째로
-버린다 — 커서는 반드시 보여야 하고 반쪽 legend는 렌더 결함으로 읽힌다.
+입력 필드는 notice 행의 repo 헤더 자리에 그려진다(`repo_dialog::repo_input_line`) — 헤더는 떠나는
+repo를, 입력은 여는 repo를 말하는데 지금 결정 중인 것은 하나뿐이고, 행을 통째로 가지면 경로가
+legend와 폭을 다툴 일이 없다. 다이얼로그의 키는 그 아래 hint 행이 알린다
+(`repo_dialog::repo_dialog_hint_line`) — 다이얼로그가 평소 legend를 대체하므로 키를 알릴 다른
+자리가 없고, 거부 notice와 Tab 후보가 뜨면 잠시 legend를 덮는다(어느 쪽이든 편집 한 번에
+사라지므로 legend가 오래 가려지지 않는다).
 
 ### Polling · 세션 · 자원
 
@@ -185,8 +189,10 @@ snapshot worker가 채워주고, detached HEAD/unborn branch처럼 값이 없으
 
 **알림(`App::notice`)이 올라오면 이 행을 덮는다.** 전용 행을 따로 만들지 않은 이유는 알림이 뜨고
 사라질 때마다 body가 한 행씩 줄었다 늘어나면서 **열려 있는 모든 PTY가 리사이즈**되기 때문이다.
-이 행의 내용은 매 프레임 `App`에서 다시 계산되는 ambient 정보라 잠시 덮어도 잃는 것이 없다 —
-반대로 아래 hint bar는 사용자가 편집 중인 repo 입력 텍스트를 담고 있어 덮으면 안 된다.
+이 행의 내용은 매 프레임 `App`에서 다시 계산되는 ambient 정보라 잠시 덮어도 잃는 것이 없다.
+repo 다이얼로그가 열리면 우선순위가 뒤집힌다: 사용자가 편집 중인 입력 텍스트는 덮으면 안 되므로
+입력이 이 행을 차지하고, 알림과 Tab 후보는 그동안 hint 행으로 내려간다
+(`repo_dialog::repo_dialog_hint_line`).
 
 알림은 `Notice { kind: NoticeKind, text }` 타입이고, **만료는 메시지 문자열이 아니라 kind로
 판정한다**. 이전에는 `msg.starts_with("git error:")` 같은 접두사 매칭이라 (a) 사람이 읽는 문구에
@@ -201,6 +207,7 @@ snapshot worker가 채워주고, detached HEAD/unborn branch처럼 값이 없으
 
 hint bar는 오버레이(repo 입력·prefix armed·swap target)가 열리면 그 내용으로 먼저 `return`
 하므로, 알림이 거기 있던 시절에는 오버레이가 열린 동안 어떤 에러도 보이지 않았다. 알림을 별도 행으로
-분리하면서 이 경합 자체가 사라졌다.
+분리하면서 이 경합 자체가 사라졌다. 지금 hint 행에 알림이 뜨는 경우는 repo 다이얼로그가 열려
+입력이 notice 행을 차지한 동안뿐이고, 그때도 알림은 legend보다 앞선 우선순위로 항상 보인다.
 
 ← [Architecture index](../architecture.md)

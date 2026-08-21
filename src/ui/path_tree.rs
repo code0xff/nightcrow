@@ -3,7 +3,7 @@
 //! Not a floating box: nothing in this crate floats — every surface takes a
 //! layout area — and mouse capture is on by default, so an overlay would be the
 //! first thing needing a hit region of its own. Taking the body avoids both, and
-//! the path field stays visible on the hint row underneath.
+//! the path field stays visible on the notice row underneath.
 
 use crate::ui::render_selectable_list;
 use crate::workspace::PathTree;

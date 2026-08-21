@@ -97,7 +97,7 @@ impl StatusView {
 pub struct RepoInput {
     pub active: bool,
     pub buf: String,
-    /// Directory names offered by the last Tab press, shown on the notice row.
+    /// Directory names offered by the last Tab press, shown on the hint row.
     /// Any edit clears them: the list describes a fragment that no longer
     /// matches what is in the buffer.
     pub candidates: Vec<String>,
