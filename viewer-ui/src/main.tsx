@@ -4,7 +4,13 @@ import { App } from "./pages/App";
 import { ErrorBoundary } from "./components/feedback/ErrorBoundary";
 import { Toaster } from "./components/feedback/Toaster";
 import { notePageBuild } from "./lib/viewerBuild";
+import { observeVisualViewport } from "./lib/visualViewport";
 import "./styles/index.css";
+
+// The layout viewport stays tall when a mobile soft keyboard opens. Keep the
+// root grid tied to the visible viewport so the terminal key bar moves above
+// the keyboard. Browsers without visualViewport keep the CSS 100% fallback.
+observeVisualViewport(document.documentElement, window);
 
 // Read here, where the document is: the server stamps the build into the shell
 // it serves, and everything downstream compares against it rather than against

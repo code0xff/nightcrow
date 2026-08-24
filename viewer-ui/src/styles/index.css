@@ -44,7 +44,7 @@
 html,
 body,
 #root {
-  height: 100%;
+  height: var(--nc-visual-viewport-height, 100%);
 }
 
 /* Root sits below the browser default 16px. Tailwind's utilities are rem-based,
