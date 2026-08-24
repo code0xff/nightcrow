@@ -174,8 +174,10 @@ pub struct TrackingStatus {
 pub struct RepoSnapshot {
     pub files: Vec<ChangedFile>,
     pub tracking: Option<TrackingStatus>,
-    /// HEAD commit oid at snapshot time. `None` for empty or detached repos.
-    /// Compared against `App::last_head_oid` to detect new commits.
+    /// HEAD commit oid at snapshot time. `None` when HEAD is unborn (an empty
+    /// repository, an orphan checkout) or unreadable — a detached HEAD still
+    /// names a commit. Compared against `App::last_head_oid` to detect new
+    /// commits.
     pub head_oid: Option<Oid>,
     /// Current branch shorthand (e.g. `main`). `None` for detached HEAD,
     /// unborn branch, or bare repo.

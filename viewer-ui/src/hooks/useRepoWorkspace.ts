@@ -8,6 +8,7 @@ import {
 import type { Commit, HotConfig, Repo } from "../api";
 import type { Maximized, MobileView, Pane, Tab } from "../types";
 import { useHotClock } from "./ui/useHotClock";
+import { useDrillDownEviction } from "./useDrillDownEviction";
 import { useLog } from "./useLog";
 import { usePaneOpeners } from "./usePaneOpeners";
 import type { ShellLayout } from "./useShellLayout";
@@ -99,7 +100,18 @@ export function useRepoWorkspace({
     [repo, setMaximizedFor],
   );
 
-  const log = useLog({ repo, authed, tab, filter, handle });
+  // Three-valued on purpose: no status yet is not knowing, while a status
+  // without a head is knowing the server could not name one (unborn HEAD, or
+  // one it could not read) — the log must react to the second and hold still
+  // for the first.
+  const log = useLog({
+    repo,
+    authed,
+    tab,
+    filter,
+    head: status ? (status.head ?? null) : undefined,
+    handle,
+  });
   // Read by the pane openers at the moment they act, so "does this still have a
   // working copy" is answered from now rather than from whenever a callback was
   // built.
@@ -180,6 +192,14 @@ export function useRepoWorkspace({
     log.setCommitDrillDown(null);
     log.resetLog();
   }, [repo, bumpPaneRequest, log.setCommitDrillDown, log.resetLog]);
+
+  useDrillDownEviction(
+    log.commits,
+    log.commitDrillDown,
+    log.setCommitDrillDown,
+    bumpPaneRequest,
+    forgetPane,
+  );
 
   const normalizedFilter = filter.toLowerCase();
   const files = useMemo(

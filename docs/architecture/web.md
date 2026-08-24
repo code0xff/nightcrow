@@ -249,8 +249,25 @@ prefetch에 대응). 페이지 크기는 `MAX_LOG_PAGE = 100`으로 TUI 기본�
   행을 그린다.
 - **페이지 실패는 `logDone`이 아니라 `logStalled`다**: 둘을 합치면 일시적 오류가 히스토리의 끝으로
   보고되고, footer 에러는 다음 폴링에 지워져 흔적조차 남지 않는다. 실패 시 retry 행을 그린다.
-- **로그는 탭 진입 시점의 스냅샷이다** — TUI와 달리 HEAD 변경을 감지해 자동 갱신하지 않으며, 탭을
-  떠나면 페이지가 버려진다.
+- **열린 로그는 HEAD를 따라간다** — status SSE가 나르는 `head`가 움직이면 fresh 첫 페이지를 받아
+  캐시에 접는다(`lib/logRefresh.ts`, TUI `apply_refresh_page`와 같은 규칙): 이전 head가 fresh
+  페이지에 남아 있고 그 아래가 캐시와 일치하면 새 커밋만 위에 붙이고(스크롤·drill-down 유지),
+  아니면(rebase·amend) fresh 페이지로 교체한다. prepend가 페이징을 깨지 않으려면 합쳐진 목록이
+  새 walk의 prefix여야 하는데, 판별 조건이 증명하는 것은 fresh 페이지가 보여주는 구간까지다 —
+  페이지 경계 아래는 안 움직였다고 신뢰하며, 병합의 side-branch 커밋이 경계 아래로 날짜순 정렬되면
+  그 신뢰가 깨져 깊은 페이지가 그 구간을 건너뛴다. TUI의 규칙이 거는 것과 같은 베팅이고(변경 없는
+  커밋 100개 아래의 rewrite여야 진다), 다음 탭 진입이 처음부터 다시 walk한다. refresh의 트리거는
+  "이전 head" 기준선이 아니라 **캐시가 walk된 head와 status head의 불일치**다 — 기준선 방식은 아직
+  아무것도 로드되지 않았을 때의 이동(빈 저장소의 첫 커밋, 초기 로드 비행 중의 커밋)을 잃는다.
+  head는 3값이다: status 미도착(`undefined`)은 침묵이라 아무것도 안 하고, status가 head 없이 온
+  것(`null`)은 unborn HEAD의 보고라 목록을 비우는 refresh를 만든다(detached HEAD는 커밋 oid를
+  보고하므로 여기 해당하지 않는다).
+  첫 페이지가 착지할 때 status head와 어긋나 있으면 그 자리에서 refresh하고, refresh는 진행 중인
+  페이지 요청을 세대 올림으로 무효화한다(TUI의 fetch worker cancel과 같은 자리). refresh 실패는
+  불일치를 남겨 두므로 retry 행이 `logStalled`를 지우면 같은 비교가 다시 refresh를 만든다.
+  교체로 drill-down의 커밋이
+  목록에서 사라지면 drill-down은 자기 back 버튼과 같은 방식으로 닫힌다 — pane까지, pane이 보여주던
+  것이 그 커밋의 파일이므로. 탭을 떠나면 페이지가 버려지는 것은 그대로다.
 
 ## 프론트엔드 (`viewer-ui/`)
 

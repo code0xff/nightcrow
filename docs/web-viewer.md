@@ -51,9 +51,11 @@ History loads a page at a time, as the TUI's does — scrolling toward the end o
 the list fetches the next page, so deep histories stay reachable without loading
 them up front. The filter narrows the commits already loaded rather than
 searching the server, so paging pauses while a query is up — the list says how
-many are loaded, and clearing the filter resumes loading. The list is the history
-as of entering the tab: unlike the TUI it does not follow HEAD, so a commit made
-in the terminal panel appears after leaving and re-entering the tab.
+many are loaded, and clearing the filter resumes loading. The list follows HEAD
+the way the TUI's does: a commit made in the terminal panel below appears at the
+top on its own, without disturbing the pages you have scrolled through. A rewrite
+of the history you were reading — a rebase, an amend — replaces the list with the
+new history instead, and closes a commit drill-down whose commit it swept away.
 
 With a diff showing, the content pane has a toggle (top-right) that switches
 between the inline unified diff and a side-by-side split view, mirroring the
