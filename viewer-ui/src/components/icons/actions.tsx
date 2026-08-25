@@ -107,3 +107,25 @@ export function RefreshIcon({ className = "h-4 w-4" }: { className?: string }) {
     </svg>
   );
 }
+
+/**
+ * A ring with one quadrant cut away, spun by `animate-spin` — the busy marker
+ * for a button that keeps its label. Lucide's `loader-circle`.
+ */
+export function SpinnerIcon({ className = "h-4 w-4" }: { className?: string }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+      focusable="false"
+      className={`shrink-0 animate-spin ${className}`}
+    >
+      <path d="M21 12a9 9 0 1 1-6.219-8.56" />
+    </svg>
+  );
+}

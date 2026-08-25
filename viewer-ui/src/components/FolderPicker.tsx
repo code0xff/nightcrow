@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { api, type Browse, type Repo } from "../api";
 import { toast } from "../lib/toast";
 import { XIcon } from "./icons/actions";
+import { BusyLabel } from "./feedback/BusyLabel";
 
 export function FolderPicker({
   onClose,
@@ -146,9 +147,10 @@ export function FolderPicker({
           <button
             onClick={createFolder}
             disabled={!dir || !newName.trim() || creating}
+            aria-busy={creating}
             className="shrink-0 rounded-sm border border-ink-700 px-2 py-1 text-ink-200 hover:bg-ink-850 disabled:opacity-50"
           >
-            {creating ? "Creating…" : "Create"}
+            <BusyLabel busy={creating}>Create</BusyLabel>
           </button>
         </div>
         <div className="flex shrink-0 items-center gap-2 border-t border-ink-700 px-3 py-2">
@@ -171,10 +173,11 @@ export function FolderPicker({
           <button
             onClick={() => dir && onClone(dir.path, cloneUrl)}
             disabled={!canClone || !dir || !cloneUrl.trim() || cloning}
+            aria-busy={cloning}
             title={canClone ? undefined : "the server has no git on its PATH"}
             className="shrink-0 rounded-sm border border-ink-700 px-2 py-1 text-ink-200 hover:bg-ink-850 disabled:opacity-50"
           >
-            {cloning ? "Cloning…" : "Clone"}
+            <BusyLabel busy={cloning}>Clone</BusyLabel>
           </button>
         </div>
         <div className="flex shrink-0 items-center gap-2 border-t border-ink-700 px-3 py-2">
@@ -184,9 +187,10 @@ export function FolderPicker({
           <button
             onClick={openHere}
             disabled={!dir || busy}
+            aria-busy={busy}
             className="ml-auto shrink-0 rounded-md bg-ink-50 px-3 py-1 font-semibold text-ink-950 hover:bg-white disabled:opacity-50"
           >
-            {busy ? "Opening…" : "Open"}
+            <BusyLabel busy={busy}>Open</BusyLabel>
           </button>
         </div>
       </div>
