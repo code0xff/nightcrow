@@ -87,12 +87,17 @@ the browser's clock, so a device whose time is badly off will fade early or late
 
 Markdown files (`.md`, `.markdown`) opened from the tree render as formatted
 documents by default, with fenced code syntax-highlighted. HTML files (`.html`,
-`.htm`) render too, inside a fully sandboxed frame: scripts do not run, and
-nothing loads from another host. A page that carries its own styling inline and
-embeds images as `data:` URIs shows in full; one that links a stylesheet or images
-as separate files shows without them, since repository files are not served to the
-frame. This previews a self-contained page rather than a site. A toggle
-(top-right of the pane) switches either back to the raw highlighted source.
+`.htm`) render too, inside a sandboxed frame that allows the document's own
+inline scripts and nothing else — so an interactive single-file page works (a
+slide deck's keyboard navigation, a chart that draws itself), while the frame
+stays cut off from the session: it runs as no origin, its requests carry no
+login, and nothing loads from or connects to another host. A page that carries
+its scripts and styling inline and embeds images as `data:` URIs runs in full;
+one that links a stylesheet, images, or scripts as separate files (or from a
+CDN) shows without them. This previews a self-contained page rather than a
+site. A toggle (top-right of the pane) switches either back to the raw
+highlighted source. Click the frame first if keys seem to go nowhere — the
+keyboard follows focus.
 
 ## Layout
 

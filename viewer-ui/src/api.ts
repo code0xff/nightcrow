@@ -104,6 +104,12 @@ export const api = {
   treeSearch: (repo: string, q: string) =>
     get<TreeSearch>(`/api/tree/search?${query({ repo, q })}`),
   /** Later pages use the returned snapshot head and held count. */
+  /** The URL an HTML preview frame loads, not a fetch: the response is a
+   *  document with its own policy (sandboxed, inline scripts allowed), and it
+   *  must arrive as a navigation for that policy to apply. `oid` asks for the
+   *  commit's version of the file rather than the working tree's. */
+  previewUrl: (repo: string, path: string, oid?: string) =>
+    `/api/preview?${query(oid ? { repo, path, oid } : { repo, path })}`,
   log: (repo: string, page?: { from: string; skip: number }) =>
     get<Log>(
       `/api/log?${query(

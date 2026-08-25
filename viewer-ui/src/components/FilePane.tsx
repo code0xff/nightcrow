@@ -14,7 +14,7 @@ import { DiffView } from "./DiffView";
 import { ErrorBoundary } from "./feedback/ErrorBoundary";
 import { LineNos } from "./LineNos";
 import { PathLabel } from "./PathLabel";
-import type { Span, Status } from "../api";
+import { api, type Span, type Status } from "../api";
 import type { FileSource, Pane } from "../types";
 
 // Keep the markdown pipeline out of the initial chunk.
@@ -232,8 +232,19 @@ export function FilePane({
                 <Suspense
                   fallback={<p className="p-4 text-ink-400">Rendering…</p>}
                 >
-                  {isHtmlPath(pane.value.path) ? (
-                    <HtmlView source={fileViewSource(pane.value.lines)} />
+                  {isHtmlPath(pane.value.path) && repo !== null ? (
+                    // The frame re-fetches the file by URL rather than taking
+                    // the lines already here: only a navigated response can
+                    // carry the policy that lets the document's scripts run.
+                    <HtmlView
+                      src={api.previewUrl(
+                        repo,
+                        pane.value.path,
+                        pane.source?.kind === "commit"
+                          ? pane.source.oid
+                          : undefined,
+                      )}
+                    />
                   ) : (
                     <MarkdownView source={fileViewSource(pane.value.lines)} />
                   )}
