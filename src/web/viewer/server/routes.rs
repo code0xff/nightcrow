@@ -150,6 +150,10 @@ pub(super) fn route(head: &RequestHead, state: &ViewerState) -> Vec<u8> {
                 &[],
             ))
         }),
+        // A repository file served as itself — the one exception to "the API
+        // answers *about* the repository, never with its files". See `preview`
+        // for what its response's own policy opens and keeps shut.
+        "/api/preview" => super::preview::route(head, state),
         "/api/log" => with_repo(head, state, |entry| {
             let repo = open_repo(&entry.path)?;
             // `from` pins the walk so a page fetched later continues the history

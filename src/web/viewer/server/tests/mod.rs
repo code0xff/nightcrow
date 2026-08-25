@@ -6,6 +6,7 @@ mod closing;
 mod commit_routes;
 mod path_gate;
 mod prefs;
+mod preview;
 mod reload;
 mod reorder;
 mod routes;

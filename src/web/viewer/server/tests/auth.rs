@@ -219,6 +219,33 @@ fn logout_revokes_the_session_server_side() {
 }
 
 #[test]
+fn a_framed_logout_is_refused_and_leaves_the_session_alone() {
+    // The HTML preview's sandboxed frame could navigate itself to /logout and
+    // end the session out from under the person. A real logout is a top-level
+    // navigation; a framed one (`Sec-Fetch-Dest: iframe`) is refused.
+    let (dir, path) = make_repo();
+    let server = server(&[path]);
+    let token = login(server.addr());
+
+    let response = request(
+        server.addr(),
+        &format!(
+            "GET /logout HTTP/1.1\r\nHost: 127.0.0.1\r\n\
+             Cookie: {VIEWER_SESSION_COOKIE}={token}\r\n\
+             Sec-Fetch-Dest: iframe\r\nConnection: close\r\n\r\n"
+        ),
+    );
+    assert!(response.starts_with("HTTP/1.1 403"), "got: {response}");
+
+    // The token still works: the framed request revoked nothing.
+    assert!(
+        get(server.addr(), "/api/repos", Some(&token)).starts_with("HTTP/1.1 200"),
+        "a refused logout must not touch the session"
+    );
+    drop(dir);
+}
+
+#[test]
 fn a_cross_origin_request_is_refused_before_auth() {
     let (dir, path) = make_repo();
     let server = server(&[path]);

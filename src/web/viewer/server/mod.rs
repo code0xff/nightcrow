@@ -9,6 +9,7 @@ mod dispatch;
 mod handlers;
 mod http_util;
 mod mutations;
+mod preview;
 mod routes;
 
 use crate::session::prefs::PrefsStore;

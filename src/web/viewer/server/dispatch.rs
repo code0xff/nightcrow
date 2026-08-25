@@ -64,6 +64,16 @@ fn handle_connection(mut stream: TcpStream, state: Arc<ViewerState>) {
             return;
         }
         ("GET", "/logout") => {
+            // A real logout is a top-level navigation (the header link, so
+            // `Sec-Fetch-Dest: document`). A framed request here is something
+            // embedded — the HTML preview's sandboxed frame navigating itself —
+            // trying to end the session out from under the person. Refuse it;
+            // absent metadata (an old client) still logs out, which is the
+            // safe direction for a control the person meant to reach.
+            if head.header("sec-fetch-dest") == Some("iframe") {
+                let _ = stream.write_all(&text_response("403 Forbidden", "not from this context"));
+                return;
+            }
             // Revoke server-side, not just in the browser: cookies are not
             // port-isolated, so any other loopback service is same-site here
             // and could have read the token before it was cleared.
@@ -84,7 +94,7 @@ fn handle_connection(mut stream: TcpStream, state: Arc<ViewerState>) {
     // mean the user could never reach a login screen at all.
     if head.method == "GET" && !head.path.starts_with("/api/") && head.path != "/ws/term" {
         let _ = stream.write_all(
-            &assets::serve(&head.path)
+            &assets::serve(&head.path, head.header("host"))
                 .unwrap_or_else(|| text_response("404 Not Found", "frontend not built")),
         );
         return;

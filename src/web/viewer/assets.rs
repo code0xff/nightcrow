@@ -17,20 +17,53 @@ use rust_embed::Embed;
 #[folder = "viewer-ui/dist"]
 struct Assets;
 
-/// `connect-src` must allow the same origin for fetch, SSE, and the terminal
-/// WebSocket; `ws:`/`wss:` are needed because a WebSocket URL is not covered
-/// by `'self'` in every browser.
-const CSP: &str = "default-src 'self'; \
+/// The policy every asset is served under. `connect-src` must allow the same
+/// origin for fetch, SSE, and the terminal WebSocket, and a WebSocket URL is
+/// not covered by `'self'` in every browser — but the bare `ws:`/`wss:`
+/// schemes admit *any* host, and the HTML preview's `srcdoc` frame inherits
+/// this policy, so the socket schemes are pinned to the host the request was
+/// addressed to. A request whose `Host` is unusable falls back to the broad
+/// schemes: that only ever relaxes to what every response carried before, and
+/// never breaks the page that sent it.
+///
+/// The pin trusts `Host` to be the name the *browser* used. A reverse proxy
+/// that rewrites it toward upstream would pin the sockets to a host the page
+/// cannot use, and the terminal would fail loudly on connect — no such proxy
+/// fronts this server today (`host_allowed` makes the same assumption), and
+/// the fix there is the proxy forwarding the original `Host`.
+fn csp(host: Option<&str>) -> String {
+    let sockets = match host.filter(|h| plain_host(h)) {
+        Some(host) => format!("ws://{host} wss://{host}"),
+        None => "ws: wss:".to_string(),
+    };
+    format!(
+        "default-src 'self'; \
 img-src 'self' data:; \
 style-src 'self' 'unsafe-inline'; \
 script-src 'self'; \
-connect-src 'self' ws: wss:; \
+connect-src 'self' {sockets}; \
 frame-ancestors 'none'; \
 base-uri 'none'; \
-form-action 'self'";
+form-action 'self'"
+    )
+}
+
+/// Only what a `host[:port]` can be made of. This value is printed into a
+/// header, so anything looser could splice CSP directives (`;`, whitespace)
+/// or new headers into the response.
+fn plain_host(host: &str) -> bool {
+    !host.is_empty()
+        && host.len() <= 255
+        && host
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'-' | b':' | b'[' | b']'))
+}
 
 /// Serve a built asset, falling back to `index.html` so client-side routes and
 /// a bare `/` both load the app.
+///
+/// `host` is the request's `Host` header, which scopes the CSP's socket
+/// sources (see [`csp`]).
 ///
 /// A miss is split by whether the request names a file. An extensionless path is
 /// a client-side route and gets the app shell; a path that names a file (has an
@@ -40,9 +73,10 @@ form-action 'self'";
 /// a stale embedded build made the header/splash crow render as a blank accent
 /// tile exactly this way (`/crow-mono.svg` missing → HTML → the `<img>` shows
 /// nothing). A loud 404 surfaces the missing asset instead.
-pub fn serve(path: &str) -> Option<Vec<u8>> {
+pub fn serve(path: &str, host: Option<&str>) -> Option<Vec<u8>> {
+    let csp = csp(host);
     let headers = [
-        ("Content-Security-Policy", CSP),
+        ("Content-Security-Policy", csp.as_str()),
         ("X-Content-Type-Options", "nosniff"),
         ("Referrer-Policy", "no-referrer"),
     ];

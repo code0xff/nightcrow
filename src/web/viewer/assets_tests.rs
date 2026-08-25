@@ -36,7 +36,7 @@ fn the_shell_says_which_build_it_is_part_of() {
     // The one fact an API response cannot supply: a response arrives after
     // the document and may come from a server that has been replaced since.
     let id = build_id().expect("a built frontend has an id");
-    let text = text(&serve("/").unwrap());
+    let text = text(&serve("/", None).unwrap());
 
     assert!(
         text.contains(&format!("<meta name=\"{BUILD_META}\" content=\"{id}\" />")),
@@ -48,7 +48,7 @@ fn the_shell_says_which_build_it_is_part_of() {
 fn a_client_side_route_gets_the_stamped_shell_too() {
     // The shell reaches a page by two paths, and a page loaded by the other
     // one needs the same fact.
-    let text = text(&serve("/some/route").unwrap());
+    let text = text(&serve("/some/route", None).unwrap());
 
     assert!(text.contains(BUILD_META), "expected the stamped shell");
 }
@@ -64,7 +64,7 @@ fn a_document_with_no_head_is_served_as_it_is() {
 
 #[test]
 fn the_root_serves_the_app_shell() {
-    let response = serve("/").expect("index.html");
+    let response = serve("/", None).expect("index.html");
     let text = text(&response);
 
     assert!(text.starts_with("HTTP/1.1 200 OK"));
@@ -74,7 +74,7 @@ fn the_root_serves_the_app_shell() {
 
 #[test]
 fn assets_carry_a_strict_csp_and_nosniff() {
-    let text = text(&serve("/").unwrap());
+    let text = text(&serve("/", None).unwrap());
 
     assert!(text.contains("Content-Security-Policy: default-src 'self'"));
     assert!(text.contains("frame-ancestors 'none'"));
@@ -82,10 +82,40 @@ fn assets_carry_a_strict_csp_and_nosniff() {
 }
 
 #[test]
+fn the_csp_pins_the_sockets_to_the_requests_host() {
+    // The HTML preview's frame inherits this policy, and its scripts must not
+    // be able to open a WebSocket to an arbitrary host — only back to the one
+    // this page was served from, where nothing answers without a session.
+    let text = text(&serve("/", Some("phone.tail:8091")).unwrap());
+
+    assert!(
+        text.contains("connect-src 'self' ws://phone.tail:8091 wss://phone.tail:8091;"),
+        "got: {text}"
+    );
+    assert!(!text.contains("ws: wss:"), "the broad schemes must be gone");
+}
+
+#[test]
+fn a_host_that_could_splice_the_header_is_not_printed_into_it() {
+    // The value lands inside a header line; a `;` or whitespace in it could
+    // append CSP directives. Such a host falls back to the broad schemes,
+    // which is what every response carried before pinning existed.
+    for hostile in ["evil; script-src *", "a b", "x\ty", ""] {
+        let text = text(&serve("/", Some(hostile)).unwrap());
+
+        assert!(
+            text.contains("connect-src 'self' ws: wss:;"),
+            "host {hostile:?} must fall back, got: {text}"
+        );
+        assert!(!text.contains("evil"), "the value leaked into the header");
+    }
+}
+
+#[test]
 fn a_traversal_request_cannot_escape_the_embedded_map() {
     // There is no filesystem lookup here, so a `..` simply misses and the
     // app shell is served instead of anything outside the bundle.
-    let text = text(&serve("/../../etc/passwd").unwrap());
+    let text = text(&serve("/../../etc/passwd", None).unwrap());
 
     assert!(text.contains("<div id=\"root\">"), "expected the app shell");
     assert!(!text.contains("root:x:"), "a system file leaked");
@@ -97,7 +127,7 @@ fn a_missing_asset_is_a_404_not_the_app_shell() {
     // index.html: serving HTML under an <img>/module request fails silently
     // (the mark rendered as a blank accent tile when a stale build lacked
     // crow-mono.svg). A loud 404 surfaces the missing asset instead.
-    let text = text(&serve("/crow-mono-does-not-exist.svg").unwrap());
+    let text = text(&serve("/crow-mono-does-not-exist.svg", None).unwrap());
 
     assert!(text.starts_with("HTTP/1.1 404"), "got: {text}");
     assert!(
@@ -110,7 +140,7 @@ fn a_missing_asset_is_a_404_not_the_app_shell() {
 fn an_embedded_svg_asset_is_served_as_an_image() {
     // The crow mark's source: present in the bundle and served with an image
     // type, so the <img> actually renders it.
-    let text = text(&serve("/crow-mono.svg").unwrap());
+    let text = text(&serve("/crow-mono.svg", None).unwrap());
 
     assert!(text.starts_with("HTTP/1.1 200"), "got: {text}");
     assert!(text.contains("image/svg+xml"), "wrong content type");
@@ -120,7 +150,7 @@ fn an_embedded_svg_asset_is_served_as_an_image() {
 fn an_extensionless_route_falls_back_to_the_shell() {
     // A client-side route (no file extension) still gets the app shell so
     // the SPA loads; only named-file misses 404.
-    let text = text(&serve("/some/route").unwrap());
+    let text = text(&serve("/some/route", None).unwrap());
 
     assert!(text.contains("<div id=\"root\">"), "expected the app shell");
 }
@@ -129,7 +159,7 @@ fn an_extensionless_route_falls_back_to_the_shell() {
 fn the_pwa_manifest_is_served_as_a_manifest() {
     // The install manifest must be reachable and typed as JSON so the
     // browser parses it rather than downloading it as an opaque blob.
-    let text = text(&serve("/manifest.webmanifest").unwrap());
+    let text = text(&serve("/manifest.webmanifest", None).unwrap());
 
     assert!(text.starts_with("HTTP/1.1 200"), "got: {text}");
     assert!(
@@ -141,7 +171,7 @@ fn the_pwa_manifest_is_served_as_a_manifest() {
 #[test]
 fn a_pwa_icon_is_served_as_a_png() {
     // Home-screen install needs raster icons the launcher can render.
-    let text = text(&serve("/icon-512.png").unwrap());
+    let text = text(&serve("/icon-512.png", None).unwrap());
 
     assert!(text.starts_with("HTTP/1.1 200"), "got: {text}");
     assert!(text.contains("image/png"), "wrong content type");
@@ -153,7 +183,7 @@ fn a_javascript_bundle_is_served_with_a_script_mime() {
     let name = Assets::iter()
         .find(|f| f.ends_with(".js"))
         .expect("a built bundle");
-    let text = text(&serve(&format!("/{name}")).unwrap());
+    let text = text(&serve(&format!("/{name}"), None).unwrap());
 
     assert!(
         text.contains("javascript"),

@@ -58,6 +58,13 @@ git 데이터도 터미널도 전혀 모르는 계층이며, 웹 표면이 하�
   `../../etc/passwd`를 받아들였다. `load_file_diff`가 경로를 파일이 아니라 git pathspec으로 넘겨
   검증기에 닿지 않았고 공격자의 경로를 그대로 되돌려줬다. **라우트가 "어떤 로더를 호출하느냐"에 따라
   우연히 안전해서는 안 된다.**
+- **`/api/preview`는 "API는 저장소에 *대해* 답하지, 저장소 파일*로* 답하지 않는다" 원칙의 유일한
+  예외다.** HTML 미리보기가 스크립트를 실행하려면 문서에 자기만의 CSP가 있어야 하는데(`srcdoc`은
+  embedder 정책을 상속해 `script-src 'self'`가 인라인 스크립트를 막는다), 정책은 네트워크 응답만
+  실을 수 있다. 응답의 `sandbox allow-scripts`가 문서를 opaque origin으로 만들고(쿠키 없음, 요청은
+  전부 비인증에 `Origin: null`), `connect-src 'none'`이 나가는 채널을 전부 닫는다 — 무엇을 열고
+  무엇을 닫는지는 `server/preview.rs` 모듈 doc이 기준. 경로는 `/api/file`과 같은 로더·게이트를
+  지나고, iframe 쪽 `sandbox` 속성이 헤더와 교차 적용되는 이중 레이어다.
   **게이트는 둘이고, 나뉘는 기준은 그 경로로 무엇을 하느냐다.** `with_repo_git_path`는 경로를
   **git에게 넘길 때** 쓰고 `validate_commit_path`로 검증한다 — 탈출·`.git`·NUL을 거부하는 순수
   문자열 판정이며 **파일시스템을 보지 않는다**. `with_repo`는 이 프로세스가 **파일을 열 때** 쓰고
@@ -628,5 +635,12 @@ OSC 52는 출력과 함께 흘러 **출력이 보이는 곳에서 끝나는** �
   원격 접속은 SSH 터널이나 TLS 프록시로 감싸야 한다.
   Windows에서는 파일 권한이 no-op이므로 상태 디렉토리 위치로 통제한다.
 - **`Secure` 쿠키 플래그 없음.** loopback 기본값에서는 맞지만 `bind`를 바꾸면 평문 HTTP로 토큰이 나간다.
+- **HTML 미리보기 프레임은 자기 자신을 다른 곳으로 이동시킬 수 있다.** `allow-scripts`를 준 이상
+  스크립트가 `location`으로 프레임을 외부 URL(자기 소스를 실어 — 그 소스는 파일 작성자가 이미 가진
+  것이다)이나 팬을 채우는 피싱 페이지로 옮기는 것은 CSP로 막을 수 없다(`connect-src`는 연결만,
+  navigation은 아니다). 프레임은 opaque origin이라 세션·다른 저장소 파일·앱 DOM에는 닿지 못하므로
+  사용자 비밀은 새지 않는다 — 정적 HTML도 이미 가능한 in-frame UI spoofing과 같은 계열의 잔여
+  위험으로 수용한다. 세션을 겨냥한 두 경로(top-level 이동으로 앱 origin 실행, 프레임에서
+  `/logout` 자가 이동)는 `Sec-Fetch-Dest`로 닫혀 있다(`server/preview.rs`, `dispatch.rs`).
 
 ← [Architecture index](../architecture.md)
