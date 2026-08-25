@@ -116,6 +116,7 @@ impl Plugins {
         let owned: Vec<PaneId> = self.panes_of(name);
         for pane in owned {
             self.release_pane(backend, pane);
+            outcome.released.push(pane);
         }
         // Whatever `stop_host` recorded as a restart was not one.
         outcome.restarted.retain(|plugin| plugin != name);

@@ -189,10 +189,12 @@ pub enum ServerMessage {
     /// What a plugin reports about a pane it is nursing back, relayed verbatim.
     ///
     /// Pane metadata rather than screen content: a client that ignores it
-    /// renders exactly as before. `state` is the plugin's own short label;
-    /// the hub neither interprets it nor keeps it, so this is a broadcast of
-    /// the latest word and not a state machine. The one label the hub itself
-    /// sends is [`RECOVERY_CANCELLED`](super::hub_recovery::RECOVERY_CANCELLED).
+    /// renders exactly as before. `state` is the plugin's own short label,
+    /// which the hub does not interpret — it broadcasts the latest word, and
+    /// caches it only to replay to a client attaching later (see
+    /// `Shared::recovery`), not as a state machine of its own. The one label
+    /// the hub itself sends is
+    /// [`RECOVERY_CANCELLED`](super::hub_recovery::RECOVERY_CANCELLED).
     /// A plugin says this pane wants the person back. Carries no reason and no
     /// text: the client turns it into that project tab's unread marker, which
     /// says "something happened here" and nothing more.

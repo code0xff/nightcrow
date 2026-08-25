@@ -33,6 +33,10 @@ pub(super) struct PluginReload {
     /// Panes whose held relaunch was given up because the plugin holding it is
     /// gone.
     pub(super) retired: Vec<PaneId>,
+    /// Panes a stopped plugin let go of. Reported so the hub can end any
+    /// recovery report still standing on one — its watcher is gone, so nothing
+    /// will ever update or cancel the report again.
+    pub(super) released: Vec<PaneId>,
 }
 
 impl PluginReload {
@@ -77,6 +81,12 @@ impl TerminalHub {
         // down to a moment nothing will act on.
         for pane in &outcome.retired {
             self.end_recovery(*pane);
+        }
+        // A released pane keeps running, but its watcher is gone: a report
+        // still standing on it would sit on every screen (and be replayed to
+        // late ones) forever, with a cancel nothing answers.
+        for pane in &outcome.released {
+            self.end_recovery_if_reported(*pane);
         }
         if !outcome.is_empty() {
             tracing::info!(
