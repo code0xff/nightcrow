@@ -1,7 +1,6 @@
 import { useState } from "react";
 import { api } from "../api";
 import { Mark } from "./Mark";
-import { BusyLabel } from "./feedback/BusyLabel";
 
 export function Login({ onSuccess }: { onSuccess: () => void }) {
   const [password, setPassword] = useState("");
@@ -44,10 +43,9 @@ export function Login({ onSuccess }: { onSuccess: () => void }) {
         <button
           type="submit"
           disabled={busy}
-          aria-busy={busy}
           className="w-full rounded-md bg-ink-50 py-1.5 font-semibold text-ink-950 hover:bg-white disabled:opacity-50"
         >
-          <BusyLabel busy={busy}>Sign in</BusyLabel>
+          {busy ? "Signing in…" : "Sign in"}
         </button>
       </form>
     </div>
