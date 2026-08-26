@@ -5,17 +5,23 @@
 use super::{VIEWER_SESSION_COOKIE, body_of, get, request, run_git, seeded_server};
 use std::net::SocketAddr;
 
-/// A `GET` that carries `Sec-Fetch-Dest: iframe`, the way a browser marks a
-/// request it is making to fill an `<iframe>`.
-fn get_framed(addr: SocketAddr, path: &str, token: &str) -> String {
+/// A `GET` that carries a given `Sec-Fetch-Dest`, the way a browser marks the
+/// destination of a request it initiates.
+fn get_with_dest(addr: SocketAddr, path: &str, token: &str, dest: &str) -> String {
     request(
         addr,
         &format!(
             "GET {path} HTTP/1.1\r\nHost: 127.0.0.1\r\n\
 Cookie: {VIEWER_SESSION_COOKIE}={token}\r\n\
-Sec-Fetch-Dest: iframe\r\nConnection: close\r\n\r\n"
+Sec-Fetch-Dest: {dest}\r\nConnection: close\r\n\r\n"
         ),
     )
+}
+
+/// A `GET` marked as a frame embed, the way a browser marks a request it is
+/// making to fill an `<iframe>`.
+fn get_framed(addr: SocketAddr, path: &str, token: &str) -> String {
+    get_with_dest(addr, path, token, "iframe")
 }
 
 #[test]
@@ -56,9 +62,10 @@ fn a_framed_preview_serves_the_file_under_its_own_policy() {
 
 #[test]
 fn a_top_level_navigation_gets_the_inert_source_not_an_executable_page() {
-    // A pasted URL or a link is not a frame embed. Serving it as text/html
-    // would run a repository file as a first-party document on any browser
-    // that ignored the CSP sandbox; text/plain cannot execute at all.
+    // A pasted URL or a link is a top-level navigation (`Sec-Fetch-Dest:
+    // document`), not a frame embed. Serving it as text/html would run a
+    // repository file as a first-party document on any browser that ignored
+    // the CSP sandbox; text/plain cannot execute at all.
     let (dir, server, token, id) = seeded_server();
     std::fs::write(
         dir.path().join("deck.html"),
@@ -66,11 +73,11 @@ fn a_top_level_navigation_gets_the_inert_source_not_an_executable_page() {
     )
     .unwrap();
 
-    // `get` sends no Sec-Fetch-Dest, standing in for a top-level navigation.
-    let response = get(
+    let response = get_with_dest(
         server.addr(),
         &format!("/api/preview?repo={id}&path=deck.html"),
-        Some(&token),
+        &token,
+        "document",
     );
 
     assert!(response.starts_with("HTTP/1.1 200"), "got: {response}");
@@ -78,6 +85,36 @@ fn a_top_level_navigation_gets_the_inert_source_not_an_executable_page() {
     assert!(
         !response.contains("Content-Security-Policy: sandbox"),
         "the exec policy must not ride the inert view: {response}"
+    );
+    drop(dir);
+}
+
+#[test]
+fn a_request_without_fetch_metadata_gets_the_executable_page() {
+    // A plain-HTTP origin (a phone over a LAN or Tailscale address) sends no
+    // Sec-Fetch metadata at all, so the embed cannot be told from a top-level
+    // load by the header. The gate fails open: the frame gets the executable
+    // document — the CSP sandbox is the wall on this path — rather than the raw
+    // source, which is what left the whole mobile preview showing only text.
+    let (dir, server, token, id) = seeded_server();
+    std::fs::write(
+        dir.path().join("deck.html"),
+        "<html><body><script>step()</script></body></html>",
+    )
+    .unwrap();
+
+    // `get` sends no Sec-Fetch-Dest.
+    let response = get(
+        server.addr(),
+        &format!("/api/preview?repo={id}&path=deck.html"),
+        Some(&token),
+    );
+
+    assert!(response.starts_with("HTTP/1.1 200"), "got: {response}");
+    assert!(response.contains("Content-Type: text/html"), "{response}");
+    assert!(
+        response.contains("Content-Security-Policy: sandbox allow-scripts;"),
+        "{response}"
     );
     drop(dir);
 }

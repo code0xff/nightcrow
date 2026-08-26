@@ -28,15 +28,22 @@
 //! attribute too: header and attribute intersect, so either one failing an
 //! old browser or a future edit still leaves the other standing.
 //!
-//! One more belt for one more brace: the executable document is served only to
-//! a request the browser marks as a frame embed (`Sec-Fetch-Dest: iframe`).
-//! A top-level navigation — a pasted URL, a link — gets the file as inert
-//! `text/plain` instead. This closes the case a browser that ignored the CSP
-//! `sandbox` (none in a decade, but the header is our only wall against it)
-//! would otherwise open: a repository file executed as a *first-party*
-//! document with the session cookie. It fails closed — a client too old to
-//! send `Sec-Fetch` metadata is also too old to be trusted with the exec, and
-//! gets the inert view, which is what the preview showed before this existed.
+//! One more belt for one more brace: a *top-level* navigation to this URL — a
+//! pasted link, not an embed — is served the file as inert `text/plain`. This
+//! closes the case a browser that ignored the CSP `sandbox` (none in a decade,
+//! but the header is our only wall against it) would otherwise open: a
+//! repository file executed as a *first-party* document with the session
+//! cookie. The signal is `Sec-Fetch-Dest: document`, set by the browser on a
+//! top-level navigation and unforgeable from script.
+//!
+//! It fails *open*: a request that carries no Fetch metadata is treated as an
+//! embed and gets the executable document. That is deliberate, because browsers
+//! send `Sec-Fetch` only from a potentially-trustworthy origin (HTTPS or
+//! localhost) — so every plain-HTTP origin omits it, and the viewer reached
+//! over a LAN or Tailscale address is exactly that. Failing closed there served
+//! the raw source instead of the page on the whole mobile path. On that path
+//! the CSP `sandbox` header stands alone — as it already does everywhere; this
+//! gate only ever added a second wall where the metadata exists to raise it.
 //!
 //! What no policy here closes: a script may navigate its own frame away — to
 //! an external URL (carrying its own source, which its author already has) or
@@ -66,9 +73,10 @@ pub(super) fn route(
     state: &super::ViewerState,
 ) -> Vec<u8> {
     use super::handlers::{open_repo, optional_oid, required_path, with_repo};
-    // Only an actual frame embed gets the executable document; see the module
-    // doc. Absent metadata (an old client) fails to the inert view.
-    let as_frame = head.header("sec-fetch-dest") == Some("iframe");
+    // Only an explicit top-level navigation gets the inert view; a frame embed
+    // — or a client that sends no Fetch metadata at all, as every plain-HTTP
+    // origin does — gets the executable document. See the module doc.
+    let top_level_nav = head.header("sec-fetch-dest") == Some("document");
     with_repo(head, state, |entry| {
         let path = required_path(head)?;
         let repo = open_repo(&entry.path)?;
@@ -76,15 +84,15 @@ pub(super) fn route(
             Some(oid) => crate::git::diff::load_commit_file(&repo, oid, &path)?,
             None => crate::git::diff::load_workdir_file(&repo, &path)?,
         };
-        Ok(if as_frame {
-            preview_response(&content)
-        } else {
+        Ok(if top_level_nav {
             inert_response(&content)
+        } else {
+            preview_response(&content)
         })
     })
 }
 
-/// The file as `text/plain`, for any request that is not a frame embed. Nothing
+/// The file as `text/plain`, for an explicit top-level navigation. Nothing
 /// executes: a browser that reached this by a top-level navigation sees the
 /// source, not a first-party page running with the session's cookie.
 fn inert_response(source: &str) -> Vec<u8> {

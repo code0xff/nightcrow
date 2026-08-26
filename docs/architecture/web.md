@@ -641,6 +641,12 @@ OSC 52는 출력과 함께 흘러 **출력이 보이는 곳에서 끝나는** �
   navigation은 아니다). 프레임은 opaque origin이라 세션·다른 저장소 파일·앱 DOM에는 닿지 못하므로
   사용자 비밀은 새지 않는다 — 정적 HTML도 이미 가능한 in-frame UI spoofing과 같은 계열의 잔여
   위험으로 수용한다. 세션을 겨냥한 두 경로(top-level 이동으로 앱 origin 실행, 프레임에서
-  `/logout` 자가 이동)는 `Sec-Fetch-Dest`로 닫혀 있다(`server/preview.rs`, `dispatch.rs`).
+  `/logout` 자가 이동)는 브라우저가 `Sec-Fetch-Dest`를 보내는 origin에서 그 헤더로
+  닫힌다(`server/preview.rs`, `dispatch.rs`). 브라우저는 이 메타데이터를 신뢰 가능한
+  origin(HTTPS·localhost)에서만 보내므로, 평문 HTTP(LAN·Tailscale 주소로 붙는 폰)에서는
+  헤더가 없다 — 게이트는 fail-open이라 그 경로에선 미리보기가 raw로 깨지지 않고 실행 가능한
+  문서를 받으며, 세션을 막는 것은 응답의 CSP `sandbox`(opaque origin) 단독이다. 이는 어차피
+  이 두 이동이 먼저 부딪히는 벽이고, `Sec-Fetch` 게이트는 메타데이터가 있는 곳에 벽을 하나 더
+  세우는 덤이었다. 평문 HTTP 원격 접속은 원래 TLS 프록시로 감싸는 것을 전제한다(위 세션 토큰 항목).
 
 ← [Architecture index](../architecture.md)

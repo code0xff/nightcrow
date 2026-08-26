@@ -34,7 +34,10 @@
  * scripts (the frame stays opaque and reaches no session), and is an accepted
  * residual. The two navigations that *would* reach the session — a top-level
  * load executing as this origin, a frame self-navigating to `/logout` — are
- * closed server-side by `Sec-Fetch-Dest` (see `server/preview.rs`).
+ * closed server-side by `Sec-Fetch-Dest` wherever the browser sends it (a
+ * trustworthy origin: HTTPS or localhost). On a plain-HTTP origin no browser
+ * sends that metadata, so there the `sandbox` above is the only wall — which
+ * is the wall these navigations run into first anyway. See `server/preview.rs`.
  *
  * The remaining cost: a document that links its stylesheet, images, or
  * scripts as separate files (or from a CDN) shows without them. This previews
