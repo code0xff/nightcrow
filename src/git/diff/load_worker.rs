@@ -10,7 +10,7 @@ use git2::{Oid, Repository};
 
 use super::{ChangedFile, DiffHunk, LogDecorations, StatusKind};
 use execute::execute;
-use lifecycle::{InFlightPermit, finish_or_retire, reap_retired};
+use lifecycle::{InFlightPermit, WorkerPermit, finish_or_detach};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum LoadLane {
@@ -133,21 +133,28 @@ impl Pending {
 pub(crate) struct GitLoadWorker {
     shared: Arc<(Mutex<Pending>, Condvar)>,
     replies: mpsc::Receiver<GitLoadReply>,
+    worker: Mutex<WorkerThread>,
+}
+
+struct WorkerThread {
+    reply_tx: mpsc::Sender<GitLoadReply>,
     handle: Option<JoinHandle<()>>,
 }
 
 impl GitLoadWorker {
     pub(crate) fn spawn() -> Self {
-        reap_retired();
         let shared = Arc::new((Mutex::new(Pending::default()), Condvar::new()));
-        let worker_shared = Arc::clone(&shared);
         let (reply_tx, replies) = mpsc::channel();
-        let handle = thread::spawn(move || worker_loop(worker_shared, reply_tx));
-        Self {
+        let worker = Self {
             shared,
             replies,
-            handle: Some(handle),
-        }
+            worker: Mutex::new(WorkerThread {
+                reply_tx,
+                handle: None,
+            }),
+        };
+        worker.ensure_started();
+        worker
     }
 
     pub(crate) fn submit(&self, request: GitLoadRequest) {
@@ -158,6 +165,8 @@ impl GitLoadWorker {
         }
         pending.replace(request);
         wake.notify_one();
+        drop(pending);
+        self.ensure_started();
     }
 
     pub(crate) fn cancel(&self, lane: LoadLane, generation: u64) {
@@ -166,7 +175,21 @@ impl GitLoadWorker {
     }
 
     pub(crate) fn try_recv(&self) -> Result<GitLoadReply, mpsc::TryRecvError> {
+        self.ensure_started();
         self.replies.try_recv()
+    }
+
+    fn ensure_started(&self) {
+        let mut worker = self.worker.lock().unwrap_or_else(|e| e.into_inner());
+        if worker.handle.is_some() {
+            return;
+        }
+        let Some(permit) = WorkerPermit::try_acquire() else {
+            return;
+        };
+        let shared = Arc::clone(&self.shared);
+        let reply_tx = worker.reply_tx.clone();
+        worker.handle = Some(thread::spawn(move || worker_loop(shared, reply_tx, permit)));
     }
 }
 
@@ -175,13 +198,18 @@ impl Drop for GitLoadWorker {
         let (lock, wake) = &*self.shared;
         lock.lock().unwrap_or_else(|e| e.into_inner()).stopped = true;
         wake.notify_one();
-        if let Some(handle) = self.handle.take() {
-            finish_or_retire(handle);
+        let worker = self.worker.get_mut().unwrap_or_else(|e| e.into_inner());
+        if let Some(handle) = worker.handle.take() {
+            finish_or_detach(handle);
         }
     }
 }
 
-fn worker_loop(shared: Arc<(Mutex<Pending>, Condvar)>, replies: mpsc::Sender<GitLoadReply>) {
+fn worker_loop(
+    shared: Arc<(Mutex<Pending>, Condvar)>,
+    replies: mpsc::Sender<GitLoadReply>,
+    _worker_permit: WorkerPermit<'static>,
+) {
     let mut cached: Option<(String, Repository)> = None;
     loop {
         let request = {
@@ -217,62 +245,4 @@ fn worker_loop(shared: Arc<(Mutex<Pending>, Condvar)>, replies: mpsc::Sender<Git
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn request(generation: u64, operation: GitLoadOperation) -> GitLoadRequest {
-        GitLoadRequest {
-            repo: "repo".into(),
-            generation,
-            operation,
-        }
-    }
-
-    #[test]
-    fn 같은_lane의_대기_요청은_최신_요청_하나로_합쳐진다() {
-        let mut pending = Pending::default();
-        for generation in 1..=100_000 {
-            pending.replace(request(
-                generation,
-                GitLoadOperation::StatusDiff(format!("{generation}.rs")),
-            ));
-        }
-
-        let latest = pending.take_next().unwrap();
-        assert_eq!(latest.generation, 100_000);
-        assert!(pending.take_next().is_none());
-    }
-
-    #[test]
-    fn 서로_다른_lane의_요청은_서로를_덮어쓰지_않는다() {
-        let mut pending = Pending::default();
-        pending.replace(request(1, GitLoadOperation::StatusDiff("a.rs".into())));
-        pending.replace(request(2, GitLoadOperation::WorkdirFile("a.rs".into())));
-
-        assert!(pending.take_next().is_some());
-        assert!(pending.take_next().is_some());
-    }
-
-    #[test]
-    fn continuously_refilled_diff_lane_cannot_starve_other_lanes() {
-        let mut pending = Pending::default();
-        pending.replace(request(1, GitLoadOperation::StatusDiff("a.rs".into())));
-        pending.replace(request(2, GitLoadOperation::WorkdirFile("a.rs".into())));
-        pending.replace(request(3, GitLoadOperation::CommitFiles(Oid::ZERO_SHA1)));
-        pending.replace(request(4, GitLoadOperation::Decorations));
-
-        let mut lanes = Vec::new();
-        for generation in 5..9 {
-            let next = pending.take_next().unwrap();
-            lanes.push(next.operation.lane());
-            pending.replace(request(
-                generation,
-                GitLoadOperation::StatusDiff(format!("{generation}.rs")),
-            ));
-        }
-
-        assert!(lanes.contains(&LoadLane::File));
-        assert!(lanes.contains(&LoadLane::CommitFiles));
-        assert!(lanes.contains(&LoadLane::Decorations));
-    }
-}
+mod tests;
