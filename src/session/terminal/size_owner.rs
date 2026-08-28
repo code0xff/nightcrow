@@ -1,10 +1,7 @@
-//! The hub's end of the session's size ownership.
-//!
-//! The rules and the state live one level up, in
-//! [`crate::session::size_owner`]: which screen the panes are fitted to is
-//! the session's answer, because every client shows the same repository. What is
-//! left here is the two places a hub touches it — a client asking for the sizing,
-//! and the worker letting a departed owner's grace run out.
+//! The hub's end of the session's size ownership. The rules and the state live
+//! one level up in [`crate::session::size_owner`]; what is left here is the two
+//! places a hub touches it — a client asking for the sizing, and the worker
+//! letting a departed owner's grace run out.
 
 use super::TerminalHub;
 
@@ -32,14 +29,11 @@ impl TerminalHub {
         self.ownership.owns(connection)
     }
 
-    /// Whether a queued request still belongs to this live hub client and that
-    /// connection still owns the sizing.
-    ///
-    /// Called with `state` locked so disconnect and ownership transfer cannot
-    /// split identity validation from authorization. This preserves the lock
-    /// order used by `connect`: hub state, then session ownership.
-    ///
-    /// [`Client::connection`]: super::session::Client::connection
+    /// Whether a queued request still belongs to a live hub client whose
+    /// connection owns the sizing. Called with `state` locked so disconnect and
+    /// ownership transfer cannot split identity validation from authorization;
+    /// this preserves the lock order used by `connect` (hub state, then
+    /// session ownership).
     pub(super) fn client_owns_size(
         &self,
         state: &super::hub_helpers::Shared,

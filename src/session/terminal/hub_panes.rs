@@ -1,9 +1,8 @@
 //! The hub's pane records: adding one, appending to it, dropping it, and the
-//! two questions the worker asks about the list before it acts.
-//!
-//! Every one of these pairs a change to `Shared` with the broadcast that
-//! announces it, under a single lock — that pairing is what keeps a client
-//! connecting mid-change from seeing a pane twice or not at all (see
+//! two questions the worker asks about the list before it acts. Every one of
+//! these pairs a change to `Shared` with the broadcast that announces it, under
+//! a single lock — that pairing is what keeps a client connecting mid-change
+//! from seeing a pane twice or not at all (see
 //! [`Shared`](super::hub_helpers::Shared)).
 
 use super::TerminalHub;

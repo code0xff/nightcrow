@@ -42,11 +42,9 @@ impl Catalog {
     }
 
     /// The served list and, from that same snapshot, the id standing for
-    /// `remembered`.
-    ///
-    /// One lock for both, because a client renders them together: a repository
-    /// opened between two separate reads would yield an active id missing from
-    /// the list beside it.
+    /// `remembered` — one lock for both, because a client renders them together
+    /// and a repository opened between two separate reads would yield an active
+    /// id missing from the list beside it.
     pub fn list_with_active(
         &self,
         remembered: Option<&str>,
@@ -61,9 +59,9 @@ impl Catalog {
                 .find(|e| e.path == path)
                 .map(|e| e.id.clone())
         });
-        // From the same snapshot for the same reason: a repository opened
-        // between two reads would be in the list with no arrangement beside it,
-        // or have one under an id the list does not carry.
+        // All from the same snapshot: a repository opened between two reads
+        // would be in the list with no arrangement beside it, or have one under
+        // an id the list does not carry.
         let arrangements = entries
             .iter()
             .filter_map(|e| {
@@ -71,9 +69,9 @@ impl Catalog {
                     .map(|panel| (e.id.clone(), panel))
             })
             .collect();
-        // And the same again for what each was showing. A project the session
-        // is not serving keeps its entry on file — there is no id to name it by
-        // here, and it will want it back when it is opened.
+        // A project the session is not serving keeps its entry on file — there
+        // is no id to name it by here, and it will want it back when it is
+        // opened.
         let last_views = entries
             .iter()
             .filter_map(|e| {

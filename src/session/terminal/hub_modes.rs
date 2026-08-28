@@ -1,23 +1,14 @@
 //! What state each pane's program has put its terminal into, and what it calls
-//! itself.
-//!
-//! A client attaching mid-session is replayed a window of output that almost
-//! never contains the bytes that set the pane's modes — a program announces
-//! them once, at startup, and the ring has long since evicted that. The hub
-//! follows them here and hands a connecting client the answer directly. A
-//! window title has exactly that shape too, so it is followed here rather than
-//! left to each client: a page that connected later had no way to learn it and
-//! fell back to a positional label.
+//! itself, followed here because a client attaching mid-session is replayed a
+//! window of output that almost never contains the bytes that set them — a
+//! program announces modes once, at startup, and the ring has long since
+//! evicted that. Titles have the same shape, so they are followed here too.
 //!
 //! Kept on the worker thread rather than in [`Shared`](super::Shared): a
 //! `PaneEmulator` holds `Rc`, so it is not `Send` and cannot live behind the
-//! state mutex.
-//!
-//! **The grid is read, so resizes have to be followed.** These emulators used
-//! to be scratch space for a mode parser; now `snapshot` reads the cells, so a
-//! grid at the wrong width would wrap output where the child does not and hand
-//! a connecting client a screen laid out differently from every other client's.
-//! `hub_layout::resize_pane` is the one place that has to call `resize`.
+//! state mutex. The grid is read (for `snapshot`), so resizes have to be
+//! followed — `hub_layout::resize_pane` is the one place that must call
+//! `resize`.
 
 use crate::backend::PaneId;
 use crate::runtime::emulator::{PaneEmulator, PaneModes};

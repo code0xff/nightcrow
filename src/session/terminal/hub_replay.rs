@@ -14,21 +14,14 @@ const LEAVE_ALT_SCREEN: &[u8] = b"\x1b[?1049l";
 
 /// Largest payload one replay frame carries.
 ///
-/// **Frame boundaries mean nothing to a client.** It concatenates what arrives
-/// into its emulator, whose parser spans writes, so a sequence split across
-/// two frames is reassembled the same as if it had come in one — splitting is
-/// free.
-///
-/// A single frame, on the other hand, does have a ceiling: the daemon socket
-/// refuses a payload over [`MAX_FRAME_BYTES`](crate::daemon::frame::MAX_FRAME_BYTES)
-/// (4 MiB), and an alternate-screen pane's screen grows with its area — a large
-/// truecolour pane reaches several megabytes. Sent whole it ended the attach
-/// connection, and again on every reconnect. Nobody transmits a screen as one
-/// indivisible message: VS Code's replay is a list of entries, tmux writes to a
-/// passed file descriptor, and mosh's datagrams cannot hold a screen at all.
-///
-/// 1 MiB stays well under that ceiling while keeping the frame count low
-/// enough that a whole replay of the largest panes this hub allows fits in
+/// Frame boundaries mean nothing to a client (it concatenates into its
+/// emulator, whose parser spans writes), so splitting is free — but a single
+/// frame has a ceiling: the daemon socket refuses a payload over
+/// [`MAX_FRAME_BYTES`](crate::daemon::frame::MAX_FRAME_BYTES) (4 MiB), and an
+/// alternate-screen pane's screen grows with its area, so sending one whole
+/// ended the attach connection on every reconnect. 1 MiB stays well under that
+/// ceiling while keeping the frame count low enough that a whole replay of the
+/// largest panes this hub allows fits in
 /// [`CLIENT_QUEUE_DEPTH`](super::CLIENT_QUEUE_DEPTH) — which is what makes it
 /// safe to queue the replay before the client is registered, with nothing else
 /// writing to that queue.
