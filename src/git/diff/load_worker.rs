@@ -1,16 +1,16 @@
 //! Conflated background loads for the TUI git views.
 
+mod execute;
+mod lifecycle;
+
 use std::sync::{Arc, Condvar, Mutex, mpsc};
 use std::thread::{self, JoinHandle};
 
 use git2::{Oid, Repository};
 
-use super::{
-    ChangedFile, DiffHunk, LogDecorations, StatusKind, load_commit_diff, load_commit_file_blob,
-    load_commit_file_diff, load_commit_files, load_file_diff, load_log_decorations,
-    load_workdir_file,
-};
-use crate::platform::threading::{REAP_TIMEOUT, try_timed_join};
+use super::{ChangedFile, DiffHunk, LogDecorations, StatusKind};
+use execute::execute;
+use lifecycle::{InFlightPermit, finish_or_retire, reap_retired};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum LoadLane {
@@ -86,6 +86,7 @@ pub(crate) struct GitLoadReply {
 struct Pending {
     requests: [Option<GitLoadRequest>; LoadLane::COUNT],
     latest: [u64; LoadLane::COUNT],
+    next_lane: usize,
     stopped: bool,
 }
 
@@ -94,6 +95,7 @@ impl Default for Pending {
         Self {
             requests: std::array::from_fn(|_| None),
             latest: [0; LoadLane::COUNT],
+            next_lane: 0,
             stopped: false,
         }
     }
@@ -107,7 +109,14 @@ impl Pending {
     }
 
     fn take_next(&mut self) -> Option<GitLoadRequest> {
-        self.requests.iter_mut().find_map(Option::take)
+        for offset in 0..LoadLane::COUNT {
+            let index = (self.next_lane + offset) % LoadLane::COUNT;
+            if let Some(request) = self.requests[index].take() {
+                self.next_lane = (index + 1) % LoadLane::COUNT;
+                return Some(request);
+            }
+        }
+        None
     }
 
     fn cancel(&mut self, lane: LoadLane, generation: u64) {
@@ -129,6 +138,7 @@ pub(crate) struct GitLoadWorker {
 
 impl GitLoadWorker {
     pub(crate) fn spawn() -> Self {
+        reap_retired();
         let shared = Arc::new((Mutex::new(Pending::default()), Condvar::new()));
         let worker_shared = Arc::clone(&shared);
         let (reply_tx, replies) = mpsc::channel();
@@ -166,7 +176,7 @@ impl Drop for GitLoadWorker {
         lock.lock().unwrap_or_else(|e| e.into_inner()).stopped = true;
         wake.notify_one();
         if let Some(handle) = self.handle.take() {
-            try_timed_join(handle, REAP_TIMEOUT);
+            finish_or_retire(handle);
         }
     }
 }
@@ -194,60 +204,16 @@ fn worker_loop(shared: Arc<(Mutex<Pending>, Condvar)>, replies: mpsc::Sender<Git
         {
             continue;
         }
+        let Some(_permit) = InFlightPermit::acquire(&request.repo, || {
+            shared.0.lock().unwrap_or_else(|e| e.into_inner()).stopped
+        }) else {
+            return;
+        };
         let result = execute(&request, &mut cached).map_err(|e| e.to_string());
         if replies.send(GitLoadReply { request, result }).is_err() {
             return;
         }
     }
-}
-
-fn execute(
-    request: &GitLoadRequest,
-    cached: &mut Option<(String, Repository)>,
-) -> anyhow::Result<GitLoadPayload> {
-    if cached
-        .as_ref()
-        .is_none_or(|(path, _)| path != &request.repo)
-    {
-        let repo = Repository::discover(&request.repo)
-            .map_err(|e| anyhow::anyhow!(crate::git::format_discover_error(&e)))?;
-        *cached = Some((request.repo.clone(), repo));
-    }
-    let repo = &cached.as_ref().expect("repository was opened").1;
-    let result = match &request.operation {
-        GitLoadOperation::StatusDiff(path) => load_file_diff(repo, path).map(GitLoadPayload::Diff),
-        GitLoadOperation::CommitDiff(oid) => load_commit_diff(repo, *oid).map(GitLoadPayload::Diff),
-        GitLoadOperation::CommitFileDiff { oid, path } => {
-            load_commit_file_diff(repo, *oid, path).map(GitLoadPayload::Diff)
-        }
-        GitLoadOperation::WorkdirFile(path) => {
-            load_workdir_file(repo, path).map(GitLoadPayload::File)
-        }
-        GitLoadOperation::CommitFile { oid, path, status } => {
-            load_commit_file_blob(repo, *oid, path, *status).map(GitLoadPayload::File)
-        }
-        GitLoadOperation::CommitFiles(oid) => {
-            load_commit_files(repo, *oid).map(GitLoadPayload::CommitFiles)
-        }
-        GitLoadOperation::Decorations => {
-            load_log_decorations(repo).map(GitLoadPayload::Decorations)
-        }
-    };
-    if result.as_ref().err().is_some_and(is_repository_error) {
-        *cached = None;
-    }
-    result
-}
-
-fn is_repository_error(error: &anyhow::Error) -> bool {
-    error
-        .downcast_ref::<git2::Error>()
-        .is_some_and(|git_error| {
-            matches!(
-                git_error.class(),
-                git2::ErrorClass::Os | git2::ErrorClass::Repository
-            )
-        })
 }
 
 #[cfg(test)]
@@ -285,5 +251,28 @@ mod tests {
 
         assert!(pending.take_next().is_some());
         assert!(pending.take_next().is_some());
+    }
+
+    #[test]
+    fn continuously_refilled_diff_lane_cannot_starve_other_lanes() {
+        let mut pending = Pending::default();
+        pending.replace(request(1, GitLoadOperation::StatusDiff("a.rs".into())));
+        pending.replace(request(2, GitLoadOperation::WorkdirFile("a.rs".into())));
+        pending.replace(request(3, GitLoadOperation::CommitFiles(Oid::ZERO_SHA1)));
+        pending.replace(request(4, GitLoadOperation::Decorations));
+
+        let mut lanes = Vec::new();
+        for generation in 5..9 {
+            let next = pending.take_next().unwrap();
+            lanes.push(next.operation.lane());
+            pending.replace(request(
+                generation,
+                GitLoadOperation::StatusDiff(format!("{generation}.rs")),
+            ));
+        }
+
+        assert!(lanes.contains(&LoadLane::File));
+        assert!(lanes.contains(&LoadLane::CommitFiles));
+        assert!(lanes.contains(&LoadLane::Decorations));
     }
 }

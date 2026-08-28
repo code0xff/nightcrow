@@ -124,7 +124,7 @@ impl App {
         if let Some((path, scroll)) = self.git.view.take_pending_selection()
             && self.selected_filtered_status_path().as_deref() == Some(path.as_str())
         {
-            self.git.view.diff.scroll = scroll.min(self.git.view.diff.max_scroll());
+            self.git.load_controller.restore_diff_scroll(scroll);
         }
     }
 

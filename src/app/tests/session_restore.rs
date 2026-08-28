@@ -1,6 +1,69 @@
 use super::mode_toggle::seed_cached_commit_log;
 use super::*;
 
+fn repo_with_scrolled_diff() -> (tempfile::TempDir, String) {
+    let (dir, path) = make_repo();
+    let file = Path::new(&path).join("a.rs");
+    std::fs::write(
+        &file,
+        (0..40).map(|n| format!("old {n}\n")).collect::<String>(),
+    )
+    .unwrap();
+    run_git(&path, &["add", "."]);
+    run_git(&path, &["commit", "-m", "base"]);
+    std::fs::write(
+        &file,
+        (0..40).map(|n| format!("new {n}\n")).collect::<String>(),
+    )
+    .unwrap();
+    (dir, path)
+}
+
+#[test]
+fn status_restore_with_an_existing_list_applies_scroll_after_async_diff() {
+    let (_dir, path) = repo_with_scrolled_diff();
+    let mut app = app_with_files(vec!["a.rs"]);
+    app.git.repo_path = path;
+
+    app.restore_session(&crate::workspace::persistence::SessionState {
+        selected_file: Some("a.rs".to_string()),
+        scroll: 7,
+        ..Default::default()
+    });
+    app.flush_git_loads_for_test(Duration::from_secs(2));
+
+    assert_eq!(app.git.view.diff.scroll, 7);
+}
+
+#[test]
+fn status_restore_from_first_snapshot_applies_scroll_after_async_diff() {
+    let (_dir, path) = repo_with_scrolled_diff();
+    let mut app = app_with_files(vec![]);
+    app.git.repo_path = path;
+    app.restore_session(&crate::workspace::persistence::SessionState {
+        selected_file: Some("a.rs".to_string()),
+        scroll: 7,
+        ..Default::default()
+    });
+
+    app.ingest_snapshot(
+        RepoSnapshot {
+            files: vec![ChangedFile::unstaged_only(
+                "a.rs".to_string(),
+                StatusKind::Modified,
+            )],
+            tracking: None,
+            head_oid: None,
+            branch_name: None,
+            refs_fingerprint: 0,
+        },
+        HashMap::new(),
+    );
+    app.flush_git_loads_for_test(Duration::from_secs(2));
+
+    assert_eq!(app.git.view.diff.scroll, 7);
+}
+
 #[test]
 fn toggle_mode_in_list_fullscreen_keeps_list_fullscreen() {
     let mut app = app_with_files(vec![]);

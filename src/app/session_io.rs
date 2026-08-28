@@ -125,7 +125,7 @@ impl App {
         {
             self.git.view.status.selected = idx;
             self.refresh_diff(true);
-            self.git.view.diff.scroll = state.scroll.min(self.git.view.diff.max_scroll());
+            self.git.load_controller.restore_diff_scroll(state.scroll);
         }
         // If the saved file is gone, leave selected/scroll as they were after
         // the initial snapshot — applying saved_scroll to a different file
