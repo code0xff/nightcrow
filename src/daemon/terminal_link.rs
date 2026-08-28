@@ -14,7 +14,20 @@ use crate::session::terminal::frame::{
 };
 use anyhow::Result;
 use std::collections::{HashMap, VecDeque};
+use std::fmt;
 use std::sync::{Arc, Mutex};
+
+/// Terminal bytes one attach connection may have waiting in memory.
+///
+/// The daemon's terminal queue can legally replay this much at once (256
+/// one-MiB frames). Keeping the same ceiling here means a valid largest replay
+/// can land, while a client that cannot keep up eventually reconnects instead
+/// of growing without bound.
+pub(crate) const TERMINAL_INBOX_BYTES: usize = 256 * 1024 * 1024;
+
+/// Work one repository may hand to its emulator in one render tick.
+const TERMINAL_DRAIN_MESSAGES: usize = 64;
+const TERMINAL_DRAIN_BYTES: usize = 256 * 1024;
 
 /// One thing the daemon said about a repository's terminals.
 #[derive(Debug)]
@@ -25,11 +38,56 @@ pub(crate) enum TerminalMessage {
     Output { pane: PaneId, data: Vec<u8> },
 }
 
+impl TerminalMessage {
+    fn output_bytes(&self) -> usize {
+        match self {
+            Self::Output { data, .. } => data.len(),
+            Self::Event(_) => 0,
+        }
+    }
+}
+
+#[derive(Debug)]
+pub(crate) struct TerminalInboxOverflow {
+    queued: usize,
+    incoming: usize,
+    limit: usize,
+}
+
+impl fmt::Display for TerminalInboxOverflow {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "terminal inbox has {} queued bytes and cannot accept {} more (limit {})",
+            self.queued, self.incoming, self.limit
+        )
+    }
+}
+
+impl std::error::Error for TerminalInboxOverflow {}
+
+#[derive(Debug, Default)]
+struct RouterState {
+    inboxes: HashMap<String, VecDeque<TerminalMessage>>,
+    queued_output_bytes: usize,
+    overflowed: bool,
+}
+
 /// Per-repository inboxes, filled by the connection's reader thread and drained
 /// by each repository's backend.
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub(crate) struct TerminalRouter {
-    inboxes: Mutex<HashMap<String, VecDeque<TerminalMessage>>>,
+    state: Mutex<RouterState>,
+    byte_limit: usize,
+}
+
+impl Default for TerminalRouter {
+    fn default() -> Self {
+        Self {
+            state: Mutex::new(RouterState::default()),
+            byte_limit: TERMINAL_INBOX_BYTES,
+        }
+    }
 }
 
 impl TerminalRouter {
@@ -40,34 +98,91 @@ impl TerminalRouter {
     /// repository exists — and the replay happens only once, so dropping those
     /// would orphan panes.
     ///
-    /// Unbounded because dropping bytes corrupts a stream that cannot be
-    /// re-read; an inbox nobody drains belongs to a repository this client has
-    /// not opened a tab for yet, which is the very next thing it does.
-    pub(crate) fn deliver(&self, repo: &str, message: TerminalMessage) {
-        self.inboxes
-            .lock()
-            .expect("terminal inboxes poisoned")
+    /// Bytes are never discarded from a live stream. If accepting the whole
+    /// message would cross the connection-wide ceiling, the router is poisoned
+    /// and the socket reader ends the connection. A later attach is replayed a
+    /// coherent stream by the session hub; continuing after a partial drop
+    /// could never be repaired.
+    pub(crate) fn deliver(
+        &self,
+        repo: &str,
+        message: TerminalMessage,
+    ) -> Result<(), TerminalInboxOverflow> {
+        let incoming = message.output_bytes();
+        let mut state = self.state.lock().expect("terminal inboxes poisoned");
+        let fits = state
+            .queued_output_bytes
+            .checked_add(incoming)
+            .is_some_and(|total| total <= self.byte_limit);
+        if state.overflowed || !fits {
+            state.overflowed = true;
+            return Err(TerminalInboxOverflow {
+                queued: state.queued_output_bytes,
+                incoming,
+                limit: self.byte_limit,
+            });
+        }
+        state.queued_output_bytes += incoming;
+        state
+            .inboxes
             .entry(repo.to_string())
             .or_default()
             .push_back(message);
+        Ok(())
     }
 
-    /// Everything filed for `repo` since the last drain.
+    /// A bounded FIFO prefix filed for `repo` since the last drain.
+    ///
+    /// The byte allowance is soft for the first message: replay frames can be
+    /// larger than it, and refusing to take the head would wedge the queue.
+    /// Message count also bounds control-only traffic. Leaving the remainder
+    /// for the next render tick keeps one loud repository from monopolising the
+    /// UI while preserving output-before-exit order.
     pub(crate) fn drain(&self, repo: &str) -> Vec<TerminalMessage> {
-        let mut inboxes = self.inboxes.lock().expect("terminal inboxes poisoned");
-        match inboxes.get_mut(repo) {
-            Some(inbox) => inbox.drain(..).collect(),
-            None => Vec::new(),
+        let mut state = self.state.lock().expect("terminal inboxes poisoned");
+        let Some(inbox) = state.inboxes.get_mut(repo) else {
+            return Vec::new();
+        };
+        let mut drained = Vec::new();
+        let mut bytes = 0usize;
+        while drained.len() < TERMINAL_DRAIN_MESSAGES {
+            let Some(next) = inbox.front() else { break };
+            let next_bytes = next.output_bytes();
+            if !drained.is_empty() && bytes.saturating_add(next_bytes) > TERMINAL_DRAIN_BYTES {
+                break;
+            }
+            let message = inbox.pop_front().expect("front was present");
+            bytes += next_bytes;
+            drained.push(message);
         }
+        state.queued_output_bytes -= bytes;
+        drained
     }
 
     /// Forget the inboxes of repositories that are no longer open, including
     /// any that were filed for a repository this client never got a tab for.
     pub(crate) fn retain(&self, open: &[String]) {
-        self.inboxes
-            .lock()
-            .expect("terminal inboxes poisoned")
-            .retain(|repo, _| open.iter().any(|id| id == repo));
+        let mut state = self.state.lock().expect("terminal inboxes poisoned");
+        let mut removed_bytes = 0usize;
+        state.inboxes.retain(|repo, inbox| {
+            let keep = open.iter().any(|id| id == repo);
+            if !keep {
+                removed_bytes += inbox
+                    .iter()
+                    .map(TerminalMessage::output_bytes)
+                    .sum::<usize>();
+            }
+            keep
+        });
+        state.queued_output_bytes -= removed_bytes;
+    }
+
+    #[cfg(test)]
+    pub(super) fn with_byte_limit(byte_limit: usize) -> Self {
+        Self {
+            state: Mutex::new(RouterState::default()),
+            byte_limit,
+        }
     }
 }
 

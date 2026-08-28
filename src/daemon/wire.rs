@@ -100,7 +100,7 @@ pub(super) fn read_routed(
                 pane: output.pane,
                 data: output.data,
             },
-        );
+        )?;
         return Ok(Some(Incoming::Routed));
     }
     let message: ServerMessage =
@@ -110,8 +110,48 @@ pub(super) fn read_routed(
     if let ServerMessage::Terminal { repo, event } = &message
         && !matches!(event, HubServerMessage::Error { .. })
     {
-        terminals.deliver(repo, TerminalMessage::Event(event.clone()));
+        terminals.deliver(repo, TerminalMessage::Event(event.clone()))?;
         return Ok(Some(Incoming::Routed));
     }
     Ok(Some(Incoming::Control(message)))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::daemon::frame::Frame;
+
+    fn send_output(stream: &mut UnixStream, data: &[u8]) {
+        let payload = TerminalOutput {
+            repo: "r1".to_string(),
+            pane: 1,
+            data: data.to_vec(),
+        }
+        .encode()
+        .unwrap();
+        write_frame(stream, &Frame::terminal(payload)).unwrap();
+        stream.flush().unwrap();
+    }
+
+    #[test]
+    fn an_inbox_overflow_ends_routing_instead_of_skipping_a_frame() {
+        let (mut receiving, mut sending) = UnixStream::pair().unwrap();
+        let router = TerminalRouter::with_byte_limit(3);
+        send_output(&mut sending, b"abc");
+        send_output(&mut sending, b"d");
+
+        assert!(matches!(
+            read_routed(&mut receiving, &router),
+            Ok(Some(Incoming::Routed))
+        ));
+        let error = match read_routed(&mut receiving, &router) {
+            Err(error) => error,
+            Ok(_) => panic!("the stream must end at the rejected frame"),
+        };
+        assert!(error.to_string().contains("terminal inbox"), "{error:#}");
+        assert!(matches!(
+            router.drain("r1").as_slice(),
+            [TerminalMessage::Output { data, .. }] if data == b"abc"
+        ));
+    }
 }
