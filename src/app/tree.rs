@@ -1,8 +1,7 @@
 //! `App` methods for the read-only file-tree navigator (`ViewMode::Tree`).
 //!
 //! Directory I/O is synchronous on the UI thread (one level per expansion);
-//! the git-status snapshot worker is never involved. Selecting a file row
-//! loads its raw contents into the existing file-view pane.
+//! the git-status snapshot worker is never involved.
 
 use super::{App, DiffPaneView, FileViewKey, FileViewState, NoticeKind, ViewMode};
 use std::collections::BTreeSet;

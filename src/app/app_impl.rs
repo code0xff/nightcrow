@@ -47,10 +47,13 @@ impl App {
         }
     }
 
-    // NOT called for keys forwarded to a PTY: in a terminal pane every
-    // keystroke is passthrough, so dismissing on those would make a notice
-    // vanish the instant the user resumed typing.
-    //
+    // Only reached for keys nightcrow itself acts on (the dispatch gate
+    // excludes PTY passthrough), so typing in a terminal pane never blanks a
+    // notice.
+    pub fn dismiss_notice_on_app_input(&mut self) {
+        self.notice = None;
+    }
+
     // Used when the press can no longer be paired with a real release (the
     // project is leaving the screen) but the PTY is still alive — dropping the
     // record would leave that program in a drag/selection state with no
@@ -61,17 +64,10 @@ impl App {
         }
     }
 
-    pub fn dismiss_notice_on_app_input(&mut self) {
-        self.notice = None;
-    }
-
     /// Build a project view on `repo_path`, with `backend` behind its terminal
-    /// panes.
-    ///
-    /// The backend comes from the caller because where the panes live is not
-    /// this type's decision: they belong to the session the daemon owns, and
-    /// only the client that connected to it can hand over the right end of that
-    /// connection.
+    /// panes. The backend comes from the caller: the panes belong to the
+    /// session the daemon owns, and only the client connected to it can hand
+    /// over the right end of that connection.
     pub fn new(
         repo_path: String,
         prompt_log: bool,

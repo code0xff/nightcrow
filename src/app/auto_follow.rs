@@ -53,10 +53,9 @@ impl App {
             let Some(&mtime) = self.status_view.hot_table.get(&file.path) else {
                 continue;
             };
-            // `duration_since` returns Err when `mtime > now` (clock skew on
-            // NFS, VMs, future-stamped files). Treating those as in-window
-            // would pin auto-follow to one bogus file forever; drop them
-            // entirely — recovery is automatic once the real clock catches up.
+            // Future mtimes (clock skew on NFS, VMs) would pin auto-follow to
+            // one bogus file forever; drop them — recovery is automatic once
+            // the real clock catches up.
             let Ok(age) = now.duration_since(mtime) else {
                 continue;
             };
