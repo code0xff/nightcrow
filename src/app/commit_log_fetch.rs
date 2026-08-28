@@ -30,6 +30,7 @@ pub(crate) enum CommitLogFetchKind {
 // as a stale-result check before appending — if the loaded count changed
 // between spawn and reply, the page is dropped.
 pub(crate) struct CommitLogPageMsg {
+    pub generation: u64,
     pub kind: CommitLogFetchKind,
     pub skip: usize,
     pub page_size: usize,
@@ -37,6 +38,26 @@ pub(crate) struct CommitLogPageMsg {
 }
 
 impl App {
+    pub fn configure_commit_log(&mut self, page_size: usize, prefetch_threshold: usize) {
+        self.commit_log_controller
+            .configure(page_size, prefetch_threshold);
+    }
+
+    #[cfg(test)]
+    pub(crate) fn commit_log_fetch_pending(&self) -> bool {
+        self.commit_log_controller.fetch_pending()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn set_observed_head_for_test(&mut self, oid: Option<Oid>) {
+        self.commit_log_controller.set_last_head_oid(oid);
+    }
+
+    #[cfg(test)]
+    pub(crate) fn observed_head_for_test(&self) -> Option<Oid> {
+        self.commit_log_controller.last_head_oid()
+    }
+
     pub(crate) fn spawn_commit_log_page_fetch(&mut self, skip: usize) {
         if self.log_view.fully_loaded {
             return;
@@ -70,46 +91,48 @@ impl App {
     // receiver-drop already signals the worker to exit at next send, and an
     // old handle mid-`load_commit_log_page` must not stall the frame).
     fn launch_commit_log_worker(&mut self, skip: usize, kind: CommitLogFetchKind) {
-        drop(self.pagination.page_rx.take());
-        self.pagination.handle.take();
-        let page_size = self.pagination.page_size;
+        drop(self.commit_log_controller.page_rx.take());
+        self.commit_log_controller.handle.take();
+        let page_size = self.commit_log_controller.page_size();
+        let generation = self.commit_log_controller.next_generation();
         let repo_path = self.repo_path.clone();
         let (tx, rx) = mpsc::channel();
-        self.pagination.page_rx = Some(rx);
+        self.commit_log_controller.page_rx = Some(rx);
         let handle = thread::spawn(move || {
             let result = match Repository::discover(&repo_path) {
                 Ok(repo) => load_commit_log_page(&repo, skip, page_size).map_err(|e| e.to_string()),
                 Err(e) => Err(crate::git::format_discover_error(&e).to_string()),
             };
             let _ = tx.send(CommitLogPageMsg {
+                generation,
                 kind,
                 skip,
                 page_size,
                 result,
             });
         });
-        self.pagination.handle = Some(handle);
+        self.commit_log_controller.handle = Some(handle);
     }
 
     pub(crate) fn poll_commit_log_page_fetch(&mut self) {
-        let Some(rx) = self.pagination.page_rx.as_ref() else {
+        let Some(rx) = self.commit_log_controller.page_rx.as_ref() else {
             return;
         };
         match rx.try_recv() {
             Ok(msg) => {
-                self.pagination.page_rx = None;
+                self.commit_log_controller.page_rx = None;
                 // The worker just sent, so its next blocking point is gone; a
                 // short timed join reaps it now, and the timeout keeps a
                 // wedged worker from stalling the frame.
-                if let Some(h) = self.pagination.handle.take() {
+                if let Some(h) = self.commit_log_controller.handle.take() {
                     try_timed_join(h, REAP_TIMEOUT);
                 }
                 self.handle_commit_log_page_msg(msg);
             }
             Err(mpsc::TryRecvError::Empty) => {}
             Err(mpsc::TryRecvError::Disconnected) => {
-                self.pagination.page_rx = None;
-                if let Some(h) = self.pagination.handle.take() {
+                self.commit_log_controller.page_rx = None;
+                if let Some(h) = self.commit_log_controller.handle.take() {
                     try_timed_join(h, REAP_TIMEOUT);
                 }
                 self.log_view.clear_pending();
@@ -122,8 +145,9 @@ impl App {
     // worker's next `tx.send` to Err and the join completes in microseconds
     // in the common case; the timeout caps worst-case latency.
     pub(crate) fn cancel_commit_log_page_fetch(&mut self) {
-        drop(self.pagination.page_rx.take());
-        if let Some(h) = self.pagination.handle.take() {
+        drop(self.commit_log_controller.page_rx.take());
+        self.commit_log_controller.next_generation();
+        if let Some(h) = self.commit_log_controller.handle.take() {
             try_timed_join(h, REAP_TIMEOUT);
         }
         self.log_view.clear_pending();
@@ -150,7 +174,7 @@ impl App {
             return;
         }
         let loaded = self.log_view.loaded_count;
-        let threshold = self.pagination.prefetch_threshold;
+        let threshold = self.commit_log_controller.prefetch_threshold();
         if self.log_view.selected + threshold >= loaded {
             self.spawn_commit_log_page_fetch(loaded);
         }
@@ -160,7 +184,7 @@ impl App {
     #[cfg(test)]
     pub(crate) fn flush_commit_log_fetch_for_test(&mut self, timeout: std::time::Duration) {
         let start = std::time::Instant::now();
-        while self.log_view.pending_fetch {
+        while self.log_view.pending_fetch || self.commit_log_fetch_pending() {
             if start.elapsed() > timeout {
                 panic!("commit log fetch did not complete within {:?}", timeout);
             }

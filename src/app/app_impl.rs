@@ -107,10 +107,11 @@ impl App {
             repo_cache: None,
             cfg_agent_indicator: crate::config::AgentIndicatorConfig::default(),
             cfg_tree: crate::config::TreeConfig::default(),
-            pagination: crate::app::commit_log_pagination::CommitLogPagination::with_config(
-                crate::config::LogConfig::default().commit_log_page_size,
-                crate::config::LogConfig::default().commit_log_prefetch_threshold,
-            ),
+            commit_log_controller:
+                crate::app::commit_log_pagination::CommitLogController::with_config(
+                    crate::config::LogConfig::default().commit_log_page_size,
+                    crate::config::LogConfig::default().commit_log_prefetch_threshold,
+                ),
             auto_follow: AutoFollow::default(),
             list_fullscreen: false,
             branch_name: None,

@@ -2,12 +2,11 @@ mod helpers;
 
 // `use super::*` re-exports app.rs's `use` declarations and public items
 // (App, AutoFollow, Focus, ViewMode, Notice, NoticeKind, DiffPaneView,
-// FileViewKey, FileViewState, CommitLogPagination, SnapshotChannel, etc.)
+// FileViewKey, FileViewState, CommitLogController, SnapshotChannel, etc.)
 // so every test submodule can pull them in with `use super::*;`.
 use super::diff_load::DiffApply;
 use super::strip_escape_sequences;
 use super::*;
-use crate::app::commit_log_fetch::{CommitLogFetchKind, CommitLogPageMsg};
 use crate::git::diff::{ChangedFile, CommitEntry, RepoSnapshot, StatusKind, load_commit_log};
 use crate::runtime::snapshot::SnapshotMsg;
 use crate::runtime::terminal::{PaneInfo, SCROLLBACK_LINES, TerminalFullscreen};
@@ -15,7 +14,6 @@ use crate::test_util::{make_repo, open_repo, run_git};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use std::collections::HashMap;
 use std::path::Path;
-use std::sync::mpsc;
 use std::time::{Duration, Instant, SystemTime};
 
 mod auto_follow;

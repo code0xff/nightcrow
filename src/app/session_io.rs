@@ -159,7 +159,7 @@ impl App {
         // fresh `set_commits` below: its reply would be silently appended over
         // the restored list. Cancel before mutating state.
         self.cancel_commit_log_page_fetch();
-        let page_size = self.pagination.page_size;
+        let page_size = self.commit_log_controller.page_size();
         let commits = match self.with_repo(|repo| load_commit_log(repo, page_size)) {
             Ok(c) => c,
             Err(e) => {
@@ -174,7 +174,8 @@ impl App {
             .log_selected
             .min(self.log_view.commits.len().saturating_sub(1));
         // Avoid a same-tick HEAD-change-trigger reload on the next snapshot.
-        self.pagination.last_head_oid = self.log_view.commits.first().map(|c| c.oid);
+        self.commit_log_controller
+            .set_last_head_oid(self.log_view.commits.first().map(|c| c.oid));
         self.mode = ViewMode::Log;
 
         if state.log_drill_down {

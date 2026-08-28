@@ -15,8 +15,10 @@ pub(crate) fn init_app(
     if cfg.tree.live_watch {
         app.tree_watch = crate::runtime::tree_watch::TreeWatcher::new();
     }
-    app.pagination.page_size = cfg.log.commit_log_page_size;
-    app.pagination.prefetch_threshold = cfg.log.commit_log_prefetch_threshold;
+    app.configure_commit_log(
+        cfg.log.commit_log_page_size,
+        cfg.log.commit_log_prefetch_threshold,
+    );
     if let Some(state) = saved_session {
         // Applied up front rather than on the first snapshot: only the Status
         // selection needs the changed-file list, and it waits in

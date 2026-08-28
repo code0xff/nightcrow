@@ -171,10 +171,8 @@ fn set_commit_files_seeds_filter_cache_under_active_query() {
 
 #[test]
 fn reset_drill_down_clears_file_search_state() {
-    let mut lv = LogView {
-        drill_down: true,
-        ..Default::default()
-    };
+    let mut lv = LogView::default();
+    lv.enter_drill_down();
     lv.set_commit_files(vec![ChangedFile::unstaged_only(
         "readme.md".into(),
         crate::git::diff::StatusKind::Modified,
