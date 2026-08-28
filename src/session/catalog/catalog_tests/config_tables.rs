@@ -106,3 +106,56 @@ fn a_repo_opened_after_a_swap_gets_the_new_startup_list() {
     catalog.shutdown();
     drop((dir_a, dir_b));
 }
+
+#[test]
+fn concurrent_open_and_config_swap_cannot_miss_each_other() {
+    let (dir_a, a) = make_repo();
+    let (dir_b, b) = make_repo();
+    let catalog = Arc::new(Catalog::with_startup_and_plugins(
+        vec![startup("old")],
+        Vec::new(),
+    ));
+    catalog.set_paths(std::slice::from_ref(&a));
+    let barrier = Arc::new(std::sync::Barrier::new(3));
+
+    let opening = {
+        let catalog = Arc::clone(&catalog);
+        let barrier = Arc::clone(&barrier);
+        let a = a.clone();
+        let b = b.clone();
+        std::thread::spawn(move || {
+            barrier.wait();
+            catalog.set_paths(&[a, b]);
+        })
+    };
+    let swapping = {
+        let catalog = Arc::clone(&catalog);
+        let barrier = Arc::clone(&barrier);
+        std::thread::spawn(move || {
+            barrier.wait();
+            catalog
+                .set_config_tables(&[startup("new")], Vec::new())
+                .expect("the merge fits the cap")
+        })
+    };
+    barrier.wait();
+    opening.join().unwrap();
+    let told = swapping.join().unwrap();
+
+    let b = crate::git::resolve_repo_path(std::path::Path::new(&b))
+        .to_string_lossy()
+        .into_owned();
+    let opened = catalog
+        .entries()
+        .into_iter()
+        .find(|entry| entry.path == b)
+        .expect("the concurrent open committed");
+    let was_in_swap = told.iter().any(|entry| Arc::ptr_eq(entry, &opened));
+    let spawned_from_new_table = opened.terminals.startup_commands() == [startup("new")];
+    assert!(
+        was_in_swap || spawned_from_new_table,
+        "an opened repository must be told by the swap or spawn from its tables"
+    );
+    catalog.shutdown();
+    drop((dir_a, dir_b));
+}

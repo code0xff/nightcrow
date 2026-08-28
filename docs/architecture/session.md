@@ -78,6 +78,20 @@ trait TerminalBackend {
 (`session/prefs`), 어느 표면에서 바꾸든 세션 전체가 따라온다 — 대신 프로젝트를 바꿔도 색은
 그대로다. `[theme] name`은 아직 한 번도 색을 고르지 않은 세션의 시작색으로 남는다.
 
+### Catalog는 membership과 runtime을 분리한다 (`session/catalog/`)
+
+저장소 집합을 결정하는 순수 상태(`CatalogMembership`)와 실제 status worker·terminal hub를
+소유하는 상태(`CatalogRuntime`)는 별개다. membership은 base·browser-added·hidden·order의 합집합과
+재사용하지 않는 id만 계산하고, runtime은 그 결과를 reconcile해 같은 path의 `Arc<RepoEntry>`를
+그대로 보존한다. 따라서 무관한 탭 변경은 기존 runtime과 SSE subscriber를 교체하지 않는다.
+
+둘 사이 변경은 `Catalog` façade의 transaction 하나로 직렬화한다. config table 교체도 같은
+transaction을 써서 동시에 열린 저장소는 교체 시점의 fan-out에 포함되거나 새 table로 spawn되는
+둘 중 하나이며, 어느 쪽에도 속하지 않는 틈이 없다. reconcile은 먼저 새 runtime snapshot을
+설치하고 retired entry를 값으로 돌려준다. worker `stop`과 join은 membership·runtime·transaction
+lock을 모두 놓은 뒤 실행한다 — 닫히는 저장소 하나의 종료 지연이 조회나 다음 catalog mutation을
+막지 않게 하기 위해서다.
+
 ### 데몬이 세션을 감시한다 (`daemon/watch.rs`)
 
 세션에는 문이 둘이다 — 브라우저의 HTTP 핸들러와 attach 소켓 — 그래서 브라우저에서 연 저장소는
