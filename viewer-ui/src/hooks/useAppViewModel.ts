@@ -31,20 +31,26 @@ export function useAppViewModel() {
     ...layout.guards,
   });
   const workspace = useRepoWorkspace({
-    repo: tabs.repo,
-    repos: tabs.repos,
-    authed,
-    hot: tabs.hot,
-    clockSkewMs: tabs.clockSkewMs,
-    resumeTick,
-    handle,
-    shell: layout.shell,
-    viewKnown: layout.viewCovers(tabs.repo),
-    rememberedView: layout.viewOf(tabs.repo),
-    latestView: layout.rememberedViewFor,
-    rememberView: layout.rememberView,
-    maximizedPanelOf: layout.maximizedPanelOf,
-    setMaximizedFor: layout.setMaximizedFor,
+    project: {
+      repo: tabs.repo,
+      repos: tabs.repos,
+      authed,
+      hot: tabs.hot,
+      clockSkewMs: tabs.clockSkewMs,
+      resumeTick,
+      handle,
+    },
+    view: {
+      known: layout.viewCovers(tabs.repo),
+      remembered: layout.viewOf(tabs.repo),
+      latest: layout.rememberedViewFor,
+      remember: layout.rememberView,
+    },
+    layout: {
+      shell: layout.shell,
+      maximizedPanelOf: layout.maximizedPanelOf,
+      setMaximizedFor: layout.setMaximizedFor,
+    },
   });
 
   const { selectOpenedRepo, closeRepo } = useRepoActions({
