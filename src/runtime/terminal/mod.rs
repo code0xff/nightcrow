@@ -18,9 +18,8 @@ pub(crate) use escape::strip_escape_sequences;
 pub use recovery::PaneRecovery;
 
 /// Upper bound on a pane's in-flight prompt buffer before further chars are
-/// dropped. Prevents unbounded growth when a program writes a stream of bytes
-/// without ever sending `\r` / `\n` (progress bars, large pastes, `yes` piped
-/// to cat).
+/// dropped, so a program writing bytes without ever sending `\r`/`\n`
+/// (progress bars, large pastes) cannot grow it without limit.
 const PROMPT_BUFFER_MAX_BYTES: usize = 4096;
 
 /// Scrollback line cap for every pane emulator.
@@ -29,7 +28,7 @@ pub const SCROLLBACK_LINES: usize = 1000;
 /// Lines moved by a single line-scroll keypress (`Shift+Up`/`Shift+Down`).
 pub const SCROLL_LINE_STEP: usize = 3;
 
-/// Lines one mouse wheel notch scrolls, by terminal convention. Used to
+/// Lines one mouse wheel notch scrolls, by terminal convention — used to
 /// convert a line count into a notch count when a pane wants wheel events,
 /// and by the mouse handler as the line count of one captured wheel event.
 pub const WHEEL_LINES_PER_NOTCH: usize = 3;
@@ -48,13 +47,9 @@ pub const MAX_VISIBLE_NORMAL: usize = 4;
 pub const MAX_VISIBLE_FULLSCREEN: usize = 8;
 
 /// Fullscreen state of the lower terminal panel. `<leader> f` cycles through
-/// `Off → Grid → Zoom → Off`.
-/// - `Off`: normal split — top viewer above, terminal split-view below.
-/// - `Grid`: terminal fills the body; up to `MAX_VISIBLE_FULLSCREEN` panes.
-/// - `Zoom`: terminal fills the body showing only the active pane.
-///
-/// `Grid` and `Zoom` are visually identical whenever `Grid` would show a
-/// single pane, so the cycle skips `Zoom` in that case.
+/// `Off → Grid → Zoom → Off`. `Grid` and `Zoom` are visually identical
+/// whenever `Grid` would show a single pane, so the cycle skips `Zoom` in
+/// that case (see [`TerminalState::zoom_distinct_from_grid`]).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum TerminalFullscreen {
     #[default]
@@ -71,12 +66,11 @@ impl TerminalFullscreen {
     }
 }
 
-/// Compute the visible pane-index window `[start, start+len)` for a split
-/// grid capped at `max_visible` panes. `prev_start` is the previous window's
-/// start (0 for a fresh terminal); the window is nudged the minimum amount
-/// needed to keep `active` inside it, rather than re-centering every call.
-/// Shared by `TerminalState::sync_visible_window` and `ui::terminal_tab` so
-/// both always agree on what's visible.
+/// Compute the visible pane-index window for a split grid capped at
+/// `max_visible` panes. The window is nudged the minimum amount needed to
+/// keep `active` inside it, rather than re-centering every call. Shared by
+/// `TerminalState::sync_visible_window` and `ui::terminal_tab` so both always
+/// agree on what's visible.
 pub(crate) fn visible_range(
     prev_start: usize,
     active: usize,
@@ -120,11 +114,10 @@ pub struct TerminalState {
     /// True unless a shared session says otherwise: a PTY has one size, so one
     /// client decides it and the others render the grid they are given.
     pub owns_size: bool,
-    /// What each pane's plugin last reported about recovering it, for the panes
-    /// any has spoken about. Deliberately outlives a pane's process: the report
-    /// that matters most arrives while the pane is gone and its slot is held for
-    /// a relaunch. Cleared only by a `cancelled` report (see
-    /// [`recovery::RECOVERY_CANCELLED`]).
+    /// What each pane's plugin last reported about recovering it. Deliberately
+    /// outlives a pane's process: the report that matters most arrives while
+    /// the pane is gone and its slot is held for a relaunch. Cleared only by
+    /// a `cancelled` report (see [`recovery::RECOVERY_CANCELLED`]).
     pub(crate) recovery: HashMap<PaneId, PaneRecovery>,
     /// Index of the first pane in the visible split-view window.
     pub visible_start: usize,

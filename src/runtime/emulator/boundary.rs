@@ -1,28 +1,19 @@
 //! Whether a pane's byte stream stands at a sequence boundary.
 //!
-//! A snapshot is spliced *into* the recorded stream on replay: everything up to
-//! its anchor, then the snapshot, then everything after (see
-//! `session::terminal::hub_replay`). PTY reads land at arbitrary byte offsets,
-//! so a chunk can end in the middle of an escape sequence or a multi-byte
-//! character — anchoring there hands a reattaching client the sequence's tail
-//! as ordinary input (`ESC [ 2` before the seam, a literal `J` printed onto the
-//! fresh screen after it). The emulator's own parser knows it is mid-sequence,
-//! but does not say so; this mirrors just enough of its state machine to answer
-//! "is a sequence in flight", so the anchor can wait for a chunk that ends
-//! clean.
+//! A snapshot is spliced *into* the recorded stream on replay (see
+//! `session::terminal::hub_replay`), and PTY reads land at arbitrary byte
+//! offsets — anchoring inside an escape sequence or multi-byte character hands
+//! a reattaching client the sequence's tail as ordinary input. The emulator's
+//! own parser knows it is mid-sequence but does not say so, so this mirrors
+//! just enough of its state machine to answer "is a sequence in flight".
 //!
-//! Mirrors the parser's *abort* semantics as well as its progress — `CAN`,
-//! `SUB` and a fresh `ESC` cancel whatever was open — so this cannot drift into
-//! claiming a sequence that the real parser has already abandoned.
-//!
-//! Where the mirror and the parser disagree, they disagree in the safe
-//! direction only: this may stay "open" after the parser has moved on (the raw
-//! `0x9c` ST that ends a DCS is not followed, and neither are the DCS
-//! sub-states it would need), which merely defers a snapshot. It never reports
-//! a boundary the parser would not also be at. The cost of deferring is the
-//! caller's to bound — see the desperation rule in
-//! `session::terminal::hub_run` — because a cap *here* would be a lie told to
-//! every caller at once.
+//! The mirror tracks the parser's *abort* semantics (`CAN`, `SUB`, a fresh
+//! `ESC`) as well as its progress, so it cannot drift into claiming a sequence
+//! the real parser has abandoned. Where they disagree, they disagree safely:
+//! this may stay "open" after the parser moved on, which only defers a
+//! snapshot — it never reports a boundary the parser would not also be at.
+//! The cost of deferring is the caller's to bound (see `session::terminal::hub_run`);
+//! a cap *here* would be a lie told to every caller at once.
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum State {
@@ -99,7 +90,6 @@ impl StreamBoundary {
                     0x18 | 0x1a => Ground,
                     0x1b => Escape,
                     0x30..=0x7e => Ground,
-                    // C0 controls execute without closing the sequence.
                     _ => Escape,
                 },
                 EscapeIntermediate => match byte {
@@ -111,7 +101,6 @@ impl StreamBoundary {
                 Csi => match byte {
                     0x40..=0x7e | 0x18 | 0x1a => Ground,
                     0x1b => Escape,
-                    // Parameters, intermediates, embedded C0, and DEL.
                     _ => Csi,
                 },
                 Osc => match byte {

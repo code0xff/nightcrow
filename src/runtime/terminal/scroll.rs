@@ -17,11 +17,9 @@ impl TerminalState {
     /// Scroll pane `id` by `lines`, delivering the request wherever that
     /// pane's program expects it (see `ScrollSink`). `pointer` is the 1-based
     /// pane-local cell of a captured mouse wheel event, when there is one.
-    ///
     /// Only the `Scrollback` sink moves the emulator's view; the other two
     /// synthesize input, because a program that owns its viewport keeps its
-    /// transcript out of the emulator's grid entirely and scrolling the grid
-    /// would reveal nothing.
+    /// transcript out of the emulator's grid entirely.
     pub fn scroll_pane(&mut self, id: PaneId, up: bool, lines: usize, pointer: Option<(u16, u16)>) {
         if lines == 0 {
             return;
@@ -36,10 +34,9 @@ impl TerminalState {
             ScrollSink::MouseWheel => {
                 // A TUI may pick which of its regions to scroll from the
                 // report's coordinates, so a captured wheel event passes the
-                // real pointer cell through. Keyboard scrolls have no
-                // pointer and report the pane's centre instead — the only
-                // cell guaranteed to be inside the transcript rather than on
-                // a border or input box.
+                // real pointer cell through. Keyboard scrolls have no pointer
+                // and report the pane's centre instead — the only cell
+                // guaranteed to be inside the transcript.
                 let (col, row) = match pointer {
                     Some(cell) => cell,
                     None => {
@@ -73,8 +70,7 @@ impl TerminalState {
     /// Forward a horizontal wheel notch to pane `id` as an SGR report at the
     /// pointer cell. Horizontal scrolling has no scrollback or arrow-key
     /// analog, so there is no sink dispatch: a pane whose program asked for
-    /// wheel reports receives the notch, every other pane silently drops it
-    /// (the same rule as `click_pane`).
+    /// wheel reports receives the notch, every other pane silently drops it.
     pub fn wheel_horizontal_pane(&mut self, id: PaneId, left: bool, col: u16, row: u16) {
         let Some(emulator) = self.emulators.get(&id) else {
             return;
@@ -88,11 +84,10 @@ impl TerminalState {
 
     /// Forward a mouse button press or release to pane `id`, translated to an
     /// SGR report at 1-based pane-local `col`/`row`. Only a pane whose program
-    /// asked for SGR mouse reports receives anything: a click has no
-    /// scrollback fallback, so an unclaimed click is dropped — the same
-    /// silence rule that keeps scroll bytes out of plain shells. Returns
-    /// whether the report was sent, so the caller can pair a forwarded press
-    /// with its eventual release.
+    /// asked for SGR mouse reports receives anything: an unclaimed click is
+    /// dropped — the same silence rule that keeps scroll bytes out of plain
+    /// shells. Returns whether the report was sent, so the caller can pair a
+    /// forwarded press with its eventual release.
     pub fn click_pane(
         &mut self,
         id: PaneId,
@@ -112,7 +107,7 @@ impl TerminalState {
         true
     }
 
-    /// Write straight to a pane's PTY. Bypasses `send_input` on purpose:
+    /// Write straight to a pane's PTY, bypassing `send_input` on purpose:
     /// input we synthesized on the user's behalf must not clear their scroll
     /// position or land in the prompt log, for the same reason the emulator's
     /// query replies in `poll` bypass it.

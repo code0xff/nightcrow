@@ -35,8 +35,7 @@ fn consume_escape_sequence(chars: &mut std::iter::Peekable<std::str::Chars<'_>>)
         }
         Some('(') | Some(')') | Some('*') | Some('+') | Some('-') | Some('.') | Some('/')
         | Some('#') => {
-            // Charset designators / DEC private 2-byte escapes:
-            // ESC <intermediate> <final>. Skip both.
+            // Charset designators / DEC private 2-byte escapes: skip both bytes.
             chars.next();
             chars.next();
         }
@@ -50,12 +49,10 @@ fn consume_escape_sequence(chars: &mut std::iter::Peekable<std::str::Chars<'_>>)
 }
 
 /// CSI: consume parameter/intermediate bytes (0x20–0x3f), stop at the final
-/// byte (0x40–0x7e). Break early on a control char so content that follows a
-/// malformed sequence isn't accidentally eaten — and leave that control byte
-/// in the iterator: eating it here would silently drop a `\n` or `\r` that
-/// the outer pass needs to flush the prompt buffer. DEL (0x7f) is treated
-/// per ECMA-48 as a no-op inside the sequence: consumed but does not stand
-/// in for a final byte.
+/// byte (0x40–0x7e). Break early on a control char and leave it in the
+/// iterator: eating it here would silently drop a `\n`/`\r` the outer pass
+/// needs to flush the prompt buffer. DEL (0x7f) is treated per ECMA-48 as a
+/// no-op inside the sequence.
 fn consume_csi(chars: &mut std::iter::Peekable<std::str::Chars<'_>>) {
     while let Some(&c) = chars.peek() {
         if c < '\x20' {
@@ -85,10 +82,9 @@ fn consume_osc(chars: &mut std::iter::Peekable<std::str::Chars<'_>>) {
     }
 }
 
-/// SS3: ESC O <final>. Used by xterm-style application keypad for arrow/
-/// function keys. Consume the next char only when it looks like a valid SS3
-/// final byte (0x40–0x7e) — a malformed `ESC O <x>` sequence used to swallow
-/// the following ordinary char.
+/// SS3: ESC O <final>. Consume the next char only when it looks like a valid
+/// SS3 final byte (0x40–0x7e) — a malformed `ESC O <x>` sequence used to
+/// swallow the following ordinary char.
 fn consume_ss3(chars: &mut std::iter::Peekable<std::str::Chars<'_>>) {
     if let Some(&next) = chars.peek()
         && ('\x40'..='\x7e').contains(&next)

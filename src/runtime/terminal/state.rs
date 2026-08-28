@@ -18,9 +18,8 @@ impl TerminalState {
         }
     }
 
-    /// Whether `Zoom` would render differently from `Grid` — i.e. whether
-    /// `Grid` would show more than one pane. When false the two are
-    /// indistinguishable, so the fullscreen cycle skips `Zoom` and a pane
+    /// Whether `Zoom` would render differently from `Grid`. When false the two
+    /// are indistinguishable, so the fullscreen cycle skips `Zoom` and a pane
     /// close normalizes `Zoom` back to `Grid`. Guards against both a lone pane
     /// and a `max_visible_fullscreen` of 1, so no site has to assume the cap
     /// is ≥ 2.
@@ -38,8 +37,8 @@ impl TerminalState {
     }
 
     /// Row count used for terminal-scroll paging: the active pane's own
-    /// content height when known, otherwise the default pane size. Callers
-    /// used to read `size` directly, which no longer tracks per-pane height.
+    /// content height when known, otherwise the default pane size (callers
+    /// used to read `size` directly, which no longer tracks per-pane height).
     pub fn active_pane_rows(&self) -> usize {
         self.active_pane_id()
             .map(|id| self.pane_size(id).0 as usize)

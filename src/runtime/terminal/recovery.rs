@@ -61,14 +61,12 @@ impl TerminalState {
         self.recovery.get(&pane)
     }
 
-    /// The one report a person is looking at, and the one the cancel key acts on.
-    ///
-    /// The focused pane's own report comes first. Failing that, a report for a
-    /// pane this client no longer lists — a pane whose process has ended while
-    /// its slot is held for a relaunch. That pane cannot be focused, and it is
-    /// exactly the one someone would want to release, so it must still be
-    /// reachable. Lowest id wins so the display and the key can never disagree
-    /// about which one that is.
+    /// The one report a person is looking at, and the one the cancel key acts
+    /// on: the focused pane's own report first, failing that a report for a
+    /// pane this client no longer lists (its process ended while its slot is
+    /// held for a relaunch). That pane cannot be focused, and it is exactly
+    /// the one someone would want to release. Lowest id wins so the display
+    /// and the key can never disagree about which one that is.
     pub fn recovery_focus(&self) -> Option<(PaneId, &PaneRecovery)> {
         if let Some(pane) = self.active_pane_id()
             && let Some(report) = self.recovery.get(&pane)
@@ -89,10 +87,9 @@ impl TerminalState {
     }
 
     /// Ask the session to give up on the recovery a person is looking at.
-    ///
     /// Nothing is cleared here: the entry goes when the session broadcasts
-    /// `cancelled`, which is also what tells every other client. Assuming it
-    /// locally would hide a cancellation the session refused.
+    /// `cancelled` (which tells every other client too) — assuming it locally
+    /// would hide a cancellation the session refused.
     pub fn cancel_recovery(&mut self) {
         let Some((pane, _)) = self.recovery_focus() else {
             return;

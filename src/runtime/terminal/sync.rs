@@ -15,7 +15,6 @@ use super::TerminalState;
 impl TerminalState {
     /// Route what an emulator produced while processing: a window title to the
     /// pane's tab, and terminal query replies back to the program that asked.
-    ///
     /// Replies bypass [`send_input`](Self::send_input) on purpose: an
     /// emulator-generated answer must not clear the user's scroll position or
     /// land in the prompt log.
