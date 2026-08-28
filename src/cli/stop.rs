@@ -1,10 +1,17 @@
 use anyhow::{Context, Result};
-use std::io::Write;
+use std::io::{Read, Write};
 use std::path::PathBuf;
+use std::time::{Duration, Instant};
 
-use crate::daemon::frame::{Frame, read_frame, write_frame};
-use crate::daemon::protocol::ClientMessage;
+use crate::daemon::frame::{Frame, FrameKind, read_frame, write_frame};
+use crate::daemon::protocol::{ClientMessage, ServerMessage};
 use crate::daemon::transport::UnixStream;
+
+// The daemon's cleanup normally takes milliseconds, but a configured plugin may
+// take up to 200 ms per host before it is force-killed. Keep room for the
+// bounded cleanup of a full configured session while still rejecting a lost
+// request instead of waiting forever.
+const SHUTDOWN_ACK_TIMEOUT: Duration = Duration::from_secs(20);
 
 /// Send a graceful shutdown request to a running daemon.
 pub(crate) fn run_stop(socket: Option<PathBuf>) -> Result<()> {
@@ -29,23 +36,59 @@ pub(crate) fn run_stop(socket: Option<PathBuf>) -> Result<()> {
         serde_json::to_vec(&ClientMessage::Shutdown).context("encoding the shutdown request")?;
     write_frame(&mut stream, &Frame::control(json)).context("sending the shutdown request")?;
     stream.flush().context("flushing the shutdown request")?;
+    stream
+        .set_read_timeout(Some(SHUTDOWN_ACK_TIMEOUT))
+        .context("setting the shutdown acknowledgment timeout")?;
 
-    // Closing the connection is the daemon's acknowledgment. A reset is also
-    // expected when shutdown wins the race with this read.
-    if let Err(err) = read_frame(&mut stream) {
-        let expected_disconnect = err.downcast_ref::<std::io::Error>().is_some_and(|error| {
-            matches!(
-                error.kind(),
-                std::io::ErrorKind::ConnectionReset
-                    | std::io::ErrorKind::ConnectionAborted
-                    | std::io::ErrorKind::UnexpectedEof
-            )
-        });
-        if !expected_disconnect {
-            return Err(err).context("waiting for the daemon to acknowledge the shutdown");
-        }
-    }
+    wait_for_shutdown_ack(&mut stream, Instant::now() + SHUTDOWN_ACK_TIMEOUT)?;
 
     println!("nightcrow: daemon is shutting down");
     Ok(())
 }
+
+/// Consume unsolicited frames until the daemon closes this connection.
+///
+/// An attach socket speaks first, so a `Repos` or terminal frame may be ahead of
+/// the shutdown request's outcome. Only EOF, or a reset/abort while the daemon
+/// is closing, proves that shutdown has reached the daemon's exit path.
+fn wait_for_shutdown_ack<R: Read>(reader: &mut R, deadline: Instant) -> Result<()> {
+    loop {
+        if Instant::now() >= deadline {
+            anyhow::bail!("timed out waiting for the daemon to acknowledge the shutdown");
+        }
+        let frame = match read_frame(reader) {
+            Ok(frame) => frame,
+            Err(err) if expected_disconnect(&err) => return Ok(()),
+            Err(err) => {
+                return Err(err).context("waiting for the daemon to acknowledge the shutdown");
+            }
+        };
+        let Some(frame) = frame else {
+            return Ok(());
+        };
+
+        if frame.kind != FrameKind::Control {
+            continue;
+        }
+        let message: ServerMessage = serde_json::from_slice(&frame.payload)
+            .context("decoding a daemon response while waiting for shutdown")?;
+        if let ServerMessage::Error { message } = message {
+            anyhow::bail!("daemon rejected the shutdown request: {message}");
+        }
+    }
+}
+
+fn expected_disconnect(err: &anyhow::Error) -> bool {
+    err.downcast_ref::<std::io::Error>().is_some_and(|error| {
+        matches!(
+            error.kind(),
+            std::io::ErrorKind::ConnectionReset
+                | std::io::ErrorKind::ConnectionAborted
+                | std::io::ErrorKind::UnexpectedEof
+        )
+    })
+}
+
+#[cfg(test)]
+#[path = "stop_tests.rs"]
+mod tests;
