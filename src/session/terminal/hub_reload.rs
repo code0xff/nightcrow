@@ -1,24 +1,18 @@
-//! Re-applying the `[[plugin]]` table on a hub that is already running.
-//!
-//! A plugin is a child process rather than a pane, so unlike a startup terminal
+//! Re-applying the `[[plugin]]` table on a hub that is already running. A
+//! plugin is a child process rather than a pane, so unlike a startup terminal
 //! it can be replaced without costing the session anything a person was using.
 //!
-//! Three rules the diff below is written around.
+//! Three rules the diff below is written around:
 //!
-//! **The opt-ins are this hub's, not the new file's.** A hub creates its startup
-//! panes once for its life, so a `[[startup_command]]` added by the edit has no
-//! pane here and will not get one. What decides is the list this hub was spawned
-//! with ([`TerminalHub::startup_commands`]).
-//!
-//! **A plugin that is watching something stays.** Removing a pane's opt-in from
-//! the file does not remove the pane, and silently un-watching a live agent
-//! terminal is worse than keeping a host the file no longer asks for. Turning
-//! `enabled` off is the way to say stop; that is honoured.
-//!
-//! **The guard is never rebuilt.** Its relaunch budget is keyed by a pane's
-//! token, which is what bounds a plugin that answers every exit with another
-//! relaunch. Rebuilding it here would hand out a fresh allowance on every
-//! reload, so the ceiling would never be reached.
+//! - **The opt-ins are this hub's, not the new file's.** A hub creates its
+//!   startup panes once for its life, so what decides is the list this hub was
+//!   spawned with.
+//! - **A plugin that is watching something stays.** Silently un-watching a live
+//!   agent terminal is worse than keeping a host the file no longer asks for;
+//!   `enabled = false` is the way to say stop.
+//! - **The guard is never rebuilt.** Its relaunch budget is keyed by a pane's
+//!   token; rebuilding it here would hand out a fresh allowance on every reload
+//!   and the ceiling would never be reached.
 
 use super::TerminalHub;
 use super::hub_helpers::Command;

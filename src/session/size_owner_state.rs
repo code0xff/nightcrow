@@ -1,10 +1,8 @@
 //! The bookkeeping behind [`SizeOwnership`](super::SizeOwnership), and every
-//! rule that reads or writes it.
-//!
-//! Split from the facade so that all of it happens where the fields live: the
-//! rules are a handful of interlocking conditions over who is present, who owns
-//! the sizing and how long it has been unattended, and spreading them across a
-//! module boundary would mean opening those fields up to reach them.
+//! rule that reads or writes it. Split from the facade so the rules — a handful
+//! of interlocking conditions over presence, ownership and idle time — live
+//! where the fields are, rather than opening those fields across a module
+//! boundary.
 
 use super::{RELEASE_GRACE, Registration, ViewerId, audit};
 use crate::session::terminal::frame::{ServerMessage, TerminalFrame};

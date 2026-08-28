@@ -1,25 +1,16 @@
-//! Which pane fills the terminal panel.
+//! Which pane fills the terminal panel — the repository's answer, not each
+//! page's, because every page attached to a repository shows the same terminals
+//! and per-page state was lost on every reload. An attached TUI is told and
+//! ignores it: it has a zoom of its own that follows the TUI's active pane and
+//! takes the body from the diff viewer with it.
 //!
-//! **The repository's answer, not each page's.** Every page attached to a
-//! repository shows the same terminals, so "which one fills the panel" is one
-//! question. Keeping it per page (what the browser used to do) lost the state
-//! on every reload.
-//!
-//! **An attached TUI is told and ignores it** (`backend/hub.rs`). It has a
-//! zoom of its own that answers a different question: it follows the TUI's
-//! active pane and takes the body from the diff viewer with it. The panes are
-//! shared between the two; what fills a screen is that screen's.
-//!
-//! **In the hub, and not on disk.** A zoom names a pane, and a pane is a child
-//! process of this daemon: restarting it destroys the panes, so there is
-//! nothing left for a stored zoom to point at. The panel-level maximize
-//! (`prefs/maximized.rs`) *is* stored, and the difference is exactly this.
-//!
-//! **A pane appearing or leaving ends it**, which is why the two functions
-//! here are called from under the same lock that changes the pane list. A
-//! zoom that outlived its pane would leave every client rendering an empty
-//! panel, and one that survived a `create` would hide the terminal somebody
-//! just asked for.
+//! Kept in the hub, not on disk: a zoom names a pane, a pane is a child process
+//! of this daemon, so a restart destroys what a stored zoom would point at
+//! (the panel-level maximize in `prefs/maximized.rs` *is* stored, and the
+//! difference is exactly this). A pane appearing or leaving ends it, which is
+//! why the two functions here run under the same lock that changes the pane
+//! list — a zoom that outlived its pane leaves every client an empty panel, and
+//! one that survived a `create` hides the terminal somebody just asked for.
 
 use super::TerminalHub;
 use super::frame::{ServerMessage, TerminalFrame};

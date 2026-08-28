@@ -1,10 +1,8 @@
 //! The plugin side of a terminal worker: which panes a plugin may see, the
-//! hosts watching them, and the slots being held open for a relaunch.
-//!
-//! Every field here is worker-local. A plugin can drive a pane's keyboard, so
-//! none of this is reachable from a connection thread — the only way in is the
-//! command queue the worker already drains, and the only way out is
-//! [`crate::plugin::Guard`].
+//! hosts watching them, and the slots being held open for a relaunch. Every
+//! field here is worker-local — a plugin can drive a pane's keyboard, so the
+//! only way in is the command queue the worker already drains, and the only way
+//! out is [`crate::plugin::Guard`].
 //!
 //! A pane appears here only two ways: its `[[startup_command]]` named a plugin
 //! by hand, or a plugin asked for it by quoting the pane's own token and the

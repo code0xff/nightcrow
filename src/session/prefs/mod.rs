@@ -1,6 +1,5 @@
-//! Preferences that follow the user rather than the browser they arrived in.
-//!
-//! Stored in `~/.nightcrow/viewer.json`. The accent is the session's (shared
+//! Preferences that follow the user rather than the browser they arrived in,
+//! stored in `~/.nightcrow/viewer.json`. The accent is the session's (shared
 //! with an attached TUI); `sidebar_width` and `upper_pct` are the viewer's alone
 //! — the first has no TUI counterpart, and the second is deliberately not shared
 //! because a percentage means different things on a terminal vs a browser window.
@@ -39,17 +38,15 @@ pub struct ViewerPrefs {
     pub accent: usize,
     /// File-sidebar width in CSS px, clamped to `[MIN, MAX]`.
     pub sidebar_width: u32,
-    /// Share of the vertical split given to the diff panel, in percent.
-    ///
-    /// The viewer's own, not the session's — unlike the accent. A percentage
-    /// means different things on a terminal vs a browser window, so sharing with
-    /// the TUI's `layout.upper_pct` was rejected.
+    /// Share of the vertical split given to the diff panel, in percent. The
+    /// viewer's own, not the session's — a percentage means different things on
+    /// a terminal vs a browser window, so sharing with the TUI's
+    /// `layout.upper_pct` was rejected.
     pub upper_pct: u32,
-    /// Absolute worktree path of the last-selected project.
-    ///
-    /// A **path**, not the repo id: ids only live as long as the process, so a
-    /// stored id would name nothing after a restart. The server translates; the
-    /// client never learns the path. `None` until a client selects a project.
+    /// Absolute worktree path of the last-selected project. A **path**, not the
+    /// repo id: ids only live as long as the process, so a stored id would name
+    /// nothing after a restart. The server translates; the client never learns
+    /// the path. `None` until a client selects a project.
     pub active_repo: Option<String>,
     /// Which panel each project was left maximized in, most recently set first.
     pub maximized: Vec<RepoMaximized>,

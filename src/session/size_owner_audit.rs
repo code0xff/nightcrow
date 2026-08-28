@@ -1,16 +1,10 @@
-//! What the sizing did, written down.
-//!
-//! Which screen the PTYs are fitted to changes what *every* attached client
-//! renders, and a client that loses it stays wrong until a person presses the
-//! fit button. It also moves for reasons no client can observe — a viewer's
-//! last connection going, a grace expiring on a worker tick — so with nothing
-//! recorded there is only the symptom to read afterwards. A phone that kept
-//! coming back a spectator had to be diagnosed by reasoning backwards from the
-//! button, because none of this was written anywhere.
-//!
-//! INFO rather than DEBUG: these happen per page load and per repository
-//! switch, not per frame, and the moment they are wanted is a report about
-//! something that already happened — which is too late to raise the level.
+//! What the sizing did, written down. It changes what *every* attached client
+//! renders, it moves for reasons no client can observe (a last connection
+//! going, a grace expiring on a worker tick), and a client that loses it stays
+//! wrong until a person presses the fit button — so with nothing recorded there
+//! is only the symptom to read afterwards. INFO rather than DEBUG: these happen
+//! per page load, not per frame, and the moment they are wanted is a report
+//! about something that already happened — too late to raise the level.
 
 use super::ViewerId;
 

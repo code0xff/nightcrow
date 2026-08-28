@@ -13,23 +13,18 @@ use std::time::Instant;
 
 impl TerminalHub {
     /// Register a client and put the current terminals in front of it before it
-    /// is eligible for broadcasts.
-    ///
-    /// Per live pane: a `Created`, the modes its program has set
-    /// ([`PaneModes::prelude`](crate::runtime::emulator::PaneModes::prelude)), and
-    /// then that pane's screen (see [`replay_pane`]). Done under the state lock
-    /// so this snapshot cannot interleave with the worker's append-and-broadcast;
-    /// the client therefore receives every pane's screen exactly once and in
-    /// order ahead of the live stream.
+    /// is eligible for broadcasts: per live pane, a `Created`, the modes its
+    /// program has set, and then that pane's screen (see [`replay_pane`]). Done
+    /// under the state lock so this snapshot cannot interleave with the worker's
+    /// append-and-broadcast — the client receives every pane's screen exactly
+    /// once, in order, ahead of the live stream.
     ///
     /// `viewer` names who this connection belongs to and `arriving` says whether
-    /// a person just sat down at it — a page opening rather than a repository
-    /// switch or a reconnect. Only the second takes the sizing; see
-    /// [`SizeOwnership`](crate::session::size_owner::SizeOwnership).
-    ///
-    /// `socket` is a handle on the connection to end if this client stops
-    /// keeping up, and `None` for one that has no socket here at all — see
-    /// [`Client::socket`](super::session::Client::socket).
+    /// a person just sat down at it; only the second takes the sizing (see
+    /// [`SizeOwnership`](crate::session::size_owner::SizeOwnership)). `socket`
+    /// is the handle used to end the connection if this client stops keeping up,
+    /// `None` for a client with no socket here (see
+    /// [`Client::socket`](super::session::Client::socket)).
     pub fn connect(
         self: &Arc<Self>,
         viewer: ViewerId,

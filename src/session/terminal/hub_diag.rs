@@ -1,15 +1,10 @@
-//! Recording where a pane's screen-clearing input came from.
-//!
-//! This exists because of a specific unexplained event: a pane running Claude
-//! Code had its conversation cleared fourteen times in five seconds. Claude
-//! Code runs `/clear` when it receives `Ctrl+L` twice within two seconds, and
-//! the transcript showed the clears arriving as a shortcut rather than as typed
-//! input — so `0x0c` reached the pane about thirty times, at a machine-like
-//! cadence, and nobody knows what sent it. nightcrow itself does not: the only
-//! bytes it synthesizes are scroll and mouse reports and a plugin's
-//! `continue`, and that one is logged where it happens. That leaves a client's
-//! own input, so this notes the arrival and its shape and the client says what
-//! produced it (`ClientMessage::ClearKeyReport`, logged in `session.rs`).
+//! Recording where a pane's screen-clearing input came from. This exists
+//! because of a specific unexplained event — a pane's conversation cleared
+//! fourteen times in five seconds, the clears arriving as `0x0c` at a
+//! machine-like cadence nobody could attribute. nightcrow does not synthesize
+//! that byte, which leaves a client's own input: so this notes the arrival and
+//! its shape, and the client says what produced it
+//! (`ClientMessage::ClearKeyReport`, logged in `session.rs`).
 //!
 //! **No input content is logged, ever** — only the byte's count, how much else
 //! rode with it, and the timing.
