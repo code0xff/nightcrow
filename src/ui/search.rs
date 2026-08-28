@@ -1,7 +1,6 @@
 /// Search-input string paired with its lowercased form. Bundling the
 /// invariant into one type keeps callers honest: pushing or popping always
-/// updates both halves in lockstep, and renderers/filters read the canonical
-/// lower form through `lower()`.
+/// updates both halves in lockstep.
 #[derive(Default, Clone, Debug)]
 pub struct SearchQuery {
     raw: String,

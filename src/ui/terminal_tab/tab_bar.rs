@@ -68,13 +68,11 @@ pub(crate) fn tab_segments(
     segments.extend(app.terminal.panes[visible.clone()].iter().enumerate().map(
         |(offset, _pane)| {
             let i = visible.start + offset;
-            // Panes 0..=7 carry a jump key: `<prefix> 1..8` in fullscreen,
-            // `<prefix> 3..9,0` in the split view (the digit row is
-            // layout-aware). Panes past the 8th have no jump key, so they
-            // carry no hint to avoid implying an unbound shortcut. The bare
-            // F-keys are NOT advertised here: they select project tabs.
-            // Carries the recovery marker when the pane has one, so a pane its
-            // plugin is nursing back is visible without leaving the tab row.
+            // Panes 0..=7 carry a jump key; panes past the 8th carry no hint
+            // to avoid implying an unbound shortcut. The bare F-keys are NOT
+            // advertised here: they select project tabs. The label carries
+            // the recovery marker when the pane has one, so a pane its plugin
+            // is nursing back is visible without leaving the tab row.
             let title = pane_label(app, i);
             let label = if i < JUMP_KEY_PANE_COUNT {
                 // Split view runs 3,4..9 then wraps to 0 for the eighth pane.

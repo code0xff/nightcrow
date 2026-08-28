@@ -1,23 +1,17 @@
-//! The recovery marker a pane's tab label carries.
-//!
-//! Deliberately a *suffix on an existing label* rather than a row or an overlay:
-//! adding or removing a layout row resizes every open PTY (see the Layout and
-//! Notice Row sections of `docs/architecture.md`), and a badge that comes and
-//! goes would do that every time a plugin changed its mind. The full report —
-//! state, deadline, attempt and detail — is on the notice row; this is only the
-//! "which pane" pointer, so it has to stay short.
+//! The recovery marker a pane's tab label carries: a suffix on an existing
+//! label rather than a row or an overlay, because adding or removing a layout
+//! row resizes every open PTY (see `docs/architecture.md`). The full report
+//! lives on the notice row; this is only the "which pane" pointer.
 
 use crate::app::App;
 use crate::runtime::terminal::PaneRecovery;
 use crate::ui::terminal_tab::layout::{TAB_TITLE_MAX_CHARS, truncate_tab_title};
 use crate::ui::wall_clock::local_hour_minute;
 
-/// Chars of the pane title kept when a marker rides along.
-///
-/// Well under [`TAB_TITLE_MAX_CHARS`](super::layout::TAB_TITLE_MAX_CHARS): the
-/// title is truncated to make room *before* the marker is appended, so a narrow
-/// pane loses title characters rather than the marker. Losing the marker is the
-/// one degradation that defeats the point of having it.
+/// Chars of the pane title kept when a marker rides along — well under
+/// [`TAB_TITLE_MAX_CHARS`](super::layout::TAB_TITLE_MAX_CHARS) so the title is
+/// truncated before the marker is appended. Losing the marker would defeat
+/// the point of having it.
 pub(crate) const RECOVERY_TITLE_MAX_CHARS: usize = 8;
 
 /// A wait with a known end.
@@ -43,11 +37,9 @@ pub(crate) fn pane_label(app: &App, index: usize) -> String {
 }
 
 /// The marker for one pane's report: the deadline as a local wall-clock time
-/// when there is one, and the attempt count when any have been spent.
-///
-/// A report with neither is still marked, with the bare hourglass — a pane its
-/// plugin is doing something about must be distinguishable from one it is not,
-/// even when there is no number to show.
+/// when there is one, and the attempt count when any have been spent. A
+/// report with neither is still marked with the bare hourglass — a pane its
+/// plugin is doing something about must be distinguishable from one it is not.
 pub(crate) fn recovery_marker(report: &PaneRecovery) -> String {
     let mut marker = String::new();
     if let Some(at) = report.deadline_epoch.and_then(local_hour_minute) {

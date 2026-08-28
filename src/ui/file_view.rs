@@ -19,21 +19,19 @@ pub struct FileViewState {
     pub scroll_x: usize,
     pub anchor_line: Option<usize>,
     pub error: Option<String>,
-    /// Cached syntect highlight output, one entry per `content.lines()` line.
-    /// Built once per (content, syntax) so per-frame rendering only slices
+    /// Cached syntect highlight output, one entry per `content.lines()` line,
+    /// built once per (content, syntax) so per-frame rendering only slices
     /// the visible window.
     pub line_highlights: Vec<Vec<HighlightSegment>>,
     /// Syntax name used to build `line_highlights`. `None` = unbuilt or
     /// invalidated.
     pub cached_syntax_name: Option<String>,
-    /// Cached `content.lines().count()` populated on load. Avoids walking the
-    /// full file on every scroll keystroke (`max_scroll` is called from each
-    /// j/k/PgUp/PgDn handler).
+    /// Cached `content.lines().count()` populated on load; `max_scroll` is
+    /// called from every j/k/PgUp/PgDn keystroke, so walking the file per
+    /// keystroke is not viable.
     pub(crate) total_lines: usize,
-    /// Byte length of `content` at cache build time. Combined with
-    /// `total_lines` it lets `ensure_highlight_cache` notice in-place content
-    /// edits that keep the line count constant (line counts alone are too
-    /// coarse a fingerprint).
+    /// Byte length of `content` at cache build time. With `total_lines` it
+    /// detects in-place content edits that keep the line count constant.
     pub(crate) cached_content_len: usize,
     /// Lowercased copy of each `content` line. Built on demand by
     /// `ensure_lower_cache` so per-keystroke file search avoids re-lowercasing.
@@ -48,9 +46,7 @@ impl FileViewState {
     /// Replace the rendered content, keeping `total_lines` and the highlight
     /// cache in lockstep with `content` so partial assignments at call sites
     /// can't leave them disagreeing (which would make `max_scroll` lie about
-    /// the legal scroll range). Also clamps `scroll` and drops any prior
-    /// error so an in-place reload never lands past the new file length or
-    /// keeps a "load failed" banner over fresh content.
+    /// the legal scroll range).
     pub fn set_content(&mut self, content: String) {
         self.total_lines = if content.is_empty() {
             0
@@ -58,8 +54,6 @@ impl FileViewState {
             content.lines().count()
         };
         self.content = content;
-        // Highlights are content-derived: stale entries would index past
-        // `total_lines` or render the previous file's colors.
         self.line_highlights.clear();
         self.cached_syntax_name = None;
         self.cached_content_len = 0;
@@ -80,9 +74,8 @@ impl FileViewState {
         self.scroll = self.scroll.saturating_add(n).min(self.max_scroll());
     }
 
-    /// Ensure `lines_lower` is built for the current `content`. Called by
-    /// `DiffPane::recompute_matches` in File-view mode so per-keystroke search
-    /// only pays the lowercase cost once per file load.
+    /// Ensure `lines_lower` is built for the current `content`, so per-
+    /// keystroke search pays the lowercase cost once per file load.
     pub(crate) fn ensure_lower_cache(&mut self) {
         if self.lines_lower.len() == self.total_lines && !self.content.is_empty() {
             return;

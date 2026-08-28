@@ -161,11 +161,9 @@ fn render_file_list(frame: &mut Frame, app: &App, area: Rect, accent: Color) {
     }
 }
 
-/// Char budget for the drill-down title inside `area`. Reserves two cells
-/// for the surrounding border corners. The title is then measured in chars
-/// (not display width), matching the trade-off documented on
-/// `terminal_tab::truncate_tab_title`: ASCII summaries are the common case
-/// and CJK titles render slightly under the visual budget.
+/// Char budget for the drill-down title inside `area`, reserving two cells
+/// for the border corners. Measured in chars (not display width), matching
+/// the trade-off documented on `terminal_tab::truncate_tab_title`.
 fn title_budget(width: u16) -> usize {
     (width as usize).saturating_sub(2)
 }

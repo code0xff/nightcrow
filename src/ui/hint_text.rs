@@ -7,8 +7,7 @@ pub(crate) const EMPTY_HINT_ARMED: &str = " o: open project | q: detach | esc: c
 
 pub(crate) fn prefix_armed_hint_text(app: &App) -> String {
     // While the terminal fills the body the digit row addresses panes
-    // directly (`1-8`); in the split view `1`/`2` focus the list/diff and
-    // `3-9,0` jump to panes.
+    // directly (`1-8`); in the split view `1`/`2` focus the list/diff.
     let digits = if app.terminal.fullscreen.fills_body() {
         "1-8: pane"
     } else {
@@ -33,9 +32,7 @@ pub(crate) fn prefix_armed_hint_text(app: &App) -> String {
     } else {
         ""
     };
-    // Only while a plugin actually has a recovery pending, which is rare — an
-    // always-present hint for it would spend a scarce row on a key that is
-    // usually inert.
+    // Only while a plugin actually has a recovery pending, which is rare.
     let cancel = if app.can_cancel_recovery() {
         "c: cancel recovery | "
     } else {
@@ -55,9 +52,9 @@ pub(crate) fn prefix_armed_hint_text(app: &App) -> String {
     )
 }
 
-/// The hint literal (with `<prefix>` placeholders) for the current
-/// non-modal state. Single source for `render_hint_bar` and `hint_click_at`,
-/// so the click hit-test always segments exactly the text on screen.
+/// The hint literal (with `<prefix>` placeholders) for the current non-modal
+/// state. Single source for `render_hint_bar` and `hint_click_at`, so the
+/// click hit-test always segments exactly the text on screen.
 pub(crate) fn normal_hint_literal(app: &App) -> &'static str {
     match app.terminal.fullscreen {
         // From Grid the next `f` zooms the active pane — but only when Zoom

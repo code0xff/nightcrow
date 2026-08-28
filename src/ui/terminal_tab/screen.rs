@@ -35,10 +35,9 @@ pub(crate) fn build_screen_lines(
                 let mut style = Style::default();
                 let cell = match screen.cell(row, col) {
                     Some(cell) => {
-                        // Wide chars (e.g., Hangul) occupy two columns: the glyph
-                        // lives on the first cell and a spacer fills the second.
-                        // Emitting anything for the spacer would shift the row by one
-                        // column.
+                        // Wide chars occupy two columns: the glyph lives on the
+                        // first cell and a spacer fills the second; emitting
+                        // anything for the spacer would shift the row.
                         if cell.is_wide_spacer() {
                             continue;
                         }
@@ -86,10 +85,8 @@ pub(crate) fn screen_cursor_position(screen: &ScreenView<'_>, area: Rect) -> Opt
     }
 
     // Embedded CLIs such as Claude can leave DECTCEM hide-cursor mode enabled
-    // while still expecting an outer terminal host to expose the input point.
-    // For the focused terminal pane, keep the host cursor visible at the
-    // emulator's tracked cursor position instead of honoring the inner app's
-    // hide flag.
+    // while still expecting an outer terminal host to expose the input point,
+    // so keep the host cursor visible at the emulator's tracked position.
     let (row, col) = screen.cursor_position();
     Some(Position::new(
         area.x.saturating_add(col.min(area.width.saturating_sub(1))),

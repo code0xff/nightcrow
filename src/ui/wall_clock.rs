@@ -62,16 +62,15 @@ fn local_parts(epoch: i64) -> Option<DateTimeParts> {
 
 /// Windows: convert the epoch through `FileTimeToLocalFileTime` so the
 /// machine's current time-zone rules apply. Pre-1970 timestamps cannot be
-/// represented as an unsigned `FILETIME` and return `None` — the caller
-/// already handles that.
+/// represented as an unsigned `FILETIME` and return `None`.
 #[cfg(windows)]
 fn local_parts(epoch: i64) -> Option<DateTimeParts> {
     use windows_sys::Win32::Foundation::{FILETIME, SYSTEMTIME};
     use windows_sys::Win32::Storage::FileSystem::FileTimeToLocalFileTime;
     use windows_sys::Win32::System::Time::FileTimeToSystemTime;
 
-    // Windows FILETIME counts 100-nanosecond intervals since 1601-01-01 UTC;
-    // Unix epoch is 1970-01-01.
+    // Windows FILETIME counts 100-ns intervals since 1601-01-01; Unix epoch
+    // is 1970-01-01.
     const EPOCH_OFFSET_SECS: u64 = 11_644_473_600;
     const HNS_PER_SEC: u64 = 10_000_000;
 

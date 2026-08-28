@@ -26,8 +26,8 @@ pub enum DiffPaneView {
 /// One row of the side-by-side layout. `Header` carries the hunk index whose
 /// `@@ ... @@` spans the full width; `Body` carries the (hunk, line)
 /// coordinates on each side, with `None` marking a blank padding cell.
-/// Coordinates index into `DiffPane::hunks` (and `line_highlights`) so the
-/// renderer reuses the prebuilt highlight cache without re-running syntect.
+/// Coordinates index into `DiffPane::hunks` so the renderer reuses the
+/// prebuilt highlight cache without re-running syntect.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SplitRow {
     Header(usize),
@@ -42,29 +42,29 @@ pub enum SplitRow {
 #[derive(Default)]
 pub struct DiffPane {
     pub hunks: Vec<DiffHunk>,
-    /// Lowercased copy of each `DiffLine::content` aligned with `hunks`.
-    /// Built once per diff load so per-keystroke search does not re-lowercase.
+    /// Lowercased copy of each `DiffLine::content` aligned with `hunks`,
+    /// built once per diff load so per-keystroke search does not
+    /// re-lowercase.
     pub(crate) hunks_lines_lower: Vec<Vec<String>>,
-    /// Cached syntect highlight output per body line, same shape as
-    /// `hunks_lines_lower`. Built once when hunks (or the active syntax)
-    /// change so the renderer skips the full-document state-recovery pass.
+    /// Cached syntect highlight output per body line. Built once when hunks
+    /// (or the active syntax) change so the renderer skips the full-document
+    /// state-recovery pass.
     pub line_highlights: Vec<Vec<Vec<HighlightSegment>>>,
     /// Per-hunk syntax name at the time `line_highlights` was built. A commit
     /// diff can touch files of different types, each needing its own
-    /// highlighter state. Empty means the cache is unbuilt or invalidated.
+    /// highlighter state.
     pub cached_hunk_syntax: Vec<String>,
-    /// Sum of `line.content.len()` across all hunk lines at cache build time.
-    /// Pairs with the shape check so a same-line-count hunk replacement still
+    /// Sum of `line.content.len()` across all hunk lines at cache build time;
+    /// pairs with the shape check so a same-line-count hunk replacement still
     /// invalidates the cache.
     pub(crate) cached_content_bytes: usize,
     pub scroll: usize,
     pub scroll_x: usize,
     /// Soft-wrap long lines instead of letting them run off the right edge.
-    ///
     /// Mutually exclusive with horizontal scrolling by construction, not by
-    /// choice: ratatui's `Paragraph` ignores its `scroll.x` once wrapping is on.
-    /// The split view ignores this entirely — halves that wrap to different
-    /// heights would stop lining up, which is the whole point of that layout.
+    /// choice: ratatui's `Paragraph` ignores its `scroll.x` once wrapping is
+    /// on. The split view ignores this entirely — halves that wrap to
+    /// different heights would stop lining up.
     pub wrap: bool,
     pub search: DiffSearch,
     pub view: DiffPaneView,

@@ -1,9 +1,6 @@
-//! The repo dialog's directory browser, drawn over the whole body.
-//!
-//! Not a floating box: nothing in this crate floats — every surface takes a
-//! layout area — and mouse capture is on by default, so an overlay would be the
-//! first thing needing a hit region of its own. Taking the body avoids both, and
-//! the path field stays visible on the notice row underneath.
+//! The repo dialog's directory browser, drawn over the whole body rather
+//! than floating: every surface in this crate takes a layout area, and mouse
+//! capture is on by default, so an overlay would need a hit region of its own.
 
 use crate::ui::render_selectable_list;
 use crate::workspace::PathTree;

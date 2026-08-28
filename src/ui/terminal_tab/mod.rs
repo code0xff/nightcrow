@@ -36,9 +36,8 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect, accent: Color) {
         " Terminal "
     };
     // The upper panes draw a `┌` corner that pushes their title text in by one
-    // column (`┌ ^F 1 Files`). This pane has no left border, so a border-styled
-    // `─` stands in for that corner — it keeps `Terminal` column-aligned with
-    // `^F 1 Files` / `^F 2 Diff` above and makes the line start flush at the edge.
+    // column. This pane has no left border, so a border-styled `─` stands in
+    // for that corner to keep `Terminal` column-aligned with the titles above.
     let title = Line::from(vec![Span::styled("─", border_style), Span::raw(label)]);
     let block = Block::default()
         .borders(TERMINAL_BORDERS)
@@ -77,10 +76,9 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect, accent: Color) {
         let i = visible.start + offset;
         let is_active = i == app.terminal.active;
         if cell.bordered {
-            // `accent` means "this is where your keystrokes go right now" —
-            // reserved for Focus::Terminal. Without real focus, the active
-            // pane must look identical to an inactive one (plain DarkGray) —
-            // any brighter treatment reads as focused when it isn't.
+            // `accent` means "this is where your keystrokes go right now" and
+            // is reserved for Focus::Terminal — without real focus the active
+            // pane must look identical to an inactive one.
             let pane_border_style = if is_active && focused {
                 Style::default().fg(accent)
             } else {

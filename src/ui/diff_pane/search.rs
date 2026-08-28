@@ -58,9 +58,8 @@ impl DiffSearch {
         if self.matches.is_empty() {
             return None;
         }
-        // Defensive clamp: `recompute_matches(false)` re-anchors `cursor` to
-        // the nearest match, but a stale cursor can otherwise survive here
-        // through code paths that mutate `matches` without re-anchoring.
+        // Defensive clamp: a stale cursor can survive here through code paths
+        // that mutate `matches` without re-anchoring.
         if self.cursor >= self.matches.len() {
             self.cursor = 0;
         } else {

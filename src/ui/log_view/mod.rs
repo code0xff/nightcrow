@@ -24,7 +24,7 @@ pub struct LogView {
     /// The previous fetch returned fewer entries than requested.
     pub(crate) fully_loaded: bool,
     /// Commit-list incremental search. The cache holds indices into `commits`
-    /// whose summary matches the lowercased query. Recomputed only when
+    /// whose summary matches the lowercased query, recomputed only when
     /// commits or the query change.
     pub commit_search_query: SearchQuery,
     pub commit_search_active: bool,
