@@ -3,19 +3,19 @@ use std::time::{Duration, Instant, SystemTime};
 
 impl App {
     pub(crate) fn mark_user_navigated(&mut self) {
-        self.auto_follow.last_manual_nav_at = Some(Instant::now());
-        self.auto_follow.followed_path = None;
+        self.git.view.auto_follow.last_manual_nav_at = Some(Instant::now());
+        self.git.view.auto_follow.followed_path = None;
     }
 
     // Returns `true` when selection changed; caller refreshes the diff.
     pub(crate) fn try_auto_follow(&mut self) -> bool {
-        if !self.cfg_agent_indicator.enabled || !self.cfg_agent_indicator.auto_follow {
+        if !self.git.agent_indicator.enabled || !self.git.agent_indicator.auto_follow {
             return false;
         }
-        if self.focus != Focus::FileList || self.mode != ViewMode::Status {
+        if self.focus != Focus::FileList || self.git.view.mode != ViewMode::Status {
             return false;
         }
-        let idle = match self.auto_follow.last_manual_nav_at {
+        let idle = match self.git.view.auto_follow.last_manual_nav_at {
             None => true,
             Some(t) => t.elapsed() >= Duration::from_secs(2),
         };
@@ -29,28 +29,28 @@ impl App {
         if current_path.as_deref() == Some(target_path.as_str()) {
             return false;
         }
-        if self.auto_follow.followed_path.as_deref() == Some(target_path.as_str()) {
+        if self.git.view.auto_follow.followed_path.as_deref() == Some(target_path.as_str()) {
             return false;
         }
         let moved = self.select_status_file_by_path(&target_path);
         if moved {
-            self.auto_follow.followed_path = Some(target_path);
+            self.git.view.auto_follow.followed_path = Some(target_path);
         }
         moved
     }
 
     fn freshest_hot_path(&self) -> Option<String> {
-        if self.status_view.hot_table.is_empty() {
+        if self.git.view.status.hot_table.is_empty() {
             return None;
         }
         let now = SystemTime::now();
-        let window = Duration::from_secs(self.cfg_agent_indicator.hot_window_secs);
+        let window = Duration::from_secs(self.git.agent_indicator.hot_window_secs);
         let mut best: Option<(&str, SystemTime)> = None;
         for &idx in self.filtered_indices() {
-            let Some(file) = self.status_view.files.get(idx) else {
+            let Some(file) = self.git.view.status.files.get(idx) else {
                 continue;
             };
-            let Some(&mtime) = self.status_view.hot_table.get(&file.path) else {
+            let Some(&mtime) = self.git.view.status.hot_table.get(&file.path) else {
                 continue;
             };
             // Future mtimes (clock skew on NFS, VMs) would pin auto-follow to
@@ -74,11 +74,17 @@ impl App {
     }
 
     fn select_status_file_by_path(&mut self, path: &str) -> bool {
-        if let Some(idx) = self.status_view.files.iter().position(|f| f.path == path)
-            && self.status_view.selected != idx
+        if let Some(idx) = self
+            .git
+            .view
+            .status
+            .files
+            .iter()
+            .position(|f| f.path == path)
+            && self.git.view.status.selected != idx
         {
-            self.status_view.selected = idx;
-            self.status_view.file_scroll_x = 0;
+            self.git.view.status.selected = idx;
+            self.git.view.status.file_scroll_x = 0;
             return true;
         }
         false

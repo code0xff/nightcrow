@@ -5,6 +5,13 @@ tree(read-only 파일 트리) — 를 떠받치는 데이터 파이프라인과 
 같은 `git2::Repository` 캐시와 같은 경로 검증기를 지나며, 우측 pane(diff/file view)은 세 뷰가
 공유한다.
 
+`GitViewManager`가 저장소 경로·opaque id, repository cache, snapshot/load workers, commit-log
+controller, branch/tracking/ref decoration을 한 수명으로 묶는다. 그 안의 `RepositoryView`는
+status/log/tree/diff pane, auto-follow, tree watcher dirty set, snapshot 기반 pending selection을
+소유한다. `App`은 terminal·focus·fullscreen·notice·interaction을 소유한 채 이 manager의 명시적
+façade만 UI와 입력 계층에 제공한다. 따라서 프로젝트 close는 manager를 drop해 worker를 함께
+정리하고, daemon set adopt는 같은 manager에 opaque id만 붙여 선택·watcher·cache를 보존한다.
+
 ## Git Diff Pipeline
 
 - **백그라운드 worker 스레드**: `SnapshotChannel`이 `load_snapshot`을 호출해 변경 파일 +

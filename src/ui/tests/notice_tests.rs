@@ -157,7 +157,7 @@ fn the_empty_screen_shows_completion_candidates_too() {
 #[test]
 fn notice_row_falls_back_to_repo_identity() {
     let mut app = app_with_files(vec![]);
-    app.repo_path = "/tmp/somewhere".to_string();
+    app.git.repo_path = "/tmp/somewhere".to_string();
     let before = notice_text(&app);
     assert!(before.contains("/tmp/somewhere"), "got: {before}");
 
@@ -181,7 +181,7 @@ fn notice_row_falls_back_to_repo_identity() {
 #[test]
 fn 공지가_뜨면_저장소_경로도_함께_보인다() {
     let mut app = app_with_files(vec![]);
-    app.repo_path = "/tmp/my-project".to_string();
+    app.git.repo_path = "/tmp/my-project".to_string();
     app.raise_notice(NoticeKind::Git, "not a git repository");
 
     let text = notice_text(&app);
@@ -200,7 +200,7 @@ fn 공지가_뜨면_저장소_경로도_함께_보인다() {
 #[test]
 fn 좁은_너비에서는_경로가_남고_공지가_잘린다() {
     let mut app = app_with_files(vec![]);
-    app.repo_path = "/tmp/p".to_string();
+    app.git.repo_path = "/tmp/p".to_string();
     app.raise_notice(NoticeKind::Git, "not a git repository");
 
     let mut terminal =
@@ -233,7 +233,7 @@ fn 좁은_너비에서는_경로가_남고_공지가_잘린다() {
 #[test]
 fn 공지_자리가_한_칸뿐이어도_잘렸다는_표시는_남는다() {
     let mut app = app_with_files(vec![]);
-    app.repo_path = "/tmp/p".to_string();
+    app.git.repo_path = "/tmp/p".to_string();
     app.raise_notice(NoticeKind::Git, "not a git repository");
 
     // `/tmp/p` renders as " /tmp/p ", so 9 columns leave exactly one.
@@ -267,7 +267,7 @@ fn 공지_자리가_한_칸뿐이어도_잘렸다는_표시는_남는다() {
 #[test]
 fn 다이얼로그가_열리면_입력이_저장소_헤더를_대체한다() {
     let mut app = app_with_files(vec![]);
-    app.repo_path = "/tmp/somewhere".to_string();
+    app.git.repo_path = "/tmp/somewhere".to_string();
 
     let text = notice_text_with(&app, &dialog_offering(&["nightcrow", "nightowl"]));
 
@@ -286,7 +286,7 @@ fn 다이얼로그가_열리면_입력이_저장소_헤더를_대체한다() {
 #[test]
 fn 공지도_후보도_없으면_저장소_헤더가_보인다() {
     let mut app = app_with_files(vec![]);
-    app.repo_path = "/tmp/somewhere".to_string();
+    app.git.repo_path = "/tmp/somewhere".to_string();
     let text = notice_text(&app);
     assert!(text.contains("/tmp/somewhere"), "got: {text}");
 }

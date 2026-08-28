@@ -9,7 +9,7 @@ impl App {
     pub(crate) fn poll_git_loads(&mut self) -> bool {
         let mut received = false;
         loop {
-            match self.load_controller.worker.try_recv() {
+            match self.git.load_controller.worker.try_recv() {
                 Ok(reply) => {
                     received = true;
                     self.apply_git_load(reply);
@@ -22,7 +22,7 @@ impl App {
     }
 
     fn apply_git_load(&mut self, reply: GitLoadReply) {
-        if reply.request.repo != self.repo_path {
+        if reply.request.repo != self.git.repo_path {
             return;
         }
         match reply.request.operation.lane() {
@@ -34,13 +34,13 @@ impl App {
     }
 
     fn apply_diff_reply(&mut self, reply: GitLoadReply) {
-        let Some(intent) = self.load_controller.diff.as_ref() else {
+        let Some(intent) = self.git.load_controller.diff.as_ref() else {
             return;
         };
         if intent.generation != reply.request.generation || intent.repo != reply.request.repo {
             return;
         }
-        let intent = self.load_controller.diff.take().unwrap();
+        let intent = self.git.load_controller.diff.take().unwrap();
         if !self.diff_target_is_current(&intent.target) {
             return;
         }
@@ -56,13 +56,14 @@ impl App {
         let current_file_key_matches = self
             .current_file_view_key()
             .as_ref()
-            .is_some_and(|key| self.diff.file_view.key.as_ref() == Some(key));
+            .is_some_and(|key| self.git.view.diff.file_view.key.as_ref() == Some(key));
         let preserve_file = current_file_key_matches
             && (self
+                .git
                 .load_controller
                 .file_generation()
                 .is_some_and(|generation| generation > intent.generation)
-                || self.diff.view == DiffPaneView::File);
+                || self.git.view.diff.view == DiffPaneView::File);
         match intent.mode {
             DiffLoadMode::Reset if preserve_file => {
                 self.apply_diff_result(result, DiffApply::ResetPreservingFile);
@@ -79,50 +80,56 @@ impl App {
             }
         }
         if let Some(scroll) = intent.restore_scroll {
-            self.diff.scroll = scroll.min(self.diff.max_scroll());
+            self.git.view.diff.scroll = scroll.min(self.git.view.diff.max_scroll());
         }
     }
 
     fn diff_target_is_current(&self, target: &DiffTarget) -> bool {
         match target {
             DiffTarget::Status(path) => {
-                self.mode == super::ViewMode::Status
+                self.git.view.mode == super::ViewMode::Status
                     && self.selected_filtered_status_path().as_deref() == Some(path)
             }
             DiffTarget::Commit(oid) => {
-                self.mode == super::ViewMode::Log
-                    && !self.log_view.drill_down
+                self.git.view.mode == super::ViewMode::Log
+                    && !self.git.view.log.drill_down
                     && self
-                        .log_view
+                        .git
+                        .view
+                        .log
                         .commits
-                        .get(self.log_view.selected)
+                        .get(self.git.view.log.selected)
                         .is_some_and(|commit| commit.oid == *oid)
             }
             DiffTarget::CommitFile { oid, path } => {
-                self.mode == super::ViewMode::Log
-                    && self.log_view.drill_down
+                self.git.view.mode == super::ViewMode::Log
+                    && self.git.view.log.drill_down
                     && self
-                        .log_view
+                        .git
+                        .view
+                        .log
                         .commits
-                        .get(self.log_view.selected)
+                        .get(self.git.view.log.selected)
                         .is_some_and(|commit| commit.oid == *oid)
                     && self
-                        .log_view
+                        .git
+                        .view
+                        .log
                         .commit_files
-                        .get(self.log_view.file_selected)
+                        .get(self.git.view.log.file_selected)
                         .is_some_and(|file| file.path == *path)
             }
         }
     }
 
     fn apply_file_reply(&mut self, reply: GitLoadReply) {
-        let Some(intent) = self.load_controller.file.as_ref() else {
+        let Some(intent) = self.git.load_controller.file.as_ref() else {
             return;
         };
         if intent.generation != reply.request.generation || intent.repo != reply.request.repo {
             return;
         }
-        let intent = self.load_controller.file.take().unwrap();
+        let intent = self.git.load_controller.file.take().unwrap();
         if self.current_file_view_key().as_ref() != Some(&intent.key) {
             return;
         }
@@ -143,35 +150,37 @@ impl App {
             Ok(_) => return,
             Err(error) => file_view.error = Some(error),
         }
-        self.diff.file_view = file_view;
+        self.git.view.diff.file_view = file_view;
     }
 
     fn apply_commit_files_reply(&mut self, reply: GitLoadReply) {
-        let Some(intent) = self.load_controller.commit_files.as_ref() else {
+        let Some(intent) = self.git.load_controller.commit_files.as_ref() else {
             return;
         };
         if intent.generation != reply.request.generation || intent.repo != reply.request.repo {
             return;
         }
-        let intent = self.load_controller.commit_files.take().unwrap();
-        if self.mode != ViewMode::Log
-            || self.log_view.drill_down
+        let intent = self.git.load_controller.commit_files.take().unwrap();
+        if self.git.view.mode != ViewMode::Log
+            || self.git.view.log.drill_down
             || self
-                .log_view
+                .git
+                .view
+                .log
                 .commits
-                .get(self.log_view.selected)
+                .get(self.git.view.log.selected)
                 .is_none_or(|commit| commit.oid != intent.oid)
         {
             return;
         }
         match reply.result {
             Ok(GitLoadPayload::CommitFiles(files)) => {
-                self.log_view.set_commit_files(files);
-                self.log_view.file_selected = 0;
-                self.log_view.drill_down = true;
-                if self.log_view.commit_files.is_empty() {
+                self.git.view.log.set_commit_files(files);
+                self.git.view.log.file_selected = 0;
+                self.git.view.log.drill_down = true;
+                if self.git.view.log.commit_files.is_empty() {
                     self.clear_diff_state();
-                    self.log_view.diff_title = intent.title;
+                    self.git.view.log.diff_title = intent.title;
                 } else {
                     self.load_file_diff_for_log_file_selected();
                 }
@@ -182,17 +191,17 @@ impl App {
     }
 
     fn apply_decorations_reply(&mut self, reply: GitLoadReply) {
-        let Some(intent) = self.load_controller.decorations.as_ref() else {
+        let Some(intent) = self.git.load_controller.decorations.as_ref() else {
             return;
         };
         if intent.generation != reply.request.generation || intent.repo != reply.request.repo {
             return;
         }
-        let intent = self.load_controller.decorations.take().unwrap();
+        let intent = self.git.load_controller.decorations.take().unwrap();
         match reply.result {
             Ok(GitLoadPayload::Decorations(decorations)) => {
-                self.log_decorations = decorations;
-                self.last_refs_fingerprint = Some(intent.fingerprint);
+                self.git.log_decorations = decorations;
+                self.git.last_refs_fingerprint = Some(intent.fingerprint);
             }
             Ok(_) => {}
             Err(error) => tracing::warn!(error = %error, "failed to load ref decorations"),
@@ -202,10 +211,10 @@ impl App {
     #[cfg(test)]
     pub(crate) fn flush_git_loads_for_test(&mut self, timeout: std::time::Duration) {
         let started = std::time::Instant::now();
-        while self.load_controller.diff.is_some()
-            || self.load_controller.file.is_some()
-            || self.load_controller.commit_files.is_some()
-            || self.load_controller.decorations.is_some()
+        while self.git.load_controller.diff.is_some()
+            || self.git.load_controller.file.is_some()
+            || self.git.load_controller.commit_files.is_some()
+            || self.git.load_controller.decorations.is_some()
         {
             assert!(
                 started.elapsed() <= timeout,

@@ -11,15 +11,15 @@ fn a_change_in_a_collapsed_directory_updates_search_results() {
     let (dir, path) = make_tree_repo();
     let mut app = app_on(&path);
     let (tx, rx) = std::sync::mpsc::channel();
-    app.tree_watch = TreeWatcher::from_receiver(rx);
+    app.git.view.tree_watch = TreeWatcher::from_receiver(rx);
     app.enter_tree_mode();
     app.start_tree_search();
     for c in "main".chars() {
         app.tree_search_push(c);
     }
-    let before = app.tree_view.match_count;
+    let before = app.git.view.tree.match_count;
     assert!(
-        !app.tree_view.expanded.contains("src"),
+        !app.git.view.tree.expanded.contains("src"),
         "src stays collapsed — the point of the test"
     );
 
@@ -31,7 +31,7 @@ fn a_change_in_a_collapsed_directory_updates_search_results() {
     .unwrap();
     app.poll_tree_watcher();
 
-    assert_eq!(app.tree_view.match_count, before + 1);
+    assert_eq!(app.git.view.tree.match_count, before + 1);
     drop(dir);
 }
 
@@ -47,13 +47,13 @@ fn a_watcher_refresh_updates_active_search_results() {
     for c in "main".chars() {
         app.tree_search_push(c);
     }
-    let before = app.tree_view.match_count;
+    let before = app.git.view.tree.match_count;
 
     std::fs::write(Path::new(&path).join("src").join("main_two.rs"), "\n").unwrap();
     app.refresh_tree_preserving_cursor();
 
     assert_eq!(
-        app.tree_view.match_count,
+        app.git.view.tree.match_count,
         before + 1,
         "a file created while the search is open must join the results"
     );
@@ -66,34 +66,34 @@ fn a_hidden_tree_change_is_remembered_until_the_tab_is_shown() {
     // records that it must, so filesystem churn elsewhere cannot stall the
     // active tab.
     let mut app = app_with_files(vec!["a.rs"]);
-    app.mode = ViewMode::Tree;
-    app.tree_dirty.insert("src".to_string());
+    app.git.view.mode = ViewMode::Tree;
+    app.git.view.tree_dirty.insert("src".to_string());
 
     // Draining with no new event leaves the flag standing, so the refresh
     // still happens once this project becomes the active one.
     app.drain_tree_watcher();
     assert!(
-        !app.tree_dirty.is_empty(),
+        !app.git.view.tree_dirty.is_empty(),
         "a pending refresh survives a drain"
     );
 
     app.poll_tree_watcher();
-    assert!(app.tree_dirty.is_empty(), "the active project consumes it");
+    assert!(
+        app.git.view.tree_dirty.is_empty(),
+        "the active project consumes it"
+    );
 }
 
 #[test]
 fn tree_preview_survives_status_snapshot() {
     let (dir, path) = make_tree_repo();
     let (snapshot, tx) = dummy_snapshot_channel();
-    let mut app = App {
-        snapshot,
-        pending_snapshot: None,
-        ..app_on(&path)
-    };
+    let mut app = app_on(&path);
+    app.git.snapshot = snapshot;
     app.enter_tree_mode();
-    app.tree_view.selected = tree_index_of(&app, "README.md");
+    app.git.view.tree.selected = tree_index_of(&app, "README.md");
     app.preview_tree_selected();
-    let content_before = app.diff.file_view.content.clone();
+    let content_before = app.git.view.diff.file_view.content.clone();
 
     // A git-status snapshot arrives (e.g. file changed in a terminal pane).
     tx.send(SnapshotMsg::Ok(
@@ -110,9 +110,9 @@ fn tree_preview_survives_status_snapshot() {
     app.poll_snapshot();
 
     // Tree mode and its preview must be untouched by the snapshot ingest.
-    assert_eq!(app.mode, ViewMode::Tree);
-    assert_eq!(app.diff.view, DiffPaneView::File);
-    assert_eq!(app.diff.file_view.content, content_before);
+    assert_eq!(app.git.view.mode, ViewMode::Tree);
+    assert_eq!(app.git.view.diff.view, DiffPaneView::File);
+    assert_eq!(app.git.view.diff.file_view.content, content_before);
     drop(dir);
 }
 
@@ -126,19 +126,19 @@ fn restoring_tree_session_clears_lingering_status_search() {
     let mut app = app_on(&path);
     app.start_search();
     app.search_push('x');
-    assert!(app.status_view.search_active);
+    assert!(app.git.view.status.search_active);
 
     app.restore_session(&crate::workspace::persistence::SessionState {
         mode: Some(ViewMode::Tree),
         ..Default::default()
     });
 
-    assert_eq!(app.mode, ViewMode::Tree);
+    assert_eq!(app.git.view.mode, ViewMode::Tree);
     assert!(
-        !app.status_view.search_active,
+        !app.git.view.status.search_active,
         "restoring Tree mode must clear a lingering status search overlay"
     );
-    assert!(app.status_view.search_query.is_empty());
+    assert!(app.git.view.status.search_query.is_empty());
     drop(dir);
 }
 
@@ -148,12 +148,12 @@ fn entering_tree_mode_clears_lingering_status_search() {
     let mut app = app_on(&path);
     app.start_search();
     app.search_push('x');
-    assert!(app.status_view.search_active);
+    assert!(app.git.view.status.search_active);
 
     app.enter_tree_mode();
 
-    assert!(!app.status_view.search_active);
-    assert!(app.status_view.search_query.is_empty());
+    assert!(!app.git.view.status.search_active);
+    assert!(app.git.view.status.search_query.is_empty());
     drop(dir);
 }
 
@@ -174,12 +174,12 @@ fn restore_tree_session_ignores_unsafe_expanded_paths() {
         ..Default::default()
     });
 
-    assert_eq!(app.mode, ViewMode::Tree);
+    assert_eq!(app.git.view.mode, ViewMode::Tree);
     // Only the safe, real directory was expanded/cached.
-    assert!(app.tree_view.expanded.contains("src"));
-    assert!(!app.tree_view.expanded.contains("../../.."));
-    assert!(!app.tree_view.expanded.contains("/etc"));
-    assert!(!app.tree_view.cache.contains_key("/etc"));
+    assert!(app.git.view.tree.expanded.contains("src"));
+    assert!(!app.git.view.tree.expanded.contains("../../.."));
+    assert!(!app.git.view.tree.expanded.contains("/etc"));
+    assert!(!app.git.view.tree.cache.contains_key("/etc"));
     drop(dir);
 }
 
@@ -199,11 +199,18 @@ fn restore_tree_session_prunes_expansion_gone_since_save() {
         ..Default::default()
     });
 
-    assert_eq!(app.mode, ViewMode::Tree);
+    assert_eq!(app.git.view.mode, ViewMode::Tree);
     // `src` no longer exists on disk, so it must not be kept as expanded...
-    assert!(!app.tree_view.expanded.contains("src"));
+    assert!(!app.git.view.tree.expanded.contains("src"));
     // ...and the moved-to directory is visible at the root.
-    assert!(app.tree_view.visible_rows().iter().any(|r| r.path == "lib"));
+    assert!(
+        app.git
+            .view
+            .tree
+            .visible_rows()
+            .iter()
+            .any(|r| r.path == "lib")
+    );
     assert!(
         !app.notice
             .as_ref()
@@ -237,13 +244,13 @@ fn tree_mode_diff_file_and_split_toggles_are_noops() {
     let (dir, path) = make_tree_repo();
     let mut app = app_on(&path);
     app.enter_tree_mode();
-    assert_eq!(app.diff.view, DiffPaneView::File);
+    assert_eq!(app.git.view.diff.view, DiffPaneView::File);
 
     // `v` and `s` must not flip the right pane away from the file preview.
     app.toggle_diff_file_view();
-    assert_eq!(app.diff.view, DiffPaneView::File);
+    assert_eq!(app.git.view.diff.view, DiffPaneView::File);
     app.toggle_diff_split_view();
-    assert_eq!(app.diff.view, DiffPaneView::File);
+    assert_eq!(app.git.view.diff.view, DiffPaneView::File);
     drop(dir);
 }
 
@@ -252,9 +259,9 @@ fn tree_session_round_trips_mode_expansion_and_selection() {
     let (dir, path) = make_tree_repo();
     let mut app = app_on(&path);
     app.enter_tree_mode();
-    app.tree_view.selected = tree_index_of(&app, "src");
+    app.git.view.tree.selected = tree_index_of(&app, "src");
     app.tree_expand();
-    app.tree_view.selected = tree_index_of(&app, "src/main.rs");
+    app.git.view.tree.selected = tree_index_of(&app, "src/main.rs");
 
     let state = app.save_session();
     assert_eq!(state.mode, Some(ViewMode::Tree));
@@ -264,14 +271,14 @@ fn tree_session_round_trips_mode_expansion_and_selection() {
     let mut other = app_on(&path);
     other.restore_session(&state);
     other.flush_git_loads_for_test(Duration::from_secs(2));
-    assert_eq!(other.mode, ViewMode::Tree);
-    assert!(other.tree_view.expanded.contains("src"));
+    assert_eq!(other.git.view.mode, ViewMode::Tree);
+    assert!(other.git.view.tree.expanded.contains("src"));
     assert_eq!(
-        other.tree_view.selected_path().as_deref(),
+        other.git.view.tree.selected_path().as_deref(),
         Some("src/main.rs")
     );
     // The restored selection previews the file, not a diff.
-    assert_eq!(other.diff.view, DiffPaneView::File);
-    assert_eq!(other.diff.file_view.content, "fn main() {}\n");
+    assert_eq!(other.git.view.diff.view, DiffPaneView::File);
+    assert_eq!(other.git.view.diff.file_view.content, "fn main() {}\n");
     drop(dir);
 }

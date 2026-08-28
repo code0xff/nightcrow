@@ -1,9 +1,9 @@
 use super::*;
 
 pub(super) fn seed_cached_commit_log(app: &mut App) {
-    app.log_view.set_commits(vec![fake_entry(0)]);
-    app.log_view.fully_loaded = true;
-    app.set_observed_head_for_test(app.log_view.commits.first().map(|c| c.oid));
+    app.git.view.log.set_commits(vec![fake_entry(0)]);
+    app.git.view.log.fully_loaded = true;
+    app.set_observed_head_for_test(app.git.view.log.commits.first().map(|c| c.oid));
 }
 
 fn fake_entry(time: i64) -> CommitEntry {
@@ -29,9 +29,9 @@ fn toggle_mode_from_terminal_fullscreen_reveals_file_list() {
 
     app.toggle_mode();
 
-    assert_eq!(app.mode, ViewMode::Log);
+    assert_eq!(app.git.view.mode, ViewMode::Log);
     assert!(!app.terminal.fullscreen.fills_body());
-    assert!(!app.diff.fullscreen);
+    assert!(!app.git.view.diff.fullscreen);
     assert_eq!(app.focus, Focus::FileList);
 }
 
@@ -40,12 +40,12 @@ fn toggle_mode_from_diff_fullscreen_reveals_file_list() {
     let mut app = app_with_files(vec![]);
     seed_cached_commit_log(&mut app);
     app.toggle_diff_fullscreen();
-    assert!(app.diff.fullscreen);
+    assert!(app.git.view.diff.fullscreen);
 
     app.toggle_mode();
 
-    assert_eq!(app.mode, ViewMode::Log);
-    assert!(!app.diff.fullscreen);
+    assert_eq!(app.git.view.mode, ViewMode::Log);
+    assert!(!app.git.view.diff.fullscreen);
     assert!(!app.terminal.fullscreen.fills_body());
     assert_eq!(app.focus, Focus::FileList);
 }
@@ -58,11 +58,11 @@ fn toggle_mode_in_split_layout_keeps_focus() {
 
     app.toggle_mode();
 
-    assert_eq!(app.mode, ViewMode::Log);
+    assert_eq!(app.git.view.mode, ViewMode::Log);
     assert_eq!(app.focus, Focus::DiffViewer);
 
     app.toggle_mode();
 
-    assert_eq!(app.mode, ViewMode::Status);
+    assert_eq!(app.git.view.mode, ViewMode::Status);
     assert_eq!(app.focus, Focus::DiffViewer);
 }

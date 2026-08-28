@@ -1,6 +1,5 @@
-use crate::app::{App, AutoFollow, Focus, InteractionState, Notice, NoticeKind, ViewMode};
+use crate::app::{App, Focus, GitViewManager, InteractionState, Notice, NoticeKind};
 use crate::backend::TerminalBackend;
-use crate::runtime::snapshot::SnapshotChannel;
 use crossterm::event::KeyEvent;
 
 impl NoticeKind {
@@ -74,29 +73,11 @@ impl App {
         leader: KeyEvent,
         backend: Box<dyn TerminalBackend>,
     ) -> Self {
-        let snapshot = SnapshotChannel::spawn(&repo_path);
-
         let app = App {
-            mode: ViewMode::Status,
-            status_view: crate::ui::status_view::StatusView::default(),
-            diff: crate::ui::diff_pane::DiffPane::default(),
+            git: GitViewManager::new(repo_path),
             focus: Focus::FileList,
             notice: None,
-            repo_path,
-            repo_id: None,
-            log_view: crate::ui::log_view::LogView::default(),
-            tree_view: crate::ui::tree_view::TreeView::default(),
             terminal: crate::runtime::terminal::TerminalState::new(Some(backend), prompt_log),
-            tracking: None,
-            snapshot,
-            pending_snapshot: None,
-            selected_snapshot_mtime: None,
-            // `main` upgrades to a live watcher after applying `[tree] live_watch`,
-            // so a `false` setting never spawns an OS watcher.
-            tree_watch: crate::runtime::tree_watch::TreeWatcher::disabled(),
-            tree_dirty: Default::default(),
-            tree_dirty_all: false,
-            pending_selection: None,
             // The fresh-launch rule: the panes are not here yet, and when they
             // arrive the input focus goes to them, as it did when this view
             // opened its own PTYs on the spot. A restored session overwrites
@@ -105,24 +86,11 @@ impl App {
                 focus: Some(Focus::Terminal),
                 ..Default::default()
             }),
-            repo_cache: None,
-            load_controller: crate::app::load_controller::LoadController::new(),
-            cfg_agent_indicator: crate::config::AgentIndicatorConfig::default(),
-            cfg_tree: crate::config::TreeConfig::default(),
-            commit_log_controller:
-                crate::app::commit_log_pagination::CommitLogController::with_config(
-                    crate::config::LogConfig::default().commit_log_page_size,
-                    crate::config::LogConfig::default().commit_log_prefetch_threshold,
-                ),
-            auto_follow: AutoFollow::default(),
             list_fullscreen: false,
-            branch_name: None,
-            log_decorations: Default::default(),
-            last_refs_fingerprint: None,
             interaction: InteractionState::new(leader),
         };
 
-        tracing::info!(repo = %app.repo_path, "nightcrow started");
+        tracing::info!(repo = %app.git.repo_path(), "nightcrow started");
         app
     }
 
@@ -130,10 +98,75 @@ impl App {
     // `Workspace::overlay_active`; both feed the key and mouse handlers so a
     // click can never reach behind a modal that swallows keystrokes.
     pub fn search_overlay_active(&self) -> bool {
-        self.status_view.search_active
-            || self.tree_view.search_active
-            || self.diff.search.active
-            || self.log_view.commit_search_active
-            || self.log_view.file_search_active
+        self.git.view.status.search_active
+            || self.git.view.tree.search_active
+            || self.git.view.diff.search.active
+            || self.git.view.log.commit_search_active
+            || self.git.view.log.file_search_active
+    }
+
+    pub fn repository_path(&self) -> &str {
+        self.git.repo_path()
+    }
+
+    pub fn repository_id(&self) -> Option<&str> {
+        self.git.repo_id()
+    }
+
+    pub fn adopt_repository_id(&mut self, repo_id: String) {
+        self.git.adopt_repo_id(repo_id);
+    }
+
+    pub fn mode(&self) -> crate::app::ViewMode {
+        self.git.view().mode()
+    }
+
+    pub fn status_view(&self) -> &crate::ui::status_view::StatusView {
+        self.git.view().status()
+    }
+
+    pub fn diff_pane(&self) -> &crate::ui::diff_pane::DiffPane {
+        self.git.view().diff()
+    }
+
+    pub fn diff_pane_mut(&mut self) -> &mut crate::ui::diff_pane::DiffPane {
+        self.git.view_mut().diff_mut()
+    }
+
+    pub fn log_view(&self) -> &crate::ui::log_view::LogView {
+        self.git.view().log()
+    }
+
+    pub fn tree_view(&self) -> &crate::ui::tree_view::TreeView {
+        self.git.view().tree()
+    }
+
+    pub fn tracking(&self) -> Option<&crate::git::diff::TrackingStatus> {
+        self.git.tracking.as_ref()
+    }
+
+    pub fn branch_name(&self) -> Option<&str> {
+        self.git.branch_name.as_deref()
+    }
+
+    pub fn log_decorations(&self) -> &crate::git::diff::LogDecorations {
+        &self.git.log_decorations
+    }
+
+    pub fn agent_indicator_config(&self) -> &crate::config::AgentIndicatorConfig {
+        &self.git.agent_indicator
+    }
+
+    pub(crate) fn configure_repository_views(
+        &mut self,
+        agent_indicator: crate::config::AgentIndicatorConfig,
+        tree: crate::config::TreeConfig,
+    ) {
+        self.git.agent_indicator = agent_indicator;
+        self.git.tree_config = tree;
+    }
+
+    pub(crate) fn enable_tree_watcher(&mut self) {
+        self.git.view.tree_watch = crate::runtime::tree_watch::TreeWatcher::new();
     }
 }

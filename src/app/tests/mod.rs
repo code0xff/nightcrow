@@ -1,8 +1,8 @@
 mod helpers;
 
 // `use super::*` re-exports app.rs's `use` declarations and public items
-// (App, AutoFollow, Focus, ViewMode, Notice, NoticeKind, DiffPaneView,
-// FileViewKey, FileViewState, CommitLogController, SnapshotChannel, etc.)
+// (App, Focus, ViewMode, Notice, NoticeKind, DiffPaneView, FileViewKey,
+// FileViewState, SnapshotChannel, etc.)
 // so every test submodule can pull them in with `use super::*;`.
 use super::diff_load::DiffApply;
 use super::strip_escape_sequences;
@@ -16,18 +16,21 @@ use std::collections::HashMap;
 use std::path::Path;
 use std::time::{Duration, Instant, SystemTime};
 
+mod app_repository_integration;
 mod async_load;
 mod auto_follow;
 mod clamp_pane;
 mod commit_log;
 mod diff_file_view;
 mod fullscreen;
+mod git_view_manager_contract;
 mod head_change;
 mod leader_notice;
 mod log_drill;
 mod log_search;
 mod mode_toggle;
 mod pane;
+mod repository_view_contract;
 mod scroll_misc;
 mod session_restore;
 mod session_restore_fullscreen;

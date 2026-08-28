@@ -51,7 +51,7 @@ pub(super) fn app_with_terminal_pane() -> App {
 pub(super) fn workspace_on(paths: &[&str]) -> Workspace {
     let project = |p: &str| {
         let mut app = app_with_files(vec!["a.rs"]);
-        app.repo_path = p.to_string();
+        app.git.repo_path = p.to_string();
         app
     };
     let mut ws = Workspace::new(leader());

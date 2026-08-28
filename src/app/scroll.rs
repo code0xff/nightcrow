@@ -14,11 +14,11 @@ impl App {
     }
 
     pub(crate) fn upper_scroll_x_mut(&mut self) -> &mut usize {
-        match self.mode {
-            ViewMode::Status => &mut self.status_view.file_scroll_x,
-            ViewMode::Tree => &mut self.tree_view.scroll_x,
-            ViewMode::Log if self.log_view.drill_down => &mut self.log_view.file_scroll_x,
-            ViewMode::Log => &mut self.log_view.commit_scroll_x,
+        match self.git.view.mode {
+            ViewMode::Status => &mut self.git.view.status.file_scroll_x,
+            ViewMode::Tree => &mut self.git.view.tree.scroll_x,
+            ViewMode::Log if self.git.view.log.drill_down => &mut self.git.view.log.file_scroll_x,
+            ViewMode::Log => &mut self.git.view.log.commit_scroll_x,
         }
     }
 
@@ -41,19 +41,19 @@ impl App {
             cache.set(Some((len, max)));
             max
         }
-        match self.mode {
+        match self.git.view.mode {
             ViewMode::Status => cached_max(
-                &self.status_view.path_width_cache,
-                &self.status_view.files,
+                &self.git.view.status.path_width_cache,
+                &self.git.view.status.files,
                 |f| f.display_path().chars().count(),
             ),
             // Tree rows are derived (not a stored slice), so cache by
             // visible-row count directly. Width = indent (depth*2) + 2-char
             // dir/file marker + name char count.
             ViewMode::Tree => {
-                let rows = self.tree_view.visible_rows();
+                let rows = self.git.view.tree.visible_rows();
                 let len = rows.len();
-                if let Some((cached_len, cached_max)) = self.tree_view.row_width_cache.get()
+                if let Some((cached_len, cached_max)) = self.git.view.tree.row_width_cache.get()
                     && cached_len == len
                 {
                     cached_max
@@ -63,18 +63,18 @@ impl App {
                         .map(|r| r.depth * 2 + 2 + r.name.chars().count())
                         .max()
                         .unwrap_or(0);
-                    self.tree_view.row_width_cache.set(Some((len, max)));
+                    self.git.view.tree.row_width_cache.set(Some((len, max)));
                     max
                 }
             }
-            ViewMode::Log if self.log_view.drill_down => cached_max(
-                &self.log_view.commit_files_width_cache,
-                &self.log_view.commit_files,
+            ViewMode::Log if self.git.view.log.drill_down => cached_max(
+                &self.git.view.log.commit_files_width_cache,
+                &self.git.view.log.commit_files,
                 |f| f.display_path().chars().count(),
             ),
             ViewMode::Log => cached_max(
-                &self.log_view.commit_width_cache,
-                &self.log_view.commits,
+                &self.git.view.log.commit_width_cache,
+                &self.git.view.log.commits,
                 |c| c.summary.chars().count(),
             ),
         }

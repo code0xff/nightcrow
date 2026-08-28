@@ -20,7 +20,7 @@ pub(crate) fn render_file_view(
 ) {
     let focused = app.focus == Focus::DiffViewer;
     let border_style = super::focused_border_style(focused, accent);
-    let file_path: &str = match &app.diff.file_view.key {
+    let file_path: &str = match &app.diff_pane().file_view.key {
         Some(crate::app::FileViewKey::Status(p)) => p.as_str(),
         Some(crate::app::FileViewKey::Commit { path, .. }) => path.as_str(),
         None => "",
@@ -30,8 +30,8 @@ pub(crate) fn render_file_view(
         .find_syntax_by_extension(ext)
         .unwrap_or_else(|| ss.find_syntax_plain_text());
 
-    let has_search = app.diff.search.has_query();
-    let show_search = app.diff.search.is_visible();
+    let has_search = app.diff_pane().search.has_query();
+    let show_search = app.diff_pane().search.is_visible();
 
     let (content_area, search_area) = if show_search {
         let chunks = Layout::default()
@@ -45,13 +45,13 @@ pub(crate) fn render_file_view(
 
     let jump = jump_legend(app, '2');
     let title = if has_search {
-        let count = app.diff.search.matches.len();
+        let count = app.diff_pane().search.matches.len();
         if count == 0 {
             format!(" {jump} {file_path} [no matches] ")
         } else {
             format!(
                 " {jump} {file_path} [{}/{}] ",
-                app.diff.search.cursor + 1,
+                app.diff_pane().search.cursor + 1,
                 count
             )
         }
@@ -60,24 +60,26 @@ pub(crate) fn render_file_view(
     };
 
     let visible_height = (content_area.height as usize).saturating_sub(2);
-    let current_match = app.diff.search.current_match();
+    let current_match = app.diff_pane().search.current_match();
     // An error or an empty file has no lines to number, so the gutter column is
     // not reserved at all — otherwise the message would sit indented under it.
     let mut gutter_lines: Vec<Line> = Vec::new();
     let mut gutter_width = 0u16;
-    let lines: Vec<Line> = if let Some(err) = &app.diff.file_view.error {
+    let lines: Vec<Line> = if let Some(err) = &app.diff_pane().file_view.error {
         vec![Line::from(Span::styled(
             err.as_str(),
             Style::default().fg(Color::Red),
         ))]
-    } else if app.diff.file_view.content.is_empty() {
+    } else if app.diff_pane().file_view.content.is_empty() {
         vec![Line::from(Span::styled(
             "(empty file)",
             Style::default().fg(Color::DarkGray),
         ))]
     } else {
-        app.diff.file_view.ensure_highlight_cache(ss, ts, syntax);
-        let fv = &app.diff.file_view;
+        app.diff_pane_mut()
+            .file_view
+            .ensure_highlight_cache(ss, ts, syntax);
+        let fv = &app.diff_pane().file_view;
         let total = fv.line_count();
         // Same floor as the diff gutters, so switching between `v` and the
         // diff view does not shift the body's left edge.
@@ -101,7 +103,8 @@ pub(crate) fn render_file_view(
                 let line_idx = scroll_start + i;
                 let is_anchor = fv.anchor_line == Some(line_no);
                 let is_current = has_search && current_match == Some(line_idx);
-                let is_match = has_search && !is_current && app.diff.search.is_match(line_idx);
+                let is_match =
+                    has_search && !is_current && app.diff_pane().search.is_match(line_idx);
                 let bg = if is_current {
                     Color::Rgb(100, 80, 0)
                 } else if is_match {
@@ -143,15 +146,15 @@ pub(crate) fn render_file_view(
         gutter_width,
         gutter_lines,
         lines,
-        app.diff.file_view.scroll_x.min(u16::MAX as usize) as u16,
-        app.diff.wrap,
+        app.diff_pane().file_view.scroll_x.min(u16::MAX as usize) as u16,
+        app.diff_pane().wrap,
     );
 
     if let Some(sa) = search_area {
         super::render_search_bar(
             frame,
-            app.diff.search.query.as_str(),
-            app.diff.search.active,
+            app.diff_pane().search.query.as_str(),
+            app.diff_pane().search.active,
             sa,
             accent,
         );

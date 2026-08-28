@@ -59,18 +59,18 @@ fn handle_paste_into_file_search_strips_control_chars() {
 
     handle_paste(&mut app, "al\nph\ta\x07");
 
-    assert_eq!(app.status_view.search_query.as_str(), "alpha");
+    assert_eq!(app.git.view.status.search_query.as_str(), "alpha");
 }
 
 #[test]
 fn handle_paste_into_diff_search_strips_control_chars() {
     let mut app = app_with_files(vec!["alpha.rs"]);
     app.focus = Focus::DiffViewer;
-    app.diff.start_search();
+    app.git.view.diff.start_search();
 
     handle_paste(&mut app, "fn\rname\x08");
 
-    assert_eq!(app.diff.search.query.as_str(), "fnname");
+    assert_eq!(app.git.view.diff.search.query.as_str(), "fnname");
 }
 
 #[test]

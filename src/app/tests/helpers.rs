@@ -29,59 +29,38 @@ pub(crate) fn dummy_tree_watcher() -> (
 pub(crate) fn app_with_files(files: Vec<&str>) -> App {
     let (snapshot, _tx) = dummy_snapshot_channel();
     let (tree_watch, _tw_tx) = dummy_tree_watcher();
-    let mut status_view = StatusView {
-        files: files
-            .into_iter()
-            .map(|path| ChangedFile::unstaged_only(path.to_string(), StatusKind::Modified))
-            .collect(),
-        ..Default::default()
-    };
-    status_view.recompute_filter();
-    App {
-        mode: ViewMode::Status,
-        status_view,
-        diff: DiffPane::default(),
-        focus: Focus::FileList,
-        notice: None,
-        repo_id: None,
-        repo_path: ".".to_string(),
-        log_view: LogView::default(),
-        tree_view: TreeView::default(),
-        terminal: TerminalState::new(None, false),
-        tracking: None,
-        snapshot,
-        pending_snapshot: None,
-        selected_snapshot_mtime: None,
-        tree_watch,
-        tree_dirty: Default::default(),
-        tree_dirty_all: false,
-        pending_selection: None,
-        // The fresh-launch rule `App::new` starts with: focus the terminals
-        // when they arrive.
-        pending_terminal: Some(crate::workspace::persistence::SessionState {
-            focus: Some(Focus::Terminal),
-            ..Default::default()
-        }),
-        repo_cache: None,
-        load_controller: crate::app::load_controller::LoadController::new(),
-        cfg_agent_indicator: crate::config::AgentIndicatorConfig {
-            auto_follow: true,
-            ..crate::config::AgentIndicatorConfig::default()
-        },
-        cfg_tree: crate::config::TreeConfig::default(),
-        commit_log_controller: CommitLogController::with_config(
-            crate::config::LogConfig::default().commit_log_page_size,
-            crate::config::LogConfig::default().commit_log_prefetch_threshold,
-        ),
-        auto_follow: AutoFollow::default(),
-        list_fullscreen: false,
-        branch_name: None,
-        log_decorations: Default::default(),
-        last_refs_fingerprint: None,
-        interaction: InteractionState::new(KeyEvent::new(
-            KeyCode::Char('f'),
-            KeyModifiers::CONTROL,
-        )),
+    let mut git = GitViewManager::from_test_parts(".".to_string(), snapshot, tree_watch);
+    git.agent_indicator.auto_follow = true;
+    git.view.status.files = files
+        .into_iter()
+        .map(|path| ChangedFile::unstaged_only(path.to_string(), StatusKind::Modified))
+        .collect();
+    git.view.status.recompute_filter();
+    App::from_test_parts(
+        git,
+        TerminalState::new(None, false),
+        KeyEvent::new(KeyCode::Char('f'), KeyModifiers::CONTROL),
+    )
+}
+
+impl App {
+    pub(crate) fn from_test_parts(
+        git: GitViewManager,
+        terminal: TerminalState,
+        leader: KeyEvent,
+    ) -> Self {
+        Self {
+            git,
+            focus: Focus::FileList,
+            notice: None,
+            terminal,
+            pending_terminal: Some(crate::workspace::persistence::SessionState {
+                focus: Some(Focus::Terminal),
+                ..Default::default()
+            }),
+            list_fullscreen: false,
+            interaction: InteractionState::new(leader),
+        }
     }
 }
 

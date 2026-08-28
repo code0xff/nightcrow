@@ -24,7 +24,12 @@ pub(crate) fn render_notice_row<'a>(
             repo_input, accent, width,
         ));
     }
-    match notice_or_candidates(app.notice.as_ref(), repo_input, Some(&app.repo_path), width) {
+    match notice_or_candidates(
+        app.notice.as_ref(),
+        repo_input,
+        Some(app.repository_path()),
+        width,
+    ) {
         Some(line) => Paragraph::new(line),
         None => render_repo_header(app, accent, width),
     }
@@ -181,8 +186,7 @@ pub(crate) fn fit_names(
 
 pub(crate) fn render_repo_header<'a>(app: &'a App, accent: Color, width: u16) -> Paragraph<'a> {
     let tracking = app
-        .tracking
-        .as_ref()
+        .tracking()
         .filter(|t| t.ahead > 0 || t.behind > 0)
         .map(|t| format!(" ^{} v{} ", t.ahead, t.behind));
     let chip = recovery_chip(app);
@@ -192,8 +196,8 @@ pub(crate) fn render_repo_header<'a>(app: &'a App, accent: Color, width: u16) ->
         .map(|text| Span::raw(text).width())
         .sum();
     let (path, branch) = fit_names(
-        &home_relative_path(&app.repo_path),
-        app.branch_name.as_deref(),
+        &home_relative_path(app.repository_path()),
+        app.branch_name(),
         (width as usize).saturating_sub(kept),
     );
 

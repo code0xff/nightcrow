@@ -3,12 +3,9 @@ use super::*;
 #[test]
 fn successful_snapshot_preserves_terminal_status() {
     let (snapshot, tx) = dummy_snapshot_channel();
-    let mut app = App {
-        notice: Some(Notice::new(NoticeKind::Terminal, "backend unavailable")),
-        snapshot,
-        pending_snapshot: None,
-        ..app_with_files(vec![])
-    };
+    let mut app = app_with_files(vec![]);
+    app.git.snapshot = snapshot;
+    app.notice = Some(Notice::new(NoticeKind::Terminal, "backend unavailable"));
 
     tx.send(SnapshotMsg::Ok(
         RepoSnapshot {
@@ -32,12 +29,9 @@ fn successful_snapshot_preserves_terminal_status() {
 #[test]
 fn successful_snapshot_clears_git_status() {
     let (snapshot, tx) = dummy_snapshot_channel();
-    let mut app = App {
-        notice: Some(Notice::new(NoticeKind::Git, "not a repo")),
-        snapshot,
-        pending_snapshot: None,
-        ..app_with_files(vec![])
-    };
+    let mut app = app_with_files(vec![]);
+    app.git.snapshot = snapshot;
+    app.notice = Some(Notice::new(NoticeKind::Git, "not a repo"));
 
     tx.send(SnapshotMsg::Ok(
         RepoSnapshot {
@@ -58,13 +52,10 @@ fn successful_snapshot_clears_git_status() {
 #[test]
 fn snapshot_refresh_clamps_selection_to_active_filter() {
     let (snapshot, tx) = dummy_snapshot_channel();
-    let mut app = App {
-        snapshot,
-        pending_snapshot: None,
-        ..app_with_files(vec!["bar.rs"])
-    };
-    app.status_view.search_query.set("bar");
-    app.status_view.recompute_filter();
+    let mut app = app_with_files(vec!["bar.rs"]);
+    app.git.snapshot = snapshot;
+    app.git.view.status.search_query.set("bar");
+    app.git.view.status.recompute_filter();
 
     tx.send(SnapshotMsg::Ok(
         RepoSnapshot {
@@ -83,9 +74,9 @@ fn snapshot_refresh_clamps_selection_to_active_filter() {
     app.poll_snapshot();
 
     assert_eq!(app.filtered_indices(), &[1]);
-    assert_eq!(app.status_view.selected, 1);
+    assert_eq!(app.git.view.status.selected, 1);
     assert_eq!(
-        app.status_view.files[app.status_view.selected].path,
+        app.git.view.status.files[app.git.view.status.selected].path,
         "bar2.rs"
     );
 }
@@ -93,11 +84,8 @@ fn snapshot_refresh_clamps_selection_to_active_filter() {
 #[test]
 fn snapshot_invalidates_path_width_cache_on_same_length_rename() {
     let (snapshot, tx) = dummy_snapshot_channel();
-    let mut app = App {
-        snapshot,
-        pending_snapshot: None,
-        ..app_with_files(vec!["short.rs"])
-    };
+    let mut app = app_with_files(vec!["short.rs"]);
+    app.git.snapshot = snapshot;
     // Prime the width cache by reading the right-scroll bound once.
     app.file_scroll_right();
     // Rename to a longer path while keeping the file count constant.
@@ -123,20 +111,17 @@ fn snapshot_invalidates_path_width_cache_on_same_length_rename() {
     for _ in 0..20 {
         app.file_scroll_right();
     }
-    assert!(app.status_view.file_scroll_x >= "short.rs".chars().count());
+    assert!(app.git.view.status.file_scroll_x >= "short.rs".chars().count());
 }
 
 #[test]
 fn snapshot_refresh_with_no_filter_matches_clears_stale_diff() {
     let (snapshot, tx) = dummy_snapshot_channel();
-    let mut app = App {
-        snapshot,
-        pending_snapshot: None,
-        ..app_with_files(vec!["bar.rs"])
-    };
-    app.status_view.search_query.set("bar");
-    app.status_view.recompute_filter();
-    app.diff.set_hunks(vec![context_hunk(&["stale"])]);
+    let mut app = app_with_files(vec!["bar.rs"]);
+    app.git.snapshot = snapshot;
+    app.git.view.status.search_query.set("bar");
+    app.git.view.status.recompute_filter();
+    app.git.view.diff.set_hunks(vec![context_hunk(&["stale"])]);
 
     tx.send(SnapshotMsg::Ok(
         RepoSnapshot {
@@ -155,16 +140,21 @@ fn snapshot_refresh_with_no_filter_matches_clears_stale_diff() {
     app.poll_snapshot();
 
     assert!(app.filtered_indices().is_empty());
-    assert!(app.diff.hunks().is_empty());
+    assert!(app.git.view.diff.hunks().is_empty());
 }
 
 #[test]
 fn non_selected_file_change_does_not_reload_the_selected_diff() {
     let mut app = app_with_files(vec!["selected.rs", "other.rs"]);
-    app.repo_path = "missing-repo-used-to-detect-unwanted-load".to_string();
-    app.diff.set_hunks(vec![context_hunk(&["selected diff"])]);
+    app.git.repo_path = "missing-repo-used-to-detect-unwanted-load".to_string();
+    app.git
+        .view
+        .diff
+        .set_hunks(vec![context_hunk(&["selected diff"])]);
     let selected_mtime = SystemTime::UNIX_EPOCH + Duration::from_secs(10);
-    app.status_view
+    app.git
+        .view
+        .status
         .hot_table
         .insert("selected.rs".to_string(), selected_mtime);
 
@@ -188,7 +178,10 @@ fn non_selected_file_change_does_not_reload_the_selected_diff() {
         ]),
     );
 
-    assert_eq!(app.diff.hunks()[0].lines[0].content, "selected diff");
+    assert_eq!(
+        app.git.view.diff.hunks()[0].lines[0].content,
+        "selected diff"
+    );
     assert!(
         app.notice
             .as_ref()

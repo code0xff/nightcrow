@@ -99,11 +99,11 @@ src/
 │                         #   logging.rs (file logger, rotation + retention), paths.rs
 │                         #   (tilde expansion), signals.rs (SIGINT/SIGTERM shutdown),
 │                         #   threading.rs (try_timed_join)
-├── app.rs, app/          # App aggregate + InteractionState; per-feature impls: auto_follow,
-│                         #   commit-log fetch/pagination/apply, diff & file-view loaders, focus,
-│                         #   navigation, log_nav, load controller/apply, scroll, session_io,
-│                         #   snapshot_io,
-│                         #   terminal_ctrl, tree, tree_nav
+├── app.rs, app/          # App coordinates terminal/focus/fullscreen/notice/interaction with
+│                         #   GitViewManager; RepositoryView owns status/log/tree/diff,
+│                         #   auto-follow, tree watch state, and pending selection;
+│                         #   GitViewManager owns repo identity/cache, snapshot/load workers,
+│                         #   commit-log controller, tracking, branch, and ref decorations
 ├── config.rs, config/    # config.toml root + layout/theme/input, log, panels,
 │                         #   plugin ([[plugin]]), web (WebViewerConfig, password bootstrap)
 ├── workspace/
@@ -241,12 +241,11 @@ PTY 관리는 portable-pty 기반 `PtyBackend` 단일 구현으로 정리됐다.
 
 ## Future Refactor Notes
 
-- `App`은 도메인별 sub-struct(`StatusView`, `LogView`, `DiffPane`, `TerminalState`,
-  `InteractionState`, `RepoInput`)와
-  `app/` 서브모듈로 impl 책임이 나뉘어 있지만, 여전히 한 구조체가 모든 sub-state를 들고 있다. 추가
-  분리가 필요해지면 sub-struct별 명시적 manager로 승격하는 게 다음 단계다.
-- 대형 diff에서 j/k 빠른 탐색 시 동기 diff 로드가 여전히 ms 단위 블로킹을 만들 수 있다. Repository
-  캐싱으로 `discover` 비용은 제거됐으나, 추가 향상이 필요하면 채널 기반 비동기 로드 + debouncing.
+- 저장소별 상태는 `GitViewManager`와 그 안의 `RepositoryView`로 분리됐다. `App`은 terminal/focus/
+  fullscreen/notice/interaction을 소유하고 명시적 façade로 UI·입력 계층에 저장소 상태를 제공한다.
+  이후 분리는 manager 내부 동작이 독립 수명이나 동시성 경계를 실제로 얻을 때만 진행한다.
+- diff/file/commit/ref 로드는 lane별 conflation과 generation guard를 갖춘 `GitLoadWorker`로 비동기화돼
+  있다. 추가 최적화는 측정 결과가 필요할 때 watcher event debouncing이나 lane별 비용을 대상으로 한다.
 
 ## Detailed design
 

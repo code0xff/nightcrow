@@ -175,7 +175,7 @@ pub fn draw(
         return;
     }
 
-    if app.diff.fullscreen {
+    if app.diff_pane().fullscreen {
         diff_viewer::render(frame, app, body_area, ss, ts, accent);
         frame.render_widget(
             render_hint_bar(app, tabs, accent, hint_area.width),
@@ -185,7 +185,7 @@ pub fn draw(
     }
 
     if app.list_fullscreen {
-        match app.mode {
+        match app.mode() {
             ViewMode::Status => file_list::render(frame, app, body_area, accent),
             ViewMode::Log => commit_list::render(frame, app, body_area, accent),
             ViewMode::Tree => tree_list::render(frame, app, body_area, accent),
@@ -212,7 +212,7 @@ pub fn draw(
         ])
         .split(main[0]);
 
-    match app.mode {
+    match app.mode() {
         ViewMode::Status => file_list::render(frame, app, upper[0], accent),
         ViewMode::Log => commit_list::render(frame, app, upper[0], accent),
         ViewMode::Tree => tree_list::render(frame, app, upper[0], accent),

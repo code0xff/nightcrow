@@ -25,12 +25,12 @@ impl App {
         &mut self,
         f: impl FnOnce(&git2::Repository) -> anyhow::Result<R>,
     ) -> anyhow::Result<R> {
-        if self.repo_cache.is_none() {
-            let repo = git2::Repository::discover(self.repo_path.as_str())
+        if self.git.repo_cache.is_none() {
+            let repo = git2::Repository::discover(self.git.repo_path.as_str())
                 .map_err(|e| anyhow::anyhow!("{}", crate::git::format_discover_error(&e)))?;
-            self.repo_cache = Some(repo);
+            self.git.repo_cache = Some(repo);
         }
-        let result = f(self.repo_cache.as_ref().unwrap());
+        let result = f(self.git.repo_cache.as_ref().unwrap());
         if let Err(ref e) = result
             && let Some(git_err) = e.downcast_ref::<git2::Error>()
             && matches!(
@@ -38,7 +38,7 @@ impl App {
                 git2::ErrorClass::Os | git2::ErrorClass::Repository
             )
         {
-            self.repo_cache = None;
+            self.git.repo_cache = None;
         }
         result
     }
@@ -46,10 +46,10 @@ impl App {
     pub(crate) fn refresh_diff(&mut self, reset_scroll: bool) {
         // Only Status shows a file diff; Log and Tree drive the diff via their
         // own loaders and must not have a status diff loaded over them.
-        if self.mode != ViewMode::Status {
+        if self.git.view.mode != ViewMode::Status {
             return;
         }
-        let previous_scroll = self.diff.scroll;
+        let previous_scroll = self.git.view.diff.scroll;
         let Some(path) = self.selected_filtered_status_path() else {
             self.clear_diff_state();
             return;
@@ -59,8 +59,9 @@ impl App {
         } else {
             DiffLoadMode::KeepScroll(previous_scroll)
         };
-        self.load_controller
-            .request_diff(&self.repo_path, DiffTarget::Status(path), mode);
+        self.git
+            .load_controller
+            .request_diff(&self.git.repo_path, DiffTarget::Status(path), mode);
     }
 
     pub(crate) fn apply_diff_result(
@@ -82,15 +83,15 @@ impl App {
         match result {
             Ok(hunks) => {
                 self.clear_notice(NoticeKind::Diff);
-                self.diff.set_hunks(hunks);
+                self.git.view.diff.set_hunks(hunks);
                 match mode {
                     DiffApply::Reset
                     | DiffApply::ResetPreservingFile
                     | DiffApply::ResetWithTitle(_)
                     | DiffApply::ResetWithTitlePreservingFile(_) => {
-                        self.diff.scroll = 0;
-                        self.diff.scroll_x = 0;
-                        self.diff.search.cursor = 0;
+                        self.git.view.diff.scroll = 0;
+                        self.git.view.diff.scroll_x = 0;
+                        self.git.view.diff.search.cursor = 0;
                         if !preserve_file {
                             self.invalidate_file_view();
                         }
@@ -98,17 +99,18 @@ impl App {
                     DiffApply::KeepScroll(prev) => {
                         // Clamp against the new (possibly shorter) diff so
                         // scroll isn't left out of range for the next keystroke.
-                        self.diff.scroll = prev.min(self.diff.max_scroll());
+                        self.git.view.diff.scroll = prev.min(self.git.view.diff.max_scroll());
                         // The file-overlay anchor was computed against the
                         // previous hunks; recompute so the open file pane stays
                         // aligned with the replaced diff.
-                        if self.diff.file_view.key.is_some() {
-                            self.diff.file_view.anchor_line = self.anchor_for_current_diff();
+                        if self.git.view.diff.file_view.key.is_some() {
+                            self.git.view.diff.file_view.anchor_line =
+                                self.anchor_for_current_diff();
                         }
                     }
                 }
-                if !self.diff.search.query.is_empty() {
-                    self.diff.recompute_matches(reset_scroll);
+                if !self.git.view.diff.search.query.is_empty() {
+                    self.git.view.diff.recompute_matches(reset_scroll);
                 }
             }
             Err(_) => {
@@ -125,34 +127,34 @@ impl App {
         if let DiffApply::ResetWithTitle(title) | DiffApply::ResetWithTitlePreservingFile(title) =
             mode
         {
-            self.log_view.diff_title = title.to_string();
+            self.git.view.log.diff_title = title.to_string();
         }
     }
 
     pub(crate) fn clear_diff_state(&mut self) {
-        self.load_controller.cancel_diff();
-        self.diff.set_hunks(Vec::new());
+        self.git.load_controller.cancel_diff();
+        self.git.view.diff.set_hunks(Vec::new());
         // Drop the entire search state, not just the match list: keeping the
         // query alive after a content-discarding clear would leave a ghost
         // `[0/0]` counter and apply the previous file's query to unrelated
         // content on the next load.
-        self.diff.search.clear();
-        self.diff.scroll = 0;
-        self.diff.scroll_x = 0;
+        self.git.view.diff.search.clear();
+        self.git.view.diff.scroll = 0;
+        self.git.view.diff.scroll_x = 0;
         self.invalidate_file_view();
     }
 
     pub(crate) fn invalidate_file_view(&mut self) {
-        self.load_controller.cancel_file();
-        self.diff.view = DiffPaneView::Diff;
-        self.diff.file_view = FileViewState::default();
+        self.git.load_controller.cancel_file();
+        self.git.view.diff.view = DiffPaneView::Diff;
+        self.git.view.diff.file_view = FileViewState::default();
     }
 
     pub(crate) fn anchor_for_current_diff(&self) -> Option<usize> {
-        let scroll = self.diff.scroll;
+        let scroll = self.git.view.diff.scroll;
         let mut offset = 0usize;
         let mut chosen = None;
-        for h in self.diff.hunks() {
+        for h in self.git.view.diff.hunks() {
             if let Some(n) = parse_hunk_new_start(&h.header) {
                 chosen = Some(n);
             }
@@ -168,11 +170,13 @@ impl App {
     // the worker replies so the UI tick never blocks on a 100-commit revwalk.
     pub(crate) fn refresh_commit_log_after_head_change(&mut self) {
         let prior_selected_oid = self
-            .log_view
+            .git
+            .view
+            .log
             .commits
-            .get(self.log_view.selected)
+            .get(self.git.view.log.selected)
             .map(|c| c.oid);
-        let prior_head_oid = self.log_view.commits.first().map(|c| c.oid);
+        let prior_head_oid = self.git.view.log.commits.first().map(|c| c.oid);
 
         // Any in-flight worker was launched against state that no longer
         // matches; drop it so only this refresh's reply can land.

@@ -57,7 +57,7 @@ fn the_project_screen_puts_the_dialog_on_the_notice_row_and_its_reports_below() 
     // The wiring, not the helpers: the input must land on the notice row in
     // the repo header's place, and the rejection on the hint row under it.
     let mut app = app_with_files(vec!["a.rs"]);
-    app.repo_path = "/tmp/somewhere".to_string();
+    app.git.repo_path = "/tmp/somewhere".to_string();
     app.raise_notice(NoticeKind::RepoInput, "no such directory");
     let repo_input = RepoInput {
         active: true,
@@ -132,7 +132,7 @@ fn the_project_tab_row_survives_every_fullscreen_mode() {
     );
 
     let mut app = app_with_files(vec!["a.rs"]);
-    app.diff.fullscreen = true;
+    app.git.view.diff.fullscreen = true;
     assert!(
         drawn_text(&mut app, &paths, 0).contains("F2 web"),
         "diff fullscreen"

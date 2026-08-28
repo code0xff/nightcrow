@@ -32,7 +32,7 @@ fn wrapping_folds_a_long_line_onto_several_rows() {
     let mut app = app_showing(long_line_hunk(), DiffPaneView::Diff);
 
     let truncated = drawn(&mut app, 40, 10, 0);
-    app.diff.wrap = true;
+    app.git.view.diff.wrap = true;
     let wrapped = drawn(&mut app, 40, 10, 0);
 
     assert_eq!(
@@ -55,7 +55,7 @@ fn wrapping_folds_a_long_line_onto_several_rows() {
 #[test]
 fn wrapping_keeps_the_line_number_on_the_row_the_line_starts_on() {
     let mut app = app_showing(long_line_hunk(), DiffPaneView::Diff);
-    app.diff.wrap = true;
+    app.git.view.diff.wrap = true;
 
     let screen = drawn(&mut app, 40, 10, 0);
     let first = screen
@@ -82,7 +82,7 @@ fn the_split_view_ignores_wrapping() {
     // Halves that fold to different heights would stop lining up, and lining up
     // is the only reason to be in this layout.
     let mut app = app_showing(long_line_hunk(), DiffPaneView::Split);
-    app.diff.wrap = true;
+    app.git.view.diff.wrap = true;
 
     let screen = drawn(&mut app, 120, 10, 0);
 

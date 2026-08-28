@@ -2,7 +2,7 @@ use super::*;
 
 fn status_app(path: &str) -> App {
     let mut app = app_with_files(vec!["a.rs", "b.rs"]);
-    app.repo_path = path.to_string();
+    app.git.repo_path = path.to_string();
     app
 }
 
@@ -18,7 +18,9 @@ fn repo_with_two_dirty_files() -> (tempfile::TempDir, String) {
 }
 
 fn diff_text(app: &App) -> String {
-    app.diff
+    app.git
+        .view
+        .diff
         .hunks()
         .iter()
         .flat_map(|hunk| hunk.lines.iter())
@@ -58,7 +60,7 @@ fn 저장소가_바뀐_뒤_도착한_이전_저장소_결과는_버린다() {
     let mut app = status_app(&old_path);
 
     app.reload_diff();
-    app.repo_path = new_path;
+    app.git.repo_path = new_path;
     app.reload_diff();
     app.flush_git_loads_for_test(Duration::from_secs(5));
 
@@ -81,19 +83,21 @@ fn 연속_commit_선택은_마지막_oid의_diff와_title만_적용한다() {
     run_git(&path, &["add", "."]);
     run_git(&path, &["commit", "-m", "second"]);
     let mut app = app_with_files(vec![]);
-    app.repo_path = path.clone();
-    app.mode = ViewMode::Log;
-    app.log_view
+    app.git.repo_path = path.clone();
+    app.git.view.mode = ViewMode::Log;
+    app.git
+        .view
+        .log
         .set_commits(load_commit_log(&open_repo(&path), 10).unwrap());
 
-    app.log_view.selected = 0;
+    app.git.view.log.selected = 0;
     app.load_commit_diff_for_selected();
-    app.log_view.selected = 1;
+    app.git.view.log.selected = 1;
     app.load_commit_diff_for_selected();
     app.flush_git_loads_for_test(Duration::from_secs(5));
 
-    assert!(app.log_view.diff_title.contains("first"));
-    assert!(!app.log_view.diff_title.contains("second"));
+    assert!(app.git.view.log.diff_title.contains("first"));
+    assert!(!app.git.view.log.diff_title.contains("second"));
     assert!(diff_text(&app).contains("one"));
 }
 
@@ -106,14 +110,20 @@ fn 비동기_새로고침은_diff_검색과_scroll을_보존한다() {
     run_git(&path, &["commit", "-m", "base"]);
     std::fs::write(&file, "zero\nneedle\ntwo changed\nthree\n").unwrap();
     let mut app = app_with_files(vec!["a.rs"]);
-    app.repo_path = path;
-    app.diff
+    app.git.repo_path = path;
+    app.git
+        .view
+        .diff
         .set_hunks(vec![context_hunk(&["old", "old", "old"])]);
-    app.diff.scroll = 2;
-    app.diff.search.query.set("needle");
+    app.git.view.diff.scroll = 2;
+    app.git.view.diff.search.query.set("needle");
     let old_mtime = SystemTime::UNIX_EPOCH + Duration::from_secs(1);
     let new_mtime = SystemTime::UNIX_EPOCH + Duration::from_secs(2);
-    app.status_view.hot_table.insert("a.rs".into(), old_mtime);
+    app.git
+        .view
+        .status
+        .hot_table
+        .insert("a.rs".into(), old_mtime);
 
     app.ingest_snapshot(
         RepoSnapshot {
@@ -130,9 +140,12 @@ fn 비동기_새로고침은_diff_검색과_scroll을_보존한다() {
     );
     app.flush_git_loads_for_test(Duration::from_secs(5));
 
-    assert_eq!(app.diff.search.query.as_str(), "needle");
-    assert!(!app.diff.search.matches.is_empty());
-    assert_eq!(app.diff.scroll, 2.min(app.diff.max_scroll()));
+    assert_eq!(app.git.view.diff.search.query.as_str(), "needle");
+    assert!(!app.git.view.diff.search.matches.is_empty());
+    assert_eq!(
+        app.git.view.diff.scroll,
+        2.min(app.git.view.diff.max_scroll())
+    );
 }
 
 #[test]
@@ -144,12 +157,12 @@ fn diff보다_나중에_연_file_view는_diff_reply가_닫지_않는다() {
     app.toggle_diff_file_view();
     app.flush_git_loads_for_test(Duration::from_secs(5));
 
-    assert_eq!(app.diff.view, DiffPaneView::File);
+    assert_eq!(app.git.view.diff.view, DiffPaneView::File);
     assert_eq!(
-        app.diff.file_view.key,
+        app.git.view.diff.file_view.key,
         Some(FileViewKey::Status("a.rs".to_string()))
     );
-    assert_eq!(app.diff.file_view.content, "latest a\n");
+    assert_eq!(app.git.view.diff.file_view.content, "latest a\n");
 }
 
 #[test]
@@ -161,7 +174,7 @@ fn selection_change_does_not_preserve_the_previous_file_view() {
     app.toggle_diff_file_view();
     app.flush_git_loads_for_test(Duration::from_secs(5));
     assert_eq!(
-        app.diff.file_view.key,
+        app.git.view.diff.file_view.key,
         Some(FileViewKey::Status("a.rs".to_string()))
     );
 
@@ -169,8 +182,8 @@ fn selection_change_does_not_preserve_the_previous_file_view() {
     app.flush_git_loads_for_test(Duration::from_secs(5));
 
     assert_eq!(app.selected_filtered_status_path().as_deref(), Some("b.rs"));
-    assert_eq!(app.diff.view, DiffPaneView::Diff);
-    assert_eq!(app.diff.file_view.key, None);
+    assert_eq!(app.git.view.diff.view, DiffPaneView::Diff);
+    assert_eq!(app.git.view.diff.file_view.key, None);
     assert!(diff_text(&app).contains("latest b"));
 }
 
@@ -181,23 +194,25 @@ fn mode_switch_drops_a_stale_commit_files_reply() {
     run_git(&path, &["add", "."]);
     run_git(&path, &["commit", "-m", "first"]);
     let mut app = app_with_files(vec!["a.rs"]);
-    app.repo_path = path.clone();
-    app.mode = ViewMode::Log;
-    app.log_view
+    app.git.repo_path = path.clone();
+    app.git.view.mode = ViewMode::Log;
+    app.git
+        .view
+        .log
         .set_commits(load_commit_log(&open_repo(&path), 10).unwrap());
 
     app.log_drill_in();
     app.toggle_mode();
     app.flush_git_loads_for_test(Duration::from_secs(5));
 
-    assert_eq!(app.mode, ViewMode::Status);
-    assert!(!app.log_view.drill_down);
+    assert_eq!(app.git.view.mode, ViewMode::Status);
+    assert!(!app.git.view.log.drill_down);
 }
 
 #[test]
 fn 현재_선택의_worker_실패는_diff_notice로_남는다() {
     let mut app = app_with_files(vec!["a.rs"]);
-    app.repo_path = "repository-that-does-not-exist".to_string();
+    app.git.repo_path = "repository-that-does-not-exist".to_string();
 
     app.reload_diff();
     app.flush_git_loads_for_test(Duration::from_secs(5));

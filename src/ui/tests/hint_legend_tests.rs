@@ -115,7 +115,7 @@ fn rows_carrying_the_added_commands_invert_only_clickable_labels() {
 
     let mut searched = app_with_fake_backend();
     searched.focus = Focus::DiffViewer;
-    searched.diff.search.query.set("foo");
+    searched.git.view.diff.search.query.set("foo");
     assert_inverted_cells_are_clickable(&searched);
 }
 

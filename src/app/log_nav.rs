@@ -2,11 +2,11 @@ use super::{App, LIST_PAGE_SIZE, ViewMode};
 
 impl App {
     pub fn log_commit_filtered_indices(&self) -> &[usize] {
-        &self.log_view.commits_filter_cache
+        &self.git.view.log.commits_filter_cache
     }
 
     pub fn log_file_filtered_indices(&self) -> &[usize] {
-        &self.log_view.commit_files_filter_cache
+        &self.git.view.log.commit_files_filter_cache
     }
 
     // Returns whether selection changed so the caller can decide whether to
@@ -17,17 +17,17 @@ impl App {
             if indices.is_empty() {
                 return false;
             }
-            if indices.contains(&self.log_view.selected) {
-                self.log_view.selected
+            if indices.contains(&self.git.view.log.selected) {
+                self.git.view.log.selected
             } else {
                 indices[0]
             }
         };
-        if target == self.log_view.selected {
+        if target == self.git.view.log.selected {
             false
         } else {
-            self.log_view.selected = target;
-            self.log_view.commit_scroll_x = 0;
+            self.git.view.log.selected = target;
+            self.git.view.log.commit_scroll_x = 0;
             true
         }
     }
@@ -38,17 +38,17 @@ impl App {
             if indices.is_empty() {
                 return false;
             }
-            if indices.contains(&self.log_view.file_selected) {
-                self.log_view.file_selected
+            if indices.contains(&self.git.view.log.file_selected) {
+                self.git.view.log.file_selected
             } else {
                 indices[0]
             }
         };
-        if target == self.log_view.file_selected {
+        if target == self.git.view.log.file_selected {
             false
         } else {
-            self.log_view.file_selected = target;
-            self.log_view.file_scroll_x = 0;
+            self.git.view.log.file_selected = target;
+            self.git.view.log.file_scroll_x = 0;
             true
         }
     }
@@ -57,7 +57,7 @@ impl App {
         let selection_changed = self.sync_log_commit_selection_to_filter();
         if self.log_commit_filtered_indices().is_empty() {
             self.clear_diff_state();
-        } else if selection_changed || self.diff.hunks().is_empty() {
+        } else if selection_changed || self.git.view.diff.hunks().is_empty() {
             self.load_commit_diff_for_selected();
         }
     }
@@ -66,25 +66,25 @@ impl App {
         let selection_changed = self.sync_log_file_selection_to_filter();
         if self.log_file_filtered_indices().is_empty() {
             self.clear_diff_state();
-        } else if selection_changed || self.diff.hunks().is_empty() {
+        } else if selection_changed || self.git.view.diff.hunks().is_empty() {
             self.load_file_diff_for_log_file_selected();
         }
     }
 
     pub fn start_log_search(&mut self) {
-        if self.log_view.drill_down {
-            self.log_view.start_file_search();
+        if self.git.view.log.drill_down {
+            self.git.view.log.start_file_search();
         } else {
-            self.log_view.start_commit_search();
+            self.git.view.log.start_commit_search();
         }
     }
 
     pub fn cancel_log_search(&mut self) {
-        if self.log_view.drill_down {
-            self.log_view.cancel_file_search();
+        if self.git.view.log.drill_down {
+            self.git.view.log.cancel_file_search();
             self.refresh_file_diff_after_filter_change();
         } else {
-            self.log_view.cancel_commit_search();
+            self.git.view.log.cancel_commit_search();
             self.refresh_commit_diff_after_filter_change();
             // Search ended → prefetch may have been pending; resume if the
             // selection now sits near the loaded tail.
@@ -93,12 +93,12 @@ impl App {
     }
 
     pub fn confirm_log_search(&mut self) {
-        if self.log_view.drill_down {
-            if self.log_view.confirm_file_search() {
+        if self.git.view.log.drill_down {
+            if self.git.view.log.confirm_file_search() {
                 self.refresh_file_diff_after_filter_change();
             }
         } else {
-            if self.log_view.confirm_commit_search() {
+            if self.git.view.log.confirm_commit_search() {
                 self.refresh_commit_diff_after_filter_change();
             }
             // Resume prefetch regardless of whether the query was empty:
@@ -109,21 +109,21 @@ impl App {
     }
 
     pub fn log_search_push(&mut self, ch: char) {
-        if self.log_view.drill_down {
-            self.log_view.file_search_push(ch);
+        if self.git.view.log.drill_down {
+            self.git.view.log.file_search_push(ch);
             self.refresh_file_diff_after_filter_change();
         } else {
-            self.log_view.commit_search_push(ch);
+            self.git.view.log.commit_search_push(ch);
             self.refresh_commit_diff_after_filter_change();
         }
     }
 
     pub fn log_search_pop(&mut self) {
-        if self.log_view.drill_down {
-            self.log_view.file_search_pop();
+        if self.git.view.log.drill_down {
+            self.git.view.log.file_search_pop();
             self.refresh_file_diff_after_filter_change();
         } else {
-            self.log_view.commit_search_pop();
+            self.git.view.log.commit_search_pop();
             self.refresh_commit_diff_after_filter_change();
         }
     }
@@ -134,10 +134,10 @@ impl App {
         commit_nav: fn(&mut Self),
         file_nav: fn(&mut Self),
     ) -> bool {
-        if self.mode != ViewMode::Log {
+        if self.git.view.mode != ViewMode::Log {
             return false;
         }
-        if self.log_view.drill_down {
+        if self.git.view.log.drill_down {
             file_nav(self);
         } else {
             commit_nav(self);
@@ -146,17 +146,18 @@ impl App {
     }
 
     pub fn log_drill_in(&mut self) {
-        let (oid, title) = match self.log_view.commits.get(self.log_view.selected) {
+        let (oid, title) = match self.git.view.log.commits.get(self.git.view.log.selected) {
             Some(entry) => (entry.oid, entry.to_string()),
             None => return,
         };
-        self.load_controller
-            .request_commit_files(&self.repo_path, oid, title);
+        self.git
+            .load_controller
+            .request_commit_files(&self.git.repo_path, oid, title);
     }
 
     pub fn log_drill_out(&mut self) {
-        self.load_controller.cancel_commit_files();
-        self.log_view.reset_drill_down();
+        self.git.load_controller.cancel_commit_files();
+        self.git.view.log.reset_drill_down();
         self.load_commit_diff_for_selected();
     }
 
@@ -186,14 +187,14 @@ impl App {
 
     pub fn log_select_up(&mut self) {
         if self.move_log_commit_in_filter(-1) {
-            self.log_view.commit_scroll_x = 0;
+            self.git.view.log.commit_scroll_x = 0;
             self.load_commit_diff_for_selected();
         }
     }
 
     pub fn log_select_down(&mut self) {
         if self.move_log_commit_in_filter(1) {
-            self.log_view.commit_scroll_x = 0;
+            self.git.view.log.commit_scroll_x = 0;
             self.load_commit_diff_for_selected();
         }
         self.maybe_prefetch_commit_log();
@@ -201,14 +202,14 @@ impl App {
 
     pub fn log_page_up(&mut self) {
         if self.move_log_commit_in_filter(-(LIST_PAGE_SIZE as isize)) {
-            self.log_view.commit_scroll_x = 0;
+            self.git.view.log.commit_scroll_x = 0;
             self.load_commit_diff_for_selected();
         }
     }
 
     pub fn log_page_down(&mut self) {
         if self.move_log_commit_in_filter(LIST_PAGE_SIZE as isize) {
-            self.log_view.commit_scroll_x = 0;
+            self.git.view.log.commit_scroll_x = 0;
             self.load_commit_diff_for_selected();
         }
         self.maybe_prefetch_commit_log();
@@ -222,7 +223,9 @@ impl App {
             if indices.is_empty() {
                 return false;
             }
-            let pos = indices.iter().position(|&i| i == self.log_view.selected);
+            let pos = indices
+                .iter()
+                .position(|&i| i == self.git.view.log.selected);
             let new_pos = match pos {
                 Some(p) => {
                     let last = indices.len() as isize - 1;
@@ -232,10 +235,10 @@ impl App {
             };
             indices[new_pos]
         };
-        if resolved == self.log_view.selected {
+        if resolved == self.git.view.log.selected {
             false
         } else {
-            self.log_view.selected = resolved;
+            self.git.view.log.selected = resolved;
             true
         }
     }
@@ -248,7 +251,7 @@ impl App {
             }
             let pos = indices
                 .iter()
-                .position(|&i| i == self.log_view.file_selected);
+                .position(|&i| i == self.git.view.log.file_selected);
             let new_pos = match pos {
                 Some(p) => {
                     let last = indices.len() as isize - 1;
@@ -258,11 +261,11 @@ impl App {
             };
             indices[new_pos]
         };
-        if resolved == self.log_view.file_selected {
+        if resolved == self.git.view.log.file_selected {
             false
         } else {
-            self.log_view.file_selected = resolved;
-            self.log_view.file_scroll_x = 0;
+            self.git.view.log.file_selected = resolved;
+            self.git.view.log.file_scroll_x = 0;
             true
         }
     }

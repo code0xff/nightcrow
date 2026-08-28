@@ -106,7 +106,7 @@ fn handle_mouse_click_focuses_the_upper_panels() {
 fn handle_mouse_is_inert_while_a_search_overlay_is_open() {
     let (mut app, areas) = app_with_two_panes_and_areas();
     app.focus = Focus::FileList;
-    app.status_view.search_active = true;
+    app.git.view.status.search_active = true;
     let (_, rect) = areas[0];
     let active_before = app.terminal.active;
 

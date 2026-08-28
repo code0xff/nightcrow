@@ -25,7 +25,7 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect, accent: Color) {
 
     // Reserve a bottom row for the search input whenever the overlay is open
     // or a query is still showing.
-    let show_search = app.tree_view.search_active || !app.tree_view.search_query.is_empty();
+    let show_search = app.tree_view().search_active || !app.tree_view().search_query.is_empty();
     let (list_area, search_area) = if show_search {
         let chunks = Layout::default()
             .direction(Direction::Vertical)
@@ -36,8 +36,8 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect, accent: Color) {
         (area, None)
     };
 
-    let rows = app.tree_view.visible_rows();
-    let scroll_x = app.tree_view.scroll_x;
+    let rows = app.tree_view().visible_rows();
+    let scroll_x = app.tree_view().scroll_x;
 
     let items: Vec<ListItem> = rows
         .iter()
@@ -65,12 +65,12 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect, accent: Color) {
         })
         .collect();
 
-    let title = if app.tree_view.search_filtering() {
+    let title = if app.tree_view().search_filtering() {
         format!(
             " {} Tree ({}/{}) ",
             super::jump_legend(app, '1'),
-            app.tree_view.match_count,
-            app.tree_view.index.len()
+            app.tree_view().match_count,
+            app.tree_view().index.len()
         )
     } else if rows.is_empty() {
         format!(" {} Tree (empty) ", super::jump_legend(app, '1'))
@@ -81,7 +81,7 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect, accent: Color) {
     let selected = if rows.is_empty() {
         None
     } else {
-        Some(app.tree_view.selected.min(rows.len() - 1))
+        Some(app.tree_view().selected.min(rows.len() - 1))
     };
 
     super::render_selectable_list(frame, list_area, title, items, selected, border_style);
@@ -89,8 +89,8 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect, accent: Color) {
     if let Some(sa) = search_area {
         super::render_search_bar(
             frame,
-            app.tree_view.search_query.as_str(),
-            app.tree_view.search_active,
+            app.tree_view().search_query.as_str(),
+            app.tree_view().search_active,
             sa,
             accent,
         );

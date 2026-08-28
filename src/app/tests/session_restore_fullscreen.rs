@@ -58,7 +58,7 @@ fn restore_session_diff_fullscreen_forces_diff_focus() {
         ..Default::default()
     });
 
-    assert!(app.diff.fullscreen);
+    assert!(app.git.view.diff.fullscreen);
     assert_eq!(app.focus, Focus::DiffViewer);
 }
 
@@ -78,7 +78,7 @@ fn restore_session_prefers_terminal_fullscreen_over_diff_fullscreen() {
     });
 
     assert!(app.terminal.fullscreen.fills_body());
-    assert!(!app.diff.fullscreen);
+    assert!(!app.git.view.diff.fullscreen);
     assert_eq!(app.focus, Focus::Terminal);
 }
 
@@ -86,14 +86,14 @@ fn restore_session_prefers_terminal_fullscreen_over_diff_fullscreen() {
 fn save_session_round_trips_diff_fullscreen() {
     let mut app = app_with_files(vec![]);
     app.toggle_diff_fullscreen();
-    assert!(app.diff.fullscreen);
+    assert!(app.git.view.diff.fullscreen);
 
     let state = app.save_session();
     assert!(state.diff_fullscreen);
 
     let mut other = app_with_files(vec![]);
     other.restore_session(&state);
-    assert!(other.diff.fullscreen);
+    assert!(other.git.view.diff.fullscreen);
     assert_eq!(other.focus, Focus::DiffViewer);
 }
 
@@ -110,7 +110,7 @@ fn restore_session_keeps_log_scroll_after_loading_commit_diff() {
     run_git(&path, &["commit", "-m", "init"]);
 
     let mut app = app_with_files(vec![]);
-    app.repo_path = path;
+    app.git.repo_path = path;
 
     app.restore_session(&crate::workspace::persistence::SessionState {
         mode: Some(ViewMode::Log),
@@ -119,7 +119,7 @@ fn restore_session_keeps_log_scroll_after_loading_commit_diff() {
     });
     app.flush_git_loads_for_test(Duration::from_secs(2));
 
-    assert_eq!(app.mode, ViewMode::Log);
-    assert!(!app.diff.hunks().is_empty());
-    assert_eq!(app.diff.scroll, 2);
+    assert_eq!(app.git.view.mode, ViewMode::Log);
+    assert!(!app.git.view.diff.hunks().is_empty());
+    assert_eq!(app.git.view.diff.scroll, 2);
 }

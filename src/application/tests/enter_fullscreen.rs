@@ -12,8 +12,14 @@ fn enter_in_diff_viewer_toggles_diff_fullscreen() {
     app.focus = Focus::DiffViewer;
 
     let _ = handle_key(&mut app, press(KeyCode::Enter, KeyModifiers::NONE));
-    assert!(app.diff.fullscreen, "Enter must zoom the diff pane");
+    assert!(
+        app.git.view.diff.fullscreen,
+        "Enter must zoom the diff pane"
+    );
 
     let _ = handle_key(&mut app, press(KeyCode::Enter, KeyModifiers::NONE));
-    assert!(!app.diff.fullscreen, "a second Enter must exit the zoom");
+    assert!(
+        !app.git.view.diff.fullscreen,
+        "a second Enter must exit the zoom"
+    );
 }

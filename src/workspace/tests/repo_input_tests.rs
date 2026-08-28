@@ -182,5 +182,5 @@ fn 새_workspace는_프로젝트_하나를_활성으로_갖는다() {
     let ws = workspace_from(app_with_files(vec!["a.rs"]));
 
     assert_eq!(ws.projects().len(), 1);
-    assert_eq!(ws.active().unwrap().repo_path, ".");
+    assert_eq!(ws.active().unwrap().git.repo_path, ".");
 }

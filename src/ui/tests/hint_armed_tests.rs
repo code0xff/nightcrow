@@ -109,14 +109,14 @@ fn prefix_hint_names_view_toggle_destinations_by_mode() {
         "status mode armed row must name log/tree destinations, got: {text}"
     );
 
-    app.mode = ViewMode::Log;
+    app.git.view.mode = ViewMode::Log;
     let text = hint_text(&app);
     assert!(
         text.contains("l: status view") && text.contains("b: tree view"),
         "log mode armed row must name status/tree destinations, got: {text}"
     );
 
-    app.mode = ViewMode::Tree;
+    app.git.view.mode = ViewMode::Tree;
     let text = hint_text(&app);
     assert!(
         text.contains("l: log view") && text.contains("b: status view"),
@@ -131,7 +131,7 @@ fn prefix_hint_names_view_toggle_destinations_by_mode() {
 fn upper_legends_advertise_both_view_toggles() {
     // FileList browsing commits in Log mode.
     let mut app = app_with_fake_backend();
-    app.mode = ViewMode::Log;
+    app.git.view.mode = ViewMode::Log;
     let text = hint_text(&app);
     assert!(
         text.contains("l: status view") && text.contains("b: tree view"),
@@ -162,13 +162,13 @@ fn upper_legends_advertise_both_view_toggles() {
         text.contains("l: log view") && text.contains("b: tree view"),
         "zoomed status list must offer both toggles, got: {text}"
     );
-    zoomed.mode = ViewMode::Log;
+    zoomed.git.view.mode = ViewMode::Log;
     let text = hint_text(&zoomed);
     assert!(
         text.contains("l: status view") && text.contains("b: tree view"),
         "zoomed log list must offer both toggles, got: {text}"
     );
-    zoomed.mode = ViewMode::Tree;
+    zoomed.git.view.mode = ViewMode::Tree;
     let text = hint_text(&zoomed);
     assert!(
         text.contains("b: status view") && text.contains("l: log view"),

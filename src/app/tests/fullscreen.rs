@@ -15,7 +15,7 @@ fn focus_list_jumps_and_exits_competing_fullscreens() {
 
     assert_eq!(app.focus, Focus::FileList);
     assert!(!app.terminal.fullscreen.fills_body());
-    assert!(!app.diff.fullscreen);
+    assert!(!app.git.view.diff.fullscreen);
 }
 
 #[test]
@@ -39,11 +39,11 @@ fn switch_pane_exits_diff_fullscreen() {
         title: "shell".into(),
     }];
     app.toggle_diff_fullscreen();
-    assert!(app.diff.fullscreen);
+    assert!(app.git.view.diff.fullscreen);
 
     app.switch_pane(0);
 
-    assert!(!app.diff.fullscreen);
+    assert!(!app.git.view.diff.fullscreen);
     assert_eq!(app.focus, Focus::Terminal);
     assert_eq!(app.terminal.active, 0);
 }
@@ -177,12 +177,12 @@ fn toggle_diff_fullscreen_sets_flag_and_focuses_diff_viewer() {
 
     app.toggle_diff_fullscreen();
 
-    assert!(app.diff.fullscreen);
+    assert!(app.git.view.diff.fullscreen);
     assert_eq!(app.focus, Focus::DiffViewer);
 
     app.toggle_diff_fullscreen();
 
-    assert!(!app.diff.fullscreen);
+    assert!(!app.git.view.diff.fullscreen);
     // Exiting zoom leaves focus on DiffViewer (no reason to bounce back).
     assert_eq!(app.focus, Focus::DiffViewer);
 }
@@ -199,7 +199,7 @@ fn toggle_diff_fullscreen_exits_terminal_fullscreen() {
 
     app.toggle_diff_fullscreen();
 
-    assert!(app.diff.fullscreen);
+    assert!(app.git.view.diff.fullscreen);
     assert!(!app.terminal.fullscreen.fills_body());
     assert_eq!(app.focus, Focus::DiffViewer);
 }
@@ -212,12 +212,12 @@ fn toggle_terminal_fullscreen_exits_diff_fullscreen() {
         title: "shell".into(),
     }];
     app.toggle_diff_fullscreen();
-    assert!(app.diff.fullscreen);
+    assert!(app.git.view.diff.fullscreen);
 
     app.toggle_terminal_fullscreen();
 
     assert!(app.terminal.fullscreen.fills_body());
-    assert!(!app.diff.fullscreen);
+    assert!(!app.git.view.diff.fullscreen);
     assert_eq!(app.focus, Focus::Terminal);
 }
 
@@ -286,11 +286,11 @@ fn toggle_list_fullscreen_sets_flag_and_focuses_file_list() {
 fn toggle_list_fullscreen_exits_diff_fullscreen() {
     let mut app = app_with_files(vec![]);
     app.toggle_diff_fullscreen();
-    assert!(app.diff.fullscreen);
+    assert!(app.git.view.diff.fullscreen);
 
     app.toggle_list_fullscreen();
 
     assert!(app.list_fullscreen);
-    assert!(!app.diff.fullscreen);
+    assert!(!app.git.view.diff.fullscreen);
     assert_eq!(app.focus, Focus::FileList);
 }

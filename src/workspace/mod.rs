@@ -81,7 +81,7 @@ impl Workspace {
             into.remember(&entry.repo, entry.state.clone());
         }
         for project in self.projects.iter().rev() {
-            into.remember(&project.repo_path, project.session_to_save());
+            into.remember(project.repository_path(), project.session_to_save());
         }
         into.sessions
     }
@@ -212,11 +212,12 @@ impl Workspace {
         // Carry the closing project's view state, or reopening would restore
         // the last-shutdown snapshot instead.
         let closing = self.projects.remove(index);
-        self.remembered.retain(|s| s.repo != closing.repo_path);
+        self.remembered
+            .retain(|s| s.repo != closing.repository_path());
         self.remembered.insert(
             0,
             RepoSession {
-                repo: closing.repo_path.clone(),
+                repo: closing.repository_path().to_string(),
                 state: closing.session_to_save(),
             },
         );
@@ -235,10 +236,13 @@ impl Workspace {
     /// active. Paths not open are skipped and open tabs the order does not name
     /// keep their relative position at the end.
     pub fn reorder_to(&mut self, order: &[&str]) {
-        let active_path = self.projects.get(self.active).map(|p| p.repo_path.clone());
+        let active_path = self
+            .projects
+            .get(self.active)
+            .map(|project| project.repository_path().to_string());
         let mut arranged: Vec<App> = Vec::with_capacity(self.projects.len());
         for path in order {
-            if let Some(index) = self.projects.iter().position(|p| p.repo_path == *path) {
+            if let Some(index) = self.index_of_repo(path) {
                 arranged.push(self.projects.remove(index));
             }
         }
@@ -252,8 +256,12 @@ impl Workspace {
 
     /// Record the daemon's id for an open repository.
     pub fn set_repo_id(&mut self, repo: &str, id: &str) {
-        if let Some(project) = self.projects.iter_mut().find(|p| p.repo_path == repo) {
-            project.repo_id = Some(id.to_string());
+        if let Some(project) = self
+            .projects
+            .iter_mut()
+            .find(|project| project.repository_path() == repo)
+        {
+            project.adopt_repository_id(id.to_string());
         }
     }
 
@@ -281,7 +289,9 @@ impl Workspace {
     /// onto the same repo — two tabs sharing a workdir would show identical
     /// git state while racing each other's snapshot workers.
     pub fn index_of_repo(&self, repo_path: &str) -> Option<usize> {
-        self.projects.iter().position(|p| p.repo_path == repo_path)
+        self.projects
+            .iter()
+            .position(|p| p.repository_path() == repo_path)
     }
 }
 

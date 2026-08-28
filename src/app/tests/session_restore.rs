@@ -10,7 +10,7 @@ fn toggle_mode_in_list_fullscreen_keeps_list_fullscreen() {
 
     app.toggle_mode();
 
-    assert_eq!(app.mode, ViewMode::Log);
+    assert_eq!(app.git.view.mode, ViewMode::Log);
     assert!(app.list_fullscreen);
     assert_eq!(app.focus, Focus::FileList);
 }
@@ -40,7 +40,7 @@ fn toggle_diff_fullscreen_exits_list_fullscreen() {
 
     app.toggle_diff_fullscreen();
 
-    assert!(app.diff.fullscreen);
+    assert!(app.git.view.diff.fullscreen);
     assert!(!app.list_fullscreen);
     assert_eq!(app.focus, Focus::DiffViewer);
 }

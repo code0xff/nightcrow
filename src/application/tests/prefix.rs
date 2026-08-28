@@ -264,11 +264,11 @@ fn handle_key_leader_l_toggles_log_view_from_upper_focus() {
     // terminal focus.
     let mut app = app_with_files(vec!["a.rs"]);
     app.focus = Focus::FileList;
-    let before = app.mode;
+    let before = app.git.view.mode;
     let _ = handle_key(&mut app, leader());
     let _ = handle_key(&mut app, press(KeyCode::Char('l'), KeyModifiers::NONE));
     assert_ne!(
-        app.mode, before,
+        app.git.view.mode, before,
         "leader+l must toggle the view in upper focus"
     );
 }

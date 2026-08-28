@@ -10,9 +10,9 @@ fn handle_key_overlay_blocks_leader_when_diff_search_active() {
     // overlay, never arming the prefix or firing an app command.
     let mut app = app_with_files(vec!["a.rs"]);
     app.focus = Focus::DiffViewer;
-    app.diff.start_search();
-    assert!(app.diff.search.active);
-    let before = app.mode;
+    app.git.view.diff.start_search();
+    assert!(app.git.view.diff.search.active);
+    let before = app.git.view.mode;
 
     let _ = handle_key(&mut app, leader());
     assert!(
@@ -22,10 +22,13 @@ fn handle_key_overlay_blocks_leader_when_diff_search_active() {
     let _ = handle_key(&mut app, press(KeyCode::Char('l'), KeyModifiers::NONE));
 
     assert_eq!(
-        app.mode, before,
+        app.git.view.mode, before,
         "no app command may fire behind an overlay"
     );
-    assert!(app.diff.search.active, "diff search must remain open");
+    assert!(
+        app.git.view.diff.search.active,
+        "diff search must remain open"
+    );
 }
 
 #[test]
@@ -37,19 +40,19 @@ fn handle_key_file_search_rejects_command_modifier_chars() {
     let ctrl_x = press(KeyCode::Char('x'), KeyModifiers::CONTROL);
     let _ = handle_key(&mut app, ctrl_x);
 
-    assert!(app.status_view.search_query.is_empty());
+    assert!(app.git.view.status.search_query.is_empty());
 }
 
 #[test]
 fn handle_key_diff_search_rejects_command_modifier_chars() {
     let mut app = app_with_files(vec!["a.rs"]);
     app.focus = Focus::DiffViewer;
-    app.diff.start_search();
+    app.git.view.diff.start_search();
 
     let alt_x = press(KeyCode::Char('x'), KeyModifiers::ALT);
     let _ = handle_key(&mut app, alt_x);
 
-    assert!(app.diff.search.query.is_empty());
+    assert!(app.git.view.diff.search.query.is_empty());
 }
 
 #[test]
@@ -60,7 +63,7 @@ fn handle_key_status_search_shortcut_requires_no_command_modifier() {
     let ctrl_slash = press(KeyCode::Char('/'), KeyModifiers::CONTROL);
     let _ = handle_key(&mut app, ctrl_slash);
 
-    assert!(!app.status_view.search_active);
+    assert!(!app.git.view.status.search_active);
 }
 
 #[test]
@@ -71,31 +74,31 @@ fn handle_key_diff_file_toggle_requires_no_command_modifier() {
     let alt_v = press(KeyCode::Char('v'), KeyModifiers::ALT);
     let _ = handle_key(&mut app, alt_v);
 
-    assert_eq!(app.diff.view, DiffPaneView::Diff);
+    assert_eq!(app.git.view.diff.view, DiffPaneView::Diff);
 }
 
 #[test]
 fn handle_key_diff_search_from_split_returns_to_unified_overlay() {
     let mut app = app_with_files(vec!["a.rs"]);
     app.focus = Focus::DiffViewer;
-    app.diff.view = DiffPaneView::Split;
+    app.git.view.diff.view = DiffPaneView::Split;
 
     let _ = handle_key(&mut app, press(KeyCode::Char('/'), KeyModifiers::NONE));
 
-    assert_eq!(app.diff.view, DiffPaneView::Diff);
-    assert!(app.diff.search.active);
+    assert_eq!(app.git.view.diff.view, DiffPaneView::Diff);
+    assert!(app.git.view.diff.search.active);
 }
 
 #[test]
 fn handle_key_diff_next_match_from_split_returns_to_unified_when_query_exists() {
     let mut app = app_with_files(vec!["a.rs"]);
     app.focus = Focus::DiffViewer;
-    app.diff.view = DiffPaneView::Split;
-    app.diff.search.query.set("needle");
+    app.git.view.diff.view = DiffPaneView::Split;
+    app.git.view.diff.search.query.set("needle");
 
     let _ = handle_key(&mut app, press(KeyCode::Char('n'), KeyModifiers::NONE));
 
-    assert_eq!(app.diff.view, DiffPaneView::Diff);
+    assert_eq!(app.git.view.diff.view, DiffPaneView::Diff);
 }
 
 #[test]
@@ -104,11 +107,11 @@ fn tab_in_the_diff_viewer_cycles_the_view() {
     // command, so it needs its own arm in the focus handler.
     let mut app = app_with_files(vec!["a.rs"]);
     app.focus = Focus::DiffViewer;
-    assert_eq!(app.diff.view, DiffPaneView::Diff);
+    assert_eq!(app.git.view.diff.view, DiffPaneView::Diff);
 
     let _ = handle_key(&mut app, press(KeyCode::Tab, KeyModifiers::NONE));
 
-    assert_eq!(app.diff.view, DiffPaneView::Split);
+    assert_eq!(app.git.view.diff.view, DiffPaneView::Split);
 }
 
 #[test]
@@ -120,5 +123,5 @@ fn tab_outside_the_diff_viewer_leaves_the_view_alone() {
 
     let _ = handle_key(&mut app, press(KeyCode::Tab, KeyModifiers::NONE));
 
-    assert_eq!(app.diff.view, DiffPaneView::Diff);
+    assert_eq!(app.git.view.diff.view, DiffPaneView::Diff);
 }
