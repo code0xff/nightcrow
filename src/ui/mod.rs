@@ -89,10 +89,9 @@ pub fn draw_empty(
         ),
     }
 
-    // Shares `render_notice_row`'s row assignment so the dialog looks the same
-    // wherever it opens: the input on this row, its reports and keys on the
-    // hint row. With no project there is no repo header to fall back to, so
-    // outside the dialog the row carries a notice or goes empty.
+    // Shares `render_notice_row`'s row assignment so the dialog looks the
+    // same wherever it opens: the input on this row, its reports and keys on
+    // the hint row. With no project there is no repo header to fall back to.
     let notice_line = if chrome.repo_input.active {
         repo_dialog::repo_input_line(chrome.repo_input, accent, rows.notice.width)
     } else {
@@ -102,8 +101,7 @@ pub fn draw_empty(
     frame.render_widget(Paragraph::new(notice_line), rows.notice);
 
     // The armed prefix shows the same chip as the project screen: pressing
-    // the leader here has to look like it did something, or it reads as a
-    // dead key.
+    // the leader here has to look like it did something.
     let hint = if chrome.repo_input.active {
         repo_dialog::repo_dialog_hint_line(notice, chrome.repo_input, rows.hint.width)
     } else if prefix_armed {
@@ -131,11 +129,10 @@ pub fn draw(
     layout: &LayoutConfig,
     accent: Color,
 ) {
-    // Chrome: the project tab row on top, the notice row (repo identity, or a
-    // notice covering it) and the hint bar below. The tab row and notice row
-    // are rendered here, before any layout branch, so neither is lost to a
-    // fullscreen view mode — a tab row that vanished in fullscreen would
-    // strand the user with no indication of which project they are in.
+    // Chrome: the project tab row on top, the notice row and the hint bar
+    // below. Both are rendered here, before any layout branch, so neither is
+    // lost to a fullscreen view mode — a tab row that vanished in fullscreen
+    // would strand the user with no indication of which project they are in.
     let rows = chrome_rows(frame.area());
     let (body_area, notice_area, hint_area) = (rows.body, rows.notice, rows.hint);
 
@@ -155,9 +152,9 @@ pub fn draw(
         notice_area,
     );
 
-    // The browser owns the body while it is open, ahead of every view-mode and
-    // fullscreen branch: the dialog already holds all the keys, so whatever
-    // those branches would draw is inert and would only hide the browse.
+    // The browser owns the body while it is open, ahead of every view-mode
+    // and fullscreen branch: the dialog already holds all the keys, so
+    // whatever those branches would draw is inert and would only hide it.
     if let Some(tree) = tabs.repo_input.picker.as_ref() {
         path_tree::render(frame, tree, body_area, accent);
         frame.render_widget(

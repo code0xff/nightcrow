@@ -38,8 +38,7 @@ impl DiffPane {
 
     /// Build the side-by-side row layout from the current hunks. Within each
     /// hunk, consecutive removed/added lines are paired index-by-index (the
-    /// shorter run padded with blank cells), and context lines are mirrored.
-    /// Cheap to recompute: it only walks line kinds and stores coordinates.
+    /// shorter run padded with blank cells) and context lines are mirrored.
     pub fn split_rows(&self) -> Vec<SplitRow> {
         let mut rows = Vec::new();
         for (hi, hunk) in self.hunks.iter().enumerate() {
@@ -111,8 +110,8 @@ impl DiffPane {
     /// over precomputed strings. `scroll_to_match=true` jumps the viewport to
     /// the current cursor's match (after a keystroke); `false` keeps the
     /// viewport pinned and re-anchors `cursor` to the nearest match (a
-    /// content-only refresh, e.g. a background snapshot tick while a query is
-    /// active, so the next `n`/`p` does not jump unexpectedly).
+    /// content-only refresh, e.g. a background snapshot tick, so the next
+    /// `n`/`p` does not jump unexpectedly).
     pub fn recompute_matches(&mut self, scroll_to_match: bool) {
         self.search.matches.clear();
         if self.search.query.is_empty() {
@@ -213,11 +212,10 @@ impl DiffPane {
     }
 
     /// Ensure `line_highlights` matches the current `hunks`, resolving the
-    /// syntax separately for each hunk from its `file_path`. A commit diff
-    /// can touch files of different types — using a single syntax for the
-    /// whole diff would render everything as the first file's language (or
-    /// plain text). Rebuilds when the cache shape, content size, or any
-    /// per-hunk syntax diverges.
+    /// syntax separately for each hunk from its `file_path`: a commit diff
+    /// can touch files of different types, and a single syntax would render
+    /// everything as the first file's language. Rebuilds when the cache
+    /// shape, content size, or any per-hunk syntax diverges.
     pub fn ensure_highlight_cache(
         &mut self,
         ss: &syntect::parsing::SyntaxSet,
@@ -251,9 +249,9 @@ impl DiffPane {
 
         use syntect::easy::HighlightLines;
         let theme = &ts.themes[DIFF_THEME];
-        // Reset the highlighter state pair whenever the hunk's syntax
-        // changes — running a JS hunk through a Rust HighlightLines would
-        // mis-paint stateful multi-line constructs.
+        // Reset the highlighter state pair whenever the hunk's syntax changes
+        // — a JS hunk through a Rust HighlightLines would mis-paint stateful
+        // multi-line constructs.
         let mut hl_pair: Option<(HighlightLines<'_>, HighlightLines<'_>)> = None;
         let mut current_syntax_name = String::new();
 

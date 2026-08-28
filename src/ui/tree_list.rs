@@ -1,8 +1,7 @@
 //! Renderer for the read-only file-tree navigator pane (`ViewMode::Tree`).
-//! Rows are derived from `TreeView::visible_rows`; each is indented by depth,
-//! prefixed with an expansion marker for directories, and horizontally
-//! scrollable via the shared `char_offset` helper (mirroring the file/commit
-//! lists).
+//! Rows come from `TreeView::visible_rows`, indented by depth, with an
+//! expansion marker for directories and shared `char_offset` horizontal
+//! scrolling.
 
 use crate::app::{App, Focus};
 use ratatui::{
@@ -13,9 +12,9 @@ use ratatui::{
     widgets::ListItem,
 };
 
-// VS Code-style chevrons rather than filled triangles: a thin right chevron
-// when collapsed, a down chevron when expanded. Each marker is two columns
-// wide (glyph + space), matching the file marker so names stay aligned.
+// VS Code-style thin chevrons rather than filled triangles; each marker is
+// two columns wide (glyph + space), matching the file marker so names stay
+// aligned.
 const EXPANDED_MARKER: &str = "⌄ ";
 const COLLAPSED_MARKER: &str = "› ";
 const FILE_MARKER: &str = "  ";
@@ -25,7 +24,7 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect, accent: Color) {
     let border_style = super::focused_border_style(focused, accent);
 
     // Reserve a bottom row for the search input whenever the overlay is open
-    // or a query is still showing, mirroring the status/commit list layout.
+    // or a query is still showing.
     let show_search = app.tree_view.search_active || !app.tree_view.search_query.is_empty();
     let (list_area, search_area) = if show_search {
         let chunks = Layout::default()
@@ -54,11 +53,9 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect, accent: Color) {
                 FILE_MARKER
             };
             let full = format!("{indent}{marker}{}", row.name);
-            // Scroll the whole rendered line (indent + marker + name) so long
-            // nested paths can be panned into view with ←/→ when focused.
             let shown = super::char_offset(&full, scroll_x).to_string();
-            // Directories take the accent color (and bold) so the structure
-            // reads at a glance; files render in the default foreground.
+            // Directories take the accent color so the structure reads at a
+            // glance; files render in the default foreground.
             let style = if row.is_dir {
                 Style::default().fg(accent).add_modifier(Modifier::BOLD)
             } else {

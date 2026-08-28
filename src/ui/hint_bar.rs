@@ -30,8 +30,7 @@ const CLICKABLE_PLAIN_KEYS: &str = "twslbfoxpruvzcn/";
 /// `q: detach` is held back so detaching stays a deliberate two-key act. The
 /// keys are listed rather than derived because nothing in the hint text tells
 /// a command apart from a navigation hint — a command added to `hint_text`
-/// stays silently unclickable until it is listed here. This list has already
-/// had that gap.
+/// stays silently unclickable until it is listed here.
 pub(crate) fn segment_click(keyspec: &str) -> Option<HintClick> {
     let spec = keyspec.trim();
     if spec == "<prefix>" {
@@ -81,9 +80,9 @@ pub(crate) fn hint_spans(text: &str, leader: &str, mark_clickable: bool) -> Vec<
                 .and_then(|(keyspec, _)| segment_click(keyspec))
                 .is_some();
         if clickable {
-            // Invert the whole segment — the entire label is the click target.
-            // Leading whitespace stays plain so the chip doesn't start with a
-            // stray block.
+            // Invert the whole segment — the entire label is the click target
+            // — but keep leading whitespace plain so the chip doesn't start
+            // with a stray block.
             let label_start = rendered.len() - rendered.trim_start().len();
             let (lead_ws, label) = rendered.split_at(label_start);
             if !lead_ws.is_empty() {
@@ -193,9 +192,9 @@ pub(crate) fn empty_hint_click_at(
         let rendered = segment.replace("<prefix>", leader_label);
         let width = Span::raw(rendered.as_str()).width() as u16;
         if x >= cursor && x < cursor + width {
-            // Same rules as `hint_click_at`: leading whitespace renders plain
-            // and so is not part of the target, and the key is the text before
-            // the colon.
+            // Same rules as `hint_spans`: leading whitespace renders plain and
+            // so is not part of the target, and the key is the text before the
+            // colon.
             let label_start = rendered.len() - rendered.trim_start().len();
             let lead_width = Span::raw(&rendered[..label_start]).width() as u16;
             if x < cursor + lead_width {

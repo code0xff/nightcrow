@@ -16,10 +16,9 @@ pub(crate) fn render_notice_row<'a>(
     accent: Color,
     width: u16,
 ) -> Paragraph<'a> {
-    // The open dialog takes the header's row whole: the header names the repo
-    // being left, the input names the one being opened. Notices follow the
-    // dialog down to the hint row (`repo_dialog_hint_line`) so nothing covers
-    // the path being typed.
+    // The dialog owns this row wholesale: the header names the repo being
+    // left, the input names the one being opened. Notices follow the dialog
+    // down to the hint row so nothing covers the path being typed.
     if repo_input.active {
         return Paragraph::new(crate::ui::repo_dialog::repo_input_line(
             repo_input, accent, width,
@@ -33,10 +32,8 @@ pub(crate) fn render_notice_row<'a>(
 
 /// The row's content when something wants to claim it: a notice first, then
 /// the repo dialog's completion candidates. `None` leaves the row to the
-/// caller's own fallback. A notice outranks the candidates because it explains
-/// a rejected action, and any edit clears it, so the two rarely compete.
-/// With a `repo_path` present the path is kept and the notice truncates
-/// with `…` when the pair exceeds `width`.
+/// caller's own fallback. A notice outranks the candidates because it
+/// explains a rejected action, and any edit clears it.
 pub(crate) fn notice_or_candidates<'a>(
     notice: Option<&'a Notice>,
     repo_input: &RepoInput,
@@ -64,8 +61,8 @@ pub(crate) fn notice_or_candidates<'a>(
             }
 
             let available = (width as usize).saturating_sub(path_width);
-            // One column is enough for the ellipsis alone: a notice cut to
-            // nothing must still say it was there, as `+N more` does.
+            // A notice cut to nothing must still say it was there, as `+N
+            // more` does — hence the ellipsis alone when only one column fits.
             if available == 0 {
                 return Some(Line::from(vec![Span::styled(path_str, path_style)]));
             }
@@ -90,16 +87,15 @@ pub(crate) fn notice_or_candidates<'a>(
 }
 
 /// Fit as many candidate names as the row holds, reporting the rest as
-/// `+N more`. The row is one line, so a long list has to be cut somewhere and
-/// dropping the tail silently would read as "that is all there is".
+/// `+N more`: dropping the tail silently would read as "that is all there is".
 fn candidate_line(candidates: &[String], width: u16) -> String {
     let width = width as usize;
     let mut line = String::new();
     let mut shown = 0;
     for name in candidates {
         let next = format!("{}{name}", if shown == 0 { " " } else { CANDIDATE_GAP });
-        // Reserve room for the count this name would push into the overflow, so
-        // the last name placed can never crowd out its own `+N more`.
+        // Reserve room for the `+N more` this name would push into, so the
+        // last name placed can never crowd out its own overflow label.
         let overflow = overflow_label(candidates.len() - shown - 1);
         if Span::raw(&line).width() + Span::raw(&next).width() + Span::raw(&overflow).width()
             > width
@@ -121,11 +117,10 @@ fn overflow_label(remaining: usize) -> String {
 }
 
 /// Truncate `text` to fit within `max_width` columns, appending `…` when cut.
-///
 /// Width is summed per character, so a sequence whose width is not the sum of
-/// its parts — a variation selector, a combining mark — can come out a column
-/// over. Re-measuring after each character would make this row quadratic in
-/// its own width on every frame, for a column the terminal clips anyway.
+/// its parts (a variation selector, a combining mark) can come out a column
+/// over — re-measuring per character would make this quadratic per frame for
+/// a column the terminal clips anyway.
 fn truncate_with_ellipsis(text: &str, max_width: usize) -> String {
     if Span::raw(text).width() <= max_width {
         return text.to_string();
@@ -156,20 +151,17 @@ fn truncate_with_ellipsis(text: &str, max_width: usize) -> String {
 const BRANCH_NAME_SHARE: usize = 2;
 
 /// The path and the branch as the row can hold them, cut with `…` rather than
-/// pushed off the end. Both give way before the counts behind them, because
-/// those counts do not: a name at full length would take the row from `↑N ↓M`
-/// and the recovery chip, the part of this row that is news. The branch is
-/// held to half of `budget` so a long one does not take the path's place
-/// entirely, and dropped when half is nothing — an ellipsis alone names no
-/// branch.
+/// pushed off the end. Both give way before the counts behind them, which are
+/// the news on this row. The branch is held to half of `budget` so a long one
+/// does not take the path's place entirely, and dropped when half is nothing —
+/// an ellipsis alone names no branch.
 pub(crate) fn fit_names(
     path: &str,
     branch: Option<&str>,
     budget: usize,
 ) -> (String, Option<String>) {
-    // Nothing left is nothing shown. `truncate_with_ellipsis` never returns
-    // less than the ellipsis, which on a row this full is a column taken from
-    // the chip it was making room for.
+    // Nothing left is nothing shown: the ellipsis `truncate_with_ellipsis`
+    // always returns would take a column from the chip it was making room for.
     if budget == 0 {
         return (String::new(), None);
     }
@@ -194,8 +186,6 @@ pub(crate) fn render_repo_header<'a>(app: &'a App, accent: Color, width: u16) ->
         .filter(|t| t.ahead > 0 || t.behind > 0)
         .map(|t| format!(" ^{} v{} ", t.ahead, t.behind));
     let chip = recovery_chip(app);
-    // The counts and the chip keep their room: each is short, and each says
-    // something no other row does.
     let kept: usize = [tracking.as_deref(), chip.as_deref()]
         .into_iter()
         .flatten()
@@ -236,8 +226,7 @@ pub(crate) fn render_repo_header<'a>(app: &'a App, accent: Color, width: u16) ->
 /// The full recovery report as one chip, on this row rather than a row of its
 /// own for the reason the notices are: a row that appears and disappears
 /// resizes every open PTY. It is the last chip, so an actual notice still
-/// covers the whole line — a rejected action needs explaining more than a
-/// wait does. The pane it describes is the one `<leader> c` would cancel.
+/// covers the whole line.
 fn recovery_chip(app: &App) -> Option<String> {
     let (pane, report) = app.terminal.recovery_focus()?;
     let mut chip = format!(" pane {pane}: {}", report.state);

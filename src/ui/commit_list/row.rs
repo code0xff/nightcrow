@@ -15,7 +15,7 @@ const SECS_PER_YEAR: i64 = SECS_PER_DAY * 365;
 /// Terminal width at which the row switches to absolute time, full author, and
 /// untruncated ref chips. A width rule rather than the `list_fullscreen` flag:
 /// a wide monitor has the room outside fullscreen too, and it keeps the
-/// decision to one threshold — the same shape as `diff_viewer::MIN_SPLIT_WIDTH`.
+/// decision to one threshold.
 pub(super) const MIN_DETAIL_WIDTH: u16 = 120;
 
 const AUTHOR_WIDTH: usize = 10;
@@ -128,8 +128,8 @@ pub(super) fn commit_row<'a>(
     spans.push(Span::styled(format!("{id} "), Style::default().fg(accent)));
 
     if wide {
-        // A timestamp the platform cannot place renders as blanks rather than a
-        // wrong date, keeping the column aligned. Same contract as `wall_clock`.
+        // A timestamp the platform cannot place renders as blanks rather than
+        // a wrong date, keeping the column aligned.
         let stamp = local_date_time(entry.time).unwrap_or_else(|| " ".repeat(16));
         spans.push(Span::styled(
             format!("{stamp} "),

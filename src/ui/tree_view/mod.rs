@@ -1,7 +1,6 @@
 //! File-tree navigator state (`ViewMode::Tree`). The visible row list is
-//! derived from a cache + expansion set so the two can never drift. All
-//! directory I/O lives in `App`; this module is pure given a populated cache,
-//! keeping the flattening logic unit-testable without a filesystem.
+//! derived from a cache + expansion set so the two can never drift; all
+//! directory I/O lives in `App`, keeping this module pure and unit-testable.
 
 use crate::git::tree::TreeEntry;
 use crate::ui::SearchQuery;
@@ -28,7 +27,6 @@ pub(crate) struct TreeIndexEntry {
 #[derive(Default)]
 pub struct TreeView {
     pub selected: usize,
-    /// Horizontal scroll offset (chars).
     pub scroll_x: usize,
     /// Repo-relative expanded directory paths. The root (`""`) is implicitly
     /// expanded and never stored here.
@@ -68,8 +66,8 @@ impl TreeView {
     /// renders an unbroken path from the root to each hit.
     pub(crate) fn recompute_filter(&mut self) {
         // Collect matches under an immutable borrow first, then mutate the
-        // show-set — `index` and `show_set` are disjoint fields but both
-        // borrow `self`, so they can't be touched in the same loop.
+        // show-set — `index` and `show_set` both borrow `self`, so they can't
+        // be touched in the same loop.
         let matches: Vec<String> = {
             let q = self.search_query.lower();
             if q.is_empty() {

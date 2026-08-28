@@ -26,12 +26,8 @@ use title::unified_title;
 
 /// Minimum pane width (columns) for the side-by-side split layout. Below this
 /// each half is too narrow to read, so `Split` view falls back to the unified
-/// diff renderer.
-///
-/// Derived: 80 columns used to leave each half ~38 columns of code, and each
-/// half now spends `side_gutter_width(MIN_LINENO_DIGITS)` = 5 of them on its
-/// line-number gutter. Raising the threshold by both gutters keeps the same
-/// readable code width per side rather than silently shrinking it.
+/// renderer. Raised from 80 by both gutters to keep the readable code width
+/// per side rather than silently shrinking it.
 const MIN_SPLIT_WIDTH: u16 = 90;
 
 pub(crate) fn rgb_to_color(rgb: (u8, u8, u8)) -> Color {
@@ -76,8 +72,8 @@ pub fn render(
     let focused = app.focus == Focus::DiffViewer;
     let border_style = focused_border_style(focused, accent);
 
-    // Build the syntect highlight cache once per (hunks × per-hunk syntax)
-    // so the visible-window walk below stays bounded even on large diffs.
+    // Build the syntect highlight cache once per (hunks × per-hunk syntax) so
+    // the visible-window walk stays bounded even on large diffs.
     app.diff.ensure_highlight_cache(ss, ts);
 
     let current_match = app.diff.search.current_match();
@@ -96,7 +92,7 @@ pub fn render(
     // Gutter width is a property of the whole loaded diff, not of the visible
     // window, so the body's left edge stays put while scrolling. With no diff
     // loaded the pane holds only a placeholder message, which has no line to
-    // number — reserving the column there would just indent the message.
+    // number.
     let digits = lineno_digits(&app.diff.hunks);
     let gutter_width = if total_lines == 0 {
         0
@@ -161,9 +157,9 @@ pub fn render(
                 Style::default().fg(Color::DarkGray).bg(bg),
             )];
 
-            // Read from the prebuilt highlight cache. Shape is guaranteed to
-            // match `hunks` after `ensure_highlight_cache`; treat any
-            // mismatch as a fallback path that just renders the raw text.
+            // Read from the prebuilt highlight cache; the shape is guaranteed
+            // to match `hunks` after `ensure_highlight_cache`, so a mismatch
+            // only hits the fallback that renders the raw text.
             if let Some(segs) = app.diff.line_highlights.get(hi).and_then(|hh| hh.get(li)) {
                 for seg in segs {
                     spans.push(Span::styled(
@@ -205,10 +201,12 @@ pub fn render(
                     "No diff for selected file"
                 }
             }
-            // Tree mode renders the file overlay, not the unified diff, so
-            // this message is only reachable if the diff view is forced open
-            // with no file selected.
-            ViewMode::Tree => "Select a file to preview",
+            ViewMode::Tree => {
+                // Tree mode renders the file overlay, not the unified diff, so
+                // this message is only reachable when the diff view is forced
+                // open with no file selected.
+                "Select a file to preview"
+            }
         };
         lines.push(Line::from(Span::styled(
             msg,

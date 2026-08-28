@@ -14,7 +14,7 @@ pub struct StatusView {
     /// Indices into `files` matching `search_query`. Recomputed only when
     /// `files` or the query changes (see `App::recompute_status_filter`).
     pub(crate) filter_cache: Vec<usize>,
-    /// Per-file mtime observed at the latest snapshot, keyed by `path`. Used
+    /// Per-file mtime observed at the latest snapshot, keyed by `path`, used
     /// by the agent-aware focus indicator to decide whether a file is "hot".
     /// Entries for paths missing from the latest snapshot are dropped each
     /// tick so the map stays bounded by the working-tree change count.

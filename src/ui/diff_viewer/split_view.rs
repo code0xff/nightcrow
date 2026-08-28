@@ -27,11 +27,9 @@ pub(crate) fn render_split_view(
     let visible_height = (area.height as usize).saturating_sub(2);
     let max_scroll = rows.len().saturating_sub(1);
     let scroll_start = app.diff.scroll.min(max_scroll);
-    // Pin the shared scroll cursor to what this layout can actually show. The
+    // Pin the shared scroll cursor to what this layout can actually show: the
     // split layout is shorter than the unified flat-row count (paired changes
-    // collapse onto one row), and navigation clamps against the unified max —
-    // writing the clamped value back keeps `k`/pgup responsive immediately
-    // after bottoming out instead of unwinding phantom rows.
+    // collapse onto one row), and navigation clamps against the unified max.
     app.diff.scroll = scroll_start;
     let scroll_end = scroll_start.saturating_add(visible_height).min(rows.len());
 
@@ -96,8 +94,8 @@ pub(crate) fn render_split_view(
         left_gutter,
         left_lines,
         scroll_x,
-        // Wrapping is deliberately ignored here: halves that fold to different
-        // heights stop lining up, and lining up is what this layout is for.
+        // Wrapping is deliberately ignored here: halves that fold to
+        // different heights stop lining up, and lining up is the point.
         false,
     );
 
@@ -129,10 +127,8 @@ enum Side {
 /// Build one side's gutter and body `Line` for a split body row, as
 /// `(gutter, body)`. `None` (no counterpart line on this side) renders both as
 /// blank; otherwise the cell is styled by line kind and reuses the prebuilt
-/// highlight cache, mirroring the unified renderer's per-line treatment.
-///
-/// Both lines come from one lookup so they cannot disagree about which
-/// `DiffLine` the row is showing.
+/// highlight cache, mirroring the unified renderer. Both lines come from one
+/// lookup so they cannot disagree about which `DiffLine` the row is showing.
 fn split_side_lines<'a>(
     app: &'a App,
     cell: Option<(usize, usize)>,

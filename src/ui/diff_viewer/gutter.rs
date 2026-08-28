@@ -30,14 +30,12 @@ pub(crate) fn digits_for(max_lineno: usize) -> usize {
 /// Gutter digit count for a whole loaded diff: the widest line number that
 /// appears on either side of any hunk. Derived from the loaded hunks, never
 /// from the visible window, so scrolling cannot change the gutter width.
-/// Recomputed per frame instead of cached: it is one allocation-free pass
-/// over the same lines `ensure_highlight_cache` already walks.
+/// Recomputed per frame instead of cached: one allocation-free pass over the
+/// same lines `ensure_highlight_cache` already walks.
 pub(crate) fn lineno_digits(hunks: &[DiffHunk]) -> usize {
     let max = hunks
         .iter()
         .flat_map(|h| h.lines.iter())
-        // `Option::max` picks the larger `Some`; both `None` only on fixtures
-        // and the synthetic binary hunk, which then fall back to the minimum.
         .filter_map(|l| l.old_lineno.max(l.new_lineno))
         .max()
         .unwrap_or(0);

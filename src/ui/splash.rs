@@ -76,7 +76,7 @@ pub fn draw(frame: &mut Frame, state: &SplashState, accent: Color) {
         ])
         .split(outer[1]);
 
-    // Logo — brighten as loading completes
+    // Brighten the logo as loading completes.
     let progress = state.progress();
     let logo_style = if progress < 0.5 {
         Style::default().fg(accent).add_modifier(Modifier::DIM)

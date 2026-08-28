@@ -21,8 +21,8 @@ pub(crate) struct VisiblePaneCell {
 /// Lay out every currently visible pane inside `content_area` (the terminal
 /// body, below the tab row). Single source of truth for pane sizing: `render`
 /// draws from it and `visible_pane_content_areas` (used to resize each pane's
-/// PTY) reads from it, so a pane's backend/emulator size always matches what's
-/// actually drawn on screen.
+/// PTY) reads from it, so a pane's backend/emulator size always matches what
+/// is drawn on screen.
 pub(crate) fn visible_pane_cells(app: &App, content_area: Rect) -> Vec<VisiblePaneCell> {
     let pane_count = app.terminal.panes.len();
     let visible = visible_range(

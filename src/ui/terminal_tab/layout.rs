@@ -22,9 +22,9 @@ pub(crate) const TAB_TITLE_MAX_CHARS: usize = 20;
 pub(crate) const JUMP_KEY_PANE_COUNT: usize = MAX_VISIBLE_FULLSCREEN;
 
 /// Truncate `title` to at most `max` characters, appending `…` when cut.
-/// Char-based (not display-width) for simplicity: ASCII shell program names
-/// are the common case and `chars().count()` is already correct there. CJK
-/// titles render slightly under the visual budget, which is acceptable.
+/// Char-based (not display-width): ASCII shell program names are the common
+/// case, and CJK titles render slightly under the visual budget, which is
+/// acceptable.
 pub(crate) fn truncate_tab_title(title: &str, max: usize) -> String {
     if title.chars().count() <= max {
         return title.to_string();
@@ -48,13 +48,11 @@ pub(crate) fn terminal_layout(area: Rect) -> Option<(Rect, Rect)> {
     Some((chunks[0], chunks[1]))
 }
 
-/// Split `area` into `count` cells using a balanced grid: 1 pane fills the
-/// area; 2 panes go side by side when `area` is wide, stacked otherwise; 3
-/// panes get a 2-column row plus a full-width remainder row; 4 is a 2x2 grid;
-/// 5-6 use 3 columns; 7 uses a 4-then-3 row split; 8 is a 2x4 grid. Counts
-/// beyond that (not expected given `MAX_VISIBLE_FULLSCREEN`) fall back to a
-/// near-square grid. Every returned Rect has at least 1x1 size when `area`
-/// is at least `count` cells large, so no cell silently disappears.
+/// Split `area` into `count` cells using a balanced grid: 2 panes go side by
+/// side when the area is wide, stacked otherwise; 3-8 panes get fixed layouts
+/// (2x2, 3-col, 4-then-3, 2x4); counts beyond that fall back to a near-square
+/// grid. Every returned Rect has at least 1x1 size when `area` is at least
+/// `count` cells large, so no cell silently disappears.
 pub(crate) fn split_pane_areas(area: Rect, count: usize) -> Vec<Rect> {
     if count == 0 || area.width == 0 || area.height == 0 {
         return Vec::new();

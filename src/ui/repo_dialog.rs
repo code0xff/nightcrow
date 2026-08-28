@@ -11,13 +11,10 @@ use ratatui::{
 
 /// The dialog's input line. Drawn on the notice row, in the repo header's
 /// place: the header names the repo being left, the input names the one being
-/// opened, and only one of those is being decided right now. Owning a whole
-/// row means the path never has to compete with the key legend, which sits on
-/// the hint row below (`repo_dialog_hint_line`).
-///
-/// A path longer than the row is shown from its tail behind a leading `…` —
-/// the caret marks where typing lands, so it is the end that must survive.
-/// `width` is the row's; 0 means "unknown", which keeps the whole path.
+/// opened, and only one of those is being decided right now. A path longer
+/// than the row is shown from its tail behind a leading `…` — the caret marks
+/// where typing lands, so it is the end that must survive. `width` is the
+/// row's; 0 means "unknown", which keeps the whole path.
 pub(crate) fn repo_input_line<'a>(
     repo_input: &'a RepoInput,
     accent: Color,

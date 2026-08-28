@@ -20,9 +20,6 @@ pub(crate) fn render_file_view(
 ) {
     let focused = app.focus == Focus::DiffViewer;
     let border_style = super::focused_border_style(focused, accent);
-    // file_view backs a single file by definition, so its key carries the
-    // path. Status overlays use the workdir path; commit overlays use the
-    // path inside the commit.
     let file_path: &str = match &app.diff.file_view.key {
         Some(crate::app::FileViewKey::Status(p)) => p.as_str(),
         Some(crate::app::FileViewKey::Commit { path, .. }) => path.as_str(),
@@ -82,13 +79,12 @@ pub(crate) fn render_file_view(
         app.diff.file_view.ensure_highlight_cache(ss, ts, syntax);
         let fv = &app.diff.file_view;
         let total = fv.line_count();
-        // Same floor as the diff gutters, so switching between `v` and the diff
-        // view does not shift the body's left edge.
+        // Same floor as the diff gutters, so switching between `v` and the
+        // diff view does not shift the body's left edge.
         let digits = super::gutter::digits_for(total);
         gutter_width = super::gutter::side_gutter_width(digits);
-        // Belt-and-braces: ensure_highlight_cache keeps line_highlights
-        // aligned with content.lines().count(), but if that invariant ever
-        // slips the slice below would panic. Clamp against the cache length.
+        // Belt-and-braces: if the highlight-cache invariant ever slips, the
+        // slice below would panic — clamp against the cache length.
         let max_scroll = total
             .saturating_sub(1)
             .min(fv.line_highlights.len().saturating_sub(1));
@@ -115,9 +111,8 @@ pub(crate) fn render_file_view(
                 } else {
                     Color::Reset
                 };
-                // The number lives in its own paragraph so horizontal scrolling
-                // cannot slide it off the left edge, which is what used to
-                // happen while it shared the body's paragraph.
+                // The number lives in its own paragraph so horizontal
+                // scrolling cannot slide it off the left edge.
                 gutter_lines.push(Line::from(Span::styled(
                     super::gutter::side_gutter_text(Some(line_no as u32), digits),
                     Style::default().fg(Color::DarkGray).bg(bg),

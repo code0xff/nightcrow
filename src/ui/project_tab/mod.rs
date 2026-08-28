@@ -12,8 +12,7 @@ use std::time::Duration;
 
 /// Per-tab character budget for the project name. The viewer's tab row applies
 /// the same budget by the same rule (`viewer-ui/src/lib/tabLabel.ts`), so a
-/// project is called the same thing on both screens — widening one without the
-/// other is how they come to disagree.
+/// project is called the same thing on both screens.
 const TAB_TITLE_MAX_CHARS: usize = 14;
 
 const MARKER_WIDTH: u16 = 4;
@@ -74,9 +73,8 @@ fn tab_texts(repo_paths: &[String], attention: &[bool]) -> Vec<String> {
 
 /// The run of tabs to draw in `width` cells, always containing `active`.
 /// A `Paragraph` would silently clip the tail — hiding later projects *and*
-/// the active-tab highlight when the active one falls off the end — so the
-/// row scrolls around the active tab and drops what doesn't fit into `+N`
-/// markers whose width is reserved here before deciding what fits.
+/// the active-tab highlight — so the row scrolls around the active tab and
+/// drops what doesn't fit into `+N` markers whose width is reserved first.
 fn visible_window(widths: &[u16], width: u16, active: usize) -> std::ops::Range<usize> {
     let n = widths.len();
     if n == 0 {
@@ -93,7 +91,7 @@ fn visible_window(widths: &[u16], width: u16, active: usize) -> std::ops::Range<
         used.saturating_add(markers * MARKER_WIDTH) <= width
     };
 
-    // Grow right first, then left. Right-first keeps the common case (active
+    // Grow right first, then left: right-first keeps the common case (active
     // near the front) showing the projects that follow it.
     loop {
         let mut grew = false;
@@ -231,8 +229,8 @@ pub(crate) fn tab_at(
     y: u16,
 ) -> Option<usize> {
     // On a terminal too short for the full chrome, ratatui hands the fixed tab
-    // constraint a zero-height Rect and nothing is drawn. Without the size
-    // check a click on whatever *is* visible at that y would select tab 0.
+    // constraint a zero-height Rect and nothing is drawn; without the size
+    // check a click on whatever is visible at that y would select tab 0.
     if area.height == 0 || area.width == 0 || y != area.y || x < area.x {
         return None;
     }
