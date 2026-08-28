@@ -65,6 +65,54 @@ fn status_restore_from_first_snapshot_applies_scroll_after_async_diff() {
 }
 
 #[test]
+fn status_restore_scroll_survives_same_target_snapshot_replacement() {
+    let (_dir, path) = repo_with_scrolled_diff();
+    let mut app = app_with_files(vec![]);
+    app.git.repo_path = path;
+    app.restore_session(&crate::workspace::persistence::SessionState {
+        selected_file: Some("a.rs".to_string()),
+        scroll: 7,
+        ..Default::default()
+    });
+
+    app.ingest_snapshot(
+        RepoSnapshot {
+            files: vec![ChangedFile::unstaged_only(
+                "a.rs".to_string(),
+                StatusKind::Modified,
+            )],
+            tracking: None,
+            head_oid: None,
+            branch_name: None,
+            refs_fingerprint: 0,
+        },
+        HashMap::from([(
+            "a.rs".to_string(),
+            SystemTime::UNIX_EPOCH + Duration::from_secs(1),
+        )]),
+    );
+    app.ingest_snapshot(
+        RepoSnapshot {
+            files: vec![ChangedFile::unstaged_only(
+                "a.rs".to_string(),
+                StatusKind::TypeChanged,
+            )],
+            tracking: None,
+            head_oid: None,
+            branch_name: None,
+            refs_fingerprint: 0,
+        },
+        HashMap::from([(
+            "a.rs".to_string(),
+            SystemTime::UNIX_EPOCH + Duration::from_secs(2),
+        )]),
+    );
+    app.flush_git_loads_for_test(Duration::from_secs(2));
+
+    assert_eq!(app.git.view.diff.scroll, 7);
+}
+
+#[test]
 fn toggle_mode_in_list_fullscreen_keeps_list_fullscreen() {
     let mut app = app_with_files(vec![]);
     seed_cached_commit_log(&mut app);

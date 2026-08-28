@@ -30,6 +30,7 @@ pub(crate) struct RedrawState {
     screen: Option<(u16, u16)>,
     attention_phase: Option<bool>,
     caret_phase: Option<bool>,
+    hot_observed: bool,
     hot_deadline: Option<SystemTime>,
 }
 
@@ -70,11 +71,21 @@ impl RedrawState {
 
     /// Schedule the next hot-file style transition without adding a periodic
     /// frame clock. A crossed deadline dirties one frame; the caller then
-    /// supplies the following deadline calculated from the same clock.
+    /// supplies the following deadline calculated from the same clock. A
+    /// newly reachable or earlier deadline after the first observation means
+    /// the wall clock moved back across a rendered stage, so repaint once to
+    /// synchronize that stage too.
     pub(crate) fn observe_hot_deadline(&mut self, next: Option<SystemTime>, now: SystemTime) {
         let crossed = self.hot_deadline.is_some_and(|deadline| now >= deadline);
+        let rolled_back = self.hot_observed
+            && match (self.hot_deadline, next) {
+                (None, Some(_)) => true,
+                (Some(previous), Some(next)) => next < previous,
+                _ => false,
+            };
+        self.hot_observed = true;
         self.hot_deadline = next;
-        if crossed {
+        if crossed || rolled_back {
             self.request(RedrawCause::HotFile);
         }
     }
@@ -181,5 +192,38 @@ mod tests {
         assert!(state.take());
         state.observe_hot_deadline(None, warm_to_cool);
         assert!(!state.take());
+    }
+
+    #[test]
+    fn hot_deadline_rollback_from_cool_to_fresh_dirties_exactly_once() {
+        let mut state = RedrawState::new();
+        state.take();
+        let cool_now = SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(120);
+        let rolled_back_now = SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(100);
+        let fresh_to_warm = SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(105);
+
+        state.observe_hot_deadline(None, cool_now);
+        assert!(!state.take());
+        state.observe_hot_deadline(Some(fresh_to_warm), rolled_back_now);
+        assert!(state.take(), "cool-to-fresh rollback must repaint");
+        state.observe_hot_deadline(Some(fresh_to_warm), rolled_back_now);
+        assert!(!state.take(), "the synchronized phase must stay idle");
+    }
+
+    #[test]
+    fn hot_deadline_rollback_from_warm_to_fresh_dirties_exactly_once() {
+        let mut state = RedrawState::new();
+        state.take();
+        let warm_now = SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(110);
+        let warm_to_cool = SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(115);
+        let rolled_back_now = SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(102);
+        let fresh_to_warm = SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(105);
+
+        state.observe_hot_deadline(Some(warm_to_cool), warm_now);
+        assert!(!state.take());
+        state.observe_hot_deadline(Some(fresh_to_warm), rolled_back_now);
+        assert!(state.take(), "warm-to-fresh rollback must repaint");
+        state.observe_hot_deadline(Some(fresh_to_warm), rolled_back_now);
+        assert!(!state.take(), "the synchronized phase must stay idle");
     }
 }

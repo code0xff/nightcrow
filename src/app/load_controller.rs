@@ -1,7 +1,7 @@
 use crate::git::diff::{GitLoadOperation, GitLoadRequest, GitLoadWorker, LoadLane};
 use crate::ui::file_view::FileViewKey;
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq, Eq)]
 pub(crate) enum DiffTarget {
     Status(String),
     Commit(git2::Oid),
@@ -21,7 +21,7 @@ impl DiffTarget {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq, Eq)]
 pub(crate) enum DiffLoadMode {
     Reset,
     KeepScroll(usize),
@@ -87,6 +87,11 @@ impl LoadController {
     }
 
     pub(crate) fn request_diff(&mut self, repo: &str, target: DiffTarget, mode: DiffLoadMode) {
+        let restore_scroll = self
+            .diff
+            .as_ref()
+            .filter(|intent| intent.repo == repo && intent.target == target && intent.mode == mode)
+            .and_then(|intent| intent.restore_scroll);
         let generation = self.generation();
         let operation = target.operation();
         self.diff = Some(DiffIntent {
@@ -94,7 +99,7 @@ impl LoadController {
             repo: repo.to_string(),
             target,
             mode,
-            restore_scroll: None,
+            restore_scroll,
         });
         self.worker.submit(GitLoadRequest {
             repo: repo.to_string(),
