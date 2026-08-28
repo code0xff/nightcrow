@@ -23,13 +23,11 @@ const ATTACH_RETRY_MS = 2000;
  * The request that starts a clone returns immediately with a job id, because
  * the transfer outlives any request a browser will hold open. Polling — rather
  * than a stream — keeps this on the same self-healing footing as the rest of
- * the viewer: a phone that suspends mid-clone simply resumes polling, and the
- * clone itself never depended on the connection staying up.
+ * the viewer: a phone that suspends mid-clone simply resumes polling.
  *
  * Call this *above* the folder picker. The picker only chooses where the clone
  * lands; the job outlives the dialog, so an observer that unmounts with it
- * would abandon a clone that is still running — no toast, no repository
- * opened, and no way to reattach on reopening.
+ * would abandon a clone that is still running.
  *
  * `enabled` gates the attach on being signed in: the probe is an API call, and
  * asking before the session exists only earns a 401.
@@ -61,11 +59,10 @@ export function useClone(onOpened: (repo: Repo) => void, enabled: boolean) {
           // both have to be told apart from a dropped request — retrying
           // either would spin forever with the form stuck on "Cloning…".
           if (isUnauthorized(err)) {
-            // The session ended under us — expiry, or a server restart. This
-            // is terminal, not a hiccup: retrying would spin at a request a
-            // second behind the login screen with the header stuck on
-            // "Cloning…". Signing back in flips `enabled` and the attach
-            // probe finds the job again if it is still running.
+            // The session ended under us. Terminal, not a hiccup: retrying
+            // would spin at a request a second behind the login screen with
+            // the header stuck on "Cloning…". Signing back in flips `enabled`
+            // and the attach probe finds the job again if it is still running.
             busyRef.current = false;
             // Same cancellation contract as the paths below.
             if (!cancelled.current) setBusy(false);
@@ -123,17 +120,16 @@ export function useClone(onOpened: (repo: Repo) => void, enabled: boolean) {
   );
 
   // Adopt a clone this page never started. The job id lives only in the tab
-  // that started it, so a reload — or a phone that dropped the tab mid-
-  // transfer — would otherwise leave the clone running with nobody watching,
-  // and the only sign of it would be the 409 refusing the next one.
+  // that started it, so a reload — or a phone that dropped the tab mid-transfer
+  // — would otherwise leave the clone running with nobody watching.
   const attach = useCallback(
     async (isStale: () => boolean = () => false) => {
-      // Retried, because a probe that fails is not an answer. "The next page
-      // load will find it" does not hold: the server reports only a *running*
-      // job, so a clone that finishes before then becomes invisible and its
-      // repository is never opened. A dropped probe is also exactly what the
-      // one after a failed start is up against — the blip that lost the start
-      // response tends to take the probe with it.
+      // Retried, because a probe that fails is not an answer: the server
+      // reports only a *running* job, so a clone that finishes before the
+      // next page load becomes invisible and its repository is never opened.
+      // A dropped probe is also exactly what the one after a failed start is
+      // up against — the blip that lost the start response tends to take the
+      // probe with it.
       for (let attempt = 0; attempt < ATTACH_ATTEMPTS; attempt++) {
         if (attempt > 0) {
           await new Promise((r) => setTimeout(r, ATTACH_RETRY_MS));
@@ -185,14 +181,12 @@ export function useClone(onOpened: (repo: Repo) => void, enabled: boolean) {
         busyRef.current = false;
         if (cancelled.current) return;
         // Only a refusal is a failure. The server starts the clone before it
-        // replies, so anything that goes wrong from the answer onwards — the
-        // connection dropping, a truncated body, a protocol mismatch on an
-        // otherwise fine 200 — leaves a clone that may well be running. Saying
-        // it failed sends the user to retry into a "folder already exists"
-        // they cannot account for. The probe below catches it if it is still
-        // going; this message is for the clone short enough to have finished
-        // first, whose id is gone because the server reports only a running
-        // job.
+        // replies, so anything that goes wrong from the answer onwards leaves
+        // a clone that may well be running — saying it failed sends the user
+        // to retry into a "folder already exists" they cannot account for.
+        // The probe below catches it if it is still going; this message is
+        // for the clone short enough to have finished first, whose id is gone
+        // because the server reports only a running job.
         const refused = err instanceof ApiError && err.status >= 400;
         toast.error(
           refused
@@ -202,11 +196,9 @@ export function useClone(onOpened: (repo: Repo) => void, enabled: boolean) {
         setBusy(false);
         // Probe again. Holding `busyRef` across this request made the attach
         // probe skip whatever was already running, and a refusal is often
-        // *because* something is — that is what the 409 says. A request that
-        // failed on the way back rather than on the way out leaves a job
-        // running too. Either way this page would otherwise never learn of
-        // it: the effect's dependencies have not changed, so nothing looks
-        // again.
+        // *because* something is. Either way this page would otherwise never
+        // learn of it: the effect's dependencies have not changed, so nothing
+        // looks again.
         void attach();
       }
     },

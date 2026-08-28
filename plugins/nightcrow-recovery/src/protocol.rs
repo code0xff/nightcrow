@@ -1,10 +1,10 @@
 //! The plugin's side of nightcrow's NDJSON plugin contract.
 //!
 //! Deliberately a standalone copy of the host's `src/plugin/protocol.rs` rather
-//! than a shared crate: a plugin is built and shipped separately from the host,
-//! so it is written against a *version* of the contract. [`PROTOCOL_VERSION`]
-//! is what makes a mismatch loud instead of half-understood, and a copy is what
-//! makes the version claim honest.
+//! than a shared crate: a plugin is built and shipped separately from the
+//! host, so it is written against a *version* of the contract.
+//! [`PROTOCOL_VERSION`] is what makes a mismatch loud instead of
+//! half-understood, and a copy is what makes the version claim honest.
 
 use serde::{Deserialize, Serialize};
 
@@ -30,8 +30,8 @@ pub type PaneToken = String;
 pub type PaneGeneration = u32;
 
 /// Env var carrying the pane token into the pane's child processes, and hence
-/// into a provider CLI's hook and statusline helpers. That inheritance is how an
-/// out-of-band signal is attributed to a pane; cwd cannot do it, because
+/// into a provider CLI's hook and statusline helpers. That inheritance is how
+/// an out-of-band signal is attributed to a pane; cwd cannot do it, because
 /// nightcrow allows several panes on one repository.
 pub const PANE_TOKEN_ENV: &str = "NIGHTCROW_PANE_TOKEN";
 

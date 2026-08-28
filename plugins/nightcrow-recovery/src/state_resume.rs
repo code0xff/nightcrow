@@ -3,10 +3,10 @@
 //! Split out of `state.rs` to keep each file readable: `state.rs` owns time and
 //! transitions, this owns the one moment the plugin actually asks for something.
 //!
-//! Everything here is written on the assumption that the host will refuse. A
-//! refusal costs an attempt and nothing else, so the checks below exist to avoid
-//! wasting attempts on requests that are obviously going to be rejected — not to
-//! be the safety boundary. That boundary is the host's.
+//! Everything here assumes the host will refuse: a refusal costs an attempt and
+//! nothing else, so the checks below exist to avoid wasting attempts on
+//! requests that are obviously going to be rejected — not to be the safety
+//! boundary. That boundary is the host's.
 
 use super::{MAX_RESUME_ATTEMPTS, PaneRecovery, RecoveryState};
 use crate::protocol::{MAX_INPUT_BYTES, PROTOCOL_VERSION, PluginCommand};

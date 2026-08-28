@@ -108,10 +108,9 @@ export function FilePane({
         top: container.scrollTop,
         // Sideways as far as this container owns it, which is the unified
         // view — its rows are `w-max` inside this scroller. A split column
-        // scrolls itself (`overflow-x-auto` per half), and that offset is not
-        // kept: restoring it means addressing each column across a remount, for
-        // a position that matters far less than how far down the reader had
-        // got.
+        // scrolls itself, and that offset is not kept: restoring it means
+        // addressing each column across a remount, for a position that
+        // matters far less than how far down the reader had got.
         left: container.scrollLeft,
       };
     }

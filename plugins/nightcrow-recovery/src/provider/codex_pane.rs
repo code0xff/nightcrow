@@ -1,6 +1,6 @@
-//! Per-pane, per-generation state for the codex adapter: which rollout file this
-//! pane's session is writing, how far into it we have read, and the tail of
-//! terminal output kept for the fallback needle match.
+//! Per-pane, per-generation state for the codex adapter: which rollout file
+//! this pane's session is writing, how far into it we have read, and the tail
+//! of terminal output kept for the fallback needle match.
 //!
 //! Split out of `codex.rs` to keep both files inside the project's 300-line
 //! limit; `codex.rs` keeps the `Provider` contract and this file keeps the
@@ -55,9 +55,10 @@ pub(super) struct PaneState {
     pending: Vec<u8>,
     session_id: Option<String>,
     resets_at: Option<i64>,
-    /// Which window codex reported as reached. Parsed because the record is seen
-    /// only once, but kept out of `detail`, which carries `codex_error_info`
-    /// alone so no other provider-side string can widen what this plugin says.
+    /// Which window codex reported as reached. Parsed because the record is
+    /// seen only once, but kept out of `detail`, which carries
+    /// `codex_error_info` alone so no other provider-side string can widen
+    /// what this plugin says.
     reached_type: Option<String>,
     output_tail: String,
     output_latched: bool,

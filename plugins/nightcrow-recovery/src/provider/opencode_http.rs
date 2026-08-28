@@ -125,10 +125,10 @@ fn status_kind(status: &Value) -> StatusKind {
 /// Resolve the ambiguous `next` field to an absolute unix time in **seconds**.
 ///
 /// Whether OpenCode reports an absolute epoch (in which unit) or a relative
-/// delay is unverified, so all three readings are tried. The order is by safety
-/// rather than by likelihood: absolute readings come first, because over-waiting
-/// only costs time while firing early walks straight back into the limit. `None`
-/// means "no deadline", which degrades to the machine's own bounded backoff.
+/// delay is unverified, so all three readings are tried, ordered by safety
+/// rather than by likelihood: over-waiting only costs time, while firing early
+/// walks straight back into the limit. `None` means "no deadline", which
+/// degrades to the machine's own bounded backoff.
 pub fn interpret_next(next: i64, now_epoch: i64) -> Option<i64> {
     // Zero or negative is "now" or a corrupt value; both would fire immediately,
     // so neither is accepted as a deadline.
@@ -155,8 +155,8 @@ pub fn interpret_next(next: i64, now_epoch: i64) -> Option<i64> {
 ///
 /// Deliberately no transfer-encoding handling: a chunked answer comes back with
 /// its framing intact, [`parse_status_body`] then finds no statuses in it, and
-/// the poll degrades to "nothing to report" — the same outcome as no server at
-/// all. That is the right failure for an adapter that must never guess.
+/// the poll degrades to "nothing to report" — the right failure for an adapter
+/// that must never guess.
 pub fn http_get(port: u16, path: &str, timeout: Duration) -> anyhow::Result<String> {
     anyhow::ensure!(
         is_safe_path(path),

@@ -41,12 +41,12 @@ interface UsePaneFocusArgs {
  * typed into; and the active pane keeps the actual DOM focus — not just when it
  * becomes active, but for as long as the layout lets it hold one.
  *
- * Which pane the first rule picks is whichever this screen last had the keyboard
- * on, kept in `lib/lastPane` — outside the page, because a reload is exactly
- * when the answer is needed and a reload is what used to lose it. The socket
- * restores it as its pane arrives; what is left to `focusOnAttach` here is the
- * screen that has no such pane. Either way the pane it settles on is written
- * back, so what is remembered always names a pane the session has.
+ * Which pane the first rule picks is whichever this screen last had the
+ * keyboard on, kept in `lib/lastPane` — outside the page, because a reload is
+ * exactly when the answer is needed and a reload is what used to lose it. The
+ * socket restores it as its pane arrives; what is left to `focusOnAttach` here
+ * is the screen that has no such pane. Either way the pane it settles on is
+ * written back, so what is remembered always names a pane the session has.
  *
  * The middle rule is the one that is easy to miss. A zoom no longer needs a
  * click on this page to happen — it is replayed on connect and set by other
@@ -99,25 +99,18 @@ export function usePaneFocus({
   //
   // Run on the same signals `useTerminalViews` opens panes on, not on `active`
   // alone, because two things other than a change of pane decide whether the
-  // active one holds the keyboard:
-  //
-  //   - the xterm may not exist yet. Creation is deferred while the cell has no
-  //     layout box, and panes arrive over the socket whether the panel is on
-  //     screen or not, so `active` is routinely set before there is anything to
-  //     focus.
-  //   - hiding the panel takes the focus away. Below `md` the panel is
-  //     `display: none` whenever another view is chosen, and an element that
-  //     stops being rendered is blurred to the body.
-  //
-  // Either way `active` is unchanged when the panel comes back, so an effect
-  // keyed on it alone leaves a panel that draws output, accepts the on-screen
-  // key bar, and ignores the keyboard. This hook is declared after
-  // `useTerminalViews`, so a pane opened by the same reveal is already here.
+  // active one holds the keyboard: the xterm may not exist yet (creation is
+  // deferred while the cell has no layout box), and hiding the panel takes
+  // the focus away. Either way `active` is unchanged when the panel comes
+  // back, so an effect keyed on it alone leaves a panel that draws output,
+  // accepts the on-screen key bar, and ignores the keyboard. This hook is
+  // declared after `useTerminalViews`, so a pane opened by the same reveal is
+  // already here.
   //
   // What is asked on each of those signals is an edge — see `focusStep`. The
-  // pane the panel holds is remembered rather than re-derived, because the DOM
-  // cannot answer it: focus this page never had looks exactly like focus it had
-  // and lost.
+  // pane the panel holds is remembered rather than re-derived, because the
+  // DOM cannot answer it: focus this page never had looks exactly like focus
+  // it had and lost.
   const heldRef = useRef<number | null>(null);
   useEffect(() => {
     const view = active === null ? undefined : viewsRef.current.get(active);

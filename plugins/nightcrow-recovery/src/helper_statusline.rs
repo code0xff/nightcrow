@@ -1,17 +1,17 @@
 //! The one line Claude Code renders, and who gets to write it.
 //!
 //! Installing this plugin necessarily takes the user's statusline away:
-//! `statusLine` in `settings.json` holds one command, not a list, so ours replaces
-//! whatever was there. Chaining is the only way to give it back — install recorded
-//! the value it displaced in a sidecar, and every refresh runs that command with
-//! the very bytes Claude Code sent us and prints what it printed. This plugin's own
-//! two-number line ([`render_statusline`]) stands in only when there is nothing to
-//! chain to. Running the command itself is [`delegate`]'s job.
+//! `statusLine` in `settings.json` holds one command, not a list, so ours
+//! replaces whatever was there. Chaining is the only way to give it back —
+//! install recorded the value it displaced in a sidecar, and every refresh
+//! runs that command with the very bytes Claude Code sent us and prints what
+//! it printed. This plugin's own two-number line ([`render_statusline`])
+//! stands in only when there is nothing to chain to. Running the command
+//! itself is [`delegate`]'s job.
 //!
-//! Nothing here fails upwards. A statusline that shows an error is worse than a
-//! plain one, so a missing sidecar, a value we cannot execute, a spawn failure, a
-//! non-zero exit, a wedged child and non-UTF-8 output all end in the same place:
-//! our own line, printed as if no chaining had been attempted.
+//! Nothing here fails upwards. A statusline that shows an error is worse than
+//! a plain one, so every disappointment ends in the same place: our own line,
+//! printed as if no chaining had been attempted.
 
 use crate::hooks::{SettingsPaths, displaced_statusline, is_ours};
 use serde_json::{Map, Value};
@@ -27,15 +27,13 @@ const STATUSLINE_FALLBACK: &str = "nightcrow: watching";
 
 /// How long a displaced statusline command may take before we give up on it.
 ///
-/// Claude Code documents no timeout for a statusline: it debounces updates at 300ms
-/// and cancels an in-flight script when the next update arrives, so the provider is
-/// already the one deciding we took too long. This bound is for the other direction
-/// — a command that never returns must not make this process immortal, and our own
-/// line has to get printed either way. Two seconds is many times that debounce and
-/// generous even for the `git`-shelling scripts the provider's own guidance calls
-/// slow, while keeping a wedged child's cost finite. It is also inside the five
-/// seconds this plugin asks Claude Code to allow its hook, the most patience
-/// anything here claims of the provider.
+/// Claude Code documents no timeout for a statusline and cancels an in-flight
+/// script when the next update arrives, so the provider is already the one
+/// deciding we took too long. This bound is for the other direction: a command
+/// that never returns must not make this process immortal. Two seconds is
+/// generous even for the `git`-shelling scripts the provider's own guidance
+/// calls slow, and inside the five seconds this plugin asks Claude Code to
+/// allow its hook — the most patience anything here claims of the provider.
 pub(super) const BUDGET: Duration = Duration::from_secs(2);
 
 const TYPE_KEY: &str = "type";
@@ -77,14 +75,11 @@ fn delegated(displaced: Option<&Value>, raw: &[u8], budget: Duration) -> Option<
 ///
 /// Install recorded that value verbatim, so this reads the shape the provider
 /// documents and the one this plugin itself writes — an object with `type` and
-/// `command` — and also accepts a bare string, which costs nothing and is the
-/// obvious hand-written form. A value with some other `type` is a statusline we do
-/// not know how to run, and guessing at it is worse than standing in for it; so is
-/// `null`, which is what install records when it displaced nothing at all.
+/// `command` — and also accepts a bare string, which is the obvious
+/// hand-written form. A value with some other `type` is a statusline we do not
+/// know how to run, and guessing at it is worse than standing in for it.
 ///
-/// The entry's other fields are Claude Code's to act on, not ours: `padding` and
-/// `refreshInterval` describe how the provider treats a statusline, and the
-/// provider is reading them off our entry now, not off this one.
+/// The entry's other fields are Claude Code's to act on, not ours.
 fn command_of(value: &Value) -> Option<&str> {
     let command = match value {
         Value::String(command) => command.as_str(),

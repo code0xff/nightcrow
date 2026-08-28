@@ -1,10 +1,9 @@
 //! Running a statusline command that is not ours, on a budget.
 //!
 //! Split out of `helper_statusline.rs` so that file decides *which* line gets
-//! printed and this one is the process plumbing under it. Everything here is
-//! written for a caller that must not be made to wait and must not be made to
-//! fail: the child is bounded, killed when it overruns, reaped on every path, and
-//! any disappointment comes back as `None`.
+//! printed and this one is the process plumbing under it. Written for a caller
+//! that must not be made to wait or to fail: the child is bounded, killed when
+//! it overruns, reaped on every path, and any disappointment comes back as `None`.
 
 use std::io::{Read, Write};
 use std::process::{Child, Command, Stdio};
@@ -14,14 +13,10 @@ use std::time::{Duration, Instant};
 /// A POSIX shell, resolved on `PATH`. Not `$SHELL`: an interactive shell would
 /// read the user's rc files on every single refresh.
 ///
-/// Windows included, and deliberately so. The command being run here is one
-/// Claude Code was running before this plugin displaced it, and Claude Code runs
-/// a `statusLine` through a POSIX shell on every platform — its own documented
-/// examples are `$(...)`, `jq` pipelines and `~` paths, and the ones people
-/// actually have installed reach for `stty`, `awk` and MSYS-style `/c/...`
-/// paths. Handing such a line to `cmd.exe` does not run it differently; it fails
-/// to run it at all, and the user silently loses their statusline. Which shell
-/// the *host's panes* use is a separate setting and not this decision.
+/// Windows included, and deliberately so: Claude Code runs a `statusLine`
+/// through a POSIX shell on every platform, so the line being run here is one
+/// `cmd.exe` would not run at all — the user would silently lose their
+/// statusline. Which shell the *host's panes* use is a separate setting.
 const SHELL: &str = "sh";
 const SHELL_COMMAND_ARG: &str = "-c";
 
@@ -45,10 +40,9 @@ const EXIT_POLL: Duration = Duration::from_millis(2);
 ///
 /// Through the platform shell's command mode (`sh -c` or `cmd.exe /C`), not an
 /// argv we split ourselves: the provider documents that a `statusLine` command
-/// "runs in a shell", and its own examples rely on it — a `~` path, a `jq`
-/// pipeline, an inline `$(...)`. Re-splitting the string the user wrote would
-/// quietly change what it means. This is the user's own configuration rather
-/// than input from a stranger, but it is also not ours to reinterpret.
+/// "runs in a shell", and its examples (`~` paths, `jq` pipelines, inline
+/// `$(...)`) rely on it. Re-splitting the string would quietly change what it
+/// means — it is the user's own configuration, not ours to reinterpret.
 pub(super) fn capture(command: &str, raw: &[u8], budget: Duration) -> Option<String> {
     let deadline = Instant::now() + budget;
     let mut child = spawn_shell(command)?;
@@ -126,10 +120,8 @@ fn shell_child(shell: &str, arg: &str, command: &str) -> std::io::Result<Child> 
 
 /// Whether the child finished, and finished happily, before `deadline`.
 ///
-/// Polled rather than waited on: `wait` has no timeout, and a command that closes
-/// its stdout and then sleeps must not get to hold a refresh open. Stdout is
-/// already at EOF by the time this is called, so the first look nearly always
-/// finds the child gone.
+/// Polled rather than waited on: `wait` has no timeout, and a command that
+/// closes its stdout and then sleeps must not get to hold a refresh open.
 fn exited_well(child: &mut Child, deadline: Instant) -> bool {
     loop {
         match child.try_wait() {

@@ -1,16 +1,16 @@
 //! Asking the host for a pane it never named to us.
 //!
-//! The dominant way a coding CLI gets started is by hand: the user opens a plain
-//! shell and types `claude` into it. That pane's `[[startup_command]]` names no
-//! plugin, so the host never mentions it — but the CLI's hook still reaches us
-//! over the socket, carrying the token the host put in that pane's environment.
-//! Presenting the token back is the whole request; the host decides whether to
-//! honour it, and never tells us when it does not.
+//! The dominant way a coding CLI gets started is by hand: the user opens a
+//! plain shell and types `claude` into it. That pane's `[[startup_command]]`
+//! names no plugin, so the host never mentions it — but the CLI's hook still
+//! reaches us over the socket, carrying the token the host put in that pane's
+//! environment. Presenting the token back is the whole request; the host
+//! decides whether to honour it, and never tells us when it does not.
 //!
-//! Everything here exists because of that silence. A refusal is indistinguishable
-//! from a token belonging to another nightcrow session's pane, so a request that
-//! goes unanswered must not be repeated in a tight loop and must not leave state
-//! behind that grows with every stranger that knocks.
+//! Everything here exists because of that silence: a refusal is
+//! indistinguishable from a token belonging to another nightcrow session, so
+//! an unanswered request must not be repeated in a tight loop and must not
+//! leave state behind that grows with every stranger that knocks.
 
 use crate::ipc::IpcMessage;
 use crate::protocol::{PaneToken, PluginCommand, watch_pane};
@@ -32,20 +32,18 @@ const MAX_PENDING: usize = 8;
 /// The host answers in milliseconds or never, so this is not a retry interval —
 /// it is the rate at which a token that is not ours may cost us a command.
 /// Claude Code's statusline runs on every render, so without it a foreign pane
-/// would have us writing a request several times a second, all refused and every
-/// one of them counted against the host's per-tick command budget alongside the
-/// requests that matter. Half a minute is far longer than any honoured request
-/// takes and short enough that a pane which only just became ours is not shut
-/// out for long.
+/// would have us writing a refused request several times a second, each counted
+/// against the host's per-tick command budget. Half a minute is far longer than
+/// any honoured request takes and short enough that a pane which only just
+/// became ours is not shut out for long.
 const REQUEST_COOLDOWN: Duration = Duration::from_secs(30);
 
 /// One outstanding request, and the signal that justified making it.
 struct Pending {
     /// Kept so the adapter still gets it. The signal arrives *before* the pane
-    /// does — it is the reason the pane arrives at all — and the host replays no
-    /// history to a pane it has just handed over, so dropping it would lose the
-    /// very limit being recovered from and leave the pane parked until the
-    /// provider happened to fail again.
+    /// does — it is the reason the pane arrives at all — and the host replays
+    /// no history to a pane it has just handed over, so dropping it would lose
+    /// the very limit being recovered from.
     signal: OutOfBand,
     asked_at: Instant,
 }
@@ -91,9 +89,8 @@ impl Adoptions {
     /// again.
     ///
     /// Without it a handful of foreign tokens would hold every slot for the
-    /// process's whole life, and a pane that later became ours could not get a
-    /// request in. Giving up is safe: a pane that really is ours signals again,
-    /// and the held signal is stale by then anyway.
+    /// process's whole life. Giving up is safe: a pane that really is ours
+    /// signals again, and the held signal is stale by then anyway.
     pub(crate) fn prune(&mut self, now: Instant) {
         self.0
             .retain(|_, p| now.saturating_duration_since(p.asked_at) < REQUEST_COOLDOWN);

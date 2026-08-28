@@ -14,11 +14,12 @@ const MONTH_DAY_DIR_LEN: usize = 2;
 
 /// How many day directories are searched for the pane's session.
 ///
-/// The directories are named in *local* time and this crate has no date library,
-/// so instead of computing today's name the `sessions/` tree is listed and the
-/// lexicographically greatest day directories are taken — zero-padded
-/// `YYYY/MM/DD` sorts chronologically. Two of them, because a session started
-/// before local midnight keeps writing into yesterday's directory.
+/// The directories are named in *local* time and this crate has no date
+/// library, so instead of computing today's name the `sessions/` tree is
+/// listed and the lexicographically greatest day directories are taken —
+/// zero-padded `YYYY/MM/DD` sorts chronologically. Two of them, because a
+/// session started before local midnight keeps writing into yesterday's
+/// directory.
 const CANDIDATE_DAY_DIRS: usize = 2;
 
 /// Rollout files in the newest day directories that were modified at or after

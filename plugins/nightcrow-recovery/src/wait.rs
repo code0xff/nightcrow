@@ -1,19 +1,15 @@
 //! Waiting for a usage limit to reset, without trusting either clock alone.
 //!
-//! A reset time arrives as an absolute unix second, which is the only form a
-//! provider reports and the only form worth showing a human. But the wall clock
-//! can be changed underneath a wait that lasts hours — an NTP correction, a
-//! laptop returning from suspend, a user fixing their timezone — and a wait
-//! driven purely by wall time would then either fire immediately (resuming into
-//! a limit that has not cleared, burning an attempt) or never fire at all
-//! (stranding the pane).
+//! A reset time is an absolute unix second, but the wall clock can be changed
+//! underneath a wait that lasts hours — an NTP correction, a laptop returning
+//! from suspend. A wait driven purely by wall time would then fire early
+//! (resuming into a limit that has not cleared, burning an attempt) or never
+//! fire at all (stranding the pane).
 //!
-//! So a wait keeps both: the absolute deadline, and a monotonic countdown of the
-//! same length. Between two polls the two clocks must advance together; when
-//! they disagree by more than [`JUMP_TOLERANCE_SECS`] the wall clock moved, and
-//! the deadline is shifted by that amount so it stays fixed to the *new* clock.
-//! The monotonic countdown then still has to elapse before the wait is over, so
-//! a jump can neither shorten nor lengthen the real time spent waiting.
+//! So a wait keeps both: the absolute deadline, and a monotonic countdown of
+//! the same length. When the two disagree by more than [`JUMP_TOLERANCE_SECS`]
+//! the wall clock moved, and the deadline is shifted by that amount so the
+//! real time spent waiting can be neither shortened nor lengthened.
 
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
@@ -34,10 +30,9 @@ pub const MIN_WAIT_SECS: i64 = 15;
 
 /// Longest wait. Claude's longest documented window is seven days; eight days
 /// is past anything legitimate, so a deadline that would exceed it is clamped
-/// rather than parking a pane indefinitely.
-/// Must stay under the host's `PENDING_RELAUNCH_TTL` (nine days): the host
-/// retires an exited pane's slot at that point, and a wait outlasting it would
-/// end with nothing left to resume.
+/// rather than parking a pane indefinitely. Must stay under the host's
+/// `PENDING_RELAUNCH_TTL` (nine days): a wait outlasting that would end with
+/// nothing left to resume.
 pub const MAX_WAIT_SECS: i64 = 8 * 24 * 60 * 60;
 
 /// Added to a reported reset time before resuming.

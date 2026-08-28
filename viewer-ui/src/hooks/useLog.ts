@@ -64,8 +64,8 @@ export function useLog({
   // The head the last refresh was asked for. The walk can return history
   // *newer* than the status report that asked for it (the stream lags the
   // repository), leaving a standing disagreement no further fetch resolves —
-  // this mark keeps that from becoming a fetch loop: a head already asked and
-  // answered is not asked again. A failed ask clears it, so the retry can.
+  // this mark keeps that from becoming a fetch loop. A failed ask clears it,
+  // so the retry can.
   const askedHeadRef = useRef<string | null | undefined>(undefined);
   const resetLog = useCallback(() => {
     logRequestRef.current += 1;

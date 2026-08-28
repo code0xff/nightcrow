@@ -249,9 +249,9 @@ fn on_signal(
         let (token, signal) = msg.into_signal();
         return deliver_signal(panes, &token, &signal);
     }
-    // Not a pane we were told about — and that is the common case rather than the
-    // odd one. The token is proof the sender runs inside one of the host's panes,
-    // so ask for it; a token from another nightcrow session simply goes
+    // Not a pane we were told about — and that is the common case rather than
+    // the odd one. The token is proof the sender runs inside one of the host's
+    // panes, so ask for it; a token from another nightcrow session simply goes
     // unanswered. See [`Adoptions`] for why asking is bounded.
     if let Some(command) = adoptions.request(msg, Instant::now()) {
         emit(&command)?;

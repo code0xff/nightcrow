@@ -111,31 +111,23 @@ export interface CtrlLatchStep {
 /**
  * One step of "the armed Ctrl modifies the next thing typed".
  *
- * Escape-led input is not that thing and leaves the latch armed. It reaches the
- * same handler but comes from the program rather than from a person: a pane
- * running tmux or vim has focus reporting on, so merely putting the keyboard
- * back in it emits `ESC [ I`, and a mouse-tracking program reports every tap
- * the same way. Spending the latch on those would disarm it with nobody having
- * typed anything — and arming it is what puts the keyboard in the pane, so the
- * report would arrive first. A hardware keyboard's arrows and Escape are
- * escape-led too, and they carry their own bytes already.
+ * Escape-led input leaves the latch armed. It reaches the same handler but
+ * comes from the program rather than from a person — a pane running tmux or
+ * vim has focus reporting on, so merely putting the keyboard back in it emits
+ * `ESC [ I`, and a mouse-tracking program reports every tap. The rule is the
+ * whole escape-led prefix rather than the two reports it is here for, because
+ * each automatic reply missed from a narrower list would disarm the latch with
+ * nothing to show for it. What that costs is the other direction: a bracketed
+ * paste (`ESC [ 2 0 0 ~`) and a hardware Escape or arrow leave it armed when a
+ * person might have expected them to spend it. That way round is the one to be
+ * wrong in — the button stays lit, where a latch that died quietly is only
+ * discovered by the character it failed to modify.
  *
  * Everything else spends it, whether or not Ctrl has a byte for it: the person
  * typed, and if what they typed has no control form the mistake was the latch.
  * An unbracketed paste is spent this way too — xterm hands it over as ordinary
  * data, so a one-character paste is indistinguishable from typing that
- * character and is modified like one.
- *
- * The rule is the whole prefix rather than the two reports it is here for,
- * because every automatic reply a terminal makes is escape-led — the cursor
- * position an application asks for, a device attributes answer — and each one
- * missed from a narrower list disarms the latch with nothing to show for it.
- * What that costs is the other direction: a bracketed paste (`ESC [ 2 0 0 ~`)
- * and a hardware Escape or arrow leave it armed when a person might have
- * expected them to spend it. That way round is the one to be wrong in — the
- * button stays lit, so the state is on screen and one tap away from cleared,
- * where a latch that died quietly is only discovered by the character it
- * failed to modify.
+ * character.
  */
 export function ctrlLatchStep(armed: boolean, typed: string): CtrlLatchStep {
   if (!armed) return { data: typed, armed: false };
@@ -157,12 +149,12 @@ export function parseKeyBarPref(raw: string | null): KeyBarPref | null {
 /**
  * Whether to show the bar on a screen nobody has chosen for yet.
  *
- * A coarse pointer is the question that actually matters — "is what types here a
- * pane of glass" — and it is the one a tablet answers differently from the
- * desktop it is as wide as. Width alone would have left an iPad, which is wider
- * than the `md` the bar used to hide at, with no Escape and no Ctrl-C. Width
- * still decides for anything a pointer cannot: a phone in desktop mode, a
- * browser that reports nothing. Same question the terminal font asks
+ * A coarse pointer is the question that actually matters — "is what types here
+ * a pane of glass" — and it is the one a tablet answers differently from the
+ * desktop it is as wide as. Width alone would have left an iPad, which is
+ * wider than the `md` the bar used to hide at, with no Escape and no Ctrl-C.
+ * Width still decides for anything a pointer cannot: a phone in desktop mode,
+ * a browser that reports nothing. Same question the terminal font asks
  * (`termFont.ts`).
  */
 export function defaultKeyBarShown(

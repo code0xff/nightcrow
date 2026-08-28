@@ -45,16 +45,12 @@ const STATUSLINE_PADDING: u64 = 2;
 
 /// Quote a path for the POSIX shell these commands are run in.
 ///
-/// Claude Code runs a hook and a `statusLine` through a shell, on every platform
-/// — its own documented examples are shell one-liners, and the entries other
-/// tools install here are `if [ -f '...' ]; then ...`. So a Windows path cannot
-/// be written bare: the shell reads each backslash as an escape, so
-/// `C:\Users\me\plugin` arrives as `C:Usersmeplugin` and is simply not found.
-/// Single quotes suspend every interpretation the shell would otherwise make,
-/// which covers spaces in the path as well.
-///
-/// A single quote cannot appear inside single quotes, so an embedded one is
-/// closed, escaped on its own, and reopened.
+/// Claude Code runs a hook and a `statusLine` through a shell on every
+/// platform, and that shell reads each backslash of a Windows path as an
+/// escape — `C:\Users\me\plugin` arrives as `C:Usersmeplugin` and is simply
+/// not found. Single quotes suspend every interpretation the shell would
+/// otherwise make, spaces included; an embedded one is closed, escaped on its
+/// own, and reopened.
 fn shell_quoted(path: &str) -> String {
     format!("'{}'", path.replace('\'', r"'\''"))
 }
@@ -162,7 +158,6 @@ pub(crate) fn merge_into(settings: &mut Value, exe: &str) -> Result<(Vec<String>
     Ok((changes, displaced))
 }
 
-/// Remove exactly what [`merge_into`] added, putting `restore` back as
 /// Put one command into one hook event's matcher group, creating whatever is
 /// missing and touching nothing else.
 fn merge_hook(
@@ -201,6 +196,7 @@ fn merge_hook(
     Ok(())
 }
 
+/// Remove exactly what [`merge_into`] added, putting `restore` back as
 /// `statusLine` when it holds a value we recorded. Containers we empty are
 /// collapsed so the file returns to its original shape.
 pub(crate) fn strip_from(settings: &mut Value, restore: Option<Value>) -> Result<Vec<String>> {

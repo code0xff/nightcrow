@@ -1,21 +1,16 @@
 //! The two modes a provider CLI invokes, not a human.
 //!
 //! Both run inside a child of the provider's own process, on that process's
-//! critical path: Claude Code runs the statusline command on a refresh interval
-//! and the hook command as a turn ends. So both do the least possible work —
-//! read one JSON object, forward a handful of whitelisted fields, exit — and
-//! neither ever reports a failure to its caller. A recovery plugin that is not
-//! running must look exactly like one that was never installed.
+//! critical path. So both do the least possible work — read one JSON object,
+//! forward a handful of whitelisted fields, exit — and neither ever reports a
+//! failure to its caller: a recovery plugin that is not running must look
+//! exactly like one that was never installed.
 //!
-//! Whitelisting is the privacy boundary. A `StopFailure` payload names a
-//! transcript file and carries a provider's own error prose; a statusline payload
-//! carries whatever else the provider decided to include. Only the fields the
-//! state machine actually reads cross the socket, so nothing else can be
-//! accidentally logged, buffered, or written down later.
-//!
-//! The one thing that leaves this process whole is the statusline payload handed
-//! to the command we displaced (see [`status_line`]) — and that command was being
-//! given the same bytes by Claude Code before this plugin was installed. We
+//! Whitelisting is the privacy boundary: only the fields the state machine
+//! actually reads cross the socket, so nothing else can be logged, buffered,
+//! or written down later. The one thing that leaves this process whole is the
+//! statusline payload handed to the command we displaced (see
+//! [`status_line`]) — the same bytes Claude Code was already giving it. We
 //! narrow what we keep; we do not narrow what someone else was already told.
 
 use crate::ipc::{IpcMessage, send, socket_path};
@@ -66,10 +61,10 @@ pub fn hook() -> ExitCode {
 
 /// Report that a turn ended, so the host can raise the pane's attention marker.
 ///
-/// Sends no payload: `Stop` fires whatever the outcome, and which outcome it was
-/// is not something the marker distinguishes. Reading stdin is still necessary —
-/// Claude Code writes the hook payload there and a helper that never drained it
-/// would leave the provider writing into a full pipe.
+/// Sends no payload: `Stop` fires whatever the outcome, and which outcome it
+/// was is not something the marker distinguishes. Reading stdin is still
+/// necessary — a helper that never drained it would leave the provider
+/// writing into a full pipe.
 pub fn turn_end() -> ExitCode {
     let _ = read_stdin_bytes();
     if let Some(token) = pane_token() {
@@ -87,8 +82,8 @@ pub fn turn_end() -> ExitCode {
 
 /// Forward the statusline's `rate_limits` and print a line — the line the user's
 /// own statusline command printed, whenever installing this plugin displaced one.
-/// Claude Code's `statusLine` holds a single command, so the only way not to cost
-/// the user their statusline is to run it from ours; see [`status_line`].
+/// `statusLine` holds a single command, so the only way not to cost the user
+/// their statusline is to run it from ours; see [`status_line`].
 pub fn statusline() -> ExitCode {
     let raw = read_stdin_bytes();
     let displaced = status_line::displaced();
@@ -115,9 +110,10 @@ struct Refresh {
 }
 
 /// Decide both halves of a refresh without touching the socket or stdout, so
-/// every way a displaced command can disappoint us stays testable — and so the
-/// usage numbers are read out of the payload before anything is delegated, which
-/// is what keeps a misbehaving statusline command from costing us them.
+/// every way a displaced command can disappoint us stays testable — and so
+/// the usage numbers are read out of the payload before anything is
+/// delegated, which is what keeps a misbehaving statusline command from
+/// costing us them.
 fn refresh(raw: &[u8], displaced: Option<&Value>, budget: Duration) -> Refresh {
     let rate_limits = parse_object(raw).and_then(rate_limits_of);
     let line = status_line::line(displaced, raw, rate_limits.as_ref(), budget);
@@ -139,11 +135,10 @@ fn pane_token() -> Option<String> {
 }
 
 /// Every byte the provider wrote, kept exactly as it wrote them. The statusline
-/// helper hands these on to the command it displaced, and a re-serialised copy is
-/// not the same thing: key order and number formatting are the provider's to
-/// choose, and a command that was reading its input before we existed should not
-/// find it rearranged now. A read that fails part-way keeps what did arrive —
-/// unparseable, and treated as such below.
+/// helper hands these on to the command it displaced, and a re-serialised copy
+/// is not the same thing: key order and number formatting are the provider's to
+/// choose. A read that fails part-way keeps what did arrive — unparseable,
+/// and treated as such below.
 fn read_stdin_bytes() -> Vec<u8> {
     let mut raw = Vec::new();
     let _ = std::io::stdin()

@@ -34,13 +34,12 @@ interface UseRepoViewMemoryArgs {
  * to date.
  *
  * **What is recorded comes from what was asked for, not from what is on
- * screen.** The screen is an async picture of the request that made it: between
- * a tap and the answer it shows the last thing, or nothing, and neither is what
- * the person chose. Reading it means every write first has to decide whether
- * the moment it is reading is a real one — a question about requests in flight,
- * project switches, failures and re-renders, with no end to it. An action says
- * what it means when it happens: `note` takes the choice itself, and what
- * becomes of the pane afterwards changes nothing.
+ * screen.** The screen is an async picture of the request that made it, and
+ * reading it means every write first has to decide whether the moment it is
+ * reading is a real one — a question about requests in flight, project
+ * switches, failures and re-renders, with no end to it. An action says what it
+ * means when it happens: `note` takes the choice itself, and what becomes of
+ * the pane afterwards changes nothing.
  *
  * A restore therefore records nothing — it is this hook putting back what is
  * already stored — and neither does a failed one, so no server fault can erase
