@@ -90,7 +90,7 @@ impl LoadController {
         let restore_scroll = self
             .diff
             .as_ref()
-            .filter(|intent| intent.repo == repo && intent.target == target && intent.mode == mode)
+            .filter(|intent| intent.repo == repo && intent.target == target)
             .and_then(|intent| intent.restore_scroll);
         let generation = self.generation();
         let operation = target.operation();
