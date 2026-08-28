@@ -92,16 +92,13 @@ pub fn init_logging(config: &LogConfig, repo_path: &str) -> Option<LogGuard> {
 }
 
 /// Drop a self-ignoring `.gitignore` in the log directory so logs never
-/// pollute the user's `git status` — the default `.nightcrow/logs` sits inside
-/// the repo.
+/// pollute the user's `git status` — the default `.nightcrow/logs` sits
+/// inside the repo.
 ///
-/// Only into a directory nightcrow owns, meaning one under `.nightcrow`. The
-/// pattern is `*`, which has to ignore the ignore file itself to hide the
-/// directory — harmless in our own folder, but writing that into a directory
-/// the user pointed `[log] dir` at would make Git ignore everything untracked
-/// there. A custom location is the user's to manage.
-///
-/// Only written when missing: a user-edited file should not be clobbered.
+/// Only into a directory nightcrow owns (one under `.nightcrow`): the `*`
+/// pattern ignores the directory's every untracked file, which would be
+/// wrong for a user-chosen `[log] dir` — that one is the user's to manage.
+/// Only written when missing, so a user-edited file is not clobbered.
 fn write_log_gitignore(log_dir: &Path) {
     if !log_dir.components().any(|c| c.as_os_str() == NIGHTCROW_DIR) {
         return;
@@ -135,10 +132,10 @@ fn cleanup_old_logs(log_dir: &Path, max_days: u32) {
         return;
     };
 
-    // First pass: collect candidate files with mtimes so we can identify the
-    // newest one and preserve it. SizeRollingAppender resumes its highest
-    // existing index on startup, so the latest log file may itself be older
-    // than the cutoff — deleting it would lose the active session's tail.
+    // First pass: collect candidate files with mtimes so the newest one can
+    // be preserved — SizeRollingAppender resumes its highest existing index
+    // on startup, so the latest log file may itself be older than the
+    // cutoff, and deleting it would lose the active session's tail.
     let mut candidates: Vec<(PathBuf, SystemTime)> = Vec::new();
     for entry in entries.flatten() {
         let path = entry.path();
@@ -160,12 +157,11 @@ fn cleanup_old_logs(log_dir: &Path, max_days: u32) {
 }
 
 /// Returns paths to delete from a list of candidate `(path, mtime)` entries.
-/// Always preserves the newest entry, even if it is older than the cutoff —
+/// Always preserves the newest entry, even if older than the cutoff —
 /// SizeRollingAppender resumes the highest-index file, so deleting it would
 /// drop the active session's tail. When two candidates share the maximum
-/// mtime (1 s mtime granularity on FAT/exFAT, simultaneous touches, etc.),
-/// only the first occurrence is preserved; the others remain eligible for
-/// cleanup so a tie doesn't silently inflate disk usage.
+/// mtime (1 s granularity on FAT/exFAT, simultaneous touches), only the first
+/// is preserved; the others stay eligible so a tie doesn't inflate disk usage.
 fn expired_log_paths(candidates: &[(PathBuf, SystemTime)], cutoff: SystemTime) -> Vec<&PathBuf> {
     let newest_idx = candidates
         .iter()

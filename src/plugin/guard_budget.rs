@@ -101,10 +101,9 @@ impl Budgets {
     ///
     /// Only approvals spend, deliberately: the budget bounds what a plugin
     /// *does* to a pane, and a refused command did nothing. Charging refusals
-    /// would let noise — a stale generation the plugin could not have known
-    /// about, a flag config forbids — eat the budget a legitimate action needs,
-    /// losing the pane's one real attempt to a race. Spam is bounded elsewhere
-    /// and more cheaply: the outbound queue drops and every refusal is logged.
+    /// would let noise eat the allowance a legitimate action needs. Spam is
+    /// bounded elsewhere and more cheaply: the outbound queue drops and every
+    /// refusal is logged.
     pub(super) fn spend(
         &mut self,
         token: &PaneToken,

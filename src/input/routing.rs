@@ -37,12 +37,12 @@ pub fn map_key(event: KeyEvent) -> Action {
     }
 }
 
-/// Classify the single follow-up key pressed after the leader. The follow-up
-/// is matched on the bare character regardless of modifiers so `<L> t` works
-/// whether or not the user is still holding a modifier from the leader chord.
-/// The digit row addresses whatever the body is showing: `1` = file list,
-/// `2` = diff viewer, `3`..`9`,`0` = terminal panes `0`..`7`. The bare F-keys
-/// are a separate axis (project tabs), so the two never collide.
+/// Classify the leader follow-up key. Matched on the bare character
+/// regardless of modifiers so `<L> t` works whether or not the user is still
+/// holding a modifier from the leader chord. The digit row addresses whatever
+/// the body is showing (`1` = file list, `2` = diff viewer, `3`..`9`,`0` =
+/// panes `0`..`7`); the bare F-keys are a separate axis (project tabs), so
+/// the two never collide.
 pub fn prefix_action(event: KeyEvent) -> Action {
     match event.code {
         KeyCode::Char(c) => match c.to_ascii_lowercase() {
@@ -74,12 +74,11 @@ pub fn prefix_action(event: KeyEvent) -> Action {
 }
 
 /// Leader follow-up mapping while the terminal fills the body
-/// (`TerminalFullscreen::fills_body`). The upper viewer is hidden, so the
-/// digit row is repurposed: `1`..`8` address the (up to
-/// `MAX_VISIBLE_FULLSCREEN` = 8) terminal panes `0`..`7` by natural
-/// numbering instead of the list/diff focus jumps. `9`/`0` have no pane in
-/// the 8-pane cap and are dropped rather than falling through to the
-/// split-view bindings. Every non-digit chord behaves as in `prefix_action`.
+/// (`TerminalFullscreen::fills_body`): the upper viewer is hidden, so the
+/// digit row is repurposed onto panes `0`..`7` by natural numbering instead
+/// of the list/diff focus jumps. `9`/`0` address no pane within the 8-pane
+/// cap and are dropped rather than falling through to the split-view
+/// bindings. Every non-digit chord behaves as in `prefix_action`.
 pub fn prefix_action_fullscreen(event: KeyEvent) -> Action {
     if let KeyCode::Char(c @ '0'..='9') = event.code {
         return match c {

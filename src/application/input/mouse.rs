@@ -61,8 +61,8 @@ pub(crate) fn dispatch_mouse(
 /// Route a captured mouse event to the pane under the pointer. Releases pair
 /// with the press's pane (not the pointer pane); wheel scrolls the pane under
 /// the pointer; a left press outside pane content can focus an upper panel,
-/// jump via a tab/`+N` marker, or run a hint-bar shortcut. In swap mode a
-/// left click names the swap target. Drag/motion reports are not forwarded.
+/// jump via a tab/`+N` marker, or run a hint-bar shortcut. In swap mode a left
+/// click names the swap target. Drag/motion reports are not forwarded.
 pub(crate) fn handle_mouse(
     app: &mut App,
     tabs: crate::ui::Chrome<'_>,
@@ -185,9 +185,9 @@ fn dispatch_hint_click(app: &mut App, click: crate::ui::HintClick) -> KeyOutcome
 /// Deliver a button release to the pane that received the matching press.
 /// The release carries the *stored* press button, not crossterm's: legacy
 /// encodings don't identify the button on release (some report every `Up` as
-/// `Left`), so trusting that would strand a right/middle press without its
-/// release. The release cell is clamped into the pressed pane's current rect;
-/// if that pane was closed or hidden since, the release is dropped.
+/// `Left`), so trusting that would strand a right/middle press. The release
+/// cell is clamped into the pressed pane's current rect; if that pane was
+/// closed or hidden since, the release is dropped.
 fn release_pending_press(
     app: &mut App,
     screen: Rect,

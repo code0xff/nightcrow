@@ -80,13 +80,10 @@ pub fn generate_password() -> Result<String> {
         .collect())
 }
 
-/// Ensure the viewer has a login credential, generating and persisting
-/// one when the config has none. A no-op when a `password` or `hashed_password`
-/// is already set. Otherwise a random password is generated, written back into
-/// the config file at `path` (creating it if absent, preserving any existing
-/// content and comments), and stored on `cfg` so the running instance uses it.
-/// Returns the freshly generated password so the caller can surface it to the
-/// user, or `None` when a credential already existed.
+/// Ensure the viewer has a login credential, generating and persisting one
+/// into the config file at `path` (format-preserving, comments kept) when it
+/// has none. Returns the freshly generated password for the caller to surface,
+/// or `None` when a credential already existed.
 pub fn ensure_web_viewer_password(
     cfg: &mut super::Config,
     path: &std::path::Path,

@@ -25,8 +25,7 @@ pub use web::{WebViewerConfig, ensure_web_viewer_password};
 /// range, so every startup pane is reachable by a direct key.
 pub const MAX_STARTUP_COMMANDS: usize = 8;
 
-/// Upper bound on `[[plugin]]` entries. Tracks `MAX_STARTUP_COMMANDS` rather
-/// than being independently generous.
+/// Upper bound on `[[plugin]]` entries. Tracks `MAX_STARTUP_COMMANDS`.
 pub const MAX_PLUGINS: usize = 8;
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -144,24 +143,21 @@ pub fn validate_config(cfg: &Config) -> Result<()> {
         "log.commit_log_prefetch_threshold must be between 1 and log.commit_log_page_size"
     );
     // `max_size_mb == 0` would make SizeRollingAppender rotate on every
-    // write (and even degenerate to creating a new file per write call),
-    // so disallow it. The upper bound is a sanity ceiling that still
-    // allows hours of trace logging at high volume.
+    // write (even degenerate to a new file per write call), so disallow it;
+    // the upper bound is a sanity ceiling.
     anyhow::ensure!(
         (1..=10_000).contains(&cfg.log.max_size_mb),
         "log.max_size_mb must be between 1 and 10000"
     );
     // `max_days == 0` is the documented "keep forever" sentinel and is
-    // intentionally accepted; only the upper bound is sanity-checked so a
-    // typo in years-vs-days doesn't silently produce log retention that
-    // exceeds the host's life.
+    // intentionally accepted; only the upper bound is sanity-checked.
     anyhow::ensure!(
         cfg.log.max_days <= 3650,
         "log.max_days must be at most 3650 (10 years); 0 = keep forever"
     );
-    // `0` is the "never expires" sentinel, as it is for `log.max_days`. The
-    // ceiling is 10 years: anything past it is a unit mix-up, and the value is
-    // multiplied into seconds, which is where an unbounded one would overflow.
+    // `0` is the "never expires" sentinel, as for `log.max_days`; the ceiling
+    // catches a unit mix-up, and the value is multiplied into seconds, where
+    // an unbounded one would overflow.
     anyhow::ensure!(
         cfg.web_viewer.session_ttl_hours <= 87_600,
         "web_viewer.session_ttl_hours must be at most 87600 (10 years); 0 = never expires"
@@ -202,10 +198,10 @@ pub fn validate_config(cfg: &Config) -> Result<()> {
 }
 
 /// Merge config `[[startup_command]]` entries with CLI `--exec` commands into
-/// the final ordered list of panes to open at launch. Config entries come
-/// first, then CLI commands (labelled by their command text). The combined
-/// count is held to `MAX_STARTUP_COMMANDS`, and empty `--exec` values are
-/// rejected — config entries were already validated by `validate_config`.
+/// the final ordered list of panes to open at launch: config entries first,
+/// then CLI commands, the combined count held to `MAX_STARTUP_COMMANDS`.
+/// Empty `--exec` values are rejected here; config entries were already
+/// validated by `validate_config`.
 pub fn resolve_startup_commands(cfg: &Config, cli_exec: &[String]) -> Result<Vec<StartupCommand>> {
     merge_startup_commands(&cfg.startup_commands, cli_exec)
 }
@@ -213,9 +209,8 @@ pub fn resolve_startup_commands(cfg: &Config, cli_exec: &[String]) -> Result<Vec
 /// The merge itself, over the two lists rather than a whole [`Config`].
 ///
 /// Split out because a reload re-reads only the file's `[[startup_command]]`
-/// table while the `--exec` panes stay whatever the daemon was started with:
-/// they are not in the file, so a reload that resolved from a fresh `Config`
-/// alone would drop them. One merge rule, reached from both places, is what
+/// table while the `--exec` panes stay whatever the daemon was started with
+/// (they are not in the file). One merge rule, reached from both places,
 /// keeps the reloaded list ordered and capped exactly like the launch one.
 pub fn merge_startup_commands(
     configured: &[StartupCommand],

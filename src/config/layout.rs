@@ -3,11 +3,11 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use serde::{Deserialize, Serialize};
 
 /// Default leader chord. `Ctrl+F` avoids tmux's `Ctrl+B` (so nightcrow can
-/// run inside tmux) and the Ctrl chords an inner Claude Code pane reserves.
-/// It also dodges terminal flow control (`Ctrl+Q`/`Ctrl+S`) and shell signals
-/// (`Ctrl+C/D/Z`). Its only collision is `Ctrl+F` as forward-char / page-forward,
-/// which users almost always reach via arrow keys / PageDown; when needed it
-/// stays reachable via `<leader><leader>`.
+/// run inside tmux), the Ctrl chords an inner Claude Code pane reserves,
+/// terminal flow control (`Ctrl+Q`/`Ctrl+S`), and shell signals
+/// (`Ctrl+C/D/Z`). Its only collision is `Ctrl+F` as forward-char /
+/// page-forward, which users almost always reach via arrow keys / PageDown;
+/// when needed it stays reachable via `<leader><leader>`.
 pub(super) const DEFAULT_LEADER: &str = "ctrl+f";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -109,10 +109,11 @@ impl Default for InputConfig {
 }
 
 /// Parse a leader chord string (e.g. `"ctrl+b"`) into a `KeyEvent`.
-/// Only `ctrl+<ascii-printable>` chords are accepted. The chord must be a key
-/// that `encode_key` can turn into literal bytes (so `<L><L>` can pass the
-/// leader through to the PTY) and must NOT collide with a no-prefix reserved
-/// key. F-keys, Shift+arrows, and Shift+PgUp/PgDn are reserved and rejected.
+///
+/// Only `ctrl+<ascii-letter>` chords are accepted. The chord must be a key
+/// `encode_key` can turn into literal bytes (so `<L><L>` can pass the leader
+/// through to the PTY) and must not collide with a reserved key; F-keys,
+/// Shift+arrows, and Shift+PgUp/PgDn are reserved and rejected.
 pub fn parse_leader(spec: &str) -> Result<KeyEvent> {
     let normalized = spec.trim().to_ascii_lowercase();
     let rest = normalized.strip_prefix("ctrl+").ok_or_else(|| {
@@ -144,10 +145,9 @@ pub fn parse_leader(spec: &str) -> Result<KeyEvent> {
          and Ctrl+M as Enter, so this leader would never be recognized"
     );
     // Restricting to letters guarantees `<L><L>` literal pass-through works:
-    // `encode_key` maps Ctrl+A..Ctrl+Z to control bytes 1..26. Digits and
-    // punctuation (e.g. ctrl+1) have no single-control-byte encoding, so
-    // encode_key would send the literal char instead and the pass-through
-    // would break — hence they are rejected above.
+    // `encode_key` maps Ctrl+A..Ctrl+Z to control bytes 1..26, while digits
+    // and punctuation have no single-control-byte encoding, so the
+    // pass-through would break — hence they are rejected above.
     Ok(KeyEvent::new(KeyCode::Char(c), KeyModifiers::CONTROL))
 }
 

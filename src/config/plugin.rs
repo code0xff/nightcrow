@@ -23,26 +23,26 @@ pub struct PluginConfig {
     /// Flags this plugin may append when relaunching a pane's command.
     ///
     /// Empty by default, which refuses every relaunch that passes a flag. The
-    /// core has no idea what any CLI's flags mean, so the decision of which
-    /// ones a plugin may add is the user's: a flag that is not listed here
-    /// cannot be smuggled into the pane's command line, which is what keeps a
-    /// plugin from quietly weakening a CLI's permission posture.
+    /// core has no idea what any CLI's flags mean, so the user decides: a flag
+    /// not listed here cannot be smuggled into the pane's command line, which
+    /// is what keeps a plugin from quietly weakening a CLI's permission
+    /// posture.
     #[serde(default)]
     pub allowed_resume_flags: Vec<String>,
     /// Off unless explicitly turned on.
     #[serde(default)]
     pub enabled: bool,
     /// Whether this plugin may be given a pane no `[[startup_command]]` named
-    /// it in, when a process *inside* that pane reports to it quoting the pane's
-    /// own token.
+    /// it in, when a process *inside* that pane reports to it quoting the
+    /// pane's own token.
     ///
-    /// Off by default, so an existing config keeps the property that the opt-in
-    /// list is the whole of what a plugin can see. Turning it on trades that for
-    /// a narrower one: a pane is reachable once something running in it has
-    /// spoken to the plugin, which a plain shell never does. The token is what
-    /// makes the difference — it is random, per pane, and only in that pane's
-    /// child environment, so it cannot be guessed from outside and the plugin is
-    /// never told which panes exist.
+    /// Off by default, so an existing config keeps the property that the
+    /// opt-in list is the whole of what a plugin can see. Turning it on trades
+    /// that for a narrower one: a pane becomes reachable once something
+    /// running in it has spoken to the plugin, which a plain shell never does.
+    /// The token makes the difference — random, per pane, only in that pane's
+    /// child environment, so it cannot be guessed from outside and the plugin
+    /// is never told which panes exist.
     #[serde(default)]
     pub watch_on_signal: bool,
 }

@@ -48,9 +48,8 @@ pub(crate) fn classify(events: Vec<Event>) -> Vec<Event> {
 /// The payload this burst would paste, or `None` if it reads as typing.
 ///
 /// Narrow on purpose: a false positive submits typed keys as a block. Enter
-/// hands the line off, so nothing typed can follow it within one burst — but
-/// the Enter that *ends* a typed line has nothing after it, and that burst is
-/// typing. What marks a paste is content the Enter did not submit.
+/// hands the line off, so nothing typed can follow it within one burst — what
+/// marks a paste is content the Enter did not submit.
 fn paste_text(events: &[Event]) -> Option<String> {
     let mut text = String::new();
     let mut enters = 0usize;

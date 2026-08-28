@@ -44,16 +44,14 @@ pub(crate) struct TerminalGuard;
 impl TerminalGuard {
     pub(crate) fn enter(mouse: bool) -> Result<Self> {
         enable_raw_mode()?;
-        // EnableBracketedPaste makes crossterm surface paste as
-        // `Event::Paste(String)` instead of a flood of `Event::Key` chars —
-        // the latter would each be filtered as control chars by the search
-        // handler and silently drop newlines. Unix only — the Windows console
-        // has no paste record, so `input::burst` reassembles the flood.
-        // Ratatui positions every changed cell itself. Host-side autowrap is
-        // therefore both unnecessary and dangerous: writing the bottom-right
-        // cell can scroll the physical screen while Ratatui's back buffer still
-        // describes the pre-scroll frame, leaving duplicated rows and stale
-        // fragments on subsequent partial draws.
+        // DisableLineWrap: Ratatui positions every changed cell itself, so
+        // host-side autowrap is unnecessary and dangerous — writing the
+        // bottom-right cell can scroll the physical screen while Ratatui's
+        // back buffer still describes the pre-scroll frame, leaving duplicated
+        // rows on later partial draws. (EnableBracketedPaste, below, makes
+        // paste arrive as one `Event::Paste` instead of a key flood that
+        // search handlers would filter into silent data loss; Windows has no
+        // paste record, so `input::burst` reassembles it there.)
         if let Err(err) = execute!(io::stdout(), EnterAlternateScreen, DisableLineWrap) {
             restore_terminal();
             return Err(err.into());
@@ -71,9 +69,8 @@ impl TerminalGuard {
         // prefer plain-drag selection can hand the mouse back entirely.
         if mouse && let Err(err) = execute!(io::stdout(), EnableMouseCapture) {
             // The enable may have partially reached the terminal even though
-            // the call errored (e.g. the write landed but a later flush
-            // failed), and no TerminalGuard exists yet to undo it on drop —
-            // send the disable explicitly; it is harmless when capture never
+            // the call errored, and no TerminalGuard exists yet to undo it on
+            // drop — send the disable explicitly; harmless if capture never
             // took effect.
             restore_terminal();
             return Err(err.into());

@@ -114,7 +114,7 @@ impl Guard {
     /// Decide one command. Never panics.
     ///
     /// `facts` is what the caller knows about the pane `cmd`'s token resolves
-    /// to, or `None` if it resolves to nothing. `allowed_resume_flags` is the
+    /// to, or `None` if it resolves to nothing; `allowed_resume_flags` is the
     /// plugin's configured list.
     pub fn judge(
         &mut self,
@@ -239,12 +239,11 @@ impl Guard {
             return Err(Refused::PaneStillRunning { pane });
         }
         if facts.launch_command.is_none() {
-            // A bare shell. Putting a process back here would start the shell
-            // again, not whatever the person ran inside it, and the resume
-            // arguments would have nothing to attach to — so the pane's only
-            // recovery is the one typed into it while it is still alive. Checked
-            // before `resume_command_line`, which also refuses this, so the log
-            // says the pane was never relaunchable rather than blaming the args.
+            // A bare shell: the resume arguments would have nothing to attach
+            // to, so the pane's only recovery is one typed into it while
+            // alive. Checked before `resume_command_line` (which also refuses
+            // this) so the log says the pane was never relaunchable rather
+            // than blaming the args.
             return Err(Refused::NoLaunchCommand { pane });
         }
         let command_line = resume_command_line(

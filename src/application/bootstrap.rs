@@ -21,8 +21,8 @@ pub(crate) fn init_app(
         // Applied up front rather than on the first snapshot: only the Status
         // selection needs the changed-file list, and it waits in
         // `pending_selection` (see `App::restore_session`). The terminal half
-        // waits too, for the panes to arrive from the session, which replaces
-        // the fresh-launch default rather than fighting it.
+        // waits for the panes to arrive from the session, which replaces the
+        // fresh-launch default rather than fighting it.
         app.restore_session(&state);
     }
     app

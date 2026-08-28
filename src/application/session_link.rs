@@ -1,10 +1,9 @@
 //! The client's half of the shared tab list.
 //!
-//! The daemon owns which repositories are open and in what order. This client
-//! asks for a change and adopts whatever comes back — including changes another
-//! client made. Which tab is in front is the daemon's too, so switching is a
-//! request and every client follows the answer. What stays local is everything
-//! *inside* a project — the view mode, the cursor, the scroll.
+//! The daemon owns the tab list — which repositories are open, their order,
+//! which is in front. This client asks and adopts whatever comes back,
+//! including changes another client made; what stays local is everything
+//! *inside* a project (view mode, cursor, scroll).
 
 use crate::application::bootstrap::init_app;
 use crate::application::input::dispatch::{ProjectContext, ProjectRequest};
@@ -22,7 +21,6 @@ impl SessionLink {
         Self { client }
     }
 
-    /// Take in everything the daemon has said since the last tick.
     pub(crate) fn sync(&mut self, ws: &mut Workspace, ctx: &ProjectContext) {
         for message in self.client.drain() {
             match message {
@@ -66,7 +64,6 @@ impl SessionLink {
         }
     }
 
-    /// Carry out a tab request locally, or send it to the daemon.
     pub(crate) fn request(&mut self, ws: &mut Workspace, request: ProjectRequest) {
         let sent = match request {
             // Which project is in front is the session's, so this asks. Nothing
@@ -114,7 +111,6 @@ impl SessionLink {
         }
     }
 
-    /// Whether the daemon is still there.
     pub(crate) fn is_connected(&self) -> bool {
         self.client.is_connected()
     }
@@ -138,13 +134,10 @@ fn focus_repo(ws: &mut Workspace, repo: &str) -> bool {
     }
 }
 
-/// Raise a terminal refusal on the tab it came from.
-///
-/// By repository, not on the active tab: the client subscribes to every open
-/// repository's terminals, so a refusal can be about one the user is not looking
-/// at, and putting it on whatever tab is in front would name the wrong project.
-/// A repository with no tab yet falls back to the active one rather than losing
-/// the message.
+/// Raise a terminal refusal on the tab it came from, not the active one: the
+/// client subscribes to every open repository, so the refusal may be about a
+/// tab the user is not looking at. A repository with no tab yet falls back to
+/// the active one rather than losing the message.
 fn notify_repo(ws: &mut Workspace, repo: &str, message: String) {
     match ws
         .projects_mut()
@@ -160,10 +153,9 @@ fn notify_repo(ws: &mut Workspace, repo: &str, message: String) {
 ///
 /// Membership first, then order, then the ids — a tab that stays open keeps its
 /// terminals, scroll, and selection, so reconciling in place matters more than
-/// it would if this rebuilt from scratch.
+/// rebuilding from scratch would.
 fn adopt(ws: &mut Workspace, ctx: &ProjectContext, repos: &[RepoSummary], client: &DaemonClient) {
-    // Closing first frees room under `MAX_PROJECTS` for what is being opened,
-    // so a set that swaps one repository for another fits in a single pass.
+    // Closing first frees room under `MAX_PROJECTS` for what is being opened.
     let wanted: Vec<&str> = repos.iter().map(|repo| repo.path.as_str()).collect();
     let doomed: Vec<String> = ws
         .projects()
