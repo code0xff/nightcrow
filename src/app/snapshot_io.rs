@@ -7,17 +7,20 @@ impl App {
     // collapses to one. Applying is NOT done here: this half touches no git
     // state, so every project can run it every tick to keep its unbounded
     // channel from growing, regardless of which tab is shown.
-    pub fn drain_snapshot(&mut self) {
+    pub fn drain_snapshot(&mut self) -> bool {
+        let mut received = false;
         while let Ok(msg) = self.snapshot.try_recv() {
+            received = true;
             self.pending_snapshot = Some(msg);
         }
+        received
     }
 
     // Applying runs a full `refresh_diff`, so this is for the on-screen project
     // only — hidden projects' snapshots wait in `pending_snapshot` and apply on
     // the first tick after their tab comes forward.
-    pub fn poll_snapshot(&mut self) {
-        self.drain_snapshot();
+    pub fn poll_snapshot(&mut self) -> bool {
+        let received = self.drain_snapshot();
         match self.pending_snapshot.take() {
             Some(SnapshotMsg::Ok(snapshot, mtimes)) => {
                 self.ingest_snapshot(snapshot, mtimes);
@@ -29,8 +32,9 @@ impl App {
                 // snapshot should still apply the saved selection. Saving must
                 // not be blocked by it — see `session_to_save`, which merges.
             }
-            None => {}
+            None => return received,
         }
+        true
     }
 
     // Split out so tests can drive the merge/auto-follow logic with deterministic

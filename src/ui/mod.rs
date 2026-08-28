@@ -28,8 +28,8 @@ mod wall_clock;
 
 pub(crate) use chrome::{Chrome, chrome_rows, main_content_constraints};
 pub(crate) use helpers::{
-    char_offset, focused_border_style, jump_legend, path_extension, render_search_bar,
-    render_selectable_list, status_color,
+    char_offset, current_caret_lit, focused_border_style, jump_legend, path_extension,
+    render_search_bar, render_selectable_list, status_color,
 };
 pub(crate) use hint_bar::{
     HintClick, empty_hint_click_at, hint_click_at, hint_spans, render_hint_bar,

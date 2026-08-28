@@ -2,6 +2,7 @@ pub(crate) use crate::application::input::dispatch::ProjectContext;
 use crate::application::input::dispatch::{KeyOutcome, dispatch_key};
 use crate::application::input::mouse::dispatch_mouse;
 use crate::application::input::paste::dispatch_paste;
+use crate::application::redraw::{RedrawCause, RedrawState};
 use crate::application::session_link::SessionLink;
 use crate::application::terminal_guard::TuiTerminal;
 use crate::workspace::Workspace;
@@ -21,10 +22,13 @@ pub(crate) fn main_loop(
     mut link: SessionLink,
 ) -> anyhow::Result<()> {
     let blink_started = std::time::Instant::now();
+    let mut redraw = RedrawState::new();
     loop {
         // Whoever owns the tab list gets the first word each tick: attached,
         // the set may have changed under this client since the last frame.
-        link.sync(ws, ctx);
+        if link.sync(ws, ctx) {
+            redraw.request(RedrawCause::Session);
+        }
         if !link.is_connected() {
             tracing::info!("daemon connection lost");
             // Reported rather than returned quietly. Leaving on a lost
@@ -45,11 +49,15 @@ pub(crate) fn main_loop(
         let active = ws.active_index();
         for (i, project) in ws.projects_mut().iter_mut().enumerate() {
             if i == active {
-                project.poll_snapshot();
+                if project.poll_snapshot() {
+                    redraw.request(RedrawCause::Snapshot);
+                }
                 // Stays with the snapshot as active-only work: applying a
                 // commit-log page can trigger a further prefetch and load a
                 // commit diff synchronously.
-                project.poll_commit_log_page_fetch();
+                if project.poll_commit_log_page_fetch() {
+                    redraw.request(RedrawCause::Log);
+                }
             } else {
                 project.drain_snapshot();
             }
@@ -58,11 +66,15 @@ pub(crate) fn main_loop(
             // consumed before the pipe fills and blocks the child. Acting on a
             // watcher event is active-only; a hidden project records the event.
             if i == active {
-                project.poll_tree_watcher();
+                if project.poll_tree_watcher() {
+                    redraw.request(RedrawCause::Tree);
+                }
             } else {
                 project.drain_tree_watcher();
             }
-            project.poll_terminal();
+            if project.poll_terminal() {
+                redraw.request(RedrawCause::Terminal);
+            }
         }
         // Project-tab attention is client-local and means "not seen on this
         // screen". The project in front has just consumed its terminal events,
@@ -71,6 +83,7 @@ pub(crate) fn main_loop(
 
         let size = terminal.size()?;
         let screen = Rect::new(0, 0, size.width, size.height);
+        redraw.observe_screen(size.width, size.height);
         if let Some(app) = ws.active() {
             let layouts: Vec<(crate::backend::PaneId, u16, u16)> =
                 crate::ui::terminal_content_areas(app, screen, &cfg.layout)
@@ -91,6 +104,13 @@ pub(crate) fn main_loop(
             .iter()
             .map(|project| project.terminal.has_unread_attention())
             .collect();
+        let has_attention = tab_attention.iter().any(|attention| *attention);
+        let attention_bright = crate::ui::project_tab::blink_is_bright(blink_started.elapsed());
+        redraw.observe_attention(has_attention, attention_bright);
+        let caret_active = ws
+            .active()
+            .is_some_and(crate::app::App::search_overlay_active);
+        redraw.observe_caret(caret_active, crate::ui::current_caret_lit());
         let active_tab = ws.active_index();
         let empty_notice = ws.empty_notice().cloned();
         let prefix_armed = ws.prefix_armed();
@@ -99,45 +119,47 @@ pub(crate) fn main_loop(
         // the borrow the projects need.
         let accent = ws.current_accent();
 
-        let (app_opt, repo_input) = ws.render_parts();
-        let tabs = crate::ui::Chrome {
-            repo_paths: &tab_paths,
-            attention: &tab_attention,
-            attention_bright: crate::ui::project_tab::blink_is_bright(blink_started.elapsed()),
-            active: active_tab,
-            repo_input,
-        };
-        terminal.draw(|frame| match app_opt {
-            Some(app) => {
-                crate::ui::draw(frame, app, tabs, ss, ts, &cfg.layout, accent);
-            }
-            None => crate::ui::draw_empty(
-                frame,
-                tabs,
-                empty_notice.as_ref(),
-                ctx.leader,
-                prefix_armed,
-                cfg.mouse.enabled,
-                accent,
-            ),
-        })?;
+        if redraw.take() {
+            let (app_opt, repo_input) = ws.render_parts();
+            let tabs = crate::ui::Chrome {
+                repo_paths: &tab_paths,
+                attention: &tab_attention,
+                attention_bright,
+                active: active_tab,
+                repo_input,
+            };
+            terminal.draw(|frame| match app_opt {
+                Some(app) => {
+                    crate::ui::draw(frame, app, tabs, ss, ts, &cfg.layout, accent);
+                }
+                None => crate::ui::draw_empty(
+                    frame,
+                    tabs,
+                    empty_notice.as_ref(),
+                    ctx.leader,
+                    prefix_armed,
+                    cfg.mouse.enabled,
+                    accent,
+                ),
+            })?;
+        }
 
         // `tabs` above borrows the workspace for the draw; input needs it
         // mutably, so rebuild the same view over a snapshot of the dialog.
-        // Only the buffer is copied, and only on frames that see an event.
+        // Only the buffer is copied here; the frame itself may be skipped when
+        // no state or visual clock phase changed.
         let repo_input = ws.repo_input.clone();
         let tabs = crate::ui::Chrome {
             repo_paths: &tab_paths,
             attention: &tab_attention,
-            attention_bright: crate::ui::project_tab::blink_is_bright(blink_started.elapsed()),
+            attention_bright,
             active: active_tab,
             repo_input: &repo_input,
         };
 
-        // 16 ms ≈ 60 fps. The previous 50 ms tick noticeably lagged PTY echo
-        // on every keystroke (typing felt sticky). `event::poll` performs an
-        // OS-level wait when nothing is happening, so the higher cap doesn't
-        // burn CPU at idle.
+        // 16 ms ≈ 60 fps is only the polling latency cap. Unlike the old frame
+        // clock, an idle tick does not draw; the wait lets asynchronous PTY and
+        // watcher results be noticed without keeping a terminal frame alive.
         if event::poll(Duration::from_millis(16))? {
             let first = event::read()?;
             // Unix gets a real `Event::Paste` from crossterm; Windows never
@@ -153,23 +175,39 @@ pub(crate) fn main_loop(
                     // Ratatui's next draw will pick up the new size from
                     // `Frame::area()`. An explicit clear() here only adds a
                     // visible flash on resize without improving correctness.
-                    Event::Resize(_, _) => {}
+                    Event::Resize(_, _) => redraw.request(RedrawCause::Resize),
                     Event::Key(key) => {
+                        let pressed = key.kind == crossterm::event::KeyEventKind::Press;
+                        if pressed {
+                            redraw.request(RedrawCause::Input);
+                        }
                         let outcome = dispatch_key(ws, key);
+                        let force_redraw = matches!(outcome, KeyOutcome::Redraw);
                         if apply_outcome(terminal, ws, &mut link, outcome)? {
                             return Ok(());
                         }
+                        if force_redraw {
+                            redraw.request(RedrawCause::Redraw);
+                        }
                     }
-                    Event::Paste(text) => dispatch_paste(ws, &text),
+                    Event::Paste(text) => {
+                        redraw.request(RedrawCause::Input);
+                        dispatch_paste(ws, &text);
+                    }
                     Event::Mouse(mouse) => {
+                        redraw.request(RedrawCause::Input);
                         let screen = Rect::new(0, 0, size.width, size.height);
                         let outcome =
                             dispatch_mouse(ws, tabs, mouse, screen, &cfg.layout, cfg.mouse.enabled);
+                        let force_redraw = matches!(outcome, KeyOutcome::Redraw);
                         if apply_outcome(terminal, ws, &mut link, outcome)? {
                             return Ok(());
                         }
+                        if force_redraw {
+                            redraw.request(RedrawCause::Redraw);
+                        }
                     }
-                    _ => {}
+                    _ => redraw.request(RedrawCause::Input),
                 }
             }
         }

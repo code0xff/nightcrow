@@ -21,7 +21,8 @@ impl SessionLink {
         Self { client }
     }
 
-    pub(crate) fn sync(&mut self, ws: &mut Workspace, ctx: &ProjectContext) {
+    pub(crate) fn sync(&mut self, ws: &mut Workspace, ctx: &ProjectContext) -> bool {
+        let mut changed = false;
         for message in self.client.drain() {
             match message {
                 ServerMessage::Repos {
@@ -39,16 +40,19 @@ impl SessionLink {
                     // Adopted whether or not this client asked: the colour may
                     // have been picked in a browser, or in another terminal.
                     ws.set_accent_index(accent);
+                    changed = true;
                 }
                 // A refusal this client asked for — a path that is not a
                 // directory, or one repository too many.
                 ServerMessage::Error { message } => {
                     ws.raise_notice(crate::app::NoticeKind::Project, message);
+                    changed = true;
                 }
                 // Shown where the refusal above is shown, because the two are the
                 // same answer to the same request.
                 ServerMessage::Reloaded { summary } => {
                     ws.raise_notice(crate::app::NoticeKind::Session, summary);
+                    changed = true;
                 }
                 // Answered during the handshake; a later one would mean the
                 // daemon restarted under this client.
@@ -58,10 +62,12 @@ impl SessionLink {
                 ServerMessage::Terminal { repo, event } => {
                     if let HubServerMessage::Error { message } = event {
                         notify_repo(ws, &repo, message);
+                        changed = true;
                     }
                 }
             }
         }
+        changed
     }
 
     pub(crate) fn request(&mut self, ws: &mut Workspace, request: ProjectRequest) {

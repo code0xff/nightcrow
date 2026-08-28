@@ -114,9 +114,9 @@ impl App {
         self.commit_log_controller.handle = Some(handle);
     }
 
-    pub(crate) fn poll_commit_log_page_fetch(&mut self) {
+    pub(crate) fn poll_commit_log_page_fetch(&mut self) -> bool {
         let Some(rx) = self.commit_log_controller.page_rx.as_ref() else {
-            return;
+            return false;
         };
         match rx.try_recv() {
             Ok(msg) => {
@@ -128,14 +128,16 @@ impl App {
                     try_timed_join(h, REAP_TIMEOUT);
                 }
                 self.handle_commit_log_page_msg(msg);
+                true
             }
-            Err(mpsc::TryRecvError::Empty) => {}
+            Err(mpsc::TryRecvError::Empty) => false,
             Err(mpsc::TryRecvError::Disconnected) => {
                 self.commit_log_controller.page_rx = None;
                 if let Some(h) = self.commit_log_controller.handle.take() {
                     try_timed_join(h, REAP_TIMEOUT);
                 }
                 self.log_view.clear_pending();
+                true
             }
         }
     }

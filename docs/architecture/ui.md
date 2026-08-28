@@ -173,6 +173,25 @@ legend와 폭을 다툴 일이 없다. 다이얼로그의 키는 그 아래 hint
 - **로그 경로** — 로그 파일은 시작 시 한 번 열리므로 활성 탭을 따라갈 수 없다. 첫 `--repo`를, 그것도
   없으면 작업 디렉토리를 고정 기준으로 삼는다.
 
+## Polling and dirty frames
+
+The attached TUI still polls its input and runtime queues every 16 ms so PTY
+output, snapshot results, tree watcher events, and log pages are noticed
+promptly. Polling is not a frame clock: `application::redraw::RedrawState`
+requests a draw only for a state-changing event, a terminal-size change, or a
+visible attention/search-caret phase change. The first frame is always drawn;
+an unchanged idle tick does no `Terminal::draw` call. Terminal polling reports
+output, title, resize, pane lifecycle, recovery, delayed synchronized-update,
+and settled-title activity so a redraw cannot depend only on keyboard input.
+
+`<prefix> r` remains an explicit full repaint: it clears ratatui's front buffer
+and marks the next loop dirty, covering terminal programs that left cells the
+diff renderer cannot know about. Input events also request a frame before their
+effects are observed, which keeps prefix/overlay/focus changes visible even
+when a PTY echo is delayed. Resize events and direct size observations share
+the same dirty path, so a missed crossterm resize notification cannot leave the
+new geometry unpainted.
+
 ## Notice Row
 
 힌트 바 바로 위 한 행. 평상시에는 `ui::mod::render_repo_header`가 repo 경로(`~/...` 형식으로
