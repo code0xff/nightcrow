@@ -463,7 +463,10 @@ path인지 quiescent moment인지에 따라 join 정책이 의도적으로 다�
 `GitLoadWorker`는 예외적으로 프로젝트 수명 동안 살아 있는 conflated worker다. 아직 시작하지 않은
 요청을 lane별 한 슬롯에 덮어써 10만 번의 연속 선택도 큐나 스레드를 10만 개 만들지 않는다. 따라서
 reply receiver drop만으로는 요청을 기다리는 `Condvar`를 깨울 수 없어 `Drop`이 stop flag를 세우고
-깨운 뒤 같은 `try_timed_join` 상한을 적용한다. 실행 중인 libgit2 호출은 강제 중단하지 않고, 늦은
-reply는 `(repo, generation)` guard가 버린다.
+깨운 뒤 5ms 동안 완료를 기다린다. 실행 중인 libgit2 호출은 강제 중단하지 않는다. 제한 안에 끝나지
+않은 handle은 버리지 않고 process-wide registry가 추적하며, 완료된 handle을 다음 spawn/drop에서
+join한다. registry가 상한에 닿으면 가장 오래된 worker 완료에 backpressure를 걸어 반복 repo churn도
+thread/FD를 무제한 누적하지 못한다. 별도의 process/동일-repo in-flight 상한이 실제 libgit2 동시
+호출도 제한하고, 늦은 reply는 `(repo, generation)` guard가 버린다.
 
 ← [Architecture index](../architecture.md)

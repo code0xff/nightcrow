@@ -22,7 +22,10 @@ façade만 UI와 입력 계층에 제공한다. 따라서 프로젝트 close는 
   `Repository::discover`와 cache를 모두 소유한다. 요청은 `(repo, oid/path, generation)`으로 식별하고
   diff/file/commit-files/decorations lane마다 아직 시작하지 않은 요청을 하나로 합친다. 실행 중인 이전
   요청은 취소할 수 없지만 generation이나 repo가 현재 intent와 다르면 결과를 버리므로 연속 선택,
-  HEAD 변경, 탭 전환이 과거 내용을 되돌리지 않는다.
+  HEAD 변경, 탭 전환이 과거 내용을 되돌리지 않는다. lane 선택은 round-robin이라 diff 요청이 계속
+  들어와도 file/commit-files/decorations가 굶지 않는다. 프로세스 전체 git I/O와 동일 저장소 I/O에는
+  각각 hard bound가 있고, 종료 제한 안에 끝나지 않은 worker handle도 중앙 registry가 bounded하게
+  추적·회수한다.
 - **snapshot reload gate**: 선택 파일의 path·status columns·mtime이 전부 이전 snapshot과 같으면
   다른 파일이 바뀌었더라도 선택 diff를 다시 읽지 않는다. 선택 파일 자체가 바뀐 in-place refresh만
   기존 scroll을 유지해 요청하고, 새 선택은 scroll/search cursor를 새 대상에 맞춰 reset한다.
