@@ -14,6 +14,7 @@ fn log_drill_in_clears_stale_diff_for_empty_commit() {
     app.log_view.diff_title = "stale".to_string();
 
     app.log_drill_in();
+    app.flush_git_loads_for_test(Duration::from_secs(2));
 
     assert!(app.log_view.drill_down);
     assert!(app.log_view.commit_files.is_empty());

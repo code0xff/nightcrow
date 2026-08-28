@@ -16,6 +16,7 @@ use std::collections::HashMap;
 use std::path::Path;
 use std::time::{Duration, Instant, SystemTime};
 
+mod async_load;
 mod auto_follow;
 mod clamp_pane;
 mod commit_log;

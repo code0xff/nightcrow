@@ -117,6 +117,7 @@ fn restore_session_keeps_log_scroll_after_loading_commit_diff() {
         scroll: 2,
         ..Default::default()
     });
+    app.flush_git_loads_for_test(Duration::from_secs(2));
 
     assert_eq!(app.mode, ViewMode::Log);
     assert!(!app.diff.hunks().is_empty());

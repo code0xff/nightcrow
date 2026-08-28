@@ -443,7 +443,7 @@ DECCKM)은 하루 지난 pane에서 이미 밀려나 있다. 그러면 클라이
 
 ## Worker Thread Lifecycle (의도된 비대칭)
 
-백그라운드 worker(`SnapshotChannel`, `CommitLogPagination`, `PtyPane`)는 모두 "receiver/owner를
+완료 후 한 번 답하는 백그라운드 worker(`SnapshotChannel`, `CommitLogPagination`, `PtyPane`)는 모두 "receiver/owner를
 먼저 drop → worker가 다음 send 실패로 종료"라는 공통 종료 신호를 쓰지만, **호출 지점이 hot
 path인지 quiescent moment인지에 따라 join 정책이 의도적으로 다르다.** 리뷰 시 이 비대칭을
 깨뜨리지 말 것.
@@ -459,5 +459,11 @@ path인지 quiescent moment인지에 따라 join 정책이 의도적으로 다�
 
 `try_timed_join`은 `src/platform/threading.rs`에 공유 helper로 두고 snapshot/commit-log/PTY 세
 곳에서 호출한다. 새 worker 패턴을 추가할 때도 같은 분기 기준으로 join 정책을 고른다.
+
+`GitLoadWorker`는 예외적으로 프로젝트 수명 동안 살아 있는 conflated worker다. 아직 시작하지 않은
+요청을 lane별 한 슬롯에 덮어써 10만 번의 연속 선택도 큐나 스레드를 10만 개 만들지 않는다. 따라서
+reply receiver drop만으로는 요청을 기다리는 `Condvar`를 깨울 수 없어 `Drop`이 stop flag를 세우고
+깨운 뒤 같은 `try_timed_join` 상한을 적용한다. 실행 중인 libgit2 호출은 강제 중단하지 않고, 늦은
+reply는 `(repo, generation)` guard가 버린다.
 
 ← [Architecture index](../architecture.md)

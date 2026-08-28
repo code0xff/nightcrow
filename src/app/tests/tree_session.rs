@@ -263,6 +263,7 @@ fn tree_session_round_trips_mode_expansion_and_selection() {
 
     let mut other = app_on(&path);
     other.restore_session(&state);
+    other.flush_git_loads_for_test(Duration::from_secs(2));
     assert_eq!(other.mode, ViewMode::Tree);
     assert!(other.tree_view.expanded.contains("src"));
     assert_eq!(

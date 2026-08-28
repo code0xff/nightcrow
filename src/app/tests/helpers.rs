@@ -51,6 +51,7 @@ pub(crate) fn app_with_files(files: Vec<&str>) -> App {
         tracking: None,
         snapshot,
         pending_snapshot: None,
+        selected_snapshot_mtime: None,
         tree_watch,
         tree_dirty: Default::default(),
         tree_dirty_all: false,
@@ -62,6 +63,7 @@ pub(crate) fn app_with_files(files: Vec<&str>) -> App {
             ..Default::default()
         }),
         repo_cache: None,
+        load_controller: crate::app::load_controller::LoadController::new(),
         cfg_agent_indicator: crate::config::AgentIndicatorConfig {
             auto_follow: true,
             ..crate::config::AgentIndicatorConfig::default()

@@ -101,7 +101,8 @@ src/
 │                         #   threading.rs (try_timed_join)
 ├── app.rs, app/          # App aggregate + InteractionState; per-feature impls: auto_follow,
 │                         #   commit-log fetch/pagination/apply, diff & file-view loaders, focus,
-│                         #   navigation, log_nav, scroll, session_io, snapshot_io,
+│                         #   navigation, log_nav, load controller/apply, scroll, session_io,
+│                         #   snapshot_io,
 │                         #   terminal_ctrl, tree, tree_nav
 ├── config.rs, config/    # config.toml root + layout/theme/input, log, panels,
 │                         #   plugin ([[plugin]]), web (WebViewerConfig, password bootstrap)
@@ -153,7 +154,8 @@ src/
 │   └── registry.rs, registry/  # ~/.nightcrow/plugins: config snippets, executable
 │                         #   resolution, atomic install/list/remove storage
 ├── git/
-│   ├── diff.rs, diff/    # types, snapshot loader, diff/commit loaders, commit_log, refs
+│   ├── diff.rs, diff/    # types, snapshot loader, diff/commit loaders, conflated load worker,
+│   │                     # commit_log, refs
 │   ├── clone.rs, clone/  # delegate `git clone` to the binary; URL scheme whitelist
 │   ├── path/             # repo-relative path validation before any filesystem read
 │   └── tree/             # lazy read-only directory listing (gitignore filter, symlink guard)

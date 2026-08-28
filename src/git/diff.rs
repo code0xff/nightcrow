@@ -2,6 +2,7 @@ mod commit_log;
 mod conflict;
 mod diff_load;
 mod file_load;
+mod load_worker;
 mod refs;
 mod snapshot;
 mod types;
@@ -16,6 +17,9 @@ pub use diff_load::{
     parse_hunk_new_start,
 };
 pub use file_load::{load_commit_file, load_commit_file_blob, load_workdir_file};
+pub(crate) use load_worker::{
+    GitLoadOperation, GitLoadPayload, GitLoadReply, GitLoadRequest, GitLoadWorker, LoadLane,
+};
 pub use refs::{LogDecorations, RefKind, RefLabel, load_log_decorations};
 pub use snapshot::load_snapshot;
 #[cfg(test)]

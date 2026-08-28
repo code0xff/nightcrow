@@ -90,6 +90,7 @@ impl App {
             tracking: None,
             snapshot,
             pending_snapshot: None,
+            selected_snapshot_mtime: None,
             // `main` upgrades to a live watcher after applying `[tree] live_watch`,
             // so a `false` setting never spawns an OS watcher.
             tree_watch: crate::runtime::tree_watch::TreeWatcher::disabled(),
@@ -105,6 +106,7 @@ impl App {
                 ..Default::default()
             }),
             repo_cache: None,
+            load_controller: crate::app::load_controller::LoadController::new(),
             cfg_agent_indicator: crate::config::AgentIndicatorConfig::default(),
             cfg_tree: crate::config::TreeConfig::default(),
             commit_log_controller:

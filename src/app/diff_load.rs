@@ -1,12 +1,15 @@
+use super::load_controller::{DiffLoadMode, DiffTarget};
 use super::{App, DiffPaneView, FileViewState, NoticeKind, ViewMode};
-use crate::git::diff::{DiffHunk, load_file_diff, parse_hunk_new_start};
+use crate::git::diff::{DiffHunk, parse_hunk_new_start};
 
 // Replaces a prior 3-flag signature where `reset_scroll`/`keep_scroll` were
 // hard to parse at call sites.
 pub(crate) enum DiffApply<'a> {
     Reset,
+    ResetPreservingFile,
     KeepScroll(usize),
     ResetWithTitle(&'a str),
+    ResetWithTitlePreservingFile(&'a str),
 }
 
 impl App {
@@ -51,17 +54,13 @@ impl App {
             self.clear_diff_state();
             return;
         };
-        let result = self.with_repo(|repo| load_file_diff(repo, &path));
-        if let Err(e) = &result {
-            tracing::warn!(error = %e, file = %path, "failed to load diff");
-            self.raise_notice(NoticeKind::Diff, e.to_string());
-        }
         let mode = if reset_scroll {
-            DiffApply::Reset
+            DiffLoadMode::Reset
         } else {
-            DiffApply::KeepScroll(previous_scroll)
+            DiffLoadMode::KeepScroll(previous_scroll)
         };
-        self.apply_diff_result(result, mode);
+        self.load_controller
+            .request_diff(&self.repo_path, DiffTarget::Status(path), mode);
     }
 
     pub(crate) fn apply_diff_result(
@@ -69,17 +68,32 @@ impl App {
         result: anyhow::Result<Vec<DiffHunk>>,
         mode: DiffApply<'_>,
     ) {
-        let reset_scroll = matches!(mode, DiffApply::Reset | DiffApply::ResetWithTitle(_));
+        let reset_scroll = matches!(
+            mode,
+            DiffApply::Reset
+                | DiffApply::ResetPreservingFile
+                | DiffApply::ResetWithTitle(_)
+                | DiffApply::ResetWithTitlePreservingFile(_)
+        );
+        let preserve_file = matches!(
+            mode,
+            DiffApply::ResetPreservingFile | DiffApply::ResetWithTitlePreservingFile(_)
+        );
         match result {
             Ok(hunks) => {
                 self.clear_notice(NoticeKind::Diff);
                 self.diff.set_hunks(hunks);
                 match mode {
-                    DiffApply::Reset | DiffApply::ResetWithTitle(_) => {
+                    DiffApply::Reset
+                    | DiffApply::ResetPreservingFile
+                    | DiffApply::ResetWithTitle(_)
+                    | DiffApply::ResetWithTitlePreservingFile(_) => {
                         self.diff.scroll = 0;
                         self.diff.scroll_x = 0;
                         self.diff.search.cursor = 0;
-                        self.invalidate_file_view();
+                        if !preserve_file {
+                            self.invalidate_file_view();
+                        }
                     }
                     DiffApply::KeepScroll(prev) => {
                         // Clamp against the new (possibly shorter) diff so
@@ -101,19 +115,22 @@ impl App {
                 // KeepScroll error (in-place refresh) keeps the prior diff:
                 // usually a transient race (mid-rename, slow index update) and
                 // clearing would flash an empty pane and dangle `scroll`.
-                if !matches!(mode, DiffApply::KeepScroll(_)) {
+                if !matches!(mode, DiffApply::KeepScroll(_)) && !preserve_file {
                     self.clear_diff_state();
                 }
             }
         }
         // Title belongs to the surrounding view, not the diff state — set it
         // last so it survives both success and failure.
-        if let DiffApply::ResetWithTitle(title) = mode {
+        if let DiffApply::ResetWithTitle(title) | DiffApply::ResetWithTitlePreservingFile(title) =
+            mode
+        {
             self.log_view.diff_title = title.to_string();
         }
     }
 
     pub(crate) fn clear_diff_state(&mut self) {
+        self.load_controller.cancel_diff();
         self.diff.set_hunks(Vec::new());
         // Drop the entire search state, not just the match list: keeping the
         // query alive after a content-discarding clear would leave a ghost
@@ -126,6 +143,7 @@ impl App {
     }
 
     pub(crate) fn invalidate_file_view(&mut self) {
+        self.load_controller.cancel_file();
         self.diff.view = DiffPaneView::Diff;
         self.diff.file_view = FileViewState::default();
     }

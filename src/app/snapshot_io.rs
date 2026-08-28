@@ -53,22 +53,50 @@ impl App {
                     .as_ref()
                     .map(|(path, _)| path.clone())
             });
+        let previous_selected = previous_path.as_ref().and_then(|path| {
+            self.status_view
+                .files
+                .iter()
+                .find(|file| &file.path == path)
+                .cloned()
+        });
+        let previous_snapshot_mtime = self.selected_snapshot_mtime.clone().or_else(|| {
+            previous_path
+                .as_ref()
+                .map(|path| (path.clone(), self.status_view.hot_table.get(path).copied()))
+        });
         let new_head = snapshot.head_oid;
         self.branch_name = snapshot.branch_name;
         self.refresh_log_decorations(snapshot.refs_fingerprint);
         self.status_view.set_files(snapshot.files);
         self.status_view.recompute_filter();
         self.tracking = snapshot.tracking;
-        self.merge_hot_table(mtimes);
+        self.merge_hot_table(&mtimes);
 
         self.restore_selection(previous_path.as_deref());
         self.sync_selection_to_filter();
         let auto_followed = self.try_auto_follow();
         let selected_path = self.selected_filtered_status_path();
+        let selected_snapshot_mtime = selected_path
+            .as_ref()
+            .map(|path| (path.clone(), mtimes.get(path).copied()));
         let selected_path_changed = auto_followed || selected_path != previous_path;
+        let selected_state_unchanged = !selected_path_changed
+            && previous_selected.as_ref().is_some_and(|previous| {
+                self.selected_filtered_status_file().is_some_and(|current| {
+                    current.path == previous.path
+                        && current.old_path == previous.old_path
+                        && current.index == previous.index
+                        && current.worktree == previous.worktree
+                        && previous_snapshot_mtime == selected_snapshot_mtime
+                })
+            });
+        self.selected_snapshot_mtime = selected_snapshot_mtime;
         if self.mode == ViewMode::Status {
             if selected_path.is_some() {
-                self.refresh_diff(selected_path_changed);
+                if !selected_state_unchanged {
+                    self.refresh_diff(selected_path_changed);
+                }
             } else {
                 self.clear_diff_state();
             }
@@ -99,13 +127,8 @@ impl App {
         if self.last_refs_fingerprint == Some(fingerprint) {
             return;
         }
-        match self.with_repo(crate::git::diff::load_log_decorations) {
-            Ok(decorations) => {
-                self.log_decorations = decorations;
-                self.last_refs_fingerprint = Some(fingerprint);
-            }
-            Err(e) => tracing::warn!(error = %e, "failed to load ref decorations"),
-        }
+        self.load_controller
+            .request_decorations(&self.repo_path, fingerprint);
     }
 
     // A path whose previous mtime was newer than the freshly observed one keeps
@@ -113,18 +136,17 @@ impl App {
     // the same path and must not demote a recent edit to cool. Updates in place
     // instead of rebuilding the HashMap every tick: the steady state has the
     // same path set tick after tick.
-    pub(crate) fn merge_hot_table(&mut self, mtimes: HashMap<String, SystemTime>) {
+    pub(crate) fn merge_hot_table(&mut self, mtimes: &HashMap<String, SystemTime>) {
         let table = &mut self.status_view.hot_table;
         table.retain(|path, _| mtimes.contains_key(path));
         for (path, new_mtime) in mtimes {
-            table
-                .entry(path)
-                .and_modify(|stored| {
-                    if new_mtime > *stored {
-                        *stored = new_mtime;
-                    }
-                })
-                .or_insert(new_mtime);
+            if let Some(stored) = table.get_mut(path) {
+                if new_mtime > stored {
+                    *stored = *new_mtime;
+                }
+            } else {
+                table.insert(path.clone(), *new_mtime);
+            }
         }
     }
 }

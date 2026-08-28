@@ -183,7 +183,7 @@ impl App {
         } else {
             self.load_commit_diff_for_selected();
         }
-        self.diff.scroll = state.scroll.min(self.diff.max_scroll());
+        self.load_controller.restore_diff_scroll(state.scroll);
         // Restored cursor may already sit close to the tail of the first page;
         // kick off the next prefetch so the first key move doesn't bump into a
         // not-yet-loaded boundary.

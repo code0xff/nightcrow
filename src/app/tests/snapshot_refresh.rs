@@ -157,3 +157,42 @@ fn snapshot_refresh_with_no_filter_matches_clears_stale_diff() {
     assert!(app.filtered_indices().is_empty());
     assert!(app.diff.hunks().is_empty());
 }
+
+#[test]
+fn non_selected_file_change_does_not_reload_the_selected_diff() {
+    let mut app = app_with_files(vec!["selected.rs", "other.rs"]);
+    app.repo_path = "missing-repo-used-to-detect-unwanted-load".to_string();
+    app.diff.hunks = vec![context_hunk(&["selected diff"])];
+    let selected_mtime = SystemTime::UNIX_EPOCH + Duration::from_secs(10);
+    app.status_view
+        .hot_table
+        .insert("selected.rs".to_string(), selected_mtime);
+
+    app.ingest_snapshot(
+        RepoSnapshot {
+            files: vec![
+                ChangedFile::unstaged_only("selected.rs".to_string(), StatusKind::Modified),
+                ChangedFile::unstaged_only("other.rs".to_string(), StatusKind::Modified),
+            ],
+            tracking: None,
+            head_oid: None,
+            branch_name: None,
+            refs_fingerprint: 0,
+        },
+        HashMap::from([
+            ("selected.rs".to_string(), selected_mtime),
+            (
+                "other.rs".to_string(),
+                SystemTime::UNIX_EPOCH + Duration::from_secs(20),
+            ),
+        ]),
+    );
+
+    assert_eq!(app.diff.hunks[0].lines[0].content, "selected diff");
+    assert!(
+        app.notice
+            .as_ref()
+            .is_none_or(|notice| notice.kind != NoticeKind::Diff),
+        "an unchanged selection must not start a repository load"
+    );
+}

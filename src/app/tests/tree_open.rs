@@ -39,6 +39,7 @@ fn tree_open_on_file_row_loads_file_view_and_goes_fullscreen() {
     app.tree_view.selected = tree_index_of(&app, "README.md");
 
     app.tree_open_selected();
+    app.flush_git_loads_for_test(Duration::from_secs(2));
 
     assert_eq!(app.diff.view, DiffPaneView::File);
     assert_eq!(
