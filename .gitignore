@@ -49,6 +49,11 @@
 /viewer-ui/tsconfig.tsbuildinfo
 # Agent tool scratch state
 /.atl/
+/.worktress/
+
+# Checkout-local agent instructions
+/AGENTS.local.md
+/CLAUDE.local.md
 
 # Internal-only notes: not part of the published documentation.
 /docs/internal/
