@@ -162,7 +162,7 @@ fn snapshot_refresh_with_no_filter_matches_clears_stale_diff() {
 fn non_selected_file_change_does_not_reload_the_selected_diff() {
     let mut app = app_with_files(vec!["selected.rs", "other.rs"]);
     app.repo_path = "missing-repo-used-to-detect-unwanted-load".to_string();
-    app.diff.hunks = vec![context_hunk(&["selected diff"])];
+    app.diff.set_hunks(vec![context_hunk(&["selected diff"])]);
     let selected_mtime = SystemTime::UNIX_EPOCH + Duration::from_secs(10);
     app.status_view
         .hot_table
@@ -188,7 +188,7 @@ fn non_selected_file_change_does_not_reload_the_selected_diff() {
         ]),
     );
 
-    assert_eq!(app.diff.hunks[0].lines[0].content, "selected diff");
+    assert_eq!(app.diff.hunks()[0].lines[0].content, "selected diff");
     assert!(
         app.notice
             .as_ref()

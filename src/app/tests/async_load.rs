@@ -19,7 +19,7 @@ fn repo_with_two_dirty_files() -> (tempfile::TempDir, String) {
 
 fn diff_text(app: &App) -> String {
     app.diff
-        .hunks
+        .hunks()
         .iter()
         .flat_map(|hunk| hunk.lines.iter())
         .map(|line| line.content.as_str())
@@ -107,7 +107,8 @@ fn 비동기_새로고침은_diff_검색과_scroll을_보존한다() {
     std::fs::write(&file, "zero\nneedle\ntwo changed\nthree\n").unwrap();
     let mut app = app_with_files(vec!["a.rs"]);
     app.repo_path = path;
-    app.diff.hunks = vec![context_hunk(&["old", "old", "old"])];
+    app.diff
+        .set_hunks(vec![context_hunk(&["old", "old", "old"])]);
     app.diff.scroll = 2;
     app.diff.search.query.set("needle");
     let old_mtime = SystemTime::UNIX_EPOCH + Duration::from_secs(1);
