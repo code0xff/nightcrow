@@ -1,5 +1,6 @@
 use super::*;
 
+mod activity;
 mod common;
 mod lifecycle_tests;
 mod poll_tests;

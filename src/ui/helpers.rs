@@ -81,9 +81,14 @@ pub(crate) const CARET_BLINK: Duration = Duration::from_millis(530);
 
 /// Whether the caret is in the lit half of its cycle. Driven by our own clock
 /// because `Modifier::SLOW_BLINK` is widely ignored (Windows conhost among
-/// them); the event loop's unconditional 16 ms redraw is the frame clock.
+/// them); the event loop observes this phase and repaints only on a change.
 pub(crate) fn caret_lit(elapsed: Duration) -> bool {
     (elapsed.as_millis() / (CARET_BLINK.as_millis() / 2)).is_multiple_of(2)
+}
+
+/// Current caret phase for the event loop's dirty-frame clock.
+pub(crate) fn current_caret_lit() -> bool {
+    caret_lit(blink_phase())
 }
 
 /// One origin for all frames, so every caret blinks in step.

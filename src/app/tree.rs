@@ -124,10 +124,10 @@ impl App {
     // Cheap half: no directory reread, no preview. Every project runs this each
     // tick so OS events can't pile up behind a hidden tab; rereading waits for
     // that tab to come forward.
-    pub fn drain_tree_watcher(&mut self) {
+    pub fn drain_tree_watcher(&mut self) -> bool {
         let changes = self.tree_watch.drain_changed();
         if changes.is_empty() {
-            return;
+            return false;
         }
         if changes.unknown {
             // Events may have been dropped — no directory set can be trusted
@@ -135,18 +135,20 @@ impl App {
             self.tree_dirty_all = true;
         }
         self.tree_dirty.extend(changes.dirs);
+        true
     }
 
     // Only the project on screen does this — several repos rereading per tick
     // would stall the active tab.
-    pub fn poll_tree_watcher(&mut self) {
+    pub fn poll_tree_watcher(&mut self) -> bool {
         self.drain_tree_watcher();
         if self.mode != ViewMode::Tree || (self.tree_dirty.is_empty() && !self.tree_dirty_all) {
-            return;
+            return false;
         }
         let all = std::mem::take(&mut self.tree_dirty_all);
         let dirs = std::mem::take(&mut self.tree_dirty);
         self.refresh_tree_preserving_cursor_scoped(if all { None } else { Some(&dirs) });
+        true
     }
 
     pub fn exit_tree_to_status(&mut self) {

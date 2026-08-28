@@ -50,13 +50,14 @@ impl TerminalState {
 
     /// End every synchronized update that has outlived its timeout as of
     /// `now`, applying the bytes it was holding back.
-    pub(super) fn settle_sync_updates(&mut self, now: Instant) {
+    pub(super) fn settle_sync_updates(&mut self, now: Instant) -> bool {
         let expired: Vec<PaneId> = self
             .emulators
             .iter()
             .filter(|(_, emulator)| emulator.sync_expired(now))
             .map(|(id, _)| *id)
             .collect();
+        let had_expired = !expired.is_empty();
         for pane in expired {
             let Some(emulator) = self.emulators.get_mut(&pane) else {
                 continue;
@@ -64,5 +65,6 @@ impl TerminalState {
             let events = emulator.settle_sync();
             self.apply_emulator_events(pane, events, now);
         }
+        had_expired
     }
 }

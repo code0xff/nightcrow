@@ -62,7 +62,7 @@ impl TerminalState {
             .or_insert_with(|| TitleActivity::new(now));
     }
 
-    pub(super) fn settle_title_attention(&mut self, now: Instant) {
+    pub(super) fn settle_title_attention(&mut self, now: Instant) -> bool {
         let mut attention = false;
         self.title_activity.retain(|_, activity| {
             let Some(settled) = activity.settled_attention(now) else {
@@ -72,6 +72,7 @@ impl TerminalState {
             false
         });
         self.unread_attention |= attention;
+        attention
     }
 
     pub(crate) fn raise_attention(&mut self) {

@@ -6,17 +6,32 @@ impl TerminalState {
     /// Drain pending backend events into pane emulators and pane metadata.
     /// Returns the pane ids the backend signalled as exited so the caller
     /// can run cross-cutting cleanup (focus redirect, fullscreen reset).
+    #[cfg(test)]
     pub fn poll(&mut self) -> Vec<PaneId> {
         self.poll_at(std::time::Instant::now())
     }
 
+    #[cfg(test)]
     pub(crate) fn poll_at(&mut self, now: std::time::Instant) -> Vec<PaneId> {
+        self.poll_at_with_activity(now).0
+    }
+
+    /// Drain terminal events and report whether anything can affect the next
+    /// rendered frame. The ordinary `poll` API remains exit-only for callers
+    /// that need just lifecycle cleanup; the TUI also needs output, title,
+    /// resize, and delayed synchronized-update activity.
+    pub(crate) fn poll_with_activity(&mut self) -> (Vec<PaneId>, bool) {
+        self.poll_at_with_activity(std::time::Instant::now())
+    }
+
+    pub(crate) fn poll_at_with_activity(&mut self, now: std::time::Instant) -> (Vec<PaneId>, bool) {
         let mut exited = Vec::new();
         let events: Vec<BackendEvent> = self
             .backend
             .as_mut()
             .map(|b| b.drain_events())
             .unwrap_or_default();
+        let had_events = !events.is_empty();
 
         for event in events {
             match event {
@@ -95,9 +110,9 @@ impl TerminalState {
         }
         // After the drain, so an update this tick's own output closed is never
         // cut short by the clock.
-        self.settle_sync_updates(now);
-        self.settle_title_attention(now);
-        exited
+        let settled_sync = self.settle_sync_updates(now);
+        let settled_title = self.settle_title_attention(now);
+        (exited, had_events || settled_sync || settled_title)
     }
 
     /// Allocate a new bare interactive-shell pane.

@@ -6,11 +6,13 @@ use super::{App, Focus, NoticeKind};
 use crate::runtime::terminal::TerminalFullscreen;
 
 impl App {
-    pub fn poll_terminal(&mut self) {
+    pub fn poll_terminal(&mut self) -> bool {
         // `TerminalState::poll` only signals exited panes; re-clamping focus
         // and fullscreen when the active pane was one of them stays here.
-        if !self.terminal.poll().is_empty() {
+        let (exited, mut changed) = self.terminal.poll_with_activity();
+        if !exited.is_empty() {
             self.clamp_active_pane_after_removal();
+            changed = true;
         }
         // The panes arrived, so the terminal half of the session — which pane
         // was active, whether the panel was fullscreen, whether the input focus
@@ -21,7 +23,9 @@ impl App {
             && let Some(state) = self.pending_terminal.take()
         {
             self.restore_pane_focus(&state);
+            changed = true;
         }
+        changed
     }
 
     pub fn open_new_pane(&mut self) {
