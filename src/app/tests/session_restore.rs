@@ -65,16 +65,12 @@ fn status_restore_from_first_snapshot_applies_scroll_after_async_diff() {
 }
 
 #[test]
-fn status_restore_scroll_survives_same_target_snapshot_replacement() {
+fn status_restore_with_existing_list_survives_same_path_snapshot_replacement() {
     let (_dir, path) = repo_with_scrolled_diff();
     let mut app = app_with_files(vec![]);
     app.git.repo_path = path;
-    app.restore_session(&crate::workspace::persistence::SessionState {
-        selected_file: Some("a.rs".to_string()),
-        scroll: 7,
-        ..Default::default()
-    });
-
+    let old_mtime = SystemTime::UNIX_EPOCH + Duration::from_secs(1);
+    let new_mtime = SystemTime::UNIX_EPOCH + Duration::from_secs(2);
     app.ingest_snapshot(
         RepoSnapshot {
             files: vec![ChangedFile::unstaged_only(
@@ -86,11 +82,15 @@ fn status_restore_scroll_survives_same_target_snapshot_replacement() {
             branch_name: None,
             refs_fingerprint: 0,
         },
-        HashMap::from([(
-            "a.rs".to_string(),
-            SystemTime::UNIX_EPOCH + Duration::from_secs(1),
-        )]),
+        HashMap::from([("a.rs".to_string(), old_mtime)]),
     );
+    app.flush_git_loads_for_test(Duration::from_secs(2));
+    app.restore_session(&crate::workspace::persistence::SessionState {
+        selected_file: Some("a.rs".to_string()),
+        scroll: 7,
+        ..Default::default()
+    });
+
     app.ingest_snapshot(
         RepoSnapshot {
             files: vec![ChangedFile::unstaged_only(
@@ -102,10 +102,7 @@ fn status_restore_scroll_survives_same_target_snapshot_replacement() {
             branch_name: None,
             refs_fingerprint: 0,
         },
-        HashMap::from([(
-            "a.rs".to_string(),
-            SystemTime::UNIX_EPOCH + Duration::from_secs(2),
-        )]),
+        HashMap::from([("a.rs".to_string(), new_mtime)]),
     );
     app.flush_git_loads_for_test(Duration::from_secs(2));
 
