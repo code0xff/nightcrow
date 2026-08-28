@@ -192,6 +192,14 @@ when a PTY echo is delayed. Resize events and direct size observations share
 the same dirty path, so a missed crossterm resize notification cannot leave the
 new geometry unpainted.
 
+The release measurement is intentionally opt-in because it starts a real shell:
+`cargo test --release measure_dirty_redraw -- --ignored --nocapture`. It prints
+before/after draw counts and `ratatui::Terminal<TestBackend>` CPU timings for
+idle, one-second-heartbeat, and every-tick event streams, followed by p95 echo
+latency from a real `PtyBackend`, plus the event-to-next-frame p95 bound. The
+draw-count and poll-bound assertions are deterministic; timings and PTY latency
+are machine-specific evidence, not CI thresholds.
+
 ## Notice Row
 
 힌트 바 바로 위 한 행. 평상시에는 `ui::mod::render_repo_header`가 repo 경로(`~/...` 형식으로

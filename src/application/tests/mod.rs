@@ -9,6 +9,7 @@ mod paste;
 mod paste_burst;
 mod prefix;
 mod prefix_digits;
+mod redraw_benchmark;
 mod reload;
 mod repo_dialog;
 mod search;
