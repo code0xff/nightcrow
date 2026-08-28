@@ -73,24 +73,27 @@ export function useRepoWorkspace({ project, view, layout }: UseRepoWorkspaceArgs
   );
 
   const maximized = layout.maximizedPanelOf(repo);
+  const setMaximizedFor = layout.setMaximizedFor;
   const setMaximized = useCallback(
     (next: Maximized | ((previous: Maximized) => Maximized)) =>
-      layout.setMaximizedFor(repo, next),
-    [repo, layout],
+      setMaximizedFor(repo, next),
+    [repo, setMaximizedFor],
   );
+  const pane = paneActions.pane;
+  const openOtherFace = paneActions.openers.showOtherFace;
+  const noteOtherFace = persistence.noteOtherFace;
   const showOtherFace = useCallback(
     (fromHunk: number) => {
-      const pane = paneActions.pane;
       const other = otherFace(pane);
       if (other) {
-        persistence.noteOtherFace(
+        noteOtherFace(
           other.source,
           other.want === "file" ? "source" : "diff",
         );
       }
-      paneActions.openers.showOtherFace(pane, fromHunk);
+      openOtherFace(pane, fromHunk);
     },
-    [paneActions, persistence],
+    [pane, noteOtherFace, openOtherFace],
   );
 
   return {
