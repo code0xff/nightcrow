@@ -1,3 +1,5 @@
+# Testing
+
 ## Which Layer
 
 - 모듈 간 계약(인터페이스)을 추가/변경 → **contract test 필수**
@@ -14,7 +16,9 @@
 - mock은 외부 시스템 경계에만 쓴다.
 - 각 테스트는 독립 실행 가능해야 한다. 테스트 간 상태 공유 금지.
 - 테스트 이름은 `무엇을_하면_어떤_결과가_나온다` 패턴으로 의도를 드러낸다.
-- 배치·네이밍은 기존 컨벤션을 따른다. 공유 fixture/helper는 공통 위치에 둔다 (`src/test_util.rs`).
+- 단위 테스트는 구현 파일에 크게 inline하지 않고 sibling `*_tests.rs` 또는 인접 `tests/`로 분리한다. crate 공개 API 통합 테스트는 루트 `tests/`에 둔다.
+- TS/TSX 테스트는 sibling `*.test.ts(x)` 파일에 둔다.
+- 그 밖의 배치·네이밍은 기존 컨벤션을 따른다. 공유 fixture/helper는 공통 위치에 둔다 (`src/test_util.rs`).
 
 ## Flaky Tests
 
