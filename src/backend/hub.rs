@@ -9,7 +9,7 @@
 //! VT emulation still happens here: the bytes are raw either way, so
 //! `PaneEmulator` reads them from a socket exactly as it read them from a PTY.
 
-use super::{BackendEvent, PaneId, TerminalBackend};
+use super::{BackendEvent, PaneId, ResizeOutcome, TerminalBackend};
 use crate::daemon::terminal_link::{TerminalLink, TerminalMessage};
 use crate::session::terminal::frame::{
     ClientMessage as HubClientMessage, ServerMessage as HubServerMessage,
@@ -78,14 +78,13 @@ impl TerminalBackend for HubBackend {
         self.link.send(HubClientMessage::Input { pane: id, data })
     }
 
-    fn resize(&mut self, id: PaneId, rows: u16, cols: u16) {
-        if let Err(err) = self.link.send(HubClientMessage::Resize {
+    fn resize(&mut self, id: PaneId, rows: u16, cols: u16) -> Result<ResizeOutcome> {
+        self.link.send(HubClientMessage::Resize {
             pane: id,
             rows,
             cols,
-        }) {
-            tracing::warn!(%err, pane = id, "could not resize a pane in the session");
-        }
+        })?;
+        Ok(ResizeOutcome::Pending)
     }
 
     fn reorder(&mut self, order: &[PaneId]) {

@@ -11,6 +11,14 @@ use anyhow::Result;
 
 pub type PaneId = u32;
 
+/// Whether a successful resize call has already changed the PTY or only queued
+/// a request whose eventual size will arrive as [`BackendEvent::Resized`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ResizeOutcome {
+    Applied,
+    Pending,
+}
+
 #[derive(Debug)]
 pub enum BackendEvent {
     /// A pane now exists. Reported rather than returned from `create_pane`
@@ -90,7 +98,7 @@ pub trait TerminalBackend {
     fn create_pane(&mut self, rows: u16, cols: u16, command: Option<&str>) -> Result<()>;
     fn destroy_pane(&mut self, id: PaneId);
     fn send_input(&mut self, id: PaneId, data: &[u8]) -> Result<()>;
-    fn resize(&mut self, id: PaneId, rows: u16, cols: u16);
+    fn resize(&mut self, id: PaneId, rows: u16, cols: u16) -> Result<ResizeOutcome>;
     fn drain_events(&mut self) -> Vec<BackendEvent>;
 
     /// Ask for the panes to be put in this order.

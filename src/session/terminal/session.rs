@@ -77,12 +77,9 @@ impl TerminalSession {
             },
             ClientMessage::Resize { pane, rows, cols } => {
                 let size = PaneSize { rows, cols }.clamped();
-                Command::Resize {
-                    pane,
-                    rows: size.rows,
-                    cols: size.cols,
-                    client: self.id,
-                }
+                self.hub
+                    .queue_resize(pane, size.rows, size.cols, self.id, self.connection);
+                return;
             }
             ClientMessage::Close { pane } => Command::Close { pane },
             ClientMessage::Reorder { order } => Command::Reorder { order },

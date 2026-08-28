@@ -32,14 +32,6 @@ pub enum Command {
         data: Vec<u8>,
         client: u64,
     },
-    /// `client` rides along because a resize is only honoured from the client
-    /// that owns the sizing (see [`Shared::size_owner`]).
-    Resize {
-        pane: PaneId,
-        rows: u16,
-        cols: u16,
-        client: u64,
-    },
     Close {
         pane: PaneId,
     },
@@ -57,6 +49,16 @@ pub enum Command {
     ReloadPlugins {
         plugins: Vec<crate::config::PluginConfig>,
     },
+}
+
+/// The newest size one connection wants for one pane. Resize traffic is kept
+/// out of the bounded command queue: intermediate drag positions may collapse,
+/// but the final position must remain available to the worker.
+pub(super) struct PendingResize {
+    pub(super) pane: PaneId,
+    pub(super) rows: u16,
+    pub(super) cols: u16,
+    pub(super) client: u64,
 }
 
 /// One startup terminal: the command to run, at the size a client measured, under

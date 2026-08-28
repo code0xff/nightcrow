@@ -14,7 +14,7 @@ trait TerminalBackend {
     fn create_pane(&mut self, rows: u16, cols: u16, command: Option<&str>) -> Result<()>;
     fn destroy_pane(&mut self, id: PaneId);
     fn send_input(&mut self, id: PaneId, data: &[u8]) -> Result<()>;
-    fn resize(&mut self, id: PaneId, rows: u16, cols: u16);
+    fn resize(&mut self, id: PaneId, rows: u16, cols: u16) -> Result<ResizeOutcome>;
     fn reorder(&mut self, order: &[PaneId]);   // 기본 no-op
     fn claim_size(&mut self);                  // 기본 no-op
     fn drain_events(&mut self) -> Vec<BackendEvent>;
@@ -35,7 +35,9 @@ trait TerminalBackend {
    알린다. 이벤트가 `requested`를 실어 **내가 연 pane만** 포커스를 가져간다 — 어느 pane을 보고
    있는지는 클라이언트 각자의 일이다. 제목도 같은 규칙으로 큐에 대기했다 도착 시 붙는다.
 2. **크기는 이 클라이언트가 정하는 것이 아닐 수 있다**(아래 "PTY 크기" 참고). `Resized`를
-   따라가고, 소유하지 않으면 `resize`를 보내지 않는다.
+   따라가고, 소유하지 않으면 `resize`를 보내지 않는다. 로컬 `PtyBackend`는 성공 시
+   `Applied`, 원격 `HubBackend`는 서버 확인이 남았다는 `Pending`을 반환한다. 호출 실패는
+   `Result`로 전파되며 적용 성공처럼 에뮬레이터나 세션 상태에 기록하지 않는다.
 3. **순서도 세션의 것이다.** `swap_active_with`는 `reorder` 요청이고, `panes`는 `Reordered`가
    투영하는 서버 canonical order다.
 4. VT 에뮬레이션은 어느 쪽이든 **클라이언트가 한다** — `PaneEmulator`가 소켓에서 온 바이트를
@@ -131,8 +133,15 @@ alternate screen을 쓰는 풀스크린 TUI를 나중에 다시 흘릴 방법은
   클라이언트가 볼 수 없는 이유로도 일어난다(마지막 커넥션이 끊김, worker tick에서 유예 만료).
   기록이 없으면 나중에 읽을 것이 증상뿐이다.
 - 비소유자의 resize는 버려지고 **실제 적용된 크기가 브로드캐스트된다** — 관전자의 에뮬레이터도
-  자식이 감는 곳에서 감아야 하기 때문이다. 소유자도 그것을 읽되("clamp됐다"를 그렇게 안다)
-  "내가 요청한 값" 기록은 유지한다. 그러지 않으면 매 프레임 같은 clamp를 다시 요청한다.
+  자식이 감는 곳에서 감아야 하기 때문이다. 소유자는 `desired`(현재 레이아웃), `pending`(마지막
+  전송과 시각), `confirmed`(`Resized`로 확인한 실제 크기)를 분리한다. 늦은 이전 ACK가 에뮬레이터를
+  과거 폭으로 돌려도 `desired != confirmed`가 남아 최종 폭을 다시 요청하며, ACK가 오지 않으면
+  100 ms 뒤 재시도한다. 서버는 이미 같은 크기인 재시도에도 `Resized`를 답한다.
+- **resize는 일반 terminal command queue에 넣지 않는다.** 입력과 create/close가 쓰는 bounded
+  queue가 가득 차도 창 드래그의 마지막 폭은 잃으면 안 되므로, hub가 connection·pane별 최신 값만
+  별도 보관해 worker tick에서 합성 처리한다. 중간 폭은 버려도 되지만 마지막 폭은 반드시 한 번
+  적용을 시도한다. `portable-pty`/ConPTY/TIOCSWINSZ resize가 실패하면 pane 상태와 mode emulator를
+  갱신하거나 `Resized`를 브로드캐스트하지 않는다.
 - 입력마다 소유권을 옮기는 대안은 기각했다 — 폰으로 잠깐 확인하는 제일 가벼운 행동이 전체
   repaint를 유발하는 제일 비싼 행동이 된다. 부수 효과로 **비소유 클라이언트가 곧 관전자**여서
   별도 관전 모드가 필요 없고, 영역과 그리드가 다르면 렌더 경로가 clamp로 처리한다.

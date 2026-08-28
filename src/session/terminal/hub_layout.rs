@@ -4,10 +4,51 @@
 
 use super::TerminalHub;
 use super::frame::{ServerMessage, TerminalFrame};
-use super::hub_helpers::{broadcast_locked, canonical_order};
+use super::hub_helpers::{PendingResize, broadcast_locked, canonical_order};
 use crate::backend::{PaneId, PtyBackend, TerminalBackend};
 
 impl TerminalHub {
+    /// Keep only the newest requested size for this connection and pane.
+    pub(super) fn queue_resize(
+        &self,
+        pane: PaneId,
+        rows: u16,
+        cols: u16,
+        client: u64,
+        connection: u64,
+    ) {
+        // Validate before the ownership lookup, with neither lock held across
+        // the other: `connect` takes the hub state and then ownership. Besides
+        // dropping an ordinary close race, this bounds the latest-value map to
+        // live panes even when a client sends arbitrary ids.
+        if !self.pane_is_live(pane) || !self.owns_size(connection) {
+            return;
+        }
+        self.pending_resizes
+            .lock()
+            .expect("terminal resize queue poisoned")
+            .insert(
+                (connection, pane),
+                PendingResize {
+                    pane,
+                    rows,
+                    cols,
+                    client,
+                },
+            );
+    }
+
+    pub(super) fn take_pending_resizes(&self) -> Vec<PendingResize> {
+        std::mem::take(
+            &mut *self
+                .pending_resizes
+                .lock()
+                .expect("terminal resize queue poisoned"),
+        )
+        .into_values()
+        .collect()
+    }
+
     /// The size a pane's PTY is recorded as having, or `None` once the pane is
     /// gone.
     pub(super) fn pane_size(&self, pane: PaneId) -> Option<(u16, u16)> {
@@ -32,11 +73,14 @@ impl TerminalHub {
         &self,
         backend: &mut PtyBackend,
         modes: &mut super::hub_modes::PaneModeTracker,
-        pane: PaneId,
-        rows: u16,
-        cols: u16,
-        client: u64,
+        resize: PendingResize,
     ) {
+        let PendingResize {
+            pane,
+            rows,
+            cols,
+            client,
+        } = resize;
         // Asked before the hub's lock, because the answer is the session's and
         // taking the two in the other order would invert the ordering `connect`
         // uses (hub lock, then ownership).
@@ -54,20 +98,24 @@ impl TerminalHub {
         let Some(p) = state.panes.iter_mut().find(|p| p.id == pane) else {
             return;
         };
-        if (p.rows, p.cols) == (rows, cols) {
-            return;
+        let changed = (p.rows, p.cols) != (rows, cols);
+        if changed {
+            if let Err(err) = backend.resize(pane, rows, cols) {
+                tracing::warn!(%err, pane, rows, cols, "could not resize a session PTY");
+                return;
+            }
+            modes.resize(pane, rows, cols);
+            p.rows = rows;
+            p.cols = cols;
         }
-        backend.resize(pane, rows, cols);
-        modes.resize(pane, rows, cols);
-        p.rows = rows;
-        p.cols = cols;
         // The grid just reflowed, so a snapshot taken before it wraps where the
         // child no longer does. Refreshed into whichever record the pane is on
         // — the emulator's active grid is that screen. Skipped when the last
         // chunk ended mid-sequence (`at_boundary`): a snapshot anchored there
         // would splice into an open sequence on replay, and a stale-size screen
         // is the smaller harm — the next output refreshes it.
-        if modes.at_boundary(pane)
+        if changed
+            && modes.at_boundary(pane)
             && let Some(screen) = modes.snapshot(pane)
         {
             if p.modes.alt_screen {
