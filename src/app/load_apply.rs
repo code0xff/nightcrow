@@ -6,11 +6,17 @@ use super::{App, DiffPaneView, FileViewState, NoticeKind, ViewMode};
 use crate::git::diff::{GitLoadPayload, GitLoadReply, LoadLane};
 
 impl App {
-    pub(crate) fn poll_git_loads(&mut self) {
+    pub(crate) fn poll_git_loads(&mut self) -> bool {
+        let mut received = false;
         loop {
             match self.load_controller.worker.try_recv() {
-                Ok(reply) => self.apply_git_load(reply),
-                Err(mpsc::TryRecvError::Empty | mpsc::TryRecvError::Disconnected) => return,
+                Ok(reply) => {
+                    received = true;
+                    self.apply_git_load(reply);
+                }
+                Err(mpsc::TryRecvError::Empty | mpsc::TryRecvError::Disconnected) => {
+                    return received;
+                }
             }
         }
     }
@@ -206,7 +212,7 @@ impl App {
                 "git load did not finish in {timeout:?}"
             );
             std::thread::sleep(std::time::Duration::from_millis(2));
-            self.poll_git_loads();
+            let _ = self.poll_git_loads();
         }
     }
 }
