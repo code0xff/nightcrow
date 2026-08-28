@@ -185,6 +185,9 @@ visible attention/search-caret phase change. The first frame is always drawn;
 an unchanged idle tick does no `Terminal::draw` call. Terminal polling reports
 output, title, resize, pane lifecycle, recovery, delayed synchronized-update,
 and settled-title activity so a redraw cannot depend only on keyboard input.
+The status list also schedules the exact Fresh→Warm (5 seconds) and Warm→Cool
+(`hot_window_secs`) boundaries for the active repository, so its fade remains
+correct without a 60 FPS frame clock.
 
 `<prefix> r` remains an explicit full repaint: it clears ratatui's front buffer
 and marks the next loop dirty, covering terminal programs that left cells the

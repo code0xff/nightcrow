@@ -18,6 +18,8 @@ enum HotStage {
     Cool,
 }
 
+const FRESH_DURATION: Duration = Duration::from_secs(5);
+
 /// Bucket a single mtime against `now` and the user's hot window. The
 /// "fresh" threshold sits well above typical filesystem mtime granularity
 /// (1s on FAT/older ext4) so the bold→non-bold transition remains easy to
@@ -27,11 +29,46 @@ fn classify_hot(mtime: SystemTime, now: SystemTime, hot_window: Duration) -> Hot
     let age = now.duration_since(mtime).unwrap_or(Duration::ZERO);
     if age >= hot_window {
         HotStage::Cool
-    } else if age < Duration::from_secs(5) {
+    } else if age < FRESH_DURATION {
         HotStage::Fresh
     } else {
         HotStage::Warm
     }
+}
+
+/// Return the next time this mtime can change the rendered stage.
+///
+/// A deadline is needed because the status list is now rendered only when the
+/// model is dirty; waiting for another filesystem snapshot would leave the
+/// accent/bold fade stale on an otherwise idle repository.
+pub(crate) fn next_hot_deadline(
+    mtime: SystemTime,
+    now: SystemTime,
+    hot_window: Duration,
+) -> Option<SystemTime> {
+    let age = now.duration_since(mtime).unwrap_or(Duration::ZERO);
+    let transition = if age < hot_window && age < FRESH_DURATION {
+        FRESH_DURATION.min(hot_window)
+    } else if age < hot_window {
+        hot_window
+    } else {
+        return None;
+    };
+    mtime.checked_add(transition)
+}
+
+/// Find the earliest stage transition visible in the active status list.
+pub(crate) fn next_hot_deadline_for_app(app: &App, now: SystemTime) -> Option<SystemTime> {
+    if app.mode() != crate::app::ViewMode::Status || !app.agent_indicator_config().enabled {
+        return None;
+    }
+    let hot_window = Duration::from_secs(app.agent_indicator_config().hot_window_secs);
+    app.filtered_indices()
+        .iter()
+        .filter_map(|&idx| app.status_view().files.get(idx))
+        .filter_map(|file| app.status_view().hot_table.get(&file.path))
+        .filter_map(|mtime| next_hot_deadline(*mtime, now, hot_window))
+        .min()
 }
 
 pub fn render(frame: &mut Frame, app: &App, area: Rect, accent: Color) {
@@ -172,5 +209,65 @@ mod tests {
         let now = SystemTime::UNIX_EPOCH + Duration::from_secs(100);
         let on_boundary = SystemTime::UNIX_EPOCH + Duration::from_secs(90);
         assert_eq!(classify_hot(on_boundary, now, window), HotStage::Cool);
+    }
+
+    #[test]
+    fn next_hot_deadline_marks_the_fresh_to_warm_boundary() {
+        let window = Duration::from_secs(15);
+        let mtime = SystemTime::UNIX_EPOCH + Duration::from_secs(100);
+        let now = SystemTime::UNIX_EPOCH + Duration::from_secs(102);
+
+        assert_eq!(
+            next_hot_deadline(mtime, now, window),
+            Some(SystemTime::UNIX_EPOCH + Duration::from_secs(105))
+        );
+        assert_eq!(
+            classify_hot(
+                mtime,
+                SystemTime::UNIX_EPOCH + Duration::from_secs(105),
+                window
+            ),
+            HotStage::Warm
+        );
+    }
+
+    #[test]
+    fn next_hot_deadline_marks_the_warm_to_cool_boundary() {
+        let window = Duration::from_secs(15);
+        let mtime = SystemTime::UNIX_EPOCH + Duration::from_secs(100);
+        let now = SystemTime::UNIX_EPOCH + Duration::from_secs(106);
+
+        assert_eq!(
+            next_hot_deadline(mtime, now, window),
+            Some(SystemTime::UNIX_EPOCH + Duration::from_secs(115))
+        );
+        assert_eq!(
+            classify_hot(
+                mtime,
+                SystemTime::UNIX_EPOCH + Duration::from_secs(115),
+                window
+            ),
+            HotStage::Cool
+        );
+    }
+
+    #[test]
+    fn next_hot_deadline_skips_warm_when_window_ends_before_five_seconds() {
+        let window = Duration::from_secs(3);
+        let mtime = SystemTime::UNIX_EPOCH + Duration::from_secs(100);
+        let now = SystemTime::UNIX_EPOCH + Duration::from_secs(101);
+
+        assert_eq!(
+            next_hot_deadline(mtime, now, window),
+            Some(SystemTime::UNIX_EPOCH + Duration::from_secs(103))
+        );
+        assert_eq!(
+            classify_hot(
+                mtime,
+                SystemTime::UNIX_EPOCH + Duration::from_secs(103),
+                window
+            ),
+            HotStage::Cool
+        );
     }
 }

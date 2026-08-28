@@ -27,6 +27,7 @@ mod tests;
 mod wall_clock;
 
 pub(crate) use chrome::{Chrome, chrome_rows, main_content_constraints};
+pub(crate) use file_list::next_hot_deadline_for_app;
 pub(crate) use helpers::{
     char_offset, current_caret_lit, focused_border_style, jump_legend, path_extension,
     render_search_bar, render_selectable_list, status_color,
