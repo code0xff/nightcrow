@@ -1,14 +1,10 @@
 //! The single-instance lock. Two daemons on one socket would each serve half
 //! the attaching clients, and the second to bind would displace the first.
-//! Deciding which is running has to be exact, which rules out asking the socket:
-//! a `connect` that succeeds does not prove a listener is alive — on macOS it
-//! can succeed against a socket whose listener has closed, and the reset only
-//! shows up on the next read.
-//!
-//! An advisory lock answers instead. The kernel holds it for as long as the
-//! descriptor is open and releases it when the process ends — including a
-//! `kill -9`, where no cleanup code of ours runs. So holding the lock means
-//! "no other daemon is live" with no race and no timeout.
+//! An advisory lock decides — not the socket, where a `connect` that succeeds
+//! does not prove a listener is alive (macOS can succeed against a socket whose
+//! listener has closed). The kernel holds the lock until the process ends —
+//! including a `kill -9` — so holding it means "no other daemon is live" with
+//! no race and no timeout.
 
 use anyhow::{Context, Result};
 use std::fs::{File, OpenOptions, TryLockError};
@@ -71,9 +67,7 @@ pub(crate) enum Attempt {
 
 /// Read a lock failure. `Interrupted` earns its own arm because this process
 /// raises signals at itself — a stop signal is how the daemon is asked to shut
-/// down. A signal landing on the thread inside the lock call returns EINTR,
-/// which says nothing about who holds the lock; reported as a failure it would
-/// refuse to start a daemon for no reason.
+/// down — and EINTR says nothing about who holds the lock.
 ///
 /// std 가 EINTR 를 내부에서 재시도하는지는 문서화되어 있지 않다.
 /// 재시도한다면 이 arm 은 도달하지 않을 뿐 해가 없고, 재시도하지
@@ -81,10 +75,8 @@ pub(crate) enum Attempt {
 /// 기대는 대신 남겨 둔다.
 pub(crate) fn outcome_of(err: &TryLockError) -> Attempt {
     match err {
-        // 다른 daemon 이 쥐고 있다. 정상적인 부정 응답.
         TryLockError::WouldBlock => Attempt::Held,
-        // 시그널이 호출 중간에 도착해 락을 시도조차 못 했다. 누가 무엇을
-        // 쥐고 있는지 아무 말도 하지 않으므로 다시 묻는 것만이 옳다.
+        // 시그널이 호출 중간에 도착해 락을 시도조차 못 했다. 다시 묻는 것만이 옳다.
         TryLockError::Error(err) if err.kind() == std::io::ErrorKind::Interrupted => {
             Attempt::Interrupted
         }
@@ -93,14 +85,6 @@ pub(crate) fn outcome_of(err: &TryLockError) -> Attempt {
 }
 
 impl Drop for InstanceLock {
-    /// Release the lock before the descriptor closes.
-    ///
-    /// Closing does release it — but not synchronously. A lock on a freshly
-    /// opened descriptor a millisecond later can still see the lock held,
-    /// which showed up as a daemon refusing to start with "already running"
-    /// moments after the previous one had gone, roughly once in every few
-    /// hundred stop-and-start cycles. `unlock` releases before this returns,
-    /// so the next daemon's attempt cannot race the last one's exit.
     fn drop(&mut self) {
         // 닫힘만으로도 해제되지만 동기적이지 않다. 명시적 unlock 이 없으면
         // 직전 daemon 이 사라진 직후의 재시작이 "이미 실행 중" 으로 거부되는

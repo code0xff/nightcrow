@@ -1,12 +1,9 @@
-//! The daemon's accept loop: one attached client, two threads. A client gets a
-//! reader and a writer because the daemon speaks unprompted — the session is
-//! shared, so a repository opened in the browser has to reach an attached TUI
-//! that never asked. The reader blocks on the socket; the writer drains that
-//! client's queue.
+//! The daemon's accept loop: one attached client, two threads. The daemon
+//! speaks unprompted — the session is shared — so a client gets a reader
+//! (blocked on the socket) and a writer (draining that client's queue).
 //!
-//! Sized like the viewer's accept loop and for the same reason — a connection
-//! costs threads — but with a much lower ceiling. Clients here are terminals a
-//! person is sitting at, not browser tabs.
+//! Threaded like the viewer's accept loop but with a lower ceiling: a client
+//! here is a person at a terminal, not a browser tab.
 
 use anyhow::Context;
 
@@ -32,9 +29,8 @@ pub struct Session {
     pub(super) state: Arc<SessionState>,
     pub(super) clients: Arc<AttachedClients>,
     /// Each attached client's terminal subscriptions. Kept here rather than on
-    /// the thread that reads that client's socket, because a repository can
-    /// appear for reasons that have nothing to do with any client's connection
-    /// — the browser opened it — and it has to start streaming for everyone.
+    /// the client's socket thread: a repository can appear without any client
+    /// asking (the browser opened it) and must start streaming for everyone.
     /// One lock per client, so following a change for one never delays
     /// another's keystrokes.
     pub(super) bridges: Mutex<HashMap<u64, Arc<Mutex<TerminalBridges>>>>,
@@ -48,11 +44,10 @@ pub struct Session {
 
 impl Session {
     /// Bring every attached client's subscriptions in line with `repos`.
-    ///
-    /// Oldest client first, because subscribing is what takes a repository's
-    /// pane sizing (the hub gives it to the newest connection): in ascending id
-    /// order the newest client subscribes last, so a repository that has just
-    /// appeared is sized by the same client that sizes all the others.
+    /// Oldest client first: subscribing takes a repository's pane sizing (the
+    /// hub gives it to the newest connection), so in ascending id order the
+    /// newest client subscribes last and sizes a just-appeared repository the
+    /// same way it sizes all the others.
     fn follow_all(&self, repos: &[session::SessionRepo]) {
         let mut bridges: Vec<(u64, Arc<Mutex<TerminalBridges>>)> = self
             .bridges
@@ -71,12 +66,11 @@ impl Session {
     }
 }
 
-/// Serve attached clients until the process ends.
-///
-/// Takes a *clone* of the listener rather than the [`DaemonSocket`]: the socket
-/// owns the unlink and the instance lock, and this loop blocks in `accept`
-/// forever, so a socket parked here would be freed by process exit — which runs
-/// no destructor. The caller keeps it and drops it on the way out.
+/// Serve attached clients until the process ends. Takes a *clone* of the
+/// listener rather than the [`DaemonSocket`]: this loop blocks in `accept`
+/// forever and process exit runs no destructor, so a socket parked here would
+/// be freed without unlinking it or releasing the lock. The caller keeps the
+/// socket and drops it on the way out.
 ///
 /// [`DaemonSocket`]: super::socket::DaemonSocket
 pub fn start(
@@ -90,11 +84,10 @@ pub fn start(
         nudge: Arc::new(super::watch::Nudge::default()),
         shutdown_tx,
     });
-    // The only thing that sends the served set, so there is one record of what
-    // clients have been told, one order they are told it in, and a change made
-    // through the browser reaches them at all. Started here, where it can be
-    // refused, rather than inside the accept loop: a session without a watcher
-    // serves clients that never learn what is open.
+    // The only sender of the served set, so clients are told it in one order
+    // and changes made through the browser reach them at all. Started outside
+    // the accept loop: a session without a watcher serves clients that never
+    // learn what is open.
     let watched = Arc::clone(&session);
     std::thread::Builder::new()
         .name("nightcrow-session-watch".into())
@@ -129,7 +122,7 @@ fn attach(stream: UnixStream, session: &Session) {
         return;
     };
     // A third handle, so the set can end this connection if the client stops
-    // draining. Its own two are blocked in `read` and `write`.
+    // draining — the other two are blocked in `read` and `write`.
     let Ok(hangup) = stream.try_clone() else {
         tracing::debug!("daemon: could not split an attaching client's socket");
         return;
@@ -163,18 +156,16 @@ fn attach(stream: UnixStream, session: &Session) {
             }
         });
 
-    // Subscribed before the set can reach this client, so the panes of every
-    // open repository are already streaming when it learns the repository
-    // exists.
+    // Subscribed before the watcher can reach this client, so every open
+    // repository's panes are already streaming when the client learns the
+    // repositories exist.
     bridges.lock().expect("client bridges poisoned").follow(
         &session::list_session_repos(&session.state),
         session.state.catalog(),
     );
-    // The set itself is not sent from here. This client is registered as owed
-    // one (`AttachedClients::connect`) and the watcher answers, which is the
-    // whole of why a client's frames arrive in the order the session changed —
-    // see `watch::watch`. Woken rather than waited for: the poke is what stops
-    // this from sitting behind the tick.
+    // The set itself is sent by the watcher, to which this client is already
+    // registered as owed one — that is what keeps a client's frames in the
+    // order the session changed (see `watch::watch`).
     session.nudge.poke();
 
     if let Err(err) = super::requests::read_requests(stream, id, session) {

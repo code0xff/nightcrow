@@ -15,10 +15,9 @@ use std::io::Write;
 use std::sync::mpsc::Sender;
 use std::sync::{Arc, Mutex};
 
-/// The write half of an attach socket.
-///
-/// Shared and locked because two kinds of caller send on it. A frame is written
-/// under the lock, so two writers cannot interleave halves of one message.
+/// The write half of an attach socket. Shared and locked because two kinds of
+/// caller send on it; a frame is written under the lock, so two writers cannot
+/// interleave halves of one message.
 pub(super) type Writer = Arc<Mutex<UnixStream>>;
 
 /// Write one request. Holds the connection lock for the whole frame.
@@ -61,10 +60,9 @@ pub(super) fn pump(
             }
             // A read that timed out is not a disconnect. A quiet session is the
             // normal state, and the handshake's timeout can outlive the
-            // handshake — macOS refuses to clear the option once the peer has
-            // gone, so `connect` may hand this loop a socket that still has one.
-            // Inventing a disconnect out of an idle session is the one failure
-            // this whole shape exists to avoid.
+            // handshake (macOS refuses to clear the option once the peer has
+            // gone). Inventing a disconnect out of an idle session is the one
+            // failure this whole shape exists to avoid.
             Err(err) if timed_out(&err) => {}
             Err(err) => {
                 tracing::warn!(%err, "daemon connection ended");
@@ -107,10 +105,8 @@ pub(super) fn read_routed(
     }
     let message: ServerMessage =
         serde_json::from_slice(&frame.payload).context("decoding a message from the daemon")?;
-    // A terminal event belongs to one repository's panes, so it goes to that
-    // repository's inbox rather than the general queue — except a refusal, which
-    // is not about a pane at all but about a request that was turned down, and
-    // has to reach the tab that shows notices.
+    // A terminal event belongs to one repository's inbox — except a refusal,
+    // which is not about a pane and has to reach the tab that shows notices.
     if let ServerMessage::Terminal { repo, event } = &message
         && !matches!(event, HubServerMessage::Error { .. })
     {

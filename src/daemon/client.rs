@@ -26,9 +26,8 @@ pub struct DaemonClient {
     incoming: Receiver<ServerMessage>,
     /// Terminal traffic, split per repository for the backends that drain it.
     terminals: Arc<TerminalRouter>,
-    /// This connection's id at the daemon, from the handshake. Handed to each
-    /// repository's backend to tell a pane this client opened from one that
-    /// appeared because another client did.
+    /// This connection's id at the daemon, so backends can tell a pane this
+    /// client opened from one another client opened.
     client: u64,
     /// Cleared by the reader thread when the daemon goes away. A separate flag
     /// rather than the channel's disconnected state: reading that means calling
@@ -65,10 +64,9 @@ impl DaemonClient {
             let incoming = read_routed(&mut reader, &terminals)?
                 .context("the daemon closed the connection during the handshake")?;
             let Incoming::Control(message) = incoming else {
-                // Terminal traffic starts before the handshake answer, because
-                // the daemon subscribes this client's repositories the moment it
-                // connects. Already filed with the router by `read_routed`,
-                // which is where the panes it describes will be looked for.
+                // Terminal traffic starts before the handshake answer — the
+                // daemon subscribes this client the moment it connects — and
+                // `read_routed` has already filed it with the router.
                 continue;
             };
             match message {
@@ -81,27 +79,24 @@ impl DaemonClient {
                     }
                     break client;
                 }
-                // The daemon volunteers the repository set on attach, so it can
-                // arrive before the handshake answer. Kept rather than dropped:
-                // it is the state this client is about to render.
+                // The daemon volunteers the repository set on attach, which can
+                // arrive before the handshake answer. Kept: it is the state
+                // this client is about to render.
                 other @ (ServerMessage::Repos { .. } | ServerMessage::Terminal { .. }) => {
                     queued.push(other)
                 }
                 ServerMessage::Error { message } => bail!("daemon refused the attach: {message}"),
-                // Nobody has asked for a reload yet — this client has not
-                // finished attaching. Dropped rather than queued: it would be an
-                // answer to a request that was never made.
+                // Dropped: an answer to a request this client has not made yet.
                 ServerMessage::Reloaded { .. } => {
                     tracing::debug!("attach: a reload answer arrived before the handshake");
                 }
             }
         };
         // Best-effort: macOS rejects the option on a socket whose peer has
-        // already gone, which is exactly the race of attaching as the daemon
-        // stops — and failing the attach over it would report a platform quirk
-        // instead of the plain fact that the daemon went away. A timeout left in
-        // place is harmless: the reader loop treats one as "still waiting"
-        // rather than as a disconnect.
+        // already gone — exactly the race of attaching as the daemon stops —
+        // and failing the attach over it would report a platform quirk instead
+        // of the plain fact that the daemon went away. A leftover timeout is
+        // harmless: the reader loop treats one as "still waiting".
         if let Err(err) = reader.set_read_timeout(None) {
             tracing::debug!(%err, "could not clear the handshake timeout");
         }
@@ -141,9 +136,8 @@ impl DaemonClient {
         )
     }
 
-    /// Drop the terminal inboxes of repositories that are no longer open. Called
-    /// with each set the daemon reports, which is also when the tabs are
-    /// reconciled.
+    /// Drop the terminal inboxes of repositories that are no longer open.
+    /// Called with each set the daemon reports, when the tabs are reconciled.
     pub fn retain_repos(&self, open: &[String]) {
         self.terminals.retain(open);
     }

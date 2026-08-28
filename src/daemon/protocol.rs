@@ -38,21 +38,18 @@ pub enum ClientMessage {
     /// Paint the session in this accent, for every client and the browser.
     ///
     /// An index into the accent cycle rather than a "next" step: two clients
-    /// cycling at once would each advance from what they last saw and land
-    /// somewhere neither asked for. An index past the end wraps.
+    /// cycling at once would not agree on what "next" means. Wraps past the end.
     SetAccent {
         accent: usize,
     },
     /// Re-read `config.toml` and apply the tables the session owns.
     ///
-    /// Carries nothing: the file is the request. Sending its contents would let
-    /// a client reconfigure the session from something it made up; this way the
-    /// daemon only acts on a file on its own disk that the user wrote.
+    /// Carries nothing: the daemon only acts on a file on its own disk that the
+    /// user wrote, never on contents a client could have made up.
     ReloadConfig,
-    /// Act on one repository's terminals. Carries the hub's own message rather
-    /// than a parallel set so the two definitions of "create a pane" cannot
-    /// drift. The repository rides along because one socket multiplexes every
-    /// open repository, where the browser opens a connection per repository.
+    /// Act on one repository's terminals. Carries the hub's own message so the
+    /// two definitions of "create a pane" cannot drift; the repository rides
+    /// along because one socket multiplexes every open repository.
     Terminal {
         repo: String,
         message: HubClientMessage,
@@ -76,28 +73,23 @@ pub enum ServerMessage {
         client: u64,
     },
     /// The repository set, sent in answer to a list, open, close, or reorder.
-    ///
-    /// Every mutation answers with the whole set rather than a delta: the set
-    /// is small, bounded by `MAX_PROJECTS`, and another client may have changed
-    /// it in between — a delta applied to a stale list silently diverges.
+    /// The whole set rather than a delta: another client may have changed it in
+    /// between, and a delta applied to a stale list silently diverges.
     Repos {
         repos: Vec<RepoSummary>,
-        /// The repository the session is focused on. `None` when nothing has
-        /// been focused yet. Carried with the set because the two change
-        /// together — opening a repository focuses it.
+        /// The focused repository, if any. Carried with the set because the
+        /// two change together — opening a repository focuses it.
         #[serde(default)]
         active: Option<String>,
-        /// The accent the whole session paints in. Required, unlike `active`:
-        /// a default here would be a colour, and a daemon too old to send one
-        /// would have this client painting the session yellow and claiming that
-        /// was its choice.
+        /// The session's accent. Required, unlike `active`: a default would
+        /// misattribute an old daemon's silence as this client's choice.
         accent: usize,
     },
     /// A request could not be carried out. The connection stays open: a refused
     /// request is an answer, not a protocol violation.
     Error { message: String },
     /// A reload was carried out, described for the person who asked. Answered
-    /// to the asker alone — nothing a reload does is visible in what the other
+    /// to the asker alone: nothing a reload does is visible in what the other
     /// clients are looking at.
     Reloaded {
         /// One line for the client to show. Built by the session so a browser
@@ -112,10 +104,9 @@ pub enum ServerMessage {
     },
 }
 
-/// One repository in the served set. Narrower than the browser's `RepoDto`:
-/// an attaching client renders with the TUI's own widgets and reads git locally,
-/// so it needs the identity and the path, not the display fields the web UI
-/// derives.
+/// One repository in the served set. Narrower than the browser's `RepoDto`: an
+/// attaching client renders with the TUI's own widgets and reads git locally,
+/// so the display fields the web UI derives would be dead weight.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RepoSummary {
     /// Opaque catalog id, stable for the daemon's lifetime.
@@ -124,12 +115,10 @@ pub struct RepoSummary {
     pub path: String,
 }
 
-/// Bytes a repository's pane produced, and who they belong to.
-///
-/// Carried in a [`FrameKind::Terminal`](super::frame::FrameKind::Terminal)
-/// frame rather than as JSON: PTY output is not guaranteed valid UTF-8 — a
-/// multi-byte sequence is routinely split across reads — so encoding it as
-/// text would corrupt it before any emulator saw it.
+/// Bytes a repository's pane produced, and who they belong to. Carried in a
+/// [`FrameKind::Terminal`](super::frame::FrameKind::Terminal) frame rather than
+/// as JSON: PTY output is not guaranteed valid UTF-8 — a multi-byte sequence is
+/// routinely split across reads — and a text encoding would corrupt it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TerminalOutput {
     pub repo: String,
@@ -138,10 +127,8 @@ pub struct TerminalOutput {
 }
 
 impl TerminalOutput {
-    /// `[repo len][repo][pane id][bytes]`, with the id little-endian to match
-    /// the hub's own binary framing.
-    ///
-    /// Refuses repository ids longer than 255 bytes instead of truncating the
+    /// `[repo len][repo][pane id][bytes]`, little-endian to match the hub's own
+    /// binary framing. Refuses long repository ids rather than truncating the
     /// payload into a frame the receiver would misinterpret.
     pub fn encode(&self) -> Result<Vec<u8>> {
         let repo = self.repo.as_bytes();
@@ -161,10 +148,8 @@ impl TerminalOutput {
     }
 
     /// Read one back, or `None` when the header is truncated or its repository
-    /// id is not valid UTF-8.
-    ///
-    /// The daemon only encodes and the attaching client only decodes: output
-    /// travels one way.
+    /// id is not valid UTF-8. Only the attaching client decodes: output travels
+    /// one way.
     pub fn decode(bytes: &[u8]) -> Option<Self> {
         let (&len, rest) = bytes.split_first()?;
         let len = usize::from(len);

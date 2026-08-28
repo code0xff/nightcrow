@@ -12,12 +12,9 @@ use std::thread;
 use std::time::Instant;
 
 impl PtyBackend {
-    /// Open a pane and say which one it is.
-    ///
-    /// The trait reports panes as events, because a backend serving a shared
-    /// session cannot answer on the spot. This one can, and the terminal hub —
-    /// which owns a `PtyBackend` outright rather than through the trait — needs
-    /// the id to register the pane before anything else happens to it.
+    /// Open a pane and say which one it is. Returns the id directly — unlike
+    /// the trait — because the terminal hub owns a `PtyBackend` outright and
+    /// needs the id to register the pane before anything else happens to it.
     pub fn open_pane(&mut self, rows: u16, cols: u16, command: Option<&str>) -> Result<PaneId> {
         let identity = PaneIdentity::new()?;
         let launch = PaneLaunch {
@@ -26,16 +23,11 @@ impl PtyBackend {
         self.spawn_pane(rows, cols, command, identity, launch)
     }
 
-    /// Replace an exited pane's process, keeping the slot it ran in.
-    ///
-    /// A new `PaneId` is unavoidable: ids are monotonic and every client treats
-    /// `Exited` as final for one. The slot's token is what carries over, so an
-    /// observer that has been tracking this pane keeps its place, and the
-    /// generation moves so decisions made about the old process cannot land on
-    /// the new one.
-    ///
-    /// The composed command line is checked before anything is torn down, so a
-    /// refused relaunch leaves the pane exactly as it was.
+    /// Replace an exited pane's process, keeping the slot it ran in. A new
+    /// `PaneId` is unavoidable: ids are monotonic and every client treats
+    /// `Exited` as final. The slot's token carries over, so an observer keeps
+    /// its place; the generation moves so decisions about the old process
+    /// cannot land on the new one.
     pub fn relaunch_pane(
         &mut self,
         id: PaneId,
@@ -55,13 +47,14 @@ impl PtyBackend {
         identity.advance();
         // Retire the old process first: two children writing one slot's PTY
         // would interleave, and the reader thread has to be let go before the
-        // replacement's is started.
+        // replacement's is started. The composed line was checked above, so a
+        // refused relaunch never tears anything down.
         self.panes.remove(&id);
         self.slots.remove(id);
 
-        // The retained launch stays the *original* invocation. Carrying the
-        // composed line forward instead would accumulate resume arguments on
-        // every further relaunch.
+        // The retained launch stays the *original* invocation; carrying the
+        // composed line forward would accumulate resume arguments on every
+        // further relaunch.
         self.spawn_pane(rows, cols, Some(line.as_str()), identity, launch)
     }
 
@@ -73,8 +66,8 @@ impl PtyBackend {
         identity: PaneIdentity,
         launch: PaneLaunch,
     ) -> Result<PaneId> {
-        // Reserve the next id only after every fallible PTY/spawn step succeeds,
-        // so a failure here does not consume an id slot.
+        // Reserve the next id only after every fallible PTY/spawn step
+        // succeeds, so a failure here does not consume an id slot.
         let pty_system = NativePtySystem::default();
         let pair = pty_system.openpty(PtySize {
             rows,
@@ -85,11 +78,9 @@ impl PtyBackend {
 
         let shell = self.shell.resolved_program();
         let mut cmd = CommandBuilder::new(&shell);
-        // A reserved startup command runs through the shell's configured args:
-        // the command text is passed as a single argv item, so the shell —
-        // not us — handles its quoting/word-splitting. This avoids the race
-        // of spawning a shell and later injecting `command\r`, and avoids any
-        // string interpolation into a wrapper on our side.
+        // A reserved startup command goes through the shell's configured args
+        // as a single argv item, so the shell handles its quoting. This avoids
+        // the race of spawning a shell and later injecting `command\r`.
         if let Some(command) = command {
             for arg in self.shell.command_args() {
                 cmd.arg(arg);
@@ -101,10 +92,10 @@ impl PtyBackend {
         // provider's own helper processes inherit it — that inheritance is what
         // lets an out-of-process observer name the pane an event came from.
         cmd.env(PANE_TOKEN_ENV, identity.token.as_str());
-        // Alongside the token and inherited the same way: a provider's hook is
-        // told which pane it is in *and* where that pane's plugins listen. The
-        // plugin spawn derives this from the same hub path, so the two agree
-        // without either being told by the other.
+        // Alongside the token: a provider's hook is told which pane it is in
+        // *and* where that pane's plugins listen. The plugin spawn derives
+        // this from the same hub path, so the two agree without either being
+        // told by the other.
         if let Some(dir) =
             crate::backend::identity::plugin_runtime_dir(std::path::Path::new(&self.cwd))
         {
