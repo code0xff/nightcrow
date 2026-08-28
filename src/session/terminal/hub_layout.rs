@@ -40,6 +40,7 @@ impl TerminalHub {
                 rows,
                 cols,
                 client,
+                connection,
             },
         );
     }
@@ -93,19 +94,16 @@ impl TerminalHub {
             rows,
             cols,
             client,
+            connection,
         } = resize;
-        // Asked before the hub's lock, because the answer is the session's and
-        // taking the two in the other order would invert the ordering `connect`
-        // uses (hub lock, then ownership).
-        let Some(connection) = self.connection_of(client) else {
-            return;
-        };
-        // Not this client's to set. Dropped rather than refused: a client can
-        // lose the sizing between laying out a frame and this arriving.
-        if !self.owns_size(connection) {
+        let mut state = self.state.lock().expect("terminal state poisoned");
+        // The queue may already have handed this value to the worker when its
+        // connection departs. Validate its original registration and ownership
+        // together while holding state, in the same state -> ownership order as
+        // `connect`, so a replacement owner cannot inherit the stale request.
+        if !self.client_owns_size(&state, client, connection) {
             return;
         }
-        let mut state = self.state.lock().expect("terminal state poisoned");
         // An unknown pane is ignored rather than errored: a client racing a
         // pane exit is normal.
         let Some(p) = state.panes.iter_mut().find(|p| p.id == pane) else {

@@ -57,6 +57,17 @@ pub(super) struct PendingResize {
     pub(super) rows: u16,
     pub(super) cols: u16,
     pub(super) client: u64,
+    pub(super) connection: u64,
+}
+
+const COMMANDS_BETWEEN_RESIZES: usize = 64;
+
+/// Whether a continuously ready command stream has reached the point where
+/// pending geometry must run before this next command.
+pub(super) fn resize_due_before_command(commands_since_resize: &mut usize) -> bool {
+    let due = *commands_since_resize == COMMANDS_BETWEEN_RESIZES;
+    *commands_since_resize = if due { 1 } else { *commands_since_resize + 1 };
+    due
 }
 
 /// One startup terminal: the command to run, at the size a client measured, under

@@ -1,6 +1,6 @@
 use super::frame::{ServerMessage, TerminalFrame};
 use super::hub_diag::ClearWatch;
-use super::hub_helpers::{Command, broadcast_locked};
+use super::hub_helpers::{Command, broadcast_locked, resize_due_before_command};
 use super::hub_modes::PaneModeTracker;
 use super::hub_plugins::Plugins;
 use super::{DEFAULT_PANE_SIZE, TerminalHub};
@@ -13,7 +13,6 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 const POLL_INTERVAL: Duration = Duration::from_millis(8);
-const COMMANDS_BETWEEN_RESIZES: usize = 64;
 
 impl TerminalHub {
     pub(super) fn run(&self, cwd: &str, commands: Receiver<Command>, stop: Arc<AtomicBool>) {
@@ -29,13 +28,11 @@ impl TerminalHub {
         while !stop.load(Ordering::Acquire) {
             let mut commands_since_resize = 0;
             while let Ok(command) = commands.try_recv() {
-                if commands_since_resize == COMMANDS_BETWEEN_RESIZES {
+                if resize_due_before_command(&mut commands_since_resize) {
                     for resize in self.take_pending_resizes() {
                         self.resize_pane(&mut backend, &mut modes, resize);
                     }
-                    commands_since_resize = 0;
                 }
-                commands_since_resize += 1;
                 match command {
                     Command::Create {
                         rows,
@@ -105,9 +102,9 @@ impl TerminalHub {
                 }
             }
 
-            // Resize is latest-value state, not a byte stream. Also processed
-            // above after each command budget so a producer that continuously
-            // refills the bounded queue cannot starve the final geometry.
+            // Resize is latest-value state, not a byte stream. The interleave
+            // above also observes it after each command budget so a producer
+            // that continuously refills the queue cannot starve final geometry.
             for resize in self.take_pending_resizes() {
                 self.resize_pane(&mut backend, &mut modes, resize);
             }
