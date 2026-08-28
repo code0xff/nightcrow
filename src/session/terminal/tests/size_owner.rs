@@ -5,10 +5,8 @@
 //! is one value with one owner, and these are the rules for who holds it.
 
 use super::{attach, next_matching, resized_size, spawn_hub};
-use crate::backend::PtyBackend;
 use crate::config::ShellConfig;
 use crate::session::terminal::frame::{ClientMessage, PaneSize, TerminalFrame};
-use crate::session::terminal::hub_modes::PaneModeTracker;
 use crate::session::terminal::{TerminalHub, TerminalSession};
 
 /// Whether a frame says this session owns the sizing.
@@ -221,43 +219,4 @@ fn only_the_owner_resizes_the_pty_and_everyone_is_told_the_size() {
         .expect("a spectator was not told the new size");
     assert_eq!(told, (30, 100));
     hub.stop();
-}
-
-#[test]
-fn a_taken_resize_from_a_disconnected_owner_is_not_applied() {
-    let dir = tempfile::TempDir::new().unwrap();
-    let cwd = dir.path().to_string_lossy();
-    let hub = spawn_hub(&cwd, Vec::new(), Vec::new());
-    hub.stop();
-    let old_owner = attach(&hub);
-    assert!(verdict(&old_owner));
-    hub.register_pane(7, 24, 80, None, None);
-
-    old_owner.dispatch(ClientMessage::Resize {
-        pane: 7,
-        rows: 24,
-        cols: 80,
-    });
-    let old_connection = old_owner.connection;
-    let stale = hub
-        .take_pending_resizes()
-        .pop()
-        .expect("the worker must have taken the old request");
-    assert_eq!(stale.connection, old_connection);
-    drop(old_owner);
-    let new_owner = attach(&hub);
-    assert!(verdict(&new_owner));
-
-    let mut backend = PtyBackend::new(dir.path(), ShellConfig::default());
-    let mut modes = PaneModeTracker::default();
-    hub.resize_pane(&mut backend, &mut modes, stale);
-
-    assert!(
-        new_owner
-            .next_frame(QUIET)
-            .as_ref()
-            .and_then(resized_size)
-            .is_none(),
-        "a replacement owner must not receive an ACK for a stale request"
-    );
 }

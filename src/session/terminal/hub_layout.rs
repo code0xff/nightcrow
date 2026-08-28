@@ -97,6 +97,8 @@ impl TerminalHub {
             connection,
         } = resize;
         let mut state = self.state.lock().expect("terminal state poisoned");
+        #[cfg(test)]
+        self.run_concurrency_test_hook(super::ConcurrencyTestPoint::BeforeResizeValidation);
         // The queue may already have handed this value to the worker when its
         // connection departs. Validate its original registration and ownership
         // together while holding state, in the same state -> ownership order as

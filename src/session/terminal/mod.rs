@@ -54,6 +54,17 @@ use std::sync::mpsc::{self, SyncSender};
 use std::sync::{Arc, Mutex};
 use std::thread;
 
+#[cfg(test)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum ConcurrencyTestPoint {
+    BeforeResizeValidation,
+    DisconnectStateAcquired,
+    DisconnectStateContended,
+}
+
+#[cfg(test)]
+type ConcurrencyTestHook = Arc<dyn Fn(ConcurrencyTestPoint) + Send + Sync>;
+
 /// Output frames a client may fall behind by before it is dropped.
 pub(crate) const CLIENT_QUEUE_DEPTH: usize = 256;
 
@@ -86,6 +97,8 @@ pub struct TerminalHub {
     /// Which screen the session's panes are fitted to — shared with every other
     /// hub because the answer is one per session, not one per repository.
     ownership: Arc<SizeOwnership>,
+    #[cfg(test)]
+    concurrency_test_hook: Mutex<Option<ConcurrencyTestHook>>,
 }
 
 impl TerminalHub {
@@ -119,6 +132,8 @@ impl TerminalHub {
             shell,
             started: AtomicBool::new(false),
             ownership,
+            #[cfg(test)]
+            concurrency_test_hook: Mutex::new(None),
         });
 
         let worker_hub = Arc::clone(&hub);
@@ -160,6 +175,29 @@ impl TerminalHub {
             .expect("terminal state poisoned")
             .clients
             .len()
+    }
+
+    #[cfg(test)]
+    pub(super) fn set_concurrency_test_hook(
+        &self,
+        hook: impl Fn(ConcurrencyTestPoint) + Send + Sync + 'static,
+    ) {
+        *self
+            .concurrency_test_hook
+            .lock()
+            .expect("terminal concurrency test hook poisoned") = Some(Arc::new(hook));
+    }
+
+    #[cfg(test)]
+    pub(super) fn run_concurrency_test_hook(&self, point: ConcurrencyTestPoint) {
+        let hook = self
+            .concurrency_test_hook
+            .lock()
+            .expect("terminal concurrency test hook poisoned")
+            .clone();
+        if let Some(hook) = hook {
+            hook(point);
+        }
     }
 
     pub fn stop(&self) {

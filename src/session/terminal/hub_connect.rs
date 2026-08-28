@@ -173,11 +173,26 @@ impl TerminalHub {
     /// meant an evicted client never released the sizing — no other screen
     /// could take it back after its page had closed.
     pub(super) fn disconnect(&self, id: u64, connection: u64) {
-        self.state
-            .lock()
-            .expect("terminal state poisoned")
-            .clients
-            .retain(|c| c.id != id);
+        #[cfg(test)]
+        let mut state = match self.state.try_lock() {
+            Ok(state) => {
+                self.run_concurrency_test_hook(
+                    super::ConcurrencyTestPoint::DisconnectStateAcquired,
+                );
+                state
+            }
+            Err(std::sync::TryLockError::WouldBlock) => {
+                self.run_concurrency_test_hook(
+                    super::ConcurrencyTestPoint::DisconnectStateContended,
+                );
+                self.state.lock().expect("terminal state poisoned")
+            }
+            Err(std::sync::TryLockError::Poisoned(_)) => panic!("terminal state poisoned"),
+        };
+        #[cfg(not(test))]
+        let mut state = self.state.lock().expect("terminal state poisoned");
+        state.clients.retain(|c| c.id != id);
+        drop(state);
         // Off the hub's lock: what happens to the sizing is the session's
         // business, and it may have to tell clients on other hubs. Unconditional
         // — `leave` ignores a connection it does not know, which is the case
