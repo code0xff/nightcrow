@@ -176,8 +176,10 @@ attach 소켓 하나가 모든 저장소의 터미널 출력을 받지만, 각 �
 - **`Exited`도 같은 FIFO에 있다.** 그 앞에 도착한 `Output`이 byte 예산에서 잘리면 종료는 다음
   틱까지 기다린다. `TerminalState::poll`은 `Exited`에서 pane과 에뮬레이터를 제거하므로 순서를
   건너뛰면 마지막 출력이 사라진다.
-- **연결 전체에 256 MiB output byte 상한을 둔다.** 이는 데몬 쪽 연결 큐가 합법적으로 보낼 수 있는
-  256개의 1 MiB replay frame과 같은 크기다. 저장소를 닫거나 drain하면 그 몫을 즉시 돌려준다.
+- **연결 전체에 256 MiB output + 4,096 message 상한을 둔다.** output allowance는 데몬 쪽 연결
+  큐가 합법적으로 보낼 수 있는 256개의 1 MiB replay frame과 같은 크기이고, 별도 message 상한은
+  control event-only 폭주도 저장량을 무제한 키우지 못하게 한다. 저장소를 닫거나 drain하면 그 몫을
+  즉시 돌려준다.
   다음 메시지 전체가 상한에 들어오지 않으면 일부를 잘라 넣거나 이후 메시지를 계속 받지 않고 reader가
   연결을 끝낸다. 그러면 TUI는 연결 손실을 명시적으로 보고하고, 사용자가 다시 attach할 때 허브의
   screen+since replay가 일관된 상태부터 복구한다. 손실된 구간 위에서 계속 그리는 경로는 없다.
