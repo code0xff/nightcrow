@@ -4,8 +4,7 @@
 //! Every one of these pairs a change to `Shared` with the broadcast that
 //! announces it, under a single lock — that pairing is what keeps a client
 //! connecting mid-change from seeing a pane twice or not at all (see
-//! [`Shared`](super::hub_helpers::Shared)). Split out of `hub_run.rs` so that
-//! file is the worker loop and nothing else; the behaviour is unchanged.
+//! [`Shared`](super::hub_helpers::Shared)).
 
 use super::TerminalHub;
 use super::frame::{ServerMessage, TerminalFrame};
@@ -39,9 +38,8 @@ impl TerminalHub {
     /// a client either sees this pane via `connect` or via this broadcast, never
     /// both and never neither.
     /// `client` is whoever asked for the pane, carried so that client alone can
-    /// treat it as the one it opened. `None` for a pane nobody asked for.
-    /// `title` is the name the session gives it, which only a configured startup
-    /// terminal has.
+    /// treat it as the one it opened. `title` is the name the session gives it,
+    /// which only a configured startup terminal has.
     pub(super) fn register_pane(
         &self,
         pane: PaneId,
@@ -60,13 +58,10 @@ impl TerminalHub {
         .ok();
         let mut state = self.state.lock().expect("terminal state poisoned");
         // A pane nobody can see is not a terminal, so whatever was filling the
-        // panel gives way to the one about to open.
-        //
-        // Ahead of the announcement rather than after it, though both go out
-        // under this one lock. They are two frames, and a client renders between
-        // them: told about the pane while still zoomed past it, it spends that
-        // render with the new terminal hidden — and moves the keyboard onto the
-        // pane filling the panel instead of the one it just asked for.
+        // panel gives way to the one about to open. Ahead of the announcement:
+        // they are two frames and a client renders between them — told about
+        // the pane while still zoomed past it, it spends that render with the
+        // new terminal hidden and its keyboard on the wrong pane.
         clear_zoom_locked(&mut state);
         state.panes.push(PaneState {
             id: pane,
@@ -86,23 +81,22 @@ impl TerminalHub {
     }
 
     /// Record output against the pane and broadcast it — under one lock, so a
-    /// concurrently connecting client cannot slip a replay between the record and
-    /// the broadcast and end up with the pane's screen missing this chunk or
-    /// carrying it twice.
+    /// concurrently connecting client cannot slip a replay between the record
+    /// and the broadcast and end up with the chunk missing or doubled.
     ///
-    /// Where the output is recorded depends on the mode the chunk leaves the pane
-    /// in (see [`PaneState`](super::hub_helpers::PaneState)). `screen` is the
-    /// serialized screen when the caller has one to hand over, which it takes
-    /// before locking — the emulator it comes from is not `Send`.
+    /// Where the output is recorded depends on the mode the chunk leaves the
+    /// pane in (see [`PaneState`](super::hub_helpers::PaneState)). `screen` is
+    /// the serialized screen when the caller has one to hand over, which it
+    /// takes before locking — the emulator it comes from is not `Send`.
     ///
     /// Returns how many recorded bytes a fresh snapshot would supersede — the
-    /// uncovered tail on the normal screen (see [`push_scrollback`]), `since` on
-    /// the alternate one. The worker reads the pane's appetite for a snapshot
-    /// off this count (crowded past the cap, desperate well past it).
+    /// uncovered tail on the normal screen (see [`push_scrollback`]), `since`
+    /// on the alternate one. The worker reads the pane's appetite for a
+    /// snapshot off this count (crowded past the cap, desperate well past it).
     ///
-    /// The clients already attached are not told the new title: they are being
-    /// handed the very bytes that set it, and each runs the emulator that reads
-    /// them. What this record is for is the client that is not here yet.
+    /// Attached clients are not told a new title: they are being handed the
+    /// very bytes that set it, and each runs the emulator that reads them.
+    /// This record is for the client that is not here yet.
     pub(super) fn record_and_broadcast(
         &self,
         pane: PaneId,

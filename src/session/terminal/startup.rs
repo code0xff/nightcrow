@@ -55,10 +55,9 @@ impl TerminalHub {
             })
             .collect();
 
-        // Hold the free cap slots before the command is even queued. Another
-        // connection's handler thread can enqueue creates between here and the
-        // worker reaching this batch; the reservation stops them taking slots
-        // this set claimed.
+        // Hold the free cap slots before the command is even queued: another
+        // connection's handler thread can enqueue creates between here and
+        // the worker reaching this batch.
         let reserved = {
             let mut state = self.state.lock().expect("terminal state poisoned");
             let free = limits::MAX_PTYS_PER_REPO.saturating_sub(state.panes.len() + state.reserved);

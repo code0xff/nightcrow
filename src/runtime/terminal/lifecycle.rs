@@ -108,7 +108,7 @@ impl TerminalState {
     /// Allocate a new backend pane and matching emulator. `command`, when
     /// present, is run in the pane's shell immediately; `label` sets the
     /// initial tab title (a program that emits OSC 0/2 can still override it
-    /// later). Both default sensibly when `None`.
+    /// later).
     pub fn create_pane_with(
         &mut self,
         command: Option<&str>,
@@ -169,8 +169,8 @@ impl TerminalState {
     /// Take in a pane the backend reports.
     ///
     /// `requested` says whether this client asked: one it did takes the focus,
-    /// and one another client opened lands in the list without moving anybody's
-    /// cursor.
+    /// and one another client opened lands in the list without moving
+    /// anybody's cursor.
     fn adopt_pane(
         &mut self,
         id: PaneId,

@@ -247,13 +247,10 @@ fn log_plugin_line(plugin: &str, level: LogLevel, message: &str) {
 /// Log a refusal at the level that says whether anyone should look into it.
 ///
 /// A plugin decides asynchronously, so being late is ordinary traffic rather
-/// than a fault: the pane moved on, is not quiet yet, or was claimed by another
-/// plugin first. The rest mean the plugin asked for something it was never
-/// allowed — a pane that is not its, an oversized or control-laden payload, a
-/// flag the config does not list, a bare shell it wanted to relaunch, or more
-/// attempts than the budget allows — and that is worth an operator's attention.
-/// Matched exhaustively on purpose, so a new refusal has to be classified rather
-/// than defaulting to silence.
+/// than a fault. The rest mean the plugin asked for something it was never
+/// allowed — that is worth an operator's attention. Matched exhaustively on
+/// purpose, so a new refusal has to be classified rather than defaulting to
+/// silence.
 fn log_refusal(plugin: &str, refused: &Refused) {
     let ordinary = match refused {
         Refused::UnknownPane { .. }

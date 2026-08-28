@@ -25,9 +25,8 @@ pub const MAX_BODY_BYTES: usize = 64 * 1024;
 /// Per-read socket timeout while collecting the head.
 pub const HEAD_READ_TIMEOUT: Duration = Duration::from_secs(15);
 /// Wall-clock budget for the *whole* request. The socket timeout above only
-/// bounds one `read`, and it re-arms on every byte — a client dribbling one
-/// byte per timeout would otherwise hold a connection slot for days. This is
-/// the deadline that actually ends it.
+/// bounds one `read` and re-arms on every byte — a client dribbling one byte
+/// per timeout would otherwise hold a connection slot for days.
 pub const REQUEST_DEADLINE: Duration = Duration::from_secs(30);
 
 /// Read the request head (up to CRLFCRLF) plus any declared body. Both
@@ -107,13 +106,13 @@ pub fn origin_allowed(head: &RequestHead) -> bool {
 
 /// Whether the request's `Host` names an address this server should answer on.
 ///
-/// [`origin_allowed`] only proves Origin and Host *agree*, which a DNS-rebound
-/// attacker satisfies trivially: they control both. Rebinding `evil.example` to
-/// 127.0.0.1 would otherwise give their page a same-origin position from which
-/// to POST `/login` and read the reply.
+/// [`origin_allowed`] only proves Origin and Host *agree*, which a
+/// DNS-rebound attacker satisfies trivially: they control both. Rebinding
+/// `evil.example` to 127.0.0.1 would otherwise give their page a same-origin
+/// position from which to POST `/login` and read the reply.
 ///
 /// A loopback-bound server can only legitimately be addressed as loopback, so
-/// any other Host is refused. When bound off-loopback the operator has taken
+/// any other Host is refused. Bound off-loopback, the operator has taken
 /// responsibility for the network path, and the check would reject legitimate
 /// proxied hosts, so it does not apply.
 pub fn host_allowed(head: &RequestHead, bound_loopback: bool) -> bool {
@@ -207,9 +206,9 @@ pub fn websocket_handshake(
     if stream.write_all(handshake.as_bytes()).is_err() {
         return None;
     }
-    // Cap frame and message size. tungstenite's defaults are 16 MiB / 64 MiB,
-    // which a client could pair with the terminal command queue to park
-    // gigabytes of pending input. Nothing either server accepts is large.
+    // Cap frame and message size: tungstenite's defaults (16 MiB / 64 MiB)
+    // paired with the terminal command queue could park gigabytes of pending
+    // input. Nothing either server accepts is large.
     let config = tungstenite::protocol::WebSocketConfig::default()
         .max_message_size(Some(MAX_WS_MESSAGE_BYTES))
         .max_frame_size(Some(MAX_WS_MESSAGE_BYTES));

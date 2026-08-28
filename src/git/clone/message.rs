@@ -1,9 +1,8 @@
 //! Turn a failed `git clone`'s stderr into one line for the user.
 //!
-//! Two things stand between that stream and something worth showing. A remote
-//! controls it — `remote:` sidebands are printed verbatim — so it cannot be
-//! collected unbounded. And git closes a failure with an advice block, so its
-//! last line names no cause at all.
+//! A remote controls that stream — `remote:` sidebands are printed verbatim —
+//! so it cannot be collected unbounded, and git closes a failure with an advice
+//! block whose last line names no cause at all.
 
 /// Most stderr kept from a failing clone. Only the tail is wanted anyway: the
 /// reason git gave up is at the end.
@@ -48,22 +47,13 @@ pub(super) fn tail_of<R: std::io::Read>(mut reader: R) -> String {
 
 /// The actionable part of a failed clone's stderr, or `None` if there is none.
 ///
-/// The last line is the wrong pick. An unreachable remote ends like this:
-///
-/// ```text
-/// ERROR: Repository not found.
-/// fatal: Could not read from remote repository.
-///
-/// Please make sure you have the correct access rights
-/// and the repository exists.
-/// ```
-///
-/// so taking the last line shows the tail of a wrapped piece of advice instead
-/// of the reason. The reason is the last diagnostic line — and usually the line
-/// before it as well, because `fatal: Could not read from remote repository.` is
-/// only a wrapper around what the transport actually said ("Repository not
-/// found.", "Permission denied (publickey)."). Both are kept and joined;
-/// everything after them is dropped.
+/// The last line is the wrong pick: an unreachable remote ends with a wrapped
+/// piece of advice (`Please make sure you have the correct access rights …`)
+/// instead of the reason. The reason is the last diagnostic line — and usually
+/// the line before it as well, because `fatal: Could not read from remote
+/// repository.` is only a wrapper around what the transport actually said
+/// ("Repository not found.", "Permission denied (publickey)."). Both are kept
+/// and joined; everything after them is dropped.
 pub(super) fn actionable(stderr: &str) -> Option<String> {
     let lines: Vec<&str> = stderr
         .lines()
@@ -71,10 +61,9 @@ pub(super) fn actionable(stderr: &str) -> Option<String> {
         .filter(|line| !line.is_empty())
         .collect();
     let Some(last) = lines.iter().rposition(|line| is_diagnostic(line)) else {
-        // Nothing announced itself as a diagnostic. That is either a transport
-        // speaking for itself (`ssh: Could not resolve hostname …`) or a git
-        // whose wording this does not know, and its last line still beats
-        // saying nothing.
+        // Nothing announced itself as a diagnostic — a transport speaking for
+        // itself (`ssh: Could not resolve hostname …`) or a git whose wording
+        // this does not know. Its last line still beats saying nothing.
         return lines.last().map(|line| (*line).to_string());
     };
     let mut kept = Vec::with_capacity(2);

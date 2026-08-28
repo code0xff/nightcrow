@@ -139,9 +139,11 @@ alternate screen을 쓰는 풀스크린 TUI를 나중에 다시 흘릴 방법은
   100 ms 뒤 재시도한다. 서버는 이미 같은 크기인 재시도에도 `Resized`를 답한다.
 - **resize는 일반 terminal command queue에 넣지 않는다.** 입력과 create/close가 쓰는 bounded
   queue가 가득 차도 창 드래그의 마지막 폭은 잃으면 안 되므로, hub가 connection·pane별 최신 값만
-  별도 보관해 worker tick에서 합성 처리한다. 중간 폭은 버려도 되지만 마지막 폭은 반드시 한 번
-  적용을 시도한다. `portable-pty`/ConPTY/TIOCSWINSZ resize가 실패하면 pane 상태와 mode emulator를
-  갱신하거나 `Resized`를 브로드캐스트하지 않는다.
+  별도 보관한다. worker는 일반 command를 64개 처리할 때마다 이를 합성 처리해 지속적인 입력에도
+  resize가 굶지 않으며, 연결이 끝나면 그 connection의 보류 값을 제거해 재접속 churn에도 저장량을
+  붙은 connection·pane 수 안에 묶는다. 중간 폭은 버려도 되지만 마지막 폭은 반드시 한 번 적용을
+  시도한다. `portable-pty`/ConPTY/TIOCSWINSZ resize가 실패하면 pane 상태와 mode emulator를 갱신하거나
+  `Resized`를 브로드캐스트하지 않는다.
 - 입력마다 소유권을 옮기는 대안은 기각했다 — 폰으로 잠깐 확인하는 제일 가벼운 행동이 전체
   repaint를 유발하는 제일 비싼 행동이 된다. 부수 효과로 **비소유 클라이언트가 곧 관전자**여서
   별도 관전 모드가 필요 없고, 영역과 그리드가 다르면 렌더 경로가 clamp로 처리한다.

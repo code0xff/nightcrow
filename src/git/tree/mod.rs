@@ -18,12 +18,12 @@ pub struct TreeEntry {
 }
 
 /// Read the immediate children of `rel_dir` (a repo-relative path; `""` is the
-/// workdir root). Entries are filtered and returned sorted with directories
-/// first, then case-sensitive alphabetical by name.
+/// workdir root), filtered and sorted with directories first, then
+/// case-sensitive alphabetical by name.
 ///
 /// `.git` is skipped at every level. Non-UTF-8 names are skipped because the
-/// file-view loader keys on `&str` paths. Individual entries whose metadata
-/// cannot be read are skipped rather than failing the whole listing.
+/// file-view loader keys on `&str` paths. Entries whose metadata cannot be read
+/// are skipped rather than failing the whole listing.
 pub fn read_children(
     repo: &Repository,
     workdir: &Path,
@@ -63,11 +63,8 @@ pub fn read_children(
         // request can carry. Sharing the rule is the point — an exact
         // `== ".git"` here would still list `.GIT` on a case-insensitive
         // filesystem, and listing a `...` directory left a row that answered
-        // "not a plain relative path" when clicked.
-        //
-        // Only names. A symlink still gets a row and refuses to open, because
-        // that is the open gate's own rule and nothing about how this name is
-        // spelled.
+        // "not a plain relative path" when clicked. Only names: a symlink still
+        // gets a row and refuses to open.
         if crate::git::path::is_refused_component(&name) {
             continue;
         }
@@ -97,8 +94,7 @@ pub fn read_children(
     Ok(out)
 }
 
-/// One hit from [`search_tree`]: the full repo-relative path and whether the
-/// entry is a directory.
+/// One hit from [`search_tree`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TreeMatch {
     pub path: String,

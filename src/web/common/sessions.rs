@@ -1,28 +1,18 @@
 //! Persistent session token store. Tokens are opaque 256-bit random strings
-//! backed by a file so they survive daemon restarts. Each token carries the
-//! expiry it was issued with, so a restarted server does not accept stale
-//! tokens forever.
+//! backed by a file so they survive daemon restarts, each carrying the expiry
+//! it was issued with. The lifetime is handed to the store at construction:
+//! how long a login lasts is the operator's call, and `None` means tokens
+//! never expire on their own.
 //!
-//! The lifetime is the store's, handed to it at construction rather than fixed
-//! here: how long a login should last is the operator's call, and a store told
-//! `None` issues tokens that never expire on their own.
+//! Logout revokes a token server-side — clearing the cookie alone leaves a
+//! leaked token usable until expiry. Expired tokens are swept on every write
+//! and on load; nothing is scheduled, since the file only changes when someone
+//! logs in, logs out, or presents an expired token.
 //!
-//! Logout revokes a token server-side — clearing the cookie alone is not
-//! enough because a leaked token would remain usable until expiry. Revocation
-//! removes the token from both memory and the on-disk store.
-//!
-//! Expired tokens are forgotten opportunistically: every write sweeps the whole
-//! set, and loading discards what has already run out. Nothing is scheduled —
-//! the file only changes when someone logs in, logs out, or presents a token
-//! that has expired, and those are the moments worth paying for the sweep.
-//!
-//! The file is written with owner-only permissions (0o600 on Unix); see
-//! `platform::fs`. On Windows the permission call is a no-op (documented
-//! there), so operators should place the state directory in a restricted
-//! location.
-//!
-//! When `store_path` is `None` the store is in-memory only, matching the old
-//! behaviour for tests and transient runs.
+//! The file is written owner-only (0o600 on Unix; see `platform::fs`). On
+//! Windows that call is a no-op (documented there), so operators should place
+//! the state directory in a restricted location. With `store_path` `None` the
+//! store is in-memory only, for tests and transient runs.
 
 use crate::platform;
 use anyhow::{Context, Result, anyhow};
@@ -86,10 +76,9 @@ impl SessionStore {
             ttl,
         };
         // Write the shortened deadlines down now instead of leaving them to the
-        // next login. Until they are on disk the file still names the old ones,
-        // so a second restart would read them and measure a fresh lifetime from
-        // there — a tightened policy would never take hold on a session that
-        // restarts more often than the lifetime it is being held to.
+        // next login: until then the file still names the old ones, so a
+        // second restart would measure a fresh lifetime from there and a
+        // tightened policy would never take hold on a fast-restarting session.
         if shortened {
             store.persist();
         }
@@ -120,8 +109,7 @@ impl SessionStore {
     }
 
     /// Invalidate a token server-side. Clearing the cookie alone leaves a
-    /// leaked token usable until expiry, which makes logout a suggestion
-    /// rather than a revocation.
+    /// leaked token usable until expiry.
     pub fn revoke(&self, token: &str) {
         {
             let mut tokens = self.tokens.lock().expect("session store mutex poisoned");
@@ -165,16 +153,8 @@ impl SessionStore {
         let data = {
             let mut tokens = self.tokens.lock().expect("session store mutex poisoned");
             // Swept here because this is the one place that already holds every
-            // token and is about to write them down. `is_valid` only reaches the
-            // token it was asked about, and a session nobody asks about again —
-            // the browser holding that cookie never came back — would otherwise
-            // sit in memory and on disk until the daemon restarts, so the file
-            // would claim sessions that cannot log anyone in.
-            //
-            // Ahead of the store having a file: a store without one (the
-            // fallback when the state directory cannot be opened) holds the same
-            // tokens in the same map, and is the one that cannot be fixed by a
-            // restart reading a swept file.
+            // token and is about to write them down; otherwise a token nobody
+            // asks about again would sit in memory and on disk until restart.
             sweep(&mut tokens, SystemTime::now());
             serialize(&tokens)
         };
@@ -202,14 +182,10 @@ fn parse_expiry(field: &str) -> Option<Expiry> {
 
 /// Bring loaded expiries down to what the configured lifetime allows.
 ///
-/// Only ever lowers. A token issued under a longer lifetime — or none at all —
-/// should not outlive a policy the operator has since tightened, and tightening
-/// it is the one edit that has to reach sessions already handed out. A token
-/// already closer to running out keeps its own earlier deadline, so a restart
-/// never extends anything.
-///
-/// Reports whether anything moved, which is what tells the caller the file no
-/// longer matches the tokens.
+/// Only ever lowers: a token issued under a longer lifetime should not
+/// outlive a policy the operator has since tightened, and a token already
+/// closer to running out keeps its earlier deadline. Reports whether anything
+/// moved, which is what tells the caller the file no longer matches the tokens.
 fn clamp(tokens: &mut HashMap<String, Expiry>, ttl: Option<Duration>, now: SystemTime) -> bool {
     let Some(ceiling) = ttl.and_then(|ttl| now.checked_add(ttl)) else {
         return false;

@@ -25,9 +25,9 @@ use std::time::Duration;
 pub(super) const PANE_IDLE_THRESHOLD: Duration = Duration::from_secs(10);
 
 /// Commands taken from any one plugin per loop iteration. One thread serves
-/// every pane in the repository, so a plugin that writes without pause must not
-/// be able to hold it. Eight per 8 ms tick is a thousand a second — far past
-/// anything a legitimate plugin needs, and bounded.
+/// every pane in the repository, so a plugin that writes without pause must
+/// not be able to hold it. Eight per 8 ms tick is a thousand a second — far
+/// past anything a legitimate plugin needs, and bounded.
 pub(super) const MAX_COMMANDS_PER_TICK: usize = 8;
 
 pub(super) struct Plugins {
@@ -66,13 +66,12 @@ impl Plugins {
     /// could be given.
     ///
     /// Both conditions, because a host with no pane to watch is a child process
-    /// that can never be given anything to do. `watch_on_signal` is the second
-    /// way to satisfy the first: such a plugin's panes are the ones that will
-    /// speak to it, so it has to be running *before* any of them does — waiting
-    /// for an opt-in that will never come would make the switch mean nothing.
+    /// that can never be given anything to do. `watch_on_signal` satisfies the
+    /// second: such a plugin has to be running *before* any of its panes speak,
+    /// or waiting for an opt-in that never comes makes the switch mean nothing.
     /// A plugin that will not launch is logged and left out: its panes then
-    /// behave exactly like unwatched ones, so a broken plugin costs the operator
-    /// a warning rather than a terminal.
+    /// behave exactly like unwatched ones, so a broken plugin costs the
+    /// operator a warning rather than a terminal.
     pub(super) fn start(cwd: &str, configs: &[PluginConfig], startup: &[StartupCommand]) -> Self {
         let dir = crate::plugin::registry::default_plugins_dir()
             .inspect_err(|error| {
@@ -128,8 +127,7 @@ impl Plugins {
     /// Hand `pane` to `plugin`, reporting whether it took.
     ///
     /// Refused when that plugin has no host: recording an association nothing
-    /// can act on would put the pane on the relaunch path — its slot kept alive
-    /// after an exit for a plugin that will never ask — for no benefit.
+    /// can act on would put the pane on the relaunch path for no benefit.
     pub(super) fn adopt(&mut self, pane: PaneId, plugin: &str) -> bool {
         // Recorded either way: what the pane asked for is a fact about the pane,
         // and a reload that later enables this plugin has no other way to learn

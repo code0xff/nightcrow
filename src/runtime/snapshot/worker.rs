@@ -24,9 +24,8 @@ pub(super) struct Worker {
 /// The watches the worker holds, and what it has already tried to watch.
 ///
 /// What was tried is recorded rather than inferred from the handles: a refusal
-/// leaves no handle, and re-deriving "not installed yet" from that would re-walk
-/// the tree and log the same warning once a second. A failure is answered by
-/// falling back to the interval and retried only when what is wanted changes.
+/// leaves no handle, and re-deriving "not installed yet" from that would
+/// re-walk the tree and log the same warning once a second.
 #[derive(Default)]
 struct Watches {
     tree: Option<RecommendedWatcher>,
@@ -217,15 +216,13 @@ impl Worker {
         self.deliver(msg)
     }
 
-    /// Hand a reading over, unless nobody is reading any more. `false` once the
-    /// receiver is gone.
+    /// Hand a reading over, unless nobody is reading any more. `false` once
+    /// the receiver is gone.
     ///
     /// Checked again here rather than only before the walk, which on a large
     /// tree takes long enough for the last client to leave. A reading nobody
-    /// waited for is worse than wasted: it sits in the channel until whoever
-    /// owns the receiver next drains it, and that is after the next client has
-    /// taken a fresher reading for itself and shown it. The older one then lands
-    /// on top.
+    /// waited for lands in the channel after the next client's fresher
+    /// reading — and then on top of it.
     fn deliver(&self, msg: SnapshotMsg) -> bool {
         if !self.awake.load(Ordering::Acquire) {
             return true;

@@ -1,9 +1,6 @@
 //! Turning a unix epoch second into the `HH:MM` a person reads off their own
-//! clock.
-//!
-//! Hand-rolled because nightcrow has no date crate: adding `chrono`/`time` for
-//! a handful of integers would buy a dependency and its transitive tree for two
-//! format strings.
+//! clock, hand-rolled because adding a date crate for two format strings
+//! would buy a dependency and its transitive tree.
 
 #[cfg(any(not(any(unix, windows)), test))]
 const SECS_PER_MINUTE: i64 = 60;
@@ -12,11 +9,10 @@ const SECS_PER_HOUR: i64 = 3_600;
 #[cfg(any(not(any(unix, windows)), test))]
 const SECS_PER_DAY: i64 = 86_400;
 
-/// `HH:MM` in the machine's local zone, or `None` when the timestamp is one the
-/// platform cannot place.
-///
-/// `None` rather than a fallback on purpose: a wrong wall-clock time reads as
-/// fact, and the caller is expected to show nothing instead.
+/// `HH:MM` in the machine's local zone, or `None` when the timestamp is one
+/// the platform cannot place. `None` rather than a fallback on purpose: a
+/// wrong wall-clock time reads as fact, and the caller is expected to show
+/// nothing instead.
 pub(crate) fn local_hour_minute(epoch: i64) -> Option<String> {
     let t = local_parts(epoch)?;
     Some(format!("{:02}:{:02}", t.hour, t.minute))
@@ -48,9 +44,8 @@ pub(crate) struct DateTimeParts {
 fn local_parts(epoch: i64) -> Option<DateTimeParts> {
     let seconds: libc::time_t = epoch.try_into().ok()?;
     let mut parts: libc::tm = unsafe { std::mem::zeroed() };
-    // SAFETY: `seconds` is a live `time_t` and `parts` a live `tm` for the whole
-    // call; `localtime_r` reads the first and writes only into the second, and is
-    // the reentrant form precisely so it needs no shared state.
+    // SAFETY: `seconds` is a live `time_t` and `parts` a live `tm` for the
+    // whole call; `localtime_r` reads the first and writes only into the second.
     let filled = unsafe { libc::localtime_r(&seconds, &mut parts) };
     if filled.is_null() {
         return None;
@@ -75,8 +70,8 @@ fn local_parts(epoch: i64) -> Option<DateTimeParts> {
     use windows_sys::Win32::Storage::FileSystem::FileTimeToLocalFileTime;
     use windows_sys::Win32::System::Time::FileTimeToSystemTime;
 
-    // Windows FILETIME counts 100-nanosecond intervals since 1601-01-01 UTC.
-    // Unix epoch is 1970-01-01. The offset is 11,644,473,600 seconds.
+    // Windows FILETIME counts 100-nanosecond intervals since 1601-01-01 UTC;
+    // Unix epoch is 1970-01-01.
     const EPOCH_OFFSET_SECS: u64 = 11_644_473_600;
     const HNS_PER_SEC: u64 = 10_000_000;
 
@@ -97,7 +92,7 @@ fn local_parts(epoch: i64) -> Option<DateTimeParts> {
     let mut st: SYSTEMTIME = unsafe { std::mem::zeroed() };
 
     // SAFETY: local_ft and st are live stack variables; the functions write
-    // only into them and need no shared state.
+    // only into them.
     let ok = unsafe {
         FileTimeToLocalFileTime(&ft, &mut local_ft) != 0
             && FileTimeToSystemTime(&local_ft, &mut st) != 0
@@ -116,18 +111,16 @@ fn local_parts(epoch: i64) -> Option<DateTimeParts> {
     })
 }
 
-/// UTC on platforms with no `localtime_r`. The zone database is the OS's to
-/// expose, and guessing an offset would be worse than being explicit about the
-/// one this falls back to.
+/// UTC on platforms with no `localtime_r`: guessing an offset would be worse
+/// than being explicit about the one this falls back to.
 #[cfg(not(any(unix, windows)))]
 fn local_parts(epoch: i64) -> Option<DateTimeParts> {
     utc_parts(epoch)
 }
 
-/// `HH:MM` in UTC, which is what the epoch already counts.
-///
-/// `epoch.rem_euclid` rather than `%` so a pre-1970 timestamp lands on the right
-/// side of midnight instead of producing a negative hour.
+/// `HH:MM` in UTC, which is what the epoch already counts. `rem_euclid`
+/// rather than `%` so a pre-1970 timestamp lands on the right side of midnight
+/// instead of producing a negative hour.
 #[cfg(any(not(any(unix, windows)), test))]
 fn utc_parts(epoch: i64) -> Option<DateTimeParts> {
     let into_day = epoch.rem_euclid(SECS_PER_DAY);

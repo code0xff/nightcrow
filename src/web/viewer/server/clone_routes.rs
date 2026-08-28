@@ -76,8 +76,8 @@ pub(super) fn handle_clone(body: &str, state: &Arc<ViewerState>) -> Vec<u8> {
     }
 
     let worker = Arc::clone(state);
-    // The closure takes the path, so keep one for the spawn-failure branch —
-    // the claimed directory must be released or it blocks a retry.
+    // Keep one path for the spawn-failure branch: the claimed directory must
+    // be released or it blocks a retry.
     let claimed = dest.clone();
     if let Err(err) = std::thread::Builder::new()
         .name("nightcrow-viewer-clone".to_string())
@@ -100,18 +100,14 @@ fn run_and_record(state: &ViewerState, id: u64, url: &str, dest: PathBuf) {
         Ok(()) => CloneState::Done(crate::platform::paths::for_display(&dest).into_owned()),
         Err(err) => {
             // The destination was created here, so a failed clone would leave
-            // a directory behind that blocks a retry under the same name.
-            // Non-recursive on purpose: it cannot destroy content if
-            // something else has taken this path in the meantime. That means
-            // a failure git does not clean up after — it keeps the repository
-            // when only the checkout fails — leaves the directory in place.
-            // A visible leftover the user can delete beats deleting files
-            // that turned out not to be ours.
+            // a directory behind that blocks a retry. Non-recursive on
+            // purpose: it cannot destroy content if something else has taken
+            // this path in the meantime. A visible leftover the user can
+            // delete beats deleting files that turned out not to be ours.
             let _ = std::fs::remove_dir(&dest);
-            // git's message names the real problem ("repository not found",
-            // "permission denied"), which is exactly what the user must act on.
-            // It is the remote's words about a URL the user typed, not server
-            // internals, so it is shown rather than redacted.
+            // git's message names the real problem and is the remote's words
+            // about a URL the user typed, not server internals — shown, not
+            // redacted.
             tracing::info!(error = %err, "clone failed");
             CloneState::Failed(err.to_string())
         }
@@ -124,9 +120,7 @@ fn run_and_record(state: &ViewerState, id: u64, url: &str, dest: PathBuf) {
 ///
 /// With no id the question is instead "what is running?", which is what a page
 /// that just loaded asks: the clone it should be following may have been
-/// started by a tab that has since been reloaded or closed, and without this
-/// that client could only see the 409 refusing a second clone, never the job
-/// causing it.
+/// started by a tab that has since been reloaded or closed.
 pub(super) fn handle_clone_status(head: &RequestHead, state: &ViewerState) -> Vec<u8> {
     let Some(raw) = head.query_param("job") else {
         return encode(serde_json::json!({ "job": state.clones.running() }));

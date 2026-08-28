@@ -1,28 +1,25 @@
 //! Which pane fills the terminal panel.
 //!
-//! **The repository's answer, not each page's.** The same reasoning as the pane
-//! order (`hub_layout.rs`): every page attached to a repository shows the same
-//! terminals, so "which one is filling the panel" is one question. Keeping it
-//! per page instead is what the browser used to do, and it cost the state on
-//! every reload — a zoom lived in one `useState` and nothing outside that page
-//! had ever heard of it.
+//! **The repository's answer, not each page's.** Every page attached to a
+//! repository shows the same terminals, so "which one fills the panel" is one
+//! question. Keeping it per page (what the browser used to do) lost the state
+//! on every reload.
 //!
-//! **An attached TUI is told and ignores it** (`backend/hub.rs`). It has a zoom
-//! of its own that answers a different question: it follows the TUI's active
-//! pane and takes the body from the diff viewer with it. The panes are shared
-//! between the two; what fills a screen is that screen's.
+//! **An attached TUI is told and ignores it** (`backend/hub.rs`). It has a
+//! zoom of its own that answers a different question: it follows the TUI's
+//! active pane and takes the body from the diff viewer with it. The panes are
+//! shared between the two; what fills a screen is that screen's.
 //!
 //! **In the hub, and not on disk.** A zoom names a pane, and a pane is a child
-//! process of this daemon: restarting it destroys the panes, so there is nothing
-//! left for a stored zoom to point at. The panel-level maximize (files vs
-//! terminal, `prefs/maximized.rs`) *is* stored, and the difference is exactly
-//! this — what it names outlives the process. So a zoom survives a page reload
-//! and a TUI restart, which is every case there is a pane to come back to.
+//! process of this daemon: restarting it destroys the panes, so there is
+//! nothing left for a stored zoom to point at. The panel-level maximize
+//! (`prefs/maximized.rs`) *is* stored, and the difference is exactly this.
 //!
-//! **A pane appearing or leaving ends it**, which is why the two functions here
-//! are called from under the same lock that changes the pane list. A zoom that
-//! outlived its pane would leave every client rendering an empty panel, and one
-//! that survived a `create` would hide the terminal somebody just asked for.
+//! **A pane appearing or leaving ends it**, which is why the two functions
+//! here are called from under the same lock that changes the pane list. A
+//! zoom that outlived its pane would leave every client rendering an empty
+//! panel, and one that survived a `create` would hide the terminal somebody
+//! just asked for.
 
 use super::TerminalHub;
 use super::frame::{ServerMessage, TerminalFrame};

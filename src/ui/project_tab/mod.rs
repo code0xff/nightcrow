@@ -16,21 +16,19 @@ use std::time::Duration;
 /// other is how they come to disagree.
 const TAB_TITLE_MAX_CHARS: usize = 14;
 
-/// Width of a `+N` overflow marker.
 const MARKER_WIDTH: u16 = 4;
 
 const ATTENTION_GLYPH: char = '•';
 const ATTENTION_BLINK_INTERVAL: Duration = Duration::from_secs(1);
 
-/// Bright/dim phase for the unread marker. Only style changes between phases,
-/// so the row and its pointer hit boxes never move while it blinks.
+/// Only style changes between phases, so the row and its pointer hit boxes
+/// never move while it blinks.
 pub(crate) fn blink_is_bright(elapsed: Duration) -> bool {
     (elapsed.as_millis() / ATTENTION_BLINK_INTERVAL.as_millis()).is_multiple_of(2)
 }
 
-/// The name shown for a repo path — its final component. Goes through `Path`
-/// rather than splitting on `/` so a Windows path (`C:\work\api`) yields
-/// `api` too.
+/// Goes through `Path` rather than splitting on `/` so a Windows path
+/// (`C:\work\api`) yields `api` too.
 pub(crate) fn tab_label(repo_path: &str) -> String {
     let path = std::path::Path::new(repo_path);
     let name = path
@@ -55,7 +53,7 @@ fn truncate(s: &str, max: usize) -> String {
 
 /// The full text of every tab, ignoring how many will fit. Every tab carries
 /// its `F#` legend because the F-key row addresses projects directly and
-/// layout-independently. Projects past the tenth have no key, so they carry
+/// layout-independently; projects past the tenth have no key, so they carry
 /// no legend rather than implying an unbound one.
 fn tab_texts(repo_paths: &[String], attention: &[bool]) -> Vec<String> {
     repo_paths
@@ -75,11 +73,10 @@ fn tab_texts(repo_paths: &[String], attention: &[bool]) -> Vec<String> {
 }
 
 /// The run of tabs to draw in `width` cells, always containing `active`.
-/// Ten tabs of repo names do not fit an 80-column row, and a `Paragraph`
-/// would clip the tail — silently hiding later projects *and* the active-tab
-/// highlight when the active one falls off the end. So the row scrolls
-/// around the active tab, and what is dropped is replaced by a `+N` marker
-/// whose width is reserved here before deciding what fits.
+/// A `Paragraph` would silently clip the tail — hiding later projects *and*
+/// the active-tab highlight when the active one falls off the end — so the
+/// row scrolls around the active tab and drops what doesn't fit into `+N`
+/// markers whose width is reserved here before deciding what fits.
 fn visible_window(widths: &[u16], width: u16, active: usize) -> std::ops::Range<usize> {
     let n = widths.len();
     if n == 0 {
@@ -165,7 +162,7 @@ fn tab_segments(
 
 /// Draw the tab row into `area`. A single project still renders its tab: the
 /// row is permanent (see `chrome_rows`), and showing which repo is open is
-/// exactly what the row is for. `accent` marks the active tab.
+/// exactly what the row is for.
 pub(crate) fn render(
     repo_paths: &[String],
     attention: &[bool],
@@ -224,7 +221,7 @@ pub(crate) fn render(
 }
 
 /// The project index a click at screen cell `(x, y)` selects, or `None` off
-/// the row or past the last tab. `area` is the tab row Rect.
+/// the row or past the last tab.
 pub(crate) fn tab_at(
     repo_paths: &[String],
     attention: &[bool],

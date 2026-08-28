@@ -12,19 +12,11 @@ pub const PANE_TOKEN_ENV: &str = "NIGHTCROW_PANE_TOKEN";
 
 /// Env var naming the directory a hub's plugins put their runtime sockets in.
 ///
-/// A plugin process belongs to one [`TerminalHub`](crate::session::terminal),
-/// and a hub is per repository — so a session with six projects runs six of
-/// each plugin. A plugin that picks one fixed socket path is therefore not
-/// wrong about its own instance but about how many there are: the first binds,
-/// the rest find the address taken and run without their socket, and a helper
-/// inside a pane reaches whichever instance won rather than the one watching
-/// it.
-///
-/// Both sides derive this from the hub's working directory, so nothing has to
-/// be handed from the plugin spawn to the pane spawn: they compute the same
-/// directory from the same input. The pane's children inherit it exactly as
-/// they inherit [`PANE_TOKEN_ENV`], which is what lets a provider's hook find
-/// the instance that is watching the pane it runs in.
+/// A hub is per repository, so a session with six projects runs six of each
+/// plugin; a plugin that picks one fixed socket path would collide. Both sides
+/// derive this from the hub's working directory, so the plugin spawn and the
+/// pane spawn agree without either being told by the other — and a provider's
+/// hook finds the instance watching the pane it runs in via inheritance.
 pub const PLUGIN_RUNTIME_DIR_ENV: &str = "NIGHTCROW_PLUGIN_RUNTIME_DIR";
 
 /// The directory the plugins of the hub rooted at `cwd` use for their sockets.
@@ -32,10 +24,9 @@ pub const PLUGIN_RUNTIME_DIR_ENV: &str = "NIGHTCROW_PLUGIN_RUNTIME_DIR";
 /// `None` when there is nowhere to put one, which leaves a plugin on whatever
 /// default it had — degraded exactly as it is today rather than refused.
 ///
-/// The hub's path is hashed rather than spelled out. AF_UNIX paths are capped
+/// The hub's path is hashed rather than spelled out: AF_UNIX paths are capped
 /// near 107 bytes and a repository path can be most of that on its own, so a
-/// fixed-width digest is what keeps the socket bindable; it also keeps a
-/// directory name from carrying where someone's code lives.
+/// fixed-width digest is what keeps the socket bindable.
 pub fn plugin_runtime_dir(cwd: &std::path::Path) -> Option<std::path::PathBuf> {
     let base = match std::env::var_os("XDG_RUNTIME_DIR").filter(|d| !d.is_empty()) {
         Some(dir) => std::path::PathBuf::from(dir).join("nightcrow"),
@@ -64,12 +55,10 @@ const TOKEN_BYTES: usize = 16;
 
 /// Opaque name for a pane slot, stable for as long as the slot exists.
 ///
-/// [`PaneId`](super::PaneId) cannot serve this purpose outside the process that
-/// owns the panes: it is a per-backend counter that restarts at 1 whenever a
-/// backend is rebuilt, so the same number means different panes across two
-/// runs. The token is random instead, and it deliberately outlives the process
-/// occupying the slot — an observer tracking a slot keeps its state when the
-/// slot's process is replaced.
+/// [`PaneId`](super::PaneId) cannot serve this outside the owning process: it
+/// is a per-backend counter that restarts whenever a backend is rebuilt. The
+/// token is random instead and deliberately outlives the process occupying the
+/// slot, so an observer tracking a slot keeps its state across a replacement.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct PaneToken(String);
 
@@ -94,13 +83,9 @@ impl PaneToken {
     }
 }
 
-/// Which spawn of a pane slot something refers to.
-///
-/// Starts at [`FIRST_GENERATION`] and rises every time the slot's process is
-/// replaced. An out-of-process observer decides what to do asynchronously, so
-/// by the time it asks for something the process it watched may already be
-/// gone; carrying the generation is what makes that detectable instead of
-/// letting a decision about one process land on its successor.
+/// Which spawn of a pane slot something refers to: an out-of-process observer
+/// decides asynchronously, so carrying the generation makes acting on an
+/// already-replaced process detectable.
 pub type PaneGeneration = u32;
 
 pub const FIRST_GENERATION: PaneGeneration = 1;

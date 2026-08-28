@@ -123,20 +123,15 @@ impl AttachedClients {
     /// Send `frame` to every attached client, and count them told: nobody is
     /// left owed a set by a broadcast that just reached them.
     ///
-    /// The two are one act, under one lock hold, because a client that attaches
-    /// between them was *not* a recipient — clearing its flag afterwards would
-    /// leave it waiting for a set the watcher has already recorded as sent, and
-    /// with no further change to the session nothing would ever send one. A
-    /// client that attaches after this returns is not in the list, keeps its
-    /// flag, and is served on the next pass.
+    /// The two are one act, under one lock hold, because a client that
+    /// attaches between them was *not* a recipient — clearing its flag
+    /// afterwards would leave it waiting for a set the watcher has already
+    /// recorded as sent. A client that attaches after this returns is not in
+    /// the list, keeps its flag, and is served on the next pass.
     ///
-    /// The served set is the only thing every client is sent at once — a
-    /// repository's pane output goes per subscriber — so there is no broadcast
-    /// this does not settle.
-    ///
-    /// Never blocks: the lock is held while queueing, and a blocking send would
-    /// let one stalled client stop the session for all the others. A client whose
-    /// queue is full is cut off instead — for itself alone.
+    /// Never blocks: the lock is held while queueing, and a blocking send
+    /// would let one stalled client stop the session for all the others. A
+    /// client whose queue is full is cut off — for itself alone.
     pub fn broadcast(&self, frame: Frame) {
         let mut clients = self.inner.lock().expect("attached clients poisoned");
         clients.retain_mut(|client| {
@@ -145,9 +140,9 @@ impl AttachedClients {
         });
     }
 
-    /// Note that `id` is waiting to be told the session's shape, for the watcher
-    /// to answer on its next pass. Unknown ids are ignored: the client detached
-    /// between asking and this.
+    /// Note that `id` is waiting to be told the session's shape, for the
+    /// watcher to answer on its next pass. Unknown ids are ignored: the client
+    /// detached between asking and this.
     pub fn owe_set(&self, id: u64) {
         let mut clients = self.inner.lock().expect("attached clients poisoned");
         if let Some(client) = clients.iter_mut().find(|client| client.id == id) {

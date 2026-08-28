@@ -35,13 +35,11 @@ pub(super) enum PtyEvent {
     Exited,
 }
 
-/// How far a pane has moved through its shutdown.
-///
-/// The two end signals are not interchangeable. EOF on the master is final.
-/// The child's death is not: on Windows `ClosePseudoConsole` only runs when
-/// the master is dropped, so `read()` never returns EOF and the child's exit
-/// is the *only* signal a pane gets. `Draining` holds the exit back until the
-/// channel is dry.
+/// How far a pane has moved through its shutdown. The two end signals are
+/// not interchangeable: EOF on the master is final, but a child's death is
+/// not — on Windows `ClosePseudoConsole` only runs when the master is dropped,
+/// so `read()` never returns EOF and the child's exit is the *only* signal a
+/// pane gets. `Draining` holds the exit back until the channel is dry.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum ExitPhase {
     /// No exit signal seen.
@@ -53,9 +51,8 @@ pub(super) enum ExitPhase {
 }
 
 pub(super) struct PtyPane {
-    // master/writer are wrapped in Option so `Drop` can release them
-    // before joining the reader thread — the reader blocks in `read()`
-    // and only unblocks when both sides of the PTY are closed.
+    // Option wrapping so `Drop` releases master/writer before joining the
+    // reader thread, which only unblocks when both PTY sides close.
     pub(super) master: Option<Box<dyn portable_pty::MasterPty>>,
     pub(super) writer: Option<Box<dyn Write + Send>>,
     pub(super) killer: Box<dyn portable_pty::ChildKiller + Send + Sync>,
@@ -69,17 +66,13 @@ impl Drop for PtyPane {
     fn drop(&mut self) {
         // Best-effort kill: the child may already be gone.
         let _ = self.killer.kill();
-        // Drop writer/master so the reader's blocked `read()` returns EOF
-        // and the thread exits. Without this, joining the reader would
-        // hang.
+        // Drop writer/master so the reader's blocked `read()` returns EOF;
+        // without this, joining the reader would hang.
         self.writer.take();
         self.master.take();
-        // Bounded join so closing a pane cannot leave reader/wait threads
-        // alive holding fds against the (possibly killed) child. If a
-        // daemonized grandchild kept the slave fd open, the reader's
-        // `read()` won't return EOF; detach in that case rather than
-        // freezing the close. We're inside drop, so a panic in either
-        // thread is logged rather than propagated.
+        // Bounded join: if a daemonized grandchild kept the slave fd open the
+        // reader's `read()` never returns EOF — detach rather than freeze the
+        // close. Inside drop, so a thread panic is logged, not propagated.
         if let Some(h) = self.reader_handle.take() {
             try_timed_join(h, PTY_REAP_TIMEOUT);
         }
@@ -90,17 +83,14 @@ impl Drop for PtyPane {
 }
 
 pub struct PtyBackend {
-    // BTreeMap (not HashMap) so per-frame event drain visits panes in
-    // PaneId order — IDs are monotonic, so this matches creation order
-    // and stays deterministic across runs.
+    // BTreeMap so per-frame drain visits panes in PaneId order — ids are
+    // monotonic, keeping the drain deterministic across runs.
     pub(super) panes: BTreeMap<PaneId, PtyPane>,
-    /// Slot bookkeeping — identity, launch, idle clock — kept beside `panes`
-    /// rather than inside `PtyPane` because a relaunch replaces the `PtyPane`
-    /// while the slot has to survive it.
+    /// Slot bookkeeping kept beside `panes` rather than inside `PtyPane`
+    /// because a relaunch replaces the pane while the slot survives it.
     pub(super) slots: PaneSlots,
     pub(super) next_id: PaneId,
-    // Each new pane spawns the shell here so its cwd matches the repo
-    // nightcrow is tracking.
+    // Spawned shell cwd must match the repo nightcrow tracks.
     pub(super) cwd: PathBuf,
     /// Panes created since the last drain, waiting to be reported.
     ///
@@ -139,20 +129,15 @@ impl PtyBackend {
         self.panes.contains_key(&id)
     }
 
-    /// Let go of a pane's process while keeping its slot.
-    ///
-    /// Splitting this out of `destroy_pane` is what makes waiting for a reset
-    /// affordable: a wait can run for hours, and holding the dead child's fds
-    /// and threads open for that long to preserve the token would be pure
-    /// waste. The slot is small, and it is the only part a relaunch needs.
+    /// Let go of a pane's process while keeping its slot, so a wait can run
+    /// for hours without holding the dead child's fds and threads open just
+    /// to preserve its token. The slot is the only part a relaunch needs.
     pub fn release_process(&mut self, id: PaneId) {
         self.panes.remove(&id);
     }
 
-    /// Drop a slot for good, retiring its token.
-    ///
-    /// Called when nothing more is expected of the pane — the wait was
-    /// abandoned, the pane was closed, or the session is going away.
+    /// Drop a slot for good, retiring its token: the wait was abandoned, the
+    /// pane was closed, or the session is going away.
     pub fn retire_slot(&mut self, id: PaneId) {
         self.slots.remove(id);
     }
@@ -165,8 +150,6 @@ impl TerminalBackend for PtyBackend {
         // way, and this backend simply knows the answer before it queues it.
         // `requested` is always true — nothing else can create a pane here.
         self.created.push(BackendEvent::Created {
-            // A local backend has no name to give: whoever opened the pane knows
-            // what it is for.
             title: None,
             pane: id,
             rows,
@@ -177,11 +160,9 @@ impl TerminalBackend for PtyBackend {
     }
 
     fn destroy_pane(&mut self, id: PaneId) {
-        // Removing the pane drops it, which runs PtyPane::drop: kill,
-        // release master/writer, join reader/wait threads.
         self.panes.remove(&id);
-        // The slot goes with it, retiring its token. A relaunch keeps the slot
-        // by going through `relaunch_pane` instead of destroy-then-open.
+        // A relaunch keeps the slot by going through `relaunch_pane` instead
+        // of destroy-then-open.
         self.slots.remove(id);
     }
 
@@ -227,18 +208,14 @@ impl TerminalBackend for PtyBackend {
         // silently dropped, and where Exited could be reported twice.
         //
         // The reader thread emits all Output messages, then a single Exited as
-        // the last message before its sender drops. The mpsc channel preserves
-        // send order, so any Output enqueued before Exited has already been
-        // surfaced by an earlier iteration of the outer try_recv loop — no
-        // separate post-Exited drain is needed.
+        // the last message before its sender drops, so the mpsc order means no
+        // separate post-Exited drain is needed. `ChildExited` carries no such
+        // ordering — it can overtake output already written — so it only moves
+        // the pane to `Draining`.
         //
-        // `ChildExited` carries no such ordering — it can overtake output the
-        // child already wrote — so it only moves the pane to `Draining`.
-        //
-        // Each pane is drained up to PER_PANE_DRAIN_BUDGET events to keep
-        // one noisy pane (e.g. `yes | head -100000`) from starving its
-        // siblings within a single frame; whatever is left lands on the
-        // next tick.
+        // Each pane is drained up to PER_PANE_DRAIN_BUDGET events so one noisy
+        // pane (e.g. `yes | head -100000`) cannot starve its siblings within a
+        // frame; the rest lands on the next tick.
         // Ahead of any output: a pane has to exist before bytes can be routed
         // to it, and both can be queued before the same drain.
         let mut events: Vec<BackendEvent> = std::mem::take(&mut self.created);
@@ -261,7 +238,6 @@ impl TerminalBackend for PtyBackend {
                         }
                     }
                     Ok(PtyEvent::Exited) => {
-                        // EOF is final, so nothing is held back.
                         if pane.exit != ExitPhase::Reported {
                             pane.exit = ExitPhase::Reported;
                             events.push(BackendEvent::Exited { pane: *id });
@@ -269,8 +245,8 @@ impl TerminalBackend for PtyBackend {
                         break;
                     }
                     Err(_) => {
-                        // Dry for now. For a dead child that is the cue to
-                        // report — once the grace has let late output land.
+                        // Dry: for a dead child past its drain grace, the cue
+                        // to report.
                         if let ExitPhase::Draining { since } = pane.exit
                             && now.duration_since(since) >= EXIT_DRAIN_GRACE
                         {
@@ -287,9 +263,8 @@ impl TerminalBackend for PtyBackend {
     }
 }
 
-// `PtyBackend` no longer needs an explicit Drop: `HashMap::drop` drops every
-// pane, and `PtyPane::drop` handles kill+release+join. Leaving an empty
-// Drop here would still work but would obscure that ownership.
+// No explicit `Drop` on `PtyBackend` on purpose: the map drops every pane and
+// `PtyPane::drop` handles kill+release+join — an empty Drop would obscure that.
 
 #[cfg(test)]
 #[path = "pty_tests.rs"]

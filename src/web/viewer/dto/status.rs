@@ -53,15 +53,14 @@ pub struct ChangedFileDto {
     pub worktree: String,
     /// Worktree mtime as Unix milliseconds, for the client's "recently touched"
     /// highlight (the same signal the TUI's hot table carries). Absent when the
-    /// file could not be stat'd — or always, for a commit's file list, where the
-    /// working tree says nothing about the commit.
+    /// file could not be stat'd — or always, for a commit's file list, where
+    /// the working tree says nothing about the commit.
     ///
     /// An absolute instant, not an age: the status payload is deduplicated by
-    /// byteequality before it is pushed, so a field that moved every tick would
-    /// turn an idle repository into a permanent event stream. Because the
-    /// instant comes from this machine's clock and the browser may be running on
-    /// another device, the client corrects for the difference using the
-    /// `now_ms` that rides the repo poll (see [`server_now_millis`]).
+    /// byte-equality before it is pushed, so a field that moved every tick
+    /// would turn an idle repository into a permanent event stream. The client
+    /// corrects for clock skew against the `now_ms` riding the repo poll (see
+    /// [`server_now_millis`]).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub mtime: Option<u64>,
 }
@@ -103,12 +102,9 @@ fn unix_millis(t: SystemTime) -> Option<u64> {
         .map(|d| d.as_millis() as u64)
 }
 
-/// The server's wall clock in Unix milliseconds — the reference the client dates
-/// `mtime` against. `0` for a pre-epoch clock, which leaves the client on its own
-/// clock rather than shifting it by a nonsense offset.
-///
-/// Sent because `mtime` is an absolute instant produced by *this* machine while
-/// the browser reading it may be another device entirely (see [`ChangedFile`]).
+/// The server's wall clock in Unix milliseconds — the reference the client
+/// dates `mtime` against. `0` for a pre-epoch clock, which leaves the client
+/// on its own clock rather than shifting it by a nonsense offset.
 pub fn server_now_millis() -> u64 {
     unix_millis(SystemTime::now()).unwrap_or(0)
 }

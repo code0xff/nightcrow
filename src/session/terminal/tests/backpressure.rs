@@ -3,7 +3,10 @@
 use super::{attach, attach_over_socket, created_pane, next_matching, spawn_hub};
 use crate::session::terminal::CLIENT_QUEUE_DEPTH;
 use crate::session::terminal::frame::ClientMessage;
+use crate::session::terminal::hub_helpers::Command;
 use std::io::Read;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 #[test]
 fn a_client_that_stops_draining_has_its_connection_ended() {
@@ -126,6 +129,68 @@ fn the_final_resize_survives_a_full_command_queue() {
 }
 
 #[test]
+fn resize_progresses_while_command_producers_stay_busy() {
+    let dir = tempfile::TempDir::new().unwrap();
+    let hub = spawn_hub(&dir.path().to_string_lossy(), Vec::new(), Vec::new());
+    let session = Arc::new(attach(&hub));
+    session.dispatch(ClientMessage::Create { rows: 24, cols: 80 });
+    let pane = next_matching(&session, |frame| created_pane(frame).is_some())
+        .and_then(|frame| created_pane(&frame))
+        .expect("no created message");
+
+    let running = Arc::new(AtomicBool::new(true));
+    let accepted = Arc::new(AtomicUsize::new(0));
+    let producers: Vec<_> = (0..4)
+        .map(|_| {
+            let commands = hub.commands.clone();
+            let running = Arc::clone(&running);
+            let accepted = Arc::clone(&accepted);
+            std::thread::spawn(move || {
+                while running.load(Ordering::Acquire) {
+                    if commands
+                        .try_send(Command::Reorder { order: vec![pane] })
+                        .is_ok()
+                    {
+                        accepted.fetch_add(1, Ordering::Relaxed);
+                    }
+                }
+            })
+        })
+        .collect();
+    let busy = super::wait_for(|| {
+        (accepted.load(Ordering::Relaxed) >= CLIENT_QUEUE_DEPTH * 4).then_some(())
+    })
+    .is_some();
+
+    session.dispatch(ClientMessage::Resize {
+        pane,
+        rows: 30,
+        cols: 120,
+    });
+    let resized = super::wait_for(|| {
+        session
+            .next_frame(std::time::Duration::from_millis(20))
+            .and_then(|frame| super::resized_size(&frame))
+            .filter(|size| *size == (30, 120))
+    })
+    .is_some();
+
+    running.store(false, Ordering::Release);
+    for producer in producers {
+        producer.join().expect("command producer panicked");
+    }
+    hub.stop();
+    assert!(
+        busy,
+        "the producer must exercise a sustained command stream"
+    );
+    assert!(
+        resized,
+        "continuous commands must not starve a pending resize"
+    );
+}
+
+#[test]
 fn unknown_panes_do_not_grow_the_resize_queue() {
     let dir = tempfile::TempDir::new().unwrap();
     let hub = spawn_hub(&dir.path().to_string_lossy(), Vec::new(), Vec::new());
@@ -141,4 +206,27 @@ fn unknown_panes_do_not_grow_the_resize_queue() {
     }
 
     assert!(hub.take_pending_resizes().is_empty());
+}
+
+#[test]
+fn disconnected_connections_leave_no_pending_resizes() {
+    let dir = tempfile::TempDir::new().unwrap();
+    let hub = spawn_hub(&dir.path().to_string_lossy(), Vec::new(), Vec::new());
+    hub.stop();
+    hub.register_pane(7, 24, 80, None, None);
+
+    for cols in 81..=1_080 {
+        let session = attach(&hub);
+        session.dispatch(ClientMessage::Resize {
+            pane: 7,
+            rows: 30,
+            cols,
+        });
+        drop(session);
+    }
+
+    assert!(
+        hub.take_pending_resizes().is_empty(),
+        "reconnect churn must not retain entries for dead connections"
+    );
 }

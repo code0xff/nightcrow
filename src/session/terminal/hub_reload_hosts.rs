@@ -27,16 +27,11 @@ impl Plugins {
                 self.set_watch_on_signal(&cfg.name, cfg.watch_on_signal);
                 self.launched.insert(cfg.name.clone(), cfg.clone());
                 self.hosts.insert(cfg.name.clone(), host);
-                // Every pane that opted into this plugin is handed to it, whether
-                // it was already owned — the child that knew about it is gone — or
-                // was never adopted because there was no host when it opened. The
-                // second case is what makes enabling a plugin mid-session useful:
-                // a pane created while it was off is still the pane its own
-                // configuration named.
-                //
-                // Only panes the hub still has. `titles` is that set, so a pane
-                // that has since exited is skipped rather than announced to a
-                // plugin that could do nothing about it.
+                // Every pane that opted into this plugin is handed to it,
+                // whether it was already owned — the child that knew about it is
+                // gone — or was never adopted because there was no host when it
+                // opened. The second case is what makes enabling a plugin
+                // mid-session useful. Only panes the hub still has (`titles`).
                 let opted_in: Vec<PaneId> = self
                     .intended
                     .iter()
@@ -93,12 +88,9 @@ impl Plugins {
         self.launched.remove(name);
         // Every hold this plugin had goes, replacement or not. A hold is a pane
         // whose process already exited, kept alive only so *that* plugin could
-        // relaunch it — and the successor is never told about it. It is handed
-        // back the panes the hub still has (see `start_host`), and an exited one
-        // is not among them, so its token dies with the child that was given it.
-        // Left in place the slot would sit out its whole window with nothing that
-        // could honour it, while every client counted down to a relaunch that was
-        // never coming.
+        // relaunch it — the successor is never told about it and cannot honour
+        // it. Left in place the slot would sit out its whole window while
+        // every client counted down to a relaunch that was never coming.
         self.retire_holds_of(backend, name, outcome);
         if replaced {
             // The live panes stay this plugin's, and are handed to the successor

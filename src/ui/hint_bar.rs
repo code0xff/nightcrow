@@ -21,20 +21,17 @@ pub(crate) enum HintClick {
 /// Leader follow-ups a `<prefix> x` segment can name and still be clicked.
 const CLICKABLE_LEADER_KEYS: &str = "twflbo";
 /// Keys a bare segment can name and still be clicked: the leader follow-ups as
-/// they appear on the armed row (`t`, `w`, `s`, `z`, `c`, `o`, `x`, `p`, `u`,
-/// `r`), plus the commands the focused panel handles unprefixed (`l`, `b`, `f`,
-/// `v`, `/`, `n`).
+/// they appear on the armed row, plus the commands the focused panel handles
+/// unprefixed.
 const CLICKABLE_PLAIN_KEYS: &str = "twslbfoxpruvzcn/";
 
 /// The click a hint segment's keyspec resolves to, or `None` for a segment
-/// that is not clickable.
-///
-/// The rule is the one `docs/keybindings.md` states: command hints dispatch,
-/// navigation hints do not, and `q: detach` is held back so detaching stays a
-/// deliberate two-key act. The keys are listed rather than derived because
-/// nothing in the hint text tells a command apart from a navigation hint —
-/// which means a command added to `hint_text` stays silently unclickable until
-/// it is listed here. This list has already had that gap.
+/// that is not clickable. Command hints dispatch, navigation hints do not, and
+/// `q: detach` is held back so detaching stays a deliberate two-key act. The
+/// keys are listed rather than derived because nothing in the hint text tells
+/// a command apart from a navigation hint — a command added to `hint_text`
+/// stays silently unclickable until it is listed here. This list has already
+/// had that gap.
 pub(crate) fn segment_click(keyspec: &str) -> Option<HintClick> {
     let spec = keyspec.trim();
     if spec == "<prefix>" {
@@ -107,8 +104,8 @@ pub(crate) fn render_hint_bar<'a>(
     width: u16,
 ) -> Paragraph<'a> {
     if chrome.repo_input.active {
-        // The input itself sits on the notice row, where the repo header was;
-        // this row carries the dialog's keys and its reports.
+        // The input itself sits on the notice row; this row carries the
+        // dialog's keys and its reports.
         return Paragraph::new(repo_dialog_hint_line(
             app.notice.as_ref(),
             chrome.repo_input,
@@ -133,8 +130,7 @@ pub(crate) fn render_hint_bar<'a>(
     }
     if app.interaction.awaiting_swap_target {
         // The swap-target digits follow the same layout-aware mapping as the
-        // focus jumps: `1-8` while the terminal fills the body, `3-9,0` in
-        // the split view.
+        // focus jumps: `1-8` fullscreen, `3-9,0` in the split view.
         let digits = if app.terminal.fullscreen.fills_body() {
             "1-8"
         } else {
@@ -174,7 +170,7 @@ pub(crate) fn empty_hint_click_at(
     x: u16,
     y: u16,
 ) -> Option<HintClick> {
-    // Gated like `hint_click_at`: with capture off the row renders plain, and
+    // Gated like `hint_click_at`: with capture off the row renders plain, but
     // a browser mouse event still reaches this path, so a label that does not
     // advertise itself as clickable must not act like one either.
     if !mouse_enabled {

@@ -1,21 +1,18 @@
 //! What each project was last showing in the browser, so opening it again
 //! opens what was open.
 //!
-//! The TUI has kept this per repository since it had a session file — mode, the
-//! selected file, the tree's cursor and its expanded directories
+//! The TUI has kept this per repository since it had a session file
 //! (`app::session_io`). This is the same thing for the viewer, and deliberately
 //! not the same *file*: `workspace.json` belongs to the TUI, which rewrites it
-//! whole when it exits (`session::operations::persist_workspace` says so), so an
-//! entry written here would go the next time a TUI ran. Kept in `viewer.json`
-//! beside `maximized`, which is per-project for the same reason and keyed the
-//! same way — by absolute path, because repo ids only live as long as the
-//! process.
+//! whole when it exits, so an entry written here would go the next time a TUI
+//! ran. Kept in `viewer.json` beside `maximized`, keyed the same way — by
+//! absolute path, because repo ids only live as long as the process.
 
 use serde::{Deserialize, Serialize};
 
 /// How many projects' views to remember. Past this the oldest go. Matches the
-/// TUI's `MAX_REMEMBERED` and `maximized`'s cap for the same reason: a file
-/// that grows with every project ever glanced at.
+/// TUI's `MAX_REMEMBERED` and `maximized`'s cap: a file that grows with every
+/// project ever glanced at.
 pub const MAX_REMEMBERED_VIEWS: usize = 50;
 
 /// How many expanded directories one project may keep. A tree opened all the

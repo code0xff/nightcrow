@@ -106,23 +106,22 @@ impl PaneSize {
 #[serde(tag = "type", rename_all = "lowercase")]
 pub enum ServerMessage {
     /// A pane exists, along with the size its PTY is currently set to. The size
-    /// rides along because the client is not the only source of it: a pane
-    /// replayed to a reconnecting page, or one another device sized, already has
-    /// a size this client never chose. Without it the client must assume nothing
-    /// and send its own size on attach, costing the child a full repaint.
+    /// rides along because the client is not the only source of it — a pane
+    /// another device sized already has a size this client never chose.
+    /// Without it the client must send its own size on attach, costing the
+    /// child a full repaint.
     Created {
         pane: PaneId,
         rows: u16,
         cols: u16,
         /// Which client asked for this pane, in the id space of the connection
-        /// the frame is going out on. Each recipient compares it against its own
-        /// id on that connection. `None` means nobody there asked: a replayed
-        /// pane, one another client opened, or a startup terminal.
+        /// the frame is going out on; each recipient compares it against its
+        /// own. `None` means nobody there asked: a replayed pane, one another
+        /// client opened, or a startup terminal.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         client: Option<u64>,
         /// What the session calls this pane, when it has a name of its own — a
-        /// startup terminal opened under a configured name. Absent for a pane a
-        /// client asked for, and for one nothing has named.
+        /// startup terminal opened under a configured name.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         title: Option<String>,
     },
@@ -138,17 +137,16 @@ pub enum ServerMessage {
         cols: u16,
     },
     /// Who this client is, in the id space [`Created::client`] is stamped in.
-    /// Addressed, and the first thing a connection is told. A connection's id,
-    /// not a viewer's: minted per connection and a reconnect gets a new one.
+    /// A connection's id, not a viewer's: minted per connection and a
+    /// reconnect gets a new one.
     ///
     /// [`Created::client`]: Self::Created::client
     Hello {
         client: u64,
         /// How many `Created` frames the replay is about to deliver. Exact,
         /// because `connect` queues the whole replay under the hub's lock and
-        /// only registers the client afterwards. A client that knows the count
-        /// can lay its grid out for the panes it is *going* to have rather than
-        /// the ones it has so far.
+        /// only registers the client afterwards — a client that knows the
+        /// count can lay its grid out for the panes it is *going* to have.
         panes: usize,
     },
     /// Whether *this* client is the one whose layout sets the pane sizes.
@@ -182,13 +180,11 @@ pub enum ServerMessage {
     },
     /// What a plugin reports about a pane it is nursing back, relayed verbatim.
     ///
-    /// Pane metadata rather than screen content: nothing here is drawn into a
-    /// terminal grid, and a client that ignores it renders exactly as before.
-    /// `state` is the plugin's own short label; the hub neither interprets it nor
-    /// keeps it, so this is a broadcast of the latest word and not a state
-    /// machine. The one label the hub itself sends is
-    /// [`RECOVERY_CANCELLED`](super::hub_recovery::RECOVERY_CANCELLED), which a
-    /// client treats as "there is nothing pending any more".
+    /// Pane metadata rather than screen content: a client that ignores it
+    /// renders exactly as before. `state` is the plugin's own short label;
+    /// the hub neither interprets it nor keeps it, so this is a broadcast of
+    /// the latest word and not a state machine. The one label the hub itself
+    /// sends is [`RECOVERY_CANCELLED`](super::hub_recovery::RECOVERY_CANCELLED).
     /// A plugin says this pane wants the person back. Carries no reason and no
     /// text: the client turns it into that project tab's unread marker, which
     /// says "something happened here" and nothing more.

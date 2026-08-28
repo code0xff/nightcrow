@@ -17,34 +17,29 @@ pub fn resolve_repo_path(path: impl AsRef<Path>) -> PathBuf {
         .and_then(|repo| repo.workdir().map(Path::to_path_buf));
     let candidate = found.as_deref().unwrap_or(path);
     // Canonicalized whichever branch produced it, so one worktree has exactly
-    // one spelling. Project de-duplication compares these strings, and a
-    // second spelling opens a second tab on a repository already open.
+    // one spelling: project de-duplication compares these strings, and a second
+    // spelling opens a second tab on a repository already open.
     //
     // Applied to libgit2's answer too, rather than trusting it: what `workdir`
     // returns is platform-specific — a trailing separator, symlinks resolved on
     // some systems and not others, and on Windows the casing as it was asked
-    // for rather than as it is on disk, where `C:\Code` and `c:\code` are one
-    // directory. Making the guarantee ours costs one `stat` and does not depend
-    // on behaviour no test here can reach.
+    // for rather than as it is on disk. Making the guarantee ours costs one
+    // `stat` and does not depend on behaviour no test here can reach.
     //
-    // A path that cannot be canonicalized is returned as it came. That is
-    // almost always one that does not exist, which the caller has already
-    // rejected — but a directory the process cannot open would land here too,
-    // and for it the single-spelling guarantee is off. Opening the repository
-    // and letting git report what is wrong beats refusing to show it at all,
-    // and the cost of being wrong is the duplicate tab this exists to prevent,
-    // not anything lost.
+    // A path that cannot be canonicalized is returned as it came — almost
+    // always one that does not exist, which the caller has already rejected.
+    // For it the single-spelling guarantee is off, but opening the repository
+    // and letting git report what is wrong beats refusing to show it at all.
     crate::platform::paths::canonicalize_clean(candidate)
         .unwrap_or_else(|_| candidate.to_path_buf())
 }
 
 /// Format a `git2::Error` from `Repository::discover` for user-facing display.
 ///
-/// When the error is a "not a repository" / `NotFound` error of class
-/// `Repository`, the internal libgit2 diagnostic (`; class=Repository (6);
-/// code=NotFound (-3)`) is stripped — users cannot act on it. All other
-/// errors preserve the full `error.to_string()` so the diagnostic is
-/// available for debugging.
+/// A "not a repository" / `NotFound` error of class `Repository` loses the
+/// internal libgit2 diagnostic (`; class=Repository (6); code=NotFound (-3)`) —
+/// users cannot act on it. All other errors keep the full `error.to_string()`
+/// for debugging.
 pub fn format_discover_error(error: &git2::Error) -> String {
     if error.class() == git2::ErrorClass::Repository && error.code() == git2::ErrorCode::NotFound {
         error.message().to_string()

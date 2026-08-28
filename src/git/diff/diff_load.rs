@@ -149,10 +149,9 @@ fn diff_options(pathspec: Option<&str>) -> DiffOptions {
 /// The two sides differ only in a rename git paired, which it does when the
 /// pathspec reached both halves — otherwise each half arrives as its own
 /// `Deleted` or `Added` delta holding that half's path on both sides. Prefix
-/// matching is what reaches both, so this is not only the directory case: a
-/// file replaced by a directory of the same name (`foo` becoming `foo/x`)
-/// pairs under the pathspec `foo`, and there the old side is the only side
-/// that equals what was asked for.
+/// matching is what reaches both: a file replaced by a directory of the same
+/// name (`foo` becoming `foo/x`) pairs under the pathspec `foo`, and there the
+/// old side is the only side that equals what was asked for.
 fn delta_is_about(delta: &DiffDelta<'_>, wanted: &str) -> bool {
     [delta.new_file().path(), delta.old_file().path()]
         .into_iter()
@@ -178,9 +177,9 @@ fn collect_hunks(
 ) -> Result<Vec<DiffHunk>> {
     let hunks: RefCell<Vec<DiffHunk>> = RefCell::new(Vec::new());
     // Every callback is handed the delta it belongs to, so each one answers the
-    // `only` question for itself. Deciding once in `file_cb` and remembering it
+    // `only` question for itself; deciding once in `file_cb` and remembering it
     // would make the result depend on a callback order libgit2 is free to
-    // change, for nothing.
+    // change.
     let wanted = |delta: &DiffDelta<'_>| only.is_none_or(|only| delta_is_about(delta, only));
 
     diff.foreach(

@@ -12,11 +12,9 @@ impl TerminalState {
     /// Ask for the active pane to be closed. Reports whether there was one to
     /// ask about; an empty list is a benign no-op.
     ///
-    /// A request, like a create. The pane goes when the session says it did
-    /// ([`BackendEvent::Exited`]), which is also how a pane someone else closed
-    /// arrives. Removing it here instead would show it gone while its process
-    /// kept running — and a close the session never carried out (a full command
-    /// queue drops one) would leave this client unable to see that pane again.
+    /// A request, like a create: the pane goes when the session says it did,
+    /// which is also how a pane someone else closed arrives. Removing it here
+    /// instead would show it gone while its process kept running.
     pub fn close_active(&mut self) -> bool {
         let Some(info) = self.panes.get(self.active) else {
             return false;
@@ -60,15 +58,15 @@ impl TerminalState {
 
     /// Put the panes in the order the session gives.
     ///
-    /// Reconciled rather than applied blindly, because the client and the session
-    /// can disagree for a beat: an id this client has not adopted yet is skipped,
-    /// and a pane the order omits keeps its place at the end. Focus follows the
-    /// *pane* it was on rather than the slot — the point of a swap is to move a
-    /// pane while still looking at it. Per-pane state (emulators, scroll, sizes,
-    /// prompt buffers) is keyed by id, so none of it moves.
+    /// Reconciled rather than applied blindly, because the client and the
+    /// session can disagree for a beat: an id this client has not adopted yet
+    /// is skipped, and a pane the order omits keeps its place at the end.
+    /// Focus follows the *pane* it was on rather than the slot — the point of
+    /// a swap is to move a pane while still looking at it.
     ///
-    /// Test-only for a locally-backed state, which has no session to be told by;
-    /// [`swap_active_with`](Self::swap_active_with) is what asks in production.
+    /// Test-only for a locally-backed state, which has no session to be told
+    /// by; [`swap_active_with`](Self::swap_active_with) is what asks in
+    /// production.
     pub(crate) fn apply_order(&mut self, order: &[PaneId]) {
         let active_id = self.active_pane_id();
         let mut taken: Vec<PaneInfo> = Vec::with_capacity(self.panes.len());

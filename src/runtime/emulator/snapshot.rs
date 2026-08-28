@@ -1,32 +1,27 @@
 //! Turning an emulated screen back into the bytes that reproduce it.
 //!
-//! A pane's byte ring is history, not a screen. For a program drawing on the
-//! alternate screen the recorded bytes are cell updates against a screen the
-//! reader does not have, so replaying them paints fragments — and a
-//! normal-screen program that repaints in place hits the same wall from the
-//! other side: its repaints rotate the byte-bounded ring until the bytes that
-//! painted the rest of the screen are evicted. Either way the emulator the hub
-//! already runs to follow the pane's modes is holding the screen those bytes
-//! produced. This turns its grid back into the bytes that paint it.
+//! A pane's byte ring is history, not a screen. For an alternate-screen
+//! program the recorded bytes are cell updates against a screen the reader
+//! does not have; a normal-screen program that repaints in place instead
+//! rotates the byte-bounded ring until the bytes that painted the screen are
+//! evicted. Either way the emulator already runs is holding the screen those
+//! bytes produced, and this turns its grid back into bytes that paint it.
 //!
-//! Written as an **absolute repaint**: the screen is cleared with default
-//! attributes, every row is positioned by `CUP`, and each run of equal
-//! attributes costs one `SGR` that begins with a reset. Nothing in the output
-//! depends on where the receiving terminal's cursor was or which attributes it
-//! had, so the same snapshot is correct for a client that has just opened a
-//! blank terminal and for one being repainted.
+//! Written as an **absolute repaint**: screen cleared, every row positioned by
+//! `CUP`, each attribute run costing one reset-leading `SGR`. Nothing depends
+//! on where the receiving terminal's cursor was or which attributes it had, so
+//! the same snapshot is correct for a fresh terminal and for a repaint.
 //!
-//! **What a snapshot does not carry.** Wrap bookkeeping: `WRAPLINE` on a row
-//! that continued into the next, and `LEADING_WIDE_CHAR_SPACER` on the filler
-//! left when a wide character did not fit the last column. Both describe how a
-//! row came to look this way rather than how it looks, and an absolute repaint
-//! places each row independently — so a row that wrapped arrives as two rows and
-//! a later resize reflows it differently from the original. Nothing reads that
-//! difference today: alternate-screen programs redraw on resize, and a
-//! normal-screen pane's history is still replayed from its byte ring, which
-//! keeps its wrapping intact — the snapshot stands in only for the screen
-//! itself. Underline colour, hyperlinks (OSC 8) and the scrolling region
-//! (DECSTBM) are not carried either.
+//! **What a snapshot does not carry.** Wrap bookkeeping (`WRAPLINE`,
+//! `LEADING_WIDE_CHAR_SPACER`): both describe how a row came to look this way
+//! rather than how it looks, and an absolute repaint places each row
+//! independently — so a wrapped row arrives as two rows and a later resize
+//! reflows it differently. Nothing reads that difference today:
+//! alternate-screen programs redraw on resize, and a normal-screen pane's
+//! history is still replayed from its byte ring, which keeps its wrapping —
+//! the snapshot stands in only for the screen itself. Underline colour,
+//! hyperlinks (OSC 8) and the scrolling region (DECSTBM) are not carried
+//! either.
 
 use super::EventProxy;
 use alacritty_terminal::grid::Dimensions;
@@ -37,9 +32,9 @@ use alacritty_terminal::vte::ansi::{Color, NamedColor};
 use std::fmt::Write as _;
 
 /// How a cell looks. The remaining flags describe the grid's own bookkeeping
-/// (wide-char spacers, wrap continuation) rather than anything a terminal can be
-/// told to enter, so they are masked out — and comparing what is left is what
-/// lets a run of equal attributes cost one escape.
+/// rather than anything a terminal can be told to enter, so they are masked
+/// out — and comparing what is left is what lets a run of equal attributes
+/// cost one escape.
 #[derive(PartialEq, Eq, Clone, Copy)]
 struct Pen {
     fg: Color,
@@ -57,12 +52,12 @@ impl Pen {
     }
 }
 
-/// Whether a cell is indistinguishable from one that was never written, so a run
-/// of them at the end of a row can be erased instead of spelled out.
+/// Whether a cell is indistinguishable from one that was never written, so a
+/// run of them at the end of a row can be erased instead of spelled out.
 ///
-/// Held to *every* attribute rather than just the background: a space carrying a
-/// foreground colour looks the same but is not the same cell, and erasing it would
-/// hand a client a screen that differs from the one it is replacing.
+/// Held to *every* attribute, not just the background: a space carrying a
+/// foreground colour looks the same but is not the same cell, and erasing it
+/// would hand a client a screen that differs from the one it replaces.
 fn is_blank(cell: &Cell) -> bool {
     cell.c == ' ' && cell.zerowidth().is_none() && Pen::of(cell) == Pen::of(&Cell::default())
 }
@@ -81,27 +76,26 @@ fn rendered_flags() -> Flags {
 pub(super) fn screen_snapshot(term: &Term<EventProxy>) -> Vec<u8> {
     let grid = term.grid();
     let (rows, cols) = (grid.screen_lines(), grid.columns());
-    // One escape and one glyph per cell is the floor; the slack covers each row's
-    // `CUP` and the attribute runs. Reserved up front because a snapshot of a large
-    // pane is taken on the worker's tick, where a dozen reallocations of a
-    // megabyte-long string is the whole cost.
+    // One escape and one glyph per cell is the floor; the slack covers each
+    // row's `CUP` and the attribute runs. Reserved up front because a
+    // snapshot of a large pane is taken on the worker's tick, where a dozen
+    // reallocations of a megabyte-long string is the whole cost.
     let mut out = String::with_capacity(rows * cols + rows * 16 + 32);
     out.push_str("\x1b[m\x1b[2J");
-    // Carried across rows: `SGR` survives a `CUP`, so a run of equal attributes
-    // spanning a row boundary still costs one escape.
+    // Carried across rows: `SGR` survives a `CUP`, so a run of equal
+    // attributes spanning a row boundary still costs one escape.
     let mut pen: Option<Pen> = None;
 
     for row in 0..rows {
         // Positioned rather than reached by a newline. Writing the last column
-        // of a row leaves the cursor pending-wrap, and this `CUP` is what
-        // cancels it — which is also why a full row of cells can never scroll
-        // the screen. Grid line 0 is the top of the live screen whatever the
-        // display offset is, so this does not depend on the emulator's scroll.
+        // of a row leaves the cursor pending-wrap, and this `CUP` cancels it —
+        // also why a full row of cells can never scroll the screen. Grid line
+        // 0 is the top of the live screen whatever the display offset is.
         let _ = write!(out, "\x1b[{};1H", row + 1);
-        // Everything past the last cell worth naming is erased rather than spelled
-        // out. On a screen that is mostly empty — which most screens are, and a
-        // large pane especially — this is the difference between a snapshot of a
-        // few kilobytes and one of several hundred.
+        // Everything past the last cell worth naming is erased rather than
+        // spelled out. Most screens are mostly empty, and this is the
+        // difference between a snapshot of a few kilobytes and several
+        // hundred.
         let last = (0..cols)
             .rev()
             .find(|&col| !is_blank(&grid[Point::new(Line(row as i32), Column(col))]));
@@ -131,9 +125,9 @@ pub(super) fn screen_snapshot(term: &Term<EventProxy>) -> Vec<u8> {
                 out.extend(zerowidth);
             }
         }
-        // Only when the row was not written to its last column: there the cursor is
-        // left pending-wrap *on* that column, and erasing to the end of the line
-        // from there would wipe the cell just written.
+        // Only when the row was not written to its last column: there the
+        // cursor is left pending-wrap *on* that column, and erasing from there
+        // would wipe the cell just written.
         if last + 1 < cols {
             out.push_str(ERASE_TO_END_OF_ROW);
             pen = Some(Pen::of(&Cell::default()));
@@ -153,17 +147,18 @@ pub(super) fn screen_snapshot(term: &Term<EventProxy>) -> Vec<u8> {
     out.into_bytes()
 }
 
-/// Erase the rest of the row to blank cells. The reset leads because `EL` erases
-/// with the *current* background, and what it has to leave behind is the default
-/// one — which is what makes the erased cells equal the cells they stand in for.
+/// Erase the rest of the row to blank cells. The reset leads because `EL`
+/// erases with the *current* background, and what it has to leave behind is
+/// the default one — which is what makes the erased cells equal the cells
+/// they stand in for.
 const ERASE_TO_END_OF_ROW: &str = "\x1b[m\x1b[K";
 
-/// One absolute `SGR`. Leads with `0` so the sequence states the whole pen rather
-/// than a change from whatever the reader had.
+/// One absolute `SGR`. Leads with `0` so the sequence states the whole pen
+/// rather than a change from whatever the reader had.
 ///
-/// Appended in place rather than returned: on a densely coloured screen this runs
-/// once per cell, and building a string per call was measurably the cost of the
-/// whole snapshot.
+/// Appended in place rather than returned: on a densely coloured screen this
+/// runs once per cell, and building a string per call was measurably the cost
+/// of the whole snapshot.
 fn write_sgr(out: &mut String, pen: Pen) {
     out.push_str("\x1b[0");
     for (flag, param) in [
@@ -189,8 +184,8 @@ fn write_sgr(out: &mut String, pen: Pen) {
     out.push('m');
 }
 
-/// The `SGR` parameter selecting `color`. The default is written as nothing at
-/// all — every sequence starts from a reset, so it needs no saying.
+/// The `SGR` parameter selecting `color`. The default is written as nothing —
+/// every sequence starts from a reset, so it needs no saying.
 ///
 /// A named colour with no fixed palette slot (`Cursor`, `BrightForeground`,
 /// `DimForeground`) defers to the default for the same reason

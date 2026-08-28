@@ -42,21 +42,17 @@ pub enum BackendEvent {
     Exited {
         pane: PaneId,
     },
-    /// The size a pane's PTY is now set to.
-    ///
-    /// Only a backend serving a shared session reports this, and it is not
-    /// necessarily what this side asked for: the size belongs to whichever
-    /// client owns the sizing. An emulator has to wrap where the child does.
+    /// The size a pane's PTY is now set to. Only a shared-session backend
+    /// reports this, and it is not necessarily what this side asked for: the
+    /// size belongs to whichever client owns the sizing.
     Resized {
         pane: PaneId,
         rows: u16,
         cols: u16,
     },
-    /// The canonical order of the panes.
-    ///
-    /// Only a backend serving a shared session reports this: the order is part
-    /// of what the session owns. Ids this side does not know are ignored and
-    /// panes the order omits keep their place.
+    /// The canonical order of the panes. Only a shared-session backend reports
+    /// this: the order is part of what the session owns. Unknown ids are
+    /// ignored; panes the order omits keep their place.
     Reordered {
         order: Vec<PaneId>,
     },
@@ -68,11 +64,8 @@ pub enum BackendEvent {
         owned: bool,
     },
     /// What a plugin driving `pane` reports about getting it running again.
-    ///
-    /// Only a backend serving a shared session reports this: the plugins run
-    /// beside the session's panes, not beside this client.
-    /// A plugin reported that this pane wants attention. Client-local from
-    /// here: it raises the project tab's unread marker.
+    /// Only a shared-session backend reports this: the plugins run beside the
+    /// session's panes, not beside this client.
     Attention {
         pane: PaneId,
     },

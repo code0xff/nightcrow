@@ -17,9 +17,9 @@ pub(crate) fn render_notice_row<'a>(
     width: u16,
 ) -> Paragraph<'a> {
     // The open dialog takes the header's row whole: the header names the repo
-    // being left, the input names the one being opened. Notices and the Tab
-    // candidates follow the dialog down to the hint row for the duration
-    // (`repo_dialog_hint_line`), so nothing covers the path being typed.
+    // being left, the input names the one being opened. Notices follow the
+    // dialog down to the hint row (`repo_dialog_hint_line`) so nothing covers
+    // the path being typed.
     if repo_input.active {
         return Paragraph::new(crate::ui::repo_dialog::repo_input_line(
             repo_input, accent, width,
@@ -33,16 +33,10 @@ pub(crate) fn render_notice_row<'a>(
 
 /// The row's content when something wants to claim it: a notice first, then
 /// the repo dialog's completion candidates. `None` leaves the row to the
-/// caller's own fallback — the repo header on the notice row, the dialog's key
-/// legend on the hint row, nothing on the empty screen.
-///
-/// A notice outranks the candidates because it explains a rejected action, and
-/// any edit (Tab included) clears it, so the two rarely compete for long.
-///
-/// When a notice is present and a `repo_path` is available, the repo path is
-/// shown on the same line alongside the notice text. If the combined width
-/// exceeds the available space, the path is kept and the notice is truncated
-/// with `…`.
+/// caller's own fallback. A notice outranks the candidates because it explains
+/// a rejected action, and any edit clears it, so the two rarely compete.
+/// With a `repo_path` present the path is kept and the notice truncates
+/// with `…` when the pair exceeds `width`.
 pub(crate) fn notice_or_candidates<'a>(
     notice: Option<&'a Notice>,
     repo_input: &RepoInput,
@@ -69,7 +63,6 @@ pub(crate) fn notice_or_candidates<'a>(
                 ]));
             }
 
-            // Truncate notice to fit alongside the path.
             let available = (width as usize).saturating_sub(path_width);
             // One column is enough for the ellipsis alone: a notice cut to
             // nothing must still say it was there, as `+N more` does.
@@ -127,14 +120,12 @@ fn overflow_label(remaining: usize) -> String {
     format!("{CANDIDATE_GAP}+{remaining} more")
 }
 
-/// Truncate `text` to fit within `max_width` columns, appending `…` when
-/// truncation is needed. The ellipsis itself counts toward the width.
+/// Truncate `text` to fit within `max_width` columns, appending `…` when cut.
 ///
 /// Width is summed per character, so a sequence whose width is not the sum of
 /// its parts — a variation selector, a combining mark — can come out a column
-/// over. Measuring the string again after each character would make this row
-/// quadratic in its own width on every frame, and what it buys is a column at
-/// the end of a line the terminal clips anyway.
+/// over. Re-measuring after each character would make this row quadratic in
+/// its own width on every frame, for a column the terminal clips anyway.
 fn truncate_with_ellipsis(text: &str, max_width: usize) -> String {
     if Span::raw(text).width() <= max_width {
         return text.to_string();
@@ -159,21 +150,18 @@ fn truncate_with_ellipsis(text: &str, max_width: usize) -> String {
     result
 }
 
-/// How much of the room left for the two names the branch may take when the
-/// path wants it as well. The web footer splits it the same way
-/// (`RepoShell.tsx`), so the same repository reads the same on both screens.
+/// How much of the room left the branch may take when the path wants it as
+/// well. The web footer splits it the same way (`RepoShell.tsx`), so the same
+/// repository reads the same on both screens.
 const BRANCH_NAME_SHARE: usize = 2;
 
 /// The path and the branch as the row can hold them, cut with `…` rather than
-/// pushed off the end.
-///
-/// `budget` is what the counts after them have left. Both give way, because
-/// those counts do not: a name allowed to keep its length would take the row
-/// from `↑N ↓M` and the recovery chip, which are the part of this row that is
-/// news. The branch is held to half of what there is so a long one does not
-/// take the path's place entirely, and dropped altogether when half is nothing
-/// — an ellipsis alone names no branch and still costs the column it is cut to
-/// fit.
+/// pushed off the end. Both give way before the counts behind them, because
+/// those counts do not: a name at full length would take the row from `↑N ↓M`
+/// and the recovery chip, the part of this row that is news. The branch is
+/// held to half of `budget` so a long one does not take the path's place
+/// entirely, and dropped when half is nothing — an ellipsis alone names no
+/// branch.
 pub(crate) fn fit_names(
     path: &str,
     branch: Option<&str>,
@@ -245,14 +233,11 @@ pub(crate) fn render_repo_header<'a>(app: &'a App, accent: Color, width: u16) ->
     Paragraph::new(Line::from(spans))
 }
 
-/// The full recovery report as one chip: which pane, the plugin's state, the
-/// deadline as a local wall-clock time, the attempts spent, and the detail line.
-///
-/// On this row rather than in a row or overlay of its own for the reason the
-/// notices are: a row that appears and disappears resizes every open PTY. It is
-/// the last chip, so an actual notice still covers the whole line — a rejected
-/// action needs explaining more than a wait does. The pane it describes is the
-/// one `<leader> c` would cancel (see `TerminalState::recovery_focus`).
+/// The full recovery report as one chip, on this row rather than a row of its
+/// own for the reason the notices are: a row that appears and disappears
+/// resizes every open PTY. It is the last chip, so an actual notice still
+/// covers the whole line — a rejected action needs explaining more than a
+/// wait does. The pane it describes is the one `<leader> c` would cancel.
 fn recovery_chip(app: &App) -> Option<String> {
     let (pane, report) = app.terminal.recovery_focus()?;
     let mut chip = format!(" pane {pane}: {}", report.state);

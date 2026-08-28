@@ -1,22 +1,19 @@
 //! Re-reading `config.toml` into a running session, independent of how the
 //! asking arrived.
 //!
-//! Sits beside [`session`](super::session) and for the same reason: the browser
-//! reaches this over HTTP and an attached terminal over the daemon socket, and
-//! both must land on exactly the same state change. Neither transport
-//! authenticates here — deciding who may ask is theirs.
+//! Sits beside [`session`](super::session) for the same reason: the browser and
+//! an attached terminal must land on exactly the same state change. Neither
+//! transport authenticates here.
 //!
 //! **What a reload is, and what it is not.** It re-reads two tables and nothing
 //! else. `[[plugin]]` reaches even the repositories that are already open,
-//! because a plugin is a child process and replacing one costs the session
-//! nothing. `[[startup_command]]` reaches only the repositories opened
-//! afterwards: a hub creates its startup panes once for its life, and the panes
-//! a running repository already spent that list on are live children that no
-//! file edit may replace. Everything else in the file is read once at startup
-//! and still needs a restart.
+//! because replacing a plugin child costs the session nothing.
+//! `[[startup_command]]` reaches only repositories opened afterwards: a hub
+//! creates its startup panes once for its life, and the live children a running
+//! repository already spent that list on no file edit may replace.
 //!
-//! **It does not half-apply.** The whole file is parsed and validated first, so a
-//! typo anywhere leaves the session exactly as it was.
+//! **It does not half-apply.** The whole file is parsed and validated first, so
+//! a typo anywhere leaves the session exactly as it was.
 
 use super::SessionState;
 
@@ -56,8 +53,7 @@ impl ReloadReport {
     /// being opened.
     ///
     /// Written here rather than in each client because both surfaces show the
-    /// same sentence — a toast in the browser, a notice in the TUI — and two
-    /// wordings of the same outcome would drift.
+    /// same sentence, and two wordings of the same outcome would drift.
     pub fn summary(&self) -> String {
         let panes = if self.startup_commands == 0 {
             "no startup panes configured".to_string()
@@ -123,15 +119,15 @@ pub fn reload_config_at(
         .set_config_tables(&cfg.startup_commands, cfg.plugins.clone())
         .map_err(ReloadError::Config)?;
 
-    // Then the repositories already open. Each hub is *asked* — the work happens
-    // on its own worker thread, which is the only thread allowed to touch a
-    // plugin child — so this returns before the children have finished being
-    // replaced. That is deliberate: waiting would mean blocking whoever asked on
-    // every repository's queue.
+    // Then the repositories already open. Each hub is *asked* — the work
+    // happens on its own worker thread, the only thread allowed to touch a
+    // plugin child — so this returns before the children have been replaced.
+    // Deliberate: waiting would block whoever asked on every repository's
+    // queue.
     //
     // A hub too far behind to take the request is counted rather than retried:
-    // its queue being full means its worker is wedged or being hammered, and
-    // neither blocking on it nor pretending it complied is honest. It keeps the
+    // a full queue means its worker is wedged or being hammered, and neither
+    // blocking on it nor pretending it complied is honest. It keeps the
     // plugins it had, and the report says so.
     let mut unreachable = 0;
     for entry in &entries {
@@ -139,10 +135,9 @@ pub fn reload_config_at(
             continue;
         }
         unreachable += 1;
-        // Which repository, logged here rather than in the hub — the hub does not
-        // keep its own path, and the summary is one sentence for a person, too
-        // short to carry a list. The operator who reads "1 was too busy" finds
-        // the name here.
+        // Which repository, logged here: the hub does not keep its own path,
+        // and the summary is one sentence for a person, too short to carry a
+        // list.
         tracing::warn!(
             repo = %entry.path,
             "session: a repository's queue was full; its plugins were not re-applied"

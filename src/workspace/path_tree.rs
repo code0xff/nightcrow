@@ -3,10 +3,9 @@
 //! A flat row list, not a nested tree: expanding splices a directory's children
 //! in after it and collapsing removes the rows below it. The root moves: `←` on
 //! a collapsed depth-0 row re-roots to the parent. Directories only, and nothing
-//! here writes — the browser fills the field, and the field's own Enter stays the
-//! single place a repo is actually opened. It deliberately does not reuse
-//! `git::tree`, which requires a `git2::Repository` and refuses paths outside a
-//! worktree.
+//! here writes — the field's own Enter stays the single place a repo is opened.
+//! It deliberately does not reuse `git::tree`, which requires a
+//! `git2::Repository` and refuses paths outside a worktree.
 
 use super::path_complete::{is_sep, read_dir_names, split_dir};
 use crate::platform::paths::expand_tilde;
@@ -193,8 +192,7 @@ impl PathTree {
         // Verify the user-notation parent against the real one instead of
         // trusting the text surgery: `~` has no expressible parent, and neither
         // does a bare Windows drive. Falling back to the absolute path is the
-        // one place the dialog rewrites the user's text, because their notation
-        // cannot name where they just asked to go.
+        // one place the dialog rewrites the user's text.
         self.root_text = parent_text(&self.root_text, self.sep)
             .filter(|t| canonicalizes_to(t, &parent))
             .unwrap_or_else(|| parent.to_string_lossy().to_string());
@@ -247,7 +245,7 @@ fn list_rows(dir: &Path, depth: usize) -> Vec<PathRow> {
 fn parent_text(text: &str, sep: char) -> Option<String> {
     let t = text.trim_end_matches(is_sep);
     if t.is_empty() {
-        // `""` is the cwd, whose parent is `..`. All-separators is the
+        // `""` is the cwd, whose parent is `..`; all-separators is the
         // filesystem root, which has no parent for `re_root` to reach.
         return text.is_empty().then(|| "..".to_string());
     }
