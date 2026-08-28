@@ -63,9 +63,14 @@ pub(super) fn finish_or_detach(handle: JoinHandle<()>) {
     while !handle.is_finished() && Instant::now() < deadline {
         thread::yield_now();
     }
-    if handle.is_finished()
-        && let Err(error) = handle.join()
-    {
+    if handle.is_finished() {
+        join_finished(handle);
+    }
+}
+
+pub(super) fn join_finished(handle: JoinHandle<()>) {
+    debug_assert!(handle.is_finished());
+    if let Err(error) = handle.join() {
         tracing::warn!(?error, "git load worker panicked");
     }
 }

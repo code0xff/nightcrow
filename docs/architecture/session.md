@@ -468,6 +468,9 @@ reply receiver drop만으로는 요청을 기다리는 `Condvar`를 깨울 수 �
 10개와 멈춘 libgit2 호출 8개를 합한 18개를 실제 thread/FD hard bound로 둔다. 별도의 공정한 FIFO
 admission이 process/동일-repo libgit2 동시 호출을 8/1로 제한한다. 취소된 ticket은 큐에서 빠지고,
 같은 repo 때문에 막힌 ticket은 unrelated repo의 eligible ticket을 가로막지 않는다. 늦은 reply는
-`(repo, generation)` guard가 버린다.
+`(repo, generation)` guard가 버린다. 스레드 생성 실패는 pending request를 유지한 채 다음 submit 또는
+reply poll에서 재시도하고, 예상하지 못한 worker 종료는 완료된 handle을 회수한 뒤 같은 방식으로
+재시작한다. 개별 git load panic은 cache를 버리고 해당 request에 일반화된 error reply를 보내므로
+worker와 이후 request는 계속 진행한다.
 
 ← [Architecture index](../architecture.md)

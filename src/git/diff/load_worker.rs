@@ -2,15 +2,14 @@
 
 mod execute;
 mod lifecycle;
+mod runtime;
 
 use std::sync::{Arc, Condvar, Mutex, mpsc};
-use std::thread::{self, JoinHandle};
 
-use git2::{Oid, Repository};
+use git2::Oid;
 
 use super::{ChangedFile, DiffHunk, LogDecorations, StatusKind};
-use execute::execute;
-use lifecycle::{InFlightPermit, WorkerPermit, finish_or_detach};
+use runtime::WorkerThread;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum LoadLane {
@@ -136,22 +135,18 @@ pub(crate) struct GitLoadWorker {
     worker: Mutex<WorkerThread>,
 }
 
-struct WorkerThread {
-    reply_tx: mpsc::Sender<GitLoadReply>,
-    handle: Option<JoinHandle<()>>,
-}
-
 impl GitLoadWorker {
     pub(crate) fn spawn() -> Self {
+        Self::new(WorkerThread::new)
+    }
+
+    fn new(make_worker: impl FnOnce(mpsc::Sender<GitLoadReply>) -> WorkerThread) -> Self {
         let shared = Arc::new((Mutex::new(Pending::default()), Condvar::new()));
         let (reply_tx, replies) = mpsc::channel();
         let worker = Self {
             shared,
             replies,
-            worker: Mutex::new(WorkerThread {
-                reply_tx,
-                handle: None,
-            }),
+            worker: Mutex::new(make_worker(reply_tx)),
         };
         worker.ensure_started();
         worker
@@ -181,15 +176,7 @@ impl GitLoadWorker {
 
     fn ensure_started(&self) {
         let mut worker = self.worker.lock().unwrap_or_else(|e| e.into_inner());
-        if worker.handle.is_some() {
-            return;
-        }
-        let Some(permit) = WorkerPermit::try_acquire() else {
-            return;
-        };
-        let shared = Arc::clone(&self.shared);
-        let reply_tx = worker.reply_tx.clone();
-        worker.handle = Some(thread::spawn(move || worker_loop(shared, reply_tx, permit)));
+        worker.ensure_started(Arc::clone(&self.shared));
     }
 }
 
@@ -199,48 +186,7 @@ impl Drop for GitLoadWorker {
         lock.lock().unwrap_or_else(|e| e.into_inner()).stopped = true;
         wake.notify_one();
         let worker = self.worker.get_mut().unwrap_or_else(|e| e.into_inner());
-        if let Some(handle) = worker.handle.take() {
-            finish_or_detach(handle);
-        }
-    }
-}
-
-fn worker_loop(
-    shared: Arc<(Mutex<Pending>, Condvar)>,
-    replies: mpsc::Sender<GitLoadReply>,
-    _worker_permit: WorkerPermit<'static>,
-) {
-    let mut cached: Option<(String, Repository)> = None;
-    loop {
-        let request = {
-            let (lock, wake) = &*shared;
-            let mut pending = lock.lock().unwrap_or_else(|e| e.into_inner());
-            while !pending.stopped && pending.requests.iter().all(Option::is_none) {
-                pending = wake.wait(pending).unwrap_or_else(|e| e.into_inner());
-            }
-            if pending.stopped {
-                return;
-            }
-            pending.take_next().expect("a pending request was observed")
-        };
-
-        if !shared
-            .0
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .is_latest(&request)
-        {
-            continue;
-        }
-        let Some(_permit) = InFlightPermit::acquire(&request.repo, || {
-            shared.0.lock().unwrap_or_else(|e| e.into_inner()).stopped
-        }) else {
-            return;
-        };
-        let result = execute(&request, &mut cached).map_err(|e| e.to_string());
-        if replies.send(GitLoadReply { request, result }).is_err() {
-            return;
-        }
+        worker.finish();
     }
 }
 
