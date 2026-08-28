@@ -1,13 +1,11 @@
 //! Server-sent events over a plain synchronous writer.
 //!
-//! The ordinary response builder in [`super::http`] always emits a
-//! `Content-Length` and `Connection: close`, which ends the connection after
-//! one body — the opposite of what a live stream needs. An SSE response
-//! instead keeps the socket open and appends events until one side gives up,
-//! so it writes its own head and owns the connection from then on.
-//!
-//! Generic over [`Write`] so the framing is unit-testable against a buffer
-//! and the same code drives a real `TcpStream`.
+//! [`super::http`]'s response builder always emits `Content-Length` and
+//! `Connection: close`, which ends the connection after one body — the
+//! opposite of what a live stream needs. An SSE response instead keeps the
+//! socket open and appends events until one side gives up, so it writes its
+//! own head and owns the connection from then on. Generic over [`Write`] so
+//! the framing is unit-testable against a buffer.
 //!
 use std::io::{self, Write};
 

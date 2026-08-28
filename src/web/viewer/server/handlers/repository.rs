@@ -6,9 +6,8 @@ use crate::session::catalog::RepoEntry;
 use anyhow::{Context, Result};
 
 /// Look the repository up, validate any `path` parameter, then run `body`.
-///
-/// Validation happens here rather than in each handler so no route can forget
-/// it. A traversal path is refused uniformly, and never echoed back.
+/// Validation happens here rather than in each handler so no route can
+/// forget it; a traversal path is refused uniformly and never echoed back.
 pub(in crate::web::viewer::server) fn with_repo(
     head: &crate::web::common::http::RequestHead,
     state: &ViewerState,
@@ -39,12 +38,11 @@ pub(in crate::web::viewer::server) fn with_repo(
 /// stricter [`with_repo`] adds refusing symlinks and requiring the path to
 /// exist, which are what protect a file this process is about to open; git
 /// reads a symlink as a blob holding the target's name, never the target's
-/// contents, and a path that is gone is exactly what a deletion diff is about.
-///
-/// Named for what the path is *for* rather than where it came from. A commit's
-/// file and a deleted worktree file need the same rule for the same reason —
-/// neither is on disk to be resolved — and calling it "commit" sent the second
-/// one to the gate that turned it into a 400.
+/// contents, and a path that is gone is exactly what a deletion diff is
+/// about. Named for what the path is *for* rather than where it came from: a
+/// commit's file and a deleted worktree file need the same rule for the same
+/// reason — neither is on disk to be resolved — and calling it "commit" sent
+/// the second one to the gate that turned it into a 400.
 pub(in crate::web::viewer::server) fn with_repo_git_path(
     head: &crate::web::common::http::RequestHead,
     state: &ViewerState,

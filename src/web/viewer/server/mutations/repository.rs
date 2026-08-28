@@ -13,9 +13,8 @@ struct ReorderRequest {
     order: Vec<String>,
 }
 
-/// Open a repository from the browser and add it to the served catalog.
-///
-/// The path is user-supplied but the response is public, so a bad path yields a
+/// Open a repository from the browser and add it to the served catalog. The
+/// path is user-supplied but the response is public, so a bad path yields a
 /// generic message.
 pub(in crate::web::viewer::server) fn handle_open_repo(body: &str, state: &ViewerState) -> Vec<u8> {
     let request: OpenRequest = match serde_json::from_str(body) {

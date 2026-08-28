@@ -59,13 +59,10 @@ pub(super) fn route(head: &RequestHead, state: &ViewerState) -> Vec<u8> {
         }
         "/api/status" => with_repo(head, state, |entry| {
             // Served from the runtime's latest snapshot rather than a fresh git
-            // call *while it is watching*: it is already reading the tree every
+            // call while it is watching: the watch already reads the tree every
             // second, and this keeps a page refresh from queueing another walk.
-            //
-            // While nothing is subscribed the watch is off, and `latest` is
-            // whatever was true when the last client left — so this reads once
-            // rather than answering with it. That is the same walk the watch
-            // would have done, paid only when someone asks.
+            // With nothing subscribed the watch is off and `latest` is whatever
+            // was true when the last client left — so this reads once instead.
             if !entry.runtime.is_watching() {
                 entry.runtime.refresh_now();
             }
@@ -161,8 +158,8 @@ pub(super) fn route(head: &RequestHead, state: &ViewerState) -> Vec<u8> {
             // list. Resolved once, and the walk is then given exactly this
             // oid: asking the loader to fall back to HEAD itself would read
             // the ref a second time, and a first commit landing between the
-            // two reads would return commits under an anchor of `None`, which
-            // the client reads as the end of the history.
+            // two reads would return commits under an anchor of `None`,
+            // which the client reads as the end of the history.
             let skip = optional_count(head, "skip")?;
             let anchor = match optional_oid(head, "from")? {
                 Some(oid) => Some(oid),

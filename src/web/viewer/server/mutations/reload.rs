@@ -1,12 +1,10 @@
 use super::super::ViewerState;
 use super::super::http_util::json_error;
 
-/// Re-read `config.toml` and report what was applied.
-///
-/// The body is ignored and no configuration is accepted from the request: the
-/// file on the server's disk is what is read. Deciding who may ask happened
-/// before this — the route is behind the same session cookie as every other
-/// mutation.
+/// Re-read `config.toml` and report what was applied. The body is ignored —
+/// the file on the server's disk is what is read, never anything from the
+/// request. Deciding who may ask happened before this: the route sits behind
+/// the same session cookie as every other mutation.
 pub(in crate::web::viewer::server) fn handle_reload_config(state: &ViewerState) -> Vec<u8> {
     match crate::session::reload::reload_config(state.session()) {
         Ok(report) => super::encode_response(
