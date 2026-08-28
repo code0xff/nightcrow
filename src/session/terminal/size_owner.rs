@@ -32,20 +32,24 @@ impl TerminalHub {
         self.ownership.owns(connection)
     }
 
-    /// This hub client's ownership registration, or `None` once it has gone.
+    /// Whether a queued request still belongs to this live hub client and that
+    /// connection still owns the sizing.
     ///
-    /// The two ids are separate on purpose (see [`Client::connection`]), and a
-    /// command carries the hub's — it was queued by a connection thread and the
-    /// worker reads it a tick later, by which time that connection may be gone.
+    /// Called with `state` locked so disconnect and ownership transfer cannot
+    /// split identity validation from authorization. This preserves the lock
+    /// order used by `connect`: hub state, then session ownership.
     ///
     /// [`Client::connection`]: super::session::Client::connection
-    pub(super) fn connection_of(&self, client: u64) -> Option<u64> {
-        self.state
-            .lock()
-            .expect("terminal state poisoned")
+    pub(super) fn client_owns_size(
+        &self,
+        state: &super::hub_helpers::Shared,
+        client: u64,
+        connection: u64,
+    ) -> bool {
+        state
             .clients
             .iter()
-            .find(|c| c.id == client)
-            .map(|c| c.connection)
+            .any(|c| c.id == client && c.connection == connection)
+            && self.owns_size(connection)
     }
 }

@@ -278,6 +278,11 @@ DECCKM)은 하루 지난 pane에서 이미 밀려나 있다. 그러면 클라이
   클라이언트가 옛 크기의 화면을 받지 않게. 반대쪽 기록(alt 밑에 동결된 normal 스냅샷)은
   에뮬레이터의 비활성 그리드라 읽을 수 없어 옛 크기로 남는다 — 복귀 후의 출력이 tail로 그 위에
   얹히고, 다음 스냅샷 갱신이 마저 고친다.
+- **꺼내 둔 resize도 연결 수명을 넘지 못한다.** latest-value map에서 worker가 값을 꺼낸 직후
+  소유자가 떠날 수 있으므로 요청은 원래 connection id를 함께 보존한다. 적용 시 hub state를 먼저
+  잠가 같은 client/connection 등록인지 확인하고, 그 lock 아래 session ownership을 다시 검사한다
+  (`state → ownership`, `connect`와 같은 순서). 따라서 disconnect나 소유권 이전이 먼저 완료되면
+  이미 꺼낸 옛 요청도 새 소유자의 PTY에 적용하거나 ACK하지 않는다.
 - **화면 하나로는 부족하다: `screen` + `since`.** 스냅샷은 worker tick마다 갱신되므로 chunk가
   broadcast된 뒤 그것이 스냅샷에 반영되기 전에 클라이언트가 붙을 수 있다. 그래서 스냅샷 이후
   broadcast된 바이트를 옆에 함께 들고, replay는 `screen` 다음에 `since`를 보낸다 — 둘을 합치면
