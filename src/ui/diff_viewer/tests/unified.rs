@@ -59,6 +59,23 @@ fn unified_gutter_stays_put_when_the_body_scrolls_sideways() {
 }
 
 #[test]
+fn unified_view_jumps_to_the_cached_hunk_offset() {
+    let mut app = app_showing(trio_hunk(), DiffPaneView::Diff);
+    let mut second = trio_hunk();
+    second.header = "@@ second hunk @@".to_string();
+    second.lines[0].content = "later();".to_string();
+    app.diff.set_hunks(vec![trio_hunk(), second]);
+    // The first hunk occupies its header plus three body rows, so the second
+    // hunk begins at flat row four.
+    app.diff.scroll = 4;
+
+    let screen = drawn(&mut app, 60, 10, 0);
+    let joined = screen.join("\n");
+    assert!(joined.contains("@@ second hunk @@"));
+    assert!(!joined.contains("keep_me"));
+}
+
+#[test]
 fn a_hunk_header_reserves_the_same_gutter_width_as_the_body() {
     let mut app = app_showing(trio_hunk(), DiffPaneView::Diff);
 

@@ -58,7 +58,7 @@ impl App {
         let selection_changed = self.sync_log_commit_selection_to_filter();
         if self.log_commit_filtered_indices().is_empty() {
             self.clear_diff_state();
-        } else if selection_changed || self.diff.hunks.is_empty() {
+        } else if selection_changed || self.diff.hunks().is_empty() {
             self.load_commit_diff_for_selected();
         }
     }
@@ -67,7 +67,7 @@ impl App {
         let selection_changed = self.sync_log_file_selection_to_filter();
         if self.log_file_filtered_indices().is_empty() {
             self.clear_diff_state();
-        } else if selection_changed || self.diff.hunks.is_empty() {
+        } else if selection_changed || self.diff.hunks().is_empty() {
             self.load_file_diff_for_log_file_selected();
         }
     }

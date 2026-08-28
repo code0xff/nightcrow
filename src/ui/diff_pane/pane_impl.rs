@@ -1,21 +1,10 @@
 use crate::git::diff::LineKind;
 use crate::ui::diff_pane::{
-    DIFF_THEME, DiffPane, DiffPaneView, HighlightSegment, SplitRow, flush_split_blocks,
-    highlight_line_segments, nearest_match_index, resolve_hunk_syntax,
+    DIFF_THEME, DiffPane, DiffPaneView, HighlightSegment, highlight_line_segments,
+    nearest_match_index, resolve_syntax_extension,
 };
 
 impl DiffPane {
-    /// Total flat row count across all hunks (1 header + N body lines each).
-    pub fn line_count(&self) -> usize {
-        self.hunks.iter().map(|h| 1 + h.lines.len()).sum()
-    }
-
-    /// Largest legal `scroll` value: one less than the total row count, or 0
-    /// when there are no rows.
-    pub fn max_scroll(&self) -> usize {
-        self.line_count().saturating_sub(1)
-    }
-
     pub fn scroll_left(&mut self) {
         let target = self.scroll_x_target_mut();
         *target = target.saturating_sub(4);
@@ -34,33 +23,6 @@ impl DiffPane {
             // scroll together.
             DiffPaneView::Diff | DiffPaneView::Split => &mut self.scroll_x,
         }
-    }
-
-    /// Build the side-by-side row layout from the current hunks. Within each
-    /// hunk, consecutive removed/added lines are paired index-by-index (the
-    /// shorter run padded with blank cells) and context lines are mirrored.
-    pub fn split_rows(&self) -> Vec<SplitRow> {
-        let mut rows = Vec::new();
-        for (hi, hunk) in self.hunks.iter().enumerate() {
-            rows.push(SplitRow::Header(hi));
-            let mut removed: Vec<usize> = Vec::new();
-            let mut added: Vec<usize> = Vec::new();
-            for (li, line) in hunk.lines.iter().enumerate() {
-                match line.kind {
-                    LineKind::Removed => removed.push(li),
-                    LineKind::Added => added.push(li),
-                    LineKind::Context => {
-                        flush_split_blocks(&mut rows, hi, &mut removed, &mut added);
-                        rows.push(SplitRow::Body {
-                            left: Some((hi, li)),
-                            right: Some((hi, li)),
-                        });
-                    }
-                }
-            }
-            flush_split_blocks(&mut rows, hi, &mut removed, &mut added);
-        }
-        rows
     }
 
     pub fn start_search(&mut self) {
@@ -134,9 +96,9 @@ impl DiffPane {
             q_owned = self.search.query.lower().to_owned();
             q = &q_owned;
             let mut flat_idx = 0usize;
-            for (hunk, lines_lower) in self.hunks.iter().zip(self.hunks_lines_lower.iter()) {
+            for lines_lower in &self.hunks_lines_lower {
                 flat_idx += 1; // header line
-                for line_lower in lines_lower.iter().take(hunk.lines.len()) {
+                for line_lower in lines_lower {
                     if line_lower.contains(q) {
                         self.search.matches.push(flat_idx);
                     }
@@ -181,8 +143,9 @@ impl DiffPane {
         }
     }
 
-    /// Rebuild the lowercased line cache from scratch and invalidate the
-    /// highlight cache so the renderer rebuilds it on next frame.
+    /// Rebuild the lowercased line cache for the current generation. Normal
+    /// callers should use `set_hunks`; this remains a recovery hook for tests
+    /// and callers that already hold a populated pane.
     pub fn rebuild_lower_cache(&mut self) {
         self.hunks_lines_lower.clear();
         self.hunks_lines_lower.reserve(self.hunks.len());
@@ -194,58 +157,35 @@ impl DiffPane {
                 .collect();
             self.hunks_lines_lower.push(lines);
         }
-        self.line_highlights.clear();
-        self.cached_hunk_syntax.clear();
+        self.lower_cache_generation = Some(self.generation);
     }
 
-    /// Rebuild the lowercased line cache iff its shape diverges from `hunks`.
+    /// Rebuild the lowercased line cache iff its generation is stale.
     pub fn ensure_lower_cache(&mut self) {
-        let shape_matches = self.hunks_lines_lower.len() == self.hunks.len()
-            && self
-                .hunks
-                .iter()
-                .zip(self.hunks_lines_lower.iter())
-                .all(|(h, ll)| ll.len() == h.lines.len());
-        if !shape_matches {
+        if self.lower_cache_generation != Some(self.generation) {
             self.rebuild_lower_cache();
         }
     }
 
-    /// Ensure `line_highlights` matches the current `hunks`, resolving the
-    /// syntax separately for each hunk from its `file_path`: a commit diff
-    /// can touch files of different types, and a single syntax would render
-    /// everything as the first file's language. Rebuilds when the cache
-    /// shape, content size, or any per-hunk syntax diverges.
+    /// Ensure `line_highlights` matches the current generation, resolving the
+    /// syntax separately for each hunk: a commit diff can touch files of
+    /// different types, and a single syntax would render everything as the
+    /// first file's language. The generation check is the frame hot path; the
+    /// full syntax/highlight walk happens only after `set_hunks`.
     pub fn ensure_highlight_cache(
         &mut self,
         ss: &syntect::parsing::SyntaxSet,
         ts: &syntect::highlighting::ThemeSet,
     ) {
-        let per_hunk_syntax: Vec<&syntect::parsing::SyntaxReference> = self
-            .hunks
-            .iter()
-            .map(|h| resolve_hunk_syntax(ss, h.file_path.as_deref()))
-            .collect();
-        let resolved_names: Vec<String> = per_hunk_syntax.iter().map(|s| s.name.clone()).collect();
-
-        let shape_matches = self.line_highlights.len() == self.hunks.len()
-            && self
-                .hunks
-                .iter()
-                .zip(self.line_highlights.iter())
-                .all(|(h, lh)| lh.len() == h.lines.len());
-        let content_bytes: usize = self
-            .hunks
-            .iter()
-            .flat_map(|h| h.lines.iter())
-            .map(|l| l.content.len())
-            .sum();
-        if shape_matches
-            && self.cached_content_bytes == content_bytes
-            && self.cached_hunk_syntax == resolved_names
-        {
+        if self.highlight_cache_generation == Some(self.generation) {
             return;
         }
+
+        let per_hunk_syntax: Vec<&syntect::parsing::SyntaxReference> = self
+            .syntax_shape
+            .iter()
+            .map(|extension| resolve_syntax_extension(ss, extension.as_deref()))
+            .collect();
 
         use syntect::easy::HighlightLines;
         let theme = &ts.themes[DIFF_THEME];
@@ -278,7 +218,6 @@ impl DiffPane {
             out.push(per_hunk);
         }
         self.line_highlights = out;
-        self.cached_hunk_syntax = resolved_names;
-        self.cached_content_bytes = content_bytes;
+        self.highlight_cache_generation = Some(self.generation);
     }
 }

@@ -1,4 +1,3 @@
-use crate::git::diff::DiffHunk;
 use ratatui::{
     Frame,
     layout::{Constraint, Direction, Layout, Rect},
@@ -25,21 +24,6 @@ pub(crate) fn digits_for(max_lineno: usize) -> usize {
         max_lineno.ilog10() as usize + 1
     };
     digits.max(MIN_LINENO_DIGITS)
-}
-
-/// Gutter digit count for a whole loaded diff: the widest line number that
-/// appears on either side of any hunk. Derived from the loaded hunks, never
-/// from the visible window, so scrolling cannot change the gutter width.
-/// Recomputed per frame instead of cached: one allocation-free pass over the
-/// same lines `ensure_highlight_cache` already walks.
-pub(crate) fn lineno_digits(hunks: &[DiffHunk]) -> usize {
-    let max = hunks
-        .iter()
-        .flat_map(|h| h.lines.iter())
-        .filter_map(|l| l.old_lineno.max(l.new_lineno))
-        .max()
-        .unwrap_or(0);
-    digits_for(max as usize)
 }
 
 /// Width of the unified gutter, which shows the old and new columns together.

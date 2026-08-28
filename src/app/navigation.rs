@@ -103,7 +103,7 @@ impl App {
         let selection_changed = self.sync_selection_to_filter();
         if self.selected_filtered_status_path().is_none() {
             self.clear_diff_state();
-        } else if selection_changed || self.diff.hunks.is_empty() {
+        } else if selection_changed || self.diff.hunks().is_empty() {
             self.reload_diff();
         }
     }

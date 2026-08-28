@@ -47,7 +47,7 @@ fn diff_scroll_clamps_at_last_line_on_select_down() {
     let mut app = app_with_files(vec!["a.rs"]);
     app.focus = Focus::DiffViewer;
     // 1 hunk = header + 1 content line = 2 total lines, max_scroll = 1
-    app.diff.hunks = vec![context_hunk(&["x"])];
+    app.diff.set_hunks(vec![context_hunk(&["x"])]);
     app.diff.scroll = 1; // already at max
 
     app.select_down();
@@ -59,7 +59,7 @@ fn diff_scroll_clamps_at_last_line_on_select_down() {
 fn diff_scroll_clamps_at_last_line_on_page_down() {
     let mut app = app_with_files(vec!["a.rs"]);
     app.focus = Focus::DiffViewer;
-    app.diff.hunks = vec![context_hunk(&["x"])];
+    app.diff.set_hunks(vec![context_hunk(&["x"])]);
     app.diff.scroll = 0;
 
     app.page_down(); // +20, but max is 1
@@ -71,7 +71,7 @@ fn diff_scroll_clamps_at_last_line_on_page_down() {
 fn diff_scroll_handles_large_restored_offset() {
     let mut app = app_with_files(vec!["a.rs"]);
     app.focus = Focus::DiffViewer;
-    app.diff.hunks = vec![context_hunk(&["x"])];
+    app.diff.set_hunks(vec![context_hunk(&["x"])]);
     app.diff.scroll = usize::MAX;
 
     app.select_down();
@@ -82,7 +82,7 @@ fn diff_scroll_handles_large_restored_offset() {
 #[test]
 fn diff_match_refresh_can_preserve_manual_scroll() {
     let mut app = app_with_files(vec!["a.rs"]);
-    app.diff.hunks = vec![context_hunk(&["needle"])];
+    app.diff.set_hunks(vec![context_hunk(&["needle"])]);
     app.diff.search.query.set("needle");
     app.diff.scroll = 7;
 
@@ -95,7 +95,7 @@ fn diff_match_refresh_can_preserve_manual_scroll() {
 #[test]
 fn diff_search_input_scrolls_to_first_match() {
     let mut app = app_with_files(vec!["a.rs"]);
-    app.diff.hunks = vec![context_hunk(&["alpha", "needle"])];
+    app.diff.set_hunks(vec![context_hunk(&["alpha", "needle"])]);
 
     app.diff.search_push('n');
 
@@ -106,10 +106,10 @@ fn diff_search_input_scrolls_to_first_match() {
 #[test]
 fn status_search_with_no_matches_clears_stale_diff() {
     let mut app = app_with_files(vec!["a.rs"]);
-    app.diff.hunks = vec![context_hunk(&["stale"])];
+    app.diff.set_hunks(vec![context_hunk(&["stale"])]);
 
     app.search_push('z');
 
     assert!(app.filtered_indices().is_empty());
-    assert!(app.diff.hunks.is_empty());
+    assert!(app.diff.hunks().is_empty());
 }

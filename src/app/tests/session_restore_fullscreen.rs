@@ -119,6 +119,6 @@ fn restore_session_keeps_log_scroll_after_loading_commit_diff() {
     });
 
     assert_eq!(app.mode, ViewMode::Log);
-    assert!(!app.diff.hunks.is_empty());
+    assert!(!app.diff.hunks().is_empty());
     assert_eq!(app.diff.scroll, 2);
 }

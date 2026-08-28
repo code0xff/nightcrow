@@ -136,7 +136,7 @@ fn snapshot_refresh_with_no_filter_matches_clears_stale_diff() {
     };
     app.status_view.search_query.set("bar");
     app.status_view.recompute_filter();
-    app.diff.hunks = vec![context_hunk(&["stale"])];
+    app.diff.set_hunks(vec![context_hunk(&["stale"])]);
 
     tx.send(SnapshotMsg::Ok(
         RepoSnapshot {
@@ -155,5 +155,5 @@ fn snapshot_refresh_with_no_filter_matches_clears_stale_diff() {
     app.poll_snapshot();
 
     assert!(app.filtered_indices().is_empty());
-    assert!(app.diff.hunks.is_empty());
+    assert!(app.diff.hunks().is_empty());
 }

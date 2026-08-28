@@ -4,10 +4,10 @@ use super::*;
 fn keep_scroll_clamps_when_new_diff_is_shorter() {
     let mut app = app_with_files(vec!["a.rs"]);
     // Seed a long diff and put scroll near the bottom.
-    app.diff.hunks = vec![
+    app.diff.set_hunks(vec![
         context_hunk(&["l1", "l2", "l3", "l4", "l5"]),
         context_hunk(&["l6", "l7", "l8"]),
-    ];
+    ]);
     app.diff.scroll = app.diff.max_scroll();
     let prev_scroll = app.diff.scroll;
     assert!(prev_scroll > 1);
@@ -106,7 +106,7 @@ fn toggle_diff_split_view_round_trips_and_overrides_file_view() {
 #[test]
 fn keep_scroll_preserves_open_file_view() {
     let mut app = app_with_files(vec!["a.rs"]);
-    app.diff.hunks = vec![context_hunk(&["l1", "l2"])];
+    app.diff.set_hunks(vec![context_hunk(&["l1", "l2"])]);
     app.diff.scroll = 1;
     app.diff.file_view = seeded_file_view("a.rs");
     app.diff.view = DiffPaneView::File;
@@ -128,7 +128,7 @@ fn keep_scroll_preserves_open_file_view() {
 #[test]
 fn clear_diff_state_invalidates_open_file_view() {
     let mut app = app_with_files(vec!["a.rs"]);
-    app.diff.hunks = vec![context_hunk(&["l1"])];
+    app.diff.set_hunks(vec![context_hunk(&["l1"])]);
     app.diff.file_view = seeded_file_view("a.rs");
     app.diff.view = DiffPaneView::File;
 
@@ -153,7 +153,7 @@ fn snapshot_refresh_with_no_filter_matches_clears_file_view() {
     };
     app.status_view.search_query.set("bar");
     app.status_view.recompute_filter();
-    app.diff.hunks = vec![context_hunk(&["stale"])];
+    app.diff.set_hunks(vec![context_hunk(&["stale"])]);
     app.diff.file_view = seeded_file_view("bar.rs");
     app.diff.view = DiffPaneView::File;
 
@@ -176,7 +176,7 @@ fn snapshot_refresh_with_no_filter_matches_clears_file_view() {
     // No filter matches the new snapshot, so the diff and file view
     // both need to drop their stale handles on the gone path.
     assert!(app.filtered_indices().is_empty());
-    assert!(app.diff.hunks.is_empty());
+    assert!(app.diff.hunks().is_empty());
     assert_eq!(app.diff.view, DiffPaneView::Diff);
     assert!(app.diff.file_view.key.is_none());
 }
