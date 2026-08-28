@@ -71,9 +71,9 @@ impl Catalog {
     /// already running is the caller's job (see [`crate::session::reload`]).
     /// The entries to tell are returned rather than fetched afterwards.
     ///
-    /// Taken under the facade transaction, the same one every membership commit
-    /// holds. Without
-    /// it a repository opened in the same beat could fall between the two halves:
+    /// Taken under the facade transaction, the same one every membership
+    /// commit holds. Without it a repository opened in the same beat could
+    /// fall between the two halves:
     /// its hub reads the old tables while the swap is still to come, and the
     /// swap's snapshot is taken while its entry is still to be installed.
     pub fn set_config_tables(

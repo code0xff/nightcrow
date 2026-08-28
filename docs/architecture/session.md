@@ -365,7 +365,7 @@ DECCKM)은 하루 지난 pane에서 이미 밀려나 있다. 그러면 클라이
 - **`[[startup_command]]` — 이후에 여는 프로젝트부터.** hub는 startup pane을 자기 수명에 **딱 한
   번** 만든다(`started: AtomicBool`). 이미 열린 프로젝트가 그 목록에 쓴 pane은 살아 있는 자식이라
   파일 편집을 근거로 교체할 수 있는 대상이 아니다. Catalog의 목록만 바뀌고
-  (`catalog/config_tables.rs`) 그 뒤 `rebuild`가 띄우는 hub가 새 목록을 받는다.
+  (`catalog/config_tables.rs`) 그 뒤 runtime reconcile이 띄우는 hub가 새 목록을 받는다.
 - **나머지는 재시작이 필요하다**: `[web_viewer]`(리스너가 이미 바인드됨), `[log]`, 그리고
   클라이언트 소유인 `[layout]`·`[input]`·`[tree]`·`[mouse]`.
 
@@ -406,7 +406,7 @@ DECCKM)은 하루 지난 pane에서 이미 밀려나 있다. 그러면 클라이
   범위를 좁히는 것이 `spec_changed`의 진짜 값이다.
 - **동시 reload는 직렬화한다**(`SessionState::reload_lock`). 두 클라이언트가 동시에 누르면 세션의
   저장소들이 서로 다른 파일을 전달받은 상태로 남을 수 있다.
-- **reload와 프로젝트 열기의 경합은 Catalog의 mutation lock이 막는다.** 테이블 교체와 "알려줄
+- **reload와 프로젝트 열기의 경합은 Catalog의 façade transaction이 막는다.** 테이블 교체와 "알려줄
   저장소 목록" 스냅샷을 **같은 락 안에서** 처리하고 그 목록을 호출자에게 돌려준다
   (`set_config_tables`가 `Vec<Arc<RepoEntry>>`를 반환하는 이유). 없으면 같은 순간에 열린 저장소가
   둘 사이로 빠져 열려 있는 내내 이전 `[[plugin]]` 테이블로 돈다.
