@@ -1,8 +1,6 @@
 # Configuration
 
-Config file: `~/.nightcrow/config.toml` (all fields optional, defaults shown).
-nightcrow runs on built-in defaults when the file is absent and never creates it
-on its own. To get a starter file, run:
+Config file: `~/.nightcrow/config.toml` (all fields optional, defaults shown). nightcrow runs on built-in defaults when the file is absent and never creates it on its own. To get a starter file, run:
 
 ```bash
 nightcrow init            # writes a commented ~/.nightcrow/config.toml
@@ -101,18 +99,14 @@ live_watch = true         # watch expanded dirs and refresh the tree live; set f
 
 ## `[shell]`
 
-The shell every terminal pane is spawned with. When the whole section is absent,
-the platform default is used:
+The shell every terminal pane is spawned with. When the whole section is absent, the platform default is used:
 
 | Platform | `program`                     | `command_args` |
 |----------|-------------------------------|----------------|
 | Unix     | `$SHELL` env var or `/bin/sh` | `["-lc"]`      |
 | Windows  | `%ComSpec%` or `cmd.exe`      | `["/C"]`       |
 
-`command_args` is the flag list placed *after* the shell name. The command text
-is always the last single argv item, so the shell — not us — handles its
-quoting/word-splitting. Interpolation like `["-c", "{}"]` is not supported: that
-would break the contract that the shell owns quoting.
+`command_args` is the flag list placed *after* the shell name. The command text is always the last single argv item, so the shell — not us — handles its quoting/word-splitting. Interpolation like `["-c", "{}"]` is not supported: that would break the contract that the shell owns quoting.
 
 ```toml
 [shell]
@@ -122,11 +116,7 @@ would break the contract that the shell owns quoting.
 
 ## `[[startup_command]]`
 
-Each entry opens its own terminal pane at launch and runs `command` immediately
-(via the configured shell). Up to 8 entries combined with CLI `--exec` — 8
-matches the `<prefix> 3`–`9`,`0` jump keys, so every startup pane is reachable by
-a direct key. This caps only the startup batch; open more anytime with
-`<prefix> t`. With no entries, nightcrow opens a single empty shell.
+Each entry opens its own terminal pane at launch and runs `command` immediately (via the configured shell). Up to 8 entries combined with CLI `--exec` — 8 matches the `<prefix> 3`–`9`,`0` jump keys, so every startup pane is reachable by a direct key. This caps only the startup batch; open more anytime with `<prefix> t`. With no entries, nightcrow opens a single empty shell.
 
 ```toml
 [[startup_command]]
@@ -142,9 +132,7 @@ command = "cargo test --watch"
 
 ## `[[plugin]]`
 
-External plugin processes — see [Plugins](plugins.md). Up to 8 entries, names
-unique. Nothing runs unless an entry exists **and** `enabled = true` **and**
-either a pane opted in or `watch_on_signal` is set.
+External plugin processes — see [Plugins](plugins.md). Up to 8 entries, names unique. Nothing runs unless an entry exists **and** `enabled = true` **and** either a pane opted in or `watch_on_signal` is set.
 
 ```toml
 [[plugin]]
@@ -166,14 +154,10 @@ NIGHTCROW_RECOVERY_LOG = "info"
 
 ## Reloading the config
 
-Editing `config.toml` normally means restarting the session — which kills every
-pane, including whatever an agent CLI was in the middle of. Two of the tables can
-be re-read instead, without stopping anything:
+Editing `config.toml` normally means restarting the session — which kills every pane, including whatever an agent CLI was in the middle of. Two of the tables can be re-read instead, without stopping anything:
 
 - **In the TUI**: `<prefix> u`. The result appears on the notice row.
-- **In the browser**: the ⟳ button in the header, next to sign out. It reloads
-  the *config*, not the page — nothing on screen changes, and the result comes
-  back as a toast.
+- **In the browser**: the ⟳ button in the header, next to sign out. It reloads the *config*, not the page — nothing on screen changes, and the result comes back as a toast.
 
 | Table | When it takes effect |
 | --- | --- |
@@ -183,31 +167,12 @@ be re-read instead, without stopping anything:
 
 Notes:
 
-- **Nothing half-applies.** The whole file is parsed and validated first, so a
-  typo anywhere leaves the session exactly as it was, and the message names the
-  key that was wrong.
-- **A missing file is refused** rather than read as "nothing is configured" —
-  otherwise deleting the file and reloading would be a quiet way to stop every
-  plugin.
-- Panes opened with `--exec` are kept: they are not in the file, so a reload
-  merges them back where a restart would have put them.
-- Disabling a plugin and enabling it again lands where enabling it the first time
-  would — the pane's opt-in survives, so `enabled` means the same thing whichever
-  way it was last flipped.
-- **Restarting a plugin discards whatever it was in the middle of.** A plugin's
-  state lives in its process, so replacing that process loses it — for
-  `nightcrow-recovery` a pane parked on a quota reset hours away simply stops
-  being watched, and nothing will resume it. The plugin logs how many panes it
-  abandoned on the way out. This only happens when you change *that plugin's* own
-  `command`, `args` or `env`; every other edit leaves a waiting one running.
-- A pane whose process had already exited and whose slot was being held for a
-  relaunch gives that slot up when its plugin is stopped or replaced. The
-  successor is never handed the pane's token, so nothing could honour the hold;
-  the countdown ends instead of running out its window.
-- If the result says **`(1 was too busy to be told)`**, that project kept the
-  plugins it had. Its terminals were too far behind to take the request, and
-  waiting on one project would have held up every other. Nothing else about the
-  reload is affected — reload again once it has caught up. The server log names
-  the project.
+- **Nothing half-applies.** The whole file is parsed and validated first, so a typo anywhere leaves the session exactly as it was, and the message names the key that was wrong.
+- **A missing file is refused** rather than read as "nothing is configured" — otherwise deleting the file and reloading would be a quiet way to stop every plugin.
+- Panes opened with `--exec` are kept: they are not in the file, so a reload merges them back where a restart would have put them.
+- Disabling a plugin and enabling it again lands where enabling it the first time would — the pane's opt-in survives, so `enabled` means the same thing whichever way it was last flipped.
+- **Restarting a plugin discards whatever it was in the middle of.** A plugin's state lives in its process, so replacing that process loses it — for `nightcrow-recovery` a pane parked on a quota reset hours away simply stops being watched, and nothing will resume it. The plugin logs how many panes it abandoned on the way out. This only happens when you change *that plugin's* own `command`, `args` or `env`; every other edit leaves a waiting one running.
+- A pane whose process had already exited and whose slot was being held for a relaunch gives that slot up when its plugin is stopped or replaced. The successor is never handed the pane's token, so nothing could honour the hold; the countdown ends instead of running out its window.
+- If the result says **`(1 was too busy to be told)`**, that project kept the plugins it had. Its terminals were too far behind to take the request, and waiting on one project would have held up every other. Nothing else about the reload is affected — reload again once it has caught up. The server log names the project.
 
 Design notes: [Architecture → Session](architecture/session.md#config-reload-webviewerreloadrs).

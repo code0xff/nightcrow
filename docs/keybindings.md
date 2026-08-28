@@ -2,31 +2,13 @@
 
 ## The leader key
 
-nightcrow uses a tmux-style **leader (prefix)** key for its app commands. The
-default leader is `Ctrl+F` (configurable via `[input] leader`). `Ctrl+F` is a
-one-handed left-hand chord that avoids tmux's own `Ctrl+B` prefix (so nightcrow
-stays usable inside a tmux session), terminal flow control (`Ctrl+Q`/`Ctrl+S`),
-the shell signals (`Ctrl+C/D/Z`), and the Ctrl chords an inner Claude Code pane
-reserves (`Ctrl+G` is its external editor, plus `Ctrl+O/R/S/T/L`) — its only
-claimant is `Ctrl+F` as forward-char/page-forward, which most users reach via
-the arrow keys instead.
+nightcrow uses a tmux-style **leader (prefix)** key for its app commands. The default leader is `Ctrl+F` (configurable via `[input] leader`). `Ctrl+F` is a one-handed left-hand chord that avoids tmux's own `Ctrl+B` prefix (so nightcrow stays usable inside a tmux session), terminal flow control (`Ctrl+Q`/`Ctrl+S`), the shell signals (`Ctrl+C/D/Z`), and the Ctrl chords an inner Claude Code pane reserves (`Ctrl+G` is its external editor, plus `Ctrl+O/R/S/T/L`) — its only claimant is `Ctrl+F` as forward-char/page-forward, which most users reach via the arrow keys instead.
 
-Press the leader, then a single follow-up key. Every other key — including Ctrl
-chords like `Ctrl+W` and `Ctrl+L` — passes straight through to the focused
-terminal, so a CLI running there (claude, codex, your shell) receives them
-unchanged. This is why the leader exists: cockpit users live inside the terminal
-panes and need their prompt-editing keys to reach the program, not nightcrow.
+Press the leader, then a single follow-up key. Every other key — including Ctrl chords like `Ctrl+W` and `Ctrl+L` — passes straight through to the focused terminal, so a CLI running there (claude, codex, your shell) receives them unchanged. This is why the leader exists: cockpit users live inside the terminal panes and need their prompt-editing keys to reach the program, not nightcrow.
 
-The hint bar shows the active leader in caret notation at its left edge (e.g.
-`^F: leader` for the default `Ctrl+F`), so the configured prefix is always
-visible from the terminal pane.
+The hint bar shows the active leader in caret notation at its left edge (e.g. `^F: leader` for the default `Ctrl+F`), so the configured prefix is always visible from the terminal pane.
 
-> **Migration from earlier versions:** the old bare-`Ctrl` app shortcuts moved
-> behind the leader. `Ctrl+T/W/L/O/P/Q` are now `<prefix> t/w/l/o/p/q` and pass
-> through to the terminal program instead; `Ctrl+F` is now the leader itself
-> (`<prefix> f` toggles fullscreen). The old `Ctrl+Q`-twice quit confirmation is
-> gone; leave with `<prefix> q`, which now detaches rather than ending the
-> session — stop the session itself with `nightcrow stop`.
+> **Migration from earlier versions:** the old bare-`Ctrl` app shortcuts moved behind the leader. `Ctrl+T/W/L/O/P/Q` are now `<prefix> t/w/l/o/p/q` and pass through to the terminal program instead; `Ctrl+F` is now the leader itself (`<prefix> f` toggles fullscreen). The old `Ctrl+Q`-twice quit confirmation is gone; leave with `<prefix> q`, which now detaches rather than ending the session — stop the session itself with `nightcrow stop`.
 
 ## Leader commands
 
@@ -54,12 +36,9 @@ Press `<prefix>`, then the key.
 | `<prefix> 1`…`<prefix> 8` (terminal fullscreen) | Jump to terminal pane 1…8. With the viewer hidden the digit row addresses panes by natural numbering; `9`/`0` are unused. The only way back to the list/diff is `<prefix> f` to leave fullscreen |
 | `Esc` / `Ctrl+C` (while armed) | Cancel the prefix |
 
-The prefix has no timeout: once armed it waits indefinitely for the follow-up
-key. A key with no leader binding cancels the prefix and is dropped.
+The prefix has no timeout: once armed it waits indefinitely for the follow-up key. A key with no leader binding cancels the prefix and is dropped.
 
-`<prefix> s` is the one two-step chord: it arms a swap mode (shown as `SWAP` in
-the hint bar) that waits for a pane digit, then swaps the active pane with the
-chosen one. A non-digit follow-up or `Esc` cancels swap mode without reordering.
+`<prefix> s` is the one two-step chord: it arms a swap mode (shown as `SWAP` in the hint bar) that waits for a pane digit, then swaps the active pane with the chosen one. A non-digit follow-up or `Esc` cancels swap mode without reordering.
 
 ## Global (no prefix)
 
@@ -68,8 +47,7 @@ chosen one. A non-digit follow-up or `Esc` cancels swap mode without reordering.
 | `Shift+→` / `Shift+←` | Cycle focus: file list → diff viewer → terminal panes → … |
 | `F1`…`F10` | Switch to project tab 1…10 — see [Projects](projects.md). Unlike the pane digits, this mapping does not change with the layout: the same F-key reaches the same project in every view, fullscreen included |
 
-A modified F-key (`Ctrl+F1`, `Shift+F5`, …) is not intercepted and passes
-through to the terminal program.
+A modified F-key (`Ctrl+F1`, `Shift+F5`, …) is not intercepted and passes through to the terminal program.
 
 ## File list / commit list (left panel)
 
@@ -100,71 +78,32 @@ through to the terminal program.
 | `n` / `N` | Next / previous search match |
 | `Esc` | Clear search |
 
-**Line numbers** are always shown in a pinned gutter. The unified view shows
-both sides (old, new) — an added line leaves the old column blank, a removed
-line leaves the new one blank. The split view numbers each half with the side it
-shows, and the file view (`v`) numbers the file itself. The gutter stays in
-place while `←`/`→` scroll the code.
+**Line numbers** are always shown in a pinned gutter. The unified view shows both sides (old, new) — an added line leaves the old column blank, a removed line leaves the new one blank. The split view numbers each half with the side it shows, and the file view (`v`) numbers the file itself. The gutter stays in place while `←`/`→` scroll the code.
 
 ## Terminal panes (bottom)
 
-Every visible pane renders at once as a split grid instead of switching
-between tabs — 2 panes go side by side (or stacked if the terminal is
-narrow), 4 form a 2x2 grid, up to 4 show normally and up to 8 in the
-fullscreen grid. `<prefix> f` cycles the terminal through `off → grid →
-zoom → off`: *grid* hides the top viewer and fills the screen with the
-split grid, *zoom* fills the screen with just the active pane.
+Every visible pane renders at once as a split grid instead of switching between tabs — 2 panes go side by side (or stacked if the terminal is narrow), 4 form a 2x2 grid, up to 4 show normally and up to 8 in the fullscreen grid. `<prefix> f` cycles the terminal through `off → grid → zoom → off`: *grid* hides the top viewer and fills the screen with the split grid, *zoom* fills the screen with just the active pane.
 
-The active pane's cell is bordered in the accent color; jumping focus with
-`<prefix> 3`–`9`,`0` or `Shift+←/→` moves that border (and, while zoomed, the
-pane on screen) without closing any other pane. With more panes than fit, the
-tab bar shows a `+N` marker for the ones scrolled out of view — they keep
-running in the background. Keyboard input, paste, and scroll still target only
-the active pane. A single pane draws with no cell border.
+The active pane's cell is bordered in the accent color; jumping focus with `<prefix> 3`–`9`,`0` or `Shift+←/→` moves that border (and, while zoomed, the pane on screen) without closing any other pane. With more panes than fit, the tab bar shows a `+N` marker for the ones scrolled out of view — they keep running in the background. Keyboard input, paste, and scroll still target only the active pane. A single pane draws with no cell border.
 
 | Key | Action |
 |-----|--------|
 | `Shift+↑` / `Shift+↓` | Scroll terminal output 3 lines |
 | `Shift+PgUp` / `Shift+PgDn` | Scroll terminal output one page |
 
-While scrolled, the terminal border title shows
-`[SCROLL — shift+pgdn: down | input: live]`. Keyboard input is still forwarded
-to the running process; `Shift+PgDn` to scroll back to the bottom.
+While scrolled, the terminal border title shows `[SCROLL — shift+pgdn: down | input: live]`. Keyboard input is still forwarded to the running process; `Shift+PgDn` to scroll back to the bottom.
 
-The tab bar picks up OSC 0/2 window-title escape sequences, so programs like
-`claude`, `vim`, `ssh`, or `cd`-aware shell prompts can rename their own tab.
-Panes without an emitted title fall back to a default label.
+The tab bar picks up OSC 0/2 window-title escape sequences, so programs like `claude`, `vim`, `ssh`, or `cd`-aware shell prompts can rename their own tab. Panes without an emitted title fall back to a default label.
 
 ## Mouse
 
-nightcrow captures the mouse by default (`[mouse]` in the
-[configuration](configuration.md#mouse)):
+nightcrow captures the mouse by default (`[mouse]` in the [configuration](configuration.md#mouse)):
 
-- **Click a pane** to focus it, same as a jump key. The click is also forwarded
-  to programs that asked for mouse reports (Claude Code, `less --mouse`, …) — so
-  their clickable UI, like Claude Code's jump-to-bottom control, works. A plain
-  shell receives nothing.
-- **Click the file list or diff viewer** to focus that panel, same as
-  `<prefix> 1`/`2`.
-- **Click a project tab** in the top row to switch to it, same as its `F`-key. A
-  `+N` overflow marker jumps to the nearest project folded behind it.
-- **Wheel** scrolls the pane under the pointer, routed exactly like the scroll
-  keys (wheel reports, arrow keys, or scrollback — whatever the program
-  expects).
-- **Click a tab** in the terminal tab bar to jump to that pane; clicking a `+N`
-  hidden-pane marker reveals the nearest hidden pane on that side.
-- **Click `o: open project`** on the empty screen — with no project open it is
-  the one action the hint bar offers, and it dispatches like its key.
-- **Click a shortcut** in the bottom hint bar to run it — command hints like
-  `t: new pane`, `w: close pane`, or `f: fullscreen` dispatch exactly as if you
-  pressed the keys they name. Clickable hints render inverted (reverse video)
-  across their whole label so they stand out from informational hints; the
-  inversion disappears when `[mouse]` is disabled. Navigation hints and
-  `q: detach` are not clickable (detaching stays a deliberate two-key act).
-- **Select text with a bypass modifier + drag.** While the mouse is captured,
-  the outer terminal performs its native selection and copy only when you hold
-  its bypass modifier while dragging. The modifier depends on the terminal:
-  **Shift** in xterm-family terminals (Alacritty, kitty, GNOME Terminal, Windows
-  Terminal), **Option (⌥)** in iTerm2, **Fn or Option** in macOS Terminal.app.
-  Set `enabled = false` under `[mouse]` to give the mouse back to the outer
-  terminal entirely — plain-drag selection returns, click forwarding stops.
+- **Click a pane** to focus it, same as a jump key. The click is also forwarded to programs that asked for mouse reports (Claude Code, `less --mouse`, …) — so their clickable UI, like Claude Code's jump-to-bottom control, works. A plain shell receives nothing.
+- **Click the file list or diff viewer** to focus that panel, same as `<prefix> 1`/`2`.
+- **Click a project tab** in the top row to switch to it, same as its `F`-key. A `+N` overflow marker jumps to the nearest project folded behind it.
+- **Wheel** scrolls the pane under the pointer, routed exactly like the scroll keys (wheel reports, arrow keys, or scrollback — whatever the program expects).
+- **Click a tab** in the terminal tab bar to jump to that pane; clicking a `+N` hidden-pane marker reveals the nearest hidden pane on that side.
+- **Click `o: open project`** on the empty screen — with no project open it is the one action the hint bar offers, and it dispatches like its key.
+- **Click a shortcut** in the bottom hint bar to run it — command hints like `t: new pane`, `w: close pane`, or `f: fullscreen` dispatch exactly as if you pressed the keys they name. Clickable hints render inverted (reverse video) across their whole label so they stand out from informational hints; the inversion disappears when `[mouse]` is disabled. Navigation hints and `q: detach` are not clickable (detaching stays a deliberate two-key act).
+- **Select text with a bypass modifier + drag.** While the mouse is captured, the outer terminal performs its native selection and copy only when you hold its bypass modifier while dragging. The modifier depends on the terminal: **Shift** in xterm-family terminals (Alacritty, kitty, GNOME Terminal, Windows Terminal), **Option (⌥)** in iTerm2, **Fn or Option** in macOS Terminal.app. Set `enabled = false` under `[mouse]` to give the mouse back to the outer terminal entirely — plain-drag selection returns, click forwarding stops.

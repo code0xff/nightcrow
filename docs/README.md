@@ -1,8 +1,6 @@
 # nightcrow documentation
 
-The [top-level README](../README.md) is the tour: what nightcrow is, how to
-install it, and enough usage to get a session up. Everything past that lives
-here, one page per surface.
+The [top-level README](../README.md) is the tour: what nightcrow is, how to install it, and enough usage to get a session up. Everything past that lives here, one page per surface.
 
 ## Using nightcrow
 
