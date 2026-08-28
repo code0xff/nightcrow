@@ -10,8 +10,8 @@
 // Rendered under StrictMode on purpose: it replays updaters and effects, the
 // way the batching this logic must survive does.
 
-import { StrictMode, createElement } from "react";
-import { act, cleanup, renderHook } from "@testing-library/react";
+import { Profiler, StrictMode, createElement, memo } from "react";
+import { act, cleanup, render, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useRepoPoll, type UseRepoPollArgs } from "./useRepoPoll";
 
@@ -87,12 +87,14 @@ function args(): UseRepoPollArgs {
   };
 }
 
-function mount() {
+function mount(onRender?: () => void, stable = args()) {
   // One args object for the hook's lifetime: fresh callbacks each render are
   // new dependencies for the polling effect, which would restart it per render
   // and turn `nextPoll` into something other than one timer-driven poll.
-  const stable = args();
-  return renderHook(() => useRepoPoll(stable), {
+  return renderHook(() => {
+    onRender?.();
+    return useRepoPoll(stable);
+  }, {
     wrapper: ({ children }) => createElement(StrictMode, null, children),
   });
 }
@@ -118,7 +120,6 @@ describe("useRepoPoll active-repo writes", () => {
     vi.useRealTimers();
     vi.clearAllMocks();
   });
-
   it("첫_폴이_연_프로젝트는_되쓰지_않는다", async () => {
     repos.mockResolvedValue(bootstrap("r2"));
     const { result } = mount();
@@ -204,5 +205,97 @@ describe("useRepoPoll active-repo writes", () => {
     act(() => result.current.setRepo("r1"));
     await flush();
     expect(written()).toEqual(["r2", "r1"]);
+  });
+});
+
+describe("useRepoPoll snapshot identity", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    cleanup();
+    vi.useRealTimers();
+    vi.clearAllMocks();
+  });
+
+  it("동일한_bootstrap_10회는_repos와_hot_identity와_render를_유지한다", async () => {
+    repos.mockImplementation(async () => bootstrap("r2"));
+    let renders = 0;
+    let profileCommits = 0;
+    let latest: ReturnType<typeof useRepoPoll> | undefined;
+    const stable = args();
+    const Probe = memo((_: Pick<ReturnType<typeof useRepoPoll>, "repos" | "hot">) => {
+      renders += 1;
+      return createElement(
+        Profiler,
+        { id: "eight-pane", onRender: () => { profileCommits += 1; } },
+        ...Array.from({ length: 8 }, (_, index) =>
+          createElement("div", { key: index }, `pane ${index + 1}`),
+        ),
+      );
+    });
+    function Harness() {
+      latest = useRepoPoll(stable);
+      return createElement(Probe, { repos: latest.repos, hot: latest.hot });
+    }
+    render(createElement(Harness));
+    await flush();
+    const firstRepos = latest!.repos;
+    const firstHot = latest!.hot;
+    const settledRenders = renders;
+    const settledCommits = profileCommits;
+    for (let i = 0; i < 10; i += 1) await nextPoll();
+
+    expect(latest!.repos).toBe(firstRepos);
+    expect(latest!.hot).toBe(firstHot);
+    expect(renders).toBe(settledRenders);
+    expect(profileCommits).toBe(settledCommits);
+  });
+
+  it("hot이나_membership의_실제_변경은_해당_identity만_교체한다", async () => {
+    repos.mockResolvedValue(bootstrap("r2"));
+    const { result } = mount();
+    await flush();
+    const firstRepos = result.current.repos;
+    const firstHot = result.current.hot;
+
+    repos.mockResolvedValue({
+      ...bootstrap("r2"),
+      hot: { enabled: true, window_secs: 30 },
+    });
+    await nextPoll();
+    expect(result.current.repos).toBe(firstRepos);
+    expect(result.current.hot).not.toBe(firstHot);
+    expect(result.current.hot).toEqual({ enabled: true, window_secs: 30 });
+    const hotAfterChange = result.current.hot;
+    const changed = bootstrap("r2");
+    changed.repos.push({ id: "r3", name: "three", display_path: "~/three" });
+    changed.hot = hotAfterChange!;
+    repos.mockResolvedValue(changed);
+    await nextPoll();
+    expect(result.current.repos).not.toBe(firstRepos);
+    expect(result.current.repos.map((item) => item.id)).toEqual(["r1", "r2", "r3"]);
+    expect(result.current.hot).toBe(hotAfterChange);
+  });
+
+  it("drag_중에는_로컬_순서를_지키면서_membership만_받는다", async () => {
+    const stable = args();
+    stable.repoDraggingRef.current = true;
+    repos.mockResolvedValue(bootstrap("r2"));
+    const { result } = mount(undefined, stable);
+    await flush();
+    act(() =>
+      result.current.setRepos([result.current.repos[1], result.current.repos[0]]),
+    );
+
+    const changed = bootstrap("r2");
+    changed.repos.push({ id: "r3", name: "three", display_path: "~/three" });
+    repos.mockResolvedValue(changed);
+    await nextPoll();
+    expect(result.current.repos.map((item) => item.id)).toEqual(["r2", "r1", "r3"]);
+
+    stable.repoDraggingRef.current = false;
+    await nextPoll();
+    expect(result.current.repos.map((item) => item.id)).toEqual(["r1", "r2", "r3"]);
   });
 });

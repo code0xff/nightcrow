@@ -10,6 +10,7 @@ import { resolveActiveRepo } from "../lib/activeRepo";
 import { nextClockOffset } from "../lib/hot";
 import { createSerialWriter } from "../lib/serialWrite";
 import { reconcileOrder } from "../lib/paneOrder";
+import { retainHot, retainRepos } from "../lib/repoSnapshot";
 import { noteViewerBuild } from "../lib/viewerBuild";
 import type { MaximizedByRepo, RepoViewByRepo } from "../api";
 
@@ -136,7 +137,7 @@ export function useRepoPoll({
           // Not state: what it decides is whether this document is out of date,
           // which nothing here renders. See `lib/viewerBuild.ts`.
           noteViewerBuild(viewer_build);
-          setHot(hot);
+          setHot((current) => retainHot(current, hot));
           setCanClone(can_clone);
           setClockSkewMs((held) => nextClockOffset(held, now_ms, Date.now()));
           if (accentWrites.current === writes) adoptAccent(accent);
@@ -158,7 +159,7 @@ export function useRepoPoll({
             !repoDraggingRef.current &&
             !reorderPending
           ) {
-            setRepos(list);
+            setRepos((current) => retainRepos(current, list));
           } else {
             setRepos((current) => {
               const ids = reconcileOrder(
@@ -166,7 +167,10 @@ export function useRepoPoll({
                 current.map((item) => item.id),
               );
               const byId = new Map(list.map((item) => [item.id, item]));
-              return ids.map((id) => byId.get(id)!).filter(Boolean);
+              return retainRepos(
+                current,
+                ids.map((id) => byId.get(id)!).filter(Boolean),
+              );
             });
           }
           const ids = list.map((r) => r.id);
