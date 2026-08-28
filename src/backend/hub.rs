@@ -26,12 +26,10 @@ impl HubBackend {
         Self { link }
     }
 
-    /// Take the daemon up on its offer to size the startup terminals.
-    ///
-    /// Answered with no sizes at all, because this client has measured nothing:
-    /// the offer arrives on attach, before the first frame has laid out a single
-    /// pane. The hub opens them at its own default and the first layout corrects
-    /// it.
+    /// Take the daemon up on its offer to size the startup terminals — with no
+    /// sizes at all, because the offer arrives on attach, before the first
+    /// frame has laid out a single pane. The hub opens them at its own default
+    /// and the first layout corrects it.
     fn size_startup_panes(&self) {
         if let Err(err) = self
             .link
@@ -43,10 +41,8 @@ impl HubBackend {
 }
 
 impl TerminalBackend for HubBackend {
-    /// `command` is refused: a pane in a shared session is a bare shell.
-    ///
-    /// The session's configured commands are run once by the daemon, for every
-    /// client, so there is no request here that would carry one — and the hub
+    /// `command` is refused: a pane in a shared session is a bare shell — the
+    /// session's configured commands are run once by the daemon, and the hub
     /// deliberately gives a client no way to ask for a pane running arbitrary
     /// text.
     fn create_pane(&mut self, rows: u16, cols: u16, command: Option<&str>) -> Result<()> {
@@ -64,15 +60,14 @@ impl TerminalBackend for HubBackend {
 
     /// Everything a client sends a pane is UTF-8 by construction — key
     /// encodings, pasted text, and the emulator's own replies to terminal
-    /// queries are all either ASCII control bytes or encoded characters — so the
-    /// text-shaped `input` message the browser already uses carries them
-    /// losslessly. Anything else is a bug on this side rather than something to
-    /// widen the wire format for, and is reported as one.
+    /// queries are all either ASCII control bytes or encoded characters — so
+    /// the text-shaped `input` message the browser already uses carries them
+    /// losslessly. Anything else is a bug on this side rather than something
+    /// to widen the wire format for.
     fn send_input(&mut self, id: PaneId, data: &[u8]) -> Result<()> {
         let Ok(data) = String::from_utf8(data.to_vec()) else {
-            // The bytes themselves stay out of it: this is what the user typed,
-            // and the caller logs the error. The length is what identifies which
-            // encoding produced it.
+            // The bytes stay out of the message: the length identifies which
+            // encoding produced it, and the caller logs the error.
             bail!("pane {id} input is not valid UTF-8 ({} bytes)", data.len());
         };
         self.link.send(HubClientMessage::Input { pane: id, data })
@@ -161,20 +156,18 @@ impl TerminalBackend for HubBackend {
                     deadline_epoch,
                     attempt,
                 }),
-                // An attached client already knows who it is — the daemon told
-                // it when it subscribed, and `rewrite_requester` restates every
-                // `created` in that id space before it gets here. This names the
-                // browser-side hub connection, which is one hop in.
+                // The daemon already rewrote every `created` into this
+                // client's id space, so a Hello here names the browser-side
+                // hub connection — nothing this client needs.
                 TerminalMessage::Event(HubServerMessage::Hello { .. }) => {}
-                // Deliberately dropped: a browser's zoom is not this client's.
-                // The TUI has a zoom of its own that means something else — it
-                // follows *its* active pane and takes the body from the diff
-                // viewer with it (`TerminalFullscreen::Zoom`), so letting a page
-                // drive it would let someone at a browser hide a panel here.
-                // The panes are shared; what fills a screen is each screen's.
+                // Deliberately dropped: the TUI's zoom follows *its* active
+                // pane and takes the diff viewer with it, so letting a browser
+                // page drive it would let someone at a browser hide a panel
+                // here. The panes are shared; what fills a screen is each
+                // screen's.
                 TerminalMessage::Event(HubServerMessage::Zoomed { .. }) => {}
-                // Refusals do not come this way — they are not about a pane, so
-                // the client keeps them on the queue that reaches its notices.
+                // Refusals are not about a pane; the client keeps them on the
+                // queue that reaches its notices.
                 TerminalMessage::Event(HubServerMessage::Error { message }) => {
                     tracing::warn!(%message, "unexpected terminal refusal on a pane inbox");
                 }

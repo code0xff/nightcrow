@@ -1,11 +1,9 @@
 //! The daemon's Unix socket: where it lives, who may open it, and what to do
 //! about one left behind by a process that is gone.
 //!
-//! Authentication is the filesystem. The socket sits under the user's own
+//! Authentication is the filesystem: the socket sits under the user's own
 //! `~/.nightcrow` at mode 0600, so reaching it already means being that user —
-//! which is the same authority a client would need to run the shells the daemon
-//! serves. That is why the attach path carries no password while the browser
-//! path does: a TCP port is reachable by anyone who can route to it.
+//! which is why the attach path carries no password while the browser path does.
 
 use super::lock::InstanceLock;
 use super::transport::UnixListener;
@@ -37,13 +35,10 @@ pub struct DaemonSocket {
 
 impl DaemonSocket {
     /// Bind the socket, refusing to start beside a daemon that already runs.
-    ///
-    /// The lock decides, not the socket file. A socket outliving its process is
-    /// the normal case after a crash or a `kill -9`, and it is indistinguishable
-    /// from a live one by inspection — connecting to it can even succeed. So the
-    /// order is: take the lock, and only then treat whatever socket file is
-    /// there as debris, because holding the lock already proves no other daemon
-    /// is serving it.
+    /// The lock decides, not the socket file: a socket outliving its process
+    /// (crash, `kill -9`) is indistinguishable from a live one by inspection.
+    /// So: take the lock, and only then treat whatever socket file is there as
+    /// debris.
     pub fn bind(path: &Path) -> Result<Self> {
         let lock_path = lock_path_for(path);
         let Some(lock) = InstanceLock::acquire(&lock_path)? else {
@@ -99,11 +94,9 @@ fn restrict_to_owner(path: &Path) -> Result<()> {
     {
         // Windows has no mode bits — the posture depends on the directory's
         // inherited ACL. %USERPROFILE%\.nightcrow's default ACL allows write
-        // only to owner and admins, so the practical posture holds.
-        //
-        // This dependency breaks if the socket path is placed outside the
-        // user profile. Explicit ACL setting is tracked as a separate task
-        // (docs/internal plan decision C).
+        // only to owner and admins, so the practical posture holds. This
+        // dependency breaks if the socket path is placed outside the user
+        // profile; explicit ACL setting is tracked separately.
         let _ = path;
     }
     Ok(())

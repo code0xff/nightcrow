@@ -1,10 +1,7 @@
 //! Wiring one attached client to every open repository's terminals. The hubs
-//! are the browser's too — one per repository, already fanning output out to
-//! whoever has connected. An attaching client subscribes to all of them at once,
-//! because it renders a tab per repository and a pane whose output it stopped
-//! reading would fall behind its own scrollback.
-//!
-//! That costs a thread per client per repository. Bounded by
+//! are the browser's too; an attaching client subscribes to all of them at
+//! once, because a pane whose output it stopped reading would fall behind its
+//! own scrollback. Costs a thread per client per repository, bounded by
 //! `MAX_ATTACHED_CLIENTS` × `MAX_PROJECTS`.
 
 use super::clients::AttachedClients;
@@ -33,8 +30,8 @@ pub struct TerminalBridges {
     open: HashMap<String, Bridge>,
     /// Whether this client's first subscription has been made. Attaching is a
     /// person sitting down, and that is the one moment this client takes the
-    /// session's sizing. Every subscription after it follows a set that changed
-    /// — a repository opened in a browser is not an arrival here.
+    /// session's sizing; every subscription after it follows a set that
+    /// changed.
     arrived: bool,
 }
 
@@ -69,11 +66,9 @@ impl TerminalBridges {
             };
             let arriving = !self.arrived;
             let Some(bridge) = self.subscribe(&repo.id, arriving, &entry.terminals) else {
-                // Left out of `open`, and the arrival left unspent, so the next
-                // set this client is told about tries again. "Next set" is the
-                // limit: this is called on attach and when the repository set
-                // changes, so a repository that fails here shows in the client's
-                // tabs with no terminals until something else moves.
+                // Left out of `open` and the arrival left unspent, so the next
+                // set this client is told about retries. A repository that
+                // fails here shows in the tabs with no terminals until then.
                 continue;
             };
             self.arrived = true;
@@ -97,12 +92,9 @@ impl TerminalBridges {
         hub: &Arc<crate::session::terminal::TerminalHub>,
     ) -> Option<Bridge> {
         let stop = Arc::new(AtomicBool::new(false));
-        // The thread first, and the subscription only once it exists.
-        // Subscribing registers this client with the session's size ownership
-        // and, on an arrival, takes the sizing off whoever had it. Done in the
-        // other order, a thread that failed to start left a subscription nobody
-        // reads — the sizing displaced, this client's one arrival spent, and
-        // the hub evicting a bridge it can never reach.
+        // Thread first, subscription only once it exists — the other order
+        // would leave a failed spawn having displaced the pane sizing and
+        // spent this client's one arrival on a subscription nobody reads.
         let (hand_over, take) = std::sync::mpsc::channel::<Arc<TerminalSession>>();
         let worker = {
             let stop = Arc::clone(&stop);
@@ -133,15 +125,10 @@ impl TerminalBridges {
                 return None;
             }
         };
-        // Connecting replays the panes and their scrollback before any live
-        // frame, so the thread above forwards a usable history first and the
-        // client's emulators start from the same place the browser's do.
-        //
-        // One viewer across every repository it subscribes to: this client is a
-        // single terminal showing one project at a time. Only the first of
-        // these subscriptions is an arrival — the rest follow a set that
-        // changed, and a repository opening elsewhere is not a person sitting
-        // down here.
+        // Connecting replays panes and scrollback before any live frame, so the
+        // client's emulators start where the browser's do. One viewer across
+        // every repository it subscribes to — this client is a single terminal
+        // showing one project at a time.
         let session = Arc::new(hub.connect(ViewerId::Attached(self.client), arriving, None));
         let _ = hand_over.send(Arc::clone(&session));
         Some(Bridge {
@@ -153,12 +140,9 @@ impl TerminalBridges {
 }
 
 /// Turn one hub frame into a frame for this client, tagged with its repository.
-///
-/// `hub_client` is this bridge's id at the hub and `attached` is the same
-/// client's id on the attach socket. A pane the hub says `hub_client` asked for
-/// is relayed as one `attached` asked for, so the client can recognise its own
-/// pane by comparing against the id it was given at the handshake — it has no
-/// way to know its per-repository hub ids.
+/// `hub_client` (this bridge's id at the hub) is rewritten to `attached` (the
+/// client's id on the attach socket), so the client can recognise its own panes
+/// — it has no way to know its per-repository hub ids.
 fn tag(repo: &str, frame: TerminalFrame, hub_client: u64, attached: u64) -> Frame {
     match frame {
         TerminalFrame::Output { pane, data } => {
@@ -182,9 +166,8 @@ fn tag(repo: &str, frame: TerminalFrame, hub_client: u64, attached: u64) -> Fram
             }
         }
         // Parsed and re-encoded rather than passed through as text: the client
-        // reads one message type, and a control frame smuggled through as an
-        // opaque string would make the repository tag unreadable without
-        // parsing it there instead.
+        // reads one message type, and an opaque string would make the
+        // repository tag unreadable without parsing it there instead.
         TerminalFrame::Control(json) => match serde_json::from_str(&json) {
             Ok(event) => encode_server(
                 &ServerMessage::Terminal {

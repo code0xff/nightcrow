@@ -1,12 +1,10 @@
-//! Putting the daemon into the background. Re-exec rather than fork: by the
-//! time this is decided the process has not started its worker threads yet, but
-//! the pattern is the trap either way — `fork` in a threaded process gives the
-//! child one thread and every lock in whatever state it was in. Spawning a fresh
-//! copy of this binary has no such state to inherit.
+//! Putting the daemon into the background. Re-exec rather than fork: `fork` in
+//! a threaded process gives the child one thread and every lock in whatever
+//! state it was in; spawning a fresh copy of this binary has no such state to
+//! inherit.
 //!
 //! The child gets its own session (`setsid`), so closing the terminal that
-//! started it does not send it SIGHUP along with the shell's other children.
-//! That is the whole difference from `&`.
+//! started it does not send it SIGHUP — the whole difference from `&`.
 
 use anyhow::{Context, Result};
 use std::process::{Command, Stdio};
@@ -22,11 +20,10 @@ pub fn is_detached_child() -> bool {
 
 /// The rule the marker carries, split from reading it.
 ///
-/// Reading the environment inside the rule made the test answer for the
-/// machine it ran on: a suite started from inside a nightcrow pane inherits
-/// the marker from the daemon that spawned the pane, and the foreground case
-/// then failed while saying nothing about the rule. Presence is what counts —
-/// the child is spawned with `"1"`, but an empty value is still a marker.
+/// Split out because a suite started from inside a nightcrow pane inherits the
+/// marker from the daemon that spawned the pane, and the foreground case then
+/// failed while saying nothing about the rule. Presence is what counts — the
+/// child is spawned with `"1"`, but an empty value is still a marker.
 fn marker_says_detached(marker: Option<&std::ffi::OsStr>) -> bool {
     marker.is_some()
 }
@@ -54,11 +51,9 @@ fn child_args(args: impl Iterator<Item = std::ffi::OsString>) -> Vec<std::ffi::O
         .collect()
 }
 
-/// Build the command that runs `exe` as a background session.
-///
-/// Separate from spawning it so the parts that can fail — the log directory,
-/// the log file, the argument list — are testable without starting a process.
-/// Nothing here execs anything.
+/// Build the command that runs `exe` as a background session. Separate from
+/// spawning it so the fallible parts — log directory, log file, argument
+/// list — are testable without starting a process.
 fn background_command(
     exe: &std::path::Path,
     args: &[std::ffi::OsString],
@@ -68,9 +63,8 @@ fn background_command(
         std::fs::create_dir_all(parent)
             .with_context(|| format!("creating {}", parent.display()))?;
     }
-    // Appended and opened twice: the child owns both handles, and a single one
-    // shared between stdout and stderr would have them overwrite each other's
-    // offset.
+    // Appended and opened twice: a single handle shared between stdout and
+    // stderr would have them overwrite each other's offset.
     let out = std::fs::OpenOptions::new()
         .create(true)
         .append(true)

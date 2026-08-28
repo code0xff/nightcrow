@@ -1,30 +1,23 @@
-//! Framing for the daemon socket. A Unix socket is a byte stream with no
-//! message boundaries, so every message carries its own length. The kind byte
-//! splits control messages from terminal output for the same reason the
-//! viewer's WebSocket splits text frames from binary ones: PTY bytes are not
-//! text, and routing them through JSON would pay escaping and base64 expansion
-//! on the hottest path there is.
+//! Framing for the daemon socket: every message carries its own length, and
+//! the kind byte splits control messages from terminal output — PTY bytes are
+//! not text, and routing them through JSON would pay escaping and base64
+//! expansion on the hottest path there is.
 
 use super::protocol::ServerMessage;
 use anyhow::{Context, Result, bail};
 use std::io::{Read, Write};
 
-/// Largest payload one frame may carry. The reader allocates whatever length
-/// the frame announces, so this is the ceiling on what a single message can make
-/// the process allocate.
-///
-/// Set above the largest payload the protocol actually produces. Terminal output
-/// stays under it by being split where it could not: a pane's replay is cut into
-/// frames of `REPLAY_CHUNK_BYTES` (1 MiB) because a client concatenates them
-/// anyway, which is what keeps an alternate-screen pane's screen — the one payload
-/// that grows with the pane's area rather than with a fixed cap — from ever
-/// reaching this limit. A control message describing every pane at once fits with
-/// room to spare.
+/// Largest payload one frame may carry — the ceiling on what a single message
+/// can make the process allocate, since the reader allocates whatever length
+/// the frame announces. Terminal output stays under it by being split: a pane's
+/// replay is cut into `REPLAY_CHUNK_BYTES` (1 MiB) frames, which keeps an
+/// alternate-screen pane — the one payload that grows with pane area — from
+/// ever reaching this limit.
 pub const MAX_FRAME_BYTES: usize = 4 * 1024 * 1024;
 
-/// What a frame carries. Encoded as the first byte on the wire, so an unknown
-/// value is a protocol mismatch rather than something to skip: the two sides
-/// ship in one binary and cannot legitimately disagree.
+/// What a frame carries. Encoded as the first byte on the wire; an unknown
+/// value is a protocol mismatch rather than something to skip, since the two
+/// sides ship in one binary and cannot legitimately disagree.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
 pub enum FrameKind {
@@ -98,11 +91,8 @@ pub(super) fn encode_server(
     }
 }
 
-/// Write one frame: kind byte, big-endian length, payload.
-///
-/// Does not flush — a caller sending several frames at once should flush after
-/// the last, and a caller sending one should flush after it. Flushing here
-/// would turn every batch into one syscall per frame.
+/// Write one frame: kind byte, big-endian length, payload. Does not flush —
+/// flushing here would turn every batch into one syscall per frame.
 pub fn write_frame<W: Write>(writer: &mut W, frame: &Frame) -> Result<()> {
     if frame.payload.len() > MAX_FRAME_BYTES {
         bail!(
@@ -111,8 +101,8 @@ pub fn write_frame<W: Write>(writer: &mut W, frame: &Frame) -> Result<()> {
         );
     }
     // Built as one buffer and written once: a header written separately can
-    // reach the peer as its own packet, and a writer that dies between the two
-    // leaves a header with no body for the reader to block on.
+    // reach the peer as its own packet, leaving a reader blocked on a body
+    // that never comes.
     let mut out = Vec::with_capacity(5 + frame.payload.len());
     out.push(frame.kind as u8);
     out.extend_from_slice(&(frame.payload.len() as u32).to_be_bytes());
@@ -121,11 +111,9 @@ pub fn write_frame<W: Write>(writer: &mut W, frame: &Frame) -> Result<()> {
     Ok(())
 }
 
-/// Read one frame, or `None` at a clean end of stream.
-///
-/// `None` means the peer closed between frames, which is how a client detaches;
-/// an error means it closed *inside* one, which is a truncated message and not
-/// something to resume from.
+/// Read one frame, or `None` at a clean end of stream — which is how a client
+/// detaches. An error means the peer closed *inside* a frame: a truncated
+/// message, not something to resume from.
 pub fn read_frame<R: Read>(reader: &mut R) -> Result<Option<Frame>> {
     let mut header = [0u8; 5];
     if !read_exact_or_eof(reader, &mut header)? {
@@ -146,11 +134,9 @@ pub fn read_frame<R: Read>(reader: &mut R) -> Result<Option<Frame>> {
 }
 
 /// Fill `buf`, reporting whether the stream ended before the first byte.
-///
-/// An end of stream part-way through is an error rather than a `false`: the
-/// distinction the caller needs is "nothing more is coming" versus "a message
-/// was cut in half", and collapsing them would let a truncated frame look like
-/// a clean detach.
+/// Part-way through is an error: "nothing more is coming" and "a message was
+/// cut in half" must not collapse, or a truncated frame would look like a
+/// clean detach.
 fn read_exact_or_eof<R: Read>(reader: &mut R, buf: &mut [u8]) -> Result<bool> {
     if buf.is_empty() {
         return Ok(true);

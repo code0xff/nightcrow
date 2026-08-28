@@ -33,18 +33,15 @@ pub(crate) struct TerminalRouter {
 }
 
 impl TerminalRouter {
-    /// File one message under its repository.
+    /// File one message under its repository. The inbox is created on arrival
+    /// rather than when a backend registers: the daemon subscribes a client to
+    /// every open repository the moment it connects, so a pane and its
+    /// scrollback can be on the wire before the client has been told the
+    /// repository exists — and the replay happens only once, so dropping those
+    /// would orphan panes.
     ///
-    /// The inbox is created on arrival rather than when a backend registers,
-    /// because the daemon subscribes a client to every open repository the
-    /// moment it connects: a pane and its scrollback can be on the wire before
-    /// the client has been told the repository exists. Dropping those would
-    /// leave panes the client is never told about again — the replay happens
-    /// once.
-    ///
-    /// Unbounded for the same reason terminal output is never conflated:
-    /// dropping bytes corrupts a stream that cannot be re-read. What bounds it
-    /// is that an inbox nobody drains belongs to a repository this client has
+    /// Unbounded because dropping bytes corrupts a stream that cannot be
+    /// re-read; an inbox nobody drains belongs to a repository this client has
     /// not opened a tab for yet, which is the very next thing it does.
     pub(crate) fn deliver(&self, repo: &str, message: TerminalMessage) {
         self.inboxes
