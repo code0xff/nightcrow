@@ -18,11 +18,9 @@ pub struct SessionState {
     pub mode: Option<ViewMode>,
     #[serde(default)]
     pub log_selected: usize,
-    // No accent here: it is the session's, not one repository's view state, and
-    // lives in `viewer.json` (see the boundary in `docs/architecture.md`). An
-    // `accent_idx` left over from before is ignored on read rather than
-    // migrated — one of several per-repo colours cannot answer what the
-    // session's colour is.
+    // No accent here: it belongs to the session, not one repository's view
+    // state, and lives in `viewer.json` (see `docs/architecture.md`). A stale
+    // `accent_idx` is ignored on read rather than migrated.
     #[serde(default)]
     pub log_drill_down: bool,
     #[serde(default)]
@@ -47,13 +45,12 @@ pub struct RepoSession {
 /// bound as repos are opened over the years.
 pub const MAX_REMEMBERED: usize = 50;
 
-/// Everything nightcrow remembers between runs: which repositories were open,
-/// which tab was in front, and each repository's view state.
+/// Everything nightcrow remembers between runs: open repositories, the active
+/// tab, and each repository's view state.
 ///
-/// One file, under the config directory rather than inside any repository.
-/// No single repo owns the fact that three others were open beside it, and
-/// keeping view state out of the repos means nightcrow never creates a
-/// directory in a project it is only reading.
+/// One file, under the config directory: no single repo owns the tab list, and
+/// keeping state out of the repos means nightcrow never writes into a project
+/// it is only reading.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct WorkspaceState {
     /// Absolute repo paths in tab order.
@@ -105,9 +102,8 @@ fn load_workspace_at(path: &Path) -> Option<WorkspaceState> {
 /// Record the open tabs. Called on exit, like the per-repo sessions, so a
 /// crash loses the tab list the same way it loses the rest of the session.
 ///
-/// An empty list is written rather than skipped: closing every tab and
-/// quitting is how a user asks for an empty screen next launch, and dropping
-/// the write would resurrect the previous tabs instead.
+/// An empty list is written rather than skipped: dropping the write would
+/// resurrect the previous tabs instead of honoring "no tabs next launch".
 pub fn save_workspace(state: &WorkspaceState) {
     let Some(path) = workspace_path() else {
         return;

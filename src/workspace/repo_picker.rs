@@ -28,7 +28,7 @@ impl Workspace {
     }
 
     /// Take the selection into the field. Enter means the same thing on every
-    /// row — going anywhere the tree does not show is `←`'s job, not a row's.
+    /// row — navigating beyond what the tree shows is `←`'s job, not a row's.
     pub fn repo_input_pick(&mut self) {
         let Some(tree) = self.repo_input.picker.take() else {
             return;
