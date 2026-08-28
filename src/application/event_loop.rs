@@ -48,7 +48,9 @@ pub(crate) fn main_loop(
         // `pending_snapshot` until its tab is shown.
         let active = ws.active_index();
         for (i, project) in ws.projects_mut().iter_mut().enumerate() {
-            project.poll_git_loads();
+            if project.poll_git_loads() {
+                redraw.request(RedrawCause::Git);
+            }
             if i == active {
                 if project.poll_snapshot() {
                     redraw.request(RedrawCause::Snapshot);
