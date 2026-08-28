@@ -5,10 +5,10 @@
 //! Ids are stable for the process lifetime, so opening or closing an unrelated
 //! tab does not renumber the others.
 //!
-//! Replacement is atomic and does no blocking work under the lock: the new list
-//! is built and swapped in, and only then are the dropped runtimes stopped — a
-//! runtime shutdown joins a thread, and holding the catalog lock across that
-//! would stall every in-flight request.
+//! Replacement is atomic: membership is committed to the live runtime snapshot
+//! under the facade transaction. Dropped runtimes are returned from that commit
+//! and stopped only after every catalog lock is released — shutdown joins a
+//! thread and must not stall in-flight reads or the next mutation.
 //!
 //! **Every path in here is the one `resolve_repo_path` produces**, normalised on
 //! the way in rather than by each caller. Two spellings of one worktree are two
