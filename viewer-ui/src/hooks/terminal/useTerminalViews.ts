@@ -13,12 +13,10 @@ import { sendTerminalMessage, type PaneSize } from "../../api/terminal";
 
 interface UseTerminalViewsArgs {
   panes: number[];
-  // Reveal signals: opening xterm inside a hidden (display:none) cell caches a
-  // 0x0 character-cell measurement that fit() can never recover, so creation
-  // waits until the cell has size. Re-run on the layout changes that can reveal
-  // a cell — the container resizing (`size`), a zoom toggle (`zoomed`), or the
-  // arrangement changing under them (`mode`) — which mirrors the fit effect's
-  // own dependency set.
+  // Opening xterm inside a hidden (display:none) cell caches a 0x0
+  // character-cell measurement that fit() can never recover, so creation waits
+  // until the cell has size. Re-run on the layout changes that can reveal a
+  // cell (`size`, `zoomed`, `mode`), mirroring the fit effect's dependency set.
   size: { w: number; h: number };
   zoomed: number | null;
   mode: PaneViewMode;
@@ -65,12 +63,9 @@ export function useTerminalViews({
         cursorBlink: true,
         // Without this there is no way to select text on a Mac in a pane whose
         // program reads the mouse — which is most of what this panel is opened
-        // for. xterm turns its own selection off while a program is tracking
-        // the mouse, and offers one way back: a modifier that forces the drag
-        // to be a selection. Off a Mac that modifier is Shift and needs no
-        // option; on one it is Option, and only if this is set. So it stays
-        // off, drags reach the program, nothing is ever selected, and Cmd+C
-        // copies nothing — a copy that fails with no way to tell why.
+        // for. xterm offers one way back: a modifier that forces the drag to be
+        // a selection (Shift, or Option on a Mac only if this is set). Left
+        // unset, Cmd+C copies nothing and nothing explains why.
         macOptionClickForcesSelection: true,
       });
       const fit = new FitAddon();
@@ -115,14 +110,12 @@ export function useTerminalViews({
         }
       });
       // A program in the pane asks for the clipboard this way, and it is the
-      // only path that reaches whoever is reading — the host's own clipboard is
-      // a different machine's whenever this panel is open from somewhere else.
-      // xterm drops the sequence unless something claims it, while the program
-      // reports a copy either way. See `lib/osc52.ts`. Answered synchronously
-      // with the work left running: a handler may return a promise, and the
-      // parser then holds the whole stream until it settles — which would stop
-      // the pane painting behind a clipboard permission prompt. Returning true
-      // claims the sequence so it is not also treated as unrecognised output.
+      // only path that reaches whoever is reading — the host's own clipboard
+      // is a different machine's whenever this panel is open from somewhere
+      // else. See `lib/osc52.ts`. Returning true claims the sequence so it is
+      // not also treated as unrecognised output; the handler runs async work
+      // beside the parse rather than inside it, which would hold the stream
+      // — and the pane's painting — behind a clipboard permission prompt.
       term.parser.registerOscHandler(OSC_CLIPBOARD, (payload) => {
         void receivePaneClipboard(payload).catch((error: unknown) => {
           // Dropping the promise is the point; dropping a rejection with it
@@ -143,27 +136,21 @@ export function useTerminalViews({
       // grid, and xterm opens at its own 80×24 default. Parsed at the default,
       // everything the program put outside that box is gone — and the fit that
       // runs after this sends nothing when it lands on the size the PTY already
-      // has, which is the usual outcome of returning to the same screen. So no
-      // resize reaches the child, nothing makes it repaint, and what was lost
-      // stays lost until it next draws by itself: a full-screen program sitting
-      // at a prompt leaves the pane blank for as long as it waits.
+      // has (the usual outcome of returning to the same screen), so what was
+      // lost stays lost until the program next draws by itself.
       //
       // The pane's grid *now*, even for output that has been queueing since an
-      // older one — a cell can stay sizeless long enough to be resized under it.
-      // Splitting the queue at each resize and parsing each part at its own grid
-      // is not the improvement it sounds like: `write` parses on a later task
-      // while `resize` applies at once, so honouring a boundary means waiting on
-      // a write callback, and an emulator written to across several tasks would
-      // have to be exclusive to that loop — which it cannot be. The fit runs in
-      // the very next effect and the socket keeps delivering, and both of them
-      // reach this terminal.
+      // older one — a cell can stay sizeless long enough to be resized under
+      // it. Splitting the queue at each resize is not the improvement it
+      // sounds like: `write` parses on a later task while `resize` applies at
+      // once, so honouring a boundary would need an emulator exclusive to one
+      // write loop, which it cannot be.
       //
-      // That is also the limit of what this line promises. It is the grid the
-      // replay is *handed to*, not one it is guaranteed to be read at: the fit
-      // can resize again before the parser has caught up. In the case this is
-      // here for — a screen returning to panes it already sized — the fit lands
-      // on the size the PTY already has and changes nothing, which is exactly
-      // why nothing else was going to correct the default either.
+      // That is also the limit of what this line promises — the grid the
+      // replay is *handed to*, not one it is guaranteed to be read at. In the
+      // case this is here for (a screen returning to panes it already sized)
+      // the fit lands on the size the PTY already has and changes nothing,
+      // which is exactly why nothing else was going to correct the default.
       const pty = ptySizesRef.current.get(pane);
       if (pty) term.resize(pty.cols, pty.rows);
       viewsRef.current.set(pane, { term, fit });
@@ -173,13 +160,9 @@ export function useTerminalViews({
         for (const chunk of queued) term.write(chunk);
         pendingRef.current.delete(pane);
         // A replayed pane is history, and what a person wants from history is
-        // its end — the last thing the program said, not wherever the write
-        // happened to leave the viewport.
-        //
-        // Queued behind the replay rather than run after the loop: `write`
-        // parses on a later task, so scrolling here directly would run while
-        // the parser was still catching up and land on a buffer that had not
-        // finished growing.
+        // its end. Queued behind the replay rather than run after the loop:
+        // `write` parses on a later task, so scrolling here directly would
+        // land on a buffer that had not finished growing.
         term.write("", () => term.scrollToBottom());
       }
     }

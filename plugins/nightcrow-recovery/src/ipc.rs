@@ -1,17 +1,16 @@
 //! The private socket a provider's helper processes report through.
 //!
-//! Claude Code invokes a hook command and a statusline command as children of
-//! the `claude` process, which means they inherit its environment — including the
-//! [`PANE_TOKEN_ENV`] value nightcrow injected when it spawned the pane. Those
-//! children live for milliseconds and must not block their parent, so they do the
-//! smallest possible thing: connect, write one line, exit. This module is that
-//! line's format and both ends of the socket.
+//! Claude Code invokes a hook and a statusline command as children of the
+//! `claude` process, so they inherit the [`PANE_TOKEN_ENV`] value nightcrow
+//! injected. Those children live for milliseconds and must not block their
+//! parent: connect, write one line, exit. This module is that line's format
+//! and both ends of the socket.
 //!
-//! Trust posture: anything that can reach the socket can claim to be any pane, so
-//! the socket is created 0600 inside a 0700 directory and every field of every
-//! message is validated before it reaches the state machine. The token is a
-//! correlation key, never an authorisation: the worst a forged message can do is
-//! make this plugin ask the host for something, and the host judges that again.
+//! Trust posture: anything that can reach the socket can claim to be any pane,
+//! so the socket is created 0600 inside a 0700 directory and every field is
+//! validated before it reaches the state machine. The token is a correlation
+//! key, never an authorisation — the worst a forged message can do is make
+//! this plugin ask the host for something, and the host judges that again.
 
 use crate::protocol::PaneToken;
 use crate::provider::{OutOfBand, SignalKind};
@@ -63,11 +62,10 @@ pub const MAX_IPC_LINE_BYTES: usize = 8 * 1024;
 /// that so a future widening does not need a change here.
 const MAX_TOKEN_LEN: usize = 64;
 
-/// How long either end will block on the socket.
-///
-/// The sender runs inside a provider's hook child, so it must give up quickly
-/// rather than hold up someone's CLI; the receiver uses the same bound so one
-/// stalled client cannot park the accept loop.
+/// How long either end will block on the socket. The sender runs inside a
+/// provider's hook child, so it must give up quickly rather than hold up
+/// someone's CLI; the receiver uses the same bound so one stalled client
+/// cannot park the accept loop.
 const IPC_TIMEOUT: Duration = Duration::from_millis(500);
 
 /// One report from a provider helper process.
@@ -96,15 +94,12 @@ pub const RUNTIME_DIR_ENV: &str = "NIGHTCROW_PLUGIN_RUNTIME_DIR";
 
 /// Where the socket lives.
 ///
-/// The host's directory when it named one, because a plugin process belongs to
-/// one hub and a hub is per repository: a session with several projects runs
-/// several of this binary, and one fixed path would let only the first bind.
-/// The rest would find the address taken and run without a socket, and a
-/// helper inside a pane would reach whichever instance won rather than the one
-/// watching it.
-///
-/// Falling back to the old fixed location keeps this runnable by hand and under
-/// a host too old to say — one instance, one socket, as before.
+/// The host's directory when it named one: a hub is per repository, so a
+/// session with several projects runs several of this binary and one fixed
+/// path would let only the first bind — a helper inside a pane would then
+/// reach whichever instance won rather than the one watching it. Falling back
+/// to the old fixed location keeps this runnable by hand and under a host too
+/// old to say.
 pub fn socket_path() -> Result<PathBuf> {
     if let Some(dir) = std::env::var_os(RUNTIME_DIR_ENV).filter(|d| !d.is_empty()) {
         return Ok(PathBuf::from(dir).join(SOCKET_FILE));

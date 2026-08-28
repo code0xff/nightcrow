@@ -180,8 +180,8 @@ export function useRepoPoll({
           // a project some client is actually in.
           //
           // Decided here rather than inside the state updater: an updater can
-          // run for a render that never commits, and a mark left behind by
-          // one would suppress a real write later. The decision needs no
+          // run for a render that never commits, and a mark left behind by one
+          // would suppress a real write later. The decision needs no
           // `current` — a changed served value that is open wins in
           // `resolveActiveRepo` regardless of it.
           if (servedChanged && active_repo && ids.includes(active_repo)) {

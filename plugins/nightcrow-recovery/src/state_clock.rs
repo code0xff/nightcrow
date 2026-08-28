@@ -1,8 +1,8 @@
 //! Waiting: the half of the machine driven by the clock rather than by an event.
 //!
 //! Split out of `state.rs` for readability. Nothing here decides *what* to do
-//! about a limit; it decides only how long to sit still first, and it is the one
-//! place that can end a recovery by running out of attempts.
+//! about a limit; it decides only how long to sit still first, and it is the
+//! one place that can end a recovery by running out of attempts.
 
 use super::{MAX_RESUME_ATTEMPTS, PaneRecovery, RESUME_CONFIRM_SECS, RecoveryState};
 use crate::protocol::PluginCommand;

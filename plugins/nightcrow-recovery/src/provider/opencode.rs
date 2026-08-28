@@ -1,12 +1,11 @@
 //! OpenCode adapter — deliberately observe-only.
 //!
-//! OpenCode retries a retryable API error *without bound*: there is no
-//! max-attempt constant, the backoff starts at 2 s and doubles, and the 30 s cap
-//! applies only when the response carried no `retry-after` header — with one the
-//! cap is ~24.8 days. So "wait for the retries to run out" is a state this
-//! adapter can never reach, and a pane in `retry` is hands off: no input, no
-//! relaunch, no abort. It only reports, and only once the retry is demonstrably
-//! over — the session went `idle`, or the process exited.
+//! OpenCode retries a retryable API error *without bound*: the 30 s cap applies
+//! only when the response carried no `retry-after` header — with one the cap is
+//! ~24.8 days. So "wait for the retries to run out" is a state this adapter can
+//! never reach, and a pane in `retry` is hands off: no input, no relaunch, no
+//! abort. It only reports, and only once the retry is demonstrably over — the
+//! session went `idle`, or the process exited.
 //!
 //! State comes from the local server's `GET /session/status`, which is
 //! first-class server state rather than screen scraping. Terminal text is not
@@ -27,7 +26,8 @@ pub use http::{
 pub const DEFAULT_PORT: u16 = 4096;
 
 /// Override for a user who always runs the server elsewhere. A `--port` on the
-/// pane's own command line wins over it: that is the truth about *this* process.
+/// pane's own command line wins over it: that is the truth about *this*
+/// process.
 const PORT_ENV: &str = "NIGHTCROW_OPENCODE_PORT";
 
 /// Snapshot of every session the server knows about.
@@ -198,8 +198,8 @@ impl Provider for OpenCode {
         _now_epoch: i64,
     ) -> Option<LimitEvent> {
         // Intentionally blind: OpenCode's TUI retry format string is unverified,
-        // so any needle list here would be a guess, and a wrong guess parks a
-        // healthy pane. The status endpoint is authoritative; the screen is not.
+        // and a wrong needle guess parks a healthy pane. The status endpoint is
+        // authoritative; the screen is not.
         None
     }
 
@@ -208,18 +208,17 @@ impl Provider for OpenCode {
         if self.fired {
             return None;
         }
-        // The process is gone, so the last thing we saw is final and there is
-        // nothing left on the server worth asking about.
         if self.exited {
+            // The process is gone, so the last thing we saw is final.
             return self.emit(now_epoch);
         }
         if !self.due(now_epoch) {
             return None;
         }
         self.last_poll = Some(now_epoch);
-        // No server, a non-200, or an unreadable body is ordinary — the user need
-        // not be running the server at all. Swallow it, and let the interval keep
-        // the next attempt from becoming a tight loop.
+        // No server, a non-200, or an unreadable body is ordinary — the user
+        // need not be running the server at all. Swallow it, and let the
+        // interval keep the next attempt from becoming a tight loop.
         let statuses = parse_status_body(&self.fetch_status().ok()?);
         if let Some(status) = statuses
             .iter()

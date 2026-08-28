@@ -7,9 +7,9 @@
 //! cases (a stale generation, a clock jump, an exhausted attempt budget) are
 //! ordinary unit tests rather than something only reproducible by waiting.
 //!
-//! Safety posture: this machine never decides that a pane is alive or idle. It
-//! only ever repeats back what the host told it, and it refuses to ask for input
-//! unless the host has said both. The host judges every request again anyway.
+//! Safety posture: this machine never decides that a pane is alive or idle; it
+//! only repeats back what the host told it, and refuses to ask for input unless
+//! the host has said both. The host judges every request again anyway.
 
 use crate::protocol::{PROTOCOL_VERSION, PaneGeneration, PaneToken, PluginCommand, PluginEvent};
 use crate::provider::{LimitEvent, LimitKind};
@@ -136,10 +136,10 @@ impl PaneRecovery {
         }
         let mut out = Vec::new();
         if generation > self.generation {
-            // A new spawn of the slot voids everything decided about the previous
-            // process. Landing in `Idle` either way; the only difference is that
-            // a relaunch we asked for counts as a resume that worked, while a
-            // respawn we did not ask for is a plain cancellation.
+            // A new spawn of the slot voids everything decided about the
+            // previous process. A relaunch we asked for counts as a resume
+            // that worked; a respawn we did not ask for is a plain cancellation.
+            // Either way the machine lands in `Idle`.
             self.generation = generation;
             self.alive = true;
             self.idle = false;
@@ -168,7 +168,7 @@ impl PaneRecovery {
             }
             PluginEvent::PaneClosed { .. } | PluginEvent::UserInput { .. } => {
                 // The slot is gone, or its human took it back. Either way this
-                // machine has no business acting on it again, and the attempt
+                // machine has no business acting on it again; the attempt
                 // budget resets because the next episode is a fresh one.
                 self.attempt = 0;
                 out.extend(self.cancel());
@@ -219,10 +219,10 @@ impl PaneRecovery {
             return Vec::new();
         }
         // The attempt budget is refunded only for an episode that had a real
-        // reset time to wait for. Those are bounded by the provider's own
-        // window, so refunding cannot spin. An episode with no known reset time
-        // keeps its count, which is what stops a pane that resumes cleanly and
-        // then immediately fails again from retrying forever.
+        // reset time to wait for — those are bounded by the provider's own
+        // window, so refunding cannot spin. An episode with no known reset
+        // time keeps its count, which is what stops a pane that resumes
+        // cleanly and then immediately fails again from retrying forever.
         if self.limit.as_ref().and_then(|l| l.resets_at).is_some() {
             self.attempt = 0;
         }

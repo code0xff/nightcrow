@@ -11,12 +11,10 @@ import {
  *
  *  A resize is not a cheap message: the child gets SIGWINCH and a full-screen
  *  program answers it by repainting from scratch. The browser reaches its
- *  final geometry through several intermediate ones — a web font finishing,
- *  the grid re-splitting as another pane appears, a window animating, a
- *  breakpoint flipping — and forwarding each one makes the child redraw once
- *  per step. Waiting for the layout to settle sends the one size the user
- *  actually ended up with. Short enough to stay imperceptible while dragging
- *  a divider. */
+ *  final geometry through several intermediate ones, and forwarding each one
+ *  makes the child redraw once per step. Waiting for the layout to settle
+ *  sends the one size the user actually ended up with, while staying
+ *  imperceptible during a divider drag. */
 const SETTLE_MS = 60;
 
 interface UsePaneSizesArgs {
@@ -109,12 +107,12 @@ export function usePaneSizes({
       const body = bodyRefs.current.get(pane);
       if (!body || body.clientHeight === 0 || body.clientWidth === 0) continue;
       // Take the size the PTY actually has whenever this page's cells are not
-      // the answer: it is a spectator, or its layout has not resolved yet. Not
-      // merely "skip the fit" — an emulator at any other size renders this
-      // pane wrapping where the child does not. A pane opens at the PTY's size
-      // (`useTerminalViews`) and `resized` follows it from then on, so this is
-      // what covers the rest: a layout change here, and a page that has just
-      // lost the sizing while its panes are at its own fit.
+      // the answer: it is a spectator, or its layout has not resolved yet.
+      // Not merely "skip the fit" — an emulator at any other size renders
+      // this pane wrapping where the child does not. A pane opens at the
+      // PTY's size (`useTerminalViews`) and `resized` follows it from then
+      // on, so this covers the rest: a layout change here, and a page that
+      // has just lost the sizing while its panes are at its own fit.
       if (!ownsSize || layoutPending) {
         const pty = ptySizesRef.current.get(pane);
         if (pty) view.term.resize(pty.cols, pty.rows);

@@ -1,8 +1,8 @@
 //! The plugin's two ends of the host's NDJSON stream.
 //!
-//! Split out of `runloop.rs` so that file is the loop's reasoning and this one is
-//! its plumbing. Everything the plugin says leaves through [`emit`], called only
-//! from the main thread, which is what keeps two half-written lines from
+//! Split out of `runloop.rs` so that file is the loop's reasoning and this one
+//! is its plumbing. Everything the plugin says leaves through [`emit`], called
+//! only from the main thread, which is what keeps two half-written lines from
 //! interleaving on stdout.
 
 use crate::ipc::IpcMessage;

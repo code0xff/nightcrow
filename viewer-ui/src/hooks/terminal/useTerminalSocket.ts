@@ -38,10 +38,10 @@ interface UseTerminalSocketArgs {
 ///
 /// A layout effect, not a passive one: the panel is not remounted per
 /// repository (it keeps the per-repo focus memory across switches), so the
-/// render that switches project still commits the previous project's panes and
-/// their xterm DOM. A passive effect may run after that has been painted, which
-/// puts one frame of the old project's terminals on screen; a layout effect
-/// clears them before the browser paints.
+/// render that switches project still commits the previous project's panes.
+/// A passive effect may run after that has been painted, putting one frame of
+/// the old project's terminals on screen; a layout effect clears them before
+/// the browser paints.
 export function useTerminalSocket({
   repo,
   socketRef,
@@ -121,8 +121,8 @@ export function useTerminalSocket({
       // Only a page someone just opened takes the sizing, and only then is it
       // worth assuming rather than awaiting — starting as a spectator would
       // leave that page's panes unfitted for a round trip. A switch or a
-      // reconnect keeps whatever this page already had; the server confirms it
-      // either way.
+      // reconnect keeps whatever this page already had; the server confirms
+      // it either way.
       const arriving = takeClaim();
       if (arriving) setOwnsSize(true);
       // Reports are keyed by pane id, which is repository-local.

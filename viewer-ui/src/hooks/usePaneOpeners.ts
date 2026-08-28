@@ -98,12 +98,10 @@ export function usePaneOpeners({
             return isUnauthorized(err) ? handle(err) : undefined;
           }
           if (!options?.restoring) return handle(err);
-          // Nobody asked for this one, so it says nothing out loud — except an
+          // Nobody asked for this one, so it says nothing out loud except an
           // expired session, which the page has to know about however it found
-          // out. Why it failed is beyond telling anyway: the server answers a
-          // deleted path and a repository it could not read alike. Nothing is
-          // recorded either way; what a restore could not put back stays
-          // remembered, and stays worth trying next time.
+          // out. A restore that failed is not recorded: what it could not put
+          // back stays remembered, and stays worth trying next time.
           if (isUnauthorized(err)) handle(err);
           setPane({ kind: "empty" });
         });
@@ -129,12 +127,10 @@ export function usePaneOpeners({
             return isUnauthorized(err) ? handle(err) : undefined;
           }
           if (!options?.restoring) return handle(err);
-          // Nobody asked for this one, so it says nothing out loud — except an
+          // Nobody asked for this one, so it says nothing out loud except an
           // expired session, which the page has to know about however it found
-          // out. Why it failed is beyond telling anyway: the server answers a
-          // deleted path and a repository it could not read alike. Nothing is
-          // recorded either way; what a restore could not put back stays
-          // remembered, and stays worth trying next time.
+          // out. A restore that failed is not recorded: what it could not put
+          // back stays remembered, and stays worth trying next time.
           if (isUnauthorized(err)) handle(err);
           setPane({ kind: "empty" });
         });
@@ -182,12 +178,10 @@ export function usePaneOpeners({
             return isUnauthorized(err) ? handle(err) : undefined;
           }
           if (!options?.restoring) return handle(err);
-          // Nobody asked for this one, so it says nothing out loud — except an
+          // Nobody asked for this one, so it says nothing out loud except an
           // expired session, which the page has to know about however it found
-          // out. Why it failed is beyond telling anyway: the server answers a
-          // deleted path and a repository it could not read alike. Nothing is
-          // recorded either way; what a restore could not put back stays
-          // remembered, and stays worth trying next time.
+          // out. A restore that failed is not recorded: what it could not put
+          // back stays remembered, and stays worth trying next time.
           if (isUnauthorized(err)) handle(err);
           setPane({ kind: "empty" });
         });
@@ -243,10 +237,10 @@ export function usePaneOpeners({
           : wantFile
             ? api.commitFile(repo, source.oid, source.path)
             : api.commitFileDiff(repo, source.oid, source.path);
-      // Raw, not rendered. "Show me around this change" is a question about the
-      // source; a rendered page has no line to land on and does not answer it.
-      // Opening a file from the tree still starts rendered — that is a different
-      // question.
+      // Raw, not rendered. "Show me around this change" is a question about
+      // the source; a rendered page has no line to land on and does not
+      // answer it. Opening a file from the tree still starts rendered — that
+      // is a different question.
       if (wantFile) setPreviewRendered(false);
       fetched
         .then((value) => {
@@ -263,10 +257,11 @@ export function usePaneOpeners({
                   kind: "diff",
                   value: value as Diff,
                   // Judged again, not carried back. The file can have gone —
-                  // or turned into something with no text in it — while its own
-                  // pane was on screen, and the status refresh that would have
-                  // noticed only looks at diffs. Same two questions `openDiff`
-                  // asks, so the answer cannot drift between the two ways in.
+                  // or turned into something with no text in it — while its
+                  // own pane was on screen, and the status refresh that would
+                  // have noticed only looks at diffs. Same two questions
+                  // `openDiff` asks, so the answer cannot drift between the
+                  // two ways in.
                   source:
                     showsText(value as Diff) &&
                     (source.kind !== "workdir" || worktreeHas(source.path))

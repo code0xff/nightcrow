@@ -3,22 +3,21 @@
 //! Codex has no hook, no statusline and no `status` subcommand, and it *exits*
 //! when the usage limit is hit — with exit code 1, indistinguishable from any
 //! other failure — so neither the exit code nor a still-running process can be
-//! used as a signal. What codex does have is a per-session rollout file, and that
-//! is the primary source here: [`Provider::poll`] tails the pane's rollout and
+//! used as a signal. What codex has is a per-session rollout file, and that is
+//! the primary source here: [`Provider::poll`] tails the pane's rollout and
 //! acts on the `turn_complete` record whose `error.codex_error_info` is
-//! `usage_limit_exceeded`, taking the deadline from the most recent `token_count`
-//! record. `EventMsg::Error` is not persisted to the rollout, so it is not looked
-//! for. Terminal text is a documented fallback only, and a reset time is never
-//! parsed out of it.
+//! `usage_limit_exceeded`, taking the deadline from the most recent
+//! `token_count` record. Terminal text is a documented fallback only, and a
+//! reset time is never parsed out of it.
 //!
 //! Recovery is always a relaunch (`codex resume <SESSION_ID>`), never typed
 //! input. `codex resume --last` is deliberately never used: nightcrow allows
 //! several codex panes on one repository, so "the last session" could belong to
-//! another pane. Without an unambiguous session id this adapter holds.
+//! another pane.
 //!
 //! Layout: `codex_pane.rs` holds the per-pane watching state,
-//! `codex_sessions.rs` finds the pane's rollout file and `codex_rollout.rs` holds
-//! the pure record grammar. This file holds only the `Provider` contract.
+//! `codex_sessions.rs` finds the pane's rollout file and `codex_rollout.rs`
+//! holds the pure record grammar. This file holds only the `Provider` contract.
 
 use super::{LimitEvent, PaneContext, Provider, ResumePlan};
 use crate::protocol::PaneToken;

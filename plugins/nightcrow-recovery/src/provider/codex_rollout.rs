@@ -4,10 +4,10 @@
 //! filesystem, and so every file stays inside the project's 300-line limit.
 //!
 //! Every rollout line has the shape
-//! `{"timestamp":..,"ordinal":N,"type":"<tag>","payload":{..}}`. Only three tags
-//! matter to recovery; everything else — including tags added by a future codex
-//! release — is ignored silently, because an adapter that fails on unknown
-//! records would break on every upgrade.
+//! `{"timestamp":..,"ordinal":N,"type":"<tag>","payload":{..}}`. Only three
+//! tags matter to recovery; everything else — including tags added by a
+//! future codex release — is ignored silently, because an adapter that fails
+//! on unknown records would break on every upgrade.
 
 use crate::provider::reset_epoch_from_json;
 use serde_json::Value;
