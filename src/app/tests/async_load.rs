@@ -152,6 +152,48 @@ fn diff보다_나중에_연_file_view는_diff_reply가_닫지_않는다() {
 }
 
 #[test]
+fn selection_change_does_not_preserve_the_previous_file_view() {
+    let (_dir, path) = repo_with_two_dirty_files();
+    let mut app = status_app(&path);
+
+    app.reload_diff();
+    app.toggle_diff_file_view();
+    app.flush_git_loads_for_test(Duration::from_secs(5));
+    assert_eq!(
+        app.diff.file_view.key,
+        Some(FileViewKey::Status("a.rs".to_string()))
+    );
+
+    app.select_down();
+    app.flush_git_loads_for_test(Duration::from_secs(5));
+
+    assert_eq!(app.selected_filtered_status_path().as_deref(), Some("b.rs"));
+    assert_eq!(app.diff.view, DiffPaneView::Diff);
+    assert_eq!(app.diff.file_view.key, None);
+    assert!(diff_text(&app).contains("latest b"));
+}
+
+#[test]
+fn mode_switch_drops_a_stale_commit_files_reply() {
+    let (_dir, path) = make_repo();
+    std::fs::write(Path::new(&path).join("a.rs"), "one\n").unwrap();
+    run_git(&path, &["add", "."]);
+    run_git(&path, &["commit", "-m", "first"]);
+    let mut app = app_with_files(vec!["a.rs"]);
+    app.repo_path = path.clone();
+    app.mode = ViewMode::Log;
+    app.log_view
+        .set_commits(load_commit_log(&open_repo(&path), 10).unwrap());
+
+    app.log_drill_in();
+    app.toggle_mode();
+    app.flush_git_loads_for_test(Duration::from_secs(5));
+
+    assert_eq!(app.mode, ViewMode::Status);
+    assert!(!app.log_view.drill_down);
+}
+
+#[test]
 fn 현재_선택의_worker_실패는_diff_notice로_남는다() {
     let mut app = app_with_files(vec!["a.rs"]);
     app.repo_path = "repository-that-does-not-exist".to_string();
