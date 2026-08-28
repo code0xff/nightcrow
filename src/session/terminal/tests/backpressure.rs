@@ -1,6 +1,6 @@
 //! What happens to a client that stops draining its queue.
 
-use super::{attach_over_socket, created_pane, next_matching, spawn_hub};
+use super::{attach, attach_over_socket, created_pane, next_matching, spawn_hub};
 use crate::session::terminal::CLIENT_QUEUE_DEPTH;
 use crate::session::terminal::frame::ClientMessage;
 use std::io::Read;
@@ -91,4 +91,54 @@ fn an_evicted_client_still_releases_the_sizing_when_its_session_ends() {
         "an evicted client must not hold the sizing after its session ends"
     );
     hub.stop();
+}
+
+#[test]
+fn the_final_resize_survives_a_full_command_queue() {
+    // Stop the worker so the ordinary command queue remains deterministically
+    // full. Resize has latest-value semantics and must stay independently
+    // writable even then; every intermediate drag position may collapse.
+    let dir = tempfile::TempDir::new().unwrap();
+    let hub = spawn_hub(&dir.path().to_string_lossy(), Vec::new(), Vec::new());
+    hub.stop();
+    let session = attach(&hub);
+    // The worker cleared its real panes while stopping; install one record so
+    // dispatch still exercises the production liveness boundary.
+    hub.register_pane(7, 24, 80, None, None);
+    for _ in 0..CLIENT_QUEUE_DEPTH + 8 {
+        session.dispatch(ClientMessage::Input {
+            pane: 7,
+            data: "x".to_string(),
+        });
+    }
+
+    for cols in 81..=120 {
+        session.dispatch(ClientMessage::Resize {
+            pane: 7,
+            rows: 30,
+            cols,
+        });
+    }
+
+    let pending = hub.take_pending_resizes();
+    assert_eq!(pending.len(), 1, "intermediate sizes must be coalesced");
+    assert_eq!((pending[0].rows, pending[0].cols), (30, 120));
+}
+
+#[test]
+fn unknown_panes_do_not_grow_the_resize_queue() {
+    let dir = tempfile::TempDir::new().unwrap();
+    let hub = spawn_hub(&dir.path().to_string_lossy(), Vec::new(), Vec::new());
+    hub.stop();
+    let session = attach(&hub);
+
+    for pane in 1..=1_000 {
+        session.dispatch(ClientMessage::Resize {
+            pane,
+            rows: 30,
+            cols: 100,
+        });
+    }
+
+    assert!(hub.take_pending_resizes().is_empty());
 }

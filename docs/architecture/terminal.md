@@ -56,7 +56,9 @@
 - **Sizing invariant**: `ui::terminal_tab::visible_pane_cells`가 pane Rect의 단일 출처다. `render`가
   매 프레임 여기서 그리고, `ui::terminal_content_areas` → `main_loop`의 `resize_visible_panes`도
   같은 함수를 읽으므로 pane의 backend PTY + 에뮬레이터 크기가 그려진 셀과 정확히 일치한다. **새
-  호출 지점에서 pane 크기를 독립적으로 계산하지 말고 이 함수를 통과시킬 것.**
+  호출 지점에서 pane 크기를 독립적으로 계산하지 말고 이 함수를 통과시킬 것.** 원격 backend에서는
+  요청 직후 에뮬레이터를 낙관적으로 바꾸지 않고 세션의 `Resized` 확인을 따라간다. 원하는 크기와
+  확인된 크기가 다르면 재요청하므로 빠른 연속 resize의 마지막 셀 크기로 수렴한다.
 - **Input/scroll scope는 그대로**: 키보드 입력, paste, prompt 로깅, 터미널 스크롤
   (`TerminalState::active_pane_rows`가 페이지 크기)은 여러 pane이 그려져도 active pane만 겨냥한다.
 - **Accent는 "active pane"이 아니라 진짜 포커스를 뜻한다**: accent 색은 앱 전역에서 "이 영역이

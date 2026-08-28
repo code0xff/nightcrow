@@ -1,5 +1,5 @@
 use super::slot::{PaneSlot, PaneSlots};
-use super::{BackendEvent, PaneId, TerminalBackend};
+use super::{BackendEvent, PaneId, ResizeOutcome, TerminalBackend};
 use crate::config::ShellConfig;
 use crate::platform::threading::try_timed_join;
 use anyhow::Result;
@@ -202,17 +202,22 @@ impl TerminalBackend for PtyBackend {
         Ok(())
     }
 
-    fn resize(&mut self, id: PaneId, rows: u16, cols: u16) {
-        if let Some(pane) = self.panes.get_mut(&id)
-            && let Some(master) = pane.master.as_mut()
-        {
-            let _ = master.resize(PtySize {
-                rows,
-                cols,
-                pixel_width: 0,
-                pixel_height: 0,
-            });
-        }
+    fn resize(&mut self, id: PaneId, rows: u16, cols: u16) -> Result<ResizeOutcome> {
+        let pane = self
+            .panes
+            .get_mut(&id)
+            .ok_or_else(|| anyhow::anyhow!("pane {id} not found"))?;
+        let master = pane
+            .master
+            .as_mut()
+            .ok_or_else(|| anyhow::anyhow!("pane {id} PTY master already released"))?;
+        master.resize(PtySize {
+            rows,
+            cols,
+            pixel_width: 0,
+            pixel_height: 0,
+        })?;
+        Ok(ResizeOutcome::Applied)
     }
 
     fn drain_events(&mut self) -> Vec<BackendEvent> {

@@ -70,14 +70,6 @@ impl TerminalHub {
                         plugins.user_input(&backend, pane);
                         let _ = backend.send_input(pane, &data);
                     }
-                    Command::Resize {
-                        pane,
-                        rows,
-                        cols,
-                        client,
-                    } => {
-                        self.resize_pane(&mut backend, &mut modes, pane, rows, cols, client);
-                    }
                     Command::Close { pane } if self.pane_is_live(pane) => {
                         // Closed for good, unlike an exit: the slot goes with
                         // the process, so there is nothing left to relaunch.
@@ -102,6 +94,14 @@ impl TerminalHub {
                     }
                     _ => {}
                 }
+            }
+
+            // Resize is latest-value state, not a byte stream. Process the
+            // newest size after queued structural commands so a close that
+            // raced a drag wins, while a saturated input queue cannot discard
+            // the final geometry.
+            for resize in self.take_pending_resizes() {
+                self.resize_pane(&mut backend, &mut modes, resize);
             }
 
             // Alternate-screen panes whose screen this tick's output has moved on.

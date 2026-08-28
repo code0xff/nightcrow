@@ -174,9 +174,9 @@ fn a_replayed_pane_reports_the_size_it_was_last_resized_to() {
     // has landed.
     //
     // Retrying the connection instead would destroy what it waits for.
-    // Connecting takes the sizing (`window-size latest`), and a resize from a
-    // client that no longer owns it is dropped rather than queued
-    // (`hub_run.rs::apply_resize`). So a `connect` that beats the worker to this
+    // Connecting takes the sizing (`window-size latest`), and a pending resize
+    // from a client that no longer owns it is discarded by
+    // `hub_layout.rs::resize_pane`. So a `connect` that beats the worker to this
     // still-pending resize discards it for good, and no amount of retrying
     // brings the size the test is waiting for — it just spends the whole
     // deadline. Normally the worker wins that race, which is what made the
@@ -198,6 +198,30 @@ fn a_replayed_pane_reports_the_size_it_was_last_resized_to() {
         Some((40, 120)),
         "a replayed pane must report its current size, not its birth size"
     );
+    hub.stop();
+}
+
+#[test]
+fn retrying_an_already_applied_size_is_acknowledged() {
+    // A client retries when an acknowledgement is late. Even when the first
+    // request already landed, the retry must receive the current size or it
+    // remains pending forever.
+    let dir = tempfile::TempDir::new().unwrap();
+    let hub = spawn_hub(&dir.path().to_string_lossy(), Vec::new(), Vec::new());
+    let session = attach(&hub);
+    session.dispatch(ClientMessage::Create { rows: 24, cols: 80 });
+    let pane = next_matching(&session, |f| created_pane(f).is_some())
+        .and_then(|f| created_pane(&f))
+        .expect("no created message");
+
+    session.dispatch(ClientMessage::Resize {
+        pane,
+        rows: 24,
+        cols: 80,
+    });
+
+    let ack = next_matching(&session, |f| resized_size(f).is_some()).and_then(|f| resized_size(&f));
+    assert_eq!(ack, Some((24, 80)));
     hub.stop();
 }
 

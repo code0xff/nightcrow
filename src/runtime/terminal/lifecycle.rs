@@ -38,17 +38,7 @@ impl TerminalState {
                 // this client asked for — or any it asked for. The emulator has
                 // to wrap where the child does, so it follows.
                 BackendEvent::Resized { pane, rows, cols } => {
-                    let (rows, cols) = crate::runtime::emulator::effective_size(rows, cols);
-                    if let Some(emulator) = self.emulators.get_mut(&pane) {
-                        emulator.resize(rows, cols);
-                    }
-                    // Only when this client is not the one sizing. For the owner
-                    // this map is "what I last asked for", and overwriting it
-                    // with a clamped answer would make the next frame ask again,
-                    // every frame.
-                    if !self.owns_size {
-                        self.last_content_size.insert(pane, (rows, cols));
-                    }
+                    self.confirm_resize(pane, rows, cols);
                 }
                 // Only for a pane this client holds, like `Exited`: a marker
                 // for a pane that is not on any of this client's tabs would
@@ -72,6 +62,11 @@ impl TerminalState {
                     // forget what was applied and let the next frame fit them.
                     if owned && !self.owns_size {
                         self.last_content_size.clear();
+                    } else if !owned && self.owns_size {
+                        self.last_content_size = self.confirmed_content_size.clone();
+                    }
+                    if owned != self.owns_size {
+                        self.pending_content_size.clear();
                     }
                     self.owns_size = owned;
                 }
@@ -191,6 +186,7 @@ impl TerminalState {
         self.emulators
             .insert(id, PaneEmulator::new(rows, cols, SCROLLBACK_LINES));
         self.last_content_size.insert(id, (rows, cols));
+        self.confirmed_content_size.insert(id, (rows, cols));
         // The session's name first: a configured startup terminal is called the
         // same thing in every client, and this one did not ask for it and has no
         // title queued for it. Then this client's own queued title, then the
@@ -222,44 +218,9 @@ impl TerminalState {
         }
         self.scroll.remove(&id);
         self.last_content_size.remove(&id);
+        self.confirmed_content_size.remove(&id);
+        self.pending_content_size.remove(&id);
         self.title_activity.remove(&id);
-    }
-
-    /// Resize each listed pane's backend PTY and emulator to its own
-    /// (rows, cols), skipping a pane whose size didn't change. `layouts`
-    /// carries one entry per currently *visible* pane — panes scrolled out of
-    /// the split-view window are omitted and keep their `last_content_size`
-    /// until they become visible again.
-    ///
-    /// A client that does not own the sizing changes nothing here: the panes are
-    /// at the owner's size and its own emulators are already following
-    /// [`BackendEvent::Resized`](crate::backend::BackendEvent::Resized). Its
-    /// layout still records what it would have asked for, which is the size a
-    /// pane it opens is born at.
-    pub fn resize_visible_panes(&mut self, layouts: &[(PaneId, u16, u16)]) {
-        let active_id = self.active_pane_id();
-        for &(id, rows, cols) in layouts {
-            // Shared minimum-grid clamp: PTY, emulator, and the recorded
-            // size must all agree, or the skip-if-unchanged check and the
-            // inner program's wrap width drift apart at degenerate layouts.
-            let (rows, cols) = crate::runtime::emulator::effective_size(rows, cols);
-            if Some(id) == active_id {
-                self.size = (rows, cols);
-            }
-            if !self.owns_size {
-                continue;
-            }
-            if self.last_content_size.get(&id) == Some(&(rows, cols)) {
-                continue;
-            }
-            if let Some(backend) = &mut self.backend {
-                backend.resize(id, rows, cols);
-            }
-            if let Some(emulator) = self.emulators.get_mut(&id) {
-                emulator.resize(rows, cols);
-            }
-            self.last_content_size.insert(id, (rows, cols));
-        }
     }
 
     /// Ask the session for the sizing. The answer arrives as

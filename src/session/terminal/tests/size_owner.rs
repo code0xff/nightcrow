@@ -193,7 +193,8 @@ fn only_the_owner_resizes_the_pty_and_everyone_is_told_the_size() {
     let second = attach(&hub);
     assert!(verdict(&second));
 
-    // Both ask, in this order, through the one command queue the hub drains.
+    // Both ask in this order. Resize has its own latest-value queue, but the
+    // ownership check still admits only the current owner's value.
     first.dispatch(ClientMessage::Resize {
         pane,
         rows: 40,

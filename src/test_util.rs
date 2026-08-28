@@ -121,7 +121,6 @@ pub fn session_state(
 
 /// In-memory `TerminalBackend` for tests: spawns nothing, just records the
 /// command each `create_pane` was asked to run.
-#[derive(Default)]
 pub struct FakeBackend {
     next_id: crate::backend::PaneId,
     pub launched: Vec<Option<String>>,
@@ -131,6 +130,35 @@ pub struct FakeBackend {
     /// test can keep a clone and inject synthetic pane output/exit after the
     /// backend was boxed into `TerminalState`.
     pub pending_events: std::rc::Rc<std::cell::RefCell<Vec<crate::backend::BackendEvent>>>,
+    /// Resize calls, in order, for convergence tests.
+    pub resized: std::rc::Rc<std::cell::RefCell<Vec<(crate::backend::PaneId, u16, u16)>>>,
+    /// Whether resize is immediate (local PTY) or awaits a server event.
+    pub resize_outcome: crate::backend::ResizeOutcome,
+    /// Synthetic resize failure for error-path tests.
+    pub resize_error: bool,
+}
+
+impl Default for FakeBackend {
+    fn default() -> Self {
+        Self {
+            next_id: 0,
+            launched: Vec::new(),
+            sent: Vec::new(),
+            pending_events: Default::default(),
+            resized: Default::default(),
+            resize_outcome: crate::backend::ResizeOutcome::Applied,
+            resize_error: false,
+        }
+    }
+}
+
+impl FakeBackend {
+    pub fn with_resize_outcome(outcome: crate::backend::ResizeOutcome) -> Self {
+        Self {
+            resize_outcome: outcome,
+            ..Default::default()
+        }
+    }
 }
 
 impl crate::backend::TerminalBackend for FakeBackend {
@@ -193,7 +221,18 @@ impl crate::backend::TerminalBackend for FakeBackend {
         Ok(())
     }
 
-    fn resize(&mut self, _id: crate::backend::PaneId, _rows: u16, _cols: u16) {}
+    fn resize(
+        &mut self,
+        id: crate::backend::PaneId,
+        rows: u16,
+        cols: u16,
+    ) -> anyhow::Result<crate::backend::ResizeOutcome> {
+        self.resized.borrow_mut().push((id, rows, cols));
+        if self.resize_error {
+            anyhow::bail!("synthetic resize failure");
+        }
+        Ok(self.resize_outcome)
+    }
 
     fn drain_events(&mut self) -> Vec<crate::backend::BackendEvent> {
         std::mem::take(&mut *self.pending_events.borrow_mut())

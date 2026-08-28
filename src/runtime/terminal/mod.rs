@@ -1,12 +1,14 @@
 use crate::backend::{PaneId, TerminalBackend};
 use crate::runtime::emulator::PaneEmulator;
 use std::collections::HashMap;
+use std::time::Instant;
 
 mod attention;
 mod escape;
 mod input;
 mod lifecycle;
 mod recovery;
+mod resize;
 mod scroll;
 mod session_panes;
 mod state;
@@ -105,10 +107,14 @@ pub struct TerminalState {
     pub size: (u16, u16),
     pub scroll: HashMap<PaneId, usize>,
     pub fullscreen: TerminalFullscreen,
-    /// Last (rows, cols) applied to each pane's backend + emulator via
-    /// `resize_visible_panes`. Panes scrolled out of the visible window keep
-    /// whatever size they had when they were last visible.
+    /// Desired (rows, cols) for each pane while this client owns sizing; the
+    /// confirmed session size while it observes another owner. Panes scrolled
+    /// out of the visible window keep their last value.
     pub last_content_size: HashMap<PaneId, (u16, u16)>,
+    /// Last size confirmed as applied by the backend.
+    pub(crate) confirmed_content_size: HashMap<PaneId, (u16, u16)>,
+    /// Resize requests awaiting confirmation or a retry deadline.
+    pub(crate) pending_content_size: HashMap<PaneId, PendingPaneResize>,
     /// Whether this client's layout is what sets the pane sizes.
     ///
     /// True unless a shared session says otherwise: a PTY has one size, so one
@@ -146,6 +152,8 @@ impl TerminalState {
             scroll: HashMap::new(),
             fullscreen: TerminalFullscreen::Off,
             last_content_size: HashMap::new(),
+            confirmed_content_size: HashMap::new(),
+            pending_content_size: HashMap::new(),
             owns_size: true,
             recovery: HashMap::new(),
             visible_start: 0,
@@ -160,6 +168,12 @@ impl TerminalState {
             backend,
         }
     }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct PendingPaneResize {
+    size: (u16, u16),
+    attempted_at: Instant,
 }
 
 #[cfg(test)]

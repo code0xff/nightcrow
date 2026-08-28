@@ -10,6 +10,15 @@ fn pty_backend_create_and_destroy_pane() {
 }
 
 #[test]
+fn resizing_an_unknown_pane_is_reported() {
+    let mut backend = PtyBackend::new(".", ShellConfig::default());
+
+    let error = backend.resize(999, 24, 80).expect_err("unknown pane");
+
+    assert!(error.to_string().contains("pane 999 not found"));
+}
+
+#[test]
 fn a_pane_whose_shell_exits_reports_it() {
     let mut backend = PtyBackend::new(".", ShellConfig::default());
     let id = backend.open_pane(24, 80, Some("exit")).expect("open_pane");
