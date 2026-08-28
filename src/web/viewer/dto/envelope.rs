@@ -95,11 +95,9 @@ pub struct HotConfigDto {
 /// What `GET /api/repos` answers: everything the client needs before it can
 /// render, in one response.
 ///
-/// Named for what it carries rather than for its route. The route is about
-/// repositories — `POST` opens one, `DELETE` closes one — but the `GET` grew
-/// into the session's bootstrap, because a client that already polls it every
-/// few seconds is the cheapest carrier for anything server-wide it must agree
-/// with.
+/// The `GET` grew into the session's bootstrap because a client that already
+/// polls it every few seconds is the cheapest carrier for anything
+/// server-wide it must agree with.
 ///
 /// Every field here belongs in `ViewerBootstrap` in `viewer-ui/src/api.ts` too.
 /// Renaming or retyping one without doing so fails the fixture contract test.
@@ -117,19 +115,17 @@ pub struct ViewerBootstrapDto {
     /// see `prefs::ViewerPrefs`.
     pub upper_pct: u32,
     /// Id of the project a client last selected, so a reload lands there
-    /// instead of on the first tab. `None` when nothing has been selected yet
-    /// or the remembered project is not currently served. An id, not the path
-    /// `prefs.rs` stores: clients address repositories by id and never learn
-    /// the path.
+    /// instead of on the first tab. An id, not the path `prefs.rs` stores:
+    /// clients address repositories by id and never learn the path.
     pub active_repo: Option<String>,
     /// Which panel each *currently served* project was left maximized in, by
-    /// id. Projects with no arrangement are absent, as are remembered ones this
-    /// session is not serving.
+    /// id. Projects with no arrangement are absent, as are remembered ones
+    /// this session is not serving.
     pub maximized: std::collections::HashMap<String, &'static str>,
-    /// What each *currently served* project was last showing, by id, so opening
-    /// one again opens what was open. Absent for a project nothing has been
-    /// looked at in, and for a remembered project this session is not serving —
-    /// which keeps its entry on file for when it is.
+    /// What each *currently served* project was last showing, by id, so
+    /// opening one again opens what was open. Absent for a project nothing
+    /// has been looked at in, and for a remembered project this session is
+    /// not serving — which keeps its entry on file for when it is.
     pub last_view: std::collections::HashMap<String, RepoViewDto>,
     /// This server's wall clock, for dating [`super::ChangedFileDto::mtime`].
     pub now_ms: u64,
@@ -149,12 +145,11 @@ impl ViewerBootstrapDto {
     /// useful as facts about the response being built, not as arguments a
     /// caller could get wrong.
     ///
-    /// Takes the whole [`ViewerPrefs`] rather than the fields it needs: several
-    /// of them are `u32`, and a positional list of those is a pair of arguments
-    /// a call site can swap with nothing to catch it. `active_repo` stays
-    /// separate because what goes on the wire is the **id** resolved from
-    /// `prefs.active_repo`, which only the caller's catalog snapshot can supply.
-    /// `maximized` and `last_view` are separate for the same reason.
+    /// Takes the whole [`ViewerPrefs`] rather than the fields it needs: a
+    /// positional list of `u32`s is a pair of arguments a call site can swap
+    /// with nothing to catch it. `active_repo`, `maximized`, and `last_view`
+    /// stay separate because what goes on the wire is the id-resolved form
+    /// only the caller's catalog snapshot can supply.
     pub fn new(
         repos: Vec<RepoDto>,
         hot: HotConfigDto,

@@ -13,6 +13,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 const POLL_INTERVAL: Duration = Duration::from_millis(8);
+const COMMANDS_BETWEEN_RESIZES: usize = 64;
 
 impl TerminalHub {
     pub(super) fn run(&self, cwd: &str, commands: Receiver<Command>, stop: Arc<AtomicBool>) {
@@ -26,7 +27,15 @@ impl TerminalHub {
         let mut clears = ClearWatch::default();
 
         while !stop.load(Ordering::Acquire) {
+            let mut commands_since_resize = 0;
             while let Ok(command) = commands.try_recv() {
+                if commands_since_resize == COMMANDS_BETWEEN_RESIZES {
+                    for resize in self.take_pending_resizes() {
+                        self.resize_pane(&mut backend, &mut modes, resize);
+                    }
+                    commands_since_resize = 0;
+                }
+                commands_since_resize += 1;
                 match command {
                     Command::Create {
                         rows,
@@ -96,17 +105,16 @@ impl TerminalHub {
                 }
             }
 
-            // Resize is latest-value state, not a byte stream. Process the
-            // newest size after queued structural commands so a close that
-            // raced a drag wins, while a saturated input queue cannot discard
-            // the final geometry.
+            // Resize is latest-value state, not a byte stream. Also processed
+            // above after each command budget so a producer that continuously
+            // refills the bounded queue cannot starve the final geometry.
             for resize in self.take_pending_resizes() {
                 self.resize_pane(&mut backend, &mut modes, resize);
             }
 
-            // Alternate-screen panes whose screen this tick's output has moved on.
-            // Snapshotted once at the end rather than per chunk: a busy program
-            // sends many small chunks and serializing a grid for each of them
+            // Alternate-screen panes whose screen this tick's output has moved
+            // on. Snapshotted once at the end rather than per chunk: a busy
+            // program sends many small chunks, and serializing a grid per chunk
             // would be the most expensive thing on this path.
             let mut restless: Vec<PaneId> = Vec::new();
             for event in backend.drain_events() {
@@ -127,29 +135,25 @@ impl TerminalHub {
                         // Cut mid-sequence it is filed into `since` instead, and
                         // the tick's restless pass takes the screen once the
                         // stream closes; until then a connecting client replays
-                        // `since` raw, whose pre-switch text lands on the wrong
-                        // buffer for that moment — the paint that follows a
-                        // switch covers it, and the retry replaces it.
+                        // `since` raw, landing pre-switch text on the wrong
+                        // buffer for that moment — the paint that follows covers
+                        // it, and the retry replaces it.
                         let screen = (alt && observed.alt_changed && modes.at_boundary(pane))
                             .then(|| modes.snapshot(pane))
                             .flatten();
                         let owed = self.record_and_broadcast(pane, data, observed, screen);
-                        // Every snapshot below normally waits for a chunk that
-                        // ends with its sequences closed and applied
-                        // (`at_boundary`): the snapshot is spliced into the
-                        // recorded stream on replay, and a seam inside a
-                        // sequence hands a reattaching client its tail as
-                        // ordinary input. A crowded record reports itself again
-                        // with every next chunk, so a deferred snapshot retries
-                        // until the stream is clean — and a desperate one has
-                        // waited a whole extra ring for that, which no real
-                        // sequence spans, so the stream is called broken and the
-                        // records are bounded over a torn seam. Desperation
-                        // overrides the sequence seam only: a grid missing a
-                        // synchronized update's bytes (`screen_current`) must
-                        // never be snapshotted, and needs no override — the
-                        // update ends at the processor's own buffer cap if
-                        // nothing else.
+                        // Snapshots wait for a chunk that ends with its
+                        // sequences closed (`at_boundary`): the snapshot is
+                        // spliced into the recorded stream on replay, and a seam
+                        // inside a sequence hands a reattaching client its tail
+                        // as ordinary input. A crowded record retries with every
+                        // next chunk; a desperate one has waited a whole extra
+                        // ring, which no real sequence spans, so the records are
+                        // bounded over a torn seam. Desperation overrides the
+                        // sequence seam only — a grid missing a synchronized
+                        // update's bytes (`screen_current`) must never be
+                        // snapshotted, and needs no override: the update ends at
+                        // the processor's own buffer cap if nothing else.
                         let crowded = owed > limits::MAX_TERMINAL_SCROLLBACK_BYTES;
                         let desperate = owed > 2 * limits::MAX_TERMINAL_SCROLLBACK_BYTES;
                         let ready =
@@ -166,23 +170,20 @@ impl TerminalHub {
                                 restless.push(pane);
                             }
                         } else if crowded && ready {
-                            // The ring's uncovered tail has outgrown the cap, and
-                            // it may not be evicted — a fresh snapshot moving the
-                            // mark is the only way back under. Not per tick like
-                            // the alternate screen's: between snapshots the tail
-                            // keeps the replay exact on its own, so this costs a
-                            // serialization once per ring's worth of output.
+                            // Not per tick like the alternate screen's: between
+                            // snapshots the tail keeps the replay exact on its
+                            // own, so this costs a serialization once per
+                            // ring's worth of output.
                             if let Some(screen) = modes.snapshot(pane) {
                                 self.store_normal_screen(pane, screen);
                             }
                         }
                     }
-                    // Destroyed as well as forgotten. `PtyBackend` leaves pane
-                    // removal to its caller (see its `drain_events`), so a pane
-                    // that ended on its own — the user typed `exit`, or the
-                    // command finished — would keep its entry, its PTY master,
-                    // and its child handle for the hub's whole life. The cap
-                    // counts live panes, not those, so open-and-exit in a loop
+                    // Destroyed as well as forgotten: `PtyBackend` leaves pane
+                    // removal to its caller, so a pane that ended on its own
+                    // would otherwise keep its entry, its PTY master, and its
+                    // child handle for the hub's whole life. The cap counts
+                    // live panes, not those, so open-and-exit in a loop
                     // accumulated descriptors with nothing to stop it.
                     BackendEvent::Exited { pane } => {
                         modes.forget(pane);
@@ -205,11 +206,11 @@ impl TerminalHub {
                 }
             }
 
-            // A program killed inside a synchronized update never closes it, and
-            // the pane it leaves behind never produces enough to close it at the
-            // processor's buffer cap either. Ended here on the clock, so a grid
-            // no byte will ever release stops holding the pane's modes and every
-            // snapshot taken from it.
+            // A program killed inside a synchronized update never closes it,
+            // and the pane it leaves behind never produces enough to close it
+            // at the processor's buffer cap either. Ended on the clock, so a
+            // grid no byte will ever release stops holding the pane's modes
+            // and every snapshot taken from it.
             for (pane, observed) in modes.settle_sync(Instant::now()) {
                 let alt = observed.modes.alt_screen;
                 self.store_settled(pane, observed);
@@ -251,8 +252,8 @@ impl TerminalHub {
         }
 
         // Ahead of the panes: a plugin child is not one of `PtyBackend`'s panes,
-        // so this is the only place it is ever reaped, and telling it to stop
-        // before its panes disappear beneath it is the courteous order.
+        // so this is the only place it is ever reaped, and it must be told to
+        // stop before its panes disappear beneath it.
         plugins.shutdown();
 
         let ids: Vec<PaneId> = self
@@ -268,15 +269,14 @@ impl TerminalHub {
         }
         // Drop the pane records too: the hub struct can outlive its worker
         // behind an `Arc`, and a late `connect` must not replay these now-dead
-        // terminals. The zoom goes with them — it names one of these panes, and
-        // nothing may be left holding a name for a pane that is gone.
+        // terminals. The zoom goes with them — it names one of these panes.
         //
-        // Announced rather than dropped in silence, because `connect`'s guard
-        // against replaying them cannot be airtight: a connection that took the
-        // state lock first read `stop` before it was set, and by the time this
-        // runs it has already been handed every pane. Telling it here is what
-        // closes that window from the other side — the guard keeps the common
-        // case cheap, and this makes the outcome correct either way.
+        // Announced rather than dropped in silence: `connect`'s guard against
+        // replaying them cannot be airtight — a connection that took the state
+        // lock first read `stop` before it was set, and has already been handed
+        // every pane. This closes that window from the other side; the guard
+        // keeps the common case cheap and this makes the outcome correct
+        // either way.
         let mut state = self.state.lock().expect("terminal state poisoned");
         let gone: Vec<PaneId> = state.panes.iter().map(|p| p.id).collect();
         state.panes.clear();

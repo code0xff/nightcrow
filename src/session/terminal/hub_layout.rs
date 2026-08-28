@@ -17,25 +17,38 @@ impl TerminalHub {
         client: u64,
         connection: u64,
     ) {
-        // Validate before the ownership lookup, with neither lock held across
-        // the other: `connect` takes the hub state and then ownership. Besides
-        // dropping an ordinary close race, this bounds the latest-value map to
-        // live panes even when a client sends arbitrary ids.
-        if !self.pane_is_live(pane) || !self.owns_size(connection) {
+        // Validate without holding the hub state lock: `connect` takes it before
+        // ownership, while this path takes the resize queue before ownership.
+        // Besides dropping an ordinary close race, this bounds the latest-value
+        // map to live panes even when a client sends arbitrary ids.
+        if !self.pane_is_live(pane) {
             return;
         }
+        let mut pending = self
+            .pending_resizes
+            .lock()
+            .expect("terminal resize queue poisoned");
+        // Checked while holding the queue lock so `disconnect` cannot purge and
+        // then have this request inserted behind it.
+        if !self.owns_size(connection) {
+            return;
+        }
+        pending.insert(
+            (connection, pane),
+            PendingResize {
+                pane,
+                rows,
+                cols,
+                client,
+            },
+        );
+    }
+
+    pub(super) fn discard_pending_resizes(&self, connection: u64) {
         self.pending_resizes
             .lock()
             .expect("terminal resize queue poisoned")
-            .insert(
-                (connection, pane),
-                PendingResize {
-                    pane,
-                    rows,
-                    cols,
-                    client,
-                },
-            );
+            .retain(|(queued_connection, _), _| *queued_connection != connection);
     }
 
     pub(super) fn take_pending_resizes(&self) -> Vec<PendingResize> {
@@ -63,11 +76,11 @@ impl TerminalHub {
     /// Resize a live pane's PTY at the sizing owner's request, record the size,
     /// and tell every client what it is. All under one lock, with the liveness
     /// check — `connect` reports each pane's size from this record and the
-    /// client caches it as "already applied"; a client that slipped between the
-    /// two would be told the old size for a PTY that has the new one, and would
-    /// then skip the resize that would have corrected it.
-    /// `modes` is resized with the PTY: the grid a connecting client's screen is
-    /// read from has to wrap where the child now does (see
+    /// client caches it as "already applied"; a client that slipped between
+    /// the two would be told the old size for a PTY that has the new one, and
+    /// would then skip the resize that would have corrected it. `modes` is
+    /// resized with the PTY: the grid a connecting client's screen is read
+    /// from has to wrap where the child now does (see
     /// [`hub_modes`](super::hub_modes)).
     pub(super) fn resize_pane(
         &self,
@@ -137,15 +150,11 @@ impl TerminalHub {
     /// Reorder the live panes to match `order` and tell every client the
     /// result.
     ///
-    /// `order` is a full desired sequence of pane ids. It is reconciled
-    /// against what is actually live so a reorder is robust to races with
-    /// create/close: unknown ids are dropped and any live pane the request
-    /// omits (e.g. one another client created in the same beat) is kept,
-    /// appended in its current order (see [`canonical_order`]). The hub
-    /// converges on that one canonical order and broadcasts it, so the
-    /// sender and every other device end up with the same layout. Reordering
-    /// only restyles the grid — pane ids, scrollback, and the live PTYs are
-    /// untouched. A no-op reorder sends nothing.
+    /// `order` is reconciled against what is actually live so a reorder is
+    /// robust to races with create/close (see [`canonical_order`]). The hub
+    /// converges on that one canonical order and broadcasts it, so the sender
+    /// and every other device end up with the same layout. A no-op reorder
+    /// sends nothing.
     pub(super) fn reorder_panes(&self, order: Vec<PaneId>) {
         let mut state = self.state.lock().expect("terminal state poisoned");
         let before: Vec<PaneId> = state.panes.iter().map(|p| p.id).collect();

@@ -6,17 +6,16 @@
 //! tab does not renumber the others.
 //!
 //! Replacement is atomic and does no blocking work under the lock: the new list
-//! is built, swapped in, and only then are the dropped runtimes stopped — a
+//! is built and swapped in, and only then are the dropped runtimes stopped — a
 //! runtime shutdown joins a thread, and holding the catalog lock across that
 //! would stall every in-flight request.
 //!
 //! **Every path in here is the one `resolve_repo_path` produces**, normalised on
-//! the way in rather than by each caller (see [`Catalog::normalized`]). Two
-//! spellings of one worktree are two strings, and the whole catalog — the served
-//! set, `hidden`, `order` — decides identity by comparing them, so a path that
-//! arrived spelled differently opened a second tab on a repository already open.
-//! Holding the invariant at the boundary is what keeps the next entry point from
-//! having to remember.
+//! the way in rather than by each caller. Two spellings of one worktree are two
+//! strings, and the whole catalog decides identity by comparing them, so a path
+//! that arrived spelled differently opened a second tab on a repository already
+//! open. Holding the invariant at the boundary keeps every entry point from
+//! having to remember it.
 
 use crate::session::StatusEncoder;
 use crate::session::runtime::RepoRuntime;
@@ -75,10 +74,9 @@ impl Catalog {
     /// One worktree's single spelling: what `git` calls the working directory,
     /// or the canonical directory when there is no repository there.
     ///
-    /// Applied to everything entering the catalog. `add_path`'s caller resolves
-    /// too, and doing it twice costs one `discover` on a path a person just
-    /// asked for — cheap next to the alternative, which is this invariant
-    /// depending on every caller having remembered.
+    /// Applied to everything entering the catalog, even though `add_path`'s
+    /// caller resolves too — doing it twice costs one `discover`, cheap next
+    /// to this invariant depending on every caller having remembered.
     fn normalized(path: &str) -> String {
         crate::git::resolve_repo_path(Path::new(path))
             .to_string_lossy()
@@ -92,10 +90,9 @@ impl Catalog {
         let _mutation = self.mutation.lock().expect("catalog mutation poisoned");
         {
             let mut base = self.base.lock().expect("catalog base poisoned");
-            // The one entry point that took paths from outside untouched: a
-            // `--repo` argument and a workspace file hold whatever spelling was
-            // typed or last written, which is not necessarily what a client
-            // opening the same repository will send.
+            // The one entry point taking outside paths untouched: a `--repo`
+            // argument and a workspace file hold whatever spelling was typed or
+            // last written, which is not necessarily what a client sends.
             *base = paths.iter().map(|p| Self::normalized(p)).collect();
         }
         self.rebuild();
@@ -141,10 +138,10 @@ impl Catalog {
     /// re-sync will not bring it back; `rebuild` then stops its runtime and
     /// terminals.
     ///
-    /// A close forgets the slot the repository held, `base` and `order` included.
-    /// Leaving it in either meant [`Catalog::add_path`] found the path already in
-    /// `union_paths` and never appended it, so re-opening put the tab back in the
-    /// middle of the strip rather than at the end where it was just asked for.
+    /// A close forgets the slot the repository held, `base` and `order`
+    /// included. Leaving it in either meant [`Catalog::add_path`] found the
+    /// path already in `union_paths` and never appended it, so re-opening put
+    /// the tab back in the middle of the strip rather than at the end.
     pub fn remove_path(&self, path: &str) {
         let path = &Self::normalized(path);
         let _mutation = self.mutation.lock().expect("catalog mutation poisoned");

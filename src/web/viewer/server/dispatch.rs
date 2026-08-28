@@ -64,12 +64,11 @@ fn handle_connection(mut stream: TcpStream, state: Arc<ViewerState>) {
             return;
         }
         ("GET", "/logout") => {
-            // A real logout is a top-level navigation (the header link, so
-            // `Sec-Fetch-Dest: document`). A framed request here is something
-            // embedded — the HTML preview's sandboxed frame navigating itself —
-            // trying to end the session out from under the person. Refuse it;
-            // absent metadata (an old client) still logs out, which is the
-            // safe direction for a control the person meant to reach.
+            // A real logout is a top-level navigation (the header link). A
+            // framed request here is something embedded — the HTML preview's
+            // sandboxed frame navigating itself — trying to end the session
+            // out from under the person. Refuse it; absent metadata (an old
+            // client) still logs out, which is the safe direction.
             if head.header("sec-fetch-dest") == Some("iframe") {
                 let _ = stream.write_all(&text_response("403 Forbidden", "not from this context"));
                 return;
@@ -170,11 +169,10 @@ fn handle_connection(mut stream: TcpStream, state: Arc<ViewerState>) {
         return;
     }
 
-    // Re-reading config.toml. POST for the same CSRF reasoning as the others, and
-    // the body is ignored: what is read is the file on this machine's disk, so this
-    // cannot be used to hand the session a configuration of the caller's own
-    // making. An authenticated user can already open a shell here, so re-reading a
-    // file they wrote stays within the same trust boundary.
+    // Re-reading config.toml. POST for the same CSRF reasoning as the others,
+    // and the body is ignored: what is read is the file on this machine's
+    // disk, so this cannot hand the session a configuration of the caller's
+    // own making.
     if head.method == "POST" && head.path == "/api/reload" {
         let _ = stream.write_all(&handle_reload_config(&state));
         return;

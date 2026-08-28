@@ -8,7 +8,6 @@ use crate::ui::SearchQuery;
 use std::cell::Cell;
 use std::collections::{BTreeSet, HashMap, HashSet};
 
-/// One flattened, currently-visible tree row.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct VisibleRow {
     pub path: String,
@@ -18,8 +17,8 @@ pub struct VisibleRow {
     pub expanded: bool,
 }
 
-/// One entry in the flat filename-search index. Built when search opens,
-/// discarded when it closes.
+/// Flat filename-search index entry, built when search opens and discarded
+/// when it closes.
 #[derive(Debug, Clone)]
 pub(crate) struct TreeIndexEntry {
     pub path: String,
@@ -50,9 +49,8 @@ pub struct TreeView {
 }
 
 impl TreeView {
-    /// Whether the search overlay is open with a non-empty query. An open
-    /// overlay with an empty query still shows the expansion view so the tree
-    /// does not explode before the user types.
+    /// An open overlay with an empty query still shows the expansion view so
+    /// the tree does not explode before the user types.
     pub fn search_filtering(&self) -> bool {
         self.search_active && !self.search_query.is_empty()
     }
@@ -66,7 +64,6 @@ impl TreeView {
         self.row_width_cache.set(None);
     }
 
-    /// Recompute `show_set`/`match_count` from `index` and the current query.
     /// Each match contributes itself and every ancestor so the filtered view
     /// renders an unbroken path from the root to each hit.
     pub(crate) fn recompute_filter(&mut self) {
@@ -102,7 +99,6 @@ impl TreeView {
         }
     }
 
-    /// Derive the flattened visible rows from the cache and expansion set.
     /// Only expanded, cached directories contribute children, so this never
     /// triggers I/O. While filtering, the row list is restricted to `show_set`.
     pub fn visible_rows(&self) -> Vec<VisibleRow> {
@@ -115,8 +111,7 @@ impl TreeView {
         rows
     }
 
-    /// Filtered variant of `push_children`: include only `show_set` entries,
-    /// rendering every kept directory as expanded so the full path to each
+    /// Renders every kept directory as expanded so the full path to each
     /// match is visible.
     fn push_children_filtered(&self, dir: &str, depth: usize, rows: &mut Vec<VisibleRow>) {
         let Some(children) = self.cache.get(dir) else {
@@ -168,16 +163,14 @@ impl TreeView {
         }
     }
 
-    /// Repo-relative path of the currently selected row, if any. Used to
-    /// persist/restore the cursor across sessions and refreshes.
+    /// Used to persist/restore the cursor across sessions and refreshes.
     pub fn selected_path(&self) -> Option<String> {
         self.visible_rows()
             .get(self.selected)
             .map(|r| r.path.clone())
     }
 
-    /// Clamp `selected` to the row count so a collapse or refresh can never
-    /// leave the cursor past the end.
+    /// So a collapse or refresh can never leave the cursor past the end.
     pub fn clamp_selection(&mut self, row_count: usize) {
         if row_count == 0 {
             self.selected = 0;
@@ -187,16 +180,15 @@ impl TreeView {
     }
 }
 
-/// Parent directory of a repo-relative path, or `None` for a top-level entry
-/// (whose parent is the root, which has no selectable row).
+/// Parent directory of a repo-relative path; `None` for a top-level entry,
+/// whose parent is the root, which has no selectable row.
 pub fn parent_path(path: &str) -> Option<&str> {
     path.rfind('/').map(|i| &path[..i])
 }
 
-/// Whether `rel` is a safe, repo-internal relative path. Paths from normal
-/// navigation always are, but a restored session is read from disk — a
-/// hand-edited `tree_expanded` entry containing `..`, a leading `/`, or a
-/// drive prefix would otherwise let the tree read outside the working tree.
+/// Guards a restored session: it is read from disk, so a hand-edited
+/// `tree_expanded` entry containing `..`, a leading `/`, or a drive prefix
+/// would otherwise let the tree read outside the working tree.
 pub fn is_safe_rel_path(rel: &str) -> bool {
     use std::path::Component;
     !rel.is_empty()

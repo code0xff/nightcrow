@@ -12,19 +12,18 @@ use std::time::{Duration, Instant};
 /// How long an exited pane's slot is kept so a relaunch can still reuse its
 /// token.
 ///
-/// This is a backstop against a plugin that died or lost interest, so it has to
-/// outlast every wait a plugin may legitimately be in the middle of. Providers
-/// quote windows in hours *and* in days — a weekly quota is a real case — so a
-/// value picked around the five-hour window would silently throw the pane's
-/// identity away days before the wait paid off, and the relaunch it was being
-/// kept for would fail. Nine days clears the longest window a bundled plugin
-/// will wait out (`nightcrow-recovery`'s own clamp is eight days) with slack for
-/// a reset that lands late.
+/// A backstop against a plugin that died or lost interest, so it has to
+/// outlast every wait a plugin may legitimately be in the middle of.
+/// Providers quote windows in hours *and* in days — a weekly quota is a real
+/// case — so a value picked around the five-hour window would silently throw
+/// the pane's identity away days before the wait paid off. Nine days clears
+/// the longest window a bundled plugin will wait out
+/// (`nightcrow-recovery`'s own clamp is eight days) with slack.
 ///
-/// Holding it that long is cheap on purpose: a token, a generation and a command
-/// string. The process, its fds and its threads were let go the moment it exited
-/// (see [`PtyBackend::release_process`]), and closing the pane or stopping the
-/// session retires the slot immediately either way.
+/// Holding it that long is cheap on purpose: a token, a generation and a
+/// command string. The process, its fds and its threads were let go the
+/// moment it exited (see [`PtyBackend::release_process`]), and closing the
+/// pane or stopping the session retires the slot immediately either way.
 pub(super) const PENDING_RELAUNCH_TTL: Duration = Duration::from_secs(9 * 24 * 60 * 60);
 
 /// Where a pane sat and what it looked like, captured before it is removed.

@@ -139,10 +139,10 @@ impl RepoRuntime {
     /// status, so a fresh connection renders immediately instead of waiting for
     /// the next change.
     ///
-    /// The first subscriber also starts the watch, and is answered from a reading
-    /// taken here rather than from `latest` — while the watch was off, `latest`
-    /// is whatever was true when the last client left, which on a page opened
-    /// the next morning is not a stale detail but a wrong screen.
+    /// The first subscriber also starts the watch, and is answered from a
+    /// reading taken here rather than from `latest` — while the watch was off,
+    /// `latest` is whatever was true when the last client left, which is a
+    /// wrong screen rather than a stale detail.
     pub fn subscribe(self: &Arc<Self>) -> Subscription {
         let id = self.next_subscriber_id.fetch_add(1, Ordering::AcqRel);
         let slot = Arc::new(Mutex::new(None));
@@ -171,11 +171,11 @@ impl RepoRuntime {
             // Outside the lock, which publishing takes.
             self.read_and_publish();
         }
-        // Whatever the publish did not leave here: a repository unchanged since
-        // the last client left publishes nothing, and this subscriber would
-        // render an empty page until something happened. Read before the slot is
-        // locked, never while — `publish` holds `latest` and reaches for slots,
-        // so taking them the other way round is the two halves of a deadlock.
+        // Whatever the publish did not leave here: a repository unchanged
+        // since the last client left publishes nothing, and this subscriber
+        // would render an empty page until something happened. Read before
+        // the slot is locked, never while — `publish` holds `latest` and
+        // reaches for slots, so the other order is a deadlock.
         let seed = self.latest();
         let mut held = slot.lock().expect("subscriber slot poisoned");
         if held.is_none() {
@@ -193,14 +193,13 @@ impl RepoRuntime {
 
     fn unsubscribe(&self, id: u64) {
         // Under the same hold of the lock as the removal, for the reason given
-        // in `subscribe`: a watch decision taken after letting go of the list can
-        // be overtaken by one taken while holding it.
+        // in `subscribe`: a watch decision taken after letting go of the list
+        // can be overtaken by one taken while holding it.
         let mut subscribers = self.subscribers.lock().expect("subscribers poisoned");
         subscribers.retain(|s| s.id != id);
         if subscribers.is_empty() {
-            // Nobody is reading, so stop walking the tree. What was published
-            // stays in `latest` for anything that asks over REST; the next
-            // subscriber replaces it with a reading before it is served (see
+            // Nobody is reading, so stop walking the tree. The next subscriber
+            // replaces `latest` with a reading before it is served (see
             // `subscribe`).
             self.watch.set_awake(false);
         }

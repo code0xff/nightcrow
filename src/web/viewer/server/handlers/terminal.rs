@@ -15,13 +15,10 @@ const MAX_VIEWER_ID: usize = 64;
 /// itself.
 ///
 /// The page generates this once per tab and sends it on every socket, so its
-/// connections can come and go without the session reading them as somebody new
-/// sitting down.
-///
-/// A boundary input, so it is held to what an id can be: a short run of plain
-/// characters. An id that is missing or malformed gets one of its own rather
-/// than a refusal -- the page still works, it simply behaves as it did before it
-/// could name itself.
+/// connections can come and go without the session reading them as somebody
+/// new sitting down. A missing or malformed id gets one of its own rather
+/// than a refusal — the page still works, it simply behaves as it did before
+/// it could name itself.
 fn browser_viewer(head: &crate::web::common::http::RequestHead) -> ViewerId {
     let named = head.query_param("viewer").filter(|id| {
         !id.is_empty()
@@ -47,18 +44,12 @@ fn anonymous_viewer() -> String {
 
 /// Whether a failed socket operation leaves the connection usable.
 ///
-/// A timeout is not a departure. Both directions carry one -- reads poll at
-/// [`TERM_POLL_TIMEOUT`] so the loop can service the other side, writes get
-/// [`SSE_HEARTBEAT`] so a stalled reader cannot wedge this thread forever -- and
-/// each surfaces as `WouldBlock` on macOS and `TimedOut` on Linux.
-///
-/// The write side counting that as fatal is what made the panel rebuild itself
-/// out of nowhere: a page that stopped reading for fifteen seconds -- a phone
-/// asleep, a tunnel renegotiating, a handover between networks -- had its socket
-/// closed under it, reconnected, and replayed every pane's history from scratch.
-/// tungstenite draws the line in the same place: an `Io` error is fatal "except
-/// for WouldBlock", and the frame that could not go out is held in its write
-/// buffer for the next `write` or `flush` to finish.
+/// A timeout is not a departure: it surfaces as `WouldBlock` on macOS and
+/// `TimedOut` on Linux, and ending the connection there cost a page that
+/// stopped reading for fifteen seconds (a phone asleep, a tunnel
+/// renegotiating) every pane replayed from scratch. tungstenite draws the
+/// same line: an `Io` error is fatal "except for WouldBlock", and the frame
+/// that could not go out stays in its write buffer for the next flush.
 ///
 /// A client that has genuinely stopped keeping up is still cut off — by the
 /// hub, once its queue fills (`broadcast_locked`). That is where the cap
@@ -113,22 +104,20 @@ pub(in crate::web::viewer::server) fn serve_terminal(
         return;
     };
     // `claim` is the page saying a person just opened it, as opposed to a
-    // repository switch or a reconnect. Absent means no -- a socket that does not
-    // say it arrived must not take the sizing off whoever is looking.
+    // repository switch or a reconnect. Absent means no — a socket that does
+    // not say it arrived must not take the sizing off whoever is looking.
     let arriving = head.query_param("claim").as_deref() == Some("1");
     // A second handle, kept by the hub only to end this connection if the page
-    // stops draining its queue: the loop below is then parked in `ws.read()` and
-    // nothing else would wake it. A clone that could not be made costs the hub
-    // that ability and nothing else.
+    // stops draining its queue: the loop below is then parked in `ws.read()`
+    // and nothing else would wake it. A clone that could not be made costs the
+    // hub that ability and nothing else.
     let evict_handle = match evict_handle {
         Ok(handle) => Some(handle),
         Err(err) => {
-            // Degrades to what this did before there was a handle at all: the
-            // client is dropped from the broadcast list but its socket stays
-            // open. Logged rather than passed over, because the page then holds
-            // a panel that has stopped updating and nothing else says so -- and
-            // because a clone that fails means descriptors are exhausted, which
-            // is worth knowing on its own.
+            // Degrades to no handle: the client is dropped from the broadcast
+            // list but its socket stays open. Logged because the page then
+            // holds a panel that has stopped updating and nothing else says
+            // so — and a failed clone means descriptors are exhausted.
             tracing::warn!(%err, "viewer: a terminal socket cannot be cut off if it stalls");
             None
         }
@@ -164,8 +153,8 @@ pub(in crate::web::viewer::server) fn serve_terminal(
                 Ok(()) => unflushed = false,
                 // Stop pulling from the hub while the socket will not take it,
                 // so what is still queued backs up where the cap is: the hub's
-                // own queue, whose overflow is what disconnects a client that
-                // has really stopped keeping up.
+                // own queue, whose overflow disconnects a client that has
+                // really stopped keeping up.
                 Err(err) if stalled_not_gone(&err) => {
                     unflushed = true;
                     break;

@@ -1,8 +1,7 @@
 //! Reading a file's whole contents — from the working tree, or from a commit.
 //!
-//! Separate from `diff_load.rs`, which is about what changed. These answer the
-//! other question a person asks of the same path: not "what moved" but "what
-//! does it say", which is what the viewer switches to from a diff.
+//! Separate from `diff_load.rs`, which is about what changed; these answer the
+//! other question a person asks of the same path: "what does it say".
 
 use super::types::StatusKind;
 use anyhow::{Context, Result};
@@ -76,13 +75,12 @@ pub fn load_commit_file_blob(
 
 /// The file's contents as of `oid`.
 ///
-/// Which side to read is decided here rather than taken from the caller. A path
+/// Which side to read is decided here rather than taken from the caller: a path
 /// deleted in a commit is not in that commit's own tree — its content is in the
 /// parent's — and the repository already knows which case this is.
-/// [`load_commit_file_blob`] is told instead, because the TUI has the status
+/// [`load_commit_file_blob`] is told instead because the TUI has the status
 /// beside the row it is acting on; a request arriving over the wire has no such
-/// thing to be trusted with, and asking for it would add an input to validate
-/// for an answer that can simply be looked up.
+/// thing to be trusted with.
 pub fn load_commit_file(repo: &Repository, oid: Oid, file_path: &str) -> Result<String> {
     let commit = repo.find_commit(oid).context("failed to find commit")?;
     let path = std::path::Path::new(file_path);
@@ -116,10 +114,9 @@ pub fn load_commit_file(repo: &Repository, oid: Oid, file_path: &str) -> Result<
 /// A blob as text, refusing one too large to show *before* it is loaded.
 ///
 /// The size comes from the object database's header rather than from the blob,
-/// because reading the blob is what there is to avoid: a repository can hold an
-/// object larger than this process should hold in memory, and finding that out
-/// from `Blob::content()` means having already paid for it. The working-tree
-/// path guards the same way, off the file's metadata.
+/// because reading the blob is what there is to avoid: finding a too-large
+/// object from `Blob::content()` means having already paid for it. The
+/// working-tree path guards the same way, off the file's metadata.
 fn read_blob(repo: &Repository, oid: Oid) -> Result<String> {
     let odb = repo.odb().context("failed to open the object database")?;
     let (size, _) = odb

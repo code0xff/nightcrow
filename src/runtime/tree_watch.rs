@@ -15,9 +15,8 @@ use std::sync::mpsc::{self, Receiver, TryRecvError};
 use std::time::Duration;
 
 /// Coalescing window for filesystem events. Long enough to batch the burst a
-/// single `git`/editor/agent operation produces into one refresh, short enough
-/// to feel live. Sits between nvim-tree (50 ms) and gitui (2 s); broot uses
-/// 500 ms.
+/// single `git`/editor/agent operation produces into one refresh, short
+/// enough to feel live.
 const DEBOUNCE: Duration = Duration::from_millis(300);
 
 /// Owns the debounced filesystem watcher and the set of currently watched
@@ -30,7 +29,6 @@ const DEBOUNCE: Duration = Duration::from_millis(300);
 /// In tests (and when the watcher fails to start) `debouncer` is `None`: the
 /// receiver still exists so `App` polling is uniform, and watch/unwatch calls
 /// become no-ops.
-/// What changed since the last poll.
 #[derive(Debug, Default, PartialEq, Eq)]
 pub struct TreeChanges {
     /// Repo-relative directories whose contents changed. A file event is

@@ -17,15 +17,10 @@ impl TerminalHub {
     ///
     /// Per live pane: a `Created`, the modes its program has set
     /// ([`PaneModes::prelude`](crate::runtime::emulator::PaneModes::prelude)), and
-    /// then that pane's screen — its recorded bytes anchored to the serialized
-    /// screen they build on, or for a program drawing on the alternate screen
-    /// that serialized screen and what is owed on top of it (see
-    /// [`replay_pane`]). Done under the state lock so this snapshot cannot
-    /// interleave with the worker's append-and-broadcast (see
-    /// [`Shared`](super::hub_helpers::Shared)); the client therefore receives every
-    /// pane's screen exactly once and in order ahead of the live stream. A fresh
-    /// hub (e.g. after a server restart) has no panes, so a reconnecting client
-    /// correctly comes back to an empty panel.
+    /// then that pane's screen (see [`replay_pane`]). Done under the state lock
+    /// so this snapshot cannot interleave with the worker's append-and-broadcast;
+    /// the client therefore receives every pane's screen exactly once and in
+    /// order ahead of the live stream.
     ///
     /// `viewer` names who this connection belongs to and `arriving` says whether
     /// a person just sat down at it — a page opening rather than a repository
@@ -63,18 +58,16 @@ impl TerminalHub {
             let _ = tx.try_send(TerminalFrame::Control(json));
         }
         if replaying {
-            // Ahead of the panes, though it names one of them. A client holds
-            // its outbound resize until the layout stops moving, and replaying
-            // several panes' histories can outlast that wait — so a page that
-            // learned the zoom last could settle on the grid, size every PTY to
-            // a cell, and then resize them all again when the zoom arrived.
-            // That is two SIGWINCH repaints for every client, which is the cost
-            // `Created` carrying its pane's size exists to avoid.
+            // Ahead of the panes, though it names one of them. Replaying
+            // several panes' histories can outlast a client's wait for the
+            // layout to stop moving, so a page that learned the zoom last
+            // would settle on the grid, size every PTY to a cell, and then
+            // resize them all again — two SIGWINCH repaints per client, the
+            // cost `Created` carrying its pane's size exists to avoid.
             //
-            // Safe in this order because the panel derives what it renders from
-            // the pane list it has: a zoom naming a pane not delivered yet
-            // simply does not apply until that pane arrives. Sent only when
-            // something is zoomed — nothing zoomed is where a client starts.
+            // Safe in this order: a zoom naming a pane not delivered yet does
+            // not apply until that pane arrives. Sent only when something is
+            // zoomed — nothing zoomed is where a client starts.
             if let Some(pane) = state.zoomed
                 && let Ok(json) = serde_json::to_string(&ServerMessage::Zoomed { pane: Some(pane) })
             {
@@ -99,11 +92,9 @@ impl TerminalHub {
                     "viewer: replaying a pane's record"
                 );
                 if !replay_pane(&tx, pane) {
-                    // The queue is this client's own and empty until now, and a
-                    // whole replay of the largest panes allowed fits it (see
-                    // `REPLAY_CHUNK_BYTES`) -- so this is a broken assumption
-                    // rather than a busy moment, and the client is left showing a
-                    // screen with a hole in it that nothing else would explain.
+                    // The queue is this client's own and empty until now, and
+                    // a whole replay of the largest panes allowed fits it —
+                    // so this is a broken assumption, not a busy moment.
                     tracing::warn!(
                         pane = pane.id,
                         client = id,
@@ -177,11 +168,10 @@ impl TerminalHub {
     /// Unregister a session that is going away.
     ///
     /// `connection` comes from the session rather than from the client record,
-    /// because the record may already be gone: every eviction path removes it
-    /// the moment the client stops keeping up. Reading the registration out of
-    /// the list meant an evicted client never released the sizing — it stayed
-    /// present forever, so a viewer that had it kept it after its page had
-    /// closed and no other screen could take it back.
+    /// which may already be gone: every eviction path removes it the moment
+    /// the client stops keeping up. Reading the registration out of the list
+    /// meant an evicted client never released the sizing — no other screen
+    /// could take it back after its page had closed.
     pub(super) fn disconnect(&self, id: u64, connection: u64) {
         self.state
             .lock()
@@ -193,5 +183,9 @@ impl TerminalHub {
         // — `leave` ignores a connection it does not know, which is the case
         // when this runs twice for one session.
         self.ownership.leave(connection, Instant::now());
+        // After `leave`: `queue_resize` checks ownership while holding this
+        // queue's lock, so a racing request is either inserted before this
+        // purge or rejected after the connection is no longer registered.
+        self.discard_pending_resizes(connection);
     }
 }

@@ -115,9 +115,8 @@ pub(in crate::web::viewer::server) fn handle_set_prefs(body: &str, state: &Viewe
     };
 
     // The project in front is shared, so a write that changes it re-points
-    // every open page — and two pages tugging it back and forth would show
-    // here as alternating switches. No-op writes (a page confirming what is
-    // already in front) stay silent.
+    // every open page — two pages tugging it back and forth would show here
+    // as alternating switches. No-op writes stay silent.
     if let Some(path) = &active_path {
         let before = state.session.prefs().get().active_repo;
         if before.as_deref() != Some(path.as_str()) {
@@ -160,15 +159,13 @@ pub(in crate::web::viewer::server) fn handle_set_prefs(body: &str, state: &Viewe
     )
 }
 
-/// Turn a client's view into the form the prefs file keeps: its repo id becomes
-/// the path that file is keyed by, and the names it carries have to be ones this
-/// build knows.
+/// Turn a client's view into the form the prefs file keeps: its repo id
+/// becomes the path that file is keyed by, and the names it carries have to
+/// be ones this build knows.
 ///
-/// Paths are not checked here. They are checked where they are stored
-/// (`prefs::repo_view`), which is the door the file itself also comes through —
-/// a second check here would be a second place for the rule to drift. What is
-/// answered instead is what the store cannot express: a project that is not
-/// served, and a tab or a face this build has no name for.
+/// Paths are not checked here — they are checked where they are stored
+/// (`prefs::repo_view`), the door the file itself also comes through; a
+/// second check here would be a second place for the rule to drift.
 fn resolve_view(request: ViewRequest, state: &ViewerState) -> Result<RepoView, Vec<u8>> {
     let Some(entry) = state.session.catalog().get(&request.repo) else {
         return Err(json_error("400 Bad Request", "unknown repo"));

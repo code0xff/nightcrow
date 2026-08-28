@@ -7,23 +7,19 @@
 //!
 //! **Why this is the session's and not each hub's.** Which repository is in
 //! front is shared by the whole session, so "which screen is this session fitted
-//! to" is one question, not one per repository. Asked per hub, it was re-answered
-//! from scratch on every switch — a browser's terminal socket is tied to the
-//! repository it shows, so moving tabs made every attached page reconnect at once
-//! and the sizing fell to whichever handshake finished last.
+//! to" is one question. Asked per hub, it was re-answered on every switch —
+//! moving tabs made every attached page reconnect at once and the sizing fell
+//! to whichever handshake finished last.
 //!
 //! **A viewer is not a connection.** A socket opens for reasons that are not a
-//! person sitting down: a repository switch, a page reload, a network blip. So a
-//! viewer names itself ([`ViewerId`]) and says outright whether it is newly
-//! arrived; the session never infers it. Connections come and go beneath a
-//! viewer without moving anything.
+//! person sitting down: a repository switch, a page reload, a network blip. So
+//! a viewer names itself ([`ViewerId`]) and says outright whether it is newly
+//! arrived; connections come and go beneath a viewer without moving anything.
 //!
-//! **Unowned means empty.** The sizing has no owner only while nobody is here:
-//! there is no screen to fit, so the panes keep the size they have. The moment
-//! a viewer is present, one of them owns it. A session with a person in it and
-//! nobody sizing for them is not a state worth having — it renders their panes
-//! at a departed screen's size and makes them press the fit button to undo it,
-//! which is what a phone did every time it woke up.
+//! **Unowned means empty.** The sizing has no owner only while nobody is here.
+//! A session with a person in it and nobody sizing for them renders their panes
+//! at a departed screen's size — the state a phone produced every time it woke
+//! up.
 //!
 //! This file is the facade — locking, and the contract each caller sees. The
 //! rules themselves live with the state they read, in [`state`].
@@ -42,10 +38,10 @@ use state::Inner;
 
 /// How long the sizing is held for an owner that has no connection left.
 ///
-/// Switching repositories closes one terminal socket and opens another, and for
-/// the moment in between the owner is not connected to anything. Handing the
-/// sizing away there and back again would re-fit every pane twice for a viewer
-/// that never went anywhere. Only the *release* is delayed; nothing claims by
+/// Switching repositories closes one terminal socket and opens another, and
+/// for the moment in between the owner is connected to nothing. Handing the
+/// sizing away there and back would re-fit every pane twice for a viewer that
+/// never went anywhere. Only the *release* is delayed; nothing claims by
 /// waiting.
 pub const RELEASE_GRACE: Duration = Duration::from_secs(2);
 

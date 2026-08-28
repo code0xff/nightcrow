@@ -62,17 +62,12 @@ fn plain_host(host: &str) -> bool {
 /// Serve a built asset, falling back to `index.html` so client-side routes and
 /// a bare `/` both load the app.
 ///
-/// `host` is the request's `Host` header, which scopes the CSP's socket
-/// sources (see [`csp`]).
-///
-/// A miss is split by whether the request names a file. An extensionless path is
-/// a client-side route and gets the app shell; a path that names a file (has an
-/// extension) is a real asset miss and gets a 404. The shell fallback must not
-/// cover the second case: handing `index.html` back for a missing `.svg`/`.js`
-/// serves HTML under an image or module request, which then fails silently —
-/// a stale embedded build made the header/splash crow render as a blank accent
-/// tile exactly this way (`/crow-mono.svg` missing → HTML → the `<img>` shows
-/// nothing). A loud 404 surfaces the missing asset instead.
+/// A miss is split by whether the request names a file. An extensionless path
+/// is a client-side route and gets the app shell; a path naming a file is a
+/// real asset miss and gets a 404. Handing `index.html` back for a missing
+/// `.svg`/`.js` serves HTML under an image or module request, which fails
+/// silently — a stale embedded build once rendered the header/splash as a
+/// blank accent tile exactly this way. A loud 404 surfaces it instead.
 pub fn serve(path: &str, host: Option<&str>) -> Option<Vec<u8>> {
     let csp = csp(host);
     let headers = [
@@ -91,10 +86,9 @@ pub fn serve(path: &str, host: Option<&str>) -> Option<Vec<u8>> {
     }
 
     // `rust_embed` resolves names against the embedded map, so a `..` in the
-    // request simply misses; there is no filesystem lookup to escape.
-    // rust-embed carries the guessed type alongside the bytes, so the content
-    // type comes from the same lookup that found the file — they cannot
-    // disagree, which matters when the CSP refuses a mistyped script.
+    // request simply misses; there is no filesystem lookup to escape. The
+    // guessed mimetype travels with the bytes, so content type and file
+    // cannot disagree — which matters when the CSP refuses a mistyped script.
     if let Some(file) = Assets::get(candidate) {
         return Some(http::response(
             "200 OK",
@@ -130,19 +124,14 @@ const BUILD_META: &str = "nightcrow-build";
 
 /// The app shell, carrying the id of the build it is part of.
 ///
-/// Stamped rather than left to the client to work out, because what the page
-/// needs is the build **it** is running, and the only moment that is certain is
-/// the one it is handed over. Inferring it from the first API response it
-/// happens to get is wrong for a tab that sits on the login screen across a
-/// rebuild: the build it adopts is then the new one, and it never learns it is
-/// running the old.
+/// Stamped rather than left to the client to work out: what the page needs is
+/// the build **it** is running, and the only moment that is certain is the one
+/// it is handed over. Inferring it from the first API response is wrong for a
+/// tab sitting on the login screen across a rebuild.
 ///
-/// The id names the stored file, not these bytes — the stamp is derived from
-/// what it is stamped into, so it cannot also be part of it.
 /// One read, not two: a debug server reads `dist` from disk, so reading the
 /// bytes and then asking [`build_id`] again could stamp the build that landed
-/// in between onto the document that preceded it — a page that would then
-/// believe it was current for as long as it stayed open.
+/// in between onto the document that preceded it.
 fn shell(headers: &[(&str, &str)]) -> Option<Vec<u8>> {
     let file = Assets::get(SHELL)?;
     let id = id_of(file.metadata.sha256_hash());
@@ -181,22 +170,18 @@ const BUILD_ID_BYTES: usize = 4;
 /// Names the built frontend this server is serving.
 ///
 /// The hash of `index.html`, because that file names the code: every chunk and
-/// stylesheet Vite emits carries a content hash in its filename, so a change to
-/// any of them changes a name in the shell. A page can compare what it was
-/// served against what the server has now and offer a reload.
-///
-/// What that leaves out is `public/`, which is copied under fixed names — an
-/// icon or the manifest can change without moving this. Deliberately: what the
-/// comparison is for is a page running code the server has replaced, and a file
-/// nothing imports cannot put a page in that state.
+/// stylesheet Vite emits carries a content hash in its filename, so a change
+/// to any of them changes a name in the shell. What that leaves out is
+/// `public/`, copied under fixed names — deliberately, since a file nothing
+/// imports cannot put a page in the replaced-code state this exists to
+/// report.
 ///
 /// Read per call rather than held: only a release build embeds `dist`, and a
 /// debug server reads it from disk — a rebuild under a running daemon is
 /// exactly the case this exists to report.
 ///
-/// `None` when the shell is missing, which is a build that cannot load at all.
-/// Saying nothing is the honest answer there; a placeholder would be a build id
-/// that never changes.
+/// `None` when the shell is missing: a build that cannot load at all, where
+/// saying nothing beats a placeholder id that never changes.
 pub fn build_id() -> Option<String> {
     Some(id_of(Assets::get(SHELL)?.metadata.sha256_hash()))
 }

@@ -73,10 +73,9 @@ pub fn load_commit_log_from(
 
 /// Render a commit oid as the conventional 7-character abbreviated form.
 ///
-/// Previously used `repo.find_object(...).short_id()`, which computes the
-/// minimum unique prefix at O(log n) ODB lookups per commit. git's own default
-/// `core.abbrev` is 7, so a fixed 7-char prefix matches the familiar form
-/// while making this O(1).
+/// A fixed 7-char prefix matches git's own default `core.abbrev`; the previous
+/// `repo.find_object(...).short_id()` computed the minimum unique prefix at
+/// O(log n) ODB lookups per commit, while this is O(1).
 pub(crate) fn short_oid(oid: Oid) -> String {
     let s = oid.to_string();
     s.get(..7).unwrap_or(&s).to_string()
@@ -103,9 +102,9 @@ pub fn head_commit_oid(repo: &Repository) -> Result<Option<Oid>> {
 
 pub(crate) fn is_empty_head(err: &git2::Error) -> bool {
     // libgit2 reports "reference 'refs/heads/<branch>' not found" for empty
-    // repos with a class of Reference but a generic error code, so we keep
-    // the message fallback. libgit2 does not localize internal messages, so
-    // the match is portable.
+    // repos with a class of Reference but a generic error code, so the message
+    // fallback stays; libgit2 does not localize internal messages, so the
+    // match is portable.
     let missing_head_reference =
         err.class() == git2::ErrorClass::Reference && err.message().contains("not found");
 

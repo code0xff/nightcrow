@@ -89,23 +89,19 @@ const MAX_RESUME_ARGS: usize = 6;
 /// Longest single resume argument. Comfortably past a UUID or a session name.
 const MAX_RESUME_ARG_LEN: usize = 256;
 
-/// Characters a resume argument may consist of.
-///
-/// Deliberately narrower than "anything the shell can be made to swallow": the
-/// argument is appended to a command line that a login shell parses, so a value
-/// carrying a space, quote, backtick, `$`, or `;` is refused outright rather
-/// than escaped differently by every supported shell.
+/// Characters a resume argument may consist of. Deliberately narrower than
+/// "anything the shell can be made to swallow": the argument lands on a command
+/// line a login shell parses, so a value carrying a space, quote, backtick,
+/// `$`, or `;` is refused outright rather than escaped per shell.
 fn is_safe_arg_char(c: char) -> bool {
     c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-' | ':' | '/' | '=' | '@' | '+')
 }
 
-/// Build the command line for a relaunch.
-///
-/// `allowed_flags` is the plugin's declared list from config. The first token
-/// (flag or subcommand) and every option-like token must appear there. Values
-/// following an approved control token remain provider data such as a session
-/// id. This lets the core refuse an unapproved relaunch mode without knowing a
-/// particular CLI's grammar.
+/// Build the command line for a relaunch. The first token and every
+/// option-like token must be in `allowed_flags` (the plugin's declared list
+/// from config); values following an approved control token stay provider
+/// data. This lets the core refuse an unapproved relaunch mode without
+/// knowing a particular CLI's grammar.
 pub fn resume_command_line(
     base: Option<&str>,
     resume_args: &[String],

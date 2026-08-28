@@ -1,41 +1,31 @@
 //! What state each pane's program has put its terminal into, and what it calls
 //! itself.
 //!
-//! A client that attaches to a pane mid-session is replayed a window of the
-//! pane's output, and the bytes that set the pane's modes are almost never in it
-//! — a program announces them once, at startup, and the ring has long since
-//! evicted that. So the hub follows them here and hands a connecting client the
-//! answer directly (see `PaneModes::prelude`).
-//!
-//! A window title has exactly that shape too, which is why it is followed here
-//! rather than left to each client. A program sets it once with an OSC 0/2 that
-//! is out of the ring within seconds, so a page that connected later, or
-//! reconnected after a stall, had no way to learn it and fell back to a
-//! positional label — the pane running an agent read `term 1` for the rest of
-//! the session.
+//! A client attaching mid-session is replayed a window of output that almost
+//! never contains the bytes that set the pane's modes — a program announces
+//! them once, at startup, and the ring has long since evicted that. The hub
+//! follows them here and hands a connecting client the answer directly. A
+//! window title has exactly that shape too, so it is followed here rather than
+//! left to each client: a page that connected later had no way to learn it and
+//! fell back to a positional label.
 //!
 //! Kept on the worker thread rather than in [`Shared`](super::Shared): a
 //! `PaneEmulator` holds `Rc`, so it is not `Send` and cannot live behind the
-//! state mutex. What crosses the lock is what the worker writes into `PaneState`
-//! after each chunk — the flag set, and whenever a pane's record asks for one
-//! the serialized screen (see [`PaneModeTracker::snapshot`]).
+//! state mutex.
 //!
-//! **The grid is read, so resizes have to be followed.** These emulators used to
-//! exist only to answer "which modes is this pane in", and their grids were
-//! scratch space for the parser; now `snapshot` reads the cells, so a grid at the
-//! wrong width would parse this pane's output wrapping where the child does not
-//! and hand a connecting client a screen laid out differently from every other
-//! client's. `resize` is what keeps it in step, and `hub_layout::resize_pane` is
-//! the one place that has to call it.
+//! **The grid is read, so resizes have to be followed.** These emulators used
+//! to be scratch space for a mode parser; now `snapshot` reads the cells, so a
+//! grid at the wrong width would wrap output where the child does not and hand
+//! a connecting client a screen laid out differently from every other client's.
+//! `hub_layout::resize_pane` is the one place that has to call `resize`.
 
 use crate::backend::PaneId;
 use crate::runtime::emulator::{PaneEmulator, PaneModes};
 use std::collections::HashMap;
 use std::time::Instant;
 
-/// Scrollback for the tracking emulators: none. A snapshot is the screen, not the
-/// history behind it — the byte ring in `PaneState` is what carries history, and
-/// paying for it twice per pane would buy nothing.
+/// Scrollback for the tracking emulators: none. The byte ring in `PaneState`
+/// carries history; paying for it twice per pane would buy nothing.
 const NO_HISTORY: usize = 0;
 
 /// What one chunk of a pane's output said about it.
@@ -147,10 +137,10 @@ impl PaneModeTracker {
     }
 
     /// Whether this pane's output so far ends with every sequence closed — the
-    /// gate on anchoring a snapshot into its records. A chunk can end
-    /// mid-sequence, and a snapshot spliced in there would hand a reattaching
-    /// client the sequence's tail as ordinary input; the caller defers to the
-    /// next chunk that ends clean instead (see
+    /// gate on anchoring a snapshot into its records. A snapshot spliced in
+    /// mid-sequence would hand a reattaching client the sequence's tail as
+    /// ordinary input; the caller defers to the next chunk that ends clean
+    /// instead (see
     /// [`PaneEmulator::at_boundary`](crate::runtime::emulator::PaneEmulator::at_boundary)).
     /// A pane with no output yet is trivially at one.
     pub(super) fn at_boundary(&self, pane: PaneId) -> bool {

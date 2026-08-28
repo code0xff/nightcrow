@@ -36,23 +36,19 @@ impl TerminalHub {
         let mut held = reserved;
         let mut remaining = panes.into_iter().peekable();
         while let Some(pane) = remaining.next() {
-            // Spend this pane's own reservation first, so the
-            // check below sees the slot it is about to take as
-            // free rather than as still held for itself.
+            // Spend this pane's own reservation first, so the cap check below
+            // sees the slot it is about to take as free rather than as still
+            // held for itself. The reservation decides who gets a slot, not
+            // how many exist — a set larger than what was free at claim time
+            // comes up short here rather than overrunning the ceiling.
             if held > 0 {
                 self.release_reserved(1);
                 held -= 1;
             }
-            // The cap still binds. The reservation decides who
-            // gets a slot, not how many exist — a set larger
-            // than what was free at claim time comes up short
-            // here rather than overrunning the ceiling.
             if !self.has_free_slot() {
-                // Name what did not start. The set is spent
-                // once claimed, so these will not run until
-                // the hub restarts — the user has to open them
-                // by hand, and cannot do that without knowing
-                // which ones they were.
+                // Name what did not start. The set is spent once claimed, so
+                // these will not run until the hub restarts, and the user
+                // cannot open them by hand without knowing which they were.
                 let mut lost = vec![startup_label(&pane)];
                 lost.extend(remaining.map(|p| startup_label(&p)));
                 self.send_error_to(
@@ -62,11 +58,9 @@ impl TerminalHub {
                 break;
             }
             match backend.open_pane(pane.size.rows, pane.size.cols, pane.command.as_deref()) {
-                // Registered as nobody's: the configured
-                // terminals belong to the session, not to
-                // whichever client happened to measure them
-                // first, so they must not pull that client's
-                // focus onto them.
+                // Registered as nobody's: the configured terminals belong to
+                // the session, not to whichever client happened to measure
+                // them first, so they must not pull that client's focus.
                 Ok(id) => {
                     self.register_pane(
                         id,
@@ -76,10 +70,10 @@ impl TerminalHub {
                         pane.title.clone(),
                     );
                     // Only here, and only from the pane's own configuration:
-                    // this is the single place a pane ever becomes visible to a
-                    // plugin. `adopt` refuses when the named plugin has no live
-                    // host, so a pane whose plugin failed to launch stays an
-                    // ordinary terminal.
+                    // this is the single place a pane ever becomes visible to
+                    // a plugin. `adopt` refuses when the named plugin has no
+                    // live host, so a pane whose plugin failed to launch stays
+                    // an ordinary terminal.
                     if let Some(name) = pane.plugin.as_deref()
                         && plugins.adopt(id, name)
                     {

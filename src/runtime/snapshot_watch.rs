@@ -186,8 +186,7 @@ fn matters(repo: Option<&git2::Repository>, roots: &Roots, path: &Path) -> bool 
         return true;
     };
     // Build output is the loudest thing in a working tree and the one thing git
-    // has been told to disregard: a `cargo build` writes thousands of files that
-    // cannot appear in a status. Skipping them is what makes this worth having.
+    // has been told to disregard: skipping it is what makes this worth having.
     //
     // A tracked file inside an ignored directory (added with `-f`) is the case
     // this skips wrongly. The idle read is what still catches it.
@@ -197,16 +196,13 @@ fn matters(repo: Option<&git2::Repository>, roots: &Roots, path: &Path) -> bool 
 /// Whether a change at `inside` — a path relative to a git directory — could
 /// change what a status says.
 ///
-/// **Top level only, on purpose.** A submodule keeps a git directory of its own
-/// under `modules/<name>/`, and the same churn happens there, so extending the
-/// rule to those is tempting. It cannot be done from the path: a submodule's
-/// name is its path in the tree, slashes and all, so `modules/foo/objects/HEAD`
-/// is the `HEAD` of a submodule at `foo/objects` and the objects directory of
-/// one at `foo` — and there is no counting of components that tells them apart.
-/// Guessing costs a real change dropped in one direction and nothing gained in
-/// the other, while admitting them all costs at most one extra read per second
-/// during a submodule fetch, which is what the reader cost before it watched
-/// anything.
+/// **Top level only, on purpose.** Extending the rule to submodules
+/// (`modules/<name>/`) is tempting but cannot be done from the path: a
+/// submodule's name is its path in the tree, so `modules/foo/objects/HEAD` is
+/// ambiguous between the `HEAD` of a submodule at `foo/objects` and the objects
+/// directory of one at `foo`. Guessing costs a real change dropped; admitting
+/// them all costs at most one extra read per second during a submodule fetch,
+/// which is what the reader cost before it watched anything.
 fn git_metadata_matters(inside: &Path) -> bool {
     // Objects and reflogs churn on every commit and every fetch, and neither
     // changes a status by itself — the index or ref update that comes with them

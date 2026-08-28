@@ -15,22 +15,20 @@ const LEAVE_ALT_SCREEN: &[u8] = b"\x1b[?1049l";
 /// Largest payload one replay frame carries.
 ///
 /// **Frame boundaries mean nothing to a client.** It concatenates what arrives
-/// into its emulator, whose parser is a state machine that spans writes, so a
-/// sequence or a multi-byte character split across two frames is reassembled the
-/// same as if it had come in one. Splitting is therefore free.
+/// into its emulator, whose parser spans writes, so a sequence split across
+/// two frames is reassembled the same as if it had come in one — splitting is
+/// free.
 ///
 /// A single frame, on the other hand, does have a ceiling: the daemon socket
 /// refuses a payload over [`MAX_FRAME_BYTES`](crate::daemon::frame::MAX_FRAME_BYTES)
-/// (4 MiB), and unlike the byte ring an alternate-screen pane's screen grows with
-/// its area — a large pane covered in per-cell colour, which a truecolour image
-/// renderer produces, reaches several megabytes. Sent whole it ended the attach
-/// connection, and again on every reconnect, because the same screen was replayed
-/// each time. Nobody transmits a screen as one indivisible message: VS Code's
-/// replay is a list of entries, tmux writes to a passed file descriptor, and
-/// mosh's datagrams cannot hold a screen at all.
+/// (4 MiB), and an alternate-screen pane's screen grows with its area — a large
+/// truecolour pane reaches several megabytes. Sent whole it ended the attach
+/// connection, and again on every reconnect. Nobody transmits a screen as one
+/// indivisible message: VS Code's replay is a list of entries, tmux writes to a
+/// passed file descriptor, and mosh's datagrams cannot hold a screen at all.
 ///
-/// 1 MiB stays well under that ceiling while keeping the frame count low enough
-/// that a whole replay of the largest panes this hub allows fits in
+/// 1 MiB stays well under that ceiling while keeping the frame count low
+/// enough that a whole replay of the largest panes this hub allows fits in
 /// [`CLIENT_QUEUE_DEPTH`](super::CLIENT_QUEUE_DEPTH) — which is what makes it
 /// safe to queue the replay before the client is registered, with nothing else
 /// writing to that queue.
@@ -104,16 +102,17 @@ pub(super) fn replay_pane(tx: &SyncSender<TerminalFrame>, pane: &PaneState) -> b
     // Ahead of the screen: these are the modes the pane's program set once, at
     // startup, and no record of them survives in what follows. Without this a
     // reattaching client is a terminal the program never configured — mouse
-    // reporting off, arrows in the wrong encoding, paste unbracketed. It leads
-    // with `1049`, so it is also what puts the client on the buffer the program is
-    // drawing on before that buffer's contents arrive.
+    // reporting off, arrows in the wrong encoding, paste unbracketed. It
+    // leads with `1049`, so it is also what puts the client on the buffer the
+    // program is drawing on before that buffer's contents arrive.
     whole &= send_replay(tx, pane.id, &pane.modes.prelude());
     let data: Vec<u8> = if pane.modes.alt_screen {
         // The screen, then everything broadcast since it was taken — the same
-        // bytes every client already attached has seen. (When an entry snapshot
-        // was deferred, `since` opens with the switch chunk itself, whose
-        // pre-switch text this client plays on the wrong buffer until the next
-        // paint covers it — the price of never splicing into an open sequence.)
+        // bytes every client already attached has seen. (When an entry
+        // snapshot was deferred, `since` opens with the switch chunk itself,
+        // whose pre-switch text plays on the wrong buffer until the next
+        // paint covers it — the price of never splicing into an open
+        // sequence.)
         let mut data = Vec::with_capacity(pane.screen.len() + pane.since.len());
         data.extend_from_slice(&pane.screen);
         data.extend(pane.since.iter().copied());

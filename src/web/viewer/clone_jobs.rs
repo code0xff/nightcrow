@@ -49,12 +49,10 @@ impl CloneJobs {
             return None;
         }
         let id = self.next_id.fetch_add(1, Ordering::Relaxed) + 1;
-        // Evict before inserting so a long-lived server does not accumulate
-        // jobs. The *oldest* finished ones go first — dropping every finished
-        // job at once could take one a client had not read yet, which reads to
-        // that client as "your clone is gone" even though it succeeded.
-        // Running jobs are never evicted: their thread still holds the id and
-        // will write a result to it.
+        // Evict the *oldest finished* jobs first — dropping all at once could
+        // take one a client had not read yet, which reads as "your clone is
+        // gone" even though it succeeded. Running jobs are never evicted:
+        // their thread still holds the id and will write a result to it.
         if jobs.len() >= MAX_RETAINED_JOBS {
             let mut finished: Vec<u64> = jobs
                 .iter()
@@ -84,10 +82,8 @@ impl CloneJobs {
         self.lock().get(&id).cloned()
     }
 
-    /// The job currently running, if any. At most one exists by admission, so
-    /// a client that lost track of its id — a reloaded page, a second tab —
-    /// can ask what to follow instead of being told a clone is already
-    /// running with no way to watch it.
+    /// The job currently running, if any — at most one exists by admission,
+    /// so a client that lost track of its id can ask what to follow.
     pub fn running(&self) -> Option<u64> {
         self.lock()
             .iter()
@@ -96,8 +92,8 @@ impl CloneJobs {
     }
 
     fn lock(&self) -> std::sync::MutexGuard<'_, HashMap<u64, CloneState>> {
-        // A poisoned lock means a panic while holding it. The map is plain data
-        // with no invariant spanning the critical sections, so recovering keeps
+        // A poisoned lock means a panic while holding it, but the map is plain
+        // data with no invariant spanning critical sections — recovering keeps
         // clone tracking usable instead of taking the server down with it.
         self.jobs.lock().unwrap_or_else(|err| err.into_inner())
     }

@@ -6,8 +6,8 @@ use ratatui::{
     widgets::{Paragraph, Wrap},
 };
 
-/// Minimum digits reserved for one line-number column. Keeps the gutter from
-/// twitching between a 1-digit and a 2-digit file.
+/// Minimum digits reserved for one line-number column, so the gutter does not
+/// twitch between a 1-digit and a 2-digit file.
 const MIN_LINENO_DIGITS: usize = 3;
 
 /// One padding space on each side of a number column: it lifts the digits off
@@ -17,7 +17,7 @@ const LINENO_PAD: usize = 2;
 /// Single space separating the old and new columns of the unified gutter.
 const LINENO_GAP: usize = 1;
 
-/// Digits needed to print `max_lineno`, floored at `MIN_LINENO_DIGITS`.
+/// Digits needed to print `max_lineno`, floored at the minimum.
 pub(crate) fn digits_for(max_lineno: usize) -> usize {
     let digits = if max_lineno == 0 {
         1
@@ -30,9 +30,8 @@ pub(crate) fn digits_for(max_lineno: usize) -> usize {
 /// Gutter digit count for a whole loaded diff: the widest line number that
 /// appears on either side of any hunk. Derived from the loaded hunks, never
 /// from the visible window, so scrolling cannot change the gutter width.
-///
-/// Recomputed per frame instead of cached: it is one allocation-free pass over
-/// the same lines `ensure_highlight_cache` already walks for its fingerprint.
+/// Recomputed per frame instead of cached: it is one allocation-free pass
+/// over the same lines `ensure_highlight_cache` already walks.
 pub(crate) fn lineno_digits(hunks: &[DiffHunk]) -> usize {
     let max = hunks
         .iter()
@@ -75,17 +74,13 @@ fn lineno_text(no: Option<u32>) -> String {
 }
 
 /// Render a pinned gutter column and a horizontally scrollable body inside
-/// `inner` (a `Block`'s inner area — draw the block yourself first).
-///
-/// The two are separate `Paragraph`s: `Paragraph::scroll` shifts the whole
-/// line, so a gutter span living in the body's paragraph would slide off the
-/// left edge. Vertical scroll is instead expressed by *which* lines the caller
-/// collected.
-///
+/// `inner` (a `Block`'s inner area — draw the block yourself first). They are
+/// separate `Paragraph`s because `Paragraph::scroll` shifts the whole line, so
+/// a gutter span in the body's paragraph would slide off the left edge;
+/// vertical scroll is instead expressed by *which* lines the caller collected.
 /// With `wrap` set that split is abandoned: a wrapped body line occupies
-/// several screen rows while its gutter line still occupies one, which would
-/// desynchronise every row below it. The number is folded into the body line
-/// instead, where wrapping carries it along.
+/// several screen rows while its gutter line still occupies one, so the number
+/// is folded into the body line instead, where wrapping carries it along.
 pub(crate) fn render_gutter_and_body(
     frame: &mut Frame,
     inner: Rect,
@@ -112,9 +107,8 @@ pub(crate) fn render_gutter_and_body(
     frame.render_widget(Paragraph::new(body).scroll((0, scroll_x)), cols[1]);
 }
 
-/// Prepend each gutter line's spans to the body line it belongs to. The two
-/// vectors are built in lockstep by the callers, so index `i` pairs row `i`; a
-/// body row with no gutter entry simply keeps its own spans.
+/// Prepend each gutter line's spans to the body line it belongs to; the two
+/// vectors are built in lockstep by the callers, so index `i` pairs row `i`.
 fn merge_gutter_into_body<'a>(gutter: Vec<Line<'a>>, body: Vec<Line<'a>>) -> Vec<Line<'a>> {
     let mut gutter = gutter.into_iter();
     body.into_iter()

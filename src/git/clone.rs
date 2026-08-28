@@ -1,9 +1,8 @@
 //! Clone a remote repository by delegating to the `git` binary.
 //!
-//! libgit2 is not used: the vendored build carries no SSH transport, knows
+//! libgit2 is not used: its vendored build carries no SSH transport, knows
 //! nothing of credential helpers or `insteadOf` rewrites, and cannot resolve
-//! `git@host:path` remotes. Delegating to `git` inherits that whole stack.
-//! Nothing here reads stdout — only exit status and stderr-on-failure.
+//! `git@host:path` remotes — delegating to `git` inherits that whole stack.
 
 mod message;
 
@@ -54,9 +53,8 @@ impl CloneUrlError {
 /// Accept `url` as a remote address and return the directory name a clone of it
 /// would create — the same name `git clone <url>` picks.
 ///
-/// Accepted shapes are the [`ALLOWED_SCHEMES`] and scp-like `user@host:path`.
-/// Everything else is rejected, so `ext::`, `file://`, and bare paths never
-/// reach `git`.
+/// Accepted shapes are the [`ALLOWED_SCHEMES`] and scp-like `user@host:path`;
+/// everything else (`ext::`, `file://`, bare paths) is rejected.
 pub fn validate_clone_url(url: &str) -> Result<String, CloneUrlError> {
     let url = url.trim();
     if url.is_empty() {
@@ -157,8 +155,7 @@ pub fn git_available() -> bool {
 /// The URL is an argv item behind `--`, never a shell word, so no quoting or
 /// escaping question arises; [`validate_clone_url`] has already ruled out the
 /// schemes that would make argv placement insufficient. On failure the error
-/// carries the actionable part of git's stderr, which is what tells the user
-/// "repository not found" or "permission denied".
+/// carries the actionable part of git's stderr.
 pub fn run_clone(url: &str, dest: &Path) -> anyhow::Result<()> {
     let mut child = Command::new("git")
         // Without this a remote that wants credentials makes git open
@@ -173,11 +170,11 @@ pub fn run_clone(url: &str, dest: &Path) -> anyhow::Result<()> {
             "GIT_SSH_COMMAND",
             "ssh -o ConnectTimeout=30 -o ServerAliveInterval=30 -o ServerAliveCountMax=4",
         )
-        // A rate floor rather than a wall clock: a wall-clock bound cannot
-        // tell a large repository (legitimately many minutes) from a dead
-        // connection, while a floor at least scales with what is arriving.
-        // It is a policy threshold, not a liveness proof — a genuine transfer
-        // that sits under 1 KiB/s for 60 s is cut too, which is the trade.
+        // A rate floor rather than a wall clock: a wall-clock bound cannot tell
+        // a large repository (legitimately many minutes) from a dead connection,
+        // while a floor scales with what is arriving. It is a policy threshold,
+        // not a liveness proof — a genuine transfer under 1 KiB/s for 60 s is
+        // cut too, which is the trade.
         .arg("-c")
         .arg("http.lowSpeedLimit=1024")
         .arg("-c")

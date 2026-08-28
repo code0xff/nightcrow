@@ -8,12 +8,11 @@
 /// Commits returned by one page of `/api/log`. Matches the TUI's
 /// `commit_log_page_size` default.
 pub const MAX_LOG_PAGE: usize = 100;
-// `/api/log?skip=` deliberately has no ceiling. A ceiling here would look
-// prudent and protect nothing: the skip feeds `Iterator::skip` on a revwalk, so
-// a request walks at most `skip + page` or the whole history, whichever is
-// smaller. An absurd skip costs what walking the repository costs and no more,
-// while a ceiling would turn the deep end of a long history into a page the
-// client can see exists and can never fetch.
+// `/api/log?skip=` deliberately has no ceiling: the skip feeds
+// `Iterator::skip` on a revwalk, so a request walks at most `skip + page` or
+// the whole history, whichever is smaller — an absurd skip costs what walking
+// the repository costs and no more, while a ceiling would make the deep end
+// of a long history a page the client can see exists and can never fetch.
 /// Changed paths returned while drilling into one commit.
 pub const MAX_COMMIT_FILES: usize = 2_000;
 /// Entries returned for one directory level of `/api/tree`.
@@ -30,14 +29,13 @@ pub const MAX_TREE_SEARCH_QUERY_BYTES: usize = 256;
 pub const MAX_STATUS_FILES: usize = 2_000;
 /// Bytes of diff text returned for one file.
 pub const MAX_DIFF_BYTES: usize = 1024 * 1024;
-/// Lines of diff returned for one file, whichever ceiling is hit first.
+/// Lines of diff returned for one file — whichever ceiling is hit first.
 pub const MAX_DIFF_LINES: usize = 20_000;
 /// Bytes of a single SSE payload. Status is conflated to the latest value, so
 /// this bounds one snapshot, not a backlog.
 pub const MAX_SSE_PAYLOAD_BYTES: usize = 1024 * 1024;
-/// Live connections the viewer's accept loop will hold. Each one costs a
-/// thread, so without a ceiling anything that can reach the port can exhaust
-/// the process.
+/// Live connections the viewer's accept loop will hold — each one costs a
+/// thread.
 pub const MAX_VIEWER_CONNECTIONS: usize = 64;
 
 /// A list that may have been cut short, with the fact recorded.
@@ -59,10 +57,9 @@ impl<T> Capped<T> {
     }
 }
 
-/// Cut `text` to at most `max_bytes`, never splitting a UTF-8 character. The
-/// cut walks back to the nearest boundary so a multi-byte character
-/// straddling the limit is dropped whole rather than emitted as a broken
-/// fragment.
+/// Cut `text` to at most `max_bytes`, never splitting a UTF-8 character: the
+/// cut walks back to the nearest boundary so a straddling multi-byte
+/// character is dropped whole rather than emitted as a broken fragment.
 pub fn cap_text(text: &str, max_bytes: usize) -> (String, bool) {
     if text.len() <= max_bytes {
         return (text.to_string(), false);

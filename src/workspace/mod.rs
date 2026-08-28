@@ -1,8 +1,7 @@
 //! Per-repo state (`App`) held in a list, with the active tab index on top.
 //! Closing a tab drops the `App`, which tears down its worker and panes — no
 //! field-by-field reset to keep in sync. The list may be empty, so `active()`
-//! yields an `Option` and the open-repo dialog lives here rather than on a
-//! project.
+//! yields an `Option`.
 
 mod accent;
 mod path_complete;
@@ -125,7 +124,7 @@ impl Workspace {
     }
 
     /// The active project and the dialog together, borrowed from disjoint
-    /// fields so a frame can render both without a borrow-checker conflict.
+    /// fields so a frame can render both.
     pub fn render_parts(&mut self) -> (Option<&mut App>, &RepoInput) {
         (self.projects.get_mut(self.active), &self.repo_input)
     }
@@ -272,8 +271,7 @@ impl Workspace {
         // release will route to the newly active project. Deliver it to the
         // pane that saw the press instead of dropping the record — that PTY
         // is still alive, and with no release it would sit in a drag or
-        // selection state, while a leftover record could pair with an
-        // unrelated release later.
+        // selection state.
         self.projects[self.active].release_pending_press_in_place();
         self.active = index;
         self.acknowledge_active_attention();

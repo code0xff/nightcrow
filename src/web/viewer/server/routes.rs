@@ -22,8 +22,7 @@ pub(super) fn route(head: &RequestHead, state: &ViewerState) -> Vec<u8> {
             // Everything server-wide the client must agree with rides this one
             // response rather than getting endpoints of its own: the client
             // already polls it every few seconds, so a setting changed here
-            // reaches every device within one interval, and `/api/status` —
-            // a hot, deduplicated stream — stays free of configuration.
+            // reaches every device within one interval.
             let prefs = state.session.prefs().get();
             // The remembered project is resolved to an id per response rather
             // than stored as one, and from the same snapshot as the list it
@@ -156,28 +155,27 @@ pub(super) fn route(head: &RequestHead, state: &ViewerState) -> Vec<u8> {
         "/api/preview" => super::preview::route(head, state),
         "/api/log" => with_repo(head, state, |entry| {
             let repo = open_repo(&entry.path)?;
-            // `from` pins the walk so a page fetched later continues the history
-            // the earlier pages described, even if commits landed meanwhile —
-            // and a terminal that commits sits right below this list. Absent on
-            // the first request, which is what establishes the anchor.
+            // `from` pins the walk so a page fetched later continues the
+            // history the earlier pages described, even if commits landed
+            // meanwhile — and a terminal that commits sits right below this
+            // list. Resolved once, and the walk is then given exactly this
+            // oid: asking the loader to fall back to HEAD itself would read
+            // the ref a second time, and a first commit landing between the
+            // two reads would return commits under an anchor of `None`, which
+            // the client reads as the end of the history.
             let skip = optional_count(head, "skip")?;
-            // Resolved once, and the walk is then given exactly this oid. Asking
-            // the loader to fall back to HEAD itself would read the ref a second
-            // time, and a first commit landing between the two reads would
-            // return commits under an anchor of `None` — which the client reads
-            // as the end of the history.
             let anchor = match optional_oid(head, "from")? {
                 Some(oid) => Some(oid),
                 None => diff::head_commit_oid(&repo)?,
             };
             let commits = match anchor {
-                // One more than a page, so a full page can be told apart from a
-                // page that happens to end at the last commit.
+                // One more than a page, so a full page can be told apart from
+                // a page that happens to end at the last commit.
                 Some(oid) => {
                     diff::load_commit_log_from(&repo, Some(oid), skip, limits::MAX_LOG_PAGE + 1)?
                 }
-                // No commit to walk from: an unborn HEAD, which is a repository
-                // with no history rather than an error.
+                // No commit to walk from: an unborn HEAD, which is a
+                // repository with no history rather than an error.
                 None => Vec::new(),
             };
             Ok(json_response(
@@ -233,10 +231,9 @@ pub(super) fn route(head: &RequestHead, state: &ViewerState) -> Vec<u8> {
 }
 
 /// List the server sub-directories under `path` (home when absent) for the
-/// folder picker. Directories only, hidden ones skipped; each is flagged when
-/// it looks like a git worktree. Deliberately unconfined — the picker browses
-/// the server to find a repo to open — but reachable only authenticated and at
-/// the same trust as the terminal.
+/// folder picker. Directories only, hidden ones skipped. Deliberately
+/// unconfined — the picker browses the server to find a repo to open — but
+/// reachable only authenticated and at the same trust as the terminal.
 fn browse(head: &RequestHead) -> Vec<u8> {
     let start = match head.query_param("path").filter(|p| !p.is_empty()) {
         Some(path) => std::path::PathBuf::from(path),

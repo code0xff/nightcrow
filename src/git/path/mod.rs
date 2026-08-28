@@ -1,7 +1,7 @@
 //! Validation for repository-relative paths that reach the filesystem.
 //!
-//! Every path that names a file inside a worktree goes through
-//! [`resolve_in_workdir`] before being opened. The web surfaces route
+//! Every path naming a file inside a worktree goes through
+//! [`resolve_in_workdir`] before being opened: the web surfaces route
 //! caller-supplied strings to the same loaders, so the check lives at the
 //! filesystem boundary rather than at each call site.
 
@@ -34,27 +34,25 @@ const HFS_IGNORABLE: [char; 16] = [
 
 /// The name a filesystem will actually open, given the name that was asked for.
 ///
-/// Three rewrites, each a documented way to name one file and be handed
-/// another, and each defended by git too (`core.protectNTFS`,
-/// `core.protectHFS`) — though not identically: git tests *every* colon-
-/// delimited segment of a name and this tests the first. The difference is
-/// unreachable, because a later segment names a stream hanging off the earlier
-/// one rather than a directory, so `x:.git` is a stream on `x` and never git's
-/// own directory.
+/// Undoes the three documented ways to name one file and be handed another,
+/// each also defended by git (`core.protectNTFS`, `core.protectHFS`):
 ///
 /// - everything from a `:` on is an NTFS alternate-stream suffix, and
 ///   `.git::$INDEX_ALLOCATION` opens the directory `.git`
 /// - HFS+ drops the ignorable code points above, so `.gi<U+200C>t` is `.git`
 /// - Windows drops trailing dots and spaces, so `.git.` is `.git`
 ///
+/// Only the first `:`-delimited segment is tested, unlike git which tests every
+/// one — the difference is unreachable because a later segment names a stream
+/// hanging off the earlier one (`x:.git` is a stream on `x`), never a directory.
+///
 /// Applied to every component before *any* rule judges it, so a rewritten name
 /// cannot slip past `..` either — on HFS+ a `.` with an ignorable between the
 /// dots is still the parent directory.
 fn effective_name(name: &str) -> String {
     // Only when something precedes it: a stream suffix hangs off a name, so a
-    // leading `:` is not one. Cutting there unconditionally left nothing to
-    // judge, and `:f.rs` — an ordinary file on Unix, unnameable on Windows —
-    // came back as a traversal.
+    // leading `:` is not one. Cutting there unconditionally reduced `:f.rs` —
+    // an ordinary file on Unix — to nothing and called it a traversal.
     let base = match name.split(':').next() {
         Some(before) if !before.is_empty() => before,
         _ => name,
@@ -70,8 +68,8 @@ fn effective_name(name: &str) -> String {
 /// run on: case-insensitively (macOS, Windows), under every rewrite
 /// [`effective_name`] undoes, and including the 8.3 short name.
 ///
-/// Every place that decides whether a name is git's own directory must use this
-/// — a second, looser spelling of the rule is how a bypass gets in.
+/// Every place that decides whether a name is git's own directory must use
+/// this — a second, looser spelling of the rule is how a bypass gets in.
 pub fn is_git_dir_name(name: &str) -> bool {
     let name = effective_name(name);
     name.eq_ignore_ascii_case(GIT_DIR) || name.eq_ignore_ascii_case(GIT_SHORT_DIR)
@@ -88,11 +86,8 @@ fn is_git_dir(part: &std::ffi::OsStr) -> bool {
 /// Windows reads `c:x` as drive `C:` plus `x`, but only at the start of a path —
 /// so as the second component of `src/c:x` it arrives here as one `Normal`.
 /// `PathBuf::push` then parses it again, finds the prefix, and *replaces the
-/// whole buffer*, throwing away the worktree the walk had built up. Refusing it
-/// keeps the component walk honest instead of leaning on the final containment
-/// check to notice.
-///
-/// A no-op on Unix, where a colon is an ordinary character in a name.
+/// whole buffer*, throwing away the worktree the walk had built up. A no-op on
+/// Unix, where a colon is an ordinary character in a name.
 fn is_a_path_of_its_own(part: &std::ffi::OsStr) -> bool {
     let mut components = Path::new(part).components();
     !matches!(components.next(), Some(Component::Normal(_))) || components.next().is_some()
@@ -103,10 +98,8 @@ fn is_a_path_of_its_own(part: &std::ffi::OsStr) -> bool {
 ///
 /// `Path::components` judges the name as written, so `.. ` on Windows and
 /// `.<U+200C>.` on HFS+ both arrive here as one `Normal` and the `..` arm below
-/// never runs. The escape this module exists to stop would then be spelled with
-/// one extra character.
-///
-/// It costs a name like `...`, legal on Unix and unnameable on Windows anyway.
+/// never runs. It costs a name like `...`, legal on Unix and unnameable on
+/// Windows anyway.
 fn is_traversal_after_trimming(part: &std::ffi::OsStr) -> bool {
     part.to_str().is_some_and(|name| {
         let name = effective_name(name);
@@ -116,12 +109,10 @@ fn is_traversal_after_trimming(part: &std::ffi::OsStr) -> bool {
 
 /// True when no path may contain `name` as a component.
 ///
-/// The listing surfaces share this with the validator so that no row is offered
-/// under a name the gate will refuse: the file tree used to show a `...`
-/// directory that the gate then refused, and search silently dropped everything
-/// under it. Names only — whether the thing behind the name can be opened is
-/// [`resolve_in_workdir`]'s question, and it still refuses a symlink that is
-/// listed.
+/// The listing surfaces share this with the validator so no row is offered under
+/// a name the gate will refuse (a `...` row that answered "not a plain relative
+/// path" when clicked used to happen). Names only — whether the thing behind the
+/// name can be opened is [`resolve_in_workdir`]'s question.
 pub fn is_refused_component(name: &str) -> bool {
     let part = std::ffi::OsStr::new(name);
     is_git_dir_name(name) || is_traversal_after_trimming(part) || is_a_path_of_its_own(part)
@@ -131,8 +122,8 @@ pub fn is_refused_component(name: &str) -> bool {
 ///
 /// Unlike [`resolve_in_workdir`], this deliberately does not stat the path:
 /// a deleted file is absent from the current worktree but is still a valid
-/// member of a historical commit diff. Callers must use this only with git's
-/// object database, never before opening a worktree file.
+/// member of a historical commit diff. Never use this before opening a
+/// worktree file.
 pub fn validate_commit_path(relative: &str) -> Result<()> {
     if relative.is_empty() {
         return Err(anyhow!("empty path"));
@@ -160,15 +151,14 @@ pub fn validate_commit_path(relative: &str) -> Result<()> {
 }
 
 /// Resolve `relative` against `workdir`, rejecting anything that could escape
-/// the worktree or read git's internals.
+/// the worktree or read git's internals: absolute paths, `..` and other
+/// non-plain components, any component naming the git directory (see
+/// [`is_git_dir`]), embedded NUL bytes, and symlinks at *any* component — not
+/// just the final one.
 ///
-/// Rejects: absolute paths, `..` and other non-plain components, any component
-/// naming the git directory (see [`is_git_dir`]), embedded NUL bytes, and
-/// symlinks at *any* component — not just the final one.
-///
-/// The returned path is the canonicalized location and is guaranteed to sit
-/// under the canonicalized `workdir`. A caller that opens it still races with
-/// a concurrent rename of the worktree itself; that residual TOCTOU window is
+/// The returned path is canonicalized and guaranteed to sit under the
+/// canonicalized `workdir`. A caller that opens it still races with a
+/// concurrent rename of the worktree itself; that residual TOCTOU window is
 /// accepted, since every surface reaching this function is already
 /// authenticated and local.
 pub fn resolve_in_workdir(workdir: &Path, relative: &str) -> Result<PathBuf> {
@@ -203,8 +193,8 @@ pub fn resolve_in_workdir(workdir: &Path, relative: &str) -> Result<PathBuf> {
 
     // Not redundant, even though the walk rejected every link: `push` re-parses
     // each component, and one that carries a Windows prefix would replace the
-    // buffer outright rather than extend it. `is_a_path_of_its_own` refuses
-    // those up front, and this is what catches it if a spelling gets past.
+    // buffer outright rather than extend it — `is_a_path_of_its_own` refuses
+    // those up front, and this is the backstop.
     if !resolved.starts_with(&base) {
         return Err(anyhow!("path escapes the worktree: {relative}"));
     }
