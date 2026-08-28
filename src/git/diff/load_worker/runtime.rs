@@ -2,11 +2,13 @@ use std::io;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::sync::{Arc, Condvar, Mutex, mpsc};
 use std::thread::{self, JoinHandle};
+use std::time::Instant;
 
 use git2::Repository;
 
 use super::execute::execute;
 use super::lifecycle::{InFlightPermit, WorkerPermit, finish_or_detach, join_finished};
+use super::retry::SpawnRetry;
 use super::{GitLoadPayload, GitLoadReply, GitLoadRequest, Pending};
 
 const TASK_PANIC_ERROR: &str = "background git load panicked";
@@ -16,6 +18,7 @@ type Shared = Arc<(Mutex<Pending>, Condvar)>;
 pub(super) struct WorkerThread {
     reply_tx: mpsc::Sender<GitLoadReply>,
     handle: Option<JoinHandle<()>>,
+    retry: SpawnRetry,
     #[cfg(test)]
     hooks: Option<Arc<TestHooks>>,
 }
@@ -25,6 +28,7 @@ impl WorkerThread {
         Self {
             reply_tx,
             handle: None,
+            retry: SpawnRetry::default(),
             #[cfg(test)]
             hooks: None,
         }
@@ -35,6 +39,10 @@ impl WorkerThread {
             join_finished(self.handle.take().expect("finished worker handle exists"));
         }
         if self.handle.is_some() {
+            return;
+        }
+        let now = self.now();
+        if !self.retry.is_ready(now) {
             return;
         }
         let Some(permit) = WorkerPermit::try_acquire() else {
@@ -48,8 +56,15 @@ impl WorkerThread {
             executor: self.hooks.as_ref().map(|hooks| Arc::clone(&hooks.executor)),
         };
         match self.spawn_task(task) {
-            Ok(handle) => self.handle = Some(handle),
-            Err(error) => tracing::warn!(?error, "failed to spawn git load worker"),
+            Ok(handle) => {
+                self.handle = Some(handle);
+                self.retry.reset();
+            }
+            Err(error) => {
+                if self.retry.record_failure(now) {
+                    self.warn_spawn_failure(&error);
+                }
+            }
         }
     }
 
@@ -67,11 +82,29 @@ impl WorkerThread {
         spawn_task(task)
     }
 
+    fn now(&self) -> Instant {
+        #[cfg(test)]
+        if let Some(hooks) = &self.hooks {
+            return (hooks.now)();
+        }
+        Instant::now()
+    }
+
+    fn warn_spawn_failure(&self, error: &io::Error) {
+        #[cfg(test)]
+        if let Some(hooks) = &self.hooks {
+            (hooks.on_warning)(error);
+            return;
+        }
+        tracing::warn!(?error, "failed to spawn git load worker");
+    }
+
     #[cfg(test)]
     pub(super) fn with_hooks(reply_tx: mpsc::Sender<GitLoadReply>, hooks: Arc<TestHooks>) -> Self {
         Self {
             reply_tx,
             handle: None,
+            retry: SpawnRetry::default(),
             hooks: Some(hooks),
         }
     }
@@ -178,7 +211,15 @@ pub(super) type TestExecutor = dyn Fn(&GitLoadRequest, &mut Option<(String, Repo
 pub(super) type TestSpawner = dyn Fn(WorkerTask) -> io::Result<JoinHandle<()>> + Send + Sync;
 
 #[cfg(test)]
+pub(super) type TestClock = dyn Fn() -> Instant + Send + Sync;
+
+#[cfg(test)]
+pub(super) type TestWarning = dyn Fn(&io::Error) + Send + Sync;
+
+#[cfg(test)]
 pub(super) struct TestHooks {
     pub(super) spawner: Arc<TestSpawner>,
     pub(super) executor: Arc<TestExecutor>,
+    pub(super) now: Arc<TestClock>,
+    pub(super) on_warning: Arc<TestWarning>,
 }
