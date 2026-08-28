@@ -167,6 +167,17 @@ fn crossing_the_byte_ceiling_poison_disconnects_instead_of_making_a_hole() {
 }
 
 #[test]
+fn control_only_traffic_is_bounded_too() {
+    let router = TerminalRouter::with_limits(usize::MAX, 1);
+    router.deliver("r1", created(1)).unwrap();
+
+    assert!(
+        router.deliver("r1", created(2)).is_err(),
+        "control events consume memory even though they carry no PTY bytes"
+    );
+}
+
+#[test]
 fn closing_a_repository_returns_its_share_of_the_byte_allowance() {
     let router = TerminalRouter::with_byte_limit(4);
     router

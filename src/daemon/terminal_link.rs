@@ -28,6 +28,8 @@ pub(crate) const TERMINAL_INBOX_BYTES: usize = 256 * 1024 * 1024;
 /// Work one repository may hand to its emulator in one render tick.
 const TERMINAL_DRAIN_MESSAGES: usize = 64;
 const TERMINAL_DRAIN_BYTES: usize = 256 * 1024;
+/// Messages one attach connection may retain, including control-only traffic.
+const TERMINAL_INBOX_MESSAGES: usize = 4096;
 
 /// One thing the daemon said about a repository's terminals.
 #[derive(Debug)]
@@ -52,14 +54,17 @@ pub(crate) struct TerminalInboxOverflow {
     queued: usize,
     incoming: usize,
     limit: usize,
+    messages: usize,
+    message_limit: usize,
 }
 
 impl fmt::Display for TerminalInboxOverflow {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "terminal inbox has {} queued bytes and cannot accept {} more (limit {})",
-            self.queued, self.incoming, self.limit
+            "terminal inbox capacity exceeded: {} queued output bytes plus {} incoming \
+             (limit {}), {} messages (limit {})",
+            self.queued, self.incoming, self.limit, self.messages, self.message_limit
         )
     }
 }
@@ -70,6 +75,7 @@ impl std::error::Error for TerminalInboxOverflow {}
 struct RouterState {
     inboxes: HashMap<String, VecDeque<TerminalMessage>>,
     queued_output_bytes: usize,
+    queued_messages: usize,
     overflowed: bool,
 }
 
@@ -79,6 +85,7 @@ struct RouterState {
 pub(crate) struct TerminalRouter {
     state: Mutex<RouterState>,
     byte_limit: usize,
+    message_limit: usize,
 }
 
 impl Default for TerminalRouter {
@@ -86,6 +93,7 @@ impl Default for TerminalRouter {
         Self {
             state: Mutex::new(RouterState::default()),
             byte_limit: TERMINAL_INBOX_BYTES,
+            message_limit: TERMINAL_INBOX_MESSAGES,
         }
     }
 }
@@ -110,19 +118,23 @@ impl TerminalRouter {
     ) -> Result<(), TerminalInboxOverflow> {
         let incoming = message.output_bytes();
         let mut state = self.state.lock().expect("terminal inboxes poisoned");
-        let fits = state
+        let bytes_fit = state
             .queued_output_bytes
             .checked_add(incoming)
             .is_some_and(|total| total <= self.byte_limit);
-        if state.overflowed || !fits {
+        let messages_fit = state.queued_messages < self.message_limit;
+        if state.overflowed || !bytes_fit || !messages_fit {
             state.overflowed = true;
             return Err(TerminalInboxOverflow {
                 queued: state.queued_output_bytes,
                 incoming,
                 limit: self.byte_limit,
+                messages: state.queued_messages,
+                message_limit: self.message_limit,
             });
         }
         state.queued_output_bytes += incoming;
+        state.queued_messages += 1;
         state
             .inboxes
             .entry(repo.to_string())
@@ -144,18 +156,20 @@ impl TerminalRouter {
             return Vec::new();
         };
         let mut drained = Vec::new();
-        let mut bytes = 0usize;
+        let mut output_bytes = 0usize;
         while drained.len() < TERMINAL_DRAIN_MESSAGES {
             let Some(next) = inbox.front() else { break };
             let next_bytes = next.output_bytes();
-            if !drained.is_empty() && bytes.saturating_add(next_bytes) > TERMINAL_DRAIN_BYTES {
+            if !drained.is_empty() && output_bytes.saturating_add(next_bytes) > TERMINAL_DRAIN_BYTES
+            {
                 break;
             }
             let message = inbox.pop_front().expect("front was present");
-            bytes += next_bytes;
+            output_bytes += next_bytes;
             drained.push(message);
         }
-        state.queued_output_bytes -= bytes;
+        state.queued_output_bytes -= output_bytes;
+        state.queued_messages -= drained.len();
         drained
     }
 
@@ -164,6 +178,7 @@ impl TerminalRouter {
     pub(crate) fn retain(&self, open: &[String]) {
         let mut state = self.state.lock().expect("terminal inboxes poisoned");
         let mut removed_bytes = 0usize;
+        let mut removed_messages = 0usize;
         state.inboxes.retain(|repo, inbox| {
             let keep = open.iter().any(|id| id == repo);
             if !keep {
@@ -171,10 +186,12 @@ impl TerminalRouter {
                     .iter()
                     .map(TerminalMessage::output_bytes)
                     .sum::<usize>();
+                removed_messages += inbox.len();
             }
             keep
         });
         state.queued_output_bytes -= removed_bytes;
+        state.queued_messages -= removed_messages;
     }
 
     #[cfg(test)]
@@ -182,6 +199,16 @@ impl TerminalRouter {
         Self {
             state: Mutex::new(RouterState::default()),
             byte_limit,
+            message_limit: TERMINAL_INBOX_MESSAGES,
+        }
+    }
+
+    #[cfg(test)]
+    fn with_limits(byte_limit: usize, message_limit: usize) -> Self {
+        Self {
+            state: Mutex::new(RouterState::default()),
+            byte_limit,
+            message_limit,
         }
     }
 }
