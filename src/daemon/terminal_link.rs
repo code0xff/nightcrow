@@ -211,6 +211,12 @@ impl TerminalRouter {
             message_limit,
         }
     }
+
+    #[cfg(test)]
+    fn queued_for_test(&self) -> (usize, usize) {
+        let state = self.state.lock().expect("terminal inboxes poisoned");
+        (state.queued_output_bytes, state.queued_messages)
+    }
 }
 
 /// One repository's end of the shared connection.
