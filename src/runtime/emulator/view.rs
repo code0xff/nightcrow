@@ -102,9 +102,9 @@ impl CellView<'_> {
 
 /// Map an emulator color to a ratatui color. Named standard/bright colors
 /// become the equivalent indexed color so the user's terminal palette
-/// applies; default foreground/background become `Reset` for the same
-/// reason. Dim named colors map to their base color — `CellView::dim`
-/// carries the dim attribute separately.
+/// applies; default foreground/background and colors with no fixed palette
+/// slot become `Reset` for the same reason. Dim named colors map to their
+/// base color — `CellView::dim` carries the dim attribute separately.
 pub(super) fn to_ratatui_color(color: Color) -> ratatui::style::Color {
     use ratatui::style::Color as C;
     match color {

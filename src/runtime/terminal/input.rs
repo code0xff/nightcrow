@@ -36,16 +36,15 @@ impl TerminalState {
                     }
                 }
                 // 0x7f (DEL, sent by Backspace) and 0x08 (BS, sent by Ctrl+H)
-                // both remove the previous typed char. Without this branch the
+                // both remove the previous typed char; without this branch the
                 // prompt log would accumulate typos the user already corrected.
                 '\x7f' | '\x08' => {
                     buf.pop();
                 }
                 _ => {
-                    // Cap to bound memory under degenerate "no-newline" producers
-                    // (progress bars piped through cat, paste of a multi-MB
-                    // string, etc.). Dropping further chars before the next flush
-                    // is preferable to letting the buffer grow without limit.
+                    // Cap to bound memory under degenerate "no-newline"
+                    // producers (progress bars piped through cat, pastes of
+                    // multi-MB strings); dropping chars beats unbounded growth.
                     if buf.len() < PROMPT_BUFFER_MAX_BYTES {
                         buf.push(ch);
                     }

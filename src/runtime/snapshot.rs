@@ -13,21 +13,19 @@ mod worker;
 use worker::Worker;
 
 /// Owns the receiver and wake channel for the background snapshot thread.
-/// Dropping the struct signals the worker to exit and joins it, so a repo switch
-/// cannot leave the old-repo worker holding a `git2::Repository` after the new
-/// channel is in place.
+/// Dropping the struct signals the worker to exit and joins it, so a repo
+/// switch cannot leave the old-repo worker holding a `git2::Repository` after
+/// the new channel is in place.
 pub struct SnapshotChannel {
     rx: Receiver<SnapshotMsg>,
-    /// Cleared to stop reading the tree without stopping the worker.
-    ///
-    /// A `git status` is not free and one runs per channel. A caller that knows
-    /// nobody is reading turns it off rather than paying for snapshots that go
-    /// straight in the bin. The filesystem watch goes with it.
+    /// Cleared to stop reading the tree without stopping the worker: a
+    /// `git status` is not free and one runs per channel, so a caller that
+    /// knows nobody is reading turns it off. The filesystem watch goes with it.
     awake: Arc<AtomicBool>,
     /// Whether the worker is being told about *every* place a change can come
     /// from, rather than looking on a timer. False while asleep, on a tree the
-    /// watcher could not install on, and — until the first read answers where the
-    /// git directory is — on a checkout that keeps it outside the work tree.
+    /// watcher could not install on, and — until the first read answers where
+    /// the git directory is — on a checkout that keeps it outside the work tree.
     ///
     /// Nothing in production reads this — a failed watch is reported where it
     /// happens, and the reader behaves correctly either way. It exists so the
@@ -36,10 +34,9 @@ pub struct SnapshotChannel {
     #[cfg(test)]
     watching: Arc<AtomicBool>,
     /// Wakes the worker: filesystem events, resumption, and the stop on drop.
-    /// One channel for all three, so an idle repository costs no wake-ups beyond
-    /// the interval that guards against missed events.
-    ///
-    /// Held in an `Option` so `Drop` can release it before joining the worker.
+    /// One channel for all three, so an idle repository costs no wake-ups
+    /// beyond the interval that guards against missed events. Held in an
+    /// `Option` so `Drop` can release it before joining the worker.
     wake: Option<Sender<Wake>>,
     // None in test fixtures that construct an inert channel via
     // `from_endpoints` (no real worker to join).
@@ -51,19 +48,17 @@ pub struct SnapshotChannel {
 /// poll cost and never more.
 const MIN_READ_INTERVAL: Duration = Duration::from_millis(1000);
 
-/// Longest gap between two reads while awake and watching.
-///
-/// A watcher can miss an event, or install on part of a tree and fail on the
-/// rest, and "stale until the user happens to change something else" is not a
-/// state to leave a file list in. With no watcher at all this is not used: the
-/// reader falls back to [`MIN_READ_INTERVAL`].
+/// Longest gap between two reads while awake and watching — a watcher can miss
+/// an event, and "stale until the user happens to change something else" is
+/// not a state to leave a file list in. With no watcher at all this is not
+/// used: the reader falls back to [`MIN_READ_INTERVAL`].
 const IDLE_READ_INTERVAL: Duration = Duration::from_secs(10);
 
 /// Reopen the cached `git2::Repository` handle every N reads so we observe
 /// out-of-band repo changes (e.g. `git gc`, packfile rewrites, worktree moves)
 /// that the cached handle would otherwise serve stale. Counted in reads rather
-/// than in seconds now that reads follow changes — a repository nobody touches
-/// is not read, and does not need reopening either.
+/// than seconds now that reads follow changes — a repository nobody touches is
+/// not read, and does not need reopening either.
 const REOPEN_REPO_EVERY_READS: u32 = 30;
 
 impl SnapshotChannel {
@@ -74,11 +69,10 @@ impl SnapshotChannel {
 
     /// Start without reading, for an owner that knows nobody is looking yet.
     ///
-    /// Separate from `spawn` followed by `set_awake(false)`, which is a race the
-    /// worker can win: it reads before that clears, which walks a tree nobody
-    /// asked about and leaves the reading queued to be published after a later,
-    /// newer one. The daemon opens every repository in a session and the browser
-    /// subscribes to one of them, so this is the ordinary case.
+    /// Separate from `spawn` followed by `set_awake(false)`, which is a race
+    /// the worker can win: it reads before that clears, which walks a tree
+    /// nobody asked about and leaves the reading queued to be published after
+    /// a later, newer one.
     pub fn spawn_asleep(repo_path: &str) -> Self {
         Self::start(repo_path, false)
     }
@@ -109,12 +103,10 @@ impl SnapshotChannel {
         }
     }
 
-    /// A handle for turning the reading on and off from another thread.
-    ///
-    /// Separate from the channel because the channel owns a receiver and cannot
-    /// be shared, while whoever decides that nobody is reading — a server
-    /// counting its subscribers — is on a different thread from the one draining
-    /// it.
+    /// A handle for turning the reading on and off from another thread —
+    /// separate from the channel because the channel owns a receiver and
+    /// cannot be shared, while whoever decides nobody is reading (a server
+    /// counting subscribers) is on a different thread from the one draining it.
     pub fn watch(&self) -> SnapshotWatch {
         SnapshotWatch {
             awake: Arc::clone(&self.awake),
@@ -140,9 +132,9 @@ impl SnapshotChannel {
         self.rx.try_recv()
     }
 
-    /// Build a `SnapshotChannel` from an externally provided receiver. Lets
-    /// tests construct an inert channel (no worker thread, no watcher) so they
-    /// can inject snapshots directly instead of booting the background reader.
+    /// Build a `SnapshotChannel` from an externally provided receiver, so
+    /// tests can construct an inert channel (no worker thread, no watcher)
+    /// and inject snapshots directly.
     #[cfg(test)]
     pub(crate) fn from_endpoints(rx: Receiver<SnapshotMsg>) -> Self {
         Self {
@@ -166,8 +158,8 @@ impl SnapshotWatch {
     pub fn set_awake(&self, awake: bool) {
         self.awake.store(awake, Ordering::Release);
         // Woken rather than left to the interval: resuming means a client is
-        // waiting to see this repository, and it must not sit behind a timer that
-        // exists for missed events.
+        // waiting to see this repository, and it must not sit behind a timer
+        // that exists for missed events.
         if let Some(wake) = &self.wake {
             let _ = wake.send(Wake::Changed(Vec::new()));
         }
@@ -176,14 +168,11 @@ impl SnapshotWatch {
 
 impl Drop for SnapshotChannel {
     fn drop(&mut self) {
-        // Release the wake sender first: the worker's `recv_timeout` observes the
-        // stop immediately rather than sitting out the idle interval.
+        // Release the wake sender first: the worker's `recv_timeout` observes
+        // the stop immediately rather than sitting out the idle interval.
         if let Some(wake) = self.wake.take() {
             let _ = wake.send(Wake::Stop);
         }
-        // Wait for the worker to finish its current `load_snapshot` so a
-        // `change_repo` doesn't leave the old-repo worker running with a
-        // live `git2::Repository` after the new channel is installed.
         // Bounded join: a worker stuck inside libgit2 (corrupted packfile,
         // hung NFS) must not freeze app shutdown / repo switch.
         if let Some(h) = self.handle.take() {

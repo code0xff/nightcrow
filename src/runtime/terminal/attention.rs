@@ -85,8 +85,8 @@ impl TerminalState {
     pub fn acknowledge_attention(&mut self) {
         self.unread_attention = false;
         // Activity already visible on this screen must not settle into a new
-        // unread event after the user switches away. If it keeps running in
-        // the background, later title changes start a fresh observation.
+        // unread event after the user switches away; later title changes
+        // start a fresh observation.
         self.title_activity.clear();
     }
 }

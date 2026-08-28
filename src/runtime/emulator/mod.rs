@@ -107,8 +107,8 @@ impl PaneEmulator {
         }
     }
 
-    /// Feed raw PTY output through the emulator, updating the screen state.
-    /// Returns the side effects (title change, terminal query responses).
+    /// Feed raw PTY output through the emulator; returns the side effects for
+    /// the caller to act on.
     pub fn process(&mut self, bytes: &[u8]) -> EmulatorEvents {
         self.boundary.feed(bytes);
         self.processor.advance(&mut self.term, bytes);
@@ -125,8 +125,8 @@ impl PaneEmulator {
     }
 
     /// Resize the emulated screen, reflowing wrapped lines. Safe for any
-    /// size change, including one that cuts a wide character at the new
-    /// last column (the vt100 panic this module exists to avoid).
+    /// size change, including one that cuts a wide character at the new last
+    /// column — the vt100 panic this module exists to avoid.
     pub fn resize(&mut self, rows: u16, cols: u16) {
         self.term.resize(term_size(rows, cols));
     }
@@ -157,27 +157,21 @@ impl PaneEmulator {
         ScreenView { term: &self.term }
     }
 
-    /// The bytes that reproduce this screen on another terminal.
-    ///
-    /// What a client attaching to a pane is given in place of the recorded
-    /// bytes that cannot rebuild its screen: all of them for a program drawing
-    /// on the alternate screen, the evicted front of the ring for one on the
-    /// normal screen. See [`snapshot`] for what a snapshot does and does not
-    /// carry.
+    /// The bytes that reproduce this screen on another terminal — what a
+    /// client attaching to a pane is given in place of the recorded bytes,
+    /// which cannot rebuild the screen (see [`snapshot`] for what a snapshot
+    /// does and does not carry).
     pub fn screen_snapshot(&self) -> Vec<u8> {
         snapshot::screen_snapshot(&self.term)
     }
 
     /// Whether everything processed so far has reached the screen and ends with
     /// every escape sequence and multi-byte character closed. A screen snapshot
-    /// may only be anchored at such a point: it is spliced into the recorded
-    /// stream on replay, and a seam inside a sequence hands a reattaching
-    /// client the sequence's tail as ordinary input (see [`boundary`]).
-    ///
-    /// "Reached the screen" is [`screen_current`](Self::screen_current); the
-    /// closed-sequences half is the [`boundary`] tracker. They are separate
-    /// questions because a caller forcing a snapshot over a torn seam may still
-    /// never take one of a grid with bytes missing.
+    /// may only be anchored at such a point: a seam inside a sequence hands a
+    /// reattaching client the sequence's tail as ordinary input (see
+    /// [`boundary`]). The two halves answer separate questions — a caller
+    /// forcing a snapshot over a torn seam may still never take one of a grid
+    /// with bytes missing.
     pub fn at_boundary(&self) -> bool {
         self.screen_current() && self.boundary.at_boundary()
     }
@@ -185,20 +179,17 @@ impl PaneEmulator {
     /// Whether the grid holds everything processed. False while a synchronized
     /// update (DEC 2026) is open: the processor buffers its bytes without
     /// applying them, so a snapshot taken then is missing bytes the record
-    /// would count as covered. An update ends with `ESU`, at the processor's
-    /// own buffer cap, or — for one the program never closed — when its owner
-    /// ticks [`settle_sync`](Self::settle_sync).
+    /// would count as covered.
     pub fn screen_current(&self) -> bool {
         self.processor.sync_bytes_count() == 0
     }
 
     /// Which input, if any, a scroll request for this pane must be turned
-    /// into. Mouse reporting wins over `alternateScroll` because a program
-    /// that asked for wheel events wants them even on the alternate screen.
-    ///
+    /// into. Mouse reporting wins over `alternateScroll` (a program that asked
+    /// for wheel events wants them even on the alternate screen), but
     /// `MOUSE_MODE` alone is not enough: without `SGR_MOUSE` the program
-    /// expects the legacy X10 encoding, which cannot address columns past
-    /// 223. Such a pane falls back to `Scrollback`.
+    /// expects legacy X10 encoding, which cannot address columns past 223 —
+    /// such a pane falls back to `Scrollback`.
     pub fn scroll_sink(&self) -> ScrollSink {
         let mode = self.term.mode();
         if mode.intersects(TermMode::MOUSE_MODE) && mode.contains(TermMode::SGR_MOUSE) {
@@ -211,8 +202,8 @@ impl PaneEmulator {
     }
 
     /// Whether the program asked for mouse button reports in SGR form —
-    /// the gate for forwarding clicks. A click has no scrollback fallback,
-    /// it is either claimed by the program or dropped.
+    /// the gate for forwarding clicks, which have no scrollback fallback:
+    /// a click is either claimed by the program or dropped.
     pub fn wants_mouse_buttons(&self) -> bool {
         let mode = self.term.mode();
         mode.intersects(TermMode::MOUSE_MODE) && mode.contains(TermMode::SGR_MOUSE)
@@ -245,9 +236,8 @@ impl PaneEmulator {
     }
 }
 
-/// Clamp a requested pane size to alacritty's supported minimum grid.
-/// A 1-column grid makes wide-character reflow loop forever on resize.
-///
+/// Clamp a requested pane size to alacritty's supported minimum grid —
+/// a 1-column grid makes wide-character reflow loop forever on resize.
 /// `TerminalState` applies the same clamp to the backend PTY size and its
 /// `last_content_size` bookkeeping, so the PTY, the emulator grid, and the
 /// recorded size can never diverge at degenerate layouts.
