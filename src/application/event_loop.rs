@@ -8,7 +8,7 @@ use crate::application::terminal_guard::TuiTerminal;
 use crate::workspace::Workspace;
 use crossterm::event::{self, Event};
 use ratatui::layout::Rect;
-use std::time::Duration;
+use std::time::{Duration, SystemTime};
 use syntect::highlighting::ThemeSet;
 use syntect::parsing::SyntaxSet;
 
@@ -114,6 +114,11 @@ pub(crate) fn main_loop(
         let has_attention = tab_attention.iter().any(|attention| *attention);
         let attention_bright = crate::ui::project_tab::blink_is_bright(blink_started.elapsed());
         redraw.observe_attention(has_attention, attention_bright);
+        let now = SystemTime::now();
+        let hot_deadline = ws
+            .active()
+            .and_then(|app| crate::ui::next_hot_deadline_for_app(app, now));
+        redraw.observe_hot_deadline(hot_deadline, now);
         let caret_active = ws
             .active()
             .is_some_and(crate::app::App::search_overlay_active);

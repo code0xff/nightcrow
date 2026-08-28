@@ -5,6 +5,8 @@
 //! event loop records state-changing inputs and queue results here, while the
 //! two clocks record visual changes that happen without an input event.
 
+use std::time::SystemTime;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum RedrawCause {
     Initial,
@@ -17,6 +19,7 @@ pub(crate) enum RedrawCause {
     Log,
     AttentionBlink,
     CaretBlink,
+    HotFile,
     Session,
     Redraw,
 }
@@ -27,6 +30,7 @@ pub(crate) struct RedrawState {
     screen: Option<(u16, u16)>,
     attention_phase: Option<bool>,
     caret_phase: Option<bool>,
+    hot_deadline: Option<SystemTime>,
 }
 
 impl RedrawState {
@@ -64,6 +68,17 @@ impl RedrawState {
         }
     }
 
+    /// Schedule the next hot-file style transition without adding a periodic
+    /// frame clock. A crossed deadline dirties one frame; the caller then
+    /// supplies the following deadline calculated from the same clock.
+    pub(crate) fn observe_hot_deadline(&mut self, next: Option<SystemTime>, now: SystemTime) {
+        let crossed = self.hot_deadline.is_some_and(|deadline| now >= deadline);
+        self.hot_deadline = next;
+        if crossed {
+            self.request(RedrawCause::HotFile);
+        }
+    }
+
     pub(crate) fn take(&mut self) -> bool {
         std::mem::take(&mut self.dirty)
     }
@@ -77,6 +92,7 @@ impl RedrawState {
 #[cfg(test)]
 mod tests {
     use super::{RedrawCause, RedrawState};
+    use std::time::SystemTime;
 
     #[test]
     fn initial_state_draws_once_then_stays_clean() {
@@ -96,6 +112,7 @@ mod tests {
             RedrawCause::Tree,
             RedrawCause::Git,
             RedrawCause::Log,
+            RedrawCause::HotFile,
             RedrawCause::Session,
             RedrawCause::Redraw,
         ];
@@ -144,5 +161,25 @@ mod tests {
         assert!(state.take());
         state.observe_caret(false, true);
         assert!(state.take());
+    }
+
+    #[test]
+    fn hot_deadline_dirties_exactly_once_at_each_stage_boundary() {
+        let mut state = RedrawState::new();
+        state.take();
+        let start = SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(100);
+        let fresh_to_warm = start + std::time::Duration::from_secs(5);
+        let warm_to_cool = start + std::time::Duration::from_secs(15);
+
+        state.observe_hot_deadline(Some(fresh_to_warm), start);
+        assert!(!state.take());
+        state.observe_hot_deadline(Some(warm_to_cool), fresh_to_warm);
+        assert!(state.take());
+        state.observe_hot_deadline(Some(warm_to_cool), fresh_to_warm);
+        assert!(!state.take());
+        state.observe_hot_deadline(None, warm_to_cool);
+        assert!(state.take());
+        state.observe_hot_deadline(None, warm_to_cool);
+        assert!(!state.take());
     }
 }
