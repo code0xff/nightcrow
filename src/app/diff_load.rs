@@ -73,8 +73,7 @@ impl App {
         match result {
             Ok(hunks) => {
                 self.clear_notice(NoticeKind::Diff);
-                self.diff.hunks = hunks;
-                self.diff.rebuild_lower_cache();
+                self.diff.set_hunks(hunks);
                 match mode {
                     DiffApply::Reset | DiffApply::ResetWithTitle(_) => {
                         self.diff.scroll = 0;
@@ -115,10 +114,7 @@ impl App {
     }
 
     pub(crate) fn clear_diff_state(&mut self) {
-        self.diff.hunks.clear();
-        self.diff.hunks_lines_lower.clear();
-        self.diff.line_highlights.clear();
-        self.diff.cached_hunk_syntax.clear();
+        self.diff.set_hunks(Vec::new());
         // Drop the entire search state, not just the match list: keeping the
         // query alive after a content-discarding clear would leave a ghost
         // `[0/0]` counter and apply the previous file's query to unrelated
@@ -138,7 +134,7 @@ impl App {
         let scroll = self.diff.scroll;
         let mut offset = 0usize;
         let mut chosen = None;
-        for h in &self.diff.hunks {
+        for h in self.diff.hunks() {
             if let Some(n) = parse_hunk_new_start(&h.header) {
                 chosen = Some(n);
             }

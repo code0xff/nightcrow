@@ -23,20 +23,21 @@ pub(crate) fn render_split_view(
     let border_style = super::focused_border_style(focused, accent);
     app.diff.ensure_highlight_cache(ss, ts);
 
-    let rows = app.diff.split_rows();
+    let split_row_count = app.diff.split_rows().len();
     let visible_height = (area.height as usize).saturating_sub(2);
-    let max_scroll = rows.len().saturating_sub(1);
+    let max_scroll = split_row_count.saturating_sub(1);
     let scroll_start = app.diff.scroll.min(max_scroll);
     // Pin the shared scroll cursor to what this layout can actually show: the
     // split layout is shorter than the unified flat-row count (paired changes
     // collapse onto one row), and navigation clamps against the unified max.
     app.diff.scroll = scroll_start;
+    let rows = app.diff.split_rows();
     let scroll_end = scroll_start.saturating_add(visible_height).min(rows.len());
 
     // Each half carries the number of the side it shows: old on the left, new
     // on the right. Collected in lockstep with the body lines so the two
     // paragraphs of a half share one vertical window.
-    let digits = super::gutter::lineno_digits(&app.diff.hunks);
+    let digits = super::gutter::digits_for(app.diff.max_line_number() as usize);
     let gutter_width = super::gutter::side_gutter_width(digits);
 
     let mut left_lines: Vec<Line> = Vec::with_capacity(visible_height);
@@ -48,7 +49,7 @@ pub(crate) fn render_split_view(
             SplitRow::Header(hi) => {
                 let header = app
                     .diff
-                    .hunks
+                    .hunks()
                     .get(*hi)
                     .map(|h| h.header.as_str())
                     .unwrap_or("");
@@ -139,7 +140,7 @@ fn split_side_lines<'a>(
     let Some((hi, li)) = cell else {
         return blank();
     };
-    let Some(diff_line) = app.diff.hunks.get(hi).and_then(|h| h.lines.get(li)) else {
+    let Some(diff_line) = app.diff.hunks().get(hi).and_then(|h| h.lines.get(li)) else {
         return blank();
     };
 

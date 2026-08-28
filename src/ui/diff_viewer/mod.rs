@@ -12,7 +12,7 @@ pub(crate) use split_view::render_split_view;
 use crate::app::{App, DiffPaneView, Focus, ViewMode};
 use crate::git::diff::LineKind;
 use crate::ui::{focused_border_style, path_extension, render_search_bar};
-use gutter::{lineno_digits, render_gutter_and_body, unified_gutter_text, unified_gutter_width};
+use gutter::{digits_for, render_gutter_and_body, unified_gutter_text, unified_gutter_width};
 use ratatui::{
     Frame,
     layout::{Constraint, Direction, Layout, Rect},
@@ -51,7 +51,7 @@ pub fn render(
     // wide enough; otherwise fall through to the unified renderer below.
     if app.diff.view == DiffPaneView::Split
         && area.width >= MIN_SPLIT_WIDTH
-        && !app.diff.hunks.is_empty()
+        && !app.diff.hunks().is_empty()
     {
         render_split_view(frame, app, area, ss, ts, accent);
         return;
@@ -93,7 +93,7 @@ pub fn render(
     // window, so the body's left edge stays put while scrolling. With no diff
     // loaded the pane holds only a placeholder message, which has no line to
     // number.
-    let digits = lineno_digits(&app.diff.hunks);
+    let digits = digits_for(app.diff.max_line_number() as usize);
     let gutter_width = if total_lines == 0 {
         0
     } else {
@@ -104,14 +104,19 @@ pub fn render(
     // Collected in lockstep with `lines`: same rows, same order, so the two
     // paragraphs share one vertical window.
     let mut gutter_lines: Vec<Line> = Vec::with_capacity(visible_height);
-    let mut flat_idx: usize = 0;
+    let hunk_starts = app.diff.hunk_starts();
+    let first_hunk = hunk_starts
+        .partition_point(|&start| start <= scroll_start)
+        .saturating_sub(1);
 
-    'outer: for (hi, hunk) in app.diff.hunks.iter().enumerate() {
-        if flat_idx >= visible_end {
+    'outer: for (hi, hunk) in app.diff.hunks().iter().enumerate().skip(first_hunk) {
+        let hunk_start = hunk_starts[hi];
+        if hunk_start >= visible_end {
             break;
         }
 
-        if flat_idx >= scroll_start && flat_idx < visible_end {
+        let hunk_offset = scroll_start.saturating_sub(hunk_start);
+        if hunk_offset == 0 {
             lines.push(Line::from(Span::styled(
                 hunk.header.as_str(),
                 Style::default().fg(Color::Cyan),
@@ -120,15 +125,16 @@ pub fn render(
             // start its `@@` one column left of the body's left edge.
             gutter_lines.push(Line::from(""));
         }
-        flat_idx += 1;
 
-        for (li, diff_line) in hunk.lines.iter().enumerate() {
+        for (li, diff_line) in hunk
+            .lines
+            .iter()
+            .enumerate()
+            .skip(hunk_offset.saturating_sub(1))
+        {
+            let flat_idx = hunk_start.saturating_add(1).saturating_add(li);
             if flat_idx >= visible_end {
                 break 'outer;
-            }
-            if flat_idx < scroll_start {
-                flat_idx += 1;
-                continue;
             }
 
             let is_current = has_search && current_match == Some(flat_idx);
@@ -181,7 +187,6 @@ pub fn render(
                 unified_gutter_text(diff_line.old_lineno, diff_line.new_lineno, digits),
                 Style::default().fg(Color::DarkGray).bg(bg),
             )));
-            flat_idx += 1;
         }
     }
 

@@ -20,15 +20,14 @@ pub(crate) fn flush_split_blocks(
     added.clear();
 }
 
-/// Pick the syntect syntax for a hunk based on its `file_path`'s extension.
-/// Falls back to plain text when the path is absent (test fixtures) or the
-/// extension is unknown.
-pub(crate) fn resolve_hunk_syntax<'a>(
+/// Pick the syntect syntax from a mutation-time file-extension key. Falls back
+/// to plain text when the path is absent (test fixtures) or the extension is
+/// unknown.
+pub(crate) fn resolve_syntax_extension<'a>(
     ss: &'a syntect::parsing::SyntaxSet,
-    file_path: Option<&str>,
+    extension: Option<&str>,
 ) -> &'a syntect::parsing::SyntaxReference {
-    file_path
-        .map(crate::ui::path_extension)
+    extension
         .and_then(|ext| ss.find_syntax_by_extension(ext))
         .unwrap_or_else(|| ss.find_syntax_plain_text())
 }

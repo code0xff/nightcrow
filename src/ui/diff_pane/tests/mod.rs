@@ -34,12 +34,10 @@ fn match_hunk(lines: &[&str]) -> DiffHunk {
 fn recompute_matches_keep_scroll_repins_cursor_near_viewport() {
     // 1 hunk header + 10 body lines. "foo" matches at body indices 0, 4, 8
     // → flat rows 1, 5, 9.
-    let mut pane = DiffPane {
-        hunks: vec![match_hunk(&[
-            "foo a", "b", "c", "d", "foo e", "f", "g", "h", "foo i", "j",
-        ])],
-        ..Default::default()
-    };
+    let mut pane = DiffPane::default();
+    pane.set_hunks(vec![match_hunk(&[
+        "foo a", "b", "c", "d", "foo e", "f", "g", "h", "foo i", "j",
+    ])]);
     pane.search.query.set("foo");
     pane.scroll = 6; // user is reading near the middle match (row 5)
     pane.search.cursor = 0; // stale cursor from before content changed
@@ -56,10 +54,8 @@ fn recompute_matches_keep_scroll_repins_cursor_near_viewport() {
 
 #[test]
 fn recompute_matches_scroll_to_match_clamps_and_jumps() {
-    let mut pane = DiffPane {
-        hunks: vec![match_hunk(&["foo a", "b", "foo c"])],
-        ..Default::default()
-    };
+    let mut pane = DiffPane::default();
+    pane.set_hunks(vec![match_hunk(&["foo a", "b", "foo c"])]);
     pane.search.query.set("foo");
     pane.scroll = 100; // arbitrary; scroll_to_match should overwrite
     pane.search.cursor = 99; // stale, should clamp to last match index.
@@ -88,20 +84,70 @@ fn kinded_hunk(lines: &[(LineKind, &str)]) -> DiffHunk {
 }
 
 #[test]
+fn replacing_hunks_updates_generation_metadata_and_split_cache() {
+    let mut pane = DiffPane::default();
+    let before = pane.generation();
+    pane.set_hunks(vec![DiffHunk {
+        header: "@@ -120 +220 @@".to_string(),
+        lines: vec![DiffLine {
+            kind: LineKind::Context,
+            content: "fn cached() {}".to_string(),
+            old_lineno: Some(120),
+            new_lineno: Some(220),
+        }],
+        file_path: Some("src/lib.rs".to_string()),
+    }]);
+
+    assert_ne!(pane.generation(), before);
+    assert_eq!(pane.line_count(), 2);
+    assert_eq!(pane.max_scroll(), 1);
+    assert_eq!(pane.max_line_number(), 220);
+    assert_eq!(pane.syntax_shape, vec![Some("rs".to_string())]);
+    assert_eq!(pane.split_rows().len(), 2);
+    assert_eq!(pane.hunks_lines_lower[0][0], "fn cached() {}");
+}
+
+#[test]
+fn replacing_hunks_invalidates_highlights_without_resetting_viewport_state() {
+    let mut pane = DiffPane {
+        view: DiffPaneView::Split,
+        scroll: 1,
+        scroll_x: 8,
+        ..Default::default()
+    };
+    pane.search.query.set("old");
+    pane.set_hunks(vec![kinded_hunk(&[(LineKind::Removed, "old")])]);
+    let ss = two_face::syntax::extra_newlines();
+    let ts = syntect::highlighting::ThemeSet::load_defaults();
+    pane.ensure_highlight_cache(&ss, &ts);
+    assert!(!pane.line_highlights.is_empty());
+
+    let previous_generation = pane.generation();
+    pane.set_hunks(vec![kinded_hunk(&[(LineKind::Added, "new")])]);
+
+    assert_ne!(pane.generation(), previous_generation);
+    assert!(pane.line_highlights.is_empty());
+    assert_eq!(pane.view, DiffPaneView::Split);
+    assert_eq!(pane.scroll, 1);
+    assert_eq!(pane.scroll_x, 8);
+    assert_eq!(pane.search.query.as_str(), "old");
+    pane.ensure_highlight_cache(&ss, &ts);
+    assert!(!pane.line_highlights.is_empty());
+}
+
+#[test]
 fn split_rows_pairs_changes_and_mirrors_context() {
     use LineKind::{Added, Context, Removed};
     // A typical edit block: one context line, a 2-removed/1-added change,
     // then a trailing context line.
-    let pane = DiffPane {
-        hunks: vec![kinded_hunk(&[
-            (Context, "ctx0"),
-            (Removed, "old a"),
-            (Removed, "old b"),
-            (Added, "new a"),
-            (Context, "ctx1"),
-        ])],
-        ..Default::default()
-    };
+    let mut pane = DiffPane::default();
+    pane.set_hunks(vec![kinded_hunk(&[
+        (Context, "ctx0"),
+        (Removed, "old a"),
+        (Removed, "old b"),
+        (Added, "new a"),
+        (Context, "ctx1"),
+    ])]);
 
     let rows = pane.split_rows();
     assert_eq!(
@@ -137,10 +183,8 @@ fn split_rows_pairs_changes_and_mirrors_context() {
 fn split_rows_pads_added_only_block() {
     use LineKind::Added;
     // Pure insertion: every change row has a blank left side.
-    let pane = DiffPane {
-        hunks: vec![kinded_hunk(&[(Added, "x"), (Added, "y")])],
-        ..Default::default()
-    };
+    let mut pane = DiffPane::default();
+    pane.set_hunks(vec![kinded_hunk(&[(Added, "x"), (Added, "y")])]);
     let rows = pane.split_rows();
     assert_eq!(
         rows,

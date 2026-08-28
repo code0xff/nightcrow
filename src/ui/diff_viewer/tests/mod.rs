@@ -9,6 +9,7 @@ use crate::app::tests::app_with_files;
 use crate::app::{App, DiffPaneView, ViewMode};
 use crate::git::diff::{DiffHunk, DiffLine, LineKind};
 use ratatui::{Terminal, backend::TestBackend, layout::Rect, style::Color};
+use std::time::Instant;
 use syntect::highlighting::ThemeSet;
 
 /// A context / removed / added trio, which is the shape that exercises every
@@ -43,9 +44,69 @@ fn trio_hunk() -> DiffHunk {
 fn app_showing(hunk: DiffHunk, view: DiffPaneView) -> App {
     let mut app = app_with_files(vec!["src/lib.rs"]);
     app.mode = ViewMode::Status;
-    app.diff.hunks = vec![hunk];
+    app.diff.set_hunks(vec![hunk]);
     app.diff.view = view;
     app
+}
+
+#[test]
+#[ignore = "release performance benchmark"]
+fn repeated_large_split_render_reuses_mutation_caches() {
+    let lines: Vec<DiffLine> = (1..=20_000)
+        .map(|line_no| DiffLine {
+            kind: LineKind::Context,
+            content: format!("line {line_no}"),
+            old_lineno: Some(line_no),
+            new_lineno: Some(line_no),
+        })
+        .collect();
+    let mut app = app_showing(
+        DiffHunk {
+            header: "@@ -1,20000 +1,20000 @@".to_string(),
+            lines,
+            file_path: Some("src/lib.rs".to_string()),
+        },
+        DiffPaneView::Split,
+    );
+    let width = 120;
+    let height = 12;
+    let ss = two_face::syntax::extra_newlines();
+    let ts = ThemeSet::load_defaults();
+    let mut terminal = Terminal::new(TestBackend::new(width, height)).expect("a terminal");
+
+    terminal
+        .draw(|frame| {
+            super::render(
+                frame,
+                &mut app,
+                Rect::new(0, 0, width, height),
+                &ss,
+                &ts,
+                Color::Yellow,
+            );
+        })
+        .expect("warmup draw");
+    let rows_ptr = app.diff.split_rows().as_ptr();
+    let highlights_ptr = app.diff.line_highlights.as_ptr();
+
+    let started = Instant::now();
+    for _ in 0..100 {
+        terminal
+            .draw(|frame| {
+                super::render(
+                    frame,
+                    &mut app,
+                    Rect::new(0, 0, width, height),
+                    &ss,
+                    &ts,
+                    Color::Yellow,
+                );
+            })
+            .expect("repeat draw");
+    }
+    eprintln!("20k-line split render ×100: {:?}", started.elapsed());
+    assert_eq!(app.diff.split_rows().as_ptr(), rows_ptr);
+    assert_eq!(app.diff.line_highlights.as_ptr(), highlights_ptr);
 }
 
 /// Screen column of `needle`. `str::find` yields a byte offset, and the pane
