@@ -2,6 +2,7 @@
 
 mod execute;
 mod lifecycle;
+mod retry;
 mod runtime;
 
 use std::sync::{Arc, Condvar, Mutex, mpsc};

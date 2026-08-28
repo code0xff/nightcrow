@@ -1,11 +1,13 @@
 use std::io;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::thread;
 use std::time::{Duration, Instant};
 
 use super::runtime::{TestHooks, WorkerTask, WorkerThread, spawn_task};
 use super::*;
+
+mod retry;
 
 fn request(generation: u64, operation: GitLoadOperation) -> GitLoadRequest {
     GitLoadRequest {
@@ -171,8 +173,33 @@ fn worker_with_hooks(
     let hooks = Arc::new(TestHooks {
         spawner: Arc::new(spawner),
         executor: Arc::new(executor),
+        now: Arc::new(Instant::now),
+        on_warning: Arc::new(|_| {}),
     });
     GitLoadWorker::new(move |reply_tx| WorkerThread::with_hooks(reply_tx, hooks))
+}
+
+struct ManualClock {
+    start: Instant,
+    elapsed_ms: AtomicU64,
+}
+
+impl ManualClock {
+    fn new() -> Self {
+        Self {
+            start: Instant::now(),
+            elapsed_ms: AtomicU64::new(0),
+        }
+    }
+
+    fn now(&self) -> Instant {
+        self.start + Duration::from_millis(self.elapsed_ms.load(Ordering::SeqCst))
+    }
+
+    fn advance(&self, duration: Duration) {
+        let millis = u64::try_from(duration.as_millis()).expect("test duration fits u64");
+        self.elapsed_ms.fetch_add(millis, Ordering::SeqCst);
+    }
 }
 
 fn successful_executor(
