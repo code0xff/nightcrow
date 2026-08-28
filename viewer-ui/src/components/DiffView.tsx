@@ -3,6 +3,8 @@ import { linenoDigits } from "../lib/gutter";
 import { diffLineBg } from "../lib/utils";
 import { LineNos } from "./LineNos";
 import type { Diff, DiffLine } from "../api";
+import { VIRTUAL_THRESHOLD, type ScrollViewport } from "../lib/virtualWindow";
+import { VirtualDiffView } from "./VirtualDiffView";
 
 function DiffLineContent({ line }: { line: DiffLine }) {
   return (
@@ -104,7 +106,28 @@ function SplitHunk({ lines, digits }: { lines: DiffLine[]; digits: number }) {
   );
 }
 
-export function DiffView({ diff, split }: { diff: Diff; split: boolean }) {
+export function DiffView({
+  diff,
+  split,
+  viewport = { scrollTop: 0, height: 600 },
+}: {
+  diff: Diff;
+  split: boolean;
+  viewport?: ScrollViewport;
+}) {
+  const lineCount = diff.hunks.reduce((count, hunk) => count + hunk.lines.length, 0);
+  if (lineCount > VIRTUAL_THRESHOLD) {
+    return (
+      <>
+        <VirtualDiffView diff={diff} split={split} viewport={viewport} />
+        {diff.truncated && (
+          <p className="p-3 text-accent">
+            Diff truncated — it exceeded the server's size ceiling.
+          </p>
+        )}
+      </>
+    );
+  }
   // One width for the whole diff, not per hunk: a gutter that resized at each
   // hunk boundary would step the code's left edge as you scrolled past one.
   const digits = linenoDigits(diff.hunks);
