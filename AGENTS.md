@@ -1,5 +1,7 @@
 # nightcrow
 
+체크아웃 루트에 `AGENTS.local.md`가 있으면 이 문서와 함께 읽고 적용한다.
+
 Agent-adjacent Rust TUI: 상단은 git diff/commit log 뷰어, 하단은 split-view 멀티 터미널 패널.
 설계는 `docs/architecture.md`, 사용법은 `README.md`.
 

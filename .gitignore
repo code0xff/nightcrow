@@ -49,7 +49,7 @@
 /viewer-ui/tsconfig.tsbuildinfo
 # Agent tool scratch state
 /.atl/
-/.worktress/
+/.worktrees/
 
 # Checkout-local agent instructions
 /AGENTS.local.md
