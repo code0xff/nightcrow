@@ -1,7 +1,7 @@
 use super::Workspace;
 use crate::app::NoticeKind;
 
-/// Outcome of confirming the dialog. The caller owns the workspace, so it does
+/// Outcome of confirming the dialog. The caller owns the workspace and does
 /// the opening; this only hands back an accepted path.
 #[derive(Debug, PartialEq, Eq)]
 pub enum RepoInputResult {
@@ -81,9 +81,10 @@ impl Workspace {
         self.repo_input.candidates = completed.candidates;
     }
 
-    /// Typing always extends the path, never replaces it. The prefill exists to
-    /// supply a shared prefix; wiping it on the first keystroke would throw that
-    /// away with nothing to undo it. Esc and Backspace discard.
+    /// Typing always extends the path, never replaces it — the prefill is
+    /// there to supply a shared prefix, and wiping it on the first keystroke
+    /// would throw that away with nothing to undo it. Esc and Backspace
+    /// discard.
     pub fn repo_input_push(&mut self, ch: char) {
         if self.repo_input.buf.len() + ch.len_utf8() > REPO_INPUT_MAX_BYTES {
             return;

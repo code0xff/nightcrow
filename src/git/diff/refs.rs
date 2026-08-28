@@ -3,10 +3,9 @@ use git2::{Oid, Repository};
 use std::collections::{HashMap, HashSet};
 use std::hash::{Hash, Hasher};
 
-/// Upper bound on the oids collected per divergence side. A repository can
-/// diverge from its upstream by an arbitrary number of commits, and the sets
-/// exist only to mark rows the user can actually scroll to; the walk yields
-/// newest-first, so the cap drops the far tail rather than the visible head.
+/// Upper bound on oids collected per divergence side: the walk yields
+/// newest-first, so capping drops the far tail, not the rows a user can
+/// actually scroll to.
 const MAX_DIVERGENCE_OIDS: usize = 1_000;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -26,11 +25,9 @@ pub struct RefLabel {
     pub name: String,
 }
 
-/// Everything the commit log needs to decorate rows: which refs point at which
-/// commit, and which commits are ahead of / behind the upstream.
-///
-/// Built from refs alone, so it stays valid until a ref moves. Callers rebuild
-/// it when [`refs_fingerprint`] changes rather than per frame or per poll.
+/// Decorations for the commit log: which refs point at which commit, and
+/// which commits are ahead of / behind the upstream. Built from refs alone, so
+/// callers rebuild it when [`refs_fingerprint`] changes rather than per frame.
 #[derive(Debug, Default)]
 pub struct LogDecorations {
     labels: HashMap<Oid, Vec<RefLabel>>,
@@ -57,7 +54,7 @@ impl LogDecorations {
     }
 }
 
-/// Cheap summary of every ref's name and target, used to decide whether
+/// Cheap summary of every ref's name and target, to decide whether
 /// [`load_log_decorations`] needs to run again. A fetch that advances
 /// `origin/dev` changes this even though HEAD did not move.
 pub fn refs_fingerprint(repo: &Repository) -> u64 {
@@ -156,10 +153,8 @@ pub fn load_log_decorations(repo: &Repository) -> Result<LogDecorations> {
     })
 }
 
-/// Oids that exist on exactly one side of the HEAD/upstream split.
-///
-/// `None` when HEAD is detached, unborn, or has no upstream — there is nothing
-/// to diverge from, which is not an error.
+/// Oids on exactly one side of the HEAD/upstream split. `None` when HEAD is
+/// detached, unborn, or has no upstream — nothing to diverge from, not an error.
 fn divergence_oids(repo: &Repository) -> Option<(HashSet<Oid>, HashSet<Oid>)> {
     let head = repo.head().ok()?;
     if !head.is_branch() {

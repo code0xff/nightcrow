@@ -1,8 +1,7 @@
 //! The colour this client paints the session in.
 //!
-//! Read rather than decided: the session owns the accent (see the shared side of
-//! the boundary in `docs/architecture.md`), so everything here either adopts what
-//! the daemon reported or works out what to ask for next.
+//! The session owns the accent (see `docs/architecture.md`), so this module
+//! only adopts what the daemon reported or works out what to ask for next.
 
 use super::Workspace;
 
@@ -13,9 +12,10 @@ impl Workspace {
         self.accent_idx = idx % crate::config::Accent::ALL.len();
     }
 
-    /// The index the next `<prefix> p` asks for. Derived here rather than by the
-    /// daemon so the request names a colour instead of a step — two clients
-    /// cycling at once would otherwise land somewhere neither asked for.
+    /// The index the next `<prefix> p` asks for. Derived here rather than by
+    /// the daemon so the request names a colour instead of a step — two
+    /// clients cycling at once would otherwise land somewhere neither asked
+    /// for.
     pub fn next_accent_index(&self) -> usize {
         (self.accent_idx + 1) % crate::config::Accent::ALL.len()
     }

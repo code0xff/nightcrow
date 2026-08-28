@@ -29,10 +29,9 @@ pub fn load_snapshot(repo: &Repository) -> Result<RepoSnapshot> {
         .statuses(Some(&mut opts))
         .context("failed to get repository status")?;
 
-    // Keyed by effective (new-side) path so the file list stays in a stable
-    // sorted order across refreshes — selection restoration depends on that.
-    // Each git status entry already carries both X and Y bits, so there is no
-    // longer a first-wins collapse: one entry maps to one row.
+    // Keyed by effective (new-side) path: one entry maps to one row, and the
+    // stable sorted order across refreshes is what selection restoration
+    // depends on.
     let mut files = BTreeMap::new();
     for entry in statuses.iter() {
         let Some((index, worktree)) = status_columns(entry.status()) else {
@@ -69,16 +68,13 @@ pub fn load_snapshot(repo: &Repository) -> Result<RepoSnapshot> {
 }
 
 /// Map a git2 status bitset into separate index (X) and worktree (Y) columns.
-/// Untracked and conflicted are reported as both-column sentinels so the
-/// renderer can collapse them to `??` / `UU`. Returns `None` when neither
-/// column carries a displayable change.
+/// Untracked and conflicted are sentinels spanning both columns so the
+/// renderer can show `??` / `UU`. `None` when neither column displays a change.
 fn status_columns(status: Status) -> Option<(StatusKind, StatusKind)> {
-    // Untracked: git renders `??` (both columns), not ` ?`. Only a *purely*
-    // untracked entry collapses to `??`. A combined state such as
-    // `INDEX_DELETED | WT_NEW` (staged deletion, then a fresh file recreated at
-    // the same path) keeps its index status so the staged change is not hidden;
-    // git itself emits two rows there, but our one-row-per-path model preserves
-    // the index side (`D `) rather than masking it as untracked.
+    // Only a *purely* untracked entry collapses to `??`. A combined state such
+    // as `INDEX_DELETED | WT_NEW` keeps its index status so the staged change
+    // is not hidden; git emits two rows there, but the one-row-per-path model
+    // preserves the index side instead of masking it as untracked.
     let index_bits = Status::INDEX_NEW
         | Status::INDEX_MODIFIED
         | Status::INDEX_DELETED
@@ -116,8 +112,7 @@ fn status_columns(status: Status) -> Option<(StatusKind, StatusKind)> {
     } else if status.contains(Status::WT_TYPECHANGE) {
         StatusKind::TypeChanged
     } else if status.contains(Status::WT_UNREADABLE) {
-        // No standard git short code; keep it visible as a worktree change
-        // rather than dropping the row (preserves prior behavior).
+        // No standard short code exists; keep the row visible as a change.
         StatusKind::Modified
     } else {
         StatusKind::Unmodified
@@ -129,9 +124,8 @@ fn status_columns(status: Status) -> Option<(StatusKind, StatusKind)> {
     Some((index, worktree))
 }
 
-/// Effective (new-side) path plus the old path for renames. The effective
-/// path drives diff/file loading; `old_path` is display/search metadata only
-/// and is omitted when it equals the effective path.
+/// Effective (new-side) path plus the old path for renames. `old_path` is
+/// display/search metadata only, omitted when it equals the effective path.
 fn paths_from_status_entry(entry: &StatusEntry<'_>) -> Option<(String, Option<String>)> {
     let i2w = entry.index_to_workdir();
     let h2i = entry.head_to_index();
@@ -144,10 +138,10 @@ fn paths_from_status_entry(entry: &StatusEntry<'_>) -> Option<(String, Option<St
         .or_else(|| entry.path().ok().map(str::to_string))?;
 
     let old_path = if status.intersects(Status::INDEX_RENAMED | Status::WT_RENAMED) {
-        // Prefer the HEAD-side original when the index carries a rename, so a
-        // double-rename (`INDEX_RENAMED | WT_RENAMED`) reports the true original
-        // path rather than the intermediate staged name. Fall back to the
-        // worktree side for a pure unstaged rename.
+        // Prefer the HEAD-side original for a double-rename
+        // (`INDEX_RENAMED | WT_RENAMED`) so the true original path is reported,
+        // not the intermediate staged name. Worktree side for a pure unstaged
+        // rename.
         let from = if status.contains(Status::INDEX_RENAMED) {
             h2i.as_ref()
         } else {

@@ -1,9 +1,7 @@
-//! Tab completion for the repo dialog's path field.
-//!
-//! One `read_dir` per Tab press, against the single directory the buffer names.
-//! Directories only: the dialog opens a repo and a file can never be one.
-//! The dialog is not a shell, so only what `confirm_repo_input` itself accepts
-//! is understood here: `~`, `..`, and cwd-relative paths. No `$VAR`, no globs.
+//! Tab completion for the repo dialog's path field: one `read_dir` per Tab
+//! press, directories only. The dialog is not a shell, so only what
+//! `confirm_repo_input` itself accepts is understood here — `~`, `..`, and
+//! cwd-relative paths. No `$VAR`, no globs.
 
 use std::path::{MAIN_SEPARATOR, Path};
 
@@ -96,7 +94,7 @@ pub(crate) fn complete_dir_path(buf: &str) -> PathCompletion {
             .filter(|n| n.to_lowercase().starts_with(&lower))
             .collect();
     }
-    // `read_dir_names` already sorted, and filtering preserves order.
+    // `read_dir_names` is sorted and filtering preserves order.
 
     match matches.len() {
         0 => unchanged(),
@@ -107,13 +105,13 @@ pub(crate) fn complete_dir_path(buf: &str) -> PathCompletion {
         },
         _ => {
             let common = longest_common_prefix(&matches);
-            // Extending also corrects casing, so this fires whenever the shared
-            // prefix reads differently from what was typed, not only when it is
-            // longer.
+            // Extending also corrects casing, so this fires whenever the
+            // shared prefix reads differently from what was typed, not only
+            // when it is longer.
             let extended = common != frag;
-            // Listing and extending are independent. While typing can still be
-            // narrowed by an extension the list would be noise — except on a
-            // directory boundary, where an empty fragment means "what is in
+            // Listing and extending are independent. While typing could still
+            // be narrowed by an extension the list would be noise — except on
+            // a directory boundary, where an empty fragment means "what is in
             // here?" and a silent extension answers nothing.
             let candidates = if extended && !frag.is_empty() {
                 Vec::new()
@@ -133,9 +131,9 @@ pub(crate) fn complete_dir_path(buf: &str) -> PathCompletion {
 }
 
 /// `file_type` comes free with the directory read on most platforms; only a
-/// symlink costs the extra stat to see what it points at. Symlinked checkouts
-/// are common enough that reporting them as non-directories would hide real
-/// repos, so unlike the in-repo tree navigator this one follows them.
+/// symlink costs an extra stat. Symlinked checkouts are common enough that
+/// reporting them as non-directories would hide real repos, so this follows
+/// them (unlike the in-repo tree navigator).
 fn is_dir_entry(entry: &std::fs::DirEntry) -> bool {
     match entry.file_type() {
         Ok(t) if t.is_symlink() => entry.path().is_dir(),
