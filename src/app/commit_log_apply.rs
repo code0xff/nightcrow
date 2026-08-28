@@ -5,6 +5,9 @@ use super::commit_log_fetch::{CommitLogFetchKind, CommitLogPageMsg};
 
 impl App {
     pub(super) fn handle_commit_log_page_msg(&mut self, msg: CommitLogPageMsg) {
+        if msg.generation != self.commit_log_controller.generation() {
+            return;
+        }
         match msg.kind {
             CommitLogFetchKind::Tail => self.apply_tail_page(msg),
             CommitLogFetchKind::Refresh {
@@ -119,7 +122,8 @@ impl App {
         self.log_view.commit_scroll_x = 0;
         // Anchor the head-oid sentinel so ingest_snapshot doesn't immediately
         // trigger another refresh.
-        self.pagination.last_head_oid = self.log_view.commits.first().map(|c| c.oid);
+        self.commit_log_controller
+            .set_last_head_oid(self.log_view.commits.first().map(|c| c.oid));
 
         // Drill-down survives only if the commit it was opened on is still in
         // the (possibly extended) list.

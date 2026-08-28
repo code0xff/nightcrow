@@ -3,7 +3,7 @@ use super::*;
 pub(super) fn seed_cached_commit_log(app: &mut App) {
     app.log_view.set_commits(vec![fake_entry(0)]);
     app.log_view.fully_loaded = true;
-    app.pagination.last_head_oid = app.log_view.commits.first().map(|c| c.oid);
+    app.set_observed_head_for_test(app.log_view.commits.first().map(|c| c.oid));
 }
 
 fn fake_entry(time: i64) -> CommitEntry {

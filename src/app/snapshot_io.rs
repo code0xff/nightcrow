@@ -73,8 +73,8 @@ impl App {
 
         // Skip on the very first snapshot (prior == None) so initial loads
         // don't double-fetch the commit log on top of `toggle_mode`'s eager load.
-        let prior_head = self.pagination.last_head_oid;
-        self.pagination.last_head_oid = new_head;
+        let prior_head = self.commit_log_controller.last_head_oid();
+        self.commit_log_controller.set_last_head_oid(new_head);
         if prior_head.is_some() && prior_head != new_head && self.mode == ViewMode::Log {
             self.refresh_commit_log_after_head_change();
         }

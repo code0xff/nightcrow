@@ -221,12 +221,12 @@ fn entering_tree_cancels_in_flight_commit_log_fetch() {
     let (dir, path) = make_tree_repo();
     let mut app = app_on(&path);
     app.spawn_commit_log_refresh_fetch(None, None);
-    assert!(app.pagination.page_rx.is_some(), "fetch should be pending");
+    assert!(app.commit_log_fetch_pending(), "fetch should be pending");
 
     app.enter_tree_mode();
 
     assert!(
-        app.pagination.page_rx.is_none(),
+        !app.commit_log_fetch_pending(),
         "entering Tree mode must cancel the in-flight commit-log fetch"
     );
     drop(dir);

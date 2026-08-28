@@ -40,8 +40,8 @@ impl App {
         // refresh the hidden commit list, so a HEAD change there must
         // invalidate the cache on the next entry.
         let cached_head = self.log_view.commits.first().map(|c| c.oid);
-        let cache_matches_head =
-            !self.log_view.commits.is_empty() && cached_head == self.pagination.last_head_oid;
+        let cache_matches_head = !self.log_view.commits.is_empty()
+            && cached_head == self.commit_log_controller.last_head_oid();
         if !self.log_view.commits.is_empty() && !cache_matches_head {
             self.refresh_commit_log_after_head_change();
         } else if self.log_view.commits.is_empty() {

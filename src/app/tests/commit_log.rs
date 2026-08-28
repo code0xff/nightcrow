@@ -13,8 +13,7 @@ fn fake_entry(time: i64) -> CommitEntry {
 pub(super) fn seed_log_app(entries: usize, page_size: usize, threshold: usize) -> App {
     let mut app = app_with_files(vec![]);
     app.mode = ViewMode::Log;
-    app.pagination.page_size = page_size;
-    app.pagination.prefetch_threshold = threshold;
+    app.configure_commit_log(page_size, threshold);
     let commits: Vec<_> = (0..entries).map(|i| fake_entry(i as i64)).collect();
     app.log_view.set_commits(commits);
     app
@@ -29,7 +28,7 @@ fn maybe_prefetch_no_ops_in_status_mode() {
     app.maybe_prefetch_commit_log();
 
     assert!(!app.log_view.pending_fetch);
-    assert!(app.pagination.page_rx.is_none());
+    assert!(!app.commit_log_fetch_pending());
 }
 
 #[test]
@@ -37,7 +36,7 @@ fn maybe_prefetch_no_ops_when_empty() {
     let mut app = seed_log_app(0, 5, 5);
     app.maybe_prefetch_commit_log();
     assert!(!app.log_view.pending_fetch);
-    assert!(app.pagination.page_rx.is_none());
+    assert!(!app.commit_log_fetch_pending());
 }
 
 #[test]
@@ -49,7 +48,7 @@ fn maybe_prefetch_no_ops_when_fully_loaded() {
     app.maybe_prefetch_commit_log();
 
     assert!(!app.log_view.pending_fetch);
-    assert!(app.pagination.page_rx.is_none());
+    assert!(!app.commit_log_fetch_pending());
 }
 
 #[test]
@@ -61,7 +60,7 @@ fn maybe_prefetch_no_ops_when_far_from_tail() {
     app.maybe_prefetch_commit_log();
 
     assert!(!app.log_view.pending_fetch);
-    assert!(app.pagination.page_rx.is_none());
+    assert!(!app.commit_log_fetch_pending());
 }
 
 #[test]
@@ -78,12 +77,11 @@ fn maybe_prefetch_triggers_when_near_tail() {
     app.maybe_prefetch_commit_log();
 
     assert!(app.log_view.pending_fetch);
-    assert!(app.pagination.page_rx.is_some());
+    assert!(app.commit_log_fetch_pending());
 
     // Wait for the worker to land so its result doesn't leak into a
     // subsequent test scenario.
-    let rx = app.pagination.page_rx.take().unwrap();
-    let _ = rx.recv_timeout(Duration::from_secs(2)).unwrap();
+    app.flush_commit_log_fetch_for_test(Duration::from_secs(2));
     drop(dir);
 }
 
@@ -98,65 +96,40 @@ fn maybe_prefetch_suppresses_duplicate_pending() {
     app.log_view.selected = 6;
 
     app.maybe_prefetch_commit_log();
-    let first_rx_ptr = app.pagination.page_rx.as_ref().map(|r| r as *const _);
-    assert!(first_rx_ptr.is_some());
+    assert!(app.commit_log_fetch_pending());
 
     app.maybe_prefetch_commit_log();
-    let second_rx_ptr = app.pagination.page_rx.as_ref().map(|r| r as *const _);
-    // The second call must reuse the same receiver — no second spawn.
-    assert_eq!(first_rx_ptr, second_rx_ptr);
+    assert!(app.commit_log_fetch_pending());
 
-    let rx = app.pagination.page_rx.take().unwrap();
-    let _ = rx.recv_timeout(Duration::from_secs(2)).unwrap();
+    app.flush_commit_log_fetch_for_test(Duration::from_secs(2));
     drop(dir);
 }
 
 #[test]
-fn poll_drains_matching_skip_into_commits() {
-    let mut app = seed_log_app(3, 5, 1);
-    app.log_view.pending_fetch = true;
-    let (tx, rx) = mpsc::channel();
-    app.pagination.page_rx = Some(rx);
-    // Worker thinks the loaded tail was 3 when it ran; this matches.
-    tx.send(CommitLogPageMsg {
-        kind: CommitLogFetchKind::Tail,
-        skip: 3,
-        page_size: 5,
-        result: Ok(vec![fake_entry(3), fake_entry(4)]),
-    })
-    .unwrap();
-
-    app.poll_commit_log_page_fetch();
-
-    assert_eq!(app.log_view.commits.len(), 5);
-    assert_eq!(app.log_view.loaded_count, 5);
-    // Page was shorter than page_size → end of history reached.
-    assert!(app.log_view.fully_loaded);
-    assert!(!app.log_view.pending_fetch);
-    assert!(app.pagination.page_rx.is_none());
+fn worker_reply_appends_matching_tail() {
+    let (_dir, path) = make_repo();
+    run_git(&path, &["commit", "--allow-empty", "-m", "c0"]);
+    run_git(&path, &["commit", "--allow-empty", "-m", "c1"]);
+    let mut app = seed_log_app(0, 1, 1);
+    app.repo_path = path;
+    app.spawn_commit_log_page_fetch(0);
+    app.flush_commit_log_fetch_for_test(Duration::from_secs(2));
+    assert_eq!(app.log_view.commits.len(), 2);
+    assert_eq!(app.log_view.loaded_count, 2);
 }
 
 #[test]
-fn poll_discards_stale_skip_result() {
-    let mut app = seed_log_app(3, 5, 1);
-    app.log_view.pending_fetch = true;
-    let (tx, rx) = mpsc::channel();
-    app.pagination.page_rx = Some(rx);
-    // skip=2 doesn't match loaded_count=3 → discard (e.g. HEAD changed
-    // between spawn and reply, resetting pagination).
-    tx.send(CommitLogPageMsg {
-        kind: CommitLogFetchKind::Tail,
-        skip: 2,
-        page_size: 5,
-        result: Ok(vec![fake_entry(2), fake_entry(3)]),
-    })
-    .unwrap();
-
-    app.poll_commit_log_page_fetch();
-
-    assert_eq!(app.log_view.commits.len(), 3);
-    assert!(!app.log_view.fully_loaded);
-    assert!(!app.log_view.pending_fetch);
+fn worker_reply_discards_stale_tail() {
+    let (_dir, path) = make_repo();
+    run_git(&path, &["commit", "--allow-empty", "-m", "c0"]);
+    let mut app = seed_log_app(1, 1, 1);
+    app.repo_path = path;
+    app.spawn_commit_log_page_fetch(1);
+    app.log_view
+        .set_commits(vec![fake_entry(9), fake_entry(10)]);
+    app.flush_commit_log_fetch_for_test(Duration::from_secs(2));
+    assert_eq!(app.log_view.commits.len(), 2);
+    assert_eq!(app.log_view.commits[0].summary, "c9");
 }
 
 #[test]

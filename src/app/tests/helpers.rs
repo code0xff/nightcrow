@@ -67,7 +67,7 @@ pub(crate) fn app_with_files(files: Vec<&str>) -> App {
             ..crate::config::AgentIndicatorConfig::default()
         },
         cfg_tree: crate::config::TreeConfig::default(),
-        pagination: CommitLogPagination::with_config(
+        commit_log_controller: CommitLogController::with_config(
             crate::config::LogConfig::default().commit_log_page_size,
             crate::config::LogConfig::default().commit_log_prefetch_threshold,
         ),

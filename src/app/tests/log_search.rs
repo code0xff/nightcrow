@@ -49,7 +49,7 @@ fn maybe_prefetch_suppressed_while_commit_search_active() {
     app.maybe_prefetch_commit_log();
 
     assert!(!app.log_view.pending_fetch);
-    assert!(app.pagination.page_rx.is_none());
+    assert!(!app.commit_log_fetch_pending());
 }
 
 #[test]
@@ -71,10 +71,9 @@ fn cancel_log_search_resumes_prefetch() {
     // tail fetch can run now that the gate is lifted.
     app.cancel_log_search();
     assert!(app.log_view.pending_fetch);
-    assert!(app.pagination.page_rx.is_some());
+    assert!(app.commit_log_fetch_pending());
 
-    let rx = app.pagination.page_rx.take().unwrap();
-    let _ = rx.recv_timeout(Duration::from_secs(2)).unwrap();
+    app.flush_commit_log_fetch_for_test(Duration::from_secs(2));
     drop(dir);
 }
 
@@ -99,8 +98,7 @@ fn confirm_log_search_with_query_resumes_prefetch() {
     assert_eq!(app.log_view.commit_search_query.as_str(), "c");
     assert!(app.log_view.pending_fetch);
 
-    let rx = app.pagination.page_rx.take().unwrap();
-    let _ = rx.recv_timeout(Duration::from_secs(2)).unwrap();
+    app.flush_commit_log_fetch_for_test(Duration::from_secs(2));
     drop(dir);
 }
 

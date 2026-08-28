@@ -17,7 +17,7 @@ mod terminal_ctrl;
 mod tree;
 mod tree_nav;
 
-pub use crate::app::commit_log_pagination::CommitLogPagination;
+pub use crate::app::commit_log_pagination::CommitLogController;
 pub use crate::runtime::snapshot::{SnapshotChannel, SnapshotMsg};
 #[cfg(test)]
 pub use crate::runtime::terminal::PaneInfo;
@@ -116,7 +116,7 @@ pub struct App {
     pub cfg_agent_indicator: crate::config::AgentIndicatorConfig,
     pub cfg_tree: crate::config::TreeConfig,
     // Drop impl joins the worker so `change_repo` can't leak the old-repo fetch.
-    pub pagination: CommitLogPagination,
+    pub commit_log_controller: CommitLogController,
     pub auto_follow: AutoFollow,
     // Mutually exclusive with `diff.fullscreen` and `terminal.fullscreen`.
     pub list_fullscreen: bool,

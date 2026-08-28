@@ -31,7 +31,7 @@ fn head_change_in_log_mode_reloads_commit_list() {
     app.log_view
         .set_commits(load_commit_log(&open_repo(&path), 500).unwrap());
     app.log_view.selected = 0;
-    app.pagination.last_head_oid = app.log_view.commits.first().map(|c| c.oid);
+    app.set_observed_head_for_test(app.log_view.commits.first().map(|c| c.oid));
     assert_eq!(app.log_view.commits.len(), 2);
 
     // Make a new commit in the same repo (simulates the terminal pane
@@ -67,7 +67,7 @@ fn head_change_in_status_mode_does_not_reload() {
     // refreshed even when HEAD moves.
     app.log_view
         .set_commits(load_commit_log(&open_repo(&path), 500).unwrap());
-    app.pagination.last_head_oid = app.log_view.commits.first().map(|c| c.oid);
+    app.set_observed_head_for_test(app.log_view.commits.first().map(|c| c.oid));
     assert_eq!(app.log_view.commits.len(), 1);
     assert_eq!(app.mode, ViewMode::Status);
 
@@ -99,7 +99,7 @@ fn toggling_log_after_status_head_change_reloads_stale_cache() {
     app.mode = ViewMode::Status;
     app.log_view
         .set_commits(load_commit_log(&open_repo(&path), 500).unwrap());
-    app.pagination.last_head_oid = app.log_view.commits.first().map(|c| c.oid);
+    app.set_observed_head_for_test(app.log_view.commits.first().map(|c| c.oid));
     assert_eq!(app.log_view.commits[0].summary, "first");
 
     run_git(&path, &["commit", "--allow-empty", "-m", "second"]);
@@ -122,7 +122,7 @@ fn toggling_log_after_status_head_change_reloads_stale_cache() {
     assert_eq!(app.log_view.selected, 1);
     assert_eq!(app.log_view.commits[app.log_view.selected].summary, "first");
     assert!(app.log_view.fully_loaded);
-    assert!(app.pagination.page_rx.is_none());
+    assert!(!app.commit_log_fetch_pending());
 }
 
 #[test]
@@ -144,7 +144,7 @@ fn head_change_preserves_selected_commit_by_oid() {
     // Select the older commit at the bottom.
     app.log_view.selected = 1;
     let prior_oid = app.log_view.commits[1].oid;
-    app.pagination.last_head_oid = app.log_view.commits.first().map(|c| c.oid);
+    app.set_observed_head_for_test(app.log_view.commits.first().map(|c| c.oid));
 
     run_git(&path, &["commit", "--allow-empty", "-m", "third"]);
 
@@ -177,7 +177,7 @@ fn head_change_falls_back_to_top_when_prior_oid_gone() {
     app.log_view
         .set_commits(load_commit_log(&open_repo(&path), 500).unwrap());
     app.log_view.selected = 0;
-    app.pagination.last_head_oid = app.log_view.commits.first().map(|c| c.oid);
+    app.set_observed_head_for_test(app.log_view.commits.first().map(|c| c.oid));
 
     // Reset to before the second commit so the prior HEAD oid is gone,
     // then add a different commit on top.
@@ -213,7 +213,7 @@ fn head_change_clears_drill_down_when_commit_gone() {
         .set_commits(load_commit_log(&open_repo(&path), 500).unwrap());
     app.log_view.selected = 0; // 'doomed' commit at top
     app.log_view.drill_down = true;
-    app.pagination.last_head_oid = app.log_view.commits.first().map(|c| c.oid);
+    app.set_observed_head_for_test(app.log_view.commits.first().map(|c| c.oid));
 
     // Drop the selected commit via reset, then advance HEAD with a new one.
     run_git(&path, &["reset", "--hard", "HEAD~1"]);
@@ -244,7 +244,7 @@ fn initial_snapshot_does_not_trigger_commit_log_reload() {
     app.mode = ViewMode::Log;
     // No prior commits loaded; last_head_oid = None (default).
     assert!(app.log_view.commits.is_empty());
-    assert!(app.pagination.last_head_oid.is_none());
+    assert!(app.observed_head_for_test().is_none());
 
     tx.send(SnapshotMsg::Ok(snapshot_with_head(&path), HashMap::new()))
         .unwrap();
@@ -254,5 +254,5 @@ fn initial_snapshot_does_not_trigger_commit_log_reload() {
     // toggle_mode's / restore_log_session's job. We only refresh on
     // subsequent HEAD changes.
     assert!(app.log_view.commits.is_empty());
-    assert!(app.pagination.last_head_oid.is_some());
+    assert!(app.observed_head_for_test().is_some());
 }
