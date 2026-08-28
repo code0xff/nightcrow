@@ -42,8 +42,8 @@ pub(crate) fn main_loop(
             );
         }
         // Every project drains its queues, not just the visible one: the
-        // snapshot worker and PTY reader produce into unbounded channels
-        // regardless of which tab is on screen. Only the active project
+        // snapshot worker and PTY reader keep producing regardless of which
+        // tab is on screen. Only the active project
         // *applies* its snapshot, though — a background one waits in
         // `pending_snapshot` until its tab is shown.
         let active = ws.active_index();

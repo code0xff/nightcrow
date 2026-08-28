@@ -43,7 +43,9 @@ impl Wired {
     }
 
     fn deliver(&self, event: HubServerMessage) {
-        self.router.deliver(REPO, TerminalMessage::Event(event));
+        self.router
+            .deliver(REPO, TerminalMessage::Event(event))
+            .expect("terminal inbox accepts the event");
     }
 }
 
@@ -170,15 +172,18 @@ fn a_pane_another_client_opened_arrives_without_claiming_the_focus() {
 #[test]
 fn output_and_exits_come_through_as_they_are() {
     let mut wired = wired();
-    wired.router.deliver(
-        REPO,
-        TerminalMessage::Output {
-            pane: 1,
-            // Not valid UTF-8: a multi-byte sequence split across reads is
-            // routine, and the emulator is what reassembles it.
-            data: vec![0xe2, 0x94],
-        },
-    );
+    wired
+        .router
+        .deliver(
+            REPO,
+            TerminalMessage::Output {
+                pane: 1,
+                // Not valid UTF-8: a multi-byte sequence split across reads is
+                // routine, and the emulator is what reassembles it.
+                data: vec![0xe2, 0x94],
+            },
+        )
+        .expect("terminal inbox accepts the output");
     wired.deliver(HubServerMessage::Exited { pane: 1 });
 
     let events = wired.backend.drain_events();
