@@ -1,14 +1,13 @@
 //! The viewer's wire format.
 //!
 //! Internal git types are never serialized directly — they carry TUI-only
-//! fields (`search_lower`, `summary_lower`) and libgit2-shaped types like
-//! `Oid`. Every payload below is an explicit whitelist built by hand, so
-//! adding a field to an internal struct can never widen what a browser sees,
-//! and renaming one breaks the build here instead of silently changing the API.
+//! fields and libgit2-shaped types like `Oid`. Every payload is an explicit
+//! whitelist built by hand, so adding a field to an internal struct can never
+//! widen what a browser sees, and renaming one breaks the build instead of
+//! silently changing the API.
 //!
 //! [`PROTOCOL_VERSION`] rides on every response so a cached page from an
-//! older build can refuse to interpret a newer payload rather than misread
-//! it.
+//! older build can refuse a newer payload rather than misread it.
 
 mod diff;
 mod envelope;

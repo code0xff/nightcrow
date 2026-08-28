@@ -20,8 +20,8 @@ pub(in crate::web::viewer::server) fn lookup_repo(
         .ok_or_else(|| json_error("404 Not Found", "unknown repository"))
 }
 
-/// Map an internal error to a fixed public message, logging the detail.
-/// Git and I/O errors may name absolute paths, symlink targets, and file sizes.
+/// Map an internal error to a fixed public message, logging the detail: git
+/// and I/O errors may name absolute paths, symlink targets, and file sizes.
 pub(in crate::web::viewer::server) fn redact(context: &str, err: &anyhow::Error) -> Vec<u8> {
     tracing::debug!(%err, context, "viewer: request failed");
     json_error("400 Bad Request", "request could not be served")

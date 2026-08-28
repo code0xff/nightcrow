@@ -1,8 +1,8 @@
 //! The viewer's HTTP server: authenticated routes over a shared session.
 //!
-//! Request handling order is Host/Origin, static assets, authentication,
-//! repository lookup, then path validation. Git and I/O details are redacted
-//! before responses because they can contain absolute server paths.
+//! Request order is Host/Origin, static assets, authentication, repository
+//! lookup, then path validation. Git and I/O details are redacted from
+//! responses because they can contain absolute server paths.
 
 mod clone_routes;
 mod dispatch;

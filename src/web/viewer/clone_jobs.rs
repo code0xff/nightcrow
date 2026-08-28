@@ -1,12 +1,11 @@
 //! Track in-flight clones so the request that starts one can return at once.
 //!
-//! A clone runs for as long as the remote takes, which is far past what a
-//! browser will hold a request open for — and on a phone the tab may be
-//! suspended mid-transfer. So `POST /api/clone` starts a thread and answers
-//! with an id, and the client polls `GET /api/clone?job=<id>` until the job
-//! reaches a terminal state. The thread outlives the request that spawned it:
-//! nothing is cancelled by a client that walks away, matching how the
-//! terminal hub keeps PTYs alive across disconnects.
+//! A clone runs for as long as the remote takes — far past what a browser
+//! will hold a request open for, and a phone tab may be suspended
+//! mid-transfer. So `POST /api/clone` starts a thread and answers with an id,
+//! and the client polls `GET /api/clone?job=<id>` until the job reaches a
+//! terminal state. The thread outlives the request that spawned it, matching
+//! how the terminal hub keeps PTYs alive across disconnects.
 
 use std::collections::HashMap;
 use std::sync::Mutex;
@@ -36,10 +35,10 @@ impl CloneJobs {
     /// Admit a new job and return its id, or `None` when one is already
     /// running.
     ///
-    /// Admission and insertion happen under one lock on purpose: checking
-    /// "is anything running?" from the caller and inserting afterwards is a
-    /// check-then-act race that lets parallel requests each see an idle
-    /// registry and every one of them spawn a clone.
+    /// Admission and insertion happen under one lock: checking "is anything
+    /// running?" and inserting afterwards is a check-then-act race that lets
+    /// parallel requests each see an idle registry and every one of them
+    /// spawn a clone.
     pub fn try_start(&self) -> Option<u64> {
         let mut jobs = self.lock();
         if jobs
@@ -92,9 +91,9 @@ impl CloneJobs {
     }
 
     fn lock(&self) -> std::sync::MutexGuard<'_, HashMap<u64, CloneState>> {
-        // A poisoned lock means a panic while holding it, but the map is plain
-        // data with no invariant spanning critical sections — recovering keeps
-        // clone tracking usable instead of taking the server down with it.
+        // Recover from a poisoned lock: the map is plain data with no
+        // invariant spanning critical sections, and keeping clone tracking
+        // usable beats taking the server down with it.
         self.jobs.lock().unwrap_or_else(|err| err.into_inner())
     }
 }

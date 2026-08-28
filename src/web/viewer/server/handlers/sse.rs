@@ -31,8 +31,8 @@ pub(in crate::web::viewer::server) fn serve_events(
                     break;
                 }
             }
-            // Nothing changed: prove the socket is still alive. This is the
-            // only way a closed tab is discovered.
+            // Nothing changed: prove the socket is still alive — the only way
+            // a closed tab is discovered.
             None => {
                 if sse.heartbeat().is_err() {
                     break;

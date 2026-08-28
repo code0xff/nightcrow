@@ -1,9 +1,9 @@
 //! Server-side syntax highlighting for the viewer.
 //!
-//! Reuses `syntect` + `two-face` — already dependencies, and the exact way the
-//! TUI highlights — so the browser needs no highlighter of its own and the
-//! colours match the terminal UI. Highlighting runs on the request thread; the
-//! diff and file byte ceilings in [`super::limits`] bound the work.
+//! Reuses `syntect` + `two-face` — already dependencies and the exact way the
+//! TUI highlights — so the browser needs no highlighter and the colours match
+//! the terminal UI. Runs on the request thread; the byte ceilings in
+//! [`super::limits`] bound the work.
 
 use crate::web::viewer::dto::SpanDto;
 use std::sync::OnceLock;

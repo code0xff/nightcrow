@@ -5,17 +5,17 @@ use super::lookup::redact;
 struct MkdirRequest {
     /// The directory to create the new folder inside.
     path: String,
-    /// The new folder's name. Must be a single plain path segment.
+    /// Must be a single plain path segment.
     name: String,
 }
 
 /// Create a new folder inside a directory the picker is browsing.
 ///
-/// The parent is confined only as much as `browse` is, but `name` is held to a
-/// single plain segment: separators, `..`, a leading `.` (which also rules out
-/// `.git`), and NUL are all rejected. Combined with canonicalizing the parent
-/// first, the created folder can only ever land directly under the browsed
-/// directory.
+/// The parent is confined only as much as `browse` is, but `name` is held to
+/// a single plain segment: separators, `..`, a leading `.` (which also rules
+/// out `.git`), and NUL are all rejected. Combined with canonicalizing the
+/// parent first, the created folder can only ever land directly under the
+/// browsed directory.
 pub(in crate::web::viewer::server) fn handle_mkdir(body: &str) -> Vec<u8> {
     let request: MkdirRequest = match serde_json::from_str(body) {
         Ok(request) => request,

@@ -25,7 +25,8 @@ pub(in crate::web::viewer::server) fn optional_oid(
 }
 
 /// A non-negative count query parameter, defaulting to zero when absent.
-/// Deliberately unbounded -- see the note beside [`crate::web::viewer::limits::MAX_LOG_PAGE`].
+/// Deliberately unbounded — see the note beside
+/// [`crate::web::viewer::limits::MAX_LOG_PAGE`].
 pub(in crate::web::viewer::server) fn optional_count(
     head: &crate::web::common::http::RequestHead,
     name: &str,
