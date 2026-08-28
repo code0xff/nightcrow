@@ -28,7 +28,7 @@ export function useRepoPaneActions({
   const [previewRendered, setPreviewRendered] = useState(true);
   const statusRef = useRef(status);
   statusRef.current = status;
-  const openers = usePaneOpeners({
+  const rawOpeners = usePaneOpeners({
     repo,
     handle,
     setPane,
@@ -38,6 +38,17 @@ export function useRepoPaneActions({
     setPreviewRendered,
     statusRef,
   });
+  const openers = useMemo(
+    () => rawOpeners,
+    [
+      rawOpeners.openDiff,
+      rawOpeners.openFile,
+      rawOpeners.openCommit,
+      rawOpeners.openCommitFileDiff,
+      rawOpeners.openCommitFiles,
+      rawOpeners.showOtherFace,
+    ],
+  );
 
   return useMemo(
     () => ({

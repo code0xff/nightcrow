@@ -43,6 +43,22 @@ function wideMatchMedia() {
   );
 }
 
+function narrowMatchMedia() {
+  vi.spyOn(window, "matchMedia").mockImplementation(
+    (query) =>
+      ({
+        matches: false,
+        media: query,
+        onchange: null,
+        addListener: vi.fn(),
+        removeListener: vi.fn(),
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+        dispatchEvent: vi.fn(),
+      }) as MediaQueryList,
+  );
+}
+
 describe("viewport content", () => {
   it("20k_diff는_viewport와_overscan_행만_DOM에_둔다", () => {
     const diff = diffWith(20_000);
@@ -136,6 +152,29 @@ describe("viewport content", () => {
     expect(pair?.textContent).toContain("-");
     expect(pair?.textContent).toContain("+");
     expect(view.container.querySelectorAll("[data-virtual-row]").length).toBeLessThan(40);
+  });
+
+  it("좁은_split은_hunk마다_old_전체_뒤에_new_전체를_둔다", () => {
+    narrowMatchMedia();
+    const diff: Diff = {
+      path: "large.ts",
+      hunks: [{
+        header: "@@",
+        lines: [line(1, "-"), line(2, "-"), line(1, "+"), line(2, "+")],
+      }],
+      truncated: false,
+    };
+    const view = render(
+      <VirtualDiffView diff={diff} split viewport={{ scrollTop: 0, height: 400 }} />,
+    );
+    const rows = Array.from(
+      view.container.querySelectorAll<HTMLElement>("[data-virtual-row]"),
+      (row) =>
+        row.dataset.virtualRow === "0"
+          ? "@"
+          : row.querySelector(".whitespace-pre")?.textContent?.trim()[0],
+    );
+    expect(rows).toEqual(["@", "-", "-", "+", "+"]);
   });
 
   it("20k_file도_행_번호_anchor와_DOM_상한을_유지한다", () => {

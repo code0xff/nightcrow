@@ -310,7 +310,7 @@ Vitest 쪽 권장이며, 결정적으로 `window.matchMedia`를 구현한다(jsd
 같은 행 높이로 직접 계산하고, diff의 모든 렌더 행은 자기 `data-hunk`를 가져 header가 viewport 밖이어도
 whole-file 전환이 현재 hunk를 찾는다. Split은 넓은 화면에서 old/new 한 쌍을 같은 virtual row로
 렌더해 세로 정렬을 보존하고, 좁은 화면에서는 hunk별 old 전체 뒤에 new 전체가 오도록 별도 row model을
-쓴다. 20k fixture가 DOM 행 수와 initial/scroll/split 측정치를 계약 테스트로 고정한다.
+쓴다. 20k fixture가 DOM 행 수를 계약으로 고정하고 initial/scroll/split 측정치를 함께 기록한다.
 
 **렌더 실패가 페이지를 가져가지 않게 한다**(`components/feedback/ErrorBoundary.tsx`,
 `lib/chunkError.ts`). boundary가 하나도 없으면 React는 어떤 렌더 에러에도 트리 전체를 unmount하고,
