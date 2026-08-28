@@ -94,13 +94,14 @@ mod imp {
         }
     }
 
-    /// Windows 는 시그널 대신 콘솔 제어 이벤트를 쓴다. 콜백을 채널로 옮겨
-    /// register/wait 분리를 Unix 와 동일하게 유지한다 — 등록 시점부터 도착한
-    /// 이벤트가 wait 까지 보관되어야 하고, 그게 이 계약의 요점이다.
+    /// Windows signals via console control events rather than POSIX signals;
+    /// the callback's event is moved onto a channel so register/wait split
+    /// stays the same contract as Unix — an event that arrives between
+    /// register and wait must be held for `wait`.
     ///
-    /// SIGTERM 대응물이 없다. Ctrl-C 와 Ctrl-Break 는 콘솔이 붙어 있을 때만
-    /// 오고, `-d` 로 분리된 daemon 에는 콘솔이 없다 (detach.rs 참조).
-    /// 그쪽 종료 경로는 `nightcrow stop` 이다.
+    /// There is no SIGTERM counterpart: Ctrl-C and Ctrl-Break only exist with
+    /// a console attached, and a daemon detached with `-d` has none (see
+    /// detach.rs). Its stop path is `nightcrow stop`.
     pub(super) struct Watch(Receiver<Shutdown>);
 
     impl Watch {

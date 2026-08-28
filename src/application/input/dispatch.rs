@@ -44,20 +44,18 @@ pub(crate) struct ProjectContext<'a> {
 
 pub(crate) fn handle_key(app: &mut App, key: KeyEvent) -> KeyOutcome {
     // Crossterm emits Press/Repeat/Release for every keystroke on Windows
-    // and on terminals that negotiate the kitty keyboard protocol.
-    // Without this guard every keypress would be processed twice or more
-    // — visible as doubled search chars, the leader firing repeatedly, and
-    // Backspace popping past the buffer.
+    // and on kitty-protocol terminals; without this guard every keypress
+    // is processed two or more times — doubled search chars, the leader
+    // firing repeatedly, Backspace popping past the buffer.
     if key.kind != KeyEventKind::Press {
         return KeyOutcome::Continue;
     }
 
     // A key nightcrow acts on itself means the user has moved on, so the
     // notice row goes back to showing repo identity. Keys forwarded verbatim
-    // to a PTY are excluded: in a terminal pane every keystroke is
-    // passthrough, and dismissing on those would blank a notice the moment
-    // the user resumed typing. Runs before dispatch so an action that raises
-    // a *new* notice still leaves it standing.
+    // to a PTY are excluded — there, every keystroke is passthrough, and
+    // dismissing on those would blank a notice the moment typing resumed.
+    // Runs before dispatch so a new notice survives the same tick.
     if app.search_overlay_active()
         || app.interaction.prefix_armed
         || app.interaction.awaiting_swap_target
@@ -68,30 +66,27 @@ pub(crate) fn handle_key(app: &mut App, key: KeyEvent) -> KeyOutcome {
     }
 
     // Modal overlays (repo-input dialog, both search bars) own every
-    // keystroke until dismissed. They are checked before any leader handling
-    // so a leader keypress while a search/repo dialog is open is typed/edited
-    // by the overlay rather than arming the prefix.
+    // keystroke until dismissed, and are checked before any leader handling
+    // so a leader press while one is open edits within the overlay rather
+    // than arming the prefix.
     if app.search_overlay_active() {
         // A prefix (or swap-target) could only be armed if an overlay opened
-        // out from under it; disarm both so neither indicator lingers behind a
-        // modal.
+        // out from under it; disarm both so neither indicator lingers.
         app.interaction.prefix_armed = false;
         app.interaction.awaiting_swap_target = false;
-        // Search overlays are handled inside the focus-local upper handler.
         handle_upper_key(app, key, Action::None);
         return KeyOutcome::Continue;
     }
 
-    // Swap-target mode is armed (`<leader> s`): this key is the digit naming
-    // the pane to swap the active pane with. Checked before the prefix so its
-    // dedicated follow-up handler owns the key.
+    // Swap-target mode is armed (`<leader> s`): this key names the pane to
+    // swap with. Checked before the prefix so its dedicated handler owns it.
     if app.interaction.awaiting_swap_target {
         return handle_swap_target_followup(app, key);
     }
 
-    // Prefix is armed: this key is the single follow-up. Resolve it three
-    // ways — Esc/Ctrl+C cancels, the leader again sends a literal leader to
-    // the PTY, a mapped key runs its action; any other key is consumed.
+    // Prefix is armed: this key is the single follow-up — Esc/Ctrl+C cancels,
+    // the leader again sends a literal leader to the PTY, a mapped key runs
+    // its action; anything else is consumed.
     if app.interaction.prefix_armed {
         return handle_prefix_followup(app, key);
     }
@@ -133,8 +128,7 @@ pub(super) fn handle_global_action(app: &mut App, action: Action) -> Option<KeyO
         }
         Action::ClosePane => {
             // Scoped by `can_close_pane` (terminal focus — the close target
-            // is invisible without it). The key is still consumed so it
-            // can't leak elsewhere.
+            // is invisible without it); the key is consumed either way.
             if app.can_close_pane() {
                 app.close_active_pane();
             }
@@ -162,14 +156,11 @@ pub(super) fn handle_global_action(app: &mut App, action: Action) -> Option<KeyO
             Some(KeyOutcome::Continue)
         }
         // The accent is the session's, so this asks rather than paints. Nothing
-        // changes locally in the meantime, for the reason the tab switch does
-        // not either: being the only surface showing the new colour for a tick
-        // is the flicker, not the wait.
+        // changes locally in the meantime — being the only surface showing the
+        // new colour for a tick is the flicker, not the wait.
         Action::CycleTheme => Some(KeyOutcome::Project(ProjectRequest::CycleAccent)),
-        // The config belongs to the session, so this asks too. What comes back is
-        // a notice rather than anything on screen: a reload replaces plugin
-        // children and the list future projects open with, neither of which this
-        // client is looking at.
+        // The config belongs to the session, so this asks too; what comes back
+        // is a notice rather than anything this client is looking at.
         Action::ReloadConfig => Some(KeyOutcome::Project(ProjectRequest::ReloadConfig)),
         Action::Redraw => Some(KeyOutcome::Redraw),
         Action::SwitchPane(n) => {
@@ -177,8 +168,8 @@ pub(super) fn handle_global_action(app: &mut App, action: Action) -> Option<KeyO
             Some(KeyOutcome::Continue)
         }
         Action::SwapPanePrompt => {
-            // Scoped by `can_swap_panes` (terminal focus plus a second pane).
-            // The key is still consumed either way.
+            // Scoped by `can_swap_panes` (terminal focus plus a second pane);
+            // the key is consumed either way.
             if app.can_swap_panes() {
                 app.interaction.begin_swap_target();
             }

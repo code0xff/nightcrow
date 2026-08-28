@@ -129,11 +129,11 @@ fn pull_line(reader: &mut impl BufRead) -> std::io::Result<Pulled> {
 /// Consume bytes up to and including the next newline, keeping at most
 /// [`MAX_LINE_BYTES`] of them in `buf` (the newline is never kept).
 ///
-/// Returns how many bytes the line actually spanned and whether a newline ended
-/// it. The cap is applied while reading rather than left to
-/// [`decode_command`]'s own length check: by the time that runs the host has
-/// already allocated whatever the plugin chose to send, which is the thing worth
-/// preventing.
+/// Returns how many bytes the line actually spanned and whether a newline
+/// ended it. The cap is applied while reading rather than left to
+/// [`decode_command`]'s length check: by the time that runs the host has
+/// already allocated whatever the plugin chose to send, which is the thing
+/// worth preventing.
 fn read_capped(reader: &mut impl BufRead, buf: &mut Vec<u8>) -> std::io::Result<(usize, bool)> {
     let mut seen = 0;
     loop {

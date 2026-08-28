@@ -21,17 +21,16 @@ pub(crate) fn dispatch_paste(ws: &mut Workspace, text: &str) {
 
 /// Route a bracketed-paste payload within one project.
 ///
-/// Its search overlays accept the text after stripping control characters —
-/// the same rule the typed-key handlers enforce. The terminal pane receives
-/// the paste re-wrapped in `ESC [200~ ... ESC [201~` so the inner shell can
+/// Search overlays accept the text after stripping control characters, the
+/// same rule the typed-key handlers enforce. The terminal pane receives the
+/// paste re-wrapped in `ESC [200~ ... ESC [201~` so the inner shell can
 /// distinguish multi-line paste from interactive input. `text` never carries
 /// the outer markers: crossterm strips them on Unix, and on Windows there are
 /// none — `input::burst` synthesises the event from keys.
 pub(crate) fn handle_paste(app: &mut App, text: &str) {
-    // A paste arriving while the prefix is armed would otherwise leave the
-    // PREFIX indicator stuck and make the next key resolve as a follow-up.
-    // Resolve the prefix first (tmux treats a non-command event as a cancel),
-    // then route the paste normally.
+    // A paste while the prefix is armed would leave the PREFIX indicator
+    // stuck and make the next key resolve as a follow-up; resolve the prefix
+    // first (tmux treats a non-command event as a cancel).
     app.interaction.prefix_armed = false;
     if app.focus == Focus::FileList && app.status_view.search_active {
         for ch in text.chars().filter(|c| !c.is_control()) {
@@ -60,11 +59,11 @@ pub(crate) fn handle_paste(app: &mut App, text: &str) {
         return;
     }
     if app.focus == Focus::Terminal {
-        // Strip ESC (0x1b) and NUL (0x00) before forwarding: an embedded
-        // 0x1b can re-arm or cancel the bracketed-paste boundary the shell
-        // is parsing, and NUL is malformed for most line-buffered shells.
-        // Newlines, tabs, and other printable controls stay in — they are
-        // exactly what bracketed paste is meant to deliver atomically.
+        // Strip ESC and NUL before forwarding: an embedded 0x1b can re-arm or
+        // cancel the bracketed-paste boundary the shell is parsing, and NUL
+        // is malformed for most line-buffered shells. Newlines, tabs, and
+        // other printable controls stay — they are what bracketed paste
+        // delivers atomically.
         let sanitized: Vec<u8> = text
             .as_bytes()
             .iter()

@@ -13,11 +13,9 @@ use crossterm::event::{KeyCode, KeyEvent};
 pub(crate) fn handle_empty_key(ws: &mut Workspace, key: KeyEvent) -> KeyOutcome {
     if ws.prefix_armed() {
         ws.cancel_prefix();
-        // `<L> <L>` sends a literal leader to the focused PTY on the project
-        // screen; here there is no pane to send it to, so it is consumed.
-        // Resolving it before the action table matters: with the default
-        // `ctrl+f` leader the follow-up would otherwise match `f` and toggle
-        // fullscreen.
+        // `<L> <L>` is consumed here: there is no pane to send a literal
+        // leader to, and with the default `ctrl+f` leader the follow-up would
+        // otherwise match `f` and toggle fullscreen.
         if ws.is_leader_key(key) {
             return KeyOutcome::Continue;
         }

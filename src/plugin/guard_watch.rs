@@ -1,30 +1,26 @@
 //! Rule 12: when a plugin may be given a pane nobody handed it.
 //!
-//! Every other rule in this layer starts from a pane the operator already
-//! assigned. This one is the single place an assignment can be *created* at
-//! runtime, so it is kept apart from the rest and reads as one list of
-//! conditions rather than as a branch inside a larger judgement.
+//! Every other rule starts from a pane the operator already assigned; this is
+//! the single place an assignment can be *created* at runtime, so it is kept
+//! apart and reads as one list of conditions.
 //!
-//! What makes it safe is where the token came from. A pane token is random, is
-//! minted per slot, and is put only into that pane's child environment, so a
-//! process able to quote one is a process running inside that pane. The pane's
-//! own occupant asking for a watcher is a different thing from a plugin
-//! enumerating the session, and only the first is allowed here — nothing in this
-//! file looks at a list of panes.
-//!
-//! Still not authority by itself: the operator's config switch has to be on, and
-//! a pane already spoken for is not taken away from the plugin that has it.
-
+//! What makes it safe is where the token came from: a pane token is random,
+//! minted per slot, and put only into that pane's child environment, so a
+//! process able to quote one is running inside that pane. The pane's own
+//! occupant asking for a watcher is allowed here; a plugin enumerating the
+//! session is not — nothing in this file looks at a list of panes. Still not
+//! authority by itself: the operator's config switch must be on, and a pane
+//! already spoken for is not taken away.
 use super::guard::{Approved, PaneFacts};
 use super::guard_refusal::Refused;
 use crate::backend::PaneToken;
 
 /// Decide one [`PluginCommand::WatchPane`](super::protocol::PluginCommand).
 ///
-/// Takes no clock and charges no budget. Being given a pane is not something
-/// done *to* the pane — it changes who is told about it, and every act that
-/// follows is charged when it is asked for. Charging here would spend the very
-/// allowance the recovery this unlocks is about to need.
+/// Takes no clock and charges no budget: being given a pane changes who is
+/// told about it, not the pane itself — every act that follows is charged
+/// when it is asked for. Charging here would spend the very allowance the
+/// recovery this unlocks is about to need.
 pub(super) fn judge_watch(
     token: &PaneToken,
     facts: Option<&PaneFacts>,

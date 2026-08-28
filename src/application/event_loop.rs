@@ -39,26 +39,24 @@ pub(crate) fn main_loop(
         }
         // Every project drains its queues, not just the visible one: the
         // snapshot worker and PTY reader produce into unbounded channels
-        // regardless of which tab is on screen.
-        //
-        // Only the active project *applies* its snapshot, though. A background
-        // snapshot waits in `pending_snapshot` until its tab is shown.
+        // regardless of which tab is on screen. Only the active project
+        // *applies* its snapshot, though — a background one waits in
+        // `pending_snapshot` until its tab is shown.
         let active = ws.active_index();
         for (i, project) in ws.projects_mut().iter_mut().enumerate() {
             if i == active {
                 project.poll_snapshot();
-                // Applying a commit-log page can trigger a further prefetch and
-                // load a commit diff synchronously, so it stays with the
-                // snapshot as active-only work.
+                // Stays with the snapshot as active-only work: applying a
+                // commit-log page can trigger a further prefetch and load a
+                // commit diff synchronously.
                 project.poll_commit_log_page_fetch();
             } else {
                 project.drain_snapshot();
             }
-            // Both are cheap drains that must run everywhere: the tree watcher
-            // to keep OS filesystem events from piling up, the terminal to
-            // consume PTY output before the pipe fills and blocks the child.
-            // Acting on a watcher event is active-only; a hidden project
-            // records the event and refreshes when its tab comes forward.
+            // Cheap drains that must run everywhere: the tree watcher so OS
+            // filesystem events do not pile up, the terminal so PTY output is
+            // consumed before the pipe fills and blocks the child. Acting on a
+            // watcher event is active-only; a hidden project records the event.
             if i == active {
                 project.poll_tree_watcher();
             } else {
@@ -86,8 +84,7 @@ pub(crate) fn main_loop(
 
         // Collected before the mutable borrow of the active project, since the
         // tab row names every project while the body renders only one. Bounded
-        // by `MAX_PROJECTS`, so the per-frame clone is a handful of short
-        // strings.
+        // by `MAX_PROJECTS`, so the per-frame clone is a handful of strings.
         let tab_paths: Vec<String> = ws.projects().iter().map(|p| p.repo_path.clone()).collect();
         let tab_attention: Vec<bool> = ws
             .projects()

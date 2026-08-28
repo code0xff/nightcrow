@@ -55,17 +55,15 @@ pub(crate) fn run_attach() -> Result<()> {
         ws.set_remembered(stored.sessions);
     }
 
-    // Read from the session's file, not asked of the daemon. The set that
-    // carries the accent is sent by the watcher now, which does not race the
-    // handshake to get there first — and this screen draws before `main_loop`,
-    // the only thing that drains the connection. `[theme]` names what a session
-    // with no stored colour starts in.
+    // Read from the session's file, not asked of the daemon: the watcher that
+    // carries the accent does not race the handshake, and this screen draws
+    // before `main_loop`, the only thing draining the connection. `[theme]`
+    // names what a session with no stored colour starts in.
     let session_accent = crate::session::prefs::PrefsStore::load_seeded(cfg.theme.preset_index())
         .get()
         .accent;
-    // The splash is not the only screen that draws before the daemon's first
-    // set arrives. Without this the first frames of the main view would come up
-    // in the default rather than the session's colour.
+    // The splash and the first frames both draw before the daemon's first set
+    // arrives; without this they would come up in the default colour.
     ws.set_accent_index(session_accent);
 
     if matches!(
@@ -75,9 +73,9 @@ pub(crate) fn run_attach() -> Result<()> {
         tracing::info!("nightcrow detached during splash");
         return Ok(());
     }
-    // The view state is written whichever way the loop ends. Losing which file
-    // was selected because the daemon stopped would be a second insult, and this
-    // half of the session file is the client's own.
+    // The view state is written whichever way the loop ends: losing which file
+    // was selected because the daemon stopped would be a second insult, and
+    // this half of the session file is the client's own.
     let ended = main_loop(
         &mut terminal,
         &mut ws,
@@ -96,16 +94,14 @@ pub(crate) fn run_attach() -> Result<()> {
 /// Write this client's view state back, leaving the tab list alone.
 ///
 /// The file has two halves and two owners: the daemon writes which
-/// repositories are open and which is active, and a client writes what it had
-/// selected and where it had scrolled. Read-modify-write rather than a whole
-/// rewrite, so detaching cannot roll the session's tab list back to whatever
-/// this client happened to be showing.
+/// repositories are open and which is active; a client writes what it had
+/// selected and where it had scrolled. Read-modify-write, so detaching cannot
+/// roll the session's tab list back to whatever this client was showing.
 ///
-/// The two can still race — a client detaching in the same instant a
-/// repository is opened elsewhere can lose that open until the next change
-/// rewrites it. That is the same self-correcting transient the viewer's
-/// preference writes already accept, and closing it would mean putting a lock
-/// around a file two processes touch seconds apart.
+/// The two can still race — a client detaching as a repository is opened
+/// elsewhere can lose that open until the next change rewrites it. The same
+/// transient the viewer's preference writes accept; closing it would mean
+/// locking a file two processes touch seconds apart.
 fn persist_view_state(ws: &Workspace) {
     let mut stored = crate::workspace::persistence::load_workspace().unwrap_or_default();
     stored.sessions = ws.view_state();

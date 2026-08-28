@@ -87,10 +87,9 @@ impl PluginHost {
     /// Launch `cfg.command` and start pumping.
     ///
     /// Resolution order for the program: a `cfg.command` containing a path
-    /// separator is taken as a path and used as given; otherwise `plugin_dir` is
-    /// searched first, so an installed plugin wins over a same-named binary on
-    /// the user's `PATH`, and only if it is not there is the bare name handed to
-    /// the OS to resolve against `PATH`.
+    /// separator is used as given; otherwise `plugin_dir` is searched first
+    /// (an installed plugin wins over a same-named `PATH` binary), and only
+    /// then is the bare name handed to the OS.
     ///
     /// No pane token is passed in the environment. A plugin learns which panes
     /// exist only from the events it is sent, which is what keeps a plugin from
@@ -117,9 +116,9 @@ impl PluginHost {
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
-        // After `cfg.env`, so this is not something a config can point at
-        // another hub's socket: which hub a plugin belongs to is the host's to
-        // say. See `PLUGIN_RUNTIME_DIR_ENV`.
+        // After `cfg.env`: which hub a plugin belongs to is the host's to say,
+        // not something a config can point at another hub's socket. See
+        // `PLUGIN_RUNTIME_DIR_ENV`.
         if let Some(dir) = runtime_dir {
             command.env(crate::backend::identity::PLUGIN_RUNTIME_DIR_ENV, dir);
         }
@@ -285,8 +284,8 @@ fn resolve_program(command: &str, plugin_dir: Option<&Path>) -> PathBuf {
         if candidate.is_file() {
             return candidate;
         }
-        // On Windows, an installed plugin is stored as `name.exe` but
-        // configured as `name`. Try the extension before falling back to PATH.
+        // On Windows an installed plugin is stored as `name.exe` but
+        // configured as `name`; try the extension before PATH.
         #[cfg(windows)]
         {
             let exe = dir.join(format!("{command}.exe"));

@@ -11,10 +11,9 @@ pub fn encode_key(key: KeyEvent, app_cursor: bool) -> Option<Vec<u8>> {
     match key.code {
         KeyCode::Char(c) => {
             if ctrl && c.is_ascii() {
-                // Several Ctrl chords fall outside the contiguous
-                // `c.to_ascii_uppercase() - '@' < 32` range and need explicit
-                // xterm-convention mappings: Ctrl+Space → NUL (formula wraps
-                // because ' ' < '@'), Ctrl+/ → 0x1F (US), Ctrl+? → 0x7F (DEL).
+                // Ctrl chords outside the `letter - '@'` formula need explicit
+                // xterm-convention mappings: Ctrl+Space → NUL (the formula
+                // wraps because ' ' < '@'), Ctrl+/ → 0x1F (US), Ctrl+? → 0x7F.
                 let b = match c {
                     ' ' => Some(0x00),
                     '/' => Some(0x1F),
@@ -39,16 +38,13 @@ pub fn encode_key(key: KeyEvent, app_cursor: bool) -> Option<Vec<u8>> {
             let mut enc = [0u8; 4];
             Some(c.encode_utf8(&mut enc).as_bytes().to_vec())
         }
-        // Alt+Enter carries the Meta prefix like Alt+Char does. Terminal UIs
-        // read ESC+CR as "insert a newline, don't submit" — it is what Claude
-        // Code binds its newline to — so dropping the modifier here made the
-        // two indistinguishable and every Alt+Enter submitted instead.
-        //
-        // Ctrl+Enter is LF for the same reason. A terminal that cannot tell the
-        // chord from a bare Enter sends Ctrl+J (LF) for it and nightcrow never
-        // sees the modifier; one that can — the Windows console API, the kitty
-        // keyboard protocol — delivers `Enter + CONTROL`, and encoding that as
-        // CR submitted the line on exactly the platforms that report it.
+        // Alt+Enter carries the Meta prefix like Alt+Char does: terminal UIs
+        // read ESC+CR as "insert a newline, don't submit" (Claude Code binds
+        // its newline to it), so dropping the modifier made every Alt+Enter
+        // submit instead. Ctrl+Enter is LF for the same reason — a terminal
+        // that can report the modifier delivers `Enter + CONTROL`, and
+        // encoding that as CR would submit the line on exactly those
+        // platforms.
         KeyCode::Enter => {
             let byte = if ctrl { b'\n' } else { b'\r' };
             Some(if alt { vec![0x1b, byte] } else { vec![byte] })
@@ -75,10 +71,9 @@ pub fn encode_key(key: KeyEvent, app_cursor: bool) -> Option<Vec<u8>> {
 /// Bit 6 (64) marks the button as a wheel rather than a click.
 const SGR_WHEEL_UP: u8 = 64;
 
-/// Encode a mouse wheel notch as an SGR (1006) mouse report. `col`/`row` are
-/// 1-based cell coordinates. A wheel notch has no release event, so a single
-/// `M` (press) report is the whole sequence — unlike a click, which xterm
-/// follows with an `m`.
+/// Encode a mouse wheel notch as an SGR (1006) mouse report; `col`/`row` are
+/// 1-based cells. A wheel notch has no release event, so a single `M` (press)
+/// report is the whole sequence — unlike a click, which xterm follows with `m`.
 pub fn encode_wheel(up: bool, col: u16, row: u16) -> Vec<u8> {
     let button = if up { SGR_WHEEL_UP } else { SGR_WHEEL_UP + 1 };
     format!("\x1b[<{button};{};{}M", col.max(1), row.max(1)).into_bytes()
@@ -96,10 +91,10 @@ pub fn encode_wheel_horizontal(left: bool, col: u16, row: u16) -> Vec<u8> {
     format!("\x1b[<{button};{};{}M", col.max(1), row.max(1)).into_bytes()
 }
 
-/// Encode a mouse button press or release as an SGR (1006) mouse report.
-/// `col`/`row` are 1-based pane-local cell coordinates. SGR keeps the real
-/// button code on release and marks it with a final `m` instead of `M` —
-/// unlike legacy X10, which collapses every release to button 3.
+/// Encode a mouse button press or release as an SGR (1006) mouse report with
+/// 1-based pane-local cell coordinates. SGR keeps the real button code on
+/// release and marks it with a final `m` instead of `M` — unlike legacy X10,
+/// which collapses every release to button 3.
 pub fn encode_button(button: MouseButton, press: bool, col: u16, row: u16) -> Vec<u8> {
     let code: u8 = match button {
         MouseButton::Left => 0,
