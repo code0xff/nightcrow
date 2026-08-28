@@ -38,17 +38,13 @@ impl App {
         }
     }
 
-    // Runs synchronously at startup (before the first snapshot) to stop the
-    // fresh-launch terminal focus from briefly drawing — and routing keystrokes
-    // — over a saved `FileList`/`DiffViewer` focus. Idempotent: `restore_session`
-    // re-applies it once the snapshot arrives, a no-op against the same state.
+    // Runs before the first snapshot so a fresh launch's terminal focus never
+    // briefly draws — or routes keystrokes — over a restored list/diff focus.
+    // Idempotent: `restore_session` re-applies it once the snapshot arrives.
     pub(crate) fn restore_pane_focus(&mut self, state: &SessionState) {
-        // Everything below that points *at a pane* — which one was active, the
-        // fullscreen panel, terminal focus — has nothing to point at until the
-        // session reports its panes, and this runs before that. Held so it can
-        // be applied for real when they arrive rather than quietly downgraded
-        // against an empty list; the rest (mode fullscreens, a focus elsewhere)
-        // takes effect now.
+        // Pane-pointing state (active pane, terminal fullscreen, terminal
+        // focus) means nothing until the session reports its panes, so hold it
+        // in `pending_terminal` rather than quietly downgrading it against an empty list.
         self.pending_terminal = self.terminal.panes.is_empty().then(|| state.clone());
         self.terminal.active = state
             .active_pane
@@ -85,12 +81,9 @@ impl App {
         }
     }
 
-    // Runs as soon as the session is loaded, not on the first snapshot. Almost
-    // none of it needs to wait: panes/focus/fullscreen need no data, and Log
-    // and Tree read what they need directly. Status mode's selection is the
-    // one exception, held in `pending_selection` until the changed files arrive
-    // — that deferral can't collide with user input: there's no way to pick a
-    // file out of a list that's still empty.
+    // Runs as soon as the session loads, not on the first snapshot: only
+    // Status's selection needs snapshot data, so it waits in
+    // `pending_selection` — an empty list can't collide with user input.
     pub fn restore_session(&mut self, state: &SessionState) {
         self.restore_pane_focus(state);
 
@@ -139,11 +132,10 @@ impl App {
         // Restoring expansion mutates the cache/expanded set; drop the stale
         // row-width bound so horizontal scroll clamps to the restored rows.
         self.tree_view.row_width_cache.set(None);
-        // The session file is an on-disk boundary: drop any entry that isn't a
-        // safe repo-internal relative path so a hand-edited `..` or absolute
-        // path can't drive a directory read outside the working tree.
-        // `refresh_tree_cache` prunes any that no longer exist on disk, so a
-        // stale expansion can't surface a "tree error".
+        // The session file is an on-disk boundary: keep only safe
+        // repo-internal relative paths, so a hand-edited `..` or absolute path
+        // can't drive a directory read outside the working tree.
+        // (`refresh_tree_cache` prunes entries missing on disk.)
         self.tree_view.expanded = state
             .tree_expanded
             .iter()
@@ -151,7 +143,6 @@ impl App {
             .cloned()
             .collect();
         self.refresh_tree_cache();
-        // Restore the cursor by path when it still resolves to a visible row.
         if let Some(path) = &state.tree_selected_path {
             let rows = self.tree_view.visible_rows();
             if let Some(idx) = rows.iter().position(|r| &r.path == path) {
@@ -164,10 +155,9 @@ impl App {
     }
 
     fn restore_log_session(&mut self, state: &SessionState) {
-        // A page worker launched before the restore (e.g. via `toggle_mode`
-        // earlier in this frame) would race against the fresh `set_commits`
-        // below: its reply would be matched by `loaded_count` and silently
-        // appended over the restored list. Cancel before mutating state.
+        // A page worker launched before the restore would race against the
+        // fresh `set_commits` below: its reply would be silently appended over
+        // the restored list. Cancel before mutating state.
         self.cancel_commit_log_page_fetch();
         let page_size = self.pagination.page_size;
         let commits = match self.with_repo(|repo| load_commit_log(repo, page_size)) {
@@ -203,10 +193,9 @@ impl App {
         let (oid, title) = match self.log_view.commits.get(self.log_view.selected) {
             Some(entry) => (entry.oid, entry.to_string()),
             None => {
-                // Saved drill-down pointed at a commit that's no longer in the
-                // loaded first page (history rewrite, force-push) — surface
-                // this so the user knows why they're back at the commit-level
-                // view instead of where they left off.
+                // Saved drill-down pointed at a commit no longer in the loaded
+                // first page (history rewrite, force-push) — surface why the
+                // user is back at the commit-level view, not where they left off.
                 tracing::warn!(
                     selected = self.log_view.selected,
                     "drill-down restore: saved commit index is out of range"
