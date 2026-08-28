@@ -31,8 +31,6 @@ impl App {
         tracing::debug!(from = ?from, to = ?self.mode, "view mode toggled");
     }
 
-    // Reuses cached commit pages when they still match the latest HEAD;
-    // otherwise refreshes in the background.
     fn enter_log_mode(&mut self) {
         self.mode = ViewMode::Log;
         self.log_view.reset_drill_down();

@@ -127,14 +127,10 @@ impl App {
 
     /// Step to the next display: unified → split → file → unified.
     ///
-    /// `v` and `s` each toggle one view against the unified default, which
-    /// leaves the third one undiscoverable unless you already know it exists.
-    /// One key that walks all three makes the set visible; the direct toggles
-    /// stay for jumping straight to a known view.
-    ///
-    /// The file step is skipped when there is nothing to open (no selection, or
-    /// a commit whose file cannot be resolved) rather than being a dead press —
-    /// the same gate `can_open_file_view` puts on `v`.
+    /// `v` and `s` each toggle one view against the unified default, leaving
+    /// the third undiscoverable; one key that walks all three makes the set
+    /// visible. The file step is skipped when there is nothing to open — the
+    /// same gate `can_open_file_view` puts on `v`.
     pub fn cycle_diff_view(&mut self) {
         // Tree mode's right pane is always the raw file preview, so there is
         // no cycle to walk — matching `v`/`s`.

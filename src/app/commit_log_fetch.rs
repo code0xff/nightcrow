@@ -98,9 +98,9 @@ impl App {
         match rx.try_recv() {
             Ok(msg) => {
                 self.pagination.page_rx = None;
-                // Worker just sent → one statement from returning. A short
-                // timed join reaps the OS thread now; the timeout means a
-                // wedged worker still can't stall the frame.
+                // The worker just sent, so its next blocking point is gone; a
+                // short timed join reaps it now, and the timeout keeps a
+                // wedged worker from stalling the frame.
                 if let Some(h) = self.pagination.handle.take() {
                     try_timed_join(h, REAP_TIMEOUT);
                 }
