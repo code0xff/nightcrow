@@ -2,7 +2,7 @@ use std::sync::mpsc;
 
 use super::diff_load::DiffApply;
 use super::load_controller::{DiffLoadMode, DiffTarget};
-use super::{App, DiffPaneView, FileViewState, NoticeKind};
+use super::{App, DiffPaneView, FileViewState, NoticeKind, ViewMode};
 use crate::git::diff::{GitLoadPayload, GitLoadReply, LoadLane};
 
 impl App {
@@ -47,11 +47,16 @@ impl App {
                 Err(anyhow::anyhow!(error))
             }
         };
-        let preserve_file = self
-            .load_controller
-            .file_generation()
-            .is_some_and(|generation| generation > intent.generation)
-            || (self.diff.view == DiffPaneView::File && self.diff.file_view.key.is_some());
+        let current_file_key_matches = self
+            .current_file_view_key()
+            .as_ref()
+            .is_some_and(|key| self.diff.file_view.key.as_ref() == Some(key));
+        let preserve_file = current_file_key_matches
+            && (self
+                .load_controller
+                .file_generation()
+                .is_some_and(|generation| generation > intent.generation)
+                || self.diff.view == DiffPaneView::File);
         match intent.mode {
             DiffLoadMode::Reset if preserve_file => {
                 self.apply_diff_result(result, DiffApply::ResetPreservingFile);
@@ -143,11 +148,13 @@ impl App {
             return;
         }
         let intent = self.load_controller.commit_files.take().unwrap();
-        if self
-            .log_view
-            .commits
-            .get(self.log_view.selected)
-            .is_none_or(|commit| commit.oid != intent.oid)
+        if self.mode != ViewMode::Log
+            || self.log_view.drill_down
+            || self
+                .log_view
+                .commits
+                .get(self.log_view.selected)
+                .is_none_or(|commit| commit.oid != intent.oid)
         {
             return;
         }
