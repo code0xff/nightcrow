@@ -32,7 +32,7 @@ pub(crate) fn upper_panel_at(
     x: u16,
     y: u16,
 ) -> Option<Focus> {
-    if app.terminal.fullscreen.fills_body() || app.diff.fullscreen || app.list_fullscreen {
+    if app.terminal.fullscreen.fills_body() || app.diff_pane().fullscreen || app.list_fullscreen {
         return None;
     }
     let main = Layout::default()
@@ -80,7 +80,7 @@ pub(crate) fn terminal_widget_area(
     if app.terminal.fullscreen.fills_body() {
         return Some(body_area);
     }
-    if app.diff.fullscreen || app.list_fullscreen {
+    if app.diff_pane().fullscreen || app.list_fullscreen {
         return None;
     }
 

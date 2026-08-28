@@ -2,58 +2,64 @@ use super::{App, ChangedFile, DIFF_PAGE_SIZE, DiffPaneView, Focus, LIST_PAGE_SIZ
 
 impl App {
     pub(crate) fn restore_selection(&mut self, previous_path: Option<&str>) -> Option<String> {
-        if self.status_view.files.is_empty() {
-            self.status_view.selected = 0;
+        if self.git.view.status.files.is_empty() {
+            self.git.view.status.selected = 0;
             return None;
         }
 
         if let Some(path) = previous_path
             && let Some(index) = self
-                .status_view
+                .git
+                .view
+                .status
                 .files
                 .iter()
                 .position(|file| file.path == path)
         {
-            self.status_view.selected = index;
+            self.git.view.status.selected = index;
             return Some(path.to_string());
         }
 
-        self.status_view.selected = self
-            .status_view
+        self.git.view.status.selected = self
+            .git
+            .view
+            .status
             .selected
-            .min(self.status_view.files.len().saturating_sub(1));
-        self.status_view
+            .min(self.git.view.status.files.len().saturating_sub(1));
+        self.git
+            .view
+            .status
             .files
-            .get(self.status_view.selected)
+            .get(self.git.view.status.selected)
             .map(|file| file.path.clone())
     }
 
     pub fn filtered_indices(&self) -> &[usize] {
-        &self.status_view.filter_cache
+        &self.git.view.status.filter_cache
     }
 
     pub fn start_search(&mut self) {
-        self.status_view.start_search();
+        self.git.view.status.start_search();
     }
 
     pub fn cancel_search(&mut self) {
-        self.status_view.cancel_search();
+        self.git.view.status.cancel_search();
         self.refresh_status_diff_after_filter_change();
     }
 
     pub fn confirm_search(&mut self) {
-        if self.status_view.confirm_search() {
+        if self.git.view.status.confirm_search() {
             self.refresh_status_diff_after_filter_change();
         }
     }
 
     pub fn search_push(&mut self, ch: char) {
-        self.status_view.search_push(ch);
+        self.git.view.status.search_push(ch);
         self.refresh_status_diff_after_filter_change();
     }
 
     pub fn search_pop(&mut self) {
-        self.status_view.search_pop();
+        self.git.view.status.search_pop();
         self.refresh_status_diff_after_filter_change();
     }
 
@@ -67,12 +73,16 @@ impl App {
     pub fn selected_filtered_status_file(&self) -> Option<&ChangedFile> {
         if self
             .filtered_indices()
-            .binary_search(&self.status_view.selected)
+            .binary_search(&self.git.view.status.selected)
             .is_err()
         {
             return None;
         }
-        self.status_view.files.get(self.status_view.selected)
+        self.git
+            .view
+            .status
+            .files
+            .get(self.git.view.status.selected)
     }
 
     pub(crate) fn sync_selection_to_filter(&mut self) -> bool {
@@ -81,20 +91,20 @@ impl App {
             if indices.is_empty() {
                 return false;
             }
-            if indices.contains(&self.status_view.selected) {
-                self.status_view.selected
+            if indices.contains(&self.git.view.status.selected) {
+                self.git.view.status.selected
             } else {
                 indices[0]
             }
         };
 
-        if target == self.status_view.selected {
+        if target == self.git.view.status.selected {
             false
         } else {
-            self.status_view.selected = target;
+            self.git.view.status.selected = target;
             // Match `move_selected_in_filter`: drop the previous file's
             // horizontal scroll so the newly-shown path starts from column 0.
-            self.status_view.file_scroll_x = 0;
+            self.git.view.status.file_scroll_x = 0;
             true
         }
     }
@@ -103,7 +113,7 @@ impl App {
         let selection_changed = self.sync_selection_to_filter();
         if self.selected_filtered_status_path().is_none() {
             self.clear_diff_state();
-        } else if selection_changed || self.diff.hunks().is_empty() {
+        } else if selection_changed || self.git.view.diff.hunks().is_empty() {
             self.reload_diff();
         }
     }
@@ -116,7 +126,9 @@ impl App {
             if indices.is_empty() {
                 None
             } else {
-                let pos = indices.iter().position(|&i| i == self.status_view.selected);
+                let pos = indices
+                    .iter()
+                    .position(|&i| i == self.git.view.status.selected);
                 let new_pos = match pos {
                     Some(p) => {
                         let last = indices.len() as isize - 1;
@@ -128,14 +140,14 @@ impl App {
             }
         };
         if let Some((pos, new_pos, new_selected)) = resolved
-            && (Some(new_pos) != pos || self.status_view.selected != new_selected)
+            && (Some(new_pos) != pos || self.git.view.status.selected != new_selected)
         {
             // Mark only after confirming the selection actually changed so
             // bumping against either end doesn't reset the auto-follow
             // steered-path memory.
             self.mark_user_navigated();
-            self.status_view.selected = new_selected;
-            self.status_view.file_scroll_x = 0;
+            self.git.view.status.selected = new_selected;
+            self.git.view.status.file_scroll_x = 0;
             self.reload_diff();
         }
     }
@@ -145,7 +157,7 @@ impl App {
     pub fn select_up(&mut self) {
         match self.focus {
             Focus::FileList => {
-                if self.mode == ViewMode::Tree {
+                if self.git.view.mode == ViewMode::Tree {
                     self.tree_select_up();
                     return;
                 }
@@ -155,10 +167,10 @@ impl App {
                 self.move_selected_in_filter(-1);
             }
             Focus::DiffViewer => {
-                if self.diff.view == DiffPaneView::File {
-                    self.diff.file_view.scroll_up(1);
+                if self.git.view.diff.view == DiffPaneView::File {
+                    self.git.view.diff.file_view.scroll_up(1);
                 } else {
-                    self.diff.scroll = self.diff.scroll.saturating_sub(1);
+                    self.git.view.diff.scroll = self.git.view.diff.scroll.saturating_sub(1);
                 }
             }
             Focus::Terminal => {}
@@ -168,7 +180,7 @@ impl App {
     pub fn select_down(&mut self) {
         match self.focus {
             Focus::FileList => {
-                if self.mode == ViewMode::Tree {
+                if self.git.view.mode == ViewMode::Tree {
                     self.tree_select_down();
                     return;
                 }
@@ -178,14 +190,16 @@ impl App {
                 self.move_selected_in_filter(1);
             }
             Focus::DiffViewer => {
-                if self.diff.view == DiffPaneView::File {
-                    self.diff.file_view.scroll_down(1);
+                if self.git.view.diff.view == DiffPaneView::File {
+                    self.git.view.diff.file_view.scroll_down(1);
                 } else {
-                    self.diff.scroll = self
+                    self.git.view.diff.scroll = self
+                        .git
+                        .view
                         .diff
                         .scroll
                         .saturating_add(1)
-                        .min(self.diff.max_scroll());
+                        .min(self.git.view.diff.max_scroll());
                 }
             }
             Focus::Terminal => {}
@@ -195,7 +209,7 @@ impl App {
     pub fn page_up(&mut self) {
         match self.focus {
             Focus::FileList => {
-                if self.mode == ViewMode::Tree {
+                if self.git.view.mode == ViewMode::Tree {
                     self.tree_page_up();
                     return;
                 }
@@ -205,10 +219,11 @@ impl App {
                 self.move_selected_in_filter(-(LIST_PAGE_SIZE as isize));
             }
             Focus::DiffViewer => {
-                if self.diff.view == DiffPaneView::File {
-                    self.diff.file_view.scroll_up(DIFF_PAGE_SIZE);
+                if self.git.view.diff.view == DiffPaneView::File {
+                    self.git.view.diff.file_view.scroll_up(DIFF_PAGE_SIZE);
                 } else {
-                    self.diff.scroll = self.diff.scroll.saturating_sub(DIFF_PAGE_SIZE);
+                    self.git.view.diff.scroll =
+                        self.git.view.diff.scroll.saturating_sub(DIFF_PAGE_SIZE);
                 }
             }
             Focus::Terminal => {}
@@ -218,7 +233,7 @@ impl App {
     pub fn page_down(&mut self) {
         match self.focus {
             Focus::FileList => {
-                if self.mode == ViewMode::Tree {
+                if self.git.view.mode == ViewMode::Tree {
                     self.tree_page_down();
                     return;
                 }
@@ -228,14 +243,16 @@ impl App {
                 self.move_selected_in_filter(LIST_PAGE_SIZE as isize);
             }
             Focus::DiffViewer => {
-                if self.diff.view == DiffPaneView::File {
-                    self.diff.file_view.scroll_down(DIFF_PAGE_SIZE);
+                if self.git.view.diff.view == DiffPaneView::File {
+                    self.git.view.diff.file_view.scroll_down(DIFF_PAGE_SIZE);
                 } else {
-                    self.diff.scroll = self
+                    self.git.view.diff.scroll = self
+                        .git
+                        .view
                         .diff
                         .scroll
                         .saturating_add(DIFF_PAGE_SIZE)
-                        .min(self.diff.max_scroll());
+                        .min(self.git.view.diff.max_scroll());
                 }
             }
             Focus::Terminal => {}

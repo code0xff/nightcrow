@@ -37,12 +37,12 @@ fn open_new_pane_moves_focus_to_new_terminal() {
 fn open_new_pane_exits_competing_fullscreen() {
     let mut app = app_with_fake_backend();
     app.toggle_diff_fullscreen();
-    assert!(app.diff.fullscreen);
+    assert!(app.git.view.diff.fullscreen);
 
     app.open_new_pane();
 
     assert_eq!(app.focus, Focus::Terminal);
-    assert!(!app.diff.fullscreen);
+    assert!(!app.git.view.diff.fullscreen);
     assert!(!app.list_fullscreen);
 }
 

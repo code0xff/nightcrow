@@ -42,22 +42,22 @@ pub fn render(
     ts: &ThemeSet,
     accent: ratatui::style::Color,
 ) {
-    if app.diff.view == DiffPaneView::File {
+    if app.diff_pane().view == DiffPaneView::File {
         render_file_view(frame, app, area, ss, ts, accent);
         return;
     }
 
     // Render side-by-side only when there is a diff to split and the pane is
     // wide enough; otherwise fall through to the unified renderer below.
-    if app.diff.view == DiffPaneView::Split
+    if app.diff_pane().view == DiffPaneView::Split
         && area.width >= MIN_SPLIT_WIDTH
-        && !app.diff.hunks().is_empty()
+        && !app.diff_pane().hunks().is_empty()
     {
         render_split_view(frame, app, area, ss, ts, accent);
         return;
     }
 
-    let show_search = app.diff.search.is_visible();
+    let show_search = app.diff_pane().search.is_visible();
 
     let (diff_area, search_area) = if show_search {
         let chunks = Layout::default()
@@ -74,26 +74,26 @@ pub fn render(
 
     // Build the syntect highlight cache once per (hunks × per-hunk syntax) so
     // the visible-window walk stays bounded even on large diffs.
-    app.diff.ensure_highlight_cache(ss, ts);
+    app.diff_pane_mut().ensure_highlight_cache(ss, ts);
 
-    let current_match = app.diff.search.current_match();
-    let has_search = app.diff.search.has_query();
+    let current_match = app.diff_pane().search.current_match();
+    let has_search = app.diff_pane().search.has_query();
 
     // Total flat row count = (1 hunk header + N body lines) per hunk.
-    let total_lines = app.diff.line_count();
+    let total_lines = app.diff_pane().line_count();
     let visible_height = (diff_area.height as usize).saturating_sub(2);
-    let scroll_start = app.diff.scroll.min(app.diff.max_scroll());
+    let scroll_start = app.diff_pane().scroll.min(app.diff_pane().max_scroll());
     // Keep the stored cursor in sync with the clamped value so a Split-view
     // scroll position that overshoots this (narrower) unified fallback layout
     // is corrected on the frame it falls back.
-    app.diff.scroll = scroll_start;
+    app.diff_pane_mut().scroll = scroll_start;
     let visible_end = scroll_start.saturating_add(visible_height);
 
     // Gutter width is a property of the whole loaded diff, not of the visible
     // window, so the body's left edge stays put while scrolling. With no diff
     // loaded the pane holds only a placeholder message, which has no line to
     // number.
-    let digits = digits_for(app.diff.max_line_number() as usize);
+    let digits = digits_for(app.diff_pane().max_line_number() as usize);
     let gutter_width = if total_lines == 0 {
         0
     } else {
@@ -104,12 +104,12 @@ pub fn render(
     // Collected in lockstep with `lines`: same rows, same order, so the two
     // paragraphs share one vertical window.
     let mut gutter_lines: Vec<Line> = Vec::with_capacity(visible_height);
-    let hunk_starts = app.diff.hunk_starts();
+    let hunk_starts = app.diff_pane().hunk_starts();
     let first_hunk = hunk_starts
         .partition_point(|&start| start <= scroll_start)
         .saturating_sub(1);
 
-    'outer: for (hi, hunk) in app.diff.hunks().iter().enumerate().skip(first_hunk) {
+    'outer: for (hi, hunk) in app.diff_pane().hunks().iter().enumerate().skip(first_hunk) {
         let hunk_start = hunk_starts[hi];
         if hunk_start >= visible_end {
             break;
@@ -138,7 +138,7 @@ pub fn render(
             }
 
             let is_current = has_search && current_match == Some(flat_idx);
-            let is_match = has_search && app.diff.search.is_match(flat_idx);
+            let is_match = has_search && app.diff_pane().search.is_match(flat_idx);
 
             let bg = if is_current {
                 Color::Rgb(100, 80, 0)
@@ -166,7 +166,12 @@ pub fn render(
             // Read from the prebuilt highlight cache; the shape is guaranteed
             // to match `hunks` after `ensure_highlight_cache`, so a mismatch
             // only hits the fallback that renders the raw text.
-            if let Some(segs) = app.diff.line_highlights.get(hi).and_then(|hh| hh.get(li)) {
+            if let Some(segs) = app
+                .diff_pane()
+                .line_highlights
+                .get(hi)
+                .and_then(|hh| hh.get(li))
+            {
                 for seg in segs {
                     spans.push(Span::styled(
                         seg.text.as_str(),
@@ -191,16 +196,16 @@ pub fn render(
     }
 
     if lines.is_empty() && total_lines == 0 {
-        let msg = match app.mode {
+        let msg = match app.mode() {
             ViewMode::Log => {
-                if app.log_view.commits.is_empty() {
+                if app.log_view().commits.is_empty() {
                     "No commits in repository"
                 } else {
                     "No diff for selected commit"
                 }
             }
             ViewMode::Status => {
-                if app.status_view.files.is_empty() {
+                if app.status_view().files.is_empty() {
                     "No changes in repository"
                 } else {
                     "No diff for selected file"
@@ -233,15 +238,15 @@ pub fn render(
         gutter_width,
         gutter_lines,
         lines,
-        app.diff.scroll_x.min(u16::MAX as usize) as u16,
-        app.diff.wrap,
+        app.diff_pane().scroll_x.min(u16::MAX as usize) as u16,
+        app.diff_pane().wrap,
     );
 
     if let Some(sa) = search_area {
         render_search_bar(
             frame,
-            app.diff.search.query.as_str(),
-            app.diff.search.active,
+            app.diff_pane().search.query.as_str(),
+            app.diff_pane().search.active,
             sa,
             accent,
         );

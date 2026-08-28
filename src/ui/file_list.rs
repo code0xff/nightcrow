@@ -38,7 +38,7 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect, accent: Color) {
     let focused = app.focus == Focus::FileList;
     let border_style = super::focused_border_style(focused, accent);
 
-    let show_search = app.status_view.search_active || !app.status_view.search_query.is_empty();
+    let show_search = app.status_view().search_active || !app.status_view().search_query.is_empty();
 
     let (list_area, search_area) = if show_search {
         let chunks = Layout::default()
@@ -53,17 +53,17 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect, accent: Color) {
     let filtered_indices = app.filtered_indices();
     let match_count = filtered_indices.len();
 
-    let indicator_enabled = app.cfg_agent_indicator.enabled;
-    let hot_window = Duration::from_secs(app.cfg_agent_indicator.hot_window_secs);
+    let indicator_enabled = app.agent_indicator_config().enabled;
+    let hot_window = Duration::from_secs(app.agent_indicator_config().hot_window_secs);
     let now = SystemTime::now();
 
     let items: Vec<ListItem> = filtered_indices
         .iter()
         .map(|&idx| {
-            let f = &app.status_view.files[idx];
+            let f = &app.status_view().files[idx];
             let symbol = f.short_code();
             let color = super::status_color(f.most_severe());
-            let scroll_x = app.status_view.file_scroll_x;
+            let scroll_x = app.status_view().file_scroll_x;
             // Borrow `f.path` in the common non-rename case so rendering stays
             // allocation-free; only renames, whose `old -> new` display string
             // is owned, allocate.
@@ -77,7 +77,7 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect, accent: Color) {
             };
 
             let stage = if indicator_enabled {
-                app.status_view
+                app.status_view()
                     .hot_table
                     .get(&f.path)
                     .map(|m| classify_hot(*m, now, hot_window))
@@ -115,9 +115,9 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect, accent: Color) {
             " {} Files ({}/{}) ",
             super::jump_legend(app, '1'),
             match_count,
-            app.status_view.files.len()
+            app.status_view().files.len()
         )
-    } else if app.status_view.files.is_empty() {
+    } else if app.status_view().files.is_empty() {
         format!(" {} Files (no changes) ", super::jump_legend(app, '1'))
     } else {
         format!(" {} Files ", super::jump_legend(app, '1'))
@@ -125,14 +125,14 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect, accent: Color) {
 
     let selected_pos = filtered_indices
         .iter()
-        .position(|&i| i == app.status_view.selected);
+        .position(|&i| i == app.status_view().selected);
     super::render_selectable_list(frame, list_area, title, items, selected_pos, border_style);
 
     if let Some(sa) = search_area {
         super::render_search_bar(
             frame,
-            app.status_view.search_query.as_str(),
-            app.status_view.search_active,
+            app.status_view().search_query.as_str(),
+            app.status_view().search_active,
             sa,
             accent,
         );

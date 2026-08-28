@@ -13,12 +13,14 @@ pub(crate) fn make_tree_repo() -> (tempfile::TempDir, String) {
 
 pub(crate) fn app_on(path: &str) -> App {
     let mut app = app_with_files(vec![]);
-    app.repo_path = path.to_string();
+    app.git.repo_path = path.to_string();
     app
 }
 
 pub(crate) fn tree_index_of(app: &App, path: &str) -> usize {
-    app.tree_view
+    app.git
+        .view
+        .tree
         .visible_rows()
         .iter()
         .position(|r| r.path == path)
@@ -32,14 +34,14 @@ fn enter_tree_mode_loads_root_and_shows_file_overlay() {
 
     app.enter_tree_mode();
 
-    assert_eq!(app.mode, ViewMode::Tree);
-    let rows = app.tree_view.visible_rows();
+    assert_eq!(app.git.view.mode, ViewMode::Tree);
+    let rows = app.git.view.tree.visible_rows();
     // Directories sort first: src/ before README.md.
     assert_eq!(rows[0].path, "src");
     assert!(rows[0].is_dir);
     assert!(rows.iter().any(|r| r.path == "README.md"));
     // The right pane is always the file overlay in Tree mode.
-    assert_eq!(app.diff.view, DiffPaneView::File);
+    assert_eq!(app.git.view.diff.view, DiffPaneView::File);
     drop(dir);
 }
 
@@ -49,10 +51,12 @@ fn tree_expand_reveals_children_and_collapse_hides_them() {
     let mut app = app_on(&path);
     app.enter_tree_mode();
 
-    app.tree_view.selected = tree_index_of(&app, "src");
+    app.git.view.tree.selected = tree_index_of(&app, "src");
     app.tree_expand();
     assert!(
-        app.tree_view
+        app.git
+            .view
+            .tree
             .visible_rows()
             .iter()
             .any(|r| r.path == "src/main.rs"),
@@ -60,10 +64,12 @@ fn tree_expand_reveals_children_and_collapse_hides_them() {
     );
 
     // Cursor is back on the (still-selected) src row; collapsing hides it.
-    app.tree_view.selected = tree_index_of(&app, "src");
+    app.git.view.tree.selected = tree_index_of(&app, "src");
     app.tree_collapse();
     assert!(
-        !app.tree_view
+        !app.git
+            .view
+            .tree
             .visible_rows()
             .iter()
             .any(|r| r.path == "src/main.rs"),
@@ -78,16 +84,16 @@ fn selecting_tree_file_loads_raw_contents_into_file_view() {
     let mut app = app_on(&path);
     app.enter_tree_mode();
 
-    app.tree_view.selected = tree_index_of(&app, "README.md");
+    app.git.view.tree.selected = tree_index_of(&app, "README.md");
     app.preview_tree_selected();
     app.flush_git_loads_for_test(Duration::from_secs(2));
 
-    assert_eq!(app.diff.view, DiffPaneView::File);
+    assert_eq!(app.git.view.diff.view, DiffPaneView::File);
     assert_eq!(
-        app.diff.file_view.key,
+        app.git.view.diff.file_view.key,
         Some(FileViewKey::Status("README.md".to_string()))
     );
-    assert_eq!(app.diff.file_view.content, "# hi\n");
+    assert_eq!(app.git.view.diff.file_view.content, "# hi\n");
     drop(dir);
 }
 
@@ -96,15 +102,15 @@ fn tree_collapse_on_expanded_child_steps_to_parent() {
     let (dir, path) = make_tree_repo();
     let mut app = app_on(&path);
     app.enter_tree_mode();
-    app.tree_view.selected = tree_index_of(&app, "src");
+    app.git.view.tree.selected = tree_index_of(&app, "src");
     app.tree_expand();
 
     // Sit on the child file, then collapse: the cursor walks up to `src`.
-    app.tree_view.selected = tree_index_of(&app, "src/main.rs");
+    app.git.view.tree.selected = tree_index_of(&app, "src/main.rs");
     app.tree_collapse();
 
     assert_eq!(
-        app.tree_view.selected_path().as_deref(),
+        app.git.view.tree.selected_path().as_deref(),
         Some("src"),
         "Left on a child should move selection to its parent dir"
     );
@@ -117,7 +123,7 @@ fn tree_search_finds_file_in_unexpanded_dir() {
     let mut app = app_on(&path);
     app.enter_tree_mode();
     // `src` starts collapsed, so its child is not in the normal view.
-    assert!(!app.tree_view.expanded.contains("src"));
+    assert!(!app.git.view.tree.expanded.contains("src"));
 
     app.start_tree_search();
     for ch in "main".chars() {
@@ -126,17 +132,17 @@ fn tree_search_finds_file_in_unexpanded_dir() {
 
     // The match is revealed through its ancestor chain even though `src`
     // was never manually expanded.
-    let rows = app.tree_view.visible_rows();
+    let rows = app.git.view.tree.visible_rows();
     assert!(rows.iter().any(|r| r.path == "src/main.rs"));
     assert!(rows.iter().any(|r| r.path == "src"));
     assert!(!rows.iter().any(|r| r.path == "README.md"));
     // Cursor lands on the matching file, not the connecting `src` dir.
     assert_eq!(
-        app.tree_view.selected_path().as_deref(),
+        app.git.view.tree.selected_path().as_deref(),
         Some("src/main.rs")
     );
     // Filtering must not mutate the real expansion set.
-    assert!(!app.tree_view.expanded.contains("src"));
+    assert!(!app.git.view.tree.expanded.contains("src"));
     drop(dir);
 }
 
@@ -154,11 +160,11 @@ fn confirm_tree_search_reveals_match_in_normal_view() {
 
     // Overlay closed, query cleared, and `src` is now genuinely expanded so
     // the chosen file stays visible with the cursor on it.
-    assert!(!app.tree_view.search_active);
-    assert!(app.tree_view.search_query.is_empty());
-    assert!(app.tree_view.expanded.contains("src"));
+    assert!(!app.git.view.tree.search_active);
+    assert!(app.git.view.tree.search_query.is_empty());
+    assert!(app.git.view.tree.expanded.contains("src"));
     assert_eq!(
-        app.tree_view.selected_path().as_deref(),
+        app.git.view.tree.selected_path().as_deref(),
         Some("src/main.rs")
     );
     drop(dir);
@@ -176,12 +182,14 @@ fn cancel_tree_search_leaves_expansion_untouched() {
     }
     app.cancel_tree_search();
 
-    assert!(!app.tree_view.search_active);
-    assert!(app.tree_view.search_query.is_empty());
+    assert!(!app.git.view.tree.search_active);
+    assert!(app.git.view.tree.search_query.is_empty());
     // Esc must not expand anything; the view returns to its prior state.
-    assert!(!app.tree_view.expanded.contains("src"));
+    assert!(!app.git.view.tree.expanded.contains("src"));
     assert!(
-        !app.tree_view
+        !app.git
+            .view
+            .tree
             .visible_rows()
             .iter()
             .any(|r| r.path == "src/main.rs")
@@ -193,13 +201,13 @@ fn cancel_tree_search_leaves_expansion_untouched() {
 fn toggle_tree_mode_round_trips_status_and_tree() {
     let (dir, path) = make_tree_repo();
     let mut app = app_on(&path);
-    assert_eq!(app.mode, ViewMode::Status);
+    assert_eq!(app.git.view.mode, ViewMode::Status);
 
     app.toggle_tree_mode();
-    assert_eq!(app.mode, ViewMode::Tree);
+    assert_eq!(app.git.view.mode, ViewMode::Tree);
 
     app.toggle_tree_mode();
-    assert_eq!(app.mode, ViewMode::Status);
+    assert_eq!(app.git.view.mode, ViewMode::Status);
     drop(dir);
 }
 
@@ -210,7 +218,9 @@ fn enter_tree_mode_picks_up_dir_created_after_first_entry() {
     // First entry caches the root listing (no `docs/` yet).
     app.enter_tree_mode();
     assert!(
-        !app.tree_view
+        !app.git
+            .view
+            .tree
             .visible_rows()
             .iter()
             .any(|r| r.path == "docs"),
@@ -225,7 +235,9 @@ fn enter_tree_mode_picks_up_dir_created_after_first_entry() {
     // Re-entering must re-read the root and surface the new directory.
     app.enter_tree_mode();
     assert!(
-        app.tree_view
+        app.git
+            .view
+            .tree
             .visible_rows()
             .iter()
             .any(|r| r.path == "docs"),
@@ -240,16 +252,16 @@ fn enter_tree_mode_reflects_moved_dir_without_error() {
     let mut app = app_on(&path);
     // Cache the root with `src/` present, expanded.
     app.enter_tree_mode();
-    app.tree_view.selected = tree_index_of(&app, "src");
+    app.git.view.tree.selected = tree_index_of(&app, "src");
     app.tree_expand();
-    assert!(app.tree_view.expanded.contains("src"));
+    assert!(app.git.view.tree.expanded.contains("src"));
 
     // Move `src/` to `lib/` on disk while away from Tree mode.
     app.exit_tree_to_status();
     std::fs::rename(Path::new(&path).join("src"), Path::new(&path).join("lib")).unwrap();
 
     app.enter_tree_mode();
-    let rows = app.tree_view.visible_rows();
+    let rows = app.git.view.tree.visible_rows();
     assert!(
         !rows.iter().any(|r| r.path == "src"),
         "the moved-away directory must disappear from its old location"
@@ -260,7 +272,7 @@ fn enter_tree_mode_reflects_moved_dir_without_error() {
     );
     // The stale `src` expansion is pruned (it no longer exists), so no
     // failing re-read leaks a "tree error" into the status bar.
-    assert!(!app.tree_view.expanded.contains("src"));
+    assert!(!app.git.view.tree.expanded.contains("src"));
     assert!(
         !app.notice
             .as_ref()

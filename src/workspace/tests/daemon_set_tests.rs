@@ -7,7 +7,10 @@
 use super::common::*;
 
 fn paths(ws: &crate::workspace::Workspace) -> Vec<String> {
-    ws.projects().iter().map(|p| p.repo_path.clone()).collect()
+    ws.projects()
+        .iter()
+        .map(|p| p.git.repo_path.clone())
+        .collect()
 }
 
 #[test]
@@ -21,7 +24,7 @@ fn closing_a_repo_that_is_not_active_leaves_the_active_one_alone() {
 
     assert_eq!(paths(&ws), vec!["/b", "/c"]);
     assert_eq!(
-        ws.active().unwrap().repo_path,
+        ws.active().unwrap().git.repo_path,
         "/c",
         "the active project must not shift onto its neighbour"
     );
@@ -35,7 +38,7 @@ fn closing_the_active_repo_falls_back_to_a_neighbour() {
     assert!(ws.close_repo("/b"));
 
     assert_eq!(paths(&ws), vec!["/a", "/c"]);
-    assert_eq!(ws.active().unwrap().repo_path, "/c");
+    assert_eq!(ws.active().unwrap().git.repo_path, "/c");
 }
 
 #[test]
@@ -90,7 +93,7 @@ fn reordering_keeps_the_same_project_active() {
 
     ws.reorder_to(&["/c", "/b", "/a"]);
 
-    assert_eq!(ws.active().unwrap().repo_path, "/a");
+    assert_eq!(ws.active().unwrap().git.repo_path, "/a");
     assert_eq!(ws.active_index(), 2);
 }
 
@@ -132,8 +135,8 @@ fn recording_an_id_names_the_repository_it_was_given_for() {
 
     ws.set_repo_id("/b", "r7");
 
-    assert_eq!(ws.projects()[1].repo_id.as_deref(), Some("r7"));
-    assert_eq!(ws.projects()[0].repo_id, None);
+    assert_eq!(ws.projects()[1].git.repo_id.as_deref(), Some("r7"));
+    assert_eq!(ws.projects()[0].git.repo_id, None);
 }
 
 #[test]
@@ -142,5 +145,5 @@ fn recording_an_id_for_a_repo_that_is_not_open_changes_nothing() {
 
     ws.set_repo_id("/gone", "r7");
 
-    assert_eq!(ws.projects()[0].repo_id, None);
+    assert_eq!(ws.projects()[0].git.repo_id, None);
 }

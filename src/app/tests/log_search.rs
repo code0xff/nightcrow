@@ -14,13 +14,13 @@ fn named_commit(summary: &str) -> CommitEntry {
 #[test]
 fn commit_search_filters_summaries_and_clamps_selection() {
     let mut app = app_with_files(vec![]);
-    app.mode = ViewMode::Log;
-    app.log_view.set_commits(vec![
+    app.git.view.mode = ViewMode::Log;
+    app.git.view.log.set_commits(vec![
         named_commit("feat: search bar"),
         named_commit("docs: readme"),
         named_commit("fix: another search edge case"),
     ]);
-    app.log_view.selected = 1;
+    app.git.view.log.selected = 1;
 
     app.start_log_search();
     app.log_search_push('s');
@@ -32,23 +32,23 @@ fn commit_search_filters_summaries_and_clamps_selection() {
 
     // "docs: readme" no longer matches → selection snaps to first match.
     assert_eq!(app.log_commit_filtered_indices(), &[0, 2]);
-    assert_eq!(app.log_view.selected, 0);
+    assert_eq!(app.git.view.log.selected, 0);
 
     app.cancel_log_search();
     assert_eq!(app.log_commit_filtered_indices(), &[0, 1, 2]);
-    assert!(app.log_view.commit_search_query.is_empty());
+    assert!(app.git.view.log.commit_search_query.is_empty());
 }
 
 #[test]
 fn maybe_prefetch_suppressed_while_commit_search_active() {
     // 10 loaded, threshold 5 — selected at 6 would normally spawn a fetch.
     let mut app = seed_log_app(10, 5, 5);
-    app.log_view.selected = 6;
-    app.log_view.commit_search_active = true;
+    app.git.view.log.selected = 6;
+    app.git.view.log.commit_search_active = true;
 
     app.maybe_prefetch_commit_log();
 
-    assert!(!app.log_view.pending_fetch);
+    assert!(!app.git.view.log.pending_fetch);
     assert!(!app.commit_log_fetch_pending());
 }
 
@@ -60,17 +60,17 @@ fn cancel_log_search_resumes_prefetch() {
     run_git(&path, &["commit", "-m", "c"]);
 
     let mut app = seed_log_app(10, 5, 5);
-    app.repo_path = path.clone();
-    app.log_view.selected = 6;
+    app.git.repo_path = path.clone();
+    app.git.view.log.selected = 6;
     // Open the search bar so the prefetch gate is engaged.
     app.start_log_search();
     app.maybe_prefetch_commit_log();
-    assert!(!app.log_view.pending_fetch);
+    assert!(!app.git.view.log.pending_fetch);
 
     // Cancelling the search must re-call maybe_prefetch so the deferred
     // tail fetch can run now that the gate is lifted.
     app.cancel_log_search();
-    assert!(app.log_view.pending_fetch);
+    assert!(app.git.view.log.pending_fetch);
     assert!(app.commit_log_fetch_pending());
 
     app.flush_commit_log_fetch_for_test(Duration::from_secs(2));
@@ -87,16 +87,16 @@ fn confirm_log_search_with_query_resumes_prefetch() {
     run_git(&path, &["commit", "-m", "c"]);
 
     let mut app = seed_log_app(10, 5, 5);
-    app.repo_path = path.clone();
-    app.log_view.selected = 6;
+    app.git.repo_path = path.clone();
+    app.git.view.log.selected = 6;
     app.start_log_search();
     app.log_search_push('c'); // every fake summary matches.
-    assert!(!app.log_view.pending_fetch);
+    assert!(!app.git.view.log.pending_fetch);
 
     app.confirm_log_search();
-    assert!(!app.log_view.commit_search_active);
-    assert_eq!(app.log_view.commit_search_query.as_str(), "c");
-    assert!(app.log_view.pending_fetch);
+    assert!(!app.git.view.log.commit_search_active);
+    assert_eq!(app.git.view.log.commit_search_query.as_str(), "c");
+    assert!(app.git.view.log.pending_fetch);
 
     app.flush_commit_log_fetch_for_test(Duration::from_secs(2));
     drop(dir);
@@ -105,14 +105,14 @@ fn confirm_log_search_with_query_resumes_prefetch() {
 #[test]
 fn drilldown_file_search_filters_paths_and_clamps_selection() {
     let mut app = app_with_files(vec![]);
-    app.mode = ViewMode::Log;
-    app.log_view.drill_down = true;
-    app.log_view.set_commit_files(vec![
+    app.git.view.mode = ViewMode::Log;
+    app.git.view.log.drill_down = true;
+    app.git.view.log.set_commit_files(vec![
         ChangedFile::unstaged_only("src/lib.rs".into(), StatusKind::Modified),
         ChangedFile::unstaged_only("README.md".into(), StatusKind::Modified),
         ChangedFile::unstaged_only("src/main.rs".into(), StatusKind::Modified),
     ]);
-    app.log_view.file_selected = 1;
+    app.git.view.log.file_selected = 1;
 
     app.start_log_search();
     app.log_search_push('s');
@@ -121,10 +121,10 @@ fn drilldown_file_search_filters_paths_and_clamps_selection() {
 
     // README.md drops out → selection snaps to first matching path.
     assert_eq!(app.log_file_filtered_indices(), &[0, 2]);
-    assert_eq!(app.log_view.file_selected, 0);
-    assert!(app.log_view.file_search_active);
+    assert_eq!(app.git.view.log.file_selected, 0);
+    assert!(app.git.view.log.file_search_active);
 
     app.cancel_log_search();
     assert_eq!(app.log_file_filtered_indices(), &[0, 1, 2]);
-    assert!(app.log_view.file_search_query.is_empty());
+    assert!(app.git.view.log.file_search_query.is_empty());
 }

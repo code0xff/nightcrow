@@ -38,7 +38,7 @@ impl App {
         // `create_pane` made the new pane active; move app focus onto it and
         // drop competing fullscreen so focus/render/hints stay in sync.
         self.focus = Focus::Terminal;
-        self.diff.fullscreen = false;
+        self.git.view.diff.fullscreen = false;
         self.list_fullscreen = false;
     }
 
@@ -123,7 +123,7 @@ impl App {
             self.terminal.sync_visible_window();
             self.focus = Focus::Terminal;
             // Drop competing fullscreen so focus/render/hints stay in sync.
-            self.diff.fullscreen = false;
+            self.git.view.diff.fullscreen = false;
             self.list_fullscreen = false;
         }
     }
@@ -131,7 +131,7 @@ impl App {
     pub fn swap_active_pane_with(&mut self, idx: usize) {
         if self.terminal.swap_active_with(idx) {
             self.focus = Focus::Terminal;
-            self.diff.fullscreen = false;
+            self.git.view.diff.fullscreen = false;
             self.list_fullscreen = false;
         }
     }

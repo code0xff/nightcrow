@@ -5,12 +5,12 @@ use crate::ui::jump_legend;
 /// mode, the selected path in status/tree mode, with per-mode fallbacks for
 /// "nothing selected".
 fn diff_label(app: &App) -> String {
-    match app.mode {
+    match app.mode() {
         ViewMode::Log => {
-            if app.log_view.diff_title.is_empty() {
+            if app.log_view().diff_title.is_empty() {
                 "Diff".to_string()
             } else {
-                app.log_view.diff_title.clone()
+                app.log_view().diff_title.clone()
             }
         }
         ViewMode::Status => app
@@ -18,7 +18,7 @@ fn diff_label(app: &App) -> String {
             .map(|f| f.path.clone())
             .unwrap_or_else(|| "Diff".to_string()),
         ViewMode::Tree => app
-            .tree_view
+            .tree_view()
             .selected_path()
             .unwrap_or_else(|| "File".to_string()),
     }
@@ -29,16 +29,16 @@ fn diff_label(app: &App) -> String {
 pub(crate) fn unified_title(app: &App) -> String {
     let jump = jump_legend(app, '2');
     let label = diff_label(app);
-    if !app.diff.search.has_query() {
+    if !app.diff_pane().search.has_query() {
         return format!(" {jump} {label} ");
     }
-    let count = app.diff.search.matches.len();
+    let count = app.diff_pane().search.matches.len();
     if count == 0 {
         format!(" {jump} {label} [no matches] ")
     } else {
         format!(
             " {jump} {label} [{}/{}] ",
-            app.diff.search.cursor + 1,
+            app.diff_pane().search.cursor + 1,
             count
         )
     }

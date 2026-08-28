@@ -32,29 +32,29 @@ pub(crate) fn handle_paste(app: &mut App, text: &str) {
     // stuck and make the next key resolve as a follow-up; resolve the prefix
     // first (tmux treats a non-command event as a cancel).
     app.interaction.prefix_armed = false;
-    if app.focus == Focus::FileList && app.status_view.search_active {
+    if app.focus == Focus::FileList && app.status_view().search_active {
         for ch in text.chars().filter(|c| !c.is_control()) {
             app.search_push(ch);
         }
         return;
     }
-    if app.focus == Focus::FileList && app.tree_view.search_active {
+    if app.focus == Focus::FileList && app.tree_view().search_active {
         for ch in text.chars().filter(|c| !c.is_control()) {
             app.tree_search_push(ch);
         }
         return;
     }
     if app.focus == Focus::FileList
-        && (app.log_view.commit_search_active || app.log_view.file_search_active)
+        && (app.log_view().commit_search_active || app.log_view().file_search_active)
     {
         for ch in text.chars().filter(|c| !c.is_control()) {
             app.log_search_push(ch);
         }
         return;
     }
-    if app.focus == Focus::DiffViewer && app.diff.search.active {
+    if app.focus == Focus::DiffViewer && app.diff_pane_mut().search.active {
         for ch in text.chars().filter(|c| !c.is_control()) {
-            app.diff.search_push(ch);
+            app.diff_pane_mut().search_push(ch);
         }
         return;
     }

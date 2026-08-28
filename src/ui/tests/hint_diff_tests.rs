@@ -28,7 +28,7 @@ fn normal_hint_advertises_close_only_with_terminal_focus() {
 fn diff_hint_advertises_view_file_only_with_a_file_target() {
     // Log view browsing commits (no drill-down): `v` has no target.
     let mut app = app_with_fake_backend();
-    app.mode = ViewMode::Log;
+    app.git.view.mode = ViewMode::Log;
     app.focus = Focus::DiffViewer;
     let text = hint_text(&app);
     assert!(
@@ -41,7 +41,7 @@ fn diff_hint_advertises_view_file_only_with_a_file_target() {
     );
 
     // Same state zoomed: the fullscreen legend must agree.
-    app.diff.fullscreen = true;
+    app.git.view.diff.fullscreen = true;
     let text = hint_text(&app);
     assert!(
         !text.contains("v: view file"),
@@ -49,8 +49,10 @@ fn diff_hint_advertises_view_file_only_with_a_file_target() {
     );
 
     // Drill-down with a file selected: `v` acts, so advertise it.
-    app.diff.fullscreen = false;
-    app.log_view
+    app.git.view.diff.fullscreen = false;
+    app.git
+        .view
+        .log
         .set_commits(vec![crate::git::diff::CommitEntry::new(
             git2::Oid::ZERO_SHA1,
             "deadbee".to_string(),
@@ -58,8 +60,8 @@ fn diff_hint_advertises_view_file_only_with_a_file_target() {
             "T".to_string(),
             0,
         )]);
-    app.log_view.drill_down = true;
-    app.log_view.commit_files = vec![crate::git::diff::ChangedFile::unstaged_only(
+    app.git.view.log.drill_down = true;
+    app.git.view.log.commit_files = vec![crate::git::diff::ChangedFile::unstaged_only(
         "a.rs".to_string(),
         StatusKind::Modified,
     )];
@@ -86,9 +88,9 @@ fn every_view_that_wraps_advertises_the_key() {
     let mut app = app_with_fake_backend();
     app.focus = Focus::DiffViewer;
     for view in [DiffPaneView::Diff, DiffPaneView::File] {
-        app.diff.view = view;
+        app.git.view.diff.view = view;
         for zoomed in [false, true] {
-            app.diff.fullscreen = zoomed;
+            app.git.view.diff.fullscreen = zoomed;
             let text = hint_text(&app);
             assert!(
                 text.contains("w: wrap"),
@@ -99,13 +101,13 @@ fn every_view_that_wraps_advertises_the_key() {
 
     // Tree mode's right pane is permanently the file view, and wraps the same.
     let mut tree = app_with_fake_backend();
-    tree.mode = ViewMode::Tree;
+    tree.git.view.mode = ViewMode::Tree;
     tree.focus = Focus::DiffViewer;
-    tree.diff.view = DiffPaneView::File;
+    tree.git.view.diff.view = DiffPaneView::File;
     assert!(hint_text(&tree).contains("w: wrap"), "tree file view wraps");
 
-    app.diff.view = DiffPaneView::Split;
-    app.diff.fullscreen = false;
+    app.git.view.diff.view = DiffPaneView::Split;
+    app.git.view.diff.fullscreen = false;
     let text = hint_text(&app);
     assert!(
         !text.contains("w: wrap"),
@@ -118,16 +120,16 @@ fn every_view_that_wraps_advertises_the_key() {
 #[test]
 fn tree_file_view_hint_omits_back_to_diff() {
     let mut app = app_with_fake_backend();
-    app.mode = ViewMode::Tree;
+    app.git.view.mode = ViewMode::Tree;
     app.focus = Focus::DiffViewer;
-    app.diff.view = DiffPaneView::File;
+    app.git.view.diff.view = DiffPaneView::File;
     let text = hint_text(&app);
     assert!(
         !text.contains("v: back to diff"),
         "tree file-view legend must not offer back to diff, got: {text}"
     );
 
-    app.diff.fullscreen = true;
+    app.git.view.diff.fullscreen = true;
     let text = hint_text(&app);
     assert!(
         !text.contains("v: back to diff"),

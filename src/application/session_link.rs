@@ -76,7 +76,11 @@ impl SessionLink {
             // moves locally in the meantime: switching optimistically and then
             // being corrected would show a tab flicking past on every switch.
             ProjectRequest::Switch(index) => {
-                match ws.projects().get(index).and_then(|app| app.repo_id.clone()) {
+                match ws
+                    .projects()
+                    .get(index)
+                    .and_then(|app| app.repository_id().map(str::to_string))
+                {
                     Some(id) => self.client.focus_repo(&id),
                     // A tab the daemon has not named yet — it is a beat from
                     // arriving, and there is nothing to ask about.
@@ -95,7 +99,10 @@ impl SessionLink {
             // Closing is by id, so a tab with no id is not one the daemon knows
             // about and closing it locally would only hide it until the next
             // broadcast put it back.
-            ProjectRequest::Close => match ws.active().and_then(|app| app.repo_id.clone()) {
+            ProjectRequest::Close => match ws
+                .active()
+                .and_then(|app| app.repository_id().map(str::to_string))
+            {
                 Some(id) => self.client.close_repo(&id),
                 None => return,
             },
@@ -130,7 +137,7 @@ fn focus_repo(ws: &mut Workspace, repo: &str) -> bool {
     match ws
         .projects()
         .iter()
-        .position(|app| app.repo_id.as_deref() == Some(repo))
+        .position(|app| app.repository_id() == Some(repo))
     {
         Some(index) => {
             ws.switch(index);
@@ -148,7 +155,7 @@ fn notify_repo(ws: &mut Workspace, repo: &str, message: String) {
     match ws
         .projects_mut()
         .iter_mut()
-        .find(|project| project.repo_id.as_deref() == Some(repo))
+        .find(|project| project.repository_id() == Some(repo))
     {
         Some(project) => project.raise_notice(crate::app::NoticeKind::Terminal, message),
         None => ws.raise_notice(crate::app::NoticeKind::Terminal, message),
@@ -166,7 +173,7 @@ fn adopt(ws: &mut Workspace, ctx: &ProjectContext, repos: &[RepoSummary], client
     let doomed: Vec<String> = ws
         .projects()
         .iter()
-        .map(|project| project.repo_path.clone())
+        .map(|project| project.repository_path().to_string())
         .filter(|path| !wanted.contains(&path.as_str()))
         .collect();
     for path in doomed {

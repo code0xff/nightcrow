@@ -9,9 +9,9 @@ impl App {
     // channel from growing, regardless of which tab is shown.
     pub fn drain_snapshot(&mut self) -> bool {
         let mut received = false;
-        while let Ok(msg) = self.snapshot.try_recv() {
+        while let Ok(msg) = self.git.snapshot.try_recv() {
             received = true;
-            self.pending_snapshot = Some(msg);
+            self.git.pending_snapshot = Some(msg);
         }
         received
     }
@@ -21,7 +21,7 @@ impl App {
     // the first tick after their tab comes forward.
     pub fn poll_snapshot(&mut self) -> bool {
         let received = self.drain_snapshot();
-        match self.pending_snapshot.take() {
+        match self.git.pending_snapshot.take() {
             Some(SnapshotMsg::Ok(snapshot, mtimes)) => {
                 self.ingest_snapshot(snapshot, mtimes);
             }
@@ -44,33 +44,41 @@ impl App {
         // path, so the ordinary "keep the cursor on the same file" machinery
         // performs the restore — no separate restore step to collide with.
         let previous_path = self
-            .status_view
+            .git
+            .view
+            .status
             .files
-            .get(self.status_view.selected)
+            .get(self.git.view.status.selected)
             .map(|f| f.path.clone())
             .or_else(|| {
-                self.pending_selection
-                    .as_ref()
+                self.git
+                    .view
+                    .pending_selection()
                     .map(|(path, _)| path.clone())
             });
         let previous_selected = previous_path.as_ref().and_then(|path| {
-            self.status_view
+            self.git
+                .view
+                .status
                 .files
                 .iter()
                 .find(|file| &file.path == path)
                 .cloned()
         });
-        let previous_snapshot_mtime = self.selected_snapshot_mtime.clone().or_else(|| {
-            previous_path
-                .as_ref()
-                .map(|path| (path.clone(), self.status_view.hot_table.get(path).copied()))
+        let previous_snapshot_mtime = self.git.view.selected_snapshot_mtime.clone().or_else(|| {
+            previous_path.as_ref().map(|path| {
+                (
+                    path.clone(),
+                    self.git.view.status.hot_table.get(path).copied(),
+                )
+            })
         });
         let new_head = snapshot.head_oid;
-        self.branch_name = snapshot.branch_name;
+        self.git.branch_name = snapshot.branch_name;
         self.refresh_log_decorations(snapshot.refs_fingerprint);
-        self.status_view.set_files(snapshot.files);
-        self.status_view.recompute_filter();
-        self.tracking = snapshot.tracking;
+        self.git.view.status.set_files(snapshot.files);
+        self.git.view.status_mut().recompute_filter();
+        self.git.tracking = snapshot.tracking;
         self.merge_hot_table(&mtimes);
 
         self.restore_selection(previous_path.as_deref());
@@ -91,8 +99,8 @@ impl App {
                         && previous_snapshot_mtime == selected_snapshot_mtime
                 })
             });
-        self.selected_snapshot_mtime = selected_snapshot_mtime;
-        if self.mode == ViewMode::Status {
+        self.git.view.selected_snapshot_mtime = selected_snapshot_mtime;
+        if self.git.view.mode == ViewMode::Status {
             if selected_path.is_some() {
                 if !selected_state_unchanged {
                     self.refresh_diff(selected_path_changed);
@@ -105,18 +113,18 @@ impl App {
 
         // Skip on the very first snapshot (prior == None) so initial loads
         // don't double-fetch the commit log on top of `toggle_mode`'s eager load.
-        let prior_head = self.commit_log_controller.last_head_oid();
-        self.commit_log_controller.set_last_head_oid(new_head);
-        if prior_head.is_some() && prior_head != new_head && self.mode == ViewMode::Log {
+        let prior_head = self.git.commit_log.last_head_oid();
+        self.git.commit_log.set_last_head_oid(new_head);
+        if prior_head.is_some() && prior_head != new_head && self.git.view.mode == ViewMode::Log {
             self.refresh_commit_log_after_head_change();
         }
 
         // The saved scroll belongs to the saved file, so it only applies if
         // the cursor actually landed there.
-        if let Some((path, scroll)) = self.pending_selection.take()
+        if let Some((path, scroll)) = self.git.view.take_pending_selection()
             && self.selected_filtered_status_path().as_deref() == Some(path.as_str())
         {
-            self.diff.scroll = scroll.min(self.diff.max_scroll());
+            self.git.view.diff.scroll = scroll.min(self.git.view.diff.max_scroll());
         }
     }
 
@@ -124,11 +132,12 @@ impl App {
     // fingerprint rather than run per poll. A failure leaves the previous map in
     // place: stale chips beat chips vanishing on a transient read error.
     fn refresh_log_decorations(&mut self, fingerprint: u64) {
-        if self.last_refs_fingerprint == Some(fingerprint) {
+        if self.git.last_refs_fingerprint == Some(fingerprint) {
             return;
         }
-        self.load_controller
-            .request_decorations(&self.repo_path, fingerprint);
+        self.git
+            .load_controller
+            .request_decorations(&self.git.repo_path, fingerprint);
     }
 
     // A path whose previous mtime was newer than the freshly observed one keeps
@@ -137,7 +146,7 @@ impl App {
     // instead of rebuilding the HashMap every tick: the steady state has the
     // same path set tick after tick.
     pub(crate) fn merge_hot_table(&mut self, mtimes: &HashMap<String, SystemTime>) {
-        let table = &mut self.status_view.hot_table;
+        let table = &mut self.git.view.status.hot_table;
         table.retain(|path, _| mtimes.contains_key(path));
         for (path, new_mtime) in mtimes {
             if let Some(stored) = table.get_mut(path) {

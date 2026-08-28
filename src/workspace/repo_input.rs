@@ -20,7 +20,7 @@ impl Workspace {
     pub fn start_repo_input(&mut self) {
         self.repo_input.buf = self
             .active()
-            .map(|p| p.repo_path.clone())
+            .map(|p| p.repository_path().to_string())
             .unwrap_or_default();
         self.repo_input.active = true;
         self.repo_input.candidates.clear();

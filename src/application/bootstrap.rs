@@ -9,11 +9,10 @@ pub(crate) fn init_app(
     backend: Box<dyn crate::backend::TerminalBackend>,
 ) -> App {
     let mut app = App::new(repo_path.to_string(), cfg.log.prompt_log, leader, backend);
-    app.cfg_agent_indicator = cfg.agent_indicator.clone();
-    app.cfg_tree = cfg.tree.clone();
+    app.configure_repository_views(cfg.agent_indicator.clone(), cfg.tree.clone());
     app.interaction.mouse_enabled = cfg.mouse.enabled;
     if cfg.tree.live_watch {
-        app.tree_watch = crate::runtime::tree_watch::TreeWatcher::new();
+        app.enable_tree_watcher();
     }
     app.configure_commit_log(
         cfg.log.commit_log_page_size,

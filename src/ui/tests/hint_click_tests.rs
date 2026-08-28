@@ -234,7 +234,7 @@ fn hint_click_armed_row_resolves_the_remaining_commands() {
 fn hint_click_resolves_the_search_match_keys() {
     let mut app = app_with_fake_backend();
     app.focus = Focus::DiffViewer;
-    app.diff.search.query.set("foo");
+    app.git.view.diff.search.query.set("foo");
 
     for (needle, key) in [("n: next match", 'n'), ("shift+n: prev match", 'N')] {
         let x = hint_x_of(&app, needle);

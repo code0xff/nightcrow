@@ -20,7 +20,7 @@ pub(super) fn workspace_on(paths: &[&str]) -> Workspace {
 /// what the tab row labels and `index_of_repo` match on.
 pub(super) fn project_at(path: &str) -> App {
     let mut app = app_with_files(vec!["a.rs"]);
-    app.repo_path = path.to_string();
+    app.git.repo_path = path.to_string();
     app
 }
 
@@ -31,5 +31,8 @@ pub(super) fn workspace_from(project: App) -> Workspace {
 }
 
 pub(super) fn paths(ws: &Workspace) -> Vec<&str> {
-    ws.projects().iter().map(|p| p.repo_path.as_str()).collect()
+    ws.projects()
+        .iter()
+        .map(|p| p.git.repo_path.as_str())
+        .collect()
 }

@@ -48,7 +48,7 @@ fn 프로젝트를_추가하면_끝에_붙고_활성이_된다() {
     assert!(ws.add(project_at("/b")));
 
     assert_eq!(paths(&ws), vec!["/a", "/b"]);
-    assert_eq!(ws.active().unwrap().repo_path, "/b");
+    assert_eq!(ws.active().unwrap().git.repo_path, "/b");
 }
 
 #[test]
@@ -58,12 +58,12 @@ fn 상한에_도달하면_추가를_거부하고_활성을_유지한다() {
         assert!(ws.add(project_at(&format!("/p{i}"))));
     }
     assert_eq!(ws.projects().len(), MAX_PROJECTS);
-    let active_before = ws.active().unwrap().repo_path.clone();
+    let active_before = ws.active().unwrap().git.repo_path.clone();
 
     assert!(!ws.add(project_at("/overflow")));
 
     assert_eq!(ws.projects().len(), MAX_PROJECTS);
-    assert_eq!(ws.active().unwrap().repo_path, active_before);
+    assert_eq!(ws.active().unwrap().git.repo_path, active_before);
     assert!(ws.index_of_repo("/overflow").is_none());
 }
 
@@ -77,7 +77,7 @@ fn 가운데_탭을_닫으면_뒤_탭이_활성이_된다() {
     assert!(ws.close_repo("/b"));
 
     assert_eq!(paths(&ws), vec!["/a", "/c"]);
-    assert_eq!(ws.active().unwrap().repo_path, "/c");
+    assert_eq!(ws.active().unwrap().git.repo_path, "/c");
 }
 
 #[test]
@@ -88,7 +88,7 @@ fn 마지막_탭을_닫으면_앞_탭이_활성이_된다() {
     assert!(ws.close_repo("/b"));
 
     assert_eq!(paths(&ws), vec!["/a"]);
-    assert_eq!(ws.active().unwrap().repo_path, "/a");
+    assert_eq!(ws.active().unwrap().git.repo_path, "/a");
 }
 
 #[test]
@@ -138,7 +138,7 @@ fn 범위를_벗어난_전환은_활성을_바꾸지_않는다() {
 
     ws.switch(9);
 
-    assert_eq!(ws.active().unwrap().repo_path, "/b");
+    assert_eq!(ws.active().unwrap().git.repo_path, "/b");
 }
 
 #[test]

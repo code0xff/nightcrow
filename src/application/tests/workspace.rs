@@ -40,7 +40,7 @@ fn confirming_the_dialog_asks_the_workspace_to_open_that_path() {
     assert_eq!(outcome, KeyOutcome::Project(ProjectRequest::Open(expected)));
     // The current project still points at its original repo: confirming
     // opens a tab, it never repoints this one.
-    assert_eq!(ws.active().unwrap().repo_path, "/a");
+    assert_eq!(ws.active().unwrap().git.repo_path, "/a");
     assert!(!ws.repo_input.active, "dialog must close on success");
 }
 

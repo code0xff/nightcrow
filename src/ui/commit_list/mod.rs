@@ -10,7 +10,7 @@ use ratatui::{
 };
 
 pub fn render(frame: &mut Frame, app: &App, area: Rect, accent: Color) {
-    if app.log_view.drill_down {
+    if app.log_view().drill_down {
         render_file_list(frame, app, area, accent);
     } else {
         render_commit_list(frame, app, area, accent);
@@ -22,7 +22,7 @@ fn render_commit_list(frame: &mut Frame, app: &App, area: Rect, accent: Color) {
     let border_style = super::focused_border_style(focused, accent);
 
     let show_search =
-        app.log_view.commit_search_active || !app.log_view.commit_search_query.is_empty();
+        app.log_view().commit_search_active || !app.log_view().commit_search_query.is_empty();
 
     let (list_area, search_area) = if show_search {
         let chunks = Layout::default()
@@ -36,16 +36,16 @@ fn render_commit_list(frame: &mut Frame, app: &App, area: Rect, accent: Color) {
 
     let filtered = app.log_commit_filtered_indices();
     let match_count = filtered.len();
-    let total_count = app.log_view.commits.len();
+    let total_count = app.log_view().commits.len();
 
-    let scroll_x = app.log_view.commit_scroll_x;
+    let scroll_x = app.log_view().commit_scroll_x;
     let items: Vec<ListItem> = filtered
         .iter()
         .map(|&i| {
-            let entry = &app.log_view.commits[i];
+            let entry = &app.log_view().commits[i];
             ListItem::new(row::commit_row(
                 entry,
-                &app.log_decorations,
+                app.log_decorations(),
                 list_area.width,
                 scroll_x,
                 accent,
@@ -64,14 +64,14 @@ fn render_commit_list(frame: &mut Frame, app: &App, area: Rect, accent: Color) {
         format!(" {} Log ({total_count}) ", super::jump_legend(app, '1'))
     };
 
-    let selected_pos = filtered.iter().position(|&i| i == app.log_view.selected);
+    let selected_pos = filtered.iter().position(|&i| i == app.log_view().selected);
     super::render_selectable_list(frame, list_area, title, items, selected_pos, border_style);
 
     if let Some(sa) = search_area {
         super::render_search_bar(
             frame,
-            app.log_view.commit_search_query.as_str(),
-            app.log_view.commit_search_active,
+            app.log_view().commit_search_query.as_str(),
+            app.log_view().commit_search_active,
             sa,
             accent,
         );
@@ -82,7 +82,8 @@ fn render_file_list(frame: &mut Frame, app: &App, area: Rect, accent: Color) {
     let focused = app.focus == Focus::FileList;
     let border_style = super::focused_border_style(focused, accent);
 
-    let show_search = app.log_view.file_search_active || !app.log_view.file_search_query.is_empty();
+    let show_search =
+        app.log_view().file_search_active || !app.log_view().file_search_query.is_empty();
 
     let (list_area, search_area) = if show_search {
         let chunks = Layout::default()
@@ -96,13 +97,13 @@ fn render_file_list(frame: &mut Frame, app: &App, area: Rect, accent: Color) {
 
     let filtered = app.log_file_filtered_indices();
     let match_count = filtered.len();
-    let total_count = app.log_view.commit_files.len();
+    let total_count = app.log_view().commit_files.len();
 
-    let scroll_x = app.log_view.file_scroll_x;
+    let scroll_x = app.log_view().file_scroll_x;
     let items: Vec<ListItem> = filtered
         .iter()
         .map(|&i| {
-            let f = &app.log_view.commit_files[i];
+            let f = &app.log_view().commit_files[i];
             let path: std::borrow::Cow<'_, str> = match f.display_path() {
                 std::borrow::Cow::Borrowed(_) => {
                     std::borrow::Cow::Borrowed(super::char_offset(&f.path, scroll_x))
@@ -123,9 +124,9 @@ fn render_file_list(frame: &mut Frame, app: &App, area: Rect, accent: Color) {
         .collect();
 
     let commit_summary = app
-        .log_view
+        .log_view()
         .commits
-        .get(app.log_view.selected)
+        .get(app.log_view().selected)
         .map(|e| {
             format!(
                 " {} {} {} ",
@@ -147,14 +148,14 @@ fn render_file_list(frame: &mut Frame, app: &App, area: Rect, accent: Color) {
 
     let selected_pos = filtered
         .iter()
-        .position(|&i| i == app.log_view.file_selected);
+        .position(|&i| i == app.log_view().file_selected);
     super::render_selectable_list(frame, list_area, title, items, selected_pos, border_style);
 
     if let Some(sa) = search_area {
         super::render_search_bar(
             frame,
-            app.log_view.file_search_query.as_str(),
-            app.log_view.file_search_active,
+            app.log_view().file_search_query.as_str(),
+            app.log_view().file_search_active,
             sa,
             accent,
         );

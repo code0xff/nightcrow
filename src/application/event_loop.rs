@@ -101,7 +101,11 @@ pub(crate) fn main_loop(
         // Collected before the mutable borrow of the active project, since the
         // tab row names every project while the body renders only one. Bounded
         // by `MAX_PROJECTS`, so the per-frame clone is a handful of strings.
-        let tab_paths: Vec<String> = ws.projects().iter().map(|p| p.repo_path.clone()).collect();
+        let tab_paths: Vec<String> = ws
+            .projects()
+            .iter()
+            .map(|p| p.repository_path().to_string())
+            .collect();
         let tab_attention: Vec<bool> = ws
             .projects()
             .iter()

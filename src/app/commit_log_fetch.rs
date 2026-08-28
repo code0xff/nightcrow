@@ -39,30 +39,29 @@ pub(crate) struct CommitLogPageMsg {
 
 impl App {
     pub fn configure_commit_log(&mut self, page_size: usize, prefetch_threshold: usize) {
-        self.commit_log_controller
-            .configure(page_size, prefetch_threshold);
+        self.git.commit_log.configure(page_size, prefetch_threshold);
     }
 
     #[cfg(test)]
     pub(crate) fn commit_log_fetch_pending(&self) -> bool {
-        self.commit_log_controller.fetch_pending()
+        self.git.commit_log.fetch_pending()
     }
 
     #[cfg(test)]
     pub(crate) fn set_observed_head_for_test(&mut self, oid: Option<Oid>) {
-        self.commit_log_controller.set_last_head_oid(oid);
+        self.git.commit_log.set_last_head_oid(oid);
     }
 
     #[cfg(test)]
     pub(crate) fn observed_head_for_test(&self) -> Option<Oid> {
-        self.commit_log_controller.last_head_oid()
+        self.git.commit_log.last_head_oid()
     }
 
     pub(crate) fn spawn_commit_log_page_fetch(&mut self, skip: usize) {
-        if self.log_view.fully_loaded {
+        if self.git.view.log.fully_loaded {
             return;
         }
-        if !self.log_view.mark_pending() {
+        if !self.git.view.log.mark_pending() {
             return;
         }
         self.launch_commit_log_worker(skip, CommitLogFetchKind::Tail);
@@ -75,7 +74,7 @@ impl App {
         prior_selected_oid: Option<Oid>,
         prior_head_oid: Option<Oid>,
     ) {
-        if !self.log_view.mark_pending() {
+        if !self.git.view.log.mark_pending() {
             return;
         }
         self.launch_commit_log_worker(
@@ -91,13 +90,13 @@ impl App {
     // receiver-drop already signals the worker to exit at next send, and an
     // old handle mid-`load_commit_log_page` must not stall the frame).
     fn launch_commit_log_worker(&mut self, skip: usize, kind: CommitLogFetchKind) {
-        drop(self.commit_log_controller.page_rx.take());
-        self.commit_log_controller.handle.take();
-        let page_size = self.commit_log_controller.page_size();
-        let generation = self.commit_log_controller.next_generation();
-        let repo_path = self.repo_path.clone();
+        drop(self.git.commit_log.page_rx.take());
+        self.git.commit_log.handle.take();
+        let page_size = self.git.commit_log.page_size();
+        let generation = self.git.commit_log.next_generation();
+        let repo_path = self.git.repo_path.clone();
         let (tx, rx) = mpsc::channel();
-        self.commit_log_controller.page_rx = Some(rx);
+        self.git.commit_log.page_rx = Some(rx);
         let handle = thread::spawn(move || {
             let result = match Repository::discover(&repo_path) {
                 Ok(repo) => load_commit_log_page(&repo, skip, page_size).map_err(|e| e.to_string()),
@@ -111,20 +110,20 @@ impl App {
                 result,
             });
         });
-        self.commit_log_controller.handle = Some(handle);
+        self.git.commit_log.handle = Some(handle);
     }
 
     pub(crate) fn poll_commit_log_page_fetch(&mut self) -> bool {
-        let Some(rx) = self.commit_log_controller.page_rx.as_ref() else {
+        let Some(rx) = self.git.commit_log.page_rx.as_ref() else {
             return false;
         };
         match rx.try_recv() {
             Ok(msg) => {
-                self.commit_log_controller.page_rx = None;
+                self.git.commit_log.page_rx = None;
                 // The worker just sent, so its next blocking point is gone; a
                 // short timed join reaps it now, and the timeout keeps a
                 // wedged worker from stalling the frame.
-                if let Some(h) = self.commit_log_controller.handle.take() {
+                if let Some(h) = self.git.commit_log.handle.take() {
                     try_timed_join(h, REAP_TIMEOUT);
                 }
                 self.handle_commit_log_page_msg(msg);
@@ -132,11 +131,11 @@ impl App {
             }
             Err(mpsc::TryRecvError::Empty) => false,
             Err(mpsc::TryRecvError::Disconnected) => {
-                self.commit_log_controller.page_rx = None;
-                if let Some(h) = self.commit_log_controller.handle.take() {
+                self.git.commit_log.page_rx = None;
+                if let Some(h) = self.git.commit_log.handle.take() {
                     try_timed_join(h, REAP_TIMEOUT);
                 }
-                self.log_view.clear_pending();
+                self.git.view.log.clear_pending();
                 true
             }
         }
@@ -147,37 +146,37 @@ impl App {
     // worker's next `tx.send` to Err and the join completes in microseconds
     // in the common case; the timeout caps worst-case latency.
     pub(crate) fn cancel_commit_log_page_fetch(&mut self) {
-        drop(self.commit_log_controller.page_rx.take());
-        self.commit_log_controller.next_generation();
-        if let Some(h) = self.commit_log_controller.handle.take() {
+        drop(self.git.commit_log.page_rx.take());
+        self.git.commit_log.next_generation();
+        if let Some(h) = self.git.commit_log.handle.take() {
             try_timed_join(h, REAP_TIMEOUT);
         }
-        self.log_view.clear_pending();
+        self.git.view.log.clear_pending();
     }
 
     pub(crate) fn maybe_prefetch_commit_log(&mut self) {
-        if self.mode != ViewMode::Log {
+        if self.git.view.mode != ViewMode::Log {
             return;
         }
-        if self.log_view.drill_down {
+        if self.git.view.log.drill_down {
             return;
         }
         // Pause tail prefetch while the commit-list search bar is open: a new
         // page arriving mid-search would shift the filter cache and disturb
         // the user's view. The gate is lifted by `cancel_log_search` /
         // `confirm_log_search`, which re-call this helper on the way out.
-        if self.log_view.commit_search_active {
+        if self.git.view.log.commit_search_active {
             return;
         }
-        if self.log_view.commits.is_empty() {
+        if self.git.view.log.commits.is_empty() {
             return;
         }
-        if self.log_view.pending_fetch || self.log_view.fully_loaded {
+        if self.git.view.log.pending_fetch || self.git.view.log.fully_loaded {
             return;
         }
-        let loaded = self.log_view.loaded_count;
-        let threshold = self.commit_log_controller.prefetch_threshold();
-        if self.log_view.selected + threshold >= loaded {
+        let loaded = self.git.view.log.loaded_count;
+        let threshold = self.git.commit_log.prefetch_threshold();
+        if self.git.view.log.selected + threshold >= loaded {
             self.spawn_commit_log_page_fetch(loaded);
         }
     }
@@ -186,7 +185,7 @@ impl App {
     #[cfg(test)]
     pub(crate) fn flush_commit_log_fetch_for_test(&mut self, timeout: std::time::Duration) {
         let start = std::time::Instant::now();
-        while self.log_view.pending_fetch || self.commit_log_fetch_pending() {
+        while self.git.view.log.pending_fetch || self.commit_log_fetch_pending() {
             if start.elapsed() > timeout {
                 panic!("commit log fetch did not complete within {:?}", timeout);
             }

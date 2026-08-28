@@ -21,23 +21,23 @@ pub(crate) fn render_split_view(
 ) {
     let focused = app.focus == Focus::DiffViewer;
     let border_style = super::focused_border_style(focused, accent);
-    app.diff.ensure_highlight_cache(ss, ts);
+    app.diff_pane_mut().ensure_highlight_cache(ss, ts);
 
-    let split_row_count = app.diff.split_rows().len();
+    let split_row_count = app.diff_pane().split_rows().len();
     let visible_height = (area.height as usize).saturating_sub(2);
     let max_scroll = split_row_count.saturating_sub(1);
-    let scroll_start = app.diff.scroll.min(max_scroll);
+    let scroll_start = app.diff_pane().scroll.min(max_scroll);
     // Pin the shared scroll cursor to what this layout can actually show: the
     // split layout is shorter than the unified flat-row count (paired changes
     // collapse onto one row), and navigation clamps against the unified max.
-    app.diff.scroll = scroll_start;
-    let rows = app.diff.split_rows();
+    app.diff_pane_mut().scroll = scroll_start;
+    let rows = app.diff_pane().split_rows();
     let scroll_end = scroll_start.saturating_add(visible_height).min(rows.len());
 
     // Each half carries the number of the side it shows: old on the left, new
     // on the right. Collected in lockstep with the body lines so the two
     // paragraphs of a half share one vertical window.
-    let digits = super::gutter::digits_for(app.diff.max_line_number() as usize);
+    let digits = super::gutter::digits_for(app.diff_pane().max_line_number() as usize);
     let gutter_width = super::gutter::side_gutter_width(digits);
 
     let mut left_lines: Vec<Line> = Vec::with_capacity(visible_height);
@@ -48,7 +48,7 @@ pub(crate) fn render_split_view(
         match row {
             SplitRow::Header(hi) => {
                 let header = app
-                    .diff
+                    .diff_pane()
                     .hunks()
                     .get(*hi)
                     .map(|h| h.header.as_str())
@@ -87,7 +87,7 @@ pub(crate) fn render_split_view(
         .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
         .split(inner);
 
-    let scroll_x = app.diff.scroll_x.min(u16::MAX as usize) as u16;
+    let scroll_x = app.diff_pane().scroll_x.min(u16::MAX as usize) as u16;
     super::gutter::render_gutter_and_body(
         frame,
         halves[0],
@@ -140,7 +140,12 @@ fn split_side_lines<'a>(
     let Some((hi, li)) = cell else {
         return blank();
     };
-    let Some(diff_line) = app.diff.hunks().get(hi).and_then(|h| h.lines.get(li)) else {
+    let Some(diff_line) = app
+        .diff_pane()
+        .hunks()
+        .get(hi)
+        .and_then(|h| h.lines.get(li))
+    else {
         return blank();
     };
 
@@ -159,7 +164,12 @@ fn split_side_lines<'a>(
         prefix,
         Style::default().fg(Color::DarkGray).bg(bg),
     )];
-    if let Some(segs) = app.diff.line_highlights.get(hi).and_then(|hh| hh.get(li)) {
+    if let Some(segs) = app
+        .diff_pane()
+        .line_highlights
+        .get(hi)
+        .and_then(|hh| hh.get(li))
+    {
         for seg in segs {
             spans.push(Span::styled(
                 seg.text.as_str(),

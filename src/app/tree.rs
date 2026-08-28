@@ -8,14 +8,14 @@ use std::collections::BTreeSet;
 
 impl App {
     pub fn enter_tree_mode(&mut self) {
-        self.mode = ViewMode::Tree;
+        self.git.view.set_mode(ViewMode::Tree);
         // A Log-mode page fetch in flight would clobber the Tree preview a tick
         // later; cancel so only Tree controls the diff pane while active.
         self.cancel_commit_log_page_fetch();
         // Drop lingering search overlays so their modal handlers can't capture
         // Tree keystrokes after the mode switch.
-        self.status_view.cancel_search();
-        self.tree_view.cancel_search();
+        self.git.view.status.cancel_search();
+        self.git.view.tree.cancel_search();
         self.clear_diff_state();
         // Re-read from disk so structural changes while away from Tree show up
         // (the per-directory cache is otherwise only cleared on repo switch).
@@ -30,24 +30,24 @@ impl App {
         &mut self,
         invalidate: Option<&BTreeSet<String>>,
     ) {
-        let prev_path = self.tree_view.selected_path();
+        let prev_path = self.git.view.tree.selected_path();
         self.refresh_tree_cache_scoped(invalidate);
         // The filtered view renders from the search index, not the cache, so
         // refreshing only the cache would leave results stale until the query
         // changed. The rebuild walks the cache (only invalidated listings
         // re-read), so cost is proportional to what changed.
-        if self.tree_view.search_active {
+        if self.git.view.tree.search_active {
             self.build_tree_index();
-            self.tree_view.recompute_filter();
+            self.git.view.tree.recompute_filter();
         }
-        let rows = self.tree_view.visible_rows();
+        let rows = self.git.view.tree.visible_rows();
         if let Some(idx) = prev_path
             .as_deref()
             .and_then(|p| rows.iter().position(|r| r.path == p))
         {
-            self.tree_view.selected = idx;
+            self.git.view.tree.selected = idx;
         }
-        self.tree_view.clamp_selection(rows.len());
+        self.git.view.tree.clamp_selection(rows.len());
         self.preview_tree_selected();
     }
 
@@ -61,22 +61,24 @@ impl App {
     // is a no-op for a listing still in the cache.
     pub(crate) fn refresh_tree_cache_scoped(&mut self, invalidate: Option<&BTreeSet<String>>) {
         match invalidate {
-            None => self.tree_view.cache.clear(),
+            None => self.git.view.tree.cache.clear(),
             Some(dirs) => {
                 for dir in dirs {
-                    self.tree_view.cache.remove(dir);
+                    self.git.view.tree.cache.remove(dir);
                 }
             }
         }
         self.ensure_tree_root();
-        let mut dirs: Vec<String> = self.tree_view.expanded.iter().cloned().collect();
+        let mut dirs: Vec<String> = self.git.view.tree.expanded.iter().cloned().collect();
         dirs.sort_by_key(|p| p.matches('/').count());
         let mut kept = BTreeSet::new();
         for dir in dirs {
             let parent = crate::ui::tree_view::parent_path(&dir).unwrap_or("");
             let name = dir.rsplit('/').next().unwrap_or(&dir);
             let still_a_dir = self
-                .tree_view
+                .git
+                .view
+                .tree
                 .cache
                 .get(parent)
                 .is_some_and(|children| children.iter().any(|e| e.is_dir && e.name == name));
@@ -85,33 +87,33 @@ impl App {
                 kept.insert(dir);
             }
         }
-        self.tree_view.expanded = kept;
-        self.tree_view.row_width_cache.set(None);
+        self.git.view.tree.expanded = kept;
+        self.git.view.tree.row_width_cache.set(None);
         self.sync_tree_watches();
     }
 
     pub(crate) fn sync_tree_watches(&mut self) {
-        if !self.cfg_tree.live_watch {
+        if !self.git.tree_config.live_watch {
             return;
         }
         // A filename search matches the whole tree, not just what is expanded,
         // so a file created in a collapsed directory must produce an event.
-        let mut desired: BTreeSet<String> = if self.tree_view.search_active {
-            self.tree_view.cache.keys().cloned().collect()
+        let mut desired: BTreeSet<String> = if self.git.view.tree.search_active {
+            self.git.view.tree.cache.keys().cloned().collect()
         } else {
-            self.tree_view.expanded.iter().cloned().collect()
+            self.git.view.tree.expanded.iter().cloned().collect()
         };
         // Root is always watched so top-level creations/removals are caught
         // even with nothing expanded.
         desired.insert(String::new());
         if let Some(workdir) = self.tree_workdir() {
-            self.tree_watch.sync(&workdir, &desired);
+            self.git.view.tree_watch.sync(&workdir, &desired);
         }
     }
 
     pub(crate) fn clear_tree_watches(&mut self) {
         if let Some(workdir) = self.tree_workdir() {
-            self.tree_watch.sync(&workdir, &BTreeSet::new());
+            self.git.view.tree_watch.sync(&workdir, &BTreeSet::new());
         }
     }
 
@@ -125,16 +127,16 @@ impl App {
     // tick so OS events can't pile up behind a hidden tab; rereading waits for
     // that tab to come forward.
     pub fn drain_tree_watcher(&mut self) -> bool {
-        let changes = self.tree_watch.drain_changed();
+        let changes = self.git.view.tree_watch.drain_changed();
         if changes.is_empty() {
             return false;
         }
         if changes.unknown {
             // Events may have been dropped — no directory set can be trusted
             // complete; fall back to re-reading everything.
-            self.tree_dirty_all = true;
+            self.git.view.tree_dirty_all = true;
         }
-        self.tree_dirty.extend(changes.dirs);
+        self.git.view.tree_dirty.extend(changes.dirs);
         true
     }
 
@@ -142,19 +144,21 @@ impl App {
     // would stall the active tab.
     pub fn poll_tree_watcher(&mut self) -> bool {
         self.drain_tree_watcher();
-        if self.mode != ViewMode::Tree || (self.tree_dirty.is_empty() && !self.tree_dirty_all) {
+        if self.git.view.mode != ViewMode::Tree
+            || (self.git.view.tree_dirty.is_empty() && !self.git.view.tree_dirty_all)
+        {
             return false;
         }
-        let all = std::mem::take(&mut self.tree_dirty_all);
-        let dirs = std::mem::take(&mut self.tree_dirty);
+        let all = std::mem::take(&mut self.git.view.tree_dirty_all);
+        let dirs = std::mem::take(&mut self.git.view.tree_dirty);
         self.refresh_tree_preserving_cursor_scoped(if all { None } else { Some(&dirs) });
         true
     }
 
     pub fn exit_tree_to_status(&mut self) {
-        self.tree_view.cancel_search();
+        self.git.view.tree.cancel_search();
         self.clear_tree_watches();
-        self.mode = ViewMode::Status;
+        self.git.view.set_mode(ViewMode::Status);
         self.clear_diff_state();
         self.refresh_diff(true);
     }
@@ -166,10 +170,10 @@ impl App {
     // A read error caches an empty listing and surfaces the message so a
     // single unreadable directory can't wedge navigation.
     pub(crate) fn ensure_tree_children(&mut self, dir: &str) {
-        if self.tree_view.cache.contains_key(dir) {
+        if self.git.view.tree.cache.contains_key(dir) {
             return;
         }
-        let respect = self.cfg_tree.respect_gitignore;
+        let respect = self.git.tree_config.respect_gitignore;
         let dir_owned = dir.to_string();
         let result = self.with_repo(|repo| {
             let workdir = repo
@@ -182,32 +186,32 @@ impl App {
                 // A successful read resolves whatever the last failing one
                 // reported; without this the tree error outlived its cause.
                 self.clear_notice(NoticeKind::Tree);
-                self.tree_view.cache.insert(dir.to_string(), children);
+                self.git.view.tree.cache.insert(dir.to_string(), children);
             }
             Err(e) => {
                 tracing::warn!(error = %e, dir = %dir, "failed to read tree directory");
                 self.raise_notice(NoticeKind::Tree, e.to_string());
                 // Cache empty so we don't retry the failing read on every
                 // keystroke; a repo change / refresh clears the cache.
-                self.tree_view.cache.insert(dir.to_string(), Vec::new());
+                self.git.view.tree.cache.insert(dir.to_string(), Vec::new());
             }
         }
     }
 
     pub(crate) fn preview_tree_selected(&mut self) {
-        let selected = self.tree_view.selected;
-        let row = self.tree_view.visible_rows().into_iter().nth(selected);
+        let selected = self.git.view.tree.selected;
+        let row = self.git.view.tree.visible_rows().into_iter().nth(selected);
         match row {
             Some(row) if !row.is_dir => {
                 let key = FileViewKey::Status(row.path);
-                if self.diff.file_view.key.as_ref() != Some(&key) {
+                if self.git.view.diff.file_view.key.as_ref() != Some(&key) {
                     self.load_file_view(key);
                 }
-                self.diff.view = DiffPaneView::File;
+                self.git.view.diff.view = DiffPaneView::File;
             }
             _ => {
-                self.diff.view = DiffPaneView::File;
-                self.diff.file_view = FileViewState::default();
+                self.git.view.diff.view = DiffPaneView::File;
+                self.git.view.diff.file_view = FileViewState::default();
             }
         }
     }

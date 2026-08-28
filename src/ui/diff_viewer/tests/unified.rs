@@ -64,10 +64,10 @@ fn unified_view_jumps_to_the_cached_hunk_offset() {
     let mut second = trio_hunk();
     second.header = "@@ second hunk @@".to_string();
     second.lines[0].content = "later();".to_string();
-    app.diff.set_hunks(vec![trio_hunk(), second]);
+    app.git.view.diff.set_hunks(vec![trio_hunk(), second]);
     // The first hunk occupies its header plus three body rows, so the second
     // hunk begins at flat row four.
-    app.diff.scroll = 4;
+    app.git.view.diff.scroll = 4;
 
     let screen = drawn(&mut app, 60, 10, 0);
     let joined = screen.join("\n");
@@ -108,7 +108,7 @@ fn a_hunk_header_reserves_the_same_gutter_width_as_the_body() {
 #[test]
 fn an_empty_diff_reserves_no_gutter_for_its_placeholder() {
     let mut app = app_with_files(vec![]);
-    app.mode = ViewMode::Status;
+    app.git.view.mode = ViewMode::Status;
 
     let screen = drawn(&mut app, 60, 10, 0);
     let msg = screen

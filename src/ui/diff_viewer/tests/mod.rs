@@ -43,9 +43,9 @@ fn trio_hunk() -> DiffHunk {
 
 fn app_showing(hunk: DiffHunk, view: DiffPaneView) -> App {
     let mut app = app_with_files(vec!["src/lib.rs"]);
-    app.mode = ViewMode::Status;
-    app.diff.set_hunks(vec![hunk]);
-    app.diff.view = view;
+    app.git.view.mode = ViewMode::Status;
+    app.git.view.diff.set_hunks(vec![hunk]);
+    app.git.view.diff.view = view;
     app
 }
 
@@ -86,8 +86,8 @@ fn repeated_large_split_render_reuses_mutation_caches() {
             );
         })
         .expect("warmup draw");
-    let rows_ptr = app.diff.split_rows().as_ptr();
-    let highlights_ptr = app.diff.line_highlights.as_ptr();
+    let rows_ptr = app.git.view.diff.split_rows().as_ptr();
+    let highlights_ptr = app.git.view.diff.line_highlights.as_ptr();
 
     let started = Instant::now();
     for _ in 0..100 {
@@ -105,8 +105,8 @@ fn repeated_large_split_render_reuses_mutation_caches() {
             .expect("repeat draw");
     }
     eprintln!("20k-line split render ×100: {:?}", started.elapsed());
-    assert_eq!(app.diff.split_rows().as_ptr(), rows_ptr);
-    assert_eq!(app.diff.line_highlights.as_ptr(), highlights_ptr);
+    assert_eq!(app.git.view.diff.split_rows().as_ptr(), rows_ptr);
+    assert_eq!(app.git.view.diff.line_highlights.as_ptr(), highlights_ptr);
 }
 
 /// Screen column of `needle`. `str::find` yields a byte offset, and the pane
@@ -130,7 +130,7 @@ fn right_columns(line: &str, n: usize) -> String {
 
 /// Render the diff pane on its own and return the screen as lines of text.
 fn drawn(app: &mut App, width: u16, height: u16, scroll_x: usize) -> Vec<String> {
-    app.diff.scroll_x = scroll_x;
+    app.git.view.diff.scroll_x = scroll_x;
     let mut terminal = Terminal::new(TestBackend::new(width, height)).expect("a terminal");
     let ss = two_face::syntax::extra_newlines();
     let ts = ThemeSet::load_defaults();

@@ -6,7 +6,7 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 fn project_at(path: &str) -> App {
     let mut app = app_with_files(vec!["a.rs"]);
-    app.repo_path = path.to_string();
+    app.git.repo_path = path.to_string();
     app
 }
 
