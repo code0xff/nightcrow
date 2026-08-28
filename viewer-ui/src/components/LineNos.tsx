@@ -15,6 +15,7 @@ export function LineNos({
   nos,
   digits,
   tint = "",
+  stickyClass = "sticky left-0",
 }: {
   /// One entry per column; `undefined` leaves that column blank, which is what
   /// an added line's old side (and a removed line's new side) has to show.
@@ -23,9 +24,11 @@ export function LineNos({
   /// Row background to repeat over the opaque base, so the cell reads as part
   /// of its row rather than a notch of pane colour.
   tint?: string;
+  /** Split virtualization pins the new-side gutter at the second half. */
+  stickyClass?: string;
 }) {
   return (
-    <span className="sticky left-0 shrink-0 select-none bg-ink-950">
+    <span className={`${stickyClass} shrink-0 select-none bg-ink-950`}>
       <span className={`flex gap-[1ch] px-[1ch] text-ink-400 ${tint}`}>
         {nos.map((no, i) => (
           <span key={i} className="text-right" style={{ width: `${digits}ch` }}>

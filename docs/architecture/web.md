@@ -303,6 +303,15 @@ Vitest 쪽 권장이며, 결정적으로 `window.matchMedia`를 구현한다(jsd
 방식으로 옮기면 된다. `@testing-library/react` 16은 `@testing-library/dom`을 peer로 요구해 함께
 설치했다; `user-event`·`jest-dom`은 훅 테스트에 불필요해 컴포넌트 테스트를 시작할 때로 미뤘다.
 
+**큰 diff와 raw file은 viewport만 DOM에 둔다**(`lib/virtualWindow.ts`,
+`components/Virtual*`). 200행 이하는 브라우저의 native selection·find·접근성 트리를 그대로 얻도록
+기존 전체 DOM 경로를 쓰고, 그보다 크면 20px 고정 행과 앞뒤 12행 overscan으로 windowing한다. 전체
+높이는 spacer가 보존하므로 scrollbar와 저장한 `scrollTop`은 원본 행 수를 계속 나타낸다. 파일 anchor는
+같은 행 높이로 직접 계산하고, diff의 모든 렌더 행은 자기 `data-hunk`를 가져 header가 viewport 밖이어도
+whole-file 전환이 현재 hunk를 찾는다. Split은 넓은 화면에서 old/new 한 쌍을 같은 virtual row로
+렌더해 세로 정렬을 보존하고, 좁은 화면에서는 hunk별 old 전체 뒤에 new 전체가 오도록 별도 row model을
+쓴다. 20k fixture가 DOM 행 수와 initial/scroll/split 측정치를 계약 테스트로 고정한다.
+
 **렌더 실패가 페이지를 가져가지 않게 한다**(`components/feedback/ErrorBoundary.tsx`,
 `lib/chunkError.ts`). boundary가 하나도 없으면 React는 어떤 렌더 에러에도 트리 전체를 unmount하고,
 보는 사람 입장에서 그것은 **서버가 죽은 것과 구분되지 않는다.** 실제로 사라진 청크가 그 모양으로

@@ -1,8 +1,12 @@
 import { Suspense, lazy, useEffect, useRef } from "react";
 import { useDiffLayout } from "../lib/diffLayout";
 import { fileViewSource, isHtmlPath, isPreviewablePath } from "../lib/fileView";
-import { digitsFor } from "../lib/gutter";
 import { anchorWithin, hunkAtTop } from "../lib/diffAnchor";
+import { useScrollViewport } from "../hooks/ui/useScrollViewport";
+import {
+  lineScrollTop,
+  VIRTUAL_THRESHOLD,
+} from "../lib/virtualWindow";
 import { otherFace, sourceKey } from "../lib/otherFace";
 import {
   MaximizeIcon,
@@ -12,9 +16,10 @@ import {
 } from "./icons/layout";
 import { DiffView } from "./DiffView";
 import { ErrorBoundary } from "./feedback/ErrorBoundary";
-import { LineNos } from "./LineNos";
+import { FileLines } from "./FileLines";
+import { VirtualFileLines } from "./VirtualFileLines";
 import { PathLabel } from "./PathLabel";
-import { api, type Span, type Status } from "../api";
+import { api, type Status } from "../api";
 import type { FileSource, Pane } from "../types";
 
 // Keep the markdown pipeline out of the initial chunk.
@@ -24,30 +29,6 @@ const MarkdownView = lazy(() =>
 const HtmlView = lazy(() =>
   import("./content/Html").then((m) => ({ default: m.HtmlView })),
 );
-
-/// A file is numbered by its own lines, so the gutter carries one column and
-/// no tint — the diff kinds have no meaning here.
-function FileLines({ lines }: { lines: Span[][] }) {
-  const digits = digitsFor(lines.length);
-  return (
-    <pre className="w-max min-w-full py-2 text-ink-200">
-      {lines.map((line, i) => (
-        <div key={i} data-line={i + 1} className="flex">
-          <LineNos nos={[i + 1]} digits={digits} />
-          <span className="whitespace-pre pr-3">
-            {line.length === 0
-              ? " "
-              : line.map((s, j) => (
-                  <span key={j} style={{ color: s.c }}>
-                    {s.t}
-                  </span>
-                ))}
-          </span>
-        </div>
-      ))}
-    </pre>
-  );
-}
 
 export interface FilePaneProps {
   /// The repository on screen. Part of what identifies a remembered scroll
@@ -79,6 +60,7 @@ export function FilePane({
 }: FilePaneProps) {
   const diffLayout = useDiffLayout();
   const scroller = useRef<HTMLDivElement>(null);
+  const { viewport, refresh: refreshViewport } = useScrollViewport(scroller);
   const anchor = pane.kind === "file" ? pane.anchor : undefined;
   // Where the diff was left, so coming back from the file lands there. The two
   // faces share one scroller: without this the file's offset carries over and a
@@ -98,9 +80,12 @@ export function FilePane({
     const container = scroller.current;
     if (!container) return 0;
     const top = container.getBoundingClientRect().top;
-    const offsets = Array.from(
+    const rows = Array.from(
       container.querySelectorAll<HTMLElement>("[data-hunk]"),
-      (el) => el.getBoundingClientRect().top - top + container.scrollTop,
+      (el) => ({
+        offset: el.getBoundingClientRect().top - top + container.scrollTop,
+        hunk: Number(el.dataset.hunk ?? 0),
+      }),
     );
     if (pane.kind === "diff" && pane.source) {
       leftAt.current = {
@@ -114,7 +99,9 @@ export function FilePane({
         left: container.scrollLeft,
       };
     }
-    return hunkAtTop(offsets, container.scrollTop);
+    const offsets = rows.map((row) => row.offset);
+    const renderedIndex = hunkAtTop(offsets, container.scrollTop);
+    return rows[renderedIndex]?.hunk ?? 0;
   };
   // Put the anchored line at the top of the pane. Measured against the
   // scroller rather than `scrollIntoView`, which would also scroll whatever
@@ -130,17 +117,24 @@ export function FilePane({
         container.scrollTop = left.top;
         container.scrollLeft = left.left;
         leftAt.current = null;
+        refreshViewport();
       }
       return;
     }
     if (anchor === undefined || pane.kind !== "file") return;
     const within = anchorWithin(anchor, pane.value.lines.length);
     if (within === null) return;
+    if (pane.value.lines.length > VIRTUAL_THRESHOLD) {
+      container.scrollTop = lineScrollTop(within);
+      refreshViewport();
+      return;
+    }
     const line = container.querySelector<HTMLElement>(`[data-line="${within}"]`);
     if (!line) return;
     container.scrollTop +=
       line.getBoundingClientRect().top - container.getBoundingClientRect().top;
-  }, [pane, anchor]);
+    refreshViewport();
+  }, [pane, anchor, refreshViewport]);
   return (
     <section className={`min-h-0 min-w-0 flex-col ${className}`}>
       <div className="flex shrink-0 items-center gap-2 bg-ink-850 px-3 py-0.5 text-ink-400">
@@ -216,7 +210,11 @@ export function FilePane({
           </button>
         </div>
       </div>
-      <div ref={scroller} className="min-h-0 flex-1 overflow-auto">
+      <div
+        ref={scroller}
+        onScroll={refreshViewport}
+        className="min-h-0 flex-1 overflow-auto"
+      >
         {pane.kind === "empty" && (
           <p className="p-4 text-ink-400">
             {status === null ? "Loading…" : "Select a file or commit."}
@@ -250,7 +248,11 @@ export function FilePane({
                 </Suspense>
               </ErrorBoundary>
             ) : (
-              <FileLines lines={pane.value.lines} />
+              pane.value.lines.length > VIRTUAL_THRESHOLD ? (
+                <VirtualFileLines lines={pane.value.lines} viewport={viewport} />
+              ) : (
+                <FileLines lines={pane.value.lines} />
+              )
             )}
             {pane.value.truncated && (
               <p className="p-3 text-accent">
@@ -260,7 +262,11 @@ export function FilePane({
           </>
         )}
         {pane.kind === "diff" && (
-          <DiffView diff={pane.value} split={diffLayout.layout === "split"} />
+          <DiffView
+            diff={pane.value}
+            split={diffLayout.layout === "split"}
+            viewport={viewport}
+          />
         )}
       </div>
     </section>
