@@ -103,6 +103,45 @@ fn a_drain_takes_a_bounded_fifo_prefix() {
 }
 
 #[test]
+fn a_busy_repository_does_not_spend_another_repositories_budget() {
+    let router = TerminalRouter::default();
+    for pane in 1..=TERMINAL_DRAIN_MESSAGES as PaneId + 1 {
+        router.deliver("busy", created(pane)).unwrap();
+    }
+    router.deliver("quiet", created(999)).unwrap();
+
+    assert_eq!(router.drain("busy").len(), TERMINAL_DRAIN_MESSAGES);
+    let quiet = router.drain("quiet");
+    assert_eq!(quiet.len(), 1);
+    assert_eq!(pane_of(&quiet[0]), 999);
+}
+
+#[test]
+fn the_byte_budget_leaves_the_next_output_for_the_next_drain() {
+    let router = TerminalRouter::default();
+    let chunk = vec![b'x'; TERMINAL_DRAIN_BYTES / 2];
+    for pane in 1..=3 {
+        router
+            .deliver(
+                "r1",
+                TerminalMessage::Output {
+                    pane,
+                    data: chunk.clone(),
+                },
+            )
+            .unwrap();
+    }
+
+    let first = router.drain("r1");
+    assert_eq!(first.len(), 2);
+    assert_eq!(pane_of(&first[0]), 1);
+    assert_eq!(pane_of(&first[1]), 2);
+    let second = router.drain("r1");
+    assert_eq!(second.len(), 1);
+    assert_eq!(pane_of(&second[0]), 3);
+}
+
+#[test]
 fn an_oversized_head_advances_but_exit_waits_behind_its_output() {
     let router = TerminalRouter::default();
     let output = vec![b'x'; TERMINAL_DRAIN_BYTES + 1];
