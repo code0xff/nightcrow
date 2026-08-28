@@ -80,6 +80,7 @@ fn selecting_tree_file_loads_raw_contents_into_file_view() {
 
     app.tree_view.selected = tree_index_of(&app, "README.md");
     app.preview_tree_selected();
+    app.flush_git_loads_for_test(Duration::from_secs(2));
 
     assert_eq!(app.diff.view, DiffPaneView::File);
     assert_eq!(

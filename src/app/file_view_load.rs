@@ -1,8 +1,5 @@
-use super::diff_load::DiffApply;
-use super::{App, DiffPaneView, FileViewKey, FileViewState, NoticeKind, ViewMode};
-use crate::git::diff::{
-    load_commit_diff, load_commit_file_blob, load_commit_file_diff, load_workdir_file,
-};
+use super::load_controller::{DiffLoadMode, DiffTarget};
+use super::{App, DiffPaneView, FileViewKey, FileViewState, ViewMode};
 
 impl App {
     pub(crate) fn current_file_view_key(&self) -> Option<FileViewKey> {
@@ -41,38 +38,14 @@ impl App {
     }
 
     pub(crate) fn load_file_view(&mut self, key: FileViewKey) {
-        let result = match &key {
-            FileViewKey::Status(path) => self.with_repo(|repo| load_workdir_file(repo, path)),
-            FileViewKey::Commit {
-                oid, path, status, ..
-            } => {
-                let oid = *oid;
-                let status = *status;
-                self.with_repo(|repo| load_commit_file_blob(repo, oid, path, status))
-            }
-        };
         let anchor = self.anchor_for_current_diff();
-        let mut fv = FileViewState {
-            key: Some(key),
+        self.diff.file_view = FileViewState {
+            key: Some(key.clone()),
             anchor_line: anchor,
             ..Default::default()
         };
-        match result {
-            Ok(content) => {
-                fv.set_content(content);
-                // 2 lines of context above the hunk's new-side start (1-based
-                // → 0-based). Clamp so a stale anchor past the current file
-                // length doesn't open on a blank region.
-                let initial = anchor
-                    .map(|n| n.saturating_sub(1).saturating_sub(2))
-                    .unwrap_or(0);
-                fv.scroll = initial.min(fv.max_scroll());
-            }
-            Err(e) => {
-                fv.error = Some(e.to_string());
-            }
-        }
-        self.diff.file_view = fv;
+        self.load_controller
+            .request_file(&self.repo_path, key, anchor);
     }
 
     // Mirrors the gates in `toggle_diff_file_view` so the hint bar only
@@ -158,12 +131,12 @@ impl App {
                 return;
             }
         };
-        let result = self.with_repo(|repo| load_commit_diff(repo, oid));
-        if let Err(e) = &result {
-            tracing::warn!(error = %e, "failed to load commit diff");
-            self.raise_notice(NoticeKind::Diff, e.to_string());
-        }
-        self.apply_diff_result(result, DiffApply::ResetWithTitle(&title));
+        self.log_view.diff_title = title.clone();
+        self.load_controller.request_diff(
+            &self.repo_path,
+            DiffTarget::Commit(oid),
+            DiffLoadMode::ResetWithTitle(title),
+        );
     }
 
     pub(crate) fn load_file_diff_for_log_file_selected(&mut self) {
@@ -188,11 +161,11 @@ impl App {
             return;
         };
         let title = format!("{short_id} {path}");
-        let result = self.with_repo(|repo| load_commit_file_diff(repo, oid, &path));
-        if let Err(e) = &result {
-            tracing::warn!(error = %e, file = %path, "failed to load commit file diff");
-            self.raise_notice(NoticeKind::Diff, e.to_string());
-        }
-        self.apply_diff_result(result, DiffApply::ResetWithTitle(&title));
+        self.log_view.diff_title = title.clone();
+        self.load_controller.request_diff(
+            &self.repo_path,
+            DiffTarget::CommitFile { oid, path },
+            DiffLoadMode::ResetWithTitle(title),
+        );
     }
 }

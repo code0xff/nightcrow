@@ -1,5 +1,4 @@
 use super::{App, LIST_PAGE_SIZE, ViewMode};
-use crate::git::diff::load_commit_files;
 
 impl App {
     pub fn log_commit_filtered_indices(&self) -> &[usize] {
@@ -151,25 +150,12 @@ impl App {
             Some(entry) => (entry.oid, entry.to_string()),
             None => return,
         };
-        match self.with_repo(|repo| load_commit_files(repo, oid)) {
-            Ok(files) => {
-                self.log_view.set_commit_files(files);
-                self.log_view.file_selected = 0;
-                self.log_view.drill_down = true;
-                if self.log_view.commit_files.is_empty() {
-                    self.clear_diff_state();
-                    self.log_view.diff_title = title;
-                } else {
-                    self.load_file_diff_for_log_file_selected();
-                }
-            }
-            Err(e) => {
-                tracing::warn!(error = %e, "failed to load commit files");
-            }
-        }
+        self.load_controller
+            .request_commit_files(&self.repo_path, oid, title);
     }
 
     pub fn log_drill_out(&mut self) {
+        self.load_controller.cancel_commit_files();
         self.log_view.reset_drill_down();
         self.load_commit_diff_for_selected();
     }

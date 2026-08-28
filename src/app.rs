@@ -8,6 +8,8 @@ mod diff_load;
 mod file_view_load;
 mod focus;
 mod interaction;
+mod load_apply;
+mod load_controller;
 mod log_nav;
 mod navigation;
 mod scroll;
@@ -95,6 +97,7 @@ pub struct App {
     // Set by `drain_snapshot` (every project), consumed by `poll_snapshot`
     // (active only) — a background project's git work defers until its tab shows.
     pub(crate) pending_snapshot: Option<SnapshotMsg>,
+    pub(crate) selected_snapshot_mtime: Option<(String, Option<std::time::SystemTime>)>,
     // Filesystem watcher for live tree refresh; active only in `ViewMode::Tree`.
     pub(crate) tree_watch: crate::runtime::tree_watch::TreeWatcher,
     // Watcher-touched directories not yet re-read. Filled by `drain_tree_watcher`
@@ -110,9 +113,11 @@ pub struct App {
     // reports them. A fresh launch starts with the default here and a restored
     // session replaces it with what was saved.
     pub(crate) pending_terminal: Option<crate::workspace::persistence::SessionState>,
-    // Cached `git2::Repository` for sync loads. Opened lazily, invalidated in
-    // `change_repo`. The snapshot worker keeps its own handle (`!Send`).
+    // Cached `git2::Repository` for synchronous tree/session reads. Diff and
+    // file-view loads use the worker's thread-local handle (`Repository` is
+    // `!Send`).
     pub(crate) repo_cache: Option<git2::Repository>,
+    pub(crate) load_controller: load_controller::LoadController,
     pub cfg_agent_indicator: crate::config::AgentIndicatorConfig,
     pub cfg_tree: crate::config::TreeConfig,
     // Drop impl joins the worker so `change_repo` can't leak the old-repo fetch.

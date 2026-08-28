@@ -10,10 +10,15 @@ tree(read-only 파일 트리) — 를 떠받치는 데이터 파이프라인과 
 - **백그라운드 worker 스레드**: `SnapshotChannel`이 `load_snapshot`을 호출해 변경 파일 +
   tracking status를 `mpsc` 채널로 푸시한다(읽는 시점 규칙은
   [session.md](session.md#상태는-시간이-아니라-변화에-따라-읽는다-runtimesnapshot_watchrs) 참고).
-- **UI 스레드 동기 로드**: 파일/커밋 선택이 바뀌면 `load_*_with_repo`를 직접 호출한다. App은
-  `git2::Repository`를 lazy-cache하므로 매 호출마다 `Repository::discover`를 다시 실행하지 않는다.
-  cache는 프로젝트와 수명을 같이 하므로 무효화 시점이 따로 없다 — 저장소가 바뀌는 유일한 방법이
-  탭을 닫고 새로 여는 것이기 때문.
+- **선택 로드 worker**: 파일/커밋 선택, file view, commit drill-down, ref decoration은
+  `GitLoadWorker`가 읽고 UI tick은 결과만 적용한다. `git2::Repository`는 `!Send`이므로 worker가
+  `Repository::discover`와 cache를 모두 소유한다. 요청은 `(repo, oid/path, generation)`으로 식별하고
+  diff/file/commit-files/decorations lane마다 아직 시작하지 않은 요청을 하나로 합친다. 실행 중인 이전
+  요청은 취소할 수 없지만 generation이나 repo가 현재 intent와 다르면 결과를 버리므로 연속 선택,
+  HEAD 변경, 탭 전환이 과거 내용을 되돌리지 않는다.
+- **snapshot reload gate**: 선택 파일의 path·status columns·mtime이 전부 이전 snapshot과 같으면
+  다른 파일이 바뀌었더라도 선택 diff를 다시 읽지 않는다. 선택 파일 자체가 바뀐 in-place refresh만
+  기존 scroll을 유지해 요청하고, 새 선택은 scroll/search cursor를 새 대상에 맞춰 reset한다.
 - **경로 검증**: 워크트리 안의 파일·디렉토리를 여는 경로는 전부 `git::path::resolve_in_workdir`를
   거친다(파일 미리보기와 트리 리스팅 양쪽). plain relative 컴포넌트만 허용하고
   `..`·절대경로·NUL·`.git`(대소문자 무시)을 거부하며, 워크디렉토리부터 한 컴포넌트씩 내려가
