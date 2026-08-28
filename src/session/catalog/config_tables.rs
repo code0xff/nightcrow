@@ -6,7 +6,7 @@
 //! the hubs spawned afterwards.
 
 use super::Catalog;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 impl Catalog {
     /// Like [`Catalog::new`], with startup terminals and their plugin table.
@@ -30,9 +30,13 @@ impl Catalog {
         cli_startup: Vec<String>,
     ) -> Self {
         Self {
-            startup_commands: Mutex::new(startup_commands),
-            plugins: Mutex::new(plugins),
-            cli_startup,
+            runtime: std::sync::Mutex::new(super::CatalogRuntime::configured(
+                startup_commands,
+                plugins,
+                cli_startup,
+                crate::config::ShellConfig::default(),
+                super::empty_status_payload,
+            )),
             ..Self::default()
         }
     }
@@ -46,11 +50,13 @@ impl Catalog {
         status_encoder: crate::session::StatusEncoder,
     ) -> Self {
         Self {
-            startup_commands: Mutex::new(startup_commands),
-            plugins: Mutex::new(plugins),
-            cli_startup,
-            shell,
-            status_encoder: Some(status_encoder),
+            runtime: std::sync::Mutex::new(super::CatalogRuntime::configured(
+                startup_commands,
+                plugins,
+                cli_startup,
+                shell,
+                status_encoder,
+            )),
             ..Self::default()
         }
     }
@@ -65,7 +71,8 @@ impl Catalog {
     /// already running is the caller's job (see [`crate::session::reload`]).
     /// The entries to tell are returned rather than fetched afterwards.
     ///
-    /// Taken under the mutation lock, the same one every rebuild holds. Without
+    /// Taken under the facade transaction, the same one every membership commit
+    /// holds. Without
     /// it a repository opened in the same beat could fall between the two halves:
     /// its hub reads the old tables while the swap is still to come, and the
     /// swap's snapshot is taken while its entry is still to be installed.
@@ -74,35 +81,33 @@ impl Catalog {
         file_startup: &[crate::config::StartupCommand],
         plugins: Vec<crate::config::PluginConfig>,
     ) -> anyhow::Result<Vec<Arc<super::RepoEntry>>> {
-        // Merged before any lock is taken, so a refusal leaves both tables
-        // exactly as they were.
-        let merged = crate::config::merge_startup_commands(file_startup, &self.cli_startup)?;
-        let _mutation = self.mutation.lock().expect("catalog mutation poisoned");
-        *self
-            .startup_commands
+        let _transaction = self
+            .transaction
             .lock()
-            .expect("catalog startup poisoned") = merged;
-        *self.plugins.lock().expect("catalog plugins poisoned") = plugins;
-        Ok(self.entries())
+            .expect("catalog transaction poisoned");
+        self.runtime
+            .lock()
+            .expect("catalog runtime poisoned")
+            .replace_config(file_startup, plugins)
     }
 
     /// The `[[plugin]]` table as it stands, for the caller that has to tell the
     /// running hubs about it.
     #[cfg(test)]
     pub fn plugins(&self) -> Vec<crate::config::PluginConfig> {
-        self.plugins
+        self.runtime
             .lock()
-            .expect("catalog plugins poisoned")
-            .clone()
+            .expect("catalog runtime poisoned")
+            .plugins()
     }
 
     /// The merged startup list as it stands — configured panes then `--exec`
     /// ones. What the next hub will be given.
     #[cfg(test)]
     pub fn startup_commands(&self) -> Vec<crate::config::StartupCommand> {
-        self.startup_commands
+        self.runtime
             .lock()
-            .expect("catalog startup poisoned")
-            .clone()
+            .expect("catalog runtime poisoned")
+            .startup_commands()
     }
 }

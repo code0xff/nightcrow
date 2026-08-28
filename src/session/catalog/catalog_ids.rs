@@ -45,6 +45,11 @@ pub(super) struct IdAssigner {
     by_path: HashMap<String, String>,
 }
 
+pub(super) struct Member {
+    pub(super) id: String,
+    pub(super) path: String,
+}
+
 impl IdAssigner {
     pub(super) fn id_for(&mut self, path: &str) -> String {
         if let Some(existing) = self.by_path.get(path) {

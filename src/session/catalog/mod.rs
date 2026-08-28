@@ -17,52 +17,36 @@
 //! open. Holding the invariant at the boundary keeps every entry point from
 //! having to remember it.
 
-use crate::session::StatusEncoder;
-use crate::session::runtime::RepoRuntime;
-use crate::session::terminal::TerminalHub;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 
 mod catalog_ids;
+mod catalog_runtime;
 mod config_tables;
+mod membership;
 mod ordering;
-use catalog_ids::IdAssigner;
 pub use catalog_ids::{AddOutcome, RepoEntry, RepoInfo};
+use catalog_runtime::CatalogRuntime;
+use membership::{AddMembership, CatalogMembership};
 
-#[derive(Default)]
 pub struct Catalog {
-    mutation: Mutex<()>,
-    entries: Mutex<Vec<Arc<RepoEntry>>>,
-    ids: Mutex<IdAssigner>,
-    /// Repositories supplied by the CLI (`serve --repo`) or pushed from the TUI
-    /// workspace. Replaced wholesale by [`Catalog::set_paths`].
-    base: Mutex<Vec<String>>,
-    /// Repositories opened from the browser. Kept across `base` updates.
-    added: Mutex<Vec<String>>,
-    /// Repositories closed from the browser. Subtracted from the served set so
-    /// a `base` re-sync does not resurrect a closed repo.
-    hidden: Mutex<Vec<String>>,
-    order: Mutex<Vec<String>>,
-    /// Commands each repository's terminal hub runs as startup terminals on the
-    /// first client connect. Behind a lock because a config reload replaces it;
-    /// only hubs spawned *after* the reload see the new list.
-    startup_commands: Mutex<Vec<crate::config::StartupCommand>>,
-    /// The `--exec` panes the daemon was started with, appended after the
-    /// configured ones. Not behind a lock: these came from the command line.
-    cli_startup: Vec<String>,
-    /// The `[[plugin]]` table, handed to every hub the catalog spawns. Replaced
-    /// by a reload; the hubs already running are told as well, because a plugin
-    /// is a child process and restarting one costs the session nothing.
-    plugins: Mutex<Vec<crate::config::PluginConfig>>,
-    /// The shell every terminal pane is spawned with. Fixed for the session's
-    /// life: a config reload does not replace the shell of a running hub.
-    shell: crate::config::ShellConfig,
-    /// Which screen this session's panes are fitted to, shared by every hub.
-    /// One value for the session rather than one per repository — see
-    /// [`crate::session::size_owner`].
-    ownership: Arc<crate::session::size_owner::SizeOwnership>,
-    /// Surface-owned status representation cached by each repository runtime.
-    status_encoder: Option<StatusEncoder>,
+    /// Serializes membership-to-runtime commits and config swaps. The two
+    /// subobjects have independent locks so read-only runtime snapshots do not
+    /// need the membership bookkeeping, but a mutation always crosses them as
+    /// one facade transaction.
+    transaction: Mutex<()>,
+    membership: Mutex<CatalogMembership>,
+    runtime: Mutex<CatalogRuntime>,
+}
+
+impl Default for Catalog {
+    fn default() -> Self {
+        Self {
+            transaction: Mutex::new(()),
+            membership: Mutex::new(CatalogMembership::default()),
+            runtime: Mutex::new(CatalogRuntime::default()),
+        }
+    }
 }
 
 impl Catalog {
@@ -87,15 +71,8 @@ impl Catalog {
     /// open tabs. Browser-opened repositories ([`Catalog::add_path`]) survive
     /// this, so a workspace change does not close a tab a viewer opened.
     pub fn set_paths(&self, paths: &[String]) {
-        let _mutation = self.mutation.lock().expect("catalog mutation poisoned");
-        {
-            let mut base = self.base.lock().expect("catalog base poisoned");
-            // The one entry point taking outside paths untouched: a `--repo`
-            // argument and a workspace file hold whatever spelling was typed or
-            // last written, which is not necessarily what a client sends.
-            *base = paths.iter().map(|p| Self::normalized(p)).collect();
-        }
-        self.rebuild();
+        let paths = paths.iter().map(|path| Self::normalized(path)).collect();
+        self.change_membership(|membership| membership.set_paths(paths));
     }
 
     /// Add a repository opened from the browser, returning its identity.
@@ -105,38 +82,36 @@ impl Catalog {
     /// served set is at `max`, so a client cannot spawn unbounded runtimes.
     pub fn add_path(&self, path: String, max: usize) -> AddOutcome {
         let path = Self::normalized(&path);
-        let _mutation = self.mutation.lock().expect("catalog mutation poisoned");
-        // Opening a path clears any prior close, so a previously removed repo
-        // comes back rather than staying suppressed by `hidden`.
-        {
-            let mut hidden = self.hidden.lock().expect("catalog hidden poisoned");
-            hidden.retain(|h| h != &path);
-        }
-        let union = self.union_paths();
-        if !union.iter().any(|p| p == &path) {
-            if union.len() >= max {
-                return AddOutcome::TooMany;
-            }
-            {
-                let mut added = self.added.lock().expect("catalog added poisoned");
-                if !added.iter().any(|p| p == &path) {
-                    added.push(path.clone());
-                }
-            }
-        }
-        self.rebuild();
-        match self.info_for_path(&path) {
-            Some(info) => AddOutcome::Added(info),
-            // rebuild always creates the entry; this only trips if a concurrent
-            // set_paths raced it back out, which the caller can treat as full.
-            None => AddOutcome::TooMany,
-        }
+        let (outcome, retired) = {
+            let _transaction = self
+                .transaction
+                .lock()
+                .expect("catalog transaction poisoned");
+            let mut membership = self.membership.lock().expect("catalog membership poisoned");
+            let id = match membership.add_path(path, max) {
+                AddMembership::Present(id) => id,
+                AddMembership::TooMany => return AddOutcome::TooMany,
+            };
+            let members = membership.members();
+            drop(membership);
+            let mut runtime = self.runtime.lock().expect("catalog runtime poisoned");
+            let retired = runtime.reconcile(members);
+            let info = runtime
+                .entries()
+                .iter()
+                .find(|entry| entry.id == id)
+                .expect("accepted membership is committed to the runtime")
+                .info();
+            (AddOutcome::Added(info), retired)
+        };
+        stop_entries(retired);
+        outcome
     }
 
     /// Close a repository opened or shown in the browser. Dropped from every
     /// list that decides the served set and remembered in `hidden` so a `base`
-    /// re-sync will not bring it back; `rebuild` then stops its runtime and
-    /// terminals.
+    /// re-sync will not bring it back; the facade transaction then retires its
+    /// runtime and terminals.
     ///
     /// A close forgets the slot the repository held, `base` and `order`
     /// included. Leaving it in either meant [`Catalog::add_path`] found the
@@ -144,108 +119,60 @@ impl Catalog {
     /// the tab back in the middle of the strip rather than at the end.
     pub fn remove_path(&self, path: &str) {
         let path = &Self::normalized(path);
-        let _mutation = self.mutation.lock().expect("catalog mutation poisoned");
-        for list in [&self.added, &self.base, &self.order] {
-            list.lock()
-                .expect("catalog path list poisoned")
-                .retain(|p| p != path);
-        }
-        {
-            let mut hidden = self.hidden.lock().expect("catalog hidden poisoned");
-            if !hidden.iter().any(|h| h == path) {
-                hidden.push(path.to_string());
-            }
-        }
-        self.rebuild();
+        self.change_membership(|membership| membership.remove_path(path));
     }
 
-    fn info_for_path(&self, path: &str) -> Option<RepoInfo> {
-        self.entries
-            .lock()
-            .expect("catalog poisoned")
-            .iter()
-            .find(|e| e.path == path)
-            .map(|e| e.info())
+    fn change_membership(&self, change: impl FnOnce(&mut CatalogMembership)) {
+        self.change_membership_if(|membership| {
+            change(membership);
+            true
+        });
     }
 
-    /// Reconcile the live entries to `union_paths()`. A path already present
-    /// keeps its entry — and therefore its runtime and every SSE subscriber
-    /// attached to it. Only genuinely new paths start a runtime, and only
-    /// genuinely removed ones stop.
-    fn rebuild(&self) {
-        let deduped = self.union_paths();
-        // Read once, before the entries lock: every hub this pass spawns is
-        // given the same tables, so a reload landing mid-rebuild cannot leave two
-        // repositories opened in the same beat configured differently.
-        let startup = self
-            .startup_commands
-            .lock()
-            .expect("catalog startup poisoned")
-            .clone();
-        let plugins = self
-            .plugins
-            .lock()
-            .expect("catalog plugins poisoned")
-            .clone();
-
-        let assigned: Vec<(String, String)> = {
-            let mut ids = self.ids.lock().expect("catalog ids poisoned");
-            deduped
-                .iter()
-                .map(|path| (ids.id_for(path), path.clone()))
-                .collect()
-        };
-
-        let retired = {
-            let mut entries = self.entries.lock().expect("catalog poisoned");
-            let previous = std::mem::take(&mut *entries);
-
-            let mut next = Vec::with_capacity(assigned.len());
-            for (id, path) in assigned {
-                match previous.iter().find(|e| e.path == path) {
-                    Some(existing) => next.push(Arc::clone(existing)),
-                    None => next.push(Arc::new(RepoEntry {
-                        name: repo_name(&path),
-                        display_path: display_path(&path),
-                        runtime: RepoRuntime::spawn(
-                            &path,
-                            self.status_encoder.unwrap_or(empty_status_payload),
-                        ),
-                        terminals: TerminalHub::spawn(
-                            &path,
-                            startup.clone(),
-                            plugins.clone(),
-                            self.shell.clone(),
-                            Arc::clone(&self.ownership),
-                        ),
-                        id,
-                        path,
-                    })),
-                }
+    fn change_membership_if(&self, change: impl FnOnce(&mut CatalogMembership) -> bool) -> bool {
+        let (changed, retired) = {
+            let _transaction = self
+                .transaction
+                .lock()
+                .expect("catalog transaction poisoned");
+            let mut membership = self.membership.lock().expect("catalog membership poisoned");
+            let changed = change(&mut membership);
+            if !changed {
+                return false;
             }
-
-            let retired: Vec<_> = previous
-                .into_iter()
-                .filter(|old| !next.iter().any(|new| Arc::ptr_eq(new, old)))
-                .collect();
-            *entries = next;
-            retired
+            let members = membership.members();
+            drop(membership);
+            let retired = self
+                .runtime
+                .lock()
+                .expect("catalog runtime poisoned")
+                .reconcile(members);
+            (true, retired)
         };
-
-        // Outside the lock: stopping a runtime joins its thread.
-        for entry in retired {
-            entry.runtime.stop();
-            entry.terminals.stop();
-        }
+        stop_entries(retired);
+        changed
     }
 
     /// Stop every runtime. Called on server shutdown.
     pub fn shutdown(&self) {
-        let entries = std::mem::take(&mut *self.entries.lock().expect("catalog poisoned"));
-        for entry in entries {
-            entry.runtime.stop();
-            entry.terminals.stop();
-        }
+        let retired = {
+            let _transaction = self
+                .transaction
+                .lock()
+                .expect("catalog transaction poisoned");
+            self.runtime
+                .lock()
+                .expect("catalog runtime poisoned")
+                .take_entries()
+        };
+        stop_entries(retired);
+    }
+}
+
+fn stop_entries(entries: Vec<Arc<RepoEntry>>) {
+    for entry in entries {
+        entry.runtime.stop();
+        entry.terminals.stop();
     }
 }
 

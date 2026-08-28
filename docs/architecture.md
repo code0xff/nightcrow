@@ -162,7 +162,8 @@ src/
 │                         #   encode_wheel/button/arrow, CSI/SS3 helpers)
 ├── session/              # daemon-owned, transport-neutral shared session core
 │   ├── state.rs, operations.rs, reload.rs  # ownership, mutations, live config reload
-│   ├── catalog/          # opaque repo ids, atomic swap, ordering, config tables
+│   ├── catalog/          # pure membership + live runtime reconciliation,
+│   │                     # opaque repo ids, ordering, config tables
 │   ├── runtime/          # SnapshotChannel drain + conflated status fan-out
 │   ├── terminal/         # TerminalHub, PtyBackend ownership, shared terminal frames
 │   ├── size_owner.rs     # which client screen the session PTYs are fitted to

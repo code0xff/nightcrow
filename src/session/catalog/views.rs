@@ -20,9 +20,10 @@ pub struct ServedView {
 
 impl Catalog {
     pub fn get(&self, id: &str) -> Option<Arc<RepoEntry>> {
-        self.entries
+        self.runtime
             .lock()
-            .expect("catalog poisoned")
+            .expect("catalog runtime poisoned")
+            .entries()
             .iter()
             .find(|e| e.id == id)
             .map(Arc::clone)
@@ -32,10 +33,12 @@ impl Catalog {
     /// rather than a client-facing projection.
     ///
     /// A snapshot: the `Arc`s are cloned out and the lock released.
+    #[cfg(test)]
     pub fn entries(&self) -> Vec<Arc<RepoEntry>> {
-        self.entries
+        self.runtime
             .lock()
-            .expect("catalog poisoned")
+            .expect("catalog runtime poisoned")
+            .entries()
             .iter()
             .map(Arc::clone)
             .collect()
@@ -51,7 +54,8 @@ impl Catalog {
         maximized: &[crate::session::prefs::RepoMaximized],
         views: &[crate::session::prefs::RepoView],
     ) -> ServedView {
-        let entries = self.entries.lock().expect("catalog poisoned");
+        let runtime = self.runtime.lock().expect("catalog runtime poisoned");
+        let entries = runtime.entries();
         let list = entries.iter().map(|e| e.info()).collect();
         let active = remembered.and_then(|path| {
             entries
@@ -91,18 +95,20 @@ impl Catalog {
     /// served. The inverse of [`Catalog::get`], for the one caller that stores
     /// a repository across restarts (`prefs.rs`) and so cannot hold an id.
     pub fn id_of_path(&self, path: &str) -> Option<String> {
-        self.entries
+        self.runtime
             .lock()
-            .expect("catalog poisoned")
+            .expect("catalog runtime poisoned")
+            .entries()
             .iter()
             .find(|e| e.path == path)
             .map(|e| e.id.clone())
     }
 
     pub fn list(&self) -> Vec<RepoInfo> {
-        self.entries
+        self.runtime
             .lock()
-            .expect("catalog poisoned")
+            .expect("catalog runtime poisoned")
+            .entries()
             .iter()
             .map(|e| e.info())
             .collect()
@@ -116,9 +122,10 @@ impl Catalog {
     /// browser's own response builder reads this too, to turn a preference
     /// stored by path back into the ids it speaks.
     pub fn id_paths(&self) -> Vec<(String, String)> {
-        self.entries
+        self.runtime
             .lock()
-            .expect("catalog poisoned")
+            .expect("catalog runtime poisoned")
+            .entries()
             .iter()
             .map(|e| (e.id.clone(), e.path.clone()))
             .collect()
@@ -127,9 +134,10 @@ impl Catalog {
     /// Absolute worktree paths of the served set, in order. Used to persist the
     /// open projects.
     pub fn paths(&self) -> Vec<String> {
-        self.entries
+        self.runtime
             .lock()
-            .expect("catalog poisoned")
+            .expect("catalog runtime poisoned")
+            .entries()
             .iter()
             .map(|e| e.path.clone())
             .collect()
@@ -137,7 +145,11 @@ impl Catalog {
 
     #[cfg(test)]
     pub fn len(&self) -> usize {
-        self.entries.lock().expect("catalog poisoned").len()
+        self.runtime
+            .lock()
+            .expect("catalog runtime poisoned")
+            .entries()
+            .len()
     }
 
     #[cfg(test)]
