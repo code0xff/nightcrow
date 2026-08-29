@@ -14,9 +14,7 @@ use anyhow::Result;
 use syntect::highlighting::ThemeSet;
 
 /// Attach to the daemon and run the TUI until the user leaves or it goes away.
-pub(crate) fn run_attach() -> Result<()> {
-    let client = DaemonClient::connect(&crate::daemon::socket::default_socket_path()?)?;
-
+pub(crate) fn run_attach(client: DaemonClient) -> Result<()> {
     let cfg = crate::config::load_config()?;
     // Parsed before the alternate screen so its error is readable. The
     // configured startup terminals are not read here at all: the daemon runs

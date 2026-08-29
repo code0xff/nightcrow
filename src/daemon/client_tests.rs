@@ -92,6 +92,22 @@ fn attaching_where_no_daemon_listens_says_so() {
 }
 
 #[test]
+fn only_missing_or_refused_sockets_are_attach_startup_failures() {
+    assert!(super::is_unavailable_socket_error(&std::io::Error::from(
+        std::io::ErrorKind::NotFound,
+    )));
+    assert!(super::is_unavailable_socket_error(&std::io::Error::from(
+        std::io::ErrorKind::ConnectionRefused,
+    )));
+    assert!(!super::is_unavailable_socket_error(&std::io::Error::from(
+        std::io::ErrorKind::PermissionDenied,
+    )));
+    assert!(!super::is_unavailable_socket_error(&std::io::Error::from(
+        std::io::ErrorKind::InvalidInput,
+    )));
+}
+
+#[test]
 fn opening_a_repository_comes_back_as_a_broadcast() {
     let (repo, path) = crate::test_util::make_repo();
     let dir = tempfile::TempDir::new().unwrap();
