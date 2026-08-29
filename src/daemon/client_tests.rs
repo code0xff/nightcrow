@@ -2,7 +2,7 @@ use super::DaemonClient;
 use crate::daemon::frame::{Frame, read_frame, write_frame};
 use crate::daemon::protocol::{ServerMessage, version};
 use crate::daemon::socket::DaemonSocket;
-use crate::daemon::transport::UnixListener;
+use crate::daemon::transport::{UnixListener, is_unavailable};
 use std::io::Write;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -93,19 +93,27 @@ fn attaching_where_no_daemon_listens_says_so() {
 }
 
 #[test]
-fn only_missing_or_refused_sockets_are_attach_startup_failures() {
-    assert!(super::is_unavailable_socket_error(&std::io::Error::from(
+fn only_absent_endpoint_errors_are_attach_startup_failures() {
+    assert!(is_unavailable(&std::io::Error::from(
         std::io::ErrorKind::NotFound,
     )));
-    assert!(super::is_unavailable_socket_error(&std::io::Error::from(
+    assert!(is_unavailable(&std::io::Error::from(
         std::io::ErrorKind::ConnectionRefused,
     )));
-    assert!(!super::is_unavailable_socket_error(&std::io::Error::from(
+    assert!(!is_unavailable(&std::io::Error::from(
         std::io::ErrorKind::PermissionDenied,
     )));
-    assert!(!super::is_unavailable_socket_error(&std::io::Error::from(
+    assert!(!is_unavailable(&std::io::Error::from(
         std::io::ErrorKind::InvalidInput,
     )));
+}
+
+#[cfg(unix)]
+#[test]
+fn a_non_socket_endpoint_is_an_attach_startup_failure() {
+    let error = std::io::Error::from_raw_os_error(libc::ENOTSOCK);
+
+    assert!(is_unavailable(&error));
 }
 
 #[test]

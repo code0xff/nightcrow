@@ -65,7 +65,7 @@ impl DaemonClient {
     /// The former may start a background daemon; the latter must be reported.
     pub(crate) fn connect_for_attach(path: &Path) -> std::result::Result<Self, ConnectError> {
         let stream = UnixStream::connect(path).map_err(|err| {
-            let unavailable = is_unavailable_socket_error(&err);
+            let unavailable = super::transport::is_unavailable(&err);
             let context = if unavailable {
                 format!(
                     "no nightcrow daemon on {} — start one with `nightcrow -d`",
@@ -244,13 +244,6 @@ impl DaemonClient {
     pub fn is_connected(&self) -> bool {
         self.connected.load(Ordering::Acquire)
     }
-}
-
-fn is_unavailable_socket_error(error: &std::io::Error) -> bool {
-    matches!(
-        error.kind(),
-        std::io::ErrorKind::NotFound | std::io::ErrorKind::ConnectionRefused
-    )
 }
 
 #[cfg(test)]
