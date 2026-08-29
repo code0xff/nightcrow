@@ -7,6 +7,7 @@
 //! inbox — on the render tick, where it must never wait on a socket.
 
 use super::protocol::ClientMessage;
+mod coalescing;
 use super::wire::{Writer, send};
 use crate::backend::PaneId;
 use crate::session::terminal::frame::{
@@ -111,6 +112,10 @@ impl TerminalRouter {
     /// and the socket reader ends the connection. A later attach is replayed a
     /// coherent stream by the session hub; continuing after a partial drop
     /// could never be repaired.
+    ///
+    /// Adjacent output frames for one pane coalesce within that repository
+    /// while their combined payload fits one drain chunk. A single oversized
+    /// incoming frame remains a single message so replay cannot wedge here.
     pub(crate) fn deliver(
         &self,
         repo: &str,
@@ -118,11 +123,22 @@ impl TerminalRouter {
     ) -> Result<(), TerminalInboxOverflow> {
         let incoming = message.output_bytes();
         let mut state = self.state.lock().expect("terminal inboxes poisoned");
+        // A PTY read is not a protocol boundary: ConPTY can split one burst
+        // into thousands of adjacent one-byte reads. Keep one queue entry per
+        // contiguous pane run within this repository, bounded to one drain
+        // chunk. This keeps the message ceiling protecting control traffic
+        // and pane boundaries without turning read granularity into a
+        // disconnect condition.
+        let coalesces = coalescing::fits(
+            state.inboxes.get(repo).and_then(VecDeque::back),
+            &message,
+            TERMINAL_DRAIN_BYTES,
+        );
         let bytes_fit = state
             .queued_output_bytes
             .checked_add(incoming)
             .is_some_and(|total| total <= self.byte_limit);
-        let messages_fit = state.queued_messages < self.message_limit;
+        let messages_fit = coalesces || state.queued_messages < self.message_limit;
         if state.overflowed || !bytes_fit || !messages_fit {
             state.overflowed = true;
             return Err(TerminalInboxOverflow {
@@ -134,12 +150,15 @@ impl TerminalRouter {
             });
         }
         state.queued_output_bytes += incoming;
-        state.queued_messages += 1;
-        state
-            .inboxes
-            .entry(repo.to_string())
-            .or_default()
-            .push_back(message);
+        if !coalesces {
+            state.queued_messages += 1;
+        }
+        let inbox = state.inboxes.entry(repo.to_string()).or_default();
+        if coalesces {
+            coalescing::append_to_fitting_tail(inbox, message);
+        } else {
+            inbox.push_back(message);
+        }
         Ok(())
     }
 
@@ -267,5 +286,5 @@ impl TerminalLink {
 }
 
 #[cfg(test)]
-#[path = "terminal_link_tests.rs"]
+#[path = "terminal_link_tests/mod.rs"]
 mod tests;
