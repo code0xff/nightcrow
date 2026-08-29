@@ -20,6 +20,25 @@ use std::time::Duration;
 /// daemon is the normal state.
 const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(5);
 
+/// Why opening a daemon client failed, so an attach caller can retry only
+/// when there was no listener to connect to. A listener that rejects or fails
+/// the handshake is still a daemon failure, not an invitation to start a
+/// second daemon beside it.
+#[derive(Debug)]
+pub(crate) enum ConnectError {
+    Unavailable(anyhow::Error),
+    Failed(anyhow::Error),
+}
+
+impl ConnectError {
+    #[cfg(test)]
+    fn into_error(self) -> anyhow::Error {
+        match self {
+            Self::Unavailable(err) | Self::Failed(err) => err,
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct DaemonClient {
     out: Writer,
@@ -40,13 +59,36 @@ impl DaemonClient {
     /// before returning, so a caller that gets a `DaemonClient` knows it is
     /// talking to a daemon of this build. The repository set the daemon
     /// volunteers on attach is queued like any other message.
+    #[cfg(test)]
     pub fn connect(path: &Path) -> Result<Self> {
-        let stream = UnixStream::connect(path).with_context(|| {
-            format!(
-                "no nightcrow daemon on {} — start one with `nightcrow serve`",
-                path.display()
-            )
+        Self::connect_for_attach(path).map_err(ConnectError::into_error)
+    }
+
+    /// Connect for `nightcrow attach`, preserving whether the socket itself
+    /// was unavailable or the daemon failed after accepting the connection.
+    /// The former may start a background daemon; the latter must be reported.
+    pub(crate) fn connect_for_attach(path: &Path) -> std::result::Result<Self, ConnectError> {
+        let stream = UnixStream::connect(path).map_err(|err| {
+            let unavailable = is_unavailable_socket_error(&err);
+            let context = if unavailable {
+                format!(
+                    "no nightcrow daemon on {} — start one with `nightcrow serve`",
+                    path.display()
+                )
+            } else {
+                format!("connecting to the nightcrow daemon on {}", path.display())
+            };
+            let error = anyhow::Error::new(err).context(context);
+            if unavailable {
+                ConnectError::Unavailable(error)
+            } else {
+                ConnectError::Failed(error)
+            }
         })?;
+        Self::connect_stream(stream).map_err(ConnectError::Failed)
+    }
+
+    fn connect_stream(stream: UnixStream) -> Result<Self> {
         let mut reader = stream
             .try_clone()
             .context("splitting the daemon connection")?;
@@ -204,6 +246,13 @@ impl DaemonClient {
     pub fn is_connected(&self) -> bool {
         self.connected.load(Ordering::Acquire)
     }
+}
+
+fn is_unavailable_socket_error(error: &std::io::Error) -> bool {
+    matches!(
+        error.kind(),
+        std::io::ErrorKind::NotFound | std::io::ErrorKind::ConnectionRefused
+    )
 }
 
 #[cfg(test)]
