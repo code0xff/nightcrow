@@ -214,7 +214,7 @@ pub fn reorder_repos(state: &SessionState, ids: &[String]) {
 
 /// Mirror the served set into the shared workspace file so the next launch
 /// starts with the same projects. No-op unless the server was started with
-/// `persist` (headless `serve`); alongside the TUI, the TUI owns that file.
+/// `persist` (a headless daemon); alongside the TUI, the TUI owns that file.
 /// Only the open-repo list is rewritten.
 fn persist_workspace(state: &SessionState) {
     if !state.persist {

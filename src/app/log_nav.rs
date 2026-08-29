@@ -1,5 +1,17 @@
 use super::{App, LIST_PAGE_SIZE, ViewMode};
 
+fn resolve_filtered_selection(indices: &[usize], selected: usize, delta: isize) -> Option<usize> {
+    if indices.is_empty() {
+        return None;
+    }
+    let position = match indices.iter().position(|&index| index == selected) {
+        Some(position) => position,
+        None => return Some(indices[0]),
+    };
+    let last = indices.len() as isize - 1;
+    Some(indices[(position as isize).saturating_add(delta).clamp(0, last) as usize])
+}
+
 impl App {
     pub fn log_commit_filtered_indices(&self) -> &[usize] {
         &self.git.view.log.commits_filter_cache
@@ -12,16 +24,13 @@ impl App {
     // Returns whether selection changed so the caller can decide whether to
     // reload the diff.
     fn sync_log_commit_selection_to_filter(&mut self) -> bool {
-        let target = {
-            let indices = self.log_commit_filtered_indices();
-            if indices.is_empty() {
-                return false;
-            }
-            if indices.contains(&self.git.view.log.selected) {
-                self.git.view.log.selected
-            } else {
-                indices[0]
-            }
+        let target = match resolve_filtered_selection(
+            self.log_commit_filtered_indices(),
+            self.git.view.log.selected,
+            0,
+        ) {
+            Some(target) => target,
+            None => return false,
         };
         if target == self.git.view.log.selected {
             false
@@ -33,16 +42,13 @@ impl App {
     }
 
     fn sync_log_file_selection_to_filter(&mut self) -> bool {
-        let target = {
-            let indices = self.log_file_filtered_indices();
-            if indices.is_empty() {
-                return false;
-            }
-            if indices.contains(&self.git.view.log.file_selected) {
-                self.git.view.log.file_selected
-            } else {
-                indices[0]
-            }
+        let target = match resolve_filtered_selection(
+            self.log_file_filtered_indices(),
+            self.git.view.log.file_selected,
+            0,
+        ) {
+            Some(target) => target,
+            None => return false,
         };
         if target == self.git.view.log.file_selected {
             false
@@ -218,22 +224,13 @@ impl App {
     // Returns whether the selection actually moved so callers can decide to
     // reload the diff.
     pub(crate) fn move_log_commit_in_filter(&mut self, delta: isize) -> bool {
-        let resolved = {
-            let indices = self.log_commit_filtered_indices();
-            if indices.is_empty() {
-                return false;
-            }
-            let pos = indices
-                .iter()
-                .position(|&i| i == self.git.view.log.selected);
-            let new_pos = match pos {
-                Some(p) => {
-                    let last = indices.len() as isize - 1;
-                    (p as isize + delta).clamp(0, last) as usize
-                }
-                None => 0,
-            };
-            indices[new_pos]
+        let resolved = match resolve_filtered_selection(
+            self.log_commit_filtered_indices(),
+            self.git.view.log.selected,
+            delta,
+        ) {
+            Some(resolved) => resolved,
+            None => return false,
         };
         if resolved == self.git.view.log.selected {
             false
@@ -244,22 +241,13 @@ impl App {
     }
 
     pub(crate) fn move_log_file_in_filter(&mut self, delta: isize) -> bool {
-        let resolved = {
-            let indices = self.log_file_filtered_indices();
-            if indices.is_empty() {
-                return false;
-            }
-            let pos = indices
-                .iter()
-                .position(|&i| i == self.git.view.log.file_selected);
-            let new_pos = match pos {
-                Some(p) => {
-                    let last = indices.len() as isize - 1;
-                    (p as isize + delta).clamp(0, last) as usize
-                }
-                None => 0,
-            };
-            indices[new_pos]
+        let resolved = match resolve_filtered_selection(
+            self.log_file_filtered_indices(),
+            self.git.view.log.file_selected,
+            delta,
+        ) {
+            Some(resolved) => resolved,
+            None => return false,
         };
         if resolved == self.git.view.log.file_selected {
             false

@@ -1,11 +1,11 @@
 use anyhow::{Context, Result};
-use std::io::{Read, Write};
+use std::io::Read;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
-use crate::daemon::frame::{Frame, FrameKind, read_frame, write_frame};
-use crate::daemon::protocol::{ClientMessage, ServerMessage};
-use crate::daemon::transport::UnixStream;
+use crate::daemon::frame::{FrameKind, read_frame};
+use crate::daemon::one_shot::{connect, send_request};
+use crate::daemon::protocol::ServerMessage;
 
 // The daemon's cleanup normally takes milliseconds, but a configured plugin may
 // take up to 200 ms per host before it is force-killed. Keep room for the
@@ -26,16 +26,17 @@ pub(crate) fn run_stop(socket: Option<PathBuf>) -> Result<()> {
         );
     }
 
-    let mut stream = UnixStream::connect(&path).with_context(|| {
+    let mut stream = connect(&path).with_context(|| {
         format!(
             "could not connect to the daemon socket at {} — the daemon may have stopped",
             path.display()
         )
     })?;
-    let json =
-        serde_json::to_vec(&ClientMessage::Shutdown).context("encoding the shutdown request")?;
-    write_frame(&mut stream, &Frame::control(json)).context("sending the shutdown request")?;
-    stream.flush().context("flushing the shutdown request")?;
+    send_request(
+        &mut stream,
+        &crate::daemon::protocol::ClientMessage::Shutdown,
+    )
+    .context("sending the shutdown request")?;
     stream
         .set_read_timeout(Some(SHUTDOWN_ACK_TIMEOUT))
         .context("setting the shutdown acknowledgment timeout")?;
@@ -46,11 +47,12 @@ pub(crate) fn run_stop(socket: Option<PathBuf>) -> Result<()> {
     Ok(())
 }
 
-/// Consume unsolicited frames until the daemon closes this connection.
+/// Consume any frames until the daemon closes this one-shot connection.
 ///
-/// An attach socket speaks first, so a `Repos` or terminal frame may be ahead of
-/// the shutdown request's outcome. Only EOF, or a reset/abort while the daemon
-/// is closing, proves that shutdown has reached the daemon's exit path.
+/// A current daemon closes immediately after accepting the one-shot request;
+/// older daemons may have queued session frames first. Only EOF, or a
+/// reset/abort while the daemon is closing, proves shutdown reached its exit
+/// path.
 fn wait_for_shutdown_ack<R: Read>(reader: &mut R, deadline: Instant) -> Result<()> {
     loop {
         if Instant::now() >= deadline {

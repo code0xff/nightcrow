@@ -1,4 +1,7 @@
-use super::{ClientMessage, RepoSummary, ServerMessage, TerminalOutput, version};
+use super::{
+    ClientMessage, DaemonStatus, RepoSummary, RepositoryStatus, ServerMessage, TerminalOutput,
+    version,
+};
 
 fn round_trip_client(message: &ClientMessage) -> ClientMessage {
     let json = serde_json::to_string(message).expect("encodes");
@@ -16,6 +19,7 @@ fn every_client_message_survives_the_round_trip() {
         ClientMessage::Hello {
             version: "0.1.0".into(),
         },
+        ClientMessage::Status {},
         ClientMessage::ListRepos,
         ClientMessage::OpenRepo {
             path: "/w/repo".into(),
@@ -48,6 +52,22 @@ fn every_server_message_survives_the_round_trip() {
         ServerMessage::Hello {
             version: "0.1.0".into(),
             client: 3,
+        },
+        ServerMessage::Status {
+            status: DaemonStatus {
+                pid: 42,
+                version: "0.1.0".into(),
+                started_at_unix_ms: Ok(123),
+                uptime_ms: 7,
+                endpoint: Ok("/tmp/nightcrow.sock".into()),
+                repositories: vec![RepositoryStatus {
+                    id: "r1".into(),
+                    path: "/w/repo".into(),
+                    panes: vec![3],
+                    pane_count: 1,
+                }],
+                attached_clients: vec![9],
+            },
         },
         ServerMessage::Repos {
             repos: vec![RepoSummary {
@@ -88,6 +108,53 @@ fn a_message_missing_a_required_field_is_refused() {
     // Reaching the socket is authorization, not a promise of well-formed
     // input: a client bug must be a refused request, not a panic.
     assert!(serde_json::from_str::<ClientMessage>(r#"{"type":"open_repo"}"#).is_err());
+}
+
+#[test]
+fn status_rejects_unknown_request_fields_and_missing_response_fields() {
+    assert!(serde_json::from_str::<ClientMessage>(r#"{"type":"status","pid":1}"#).is_err());
+    let missing_uptime = r#"{
+        "type":"status","status":{"pid":1,"version":"0.1.0",
+        "started_at_unix_ms":{"Ok":1},"endpoint":"/tmp/d.sock",
+        "repositories":[],"attached_clients":[]}}
+    "#;
+    assert!(serde_json::from_str::<ServerMessage>(missing_uptime).is_err());
+}
+
+#[test]
+fn an_unavailable_endpoint_reason_survives_the_status_round_trip() {
+    let status = DaemonStatus {
+        pid: 1,
+        version: version(),
+        started_at_unix_ms: Ok(0),
+        uptime_ms: 0,
+        endpoint: Err(super::StatusUnavailable {
+            reason: super::StatusUnavailableReason::EndpointNotUnicode,
+        }),
+        repositories: vec![],
+        attached_clients: vec![],
+    };
+    assert_eq!(
+        round_trip_server(&ServerMessage::Status {
+            status: status.clone()
+        }),
+        ServerMessage::Status { status }
+    );
+}
+
+#[test]
+fn existing_wire_messages_keep_their_shape() {
+    assert_eq!(
+        serde_json::to_string(&ClientMessage::Hello {
+            version: "0.1.0".into()
+        })
+        .unwrap(),
+        r#"{"type":"hello","version":"0.1.0"}"#
+    );
+    assert!(matches!(
+        serde_json::from_str::<ClientMessage>(r#"{"type":"list_repos"}"#),
+        Ok(ClientMessage::ListRepos)
+    ));
 }
 
 /// A reload carries nothing on the way out: the file on the daemon's disk is the

@@ -9,7 +9,7 @@
 //! boundary. That boundary is the host's.
 
 use super::{MAX_RESUME_ATTEMPTS, PaneRecovery, RecoveryState};
-use crate::protocol::{MAX_INPUT_BYTES, PROTOCOL_VERSION, PluginCommand};
+use crate::protocol::{PROTOCOL_VERSION, PluginCommand};
 use crate::provider::{PaneContext, Provider, ResumePlan};
 use std::time::Instant;
 
@@ -50,8 +50,7 @@ impl PaneRecovery {
     ///
     /// Staying in [`RecoveryState::ReadyToResume`] with nothing emitted is the
     /// normal answer while the pane is not yet touchable: a relaunch needs the
-    /// process gone, typed input needs it alive *and* idle, and both of those
-    /// facts arrive as later host events.
+    /// process gone, and that fact arrives as a later host event.
     pub(super) fn try_resume(
         &mut self,
         provider: &dyn Provider,
@@ -72,31 +71,8 @@ impl PaneRecovery {
                 self.detail = Some(reason.to_string());
                 self.goto(RecoveryState::NeedsAttention)
             }
-            ResumePlan::Input(data) => self.send_input(data, now_epoch, now),
             ResumePlan::Relaunch(args) => self.relaunch(args, ctx, now),
         }
-    }
-
-    fn send_input(&mut self, data: String, now_epoch: i64, now: Instant) -> Vec<PluginCommand> {
-        if !self.alive {
-            // The adapter offered typed input for a process that has since
-            // exited. Do not invent a relaunch on its behalf.
-            return self.arm_wait_after_failure(now_epoch, now);
-        }
-        if !self.idle {
-            return Vec::new();
-        }
-        if data.is_empty() || data.len() > MAX_INPUT_BYTES {
-            self.detail = Some("adapter offered input the host would refuse".to_string());
-            return self.goto(RecoveryState::NeedsAttention);
-        }
-        let command = PluginCommand::SendInput {
-            v: PROTOCOL_VERSION,
-            token: self.token.clone(),
-            generation: self.generation,
-            data,
-        };
-        self.spend_attempt(command, now)
     }
 
     fn relaunch(

@@ -1,71 +1,29 @@
 # Views
 
+Each project has a status view, commit log, and read-only tree. The upper area contains the selected list and diff/file content; terminal panes occupy the lower area. Use [Keyboard and mouse](keybindings.md) for navigation.
+
 ## Status view
 
-The default. Lists changed files on the left, syntax-highlighted diff on the right.
+The left list contains changed paths and the right pane shows the selected working-tree diff, with syntax highlighting and line numbers. Rows use Git's two-character `XY` status: `X` is the index (staged) state and `Y` is the working-tree state. For example, `MM` is staged and further modified, `??` is untracked, and `UU` is conflicted. Renames show both paths and can be found by either name.
 
-Each row begins with a two-character `XY` status code, following Git's short status notation (nightcrow reads status through git2 internally, not by parsing `git status --short`). `X` is the staged (index) state and `Y` is the unstaged (working-tree) state, so a file can show both at once:
+## Commit log view
 
-| Code | Meaning |
-| --- | --- |
-| ` M` | modified, unstaged |
-| `M ` | modified, staged |
-| `MM` | modified, staged **and** further modified in the working tree |
-| `A ` | added (staged) |
-| `D `/` D` | deleted (staged / unstaged) |
-| `R ` | renamed (shown as `old -> new`; searchable by either path) |
-| `T ` | type changed (e.g. file ↔ symlink) |
-| `??` | untracked |
-| `UU` | conflicted (placeholder for unmerged paths) |
+`<prefix> l` shows a commit list and the selected commit's diff. Commits ahead of a tracked upstream are marked with `↑`; a commit with no upstream has no ahead/behind marker. `Enter` drills into the commit's changed files, and `Esc` returns to the commit list.
 
-The diff for a selected file shows the combined working-tree-with-index changes.
+History loads in pages. The first page and subsequent prefetch distance use [`[log]`](configuration.md#log) settings, and scrolling near the end requests more. The view follows a new `HEAD`; a history rewrite replaces the list and may close a drill-down.
 
-## Commit log view (`<prefix> l`)
+## Tree view
 
-A tig-like commit list on the left, full commit diff on the right. Commits ahead of the upstream are marked with `↑`. Press `Enter` on a commit to drill into its individual files; `Esc` to go back.
+`<prefix> b` opens a read-only directory tree for the whole worktree. Expand with `Right`, collapse or move to the parent with `Left`, and press `Enter` on a file to preview its contents. `/` searches filenames recursively; `Esc` cancels a search. The preview pane supports content search with `/`, `n`, and `N`.
 
-The list auto-refreshes when the workdir HEAD changes (commits made in the terminal pane, amends, force-pushes, branch switches). History loads one page at a time — initial entry fetches `commit_log_page_size` commits and additional pages stream in on a background thread as the selection approaches the loaded tail, so deep histories stay responsive. Toggling while a terminal or diff pane is zoomed exits the zoom and focuses the list, so the view switch is always visible.
-
-## Tree view (`<prefix> b`)
-
-A read-only directory tree of the whole working tree on the left, with the selected file's raw contents on the right. Unlike the status view (which lists only changed files), the tree lets you browse and read *any* file next to the diff without leaving nightcrow.
-
-- `j`/`k` move the cursor, `→` expands a directory (read lazily, one level at a time), `←` collapses it or steps up to the parent, and selecting a file previews it.
-- `Enter` on a file row opens it in the preview pane and zooms that pane fullscreen (`Enter` again, or `<prefix> f`, exits the zoom); on a directory row it does nothing.
-- `/` while the tree is focused runs a recursive filename search across the whole tree — type to filter, `Enter` reveals the selected match in place (expanding its ancestor directories), `Esc` cancels.
-- Focus the file preview with `<prefix> 2`, then press `/` to search within the file contents — `n`/`N` jump to the next/previous match, `Esc` clears the search.
-
-`.gitignore`-matched paths (e.g. `target/`, `node_modules/`) are hidden by default — toggle with `[tree] respect_gitignore`. Expanded directories are watched for filesystem changes, so files and folders created, moved, or deleted by another process (an editor, `git`, an LLM CLI) appear without leaving the view; set `[tree] live_watch = false` to refresh only on entry instead. See [Configuration → `[tree]`](configuration.md#tree).
-
-The tree never writes, renames, or deletes anything. Expansion state and the selected path persist across sessions.
+Paths matched by `.gitignore` are hidden by default. `[tree] respect_gitignore`, `[tree] max_depth`, and `[tree] live_watch` control filtering, expansion depth, and whether expanded directories refresh on filesystem changes. The tree never writes, renames, or deletes files.
 
 ## Notice row
 
-A one-row strip just above the hint bar shows the repo path (home-relative, e.g. `~/projects/myapp`), the current branch, and ahead/behind counts (`↑N ↓M`) when the branch tracks an upstream. A path or a branch too long for the row is cut with `…` — the counts and the recovery chip after them keep their room, so a long name shortens itself rather than pushing them off the end.
-
-When something fails — a git snapshot, a diff load, a terminal pane, or a repo path you typed that doesn't exist — the message takes over this row in red until the problem is resolved or you act on the app again.
-
-While the repo dialog is open, its input takes this row in the header's place — you are deciding which repo the header will name next — and the messages move down to the hint row: a rejected path appears directly below the input you're correcting, and the dialog's completion candidates show there too (dimmed, and a notice outranks them), so a list too long for one line ends in `+N more`.
-When neither is up, the hint row spells out the dialog's keys.
+The header identifies the selected repository, branch, and tracked-branch ahead/behind counts. Errors from Git, a diff load, terminal creation, or repository selection appear in the notice row until resolved or dismissed by app input. Repository-dialog validation messages appear below the dialog.
 
 ## The repo dialog
 
-### Path completion
+Open it with `<prefix> o`. The field accepts an existing directory path, including absolute paths, paths relative to the current directory, and a leading `~`. It is a path field, not a shell: `cd`, environment variables, and globs are not expanded. An empty or nonexistent path is rejected and leaves the dialog open for correction.
 
-`Tab` completes the directory you're typing, so you don't have to know the path by heart. One press extends as far as the names allow; when there's nothing left to extend it lists what's there instead. On a trailing `/` the first press shows that directory's contents, and a unique match gains a trailing `/` so you can keep pressing `Tab` to descend.
-
-Only directories are offered (a file can't be a repo), dotted directories stay hidden until you type a leading `.`, and a name that differs only in case is matched and corrected for you. The dialog is a path field, not a shell — `~`, `..` and paths relative to your working directory all work, but `cd`, `$VAR`, and globs don't, and `Enter` always means "open this path".
-
-### Browsing for a repo
-
-When you don't know the path, press `↓` in the repo dialog to browse instead of typing. (A second `Tab`, once the candidate list is up, opens the same browser: at that point the flat list has told you all it can.) The browser fills the body of the screen, rooted at whatever directory the field currently names, and the field stays visible below it with the keys spelled out.
-
-| Key | Action |
-|-----|--------|
-| `↓` / `j`, `↑` / `k` | Move the cursor |
-| `→` | Expand the selected directory (read lazily, one level at a time) |
-| `←` | Collapse it, or step out — to the parent row, or one level *above the root* when you're already at the top, so a sibling checkout is one press away |
-| `Enter` | Take the selected path into the field and return to it — this does **not** open the repo. Press `Enter` again in the field for that, or keep refining the path with `Tab` first |
-| `Esc` | Leave the browser, keeping the text it started from. A second `Esc` cancels the dialog |
-
-Directories only, hidden ones excluded, and nothing is ever written. Note that `Enter` means *select* here but *open* in the field — the browser's job is to fill the field, so `→` alone expands — matching the file-tree view, where `Enter` opens a file rather than expanding. Paths keep your own notation: browsing out of `~/coding` gives you back `~/coding/…`, not an absolute path. Mouse selection isn't supported; the browser is keyboard-only.
+`Tab` completes directory names. `Down` opens a keyboard-only directory browser; it lists visible directories, and `Right`/`Left` expand and collapse. `Enter` in the browser selects a directory into the field; `Enter` in the field submits it. `Esc` closes the browser first and then cancels the dialog. Opening a directory inside an existing worktree resolves to that worktree; a directory outside Git shows a repository error when its views load.

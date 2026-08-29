@@ -2,11 +2,7 @@
 
 ## Which Layer
 
-- 모듈 간 계약(인터페이스)을 추가/변경 → **contract test 필수**
-- 순수 함수, 개별 모듈 로직 → unit test
-- API endpoint, 요청 흐름 전체(web viewer, daemon protocol) → integration test
-- 사용자 관점 시나리오 → end-to-end test
-- 하나의 변경이 여러 유형에 걸치면 각각 작성한다.
+- 변경 유형에 맞는 테스트를 추가한다: 모듈 간 계약(인터페이스)은 **contract test**, 순수 함수·개별 모듈 로직은 unit test, API endpoint·전체 요청 흐름(web viewer·daemon protocol)은 integration test, 사용자 관점 시나리오는 end-to-end test. 하나의 변경이 여러 유형에 걸치면 각각 작성한다.
 
 ## Rules
 

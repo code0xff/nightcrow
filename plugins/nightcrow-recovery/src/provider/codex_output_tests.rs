@@ -6,7 +6,6 @@ use super::pane::{OUTPUT_DETAIL, USAGE_LIMIT_NEEDLES};
 use super::rollout::USAGE_LIMIT_ERROR_INFO;
 use super::*;
 use crate::protocol::PaneGeneration;
-use crate::provider::LimitKind;
 
 const UUID: &str = "0199cbb1-2b70-7f11-9f0f-0f8e9d1c2b3a";
 /// Any plausible "now"; the output path never reads a time out of text, so the
@@ -42,7 +41,6 @@ fn every_terminal_output_needle_fires_once() {
         let event = codex
             .on_output(&ctx(1), &shouted, NOW)
             .expect("the needle fires");
-        assert_eq!(event.kind, LimitKind::UsageLimit);
         assert_eq!(event.detail, OUTPUT_DETAIL);
         assert_eq!(event.resets_at, None, "no time is ever read out of text");
         assert_eq!(event.session_id, None);

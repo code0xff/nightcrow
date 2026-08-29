@@ -41,39 +41,11 @@ fn a_limit_naming_a_different_session_starts_a_new_episode() {
 }
 
 #[test]
-fn a_transient_failure_backs_off_instead_of_waiting_for_a_usage_window() {
-    let mut rec = recovery();
-    let out = rec.note_limit(transient(), T0, Instant::now());
-    assert_eq!(rec.state(), RecoveryState::Backoff);
-    assert_eq!(rec.deadline_epoch(), Some(T0 + BACKOFF_BASE_SECS));
-    assert_eq!(states(&out), vec!["limit_detected", "backoff"]);
-}
-
-#[test]
 fn a_limit_with_no_known_reset_backs_off() {
     let mut rec = recovery();
     rec.note_limit(usage(Some(SESSION), None), T0, Instant::now());
     assert_eq!(rec.state(), RecoveryState::Backoff);
     assert_eq!(rec.deadline_epoch(), Some(T0 + BACKOFF_BASE_SECS));
-}
-
-#[test]
-fn a_failure_only_a_human_can_fix_goes_straight_to_needs_attention() {
-    let mut rec = recovery();
-    let out = rec.note_limit(needs_human(), T0, Instant::now());
-    assert_eq!(rec.state(), RecoveryState::NeedsAttention);
-    assert_eq!(states(&out), vec!["limit_detected", "needs_attention"]);
-    assert!(action(&out).is_none());
-}
-
-#[test]
-fn needs_attention_ignores_every_later_limit_report() {
-    let mut rec = recovery();
-    let mono = Instant::now();
-    rec.note_limit(needs_human(), T0, mono);
-    let out = rec.note_limit(usage(Some(SESSION), Some(RESET)), T0, mono);
-    assert!(out.is_empty());
-    assert_eq!(rec.state(), RecoveryState::NeedsAttention);
 }
 
 #[test]

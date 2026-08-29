@@ -1,11 +1,13 @@
+# Commit and History Rules
+
 ## Commit Units
 
 - 하나의 commit은 하나의 목적만 담고, 독립적으로 리뷰·revert 가능해야 한다.
 - 큰 작업도 작은 commit으로 나눈다. 단, 의미 있는 작업 단위가 깨질 정도로 쪼개지 않는다.
-- 각 commit 시점에 빌드와 테스트가 통과해야 한다 (AGENTS.md의 Verify 게이트).
-  훅은 이것을 강제하지 않는다 — `pre-commit`은 형식만 보고, 전체 게이트는 `pre-push`가
-  tip에 대해서만 돌린다. 따라서 이 항목은 도구가 아니라 작성자가 지키는 규칙이며,
-  깨지면 `git bisect`가 못 쓰게 된다. 범위 전체를 검증하려면
+- 각 commit 시점에 빌드와 테스트가 통과해야 한다. 일반 게이트는 루트 `AGENTS.md`가 가리키는 `docs/getting-started.md`에 있고, 훅이 이 원칙을 대신 지키지는 않는다.
+  훅은 이것을 강제하지 않는다 — `pre-commit`은 형식만 보고, `pre-push`는 통합 기준점 대비
+  변경 범위의 tip만 검사한다(문서만 바꾼 push는 Rust 게이트를 건너뛴다). 따라서 이 항목은
+  도구가 아니라 작성자가 지키는 규칙이며, 깨지면 `git bisect`가 못 쓰게 된다. 범위 전체를 검증하려면
   `NIGHTCROW_VERIFY_EACH_COMMIT=1 git push`.
 
 ## Feature-scoped Workflow

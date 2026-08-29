@@ -1,30 +1,22 @@
 # nightcrow documentation
 
-The [top-level README](../README.md) is the tour: what nightcrow is, how to install it, and enough usage to get a session up. Everything past that lives here, one page per surface.
+Start with the [top-level README](../README.md) for the five-minute install and first session. Use [Getting started](getting-started.md) for the complete install, run, update, and development workflow.
 
-## Using nightcrow
+## User guides
 
-| Page | What it covers |
+| Guide | Scope |
 | --- | --- |
-| [Getting started](getting-started.md) | Install, starting and stopping a session, attaching, startup panes |
-| [Projects](projects.md) | Repository tabs, the empty state, per-project scope |
-| [Views](views.md) | Status, commit log, and tree views; the notice row; the repo dialog and its directory browser |
-| [Keyboard and mouse](keybindings.md) | The leader key, every binding, mouse routing |
-| [Session state](session-state.md) | Recent-activity highlighting, what persists across restarts and who owns it |
-| [Web viewer](web-viewer.md) | The browser surface, phone layout, authentication, frontend development |
-| [Plugins](plugins.md) | The plugin boundary and the bundled `nightcrow-recovery` |
-| [Configuration](configuration.md) | Every `config.toml` table, and which ones reload without a restart |
+| [Projects](projects.md) | Repository tabs and per-project terminal limits |
+| [Views](views.md) | Status, commit log, tree, notices, and repository picker |
+| [Keyboard and mouse](keybindings.md) | Leader commands, navigation, terminal input, and mouse routing |
+| [Session state](session-state.md) | Recent-activity indicator and files written between runs |
+| [Web viewer](web-viewer.md) | Browser access, cloning, mobile layout, and security |
+| [Configuration](configuration.md) | `~/.nightcrow/config.toml`, defaults, validation, and reload scope |
+| [Plugins](plugins.md) | Plugin installation, opt-in, and bundled recovery plugin |
 
-## Working on nightcrow
+Each guide is authoritative for its surface. Cross-links point back here or to the guide that owns a shared rule; design rationale and module boundaries remain in [Architecture](architecture.md), and historical decisions remain in [Design decisions](decisions.md).
 
-| Page | What it covers |
-| --- | --- |
-| [Architecture](architecture.md) | Index: overview, layout, module map, stack — and links into the detail pages below |
-| [· Session](architecture/session.md) | Daemon ↔ client split, `TerminalBackend`, PTY size ownership, config reload |
-| [· Git views](architecture/git-views.md) | Diff pipeline, gutter and wrapping, tree navigator, commit-log decoration |
-| [· Terminal](architecture/terminal.md) | Split-view pane grid, emulation layer, scroll and mouse routing |
-| [· UI](architecture/ui.md) | Keyboard routing, the `Workspace`/`App` project boundary, notice row |
-| [· Plugin host](architecture/plugin-host.md) | The trust boundary and the recovery surface |
-| [· Web layer](architecture/web.md) | Shared HTTP/SSE primitives, the viewer, the frontend |
-| [Design decisions](decisions.md) | Why it went this way — rejected alternatives and where implementation diverged from plan |
-| [AGENTS.md](../AGENTS.md) | Contribution workflow and repository conventions |
+## Development references
+
+- [Getting started → Building and testing](getting-started.md#building-and-testing) contains the repository verification gates.
+- [Architecture](architecture.md) documents system boundaries and implementation responsibilities.

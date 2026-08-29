@@ -1,19 +1,13 @@
 # Projects
 
-One nightcrow process holds up to **10 repositories at once**, each in its own tab across the top row. A project owns everything scoped to its repo — the git views, the snapshot worker, and its own set of terminal panes — so switching tabs swaps the whole screen, not just the diff. A pane running a build in one project keeps running while you work in another.
+The session can serve up to 10 repositories. Each repository is a project tab with its own status, commit-log, tree, and terminal views. A project can hold up to 8 terminal panes; its panes keep running while another project is active.
 
-```
- F1 nightcrow  F2 api-server  +3          ← project tabs (active one accented)
-┌ ^F 1 Files ──────┐┌ ^F 2 src/main.rs ────┐
-```
+Open and close projects with `<prefix> o` and `<prefix> x`; switch among tabs with `F1`–`F10`. Opening a repository that is already open focuses the existing tab instead of creating a duplicate worktree view. The browser and every attached TUI share the project set, order, and active project.
 
-- `^F o` opens a repo in a tab, `^F x` closes the active one, and `F1`…`F10` switch between them. There is no "change this tab's repo": closing and opening is the same thing, and it tears the old project down properly instead of leaving its shells behind in the previous directory.
-- Opening a repo another tab already holds focuses that tab instead of running two copies against one worktree.
-- When the tabs outgrow the row, it scrolls around the active tab and folds the rest behind `+N` markers; clicking a marker jumps to the nearest project behind it.
-- A blinking `•` marks a background project whose terminal needs attention. Opening that project acknowledges everything seen so far; later activity can light it again. A terminal bell raises it, as does a pane exiting or a burst of title changes settling. A tool that reports finishing some other way can say so directly through a plugin — see [Plugins](plugins.md#claude-code-hooks).
+If tabs do not fit, the tab row folds inactive tabs behind an overflow marker. A background project shows an attention marker when its terminal reports unread activity; selecting that project acknowledges the marker, and later activity can raise it again.
 
-**No project open** is a normal state, not an error — it is how a fresh session starts, and where closing the last tab returns you. The screen keeps its chrome and offers the only two things that apply: `^F o` to open a repo, `^F q` to detach.
+Having no project open is valid. A new session starts there when no repositories are saved, and closing the last tab returns there. Use `<prefix> o` to open a repository.
 
-Each project keeps its own session file (see [Session state](session-state.md)), so tabs restore independently.
+Repository paths are normalized to their worktree root, so opening a subdirectory of an already open worktree focuses the existing project. The path dialog supports `~`, absolute paths, relative paths, completion, and a directory browser; see [Views → The repo dialog](views.md#the-repo-dialog).
 
-Typing a path into the repo dialog, completing it with `Tab`, and browsing for one with `↓` are covered in [Views → the repo dialog](views.md#the-repo-dialog).
+Open tabs and the active tab are session-owned. Per-project selection, scroll, view mode, and fullscreen state are client view state; see [Session state](session-state.md).

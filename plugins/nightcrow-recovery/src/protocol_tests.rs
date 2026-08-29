@@ -4,7 +4,7 @@ const TOKEN: &str = "0123456789abcdef0123456789abcdef";
 
 fn opened_line() -> String {
     format!(
-        r#"{{"event":"pane_opened","v":{PROTOCOL_VERSION},"token":"{TOKEN}","generation":2,"title":null,"command":"claude","cwd":"/w/repo"}}"#
+        r#"{{"event":"pane_opened","v":{PROTOCOL_VERSION},"token":"{TOKEN}","generation":2,"title":null,"command":"codex","cwd":"/w/repo"}}"#
     )
 }
 
@@ -18,7 +18,7 @@ fn a_host_event_is_parsed_from_its_wire_shape() {
             token: TOKEN.to_string(),
             generation: 2,
             title: None,
-            command: Some("claude".to_string()),
+            command: Some("codex".to_string()),
             cwd: "/w/repo".to_string(),
         }
     );
@@ -44,9 +44,8 @@ fn an_event_from_another_protocol_version_is_refused_and_both_versions_named() {
 
 #[test]
 fn an_event_from_the_previous_protocol_version_is_refused_too() {
-    // Refused in both directions on purpose. A host still speaking 1 has no
-    // `watch_pane` to honour, so the panes this plugin exists for would silently
-    // never be watched — better to fail at the first line than halfway.
+    // Refused in both directions on purpose. Better to fail at the first line
+    // than to run against a partly compatible command set.
     let line = opened_line().replace(&format!("\"v\":{PROTOCOL_VERSION}"), "\"v\":1");
     assert!(decode_event(&line).is_err());
 }
@@ -103,7 +102,11 @@ fn a_watch_pane_request_carries_only_the_token() {
     // Deliberately no generation: this is asked about a pane the host has never
     // described to us, so any generation we put here would be invented — and the
     // host would be right to refuse it.
-    let line = encode_command(&watch_pane(TOKEN.to_string())).expect("encodable");
+    let line = encode_command(&PluginCommand::WatchPane {
+        v: PROTOCOL_VERSION,
+        token: TOKEN.to_string(),
+    })
+    .expect("encodable");
     assert!(line.contains("\"cmd\":\"watch_pane\""), "{line}");
     assert!(line.contains(&format!("\"token\":\"{TOKEN}\"")), "{line}");
     assert!(!line.contains("generation"), "{line}");
@@ -138,7 +141,6 @@ fn the_input_limit_matches_what_the_host_accepts() {
     // spend attempts on requests the host refuses.
     assert_eq!(MAX_INPUT_BYTES, 8 * 1024);
     assert_eq!(MAX_LINE_BYTES, 64 * 1024);
-    assert_eq!(PANE_TOKEN_ENV, "NIGHTCROW_PANE_TOKEN");
 }
 
 /// Pull `pub const NAME: ty = <literal>;` out of the host's source.

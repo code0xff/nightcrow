@@ -5,7 +5,6 @@
 //! only from the main thread, which is what keeps two half-written lines from
 //! interleaving on stdout.
 
-use crate::ipc::IpcMessage;
 use crate::protocol::{LogLevel, PluginCommand, PluginEvent, decode_event, encode_command, log};
 use anyhow::Result;
 use std::io::{BufRead, BufReader, Write};
@@ -17,7 +16,6 @@ pub(crate) enum Message {
     /// A line from the host that could not be understood. Reported and skipped:
     /// one bad line is not a reason to abandon a session's panes.
     HostGarbage(String),
-    Signal(IpcMessage),
     /// stdin ended. The host is gone, so there is nothing left to serve.
     HostGone,
 }

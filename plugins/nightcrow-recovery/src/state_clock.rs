@@ -6,7 +6,7 @@
 
 use super::{MAX_RESUME_ATTEMPTS, PaneRecovery, RESUME_CONFIRM_SECS, RecoveryState};
 use crate::protocol::PluginCommand;
-use crate::provider::{LimitKind, PaneContext, Provider};
+use crate::provider::{PaneContext, Provider};
 use crate::wait::ResetWait;
 use std::time::{Duration, Instant};
 
@@ -48,11 +48,7 @@ impl PaneRecovery {
     pub(super) fn arm_wait(&mut self, now_epoch: i64, now: Instant) -> Vec<PluginCommand> {
         // A known reset time is waited out exactly once and does not spend an
         // attempt: nothing has been tried yet.
-        let reset = self
-            .limit
-            .as_ref()
-            .filter(|l| l.kind == LimitKind::UsageLimit)
-            .and_then(|l| l.resets_at);
+        let reset = self.limit.as_ref().and_then(|l| l.resets_at);
         if let Some(reset) = reset {
             self.wait = Some(ResetWait::until(reset, now_epoch, now));
             return self.goto(RecoveryState::WaitingForReset);

@@ -4,7 +4,7 @@
 //! one record of what they have been told.
 
 use super::frame::{FrameKind, encode_server, read_frame};
-use super::protocol::{ClientMessage, ServerMessage, version};
+use super::protocol::{ClientMessage, ServerMessage};
 use super::serve::Session;
 use super::transport::UnixStream;
 use crate::session::{self, CloseError, OpenError};
@@ -42,21 +42,11 @@ pub(super) fn read_requests(mut stream: UnixStream, id: u64, session: &Session) 
 fn handle(message: ClientMessage, id: u64, session: &Session) {
     let state = &session.state;
     match message {
-        ClientMessage::Hello { version: client } => {
-            let daemon = version();
-            let reply = if client == daemon {
-                ServerMessage::Hello {
-                    version: daemon,
-                    client: id,
-                }
-            } else {
-                // Reported, not refused: the two ship in one binary, so a
-                // mismatch means two builds are running at once.
-                ServerMessage::Error {
-                    message: format!("client is {client}, daemon is {daemon}"),
-                }
-            };
-            session.clients.send_to(id, encode_reply(&reply));
+        ClientMessage::Hello { .. } => {
+            refuse(id, session, "hello is only valid as the first request")
+        }
+        ClientMessage::Status {} => {
+            refuse(id, session, "status is only valid as the first request")
         }
         // Answered to the asker alone (nothing changed), but not from here —
         // the set is sent from one place, in session-change order. This records

@@ -1,159 +1,87 @@
-# 설계 결정 이력
+# 설계 결정
 
-확정된 설계는 [`architecture.md`](architecture.md)에, 사용법은 [`../README.md`](../README.md)과 `docs/`의 사용자 문서에 있다. 이 문서는 **왜 그렇게 갔는지** — 특히 계획과 갈린 지점과 검토 후 접은 대안 — 만 남긴다.
+현재 설계의 선택 이유와 중요한 대안만 기록한다. 현재 동작과 불변식은 [`architecture.md`](architecture.md)와 하위 설계 문서를 기준으로 하며, 사용자 절차는 [`README.md`](../README.md)를 따른다.
 
-## 세션 데몬 (2026)
+## 세션 경계
 
-### 왜 클라이언트 렌더인가
+### 데몬은 상태를 소유하고 클라이언트가 렌더한다
 
-가능한 구조가 둘이었다. 서버 렌더(데몬이 ratatui로 한 장 그려 ANSI를 민다)는 클라이언트가 수백 줄로 끝나지만 **그리드가 하나뿐이라 디스플레이별 크기가 불가능**하다. 모두가 같은 크기를 강제로 공유하게 된다. "디스플레이 종류·사이즈에 따라 재렌더링"이 목표에 있었으므로 성립하지 않는다.
+데몬이 ratatui 화면 하나를 만들어 반사하는 방식은 터미널과 브라우저가 서로 다른 크기로 같은 pane을 볼 수 없게 한다. 데몬은 repository·PTY·공유 preference를 소유하고, 각 클라이언트가 자신의 기하와 emulator로 렌더한다. 이 선택으로 TUI와 viewer가 같은 session operation을 사용하고, 별도의 화면 반사 계층은 필요하지 않다.
 
-그리고 클라이언트 렌더 프로토콜은 이미 있었다 — 웹 뷰어가 쓰던 것이 그것이다. 그래서 이 작업은 새 데몬을 만드는 일이 아니라 `serve`를 세션 데몬으로 승격시키고 TUI를 그 클라이언트로 돌려세우는 일이 됐다. 같은 이유로 웹 미러는 존재 이유를 잃고 제거됐다 — 브라우저가 화면 반사 대신 네이티브 프론트엔드로 같은 세션에 붙는다.
+### 동기 thread 모델과 로컬 git 읽기
 
-### 지금도 구속하는 제약
+외부 async runtime을 추가하지 않고 bounded thread/channel을 유지한다. git diff/file/tree/log는 같은 로컬 worktree를 읽는 client-side 경로이며, 원격 attach를 위해 git 데이터를 daemon wire로 옮기는 설계는 선택하지 않는다. 그 대신 선택 로드는 `git2::Repository`를 소유하는 worker와 generation guard로 비동기 UI를 제공한다.
 
-- **async 런타임 무도입.** 동기 스레드 모델을 유지한다.
-- **git 온디맨드 읽기는 클라이언트 로컬.** diff/file/tree/log는 UI 스레드에서 동기로 읽는다.
-- 새 프로토콜을 발명하지 않고 뷰어가 쓰던 메시지 타입을 전송만 바꿔 재사용한다.
-- 각 커밋이 빌드·테스트를 통과하고 **쓸 수 있는 상태**여야 한다 — 중간에 TUI를 못 쓰는 기간이 없도록 단계를 배치했다.
+### 단일 인스턴스와 안전한 daemon화
 
-### 접은 대안: 원격 attach (= git 데이터를 프로토콜에 올리기)
+stale socket에 connect하는 방식은 닫힌 Unix socket에서 생존 여부를 안정적으로 판정하지 못한다. `flock`으로 process lock을 잡고, daemon mode는 fork가 아니라 `setsid`를 포함한 re-exec로 시작한다. 이미 thread가 있는 process를 fork하지 않아 lock과 thread 상태를 자식에게 물려주지 않는다.
 
-다른 머신의 데몬에 TUI로 붙는 것은 목표에서 뺐다. 그래서 git 데이터를 프로토콜로 옮기지 않는다. 옮기려면 `app/`의 "선택이 바뀌면 그 자리에서 동기로 읽는다"는 전제를 전부 pending 상태를 갖는 비동기 요청으로 뒤집어야 하는데(`diff_load`, `commit_log_fetch`, `tree`, `file_view_load`, `snapshot_io`), 로컬에서는 양쪽이 같은 디스크를 읽어 1초 안에 수렴하므로 사용자에게 보이는 이득이 거의 없다. 비용은 이 프로젝트에서 제일 크다.
+### 공유 값과 화면별 값
 
-### 접은 대안: stale 소켓 connect로 단일 인스턴스 판정
+active repository와 accent는 같은 session의 사실이므로 TUI와 browser 사이에 공유한다. cursor·scroll·focus·fullscreen·검색과 화면 비율(`upper_pct`)은 display마다 의미가 달라 client-local로 둔다. viewer preference와 TUI workspace도 서로 다른 파일에 두어 한 표면이 다른 표면의 view state를 덮지 않게 한다.
 
-계획에는 "남은 소켓에 connect해서 살아 있는 데몬인지 본다"로 적혀 있었다. **macOS에서는 리스너가 닫힌 소켓에도 connect가 성공할 수 있어** 판정이 성립하지 않았다(테스트가 세 번에 한 번꼴로 실패). `flock`은 `kill -9`에도 커널이 해제하므로 정확하다 — 그래서 `libc`를 직접 의존성으로 올렸다(std가 노출하지 않는 유일한 호출).
+### PTY 크기는 latest viewer 하나가 소유한다
 
-### 접은 대안: 데몬화 크레이트, 그리고 fork
+PTY child와 alternate-screen 프로그램은 전달받은 폭에 맞춰 화면을 만들고, 화면별 크기를 사후에 합칠 수 없다. 따라서 session에 하나의 size owner를 두고, 명시적인 arrival/claim 때만 이전한다. 입력마다 owner를 바꾸면 휴대폰의 잠깐 확인이 모든 pane repaint를 일으키므로 배제했다. 비소유 client는 관전자이며 실제 `Resized` event만 따른다.
 
-데몬화 크레이트는 표준 없이 파편화돼 있어(daemonize/daemonize2/daemonizr/fork) 채택하지 않았다. `-d`는 **fork가 아니라 재exec + `setsid`**다. 스레드가 도는 프로세스에서 fork하면 자식은 스레드 하나와 임의 상태의 락들을 물려받는다 — 데몬화 크레이트들이 조심스러워하는 것이 정확히 그것이다. 새 사본을 exec하면 물려받을 상태가 없다.
+## 상태·스트림·동시성
 
-### 접은 대안: 입력마다 PTY 크기 소유권 이전
+### 상태는 변화 기반으로 읽고, repository set은 한 producer가 보낸다
 
-PTY는 데이터가 아니라 자식 프로세스와 맺은 계약이라(자식은 `TIOCGWINSZ`로 들은 폭에 맞춰 출력을 만든다) pane의 셀 크기는 단일 값이어야 한다. 클라이언트마다 자기 크기로 에뮬레이터를 돌리는 방식은 줄 단위 출력에만 통하고, alternate screen을 쓰는 풀스크린 TUI(Claude Code, Codex, vim)에서는 두 화면이 서로 다른 쓰레기로 갈라진다 — 그게 이 앱의 주 용도다.
+매초 모든 worktree를 읽는 대신 filesystem watcher를 사용하고, watcher 설치 실패 때만 1초 timer로 폴백한다. subscriber 없는 repository는 읽거나 감시하지 않는다. HTTP와 attach가 동시에 session을 바꿀 수 있으므로 set/active/accent를 다시 읽어 보내는 producer를 `daemon/watch.rs` 하나로 제한한다. callback을 각 mutation에 흩뜨리면 새 경로가 broadcast를 빠뜨릴 수 있고, 두 producer는 frame 순서를 뒤집을 수 있다.
 
-그래서 tmux의 `window-size latest` 모델을 택했다. 여기서 **입력마다 소유권을 옮기는 대안은 기각**했다. 폰으로 잠깐 확인하는 흔한 동작이 곧바로 전체 repaint를 유발해, 제일 가벼운 행동이 제일 비싼 행동이 된다. 부수 효과로 비소유 클라이언트가 곧 관전자가 되므로 별도의 관전 모드를 만들 필요가 없어졌다.
+### 완전한 snapshot은 합치고 terminal byte는 보존한다
 
-### 뒤집힌 결정: accent
+status는 최신 값 하나가 완전한 그림이라 중간 값을 conflate할 수 있다. terminal output은 escape sequence와 multibyte stream이므로 한 byte도 생략할 수 없다. 그래서 terminal queue는 bounded FIFO이고 overflow client는 끊어 일관된 replay를 다시 받게 한다. replay는 screen snapshot과 그 이후 `since`를 결합하고, daemon frame 상한을 넘지 않도록 1 MiB chunk로 보낸다.
 
-초안은 accent를 공유로 뒀다가 **클라이언트별로 뺐다** — 세션 사실이 아니라 표시 취향이고, TUI의 accent는 저장소별이라(색으로 탭을 구별하는 것이 그 기능의 목적) 세션 전역 값 하나로 만들면 그것이 사라진다는 이유였다.
+### Catalog membership과 runtime은 분리한다
 
-**그 뒤 다시 뒤집혔다.** 한 세션을 TUI와 브라우저로 나란히 두면 같은 세션이 두 색으로 보였고, 어느 쪽이 세션의 색이냐에 답할 수 있는 값이 없었다. 지금 accent는 세션 전역 값 하나다. 저장소별 색이 대신하던 "지금 어느 프로젝트인가"는 탭 이름과 활성 탭 강조가 답한다. 현재 경계는 [`architecture.md`](architecture.md)의 "세션 공유" 절이 기준이다.
+순수 membership 계산과 worker/hub 수명을 한 객체로 섞으면 tab reorder나 config reload가 무관한 subscriber를 재생성한다. path를 기준으로 runtime entry를 보존하고, membership/runtime/config table 변경을 하나의 transaction으로 직렬화한다. retired worker의 join은 transaction lock을 놓은 뒤 실행해 한 repository의 종료 지연이 다음 mutation을 막지 않게 한다.
 
-활성 프로젝트도 D단계에서는 클라이언트별로 구현돼 있었고 뷰어 코드에도 같은 판단이 박혀 있었지만(`resolveActiveRepo`) 공유로 확정했다. 대가는 알고 택했다 — 폰에서 탭을 바꾸면 노트북 화면도 옮겨간다. 대신 "브라우저와 TUI가 서로 다른 프로젝트를 보여주는데 둘 다 정상"인 상태가 없어진다.
+### Reload는 전체 검증 후 제한적으로 적용한다
 
-### 계획과 갈린 지점
+살아 있는 pane을 보존하려고 `config.toml`을 부분 적용하지 않는다. 파일 전체를 parse/validate한 뒤 `[[plugin]]`은 열린 hub에, `[[startup_command]]`는 새 hub에만 적용한다. plugin 권한 flag와 watch switch는 다음 판정부터 읽고, child 교체가 필요한 command/args/env만 재시작한다. concurrent reload는 lock으로 직렬화하고 전달하지 못한 hub는 성공으로 가장하지 않는다.
 
-- **B단계(빈 `attach` 별칭 + `application/` → `client/` 이동)는 C·D에 흡수했다.** 아직 클라이언트가 아닌 것에 클라이언트 이름을 붙이는 선반영이라, 실제 소비자가 생기는 시점에 만들었다.
-- **순서를 D → F → E로 바꿨다.** F를 E 뒤에 두면 E 내내 `TerminalState`가 로컬 PTY와 원격 hub 양쪽을 다뤄야 한다. F를 먼저 하면 E는 최종 형태 하나만 본다. 대가는 E가 끝날 때까지 detach가 터미널을 죽인다는 것인데, 그건 지금도 없는 기능이라 잃는 것이 아니라 아직 얻지 못한 것이었다.
-- **`--repo`는 남기지 않고 지웠다.** 같은 이름이 자리마다 다른 뜻이었다 — TUI에서는 기억된 목록을 *대체*하고, 데몬과 attach에서는 *추가*했다. 여러 클라이언트가 공유하는 세션에서 저장소를 여는 자리는 안쪽 하나뿐이라 둘 중 하나로 통일하는 대신 없앴다. 밖에서 세션을 미리 채우는 요구가 생기면 argv가 아니라 config에 둔다.
-- **알림(callback)이 아니라 관측.** 데몬은 틱마다 세션을 다시 읽어 마지막으로 알린 것과 다르면 브로드캐스트한다. 알림 방식은 나중에 추가된 mutation이 빼먹을 수 있고, 그 실패가 정확히 이 버그로 다시 나타난다.
+## TUI 입력과 git 표시
 
-### G단계: 측정하고 다르게 고쳤다
+### 앱 명령은 leader 뒤에 둔다
 
-계획은 "TUI가 데몬 스냅샷을 구독"(중복 제거)이었다. 먼저 쟀다 — `git status` 한 번은 파일 260개에서 3 ms, 1만 개에서 23 ms, 5만 개에서 129 ms. 폴링 수는 클라이언트 수에 비례하므로 5만 파일 트리 + 4탭 TUI 하나면 초당 516 ms인데 그중 중복은 129 ms뿐이었다. **주범은 중복이 아니라 "안 바뀌었는데도 매초 걷는 것"이었다.**
+LLM CLI와 shell의 `Ctrl+W`, `Ctrl+L` 같은 입력을 보존하려면 일반 key를 전역 단축키로 예약할 수 없다. 기본 `Ctrl+F` leader 뒤에 앱 명령을 두고, F-key와 shift-only navigation만 예외적인 no-prefix 예약키로 둔다. leader timeout은 두지 않아 사용자가 중첩 TUI의 prompt 입력을 잃지 않는다.
 
-그래서 (1) 구독자 없는 저장소는 걷지도 감시하지도 않고, (2) 읽기를 변화 구동으로 바꿨다. 유휴 비용이 초당 129 ms → 13 ms로 떨어졌고 변화 감지는 최대 1초 → 즉시가 됐다.
+### chrome 행과 git status 표기는 단일 규칙으로 유지한다
 
-**안 한 것**: 데몬 스냅샷 구독. 남는 중복은 유휴에서 10초에 한 번뿐이고, 닫으려면 주기적 git 데이터를 attach 프로토콜에 올려(위에서 피한 그것) TUI가 자기 뷰를 만드는 두 번째 경로를 갖게 된다 — 가장 많이 쓰는 화면에 단일 실패점을 만드는 값이다.
+notice/hint가 나타날 때마다 행을 삽입하면 모든 PTY를 resize하고 프로그램을 다시 그리게 한다. 그래서 project tabs, body, notice, hint 네 행을 항상 만들고 notice를 overlay한다. status는 새로운 표기보다 익숙한 `XY path`를 택하고, staged/worktree 두 열은 같은 `StatusKind`로 모델링한다. rename의 유효 경로와 표시 경로를 분리하고 typechange/conflict를 modified로 숨기지 않는다.
 
-### 넣지 않은 것
+### repo picker는 셸이 아닌 네이티브 경로 탐색이다
 
-- **재연결.** 연결이 끊기면 TUI가 alternate screen을 정상적으로 벗고 이유 한 줄과 함께 비정상 종료한다. 메시지는 "세션이 사라졌다"가 아니다 — 데몬이 살아 있는데 이 연결만 끊긴 경우(뒤처진 클라이언트를 데몬이 끊는 경로)가 있으므로 확실한 것만 말하고 재attach를 권한다. 넣으려면 연결을 재접속 가능한 채널로 바꾸고 재접속마다 pane을 버리고 리플레이를 다시 받아야 한다(그러지 않으면 스크롤백이 에뮬레이터에 두 번 들어간다). 지금 설계를 막지 않으므로 필요해지면 그때 올린다.
-- **named session.** 사용자당 데몬 하나를 전제한다.
-- **스크롤백 상한 변경.** 실측 결과 평범한 출력은 클라이언트의 1000줄을 다 채우고, 줄당 ~262바이트를 넘는 escape-heavy 출력만 그보다 얕다. 경계 양쪽을 테스트로 고정하고 (`terminal/tests/scrollback_depth.rs`) 상한은 그대로 뒀다.
+readline을 PTY로 띄우는 방식은 Windows 대응이 없고, PTY stream에서 후보와 결과를 다시 구분해야 한다. `std::fs::read_dir` 기반 picker는 OS별 shell 의존성과 추가 protocol 없이 세 플랫폼에서 같은 입력 모델을 제공한다. 입력한 `~`/relative spelling은 화면에 보존하고 읽는 순간에만 확장한다.
 
-## 웹 뷰어
+## Web surface
 
-### 계획과 갈린 지점
+### viewer는 TUI mirror가 아닌 두 번째 frontend다
 
-- **shadcn/ui 미채택.** 계획 자체가 "기본 톤을 TUI 밀도로 재조정해야 한다"고 적고 있었는데, 실제 UI가 커스텀 고밀도 패널이라 덮어쓸 것이 쌓을 것보다 많았다. Tailwind가 토큰을 직접 든다.
-- **"연결 수명" 단계는 미러를 건드리지 않았다.** `SseStream`이 자기 헤드를 쓰고 소켓을 소유하는 구조로 해소돼, 소비자 없는 상태에서 미러 응답 경로를 고칠 이유가 없었다.
-- **경로 검증 위치가 바뀌었다 — 이게 실제 버그였다.** 계획은 "tree/file/commit 전 엔드포인트가 검증기를 공유"라고만 적었는데, 그것을 **라우트별로 구현하면 새 라우트가 빠뜨린다.** 실제로 `/api/diff`가 `../../etc/passwd`를 받아들였다 — `load_file_diff`는 경로를 파일이 아니라 git pathspec으로 쓰므로 검증기에 닿지 않고, 빈 hunk와 함께 공격자 경로를 되돌려줬다. 검증은 dispatch 한 지점(`with_repo`)에 있어야 "어떤 로더를 부르느냐"와 무관하게 안전하다. 이 규칙은 지금도 구속한다: **새 repo 라우트는 자기 경로 검증을 하지 않는다.**
+TUI grid를 이미지처럼 반사하면 browser geometry와 responsive layout을 지원하기 어렵다. viewer는 session의 git/runtime/terminal primitive만 공유하고 자체 JSON/SSE/WebSocket/React surface를 갖는다. 인자 없이 시작한 daemon이 viewer를 함께 띄우며, `viewer-ui/dist`를 함께 배포해 Node 없는 `cargo install`도 실행 가능하게 한다.
 
-### 왜 미러가 아니라 별도 서비스인가
+### 요청 순서와 path gate는 중앙에서 고정한다
 
-미러는 TUI 그리드를 그대로 반사해 `App`+`ui`+`input`을 통째로 재사용했다. 뷰어는 그 계층을 하나도 쓰지 않고 하부 데이터/PTY 계층만 공유하는 두 번째 프론트엔드다. 그래서 미러의 "무빌드·바닐라·`include_str!`" 제약을 상속하지 않는다 — 별도 서비스엔 깰 불변식이 없으므로 React/Vite 빌드가 정상적 선택이었다.
+Host를 Origin보다 먼저 보고, static bundle을 인증 전 허용하고, repository lookup보다 authentication을 먼저 수행한다. route별 path 검증은 새 route가 빠뜨리기 쉬우므로 파일을 여는 `with_repo`와 git에 넘기는 `with_repo_git_path` 두 중앙 gate로 제한한다. 삭제된 file diff까지 막는 과도한 filesystem check는 허용하지 않는다.
 
-같은 이유로 터미널을 **독립 세션**으로 뒀다(당시 기준). TUI와 같은 세션 터미널은 PTY가 `App`에 있어야 해서 "서버는 App을 참조하지 않는다"는 전제와 헤드리스 모드가 깨졌다. 이 판단은 이후 세션 데몬이 PTY 소유권을 데몬으로 올리면서 자연스럽게 해소됐다.
+### opaque repository id와 anchor pagination
 
-### 접은 대안 (그 밖)
+클라이언트에 absolute path를 주지 않고 process 수명 동안 안정적인 opaque id만 사용한다. `/api/log`는 마지막 commit을 cursor로 사용하지 않는다. merge history에서 cursor의 조상만 걷게 되면 병렬 branch commit이 누락되므로, 같은 revwalk의 `from` anchor와 `skip`을 사용한다.
 
-- **스레드 로컬 `Repository` 캐시.** 서버가 연결마다 스레드를 새로 뜨고 요청 처리 후 종료하므로 캐시가 그 스레드와 함께 버려져 이득이 없다.
-- **Vite `dist/`를 커밋하지 않기.** `cargo install nightcrow`이 Node 없이 동작해야 한다. `build.rs`에서 npm을 부르면 crates.io 설치 사용자가 깨지고, cargo feature로 가르면 CI 매트릭스와 조건부 컴파일이 는다. 비용인 산출물 diff 노이즈는 `.gitattributes`의 `linguist-generated`로 완화한다.
-- **미러의 팬아웃(`Shared`/`ClientMsg`/`Buffer`)을 `web/common`으로 올리기.** 그 팬아웃은 터미널·그리드 전용이라 뷰어의 JSON/SSE/터미널과 일반화되지 않는다. 공유는 안정적 프리미티브만(auth, 세션 저장, rate-limit, 요청/응답 파싱).
-- **커서 기반 log 페이징.** 마지막 커밋 oid에서 다시 walk하면 병합 히스토리에서 그 커밋의 *조상만* 나오므로, HEAD 기준 날짜순 walk에 끼어 있던 병렬 브랜치 커밋이 영구히 누락된다. anchor(`from`) + `skip`은 같은 walk의 offset이라 그 문제가 없다. 현재 동작과 알려진 대가는 [`architecture.md`](architecture.md)의 Web Viewer 절에 있다.
-- **TUI의 split-view/fullscreen/swap/visible-window 로직 재사용.** 웹은 터미널 탭/기본 그리드의 자체 단순 모델로 갔다.
+### clone은 git subprocess와 URL allowlist다
 
-## repo 다이얼로그 경로 탐색
+libgit2 vendored build는 SSH transport·credential helper·scp-like remote 지원이 부족하므로 clone은 `git` binary에 위임한다. `ext::`가 command execution으로 이어질 수 있어 URL scheme을 `https/http/ssh/git+ssh`와 scp-like 형태로 제한하고 `file://`, local path, `git://`는 거부한다. destination은 먼저 `create_dir`로 확보하고, clone job과 동시 실행 수는 bounded하게 유지한다.
 
-### 접은 대안: 셸을 PTY로 띄우기
+## Plugin trust model
 
-`bash --norc -c 'read -e -p ...'`(readline)이나 zsh `vared`를 PTY로 띄우면 완성이 공짜로 따라온다. 접은 이유:
+### dylib 대신 process + NDJSON
 
-- **Windows에 대응 프리미티브가 없다.** PowerShell `Read-Host`는 완성이 없고(PSReadLine은 대화형 호스트 루프 전용), cmd `set /p`도 없다. Windows를 목표로 두는 순간 네이티브 완성기를 어차피 써야 하므로 셸은 *대체*가 아니라 *추가* 경로가 된다.
-- 결과 회수가 PTY 스트림 하나뿐이라 sentinel/임시 파일 프로토콜이 필요하다.
-- readline 후보 목록은 여러 줄 + "Display all N possibilities?"를 뿜어 hint bar 1줄에 안 들어가고, PTY 그리드 렌더 영역을 새로 만들어야 한다.
-- `$SHELL`을 그대로 쓰면 rc 오염·시작 지연·rc가 입력 대기 시 먹통 리스크가 붙는다.
+Rust에는 안정적인 plugin ABI가 없어 dylib가 compiler/runtime 결합과 주소 공간의 안전성 문제를 만든다. plugin을 child process로 분리하고 versioned NDJSON으로 통신하면 host가 line/payload bound를 적용하고 plugin crash를 pane에 전파하지 않을 수 있다.
 
-`std::fs::read_dir` 기반 네이티브 구현은 새 의존성 0, `cfg(windows)` 분기 0으로 같은 체감을 준다.
+### pane opt-in은 token 증명과 guard를 거친다
 
-### 접은 대안: 기존 트리 인프라 재사용
+기본적으로 startup command가 지목한 pane만 plugin에 노출한다. `watch_on_signal`을 켠 경우에도 pane child에만 주입된 난수 `PaneToken`을 제시해야 하며, token만으로 권한을 부여하지 않고 `Guard`가 generation·liveness·launch command·다른 watcher·rate budget을 다시 판정한다. relaunch budget은 새 PaneId가 생겨도 같은 slot을 묶도록 token 기준으로 센다.
 
-`ViewMode::Tree` 자산을 쓰고 싶었지만 대부분 못 썼다. `git::tree::read_children`은 `git2::Repository`가 필수이고 **repo-relative** 경로만 받으며 `resolve_in_workdir`이 워크트리 밖 경로와 심볼릭 링크를 거부한다 — 피커는 *어떤 repo에도 속하지 않는* 경로를 돌아다녀야 하고 **프로젝트 0개 상태**에서도 떠야 한다. 그 함수가 막으려고 만들어진 것이 정확히 피커의 일이다. `TreeView`는 `App` 소유(프로젝트별)이고 search index / show_set / row_width_cache가 repo-relative 전용이며, `tree_list::render`는 `&App`·`app.focus`에 의존해 빈 화면에서 호출조차 안 된다. 실제 재사용은 `render_selectable_list` 하나였다.
-
-### 계획과 갈린 지점
-
-- **진입 키는 `Ctrl+T`가 아니라 `↓`다.** `T` 니모닉이 `<prefix> t`(새 터미널)와 겹쳐 "충돌하지 않는다"를 설명해야 했는데, 설명이 필요한 키는 이미 진 것이다. 다이얼로그의 다른 키가 전부 bare인 것과도 맞고, 필드의 수평 키가 이미 "이 경로를 편집한다"는 뜻이라 수직 축이 비어 있었다. 후보 목록이 떠 있을 때의 두 번째 `Tab`도 같은 곳으로 승격한다.
-- **hint 행에 키 legend를 붙였다** (계획에 없던 항목). 다이얼로그가 hint legend를 통째로 입력 줄로 대체해서 `Tab` 완성조차 화면에 안 나오고 있었다. 진입 키를 아무리 잘 골라도 광고할 자리가 없으면 못 찾는다. (이후 입력이 notice 행의 repo 헤더 자리로 올라가면서 legend가 hint 행을 통째로 갖게 됐다 — [architecture/ui.md](architecture/ui.md)의 저장소 열기 다이얼로그 절.)
-- **상태는 `BTreeSet` + children 캐시가 아니라 평면 row 리스트다.** 확장이 자식을 부모 뒤에 splice하고 접기가 아래 깊은 row를 drain하면 선택이 화면 인덱스 그대로여서 visible_rows 계산도 캐시 무효화도 필요 없다. 계획이 트리 뷰의 구조를 따라가려 했지만 그쪽 복잡도는 repo-relative 검색 인덱스에서 온 것이고 브라우저에는 없다.
-- **플로팅 팝업이 아니라 body 영역 전체.** `src/ui/`에 팝업/오버레이 인프라가 전혀 없어서 (`Clear` 위젯도 centered-rect 헬퍼도 없다) 떠 있는 박스는 이 프로젝트 최초의 플로팅 UI가 되고 마우스 캡처가 기본 on이라 `hit_test.rs`에 새 히트 영역을 끼워야 한다.
-- **마우스 클릭 선택은 계획대로 범위 밖.** 키보드로 완결된다.
-
-### 유지되는 원칙
-
-사용자가 입력한 텍스트는 다시 쓰지 않는다 — `~`나 상대 경로는 **읽을 때만** 확장하고 버퍼에는 완성된 컴포넌트만 이어붙인다. `~/x`를 `/Users/me/x`로 바꿔 써넣지 않는다. 셸이 아니므로 커맨드·`$VAR`·글롭·커맨드 치환은 없고 Enter는 항상 "이 경로 열기"다.
-
-## git status XY 표기
-
-### 왜 git 표기를 그대로 쓰는가
-
-기존 표시는 collapse된 한 글자여서 "무엇이 바뀌었는가"는 보여도 "그 변경이 어디에 있는가"(staged / unstaged / 둘 다)를 못 보여줬다. **새 멘탈 모델을 만드는 대신** 사용자가 `git status --short`에서 이미 아는 `XY path` 관례를 그대로 가져왔다. git2가 깔끔히 표현하지 못하는 경우가 아니면 자체 표기를 만들지 않는다는 것이 이 작업의 non-goal이었다.
-
-### 접은 대안: `git status --short` 파싱
-
-셸아웃하지 않는다. 스냅샷 워커가 느려지고 테스트가 어려워지며, git2가 이미 주는 정보를 중복한다.
-
-### 결정: 두 칸이지만 enum은 하나
-
-`ChangedFile`이 `index`/`worktree` 두 컬럼을 갖되 **같은 `StatusKind` 하나**를 쓴다. 커밋 drill-down은 `worktree = Unmodified`로 같은 타입을 재사용하므로 status 리스트와 커밋 리스트에서 status의 의미가 하나다. 이름을 `ChangeStatus` → `StatusKind`로 바꾼 이유도 같다 — 이제 이 엔티티는 "파일의 변경 종류"가 아니라 **단일 diff 컬럼의 상태**를 모델링하고, 그 컬럼은 `Unmodified`일 수 있는데 옛 이름으로는 표현되지 않았다.
-
-### 결정: 색은 두 글자 한 덩어리에 최고 심각도 하나
-
-`unmerged > deleted > renamed > added > modified > typechanged > untracked` 순으로 더 심각한 쪽 색을 두 글자 전체에 칠한다. 기존 단색 행 모양과 `status_color` 시그니처를 그대로 유지하기 위해서다.
-
-### 결정: 충돌 행은 첫 판에 `UU` 고정
-
-`AA`/`DD`/`AU`/`UD`/`DU`를 나중에 데이터 구조를 다시 만들지 않고 넣을 수 있도록, 구조화된 컬럼은 유지한 채 렌더만 `UU`로 고정했다. **조용히 modified로 뭉개지 않는다**는 것이 요점이다.
-
-### 결정: rename은 `path`와 표시를 분리
-
-`path`는 diff·파일 로드·hot-file 추적·선택 복원이 쓰는 유효(new-side) 경로로 남고, `old_path`는 표시/검색 메타다. `display_path()`가 `old -> new`를 만들되 **비-rename에서는 `Cow::Borrowed`로 할당 없이** 돌려준다 — 리스트 렌더는 매 프레임 돌고 그쪽이 hot case다. `impl Display`가 아니라 `Cow<str>`인 이유는 렌더러가 수평 스크롤 때문에 `char_offset(&str) -> &str`로 슬라이스하고 `.chars().count()`로 재기 때문이다. 검색은 `search_lower`에 양쪽 경로를 함께 담아, 필터 로직을 바꾸지 않고도 옛 경로/새 경로 어느 쪽으로도 찾힌다.
-
-### 유지되는 제약
-
-- **정렬은 결정적이어야 한다.** 옛 `BTreeMap` "first-wins" collapse가 사라져도 안정 정렬은 남는다 — 새로고침마다 순서가 흔들리면 선택이 튄다.
-- **typechange를 modified로 뭉개지 않는다.** `load_snapshot`(status 비트)과 `load_commit_files`(`git2::Delta::Typechange`) 양쪽에서 `T`로 보존한다.
-- 생산 코드에 대칭성만을 위한 헬퍼를 추가하지 않는다. 테스트에만 쓸 것은 `#[cfg(test)]` 아래 두고, 실제 호출처가 생길 때 만든다.
-
-### 미룬 것
-
-같은 파일의 staged/unstaged diff를 따로 보여주는 것. 현재는 HEAD→workdir(인덱스 포함) 결합 diff(`load_file_diff`)가 기본이고, 이 로더는 경로로만 키잉되어 status를 읽지 않으므로 모델 변경의 영향을 받지 않는다. stage/unstage 액션이 들어올 때 다시 본다.
-
-## 그 밖
-
-- **플러그인은 dylib가 아니라 자식 프로세스 + NDJSON이다.** Rust에는 안정 ABI가 없어 `libloading` 기반 dylib 플러그인은 컴파일러 버전이 맞아야만 동작한다. 현재 설계는 [`architecture.md`](architecture.md)의 Plugin Host 절에 있다.
-- **`git://`는 클론 URL 화이트리스트에서 뺐다.** 인증도 암호화도 없어 경로 위의 누구든 임의 코드를 클론시킬 수 있고, git이 stall 제어를 주지 않는 유일한 전송이라 죽은 원격이 클론 슬롯을 재시작까지 쥔다. `https://`가 같은 익명 fetch를 두 문제 없이 대신한다.
-- **호스트 터미널 커서 색을 OSC 12로 강제하지 않는다.** ratatui는 ANSI 코드로 렌더하고 호스트 팔레트가 그리는데, 별도 hex를 밀어 넣으면 어두운 ANSI green을 쓰는 터미널에서 커서만 밝은 라임으로 튄다. 관련 코드는 전부 제거했고 호스트 기본 커서 색을 그대로 쓴다.
-- **`is_empty_head`의 문자열 매칭은 의도적이다.** 빈 repo에서 libgit2가 `class=Reference + GenericError` 조합으로 응답해 ErrorCode 매칭만으로는 커버되지 않는다. libgit2 내부 메시지는 로케일 독립이라 문자열 매칭이 portable하다.
+← [Architecture index](architecture.md)

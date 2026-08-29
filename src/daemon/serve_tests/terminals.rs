@@ -30,6 +30,7 @@ fn attaching_subscribes_to_the_terminals_of_every_open_repository() {
     let daemon = daemon(&dir, std::slice::from_ref(&path));
 
     let mut client = Client::attach_raw(daemon.path());
+    client.hello();
 
     let (id, _) = client.next_terminal_event();
     assert!(!id.is_empty(), "the event says which repository it is for");

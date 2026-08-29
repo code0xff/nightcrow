@@ -1,3 +1,5 @@
+# Dependency Rules
+
 ## Selecting
 
 - 새 의존성 전에 stdlib 또는 이미 있는 의존성으로 되는지 먼저 확인한다.

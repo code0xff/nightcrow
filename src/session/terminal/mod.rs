@@ -1,7 +1,7 @@
 //! Terminals owned by the viewer, one hub per repository.
 //!
 //! These are **not** the TUI's panes — the viewer owns its own [`PtyBackend`],
-//! so `nightcrow serve` offers terminals with no TUI running at all.
+//! so `nightcrow -d` offers terminals with no TUI running at all.
 //!
 //! Raw PTY bytes go to the browser untouched. The hub does parse the stream —
 //! through a per-pane emulator — for what it cannot get any other way: the
@@ -151,6 +151,17 @@ impl TerminalHub {
     /// panes are created once and a config reload does not replace them.
     pub(crate) fn startup_commands(&self) -> &[crate::config::StartupCommand] {
         &self.startup
+    }
+
+    /// Pane identities owned by this repository's hub, in canonical order.
+    pub(crate) fn pane_ids(&self) -> Vec<crate::backend::PaneId> {
+        self.state
+            .lock()
+            .expect("terminal state poisoned")
+            .panes
+            .iter()
+            .map(|pane| pane.id)
+            .collect()
     }
 
     /// How many startup terminals this hub will open. No configured commands

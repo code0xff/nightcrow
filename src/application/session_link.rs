@@ -57,6 +57,9 @@ impl SessionLink {
                 // Answered during the handshake; a later one would mean the
                 // daemon restarted under this client.
                 ServerMessage::Hello { .. } => {}
+                // A status connection closes before attachment, so this is not
+                // a response the long-lived session client can request.
+                ServerMessage::Status { .. } => {}
                 // Only a refusal reaches here. A pane created, exited, or
                 // reordered goes to that repository's backend.
                 ServerMessage::Terminal { repo, event } => {

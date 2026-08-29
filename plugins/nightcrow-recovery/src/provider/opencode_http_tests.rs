@@ -71,15 +71,12 @@ fn a_relative_delay_is_accepted_up_to_the_horizon_and_refused_past_it() {
 
 #[test]
 fn an_object_keyed_by_session_id_yields_one_status_per_key() {
-    let statuses = parse_status_body(r#"{"ses_abc":{"type":"retry","attempt":3,"next":4000}}"#);
+    let statuses = parse_status_body(r#"{"ses_abc":{"type":"retry","next":4000}}"#);
     assert_eq!(
         statuses,
         vec![SessionStatus {
             session_id: Some("ses_abc".to_string()),
-            kind: StatusKind::Retry {
-                attempt: 3,
-                next: Some(4000)
-            },
+            kind: StatusKind::Retry { next: Some(4000) },
         }]
     );
 }
@@ -98,32 +95,8 @@ fn an_array_of_entries_yields_one_status_per_element() {
 
 #[test]
 fn a_retry_without_next_parses_with_no_deadline() {
-    let statuses = parse_status_body(r#"{"s":{"type":"retry","attempt":1}}"#);
-    assert_eq!(
-        statuses[0].kind,
-        StatusKind::Retry {
-            attempt: 1,
-            next: None
-        }
-    );
-}
-
-#[test]
-fn a_retry_with_an_unusable_attempt_number_parses_as_attempt_zero() {
-    for body in [
-        r#"{"s":{"type":"retry","attempt":-1}}"#,
-        r#"{"s":{"type":"retry","attempt":"many"}}"#,
-        r#"{"s":{"type":"retry"}}"#,
-    ] {
-        assert_eq!(
-            parse_status_body(body)[0].kind,
-            StatusKind::Retry {
-                attempt: 0,
-                next: None
-            },
-            "body {body}"
-        );
-    }
+    let statuses = parse_status_body(r#"{"s":{"type":"retry"}}"#);
+    assert_eq!(statuses[0].kind, StatusKind::Retry { next: None });
 }
 
 #[test]

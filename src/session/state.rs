@@ -36,6 +36,14 @@ pub struct SessionState {
     pub(super) reload_lock: Mutex<()>,
 }
 
+/// Transport-neutral repository facts needed for daemon introspection.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RepositoryStatusSnapshot {
+    pub id: String,
+    pub path: String,
+    pub panes: Vec<crate::backend::PaneId>,
+}
+
 impl SessionState {
     #[cfg(test)]
     pub fn new(options: SessionOptions) -> Self {
@@ -68,6 +76,10 @@ impl SessionState {
 
     pub fn prefs(&self) -> &PrefsStore {
         &self.prefs
+    }
+
+    pub fn status_snapshot(&self) -> Vec<RepositoryStatusSnapshot> {
+        self.catalog.status_snapshot()
     }
 
     pub fn shutdown(&self) {

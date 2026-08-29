@@ -143,6 +143,28 @@ impl Catalog {
             .collect()
     }
 
+    /// Repository identities paired with the panes their hubs currently own.
+    /// Entry Arcs are cloned out first so a hub lock is never taken while the
+    /// catalog runtime lock is held.
+    pub fn status_snapshot(&self) -> Vec<crate::session::RepositoryStatusSnapshot> {
+        let entries: Vec<_> = self
+            .runtime
+            .lock()
+            .expect("catalog runtime poisoned")
+            .entries()
+            .iter()
+            .map(Arc::clone)
+            .collect();
+        entries
+            .into_iter()
+            .map(|entry| crate::session::RepositoryStatusSnapshot {
+                id: entry.id.clone(),
+                path: entry.path.clone(),
+                panes: entry.terminals.pane_ids(),
+            })
+            .collect()
+    }
+
     #[cfg(test)]
     pub fn len(&self) -> usize {
         self.runtime

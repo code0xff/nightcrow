@@ -11,6 +11,8 @@ pub(super) struct TestDaemon {
     /// The session itself, so a test can change it the way the browser does —
     /// through the session functions, with no attach connection involved.
     state: std::sync::Arc<crate::session::SessionState>,
+    pub(super) session: std::sync::Arc<crate::daemon::serve::Session>,
+    pub(super) shutdown_rx: std::sync::mpsc::Receiver<crate::platform::signals::Shutdown>,
 }
 
 impl TestDaemon {
@@ -36,10 +38,17 @@ pub(super) fn daemon(dir: &tempfile::TempDir, repos: &[String]) -> TestDaemon {
     // them last.
     let state = crate::test_util::session_state(repos, dir.path());
     let served = std::sync::Arc::clone(&state);
-    let (shutdown_tx, _shutdown_rx) = std::sync::mpsc::sync_channel(1);
-    let session = crate::daemon::serve::start(served, shutdown_tx).expect("starts the watcher");
-    std::thread::spawn(move || crate::daemon::serve::serve(listener, session));
-    TestDaemon { socket, state }
+    let (shutdown_tx, shutdown_rx) = std::sync::mpsc::sync_channel(1);
+    let session = crate::daemon::serve::start(served, socket.path(), shutdown_tx)
+        .expect("starts the watcher");
+    let serving = std::sync::Arc::clone(&session);
+    std::thread::spawn(move || crate::daemon::serve::serve(listener, serving));
+    TestDaemon {
+        socket,
+        state,
+        session,
+        shutdown_rx,
+    }
 }
 
 /// How long a helper waits on the socket for the frame it is after.
@@ -64,6 +73,7 @@ pub(super) fn decodes_to_terminal(frame: &Frame) -> bool {
 /// A client attached to the daemon at `path`.
 pub(super) struct Client {
     pub(super) stream: UnixStream,
+    id: Option<u64>,
     /// Frames read while looking for a different one.
     ///
     /// The real client routes everything it reads rather than dropping what it
@@ -76,9 +86,10 @@ pub(super) struct Client {
 }
 
 impl Client {
-    /// Attach and consume the repository set the daemon sends unprompted.
+    /// Complete the hello handshake and consume the repository set.
     pub(super) fn attach(path: &std::path::Path) -> Self {
         let mut client = Self::attach_raw(path);
+        client.hello();
         client.next_repos();
         client
     }
@@ -87,6 +98,7 @@ impl Client {
     pub(super) fn attach_raw(path: &std::path::Path) -> Self {
         Self {
             stream: UnixStream::connect(path).expect("attaches"),
+            id: None,
             pending: std::collections::VecDeque::new(),
         }
     }
@@ -151,9 +163,13 @@ impl Client {
     /// Complete the handshake and return the id the daemon knows this
     /// connection by.
     pub(super) fn hello(&mut self) -> u64 {
+        if let Some(id) = self.id {
+            return id;
+        }
         self.send(ClientMessage::Hello { version: version() });
         for _ in 0..64 {
             if let ServerMessage::Hello { client, .. } = self.next() {
+                self.id = Some(client);
                 return client;
             }
         }

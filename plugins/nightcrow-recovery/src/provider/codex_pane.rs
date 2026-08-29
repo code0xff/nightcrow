@@ -55,11 +55,6 @@ pub(super) struct PaneState {
     pending: Vec<u8>,
     session_id: Option<String>,
     resets_at: Option<i64>,
-    /// Which window codex reported as reached. Parsed because the record is
-    /// seen only once, but kept out of `detail`, which carries
-    /// `codex_error_info` alone so no other provider-side string can widen
-    /// what this plugin says.
-    reached_type: Option<String>,
     output_tail: String,
     output_latched: bool,
 }
@@ -75,7 +70,6 @@ impl PaneState {
             pending: Vec::new(),
             session_id: None,
             resets_at: None,
-            reached_type: None,
             output_tail: String::new(),
             output_latched: false,
         }
@@ -174,15 +168,9 @@ impl PaneState {
                 }
                 None
             }
-            Record::TokenCount {
-                resets_at,
-                reached_type,
-            } => {
+            Record::TokenCount { resets_at } => {
                 if resets_at.is_some() {
                     self.resets_at = resets_at;
-                }
-                if reached_type.is_some() {
-                    self.reached_type = reached_type;
                 }
                 None
             }
