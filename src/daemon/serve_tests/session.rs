@@ -39,6 +39,10 @@ fn a_version_mismatch_is_reported_rather_than_ignored() {
     let daemon = daemon(&dir, &[]);
     let before_repos = daemon.state().status_snapshot();
     let mut client = Client::attach_raw(daemon.path());
+    client
+        .stream
+        .set_read_timeout(Some(std::time::Duration::from_secs(1)))
+        .expect("sets a timeout");
 
     let answer = client.ask(ClientMessage::Hello {
         version: "0.0.1-from-another-build".into(),
@@ -51,10 +55,6 @@ fn a_version_mismatch_is_reported_rather_than_ignored() {
         }
         other => panic!("expected a mismatch report, got {other:?}"),
     }
-    client
-        .stream
-        .set_read_timeout(Some(std::time::Duration::from_secs(1)))
-        .expect("sets a timeout");
     assert!(
         read_frame(&mut client.stream)
             .expect("the mismatched connection closes")

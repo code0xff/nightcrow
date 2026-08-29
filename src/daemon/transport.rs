@@ -12,3 +12,21 @@ pub(crate) use std::os::unix::net::{UnixListener, UnixStream};
 
 #[cfg(windows)]
 pub(crate) use uds_windows::{UnixListener, UnixStream};
+
+/// Whether connecting failed because no daemon can be listening at the path.
+pub(crate) fn is_unavailable(error: &std::io::Error) -> bool {
+    if matches!(
+        error.kind(),
+        std::io::ErrorKind::NotFound | std::io::ErrorKind::ConnectionRefused
+    ) {
+        return true;
+    }
+    // macOS reports ENOTSOCK when a stale socket path has been replaced by a
+    // regular file. It means the endpoint is just as unavailable as a refused
+    // connection; the next daemon can remove it after taking the instance lock.
+    #[cfg(unix)]
+    if error.raw_os_error() == Some(libc::ENOTSOCK) {
+        return true;
+    }
+    false
+}
