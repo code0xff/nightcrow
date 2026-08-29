@@ -1,178 +1,98 @@
 # Configuration
 
-Config file: `~/.nightcrow/config.toml` (all fields optional, defaults shown). nightcrow runs on built-in defaults when the file is absent and never creates it on its own. To get a starter file, run:
+nightcrow reads `~/.nightcrow/config.toml`. Every field is optional and omitted fields use the defaults below. A first run uses those defaults, then writes a generated web-viewer password to the config unless a password or hash is already configured. Run `nightcrow init` to create the complete commented starter; `nightcrow init --force` replaces an existing file.
 
-```bash
-nightcrow init            # writes a commented ~/.nightcrow/config.toml
-nightcrow init --force    # overwrite an existing file
-```
+## Session and client settings
 
-`init` leaves an existing config untouched unless `--force` is passed.
+| Table | Fields and defaults | Valid values / effect |
+| --- | --- | --- |
+| `[layout]` | `upper_pct = 55`, `file_list_pct = 25` | Each is `1..=99`; TUI panel proportions. |
+| `[theme]` | `name = "yellow"` | `yellow`, `cyan`, `green`, `magenta`, or `blue`. Seeds the session accent when no saved accent exists. |
+| `[input]` | `leader = "ctrl+f"` | One `ctrl+<ascii-letter>` chord. `ctrl+i` and `ctrl+m` are rejected because terminals report them as Tab and Enter. |
+| `[mouse]` | `enabled = true` | Captures clicks and wheel events for the TUI; `false` gives selection and mouse handling back to the outer terminal. |
+| `[agent_indicator]` | `enabled = true`, `hot_window_secs = 15`, `auto_follow = false` | Hot window is `3..=3600` seconds. `auto_follow` selects the freshest recently changed file after 2 seconds of inactivity. |
+| `[tree]` | `respect_gitignore = true`, `max_depth = 64`, `live_watch = true` | `max_depth` is `1..=1024`; `live_watch = false` refreshes the tree on entry instead of watching expanded directories. |
+| `[shell]` | `program` omitted; `command_args` platform default | Unix uses `$SHELL` or `/bin/sh` with `[-lc]`; Windows uses `%ComSpec%` or `cmd.exe` with `[/C]`. The command is always the final single argument; interpolation such as `"{}"` is not supported. |
 
-## `[layout]`
-
-```toml
-[layout]
-upper_pct = 55       # vertical % for the diff panel (1–99) — the TUI's own; the
-                     # viewer keeps a separate dragged value in viewer.json
-file_list_pct = 25   # horizontal % of upper panel for the file list (1–99)
-```
-
-## `[theme]`
-
-```toml
-[theme]
-name = "yellow"      # accent a session starts with, before anyone picks one:
-                     # "yellow" | "cyan" | "green" | "magenta" | "blue"
-```
-
-## `[input]`
-
-```toml
-[input]
-leader = "ctrl+f"    # leader (prefix) chord for app commands; tmux-style.
-                     # Allowed: "ctrl+<letter>". Reserved keys (F1..F10,
-                     # Shift+arrows, Shift+PgUp/PgDn) cannot be the leader.
-```
-
-## `[mouse]`
-
-```toml
-[mouse]
-enabled = true       # capture the mouse: click to focus/forward, wheel scrolls
-                     # the pane under the pointer; select text with the
-                     # terminal's bypass modifier + drag (Shift in xterm-family,
-                     # Option in iTerm2, Fn/Option in macOS Terminal.app).
-                     # false = plain-drag selection, no click forwarding.
-```
+The web viewer has its own panel proportions and sidebar width in `~/.nightcrow/viewer.json`; `[layout]` controls the TUI only. Shared files and ownership are described in [Session state](session-state.md).
 
 ## `[web_viewer]`
 
+The viewer is always part of a session. Defaults are `bind = "127.0.0.1"`, `port = 8091`, and `session_ttl_hours = 24`.
+
 ```toml
 [web_viewer]
-bind = "127.0.0.1"   # loopback only by default; plain HTTP, so tunnel/proxy for remote
+bind = "127.0.0.1"
 port = 8091
-# password = "..."         # auto-generated + saved here on first launch if unset
-# hashed_password = "..."  # Argon2 PHC string; takes precedence over `password`
-session_ttl_hours = 24     # how long a browser login lasts (0 = never expires)
+# password = "..."
+# hashed_password = "$argon2id$v=19$..."
+session_ttl_hours = 24
 ```
 
-See [Web viewer → Configuration and access](web-viewer.md#configuration-and-access).
+`bind` must be an IP address and `port` must be non-zero. `session_ttl_hours` accepts `0..=87600` hours; `0` means sessions do not expire on the server, while browser cookies still have a 400-day maximum. If neither credential is set, startup generates a random password, saves it to this file, and prints it once. `hashed_password` is an Argon2 PHC string and takes precedence over `password`. Login attempts are rate-limited, logout revokes the server-side token, and persisted tokens live in `~/.nightcrow/sessions`.
+
+The command-line options `--bind ADDRESS` and `--port PORT` override these values for one daemon run. The listener uses plain HTTP, so remote access requires an SSH tunnel or TLS reverse proxy; see [Web viewer → Access and security](web-viewer.md#access-and-security).
 
 ## `[log]`
 
 ```toml
 [log]
 enabled = true
-dir = ".nightcrow/logs"   # relative paths resolve under the home directory
-rotation = "daily"        # "daily" | "hourly" | "size"
-max_size_mb = 10          # used when rotation = "size"
-max_days = 7              # delete logs older than N days (0 = keep forever)
-level = "info"            # "error" | "warn" | "info" | "debug" | "trace"
-prompt_log = false        # record terminal prompt input line by line
-commit_log_page_size = 100        # commits fetched per commit-log page
-commit_log_prefetch_threshold = 25 # start the next-page fetch when the selection is within
-                                  # this many rows of the loaded tail (1..=page_size)
+dir = ".nightcrow/logs"
+rotation = "daily"
+max_size_mb = 10
+max_days = 7
+level = "info"
+prompt_log = false
+commit_log_page_size = 100
+commit_log_prefetch_threshold = 25
 ```
 
-## `[agent_indicator]`
-
-```toml
-[agent_indicator]
-enabled = true            # color recently-touched files in the file list
-hot_window_secs = 15      # seconds within which a file stays hot (3–3600)
-auto_follow = false       # jump selection to the freshest hot file when idle
-```
-
-See [Session state → Recent-activity focus indicator](session-state.md#recent-activity-focus-indicator).
-
-## `[tree]`
-
-```toml
-# Read-only directory-tree navigator (enter with <prefix> b).
-[tree]
-respect_gitignore = true  # hide .gitignore-matched paths (target/, node_modules/, …)
-max_depth = 64            # deepest directory level the tree will expand into (1..=1024)
-live_watch = true         # watch expanded dirs and refresh the tree live; set false
-                          # to refresh only on tree entry (large trees / odd filesystems)
-```
-
-## `[shell]`
-
-The shell every terminal pane is spawned with. When the whole section is absent, the platform default is used:
-
-| Platform | `program`                     | `command_args` |
-|----------|-------------------------------|----------------|
-| Unix     | `$SHELL` env var or `/bin/sh` | `["-lc"]`      |
-| Windows  | `%ComSpec%` or `cmd.exe`      | `["/C"]`       |
-
-`command_args` is the flag list placed *after* the shell name. The command text is always the last single argv item, so the shell — not us — handles its quoting/word-splitting. Interpolation like `["-c", "{}"]` is not supported: that would break the contract that the shell owns quoting.
-
-```toml
-[shell]
-# program = "C:\\Program Files\\Git\\bin\\bash.exe"   # optional; platform default when omitted
-# command_args = ["-lc"]                               # optional; platform default when omitted
-```
+Relative `dir` values are under the user's home/state directory. `rotation` is `daily`, `hourly`, or `size`; `max_size_mb` is `1..=10000` and is used for `size`; `max_days = 0` keeps logs forever, otherwise it is at most 3650 days. `level` is `error`, `warn`, `info`, `debug`, or `trace`. `prompt_log` records terminal prompt input line by line and is off by default. `commit_log_page_size` is `50..=500`; the prefetch threshold is `1..=page_size`.
 
 ## `[[startup_command]]`
 
-Each entry opens its own terminal pane at launch and runs `command` immediately (via the configured shell). Up to 8 entries combined with CLI `--exec` — 8 matches the `<prefix> 3`–`9`,`0` jump keys, so every startup pane is reachable by a direct key. This caps only the startup batch; open more anytime with `<prefix> t`. With no entries, nightcrow opens a single empty shell.
+Each entry opens one terminal pane per project and runs `command` through the configured shell. `name` is an optional tab label. `plugin` optionally names a declared plugin for that pane.
 
 ```toml
 [[startup_command]]
-name = "Claude"           # optional tab label; falls back to the command text
-command = "claude"        # required; must not be empty
-plugin = "recovery"       # optional; names the [[plugin]] allowed to act on this
-                          # pane. Omitted — the default — means no plugin sees
-                          # it unless that plugin sets watch_on_signal.
+name = "Codex"
+command = "codex"
+plugin = "recovery"
 
 [[startup_command]]
 command = "cargo test --watch"
 ```
 
+Configured entries and repeated CLI `--exec COMMAND` values share an 8-pane startup limit, in config-first order. `command` cannot be empty. A project with no startup entries starts with one shell; each project may hold up to 8 panes total.
+
 ## `[[plugin]]`
 
-External plugin processes — see [Plugins](plugins.md). Up to 8 entries, names unique. Nothing runs unless an entry exists **and** `enabled = true` **and** either a pane opted in or `watch_on_signal` is set.
+Each plugin entry requires a unique `name` and executable `command`; `args` and `[plugin.env]` are optional and apply to the plugin process only.
 
 ```toml
 [[plugin]]
-name = "recovery"                 # the name panes opt in with
-command = "nightcrow-recovery"    # found on PATH or in ~/.nightcrow/plugins
-args = []                         # passed to the plugin verbatim
-enabled = false                   # off by default
-watch_on_signal = false           # off by default; when true, a pane no
-                                  # [[startup_command]] named is also handed over
-                                  # once something inside it quotes that pane's
-                                  # token to this plugin. Such a pane is never
-                                  # relaunched, only typed into while it lives.
-allowed_resume_flags = []         # flags/subcommands the plugin may append to
-                                  # re-open a session; empty refuses arguments
+name = "recovery"
+command = "nightcrow-recovery"
+args = []
+enabled = false
+watch_on_signal = false
+allowed_resume_flags = []
 
-[plugin.env]                      # plugin process only, never terminal panes
-NIGHTCROW_RECOVERY_LOG = "info"
+[plugin.env]
+PLUGIN_LOG = "info"
 ```
 
-## Reloading the config
+Plugins are off unless `enabled = true`. A plugin normally receives events only from panes whose `[[startup_command]]` sets `plugin =` to its name. `watch_on_signal = true` also permits a process inside an otherwise unconfigured pane to opt in with its pane token; such a pane can be monitored and receive input but cannot be relaunched. `allowed_resume_flags` is an explicit allowlist for flags/subcommands a plugin may append when relaunching a configured pane; leave it empty to forbid relaunch arguments. At most 8 plugin entries are allowed.
 
-Editing `config.toml` normally means restarting the session — which kills every pane, including whatever an agent CLI was in the middle of. Two of the tables can be re-read instead, without stopping anything:
+See [Plugins](plugins.md) for installation and the bundled recovery plugin.
 
-- **In the TUI**: `<prefix> u`. The result appears on the notice row.
-- **In the browser**: the ⟳ button in the header, next to sign out. It reloads the *config*, not the page — nothing on screen changes, and the result comes back as a toast.
+## Reloading
 
-| Table | When it takes effect |
-| --- | --- |
-| `[[plugin]]` | **Immediately, in every open project.** Newly enabled plugins start and are handed the panes that opted into them; disabled or removed ones stop and their panes carry on unwatched. A plugin whose `command`, `args` or `env` changed gets a new process; changing only `allowed_resume_flags` or `watch_on_signal` leaves the running one alone, so a plugin part-way through a long wait is not disturbed. A replacement that will not start (a command that is not there) leaves its panes unwatched too, exactly as removing it would |
-| `[[startup_command]]` | **On the next project you open.** A project that is already open keeps the panes it started with — those are live processes, and no file edit replaces them |
-| Everything else | Needs a restart: `[web_viewer]` (the listener is already bound), `[log]`, and the client-owned `[layout]`, `[input]`, `[tree]`, `[mouse]` sections, which each TUI reads when it attaches |
+Use `<prefix> u` in the TUI or the reload control in the browser. nightcrow parses and validates the whole file before applying anything; a missing, malformed, or invalid file leaves the running session unchanged.
 
-Notes:
+- `[[plugin]]` is re-applied immediately to open projects. Changing a plugin's executable, arguments, or environment restarts that plugin and can abandon a pending recovery.
+- `[[startup_command]]` applies to projects opened after the reload. Existing project panes keep running; CLI `--exec` panes remain part of the merged startup list.
+- All other settings require a daemon restart. A TUI reads its client settings when it attaches, while the running daemon keeps its listener and server settings until restart.
 
-- **Nothing half-applies.** The whole file is parsed and validated first, so a typo anywhere leaves the session exactly as it was, and the message names the key that was wrong.
-- **A missing file is refused** rather than read as "nothing is configured" — otherwise deleting the file and reloading would be a quiet way to stop every plugin.
-- Panes opened with `--exec` are kept: they are not in the file, so a reload merges them back where a restart would have put them.
-- Disabling a plugin and enabling it again lands where enabling it the first time would — the pane's opt-in survives, so `enabled` means the same thing whichever way it was last flipped.
-- **Restarting a plugin discards whatever it was in the middle of.** A plugin's state lives in its process, so replacing that process loses it — for `nightcrow-recovery` a pane parked on a quota reset hours away simply stops being watched, and nothing will resume it. The plugin logs how many panes it abandoned on the way out. This only happens when you change *that plugin's* own `command`, `args` or `env`; every other edit leaves a waiting one running.
-- A pane whose process had already exited and whose slot was being held for a relaunch gives that slot up when its plugin is stopped or replaced. The successor is never handed the pane's token, so nothing could honour the hold; the countdown ends instead of running out its window.
-- If the result says **`(1 was too busy to be told)`**, that project kept the plugins it had. Its terminals were too far behind to take the request, and waiting on one project would have held up every other. Nothing else about the reload is affected — reload again once it has caught up. The server log names the project.
-
-Design notes: [Architecture → Session](architecture/session.md#config-reload-webviewerreloadrs).
+Restarting a session stops its terminal programs. Use [Getting started](getting-started.md#detach-and-stop) for the shutdown procedure.

@@ -28,9 +28,8 @@ pub const JUMP_TOLERANCE_SECS: i64 = 5;
 /// actually cleared, so every wait has a floor.
 pub const MIN_WAIT_SECS: i64 = 15;
 
-/// Longest wait. Claude's longest documented window is seven days; eight days
-/// is past anything legitimate, so a deadline that would exceed it is clamped
-/// rather than parking a pane indefinitely. Must stay under the host's
+/// Longest wait. A deadline beyond eight days is clamped rather than parking a
+/// pane indefinitely. Must stay under the host's
 /// `PENDING_RELAUNCH_TTL` (nine days): a wait outlasting that would end with
 /// nothing left to resume.
 pub const MAX_WAIT_SECS: i64 = 8 * 24 * 60 * 60;

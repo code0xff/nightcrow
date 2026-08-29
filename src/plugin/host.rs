@@ -5,13 +5,14 @@
 //! make either block — the terminal hub calls them on the thread that also
 //! serves every pane.
 
+use super::host_command::configure_command;
 use super::host_pump;
 use super::protocol::{PROTOCOL_VERSION, PluginCommand, PluginEvent, encode_event};
 use crate::config::PluginConfig;
 use crate::platform::threading::{REAP_TIMEOUT, try_timed_join};
 use anyhow::{Context, Result};
-use std::path::{Path, PathBuf};
-use std::process::{Child, Command, Stdio};
+use std::path::Path;
+use std::process::Child;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc::{self, Receiver, SyncSender, TrySendError};
 use std::sync::{Arc, Mutex};
@@ -61,28 +62,6 @@ pub struct PluginHost {
     shut_down: bool,
 }
 
-/// Keep a plugin from opening a console window of its own.
-///
-/// A backgrounded session runs `DETACHED_PROCESS`, so it has no console to hand
-/// down. Windows answers that by allocating a *new* console for a
-/// console-subsystem child — one visible window per plugin, and a window the
-/// user can close, which kills the plugin under it. Every pipe this child uses
-/// is one the spawn opened, so it has nothing to show a console for.
-///
-/// Unix inherits no console this way and needs no flag.
-fn no_console_window(command: &mut Command) {
-    #[cfg(windows)]
-    {
-        use std::os::windows::process::CommandExt;
-        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-        command.creation_flags(CREATE_NO_WINDOW);
-    }
-    #[cfg(not(windows))]
-    {
-        let _ = command;
-    }
-}
-
 impl PluginHost {
     /// Launch `cfg.command` and start pumping.
     ///
@@ -108,21 +87,7 @@ impl PluginHost {
         runtime_dir: Option<&Path>,
         depth: usize,
     ) -> Result<PluginHost> {
-        let program = resolve_program(&cfg.command, plugin_dir);
-        let mut command = Command::new(&program);
-        command
-            .args(&cfg.args)
-            .envs(&cfg.env)
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped());
-        // After `cfg.env`: which hub a plugin belongs to is the host's to say,
-        // not something a config can point at another hub's socket. See
-        // `PLUGIN_RUNTIME_DIR_ENV`.
-        if let Some(dir) = runtime_dir {
-            command.env(crate::backend::identity::PLUGIN_RUNTIME_DIR_ENV, dir);
-        }
-        no_console_window(&mut command);
+        let (program, mut command) = configure_command(cfg, plugin_dir, runtime_dir);
         let mut child = command.spawn().with_context(|| {
             format!(
                 "cannot launch plugin \"{}\" from {}",
@@ -272,29 +237,6 @@ impl Drop for PluginHost {
     fn drop(&mut self) {
         self.shutdown();
     }
-}
-
-/// See [`PluginHost::spawn`] for the order and why it is that way.
-fn resolve_program(command: &str, plugin_dir: Option<&Path>) -> PathBuf {
-    if command.contains(std::path::MAIN_SEPARATOR) || command.contains('/') {
-        return PathBuf::from(command);
-    }
-    if let Some(dir) = plugin_dir {
-        let candidate = dir.join(command);
-        if candidate.is_file() {
-            return candidate;
-        }
-        // On Windows an installed plugin is stored as `name.exe` but
-        // configured as `name`; try the extension before PATH.
-        #[cfg(windows)]
-        {
-            let exe = dir.join(format!("{command}.exe"));
-            if exe.is_file() {
-                return exe;
-            }
-        }
-    }
-    PathBuf::from(command)
 }
 
 #[cfg(all(test, unix))]

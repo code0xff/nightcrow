@@ -1,3 +1,5 @@
+# Security Rules
+
 ## Input Validation
 
 - 시스템 경계(사용자 입력, 외부 API 응답, 파일 읽기, HTTP 요청)에서 오는 데이터는 항상 검증한다.

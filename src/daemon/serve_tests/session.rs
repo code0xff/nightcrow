@@ -7,7 +7,7 @@ use std::io::Write;
 fn a_client_that_says_hello_is_answered_with_the_daemon_version() {
     let dir = tempfile::TempDir::new().unwrap();
     let daemon = daemon(&dir, &[]);
-    let mut client = Client::attach(daemon.path());
+    let mut client = Client::attach_raw(daemon.path());
 
     let answer = client.ask(ClientMessage::Hello { version: version() });
 
@@ -37,7 +37,8 @@ fn a_version_mismatch_is_reported_rather_than_ignored() {
     // one side cannot decode.
     let dir = tempfile::TempDir::new().unwrap();
     let daemon = daemon(&dir, &[]);
-    let mut client = Client::attach(daemon.path());
+    let before_repos = daemon.state().status_snapshot();
+    let mut client = Client::attach_raw(daemon.path());
 
     let answer = client.ask(ClientMessage::Hello {
         version: "0.0.1-from-another-build".into(),
@@ -50,6 +51,33 @@ fn a_version_mismatch_is_reported_rather_than_ignored() {
         }
         other => panic!("expected a mismatch report, got {other:?}"),
     }
+    client
+        .stream
+        .set_read_timeout(Some(std::time::Duration::from_secs(1)))
+        .expect("sets a timeout");
+    assert!(
+        read_frame(&mut client.stream)
+            .expect("the mismatched connection closes")
+            .is_none()
+    );
+    let request = serde_json::to_vec(&ClientMessage::OpenRepo {
+        path: "not-used-after-mismatch".into(),
+    })
+    .expect("encodes");
+    let _ = write_frame(&mut client.stream, &Frame::control(request));
+    assert_eq!(daemon.state().status_snapshot(), before_repos);
+    assert_eq!(daemon.session.clients.len(), 0);
+    assert!(daemon.session.bridges.lock().unwrap().is_empty());
+    assert_eq!(
+        daemon
+            .state()
+            .catalog()
+            .entries()
+            .iter()
+            .map(|entry| entry.terminals.client_count())
+            .sum::<usize>(),
+        0
+    );
 }
 
 #[test]
@@ -154,6 +182,7 @@ fn attaching_serves_the_repository_set_before_anything_is_asked() {
     let daemon = daemon(&dir, std::slice::from_ref(&path));
 
     let mut client = Client::attach_raw(daemon.path());
+    client.hello();
 
     assert_eq!(repo_paths(&client.next_repos()), vec![resolved(&path)]);
     drop(repo);

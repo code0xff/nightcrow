@@ -4,7 +4,7 @@
 
 use super::*;
 use crate::protocol::PROTOCOL_VERSION;
-use crate::provider::{LimitEvent, LimitKind, PaneContext, Provider, ResumePlan};
+use crate::provider::{LimitEvent, PaneContext, Provider, ResumePlan};
 use crate::wait::{BACKOFF_BASE_SECS, RESET_GRACE_SECS};
 use std::time::Duration;
 
@@ -32,7 +32,7 @@ pub(super) struct FakeProvider {
 impl Default for FakeProvider {
     fn default() -> Self {
         Self {
-            alive_plan: Some(ResumePlan::Input("continue\r".to_string())),
+            alive_plan: Some(ResumePlan::Hold("still running")),
             exited_plan: Some(ResumePlan::Relaunch(vec![
                 "--resume".to_string(),
                 SESSION.to_string(),
@@ -71,7 +71,7 @@ pub(super) fn ctx() -> PaneContext {
         token: TOKEN.to_string(),
         generation: 1,
         cwd: "/w/repo".to_string(),
-        command: Some("claude".to_string()),
+        command: Some("codex".to_string()),
     }
 }
 
@@ -83,41 +83,14 @@ pub(super) fn usage(session: Option<&str>, resets_at: Option<i64>) -> LimitEvent
     LimitEvent::usage(session.map(str::to_string), resets_at, "test limit")
 }
 
-pub(super) fn transient() -> LimitEvent {
-    LimitEvent {
-        session_id: Some(SESSION.to_string()),
-        resets_at: Some(RESET),
-        kind: LimitKind::Transient,
-        detail: "overloaded".to_string(),
-    }
-}
-
-pub(super) fn needs_human() -> LimitEvent {
-    LimitEvent {
-        session_id: Some(SESSION.to_string()),
-        resets_at: None,
-        kind: LimitKind::NeedsHuman,
-        detail: "billing_error".to_string(),
-    }
-}
-
 pub(super) fn opened(generation: PaneGeneration) -> PluginEvent {
     PluginEvent::PaneOpened {
         v: PROTOCOL_VERSION,
         token: TOKEN.to_string(),
         generation,
         title: None,
-        command: Some("claude".to_string()),
+        command: Some("codex".to_string()),
         cwd: "/w/repo".to_string(),
-    }
-}
-
-pub(super) fn output(generation: PaneGeneration) -> PluginEvent {
-    PluginEvent::PaneOutput {
-        v: PROTOCOL_VERSION,
-        token: TOKEN.to_string(),
-        generation,
-        text: "thinking".to_string(),
     }
 }
 

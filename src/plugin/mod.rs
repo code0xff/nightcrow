@@ -30,6 +30,7 @@ mod guard_budget;
 mod guard_refusal;
 mod guard_text;
 mod guard_watch;
+mod host_command;
 mod host_pump;
 
 pub use guard::{Approved, Guard, PaneFacts};

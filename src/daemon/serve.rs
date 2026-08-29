@@ -1,6 +1,7 @@
 //! The daemon's accept loop: one attached client, two threads. The daemon
-//! speaks unprompted — the session is shared — so a client gets a reader
-//! (blocked on the socket) and a writer (draining that client's queue).
+//! requires `Hello` as the first frame, then speaks unprompted because the
+//! session is shared. An attached client gets a reader (blocked on the socket)
+//! and a writer (draining that client's queue); a status query gets neither.
 //!
 //! Threaded like the viewer's accept loop but with a lower ceiling: a client
 //! here is a person at a terminal, not a browser tab.
@@ -8,14 +9,13 @@
 use anyhow::Context;
 
 use super::clients::AttachedClients;
-use super::frame::write_frame;
 use super::terminals::TerminalBridges;
-use super::transport::{UnixListener, UnixStream};
+use super::transport::UnixListener;
 use crate::platform::signals::Shutdown;
 use crate::session;
 use crate::session::SessionState;
 use std::collections::HashMap;
-use std::io::Write;
+use std::path::Path;
 use std::sync::mpsc::SyncSender;
 use std::sync::{Arc, Mutex};
 
@@ -23,6 +23,14 @@ use std::sync::{Arc, Mutex};
 /// this is generous for the real case while still bounding a client stuck in a
 /// reconnect loop.
 pub const MAX_ATTACHED_CLIENTS: usize = 16;
+/// Maximum number of sockets waiting for their first protocol frame. Kept as
+/// a separate bound from the attached-client registry because one-shot status
+/// and stop requests never become attached clients.
+pub const MAX_PRE_ATTACH_CONNECTIONS: usize = 16;
+
+mod admission;
+mod connection;
+mod pre_attach;
 
 /// Everything the connection threads share.
 pub struct Session {
@@ -40,9 +48,16 @@ pub struct Session {
     /// Signals the main thread to stop. Sent by the `Shutdown` client message
     /// handler, and also by the signal-forwarding thread in `cli.rs`.
     pub(super) shutdown_tx: SyncSender<Shutdown>,
+    pub(super) metadata: super::status::DaemonMetadata,
+    admission: Arc<admission::PreAttachAdmission>,
 }
 
 impl Session {
+    #[cfg(test)]
+    pub(super) fn pre_attach_active(&self) -> usize {
+        self.admission.active()
+    }
+
     /// Bring every attached client's subscriptions in line with `repos`.
     /// Oldest client first: subscribing takes a repository's pane sizing (the
     /// hub gives it to the newest connection), so in ascending id order the
@@ -75,6 +90,7 @@ impl Session {
 /// [`DaemonSocket`]: super::socket::DaemonSocket
 pub fn start(
     state: Arc<SessionState>,
+    endpoint: &Path,
     shutdown_tx: SyncSender<Shutdown>,
 ) -> anyhow::Result<Arc<Session>> {
     let session = Arc::new(Session {
@@ -83,6 +99,10 @@ pub fn start(
         bridges: Mutex::new(HashMap::new()),
         nudge: Arc::new(super::watch::Nudge::default()),
         shutdown_tx,
+        metadata: super::status::DaemonMetadata::capture(endpoint),
+        admission: Arc::new(admission::PreAttachAdmission::new(
+            MAX_PRE_ATTACH_CONNECTIONS,
+        )),
     });
     // The only sender of the served set, so clients are told it in one order
     // and changes made through the browser reach them at all. Started outside
@@ -108,84 +128,14 @@ pub fn start(
 pub fn serve(listener: UnixListener, session: Arc<Session>) {
     for stream in listener.incoming() {
         let Ok(stream) = stream else { continue };
+        let Some(permit) = session.admission.try_reserve() else {
+            tracing::debug!("daemon: refusing a connection over the pre-attach cap");
+            continue;
+        };
         let session = Arc::clone(&session);
         let _ = std::thread::Builder::new()
             .name("nightcrow-attach".into())
-            .spawn(move || attach(stream, &session));
-    }
-}
-
-/// Serve one client for as long as it stays attached.
-fn attach(stream: UnixStream, session: &Session) {
-    let Ok(write_half) = stream.try_clone() else {
-        tracing::debug!("daemon: could not split an attaching client's socket");
-        return;
-    };
-    // A third handle, so the set can end this connection if the client stops
-    // draining — the other two are blocked in `read` and `write`.
-    let Ok(hangup) = stream.try_clone() else {
-        tracing::debug!("daemon: could not split an attaching client's socket");
-        return;
-    };
-    let Some((id, queue)) = session.clients.try_connect(hangup, MAX_ATTACHED_CLIENTS) else {
-        // Dropped rather than answered: writing a refusal here would let one
-        // stalled client hold up every attach behind it.
-        tracing::debug!("daemon: refusing an attach over the client cap");
-        return;
-    };
-    let bridges = Arc::new(Mutex::new(TerminalBridges::new(
-        id,
-        Arc::clone(&session.clients),
-    )));
-    session
-        .bridges
-        .lock()
-        .expect("attach bridges poisoned")
-        .insert(id, Arc::clone(&bridges));
-
-    // The writer owns its half outright, so the reader below can stay blocked
-    // in `read` while frames go out.
-    let writer = std::thread::Builder::new()
-        .name("nightcrow-attach-tx".into())
-        .spawn(move || {
-            let mut out = write_half;
-            for frame in queue {
-                if write_frame(&mut out, &frame).is_err() || out.flush().is_err() {
-                    break;
-                }
-            }
-        });
-
-    // Subscribed before the watcher can reach this client, so every open
-    // repository's panes are already streaming when the client learns the
-    // repositories exist.
-    bridges.lock().expect("client bridges poisoned").follow(
-        &session::list_session_repos(&session.state),
-        session.state.catalog(),
-    );
-    // The set itself is sent by the watcher, to which this client is already
-    // registered as owed one — that is what keeps a client's frames in the
-    // order the session changed (see `watch::watch`).
-    session.nudge.poke();
-
-    if let Err(err) = super::requests::read_requests(stream, id, session) {
-        // Expected on detach: the client closes mid-read. Logged at debug
-        // because a person quitting is not a fault.
-        tracing::debug!(%err, "daemon: attached client ended");
-    }
-    // Drops this client's sender, which ends the writer draining it, and its
-    // subscriptions, which stops the threads relaying its terminals.
-    session
-        .bridges
-        .lock()
-        .expect("attach bridges poisoned")
-        .remove(&id);
-    session.clients.disconnect(id);
-    if let Ok(writer) = writer {
-        crate::platform::threading::try_timed_join(
-            writer,
-            crate::platform::threading::REAP_TIMEOUT,
-        );
+            .spawn(move || connection::run(stream, &session, permit));
     }
 }
 

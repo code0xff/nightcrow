@@ -10,9 +10,9 @@ use serde::{Deserialize, Serialize};
 
 /// Contract version this plugin speaks. The host refuses anything else.
 ///
-/// 2 is the first version with [`PluginCommand::WatchPane`], which this plugin
-/// needs: a pane somebody started a provider CLI in by hand is never named to
-/// us, so asking for it is the only way to watch it at all.
+/// Version 3 includes the provider-agnostic watch and attention commands even
+/// though this bundled plugin currently acts only on panes explicitly assigned
+/// to it. Keeping the full shape catches drift against the host contract.
 pub const PROTOCOL_VERSION: u32 = 3;
 
 /// Longest line the host will read from us; also the cap we apply to what we
@@ -20,6 +20,10 @@ pub const PROTOCOL_VERSION: u32 = 3;
 pub const MAX_LINE_BYTES: usize = 64 * 1024;
 
 /// Longest `data` the host accepts in one [`PluginCommand::SendInput`].
+#[allow(
+    dead_code,
+    reason = "kept in this standalone protocol copy to catch host contract drift"
+)]
 pub const MAX_INPUT_BYTES: usize = 8 * 1024;
 
 /// Opaque pane-slot name. Random hex minted by the host; we only ever compare
@@ -28,12 +32,6 @@ pub type PaneToken = String;
 
 /// Which spawn of a pane slot an event or command refers to.
 pub type PaneGeneration = u32;
-
-/// Env var carrying the pane token into the pane's child processes, and hence
-/// into a provider CLI's hook and statusline helpers. That inheritance is how
-/// an out-of-band signal is attributed to a pane; cwd cannot do it, because
-/// nightcrow allows several panes on one repository.
-pub const PANE_TOKEN_ENV: &str = "NIGHTCROW_PANE_TOKEN";
 
 /// Something the host observed.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -200,21 +198,6 @@ pub fn encode_command(cmd: &PluginCommand) -> anyhow::Result<String> {
         "encoded plugin command contains a newline, which would split the frame"
     );
     Ok(line)
-}
-
-pub fn watch_pane(token: PaneToken) -> PluginCommand {
-    PluginCommand::WatchPane {
-        v: PROTOCOL_VERSION,
-        token,
-    }
-}
-
-pub fn attention(token: PaneToken, generation: PaneGeneration) -> PluginCommand {
-    PluginCommand::Attention {
-        v: PROTOCOL_VERSION,
-        token,
-        generation,
-    }
 }
 
 pub fn log(level: LogLevel, message: impl Into<String>) -> PluginCommand {

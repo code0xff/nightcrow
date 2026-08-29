@@ -1,5 +1,5 @@
 use super::*;
-use crate::daemon::frame::write_frame;
+use crate::daemon::frame::{Frame, write_frame};
 use std::io::{self, Cursor, Read};
 use std::time::{Duration, Instant};
 

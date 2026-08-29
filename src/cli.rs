@@ -5,12 +5,14 @@ mod attach;
 mod daemon;
 mod init;
 pub(crate) mod plugin_cmd;
+mod status;
 mod stop;
 mod update;
 
 pub(crate) use attach::run_attach_detached;
 pub(crate) use daemon::run_daemon;
 pub(crate) use init::run_init;
+pub(crate) use status::run_status;
 pub(crate) use stop::run_stop;
 pub(crate) use update::run_update;
 
@@ -80,6 +82,12 @@ pub(crate) enum Commands {
     /// Sends a graceful shutdown request via the daemon socket. The daemon
     /// runs the same shutdown sequence as SIGINT/SIGTERM.
     Stop {
+        /// Path to the daemon socket. Defaults to the standard location.
+        #[arg(long)]
+        socket: Option<PathBuf>,
+    },
+    /// Show the state of a running daemon without attaching a client.
+    Status {
         /// Path to the daemon socket. Defaults to the standard location.
         #[arg(long)]
         socket: Option<PathBuf>,

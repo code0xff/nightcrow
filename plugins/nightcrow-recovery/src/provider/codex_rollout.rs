@@ -21,10 +21,6 @@ pub const MAX_RECORD_BYTES: usize = 64 * 1024;
 /// format, and the cap exists because the id becomes a command-line argument.
 const MAX_SESSION_ID_BYTES: usize = 128;
 
-/// Longest remembered `rate_limit_reached_type`. It is a provider enum name, so
-/// anything longer is not one and is not worth keeping.
-const MAX_REACHED_TYPE_BYTES: usize = 64;
-
 /// The one `codex_error_info` value that means "usage limit". Any other value is
 /// a different failure mode that waiting cannot fix, so it is not ours.
 pub const USAGE_LIMIT_ERROR_INFO: &str = "usage_limit_exceeded";
@@ -51,10 +47,7 @@ pub enum Record {
     SessionMeta { id: Option<String> },
     /// A usage snapshot. `resets_at` is already validated as a plausible
     /// absolute unix second, or `None`.
-    TokenCount {
-        resets_at: Option<i64>,
-        reached_type: Option<String>,
-    },
+    TokenCount { resets_at: Option<i64> },
     /// A turn that ended because the usage limit was hit.
     UsageLimit,
 }
@@ -78,7 +71,6 @@ pub fn classify_line(line: &str, now_epoch: i64) -> Option<Record> {
             let payload = value.get("payload")?;
             Some(Record::TokenCount {
                 resets_at: reset_epoch_from_json(payload, &RESETS_AT_PATH, now_epoch),
-                reached_type: reached_type_from_payload(payload),
             })
         }
         "turn_complete" => {
@@ -100,19 +92,6 @@ fn session_id_from_payload(payload: &Value) -> Option<String> {
         .filter_map(|key| payload.get(key).and_then(Value::as_str))
         .find(|id| valid_session_id(id))
         .map(str::to_string)
-}
-
-/// Which rate-limit window codex says was reached, when it is a short plain
-/// string. A long or non-ASCII value is not an enum name and is dropped.
-fn reached_type_from_payload(payload: &Value) -> Option<String> {
-    let raw = payload
-        .get("rate_limits")?
-        .get("rate_limit_reached_type")?
-        .as_str()?;
-    let ok = !raw.is_empty()
-        && raw.len() <= MAX_REACHED_TYPE_BYTES
-        && raw.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_');
-    ok.then(|| raw.to_string())
 }
 
 /// Whether an id is safe to hand back as a command-line argument.

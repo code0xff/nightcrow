@@ -23,7 +23,7 @@ fn deadline_for(payload: Value) -> Option<i64> {
 }
 
 fn rate_limits(primary: Value) -> Value {
-    json!({"rate_limits": {"primary": primary, "rate_limit_reached_type": "primary"}})
+    json!({"rate_limits": {"primary": primary}})
 }
 
 #[test]
@@ -108,18 +108,6 @@ fn a_token_count_with_a_valid_resets_at_is_accepted() {
     assert_eq!(
         deadline_for(rate_limits(json!({"resets_at": SOON}))),
         Some(SOON)
-    );
-}
-
-#[test]
-fn a_token_count_remembers_a_short_rate_limit_reached_type() {
-    let payload = rate_limits(json!({"resets_at": SOON}));
-    assert_eq!(
-        classify_line(&record("token_count", payload), NOW),
-        Some(Record::TokenCount {
-            resets_at: Some(SOON),
-            reached_type: Some("primary".to_string()),
-        })
     );
 }
 

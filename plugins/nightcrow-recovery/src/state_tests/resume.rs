@@ -50,30 +50,6 @@ fn a_pane_whose_process_is_still_running_is_not_relaunched() {
 }
 
 #[test]
-fn a_live_pane_is_not_typed_into_until_the_host_says_it_is_idle() {
-    let mut rec = recovery();
-    let provider = FakeProvider::default();
-    let mono = Instant::now();
-    rec.note_limit(usage(Some(SESSION), Some(RESET)), T0, mono);
-    let out = tick_at(&mut rec, &provider, T0 + AFTER_RESET, at(mono, AFTER_RESET));
-    assert_eq!(rec.state(), RecoveryState::ReadyToResume);
-    assert!(action(&out).is_none());
-
-    rec.on_event(&went_idle(1)).expect("current generation");
-    let out = tick_at(
-        &mut rec,
-        &provider,
-        T0 + AFTER_RESET + 1,
-        at(mono, AFTER_RESET + 1),
-    );
-    assert_eq!(rec.state(), RecoveryState::Resuming);
-    match action(&out) {
-        Some(PluginCommand::SendInput { data, .. }) => assert_eq!(data, "continue\r"),
-        other => panic!("expected typed input, got {other:?}"),
-    }
-}
-
-#[test]
 fn a_relaunch_that_lands_as_a_new_generation_confirms_the_resume() {
     let mut rec = recovery();
     let provider = FakeProvider::relaunch_only();
@@ -86,20 +62,6 @@ fn a_relaunch_that_lands_as_a_new_generation_confirms_the_resume() {
     assert_eq!(rec.generation(), 2);
     assert_eq!(rec.attempt(), 0, "a resume that landed refunds the budget");
     assert_eq!(states(&out), vec!["idle"]);
-}
-
-#[test]
-fn output_after_typed_input_confirms_the_resume() {
-    let mut rec = recovery();
-    let provider = FakeProvider::default();
-    let mono = Instant::now();
-    rec.note_limit(usage(Some(SESSION), Some(RESET)), T0, mono);
-    rec.on_event(&went_idle(1)).expect("current generation");
-    tick_at(&mut rec, &provider, T0 + AFTER_RESET, at(mono, AFTER_RESET));
-    assert_eq!(rec.state(), RecoveryState::Resuming);
-    rec.on_event(&output(1)).expect("current generation");
-    assert_eq!(rec.state(), RecoveryState::Idle);
-    assert_eq!(rec.attempt(), 0);
 }
 
 #[test]
@@ -185,9 +147,8 @@ fn an_adapter_offering_unsafe_resume_args_is_refused_without_asking_the_host() {
     assert!(action(&out).is_none());
 }
 
-/// A pane the host launched no command in: the plain shell somebody started a
-/// provider CLI inside by hand, which is the only kind of pane this plugin can be
-/// given on a signal.
+/// A pane the host launched no command in. The state machine still rejects a
+/// relaunch even though the bundled plugin no longer adopts such panes.
 fn bare_shell() -> PaneContext {
     PaneContext {
         command: None,
@@ -214,28 +175,6 @@ fn a_pane_the_host_launched_no_command_in_is_never_relaunched() {
     assert_eq!(rec.state(), RecoveryState::NeedsAttention);
     assert!(action(&out).is_none(), "the host is asked for nothing");
     assert_eq!(rec.attempt(), 0, "and no attempt is spent learning that");
-}
-
-#[test]
-fn a_pane_with_no_command_is_still_typed_into_while_its_process_lives() {
-    // The other half of the same rule: typed input is the whole of the recovery
-    // such a pane can get, so the missing command line must not cost it that too.
-    let mut rec = recovery();
-    let provider = FakeProvider::default();
-    let mono = Instant::now();
-    rec.note_limit(usage(Some(SESSION), Some(RESET)), T0, mono);
-    rec.on_event(&went_idle(1)).expect("current generation");
-    let out = rec.tick(
-        &provider,
-        &bare_shell(),
-        T0 + AFTER_RESET,
-        at(mono, AFTER_RESET),
-    );
-    assert_eq!(rec.state(), RecoveryState::Resuming);
-    match action(&out) {
-        Some(PluginCommand::SendInput { data, .. }) => assert_eq!(data, "continue\r"),
-        other => panic!("expected typed input, got {other:?}"),
-    }
 }
 
 #[test]

@@ -1,25 +1,19 @@
 # Session state
 
-## Recent-activity focus indicator
+## Recent activity
 
-Files modified within the last `hot_window_secs` seconds — whether by an agent in a terminal pane, your editor, or a build/format script — are rendered in the accent color (bold for the first 5 seconds, normal until the window expires).
+When `[agent_indicator].enabled` is true, files changed within `hot_window_secs` (15 seconds by default) are highlighted in the status list. They are bold for the first 5 seconds, then use the accent color until the window expires. This includes changes made by editors, builds, and terminal programs, not only AI tools.
 
-When the file list is in focus and you have not navigated in the last 2 seconds, the selection auto-follows to the freshest hot file so the diff updates as files change. Manual navigation (`j` / `k` / arrows / PgUp / PgDn) immediately suppresses auto-follow until you go idle again.
+With `[agent_indicator].auto_follow = true`, the status selection moves to the freshest hot file after 2 seconds without manual navigation. Moving the selection suppresses auto-follow until the next idle period. The indicator is shared by the TUI and browser and uses the server's setting.
 
-Configurable under [`[agent_indicator]`](configuration.md#agent_indicator).
+## Files and ownership
 
-## What persists
+State is stored under `~/.nightcrow/`; nightcrow does not write session state into a repository.
 
-nightcrow saves the current state on exit and restores it on the next launch — focus position, selected file, scroll offset, active terminal pane, view mode (status / commit log / tree), fullscreen states, commit-log drill-down position, and tree expansion and selection.
+- `workspace.json` stores the daemon's open repositories, tab order, and active tab. It also stores up to 50 recently used repositories' TUI view state: selected file, focus, scroll, active pane, view mode, commit-log position, tree selection/expansion, and list/diff/terminal fullscreen state. A terminal fullscreen restore returns to the grid; a zoomed pane is not persisted.
+- `viewer.json` stores the session accent and browser layout preferences, including sidebar width, upper-panel split, per-project view, and maximized panel (up to 50 recent projects). Browser terminal panes and their live arrangement end with the session.
+- `sessions` stores authenticated web-viewer tokens so browser logins can survive a daemon restart. Logout revokes a token server-side. Removing this file prevents tokens from being restored on the next restart; a running daemon keeps its in-memory tokens until they expire or are logged out.
 
-The accent is not in that list. It belongs to the session rather than to one repo's view state, so it lives in `~/.nightcrow/viewer.json` alongside the viewer's other shared preferences and is not restored per repo.
+The daemon owns the repository set and active tab. An attached TUI writes its own selection and view state when it detaches or the connection ends, without overwriting the tab list. Browser repository changes update the shared workspace. Closing every project before stopping writes an empty set, so the next session starts empty.
 
-The browser keeps its own half of this. Which panel each project is maximized in is remembered per project in `viewer.json`, so a refresh comes back to the layout you left — the browser's counterpart to the fullscreen states above, kept apart from them because maximizing on a 40-row terminal and in a browser window are not the same answer. It is held for 50 projects, like the TUI's — the 50 whose arrangement was set most recently, so maximizing a fifty-first is what drops the oldest, not merely opening one.
-
-Everything else lands in one file, `~/.nightcrow/workspace.json` — which repos were open, which tab was in front, and each repo's view state. Nothing is written inside your repositories: no single repo owns the fact that others were open beside it, and nightcrow shouldn't create directories in a project it is only reading.
-
-A bare `nightcrow` reopens those tabs and lands on the one that was in front, with each project's selection and scroll where you left them. Repos that have moved or been deleted since are skipped, with a notice saying how many. View state is kept for the 50 most recently used repos.
-
-## Who writes what
-
-The two halves have two owners. The session writes which repositories are open and which tab is in front; an attached client writes what it had selected and scrolled, and never the tab list — detaching must not roll the session back to one client's view of it. To start empty, close every tab before stopping the session.
+Corrupt or missing JSON state falls back to defaults. A repository that is no longer a directory is not started on the next daemon launch. Reopen it through the project dialog when it is available again.

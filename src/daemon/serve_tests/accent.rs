@@ -35,6 +35,7 @@ fn the_accent_comes_with_the_first_set_a_client_is_given() {
     assert_eq!(picker.next_accent(), 2);
 
     let mut arriving = Client::attach_raw(daemon.path());
+    arriving.hello();
 
     assert_eq!(arriving.next_accent(), 2);
     drop(repo);

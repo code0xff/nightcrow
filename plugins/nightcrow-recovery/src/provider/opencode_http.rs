@@ -52,7 +52,6 @@ pub struct SessionStatus {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StatusKind {
     Retry {
-        attempt: u32,
         next: Option<i64>,
     },
     Busy,
@@ -107,13 +106,6 @@ fn status_object(entry: &Value) -> Option<&Value> {
 fn status_kind(status: &Value) -> StatusKind {
     match status.get("type").and_then(Value::as_str) {
         Some("retry") => StatusKind::Retry {
-            // Informational only — nothing is decided from the attempt number —
-            // so a missing one is not a parse failure.
-            attempt: status
-                .get("attempt")
-                .and_then(Value::as_u64)
-                .and_then(|n| u32::try_from(n).ok())
-                .unwrap_or(0),
             next: status.get("next").and_then(Value::as_i64),
         },
         Some("busy") => StatusKind::Busy,

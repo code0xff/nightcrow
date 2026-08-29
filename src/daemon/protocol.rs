@@ -9,15 +9,20 @@ use crate::session::terminal::frame::{
 use anyhow::{Result, bail};
 use serde::{Deserialize, Serialize};
 
+mod status;
+pub use status::{DaemonStatus, RepositoryStatus, StatusUnavailable, StatusUnavailableReason};
+
 /// A request from an attached client.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(tag = "type", rename_all = "snake_case")]
+#[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
 pub enum ClientMessage {
     /// First message on a connection. The daemon answers with [`ServerMessage::Hello`].
     Hello {
         /// The client's build, so a mismatch is reported rather than acted on.
         version: String,
     },
+    /// Read daemon-owned runtime facts without attaching to the session.
+    Status {},
     ListRepos,
     /// Open a repository, or focus it if it is already open.
     OpenRepo {
@@ -62,7 +67,7 @@ pub enum ClientMessage {
 
 /// A message from the daemon.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(tag = "type", rename_all = "snake_case")]
+#[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
 pub enum ServerMessage {
     /// Answer to [`ClientMessage::Hello`], naming the daemon's build.
     Hello {
@@ -72,6 +77,9 @@ pub enum ServerMessage {
         /// created by request and reported to everybody.
         client: u64,
     },
+    /// One-shot answer to [`ClientMessage::Status`]. The connection closes
+    /// after this response and is never registered as an attached client.
+    Status { status: DaemonStatus },
     /// The repository set, sent in answer to a list, open, close, or reorder.
     /// The whole set rather than a delta: another client may have changed it in
     /// between, and a delta applied to a stale list silently diverges.

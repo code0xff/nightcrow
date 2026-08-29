@@ -1,6 +1,6 @@
 # `src/` scope
 
-이 가이드는 `src/`의 Rust core에만 적용된다. 저장소 전체 규칙과 설계 기준은 [루트 가이드](../AGENTS.md)를 먼저 읽고, 공통 플랫폼·코드 품질 규칙은 [guardrails](../.agents/rules/guardrails.md), 테스트 배치는 [testing rules](../.agents/rules/testing.md), 전체 불변식은 [architecture index](../docs/architecture.md)를 따른다. 이 문서에는 그 규칙을 반복하지 않고 `src/`의 비자명한 경계만 적는다.
+이 가이드는 `src/`의 Rust core에만 적용된다. 저장소 공통 규칙은 [루트 가이드](../AGENTS.md), 설계 불변식은 [architecture index](../docs/architecture.md)를 따른다. 아래에는 `src/`의 비자명한 경계만 적는다.
 
 ## Core boundaries
 

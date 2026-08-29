@@ -18,7 +18,6 @@
 ## Architecture
 
 - `docs/architecture.md`가 설계 결정의 기준이다. 구현이 문서와 어긋나면 문서를 먼저 고치거나 구현을 조정한다.
-- top-level 구조는 새 모듈을 붙일 수 있도록 열어 두되, 초기 구현은 간소하게 시작한다.
 
 ## Code Quality
 

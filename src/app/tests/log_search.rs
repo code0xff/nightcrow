@@ -128,3 +128,45 @@ fn drilldown_file_search_filters_paths_and_clamps_selection() {
     assert_eq!(app.log_file_filtered_indices(), &[0, 1, 2]);
     assert!(app.git.view.log.file_search_query.is_empty());
 }
+
+#[test]
+fn log_navigation_clamps_missing_and_empty_filter_selection() {
+    let mut app = app_with_files(vec![]);
+    app.git.view.mode = ViewMode::Log;
+    app.git.view.log.set_commits(vec![
+        named_commit("first"),
+        named_commit("second"),
+        named_commit("third"),
+    ]);
+    app.git.view.log.selected = usize::MAX;
+
+    assert!(app.move_log_commit_in_filter(1));
+    assert_eq!(app.git.view.log.selected, 0);
+    assert!(!app.move_log_commit_in_filter(-1));
+    assert!(!app.move_log_commit_in_filter(-isize::MAX));
+    assert!(app.move_log_commit_in_filter(isize::MAX));
+    assert_eq!(app.git.view.log.selected, 2);
+    assert!(!app.move_log_commit_in_filter(1));
+    app.git.view.log.selected = 1;
+    assert!(app.move_log_commit_in_filter(isize::MAX));
+    assert_eq!(app.git.view.log.selected, 2);
+    app.git.view.log.selected = 1;
+    assert!(app.move_log_commit_in_filter(isize::MIN));
+    assert_eq!(app.git.view.log.selected, 0);
+
+    app.git.view.log.drill_down = true;
+    app.git.view.log.set_commit_files(vec![
+        ChangedFile::unstaged_only("first.rs".into(), StatusKind::Modified),
+        ChangedFile::unstaged_only("second.rs".into(), StatusKind::Modified),
+    ]);
+    app.git.view.log.file_selected = usize::MAX;
+
+    assert!(app.move_log_file_in_filter(1));
+    assert_eq!(app.git.view.log.file_selected, 0);
+    assert!(!app.move_log_file_in_filter(-1));
+    assert!(app.move_log_file_in_filter(isize::MAX));
+    assert_eq!(app.git.view.log.file_selected, 1);
+
+    app.git.view.log.set_commit_files(vec![]);
+    assert!(!app.move_log_file_in_filter(1));
+}

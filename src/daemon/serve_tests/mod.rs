@@ -10,4 +10,5 @@ mod harness_terminal;
 mod other_transport;
 mod reload;
 mod session;
+mod status;
 mod terminals;

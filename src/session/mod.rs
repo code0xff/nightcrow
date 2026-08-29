@@ -21,4 +21,4 @@ pub use operations::{
 };
 #[cfg(test)]
 pub use state::test_status_encoder;
-pub use state::{SessionOptions, SessionState, StatusEncoder};
+pub use state::{RepositoryStatusSnapshot, SessionOptions, SessionState, StatusEncoder};

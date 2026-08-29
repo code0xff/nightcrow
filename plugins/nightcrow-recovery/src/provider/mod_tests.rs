@@ -5,21 +5,21 @@ const NOW: i64 = 1_767_225_600;
 
 #[test]
 fn a_reset_time_in_the_documented_shape_is_read_as_unix_seconds() {
-    let payload = serde_json::json!({"five_hour": {"resets_at": NOW + 3600}});
+    let payload = serde_json::json!({"primary": {"resets_at": NOW + 3600}});
     assert_eq!(
-        reset_epoch_from_json(&payload, &["five_hour", "resets_at"], NOW),
+        reset_epoch_from_json(&payload, &["primary", "resets_at"], NOW),
         Some(NOW + 3600)
     );
 }
 
 #[test]
 fn a_reset_time_that_is_absent_is_not_invented() {
-    let payload = serde_json::json!({"five_hour": {}});
+    let payload = serde_json::json!({"primary": {}});
     assert_eq!(
-        reset_epoch_from_json(&payload, &["five_hour", "resets_at"], NOW),
+        reset_epoch_from_json(&payload, &["primary", "resets_at"], NOW),
         None
     );
-    assert_eq!(reset_epoch_from_json(&payload, &["seven_day"], NOW), None);
+    assert_eq!(reset_epoch_from_json(&payload, &["secondary"], NOW), None);
 }
 
 #[test]
@@ -63,9 +63,6 @@ fn a_reset_time_already_in_the_past_is_still_a_reset_time() {
 #[test]
 fn each_known_provider_is_recognised_from_its_command_line() {
     for (command, name) in [
-        ("claude", "claude"),
-        ("claude --model opus", "claude"),
-        ("/usr/local/bin/claude", "claude"),
         ("codex", "codex"),
         ("codex resume --last", "codex"),
         ("opencode", "opencode"),
@@ -80,7 +77,6 @@ fn each_known_provider_is_recognised_from_its_command_line() {
 #[test]
 fn windows_executable_paths_and_wrapper_shims_are_recognised() {
     for (command, name) in [
-        (r"C:\Tools\claude.exe --model opus", "claude"),
         (r#""C:\Program Files\OpenAI\codex.cmd" resume"#, "codex"),
         (r"C:\Tools\opencode.PS1", "opencode"),
     ] {
@@ -97,42 +93,13 @@ fn a_pane_running_something_else_is_not_watched_at_all() {
         Some("   "),
         Some("bash"),
         Some("zsh -l"),
-        Some("claudette"),
-        Some(r#""C:\Tools\claude.exe"suffix"#),
-        Some(r#""C:\Tools\claude.exe"#),
+        Some("aider"),
+        Some(r#""C:\Tools\codex.exe"suffix"#),
+        Some(r#""C:\Tools\codex.exe"#),
     ] {
         assert!(
             detect(command).is_none(),
             "{command:?} must not be adopted by any adapter"
         );
     }
-}
-
-#[test]
-fn every_signal_kind_names_the_adapter_whose_helper_minted_it() {
-    // A pane with no command line of its own — the shell somebody typed `claude`
-    // into — has only the signal to go on, and the signal's kind is enough: each
-    // one is written by exactly one provider's helper.
-    for kind in [SignalKind::StopFailure, SignalKind::RateLimits] {
-        let provider =
-            detect_from_signal(kind).unwrap_or_else(|| panic!("{kind:?} names an adapter"));
-        assert_eq!(provider.name(), "claude");
-    }
-}
-
-#[test]
-fn a_signal_binds_an_adapter_where_the_command_line_cannot() {
-    // The pair that makes the late-adoption path work at all: `detect` gives up
-    // on a pane with no command, and the signal is what answers instead.
-    assert!(detect(None).is_none());
-    assert!(detect_from_signal(SignalKind::StopFailure).is_some());
-}
-
-#[test]
-fn a_signal_kind_round_trips_through_its_wire_name() {
-    for kind in [SignalKind::StopFailure, SignalKind::RateLimits] {
-        assert_eq!(SignalKind::from_wire(kind.as_wire()), Some(kind));
-    }
-    assert_eq!(SignalKind::from_wire("transcript"), None);
-    assert_eq!(SignalKind::from_wire(""), None);
 }

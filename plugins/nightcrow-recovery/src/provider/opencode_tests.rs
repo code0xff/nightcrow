@@ -1,5 +1,4 @@
 use super::*;
-use crate::provider::LimitKind;
 use serde_json::Value;
 
 /// Fixed "now", well inside the plausible epoch band.
@@ -61,7 +60,7 @@ fn wrap(id: &str, status: Value) -> String {
 }
 
 fn retry_body(id: &str, next: Option<i64>) -> String {
-    let mut status = serde_json::json!({"type": "retry", "attempt": 2});
+    let mut status = serde_json::json!({"type": "retry"});
     if let Some(next) = next {
         status["next"] = next.into();
     }
@@ -95,7 +94,6 @@ fn a_retry_going_idle_produces_exactly_one_usage_limit_event() {
     let mut oc = adapter(vec![retry_body(SESSION, None), idle_body(SESSION)]);
     assert_eq!(oc.poll(&ctx(1), NOW), None);
     let event = oc.poll(&ctx(1), NOW + 5).expect("idle after retry reports");
-    assert_eq!(event.kind, LimitKind::UsageLimit);
     assert_eq!(event.session_id.as_deref(), Some(SESSION));
     assert_eq!(oc.poll(&ctx(1), NOW + 10), None, "second event suppressed");
 }
@@ -280,7 +278,7 @@ fn observe_command_ignores_a_port_it_cannot_use() {
 fn observe_command_leaves_the_port_alone_when_no_flag_is_present() {
     let mut oc = adapter(vec![]);
     let before = oc.port();
-    oc.observe_command("opencode run --model anthropic/claude --print");
+    oc.observe_command("opencode run --model openai/gpt-5 --print");
     assert_eq!(oc.port(), before);
     assert_eq!(port_from_command("opencode"), None);
 }

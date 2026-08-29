@@ -85,15 +85,6 @@ fn a_cancelled_pane_can_start_a_new_episode() {
 }
 
 #[test]
-fn a_pane_needing_attention_is_cleared_by_its_human() {
-    let mut rec = recovery();
-    rec.note_limit(needs_human(), T0, Instant::now());
-    let out = rec.on_event(&user_input(1)).expect("current generation");
-    assert_eq!(rec.state(), RecoveryState::Idle);
-    assert_eq!(states(&out), vec!["idle"]);
-}
-
-#[test]
 fn two_panes_in_one_repo_recover_their_own_sessions_independently() {
     let mut first = PaneRecovery::new(TOKEN.to_string(), 1);
     let mut second = PaneRecovery::new(OTHER_TOKEN.to_string(), 1);

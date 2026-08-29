@@ -7,12 +7,11 @@
 //! cases (a stale generation, a clock jump, an exhausted attempt budget) are
 //! ordinary unit tests rather than something only reproducible by waiting.
 //!
-//! Safety posture: this machine never decides that a pane is alive or idle; it
-//! only repeats back what the host told it, and refuses to ask for input unless
-//! the host has said both. The host judges every request again anyway.
+//! Safety posture: this machine never decides that a pane is alive; it only
+//! repeats back what the host told it. The host judges every request again.
 
 use crate::protocol::{PROTOCOL_VERSION, PaneGeneration, PaneToken, PluginCommand, PluginEvent};
-use crate::provider::{LimitEvent, LimitKind};
+use crate::provider::LimitEvent;
 use crate::wait::ResetWait;
 use std::time::Instant;
 
@@ -27,9 +26,9 @@ pub const MAX_RESUME_ATTEMPTS: u32 = 4;
 /// How long a resume has to show some sign of life before it is treated as
 /// failed.
 ///
-/// A relaunch reports back as a new generation within milliseconds and typed
-/// input echoes almost as fast, so this only has to cover a slow provider
-/// start-up; a minute and a half is generous and still bounded.
+/// A relaunch reports back as a new generation within milliseconds, so this
+/// only has to cover a slow provider start-up; a minute and a half is generous
+/// and still bounded.
 pub const RESUME_CONFIRM_SECS: u64 = 90;
 
 /// Where a pane is in its recovery.
@@ -77,7 +76,6 @@ pub struct PaneRecovery {
     attempt: u32,
     /// The host's word on the pane's process, never this machine's guess.
     alive: bool,
-    idle: bool,
     detail: Option<String>,
     resumed_at: Option<Instant>,
 }
@@ -92,7 +90,6 @@ impl PaneRecovery {
             wait: None,
             attempt: 0,
             alive: true,
-            idle: false,
             detail: None,
             resumed_at: None,
         }
@@ -142,7 +139,6 @@ impl PaneRecovery {
             // Either way the machine lands in `Idle`.
             self.generation = generation;
             self.alive = true;
-            self.idle = false;
             out.extend(if self.state == RecoveryState::Resuming {
                 self.confirm_resume()
             } else {
@@ -152,19 +148,10 @@ impl PaneRecovery {
         match event {
             PluginEvent::PaneOpened { .. } => {
                 self.alive = true;
-                self.idle = false;
             }
-            PluginEvent::PaneOutput { .. } => {
-                self.idle = false;
-                out.extend(self.confirm_resume());
-            }
-            PluginEvent::PaneIdle { .. } => {
-                self.idle = true;
-                out.extend(self.confirm_resume());
-            }
+            PluginEvent::PaneOutput { .. } | PluginEvent::PaneIdle { .. } => {}
             PluginEvent::PaneExited { .. } => {
                 self.alive = false;
-                self.idle = false;
             }
             PluginEvent::PaneClosed { .. } | PluginEvent::UserInput { .. } => {
                 // The slot is gone, or its human took it back. Either way this
@@ -190,13 +177,8 @@ impl PaneRecovery {
             return Vec::new();
         }
         self.detail = Some(limit.detail.clone());
-        let kind = limit.kind;
         self.limit = Some(limit);
         let mut out = self.goto(RecoveryState::LimitDetected);
-        if kind == LimitKind::NeedsHuman {
-            out.extend(self.goto(RecoveryState::NeedsAttention));
-            return out;
-        }
         out.extend(self.arm_wait(now_epoch, now));
         out
     }
@@ -210,7 +192,6 @@ impl PaneRecovery {
         self.state != RecoveryState::Idle
             && current.session_id == limit.session_id
             && current.resets_at == limit.resets_at
-            && current.kind == limit.kind
     }
 
     /// A sign that a resume landed. Only meaningful while [`RecoveryState::Resuming`].

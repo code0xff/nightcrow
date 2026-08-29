@@ -3,14 +3,13 @@
 //! The state machine knows nothing about any particular CLI: it asks an adapter
 //! "did this pane just hit a usage limit, and when does that limit reset", and
 //! later "how do I get this session going again". Everything provider-specific —
-//! which hook fires, which file to tail, which flag resumes a session — lives in
+//! which file to tail, which flag resumes a session — lives in
 //! one file per adapter.
 
 use crate::protocol::{PaneGeneration, PaneToken};
 use serde_json::Value;
 use std::path::Path;
 
-pub mod claude;
 pub mod codex;
 pub mod opencode;
 
@@ -23,19 +22,6 @@ pub struct PaneContext {
     pub command: Option<String>,
 }
 
-/// Why a provider stopped.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum LimitKind {
-    /// A plan/usage limit that clears at a known or estimated time. Worth
-    /// waiting for.
-    UsageLimit,
-    /// An overload or server error. Worth a short backoff, not a long wait.
-    Transient,
-    /// Auth, billing, or a bad request. No amount of waiting fixes it, so the
-    /// machine stops and says so instead of retrying.
-    NeedsHuman,
-}
-
 /// An adapter's report that a pane's provider stopped for a limit-like reason.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LimitEvent {
@@ -46,7 +32,6 @@ pub struct LimitEvent {
     /// Absolute unix seconds at which the limit clears, when the provider said
     /// so. `None` means the machine must fall back to bounded backoff.
     pub resets_at: Option<i64>,
-    pub kind: LimitKind,
     /// Short, non-sensitive explanation for the host's status line. Never
     /// carries transcript text or a raw payload.
     pub detail: String,
@@ -57,49 +42,9 @@ impl LimitEvent {
         Self {
             session_id,
             resets_at,
-            kind: LimitKind::UsageLimit,
             detail: detail.to_string(),
         }
     }
-}
-
-/// A signal that did not come through the pane's terminal output.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SignalKind {
-    /// Claude Code's `StopFailure` hook payload.
-    StopFailure,
-    /// The `rate_limits` object from Claude Code's statusline payload.
-    RateLimits,
-    /// Claude Code's `Stop` hook: a turn ended, however it ended. Carries no
-    /// payload and never reaches a provider, because wanting the person back
-    /// is not a provider question.
-    TurnEnd,
-}
-
-impl SignalKind {
-    /// The wire name used on the IPC socket. Anything else is rejected there.
-    pub fn as_wire(&self) -> &'static str {
-        match self {
-            Self::StopFailure => "stop_failure",
-            Self::RateLimits => "rate_limits",
-            Self::TurnEnd => "turn_end",
-        }
-    }
-
-    pub fn from_wire(s: &str) -> Option<Self> {
-        match s {
-            "stop_failure" => Some(Self::StopFailure),
-            "rate_limits" => Some(Self::RateLimits),
-            "turn_end" => Some(Self::TurnEnd),
-            _ => None,
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct OutOfBand {
-    pub kind: SignalKind,
-    pub payload: Value,
 }
 
 /// How to get a stopped session going again.
@@ -108,8 +53,6 @@ pub enum ResumePlan {
     /// Append these args to the pane's original command. The host supplies the
     /// program, so this can never name a different binary.
     Relaunch(Vec<String>),
-    /// Type this into a pane whose process is still alive and idle.
-    Input(String),
     /// The adapter knows this pane must not be touched yet, and why.
     Hold(&'static str),
 }
@@ -130,16 +73,6 @@ pub trait Provider {
         None
     }
 
-    /// A signal that arrived over the IPC socket.
-    fn on_signal(
-        &mut self,
-        _ctx: &PaneContext,
-        _signal: &OutOfBand,
-        _now_epoch: i64,
-    ) -> Option<LimitEvent> {
-        None
-    }
-
     /// Called on the plugin's timer, for an adapter that has to look somewhere
     /// itself (a rollout file, an HTTP endpoint).
     fn poll(&mut self, _ctx: &PaneContext, _now_epoch: i64) -> Option<LimitEvent> {
@@ -152,8 +85,7 @@ pub trait Provider {
 
     /// How to resume, or `None` when this adapter cannot say safely.
     ///
-    /// `alive` is the host's word that the pane's process is still running; an
-    /// adapter must only answer [`ResumePlan::Input`] when it is true.
+    /// `alive` is the host's word that the pane's process is still running.
     fn resume(&self, ctx: &PaneContext, limit: &LimitEvent, alive: bool) -> Option<ResumePlan>;
 }
 
@@ -171,28 +103,9 @@ pub fn detect(command: Option<&str>) -> Option<Box<dyn Provider>> {
         .find_map(|suffix| program.strip_suffix(suffix))
         .unwrap_or(&program);
     match program {
-        "claude" => Some(Box::new(claude::Claude::default())),
         "codex" => Some(Box::new(codex::Codex::default())),
         "opencode" => Some(Box::new(opencode::OpenCode::default())),
         _ => None,
-    }
-}
-
-/// Pick an adapter from a signal that arrived over the IPC socket, for a pane
-/// whose command line says nothing — the shell somebody opened and then
-/// started a provider CLI inside by hand.
-///
-/// Sound because a [`SignalKind`] is minted by exactly one provider's helper:
-/// a `stop_failure` line can only have come from the Claude Code hook this
-/// binary installed. The signal is therefore evidence of what the pane is
-/// running, in a way terminal text never is — which is why this is a lookup on
-/// the wire kind and deliberately not a second sniffing path. A kind added
-/// later has to be classified here rather than falling through to a guess.
-pub fn detect_from_signal(kind: SignalKind) -> Option<Box<dyn Provider>> {
-    match kind {
-        SignalKind::StopFailure | SignalKind::RateLimits | SignalKind::TurnEnd => {
-            Some(Box::new(claude::Claude::default()))
-        }
     }
 }
 
@@ -215,9 +128,8 @@ fn first_word(command: &str) -> Option<&str> {
 
 /// Furthest ahead a reported reset time is believed.
 ///
-/// Claude's longest documented window is seven days, so anything beyond eight is
-/// either a different unit or a corrupt value; treating it as absent keeps a
-/// bogus number from parking a pane for months.
+/// Anything beyond eight days is treated as a different unit or corrupt value,
+/// keeping a bogus number from parking a pane for months.
 pub const MAX_RESET_HORIZON_SECS: i64 = 8 * 24 * 60 * 60;
 
 /// Earliest plausible unix second for a reset time (2020-01-01). Below this a

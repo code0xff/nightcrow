@@ -3,6 +3,7 @@ use super::*;
 mod activity;
 mod common;
 mod lifecycle_tests;
+mod panes_from_elsewhere_tests;
 mod poll_tests;
 mod recovery_tests;
 mod scroll_tests;

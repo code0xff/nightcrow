@@ -139,9 +139,7 @@ impl OpenCode {
 
     fn remember_retry(&mut self, status: &SessionStatus, now_epoch: i64) {
         let resets_at = match status.kind {
-            StatusKind::Retry {
-                next: Some(next), ..
-            } => interpret_next(next, now_epoch),
+            StatusKind::Retry { next: Some(next) } => interpret_next(next, now_epoch),
             _ => None,
         };
         let known = self.retrying.get_or_insert_default();
@@ -239,8 +237,8 @@ impl Provider for OpenCode {
     }
 
     fn resume(&self, _ctx: &PaneContext, limit: &LimitEvent, alive: bool) -> Option<ResumePlan> {
-        // Never `ResumePlan::Input`: a live pane may be mid-retry, and typing at
-        // one is exactly what this adapter exists to avoid.
+        // A live pane may be mid-retry, and typing at one is exactly what this
+        // adapter exists to avoid.
         if alive {
             return Some(ResumePlan::Hold(ALIVE_HOLD));
         }

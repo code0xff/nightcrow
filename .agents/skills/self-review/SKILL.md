@@ -14,17 +14,20 @@ user-invocable: true
 ## 분석 렌즈 (extended thinking)
 
 ### 정합성
+
 - 호출하는 함수, 의존하는 타입, 참조하는 상수가 실제로 존재하고 올바른지.
 - 새 인터페이스/타입과 기존 구현체 간 계약이 맞는지.
 - import 경로, export 누락, 순환 참조.
 
 ### 로직
+
 - 분기의 완전성 (switch/if-else).
 - 에러 경로에서의 리소스 정리와 상태 롤백.
 - 경계 조건 (null, empty, 0, max).
 - 비동기 코드의 await 누락, 에러 전파 누락.
 
 ### 설계 정합성
+
 - `docs/architecture.md`의 계층 책임과 일치하는지.
 - `.agents/rules/`의 규칙을 위반하지 않는지.
 - scope 문서가 있으면 그 범위 내인지.
@@ -32,6 +35,7 @@ user-invocable: true
 - 문서 간 충돌은 Architecture > Rules > Scope 우선순위로 해소한다.
 
 ### 테스트 충분성
+
 - 변경된 로직의 주요 경로와 에러 경로에 대응하는 테스트가 있는지.
 - 테스트가 구현 세부사항이 아니라 계약/동작을 검증하는지.
 

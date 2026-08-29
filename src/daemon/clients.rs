@@ -120,6 +120,16 @@ impl AttachedClients {
         self.inner.lock().expect("attached clients poisoned").len()
     }
 
+    /// Attached protocol client ids, never terminal-hub connection ids.
+    pub fn ids(&self) -> Vec<u64> {
+        self.inner
+            .lock()
+            .expect("attached clients poisoned")
+            .iter()
+            .map(|client| client.id)
+            .collect()
+    }
+
     /// Send `frame` to every attached client, and count them told: nobody is
     /// left owed a set by a broadcast that just reached them.
     ///

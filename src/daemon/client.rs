@@ -1,8 +1,8 @@
-//! The attaching side of the daemon socket. The daemon speaks first — the
-//! session changes under the client, and terminal output arrives unprompted —
-//! so requests are sent and forgotten, and everything the daemon says lands in
-//! a queue the caller drains on its own schedule (a TUI frame, which must never
-//! block on a socket).
+//! The attaching side of the daemon socket. The client sends `Hello` as its
+//! first frame; after that the daemon speaks unprompted because the session can
+//! change under the client. Everything the daemon says lands in a queue the
+//! caller drains on its own schedule (a TUI frame, which must never block on a
+//! socket).
 
 use super::protocol::{ClientMessage, ServerMessage, version};
 use super::terminal_link::{TerminalLink, TerminalRouter};
@@ -13,13 +13,9 @@ use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::Receiver;
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
-
 /// How long the opening handshake waits for the daemon to answer. Only the
 /// handshake is bounded — after it the connection is event-driven and a quiet
 /// daemon is the normal state.
-const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(5);
-
 /// Why opening a daemon client failed, so an attach caller can retry only
 /// when there was no listener to connect to. A listener that rejects or fails
 /// the handshake is still a daemon failure, not an invitation to start a
@@ -58,7 +54,7 @@ impl DaemonClient {
     /// Attach to the daemon listening on `path`. Completes the version handshake
     /// before returning, so a caller that gets a `DaemonClient` knows it is
     /// talking to a daemon of this build. The repository set the daemon
-    /// volunteers on attach is queued like any other message.
+    /// sends after accepting the hello is queued like any other message.
     #[cfg(test)]
     pub fn connect(path: &Path) -> Result<Self> {
         Self::connect_for_attach(path).map_err(ConnectError::into_error)
@@ -72,7 +68,7 @@ impl DaemonClient {
             let unavailable = is_unavailable_socket_error(&err);
             let context = if unavailable {
                 format!(
-                    "no nightcrow daemon on {} — start one with `nightcrow serve`",
+                    "no nightcrow daemon on {} — start one with `nightcrow -d`",
                     path.display()
                 )
             } else {
@@ -99,7 +95,7 @@ impl DaemonClient {
         // Bounded only for the handshake; cleared before the reader thread takes
         // over, or an idle session would read as a dead one.
         reader
-            .set_read_timeout(Some(HANDSHAKE_TIMEOUT))
+            .set_read_timeout(Some(super::HANDSHAKE_TIMEOUT))
             .context("setting the handshake timeout")?;
         let mut queued = Vec::new();
         let client = loop {
@@ -121,9 +117,8 @@ impl DaemonClient {
                     }
                     break client;
                 }
-                // The daemon volunteers the repository set on attach, which can
-                // arrive before the handshake answer. Kept: it is the state
-                // this client is about to render.
+                // Session traffic is queued if it races the hello answer. Kept:
+                // it is the state this client is about to render.
                 other @ (ServerMessage::Repos { .. } | ServerMessage::Terminal { .. }) => {
                     queued.push(other)
                 }
@@ -131,6 +126,9 @@ impl DaemonClient {
                 // Dropped: an answer to a request this client has not made yet.
                 ServerMessage::Reloaded { .. } => {
                     tracing::debug!("attach: a reload answer arrived before the handshake");
+                }
+                ServerMessage::Status { .. } => {
+                    bail!("daemon answered an attach handshake with a status response")
                 }
             }
         };

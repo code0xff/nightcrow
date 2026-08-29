@@ -14,7 +14,7 @@ fn api_requires_authentication() {
 
 #[test]
 fn opening_a_repository_adds_it_to_the_served_set() {
-    // Start empty, the way `serve` with no --repo now does, then open a
+    // Start empty, the way a headless daemon with no configured repository does, then open a
     // repository from the browser.
     let server = server(&[]);
     let token = login(server.addr());
@@ -39,7 +39,6 @@ fn opening_a_repository_requires_authentication() {
     let server = server(&[]);
     let (dir, path) = make_repo();
     let body = format!("{{\"path\":{}}}", serde_json::to_string(&path).unwrap());
-
     let response = post(server.addr(), "/api/repos", &body, None);
 
     assert!(response.starts_with("HTTP/1.1 401"), "got: {response}");
@@ -144,7 +143,6 @@ fn auth_is_checked_before_the_repository_is_looked_up() {
 
     let known = get(server.addr(), &format!("/api/status?repo={real}"), None);
     let unknown = get(server.addr(), "/api/status?repo=r9999", None);
-
     assert!(known.starts_with("HTTP/1.1 401"), "got: {known}");
     assert!(unknown.starts_with("HTTP/1.1 401"), "got: {unknown}");
     drop(dir);
@@ -198,7 +196,6 @@ fn the_login_cookie_lasts_as_long_as_the_configured_session() {
         "the cookie must expire with the session: {response}"
     );
 }
-
 #[test]
 fn logout_revokes_the_session_server_side() {
     // Clearing the cookie is not enough: cookies are not port-isolated, so
@@ -217,7 +214,6 @@ fn logout_revokes_the_session_server_side() {
     );
     drop(dir);
 }
-
 #[test]
 fn a_framed_logout_is_refused_and_leaves_the_session_alone() {
     // The HTML preview's sandboxed frame could navigate itself to /logout and

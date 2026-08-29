@@ -7,7 +7,6 @@
 use super::rollout::USAGE_LIMIT_ERROR_INFO;
 use super::*;
 use crate::protocol::PaneGeneration;
-use crate::provider::LimitKind;
 use serde_json::{Value, json};
 use std::io::Write as _;
 use std::path::Path;
@@ -63,7 +62,7 @@ fn token_count(resets_at: Value) -> String {
 }
 
 fn rate_limits(primary: Value) -> Value {
-    json!({"rate_limits": {"primary": primary, "rate_limit_reached_type": "primary"}})
+    json!({"rate_limits": {"primary": primary}})
 }
 
 fn limit_turn() -> String {
@@ -142,7 +141,6 @@ fn a_malformed_line_is_skipped_and_later_records_still_parse() {
     let (_home, event) = poll_once(&lines);
     let event = event.expect("a usage limit event");
     assert_eq!(event.resets_at, Some(reset));
-    assert_eq!(event.kind, LimitKind::UsageLimit);
     assert_eq!(event.detail, USAGE_LIMIT_ERROR_INFO);
     assert_eq!(event.session_id.as_deref(), Some(UUID_A));
 }
