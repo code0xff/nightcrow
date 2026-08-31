@@ -122,6 +122,7 @@ fn bash_hub(dir: &tempfile::TempDir) -> std::sync::Arc<super::super::TerminalHub
         &dir.path().to_string_lossy(),
         Vec::new(),
         Vec::new(),
+        true,
         crate::config::ShellConfig {
             program: Some("bash".to_string()),
             command_args: Vec::new(),

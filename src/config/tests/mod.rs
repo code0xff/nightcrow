@@ -5,6 +5,7 @@ mod panels;
 mod plugin;
 mod shell;
 mod startup;
+mod terminal;
 mod theme;
 mod tree;
 mod web;

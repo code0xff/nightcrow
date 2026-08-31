@@ -28,12 +28,12 @@ impl TerminalHub {
         {
             return;
         }
-        // A bare shell when nothing is configured, matching the TUI's default.
-        let configured: Vec<Option<crate::config::StartupCommand>> = if self.startup.is_empty() {
-            vec![None]
-        } else {
-            self.startup.iter().cloned().map(Some).collect()
-        };
+        let configured: Vec<Option<crate::config::StartupCommand>> =
+            if self.startup.is_empty() && self.auto_open {
+                vec![None]
+            } else {
+                self.startup.iter().cloned().map(Some).collect()
+            };
         let panes: Vec<StartupPane> = configured
             .into_iter()
             .enumerate()
@@ -98,6 +98,9 @@ impl TerminalHub {
 
     /// Offer the startup terminals to every connected client.
     fn broadcast_pending(&self) {
+        if self.startup_count() == 0 {
+            return;
+        }
         let Ok(json) = serde_json::to_string(&ServerMessage::Pending {
             count: self.startup_count(),
         }) else {

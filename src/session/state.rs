@@ -23,6 +23,7 @@ pub struct SessionOptions {
     pub persist: bool,
     pub startup_commands: Vec<crate::config::StartupCommand>,
     pub cli_startup: Vec<String>,
+    pub terminal: crate::config::TerminalConfig,
     pub shell: crate::config::ShellConfig,
     pub prefs: PrefsStore,
     pub status_encoder: StatusEncoder,
@@ -58,6 +59,7 @@ impl SessionState {
             options.startup_commands,
             plugins,
             options.cli_startup,
+            options.terminal,
             options.shell,
             options.status_encoder,
         );

@@ -32,20 +32,12 @@ fn attaching_subscribes_to_the_terminals_of_every_open_repository() {
     let mut client = Client::attach_raw(daemon.path());
     client.hello();
 
-    let (id, _) = client.next_terminal_event();
+    let (id, event) = client.next_terminal_event();
     assert!(!id.is_empty(), "the event says which repository it is for");
-    // And the subscription is live from the start: a fresh hub offers its
-    // startup terminals to be sized before creating them, so that offer reaches
-    // a client that has asked for nothing.
-    let mut offered = false;
-    for _ in 0..8 {
-        let (_, event) = client.next_terminal_event();
-        if matches!(event, HubServerMessage::Pending { .. }) {
-            offered = true;
-            break;
-        }
-    }
-    assert!(offered, "the startup terminals were never offered");
+    // The subscription is live from the start even though the default policy
+    // does not create or offer a shell: the hub handshake reaches a client that
+    // has asked for no terminal operation and reports an empty replay.
+    assert!(matches!(event, HubServerMessage::Hello { panes: 0, .. }));
     drop(repo);
 }
 

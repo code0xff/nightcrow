@@ -29,7 +29,11 @@ fn swapping_the_config_tables_keeps_the_cli_startup_panes() {
     );
 
     catalog
-        .set_config_tables(&[startup("cargo watch")], Vec::new())
+        .set_config_tables(
+            &[startup("cargo watch")],
+            crate::config::TerminalConfig::default(),
+            Vec::new(),
+        )
         .expect("the merge fits the cap");
 
     // The file's table was replaced; the --exec pane is not in the file and
@@ -55,7 +59,11 @@ fn a_refused_swap_replaces_neither_table() {
     }];
     let too_many: Vec<_> = (0..8).map(|i| startup(&format!("echo {i}"))).collect();
 
-    assert!(catalog.set_config_tables(&too_many, plugins).is_err());
+    assert!(
+        catalog
+            .set_config_tables(&too_many, crate::config::TerminalConfig::default(), plugins,)
+            .is_err()
+    );
 
     // Neither list moved: a reload does not half-apply.
     assert_eq!(catalog.startup_commands(), vec![startup("claude")]);
@@ -69,7 +77,11 @@ fn a_swap_hands_back_the_repositories_the_caller_must_tell() {
     catalog.set_paths(std::slice::from_ref(&path));
 
     let told = catalog
-        .set_config_tables(&[startup("cargo watch")], vec![plugin("recovery")])
+        .set_config_tables(
+            &[startup("cargo watch")],
+            crate::config::TerminalConfig::default(),
+            vec![plugin("recovery")],
+        )
         .expect("the merge fits the cap");
 
     // The fan-out list is the served set as of the swap itself, not one fetched
@@ -90,7 +102,11 @@ fn a_repo_opened_after_a_swap_gets_the_new_startup_list() {
     let before = Arc::clone(&catalog.entries()[0].terminals);
 
     catalog
-        .set_config_tables(&[startup("cargo watch")], Vec::new())
+        .set_config_tables(
+            &[startup("cargo watch")],
+            crate::config::TerminalConfig::default(),
+            Vec::new(),
+        )
         .expect("the merge fits the cap");
     catalog.set_paths(&[a.clone(), b.clone()]);
 
@@ -105,6 +121,25 @@ fn a_repo_opened_after_a_swap_gets_the_new_startup_list() {
     );
     catalog.shutdown();
     drop((dir_a, dir_b));
+}
+
+#[test]
+fn a_repo_opened_after_a_swap_gets_the_new_auto_open_policy() {
+    let (dir, path) = make_repo();
+    let catalog = Catalog::with_startup_and_plugins(Vec::new(), Vec::new());
+
+    catalog
+        .set_config_tables(
+            &[],
+            crate::config::TerminalConfig { auto_open: true },
+            Vec::new(),
+        )
+        .expect("an empty startup table is valid");
+    catalog.set_paths(std::slice::from_ref(&path));
+
+    assert!(catalog.entries()[0].terminals.auto_opens_shell());
+    catalog.shutdown();
+    drop(dir);
 }
 
 #[test]
@@ -134,7 +169,11 @@ fn concurrent_open_and_config_swap_cannot_miss_each_other() {
         std::thread::spawn(move || {
             barrier.wait();
             catalog
-                .set_config_tables(&[startup("new")], Vec::new())
+                .set_config_tables(
+                    &[startup("new")],
+                    crate::config::TerminalConfig::default(),
+                    Vec::new(),
+                )
                 .expect("the merge fits the cap")
         })
     };

@@ -2,10 +2,9 @@
 //!
 //! One test with a real session behind it, because everything this step added
 //! only exists between the parts: the tab is built with the repository's end of
-//! the connection, the daemon's offer to size the startup terminals is answered
-//! from there, and the pane that comes back has to reach that tab's emulator
-//! with its output. A fake at any of those seams would assert the seam rather
-//! than the crossing.
+//! the connection, a pane request crosses to the daemon, and the pane that
+//! comes back has to reach that tab's emulator with its output. A fake at any
+//! of those seams would assert the seam rather than the crossing.
 
 use crate::application::input::dispatch::ProjectContext;
 use crate::application::session_link::SessionLink;
@@ -93,8 +92,21 @@ fn a_tab_shows_the_pane_the_session_is_running_and_the_output_it_produces() {
     );
     assert_eq!(ws.projects().len(), 1);
 
-    // And so does its pane: the session opened its startup shell once the client
-    // answered the offer to size it.
+    // A project does not spend a process on a shell until somebody asks for it.
+    let quiet_until = Instant::now() + Duration::from_millis(100);
+    while Instant::now() < quiet_until {
+        link.sync(&mut ws, &ctx);
+        for project in ws.projects_mut() {
+            project.poll_terminal();
+        }
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    assert!(
+        ws.active().is_some_and(|app| app.terminal.panes.is_empty()),
+        "a default project must not auto-open a terminal"
+    );
+
+    ws.active_mut().expect("a tab").open_new_pane();
     assert!(
         tick_until(&mut link, &mut ws, &ctx, |ws| {
             ws.active()
@@ -114,8 +126,8 @@ fn a_tab_shows_the_pane_the_session_is_running_and_the_output_it_produces() {
         "the pane produced no output the client could render"
     );
 
-    // The fresh-launch rule, end to end: keystrokes go to the terminal that just
-    // appeared rather than to the file list the view was built on.
+    // The explicit-open rule, end to end: keystrokes go to the terminal that
+    // just appeared rather than to the file list the view was built on.
     assert_eq!(
         ws.active().expect("a tab").focus,
         crate::app::Focus::Terminal

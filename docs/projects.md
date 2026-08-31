@@ -2,6 +2,8 @@
 
 The session can serve up to 10 repositories. Each repository is a project tab with its own status, commit-log, tree, and terminal views. A project can hold up to 8 terminal panes; its panes keep running while another project is active.
 
+Projects start without a terminal process unless a startup command is configured. Open the first shell with `<prefix> t`, or set `[terminal] auto_open = true` to create one automatically for projects without startup commands.
+
 Open and close projects with `<prefix> o` and `<prefix> x`; switch among tabs with `F1`–`F10`. Opening a repository that is already open focuses the existing tab instead of creating a duplicate worktree view. The browser and every attached TUI share the project set, order, and active project.
 
 If tabs do not fit, the tab row folds inactive tabs behind an overflow marker. A background project shows an attention marker when its terminal reports unread activity; selecting that project acknowledges the marker, and later activity can raise it again.

@@ -79,6 +79,7 @@ pub(crate) fn run_daemon(
             agent_indicator: &cfg.agent_indicator,
             theme: &cfg.theme,
             shell: &cfg.shell,
+            terminal: &cfg.terminal,
             paths: &paths,
             persist: true,
             startup_commands: startup,

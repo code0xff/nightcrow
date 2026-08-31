@@ -10,6 +10,7 @@ nightcrow reads `~/.nightcrow/config.toml`. Every field is optional and omitted 
 | `[theme]` | `name = "yellow"` | `yellow`, `cyan`, `green`, `magenta`, or `blue`. Seeds the session accent when no saved accent exists. |
 | `[input]` | `leader = "ctrl+f"` | One `ctrl+<ascii-letter>` chord. `ctrl+i` and `ctrl+m` are rejected because terminals report them as Tab and Enter. |
 | `[mouse]` | `enabled = true` | Captures clicks and wheel events for the TUI; `false` gives selection and mouse handling back to the outer terminal. |
+| `[terminal]` | `auto_open = false` | With no startup commands, `true` opens one shell per project automatically; `false` waits for `<prefix> t`. |
 | `[agent_indicator]` | `enabled = true`, `hot_window_secs = 15`, `auto_follow = false` | Hot window is `3..=3600` seconds. `auto_follow` selects the freshest recently changed file after 2 seconds of inactivity. |
 | `[tree]` | `respect_gitignore = true`, `max_depth = 64`, `live_watch = true` | `max_depth` is `1..=1024`; `live_watch = false` refreshes the tree on entry instead of watching expanded directories. |
 | `[shell]` | `program` omitted; `command_args` platform default | Unix uses `$SHELL` or `/bin/sh` with `[-lc]`; Windows uses `%ComSpec%` or `cmd.exe` with `[/C]`. The command is always the final single argument; interpolation such as `"{}"` is not supported. |
@@ -64,7 +65,7 @@ plugin = "recovery"
 command = "cargo test --watch"
 ```
 
-Configured entries and repeated CLI `--exec COMMAND` values share an 8-pane startup limit, in config-first order. `command` cannot be empty. A project with no startup entries starts with one shell; each project may hold up to 8 panes total.
+Configured entries and repeated CLI `--exec COMMAND` values share an 8-pane startup limit, in config-first order. `command` cannot be empty. A project with no startup entries starts with no panes by default; set `[terminal] auto_open = true` to restore one automatic shell. Each project may hold up to 8 panes total.
 
 ## `[[plugin]]`
 
@@ -92,7 +93,7 @@ See [Plugins](plugins.md) for installation and the bundled recovery plugin.
 Use `<prefix> u` in the TUI or the reload control in the browser. nightcrow parses and validates the whole file before applying anything; a missing, malformed, or invalid file leaves the running session unchanged.
 
 - `[[plugin]]` is re-applied immediately to open projects. Changing a plugin's executable, arguments, or environment restarts that plugin and can abandon a pending recovery.
-- `[[startup_command]]` applies to projects opened after the reload. Existing project panes keep running; CLI `--exec` panes remain part of the merged startup list.
+- `[[startup_command]]` and `[terminal] auto_open` apply to projects opened after the reload. Existing project panes keep running; CLI `--exec` panes remain part of the merged startup list.
 - All other settings require a daemon restart. A TUI reads its client settings when it attaches, while the running daemon keeps its listener and server settings until restart.
 
 Restarting a session stops its terminal programs. Use [Getting started](getting-started.md#detach-and-stop) for the shutdown procedure.

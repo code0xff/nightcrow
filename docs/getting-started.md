@@ -39,7 +39,7 @@ nightcrow -d
 
 There is one session per running daemon. `nightcrow attach` reuses an existing session and starts one in the background when none is available. The daemon owns the open repositories and terminal programs; clients only attach to it. Startup prints the browser URL and the attach-socket path. A background daemon writes its output to `~/.nightcrow/daemon.out`.
 
-Use `--exec COMMAND` once per startup pane when starting a daemon. Configured `[[startup_command]]` entries run first, followed by these CLI commands. The combined startup list is limited to 8 panes per project; each project gets its own list. With no startup commands, a project starts with one shell. All terminal panes in a project share an 8-pane limit; later panes are opened with `<prefix> t` until that limit is reached.
+Use `--exec COMMAND` once per startup pane when starting a daemon. Configured `[[startup_command]]` entries run first, followed by these CLI commands. The combined startup list is limited to 8 panes per project; each project gets its own list. With no startup commands, a project starts with no terminal process; press `<prefix> t` to open the first shell, or set `[terminal] auto_open = true` to open one automatically. All terminal panes in a project share an 8-pane limit; later panes are opened with `<prefix> t` until that limit is reached.
 
 The browser and TUI share repositories, terminals, project order, active project, and accent. The TUI's leader is `Ctrl+F` by default; see [Keyboard and mouse](keybindings.md) for all controls.
 

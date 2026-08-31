@@ -7,6 +7,7 @@ mod log;
 mod panels;
 mod plugin;
 mod shell;
+mod terminal;
 mod web;
 
 pub use layout::{Accent, InputConfig, LayoutConfig, StartupCommand, ThemeConfig, parse_leader};
@@ -16,6 +17,7 @@ pub use log::{LogConfig, LogRotation};
 pub use panels::{AgentIndicatorConfig, MouseConfig, TreeConfig};
 pub use plugin::PluginConfig;
 pub use shell::ShellConfig;
+pub use terminal::TerminalConfig;
 #[cfg(test)]
 pub use web::generate_password;
 pub use web::{WebViewerConfig, ensure_web_viewer_password};
@@ -38,6 +40,7 @@ pub struct Config {
     pub input: InputConfig,
     pub tree: TreeConfig,
     pub mouse: MouseConfig,
+    pub terminal: TerminalConfig,
     pub web_viewer: WebViewerConfig,
     /// The shell every terminal pane is spawned with. When absent, the platform
     /// default is used.

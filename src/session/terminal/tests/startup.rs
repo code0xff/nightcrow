@@ -7,7 +7,7 @@
 
 use super::{
     attach, collect_created, created_pane, created_size, created_title, next_matching,
-    pending_count, spawn_hub,
+    pending_count, spawn_hub, spawn_hub_with_auto_open,
 };
 use crate::config::StartupCommand;
 use crate::session::limits;
@@ -28,10 +28,11 @@ fn a_startup_terminal_is_offered_for_sizing_and_born_at_that_size() {
     // The whole point of the handshake: the child must never draw a frame at a
     // size no client chose, so the PTY does not exist until one has measured.
     let dir = tempfile::TempDir::new().unwrap();
-    let hub = spawn_hub(
+    let hub = spawn_hub_with_auto_open(
         &dir.path().to_string_lossy(),
         vec![startup("printf hello")],
         Vec::new(),
+        false,
     );
     let session = attach(&hub);
 
@@ -54,27 +55,6 @@ fn a_startup_terminal_is_offered_for_sizing_and_born_at_that_size() {
         created_size(&created),
         Some((40, 120)),
         "the startup terminal must be born at the size the client measured"
-    );
-    hub.stop();
-}
-
-#[test]
-fn an_empty_startup_offers_one_shell() {
-    let dir = tempfile::TempDir::new().unwrap();
-    let hub = spawn_hub(&dir.path().to_string_lossy(), Vec::new(), Vec::new());
-    let session = attach(&hub);
-
-    assert_eq!(
-        next_matching(&session, |f| pending_count(f).is_some()).and_then(|f| pending_count(&f)),
-        Some(1),
-        "no configured commands still means one bare shell"
-    );
-
-    session.dispatch(ClientMessage::Start { sizes: Vec::new() });
-
-    assert!(
-        next_matching(&session, |f| created_pane(f).is_some()).is_some(),
-        "a client that measured nothing must still get its shell"
     );
     hub.stop();
 }
