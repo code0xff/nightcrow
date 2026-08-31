@@ -112,6 +112,7 @@ pub fn session_state(
             persist: false,
             startup_commands: Vec::new(),
             cli_startup: Vec::new(),
+            terminal: crate::config::TerminalConfig::default(),
             shell: crate::config::ShellConfig::default(),
             prefs: crate::session::prefs::PrefsStore::at(prefs_dir.join("viewer.json")),
             status_encoder: crate::session::test_status_encoder,

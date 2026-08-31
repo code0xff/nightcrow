@@ -109,6 +109,7 @@ fn one_answer_covers_every_repository_in_the_session() {
         &cwd,
         Vec::new(),
         Vec::new(),
+        true,
         ShellConfig::default(),
         ownership.clone(),
     );
@@ -116,6 +117,7 @@ fn one_answer_covers_every_repository_in_the_session() {
         &cwd,
         Vec::new(),
         Vec::new(),
+        true,
         ShellConfig::default(),
         ownership,
     );

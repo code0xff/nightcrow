@@ -124,7 +124,10 @@ impl TerminalHub {
         // them then (see `claim_startup`). Announced to every client while the
         // panes are unclaimed, so one that drops mid-handshake does not leave
         // the hub terminal-less forever.
-        if !self.stop.load(Ordering::Acquire) && !self.started.load(Ordering::Acquire) {
+        if self.startup_count() > 0
+            && !self.stop.load(Ordering::Acquire)
+            && !self.started.load(Ordering::Acquire)
+        {
             self.send_to(
                 id,
                 &ServerMessage::Pending {

@@ -82,9 +82,10 @@ pub struct TerminalHub {
     next_client_id: AtomicU64,
     stop: Arc<AtomicBool>,
     worker: Mutex<Option<thread::JoinHandle<()>>>,
-    /// The terminals to open once a client has sized them. Empty means a single
-    /// bare shell (matching the TUI's default).
+    /// The configured terminals to open once a client has sized them.
     startup: Vec<crate::config::StartupCommand>,
+    /// Whether an empty startup list still opens one bare shell.
+    auto_open: bool,
     /// The `[[plugin]]` table. The worker launches a host for each entry that is
     /// enabled *and* that some `startup` entry opted into — a plugin no pane
     /// named is never started.
@@ -103,14 +104,16 @@ pub struct TerminalHub {
 
 impl TerminalHub {
     /// Start a hub whose terminals run in `cwd`. `startup` is the list of
-    /// commands to launch when the first client connects (empty = one shell),
-    /// and `plugins` the configured plugin table those commands may opt into.
+    /// commands to launch when the first client connects. `auto_open` adds one
+    /// bare shell only when that list is empty, and `plugins` is the configured
+    /// plugin table those commands may opt into.
     ///
     /// `ownership` is the session's, shared with every other hub.
     pub fn spawn(
         cwd: &str,
         startup: Vec<crate::config::StartupCommand>,
         plugins: Vec<crate::config::PluginConfig>,
+        auto_open: bool,
         shell: crate::config::ShellConfig,
         ownership: Arc<SizeOwnership>,
     ) -> Arc<Self> {
@@ -128,6 +131,7 @@ impl TerminalHub {
             stop: Arc::new(AtomicBool::new(false)),
             worker: Mutex::new(None),
             startup,
+            auto_open,
             plugins,
             shell,
             started: AtomicBool::new(false),
@@ -153,6 +157,11 @@ impl TerminalHub {
         &self.startup
     }
 
+    #[cfg(test)]
+    pub(crate) fn auto_opens_shell(&self) -> bool {
+        self.auto_open
+    }
+
     /// Pane identities owned by this repository's hub, in canonical order.
     pub(crate) fn pane_ids(&self) -> Vec<crate::backend::PaneId> {
         self.state
@@ -164,10 +173,13 @@ impl TerminalHub {
             .collect()
     }
 
-    /// How many startup terminals this hub will open. No configured commands
-    /// means one bare shell, matching the TUI's default.
+    /// How many startup terminals this hub will open.
     fn startup_count(&self) -> usize {
-        self.startup.len().max(1)
+        if self.startup.is_empty() && self.auto_open {
+            1
+        } else {
+            self.startup.len()
+        }
     }
 
     /// Give back cap slots a startup batch is no longer going to use.

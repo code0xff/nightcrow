@@ -49,6 +49,53 @@ fn a_reload_replaces_the_startup_list_for_repos_opened_afterwards() {
 }
 
 #[test]
+fn a_reload_applies_auto_open_to_repos_opened_afterwards() {
+    let dir = tempfile::TempDir::new().unwrap();
+    let (repo_dir, repo) = make_repo();
+    let state = session_state(&[], dir.path());
+    let path = config_file(dir.path(), "[terminal]\nauto_open = true\n");
+
+    let report = reload_config_at(&state, &path).expect("a valid file must apply");
+    assert!(report.auto_open);
+
+    state.catalog.set_paths(std::slice::from_ref(&repo));
+    assert!(state.catalog.entries()[0].terminals.auto_opens_shell());
+    state.catalog.shutdown();
+    drop((repo_dir, dir));
+}
+
+#[test]
+fn a_reload_summary_counts_preserved_cli_panes_before_auto_open() {
+    let dir = tempfile::TempDir::new().unwrap();
+    let state = SessionState::new(crate::session::SessionOptions {
+        repos: Vec::new(),
+        persist: false,
+        startup_commands: vec![crate::config::StartupCommand {
+            name: None,
+            command: "cargo watch".to_string(),
+            plugin: None,
+        }],
+        cli_startup: vec!["cargo watch".to_string()],
+        terminal: crate::config::TerminalConfig::default(),
+        shell: crate::config::ShellConfig::default(),
+        prefs: crate::session::prefs::PrefsStore::at(dir.path().join("viewer.json")),
+        status_encoder: crate::session::test_status_encoder,
+    });
+    let path = config_file(dir.path(), "[terminal]\nauto_open = true\n");
+
+    let report = reload_config_at(&state, &path).expect("a valid file must apply");
+
+    assert_eq!(report.startup_commands, 1);
+    assert_eq!(
+        report.summary(),
+        "config reloaded: 0 plugins across 0 open projects; \
+         1 startup pane applies to newly opened projects"
+    );
+    state.catalog.shutdown();
+    drop(dir);
+}
+
+#[test]
 fn a_file_that_does_not_parse_changes_nothing() {
     let dir = tempfile::TempDir::new().unwrap();
     let state = session_state(&[], dir.path());
@@ -131,6 +178,7 @@ fn the_summary_agrees_with_its_own_counts() {
     let one = ReloadReport {
         plugins: 1,
         startup_commands: 1,
+        auto_open: false,
         repos: 1,
         unreachable: 0,
     };
@@ -142,6 +190,7 @@ fn the_summary_agrees_with_its_own_counts() {
     let many = ReloadReport {
         plugins: 2,
         startup_commands: 3,
+        auto_open: false,
         repos: 4,
         unreachable: 0,
     };
@@ -153,12 +202,29 @@ fn the_summary_agrees_with_its_own_counts() {
     let none = ReloadReport {
         plugins: 0,
         startup_commands: 0,
+        auto_open: false,
         repos: 0,
         unreachable: 0,
     };
     assert_eq!(
         none.summary(),
         "config reloaded: 0 plugins across 0 open projects; no startup panes configured"
+    );
+}
+
+#[test]
+fn the_summary_reports_an_automatic_shell_without_calling_it_configured() {
+    let report = ReloadReport {
+        plugins: 0,
+        startup_commands: 0,
+        auto_open: true,
+        repos: 0,
+        unreachable: 0,
+    };
+    assert_eq!(
+        report.summary(),
+        "config reloaded: 0 plugins across 0 open projects; \
+         1 automatic shell applies to newly opened projects"
     );
 }
 
@@ -169,6 +235,7 @@ fn the_summary_owns_up_to_the_repositories_it_could_not_tell() {
     let one = ReloadReport {
         plugins: 1,
         startup_commands: 1,
+        auto_open: false,
         repos: 2,
         unreachable: 1,
     };
@@ -180,6 +247,7 @@ fn the_summary_owns_up_to_the_repositories_it_could_not_tell() {
     let many = ReloadReport {
         plugins: 1,
         startup_commands: 1,
+        auto_open: false,
         repos: 0,
         unreachable: 3,
     };

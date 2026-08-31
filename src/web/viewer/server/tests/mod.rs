@@ -53,6 +53,7 @@ pub(super) fn server_with(
             persist: false,
             startup_commands: Vec::new(),
             cli_startup: Vec::new(),
+            terminal: crate::config::TerminalConfig::default(),
             shell: crate::config::ShellConfig::default(),
             prefs,
             status_encoder: crate::web::viewer::status_payload::encode,

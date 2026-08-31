@@ -28,6 +28,7 @@ fn daemon(dir: &tempfile::TempDir, repos: &[String]) -> TestDaemon {
             persist: false,
             startup_commands: Vec::new(),
             cli_startup: Vec::new(),
+            terminal: crate::config::TerminalConfig::default(),
             shell: crate::config::ShellConfig::default(),
             prefs: crate::session::prefs::PrefsStore::at(dir.path().join("viewer.json")),
             status_encoder: crate::session::test_status_encoder,

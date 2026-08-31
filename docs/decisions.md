@@ -40,7 +40,7 @@ status는 최신 값 하나가 완전한 그림이라 중간 값을 conflate할 
 
 ### Reload는 전체 검증 후 제한적으로 적용한다
 
-살아 있는 pane을 보존하려고 `config.toml`을 부분 적용하지 않는다. 파일 전체를 parse/validate한 뒤 `[[plugin]]`은 열린 hub에, `[[startup_command]]`는 새 hub에만 적용한다. plugin 권한 flag와 watch switch는 다음 판정부터 읽고, child 교체가 필요한 command/args/env만 재시작한다. concurrent reload는 lock으로 직렬화하고 전달하지 못한 hub는 성공으로 가장하지 않는다.
+살아 있는 pane을 보존하려고 `config.toml`을 부분 적용하지 않는다. 파일 전체를 parse/validate한 뒤 `[[plugin]]`은 열린 hub에, `[[startup_command]]`와 `[terminal] auto_open`은 새 hub에만 적용한다. plugin 권한 flag와 watch switch는 다음 판정부터 읽고, child 교체가 필요한 command/args/env만 재시작한다. concurrent reload는 lock으로 직렬화하고 전달하지 못한 hub는 성공으로 가장하지 않는다.
 
 ## TUI 입력과 git 표시
 

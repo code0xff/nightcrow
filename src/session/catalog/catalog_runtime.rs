@@ -12,6 +12,7 @@ pub(super) struct CatalogRuntime {
     startup_commands: Vec<crate::config::StartupCommand>,
     cli_startup: Vec<String>,
     plugins: Vec<crate::config::PluginConfig>,
+    terminal: crate::config::TerminalConfig,
     shell: crate::config::ShellConfig,
     ownership: Arc<crate::session::size_owner::SizeOwnership>,
     status_encoder: StatusEncoder,
@@ -24,6 +25,7 @@ impl Default for CatalogRuntime {
             startup_commands: Vec::new(),
             cli_startup: Vec::new(),
             plugins: Vec::new(),
+            terminal: crate::config::TerminalConfig::default(),
             shell: crate::config::ShellConfig::default(),
             ownership: Arc::new(crate::session::size_owner::SizeOwnership::default()),
             status_encoder: empty_status_payload,
@@ -36,6 +38,7 @@ impl CatalogRuntime {
         startup_commands: Vec<crate::config::StartupCommand>,
         plugins: Vec<crate::config::PluginConfig>,
         cli_startup: Vec<String>,
+        terminal: crate::config::TerminalConfig,
         shell: crate::config::ShellConfig,
         status_encoder: StatusEncoder,
     ) -> Self {
@@ -43,6 +46,7 @@ impl CatalogRuntime {
             startup_commands,
             plugins,
             cli_startup,
+            terminal,
             shell,
             status_encoder,
             ..Self::default()
@@ -65,6 +69,7 @@ impl CatalogRuntime {
                     &member.path,
                     self.startup_commands.clone(),
                     self.plugins.clone(),
+                    self.terminal.auto_open,
                     self.shell.clone(),
                     Arc::clone(&self.ownership),
                 ),
@@ -83,10 +88,12 @@ impl CatalogRuntime {
     pub(super) fn replace_config(
         &mut self,
         file_startup: &[crate::config::StartupCommand],
+        terminal: crate::config::TerminalConfig,
         plugins: Vec<crate::config::PluginConfig>,
     ) -> anyhow::Result<Vec<Arc<RepoEntry>>> {
         let merged = crate::config::merge_startup_commands(file_startup, &self.cli_startup)?;
         self.startup_commands = merged;
+        self.terminal = terminal;
         self.plugins = plugins;
         Ok(self.entries.clone())
     }
@@ -102,6 +109,10 @@ impl CatalogRuntime {
     #[cfg(test)]
     pub(super) fn startup_commands(&self) -> Vec<crate::config::StartupCommand> {
         self.startup_commands.clone()
+    }
+
+    pub(super) fn startup_command_count(&self) -> usize {
+        self.startup_commands.len()
     }
 
     #[cfg(test)]

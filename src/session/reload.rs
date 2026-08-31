@@ -5,12 +5,11 @@
 //! an attached terminal must land on exactly the same state change. Neither
 //! transport authenticates here.
 //!
-//! **What a reload is, and what it is not.** It re-reads two tables and nothing
-//! else. `[[plugin]]` reaches even the repositories that are already open,
-//! because replacing a plugin child costs the session nothing.
-//! `[[startup_command]]` reaches only repositories opened afterwards: a hub
-//! creates its startup panes once for its life, and the live children a running
-//! repository already spent that list on no file edit may replace.
+//! **What a reload is, and what it is not.** `[[plugin]]` reaches even the
+//! repositories that are already open, because replacing a plugin child costs
+//! the session nothing. `[[startup_command]]` and `[terminal] auto_open` reach
+//! only repositories opened afterwards: a hub decides its startup panes once
+//! for its life, and no file edit may replace a running repository's children.
 //!
 //! **It does not half-apply.** The whole file is parsed and validated first, so
 //! a typo anywhere leaves the session exactly as it was.
@@ -39,8 +38,10 @@ impl std::fmt::Display for ReloadError {
 pub struct ReloadReport {
     /// `[[plugin]]` entries now declared.
     pub plugins: usize,
-    /// Configured startup panes now on file, before `--exec` is merged in.
+    /// Startup panes for new projects, including preserved `--exec` commands.
     pub startup_commands: usize,
+    /// Whether a project with no startup commands opens one shell.
+    pub auto_open: bool,
     /// Repositories whose plugins were re-applied.
     pub repos: usize,
     /// Repositories that could not even be asked, because their terminal worker
@@ -55,7 +56,9 @@ impl ReloadReport {
     /// Written here rather than in each client because both surfaces show the
     /// same sentence, and two wordings of the same outcome would drift.
     pub fn summary(&self) -> String {
-        let panes = if self.startup_commands == 0 {
+        let panes = if self.startup_commands == 0 && self.auto_open {
+            "1 automatic shell applies to newly opened projects".to_string()
+        } else if self.startup_commands == 0 {
             "no startup panes configured".to_string()
         } else if self.startup_commands == 1 {
             "1 startup pane applies to newly opened projects".to_string()
@@ -82,7 +85,7 @@ impl ReloadReport {
     }
 }
 
-/// Re-read the config file and apply the two tables it owns.
+/// Re-read the config file and apply the live-reloadable settings it owns.
 ///
 /// Serialized against itself by [`SessionState::reload_lock`]: two clients
 /// pressing at once would otherwise interleave a table swap with another's
@@ -116,8 +119,13 @@ pub fn reload_config_at(
     // spawned from the new tables, never neither.
     let entries = state
         .catalog
-        .set_config_tables(&cfg.startup_commands, cfg.plugins.clone())
+        .set_config_tables(
+            &cfg.startup_commands,
+            cfg.terminal.clone(),
+            cfg.plugins.clone(),
+        )
         .map_err(ReloadError::Config)?;
+    let startup_commands = state.catalog.startup_command_count();
 
     // Then the repositories already open. Each hub is *asked* — the work
     // happens on its own worker thread, the only thread allowed to touch a
@@ -147,14 +155,15 @@ pub fn reload_config_at(
 
     tracing::info!(
         plugins = cfg.plugins.len(),
-        startup_commands = cfg.startup_commands.len(),
+        startup_commands,
         repos = asked,
         unreachable,
         "session: re-read the config file"
     );
     Ok(ReloadReport {
         plugins: cfg.plugins.len(),
-        startup_commands: cfg.startup_commands.len(),
+        startup_commands,
+        auto_open: cfg.terminal.auto_open,
         repos: asked,
         unreachable,
     })

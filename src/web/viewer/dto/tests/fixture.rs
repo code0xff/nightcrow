@@ -246,6 +246,7 @@ fn wire_fixture() -> serde_json::Value {
             "summary": crate::session::reload::ReloadReport {
                 plugins: 1,
                 startup_commands: 2,
+                auto_open: false,
                 repos: 1,
                 unreachable: 0,
             }

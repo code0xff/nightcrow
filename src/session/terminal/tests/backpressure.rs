@@ -63,6 +63,7 @@ fn an_evicted_client_still_releases_the_sizing_when_its_session_ends() {
         &cwd,
         Vec::new(),
         Vec::new(),
+        true,
         crate::config::ShellConfig::default(),
         ownership.clone(),
     );

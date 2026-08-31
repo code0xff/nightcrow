@@ -92,6 +92,7 @@ fn pane_running_awaiting(sequences: &str, marker: &str) -> Running {
         &dir.path().to_string_lossy(),
         Vec::new(),
         Vec::new(),
+        true,
         crate::config::ShellConfig {
             program: Some("bash".to_string()),
             command_args: Vec::new(),

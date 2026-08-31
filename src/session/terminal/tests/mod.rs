@@ -21,6 +21,7 @@ mod scrollback_depth;
 mod size_owner;
 mod size_owner_resize_race;
 mod startup;
+mod startup_policy;
 mod wire;
 mod zoom;
 
@@ -236,10 +237,20 @@ pub(super) fn spawn_hub(
     startup: Vec<crate::config::StartupCommand>,
     plugins: Vec<crate::config::PluginConfig>,
 ) -> std::sync::Arc<super::TerminalHub> {
+    spawn_hub_with_auto_open(cwd, startup, plugins, true)
+}
+
+pub(super) fn spawn_hub_with_auto_open(
+    cwd: &str,
+    startup: Vec<crate::config::StartupCommand>,
+    plugins: Vec<crate::config::PluginConfig>,
+    auto_open: bool,
+) -> std::sync::Arc<super::TerminalHub> {
     super::TerminalHub::spawn(
         cwd,
         startup,
         plugins,
+        auto_open,
         crate::config::ShellConfig::default(),
         Default::default(),
     )

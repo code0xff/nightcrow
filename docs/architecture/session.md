@@ -57,7 +57,7 @@ replay는 1 MiB chunk로 분할하고 daemon frame payload는 4 MiB 이하로 �
 
 ## Config reload
 
-`POST /api/reload`와 attach의 reload request는 transport와 무관한 같은 operation을 호출한다. `config.toml` 전체를 parse/validate한 뒤에만 적용하며, 파일이 사라졌거나 잘못되면 session을 변경하지 않는다. `[[plugin]]` 변경은 열린 repository hub에 즉시 요청하고, `command`/`args`/`env` 변경 때만 child를 교체한다. `allowed_resume_flags`와 `watch_on_signal`은 다음 판정부터 읽는다. `[[startup_command]]` 변경은 이후 생성되는 hub에만 적용한다. web/listener·log·layout/input/tree/mouse 설정은 재시작 대상이다.
+`POST /api/reload`와 attach의 reload request는 transport와 무관한 같은 operation을 호출한다. `config.toml` 전체를 parse/validate한 뒤에만 적용하며, 파일이 사라졌거나 잘못되면 session을 변경하지 않는다. `[[plugin]]` 변경은 열린 repository hub에 즉시 요청하고, `command`/`args`/`env` 변경 때만 child를 교체한다. `allowed_resume_flags`와 `watch_on_signal`은 다음 판정부터 읽는다. `[[startup_command]]`와 `[terminal] auto_open` 변경은 이후 생성되는 hub에만 적용한다. web/listener·log·layout/input/tree/mouse 설정은 재시작 대상이다.
 
 reload lock은 concurrent reload를 직렬화하고, catalog transaction은 reload와 project open이 서로 다른 config table을 보는 틈을 막는다. hub queue가 가득 차 전달하지 못한 repository는 보고서의 `unreachable`로 표시하며, reload 결과는 요청한 client에만 반환한다. plugin reload가 기존 pane의 opt-in을 조용히 취소하거나 relaunch budget을 재생성하지 않는다.
 

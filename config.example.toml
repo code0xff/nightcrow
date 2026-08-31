@@ -89,6 +89,11 @@ live_watch = true         # watch expanded dirs and refresh the tree live; set f
 # program = "C:\\Program Files\\Git\\bin\\bash.exe"   # optional; platform default when omitted
 # command_args = ["-lc"]                               # optional; platform default when omitted
 
+[terminal]
+# Open one empty shell automatically when a project has no explicit startup
+# commands. Keep this false to create the first shell only with <leader> t.
+auto_open = false
+
 # Reserve startup commands: each [[startup_command]] opens its own terminal
 # pane and runs `command` immediately (via the configured shell). Panes are
 # per project, so these run again for every project tab you open, not once
@@ -99,8 +104,8 @@ live_watch = true         # watch expanded dirs and refresh the tree live; set f
 # project tabs). This caps only the startup
 # batch — open more anytime with <leader> t (panes past the eighth are reached
 # via focus cycling, Shift+←/→). `name` labels the tab; when omitted the
-# command text is used. With no [[startup_command]] entries, nightcrow opens a
-# single empty shell.
+# command text is used. With no [[startup_command]] entries, no pane is opened
+# unless terminal.auto_open is true.
 #
 # Editing this table does not need a restart: <leader> u in the TUI, or the
 # reload button in the browser header, re-reads this file. Startup commands take

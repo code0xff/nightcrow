@@ -1,4 +1,4 @@
-//! The two configured tables a hub is spawned with, and replacing them.
+//! The configured startup policy and plugin table a hub is spawned with.
 //!
 //! Separate from the served set because they answer a different question. The
 //! catalog proper is "which repositories exist"; this is "what does a repository
@@ -34,6 +34,7 @@ impl Catalog {
                 startup_commands,
                 plugins,
                 cli_startup,
+                crate::config::TerminalConfig::default(),
                 crate::config::ShellConfig::default(),
                 super::empty_status_payload,
             )),
@@ -46,6 +47,7 @@ impl Catalog {
         startup_commands: Vec<crate::config::StartupCommand>,
         plugins: Vec<crate::config::PluginConfig>,
         cli_startup: Vec<String>,
+        terminal: crate::config::TerminalConfig,
         shell: crate::config::ShellConfig,
         status_encoder: crate::session::StatusEncoder,
     ) -> Self {
@@ -54,6 +56,7 @@ impl Catalog {
                 startup_commands,
                 plugins,
                 cli_startup,
+                terminal,
                 shell,
                 status_encoder,
             )),
@@ -61,11 +64,11 @@ impl Catalog {
         }
     }
 
-    /// Replace both configured tables, as a config reload does.
+    /// Replace the configured startup policy and plugin table, as reload does.
     ///
     /// `file_startup` is the file's `[[startup_command]]` table alone; the
     /// remembered `--exec` panes are merged back on here. A merge that would
-    /// exceed the pane cap is refused and *neither* table is replaced.
+    /// exceed the pane cap is refused and none of the settings are replaced.
     ///
     /// Only the hubs spawned after this see the startup list. Telling the ones
     /// already running is the caller's job (see [`crate::session::reload`]).
@@ -79,6 +82,7 @@ impl Catalog {
     pub fn set_config_tables(
         &self,
         file_startup: &[crate::config::StartupCommand],
+        terminal: crate::config::TerminalConfig,
         plugins: Vec<crate::config::PluginConfig>,
     ) -> anyhow::Result<Vec<Arc<super::RepoEntry>>> {
         let _transaction = self
@@ -88,7 +92,7 @@ impl Catalog {
         self.runtime
             .lock()
             .expect("catalog runtime poisoned")
-            .replace_config(file_startup, plugins)
+            .replace_config(file_startup, terminal, plugins)
     }
 
     /// The `[[plugin]]` table as it stands, for the caller that has to tell the
@@ -109,5 +113,13 @@ impl Catalog {
             .lock()
             .expect("catalog runtime poisoned")
             .startup_commands()
+    }
+
+    /// Configured and CLI startup panes the next repository will receive.
+    pub(crate) fn startup_command_count(&self) -> usize {
+        self.runtime
+            .lock()
+            .expect("catalog runtime poisoned")
+            .startup_command_count()
     }
 }
