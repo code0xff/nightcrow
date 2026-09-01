@@ -90,6 +90,12 @@ impl SessionLink {
                     None => return,
                 }
             }
+            // Resolved to an id here rather than to an index sent onward,
+            // because the wrap and the tab it lands on are the same question.
+            ProjectRequest::Cycle { forward } => match cycle_target(ws, forward) {
+                Some(id) => self.client.focus_repo(&id),
+                None => return,
+            },
             // The dialog is this client's own; only what it confirms is a
             // request.
             ProjectRequest::OpenDialog => {
@@ -148,6 +154,25 @@ fn focus_repo(ws: &mut Workspace, repo: &str) -> bool {
         }
         None => false,
     }
+}
+
+/// The catalog id of the tab one step from the front, wrapping over tab order.
+///
+/// `None` for every case with nothing to ask about: no tabs, a single tab —
+/// where either direction lands back on the one already in front — and a tab
+/// the daemon has not named yet, the same early-out closing has. Takes
+/// `&Workspace` because stepping is a request; the tab moves when the daemon
+/// rebroadcasts the set, never here.
+fn cycle_target(ws: &Workspace, forward: bool) -> Option<String> {
+    let len = ws.projects().len();
+    if len <= 1 {
+        return None;
+    }
+    // Backward as a forward step of `len - 1` so the arithmetic stays in
+    // unsigned space and wrapping past zero needs no special case.
+    let step = if forward { 1 } else { len - 1 };
+    let target = (ws.active_index() + step) % len;
+    ws.projects()[target].repository_id().map(str::to_string)
 }
 
 /// Raise a terminal refusal on the tab it came from, not the active one: the

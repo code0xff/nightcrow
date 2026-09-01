@@ -26,6 +26,12 @@ pub enum Action {
     SwapPanePrompt,
     /// Focus the project tab at this index. Out-of-range indices are inert.
     SwitchProject(usize),
+    /// Step one project tab towards the front of the list, wrapping. The
+    /// relative counterpart to the F-key jumps, for a session with more tabs
+    /// than the user wants to count.
+    PrevProject,
+    /// Step one project tab away from the front of the list, wrapping.
+    NextProject,
     /// Open the repo-path dialog to add a project tab.
     OpenProject,
     /// Close the active project tab. Refused when it is the only one.
