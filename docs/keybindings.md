@@ -16,6 +16,7 @@ The prefix waits indefinitely for one follow-up. `Esc` or `Ctrl+C` cancels it. A
 - `<prefix> f` toggles fullscreen for the focused list, diff, or terminal panel. Terminal fullscreen cycles through the grid and the active-pane zoom.
 - `<prefix> o` opens the repository dialog.
 - `<prefix> x` closes the active project tab.
+- `<prefix> [` and `<prefix> ]` move the active project one slot towards the front or the back of the tab row. Tab order is shared with the browser and every other attached TUI. Neither wraps: the first tab does not move further forward and the last does not move further back.
 - `<prefix> p` cycles the session accent: yellow, cyan, green, magenta, blue.
 - `<prefix> u` reloads the configuration; see [Reloading](configuration.md#reloading).
 - `<prefix> r` forces a full redraw.

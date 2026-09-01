@@ -1,4 +1,4 @@
-use super::{cycle_target, focus_repo, notify_repo};
+use super::{cycle_target, focus_repo, moved_order, notify_repo};
 use crate::app::App;
 use crate::app::tests::app_with_files;
 use crate::workspace::Workspace;
@@ -155,4 +155,90 @@ fn resolving_a_step_leaves_the_front_tab_where_it_is() {
     let _ = cycle_target(&ws, false);
 
     assert_eq!(ws.active_index(), 1);
+}
+
+/// The ids `moved_order` should have produced, so each expectation reads as the
+/// tab strip it means rather than as a list of format strings.
+fn ids_of(paths: &[&str]) -> Vec<String> {
+    paths.iter().map(|path| id_of(path)).collect()
+}
+
+#[test]
+fn moving_the_front_tab_back_swaps_it_with_the_tab_behind_it() {
+    let mut ws = workspace_on(&["/a", "/b", "/c"]);
+    ws.switch(0);
+
+    assert_eq!(moved_order(&ws, true), Some(ids_of(&["/b", "/a", "/c"])));
+}
+
+#[test]
+fn moving_the_front_tab_towards_the_front_swaps_it_with_the_tab_ahead_of_it() {
+    let mut ws = workspace_on(&["/a", "/b", "/c"]);
+    ws.switch(2);
+
+    assert_eq!(moved_order(&ws, false), Some(ids_of(&["/a", "/c", "/b"])));
+}
+
+#[test]
+fn moving_past_either_end_of_the_strip_does_not_wrap() {
+    // Wrapping is the stepping chord's meaning. Conflating the two would let a
+    // held key silently shuffle the whole strip instead of coming to rest.
+    let mut ws = workspace_on(&["/a", "/b", "/c"]);
+
+    ws.switch(0);
+    assert_eq!(
+        moved_order(&ws, false),
+        None,
+        "the first tab cannot move up"
+    );
+    ws.switch(2);
+    assert_eq!(
+        moved_order(&ws, true),
+        None,
+        "the last tab cannot move down"
+    );
+}
+
+#[test]
+fn moving_with_fewer_than_two_tabs_asks_for_nothing() {
+    // Nothing to swap with, in either direction, so there is no order worth
+    // broadcasting to every client.
+    for forward in [true, false] {
+        assert_eq!(moved_order(&workspace_on(&[]), forward), None);
+        assert_eq!(moved_order(&workspace_on(&["/a"]), forward), None);
+    }
+}
+
+#[test]
+fn moving_while_any_tab_is_unnamed_asks_for_nothing() {
+    // The order is sent as the whole strip, by catalog id. Leaving out a tab the
+    // daemon has not named yet would ask to drop that repository, so the request
+    // waits for the ids — the same early-out closing and stepping have.
+    let mut ws = Workspace::new(KeyEvent::new(KeyCode::Char('f'), KeyModifiers::CONTROL));
+    assert!(ws.add(project_at("/a")));
+    assert!(ws.add(project_at("/b")));
+    ws.set_repo_id("/a", &id_of("/a"));
+    ws.switch(0);
+
+    assert_eq!(moved_order(&ws, true), None);
+}
+
+#[test]
+fn resolving_a_move_leaves_the_tabs_where_they_are() {
+    // Order is shared state: the strip rearranges when the daemon rebroadcasts
+    // the set. Moving locally first would show the tab jumping twice, and would
+    // also make this attach client a second writer of the tab order.
+    let mut ws = workspace_on(&["/a", "/b", "/c"]);
+    ws.switch(1);
+
+    let _ = moved_order(&ws, true);
+    let _ = moved_order(&ws, false);
+
+    assert_eq!(ws.active_index(), 1);
+    let paths: Vec<&str> = ws
+        .projects()
+        .iter()
+        .map(|project| project.repository_path())
+        .collect();
+    assert_eq!(paths, ["/a", "/b", "/c"]);
 }

@@ -32,6 +32,14 @@ pub enum Action {
     PrevProject,
     /// Step one project tab away from the front of the list, wrapping.
     NextProject,
+    /// Move the active project one slot towards the front of the tab strip,
+    /// taking the tab with it. Reordering, not stepping: `PrevProject` changes
+    /// which tab is in front, this changes where that tab sits. Deliberately
+    /// does not wrap — wrapping is the stepping chord's meaning, and a held key
+    /// would otherwise shuffle the strip.
+    MoveProjectPrev,
+    /// Move the active project one slot away from the front of the tab strip.
+    MoveProjectNext,
     /// Open the repo-path dialog to add a project tab.
     OpenProject,
     /// Close the active project tab. Refused when it is the only one.

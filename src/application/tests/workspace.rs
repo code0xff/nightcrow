@@ -149,3 +149,24 @@ fn ctrl_shift_arrows_ask_the_workspace_to_step_between_projects() {
         KeyOutcome::Project(ProjectRequest::Cycle { forward: false })
     );
 }
+
+#[test]
+fn the_leader_brackets_ask_the_workspace_to_move_the_active_project() {
+    let mut app = app_with_files(vec!["a.rs"]);
+
+    let _ = handle_key(&mut app, leader());
+    let back = handle_key(&mut app, press(KeyCode::Char(']'), KeyModifiers::NONE));
+    let _ = handle_key(&mut app, leader());
+    let front = handle_key(&mut app, press(KeyCode::Char('['), KeyModifiers::NONE));
+
+    // Reordering, not switching: the handler holds one project, so it names the
+    // direction and the tab list resolves it into an order for the session.
+    assert_eq!(
+        back,
+        KeyOutcome::Project(ProjectRequest::Move { forward: true })
+    );
+    assert_eq!(
+        front,
+        KeyOutcome::Project(ProjectRequest::Move { forward: false })
+    );
+}

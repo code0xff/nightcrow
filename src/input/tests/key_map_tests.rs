@@ -133,3 +133,12 @@ fn ctrl_shift_arrows_step_between_project_tabs() {
     assert_eq!(map_key(ctrl_shift(KeyCode::PageDown)), Action::None);
     assert_eq!(map_key(ctrl_shift(KeyCode::F(3))), Action::None);
 }
+
+#[test]
+fn bare_brackets_are_not_app_commands() {
+    // `[` and `]` move a project tab only behind the leader. Bare, they must
+    // reach the PTY untouched: they are ordinary characters and the closing
+    // half of every CSI escape sequence a program writes back.
+    assert_eq!(map_key(key(KeyCode::Char('['))), Action::None);
+    assert_eq!(map_key(key(KeyCode::Char(']'))), Action::None);
+}

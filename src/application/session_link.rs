@@ -96,6 +96,13 @@ impl SessionLink {
                 Some(id) => self.client.focus_repo(&id),
                 None => return,
             },
+            // Tab order is the session's too, so the whole new order is asked
+            // for and nothing is rearranged here. Adopting the broadcast is
+            // what moves the tab, exactly as switching does.
+            ProjectRequest::Move { forward } => match moved_order(ws, forward) {
+                Some(order) => self.client.reorder_repos(&order),
+                None => return,
+            },
             // The dialog is this client's own; only what it confirms is a
             // request.
             ProjectRequest::OpenDialog => {
@@ -173,6 +180,33 @@ fn cycle_target(ws: &Workspace, forward: bool) -> Option<String> {
     let step = if forward { 1 } else { len - 1 };
     let target = (ws.active_index() + step) % len;
     ws.projects()[target].repository_id().map(str::to_string)
+}
+
+/// The full tab order with the front tab swapped past its neighbour, by catalog
+/// id, or `None` when there is nothing to ask for.
+///
+/// `None` at every boundary: fewer than two tabs, the front tab already at the
+/// end it is pushed towards — no wrap, because wrapping is the stepping chord's
+/// meaning and a held key would otherwise shuffle the strip — and any tab the
+/// daemon has not named yet, since an order missing an id would ask to drop that
+/// repository. Takes `&Workspace` because reordering is a request; the tabs move
+/// when the daemon rebroadcasts the set, never here.
+fn moved_order(ws: &Workspace, forward: bool) -> Option<Vec<String>> {
+    let active = ws.active_index();
+    let neighbour = if forward {
+        active
+            .checked_add(1)
+            .filter(|next| *next < ws.projects().len())
+    } else {
+        active.checked_sub(1)
+    }?;
+    let mut order: Vec<String> = ws
+        .projects()
+        .iter()
+        .map(|project| project.repository_id().map(str::to_string))
+        .collect::<Option<Vec<String>>>()?;
+    order.swap(active, neighbour);
+    Some(order)
 }
 
 /// Raise a terminal refusal on the tab it came from, not the active one: the

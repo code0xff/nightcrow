@@ -14,6 +14,6 @@ State is stored under `~/.nightcrow/`; nightcrow does not write session state in
 - `viewer.json` stores the session accent and browser layout preferences, including sidebar width, upper-panel split, per-project view, and maximized panel (up to 50 recent projects). Browser terminal panes and their live arrangement end with the session.
 - `sessions` stores authenticated web-viewer tokens so browser logins can survive a daemon restart. Logout revokes a token server-side. Removing this file prevents tokens from being restored on the next restart; a running daemon keeps its in-memory tokens until they expire or are logged out.
 
-The daemon owns the repository set and active tab. An attached TUI writes its own selection and view state when it detaches or the connection ends, without overwriting the tab list. Browser repository changes update the shared workspace. Closing every project before stopping writes an empty set, so the next session starts empty.
+The daemon owns the repository set, the tab order, and the active tab. An attached TUI writes its own selection and view state when it detaches or the connection ends, without overwriting the tab list. Browser repository changes update the shared workspace. Closing every project before stopping writes an empty set, so the next session starts empty.
 
 Corrupt or missing JSON state falls back to defaults. A repository that is no longer a directory is not started on the next daemon launch. Reopen it through the project dialog when it is available again.
