@@ -27,6 +27,7 @@ The prefix waits indefinitely for one follow-up. `Esc` or `Ctrl+C` cancels it. A
 ## Global keys
 
 - `F1`–`F10` switch project tabs 1–10. Modified function keys pass through to the terminal.
+- `Ctrl+Shift+Left` / `Ctrl+Shift+Right` switch to the previous or next project, wrapping at both ends of the tab order. With one project open they do nothing.
 - `Shift+Left` / `Shift+Right` cycle focus through the file list, diff viewer, and terminal.
 - `Shift+Up` / `Shift+Down` scroll the active terminal three lines.
 - `Shift+PageUp` / `Shift+PageDown` scroll the active terminal one page. Input remains live while scrolled.
