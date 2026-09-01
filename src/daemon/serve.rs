@@ -15,6 +15,7 @@ use crate::platform::signals::Shutdown;
 use crate::session;
 use crate::session::SessionState;
 use std::collections::HashMap;
+use std::net::SocketAddr;
 use std::path::Path;
 use std::sync::mpsc::SyncSender;
 use std::sync::{Arc, Mutex};
@@ -90,7 +91,8 @@ impl Session {
 /// [`DaemonSocket`]: super::socket::DaemonSocket
 pub fn start(
     state: Arc<SessionState>,
-    endpoint: &Path,
+    attach_endpoint: &Path,
+    web_addr: SocketAddr,
     shutdown_tx: SyncSender<Shutdown>,
 ) -> anyhow::Result<Arc<Session>> {
     let session = Arc::new(Session {
@@ -99,7 +101,7 @@ pub fn start(
         bridges: Mutex::new(HashMap::new()),
         nudge: Arc::new(super::watch::Nudge::default()),
         shutdown_tx,
-        metadata: super::status::DaemonMetadata::capture(endpoint),
+        metadata: super::status::DaemonMetadata::capture(attach_endpoint, web_addr),
         admission: Arc::new(admission::PreAttachAdmission::new(
             MAX_PRE_ATTACH_CONNECTIONS,
         )),

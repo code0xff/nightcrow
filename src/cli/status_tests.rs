@@ -52,7 +52,8 @@ fn a_version_mismatch_is_reported_as_a_version_error() {
         version: "old".into(),
         started_at_unix_ms: Ok(0),
         uptime_ms: 0,
-        endpoint: Ok("sock".into()),
+        web_endpoint: "http://127.0.0.1:4321/".into(),
+        attach_endpoint: Ok("sock".into()),
         repositories: vec![],
         attached_clients: vec![],
     };
@@ -77,7 +78,8 @@ fn malformed_status_facts_are_rejected_before_rendering() {
         version: version(),
         started_at_unix_ms: Ok(0),
         uptime_ms: 0,
-        endpoint: Ok("sock".into()),
+        web_endpoint: "http://127.0.0.1:4321/".into(),
+        attach_endpoint: Ok("sock".into()),
         repositories: vec![RepositoryStatus {
             id: "repo".into(),
             path: "/repo".into(),
@@ -88,4 +90,42 @@ fn malformed_status_facts_are_rejected_before_rendering() {
     };
     let error = validate_status(&status).unwrap_err();
     assert!(error.to_string().contains("malformed status"), "{error:#}");
+}
+
+#[test]
+fn an_empty_web_endpoint_is_rejected_before_rendering() {
+    let status = DaemonStatus {
+        pid: 1,
+        version: version(),
+        started_at_unix_ms: Ok(0),
+        uptime_ms: 0,
+        web_endpoint: String::new(),
+        attach_endpoint: Ok("sock".into()),
+        repositories: vec![],
+        attached_clients: vec![],
+    };
+    let error = validate_status(&status).unwrap_err();
+    assert!(
+        error.to_string().contains("web endpoint is empty"),
+        "{error:#}"
+    );
+}
+
+#[test]
+fn an_empty_attach_endpoint_is_rejected_before_rendering() {
+    let status = DaemonStatus {
+        pid: 1,
+        version: version(),
+        started_at_unix_ms: Ok(0),
+        uptime_ms: 0,
+        web_endpoint: "http://127.0.0.1:4321/".into(),
+        attach_endpoint: Ok(String::new()),
+        repositories: vec![],
+        attached_clients: vec![],
+    };
+    let error = validate_status(&status).unwrap_err();
+    assert!(
+        error.to_string().contains("attach endpoint is empty"),
+        "{error:#}"
+    );
 }

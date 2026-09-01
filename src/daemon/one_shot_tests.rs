@@ -20,7 +20,8 @@ fn one_shot_request_uses_the_configured_endpoint_and_reads_one_typed_response() 
             version: "test".into(),
             started_at_unix_ms: Ok(1),
             uptime_ms: 2,
-            endpoint: Ok("status.sock".into()),
+            web_endpoint: "http://127.0.0.1:4321/".into(),
+            attach_endpoint: Ok("status.sock".into()),
             repositories: vec![],
             attached_clients: vec![],
         };
@@ -40,6 +41,74 @@ fn one_shot_request_uses_the_configured_endpoint_and_reads_one_typed_response() 
     )
     .unwrap();
     assert!(matches!(response, ServerMessage::Status { .. }));
+    server.join().unwrap();
+}
+
+#[test]
+fn a_legacy_status_response_reports_that_the_daemon_must_be_restarted() {
+    let dir = tempfile::TempDir::new().unwrap();
+    let path = dir.path().join("status.sock");
+    let socket = DaemonSocket::bind(&path).unwrap();
+    let listener = socket.listener().try_clone().unwrap();
+    let server = thread::spawn(move || {
+        let (mut stream, _) = listener.accept().unwrap();
+        let _ = read_frame(&mut stream).unwrap();
+        let response = format!(
+            r#"{{"type":"status","status":{{"pid":7,"version":"{}","started_at_unix_ms":{{"Ok":1}},"uptime_ms":2,"endpoint":{{"Ok":"status.sock"}},"repositories":[],"attached_clients":[]}}}}"#,
+            crate::daemon::protocol::version()
+        );
+        write_frame(&mut stream, &Frame::control(response.into_bytes())).unwrap();
+        stream.flush().unwrap();
+    });
+
+    let error = request(
+        &path,
+        &ClientMessage::Status {},
+        std::time::Duration::from_secs(1),
+    )
+    .unwrap_err();
+
+    assert!(
+        error.to_string().contains("protocol incompatibility"),
+        "{error:#}"
+    );
+    assert!(error.to_string().contains("legacy endpoint"), "{error:#}");
+    assert!(
+        error.to_string().contains("restart the daemon"),
+        "{error:#}"
+    );
+    server.join().unwrap();
+}
+
+#[test]
+fn an_incomplete_legacy_status_marker_remains_a_malformed_response() {
+    let dir = tempfile::TempDir::new().unwrap();
+    let path = dir.path().join("status.sock");
+    let socket = DaemonSocket::bind(&path).unwrap();
+    let listener = socket.listener().try_clone().unwrap();
+    let server = thread::spawn(move || {
+        let (mut stream, _) = listener.accept().unwrap();
+        let _ = read_frame(&mut stream).unwrap();
+        let response = format!(
+            r#"{{"type":"status","status":{{"pid":7,"version":"{}","started_at_unix_ms":{{"Ok":1}},"uptime_ms":2,"endpoint":7,"repositories":[],"attached_clients":[]}}}}"#,
+            crate::daemon::protocol::version()
+        );
+        write_frame(&mut stream, &Frame::control(response.into_bytes())).unwrap();
+        stream.flush().unwrap();
+    });
+
+    let error = request(
+        &path,
+        &ClientMessage::Status {},
+        std::time::Duration::from_secs(1),
+    )
+    .unwrap_err();
+
+    assert!(
+        error.to_string().contains("malformed daemon response JSON"),
+        "{error:#}"
+    );
+    assert!(!error.to_string().contains("protocol incompatibility"));
     server.join().unwrap();
 }
 

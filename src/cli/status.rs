@@ -81,10 +81,13 @@ fn validate_status(status: &DaemonStatus) -> Result<()> {
     if status.pid == 0 {
         bail!("protocol error: malformed status response: PID is zero");
     }
-    if let Ok(endpoint) = &status.endpoint
+    if status.web_endpoint.is_empty() {
+        bail!("protocol error: malformed status response: web endpoint is empty");
+    }
+    if let Ok(endpoint) = &status.attach_endpoint
         && endpoint.is_empty()
     {
-        bail!("protocol error: malformed status response: endpoint is empty");
+        bail!("protocol error: malformed status response: attach endpoint is empty");
     }
     let mut client_ids = status.attached_clients.clone();
     client_ids.sort_unstable();

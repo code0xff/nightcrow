@@ -9,9 +9,39 @@ use super::frame::{Frame, FrameKind, read_frame, write_frame};
 use super::protocol::{ClientMessage, ServerMessage};
 use super::transport::UnixStream;
 use anyhow::{Context, Result, bail};
+use serde::Deserialize;
 use std::io::Write;
 use std::path::Path;
 use std::time::Duration;
+
+/// The status shape emitted before the web and attach endpoints were split.
+/// It is intentionally private and only used to turn a precise, same-version
+/// compatibility failure into an actionable error at the one-shot boundary.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct LegacyStatusResponse {
+    #[serde(rename = "type")]
+    message_type: String,
+    status: LegacyDaemonStatus,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct LegacyDaemonStatus {
+    #[serde(rename = "pid")]
+    _pid: u32,
+    version: String,
+    #[serde(rename = "started_at_unix_ms")]
+    _started_at_unix_ms: Result<u64, super::protocol::StatusUnavailable>,
+    #[serde(rename = "uptime_ms")]
+    _uptime_ms: u64,
+    #[serde(rename = "endpoint")]
+    _endpoint: Result<String, super::protocol::StatusUnavailable>,
+    #[serde(rename = "repositories")]
+    _repositories: Vec<super::protocol::RepositoryStatus>,
+    #[serde(rename = "attached_clients")]
+    _attached_clients: Vec<u64>,
+}
 
 pub(crate) fn connect(path: &Path) -> std::io::Result<UnixStream> {
     UnixStream::connect(path)
@@ -44,7 +74,26 @@ pub(crate) fn request(
             frame.kind
         );
     }
-    serde_json::from_slice(&frame.payload).context("protocol error: malformed daemon response JSON")
+    match serde_json::from_slice(&frame.payload) {
+        Ok(response) => Ok(response),
+        Err(error) => {
+            if matches!(request, ClientMessage::Status {})
+                && is_legacy_status_response(&frame.payload)
+            {
+                bail!(
+                    "protocol incompatibility: daemon status response uses the legacy endpoint field; restart the daemon after updating nightcrow"
+                );
+            }
+            Err(error).context("protocol error: malformed daemon response JSON")
+        }
+    }
+}
+
+fn is_legacy_status_response(payload: &[u8]) -> bool {
+    let Ok(response) = serde_json::from_slice::<LegacyStatusResponse>(payload) else {
+        return false;
+    };
+    response.message_type == "status" && response.status.version == super::protocol::version()
 }
 
 #[cfg(test)]
