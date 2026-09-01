@@ -3,6 +3,7 @@ import { isUnauthorized } from "../api";
 import { appRows } from "../layout/appLayout";
 import { toast } from "../lib/toast";
 import { useClone } from "./useClone";
+import { useProjectCycleShortcut } from "./useProjectCycleShortcut";
 import { useProjectTabs } from "./useProjectTabs";
 import { useRepoActions } from "./useRepoActions";
 import { useRepoWorkspace } from "./useRepoWorkspace";
@@ -81,6 +82,17 @@ export function useAppViewModel() {
     },
     [tabs.repo, tabs.setRepo, workspace.clearPane],
   );
+  // Mounted here because this is where the tab order and the one selection
+  // path meet. Going through `selectRepo` rather than writing the active
+  // project itself is what keeps a shortcut switch identical to a tab click —
+  // pane clear, per-project view restore, and the single write-back in
+  // `useRepoPoll` that the `adoptedRef` invariant depends on.
+  useProjectCycleShortcut({
+    repos: tabs.repos,
+    repo: tabs.repo,
+    selectRepo,
+    enabled: authed === true,
+  });
   const openPicker = useCallback(() => setPickerOpen(true), []);
   const closePicker = useCallback(() => setPickerOpen(false), []);
   // Re-bootstrap after login instead of mounting repository state retained
