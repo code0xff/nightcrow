@@ -211,9 +211,11 @@ fn moving_with_fewer_than_two_tabs_asks_for_nothing() {
 
 #[test]
 fn moving_while_any_tab_is_unnamed_asks_for_nothing() {
-    // The order is sent as the whole strip, by catalog id. Leaving out a tab the
-    // daemon has not named yet would ask to drop that repository, so the request
-    // waits for the ids — the same early-out closing and stepping have.
+    // The order is sent as the whole strip, by catalog id, and the session
+    // appends whatever the order leaves out. Omitting a tab the daemon has not
+    // named yet would therefore send that repository to the back of the strip,
+    // so the request waits for the ids — the same early-out closing and
+    // stepping have.
     let mut ws = Workspace::new(KeyEvent::new(KeyCode::Char('f'), KeyModifiers::CONTROL));
     assert!(ws.add(project_at("/a")));
     assert!(ws.add(project_at("/b")));

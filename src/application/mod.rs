@@ -14,5 +14,8 @@ pub(crate) mod splash;
 pub(crate) mod terminal_guard;
 
 #[cfg(test)]
+#[path = "session_link_project_tests.rs"]
+mod session_link_project_tests;
+#[cfg(test)]
 #[path = "session_terminals_tests.rs"]
 mod session_terminals_tests;

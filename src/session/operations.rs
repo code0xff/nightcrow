@@ -221,7 +221,10 @@ pub fn reorder_repos(state: &SessionState, ids: &[String]) {
         .iter()
         .filter_map(|id| state.catalog.get(id).map(|entry| entry.path.clone()))
         .collect();
-    state.catalog.reorder(&paths);
+    // Before the slots move rather than after: the watcher reads the session on
+    // its own tick, and one landing between the two statements would see the new
+    // order while the fallback still named the old first tab — broadcasting the
+    // front-tab jump this pinning exists to prevent.
     if let Some(path) = front {
         // Only while the preference is still what the fallback was read
         // against, for the reason the close does the same: a focus arriving in
@@ -230,6 +233,7 @@ pub fn reorder_repos(state: &SessionState, ids: &[String]) {
             .prefs
             .set_active_repo_if(focus_before.as_deref(), path);
     }
+    state.catalog.reorder(&paths);
     persist_workspace(state);
 }
 

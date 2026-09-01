@@ -23,7 +23,7 @@ const DEADLINE: Duration = Duration::from_secs(15);
 ///
 /// The socket comes back with them: it owns the unlink and the instance lock, so
 /// dropping it would free the path the client is attached to.
-fn attached(dir: &tempfile::TempDir, repos: &[String]) -> (DaemonSocket, DaemonClient) {
+pub(super) fn attached(dir: &tempfile::TempDir, repos: &[String]) -> (DaemonSocket, DaemonClient) {
     let socket = DaemonSocket::bind(&dir.path().join("d.sock")).expect("binds");
     let listener = socket.listener().try_clone().expect("clones");
     let state = crate::test_util::session_state(repos, dir.path());

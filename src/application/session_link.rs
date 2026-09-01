@@ -188,23 +188,27 @@ fn cycle_target(ws: &Workspace, forward: bool) -> Option<String> {
 /// `None` at every boundary: fewer than two tabs, the front tab already at the
 /// end it is pushed towards — no wrap, because wrapping is the stepping chord's
 /// meaning and a held key would otherwise shuffle the strip — and any tab the
-/// daemon has not named yet, since an order missing an id would ask to drop that
-/// repository. Takes `&Workspace` because reordering is a request; the tabs move
-/// when the daemon rebroadcasts the set, never here.
+/// daemon has not named yet, since the session appends whatever an order leaves
+/// out (`CatalogMembership::reorder`), so a partial order would send that
+/// repository to the back of the strip. Takes `&Workspace` because reordering is
+/// a request; the tabs move when the daemon rebroadcasts the set, never here.
 fn moved_order(ws: &Workspace, forward: bool) -> Option<Vec<String>> {
-    let active = ws.active_index();
-    let neighbour = if forward {
-        active
-            .checked_add(1)
-            .filter(|next| *next < ws.projects().len())
-    } else {
-        active.checked_sub(1)
-    }?;
     let mut order: Vec<String> = ws
         .projects()
         .iter()
         .map(|project| project.repository_id().map(str::to_string))
         .collect::<Option<Vec<String>>>()?;
+    // Both ends bounded by the order just built, stated once: the forward step
+    // needs the length anyway, and reading it from the same place keeps the
+    // backward step from being the one that can address past the end, where
+    // `swap` would panic in the event loop rather than answer nothing.
+    let last = order.len().checked_sub(1)?;
+    let active = ws.active_index();
+    let neighbour = if forward {
+        (active < last).then(|| active + 1)
+    } else {
+        active.checked_sub(1).filter(|_| active <= last)
+    }?;
     order.swap(active, neighbour);
     Some(order)
 }
