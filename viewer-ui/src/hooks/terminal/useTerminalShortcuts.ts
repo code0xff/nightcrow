@@ -71,10 +71,11 @@ export function useTerminalShortcuts({
     map["terminal.closePane"] = () => live.current.commands.closePane(active);
     map["terminal.claimSizing"] = () => live.current.commands.claimSize();
     map["terminal.cancelRecovery"] = () => live.current.cancelRecovery(active);
-    // Runs nothing by design: `reduceLeader` holds the leader armed for the pane
-    // digit and never emits this action. The registration is what states the
-    // command is available — there is a pane to swap — so the keyboard and the
-    // help sheet cannot disagree about it.
+    // Registered to answer availability, never to run: `reduceLeader` owns the
+    // two-step sequence and never emits this action. Registration is the single
+    // source for "there is a pane to swap", so the keyboard and the help sheet
+    // cannot disagree — and the sheet renders it as text rather than a button
+    // because of `keyboardOnly` in the registry, not because of this handler.
     map["terminal.swapPanePrompt"] = noop;
     map.swapPanes = (nth: number) => {
       const target = paneAt(panes, nth);

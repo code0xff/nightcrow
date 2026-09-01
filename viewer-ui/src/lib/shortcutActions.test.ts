@@ -44,6 +44,24 @@ describe("SHORTCUT_ACTIONS", () => {
     }
   });
 
+  it("keyboardOnly는_두_번째_단계를_무장하는_액션에만_붙는다", () => {
+    // Derived from the registry rather than listed by hand, so a new action
+    // cannot be added with the flag — or without it — unnoticed. Arming a second
+    // step is the only reason it may be set: see the field's doc comment.
+    const keyboardOnly = SHORTCUT_ACTIONS.filter((a) => a.keyboardOnly).map(
+      (a) => a.id,
+    );
+    expect(keyboardOnly).toEqual(["terminal.swapPanePrompt"]);
+    for (const action of SHORTCUT_ACTIONS) {
+      if (!action.keyboardOnly) continue;
+      // The row is text, so its note is the only thing that can explain why
+      // there is nothing to press, and a chord action has no second step.
+      expect(action.note, action.id).toBeTruthy();
+      expect(action.leader, action.id).toBeTruthy();
+      expect(action.chord, action.id).toBeUndefined();
+    }
+  });
+
   it("fullscreen만_reinterpreted다", () => {
     // 브라우저에는 TUI의 fullscreen에 대응하는 것이 없어 의미만 옮긴다.
     const reinterpreted = SHORTCUT_ACTIONS.filter(

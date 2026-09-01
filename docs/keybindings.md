@@ -56,7 +56,7 @@ The leader followed by `t`, `w`, `s`, `z`, `c`, `l`, `b`, `o`, `x`, `p`, or `u` 
 - Detach: closing a tab already leaves the session running. Signing out is a different, destructive action and is deliberately not on a key.
 - `F1`–`F10` project selection: bare function keys are reserved by the browser and the OS. Use `Ctrl+Shift+Left` / `Ctrl+Shift+Right`, the project control, or the shortcut sheet instead.
 
-`F5` and `F11` are never bound, and the viewer does not try to block them. Which chords a browser delivers to a page at all is the browser's decision, not the viewer's: the bindings above avoid the ones Chrome, Edge, Firefox, and Safari reserve on Windows, macOS, and Linux, and a chord a browser keeps for itself simply never arrives. The shortcut sheet lists every action with its key and marks the ones unavailable on the current screen, and every action also has a button or menu item, so nothing is reachable by keyboard alone.
+`F5` and `F11` are never bound, and the viewer does not try to block them. Which chords a browser delivers to a page at all is the browser's decision, not the viewer's: the bindings above avoid the ones Chrome, Edge, Firefox, and Safari reserve on Windows, macOS, and Linux, and a chord a browser keeps for itself simply never arrives. The shortcut sheet lists every action with its key and marks the ones unavailable on the current screen, and every action also has a button or menu item. The one exception is `<prefix> s`, which arms a second step rather than running a command: no single control can stand for "then pick a pane", so the sheet lists it as text and dragging a pane does the same job.
 
 ## File list and commit list
 

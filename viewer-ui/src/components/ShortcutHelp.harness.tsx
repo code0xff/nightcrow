@@ -58,9 +58,10 @@ export function mount(handlers: ShortcutHandlers) {
   return { opener, settings: held };
 }
 
-/** The row for one action, whichever group it landed in. */
-export function row(id: string): HTMLButtonElement {
-  const found = document.querySelector<HTMLButtonElement>(
+/** The row for one action, whichever group it landed in. Not typed as a button:
+ *  a `keyboardOnly` action's row is deliberately not one. */
+export function row(id: string): HTMLElement {
+  const found = document.querySelector<HTMLElement>(
     `[data-shortcut-action="${id}"]`,
   );
   if (!found) throw new Error(`no help row for ${id}`);

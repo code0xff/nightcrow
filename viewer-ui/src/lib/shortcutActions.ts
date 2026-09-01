@@ -67,6 +67,18 @@ export interface ShortcutAction {
   support: ShortcutActionSupport;
   group: ShortcutGroup;
   note?: string;
+  /**
+   * True for an action the keyboard is the only way to reach, because pressing
+   * it arms a second step rather than running a command: `<prefix> s` waits for
+   * a pane digit, and a click has no next key to offer. The help sheet renders
+   * such an action as text instead of a button, and its `note` is what says why.
+   *
+   * Arming a second step is the ONLY legitimate reason a row is not a button.
+   * An ordinary action whose row does nothing is a missing handler on the intent
+   * bus — a bug — and must be fixed there rather than explained away by setting
+   * this flag on it.
+   */
+  keyboardOnly?: true;
 }
 
 // Leader digits for pane focus, mirroring the TUI split-view digit row: `1` and
@@ -94,7 +106,8 @@ export const SHORTCUT_ACTIONS: readonly ShortcutAction[] = [
     leader: "s",
     support: "direct",
     group: "terminal",
-    note: "Arms a second step: the next pane digit picks the pane to swap with.",
+    keyboardOnly: true,
+    note: "Arms a second step: the next pane digit picks the pane to swap with, so there is no button for it. Drag a pane to move it instead.",
   },
   { id: "terminal.claimSizing", label: "Claim terminal sizing", leader: "z", support: "direct", group: "terminal" },
   { id: "terminal.cancelRecovery", label: "Cancel plugin recovery", leader: "c", support: "direct", group: "terminal" },
