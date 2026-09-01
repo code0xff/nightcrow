@@ -10,6 +10,7 @@ pub(crate) mod event_loop;
 pub(crate) mod input;
 pub(crate) mod redraw;
 pub(crate) mod session_link;
+mod session_tabs;
 pub(crate) mod splash;
 pub(crate) mod terminal_guard;
 
