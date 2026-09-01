@@ -40,6 +40,7 @@ describe("reduceLeader - arm과 disarm", () => {
       "dialogOpen",
       "repoChange",
       "socketReconnect",
+      "disabled",
       "suppressed",
     ];
     for (const kind of events) {
@@ -147,6 +148,7 @@ describe("무장 해제 뒤의 다음 키", () => {
       { kind: "dialogOpen" },
       { kind: "repoChange" },
       { kind: "socketReconnect" },
+      { kind: "disabled" },
       { kind: "suppressed" },
       action("terminal.newPane"),
     ];

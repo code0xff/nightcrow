@@ -15,7 +15,11 @@ import type { MobileView } from "../types";
 
 export interface SidebarProps {
   tab: Tab;
-  setTab: (t: Tab) => void;
+  /** Show a list. The whole choice, not a raw setter: it invalidates the pane
+   *  request in flight, records the tab, drops the log's snapshot on the way
+   *  out, and empties the content pane the previous list filled
+   *  (`lib/tabChoice.ts`). The keyboard is handed the same function. */
+  chooseTab: (t: Tab) => void;
   filter: string;
   setFilter: (v: string) => void;
   filterOpen: boolean;
@@ -46,7 +50,6 @@ export interface SidebarProps {
   setLogStalled: (v: boolean | ((prev: boolean) => boolean)) => void;
   commitDrillDown: CommitDrillDown | null;
   setCommitDrillDown: (v: CommitDrillDown | null) => void;
-  resetLog: () => void;
   logSentinelRef: React.RefObject<HTMLLIElement | null>;
   visibleCommits: Commit[];
   logPagingPaused: boolean;
@@ -77,7 +80,7 @@ export interface SidebarProps {
 export function Sidebar(props: SidebarProps) {
   const {
     tab,
-    setTab,
+    chooseTab,
     filter,
     setFilter,
     filterOpen,
@@ -108,7 +111,6 @@ export function Sidebar(props: SidebarProps) {
     setLogStalled,
     commitDrillDown,
     setCommitDrillDown,
-    resetLog,
     logSentinelRef,
     visibleCommits,
     logPagingPaused,
@@ -165,20 +167,6 @@ export function Sidebar(props: SidebarProps) {
     tree.revealTreeDir(path);
   };
 
-  // Both halves of one choice: the list to show, and the pane it leaves empty
-  // behind it. Named here rather than in the tab row because the log's reset is
-  // this component's state.
-  const chooseTab = (t: Tab) => {
-    if (t === tab) return;
-    bumpPaneRequest();
-    if (tab === "log") {
-      setCommitDrillDown(null);
-      // Re-entering the log must use a fresh history snapshot.
-      resetLog();
-    }
-    setTab(t);
-    clearPane();
-  };
   const toggleFilter = () => {
     if (filterOpen) setFilter("");
     setFilterOpen((open) => !open);

@@ -1,7 +1,8 @@
 import { useCallback } from "react";
 import type { HotConfig, Repo, RepoView } from "../api";
 import { otherFace } from "../lib/otherFace";
-import type { Maximized } from "../types";
+import { applyTabChoice } from "../lib/tabChoice";
+import type { Maximized, Tab } from "../types";
 import { useDrillDownEviction } from "./useDrillDownEviction";
 import { useRepoData } from "./useRepoData";
 import { useRepoPaneActions } from "./useRepoPaneActions";
@@ -64,6 +65,35 @@ export function useRepoWorkspace({ project, view, layout }: UseRepoWorkspaceArgs
     openers: paneActions.openers,
   });
 
+  // The one "show this list" control, assembled here because every part of it
+  // lives in this file's seams and none of them in the tab row. The keyboard and
+  // the sidebar are handed the same function: a second copy of the sequence is
+  // how the keyboard came to record the tab without emptying the pane.
+  const showingTab = data.screen.tab;
+  const { bumpPaneRequest } = data.request;
+  const { setCommitDrillDown, resetLog } = data.log;
+  const { chooseTab: recordTab, forgetPane } = persistence;
+  const chooseTab = useCallback(
+    (next: Tab) =>
+      void applyTabChoice(showingTab, next, {
+        bumpPaneRequest,
+        leaveLog: () => {
+          setCommitDrillDown(null);
+          resetLog();
+        },
+        recordTab,
+        forgetPane,
+      }),
+    [
+      showingTab,
+      bumpPaneRequest,
+      setCommitDrillDown,
+      resetLog,
+      recordTab,
+      forgetPane,
+    ],
+  );
+
   useDrillDownEviction(
     data.log.commits,
     data.log.commitDrillDown,
@@ -102,11 +132,11 @@ export function useRepoWorkspace({ project, view, layout }: UseRepoWorkspaceArgs
     clearPane: data.request.clearPane,
     maximized,
     // Exposed for the keyboard, which reaches the same three controls the
-    // sidebar and the toolbar do: the recording tab setter rather than the raw
-    // one, the tab it would be toggling away from, and the per-project panel
+    // sidebar and the toolbar do: the composed list chooser the tab row is given
+    // below, the tab it would be toggling away from, and the per-project panel
     // maximize already bound to the project on screen.
-    tab: data.screen.tab,
-    chooseTab: persistence.chooseTab,
+    tab: showingTab,
+    chooseTab,
     setMaximized,
     repoShell: repo
       ? {
@@ -126,7 +156,7 @@ export function useRepoWorkspace({ project, view, layout }: UseRepoWorkspaceArgs
             hotWindowMs: data.status.hotWindowMs,
             ...paneActions.openers,
             ...persistence.asked,
-            setTab: persistence.chooseTab,
+            chooseTab,
             authed,
             handle,
             bumpPaneRequest: data.request.bumpPaneRequest,

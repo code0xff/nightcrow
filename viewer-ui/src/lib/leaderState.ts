@@ -30,6 +30,10 @@ export type LeaderEvent =
   | { kind: "dialogOpen" }
   | { kind: "repoChange" }
   | { kind: "socketReconnect" }
+  /** The keyboard switched off entirely — the session expired and the login
+   *  screen has it. The listener goes away with it, so an armed leader would
+   *  otherwise still be armed when the page comes back. */
+  | { kind: "disabled" }
   | { kind: "suppressed" };
 
 export type LeaderEffect =
@@ -66,6 +70,7 @@ export function reduceLeader(state: LeaderState, event: LeaderEvent): LeaderStep
     case "dialogOpen":
     case "repoChange":
     case "socketReconnect":
+    case "disabled":
     case "suppressed":
     case "cancel":
       return idle();

@@ -110,6 +110,20 @@ describe("useShortcuts 리더 해제", () => {
     expectIdle(actions);
   });
 
+  it("키보드가_꺼지면_해제된다", () => {
+    // The session expiring puts the login screen up and takes the listener away
+    // with `enabled`. Coming back has to come back idle: otherwise the first key
+    // typed into a pane after signing back in is spent on the leader nobody
+    // remembers pressing.
+    const { actions, update } = mount();
+
+    leader();
+    update({ enabled: false });
+    update({ enabled: true });
+
+    expectIdle(actions);
+  });
+
   it("해제_뒤에도_리더는_다시_무장한다", () => {
     const { actions } = mount();
 

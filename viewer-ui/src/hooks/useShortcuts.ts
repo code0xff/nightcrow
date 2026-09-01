@@ -117,6 +117,15 @@ export function useShortcuts({
     if (dialogOpen) dispatch({ kind: "dialogOpen" });
   }, [dialogOpen, dispatch]);
 
+  // The keyboard being taken away altogether: the session expired mid-sequence
+  // and the login screen has it. This hook stays mounted through that, so the
+  // armed state outlives the listener unless it is cleared here — and signing
+  // back in would spend the first key typed into a pane on a leader pressed
+  // before the interruption.
+  useEffect(() => {
+    if (!enabled) dispatch({ kind: "disabled" });
+  }, [enabled, dispatch]);
+
   // A project switch, which is also the terminal socket's own signal: the socket
   // effect is keyed on the repository (`useTerminalSocket`), so a switch tears
   // every pane down and hands out ids that mean something else.
