@@ -8,7 +8,7 @@ The header's project control opens an existing server-side directory, closes a p
 
 Only `https://`, `http://`, `ssh://`, `git+ssh://`, and scp-style `user@host:path` remotes are accepted. Local paths, `file://`, `git://`, and `ext::` are refused. One clone runs at a time; it continues on the server if the page is closed or reloaded, and the page can resume polling it. A destination with an existing name is rejected.
 
-Each project exposes `status`, `log`, and `tree` views, a diff/file content pane, and the same interactive terminal session as an attached TUI. The [Views](views.md) and [Keyboard and mouse](keybindings.md) guides describe the shared Git and input behavior. Browser view state (last tab/file, tree expansion, and maximized panel) is stored separately from TUI view state.
+Each project exposes `status`, `log`, and `tree` views, a diff/file content pane, and the same interactive terminal session as an attached TUI. The [Views](views.md) and [Keyboard and mouse](keybindings.md) guides describe the shared Git and input behavior. The viewer binds the same commands to keys a browser can actually receive rather than to the TUI's physical keys; [Keyboard and mouse → Web viewer](keybindings.md#web-viewer) records which commands the browser keeps unchanged, reinterprets, or leaves unbound, and the in-app shortcut sheet lists them with their keys and marks the ones unavailable on the current screen. Browser view state (last tab/file, tree expansion, and maximized panel) is stored separately from TUI view state.
 
 Markdown files render as formatted documents with highlighted fenced code. `.html` and `.htm` files can render in a sandbox that allows inline scripts but blocks cookies, session access, network connections, and external assets; use the raw-source toggle for inspection. The rendered page is a preview of a self-contained file, not a general website.
 
@@ -18,7 +18,7 @@ Drag the sidebar and upper-panel dividers to resize them; double-click a divider
 
 The terminal toolbar can add a pane, show panes as a grid or tabs, maximize the terminal panel, claim sizing for this screen, and show the on-screen key bar. A project has up to 8 panes. Pane order and zoom are shared while the session runs; they are not restored after the session ends. A PTY has one size, so the client that most recently claims sizing determines the grid rendered by every client.
 
-On phones and other narrow layouts, the bottom navigation switches among `Repo`, `Content`, and `Terminal`. Touch-dragging a terminal scrolls it; the key bar supplies Escape, Tab, arrows, and control keys when a soft keyboard cannot. Its `Ctrl` button is a latch for the next typed character. The keyboard-bar preference is stored in the browser, so it can be changed from the terminal toolbar.
+On phones and other narrow layouts, the bottom navigation switches among `Repo`, `Content`, and `Terminal`. Touch-dragging a terminal scrolls it; the key bar supplies Escape, Tab, arrows, and control keys when a soft keyboard cannot. Its `Ctrl` button is a latch for the next typed character. The keyboard-bar preference is stored in the browser, so it can be changed from the terminal toolbar. The shortcut leader key is stored in the browser too, and can be rebound or switched off from the shortcut sheet.
 
 Terminal programs may write to the clipboard through OSC 52; the text reaches the browser device viewing the pane. A program requesting clipboard contents is not answered. If the browser requires a user gesture to write, the viewer shows a Copy action.
 
