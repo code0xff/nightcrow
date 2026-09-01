@@ -2,6 +2,7 @@ import type { CSSProperties } from "react";
 import { XIcon } from "../icons/actions";
 import { MaximizeIcon } from "../icons/layout";
 import { RecoveryChip } from "./RecoveryChip";
+import { useShortcutHint } from "../../hooks/shortcutLeader";
 import type { PaneRecovery } from "../../lib/recovery";
 import { TAB_TITLE_MAX_CELLS, truncateCells } from "../../lib/terminalLayout";
 
@@ -64,6 +65,12 @@ export function TerminalCell({
   bodyRef,
   bodyTouch,
 }: TerminalCellProps) {
+  const shortcut = useShortcutHint();
+  // Both keys act on the *active* pane, so only the active cell may name them:
+  // on any other cell they would close or zoom a different terminal than the
+  // button under the announcement.
+  const paneKey = (id: "terminal.closePane" | "view.toggleMaximize", title: string) =>
+    isActive ? shortcut(id, title) : { title };
   const borderClass = isDropTarget
     ? "border-accent ring-1 ring-accent"
     : isActive
@@ -116,7 +123,10 @@ export function TerminalCell({
               onMouseDown={(e) => e.stopPropagation()}
               onClick={onToggleZoom}
               aria-pressed={isZoomed}
-              title={isZoomed ? "Restore the grid" : "Zoom this terminal"}
+              {...paneKey(
+                "view.toggleMaximize",
+                isZoomed ? "Restore the grid" : "Zoom this terminal",
+              )}
               aria-label={isZoomed ? "Restore the grid" : "Zoom this terminal"}
               className="flex h-8 w-8 shrink-0 items-center justify-center rounded-sm text-ink-400 hover:text-accent md:h-6 md:w-6"
             >
@@ -126,7 +136,7 @@ export function TerminalCell({
           <button
             onMouseDown={(e) => e.stopPropagation()}
             onClick={onClose}
-            title="Close terminal"
+            {...paneKey("terminal.closePane", "Close terminal")}
             aria-label={`close terminal ${index + 1}`}
             className="flex h-8 w-8 shrink-0 items-center justify-center rounded-sm text-ink-400 hover:text-removed md:h-6 md:w-6"
           >

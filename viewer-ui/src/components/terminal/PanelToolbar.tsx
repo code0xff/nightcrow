@@ -9,6 +9,7 @@ import {
   TabViewIcon,
 } from "../icons/layout";
 import { RecoveryChip } from "./RecoveryChip";
+import { useShortcutHint } from "../../hooks/shortcutLeader";
 import { orphanRecovery, type RecoveryByPane } from "../../lib/recovery";
 import { focusFillsEmptyPanel } from "../../lib/paneFocus";
 import type { PaneViewMode } from "../../lib/paneViewMode";
@@ -66,6 +67,7 @@ export function PanelToolbar({
   // Where the keyboard goes when the panel empties. Counted here rather than
   // watched, because the elements it was on are gone by the time this runs and
   // the body cannot say which of them it fell from.
+  const shortcut = useShortcutHint();
   const createRef = useRef<HTMLButtonElement>(null);
   const beforeRef = useRef(panes.length);
   useLayoutEffect(() => {
@@ -105,7 +107,10 @@ export function PanelToolbar({
       {!ownsSize && (
         <button
           onClick={onClaimSize}
-          title="These panes are sized for another client. Resize them to fit this screen."
+          {...shortcut(
+            "terminal.claimSizing",
+            "These panes are sized for another client. Resize them to fit this screen.",
+          )}
           aria-label="Fit the panes to this screen"
           className={`ml-auto ${button}`}
         >
@@ -115,7 +120,7 @@ export function PanelToolbar({
       <button
         ref={createRef}
         onClick={onCreate}
-        title="New terminal"
+        {...shortcut("terminal.newPane", "New terminal")}
         aria-label="New terminal"
         className={`${button} ${ownsSize ? "ml-auto" : ""}`}
       >
@@ -150,7 +155,13 @@ export function PanelToolbar({
       <button
         onClick={onToggleMaximized}
         aria-pressed={maximized}
-        title={maximized ? "Restore panel height" : "Maximize the panel"}
+        // The panel half of the reinterpreted maximize: the key does this and
+        // zooms the active pane, this button only does this. Named anyway —
+        // pressing it is something the key genuinely carries out.
+        {...shortcut(
+          "view.toggleMaximize",
+          maximized ? "Restore panel height" : "Maximize the panel",
+        )}
         aria-label={maximized ? "Restore panel height" : "Maximize the panel"}
         className={`hidden md:flex ${button}`}
       >

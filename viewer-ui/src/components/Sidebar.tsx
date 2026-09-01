@@ -1,10 +1,10 @@
 import { useEffect, useRef } from "react";
 import type { PointerEvent as ReactPointerEvent } from "react";
-import { SearchIcon } from "./icons/actions";
 import { focusRegionAttrs } from "../lib/shortcutDom";
 import { useTree } from "../hooks/useTree";
 import { buildTreeRows } from "../lib/tree";
 import { ancestorDirs, toggled } from "../lib/treeCache";
+import { SidebarTabs } from "./SidebarTabs";
 import { StatusList } from "./StatusList";
 import { LogList } from "./LogList";
 import { TreeList } from "./TreeList";
@@ -165,6 +165,25 @@ export function Sidebar(props: SidebarProps) {
     tree.revealTreeDir(path);
   };
 
+  // Both halves of one choice: the list to show, and the pane it leaves empty
+  // behind it. Named here rather than in the tab row because the log's reset is
+  // this component's state.
+  const chooseTab = (t: Tab) => {
+    if (t === tab) return;
+    bumpPaneRequest();
+    if (tab === "log") {
+      setCommitDrillDown(null);
+      // Re-entering the log must use a fresh history snapshot.
+      resetLog();
+    }
+    setTab(t);
+    clearPane();
+  };
+  const toggleFilter = () => {
+    if (filterOpen) setFilter("");
+    setFilterOpen((open) => !open);
+  };
+
   return (
     <section
       ref={sidebarRef}
@@ -197,48 +216,12 @@ export function Sidebar(props: SidebarProps) {
           }`}
         />
       )}
-      <div className="flex shrink-0 items-stretch border-b border-ink-700 px-2">
-        {(["status", "log", "tree"] as Tab[]).map((t) => (
-          <button
-            key={t}
-            onClick={() => {
-              if (t === tab) return;
-              bumpPaneRequest();
-              if (tab === "log") {
-                setCommitDrillDown(null);
-                // Re-entering the log must use a fresh history snapshot.
-                resetLog();
-              }
-              // Both halves of one choice: the list to show, and the pane it
-              // leaves empty behind it.
-              setTab(t);
-              clearPane();
-            }}
-            aria-current={t === tab ? "page" : undefined}
-            className={`-mb-px border-b-2 px-2 py-1 ${
-              t === tab
-                ? "border-accent text-ink-50"
-                : "border-transparent text-ink-400 hover:text-ink-200"
-            }`}
-          >
-            {t}
-          </button>
-        ))}
-        <button
-          onClick={() => {
-            if (filterOpen) setFilter("");
-            setFilterOpen((open) => !open);
-          }}
-          aria-pressed={filterOpen}
-          title={filterOpen ? "Hide the filter" : "Filter the list"}
-          aria-label={filterOpen ? "Hide the filter" : "Filter the list"}
-          className={`my-1 ml-auto flex shrink-0 items-center rounded-sm px-1.5 hover:text-accent ${
-            filterOpen ? "text-ink-50" : "text-ink-400"
-          }`}
-        >
-          <SearchIcon />
-        </button>
-      </div>
+      <SidebarTabs
+        tab={tab}
+        onChoose={chooseTab}
+        filterOpen={filterOpen}
+        onToggleFilter={toggleFilter}
+      />
       {filterOpen && (
         <input
           value={filter}

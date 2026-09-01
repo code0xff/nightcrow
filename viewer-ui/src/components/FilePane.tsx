@@ -9,6 +9,7 @@ import {
 } from "../lib/virtualWindow";
 import { otherFace, sourceKey } from "../lib/otherFace";
 import { focusRegionAttrs } from "../lib/shortcutDom";
+import { useShortcutHint } from "../hooks/shortcutLeader";
 import {
   MaximizeIcon,
   PreviewIcon,
@@ -60,6 +61,7 @@ export function FilePane({
   className = "",
 }: FilePaneProps) {
   const diffLayout = useDiffLayout();
+  const shortcut = useShortcutHint();
   const scroller = useRef<HTMLDivElement>(null);
   const { viewport, refresh: refreshViewport } = useScrollViewport(scroller);
   const anchor = pane.kind === "file" ? pane.anchor : undefined;
@@ -205,7 +207,10 @@ export function FilePane({
           <button
             onClick={() => setMaximized(filesMax ? "none" : "files")}
             aria-pressed={filesMax}
-            title={filesMax ? "Restore the layout" : "Maximize the file pane"}
+            {...shortcut(
+              "view.toggleMaximize",
+              filesMax ? "Restore the layout" : "Maximize the file pane",
+            )}
             aria-label={
               filesMax ? "Restore the layout" : "Maximize the file pane"
             }
