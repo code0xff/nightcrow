@@ -1,16 +1,12 @@
-import { useCallback, useState } from "react";
+import { useState } from "react";
 import { planLayout } from "../../lib/terminalLayout";
 import { usePaneDrag } from "../../hooks/terminal/usePaneDrag";
-import { useTerminalSocket } from "../../hooks/terminal/useTerminalSocket";
-import { useTerminalViews } from "../../hooks/terminal/useTerminalViews";
-import { usePaneSizes } from "../../hooks/terminal/usePaneSizes";
 import { usePaneRecovery } from "../../hooks/terminal/usePaneRecovery";
 import { usePaneCommands } from "../../hooks/terminal/usePaneCommands";
 import { useTerminalRefs } from "../../hooks/terminal/useTerminalRefs";
 import { useTerminalShortcuts } from "../../hooks/terminal/useTerminalShortcuts";
-import { usePaneFocus } from "../../hooks/terminal/usePaneFocus";
+import { useTerminalWiring } from "../../hooks/terminal/useTerminalWiring";
 import { useCtrlLatch } from "../../hooks/terminal/useCtrlLatch";
-import { useStartupSizes } from "../../hooks/terminal/useStartupSizes";
 import { usePanelSize } from "../../hooks/terminal/usePanelSize";
 import { AttachNotice } from "./AttachNotice";
 import { PaneGrid } from "./PaneGrid";
@@ -23,7 +19,7 @@ import { rememberPane } from "../../lib/lastPane";
 import { shownTab } from "../../lib/paneViewMode";
 import { PanelDivider, type PanelDividerProps } from "./PanelDivider";
 import { PanelToolbar } from "./PanelToolbar";
-import { renderedZoom, zoomPending } from "../../lib/zoom";
+import { renderedZoom } from "../../lib/zoom";
 import {
   attachLabel,
   attachStatus,
@@ -45,17 +41,11 @@ export function TerminalPanel({
   /** The panel's own element, the bottom edge of the region the split divides. */
   sectionRef: React.RefObject<HTMLElement | null>;
 } & PanelDividerProps) {
-  const {
-    containerRef,
-    socketRef,
-    viewsRef,
-    bodyRefs,
-    ptySizesRef,
-    askedSizesRef,
-    pendingRef,
-    zoomAskedRef,
-    slotRefs,
-  } = useTerminalRefs();
+  // Held as one bag and passed to `useTerminalWiring` that way; the names below
+  // are the ones this component reads for itself.
+  const refs = useTerminalRefs();
+  const { containerRef, socketRef, viewsRef, bodyRefs, zoomAskedRef, slotRefs } =
+    refs;
   const [pending, setPending] = useState<number | null>(null);
   // Where the socket is. Held here rather than inferred from the pane list,
   // which is empty both while attaching and when the session really has no
@@ -92,14 +82,19 @@ export function TerminalPanel({
   // What the panel puts on screen: the focused tab, or the zoom in the grid.
   const shown = tabs ? shownTab(active, panes) : zoom;
 
-  useTerminalSocket({
+  useTerminalWiring({
     repo,
-    socketRef,
-    viewsRef,
-    pendingRef,
-    ptySizesRef,
-    askedSizesRef,
-    zoomAskedRef,
+    refs,
+    size,
+    mode,
+    panes,
+    active,
+    replayLeft,
+    pending,
+    ownsSize,
+    zoomShown,
+    zoomServer,
+    consumeCtrl: ctrl.consume,
     setLink,
     setPending,
     setReplayLeft,
@@ -109,58 +104,6 @@ export function TerminalPanel({
     setTitles,
     setOwnsSize,
     setRecovery,
-  });
-
-  useTerminalViews({
-    panes,
-    size,
-    zoomed: zoomShown,
-    mode,
-    socketRef,
-    viewsRef,
-    bodyRefs,
-    pendingRef,
-    ptySizesRef,
-    consumeCtrl: ctrl.consume,
-    setTitles,
-  });
-
-  const onAnswered = useCallback(() => setPending(null), []);
-  useStartupSizes({
-    pending,
-    size,
-    socketRef,
-    slotRefs,
-    panesExist: panes.length > 0,
-    onAnswered,
-  });
-
-  usePaneSizes({
-    panes,
-    size,
-    zoomed: zoomShown,
-    mode,
-    socketRef,
-    viewsRef,
-    bodyRefs,
-    ptySizesRef,
-    askedSizesRef,
-    ownsSize,
-    layoutPending: zoomPending(zoomServer, panes),
-  });
-
-  usePaneFocus({
-    repo,
-    panes,
-    replayLeft,
-    active,
-    setActive,
-    zoomed: zoomServer,
-    zoom: zoomShown,
-    viewsRef,
-    panelRef: containerRef,
-    size,
-    mode,
   });
 
   const focusPane = (pane: number) => {
@@ -177,11 +120,22 @@ export function TerminalPanel({
   const focusActive = () => active !== null && focusPane(active);
 
   const commands = usePaneCommands({
-    socketRef, viewsRef, zoomed: zoom, zoomAskedRef, active,
+    socketRef,
+    viewsRef,
+    zoomed: zoom,
+    zoomAskedRef,
+    active,
   });
-  const { create, toggleZoom, claimSize, closePane, reorder, sendKey } = commands;
+  const { create, toggleZoom, claimSize, closePane, reorder, sendKey } =
+    commands;
   useTerminalShortcuts({
-    socketRef, panes, active, link, commands, focusPane, cancelRecovery,
+    socketRef,
+    panes,
+    active,
+    link,
+    commands,
+    focusPane,
+    cancelRecovery,
   });
 
   const {

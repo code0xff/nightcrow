@@ -43,3 +43,6 @@ export function useTerminalRefs() {
     slotRefs,
   };
 }
+
+/** The bag above, passed as a unit wherever a hook needs several of them. */
+export type TerminalRefs = ReturnType<typeof useTerminalRefs>;
