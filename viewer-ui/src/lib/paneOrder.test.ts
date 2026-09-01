@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { reconcileOrder, reorderByDrop } from "./paneOrder";
+import { paneAt, reconcileOrder, reorderByDrop, swapOrder } from "./paneOrder";
 
 describe("reorderByDrop", () => {
   it("뒤로_끌면_타겟_앞에_삽입한다", () => {
@@ -67,5 +67,38 @@ describe("문자열_id로도_동작한다 (project tabs)", () => {
       "r1",
       "r4",
     ]);
+  });
+});
+
+describe("paneAt 숫자로 pane 고르기", () => {
+  it("보이는_순서의_n번째를_돌려준다", () => {
+    // Pane ids are handed out by the session; a shortcut digit names a position.
+    expect(paneAt([7, 8, 9], 1)).toBe(7);
+    expect(paneAt([7, 8, 9], 3)).toBe(9);
+  });
+
+  it("없는_자리는_null이다", () => {
+    expect(paneAt([7, 8, 9], 4)).toBeNull();
+    expect(paneAt([], 1)).toBeNull();
+    expect(paneAt([7], 0)).toBeNull();
+  });
+});
+
+describe("swapOrder 두 pane 자리 바꾸기", () => {
+  it("두_자리를_맞바꾸고_나머지는_두지_않는다", () => {
+    expect(swapOrder([7, 8, 9], 8, 7)).toEqual([8, 7, 9]);
+    expect(swapOrder([7, 8, 9, 10], 7, 10)).toEqual([10, 8, 9, 7]);
+  });
+
+  it("없는_pane이나_같은_pane이면_배치는_그대로다", () => {
+    // A stale digit must not be able to rewrite the arrangement.
+    expect(swapOrder([7, 8, 9], 8, 99)).toEqual([7, 8, 9]);
+    expect(swapOrder([7, 8, 9], 8, 8)).toEqual([7, 8, 9]);
+  });
+
+  it("원본을_바꾸지_않는다", () => {
+    const order = [7, 8, 9];
+    swapOrder(order, 7, 9);
+    expect(order).toEqual([7, 8, 9]);
   });
 });

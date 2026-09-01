@@ -2,9 +2,10 @@ import { useCallback, useState } from "react";
 import { isUnauthorized } from "../api";
 import { appRows } from "../layout/appLayout";
 import { toast } from "../lib/toast";
+import { useAppShortcuts } from "./useAppShortcuts";
 import { useClone } from "./useClone";
-import { useProjectCycleShortcut } from "./useProjectCycleShortcut";
 import { useProjectTabs } from "./useProjectTabs";
+import { useReloadConfig } from "./useReloadConfig";
 import { useRepoActions } from "./useRepoActions";
 import { useRepoWorkspace } from "./useRepoWorkspace";
 import { useResumeTick } from "./useResumeTick";
@@ -82,19 +83,32 @@ export function useAppViewModel() {
     },
     [tabs.repo, tabs.setRepo, workspace.clearPane],
   );
-  // Mounted here because this is where the tab order and the one selection
-  // path meet. Going through `selectRepo` rather than writing the active
+  const openPicker = useCallback(() => setPickerOpen(true), []);
+  const closePicker = useCallback(() => setPickerOpen(false), []);
+  // Hoisted out of `Header` so the button and the keyboard share one reload:
+  // a second instance would keep its own `inFlight` guard and two requests
+  // could be open at once.
+  const config = useReloadConfig();
+  // The whole keyboard, mounted here because this is where everything it drives
+  // already meets: authentication, the picker, the tab order and the one
+  // selection path. Going through `selectRepo` rather than writing the active
   // project itself is what keeps a shortcut switch identical to a tab click —
   // pane clear, per-project view restore, and the single write-back in
   // `useRepoPoll` that the `adoptedRef` invariant depends on.
-  useProjectCycleShortcut({
-    repos: tabs.repos,
-    repo: tabs.repo,
-    selectRepo,
+  const shortcuts = useAppShortcuts({
     enabled: authed === true,
+    repo: tabs.repo,
+    repos: tabs.repos,
+    selectRepo,
+    closeRepo,
+    openPicker,
+    pickerOpen,
+    cycleAccent: layout.cycle,
+    reloadConfig: config.reload,
+    tab: workspace.tab,
+    chooseTab: workspace.chooseTab,
+    setMaximized: workspace.setMaximized,
   });
-  const openPicker = useCallback(() => setPickerOpen(true), []);
-  const closePicker = useCallback(() => setPickerOpen(false), []);
   // Re-bootstrap after login instead of mounting repository state retained
   // from an expired session before the first authenticated poll completes.
   const login = useCallback(() => setAuthed(null), []);
@@ -120,7 +134,14 @@ export function useAppViewModel() {
       onRepoDragStart: tabs.onRepoDragStart,
       onRepoDragMove: tabs.onRepoDragMove,
       onRepoDragEnd: tabs.onRepoDragEnd,
+      onReloadConfig: config.reload,
+      reloading: config.pending,
     },
+    // The help sheet's state only. Another component renders it, and it reads
+    // what is available and what the leader is from the same two sources the
+    // keyboard does — the intent bus and `useShortcutSettings`.
+    shortcutHelp: shortcuts.shortcutHelp,
+    leader: shortcuts.settings,
     repoShell: workspace.repoShell,
     picker: pickerOpen
       ? {

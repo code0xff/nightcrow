@@ -1,7 +1,6 @@
 import { Mark } from "./Mark";
 import { ProjectMenu } from "./ProjectMenu";
 import { LogOutIcon, PlusIcon, RefreshIcon, XIcon } from "./icons/actions";
-import { useReloadConfig } from "../hooks/useReloadConfig";
 import { tabLabel } from "../lib/tabLabel";
 import type { Repo } from "../api";
 
@@ -22,6 +21,11 @@ export interface HeaderProps {
   onRepoDragStart: (event: React.PointerEvent, id: string) => void;
   onRepoDragMove: (event: React.PointerEvent) => void;
   onRepoDragEnd: () => void;
+  /** Owned by the page, not by this component: the keyboard reloads the config
+   *  too, and two instances of `useReloadConfig` would each hold their own
+   *  in-flight guard. */
+  onReloadConfig: () => void;
+  reloading: boolean;
 }
 
 export function Header({
@@ -39,10 +43,9 @@ export function Header({
   onRepoDragStart,
   onRepoDragMove,
   onRepoDragEnd,
+  onReloadConfig,
+  reloading,
 }: HeaderProps) {
-  // Kept here rather than threaded down from `App`: a reload changes nothing this
-  // component's parents render, so there is no state for them to hold.
-  const { reload, pending: reloading } = useReloadConfig();
   return (
     <header className="flex items-center gap-2 border-b border-ink-700 bg-ink-900 px-[12.8px] py-[8.8px]">
       <Mark className="h-[22px] w-[22px] shrink-0" />
@@ -141,7 +144,7 @@ export function Header({
           reads as a browser refresh, and this reloads the server's config.toml
           while leaving the page exactly as it is. */}
       <button
-        onClick={reload}
+        onClick={onReloadConfig}
         disabled={reloading}
         title="Reload config.toml on the server (does not reload this page)"
         aria-label="reload the server config"

@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import type { PointerEvent as ReactPointerEvent } from "react";
 import { SearchIcon } from "./icons/actions";
+import { focusRegionAttrs } from "../lib/shortcutDom";
 import { useTree } from "../hooks/useTree";
 import { buildTreeRows } from "../lib/tree";
 import { ancestorDirs, toggled } from "../lib/treeCache";
@@ -167,6 +168,10 @@ export function Sidebar(props: SidebarProps) {
   return (
     <section
       ref={sidebarRef}
+      // The region `focus.list` sends the keyboard to. `tabIndex={-1}` because a
+      // container is not focusable otherwise, and -1 keeps it out of the Tab
+      // order: it is a shortcut target, not a stop.
+      {...focusRegionAttrs("list")}
       className={`relative min-h-0 flex-col overflow-hidden ${
         mobileView === "files" ? "flex" : "hidden md:flex"
       } ${filesMax ? "md:flex" : "border-ink-700 md:border-r"}`}

@@ -8,6 +8,7 @@ import {
   VIRTUAL_THRESHOLD,
 } from "../lib/virtualWindow";
 import { otherFace, sourceKey } from "../lib/otherFace";
+import { focusRegionAttrs } from "../lib/shortcutDom";
 import {
   MaximizeIcon,
   PreviewIcon,
@@ -136,7 +137,11 @@ export function FilePane({
     refreshViewport();
   }, [pane, anchor, refreshViewport]);
   return (
-    <section className={`min-h-0 min-w-0 flex-col ${className}`}>
+    // `focus.content` sends the keyboard here; see `focusRegionAttrs`.
+    <section
+      {...focusRegionAttrs("content")}
+      className={`min-h-0 min-w-0 flex-col ${className}`}
+    >
       <div className="flex shrink-0 items-center gap-2 bg-ink-850 px-3 py-0.5 text-ink-400">
         {pane.kind === "file" && <PathLabel path={pane.value.path} />}
         <div className="ml-auto flex shrink-0 items-center gap-1">

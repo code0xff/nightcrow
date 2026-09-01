@@ -1,6 +1,7 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "./pages/App";
+import { ShortcutIntentProvider } from "./hooks/shortcutIntents";
 import { ErrorBoundary } from "./components/feedback/ErrorBoundary";
 import { Toaster } from "./components/feedback/Toaster";
 import { notePageBuild } from "./lib/viewerBuild";
@@ -31,7 +32,16 @@ createRoot(document.getElementById("root")!).render(
       still readable.
     */}
     <ErrorBoundary>
-      <App />
+      {/*
+        Above `App` because the terminal panel registers its commands from deep
+        inside the tree while the one keyboard handler sits at the top: the
+        provider is the seam between them. Outside `App` for the ordinary
+        reason a context provider is — a hook cannot read a provider its own
+        component renders.
+      */}
+      <ShortcutIntentProvider>
+        <App />
+      </ShortcutIntentProvider>
     </ErrorBoundary>
     <Toaster />
   </StrictMode>,

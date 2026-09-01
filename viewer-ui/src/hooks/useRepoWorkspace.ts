@@ -101,6 +101,13 @@ export function useRepoWorkspace({ project, view, layout }: UseRepoWorkspaceArgs
     setTab: data.screen.setTab,
     clearPane: data.request.clearPane,
     maximized,
+    // Exposed for the keyboard, which reaches the same three controls the
+    // sidebar and the toolbar do: the recording tab setter rather than the raw
+    // one, the tab it would be toggling away from, and the per-project panel
+    // maximize already bound to the project on screen.
+    tab: data.screen.tab,
+    chooseTab: persistence.chooseTab,
+    setMaximized,
     repoShell: repo
       ? {
           repository: {
