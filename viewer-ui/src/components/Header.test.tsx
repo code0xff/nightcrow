@@ -33,6 +33,7 @@ function mount(over: Partial<HeaderProps> = {}) {
     onReloadConfig: vi.fn(),
     reloading: false,
     onShowShortcuts: vi.fn(),
+    tabStrip: { side: "top", toggle: vi.fn() },
     ...over,
   };
   render(
@@ -112,5 +113,28 @@ describe("Header", () => {
     fireEvent.click(screen.getByRole("button", { name: "keyboard shortcuts" }));
 
     expect(props.onShowShortcuts).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("Header 탭 스트립 위치", () => {
+  it("위에_둘_때는_헤더가_스트립을_그린다", () => {
+    mount();
+
+    expect(screen.getByRole("navigation")).toBeTruthy();
+    const toggle = screen.getByRole("button", { name: /project tabs: top/ });
+    expect(toggle.getAttribute("aria-pressed")).toBe("false");
+  });
+
+  it("왼쪽에_둘_때는_헤더에_스트립이_없고_옮기는_버튼만_남는다", () => {
+    // The page draws the left strip beside the whole grid; a second copy in
+    // the header would be two strips for one list of projects.
+    const toggle = vi.fn();
+    mount({ tabStrip: { side: "left", toggle } });
+
+    expect(screen.queryByRole("navigation")).toBeNull();
+    const button = screen.getByRole("button", { name: /project tabs: left/ });
+    expect(button.getAttribute("aria-pressed")).toBe("true");
+    fireEvent.click(button);
+    expect(toggle).toHaveBeenCalledTimes(1);
   });
 });

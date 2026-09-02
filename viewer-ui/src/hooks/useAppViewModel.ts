@@ -10,6 +10,7 @@ import { useRepoActions } from "./useRepoActions";
 import { useRepoWorkspace } from "./useRepoWorkspace";
 import { useResumeTick } from "./useResumeTick";
 import { useShellLayout } from "./useShellLayout";
+import { useTabStripSide } from "./ui/tabStripSide";
 
 /** The page-level seams between authentication, projects, and repository UI. */
 export function useAppViewModel() {
@@ -24,6 +25,8 @@ export function useAppViewModel() {
   }, []);
   const resumeTick = useResumeTick();
   const layout = useShellLayout();
+  // This device's alone, like the pane view mode; see the hook.
+  const tabStrip = useTabStripSide();
 
   const tabs = useProjectTabs({
     authed,
@@ -138,7 +141,11 @@ export function useAppViewModel() {
       onRepoDragEnd: tabs.onRepoDragEnd,
       onReloadConfig: config.reload,
       reloading: config.pending,
+      tabStrip,
     },
+    // Where the project strip is drawn. The page places the left one itself,
+    // outside the grid the header tops; the header draws the top one.
+    tabStrip,
     // The help sheet's state only. Another component renders it, and it reads
     // what is available and what the leader is from the same two sources the
     // keyboard does — the intent bus and `useShortcutSettings`.

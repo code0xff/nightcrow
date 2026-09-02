@@ -3,6 +3,7 @@ import { FolderPicker } from "../components/FolderPicker";
 import { Header } from "../components/Header";
 import { LoadingSplash } from "../components/LoadingSplash";
 import { Login } from "../components/Login";
+import { ProjectStrip } from "../components/ProjectStrip";
 import { RepoShell } from "../components/RepoShell";
 import { ShortcutHelp } from "../components/ShortcutHelp";
 import { ShortcutHintBar } from "../components/shortcuts/ShortcutHintBar";
@@ -22,35 +23,46 @@ export function App() {
     // out of the view model, and one source is what keeps a rebinding from
     // moving some controls and leaving others behind.
     <ShortcutLeaderProvider leader={view.leader.leader}>
-      <div
-        className={`nc-fade grid h-full ${view.rows}`}
-        style={
-          {
-            // `fr` pairs divide only the space left between fixed chrome rows.
-            "--nc-upper": `${view.upperPct}fr`,
-            "--nc-lower": `${100 - view.upperPct}fr`,
-          } as CSSProperties
-        }
-      >
-        <Header {...view.header} onShowShortcuts={view.shortcutHelp.show} />
-        {view.repoShell ? (
-          <>
-            <RepoShell {...view.repoShell} />
-            {/* Last, under the footer, where the TUI keeps it. */}
-            <ShortcutHintBar {...view.hint} />
-          </>
-        ) : (
-          <div className="flex items-center justify-center p-6 text-center text-ink-400">
-            <span>
-              No repository open. Click{" "}
-              <span className="text-ink-200">+ open</span> above to add one.
-            </span>
-          </div>
+      {/* The left strip stands beside the whole grid, header included, the way
+          the TUI's column runs the full height of its body: it is a fixed
+          column of chrome, not a row of the page. */}
+      <div className="nc-fade flex h-full">
+        {view.tabStrip.side === "left" && (
+          <aside className="hidden w-48 shrink-0 flex-col border-r border-ink-700 bg-ink-900 md:flex">
+            <ProjectStrip side="left" {...view.header} />
+          </aside>
         )}
-        {view.picker && <FolderPicker {...view.picker} />}
-        {view.shortcutHelp.open && (
-          <ShortcutHelp onClose={view.shortcutHelp.hide} leader={view.leader} />
-        )}
+        <div
+          className={`grid h-full min-w-0 flex-1 ${view.rows}`}
+          style={
+            {
+              // `fr` pairs divide only the space left between fixed chrome rows.
+              "--nc-upper": `${view.upperPct}fr`,
+              "--nc-lower": `${100 - view.upperPct}fr`,
+            } as CSSProperties
+          }
+        >
+          <Header {...view.header} onShowShortcuts={view.shortcutHelp.show} />
+          {view.repoShell ? (
+            <>
+              <RepoShell {...view.repoShell} />
+              {/* Last, under the footer, where the TUI keeps it. */}
+              <ShortcutHintBar {...view.hint} />
+            </>
+          ) : (
+            <div className="flex items-center justify-center p-6 text-center text-ink-400">
+              <span>
+                No repository open. Click{" "}
+                <span className="text-ink-200">+ open</span>{" "}
+                {view.tabStrip.side === "left" ? "beside" : "above"} to add one.
+              </span>
+            </div>
+          )}
+          {view.picker && <FolderPicker {...view.picker} />}
+          {view.shortcutHelp.open && (
+            <ShortcutHelp onClose={view.shortcutHelp.hide} leader={view.leader} />
+          )}
+        </div>
       </div>
     </ShortcutLeaderProvider>
   );

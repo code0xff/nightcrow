@@ -1,10 +1,11 @@
 import { Mark } from "./Mark";
 import { ProjectMenu } from "./ProjectMenu";
-import { LogOutIcon, PlusIcon, RefreshIcon, XIcon } from "./icons/actions";
-import { KeyboardIcon } from "./icons/layout";
-import { useLeaderChord, useShortcutHint } from "../hooks/shortcutLeader";
-import { ariaKeyShortcuts, shortcutHintText } from "../lib/shortcutHint";
-import { tabLabel } from "../lib/tabLabel";
+import { ProjectStrip } from "./ProjectStrip";
+import { LogOutIcon, RefreshIcon } from "./icons/actions";
+import { KeyboardIcon, TabStripIcon } from "./icons/layout";
+import { useShortcutHint } from "../hooks/shortcutLeader";
+import type { TabStrip } from "../hooks/ui/tabStripSide";
+import { otherSide } from "../lib/tabStripSide";
 import type { Repo } from "../api";
 
 export interface HeaderProps {
@@ -32,6 +33,10 @@ export interface HeaderProps {
   /** Open the shortcut sheet. Held by the page beside the keyboard that opens
    *  the same sheet, so both go through one piece of state. */
   onShowShortcuts: () => void;
+  /** Where the project strip is. The header draws it only across the top; on
+   *  the left the page draws it beside the whole grid, and the header keeps the
+   *  control that moves it. */
+  tabStrip: TabStrip;
 }
 
 export function Header({
@@ -52,24 +57,9 @@ export function Header({
   onReloadConfig,
   reloading,
   onShowShortcuts,
+  tabStrip,
 }: HeaderProps) {
   const shortcut = useShortcutHint();
-  const leader = useLeaderChord();
-  // The two project chords act on the strip, not on any one tab: they move the
-  // selection relative to the project in front, so no tab can claim either as
-  // the key that activates it. Named here, where the strip is, as the pair of
-  // alternatives ARIA's space-separated list is for — and only while there is
-  // somewhere to go, because with one project open the chords are not
-  // registered and naming them would announce a key that does nothing.
-  const cycleActions =
-    repos.length > 1 ? (["project.previous", "project.next"] as const) : [];
-  const named = <T,>(value: T | null): value is T => value !== null;
-  const cycleKeys = cycleActions
-    .map((id) => ariaKeyShortcuts(id, leader))
-    .filter(named);
-  const cycleHint = cycleActions
-    .map((id) => shortcutHintText(id, leader))
-    .filter(named);
   return (
     <header className="flex items-center gap-2 border-b border-ink-700 bg-ink-900 px-[12.8px] py-[8.8px]">
       <Mark className="h-[22px] w-[22px] shrink-0" />
@@ -85,73 +75,21 @@ export function Header({
         onCloseProject={onCloseRepo}
         onOpenPicker={onOpenPicker}
       />
-      <nav
-        aria-keyshortcuts={cycleKeys.length > 0 ? cycleKeys.join(" ") : undefined}
-        title={
-          cycleHint.length > 0
-            ? `Previous or next project (${cycleHint.join(", ")})`
-            : undefined
-        }
-        className="-my-[8.8px] hidden items-stretch self-stretch overflow-x-auto pl-1 md:flex"
-      >
-        {repos.map((r) => (
-          <div
-            key={r.id}
-            data-repo-id={r.id}
-            onPointerDown={(event) => onRepoDragStart(event, r.id)}
-            onPointerMove={onRepoDragMove}
-            onPointerUp={onRepoDragEnd}
-            onPointerCancel={onRepoDragEnd}
-            onLostPointerCapture={onRepoDragEnd}
-            className={`flex items-center border-r border-ink-700 whitespace-nowrap ${
-              repos.length > 1 ? "touch-none" : ""
-            } ${draggingRepo === r.id ? "opacity-60" : ""} ${
-              dragOverRepo === r.id ? "bg-ink-800 ring-1 ring-inset ring-accent" : ""
-            } ${
-              r.id === repo
-                ? "bg-ink-950 text-ink-50 shadow-[inset_0_2px_0_0_var(--color-accent)]"
-                : "text-ink-400 hover:bg-ink-850 hover:text-ink-200"
-            }`}
-            title={r.display_path}
-          >
-            {/* Shortened here, not by the server: `name` is what the project
-                menu and the labels below read out, and those want it whole. */}
-            <button
-              onClick={() => {
-                onSelectRepo(r.id);
-              }}
-              aria-label={r.name}
-              className="self-stretch pl-3 pr-1"
-            >
-              {tabLabel(r.name)}
-            </button>
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                onCloseRepo(r.id);
-              }}
-              data-tab-close
-              // Only on the project in front: `project.close` closes the current
-              // project, so on any other tab the key would name a different one.
-              {...(r.id === repo
-                ? shortcut("project.close", "Close project")
-                : { title: "Close project" })}
-              aria-label={`close ${r.name}`}
-              className="mr-1 flex h-5 w-5 items-center justify-center rounded-sm text-ink-400 hover:bg-ink-700 hover:text-removed"
-            >
-              <XIcon className="h-3.5 w-3.5" />
-            </button>
-          </div>
-        ))}
-      </nav>
-      <button
-        onClick={onOpenPicker}
-        {...shortcut("project.openDialog", "Open a project")}
-        className="hidden shrink-0 items-center gap-1 rounded-sm px-2 py-0.5 text-ink-400 hover:text-ink-200 md:inline-flex"
-      >
-        <PlusIcon className="h-3.5 w-3.5" />
-        open
-      </button>
+      {tabStrip.side === "top" && (
+        <ProjectStrip
+          side="top"
+          repos={repos}
+          repo={repo}
+          onSelectRepo={onSelectRepo}
+          onCloseRepo={onCloseRepo}
+          onOpenPicker={onOpenPicker}
+          draggingRepo={draggingRepo}
+          dragOverRepo={dragOverRepo}
+          onRepoDragStart={onRepoDragStart}
+          onRepoDragMove={onRepoDragMove}
+          onRepoDragEnd={onRepoDragEnd}
+        />
+      )}
       {cloning && (
         <span
           role="status"
@@ -165,6 +103,17 @@ export function Header({
           Cloning…
         </span>
       )}
+      {/* Wide screens only, like the strip it moves: below `md` there is no
+          strip, and a control for where it goes would be a control for nothing. */}
+      <button
+        onClick={tabStrip.toggle}
+        title={`Project tabs ${tabStrip.side === "top" ? "across the top" : "down the left"} (click to move them ${otherSide(tabStrip.side)})`}
+        aria-label={`project tabs: ${tabStrip.side}, click for ${otherSide(tabStrip.side)}`}
+        aria-pressed={tabStrip.side === "left"}
+        className="ml-auto hidden h-6 w-6 shrink-0 items-center justify-center rounded-sm text-ink-400 hover:bg-ink-700 hover:text-ink-200 md:flex"
+      >
+        <TabStripIcon side={tabStrip.side} />
+      </button>
       <button
         onClick={cycle}
         {...shortcut(
@@ -172,7 +121,7 @@ export function Header({
           `Accent: ${accent.name} (click for ${next.name})`,
         )}
         aria-label={`accent colour: ${accent.name}, click for ${next.name}`}
-        className="ml-auto flex h-6 w-6 shrink-0 items-center justify-center rounded-sm"
+        className="ml-1 flex h-6 w-6 shrink-0 items-center justify-center rounded-sm max-md:ml-auto"
       >
         <span
           aria-hidden="true"
