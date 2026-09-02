@@ -114,11 +114,13 @@ function scrollPane(
   element.dispatchEvent(wheel);
   if (wheel.defaultPrevented || !view) return;
 
-  // Nothing claimed the wheel, so this is the scrollback. Measured off the pane
-  // rather than assumed: the font follows the device, and a notch has to be the
-  // same distance in rows that it was in pixels.
+  // Nothing claimed the wheel, so this is the scrollback. Measured off the
+  // terminal itself rather than assumed: the font follows the device, and a
+  // notch has to be the same distance in rows that it was in pixels. Off the
+  // terminal and not the body, because the two differ while a soft keyboard
+  // has shortened the body around an unrefitted terminal.
   const rows = view.term.rows;
-  const cellHeight = rows > 0 ? body.clientHeight / rows : 0;
+  const cellHeight = rows > 0 ? element.clientHeight / rows : 0;
   if (cellHeight <= 0) return;
   const lines = Math.round(deltaY / cellHeight);
   // At least a row per notch, so a slow drag moves rather than rounding away.

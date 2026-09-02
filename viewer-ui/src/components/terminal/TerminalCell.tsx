@@ -147,8 +147,12 @@ export function TerminalCell({
       <div
         ref={bodyRef}
         {...bodyTouch}
-        // Panning is ours; a pinch is still the browser's.
-        className="min-h-0 flex-1 touch-pinch-zoom"
+        // Panning is ours; a pinch is still the browser's. The terminal sits at
+        // the bottom of the body so that when the body is shorter than the
+        // terminal — a soft keyboard is up and the panes were deliberately not
+        // refitted (`usePaneSizes`) — it is the top rows that go out of view
+        // and the prompt that stays.
+        className="nc-pane-body flex min-h-0 flex-1 flex-col justify-end overflow-hidden touch-pinch-zoom"
       />
     </div>
   );

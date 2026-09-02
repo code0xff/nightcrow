@@ -8,6 +8,7 @@ import { useTerminalShortcuts } from "../../hooks/terminal/useTerminalShortcuts"
 import { useTerminalWiring } from "../../hooks/terminal/useTerminalWiring";
 import { useCtrlLatch } from "../../hooks/terminal/useCtrlLatch";
 import { usePanelSize } from "../../hooks/terminal/usePanelSize";
+import { useSoftKeyboardOpen } from "../../hooks/ui/useSoftKeyboard";
 import { AttachNotice } from "./AttachNotice";
 import { PaneGrid } from "./PaneGrid";
 import { PaneTabs } from "./PaneTabs";
@@ -64,6 +65,7 @@ export function TerminalPanel({
   // decides it; the rest render the grid they are given.
   const [ownsSize, setOwnsSize] = useState(true);
   const size = usePanelSize(containerRef);
+  const keyboardOpen = useSoftKeyboardOpen();
   const { recovery, setRecovery, cancelRecovery } = usePaneRecovery(socketRef);
   // Derived rather than corrected in the handler, so the panel cannot render a
   // state its pane list does not support at all. See `lib/zoom.ts`.
@@ -92,6 +94,7 @@ export function TerminalPanel({
     replayLeft,
     pending,
     ownsSize,
+    keyboardOpen,
     zoomShown,
     zoomServer,
     consumeCtrl: ctrl.consume,

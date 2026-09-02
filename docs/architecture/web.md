@@ -31,7 +31,7 @@ repository runtime의 status snapshot은 최신 payload만 필요하므로 byte-
 
 terminal connection은 읽기와 쓰기를 bounded polling으로 다루며, stalled write 중에는 hub queue에서 frame을 더 꺼내지 않는다. 완전히 따라오지 못한 client는 session terminal queue 상한에서 종료되고 screen/mode/since replay로 재접속한다. pane 입력·resize·close·reorder는 authenticated client가 session hub에 보내며, pane별 authorization은 제공하지 않는다.
 
-서버가 canonical pane order와 zoom을 결정한다. client는 요청을 낙관적으로 적용하지 않고 `reordered`/`zoomed` echo와 reconnect replay를 받아 수렴한다. pane order·zoom은 디스크에 저장하지 않는다. `Created`에는 pane의 현재 size/title을, 초기 replay에는 정확한 pane 수를 싣는다. client가 만든 resize는 settled geometry에서만 서버로 보내고, session owner가 확정한 `Resized`만 emulator에 적용한다.
+서버가 canonical pane order와 zoom을 결정한다. client는 요청을 낙관적으로 적용하지 않고 `reordered`/`zoomed` echo와 reconnect replay를 받아 수렴한다. pane order·zoom은 디스크에 저장하지 않는다. `Created`에는 pane의 현재 size/title을, 초기 replay에는 정확한 pane 수를 싣는다. client가 만든 resize는 settled geometry에서만 서버로 보내고, session owner가 확정한 `Resized`만 emulator에 적용한다. soft keyboard로 visual viewport가 줄어든 동안은 geometry로 취급하지 않는다: fit도 resize도 보내지 않고 pane body가 terminal의 아래쪽을 보이도록 잘라내며, 키보드가 닫힌 뒤의 layout을 한 번 적용한다. keyboard 판정은 layout viewport와 visual viewport의 높이 차이 하나로 한다.
 
 ## Wire and log contract
 

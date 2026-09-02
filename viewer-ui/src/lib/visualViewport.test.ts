@@ -1,8 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
   observeVisualViewport,
+  softKeyboardInset,
+  SOFT_KEYBOARD_MIN_PX,
   visibleViewportHeight,
   VISUAL_VIEWPORT_HEIGHT,
+  type KeyboardWindowLike,
   type VisualViewportLike,
   type ViewportWindowLike,
 } from "./visualViewport";
@@ -132,5 +135,53 @@ describe("observeVisualViewport", () => {
     const stop = observeVisualViewport(root, viewportWindow);
     expect(root.style.getPropertyValue(VISUAL_VIEWPORT_HEIGHT)).toBe("");
     stop();
+  });
+});
+
+describe("softKeyboardInset", () => {
+  const withViewport = (
+    innerHeight: number,
+    viewport: Pick<VisualViewportLike, "height" | "offsetTop"> | null,
+  ): KeyboardWindowLike => ({
+    innerHeight,
+    visualViewport: viewport
+      ? { ...viewport, addEventListener() {}, removeEventListener() {} }
+      : null,
+    addEventListener() {},
+    removeEventListener() {},
+  });
+
+  it("키보드가_레이아웃_뷰포트를_가린_만큼을_돌려준다", () => {
+    expect(
+      softKeyboardInset(withViewport(800, { height: 500, offsetTop: 0 })),
+    ).toBe(300);
+  });
+
+  it("문턱_아래의_차이는_키보드가_아니다", () => {
+    // URL bar가 접히는 정도의 차이는 두 뷰포트가 함께 움직여 남지 않지만,
+    // 남더라도 키보드로 읽지 않는다.
+    expect(
+      softKeyboardInset(
+        withViewport(800, { height: 800 - SOFT_KEYBOARD_MIN_PX + 1, offsetTop: 0 }),
+      ),
+    ).toBe(0);
+    expect(
+      softKeyboardInset(
+        withViewport(800, { height: 800 - SOFT_KEYBOARD_MIN_PX, offsetTop: 0 }),
+      ),
+    ).toBe(SOFT_KEYBOARD_MIN_PX);
+  });
+
+  it("패닝된_뷰포트의_offset은_가려진_높이에_들어가지_않는다", () => {
+    expect(
+      softKeyboardInset(withViewport(800, { height: 500, offsetTop: 100 })),
+    ).toBe(200);
+  });
+
+  it("visualViewport가_없으면_0이다", () => {
+    expect(softKeyboardInset(withViewport(800, null))).toBe(0);
+    expect(
+      softKeyboardInset(withViewport(Number.NaN, { height: 500, offsetTop: 0 })),
+    ).toBe(0);
   });
 });

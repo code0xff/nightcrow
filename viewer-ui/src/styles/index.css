@@ -214,6 +214,15 @@ button:not(:disabled),
   font-weight: 600;
 }
 
+/* The terminal keeps the height its rows give it, whatever the body around it
+   does. The body is a column flex container so it can anchor the terminal to
+   its bottom edge (`TerminalCell`); without this the terminal would be a flex
+   item free to shrink to fit, which is the resize that anchoring exists to
+   avoid. */
+.nc-pane-body > .xterm {
+  flex: none;
+}
+
 /* The app fades in once, when it first mounts after the loading screen, so the
    layout eases onto the page instead of snapping from blank. Runs a single time
    per element mount — re-renders reuse the node and do not replay it. */
