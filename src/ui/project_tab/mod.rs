@@ -155,13 +155,13 @@ fn styled_spans(
     } else {
         attention.get(index).copied().unwrap_or(false)
     };
-    if !has_attention {
+    // The glyph is not always there to style: a column on a terminal narrower
+    // than the strip has cut its rows to fit (`pad_to`), and the marker sits
+    // far enough along ` F10•` to be the first thing cut. A tab with attention
+    // and no room to show it is drawn plain rather than not drawn at all.
+    let Some(marker_start) = text.find(ATTENTION_GLYPH).filter(|_| has_attention) else {
         return vec![Span::styled(text, base)];
-    }
-
-    let marker_start = text
-        .find(ATTENTION_GLYPH)
-        .expect("attention segment must contain its marker");
+    };
     let marker_end = marker_start + ATTENTION_GLYPH.len_utf8();
     let marker_style = Style::default()
         .fg(if attention_bright {

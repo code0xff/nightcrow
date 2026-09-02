@@ -229,3 +229,32 @@ fn a_wide_character_name_is_cut_by_cells_and_never_overflows_the_strip() {
     assert!(row.starts_with(" F1 프"), "got: {row:?}");
     assert!(row.contains('아') && !row.contains('주'), "got: {row:?}");
 }
+
+#[test]
+fn a_strip_too_narrow_for_the_attention_glyph_draws_the_tab_plain() {
+    // A terminal narrower than the strip hands the column fewer cells than
+    // ` F2•` needs, and the glyph is cut before the styling sees the row. The
+    // tab is drawn without its marker; it is not a reason to stop drawing.
+    let repo_paths = paths(&["/w/api", "/w/web"]);
+    let mut terminal = Terminal::new(TestBackend::new(3, 2)).unwrap();
+    terminal
+        .draw(|frame| {
+            frame.render_widget(
+                render(
+                    &repo_paths,
+                    &[false, true],
+                    0,
+                    frame.area(),
+                    Color::Yellow,
+                    true,
+                    TabStrip::Left,
+                ),
+                frame.area(),
+            );
+        })
+        .unwrap();
+    let buf = terminal.backend().buffer();
+    let row: String = (0..3).map(|x| buf[(x, 1)].symbol()).collect();
+
+    assert_eq!(row, " F2");
+}
