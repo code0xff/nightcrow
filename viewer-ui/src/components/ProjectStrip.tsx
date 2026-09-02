@@ -92,12 +92,12 @@ export function ProjectStrip({
             } ${
               dragOverRepo === r.id ? "bg-ink-800 ring-1 ring-inset ring-accent" : ""
             } ${
+              // The active tab takes the ink of the surface it opens onto: the
+              // page's beneath the header row, the header's beside the page.
               r.id === repo
-                ? `bg-ink-950 text-ink-50 ${
-                    left
-                      ? "shadow-[inset_2px_0_0_0_var(--color-accent)]"
-                      : "shadow-[inset_0_2px_0_0_var(--color-accent)]"
-                  }`
+                ? left
+                  ? "bg-ink-900 text-ink-50 shadow-[inset_2px_0_0_0_var(--color-accent)]"
+                  : "bg-ink-950 text-ink-50 shadow-[inset_0_2px_0_0_var(--color-accent)]"
                 : "text-ink-400 hover:bg-ink-850 hover:text-ink-200"
             }`}
             title={r.display_path}

@@ -29,10 +29,13 @@ export function App() {
           title's row is the header's height, so the two line up. */}
       <div className="nc-fade flex h-full">
         {view.tabStrip.side === "left" && (
-          <aside className="hidden w-48 shrink-0 flex-col bg-ink-900 md:flex">
-            {/* The header's exact height (see `Header`), so this border and the
-                header's are one line at one pixel row. */}
-            <div className="flex h-[42px] items-center gap-2 border-b border-ink-700 px-[12.8px]">
+          <aside className="hidden w-48 shrink-0 flex-col bg-ink-950 md:flex">
+            {/* The header's exact height and colours (see `Header`): the same
+                row, and the same ink above and below its border as the header
+                has, so the two borders read as one line. A border between two
+                areas of the same ink looks fainter than the identical border
+                between the header and the darker page beside it. */}
+            <div className="flex h-[42px] items-center gap-2 border-b border-ink-700 bg-ink-900 px-[12.8px]">
               <Brand />
             </div>
             <ProjectStrip side="left" {...view.header} />
