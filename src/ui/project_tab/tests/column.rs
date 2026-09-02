@@ -197,3 +197,35 @@ fn the_strip_is_offset_by_its_own_origin() {
         None
     );
 }
+
+#[test]
+fn a_click_under_a_strip_too_short_for_its_markers_is_not_a_tab() {
+    // One row for ten tabs: the active tab and a marker on each side are
+    // three segments for one row. Only the row that exists is a hit box; the
+    // rows the other two would have needed belong to the notice bar below.
+    let area = Rect::new(0, 0, STRIP_WIDTH, 1);
+
+    let segments = tab_segments(&crowded(), &[], 5, 1, TabStrip::Left);
+    assert!(
+        segments.len() > 1,
+        "the case needs an overflow: {segments:?}"
+    );
+
+    assert_eq!(tab_at(&crowded(), &[], 5, area, 3, 1, TabStrip::Left), None);
+    assert_eq!(tab_at(&crowded(), &[], 5, area, 3, 2, TabStrip::Left), None);
+}
+
+#[test]
+fn a_wide_character_name_is_cut_by_cells_and_never_overflows_the_strip() {
+    // Fourteen CJK characters are twenty-eight cells: the label rule, which
+    // counts characters, lets them through, so the row has to cut by cells —
+    // and land exactly on the strip's width without splitting a glyph.
+    let rows = rendered_column(&paths(&["/w/프로젝트이름이아주아주긴저장소"]), 0, 1);
+
+    // The buffer yields one symbol per cell, a wide glyph then a blank for its
+    // second cell: sixteen cells hold eight glyphs after the legend, so the
+    // eighth (`아`) is the last one drawn and the ninth (`주`) never is.
+    let row = &rows[0];
+    assert!(row.starts_with(" F1 프"), "got: {row:?}");
+    assert!(row.contains('아') && !row.contains('주'), "got: {row:?}");
+}

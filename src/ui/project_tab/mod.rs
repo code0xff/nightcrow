@@ -107,12 +107,22 @@ pub(crate) fn render(
 }
 
 /// Fill `text` out to `width` cells, or cut it there: a segment is one row of
-/// the column and must be exactly that wide.
+/// the column and must be exactly that wide. Cut by cells, not characters — a
+/// CJK name is two cells a character, and a wide glyph that would straddle the
+/// edge is dropped rather than split.
 fn pad_to(text: String, width: u16) -> String {
     let width = width as usize;
-    let shown: String = text.chars().take(width).collect();
-    let used = Span::raw(shown.as_str()).width();
-    format!("{shown}{}", " ".repeat(width.saturating_sub(used)))
+    let mut shown = String::new();
+    let mut used = 0;
+    for ch in text.chars() {
+        let cells = Span::raw(ch.to_string()).width();
+        if used + cells > width {
+            break;
+        }
+        shown.push(ch);
+        used += cells;
+    }
+    format!("{shown}{}", " ".repeat(width - used))
 }
 
 /// One segment's spans. A `+N` marker is never the active tab, so accent stays
@@ -201,7 +211,11 @@ pub(crate) fn tab_at(
             None
         }
         TabStrip::Left => {
-            if x >= area.x.saturating_add(area.width) {
+            // Both edges, not just the left and the top: on a terminal too short
+            // for the active tab and its two markers the segments outnumber the
+            // rows, and a click on the notice row under the strip would otherwise
+            // index the segment that was never drawn.
+            if x >= area.x.saturating_add(area.width) || y >= area.y.saturating_add(area.height) {
                 return None;
             }
             segments
