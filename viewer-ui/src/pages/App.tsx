@@ -1,5 +1,4 @@
 import type { CSSProperties } from "react";
-import { Brand } from "../components/Brand";
 import { FolderPicker } from "../components/FolderPicker";
 import { Header } from "../components/Header";
 import { LoadingSplash } from "../components/LoadingSplash";
@@ -24,53 +23,53 @@ export function App() {
     // out of the view model, and one source is what keeps a rebinding from
     // moving some controls and leaving others behind.
     <ShortcutLeaderProvider leader={view.leader.leader}>
-      {/* The left strip is a column beside the grid, headed by the title so
-          the tabs hang under the name rather than in a panel of their own; the
-          title's row is the header's height, so the two line up. */}
-      <div className="nc-fade flex h-full">
-        {view.tabStrip.side === "left" && (
-          <aside className="hidden w-48 shrink-0 flex-col bg-ink-950 md:flex">
-            {/* The header's exact height and colours (see `Header`): the same
-                row, and the same ink above and below its border as the header
-                has, so the two borders read as one line. A border between two
-                areas of the same ink looks fainter than the identical border
-                between the header and the darker page beside it. */}
-            <div className="flex h-[42px] items-center gap-2 border-b border-ink-700 bg-ink-900 px-[12.8px]">
-              <Brand />
-            </div>
-            <ProjectStrip side="left" {...view.header} />
-          </aside>
-        )}
-        <div
-          className={`grid h-full min-w-0 flex-1 ${view.rows}`}
-          style={
-            {
-              // `fr` pairs divide only the space left between fixed chrome rows.
-              "--nc-upper": `${view.upperPct}fr`,
-              "--nc-lower": `${100 - view.upperPct}fr`,
-            } as CSSProperties
-          }
-        >
-          <Header {...view.header} onShowShortcuts={view.shortcutHelp.show} />
-          {view.repoShell ? (
-            <>
-              <RepoShell {...view.repoShell} />
-              {/* Last, under the footer, where the TUI keeps it. */}
-              <ShortcutHintBar {...view.hint} />
-            </>
-          ) : (
-            <div className="flex items-center justify-center p-6 text-center text-ink-400">
-              <span>
-                No repository open. Click{" "}
-                <span className="text-ink-200">+ open</span>{" "}
-                {view.tabStrip.side === "left" ? "beside" : "above"} to add one.
-              </span>
-            </div>
+      {/* The header spans the page, so its one border is the one line under
+          the title and the controls alike. Below it the left strip, when
+          chosen, is a column beside the grid: the tabs hang under the title in
+          the header's left corner rather than in a panel with a title of its
+          own — which would mean a second border, never quite the first. */}
+      <div className="nc-fade flex h-full flex-col">
+        <Header {...view.header} onShowShortcuts={view.shortcutHelp.show} />
+        <div className="flex min-h-0 flex-1">
+          {view.tabStrip.side === "left" && (
+            <aside className="hidden w-48 shrink-0 flex-col bg-ink-950 md:flex">
+              <ProjectStrip side="left" {...view.header} />
+            </aside>
           )}
-          {view.picker && <FolderPicker {...view.picker} />}
-          {view.shortcutHelp.open && (
-            <ShortcutHelp onClose={view.shortcutHelp.hide} leader={view.leader} />
-          )}
+          <div
+            className={`grid min-h-0 min-w-0 flex-1 ${view.rows}`}
+            style={
+              {
+                // `fr` pairs divide only the space left between fixed chrome rows.
+                "--nc-upper": `${view.upperPct}fr`,
+                "--nc-lower": `${100 - view.upperPct}fr`,
+              } as CSSProperties
+            }
+          >
+            {view.repoShell ? (
+              <>
+                <RepoShell {...view.repoShell} />
+                {/* Last, under the footer, where the TUI keeps it. */}
+                <ShortcutHintBar {...view.hint} />
+              </>
+            ) : (
+              <div className="flex items-center justify-center p-6 text-center text-ink-400">
+                <span>
+                  No repository open. Click{" "}
+                  <span className="text-ink-200">+ open</span>{" "}
+                  {view.tabStrip.side === "left" ? "beside" : "above"} to add
+                  one.
+                </span>
+              </div>
+            )}
+            {view.picker && <FolderPicker {...view.picker} />}
+            {view.shortcutHelp.open && (
+              <ShortcutHelp
+                onClose={view.shortcutHelp.hide}
+                leader={view.leader}
+              />
+            )}
+          </div>
         </div>
       </div>
     </ShortcutLeaderProvider>

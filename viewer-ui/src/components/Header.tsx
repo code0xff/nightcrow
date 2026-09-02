@@ -67,13 +67,9 @@ export function Header({
   // rows share this height so their borders are one line.
   return (
     <header className="flex h-[42px] items-center gap-2 border-b border-ink-700 bg-ink-900 px-[12.8px]">
-      {/* With the tabs on the left the title heads their column instead, so
-          the header shows it only where that column is not drawn. */}
-      <div
-        className={`flex items-center gap-2 ${
-          tabStrip.side === "left" ? "md:hidden" : ""
-        }`}
-      >
+      {/* Always here: with the tabs on the left the header still spans the
+          page, and its left corner is the head of their column. */}
+      <div className="flex items-center gap-2">
         <Brand />
       </div>
       <ProjectMenu
