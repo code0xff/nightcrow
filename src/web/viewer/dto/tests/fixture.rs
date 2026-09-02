@@ -54,7 +54,6 @@ fn wire_fixture() -> serde_json::Value {
             }],
             hot: HotConfigDto { enabled: true, window_secs: 15 },
             accent: 2,
-            sidebar_width: 460,
             upper_pct: 55,
             active_repo: Some("r1".to_string()),
             // Only the served projects appear, by id — a remembered one this
@@ -201,7 +200,6 @@ fn wire_fixture() -> serde_json::Value {
         // the clamped result back the same way.
         "storedPrefs": serde_json::json!({
             "accent": 2,
-            "sidebar_width": 460,
             "upper_pct": 55,
             "active_repo": "r1",
             // Both panels, so the client's union is exercised whole: the

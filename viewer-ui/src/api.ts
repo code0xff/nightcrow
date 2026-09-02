@@ -55,10 +55,6 @@ export const api = {
     get<ViewerBootstrap>("/api/repos", signal),
   setAccent: (accent: number) =>
     post<StoredPrefs>("/api/prefs", { accent }).then((r) => r.accent),
-  setSidebarWidth: (sidebar_width: number) =>
-    post<StoredPrefs>("/api/prefs", { sidebar_width }).then(
-      (r) => r.sidebar_width,
-    ),
   setUpperPct: (upper_pct: number) =>
     post<StoredPrefs>("/api/prefs", { upper_pct }).then((r) => r.upper_pct),
   /** Remember the open project, by id — the server stores the path behind it

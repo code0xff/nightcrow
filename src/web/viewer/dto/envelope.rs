@@ -108,8 +108,6 @@ pub struct ViewerBootstrapDto {
     /// Index into the accent presets. The session's colour, stored server-side
     /// so every device — and every attached TUI — agrees.
     pub accent: usize,
-    /// File-sidebar width in CSS px, stored server-side like the accent.
-    pub sidebar_width: u32,
     /// Percent of the vertical split given to the diff panel; the terminal
     /// panel takes the rest. Shared between browsers, not shared with the TUI —
     /// see `prefs::ViewerPrefs`.
@@ -163,7 +161,6 @@ impl ViewerBootstrapDto {
             repos,
             hot,
             accent: prefs.accent,
-            sidebar_width: prefs.sidebar_width,
             upper_pct: prefs.upper_pct,
             active_repo,
             maximized,

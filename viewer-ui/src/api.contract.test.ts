@@ -132,7 +132,6 @@ describe("wire contract", () => {
     expect(bootstrap.repos).toHaveLength(1);
     expect(bootstrap.hot.window_secs).toBeGreaterThan(0);
     expect(bootstrap.now_ms).toBeGreaterThan(0);
-    expect(bootstrap.sidebar_width).toBeGreaterThan(0);
     expect(bootstrap.upper_pct).toBeGreaterThan(0);
     expect(bootstrap.maximized).toEqual({ r1: "terminal" });
     // 프로젝트를 다시 열었을 때 무엇을 열어야 하는지. 서버는 서빙 중인
@@ -218,7 +217,6 @@ describe("wire contract", () => {
     };
     expect(opened.repo.display_path).toBe("~/code/scratch");
     expect(stored.accent).toBe(2);
-    expect(stored.sidebar_width).toBe(460);
     expect(stored.upper_pct).toBe(55);
     expect(stored.active_repo).toBe("r1");
     // Both variants, so renaming either on the Rust side fails here.

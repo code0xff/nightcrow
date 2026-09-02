@@ -47,7 +47,6 @@ function bootstrap(active: string | null) {
     ],
     hot: { enabled: false, window_secs: 15 },
     accent: 0,
-    sidebar_width: 300,
     upper_pct: 50,
     active_repo: active,
     maximized: {},

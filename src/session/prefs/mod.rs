@@ -1,8 +1,9 @@
 //! Preferences that follow the user rather than the browser they arrived in,
 //! stored in `~/.nightcrow/viewer.json`. The accent is the session's (shared
-//! with an attached TUI); `sidebar_width` and `upper_pct` are the viewer's alone
-//! — the first has no TUI counterpart, and the second is deliberately not shared
-//! because a percentage means different things on a terminal vs a browser window.
+//! with an attached TUI); `upper_pct` is the viewer's alone, deliberately not
+//! shared because a percentage means different things on a terminal vs a
+//! browser window. The sidebar width is not here at all: a pixel count is a
+//! fact about one screen, so each browser keeps its own (`hooks/ui/sidebar.ts`).
 
 pub mod maximized;
 pub mod repo_view;
@@ -13,12 +14,6 @@ use crate::config::Accent;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
-
-/// Default sidebar width before the divider was dragged.
-pub const DEFAULT_SIDEBAR_WIDTH: u32 = 460;
-/// Bounds the stored sidebar width so both panes stay usable.
-pub const MIN_SIDEBAR_WIDTH: u32 = 280;
-pub const MAX_SIDEBAR_WIDTH: u32 = 720;
 
 /// Default split share for the diff panel (matches the TUI's `layout.upper_pct`).
 pub const DEFAULT_UPPER_PCT: u32 = 55;
@@ -36,8 +31,6 @@ pub const MAX_UPPER_PCT: u32 = 85;
 pub struct ViewerPrefs {
     /// Index into the accent cycle (`config::Accent::ALL`).
     pub accent: usize,
-    /// File-sidebar width in CSS px, clamped to `[MIN, MAX]`.
-    pub sidebar_width: u32,
     /// Share of the vertical split given to the diff panel, in percent. The
     /// viewer's own, not the session's — a percentage means different things on
     /// a terminal vs a browser window, so sharing with the TUI's
@@ -60,7 +53,6 @@ impl Default for ViewerPrefs {
     fn default() -> Self {
         Self {
             accent: 0,
-            sidebar_width: DEFAULT_SIDEBAR_WIDTH,
             upper_pct: DEFAULT_UPPER_PCT,
             active_repo: None,
             maximized: Vec::new(),
@@ -100,13 +92,10 @@ impl PrefsStore {
     }
 
     /// Load from `path`, falling back to `absent` when there is nothing to read.
-    /// Clamps widths and splits on load so `get` never serves a value the write
-    /// path would have rejected.
+    /// Clamps the split on load so `get` never serves a value the write path
+    /// would have rejected.
     fn at_or(path: PathBuf, absent: ViewerPrefs) -> Self {
         let mut state = read(&path).unwrap_or(absent);
-        state.sidebar_width = state
-            .sidebar_width
-            .clamp(MIN_SIDEBAR_WIDTH, MAX_SIDEBAR_WIDTH);
         state.upper_pct = state.upper_pct.clamp(MIN_UPPER_PCT, MAX_UPPER_PCT);
         maximized::normalize(&mut state.maximized);
         repo_view::normalize(&mut state.views);
@@ -138,9 +127,6 @@ impl PrefsStore {
         self.mutate(|state| {
             if let Some(accent) = change.accent {
                 state.accent = accent % Accent::ALL.len();
-            }
-            if let Some(width) = change.sidebar_width {
-                state.sidebar_width = width.clamp(MIN_SIDEBAR_WIDTH, MAX_SIDEBAR_WIDTH);
             }
             if let Some(pct) = change.upper_pct {
                 state.upper_pct = pct.clamp(MIN_UPPER_PCT, MAX_UPPER_PCT);
@@ -199,15 +185,7 @@ impl PrefsStore {
         })
     }
 
-    /// Store the sidebar width alone.
     #[cfg(test)]
-    pub fn set_sidebar_width(&self, width: u32) -> ViewerPrefs {
-        self.update(PrefsUpdate {
-            sidebar_width: Some(width),
-            ..PrefsUpdate::default()
-        })
-    }
-
     /// Store the split percentage alone.
     #[cfg(test)]
     pub fn set_upper_pct(&self, pct: u32) -> ViewerPrefs {
@@ -235,7 +213,6 @@ impl PrefsStore {
 #[derive(Debug, Clone, Default)]
 pub struct PrefsUpdate {
     pub accent: Option<usize>,
-    pub sidebar_width: Option<u32>,
     pub upper_pct: Option<u32>,
     pub active_repo: Option<String>,
     pub maximized: Option<MaximizedUpdate>,

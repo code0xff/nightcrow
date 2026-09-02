@@ -38,7 +38,6 @@ function bootstrap(active: string | null) {
     repos: IDS.map((id) => ({ id, name: id, display_path: `~/${id}` })),
     hot: { enabled: false, window_secs: 15 },
     accent: 0,
-    sidebar_width: 300,
     upper_pct: 50,
     active_repo: active,
     maximized: {},

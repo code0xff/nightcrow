@@ -31,8 +31,8 @@ fn a_session_with_no_file_yet_starts_at_the_configured_accent() {
 
     assert_eq!(store.get().accent, 3);
     assert_eq!(
-        store.get().sidebar_width,
-        DEFAULT_SIDEBAR_WIDTH,
+        store.get().upper_pct,
+        DEFAULT_UPPER_PCT,
         "the seed names the accent alone"
     );
 }
@@ -71,46 +71,7 @@ fn a_missing_file_reads_as_defaults() {
     let store = PrefsStore::at(dir.path().join("absent.json"));
 
     assert_eq!(store.get().accent, 0);
-    assert_eq!(store.get().sidebar_width, DEFAULT_SIDEBAR_WIDTH);
-}
-
-#[test]
-fn a_sidebar_width_round_trips_through_the_file() {
-    let dir = tempfile::TempDir::new().unwrap();
-    let path = dir.path().join("viewer.json");
-
-    PrefsStore::at(path.clone()).set_sidebar_width(500);
-
-    assert_eq!(PrefsStore::at(path).get().sidebar_width, 500);
-}
-
-#[test]
-fn an_out_of_range_sidebar_width_clamps_instead_of_being_stored_as_given() {
-    // The width comes from a browser drag, so it is input: a value past the
-    // bounds would hand a later device a split with no diff pane, or one so
-    // narrow the status letters clip.
-    let dir = tempfile::TempDir::new().unwrap();
-    let store = PrefsStore::at(dir.path().join("viewer.json"));
-
-    assert_eq!(
-        store
-            .set_sidebar_width(MAX_SIDEBAR_WIDTH + 400)
-            .sidebar_width,
-        MAX_SIDEBAR_WIDTH
-    );
-    assert_eq!(store.set_sidebar_width(10).sidebar_width, MIN_SIDEBAR_WIDTH);
-}
-
-#[test]
-fn a_width_outside_the_bounds_in_the_file_is_clamped_on_load() {
-    // A hand-edited file must not smuggle a value past the bounds the write
-    // path enforces — `get` would otherwise serve it and an accent-only
-    // write would echo it back.
-    let dir = tempfile::TempDir::new().unwrap();
-    let path = dir.path().join("viewer.json");
-    std::fs::write(&path, r#"{"accent":0,"sidebar_width":9000}"#).unwrap();
-
-    assert_eq!(PrefsStore::at(path).get().sidebar_width, MAX_SIDEBAR_WIDTH);
+    assert_eq!(store.get().upper_pct, DEFAULT_UPPER_PCT);
 }
 
 #[test]
@@ -178,14 +139,14 @@ fn selecting_a_project_leaves_the_other_preferences_as_they_were() {
     let store = PrefsStore::at(dir.path().join("viewer.json"));
     store.update(PrefsUpdate {
         accent: Some(3),
-        sidebar_width: Some(500),
+        upper_pct: Some(70),
         ..PrefsUpdate::default()
     });
 
     let stored = store.set_active_repo("/w/api".to_string());
 
     assert_eq!(stored.accent, 3);
-    assert_eq!(stored.sidebar_width, 500);
+    assert_eq!(stored.upper_pct, 70);
     assert_eq!(stored.active_repo.as_deref(), Some("/w/api"));
 }
 
@@ -216,16 +177,26 @@ fn an_older_file_without_an_active_repo_loads_with_none() {
 }
 
 #[test]
-fn an_older_file_without_a_width_keeps_its_accent_and_defaults_the_width() {
-    // A `viewer.json` written before the field existed must still load: the
-    // container `#[serde(default)]` fills the missing width, not zero.
+fn a_file_from_when_the_sidebar_width_was_shared_still_loads_and_sheds_it() {
+    // The width moved to the browser's own storage, but every `viewer.json`
+    // written before that carries it. The file must load — an unknown key is
+    // not a corrupt file — and the next write must not carry the key forward,
+    // or the file would keep stating a preference nothing reads.
     let dir = tempfile::TempDir::new().unwrap();
     let path = dir.path().join("viewer.json");
-    std::fs::write(&path, r#"{"accent":3}"#).unwrap();
+    std::fs::write(&path, r#"{"accent":3,"sidebar_width":500,"upper_pct":60}"#).unwrap();
 
-    let prefs = PrefsStore::at(path).get();
-    assert_eq!(prefs.accent, 3);
-    assert_eq!(prefs.sidebar_width, DEFAULT_SIDEBAR_WIDTH);
+    let store = PrefsStore::at(path.clone());
+    assert_eq!(store.get().accent, 3);
+    assert_eq!(store.get().upper_pct, 60);
+
+    store.set_accent(4);
+
+    let written = std::fs::read_to_string(&path).unwrap();
+    assert!(
+        !written.contains("sidebar_width"),
+        "the retired key survived a write: {written}"
+    );
 }
 
 #[test]

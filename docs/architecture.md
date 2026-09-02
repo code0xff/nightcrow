@@ -32,7 +32,7 @@ status는 저장소별 snapshot worker가 파일시스템 변화에 반응해 �
 ## Shared state and client state
 
 - 세션 전체에 하나인 값은 열린 저장소와 순서, active repo, pane 집합·내용·순서·확정된 크기, accent다. active repo와 accent는 TUI와 브라우저가 같은 값을 따른다.
-- 브라우저끼리만 공유하는 값은 `viewer.json`의 sidebar width, `upper_pct`, project별 마지막 view와 maximize arrangement다. 화면 크기 의미가 달라 TUI와는 공유하지 않는다.
+- 브라우저끼리만 공유하는 값은 `viewer.json`의 `upper_pct`, project별 마지막 view와 maximize arrangement다. 화면 크기 의미가 달라 TUI와는 공유하지 않는다. 같은 이유가 브라우저 사이에도 성립하는 값 — 픽셀 단위의 sidebar width, pane view mode, key bar, shortcut leader — 은 어디에도 공유하지 않고 각 브라우저의 `localStorage`에 둔다.
 - 커서·스크롤·포커스·fullscreen·검색 입력과 TUI의 `Workspace` view state는 클라이언트별이다. 숨은 project의 terminal attention/read 상태도 client-local이라 한 표면의 활동이 다른 표면의 읽음 상태를 지우지 않는다. TUI의 workspace 파일과 viewer preference 파일은 서로 덮어쓰지 않는다.
 - PTY 크기는 세션 하나의 owner가 결정한다. 새 viewer의 명시적 도착 또는 `claim`만 owner를 바꾸고, 떠난 owner의 해제는 2초 grace 뒤 남은 viewer로 넘긴다. 비소유자의 resize는 버리고 실제 적용된 `Resized`만 모두에게 반영한다.
 

@@ -29,7 +29,6 @@
         "name": "nightcrow"
       }
     ],
-    "sidebar_width": 460,
     "upper_pct": 55,
     "viewer_build": "3f6a1c04"
   },
@@ -209,7 +208,6 @@
       "r1": "terminal",
       "r2": "files"
     },
-    "sidebar_width": 460,
     "upper_pct": 55
   },
   "tree": {

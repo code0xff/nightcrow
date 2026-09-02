@@ -14,7 +14,7 @@ Markdown files render as formatted documents with highlighted fenced code. `.htm
 
 ## Layout and terminals
 
-Drag the sidebar and upper-panel dividers to resize them; double-click a divider to reset it. The browser's sidebar width and upper-panel split are stored in `~/.nightcrow/viewer.json` and shared with other browser clients. They are independent of the TUI's `[layout]` values. The header swatch cycles the session accent and is shared with attached TUIs.
+Drag the sidebar and upper-panel dividers to resize them; double-click a divider to reset it. The upper-panel split is stored in `~/.nightcrow/viewer.json` and shared with other browser clients — a percentage means the same thing at any width. The sidebar width is not: it is a pixel count, so the browser keeps it to itself and each screen has its own. Both are independent of the TUI's `[layout]` values. The header swatch cycles the session accent and is shared with attached TUIs.
 
 The terminal toolbar can add a pane, show panes as a grid or tabs, maximize the terminal panel, claim sizing for this screen, and show the on-screen key bar. A project has up to 8 panes. Pane order and zoom are shared while the session runs; they are not restored after the session ends. A PTY has one size, so the client that most recently claims sizing determines the grid rendered by every client.
 

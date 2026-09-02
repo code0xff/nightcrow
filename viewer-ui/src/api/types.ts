@@ -59,7 +59,6 @@ export type RepoViewByRepo = Record<string, RepoView>;
 /** What every `/api/prefs` write echoes back: the full stored set. */
 export interface StoredPrefs {
   accent: number;
-  sidebar_width: number;
   upper_pct: number;
   active_repo: string | null;
   maximized: MaximizedByRepo;
@@ -80,8 +79,6 @@ export interface ViewerBootstrap {
   hot: HotConfig;
   /** Server-owned accent preset. */
   accent: number;
-  /** Server-owned sidebar width in CSS pixels. */
-  sidebar_width: number;
   /** Server-owned percent of the vertical split given to the diff panel; the
    *  terminal panel takes the rest. Shared between browsers, not with the TUI. */
   upper_pct: number;

@@ -18,22 +18,14 @@ fn layout_bounds_are_clamped_and_persisted() {
     let stored = post(
         server.addr(),
         "/api/prefs",
-        "{\"sidebar_width\":5000,\"upper_pct\":99}",
+        "{\"upper_pct\":99}",
         Some(&token),
     );
     let echoed: serde_json::Value = serde_json::from_str(body_of(&stored)).unwrap();
-    assert_eq!(
-        echoed["sidebar_width"],
-        crate::session::prefs::MAX_SIDEBAR_WIDTH
-    );
     assert_eq!(echoed["upper_pct"], crate::session::prefs::MAX_UPPER_PCT);
 
     let list = get(server.addr(), "/api/repos", Some(&token));
     let value: serde_json::Value = serde_json::from_str(body_of(&list)).unwrap();
-    assert_eq!(
-        value["sidebar_width"],
-        crate::session::prefs::MAX_SIDEBAR_WIDTH
-    );
     assert_eq!(value["upper_pct"], crate::session::prefs::MAX_UPPER_PCT);
 }
 
@@ -45,13 +37,34 @@ fn setting_one_preference_leaves_the_other_untouched() {
     let stored = post(
         server.addr(),
         "/api/prefs",
-        "{\"sidebar_width\":500}",
+        "{\"upper_pct\":70}",
         Some(&token),
     );
 
     let echoed: serde_json::Value = serde_json::from_str(body_of(&stored)).unwrap();
     assert_eq!(echoed["accent"], 3);
-    assert_eq!(echoed["sidebar_width"], 500);
+    assert_eq!(echoed["upper_pct"], 70);
+}
+
+#[test]
+fn the_sidebar_width_is_no_longer_a_preference_the_server_knows() {
+    // It moved to the browser's own storage. A body naming only it is a body
+    // naming nothing this server stores, and is answered as such rather than
+    // accepted and dropped — silence here would let a stale page believe its
+    // width was being shared.
+    let (_dir, server, token) = prefs_server();
+
+    let stored = post(
+        server.addr(),
+        "/api/prefs",
+        "{\"sidebar_width\":500}",
+        Some(&token),
+    );
+
+    assert!(stored.starts_with("HTTP/1.1 400"), "got: {stored}");
+    let list = get(server.addr(), "/api/repos", Some(&token));
+    let value: serde_json::Value = serde_json::from_str(body_of(&list)).unwrap();
+    assert!(value.get("sidebar_width").is_none());
 }
 
 #[test]

@@ -15,7 +15,7 @@ nightcrow reads `~/.nightcrow/config.toml`. Every field is optional and omitted 
 | `[tree]` | `respect_gitignore = true`, `max_depth = 64`, `live_watch = true` | `max_depth` is `1..=1024`; `live_watch = false` refreshes the tree on entry instead of watching expanded directories. |
 | `[shell]` | `program` omitted; `command_args` platform default | Unix uses `$SHELL` or `/bin/sh` with `[-lc]`; Windows uses `%ComSpec%` or `cmd.exe` with `[/C]`. The command is always the final single argument; interpolation such as `"{}"` is not supported. |
 
-The web viewer has its own panel proportions and sidebar width in `~/.nightcrow/viewer.json`; `[layout]` controls the TUI only. Shared files and ownership are described in [Session state](session-state.md).
+The web viewer has its own panel proportions in `~/.nightcrow/viewer.json` and keeps its sidebar width in the browser; `[layout]` controls the TUI only. Shared files and ownership are described in [Session state](session-state.md).
 
 ## `[web_viewer]`
 
