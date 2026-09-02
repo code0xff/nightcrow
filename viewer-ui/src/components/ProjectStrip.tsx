@@ -73,7 +73,7 @@ export function ProjectStrip({
         className={
           left
             ? "hidden min-h-0 flex-1 flex-col overflow-y-auto md:flex"
-            : "-my-[8.8px] hidden items-stretch self-stretch overflow-x-auto pl-1 md:flex"
+            : "hidden items-stretch self-stretch overflow-x-auto pl-1 md:flex"
         }
       >
         {repos.map((r) => (

@@ -1,1 +1,0 @@
-import{k as e}from"./index-DVCy-ekp.js";var t=e();function n({src:e}){return(0,t.jsx)(`iframe`,{title:`HTML preview`,sandbox:`allow-scripts`,src:e,className:`h-full w-full border-0 bg-white`})}export{n as HtmlView};

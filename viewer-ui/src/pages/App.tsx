@@ -30,13 +30,10 @@ export function App() {
       <div className="nc-fade flex h-full">
         {view.tabStrip.side === "left" && (
           <aside className="hidden w-48 shrink-0 flex-col bg-ink-900 md:flex">
-            {/* The header's padding around a row the height of its controls
-                (`h-6`), so this border meets the header's border exactly; the
-                mark alone is shorter than a button and would leave a step. */}
-            <div className="flex items-center border-b border-ink-700 px-[12.8px] py-[8.8px]">
-              <div className="flex h-6 items-center gap-2">
-                <Brand />
-              </div>
+            {/* The header's exact height (see `Header`), so this border and the
+                header's are one line at one pixel row. */}
+            <div className="flex h-[42px] items-center gap-2 border-b border-ink-700 px-[12.8px]">
+              <Brand />
             </div>
             <ProjectStrip side="left" {...view.header} />
           </aside>

@@ -60,8 +60,13 @@ export function Header({
   tabStrip,
 }: HeaderProps) {
   const shortcut = useShortcutHint();
+  // A whole number of pixels tall, not padding around content: a fractional
+  // height lands the bottom border between device pixels, where it is blurred
+  // across two rows and reads thinner than a border that is not — and the left
+  // column's title row, sized separately, need not land the same way. Both
+  // rows share this height so their borders are one line.
   return (
-    <header className="flex items-center gap-2 border-b border-ink-700 bg-ink-900 px-[12.8px] py-[8.8px]">
+    <header className="flex h-[42px] items-center gap-2 border-b border-ink-700 bg-ink-900 px-[12.8px]">
       {/* With the tabs on the left the title heads their column instead, so
           the header shows it only where that column is not drawn. */}
       <div
