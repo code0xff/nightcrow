@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { PlusIcon, XIcon } from "./icons/actions";
 import { ChevronIcon } from "./icons/navigation";
+import { useShortcutHint } from "../hooks/shortcutLeader";
 import type { Repo } from "../api";
 
 export function ProjectMenu({
@@ -19,6 +20,7 @@ export function ProjectMenu({
   className?: string;
 }) {
   const [open, setOpen] = useState(false);
+  const shortcut = useShortcutHint();
   const triggerRef = useRef<HTMLButtonElement>(null);
   const current = repos.find((r) => r.id === currentId);
 
@@ -78,7 +80,11 @@ export function ProjectMenu({
                 <button
                   onClick={() => onCloseProject(r.id)}
                   aria-label={`close ${r.name}`}
-                  title="Close project"
+                  // As in the tab strip: the key closes the current project, so
+                  // it is only named on that one.
+                  {...(r.id === currentId
+                    ? shortcut("project.close", "Close project")
+                    : { title: "Close project" })}
                   className="mr-1 flex h-6 w-6 shrink-0 items-center justify-center rounded-sm text-ink-400 hover:text-removed"
                 >
                   <XIcon className="h-3.5 w-3.5" />
@@ -92,6 +98,7 @@ export function ProjectMenu({
                 onOpenPicker();
                 setOpen(false);
               }}
+              {...shortcut("project.openDialog", "Open a project")}
               className="flex w-full items-center gap-1 px-3 py-1.5 text-left text-ink-400 hover:text-ink-200"
             >
               <PlusIcon className="h-3.5 w-3.5" />

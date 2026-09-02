@@ -8,6 +8,8 @@ import {
   VIRTUAL_THRESHOLD,
 } from "../lib/virtualWindow";
 import { otherFace, sourceKey } from "../lib/otherFace";
+import { focusRegionAttrs } from "../lib/shortcutDom";
+import { useShortcutHint } from "../hooks/shortcutLeader";
 import {
   MaximizeIcon,
   PreviewIcon,
@@ -59,6 +61,7 @@ export function FilePane({
   className = "",
 }: FilePaneProps) {
   const diffLayout = useDiffLayout();
+  const shortcut = useShortcutHint();
   const scroller = useRef<HTMLDivElement>(null);
   const { viewport, refresh: refreshViewport } = useScrollViewport(scroller);
   const anchor = pane.kind === "file" ? pane.anchor : undefined;
@@ -136,7 +139,11 @@ export function FilePane({
     refreshViewport();
   }, [pane, anchor, refreshViewport]);
   return (
-    <section className={`min-h-0 min-w-0 flex-col ${className}`}>
+    // `focus.content` sends the keyboard here; see `focusRegionAttrs`.
+    <section
+      {...focusRegionAttrs("content")}
+      className={`min-h-0 min-w-0 flex-col ${className}`}
+    >
       <div className="flex shrink-0 items-center gap-2 bg-ink-850 px-3 py-0.5 text-ink-400">
         {pane.kind === "file" && <PathLabel path={pane.value.path} />}
         <div className="ml-auto flex shrink-0 items-center gap-1">
@@ -200,7 +207,10 @@ export function FilePane({
           <button
             onClick={() => setMaximized(filesMax ? "none" : "files")}
             aria-pressed={filesMax}
-            title={filesMax ? "Restore the layout" : "Maximize the file pane"}
+            {...shortcut(
+              "view.toggleMaximize",
+              filesMax ? "Restore the layout" : "Maximize the file pane",
+            )}
             aria-label={
               filesMax ? "Restore the layout" : "Maximize the file pane"
             }

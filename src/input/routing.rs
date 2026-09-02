@@ -12,11 +12,17 @@ pub fn map_key(event: KeyEvent) -> Action {
     // F-keys / arrows must carry no modifier at all — including
     // Super/Hyper/Meta, so e.g. Super+F3 passes straight through.
     let shift_only = event.modifiers == KeyModifiers::SHIFT;
+    let ctrl_shift = event.modifiers == KeyModifiers::CONTROL | KeyModifiers::SHIFT;
     let no_mods = event.modifiers.is_empty();
 
     match event.code {
         KeyCode::Left if shift_only => Action::CycleBackward,
         KeyCode::Right if shift_only => Action::CycleForward,
+        // One modifier deeper than pane cycling, on the same keys: the arrows
+        // step through panes, and adding Ctrl widens the step to project tabs.
+        // Exact equality keeps these from swallowing the shift-only arms.
+        KeyCode::Left if ctrl_shift => Action::PrevProject,
+        KeyCode::Right if ctrl_shift => Action::NextProject,
         KeyCode::Up if shift_only => Action::TermScrollLineUp,
         KeyCode::Down if shift_only => Action::TermScrollLineDown,
         KeyCode::PageUp if shift_only => Action::TermScrollUp,
@@ -42,7 +48,8 @@ pub fn map_key(event: KeyEvent) -> Action {
 /// holding a modifier from the leader chord. The digit row addresses whatever
 /// the body is showing (`1` = file list, `2` = diff viewer, `3`..`9`,`0` =
 /// panes `0`..`7`); the bare F-keys are a separate axis (project tabs), so
-/// the two never collide.
+/// the two never collide. The bracket pair moves the active project tab within
+/// the strip, which is why it is here and not in `map_key`.
 pub fn prefix_action(event: KeyEvent) -> Action {
     match event.code {
         KeyCode::Char(c) => match c.to_ascii_lowercase() {
@@ -58,6 +65,11 @@ pub fn prefix_action(event: KeyEvent) -> Action {
             'c' => Action::CancelRecovery,
             'o' => Action::OpenProject,
             'x' => Action::CloseProject,
+            // Behind the leader, never bare: `map_key` passes unmodified
+            // characters straight to the PTY, so intercepting `[`/`]` there
+            // would break terminal input and escape sequences.
+            '[' => Action::MoveProjectPrev,
+            ']' => Action::MoveProjectNext,
             'p' => Action::CycleTheme,
             // `u` for update-from-file. Not `r`, which is already Redraw.
             'u' => Action::ReloadConfig,

@@ -1,7 +1,9 @@
 import { Mark } from "./Mark";
 import { ProjectMenu } from "./ProjectMenu";
 import { LogOutIcon, PlusIcon, RefreshIcon, XIcon } from "./icons/actions";
-import { useReloadConfig } from "../hooks/useReloadConfig";
+import { KeyboardIcon } from "./icons/layout";
+import { useLeaderChord, useShortcutHint } from "../hooks/shortcutLeader";
+import { ariaKeyShortcuts, shortcutHintText } from "../lib/shortcutHint";
 import { tabLabel } from "../lib/tabLabel";
 import type { Repo } from "../api";
 
@@ -22,6 +24,14 @@ export interface HeaderProps {
   onRepoDragStart: (event: React.PointerEvent, id: string) => void;
   onRepoDragMove: (event: React.PointerEvent) => void;
   onRepoDragEnd: () => void;
+  /** Owned by the page, not by this component: the keyboard reloads the config
+   *  too, and two instances of `useReloadConfig` would each hold their own
+   *  in-flight guard. */
+  onReloadConfig: () => void;
+  reloading: boolean;
+  /** Open the shortcut sheet. Held by the page beside the keyboard that opens
+   *  the same sheet, so both go through one piece of state. */
+  onShowShortcuts: () => void;
 }
 
 export function Header({
@@ -39,10 +49,27 @@ export function Header({
   onRepoDragStart,
   onRepoDragMove,
   onRepoDragEnd,
+  onReloadConfig,
+  reloading,
+  onShowShortcuts,
 }: HeaderProps) {
-  // Kept here rather than threaded down from `App`: a reload changes nothing this
-  // component's parents render, so there is no state for them to hold.
-  const { reload, pending: reloading } = useReloadConfig();
+  const shortcut = useShortcutHint();
+  const leader = useLeaderChord();
+  // The two project chords act on the strip, not on any one tab: they move the
+  // selection relative to the project in front, so no tab can claim either as
+  // the key that activates it. Named here, where the strip is, as the pair of
+  // alternatives ARIA's space-separated list is for — and only while there is
+  // somewhere to go, because with one project open the chords are not
+  // registered and naming them would announce a key that does nothing.
+  const cycleActions =
+    repos.length > 1 ? (["project.previous", "project.next"] as const) : [];
+  const named = <T,>(value: T | null): value is T => value !== null;
+  const cycleKeys = cycleActions
+    .map((id) => ariaKeyShortcuts(id, leader))
+    .filter(named);
+  const cycleHint = cycleActions
+    .map((id) => shortcutHintText(id, leader))
+    .filter(named);
   return (
     <header className="flex items-center gap-2 border-b border-ink-700 bg-ink-900 px-[12.8px] py-[8.8px]">
       <Mark className="h-[22px] w-[22px] shrink-0" />
@@ -58,7 +85,15 @@ export function Header({
         onCloseProject={onCloseRepo}
         onOpenPicker={onOpenPicker}
       />
-      <nav className="-my-[8.8px] hidden items-stretch self-stretch overflow-x-auto pl-1 md:flex">
+      <nav
+        aria-keyshortcuts={cycleKeys.length > 0 ? cycleKeys.join(" ") : undefined}
+        title={
+          cycleHint.length > 0
+            ? `Previous or next project (${cycleHint.join(", ")})`
+            : undefined
+        }
+        className="-my-[8.8px] hidden items-stretch self-stretch overflow-x-auto pl-1 md:flex"
+      >
         {repos.map((r) => (
           <div
             key={r.id}
@@ -96,7 +131,11 @@ export function Header({
                 onCloseRepo(r.id);
               }}
               data-tab-close
-              title="Close project"
+              // Only on the project in front: `project.close` closes the current
+              // project, so on any other tab the key would name a different one.
+              {...(r.id === repo
+                ? shortcut("project.close", "Close project")
+                : { title: "Close project" })}
               aria-label={`close ${r.name}`}
               className="mr-1 flex h-5 w-5 items-center justify-center rounded-sm text-ink-400 hover:bg-ink-700 hover:text-removed"
             >
@@ -107,7 +146,7 @@ export function Header({
       </nav>
       <button
         onClick={onOpenPicker}
-        title="Open a project"
+        {...shortcut("project.openDialog", "Open a project")}
         className="hidden shrink-0 items-center gap-1 rounded-sm px-2 py-0.5 text-ink-400 hover:text-ink-200 md:inline-flex"
       >
         <PlusIcon className="h-3.5 w-3.5" />
@@ -128,7 +167,10 @@ export function Header({
       )}
       <button
         onClick={cycle}
-        title={`Accent: ${accent.name} (click for ${next.name})`}
+        {...shortcut(
+          "session.cycleAccent",
+          `Accent: ${accent.name} (click for ${next.name})`,
+        )}
         aria-label={`accent colour: ${accent.name}, click for ${next.name}`}
         className="ml-auto flex h-6 w-6 shrink-0 items-center justify-center rounded-sm"
       >
@@ -141,15 +183,26 @@ export function Header({
           reads as a browser refresh, and this reloads the server's config.toml
           while leaving the page exactly as it is. */}
       <button
-        onClick={reload}
+        onClick={onReloadConfig}
         disabled={reloading}
-        title="Reload config.toml on the server (does not reload this page)"
+        {...shortcut(
+          "session.reloadConfig",
+          "Reload config.toml on the server (does not reload this page)",
+        )}
         aria-label="reload the server config"
         className="ml-1 flex h-6 w-6 shrink-0 items-center justify-center rounded-sm text-ink-400 hover:bg-ink-700 hover:text-ink-200 disabled:cursor-progress disabled:text-ink-500 disabled:hover:bg-transparent"
       >
         <RefreshIcon
           className={`h-3.5 w-3.5 ${reloading ? "animate-spin" : ""}`}
         />
+      </button>
+      <button
+        onClick={onShowShortcuts}
+        {...shortcut("help.shortcuts", "Keyboard shortcuts")}
+        aria-label="keyboard shortcuts"
+        className="ml-1 flex h-6 w-6 shrink-0 items-center justify-center rounded-sm text-ink-400 hover:bg-ink-700 hover:text-ink-200"
+      >
+        <KeyboardIcon className="h-3.5 w-3.5" />
       </button>
       <a
         href="/logout"

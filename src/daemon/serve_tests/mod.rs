@@ -7,6 +7,7 @@ mod accent;
 mod active;
 mod harness;
 mod harness_terminal;
+mod order;
 mod other_transport;
 mod reload;
 mod session;

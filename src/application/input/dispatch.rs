@@ -26,6 +26,20 @@ pub(crate) enum KeyOutcome {
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) enum ProjectRequest {
     Switch(usize),
+    /// Step one tab forward or backward, wrapping over tab order.
+    ///
+    /// A direction rather than a resolved index because the sender holds one
+    /// project: the wrap needs the tab count and which tab is in front, and
+    /// both are only known where the tab list is.
+    Cycle {
+        forward: bool,
+    },
+    /// Move the active tab one slot within the strip, `forward` being away from
+    /// the front. A direction for the same reason `Cycle` is one, and separate
+    /// from it because this reorders the strip instead of stepping along it.
+    Move {
+        forward: bool,
+    },
     Close,
     Open(String),
     OpenDialog,
@@ -139,6 +153,16 @@ pub(super) fn handle_global_action(app: &mut App, action: Action) -> Option<KeyO
         Action::OpenProject => Some(KeyOutcome::Project(ProjectRequest::OpenDialog)),
         Action::CloseProject => Some(KeyOutcome::Project(ProjectRequest::Close)),
         Action::SwitchProject(idx) => Some(KeyOutcome::Project(ProjectRequest::Switch(idx))),
+        Action::PrevProject => Some(KeyOutcome::Project(ProjectRequest::Cycle {
+            forward: false,
+        })),
+        Action::NextProject => Some(KeyOutcome::Project(ProjectRequest::Cycle { forward: true })),
+        Action::MoveProjectPrev => {
+            Some(KeyOutcome::Project(ProjectRequest::Move { forward: false }))
+        }
+        Action::MoveProjectNext => {
+            Some(KeyOutcome::Project(ProjectRequest::Move { forward: true }))
+        }
         Action::ToggleFullscreen => {
             match app.focus {
                 Focus::DiffViewer => app.toggle_diff_fullscreen(),

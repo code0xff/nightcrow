@@ -90,9 +90,10 @@ export function PreviewIcon() {
 
 /**
  * Keyboard glyph, traced from Lucide's `keyboard`. Labels the toggle for the
- * on-screen key bar — the keys a glass keyboard cannot send.
+ * on-screen key bar — the keys a glass keyboard cannot send — and the header
+ * button that opens the shortcut sheet.
  */
-export function KeyboardIcon() {
+export function KeyboardIcon({ className = "h-4 w-4" }: { className?: string }) {
   return (
     <svg
       viewBox="0 0 24 24"
@@ -103,7 +104,7 @@ export function KeyboardIcon() {
       strokeLinejoin="round"
       aria-hidden="true"
       focusable="false"
-      className="h-4 w-4"
+      className={className}
     >
       <rect width="20" height="14" x="2" y="5" rx="2" />
       <path d="M6 9h.01" />

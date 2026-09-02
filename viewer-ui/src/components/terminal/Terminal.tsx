@@ -1,14 +1,12 @@
-import { useCallback, useRef, useState } from "react";
-import { planLayout, type PaneView } from "../../lib/terminalLayout";
+import { useState } from "react";
+import { planLayout } from "../../lib/terminalLayout";
 import { usePaneDrag } from "../../hooks/terminal/usePaneDrag";
-import { useTerminalSocket } from "../../hooks/terminal/useTerminalSocket";
-import { useTerminalViews } from "../../hooks/terminal/useTerminalViews";
-import { usePaneSizes } from "../../hooks/terminal/usePaneSizes";
 import { usePaneRecovery } from "../../hooks/terminal/usePaneRecovery";
 import { usePaneCommands } from "../../hooks/terminal/usePaneCommands";
-import { usePaneFocus } from "../../hooks/terminal/usePaneFocus";
+import { useTerminalRefs } from "../../hooks/terminal/useTerminalRefs";
+import { useTerminalShortcuts } from "../../hooks/terminal/useTerminalShortcuts";
+import { useTerminalWiring } from "../../hooks/terminal/useTerminalWiring";
 import { useCtrlLatch } from "../../hooks/terminal/useCtrlLatch";
-import { useStartupSizes } from "../../hooks/terminal/useStartupSizes";
 import { usePanelSize } from "../../hooks/terminal/usePanelSize";
 import { AttachNotice } from "./AttachNotice";
 import { PaneGrid } from "./PaneGrid";
@@ -21,8 +19,7 @@ import { rememberPane } from "../../lib/lastPane";
 import { shownTab } from "../../lib/paneViewMode";
 import { PanelDivider, type PanelDividerProps } from "./PanelDivider";
 import { PanelToolbar } from "./PanelToolbar";
-import { renderedZoom, zoomPending } from "../../lib/zoom";
-import type { PaneSize } from "../../api/terminal";
+import { renderedZoom } from "../../lib/zoom";
 import {
   attachLabel,
   attachStatus,
@@ -44,26 +41,11 @@ export function TerminalPanel({
   /** The panel's own element, the bottom edge of the region the split divides. */
   sectionRef: React.RefObject<HTMLElement | null>;
 } & PanelDividerProps) {
-  const containerRef = useRef<HTMLDivElement>(null);
-  const socketRef = useRef<WebSocket | null>(null);
-  const viewsRef = useRef(new Map<number, PaneView>());
-  const bodyRefs = useRef(new Map<number, HTMLDivElement>());
-  // Each pane's grid as the server has confirmed it — `created` and `resized`,
-  // never a size this page has merely asked for. What a pane is rendered at is
-  // read from here, and the server drops a resize from a page that lost the
-  // sizing mid-flight, so a request must not be recorded as fact.
-  const ptySizesRef = useRef(new Map<number, PaneSize>());
-  // What this page last asked each pane's size to be, so an unchanged layout
-  // does not send the same resize again.
-  const askedSizesRef = useRef(new Map<number, PaneSize>());
-  // Buffer scrollback received before the corresponding xterm exists.
-  const pendingRef = useRef(new Map<number, Uint8Array[]>());
-  // A zoom this page has asked for and not yet been answered. Held here because
-  // both halves need it: the commands read it, the socket clears it.
-  const zoomAskedRef = useRef<number | null | undefined>(undefined);
-  // Cells rendered for startup terminals the server has not created yet, so
-  // their size can be measured from the slot each will occupy.
-  const slotRefs = useRef(new Map<number, HTMLDivElement>());
+  // Held as one bag and passed to `useTerminalWiring` that way; the names below
+  // are the ones this component reads for itself.
+  const refs = useTerminalRefs();
+  const { containerRef, socketRef, viewsRef, bodyRefs, zoomAskedRef, slotRefs } =
+    refs;
   const [pending, setPending] = useState<number | null>(null);
   // Where the socket is. Held here rather than inferred from the pane list,
   // which is empty both while attaching and when the session really has no
@@ -100,14 +82,19 @@ export function TerminalPanel({
   // What the panel puts on screen: the focused tab, or the zoom in the grid.
   const shown = tabs ? shownTab(active, panes) : zoom;
 
-  useTerminalSocket({
+  useTerminalWiring({
     repo,
-    socketRef,
-    viewsRef,
-    pendingRef,
-    ptySizesRef,
-    askedSizesRef,
-    zoomAskedRef,
+    refs,
+    size,
+    mode,
+    panes,
+    active,
+    replayLeft,
+    pending,
+    ownsSize,
+    zoomShown,
+    zoomServer,
+    consumeCtrl: ctrl.consume,
     setLink,
     setPending,
     setReplayLeft,
@@ -117,58 +104,6 @@ export function TerminalPanel({
     setTitles,
     setOwnsSize,
     setRecovery,
-  });
-
-  useTerminalViews({
-    panes,
-    size,
-    zoomed: zoomShown,
-    mode,
-    socketRef,
-    viewsRef,
-    bodyRefs,
-    pendingRef,
-    ptySizesRef,
-    consumeCtrl: ctrl.consume,
-    setTitles,
-  });
-
-  const onAnswered = useCallback(() => setPending(null), []);
-  useStartupSizes({
-    pending,
-    size,
-    socketRef,
-    slotRefs,
-    panesExist: panes.length > 0,
-    onAnswered,
-  });
-
-  usePaneSizes({
-    panes,
-    size,
-    zoomed: zoomShown,
-    mode,
-    socketRef,
-    viewsRef,
-    bodyRefs,
-    ptySizesRef,
-    askedSizesRef,
-    ownsSize,
-    layoutPending: zoomPending(zoomServer, panes),
-  });
-
-  usePaneFocus({
-    repo,
-    panes,
-    replayLeft,
-    active,
-    setActive,
-    zoomed: zoomServer,
-    zoom: zoomShown,
-    viewsRef,
-    panelRef: containerRef,
-    size,
-    mode,
   });
 
   const focusPane = (pane: number) => {
@@ -184,14 +119,24 @@ export function TerminalPanel({
 
   const focusActive = () => active !== null && focusPane(active);
 
+  const commands = usePaneCommands({
+    socketRef,
+    viewsRef,
+    zoomed: zoom,
+    zoomAskedRef,
+    active,
+  });
   const { create, toggleZoom, claimSize, closePane, reorder, sendKey } =
-    usePaneCommands({
-      socketRef,
-      viewsRef,
-      zoomed: zoom,
-      zoomAskedRef,
-      active,
-    });
+    commands;
+  useTerminalShortcuts({
+    socketRef,
+    panes,
+    active,
+    link,
+    commands,
+    focusPane,
+    cancelRecovery,
+  });
 
   const {
     draggingPane,
@@ -229,6 +174,11 @@ export function TerminalPanel({
   return (
     <section
       ref={sectionRef}
+      // How the keyboard layer recognises the panel (`lib/shortcutDom.ts`): all
+      // of it, so the toolbar is app context too and `<prefix> f` maximizes this
+      // panel from either. A keystroke in here is never typing — xterm keeps its
+      // caret in a `<textarea>`, which the text-field rule matches by tag.
+      data-terminal-panel=""
       className={`relative flex min-h-0 min-w-0 flex-col border-t border-ink-700 ${className}`}
     >
       <PanelDivider {...divider} />

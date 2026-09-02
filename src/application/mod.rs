@@ -10,9 +10,13 @@ pub(crate) mod event_loop;
 pub(crate) mod input;
 pub(crate) mod redraw;
 pub(crate) mod session_link;
+mod session_tabs;
 pub(crate) mod splash;
 pub(crate) mod terminal_guard;
 
+#[cfg(test)]
+#[path = "session_link_project_tests.rs"]
+mod session_link_project_tests;
 #[cfg(test)]
 #[path = "session_terminals_tests.rs"]
 mod session_terminals_tests;

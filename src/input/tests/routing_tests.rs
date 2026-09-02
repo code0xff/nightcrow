@@ -220,6 +220,37 @@ fn fullscreen_prefix_leaves_non_digit_chords_unchanged() {
 }
 
 #[test]
+fn the_leader_brackets_move_the_active_project_within_the_tab_strip() {
+    // Behind the leader rather than bare: `map_key` hands unmodified characters
+    // to the PTY, so bare brackets would break terminal input. `[` goes towards
+    // the front of the strip and `]` away from it, matching how `PrevProject` /
+    // `NextProject` already name that axis.
+    assert_eq!(
+        prefix_action(key(KeyCode::Char('['))),
+        Action::MoveProjectPrev
+    );
+    assert_eq!(
+        prefix_action(key(KeyCode::Char(']'))),
+        Action::MoveProjectNext
+    );
+}
+
+#[test]
+fn the_fullscreen_leader_inherits_the_bracket_moves() {
+    // `prefix_action_fullscreen` reinterprets digits only, so moving a project
+    // must arrive by delegation. Pinned here so a future digit-shaped branch
+    // cannot quietly drop the pair in fullscreen.
+    assert_eq!(
+        prefix_action_fullscreen(key(KeyCode::Char('['))),
+        Action::MoveProjectPrev
+    );
+    assert_eq!(
+        prefix_action_fullscreen(key(KeyCode::Char(']'))),
+        Action::MoveProjectNext
+    );
+}
+
+#[test]
 fn prefix_dispatch_ignores_modifiers_on_follow_up() {
     // A leftover Ctrl from the leader chord must not break the follow-up.
     assert_eq!(prefix_action(ctrl(KeyCode::Char('t'))), Action::NewPane);

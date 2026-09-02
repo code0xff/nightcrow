@@ -39,7 +39,7 @@ status는 저장소별 snapshot worker가 파일시스템 변화에 반응해 �
 ## Cross-cutting invariants
 
 - **기하의 단일 출처**: 네 chrome 행은 `ui::chrome::chrome_rows`, visible pane cell은 `ui::terminal_tab::visible_pane_cells`만 계산한다. 렌더·resize·hit-test가 별도 산술을 갖지 않는다. 프로젝트 tab 행과 notice 행은 항상 존재해 PTY가 행 삽입/삭제로 resize되지 않는다.
-- **입력 보호**: 기본 leader(`Ctrl+F`, 설정 가능) 뒤에만 앱 명령을 두고, 그 밖의 일반 키·단독 Ctrl은 active pane으로 그대로 보낸다. 앱이 합성하는 scroll/mouse report도 프로그램이 해당 mode를 켠 경우에만 보낸다.
+- **입력 보호**: 기본 leader(`Ctrl+F`, 설정 가능) 뒤에만 앱 명령을 두고, 그 밖의 일반 키·단독 Ctrl은 active pane으로 그대로 보낸다. 예외는 leader 없이 예약한 소수의 chord뿐이며 — bare F-key, shift-only 방향키/PageUp·PageDown, `Ctrl+Shift`+좌우 — 정확한 modifier 집합으로만 매칭해 다른 조합은 pane으로 흘린다. 앱이 합성하는 scroll/mouse report도 프로그램이 해당 mode를 켠 경우에만 보낸다.
 - **순서와 generation**: pane 생성·종료·resize·reorder는 backend/session event가 확정한다. daemon의 repository set은 watcher 한 곳만 전송하며, terminal output은 repo별 FIFO를 유지한다. 비동기 git 결과는 generation guard를 통과한 것만 적용한다.
 - **경로 경계**: worktree 파일을 열 때는 `git::path::resolve_in_workdir`를, git object/pathspec만 다룰 때는 `validate_commit_path`를 사용한다. traversal·절대 경로·NUL·`.git` 변형을 거부하며 worktree 파일은 중간 component의 symlink도 따르지 않는다. 웹 route가 검증을 중복 구현하지 않고 공통 handler를 통과한다.
 - **자원 상한과 오류**: frame, terminal queue, PTY/pane, 웹 연결·응답·목록·diff·검색에는 명시적 상한이 있다. 잘린 결과는 `truncated` 등으로 표시하고, malformed/truncated input과 외부 호출 실패는 성공처럼 기록하지 않는다.

@@ -203,11 +203,36 @@ fn successor_of(state: &SessionState, id: &str) -> Option<String> {
 ///
 /// Ids that no longer name a repository are dropped rather than refused: the
 /// only way to send one is to have raced a close on another client.
+///
+/// The tab in front stays with its repository. That needs saying because
+/// [`active_repo`]'s fallback names the *first served* repository while nothing
+/// has been focused, and reordering changes which one that is — so the fallback
+/// is pinned to what it currently names before the slots move under it.
 pub fn reorder_repos(state: &SessionState, ids: &[String]) {
+    let focus_before = state.prefs.get().active_repo;
+    let front = focus_before
+        .as_deref()
+        .and_then(|path| state.catalog.id_of_path(path))
+        .is_none()
+        .then(|| active_repo_from(state, focus_before.as_deref()))
+        .flatten()
+        .and_then(|id| state.catalog.get(&id).map(|entry| entry.path.clone()));
     let paths: Vec<String> = ids
         .iter()
         .filter_map(|id| state.catalog.get(id).map(|entry| entry.path.clone()))
         .collect();
+    // Before the slots move rather than after: the watcher reads the session on
+    // its own tick, and one landing between the two statements would see the new
+    // order while the fallback still named the old first tab — broadcasting the
+    // front-tab jump this pinning exists to prevent.
+    if let Some(path) = front {
+        // Only while the preference is still what the fallback was read
+        // against, for the reason the close does the same: a focus arriving in
+        // between must win rather than be overwritten by a reorder.
+        state
+            .prefs
+            .set_active_repo_if(focus_before.as_deref(), path);
+    }
     state.catalog.reorder(&paths);
     persist_workspace(state);
 }

@@ -7,6 +7,7 @@
 
 use crate::application::bootstrap::init_app;
 use crate::application::input::dispatch::{ProjectContext, ProjectRequest};
+use crate::application::session_tabs::{cycle_target, focus_repo, moved_order, notify_repo};
 use crate::daemon::client::DaemonClient;
 use crate::daemon::protocol::{RepoSummary, ServerMessage};
 use crate::session::terminal::frame::ServerMessage as HubServerMessage;
@@ -90,6 +91,19 @@ impl SessionLink {
                     None => return,
                 }
             }
+            // Resolved to an id here rather than to an index sent onward,
+            // because the wrap and the tab it lands on are the same question.
+            ProjectRequest::Cycle { forward } => match cycle_target(ws, forward) {
+                Some(id) => self.client.focus_repo(&id),
+                None => return,
+            },
+            // Tab order is the session's too, so the whole new order is asked
+            // for and nothing is rearranged here. Adopting the broadcast is
+            // what moves the tab, exactly as switching does.
+            ProjectRequest::Move { forward } => match moved_order(ws, forward) {
+                Some(order) => self.client.reorder_repos(&order),
+                None => return,
+            },
             // The dialog is this client's own; only what it confirms is a
             // request.
             ProjectRequest::OpenDialog => {
@@ -129,39 +143,6 @@ impl SessionLink {
 
     pub(crate) fn is_connected(&self) -> bool {
         self.client.is_connected()
-    }
-}
-
-/// Put the tab for `repo` in front, by catalog id. Reports whether there was one.
-///
-/// A miss is normal rather than an error: the session can name a repository this
-/// client has not built a tab for yet, in the beat between the two.
-fn focus_repo(ws: &mut Workspace, repo: &str) -> bool {
-    match ws
-        .projects()
-        .iter()
-        .position(|app| app.repository_id() == Some(repo))
-    {
-        Some(index) => {
-            ws.switch(index);
-            true
-        }
-        None => false,
-    }
-}
-
-/// Raise a terminal refusal on the tab it came from, not the active one: the
-/// client subscribes to every open repository, so the refusal may be about a
-/// tab the user is not looking at. A repository with no tab yet falls back to
-/// the active one rather than losing the message.
-fn notify_repo(ws: &mut Workspace, repo: &str, message: String) {
-    match ws
-        .projects_mut()
-        .iter_mut()
-        .find(|project| project.repository_id() == Some(repo))
-    {
-        Some(project) => project.raise_notice(crate::app::NoticeKind::Terminal, message),
-        None => ws.raise_notice(crate::app::NoticeKind::Terminal, message),
     }
 }
 
@@ -225,7 +206,3 @@ fn adopt(ws: &mut Workspace, ctx: &ProjectContext, repos: &[RepoSummary], client
     let ids: Vec<String> = repos.iter().map(|repo| repo.id.clone()).collect();
     client.retain_repos(&ids);
 }
-
-#[cfg(test)]
-#[path = "session_link_tests.rs"]
-mod tests;

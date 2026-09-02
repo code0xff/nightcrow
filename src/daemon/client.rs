@@ -203,6 +203,18 @@ impl DaemonClient {
         )
     }
 
+    /// Ask the daemon to put the open repositories in `order`, by catalog id.
+    /// Tab order is shared, so the answer arrives as a broadcast and the caller
+    /// adopts it rather than rearranging anything itself.
+    pub fn reorder_repos(&mut self, order: &[String]) -> Result<()> {
+        send(
+            &self.out,
+            &ClientMessage::ReorderRepos {
+                order: order.to_vec(),
+            },
+        )
+    }
+
     /// Ask the daemon to paint the session in `accent`. Every client and the
     /// browser follow, so the answer arrives as a broadcast.
     pub fn set_accent(&mut self, accent: usize) -> Result<()> {

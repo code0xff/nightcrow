@@ -21,3 +21,29 @@ export function reconcileOrder<T>(present: T[], desired: T[]): T[] {
   }
   return out;
 }
+
+/**
+ * The pane a shortcut digit addresses: `n` is 1-based over the order the panel
+ * shows, so `<prefix> 3` means "the first pane" whatever id it was given and
+ * keeps meaning it after a reorder. Null when the panel has no `n`th pane.
+ */
+export function paneAt(order: readonly number[], n: number): number | null {
+  return order[n - 1] ?? null;
+}
+
+/**
+ * `order` with `a` and `b` exchanged in place — the swap `<prefix> s` performs,
+ * as opposed to `reorderByDrop`, which lifts one pane out and re-inserts it.
+ *
+ * Returns a copy of `order` unchanged when either pane is absent or they are the
+ * same one, so a stale digit cannot rewrite the arrangement.
+ */
+export function swapOrder(order: readonly number[], a: number, b: number): number[] {
+  const next = [...order];
+  const from = next.indexOf(a);
+  const to = next.indexOf(b);
+  if (from === -1 || to === -1 || from === to) return next;
+  next[from] = b;
+  next[to] = a;
+  return next;
+}

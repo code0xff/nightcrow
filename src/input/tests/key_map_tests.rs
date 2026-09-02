@@ -4,7 +4,7 @@
 //! rule — a follow-up ignores modifiers, while these must match them exactly or
 //! a chord meant for the pane below becomes an app command.
 
-use super::common::{ctrl, key};
+use super::common::{ctrl, ctrl_shift, key};
 use super::*;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
@@ -29,8 +29,18 @@ fn reserved_keys_require_exact_modifiers() {
     // Shift-only arrows are reserved.
     assert_eq!(with(KeyCode::Left, M::SHIFT), Action::CycleBackward);
     // Extra modifiers fall through to the PTY.
-    assert_eq!(with(KeyCode::Left, M::SHIFT | M::CONTROL), Action::None);
+    assert_eq!(with(KeyCode::Left, M::SHIFT | M::ALT), Action::None);
     assert_eq!(with(KeyCode::Right, M::SHIFT | M::ALT), Action::None);
+    // Ctrl+Shift+arrow is reserved too, and on that pair alone: a third
+    // modifier still belongs to whatever is running in the pane.
+    assert_eq!(
+        with(KeyCode::Left, M::SHIFT | M::CONTROL),
+        Action::PrevProject
+    );
+    assert_eq!(
+        with(KeyCode::Right, M::SHIFT | M::CONTROL | M::SUPER),
+        Action::None
+    );
     // F-keys are reserved only without modifiers.
     assert_eq!(with(KeyCode::F(3), M::NONE), Action::SwitchProject(2));
     assert_eq!(with(KeyCode::F(3), M::ALT), Action::None);
@@ -99,4 +109,36 @@ fn f_keys_select_project_tabs_regardless_of_layout() {
     }
     assert_eq!(map_key(key(KeyCode::F(1))), Action::SwitchProject(0));
     assert_eq!(map_key(key(KeyCode::F(8))), Action::SwitchProject(7));
+}
+
+#[test]
+fn ctrl_shift_arrows_step_between_project_tabs() {
+    // The F-keys jump to a tab by number; stepping needs a chord of its own,
+    // and Ctrl+Shift+arrow is safe for the same reason Shift+arrow is — it
+    // carries modifiers, so it can never be prompt text.
+    assert_eq!(map_key(ctrl_shift(KeyCode::Left)), Action::PrevProject);
+    assert_eq!(map_key(ctrl_shift(KeyCode::Right)), Action::NextProject);
+    // The shift-only arrows keep pane focus cycling: the two chords share the
+    // arrow keys and must stay distinct.
+    assert_eq!(
+        map_key(KeyEvent::new(KeyCode::Left, KeyModifiers::SHIFT)),
+        Action::CycleBackward
+    );
+    assert_eq!(
+        map_key(KeyEvent::new(KeyCode::Right, KeyModifiers::SHIFT)),
+        Action::CycleForward
+    );
+    // Ctrl+Shift on any other reserved key is not a project step.
+    assert_eq!(map_key(ctrl_shift(KeyCode::Up)), Action::None);
+    assert_eq!(map_key(ctrl_shift(KeyCode::PageDown)), Action::None);
+    assert_eq!(map_key(ctrl_shift(KeyCode::F(3))), Action::None);
+}
+
+#[test]
+fn bare_brackets_are_not_app_commands() {
+    // `[` and `]` move a project tab only behind the leader. Bare, they must
+    // reach the PTY untouched: they are ordinary characters and the closing
+    // half of every CSI escape sequence a program writes back.
+    assert_eq!(map_key(key(KeyCode::Char('['))), Action::None);
+    assert_eq!(map_key(key(KeyCode::Char(']'))), Action::None);
 }

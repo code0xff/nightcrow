@@ -1,9 +1,10 @@
 import { useEffect, useRef } from "react";
 import type { PointerEvent as ReactPointerEvent } from "react";
-import { SearchIcon } from "./icons/actions";
+import { focusRegionAttrs } from "../lib/shortcutDom";
 import { useTree } from "../hooks/useTree";
 import { buildTreeRows } from "../lib/tree";
 import { ancestorDirs, toggled } from "../lib/treeCache";
+import { SidebarTabs } from "./SidebarTabs";
 import { StatusList } from "./StatusList";
 import { LogList } from "./LogList";
 import { TreeList } from "./TreeList";
@@ -14,7 +15,11 @@ import type { MobileView } from "../types";
 
 export interface SidebarProps {
   tab: Tab;
-  setTab: (t: Tab) => void;
+  /** Show a list. The whole choice, not a raw setter: it invalidates the pane
+   *  request in flight, records the tab, drops the log's snapshot on the way
+   *  out, and empties the content pane the previous list filled
+   *  (`lib/tabChoice.ts`). The keyboard is handed the same function. */
+  chooseTab: (t: Tab) => void;
   filter: string;
   setFilter: (v: string) => void;
   filterOpen: boolean;
@@ -45,7 +50,6 @@ export interface SidebarProps {
   setLogStalled: (v: boolean | ((prev: boolean) => boolean)) => void;
   commitDrillDown: CommitDrillDown | null;
   setCommitDrillDown: (v: CommitDrillDown | null) => void;
-  resetLog: () => void;
   logSentinelRef: React.RefObject<HTMLLIElement | null>;
   visibleCommits: Commit[];
   logPagingPaused: boolean;
@@ -76,7 +80,7 @@ export interface SidebarProps {
 export function Sidebar(props: SidebarProps) {
   const {
     tab,
-    setTab,
+    chooseTab,
     filter,
     setFilter,
     filterOpen,
@@ -107,7 +111,6 @@ export function Sidebar(props: SidebarProps) {
     setLogStalled,
     commitDrillDown,
     setCommitDrillDown,
-    resetLog,
     logSentinelRef,
     visibleCommits,
     logPagingPaused,
@@ -164,9 +167,18 @@ export function Sidebar(props: SidebarProps) {
     tree.revealTreeDir(path);
   };
 
+  const toggleFilter = () => {
+    if (filterOpen) setFilter("");
+    setFilterOpen((open) => !open);
+  };
+
   return (
     <section
       ref={sidebarRef}
+      // The region `focus.list` sends the keyboard to. `tabIndex={-1}` because a
+      // container is not focusable otherwise, and -1 keeps it out of the Tab
+      // order: it is a shortcut target, not a stop.
+      {...focusRegionAttrs("list")}
       className={`relative min-h-0 flex-col overflow-hidden ${
         mobileView === "files" ? "flex" : "hidden md:flex"
       } ${filesMax ? "md:flex" : "border-ink-700 md:border-r"}`}
@@ -192,48 +204,12 @@ export function Sidebar(props: SidebarProps) {
           }`}
         />
       )}
-      <div className="flex shrink-0 items-stretch border-b border-ink-700 px-2">
-        {(["status", "log", "tree"] as Tab[]).map((t) => (
-          <button
-            key={t}
-            onClick={() => {
-              if (t === tab) return;
-              bumpPaneRequest();
-              if (tab === "log") {
-                setCommitDrillDown(null);
-                // Re-entering the log must use a fresh history snapshot.
-                resetLog();
-              }
-              // Both halves of one choice: the list to show, and the pane it
-              // leaves empty behind it.
-              setTab(t);
-              clearPane();
-            }}
-            aria-current={t === tab ? "page" : undefined}
-            className={`-mb-px border-b-2 px-2 py-1 ${
-              t === tab
-                ? "border-accent text-ink-50"
-                : "border-transparent text-ink-400 hover:text-ink-200"
-            }`}
-          >
-            {t}
-          </button>
-        ))}
-        <button
-          onClick={() => {
-            if (filterOpen) setFilter("");
-            setFilterOpen((open) => !open);
-          }}
-          aria-pressed={filterOpen}
-          title={filterOpen ? "Hide the filter" : "Filter the list"}
-          aria-label={filterOpen ? "Hide the filter" : "Filter the list"}
-          className={`my-1 ml-auto flex shrink-0 items-center rounded-sm px-1.5 hover:text-accent ${
-            filterOpen ? "text-ink-50" : "text-ink-400"
-          }`}
-        >
-          <SearchIcon />
-        </button>
-      </div>
+      <SidebarTabs
+        tab={tab}
+        onChoose={chooseTab}
+        filterOpen={filterOpen}
+        onToggleFilter={toggleFilter}
+      />
       {filterOpen && (
         <input
           value={filter}
