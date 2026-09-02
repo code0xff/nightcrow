@@ -84,3 +84,20 @@ describe("ProjectStrip", () => {
     expect(strip.className).not.toContain("overflow-x-auto");
   });
 });
+
+describe("ProjectStrip 왼쪽 레일의 폭", () => {
+  it("라벨은_레일_안에서_잘리고_닫기_버튼을_밀어내지_않는다", () => {
+    // Fourteen Hangul code points pass the label rule untouched and are twice
+    // as wide as Latin; the rail is fixed, so the label yields, not the row.
+    mount({
+      side: "left",
+      repos: [{ id: "k", name: "프로젝트이름이아주아주긴저장", display_path: "/k" }],
+      repo: "k",
+    });
+
+    const tab = screen.getByRole("button", { name: "프로젝트이름이아주아주긴저장" });
+    expect(tab.className).toContain("truncate");
+    expect(tab.className).toContain("min-w-0");
+    expect(tab.parentElement?.className).toContain("min-w-0");
+  });
+});

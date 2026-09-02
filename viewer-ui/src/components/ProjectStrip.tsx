@@ -85,8 +85,12 @@ export function ProjectStrip({
             onPointerUp={onRepoDragEnd}
             onPointerCancel={onRepoDragEnd}
             onLostPointerCapture={onRepoDragEnd}
+            // `min-w-0` on the left: the rail is a fixed width, and a name of
+            // fourteen wide code points — the label rule counts characters —
+            // would otherwise push the close control out of it. A row across
+            // the header may grow and scroll instead.
             className={`flex items-center whitespace-nowrap ${
-              left ? "border-b border-ink-700" : "border-r border-ink-700"
+              left ? "min-w-0 border-b border-ink-700" : "border-r border-ink-700"
             } ${repos.length > 1 ? "touch-none" : ""} ${
               draggingRepo === r.id ? "opacity-60" : ""
             } ${
@@ -109,7 +113,9 @@ export function ProjectStrip({
                 onSelectRepo(r.id);
               }}
               aria-label={r.name}
-              className={`self-stretch pl-3 pr-1 ${left ? "flex-1 py-2 text-left" : ""}`}
+              className={`self-stretch pl-3 pr-1 ${
+                left ? "min-w-0 flex-1 truncate py-2 text-left" : ""
+              }`}
             >
               {tabLabel(r.name)}
             </button>
