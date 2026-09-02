@@ -1,4 +1,4 @@
-import { Mark } from "./Mark";
+import { Brand } from "./Brand";
 import { ProjectMenu } from "./ProjectMenu";
 import { ProjectStrip } from "./ProjectStrip";
 import { LogOutIcon, RefreshIcon } from "./icons/actions";
@@ -62,11 +62,15 @@ export function Header({
   const shortcut = useShortcutHint();
   return (
     <header className="flex items-center gap-2 border-b border-ink-700 bg-ink-900 px-[12.8px] py-[8.8px]">
-      <Mark className="h-[22px] w-[22px] shrink-0" />
-      <span className="text-[16px] font-medium tracking-[0.04em] text-ink-50">nightcrow</span>
-      <span className="hidden font-sans text-[10px] uppercase tracking-[0.18em] text-ink-400 sm:inline">
-        web viewer
-      </span>
+      {/* With the tabs on the left the title heads their column instead, so
+          the header shows it only where that column is not drawn. */}
+      <div
+        className={`flex items-center gap-2 ${
+          tabStrip.side === "left" ? "md:hidden" : ""
+        }`}
+      >
+        <Brand />
+      </div>
       <ProjectMenu
         className="md:hidden"
         repos={repos}
@@ -103,17 +107,6 @@ export function Header({
           Cloning…
         </span>
       )}
-      {/* Wide screens only, like the strip it moves: below `md` there is no
-          strip, and a control for where it goes would be a control for nothing. */}
-      <button
-        onClick={tabStrip.toggle}
-        title={`Project tabs ${tabStrip.side === "top" ? "across the top" : "down the left"} (click to move them ${otherSide(tabStrip.side)})`}
-        aria-label={`project tabs: ${tabStrip.side}, click for ${otherSide(tabStrip.side)}`}
-        aria-pressed={tabStrip.side === "left"}
-        className="ml-auto hidden h-6 w-6 shrink-0 items-center justify-center rounded-sm text-ink-400 hover:bg-ink-700 hover:text-ink-200 md:flex"
-      >
-        <TabStripIcon side={tabStrip.side} />
-      </button>
       <button
         onClick={cycle}
         {...shortcut(
@@ -121,12 +114,23 @@ export function Header({
           `Accent: ${accent.name} (click for ${next.name})`,
         )}
         aria-label={`accent colour: ${accent.name}, click for ${next.name}`}
-        className="ml-1 flex h-6 w-6 shrink-0 items-center justify-center rounded-sm max-md:ml-auto"
+        className="ml-auto flex h-6 w-6 shrink-0 items-center justify-center rounded-sm"
       >
         <span
           aria-hidden="true"
           className="h-3 w-3 rounded-full bg-accent ring-1 ring-ink-600"
         />
+      </button>
+      {/* Wide screens only, like the strip it moves: below `md` there is no
+          strip, and a control for where it goes would be a control for nothing. */}
+      <button
+        onClick={tabStrip.toggle}
+        title={`Project tabs ${tabStrip.side === "top" ? "across the top" : "down the left"} (click to move them ${otherSide(tabStrip.side)})`}
+        aria-label={`project tabs: ${tabStrip.side}, click for ${otherSide(tabStrip.side)}`}
+        aria-pressed={tabStrip.side === "left"}
+        className="ml-1 hidden h-6 w-6 shrink-0 items-center justify-center rounded-sm text-ink-400 hover:bg-ink-700 hover:text-ink-200 md:flex"
+      >
+        <TabStripIcon side={tabStrip.side} />
       </button>
       {/* The title says "config" because the shape does not: a circular arrow
           reads as a browser refresh, and this reloads the server's config.toml

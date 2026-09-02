@@ -138,3 +138,20 @@ describe("Header 탭 스트립 위치", () => {
     expect(toggle).toHaveBeenCalledTimes(1);
   });
 });
+
+describe("Header 타이틀", () => {
+  it("이름만_있고_부제는_없다", () => {
+    mount();
+
+    expect(screen.getByText("nightcrow")).toBeTruthy();
+    expect(screen.queryByText(/web viewer/i)).toBeNull();
+  });
+
+  it("스트립_이동_버튼은_accent_스와치_바로_오른쪽이다", () => {
+    mount();
+
+    const accent = screen.getByRole("button", { name: /accent colour/ });
+    const toggle = screen.getByRole("button", { name: /project tabs: top/ });
+    expect(accent.nextElementSibling).toBe(toggle);
+  });
+});

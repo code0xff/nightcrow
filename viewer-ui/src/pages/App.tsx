@@ -1,4 +1,5 @@
 import type { CSSProperties } from "react";
+import { Brand } from "../components/Brand";
 import { FolderPicker } from "../components/FolderPicker";
 import { Header } from "../components/Header";
 import { LoadingSplash } from "../components/LoadingSplash";
@@ -23,12 +24,15 @@ export function App() {
     // out of the view model, and one source is what keeps a rebinding from
     // moving some controls and leaving others behind.
     <ShortcutLeaderProvider leader={view.leader.leader}>
-      {/* The left strip stands beside the whole grid, header included, the way
-          the TUI's column runs the full height of its body: it is a fixed
-          column of chrome, not a row of the page. */}
+      {/* The left strip is a column beside the grid, headed by the title so
+          the tabs hang under the name rather than in a panel of their own; the
+          title's row is the header's height, so the two line up. */}
       <div className="nc-fade flex h-full">
         {view.tabStrip.side === "left" && (
           <aside className="hidden w-48 shrink-0 flex-col border-r border-ink-700 bg-ink-900 md:flex">
+            <div className="flex items-center gap-2 border-b border-ink-700 px-[12.8px] py-[8.8px]">
+              <Brand />
+            </div>
             <ProjectStrip side="left" {...view.header} />
           </aside>
         )}
