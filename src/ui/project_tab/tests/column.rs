@@ -199,20 +199,22 @@ fn the_strip_is_offset_by_its_own_origin() {
 }
 
 #[test]
-fn a_click_under_a_strip_too_short_for_its_markers_is_not_a_tab() {
-    // One row for ten tabs: the active tab and a marker on each side are
-    // three segments for one row. Only the row that exists is a hit box; the
-    // rows the other two would have needed belong to the notice bar below.
+fn a_one_row_strip_shows_the_active_tab_and_no_marker() {
+    // One row for ten tabs, the active one in the middle: there is no room for
+    // a marker beside it, and the marker must not take the row from the one
+    // segment the strip exists to show. The row is the tab, and nothing below
+    // the strip is.
     let area = Rect::new(0, 0, STRIP_WIDTH, 1);
 
     let segments = tab_segments(&crowded(), &[], 5, 1, TabStrip::Left);
-    assert!(
-        segments.len() > 1,
-        "the case needs an overflow: {segments:?}"
-    );
+    assert_eq!(segments.len(), 1, "got: {segments:?}");
+    assert_eq!(segments[0].1, 5);
 
+    assert_eq!(
+        tab_at(&crowded(), &[], 5, area, 3, 0, TabStrip::Left),
+        Some(5)
+    );
     assert_eq!(tab_at(&crowded(), &[], 5, area, 3, 1, TabStrip::Left), None);
-    assert_eq!(tab_at(&crowded(), &[], 5, area, 3, 2, TabStrip::Left), None);
 }
 
 #[test]

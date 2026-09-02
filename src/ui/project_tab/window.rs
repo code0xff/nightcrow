@@ -132,5 +132,40 @@ pub(super) fn tab_segments(
         };
         segments.push((marker, visible.end));
     }
+    fit_markers(segments, budget, strip)
+}
+
+/// Drop the `+N` markers a budget cannot hold. The window is sized with room
+/// for them, but a budget too small for the active tab and a marker together
+/// — one row for a column, a few cells for a row — leaves nothing to trade
+/// off, and the window still holds the active tab. Drawn in order, the leading
+/// marker would then take the only row and the active tab would be clipped:
+/// the one segment the strip exists to show. The markers go first, trailing
+/// before leading, so the active tab is drawn whenever it fits at all.
+fn fit_markers(
+    mut segments: Vec<(String, usize)>,
+    budget: u16,
+    strip: TabStrip,
+) -> Vec<(String, usize)> {
+    let extent = |text: &str| -> u16 {
+        match strip {
+            TabStrip::Top => Span::raw(text).width() as u16,
+            TabStrip::Left => 1,
+        }
+    };
+    let is_marker = |text: &str| text.trim_start().starts_with('+');
+    let mut used: u16 = segments.iter().map(|(text, _)| extent(text)).sum();
+    while used > budget {
+        let last = segments.len().checked_sub(1);
+        if let Some(i) = last.filter(|&i| is_marker(&segments[i].0)) {
+            used -= extent(&segments[i].0);
+            segments.remove(i);
+        } else if segments.first().is_some_and(|(text, _)| is_marker(text)) {
+            used -= extent(&segments[0].0);
+            segments.remove(0);
+        } else {
+            break;
+        }
+    }
     segments
 }

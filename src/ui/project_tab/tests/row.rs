@@ -287,3 +287,14 @@ fn tab_at_is_none_off_the_row_and_past_the_last_tab() {
         None
     );
 }
+
+#[test]
+fn a_row_too_narrow_for_a_marker_still_shows_the_active_tab() {
+    // Exactly the active tab's width: a marker beside it would push it off.
+    let active_width = Span::raw(" F6 project-name-5 ").width() as u16;
+
+    let segments = tab_segments(&crowded(), &[], 5, active_width, TabStrip::Top);
+
+    assert_eq!(segments.len(), 1, "got: {segments:?}");
+    assert_eq!(segments[0].1, 5);
+}
