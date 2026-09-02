@@ -113,6 +113,16 @@ pub(super) fn assert_inverted_cells_are_clickable(app: &App) {
 }
 
 pub(super) fn drawn_text(app: &mut App, tab_paths: &[String], active: usize) -> String {
+    drawn_text_in(app, tab_paths, active, crate::config::TabStrip::Top)
+}
+
+/// The whole screen with the project tabs placed as `strip` says.
+pub(super) fn drawn_text_in(
+    app: &mut App,
+    tab_paths: &[String],
+    active: usize,
+    strip: crate::config::TabStrip,
+) -> String {
     let mut terminal = Terminal::new(TestBackend::new(120, 20)).unwrap();
     let ss = two_face::syntax::extra_newlines();
     let ts = ThemeSet::load_defaults();
@@ -124,17 +134,13 @@ pub(super) fn drawn_text(app: &mut App, tab_paths: &[String], active: usize) -> 
                 attention_bright: true,
                 active,
                 repo_input: &RepoInput::default(),
-                strip: crate::config::TabStrip::Top,
+                strip,
             };
-            draw(
-                frame,
-                app,
-                tabs,
-                &ss,
-                &ts,
-                &LayoutConfig::default(),
-                Color::Yellow,
-            );
+            let layout = LayoutConfig {
+                tabs: strip,
+                ..LayoutConfig::default()
+            };
+            draw(frame, app, tabs, &ss, &ts, &layout, Color::Yellow);
         })
         .unwrap();
     let buf = terminal.backend().buffer();

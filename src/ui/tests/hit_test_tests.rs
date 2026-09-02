@@ -120,3 +120,29 @@ fn pane_at_misses_when_another_panel_is_fullscreen() {
 
     assert_eq!(hit, None);
 }
+
+#[test]
+fn a_left_strip_takes_its_columns_from_every_pane() {
+    // The strip is chrome, not body: with `[layout] tabs = "left"` no pane may
+    // be laid out under it, in any view mode.
+    let mut app = app_with_files(vec!["a.rs"]);
+    app.terminal.panes.push(crate::app::PaneInfo {
+        id: 1,
+        title: "shell".to_string(),
+    });
+    let layout = LayoutConfig {
+        tabs: crate::config::TabStrip::Left,
+        ..LayoutConfig::default()
+    };
+    let strip = crate::ui::project_tab::STRIP_WIDTH;
+
+    for fullscreen in [TerminalFullscreen::Off, TerminalFullscreen::Grid] {
+        app.terminal.fullscreen = fullscreen;
+        let areas = terminal_content_areas(&app, Rect::new(0, 0, 100, 40), &layout);
+
+        assert!(!areas.is_empty());
+        for (_, rect) in areas {
+            assert!(rect.x >= strip, "pane at x={} under the strip", rect.x);
+        }
+    }
+}

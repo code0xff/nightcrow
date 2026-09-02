@@ -8,6 +8,8 @@ Open and close projects with `<prefix> o` and `<prefix> x`; switch among tabs wi
 
 If tabs do not fit, the tab row folds inactive tabs behind an overflow marker. A background project shows an attention marker when its terminal reports unread activity; selecting that project acknowledges the marker, and later activity can raise it again.
 
+With `[layout] tabs = "left"` ([Configuration](configuration.md#session-and-client-settings)) the TUI stacks the same tabs down a 20-column strip beside the body instead, one project per row, and the top row goes to the body. The labels, the `F#` legends, the attention marker and the overflow markers are the same; a full strip folds the tabs above and below the visible run into `+N` rows, and clicking one selects the nearest hidden project on that side, as clicking a `+N` cell in the row does. The notice and hint rows stay under everything at full width. The placement is read when the TUI attaches, like the rest of `[layout]`.
+
 Having no project open is valid. A new session starts there when no repositories are saved, and closing the last tab returns there. Use `<prefix> o` to open a repository.
 
 Repository paths are normalized to their worktree root, so opening a subdirectory of an already open worktree focuses the existing project. The path dialog supports `~`, absolute paths, relative paths, completion, and a directory browser; see [Views → The repo dialog](views.md#the-repo-dialog).

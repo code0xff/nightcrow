@@ -1,38 +1,11 @@
-use super::*;
+//! The strip as a row across the top of the screen, the default placement.
+
+use super::super::window::{ROW_MARKER_WIDTH, tab_segments, tab_texts};
+use super::super::*;
+use super::{crowded, paths, rendered, rendered_at};
+use crate::config::TabStrip;
 use ratatui::{Terminal, backend::TestBackend, layout::Rect, style::Color, text::Span};
 use std::time::Duration;
-
-fn paths(v: &[&str]) -> Vec<String> {
-    v.iter().map(|s| s.to_string()).collect()
-}
-
-fn rendered_at(repo_paths: &[String], active: usize, width: u16) -> String {
-    let attention = vec![false; repo_paths.len()];
-    let mut terminal = Terminal::new(TestBackend::new(width, 1)).unwrap();
-    terminal
-        .draw(|frame| {
-            frame.render_widget(
-                render(
-                    repo_paths,
-                    &attention,
-                    active,
-                    frame.area(),
-                    Color::Yellow,
-                    true,
-                ),
-                frame.area(),
-            );
-        })
-        .unwrap();
-    let buf = terminal.backend().buffer();
-    (0..buf.area.width)
-        .map(|x| buf[(x, 0)].symbol())
-        .collect::<String>()
-}
-
-fn rendered(repo_paths: &[String], active: usize) -> String {
-    rendered_at(repo_paths, active, 120)
-}
 
 #[test]
 fn tab_label_uses_the_final_path_component() {
@@ -69,22 +42,16 @@ fn a_project_past_the_tenth_carries_no_key_legend() {
     // Only ten F-keys exist, so an eleventh tab must not imply one.
     let many: Vec<String> = (0..11).map(|i| format!("/w/p{i}")).collect();
 
-    let segments = tab_segments(&many, &[], 0, 240);
+    let segments = tab_segments(&many, &[], 0, 240, TabStrip::Top);
 
     assert_eq!(segments[9].0, " F10 p9 ");
     assert_eq!(segments[10].0, " p10 ");
 }
 
-/// Ten tabs whose names are long enough that the row cannot hold them all
-/// at 80 columns — the case a plain `Paragraph` would silently clip.
-fn crowded() -> Vec<String> {
-    (0..10).map(|i| format!("/w/project-name-{i}")).collect()
-}
-
 #[test]
 fn a_crowded_row_stays_within_its_width() {
     for active in [0usize, 5, 9] {
-        let segments = tab_segments(&crowded(), &[], active, 80);
+        let segments = tab_segments(&crowded(), &[], active, 80, TabStrip::Top);
         let total: u16 = segments
             .iter()
             .map(|(t, _)| Span::raw(t).width() as u16)
@@ -115,7 +82,7 @@ fn the_active_tab_is_always_visible_however_crowded() {
 #[test]
 fn hidden_tabs_are_reported_by_overflow_markers() {
     // Scrolled to the far end, everything before it is behind one marker.
-    let segments = tab_segments(&crowded(), &[], 9, 80);
+    let segments = tab_segments(&crowded(), &[], 9, 80, TabStrip::Top);
 
     let (marker, target) = &segments[0];
     assert!(marker.starts_with(" +"), "got: {marker}");
@@ -138,15 +105,15 @@ fn an_overflow_marker_carries_attention_from_any_hidden_project() {
     let mut attention = vec![false; projects.len()];
     attention[0] = true;
 
-    let segments = tab_segments(&projects, &attention, 9, 80);
+    let segments = tab_segments(&projects, &attention, 9, 80, TabStrip::Top);
 
     assert!(segments[0].0.contains('•'), "got: {}", segments[0].0);
-    assert_eq!(Span::raw(&segments[0].0).width(), MARKER_WIDTH as usize);
+    assert_eq!(Span::raw(&segments[0].0).width(), ROW_MARKER_WIDTH as usize);
 }
 
 #[test]
 fn a_row_that_fits_shows_no_markers() {
-    let segments = tab_segments(&paths(&["/w/api", "/w/web"]), &[], 0, 80);
+    let segments = tab_segments(&paths(&["/w/api", "/w/web"]), &[], 0, 80, TabStrip::Top);
 
     assert_eq!(segments.len(), 2, "no marker when everything fits");
 }
@@ -158,7 +125,15 @@ fn only_the_active_tab_is_accented() {
     terminal
         .draw(|frame| {
             frame.render_widget(
-                render(&repo_paths, &[], 1, frame.area(), Color::Yellow, true),
+                render(
+                    &repo_paths,
+                    &[],
+                    1,
+                    frame.area(),
+                    Color::Yellow,
+                    true,
+                    TabStrip::Top,
+                ),
                 frame.area(),
             );
         })
@@ -190,6 +165,7 @@ fn unread_attention_is_one_fixed_width_blinking_dot() {
                         frame.area(),
                         Color::Yellow,
                         bright,
+                        TabStrip::Top,
                     ),
                     frame.area(),
                 );
@@ -222,7 +198,15 @@ fn a_dot_in_a_project_name_is_not_treated_as_attention() {
     terminal
         .draw(|frame| {
             frame.render_widget(
-                render(&repo_paths, &[false], 1, frame.area(), Color::Yellow, true),
+                render(
+                    &repo_paths,
+                    &[false],
+                    1,
+                    frame.area(),
+                    Color::Yellow,
+                    true,
+                    TabStrip::Top,
+                ),
                 frame.area(),
             );
         })
@@ -248,14 +232,14 @@ fn attention_blink_alternates_every_second() {
 fn attention_dot_is_inside_its_project_hit_box() {
     let repo_paths = paths(&["/w/api", "/w/web"]);
     let area = Rect::new(0, 0, 120, 1);
-    let text = tab_segments(&repo_paths, &[false, true], 0, area.width)
+    let text = tab_segments(&repo_paths, &[false, true], 0, area.width, TabStrip::Top)
         .into_iter()
         .map(|(text, _)| text)
         .collect::<String>();
     let dot = text.find('•').expect("attention dot rendered") as u16;
 
     assert_eq!(
-        tab_at(&repo_paths, &[false, true], 0, area, dot, 0),
+        tab_at(&repo_paths, &[false, true], 0, area, dot, 0, TabStrip::Top),
         Some(1)
     );
 }
@@ -269,8 +253,14 @@ fn tab_at_maps_a_click_to_the_tab_under_it() {
     let text = rendered(&repo_paths, 0);
     let web_x = text.find("F2 web").expect("second tab rendered") as u16;
 
-    assert_eq!(tab_at(&repo_paths, &[], 0, area, 0, 0), Some(0));
-    assert_eq!(tab_at(&repo_paths, &[], 0, area, web_x, 0), Some(1));
+    assert_eq!(
+        tab_at(&repo_paths, &[], 0, area, 0, 0, TabStrip::Top),
+        Some(0)
+    );
+    assert_eq!(
+        tab_at(&repo_paths, &[], 0, area, web_x, 0, TabStrip::Top),
+        Some(1)
+    );
 }
 
 #[test]
@@ -278,9 +268,13 @@ fn tab_at_is_none_off_the_row_and_past_the_last_tab() {
     let repo_paths = paths(&["/w/api"]);
     let area = Rect::new(0, 0, 120, 1);
 
-    assert_eq!(tab_at(&repo_paths, &[], 0, area, 0, 1), None, "wrong row");
     assert_eq!(
-        tab_at(&repo_paths, &[], 0, area, 100, 0),
+        tab_at(&repo_paths, &[], 0, area, 0, 1, TabStrip::Top),
+        None,
+        "wrong row"
+    );
+    assert_eq!(
+        tab_at(&repo_paths, &[], 0, area, 100, 0, TabStrip::Top),
         None,
         "past last tab"
     );
@@ -288,5 +282,8 @@ fn tab_at_is_none_off_the_row_and_past_the_last_tab() {
     // A layout too short to give the row any cells must not report hits:
     // whatever is drawn at that y belongs to another row.
     let collapsed = Rect::new(0, 0, 120, 0);
-    assert_eq!(tab_at(&repo_paths, &[], 0, collapsed, 0, 0), None);
+    assert_eq!(
+        tab_at(&repo_paths, &[], 0, collapsed, 0, 0, TabStrip::Top),
+        None
+    );
 }

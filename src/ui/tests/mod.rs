@@ -1,3 +1,4 @@
+mod chrome_left_tests;
 mod chrome_tests;
 mod common;
 mod hint_armed_tests;

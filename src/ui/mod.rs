@@ -73,6 +73,7 @@ pub fn draw_empty(
             rows.tabs,
             accent,
             chrome.attention_bright,
+            chrome.strip,
         ),
         rows.tabs,
     );
@@ -145,6 +146,7 @@ pub fn draw(
             rows.tabs,
             accent,
             tabs.attention_bright,
+            tabs.strip,
         ),
         rows.tabs,
     );

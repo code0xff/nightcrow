@@ -11,6 +11,7 @@ pub(crate) fn project_tab_at(tabs: Chrome<'_>, screen_area: Rect, x: u16, y: u16
         chrome_areas(screen_area, tabs.strip).tabs,
         x,
         y,
+        tabs.strip,
     )
 }
 

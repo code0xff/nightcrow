@@ -1,7 +1,12 @@
-//! The project tab row across the top of the screen. One `tab_segments`
-//! builder feeds both the renderer and the click hit-test, so a label and its
-//! click box can never disagree.
+//! The project tab strip: a row across the top of the screen, or a column
+//! down its left (`[layout] tabs`). One `tab_segments` builder feeds both the
+//! renderer and the click hit-test, so a label and its click box can never
+//! disagree — and both placements share it, so a project is called the same
+//! thing and overflows the same way whichever way the strip runs.
 
+mod window;
+
+use crate::config::TabStrip;
 use ratatui::{
     layout::Rect,
     style::{Color, Modifier, Style},
@@ -9,6 +14,7 @@ use ratatui::{
     widgets::Paragraph,
 };
 use std::time::Duration;
+use window::tab_segments;
 
 /// Per-tab character budget for the project name. The viewer's tab row applies
 /// the same budget by the same rule (`viewer-ui/src/lib/tabLabel.ts`), so a
@@ -22,12 +28,10 @@ const TAB_TITLE_MAX_CHARS: usize = 14;
 /// cut labels the rule had already cut.
 pub(crate) const STRIP_WIDTH: u16 = 20;
 
-const MARKER_WIDTH: u16 = 4;
-
 const ATTENTION_GLYPH: char = '•';
 const ATTENTION_BLINK_INTERVAL: Duration = Duration::from_secs(1);
 
-/// Only style changes between phases, so the row and its pointer hit boxes
+/// Only style changes between phases, so the strip and its pointer hit boxes
 /// never move while it blinks.
 pub(crate) fn blink_is_bright(elapsed: Duration) -> bool {
     (elapsed.as_millis() / ATTENTION_BLINK_INTERVAL.as_millis()).is_multiple_of(2)
@@ -57,117 +61,22 @@ fn truncate(s: &str, max: usize) -> String {
     out
 }
 
-/// The full text of every tab, ignoring how many will fit. Every tab carries
-/// its `F#` legend because the F-key row addresses projects directly and
-/// layout-independently; projects past the tenth have no key, so they carry
-/// no legend rather than implying an unbound one.
-fn tab_texts(repo_paths: &[String], attention: &[bool]) -> Vec<String> {
-    repo_paths
-        .iter()
-        .enumerate()
-        .map(|(i, path)| {
-            let name = tab_label(path);
-            let unread = attention.get(i).copied().unwrap_or(false);
-            match (i.checked_add(1).filter(|n| *n <= 10), unread) {
-                (Some(n), true) => format!(" F{n}{ATTENTION_GLYPH}{name} "),
-                (Some(n), false) => format!(" F{n} {name} "),
-                (None, true) => format!(" {ATTENTION_GLYPH}{name}"),
-                (None, false) => format!(" {name} "),
-            }
-        })
-        .collect()
-}
-
-/// The run of tabs to draw in `width` cells, always containing `active`.
-/// A `Paragraph` would silently clip the tail — hiding later projects *and*
-/// the active-tab highlight — so the row scrolls around the active tab and
-/// drops what doesn't fit into `+N` markers whose width is reserved first.
-fn visible_window(widths: &[u16], width: u16, active: usize) -> std::ops::Range<usize> {
-    let n = widths.len();
-    if n == 0 {
-        return 0..0;
-    }
-    let active = active.min(n - 1);
-    let (mut lo, mut hi) = (active, active + 1);
-    let mut used = widths[active];
-
-    // Cost of the window if it were [lo, hi): its tabs plus a marker on each
-    // side that still has something hidden behind it.
-    let fits = |used: u16, lo: usize, hi: usize| {
-        let markers = (lo > 0) as u16 + (hi < n) as u16;
-        used.saturating_add(markers * MARKER_WIDTH) <= width
-    };
-
-    // Grow right first, then left: right-first keeps the common case (active
-    // near the front) showing the projects that follow it.
-    loop {
-        let mut grew = false;
-        if hi < n && fits(used + widths[hi], lo, hi + 1) {
-            used += widths[hi];
-            hi += 1;
-            grew = true;
-        }
-        if lo > 0 && fits(used + widths[lo - 1], lo - 1, hi) {
-            lo -= 1;
-            used += widths[lo];
-            grew = true;
-        }
-        if !grew {
-            return lo..hi;
-        }
+/// What a segment's extent is measured in: cells across a row, rows down a
+/// column.
+fn budget_of(area: Rect, strip: TabStrip) -> u16 {
+    match strip {
+        TabStrip::Top => area.width,
+        TabStrip::Left => area.height,
     }
 }
 
-/// Build the row's segments: rendered text paired with the project each one
-/// selects. Single source for `render` and `tab_at`, so the hit boxes always
-/// match what is on screen. A `+N` marker selects the nearest project hidden
-/// on its side, so the overflow is reachable by pointer as well as by F-key.
-fn tab_segments(
-    repo_paths: &[String],
-    attention: &[bool],
-    active: usize,
-    width: u16,
-) -> Vec<(String, usize)> {
-    let texts = tab_texts(repo_paths, attention);
-    let widths: Vec<u16> = texts.iter().map(|t| Span::raw(t).width() as u16).collect();
-    let visible = visible_window(&widths, width, active);
-
-    let mut segments = Vec::with_capacity(visible.len() + 2);
-    if visible.start > 0 {
-        let marker = if attention[..visible.start.min(attention.len())]
-            .iter()
-            .any(|unread| *unread)
-        {
-            format!(" +{}{ATTENTION_GLYPH}", visible.start)
-        } else {
-            format!(" +{} ", visible.start)
-        };
-        segments.push((marker, visible.start - 1));
-    }
-    segments.extend(
-        texts[visible.clone()]
-            .iter()
-            .enumerate()
-            .map(|(offset, text)| (text.clone(), visible.start + offset)),
-    );
-    let hidden_after = texts.len() - visible.end;
-    if hidden_after > 0 {
-        let marker = if attention
-            .get(visible.end..)
-            .is_some_and(|hidden| hidden.iter().any(|unread| *unread))
-        {
-            format!(" +{hidden_after}{ATTENTION_GLYPH}")
-        } else {
-            format!(" +{hidden_after} ")
-        };
-        segments.push((marker, visible.end));
-    }
-    segments
-}
-
-/// Draw the tab row into `area`. A single project still renders its tab: the
-/// row is permanent (see `chrome_rows`), and showing which repo is open is
-/// exactly what the row is for.
+/// Draw the strip into `area`. A single project still renders its tab: the
+/// strip is permanent (see `chrome_areas`), and showing which repo is open is
+/// exactly what it is for.
+///
+/// A column pads every segment to the strip's width, so the active tab's
+/// accent fills its whole row and the row is the click box — a label that
+/// stopped short would leave dead cells beside it that look like the tab.
 pub(crate) fn render(
     repo_paths: &[String],
     attention: &[bool],
@@ -175,58 +84,91 @@ pub(crate) fn render(
     area: Rect,
     accent: Color,
     attention_bright: bool,
+    strip: TabStrip,
 ) -> Paragraph<'static> {
-    let spans: Vec<Span> = tab_segments(repo_paths, attention, active, area.width)
-        .into_iter()
-        .flat_map(|(text, index)| {
-            // A `+N` marker is never the active tab, so accent stays a
-            // reliable "this is the project you are in" signal.
-            if index == active && !text.starts_with(" +") {
-                return vec![Span::styled(
-                    text,
-                    Style::default()
-                        .fg(Color::Black)
-                        .bg(accent)
-                        .add_modifier(Modifier::BOLD),
-                )];
-            }
-            let base = if text.starts_with(" +") {
-                Style::default().fg(Color::DarkGray)
-            } else {
-                Style::default().fg(Color::Gray)
-            };
-            let has_attention = if text.starts_with(" +") {
-                text.ends_with(ATTENTION_GLYPH)
-            } else {
-                attention.get(index).copied().unwrap_or(false)
-            };
-            if !has_attention {
-                return vec![Span::styled(text, base)];
-            }
+    let segments = tab_segments(repo_paths, attention, active, budget_of(area, strip), strip);
+    let style = |text: String, index: usize| {
+        styled_spans(text, index, active, attention, accent, attention_bright)
+    };
+    match strip {
+        TabStrip::Top => Paragraph::new(Line::from(
+            segments
+                .into_iter()
+                .flat_map(|(text, index)| style(text, index))
+                .collect::<Vec<Span>>(),
+        )),
+        TabStrip::Left => Paragraph::new(
+            segments
+                .into_iter()
+                .map(|(text, index)| Line::from(style(pad_to(text, area.width), index)))
+                .collect::<Vec<Line>>(),
+        ),
+    }
+}
 
-            let marker_start = text
-                .find(ATTENTION_GLYPH)
-                .expect("attention segment must contain its marker");
-            let marker_end = marker_start + ATTENTION_GLYPH.len_utf8();
-            let marker_style = Style::default()
-                .fg(if attention_bright {
-                    accent
-                } else {
-                    Color::DarkGray
-                })
-                .add_modifier(Modifier::BOLD);
-            vec![
-                Span::styled(text[..marker_start].to_string(), base),
-                Span::styled(ATTENTION_GLYPH.to_string(), marker_style),
-                Span::styled(text[marker_end..].to_string(), base),
-            ]
+/// Fill `text` out to `width` cells, or cut it there: a segment is one row of
+/// the column and must be exactly that wide.
+fn pad_to(text: String, width: u16) -> String {
+    let width = width as usize;
+    let shown: String = text.chars().take(width).collect();
+    let used = Span::raw(shown.as_str()).width();
+    format!("{shown}{}", " ".repeat(width.saturating_sub(used)))
+}
+
+/// One segment's spans. A `+N` marker is never the active tab, so accent stays
+/// a reliable "this is the project you are in" signal.
+fn styled_spans(
+    text: String,
+    index: usize,
+    active: usize,
+    attention: &[bool],
+    accent: Color,
+    attention_bright: bool,
+) -> Vec<Span<'static>> {
+    let is_marker = text.trim_start().starts_with('+');
+    if index == active && !is_marker {
+        return vec![Span::styled(
+            text,
+            Style::default()
+                .fg(Color::Black)
+                .bg(accent)
+                .add_modifier(Modifier::BOLD),
+        )];
+    }
+    let base = if is_marker {
+        Style::default().fg(Color::DarkGray)
+    } else {
+        Style::default().fg(Color::Gray)
+    };
+    let has_attention = if is_marker {
+        text.trim_end().ends_with(ATTENTION_GLYPH)
+    } else {
+        attention.get(index).copied().unwrap_or(false)
+    };
+    if !has_attention {
+        return vec![Span::styled(text, base)];
+    }
+
+    let marker_start = text
+        .find(ATTENTION_GLYPH)
+        .expect("attention segment must contain its marker");
+    let marker_end = marker_start + ATTENTION_GLYPH.len_utf8();
+    let marker_style = Style::default()
+        .fg(if attention_bright {
+            accent
+        } else {
+            Color::DarkGray
         })
-        .collect();
-    Paragraph::new(Line::from(spans))
+        .add_modifier(Modifier::BOLD);
+    vec![
+        Span::styled(text[..marker_start].to_string(), base),
+        Span::styled(ATTENTION_GLYPH.to_string(), marker_style),
+        Span::styled(text[marker_end..].to_string(), base),
+    ]
 }
 
 /// The project index a click at screen cell `(x, y)` selects, or `None` off
-/// the row or past the last tab.
+/// the strip or past the last tab.
 pub(crate) fn tab_at(
     repo_paths: &[String],
     attention: &[bool],
@@ -234,22 +176,39 @@ pub(crate) fn tab_at(
     area: Rect,
     x: u16,
     y: u16,
+    strip: TabStrip,
 ) -> Option<usize> {
-    // On a terminal too short for the full chrome, ratatui hands the fixed tab
-    // constraint a zero-height Rect and nothing is drawn; without the size
-    // check a click on whatever is visible at that y would select tab 0.
-    if area.height == 0 || area.width == 0 || y != area.y || x < area.x {
+    // On a terminal too small for the full chrome, ratatui hands the fixed
+    // constraint a zero-size Rect and nothing is drawn; without the size check
+    // a click on whatever is visible there would select tab 0.
+    if area.height == 0 || area.width == 0 || x < area.x || y < area.y {
         return None;
     }
-    let mut cursor = area.x;
-    for (text, index) in tab_segments(repo_paths, attention, active, area.width) {
-        let width = Span::raw(text).width() as u16;
-        if x < cursor.saturating_add(width) {
-            return Some(index);
+    let segments = tab_segments(repo_paths, attention, active, budget_of(area, strip), strip);
+    match strip {
+        TabStrip::Top => {
+            if y != area.y {
+                return None;
+            }
+            let mut cursor = area.x;
+            for (text, index) in segments {
+                let width = Span::raw(text).width() as u16;
+                if x < cursor.saturating_add(width) {
+                    return Some(index);
+                }
+                cursor = cursor.saturating_add(width);
+            }
+            None
         }
-        cursor = cursor.saturating_add(width);
+        TabStrip::Left => {
+            if x >= area.x.saturating_add(area.width) {
+                return None;
+            }
+            segments
+                .get(usize::from(y - area.y))
+                .map(|(_, index)| *index)
+        }
     }
-    None
 }
 
 #[cfg(test)]
