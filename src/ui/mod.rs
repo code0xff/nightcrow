@@ -26,7 +26,7 @@ mod repo_dialog;
 mod tests;
 mod wall_clock;
 
-pub(crate) use chrome::{Chrome, chrome_rows, main_content_constraints};
+pub(crate) use chrome::{Chrome, chrome_areas, main_content_constraints};
 pub(crate) use file_list::next_hot_deadline_for_app;
 pub(crate) use helpers::{
     char_offset, current_caret_lit, focused_border_style, jump_legend, path_extension,
@@ -64,7 +64,7 @@ pub fn draw_empty(
     mouse_enabled: bool,
     accent: Color,
 ) {
-    let rows = chrome_rows(frame.area());
+    let rows = chrome_areas(frame.area(), chrome.strip);
     frame.render_widget(
         project_tab::render(
             chrome.repo_paths,
@@ -134,7 +134,7 @@ pub fn draw(
     // below. Both are rendered here, before any layout branch, so neither is
     // lost to a fullscreen view mode — a tab row that vanished in fullscreen
     // would strand the user with no indication of which project they are in.
-    let rows = chrome_rows(frame.area());
+    let rows = chrome_areas(frame.area(), tabs.strip);
     let (body_area, notice_area, hint_area) = (rows.body, rows.notice, rows.hint);
 
     frame.render_widget(

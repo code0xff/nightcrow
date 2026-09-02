@@ -15,6 +15,13 @@ use std::time::Duration;
 /// project is called the same thing on both screens.
 const TAB_TITLE_MAX_CHARS: usize = 14;
 
+/// The column a left-placed strip takes (`[layout] tabs = "left"`): the widest
+/// legend (` F10•`, five cells), the label budget above, and one cell of
+/// padding. Fixed rather than configurable because it is derived from the
+/// label rule — widening it would show nothing more, and narrowing it would
+/// cut labels the rule had already cut.
+pub(crate) const STRIP_WIDTH: u16 = 20;
+
 const MARKER_WIDTH: u16 = 4;
 
 const ATTENTION_GLYPH: char = '•';

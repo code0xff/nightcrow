@@ -139,6 +139,7 @@ pub(crate) fn main_loop(
                 attention_bright,
                 active: active_tab,
                 repo_input,
+                strip: cfg.layout.tabs,
             };
             terminal.draw(|frame| match app_opt {
                 Some(app) => {
@@ -167,6 +168,7 @@ pub(crate) fn main_loop(
             attention_bright,
             active: active_tab,
             repo_input: &repo_input,
+            strip: cfg.layout.tabs,
         };
 
         // 16 ms ≈ 60 fps is only the polling latency cap. Unlike the old frame

@@ -17,6 +17,8 @@ pub struct LayoutConfig {
     pub upper_pct: u16,
     /// Percentage of horizontal space for the file list within the upper panel (1–99)
     pub file_list_pct: u16,
+    /// Where the project tab strip is drawn.
+    pub tabs: TabStrip,
 }
 
 impl Default for LayoutConfig {
@@ -24,8 +26,22 @@ impl Default for LayoutConfig {
         Self {
             upper_pct: 55,
             file_list_pct: 25,
+            tabs: TabStrip::Top,
         }
     }
+}
+
+/// Where the project tabs sit. `Left` gives a wide, short terminal its rows
+/// back at the cost of a fixed column of width; read when the TUI attaches,
+/// like the rest of `[layout]`, so panes are never resized by a live flip.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum TabStrip {
+    /// One row across the top of the screen.
+    #[default]
+    Top,
+    /// A column down the left of the body, one tab per row.
+    Left,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]

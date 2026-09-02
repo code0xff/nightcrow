@@ -6,7 +6,7 @@ nightcrow reads `~/.nightcrow/config.toml`. Every field is optional and omitted 
 
 | Table | Fields and defaults | Valid values / effect |
 | --- | --- | --- |
-| `[layout]` | `upper_pct = 55`, `file_list_pct = 25` | Each is `1..=99`; TUI panel proportions. |
+| `[layout]` | `upper_pct = 55`, `file_list_pct = 25`, `tabs = "top"` | The percentages are `1..=99`; TUI panel proportions. `tabs` is `top` for one row across the screen or `left` for a 20-column strip down the body's left edge, one project per row — see [Keyboard and mouse](keybindings.md#global-keys) for what the strip shows. |
 | `[theme]` | `name = "yellow"` | `yellow`, `cyan`, `green`, `magenta`, or `blue`. Seeds the session accent when no saved accent exists. |
 | `[input]` | `leader = "ctrl+f"` | One `ctrl+<ascii-letter>` chord. `ctrl+i` and `ctrl+m` are rejected because terminals report them as Tab and Enter. |
 | `[mouse]` | `enabled = true` | Captures clicks and wheel events for the TUI; `false` gives selection and mouse handling back to the outer terminal. |

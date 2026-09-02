@@ -22,7 +22,7 @@ TUI workspace state는 `~/.nightcrow/workspace.json`에 저장한다. 열린 pro
 
 ## Layout and redraw
 
-`ui::chrome::chrome_rows`가 project tabs, body, notice, hint 네 행을 항상 만든다. body의 upper/lower split은 TUI layout config에서 계산하고, terminal pane rect는 [terminal.md](terminal.md)의 단일 기하 출처를 사용한다. notice나 dialog 때문에 행을 추가·삭제하지 않는다.
+`ui::chrome::chrome_areas`가 project tabs, body, notice, hint 네 영역을 항상 만든다. notice와 hint는 배치와 무관하게 화면 아래 두 행이고(`bottom_rows`), project tabs는 `[layout] tabs`에 따라 그 위의 첫 행(`top`) 또는 좌측 `STRIP_WIDTH`(20) 열(`left`)이며 body는 남은 영역이다. body의 upper/lower split은 TUI layout config에서 계산하고, terminal pane rect는 [terminal.md](terminal.md)의 단일 기하 출처를 사용한다. notice나 dialog 때문에 행을 추가·삭제하지 않는다.
 
 입력·PTY output·snapshot/load 결과·tree watch·resize·recovery·title 변화는 dirty frame을 요청한다. event loop는 16 ms마다 queue를 poll하지만 변경 없는 tick에는 `Terminal::draw`를 호출하지 않는다. `<leader> r`만 front buffer를 비우는 명시적 full repaint다. status의 hot-file fade와 attention/search caret 경계도 timer event로 dirty를 만든다.
 

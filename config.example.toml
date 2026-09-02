@@ -10,6 +10,10 @@
 # rows on a terminal than in a browser window.
 upper_pct = 55       # vertical % for the diff panel (1–99)
 file_list_pct = 25   # horizontal % of upper panel for the file list (1–99)
+# Where the project tabs go. "left" stacks them down a 20-column strip beside
+# the body — for wide, short terminals that have columns to spare and rows to
+# save. Read when the TUI attaches, like the rest of this table.
+tabs = "top"         # "top" | "left"
 
 [theme]
 # The accent a session starts with, before anyone picks one. Once picked (TUI

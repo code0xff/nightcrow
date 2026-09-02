@@ -1,7 +1,7 @@
 use super::common::*;
 use crate::app::NoticeKind;
 use crate::app::tests::{app_with_fake_backend, app_with_files};
-use crate::config::LayoutConfig;
+use crate::config::{LayoutConfig, TabStrip};
 use crate::runtime::terminal::TerminalFullscreen;
 use crate::ui::chrome::Chrome;
 use crate::ui::status_view::RepoInput;
@@ -80,6 +80,7 @@ fn the_project_screen_puts_the_dialog_on_the_notice_row_and_its_reports_below() 
                     attention_bright: true,
                     active: 0,
                     repo_input: &repo_input,
+                    strip: TabStrip::Top,
                 },
                 &ss,
                 &ts,
@@ -156,6 +157,7 @@ fn project_tab_at_matches_the_rendered_row() {
         attention_bright: true,
         active: 0,
         repo_input: &RepoInput::default(),
+        strip: TabStrip::Top,
     };
     assert_eq!(project_tab_at(tabs, screen, 0, 0), Some(0));
     assert_eq!(project_tab_at(tabs, screen, web_x, 0), Some(1));
@@ -184,6 +186,7 @@ fn panels_advertise_the_leader_digit_not_the_bare_f_key() {
                     attention_bright: true,
                     active: 0,
                     repo_input: &RepoInput::default(),
+                    strip: TabStrip::Top,
                 },
                 &ss,
                 &ts,
@@ -252,6 +255,7 @@ fn main_content_split_preserves_lower_panel_at_high_upper_ratio() {
     let cfg = LayoutConfig {
         upper_pct: 99,
         file_list_pct: 25,
+        tabs: TabStrip::Top,
     };
 
     assert_eq!(

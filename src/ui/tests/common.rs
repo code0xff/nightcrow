@@ -52,6 +52,7 @@ pub(super) fn plain_chrome(repo_input: &RepoInput) -> Chrome<'_> {
         attention_bright: true,
         active: 0,
         repo_input,
+        strip: crate::config::TabStrip::Top,
     }
 }
 
@@ -123,6 +124,7 @@ pub(super) fn drawn_text(app: &mut App, tab_paths: &[String], active: usize) -> 
                 attention_bright: true,
                 active,
                 repo_input: &RepoInput::default(),
+                strip: crate::config::TabStrip::Top,
             };
             draw(
                 frame,
@@ -164,6 +166,7 @@ pub(super) fn drawn_empty(
                 attention_bright: true,
                 active: 0,
                 repo_input,
+                strip: crate::config::TabStrip::Top,
             };
             draw_empty(frame, chrome, notice, leader, armed, false, Color::Yellow);
         })

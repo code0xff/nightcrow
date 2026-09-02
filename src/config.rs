@@ -10,7 +10,9 @@ mod shell;
 mod terminal;
 mod web;
 
-pub use layout::{Accent, InputConfig, LayoutConfig, StartupCommand, ThemeConfig, parse_leader};
+pub use layout::{
+    Accent, InputConfig, LayoutConfig, StartupCommand, TabStrip, ThemeConfig, parse_leader,
+};
 #[cfg(test)]
 pub use log::LogLevel;
 pub use log::{LogConfig, LogRotation};

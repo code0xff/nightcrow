@@ -1,5 +1,5 @@
 use crate::app::{App, leader_label_of};
-use crate::ui::chrome::{Chrome, chrome_rows};
+use crate::ui::chrome::{Chrome, bottom_rows};
 use crate::ui::hint_text::{
     EMPTY_HINT, EMPTY_HINT_ARMED, PREFIX_CHIP, normal_hint_literal, prefix_armed_hint_text,
 };
@@ -175,7 +175,7 @@ pub(crate) fn empty_hint_click_at(
     if !mouse_enabled {
         return None;
     }
-    let hint_area = chrome_rows(screen_area).hint;
+    let hint_area = bottom_rows(screen_area).hint;
     if hint_area.height == 0 || !hint_area.contains(Position { x, y }) {
         return None;
     }
@@ -221,7 +221,7 @@ pub(crate) fn hint_click_at(
     if !app.interaction.mouse_enabled {
         return None;
     }
-    let hint_area = chrome_rows(screen_area).hint;
+    let hint_area = bottom_rows(screen_area).hint;
     if hint_area.height == 0 || !hint_area.contains(Position { x, y }) {
         return None;
     }

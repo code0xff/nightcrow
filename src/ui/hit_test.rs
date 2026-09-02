@@ -1,6 +1,6 @@
 use crate::app::{App, Focus};
 use crate::config::LayoutConfig;
-use crate::ui::chrome::{Chrome, chrome_rows, main_content_constraints};
+use crate::ui::chrome::{Chrome, chrome_areas, main_content_constraints};
 use ratatui::layout::{Constraint, Direction, Layout, Position, Rect};
 
 pub(crate) fn project_tab_at(tabs: Chrome<'_>, screen_area: Rect, x: u16, y: u16) -> Option<usize> {
@@ -8,7 +8,7 @@ pub(crate) fn project_tab_at(tabs: Chrome<'_>, screen_area: Rect, x: u16, y: u16
         tabs.repo_paths,
         tabs.attention,
         tabs.active,
-        chrome_rows(screen_area).tabs,
+        chrome_areas(screen_area, tabs.strip).tabs,
         x,
         y,
     )
@@ -38,7 +38,7 @@ pub(crate) fn upper_panel_at(
     let main = Layout::default()
         .direction(Direction::Vertical)
         .constraints(main_content_constraints(layout))
-        .split(chrome_rows(screen_area).body);
+        .split(chrome_areas(screen_area, layout.tabs).body);
     let file_list_pct = layout.file_list_pct;
     let upper = Layout::default()
         .direction(Direction::Horizontal)
@@ -75,7 +75,7 @@ pub(crate) fn terminal_widget_area(
     screen_area: Rect,
     layout: &LayoutConfig,
 ) -> Option<Rect> {
-    let body_area = chrome_rows(screen_area).body;
+    let body_area = chrome_areas(screen_area, layout.tabs).body;
 
     if app.terminal.fullscreen.fills_body() {
         return Some(body_area);

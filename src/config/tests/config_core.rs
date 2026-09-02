@@ -1,6 +1,6 @@
 use crate::config::{
-    Config, EXAMPLE_CONFIG, InitOutcome, MAX_STARTUP_COMMANDS, StartupCommand, validate_config,
-    write_config_template,
+    Config, EXAMPLE_CONFIG, InitOutcome, MAX_STARTUP_COMMANDS, StartupCommand, TabStrip,
+    validate_config, write_config_template,
 };
 
 #[test]
@@ -117,4 +117,26 @@ fn validate_rejects_bad_leader() {
     let mut cfg = Config::default();
     cfg.input.leader = "f1".to_string();
     assert!(validate_config(&cfg).is_err());
+}
+
+#[test]
+fn parse_toml_places_the_project_tabs() {
+    let toml = r#"
+[layout]
+tabs = "left"
+"#;
+    let cfg: Config = toml::from_str(toml).unwrap();
+    assert_eq!(cfg.layout.tabs, TabStrip::Left);
+    assert_eq!(Config::default().layout.tabs, TabStrip::Top);
+}
+
+#[test]
+fn an_unknown_tab_placement_is_rejected_rather_than_defaulted() {
+    // A typo must not silently become the default — the person asked for a
+    // layout and would otherwise never learn the request was dropped.
+    let toml = r#"
+[layout]
+tabs = "bottom"
+"#;
+    assert!(toml::from_str::<Config>(toml).is_err());
 }
