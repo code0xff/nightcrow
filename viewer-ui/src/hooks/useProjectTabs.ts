@@ -9,19 +9,15 @@ export interface UseProjectTabsArgs {
   handle: (err: unknown) => void;
   resumeTick: number;
   adoptAccent: (accent: number) => void;
-  adoptSidebarWidth: (px: number) => void;
   adoptUpperPct: (pct: number) => void;
   adoptMaximized: (remote: MaximizedByRepo) => void;
   adoptViews: (remote: RepoViewByRepo, served: string[]) => void;
   accentWrites: React.MutableRefObject<number>;
-  sidebarWrites: React.MutableRefObject<number>;
   upperPctWrites: React.MutableRefObject<number>;
   maximizedWrites: React.MutableRefObject<number>;
   viewWrites: React.MutableRefObject<number>;
-  /** True while the sidebar divider is being dragged, so a poll does not adopt
-   *  a width the user is still choosing. */
-  draggingRef: React.MutableRefObject<boolean>;
-  /** The same, for the panel-split divider. */
+  /** True while the panel-split divider is being dragged, so a poll does not
+   *  adopt a split the user is still choosing. */
   upperDraggingRef: React.MutableRefObject<boolean>;
 }
 
@@ -42,16 +38,13 @@ export function useProjectTabs({
   handle,
   resumeTick,
   adoptAccent,
-  adoptSidebarWidth,
   adoptUpperPct,
   adoptMaximized,
   adoptViews,
   accentWrites,
-  sidebarWrites,
   upperPctWrites,
   maximizedWrites,
   viewWrites,
-  draggingRef,
   upperDraggingRef,
 }: UseProjectTabsArgs): UseRepoPollResult & {
   orderWrites: React.MutableRefObject<number>;
@@ -71,14 +64,11 @@ export function useProjectTabs({
     setAuthed,
     handle,
     adoptAccent,
-    adoptSidebarWidth,
     adoptUpperPct,
     adoptMaximized,
     adoptViews,
-    draggingRef,
     upperDraggingRef,
     accentWrites,
-    sidebarWrites,
     upperPctWrites,
     maximizedWrites,
     viewWrites,

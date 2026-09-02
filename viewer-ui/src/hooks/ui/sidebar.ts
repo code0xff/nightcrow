@@ -1,15 +1,20 @@
-// localStorage provides first paint while the server shares this preference.
+// Device-local, like the pane view mode: a width in pixels is a fact about the
+// screen in front of you. Shared through `viewer.json` it was one value for
+// every screen — 720px is a third of a wide monitor and half of a laptop — and
+// the page had to cap it against the viewport on every render to stay usable.
+// That cap was the symptom; keeping the value where the screen is removes the
+// cause. The panel split (`upperPct.ts`) stays shared because a percentage
+// means the same thing at any width.
 
 import { useCallback, useState } from "react";
-import { api } from "../../api";
 
 const STORAGE_KEY = "nightcrow.sidebarWidth";
 
-// Keep these bounds aligned with the server preference limits.
 export const MIN_SIDEBAR_WIDTH = 280;
 export const MAX_SIDEBAR_WIDTH = 720;
 export const DEFAULT_SIDEBAR_WIDTH = 460;
-/** Display cap; stored preferences remain absolute widths. */
+/** Display cap, for a window that has since been made narrower than the width
+ *  it stored; the stored value remains an absolute width. */
 export const MAX_SIDEBAR_VIEWPORT_FRACTION = 0.5;
 
 export function clampSidebarWidth(px: number): number {
@@ -50,6 +55,10 @@ function storeWidth(px: number) {
   }
 }
 
+/**
+ * The file sidebar's width. `resize` is the drag in progress and `commit` its
+ * release; both store, so a drag interrupted by a reload keeps what it reached.
+ */
 export function useSidebarWidth() {
   const [width, setWidth] = useState(loadWidth);
 
@@ -59,31 +68,11 @@ export function useSidebarWidth() {
     storeWidth(clamped);
   }, []);
 
-  const commit = useCallback((px: number) => {
-    const clamped = clampSidebarDragWidth(px);
-    setWidth(clamped);
-    storeWidth(clamped);
-    void api.setSidebarWidth(clamped).catch(() => {
-    });
-  }, []);
-
   const reset = useCallback(() => {
     const clamped = clampSidebarWidth(DEFAULT_SIDEBAR_WIDTH);
     setWidth(clamped);
     storeWidth(clamped);
-    void api.setSidebarWidth(clamped).catch(() => {
-    });
   }, []);
 
-  /** Apply remote values without echoing them back. */
-  const adopt = useCallback((remote: number) => {
-    setWidth((current) => {
-      const clamped = clampSidebarWidth(remote);
-      if (clamped === current) return current;
-      storeWidth(clamped);
-      return clamped;
-    });
-  }, []);
-
-  return { width, resize, commit, reset, adopt };
+  return { width, resize, commit: resize, reset };
 }

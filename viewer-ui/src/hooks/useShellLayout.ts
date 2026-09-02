@@ -9,14 +9,15 @@ import { useUpperPctDrag } from "./useUpperPctDrag";
  *
  * One hook because the pieces only make sense together: each divider needs the
  * element it measures against, the local setter it calls while dragging, the
- * persisting one it calls on release, and the write counter that stops a poll
- * from undoing either. Assembled at the call site, that is four wirings per
- * divider for a page that has no other use for any of them — and a page long
- * enough that the wiring crowds out what it actually renders.
+ * persisting one it calls on release — and, for the split, which is shared
+ * through the server, the write counter that stops a poll from undoing it.
+ * Assembled at the call site, that is several wirings per divider for a page
+ * that has no other use for any of them — and a page long enough that the
+ * wiring crowds out what it actually renders.
  *
  * `shell` is handed straight to `RepoShell`; the rest is what other parts of the
  * page read (the accent for the header, the split for the grid tracks, the
- * two guards for the poll).
+ * guards for the poll).
  */
 export function useShellLayout() {
   const {
@@ -29,9 +30,6 @@ export function useShellLayout() {
     resizeSidebar,
     commitSidebarWidth,
     resetSidebarWidth,
-    bumpSidebarWrites,
-    adoptSidebarWidth,
-    sidebarWrites,
     upperPct,
     resizeUpperPct,
     commitUpperPct,
@@ -63,7 +61,6 @@ export function useShellLayout() {
     resizeSidebar,
     commitSidebarWidth,
     resetSidebarWidth,
-    bumpSidebarWrites,
   });
   const split = useUpperPctDrag({
     upperRef,
@@ -110,16 +107,13 @@ export function useShellLayout() {
     /** What keeps the repository poll from adopting a value newer than it. */
     guards: {
       adoptAccent,
-      adoptSidebarWidth,
       adoptUpperPct,
       adoptMaximized,
       adoptViews,
       accentWrites,
-      sidebarWrites,
       upperPctWrites,
       maximizedWrites,
       viewWrites,
-      draggingRef: sidebar.draggingRef,
       upperDraggingRef: split.upperDraggingRef,
     },
   };

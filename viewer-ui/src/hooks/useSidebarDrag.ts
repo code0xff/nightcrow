@@ -8,8 +8,6 @@ export interface UseSidebarDragArgs {
   resizeSidebar: (px: number) => void;
   commitSidebarWidth: (px: number) => void;
   resetSidebarWidth: () => void;
-  // Prevent an older poll from overwriting the width during a drag.
-  bumpSidebarWrites: () => void;
 }
 
 export interface UseSidebarDragResult {
@@ -18,7 +16,6 @@ export interface UseSidebarDragResult {
   onSidebarDragMove: (e: ReactPointerEvent) => void;
   onSidebarDragEnd: () => void;
   onSidebarDragCancel: () => void;
-  draggingRef: React.MutableRefObject<boolean>;
 }
 
 /**
@@ -36,7 +33,6 @@ export function useSidebarDrag({
   resizeSidebar,
   commitSidebarWidth,
   resetSidebarWidth,
-  bumpSidebarWrites,
 }: UseSidebarDragArgs): UseSidebarDragResult {
   const dragOriginRef = useRef(0);
 
@@ -44,23 +40,16 @@ export function useSidebarDrag({
     const left = sidebarRef.current?.getBoundingClientRect().left;
     if (left === undefined) return false;
     dragOriginRef.current = left;
-    bumpSidebarWrites();
     return true;
-  }, [sidebarRef, bumpSidebarWrites]);
+  }, [sidebarRef]);
 
   const valueAt = useCallback(
     (e: ReactPointerEvent) => e.clientX - dragOriginRef.current,
     [],
   );
 
-  const {
-    dragging,
-    onDragStart,
-    onDragMove,
-    onDragEnd,
-    onDragCancel,
-    draggingRef,
-  } = useDividerDrag({
+  const { dragging, onDragStart, onDragMove, onDragEnd, onDragCancel } =
+    useDividerDrag({
     value: sidebarWidth,
     valueAt,
     onGestureStart,
@@ -76,6 +65,5 @@ export function useSidebarDrag({
     onSidebarDragMove: onDragMove,
     onSidebarDragEnd: onDragEnd,
     onSidebarDragCancel: onDragCancel,
-    draggingRef,
   };
 }

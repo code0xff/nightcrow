@@ -21,14 +21,11 @@ export interface UseRepoPollArgs {
   setAuthed: React.Dispatch<React.SetStateAction<boolean | null>>;
   handle: (err: unknown) => void;
   adoptAccent: (accent: number) => void;
-  adoptSidebarWidth: (px: number) => void;
   adoptUpperPct: (pct: number) => void;
   adoptMaximized: (remote: MaximizedByRepo) => void;
   adoptViews: (remote: RepoViewByRepo, served: string[]) => void;
-  draggingRef: React.MutableRefObject<boolean>;
   upperDraggingRef: React.MutableRefObject<boolean>;
   accentWrites: React.MutableRefObject<number>;
-  sidebarWrites: React.MutableRefObject<number>;
   upperPctWrites: React.MutableRefObject<number>;
   maximizedWrites: React.MutableRefObject<number>;
   viewWrites: React.MutableRefObject<number>;
@@ -56,14 +53,11 @@ export function useRepoPoll({
   setAuthed,
   handle,
   adoptAccent,
-  adoptSidebarWidth,
   adoptUpperPct,
   adoptMaximized,
   adoptViews,
-  draggingRef,
   upperDraggingRef,
   accentWrites,
-  sidebarWrites,
   upperPctWrites,
   maximizedWrites,
   viewWrites,
@@ -112,7 +106,6 @@ export function useRepoPoll({
     const controller = new AbortController();
     const refresh = () => {
       const writes = accentWrites.current;
-      const widthWrites = sidebarWrites.current;
       const splitWrites = upperPctWrites.current;
       const panelWrites = maximizedWrites.current;
       const lastViewWrites = viewWrites.current;
@@ -124,7 +117,6 @@ export function useRepoPoll({
             repos: list,
             hot,
             accent,
-            sidebar_width,
             upper_pct,
             active_repo,
             maximized,
@@ -141,8 +133,6 @@ export function useRepoPoll({
           setCanClone(can_clone);
           setClockSkewMs((held) => nextClockOffset(held, now_ms, Date.now()));
           if (accentWrites.current === writes) adoptAccent(accent);
-          if (sidebarWrites.current === widthWrites && !draggingRef.current)
-            adoptSidebarWidth(sidebar_width);
           if (upperPctWrites.current === splitWrites && !upperDraggingRef.current)
             adoptUpperPct(upper_pct);
           if (maximizedWrites.current === panelWrites) adoptMaximized(maximized);
@@ -220,15 +210,12 @@ export function useRepoPoll({
     setAuthed,
     handle,
     adoptAccent,
-    adoptSidebarWidth,
     adoptUpperPct,
     resumeTick,
     accentWrites,
-    sidebarWrites,
     upperPctWrites,
     maximizedWrites,
     viewWrites,
-    draggingRef,
     upperDraggingRef,
     adoptMaximized,
     adoptViews,
