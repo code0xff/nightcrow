@@ -8,6 +8,7 @@
 // already moved past. What that costs is measured here rather than assumed.
 
 import { StrictMode, createElement, useCallback } from "react";
+import { PROTOCOL_VERSION } from "../api/types";
 import { act, cleanup, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { stubLocalStorage } from "../lib/fakeStorage";
@@ -34,7 +35,7 @@ const IDS = ["a", "b", "c", "d"];
 
 function bootstrap(active: string | null) {
   return {
-    version: 2,
+    version: PROTOCOL_VERSION,
     repos: IDS.map((id) => ({ id, name: id, display_path: `~/${id}` })),
     hot: { enabled: false, window_secs: 15 },
     accent: 0,

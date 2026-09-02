@@ -1,6 +1,6 @@
 // DTOs mirror the server-owned API shape.
 
-export const PROTOCOL_VERSION = 2;
+export const PROTOCOL_VERSION = 3;
 
 export interface Span {
   t: string;

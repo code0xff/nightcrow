@@ -11,6 +11,7 @@
 // way the batching this logic must survive does.
 
 import { Profiler, StrictMode, createElement, memo } from "react";
+import { PROTOCOL_VERSION } from "../api/types";
 import { act, cleanup, render, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useRepoPoll, type UseRepoPollArgs } from "./useRepoPoll";
@@ -40,7 +41,7 @@ function written(): string[] {
 
 function bootstrap(active: string | null) {
   return {
-    version: 2,
+    version: PROTOCOL_VERSION,
     repos: [
       { id: "r1", name: "one", display_path: "~/one" },
       { id: "r2", name: "two", display_path: "~/two" },

@@ -4,7 +4,12 @@ use serde::Serialize;
 
 /// Bumped whenever an existing field changes meaning or disappears. Adding a
 /// new optional field does not need a bump.
-pub const PROTOCOL_VERSION: u32 = 2;
+///
+/// 3: `sidebar_width` left the bootstrap and the preference echo — the width
+/// is the browser's own now. A page still running the v2 bundle would read
+/// the missing field as `undefined` and lay its sidebar out to `NaN`; the bump
+/// has it refuse the response and ask for a reload instead.
+pub const PROTOCOL_VERSION: u32 = 3;
 
 /// Wrapper carried by every response so a stale client can detect a mismatch.
 #[derive(Debug, Serialize)]
