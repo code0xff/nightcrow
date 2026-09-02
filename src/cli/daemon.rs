@@ -114,7 +114,12 @@ pub(crate) fn run_daemon(
         .listener()
         .try_clone()
         .context("cloning the daemon listener")?;
-    let session = crate::daemon::serve::start(server.session_state(), socket.path(), shutdown_tx)?;
+    let session = crate::daemon::serve::start(
+        server.session_state(),
+        socket.path(),
+        server.addr(),
+        shutdown_tx,
+    )?;
     std::thread::Builder::new()
         .name("nightcrow-daemon-accept".into())
         .spawn(move || crate::daemon::serve::serve(listener, session))

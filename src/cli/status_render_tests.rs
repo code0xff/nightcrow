@@ -10,7 +10,8 @@ fn status() -> DaemonStatus {
         version: version(),
         started_at_unix_ms: Ok(1_735_689_723_004),
         uptime_ms: 90_061_000,
-        endpoint: Ok("custom.sock".into()),
+        web_endpoint: "http://127.0.0.1:4321/".into(),
+        attach_endpoint: Ok("custom.sock".into()),
         attached_clients: vec![9, 2],
         repositories: vec![
             RepositoryStatus {
@@ -35,6 +36,8 @@ fn status_output_sorts_ids_and_repositories_and_names_empty_values() {
     assert!(output.contains("Status: running"));
     assert!(output.contains("Started at: 2025-01-01T00:02:03.004Z"));
     assert!(output.contains("Uptime: 1d 1h 1m 1s"));
+    assert!(output.contains("Web endpoint: http://127.0.0.1:4321/"));
+    assert!(output.contains("Attach endpoint: custom.sock"));
     assert!(output.contains("Attached client IDs: 2, 9"));
     assert!(output.find("Repository: a") < output.find("Repository: b"));
     assert!(output.contains("    Pane IDs: 3, 8"));
@@ -60,21 +63,22 @@ fn status_output_explains_empty_repository_set() {
 }
 
 #[test]
-fn status_output_explains_unavailable_endpoint() {
+fn status_output_explains_unavailable_attach_endpoint() {
     let mut status = status();
-    status.endpoint = Err(StatusUnavailable {
+    status.attach_endpoint = Err(StatusUnavailable {
         reason: StatusUnavailableReason::EndpointNotUnicode,
     });
     assert!(
         render_status(&status)
-            .contains("Endpoint: unavailable (endpoint path is not valid Unicode)")
+            .contains("Attach endpoint: unavailable (endpoint path is not valid Unicode)")
     );
 }
 
 #[test]
 fn status_output_escapes_control_characters_and_preserves_unicode() {
     let mut status = status();
-    status.endpoint = Ok("sock\u{1b}]0;evil\u{7}\n\u{9b}".into());
+    status.web_endpoint = "http://sock\u{1b}]0;evil\u{7}\n\u{9b}/".into();
+    status.attach_endpoint = Ok("sock\u{1b}]0;evil\u{7}\n\u{9b}".into());
     status.repositories[0].id = "repo-한글\u{1b}".into();
     status.repositories[0].path = "C:\\work\n\u{80}".into();
     let output = render_status(&status);

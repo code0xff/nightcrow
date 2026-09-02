@@ -1,5 +1,6 @@
 use super::protocol::{DaemonStatus, RepositoryStatus, StatusUnavailable, StatusUnavailableReason};
 use super::serve::Session;
+use std::net::SocketAddr;
 use std::path::Path;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
@@ -9,17 +10,19 @@ pub(super) struct DaemonMetadata {
     version: String,
     started_at: SystemTime,
     started_mono: Instant,
-    endpoint: Result<String, StatusUnavailable>,
+    web_endpoint: String,
+    attach_endpoint: Result<String, StatusUnavailable>,
 }
 
 impl DaemonMetadata {
-    pub(super) fn capture(endpoint: &Path) -> Self {
+    pub(super) fn capture(attach_endpoint: &Path, web_addr: SocketAddr) -> Self {
         Self {
             pid: std::process::id(),
             version: super::protocol::version(),
             started_at: SystemTime::now(),
             started_mono: Instant::now(),
-            endpoint: endpoint
+            web_endpoint: format!("http://{web_addr}/"),
+            attach_endpoint: attach_endpoint
                 .to_str()
                 .map(str::to_owned)
                 .ok_or(StatusUnavailable {
@@ -45,7 +48,8 @@ impl DaemonMetadata {
             version: self.version.clone(),
             started_at_unix_ms: unix_millis(self.started_at),
             uptime_ms: millis(self.started_mono.elapsed()),
-            endpoint: self.endpoint.clone(),
+            web_endpoint: self.web_endpoint.clone(),
+            attach_endpoint: self.attach_endpoint.clone(),
             repositories,
             attached_clients: session.clients.ids(),
         }

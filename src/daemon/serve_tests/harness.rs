@@ -39,8 +39,13 @@ pub(super) fn daemon(dir: &tempfile::TempDir, repos: &[String]) -> TestDaemon {
     let state = crate::test_util::session_state(repos, dir.path());
     let served = std::sync::Arc::clone(&state);
     let (shutdown_tx, shutdown_rx) = std::sync::mpsc::sync_channel(1);
-    let session = crate::daemon::serve::start(served, socket.path(), shutdown_tx)
-        .expect("starts the watcher");
+    let session = crate::daemon::serve::start(
+        served,
+        socket.path(),
+        "127.0.0.1:4321".parse().unwrap(),
+        shutdown_tx,
+    )
+    .expect("starts the watcher");
     let serving = std::sync::Arc::clone(&session);
     std::thread::spawn(move || crate::daemon::serve::serve(listener, serving));
     TestDaemon {

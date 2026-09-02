@@ -14,7 +14,18 @@ pub(super) fn render_status(status: &DaemonStatus) -> String {
     )
     .unwrap();
     writeln!(output, "Uptime: {}", format_uptime(status.uptime_ms)).unwrap();
-    writeln!(output, "Endpoint: {}", format_endpoint(&status.endpoint)).unwrap();
+    writeln!(
+        output,
+        "Web endpoint: {}",
+        display_text(&status.web_endpoint)
+    )
+    .unwrap();
+    writeln!(
+        output,
+        "Attach endpoint: {}",
+        format_endpoint(&status.attach_endpoint)
+    )
+    .unwrap();
 
     let mut clients = status.attached_clients.clone();
     clients.sort_unstable();

@@ -36,9 +36,10 @@ fn status_is_authoritative_and_does_not_attach_or_mutate_the_session() {
     assert_eq!(status.pid, std::process::id());
     assert_eq!(status.version, version());
     assert_eq!(
-        status.endpoint.as_deref(),
+        status.attach_endpoint.as_deref(),
         Ok(daemon.path().to_str().expect("test path is Unicode"))
     );
+    assert_eq!(status.web_endpoint, "http://127.0.0.1:4321/");
     assert_eq!(status.attached_clients, vec![attached_id]);
     assert_eq!(status.repositories.len(), 1);
     assert_eq!(status.repositories[0].path, resolved(&path));

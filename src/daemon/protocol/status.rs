@@ -9,8 +9,11 @@ pub struct DaemonStatus {
     pub version: String,
     pub started_at_unix_ms: Result<u64, StatusUnavailable>,
     pub uptime_ms: u64,
-    /// The socket endpoint, or why it could not be represented as text.
-    pub endpoint: Result<String, StatusUnavailable>,
+    /// The HTTP endpoint the viewer listener bound at runtime.
+    pub web_endpoint: String,
+    /// The attach socket endpoint, or why its path could not be represented as
+    /// text.
+    pub attach_endpoint: Result<String, StatusUnavailable>,
     pub repositories: Vec<RepositoryStatus>,
     /// Attach protocol client ids only. Terminal-hub connection ids are a
     /// different namespace and deliberately do not appear here.
