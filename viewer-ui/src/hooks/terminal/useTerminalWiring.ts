@@ -33,6 +33,8 @@ export interface TerminalWiringArgs {
   /** Startup terminals the server is holding, or null with nothing to answer. */
   pending: number | null;
   ownsSize: boolean;
+  /** A soft keyboard is up; see `usePaneSizes`. */
+  keyboardOpen: boolean;
   /** The zoom actually rendered, and the raw one the server sent. A tabbed panel
    *  renders neither — see the comment on `zoomShown` in `Terminal.tsx`. */
   zoomShown: number | null;
@@ -59,6 +61,7 @@ export function useTerminalWiring({
   replayLeft,
   pending,
   ownsSize,
+  keyboardOpen,
   zoomShown,
   zoomServer,
   consumeCtrl,
@@ -139,6 +142,7 @@ export function useTerminalWiring({
     askedSizesRef,
     ownsSize,
     layoutPending: zoomPending(zoomServer, panes),
+    keyboardOpen,
   });
 
   usePaneFocus({

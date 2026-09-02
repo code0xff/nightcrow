@@ -52,6 +52,13 @@ interface UsePaneSizesArgs {
    *  cell meanwhile is measured against a layout that is about to be replaced —
    *  and, being hidden by then, keeps the size it was wrongly given. */
   layoutPending: boolean;
+  /** Whether a soft keyboard is covering the lower part of the page. The panel
+   *  is shorter while it is, but the PTY is not told: a resize is a SIGWINCH
+   *  and a full repaint, and a keyboard that comes and goes with every message
+   *  typed would have the child repaint from the top each time — twice. The
+   *  panes keep the grid they had and the cell shows the bottom of it
+   *  (`TerminalCell`), which is where the prompt is. */
+  keyboardOpen: boolean;
 }
 
 /**
@@ -78,6 +85,7 @@ export function usePaneSizes({
   askedSizesRef,
   ownsSize,
   layoutPending,
+  keyboardOpen,
 }: UsePaneSizesArgs) {
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -103,6 +111,10 @@ export function usePaneSizes({
 
   // Size visible panes after layout changes; never resize hidden cells to zero.
   useEffect(() => {
+    // A keyboard-shortened panel is not a layout the panes should take. Nothing
+    // is fitted and nothing goes out; the effect runs again when it closes and
+    // finds the panes already at the size the restored panel gives them.
+    if (keyboardOpen) return;
     for (const [pane, view] of viewsRef.current) {
       const body = bodyRefs.current.get(pane);
       if (!body || body.clientHeight === 0 || body.clientWidth === 0) continue;
@@ -141,5 +153,6 @@ export function usePaneSizes({
     ptySizesRef,
     ownsSize,
     layoutPending,
+    keyboardOpen,
   ]);
 }

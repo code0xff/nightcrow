@@ -14,6 +14,33 @@ export interface ViewportWindowLike {
 
 export const VISUAL_VIEWPORT_HEIGHT = "--nc-visual-viewport-height";
 
+/** A window that also says how tall the layout viewport is. */
+export interface KeyboardWindowLike extends ViewportWindowLike {
+  readonly innerHeight: number;
+}
+
+/**
+ * The least a soft keyboard takes off the visual viewport.
+ *
+ * Browser chrome coming and going — the URL bar collapsing on a scroll — moves
+ * the layout viewport and the visual viewport together, so the gap between the
+ * two stays near zero. A keyboard shrinks only the visual one, by a few hundred
+ * pixels on any phone or tablet. The threshold sits between those.
+ */
+export const SOFT_KEYBOARD_MIN_PX = 120;
+
+/**
+ * How much of the layout viewport a soft keyboard is covering, or 0 when none
+ * is up (or the browser cannot say). The gap is the layout height minus what
+ * the visual viewport shows, and it is reported only past the threshold above.
+ */
+export function softKeyboardInset(viewportWindow: KeyboardWindowLike): number {
+  const visible = visibleViewportHeight(viewportWindow.visualViewport);
+  if (visible === null || !Number.isFinite(viewportWindow.innerHeight)) return 0;
+  const inset = viewportWindow.innerHeight - visible;
+  return inset >= SOFT_KEYBOARD_MIN_PX ? inset : 0;
+}
+
 /**
  * Convert visual viewport coordinates into the document-root height needed to
  * keep its bottom edge visible. The visual viewport can be panned down while
