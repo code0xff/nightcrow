@@ -1,5 +1,6 @@
 pub mod hub;
 pub mod identity;
+mod pane_env;
 pub mod pty;
 pub mod slot;
 

@@ -87,7 +87,7 @@ impl PtyBackend {
             }
             cmd.arg(command);
         }
-        cmd.env("TERM", "xterm-256color");
+        crate::backend::pane_env::apply(&mut cmd);
         // Set at spawn time because a child cannot be told afterwards, and the
         // provider's own helper processes inherit it — that inheritance is what
         // lets an out-of-process observer name the pane an event came from.
