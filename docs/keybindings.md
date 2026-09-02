@@ -41,6 +41,8 @@ Its leader is also `Ctrl+F` by default, and it is consumed only where the page o
 
 `Ctrl+F` is the browser's Find shortcut, so the viewer says so and lets the leader be rebound or switched off. Holding a shortcut down runs it once per press, not once per repeat.
 
+From `md` width up, a hint line under the footer mirrors the TUI's hint bar. Idle, it names the leader and the commands reached for first; with the leader armed it shows a `PREFIX` chip and every follow-up key that can run on this screen, and the pane digits as one `3-9,0` entry; during `<prefix> s` it shows `SWAP`. A command that cannot run here is left off the line rather than dimmed. Clicking a hint runs it, or arms the leader when the hint is the leader itself, without moving the keyboard out of the pane. Phones show the terminal key bar instead.
+
 ### Same meaning as the TUI
 
 The leader followed by `t`, `w`, `s`, `z`, `c`, `l`, `b`, `o`, `x`, `p`, or `u` does what the matching bullet under [Leader commands](#leader-commands) describes, using the same controls the buttons use. The focus keys `1`, `2`, and `3`–`9`, `0` address the list, the content pane, and terminal panes 1–8 with the same numbering. `Ctrl+Shift+Left` and `Ctrl+Shift+Right` switch projects exactly as they do in the TUI.

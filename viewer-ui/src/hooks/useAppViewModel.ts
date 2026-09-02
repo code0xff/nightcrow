@@ -142,6 +142,7 @@ export function useAppViewModel() {
     // keyboard does — the intent bus and `useShortcutSettings`.
     shortcutHelp: shortcuts.shortcutHelp,
     leader: shortcuts.settings,
+    hint: shortcuts.hint,
     repoShell: workspace.repoShell,
     picker: pickerOpen
       ? {
