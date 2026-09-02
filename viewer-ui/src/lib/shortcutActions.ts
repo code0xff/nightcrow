@@ -30,6 +30,8 @@ export type ShortcutActionId =
   | "session.reloadConfig"
   | "focus.list"
   | "focus.content"
+  | "focus.previous"
+  | "focus.next"
   | "focus.pane1"
   | "focus.pane2"
   | "focus.pane3"
@@ -157,6 +159,27 @@ export const SHORTCUT_ACTIONS: readonly ShortcutAction[] = [
   { id: "session.reloadConfig", label: "Reload configuration", hint: "reload config", leader: "u", support: "direct", group: "session" },
   { id: "focus.list", label: "Focus file or commit list", hint: "focus list", leader: "1", support: "direct", group: "focus" },
   { id: "focus.content", label: "Focus content pane", hint: "focus content", leader: "2", support: "direct", group: "focus" },
+  // The TUI's `Shift+Left` / `Shift+Right` (`src/input/routing.rs`), bound to
+  // the same physical keys because a browser leaves Shift+Arrow to the page. The
+  // ring they walk is `lib/focusCycle.ts`.
+  {
+    id: "focus.previous",
+    label: "Focus previous panel or pane",
+    hint: "focus prev",
+    chord: "Shift+ArrowLeft",
+    support: "direct",
+    group: "focus",
+    note: "Walks the file list, the content pane and each terminal pane in turn, among whatever is on screen.",
+  },
+  {
+    id: "focus.next",
+    label: "Focus next panel or pane",
+    hint: "focus next",
+    chord: "Shift+ArrowRight",
+    support: "direct",
+    group: "focus",
+    note: "Walks the file list, the content pane and each terminal pane in turn, among whatever is on screen.",
+  },
   ...PANE_FOCUS_ACTIONS,
   { id: "help.shortcuts", label: "Keyboard shortcuts", hint: "shortcuts", leader: "?", support: "direct", group: "help" },
 ];

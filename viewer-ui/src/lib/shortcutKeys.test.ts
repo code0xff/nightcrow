@@ -200,3 +200,30 @@ describe("classifyShortcutKey - armed", () => {
     }
   });
 });
+
+describe("classifyShortcutKey - Shift 화살표 포커스 순환", () => {
+  it("Shift만_눌린_화살표는_포커스_액션이다", () => {
+    expect(
+      classifyShortcutKey(event({ key: "ArrowLeft", shiftKey: true }), ctx()),
+    ).toEqual({ kind: "action", action: expect.objectContaining({ id: "focus.previous" }) });
+    expect(
+      classifyShortcutKey(event({ key: "ArrowRight", shiftKey: true }), ctx()),
+    ).toEqual({ kind: "action", action: expect.objectContaining({ id: "focus.next" }) });
+  });
+
+  it("Shift_없는_화살표는_pane의_것이다", () => {
+    // A bare arrow is a cursor key the program in the pane reads.
+    expect(classifyShortcutKey(event({ key: "ArrowRight" }), ctx())).toEqual({
+      kind: "ignore",
+    });
+  });
+
+  it("Ctrl이_더_눌리면_프로젝트_순환이고_포커스_순환이_아니다", () => {
+    // Exact modifiers, as `chordMatches` promises: the two chords share the key.
+    const decision = classifyShortcutKey(
+      event({ key: "ArrowRight", shiftKey: true, ctrlKey: true }),
+      ctx(),
+    );
+    expect(decision).toEqual({ kind: "action", action: expect.objectContaining({ id: "project.next" }) });
+  });
+});

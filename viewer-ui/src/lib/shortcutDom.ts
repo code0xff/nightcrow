@@ -72,8 +72,25 @@ export function describeShortcutTarget(
 
 /** Whether the keyboard is inside the terminal panel right now. */
 export function terminalPanelHasFocus(root: Document = document): boolean {
+  return keyboardRegion(root) === "terminal";
+}
+
+/**
+ * Which region holds the keyboard: a focus region, the terminal panel, or null
+ * for anything else — a toolbar button, the body. Which pane inside the panel
+ * is the panel's own answer (`paneCursor` on the intent bus); the DOM only says
+ * the keyboard is in there.
+ */
+export function keyboardRegion(
+  root: Document = document,
+): FocusRegion | "terminal" | null {
   const active = root.activeElement;
-  return active !== null && active.closest(TERMINAL_PANEL) !== null;
+  if (!active) return null;
+  if (active.closest(TERMINAL_PANEL)) return "terminal";
+  const region = active
+    .closest(`[${FOCUS_REGION_ATTR}]`)
+    ?.getAttribute(FOCUS_REGION_ATTR);
+  return region === "list" || region === "content" ? region : null;
 }
 
 /**

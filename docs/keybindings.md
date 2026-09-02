@@ -29,7 +29,7 @@ The prefix waits indefinitely for one follow-up. `Esc` or `Ctrl+C` cancels it. A
 
 - `F1`–`F10` switch project tabs 1–10. Modified function keys pass through to the terminal.
 - `Ctrl+Shift+Left` / `Ctrl+Shift+Right` switch to the previous or next project, wrapping at both ends of the tab order. With one project open they do nothing.
-- `Shift+Left` / `Shift+Right` cycle focus through the file list, diff viewer, and terminal.
+- `Shift+Left` / `Shift+Right` cycle focus through the file list, the diff viewer, and each terminal pane in turn, wrapping at both ends. In terminal fullscreen they cycle the panes alone; in list or diff fullscreen they do nothing.
 - `Shift+Up` / `Shift+Down` scroll the active terminal three lines.
 - `Shift+PageUp` / `Shift+PageDown` scroll the active terminal one page. Input remains live while scrolled.
 
@@ -47,6 +47,10 @@ From `md` width up, a hint line under the footer mirrors the TUI's hint bar. Idl
 
 The leader followed by `t`, `w`, `s`, `z`, `c`, `l`, `b`, `o`, `x`, `p`, or `u` does what the matching bullet under [Leader commands](#leader-commands) describes, using the same controls the buttons use. The focus keys `1`, `2`, and `3`–`9`, `0` address the list, the content pane, and terminal panes 1–8 with the same numbering. `Ctrl+Shift+Left` and `Ctrl+Shift+Right` switch projects exactly as they do in the TUI.
 
+`Shift+Left` and `Shift+Right` walk the same ring — the list, the content pane, then each terminal pane — among whatever is on screen: a maximized terminal offers its panes alone, a maximized upper region the list and the content pane, and a narrow screen only the view its bottom navigation chose, which is what the TUI's fullscreen rules amount to. Stepping onto a pane while another is zoomed moves the zoom to it, as the TUI's fullscreen cycle does. A control inside a region — the sidebar's filter, a pane's toolbar — counts as that region; a keyboard nowhere on the ring (in the header or the footer, say) enters it at the near end. The chord is the page's wherever it is not typing, so it never reaches a pane as `ESC[1;2D`; in a text field it stays the browser's word selection.
+
+`Shift+PageUp` and `Shift+PageDown` scroll the focused pane a page, as in the TUI — xterm.js binds them itself.
+
 ### Reinterpreted
 
 - Moving a project within the tab row is a drag on the tab itself rather than a key. The order it writes is the same session-owned order the TUI's bracket keys move.
@@ -57,6 +61,7 @@ The leader followed by `t`, `w`, `s`, `z`, `c`, `l`, `b`, `o`, `x`, `p`, or `u` 
 - Redraw: the browser repaints the page itself, so there is no stale frame to force.
 - Detach: closing a tab already leaves the session running. Signing out is a different, destructive action and is deliberately not on a key.
 - `F1`–`F10` project selection: bare function keys are reserved by the browser and the OS. Use `Ctrl+Shift+Left` / `Ctrl+Shift+Right`, the project control, or the shortcut sheet instead.
+- `Shift+Up` / `Shift+Down` line scrolling: xterm.js hands a shifted arrow to the pane as a keystroke (`ESC[1;2A`), and the viewer has not claimed it. The wheel, a touch drag, and `Shift+PageUp` / `Shift+PageDown` scroll a pane.
 
 `F5` and `F11` are never bound, and the viewer does not try to block them. Which chords a browser delivers to a page at all is the browser's decision, not the viewer's: the bindings above avoid the ones Chrome, Edge, Firefox, and Safari reserve on Windows, macOS, and Linux, and a chord a browser keeps for itself simply never arrives. The shortcut sheet lists every action with its key and marks the ones unavailable on the current screen, and every action also has a button or menu item. The one exception is `<prefix> s`, which arms a second step rather than running a command: no single control can stand for "then pick a pane", so the sheet lists it as text and dragging a pane does the same job.
 

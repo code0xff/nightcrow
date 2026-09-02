@@ -39,6 +39,11 @@ export interface ShortcutHandlerExtras {
   swapPanes?: (pane: number) => void;
   /** Zoom the active pane, the terminal half of the reinterpreted maximize. */
   zoomActivePane?: () => void;
+  /** Where the panel's keyboard is among its panes, for the focus ring:
+   *  `index` is -1 when no pane is active. */
+  paneCursor?: () => { index: number; count: number };
+  /** Focus the pane at a position in pane order. */
+  focusPaneAt?: (index: number) => void;
 }
 
 export type ShortcutHandlers = Partial<Record<ShortcutActionId, () => void>> &
@@ -55,6 +60,9 @@ export interface ShortcutIntents {
   sendLiteralLeader: (data: string) => void;
   swapPanes: (pane: number) => boolean;
   zoomActivePane: () => boolean;
+  /** Null when there is no terminal panel to ask. */
+  paneCursor: () => { index: number; count: number } | null;
+  focusPaneAt: (index: number) => boolean;
   /** Something outside the keyboard ended the moment the leader was pressed in.
    *  The terminal socket's reconnect is the one signal the page cannot see. */
   disarm: () => void;
@@ -126,6 +134,14 @@ export function ShortcutIntentProvider({ children }: { children: ReactNode }) {
         const zoom = get<() => void>("zoomActivePane");
         if (!zoom) return false;
         zoom();
+        return true;
+      },
+      paneCursor: () =>
+        get<() => { index: number; count: number }>("paneCursor")?.() ?? null,
+      focusPaneAt: (index) => {
+        const focus = get<(index: number) => void>("focusPaneAt");
+        if (!focus) return false;
+        focus(index);
         return true;
       },
       disarm: () => listeners.current.forEach((listener) => listener()),

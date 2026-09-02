@@ -5,6 +5,7 @@ import {
   ShortcutIntentProvider,
   useRegisterShortcutHandlers,
   useShortcutIntents,
+  type ShortcutHandlers,
   type ShortcutIntents,
 } from "./shortcutIntents";
 import {
@@ -30,14 +31,17 @@ function Page({
   return null;
 }
 
-/** Stands in for the terminal panel's registration, so the zoom half of the
- *  reinterpreted maximize has somewhere to go. */
-function Panel({ zoomActivePane }: { zoomActivePane: () => void }) {
-  useRegisterShortcutHandlers({ zoomActivePane });
+/** Stands in for the terminal panel's registration: the zoom half of the
+ *  reinterpreted maximize, and whatever a test adds for the focus ring. */
+function Panel({ handlers }: { handlers: ShortcutHandlers }) {
+  useRegisterShortcutHandlers(handlers);
   return null;
 }
 
-export function mount(over: Partial<AppShortcutArgs> = {}) {
+export function mount(
+  over: Partial<AppShortcutArgs> = {},
+  panel: ShortcutHandlers = {},
+) {
   // The leader is read from `localStorage` on mount; keep the suite off the
   // environment's own storage.
   stubLocalStorage();
@@ -59,13 +63,21 @@ export function mount(over: Partial<AppShortcutArgs> = {}) {
     repos: three,
     tab: "status",
     pickerOpen: false,
+    maximized: "none",
+    mobileView: "files",
     ...spies,
     ...over,
+  };
+  // The panel's handlers are memoized by the real panel; here the object is
+  // built once per mount, which is the same promise.
+  const handlers: ShortcutHandlers = {
+    zoomActivePane: spies.zoomActivePane,
+    ...panel,
   };
   render(
     <ShortcutIntentProvider>
       <Page args={args} held={held} bus={bus} />
-      <Panel zoomActivePane={spies.zoomActivePane} />
+      <Panel handlers={handlers} />
     </ShortcutIntentProvider>,
   );
   return { ...spies, help: held, bus };

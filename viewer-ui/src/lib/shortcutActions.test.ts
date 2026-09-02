@@ -36,7 +36,12 @@ describe("SHORTCUT_ACTIONS", () => {
 
   it("chord는_정규_표시형과_왕복한다", () => {
     const chords = SHORTCUT_ACTIONS.flatMap((a) => (a.chord ? [a.chord] : []));
-    expect(chords).toEqual(["Ctrl+Shift+ArrowLeft", "Ctrl+Shift+ArrowRight"]);
+    expect(chords).toEqual([
+      "Ctrl+Shift+ArrowLeft",
+      "Ctrl+Shift+ArrowRight",
+      "Shift+ArrowLeft",
+      "Shift+ArrowRight",
+    ]);
     for (const chord of chords) {
       const spec = parseChord(chord);
       expect(spec).not.toBeNull();
@@ -93,6 +98,14 @@ describe("SHORTCUT_ACTIONS", () => {
     for (const [key, id] of Object.entries(expected)) {
       expect(actionByLeader(key)?.id).toBe(id);
     }
+  });
+
+  it("TUI의_Shift_화살표는_같은_키로_포커스를_순환한다", () => {
+    // `src/input/routing.rs` binds Shift-only Left/Right to the focus ring; a
+    // browser leaves Shift+Arrow to the page, so the web keeps the keys.
+    const byChord = new Map(SHORTCUT_ACTIONS.map((a) => [a.chord, a.id]));
+    expect(byChord.get("Shift+ArrowLeft")).toBe("focus.previous");
+    expect(byChord.get("Shift+ArrowRight")).toBe("focus.next");
   });
 
   it("숫자_3부터_9와_0은_pane_1부터_8을_가리킨다", () => {

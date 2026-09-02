@@ -57,6 +57,7 @@ function mount(over: Partial<UseTerminalShortcutsArgs> = {}) {
     socketRef,
     panes: [7, 8, 9],
     active: 8,
+    zoom: null,
     link: "live",
     commands,
     focusPane,
@@ -221,5 +222,63 @@ describe("useTerminalShortcuts 패널 명령", () => {
 
     expect(after.defaultPrevented).toBe(false);
     expect(commands.create).not.toHaveBeenCalled();
+  });
+});
+
+describe("useTerminalShortcuts 포커스 링의 패널 쪽", () => {
+  it("커서는_활성_pane의_순서와_pane_수를_말한다", () => {
+    const { bus } = mount();
+
+    expect(bus.current?.paneCursor()).toEqual({ index: 1, count: 3 });
+  });
+
+  it("활성_pane이_없으면_커서_index는_-1이다", () => {
+    const { bus } = mount({ active: null });
+
+    expect(bus.current?.paneCursor()).toEqual({ index: -1, count: 3 });
+  });
+
+  it("그리드에서는_순서로_고른_pane에_포커스한다", () => {
+    const { bus, focusPane, commands } = mount();
+
+    expect(bus.current?.focusPaneAt(2)).toBe(true);
+
+    expect(focusPane).toHaveBeenCalledWith(9);
+    expect(commands.toggleZoom).not.toHaveBeenCalled();
+  });
+
+  it("zoom_중에는_포커스_대신_zoom을_옮긴다", () => {
+    // `usePaneFocus` would put the keyboard straight back on the zoomed pane,
+    // so what changes is which pane fills the panel; the echo moves the keyboard.
+    const { bus, focusPane, commands } = mount({ zoom: 8 });
+
+    bus.current?.focusPaneAt(2);
+
+    expect(commands.toggleZoom).toHaveBeenCalledWith(9);
+    expect(focusPane).not.toHaveBeenCalled();
+  });
+
+  it("zoom된_pane_자체를_고르면_zoom을_건드리지_않는다", () => {
+    const { bus, focusPane, commands } = mount({ zoom: 8 });
+
+    bus.current?.focusPaneAt(1);
+
+    expect(focusPane).toHaveBeenCalledWith(8);
+    expect(commands.toggleZoom).not.toHaveBeenCalled();
+  });
+
+  it("범위_밖_순서는_아무것도_하지_않는다", () => {
+    const { bus, focusPane } = mount();
+
+    bus.current?.focusPaneAt(5);
+
+    expect(focusPane).not.toHaveBeenCalled();
+  });
+
+  it("pane이_없으면_focusPaneAt은_가용하지_않다", () => {
+    const { bus } = mount({ panes: [], active: null });
+
+    expect(bus.current?.focusPaneAt(0)).toBe(false);
+    expect(bus.current?.paneCursor()).toEqual({ index: -1, count: 0 });
   });
 });

@@ -31,6 +31,9 @@ export interface UseTerminalShortcutsArgs {
   socketRef: MutableRefObject<WebSocket | null>;
   panes: number[];
   active: number | null;
+  /** The pane filling the panel, or null for the grid — as rendered, so null in
+   *  tabs mode, where every pane is a tab and the zoom is not drawn. */
+  zoom: number | null;
   /** Where the socket is. Anything but `live` disarms an armed leader. */
   link: LinkState;
   commands: TerminalPaneCommands;
@@ -42,6 +45,7 @@ export function useTerminalShortcuts({
   socketRef,
   panes,
   active,
+  zoom,
   link,
   commands,
   focusPane,
@@ -57,7 +61,29 @@ export function useTerminalShortcuts({
   const handlers = useMemo<ShortcutHandlers>(() => {
     const map: ShortcutHandlers = {
       "terminal.newPane": () => live.current.commands.create(),
+      // The focus ring's view of the panel. Position rather than id, because the
+      // ring is walked in pane order and the ids are the server's.
+      paneCursor: () => ({
+        index: active === null ? -1 : panes.indexOf(active),
+        count: panes.length,
+      }),
     };
+    if (panes.length > 0) {
+      map.focusPaneAt = (index: number) => {
+        const pane = panes[index];
+        if (pane === undefined) return;
+        // A zoomed panel shows one pane, and `usePaneFocus` keeps the keyboard
+        // on it — so focusing another would be undone on the next render and
+        // the person would see nothing change. The zoom is what has to move,
+        // as the TUI's does when its fullscreen cycles; the server's echo then
+        // brings the keyboard along.
+        if (zoom !== null && pane !== zoom) {
+          live.current.commands.toggleZoom(pane);
+          return;
+        }
+        live.current.focusPane(pane);
+      };
+    }
     // The digit row's numbering belongs to the registry, so it is read from
     // there rather than counted again here.
     for (const action of SHORTCUT_ACTIONS) {
@@ -92,7 +118,7 @@ export function useTerminalShortcuts({
         data,
       });
     return map;
-  }, [panes, active]);
+  }, [panes, active, zoom]);
 
   useRegisterShortcutHandlers(handlers);
 

@@ -107,7 +107,9 @@ export function useAppViewModel() {
     reloadConfig: config.reload,
     tab: workspace.tab,
     chooseTab: workspace.chooseTab,
+    maximized: workspace.maximized,
     setMaximized: workspace.setMaximized,
+    mobileView: workspace.repoShell?.layout.mobileView ?? "files",
   });
   // Re-bootstrap after login instead of mounting repository state retained
   // from an expired session before the first authenticated poll completes.

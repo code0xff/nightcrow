@@ -1,9 +1,15 @@
 import { useCallback, useMemo, useState } from "react";
+import { nextFocus, type FocusSpot } from "../lib/focusCycle";
+import { GRID_MIN_VIEWPORT_PX } from "../lib/paneViewMode";
 import { neighborRepo } from "../lib/projectCycle";
-import { focusShortcutRegion, terminalPanelHasFocus } from "../lib/shortcutDom";
+import {
+  focusShortcutRegion,
+  keyboardRegion,
+  terminalPanelHasFocus,
+} from "../lib/shortcutDom";
 import type { LeaderState } from "../lib/leaderState";
 import type { HintClick } from "../lib/shortcutHintBar";
-import type { Maximized, Tab } from "../types";
+import type { Maximized, MobileView, Tab } from "../types";
 import {
   useRegisterShortcutHandlers,
   useShortcutIntents,
@@ -40,7 +46,11 @@ export interface AppShortcutArgs {
    *  what gates the two view commands. */
   tab: Tab;
   chooseTab: (tab: Tab) => void;
+  /** Which panel fills the page, read to know what the focus ring can reach. */
+  maximized: Maximized;
   setMaximized: (next: Maximized | ((previous: Maximized) => Maximized)) => void;
+  /** The view a narrow screen shows, for the same reason. */
+  mobileView: MobileView;
 }
 
 export interface ShortcutHelp {
@@ -68,7 +78,9 @@ export function useAppShortcuts({
   reloadConfig,
   tab,
   chooseTab,
+  maximized,
   setMaximized,
+  mobileView,
 }: AppShortcutArgs): {
   shortcutHelp: ShortcutHelp;
   settings: ShortcutSettings;
@@ -111,6 +123,40 @@ export function useAppShortcuts({
     setMaximized((current) => (current === "files" ? "none" : "files"));
   }, [setMaximized, zoomActivePane]);
 
+  // `docs/keybindings.md`: `Shift+Left` / `Shift+Right` walk the list, the
+  // content pane and each terminal pane in turn. Where the keyboard is comes
+  // from two places because it lives in two: the DOM says which region, and
+  // only the panel knows which of its panes. Where it goes is `nextFocus`.
+  const cycleFocus = useCallback(
+    (delta: 1 | -1) => {
+      const cursor = intents?.paneCursor() ?? null;
+      const region = keyboardRegion();
+      let at: FocusSpot | null = null;
+      if (region === "terminal") {
+        if (cursor && cursor.index >= 0) at = { kind: "pane", index: cursor.index };
+      } else if (region !== null) {
+        at = { kind: region };
+      }
+      const to = nextFocus(
+        {
+          at,
+          paneCount: cursor?.count ?? 0,
+          maximized,
+          // Read at the keystroke rather than held as state: it is the one
+          // breakpoint `RepoShell` lays out by, and nothing else here needs to
+          // re-render when the window crosses it.
+          narrow: window.innerWidth < GRID_MIN_VIEWPORT_PX,
+          mobileView,
+        },
+        delta,
+      );
+      if (to === null) return;
+      if (to.kind === "pane") intents?.focusPaneAt(to.index);
+      else focusShortcutRegion(to.kind);
+    },
+    [intents, maximized, mobileView],
+  );
+
   const handlers = useMemo<ShortcutHandlers>(() => {
     const map: ShortcutHandlers = {
       "project.openDialog": openPicker,
@@ -129,6 +175,8 @@ export function useAppShortcuts({
     map["view.toggleMaximize"] = toggleMaximize;
     map["focus.list"] = () => void focusShortcutRegion("list");
     map["focus.content"] = () => void focusShortcutRegion("content");
+    map["focus.previous"] = () => cycleFocus(-1);
+    map["focus.next"] = () => cycleFocus(1);
     return map;
   }, [
     openPicker,
@@ -142,6 +190,7 @@ export function useAppShortcuts({
     closeRepo,
     chooseTab,
     toggleMaximize,
+    cycleFocus,
   ]);
 
   useRegisterShortcutHandlers(handlers);

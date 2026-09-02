@@ -5,6 +5,7 @@ import {
   describeShortcutTarget,
   focusRegionAttrs,
   focusShortcutRegion,
+  keyboardRegion,
   terminalPanelHasFocus,
 } from "./shortcutDom";
 import { isTextEntryTarget, shortcutsSuppressed } from "./shortcutTarget";
@@ -133,5 +134,35 @@ describe("focusShortcutRegion 영역으로 키보드 옮기기", () => {
 
     expect(focusShortcutRegion("list")).toBe(false);
     expect(document.activeElement).toBe(field);
+  });
+});
+
+describe("keyboardRegion 키보드가 있는 영역", () => {
+  it("포커스_영역_안이면_그_영역이다", () => {
+    const list = el("div", { "data-focus-region": "list", tabindex: "-1" });
+    const inner = list.appendChild(document.createElement("button"));
+    inner.focus();
+
+    expect(keyboardRegion()).toBe("list");
+  });
+
+  it("터미널_패널_안이면_terminal이다", () => {
+    const panel = el("div", { "data-terminal-panel": "" });
+    const xterm = panel.appendChild(document.createElement("textarea"));
+    xterm.focus();
+
+    expect(keyboardRegion()).toBe("terminal");
+  });
+
+  it("어느_영역에도_없으면_null이다", () => {
+    el("button").focus();
+    expect(keyboardRegion()).toBeNull();
+  });
+
+  it("알_수_없는_영역_이름은_null이다", () => {
+    // A marker the ring does not know is not a spot on it.
+    const odd = el("div", { "data-focus-region": "footer", tabindex: "-1" });
+    odd.focus();
+    expect(keyboardRegion()).toBeNull();
   });
 });

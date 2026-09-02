@@ -98,6 +98,8 @@ function useProjectPage(stable: UseRepoPollArgs) {
     reloadConfig: () => {},
     tab: "status",
     chooseTab: () => {},
+    maximized: "none",
+    mobileView: "files",
     setMaximized: () => {},
   });
   return poll;

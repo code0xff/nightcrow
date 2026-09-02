@@ -135,6 +135,7 @@ export function TerminalPanel({
     socketRef,
     panes,
     active,
+    zoom: zoomShown,
     link,
     commands,
     focusPane,

@@ -93,6 +93,8 @@ describe("hintLine", () => {
     expect(line.segments.slice(1).map((s) => s.keys)).toEqual([
       "Ctrl+Shift+ArrowLeft",
       "Ctrl+Shift+ArrowRight",
+      "Shift+ArrowLeft",
+      "Shift+ArrowRight",
     ]);
   });
 
