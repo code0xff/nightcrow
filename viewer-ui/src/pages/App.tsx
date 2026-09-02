@@ -32,7 +32,7 @@ export function App() {
         <Header {...view.header} onShowShortcuts={view.shortcutHelp.show} />
         <div className="flex min-h-0 flex-1">
           {view.tabStrip.side === "left" && (
-            <aside className="hidden w-48 shrink-0 flex-col bg-ink-950 md:flex">
+            <aside className="hidden w-48 shrink-0 flex-col border-r border-ink-700 bg-ink-950 md:flex">
               <ProjectStrip side="left" {...view.header} />
             </aside>
           )}
