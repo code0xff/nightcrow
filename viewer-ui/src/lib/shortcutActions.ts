@@ -60,6 +60,11 @@ export type ShortcutGroup =
 export interface ShortcutAction {
   id: ShortcutActionId;
   label: string;
+  /** The label as the hint line prints it, a few words after the key the way
+   *  the TUI's hint bar writes `t: new pane`. `label` is the sentence for a
+   *  button title and a help row; this is what fits a dozen commands on one
+   *  line. */
+  hint: string;
   /** The single follow-up key after the leader: one lowercase letter, a digit, or `?`. */
   leader?: string;
   /** A standalone chord in `leaderChord.ts` display form, for actions bound without the leader. */
@@ -91,6 +96,7 @@ const PANE_FOCUS_ACTIONS: ShortcutAction[] = PANE_FOCUS_DIGITS.map(
   (digit, index) => ({
     id: `focus.pane${index + 1}` as ShortcutActionId,
     label: `Focus terminal pane ${index + 1}`,
+    hint: `pane ${index + 1}`,
     leader: digit,
     support: "direct" as const,
     group: "focus" as const,
@@ -98,24 +104,26 @@ const PANE_FOCUS_ACTIONS: ShortcutAction[] = PANE_FOCUS_DIGITS.map(
 );
 
 export const SHORTCUT_ACTIONS: readonly ShortcutAction[] = [
-  { id: "terminal.newPane", label: "New terminal pane", leader: "t", support: "direct", group: "terminal" },
-  { id: "terminal.closePane", label: "Close terminal pane", leader: "w", support: "direct", group: "terminal" },
+  { id: "terminal.newPane", label: "New terminal pane", hint: "new pane", leader: "t", support: "direct", group: "terminal" },
+  { id: "terminal.closePane", label: "Close terminal pane", hint: "close pane", leader: "w", support: "direct", group: "terminal" },
   {
     id: "terminal.swapPanePrompt",
     label: "Swap pane with...",
+    hint: "swap pane",
     leader: "s",
     support: "direct",
     group: "terminal",
     keyboardOnly: true,
     note: "Arms a second step: the next pane digit picks the pane to swap with, so there is no button for it. Drag a pane to move it instead.",
   },
-  { id: "terminal.claimSizing", label: "Claim terminal sizing", leader: "z", support: "direct", group: "terminal" },
-  { id: "terminal.cancelRecovery", label: "Cancel plugin recovery", leader: "c", support: "direct", group: "terminal" },
-  { id: "view.toggleLog", label: "Toggle status and commit log", leader: "l", support: "direct", group: "view" },
-  { id: "view.toggleTree", label: "Toggle tree view", leader: "b", support: "direct", group: "view" },
+  { id: "terminal.claimSizing", label: "Claim terminal sizing", hint: "resize panes here", leader: "z", support: "direct", group: "terminal" },
+  { id: "terminal.cancelRecovery", label: "Cancel plugin recovery", hint: "cancel recovery", leader: "c", support: "direct", group: "terminal" },
+  { id: "view.toggleLog", label: "Toggle status and commit log", hint: "log/status view", leader: "l", support: "direct", group: "view" },
+  { id: "view.toggleTree", label: "Toggle tree view", hint: "tree view", leader: "b", support: "direct", group: "view" },
   {
     id: "view.toggleMaximize",
     label: "Maximize panel",
+    hint: "maximize",
     leader: "f",
     support: "reinterpreted",
     group: "view",
@@ -125,11 +133,12 @@ export const SHORTCUT_ACTIONS: readonly ShortcutAction[] = [
     // maximize and the active-pane terminal zoom. Never F11.
     note: "In the browser this maximizes the panel and zooms the active terminal pane rather than entering OS fullscreen; it is never bound to F11.",
   },
-  { id: "project.openDialog", label: "Open project...", leader: "o", support: "direct", group: "project" },
-  { id: "project.close", label: "Close project", leader: "x", support: "direct", group: "project" },
+  { id: "project.openDialog", label: "Open project...", hint: "open project", leader: "o", support: "direct", group: "project" },
+  { id: "project.close", label: "Close project", hint: "close project", leader: "x", support: "direct", group: "project" },
   {
     id: "project.previous",
     label: "Previous project",
+    hint: "prev project",
     chord: "Ctrl+Shift+ArrowLeft",
     support: "direct",
     group: "project",
@@ -138,17 +147,18 @@ export const SHORTCUT_ACTIONS: readonly ShortcutAction[] = [
   {
     id: "project.next",
     label: "Next project",
+    hint: "next project",
     chord: "Ctrl+Shift+ArrowRight",
     support: "direct",
     group: "project",
     note: "Wraps around at the last project.",
   },
-  { id: "session.cycleAccent", label: "Cycle session accent", leader: "p", support: "direct", group: "session" },
-  { id: "session.reloadConfig", label: "Reload configuration", leader: "u", support: "direct", group: "session" },
-  { id: "focus.list", label: "Focus file or commit list", leader: "1", support: "direct", group: "focus" },
-  { id: "focus.content", label: "Focus content pane", leader: "2", support: "direct", group: "focus" },
+  { id: "session.cycleAccent", label: "Cycle session accent", hint: "theme", leader: "p", support: "direct", group: "session" },
+  { id: "session.reloadConfig", label: "Reload configuration", hint: "reload config", leader: "u", support: "direct", group: "session" },
+  { id: "focus.list", label: "Focus file or commit list", hint: "focus list", leader: "1", support: "direct", group: "focus" },
+  { id: "focus.content", label: "Focus content pane", hint: "focus content", leader: "2", support: "direct", group: "focus" },
   ...PANE_FOCUS_ACTIONS,
-  { id: "help.shortcuts", label: "Keyboard shortcuts", leader: "?", support: "direct", group: "help" },
+  { id: "help.shortcuts", label: "Keyboard shortcuts", hint: "shortcuts", leader: "?", support: "direct", group: "help" },
 ];
 
 /**

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { ChordSpec } from "../lib/leaderChord";
 import {
   IDLE_LEADER,
@@ -37,16 +37,29 @@ export interface UseShortcutsArgs {
   repo: string | null;
 }
 
+/** What the engine lets the page see and do: the leader's state for the hint
+ *  line to print, and the two moves a click on that line makes. */
+export interface ShortcutEngine {
+  state: LeaderState;
+  /** Arm the leader, as the TUI's `<prefix>` chip does when clicked. */
+  arm: () => void;
+  /** Put the leader back to idle, for a hint that ran its command by click. */
+  disarm: () => void;
+}
+
 export function useShortcuts({
   enabled,
   leader,
   dialogOpen,
   repo,
-}: UseShortcutsArgs): void {
+}: UseShortcutsArgs): ShortcutEngine {
   const intents = useShortcutIntents();
-  // Not state: nothing renders the armed leader, and a re-render between the
-  // leader and its follow-up would be a chance for the two to disagree.
+  // The ref is what a keystroke reads and what the reducer writes, so a leader
+  // and its follow-up can never straddle a render and disagree. The state is a
+  // mirror of it for the hint line, which is the one thing that renders the
+  // armed leader; nothing decides from the mirror.
   const state = useRef<LeaderState>(IDLE_LEADER);
+  const [shown, setShown] = useState<LeaderState>(IDLE_LEADER);
   // The bus through a ref, so `dispatch` has one identity for the hook's whole
   // life. The bus hands out a new object whenever the set of registered actions
   // changes — a pane opening does that — and a `dispatch` that changed with it
@@ -57,6 +70,7 @@ export function useShortcuts({
   const dispatch = useCallback((event: LeaderEvent) => {
     const step = reduceLeader(state.current, event);
     state.current = step.state;
+    setShown(step.state);
     const bus = busRef.current;
     if (bus) perform(step.effect, bus);
   }, []);
@@ -151,6 +165,10 @@ export function useShortcuts({
   useEffect(() => {
     dispatch({ kind: "cancel" });
   }, [leader, dispatch]);
+
+  const arm = useCallback(() => dispatch({ kind: "arm" }), [dispatch]);
+  const disarm = useCallback(() => dispatch({ kind: "cancel" }), [dispatch]);
+  return { state: shown, arm, disarm };
 }
 
 function perform(effect: LeaderEffect, intents: ShortcutIntents): void {

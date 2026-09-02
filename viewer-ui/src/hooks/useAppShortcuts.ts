@@ -1,6 +1,8 @@
 import { useCallback, useMemo, useState } from "react";
 import { neighborRepo } from "../lib/projectCycle";
 import { focusShortcutRegion, terminalPanelHasFocus } from "../lib/shortcutDom";
+import type { LeaderState } from "../lib/leaderState";
+import type { HintClick } from "../lib/shortcutHintBar";
 import type { Maximized, Tab } from "../types";
 import {
   useRegisterShortcutHandlers,
@@ -47,6 +49,13 @@ export interface ShortcutHelp {
   hide: () => void;
 }
 
+/** The hint line's view of the engine: the state it prints and the click it
+ *  reports. See `ShortcutHintBar`. */
+export interface ShortcutHint {
+  state: LeaderState;
+  onClick: (click: HintClick) => void;
+}
+
 export function useAppShortcuts({
   enabled,
   repo,
@@ -63,6 +72,7 @@ export function useAppShortcuts({
 }: AppShortcutArgs): {
   shortcutHelp: ShortcutHelp;
   settings: ShortcutSettings;
+  hint: ShortcutHint;
 } {
   const intents = useShortcutIntents();
   const settings = useShortcutSettings();
@@ -136,7 +146,7 @@ export function useAppShortcuts({
 
   useRegisterShortcutHandlers(handlers);
 
-  useShortcuts({
+  const engine = useShortcuts({
     enabled,
     leader: settings.leader,
     // The help sheet is modal too, so the leader does not fire underneath it and
@@ -145,10 +155,27 @@ export function useAppShortcuts({
     repo,
   });
 
+  // A hint clicked while the leader is armed is that leader's follow-up, so it
+  // spends the leader the way a key would; left armed, the next character typed
+  // into a pane would be read as a command.
+  const { arm, disarm } = engine;
+  const onHintClick = useCallback(
+    (click: HintClick) => {
+      if (click.kind === "arm") {
+        arm();
+        return;
+      }
+      disarm();
+      intents?.runAction(click.action);
+    },
+    [arm, disarm, intents],
+  );
+
   return {
     shortcutHelp: { open: helpOpen, show: showHelp, hide: hideHelp },
     // The whole of the leader preference, so the help sheet can show the chord,
     // its known collision, and the controls that rebind or switch it off.
     settings,
+    hint: { state: engine.state, onClick: onHintClick },
   };
 }

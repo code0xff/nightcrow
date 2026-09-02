@@ -5,6 +5,7 @@ import { LoadingSplash } from "../components/LoadingSplash";
 import { Login } from "../components/Login";
 import { RepoShell } from "../components/RepoShell";
 import { ShortcutHelp } from "../components/ShortcutHelp";
+import { ShortcutHintBar } from "../components/shortcuts/ShortcutHintBar";
 import { ShortcutLeaderProvider } from "../hooks/shortcutLeader";
 import { useAppViewModel } from "../hooks/useAppViewModel";
 
@@ -33,7 +34,11 @@ export function App() {
       >
         <Header {...view.header} onShowShortcuts={view.shortcutHelp.show} />
         {view.repoShell ? (
-          <RepoShell {...view.repoShell} />
+          <>
+            <RepoShell {...view.repoShell} />
+            {/* Last, under the footer, where the TUI keeps it. */}
+            <ShortcutHintBar {...view.hint} />
+          </>
         ) : (
           <div className="flex items-center justify-center p-6 text-center text-ink-400">
             <span>

@@ -1,6 +1,8 @@
 import type { Maximized } from "../types";
 
-/** Grid tracks for the app shell: header, upper panel, terminal panel, footer.
+/** Grid tracks for the app shell: header, upper panel, terminal panel, footer,
+ * and — from `md` up — the keyboard hint line under it all. Below `md` the
+ * hint line is not rendered, so the phone template has no track for it.
  * The upper one is the sidebar plus the content pane, which is why it is not
  * named after the diff — that is one of the things the content pane can hold.
  *
@@ -15,9 +17,9 @@ export function appRows(repo: string | null, maximized: Maximized): string {
   if (!repo) return "grid-rows-[auto_1fr]";
   const desktop =
     maximized === "terminal"
-      ? "md:grid-rows-[auto_minmax(0,0fr)_minmax(0,1fr)_auto]"
+      ? "md:grid-rows-[auto_minmax(0,0fr)_minmax(0,1fr)_auto_auto]"
       : maximized === "files"
-        ? "md:grid-rows-[auto_minmax(0,1fr)_minmax(0,0fr)_auto]"
-        : "md:grid-rows-[auto_minmax(0,var(--nc-upper))_minmax(0,var(--nc-lower))_auto]";
+        ? "md:grid-rows-[auto_minmax(0,1fr)_minmax(0,0fr)_auto_auto]"
+        : "md:grid-rows-[auto_minmax(0,var(--nc-upper))_minmax(0,var(--nc-lower))_auto_auto]";
   return `grid-rows-[auto_minmax(0,1fr)_auto_auto] ${desktop}`;
 }
