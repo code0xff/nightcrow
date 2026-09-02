@@ -17,7 +17,7 @@ trait TerminalBackend {
 }
 ```
 
-`PtyBackend`는 `portable-pty`와 reader/waiter thread로 로컬 child를 소유하고, `HubBackend`는 daemon hub에 요청만 보낸다. pane id·title·resize·reorder는 즉시 로컬 상태로 확정하지 않고 `Created`, `Resized`, `Reordered`, `Exited` 같은 backend event를 따른다. `drain_events`는 보고만 하며 `Exited`를 받은 owner가 `destroy_pane`을 호출해 자원을 회수한다. VT parsing은 두 backend 모두 client-side `PaneEmulator`가 담당한다.
+`PtyBackend`는 `portable-pty`와 reader/waiter thread로 로컬 child를 소유하고, `HubBackend`는 daemon hub에 요청만 보낸다. pane id·title·resize·reorder는 즉시 로컬 상태로 확정하지 않고 `Created`, `Resized`, `Reordered`, `Exited` 같은 backend event를 따른다. `drain_events`는 보고만 하며 `Exited`를 받은 owner가 `destroy_pane`을 호출해 자원을 회수한다. VT parsing은 두 backend 모두 client-side `PaneEmulator`가 담당한다. pane child의 환경은 daemon이 상속한 값이 아니라 pane이 실제로 렌더되는 emulator를 기준으로 맞춘다: `TERM=xterm-256color`, `COLORTERM=truecolor`를 강제하고 `NO_COLOR`는 제거한다. daemon은 agent shell이나 service manager처럼 터미널이 아닌 곳에서 시작될 수 있고, 그런 부모는 자기 자식용으로 `NO_COLOR=1`, `TERM=dumb`를 내보내는 일이 흔하기 때문이다.
 
 세션 상한은 repository당 PTY 8개, pane 크기 1–500행 × 1–1100열, pane당 reconnect scrollback 256 KiB다. 명령 queue가 가득 찼다는 이유로 close/resize의 성공을 가정하지 않는다.
 
