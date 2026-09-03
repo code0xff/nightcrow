@@ -7,15 +7,9 @@ import {
   lineScrollTop,
   VIRTUAL_THRESHOLD,
 } from "../lib/virtualWindow";
-import { otherFace, sourceKey } from "../lib/otherFace";
+import { sourceKey } from "../lib/otherFace";
 import { focusRegionAttrs } from "../lib/shortcutDom";
-import { useShortcutHint } from "../hooks/shortcutLeader";
-import {
-  MaximizeIcon,
-  PreviewIcon,
-  SplitViewIcon,
-  WholeFileIcon,
-} from "./icons/layout";
+import { FilePaneActions } from "./FilePaneActions";
 import { DiffView } from "./DiffView";
 import { ErrorBoundary } from "./feedback/ErrorBoundary";
 import { FileLines } from "./FileLines";
@@ -61,7 +55,6 @@ export function FilePane({
   className = "",
 }: FilePaneProps) {
   const diffLayout = useDiffLayout();
-  const shortcut = useShortcutHint();
   const scroller = useRef<HTMLDivElement>(null);
   const { viewport, refresh: refreshViewport } = useScrollViewport(scroller);
   const anchor = pane.kind === "file" ? pane.anchor : undefined;
@@ -146,79 +139,14 @@ export function FilePane({
     >
       <div className="flex shrink-0 items-center gap-2 bg-ink-850 px-3 py-0.5 text-ink-400">
         {pane.kind === "file" && <PathLabel path={pane.value.path} />}
-        <div className="ml-auto flex shrink-0 items-center gap-1">
-          {otherFace(pane) && (
-            <button
-              onClick={() => showOtherFace(visibleHunk())}
-              aria-pressed={pane.kind === "file"}
-              title={
-                pane.kind === "file"
-                  ? "Back to the diff"
-                  : "Open the whole file at this change"
-              }
-              aria-label={
-                pane.kind === "file"
-                  ? "Back to the diff"
-                  : "Open the whole file at this change"
-              }
-              className={`flex shrink-0 items-center rounded-sm px-1.5 py-0.5 hover:text-accent ${
-                pane.kind === "file" ? "text-accent" : ""
-              }`}
-            >
-              <WholeFileIcon />
-            </button>
-          )}
-          {pane.kind === "diff" && (
-            <button
-              onClick={diffLayout.toggle}
-              aria-pressed={diffLayout.layout === "split"}
-              title={
-                diffLayout.layout === "split"
-                  ? "Switch to unified diff"
-                  : "Switch to split diff"
-              }
-              aria-label={
-                diffLayout.layout === "split"
-                  ? "Switch to unified diff"
-                  : "Switch to split diff"
-              }
-              className={`flex shrink-0 items-center rounded-sm px-1.5 py-0.5 hover:text-accent ${
-                diffLayout.layout === "split" ? "text-accent" : ""
-              }`}
-            >
-              <SplitViewIcon />
-            </button>
-          )}
-          {pane.kind === "file" && isPreviewablePath(pane.value.path) && (
-            <button
-              onClick={() => setPreviewRendered((r) => !r)}
-              aria-pressed={previewRendered}
-              title={previewRendered ? "Show raw source" : "Show the rendered page"}
-              aria-label={
-                previewRendered ? "Show raw source" : "Show the rendered page"
-              }
-              className={`flex shrink-0 items-center rounded-sm px-1.5 py-0.5 hover:text-accent ${
-                previewRendered ? "text-accent" : ""
-              }`}
-            >
-              <PreviewIcon />
-            </button>
-          )}
-          <button
-            onClick={() => setMaximized(filesMax ? "none" : "files")}
-            aria-pressed={filesMax}
-            {...shortcut(
-              "view.toggleMaximize",
-              filesMax ? "Restore the layout" : "Maximize the file pane",
-            )}
-            aria-label={
-              filesMax ? "Restore the layout" : "Maximize the file pane"
-            }
-            className="hidden shrink-0 items-center rounded-sm px-1.5 py-0.5 hover:text-accent md:flex"
-          >
-            <MaximizeIcon maximized={filesMax} />
-          </button>
-        </div>
+        <FilePaneActions
+          pane={pane}
+          previewRendered={previewRendered}
+          setPreviewRendered={setPreviewRendered}
+          filesMax={filesMax}
+          setMaximized={setMaximized}
+          onShowOtherFace={() => showOtherFace(visibleHunk())}
+        />
       </div>
       <div
         ref={scroller}
