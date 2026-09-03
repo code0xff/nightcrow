@@ -8,6 +8,7 @@ import {
   SplitViewIcon,
   WholeFileIcon,
 } from "./icons/layout";
+import { PencilIcon } from "./icons/actions";
 import type { Pane } from "../types";
 
 export interface FilePaneActionsProps {
@@ -19,6 +20,11 @@ export interface FilePaneActionsProps {
   /// Swap between the diff and the whole file, from the hunk now at the top.
   /// The pane measures that hunk; this only asks for the swap.
   onShowOtherFace: () => void;
+  /// Whether this file can be edited in place: an HTML file the working tree
+  /// holds. A commit's copy is history, and history is read-only.
+  canEdit: boolean;
+  editing: boolean;
+  onToggleEdit: () => void;
 }
 
 /** The buttons on the right of the file pane's header. */
@@ -29,6 +35,9 @@ export function FilePaneActions({
   filesMax,
   setMaximized,
   onShowOtherFace,
+  canEdit,
+  editing,
+  onToggleEdit,
 }: FilePaneActionsProps) {
   const diffLayout = useDiffLayout();
   const shortcut = useShortcutHint();
@@ -76,7 +85,20 @@ export function FilePaneActions({
           <SplitViewIcon />
         </button>
       )}
-      {pane.kind === "file" && isPreviewablePath(pane.value.path) && (
+      {canEdit && (
+        <button
+          onClick={onToggleEdit}
+          aria-pressed={editing}
+          title={editing ? "Stop editing" : "Edit this page's text"}
+          aria-label={editing ? "Stop editing" : "Edit this page's text"}
+          className={`flex shrink-0 items-center rounded-sm px-1.5 py-0.5 hover:text-accent ${
+            editing ? "text-accent" : ""
+          }`}
+        >
+          <PencilIcon />
+        </button>
+      )}
+      {pane.kind === "file" && isPreviewablePath(pane.value.path) && !editing && (
         <button
           onClick={() => setPreviewRendered((r) => !r)}
           aria-pressed={previewRendered}

@@ -1,4 +1,4 @@
-import { Suspense, lazy, useEffect, useRef } from "react";
+import { Suspense, lazy, useEffect, useRef, useState } from "react";
 import { useDiffLayout } from "../lib/diffLayout";
 import { fileViewSource, isHtmlPath, isPreviewablePath } from "../lib/fileView";
 import { anchorWithin, hunkAtTop } from "../lib/diffAnchor";
@@ -24,6 +24,11 @@ const MarkdownView = lazy(() =>
 );
 const HtmlView = lazy(() =>
   import("./content/Html").then((m) => ({ default: m.HtmlView })),
+);
+// The edit engine (a parser and the agent) rides its own chunk: most sessions
+// only ever read.
+const HtmlEditor = lazy(() =>
+  import("./content/HtmlEditor").then((m) => ({ default: m.HtmlEditor })),
 );
 
 export interface FilePaneProps {
@@ -55,6 +60,12 @@ export function FilePane({
   className = "",
 }: FilePaneProps) {
   const diffLayout = useDiffLayout();
+  const [editing, setEditing] = useState(false);
+  const filePath = pane.kind === "file" ? pane.value.path : null;
+  // A commit's copy is history; only what the working tree holds can be edited.
+  const fromCommit = pane.kind === "file" && pane.source?.kind === "commit";
+  const canEdit =
+    repo !== null && filePath !== null && !fromCommit && isHtmlPath(filePath);
   const scroller = useRef<HTMLDivElement>(null);
   const { viewport, refresh: refreshViewport } = useScrollViewport(scroller);
   const anchor = pane.kind === "file" ? pane.anchor : undefined;
@@ -131,6 +142,11 @@ export function FilePane({
       line.getBoundingClientRect().top - container.getBoundingClientRect().top;
     refreshViewport();
   }, [pane, anchor, refreshViewport]);
+  // The editor is bound to one file: showing another (or that file as a commit
+  // left it) leaves editing rather than pointing the session at the wrong path.
+  useEffect(() => {
+    setEditing(false);
+  }, [repo, filePath, fromCommit]);
   return (
     // `focus.content` sends the keyboard here; see `focusRegionAttrs`.
     <section
@@ -146,6 +162,9 @@ export function FilePane({
           filesMax={filesMax}
           setMaximized={setMaximized}
           onShowOtherFace={() => showOtherFace(visibleHunk())}
+          canEdit={canEdit}
+          editing={editing && canEdit}
+          onToggleEdit={() => setEditing((e) => !e)}
         />
       </div>
       <div
@@ -160,7 +179,17 @@ export function FilePane({
         )}
         {pane.kind === "file" && (
           <>
-            {isPreviewablePath(pane.value.path) && previewRendered ? (
+            {editing && canEdit && repo !== null && filePath !== null ? (
+              // Keyed by the file so switching starts a clean session rather
+              // than carrying one file's pending edits onto another.
+              <ErrorBoundary key={`edit:${filePath}`} region="preview">
+                <Suspense
+                  fallback={<p className="p-4 text-ink-400">Opening the editor…</p>}
+                >
+                  <HtmlEditor repo={repo} path={filePath} />
+                </Suspense>
+              </ErrorBoundary>
+            ) : isPreviewablePath(pane.value.path) && previewRendered ? (
               // Keyed by the file so the next one starts clean: the renderers
               // are separate chunks, and losing one says nothing about the other.
               <ErrorBoundary key={pane.value.path} region="preview">
