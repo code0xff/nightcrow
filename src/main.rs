@@ -45,7 +45,7 @@ fn main() -> Result<()> {
         Some(Commands::Plugin { command }) => cli::plugin_cmd::run_plugin(command),
         Some(Commands::Stop { socket }) => run_stop(socket),
         Some(Commands::Status { socket }) => run_status(socket),
-        Some(Commands::Update { path, git }) => run_update(path, git),
+        Some(Commands::Update { version, path, git }) => run_update(version, path, git),
         None => run_daemon(cli.exec, cli.port, cli.bind, cli.detach),
     }
 }

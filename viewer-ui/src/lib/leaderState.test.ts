@@ -33,7 +33,7 @@ describe("reduceLeader - arm과 disarm", () => {
   });
 
   it("바깥에서_생긴_모든_사건은_무장을_푼다", () => {
-    // 무장한 채로 남으면 다음에 터미널에 친 키가 조용히 사라진다.
+    // If it stays armed, the next terminal key disappears silently.
     const events: LeaderEvent["kind"][] = [
       "blur",
       "focusChange",
@@ -116,7 +116,7 @@ describe("reduceLeader - swap의 두 번째 단계", () => {
   });
 
   it("pane_숫자가_아닌_키는_아무_것도_하지_않고_무장을_푼다", () => {
-    // swap을 요청한 사람에게 엉뚱한 명령을 실행해주지 않는다.
+    // A swap request must not execute an unrelated command.
     for (const id of ["focus.list", "focus.content", "terminal.newPane"] as const) {
       expect(reduceLeader(SWAP, action(id))).toEqual({
         state: IDLE_LEADER,

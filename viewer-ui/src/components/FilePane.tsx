@@ -78,8 +78,8 @@ export function FilePane({
     top: number;
     left: number;
   } | null>(null);
-  // Both the file and the repository, or the same path in another project would
-  // be handed the offset this one was left at.
+  // Include the repository and source in the key: the same path can exist in
+  // another project, and file/diff offsets must not cross either boundary.
   const placeKey = (source: FileSource) => `${repo ?? ""}\u0000${sourceKey(source)}`;
   // Which hunk the diff is scrolled to, measured only when the switch is asked
   // for. The offsets come from the DOM; which of them wins is `hunkAtTop`.

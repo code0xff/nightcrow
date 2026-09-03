@@ -1,0 +1,130 @@
+name: Release
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-main
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  quality:
+    if: github.repository == 'code0xff/nightcrow'
+    name: Release quality gates
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
+        with:
+          components: rustfmt
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: viewer-ui/package-lock.json
+      - name: Verify package and release policy
+        run: node scripts/prepare-release.mjs check
+      - name: Test release automation
+        run: node --test scripts/prepare-release.test.mjs scripts/publish-release.test.mjs
+      - name: Rustfmt
+        run: cargo fmt --all --check
+      - name: Install viewer dependencies
+        run: npm ci
+        working-directory: viewer-ui
+      - name: Test viewer
+        run: npm test
+        working-directory: viewer-ui
+      - name: Build viewer
+        run: npm run build
+        working-directory: viewer-ui
+      - name: Check committed viewer bundle
+        run: git diff --exit-code -- viewer-ui/dist
+
+  build:
+    if: github.repository == 'code0xff/nightcrow'
+    needs: quality
+    name: Build ${{ matrix.asset }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            asset: nightcrow-x86_64-unknown-linux-gnu
+            suffix: ''
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            asset: nightcrow-x86_64-pc-windows-msvc.exe
+            suffix: .exe
+          - os: macos-15-intel
+            target: x86_64-apple-darwin
+            asset: nightcrow-x86_64-apple-darwin
+            suffix: ''
+          - os: macos-14
+            target: aarch64-apple-darwin
+            asset: nightcrow-aarch64-apple-darwin
+            suffix: ''
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@49a0bdc70d2e1b713ca9e2869b211fcce03d3c1c # v2
+        with:
+          key: release-${{ matrix.target }}
+      - name: Verify package and release policy
+        run: node scripts/prepare-release.mjs check
+      - name: Test workspace
+        run: cargo test --locked --workspace
+      - name: Clippy
+        run: cargo clippy --locked --workspace --all-targets --all-features -- -D warnings
+      - name: Build release binary
+        run: cargo build --locked --release --target ${{ matrix.target }}
+      - name: Stage release asset
+        shell: bash
+        run: |
+          mkdir -p release-dist
+          cp "target/${{ matrix.target }}/release/nightcrow${{ matrix.suffix }}" "release-dist/${{ matrix.asset }}"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: ${{ matrix.asset }}
+          path: release-dist/${{ matrix.asset }}
+          if-no-files-found: error
+
+  publish:
+    if: github.repository == 'code0xff/nightcrow'
+    needs: [quality, build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          path: release-dist
+          merge-multiple: true
+      - name: Validate exact next patch
+        id: version
+        shell: bash
+        run: echo "version=$(node scripts/prepare-release.mjs check --release --print-version)" >> "$GITHUB_OUTPUT"
+      - name: Create or verify the tag and GitHub Release
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node scripts/publish-release.mjs --version "${{ steps.version.outputs.version }}" --dist release-dist

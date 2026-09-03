@@ -30,7 +30,6 @@ describe("hintLine", () => {
   });
 
   it("실행할_수_없는_명령은_줄에서_빠진다", () => {
-    // TUI의 규칙과 같다: 아무 일도 하지 않는 키의 힌트는 거짓말이다.
     const line = hintLine(IDLE_LEADER, DEFAULT_LEADER, only("help.shortcuts"));
 
     expect(line.segments.map((s) => s.label)).toEqual(["leader", "shortcuts"]);
@@ -62,7 +61,8 @@ describe("hintLine", () => {
 
     const digits = line.segments.filter((s) => s.keys === "3-9,0");
     expect(digits).toEqual([{ keys: "3-9,0", label: "pane 1-8", click: null }]);
-    // 자릿수 세그먼트는 첫 pane 액션이 있던 자리, 곧 `2: focus content` 다음이다.
+    // The digit segment starts where the first pane action would appear, after
+    // `2: focus content`.
     const contentAt = line.segments.findIndex((s) => s.keys === "2");
     expect(line.segments[contentAt + 1]?.keys).toBe("3-9,0");
   });

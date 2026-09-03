@@ -226,7 +226,7 @@ fn a_wide_character_name_is_cut_by_cells_and_never_overflows_the_strip() {
 
     // The buffer yields one symbol per cell, a wide glyph then a blank for its
     // second cell: sixteen cells hold eight glyphs after the legend, so the
-    // eighth (`아`) is the last one drawn and the ninth (`주`) never is.
+    // eighth glyph is the last one drawn and the ninth never is.
     let row = &rows[0];
     assert!(row.starts_with(" F1 프"), "got: {row:?}");
     assert!(row.contains('아') && !row.contains('주'), "got: {row:?}");

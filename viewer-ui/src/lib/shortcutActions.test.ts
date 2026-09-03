@@ -68,7 +68,7 @@ describe("SHORTCUT_ACTIONS", () => {
   });
 
   it("fullscreen만_reinterpreted다", () => {
-    // 브라우저에는 TUI의 fullscreen에 대응하는 것이 없어 의미만 옮긴다.
+    // The browser has no TUI fullscreen equivalent, so only the intent carries over.
     const reinterpreted = SHORTCUT_ACTIONS.filter(
       (a) => a.support === "reinterpreted",
     ).map((a) => a.id);
@@ -77,7 +77,7 @@ describe("SHORTCUT_ACTIONS", () => {
   });
 
   it("TUI_문서의_leader_문자를_그대로_따른다", () => {
-    // docs/keybindings.md가 두 구현의 기준이다.
+    // `docs/keybindings.md` is the source of truth for both implementations.
     const expected: Record<string, ShortcutActionId> = {
       t: "terminal.newPane",
       w: "terminal.closePane",
@@ -153,7 +153,7 @@ describe("actionById", () => {
   });
 
   it("표에_없는_id는_던진다", () => {
-    // 타입 union과 표가 어긋난 것이므로 조용한 기본값보다 실패가 낫다.
+    // A union/table mismatch is a build error, not a case for a silent default.
     expect(() => actionById("nope" as ShortcutActionId)).toThrow(/nope/);
   });
 });

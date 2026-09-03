@@ -12,6 +12,11 @@ nightcrow is a single Rust binary for macOS, Linux, and Windows.
 cargo install --git https://github.com/code0xff/nightcrow --locked
 ```
 
+Once installed, `nightcrow update` uses the latest official GitHub Release
+binary. Use `nightcrow update --path DIR` for a local development build or
+`nightcrow update --git URL` for an explicitly selected source repository. See
+[Releasing](docs/releasing.md) for the complete version and promotion policy.
+
 Rust 1.85 or newer is required. To create an editable starter configuration first, run `nightcrow init`; see [Configuration](docs/configuration.md).
 
 ### 2. Start a session

@@ -17,12 +17,11 @@ describe("shortcutKeys", () => {
   });
 
   it("chord_액션은_리더와_무관하게_그_코드_하나다", () => {
-    // 리더를 꺼도 standalone chord는 살아 있다.
     expect(shortcutKeys("project.next", null)).toEqual(["Ctrl+Shift+ArrowRight"]);
   });
 
   it("리더를_끄면_leader_액션에는_키가_없다", () => {
-    // 없는 키를 있다고 말하면 아무 일도 하지 않는 키를 안내하게 된다.
+    // Advertising a missing key would document a no-op.
     expect(shortcutKeys("terminal.newPane", null)).toBeNull();
     expect(shortcutHintText("terminal.newPane", null)).toBeNull();
     expect(ariaKeyShortcuts("terminal.newPane", null)).toBeNull();
@@ -36,11 +35,11 @@ describe("shortcutKeys", () => {
 
 describe("ariaKeyShortcuts", () => {
   it("leader_시퀀스는_속성을_받지_않는다", () => {
-    // ARIA의 공백은 "대안"이라서 `Control+F T`는 T 하나로도 실행된다는 주장이
-    // 된다. 그런 키는 없으므로 틀린 안내가 되고, 없는 것보다 나쁘다.
+    // ARIA spaces mean alternatives, so `Control+F T` falsely claims that bare
+    // `T` runs the action.
     expect(ariaKeyShortcuts("terminal.newPane", DEFAULT_LEADER)).toBeNull();
     expect(ariaKeyShortcuts("help.shortcuts", DEFAULT_LEADER)).toBeNull();
-    // 사람이 읽는 쪽은 그대로 시퀀스를 말한다.
+    // The human-readable title still spells out the sequence.
     expect(shortcutHintText("terminal.newPane", DEFAULT_LEADER)).toBe(
       "Ctrl+F then t",
     );
@@ -62,7 +61,7 @@ describe("ariaKeyShortcuts", () => {
         expect(value, action.id).toBeNull();
         continue;
       }
-      // 하나의 chord여야 한다: 공백이 들어가면 대안 목록으로 읽힌다.
+      // It must remain one chord; a space would turn it into alternatives.
       expect(value, action.id).toMatch(/^([A-Za-z]+\+)*[^+\s]+$/);
     }
   });

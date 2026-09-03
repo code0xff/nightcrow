@@ -59,7 +59,7 @@ describe("parseChord", () => {
   });
 
   it("모르는_수정자는_null이다", () => {
-    // "Hyper"를 키 이름으로 읽으면 절대 눌리지 않는 chord가 조용히 만들어진다.
+    // Treating "Hyper" as a key would silently create an unreachable chord.
     expect(parseChord("Hyper+Ctrl+F")).toBeNull();
   });
 
@@ -110,7 +110,7 @@ describe("chordMatches", () => {
   });
 
   it("수정자가_더_눌리면_맞지_않는다", () => {
-    // contains가 아니라 정확히 같아야 한다.
+    // Matching requires exact modifier equality, not containment.
     const left = spec({ key: "ArrowLeft", ctrl: true, shift: true });
     expect(
       chordMatches(left, event({ key: "ArrowLeft", ctrlKey: true, shiftKey: true })),
@@ -174,7 +174,7 @@ describe("leaderConflict", () => {
   });
 
   it("Shift가_붙으면_단일_수정자_충돌은_사라진다", () => {
-    // Ctrl+Shift+F는 브라우저 Find가 아니다.
+    // Ctrl+Shift+F is not the browser's Find shortcut.
     expect(leaderConflict(spec({ key: "F", ctrl: true, shift: true }))).toBeNull();
   });
 
@@ -185,7 +185,7 @@ describe("leaderConflict", () => {
 
 describe("literalLeaderSequence", () => {
   it("Ctrl_글자는_C0_제어문자다", () => {
-    // src/input/encode.rs와 termKeys.ts의 ctrlSequence와 같은 공식이다.
+    // This matches `src/input/encode.rs` and `termKeys.ts::ctrlSequence`.
     expect(literalLeaderSequence(DEFAULT_LEADER)).toBe("\x06");
     expect(literalLeaderSequence(spec({ key: "A", ctrl: true }))).toBe("\x01");
     expect(literalLeaderSequence(spec({ key: "B", ctrl: true }))).toBe("\x02");

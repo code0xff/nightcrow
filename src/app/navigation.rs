@@ -152,8 +152,6 @@ impl App {
         }
     }
 
-    // ── Selection navigation (status + log shared) ────────────────
-
     pub fn select_up(&mut self) {
         match self.focus {
             Focus::FileList => {

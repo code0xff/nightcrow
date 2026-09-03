@@ -101,13 +101,13 @@ fn background_command(
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
-        // setsid 의 Windows 대응. DETACHED_PROCESS 는 콘솔을 물려주지 않아
-        // 이 터미널이 닫혀도 daemon 이 함께 죽지 않고, NEW_PROCESS_GROUP 은
-        // 이 셸에 간 Ctrl-C 가 daemon 까지 가지 않게 한다.
+        // Windows equivalent of `setsid`: `DETACHED_PROCESS` keeps the daemon
+        // alive after this terminal closes, and `CREATE_NEW_PROCESS_GROUP`
+        // keeps Ctrl-C sent to this shell from reaching the daemon.
         //
-        // 대가: 콘솔이 없으므로 SetConsoleCtrlHandler 로 받을 이벤트가
-        // 애초에 도착하지 않는다. 백그라운드 daemon 을 멈추는 경로는
-        // 시그널이 아니라 `nightcrow stop` 이다 (PR 8).
+        // The trade-off is that no console means `SetConsoleCtrlHandler`
+        // receives no events. A background daemon is stopped through
+        // `nightcrow stop`, not a signal.
         const DETACHED_PROCESS: u32 = 0x0000_0008;
         const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
         command.creation_flags(DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP);

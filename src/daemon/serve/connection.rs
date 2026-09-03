@@ -6,7 +6,6 @@ use crate::daemon::transport::UnixStream;
 use std::io::Write;
 use std::sync::{Arc, Mutex};
 
-/// Serve one client for as long as it stays attached.
 pub(super) fn run(mut stream: UnixStream, session: &Session, permit: admission::Permit) {
     if let Err(err) = stream.set_read_timeout(Some(HANDSHAKE_TIMEOUT)) {
         tracing::debug!(%err, "daemon: could not set the pre-attach timeout");

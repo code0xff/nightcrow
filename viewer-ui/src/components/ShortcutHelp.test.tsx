@@ -12,8 +12,6 @@ afterEach(cleanup);
 
 describe("ShortcutHelp", () => {
   it("레지스트리의_모든_액션이_한_줄씩_나온다", () => {
-    // 레지스트리에 액션을 더하면 아무 것도 기억하지 않아도 여기에 나타나야
-    // 한다. 시트가 자기 키 표를 들고 있지 않다는 것이 이 단정이다.
     mount({});
 
     const listed = [...document.querySelectorAll("[data-shortcut-action]")].map(
@@ -31,7 +29,6 @@ describe("ShortcutHelp", () => {
 
     const maximize = row("view.toggleMaximize");
     expect(maximize.textContent).toContain("reinterpreted");
-    // 등록된 note가 그대로 보여야 TUI와 무엇이 다른지 읽을 수 있다.
     expect(maximize.textContent).toContain("never bound to F11");
   });
 
@@ -45,7 +42,6 @@ describe("ShortcutHelp", () => {
   });
 
   it("실행할_수_없는_줄은_표시되고_눌러도_아무_일이_없다", () => {
-    // 핸들러가 없는 액션은 지금 이 화면에서 할 수 없는 일이다.
     mount({ "focus.list": vi.fn() });
 
     const unavailable = row("terminal.newPane");
@@ -56,8 +52,8 @@ describe("ShortcutHelp", () => {
   });
 
   it("실행할_수_있는_줄은_그_액션을_돌리고_시트를_닫는다", () => {
-    // `focus.list`와 `focus.content`는 다른 어떤 버튼도 없어서, 이 줄이
-    // 키보드가 아닌 유일한 경로다.
+    // These focus actions have no other button, so the row is their only
+    // non-keyboard path.
     const focusList = vi.fn();
     const newPane = vi.fn();
     mount({ "focus.list": focusList, "terminal.newPane": newPane });
@@ -70,8 +66,8 @@ describe("ShortcutHelp", () => {
   });
 
   it("두_번째_단계를_무장하는_줄은_버튼이_아니고_눌러도_아무_일이_없다", () => {
-    // `<prefix> s`는 다음 키를 기다리므로 클릭이 줄 수 있는 것이 없다. 아무
-    // 일도 하지 않는 버튼은 고장으로 읽히므로 텍스트로 렌더한다.
+    // `<prefix> s` waits for another key, so a click has no action; render text
+    // instead of a button that appears broken.
     const swap = vi.fn();
     mount({ "terminal.swapPanePrompt": swap });
 
@@ -83,7 +79,6 @@ describe("ShortcutHelp", () => {
     expect(sheet()).not.toBeNull();
     // Not a button, but still advertised as runnable by the keyboard.
     expect(arming.hasAttribute("aria-disabled")).toBe(false);
-    // 이유는 여전히 그 줄에 적혀 있다.
     expect(arming.textContent).toContain("the next pane digit");
   });
 
@@ -107,8 +102,8 @@ describe("ShortcutHelp", () => {
   });
 
   it("시트의_어떤_줄도_빈_aria_keyshortcuts를_갖지_않는다", () => {
-    // 시트는 레지스트리 전체를 렌더하므로 여기서 한 번에 확인된다: leader
-    // 시퀀스 줄은 속성이 없고, chord 줄만 값을 가진다.
+    // The registry supplies every row: leader sequences have no ARIA value,
+    // while standalone chords do.
     mount({});
 
     const marked = [...document.querySelectorAll("[aria-keyshortcuts]")];
@@ -127,7 +122,7 @@ describe("ShortcutHelp", () => {
 
     const dialog = screen.getByRole("dialog");
     expect(dialog.getAttribute("aria-modal")).toBe("true");
-    // 이 두 속성은 `shortcutDom`이 dialog를 알아보는 방법이기도 하다.
+    // `shortcutDom` also uses these attributes to identify the dialog.
     expect(dialog).toHaveProperty("tabIndex", -1);
     expect(screen.getByRole("dialog", { name: "Keyboard shortcuts" })).toBe(
       dialog,
@@ -152,7 +147,7 @@ describe("ShortcutHelp", () => {
   it("배경을_누르면_닫힌다", () => {
     const { opener } = mount({});
 
-    // `FolderPicker`와 같은 규약: 시트 안의 클릭은 전파되지 않는다.
+    // As with `FolderPicker`, clicks inside the sheet must not bubble out.
     fireEvent.click(screen.getByRole("dialog"));
     expect(sheet()).not.toBeNull();
 

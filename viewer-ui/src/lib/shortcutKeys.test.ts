@@ -139,7 +139,7 @@ describe("classifyShortcutKey - armed", () => {
   });
 
   it("follow_up의_수정자는_무시한다", () => {
-    // leader의 Ctrl을 아직 놓지 않은 채 다음 키를 누르는 것이 보통이다.
+    // The leader's Ctrl is usually still held when the follow-up arrives.
     expect(
       classifyShortcutKey(event({ key: "T", ctrlKey: true, shiftKey: true }), armed),
     ).toEqual({
@@ -161,7 +161,7 @@ describe("classifyShortcutKey - armed", () => {
   });
 
   it("Ctrl_Shift_C는_취소가_아니라_c_명령이다", () => {
-    // 취소는 정확히 Ctrl만 눌린 Ctrl+C이고, 그 밖의 수정자는 follow-up에서 무시된다.
+    // Cancellation is exactly Ctrl+C; other modifiers are ignored on follow-up.
     expect(
       classifyShortcutKey(event({ key: "c", ctrlKey: true, shiftKey: true }), armed),
     ).toEqual({

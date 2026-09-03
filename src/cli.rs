@@ -92,15 +92,17 @@ pub(crate) enum Commands {
         #[arg(long)]
         socket: Option<PathBuf>,
     },
-    /// Reinstall nightcrow, replacing the binary this command is running from.
+    /// Update nightcrow from an official binary release or an explicit source.
     ///
-    /// Runs `cargo install --locked --force`, so it needs a Rust toolchain.
-    /// The installed binary is moved aside first: Windows refuses to overwrite
-    /// an executable while a session is running from it, but does allow the
-    /// rename. A running session keeps its own version until it is restarted.
+    /// With no source options, downloads the latest stable v0.1.x release.
+    /// `--path` and `--git` are development paths that run Cargo instead.
     Update {
+        /// Install this official v0.1.x release, including older patch versions.
+        #[arg(long, value_name = "0.1.N", conflicts_with_all = ["path", "git"])]
+        version: Option<String>,
+
         /// Install from a local checkout instead of the upstream repository.
-        #[arg(long, value_name = "DIR")]
+        #[arg(long, value_name = "DIR", conflicts_with = "git")]
         path: Option<PathBuf>,
 
         /// Install from this git repository instead of the upstream one.

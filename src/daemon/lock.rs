@@ -69,14 +69,14 @@ pub(crate) enum Attempt {
 /// raises signals at itself — a stop signal is how the daemon is asked to shut
 /// down — and EINTR says nothing about who holds the lock.
 ///
-/// std 가 EINTR 를 내부에서 재시도하는지는 문서화되어 있지 않다.
-/// 재시도한다면 이 arm 은 도달하지 않을 뿐 해가 없고, 재시도하지
-/// 않는다면 이 arm 이 반드시 필요하다. 문서화되지 않은 동작에
-/// 기대는 대신 남겨 둔다.
+/// The standard library's handling of EINTR is undocumented. If it retries
+/// internally, this arm is merely unreachable; if it does not, the arm is
+/// required. Keep it rather than relying on undocumented behaviour.
 pub(crate) fn outcome_of(err: &TryLockError) -> Attempt {
     match err {
         TryLockError::WouldBlock => Attempt::Held,
-        // 시그널이 호출 중간에 도착해 락을 시도조차 못 했다. 다시 묻는 것만이 옳다.
+        // A signal arrived before the lock was attempted; retrying is the only
+        // correct response.
         TryLockError::Error(err) if err.kind() == std::io::ErrorKind::Interrupted => {
             Attempt::Interrupted
         }
@@ -86,9 +86,9 @@ pub(crate) fn outcome_of(err: &TryLockError) -> Attempt {
 
 impl Drop for InstanceLock {
     fn drop(&mut self) {
-        // 닫힘만으로도 해제되지만 동기적이지 않다. 명시적 unlock 이 없으면
-        // 직전 daemon 이 사라진 직후의 재시작이 "이미 실행 중" 으로 거부되는
-        // 경우가 수백 회에 한 번 발생했다.
+        // Closing releases the lock eventually, but an explicit unlock avoids
+        // an immediate restart being rejected as "already running" while the
+        // previous daemon's close is still propagating.
         let _ = self.file.unlock();
     }
 }

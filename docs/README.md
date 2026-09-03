@@ -1,6 +1,6 @@
 # nightcrow documentation
 
-Start with the [top-level README](../README.md) for the five-minute install and first session. Use [Getting started](getting-started.md) for the complete install, run, update, and development workflow.
+Start with the [top-level README](../README.md) for the five-minute install and first session. Use [Getting started](getting-started.md) for the complete install, run, update, and development workflow. Maintainers should use [Releasing](releasing.md) for the fork-to-upstream release flow.
 
 ## User guides
 
@@ -13,6 +13,7 @@ Start with the [top-level README](../README.md) for the five-minute install and 
 | [Web viewer](web-viewer.md) | Browser access, cloning, mobile layout, and security |
 | [Configuration](configuration.md) | `~/.nightcrow/config.toml`, defaults, validation, and reload scope |
 | [Plugins](plugins.md) | Plugin installation, opt-in, and bundled recovery plugin |
+| [Releasing](releasing.md) | Patch-only versioning, fork promotion, and official binary Releases |
 
 Each guide is authoritative for its surface. Cross-links point back here or to the guide that owns a shared rule; design rationale and module boundaries remain in [Architecture](architecture.md), and historical decisions remain in [Design decisions](decisions.md).
 

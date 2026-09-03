@@ -3,9 +3,8 @@
  * nighteditor. It must be a self-contained function: no imports, no references
  * to outer scope. The host stringifies it with `previewAgent.toString()` and
  * injects it at the front of the document, so constants like `data-ne-id` are
- * written out again here (they must match `markers.ts`; `agent.test.ts` catches
- * drift). Because it cannot be split without breaking that contract, this file
- * is exempt from the 300-line guardrail — it is one vendored function.
+ * written out again here and must match `markers.ts`. The function is kept as
+ * one self-contained unit because splitting it would break that contract.
  *
  * @param token This preview document's token. The iframe is reused, so
  *   `contentWindow` identity cannot tell documents apart — every message carries
@@ -103,7 +102,6 @@ export function previewAgent(token = ""): () => void {
   const snapshotMarkers = (): Map<number, HTMLElement[]> => {
     const map = new Map<number, HTMLElement[]>();
     for (const el of document.querySelectorAll<HTMLElement>("[" + MARKER + "]")) {
-      // A marker inside another marker is a mimic — real blocks never nest.
       if (mimicked(el)) continue;
       const id = Number(el.getAttribute(MARKER));
       const seen = map.get(id);
@@ -130,7 +128,6 @@ export function previewAgent(token = ""): () => void {
     revealed = null;
   };
 
-  /** A marker nested inside another marker — real blocks never nest, so a mimic. */
   const mimicked = (el: Element): boolean =>
     !!el.parentElement?.closest("[" + MARKER + "]");
 
@@ -252,7 +249,6 @@ export function previewAgent(token = ""): () => void {
     post({ type: "select", id });
   };
 
-  // --- Inline formatting --------------------------------------------------
 
   /**
    * Apply a formatting command.
@@ -554,7 +550,6 @@ export function previewAgent(token = ""): () => void {
     barHeld = false;
   });
 
-  // --- Event interception -------------------------------------------------
   // Block at the bubble phase. This script runs at the front of the document,
   // so it registers before the artifact and runs first.
 
@@ -644,7 +639,6 @@ export function previewAgent(token = ""): () => void {
     if (editingId !== null) e.stopImmediatePropagation();
   });
 
-  // --- IME (Hangul composition) -------------------------------------------
   on(document, "compositionstart", () => {
     composing = true;
   });
@@ -667,7 +661,6 @@ export function previewAgent(token = ""): () => void {
     document.execCommand("insertText", false, text);
   }) as EventListener);
 
-  // --- Talking to the host ------------------------------------------------
   on(window, "message", ((e: MessageEvent) => {
     // Accept only what the host sent.
     if (e.source !== parent) return;

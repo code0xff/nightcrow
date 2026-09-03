@@ -1,0 +1,23 @@
+{
+  "repository": "code0xff/nightcrow",
+  "releaseOwner": "code0xff",
+  "developmentBranch": "dev",
+  "releaseBranch": "main",
+  "versionSeries": "0.1.x",
+  "bootstrapVersion": "0.1.1",
+  "tagPrefix": "v",
+  "versionFiles": [
+    { "kind": "cargo-toml", "path": "Cargo.toml", "package": "nightcrow" },
+    { "kind": "cargo-toml", "path": "plugins/nightcrow-recovery/Cargo.toml", "package": "nightcrow-recovery" },
+    { "kind": "cargo-lock", "path": "Cargo.lock", "package": "nightcrow" },
+    { "kind": "cargo-lock", "path": "Cargo.lock", "package": "nightcrow-recovery" },
+    { "kind": "npm-package", "path": "viewer-ui/package.json" },
+    { "kind": "npm-lock", "path": "viewer-ui/package-lock.json" }
+  ],
+  "assets": [
+    "nightcrow-x86_64-unknown-linux-gnu",
+    "nightcrow-x86_64-pc-windows-msvc.exe",
+    "nightcrow-x86_64-apple-darwin",
+    "nightcrow-aarch64-apple-darwin"
+  ]
+}
