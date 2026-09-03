@@ -49,6 +49,8 @@ tempfile = "3"
 toml = "1"
 toml_edit = "0.25"
 dirs = "6"
+ureq = { version = "3.4", default-features = false, features = ["rustls"] }
+sha2 = { version = "0.11", default-features = false }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 tracing-appender = "0.2"

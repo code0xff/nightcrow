@@ -53,6 +53,21 @@ pub(crate) fn discard(parked: &Path) -> bool {
     std::fs::remove_file(parked).is_ok()
 }
 
+/// Give a downloaded replacement the permissions expected of an executable.
+pub(crate) fn make_executable(path: &Path) -> io::Result<()> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+
+        let mut permissions = std::fs::metadata(path)?.permissions();
+        permissions.set_mode(0o755);
+        std::fs::set_permissions(path, permissions)?;
+    }
+    #[cfg(not(unix))]
+    let _ = path;
+    Ok(())
+}
+
 /// Delete binaries parked beside `path` by earlier updates.
 ///
 /// Best-effort: this runs on startup, where a leftover costs a few megabytes
