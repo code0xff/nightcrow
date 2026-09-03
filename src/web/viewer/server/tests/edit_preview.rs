@@ -99,6 +99,46 @@ fn an_insert_offset_past_the_source_is_refused() {
 }
 
 #[test]
+fn a_top_level_navigation_to_an_assembled_preview_is_refused() {
+    // The frame is the only context it is for; a pasted link would otherwise
+    // spend the token running markers and an agent as a first-party document on
+    // any browser that ignored the CSP sandbox.
+    let (dir, server, token, id) = seeded_server();
+    let source = "<p>x</p>";
+    std::fs::write(dir.path().join("deck.html"), source).unwrap();
+    let stash = post(
+        server.addr(),
+        &format!("/api/preview/edit?repo={id}&path=deck.html"),
+        &stash_body(serde_json::json!([]), &blob_oid(source.as_bytes())),
+        Some(&token),
+    );
+    let preview_token =
+        serde_json::from_str::<serde_json::Value>(body_of(&stash)).unwrap()["token"]
+            .as_str()
+            .unwrap()
+            .to_string();
+
+    let navigated = super::request(
+        server.addr(),
+        &format!(
+            "GET /api/preview/edit?token={preview_token} HTTP/1.1\r\nHost: 127.0.0.1\r\n\
+Cookie: {}={token}\r\nSec-Fetch-Dest: document\r\nConnection: close\r\n\r\n",
+            super::VIEWER_SESSION_COOKIE
+        ),
+    );
+    assert!(navigated.starts_with("HTTP/1.1 403"), "got: {navigated}");
+
+    // Refused without spending the token: the frame can still load it.
+    let framed = get(
+        server.addr(),
+        &format!("/api/preview/edit?token={preview_token}"),
+        Some(&token),
+    );
+    assert!(framed.starts_with("HTTP/1.1 200"), "got: {framed}");
+    drop(dir);
+}
+
+#[test]
 fn an_unknown_preview_token_is_not_found() {
     let (dir, server, token, _id) = seeded_server();
     let response = get(

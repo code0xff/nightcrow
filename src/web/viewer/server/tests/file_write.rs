@@ -16,6 +16,29 @@ fn save_body(content: &str, base_hash: &str, force: bool) -> String {
     serde_json::json!({ "content": content, "base_hash": base_hash, "force": force }).to_string()
 }
 
+/// Post a body the server will refuse unread, tolerating the broken pipe that
+/// follows: it answers and closes rather than draining megabytes it has already
+/// decided not to use.
+fn send_oversized(addr: std::net::SocketAddr, path: &str, body: &str, token: &str) -> String {
+    use std::io::{Read, Write};
+    let mut stream = std::net::TcpStream::connect(addr).unwrap();
+    stream
+        .set_read_timeout(Some(std::time::Duration::from_secs(30)))
+        .unwrap();
+    let request = format!(
+        "POST {path} HTTP/1.1\r\nHost: 127.0.0.1\r\n\
+         Content-Type: application/json\r\n\
+         Cookie: {}={token}\r\n\
+         Content-Length: {}\r\nConnection: close\r\n\r\n{body}",
+        super::VIEWER_SESSION_COOKIE,
+        body.len()
+    );
+    let _ = stream.write_all(request.as_bytes());
+    let mut buf = Vec::new();
+    let _ = stream.read_to_end(&mut buf);
+    String::from_utf8_lossy(&buf).into_owned()
+}
+
 #[test]
 fn saving_a_file_overwrites_it_and_returns_the_new_hash() {
     let (dir, server, token, id) = seeded_server();
@@ -117,6 +140,59 @@ fn a_missing_file_is_not_created() {
 
     assert!(response.starts_with("HTTP/1.1 400"), "got: {response}");
     assert!(!dir.path().join("absent.html").exists(), "{response}");
+    drop(dir);
+}
+
+#[test]
+fn a_document_past_the_general_body_cap_still_saves() {
+    // The whole point of the editor is HTML artifacts, which run well past the
+    // 64KB every other route is held to. Saving one used to arrive truncated.
+    let (dir, server, token, id) = seeded_server();
+    let before = format!("<p>{}</p>\n", "a".repeat(200_000));
+    std::fs::write(dir.path().join("big.html"), &before).unwrap();
+    let after = format!("<p>{}</p>\n", "b".repeat(200_000));
+
+    let response = post(
+        server.addr(),
+        &format!("/api/file?repo={id}&path=big.html"),
+        &save_body(&after, &blob_oid(before.as_bytes()), false),
+        Some(&token),
+    );
+
+    assert!(response.starts_with("HTTP/1.1 200"), "got: {response}");
+    assert_eq!(
+        std::fs::read_to_string(dir.path().join("big.html")).unwrap(),
+        after
+    );
+    drop(dir);
+}
+
+#[test]
+fn a_body_past_the_write_cap_is_refused_whole_rather_than_cut_to_fit() {
+    // A truncated body can still parse, and writing the part that arrived would
+    // put a half a file on disk under the name of a whole one.
+    let (dir, server, token, id) = seeded_server();
+    let before = "<p>small</p>\n";
+    std::fs::write(dir.path().join("page.html"), before).unwrap();
+    let huge = "c".repeat(crate::web::viewer::limits::MAX_FILE_WRITE_BYTES + 1);
+    let response = send_oversized(
+        server.addr(),
+        &format!("/api/file?repo={id}&path=page.html"),
+        &save_body(&huge, &blob_oid(before.as_bytes()), false),
+        &token,
+    );
+
+    // The server answers and closes without draining the upload, so the write
+    // may break before the whole body is out; either way it must not be acted on.
+    assert!(
+        response.is_empty() || response.starts_with("HTTP/1.1 413"),
+        "got: {response}"
+    );
+    assert_eq!(
+        std::fs::read_to_string(dir.path().join("page.html")).unwrap(),
+        before,
+        "the refusal wrote nothing"
+    );
     drop(dir);
 }
 

@@ -38,6 +38,12 @@ pub const MAX_SSE_PAYLOAD_BYTES: usize = 1024 * 1024;
 /// thread.
 pub const MAX_VIEWER_CONNECTIONS: usize = 64;
 
+/// The body `POST /api/file` may carry: a whole edited document, where every
+/// other route carries a small control payload. Well past any page a person
+/// edits in place (a large HTML artifact is a few hundred KB) and still far
+/// under what `MAX_VIEWER_CONNECTIONS` of it could cost at once.
+pub const MAX_FILE_WRITE_BYTES: usize = 1024 * 1024;
+
 /// A list that may have been cut short, with the fact recorded.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Capped<T> {

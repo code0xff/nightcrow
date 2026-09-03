@@ -212,6 +212,15 @@ pub(super) fn serve_edit(
     head: &crate::web::common::http::RequestHead,
     state: &super::ViewerState,
 ) -> Vec<u8> {
+    // An assembled preview is only ever meant for the editor's frame. A
+    // top-level navigation to it — a pasted link — is refused for the same
+    // reason a plain preview turns inert there: a browser ignoring the CSP
+    // sandbox would otherwise run it as a first-party document. Refused rather
+    // than served inert, since raw markers and an agent are of no use to read,
+    // and the token would be spent showing them.
+    if head.header("sec-fetch-dest") == Some("document") {
+        return super::http_util::json_error("403 Forbidden", "not from this context");
+    }
     let Some(token) = head.query_param("token").filter(|t| !t.is_empty()) else {
         return super::http_util::json_error("400 Bad Request", "missing token parameter");
     };

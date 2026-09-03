@@ -34,8 +34,18 @@ pub(super) fn accept_loop(listener: TcpListener, state: Arc<ViewerState>) {
     }
 }
 
+/// How much body each route may carry. Only the file write carries a document;
+/// everything else is a small control payload.
+fn body_limit(head: &RequestHead) -> usize {
+    if head.method == "POST" && head.path == "/api/file" {
+        limits::MAX_FILE_WRITE_BYTES
+    } else {
+        conn::MAX_BODY_BYTES
+    }
+}
+
 fn handle_connection(mut stream: TcpStream, state: Arc<ViewerState>) {
-    let (head, body) = match conn::read_request(&mut stream) {
+    let (head, body) = match conn::read_request(&mut stream, body_limit) {
         Ok(v) => v,
         Err(err) => {
             tracing::debug!(%err, "viewer: dropping malformed request");
@@ -56,6 +66,20 @@ fn handle_connection(mut stream: TcpStream, state: Arc<ViewerState>) {
         ));
         return;
     }
+
+    // An over-limit body was refused unread, so there is nothing to hand a
+    // handler. Answering is what keeps a save of an oversized file from looking
+    // like a dropped connection.
+    let body = match body {
+        conn::RequestBody::Complete(text) => text,
+        conn::RequestBody::TooLarge => {
+            let _ = stream.write_all(&json_error(
+                "413 Payload Too Large",
+                "request body is too large",
+            ));
+            return;
+        }
+    };
 
     // The login form and its POST are the only routes reachable unauthenticated.
     match (head.method.as_str(), head.path.as_str()) {

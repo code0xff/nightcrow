@@ -20,8 +20,20 @@ use std::time::{Duration, Instant};
 
 /// Reject a request head larger than this (headers only) to bound memory.
 pub const MAX_HEAD_BYTES: usize = 32 * 1024;
-/// Cap the request body read. Both servers take only small form posts.
+/// The body ceiling for a route that carries a small control payload, which is
+/// almost all of them. A route that legitimately carries more says so through
+/// the limit `read_request` is given.
 pub const MAX_BODY_BYTES: usize = 64 * 1024;
+
+/// What a request carried, or a refusal.
+pub enum RequestBody {
+    Complete(String),
+    /// The request declared a body larger than the route accepts, so none of it
+    /// was read. Refusing outright matters: a body cut to fit can still parse,
+    /// and a handler acting on the part that arrived would write a truncated
+    /// file as if it were the whole one.
+    TooLarge,
+}
 /// Per-read socket timeout while collecting the head.
 pub const HEAD_READ_TIMEOUT: Duration = Duration::from_secs(15);
 /// Wall-clock budget for the *whole* request. The socket timeout above only
@@ -32,7 +44,13 @@ pub const REQUEST_DEADLINE: Duration = Duration::from_secs(30);
 /// Read the request head (up to CRLFCRLF) plus any declared body. Both
 /// ceilings are enforced while reading, not after, so a client that never
 /// sends a terminator cannot grow the buffer without bound.
-pub fn read_request(stream: &mut TcpStream) -> Result<(RequestHead, String)> {
+///
+/// `body_limit` is asked, once the head is parsed, how much body this
+/// particular route may carry.
+pub fn read_request(
+    stream: &mut TcpStream,
+    body_limit: impl Fn(&RequestHead) -> usize,
+) -> Result<(RequestHead, RequestBody)> {
     stream.set_read_timeout(Some(HEAD_READ_TIMEOUT)).ok();
     let deadline = Instant::now() + REQUEST_DEADLINE;
     let mut buf = Vec::new();
@@ -55,7 +73,12 @@ pub fn read_request(stream: &mut TcpStream) -> Result<(RequestHead, String)> {
         std::str::from_utf8(&buf[..head_end]).context("request head is not valid UTF-8")?;
     let head = http::parse_request_head(head_text)?;
 
-    let want = head.content_length.min(MAX_BODY_BYTES);
+    // Refused before a byte of it is read, and without draining: the caller
+    // answers and closes.
+    if head.content_length > body_limit(&head) {
+        return Ok((head, RequestBody::TooLarge));
+    }
+    let want = head.content_length;
     let mut body = buf[head_end..].to_vec();
     while body.len() < want {
         if Instant::now() >= deadline {
@@ -70,7 +93,10 @@ pub fn read_request(stream: &mut TcpStream) -> Result<(RequestHead, String)> {
     body.truncate(want);
     // A WebSocket loop installs its own timeout; clear this one first.
     stream.set_read_timeout(None).ok();
-    Ok((head, String::from_utf8_lossy(&body).into_owned()))
+    Ok((
+        head,
+        RequestBody::Complete(String::from_utf8_lossy(&body).into_owned()),
+    ))
 }
 
 fn request_head_end(buf: &[u8]) -> Result<Option<usize>> {
