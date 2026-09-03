@@ -5,6 +5,7 @@ mod clone;
 mod closing;
 mod commit_routes;
 mod edit_preview;
+mod edit_round_trip;
 mod file_write;
 mod path_gate;
 mod prefs;
