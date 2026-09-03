@@ -85,7 +85,7 @@ describe("shortcutsSuppressed", () => {
   });
 
   it("텍스트_입력이면_참이다", () => {
-    // 로그인, 검색, 폴더 선택 필드가 모두 이 경로로 막힌다.
+    // Login, search, and folder-picker fields all use this guard.
     expect(
       shortcutsSuppressed({
         ...idle,

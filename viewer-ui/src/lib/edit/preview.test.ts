@@ -14,13 +14,10 @@ describe("previewEdits", () => {
   it("is one marker per block plus a single head payload, agent before style", () => {
     const blocks = parseBlocks(DOC);
     const edits = previewEdits(DOC, blocks, "tok");
-    // markerEdits first, the head injection last.
     expect(edits).toHaveLength(blocks.length + 1);
     const head = edits[edits.length - 1]!;
     expect(head.start).toBe(head.end); // an insertion
-    // Agent first (runs before the artifact's scripts), then the style.
     expect(head.text.indexOf("<script>")).toBeLessThan(head.text.indexOf("<style>"));
-    // The others are marker insertions.
     for (const e of edits.slice(0, -1)) {
       expect(e.start).toBe(e.end);
       expect(e.text).toMatch(/ data-ne-id="\d+"/);
@@ -34,7 +31,6 @@ describe("buildPreviewDocument", () => {
     const html = buildPreviewDocument(DOC, blocks, "tok");
     expect(html).toMatch(/<p data-ne-id="\d+">Hello<\/p>/);
     expect(html).toContain("function previewAgent");
-    // The agent runs before the artifact's own script.
     expect(html.indexOf("function previewAgent")).toBeLessThan(html.indexOf("run()"));
   });
 
@@ -53,7 +49,7 @@ describe("previewInserts", () => {
     const blocks = parseBlocks(source);
     const inserts = previewInserts(source, blocks);
     const secondMarker = inserts.find((i) => i.text.includes('data-ne-id="1"'));
-    // JS index of the second <p>'s '>' is 12; its byte offset is 12 + 2 extra
+    // JS index of the second <p>'s '>' is 11; its byte offset is 11 + 2 extra
     // bytes for each of the two Korean characters = 16.
     const jsIndex = source.indexOf("</p>") + "</p><p".length;
     expect(secondMarker!.at).toBe(new TextEncoder().encode(source.slice(0, jsIndex)).length);

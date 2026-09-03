@@ -37,9 +37,9 @@ describe("ShortcutHelp leader configuration", () => {
 
     expect(settings.current?.leaderText).toBe("Alt+G");
     expect(keys("terminal.newPane")).toEqual(["Alt+G", "t"]);
-    // leader 시퀀스에는 aria 속성이 없다. 시트의 <kbd>와 버튼이 그 역할을 한다.
+    // ARIA has no two-step syntax; the sheet's <kbd> and button expose it.
     expect(row("terminal.newPane").hasAttribute("aria-keyshortcuts")).toBe(false);
-    // standalone chord는 리더와 무관하므로 그대로다.
+    // Standalone chords do not depend on the leader.
     expect(keys("project.next")).toEqual(["Ctrl+Shift+ArrowRight"]);
     expect(row("project.next").getAttribute("aria-keyshortcuts")).toBe(
       "Control+Shift+ArrowRight",
@@ -47,8 +47,8 @@ describe("ShortcutHelp leader configuration", () => {
   });
 
   it("코드가_아닌_문자열은_거부를_보여주고_설정을_바꾸지_않는다", () => {
-    // `setLeader`가 false를 주는 경우다. 조용히 무시하면 다음 키를 누를 때까지
-    // 성공한 재바인딩과 구별되지 않는다.
+    // A rejected binding must be visible instead of looking successful until
+    // the next keystroke.
     const { settings } = mount({});
 
     type("Ctrl+");
@@ -70,7 +70,6 @@ describe("ShortcutHelp leader configuration", () => {
       "the leader is switched off",
     );
     expect(row("terminal.newPane").hasAttribute("aria-keyshortcuts")).toBe(false);
-    // 리더 없이도 standalone chord는 살아 있다.
     expect(keys("project.next")).toEqual(["Ctrl+Shift+ArrowRight"]);
   });
 
@@ -85,7 +84,7 @@ describe("ShortcutHelp leader configuration", () => {
   });
 
   it("기본_리더의_브라우저_충돌을_눈에_보이게_경고한다", () => {
-    // Ctrl+F는 브라우저의 Find다. 말없이 가져가지 않는 것이 요구사항이다.
+    // Ctrl+F is the browser's Find, so taking it must be reported.
     const { settings } = mount({});
 
     expect(screen.getByRole("status").textContent).toContain("in-page Find");

@@ -40,7 +40,6 @@ describe("ShortcutHintBar", () => {
     expect(bar.textContent).toContain("Ctrl+F: leader");
     expect(bar.textContent).toContain("Ctrl+F t: new pane");
     expect(bar.textContent).toContain("Ctrl+F ?: shortcuts");
-    // 패널이 등록하지 않은 명령은 이 화면에서 할 수 없는 일이다.
     expect(bar.textContent).not.toContain("close pane");
     expect(bar.querySelector("[data-hint-chip]")).toBeNull();
   });
@@ -62,7 +61,7 @@ describe("ShortcutHintBar", () => {
     const down = fireEvent.pointerDown(newPane);
     fireEvent.click(newPane);
 
-    // pointerdown이 막혀야 버튼이 pane에서 caret을 빼앗지 않는다.
+    // Blocking pointerdown keeps the button from stealing the pane's caret.
     expect(down).toBe(false);
     expect(onClick).toHaveBeenCalledWith({ kind: "run", action: "terminal.newPane" });
 

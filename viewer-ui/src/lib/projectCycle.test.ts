@@ -42,13 +42,13 @@ describe("neighborRepo", () => {
   });
 
   it("목록에_없는_선택이면_아무것도_하지_않는다", () => {
-    // 폴링이 아직 정리하지 못한 상태다. 여기서 첫 탭으로 뛰면 그 결정과 다툰다.
+    // The poll is still resolving; jumping to the first tab would race it.
     expect(neighborRepo(["a", "b"], "gone", 1)).toBeNull();
     expect(neighborRepo(["a", "b"], "gone", -1)).toBeNull();
   });
 
   it("중복이_있으면_첫_등장을_기준으로_센다", () => {
-    // 탭 목록은 중복 없는 id를 주지만, 계산이 무엇을 하는지는 고정해 둔다.
+    // The tab list is unique, but keep this helper's duplicate-id behavior fixed.
     expect(neighborRepo(["a", "b", "a"], "a", 1)).toBe("b");
   });
 });

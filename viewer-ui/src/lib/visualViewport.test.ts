@@ -158,8 +158,8 @@ describe("softKeyboardInset", () => {
   });
 
   it("문턱_아래의_차이는_키보드가_아니다", () => {
-    // URL bar가 접히는 정도의 차이는 두 뷰포트가 함께 움직여 남지 않지만,
-    // 남더라도 키보드로 읽지 않는다.
+    // A collapsing URL bar moves both viewports together; any remaining small
+    // gap is not treated as a keyboard.
     expect(
       softKeyboardInset(
         withViewport(800, { height: 800 - SOFT_KEYBOARD_MIN_PX + 1, offsetTop: 0 }),

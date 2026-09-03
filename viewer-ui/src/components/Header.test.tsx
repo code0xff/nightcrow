@@ -46,8 +46,7 @@ function mount(over: Partial<HeaderProps> = {}) {
 
 describe("Header", () => {
   it("leader_시퀀스에_묶인_컨트롤은_title로만_키를_말한다", () => {
-    // ARIA에 두 단계 표기가 없으므로 속성을 두지 않는다. 시퀀스는 title과
-    // 단축키 시트가 나른다.
+    // ARIA has no two-step notation; the title and shortcut sheet carry it.
     mount();
 
     const accent = screen.getByRole("button", { name: /accent colour/ });
@@ -66,7 +65,7 @@ describe("Header", () => {
   });
 
   it("헤더_어디에도_빈_aria_keyshortcuts는_없다", () => {
-    // `aria-keyshortcuts=""`나 `="undefined"`는 그 자체로 버그다.
+    // Empty or undefined `aria-keyshortcuts` values are invalid.
     mount();
 
     const marked = [...document.querySelectorAll("[aria-keyshortcuts]")];
@@ -79,7 +78,7 @@ describe("Header", () => {
   });
 
   it("탭_스트립_전체가_프로젝트_순환_코드_두_개를_알린다", () => {
-    // 두 코드는 현재 프로젝트를 기준으로 상대 이동이므로 어느 탭의 키도 아니다.
+    // These chords move relative to the active project, so the strip owns them.
     mount();
 
     const strip = screen.getByRole("navigation");
@@ -87,16 +86,16 @@ describe("Header", () => {
       "Control+Shift+ArrowLeft Control+Shift+ArrowRight",
     );
     for (const repo of repos) {
-      // 스트립 안에서 찾는다: 좁은 화면용 `ProjectMenu`의 트리거도 현재
-      // 프로젝트 이름을 쓰기 때문이다.
+      // Search inside the strip because the narrow-screen menu uses the same
+      // project name for its trigger.
       const tab = within(strip).getByRole("button", { name: repo.name });
       expect(tab.hasAttribute("aria-keyshortcuts")).toBe(false);
     }
   });
 
   it("닫기_키_안내는_앞에_있는_프로젝트_탭에만_붙는다", () => {
-    // `project.close`는 현재 프로젝트를 닫으므로 다른 탭에서는 다른 것을
-    // 가리킨다. leader 시퀀스라 속성은 없고, title이 차이를 진다.
+    // Closing targets the active project; another tab would advertise a
+    // different command. The leader sequence is carried by the title only.
     mount();
 
     expect(

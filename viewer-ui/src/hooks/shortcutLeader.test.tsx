@@ -40,8 +40,8 @@ function mount(leader: ChordSpec | null) {
 
 describe("useShortcutHint", () => {
   it("leader_시퀀스는_title로만_말하고_aria_속성은_두지_않는다", () => {
-    // ARIA에는 두 단계 시퀀스 표기가 없다. 공백으로 적으면 후속 키 하나로도
-    // 실행된다는 틀린 주장이 되므로 속성을 아예 두지 않는다.
+    // ARIA has no two-step notation; a space-separated value would falsely
+    // claim that the follow-up key runs the action by itself.
     const { button } = mount(DEFAULT_LEADER);
 
     expect(button.getAttribute("title")).toBe("New terminal (Ctrl+F then t)");
@@ -60,14 +60,13 @@ describe("useShortcutHint", () => {
   });
 
   it("리더를_바꾸면_같은_컨트롤이_새_키를_말한다", () => {
-    // 컨트롤마다 문자열을 적어 두면 재바인딩이 일부만 반영된다.
+    // Deriving the value avoids stale bindings when the leader is rebound.
     const { button, chordButton, rerender } = mount(DEFAULT_LEADER);
 
     rerender(parseChord("Alt+G"));
 
     expect(button.getAttribute("title")).toBe("New terminal (Alt+G then t)");
     expect(button.hasAttribute("aria-keyshortcuts")).toBe(false);
-    // chord는 리더와 무관하므로 움직이지 않는다.
     expect(chordButton.getAttribute("aria-keyshortcuts")).toBe(
       "Control+Shift+ArrowRight",
     );
@@ -81,7 +80,7 @@ describe("useShortcutHint", () => {
   });
 
   it("provider_밖에서는_leader_키_없이_렌더된다", () => {
-    // 격리된 컴포넌트 테스트가 이 context에 의존하지 않게 하는 쪽을 택했다.
+    // Isolated component tests should not require this context.
     render(<Probe />);
 
     const button = screen.getByRole("button", { name: "new" });
@@ -90,7 +89,7 @@ describe("useShortcutHint", () => {
   });
 
   it("빈_aria_keyshortcuts를_렌더하지_않는다", () => {
-    // `aria-keyshortcuts=""`는 그 자체로 버그다: 타입만 보면 놓친다.
+    // An empty `aria-keyshortcuts` value is invalid even when the type allows it.
     mount(DEFAULT_LEADER);
 
     for (const node of document.querySelectorAll("[aria-keyshortcuts]")) {

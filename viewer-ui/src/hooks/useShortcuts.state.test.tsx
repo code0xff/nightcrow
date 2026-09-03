@@ -54,7 +54,6 @@ describe("useShortcuts state", () => {
     engine.arm();
     expect(engine.state()).toEqual(ARMED);
 
-    // 무장된 리더가 힌트 클릭으로 명령을 실행했으면 다음 키가 후속 키로 읽히지 않아야 한다.
     engine.disarm();
     expect(engine.state()).toEqual({ armed: false });
   });
