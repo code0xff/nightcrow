@@ -155,6 +155,9 @@
   "reloaded": {
     "summary": "config reloaded: 1 plugin across 1 open project; 2 startup panes apply to newly opened projects"
   },
+  "savedFile": {
+    "hash": "0123456789abcdef0123456789abcdef01234567"
+  },
   "status": {
     "branch": "dev",
     "files": [

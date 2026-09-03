@@ -195,6 +195,14 @@ fn wire_fixture() -> serde_json::Value {
             name: "scratch".to_string(),
             display_path: "~/code/scratch".to_string(),
         }}),
+        // What `POST /api/file` answers on a successful write: the blob oid of
+        // the saved contents, which the client keeps as the base for its next
+        // save so a stale write is caught. The `409` refusal it can also send
+        // carries `currentHash` and is an error shape, not a served payload,
+        // so it is not modelled here.
+        "savedFile": serde_json::json!({
+            "hash": "0123456789abcdef0123456789abcdef01234567",
+        }),
         // One shape for every `/api/prefs` write: the full stored prefs, so
         // a client that set the accent and one that set the width both read
         // the clamped result back the same way.

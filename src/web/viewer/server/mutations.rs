@@ -1,9 +1,11 @@
+mod file;
 mod filesystem;
 mod lookup;
 mod preferences;
 mod reload;
 mod repository;
 
+pub(super) use file::handle_write_file;
 pub(super) use filesystem::handle_mkdir;
 pub(super) use lookup::{lookup_repo, redact};
 pub(super) use preferences::handle_set_prefs;

@@ -16,6 +16,7 @@ import type {
   Repo,
   RepoView,
   RunningClone,
+  SavedFile,
   Status,
   StoredPrefs,
   Tree,
@@ -118,6 +119,50 @@ export const api = {
     get<Diff>(`/api/diff?${query({ repo, path })}`),
   file: (repo: string, path: string) =>
     get<FileView>(`/api/file?${query({ repo, path })}`),
+  /** Overwrite a working-tree file with edited contents.
+   *
+   *  `baseHash` is the blob oid the edit began from. If the file on disk has
+   *  moved on from it the server refuses with `409` rather than clobber the
+   *  change — surfaced here as `{ ok: false, currentHash }` so the caller can
+   *  warn and, if the user insists, retry with `force`. A plain `post` cannot
+   *  carry the `currentHash` out of a thrown error, so this reads the response
+   *  itself. */
+  save: async (
+    repo: string,
+    path: string,
+    content: string,
+    baseHash: string,
+    force = false,
+  ): Promise<{ ok: true; hash: string } | { ok: false; currentHash: string }> => {
+    const response = await request(`/api/file?${query({ repo, path })}`, {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ content, base_hash: baseHash, force }),
+    });
+    if (response.status === 409) {
+      const body = (await response.json()) as { currentHash?: string };
+      return { ok: false, currentHash: String(body.currentHash ?? "") };
+    }
+    if (!response.ok) {
+      let message = `save failed (${response.status})`;
+      try {
+        const body = await response.json();
+        if (typeof body?.error === "string") message = body.error;
+      } catch {
+        // No JSON body; the status-code message stands.
+      }
+      throw new ApiError(response.status, message);
+    }
+    const body = (await response.json()) as { version?: number } & SavedFile;
+    if (body.version !== PROTOCOL_VERSION) {
+      throw new ApiError(
+        response.status,
+        `this page is out of date (server protocol v${body.version}) — reload`,
+      );
+    }
+    return { ok: true, hash: body.hash };
+  },
   commit: (repo: string, oid: string) =>
     get<Diff>(`/api/commit?${query({ repo, oid })}`),
   commitFiles: (repo: string, oid: string) =>

@@ -31,6 +31,7 @@ import {
   type Repo,
   type RepoView,
   type RepoViewByRepo,
+  type SavedFile,
   type Status,
   type StoredPrefs,
   type Tree,
@@ -232,5 +233,11 @@ describe("wire contract", () => {
     const reloaded: Reloaded = fixture.reloaded;
     // 문구는 서버가 만든다 — 브라우저 토스트와 TUI notice가 같은 말을 하도록.
     expect(reloaded.summary).toContain("config reloaded");
+  });
+
+  it("파일_저장_응답이_SavedFile과_맞는다", () => {
+    const saved: SavedFile = fixture.savedFile;
+    // The blob oid the client keeps as the base for its next save.
+    expect(saved.hash).toHaveLength(40);
   });
 });

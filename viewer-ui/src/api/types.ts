@@ -74,6 +74,12 @@ export interface Reloaded {
   summary: string;
 }
 
+/** What a successful `POST /api/file` returns: the blob oid of the saved
+ *  contents, kept as the base for the next save. */
+export interface SavedFile {
+  hash: string;
+}
+
 export interface ViewerBootstrap {
   repos: Repo[];
   hot: HotConfig;

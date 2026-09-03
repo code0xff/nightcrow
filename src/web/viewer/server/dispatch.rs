@@ -2,7 +2,7 @@ use super::clone_routes;
 use super::http_util::{json_error, json_response, text_response};
 use super::mutations::{
     handle_close_repo, handle_mkdir, handle_open_repo, handle_reload_config, handle_reorder_repos,
-    handle_set_prefs,
+    handle_set_prefs, handle_write_file,
 };
 use super::routes::route;
 use super::{VIEWER_SESSION_COOKIE, ViewerState};
@@ -133,6 +133,14 @@ fn handle_connection(mut stream: TcpStream, state: Arc<ViewerState>) {
     // repository is: a cross-site page cannot trigger it.
     if head.method == "POST" && head.path == "/api/prefs" {
         let _ = stream.write_all(&handle_set_prefs(&body, &state));
+        return;
+    }
+
+    // Overwriting a working-tree file with edited contents. POST for the same
+    // CSRF reasoning, and inside the terminal's trust boundary — see
+    // `mutations::file`. The read side of this path is `GET /api/file`.
+    if head.method == "POST" && head.path == "/api/file" {
+        let _ = stream.write_all(&handle_write_file(&head, &body, &state));
         return;
     }
 
