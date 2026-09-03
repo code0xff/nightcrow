@@ -11,7 +11,7 @@ node scripts/prepare-release.mjs
 node scripts/prepare-release.mjs --json
 ```
 
-On a clean branch, use `--execute` to update all six version entries. The first no-tag release is `0.1.1`; after that, the next version is exactly one patch above the highest official `v0.1.*` tag. An explicit `--version` is accepted only when it matches that calculated value.
+On a clean branch, use `--execute` to update all six version entries. The tool reads tags from the authoritative `code0xff/nightcrow` remote (or the official HTTPS URL when that remote is not configured), never from a stale local tag list; tag-network or authentication failures stop the command. The first no-tag release is `0.1.1`; after that, the next version is exactly one patch above the highest official `v0.1.*` tag. An explicit `--version` is accepted only when it matches that calculated value.
 
 ```bash
 node scripts/prepare-release.mjs --execute

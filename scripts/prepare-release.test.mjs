@@ -7,6 +7,7 @@ import { spawnSync } from "node:child_process";
 import {
   assertVersionsAgree,
   checkRoot,
+  gitTags,
   nextPatchFromTags,
   patchVersion,
   readVersions,
@@ -70,6 +71,7 @@ test("the policy cannot be changed to a major or minor series", () => {
 test("execute updates every application version entry without touching dependencies", () => {
   const source = process.cwd();
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "nightcrow-release-"));
+  let remote;
   try {
     fs.cpSync(path.join(source, ".github"), path.join(root, ".github"), { recursive: true });
     for (const file of ["Cargo.toml", "Cargo.lock", "README.md"]) fs.copyFileSync(path.join(source, file), path.join(root, file));
@@ -94,8 +96,14 @@ test("execute updates every application version entry without touching dependenc
     git("commit", "--quiet", "-m", "fixture");
     git("tag", "v0.1.1");
     git("tag", "v0.1.2");
-    assert.equal(checkRoot(root, { release: true }).current, "0.1.2");
+    remote = fs.mkdtempSync(path.join(os.tmpdir(), "nightcrow-release-remote-"));
+    git("init", "--bare", remote);
+    git("remote", "add", "authoritative", remote);
+    git("push", "--quiet", "authoritative", "v0.1.1", "v0.1.2");
+    assert.equal(checkRoot(root, { release: true, tagRemote: remote }).current, "0.1.2");
+    assert.throws(() => gitTags(root, policy, path.join(root, "missing-remote")), /authoritative/);
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
+    if (remote) fs.rmSync(remote, { recursive: true, force: true });
   }
 });

@@ -3,9 +3,11 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { spawnSync } from "node:child_process";
 import {
   compareReleaseAssets,
   localAssetInfo,
+  parseCliArgs,
   verifyBinaryAssets,
   verifyFinalAssets,
   writeChecksums,
@@ -67,5 +69,26 @@ test("an existing asset with a different digest or size is never overwritten", (
     assert.throws(() => compareReleaseAssets({ draft: false, assets: remote }, local, assets), /refusing to overwrite/);
   } finally {
     fs.rmSync(dist, { recursive: true, force: true });
+  }
+});
+
+test("publish CLI accepts separated values and the entrypoint reaches validation", () => {
+  assert.deepEqual(parseCliArgs(["--version", "0.1.1", "--dist", "release-dist", "--root", "repo"]), {
+    version: "0.1.1",
+    dist: "release-dist",
+    root: "repo",
+  });
+  assert.deepEqual(parseCliArgs(["--version=0.1.1", "--dist=release-dist", "--root=repo"]), {
+    version: "0.1.1",
+    dist: "release-dist",
+    root: "repo",
+  });
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "nightcrow-publish-cli-"));
+  try {
+    const result = spawnSync(process.execPath, [path.join(process.cwd(), "scripts/publish-release.mjs"), "--version", "0.1.1", "--dist", "dist", "--root", root], { encoding: "utf8" });
+    assert.notEqual(result.status, 0);
+    assert.doesNotMatch(result.stderr, /unknown argument/);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
   }
 });

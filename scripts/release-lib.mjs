@@ -146,10 +146,39 @@ export function nextPatchFromTags(tags, policy, currentVersion) {
   return expected;
 }
 
-export function gitTags(root) {
-  const result = spawnSync("git", ["tag", "--list"], { cwd: root, encoding: "utf8" });
-  if (result.status !== 0) throw new Error(result.stderr.trim() || "could not read git tags");
-  return result.stdout.split(/\r?\n/).filter(Boolean);
+function normalizedRepository(value) {
+  let url = value.trim().replace(/\.git\/?$/, "");
+  if (url.startsWith("git@github.com:")) url = `https://github.com/${url.slice("git@github.com:".length)}`;
+  if (url.startsWith("ssh://git@github.com/")) url = `https://github.com/${url.slice("ssh://git@github.com/".length)}`;
+  try {
+    const parsed = new URL(url);
+    if (parsed.hostname.toLowerCase() !== "github.com") return null;
+    return `${parsed.hostname.toLowerCase()}${parsed.pathname}`.replace(/\/$/, "");
+  } catch {
+    return null;
+  }
+}
+
+function repositoryKey(repository) {
+  return `github.com/${repository}`.replace(/\.git\/?$/, "").toLowerCase();
+}
+
+export function authoritativeRemote(root, policy) {
+  const remotes = spawnSync("git", ["remote"], { cwd: root, encoding: "utf8" });
+  if (remotes.status !== 0) throw new Error(remotes.stderr.trim() || "could not inspect git remotes");
+  const expected = repositoryKey(policy.repository);
+  for (const remote of remotes.stdout.split(/\r?\n/).filter(Boolean)) {
+    const url = spawnSync("git", ["remote", "get-url", remote], { cwd: root, encoding: "utf8" });
+    if (url.status === 0 && normalizedRepository(url.stdout) === expected) return remote;
+  }
+  return `https://github.com/${policy.repository}.git`;
+}
+
+export function gitTags(root, policy = loadPolicy(root), remoteOverride) {
+  const remote = remoteOverride || authoritativeRemote(root, policy);
+  const result = spawnSync("git", ["ls-remote", "--tags", "--refs", remote], { cwd: root, encoding: "utf8" });
+  if (result.status !== 0) throw new Error("could not read authoritative release tags; network or authentication failure");
+  return result.stdout.split(/\r?\n/).filter(Boolean).map((line) => line.split(/\s+/)[1].replace(/^refs\/tags\//, ""));
 }
 
 function replaceCargoToml(text, packageName, next, relativePath) {
@@ -211,11 +240,11 @@ export function updateVersions(root, policy, next) {
   return { current, next, changed: [...changed] };
 }
 
-export function checkRoot(root, { release = false } = {}) {
+export function checkRoot(root, { release = false, tagRemote } = {}) {
   const policy = loadPolicy(root);
   const entries = readVersions(root, policy);
   const current = assertVersionsAgree(entries);
-  const tags = release ? gitTags(root) : [];
+  const tags = release ? gitTags(root, policy, tagRemote) : [];
   const expected = release ? nextPatchFromTags(tags, policy, current) : current;
   if (release && expected !== current) {
     const currentTag = `${policy.tagPrefix}${current}`;

@@ -4,7 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { pathToFileURL } from "node:url";
-import { checkRoot, loadPolicy } from "./release-lib.mjs";
+import { authoritativeRemote, checkRoot, loadPolicy } from "./release-lib.mjs";
 
 function command(name, args, options = {}) {
   const result = spawnSync(name, args, { encoding: "utf8", ...options });
@@ -15,10 +15,18 @@ function command(name, args, options = {}) {
   return result.stdout.trim();
 }
 
-function argument(name) {
-  const prefix = `${name}=`;
-  const value = process.argv.find((arg) => arg.startsWith(prefix));
-  return value?.slice(prefix.length);
+export function parseCliArgs(argv) {
+  const options = {};
+  for (let index = 0; index < argv.length; index += 1) {
+    const arg = argv[index];
+    const equals = arg.indexOf("=");
+    const name = equals < 0 ? arg : arg.slice(0, equals);
+    if (!["--version", "--dist", "--root"].includes(name)) throw new Error(`unknown argument: ${arg}`);
+    const value = equals < 0 ? argv[++index] : arg.slice(equals + 1);
+    if (!value || value.startsWith("--")) throw new Error(`${name} requires a value`);
+    options[name.slice(2)] = value;
+  }
+  return options;
 }
 
 function digest(file) {
@@ -81,8 +89,8 @@ export function compareReleaseAssets(release, local, assets) {
   return { missing };
 }
 
-function remoteTagSha(tag) {
-  const output = command("git", ["ls-remote", "origin", `refs/tags/${tag}`, `refs/tags/${tag}^{}`]);
+function remoteTagSha(remote, tag) {
+  const output = command("git", ["ls-remote", remote, `refs/tags/${tag}`, `refs/tags/${tag}^{}`]);
   if (!output) return null;
   const lines = output.split(/\r?\n/).filter(Boolean);
   const peeled = lines.find((line) => line.endsWith(`refs/tags/${tag}^{}`));
@@ -126,14 +134,15 @@ function publish(root, dist, version) {
   writeChecksums(dist, policy.assets);
   const local = verifyFinalAssets(dist, policy.assets);
   const tag = `${policy.tagPrefix}${version}`;
-  const existingSha = remoteTagSha(tag);
+  const remote = authoritativeRemote(root, policy);
+  const existingSha = remoteTagSha(remote, tag);
   if (existingSha && existingSha !== sha) throw new Error(`${tag} already points to ${existingSha}, expected ${sha}`);
   if (!existingSha) {
     command("git", ["tag", tag, sha]);
     try {
-      command("git", ["push", "origin", `refs/tags/${tag}`]);
+      command("git", ["push", remote, `refs/tags/${tag}`]);
     } catch (error) {
-      const racedSha = remoteTagSha(tag);
+      const racedSha = remoteTagSha(remote, tag);
       if (racedSha !== sha) throw error;
     }
   }
@@ -173,9 +182,10 @@ function publish(root, dist, version) {
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   try {
-    const root = path.resolve(argument("--root") || process.cwd());
-    const dist = path.resolve(argument("--dist") || path.join(root, "release-dist"));
-    const version = argument("--version");
+    const options = parseCliArgs(process.argv.slice(2));
+    const root = path.resolve(options.root || process.cwd());
+    const dist = path.resolve(options.dist || path.join(root, "release-dist"));
+    const version = options.version;
     if (!version) throw new Error("--version is required");
     console.log(JSON.stringify(publish(root, dist, version)));
   } catch (error) {

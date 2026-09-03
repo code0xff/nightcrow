@@ -20,6 +20,8 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 22
+      - name: Test release automation
+        run: node --test scripts/prepare-release.test.mjs scripts/publish-release.test.mjs
       - name: Verify application package versions agree
         run: |
           node <<'NODE'
