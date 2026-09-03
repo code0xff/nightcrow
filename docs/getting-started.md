@@ -2,11 +2,13 @@
 
 ## Install
 
-Install the released source directly from GitHub:
+Install from the official source repository:
 
 ```bash
 cargo install --git https://github.com/code0xff/nightcrow --locked
 ```
+
+After the first install, the no-argument updater uses the latest binary from the official GitHub Release. This keeps routine updates independent of the mutable development branches.
 
 For a checkout you are developing locally:
 
@@ -57,9 +59,10 @@ If a client loses its connection, reattach after confirming that the daemon is s
 
 ```bash
 nightcrow update
+nightcrow update --version 0.1.1
 ```
 
-By default this reinstalls from the upstream repository. Use `--path DIR` for a local checkout or `--git URL` for another Git repository. The command requires Rust and runs a locked, forced `cargo install`. Restart the session after updating so the daemon and its panes use the new binary. On Windows, `update` moves the installed executable aside before replacing it; rerunning plain `cargo install` while a session is running can fail because Windows locks the executable.
+By default this downloads and verifies the latest binary from the official GitHub Release. Use `--version VER` to roll back to a published patch. Use `--path DIR` for a local checkout or `--git URL` for another source repository; those explicit development modes require Rust and run a locked, forced `cargo install`. Restart the session after updating so the daemon and its panes use the new binary. On Windows, `update` moves the installed executable aside before replacing it.
 
 ## Building and testing
 

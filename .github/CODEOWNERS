@@ -1,0 +1,7 @@
+# Release policy and release automation require the upstream maintainer's review.
+/.github/release-policy.json @code0xff
+/.github/workflows/release.yml @code0xff
+/.agents/rules/releases.md @code0xff
+/scripts/release-lib.mjs @code0xff
+/scripts/prepare-release.mjs @code0xff
+/scripts/publish-release.mjs @code0xff

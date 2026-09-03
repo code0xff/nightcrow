@@ -13,6 +13,8 @@ Agent-adjacent Rust TUI: 상단은 git diff/commit log 뷰어, 하단은 split-v
 
 ## Scope guides
 
+Release governance and the fork-to-upstream promotion contract are in [`.agents/rules/releases.md`](.agents/rules/releases.md).
+
 변경 범위에 해당하는 scope guide도 함께 읽는다. 공통 규칙을 scope guide에 다시 적지 않는다.
 
 - `docs/AGENTS.md` — `docs/`
