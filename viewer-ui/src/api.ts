@@ -12,6 +12,7 @@ import type {
   Diff,
   FileView,
   Log,
+  EditPreviewToken,
   Reloaded,
   Repo,
   RepoView,
@@ -107,6 +108,49 @@ export const api = {
    *  commit's version of the file rather than the working tree's. */
   previewUrl: (repo: string, path: string, oid?: string) =>
     `/api/preview?${query(oid ? { repo, path, oid } : { repo, path })}`,
+  /** Assemble an editable preview: the server splices `inserts` into its copy of
+   *  the file (verified against `baseHash`) and returns a one-time token the
+   *  frame loads through `editPreviewUrl`. A stale base is `{ ok: false,
+   *  currentHash }`, the same shape as `save`, so the editor can reparse. */
+  editPreview: async (
+    repo: string,
+    path: string,
+    inserts: { at: number; text: string }[],
+    baseHash: string,
+    oid?: string,
+  ): Promise<{ ok: true; token: string } | { ok: false; currentHash: string }> => {
+    const url = `/api/preview/edit?${query(oid ? { repo, path, oid } : { repo, path })}`;
+    const response = await request(url, {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ inserts, base_hash: baseHash }),
+    });
+    if (response.status === 409) {
+      const body = (await response.json()) as { currentHash?: string };
+      return { ok: false, currentHash: String(body.currentHash ?? "") };
+    }
+    if (!response.ok) {
+      let message = `preview failed (${response.status})`;
+      try {
+        const body = await response.json();
+        if (typeof body?.error === "string") message = body.error;
+      } catch {
+        // No JSON body; the status-code message stands.
+      }
+      throw new ApiError(response.status, message);
+    }
+    const body = (await response.json()) as { version?: number } & EditPreviewToken;
+    if (body.version !== PROTOCOL_VERSION) {
+      throw new ApiError(
+        response.status,
+        `this page is out of date (server protocol v${body.version}) — reload`,
+      );
+    }
+    return { ok: true, token: body.token };
+  },
+  /** The URL the frame loads to fetch an assembled editable preview once. */
+  editPreviewUrl: (token: string) => `/api/preview/edit?${query({ token })}`,
   log: (repo: string, page?: { from: string; skip: number }) =>
     get<Log>(
       `/api/log?${query(

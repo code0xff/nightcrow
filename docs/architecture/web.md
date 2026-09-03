@@ -39,6 +39,8 @@ terminal connection은 읽기와 쓰기를 bounded polling으로 다루며, stal
 
 `POST /api/file`은 working-tree 파일 하나를 편집 내용으로 덮어쓰는 유일한 file-write route다. 다른 mutation과 같은 Origin 검사와 `SameSite=Strict` cookie로 CSRF를 막고, `/api/file` read가 쓰는 worktree gate(`resolve_in_workdir`: traversal·symlink·git 디렉터리 거부)를 그대로 통과한다. authenticated user는 terminal에서 이미 파일을 쓸 수 있으므로 같은 신뢰 경계 안이고, 존재하는 working-tree 파일만 대상이다(commit 버전은 read-only history). optimistic concurrency: body의 `base_hash`(편집이 시작된 blob oid)가 디스크의 현재 oid와 다르면 `409`로 `currentHash`와 함께 거부해 밑에서 바뀐 변경을 덮지 않으며, `force`가 이를 무릅쓴다. 성공 응답은 저장된 내용의 blob oid를 돌려주어 client가 다음 저장의 base로 삼는다.
 
+`/api/preview/edit`는 인라인 편집용 프리뷰를 조립한다. `srcdoc`는 부모 CSP를 상속해 인라인 스크립트가 안 도므로, 편집 에이전트가 실행되려면 자체 정책을 실은 네트워크 응답이어야 한다. 블록 검출(parse5)은 클라이언트에 있고 조립된 HTML은 64KB 본문 상한을 넘으므로, 클라이언트는 작은 insert 목록(블록마다 마커 하나 + 에이전트를 담은 head 페이로드)을 UTF-8 바이트 오프셋으로 POST한다. 서버는 파일을 다시 읽어 `base_hash`(blob oid)와 일치할 때만(불일치 시 `409` + `currentHash`) insert를 splice하고, 결과를 1회용 토큰으로 stash한 뒤 토큰을 돌려준다. 프레임은 `GET /api/preview/edit?token=`으로 그 문서를 한 번 받아 preview 정책(sandbox+실행 CSP) 아래 로드한다. stash는 세션 트러스트 안의 임시 상태이고 토큰은 소비되며, 조립물은 디스크에 쓰이지 않는다. 편집 결과 저장은 `POST /api/file`이 맡는다.
+
 `/api/log`는 `MAX_LOG_PAGE = 100`과 `from=<head oid> + skip`을 사용한다. `from`은 같은 revwalk의 anchor이므로 page 사이에 새 commit이 생겨도 offset이 흔들리지 않는다. cursor를 마지막 oid의 조상으로 삼지 않는다. `skip`은 history length보다 더 걷지 않으며, `page + 1`개를 읽어 `truncated`를 판정한다. filter 중에는 추가 page를 자동 요청하지 않고, page 실패는 retry 가능한 stalled 상태로 표시한다. status의 HEAD가 바뀌면 log cache를 fresh page와 generation으로 갱신한다.
 
 ## Browser state and frontend

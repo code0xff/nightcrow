@@ -6,6 +6,7 @@
 
 mod clone_routes;
 mod dispatch;
+mod edit_preview;
 mod handlers;
 mod http_util;
 mod mutations;
@@ -42,6 +43,7 @@ pub struct ViewerState {
     pub(super) hot: crate::config::AgentIndicatorConfig,
     pub(super) clones: crate::web::viewer::clone_jobs::CloneJobs,
     pub(super) git_available: bool,
+    pub(in crate::web::viewer::server) edit_previews: edit_preview::EditPreviewStore,
 }
 
 pub struct ViewerServer {
@@ -88,6 +90,7 @@ impl ViewerState {
             hot: options.hot,
             clones: Default::default(),
             git_available: crate::git::clone::git_available(),
+            edit_previews: Default::default(),
             session: Arc::new(SessionState::with_plugins(options.session, plugins)),
         }
     }

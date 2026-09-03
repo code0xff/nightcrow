@@ -150,6 +150,9 @@ pub(super) fn route(head: &RequestHead, state: &ViewerState) -> Vec<u8> {
         // answers *about* the repository, never with its files". See `preview`
         // for what its response's own policy opens and keeps shut.
         "/api/preview" => super::preview::route(head, state),
+        // The frame loads an assembled editable preview by its one-time token;
+        // the POST that produced the token is handled in `dispatch`.
+        "/api/preview/edit" => super::preview::serve_edit(head, state),
         "/api/log" => with_repo(head, state, |entry| {
             let repo = open_repo(&entry.path)?;
             // `from` pins the walk so a page fetched later continues the

@@ -24,6 +24,7 @@ import {
   type Browse,
   type CommitFiles,
   type Diff,
+  type EditPreviewToken,
   type FileView,
   type Log,
   type MaximizedByRepo,
@@ -239,5 +240,11 @@ describe("wire contract", () => {
     const saved: SavedFile = fixture.savedFile;
     // The blob oid the client keeps as the base for its next save.
     expect(saved.hash).toHaveLength(40);
+  });
+
+  it("편집_프리뷰_응답이_EditPreviewToken과_맞는다", () => {
+    const preview: EditPreviewToken = fixture.editPreview;
+    // The one-time token the frame loads the assembled preview by.
+    expect(preview.token).toBeTruthy();
   });
 });

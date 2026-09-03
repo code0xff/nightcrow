@@ -86,8 +86,11 @@ fn inert_response(source: &str) -> Vec<u8> {
     )
 }
 
-/// A repository file served as an HTML document under the preview policy.
+/// A repository file served as an HTML document under the preview policy. The
+/// `ETag` is the file's blob oid, which the editor reads back and hands to the
+/// save and edit-preview routes as the version its edits began from.
 fn preview_response(html: &str) -> Vec<u8> {
+    let etag = format!("\"{}\"", blob_oid(html.as_bytes()));
     crate::web::common::http::response(
         "200 OK",
         "text/html; charset=utf-8",
@@ -95,9 +98,125 @@ fn preview_response(html: &str) -> Vec<u8> {
             ("Content-Security-Policy", PREVIEW_CSP),
             ("X-Content-Type-Options", "nosniff"),
             ("Referrer-Policy", "no-referrer"),
+            ("ETag", &etag),
             // Session-gated content; no shared cache may keep it.
             ("Cache-Control", "no-store"),
         ],
         html.as_bytes(),
     )
+}
+
+/// The git blob oid of some bytes — the version identity the editor compares by,
+/// the same one `POST /api/file` uses.
+fn blob_oid(bytes: &[u8]) -> String {
+    git2::Oid::hash_object(git2::ObjectType::Blob, bytes)
+        .map(|oid| oid.to_string())
+        .unwrap_or_default()
+}
+
+/// `POST /api/preview/edit?repo&path[&oid]` — assemble the editable preview.
+///
+/// The editor sends the small insert list (a marker per block, plus the head
+/// payload carrying the agent), each at a UTF-8 byte offset, and the blob oid
+/// its parse began from. The server re-reads the file, refuses `409` if it no
+/// longer hashes to that oid (so a marker cannot land on shifted bytes), splices
+/// the inserts in, and stashes the result under a one-time token for the frame
+/// to load. The document is preview only — nothing here is written to disk.
+pub(super) fn stash_edit(
+    head: &crate::web::common::http::RequestHead,
+    body: &str,
+    state: &super::ViewerState,
+) -> Vec<u8> {
+    use super::handlers::{open_repo, optional_oid, required_path, with_repo};
+    use super::http_util::{json_error, json_response};
+
+    #[derive(serde::Deserialize)]
+    struct Request {
+        inserts: Vec<Insert>,
+        base_hash: String,
+    }
+    #[derive(serde::Deserialize)]
+    struct Insert {
+        at: usize,
+        text: String,
+    }
+
+    let request: Request = match serde_json::from_str(body) {
+        Ok(request) => request,
+        Err(_) => return json_error("400 Bad Request", "expected inserts and baseHash"),
+    };
+    with_repo(head, state, |entry| {
+        let path = required_path(head)?;
+        let repo = open_repo(&entry.path)?;
+        let content = match optional_oid(head, "oid")? {
+            Some(oid) => crate::git::diff::load_commit_file(&repo, oid, &path)?,
+            None => crate::git::diff::load_workdir_file(&repo, &path)?,
+        };
+        let current = blob_oid(content.as_bytes());
+        if current != request.base_hash {
+            return Ok(json_response(
+                "409 Conflict",
+                &format!("{{\"error\":\"stale\",\"currentHash\":\"{current}\"}}"),
+                &[],
+            ));
+        }
+        let points: Vec<(usize, String)> = request
+            .inserts
+            .into_iter()
+            .map(|i| (i.at, i.text))
+            .collect();
+        let assembled = match apply_inserts(&content, points) {
+            Ok(html) => html,
+            Err(message) => return Ok(json_error("400 Bad Request", message)),
+        };
+        match state.edit_previews.stash(assembled) {
+            Ok(token) => {
+                let payload = serde_json::json!({ "token": token });
+                match super::http_util::encode(&payload) {
+                    Ok(json) => Ok(json_response("200 OK", &json, &[])),
+                    Err(_) => Ok(json_error(
+                        "500 Internal Server Error",
+                        "could not encode the token",
+                    )),
+                }
+            }
+            Err(_) => Ok(json_error(
+                "500 Internal Server Error",
+                "could not start a preview",
+            )),
+        }
+    })
+}
+
+/// Splice each `(byte offset, text)` insertion into `source`. Applied from the
+/// back so earlier offsets do not shift, and every offset must land on a UTF-8
+/// character boundary within the source — a guarantee the blob-oid check above
+/// already gives, checked again here so a bad offset is a clean error, never a
+/// panic.
+fn apply_inserts(source: &str, mut points: Vec<(usize, String)>) -> Result<String, &'static str> {
+    points.sort_by(|a, b| b.0.cmp(&a.0));
+    let mut out = source.to_string();
+    for (at, text) in points {
+        if at > out.len() || !out.is_char_boundary(at) {
+            return Err("an insertion offset is out of range");
+        }
+        out.insert_str(at, &text);
+    }
+    Ok(out)
+}
+
+/// `GET /api/preview/edit?token=…` — serve a stashed editable preview once,
+/// under the same policy as a plain preview. A missing token (used, expired, or
+/// never issued) is a 404, not an error.
+pub(super) fn serve_edit(
+    head: &crate::web::common::http::RequestHead,
+    state: &super::ViewerState,
+) -> Vec<u8> {
+    let Some(token) = head.query_param("token").filter(|t| !t.is_empty()) else {
+        return super::http_util::json_error("400 Bad Request", "missing token parameter");
+    };
+    match state.edit_previews.take(&token) {
+        Some(html) => preview_response(&html),
+        None => super::http_util::json_error("404 Not Found", "no such preview"),
+    }
 }

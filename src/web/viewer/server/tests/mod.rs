@@ -4,6 +4,7 @@ mod bootstrap;
 mod clone;
 mod closing;
 mod commit_routes;
+mod edit_preview;
 mod file_write;
 mod path_gate;
 mod prefs;

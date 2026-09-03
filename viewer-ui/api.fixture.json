@@ -115,6 +115,9 @@
     "path": "src/main.rs",
     "truncated": false
   },
+  "editPreview": {
+    "token": "0123456789abcdef0123456789abcdef"
+  },
   "file": {
     "lines": [
       [

@@ -80,6 +80,12 @@ export interface SavedFile {
   hash: string;
 }
 
+/** What `POST /api/preview/edit` returns: the one-time token the frame loads to
+ *  fetch the assembled editable preview. */
+export interface EditPreviewToken {
+  token: string;
+}
+
 export interface ViewerBootstrap {
   repos: Repo[];
   hot: HotConfig;

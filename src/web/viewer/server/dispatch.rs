@@ -144,6 +144,14 @@ fn handle_connection(mut stream: TcpStream, state: Arc<ViewerState>) {
         return;
     }
 
+    // Assembling an editable preview: the editor POSTs the insert list, the
+    // server splices it into the file and stashes the result for the frame's
+    // GET (below, through `route`) to load once. See `preview::stash_edit`.
+    if head.method == "POST" && head.path == "/api/preview/edit" {
+        let _ = stream.write_all(&super::preview::stash_edit(&head, &body, &state));
+        return;
+    }
+
     // Cloning a remote into the browsed directory. The clone outlives this
     // request, so the response carries a job id the client polls. The URL's
     // scheme is validated before `git` sees it: `ext::` would execute a command.

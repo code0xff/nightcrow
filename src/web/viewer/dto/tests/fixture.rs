@@ -203,6 +203,9 @@ fn wire_fixture() -> serde_json::Value {
         "savedFile": serde_json::json!({
             "hash": "0123456789abcdef0123456789abcdef01234567",
         }),
+        // The one-time token `POST /api/preview/edit` hands back for the frame
+        // to load the assembled editable preview.
+        "editPreview": serde_json::json!({ "token": "0123456789abcdef0123456789abcdef" }),
         // One shape for every `/api/prefs` write: the full stored prefs, so
         // a client that set the accent and one that set the width both read
         // the clamped result back the same way.

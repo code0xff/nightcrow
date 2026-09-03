@@ -53,6 +53,8 @@ fn a_framed_preview_serves_the_file_under_its_own_policy() {
     );
     assert!(response.contains("connect-src 'none'"), "{response}");
     assert!(response.contains("Cache-Control: no-store"), "{response}");
+    // The blob oid the editor reads back as the version its edits began from.
+    assert!(response.contains("ETag: \""), "{response}");
     assert!(
         body_of(&response).contains("<script>step()</script>"),
         "the document must arrive as it is: {response}"

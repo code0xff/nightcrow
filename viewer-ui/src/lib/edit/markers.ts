@@ -43,31 +43,40 @@ export function injectMarkers(source: string, blocks: readonly Block[]): string 
 }
 
 /**
- * Injects the preview agent at the very front of the document.
- *
- * The injection point is a correctness condition. The agent must register its
- * listeners before the artifact scripts do, so it runs first in the bubble
- * phase and can block the artifact's global handlers. Artifact scripts usually
- * sit at the end of `<body>`, so the front of `<head>` is enough.
+ * Offset just inside `<head>` (or `<html>`), where injected furniture goes. 0
+ * when the document has neither — then the furniture is prepended.
  */
-export function injectAgentScript(html: string, agentSource: string, token = ""): string {
+export function headAnchorOffset(html: string): number {
+  const anchor = /<head[^>]*>/i.exec(html) ?? /<html[^>]*>/i.exec(html);
+  return anchor ? anchor.index + anchor[0].length : 0;
+}
+
+/**
+ * The `<script>` that runs the preview agent, with `agentSource` stringified.
+ *
+ * The agent must register its listeners before the artifact scripts do — so it
+ * runs first in the bubble phase and can block the artifact's global handlers.
+ * Artifact scripts usually sit at the end of `<body>`, so the front of `<head>`
+ * is enough (see `headAnchorOffset`).
+ */
+export function agentScriptTag(agentSource: string, token = ""): string {
   // A `</script>` inside the agent source would terminate the inline script early.
   const safe = agentSource.replace(/<\/script/gi, "<\\/script");
   // A per-document token — the agent attaches it to every message so the host
   // can filter out messages arriving from an old preview after switching. `<`
   // is escaped so a `</script` inside the token cannot terminate the script.
   const arg = JSON.stringify(token).replace(/</g, "\\u003c");
-  const script = `<script>(${safe})(${arg});</script>`;
+  return `<script>(${safe})(${arg});</script>`;
+}
 
-  const anchor = /<head[^>]*>/i.exec(html) ?? /<html[^>]*>/i.exec(html);
-  if (!anchor) return script + html;
-
-  const at = anchor.index + anchor[0].length;
+export function injectAgentScript(html: string, agentSource: string, token = ""): string {
+  const at = headAnchorOffset(html);
+  const script = agentScriptTag(agentSource, token);
   return html.slice(0, at) + script + html.slice(at);
 }
 
 /**
- * Injects the style that shows editability on screen.
+ * The `<style>` that shows editability on screen.
  *
  * Without seeing what can be edited and what is locked, the user has to guess by
  * clicking around. What cannot be fixed is shown as unfixable.
@@ -85,9 +94,9 @@ export function injectAgentScript(html: string, agentSource: string, token = "")
  * use differs per block (a light card on a dark background); the agent measures
  * the rendered background and attaches `data-ne-dark`, and here we only read it.
  */
-export function injectEditorStyle(html: string): string {
+export function editorStyleTag(): string {
   const editable = `[${MARKER_ATTR}]:not([${LOCKED_ATTR}])`;
-  const style =
+  return (
     "<style>" +
     `[${MARKER_ATTR}]{--ne-mark:#101012!important;--ne-soft:rgba(16,16,18,.45)!important;` +
     "--ne-tint:rgba(16,16,18,.05)!important}" +
@@ -109,11 +118,12 @@ export function injectEditorStyle(html: string): string {
     // Point out the spot picked from the list. Scrolling alone cannot say which.
     `[${REVEALED_ATTR}]{outline:2px solid var(--ne-mark)!important;outline-offset:2px!important;` +
     "background:var(--ne-tint)!important}" +
-    "</style>";
+    "</style>"
+  );
+}
 
-  const anchor = /<head[^>]*>/i.exec(html) ?? /<html[^>]*>/i.exec(html);
-  if (!anchor) return style + html;
-
-  const at = anchor.index + anchor[0].length;
+export function injectEditorStyle(html: string): string {
+  const at = headAnchorOffset(html);
+  const style = editorStyleTag();
   return html.slice(0, at) + style + html.slice(at);
 }
