@@ -15,8 +15,41 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  quality:
+    if: github.repository == 'code0xff/nightcrow'
+    name: Release quality gates
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
+        with:
+          components: rustfmt
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: viewer-ui/package-lock.json
+      - name: Verify package and release policy
+        run: node scripts/prepare-release.mjs check
+      - name: Rustfmt
+        run: cargo fmt --all --check
+      - name: Install viewer dependencies
+        run: npm ci
+        working-directory: viewer-ui
+      - name: Test viewer
+        run: npm test
+        working-directory: viewer-ui
+      - name: Build viewer
+        run: npm run build
+        working-directory: viewer-ui
+      - name: Check committed viewer bundle
+        run: git diff --exit-code -- viewer-ui/dist
+
   build:
     if: github.repository == 'code0xff/nightcrow'
+    needs: quality
     name: Build ${{ matrix.asset }}
     runs-on: ${{ matrix.os }}
     strategy:
@@ -53,6 +86,8 @@ jobs:
         run: node scripts/prepare-release.mjs check
       - name: Test workspace
         run: cargo test --locked --workspace
+      - name: Clippy
+        run: cargo clippy --locked --workspace --all-targets --all-features -- -D warnings
       - name: Build release binary
         run: cargo build --locked --release --target ${{ matrix.target }}
       - name: Stage release asset
@@ -68,7 +103,7 @@ jobs:
 
   publish:
     if: github.repository == 'code0xff/nightcrow'
-    needs: build
+    needs: [quality, build]
     runs-on: ubuntu-latest
     permissions:
       contents: write

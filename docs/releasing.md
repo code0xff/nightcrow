@@ -35,7 +35,7 @@ The workflow verifies the package policy, runs the workspace tests on each relea
 | macOS x86_64 | `nightcrow-x86_64-apple-darwin` |
 | macOS arm64 | `nightcrow-aarch64-apple-darwin` |
 
-Only after all builds and tests pass does it create `v0.1.x`, generate `SHA256SUMS`, and publish the GitHub Release. The tag must point at the exact `main` commit. The workflow is serialized and safe to retry: an existing tag must point at the same SHA and an existing Release must have exactly the four assets plus `SHA256SUMS`; anything else fails closed.
+Only after all builds and tests pass does it create `v0.1.x`, generate `SHA256SUMS`, and create a draft GitHub Release. The tag must point at the exact `main` commit. A retry resumes a draft only by uploading missing assets; every existing asset must match the local SHA-256 digest and size. Once the set is complete, the draft is published. A published Release must already have exactly the four assets plus `SHA256SUMS`; mismatches are hard failures and published assets are never overwritten.
 
 ## Updating an installation
 
