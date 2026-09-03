@@ -78,7 +78,7 @@ libgit2 vendored build는 SSH transport·credential helper·scp-like remote 지�
 
 ### 공식 업데이트는 release binary를 검증한 뒤 복구 가능하게 교체한다
 
-기본 `nightcrow update`는 `code0xff/nightcrow`의 published stable GitHub Release만 읽고 현재 플랫폼의 allowlisted raw binary를 받는다. 기존 바이너리를 먼저 비우는 source rebuild 방식은 Rust toolchain이 필요하고 다운로드 실패 중 설치 경로를 흔드므로, 새 바이너리를 sibling 임시 파일에 streaming하고 GitHub asset digest 또는 `SHA256SUMS`의 SHA-256과 일치한 뒤에만 기존 self-replace 복구 경계로 교체한다. 명시적인 `--path`와 `--git`만 개발용 `cargo install --locked --force` 경로를 유지한다.
+기본 `nightcrow update`는 `code0xff/nightcrow`의 published stable GitHub Release만 읽고 현재 플랫폼의 allowlisted raw binary를 받는다. 기존 바이너리를 먼저 비우는 source rebuild 방식은 Rust toolchain이 필요하고 다운로드 실패 중 설치 경로를 흔드므로, 새 바이너리를 sibling 임시 파일에 streaming하고 GitHub asset digest와 일치한 뒤에만 기존 self-replace 복구 경계로 교체한다. 바이너리 digest가 없으면 자체 API digest로 먼저 검증한 `SHA256SUMS`만 fallback으로 신뢰한다. 명시적인 `--path`와 `--git`만 개발용 `cargo install --locked --force` 경로를 유지한다.
 
 HTTP client는 명령의 동기 실행 모델과 기존 async-runtime 배제 결정에 맞춰 `ureq`의 rustls-only 기능을 사용한다. `reqwest`는 더 넓은 기능과 일반적인 async 구성이 이 단일 GET 흐름에 불필요하고, 표준 라이브러리만으로는 HTTPS client를 제공할 수 없다. digest는 OS command나 플랫폼 crypto API에 위임하지 않고 RustCrypto `sha2`의 core-only SHA-256을 사용해 세 플랫폼이 같은 검증 경로를 탄다.
 

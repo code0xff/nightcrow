@@ -88,10 +88,11 @@ fn expected_digest(client: &Client, release: &Release, asset_name: &str) -> Resu
     }
 
     let sums = release.asset(CHECKSUM_ASSET, MAX_CHECKSUM_BYTES)?;
+    let expected = sums.api_digest()?.with_context(|| {
+        format!("`{CHECKSUM_ASSET}` has no trusted SHA-256 digest in the GitHub API response")
+    })?;
     let (contents, actual) = client.download_bytes(sums)?;
-    if let Some(expected) = sums.api_digest()?
-        && actual != expected
-    {
+    if actual != expected {
         anyhow::bail!("SHA-256 verification failed for `{CHECKSUM_ASSET}`");
     }
     let contents = std::str::from_utf8(&contents)
@@ -110,3 +111,7 @@ mod tests;
 #[cfg(test)]
 #[path = "release_version_tests.rs"]
 mod version_tests;
+
+#[cfg(test)]
+#[path = "release_checksum_tests.rs"]
+mod checksum_tests;
