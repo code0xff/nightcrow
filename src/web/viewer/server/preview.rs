@@ -194,7 +194,7 @@ pub(super) fn stash_edit(
 /// already gives, checked again here so a bad offset is a clean error, never a
 /// panic.
 fn apply_inserts(source: &str, mut points: Vec<(usize, String)>) -> Result<String, &'static str> {
-    points.sort_by(|a, b| b.0.cmp(&a.0));
+    points.sort_by_key(|point| std::cmp::Reverse(point.0));
     let mut out = source.to_string();
     for (at, text) in points {
         if at > out.len() || !out.is_char_boundary(at) {

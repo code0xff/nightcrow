@@ -53,7 +53,6 @@ pub(crate) fn send_request(stream: &mut UnixStream, request: &ClientMessage) -> 
     stream.flush().context("flushing a daemon request")
 }
 
-/// Send one request and read exactly one framed server response.
 pub(crate) fn request(
     path: &Path,
     request: &ClientMessage,

@@ -111,8 +111,8 @@ mod tests {
 
     #[test]
     fn cap_text_never_splits_a_multibyte_character() {
-        // "한" is three bytes. Cutting at 2 or 4 lands mid-character; slicing
-        // there would panic, so the partial character must be dropped whole.
+        // The sample character is three bytes. Cutting at 2 or 4 lands
+        // mid-character; slicing there would panic, so it must be dropped whole.
         let text = "한글";
         for limit in [1, 2, 4, 5] {
             let (kept, truncated) = cap_text(text, limit);

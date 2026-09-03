@@ -5,7 +5,6 @@ use crate::web::common::http::RequestHead;
 
 #[derive(serde::Deserialize)]
 struct WriteFileRequest {
-    /// The full new contents of the file.
     content: String,
     /// The blob oid the edit was based on — the version the client loaded.
     /// A mismatch with what is on disk now means the file moved underneath the

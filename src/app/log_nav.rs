@@ -134,7 +134,6 @@ impl App {
         }
     }
 
-    // Returns `true` if handled (i.e. we are in Log mode).
     pub(super) fn navigate_log_list(
         &mut self,
         commit_nav: fn(&mut Self),
