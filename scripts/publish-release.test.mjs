@@ -6,6 +6,7 @@ import path from "node:path";
 import { spawnSync } from "node:child_process";
 import {
   compareReleaseAssets,
+  fetchRelease,
   localAssetInfo,
   parseCliArgs,
   verifyBinaryAssets,
@@ -91,4 +92,31 @@ test("publish CLI accepts separated values and the entrypoint reaches validation
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }
+});
+
+test("fetchRelease falls back to the releases list because drafts are invisible to the tag endpoint", () => {
+  const calls = [];
+  const draft = { id: 1, tag_name: "v0.1.1", draft: true, assets: [] };
+  const lookup = (args) => {
+    calls.push(args[0]);
+    return args[0].endsWith("/releases/tags/v0.1.1") ? null : [draft, { id: 2, tag_name: "v0.1.2", draft: true, assets: [] }];
+  };
+  assert.equal(fetchRelease("code0xff/nightcrow", "v0.1.1", lookup), draft);
+  assert.deepEqual(calls, ["repos/code0xff/nightcrow/releases/tags/v0.1.1", "repos/code0xff/nightcrow/releases?per_page=100"]);
+});
+
+test("fetchRelease returns null when no release exists anywhere", () => {
+  const lookup = () => null;
+  assert.equal(fetchRelease("code0xff/nightcrow", "v0.1.1", lookup), null);
+});
+
+test("fetchRelease returns the published release served by the tag endpoint", () => {
+  const published = { id: 3, tag_name: "v0.1.1", draft: false, assets: [] };
+  const lookup = (args) => (args[0].endsWith("/releases/tags/v0.1.1") ? published : [published]);
+  assert.equal(fetchRelease("code0xff/nightcrow", "v0.1.1", lookup), published);
+});
+
+test("fetchRelease rejects a non-array listing payload", () => {
+  const lookup = (args) => (args[0].endsWith("/releases/tags/v0.1.1") ? null : { not: "an array" });
+  assert.throws(() => fetchRelease("code0xff/nightcrow", "v0.1.1", lookup), /unexpected payload/);
 });
