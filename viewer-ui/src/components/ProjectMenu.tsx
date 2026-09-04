@@ -37,14 +37,18 @@ export function ProjectMenu({
   }, [open]);
 
   return (
-    <div className={`relative ${className}`}>
+    <div className={`relative min-w-0 ${className}`}>
       <button
         ref={triggerRef}
         onClick={() => setOpen((o) => !o)}
         aria-haspopup="menu"
         aria-expanded={open}
         title={current?.display_path ?? "Select a project"}
-        className="flex max-w-[9rem] items-center gap-1 rounded-sm bg-ink-700 py-0.5 pl-2 pr-1 text-ink-50"
+        // `min-w-0` as well as the cap: the label inside truncates, and a
+        // truncated label is `nowrap`, whose min-content is its max-content —
+        // without a floor of zero the name would hold the header open and push
+        // the controls off a narrow phone.
+        className="flex min-w-0 max-w-[9rem] items-center gap-1 rounded-sm bg-ink-700 py-0.5 pl-2 pr-1 text-ink-50"
       >
         <span className="truncate">{current?.name ?? "No project"}</span>
         <ChevronIcon open={open} />

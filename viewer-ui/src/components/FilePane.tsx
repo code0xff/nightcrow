@@ -154,7 +154,9 @@ export function FilePane({
       className={`min-h-0 min-w-0 flex-col ${className}`}
     >
       <div className="flex shrink-0 items-center gap-2 bg-ink-850 px-3 py-0.5 text-ink-400">
-        {pane.kind === "file" && <PathLabel path={pane.value.path} />}
+        {pane.kind === "file" && (
+          <PathLabel path={pane.value.path} className="min-w-0 truncate" />
+        )}
         <FilePaneActions
           pane={pane}
           previewRendered={previewRendered}

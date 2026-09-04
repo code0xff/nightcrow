@@ -97,9 +97,12 @@ export function RepoShell({
       {/* Keep the resize cursor and prevent selection during dragging. */}
       {draggingSidebar && <div className="fixed inset-0 z-50 cursor-col-resize" />}
       {draggingUpper && <div className="fixed inset-0 z-50 cursor-row-resize" />}
+      {/* The content track is `minmax(0,1fr)`, not `1fr`: a bare `1fr` keeps
+          an auto minimum, so a long file path in the pane's header would widen
+          the track past the panel instead of being cut to it. */}
       <main
         ref={upperRef}
-        className={`grid min-h-0 grid-cols-1 md:grid-cols-[var(--nc-sidebar)_1fr] ${
+        className={`grid min-h-0 grid-cols-1 md:grid-cols-[var(--nc-sidebar)_minmax(0,1fr)] ${
           mobileView === "terminal" ? "hidden md:grid" : ""
         } ${draggingSidebar || draggingUpper ? "select-none" : ""}`}
         style={
