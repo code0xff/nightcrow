@@ -97,18 +97,29 @@ function remoteTagSha(remote, tag) {
   return (peeled || lines[0]).split(/\s+/)[0];
 }
 
-function fetchRelease(repo, tag) {
-  const result = spawnSync("gh", ["api", `repos/${repo}/releases/tags/${tag}`], { encoding: "utf8" });
-  if (result.status === 0) {
-    try {
-      return JSON.parse(result.stdout);
-    } catch {
-      throw new Error("GitHub Release lookup returned invalid JSON");
-    }
+function ghJson(args) {
+  const result = spawnSync("gh", ["api", ...args], { encoding: "utf8" });
+  if (result.status !== 0) {
+    const detail = `${result.stderr || ""} ${result.stdout || ""}`;
+    if (/\bHTTP 404\b|404 Not Found|Not Found \(HTTP 404\)/i.test(detail)) return null;
+    throw new Error("GitHub Release lookup failed; authentication or network errors fail closed");
   }
-  const detail = `${result.stderr || ""} ${result.stdout || ""}`;
-  if (/\bHTTP 404\b|404 Not Found|Not Found \(HTTP 404\)/i.test(detail)) return null;
-  throw new Error("GitHub Release lookup failed; authentication or network errors fail closed");
+  try {
+    return JSON.parse(result.stdout);
+  } catch {
+    throw new Error("GitHub Release lookup returned invalid JSON");
+  }
+}
+
+export function fetchRelease(repo, tag, lookup = ghJson) {
+  // The tag endpoint never serves drafts, so a 404 must fall back to the releases
+  // list, which includes drafts and is ordered newest first.
+  const direct = lookup([`repos/${repo}/releases/tags/${tag}`]);
+  if (direct) return direct;
+  const list = lookup([`repos/${repo}/releases?per_page=100`]);
+  if (list === null) return null;
+  if (!Array.isArray(list)) throw new Error("GitHub Release listing returned an unexpected payload");
+  return list.find((candidate) => candidate.tag_name === tag) || null;
 }
 
 function uploadMissing(repo, tag, dist, missing) {
