@@ -147,3 +147,34 @@ describe("useHtmlEditor", () => {
     expect(result.current.state.conflict).toBe(false);
   });
 });
+
+describe("useHtmlEditor record의 경계", () => {
+  it("블록을_가리키지_않는_id는_패치로_들어가지_않는다", async () => {
+    // The frame's document runs its own scripts and postMessage is open to
+    // them; a message in the agent's shape with no real id must not become a
+    // patch that fails the whole save.
+    const { result } = await open();
+
+    // The paragraph is locked: a script rewrote it, so an edit for it can only
+    // be a forgery or a mistake.
+    act(() => {
+      result.current.verify([
+        { id: 0, text: "T" },
+        { id: 1, text: "written by a script" },
+      ]);
+    });
+
+    act(() => result.current.record(null as unknown as number, "x", false));
+    act(() => result.current.record("0" as unknown as number, "x", false));
+    act(() => result.current.record(Number.NaN, "x", false));
+    act(() => result.current.record(99, "x", false));
+    act(() => result.current.record(1, "x", false));
+
+    expect(result.current.state.pending).toBe(0);
+    await act(async () => {
+      await result.current.save();
+    });
+    expect(save).not.toHaveBeenCalled();
+    expect(result.current.state.error).toBeNull();
+  });
+});
