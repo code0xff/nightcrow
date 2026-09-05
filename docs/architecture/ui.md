@@ -16,7 +16,7 @@
 
 `Workspace`는 최대 `MAX_PROJECTS = 10`개의 `App`을 Vec와 active index로 관리한다. `App`은 한 저장소의 GitViewManager, pane 집합, 포커스·fullscreen·notice를 소유한다. active가 없을 수 있으므로 마지막 탭을 닫은 뒤에도 repo dialog와 quit만 동작한다. 같은 canonical worktree는 두 번 열지 않고 기존 탭으로 focus한다. 숨은 project의 terminal attention은 해당 TUI client에서만 읽음 처리한다.
 
-repo open dialog는 Workspace 레벨에서 먼저 처리되므로 project가 0개여도 열 수 있다. 경로 입력은 셸을 실행하지 않고 `read_dir` 한 단계만으로 directory 후보를 완성한다. `~`와 상대 표기는 읽을 때만 확장하며 사용자가 입력한 텍스트는 그대로 보존한다. directory browser는 평면 row list로 확장/접기를 관리하고, 경로를 확정하는 것은 field의 `Enter` 한 곳이다.
+repo open dialog는 Workspace 레벨에서 먼저 처리되므로 project가 0개여도 열 수 있다. 경로 입력은 셸을 실행하지 않고 `read_dir` 한 단계만으로 directory 후보를 완성한다. `~`와 상대 표기는 읽을 때만 확장하며 사용자가 입력한 텍스트는 그대로 보존한다. directory browser는 평면 row list로 확장/접기를 관리하며, 경로 확정은 field의 `confirm_repo_input` 한 곳에서 일어난다. browser의 `Enter`는 선택을 field에 넘긴 뒤 같은 입력에서 곧바로 확정까지 이어진다.
 
 TUI workspace state는 `~/.nightcrow/workspace.json`에 저장한다. 열린 project, active project와 project별 view를 기록하지만 저장소 내부에는 기록하지 않는다. 복원된 status 선택처럼 snapshot이 필요한 값만 pending으로 두며, background project의 queue는 매 tick 비우되 snapshot 적용은 active project에서 한다. worker join과 snapshot watch의 세부 규칙은 [session.md](session.md)를 따른다.
 

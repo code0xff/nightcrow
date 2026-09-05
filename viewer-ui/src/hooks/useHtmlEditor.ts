@@ -112,6 +112,13 @@ export function useHtmlEditor(repo: string, path: string) {
 
   /** Record a committed edit. A pristine one means the block is back as it was. */
   const record = useCallback((id: number, html: string, pristine: boolean) => {
+    // postMessage is a boundary: the frame runs the document's own scripts,
+    // and a message shaped like the agent's is not the agent's word for it. An
+    // id that names no block — `null`, a string, a number off the roster — or
+    // names a locked one would sit in the patch list until the save rejected
+    // the whole batch for it, taking every honest edit down with it.
+    const block = blocks.current.find((b) => b.id === id);
+    if (!block || block.locked !== null) return;
     if (pristine) patches.current.delete(id);
     else patches.current.set(id, { id, newInnerHtml: html });
     setPending(patches.current.size);

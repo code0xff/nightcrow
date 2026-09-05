@@ -36,8 +36,15 @@ export function App() {
               <ProjectStrip side="left" {...view.header} />
             </aside>
           )}
+          {/* The one column is pinned to `minmax(0,1fr)` rather than left
+              `auto`: an auto track cannot be narrower than the widest row's
+              min-content, and `truncate` sets `white-space: nowrap`, whose
+              min-content *is* its max-content. The footer's path and branch
+              would then set the shell's width, and every row under them —
+              panels, mobile nav, footer — would stretch to it while the
+              viewport scrolled sideways underneath. */}
           <div
-            className={`grid min-h-0 min-w-0 flex-1 ${view.rows}`}
+            className={`grid min-h-0 min-w-0 flex-1 grid-cols-[minmax(0,1fr)] ${view.rows}`}
             style={
               {
                 // `fr` pairs divide only the space left between fixed chrome rows.

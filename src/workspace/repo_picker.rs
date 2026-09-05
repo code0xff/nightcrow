@@ -1,5 +1,5 @@
-//! The repo dialog's directory browser. It only ever fills the field — opening
-//! a repo stays the field's own Enter.
+//! The repo dialog's directory browser. It hands a path to the field, whose
+//! own Enter confirms it — the key handler may chain the two.
 
 use super::Workspace;
 use super::path_tree::PathTree;
@@ -27,8 +27,10 @@ impl Workspace {
         self.repo_input.picker = None;
     }
 
-    /// Take the selection into the field. Enter means the same thing on every
-    /// row — navigating beyond what the tree shows is `←`'s job, not a row's.
+    /// Take the selection into the field, closing the browser. The caller may
+    /// confirm right after — Enter in the key handler opens in one gesture.
+    /// On every row it means the same thing: navigating beyond what the tree
+    /// shows is `←`'s job, not a row's.
     pub fn repo_input_pick(&mut self) {
         let Some(tree) = self.repo_input.picker.take() else {
             return;

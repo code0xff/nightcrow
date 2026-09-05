@@ -162,6 +162,27 @@ export function previewAgent(token = ""): () => void {
 
   const idOf = (el: HTMLElement): number => Number(el.getAttribute(MARKER));
 
+  /**
+   * Take the open edit's state and close it, before anything touches the DOM.
+   *
+   * Removing `contenteditable` from the focused block blurs it, and the browser
+   * delivers that focusout synchronously — inside `removeAttribute`, to the
+   * handler below that commits. With the state still set, that re-entrant call
+   * committed the edit itself and then returned here, where the original call
+   * posted the same edit again with the id it had just seen cleared: `null`,
+   * which the host recorded as a patch no block could answer to. Cleared first,
+   * the re-entrant call finds nothing open and does nothing.
+   */
+  const takeEdit = (): { id: number; el: HTMLElement | null; before: string | null } | null => {
+    if (editingId === null) return null;
+    const taken = { id: editingId, el: editingEl, before: snapshot };
+    editingId = null;
+    editingEl = null;
+    snapshot = null;
+    pendingCommit = false;
+    return taken;
+  };
+
   /** Commit the edit and send the result to the host. */
   const commit = (): void => {
     if (editingId === null) return;
@@ -170,8 +191,10 @@ export function previewAgent(token = ""): () => void {
       pendingCommit = true;
       return;
     }
+    const taken = takeEdit();
+    if (!taken) return;
     // Never re-find by id — a mimic earlier in the document would be caught first.
-    const el = editingEl;
+    const { id, el, before } = taken;
     if (el) {
       el.removeAttribute("contenteditable");
       el.removeAttribute("enterkeyhint");
@@ -184,15 +207,11 @@ export function previewAgent(token = ""): () => void {
       // differences like <br/> → <br>.
       post({
         type: "edit",
-        id: editingId,
+        id,
         html: el.innerHTML,
-        pristine: el.innerHTML === snapshot,
+        pristine: el.innerHTML === before,
       });
     }
-    editingId = null;
-    editingEl = null;
-    snapshot = null;
-    pendingCommit = false;
     hideBar();
     post({ type: "select", id: null });
     // Deferred flush replies can go now — the commit went out first above.
@@ -201,8 +220,12 @@ export function previewAgent(token = ""): () => void {
 
   /** Drop the edit and restore the content from before it opened. */
   const cancel = (): void => {
-    if (editingId === null) return;
-    const el = editingEl;
+    // Taken first for the same reason `commit` takes it: the focusout that
+    // removing `contenteditable` raises would otherwise commit the very edit
+    // being dropped, with the block's unrestored content.
+    const taken = takeEdit();
+    if (!taken) return;
+    const { el, before } = taken;
     if (el) {
       el.removeAttribute("contenteditable");
       el.removeAttribute("enterkeyhint");
@@ -210,12 +233,8 @@ export function previewAgent(token = ""): () => void {
       // reference survives, so the next selection neither rebuilds nor
       // re-attaches it. Spirit it out of the block before restoring.
       if (bar && el.contains(bar)) document.documentElement.appendChild(bar);
-      if (snapshot !== null) el.innerHTML = snapshot;
+      if (before !== null) el.innerHTML = before;
     }
-    editingId = null;
-    editingEl = null;
-    snapshot = null;
-    pendingCommit = false;
     hideBar();
     post({ type: "select", id: null });
     // A dropped edit has no commit to send — no reason to hold the flush replies.

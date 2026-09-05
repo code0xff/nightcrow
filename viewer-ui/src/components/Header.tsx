@@ -69,7 +69,7 @@ export function Header({
     <header className="flex h-[42px] items-center gap-2 border-b border-ink-700 bg-ink-900 px-[12.8px]">
       {/* Always here: with the tabs on the left the header still spans the
           page, and its left corner is the head of their column. */}
-      <div className="flex items-center gap-2">
+      <div className="flex shrink-0 items-center gap-2">
         <Brand />
       </div>
       <ProjectMenu

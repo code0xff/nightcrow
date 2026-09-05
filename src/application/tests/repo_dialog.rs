@@ -3,7 +3,7 @@
 //! field/browser contract in `workspace::tests::repo_picker_tests`.
 
 use super::helpers::*;
-use crate::application::input::dispatch::{KeyOutcome, dispatch_key};
+use crate::application::input::dispatch::{KeyOutcome, ProjectRequest, dispatch_key};
 use crate::workspace::Workspace;
 use crossterm::event::{KeyCode, KeyModifiers};
 use tempfile::TempDir;
@@ -94,11 +94,11 @@ fn the_browser_takes_the_keys_the_field_would_have_had() {
     // In the field these would edit the buffer; here they drive the tree.
     send(&mut ws, KeyCode::Right);
     send(&mut ws, KeyCode::Down);
-    send(&mut ws, KeyCode::Enter);
 
-    assert!(ws.repo_input.picker.is_none(), "Enter selects and returns");
-    assert_eq!(ws.repo_input.buf, format!("{text}/alpha/inner/"));
-    assert!(ws.repo_input.active, "selecting must not open the repo");
+    // The tree nav keys never reach the buffer — only Enter does, and it goes
+    // straight to opening rather than editing the field.
+    assert!(ws.repo_input.picker.is_some(), "still browsing");
+    assert_eq!(ws.repo_input.buf, text);
 }
 
 #[test]
@@ -125,19 +125,50 @@ fn the_first_esc_leaves_the_browser_and_the_second_cancels_the_dialog() {
     assert!(!ws.repo_input.active);
 }
 
+/// One Enter on a row asks the workspace to open that directory: pick and
+/// confirm were two keys for one gesture, so the dialog closes behind the
+/// request and the browser never returns to the field.
 #[test]
-fn j_and_k_move_the_browser_without_reaching_the_field() {
-    let (_guard, mut ws, text) = dialog_on(&["alpha", "zeta"]);
+fn enter_on_a_row_opens_that_directory_in_one_key() {
+    let (guard, mut ws, text) = dialog_on(&["alpha"]);
     send(&mut ws, KeyCode::Down);
 
-    send(&mut ws, KeyCode::Char('j'));
-    assert_eq!(
-        ws.repo_input.picker.as_ref().expect("open").selected(),
-        1,
-        "`j` moves the cursor rather than typing a `j`"
-    );
-    send(&mut ws, KeyCode::Char('k'));
-    send(&mut ws, KeyCode::Enter);
+    // The one Enter both picks the row and asks the workspace to open it.
+    let outcome = dispatch_key(&mut ws, press(KeyCode::Enter, KeyModifiers::NONE));
 
-    assert_eq!(ws.repo_input.buf, format!("{text}/alpha/"));
+    let KeyOutcome::Project(ProjectRequest::Open(path)) = outcome else {
+        panic!("the Enter must ask the workspace to open: {outcome:?}");
+    };
+    let resolved = crate::git::resolve_repo_path(std::path::Path::new(&path))
+        .to_string_lossy()
+        .to_string();
+    let expected = crate::git::resolve_repo_path(std::path::Path::new(&format!(
+        "{}/alpha/",
+        text.trim_end_matches('/')
+    )))
+    .to_string_lossy()
+    .to_string();
+    assert_eq!(resolved, expected);
+    assert!(
+        !ws.repo_input.active,
+        "the dialog closed behind the request"
+    );
+    let _ = guard;
+}
+
+#[test]
+fn enter_on_an_empty_directory_opens_the_root_itself() {
+    let (_guard, mut ws, _text) = dialog_on(&[]);
+    send(&mut ws, KeyCode::Down);
+
+    let outcome = dispatch_key(&mut ws, press(KeyCode::Enter, KeyModifiers::NONE));
+
+    // No rows to select, so Enter hands the root itself to the field's confirm.
+    let KeyOutcome::Project(ProjectRequest::Open(_)) = outcome else {
+        panic!("the root must be openable: {outcome:?}");
+    };
+    assert!(
+        !ws.repo_input.active,
+        "the dialog closed behind the request"
+    );
 }

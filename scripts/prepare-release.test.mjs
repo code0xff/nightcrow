@@ -13,6 +13,7 @@ import {
   readVersions,
   updateVersions,
   validatePolicy,
+  versionParts,
 } from "./release-lib.mjs";
 
 const policy = {
@@ -80,9 +81,13 @@ test("execute updates every application version entry without touching dependenc
     fs.mkdirSync(path.join(root, "viewer-ui"), { recursive: true });
     for (const file of ["package.json", "package-lock.json"]) fs.copyFileSync(path.join(source, `viewer-ui/${file}`), path.join(root, `viewer-ui/${file}`));
     const before = fs.readFileSync(path.join(root, "Cargo.lock"), "utf8");
-    const result = updateVersions(root, policy, "0.1.2");
+    // The fixture copies this repository, so derive every version from what is
+    // on disk instead of hard-coding a patch that becomes stale on the next bump.
+    const current = assertVersionsAgree(readVersions(root, policy));
+    const next = patchVersion(versionParts(current) + 1);
+    const result = updateVersions(root, policy, next);
     assert.equal(result.changed.length, 5);
-    assert.equal(assertVersionsAgree(readVersions(root, policy)), "0.1.2");
+    assert.equal(assertVersionsAgree(readVersions(root, policy)), next);
     assert.match(fs.readFileSync(path.join(root, "Cargo.lock"), "utf8"), /name = "ratatui"\nversion = "0\.30\./);
     assert.notEqual(fs.readFileSync(path.join(root, "Cargo.lock"), "utf8"), before);
     const git = (...args) => {
@@ -94,13 +99,14 @@ test("execute updates every application version entry without touching dependenc
     git("config", "user.name", "Release Test");
     git("add", ".");
     git("commit", "--quiet", "-m", "fixture");
-    git("tag", "v0.1.1");
-    git("tag", "v0.1.2");
+    const tags = [];
+    for (let patch = 1; patch <= versionParts(next); patch += 1) tags.push(`${policy.tagPrefix}${patchVersion(patch)}`);
+    for (const tag of tags) git("tag", tag);
     remote = fs.mkdtempSync(path.join(os.tmpdir(), "nightcrow-release-remote-"));
     git("init", "--bare", remote);
     git("remote", "add", "authoritative", remote);
-    git("push", "--quiet", "authoritative", "v0.1.1", "v0.1.2");
-    assert.equal(checkRoot(root, { release: true, tagRemote: remote }).current, "0.1.2");
+    git("push", "--quiet", "authoritative", ...tags);
+    assert.equal(checkRoot(root, { release: true, tagRemote: remote }).current, next);
     assert.throws(() => gitTags(root, policy, path.join(root, "missing-remote")), /authoritative/);
   } finally {
     fs.rmSync(root, { recursive: true, force: true });

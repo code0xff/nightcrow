@@ -20,7 +20,7 @@ pub(crate) fn render(frame: &mut Frame, tree: &PathTree, area: Rect, accent: Col
     let dim = Style::default().fg(Color::DarkGray);
     let (items, selected) = if tree.rows().is_empty() {
         // Nothing selectable, but the box must say why it is blank — an empty
-        // frame reads as a failure to load. Enter still picks the root itself.
+        // frame reads as a failure to load. Enter still opens the root itself.
         (
             vec![ListItem::new(Line::from(Span::styled(
                 "  (no sub-directories)",

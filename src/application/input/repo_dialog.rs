@@ -9,8 +9,7 @@ pub(crate) fn handle_repo_input_key(ws: &mut Workspace, key: KeyEvent) -> KeyOut
     // The browser takes the keys while open; the field's text cannot change
     // until it hands a path back.
     if ws.repo_input.picker.is_some() {
-        handle_picker_key(ws, key);
-        return KeyOutcome::Continue;
+        return handle_picker_key(ws, key);
     }
     match key.code {
         KeyCode::Esc => ws.cancel_repo_input(),
@@ -40,18 +39,40 @@ pub(crate) fn handle_repo_input_key(ws: &mut Workspace, key: KeyEvent) -> KeyOut
     KeyOutcome::Continue
 }
 
-/// Enter selects here rather than opening: the field's Enter stays the single
-/// place a repo is opened, so `→` alone expands.
-fn handle_picker_key(ws: &mut Workspace, key: KeyEvent) {
+/// Enter on a row opens it: selecting into the field and confirming there was
+/// two keys for one gesture. `→` still expands, so descending without opening
+/// stays possible.
+fn handle_picker_key(ws: &mut Workspace, key: KeyEvent) -> KeyOutcome {
     match key.code {
         // One Esc leaves the browser with the field's text intact, a second
         // cancels the dialog.
-        KeyCode::Esc => ws.repo_input_close_browser(),
-        KeyCode::Enter => ws.repo_input_pick(),
-        KeyCode::Down | KeyCode::Char('j') => ws.repo_picker_move(true),
-        KeyCode::Up | KeyCode::Char('k') => ws.repo_picker_move(false),
-        KeyCode::Right => ws.repo_picker_expand(),
-        KeyCode::Left => ws.repo_picker_collapse(),
-        _ => {}
+        KeyCode::Esc => {
+            ws.repo_input_close_browser();
+            KeyOutcome::Continue
+        }
+        KeyCode::Enter => {
+            ws.repo_input_pick();
+            if let crate::workspace::RepoInputResult::Open(path) = ws.confirm_repo_input() {
+                return KeyOutcome::Project(ProjectRequest::Open(path));
+            }
+            KeyOutcome::Continue
+        }
+        KeyCode::Down | KeyCode::Char('j') => {
+            ws.repo_picker_move(true);
+            KeyOutcome::Continue
+        }
+        KeyCode::Up | KeyCode::Char('k') => {
+            ws.repo_picker_move(false);
+            KeyOutcome::Continue
+        }
+        KeyCode::Right => {
+            ws.repo_picker_expand();
+            KeyOutcome::Continue
+        }
+        KeyCode::Left => {
+            ws.repo_picker_collapse();
+            KeyOutcome::Continue
+        }
+        _ => KeyOutcome::Continue,
     }
 }

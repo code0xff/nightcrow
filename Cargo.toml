@@ -6,7 +6,7 @@ members = [".", "plugins/nightcrow-recovery"]
 
 [package]
 name = "nightcrow"
-version = "0.1.1"
+version = "0.1.2"
 edition = "2024"
 description = "Agent-adjacent terminal workbench — git diff viewer + multi-terminal panes for running CLIs next to your code"
 license = "Apache-2.0"
