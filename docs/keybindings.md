@@ -84,7 +84,7 @@ The leader followed by `t`, `w`, `s`, `z`, `c`, `l`, `b`, `o`, `x`, `p`, or `u` 
 
 ## Repository dialog
 
-`<prefix> o` opens a path field. `Tab` completes a directory, `Down` opens the directory browser, and `Enter` opens the selected path. `Esc` closes the browser first and the dialog second. Paths may be absolute, relative to the current directory, or begin with `~`; shell expansion, variables, globs, and files are not accepted. See [Views → The repo dialog](views.md#the-repo-dialog).
+`<prefix> o` opens a path field. `Tab` completes a directory, `Down` opens the directory browser, and `Enter` opens the selected path — in the browser it opens the highlighted directory, in the field it submits the typed text. `Esc` closes the browser first and the dialog second. Paths may be absolute, relative to the current directory, or begin with `~`; shell expansion, variables, globs, and files are not accepted. See [Views → The repo dialog](views.md#the-repo-dialog).
 
 ## Mouse
 
