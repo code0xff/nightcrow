@@ -83,7 +83,7 @@ pub(crate) fn repo_dialog_hint_line<'a>(
         return line;
     }
     let legend = if repo_input.picker.is_some() {
-        " up/dn/jk: move | right: open | left: up | enter: select | esc: back"
+        " up/dn/jk: move | right: open | left: up | enter: open | esc: back"
     } else {
         " down: browse | tab: complete | enter: open | esc: cancel"
     };

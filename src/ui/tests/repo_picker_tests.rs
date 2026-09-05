@@ -82,7 +82,7 @@ fn the_browsers_own_keys_replace_the_fields_on_the_hint_row() {
 
     let line = repo_dialog_hint_line(None, &repo_input, 200).to_string();
 
-    assert!(line.contains("enter: select"), "not `enter: open`: {line}");
+    assert!(line.contains("enter: open"), "{line}");
     assert!(line.contains("left: up"), "{line}");
     assert!(!line.contains("down: browse"), "already browsing: {line}");
 }
