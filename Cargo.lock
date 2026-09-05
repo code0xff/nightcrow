@@ -1274,7 +1274,7 @@ dependencies = [
 
 [[package]]
 name = "nightcrow"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "alacritty_terminal",
  "anyhow",
@@ -1311,7 +1311,7 @@ dependencies = [
 
 [[package]]
 name = "nightcrow-recovery"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "anyhow",
  "serde",
