@@ -95,7 +95,7 @@ export function readVersions(root, policy = loadPolicy(root)) {
   return policy.versionFiles.map((entry) => ({ ...entry, version: readEntry(root, entry) }));
 }
 
-function versionParts(version) {
+export function versionParts(version) {
   const match = /^0\.1\.(0|[1-9]\d*)$/.exec(version);
   if (!match) throw new Error(`version ${version} is outside the ${SUPPORTED_SERIES} series`);
   return Number(match[1]);
