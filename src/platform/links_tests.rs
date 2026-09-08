@@ -50,6 +50,10 @@ fn rejects_unsafe_or_ambiguous_targets_before_launching() {
     for target in [
         "javascript:alert(1)",
         "file://server/share/readme.md",
+        "file:",
+        "file:😀",
+        "file:한글",
+        "file:aa/C:/temp/a.txt",
         r"\\?\C:\secret.txt",
         "../secret.txt",
         "src/file.rs\n:3",
@@ -83,6 +87,10 @@ fn parses_windows_drive_paths_and_file_urls() {
             column: None,
         }
     );
+    assert!(matches!(
+        parse_target("FILE:///C:/work/space%20file.rs"),
+        Ok(LinkTarget::File { .. })
+    ));
     assert!(parse_target(r"C:\work\space.txt:secret").is_err());
 }
 

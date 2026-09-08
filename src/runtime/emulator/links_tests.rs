@@ -100,6 +100,18 @@ fn file_like_names_without_locations_are_detected_but_bare_words_are_not() {
 }
 
 #[test]
+fn filename_line_ranges_and_hash_columns_are_detected_without_truncation() {
+    for input in ["README.md:12-14", "README.md:12:3-14", "README.md#L12C3"] {
+        link_at(input, input, input);
+    }
+    for input in ["README.md:12-", "README.md:12:", "README.md#L12C"] {
+        let mut emulator = PaneEmulator::new(2, 80, 0);
+        emulator.process(input.as_bytes());
+        assert_eq!(emulator.view().link_at(0, 0), None, "{input}");
+    }
+}
+
+#[test]
 fn scrollback_uses_viewport_coordinates() {
     let mut emulator = PaneEmulator::new(2, 30, 8);
     emulator.process(b"old\r\nhttps://example.test/history\r\nnow");

@@ -1,3 +1,4 @@
+use super::link_target_paths::{is_drive_path, is_file_url_prefix, is_forbidden_namespace};
 use anyhow::{Context, Result, bail};
 use std::path::{Component, Path, PathBuf};
 type Location = (Option<u32>, Option<u32>);
@@ -57,7 +58,7 @@ fn parse_web(raw: &str) -> Result<LinkTarget> {
     Ok(LinkTarget::Web(raw.to_owned()))
 }
 fn parse_file_url(raw: &str) -> Result<LinkTarget> {
-    if raw.len() < 7 || !starts_with_scheme(raw, "file") || !raw[7..].starts_with('/') {
+    if !is_file_url_prefix(raw) || raw.as_bytes().get(7) != Some(&b'/') {
         bail!("file link must use a local file URI");
     }
     let (encoded_path, fragment) = split_fragment(&raw[7..])?;
@@ -279,21 +280,6 @@ fn is_http_scheme(text: &str) -> bool {
             .as_bytes()
             .get(..8)
             .is_some_and(|prefix| prefix.eq_ignore_ascii_case(b"https://"))
-}
-fn is_drive_path(path: &str) -> bool {
-    let bytes = path.as_bytes();
-    bytes.len() >= 3
-        && bytes[0].is_ascii_alphabetic()
-        && bytes[1] == b':'
-        && matches!(bytes[2], b'/' | b'\\')
-}
-fn is_forbidden_namespace(path: &str) -> bool {
-    path.starts_with(r"\\")
-        || path.starts_with("//")
-        || path.starts_with(r"\\?\")
-        || path.starts_with(r"\\.\")
-        || path.starts_with("//?/")
-        || path.starts_with("//./")
 }
 #[cfg(test)]
 #[path = "links_tests.rs"]
