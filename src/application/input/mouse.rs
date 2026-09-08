@@ -134,7 +134,21 @@ pub(crate) fn handle_mouse(
     let row = mouse.row - rect.y + 1;
     match mouse.kind {
         MouseEventKind::Down(button) => {
+            // Link handling keeps the ordinary click's focus behavior. A
+            // link is opened by the app after the clicked pane is active.
             focus_clicked_pane(app, id);
+            if button == crossterm::event::MouseButton::Left
+                && mouse.modifiers == KeyModifiers::NONE
+                && let Some(target) = app
+                    .terminal
+                    .screen_for_pane(id)
+                    .and_then(|screen| screen.link_at(row - 1, col - 1))
+            {
+                return KeyOutcome::OpenLink {
+                    target,
+                    base: app.repository_path().to_owned(),
+                };
+            }
             if app.terminal.click_pane(id, button, true, col, row) {
                 app.interaction.pending_mouse_press = Some((id, button, col, row));
             }

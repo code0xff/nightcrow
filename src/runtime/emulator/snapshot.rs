@@ -19,15 +19,16 @@
 //! reflows it differently. Nothing reads that difference today:
 //! alternate-screen programs redraw on resize, and a normal-screen pane's
 //! history is still replayed from its byte ring, which keeps its wrapping —
-//! the snapshot stands in only for the screen itself. Underline colour,
-//! hyperlinks (OSC 8) and the scrolling region (DECSTBM) are not carried
-//! either.
+//! the snapshot stands in only for the screen itself. Underline colour and the
+//! scrolling region (DECSTBM) are not carried either. OSC 8 hyperlink runs and
+//! the cursor's active hyperlink are carried so a reattaching client can keep
+//! links clickable after the repaint.
 
 use super::EventProxy;
 use alacritty_terminal::grid::Dimensions;
 use alacritty_terminal::index::{Column, Line, Point};
 use alacritty_terminal::term::Term;
-use alacritty_terminal::term::cell::{Cell, Flags};
+use alacritty_terminal::term::cell::{Cell, Flags, Hyperlink};
 use alacritty_terminal::vte::ansi::{Color, NamedColor};
 use std::fmt::Write as _;
 
@@ -35,11 +36,12 @@ use std::fmt::Write as _;
 /// rather than anything a terminal can be told to enter, so they are masked
 /// out — and comparing what is left is what lets a run of equal attributes
 /// cost one escape.
-#[derive(PartialEq, Eq, Clone, Copy)]
+#[derive(PartialEq, Eq, Clone)]
 struct Pen {
     fg: Color,
     bg: Color,
     flags: Flags,
+    hyperlink: Option<Hyperlink>,
 }
 
 impl Pen {
@@ -48,6 +50,7 @@ impl Pen {
             fg: cell.fg,
             bg: cell.bg,
             flags: cell.flags & rendered_flags(),
+            hyperlink: cell.hyperlink(),
         }
     }
 }
@@ -81,10 +84,14 @@ pub(super) fn screen_snapshot(term: &Term<EventProxy>) -> Vec<u8> {
     // snapshot of a large pane is taken on the worker's tick, where a dozen
     // reallocations of a megabyte-long string is the whole cost.
     let mut out = String::with_capacity(rows * cols + rows * 16 + 32);
+    // SGR reset does not clear OSC 8 in alacritty, and a receiver may have
+    // inherited a link from bytes just before this snapshot.
+    out.push_str(OSC8_CLEAR);
     out.push_str("\x1b[m\x1b[2J");
     // Carried across rows: `SGR` survives a `CUP`, so a run of equal
     // attributes spanning a row boundary still costs one escape.
     let mut pen: Option<Pen> = None;
+    let mut hyperlink: Option<Hyperlink> = None;
 
     for row in 0..rows {
         // Positioned rather than reached by a newline. Writing the last column
@@ -100,6 +107,7 @@ pub(super) fn screen_snapshot(term: &Term<EventProxy>) -> Vec<u8> {
             .rev()
             .find(|&col| !is_blank(&grid[Point::new(Line(row as i32), Column(col))]));
         let Some(last) = last else {
+            clear_hyperlink(&mut out, &mut hyperlink);
             out.push_str(ERASE_TO_END_OF_ROW);
             pen = Some(Pen::of(&Cell::default()));
             continue;
@@ -113,11 +121,31 @@ pub(super) fn screen_snapshot(term: &Term<EventProxy>) -> Vec<u8> {
                 .flags
                 .intersects(Flags::WIDE_CHAR_SPACER | Flags::LEADING_WIDE_CHAR_SPACER)
             {
+                // A leading spacer has no glyph in this row to recreate it. A
+                // linked one still needs a real write so OSC 8 metadata survives.
+                if cell.flags.contains(Flags::LEADING_WIDE_CHAR_SPACER)
+                    && cell.hyperlink().is_some()
+                {
+                    let cell_pen = Pen::of(cell);
+                    if hyperlink != cell_pen.hyperlink {
+                        write_hyperlink(&mut out, cell_pen.hyperlink.as_ref());
+                        hyperlink = cell_pen.hyperlink.clone();
+                    }
+                    if pen.as_ref() != Some(&cell_pen) {
+                        write_sgr(&mut out, &cell_pen);
+                        pen = Some(cell_pen);
+                    }
+                    out.push(' ');
+                }
                 continue;
             }
             let cell_pen = Pen::of(cell);
-            if pen != Some(cell_pen) {
-                write_sgr(&mut out, cell_pen);
+            if hyperlink != cell_pen.hyperlink {
+                write_hyperlink(&mut out, cell_pen.hyperlink.as_ref());
+                hyperlink = cell_pen.hyperlink.clone();
+            }
+            if pen.as_ref() != Some(&cell_pen) {
+                write_sgr(&mut out, &cell_pen);
                 pen = Some(cell_pen);
             }
             out.push(cell.c);
@@ -129,6 +157,7 @@ pub(super) fn screen_snapshot(term: &Term<EventProxy>) -> Vec<u8> {
         // cursor is left pending-wrap *on* that column, and erasing from there
         // would wipe the cell just written.
         if last + 1 < cols {
+            clear_hyperlink(&mut out, &mut hyperlink);
             out.push_str(ERASE_TO_END_OF_ROW);
             pen = Some(Pen::of(&Cell::default()));
         }
@@ -136,7 +165,13 @@ pub(super) fn screen_snapshot(term: &Term<EventProxy>) -> Vec<u8> {
 
     // The pen the program left set, so the next thing it writes looks the way it
     // means to rather than inheriting the last cell of the screen.
-    write_sgr(&mut out, Pen::of(&grid.cursor.template));
+    let template_pen = Pen::of(&grid.cursor.template);
+    if pen.as_ref() != Some(&template_pen) {
+        write_sgr(&mut out, &template_pen);
+    }
+    if hyperlink != template_pen.hyperlink {
+        write_hyperlink(&mut out, template_pen.hyperlink.as_ref());
+    }
     let point = grid.cursor.point;
     let _ = write!(
         out,
@@ -152,6 +187,7 @@ pub(super) fn screen_snapshot(term: &Term<EventProxy>) -> Vec<u8> {
 /// the default one — which is what makes the erased cells equal the cells
 /// they stand in for.
 const ERASE_TO_END_OF_ROW: &str = "\x1b[m\x1b[K";
+const OSC8_CLEAR: &str = "\x1b]8;;\x1b\\";
 
 /// One absolute `SGR`. Leads with `0` so the sequence states the whole pen
 /// rather than a change from whatever the reader had.
@@ -159,7 +195,7 @@ const ERASE_TO_END_OF_ROW: &str = "\x1b[m\x1b[K";
 /// Appended in place rather than returned: on a densely coloured screen this
 /// runs once per cell, and building a string per call was measurably the cost
 /// of the whole snapshot.
-fn write_sgr(out: &mut String, pen: Pen) {
+fn write_sgr(out: &mut String, pen: &Pen) {
     out.push_str("\x1b[0");
     for (flag, param) in [
         (Flags::BOLD, "1"),
@@ -182,6 +218,30 @@ fn write_sgr(out: &mut String, pen: Pen) {
     write_color(out, pen.fg, true);
     write_color(out, pen.bg, false);
     out.push('m');
+}
+
+fn clear_hyperlink(out: &mut String, hyperlink: &mut Option<Hyperlink>) {
+    if hyperlink.is_some() {
+        write_hyperlink(out, None);
+        *hyperlink = None;
+    }
+}
+
+pub(super) fn write_hyperlink(out: &mut String, hyperlink: Option<&Hyperlink>) {
+    out.push_str("\x1b]8;;");
+    if let Some(hyperlink) = hyperlink {
+        for character in hyperlink.uri().chars() {
+            if character.is_control() || character == '\u{7f}' {
+                let mut encoded = [0; 4];
+                for byte in character.encode_utf8(&mut encoded).bytes() {
+                    let _ = write!(out, "%{byte:02X}");
+                }
+            } else {
+                out.push(character);
+            }
+        }
+    }
+    out.push_str("\x1b\\");
 }
 
 /// The `SGR` parameter selecting `color`. The default is written as nothing —

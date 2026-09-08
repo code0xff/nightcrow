@@ -32,6 +32,13 @@ impl<'a> ScreenView<'a> {
         Some(CellView { cell: &grid[point] })
     }
 
+    /// Return the raw target at zero-based viewport coordinates. OSC 8 cell
+    /// metadata wins; otherwise bounded visible text detection covers URLs,
+    /// Markdown destinations, and file-like paths.
+    pub fn link_at(&self, row: u16, col: u16) -> Option<String> {
+        super::links::find(self, row, col)
+    }
+
     /// Live cursor position as (row, col), independent of the scrollback
     /// offset and of the program's DECTCEM show/hide state — nightcrow
     /// always exposes the input point of the focused pane.
@@ -60,6 +67,14 @@ impl CellView<'_> {
         self.cell
             .flags
             .intersects(Flags::WIDE_CHAR_SPACER | Flags::LEADING_WIDE_CHAR_SPACER)
+    }
+
+    pub(super) fn is_wrap_line(&self) -> bool {
+        self.cell.flags.contains(Flags::WRAPLINE)
+    }
+
+    pub(super) fn hyperlink(&self) -> Option<String> {
+        self.cell.hyperlink().map(|link| link.uri().to_owned())
     }
 
     /// Append the cell's visible contents (base char plus any zero-width

@@ -239,6 +239,14 @@ pub(crate) fn apply_outcome(
         KeyOutcome::Quit => return Ok(true),
         KeyOutcome::Redraw => terminal.clear()?,
         KeyOutcome::Continue => {}
+        KeyOutcome::OpenLink { target, base } => {
+            if let Err(error) = crate::platform::links::open(&target, std::path::Path::new(&base)) {
+                ws.raise_notice(
+                    crate::app::NoticeKind::Terminal,
+                    format!("could not open terminal link {target:?}: {error}"),
+                );
+            }
+        }
         // Through the link: attached, opening and closing a tab is a request to
         // whoever owns the tab list, not a local edit.
         KeyOutcome::Project(request) => link.request(ws, request),
