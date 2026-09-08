@@ -1,4 +1,4 @@
-use super::links_paths::location_suffix;
+use super::links_paths::{has_location_marker, location_suffix};
 use super::view::ScreenView;
 
 const MAX_LINK_SCAN_BYTES: usize = 16 * 1024;
@@ -193,9 +193,17 @@ fn find_path(text: &str, clicked: usize, complete: bool) -> Option<String> {
             .char_indices()
             .find(|(_, character)| character.is_whitespace() || character.is_control())
             .map_or(text.len(), |(offset, _)| start + offset);
+        let raw_candidate = &text[start..raw_end];
+        if raw_candidate.ends_with(':') && has_location_marker(raw_candidate) {
+            continue;
+        }
         let end = trim_punctuation(text, start, raw_end, false);
         let candidate = &text[start..end];
-        let path_end = location_suffix(candidate).unwrap_or(candidate.len());
+        let Some(path_end) = location_suffix(candidate)
+            .or_else(|| (!has_location_marker(candidate)).then_some(candidate.len()))
+        else {
+            continue;
+        };
         let path = &candidate[..path_end];
         if !is_file_like_path(path) {
             continue;

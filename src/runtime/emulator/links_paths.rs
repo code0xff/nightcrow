@@ -8,31 +8,47 @@ pub(super) fn location_suffix(candidate: &str) -> Option<usize> {
     is_hash_suffix(&candidate[hash..]).then_some(hash)
 }
 
+pub(super) fn has_location_marker(candidate: &str) -> bool {
+    candidate.contains("#L")
+        || candidate.char_indices().any(|(offset, character)| {
+            character == ':'
+                && candidate
+                    .as_bytes()
+                    .get(offset + 1)
+                    .is_some_and(u8::is_ascii_digit)
+        })
+}
+
 fn is_line_suffix(suffix: &str) -> bool {
     let bytes = suffix.as_bytes();
     let mut at = 0;
     if bytes.get(at) != Some(&b':') {
         return false;
     }
-    at = digits_end(bytes, at + 1);
-    if at == 1 {
+    let next = digits_end(bytes, at + 1);
+    if next == at + 1 {
         return false;
     }
+    at = next;
     if bytes.get(at) == Some(&b':') {
-        let next = digits_end(bytes, at + 1);
-        if next == at + 1 {
+        let before = at + 1;
+        let next = digits_end(bytes, before);
+        if next == before {
             return false;
         }
         at = next;
     }
     if bytes.get(at) == Some(&b'-') {
-        at = digits_end(bytes, at + 1);
-        if at == suffix.len() {
+        let before = at + 1;
+        let next = digits_end(bytes, before);
+        if next == before {
             return false;
         }
+        at = next;
         if bytes.get(at) == Some(&b':') {
-            let next = digits_end(bytes, at + 1);
-            if next == at + 1 {
+            let before = at + 1;
+            let next = digits_end(bytes, before);
+            if next == before {
                 return false;
             }
             at = next;
@@ -46,31 +62,38 @@ fn is_hash_suffix(suffix: &str) -> bool {
     if !suffix.starts_with("#L") {
         return false;
     }
-    let mut at = digits_end(bytes, 2);
-    if at == 2 {
+    let mut at = 2;
+    let next = digits_end(bytes, at);
+    if next == at {
         return false;
     }
+    at = next;
     if bytes.get(at) == Some(&b'C') {
-        at = digits_end(bytes, at + 1);
-        if at == suffix.len() {
+        let before = at + 1;
+        let next = digits_end(bytes, before);
+        if next == before {
             return false;
         }
+        at = next;
     }
     if bytes.get(at) == Some(&b'-') {
         at += 1;
         if bytes.get(at) == Some(&b'L') {
             at += 1;
         }
-        let line_end = digits_end(bytes, at);
-        if line_end == at {
+        let line_start = at;
+        let line_end = digits_end(bytes, line_start);
+        if line_end == line_start {
             return false;
         }
         at = line_end;
         if bytes.get(at) == Some(&b'C') {
-            at = digits_end(bytes, at + 1);
-            if at == line_end + 1 {
+            let before = at + 1;
+            let next = digits_end(bytes, before);
+            if next == before {
                 return false;
             }
+            at = next;
         }
     }
     at == bytes.len()
