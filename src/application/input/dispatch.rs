@@ -20,6 +20,12 @@ pub(crate) enum KeyOutcome {
     /// take `&mut App` — one project — so they cannot reach the tab list;
     /// they name the intent here and `main_loop` carries it out.
     Project(ProjectRequest),
+    /// Open a link detected in a terminal screen. Launching is kept out of
+    /// input handlers so failures can become a visible terminal notice.
+    OpenLink {
+        target: String,
+        base: String,
+    },
 }
 
 /// A workspace-level action requested by a key or click.
