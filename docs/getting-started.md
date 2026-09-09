@@ -16,7 +16,7 @@ For a checkout you are developing locally:
 cargo install --path . --locked
 ```
 
-Rust 1.88 or newer is required. `--locked` uses the repository's committed `Cargo.lock`. The browser bundle is committed and embedded in the binary, so these commands do not require Node.js.
+Rust 1.89 or newer is required. `--locked` uses the repository's committed `Cargo.lock`. The browser bundle is committed and embedded in the binary, so these commands do not require Node.js.
 
 Create a commented configuration starter when needed:
 
