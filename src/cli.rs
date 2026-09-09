@@ -5,7 +5,7 @@ mod attach;
 mod daemon;
 mod init;
 pub(crate) mod plugin_cmd;
-mod status;
+pub(crate) mod status;
 mod stop;
 mod update;
 

@@ -44,8 +44,21 @@ fn main() -> Result<()> {
         Some(Commands::Attach) => run_attach_detached(),
         Some(Commands::Plugin { command }) => cli::plugin_cmd::run_plugin(command),
         Some(Commands::Stop { socket }) => run_stop(socket),
-        Some(Commands::Status { socket }) => run_status(socket),
+        Some(Commands::Status { socket }) => report_status_exit(run_status(socket)),
         Some(Commands::Update { version, path, git }) => run_update(version, path, git),
         None => run_daemon(cli.exec, cli.port, cli.bind, cli.detach),
+    }
+}
+
+/// Exit with the status command's dedicated failure code instead of the
+/// generic `main` error path, so scripts can distinguish stopped, timeout,
+/// and protocol errors without parsing stderr.
+fn report_status_exit(result: Result<(), cli::status::StatusError>) -> ! {
+    match result {
+        Ok(()) => std::process::exit(0),
+        Err(error) => {
+            eprintln!("error: {error}");
+            std::process::exit(error.exit_code());
+        }
     }
 }
