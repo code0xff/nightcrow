@@ -254,6 +254,8 @@ fn term_size(rows: u16, cols: u16) -> TermSize {
 }
 
 mod boundary;
+mod links;
+mod links_paths;
 mod modes;
 mod snapshot;
 mod sync;
@@ -265,9 +267,13 @@ pub use view::{CellView, ScreenView};
 #[cfg(test)]
 mod boundary_tests;
 #[cfg(test)]
+mod links_tests;
+#[cfg(test)]
 mod modes_tests;
 #[cfg(test)]
 mod snapshot_cost_tests;
+#[cfg(test)]
+mod snapshot_link_tests;
 #[cfg(test)]
 mod snapshot_tests;
 #[cfg(test)]

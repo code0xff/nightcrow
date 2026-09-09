@@ -6,6 +6,8 @@ use crate::config::ShellConfig;
 mod identity;
 #[path = "pty_tests/lifecycle.rs"]
 mod lifecycle;
+#[path = "pty_tests/links.rs"]
+mod links;
 #[path = "pty_tests/relaunch.rs"]
 mod relaunch;
 

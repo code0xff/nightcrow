@@ -15,6 +15,9 @@
 `runtime::emulator::PaneEmulator`가 pane마다 alacritty_terminal `Term`과 ANSI `Processor`를 감싼다. UI는 `ScreenView`/`CellView`만 보고, VT 구현 타입은 모듈 밖으로 새지 않는다. emulator는 최소 1행 × 2열로 clamp한다.
 
 - PTY byte는 client emulator에 적용한다. emulator가 OSC 0/2 title, DSR/DA query reply, terminal modes를 수집하고, title은 pane metadata로 세션에 전달한다.
+- `ScreenView::link_at`은 viewport 좌표에서 OSC 8 셀 링크를 먼저 조회하고, 메타데이터가 없으면 현재 visible line의 bounded URL·Markdown·파일 위치를 찾는다. soft wrap과 scrollback을 포함하지만 파일을 열거나 검증하지 않고 platform seam에 target을 넘긴다. PTY 경로에서 OSC 8 메타데이터를 받지 못하는 경우에도 visible text fallback을 사용할 수 있다.
+- 이미 제거된 label-only 링크는 재생할 URI가 없어 복구할 수 없다.
+- screen snapshot은 OSC 8 run과 cursor template의 활성 링크를 재생하며, 초기 화면 지우기와 행 끝 erase 전에 입력 링크를 명시적으로 닫아 이전 stream 상태가 새 셀로 번지지 않게 한다.
 - hub는 재접속을 위해 mode와 screen snapshot을 별도로 보관한다. alternate screen은 현재 screen을, normal screen은 ring history와 snapshot 이후 tail을 조합해 replay한다. reconnect replay는 `screen` 뒤에 `since` byte를 붙여 snapshot 이후 broadcast를 잃지 않는다.
 - replay frame은 1 MiB 이하로 분할되고 daemon frame은 4 MiB를 넘지 않는다. terminal stream은 byte를 생략하거나 conflation하지 않으며, frame/queue 상한을 넘긴 연결은 명시적으로 종료한다.
 
@@ -32,7 +35,7 @@
 
 ## Mouse routing
 
-`[mouse] enabled`가 켜져 있으면 crossterm이 화면을 캡처한다. `pane_at`은 렌더와 같은 `terminal_content_areas`를 사용한다. pane press는 focus와 active pane을 바꾸고, 프로그램이 mouse button mode + SGR encoding을 요청한 경우에만 pane-local SGR button report를 보낸다. release는 포인터 현재 위치가 아니라 press를 받은 pane에 짝지으며, pane이 닫히거나 숨겨졌으면 버린다.
+`[mouse] enabled`가 켜져 있으면 crossterm이 화면을 캡처한다. `pane_at`은 렌더와 같은 `terminal_content_areas`를 사용한다. pane press는 focus와 active pane을 바꾸며, modifier 없는 왼쪽 press가 링크 target을 찾으면 SGR button report보다 먼저 링크 열기 명령으로 반환한다. 링크가 없으면 프로그램이 mouse button mode + SGR encoding을 요청한 경우에만 pane-local SGR button report를 보낸다. release는 포인터 현재 위치가 아니라 press를 받은 pane에 짝지으며, pane이 닫히거나 숨겨졌으면 버린다.
 
 wheel은 포인터 아래 pane을 대상으로 하며 sink 규칙은 keyboard scroll과 같다. tab bar와 hint bar의 클릭 대상은 렌더러가 만든 segment에서 파생하고, `<leader> s` 대기 중 pane 클릭은 swap target으로 해석한다. motion/drag는 PTY로 전달하지 않는다. 외부 터미널의 text selection은 capture bypass modifier를 사용한다.
 

@@ -4,6 +4,7 @@ mod helpers;
 mod mouse;
 mod mouse_clicks;
 mod mouse_empty;
+mod mouse_links;
 mod mouse_release;
 mod paste;
 mod paste_burst;
