@@ -34,4 +34,4 @@ The viewer checks the request host and origin before serving repository data. Re
 
 ## Frontend development
 
-The React/Vite source is in `viewer-ui/`; the committed `viewer-ui/dist/` bundle is embedded in release builds. Install Node.js 22 dependencies with `npm --prefix viewer-ui ci`, run `npm --prefix viewer-ui run dev` for a local frontend, and use the verification commands in [Getting started → Building and testing](getting-started.md#building-and-testing).
+The React/Vite source is in `viewer-ui/`; the committed `viewer-ui/dist/` bundle is embedded in release builds. Install Node.js 26 dependencies with `npm --prefix viewer-ui ci`, run `npm --prefix viewer-ui run dev` for a local frontend, and use the verification commands in [Getting started → Building and testing](getting-started.md#building-and-testing).
