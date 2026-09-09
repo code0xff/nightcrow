@@ -28,21 +28,20 @@ fn status_subcommand_defaults_to_the_standard_socket() {
 fn explicit_socket_override_does_not_evaluate_the_default_socket() {
     let expected = std::path::PathBuf::from("custom.sock");
     let actual = resolve_socket_path(Some(expected.clone()), || {
-        anyhow::bail!("default socket path should not be evaluated")
+        panic!("default socket path should not be evaluated")
     })
     .unwrap();
     assert_eq!(actual, expected);
 }
 
 #[test]
-fn a_missing_daemon_is_distinguished_from_a_protocol_failure() {
+fn a_missing_daemon_is_the_stopped_failure_with_its_dedicated_exit_code() {
     let dir = tempfile::TempDir::new().unwrap();
     let error = query_status(&dir.path().join("missing.sock")).unwrap_err();
-    assert!(
-        error.to_string().contains("daemon unavailable"),
-        "{error:#}"
-    );
-    assert!(error.to_string().contains("nightcrow -d"), "{error:#}");
+    assert!(matches!(error, StatusError::Stopped { .. }), "{error}");
+    assert!(error.to_string().contains("daemon stopped"), "{error}");
+    assert!(error.to_string().contains("nightcrow -d"), "{error}");
+    assert_eq!(error.exit_code(), exit_code::DAEMON_STOPPED as i32);
 }
 
 #[test]
@@ -58,17 +57,20 @@ fn a_version_mismatch_is_reported_as_a_version_error() {
         attached_clients: vec![],
     };
     let error = decode_status(ServerMessage::Status { status }).unwrap_err();
-    assert!(error.to_string().contains("version mismatch"), "{error:#}");
+    assert!(error.contains("version mismatch"), "{error}");
 }
 
 #[test]
-fn an_unexpected_server_message_is_reported_as_a_protocol_error() {
+fn an_unexpected_server_message_is_the_protocol_failure_with_its_dedicated_exit_code() {
     let error = decode_status(ServerMessage::Hello {
         version: version(),
         client: 1,
     })
     .unwrap_err();
-    assert!(error.to_string().contains("protocol error"), "{error:#}");
+    assert!(error.contains("unexpected response"), "{error}");
+    let error = StatusError::Protocol(error);
+    assert!(error.to_string().contains("protocol error"), "{error}");
+    assert_eq!(error.exit_code(), exit_code::PROTOCOL_ERROR as i32);
 }
 
 #[test]
@@ -89,7 +91,7 @@ fn malformed_status_facts_are_rejected_before_rendering() {
         attached_clients: vec![],
     };
     let error = validate_status(&status).unwrap_err();
-    assert!(error.to_string().contains("malformed status"), "{error:#}");
+    assert!(error.contains("malformed status"), "{error}");
 }
 
 #[test]
@@ -105,10 +107,7 @@ fn an_empty_web_endpoint_is_rejected_before_rendering() {
         attached_clients: vec![],
     };
     let error = validate_status(&status).unwrap_err();
-    assert!(
-        error.to_string().contains("web endpoint is empty"),
-        "{error:#}"
-    );
+    assert!(error.contains("web endpoint is empty"), "{error}");
 }
 
 #[test]
@@ -124,8 +123,5 @@ fn an_empty_attach_endpoint_is_rejected_before_rendering() {
         attached_clients: vec![],
     };
     let error = validate_status(&status).unwrap_err();
-    assert!(
-        error.to_string().contains("attach endpoint is empty"),
-        "{error:#}"
-    );
+    assert!(error.contains("attach endpoint is empty"), "{error}");
 }
