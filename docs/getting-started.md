@@ -16,7 +16,7 @@ For a checkout you are developing locally:
 cargo install --path . --locked
 ```
 
-Rust 1.85 or newer is required. `--locked` uses the repository's committed `Cargo.lock`. The browser bundle is committed and embedded in the binary, so these commands do not require Node.js.
+Rust 1.88 or newer is required. `--locked` uses the repository's committed `Cargo.lock`. The browser bundle is committed and embedded in the binary, so these commands do not require Node.js.
 
 Create a commented configuration starter when needed:
 
@@ -77,7 +77,7 @@ cargo clippy --all-targets --all-features -- -D warnings
 
 Enable this checkout's hooks once with `git config core.hooksPath .githooks`. The `pre-commit` hook runs the format check; `pre-push` runs the CI-equivalent gates for the changes in the push range. See [commit rules](../.agents/rules/commits.md) for commit-specific policy.
 
-The viewer source requires Node.js 22 and installed dependencies:
+The viewer source requires Node.js 26 and installed dependencies:
 
 ```bash
 npm --prefix viewer-ui ci
