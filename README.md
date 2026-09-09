@@ -45,7 +45,18 @@ nightcrow update     # reinstall the binary; restart the session afterwards
 
 For foreground operation, use `nightcrow`; `nightcrow -d` starts the session in the background and writes its output to `~/.nightcrow/daemon.out`. See [Getting started](docs/getting-started.md) for installation variants, startup panes, disconnects, updates, and build verification.
 
-To inspect a running daemon without attaching, run `nightcrow status [--socket PATH]`. It performs a read-only one-shot query and reports the PID, version, start time, uptime, web and attach endpoints, attached clients, repositories, and panes. It exits non-zero when no daemon is running.
+To inspect a running daemon without attaching, run `nightcrow status [--socket PATH]`. It performs a read-only one-shot query and reports the PID, version, start time, uptime, web and attach endpoints, attached clients, repositories, and panes. Fields the daemon marks unavailable are reported as unavailable; the command never infers state from the process table or port scans, never auto-starts a daemon, and never opens the attach TUI or changes session state.
+
+Exit codes:
+
+| Code | Meaning |
+|------|---------|
+| 0 | The daemon answered and its status was rendered. |
+| 3 | Stopped — no socket or listener at the expected path. |
+| 4 | Response timeout — the daemon accepted the connection but did not answer within 5 seconds. |
+| 5 | Protocol error — the daemon answered, but the response failed validation or violated the status contract. |
+
+The daemon socket is a Unix-domain socket on every platform: a filesystem path on Unix and an AF_UNIX socket via the `uds_windows` transport on Windows. `--socket PATH` overrides the default location on either platform.
 
 ## Features
 
