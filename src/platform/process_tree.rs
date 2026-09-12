@@ -221,10 +221,16 @@ fn session_process_groups(session: libc::pid_t) -> impl Iterator<Item = libc::pi
     }
     for line in String::from_utf8_lossy(&output.stdout).lines() {
         let mut fields = line.split_whitespace();
-        let Some(group) = fields.next().and_then(|value| value.parse().ok()) else {
+        let Some(group) = fields
+            .next()
+            .and_then(|value| value.parse::<libc::pid_t>().ok())
+        else {
             continue;
         };
-        let Some(proc_session) = fields.next().and_then(|value| value.parse().ok()) else {
+        let Some(proc_session) = fields
+            .next()
+            .and_then(|value| value.parse::<libc::pid_t>().ok())
+        else {
             continue;
         };
         if proc_session == session && group > 1 {
