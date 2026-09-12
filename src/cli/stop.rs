@@ -12,6 +12,7 @@ use crate::daemon::protocol::ServerMessage;
 // bounded cleanup of a full configured session while still rejecting a lost
 // request instead of waiting forever.
 const SHUTDOWN_ACK_TIMEOUT: Duration = Duration::from_secs(20);
+const SHUTDOWN_POLL_INTERVAL: Duration = Duration::from_millis(25);
 
 /// Send a graceful shutdown request to a running daemon.
 pub(crate) fn run_stop(socket: Option<PathBuf>) -> Result<()> {
@@ -41,9 +42,22 @@ pub(crate) fn run_stop(socket: Option<PathBuf>) -> Result<()> {
         .set_read_timeout(Some(SHUTDOWN_ACK_TIMEOUT))
         .context("setting the shutdown acknowledgment timeout")?;
 
-    wait_for_shutdown_ack(&mut stream, Instant::now() + SHUTDOWN_ACK_TIMEOUT)?;
+    let deadline = Instant::now() + SHUTDOWN_ACK_TIMEOUT;
+    wait_for_shutdown_ack(&mut stream, deadline)?;
+    wait_for_daemon_exit(&path, deadline)?;
 
-    println!("nightcrow: daemon is shutting down");
+    println!("nightcrow: daemon stopped");
+    Ok(())
+}
+
+/// Wait until the daemon has dropped its socket and instance lock.
+fn wait_for_daemon_exit(path: &std::path::Path, deadline: Instant) -> Result<()> {
+    while path.exists() {
+        if Instant::now() >= deadline {
+            anyhow::bail!("timed out waiting for the daemon to stop");
+        }
+        std::thread::sleep(SHUTDOWN_POLL_INTERVAL);
+    }
     Ok(())
 }
 

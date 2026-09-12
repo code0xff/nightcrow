@@ -62,7 +62,7 @@ nightcrow update
 nightcrow update --version 0.1.1
 ```
 
-By default this downloads and verifies the latest binary from the official GitHub Release. Use `--version VER` to roll back to a published patch. Use `--path DIR` for a local checkout or `--git URL` for another source repository; those explicit development modes require Rust and run a locked, forced `cargo install`. Restart the session after updating so the daemon and its panes use the new binary. On Windows, `update` moves the installed executable aside before replacing it.
+By default this downloads and verifies the latest binary from the official GitHub Release. Use `--version VER` to roll back to a published patch. Use `--path DIR` for a local checkout or `--git URL` for another source repository; those explicit development modes require Rust and run a locked, forced `cargo install`. Restart a running session after updating with `nightcrow stop`, then start nightcrow again so the daemon and its panes use the new binary. On Windows, `update` moves the installed executable aside before replacing it; if that parked copy is still in use, cleanup waits for the session or updater to exit. The new binary is already installed, so a second `update` is not needed.
 
 ## Building and testing
 
