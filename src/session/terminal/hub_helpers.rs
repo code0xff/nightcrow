@@ -31,9 +31,6 @@ pub enum Command {
         data: Vec<u8>,
         client: u64,
     },
-    Close {
-        pane: PaneId,
-    },
     Reorder {
         order: Vec<PaneId>,
     },

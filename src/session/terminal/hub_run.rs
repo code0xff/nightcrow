@@ -26,6 +26,21 @@ impl TerminalHub {
         let mut clears = ClearWatch::default();
 
         while !stop.load(Ordering::Acquire) {
+            for pane in self.take_pending_closes() {
+                if !self.pane_is_live(pane) {
+                    continue;
+                }
+                if plugins.owner(pane).is_some() {
+                    plugins.pane_closed(&backend, pane);
+                    plugins.forget(&backend, pane);
+                    backend.retire_slot(pane);
+                    self.end_recovery(pane);
+                }
+                modes.forget(pane);
+                clears.forget(pane);
+                backend.destroy_pane(pane);
+                self.remove_pane_and_announce(pane);
+            }
             let mut commands_since_resize = 0;
             while let Ok(command) = commands.try_recv() {
                 if resize_due_before_command(&mut commands_since_resize) {
@@ -75,18 +90,6 @@ impl TerminalHub {
                         // from the output this input produces.
                         plugins.user_input(&backend, pane);
                         let _ = backend.send_input(pane, &data);
-                    }
-                    Command::Close { pane } if self.pane_is_live(pane) => {
-                        // Closed for good, unlike an exit: the slot goes with
-                        // the process, so there is nothing left to relaunch.
-                        if plugins.owner(pane).is_some() {
-                            plugins.pane_closed(&backend, pane);
-                            plugins.forget(&backend, pane);
-                            backend.retire_slot(pane);
-                            self.end_recovery(pane);
-                        }
-                        backend.destroy_pane(pane);
-                        self.remove_pane_and_announce(pane);
                     }
                     Command::Reorder { order } => self.reorder_panes(order),
                     // Deliberately not gated on the pane being live: a pane with

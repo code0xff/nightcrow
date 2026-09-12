@@ -16,6 +16,21 @@ use crate::session::limits;
 use std::collections::VecDeque;
 
 impl TerminalHub {
+    pub(super) fn queue_close(&self, pane: PaneId) {
+        self.pending_closes
+            .lock()
+            .expect("terminal close queue poisoned")
+            .insert(pane);
+    }
+
+    pub(super) fn take_pending_closes(&self) -> Vec<PaneId> {
+        let mut pending = self
+            .pending_closes
+            .lock()
+            .expect("terminal close queue poisoned");
+        std::mem::take(&mut *pending).into_iter().collect()
+    }
+
     /// Whether another terminal fits under the cap, counting slots already
     /// held for a startup set that has been claimed but not created yet.
     pub(super) fn has_free_slot(&self) -> bool {
