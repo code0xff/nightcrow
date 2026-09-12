@@ -48,7 +48,7 @@ pub use session::TerminalSession;
 
 use crate::session::size_owner::SizeOwnership;
 use hub_helpers::{Command, PendingResize, Shared};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc::{self, SyncSender};
 use std::sync::{Arc, Mutex};
@@ -75,6 +75,8 @@ const DEFAULT_PANE_SIZE: PaneSize = PaneSize { rows: 24, cols: 80 };
 
 pub struct TerminalHub {
     pub(super) commands: SyncSender<Command>,
+    /// Close is lossless control state, separate from the bounded input queue.
+    pending_closes: Mutex<BTreeSet<crate::backend::PaneId>>,
     /// Latest resize per connection and pane. Separate from `commands` so a
     /// full input queue cannot discard the final width of a window drag.
     pending_resizes: Mutex<BTreeMap<(u64, crate::backend::PaneId), PendingResize>>,
@@ -120,6 +122,7 @@ impl TerminalHub {
         let (commands, command_rx) = mpsc::sync_channel::<Command>(256);
         let hub = Arc::new(Self {
             commands,
+            pending_closes: Mutex::new(BTreeSet::new()),
             pending_resizes: Mutex::new(BTreeMap::new()),
             state: Mutex::new(Shared {
                 clients: Vec::new(),
