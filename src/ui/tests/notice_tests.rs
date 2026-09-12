@@ -76,6 +76,7 @@ fn dialog_offering(candidates: &[&str]) -> crate::ui::status_view::RepoInput {
         buf: "/repos/".to_string(),
         candidates: candidates.iter().map(|c| c.to_string()).collect(),
         picker: None,
+        ..crate::ui::status_view::RepoInput::default()
     }
 }
 

@@ -1,6 +1,7 @@
 use super::common::*;
 use super::*;
 use crate::app::tests::app_with_files;
+use std::time::Duration;
 
 #[test]
 fn typing_extends_the_prefilled_repo_path() {
@@ -183,4 +184,42 @@ fn 새_workspace는_프로젝트_하나를_활성으로_갖는다() {
 
     assert_eq!(ws.projects().len(), 1);
     assert_eq!(ws.active().unwrap().git.repo_path, ".");
+}
+
+#[test]
+fn repo_input_focus_flash_pulses_twice_then_stays_dim() {
+    let mut ws = workspace_on(&["/repos/current"]);
+    ws.start_repo_input();
+    let started = ws
+        .repo_input
+        .focus_flash_started
+        .expect("opening the dialog starts the focus cue");
+    let phase = crate::ui::status_view::REPO_INPUT_FLASH_PHASE;
+
+    assert!(ws.repo_input.focus_flash_bright());
+    for expected_bright in [false, true, false] {
+        let now = started + phase * (ws.repo_input.focus_flash_phase as u32 + 1);
+        assert!(ws.advance_repo_input_focus_flash(now));
+        assert_eq!(ws.repo_input.focus_flash_bright(), expected_bright);
+    }
+
+    let finished = started + phase * 4;
+    assert!(ws.advance_repo_input_focus_flash(finished));
+    assert!(!ws.repo_input.focus_flash_bright());
+    assert!(ws.repo_input.focus_flash_started.is_none());
+    assert!(!ws.advance_repo_input_focus_flash(finished + Duration::from_secs(1)));
+}
+
+#[test]
+fn reopening_repo_input_restarts_the_focus_flash() {
+    let mut ws = workspace_on(&["/repos/current"]);
+    ws.start_repo_input();
+    let first = ws.repo_input.focus_flash_started.expect("first start");
+    ws.advance_repo_input_focus_flash(first + crate::ui::status_view::REPO_INPUT_FLASH_PHASE * 4);
+
+    ws.start_repo_input();
+
+    assert!(ws.repo_input.focus_flash_started.is_some());
+    assert!(ws.repo_input.focus_flash_bright());
+    assert!(ws.repo_input.focus_flash_started.unwrap() >= first);
 }

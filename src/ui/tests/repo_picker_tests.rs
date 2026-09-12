@@ -1,8 +1,9 @@
 use super::common::*;
-use crate::ui::repo_dialog::{repo_dialog_hint_line, repo_input_line};
+use crate::ui::repo_dialog::{render_repo_input_row, repo_dialog_hint_line, repo_input_line};
 use crate::ui::status_view::RepoInput;
 use crate::workspace::PathTree;
-use ratatui::style::Color;
+use ratatui::{Terminal, backend::TestBackend, style::Color};
+use std::time::Instant;
 use tempfile::TempDir;
 
 /// The dialog's state with the browser open on a temp directory holding `dirs`.
@@ -24,6 +25,7 @@ fn browsing(dirs: &[&str]) -> (TempDir, RepoInput) {
             buf,
             candidates: Vec::new(),
             picker: Some(picker),
+            ..RepoInput::default()
         },
     )
 }
@@ -34,6 +36,7 @@ fn field_only() -> RepoInput {
         buf: "/repos/current".to_string(),
         candidates: Vec::new(),
         picker: None,
+        ..RepoInput::default()
     }
 }
 
@@ -148,6 +151,52 @@ fn a_row_too_narrow_for_any_path_keeps_the_prompt_and_caret_alone() {
     let line = repo_input_line(&field, Color::Yellow, 8).to_string();
 
     assert_eq!(line, " repo: |", "got: {line}");
+}
+
+#[test]
+fn the_focus_border_keeps_its_rail_while_pulsing_twice() {
+    let mut field = field_only();
+    let started = Instant::now();
+    field.start_focus_flash_at(started);
+    let mut rendered = Vec::new();
+
+    for phase in 0u32..=4 {
+        field.advance_focus_flash_at(
+            started + crate::ui::status_view::REPO_INPUT_FLASH_PHASE * phase,
+        );
+        let mut terminal = Terminal::new(TestBackend::new(40, 1)).expect("a terminal");
+        terminal
+            .draw(|frame| {
+                frame.render_widget(
+                    render_repo_input_row(&field, Color::Yellow, frame.area().width),
+                    frame.area(),
+                )
+            })
+            .expect("draw");
+        let buf = terminal.backend().buffer();
+        let text = (0..buf.area.width)
+            .map(|x| buf[(x, 0)].symbol())
+            .collect::<String>();
+        rendered.push((text, buf[(0, 0)].style().fg));
+    }
+
+    assert!(rendered.iter().all(|(text, _)| text.starts_with('│')));
+    assert!(rendered.iter().all(|(text, _)| text.ends_with('│')));
+    assert!(
+        rendered
+            .iter()
+            .all(|(text, _)| ratatui::text::Span::raw(text).width() == 40)
+    );
+    assert_eq!(
+        rendered.iter().map(|(_, color)| *color).collect::<Vec<_>>(),
+        vec![
+            Some(Color::Yellow),
+            Some(Color::DarkGray),
+            Some(Color::Yellow),
+            Some(Color::DarkGray),
+            Some(Color::DarkGray),
+        ]
+    );
 }
 
 #[test]

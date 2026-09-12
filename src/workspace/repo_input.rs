@@ -23,6 +23,7 @@ impl Workspace {
             .map(|p| p.repository_path().to_string())
             .unwrap_or_default();
         self.repo_input.active = true;
+        self.repo_input.start_focus_flash();
         self.repo_input.candidates.clear();
         self.repo_input.picker = None;
         self.clear_notice(NoticeKind::RepoInput);
@@ -30,6 +31,7 @@ impl Workspace {
 
     pub fn cancel_repo_input(&mut self) {
         self.repo_input.active = false;
+        self.repo_input.focus_flash_started = None;
         self.repo_input.buf.clear();
         self.repo_input.candidates.clear();
         self.repo_input.picker = None;
@@ -61,11 +63,18 @@ impl Workspace {
             .to_string_lossy()
             .to_string();
         self.repo_input.active = false;
+        self.repo_input.focus_flash_started = None;
         self.repo_input.buf.clear();
         self.repo_input.candidates.clear();
         self.repo_input.picker = None;
         self.clear_notice(NoticeKind::RepoInput);
         RepoInputResult::Open(resolved)
+    }
+
+    /// Advance the short focus cue without keeping a frame clock alive after
+    /// its two pulses have completed.
+    pub(crate) fn advance_repo_input_focus_flash(&mut self, now: std::time::Instant) -> bool {
+        self.repo_input.advance_focus_flash_at(now)
     }
 
     /// Extend the path from disk and offer what it could still become. Bound to

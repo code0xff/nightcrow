@@ -7,7 +7,27 @@ use crate::ui::status_view::RepoInput;
 use ratatui::{
     style::{Color, Style},
     text::{Line, Span},
+    widgets::{Block, Borders, Paragraph},
 };
+
+/// Render the active field with a fixed two-cell side rail. Keeping the rail
+/// in both phases means the path and caret never shift while focus is cued.
+pub(crate) fn render_repo_input_row<'a>(
+    repo_input: &'a RepoInput,
+    accent: Color,
+    width: u16,
+) -> Paragraph<'a> {
+    let border_color = if repo_input.focus_flash_bright() {
+        accent
+    } else {
+        Color::DarkGray
+    };
+    Paragraph::new(repo_input_line(repo_input, accent, width.saturating_sub(2))).block(
+        Block::default()
+            .borders(Borders::LEFT | Borders::RIGHT)
+            .border_style(Style::default().fg(border_color)),
+    )
+}
 
 /// The dialog's input line. Drawn on the notice row, in the repo header's
 /// place: the header names the repo being left, the input names the one being
