@@ -43,6 +43,7 @@ fn the_empty_screen_shows_the_dialog_and_its_rejection() {
         buf: "/definitely/not/here".to_string(),
         candidates: Vec::new(),
         picker: None,
+        ..RepoInput::default()
     };
     let notice = crate::app::Notice::new(NoticeKind::RepoInput, "no such directory");
 
@@ -64,6 +65,7 @@ fn the_project_screen_puts_the_dialog_on_the_notice_row_and_its_reports_below() 
         buf: "/definitely/not/here".to_string(),
         candidates: Vec::new(),
         picker: None,
+        ..RepoInput::default()
     };
     let paths = vec![".".to_string()];
     let mut terminal = Terminal::new(TestBackend::new(120, 20)).unwrap();

@@ -20,9 +20,7 @@ pub(crate) fn render_notice_row<'a>(
     // left, the input names the one being opened. Notices follow the dialog
     // down to the hint row so nothing covers the path being typed.
     if repo_input.active {
-        return Paragraph::new(crate::ui::repo_dialog::repo_input_line(
-            repo_input, accent, width,
-        ));
+        return crate::ui::repo_dialog::render_repo_input_row(repo_input, accent, width);
     }
     match notice_or_candidates(
         app.notice.as_ref(),

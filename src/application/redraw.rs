@@ -19,6 +19,7 @@ pub(crate) enum RedrawCause {
     Log,
     AttentionBlink,
     CaretBlink,
+    RepoInputFocus,
     HotFile,
     Session,
     Redraw,
@@ -124,6 +125,7 @@ mod tests {
             RedrawCause::Git,
             RedrawCause::Log,
             RedrawCause::HotFile,
+            RedrawCause::RepoInputFocus,
             RedrawCause::Session,
             RedrawCause::Redraw,
         ];
