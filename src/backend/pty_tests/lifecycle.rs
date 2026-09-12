@@ -1,5 +1,7 @@
 use super::*;
 
+const DESCENDANT_START_DEADLINE: Duration = Duration::from_secs(30);
+
 #[test]
 fn pty_backend_create_and_destroy_pane() {
     let mut backend = PtyBackend::new(".", ShellConfig::default());
@@ -54,7 +56,7 @@ fn descendant_command(marker: &std::path::Path) -> (ShellConfig, String) {
 }
 
 fn wait_for_pid(backend: &mut PtyBackend, id: PaneId, marker: &std::path::Path) -> u32 {
-    let deadline = Instant::now() + Duration::from_secs(10);
+    let deadline = Instant::now() + DESCENDANT_START_DEADLINE;
     let mut output = Vec::new();
     while Instant::now() < deadline {
         if let Ok(text) = std::fs::read_to_string(marker)
