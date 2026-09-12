@@ -71,6 +71,38 @@ fn clean_eof_is_a_shutdown_acknowledgment() {
 }
 
 #[test]
+fn stop_waits_until_the_daemon_socket_is_released() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("daemon.sock");
+    std::fs::write(&path, b"socket").unwrap();
+    let release_path = path.clone();
+    let releaser = std::thread::spawn(move || {
+        std::thread::sleep(Duration::from_millis(50));
+        std::fs::remove_file(release_path).unwrap();
+    });
+
+    wait_for_daemon_exit(&path, future_deadline()).expect("waits for socket release");
+
+    releaser.join().unwrap();
+    assert!(!path.exists());
+}
+
+#[test]
+fn stop_fails_when_the_daemon_socket_is_not_released() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("daemon.sock");
+    std::fs::write(&path, b"socket").unwrap();
+
+    let error = wait_for_daemon_exit(&path, Instant::now()).expect_err("expired deadline");
+
+    assert!(
+        error
+            .to_string()
+            .contains("timed out waiting for the daemon to stop")
+    );
+}
+
+#[test]
 fn reset_and_abort_are_shutdown_acknowledgments() {
     for kind in [
         io::ErrorKind::ConnectionReset,

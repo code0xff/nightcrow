@@ -14,11 +14,6 @@ pub(super) fn replace_target(
             target.display()
         )
     })?;
-    if parked.is_some() {
-        println!(
-            "nightcrow: moved the installed binary aside — a running session keeps using it until it exits"
-        );
-    }
 
     match install(target).and_then(|()| {
         if target.is_file() {
@@ -47,16 +42,17 @@ pub(super) fn replace_target(
 }
 
 fn finish_success(parked: Option<&Path>) -> Result<()> {
-    if let Some(parked) = parked
-        && !self_replace::discard(parked)
-    {
-        println!(
-            "nightcrow: the previous binary is still in use and was left at {} — it is removed on a later start",
-            parked.display()
-        );
-    }
-    println!("nightcrow: updated — restart the session to run the new version");
+    let cleanup_pending = parked.is_some_and(|parked| !self_replace::discard(parked));
+    println!("{}", success_message(cleanup_pending));
     Ok(())
+}
+
+fn success_message(cleanup_pending: bool) -> &'static str {
+    if cleanup_pending {
+        "nightcrow: update installed successfully.\nnightcrow: the parked old binary is still in use by the running session or updater; cleanup is pending.\nnightcrow: no second update is needed. If a session is running, run `nightcrow stop`, then start nightcrow again to use the new version."
+    } else {
+        "nightcrow: update installed successfully.\nnightcrow: no second update is needed. If a session is running, run `nightcrow stop`, then start nightcrow again to use the new version."
+    }
 }
 
 fn rollback(target: &Path, parked: Option<&Path>) -> Result<()> {
