@@ -6,7 +6,7 @@ members = [".", "plugins/nightcrow-recovery"]
 
 [package]
 name = "nightcrow"
-version = "0.1.4"
+version = "0.1.5"
 edition = "2024"
 rust-version = "1.89"
 description = "Agent-adjacent terminal workbench — git diff viewer + multi-terminal panes for running CLIs next to your code"
