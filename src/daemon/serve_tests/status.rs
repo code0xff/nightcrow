@@ -81,18 +81,21 @@ fn an_invalid_first_request_is_refused_without_attaching() {
 fn stop_request_is_still_accepted_before_attach() {
     let dir = tempfile::TempDir::new().unwrap();
     let daemon = daemon(&dir, &[]);
+    let path = daemon.path().to_path_buf();
+    let stopping = std::thread::spawn(move || crate::cli::run_stop(Some(path)));
 
-    crate::cli::run_stop(Some(daemon.path().to_path_buf())).expect("stop request succeeds");
-
-    assert_eq!(
-        daemon
-            .shutdown_rx
-            .recv_timeout(std::time::Duration::from_millis(100))
-            .expect("the daemon receives the stop signal"),
-        crate::platform::signals::Shutdown::Terminate
-    );
+    let signal = daemon
+        .shutdown_rx
+        .recv_timeout(std::time::Duration::from_millis(100))
+        .expect("the daemon receives the stop signal");
+    assert_eq!(signal, crate::platform::signals::Shutdown::Terminate);
     assert_eq!(daemon.session.clients.len(), 0);
     assert!(daemon.session.bridges.lock().unwrap().is_empty());
+    drop(daemon);
+    stopping
+        .join()
+        .expect("stop request thread does not panic")
+        .expect("stop request succeeds");
 }
 
 #[test]
