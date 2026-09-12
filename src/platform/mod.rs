@@ -7,6 +7,7 @@ mod link_target_paths;
 pub(crate) mod links;
 pub(crate) mod logging;
 pub(crate) mod paths;
+pub(crate) mod process_tree;
 pub(crate) mod self_replace;
 pub(crate) mod signals;
 pub(crate) mod threading;

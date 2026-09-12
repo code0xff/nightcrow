@@ -58,7 +58,7 @@ fn leader_x_asks_the_workspace_to_close_the_project() {
     let mut app = app_with_files(vec!["a.rs"]);
     let _ = handle_key(&mut app, leader());
 
-    let outcome = handle_key(&mut app, press(KeyCode::Char('x'), KeyModifiers::NONE));
+    let outcome = handle_key(&mut app, press(KeyCode::Char('x'), KeyModifiers::CONTROL));
 
     assert_eq!(outcome, KeyOutcome::Project(ProjectRequest::Close));
     assert!(
@@ -208,7 +208,7 @@ fn handle_key_leader_w_closes_pane_with_terminal_focus() {
     app.terminal.create_pane_now().unwrap();
     let before = app.terminal.panes.len();
     let _ = handle_key(&mut app, leader());
-    let _ = handle_key(&mut app, press(KeyCode::Char('w'), KeyModifiers::NONE));
+    let _ = handle_key(&mut app, press(KeyCode::Char('w'), KeyModifiers::CONTROL));
     // Closing is a request; the pane goes when its exit arrives.
     app.poll_terminal();
     assert_eq!(app.terminal.panes.len(), before - 1);

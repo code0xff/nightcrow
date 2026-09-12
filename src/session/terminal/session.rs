@@ -81,7 +81,10 @@ impl TerminalSession {
                     .queue_resize(pane, size.rows, size.cols, self.id, self.connection);
                 return;
             }
-            ClientMessage::Close { pane } => Command::Close { pane },
+            ClientMessage::Close { pane } => {
+                self.hub.queue_close(pane);
+                return;
+            }
             ClientMessage::Reorder { order } => Command::Reorder { order },
             ClientMessage::CancelRecovery { pane } => Command::CancelRecovery { pane },
             // Off the worker queue: it rearranges the panel and never reaches a

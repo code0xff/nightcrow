@@ -2,6 +2,7 @@ use super::{ExitPhase, PtyBackend, PtyEvent, PtyPane};
 use crate::backend::PaneId;
 use crate::backend::identity::{PANE_TOKEN_ENV, PLUGIN_RUNTIME_DIR_ENV, PaneIdentity};
 use crate::backend::slot::{PaneLaunch, resume_command_line};
+use crate::platform::process_tree::ProcessTree;
 use anyhow::Result;
 use portable_pty::{CommandBuilder, NativePtySystem, PtySize, PtySystem};
 use std::io::Read;
@@ -111,6 +112,16 @@ impl PtyBackend {
             cmd.cwd(canonical);
         }
         let mut child = pair.slave.spawn_command(cmd)?;
+        let process_tree = match ProcessTree::attach(&*child, &*pair.master) {
+            Ok(tree) => tree,
+            Err(error) => {
+                // Do not leave a process behind when establishing the tree
+                // boundary fails before the pane is inserted in the backend.
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err(error.context("establishing pane process tree"));
+            }
+        };
         let killer = child.clone_killer();
         drop(pair.slave);
 
@@ -154,6 +165,7 @@ impl PtyBackend {
                 master: Some(pair.master),
                 writer: Some(writer),
                 killer,
+                process_tree,
                 rx,
                 reader_handle: Some(reader_handle),
                 wait_handle: Some(wait_handle),

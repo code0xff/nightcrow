@@ -1,6 +1,7 @@
 use super::slot::{PaneSlot, PaneSlots};
 use super::{BackendEvent, PaneId, ResizeOutcome, TerminalBackend};
 use crate::config::ShellConfig;
+use crate::platform::process_tree::ProcessTree;
 use crate::platform::threading::try_timed_join;
 use anyhow::Result;
 use portable_pty::PtySize;
@@ -56,6 +57,7 @@ pub(super) struct PtyPane {
     pub(super) master: Option<Box<dyn portable_pty::MasterPty>>,
     pub(super) writer: Option<Box<dyn Write + Send>>,
     pub(super) killer: Box<dyn portable_pty::ChildKiller + Send + Sync>,
+    pub(super) process_tree: ProcessTree,
     pub(super) rx: Receiver<PtyEvent>,
     pub(super) reader_handle: Option<thread::JoinHandle<()>>,
     pub(super) wait_handle: Option<thread::JoinHandle<()>>,
@@ -64,7 +66,13 @@ pub(super) struct PtyPane {
 
 impl Drop for PtyPane {
     fn drop(&mut self) {
-        // Best-effort kill: the child may already be gone.
+        // Terminate the pane's process boundary before the PTY handles and
+        // waiter are reaped, so child jobs cannot outlive an explicit close.
+        if let Err(error) = self.process_tree.terminate() {
+            tracing::warn!(%error, "could not terminate pane process tree");
+        }
+        // Best-effort direct kill covers a child that exited before its tree
+        // termination raced with teardown.
         let _ = self.killer.kill();
         // Drop writer/master so the reader's blocked `read()` returns EOF;
         // without this, joining the reader would hang.
