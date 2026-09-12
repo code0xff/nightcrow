@@ -8,7 +8,7 @@ use crate::application::terminal_guard::TuiTerminal;
 use crate::workspace::Workspace;
 use crossterm::event::{self, Event};
 use ratatui::layout::Rect;
-use std::time::{Duration, SystemTime};
+use std::time::{Duration, Instant, SystemTime};
 use syntect::highlighting::ThemeSet;
 use syntect::parsing::SyntaxSet;
 
@@ -123,6 +123,9 @@ pub(crate) fn main_loop(
             .active()
             .is_some_and(crate::app::App::search_overlay_active);
         redraw.observe_caret(caret_active, crate::ui::current_caret_lit());
+        if ws.advance_repo_input_focus_flash(Instant::now()) {
+            redraw.request(RedrawCause::RepoInputFocus);
+        }
         let active_tab = ws.active_index();
         let empty_notice = ws.empty_notice().cloned();
         let prefix_armed = ws.prefix_armed();

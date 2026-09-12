@@ -2,7 +2,7 @@ use crate::git::diff::ChangedFile;
 use crate::ui::SearchQuery;
 use std::cell::Cell;
 use std::collections::HashMap;
-use std::time::SystemTime;
+use std::time::{Duration, Instant, SystemTime};
 
 #[derive(Default)]
 pub struct StatusView {
@@ -105,4 +105,42 @@ pub struct RepoInput {
     /// dialog's keys; the field stays on screen below it and keeps the text, so
     /// closing the browser returns to exactly what was being typed.
     pub picker: Option<crate::workspace::PathTree>,
+    /// Monotonic phase for the short focus cue shown when the dialog opens.
+    pub(crate) focus_flash_started: Option<Instant>,
+    pub(crate) focus_flash_phase: u8,
+}
+
+/// One bright/dim half-cycle of the repo-input focus cue.
+pub(crate) const REPO_INPUT_FLASH_PHASE: Duration = Duration::from_millis(100);
+const REPO_INPUT_FLASH_PHASES: u8 = 4;
+
+impl RepoInput {
+    pub(crate) fn start_focus_flash(&mut self) {
+        self.start_focus_flash_at(Instant::now());
+    }
+
+    pub(crate) fn start_focus_flash_at(&mut self, now: Instant) {
+        self.focus_flash_started = Some(now);
+        self.focus_flash_phase = 0;
+    }
+
+    /// Move to the phase containing `now`; returns whether a repaint is needed.
+    pub(crate) fn advance_focus_flash_at(&mut self, now: Instant) -> bool {
+        let Some(started) = self.focus_flash_started else {
+            return false;
+        };
+        let phase = (now.saturating_duration_since(started).as_millis()
+            / REPO_INPUT_FLASH_PHASE.as_millis())
+        .min(u128::from(REPO_INPUT_FLASH_PHASES)) as u8;
+        let changed = phase != self.focus_flash_phase;
+        self.focus_flash_phase = phase;
+        if phase >= REPO_INPUT_FLASH_PHASES {
+            self.focus_flash_started = None;
+        }
+        changed
+    }
+
+    pub(crate) fn focus_flash_bright(&self) -> bool {
+        self.focus_flash_started.is_some() && self.focus_flash_phase.is_multiple_of(2)
+    }
 }

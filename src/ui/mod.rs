@@ -94,13 +94,17 @@ pub fn draw_empty(
     // Shares `render_notice_row`'s row assignment so the dialog looks the
     // same wherever it opens: the input on this row, its reports and keys on
     // the hint row. With no project there is no repo header to fall back to.
-    let notice_line = if chrome.repo_input.active {
-        repo_dialog::repo_input_line(chrome.repo_input, accent, rows.notice.width)
+    if chrome.repo_input.active {
+        frame.render_widget(
+            repo_dialog::render_repo_input_row(chrome.repo_input, accent, rows.notice.width),
+            rows.notice,
+        );
     } else {
-        notice::notice_or_candidates(notice, chrome.repo_input, None, rows.notice.width)
-            .unwrap_or_default()
-    };
-    frame.render_widget(Paragraph::new(notice_line), rows.notice);
+        let notice_line =
+            notice::notice_or_candidates(notice, chrome.repo_input, None, rows.notice.width)
+                .unwrap_or_default();
+        frame.render_widget(Paragraph::new(notice_line), rows.notice);
+    }
 
     // The armed prefix shows the same chip as the project screen: pressing
     // the leader here has to look like it did something.
