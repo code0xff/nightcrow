@@ -39,6 +39,8 @@ export interface UseTerminalShortcutsArgs {
   commands: TerminalPaneCommands;
   focusPane: (pane: number) => void;
   cancelRecovery: (pane: number) => void;
+  /** Open the message form for the active pane (`useCompose`). */
+  openCompose: () => void;
 }
 
 export function useTerminalShortcuts({
@@ -50,13 +52,14 @@ export function useTerminalShortcuts({
   commands,
   focusPane,
   cancelRecovery,
+  openCompose,
 }: UseTerminalShortcutsArgs): void {
   const intents = useShortcutIntents();
   // The panel rebuilds these callbacks every render. Read through a ref so the
   // registration below depends on the pane list alone: re-registering on every
   // render would churn the bus for a set of handlers that has not changed.
-  const live = useRef({ commands, focusPane, cancelRecovery, socketRef });
-  live.current = { commands, focusPane, cancelRecovery, socketRef };
+  const live = useRef({ commands, focusPane, cancelRecovery, openCompose, socketRef });
+  live.current = { commands, focusPane, cancelRecovery, openCompose, socketRef };
 
   const handlers = useMemo<ShortcutHandlers>(() => {
     const map: ShortcutHandlers = {
@@ -97,6 +100,7 @@ export function useTerminalShortcuts({
     map["terminal.closePane"] = () => live.current.commands.closePane(active);
     map["terminal.claimSizing"] = () => live.current.commands.claimSize();
     map["terminal.cancelRecovery"] = () => live.current.cancelRecovery(active);
+    map["terminal.composeMessage"] = () => live.current.openCompose();
     // Registered to answer availability, never to run: `reduceLeader` owns the
     // two-step sequence and never emits this action. Registration is the single
     // source for "there is a pane to swap", so the keyboard and the help sheet

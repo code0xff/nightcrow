@@ -147,7 +147,10 @@ export function PanelToolbar({
       {panes.length > 0 && (
         <button
           onClick={onCompose}
-          title="Write a message to the active terminal"
+          {...shortcut(
+            "terminal.composeMessage",
+            "Write a message to the active terminal",
+          )}
           aria-label="Write a message to the active terminal"
           className={button}
         >

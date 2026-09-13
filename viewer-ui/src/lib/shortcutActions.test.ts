@@ -100,6 +100,17 @@ describe("SHORTCUT_ACTIONS", () => {
     }
   });
 
+  it("브라우저_전용은_메시지_작성뿐이고_TUI_leader_문자를_쓰지_않는다", () => {
+    const browserOnly = SHORTCUT_ACTIONS.filter((a) => a.support === "browserOnly");
+    expect(browserOnly.map((a) => a.id)).toEqual(["terminal.composeMessage"]);
+    // Keys the TUI binds (`docs/keybindings.md`), including the ones the web
+    // leaves unbound: a browser-only command must not take any of them.
+    const tuiLeaders = [..."twszclbfoxpurq[]"];
+    for (const action of browserOnly) {
+      expect(tuiLeaders, action.id).not.toContain(action.leader);
+    }
+  });
+
   it("TUI의_Shift_화살표는_같은_키로_포커스를_순환한다", () => {
     // `src/input/routing.rs` binds Shift-only Left/Right to the focus ring; a
     // browser leaves Shift+Arrow to the page, so the web keeps the keys.
