@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { composedInput, isSendable } from "./composeInput";
+import { composedInput, isSendable, sendChordLabel } from "./composeInput";
 
 describe("composedInput", () => {
   it("bracketed_mode_wraps_the_message_in_paste_markers", () => {
@@ -33,5 +33,19 @@ describe("isSendable", () => {
 
   it("any_visible_character_is_sendable", () => {
     expect(isSendable(" 가 ")).toBe(true);
+  });
+});
+
+describe("sendChordLabel", () => {
+  it("apple_platforms_including_ipados_name_the_command_key", () => {
+    for (const platform of ["MacIntel", "macOS", "iPad", "iPhone"]) {
+      expect(sendChordLabel(platform), platform).toBe("⌘↩");
+    }
+  });
+
+  it("other_or_unknown_platforms_name_ctrl", () => {
+    for (const platform of ["Win32", "Linux x86_64", "Android", ""]) {
+      expect(sendChordLabel(platform), platform).toBe("Ctrl+Enter");
+    }
   });
 });

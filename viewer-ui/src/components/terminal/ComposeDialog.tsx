@@ -1,9 +1,14 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { XIcon } from "../icons/actions";
-import { isSendable } from "../../lib/composeInput";
+import { isSendable, sendChordLabel } from "../../lib/composeInput";
 
 const TITLE_ID = "nc-compose-title";
+
+function platform(): string {
+  const nav = navigator as Navigator & { userAgentData?: { platform?: string } };
+  return nav.userAgentData?.platform || nav.platform || "";
+}
 
 /**
  * The form `useCompose` sends from.
@@ -33,6 +38,7 @@ export function ComposeDialog({
   const fieldRef = useRef<HTMLTextAreaElement>(null);
   const [failed, setFailed] = useState(false);
   const sendable = isSendable(draft);
+  const chord = sendChordLabel(platform());
 
   useEffect(() => {
     const field = fieldRef.current;
@@ -106,9 +112,16 @@ export function ComposeDialog({
           className="m-3 resize-y rounded-sm border border-ink-700 bg-ink-950 p-2 font-mono text-[16px] text-ink-50 focus:border-accent focus:outline-none"
         />
         <div className="flex items-center gap-2 px-3 pb-3">
-          {failed && (
+          {/* Written out rather than left to the Send button's tooltip, which a
+              touch screen never shows. The warning takes its place: both say
+              something about sending, and the warning is the one that matters. */}
+          {failed ? (
             <span role="alert" className="min-w-0 truncate text-removed">
               Not connected — nothing was sent.
+            </span>
+          ) : (
+            <span className="min-w-0 truncate text-xs text-ink-500">
+              <kbd className="font-sans">{chord}</kbd> to send
             </span>
           )}
           <button
@@ -123,7 +136,7 @@ export function ComposeDialog({
             type="button"
             onClick={send}
             disabled={!sendable}
-            title="Send and run (⌘/Ctrl+Return)"
+            title={`Send and run (${chord})`}
             className="rounded-sm bg-accent px-3 py-1.5 font-medium text-ink-950 disabled:bg-ink-700 disabled:text-ink-500"
           >
             Send

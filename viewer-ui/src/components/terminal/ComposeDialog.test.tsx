@@ -68,10 +68,16 @@ describe("ComposeDialog", () => {
     expect(onSend).not.toHaveBeenCalled();
   });
 
-  it("a_failed_send_says_nothing_went_out", () => {
+  it("the_send_chord_is_written_in_the_dialog", () => {
+    mount();
+    expect(screen.getByText(/to send/)).toBeTruthy();
+  });
+
+  it("a_failed_send_says_nothing_went_out_in_place_of_the_chord", () => {
     mount("hi", false);
     fireEvent.click(screen.getByRole("button", { name: /send/i }));
     expect(screen.getByRole("alert").textContent).toMatch(/nothing was sent/);
+    expect(screen.queryByText(/to send/)).toBeNull();
   });
 
   it("escape_closes_the_dialog", () => {
