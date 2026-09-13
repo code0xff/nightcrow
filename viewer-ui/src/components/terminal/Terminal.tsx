@@ -10,6 +10,8 @@ import { useCtrlLatch } from "../../hooks/terminal/useCtrlLatch";
 import { usePanelSize } from "../../hooks/terminal/usePanelSize";
 import { useSoftKeyboardOpen } from "../../hooks/ui/useSoftKeyboard";
 import { AttachNotice } from "./AttachNotice";
+import { ComposeDialog } from "./ComposeDialog";
+import { useCompose } from "../../hooks/terminal/useCompose";
 import { PaneGrid } from "./PaneGrid";
 import { PaneTabs } from "./PaneTabs";
 import { TermKeyBar } from "./TermKeyBar";
@@ -122,6 +124,18 @@ export function TerminalPanel({
 
   const focusActive = () => active !== null && focusPane(active);
 
+  const compose = useCompose({
+    socketRef,
+    viewsRef,
+    active,
+    panes,
+    onSent: (pane) => {
+      // Sent past the latch, like the key bar's keys, so it is spent here.
+      ctrl.clear();
+      focusPane(pane);
+    },
+  });
+
   const commands = usePaneCommands({
     socketRef,
     viewsRef,
@@ -215,6 +229,7 @@ export function TerminalPanel({
         onCancelRecovery={cancelRecovery}
         onClaimSize={claimSize}
         onCreate={create}
+        onCompose={compose.open}
         onToggleKeyBar={keyBar.toggle}
         onToggleMaximized={onToggleMaximized}
       />
@@ -247,7 +262,21 @@ export function TerminalPanel({
         />
       </div>
       {panes.length > 0 && keyBar.shown && (
-        <TermKeyBar onKey={sendKey} ctrl={ctrl} onArm={focusActive} />
+        <TermKeyBar
+          onKey={sendKey}
+          ctrl={ctrl}
+          onArm={focusActive}
+          onCompose={compose.open}
+        />
+      )}
+      {compose.target !== null && (
+        <ComposeDialog
+          label={titles[compose.target] || `terminal ${panes.indexOf(compose.target) + 1}`}
+          draft={compose.draft}
+          onChange={compose.setDraft}
+          onSend={compose.send}
+          onClose={compose.close}
+        />
       )}
     </section>
   );
