@@ -71,6 +71,11 @@ export function ShortcutRow({
             reinterpreted
           </span>
         )}
+        {action.support === "browserOnly" && (
+          <span className="shrink-0 rounded-sm bg-ink-700 px-1 text-[0.65rem] uppercase tracking-wide text-ink-200">
+            browser only
+          </span>
+        )}
         {!available && (
           <span className="shrink-0 text-[0.65rem] uppercase tracking-wide text-ink-400">
             not available here

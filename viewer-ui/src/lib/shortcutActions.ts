@@ -19,6 +19,7 @@ export type ShortcutActionId =
   | "terminal.swapPanePrompt"
   | "terminal.claimSizing"
   | "terminal.cancelRecovery"
+  | "terminal.composeMessage"
   | "view.toggleLog"
   | "view.toggleTree"
   | "view.toggleMaximize"
@@ -48,8 +49,12 @@ export type ShortcutActionId =
  * `reinterpreted` is not a lesser binding — it is a promise that the *user*
  * intent survives where the mechanism cannot, and it is surfaced in the help
  * sheet so nobody expects the terminal behaviour byte for byte.
+ *
+ * `browserOnly` has no TUI command behind it at all: it works around something
+ * only a browser gets wrong, so its key is chosen from the ones the TUI leaves
+ * unmapped and `docs/keybindings.md` lists it apart from the shared table.
  */
-export type ShortcutActionSupport = "direct" | "reinterpreted";
+export type ShortcutActionSupport = "direct" | "reinterpreted" | "browserOnly";
 
 export type ShortcutGroup =
   | "terminal"
@@ -120,6 +125,15 @@ export const SHORTCUT_ACTIONS: readonly ShortcutAction[] = [
   },
   { id: "terminal.claimSizing", label: "Claim terminal sizing", hint: "resize panes here", leader: "z", support: "direct", group: "terminal" },
   { id: "terminal.cancelRecovery", label: "Cancel plugin recovery", hint: "cancel recovery", leader: "c", support: "direct", group: "terminal" },
+  {
+    id: "terminal.composeMessage",
+    label: "Write a message to the active terminal",
+    hint: "message",
+    leader: "m",
+    support: "browserOnly",
+    group: "terminal",
+    note: "Opens a text field that sends its text to the pane and presses Return — for input an IME garbles when typed into the terminal itself.",
+  },
   { id: "view.toggleLog", label: "Toggle status and commit log", hint: "log/status view", leader: "l", support: "direct", group: "view" },
   { id: "view.toggleTree", label: "Toggle tree view", hint: "tree view", leader: "b", support: "direct", group: "view" },
   {

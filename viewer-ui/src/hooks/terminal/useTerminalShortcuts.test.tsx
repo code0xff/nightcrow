@@ -48,6 +48,7 @@ function mount(over: Partial<UseTerminalShortcutsArgs> = {}) {
   };
   const focusPane = vi.fn();
   const cancelRecovery = vi.fn();
+  const openCompose = vi.fn();
   const send = vi.fn();
   const socketRef = {
     current: { readyState: WebSocket.OPEN, send } as unknown as WebSocket,
@@ -62,6 +63,7 @@ function mount(over: Partial<UseTerminalShortcutsArgs> = {}) {
     commands,
     focusPane,
     cancelRecovery,
+    openCompose,
     ...over,
   };
   const tree = (current: UseTerminalShortcutsArgs) => (
@@ -82,6 +84,7 @@ function mount(over: Partial<UseTerminalShortcutsArgs> = {}) {
     commands,
     focusPane,
     cancelRecovery,
+    openCompose,
     send,
     bus,
     update: (next: Partial<UseTerminalShortcutsArgs>) =>
@@ -98,13 +101,14 @@ function inputs(send: ReturnType<typeof vi.fn>): unknown[] {
 
 describe("useTerminalShortcuts 패널 명령", () => {
   it("리더_명령은_패널이_이미_쓰는_컨트롤을_부른다", () => {
-    const { commands, cancelRecovery } = mount();
+    const { commands, cancelRecovery, openCompose } = mount();
 
     for (const [key, check] of [
       ["t", () => expect(commands.create).toHaveBeenCalledTimes(1)],
       ["w", () => expect(commands.closePane).toHaveBeenCalledWith(8)],
       ["z", () => expect(commands.claimSize).toHaveBeenCalledTimes(1)],
       ["c", () => expect(cancelRecovery).toHaveBeenCalledWith(8)],
+      ["m", () => expect(openCompose).toHaveBeenCalledTimes(1)],
     ] as const) {
       leader();
       press(document.body, { key });
@@ -184,6 +188,7 @@ describe("useTerminalShortcuts 패널 명령", () => {
       "terminal.closePane",
       "terminal.claimSizing",
       "terminal.cancelRecovery",
+      "terminal.composeMessage",
       "terminal.swapPanePrompt",
       "focus.pane1",
     ] as const) {

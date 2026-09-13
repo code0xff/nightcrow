@@ -56,6 +56,10 @@ The leader followed by `t`, `w`, `s`, `z`, `c`, `l`, `b`, `o`, `x`, `p`, or `u` 
 - Moving a project within the tab row is a drag on the tab itself rather than a key. The order it writes is the same session-owned order the TUI's bracket keys move.
 - The leader followed by `f` maximizes the focused panel and zooms the active terminal pane. A page cannot take the browser's chrome into fullscreen, and `F11` belongs to the browser, so the intent — give this panel the whole area — is kept and the mechanism is not.
 
+### Browser only
+
+- The leader followed by `m` opens the message form for the active terminal pane (see [Web viewer](web-viewer.md)). The TUI has no such command and leaves `m` unmapped: it reads keys from the host terminal, whose IME already composes, so there is nothing for a form to work around.
+
 ### Not bound in the browser
 
 - Redraw: the browser repaints the page itself, so there is no stale frame to force.

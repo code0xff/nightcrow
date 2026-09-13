@@ -154,6 +154,7 @@ export function TerminalPanel({
     commands,
     focusPane,
     cancelRecovery,
+    openCompose: compose.open,
   });
 
   const {
