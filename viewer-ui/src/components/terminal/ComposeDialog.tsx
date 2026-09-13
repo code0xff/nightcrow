@@ -76,7 +76,7 @@ export function ComposeDialog({
         role="dialog"
         aria-modal="true"
         aria-labelledby={TITLE_ID}
-        className="flex w-[36rem] max-w-full flex-col rounded-md border border-ink-700 bg-ink-900"
+        className="flex w-[56rem] max-w-full flex-col rounded-md border border-ink-700 bg-ink-900"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center gap-2 border-b border-ink-700 px-3 py-2">
@@ -106,7 +106,7 @@ export function ComposeDialog({
               send();
             }
           }}
-          rows={6}
+          rows={10}
           aria-label="message"
           // 16px, not the page's 14: iOS zooms the page into any field smaller.
           className="m-3 resize-y rounded-sm border border-ink-700 bg-ink-950 p-2 font-mono text-[16px] text-ink-50 focus:border-accent focus:outline-none"
