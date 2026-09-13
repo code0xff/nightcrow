@@ -28,3 +28,14 @@ export function composedInput(text: string, bracketed: boolean): string {
 export function isSendable(text: string): boolean {
   return text.trim().length > 0;
 }
+
+/**
+ * How the send chord is written for this device: the Command key where there is
+ * one, Ctrl elsewhere. Both work everywhere — this is only the label.
+ *
+ * iPadOS reports itself as `MacIntel`, which is the right answer here: a
+ * keyboard attached to an iPad has a Command key.
+ */
+export function sendChordLabel(platform: string): string {
+  return /mac|iphone|ipad|ipod/i.test(platform) ? "⌘↩" : "Ctrl+Enter";
+}
