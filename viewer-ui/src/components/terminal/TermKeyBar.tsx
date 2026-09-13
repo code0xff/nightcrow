@@ -1,4 +1,5 @@
 import { useEffect } from "react";
+import { PencilIcon } from "../icons/actions";
 import { TERM_KEY_BAR, type TermKey } from "../../lib/termKeys";
 import type { CtrlLatch } from "../../hooks/terminal/useCtrlLatch";
 
@@ -24,6 +25,7 @@ export function TermKeyBar({
   onKey,
   ctrl,
   onArm,
+  onCompose,
 }: {
   onKey: (key: TermKey) => void;
   ctrl: CtrlLatch;
@@ -31,6 +33,8 @@ export function TermKeyBar({
    *  need no focus, but the latch is spent by the next character *typed*, so
    *  tapping it has to leave somewhere to type. */
   onArm: () => void;
+  /** Write a message outside the pane and send it whole (`ComposeDialog`). */
+  onCompose: () => void;
 }) {
   // The latch outlives this bar — it belongs to the panel — and armed with no
   // button to say so, it would modify a character typed long after, for no
@@ -80,6 +84,16 @@ export function TermKeyBar({
           </button>
         ),
       )}
+      <button
+        onClick={() => {
+          ctrl.clear();
+          onCompose();
+        }}
+        aria-label="Write a message to this terminal"
+        className={`${KEY_BUTTON} ${KEY_IDLE} ml-auto`}
+      >
+        <PencilIcon className="h-3.5 w-3.5" />
+      </button>
     </div>
   );
 }

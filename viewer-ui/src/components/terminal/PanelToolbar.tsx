@@ -1,6 +1,6 @@
 import { useLayoutEffect, useRef } from "react";
 import type { ReactNode } from "react";
-import { PlusIcon } from "../icons/actions";
+import { PencilIcon, PlusIcon } from "../icons/actions";
 import {
   FitScreenIcon,
   KeyboardIcon,
@@ -41,6 +41,8 @@ export interface PanelToolbarProps {
   onCancelRecovery: (pane: number) => void;
   onClaimSize: () => void;
   onCreate: () => void;
+  /** Open the message form for the active pane. */
+  onCompose: () => void;
   onToggleKeyBar: () => void;
   onToggleMaximized: () => void;
 }
@@ -61,6 +63,7 @@ export function PanelToolbar({
   onCancelRecovery,
   onClaimSize,
   onCreate,
+  onCompose,
   onToggleKeyBar,
   onToggleMaximized,
 }: PanelToolbarProps) {
@@ -141,6 +144,16 @@ export function PanelToolbar({
           keys to, so an empty panel has none — and a control that reads "hide
           the key bar", pressed, over a panel with no key bar in it is naming
           something that is not there. */}
+      {panes.length > 0 && (
+        <button
+          onClick={onCompose}
+          title="Write a message to the active terminal"
+          aria-label="Write a message to the active terminal"
+          className={button}
+        >
+          <PencilIcon className="h-3.5 w-3.5" />
+        </button>
+      )}
       {panes.length > 0 && (
         <button
           onClick={onToggleKeyBar}
