@@ -68,16 +68,16 @@ describe("ComposeDialog", () => {
     expect(onSend).not.toHaveBeenCalled();
   });
 
-  it("the_send_chord_is_written_in_the_dialog", () => {
+  it("the_send_button_shows_its_chord_but_is_named_send", () => {
     mount();
-    expect(screen.getByText(/to send/)).toBeTruthy();
+    const send = screen.getByRole("button", { name: "Send" });
+    expect(send.querySelector("kbd")?.textContent).toMatch(/↩|Enter/);
   });
 
-  it("a_failed_send_says_nothing_went_out_in_place_of_the_chord", () => {
+  it("a_failed_send_says_nothing_went_out", () => {
     mount("hi", false);
     fireEvent.click(screen.getByRole("button", { name: /send/i }));
     expect(screen.getByRole("alert").textContent).toMatch(/nothing was sent/);
-    expect(screen.queryByText(/to send/)).toBeNull();
   });
 
   it("escape_closes_the_dialog", () => {
