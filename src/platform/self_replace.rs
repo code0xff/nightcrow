@@ -11,9 +11,18 @@
 
 use std::io;
 use std::path::{Path, PathBuf};
+use std::time::{Duration, SystemTime};
 
 /// Distinctive enough that [`sweep`] only ever deletes files this module made.
 const PARKED_SUFFIX: &str = ".nightcrow-old";
+
+/// The prefix `update` gives its download temporaries, shared so that [`sweep`]
+/// recognizes the ones an interrupted download abandoned.
+pub(crate) const DOWNLOAD_PREFIX: &str = ".nightcrow-download-";
+
+/// A download temporary younger than this may belong to an update running right
+/// now, whose `persist` would fail if the file were unlinked underneath it.
+const DOWNLOAD_GRACE: Duration = Duration::from_secs(60 * 60);
 
 /// Each still-locked leftover takes a slot; more than a handful is a bug.
 const MAX_PARKED_SLOTS: u32 = 32;
@@ -68,7 +77,8 @@ pub(crate) fn make_executable(path: &Path) -> io::Result<()> {
     Ok(())
 }
 
-/// Delete binaries parked beside `path` by earlier updates.
+/// Delete binaries parked beside `path`, and download temporaries abandoned,
+/// by earlier updates.
 ///
 /// Best-effort: this runs on startup, where a leftover costs a few megabytes
 /// and is never a reason to refuse to start.
@@ -80,13 +90,17 @@ pub(crate) fn sweep(path: &Path) {
     for entry in entries.flatten() {
         let name = entry.file_name();
         let Some(name) = name.to_str() else { continue };
-        if !is_parked_name(name) {
+        let kind = if is_parked_name(name) {
+            "parked binary"
+        } else if name.starts_with(DOWNLOAD_PREFIX) && is_stale(&entry) {
+            "abandoned download"
+        } else {
             continue;
-        }
+        };
         match std::fs::remove_file(entry.path()) {
-            Ok(()) => tracing::debug!(file = name, "swept a binary parked by an earlier update"),
+            Ok(()) => tracing::debug!(file = name, kind, "swept a leftover from an earlier update"),
             // Still running, or not ours to delete. Next startup tries again.
-            Err(err) => tracing::debug!(%err, file = name, "parked binary is still in use"),
+            Err(err) => tracing::debug!(%err, file = name, kind, "leftover is still in use"),
         }
     }
 }
@@ -96,6 +110,17 @@ pub(crate) fn sweep_beside_current_exe() {
     if let Ok(exe) = std::env::current_exe() {
         sweep(&exe);
     }
+}
+
+/// Treat an unreadable timestamp as young: skipping a leftover is cheaper than
+/// deleting the download of an update that is still running.
+fn is_stale(entry: &std::fs::DirEntry) -> bool {
+    let Ok(modified) = entry.metadata().and_then(|metadata| metadata.modified()) else {
+        return false;
+    };
+    SystemTime::now()
+        .duration_since(modified)
+        .is_ok_and(|age| age >= DOWNLOAD_GRACE)
 }
 
 fn parked_path(path: &Path, slot: u32) -> PathBuf {

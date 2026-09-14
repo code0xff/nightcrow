@@ -74,3 +74,26 @@ fn parked_names_are_recognised_only_with_a_numeric_slot() {
     assert!(!is_parked_name("nightcrow.exe.nightcrow-old.keep"));
     assert!(!is_parked_name("nightcrow.exe"));
 }
+
+#[test]
+fn sweeping_removes_only_a_stale_download_temporary() {
+    let dir = tempfile::tempdir().unwrap();
+    let exe = bin(dir.path(), "nightcrow.exe");
+    let stale = bin(dir.path(), &format!("{DOWNLOAD_PREFIX}abandoned"));
+    let fresh = bin(dir.path(), &format!("{DOWNLOAD_PREFIX}inflight"));
+    let aged = SystemTime::now() - DOWNLOAD_GRACE - Duration::from_secs(60);
+    std::fs::File::options()
+        .write(true)
+        .open(&stale)
+        .unwrap()
+        .set_modified(aged)
+        .unwrap();
+
+    sweep(&exe);
+
+    assert!(!stale.exists(), "an abandoned download is reclaimed");
+    assert!(
+        fresh.exists(),
+        "a download this young may belong to a running update"
+    );
+}
