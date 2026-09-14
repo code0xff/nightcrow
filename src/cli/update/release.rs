@@ -8,6 +8,7 @@ use super::contract::{
 use super::http::Client;
 use super::replace::replace_target;
 use crate::platform::self_replace;
+use crate::platform::self_replace::DOWNLOAD_PREFIX;
 
 pub(super) fn run(version: Option<&str>) -> Result<()> {
     let requested = version.map(PatchVersion::requested).transpose()?;
@@ -48,7 +49,7 @@ fn run_with(
         )
     })?;
     let mut temporary = tempfile::Builder::new()
-        .prefix(".nightcrow-download-")
+        .prefix(DOWNLOAD_PREFIX)
         .tempfile_in(parent)
         .with_context(|| {
             format!(
