@@ -61,8 +61,9 @@ impl Client {
         &self,
         asset: &Asset,
         destination: &mut std::fs::File,
+        progress: &mut dyn FnMut(u64),
     ) -> Result<[u8; 32]> {
-        let digest = self.stream_asset(asset, destination)?;
+        let digest = self.stream_asset(asset, destination, progress)?;
         destination
             .flush()
             .and_then(|()| destination.sync_all())
@@ -72,11 +73,16 @@ impl Client {
 
     pub(super) fn download_bytes(&self, asset: &Asset) -> Result<(Vec<u8>, [u8; 32])> {
         let mut bytes = Vec::with_capacity(asset.size as usize);
-        let digest = self.stream_asset(asset, &mut bytes)?;
+        let digest = self.stream_asset(asset, &mut bytes, &mut |_| {})?;
         Ok((bytes, digest))
     }
 
-    fn stream_asset(&self, asset: &Asset, output: &mut impl Write) -> Result<[u8; 32]> {
+    fn stream_asset(
+        &self,
+        asset: &Asset,
+        output: &mut impl Write,
+        progress: &mut dyn FnMut(u64),
+    ) -> Result<[u8; 32]> {
         self.validate_url(&asset.browser_download_url)?;
         let mut response = self
             .agent
@@ -110,6 +116,7 @@ impl Client {
             output
                 .write_all(&buffer[..read])
                 .with_context(|| format!("could not write release asset `{}`", asset.name))?;
+            progress(total);
         }
         if total != asset.size {
             anyhow::bail!(

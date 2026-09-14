@@ -6,6 +6,7 @@ use super::contract::{
     platform_asset,
 };
 use super::http::Client;
+use super::progress::Progress;
 use super::replace::replace_target;
 use crate::platform::self_replace;
 use crate::platform::self_replace::DOWNLOAD_PREFIX;
@@ -57,7 +58,11 @@ fn run_with(
                 target.display()
             )
         })?;
-    let actual = client.download_file(asset, temporary.as_file_mut())?;
+    let mut reporter = Progress::start(asset_name, asset.size);
+    let actual = client.download_file(asset, temporary.as_file_mut(), &mut |downloaded| {
+        reporter.advance(downloaded)
+    })?;
+    reporter.finish();
     if actual != expected {
         anyhow::bail!(
             "SHA-256 verification failed for `{asset_name}`; the installed binary was not changed"
