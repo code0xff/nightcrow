@@ -5,6 +5,7 @@ use std::path::PathBuf;
 
 mod contract;
 mod http;
+mod progress;
 mod release;
 mod replace;
 mod source;
