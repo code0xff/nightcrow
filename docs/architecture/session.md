@@ -39,6 +39,8 @@ trait TerminalBackend {
 
 PTY child가 그린 폭은 alternate-screen 화면을 사후에 재배치할 수 없는 계약이므로 세션 전체에 한 owner만 둔다. viewer의 명시적 arrival 또는 `claim_size`가 owner가 되고, owner가 떠난 뒤 2초 `RELEASE_GRACE`가 지나면 남은 viewer로 넘긴다. 연결 재접속·repository 전환은 viewer arrival과 구별한다. 아무 viewer도 없으면 owner 없음과 마지막 확정 크기를 유지한다.
 
+TUI는 외부 터미널 창의 유효한 행·열 크기가 바뀌면 기존 `claim_size` 경로로 소유권을 요청한다. 최초 크기 관측, 같은 크기의 반복 관측, 일반 재그리기나 원격 `Resized` 통지는 소유권을 요청하지 않는다. 소유권은 로컬에서 추정하지 않고 세션의 `SizeOwner` 확인을 따른다.
+
 비소유자의 resize는 버리며 실제 PTY 적용에 성공한 `Resized`만 broadcast한다. owner는 desired/pending/confirmed size를 분리하고 늦은 확인이 과거 크기여도 desired와 다르면 재요청한다. resize는 일반 input queue와 별도의 connection·pane별 latest-value queue에서 처리해 queue 포화에도 마지막 폭을 잃지 않는다. disconnect와 resize의 경합에서는 connection 등록과 ownership을 다시 확인한 요청만 적용한다.
 
 ## Status snapshot
