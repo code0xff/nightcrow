@@ -86,7 +86,7 @@ pub(crate) fn main_loop(
 
         let size = terminal.size()?;
         let screen = Rect::new(0, 0, size.width, size.height);
-        redraw.observe_screen(size.width, size.height);
+        observe_terminal_size(&mut redraw, ws, size.width, size.height);
         if let Some(app) = ws.active() {
             let layouts: Vec<(crate::backend::PaneId, u16, u16)> =
                 crate::ui::terminal_content_areas(app, screen, &cfg.layout)
@@ -228,6 +228,23 @@ pub(crate) fn main_loop(
                 }
             }
         }
+    }
+}
+
+/// Only a change between valid window sizes claims the shared PTY geometry;
+/// initial layout and minimized dimensions do not express a resize request.
+pub(crate) fn observe_terminal_size(
+    redraw: &mut RedrawState,
+    ws: &mut Workspace,
+    width: u16,
+    height: u16,
+) {
+    if redraw.observe_screen(width, height)
+        && width > 0
+        && height > 0
+        && let Some(app) = ws.active_mut()
+    {
+        app.claim_pane_sizing();
     }
 }
 
