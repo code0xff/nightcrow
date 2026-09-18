@@ -8,7 +8,7 @@
 //! a Job Object, whose kernel membership includes descendants created after
 //! the child is assigned.
 
-use anyhow::{Context as _, Result};
+use anyhow::Result;
 use portable_pty::{Child, MasterPty};
 use std::io;
 
@@ -40,14 +40,12 @@ impl ProcessTree {
                 anyhow::bail!("refusing unsafe PTY process id {pid}");
             }
 
-            // portable-pty calls setsid() before exec, which makes the child a
-            // session and process-group leader. Check the session while the
-            // child is alive so a recycled PID can never be mistaken for ours.
-            let process_group = unsafe { libc::getpgid(pid) };
-            let session = unsafe { libc::getsid(pid) };
-            if process_group <= 1 || session <= 1 {
-                return Err(io::Error::last_os_error()).context("querying PTY process session");
-            }
+            // portable-pty calls setsid() before exec, making this PID the
+            // session and process-group leader. Attach runs immediately after
+            // spawn, before any wait/reap, so the PID cannot have been reused;
+            // no live-process lookup is needed for this identity boundary.
+            let process_group = pid;
+            let session = pid;
             Ok(Self {
                 process_group,
                 session,
@@ -57,6 +55,7 @@ impl ProcessTree {
 
         #[cfg(windows)]
         {
+            use anyhow::Context as _;
             use std::os::windows::io::{AsRawHandle, FromRawHandle};
             use windows_sys::Win32::Foundation::HANDLE;
             use windows_sys::Win32::System::JobObjects::{
@@ -262,3 +261,7 @@ mod tests {
         assert_eq!(parse_proc_stat(stat), Some((123, 122, 122)));
     }
 }
+
+#[cfg(all(test, any(target_os = "linux", target_os = "macos")))]
+#[path = "process_tree_tests.rs"]
+mod pty_tests;
