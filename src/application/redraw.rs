@@ -46,12 +46,17 @@ impl RedrawState {
         self.dirty = true;
     }
 
-    pub(crate) fn observe_screen(&mut self, width: u16, height: u16) {
+    pub(crate) fn observe_screen(&mut self, width: u16, height: u16) -> bool {
+        if width == 0 || height == 0 {
+            return false;
+        }
         let screen = (width, height);
+        let changed = self.screen.is_some_and(|previous| previous != screen);
         if self.screen != Some(screen) {
             self.screen = Some(screen);
             self.request(RedrawCause::Resize);
         }
+        changed
     }
 
     pub(crate) fn observe_attention(&mut self, has_attention: bool, bright: bool) {
@@ -144,11 +149,15 @@ mod tests {
         let mut state = RedrawState::new();
         state.take();
 
-        state.observe_screen(100, 40);
+        assert!(!state.observe_screen(0, 0));
+        assert!(!state.observe_screen(100, 40));
         assert!(state.take());
-        state.observe_screen(100, 40);
+        assert!(!state.observe_screen(100, 40));
         assert!(!state.take());
-        state.observe_screen(101, 40);
+        assert!(!state.observe_screen(0, 40));
+        assert!(!state.observe_screen(100, 40));
+        assert!(!state.take());
+        assert!(state.observe_screen(101, 40));
         assert!(state.take());
     }
 

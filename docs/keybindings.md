@@ -9,7 +9,7 @@ The prefix waits indefinitely for one follow-up. `Esc` or `Ctrl+C` cancels it. A
 - `<prefix> t` opens a terminal pane (up to 8 panes per project).
 - `<prefix> w` closes the active terminal pane when the terminal has focus.
 - `<prefix> s`, then a pane digit, swaps the active pane with the selected pane. `Esc` or `Ctrl+C` cancels the second step.
-- `<prefix> z` claims the terminal size for this screen when another client currently owns it. A PTY has one size shared by all clients.
+- `<prefix> z` claims the terminal size for this screen when another client currently owns it. A PTY has one size shared by all clients. Resizing the outer TUI window also claims sizing automatically; simply returning focus to the window does not.
 - `<prefix> c` cancels a plugin recovery pending for the focused pane.
 - `<prefix> l` toggles between status and commit-log views.
 - `<prefix> b` opens the read-only tree view.

@@ -24,6 +24,13 @@ Release governance and the fork-to-upstream promotion contract are in [`.agents/
 
 ## 개발 흐름
 
+### Git 병합 운영 방침
+
+- PR은 CI 통과 후 merge commit을 생성하는 **Merge** 방식으로 병합한다. Rebase merge나 Squash merge는 사용하지 않는다.
+- 개발 변경은 `upstream/dev`에 통합하고, 릴리스는 `dev → main` 승격 PR로 병합한다. `main → dev` 동기화도 기존 커밋 이력을 보존하는 merge 방식으로 수행한다.
+
+### 작업 순서
+
 1. **Plan** — 변경이 단순하지 않으면 `/plan`으로 사용자와 정렬한 뒤 구현한다. 단순한 버그 수정·설정 변경은 바로 구현한다.
 2. **Implement** — `docs/architecture.md`와 해당 scope guide의 경계를 따른다. 공통 플랫폼·코드 품질 제약은 `.agents/rules/guardrails.md`에 있다.
 3. **Verify** — 빌드·테스트·포맷·다른 플랫폼·viewer bundle 게이트는 [`docs/getting-started.md`](docs/getting-started.md)의 [Building and testing](docs/getting-started.md#building-and-testing)을 따른다. 커밋별 green과 history 규칙은 [`commits.md`](.agents/rules/commits.md)에 있다.
