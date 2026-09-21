@@ -16,6 +16,8 @@ pub mod tree_view;
 pub use search::SearchQuery;
 
 mod chrome;
+mod help;
+mod help_entries;
 mod helpers;
 mod hint_bar;
 mod hint_text;
@@ -28,6 +30,9 @@ mod wall_clock;
 
 pub(crate) use chrome::{Chrome, chrome_areas, main_content_constraints};
 pub(crate) use file_list::next_hot_deadline_for_app;
+#[cfg(test)]
+pub use help::CLOSED_HELP;
+pub use help::HelpOverlay;
 pub(crate) use helpers::{
     char_offset, current_caret_lit, focused_border_style, jump_legend, path_extension,
     render_search_bar, render_selectable_list, status_color,
@@ -124,9 +129,30 @@ pub fn draw_empty(
         Line::from(hint_spans(EMPTY_HINT, &leader_label, mouse_enabled))
     };
     frame.render_widget(Paragraph::new(hint), rows.hint);
+    if chrome.help.open {
+        help::render(frame, chrome.help, &leader_label, frame.area(), accent);
+    }
 }
 
 pub fn draw(
+    frame: &mut Frame,
+    app: &mut App,
+    tabs: Chrome<'_>,
+    ss: &SyntaxSet,
+    ts: &ThemeSet,
+    layout: &LayoutConfig,
+    accent: Color,
+) {
+    let leader_label = crate::app::leader_label_of(app.interaction.leader);
+    draw_project(frame, app, tabs, ss, ts, layout, accent);
+    // Last, and over the whole screen: the overlay is a reading surface, and
+    // every branch above draws a full screen of its own underneath it.
+    if tabs.help.open {
+        help::render(frame, tabs.help, &leader_label, frame.area(), accent);
+    }
+}
+
+fn draw_project(
     frame: &mut Frame,
     app: &mut App,
     tabs: Chrome<'_>,

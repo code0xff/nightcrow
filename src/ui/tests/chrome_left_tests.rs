@@ -40,6 +40,7 @@ fn project_tab_at_follows_the_strip_down_the_left() {
         attention_bright: true,
         active: 0,
         repo_input: &RepoInput::default(),
+        help: &crate::ui::CLOSED_HELP,
         strip: TabStrip::Left,
     };
 

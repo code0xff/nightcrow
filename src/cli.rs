@@ -37,16 +37,16 @@ pub(crate) struct Cli {
     #[arg(long)]
     pub(crate) bind: Option<String>,
 
-    /// Run the session in the background and return to the shell.
+    /// Run the session as a background daemon and return to the shell.
     ///
     /// It gets its own session, so closing this terminal does not stop it.
     /// A service manager should start nightcrow *without* this — backgrounding
     /// is what it does itself.
     ///
-    /// With `attach` it makes no difference: attaching starts a backgrounded
-    /// session on its own when none is running.
-    #[arg(short, long)]
-    pub(crate) detach: bool,
+    /// With `attach` it makes no difference: attaching starts a background
+    /// daemon on its own when none is running.
+    #[arg(short = 'd', long = "daemon")]
+    pub(crate) daemon: bool,
 
     #[command(subcommand)]
     pub(crate) command: Option<Commands>,

@@ -110,6 +110,12 @@ impl SessionLink {
                 ws.start_repo_input();
                 return;
             }
+            // The overlay is this client's own, like the dialog: nothing about
+            // it is the session's business.
+            ProjectRequest::ToggleHelp => {
+                ws.help.toggle();
+                return;
+            }
             // Opening focuses in the daemon, so the tab comes forward with the
             // set rather than needing to be chased here.
             ProjectRequest::Open(path) => self.client.open_repo(&path),

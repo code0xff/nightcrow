@@ -52,6 +52,7 @@ pub(super) fn plain_chrome(repo_input: &RepoInput) -> Chrome<'_> {
         attention_bright: true,
         active: 0,
         repo_input,
+        help: &crate::ui::CLOSED_HELP,
         strip: crate::config::TabStrip::Top,
     }
 }
@@ -134,6 +135,7 @@ pub(super) fn drawn_text_in(
                 attention_bright: true,
                 active,
                 repo_input: &RepoInput::default(),
+                help: &crate::ui::CLOSED_HELP,
                 strip,
             };
             let layout = LayoutConfig {
@@ -172,6 +174,7 @@ pub(super) fn drawn_empty(
                 attention_bright: true,
                 active: 0,
                 repo_input,
+                help: &crate::ui::CLOSED_HELP,
                 strip: crate::config::TabStrip::Top,
             };
             draw_empty(frame, chrome, notice, leader, armed, false, Color::Yellow);

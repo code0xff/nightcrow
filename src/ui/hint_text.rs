@@ -2,8 +2,9 @@ use crate::app::{App, DiffPaneView, Focus, ViewMode};
 use crate::runtime::terminal::TerminalFullscreen;
 
 pub(crate) const PREFIX_CHIP: &str = " PREFIX ";
-pub(crate) const EMPTY_HINT: &str = " <prefix> o: open project | <prefix> q: detach";
-pub(crate) const EMPTY_HINT_ARMED: &str = " o: open project | q: detach | esc: cancel";
+pub(crate) const EMPTY_HINT: &str =
+    " <prefix> o: open project | <prefix> ?: help | <prefix> q: detach";
+pub(crate) const EMPTY_HINT_ARMED: &str = " o: open project | ?: help | q: detach | esc: cancel";
 
 pub(crate) fn prefix_armed_hint_text(app: &App) -> String {
     // While the terminal fills the body the digit row addresses panes
@@ -48,7 +49,7 @@ pub(crate) fn prefix_armed_hint_text(app: &App) -> String {
     // reports why on the notice row, so the key always produces a visible
     // result.
     format!(
-        " t: new pane | {close}{swap}{resize}{cancel}{log_toggle} | {tree_toggle} | f: fullscreen | o: open project | x: close project | p: theme | u: reload config | r: redraw | q: detach | {digits} | esc: cancel"
+        " t: new pane | {close}{swap}{resize}{cancel}{log_toggle} | {tree_toggle} | f: fullscreen | o: open project | x: close project | p: theme | u: reload config | r: redraw | ?: help | q: detach | {digits} | esc: cancel"
     )
 }
 
