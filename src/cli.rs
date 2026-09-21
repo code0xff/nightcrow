@@ -1,4 +1,4 @@
-use clap::{Parser, Subcommand};
+use clap::{CommandFactory, Parser, Subcommand};
 use std::path::PathBuf;
 
 mod attach;
@@ -110,3 +110,73 @@ pub(crate) enum Commands {
         git: Option<String>,
     },
 }
+
+impl Cli {
+    /// The session-shaping options this invocation set, named as the user
+    /// typed them. Empty when none is in play.
+    fn session_options(&self) -> Vec<&'static str> {
+        let mut named = Vec::new();
+        if !self.exec.is_empty() {
+            named.push("--exec");
+        }
+        if self.port.is_some() {
+            named.push("--port");
+        }
+        if self.bind.is_some() {
+            named.push("--bind");
+        }
+        if self.daemon {
+            named.push("--daemon");
+        }
+        named
+    }
+}
+
+/// The subcommand an option is a mistake on, if it is one.
+///
+/// These options only shape a session that is about to start, so pairing them
+/// with a subcommand that never starts one is a silent no-op: without this,
+/// `nightcrow --port 9000 status` reads as if it addressed that port. `attach`
+/// is deliberately absent — it starts a daemon when none is running and passes
+/// the options on to it.
+fn command_that_starts_no_session(command: &Commands) -> Option<&'static str> {
+    match command {
+        Commands::Init { .. } => Some("init"),
+        Commands::Plugin { .. } => Some("plugin"),
+        Commands::Stop { .. } => Some("stop"),
+        Commands::Status { .. } => Some("status"),
+        Commands::Update { .. } => Some("update"),
+        Commands::Attach => None,
+    }
+}
+
+/// Reject session options on a subcommand that starts no session, in clap's
+/// own error shape so the message and exit code match every other misuse.
+pub(crate) fn reject_session_options(cli: &Cli) -> Result<(), clap::Error> {
+    let Some(command) = cli.command.as_ref() else {
+        return Ok(());
+    };
+    let Some(name) = command_that_starts_no_session(command) else {
+        return Ok(());
+    };
+    let options = cli.session_options();
+    if options.is_empty() {
+        return Ok(());
+    }
+    Err(Cli::command().error(
+        clap::error::ErrorKind::ArgumentConflict,
+        format!(
+            "{} cannot be used with `{name}`: {}",
+            options.join(", "),
+            if options.len() == 1 {
+                "it only shapes a session that is starting"
+            } else {
+                "they only shape a session that is starting"
+            },
+        ),
+    ))
+}
+
+#[cfg(test)]
+#[path = "cli_tests.rs"]
+mod tests;

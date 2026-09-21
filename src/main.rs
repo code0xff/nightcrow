@@ -32,6 +32,9 @@ use crate::cli::{
 /// separate invocation, which is the one that draws.
 fn main() -> Result<()> {
     let cli = Cli::parse();
+    if let Err(error) = cli::reject_session_options(&cli) {
+        error.exit();
+    }
     // Collect binaries an update parked but could not delete while they ran.
     crate::platform::self_replace::sweep_beside_current_exe();
     match cli.command {
