@@ -43,7 +43,7 @@ nightcrow stop       # stop the running session and its terminal programs
 nightcrow update     # reinstall the binary; restart the session afterwards
 ```
 
-For foreground operation, use `nightcrow`; `nightcrow -d` starts the session in the background and writes its output to `~/.nightcrow/daemon.out`. See [Getting started](docs/getting-started.md) for installation variants, startup panes, disconnects, updates, and build verification.
+For foreground operation, use `nightcrow`; `nightcrow --daemon` starts the session as a background daemon and writes its output to `~/.nightcrow/daemon.out`. See [Getting started](docs/getting-started.md) for installation variants, startup panes, disconnects, updates, and build verification.
 
 To inspect a running daemon without attaching, run `nightcrow status [--socket PATH]`. It performs a read-only one-shot query and reports the PID, version, start time, uptime, web and attach endpoints, attached clients, repositories, and panes. Fields the daemon marks unavailable are reported as unavailable; the command never infers state from the process table or port scans, never auto-starts a daemon, and never opens the attach TUI or changes session state.
 

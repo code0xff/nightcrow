@@ -20,6 +20,7 @@ fn clicking_a_project_tab_asks_the_workspace_to_switch() {
             attention_bright: true,
             active: 1,
             repo_input: &crate::ui::status_view::RepoInput::default(),
+            help: &crate::ui::CLOSED_HELP,
             strip: crate::config::TabStrip::Top,
         },
         mouse(

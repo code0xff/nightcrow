@@ -35,8 +35,8 @@ nightcrow attach
 # Start in the foreground (Ctrl-C stops it).
 nightcrow
 
-# Start in the background and return to the shell.
-nightcrow -d
+# Start as a background daemon and return to the shell.
+nightcrow --daemon
 ```
 
 There is one session per running daemon. `nightcrow attach` reuses an existing session and starts one in the background when none is available. The daemon owns the open repositories and terminal programs; clients only attach to it. Startup prints the browser URL and the attach-socket path. A background daemon writes its output to `~/.nightcrow/daemon.out`.

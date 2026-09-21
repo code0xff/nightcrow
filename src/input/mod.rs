@@ -40,6 +40,9 @@ pub enum Action {
     MoveProjectPrev,
     /// Move the active project one slot away from the front of the tab strip.
     MoveProjectNext,
+    /// Open or close the keyboard help overlay. Workspace-level: it opens with
+    /// no project on screen too.
+    ToggleHelp,
     /// Open the repo-path dialog to add a project tab.
     OpenProject,
     /// Close the active project tab. Refused when it is the only one.

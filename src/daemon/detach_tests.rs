@@ -32,7 +32,7 @@ fn the_marker_counts_by_being_set_rather_than_by_its_value() {
 }
 
 #[test]
-fn the_background_copy_is_not_told_to_detach_again() {
+fn the_background_copy_is_not_told_to_background_itself_again() {
     // Otherwise it would spawn another, which would spawn another.
     let filtered = child_args(args(&["--port", "9000", "-d", "--exec", "claude"]).into_iter());
 
@@ -41,7 +41,7 @@ fn the_background_copy_is_not_told_to_detach_again() {
 
 #[test]
 fn the_long_form_of_the_flag_is_dropped_too() {
-    let filtered = child_args(args(&["--detach", "--bind", "127.0.0.1"]).into_iter());
+    let filtered = child_args(args(&["--daemon", "--bind", "127.0.0.1"]).into_iter());
 
     assert_eq!(filtered, args(&["--bind", "127.0.0.1"]));
 }

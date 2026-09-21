@@ -29,6 +29,10 @@ pub(crate) fn handle_empty_key(ws: &mut Workspace, key: KeyEvent) -> KeyOutcome 
             // session's, and a reload is worth having before opening the first
             // project — that is when the startup list it replaces takes effect.
             Action::ReloadConfig => KeyOutcome::Project(ProjectRequest::ReloadConfig),
+            // Reachable with nothing open, and most needed there: a user who
+            // has not opened a project yet is exactly the one looking for the
+            // key that opens one.
+            Action::ToggleHelp => KeyOutcome::Project(ProjectRequest::ToggleHelp),
             Action::Quit => KeyOutcome::Quit,
             _ => KeyOutcome::Continue,
         };

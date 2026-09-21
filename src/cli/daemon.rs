@@ -6,9 +6,9 @@ pub(crate) fn run_daemon(
     exec: Vec<String>,
     port: Option<u16>,
     bind: Option<String>,
-    detach: bool,
+    daemon: bool,
 ) -> Result<()> {
-    if detach && !crate::daemon::detach::is_detached_child() {
+    if daemon && !crate::daemon::detach::is_detached_child() {
         let log = daemon_output_path()?;
         let pid = crate::daemon::detach::respawn_in_background(&log)?;
         eprintln!("nightcrow: session running in the background (pid {pid})");
