@@ -20,6 +20,7 @@ The prefix waits indefinitely for one follow-up. `Esc` or `Ctrl+C` cancels it. A
 - `<prefix> p` cycles the session accent: yellow, cyan, green, magenta, blue.
 - `<prefix> u` reloads the configuration; see [Reloading](configuration.md#reloading).
 - `<prefix> r` forces a full redraw.
+- `<prefix> ?` or `<prefix> h` opens the help overlay: every command with its keys, on one screen. It opens with no project open too. `j`/`k`, the arrows, `PageUp`/`PageDown` and `Space` scroll it; `Esc`, `Enter`, `q`, `?`, `h` or `Ctrl+C` closes it. Every other key is consumed while it is up, so nothing acts on the screen underneath.
 - `<prefix> q` detaches the TUI; it does not stop the session.
 - `<prefix> 1` focuses the file list and `<prefix> 2` focuses the diff viewer in split view.
 - `<prefix> 3`…`<prefix> 9` and `<prefix> 0` focus terminal panes 1–8 in split view (`0` is pane 8).
@@ -50,6 +51,8 @@ The leader followed by `t`, `w`, `s`, `z`, `c`, `l`, `b`, `o`, `x`, `p`, or `u` 
 `Shift+Left` and `Shift+Right` walk the same ring — the list, the content pane, then each terminal pane — among whatever is on screen: a maximized terminal offers its panes alone, a maximized upper region the list and the content pane, and a narrow screen only the view its bottom navigation chose, which is what the TUI's fullscreen rules amount to. Stepping onto a pane while another is zoomed moves the zoom to it, as the TUI's fullscreen cycle does. A control inside a region — the sidebar's filter, a pane's toolbar — counts as that region; a keyboard nowhere on the ring (in the header or the footer, say) enters it at the near end. The chord is the page's wherever it is not typing, so it never reaches a pane as `ESC[1;2D`; in a text field it stays the browser's word selection.
 
 `Shift+PageUp` and `Shift+PageDown` scroll the focused pane a page, as in the TUI — xterm.js binds them itself.
+
+The leader followed by `?` raises the command list in both: the browser's shortcut sheet and the TUI's help overlay. The TUI answers to `h` as well, which the browser leaves to the page.
 
 ### Reinterpreted
 

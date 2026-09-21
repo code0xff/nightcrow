@@ -27,6 +27,8 @@ pub struct Workspace {
     active: usize,
     /// Lives at process level because it must work with no project open.
     pub repo_input: RepoInput,
+    /// The keyboard help overlay, at process level for the same reason.
+    pub help: crate::ui::HelpOverlay,
     /// Notice shown only on the empty screen; a project owns its own.
     empty_notice: Option<Notice>,
     leader: KeyEvent,
@@ -48,6 +50,7 @@ impl Workspace {
             projects: Vec::new(),
             active: 0,
             repo_input: RepoInput::default(),
+            help: crate::ui::HelpOverlay::default(),
             empty_notice: None,
             leader,
             empty_prefix_armed: false,
@@ -125,8 +128,12 @@ impl Workspace {
 
     /// The active project and the dialog together, borrowed from disjoint
     /// fields so a frame can render both.
-    pub fn render_parts(&mut self) -> (Option<&mut App>, &RepoInput) {
-        (self.projects.get_mut(self.active), &self.repo_input)
+    pub fn render_parts(&mut self) -> (Option<&mut App>, &RepoInput, &crate::ui::HelpOverlay) {
+        (
+            self.projects.get_mut(self.active),
+            &self.repo_input,
+            &self.help,
+        )
     }
 
     /// Raise a notice on the active project or the empty screen.

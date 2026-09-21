@@ -79,6 +79,7 @@ pub(super) fn test_tab_view(paths: &[String]) -> crate::ui::Chrome<'_> {
         attention_bright: true,
         active: 0,
         repo_input: &CLOSED_DIALOG,
+        help: &crate::ui::CLOSED_HELP,
         strip: crate::config::TabStrip::Top,
     }
 }

@@ -82,6 +82,7 @@ fn the_project_screen_puts_the_dialog_on_the_notice_row_and_its_reports_below() 
                     attention_bright: true,
                     active: 0,
                     repo_input: &repo_input,
+                    help: &crate::ui::CLOSED_HELP,
                     strip: TabStrip::Top,
                 },
                 &ss,
@@ -159,6 +160,7 @@ fn project_tab_at_matches_the_rendered_row() {
         attention_bright: true,
         active: 0,
         repo_input: &RepoInput::default(),
+        help: &crate::ui::CLOSED_HELP,
         strip: TabStrip::Top,
     };
     assert_eq!(project_tab_at(tabs, screen, 0, 0), Some(0));
@@ -188,6 +190,7 @@ fn panels_advertise_the_leader_digit_not_the_bare_f_key() {
                     attention_bright: true,
                     active: 0,
                     repo_input: &RepoInput::default(),
+                    help: &crate::ui::CLOSED_HELP,
                     strip: TabStrip::Top,
                 },
                 &ss,

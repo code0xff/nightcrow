@@ -135,13 +135,14 @@ pub(crate) fn main_loop(
         let accent = ws.current_accent();
 
         if redraw.take() {
-            let (app_opt, repo_input) = ws.render_parts();
+            let (app_opt, repo_input, help) = ws.render_parts();
             let tabs = crate::ui::Chrome {
                 repo_paths: &tab_paths,
                 attention: &tab_attention,
                 attention_bright,
                 active: active_tab,
                 repo_input,
+                help,
                 strip: cfg.layout.tabs,
             };
             terminal.draw(|frame| match app_opt {
@@ -165,12 +166,14 @@ pub(crate) fn main_loop(
         // Only the buffer is copied here; the frame itself may be skipped when
         // no state or visual clock phase changed.
         let repo_input = ws.repo_input.clone();
+        let help_snapshot = ws.help.clone();
         let tabs = crate::ui::Chrome {
             repo_paths: &tab_paths,
             attention: &tab_attention,
             attention_bright,
             active: active_tab,
             repo_input: &repo_input,
+            help: &help_snapshot,
             strip: cfg.layout.tabs,
         };
 

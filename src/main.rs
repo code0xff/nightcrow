@@ -32,21 +32,24 @@ use crate::cli::{
 /// separate invocation, which is the one that draws.
 fn main() -> Result<()> {
     let cli = Cli::parse();
+    if let Err(error) = cli::reject_session_options(&cli) {
+        error.exit();
+    }
     // Collect binaries an update parked but could not delete while they ran.
     crate::platform::self_replace::sweep_beside_current_exe();
     match cli.command {
         Some(Commands::Init { force }) => run_init(force),
-        // Attach starts a session when none is running, with or without `-d`:
-        // the first command of the day should not have to be two commands, and
-        // a session that has to exist for the TUI to draw is not a choice the
-        // user was making. `-d` still says how the session runs — in the
-        // background — which is what it already does here.
+        // Attach starts a session when none is running, with or without
+        // `--daemon`: the first command of the day should not have to be two
+        // commands, and a session that has to exist for the TUI to draw is not
+        // a choice the user was making. `--daemon` still says how the session
+        // runs — in the background — which is what it already does here.
         Some(Commands::Attach) => run_attach_detached(),
         Some(Commands::Plugin { command }) => cli::plugin_cmd::run_plugin(command),
         Some(Commands::Stop { socket }) => run_stop(socket),
         Some(Commands::Status { socket }) => report_status_exit(run_status(socket)),
         Some(Commands::Update { version, path, git }) => run_update(version, path, git),
-        None => run_daemon(cli.exec, cli.port, cli.bind, cli.detach),
+        None => run_daemon(cli.exec, cli.port, cli.bind, cli.daemon),
     }
 }
 

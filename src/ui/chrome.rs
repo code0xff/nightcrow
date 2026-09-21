@@ -1,4 +1,5 @@
 use crate::config::{LayoutConfig, TabStrip};
+use crate::ui::help::HelpOverlay;
 use crate::ui::project_tab::STRIP_WIDTH;
 use crate::ui::status_view::RepoInput;
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
@@ -82,6 +83,9 @@ pub struct Chrome<'a> {
     pub attention_bright: bool,
     pub active: usize,
     pub repo_input: &'a RepoInput,
+    /// Drawn over everything the chrome and the body put down, so it is the
+    /// last thing `draw` and `draw_empty` render.
+    pub help: &'a HelpOverlay,
     /// `[layout] tabs`, carried with the chrome so it can be drawn and
     /// hit-tested without the layout — the empty screen has none to hand over.
     pub strip: TabStrip,

@@ -2,6 +2,7 @@ use crate::app::{App, Focus};
 use crate::application::input::handlers::{
     handle_empty_key, handle_terminal_key, handle_upper_key,
 };
+use crate::application::input::help::handle_help_key;
 use crate::application::input::prefix::{handle_prefix_followup, handle_swap_target_followup};
 use crate::application::input::repo_dialog::handle_repo_input_key;
 use crate::input::{Action, map_key};
@@ -48,6 +49,9 @@ pub(crate) enum ProjectRequest {
     },
     Close,
     Open(String),
+    /// Raise or dismiss the keyboard help overlay. A workspace request because
+    /// the overlay outlives having any project open.
+    ToggleHelp,
     OpenDialog,
     CycleAccent,
     ReloadConfig,
@@ -156,6 +160,7 @@ pub(super) fn handle_global_action(app: &mut App, action: Action) -> Option<KeyO
         }
         // Opening is two steps: this only raises the dialog, and confirming it
         // emits the `Open` request (see `handle_repo_input_key`).
+        Action::ToggleHelp => Some(KeyOutcome::Project(ProjectRequest::ToggleHelp)),
         Action::OpenProject => Some(KeyOutcome::Project(ProjectRequest::OpenDialog)),
         Action::CloseProject => Some(KeyOutcome::Project(ProjectRequest::Close)),
         Action::SwitchProject(idx) => Some(KeyOutcome::Project(ProjectRequest::Switch(idx))),
@@ -258,6 +263,12 @@ pub(crate) fn matches_text_command(key: KeyEvent, expected: char) -> bool {
 pub(crate) fn dispatch_key(ws: &mut Workspace, key: KeyEvent) -> KeyOutcome {
     if key.kind != KeyEventKind::Press {
         return KeyOutcome::Continue;
+    }
+    // The overlay owns the keyboard while it is up, ahead of the dialog and
+    // every project key: it covers the screen, so anything underneath would
+    // act on what the user cannot see.
+    if ws.help.open {
+        return handle_help_key(ws, key);
     }
     if ws.repo_input.active {
         return handle_repo_input_key(ws, key);

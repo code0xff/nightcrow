@@ -75,6 +75,10 @@ pub fn prefix_action(event: KeyEvent) -> Action {
             'u' => Action::ReloadConfig,
             'r' => Action::Redraw,
             'q' => Action::Quit,
+            // Two keys for one overlay: `?` matches the web viewer's sheet,
+            // and `h` is what a hand reaches for when the leader is already
+            // held. Neither is taken by anything else behind the leader.
+            '?' | 'h' => Action::ToggleHelp,
             '1' => Action::FocusList,
             '2' => Action::FocusDiff,
             d @ '3'..='9' => Action::SwitchPane(d as usize - '3' as usize),
