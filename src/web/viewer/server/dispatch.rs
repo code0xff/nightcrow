@@ -1,8 +1,8 @@
 use super::clone_routes;
 use super::http_util::{json_error, json_response, text_response};
 use super::mutations::{
-    handle_close_repo, handle_mkdir, handle_open_repo, handle_reload_config, handle_reorder_repos,
-    handle_set_prefs, handle_write_file,
+    handle_close_repo, handle_mkdir, handle_open_repo, handle_paste_image, handle_reload_config,
+    handle_reorder_repos, handle_set_prefs, handle_write_file,
 };
 use super::routes::route;
 use super::{VIEWER_SESSION_COOKIE, ViewerState};
@@ -37,10 +37,13 @@ pub(super) fn accept_loop(listener: TcpListener, state: Arc<ViewerState>) {
 /// How much body each route may carry. Only the file write carries a document;
 /// everything else is a small control payload.
 fn body_limit(head: &RequestHead) -> usize {
-    if head.method == "POST" && head.path == "/api/file" {
-        limits::MAX_FILE_WRITE_BYTES
-    } else {
-        conn::MAX_BODY_BYTES
+    if head.method != "POST" {
+        return conn::MAX_BODY_BYTES;
+    }
+    match head.path.as_str() {
+        "/api/file" => limits::MAX_FILE_WRITE_BYTES,
+        "/api/paste-image" => limits::MAX_PASTE_IMAGE_BYTES,
+        _ => conn::MAX_BODY_BYTES,
     }
 }
 
@@ -140,6 +143,14 @@ fn handle_connection(mut stream: TcpStream, state: Arc<ViewerState>) {
 
     if head.path == "/ws/term" && head.is_websocket_upgrade() {
         super::handlers::serve_terminal(stream, &head, &state);
+        return;
+    }
+
+    // Writing a pasted image to disk. Dispatched from the bytes, above the
+    // decode below: an image is not text, and reading it as text would both
+    // ruin it and allocate a second copy of it.
+    if head.method == "POST" && head.path == "/api/paste-image" {
+        let _ = stream.write_all(&handle_paste_image(&raw));
         return;
     }
 
