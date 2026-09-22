@@ -74,6 +74,14 @@ Host를 Origin보다 먼저 보고, static bundle을 인증 전 허용하고, re
 
 libgit2 vendored build는 SSH transport·credential helper·scp-like remote 지원이 부족하므로 clone은 `git` binary에 위임한다. `ext::`가 command execution으로 이어질 수 있어 URL scheme을 `https/http/ssh/git+ssh`와 scp-like 형태로 제한하고 `file://`, local path, `git://`는 거부한다. destination은 먼저 `create_dir`로 확보하고, clone job과 동시 실행 수는 bounded하게 유지한다.
 
+### 붙여넣은 이미지는 업로드하고 경로를 입력한다
+
+pane 안의 CLI에게 이미지를 건네는 방법은 열 수 있는 파일뿐이고, 클립보드는 페이지를 연 기기의 것이다. 그래서 브라우저가 이미지를 `POST /api/paste-image`로 올리고 서버가 쓴 경로를 pane에 입력한다. 키 입력만 전달하는 대안은 원리적으로 불가능하다 — CLI의 `Ctrl+V`는 CLI가 도는 머신의 클립보드를 읽는다.
+
+body는 base64 JSON이 아니라 raw bytes다. base64는 직접 의존성을 늘리고 전송량을 1/3 키우는 데 비해, `conn::read_request`가 body를 `String`이 아닌 `Vec<u8>`로 돌려주게 하는 변경은 기존 route의 동작을 바꾸지 않는다. WebSocket binary frame으로 보내는 안은 client→server가 JSON 전용인 terminal protocol 계약을 더 크게 흔들어 기각했다.
+
+파일은 저장소가 아니라 `~/.nightcrow/tmp`에 쓴다. 저장소 안이면 `@상대경로` 참조가 되는 대신 붙여넣을 때마다 untracked 파일이 status에 나타난다 — 스크린샷은 프로젝트의 변경이 아니다.
+
 ## 배포와 업데이트
 
 ### 공식 업데이트는 release binary를 검증한 뒤 복구 가능하게 교체한다
