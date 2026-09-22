@@ -6,7 +6,7 @@ import type { PaneView } from "../../lib/terminalLayout";
 import type { PaneViewMode } from "../../lib/paneViewMode";
 import { terminalFontOptions } from "../../lib/termFont";
 import { ClearKeyProbe } from "../../lib/clearKeyProbe";
-import { overriddenKeySequence } from "../../lib/hardwareKeys";
+import { browserHandlesKey, overriddenKeySequence } from "../../lib/hardwareKeys";
 import { OSC_CLIPBOARD } from "../../lib/osc52";
 import { receivePaneClipboard } from "../../lib/paneClipboard";
 import { sendTerminalMessage, type PaneSize } from "../../api/terminal";
@@ -76,6 +76,10 @@ export function useTerminalViews({
       const probe = new ClearKeyProbe();
       term.attachCustomKeyEventHandler((event) => {
         probe.noteKey(event, performance.now());
+        // False is xterm's "this key is not mine": it returns before it
+        // encodes anything or calls preventDefault, so the browser's own
+        // gesture — the paste — goes ahead. See `browserHandlesKey`.
+        if (browserHandlesKey(event)) return false;
         const overridden = overriddenKeySequence(event);
         if (overridden === null) return true;
         // Back through xterm's own input path rather than straight to the
