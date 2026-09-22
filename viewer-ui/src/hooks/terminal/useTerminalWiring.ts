@@ -8,6 +8,7 @@ import { usePaneFocus } from "./usePaneFocus";
 import { usePaneSizes } from "./usePaneSizes";
 import { useStartupSizes } from "./useStartupSizes";
 import { useTerminalSocket } from "./useTerminalSocket";
+import { usePasteImage } from "./usePasteImage";
 import { useTerminalViews } from "./useTerminalViews";
 
 // How the panel is wired to the session: the socket, the xterms it fills, and
@@ -105,6 +106,10 @@ export function useTerminalWiring({
     setOwnsSize,
     setRecovery,
   });
+
+  // Mounted alongside the views rather than after them: this only installs
+  // listeners on the panel, and reads a pane's view when one fires.
+  usePasteImage({ containerRef, socketRef, viewsRef });
 
   useTerminalViews({
     panes,

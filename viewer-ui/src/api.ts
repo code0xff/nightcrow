@@ -4,7 +4,7 @@ export * from "./api/errors";
 
 import { PROTOCOL_VERSION } from "./api/types";
 import { ApiError } from "./api/errors";
-import { get, post, query, request } from "./api/client";
+import { get, post, postBytes, query, request } from "./api/client";
 import type {
   Browse,
   CloneStatus,
@@ -253,6 +253,11 @@ export const api = {
    *  result: `[[plugin]]` is re-applied to child processes the page never sees,
    *  and `[[startup_command]]` only reaches projects opened afterwards. The
    *  summary is the whole of what there is to show. */
+  /** Write a pasted image on the server and return the path a pane can be
+   *  told to open. The name and the directory are the server's; this sends
+   *  nothing but the bytes. */
+  pasteImage: (image: Blob) =>
+    postBytes<{ path: string }>("/api/paste-image", image).then((r) => r.path),
   reloadConfig: () =>
     post<Reloaded>("/api/reload", {}).then((r) => r.summary),
 };
