@@ -7,8 +7,7 @@
   "bootstrapVersion": "0.1.1",
   "tagPrefix": "v",
   "versionFiles": [
-    { "kind": "cargo-toml", "path": "Cargo.toml", "package": "nightcrow" },
-    { "kind": "cargo-toml", "path": "plugins/nightcrow-recovery/Cargo.toml", "package": "nightcrow-recovery" },
+    { "kind": "cargo-workspace", "path": "Cargo.toml" },
     { "kind": "cargo-lock", "path": "Cargo.lock", "package": "nightcrow" },
     { "kind": "cargo-lock", "path": "Cargo.lock", "package": "nightcrow-recovery" },
     { "kind": "npm-package", "path": "viewer-ui/package.json" },

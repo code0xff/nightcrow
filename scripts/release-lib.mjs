@@ -34,12 +34,14 @@ export function validatePolicy(policy) {
   if (JSON.stringify(policy.assets) !== JSON.stringify(expectedAssets)) {
     throw new Error("release policy assets do not match the four-platform contract");
   }
-  if (!Array.isArray(policy.versionFiles) || policy.versionFiles.length !== 6) {
-    throw new Error("release policy must list all six application version entries");
+  // Five, not six: both crates inherit one `[workspace.package]` version, so
+  // the recovery plugin has no version of its own to list. The lockfile still
+  // records each crate separately, which is why it appears twice.
+  if (!Array.isArray(policy.versionFiles) || policy.versionFiles.length !== 5) {
+    throw new Error("release policy must list all five application version entries");
   }
   const requiredEntries = [
-    "cargo-toml:Cargo.toml:nightcrow",
-    "cargo-toml:plugins/nightcrow-recovery/Cargo.toml:nightcrow-recovery",
+    "cargo-workspace:Cargo.toml:",
     "cargo-lock:Cargo.lock:nightcrow",
     "cargo-lock:Cargo.lock:nightcrow-recovery",
     "npm-package:viewer-ui/package.json:",
@@ -47,12 +49,22 @@ export function validatePolicy(policy) {
   ];
   const actualEntries = policy.versionFiles.map((entry) => `${entry.kind}:${entry.path}:${entry.package || ""}`);
   if (requiredEntries.some((entry) => !actualEntries.includes(entry))) {
-    throw new Error("release policy must cover root, recovery, lockfile, and viewer package versions");
+    throw new Error("release policy must cover the workspace, lockfile, and viewer package versions");
   }
 }
 
 function readText(root, relativePath) {
   return fs.readFileSync(path.join(root, relativePath), "utf8");
+}
+
+function cargoWorkspaceVersion(text, relativePath) {
+  const start = text.indexOf("[workspace.package]");
+  if (start < 0) throw new Error(`${relativePath} has no [workspace.package] table`);
+  const next = text.indexOf("\n[", start + 1);
+  const block = text.slice(start, next < 0 ? text.length : next);
+  const version = block.match(/^version\s*=\s*"([^"]+)"$/m)?.[1];
+  if (!version) throw new Error(`${relativePath} has no workspace version`);
+  return version;
 }
 
 function cargoTomlVersion(text, packageName, relativePath) {
@@ -84,6 +96,7 @@ function npmVersion(text, relativePath, lockfile) {
 
 function readEntry(root, entry) {
   const text = readText(root, entry.path);
+  if (entry.kind === "cargo-workspace") return cargoWorkspaceVersion(text, entry.path);
   if (entry.kind === "cargo-toml") return cargoTomlVersion(text, entry.package, entry.path);
   if (entry.kind === "cargo-lock") return cargoLockVersion(text, entry.package, entry.path);
   if (entry.kind === "npm-package") return npmVersion(text, entry.path, false);
@@ -181,6 +194,17 @@ export function gitTags(root, policy = loadPolicy(root), remoteOverride) {
   return result.stdout.split(/\r?\n/).filter(Boolean).map((line) => line.split(/\s+/)[1].replace(/^refs\/tags\//, ""));
 }
 
+function replaceCargoWorkspace(text, next, relativePath) {
+  const start = text.indexOf("[workspace.package]");
+  if (start < 0) throw new Error(`${relativePath} has no [workspace.package] table`);
+  const end = text.indexOf("\n[", start + 1);
+  const blockEnd = end < 0 ? text.length : end;
+  const block = text.slice(start, blockEnd);
+  const replaced = block.replace(/^(version\s*=\s*)"[^"]+"$/m, `$1"${next}"`);
+  if (replaced === block) throw new Error(`${relativePath} has no replaceable workspace version`);
+  return text.slice(0, start) + replaced + text.slice(blockEnd);
+}
+
 function replaceCargoToml(text, packageName, next, relativePath) {
   const start = text.indexOf("[package]");
   const end = text.indexOf("\n[", start + 1);
@@ -228,7 +252,8 @@ export function updateVersions(root, policy, next) {
     const file = path.join(root, entry.path);
     const before = fs.readFileSync(file, "utf8");
     let after;
-    if (entry.kind === "cargo-toml") after = replaceCargoToml(before, entry.package, next, entry.path);
+    if (entry.kind === "cargo-workspace") after = replaceCargoWorkspace(before, next, entry.path);
+    else if (entry.kind === "cargo-toml") after = replaceCargoToml(before, entry.package, next, entry.path);
     else if (entry.kind === "cargo-lock") after = replaceCargoLock(before, entry.package, next, entry.path);
     else if (entry.kind === "npm-package") after = replaceNpm(before, next, entry.path, false);
     else if (entry.kind === "npm-lock") after = replaceNpm(before, next, entry.path, true);
