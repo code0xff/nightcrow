@@ -70,8 +70,8 @@ fn handle_connection(mut stream: TcpStream, state: Arc<ViewerState>) {
     // An over-limit body was refused unread, so there is nothing to hand a
     // handler. Answering is what keeps a save of an oversized file from looking
     // like a dropped connection.
-    let body = match body {
-        conn::RequestBody::Complete(text) => text,
+    let raw = match body {
+        conn::RequestBody::Complete(bytes) => bytes,
         conn::RequestBody::TooLarge => {
             let _ = stream.write_all(&json_error(
                 "413 Payload Too Large",
@@ -84,7 +84,7 @@ fn handle_connection(mut stream: TcpStream, state: Arc<ViewerState>) {
     // The login form and its POST are the only routes reachable unauthenticated.
     match (head.method.as_str(), head.path.as_str()) {
         ("POST", "/login") => {
-            let _ = stream.write_all(&handle_login(&body, &state));
+            let _ = stream.write_all(&handle_login(&String::from_utf8_lossy(&raw), &state));
             return;
         }
         ("GET", "/logout") => {
@@ -142,6 +142,11 @@ fn handle_connection(mut stream: TcpStream, state: Arc<ViewerState>) {
         super::handlers::serve_terminal(stream, &head, &state);
         return;
     }
+
+    // Every route below reads the body as text, so the decode happens once
+    // here. Routes carrying something that is not text dispatch from `raw`
+    // above this line.
+    let body = String::from_utf8_lossy(&raw);
 
     // Opening a repository is the one state-changing route. It is a POST, so a
     // cross-site page cannot trigger it (Origin was already checked, and the
