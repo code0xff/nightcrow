@@ -26,8 +26,12 @@ pub const MAX_HEAD_BYTES: usize = 32 * 1024;
 pub const MAX_BODY_BYTES: usize = 64 * 1024;
 
 /// What a request carried, or a refusal.
+///
+/// Bytes rather than text: a route may carry something that is not UTF-8 at
+/// all (a pasted image), and decoding here would both corrupt it and allocate
+/// a second copy of it. Routes whose body is text decode at their own edge.
 pub enum RequestBody {
-    Complete(String),
+    Complete(Vec<u8>),
     /// The request declared a body larger than the route accepts, so none of it
     /// was read. Refusing outright matters: a body cut to fit can still parse,
     /// and a handler acting on the part that arrived would write a truncated
@@ -93,10 +97,7 @@ pub fn read_request(
     body.truncate(want);
     // A WebSocket loop installs its own timeout; clear this one first.
     stream.set_read_timeout(None).ok();
-    Ok((
-        head,
-        RequestBody::Complete(String::from_utf8_lossy(&body).into_owned()),
-    ))
+    Ok((head, RequestBody::Complete(body)))
 }
 
 fn request_head_end(buf: &[u8]) -> Result<Option<usize>> {

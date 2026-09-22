@@ -4,9 +4,16 @@
 [workspace]
 members = [".", "plugins/nightcrow-recovery"]
 
+# The one place the application version is written. Every crate in the
+# workspace inherits it, so the plugin cannot be released at a version the host
+# was never built at — a class of drift the release check could only report
+# after the fact.
+[workspace.package]
+version = "0.1.10"
+
 [package]
 name = "nightcrow"
-version = "0.1.9"
+version.workspace = true
 edition = "2024"
 rust-version = "1.89"
 description = "Agent-adjacent terminal workbench — git diff viewer + multi-terminal panes for running CLIs next to your code"

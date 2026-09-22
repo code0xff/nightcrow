@@ -1,6 +1,7 @@
 mod file;
 mod filesystem;
 mod lookup;
+mod paste_image;
 mod preferences;
 mod reload;
 mod repository;
@@ -8,6 +9,7 @@ mod repository;
 pub(super) use file::handle_write_file;
 pub(super) use filesystem::handle_mkdir;
 pub(super) use lookup::{lookup_repo, redact};
+pub(super) use paste_image::handle_paste_image;
 pub(super) use preferences::handle_set_prefs;
 pub(super) use reload::handle_reload_config;
 pub(super) use repository::{handle_close_repo, handle_open_repo, handle_reorder_repos};

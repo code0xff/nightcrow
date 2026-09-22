@@ -44,6 +44,13 @@ pub const MAX_VIEWER_CONNECTIONS: usize = 64;
 /// under what `MAX_VIEWER_CONNECTIONS` of it could cost at once.
 pub const MAX_FILE_WRITE_BYTES: usize = 1024 * 1024;
 
+/// The body `POST /api/paste-image` may carry: one screenshot from a
+/// clipboard, sent as raw bytes rather than encoded into JSON. Larger than any
+/// other route because a full-resolution screenshot from a high-DPI display is
+/// routinely several megabytes, and a paste that silently fails at the size
+/// people actually paste at is not a feature.
+pub const MAX_PASTE_IMAGE_BYTES: usize = 10 * 1024 * 1024;
+
 /// A list that may have been cut short, with the fact recorded.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Capped<T> {
