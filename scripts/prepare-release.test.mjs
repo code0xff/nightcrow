@@ -30,8 +30,7 @@ const policy = {
     "nightcrow-aarch64-apple-darwin",
   ],
   versionFiles: [
-    { kind: "cargo-toml", path: "Cargo.toml", package: "nightcrow" },
-    { kind: "cargo-toml", path: "plugins/nightcrow-recovery/Cargo.toml", package: "nightcrow-recovery" },
+    { kind: "cargo-workspace", path: "Cargo.toml" },
     { kind: "cargo-lock", path: "Cargo.lock", package: "nightcrow" },
     { kind: "cargo-lock", path: "Cargo.lock", package: "nightcrow-recovery" },
     { kind: "npm-package", path: "viewer-ui/package.json" },
@@ -85,8 +84,16 @@ test("execute updates every application version entry without touching dependenc
     // on disk instead of hard-coding a patch that becomes stale on the next bump.
     const current = assertVersionsAgree(readVersions(root, policy));
     const next = patchVersion(versionParts(current) + 1);
+    const pluginBefore = fs.readFileSync(path.join(root, "plugins/nightcrow-recovery/Cargo.toml"), "utf8");
     const result = updateVersions(root, policy, next);
-    assert.equal(result.changed.length, 5);
+    // Four paths, not five: the recovery plugin inherits the workspace version
+    // and so has nothing of its own to rewrite.
+    assert.equal(result.changed.length, 4);
+    assert.equal(
+      fs.readFileSync(path.join(root, "plugins/nightcrow-recovery/Cargo.toml"), "utf8"),
+      pluginBefore,
+    );
+    assert.match(pluginBefore, /^version\.workspace = true$/m);
     assert.equal(assertVersionsAgree(readVersions(root, policy)), next);
     assert.match(fs.readFileSync(path.join(root, "Cargo.lock"), "utf8"), /name = "ratatui"\nversion = "0\.30\./);
     assert.notEqual(fs.readFileSync(path.join(root, "Cargo.lock"), "utf8"), before);
