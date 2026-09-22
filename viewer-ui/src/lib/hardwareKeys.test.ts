@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { overriddenKeySequence, type TypedKey } from "./hardwareKeys";
+import {
+  browserHandlesKey,
+  overriddenKeySequence,
+  type TypedKey,
+} from "./hardwareKeys";
 
 function key(over: Partial<TypedKey> = {}): TypedKey {
   return {
@@ -43,5 +47,32 @@ describe("overriddenKeySequence", () => {
     expect(
       overriddenKeySequence(key({ type: "keypress", ctrlKey: true })),
     ).toBeNull();
+  });
+});
+
+describe("browserHandlesKey", () => {
+  it("Ctrl_V는_브라우저에_맡긴다", () => {
+    // 그러지 않으면 xterm이 \x16으로 인코딩해 paste 이벤트가 아예 없다.
+    expect(browserHandlesKey(key({ key: "v", ctrlKey: true }))).toBe(true);
+    expect(browserHandlesKey(key({ key: "V", ctrlKey: true }))).toBe(true);
+  });
+
+  it("Ctrl_없는_v는_그냥_타이핑이다", () => {
+    expect(browserHandlesKey(key({ key: "v" }))).toBe(false);
+  });
+
+  it("Alt나_Meta가_섞인_조합은_pane의_것이다", () => {
+    expect(
+      browserHandlesKey(key({ key: "v", ctrlKey: true, altKey: true })),
+    ).toBe(false);
+    expect(
+      browserHandlesKey(key({ key: "v", ctrlKey: true, metaKey: true })),
+    ).toBe(false);
+  });
+
+  it("keydown이_아닌_이벤트는_답하지_않는다", () => {
+    expect(
+      browserHandlesKey(key({ type: "keypress", key: "v", ctrlKey: true })),
+    ).toBe(false);
   });
 });

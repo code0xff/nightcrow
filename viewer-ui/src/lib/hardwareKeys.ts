@@ -36,3 +36,27 @@ export function overriddenKeySequence(event: TypedKey): string | null {
   // Alt takes the Meta prefix, exactly as it does for Alt+Enter.
   return event.altKey ? ESC + LF : LF;
 }
+
+/**
+ * Whether this key should be left to the browser rather than encoded by xterm.
+ *
+ * To a terminal Ctrl+V is a control character (SYN, readline's quoted insert),
+ * so xterm encodes it and calls `preventDefault` and no `paste` event is ever
+ * fired. In this panel that costs more than the byte is worth: pasting an
+ * image depends on the `paste` event entirely (`lib/pasteImage.ts`), and the
+ * clipboard it reads belongs to the device showing the page, which nothing on
+ * the far side of the PTY can reach. Quoted insert is what this gives up;
+ * Shift+Insert still pastes for anyone who had been using it.
+ *
+ * Cmd+V is not listed: xterm does not encode a held Meta, so on a Mac the
+ * browser already gets the key.
+ */
+export function browserHandlesKey(event: TypedKey): boolean {
+  if (event.type !== "keydown") return false;
+  return (
+    event.ctrlKey &&
+    !event.altKey &&
+    !event.metaKey &&
+    (event.key === "v" || event.key === "V")
+  );
+}

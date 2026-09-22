@@ -7,6 +7,7 @@ mod commit_routes;
 mod edit_preview;
 mod edit_round_trip;
 mod file_write;
+mod paste_image;
 mod path_gate;
 mod prefs;
 mod preview;

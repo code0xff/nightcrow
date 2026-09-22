@@ -25,6 +25,25 @@ pub fn set_owner_only(path: &Path) {
     }
 }
 
+/// Restrict a directory to owner-only access. The file form above sets 0o600,
+/// which on a directory would leave it unusable — a directory needs the
+/// execute bit to be entered at all — so this sets 0o700. Windows is a no-op
+/// for the same reason `set_owner_only` is.
+pub fn set_owner_only_dir(path: &Path) {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        if let Err(err) = std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o700)) {
+            tracing::warn!(%err, ?path, "could not set owner-only permissions on state directory");
+        }
+    }
+    #[cfg(not(unix))]
+    {
+        // Windows: no portable per-directory permission API. See above.
+        let _ = path;
+    }
+}
+
 /// Write `data` to `path` atomically: write to a sibling temp file, then
 /// rename over the target. The temp file is in the same directory so the
 /// rename is atomic on the same filesystem. Permissions are restricted to

@@ -54,5 +54,22 @@ export async function post<T>(
   return parseBody<T>(response);
 }
 
+/** POST bytes as themselves. Encoding an image into JSON would inflate it by a
+ *  third and buy nothing: the server sniffs the format from the bytes. */
+export async function postBytes<T>(
+  path: string,
+  body: Blob,
+  signal?: AbortSignal,
+): Promise<T> {
+  const response = await request(path, {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/octet-stream" },
+    body,
+    signal,
+  });
+  return parseBody<T>(response);
+}
+
 export const query = (params: Record<string, string>) =>
   new URLSearchParams(params).toString();

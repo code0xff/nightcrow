@@ -1,8 +1,8 @@
 use super::clone_routes;
 use super::http_util::{json_error, json_response, text_response};
 use super::mutations::{
-    handle_close_repo, handle_mkdir, handle_open_repo, handle_reload_config, handle_reorder_repos,
-    handle_set_prefs, handle_write_file,
+    handle_close_repo, handle_mkdir, handle_open_repo, handle_paste_image, handle_reload_config,
+    handle_reorder_repos, handle_set_prefs, handle_write_file,
 };
 use super::routes::route;
 use super::{VIEWER_SESSION_COOKIE, ViewerState};
@@ -37,10 +37,13 @@ pub(super) fn accept_loop(listener: TcpListener, state: Arc<ViewerState>) {
 /// How much body each route may carry. Only the file write carries a document;
 /// everything else is a small control payload.
 fn body_limit(head: &RequestHead) -> usize {
-    if head.method == "POST" && head.path == "/api/file" {
-        limits::MAX_FILE_WRITE_BYTES
-    } else {
-        conn::MAX_BODY_BYTES
+    if head.method != "POST" {
+        return conn::MAX_BODY_BYTES;
+    }
+    match head.path.as_str() {
+        "/api/file" => limits::MAX_FILE_WRITE_BYTES,
+        "/api/paste-image" => limits::MAX_PASTE_IMAGE_BYTES,
+        _ => conn::MAX_BODY_BYTES,
     }
 }
 
@@ -70,8 +73,8 @@ fn handle_connection(mut stream: TcpStream, state: Arc<ViewerState>) {
     // An over-limit body was refused unread, so there is nothing to hand a
     // handler. Answering is what keeps a save of an oversized file from looking
     // like a dropped connection.
-    let body = match body {
-        conn::RequestBody::Complete(text) => text,
+    let raw = match body {
+        conn::RequestBody::Complete(bytes) => bytes,
         conn::RequestBody::TooLarge => {
             let _ = stream.write_all(&json_error(
                 "413 Payload Too Large",
@@ -84,7 +87,7 @@ fn handle_connection(mut stream: TcpStream, state: Arc<ViewerState>) {
     // The login form and its POST are the only routes reachable unauthenticated.
     match (head.method.as_str(), head.path.as_str()) {
         ("POST", "/login") => {
-            let _ = stream.write_all(&handle_login(&body, &state));
+            let _ = stream.write_all(&handle_login(&String::from_utf8_lossy(&raw), &state));
             return;
         }
         ("GET", "/logout") => {
@@ -142,6 +145,19 @@ fn handle_connection(mut stream: TcpStream, state: Arc<ViewerState>) {
         super::handlers::serve_terminal(stream, &head, &state);
         return;
     }
+
+    // Writing a pasted image to disk. Dispatched from the bytes, above the
+    // decode below: an image is not text, and reading it as text would both
+    // ruin it and allocate a second copy of it.
+    if head.method == "POST" && head.path == "/api/paste-image" {
+        let _ = stream.write_all(&handle_paste_image(&raw));
+        return;
+    }
+
+    // Every route below reads the body as text, so the decode happens once
+    // here. Routes carrying something that is not text dispatch from `raw`
+    // above this line.
+    let body = String::from_utf8_lossy(&raw);
 
     // Opening a repository is the one state-changing route. It is a POST, so a
     // cross-site page cannot trigger it (Origin was already checked, and the
