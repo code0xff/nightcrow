@@ -27,11 +27,12 @@ interface UseTerminalViewsArgs {
   /** What each PTY's grid is, from `created` and `resized`. Read here as the
    *  size a pane's replay has to be parsed at. */
   ptySizesRef: MutableRefObject<Map<number, PaneSize>>;
-  /** What the key bar's Ctrl latch makes of a typed character (`useCtrlLatch`).
-   *  Every pane's input passes through it, because the latch belongs to the bar
+  /** What the key bar's Ctrl and Alt latches make of a typed character
+   *  (`useModifierLatch`).
+   *  Every pane's input passes through it, because the latches belong to the bar
    *  rather than to a pane and the next character may be typed into any of
    *  them. */
-  consumeCtrl: (typed: string) => string;
+  consumeLatches: (typed: string) => string;
   setTitles: React.Dispatch<React.SetStateAction<Record<number, string>>>;
 }
 
@@ -45,7 +46,7 @@ export function useTerminalViews({
   bodyRefs,
   pendingRef,
   ptySizesRef,
-  consumeCtrl,
+  consumeLatches,
   setTitles,
 }: UseTerminalViewsArgs) {
   useEffect(() => {
@@ -97,7 +98,7 @@ export function useTerminalViews({
         // bar's own `^L` is already outside the probe for the same reason: it
         // never goes through a terminal at all.
         const report = probe.report(data, performance.now());
-        const input = consumeCtrl(data);
+        const input = consumeLatches(data);
         if (
           sendTerminalMessage(socketRef.current, {
             type: "input",

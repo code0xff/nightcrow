@@ -1,7 +1,7 @@
 // The Ctrl the bar cannot spell out. Only a handful of combinations fit on it,
 // and a shell uses more than that (`^A`, `^E`, `^K`, `^W`, `^P`…), so this one
 // arms and the next character sent from the soft keyboard leaves as its control
-// byte.
+// byte. Alt, which a soft keyboard lacks as well, works the same way.
 //
 // It reads the character, not the keypress. A soft keyboard is under no
 // obligation to say which key was struck — iOS and Android report
@@ -10,9 +10,13 @@
 // `term.onData` it is a character, whatever produced it.
 
 import { useCallback, useRef, useState } from "react";
-import { ctrlLatchStep } from "../../lib/termKeys";
+import {
+  altLatchStep,
+  ctrlLatchStep,
+  type CtrlLatchStep,
+} from "../../lib/termKeys";
 
-export interface CtrlLatch {
+export interface ModifierLatch {
   /** Whether the next character is being modified — the button's pressed state. */
   armed: boolean;
   /** Flips the latch and says what it became. Returned rather than read back
@@ -29,7 +33,12 @@ export interface CtrlLatch {
   consume: (typed: string) => string;
 }
 
-export function useCtrlLatch(): CtrlLatch {
+type LatchStep = (armed: boolean, typed: string) => CtrlLatchStep;
+
+export const useCtrlLatch = (): ModifierLatch => useModifierLatch(ctrlLatchStep);
+export const useAltLatch = (): ModifierLatch => useModifierLatch(altLatchStep);
+
+function useModifierLatch(latchStep: LatchStep): ModifierLatch {
   const [armed, setArmed] = useState(false);
   // The state is what renders the button; the ref is what `consume` reads, which
   // is called from a closure older than any of these renders.
@@ -40,14 +49,14 @@ export function useCtrlLatch(): CtrlLatch {
   }, []);
 
   // What is decided here is only when to re-render; which bytes go out, and
-  // whether the latch survives them, is `ctrlLatchStep`.
+  // whether the latch survives them, is `latchStep`.
   const consume = useCallback(
     (typed: string) => {
-      const step = ctrlLatchStep(armedRef.current, typed);
+      const step = latchStep(armedRef.current, typed);
       if (step.armed !== armedRef.current) set(step.armed);
       return step.data;
     },
-    [set],
+    [latchStep, set],
   );
 
   return {

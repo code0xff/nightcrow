@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import { planLayout } from "../../lib/terminalLayout";
 import { usePaneDrag } from "../../hooks/terminal/usePaneDrag";
 import { usePaneRecovery } from "../../hooks/terminal/usePaneRecovery";
@@ -6,7 +6,7 @@ import { usePaneCommands } from "../../hooks/terminal/usePaneCommands";
 import { useTerminalRefs } from "../../hooks/terminal/useTerminalRefs";
 import { useTerminalShortcuts } from "../../hooks/terminal/useTerminalShortcuts";
 import { useTerminalWiring } from "../../hooks/terminal/useTerminalWiring";
-import { useCtrlLatch } from "../../hooks/terminal/useCtrlLatch";
+import { useAltLatch, useCtrlLatch } from "../../hooks/terminal/useModifierLatch";
 import { usePanelSize } from "../../hooks/terminal/usePanelSize";
 import { useSoftKeyboardOpen } from "../../hooks/ui/useSoftKeyboard";
 import { AttachNotice } from "./AttachNotice";
@@ -79,6 +79,12 @@ export function TerminalPanel({
   const { mode, toggle: toggleMode } = usePaneViewMode();
   const keyBar = useTermKeyBar();
   const ctrl = useCtrlLatch();
+  const alt = useAltLatch();
+  // Ctrl first, so both armed send ESC and the control byte (`altLatchStep`).
+  const consumeLatches = useCallback(
+    (typed: string) => alt.consume(ctrl.consume(typed)),
+    [alt.consume, ctrl.consume],
+  );
   const tabs = mode === "tabs";
   // A tabbed panel renders no zoom — it already shows one pane — so nothing in
   // it waits on one, and the zoomed pane is just another tab. Feeding the real
@@ -102,7 +108,7 @@ export function TerminalPanel({
     keyboardOpen,
     zoomShown,
     zoomServer,
-    consumeCtrl: ctrl.consume,
+    consumeLatches,
     setLink,
     setPending,
     setReplayLeft,
@@ -136,8 +142,9 @@ export function TerminalPanel({
     active,
     panes,
     onSent: (pane) => {
-      // Sent past the latch, like the key bar's keys, so it is spent here.
+      // Sent past the latches, like the key bar's keys, so they are spent here.
       ctrl.clear();
+      alt.clear();
       focusPane(pane);
     },
   });
@@ -272,6 +279,7 @@ export function TerminalPanel({
         <TermKeyBar
           onKey={sendKey}
           ctrl={ctrl}
+          alt={alt}
           onArm={focusActive}
           onCompose={compose.open}
         />
