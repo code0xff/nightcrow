@@ -11,6 +11,7 @@ import { usePanelSize } from "../../hooks/terminal/usePanelSize";
 import { useSoftKeyboardOpen } from "../../hooks/ui/useSoftKeyboard";
 import { AttachNotice } from "./AttachNotice";
 import { ComposeDialog } from "./ComposeDialog";
+import { ConfirmCloseDialog } from "./ConfirmCloseDialog";
 import { useCompose } from "../../hooks/terminal/useCompose";
 import { PaneGrid } from "./PaneGrid";
 import { PaneTabs } from "./PaneTabs";
@@ -62,6 +63,8 @@ export function TerminalPanel({
   const [active, setActive] = useState<number | null>(null);
   const [zoomed, setZoomed] = useState<number | null>(null);
   const [titles, setTitles] = useState<Record<number, string>>({});
+  // The pane whose close button is waiting on a confirmation.
+  const [closing, setClosing] = useState<number | null>(null);
   // Whether this page's layout is what sets the pane sizes. A PTY has one size
   // and the child cannot be re-flowed afterwards, so one client at a time
   // decides it; the rest render the grid they are given.
@@ -121,6 +124,9 @@ export function TerminalPanel({
     // the header and the tab strip are outside it.
     viewsRef.current.get(pane)?.term.focus();
   };
+
+  const paneLabel = (pane: number) =>
+    titles[pane] || `terminal ${panes.indexOf(pane) + 1}`;
 
   const focusActive = () => active !== null && focusPane(active);
 
@@ -213,7 +219,7 @@ export function TerminalPanel({
               reorderable={reorderable}
               draggingPane={draggingPane}
               dragOverPane={dragOverPane}
-              onClose={closePane}
+              onClose={setClosing}
               onPaneDragStart={onPaneDragStart}
               onPaneDragMove={onPaneDragMove}
               onPaneDragEnd={onPaneDragEnd}
@@ -254,7 +260,7 @@ export function TerminalPanel({
           bodyRefs={bodyRefs}
           onFocus={focusPane}
           onToggleZoom={toggleZoom}
-          onClose={closePane}
+          onClose={setClosing}
           onCancelRecovery={cancelRecovery}
           onPaneDragStart={onPaneDragStart}
           onPaneDragMove={onPaneDragMove}
@@ -270,9 +276,24 @@ export function TerminalPanel({
           onCompose={compose.open}
         />
       )}
+      {/* Only while the pane is still there: one closed from elsewhere
+          meanwhile has nothing left to confirm. */}
+      {closing !== null && panes.includes(closing) && (
+        <ConfirmCloseDialog
+          label={paneLabel(closing)}
+          onConfirm={() => {
+            setClosing(null);
+            closePane(closing);
+          }}
+          onCancel={() => {
+            setClosing(null);
+            focusActive();
+          }}
+        />
+      )}
       {compose.target !== null && (
         <ComposeDialog
-          label={titles[compose.target] || `terminal ${panes.indexOf(compose.target) + 1}`}
+          label={paneLabel(compose.target)}
           draft={compose.draft}
           onChange={compose.setDraft}
           onSend={compose.send}
