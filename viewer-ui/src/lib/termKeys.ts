@@ -10,7 +10,8 @@
 // `~`) stay off the bar, which is why it holds control/escape/arrows alone.
 // Ctrl is there as well, but as a latch rather than a key: a shell uses more
 // combinations than there are buttons for, so it arms and the next character
-// typed is sent as the control byte instead (`ctrlSequence`, `useCtrlLatch`).
+// typed is sent as the control byte instead (`ctrlSequence`, `useModifierLatch`).
+// Alt is a latch too, for the same reason and the same way.
 
 export type TermKey =
   | "esc"
@@ -135,6 +136,24 @@ export function ctrlLatchStep(armed: boolean, typed: string): CtrlLatchStep {
   return { data: ctrlSequence(typed) ?? typed, armed: false };
 }
 
+/**
+ * One step of "the armed Alt modifies the next thing typed".
+ *
+ * A terminal sends Alt held with a key as ESC followed by what the key sends —
+ * the "meta sends escape" convention xterm, readline, emacs and tmux all read.
+ * Which input keeps the latch armed and which spends it is `ctrlLatchStep`'s
+ * rule, for the same reasons; only what a spent latch does differs. More than
+ * one character is not one keystroke, so it goes out as it came.
+ *
+ * Run after the Ctrl step, so both armed make Ctrl-Alt: ESC and the control
+ * byte.
+ */
+export function altLatchStep(armed: boolean, typed: string): CtrlLatchStep {
+  if (!armed) return { data: typed, armed: false };
+  if (typed.startsWith("\x1b")) return { data: typed, armed: true };
+  return { data: [...typed].length === 1 ? `\x1b${typed}` : typed, armed: false };
+}
+
 /** Tailwind's `md`. A window this narrow belongs to a phone whatever it reports
  *  about its pointer, so the bar defaults on below it either way. */
 export const KEYBOARD_MIN_VIEWPORT_PX = 768;
@@ -165,13 +184,15 @@ export function defaultKeyBarShown(
 }
 
 /**
- * A button on the bar. Either a key, which sends its bytes, or the Ctrl latch,
- * which sends nothing of its own and changes what the next typed character
- * sends (`ctrlSequence`, `useCtrlLatch`).
+ * A button on the bar. Either a key, which sends its bytes, or a modifier
+ * latch, which sends nothing of its own and changes what the next typed
+ * character sends (`ctrlLatchStep`, `altLatchStep`, `useModifierLatch`).
  */
+export type TermLatch = "ctrl" | "alt";
+
 export type TermBarItem =
   | { kind: "key"; key: TermKey; label: string; aria: string }
-  | { kind: "ctrl"; label: string; aria: string };
+  | { kind: "latch"; latch: TermLatch; label: string; aria: string };
 
 // The bar's layout, left to right: the bare keys first, then Ctrl and the
 // combinations common enough to be worth a button of their own, then the arrow
@@ -181,7 +202,8 @@ export const TERM_KEY_BAR: TermBarItem[] = [
   { kind: "key", key: "esc", label: "Esc", aria: "Escape" },
   { kind: "key", key: "tab", label: "Tab", aria: "Tab" },
   { kind: "key", key: "shift-tab", label: "⇧Tab", aria: "Shift Tab" },
-  { kind: "ctrl", label: "Ctrl", aria: "Control for the next key" },
+  { kind: "latch", latch: "alt", label: "Alt", aria: "Alt for the next key" },
+  { kind: "latch", latch: "ctrl", label: "Ctrl", aria: "Control for the next key" },
   { kind: "key", key: "ctrl-b", label: "^B", aria: "Control B" },
   { kind: "key", key: "ctrl-c", label: "^C", aria: "Control C" },
   { kind: "key", key: "ctrl-d", label: "^D", aria: "Control D" },

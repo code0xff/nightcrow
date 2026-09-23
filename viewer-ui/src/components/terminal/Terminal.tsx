@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import { planLayout } from "../../lib/terminalLayout";
 import { usePaneDrag } from "../../hooks/terminal/usePaneDrag";
 import { usePaneRecovery } from "../../hooks/terminal/usePaneRecovery";
@@ -6,11 +6,12 @@ import { usePaneCommands } from "../../hooks/terminal/usePaneCommands";
 import { useTerminalRefs } from "../../hooks/terminal/useTerminalRefs";
 import { useTerminalShortcuts } from "../../hooks/terminal/useTerminalShortcuts";
 import { useTerminalWiring } from "../../hooks/terminal/useTerminalWiring";
-import { useCtrlLatch } from "../../hooks/terminal/useCtrlLatch";
+import { useAltLatch, useCtrlLatch } from "../../hooks/terminal/useModifierLatch";
 import { usePanelSize } from "../../hooks/terminal/usePanelSize";
 import { useSoftKeyboardOpen } from "../../hooks/ui/useSoftKeyboard";
 import { AttachNotice } from "./AttachNotice";
 import { ComposeDialog } from "./ComposeDialog";
+import { ConfirmCloseDialog } from "./ConfirmCloseDialog";
 import { useCompose } from "../../hooks/terminal/useCompose";
 import { PaneGrid } from "./PaneGrid";
 import { PaneTabs } from "./PaneTabs";
@@ -62,6 +63,8 @@ export function TerminalPanel({
   const [active, setActive] = useState<number | null>(null);
   const [zoomed, setZoomed] = useState<number | null>(null);
   const [titles, setTitles] = useState<Record<number, string>>({});
+  // The pane whose close button is waiting on a confirmation.
+  const [closing, setClosing] = useState<number | null>(null);
   // Whether this page's layout is what sets the pane sizes. A PTY has one size
   // and the child cannot be re-flowed afterwards, so one client at a time
   // decides it; the rest render the grid they are given.
@@ -76,6 +79,12 @@ export function TerminalPanel({
   const { mode, toggle: toggleMode } = usePaneViewMode();
   const keyBar = useTermKeyBar();
   const ctrl = useCtrlLatch();
+  const alt = useAltLatch();
+  // Ctrl first, so both armed send ESC and the control byte (`altLatchStep`).
+  const consumeLatches = useCallback(
+    (typed: string) => alt.consume(ctrl.consume(typed)),
+    [alt.consume, ctrl.consume],
+  );
   const tabs = mode === "tabs";
   // A tabbed panel renders no zoom — it already shows one pane — so nothing in
   // it waits on one, and the zoomed pane is just another tab. Feeding the real
@@ -99,7 +108,7 @@ export function TerminalPanel({
     keyboardOpen,
     zoomShown,
     zoomServer,
-    consumeCtrl: ctrl.consume,
+    consumeLatches,
     setLink,
     setPending,
     setReplayLeft,
@@ -122,6 +131,9 @@ export function TerminalPanel({
     viewsRef.current.get(pane)?.term.focus();
   };
 
+  const paneLabel = (pane: number) =>
+    titles[pane] || `terminal ${panes.indexOf(pane) + 1}`;
+
   const focusActive = () => active !== null && focusPane(active);
 
   const compose = useCompose({
@@ -130,8 +142,9 @@ export function TerminalPanel({
     active,
     panes,
     onSent: (pane) => {
-      // Sent past the latch, like the key bar's keys, so it is spent here.
+      // Sent past the latches, like the key bar's keys, so they are spent here.
       ctrl.clear();
+      alt.clear();
       focusPane(pane);
     },
   });
@@ -213,7 +226,7 @@ export function TerminalPanel({
               reorderable={reorderable}
               draggingPane={draggingPane}
               dragOverPane={dragOverPane}
-              onClose={closePane}
+              onClose={setClosing}
               onPaneDragStart={onPaneDragStart}
               onPaneDragMove={onPaneDragMove}
               onPaneDragEnd={onPaneDragEnd}
@@ -254,7 +267,7 @@ export function TerminalPanel({
           bodyRefs={bodyRefs}
           onFocus={focusPane}
           onToggleZoom={toggleZoom}
-          onClose={closePane}
+          onClose={setClosing}
           onCancelRecovery={cancelRecovery}
           onPaneDragStart={onPaneDragStart}
           onPaneDragMove={onPaneDragMove}
@@ -266,13 +279,29 @@ export function TerminalPanel({
         <TermKeyBar
           onKey={sendKey}
           ctrl={ctrl}
+          alt={alt}
           onArm={focusActive}
           onCompose={compose.open}
         />
       )}
+      {/* Only while the pane is still there: one closed from elsewhere
+          meanwhile has nothing left to confirm. */}
+      {closing !== null && panes.includes(closing) && (
+        <ConfirmCloseDialog
+          label={paneLabel(closing)}
+          onConfirm={() => {
+            setClosing(null);
+            closePane(closing);
+          }}
+          onCancel={() => {
+            setClosing(null);
+            focusActive();
+          }}
+        />
+      )}
       {compose.target !== null && (
         <ComposeDialog
-          label={titles[compose.target] || `terminal ${panes.indexOf(compose.target) + 1}`}
+          label={paneLabel(compose.target)}
           draft={compose.draft}
           onChange={compose.setDraft}
           onSend={compose.send}

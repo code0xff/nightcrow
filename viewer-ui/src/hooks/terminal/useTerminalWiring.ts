@@ -40,7 +40,7 @@ export interface TerminalWiringArgs {
    *  renders neither — see the comment on `zoomShown` in `Terminal.tsx`. */
   zoomShown: number | null;
   zoomServer: number | null;
-  consumeCtrl: (typed: string) => string;
+  consumeLatches: (typed: string) => string;
   setLink: React.Dispatch<React.SetStateAction<LinkState>>;
   setPending: React.Dispatch<React.SetStateAction<number | null>>;
   setReplayLeft: React.Dispatch<React.SetStateAction<number>>;
@@ -65,7 +65,7 @@ export function useTerminalWiring({
   keyboardOpen,
   zoomShown,
   zoomServer,
-  consumeCtrl,
+  consumeLatches,
   setLink,
   setPending,
   setReplayLeft,
@@ -121,7 +121,7 @@ export function useTerminalWiring({
     bodyRefs,
     pendingRef,
     ptySizesRef,
-    consumeCtrl,
+    consumeLatches,
     setTitles,
   });
 
