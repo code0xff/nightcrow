@@ -1,7 +1,7 @@
 import { useEffect } from "react";
 import { PencilIcon } from "../icons/actions";
 import { TERM_KEY_BAR, type TermKey } from "../../lib/termKeys";
-import type { CtrlLatch } from "../../hooks/terminal/useCtrlLatch";
+import type { ModifierLatch } from "../../hooks/terminal/useModifierLatch";
 
 const KEY_BUTTON =
   "flex min-h-9 min-w-9 shrink-0 items-center justify-center rounded-sm border px-2 text-xs active:bg-ink-700 active:text-accent";
@@ -24,11 +24,13 @@ const KEY_ARMED = "border-accent bg-ink-700 text-accent";
 export function TermKeyBar({
   onKey,
   ctrl,
+  alt,
   onArm,
   onCompose,
 }: {
   onKey: (key: TermKey) => void;
-  ctrl: CtrlLatch;
+  ctrl: ModifierLatch;
+  alt: ModifierLatch;
   /** Put the keyboard in the pane. The other keys go out over the socket and
    *  need no focus, but the latch is spent by the next character *typed*, so
    *  tapping it has to leave somewhere to type. */
@@ -43,38 +45,34 @@ export function TermKeyBar({
   // phone showing another view) keeps both, which is the point — they come back
   // together, lit.
   useEffect(() => ctrl.clear, [ctrl.clear]);
+  useEffect(() => alt.clear, [alt.clear]);
+
+  const clearLatches = () => {
+    ctrl.clear();
+    alt.clear();
+  };
 
   return (
     <div className="flex shrink-0 items-stretch gap-1 overflow-x-auto border-t border-ink-700 bg-ink-900 px-1 py-1">
       {TERM_KEY_BAR.map((item) =>
-        item.kind === "ctrl" ? (
-          <button
-            key="ctrl"
-            onPointerDown={(event) => event.preventDefault()}
-            // On the way up only. Disarming has nothing waiting to be typed, so
-            // taking the keyboard for it would be the bar interrupting whatever
-            // the person moved on to — the panel's own rule about text entry
-            // outside it (`focusIsTakeable`). What the tap did is the toggle's
-            // answer, not `ctrl.armed`, which is a render behind it.
-            onClick={() => {
-              if (ctrl.toggle()) onArm();
-            }}
-            aria-pressed={ctrl.armed}
-            aria-label={item.aria}
-            className={`${KEY_BUTTON} ${ctrl.armed ? KEY_ARMED : KEY_IDLE}`}
-          >
-            {item.label}
-          </button>
+        item.kind === "latch" ? (
+          <LatchButton
+            key={item.latch}
+            latch={item.latch === "ctrl" ? ctrl : alt}
+            label={item.label}
+            aria={item.aria}
+            onArm={onArm}
+          />
         ) : (
           <button
             key={item.key}
             onPointerDown={(event) => event.preventDefault()}
             // A latch left armed is spent here rather than carried past this
-            // tap: these keys send their own bytes and have no room for a Ctrl,
-            // and one kept for later would attach itself to whatever is typed
-            // next, long after the person forgot they armed it.
+            // tap: these keys send their own bytes and have no room for a
+            // modifier, and one kept for later would attach itself to whatever
+            // is typed next, long after the person forgot they armed it.
             onClick={() => {
-              ctrl.clear();
+              clearLatches();
               onKey(item.key);
             }}
             aria-label={item.aria}
@@ -86,7 +84,7 @@ export function TermKeyBar({
       )}
       <button
         onClick={() => {
-          ctrl.clear();
+          clearLatches();
           onCompose();
         }}
         aria-label="Write a message to this terminal"
@@ -95,5 +93,36 @@ export function TermKeyBar({
         <PencilIcon className="h-3.5 w-3.5" />
       </button>
     </div>
+  );
+}
+
+function LatchButton({
+  latch,
+  label,
+  aria,
+  onArm,
+}: {
+  latch: ModifierLatch;
+  label: string;
+  aria: string;
+  onArm: () => void;
+}) {
+  return (
+    <button
+      onPointerDown={(event) => event.preventDefault()}
+      // On the way up only. Disarming has nothing waiting to be typed, so
+      // taking the keyboard for it would be the bar interrupting whatever
+      // the person moved on to — the panel's own rule about text entry
+      // outside it (`focusIsTakeable`). What the tap did is the toggle's
+      // answer, not `latch.armed`, which is a render behind it.
+      onClick={() => {
+        if (latch.toggle()) onArm();
+      }}
+      aria-pressed={latch.armed}
+      aria-label={aria}
+      className={`${KEY_BUTTON} ${latch.armed ? KEY_ARMED : KEY_IDLE}`}
+    >
+      {label}
+    </button>
   );
 }

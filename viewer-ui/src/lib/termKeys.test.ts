@@ -3,6 +3,7 @@ import {
   KEYBOARD_MIN_VIEWPORT_PX,
   TERM_KEY_BAR,
   TERM_KEY_SEQUENCES,
+  altLatchStep,
   ctrlLatchStep,
   ctrlSequence,
   defaultKeyBarShown,
@@ -140,6 +141,30 @@ describe("ctrlLatchStep", () => {
   });
 });
 
+describe("altLatchStep", () => {
+  it("해제된_래치는_입력을_그대로_보낸다", () => {
+    expect(altLatchStep(false, "b")).toEqual({ data: "b", armed: false });
+  });
+
+  it("켜진_래치는_한_글자_앞에_ESC를_붙이고_해제된다", () => {
+    expect(altLatchStep(true, "b")).toEqual({ data: "\x1bb", armed: false });
+    expect(altLatchStep(true, "가")).toEqual({ data: "\x1b가", armed: false });
+  });
+
+  it("여러_글자는_그대로_보내고_해제된다", () => {
+    expect(altLatchStep(true, "ls")).toEqual({ data: "ls", armed: false });
+  });
+
+  it("ESC로_시작하는_입력은_래치를_유지한다", () => {
+    expect(altLatchStep(true, "\x1b[I")).toEqual({ data: "\x1b[I", armed: true });
+  });
+
+  it("Ctrl_뒤에_적용하면_Ctrl_Alt가_된다", () => {
+    const ctrl = ctrlLatchStep(true, "a");
+    expect(altLatchStep(true, ctrl.data)).toEqual({ data: "\x1b", armed: false });
+  });
+});
+
 describe("TERM_KEY_BAR", () => {
   it("모든_바_키_항목은_시퀀스_맵에_대응한다", () => {
     for (const item of TERM_KEY_BAR) {
@@ -147,9 +172,18 @@ describe("TERM_KEY_BAR", () => {
     }
   });
 
-  it("Ctrl_래치는_바에_정확히_하나다", () => {
+  it("래치는_종류마다_바에_정확히_하나다", () => {
     // 눌린 상태를 가진 버튼이라 둘이면 어느 쪽이 켜졌는지 화면이 못 말한다.
-    expect(TERM_KEY_BAR.filter((item) => item.kind === "ctrl")).toHaveLength(1);
+    for (const latch of ["ctrl", "alt"]) {
+      expect(
+        TERM_KEY_BAR.filter((item) => item.kind === "latch" && item.latch === latch),
+      ).toHaveLength(1);
+    }
+  });
+
+  it("Alt는_ShiftTab_바로_다음에_있다", () => {
+    const labels = TERM_KEY_BAR.map((k) => k.label);
+    expect(labels[labels.indexOf("⇧Tab") + 1]).toBe("Alt");
   });
 
   it("바에_중복_키가_없다", () => {
