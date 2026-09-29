@@ -1,4 +1,5 @@
 import type { CSSProperties } from "react";
+import { ConfirmCloseDialog } from "../components/ConfirmCloseDialog";
 import { FolderPicker } from "../components/FolderPicker";
 import { Header } from "../components/Header";
 import { LoadingSplash } from "../components/LoadingSplash";
@@ -70,6 +71,9 @@ export function App() {
               </div>
             )}
             {view.picker && <FolderPicker {...view.picker} />}
+            {view.closeConfirm && (
+              <ConfirmCloseDialog {...view.closeConfirm} />
+            )}
             {view.shortcutHelp.open && (
               <ShortcutHelp
                 onClose={view.shortcutHelp.hide}

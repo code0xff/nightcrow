@@ -1,0 +1,1 @@
+import{M as e}from"./index-2BRmr4XI.js";var t=e();function n({src:e}){return(0,t.jsx)(`iframe`,{title:`HTML preview`,sandbox:`allow-scripts`,src:e,className:`h-full w-full border-0 bg-white`})}export{n as HtmlView};
