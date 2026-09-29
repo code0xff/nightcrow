@@ -11,7 +11,12 @@ function mount() {
   const onCancel = vi.fn();
   render(
     <section data-terminal-panel="">
-      <ConfirmCloseDialog label="terminal 1" onConfirm={onConfirm} onCancel={onCancel} />
+      <ConfirmCloseDialog
+        label="terminal 1"
+        detail="The process running in it will be terminated."
+        onConfirm={onConfirm}
+        onCancel={onCancel}
+      />
     </section>,
   );
   return { onConfirm, onCancel };
@@ -22,6 +27,11 @@ describe("ConfirmCloseDialog", () => {
     mount();
     expect(screen.getByRole("alertdialog", { name: "Close terminal 1?" })).toBeTruthy();
     expect(document.activeElement).toBe(screen.getByRole("button", { name: "Close" }));
+  });
+
+  it("says_what_closing_ends", () => {
+    mount();
+    expect(screen.getByText("The process running in it will be terminated.")).toBeTruthy();
   });
 
   it("close_confirms", () => {

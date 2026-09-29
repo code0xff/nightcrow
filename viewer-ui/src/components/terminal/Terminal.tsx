@@ -11,7 +11,7 @@ import { usePanelSize } from "../../hooks/terminal/usePanelSize";
 import { useSoftKeyboardOpen } from "../../hooks/ui/useSoftKeyboard";
 import { AttachNotice } from "./AttachNotice";
 import { ComposeDialog } from "./ComposeDialog";
-import { ConfirmCloseDialog } from "./ConfirmCloseDialog";
+import { ConfirmCloseDialog } from "../ConfirmCloseDialog";
 import { useCompose } from "../../hooks/terminal/useCompose";
 import { PaneGrid } from "./PaneGrid";
 import { PaneTabs } from "./PaneTabs";
@@ -289,6 +289,7 @@ export function TerminalPanel({
       {closing !== null && panes.includes(closing) && (
         <ConfirmCloseDialog
           label={paneLabel(closing)}
+          detail="The process running in it will be terminated."
           onConfirm={() => {
             setClosing(null);
             closePane(closing);

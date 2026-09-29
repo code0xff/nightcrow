@@ -16,6 +16,8 @@ import { useTabStripSide } from "./ui/tabStripSide";
 export function useAppViewModel() {
   const [authed, setAuthed] = useState<boolean | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
+  // The project whose close button is waiting on a confirmation.
+  const [closingRepo, setClosingRepo] = useState<string | null>(null);
   const handle = useCallback((error: unknown) => {
     if (isUnauthorized(error)) {
       setAuthed(false);
@@ -86,6 +88,10 @@ export function useAppViewModel() {
     },
     [tabs.repo, tabs.setRepo, workspace.clearPane],
   );
+  // Only the close buttons ask; the `project.close` key is already a deliberate
+  // two-stroke chord, as `terminal.closePane` is for a pane.
+  const closing = tabs.repos.find((r) => r.id === closingRepo);
+  const cancelClose = useCallback(() => setClosingRepo(null), []);
   const openPicker = useCallback(() => setPickerOpen(true), []);
   const closePicker = useCallback(() => setPickerOpen(false), []);
   // Hoisted out of `Header` so the button and the keyboard share one reload:
@@ -128,7 +134,7 @@ export function useAppViewModel() {
       repos: tabs.repos,
       repo: tabs.repo,
       onSelectRepo: selectRepo,
-      onCloseRepo: closeRepo,
+      onCloseRepo: setClosingRepo,
       onOpenPicker: openPicker,
       cloning,
       accent: layout.accent,
@@ -153,6 +159,19 @@ export function useAppViewModel() {
     leader: shortcuts.settings,
     hint: shortcuts.hint,
     repoShell: workspace.repoShell,
+    // Only while the project is still open: one closed from elsewhere meanwhile
+    // has nothing left to confirm.
+    closeConfirm: closing
+      ? {
+          label: closing.name,
+          detail: "Its terminals and the processes running in them will be terminated.",
+          onConfirm: () => {
+            setClosingRepo(null);
+            closeRepo(closing.id);
+          },
+          onCancel: cancelClose,
+        }
+      : null,
     picker: pickerOpen
       ? {
           onClose: closePicker,
