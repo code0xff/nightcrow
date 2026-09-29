@@ -4,19 +4,22 @@ import { createPortal } from "react-dom";
 const TITLE_ID = "nc-confirm-close-title";
 
 /**
- * Asks before a pane's close button ends its terminal, which kills whatever is
- * running in it and cannot be undone.
+ * Asks before a close button ends something that kills running processes and
+ * cannot be undone: a terminal pane, or a project with all of its terminals.
  *
  * Portalled to the body for the same reason as `ComposeDialog`: inside the
  * panel, focus would count as the panel's and be taken back into a pane.
  */
 export function ConfirmCloseDialog({
   label,
+  detail,
   onConfirm,
   onCancel,
 }: {
-  /** Which pane is closing, said in the title. */
+  /** What is closing, said in the title. */
   label: string;
+  /** What closing it ends. */
+  detail: string;
   onConfirm: () => void;
   onCancel: () => void;
 }) {
@@ -49,9 +52,7 @@ export function ConfirmCloseDialog({
         <span id={TITLE_ID} className="font-medium break-words text-ink-50">
           Close {label}?
         </span>
-        <p className="text-ink-300">
-          The process running in it will be terminated.
-        </p>
+        <p className="text-ink-300">{detail}</p>
         <div className="flex items-center justify-end gap-2">
           <button
             type="button"
