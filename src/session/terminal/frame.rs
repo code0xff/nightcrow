@@ -35,8 +35,8 @@ pub enum ClientMessage {
         pane: Option<PaneId>,
     },
     /// Take over sizing this repository's panes (see [`ServerMessage::SizeOwner`]).
-    /// A PTY has one size, so one client at a time decides it. Attaching takes
-    /// it; this is how a client already attached takes it back on a keystroke.
+    /// A PTY has one size, so one client at a time decides it. This is how an
+    /// already-connected client claims sizing after user activity.
     #[serde(rename = "claim_size")]
     ClaimSize,
     /// Give up on whatever recovery is pending for `pane`. The person's decision
@@ -150,12 +150,16 @@ pub enum ServerMessage {
         panes: usize,
     },
     /// Whether *this* client is the one whose layout sets the pane sizes.
-    /// Addressed rather than broadcast. The size follows the most recent arrival
-    /// (tmux's `window-size latest`); others become spectators until one takes
-    /// it back with [`ClientMessage::ClaimSize`].
+    /// Addressed rather than broadcast. User activity or an explicit
+    /// [`ClientMessage::ClaimSize`] selects the screen that controls sizing;
+    /// a passive connection does not displace the current owner. `generation`
+    /// is a decimal string that changes only when the owner changes, so a client
+    /// can detect a lost false verdict after ownership has returned to it.
     #[serde(rename = "size_owner")]
     SizeOwner {
         owned: bool,
+        #[serde(default, skip_serializing_if = "String::is_empty")]
+        generation: String,
     },
     Error {
         message: String,

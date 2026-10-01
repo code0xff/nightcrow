@@ -10,6 +10,7 @@ import { browserHandlesKey, overriddenKeySequence } from "../../lib/hardwareKeys
 import { OSC_CLIPBOARD } from "../../lib/osc52";
 import { receivePaneClipboard } from "../../lib/paneClipboard";
 import { sendTerminalMessage, type PaneSize } from "../../api/terminal";
+import type { ScreenScale } from "../ui/screenScale";
 
 interface UseTerminalViewsArgs {
   panes: number[];
@@ -20,6 +21,7 @@ interface UseTerminalViewsArgs {
   size: { w: number; h: number };
   zoomed: number | null;
   mode: PaneViewMode;
+  screenScale: ScreenScale;
   socketRef: MutableRefObject<WebSocket | null>;
   viewsRef: MutableRefObject<Map<number, PaneView>>;
   bodyRefs: MutableRefObject<Map<number, HTMLDivElement>>;
@@ -41,6 +43,7 @@ export function useTerminalViews({
   size,
   zoomed,
   mode,
+  screenScale,
   socketRef,
   viewsRef,
   bodyRefs,
@@ -50,8 +53,18 @@ export function useTerminalViews({
   setTitles,
 }: UseTerminalViewsArgs) {
   useEffect(() => {
+    const font = terminalFontOptions(screenScale);
     for (const pane of panes) {
-      if (viewsRef.current.has(pane)) continue;
+      const current = viewsRef.current.get(pane);
+      if (current) {
+        if (current.term.options.fontSize !== font.fontSize) {
+          current.term.options.fontSize = font.fontSize;
+        }
+        if (current.term.options.fontFamily !== font.fontFamily) {
+          current.term.options.fontFamily = font.fontFamily;
+        }
+        continue;
+      }
       const body = bodyRefs.current.get(pane);
       if (!body) continue;
       // Defer creation until the cell is visible; retried on the reveal that
@@ -59,7 +72,7 @@ export function useTerminalViews({
       if (body.clientHeight === 0 || body.clientWidth === 0) continue;
 
       const term = new Terminal({
-        ...terminalFontOptions(),
+        ...font,
         theme: { background: "#0b0b0d", foreground: "#e6e6ec" },
         cursorBlink: true,
         // Without this there is no way to select text on a Mac in a pane whose
@@ -178,5 +191,5 @@ export function useTerminalViews({
         viewsRef.current.delete(pane);
       }
     }
-  }, [panes, size, zoomed, mode]);
+  }, [panes, size, zoomed, mode, screenScale]);
 }

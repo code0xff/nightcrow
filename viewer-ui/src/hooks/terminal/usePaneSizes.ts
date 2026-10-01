@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef } from "react";
 import type { MutableRefObject } from "react";
 import type { PaneView } from "../../lib/terminalLayout";
 import type { PaneViewMode } from "../../lib/paneViewMode";
+import type { ScreenScale } from "../ui/screenScale";
 import {
   sendTerminalMessage,
   type PaneSize,
@@ -28,12 +29,15 @@ interface UsePaneSizesArgs {
    *  moves nothing else this hook watches, and without it the panes would keep
    *  the size the other arrangement gave them. */
   mode: PaneViewMode;
+  screenScale: ScreenScale;
   socketRef: MutableRefObject<WebSocket | null>;
   viewsRef: MutableRefObject<Map<number, PaneView>>;
   bodyRefs: MutableRefObject<Map<number, HTMLDivElement>>;
   /** Each pane's grid as the server has confirmed it, from `created` and
    *  `resized`. Read here for the panes this page is not sizing. */
   ptySizesRef: MutableRefObject<Map<number, PaneSize>>;
+  /** The latest local fit, which may differ from xterm after a stale resize ack. */
+  desiredSizesRef: MutableRefObject<Map<number, PaneSize>>;
   /** What this page has already asked for, so an unchanged layout is not sent
    *  twice. Separate from the confirmed sizes because a request is not an
    *  outcome: the server drops one from a page that lost the sizing between
@@ -59,6 +63,8 @@ interface UsePaneSizesArgs {
    *  panes keep the grid they had and the cell shows the bottom of it
    *  (`TerminalCell`), which is where the prompt is. */
   keyboardOpen: boolean;
+  /** Incremented by a manual fit command, even while this page owns sizing. */
+  refitEpoch: number;
 }
 
 /**
@@ -78,36 +84,49 @@ export function usePaneSizes({
   size,
   zoomed,
   mode,
+  screenScale,
   socketRef,
   viewsRef,
   bodyRefs,
   ptySizesRef,
+  desiredSizesRef,
   askedSizesRef,
   ownsSize,
   layoutPending,
   keyboardOpen,
+  refitEpoch,
 }: UsePaneSizesArgs) {
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const seenRefitEpoch = useRef(refitEpoch);
 
   const flush = useCallback(() => {
     for (const [pane, view] of viewsRef.current) {
       const body = bodyRefs.current.get(pane);
       if (!body || body.clientHeight === 0 || body.clientWidth === 0) continue;
-      const { rows, cols } = view.term;
+      const desired = desiredSizesRef.current.get(pane) ?? {
+        rows: view.term.rows,
+        cols: view.term.cols,
+      };
       const asked = askedSizesRef.current.get(pane);
-      if (asked && asked.rows === rows && asked.cols === cols) continue;
+      if (
+        asked &&
+        asked.rows === desired.rows &&
+        asked.cols === desired.cols
+      ) {
+        continue;
+      }
       if (
         sendTerminalMessage(socketRef.current, {
           type: "resize",
           pane,
-          rows,
-          cols,
+          rows: desired.rows,
+          cols: desired.cols,
         })
       ) {
-        askedSizesRef.current.set(pane, { rows, cols });
+        askedSizesRef.current.set(pane, desired);
       }
     }
-  }, [socketRef, viewsRef, bodyRefs, askedSizesRef]);
+  }, [socketRef, viewsRef, bodyRefs, askedSizesRef, desiredSizesRef]);
 
   // Size visible panes after layout changes; never resize hidden cells to zero.
   useEffect(() => {
@@ -115,6 +134,10 @@ export function usePaneSizes({
     // is fitted and nothing goes out; the effect runs again when it closes and
     // finds the panes already at the size the restored panel gives them.
     if (keyboardOpen) return;
+    if (seenRefitEpoch.current !== refitEpoch) {
+      askedSizesRef.current.clear();
+      seenRefitEpoch.current = refitEpoch;
+    }
     for (const [pane, view] of viewsRef.current) {
       const body = bodyRefs.current.get(pane);
       if (!body || body.clientHeight === 0 || body.clientWidth === 0) continue;
@@ -127,10 +150,17 @@ export function usePaneSizes({
       // has just lost the sizing while its panes are at its own fit.
       if (!ownsSize || layoutPending) {
         const pty = ptySizesRef.current.get(pane);
-        if (pty) view.term.resize(pty.cols, pty.rows);
+        if (pty) {
+          view.term.resize(pty.cols, pty.rows);
+          desiredSizesRef.current.set(pane, pty);
+        }
         continue;
       }
       view.fit.fit();
+      desiredSizesRef.current.set(pane, {
+        rows: view.term.rows,
+        cols: view.term.cols,
+      });
     }
     // Nothing goes out while the layout is still resolving: what would be
     // measured is a grid about to be replaced.
@@ -146,11 +176,14 @@ export function usePaneSizes({
     panes,
     zoomed,
     mode,
+    screenScale,
+    refitEpoch,
     size,
     flush,
     viewsRef,
     bodyRefs,
     ptySizesRef,
+    desiredSizesRef,
     ownsSize,
     layoutPending,
     keyboardOpen,

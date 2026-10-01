@@ -2,6 +2,7 @@ import { useCallback } from "react";
 import type { LinkState } from "../../lib/attachStatus";
 import type { PaneViewMode } from "../../lib/paneViewMode";
 import type { RecoveryByPane } from "../../lib/recovery";
+import type { ScreenScale } from "../ui/screenScale";
 import { zoomPending } from "../../lib/zoom";
 import type { TerminalRefs } from "./useTerminalRefs";
 import { usePaneFocus } from "./usePaneFocus";
@@ -36,6 +37,8 @@ export interface TerminalWiringArgs {
   ownsSize: boolean;
   /** A soft keyboard is up; see `usePaneSizes`. */
   keyboardOpen: boolean;
+  screenScale: ScreenScale;
+  refitEpoch: number;
   /** The zoom actually rendered, and the raw one the server sent. A tabbed panel
    *  renders neither — see the comment on `zoomShown` in `Terminal.tsx`. */
   zoomShown: number | null;
@@ -48,7 +51,8 @@ export interface TerminalWiringArgs {
   setActive: React.Dispatch<React.SetStateAction<number | null>>;
   setZoomed: React.Dispatch<React.SetStateAction<number | null>>;
   setTitles: React.Dispatch<React.SetStateAction<Record<number, string>>>;
-  setOwnsSize: React.Dispatch<React.SetStateAction<boolean>>;
+  setOwnsSize: (owned: boolean) => void;
+  onSizeAcquired: () => void;
   setRecovery: React.Dispatch<React.SetStateAction<RecoveryByPane>>;
 }
 
@@ -63,6 +67,8 @@ export function useTerminalWiring({
   pending,
   ownsSize,
   keyboardOpen,
+  screenScale,
+  refitEpoch,
   zoomShown,
   zoomServer,
   consumeLatches,
@@ -74,6 +80,7 @@ export function useTerminalWiring({
   setZoomed,
   setTitles,
   setOwnsSize,
+  onSizeAcquired,
   setRecovery,
 }: TerminalWiringArgs): void {
   const {
@@ -83,6 +90,9 @@ export function useTerminalWiring({
     bodyRefs,
     ptySizesRef,
     askedSizesRef,
+    desiredSizesRef,
+    ownsSizeRef,
+    sizeOwnerGenerationRef,
     pendingRef,
     zoomAskedRef,
     slotRefs,
@@ -95,6 +105,9 @@ export function useTerminalWiring({
     pendingRef,
     ptySizesRef,
     askedSizesRef,
+    desiredSizesRef,
+    ownsSizeRef,
+    sizeOwnerGenerationRef,
     zoomAskedRef,
     setLink,
     setPending,
@@ -104,6 +117,7 @@ export function useTerminalWiring({
     setZoomed,
     setTitles,
     setOwnsSize,
+    onSizeAcquired,
     setRecovery,
   });
 
@@ -116,6 +130,7 @@ export function useTerminalWiring({
     size,
     zoomed: zoomShown,
     mode,
+    screenScale,
     socketRef,
     viewsRef,
     bodyRefs,
@@ -129,6 +144,7 @@ export function useTerminalWiring({
   useStartupSizes({
     pending,
     size,
+    screenScale,
     socketRef,
     slotRefs,
     panesExist: panes.length > 0,
@@ -140,14 +156,17 @@ export function useTerminalWiring({
     size,
     zoomed: zoomShown,
     mode,
+    screenScale,
     socketRef,
     viewsRef,
     bodyRefs,
     ptySizesRef,
     askedSizesRef,
+    desiredSizesRef,
     ownsSize,
     layoutPending: zoomPending(zoomServer, panes),
     keyboardOpen,
+    refitEpoch,
   });
 
   usePaneFocus({

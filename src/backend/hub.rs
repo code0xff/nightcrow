@@ -131,7 +131,7 @@ impl TerminalBackend for HubBackend {
                 TerminalMessage::Event(HubServerMessage::Resized { pane, rows, cols }) => {
                     events.push(BackendEvent::Resized { pane, rows, cols })
                 }
-                TerminalMessage::Event(HubServerMessage::SizeOwner { owned }) => {
+                TerminalMessage::Event(HubServerMessage::SizeOwner { owned, .. }) => {
                     events.push(BackendEvent::SizeOwnership { owned })
                 }
                 TerminalMessage::Event(HubServerMessage::Pending { .. }) => {

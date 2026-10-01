@@ -2,24 +2,21 @@
 //!
 //! A PTY is a contract with a child process: the child draws for the width it
 //! was told, and nothing can re-flow an alternate-screen program afterwards. So
-//! the size is one value with one owner — the most recent viewer to arrive
-//! (tmux's `window-size latest`), until another takes it.
+//! the size is one value with one owner — the most recent viewer to interact
+//! with it, until another takes it.
 //!
 //! **Why this is the session's and not each hub's.** Which repository is in
 //! front is shared by the whole session, so "which screen is this session fitted
 //! to" is one question. Asked per hub, it was re-answered on every switch —
-//! moving tabs made every attached page reconnect at once and the sizing fell
-//! to whichever handshake finished last.
+//! the same attached screen would accumulate different owner histories for each
+//! repository and fit one physical display to several incompatible sizes.
 //!
 //! **A viewer is not a connection.** A socket opens for reasons that are not a
-//! person sitting down: a repository switch, a page reload, a network blip. So
-//! a viewer names itself ([`ViewerId`]) and says outright whether it is newly
-//! arrived; connections come and go beneath a viewer without moving anything.
+//! person interacting: a repository switch, a page reload, a network blip. So
+//! connections come and go beneath a viewer without moving anything.
 //!
-//! **Unowned means empty.** The sizing has no owner only while nobody is here.
-//! A session with a person in it and nobody sizing for them renders their panes
-//! at a departed screen's size — the state a phone produced every time it woke
-//! up.
+//! **Arrival is passive.** The first viewer bootstraps an unowned session, but
+//! later arrivals leave the current screen in charge until someone interacts.
 //!
 //! This file is the facade — locking, and the contract each caller sees. The
 //! rules themselves live with the state they read, in [`state`].
@@ -88,9 +85,9 @@ impl SizeOwnership {
 
     /// Register a connection for `viewer`.
     ///
-    /// `arriving` is the client's own word for "a person just sat down here" —
-    /// a page opening rather than a repository switch or a reconnect. Only that
-    /// takes the sizing.
+    /// `arriving` records the client's distinction between a new screen and a
+    /// reconnect for diagnostics. Ownership changes only for an unowned session
+    /// or an explicit claim.
     pub fn join(
         &self,
         viewer: ViewerId,
@@ -113,7 +110,33 @@ impl SizeOwnership {
         self.lock().claim(connection, now);
     }
 
+    /// The current ownership generation when `connection` is the owner.
+    pub(crate) fn owner_generation(&self, connection: u64) -> Option<u64> {
+        self.lock().owner_generation(connection)
+    }
+
+    /// Run `apply` while ownership is locked if the connection still owns the
+    /// exact generation that admitted a queued resize.
+    pub(crate) fn with_owner_generation<R>(
+        &self,
+        connection: u64,
+        generation: u64,
+        apply: impl FnOnce() -> R,
+    ) -> Option<R> {
+        self.lock()
+            .with_owner_generation(connection, generation, apply)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn test_lock_is_held(&self) -> bool {
+        matches!(
+            self.inner.try_lock(),
+            Err(std::sync::TryLockError::WouldBlock)
+        )
+    }
+
     /// Whether `connection`'s viewer may size the panes.
+    #[cfg(test)]
     pub fn owns(&self, connection: u64) -> bool {
         self.lock().owns(connection)
     }
@@ -134,6 +157,9 @@ impl SizeOwnership {
     }
 }
 
+#[cfg(test)]
+#[path = "size_owner_activity_tests.rs"]
+mod activity_tests;
 #[cfg(test)]
 #[path = "size_owner_tests.rs"]
 mod tests;

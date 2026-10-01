@@ -29,7 +29,7 @@ fn verdicts(rx: &Receiver<TerminalFrame>) -> Vec<bool> {
 }
 
 #[test]
-fn a_viewer_that_says_it_just_arrived_takes_the_sizing() {
+fn a_first_viewer_bootstraps_unowned_sizing() {
     let ownership = SizeOwnership::new();
     let (tx, rx) = channel();
 
@@ -59,10 +59,7 @@ fn a_connection_that_is_not_arriving_leaves_the_sizing_where_it_is() {
     assert!(verdicts(&a_rx).is_empty(), "the owner was not disturbed");
 }
 
-/// The bug this module exists for: switching repositories closes one socket and
-/// opens another, on *every* attached page at once, because which repository is
-/// in front is shared. Read as arrivals, that made the sizing fall to whichever
-/// handshake finished last.
+/// Repository changes open new sockets but do not count as user activity.
 #[test]
 fn switching_repositories_does_not_move_the_sizing_between_viewers() {
     let ownership = SizeOwnership::new();
@@ -71,8 +68,11 @@ fn switching_repositories_does_not_move_the_sizing_between_viewers() {
     let (b_tx, b_rx) = channel();
     let a = ownership.join(viewer("a"), true, a_tx.clone(), now);
     let b = ownership.join(viewer("b"), true, b_tx.clone(), now);
-    // The second page to open owns it, as `window-size latest` says.
-    assert!(b.owned);
+    assert!(
+        !b.owned,
+        "a passive arrival leaves the current owner in charge"
+    );
+    ownership.claim(b.connection, now);
     let _ = (verdicts(&a_rx), verdicts(&b_rx));
 
     // Both pages move to another repository: old socket closed, new one opened,
@@ -197,6 +197,7 @@ fn a_viewers_further_connections_neither_claim_nor_release() {
 
     let tui = ViewerId::Attached(7);
     let first = ownership.join(tui.clone(), true, first_tx, now);
+    ownership.claim(first.connection, now);
     // Its second repository. Arriving again must not re-take what it has.
     let second = ownership.join(tui.clone(), true, second_tx, now);
     assert_eq!(ownership.owner(), Some(tui.clone()));
@@ -223,7 +224,8 @@ fn a_client_can_take_the_sizing_back_on_request() {
     let (b_tx, b_rx) = channel();
     let a = ownership.join(viewer("a"), true, a_tx, now);
     let b = ownership.join(viewer("b"), true, b_tx, now);
-    assert!(b.owned);
+    assert!(!b.owned);
+    ownership.claim(b.connection, now);
     let _ = (verdicts(&a_rx), verdicts(&b_rx));
 
     ownership.claim(a.connection, now);
@@ -236,7 +238,7 @@ fn a_client_can_take_the_sizing_back_on_request() {
 }
 
 #[test]
-fn claiming_what_this_viewer_already_owns_says_nothing() {
+fn claiming_what_this_viewer_already_owns_sends_a_refit_ack() {
     let ownership = SizeOwnership::new();
     let now = Instant::now();
     let (tx, rx) = channel();
@@ -245,10 +247,7 @@ fn claiming_what_this_viewer_already_owns_says_nothing() {
 
     ownership.claim(only.connection, now);
 
-    assert!(
-        verdicts(&rx).is_empty(),
-        "a client is not told what it already knows"
-    );
+    assert_eq!(verdicts(&rx), [true], "manual refit receives an owner ack");
 }
 
 #[test]
@@ -259,6 +258,7 @@ fn a_claim_from_a_connection_that_is_gone_is_dropped() {
     let (b_tx, _b_rx) = channel();
     let a = ownership.join(viewer("a"), true, a_tx, now);
     let b = ownership.join(viewer("b"), true, b_tx, now);
+    ownership.claim(b.connection, now);
 
     ownership.leave(a.connection, now);
     ownership.claim(a.connection, now);
