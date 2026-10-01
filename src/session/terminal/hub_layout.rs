@@ -30,9 +30,9 @@ impl TerminalHub {
             .expect("terminal resize queue poisoned");
         // Checked while holding the queue lock so `disconnect` cannot purge and
         // then have this request inserted behind it.
-        if !self.owns_size(connection) {
+        let Some(ownership_generation) = self.ownership.owner_generation(connection) else {
             return;
-        }
+        };
         pending.insert(
             (connection, pane),
             PendingResize {
@@ -41,6 +41,7 @@ impl TerminalHub {
                 cols,
                 client,
                 connection,
+                ownership_generation,
             },
         );
     }
@@ -95,56 +96,59 @@ impl TerminalHub {
             cols,
             client,
             connection,
+            ownership_generation,
         } = resize;
         let mut state = self.state.lock().expect("terminal state poisoned");
         #[cfg(test)]
         self.run_concurrency_test_hook(super::ConcurrencyTestPoint::BeforeResizeValidation);
-        // The queue may already have handed this value to the worker when its
-        // connection departs. Validate its original registration and ownership
-        // together while holding state, in the same state -> ownership order as
-        // `connect`, so a replacement owner cannot inherit the stale request.
-        if !self.client_owns_size(&state, client, connection) {
-            return;
-        }
-        // An unknown pane is ignored rather than errored: a client racing a
-        // pane exit is normal.
-        let Some(p) = state.panes.iter_mut().find(|p| p.id == pane) else {
-            return;
-        };
-        let changed = (p.rows, p.cols) != (rows, cols);
-        if changed {
-            if let Err(err) = backend.resize(pane, rows, cols) {
-                tracing::warn!(%err, pane, rows, cols, "could not resize a session PTY");
-                return;
-            }
-            modes.resize(pane, rows, cols);
-            p.rows = rows;
-            p.cols = cols;
-        }
-        // The grid just reflowed, so a snapshot taken before it wraps where the
-        // child no longer does. Refreshed into whichever record the pane is on
-        // — the emulator's active grid is that screen. Skipped when the last
-        // chunk ended mid-sequence (`at_boundary`): a snapshot anchored there
-        // would splice into an open sequence on replay, and a stale-size screen
-        // is the smaller harm — the next output refreshes it.
-        if changed
-            && modes.at_boundary(pane)
-            && let Some(screen) = modes.snapshot(pane)
-        {
-            if p.modes.alt_screen {
-                p.screen = screen;
-                p.since.clear();
-            } else {
-                p.covered = p.scrollback.len();
-                p.normal_screen = screen;
-            }
-        }
-        // Every client's emulator has to wrap where the child now does, so the
-        // size it was actually set to goes to all of them — including the one
-        // that asked, which learns here if its request was clamped.
-        if let Ok(json) = serde_json::to_string(&ServerMessage::Resized { pane, rows, cols }) {
-            broadcast_locked(&mut state.clients, TerminalFrame::Control(json));
-        }
+        // Keep ownership locked until the PTY, record, and broadcast agree.
+        // The generation rejects a delayed request even after an A → B → A cycle.
+        self.ownership
+            .with_owner_generation(connection, ownership_generation, || {
+                if !state
+                    .clients
+                    .iter()
+                    .any(|c| c.id == client && c.connection == connection)
+                {
+                    return;
+                }
+                #[cfg(test)]
+                self.run_concurrency_test_hook(super::ConcurrencyTestPoint::ResizeOwnershipLocked);
+                let Some(p) = state.panes.iter_mut().find(|p| p.id == pane) else {
+                    return;
+                };
+                let changed = (p.rows, p.cols) != (rows, cols);
+                if changed {
+                    if let Err(err) = backend.resize(pane, rows, cols) {
+                        tracing::warn!(%err, pane, rows, cols, "could not resize a session PTY");
+                        return;
+                    }
+                    modes.resize(pane, rows, cols);
+                    p.rows = rows;
+                    p.cols = cols;
+                }
+                if changed
+                    && modes.at_boundary(pane)
+                    && let Some(screen) = modes.snapshot(pane)
+                {
+                    if p.modes.alt_screen {
+                        p.screen = screen;
+                        p.since.clear();
+                    } else {
+                        p.covered = p.scrollback.len();
+                        p.normal_screen = screen;
+                    }
+                }
+                if let Ok(json) =
+                    serde_json::to_string(&ServerMessage::Resized { pane, rows, cols })
+                {
+                    broadcast_locked(&mut state.clients, TerminalFrame::Control(json));
+                    #[cfg(test)]
+                    self.run_concurrency_test_hook(
+                        super::ConcurrencyTestPoint::ResizeBroadcastComplete,
+                    );
+                }
+            });
     }
 
     /// Reorder the live panes to match `order` and tell every client the

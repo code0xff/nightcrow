@@ -2,7 +2,7 @@ import { useLayoutEffect, useRef } from "react";
 import type { MutableRefObject } from "react";
 import type { LinkState } from "../../lib/attachStatus";
 import type { RecoveryByPane } from "../../lib/recovery";
-import { takeClaim, viewerId } from "../../lib/viewerId";
+import { viewerId } from "../../lib/viewerId";
 import type { PaneView } from "../../lib/terminalLayout";
 import type { PaneSize } from "../../api/terminal";
 import { handleTerminalSocketMessage } from "./terminalSocketMessages";
@@ -14,6 +14,10 @@ interface UseTerminalSocketArgs {
   pendingRef: MutableRefObject<Map<number, Uint8Array[]>>;
   ptySizesRef: MutableRefObject<Map<number, PaneSize>>;
   askedSizesRef: MutableRefObject<Map<number, PaneSize>>;
+  desiredSizesRef: MutableRefObject<Map<number, PaneSize>>;
+  ownsSizeRef: MutableRefObject<boolean>;
+  sizeOwnerGenerationRef: MutableRefObject<string | null>;
+  onSizeAcquired: () => void;
   /** What the page last asked the zoom to be (see `usePaneCommands`). Cleared
    *  here because this is what knows when a request has been answered and when
    *  the connection carrying it is gone — including a repository switch, whose
@@ -30,7 +34,7 @@ interface UseTerminalSocketArgs {
   setZoomed: React.Dispatch<React.SetStateAction<number | null>>;
   setTitles: React.Dispatch<React.SetStateAction<Record<number, string>>>;
   /** Whether this page's layout is what sets the pane sizes. */
-  setOwnsSize: React.Dispatch<React.SetStateAction<boolean>>;
+  setOwnsSize: (owned: boolean) => void;
   setRecovery: React.Dispatch<React.SetStateAction<RecoveryByPane>>;
 }
 
@@ -49,6 +53,10 @@ export function useTerminalSocket({
   pendingRef,
   ptySizesRef,
   askedSizesRef,
+  desiredSizesRef,
+  ownsSizeRef,
+  sizeOwnerGenerationRef,
+  onSizeAcquired,
   zoomAskedRef,
   setLink,
   setPending,
@@ -86,6 +94,10 @@ export function useTerminalSocket({
       pendingRef,
       ptySizesRef,
       askedSizesRef,
+      desiredSizesRef,
+      ownsSizeRef,
+      sizeOwnerGenerationRef,
+      onSizeAcquired,
       zoomAskedRef,
       setLink: linkTo,
       setPending,
@@ -104,10 +116,13 @@ export function useTerminalSocket({
       pendingRef.current.clear();
       ptySizesRef.current.clear();
       askedSizesRef.current.clear();
+      desiredSizesRef.current.clear();
     };
 
     const connect = () => {
       clientIdRef.current = null;
+      ownsSizeRef.current = false;
+      sizeOwnerGenerationRef.current = null;
       linkTo(waiting());
       setReplayLeft(0);
       // Anything asked for on the socket that just went is unanswerable, and a
@@ -118,13 +133,6 @@ export function useTerminalSocket({
       setActive(null);
       setZoomed(null);
       setTitles({});
-      // Only a page someone just opened takes the sizing, and only then is it
-      // worth assuming rather than awaiting — starting as a spectator would
-      // leave that page's panes unfitted for a round trip. A switch or a
-      // reconnect keeps whatever this page already had; the server confirms
-      // it either way.
-      const arriving = takeClaim();
-      if (arriving) setOwnsSize(true);
       // Reports are keyed by pane id, which is repository-local.
       setRecovery({});
       disposeAll();
@@ -133,7 +141,6 @@ export function useTerminalSocket({
       // The page names itself, so the session can tell one screen's sockets
       // coming and going from a new screen arriving.
       const query = new URLSearchParams({ repo, viewer: viewerId() });
-      if (arriving) query.set("claim", "1");
       const socket = new WebSocket(
         `${scheme}//${location.host}/ws/term?${query}`,
       );

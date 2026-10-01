@@ -1,8 +1,10 @@
-import { useCallback, useState } from "react";
+import { useCallback } from "react";
 import { planLayout } from "../../lib/terminalLayout";
 import { usePaneDrag } from "../../hooks/terminal/usePaneDrag";
 import { usePaneRecovery } from "../../hooks/terminal/usePaneRecovery";
 import { usePaneCommands } from "../../hooks/terminal/usePaneCommands";
+import { useTerminalSizingControl } from "../../hooks/terminal/useTerminalSizingControl";
+import { useTerminalPanelState } from "../../hooks/terminal/useTerminalPanelState";
 import { useTerminalRefs } from "../../hooks/terminal/useTerminalRefs";
 import { useTerminalShortcuts } from "../../hooks/terminal/useTerminalShortcuts";
 import { useTerminalWiring } from "../../hooks/terminal/useTerminalWiring";
@@ -10,9 +12,8 @@ import { useAltLatch, useCtrlLatch } from "../../hooks/terminal/useModifierLatch
 import { usePanelSize } from "../../hooks/terminal/usePanelSize";
 import { useSoftKeyboardOpen } from "../../hooks/ui/useSoftKeyboard";
 import { AttachNotice } from "./AttachNotice";
-import { ComposeDialog } from "./ComposeDialog";
-import { ConfirmCloseDialog } from "../ConfirmCloseDialog";
 import { useCompose } from "../../hooks/terminal/useCompose";
+import { TerminalDialogs } from "./TerminalDialogs";
 import { PaneGrid } from "./PaneGrid";
 import { PaneTabs } from "./PaneTabs";
 import { TermKeyBar } from "./TermKeyBar";
@@ -24,11 +25,8 @@ import { shownTab } from "../../lib/paneViewMode";
 import { PanelDivider, type PanelDividerProps } from "./PanelDivider";
 import { PanelToolbar } from "./PanelToolbar";
 import { renderedZoom } from "../../lib/zoom";
-import {
-  attachLabel,
-  attachStatus,
-  type LinkState,
-} from "../../lib/attachStatus";
+import { attachLabel, attachStatus } from "../../lib/attachStatus";
+import { useScreenScale } from "../../hooks/ui/screenScale";
 
 export function TerminalPanel({
   repo,
@@ -48,28 +46,22 @@ export function TerminalPanel({
   // Held as one bag and passed to `useTerminalWiring` that way; the names below
   // are the ones this component reads for itself.
   const refs = useTerminalRefs();
-  const { containerRef, socketRef, viewsRef, bodyRefs, zoomAskedRef, slotRefs } =
-    refs;
-  const [pending, setPending] = useState<number | null>(null);
-  // Where the socket is. Held here rather than inferred from the pane list,
-  // which is empty both while attaching and when the session really has no
-  // terminal — the two the panel used to render identically.
-  const [link, setLink] = useState<LinkState>("connecting");
-  // Panes the replay has promised but not yet delivered. The grid is planned for
-  // them too, so each pane arrives into the cell it will keep instead of being
-  // given the whole panel and shrunk by the next one.
-  const [replayLeft, setReplayLeft] = useState(0);
-  const [panes, setPanes] = useState<number[]>([]);
-  const [active, setActive] = useState<number | null>(null);
-  const [zoomed, setZoomed] = useState<number | null>(null);
-  const [titles, setTitles] = useState<Record<number, string>>({});
-  // The pane whose close button is waiting on a confirmation.
-  const [closing, setClosing] = useState<number | null>(null);
-  // Whether this page's layout is what sets the pane sizes. A PTY has one size
-  // and the child cannot be re-flowed afterwards, so one client at a time
-  // decides it; the rest render the grid they are given.
-  const [ownsSize, setOwnsSize] = useState(true);
+  const {
+    containerRef,
+    socketRef,
+    viewsRef,
+    bodyRefs,
+    zoomAskedRef,
+    slotRefs,
+  } = refs;
+  const {
+    pending, setPending, link, setLink, replayLeft, setReplayLeft,
+    panes, setPanes, active, setActive, zoomed, setZoomed,
+    titles, setTitles, closing, setClosing, ownsSize, setOwnsSize,
+  } = useTerminalPanelState();
   const size = usePanelSize(containerRef);
+  const { scale: screenScale } = useScreenScale();
+  const { refitEpoch, forceFit } = useTerminalSizingControl(link, socketRef);
   const keyboardOpen = useSoftKeyboardOpen();
   const { recovery, setRecovery, cancelRecovery } = usePaneRecovery(socketRef);
   // Derived rather than corrected in the handler, so the panel cannot render a
@@ -106,6 +98,8 @@ export function TerminalPanel({
     pending,
     ownsSize,
     keyboardOpen,
+    screenScale,
+    refitEpoch,
     zoomShown,
     zoomServer,
     consumeLatches,
@@ -117,6 +111,7 @@ export function TerminalPanel({
     setZoomed,
     setTitles,
     setOwnsSize,
+    onSizeAcquired: forceFit,
     setRecovery,
   });
 
@@ -155,9 +150,9 @@ export function TerminalPanel({
     zoomed: zoom,
     zoomAskedRef,
     active,
+    onForceFit: forceFit,
   });
-  const { create, toggleZoom, claimSize, closePane, reorder, sendKey } =
-    commands;
+  const { create, toggleZoom, claimSize, closePane, reorder, sendKey } = commands;
   useTerminalShortcuts({
     socketRef,
     panes,
@@ -284,31 +279,20 @@ export function TerminalPanel({
           onCompose={compose.open}
         />
       )}
-      {/* Only while the pane is still there: one closed from elsewhere
-          meanwhile has nothing left to confirm. */}
-      {closing !== null && panes.includes(closing) && (
-        <ConfirmCloseDialog
-          label={paneLabel(closing)}
-          detail="The process running in it will be terminated."
-          onConfirm={() => {
-            setClosing(null);
-            closePane(closing);
-          }}
-          onCancel={() => {
-            setClosing(null);
-            focusActive();
-          }}
-        />
-      )}
-      {compose.target !== null && (
-        <ComposeDialog
-          label={paneLabel(compose.target)}
-          draft={compose.draft}
-          onChange={compose.setDraft}
-          onSend={compose.send}
-          onClose={compose.close}
-        />
-      )}
+      <TerminalDialogs
+        closing={closing}
+        panes={panes}
+        paneLabel={paneLabel}
+        onConfirmClose={(pane) => {
+          setClosing(null);
+          closePane(pane);
+        }}
+        onCancelClose={() => {
+          setClosing(null);
+          focusActive();
+        }}
+        compose={compose}
+      />
     </section>
   );
 }

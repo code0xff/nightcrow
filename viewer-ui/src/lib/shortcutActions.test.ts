@@ -82,7 +82,7 @@ describe("SHORTCUT_ACTIONS", () => {
       t: "terminal.newPane",
       w: "terminal.closePane",
       s: "terminal.swapPanePrompt",
-      z: "terminal.claimSizing",
+      r: "terminal.claimSizing",
       c: "terminal.cancelRecovery",
       l: "view.toggleLog",
       b: "view.toggleTree",
@@ -140,6 +140,10 @@ describe("actionByLeader", () => {
     expect(actionByLeader("ArrowLeft")).toBeNull();
   });
 
+  it("기존_z_바인딩도_크기_회수로_유지한다", () => {
+    expect(actionByLeader("z")?.id).toBe("terminal.claimSizing");
+  });
+
   it("web에서_버린_TUI_키는_매핑되지_않는다", () => {
     for (const unsupported of UNSUPPORTED_TUI_ACTIONS) {
       if (unsupported.leader.length !== 1) continue;
@@ -151,7 +155,7 @@ describe("actionByLeader", () => {
 describe("UNSUPPORTED_TUI_ACTIONS", () => {
   it("redraw_detach_F키를_이유와_함께_기록한다", () => {
     const leaders = UNSUPPORTED_TUI_ACTIONS.map((a) => a.leader);
-    expect(leaders).toEqual(["r", "q", "F1-F10"]);
+    expect(leaders).toEqual(["q", "F1-F10"]);
     for (const action of UNSUPPORTED_TUI_ACTIONS) {
       expect(action.reason.length).toBeGreaterThan(0);
     }

@@ -23,27 +23,4 @@ impl TerminalHub {
     pub(super) fn settle_size_owner(&self, now: std::time::Instant) {
         self.ownership.settle(now);
     }
-
-    /// Whether `connection` may size this repository's panes.
-    pub(super) fn owns_size(&self, connection: u64) -> bool {
-        self.ownership.owns(connection)
-    }
-
-    /// Whether a queued request still belongs to a live hub client whose
-    /// connection owns the sizing. Called with `state` locked so disconnect and
-    /// ownership transfer cannot split identity validation from authorization;
-    /// this preserves the lock order used by `connect` (hub state, then
-    /// session ownership).
-    pub(super) fn client_owns_size(
-        &self,
-        state: &super::hub_helpers::Shared,
-        client: u64,
-        connection: u64,
-    ) -> bool {
-        state
-            .clients
-            .iter()
-            .any(|c| c.id == client && c.connection == connection)
-            && self.owns_size(connection)
-    }
 }

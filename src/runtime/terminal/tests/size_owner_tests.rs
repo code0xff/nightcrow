@@ -129,6 +129,23 @@ fn taking_the_sizing_back_re_applies_this_client_layout() {
 }
 
 #[test]
+fn explicit_refit_reissues_unchanged_geometry_when_already_owner() {
+    let backend = crate::test_util::FakeBackend::default();
+    let resized = backend.resized.clone();
+    let mut state = TerminalState::new(Some(Box::new(backend)), false);
+    state.create_pane_now().unwrap();
+    let pane = state.panes[0].id;
+    state.resize_visible_panes(&[(pane, 24, 80)]);
+    assert_eq!(resized.borrow().len(), 1);
+
+    state.force_refit();
+    state.resize_visible_panes(&[(pane, 24, 80)]);
+
+    assert_eq!(resized.borrow().len(), 2);
+    assert_eq!(resized.borrow().last().copied(), Some((pane, 24, 80)));
+}
+
+#[test]
 fn an_unconfirmed_resize_is_retried_after_the_deadline() {
     let (mut state, _events, resized) = state_with_pending_resize();
     state.create_pane_now().unwrap();

@@ -20,9 +20,9 @@ stale socket에 connect하는 방식은 닫힌 Unix socket에서 생존 여부�
 
 active repository와 accent는 같은 session의 사실이므로 TUI와 browser 사이에 공유한다. cursor·scroll·focus·fullscreen·검색과 화면 비율(`upper_pct`)은 display마다 의미가 달라 client-local로 둔다. viewer preference와 TUI workspace도 서로 다른 파일에 두어 한 표면이 다른 표면의 view state를 덮지 않게 한다.
 
-### PTY 크기는 latest viewer 하나가 소유한다
+### PTY 크기는 마지막으로 조작한 viewer 하나가 소유한다
 
-PTY child와 alternate-screen 프로그램은 전달받은 폭에 맞춰 화면을 만들고, 화면별 크기를 사후에 합칠 수 없다. 따라서 session에 하나의 size owner를 두고, 명시적인 arrival/claim 때만 이전한다. 입력마다 owner를 바꾸면 휴대폰의 잠깐 확인이 모든 pane repaint를 일으키므로 배제했다. 비소유 client는 관전자이며 실제 `Resized` event만 따른다.
+PTY child와 alternate-screen 프로그램은 전달받은 폭에 맞춰 화면을 만들고, 화면별 크기를 사후에 합칠 수 없다. 따라서 session에 하나의 size owner를 둔다. 사람이 key press/repeat, paste, click, touch, wheel로 조작한 화면이 claim하며, 새 연결·창 크기 변경·focus·redraw·reconnect만으로는 이전하지 않는다. 같은 owner의 반복 조작은 resize를 강제하지 않으며, `<leader> r`과 web의 수동 fit control은 명시적으로 geometry를 다시 적용한다. owner가 떠나면 2초 grace 뒤 남은 최근 조작 viewer를 택하고, 아무도 조작하지 않았다면 최근 연결 viewer로 fallback한다. 비소유 client는 관전자이며 실제 `Resized` event만 따른다.
 
 ## 상태·스트림·동시성
 

@@ -7,6 +7,7 @@ import {
   sendTerminalMessage,
   type PaneSize,
 } from "../../api/terminal";
+import type { ScreenScale } from "../ui/screenScale";
 
 interface UseStartupSizesArgs {
   /** How many startup terminals the server is holding, or null when there is
@@ -15,6 +16,7 @@ interface UseStartupSizesArgs {
   /** Re-run when the layout moves, since a cell with no size cannot be
    *  measured yet. */
   size: { w: number; h: number };
+  screenScale: ScreenScale;
   socketRef: MutableRefObject<WebSocket | null>;
   /** The placeholder cells rendered for the pending panes, by slot. */
   slotRefs: MutableRefObject<Map<number, HTMLDivElement>>;
@@ -37,6 +39,7 @@ interface UseStartupSizesArgs {
 export function useStartupSizes({
   pending,
   size,
+  screenScale,
   socketRef,
   slotRefs,
   panesExist,
@@ -68,7 +71,7 @@ export function useStartupSizes({
     let sizes: PaneSize[] = [];
     try {
       sizes = slots.map((node) => {
-        const term = new Terminal(terminalFontOptions());
+        const term = new Terminal(terminalFontOptions(screenScale));
         const fit = new FitAddon();
         term.loadAddon(fit);
         term.open(node);
@@ -86,5 +89,5 @@ export function useStartupSizes({
     }
 
     if (sendTerminalMessage(socket, { type: "start", sizes })) onAnswered();
-  }, [pending, size, socketRef, slotRefs, panesExist, onAnswered]);
+  }, [pending, size, screenScale, socketRef, slotRefs, panesExist, onAnswered]);
 }

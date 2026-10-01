@@ -55,6 +55,18 @@ impl App {
         self.terminal.claim_size();
     }
 
+    /// Report user activity even when ownership appears local; another viewer
+    /// may have claimed it before this client receives the loss notification.
+    pub fn request_pane_sizing(&mut self) {
+        self.terminal.claim_size();
+    }
+
+    /// Unconditionally request ownership and discard local resize confirms so
+    /// the next layout pass re-sends this screen's geometry.
+    pub fn force_refit_pane_sizing(&mut self) {
+        self.terminal.force_refit();
+    }
+
     /// Whether taking over the sizing would do anything — the terminal hint row
     /// advertises the key only where it would, since a hint for a no-op lies.
     pub fn can_claim_pane_sizing(&self) -> bool {

@@ -20,9 +20,13 @@ struct Announce {
 pub(super) struct Inner {
     /// How many connections each present viewer holds.
     present: HashMap<ViewerId, usize>,
-    /// Present viewers in arrival order, newest last.
+    /// Present viewers in first-connection order, newest last.
     arrival: Vec<ViewerId>,
+    /// Viewers that have taken control, ordered by their last user activity.
+    activity: Vec<ViewerId>,
     owner: Option<ViewerId>,
+    /// Invalidates a queued resize after any ownership change, including A → B → A.
+    generation: u64,
     /// When the owner's last connection went, if it has none now.
     owner_absent_since: Option<Instant>,
     /// Every live connection, by the id the registrar handed out.
@@ -61,26 +65,15 @@ impl Inner {
 
         audit::joined(&viewer, connection, arriving);
 
-        // Arriving is not the only way in. An unowned sizing displaces nobody,
-        // so the caution that stops a reconnect from taking a screen it never
-        // claimed has nothing to protect — see the invariant in the module doc.
+        // A new viewer only bootstraps a session with no sizing owner.
         let unowned = self.owner.is_none();
-        let took = (arriving || unowned) && self.owner.as_ref() != Some(&viewer);
+        let took = unowned && self.owner.as_ref() != Some(&viewer);
         if took {
             self.owner_absent_since = None;
             let displaced = self.owner.replace(viewer.clone());
-            // Both hold for the first page of a session. Naming the arrival
-            // there keeps the other reason meaning what it is worth reading:
-            // a connection that took the sizing without anyone sitting down.
-            audit::moved(
-                displaced.as_ref(),
-                Some(&viewer),
-                if arriving {
-                    "a viewer arrived"
-                } else {
-                    "nobody owned it"
-                },
-            );
+            self.mark_active(&viewer);
+            self.advance_generation();
+            audit::moved(displaced.as_ref(), Some(&viewer), "nobody owned it");
             // Every one of the new owner's connections, and of the displaced
             // one's: each holds its own repository's panes to re-fit or stop
             // sizing.
@@ -119,6 +112,7 @@ impl Inner {
         }
         self.present.remove(&gone.viewer);
         self.arrival.retain(|v| v != &gone.viewer);
+        self.activity.retain(|v| v != &gone.viewer);
         if self.owner.as_ref() == Some(&gone.viewer) {
             self.owner_absent_since = Some(now);
         }
@@ -131,11 +125,14 @@ impl Inner {
             // to hand the sizing to.
             return;
         };
+        self.mark_active(&viewer);
         if self.owner.as_ref() == Some(&viewer) {
+            self.tell_one(connection, true);
             return;
         }
         self.owner_absent_since = None;
         let displaced = self.owner.replace(viewer.clone());
+        self.advance_generation();
         audit::moved(displaced.as_ref(), Some(&viewer), "a viewer asked");
         self.tell(&viewer, true);
         if let Some(displaced) = displaced {
@@ -147,6 +144,28 @@ impl Inner {
         self.announce
             .get(&connection)
             .is_some_and(|a| self.owner.as_ref() == Some(&a.viewer))
+    }
+
+    pub(super) fn owner_generation(&self, connection: u64) -> Option<u64> {
+        self.owns(connection).then_some(self.generation)
+    }
+
+    pub(super) fn with_owner_generation<R>(
+        &self,
+        connection: u64,
+        generation: u64,
+        apply: impl FnOnce() -> R,
+    ) -> Option<R> {
+        (self.owner_generation(connection) == Some(generation)).then(apply)
+    }
+
+    fn mark_active(&mut self, viewer: &ViewerId) {
+        self.activity.retain(|active| active != viewer);
+        self.activity.push(viewer.clone());
+    }
+
+    fn advance_generation(&mut self) {
+        self.generation = self.generation.wrapping_add(1);
     }
 
     #[cfg(test)]
@@ -168,7 +187,14 @@ impl Inner {
         // it goes unowned and every pane keeps the size it has — there is no
         // client to fit, and the next viewer to connect picks it up.
         let gone = self.owner.take();
-        self.owner = self.arrival.last().cloned();
+        self.owner = self
+            .activity
+            .last()
+            .or_else(|| self.arrival.last())
+            .cloned();
+        if gone != self.owner {
+            self.advance_generation();
+        }
         audit::moved(gone.as_ref(), self.owner.as_ref(), "the owner stayed gone");
         if let Some(owner) = self.owner.clone() {
             self.tell(&owner, true);
@@ -179,9 +205,8 @@ impl Inner {
     ///
     /// All of them, because a client keeps per-repository terminal state: an
     /// attached TUI holds one subscription per open repository and each has to
-    /// re-fit its own panes. A connection whose queue is full is skipped rather
-    /// than dropped — unwinding a client belongs to its hub, which will find it
-    /// on the next frame it cannot deliver.
+    /// re-fit its own panes. A full bounded queue drops this verdict without
+    /// blocking; the next claim or reconnect announces the current state again.
     fn tell(&self, viewer: &ViewerId, owned: bool) {
         for (connection, announce) in &self.announce {
             if &announce.viewer == viewer {
@@ -196,7 +221,10 @@ impl Inner {
         let Some(announce) = self.announce.get(&connection) else {
             return;
         };
-        let Ok(json) = serde_json::to_string(&ServerMessage::SizeOwner { owned }) else {
+        let Ok(json) = serde_json::to_string(&ServerMessage::SizeOwner {
+            owned,
+            generation: self.generation.to_string(),
+        }) else {
             return;
         };
         let _ = announce.tx.try_send(TerminalFrame::Control(json));

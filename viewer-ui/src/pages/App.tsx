@@ -9,6 +9,8 @@ import { RepoShell } from "../components/RepoShell";
 import { ShortcutHelp } from "../components/ShortcutHelp";
 import { ShortcutHintBar } from "../components/shortcuts/ShortcutHintBar";
 import { ShortcutLeaderProvider } from "../hooks/shortcutLeader";
+import { ScreenScaleProvider } from "../hooks/ui/screenScale";
+import { ViewerActivityProvider } from "../hooks/viewerActivity";
 import { useAppViewModel } from "../hooks/useAppViewModel";
 
 export function App() {
@@ -23,13 +25,15 @@ export function App() {
     // rather than in `main.tsx` because this is where the settings object comes
     // out of the view model, and one source is what keeps a rebinding from
     // moving some controls and leaving others behind.
-    <ShortcutLeaderProvider leader={view.leader.leader}>
-      {/* The header spans the page, so its one border is the one line under
-          the title and the controls alike. Below it the left strip, when
-          chosen, is a column beside the grid: the tabs hang under the title in
-          the header's left corner rather than in a panel with a title of its
-          own — which would mean a second border, never quite the first. */}
-      <div className="nc-fade flex h-full flex-col">
+    <ScreenScaleProvider>
+      <ViewerActivityProvider>
+        <ShortcutLeaderProvider leader={view.leader.leader}>
+          {/* The header spans the page, so its one border is the one line under
+              the title and the controls alike. Below it the left strip, when
+              chosen, is a column beside the grid: the tabs hang under the title in
+              the header's left corner rather than in a panel with a title of its
+              own — which would mean a second border, never quite the first. */}
+          <div className="nc-fade flex h-full flex-col">
         <Header {...view.header} onShowShortcuts={view.shortcutHelp.show} />
         <div className="flex min-h-0 flex-1">
           {view.tabStrip.side === "left" && (
@@ -82,7 +86,9 @@ export function App() {
             )}
           </div>
         </div>
-      </div>
-    </ShortcutLeaderProvider>
+          </div>
+        </ShortcutLeaderProvider>
+      </ViewerActivityProvider>
+    </ScreenScaleProvider>
   );
 }

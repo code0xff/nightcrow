@@ -37,11 +37,11 @@ trait TerminalBackend {
 
 ## PTY size ownership
 
-PTY child가 그린 폭은 alternate-screen 화면을 사후에 재배치할 수 없는 계약이므로 세션 전체에 한 owner만 둔다. viewer의 명시적 arrival 또는 `claim_size`가 owner가 되고, owner가 떠난 뒤 2초 `RELEASE_GRACE`가 지나면 남은 viewer로 넘긴다. 연결 재접속·repository 전환은 viewer arrival과 구별한다. 아무 viewer도 없으면 owner 없음과 마지막 확정 크기를 유지한다.
+PTY child가 그린 폭은 alternate-screen 화면을 사후에 재배치할 수 없는 계약이므로 세션 전체에 한 owner만 둔다. 첫 연결은 무소유 세션만 초기화하며, 이후 연결·재접속은 owner를 빼앗지 않는다. TUI의 key press/repeat, paste, mouse down/wheel과 웹의 직접 조작은 `claim_size`를 요청하고, resize·redraw·focus·reconnect는 요청하지 않는다. `size_owner`는 소유권 변경 때만 증가하는 generation을 10진 문자열로 전달한다. 같은 viewer의 반복 claim은 같은 generation으로 `owned=true`를 재전달해 명시적 refit을 확인하며, 늦은 `owned=true`의 generation이 달라졌다면 중간 소유권 변경을 놓친 client도 다시 fit할 수 있다. generation이 없는 legacy frame은 알 수 없는 값으로 읽는다. owner가 떠난 뒤 2초 `RELEASE_GRACE`가 지나면 남은 최근 조작 viewer로 넘기고, 조작 기록이 없으면 가장 최근에 연결된 viewer를 택한다. 아무 viewer도 없으면 owner 없음과 마지막 확정 크기를 유지한다.
 
-TUI는 외부 터미널 창의 유효한 행·열 크기가 바뀌면 기존 `claim_size` 경로로 소유권을 요청한다. 최초 크기 관측, 같은 크기의 반복 관측, 일반 재그리기나 원격 `Resized` 통지는 소유권을 요청하지 않는다. 소유권은 로컬에서 추정하지 않고 세션의 `SizeOwner` 확인을 따른다.
+TUI는 자신이 owner일 때만 외부 창 크기에 맞춰 pane을 다시 잰다. 크기 변경은 다른 client의 소유권을 빼앗지 않는다. 직접 입력에 따른 claim은 server가 확인하며, `SizeOwner`의 same-owner 응답은 refit을 강제하지 않는다. `<leader> r`은 예외적인 복구 동작으로 owner를 다시 요청하고 현재 geometry를 재전송한 뒤 전체 화면을 다시 그린다.
 
-비소유자의 resize는 버리며 실제 PTY 적용에 성공한 `Resized`만 broadcast한다. owner는 desired/pending/confirmed size를 분리하고 늦은 확인이 과거 크기여도 desired와 다르면 재요청한다. resize는 일반 input queue와 별도의 connection·pane별 latest-value queue에서 처리해 queue 포화에도 마지막 폭을 잃지 않는다. disconnect와 resize의 경합에서는 connection 등록과 ownership을 다시 확인한 요청만 적용한다.
+비소유자의 resize는 버리며 실제 PTY 적용에 성공한 `Resized`만 broadcast한다. owner는 desired/pending/confirmed size를 분리하고 늦은 확인이 과거 크기여도 desired와 다르면 재요청한다. resize는 일반 input queue와 별도의 connection·pane별 latest-value queue에서 처리해 queue 포화에도 마지막 폭을 잃지 않는다. queue에 넣을 때 소유권 generation을 기록하고 apply 시점에 다시 검사한다. hub state → session ownership 순으로 lock을 잡고 PTY 적용·size 기록·broadcast까지 ownership lock을 유지해 claim과 resize를 직렬화한다. 그래서 owner A의 지연된 resize는 A→B→A 뒤에도 적용되지 않는다. Owner verdict는 기존 bounded client queue로 nonblocking 전송한다. 큐가 가득 차면 verdict는 누락될 수 있으며, 다음 input claim 또는 reconnect가 현재 소유권을 다시 알려준다.
 
 ## Status snapshot
 

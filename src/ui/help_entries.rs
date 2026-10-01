@@ -161,7 +161,7 @@ pub(crate) const HELP_SECTIONS: &[HelpSection] = &[
             },
             HelpRow {
                 keys: "{L} r",
-                what: "Force a full redraw.",
+                what: "Reclaim sizing, refit this screen, and redraw.",
             },
             HelpRow {
                 keys: "{L} q",

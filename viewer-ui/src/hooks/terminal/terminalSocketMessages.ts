@@ -11,6 +11,7 @@ import { reconcileOrder } from "../../lib/paneOrder";
 import { applyRecovery, type RecoveryByPane } from "../../lib/recovery";
 import type { PaneView } from "../../lib/terminalLayout";
 import { toast } from "../../lib/toast";
+import { applySizeOwnerUpdate } from "../../lib/sizeActivity";
 
 type Setter<T> = Dispatch<SetStateAction<T>>;
 
@@ -21,6 +22,10 @@ export interface TerminalMessageContext {
   pendingRef: MutableRefObject<Map<number, Uint8Array[]>>;
   ptySizesRef: MutableRefObject<Map<number, PaneSize>>;
   askedSizesRef: MutableRefObject<Map<number, PaneSize>>;
+  desiredSizesRef: MutableRefObject<Map<number, PaneSize>>;
+  ownsSizeRef: MutableRefObject<boolean>;
+  sizeOwnerGenerationRef: MutableRefObject<string | null>;
+  onSizeAcquired: () => void;
   zoomAskedRef: MutableRefObject<number | null | undefined>;
   /** Not a plain setter: the socket hook remembers whether this page has ever
    *  been attached, so a link it loses reads as a reconnect. */
@@ -31,7 +36,7 @@ export interface TerminalMessageContext {
   setActive: Setter<number | null>;
   setZoomed: Setter<number | null>;
   setTitles: Setter<Record<number, string>>;
-  setOwnsSize: Setter<boolean>;
+  setOwnsSize: (owned: boolean) => void;
   setRecovery: Setter<RecoveryByPane>;
 }
 
@@ -107,6 +112,7 @@ function handleControlMessage(
       context.pendingRef.current.delete(message.pane);
       context.ptySizesRef.current.delete(message.pane);
       context.askedSizesRef.current.delete(message.pane);
+      context.desiredSizesRef.current.delete(message.pane);
       forgetPane(context.repo, message.pane);
       context.setTitles((current) => {
         if (!(message.pane in current)) return current;
@@ -128,14 +134,18 @@ function handleControlMessage(
       context.setRecovery((current) => applyRecovery(current, message));
       return;
     case "size_owner":
-      // Gaining it means the panes are this page's to size and are currently at
-      // someone else's, so what was asked before says nothing about what to ask
-      // now — including a request the server dropped because this page had
-      // already lost the sizing when it arrived. Without this, reclaiming and
-      // fitting back to a size asked for earlier would be skipped as a repeat
-      // and never reach the child. The TUI clears its own record on the same
-      // event, for the same reason.
-      if (message.owned) context.askedSizesRef.current.clear();
+      // The synchronous ref is the activity handler's ownership snapshot. Clear
+      // old fit requests only on a real acquisition, not on same-owner acks.
+      applySizeOwnerUpdate(
+        context.ownsSizeRef,
+        context.sizeOwnerGenerationRef,
+        message.owned,
+        message.generation,
+        () => {
+          context.askedSizesRef.current.clear();
+          context.onSizeAcquired();
+        },
+      );
       context.setOwnsSize(message.owned);
       return;
     case "reordered":

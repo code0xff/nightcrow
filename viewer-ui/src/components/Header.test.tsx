@@ -49,17 +49,19 @@ describe("Header", () => {
     // ARIA has no two-step notation; the title and shortcut sheet carry it.
     mount();
 
-    const accent = screen.getByRole("button", { name: /accent colour/ });
+    fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+    const dialog = screen.getByRole("dialog", { name: "Settings" });
+    const accent = within(dialog).getByRole("button", { name: /accent colour/ });
     expect(accent.hasAttribute("aria-keyshortcuts")).toBe(false);
     expect(accent.getAttribute("title")).toContain("Ctrl+F then p");
 
-    const reload = screen.getByRole("button", {
+    const reload = within(dialog).getByRole("button", {
       name: "reload the server config",
     });
     expect(reload.hasAttribute("aria-keyshortcuts")).toBe(false);
     expect(reload.getAttribute("title")).toContain("Ctrl+F then u");
 
-    const help = screen.getByRole("button", { name: "keyboard shortcuts" });
+    const help = within(dialog).getByRole("button", { name: "keyboard shortcuts" });
     expect(help.hasAttribute("aria-keyshortcuts")).toBe(false);
     expect(help.getAttribute("title")).toBe("Keyboard shortcuts (Ctrl+F then ?)");
   });
@@ -109,9 +111,12 @@ describe("Header", () => {
   it("도움말_버튼은_시트를_연다", () => {
     const props = mount();
 
+    fireEvent.click(screen.getByRole("button", { name: "Settings" }));
     fireEvent.click(screen.getByRole("button", { name: "keyboard shortcuts" }));
 
     expect(props.onShowShortcuts).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole("dialog", { name: "Settings" })).toBeNull();
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: "Settings" }));
   });
 });
 
@@ -146,11 +151,11 @@ describe("Header 타이틀", () => {
     expect(screen.queryByText(/web viewer/i)).toBeNull();
   });
 
-  it("스트립_이동_버튼은_accent_스와치_바로_오른쪽이다", () => {
+  it("설정_버튼은_스트립_이동_버튼_바로_앞에_있다", () => {
     mount();
 
-    const accent = screen.getByRole("button", { name: /accent colour/ });
+    const settings = screen.getByRole("button", { name: "Settings" });
     const toggle = screen.getByRole("button", { name: /project tabs: top/ });
-    expect(accent.nextElementSibling).toBe(toggle);
+    expect(settings.nextElementSibling).toBe(toggle);
   });
 });

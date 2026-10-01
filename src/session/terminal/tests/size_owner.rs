@@ -44,19 +44,22 @@ fn verdict(session: &TerminalSession) -> bool {
 const QUIET: std::time::Duration = std::time::Duration::from_millis(100);
 
 #[test]
-fn the_client_that_just_arrived_owns_the_sizing() {
-    // tmux's `window-size latest`: the newest client is the one someone is
-    // sitting at, so the panes should fit its screen.
+fn the_first_client_bootstraps_sizing_and_later_arrivals_are_passive() {
     let dir = tempfile::TempDir::new().unwrap();
     let hub = spawn_hub(&dir.path().to_string_lossy(), Vec::new(), Vec::new());
 
     let first = attach(&hub);
-    assert!(verdict(&first), "the only client owns it");
+    assert!(verdict(&first), "the first client bootstraps ownership");
 
     let second = attach(&hub);
 
-    assert!(verdict(&second), "and then the newer one does");
-    assert!(!verdict(&first), "which the older one is told");
+    assert!(!verdict(&second), "a new viewer waits for direct input");
+    second.dispatch(ClientMessage::ClaimSize);
+    assert!(verdict(&second));
+    assert!(
+        !verdict(&first),
+        "the existing owner changes only after a claim"
+    );
     hub.stop();
 }
 
@@ -71,7 +74,11 @@ fn the_sizing_passes_to_the_newest_client_still_attached() {
     let hub = spawn_hub(&dir.path().to_string_lossy(), Vec::new(), Vec::new());
     let first = attach(&hub);
     let second = attach(&hub);
+    assert!(!verdict(&second));
+    second.dispatch(ClientMessage::ClaimSize);
     let third = attach(&hub);
+    assert!(!verdict(&third));
+    third.dispatch(ClientMessage::ClaimSize);
     assert!(verdict(&third));
 
     drop(third);
@@ -97,9 +104,8 @@ fn the_sizing_passes_to_the_newest_client_still_attached() {
 /// The sizing is the session's, not each repository's.
 ///
 /// Every client shows the same repository — which one is in front is shared — so
-/// "which screen are the panes fitted to" has one answer. Asked per hub it was
-/// re-answered from scratch on every switch, and with two pages attached the
-/// winner was whichever handshake finished last.
+/// "which screen are the panes fitted to" has one answer. Per-hub ownership
+/// would give one physical screen separate sizing histories for each project.
 #[test]
 fn one_answer_covers_every_repository_in_the_session() {
     let dir = tempfile::TempDir::new().unwrap();
@@ -130,10 +136,11 @@ fn one_answer_covers_every_repository_in_the_session() {
     assert!(verdict(&tui_one));
     assert!(verdict(&tui_two), "both of its ends hold the sizing");
 
-    // A page opens on the second repository and takes it, as `window-size
-    // latest` says.
+    // A page arriving at the second repository stays a spectator until it acts.
     let page = attach(&two);
 
+    assert!(!verdict(&page));
+    page.dispatch(ClientMessage::ClaimSize);
     assert!(verdict(&page));
     assert!(
         !verdict(&tui_one),
@@ -153,6 +160,9 @@ fn a_client_can_take_the_sizing_back_on_request() {
     let hub = spawn_hub(&dir.path().to_string_lossy(), Vec::new(), Vec::new());
     let first = attach(&hub);
     let second = attach(&hub);
+    assert!(verdict(&first));
+    assert!(!verdict(&second));
+    second.dispatch(ClientMessage::ClaimSize);
     assert!(verdict(&second));
     assert!(!verdict(&first));
 
@@ -164,7 +174,7 @@ fn a_client_can_take_the_sizing_back_on_request() {
 }
 
 #[test]
-fn claiming_what_this_client_already_owns_says_nothing() {
+fn claiming_what_this_client_already_owns_sends_a_refit_ack() {
     let dir = tempfile::TempDir::new().unwrap();
     let hub = spawn_hub(&dir.path().to_string_lossy(), Vec::new(), Vec::new());
     let only = attach(&hub);
@@ -172,10 +182,9 @@ fn claiming_what_this_client_already_owns_says_nothing() {
 
     only.dispatch(ClientMessage::ClaimSize);
 
-    // Nothing to tell anyone: a repeated claim is not a change.
     assert!(
-        only.next_frame(QUIET).as_ref().and_then(owned).is_none(),
-        "a no-op claim must not announce anything"
+        verdict(&only),
+        "the explicit claim gets an owner acknowledgement"
     );
     hub.stop();
 }
@@ -191,8 +200,10 @@ fn only_the_owner_resizes_the_pty_and_everyone_is_told_the_size() {
         sizes: vec![PaneSize { rows: 24, cols: 80 }],
     });
     let pane = super::collect_created(&first, 1)[0];
-    // The newcomer takes the sizing from `first`.
+    // The new viewer stays passive until it explicitly claims.
     let second = attach(&hub);
+    assert!(!verdict(&second));
+    second.dispatch(ClientMessage::ClaimSize);
     assert!(verdict(&second));
 
     // Both ask in this order. Resize has its own latest-value queue, but the

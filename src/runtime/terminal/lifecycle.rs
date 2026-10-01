@@ -254,4 +254,9 @@ impl TerminalState {
     pub(crate) fn fake_backend_sent(&self) -> Option<Vec<Vec<u8>>> {
         self.backend.as_ref().and_then(|b| b.test_sent_payloads())
     }
+
+    #[cfg(test)]
+    pub(crate) fn fake_backend_claim_requests(&self) -> Option<u32> {
+        self.backend.as_ref().and_then(|b| b.test_claim_requests())
+    }
 }

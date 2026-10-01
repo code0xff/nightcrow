@@ -1,9 +1,9 @@
 import { Brand } from "./Brand";
 import { ProjectMenu } from "./ProjectMenu";
 import { ProjectStrip } from "./ProjectStrip";
-import { LogOutIcon, RefreshIcon } from "./icons/actions";
-import { KeyboardIcon, TabStripIcon } from "./icons/layout";
-import { useShortcutHint } from "../hooks/shortcutLeader";
+import { LogOutIcon } from "./icons/actions";
+import { TabStripIcon } from "./icons/layout";
+import { SettingsMenu } from "./SettingsMenu";
 import type { TabStrip } from "../hooks/ui/tabStripSide";
 import { otherSide } from "../lib/tabStripSide";
 import type { Repo } from "../api";
@@ -59,7 +59,6 @@ export function Header({
   onShowShortcuts,
   tabStrip,
 }: HeaderProps) {
-  const shortcut = useShortcutHint();
   // A whole number of pixels tall, not padding around content: a fractional
   // height lands the bottom border between device pixels, where it is blurred
   // across two rows and reads thinner than a border that is not — and the left
@@ -108,20 +107,14 @@ export function Header({
           Cloning…
         </span>
       )}
-      <button
-        onClick={cycle}
-        {...shortcut(
-          "session.cycleAccent",
-          `Accent: ${accent.name} (click for ${next.name})`,
-        )}
-        aria-label={`accent colour: ${accent.name}, click for ${next.name}`}
-        className="ml-auto flex h-6 w-6 shrink-0 items-center justify-center rounded-sm"
-      >
-        <span
-          aria-hidden="true"
-          className="h-3 w-3 rounded-full bg-accent ring-1 ring-ink-600"
-        />
-      </button>
+      <SettingsMenu
+        accent={accent}
+        next={next}
+        cycle={cycle}
+        onReloadConfig={onReloadConfig}
+        reloading={reloading}
+        onShowShortcuts={onShowShortcuts}
+      />
       {/* Wide screens only, like the strip it moves: below `md` there is no
           strip, and a control for where it goes would be a control for nothing. */}
       <button
@@ -132,31 +125,6 @@ export function Header({
         className="ml-1 hidden h-6 w-6 shrink-0 items-center justify-center rounded-sm text-ink-400 hover:bg-ink-700 hover:text-ink-200 md:flex"
       >
         <TabStripIcon side={tabStrip.side} />
-      </button>
-      {/* The title says "config" because the shape does not: a circular arrow
-          reads as a browser refresh, and this reloads the server's config.toml
-          while leaving the page exactly as it is. */}
-      <button
-        onClick={onReloadConfig}
-        disabled={reloading}
-        {...shortcut(
-          "session.reloadConfig",
-          "Reload config.toml on the server (does not reload this page)",
-        )}
-        aria-label="reload the server config"
-        className="ml-1 flex h-6 w-6 shrink-0 items-center justify-center rounded-sm text-ink-400 hover:bg-ink-700 hover:text-ink-200 disabled:cursor-progress disabled:text-ink-500 disabled:hover:bg-transparent"
-      >
-        <RefreshIcon
-          className={`h-3.5 w-3.5 ${reloading ? "animate-spin" : ""}`}
-        />
-      </button>
-      <button
-        onClick={onShowShortcuts}
-        {...shortcut("help.shortcuts", "Keyboard shortcuts")}
-        aria-label="keyboard shortcuts"
-        className="ml-1 flex h-6 w-6 shrink-0 items-center justify-center rounded-sm text-ink-400 hover:bg-ink-700 hover:text-ink-200"
-      >
-        <KeyboardIcon className="h-3.5 w-3.5" />
       </button>
       <a
         href="/logout"

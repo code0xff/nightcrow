@@ -173,14 +173,8 @@ fn a_replayed_pane_reports_the_size_it_was_last_resized_to() {
     // the client that asked — the `resized` broadcast is the worker saying it
     // has landed.
     //
-    // Retrying the connection instead would destroy what it waits for.
-    // Connecting takes the sizing (`window-size latest`), and a pending resize
-    // from a client that no longer owns it is discarded by
-    // `hub_layout.rs::resize_pane`. So a `connect` that beats the worker to this
-    // still-pending resize discards it for good, and no amount of retrying
-    // brings the size the test is waiting for — it just spends the whole
-    // deadline. Normally the worker wins that race, which is what made the
-    // failure rare and load-dependent rather than constant.
+    // A resize is confirmed only after application. Reconnecting does not claim
+    // ownership, and an explicit claim invalidates older queued generations.
     let applied =
         next_matching(&first, |f| resized_size(f).is_some()).and_then(|f| resized_size(&f));
     assert_eq!(

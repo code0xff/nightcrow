@@ -137,6 +137,8 @@ pub struct FakeBackend {
     pub resize_outcome: crate::backend::ResizeOutcome,
     /// Synthetic resize failure for error-path tests.
     pub resize_error: bool,
+    /// Number of explicit shared-size ownership requests.
+    pub claim_requests: std::rc::Rc<std::cell::Cell<u32>>,
 }
 
 impl Default for FakeBackend {
@@ -149,6 +151,7 @@ impl Default for FakeBackend {
             resized: Default::default(),
             resize_outcome: crate::backend::ResizeOutcome::Applied,
             resize_error: false,
+            claim_requests: Default::default(),
         }
     }
 }
@@ -239,7 +242,16 @@ impl crate::backend::TerminalBackend for FakeBackend {
         std::mem::take(&mut *self.pending_events.borrow_mut())
     }
 
+    fn claim_size(&mut self) {
+        self.claim_requests
+            .set(self.claim_requests.get().saturating_add(1));
+    }
+
     fn test_sent_payloads(&self) -> Option<Vec<Vec<u8>>> {
         Some(self.sent.clone())
+    }
+
+    fn test_claim_requests(&self) -> Option<u32> {
+        Some(self.claim_requests.get())
     }
 }
