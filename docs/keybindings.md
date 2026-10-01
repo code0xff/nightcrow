@@ -9,7 +9,7 @@ The prefix waits indefinitely for one follow-up. `Esc` or `Ctrl+C` cancels it. A
 - `<prefix> t` opens a terminal pane (up to 8 panes per project).
 - `<prefix> w` closes the active terminal pane when the terminal has focus.
 - `<prefix> s`, then a pane digit, swaps the active pane with the selected pane. `Esc` or `Ctrl+C` cancels the second step.
-- `<prefix> z` claims the terminal size for this screen when another client currently owns it. A PTY has one size shared by all clients. Resizing the outer TUI window also claims sizing automatically; simply returning focus to the window does not.
+- `<prefix> z` explicitly claims the terminal size for this screen. Normal key presses/repeats, paste, mouse down, and wheel input also make this TUI the sizing owner. A passive connection, focus change, outer-window resize, redraw, or reconnect does not claim it.
 - `<prefix> c` cancels a plugin recovery pending for the focused pane.
 - `<prefix> l` toggles between status and commit-log views.
 - `<prefix> b` opens the read-only tree view.
@@ -19,7 +19,7 @@ The prefix waits indefinitely for one follow-up. `Esc` or `Ctrl+C` cancels it. A
 - `<prefix> [` and `<prefix> ]` move the active project one slot towards the front or the back of the tab row. Tab order is shared with the browser and every other attached TUI. Neither wraps: the first tab does not move further forward and the last does not move further back.
 - `<prefix> p` cycles the session accent: yellow, cyan, green, magenta, blue.
 - `<prefix> u` reloads the configuration; see [Reloading](configuration.md#reloading).
-- `<prefix> r` forces a full redraw.
+- `<prefix> r` re-requests ownership, reapplies the current pane geometry, and forces a full redraw. Use it when a terminal did not report a sizing interaction.
 - `<prefix> ?` or `<prefix> h` opens the help overlay: every command with its keys, on one screen. It opens with no project open too. `j`/`k`, the arrows, `PageUp`/`PageDown` and `Space` scroll it; `Esc`, `Enter`, `q`, `?`, `h` or `Ctrl+C` closes it. Every other key is consumed while it is up, so nothing acts on the screen underneath.
 - `<prefix> q` detaches the TUI; it does not stop the session.
 - `<prefix> 1` focuses the file list and `<prefix> 2` focuses the diff viewer in split view.
@@ -46,7 +46,7 @@ From `md` width up, a hint line under the footer mirrors the TUI's hint bar. Idl
 
 ### Same meaning as the TUI
 
-The leader followed by `t`, `w`, `s`, `z`, `c`, `l`, `b`, `o`, `x`, `p`, or `u` does what the matching bullet under [Leader commands](#leader-commands) describes, using the same controls the buttons use. The focus keys `1`, `2`, and `3`–`9`, `0` address the list, the content pane, and terminal panes 1–8 with the same numbering. `Ctrl+Shift+Left` and `Ctrl+Shift+Right` switch projects exactly as they do in the TUI.
+The leader followed by `t`, `w`, `s`, `z`, `r`, `c`, `l`, `b`, `o`, `x`, `p`, or `u` does what the matching bullet under [Leader commands](#leader-commands) describes, using the same controls the buttons use. In the browser, `r` is the sizing recovery command and `z` remains an alias. The focus keys `1`, `2`, and `3`–`9`, `0` address the list, the content pane, and terminal panes 1–8 with the same numbering. `Ctrl+Shift+Left` and `Ctrl+Shift+Right` switch projects exactly as they do in the TUI.
 
 `Shift+Left` and `Shift+Right` walk the same ring — the list, the content pane, then each terminal pane — among whatever is on screen: a maximized terminal offers its panes alone, a maximized upper region the list and the content pane, and a narrow screen only the view its bottom navigation chose, which is what the TUI's fullscreen rules amount to. Stepping onto a pane while another is zoomed moves the zoom to it, as the TUI's fullscreen cycle does. A control inside a region — the sidebar's filter, a pane's toolbar — counts as that region; a keyboard nowhere on the ring (in the header or the footer, say) enters it at the near end. The chord is the page's wherever it is not typing, so it never reaches a pane as `ESC[1;2D`; in a text field it stays the browser's word selection.
 
@@ -65,7 +65,7 @@ The leader followed by `?` raises the command list in both: the browser's shortc
 
 ### Not bound in the browser
 
-- Redraw: the browser repaints the page itself, so there is no stale frame to force.
+- A forced page redraw is unnecessary because the browser repaints itself; `<prefix> r` instead requests this browser's PTY sizing again, and `<prefix> z` remains a sizing alias.
 - Detach: closing a tab already leaves the session running. Signing out is a different, destructive action and is deliberately not on a key.
 - `F1`–`F10` project selection: bare function keys are reserved by the browser and the OS. Use `Ctrl+Shift+Left` / `Ctrl+Shift+Right`, the project control, or the shortcut sheet instead.
 - `Shift+Up` / `Shift+Down` line scrolling: xterm.js hands a shifted arrow to the pane as a keystroke (`ESC[1;2A`), and the viewer has not claimed it. The wheel, a touch drag, and `Shift+PageUp` / `Shift+PageDown` scroll a pane.

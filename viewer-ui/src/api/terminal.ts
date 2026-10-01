@@ -30,7 +30,7 @@ export type TerminalServerMessage =
   | { type: "exited"; pane: number }
   | { type: "resized"; pane: number; rows: number; cols: number }
   | { type: "hello"; client: number; panes: number }
-  | { type: "size_owner"; owned: boolean }
+  | { type: "size_owner"; owned: boolean; generation?: string }
   | { type: "error"; message: string }
   | { type: "reordered"; order: number[] }
   | { type: "zoomed"; pane: number | null }
@@ -45,6 +45,10 @@ function isInteger(value: unknown): value is number {
 
 function isUnsigned(value: unknown): value is number {
   return isInteger(value) && value >= 0;
+}
+
+function isDecimalString(value: unknown): value is string {
+  return typeof value === "string" && /^[0-9]+$/.test(value);
 }
 
 /** Decode and validate the server's JSON control boundary. */
@@ -85,7 +89,10 @@ export function decodeTerminalControlFrame(
       valid = isUnsigned(message.client) && isUnsigned(message.panes);
       break;
     case "size_owner":
-      valid = typeof message.owned === "boolean";
+      valid =
+        typeof message.owned === "boolean" &&
+        (message.generation === undefined ||
+          isDecimalString(message.generation));
       break;
     case "error":
       valid = typeof message.message === "string";

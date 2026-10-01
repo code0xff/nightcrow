@@ -5,6 +5,16 @@ use std::time::{Duration, Instant};
 const RESIZE_RETRY_INTERVAL: Duration = Duration::from_millis(100);
 
 impl TerminalState {
+    /// Request ownership and invalidate known sizes for the explicit recovery
+    /// command, including when the session already says this client owns them.
+    pub fn force_refit(&mut self) {
+        self.confirmed_content_size.clear();
+        self.pending_content_size.clear();
+        if let Some(backend) = &mut self.backend {
+            backend.claim_size();
+        }
+    }
+
     /// Fit each visible pane to its rendered cells. Remote backends confirm the
     /// applied size asynchronously, so desired, pending, and confirmed geometry
     /// remain distinct until a `Resized` event arrives.

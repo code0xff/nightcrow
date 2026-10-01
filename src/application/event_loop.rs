@@ -4,6 +4,7 @@ use crate::application::input::mouse::dispatch_mouse;
 use crate::application::input::paste::dispatch_paste;
 use crate::application::redraw::{RedrawCause, RedrawState};
 use crate::application::session_link::SessionLink;
+use crate::application::size_activity::claim_for_user_activity;
 use crate::application::terminal_guard::TuiTerminal;
 use crate::workspace::Workspace;
 use crossterm::event::{self, Event};
@@ -86,7 +87,7 @@ pub(crate) fn main_loop(
 
         let size = terminal.size()?;
         let screen = Rect::new(0, 0, size.width, size.height);
-        observe_terminal_size(&mut redraw, ws, size.width, size.height);
+        observe_terminal_size(&mut redraw, size.width, size.height);
         if let Some(app) = ws.active() {
             let layouts: Vec<(crate::backend::PaneId, u16, u16)> =
                 crate::ui::terminal_content_areas(app, screen, &cfg.layout)
@@ -191,6 +192,7 @@ pub(crate) fn main_loop(
             let events = [first];
 
             for event in events {
+                claim_for_user_activity(ws, &event);
                 match event {
                     // Ratatui's next draw will pick up the new size from
                     // `Frame::area()`. An explicit clear() here only adds a
@@ -234,21 +236,10 @@ pub(crate) fn main_loop(
     }
 }
 
-/// Only a change between valid window sizes claims the shared PTY geometry;
-/// initial layout and minimized dimensions do not express a resize request.
-pub(crate) fn observe_terminal_size(
-    redraw: &mut RedrawState,
-    ws: &mut Workspace,
-    width: u16,
-    height: u16,
-) {
-    if redraw.observe_screen(width, height)
-        && width > 0
-        && height > 0
-        && let Some(app) = ws.active_mut()
-    {
-        app.claim_pane_sizing();
-    }
+/// Track physical screen changes for redraw. Geometry changes do not claim
+/// shared PTY sizing; only direct key, paste, click, or wheel input does.
+pub(crate) fn observe_terminal_size(redraw: &mut RedrawState, width: u16, height: u16) {
+    redraw.observe_screen(width, height);
 }
 
 /// Carry out a handler's outcome. Returns `true` when the app should quit.

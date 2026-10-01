@@ -26,6 +26,7 @@ describe("terminal control protocol", () => {
       { type: "exited", pane: 7 },
       { type: "resized", pane: 7, rows: 32, cols: 120 },
       { type: "size_owner", owned: true },
+      { type: "size_owner", owned: true, generation: "42" },
       { type: "reordered", order: [7, 4] },
       { type: "zoomed", pane: null },
       {
@@ -60,6 +61,13 @@ describe("terminal control protocol", () => {
         `{"type":"reordered","order":[1,"2"]}`,
       ),
     ).toBeNull();
+    for (const generation of ["-1", "+1", "", 42]) {
+      expect(
+        decodeTerminalControlFrame(
+          JSON.stringify({ type: "size_owner", owned: true, generation }),
+        ),
+      ).toBeNull();
+    }
   });
 
   it("sends typed client controls only on an open socket", () => {

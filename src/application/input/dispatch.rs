@@ -12,9 +12,8 @@ use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) enum KeyOutcome {
     Continue,
-    /// Force a full repaint on the next frame. Used by the `<prefix> r` redraw
-    /// chord to wipe stray glyphs left behind when a PTY child writes cells
-    /// ratatui's diff renderer doesn't track.
+    /// Force a full repaint on the next frame after `<prefix> r` requests a
+    /// sizing refit.
     Redraw,
     Quit,
     /// The key asked for something only the workspace can do. The handlers
@@ -197,7 +196,10 @@ pub(super) fn handle_global_action(app: &mut App, action: Action) -> Option<KeyO
         // The config belongs to the session, so this asks too; what comes back
         // is a notice rather than anything this client is looking at.
         Action::ReloadConfig => Some(KeyOutcome::Project(ProjectRequest::ReloadConfig)),
-        Action::Redraw => Some(KeyOutcome::Redraw),
+        Action::Redraw => {
+            app.force_refit_pane_sizing();
+            Some(KeyOutcome::Redraw)
+        }
         Action::SwitchPane(n) => {
             app.switch_pane(n);
             Some(KeyOutcome::Continue)

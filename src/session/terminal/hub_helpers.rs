@@ -55,6 +55,7 @@ pub(super) struct PendingResize {
     pub(super) cols: u16,
     pub(super) client: u64,
     pub(super) connection: u64,
+    pub(super) ownership_generation: u64,
 }
 
 const COMMANDS_BETWEEN_RESIZES: usize = 64;

@@ -19,9 +19,9 @@ impl TerminalHub {
     /// append-and-broadcast — the client receives every pane's screen exactly
     /// once, in order, ahead of the live stream.
     ///
-    /// `viewer` names who this connection belongs to and `arriving` says whether
-    /// a person just sat down at it; only the second takes the sizing (see
-    /// [`SizeOwnership`](crate::session::size_owner::SizeOwnership)). `socket`
+    /// `viewer` names who this connection belongs to and `arriving` records the
+    /// client's new-screen/reconnect distinction; connecting never preempts an
+    /// owner (see [`SizeOwnership`](crate::session::size_owner::SizeOwnership)). `socket`
     /// is the handle used to end the connection if this client stops keeping up,
     /// `None` for a client with no socket here (see
     /// [`Client::socket`](super::session::Client::socket)).

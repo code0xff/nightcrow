@@ -125,4 +125,9 @@ pub trait TerminalBackend {
     fn test_sent_payloads(&self) -> Option<Vec<Vec<u8>>> {
         None
     }
+
+    #[cfg(test)]
+    fn test_claim_requests(&self) -> Option<u32> {
+        None
+    }
 }

@@ -6,7 +6,7 @@
 
 기본 leader는 `Ctrl+F`이며 `[input] leader`에서 `ctrl+<letter>`로 바꿀 수 있다. leader를 누르면 다음 key 하나를 앱 명령으로 해석하고, 매핑·미매핑·`Esc`/`Ctrl+C` 어느 경로든 prefix 상태를 끝낸다. timeout은 없다. `<leader> <leader>`는 terminal focus에서 literal leader를 PTY로 보낸다.
 
-- leader 명령은 `t`(new pane), `w`(close pane), `s`(swap target), `z`(claim PTY size), `l`(log), `b`(tree), `f`(fullscreen), `o`(open project), `x`(close project), `p`(theme), `u`(reload config), `r`(redraw), `q`(quit), `c`(cancel recovery)다. `c`는 대기 중 recovery가 있을 때만 힌트에 보인다. `w`와 `s`는 terminal focus와 pane 수 조건을 만족할 때만 실행한다.
+- leader 명령은 `t`(new pane), `w`(close pane), `s`(swap target), `z`(claim PTY size), `l`(log), `b`(tree), `f`(fullscreen), `o`(open project), `x`(close project), `p`(theme), `u`(reload config), `r`(refit PTY size and redraw), `q`(quit), `c`(cancel recovery)다. 일반 key press/repeat, paste, mouse down/wheel도 현재 TUI 화면이 조작될 때 sizing을 claim한다. 창 크기 변경·focus·redraw·재접속은 owner를 바꾸지 않는다. `c`는 대기 중 recovery가 있을 때만 힌트에 보인다. `w`와 `s`는 terminal focus와 pane 수 조건을 만족할 때만 실행한다.
 - split layout에서 leader digit `1`/`2`는 file list/diff focus, `3`–`9`와 `0`은 pane `0`–`7`이다. terminal fullscreen에서는 `1`–`8`을 pane `0`–`7`에 자연스럽게 매핑하고 `9`/`0`은 버린다. bare `F1`–`F10`은 layout과 무관하게 project tab `0`–`9`를 선택한다.
 - prefix 없는 예약키는 bare F-key와 shift-only arrow/PageUp/PageDown이다. 그 밖의 일반 key와 단독 Ctrl은 active backend의 stdin으로 전달한다. 따라서 pane 안의 `Ctrl+W`, `Ctrl+L` 같은 편집키를 앱이 훔치지 않는다. bare F-key를 앱이 사용하므로 pane 프로그램의 F-key 메뉴는 수정자를 붙여야 한다.
 - paste는 terminal의 bracketed-paste mode일 때만 escape로 감싸며 ESC/NUL은 제거한다. Windows console에서 문자 burst로 들어오는 paste는 제한된 간격·길이 안에서만 합성 paste로 묶고, 판정이 불확실하면 원래 key 순서로 되돌린다. overlay가 열렸거나 project가 없으면 overlay/empty-state가 먼저 입력을 소유한다.
@@ -24,7 +24,7 @@ TUI workspace state는 `~/.nightcrow/workspace.json`에 저장한다. 열린 pro
 
 `ui::chrome::chrome_areas`가 project tabs, body, notice, hint 네 영역을 항상 만든다. notice와 hint는 배치와 무관하게 화면 아래 두 행이고(`bottom_rows`), project tabs는 `[layout] tabs`에 따라 그 위의 첫 행(`top`) 또는 좌측 `STRIP_WIDTH`(20) 열(`left`)이며 body는 남은 영역이다. body의 upper/lower split은 TUI layout config에서 계산하고, terminal pane rect는 [terminal.md](terminal.md)의 단일 기하 출처를 사용한다. notice나 dialog 때문에 행을 추가·삭제하지 않는다.
 
-입력·PTY output·snapshot/load 결과·tree watch·resize·recovery·title 변화는 dirty frame을 요청한다. event loop는 16 ms마다 queue를 poll하지만 변경 없는 tick에는 `Terminal::draw`를 호출하지 않는다. `<leader> r`만 front buffer를 비우는 명시적 full repaint다. status의 hot-file fade와 attention/search caret 경계도 timer event로 dirty를 만든다. repo 입력을 열면 notice row의 좌우 border가 고정된 채 accent/dim 두 pulse를 보여 주고, 두 pulse가 끝나면 dim으로 유지한다. 이 focus cue는 phase 경계에서만 repaint하며 완료 뒤 timer를 더 예약하지 않는다.
+입력·PTY output·snapshot/load 결과·tree watch·resize·recovery·title 변화는 dirty frame을 요청한다. event loop는 16 ms마다 queue를 poll하지만 변경 없는 tick에는 `Terminal::draw`를 호출하지 않는다. `<leader> r`은 owner 요청과 현재 geometry 재전송을 함께 수행한 뒤 front buffer를 비우는 명시적 full repaint다. status의 hot-file fade와 attention/search caret 경계도 timer event로 dirty를 만든다. repo 입력을 열면 notice row의 좌우 border가 고정된 채 accent/dim 두 pulse를 보여 주고, 두 pulse가 끝나면 dim으로 유지한다. 이 focus cue는 phase 경계에서만 repaint하며 완료 뒤 timer를 더 예약하지 않는다.
 
 ## Notice row
 

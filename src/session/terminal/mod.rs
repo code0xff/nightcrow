@@ -58,6 +58,8 @@ use std::thread;
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum ConcurrencyTestPoint {
     BeforeResizeValidation,
+    ResizeOwnershipLocked,
+    ResizeBroadcastComplete,
     DisconnectStateAcquired,
     DisconnectStateContended,
 }

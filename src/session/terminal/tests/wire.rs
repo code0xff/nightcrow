@@ -170,6 +170,33 @@ fn server_messages_serialize_with_a_type_tag() {
 }
 
 #[test]
+fn size_owner_wire_carries_a_decimal_generation_and_reads_legacy_frames() {
+    let json = serde_json::to_string(&ServerMessage::SizeOwner {
+        owned: true,
+        generation: "18446744073709551615".to_string(),
+    })
+    .unwrap();
+    assert_eq!(
+        json,
+        r#"{"type":"size_owner","owned":true,"generation":"18446744073709551615"}"#
+    );
+
+    let legacy: ServerMessage =
+        serde_json::from_str(r#"{"type":"size_owner","owned":true}"#).unwrap();
+    assert_eq!(
+        legacy,
+        ServerMessage::SizeOwner {
+            owned: true,
+            generation: String::new(),
+        }
+    );
+    assert_eq!(
+        serde_json::to_string(&legacy).unwrap(),
+        r#"{"type":"size_owner","owned":true}"#
+    );
+}
+
+#[test]
 fn a_recovery_report_has_a_fixed_wire_shape() {
     let json = serde_json::to_string(&ServerMessage::Recovery {
         pane: 6,

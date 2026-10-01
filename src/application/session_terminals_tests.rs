@@ -143,7 +143,7 @@ fn a_tab_shows_the_pane_the_session_is_running_and_the_output_it_produces() {
 }
 
 #[test]
-fn a_spectator_claims_sizing_only_after_a_real_screen_change() {
+fn a_tui_screen_resize_does_not_claim_shared_sizing() {
     let (repo_a, path_a) = crate::test_util::make_repo();
     let (repo_b, path_b) = crate::test_util::make_repo();
     let dir = tempfile::TempDir::new().unwrap();
@@ -162,36 +162,20 @@ fn a_spectator_claims_sizing_only_after_a_real_screen_change() {
     let mut second_link = SessionLink::new(second_client);
     let mut second_ws = Workspace::new(leader);
     assert!(tick_until(&mut second_link, &mut second_ws, &ctx, |ws| {
-        ws.projects().len() == 2 && ws.projects().iter().all(|app| app.terminal.owns_size)
-    }));
-    assert!(tick_until(&mut first_link, &mut first_ws, &ctx, |ws| {
         ws.projects().len() == 2 && ws.projects().iter().all(|app| !app.terminal.owns_size)
     }));
-    let spectator = first_ws
-        .projects()
-        .iter()
-        .position(|app| !app.terminal.owns_size)
-        .expect("one repository remains with its first owner");
-    first_ws.switch(spectator);
+    assert!(first_ws.projects().iter().all(|app| app.terminal.owns_size));
 
     let mut redraw = RedrawState::new();
-    observe_terminal_size(&mut redraw, &mut first_ws, 0, 24);
-    pump(&mut first_link, &mut first_ws, &ctx);
-    assert!(!first_ws.active().expect("spectator tab").terminal.owns_size);
-
-    observe_terminal_size(&mut redraw, &mut first_ws, 80, 24);
-    pump(&mut first_link, &mut first_ws, &ctx);
-    assert!(!first_ws.active().expect("spectator tab").terminal.owns_size);
-
-    observe_terminal_size(&mut redraw, &mut first_ws, 80, 24);
-    pump(&mut first_link, &mut first_ws, &ctx);
-    assert!(!first_ws.active().expect("spectator tab").terminal.owns_size);
-
-    observe_terminal_size(&mut redraw, &mut first_ws, 81, 24);
-    assert!(!first_ws.active().expect("spectator tab").terminal.owns_size);
-    assert!(tick_until(&mut first_link, &mut first_ws, &ctx, |ws| {
-        ws.active().is_some_and(|app| app.terminal.owns_size)
-    }));
+    observe_terminal_size(&mut redraw, 81, 24);
+    pump(&mut second_link, &mut second_ws, &ctx);
+    assert!(
+        second_ws
+            .projects()
+            .iter()
+            .all(|app| !app.terminal.owns_size)
+    );
+    assert!(first_ws.projects().iter().all(|app| app.terminal.owns_size));
 
     drop(repo_a);
     drop(repo_b);

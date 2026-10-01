@@ -23,6 +23,9 @@ export function useTerminalRefs() {
   // What this page last asked each pane's size to be, so an unchanged layout
   // does not send the same resize again.
   const askedSizesRef = useRef(new Map<number, PaneSize>());
+  const desiredSizesRef = useRef(new Map<number, PaneSize>());
+  const ownsSizeRef = useRef(true);
+  const sizeOwnerGenerationRef = useRef<string | null>(null);
   // Buffer scrollback received before the corresponding xterm exists.
   const pendingRef = useRef(new Map<number, Uint8Array[]>());
   // A zoom this page has asked for and not yet been answered. Held here because
@@ -38,6 +41,9 @@ export function useTerminalRefs() {
     bodyRefs,
     ptySizesRef,
     askedSizesRef,
+    desiredSizesRef,
+    ownsSizeRef,
+    sizeOwnerGenerationRef,
     pendingRef,
     zoomAskedRef,
     slotRefs,

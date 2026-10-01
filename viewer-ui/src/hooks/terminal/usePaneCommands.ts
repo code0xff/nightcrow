@@ -20,6 +20,8 @@ interface UsePaneCommandsArgs {
   zoomAskedRef: MutableRefObject<number | null | undefined>;
   /** The pane a key from the on-screen bar is typed into. */
   active: number | null;
+  /** Force a local fit after an explicit user request, even for the current owner. */
+  onForceFit: () => void;
 }
 
 /**
@@ -39,6 +41,7 @@ export function usePaneCommands({
   zoomed,
   zoomAskedRef,
   active,
+  onForceFit,
 }: UsePaneCommandsArgs) {
   const send = (message: TerminalClientMessage) =>
     sendTerminalMessage(socketRef.current, message);
@@ -62,7 +65,10 @@ export function usePaneCommands({
   // Take the sizing back. Deliberate rather than automatic: the panes belong to
   // a session someone else may be working in, and merely opening this page must
   // not repaint their screen.
-  const claimSize = () => send({ type: "claim_size" });
+  const requestSize = () => send({ type: "claim_size" });
+  const claimSize = () => {
+    if (requestSize()) onForceFit();
+  };
 
   const closePane = (pane: number) => send({ type: "close", pane });
 
@@ -78,5 +84,5 @@ export function usePaneCommands({
     send({ type: "input", pane: active, data: termKeySequence(key, appCursor) });
   };
 
-  return { create, toggleZoom, claimSize, closePane, reorder, sendKey };
+  return { create, toggleZoom, claimSize, requestSize, closePane, reorder, sendKey };
 }

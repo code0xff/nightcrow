@@ -11,6 +11,10 @@ pub(crate) mod input;
 pub(crate) mod redraw;
 pub(crate) mod session_link;
 mod session_tabs;
+mod size_activity;
+#[cfg(test)]
+#[path = "size_activity_tests.rs"]
+mod size_activity_tests;
 pub(crate) mod splash;
 pub(crate) mod terminal_guard;
 

@@ -123,7 +123,7 @@ export const SHORTCUT_ACTIONS: readonly ShortcutAction[] = [
     keyboardOnly: true,
     note: "Arms a second step: the next pane digit picks the pane to swap with, so there is no button for it. Drag a pane to move it instead.",
   },
-  { id: "terminal.claimSizing", label: "Claim terminal sizing", hint: "resize panes here", leader: "z", support: "direct", group: "terminal" },
+  { id: "terminal.claimSizing", label: "Reclaim and fit terminal sizing", hint: "resize panes here", leader: "r", support: "direct", group: "terminal" },
   { id: "terminal.cancelRecovery", label: "Cancel plugin recovery", hint: "cancel recovery", leader: "c", support: "direct", group: "terminal" },
   {
     id: "terminal.composeMessage",
@@ -208,12 +208,6 @@ export const UNSUPPORTED_TUI_ACTIONS: readonly {
   reason: string;
 }[] = [
   {
-    leader: "r",
-    label: "Force redraw",
-    reason:
-      "The browser repaints the page itself; there is no stale frame to force and nothing for the key to do.",
-  },
-  {
     leader: "q",
     label: "Detach",
     reason:
@@ -237,6 +231,10 @@ const BY_ID = new Map<ShortcutActionId, ShortcutAction>(
   SHORTCUT_ACTIONS.map((action) => [action.id, action]),
 );
 
+const LEGACY_LEADER_ALIASES: Partial<Record<string, ShortcutActionId>> = {
+  z: "terminal.claimSizing",
+};
+
 /**
  * The action a leader follow-up key runs, or null when the key is unmapped.
  *
@@ -245,7 +243,11 @@ const BY_ID = new Map<ShortcutActionId, ShortcutAction>(
  * the follow-up names.
  */
 export function actionByLeader(key: string): ShortcutAction | null {
-  return BY_LEADER.get(key.toLowerCase()) ?? null;
+  const normalized = key.toLowerCase();
+  const action = BY_LEADER.get(normalized);
+  if (action) return action;
+  const legacy = LEGACY_LEADER_ALIASES[normalized];
+  return legacy ? actionById(legacy) : null;
 }
 
 export function actionById(id: ShortcutActionId): ShortcutAction {
