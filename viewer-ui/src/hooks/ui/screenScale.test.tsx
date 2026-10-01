@@ -4,6 +4,7 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   ScreenScaleProvider,
+  readScreenScale,
   useScreenScale,
 } from "./screenScale";
 
@@ -23,6 +24,13 @@ function ScaleButton() {
 }
 
 describe("ScreenScaleProvider", () => {
+  it("clamps_previously_saved_scales_to_the_new_range", () => {
+    localStorage.setItem("nightcrow.viewer.scale", "150");
+    expect(readScreenScale()).toBe(130);
+    localStorage.setItem("nightcrow.viewer.scale", "40");
+    expect(readScreenScale()).toBe(50);
+  });
+
   it("persists_the_browser_scale_and_applies_it_to_the_root_rem_size", () => {
     render(
       <ScreenScaleProvider>
