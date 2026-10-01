@@ -73,11 +73,14 @@ describe("SettingsMenu", () => {
     mount();
     openSettings();
     const scale = screen.getByRole("combobox", { name: "Screen scale" });
+    expect([...scale.querySelectorAll("option")].map((option) => option.value)).toEqual(
+      ["50", "60", "70", "80", "90", "100", "110", "120", "130"],
+    );
 
-    fireEvent.change(scale, { target: { value: "120" } });
-    expect((scale as HTMLSelectElement).value).toBe("120");
-    expect(document.documentElement.style.fontSize).toBe("16.8px");
-    expect(localStorage.getItem("nightcrow.viewer.scale")).toBe("120");
+    fireEvent.change(scale, { target: { value: "50" } });
+    expect((scale as HTMLSelectElement).value).toBe("50");
+    expect(document.documentElement.style.fontSize).toBe("7px");
+    expect(localStorage.getItem("nightcrow.viewer.scale")).toBe("50");
 
     fireEvent.click(screen.getByRole("button", { name: "Reset screen scale to 100%" }));
     expect((scale as HTMLSelectElement).value).toBe("100");
