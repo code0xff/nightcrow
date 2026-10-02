@@ -40,7 +40,7 @@ fn config_without_web_table_defaults() {
 
 #[test]
 fn a_removed_sections_settings_are_ignored_not_rejected() {
-    // Configs written before the web mirror was removed still carry its table.
+    // Configs written by an older build can carry a table it no longer reads.
     // Nothing deserializes with `deny_unknown_fields`, so the stale section is
     // dropped rather than failing the load of an otherwise valid file.
     let cfg: Config =
