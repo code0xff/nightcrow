@@ -46,7 +46,7 @@ export function ConfirmCloseDialog({
         role="alertdialog"
         aria-modal="true"
         aria-labelledby={TITLE_ID}
-        className="flex w-[24rem] max-w-full flex-col gap-3 rounded-md border border-ink-700 bg-ink-900 p-4"
+        className="flex w-[28rem] max-w-full flex-col gap-3 rounded-md border border-ink-700 bg-ink-900 p-4"
         onClick={(e) => e.stopPropagation()}
       >
         <span id={TITLE_ID} className="font-medium break-words text-ink-50">
