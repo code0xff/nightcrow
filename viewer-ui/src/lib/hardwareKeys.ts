@@ -42,17 +42,24 @@ export function overriddenKeySequence(event: TypedKey): string | null {
  *
  * To a terminal Ctrl+V is a control character (SYN, readline's quoted insert),
  * so xterm encodes it and calls `preventDefault` and no `paste` event is ever
- * fired. In this panel that costs more than the byte is worth: pasting an
- * image depends on the `paste` event entirely (`lib/pasteImage.ts`), and the
- * clipboard it reads belongs to the device showing the page, which nothing on
- * the far side of the PTY can reach. Quoted insert is what this gives up;
- * Shift+Insert still pastes for anyone who had been using it.
+ * fired. Where Ctrl+V is the browser's paste — Windows, Linux — that costs more
+ * than the byte is worth: pasting an image depends on the `paste` event entirely
+ * (`lib/pasteImage.ts`), and the clipboard it reads belongs to the device
+ * showing the page, which nothing on the far side of the PTY can reach. Quoted
+ * insert is what this gives up; Shift+Insert still pastes.
  *
- * Cmd+V is not listed: xterm does not encode a held Meta, so on a Mac the
- * browser already gets the key.
+ * Not on an Apple device. There the browser pastes on Cmd+V, which xterm never
+ * encodes, so the upload already works; Ctrl+V is not a paste at all, and handing
+ * it to the browser would only take the byte away from the pane. That byte is
+ * how Claude Code is told to read the clipboard itself, so a Mac running the
+ * session it views lost image paste altogether.
+ *
+ * `platform` is `navigator.platform`; iPadOS reports `MacIntel`, which is right
+ * here too — an iPad's keyboard pastes with Command.
  */
-export function browserHandlesKey(event: TypedKey): boolean {
+export function browserHandlesKey(event: TypedKey, platform: string): boolean {
   if (event.type !== "keydown") return false;
+  if (APPLE_PLATFORM.test(platform)) return false;
   return (
     event.ctrlKey &&
     !event.altKey &&
@@ -60,3 +67,6 @@ export function browserHandlesKey(event: TypedKey): boolean {
     (event.key === "v" || event.key === "V")
   );
 }
+
+/** Platforms whose paste chord is Command, not Ctrl. */
+const APPLE_PLATFORM = /mac|iphone|ipad|ipod/i;

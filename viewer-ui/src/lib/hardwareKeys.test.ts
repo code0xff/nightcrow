@@ -50,29 +50,46 @@ describe("overriddenKeySequence", () => {
   });
 });
 
+const LINUX = "Linux x86_64";
+const on = (platform: string, event: TypedKey) => browserHandlesKey(event, platform);
+
 describe("browserHandlesKey", () => {
   it("Ctrl_V는_브라우저에_맡긴다", () => {
     // 그러지 않으면 xterm이 \x16으로 인코딩해 paste 이벤트가 아예 없다.
-    expect(browserHandlesKey(key({ key: "v", ctrlKey: true }))).toBe(true);
-    expect(browserHandlesKey(key({ key: "V", ctrlKey: true }))).toBe(true);
+    expect(on(LINUX, key({ key: "v", ctrlKey: true }))).toBe(true);
+    expect(on(LINUX, key({ key: "V", ctrlKey: true }))).toBe(true);
   });
 
   it("Ctrl_없는_v는_그냥_타이핑이다", () => {
-    expect(browserHandlesKey(key({ key: "v" }))).toBe(false);
+    expect(on(LINUX, key({ key: "v" }))).toBe(false);
   });
 
   it("Alt나_Meta가_섞인_조합은_pane의_것이다", () => {
     expect(
-      browserHandlesKey(key({ key: "v", ctrlKey: true, altKey: true })),
+      on(LINUX, key({ key: "v", ctrlKey: true, altKey: true })),
     ).toBe(false);
     expect(
-      browserHandlesKey(key({ key: "v", ctrlKey: true, metaKey: true })),
+      on(LINUX, key({ key: "v", ctrlKey: true, metaKey: true })),
     ).toBe(false);
   });
 
   it("keydown이_아닌_이벤트는_답하지_않는다", () => {
     expect(
-      browserHandlesKey(key({ type: "keypress", key: "v", ctrlKey: true })),
+      on(LINUX, key({ type: "keypress", key: "v", ctrlKey: true })),
     ).toBe(false);
+  });
+});
+
+describe("browserHandlesKey Apple", () => {
+  it("Mac에서는_Ctrl_V를_pane에_보낸다", () => {
+    // Cmd+V가 브라우저 붙여넣기이고, Ctrl+V는 Claude Code에 클립보드를
+    // 읽으라는 신호다. 브라우저에 넘기면 어디에도 닿지 않는다.
+    for (const platform of ["MacIntel", "iPhone", "iPad"]) {
+      expect(on(platform, key({ key: "v", ctrlKey: true })), platform).toBe(false);
+    }
+  });
+
+  it("Windows에서는_여전히_브라우저에_맡긴다", () => {
+    expect(on("Win32", key({ key: "v", ctrlKey: true }))).toBe(true);
   });
 });

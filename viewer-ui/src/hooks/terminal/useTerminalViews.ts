@@ -100,7 +100,7 @@ export function useTerminalViews({
         // False is xterm's "this key is not mine": it returns before it
         // encodes anything or calls preventDefault, so the browser's own
         // gesture — the paste — goes ahead. See `browserHandlesKey`.
-        if (browserHandlesKey(event)) return false;
+        if (browserHandlesKey(event, navigator.platform)) return false;
         const overridden = overriddenKeySequence(event);
         if (overridden === null) return true;
         // Back through xterm's own input path rather than straight to the
