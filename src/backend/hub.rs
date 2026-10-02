@@ -19,11 +19,15 @@ use anyhow::{Result, bail};
 /// The panes of one repository in the daemon's session.
 pub struct HubBackend {
     link: TerminalLink,
+    replaying: bool,
 }
 
 impl HubBackend {
     pub fn new(link: TerminalLink) -> Self {
-        Self { link }
+        Self {
+            link,
+            replaying: true,
+        }
     }
 
     /// Take the daemon up on its offer to size the startup terminals — with no
@@ -109,9 +113,11 @@ impl TerminalBackend for HubBackend {
         let mut events = Vec::new();
         for message in self.link.drain() {
             match message {
-                TerminalMessage::Output { pane, data } => {
-                    events.push(BackendEvent::Output { pane, data })
-                }
+                TerminalMessage::Output { pane, data } => events.push(if self.replaying {
+                    BackendEvent::ReplayOutput { pane, data }
+                } else {
+                    BackendEvent::Output { pane, data }
+                }),
                 TerminalMessage::Event(HubServerMessage::Created {
                     pane,
                     rows,
@@ -159,7 +165,13 @@ impl TerminalBackend for HubBackend {
                 // The daemon already rewrote every `created` into this
                 // client's id space, so a Hello here names the browser-side
                 // hub connection — nothing this client needs.
-                TerminalMessage::Event(HubServerMessage::Hello { .. }) => {}
+                TerminalMessage::Event(HubServerMessage::Hello { .. }) => {
+                    self.replaying = true;
+                }
+                TerminalMessage::Event(HubServerMessage::ReplayComplete) => {
+                    self.replaying = false;
+                    events.push(BackendEvent::ReplayComplete);
+                }
                 // Deliberately dropped: the TUI's zoom follows *its* active
                 // pane and takes the diff viewer with it, so letting a browser
                 // page drive it would let someone at a browser hide a panel

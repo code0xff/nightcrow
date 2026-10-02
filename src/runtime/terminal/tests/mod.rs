@@ -6,6 +6,7 @@ mod lifecycle_tests;
 mod panes_from_elsewhere_tests;
 mod poll_tests;
 mod recovery_tests;
+mod replay_tests;
 mod scroll_tests;
 mod session_panes_tests;
 mod size_owner_tests;

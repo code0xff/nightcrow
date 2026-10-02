@@ -55,7 +55,9 @@ status payload는 완전한 최신 그림이라 runtime fan-out에서 conflate�
 
 hub emulator는 pane의 current terminal modes와 OSC title을 기억한다. 연결 시 mode prelude와 title을 replay하고, screen snapshot 뒤 snapshot 이후 byte를 담은 `since`를 보낸다. alternate screen은 current screen snapshot을, normal screen은 ring history와 normal snapshot 및 tail을 조합한다. snapshot boundary는 열린 escape/multibyte/synchronized-update sequence를 가르지 않으며, 경계가 오래 지연되면 bounded fallback을 사용한다. `screen`/`since` 어느 쪽도 중간 byte를 버리지 않는다.
 
-replay는 1 MiB chunk로 분할하고 daemon frame payload는 4 MiB 이하로 제한한다. attach client의 terminal inbox가 overflow하면 일부 byte만 버리고 계속하지 않고 연결을 닫는다. 새 client가 받은 frame 순서는 `Created`/mode/zoom/replay 계약을 지키며, 재접속 후 client emulator는 같은 byte stream을 다시 적용한다.
+replay는 1 MiB chunk로 분할하고 daemon frame payload는 4 MiB 이하로 제한한다. 연결은 `Hello`, 선택된 zoom, pane별 `Created`와 replay bytes, `ReplayComplete` 순서로 받으며 완료 표식은 size-owner verdict와 live broadcast보다 앞선다. 초기 replay는 기존 client queue depth만큼으로 제한하고 별도 한 슬롯을 완료 표식에 예약한다. attach client의 terminal inbox가 overflow하면 일부 byte만 버리고 계속하지 않고 연결을 닫는다. 재접속 후 client emulator는 같은 byte stream을 다시 적용한다.
+
+TUI의 `HubBackend`는 `ReplayComplete` 전의 pane bytes를 `ReplayOutput`으로 구분한다. emulator가 역사 출력에서 만든 PTY query reply는 이 구간 동안 억제하지만 title과 screen 갱신은 적용한다. 완료 표식에서 열린 synchronized update를 먼저 settle하고 그 side effect를 반영한 뒤 억제를 해제하므로, replay에 포함된 DSR 응답이 실행 중인 프로그램 입력으로 되돌아가지 않는다.
 
 ## Config reload
 

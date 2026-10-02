@@ -1,6 +1,10 @@
 import { useRef } from "react";
 import type { PaneView } from "../../lib/terminalLayout";
 import type { PaneSize } from "../../api/terminal";
+import {
+  createTerminalReplayState,
+  type PendingTerminalWrite,
+} from "../../lib/terminalReplay";
 
 /**
  * The mutable state the terminal panel's hooks share.
@@ -27,7 +31,8 @@ export function useTerminalRefs() {
   const ownsSizeRef = useRef(true);
   const sizeOwnerGenerationRef = useRef<string | null>(null);
   // Buffer scrollback received before the corresponding xterm exists.
-  const pendingRef = useRef(new Map<number, Uint8Array[]>());
+  const pendingRef = useRef(new Map<number, PendingTerminalWrite[]>());
+  const replayRef = useRef(createTerminalReplayState());
   // A zoom this page has asked for and not yet been answered. Held here because
   // both halves need it: the commands read it, the socket clears it.
   const zoomAskedRef = useRef<number | null | undefined>(undefined);
@@ -45,6 +50,7 @@ export function useTerminalRefs() {
     ownsSizeRef,
     sizeOwnerGenerationRef,
     pendingRef,
+    replayRef,
     zoomAskedRef,
     slotRefs,
   };

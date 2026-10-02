@@ -10,6 +10,11 @@ import { forgetPane, lastPaneOf, rememberPane } from "../../lib/lastPane";
 import { reconcileOrder } from "../../lib/paneOrder";
 import { applyRecovery, type RecoveryByPane } from "../../lib/recovery";
 import type { PaneView } from "../../lib/terminalLayout";
+import type {
+  PendingTerminalWrite,
+  TerminalReplayState,
+} from "../../lib/terminalReplay";
+import { queueReplayEnd } from "../../lib/terminalReplay";
 import { toast } from "../../lib/toast";
 import { applySizeOwnerUpdate } from "../../lib/sizeActivity";
 
@@ -19,7 +24,8 @@ export interface TerminalMessageContext {
   repo: string;
   clientIdRef: MutableRefObject<number | null>;
   viewsRef: MutableRefObject<Map<number, PaneView>>;
-  pendingRef: MutableRefObject<Map<number, Uint8Array[]>>;
+  pendingRef: MutableRefObject<Map<number, PendingTerminalWrite[]>>;
+  replayRef: MutableRefObject<TerminalReplayState>;
   ptySizesRef: MutableRefObject<Map<number, PaneSize>>;
   askedSizesRef: MutableRefObject<Map<number, PaneSize>>;
   desiredSizesRef: MutableRefObject<Map<number, PaneSize>>;
@@ -53,8 +59,17 @@ export function handleTerminalSocketMessage(
 
   const frame = decodeTerminalOutputFrame(data);
   if (!frame) return;
+  let replayToken: symbol | undefined;
+  if (context.replayRef.current.active) {
+    replayToken = context.replayRef.current.panes.get(frame.pane);
+    if (!replayToken) {
+      replayToken = Symbol();
+      context.replayRef.current.panes.set(frame.pane, replayToken);
+    }
+  }
   const view = context.viewsRef.current.get(frame.pane);
   if (view) {
+    if (replayToken) view.replayGate.begin();
     view.term.write(frame.data);
     return;
   }
@@ -71,13 +86,21 @@ function handleControlMessage(
     case "hello":
       context.clientIdRef.current = message.client;
       context.setLink("live");
+      context.replayRef.current.active = true;
+      context.replayRef.current.panes.clear();
       context.setReplayLeft(message.panes);
+      return;
+    case "replay_complete":
+      completeReplay(context);
       return;
     case "pending":
       context.setPending(message.count);
       return;
     case "created": {
       const pane = message.pane;
+      if (context.replayRef.current.active) {
+        context.replayRef.current.panes.set(pane, Symbol());
+      }
       context.ptySizesRef.current.set(pane, {
         rows: message.rows,
         cols: message.cols,
@@ -110,6 +133,7 @@ function handleControlMessage(
         current === message.pane ? null : current,
       );
       context.pendingRef.current.delete(message.pane);
+      context.replayRef.current.panes.delete(message.pane);
       context.ptySizesRef.current.delete(message.pane);
       context.askedSizesRef.current.delete(message.pane);
       context.desiredSizesRef.current.delete(message.pane);
@@ -161,4 +185,28 @@ function handleControlMessage(
   }
   const unhandled: never = message;
   return unhandled;
+}
+
+function completeReplay(context: TerminalMessageContext): void {
+  const replay = context.replayRef.current;
+  if (!replay.active) return;
+  replay.active = false;
+  context.setReplayLeft(0);
+  for (const [pane, token] of replay.panes) {
+    const view = context.viewsRef.current.get(pane);
+    if (!view) {
+      const queue = context.pendingRef.current.get(pane) ?? [];
+      queue.push({ kind: "replay_complete", token });
+      context.pendingRef.current.set(pane, queue);
+      continue;
+    }
+    queueReplayEnd(view.term, view.replayGate, () => {
+      if (
+        context.viewsRef.current.get(pane) === view &&
+        replay.panes.get(pane) === token
+      ) {
+        replay.panes.delete(pane);
+      }
+    });
+  }
 }

@@ -13,6 +13,7 @@ describe("terminal control protocol", () => {
   it("decodes every server control variant", () => {
     const messages: TerminalServerMessage[] = [
       { type: "hello", client: 3, panes: 2 },
+      { type: "replay_complete" },
       { type: "pending", count: 2 },
       {
         type: "created",

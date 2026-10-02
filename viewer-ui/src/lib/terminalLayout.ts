@@ -1,9 +1,11 @@
 import type { Terminal } from "@xterm/xterm";
 import type { FitAddon } from "@xterm/addon-fit";
+import type { ReplayReplyGate } from "./terminalReplay";
 
 export interface PaneView {
   term: Terminal;
   fit: FitAddon;
+  replayGate: ReplayReplyGate;
 }
 
 /// Measure the title cap in display cells so wide glyphs do not overflow.

@@ -30,6 +30,7 @@ export type TerminalServerMessage =
   | { type: "exited"; pane: number }
   | { type: "resized"; pane: number; rows: number; cols: number }
   | { type: "hello"; client: number; panes: number }
+  | { type: "replay_complete" }
   | { type: "size_owner"; owned: boolean; generation?: string }
   | { type: "error"; message: string }
   | { type: "reordered"; order: number[] }
@@ -87,6 +88,9 @@ export function decodeTerminalControlFrame(
       break;
     case "hello":
       valid = isUnsigned(message.client) && isUnsigned(message.panes);
+      break;
+    case "replay_complete":
+      valid = true;
       break;
     case "size_owner":
       valid =

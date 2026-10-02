@@ -7,8 +7,13 @@ import type { PaneViewMode } from "../../lib/paneViewMode";
 import { terminalFontOptions } from "../../lib/termFont";
 import { ClearKeyProbe } from "../../lib/clearKeyProbe";
 import { browserHandlesKey, overriddenKeySequence } from "../../lib/hardwareKeys";
-import { OSC_CLIPBOARD } from "../../lib/osc52";
 import { receivePaneClipboard } from "../../lib/paneClipboard";
+import {
+  installReplayReplyGate,
+  queueReplayEnd,
+  type PendingTerminalWrite,
+  type TerminalReplayState,
+} from "../../lib/terminalReplay";
 import { sendTerminalMessage, type PaneSize } from "../../api/terminal";
 import type { ScreenScale } from "../ui/screenScale";
 
@@ -25,7 +30,8 @@ interface UseTerminalViewsArgs {
   socketRef: MutableRefObject<WebSocket | null>;
   viewsRef: MutableRefObject<Map<number, PaneView>>;
   bodyRefs: MutableRefObject<Map<number, HTMLDivElement>>;
-  pendingRef: MutableRefObject<Map<number, Uint8Array[]>>;
+  pendingRef: MutableRefObject<Map<number, PendingTerminalWrite[]>>;
+  replayRef: MutableRefObject<TerminalReplayState>;
   /** What each PTY's grid is, from `created` and `resized`. Read here as the
    *  size a pane's replay has to be parsed at. */
   ptySizesRef: MutableRefObject<Map<number, PaneSize>>;
@@ -48,6 +54,7 @@ export function useTerminalViews({
   viewsRef,
   bodyRefs,
   pendingRef,
+  replayRef,
   ptySizesRef,
   consumeLatches,
   setTitles,
@@ -127,22 +134,18 @@ export function useTerminalViews({
           });
         }
       });
-      // A program in the pane asks for the clipboard this way, and it is the
-      // only path that reaches whoever is reading — the host's own clipboard
-      // is a different machine's whenever this panel is open from somewhere
-      // else. See `lib/osc52.ts`. Returning true claims the sequence so it is
-      // not also treated as unrecognised output; the handler runs async work
-      // beside the parse rather than inside it, which would hold the stream
-      // — and the pane's painting — behind a clipboard permission prompt.
-      term.parser.registerOscHandler(OSC_CLIPBOARD, (payload) => {
-        void receivePaneClipboard(payload).catch((error: unknown) => {
-          // Dropping the promise is the point; dropping a rejection with it
-          // would make a DOM failure here an unhandled rejection with no name
-          // on it.
-          console.error("nightcrow: a pane's clipboard request failed", error);
-        });
-        return true;
-      });
+      const replayGate = installReplayReplyGate(
+        term,
+        replayRef.current.panes.has(pane),
+        (payload) => {
+          void receivePaneClipboard(payload).catch((error: unknown) => {
+            // Dropping the promise is the point; dropping a rejection with it
+            // would make a DOM failure here an unhandled rejection with no name
+            // on it.
+            console.error("nightcrow: a pane's clipboard request failed", error);
+          });
+        },
+      );
       // Preserve the previous label when OSC provides an empty title.
       term.onTitleChange((title) => {
         const cleaned = title.replace(/\s+/g, " ").trim();
@@ -171,11 +174,25 @@ export function useTerminalViews({
       // which is exactly why nothing else was going to correct the default.
       const pty = ptySizesRef.current.get(pane);
       if (pty) term.resize(pty.cols, pty.rows);
-      viewsRef.current.set(pane, { term, fit });
+      const view = { term, fit, replayGate };
+      viewsRef.current.set(pane, view);
 
       const queued = pendingRef.current.get(pane);
       if (queued) {
-        for (const chunk of queued) term.write(chunk);
+        for (const item of queued) {
+          if (item instanceof Uint8Array) {
+            term.write(item);
+          } else {
+            queueReplayEnd(term, view.replayGate, () => {
+              if (
+                viewsRef.current.get(pane) === view &&
+                replayRef.current.panes.get(pane) === item.token
+              ) {
+                replayRef.current.panes.delete(pane);
+              }
+            });
+          }
+        }
         pendingRef.current.delete(pane);
         // A replayed pane is history, and what a person wants from history is
         // its end. Queued behind the replay rather than run after the loop:

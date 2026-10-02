@@ -99,6 +99,16 @@ fn the_zoomed_announcement_carries_a_null_rather_than_omitting_the_pane() {
 }
 
 #[test]
+fn replay_completion_has_a_stable_wire_marker() {
+    let json = serde_json::to_string(&ServerMessage::ReplayComplete).unwrap();
+    assert_eq!(json, r#"{"type":"replay_complete"}"#);
+    assert_eq!(
+        serde_json::from_str::<ServerMessage>(&json).unwrap(),
+        ServerMessage::ReplayComplete
+    );
+}
+
+#[test]
 fn a_clear_key_report_parses_with_and_without_a_key_event() {
     let keyed: ClientMessage = serde_json::from_str(
         r#"{"type":"clear_key_report","pane":2,"key":{"trusted":false,"repeat":true,"code":"KeyL","since_ms":3}}"#,
