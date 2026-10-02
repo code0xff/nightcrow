@@ -237,6 +237,7 @@ fn a_closed_connection_reads_as_gone() {
     let dir = tempfile::TempDir::new().unwrap();
     let path = dir.path().join("bare.sock");
     let listener = UnixListener::bind(&path).expect("binds");
+    let (close_peer, wait_to_close) = std::sync::mpsc::channel();
     let peer = std::thread::spawn(move || {
         let (mut stream, _) = listener.accept().expect("accepts");
         let hello = serde_json::to_vec(&ServerMessage::Hello {
@@ -248,10 +249,20 @@ fn a_closed_connection_reads_as_gone() {
         stream.flush().expect("flushes");
         // Read what the client said before closing, so the close is what ends
         // the connection rather than an unread request.
-        let _ = read_frame(&mut stream);
+        read_frame(&mut stream)
+            .expect("reads the client hello")
+            .expect("the client hello arrives");
+        // macOS can reject setting the handshake timeout after peer EOF. Keep
+        // the peer open until connect has completed so this tests reader EOF.
+        let _ = wait_to_close.recv();
     });
 
     let client = DaemonClient::connect(&path).expect("attaches");
+    assert!(
+        client.is_connected(),
+        "the attached client starts connected"
+    );
+    close_peer.send(()).expect("releases the peer");
     peer.join().expect("the peer ends");
 
     // The reader thread ends on the peer's close and clears the flag with it.

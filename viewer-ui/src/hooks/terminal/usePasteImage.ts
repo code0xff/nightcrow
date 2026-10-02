@@ -2,10 +2,10 @@ import { useEffect } from "react";
 import type { MutableRefObject, RefObject } from "react";
 import { api } from "../../api";
 import { sendTerminalMessage } from "../../api/terminal";
-import { composedInput } from "../../lib/composeInput";
-import { pastedImage, pathInput } from "../../lib/pasteImage";
-import type { PaneView } from "../../lib/terminalLayout";
-import { toast } from "../../lib/toast";
+import { composedInput } from "../../lib/terminal/composeInput";
+import { pastedImage, pathInput } from "../../lib/terminal/pasteImage";
+import type { PaneView } from "../../lib/terminal/terminalLayout";
+import { toast } from "../../lib/runtime/toast";
 
 /** Which pane an event happened in, from the cell it came from. */
 function paneOf(target: EventTarget | null): number | null {

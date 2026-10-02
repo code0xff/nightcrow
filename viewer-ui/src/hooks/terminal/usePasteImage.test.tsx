@@ -3,14 +3,14 @@
 import { renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { usePasteImage } from "./usePasteImage";
-import type { PaneView } from "../../lib/terminalLayout";
+import type { PaneView } from "../../lib/terminal/terminalLayout";
 
 const { pasteImage, toastError } = vi.hoisted(() => ({
   pasteImage: vi.fn(),
   toastError: vi.fn(),
 }));
 vi.mock("../../api", () => ({ api: { pasteImage } }));
-vi.mock("../../lib/toast", () => ({ toast: { error: toastError } }));
+vi.mock("../../lib/runtime/toast", () => ({ toast: { error: toastError } }));
 
 function fakeSocket() {
   const sent: unknown[] = [];

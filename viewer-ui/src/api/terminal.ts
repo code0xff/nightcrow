@@ -1,5 +1,5 @@
-import type { ClearKeyReport } from "../lib/clearKeyProbe";
-import type { RecoveryFrame } from "../lib/recovery";
+import type { ClearKeyReport } from "../lib/terminal/clearKeyProbe";
+import type { RecoveryFrame } from "../lib/terminal/recovery";
 
 export interface PaneSize {
   rows: number;

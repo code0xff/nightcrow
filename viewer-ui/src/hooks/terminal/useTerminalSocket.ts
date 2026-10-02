@@ -1,14 +1,14 @@
 import { useLayoutEffect, useRef } from "react";
 import type { MutableRefObject } from "react";
-import type { LinkState } from "../../lib/attachStatus";
-import type { RecoveryByPane } from "../../lib/recovery";
-import { viewerId } from "../../lib/viewerId";
-import type { PaneView } from "../../lib/terminalLayout";
+import type { LinkState } from "../../lib/terminal/attachStatus";
+import type { RecoveryByPane } from "../../lib/terminal/recovery";
+import { viewerId } from "../../lib/runtime/viewerId";
+import type { PaneView } from "../../lib/terminal/terminalLayout";
 import type { PaneSize } from "../../api/terminal";
 import type {
   PendingTerminalWrite,
   TerminalReplayState,
-} from "../../lib/terminalReplay";
+} from "../../lib/terminal/terminalReplay";
 import { handleTerminalSocketMessage } from "./terminalSocketMessages";
 
 interface UseTerminalSocketArgs {

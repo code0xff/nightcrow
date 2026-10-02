@@ -1,12 +1,12 @@
 import type { ReactNode } from "react";
-import type { ShortcutAction } from "../../lib/shortcutActions";
+import type { ShortcutAction } from "../../lib/shortcuts/shortcutActions";
 
 /** The keys of one shortcut, one `<kbd>` per step: the leader chord and then
  *  its follow-up key, or a standalone chord on its own. */
 export function ShortcutKeys({ keys }: { keys: string[] | null }) {
   if (!keys) {
     return (
-      <span className="shrink-0 text-ink-500">
+      <span className="shrink-0 text-ink-400">
         no key — the leader is switched off
       </span>
     );
@@ -15,7 +15,7 @@ export function ShortcutKeys({ keys }: { keys: string[] | null }) {
     <span className="flex shrink-0 items-center gap-1">
       {keys.map((key, index) => (
         <span key={key} className="flex items-center gap-1">
-          {index > 0 && <span className="text-ink-500">then</span>}
+          {index > 0 && <span className="text-ink-400">then</span>}
           <kbd className="rounded-sm border border-ink-600 bg-ink-850 px-1.5 py-0.5 font-mono text-ink-50">
             {key}
           </kbd>
@@ -67,17 +67,17 @@ export function ShortcutRow({
       <span className="flex w-full items-baseline gap-2">
         <span className="min-w-0 flex-1 text-ink-50">{action.label}</span>
         {action.support === "reinterpreted" && (
-          <span className="shrink-0 rounded-sm bg-ink-700 px-1 text-[0.65rem] uppercase tracking-wide text-ink-200">
+          <span className="shrink-0 rounded-sm bg-ink-700 px-1 text-2xs uppercase tracking-wide text-ink-200">
             reinterpreted
           </span>
         )}
         {action.support === "browserOnly" && (
-          <span className="shrink-0 rounded-sm bg-ink-700 px-1 text-[0.65rem] uppercase tracking-wide text-ink-200">
+          <span className="shrink-0 rounded-sm bg-ink-700 px-1 text-2xs uppercase tracking-wide text-ink-200">
             browser only
           </span>
         )}
         {!available && (
-          <span className="shrink-0 text-[0.65rem] uppercase tracking-wide text-ink-400">
+          <span className="shrink-0 text-2xs uppercase tracking-wide text-ink-400">
             not available here
           </span>
         )}

@@ -1,7 +1,7 @@
 import { useState, type MutableRefObject } from "react";
 import { sendTerminalMessage } from "../../api/terminal";
-import { SUBMIT_KEY, composedInput, isSendable } from "../../lib/composeInput";
-import type { PaneView } from "../../lib/terminalLayout";
+import { SUBMIT_KEY, composedInput, isSendable } from "../../lib/terminal/composeInput";
+import type { PaneView } from "../../lib/terminal/terminalLayout";
 
 /**
  * How long the Return waits behind the message. Sent together, a program that

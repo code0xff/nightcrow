@@ -1,5 +1,5 @@
 import { Component, type ErrorInfo, type ReactNode } from "react";
-import { isChunkLoadError } from "../../lib/chunkError";
+import { isChunkLoadError } from "../../lib/runtime/chunkError";
 
 /**
  * Keeps one failed subtree from taking the page with it.
@@ -8,7 +8,7 @@ import { isChunkLoadError } from "../../lib/chunkError";
  * error and the viewer goes blank — indistinguishable, to the person looking at
  * it, from the server having died. That is the shape a missing chunk arrived in:
  * open an HTML preview against a build the server has replaced, and the page
- * disappears with nothing said. See `lib/chunkError.ts` for how that case is
+ * disappears with nothing said. See `lib/runtime/chunkError.ts` for how that case is
  * told apart, and why reloading is the only way out of it.
  *
  * A class because this is the one thing React has no hook for — `componentDidCatch`

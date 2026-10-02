@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef } from "react";
 import type { MutableRefObject } from "react";
-import type { PaneView } from "../../lib/terminalLayout";
-import type { PaneViewMode } from "../../lib/paneViewMode";
+import type { PaneView } from "../../lib/terminal/terminalLayout";
+import type { PaneViewMode } from "../../lib/terminal/paneViewMode";
 import type { ScreenScale } from "../ui/screenScale";
 import {
   sendTerminalMessage,

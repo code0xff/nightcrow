@@ -1,9 +1,9 @@
 import { useCallback, useState } from "react";
 import type { MutableRefObject } from "react";
 import { sendTerminalMessage } from "../../api/terminal";
-import type { LinkState } from "../../lib/attachStatus";
-import { shouldRequestSizeForActivity } from "../../lib/sizeActivity";
-import { useViewerActivity } from "../viewerActivity";
+import type { LinkState } from "../../lib/terminal/attachStatus";
+import { shouldRequestSizeForActivity } from "../../lib/terminal/sizeActivity";
+import { useViewerActivity } from "../ui/viewerActivity";
 
 export function useTerminalSizingControl(
   link: LinkState,

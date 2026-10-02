@@ -33,11 +33,19 @@
   --color-added: #4ba36b;
   --color-removed: #c85f5f;
 
+  /* The two sizes under `text-xs`, by role rather than by eye: `2xs` for the
+     small chips (a key name, a status tag) and `caption` for the spaced,
+     upper-case labels — section heads, the splash and attach notices. They
+     had drifted into five values a few tenths of a pixel apart. */
+  --text-2xs: 0.65rem;
+  --text-caption: 0.7rem;
+  --text-caption--letter-spacing: 0.16em;
+
   --font-mono:
     ui-monospace, "JetBrains Mono", "SF Mono", Menlo, Consolas, monospace;
-  /* Only the header tag uses this, matching the web mirror: a sans label
-     against the mono wordmark. Pinned here rather than left to Tailwind's
-     default so both services resolve to the same stack. */
+  /* Only the header tag uses this: a sans label against the mono wordmark.
+     Pinned here rather than left to Tailwind's default so every browser
+     resolves the same stack. */
   --font-sans: system-ui, sans-serif;
 }
 
@@ -70,6 +78,24 @@ body {
 button:not(:disabled),
 [role="button"]:not(:disabled) {
   cursor: pointer;
+}
+
+/* Where the keyboard is, for the keyboard. The accent already means
+   selection and focus, so the ring is it — drawn only for keyboard focus
+   (`:focus-visible`), so a click leaves nothing behind. Inset, because a
+   focused region (the list, the content pane) is flush against its
+   neighbours and an outset ring would be clipped by them. Fields that draw
+   their own focus border opt out with `outline-none`. */
+:focus-visible {
+  outline: 1px solid var(--color-accent);
+  outline-offset: -1px;
+}
+
+/* Header height, shared by the header and anything placed against it, so
+   moving one moves the other. Whole pixels: a fractional height blurs the
+   header's border across two device rows. */
+:root {
+  --nc-header-h: 42px;
 }
 
 /* Thin, low-contrast scrollbars so panes read as one surface. */

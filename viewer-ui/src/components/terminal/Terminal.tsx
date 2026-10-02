@@ -1,5 +1,5 @@
 import { useCallback } from "react";
-import { planLayout } from "../../lib/terminalLayout";
+import { planLayout } from "../../lib/terminal/terminalLayout";
 import { usePaneDrag } from "../../hooks/terminal/usePaneDrag";
 import { usePaneRecovery } from "../../hooks/terminal/usePaneRecovery";
 import { usePaneCommands } from "../../hooks/terminal/usePaneCommands";
@@ -20,12 +20,12 @@ import { TermKeyBar } from "./TermKeyBar";
 import { useTouchScroll } from "../../hooks/terminal/useTouchScroll";
 import { usePaneViewMode } from "../../hooks/ui/paneViewMode";
 import { useTermKeyBar } from "../../hooks/ui/termKeyBar";
-import { rememberPane } from "../../lib/lastPane";
-import { shownTab } from "../../lib/paneViewMode";
+import { rememberPane } from "../../lib/terminal/lastPane";
+import { shownTab } from "../../lib/terminal/paneViewMode";
 import { PanelDivider, type PanelDividerProps } from "./PanelDivider";
 import { PanelToolbar } from "./PanelToolbar";
-import { renderedZoom } from "../../lib/zoom";
-import { attachLabel, attachStatus } from "../../lib/attachStatus";
+import { renderedZoom } from "../../lib/terminal/zoom";
+import { attachLabel, attachStatus } from "../../lib/terminal/attachStatus";
 import { useScreenScale } from "../../hooks/ui/screenScale";
 
 export function TerminalPanel({

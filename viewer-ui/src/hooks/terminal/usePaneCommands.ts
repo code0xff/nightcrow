@@ -1,11 +1,11 @@
 import type { MutableRefObject } from "react";
-import type { PaneView } from "../../lib/terminalLayout";
+import type { PaneView } from "../../lib/terminal/terminalLayout";
 import {
   sendTerminalMessage,
   type TerminalClientMessage,
 } from "../../api/terminal";
-import { termKeySequence, type TermKey } from "../../lib/termKeys";
-import { zoomRequest } from "../../lib/zoom";
+import { termKeySequence, type TermKey } from "../../lib/terminal/termKeys";
+import { zoomRequest } from "../../lib/terminal/zoom";
 
 interface UsePaneCommandsArgs {
   socketRef: MutableRefObject<WebSocket | null>;

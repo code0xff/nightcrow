@@ -1,4 +1,4 @@
-import { ConfirmCloseDialog } from "../ConfirmCloseDialog";
+import { ConfirmCloseDialog } from "../feedback/ConfirmCloseDialog";
 import { ComposeDialog } from "./ComposeDialog";
 import type { useCompose } from "../../hooks/terminal/useCompose";
 

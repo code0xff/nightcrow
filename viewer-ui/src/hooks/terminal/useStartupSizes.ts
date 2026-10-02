@@ -2,7 +2,7 @@ import { useEffect } from "react";
 import type { MutableRefObject } from "react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
-import { terminalFontOptions } from "../../lib/termFont";
+import { terminalFontOptions } from "../../lib/terminal/termFont";
 import {
   sendTerminalMessage,
   type PaneSize,

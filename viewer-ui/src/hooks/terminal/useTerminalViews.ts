@@ -2,18 +2,18 @@ import { useEffect } from "react";
 import type { MutableRefObject } from "react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
-import type { PaneView } from "../../lib/terminalLayout";
-import type { PaneViewMode } from "../../lib/paneViewMode";
-import { terminalFontOptions } from "../../lib/termFont";
-import { ClearKeyProbe } from "../../lib/clearKeyProbe";
-import { browserHandlesKey, overriddenKeySequence } from "../../lib/hardwareKeys";
-import { receivePaneClipboard } from "../../lib/paneClipboard";
+import type { PaneView } from "../../lib/terminal/terminalLayout";
+import type { PaneViewMode } from "../../lib/terminal/paneViewMode";
+import { terminalFontOptions } from "../../lib/terminal/termFont";
+import { ClearKeyProbe } from "../../lib/terminal/clearKeyProbe";
+import { browserHandlesKey, overriddenKeySequence } from "../../lib/terminal/hardwareKeys";
+import { receivePaneClipboard } from "../../lib/terminal/paneClipboard";
 import {
   installReplayReplyGate,
   queueReplayEnd,
   type PendingTerminalWrite,
   type TerminalReplayState,
-} from "../../lib/terminalReplay";
+} from "../../lib/terminal/terminalReplay";
 import { sendTerminalMessage, type PaneSize } from "../../api/terminal";
 import type { ScreenScale } from "../ui/screenScale";
 
@@ -100,7 +100,7 @@ export function useTerminalViews({
         // False is xterm's "this key is not mine": it returns before it
         // encodes anything or calls preventDefault, so the browser's own
         // gesture — the paste — goes ahead. See `browserHandlesKey`.
-        if (browserHandlesKey(event)) return false;
+        if (browserHandlesKey(event, navigator.platform)) return false;
         const overridden = overriddenKeySequence(event);
         if (overridden === null) return true;
         // Back through xterm's own input path rather than straight to the

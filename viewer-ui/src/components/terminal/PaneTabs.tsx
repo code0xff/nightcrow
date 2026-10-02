@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 import { XIcon } from "../icons/actions";
-import { TAB_TITLE_MAX_CELLS, truncateCells } from "../../lib/terminalLayout";
+import { TAB_TITLE_MAX_CELLS, truncateCells } from "../../lib/terminal/terminalLayout";
 
 export interface PaneTabsProps {
   panes: number[];

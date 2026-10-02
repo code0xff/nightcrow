@@ -1,14 +1,14 @@
 import { useEffect, useMemo, useRef } from "react";
 import type { MutableRefObject } from "react";
 import { sendTerminalMessage } from "../../api/terminal";
-import type { LinkState } from "../../lib/attachStatus";
-import { paneAt, swapOrder } from "../../lib/paneOrder";
-import { SHORTCUT_ACTIONS, focusPaneNumber } from "../../lib/shortcutActions";
+import type { LinkState } from "../../lib/terminal/attachStatus";
+import { paneAt, swapOrder } from "../../lib/terminal/paneOrder";
+import { SHORTCUT_ACTIONS, focusPaneNumber } from "../../lib/shortcuts/shortcutActions";
 import {
   useRegisterShortcutHandlers,
   useShortcutIntents,
   type ShortcutHandlers,
-} from "../shortcutIntents";
+} from "../shortcuts/shortcutIntents";
 
 // The panel's half of the shortcut registry.
 //

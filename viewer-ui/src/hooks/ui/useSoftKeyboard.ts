@@ -2,7 +2,7 @@ import { useSyncExternalStore } from "react";
 import {
   softKeyboardInset,
   type KeyboardWindowLike,
-} from "../../lib/visualViewport";
+} from "../../lib/ui/visualViewport";
 
 /**
  * Whether a soft keyboard is covering part of the page.

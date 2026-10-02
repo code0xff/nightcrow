@@ -5,7 +5,7 @@ import {
   subscribeToasts,
   type Toast,
   type ToastKind,
-} from "../../lib/toast";
+} from "../../lib/runtime/toast";
 
 const DURATION_MS: Record<ToastKind, number> = {
   error: 7000,

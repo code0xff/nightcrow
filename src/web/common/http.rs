@@ -1,6 +1,6 @@
 //! Minimal synchronous HTTP/1.1 request parsing and response building for the
-//! web mirror. Only the tiny surface the server needs is implemented (a static
-//! page, a login POST, a WebSocket upgrade) — no HTTP crate is pulled in.
+//! web viewer. Only the tiny surface the server needs is implemented (static
+//! assets, a login POST, a WebSocket upgrade) — no HTTP crate is pulled in.
 //!
 //! The parsing here is pure and unit-tested; the socket I/O that feeds it lives
 //! in `server.rs`.

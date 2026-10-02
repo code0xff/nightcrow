@@ -85,6 +85,8 @@ npm --prefix viewer-ui test
 npm --prefix viewer-ui run build
 ```
 
+`test` and `build` refuse to run when `node_modules` no longer matches `package-lock.json` — after a pull that bumped a dependency, say — and name the packages that differ; `npm --prefix viewer-ui ci` brings it back. A stale install still resolves, so without the check both would pass against versions the project does not use.
+
 The bundle in `viewer-ui/dist/` is committed. A viewer change is complete only when the build succeeds and the generated `dist` diff is included when it changes. On Windows, run the Unix verification gate with:
 
 ```bash

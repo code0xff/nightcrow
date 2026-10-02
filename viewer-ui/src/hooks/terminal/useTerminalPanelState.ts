@@ -1,5 +1,5 @@
 import { useState } from "react";
-import type { LinkState } from "../../lib/attachStatus";
+import type { LinkState } from "../../lib/terminal/attachStatus";
 
 export function useTerminalPanelState() {
   const [pending, setPending] = useState<number | null>(null);

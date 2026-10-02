@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { XIcon } from "../icons/actions";
-import { isSendable, sendChordLabel } from "../../lib/composeInput";
+import { isSendable, sendChordLabel } from "../../lib/terminal/composeInput";
 
 const TITLE_ID = "nc-compose-title";
 
@@ -121,7 +121,7 @@ export function ComposeDialog({
             type="button"
             onClick={clear}
             disabled={draft.length === 0}
-            className="ml-auto rounded-sm px-3 py-1.5 text-ink-300 hover:text-ink-50 disabled:text-ink-600"
+            className="ml-auto rounded-sm px-3 py-1.5 text-ink-200 hover:text-ink-50 disabled:text-ink-600"
           >
             Clear
           </button>
@@ -131,7 +131,7 @@ export function ComposeDialog({
             disabled={!sendable}
             title={`Send and run (${chord})`}
             aria-keyshortcuts="Meta+Enter Control+Enter"
-            className="flex items-center gap-1.5 rounded-sm bg-accent px-3 py-1.5 font-medium text-ink-950 disabled:bg-ink-700 disabled:text-ink-500"
+            className="flex items-center gap-1.5 rounded-sm bg-accent px-3 py-1.5 font-medium text-ink-950 disabled:bg-ink-700 disabled:text-ink-400"
           >
             {/* On the button rather than only in its tooltip, which a touch
                 screen never shows. Hidden from the accessible name, which stays

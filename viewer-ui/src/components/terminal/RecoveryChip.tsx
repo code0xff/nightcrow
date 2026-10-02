@@ -1,5 +1,5 @@
 import { XIcon } from "../icons/actions";
-import { recoverySummary, type PaneRecovery } from "../../lib/recovery";
+import { recoverySummary, type PaneRecovery } from "../../lib/terminal/recovery";
 
 interface RecoveryChipProps {
   report: PaneRecovery;

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef } from "react";
-import { useHtmlEditor } from "../../hooks/useHtmlEditor";
+import { useHtmlEditor } from "../../hooks/git/useHtmlEditor";
 import type { FromPreview, ToPreview } from "../../lib/edit/protocol";
 
 /** How long to wait for the preview to commit an open edit before saving anyway. */
@@ -97,7 +97,7 @@ export function HtmlEditor({ repo, path }: { repo: string; path: string }) {
     return (
       <div className="p-4 text-accent">
         {state.error}{" "}
-        <button onClick={editor.reload} className="underline hover:text-ink-100">
+        <button onClick={editor.reload} className="underline hover:text-ink-50">
           Try again
         </button>
       </div>
@@ -125,13 +125,13 @@ export function HtmlEditor({ repo, path }: { repo: string; path: string }) {
           <span>This file changed on disk since it was opened. Your edits are still here.</span>
           <button
             onClick={() => void save(true)}
-            className="ml-auto rounded-sm px-2 py-0.5 underline hover:text-ink-100"
+            className="ml-auto rounded-sm px-2 py-0.5 underline hover:text-ink-50"
           >
             Overwrite
           </button>
           <button
             onClick={editor.dismissConflict}
-            className="rounded-sm px-2 py-0.5 underline hover:text-ink-100"
+            className="rounded-sm px-2 py-0.5 underline hover:text-ink-50"
           >
             Cancel
           </button>
@@ -140,7 +140,7 @@ export function HtmlEditor({ repo, path }: { repo: string; path: string }) {
       {state.notice && (
         <button
           onClick={editor.dismiss}
-          className="shrink-0 bg-ink-850 px-3 py-1 text-left text-ink-400 hover:text-ink-100"
+          className="shrink-0 bg-ink-850 px-3 py-1 text-left text-ink-400 hover:text-ink-50"
           title="Dismiss"
         >
           {state.notice}

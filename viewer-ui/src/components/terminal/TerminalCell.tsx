@@ -2,9 +2,9 @@ import type { CSSProperties } from "react";
 import { XIcon } from "../icons/actions";
 import { MaximizeIcon } from "../icons/layout";
 import { RecoveryChip } from "./RecoveryChip";
-import { useShortcutHint } from "../../hooks/shortcutLeader";
-import type { PaneRecovery } from "../../lib/recovery";
-import { TAB_TITLE_MAX_CELLS, truncateCells } from "../../lib/terminalLayout";
+import { useShortcutHint } from "../../hooks/shortcuts/shortcutLeader";
+import type { PaneRecovery } from "../../lib/terminal/recovery";
+import { TAB_TITLE_MAX_CELLS, truncateCells } from "../../lib/terminal/terminalLayout";
 
 interface TerminalCellProps {
   pane: number;

@@ -1,6 +1,6 @@
 import { useCallback, useState } from "react";
 import type { MutableRefObject } from "react";
-import type { RecoveryByPane } from "../../lib/recovery";
+import type { RecoveryByPane } from "../../lib/terminal/recovery";
 import { sendTerminalMessage } from "../../api/terminal";
 
 /// Per-pane recovery reports, and the one control that acts on them.
