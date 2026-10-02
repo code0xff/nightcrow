@@ -31,6 +31,25 @@ fn a_recovery_report_is_relayed_unchanged() {
 }
 
 #[test]
+fn replay_completion_survives_the_attach_envelope_unchanged() {
+    let marker = HubServerMessage::ReplayComplete;
+    let tagged = ServerMessage::Terminal {
+        repo: "repo-a".to_string(),
+        event: rewrite_requester(marker.clone(), HUB_CLIENT, ATTACHED_CLIENT),
+    };
+    let back: ServerMessage =
+        serde_json::from_str(&serde_json::to_string(&tagged).unwrap()).unwrap();
+
+    assert_eq!(
+        back,
+        ServerMessage::Terminal {
+            repo: "repo-a".to_string(),
+            event: marker,
+        }
+    );
+}
+
+#[test]
 fn a_recovery_report_survives_the_attach_envelope_intact() {
     // The relay parses a hub control frame and re-encodes it under a repository
     // tag, so the round trip is part of the delivery path rather than a test

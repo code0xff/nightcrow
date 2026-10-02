@@ -7,6 +7,30 @@ use super::hub_helpers::PaneState;
 use crate::backend::PaneId;
 use std::sync::mpsc::SyncSender;
 
+/// Initial replay frames are bounded independently from the one frame that
+/// announces the replay boundary. `connect` reserves that final queue slot.
+pub(super) struct ReplayQueue<'a> {
+    tx: &'a SyncSender<TerminalFrame>,
+    queued: usize,
+}
+
+impl<'a> ReplayQueue<'a> {
+    pub(super) fn new(tx: &'a SyncSender<TerminalFrame>) -> Self {
+        Self { tx, queued: 0 }
+    }
+
+    pub(super) fn send(&mut self, frame: TerminalFrame) -> bool {
+        if self.queued >= super::CLIENT_QUEUE_DEPTH {
+            return false;
+        }
+        if self.tx.try_send(frame).is_err() {
+            return false;
+        }
+        self.queued += 1;
+        true
+    }
+}
+
 /// Back to the normal screen. Sent ahead of a normal-screen replay for a pane
 /// whose program is on the alternate one, because the prelude that follows is
 /// what switches away from it.
@@ -23,21 +47,20 @@ const LEAVE_ALT_SCREEN: &[u8] = b"\x1b[?1049l";
 /// ceiling while keeping the frame count low enough that a whole replay of the
 /// largest panes this hub allows fits in
 /// [`CLIENT_QUEUE_DEPTH`](super::CLIENT_QUEUE_DEPTH) — which is what makes it
-/// safe to queue the replay before the client is registered, with nothing else
-/// writing to that queue.
+/// safe to queue the replay before the client is registered. The completion
+/// marker has one additional reserved slot in the channel.
 pub(super) const REPLAY_CHUNK_BYTES: usize = 1024 * 1024;
 
 /// Queue `data` for `pane` as frames no larger than [`REPLAY_CHUNK_BYTES`],
 /// reporting whether all of it fit. Stops at the first frame the queue refuses:
 /// what follows would not fit either, and a replay missing a piece in the middle
 /// is a screen the client cannot repair.
-fn send_replay(tx: &SyncSender<TerminalFrame>, pane: PaneId, data: &[u8]) -> bool {
+fn send_replay(queue: &mut ReplayQueue<'_>, pane: PaneId, data: &[u8]) -> bool {
     data.chunks(REPLAY_CHUNK_BYTES).all(|chunk| {
-        tx.try_send(TerminalFrame::Output {
+        queue.send(TerminalFrame::Output {
             pane,
             data: chunk.to_vec(),
         })
-        .is_ok()
     })
 }
 
@@ -67,7 +90,7 @@ fn normal_record(pane: &PaneState) -> Vec<u8> {
 /// Reports whether the whole pane reached the queue. A client that was handed only
 /// part of a screen has no way to tell, so the caller says so where someone can
 /// read it.
-pub(super) fn replay_pane(tx: &SyncSender<TerminalFrame>, pane: &PaneState) -> bool {
+pub(super) fn replay_pane(queue: &mut ReplayQueue<'_>, pane: &PaneState) -> bool {
     let mut whole = true;
     if let Ok(json) = serde_json::to_string(&ServerMessage::Created {
         pane: pane.id,
@@ -78,7 +101,7 @@ pub(super) fn replay_pane(tx: &SyncSender<TerminalFrame>, pane: &PaneState) -> b
         // must not take the focus of whatever the client is already looking at.
         client: None,
     }) {
-        whole &= tx.try_send(TerminalFrame::Control(json)).is_ok();
+        whole &= queue.send(TerminalFrame::Control(json));
     }
     // The normal screen first, for a pane whose program has left it: its record
     // was frozen where the program switched away, so it is what the client will be
@@ -90,7 +113,7 @@ pub(super) fn replay_pane(tx: &SyncSender<TerminalFrame>, pane: &PaneState) -> b
         let mut data = Vec::with_capacity(LEAVE_ALT_SCREEN.len() + pane.scrollback.len());
         data.extend_from_slice(LEAVE_ALT_SCREEN);
         data.extend(normal_record(pane));
-        whole &= send_replay(tx, pane.id, &data);
+        whole &= send_replay(queue, pane.id, &data);
     }
     // Ahead of the screen: these are the modes the pane's program set once, at
     // startup, and no record of them survives in what follows. Without this a
@@ -98,7 +121,7 @@ pub(super) fn replay_pane(tx: &SyncSender<TerminalFrame>, pane: &PaneState) -> b
     // reporting off, arrows in the wrong encoding, paste unbracketed. It
     // leads with `1049`, so it is also what puts the client on the buffer the
     // program is drawing on before that buffer's contents arrive.
-    whole &= send_replay(tx, pane.id, &pane.modes.prelude());
+    whole &= send_replay(queue, pane.id, &pane.modes.prelude());
     let data: Vec<u8> = if pane.modes.alt_screen {
         // The screen, then everything broadcast since it was taken — the same
         // bytes every client already attached has seen. (When an entry
@@ -113,6 +136,6 @@ pub(super) fn replay_pane(tx: &SyncSender<TerminalFrame>, pane: &PaneState) -> b
     } else {
         normal_record(pane)
     };
-    whole &= send_replay(tx, pane.id, &data);
+    whole &= send_replay(queue, pane.id, &data);
     whole
 }

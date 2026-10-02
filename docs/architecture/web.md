@@ -29,7 +29,7 @@ HTML preview는 검증된 파일만 sandboxed iframe으로 전달한다. 응답 
 
 repository runtime의 status snapshot은 최신 payload만 필요하므로 byte-identical 값은 publish하지 않고 fan-out도 conflate한다. terminal output은 raw byte stream이라 conflate하지 않고 queue가 가득 찬 client는 socket 자체를 닫는다. WebSocket terminal binary frame은 4-byte little-endian pane id 뒤에 raw PTY bytes를 붙이고 control event는 JSON frame으로 보낸다.
 
-terminal connection은 읽기와 쓰기를 bounded polling으로 다루며, stalled write 중에는 hub queue에서 frame을 더 꺼내지 않는다. 완전히 따라오지 못한 client는 session terminal queue 상한에서 종료되고 screen/mode/since replay로 재접속한다. pane 입력·resize·close·reorder는 authenticated client가 session hub에 보내며, pane별 authorization은 제공하지 않는다.
+terminal connection은 읽기와 쓰기를 bounded polling으로 다루며, stalled write 중에는 hub queue에서 frame을 더 꺼내지 않는다. 완전히 따라오지 못한 client는 session terminal queue 상한에서 종료되고 screen/mode/since replay로 재접속한다. 초기 replay는 `replay_complete` control을 같은 FIFO에 넣어 경계를 알리며, per-connection/per-pane xterm reply gate는 그 pane의 모든 replay bytes가 파싱된 뒤 `term.write('', callback)`이 실행될 때만 해제한다. 아직 xterm이 없는 pane은 replay bytes와 완료 sentinel을 하나의 FIFO에 두어 이후 도착한 live bytes와 순서를 보존한다. 재생 중에는 CSI DSR/DA/DECRQM, DCS DECRQSS, 그리고 CSI 14t/16t/18t 보고 응답을 삼키고 OSC 52 clipboard callback을 실행하지 않는다. CSI 22t/23t title stack 명령은 통과시키며 키 입력과 paste는 계속 PTY로 전달한다. 같은 OSC command에 query와 color set을 함께 싣는 OSC 4/10/11/12는 이 억제 범위에 포함하지 않는다. pane 입력·resize·close·reorder는 authenticated client가 session hub에 보내며, pane별 authorization은 제공하지 않는다.
 
 사용자의 key, paste, pointer down/click, wheel 입력은 session size-owner claim으로 번역한다. 같은 owner의 활동은 이미 owner인 viewer connection에 확인 응답을 다시 보내어 수동 refit에 쓰며, 일반 활동으로 owner 전환이나 강제 resize를 일으키지는 않는다. browser resize·focus·reconnect는 소유권을 바꾸지 않는다.
 

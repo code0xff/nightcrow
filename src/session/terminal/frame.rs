@@ -149,6 +149,10 @@ pub enum ServerMessage {
         /// count can lay its grid out for the panes it is *going* to have.
         panes: usize,
     },
+    /// The initial connection replay has ended. Queued after `Hello`, zoom,
+    /// pane records, and before any live broadcast or size ownership verdict.
+    #[serde(rename = "replay_complete")]
+    ReplayComplete,
     /// Whether *this* client is the one whose layout sets the pane sizes.
     /// Addressed rather than broadcast. User activity or an explicit
     /// [`ClientMessage::ClaimSize`] selects the screen that controls sizing;

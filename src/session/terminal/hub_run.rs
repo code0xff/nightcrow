@@ -200,7 +200,9 @@ impl TerminalHub {
                     BackendEvent::SizeOwnership { .. }
                     | BackendEvent::Reordered { .. }
                     | BackendEvent::Attention { .. }
-                    | BackendEvent::Recovery { .. } => {
+                    | BackendEvent::Recovery { .. }
+                    | BackendEvent::ReplayOutput { .. }
+                    | BackendEvent::ReplayComplete => {
                         tracing::debug!("hub: unexpected session event from its own backend");
                     }
                 }

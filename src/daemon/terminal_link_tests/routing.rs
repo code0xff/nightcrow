@@ -1,4 +1,5 @@
 use super::*;
+use crate::session::terminal::frame::ServerMessage as HubServerMessage;
 
 #[test]
 fn traffic_that_arrives_before_a_repository_has_a_reader_is_kept() {
@@ -22,6 +23,45 @@ fn traffic_that_arrives_before_a_repository_has_a_reader_is_kept() {
     let inbox = router.drain("r1");
     assert_eq!(inbox.len(), 2);
     assert_eq!(pane_of(&inbox[0]), 1);
+}
+
+#[test]
+fn replay_completion_stays_between_historical_and_live_output() {
+    let router = TerminalRouter::default();
+    router
+        .deliver(
+            "r1",
+            TerminalMessage::Output {
+                pane: 1,
+                data: b"history".to_vec(),
+            },
+        )
+        .unwrap();
+    router
+        .deliver(
+            "r1",
+            TerminalMessage::Event(HubServerMessage::ReplayComplete),
+        )
+        .unwrap();
+    router
+        .deliver(
+            "r1",
+            TerminalMessage::Output {
+                pane: 1,
+                data: b"live".to_vec(),
+            },
+        )
+        .unwrap();
+
+    let inbox = router.drain("r1");
+    assert!(matches!(
+        inbox.as_slice(),
+        [
+            TerminalMessage::Output { data: history, .. },
+            TerminalMessage::Event(HubServerMessage::ReplayComplete),
+            TerminalMessage::Output { data: live, .. }
+        ] if history == b"history" && live == b"live"
+    ));
 }
 
 #[test]

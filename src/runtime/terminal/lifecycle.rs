@@ -49,6 +49,28 @@ impl TerminalState {
                     let events = emulator.process(&data);
                     self.apply_emulator_events(pane, events, now);
                 }
+                BackendEvent::ReplayOutput { pane, data } => {
+                    let Some(emulator) = self.emulators.get_mut(&pane) else {
+                        continue;
+                    };
+                    emulator.suppress_pty_replies(true);
+                    self.replaying_panes.insert(pane);
+                    let events = emulator.process(&data);
+                    self.apply_emulator_events(pane, events, now);
+                }
+                BackendEvent::ReplayComplete => {
+                    let panes: Vec<PaneId> = self.replaying_panes.drain().collect();
+                    for pane in panes {
+                        let Some(emulator) = self.emulators.get_mut(&pane) else {
+                            continue;
+                        };
+                        let events = emulator.settle_sync();
+                        self.apply_emulator_events(pane, events, now);
+                        if let Some(emulator) = self.emulators.get_mut(&pane) {
+                            emulator.suppress_pty_replies(false);
+                        }
+                    }
+                }
                 // The session set this pane to a size, which may not be the one
                 // this client asked for — or any it asked for. The emulator has
                 // to wrap where the child does, so it follows.

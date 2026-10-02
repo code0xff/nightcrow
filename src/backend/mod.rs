@@ -40,6 +40,14 @@ pub enum BackendEvent {
         pane: PaneId,
         data: Vec<u8>,
     },
+    /// Output from a shared-session connection's initial replay. Terminal
+    /// query replies are suppressed until [`BackendEvent::ReplayComplete`].
+    ReplayOutput {
+        pane: PaneId,
+        data: Vec<u8>,
+    },
+    /// The shared-session connection has delivered its full initial replay.
+    ReplayComplete,
     Exited {
         pane: PaneId,
     },

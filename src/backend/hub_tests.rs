@@ -191,14 +191,40 @@ fn output_and_exits_come_through_as_they_are() {
     assert!(matches!(
         events.as_slice(),
         [
-            BackendEvent::Output { pane: 1, .. },
+            BackendEvent::ReplayOutput { pane: 1, .. },
             BackendEvent::Exited { pane: 1 }
         ]
     ));
     match &events[0] {
-        BackendEvent::Output { data, .. } => assert_eq!(data, &vec![0xe2, 0x94]),
+        BackendEvent::ReplayOutput { data, .. } => assert_eq!(data, &vec![0xe2, 0x94]),
         other => panic!("expected output, got {other:?}"),
     }
+}
+
+#[test]
+fn replay_completion_switches_subsequent_output_to_live() {
+    let mut wired = wired();
+    wired.deliver(HubServerMessage::Hello {
+        client: MINE,
+        panes: 0,
+    });
+    wired.deliver(HubServerMessage::ReplayComplete);
+    wired
+        .router
+        .deliver(
+            REPO,
+            TerminalMessage::Output {
+                pane: 1,
+                data: b"live".to_vec(),
+            },
+        )
+        .expect("terminal inbox accepts the output");
+
+    assert!(matches!(
+        wired.backend.drain_events().as_slice(),
+        [BackendEvent::ReplayComplete, BackendEvent::Output { pane: 1, data }]
+            if data == b"live"
+    ));
 }
 
 #[test]

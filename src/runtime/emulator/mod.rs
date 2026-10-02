@@ -50,6 +50,7 @@ struct ProxyState {
     title: Option<String>,
     bell: bool,
     pty_writes: Vec<u8>,
+    suppress_pty_writes: bool,
 }
 
 /// Event sink handed to `Term`. `EventListener::send_event` only gets
@@ -69,10 +70,10 @@ impl EventListener for EventProxy {
                 }
             }
             Event::PtyWrite(text) => {
-                self.0
-                    .borrow_mut()
-                    .pty_writes
-                    .extend_from_slice(text.as_bytes());
+                let mut state = self.0.borrow_mut();
+                if !state.suppress_pty_writes {
+                    state.pty_writes.extend_from_slice(text.as_bytes());
+                }
             }
             Event::Bell => self.0.borrow_mut().bell = true,
             // Clipboard, damage and child-process events are not part of
@@ -113,6 +114,11 @@ impl PaneEmulator {
         self.boundary.feed(bytes);
         self.processor.advance(&mut self.term, bytes);
         self.take_events()
+    }
+
+    /// Suppress terminal replies generated while reading historical replay.
+    pub fn suppress_pty_replies(&mut self, suppress: bool) {
+        self.proxy.0.borrow_mut().suppress_pty_writes = suppress;
     }
 
     fn take_events(&mut self) -> EmulatorEvents {
