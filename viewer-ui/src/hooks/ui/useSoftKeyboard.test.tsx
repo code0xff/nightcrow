@@ -2,7 +2,7 @@
 
 import { act, cleanup, render } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
-import type { KeyboardWindowLike } from "../../lib/visualViewport";
+import type { KeyboardWindowLike } from "../../lib/ui/visualViewport";
 import { useSoftKeyboardOpen } from "./useSoftKeyboard";
 
 afterEach(cleanup);

@@ -1,15 +1,15 @@
 import { useEffect, useRef } from "react";
 import type { MutableRefObject } from "react";
-import type { PaneView } from "../../lib/terminalLayout";
-import type { PaneViewMode } from "../../lib/paneViewMode";
-import { lastPaneOf, rememberPane } from "../../lib/lastPane";
+import type { PaneView } from "../../lib/terminal/terminalLayout";
+import type { PaneViewMode } from "../../lib/terminal/paneViewMode";
+import { lastPaneOf, rememberPane } from "../../lib/terminal/lastPane";
 import {
   focusHolder,
   focusIsTakeable,
   focusOnAttach,
   focusStep,
-} from "../../lib/paneFocus";
-import { zoomPending } from "../../lib/zoom";
+} from "../../lib/terminal/paneFocus";
+import { zoomPending } from "../../lib/terminal/zoom";
 
 interface UsePaneFocusArgs {
   repo: string;

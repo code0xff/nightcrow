@@ -1,9 +1,9 @@
 import { useCallback } from "react";
-import type { LinkState } from "../../lib/attachStatus";
-import type { PaneViewMode } from "../../lib/paneViewMode";
-import type { RecoveryByPane } from "../../lib/recovery";
+import type { LinkState } from "../../lib/terminal/attachStatus";
+import type { PaneViewMode } from "../../lib/terminal/paneViewMode";
+import type { RecoveryByPane } from "../../lib/terminal/recovery";
 import type { ScreenScale } from "../ui/screenScale";
-import { zoomPending } from "../../lib/zoom";
+import { zoomPending } from "../../lib/terminal/zoom";
 import type { TerminalRefs } from "./useTerminalRefs";
 import { usePaneFocus } from "./usePaneFocus";
 import { usePaneSizes } from "./usePaneSizes";

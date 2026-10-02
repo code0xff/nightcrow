@@ -4,7 +4,7 @@ mod helpers;
 // (App, Focus, ViewMode, Notice, NoticeKind, DiffPaneView, FileViewKey,
 // FileViewState, SnapshotChannel, etc.)
 // so every test submodule can pull them in with `use super::*;`.
-use super::diff_load::DiffApply;
+use super::git::diff_load::DiffApply;
 use super::strip_escape_sequences;
 use super::*;
 use crate::git::diff::{ChangedFile, CommitEntry, RepoSnapshot, StatusKind, load_commit_log};

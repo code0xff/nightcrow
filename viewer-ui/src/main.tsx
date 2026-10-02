@@ -1,11 +1,11 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "./pages/App";
-import { ShortcutIntentProvider } from "./hooks/shortcutIntents";
+import { ShortcutIntentProvider } from "./hooks/shortcuts/shortcutIntents";
 import { ErrorBoundary } from "./components/feedback/ErrorBoundary";
 import { Toaster } from "./components/feedback/Toaster";
-import { notePageBuild } from "./lib/viewerBuild";
-import { observeVisualViewport } from "./lib/visualViewport";
+import { notePageBuild } from "./lib/runtime/viewerBuild";
+import { observeVisualViewport } from "./lib/ui/visualViewport";
 import { applyScreenScale, readScreenScale } from "./hooks/ui/screenScale";
 import "./styles/index.css";
 

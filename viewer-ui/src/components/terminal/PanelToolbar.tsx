@@ -9,10 +9,10 @@ import {
   TabViewIcon,
 } from "../icons/layout";
 import { RecoveryChip } from "./RecoveryChip";
-import { useShortcutHint } from "../../hooks/shortcutLeader";
-import { orphanRecovery, type RecoveryByPane } from "../../lib/recovery";
-import { focusFillsEmptyPanel } from "../../lib/paneFocus";
-import type { PaneViewMode } from "../../lib/paneViewMode";
+import { useShortcutHint } from "../../hooks/shortcuts/shortcutLeader";
+import { orphanRecovery, type RecoveryByPane } from "../../lib/terminal/recovery";
+import { focusFillsEmptyPanel } from "../../lib/terminal/paneFocus";
+import type { PaneViewMode } from "../../lib/terminal/paneViewMode";
 
 export interface PanelToolbarProps {
   mode: PaneViewMode;

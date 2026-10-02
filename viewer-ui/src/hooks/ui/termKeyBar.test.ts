@@ -15,8 +15,8 @@ import { act, cleanup, renderHook } from "@testing-library/react";
 import type { Window as HappyDOMWindow } from "happy-dom";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { useTermKeyBar } from "./termKeyBar";
-import { stubLocalStorage } from "../../lib/fakeStorage";
-import { KEYBOARD_MIN_VIEWPORT_PX } from "../../lib/termKeys";
+import { stubLocalStorage } from "../../lib/shared/fakeStorage";
+import { KEYBOARD_MIN_VIEWPORT_PX } from "../../lib/terminal/termKeys";
 
 const WIDE = KEYBOARD_MIN_VIEWPORT_PX + 300;
 

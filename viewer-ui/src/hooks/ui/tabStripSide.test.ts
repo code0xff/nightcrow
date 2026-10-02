@@ -2,7 +2,7 @@
 
 import { act, cleanup, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { stubLocalStorage } from "../../lib/fakeStorage";
+import { stubLocalStorage } from "../../lib/shared/fakeStorage";
 import { useTabStripSide } from "./tabStripSide";
 
 beforeEach(stubLocalStorage);

@@ -1,17 +1,17 @@
 import type { CSSProperties } from "react";
-import { ConfirmCloseDialog } from "../components/ConfirmCloseDialog";
-import { FolderPicker } from "../components/FolderPicker";
-import { Header } from "../components/Header";
-import { LoadingSplash } from "../components/LoadingSplash";
-import { Login } from "../components/Login";
-import { ProjectStrip } from "../components/ProjectStrip";
-import { RepoShell } from "../components/RepoShell";
-import { ShortcutHelp } from "../components/ShortcutHelp";
+import { ConfirmCloseDialog } from "../components/feedback/ConfirmCloseDialog";
+import { FolderPicker } from "../components/repository/FolderPicker";
+import { Header } from "../components/shell/Header";
+import { LoadingSplash } from "../components/shell/LoadingSplash";
+import { Login } from "../components/shell/Login";
+import { ProjectStrip } from "../components/repository/ProjectStrip";
+import { RepoShell } from "../components/shell/RepoShell";
+import { ShortcutHelp } from "../components/shortcuts/ShortcutHelp";
 import { ShortcutHintBar } from "../components/shortcuts/ShortcutHintBar";
-import { ShortcutLeaderProvider } from "../hooks/shortcutLeader";
+import { ShortcutLeaderProvider } from "../hooks/shortcuts/shortcutLeader";
 import { ScreenScaleProvider } from "../hooks/ui/screenScale";
-import { ViewerActivityProvider } from "../hooks/viewerActivity";
-import { useAppViewModel } from "../hooks/useAppViewModel";
+import { ViewerActivityProvider } from "../hooks/ui/viewerActivity";
+import { useAppViewModel } from "../hooks/app/useAppViewModel";
 
 export function App() {
   const view = useAppViewModel();

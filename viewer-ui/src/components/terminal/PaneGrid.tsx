@@ -1,7 +1,7 @@
 import type { CSSProperties, MutableRefObject } from "react";
-import type { CellPlacement } from "../../lib/terminalLayout";
-import type { RecoveryByPane } from "../../lib/recovery";
-import { stackedCellStyle, type PaneViewMode } from "../../lib/paneViewMode";
+import type { CellPlacement } from "../../lib/terminal/terminalLayout";
+import type { RecoveryByPane } from "../../lib/terminal/recovery";
+import { stackedCellStyle, type PaneViewMode } from "../../lib/terminal/paneViewMode";
 import { TerminalCell } from "./TerminalCell";
 import { StartupSlots } from "./StartupSlots";
 

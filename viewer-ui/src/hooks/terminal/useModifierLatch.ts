@@ -14,7 +14,7 @@ import {
   altLatchStep,
   ctrlLatchStep,
   type CtrlLatchStep,
-} from "../../lib/termKeys";
+} from "../../lib/terminal/termKeys";
 
 export interface ModifierLatch {
   /** Whether the next character is being modified — the button's pressed state. */

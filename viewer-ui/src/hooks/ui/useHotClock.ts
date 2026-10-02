@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { anyHot, HOT_TICK_MS, type HotStage } from "../../lib/hot";
+import { anyHot, HOT_TICK_MS, type HotStage } from "../../lib/repository/hot";
 import type { ChangedFile } from "../../api";
 
 /** Keep change-kind colors stable as highlights fade. */

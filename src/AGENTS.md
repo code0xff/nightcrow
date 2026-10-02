@@ -8,6 +8,10 @@
 - attached TUI의 daemon socket transport와 browser viewer의 HTTP/WebSocket transport는 서로 다른 보안 경계다. 전자는 소켓 파일 권한을 전제로 하고 후자는 웹 인증을 전제로 하므로, 공통 상태 변경은 `session/`에 두되 두 transport의 인증·wire 처리를 합치지 않는다. 웹 계층의 상세는 [web design](../docs/architecture/web.md)을 따른다.
 - `TerminalBackend`는 로컬 `PtyBackend`와 데몬 공유 세션의 `HubBackend`를 잇는 경계다. pane 생성·종료·재정렬·resize는 backend event 계약을 통해 관찰하고, 실제 PTY 크기는 session-level ownership과 확인된 `Resized` 이벤트를 따른다. 이 경계를 우회해 frontend가 PTY나 hub 내부 상태를 직접 갱신하지 않는다.
 
+## Source organization
+
+- `app.rs`는 crate 내부 TUI facade로 기존 `pub`/`pub(crate)` 노출 범위를 유지한다. 내부 구현은 책임별로 `app/git/`의 Git view 처리와 `app/navigation/`의 포커스·입력 이동 처리에 모으고, application wiring과 session I/O는 `app/` 루트에 둔다. 새 동작은 가장 가까운 책임 경계에 넣어 flat module 집합이 다시 커지지 않게 한다.
+
 ## Protocol and platform seams
 
 - daemon frame은 control JSON과 raw terminal bytes를 구분한다. framing의 종류·길이 검증·truncated stream 처리와 terminal payload 분할 불변식을 바꾸면 [session design](../docs/architecture/session.md)과 해당 wire/contract tests를 함께 갱신한다. session repository set의 통지는 watcher 단일 producer 경계를 유지해 client별 응답 경쟁으로 순서가 갈라지지 않게 한다.

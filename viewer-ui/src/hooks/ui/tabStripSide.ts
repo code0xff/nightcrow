@@ -10,7 +10,7 @@ import {
   otherSide,
   parseTabStripSide,
   type TabStripSide,
-} from "../../lib/tabStripSide";
+} from "../../lib/ui/tabStripSide";
 
 const STORAGE_KEY = "nightcrow.tabStripSide";
 

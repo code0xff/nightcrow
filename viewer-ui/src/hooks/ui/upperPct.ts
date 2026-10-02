@@ -6,7 +6,7 @@ import {
   DEFAULT_UPPER_PCT,
   clampUpperPct,
   clampUpperPctExact,
-} from "../../lib/upperPct";
+} from "../../lib/ui/upperPct";
 
 const STORAGE_KEY = "nightcrow.upperPct";
 

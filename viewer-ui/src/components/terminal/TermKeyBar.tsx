@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 import { PencilIcon } from "../icons/actions";
-import { TERM_KEY_BAR, type TermKey } from "../../lib/termKeys";
+import { TERM_KEY_BAR, type TermKey } from "../../lib/terminal/termKeys";
 import type { ModifierLatch } from "../../hooks/terminal/useModifierLatch";
 
 const KEY_BUTTON =

@@ -8,7 +8,7 @@ import {
   defaultKeyBarShown,
   parseKeyBarPref,
   type KeyBarPref,
-} from "../../lib/termKeys";
+} from "../../lib/terminal/termKeys";
 
 const STORAGE_KEY = "nightcrow.termKeyBar";
 const COARSE_QUERY = "(pointer: coarse)";

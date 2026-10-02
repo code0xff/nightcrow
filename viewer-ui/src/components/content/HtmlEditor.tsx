@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef } from "react";
-import { useHtmlEditor } from "../../hooks/useHtmlEditor";
+import { useHtmlEditor } from "../../hooks/git/useHtmlEditor";
 import type { FromPreview, ToPreview } from "../../lib/edit/protocol";
 
 /** How long to wait for the preview to commit an open edit before saving anyway. */

@@ -1,12 +1,12 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { Terminal } from "@xterm/xterm";
-import type { PaneView } from "../../lib/terminalLayout";
+import type { PaneView } from "../../lib/terminal/terminalLayout";
 import {
   createTerminalReplayState,
   installReplayReplyGate,
   queueReplayEnd,
   type PendingTerminalWrite,
-} from "../../lib/terminalReplay";
+} from "../../lib/terminal/terminalReplay";
 import { handleTerminalSocketMessage, type TerminalMessageContext } from "./terminalSocketMessages";
 
 const terminals: Terminal[] = [];

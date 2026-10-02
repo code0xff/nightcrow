@@ -1,8 +1,8 @@
 import { Fragment } from "react";
-import { useLeaderChord } from "../../hooks/shortcutLeader";
-import { useShortcutAvailability } from "../../hooks/shortcutIntents";
-import type { ShortcutHint } from "../../hooks/useAppShortcuts";
-import { hintLine, type HintSegment } from "../../lib/shortcutHintBar";
+import { useLeaderChord } from "../../hooks/shortcuts/shortcutLeader";
+import { useShortcutAvailability } from "../../hooks/shortcuts/shortcutIntents";
+import type { ShortcutHint } from "../../hooks/shortcuts/useAppShortcuts";
+import { hintLine, type HintSegment } from "../../lib/shortcuts/shortcutHintBar";
 
 // The line under the page that says what the keyboard does next, as the TUI
 // has under every screen. The text comes from `hintLine`; this only prints it.

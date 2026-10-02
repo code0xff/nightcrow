@@ -7,13 +7,13 @@
 
 import { cleanup, render } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { DEFAULT_LEADER } from "../../lib/leaderChord";
+import { DEFAULT_LEADER } from "../../lib/shortcuts/leaderChord";
 import {
   ShortcutIntentProvider,
   useShortcutIntents,
   type ShortcutIntents,
-} from "../shortcutIntents";
-import { ShortcutEngine, leader, pane, press } from "../useShortcuts.harness";
+} from "../shortcuts/shortcutIntents";
+import { ShortcutEngine, leader, pane, press } from "../shortcuts/useShortcuts.harness";
 import {
   useTerminalShortcuts,
   type UseTerminalShortcutsArgs,
