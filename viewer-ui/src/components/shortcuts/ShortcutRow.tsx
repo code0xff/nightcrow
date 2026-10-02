@@ -6,7 +6,7 @@ import type { ShortcutAction } from "../../lib/shortcutActions";
 export function ShortcutKeys({ keys }: { keys: string[] | null }) {
   if (!keys) {
     return (
-      <span className="shrink-0 text-ink-500">
+      <span className="shrink-0 text-ink-400">
         no key — the leader is switched off
       </span>
     );
@@ -15,7 +15,7 @@ export function ShortcutKeys({ keys }: { keys: string[] | null }) {
     <span className="flex shrink-0 items-center gap-1">
       {keys.map((key, index) => (
         <span key={key} className="flex items-center gap-1">
-          {index > 0 && <span className="text-ink-500">then</span>}
+          {index > 0 && <span className="text-ink-400">then</span>}
           <kbd className="rounded-sm border border-ink-600 bg-ink-850 px-1.5 py-0.5 font-mono text-ink-50">
             {key}
           </kbd>

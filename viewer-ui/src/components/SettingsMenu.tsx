@@ -145,7 +145,7 @@ export function SettingsMenu({
                 aria-label="Screen scale"
                 value={scale}
                 onChange={(event) => setScale(Number(event.currentTarget.value) as ScreenScale)}
-                className="rounded-sm border border-ink-700 bg-ink-850 px-1.5 py-1 text-ink-100 focus:border-accent focus:outline-none"
+                className="rounded-sm border border-ink-700 bg-ink-850 px-1.5 py-1 text-ink-50 focus:border-accent focus:outline-none"
               >
                 {SCREEN_SCALES.map((value) => (
                   <option key={value} value={value}>{value}%</option>
@@ -172,7 +172,7 @@ export function SettingsMenu({
                 "Reload config.toml on the server (does not reload this page)",
               )}
               aria-label="reload the server config"
-              className="flex w-full items-center gap-2 rounded-sm py-1.5 text-left text-ink-200 hover:bg-ink-700 disabled:cursor-progress disabled:text-ink-500 disabled:hover:bg-transparent"
+              className="flex w-full items-center gap-2 rounded-sm py-1.5 text-left text-ink-200 hover:bg-ink-700 disabled:cursor-progress disabled:text-ink-400 disabled:hover:bg-transparent"
             >
               <RefreshIcon className={`h-3.5 w-3.5 ${reloading ? "animate-spin" : ""}`} />
               {reloading ? "Reloading config.toml…" : "Reload config.toml"}

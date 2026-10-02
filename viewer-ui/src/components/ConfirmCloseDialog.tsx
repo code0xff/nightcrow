@@ -52,12 +52,12 @@ export function ConfirmCloseDialog({
         <span id={TITLE_ID} className="font-medium break-words text-ink-50">
           Close {label}?
         </span>
-        <p className="text-ink-300">{detail}</p>
+        <p className="text-ink-200">{detail}</p>
         <div className="flex items-center justify-end gap-2">
           <button
             type="button"
             onClick={onCancel}
-            className="rounded-sm px-3 py-1.5 text-ink-300 hover:text-ink-50"
+            className="rounded-sm px-3 py-1.5 text-ink-200 hover:text-ink-50"
           >
             Cancel
           </button>
