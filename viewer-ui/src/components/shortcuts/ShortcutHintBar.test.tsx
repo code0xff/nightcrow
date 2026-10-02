@@ -2,11 +2,11 @@
 
 import { cleanup, fireEvent, render } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { ShortcutIntentProvider, useRegisterShortcutHandlers } from "../../hooks/shortcutIntents";
-import { ShortcutLeaderProvider } from "../../hooks/shortcutLeader";
-import { DEFAULT_LEADER, type ChordSpec } from "../../lib/leaderChord";
-import { IDLE_LEADER, type LeaderState } from "../../lib/leaderState";
-import type { HintClick } from "../../lib/shortcutHintBar";
+import { ShortcutIntentProvider, useRegisterShortcutHandlers } from "../../hooks/shortcuts/shortcutIntents";
+import { ShortcutLeaderProvider } from "../../hooks/shortcuts/shortcutLeader";
+import { DEFAULT_LEADER, type ChordSpec } from "../../lib/shortcuts/leaderChord";
+import { IDLE_LEADER, type LeaderState } from "../../lib/shortcuts/leaderState";
+import type { HintClick } from "../../lib/shortcuts/shortcutHintBar";
 import { ShortcutHintBar } from "./ShortcutHintBar";
 
 afterEach(cleanup);

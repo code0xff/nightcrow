@@ -1,0 +1,92 @@
+import { useCallback, useRef } from "react";
+import { useAccent } from "./theme";
+import { useSidebarWidth } from "./sidebar";
+import { useUpperPct } from "./upperPct";
+import { useMaximized } from "./useMaximized";
+import { useRepoView } from "../git/useRepoView";
+
+/**
+ * The preferences this page owns locally, and the bookkeeping that keeps the
+ * repository poll from undoing them.
+ *
+ * Accent and the panel split live on the server so every device agrees, and
+ * the poll adopts what it reads. But a value the user just changed here is
+ * newer than anything a request in flight can carry, so every local write
+ * bumps a counter; the poll compares the counter it started with and skips
+ * adopting when it moved. Wrapping each setter with its bump is why they are
+ * exposed from one place rather than assembled at the call site — a write that
+ * forgets to count silently reverts a moment later.
+ *
+ * The sidebar width is this device's alone (`ui/sidebar.ts`), so it has no
+ * counter: nothing the poll carries can overwrite it.
+ */
+export function useViewerPrefs() {
+  const { accent, next, cycle: cycleAccent, adopt: adoptAccent } = useAccent();
+  const {
+    width: sidebarWidth,
+    resize: resizeSidebar,
+    commit: commitSidebarWidth,
+    reset: resetSidebarWidth,
+  } = useSidebarWidth();
+  const {
+    pct: upperPct,
+    resize: resizeUpperPct,
+    commit: commitUpper,
+    reset: resetUpper,
+    adopt: adoptUpperPct,
+  } = useUpperPct();
+  // Own their own write counters, so they are passed through whole rather than
+  // rewrapped here like the scalars below.
+  const maximized = useMaximized();
+  const view = useRepoView();
+  const accentWrites = useRef(0);
+  const upperPctWrites = useRef(0);
+
+  const cycle = useCallback(() => {
+    accentWrites.current += 1;
+    cycleAccent();
+  }, [cycleAccent]);
+  const commitUpperPct = useCallback(
+    (pct: number) => {
+      upperPctWrites.current += 1;
+      commitUpper(pct);
+    },
+    [commitUpper],
+  );
+  const resetUpperPct = useCallback(() => {
+    upperPctWrites.current += 1;
+    resetUpper();
+  }, [resetUpper]);
+  const bumpUpperPctWrites = useCallback(() => {
+    upperPctWrites.current += 1;
+  }, []);
+
+  return {
+    accent,
+    next,
+    cycle,
+    adoptAccent,
+    accentWrites,
+    sidebarWidth,
+    resizeSidebar,
+    commitSidebarWidth,
+    resetSidebarWidth,
+    upperPct,
+    resizeUpperPct,
+    commitUpperPct,
+    resetUpperPct,
+    bumpUpperPctWrites,
+    adoptUpperPct,
+    upperPctWrites,
+    maximizedPanelOf: maximized.panelOf,
+    setMaximizedFor: maximized.setFor,
+    adoptMaximized: maximized.adopt,
+    maximizedWrites: maximized.writes,
+    viewOf: view.viewOf,
+    rememberedViewFor: view.rememberedFor,
+    rememberView: view.remember,
+    adoptViews: view.adopt,
+    viewCovers: view.covers,
+    viewWrites: view.writes,
+  };
+}

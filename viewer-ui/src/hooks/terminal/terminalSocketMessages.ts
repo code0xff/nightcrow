@@ -5,18 +5,18 @@ import {
   type PaneSize,
   type TerminalServerMessage,
 } from "../../api/terminal";
-import type { LinkState } from "../../lib/attachStatus";
-import { forgetPane, lastPaneOf, rememberPane } from "../../lib/lastPane";
-import { reconcileOrder } from "../../lib/paneOrder";
-import { applyRecovery, type RecoveryByPane } from "../../lib/recovery";
-import type { PaneView } from "../../lib/terminalLayout";
+import type { LinkState } from "../../lib/terminal/attachStatus";
+import { forgetPane, lastPaneOf, rememberPane } from "../../lib/terminal/lastPane";
+import { reconcileOrder } from "../../lib/terminal/paneOrder";
+import { applyRecovery, type RecoveryByPane } from "../../lib/terminal/recovery";
+import type { PaneView } from "../../lib/terminal/terminalLayout";
 import type {
   PendingTerminalWrite,
   TerminalReplayState,
-} from "../../lib/terminalReplay";
-import { queueReplayEnd } from "../../lib/terminalReplay";
-import { toast } from "../../lib/toast";
-import { applySizeOwnerUpdate } from "../../lib/sizeActivity";
+} from "../../lib/terminal/terminalReplay";
+import { queueReplayEnd } from "../../lib/terminal/terminalReplay";
+import { toast } from "../../lib/runtime/toast";
+import { applySizeOwnerUpdate } from "../../lib/terminal/sizeActivity";
 
 type Setter<T> = Dispatch<SetStateAction<T>>;
 

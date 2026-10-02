@@ -1,10 +1,10 @@
 import { useRef } from "react";
-import type { PaneView } from "../../lib/terminalLayout";
+import type { PaneView } from "../../lib/terminal/terminalLayout";
 import type { PaneSize } from "../../api/terminal";
 import {
   createTerminalReplayState,
   type PendingTerminalWrite,
-} from "../../lib/terminalReplay";
+} from "../../lib/terminal/terminalReplay";
 
 /**
  * The mutable state the terminal panel's hooks share.

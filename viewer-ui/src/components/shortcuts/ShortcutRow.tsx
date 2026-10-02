@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import type { ShortcutAction } from "../../lib/shortcutActions";
+import type { ShortcutAction } from "../../lib/shortcuts/shortcutActions";
 
 /** The keys of one shortcut, one `<kbd>` per step: the leader chord and then
  *  its follow-up key, or a standalone chord on its own. */

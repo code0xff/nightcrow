@@ -1,11 +1,11 @@
 import { useCallback, useRef } from "react";
 import type { MutableRefObject } from "react";
-import type { PaneView } from "../../lib/terminalLayout";
+import type { PaneView } from "../../lib/terminal/terminalLayout";
 import {
   advanceTouchScroll,
   beginTouchScroll,
   type TouchScroll,
-} from "../../lib/touchScroll";
+} from "../../lib/terminal/touchScroll";
 
 interface UseTouchScrollArgs {
   viewsRef: MutableRefObject<Map<number, PaneView>>;

@@ -1,25 +1,8 @@
 use crate::git::diff::{ChangedFile, RepoSnapshot};
 mod app_impl;
-mod auto_follow;
-mod commit_log_apply;
-mod commit_log_fetch;
-mod commit_log_pagination;
-mod diff_load;
-mod file_view_load;
-mod focus;
-mod git_view_manager;
-mod interaction;
-mod load_apply;
-mod load_controller;
-mod log_nav;
+mod git;
 mod navigation;
-mod repository_view;
-mod scroll;
 mod session_io;
-mod snapshot_io;
-mod terminal_ctrl;
-mod tree;
-mod tree_nav;
 
 #[cfg(test)]
 pub use crate::runtime::snapshot::SnapshotChannel;
@@ -31,10 +14,10 @@ pub use crate::runtime::terminal::TerminalState;
 pub(crate) use crate::runtime::terminal::strip_escape_sequences;
 pub use crate::ui::diff_pane::DiffPaneView;
 pub use crate::ui::file_view::{FileViewKey, FileViewState};
-pub use git_view_manager::GitViewManager;
-pub(crate) use interaction::{InteractionState, leader_label_of};
+pub use git::GitViewManager;
 #[cfg(test)]
-pub use repository_view::RepositoryView;
+pub use git::RepositoryView;
+pub(crate) use navigation::interaction::{InteractionState, leader_label_of};
 
 pub(crate) const LIST_PAGE_SIZE: usize = 10;
 pub(crate) const DIFF_PAGE_SIZE: usize = 20;

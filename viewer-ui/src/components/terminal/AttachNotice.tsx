@@ -1,4 +1,4 @@
-import { attachLabel, type AttachStatus } from "../../lib/attachStatus";
+import { attachLabel, type AttachStatus } from "../../lib/terminal/attachStatus";
 
 /**
  * What a panel holding no terminals says for itself.

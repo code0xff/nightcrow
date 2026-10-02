@@ -12,4 +12,5 @@
 
 - `viewer-ui/dist/`는 Vite가 생성하는 커밋 대상 릴리스 번들이며 Rust 서버가 바이너리에 임베드한다. 번들에 영향을 주는 소스·설정·public asset 변경 뒤에는 반드시 build하고, 최종 변경에는 소스와 일치하는 `dist` 결과를 포함한다. clean checkout에서 같은 build를 다시 실행해 `dist`에 미커밋 차이가 없어야 한다.
 - `vite.config.ts`의 relative asset base와 `/api`, `/login`, `/ws` 개발 프록시는 임베드 서버와 Vite 개발 서버 사이의 배포 계약이다. mount path나 서버 포트를 바꿀 때는 Rust route와 문서·검증을 함께 확인한다.
-- 화면 조립은 `pages/`, 재사용 UI는 `components/`, 상태·효과는 `hooks/`, API 외 순수 로직은 `lib/`에 둔다. 서버 wire 문자열을 각 hook에서 다시 해석하지 말고 `api/`의 경계에서 검증된 타입을 전달한다.
+- 화면 조립은 `pages/`, 재사용 UI는 `components/`의 기능별 디렉터리, 상태·효과는 `hooks/`의 책임별 디렉터리에 둔다. 서버 wire 계약은 `api/` 경계에서 다루고, 여러 화면이나 hook이 함께 쓰는 동작·계산 도우미는 `lib/`의 책임별 디렉터리에 둔다. `lib/`에는 React 기반 hook 의존성이 포함될 수 있으므로 순수 함수 전용 계층으로 간주하지 않는다. 서버 wire 문자열은 hook에서 다시 해석하지 말고 `api/`에서 검증된 타입을 전달한다.
+- 테스트와 harness는 대상 모듈의 기능 디렉터리에 두고, `lib/shared/`에는 여러 기능이 함께 쓰는 도우미만 둔다. 파일을 옮길 때 동적 import의 lazy-loading 경계를 유지한다.

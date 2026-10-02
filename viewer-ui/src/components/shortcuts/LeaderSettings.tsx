@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import type { ShortcutSettings } from "../../hooks/useShortcutSettings";
+import type { ShortcutSettings } from "../../hooks/shortcuts/useShortcutSettings";
 
 /**
  * The leader, and the three things that can be done to it.

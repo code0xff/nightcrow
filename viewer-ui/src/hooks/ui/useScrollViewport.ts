@@ -1,5 +1,5 @@
 import { useCallback, useLayoutEffect, useState } from "react";
-import type { ScrollViewport } from "../../lib/virtualWindow";
+import type { ScrollViewport } from "../../lib/ui/virtualWindow";
 
 const FALLBACK_HEIGHT = 600;
 

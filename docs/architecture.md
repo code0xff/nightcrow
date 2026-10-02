@@ -23,6 +23,8 @@ filesystem/git ──> per-repository runtime ──> session daemon
 | `web/` + `viewer-ui/` | HTTP/WebSocket 인증·wire·브라우저 기하와 viewer preference | JSON/SSE/terminal binary 및 DOM 렌더 |
 | `plugin/` | provider별 감지·복구 프로세스 | 제한된 NDJSON event/command |
 
+TUI의 [`app.rs`](../src/app.rs)는 crate 내부 facade로 현재 항목의 노출 범위를 유지한다. 구현은 `src/app/git/`의 Git view와 `src/app/navigation/`의 focus/input 이동으로 묶고, application wiring과 session I/O는 app 경계의 루트에 둔다. 다른 계층의 구조는 위 소유권 경계를 따르며, 세부 계약은 해당 영역의 상세 문서에 둔다.
+
 저장소 catalog는 membership(경로·순서·숨김·opaque id)과 runtime(worker·terminal hub)을 분리한다. 변경은 하나의 catalog transaction에서 membership을 계산하고 runtime을 reconcile한다. 같은 경로의 entry는 유지해 watcher·SSE·hub를 불필요하게 교체하지 않으며, retired worker의 종료는 catalog lock을 놓은 뒤 수행한다.
 
 status는 저장소별 snapshot worker가 파일시스템 변화에 반응해 읽고, 구독자가 없으면 읽거나 감시하지 않는다. 구독자가 없는 `/api/status`의 on-demand 요청만 한 번 읽을 수 있다. status payload는 최신 상태만 의미하므로 conflate할 수 있지만 terminal byte는 순서가 있는 스트림이라 버릴 수 없다. git diff/file/log 선택 로드는 `git2::Repository`를 소유하는 수명 긴 worker에서 lane별로 합치고 `(repository, generation)`이 현재 의도와 다르면 늦은 결과를 버린다. tree는 필요한 directory만 UI 경계에서 lazy-read한다.

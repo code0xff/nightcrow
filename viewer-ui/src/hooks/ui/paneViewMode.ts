@@ -8,7 +8,7 @@ import {
   defaultPaneViewMode,
   parsePaneViewMode,
   type PaneViewMode,
-} from "../../lib/paneViewMode";
+} from "../../lib/terminal/paneViewMode";
 
 const STORAGE_KEY = "nightcrow.paneViewMode";
 

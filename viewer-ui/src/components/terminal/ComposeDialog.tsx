@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { XIcon } from "../icons/actions";
-import { isSendable, sendChordLabel } from "../../lib/composeInput";
+import { isSendable, sendChordLabel } from "../../lib/terminal/composeInput";
 
 const TITLE_ID = "nc-compose-title";
 
