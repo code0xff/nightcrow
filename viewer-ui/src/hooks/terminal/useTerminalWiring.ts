@@ -94,6 +94,7 @@ export function useTerminalWiring({
     ownsSizeRef,
     sizeOwnerGenerationRef,
     pendingRef,
+    replayRef,
     zoomAskedRef,
     slotRefs,
   } = refs;
@@ -103,6 +104,7 @@ export function useTerminalWiring({
     socketRef,
     viewsRef,
     pendingRef,
+    replayRef,
     ptySizesRef,
     askedSizesRef,
     desiredSizesRef,
@@ -135,6 +137,7 @@ export function useTerminalWiring({
     viewsRef,
     bodyRefs,
     pendingRef,
+    replayRef,
     ptySizesRef,
     consumeLatches,
     setTitles,

@@ -127,6 +127,8 @@ pub struct TerminalState {
     /// the order they were asked for. See `create_pane_with`.
     pub(crate) pending_titles: std::collections::VecDeque<Option<String>>,
     pub(crate) emulators: HashMap<PaneId, PaneEmulator>,
+    /// Panes whose historical output is being replayed from a shared session.
+    pub(crate) replaying_panes: std::collections::HashSet<PaneId>,
     pub(crate) prompt_bufs: HashMap<PaneId, String>,
     /// Title animations currently being observed, keyed by stable pane id.
     title_activity: HashMap<PaneId, attention::TitleActivity>,
@@ -154,6 +156,7 @@ impl TerminalState {
             max_visible_fullscreen: MAX_VISIBLE_FULLSCREEN,
             pending_titles: std::collections::VecDeque::new(),
             emulators: HashMap::new(),
+            replaying_panes: std::collections::HashSet::new(),
             prompt_bufs: HashMap::new(),
             title_activity: HashMap::new(),
             unread_attention: false,

@@ -5,13 +5,18 @@ import type { RecoveryByPane } from "../../lib/recovery";
 import { viewerId } from "../../lib/viewerId";
 import type { PaneView } from "../../lib/terminalLayout";
 import type { PaneSize } from "../../api/terminal";
+import type {
+  PendingTerminalWrite,
+  TerminalReplayState,
+} from "../../lib/terminalReplay";
 import { handleTerminalSocketMessage } from "./terminalSocketMessages";
 
 interface UseTerminalSocketArgs {
   repo: string;
   socketRef: MutableRefObject<WebSocket | null>;
   viewsRef: MutableRefObject<Map<number, PaneView>>;
-  pendingRef: MutableRefObject<Map<number, Uint8Array[]>>;
+  pendingRef: MutableRefObject<Map<number, PendingTerminalWrite[]>>;
+  replayRef: MutableRefObject<TerminalReplayState>;
   ptySizesRef: MutableRefObject<Map<number, PaneSize>>;
   askedSizesRef: MutableRefObject<Map<number, PaneSize>>;
   desiredSizesRef: MutableRefObject<Map<number, PaneSize>>;
@@ -51,6 +56,7 @@ export function useTerminalSocket({
   socketRef,
   viewsRef,
   pendingRef,
+  replayRef,
   ptySizesRef,
   askedSizesRef,
   desiredSizesRef,
@@ -92,6 +98,7 @@ export function useTerminalSocket({
       clientIdRef,
       viewsRef,
       pendingRef,
+      replayRef,
       ptySizesRef,
       askedSizesRef,
       desiredSizesRef,
@@ -114,6 +121,8 @@ export function useTerminalSocket({
       viewsRef.current.forEach((view) => view.term.dispose());
       viewsRef.current.clear();
       pendingRef.current.clear();
+      replayRef.current.active = false;
+      replayRef.current.panes.clear();
       ptySizesRef.current.clear();
       askedSizesRef.current.clear();
       desiredSizesRef.current.clear();

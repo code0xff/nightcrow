@@ -2,7 +2,7 @@
 //! front of one, and the two sends that address a single client.
 
 use super::frame::{ServerMessage, TerminalFrame};
-use super::hub_replay::replay_pane;
+use super::hub_replay::{ReplayQueue, replay_pane};
 use super::session::{Client, ReportBudget};
 use super::{CLIENT_QUEUE_DEPTH, TerminalHub, TerminalSession};
 use crate::session::size_owner::ViewerId;
@@ -13,11 +13,11 @@ use std::time::Instant;
 
 impl TerminalHub {
     /// Register a client and put the current terminals in front of it before it
-    /// is eligible for broadcasts: per live pane, a `Created`, the modes its
-    /// program has set, and then that pane's screen (see [`replay_pane`]). Done
+    /// is eligible for broadcasts: `Hello`, optional zoom, each live pane's
+    /// `Created` and screen (see [`replay_pane`]), then `ReplayComplete`. Done
     /// under the state lock so this snapshot cannot interleave with the worker's
-    /// append-and-broadcast — the client receives every pane's screen exactly
-    /// once, in order, ahead of the live stream.
+    /// append-and-broadcast — the client receives the replay boundary ahead of
+    /// ownership verdicts and the live stream.
     ///
     /// `viewer` names who this connection belongs to and `arriving` records the
     /// client's new-screen/reconnect distinction; connecting never preempts an
@@ -32,8 +32,9 @@ impl TerminalHub {
         socket: Option<std::net::TcpStream>,
     ) -> TerminalSession {
         let id = self.next_client_id.fetch_add(1, Ordering::AcqRel);
-        let (tx, rx) = mpsc::sync_channel(CLIENT_QUEUE_DEPTH);
+        let (tx, rx) = mpsc::sync_channel(CLIENT_QUEUE_DEPTH + 1);
         let mut state = self.state.lock().expect("terminal state poisoned");
+        let mut replay_queue = ReplayQueue::new(&tx);
         // A hub whose worker has stopped (its repo was retired) still lingers
         // behind the `Arc` a racing connection resolved, but its panes are dead
         // and will never emit another frame. Skip the replay so the client is
@@ -50,7 +51,7 @@ impl TerminalHub {
             client: id,
             panes: to_replay,
         }) {
-            let _ = tx.try_send(TerminalFrame::Control(json));
+            replay_queue.send(TerminalFrame::Control(json));
         }
         if replaying {
             // Ahead of the panes, though it names one of them. Replaying
@@ -66,7 +67,7 @@ impl TerminalHub {
             if let Some(pane) = state.zoomed
                 && let Ok(json) = serde_json::to_string(&ServerMessage::Zoomed { pane: Some(pane) })
             {
-                let _ = tx.try_send(TerminalFrame::Control(json));
+                replay_queue.send(TerminalFrame::Control(json));
             }
             for pane in &state.panes {
                 // The shape of what was replayed, so a client that reports an
@@ -86,7 +87,7 @@ impl TerminalHub {
                     cols = pane.cols,
                     "viewer: replaying a pane's record"
                 );
-                if !replay_pane(&tx, pane) {
+                if !replay_pane(&mut replay_queue, pane) {
                     // The queue is this client's own and empty until now, and
                     // a whole replay of the largest panes allowed fits it —
                     // so this is a broken assumption, not a busy moment.
@@ -98,6 +99,10 @@ impl TerminalHub {
                 }
             }
         }
+        let replay_complete = serde_json::to_string(&ServerMessage::ReplayComplete)
+            .expect("replay-complete control serializes");
+        tx.try_send(TerminalFrame::Control(replay_complete))
+            .expect("initial replay reserved a queue slot for its completion marker");
         // Registered with the session while the hub's lock is still held, so a
         // resize cannot reach `resize_pane` before this connection is known to
         // the ownership it is about to be judged against.
