@@ -14,6 +14,29 @@ export function defaultPaneViewMode(viewportWidth: number): PaneViewMode {
   return viewportWidth < GRID_MIN_VIEWPORT_PX ? "tabs" : "grid";
 }
 
+/** Whether this width offers a choice at all. */
+export function canChoosePaneViewMode(viewportWidth: number): boolean {
+  return viewportWidth >= GRID_MIN_VIEWPORT_PX;
+}
+
+/**
+ * The arrangement to draw: tabs below `md` whatever was stored, the stored
+ * choice above it, the default where nothing was stored.
+ *
+ * Below `md` this is not a preference to respect but a layout that does not
+ * work. A split grid hands each pane fewer columns than a command line needs,
+ * and a PTY has one size for the whole session — a phone that took the sizing
+ * in a grid would narrow every other screen's panes along with its own. The
+ * stored choice is kept, not cleared, so widening the window gives it back.
+ */
+export function resolvePaneViewMode(
+  stored: PaneViewMode | null,
+  viewportWidth: number,
+): PaneViewMode {
+  if (!canChoosePaneViewMode(viewportWidth)) return "tabs";
+  return stored ?? defaultPaneViewMode(viewportWidth);
+}
+
 /** What was stored, or null for anything this version does not recognise. */
 export function parsePaneViewMode(raw: string | null): PaneViewMode | null {
   return raw === "grid" || raw === "tabs" ? raw : null;

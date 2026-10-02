@@ -5,8 +5,9 @@
 import { useCallback, useEffect, useState } from "react";
 import {
   GRID_MIN_VIEWPORT_PX,
-  defaultPaneViewMode,
+  canChoosePaneViewMode,
   parsePaneViewMode,
+  resolvePaneViewMode,
   type PaneViewMode,
 } from "../../lib/terminal/paneViewMode";
 
@@ -51,13 +52,17 @@ export function usePaneViewMode() {
     return () => window.removeEventListener("resize", apply);
   }, []);
 
-  const mode = override ?? defaultPaneViewMode(width);
+  const mode = resolvePaneViewMode(override, width);
+  const canToggle = canChoosePaneViewMode(width);
 
   const toggle = useCallback(() => {
+    // Nothing to choose below `md`; a stored choice made there would come back
+    // as a surprise on the next wide screen.
+    if (!canToggle) return;
     const next: PaneViewMode = mode === "tabs" ? "grid" : "tabs";
     store(next);
     setOverride(next);
-  }, [mode]);
+  }, [mode, canToggle]);
 
-  return { mode, toggle };
+  return { mode, toggle, canToggle };
 }

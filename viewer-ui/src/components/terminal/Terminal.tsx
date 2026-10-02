@@ -68,7 +68,7 @@ export function TerminalPanel({
   // state its pane list does not support at all. See `lib/zoom.ts`.
   const zoom = renderedZoom(zoomed, panes);
   const bodyTouch = useTouchScroll({ viewsRef, bodyRefs });
-  const { mode, toggle: toggleMode } = usePaneViewMode();
+  const { mode, toggle: toggleMode, canToggle: canToggleMode } = usePaneViewMode();
   const keyBar = useTermKeyBar();
   const ctrl = useCtrlLatch();
   const alt = useAltLatch();
@@ -212,6 +212,7 @@ export function TerminalPanel({
       <PanelToolbar
         mode={mode}
         onToggleMode={toggleMode}
+        canToggleMode={canToggleMode}
         tabs={
           tabs && panes.length > 0 ? (
             <PaneTabs
