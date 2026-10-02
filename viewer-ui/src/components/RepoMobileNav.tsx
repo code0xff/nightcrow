@@ -34,7 +34,7 @@ export function RepoMobileNav({
           key={key}
           onClick={() => onSelect(key)}
           aria-current={view === key ? "page" : undefined}
-          className={`flex min-h-11 flex-1 flex-col items-center justify-center gap-0.5 py-1 text-[11px] ${
+          className={`flex min-h-11 flex-1 flex-col items-center justify-center gap-0.5 py-1 text-xs ${
             view === key
               ? "text-accent shadow-[inset_0_2px_0_0_var(--color-accent)]"
               : "text-ink-400"

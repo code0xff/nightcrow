@@ -109,7 +109,7 @@ export function SettingsMenu({
           role="dialog"
           aria-labelledby={TITLE_ID}
           tabIndex={-1}
-          className="fixed right-2 top-[50px] z-50 flex max-h-[calc(100vh-3.75rem)] w-72 max-w-[calc(100vw-1rem)] flex-col overflow-y-auto rounded-md border border-ink-700 bg-ink-900 shadow-xl focus:outline-none"
+          className="fixed right-2 top-[calc(var(--nc-header-h)+8px)] z-50 flex max-h-[calc(100vh-3.75rem)] w-72 max-w-[calc(100vw-1rem)] flex-col overflow-y-auto rounded-md border border-ink-700 bg-ink-900 shadow-xl focus:outline-none"
           style={{ maxHeight: "calc(100dvh - 3.75rem)" }}
         >
           <div className="border-b border-ink-700 px-3 py-2">

@@ -28,7 +28,7 @@ export function Login({ onSuccess }: { onSuccess: () => void }) {
         <h1 className="text-center text-lg font-medium tracking-wide text-ink-50">
           nightcrow
         </h1>
-        <p className="mt-1 mb-5 text-center text-[0.62rem] tracking-[0.18em] text-ink-400 uppercase">
+        <p className="mt-1 mb-5 text-center text-caption text-ink-400 uppercase">
           web viewer
         </p>
         {error && <p className="mb-2.5 text-center text-removed">{error}</p>}

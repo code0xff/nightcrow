@@ -32,7 +32,7 @@ export function AttachNotice({ status }: { status: AttachStatus }) {
       {/* The pulse carries the label, not just the dot beside it: a 6px dot
           breathing in the middle of an empty panel is easy to read as part of
           the layout, and the thing worth noticing is the sentence. */}
-      <span className="flex animate-pulse items-center gap-2 text-[0.72rem] tracking-[0.18em] text-ink-400 uppercase">
+      <span className="flex animate-pulse items-center gap-2 text-caption text-ink-400 uppercase">
         <span className="h-1.5 w-1.5 rounded-full bg-accent" />
         {label}
       </span>

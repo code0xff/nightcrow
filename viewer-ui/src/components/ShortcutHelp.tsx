@@ -123,7 +123,7 @@ export function ShortcutHelp({
         <div className="min-h-0 flex-1 overflow-y-auto py-1">
           {GROUPS.map(({ group, actions }) => (
             <section key={group}>
-              <h3 className="px-3 py-1 text-[0.7rem] uppercase tracking-[0.14em] text-ink-400">
+              <h3 className="px-3 py-1 text-caption uppercase text-ink-400">
                 {GROUP_TITLES[group]}
               </h3>
               <ul>
@@ -144,7 +144,7 @@ export function ShortcutHelp({
               deliberate part of this binding, and a sheet that simply omitted
               them would read as unfinished. */}
           <section>
-            <h3 className="px-3 py-1 text-[0.7rem] uppercase tracking-[0.14em] text-ink-400">
+            <h3 className="px-3 py-1 text-caption uppercase text-ink-400">
               Not bound in the browser
             </h3>
             <ul>

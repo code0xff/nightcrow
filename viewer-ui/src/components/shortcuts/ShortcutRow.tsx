@@ -67,17 +67,17 @@ export function ShortcutRow({
       <span className="flex w-full items-baseline gap-2">
         <span className="min-w-0 flex-1 text-ink-50">{action.label}</span>
         {action.support === "reinterpreted" && (
-          <span className="shrink-0 rounded-sm bg-ink-700 px-1 text-[0.65rem] uppercase tracking-wide text-ink-200">
+          <span className="shrink-0 rounded-sm bg-ink-700 px-1 text-2xs uppercase tracking-wide text-ink-200">
             reinterpreted
           </span>
         )}
         {action.support === "browserOnly" && (
-          <span className="shrink-0 rounded-sm bg-ink-700 px-1 text-[0.65rem] uppercase tracking-wide text-ink-200">
+          <span className="shrink-0 rounded-sm bg-ink-700 px-1 text-2xs uppercase tracking-wide text-ink-200">
             browser only
           </span>
         )}
         {!available && (
-          <span className="shrink-0 text-[0.65rem] uppercase tracking-wide text-ink-400">
+          <span className="shrink-0 text-2xs uppercase tracking-wide text-ink-400">
             not available here
           </span>
         )}

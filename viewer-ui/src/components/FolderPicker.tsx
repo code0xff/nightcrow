@@ -120,7 +120,7 @@ export function FolderPicker({
               >
                 <span className="truncate text-accent">{e.name}/</span>
                 {e.is_repo && (
-                  <span className="rounded-sm bg-ink-700 px-1 text-[0.65rem] text-ink-200">
+                  <span className="rounded-sm bg-ink-700 px-1 text-2xs text-ink-200">
                     git
                   </span>
                 )}
