@@ -126,6 +126,11 @@ pub struct StatusDto {
     /// Unmerged files, counted before `files` is capped.
     #[serde(skip_serializing_if = "is_zero")]
     pub conflicts: usize,
+    /// Digest over every ref name and target, in hex. A push or fetch moves a
+    /// branch without moving HEAD, and the client's log decorations need to
+    /// hear about it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub refs: Option<String>,
 }
 
 fn is_zero(n: &usize) -> bool {
@@ -180,6 +185,7 @@ impl StatusDto {
             truncated: capped.truncated,
             operation: None,
             conflicts: 0,
+            refs: None,
         }
     }
 
@@ -191,6 +197,12 @@ impl StatusDto {
     ) -> Self {
         self.operation = operation.map(OperationDto::from);
         self.conflicts = conflicts;
+        self
+    }
+
+    /// Attach the refs digest the snapshot computed.
+    pub fn with_refs(mut self, fingerprint: u64) -> Self {
+        self.refs = Some(format!("{fingerprint:016x}"));
         self
     }
 }

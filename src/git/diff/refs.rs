@@ -52,6 +52,22 @@ impl LogDecorations {
     pub fn is_head(&self, oid: Oid) -> bool {
         self.head == Some(oid)
     }
+
+    /// Every decorated commit with its labels, for a client that keeps the
+    /// decorations apart from the rows they mark.
+    pub fn all_labels(&self) -> impl Iterator<Item = (&Oid, &[RefLabel])> {
+        self.labels
+            .iter()
+            .map(|(oid, labels)| (oid, labels.as_slice()))
+    }
+
+    pub fn ahead_oids(&self) -> impl Iterator<Item = &Oid> {
+        self.ahead.iter()
+    }
+
+    pub fn behind_oids(&self) -> impl Iterator<Item = &Oid> {
+        self.behind.iter()
+    }
 }
 
 /// Cheap summary of every ref's name and target, to decide whether

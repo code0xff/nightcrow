@@ -25,7 +25,7 @@ pub use envelope::ViewFileDto;
 pub use envelope::{Envelope, HotConfigDto, RepoDto, RepoViewDto, ViewerBootstrapDto};
 #[cfg(test)]
 pub use log::{CommitDto, RefDto};
-pub use log::{CommitFilesDto, LogDto};
+pub use log::{CommitFilesDto, LogDecorationsDto, LogDto};
 pub use status::{BrowseDto, BrowseEntryDto, StatusDto};
 #[cfg(test)]
 pub use status::{ChangedFileDto, OperationDto, TrackingDto, server_now_millis};

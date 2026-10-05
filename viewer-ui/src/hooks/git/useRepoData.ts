@@ -2,6 +2,7 @@ import { useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { HotConfig } from "../../api";
 import type { Pane, Tab } from "../../types";
 import { useHotClock } from "../ui/useHotClock";
+import { useLogDecorations } from "./useLogDecorations";
 import { useLog } from "./useLog";
 import { useStatus } from "./useStatus";
 
@@ -59,6 +60,14 @@ export function useRepoData({
     head: status ? (status.head ?? null) : undefined,
     handle,
   });
+  const decorations = useLogDecorations({
+    repo,
+    authed,
+    tab,
+    head: status ? (status.head ?? null) : undefined,
+    branch: status?.branch,
+    refs: status?.refs,
+  });
 
   useLayoutEffect(() => {
     bumpPaneRequest();
@@ -88,6 +97,6 @@ export function useRepoData({
     screen: { tab, setTab, filter, setFilter, filterOpen, setFilterOpen, pane, setPane },
     request: { paneRequestRef, bumpPaneRequest, clearPane },
     status: { value: status, files, now, hotWindowMs },
-    log: { ...log, visibleCommitFiles },
+    log: { ...log, decorations, visibleCommitFiles },
   };
 }

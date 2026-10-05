@@ -3,6 +3,7 @@ use crate::git::diff::{ChangedFile, CommitEntry, LogDecorations, RefKind};
 use crate::web::viewer::limits::{self, Capped};
 use git2::Oid;
 use serde::Serialize;
+use std::collections::BTreeMap;
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub struct CommitDto {
@@ -12,13 +13,6 @@ pub struct CommitDto {
     pub author: String,
     /// Unix seconds. Formatting is the client's business.
     pub time: i64,
-    /// Refs pointing at this commit, most orienting first (HEAD, local
-    /// branches, tags, remote branches) — the order the TUI's chips use.
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub refs: Vec<RefDto>,
-    /// `"ahead"` of the upstream or `"behind"` it; absent when neither.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub divergence: Option<&'static str>,
     #[serde(skip_serializing_if = "is_false")]
     pub merge: bool,
 }
@@ -35,9 +29,8 @@ pub struct RefDto {
     pub name: String,
 }
 
-impl CommitDto {
-    /// One log row, decorated the way the TUI's commit list is.
-    pub fn decorated(c: &CommitEntry, decorations: &LogDecorations) -> Self {
+impl From<&CommitEntry> for CommitDto {
+    fn from(c: &CommitEntry) -> Self {
         // `summary_lower` is deliberately absent: it is a TUI filter cache.
         Self {
             oid: c.oid.to_string(),
@@ -45,27 +38,57 @@ impl CommitDto {
             summary: c.summary.clone(),
             author: c.author.clone(),
             time: c.time,
-            refs: decorations
-                .labels_for(c.oid)
-                .iter()
-                .map(|label| RefDto {
-                    kind: match label.kind {
-                        RefKind::Head => "head",
-                        RefKind::LocalBranch => "local",
-                        RefKind::Tag => "tag",
-                        RefKind::RemoteBranch => "remote",
-                    },
-                    name: label.name.clone(),
+            merge: c.is_merge(),
+        }
+    }
+}
+
+/// Which refs point at which commits, and which commits stand ahead of or
+/// behind the upstream — for the whole repository, not for one page.
+///
+/// Apart from the log pages on purpose. The history a page describes does not
+/// change once walked, but its decorations do whenever a ref moves: a push,
+/// a fetch, a branch switch at the same commit. Carried on each row, they went
+/// stale on every row already loaded; here the client replaces them wholesale.
+#[derive(Debug, Clone, Serialize)]
+pub struct LogDecorationsDto {
+    /// Oid → labels, most orienting first (HEAD, local, tag, remote).
+    pub refs: BTreeMap<String, Vec<RefDto>>,
+    /// Commits on this branch the upstream lacks, capped by the walk.
+    pub ahead: Vec<String>,
+    /// Commits on the upstream this branch lacks, capped by the walk.
+    pub behind: Vec<String>,
+}
+
+impl From<&LogDecorations> for LogDecorationsDto {
+    fn from(d: &LogDecorations) -> Self {
+        // Sorted so the payload is the same bytes for the same refs.
+        fn sorted<'a>(oids: impl Iterator<Item = &'a Oid>) -> Vec<String> {
+            let mut out: Vec<String> = oids.map(Oid::to_string).collect();
+            out.sort();
+            out
+        }
+        Self {
+            refs: d
+                .all_labels()
+                .map(|(oid, labels)| {
+                    let chips = labels
+                        .iter()
+                        .map(|label| RefDto {
+                            kind: match label.kind {
+                                RefKind::Head => "head",
+                                RefKind::LocalBranch => "local",
+                                RefKind::Tag => "tag",
+                                RefKind::RemoteBranch => "remote",
+                            },
+                            name: label.name.clone(),
+                        })
+                        .collect();
+                    (oid.to_string(), chips)
                 })
                 .collect(),
-            divergence: if decorations.is_ahead(c.oid) {
-                Some("ahead")
-            } else if decorations.is_behind(c.oid) {
-                Some("behind")
-            } else {
-                None
-            },
-            merge: c.is_merge(),
+            ahead: sorted(d.ahead_oids()),
+            behind: sorted(d.behind_oids()),
         }
     }
 }
@@ -115,18 +138,10 @@ impl LogDto {
     ///
     /// `anchor` is the commit the walk started from, echoed to the client so
     /// its next request describes the same history.
-    pub fn from_entries(
-        entries: &[CommitEntry],
-        anchor: Option<Oid>,
-        decorations: &LogDecorations,
-    ) -> Self {
+    pub fn from_entries(entries: &[CommitEntry], anchor: Option<Oid>) -> Self {
         let capped = Capped::new(entries.to_vec(), limits::MAX_LOG_PAGE);
         Self {
-            commits: capped
-                .items
-                .iter()
-                .map(|c| CommitDto::decorated(c, decorations))
-                .collect(),
+            commits: capped.items.iter().map(CommitDto::from).collect(),
             truncated: capped.truncated,
             head: anchor.map(|oid| oid.to_string()),
         }

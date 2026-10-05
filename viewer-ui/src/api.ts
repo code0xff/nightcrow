@@ -12,6 +12,7 @@ import type {
   Diff,
   FileView,
   Log,
+  LogDecorations,
   EditPreviewToken,
   Reloaded,
   Repo,
@@ -159,6 +160,9 @@ export const api = {
           : { repo },
       )}`,
     ),
+  /** Refs and upstream divergence for the whole repository. */
+  logDecorations: (repo: string, signal?: AbortSignal) =>
+    get<LogDecorations>(`/api/log/decorations?${query({ repo })}`, signal),
   diff: (repo: string, path: string) =>
     get<Diff>(`/api/diff?${query({ repo, path })}`),
   file: (repo: string, path: string) =>

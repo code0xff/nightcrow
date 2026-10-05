@@ -1,3 +1,4 @@
+import type { Decorations } from "../../hooks/git/useLogDecorations";
 import { useEffect, useRef } from "react";
 import type { PointerEvent as ReactPointerEvent } from "react";
 import { focusRegionAttrs } from "../../lib/shortcuts/shortcutDom";
@@ -52,6 +53,8 @@ export interface SidebarProps {
   setCommitDrillDown: (v: CommitDrillDown | null) => void;
   logSentinelRef: React.RefObject<HTMLLIElement | null>;
   visibleCommits: Commit[];
+  /** The log's ref chips and ahead/behind marks, repository-wide. */
+  decorations: Decorations;
   logPagingPaused: boolean;
   visibleCommitFiles: CommitDrillDown["files"];
   mobileView: MobileView;
@@ -112,6 +115,7 @@ export function Sidebar(props: SidebarProps) {
     setCommitDrillDown,
     logSentinelRef,
     visibleCommits,
+    decorations,
     logPagingPaused,
     visibleCommitFiles,
     mobileView,
@@ -230,6 +234,7 @@ export function Sidebar(props: SidebarProps) {
         {tab === "log" && (
           <LogList
             visibleCommits={visibleCommits}
+            decorations={decorations}
             commits={commits}
             commitDrillDown={commitDrillDown}
             visibleCommitFiles={visibleCommitFiles}

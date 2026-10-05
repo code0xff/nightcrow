@@ -106,12 +106,14 @@ fn wire_fixture() -> serde_json::Value {
                 total: Some(5),
             }),
             conflicts: 1,
+            refs: Some("00c0ffee00c0ffee".to_string()),
         },
         "log": super::fixture_log::log_page(),
+        "logDecorations": super::fixture_log::decorations(),
         // A repository with no commits: no anchor to page from, which is
         // also how the client learns there is nothing more. Present so the
         // absent `head` is pinned as well as the populated one.
-        "logEmpty": LogDto::from_entries(&[], None, &Default::default()),
+        "logEmpty": LogDto::from_entries(&[], None),
         "commitFiles": CommitFilesDto {
             files: vec![renamed],
             truncated: true,

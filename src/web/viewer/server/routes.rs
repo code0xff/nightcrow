@@ -8,8 +8,8 @@ use super::mutations::redact;
 use crate::git::diff;
 use crate::web::common::http::RequestHead;
 use crate::web::viewer::dto::{
-    BrowseDto, BrowseEntryDto, CommitFilesDto, DiffDto, Envelope, FileDto, HotConfigDto, LogDto,
-    StatusDto, TreeDto, TreeSearchDto, ViewerBootstrapDto,
+    BrowseDto, BrowseEntryDto, CommitFilesDto, DiffDto, Envelope, FileDto, HotConfigDto,
+    LogDecorationsDto, LogDto, StatusDto, TreeDto, TreeSearchDto, ViewerBootstrapDto,
 };
 use crate::web::viewer::limits;
 
@@ -180,14 +180,18 @@ pub(super) fn route(head: &RequestHead, state: &ViewerState) -> Vec<u8> {
             };
             Ok(json_response(
                 "200 OK",
-                // Rebuilt per page rather than cached: it is a walk of the
-                // refs alone, and a fetch can move one between two pages.
-                // A failure costs the chips, not the history.
-                &encode(&LogDto::from_entries(
-                    &commits,
-                    anchor,
-                    &diff::load_log_decorations(&repo).unwrap_or_default(),
-                ))?,
+                &encode(&LogDto::from_entries(&commits, anchor))?,
+                &[],
+            ))
+        }),
+        // The log's decorations, for the whole repository at once — see
+        // `LogDecorationsDto` for why they are not on the pages.
+        "/api/log/decorations" => with_repo(head, state, |entry| {
+            let repo = open_repo(&entry.path)?;
+            let decorations = diff::load_log_decorations(&repo)?;
+            Ok(json_response(
+                "200 OK",
+                &encode(&LogDecorationsDto::from(&decorations))?,
                 &[],
             ))
         }),
