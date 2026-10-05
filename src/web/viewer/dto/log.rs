@@ -58,9 +58,10 @@ pub struct LogDecorationsDto {
     pub ahead: Vec<String>,
     /// Commits on the upstream this branch lacks, capped by the walk.
     pub behind: Vec<String>,
-    /// True when `refs` was cut at [`limits::MAX_LOG_DECORATION_REFS`]. The
-    /// cut drops remote branches before tags before local ones, and never the
-    /// branch HEAD is on.
+    /// True when anything here is incomplete: `refs` cut at
+    /// [`limits::MAX_LOG_DECORATION_REFS`] (remote branches first, then tags,
+    /// never the branch HEAD is on), or `ahead`/`behind` stopped at the walk's
+    /// own cap, so a commit missing from them may still be on that side.
     pub truncated: bool,
 }
 
@@ -85,7 +86,7 @@ impl LogDecorationsDto {
                 .cmp(&b.1.kind)
                 .then_with(|| a.1.name.cmp(&b.1.name))
         });
-        let truncated = all.len() > cap;
+        let truncated = all.len() > cap || d.divergence_capped();
         all.truncate(cap);
 
         let mut refs: BTreeMap<String, Vec<RefDto>> = BTreeMap::new();

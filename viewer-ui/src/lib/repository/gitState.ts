@@ -11,6 +11,7 @@ const OPERATION_LABEL: Record<NonNullable<Status["operation"]>["kind"], string> 
   "cherry-pick": "CHERRY-PICKING",
   revert: "REVERTING",
   bisect: "BISECTING",
+  am: "APPLYING",
 };
 
 /**

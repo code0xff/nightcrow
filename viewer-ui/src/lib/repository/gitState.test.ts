@@ -17,6 +17,7 @@ describe("operationText", () => {
   it("단계가_없으면_상태만_말한다", () => {
     expect(operationText({ operation: { kind: "merge" } })).toBe("MERGING");
     expect(operationText({ operation: { kind: "cherry-pick" } })).toBe("CHERRY-PICKING");
+    expect(operationText({ operation: { kind: "am", step: 1, total: 3 } })).toBe("APPLYING 1/3");
   });
 
   it("충돌_수는_작업_뒤에_붙고_혼자서도_나온다", () => {

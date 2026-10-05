@@ -137,6 +137,14 @@ describe("useLogDecorations", () => {
     expect(fetchMarks).toHaveBeenCalledTimes(1);
   });
 
+  it("잘린_응답은_잘렸다고_알린다", async () => {
+    fetchMarks.mockResolvedValueOnce(marks({ truncated: true }));
+    const { result } = render({ head: "a", branch: "dev", refs: "r1" });
+    await settle();
+
+    expect(result.current.truncated).toBe(true);
+  });
+
   it("상태가_오기_전에는_묻지_않는다", async () => {
     render({ head: undefined, branch: undefined, refs: undefined });
     await settle();

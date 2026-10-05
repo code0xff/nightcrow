@@ -80,3 +80,33 @@ fn a_cherry_pick_head_is_a_cherry_pick() {
         Some(OperationKind::CherryPick)
     );
 }
+
+#[test]
+fn a_stopped_git_am_is_not_called_a_rebase() {
+    // Its way out is `git am --continue`, not the rebase commands.
+    let dir = tempfile::TempDir::new().unwrap();
+    let repo = repo_with_commit(dir.path());
+    let state = repo.path().join("rebase-apply");
+    std::fs::create_dir(&state).unwrap();
+    std::fs::write(state.join("applying"), "").unwrap();
+    std::fs::write(state.join("next"), "1\n").unwrap();
+    std::fs::write(state.join("last"), "3\n").unwrap();
+
+    let op = current_operation(&repo).unwrap();
+    assert_eq!(op.kind, OperationKind::ApplyMailbox);
+    assert_eq!(op.text(), "APPLYING 1/3");
+}
+
+#[test]
+fn a_rebase_apply_without_the_am_marker_is_a_rebase() {
+    let dir = tempfile::TempDir::new().unwrap();
+    let repo = repo_with_commit(dir.path());
+    let state = repo.path().join("rebase-apply");
+    std::fs::create_dir(&state).unwrap();
+    std::fs::write(state.join("rebasing"), "").unwrap();
+
+    assert_eq!(
+        current_operation(&repo).map(|op| op.kind),
+        Some(OperationKind::Rebase)
+    );
+}

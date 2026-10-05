@@ -23,6 +23,9 @@ export interface UseLogDecorationsArgs {
 export interface Decorations {
   refsOf: (oid: string) => CommitRef[] | undefined;
   divergenceOf: (oid: string) => "ahead" | "behind" | undefined;
+  /** The server cut the answer short, so a missing chip or arrow is not proof
+   *  of an absent ref or a level commit. */
+  truncated: boolean;
 }
 
 const EMPTY: LogDecorations = {
@@ -91,6 +94,7 @@ export function useLogDecorations({
       refsOf: (oid) => current.refs[oid],
       divergenceOf: (oid) =>
         ahead.has(oid) ? "ahead" : behind.has(oid) ? "behind" : undefined,
+      truncated: current.truncated,
     };
   }, [current]);
 }

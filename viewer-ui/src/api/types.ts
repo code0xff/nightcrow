@@ -121,7 +121,7 @@ export interface ViewerBootstrap {
 /** A merge, rebase or similar that stopped and is waiting. `step`/`total`
  *  only for a rebase whose counters git recorded. */
 export interface RepoOperation {
-  kind: "merge" | "rebase" | "cherry-pick" | "revert" | "bisect";
+  kind: "merge" | "rebase" | "cherry-pick" | "revert" | "bisect" | "am";
   step?: number;
   total?: number;
 }
@@ -164,7 +164,8 @@ export interface LogDecorations {
   refs: Record<string, CommitRef[]>;
   ahead: string[];
   behind: string[];
-  /** The refs were cut at the server's ceiling, least orienting kinds first. */
+  /** Something here is incomplete: refs cut at the server's ceiling (least
+   *  orienting kinds first), or a divergence walk stopped at its cap. */
   truncated: boolean;
 }
 

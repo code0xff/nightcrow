@@ -13,6 +13,9 @@ pub enum OperationKind {
     CherryPick,
     Revert,
     Bisect,
+    /// `git am`, stopped on a patch. Distinct from a rebase because getting
+    /// out of it is `git am --continue` / `--abort`, not the rebase commands.
+    ApplyMailbox,
 }
 
 impl OperationKind {
@@ -25,6 +28,7 @@ impl OperationKind {
             Self::CherryPick => "CHERRY-PICKING",
             Self::Revert => "REVERTING",
             Self::Bisect => "BISECTING",
+            Self::ApplyMailbox => "APPLYING",
         }
     }
 
@@ -36,6 +40,7 @@ impl OperationKind {
             Self::CherryPick => "cherry-pick",
             Self::Revert => "revert",
             Self::Bisect => "bisect",
+            Self::ApplyMailbox => "am",
         }
     }
 }
@@ -69,12 +74,20 @@ pub fn current_operation(repo: &Repository) -> Option<Operation> {
         RepositoryState::Bisect => OperationKind::Bisect,
         RepositoryState::Rebase
         | RepositoryState::RebaseInteractive
-        | RepositoryState::RebaseMerge
-        | RepositoryState::ApplyMailbox
-        | RepositoryState::ApplyMailboxOrRebase => OperationKind::Rebase,
+        | RepositoryState::RebaseMerge => OperationKind::Rebase,
+        RepositoryState::ApplyMailbox => OperationKind::ApplyMailbox,
+        // libgit2 cannot tell from `rebase-apply/` alone; `git am` marks its
+        // own use of the directory with an `applying` file.
+        RepositoryState::ApplyMailboxOrRebase => {
+            if repo.path().join("rebase-apply").join("applying").exists() {
+                OperationKind::ApplyMailbox
+            } else {
+                OperationKind::Rebase
+            }
+        }
     };
     let progress = match kind {
-        OperationKind::Rebase => rebase_progress(repo.path()),
+        OperationKind::Rebase | OperationKind::ApplyMailbox => rebase_progress(repo.path()),
         _ => None,
     };
     Some(Operation { kind, progress })

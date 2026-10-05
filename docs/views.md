@@ -20,7 +20,7 @@ Paths matched by `.gitignore` are hidden by default. `[tree] respect_gitignore`,
 
 ## Notice row
 
-The header identifies the selected repository, branch, and tracked-branch ahead/behind counts. While git is stopped in the middle of something it says so ahead of the counts — `MERGING`, `REBASING 2/5`, `CHERRY-PICKING`, `REVERTING` or `BISECTING`, with the number of unmerged files after it (`· 3 conflicts`); conflicts left by a stash pop or checkout are shown on their own. The web viewer shows the same in its footer. Errors from Git, a diff load, terminal creation, or repository selection appear in the notice row until resolved or dismissed by app input. Repository-dialog validation messages appear below the dialog.
+The header identifies the selected repository, branch, and tracked-branch ahead/behind counts. While git is stopped in the middle of something it says so ahead of the counts — `MERGING`, `REBASING 2/5`, `CHERRY-PICKING`, `REVERTING`, `BISECTING` or `APPLYING` (a stopped `git am`), with the number of unmerged files after it (`· 3 conflicts`); conflicts left by a stash pop or checkout are shown on their own. The web viewer shows the same in its footer. Errors from Git, a diff load, terminal creation, or repository selection appear in the notice row until resolved or dismissed by app input. Repository-dialog validation messages appear below the dialog.
 
 ## The repo dialog
 

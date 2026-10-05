@@ -5,7 +5,7 @@
 
 import type { CommitRef, LogDecorations, RepoOperation } from "./api";
 
-const OPERATIONS = ["merge", "rebase", "cherry-pick", "revert", "bisect"] as const;
+const OPERATIONS = ["merge", "rebase", "cherry-pick", "revert", "bisect", "am"] as const;
 const REF_KINDS = ["head", "local", "tag", "remote"] as const;
 
 type Same<A, B> = [A] extends [B] ? ([B] extends [A] ? true : never) : never;

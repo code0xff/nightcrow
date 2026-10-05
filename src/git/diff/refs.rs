@@ -34,6 +34,8 @@ pub struct LogDecorations {
     ahead: HashSet<Oid>,
     behind: HashSet<Oid>,
     head: Option<Oid>,
+    /// Whether either divergence side hit `MAX_DIVERGENCE_OIDS` and stopped.
+    divergence_capped: bool,
 }
 
 impl LogDecorations {
@@ -67,6 +69,12 @@ impl LogDecorations {
 
     pub fn behind_oids(&self) -> impl Iterator<Item = &Oid> {
         self.behind.iter()
+    }
+
+    /// True when the ahead or behind set was cut short, so a commit missing
+    /// from it may still be on that side.
+    pub fn divergence_capped(&self) -> bool {
+        self.divergence_capped
     }
 }
 
@@ -160,18 +168,21 @@ pub fn load_log_decorations(repo: &Repository) -> Result<LogDecorations> {
         chips.sort_by(|a, b| a.kind.cmp(&b.kind).then_with(|| a.name.cmp(&b.name)));
     }
 
-    let (ahead, behind) = divergence_oids(repo).unwrap_or_default();
+    let ((ahead, ahead_capped), (behind, behind_capped)) =
+        divergence_oids(repo).unwrap_or_default();
     Ok(LogDecorations {
         labels,
         ahead,
         behind,
         head,
+        divergence_capped: ahead_capped || behind_capped,
     })
 }
 
 /// Oids on exactly one side of the HEAD/upstream split. `None` when HEAD is
 /// detached, unborn, or has no upstream — nothing to diverge from, not an error.
-fn divergence_oids(repo: &Repository) -> Option<(HashSet<Oid>, HashSet<Oid>)> {
+#[allow(clippy::type_complexity)]
+fn divergence_oids(repo: &Repository) -> Option<((HashSet<Oid>, bool), (HashSet<Oid>, bool))> {
     let head = repo.head().ok()?;
     if !head.is_branch() {
         return None;
@@ -184,13 +195,22 @@ fn divergence_oids(repo: &Repository) -> Option<(HashSet<Oid>, HashSet<Oid>)> {
     ))
 }
 
-/// Commits reachable from `from` but not from `hidden` — `git rev-list from ^hidden`.
-fn exclusive_oids(repo: &Repository, from: Oid, hidden: Oid) -> HashSet<Oid> {
+/// Commits reachable from `from` but not from `hidden` — `git rev-list from ^hidden`
+/// — and whether the walk was cut at `MAX_DIVERGENCE_OIDS`.
+fn exclusive_oids(repo: &Repository, from: Oid, hidden: Oid) -> (HashSet<Oid>, bool) {
     let Ok(mut revwalk) = repo.revwalk() else {
-        return HashSet::new();
+        return (HashSet::new(), false);
     };
     if revwalk.push(from).is_err() || revwalk.hide(hidden).is_err() {
-        return HashSet::new();
+        return (HashSet::new(), false);
     }
-    revwalk.flatten().take(MAX_DIVERGENCE_OIDS).collect()
+    // One past the cap, so a walk that stops exactly at it is told apart from
+    // one that had more to give.
+    let mut oids: HashSet<Oid> = revwalk.flatten().take(MAX_DIVERGENCE_OIDS + 1).collect();
+    let capped = oids.len() > MAX_DIVERGENCE_OIDS;
+    if capped {
+        let extra = *oids.iter().next().expect("over the cap means non-empty");
+        oids.remove(&extra);
+    }
+    (oids, capped)
 }

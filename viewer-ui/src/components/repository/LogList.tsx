@@ -99,6 +99,14 @@ export function LogList({
             </li>
           );
         })}
+      {!commitDrillDown && decorations.truncated && (
+        // Last in the list rather than first: it qualifies the marks above
+        // without pushing the history down.
+        <li className="px-3 py-1 text-2xs text-ink-400">
+          Too many refs to mark them all — some branch, tag or upstream marks are
+          not shown.
+        </li>
+      )}
       {!commitDrillDown && !logDone && !logStalled && !logPagingPaused && (
         <li
           ref={logSentinelRef}
