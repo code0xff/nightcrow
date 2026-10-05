@@ -198,19 +198,26 @@ fn divergence_oids(repo: &Repository) -> Option<((HashSet<Oid>, bool), (HashSet<
 /// Commits reachable from `from` but not from `hidden` — `git rev-list from ^hidden`
 /// — and whether the walk was cut at `MAX_DIVERGENCE_OIDS`.
 fn exclusive_oids(repo: &Repository, from: Oid, hidden: Oid) -> (HashSet<Oid>, bool) {
+    exclusive_oids_capped(repo, from, hidden, MAX_DIVERGENCE_OIDS)
+}
+
+pub(in crate::git::diff) fn exclusive_oids_capped(
+    repo: &Repository,
+    from: Oid,
+    hidden: Oid,
+    cap: usize,
+) -> (HashSet<Oid>, bool) {
     let Ok(mut revwalk) = repo.revwalk() else {
         return (HashSet::new(), false);
     };
     if revwalk.push(from).is_err() || revwalk.hide(hidden).is_err() {
         return (HashSet::new(), false);
     }
-    // One past the cap, so a walk that stops exactly at it is told apart from
-    // one that had more to give.
-    let mut oids: HashSet<Oid> = revwalk.flatten().take(MAX_DIVERGENCE_OIDS + 1).collect();
-    let capped = oids.len() > MAX_DIVERGENCE_OIDS;
-    if capped {
-        let extra = *oids.iter().next().expect("over the cap means non-empty");
-        oids.remove(&extra);
-    }
+    // The walk yields newest first, so the first `MAX_DIVERGENCE_OIDS` are the
+    // ones to keep; one more pull tells a walk that stopped exactly at the cap
+    // from one that had more to give.
+    let mut walk = revwalk.flatten();
+    let oids: HashSet<Oid> = walk.by_ref().take(cap).collect();
+    let capped = walk.next().is_some();
     (oids, capped)
 }
