@@ -103,6 +103,8 @@ fn tree_preview_survives_status_snapshot() {
             head_oid: None,
             branch_name: None,
             refs_fingerprint: 0,
+            operation: None,
+            conflicts: 0,
         },
         HashMap::new(),
     ))

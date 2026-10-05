@@ -145,6 +145,22 @@ impl App {
         self.git.tracking.as_ref()
     }
 
+    /// The stopped merge/rebase/… and the unmerged-file count, as one header
+    /// chip's worth of text — `REBASING 2/5 · 3 conflicts` — or `None` at rest.
+    pub fn operation_text(&self) -> Option<String> {
+        let conflicts = match self.git.conflicts {
+            0 => None,
+            1 => Some("1 conflict".to_string()),
+            n => Some(format!("{n} conflicts")),
+        };
+        match (self.git.operation.map(|op| op.text()), conflicts) {
+            (None, None) => None,
+            (Some(op), None) => Some(op),
+            (None, Some(c)) => Some(c),
+            (Some(op), Some(c)) => Some(format!("{op} · {c}")),
+        }
+    }
+
     pub fn branch_name(&self) -> Option<&str> {
         self.git.branch_name.as_deref()
     }

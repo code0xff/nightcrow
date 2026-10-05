@@ -10,6 +10,8 @@ fn snapshot_with(paths: &[&str]) -> RepoSnapshot {
         head_oid: None,
         branch_name: None,
         refs_fingerprint: 0,
+        operation: None,
+        conflicts: 0,
     }
 }
 

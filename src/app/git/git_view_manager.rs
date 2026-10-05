@@ -18,6 +18,9 @@ pub struct GitViewManager {
     pub(crate) commit_log: CommitLogController,
     pub(crate) branch_name: Option<String>,
     pub(crate) tracking: Option<TrackingStatus>,
+    /// What git is in the middle of, and how many files it left unmerged.
+    pub(crate) operation: Option<crate::git::diff::Operation>,
+    pub(crate) conflicts: usize,
     pub(crate) log_decorations: LogDecorations,
     pub(crate) last_refs_fingerprint: Option<u64>,
     pub(crate) load_controller: LoadController,
@@ -46,6 +49,8 @@ impl GitViewManager {
             ),
             branch_name: None,
             tracking: None,
+            operation: None,
+            conflicts: 0,
             log_decorations: LogDecorations::default(),
             last_refs_fingerprint: None,
             load_controller: LoadController::new(),

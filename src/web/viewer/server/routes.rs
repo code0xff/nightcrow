@@ -180,7 +180,14 @@ pub(super) fn route(head: &RequestHead, state: &ViewerState) -> Vec<u8> {
             };
             Ok(json_response(
                 "200 OK",
-                &encode(&LogDto::from_entries(&commits, anchor))?,
+                // Rebuilt per page rather than cached: it is a walk of the
+                // refs alone, and a fetch can move one between two pages.
+                // A failure costs the chips, not the history.
+                &encode(&LogDto::from_entries(
+                    &commits,
+                    anchor,
+                    &diff::load_log_decorations(&repo).unwrap_or_default(),
+                ))?,
                 &[],
             ))
         }),

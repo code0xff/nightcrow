@@ -53,7 +53,6 @@ export interface SidebarProps {
   logSentinelRef: React.RefObject<HTMLLIElement | null>;
   visibleCommits: Commit[];
   logPagingPaused: boolean;
-  aheadOids: Set<string>;
   visibleCommitFiles: CommitDrillDown["files"];
   mobileView: MobileView;
   /** Directories the tree had open when this project was last looked at.
@@ -114,7 +113,6 @@ export function Sidebar(props: SidebarProps) {
     logSentinelRef,
     visibleCommits,
     logPagingPaused,
-    aheadOids,
     visibleCommitFiles,
     mobileView,
     restoreTree,
@@ -233,7 +231,6 @@ export function Sidebar(props: SidebarProps) {
           <LogList
             visibleCommits={visibleCommits}
             commits={commits}
-            aheadOids={aheadOids}
             commitDrillDown={commitDrillDown}
             visibleCommitFiles={visibleCommitFiles}
             logDone={logDone}

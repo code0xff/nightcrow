@@ -135,7 +135,27 @@
     "commits": [
       {
         "author": "code0xff",
+        "divergence": "ahead",
+        "merge": true,
         "oid": "9a3bc2cf0e1d2a3b4c5d6e7f8a9b0c1d2e3f4a5b",
+        "refs": [
+          {
+            "kind": "head",
+            "name": "dev"
+          },
+          {
+            "kind": "local",
+            "name": "feat/graph"
+          },
+          {
+            "kind": "tag",
+            "name": "v0.1.15"
+          },
+          {
+            "kind": "remote",
+            "name": "origin/dev"
+          }
+        ],
         "short_id": "9a3bc2c",
         "summary": "refactor: name the bootstrap payload",
         "time": 1700000000
@@ -163,6 +183,7 @@
   },
   "status": {
     "branch": "dev",
+    "conflicts": 1,
     "files": [
       {
         "index": "M",
@@ -178,6 +199,11 @@
       }
     ],
     "head": "9a3bc2c",
+    "operation": {
+      "kind": "rebase",
+      "step": 2,
+      "total": 5
+    },
     "tracking": {
       "ahead": 2,
       "behind": 0

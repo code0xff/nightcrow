@@ -41,6 +41,8 @@ fn snapshot(branch: &str, files: usize) -> RepoSnapshot {
         head_oid: None,
         branch_name: Some(branch.to_string()),
         refs_fingerprint: 0,
+        operation: None,
+        conflicts: 0,
     }
 }
 

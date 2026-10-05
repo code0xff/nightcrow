@@ -1,12 +1,12 @@
 import { PathLabel } from "../content/PathLabel";
 import { formatRelativeTime, statusColor } from "../../lib/shared/utils";
+import { refClass, refText } from "../../lib/repository/gitState";
 import type { Commit } from "../../api";
 import type { CommitDrillDown } from "../../hooks/git/useLog";
 
 export interface LogListProps {
   visibleCommits: Commit[];
   commits: Commit[];
-  aheadOids: Set<string>;
   commitDrillDown: CommitDrillDown | null;
   visibleCommitFiles: CommitDrillDown["files"];
   logDone: boolean;
@@ -25,7 +25,6 @@ export interface LogListProps {
 export function LogList({
   visibleCommits,
   commits,
-  aheadOids,
   commitDrillDown,
   visibleCommitFiles,
   logDone,
@@ -50,8 +49,22 @@ export function LogList({
               title={`${c.author} · ${c.summary}`}
               className="flex w-max min-w-full items-baseline gap-2 px-3 py-0.5 text-left hover:bg-ink-850"
             >
-              <span className="w-2 shrink-0 text-added">
-                {aheadOids.has(c.oid) ? "↑" : ""}
+              {/* Where the commit stands against the upstream — from the
+                  server's walk of both sides, not the first N rows, which a
+                  merge puts out of order. */}
+              <span
+                className={`w-2 shrink-0 ${
+                  c.divergence === "behind" ? "text-accent" : "text-added"
+                }`}
+                title={
+                  c.divergence === "ahead"
+                    ? "Not on the upstream yet"
+                    : c.divergence === "behind"
+                      ? "On the upstream, not here yet"
+                      : undefined
+                }
+              >
+                {c.divergence === "ahead" ? "↑" : c.divergence === "behind" ? "↓" : ""}
               </span>
               <span className="shrink-0 text-accent">{c.short_id}</span>
               <span className="w-10 shrink-0 text-right text-ink-400">
@@ -60,7 +73,17 @@ export function LogList({
               <span className="max-w-[6rem] shrink-0 truncate text-ink-400">
                 {c.author}
               </span>
-              <span className="whitespace-nowrap">{c.summary}</span>
+              {c.refs?.map((ref) => (
+                <span
+                  key={`${ref.kind}:${ref.name}`}
+                  className={`shrink-0 self-center rounded-sm border px-1 text-2xs ${refClass(ref.kind)}`}
+                >
+                  {refText(ref)}
+                </span>
+              ))}
+              <span className={`whitespace-nowrap ${c.merge ? "text-ink-400" : ""}`}>
+                {c.summary}
+              </span>
             </button>
           </li>
         ))}

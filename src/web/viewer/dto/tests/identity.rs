@@ -47,11 +47,16 @@ fn commit_dto_drops_the_summary_cache_and_hexes_the_oid() {
     );
     assert!(!entry.summary_lower.is_empty(), "precondition");
 
-    let value = json(&CommitDto::from(&entry));
+    let value = json(&CommitDto::decorated(&entry, &Default::default()));
 
     assert_eq!(value["oid"], "1234567890abcdef1234567890abcdef12345678");
     assert_eq!(value["summary"], "Fix The Bug");
     assert!(value.get("summary_lower").is_none());
+    // Undecorated: nothing points at it and it is level with the upstream,
+    // so the optional fields stay off the wire rather than arriving empty.
+    assert!(value.get("refs").is_none());
+    assert!(value.get("divergence").is_none());
+    assert!(value.get("merge").is_none());
 }
 
 #[test]

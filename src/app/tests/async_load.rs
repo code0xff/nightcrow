@@ -135,6 +135,8 @@ fn 비동기_새로고침은_diff_검색과_scroll을_보존한다() {
             head_oid: None,
             branch_name: None,
             refs_fingerprint: 0,
+            operation: None,
+            conflicts: 0,
         },
         HashMap::from([("a.rs".to_string(), new_mtime)]),
     );

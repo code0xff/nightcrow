@@ -49,7 +49,11 @@ pub fn load_snapshot(repo: &Repository) -> Result<RepoSnapshot> {
         );
     }
 
-    let files = files.into_values().collect();
+    let files: Vec<ChangedFile> = files.into_values().collect();
+    let conflicts = files
+        .iter()
+        .filter(|f| f.index == StatusKind::Unmerged || f.worktree == StatusKind::Unmerged)
+        .count();
 
     let tracking = load_tracking_status(repo);
     let head = repo.head().ok();
@@ -64,6 +68,8 @@ pub fn load_snapshot(repo: &Repository) -> Result<RepoSnapshot> {
         head_oid,
         branch_name,
         refs_fingerprint: crate::git::diff::refs::refs_fingerprint(repo),
+        operation: crate::git::diff::operation::current_operation(repo),
+        conflicts,
     })
 }
 

@@ -120,6 +120,37 @@ pub struct StatusDto {
     pub files: Vec<ChangedFileDto>,
     /// True when the repository had more changed files than the ceiling.
     pub truncated: bool,
+    /// A merge, rebase or similar that stopped and is waiting.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub operation: Option<OperationDto>,
+    /// Unmerged files, counted before `files` is capped.
+    #[serde(skip_serializing_if = "is_zero")]
+    pub conflicts: usize,
+}
+
+fn is_zero(n: &usize) -> bool {
+    *n == 0
+}
+
+/// What git is in the middle of. `step`/`total` only for a rebase whose
+/// counters git recorded.
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct OperationDto {
+    pub kind: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub step: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub total: Option<u32>,
+}
+
+impl From<&crate::git::diff::Operation> for OperationDto {
+    fn from(op: &crate::git::diff::Operation) -> Self {
+        Self {
+            kind: op.kind.as_str(),
+            step: op.progress.map(|(step, _)| step),
+            total: op.progress.map(|(_, total)| total),
+        }
+    }
 }
 
 impl StatusDto {
@@ -147,6 +178,19 @@ impl StatusDto {
                 })
                 .collect(),
             truncated: capped.truncated,
+            operation: None,
+            conflicts: 0,
         }
+    }
+
+    /// Attach the repository's in-progress operation and conflict count.
+    pub fn with_operation(
+        mut self,
+        operation: Option<&crate::git::diff::Operation>,
+        conflicts: usize,
+    ) -> Self {
+        self.operation = operation.map(OperationDto::from);
+        self.conflicts = conflicts;
+        self
     }
 }

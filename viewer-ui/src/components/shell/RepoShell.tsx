@@ -9,6 +9,7 @@ import type { Repo, Status } from "../../api";
 import type { ShellLayout } from "../../hooks/ui/useShellLayout";
 import type { Maximized, MobileView } from "../../types";
 import { RepoMobileNav } from "./RepoMobileNav";
+import { operationText } from "../../lib/repository/gitState";
 import { ErrorBoundary } from "../feedback/ErrorBoundary";
 
 // Keep xterm out of the initial login and git-viewer bundle.
@@ -188,6 +189,12 @@ export function RepoShell({
         {status?.branch && (
           <span className="min-w-0 max-w-[50%] truncate text-accent">
             {status.branch}
+          </span>
+        )}
+        {operationText(status) && (
+          // Ahead of the counts: a stopped rebase is the more urgent news.
+          <span className="shrink-0 font-medium text-removed" role="status">
+            {operationText(status)}
           </span>
         )}
         {status?.tracking && (

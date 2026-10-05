@@ -83,20 +83,11 @@ export function useRepoData({
       ),
     [log.commitDrillDown?.files, normalizedFilter],
   );
-  const aheadOids = useMemo(
-    () =>
-      new Set(
-        log.commits
-          .slice(0, status?.tracking?.ahead ?? 0)
-          .map((commit) => commit.oid),
-      ),
-    [log.commits, status?.tracking?.ahead],
-  );
 
   return {
     screen: { tab, setTab, filter, setFilter, filterOpen, setFilterOpen, pane, setPane },
     request: { paneRequestRef, bumpPaneRequest, clearPane },
     status: { value: status, files, now, hotWindowMs },
-    log: { ...log, aheadOids, visibleCommitFiles },
+    log: { ...log, visibleCommitFiles },
   };
 }

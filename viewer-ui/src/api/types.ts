@@ -118,12 +118,29 @@ export interface ViewerBootstrap {
   viewer_build: string | null;
 }
 
+/** A merge, rebase or similar that stopped and is waiting. `step`/`total`
+ *  only for a rebase whose counters git recorded. */
+export interface RepoOperation {
+  kind: "merge" | "rebase" | "cherry-pick" | "revert" | "bisect";
+  step?: number;
+  total?: number;
+}
+
 export interface Status {
   branch?: string;
   head?: string;
   tracking?: { ahead: number; behind: number };
   files: ChangedFile[];
   truncated: boolean;
+  operation?: RepoOperation;
+  /** Unmerged files, counted before `files` was capped. Absent when none. */
+  conflicts?: number;
+}
+
+/** A ref pointing at a commit, most orienting first. */
+export interface CommitRef {
+  kind: "head" | "local" | "tag" | "remote";
+  name: string;
 }
 
 export interface Commit {
@@ -132,6 +149,10 @@ export interface Commit {
   summary: string;
   author: string;
   time: number;
+  refs?: CommitRef[];
+  /** Relative to the branch's upstream; absent when level with it. */
+  divergence?: "ahead" | "behind";
+  merge?: boolean;
 }
 
 export interface Log {

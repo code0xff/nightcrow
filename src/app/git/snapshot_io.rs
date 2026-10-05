@@ -79,6 +79,8 @@ impl App {
         self.git.view.status.set_files(snapshot.files);
         self.git.view.status_mut().recompute_filter();
         self.git.tracking = snapshot.tracking;
+        self.git.operation = snapshot.operation;
+        self.git.conflicts = snapshot.conflicts;
         self.merge_hot_table(&mtimes);
 
         self.restore_selection(previous_path.as_deref());

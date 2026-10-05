@@ -24,11 +24,11 @@ pub use envelope::PROTOCOL_VERSION;
 pub use envelope::ViewFileDto;
 pub use envelope::{Envelope, HotConfigDto, RepoDto, RepoViewDto, ViewerBootstrapDto};
 #[cfg(test)]
-pub use log::CommitDto;
+pub use log::{CommitDto, RefDto};
 pub use log::{CommitFilesDto, LogDto};
 pub use status::{BrowseDto, BrowseEntryDto, StatusDto};
 #[cfg(test)]
-pub use status::{ChangedFileDto, TrackingDto, server_now_millis};
+pub use status::{ChangedFileDto, OperationDto, TrackingDto, server_now_millis};
 pub use tree::{TreeDto, TreeSearchDto};
 #[cfg(test)]
 pub use tree::{TreeEntryDto, TreeMatchDto};

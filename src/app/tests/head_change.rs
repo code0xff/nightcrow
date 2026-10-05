@@ -11,6 +11,8 @@ fn snapshot_with_head(repo_path: &str) -> RepoSnapshot {
         head_oid: head,
         branch_name: None,
         refs_fingerprint: 0,
+        operation: None,
+        conflicts: 0,
     }
 }
 

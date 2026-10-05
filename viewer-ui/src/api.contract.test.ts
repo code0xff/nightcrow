@@ -40,6 +40,7 @@ import {
   type ViewFile,
   type ViewerBootstrap,
 } from "./api";
+import { commit, gitNamesMatchTheUnions, operation } from "./api.contract.gitState";
 
 /**
  * Re-check a union the annotations cannot.
@@ -145,7 +146,10 @@ describe("wire contract", () => {
   });
 
   it("status_페이로드가_Status와_맞는다", () => {
-    const status: Status = fixture.status;
+    const status: Status = {
+      ...fixture.status,
+      operation: operation(fixture.status.operation),
+    };
     // 이름이 바뀐 파일과 아닌 파일이 함께 있어, optional 필드가 있을 때와
     // 없을 때를 모두 통과시킨다.
     expect(status.files.map((f) => f.old_path)).toEqual([
@@ -153,13 +157,26 @@ describe("wire contract", () => {
       "src/app.rs",
     ]);
     expect(status.tracking?.ahead).toBe(2);
+    // 멈춘 리베이스와 충돌 수. 쉬는 저장소는 둘 다 싣지 않는다.
+    expect(status.operation).toEqual({ kind: "rebase", step: 2, total: 5 });
+    expect(status.conflicts).toBe(1);
+    expect(gitNamesMatchTheUnions()).toEqual([true, true, true]);
   });
 
   it("log와_commit_파일_목록이_각_인터페이스와_맞는다", () => {
-    const log: Log = fixture.log;
-    const empty: Log = fixture.logEmpty;
+    const log: Log = { ...fixture.log, commits: fixture.log.commits.map(commit) };
+    const empty: Log = { ...fixture.logEmpty, commits: [] };
     const commitFiles: CommitFiles = fixture.commitFiles;
     expect(log.commits[0]?.short_id).toBe("9a3bc2c");
+    // ref는 가장 방향을 잡아주는 것부터 온다: HEAD, 로컬, 태그, 원격.
+    expect(log.commits[0]?.refs?.map((r) => r.kind)).toEqual([
+      "head",
+      "local",
+      "tag",
+      "remote",
+    ]);
+    expect(log.commits[0]?.divergence).toBe("ahead");
+    expect(log.commits[0]?.merge).toBe(true);
     // 이어받을 페이지가 있는 응답은 anchor를 싣고, 커밋이 없는 저장소는
     // 싣지 않는다 — 클라이언트가 후자를 끝으로 읽는다.
     expect(log.head).toBeDefined();
