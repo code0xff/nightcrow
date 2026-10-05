@@ -66,3 +66,31 @@ fn decorations_require_a_known_repository() {
     assert!(!response.starts_with("HTTP/1.1 200"), "got: {response}");
     drop(dir);
 }
+
+#[test]
+fn a_capped_answer_keeps_head_and_drops_tags_first() {
+    // Many tags on one repository: the cut gives up the tags, says it did, and
+    // never the label for where you are.
+    let (dir, server, _token, id) = seeded_server();
+    let repo_path = server
+        .state
+        .session
+        .catalog()
+        .get(&id)
+        .unwrap()
+        .path
+        .clone();
+    for n in 0..5 {
+        run_git(&repo_path, &["tag", &format!("v{n}")]);
+    }
+    let repo = git2::Repository::open(&repo_path).unwrap();
+    let decorations = crate::git::diff::load_log_decorations(&repo).unwrap();
+
+    let dto = crate::web::viewer::dto::LogDecorationsDto::capped(&decorations, 3);
+
+    assert!(dto.truncated);
+    let kinds: Vec<&str> = dto.refs.values().flatten().map(|r| r.kind).collect();
+    assert_eq!(kinds.len(), 3);
+    assert_eq!(kinds[0], "head", "got: {kinds:?}");
+    drop(dir);
+}

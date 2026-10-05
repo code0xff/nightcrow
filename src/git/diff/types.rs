@@ -168,6 +168,9 @@ pub struct DiffHunk {
 pub struct TrackingStatus {
     pub ahead: usize,
     pub behind: usize,
+    /// The upstream's shorthand (`origin/dev`). Repointing it moves the
+    /// counts' meaning without moving any ref, so clients watch the name too.
+    pub upstream: String,
 }
 
 #[derive(Debug, Clone)]

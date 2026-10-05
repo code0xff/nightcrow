@@ -6,7 +6,10 @@
 
 import { act, cleanup, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { useLogDecorations, type UseLogDecorationsArgs } from "./useLogDecorations";
+import {
+  useLogDecorations,
+  type UseLogDecorationsArgs,
+} from "./useLogDecorations";
 import type { LogDecorations } from "../../api";
 
 vi.mock("../../api", () => ({
@@ -17,15 +20,23 @@ import { api } from "../../api";
 const fetchMarks = vi.mocked(api.logDecorations);
 
 function marks(over: Partial<LogDecorations> = {}): LogDecorations {
-  return { refs: {}, ahead: [], behind: [], ...over };
+  return { refs: {}, ahead: [], behind: [], truncated: false, ...over };
 }
 
-type Props = Pick<UseLogDecorationsArgs, "head" | "branch" | "refs">;
+type Props = Pick<UseLogDecorationsArgs, "head" | "branch" | "refs"> & {
+  upstream?: string;
+};
 
 function render(initial: Props) {
   return renderHook(
     (props: Props) =>
-      useLogDecorations({ repo: "r1", authed: true, tab: "log", ...props }),
+      useLogDecorations({
+        repo: "r1",
+        authed: true,
+        tab: "log",
+        upstream: undefined,
+        ...props,
+      }),
     { initialProps: initial },
   );
 }
@@ -41,7 +52,11 @@ afterEach(cleanup);
 describe("useLogDecorations", () => {
   it("ref만_움직여도_모든_행의_표시를_새로_받는다", async () => {
     fetchMarks.mockResolvedValueOnce(marks({ ahead: ["a", "z"] }));
-    const { result, rerender } = render({ head: "a", branch: "dev", refs: "r1" });
+    const { result, rerender } = render({
+      head: "a",
+      branch: "dev",
+      refs: "r1",
+    });
     await settle();
     // `z` stands for a row far below the first page: it is answered too.
     expect(result.current.divergenceOf("z")).toBe("ahead");
@@ -58,8 +73,14 @@ describe("useLogDecorations", () => {
 
   it("같은_커밋에서_브랜치만_바꿔도_다시_묻는다", async () => {
     // Neither HEAD nor the refs digest moves; only the branch HEAD is on.
-    fetchMarks.mockResolvedValueOnce(marks({ refs: { a: [{ kind: "head", name: "dev" }] } }));
-    const { result, rerender } = render({ head: "a", branch: "dev", refs: "r1" });
+    fetchMarks.mockResolvedValueOnce(
+      marks({ refs: { a: [{ kind: "head", name: "dev" }] } }),
+    );
+    const { result, rerender } = render({
+      head: "a",
+      branch: "dev",
+      refs: "r1",
+    });
     await settle();
 
     fetchMarks.mockResolvedValueOnce(
@@ -69,6 +90,25 @@ describe("useLogDecorations", () => {
     await settle();
 
     expect(result.current.refsOf("a")?.[0]?.name).toBe("feat");
+  });
+
+  it("업스트림만_바꿔도_다시_묻는다", async () => {
+    // `git branch --set-upstream-to`: no ref target moves, the arrows do.
+    fetchMarks.mockResolvedValueOnce(marks({ ahead: ["a"] }));
+    const { result, rerender } = render({
+      head: "a",
+      branch: "dev",
+      refs: "r1",
+      upstream: "origin/dev",
+    });
+    await settle();
+
+    fetchMarks.mockResolvedValueOnce(marks());
+    rerender({ head: "a", branch: "dev", refs: "r1", upstream: "fork/dev" });
+    await settle();
+
+    expect(fetchMarks).toHaveBeenCalledTimes(2);
+    expect(result.current.divergenceOf("a")).toBeUndefined();
   });
 
   it("실패한_변화는_버려지지_않고_다시_묻는다", async () => {

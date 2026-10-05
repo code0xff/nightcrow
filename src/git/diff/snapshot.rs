@@ -15,7 +15,17 @@ fn load_tracking_status(repo: &Repository) -> Option<TrackingStatus> {
     let local_oid = branch.get().target()?;
     let upstream_oid = upstream.get().target()?;
     let (ahead, behind) = repo.graph_ahead_behind(local_oid, upstream_oid).ok()?;
-    Some(TrackingStatus { ahead, behind })
+    let name = upstream
+        .get()
+        .shorthand()
+        .ok()
+        .map(String::from)
+        .unwrap_or_default();
+    Some(TrackingStatus {
+        ahead,
+        behind,
+        upstream: name,
+    })
 }
 
 pub fn load_snapshot(repo: &Repository) -> Result<RepoSnapshot> {

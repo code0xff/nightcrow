@@ -31,6 +31,8 @@ pub struct BrowseDto {
 pub struct TrackingDto {
     pub ahead: usize,
     pub behind: usize,
+    /// The upstream's shorthand, e.g. `origin/dev`.
+    pub upstream: String,
 }
 
 impl From<&TrackingStatus> for TrackingDto {
@@ -38,6 +40,7 @@ impl From<&TrackingStatus> for TrackingDto {
         Self {
             ahead: t.ahead,
             behind: t.behind,
+            upstream: t.upstream.clone(),
         }
     }
 }

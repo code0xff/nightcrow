@@ -1,5 +1,5 @@
 use super::status::ChangedFileDto;
-use crate::git::diff::{ChangedFile, CommitEntry, LogDecorations, RefKind};
+use crate::git::diff::{ChangedFile, CommitEntry, LogDecorations, RefKind, RefLabel};
 use crate::web::viewer::limits::{self, Capped};
 use git2::Oid;
 use serde::Serialize;
@@ -58,10 +58,48 @@ pub struct LogDecorationsDto {
     pub ahead: Vec<String>,
     /// Commits on the upstream this branch lacks, capped by the walk.
     pub behind: Vec<String>,
+    /// True when `refs` was cut at [`limits::MAX_LOG_DECORATION_REFS`]. The
+    /// cut drops remote branches before tags before local ones, and never the
+    /// branch HEAD is on.
+    pub truncated: bool,
 }
 
 impl From<&LogDecorations> for LogDecorationsDto {
     fn from(d: &LogDecorations) -> Self {
+        Self::capped(d, limits::MAX_LOG_DECORATION_REFS)
+    }
+}
+
+impl LogDecorationsDto {
+    /// Every label the repository has, or the `cap` most orienting of them.
+    pub fn capped(d: &LogDecorations, cap: usize) -> Self {
+        // Flattened and ranked across the whole repository, so a cut keeps
+        // HEAD and local branches wherever they are and gives up the long tail
+        // of remote branches and release tags first.
+        let mut all: Vec<(&Oid, &RefLabel)> = d
+            .all_labels()
+            .flat_map(|(oid, labels)| labels.iter().map(move |label| (oid, label)))
+            .collect();
+        all.sort_by(|a, b| {
+            a.1.kind
+                .cmp(&b.1.kind)
+                .then_with(|| a.1.name.cmp(&b.1.name))
+        });
+        let truncated = all.len() > cap;
+        all.truncate(cap);
+
+        let mut refs: BTreeMap<String, Vec<RefDto>> = BTreeMap::new();
+        for (oid, label) in all {
+            refs.entry(oid.to_string()).or_default().push(RefDto {
+                kind: match label.kind {
+                    RefKind::Head => "head",
+                    RefKind::LocalBranch => "local",
+                    RefKind::Tag => "tag",
+                    RefKind::RemoteBranch => "remote",
+                },
+                name: label.name.clone(),
+            });
+        }
         // Sorted so the payload is the same bytes for the same refs.
         fn sorted<'a>(oids: impl Iterator<Item = &'a Oid>) -> Vec<String> {
             let mut out: Vec<String> = oids.map(Oid::to_string).collect();
@@ -69,26 +107,10 @@ impl From<&LogDecorations> for LogDecorationsDto {
             out
         }
         Self {
-            refs: d
-                .all_labels()
-                .map(|(oid, labels)| {
-                    let chips = labels
-                        .iter()
-                        .map(|label| RefDto {
-                            kind: match label.kind {
-                                RefKind::Head => "head",
-                                RefKind::LocalBranch => "local",
-                                RefKind::Tag => "tag",
-                                RefKind::RemoteBranch => "remote",
-                            },
-                            name: label.name.clone(),
-                        })
-                        .collect();
-                    (oid.to_string(), chips)
-                })
-                .collect(),
+            refs,
             ahead: sorted(d.ahead_oids()),
             behind: sorted(d.behind_oids()),
+            truncated,
         }
     }
 }

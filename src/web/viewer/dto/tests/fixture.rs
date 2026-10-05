@@ -95,7 +95,11 @@ fn wire_fixture() -> serde_json::Value {
         "status": StatusDto {
             branch: Some("dev".to_string()),
             head: Some("9a3bc2c".to_string()),
-            tracking: Some(TrackingDto { ahead: 2, behind: 0 }),
+            tracking: Some(TrackingDto {
+                ahead: 2,
+                behind: 0,
+                upstream: "origin/dev".to_string(),
+            }),
             files: vec![changed.clone(), renamed.clone()],
             truncated: false,
             // Mid-rebase with one file left unmerged, so the client's union

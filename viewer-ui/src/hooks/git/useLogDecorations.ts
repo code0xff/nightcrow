@@ -15,6 +15,9 @@ export interface UseLogDecorationsArgs {
   head: string | null | undefined;
   branch: string | undefined;
   refs: string | undefined;
+  /** The branch's upstream. `--set-upstream-to` moves what ahead and behind
+   *  mean without moving a single ref. */
+  upstream: string | undefined;
 }
 
 export interface Decorations {
@@ -22,7 +25,12 @@ export interface Decorations {
   divergenceOf: (oid: string) => "ahead" | "behind" | undefined;
 }
 
-const EMPTY: LogDecorations = { refs: {}, ahead: [], behind: [] };
+const EMPTY: LogDecorations = {
+  refs: {},
+  ahead: [],
+  behind: [],
+  truncated: false,
+};
 
 /**
  * The log's ref chips and ahead/behind marks, for the whole repository.
@@ -41,6 +49,7 @@ export function useLogDecorations({
   head,
   branch,
   refs,
+  upstream,
 }: UseLogDecorationsArgs): Decorations {
   const [state, setState] = useState<{ key: string; value: LogDecorations }>({
     key: "",
@@ -48,7 +57,9 @@ export function useLogDecorations({
   });
   const [attempt, setAttempt] = useState(0);
   const key =
-    repo && head !== undefined ? `${repo}|${head ?? ""}|${branch ?? ""}|${refs ?? ""}` : "";
+    repo && head !== undefined
+      ? `${repo}|${head ?? ""}|${branch ?? ""}|${refs ?? ""}|${upstream ?? ""}`
+      : "";
   const stateKey = useRef(state.key);
   stateKey.current = state.key;
 
@@ -78,7 +89,8 @@ export function useLogDecorations({
     const behind = new Set(current.behind);
     return {
       refsOf: (oid) => current.refs[oid],
-      divergenceOf: (oid) => (ahead.has(oid) ? "ahead" : behind.has(oid) ? "behind" : undefined),
+      divergenceOf: (oid) =>
+        ahead.has(oid) ? "ahead" : behind.has(oid) ? "behind" : undefined,
     };
   }, [current]);
 }

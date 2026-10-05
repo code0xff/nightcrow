@@ -171,7 +171,8 @@
           "name": "origin/dev"
         }
       ]
-    }
+    },
+    "truncated": false
   },
   "logEmpty": {
     "commits": [],
@@ -216,7 +217,8 @@
     "refs": "00c0ffee00c0ffee",
     "tracking": {
       "ahead": 2,
-      "behind": 0
+      "behind": 0,
+      "upstream": "origin/dev"
     },
     "truncated": false
   },

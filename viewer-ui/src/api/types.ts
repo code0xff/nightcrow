@@ -129,7 +129,8 @@ export interface RepoOperation {
 export interface Status {
   branch?: string;
   head?: string;
-  tracking?: { ahead: number; behind: number };
+  /** `upstream` is the shorthand, e.g. `origin/dev`. */
+  tracking?: { ahead: number; behind: number; upstream: string };
   files: ChangedFile[];
   truncated: boolean;
   operation?: RepoOperation;
@@ -163,6 +164,8 @@ export interface LogDecorations {
   refs: Record<string, CommitRef[]>;
   ahead: string[];
   behind: string[];
+  /** The refs were cut at the server's ceiling, least orienting kinds first. */
+  truncated: boolean;
 }
 
 export interface Log {

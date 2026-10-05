@@ -67,6 +67,7 @@ export function useRepoData({
     head: status ? (status.head ?? null) : undefined,
     branch: status?.branch,
     refs: status?.refs,
+    upstream: status?.tracking?.upstream,
   });
 
   useLayoutEffect(() => {
