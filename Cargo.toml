@@ -9,7 +9,7 @@ members = [".", "plugins/nightcrow-recovery", "plugins/nightcrow-memory"]
 # was never built at — a class of drift the release check could only report
 # after the fact.
 [workspace.package]
-version = "0.1.15"
+version = "0.1.16"
 
 [package]
 name = "nightcrow"
