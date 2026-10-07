@@ -10,6 +10,7 @@
     { "kind": "cargo-workspace", "path": "Cargo.toml" },
     { "kind": "cargo-lock", "path": "Cargo.lock", "package": "nightcrow" },
     { "kind": "cargo-lock", "path": "Cargo.lock", "package": "nightcrow-recovery" },
+    { "kind": "cargo-lock", "path": "Cargo.lock", "package": "nightcrow-memory" },
     { "kind": "npm-package", "path": "viewer-ui/package.json" },
     { "kind": "npm-lock", "path": "viewer-ui/package-lock.json" }
   ],

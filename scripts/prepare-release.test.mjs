@@ -33,6 +33,7 @@ const policy = {
     { kind: "cargo-workspace", path: "Cargo.toml" },
     { kind: "cargo-lock", path: "Cargo.lock", package: "nightcrow" },
     { kind: "cargo-lock", path: "Cargo.lock", package: "nightcrow-recovery" },
+    { kind: "cargo-lock", path: "Cargo.lock", package: "nightcrow-memory" },
     { kind: "npm-package", path: "viewer-ui/package.json" },
     { kind: "npm-lock", path: "viewer-ui/package-lock.json" },
   ],
@@ -86,8 +87,8 @@ test("execute updates every application version entry without touching dependenc
     const next = patchVersion(versionParts(current) + 1);
     const pluginBefore = fs.readFileSync(path.join(root, "plugins/nightcrow-recovery/Cargo.toml"), "utf8");
     const result = updateVersions(root, policy, next);
-    // Four paths, not five: the recovery plugin inherits the workspace version
-    // and so has nothing of its own to rewrite.
+    // Four paths, not six: the plugin crates inherit the workspace version and
+    // so have nothing of their own to rewrite, and the lockfile is one file.
     assert.equal(result.changed.length, 4);
     assert.equal(
       fs.readFileSync(path.join(root, "plugins/nightcrow-recovery/Cargo.toml"), "utf8"),

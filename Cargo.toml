@@ -2,7 +2,7 @@
 # that speak the plugin protocol over a pipe, never link against nightcrow, and
 # are excluded from the published crate.
 [workspace]
-members = [".", "plugins/nightcrow-recovery"]
+members = [".", "plugins/nightcrow-recovery", "plugins/nightcrow-memory"]
 
 # The one place the application version is written. Every crate in the
 # workspace inherits it, so the plugin cannot be released at a version the host

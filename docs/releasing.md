@@ -11,7 +11,7 @@ node scripts/prepare-release.mjs
 node scripts/prepare-release.mjs --json
 ```
 
-On a clean branch, use `--execute` to update all five version entries. The application version is written once, in the root manifest's `[workspace.package]`; both crates inherit it, so the recovery plugin has no version of its own to bump. The lockfile still records each crate separately. The tool reads tags from the authoritative `code0xff/nightcrow` remote (or the official HTTPS URL when that remote is not configured), never from a stale local tag list; tag-network or authentication failures stop the command. The first no-tag release is `0.1.1`; after that, the next version is exactly one patch above the highest official `v0.1.*` tag. An explicit `--version` is accepted only when it matches that calculated value.
+On a clean branch, use `--execute` to update all six version entries. The application version is written once, in the root manifest's `[workspace.package]`; every crate inherits it, so the crates under `plugins/` have no version of their own to bump. The lockfile still records each crate separately. The tool reads tags from the authoritative `code0xff/nightcrow` remote (or the official HTTPS URL when that remote is not configured), never from a stale local tag list; tag-network or authentication failures stop the command. The first no-tag release is `0.1.1`; after that, the next version is exactly one patch above the highest official `v0.1.*` tag. An explicit `--version` is accepted only when it matches that calculated value.
 
 ```bash
 node scripts/prepare-release.mjs --execute
