@@ -17,6 +17,8 @@ import type { PaneViewMode } from "../../lib/terminal/paneViewMode";
 export interface PanelToolbarProps {
   mode: PaneViewMode;
   onToggleMode: () => void;
+  /** False below `md`, where the panel is always tabbed and the toggle hidden. */
+  canToggleMode: boolean;
   /** The tab strip, in tabs mode. It shares this row so `+` reads as "add a
    *  tab" rather than "split the panel again". */
   tabs?: ReactNode;
@@ -53,6 +55,7 @@ export interface PanelToolbarProps {
 export function PanelToolbar({
   mode,
   onToggleMode,
+  canToggleMode,
   tabs,
   ownsSize,
   maximized,
@@ -129,17 +132,19 @@ export function PanelToolbar({
       >
         <PlusIcon />
       </button>
-      <button
-        onClick={onToggleMode}
-        aria-pressed={mode === "tabs"}
-        title={mode === "tabs" ? "Show the panes side by side" : "Show one pane per tab"}
-        aria-label={
-          mode === "tabs" ? "Show the panes side by side" : "Show one pane per tab"
-        }
-        className={button}
-      >
-        {mode === "tabs" ? <SplitViewIcon /> : <TabViewIcon />}
-      </button>
+      {canToggleMode && (
+        <button
+          onClick={onToggleMode}
+          aria-pressed={mode === "tabs"}
+          title={mode === "tabs" ? "Show the panes side by side" : "Show one pane per tab"}
+          aria-label={
+            mode === "tabs" ? "Show the panes side by side" : "Show one pane per tab"
+          }
+          className={button}
+        >
+          {mode === "tabs" ? <SplitViewIcon /> : <TabViewIcon />}
+        </button>
+      )}
       {/* Only alongside the bar it speaks for. The bar needs a pane to send its
           keys to, so an empty panel has none — and a control that reads "hide
           the key bar", pressed, over a panel with no key bar in it is naming

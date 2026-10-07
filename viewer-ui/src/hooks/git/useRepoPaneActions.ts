@@ -1,6 +1,7 @@
 import { useMemo, useRef, useState } from "react";
 import type { Status } from "../../api";
-import type { MobileView, Pane } from "../../types";
+import type { Pane } from "../../types";
+import { useMobileView } from "../ui/mobileView";
 import type { CommitDrillDown } from "./useLog";
 import { usePaneOpeners } from "./usePaneOpeners";
 
@@ -24,7 +25,7 @@ export function useRepoPaneActions({
   setCommitDrillDown,
   status,
 }: RepoPaneActionsArgs) {
-  const [mobileView, setMobileView] = useState<MobileView>("files");
+  const { mobileView, setMobileView } = useMobileView();
   const [previewRendered, setPreviewRendered] = useState(true);
   const statusRef = useRef(status);
   statusRef.current = status;

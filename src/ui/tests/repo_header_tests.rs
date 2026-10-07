@@ -88,3 +88,34 @@ fn a_name_in_hangul_is_cut_between_characters() {
     assert!(width(&path) + branch.as_deref().map_or(0, width) <= 20);
     assert!(!path.is_empty());
 }
+
+#[test]
+fn a_stopped_rebase_and_its_conflicts_head_the_row() {
+    use crate::app::tests::app_with_files;
+    use crate::git::diff::{Operation, OperationKind};
+
+    let mut app = app_with_files(vec![]);
+    assert!(
+        !super::common::notice_text(&app).contains("REBASING"),
+        "a repository at rest shows no operation"
+    );
+
+    app.git.operation = Some(Operation {
+        kind: OperationKind::Rebase,
+        progress: Some((2, 5)),
+    });
+    app.git.conflicts = 3;
+
+    let row = super::common::notice_text(&app);
+    assert!(row.contains("REBASING 2/5 · 3 conflicts"), "got: {row}");
+}
+
+#[test]
+fn conflicts_alone_still_raise_the_chip() {
+    // A conflicted stash pop or checkout leaves no operation state behind, and
+    // the unmerged files are still the thing to act on.
+    let mut app = crate::app::tests::app_with_files(vec![]);
+    app.git.conflicts = 1;
+
+    assert!(super::common::notice_text(&app).contains("1 conflict"));
+}

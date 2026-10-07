@@ -5,6 +5,7 @@ import type { RecoveryByPane } from "../../lib/terminal/recovery";
 import type { ScreenScale } from "../ui/screenScale";
 import { zoomPending } from "../../lib/terminal/zoom";
 import type { TerminalRefs } from "./useTerminalRefs";
+import { useCursorInView } from "./useCursorInView";
 import { usePaneFocus } from "./usePaneFocus";
 import { usePaneSizes } from "./usePaneSizes";
 import { useStartupSizes } from "./useStartupSizes";
@@ -170,6 +171,14 @@ export function useTerminalWiring({
     layoutPending: zoomPending(zoomServer, panes),
     keyboardOpen,
     refitEpoch,
+  });
+
+  useCursorInView({
+    panes,
+    viewsRef,
+    bodyRefs,
+    keyboardOpen,
+    size,
   });
 
   usePaneFocus({

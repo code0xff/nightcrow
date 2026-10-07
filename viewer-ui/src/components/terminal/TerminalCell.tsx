@@ -150,8 +150,9 @@ export function TerminalCell({
         // Panning is ours; a pinch is still the browser's. The terminal sits at
         // the bottom of the body so that when the body is shorter than the
         // terminal — a soft keyboard is up and the panes were deliberately not
-        // refitted (`usePaneSizes`) — it is the top rows that go out of view
-        // and the prompt that stays.
+        // refitted (`usePaneSizes`) — it is the top rows that go out of view.
+        // When the cursor is higher than the crop would show, as on a fresh
+        // terminal, `useCursorInView` lowers the terminal to bring it back.
         className="nc-pane-body flex min-h-0 flex-1 flex-col justify-end overflow-hidden touch-pinch-zoom"
       />
     </div>

@@ -24,6 +24,14 @@ relaunch는 같은 `PaneId`를 부활시키지 않고 새 id와 증가한 genera
 
 `plugins/nightcrow-recovery`가 provider-specific adapter를 맡는다. bundled recovery는 host가 전달한 launch command에서 Codex CLI와 OpenCode를 식별하고, provider별 session id·reset 시각·resume 인자를 plugin 안에서만 해석한다. Codex는 rollout JSONL에서 unambiguous session id와 usage-limit reset을 읽어 `codex resume <SESSION_ID>`를 제안한다. OpenCode는 `/session/status`를 관찰하고 retry 중에는 개입하지 않으며, live process가 `idle`이 되면 `NeedsAttention`을 보고하고 process가 끝난 뒤에만 `--session <SESSION_ID>` relaunch를 제안한다. provider 한도를 우회하지 않으며 transcript나 원본 payload를 host 계약 밖으로 보내지 않는다.
 
+## Pane helper: shared memory
+
+`plugins/nightcrow-memory`는 host가 실행하는 plugin child가 아니라 pane 안에서 provider CLI가 띄우는 helper다. plugin protocol을 쓰지 않고 `[[plugin]]`에도 선언하지 않으며, host와의 계약은 pane spawn이 주입하는 `NIGHTCROW_PLUGIN_RUNTIME_DIR`의 마지막 경로 요소(hub key)와 `NIGHTCROW_PANE_TOKEN` 두 환경 변수뿐이다. 따라서 guard·watcher·generation 어느 것도 거치지 않고, pane을 읽거나 입력하는 경로도 없다.
+
+각 helper는 stdio MCP 서버로 동작하며 hub key로 정한 SQLite 파일 하나를 직접 연다. 사이에 서버 프로세스를 두지 않은 것은 SQLite가 이미 프로세스 간 writer를 직렬화하기 때문이다. WAL과 busy timeout이 동시성의 전부이고, journal mode 전환만은 SQLite가 busy handler 없이 즉시 `BUSY`를 돌려주므로 열 때 직접 재시도한다. 저장 위치는 repository 밖(`~/.nightcrow/memory`)이며 hub key 형식을 검증한 뒤에만 파일 이름으로 쓴다.
+
+token은 여기서도 인증 수단이 아니다. 작성자 label에는 앞 6자만 쓰고 전체 값은 저장하지 않는다. 읽은 항목은 다른 agent가 쓴 미검증 텍스트이므로 모든 읽기 결과에 그 사실을 알리는 문구를 붙이지만, agent 간 prompt injection 전파를 구조적으로 막지는 못한다.
+
 ## Config reload
 
 `[[plugin]]`의 enabled/opt-in과 live host 목록은 repository hub의 worker에서 적용한다. `command`·`args`·`env`만 child 교체를 일으키며, `allowed_resume_flags`·`watch_on_signal`은 다음 guard 판정부터 바꾼다. 이미 pane을 보고 있는 plugin은 명시적으로 `enabled = false`가 되기 전까지 유지한다. 후계자 spawn이 실패하면 기존 pane의 hold를 버려 owner 없는 recovery를 만들지 않는다. guard와 token budget은 reload마다 재생성하지 않는다.

@@ -8,6 +8,10 @@
 /// Commits returned by one page of `/api/log`. Matches the TUI's
 /// `commit_log_page_size` default.
 pub const MAX_LOG_PAGE: usize = 100;
+/// Ref labels in one `/api/log/decorations` answer. A repository with years of
+/// release tags can hold thousands; past this the least orienting kinds
+/// (remote branches, then tags) are dropped first and the answer says so.
+pub const MAX_LOG_DECORATION_REFS: usize = 2_000;
 // `/api/log?skip=` deliberately has no ceiling: the skip feeds
 // `Iterator::skip` on a revwalk, so a request walks at most `skip + page` or
 // the whole history, whichever is smaller — an absurd skip costs what walking

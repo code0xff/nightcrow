@@ -8,7 +8,7 @@ The left list contains changed paths and the right pane shows the selected worki
 
 ## Commit log view
 
-`<prefix> l` shows a commit list and the selected commit's diff. Commits ahead of a tracked upstream are marked with `↑`; a commit with no upstream has no ahead/behind marker. `Enter` drills into the commit's changed files, and `Esc` returns to the commit list.
+`<prefix> l` shows a commit list and the selected commit's diff. Commits ahead of a tracked upstream are marked with `↑` and commits on the upstream but not yet here with `↓`; a branch with no upstream has neither. Each commit carries the refs that point at it — `HEAD → dev`, other local branches, tags, remote branches, in that order — in the TUI and the web viewer alike. `Enter` drills into the commit's changed files, and `Esc` returns to the commit list.
 
 History loads in pages. The first page and subsequent prefetch distance use [`[log]`](configuration.md#log) settings, and scrolling near the end requests more. The view follows a new `HEAD`; a history rewrite replaces the list and may close a drill-down.
 
@@ -20,7 +20,7 @@ Paths matched by `.gitignore` are hidden by default. `[tree] respect_gitignore`,
 
 ## Notice row
 
-The header identifies the selected repository, branch, and tracked-branch ahead/behind counts. Errors from Git, a diff load, terminal creation, or repository selection appear in the notice row until resolved or dismissed by app input. Repository-dialog validation messages appear below the dialog.
+The header identifies the selected repository, branch, and tracked-branch ahead/behind counts. While git is stopped in the middle of something it says so ahead of the counts — `MERGING`, `REBASING 2/5`, `CHERRY-PICKING`, `REVERTING`, `BISECTING` or `APPLYING` (a stopped `git am`), with the number of unmerged files after it (`· 3 conflicts`); conflicts left by a stash pop or checkout are shown on their own. The web viewer shows the same in its footer. Errors from Git, a diff load, terminal creation, or repository selection appear in the notice row until resolved or dismissed by app input. Repository-dialog validation messages appear below the dialog.
 
 ## The repo dialog
 

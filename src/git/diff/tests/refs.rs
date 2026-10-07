@@ -107,3 +107,31 @@ fn the_fingerprint_is_stable_when_refs_do_not_move() {
     assert_eq!(first, refs_fingerprint(&open_repo(&path)));
     drop(dir);
 }
+
+#[test]
+fn a_capped_divergence_walk_keeps_the_newest_commits_and_says_it_stopped() {
+    // Five commits on one side of a three-commit cap: the three newest are the
+    // ones a reader can scroll to, and the walk must say there was more.
+    let (_dir, path) = make_repo();
+    commit(&path, "base");
+    let repo = open_repo(&path);
+    let base = repo.head().unwrap().target().unwrap();
+    let mut newest = Vec::new();
+    for n in 0..5 {
+        commit(&path, &format!("c{n}"));
+        newest.push(repo.head().unwrap().target().unwrap());
+    }
+    let tip = *newest.last().unwrap();
+
+    let (kept, capped) = crate::git::diff::refs::exclusive_oids_capped(&repo, tip, base, 3);
+
+    assert!(capped);
+    assert_eq!(kept.len(), 3);
+    for oid in &newest[2..] {
+        assert!(kept.contains(oid), "a recent commit was dropped");
+    }
+
+    let (all, capped) = crate::git::diff::refs::exclusive_oids_capped(&repo, tip, base, 5);
+    assert!(!capped, "exactly at the cap is not more to give");
+    assert_eq!(all.len(), 5);
+}

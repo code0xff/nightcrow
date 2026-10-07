@@ -8,8 +8,8 @@ use super::mutations::redact;
 use crate::git::diff;
 use crate::web::common::http::RequestHead;
 use crate::web::viewer::dto::{
-    BrowseDto, BrowseEntryDto, CommitFilesDto, DiffDto, Envelope, FileDto, HotConfigDto, LogDto,
-    StatusDto, TreeDto, TreeSearchDto, ViewerBootstrapDto,
+    BrowseDto, BrowseEntryDto, CommitFilesDto, DiffDto, Envelope, FileDto, HotConfigDto,
+    LogDecorationsDto, LogDto, StatusDto, TreeDto, TreeSearchDto, ViewerBootstrapDto,
 };
 use crate::web::viewer::limits;
 
@@ -181,6 +181,17 @@ pub(super) fn route(head: &RequestHead, state: &ViewerState) -> Vec<u8> {
             Ok(json_response(
                 "200 OK",
                 &encode(&LogDto::from_entries(&commits, anchor))?,
+                &[],
+            ))
+        }),
+        // The log's decorations, for the whole repository at once — see
+        // `LogDecorationsDto` for why they are not on the pages.
+        "/api/log/decorations" => with_repo(head, state, |entry| {
+            let repo = open_repo(&entry.path)?;
+            let decorations = diff::load_log_decorations(&repo)?;
+            Ok(json_response(
+                "200 OK",
+                &encode(&LogDecorationsDto::from(&decorations))?,
                 &[],
             ))
         }),

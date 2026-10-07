@@ -168,6 +168,9 @@ pub struct DiffHunk {
 pub struct TrackingStatus {
     pub ahead: usize,
     pub behind: usize,
+    /// The upstream's shorthand (`origin/dev`). Repointing it moves the
+    /// counts' meaning without moving any ref, so clients watch the name too.
+    pub upstream: String,
 }
 
 #[derive(Debug, Clone)]
@@ -185,6 +188,10 @@ pub struct RepoSnapshot {
     /// (a fetch advances `origin/dev`), so the Log view rebuilds its ref
     /// decoration map when this changes.
     pub refs_fingerprint: u64,
+    /// A merge, rebase or similar that stopped and is waiting; `None` at rest.
+    pub operation: Option<super::operation::Operation>,
+    /// Files with an unmerged index entry, counted before any display cap.
+    pub conflicts: usize,
 }
 
 #[derive(Debug, Clone)]

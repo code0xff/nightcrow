@@ -156,25 +156,51 @@ fn editor_args(
 }
 
 fn spawn_editor(command: &mut Command, program: &Path) -> std::io::Result<()> {
+    spawn_editor_within(command, program, EDITOR_STARTUP_GRACE)
+}
+
+/// How often the grace window looks at the child. Short enough that an editor
+/// failing at once is reported at once rather than at the end of the window.
+const EDITOR_POLL: Duration = Duration::from_millis(5);
+
+/// Spawn the editor and report it as failed if it exits unsuccessfully within
+/// `grace`; still running at the end of the window counts as started.
+///
+/// Polled rather than one sleep and one look: a single look at the end of the
+/// window misses a failure that was simply slow to happen — a loaded machine
+/// starting the process late — and the same window is then both too long for a
+/// fast failure and too short for a slow one.
+fn spawn_editor_within(
+    command: &mut Command,
+    program: &Path,
+    grace: Duration,
+) -> std::io::Result<()> {
     let mut child = command
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .spawn()?;
-    std::thread::sleep(EDITOR_STARTUP_GRACE);
-    match child.try_wait() {
-        Ok(Some(status)) if status.success() => Ok(()),
-        Ok(Some(status)) => Err(std::io::Error::other(format!(
-            "{} exited with {status}",
-            program.display()
-        ))),
-        Ok(None) => {
-            reap_child(child, program);
-            Ok(())
-        }
-        Err(error) => {
-            reap_child(child, program);
-            Err(error)
+    let deadline = std::time::Instant::now() + grace;
+    loop {
+        match child.try_wait() {
+            Ok(Some(status)) if status.success() => return Ok(()),
+            Ok(Some(status)) => {
+                return Err(std::io::Error::other(format!(
+                    "{} exited with {status}",
+                    program.display()
+                )));
+            }
+            Ok(None) if std::time::Instant::now() < deadline => {
+                std::thread::sleep(EDITOR_POLL);
+            }
+            Ok(None) => {
+                reap_child(child, program);
+                return Ok(());
+            }
+            Err(error) => {
+                reap_child(child, program);
+                return Err(error);
+            }
         }
     }
 }

@@ -1,8 +1,9 @@
 use super::status::ChangedFileDto;
-use crate::git::diff::{ChangedFile, CommitEntry};
+use crate::git::diff::{ChangedFile, CommitEntry, LogDecorations, RefKind, RefLabel};
 use crate::web::viewer::limits::{self, Capped};
 use git2::Oid;
 use serde::Serialize;
+use std::collections::BTreeMap;
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub struct CommitDto {
@@ -12,6 +13,20 @@ pub struct CommitDto {
     pub author: String,
     /// Unix seconds. Formatting is the client's business.
     pub time: i64,
+    #[serde(skip_serializing_if = "is_false")]
+    pub merge: bool,
+}
+
+fn is_false(b: &bool) -> bool {
+    !*b
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct RefDto {
+    /// `head`, `local`, `tag` or `remote`.
+    pub kind: &'static str,
+    /// Shorthand: `dev`, `origin/dev`, `v0.1.15`. `HEAD` for a detached head.
+    pub name: String,
 }
 
 impl From<&CommitEntry> for CommitDto {
@@ -23,6 +38,80 @@ impl From<&CommitEntry> for CommitDto {
             summary: c.summary.clone(),
             author: c.author.clone(),
             time: c.time,
+            merge: c.is_merge(),
+        }
+    }
+}
+
+/// Which refs point at which commits, and which commits stand ahead of or
+/// behind the upstream — for the whole repository, not for one page.
+///
+/// Apart from the log pages on purpose. The history a page describes does not
+/// change once walked, but its decorations do whenever a ref moves: a push,
+/// a fetch, a branch switch at the same commit. Carried on each row, they went
+/// stale on every row already loaded; here the client replaces them wholesale.
+#[derive(Debug, Clone, Serialize)]
+pub struct LogDecorationsDto {
+    /// Oid → labels, most orienting first (HEAD, local, tag, remote).
+    pub refs: BTreeMap<String, Vec<RefDto>>,
+    /// Commits on this branch the upstream lacks, capped by the walk.
+    pub ahead: Vec<String>,
+    /// Commits on the upstream this branch lacks, capped by the walk.
+    pub behind: Vec<String>,
+    /// True when anything here is incomplete: `refs` cut at
+    /// [`limits::MAX_LOG_DECORATION_REFS`] (remote branches first, then tags,
+    /// never the branch HEAD is on), or `ahead`/`behind` stopped at the walk's
+    /// own cap, so a commit missing from them may still be on that side.
+    pub truncated: bool,
+}
+
+impl From<&LogDecorations> for LogDecorationsDto {
+    fn from(d: &LogDecorations) -> Self {
+        Self::capped(d, limits::MAX_LOG_DECORATION_REFS)
+    }
+}
+
+impl LogDecorationsDto {
+    /// Every label the repository has, or the `cap` most orienting of them.
+    pub fn capped(d: &LogDecorations, cap: usize) -> Self {
+        // Flattened and ranked across the whole repository, so a cut keeps
+        // HEAD and local branches wherever they are and gives up the long tail
+        // of remote branches and release tags first.
+        let mut all: Vec<(&Oid, &RefLabel)> = d
+            .all_labels()
+            .flat_map(|(oid, labels)| labels.iter().map(move |label| (oid, label)))
+            .collect();
+        all.sort_by(|a, b| {
+            a.1.kind
+                .cmp(&b.1.kind)
+                .then_with(|| a.1.name.cmp(&b.1.name))
+        });
+        let truncated = all.len() > cap || d.divergence_capped();
+        all.truncate(cap);
+
+        let mut refs: BTreeMap<String, Vec<RefDto>> = BTreeMap::new();
+        for (oid, label) in all {
+            refs.entry(oid.to_string()).or_default().push(RefDto {
+                kind: match label.kind {
+                    RefKind::Head => "head",
+                    RefKind::LocalBranch => "local",
+                    RefKind::Tag => "tag",
+                    RefKind::RemoteBranch => "remote",
+                },
+                name: label.name.clone(),
+            });
+        }
+        // Sorted so the payload is the same bytes for the same refs.
+        fn sorted<'a>(oids: impl Iterator<Item = &'a Oid>) -> Vec<String> {
+            let mut out: Vec<String> = oids.map(Oid::to_string).collect();
+            out.sort();
+            out
+        }
+        Self {
+            refs,
+            ahead: sorted(d.ahead_oids()),
+            behind: sorted(d.behind_oids()),
+            truncated,
         }
     }
 }

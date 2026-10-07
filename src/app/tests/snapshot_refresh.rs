@@ -14,6 +14,8 @@ fn successful_snapshot_preserves_terminal_status() {
             head_oid: None,
             branch_name: None,
             refs_fingerprint: 0,
+            operation: None,
+            conflicts: 0,
         },
         HashMap::new(),
     ))
@@ -40,6 +42,8 @@ fn successful_snapshot_clears_git_status() {
             head_oid: None,
             branch_name: None,
             refs_fingerprint: 0,
+            operation: None,
+            conflicts: 0,
         },
         HashMap::new(),
     ))
@@ -67,6 +71,8 @@ fn snapshot_refresh_clamps_selection_to_active_filter() {
             head_oid: None,
             branch_name: None,
             refs_fingerprint: 0,
+            operation: None,
+            conflicts: 0,
         },
         HashMap::new(),
     ))
@@ -101,6 +107,8 @@ fn snapshot_invalidates_path_width_cache_on_same_length_rename() {
             head_oid: None,
             branch_name: None,
             refs_fingerprint: 0,
+            operation: None,
+            conflicts: 0,
         },
         HashMap::new(),
     ))
@@ -133,6 +141,8 @@ fn snapshot_refresh_with_no_filter_matches_clears_stale_diff() {
             head_oid: None,
             branch_name: None,
             refs_fingerprint: 0,
+            operation: None,
+            conflicts: 0,
         },
         HashMap::new(),
     ))
@@ -168,6 +178,8 @@ fn non_selected_file_change_does_not_reload_the_selected_diff() {
             head_oid: None,
             branch_name: None,
             refs_fingerprint: 0,
+            operation: None,
+            conflicts: 0,
         },
         HashMap::from([
             ("selected.rs".to_string(), selected_mtime),

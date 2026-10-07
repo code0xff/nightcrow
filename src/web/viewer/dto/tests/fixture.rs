@@ -1,6 +1,6 @@
 use super::super::{
-    BrowseDto, BrowseEntryDto, ChangedFileDto, CommitDto, CommitFilesDto, DiffDto, DiffHunkDto,
-    DiffLineDto, FileDto, HotConfigDto, LogDto, PROTOCOL_VERSION, RepoDto, RepoViewDto, SpanDto,
+    BrowseDto, BrowseEntryDto, ChangedFileDto, CommitFilesDto, DiffDto, DiffHunkDto, DiffLineDto,
+    FileDto, HotConfigDto, LogDto, OperationDto, PROTOCOL_VERSION, RepoDto, RepoViewDto, SpanDto,
     StatusDto, TrackingDto, TreeDto, TreeEntryDto, TreeMatchDto, TreeSearchDto, ViewFileDto,
     ViewerBootstrapDto,
 };
@@ -95,23 +95,25 @@ fn wire_fixture() -> serde_json::Value {
         "status": StatusDto {
             branch: Some("dev".to_string()),
             head: Some("9a3bc2c".to_string()),
-            tracking: Some(TrackingDto { ahead: 2, behind: 0 }),
+            tracking: Some(TrackingDto {
+                ahead: 2,
+                behind: 0,
+                upstream: "origin/dev".to_string(),
+            }),
             files: vec![changed.clone(), renamed.clone()],
             truncated: false,
+            // Mid-rebase with one file left unmerged, so the client's union
+            // for the operation and the count are both exercised.
+            operation: Some(OperationDto {
+                kind: "rebase",
+                step: Some(2),
+                total: Some(5),
+            }),
+            conflicts: 1,
+            refs: Some("00c0ffee00c0ffee".to_string()),
         },
-        "log": LogDto {
-            commits: vec![CommitDto {
-                oid: "9a3bc2cf0e1d2a3b4c5d6e7f8a9b0c1d2e3f4a5b".to_string(),
-                short_id: "9a3bc2c".to_string(),
-                summary: "refactor: name the bootstrap payload".to_string(),
-                author: "code0xff".to_string(),
-                time: 1_700_000_000,
-            }],
-            // A page with more behind it, carrying the anchor the client
-            // pins its next request to.
-            truncated: true,
-            head: Some("9a3bc2cf0e1d2a3b4c5d6e7f8a9b0c1d2e3f4a5b".to_string()),
-        },
+        "log": super::fixture_log::log_page(),
+        "logDecorations": super::fixture_log::decorations(),
         // A repository with no commits: no anchor to page from, which is
         // also how the client learns there is nothing more. Present so the
         // absent `head` is pinned as well as the populated one.

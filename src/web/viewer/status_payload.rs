@@ -15,7 +15,9 @@ pub(crate) fn encode(
         snapshot.head_oid,
         snapshot.branch_name.as_deref(),
         mtimes,
-    );
+    )
+    .with_operation(snapshot.operation.as_ref(), snapshot.conflicts)
+    .with_refs(snapshot.refs_fingerprint);
     let json = match serde_json::to_string(&Envelope::new(dto)) {
         Ok(json) => json,
         Err(err) => {

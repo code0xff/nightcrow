@@ -187,8 +187,11 @@ pub(crate) fn render_repo_header<'a>(app: &'a App, accent: Color, width: u16) ->
         .tracking()
         .filter(|t| t.ahead > 0 || t.behind > 0)
         .map(|t| format!(" ^{} v{} ", t.ahead, t.behind));
+    // Ahead of the tracking chip: a stopped rebase is the more urgent news, and
+    // like tracking it keeps its width while the path and branch shrink.
+    let operation = app.operation_text().map(|text| format!(" {text} "));
     let chip = recovery_chip(app);
-    let kept: usize = [tracking.as_deref(), chip.as_deref()]
+    let kept: usize = [operation.as_deref(), tracking.as_deref(), chip.as_deref()]
         .into_iter()
         .flatten()
         .map(|text| Span::raw(text).width())
@@ -209,6 +212,12 @@ pub(crate) fn render_repo_header<'a>(app: &'a App, accent: Color, width: u16) ->
         spans.push(Span::styled(
             branch,
             Style::default().fg(accent).add_modifier(Modifier::BOLD),
+        ));
+    }
+    if let Some(operation) = operation {
+        spans.push(Span::styled(
+            operation,
+            Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
         ));
     }
     if let Some(tracking) = tracking {

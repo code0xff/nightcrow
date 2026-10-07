@@ -34,6 +34,8 @@ pub struct LogDecorations {
     ahead: HashSet<Oid>,
     behind: HashSet<Oid>,
     head: Option<Oid>,
+    /// Whether either divergence side hit `MAX_DIVERGENCE_OIDS` and stopped.
+    divergence_capped: bool,
 }
 
 impl LogDecorations {
@@ -51,6 +53,28 @@ impl LogDecorations {
 
     pub fn is_head(&self, oid: Oid) -> bool {
         self.head == Some(oid)
+    }
+
+    /// Every decorated commit with its labels, for a client that keeps the
+    /// decorations apart from the rows they mark.
+    pub fn all_labels(&self) -> impl Iterator<Item = (&Oid, &[RefLabel])> {
+        self.labels
+            .iter()
+            .map(|(oid, labels)| (oid, labels.as_slice()))
+    }
+
+    pub fn ahead_oids(&self) -> impl Iterator<Item = &Oid> {
+        self.ahead.iter()
+    }
+
+    pub fn behind_oids(&self) -> impl Iterator<Item = &Oid> {
+        self.behind.iter()
+    }
+
+    /// True when the ahead or behind set was cut short, so a commit missing
+    /// from it may still be on that side.
+    pub fn divergence_capped(&self) -> bool {
+        self.divergence_capped
     }
 }
 
@@ -144,18 +168,21 @@ pub fn load_log_decorations(repo: &Repository) -> Result<LogDecorations> {
         chips.sort_by(|a, b| a.kind.cmp(&b.kind).then_with(|| a.name.cmp(&b.name)));
     }
 
-    let (ahead, behind) = divergence_oids(repo).unwrap_or_default();
+    let ((ahead, ahead_capped), (behind, behind_capped)) =
+        divergence_oids(repo).unwrap_or_default();
     Ok(LogDecorations {
         labels,
         ahead,
         behind,
         head,
+        divergence_capped: ahead_capped || behind_capped,
     })
 }
 
 /// Oids on exactly one side of the HEAD/upstream split. `None` when HEAD is
 /// detached, unborn, or has no upstream — nothing to diverge from, not an error.
-fn divergence_oids(repo: &Repository) -> Option<(HashSet<Oid>, HashSet<Oid>)> {
+#[allow(clippy::type_complexity)]
+fn divergence_oids(repo: &Repository) -> Option<((HashSet<Oid>, bool), (HashSet<Oid>, bool))> {
     let head = repo.head().ok()?;
     if !head.is_branch() {
         return None;
@@ -168,13 +195,29 @@ fn divergence_oids(repo: &Repository) -> Option<(HashSet<Oid>, HashSet<Oid>)> {
     ))
 }
 
-/// Commits reachable from `from` but not from `hidden` — `git rev-list from ^hidden`.
-fn exclusive_oids(repo: &Repository, from: Oid, hidden: Oid) -> HashSet<Oid> {
+/// Commits reachable from `from` but not from `hidden` — `git rev-list from ^hidden`
+/// — and whether the walk was cut at `MAX_DIVERGENCE_OIDS`.
+fn exclusive_oids(repo: &Repository, from: Oid, hidden: Oid) -> (HashSet<Oid>, bool) {
+    exclusive_oids_capped(repo, from, hidden, MAX_DIVERGENCE_OIDS)
+}
+
+pub(in crate::git::diff) fn exclusive_oids_capped(
+    repo: &Repository,
+    from: Oid,
+    hidden: Oid,
+    cap: usize,
+) -> (HashSet<Oid>, bool) {
     let Ok(mut revwalk) = repo.revwalk() else {
-        return HashSet::new();
+        return (HashSet::new(), false);
     };
     if revwalk.push(from).is_err() || revwalk.hide(hidden).is_err() {
-        return HashSet::new();
+        return (HashSet::new(), false);
     }
-    revwalk.flatten().take(MAX_DIVERGENCE_OIDS).collect()
+    // The walk yields newest first, so the first `MAX_DIVERGENCE_OIDS` are the
+    // ones to keep; one more pull tells a walk that stopped exactly at the cap
+    // from one that had more to give.
+    let mut walk = revwalk.flatten();
+    let oids: HashSet<Oid> = walk.by_ref().take(cap).collect();
+    let capped = walk.next().is_some();
+    (oids, capped)
 }

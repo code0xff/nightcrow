@@ -52,6 +52,11 @@ fn commit_dto_drops_the_summary_cache_and_hexes_the_oid() {
     assert_eq!(value["oid"], "1234567890abcdef1234567890abcdef12345678");
     assert_eq!(value["summary"], "Fix The Bug");
     assert!(value.get("summary_lower").is_none());
+    // Not a merge, so the flag stays off the wire rather than arriving false.
+    // Refs and divergence are not here at all: they are repository-wide and
+    // travel apart (`LogDecorationsDto`).
+    assert!(value.get("merge").is_none());
+    assert!(value.get("refs").is_none());
 }
 
 #[test]

@@ -1,5 +1,6 @@
 mod diff;
 mod fixture;
+mod fixture_log;
 mod identity;
 mod status;
 

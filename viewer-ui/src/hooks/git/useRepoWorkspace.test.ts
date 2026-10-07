@@ -9,22 +9,30 @@
 // somebody switches lists with a diff open.
 
 import { act, cleanup, renderHook } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useRepoWorkspace } from "./useRepoWorkspace";
 import type { ShellLayout } from "../ui/useShellLayout";
-import type { Diff } from "../../api";
+import { api, type Diff, type RepoView } from "../../api";
 import type { Maximized, Pane } from "../../types";
+import { stubLocalStorage } from "../../lib/shared/fakeStorage";
 
 vi.mock("../../api", () => ({
   api: {
     log: vi.fn(() => Promise.resolve({ commits: [], truncated: false })),
     setRepoView: vi.fn(() => Promise.resolve({})),
+    diff: vi.fn(() => new Promise(() => {})),
+    file: vi.fn(() => new Promise(() => {})),
   },
   subscribeStatus: vi.fn(() => () => {}),
   isUnauthorized: () => false,
 }));
 
-afterEach(cleanup);
+beforeEach(stubLocalStorage);
+
+afterEach(() => {
+  cleanup();
+  localStorage.clear();
+});
 
 /** A content pane with something in it, so emptying it is observable. */
 const OPEN_DIFF: Pane = {
@@ -32,7 +40,7 @@ const OPEN_DIFF: Pane = {
   value: { path: "a.ts", hunks: [], binary: false } as unknown as Diff,
 };
 
-function mount(remember = vi.fn()) {
+function mount(remember = vi.fn(), remembered?: RepoView) {
   let maximized: Maximized = "none";
   return renderHook(() =>
     useRepoWorkspace({
@@ -49,7 +57,7 @@ function mount(remember = vi.fn()) {
       },
       view: {
         known: true,
-        remembered: undefined,
+        remembered,
         latest: () => undefined,
         remember,
       },
@@ -101,5 +109,44 @@ describe("useRepoWorkspace 목록 선택", () => {
     act(() => result.current.chooseTab("status"));
 
     expect(result.current.repoShell!.filePane.pane.kind).toBe("diff");
+  });
+
+  it.each(["openDiff", "openFile"] as const)(
+    "%s로_콘텐츠를_열면_모바일_content_화면을_선택한다",
+    (action) => {
+      const { result } = mount();
+
+      act(() => result.current.repoShell!.sidebar[action]("src/main.ts"));
+
+      expect(result.current.repoShell!.layout.mobileView).toBe("diff");
+    },
+  );
+
+  it("터미널_화면은_재마운트와_기억된_파일_복원_뒤에도_유지된다", async () => {
+    const remembered: RepoView = {
+      tab: "status",
+      file: { path: "src/main.ts", commit: null, face: "source" },
+      tree_expanded: [],
+    };
+    vi.mocked(api.file).mockResolvedValue({
+      path: "src/main.ts",
+      lines: [],
+      truncated: false,
+    });
+
+    const first = mount(vi.fn(), remembered);
+    await act(async () => {
+      await Promise.resolve();
+    });
+    act(() => first.result.current.repoShell!.layout.setMobileView("terminal"));
+    first.unmount();
+
+    const refreshed = mount(vi.fn(), remembered);
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(refreshed.result.current.repoShell!.filePane.pane.kind).toBe("file");
+    expect(refreshed.result.current.repoShell!.layout.mobileView).toBe("terminal");
   });
 });

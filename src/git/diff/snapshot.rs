@@ -15,7 +15,17 @@ fn load_tracking_status(repo: &Repository) -> Option<TrackingStatus> {
     let local_oid = branch.get().target()?;
     let upstream_oid = upstream.get().target()?;
     let (ahead, behind) = repo.graph_ahead_behind(local_oid, upstream_oid).ok()?;
-    Some(TrackingStatus { ahead, behind })
+    let name = upstream
+        .get()
+        .shorthand()
+        .ok()
+        .map(String::from)
+        .unwrap_or_default();
+    Some(TrackingStatus {
+        ahead,
+        behind,
+        upstream: name,
+    })
 }
 
 pub fn load_snapshot(repo: &Repository) -> Result<RepoSnapshot> {
@@ -49,7 +59,11 @@ pub fn load_snapshot(repo: &Repository) -> Result<RepoSnapshot> {
         );
     }
 
-    let files = files.into_values().collect();
+    let files: Vec<ChangedFile> = files.into_values().collect();
+    let conflicts = files
+        .iter()
+        .filter(|f| f.index == StatusKind::Unmerged || f.worktree == StatusKind::Unmerged)
+        .count();
 
     let tracking = load_tracking_status(repo);
     let head = repo.head().ok();
@@ -64,6 +78,8 @@ pub fn load_snapshot(repo: &Repository) -> Result<RepoSnapshot> {
         head_oid,
         branch_name,
         refs_fingerprint: crate::git::diff::refs::refs_fingerprint(repo),
+        operation: crate::git::diff::operation::current_operation(repo),
+        conflicts,
     })
 }
 

@@ -12,9 +12,10 @@
 #
 #   * no Rust and no manifest touched  -> every cargo invocation is skipped, so a
 #     docs-only push costs nothing
-#   * only `plugins/` touched          -> just that crate is checked. Sound because
-#     `nightcrow-recovery` does not depend on `nightcrow`: it speaks the plugin
-#     protocol over a pipe and shares no code (see its Cargo.toml)
+#   * only `plugins/` touched          -> just those crates are checked. Sound
+#     because neither depends on `nightcrow`: `nightcrow-recovery` speaks the
+#     plugin protocol over a pipe and `nightcrow-memory` reads only the pane
+#     environment, so they share no code with it (see their Cargo.toml)
 #   * only the host touched            -> just `nightcrow`
 #   * a manifest or lockfile touched   -> the whole workspace, since a dependency
 #     change can reach either crate
@@ -178,7 +179,7 @@ else
 	if [ -n "$manifest" ] || { [ -n "$host" ] && [ -n "$plugin" ]; }; then
 		scope=(--workspace)
 	elif [ -n "$plugin" ]; then
-		scope=(-p nightcrow-recovery)
+		scope=(-p nightcrow-recovery -p nightcrow-memory)
 	else
 		scope=(-p nightcrow)
 	fi

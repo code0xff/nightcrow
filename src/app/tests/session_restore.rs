@@ -56,6 +56,8 @@ fn status_restore_from_first_snapshot_applies_scroll_after_async_diff() {
             head_oid: None,
             branch_name: None,
             refs_fingerprint: 0,
+            operation: None,
+            conflicts: 0,
         },
         HashMap::new(),
     );
@@ -81,6 +83,8 @@ fn status_restore_with_existing_list_survives_same_path_snapshot_replacement() {
             head_oid: None,
             branch_name: None,
             refs_fingerprint: 0,
+            operation: None,
+            conflicts: 0,
         },
         HashMap::from([("a.rs".to_string(), old_mtime)]),
     );
@@ -101,6 +105,8 @@ fn status_restore_with_existing_list_survives_same_path_snapshot_replacement() {
             head_oid: None,
             branch_name: None,
             refs_fingerprint: 0,
+            operation: None,
+            conflicts: 0,
         },
         HashMap::from([("a.rs".to_string(), new_mtime)]),
     );

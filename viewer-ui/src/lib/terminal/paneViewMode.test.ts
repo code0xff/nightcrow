@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
   GRID_MIN_VIEWPORT_PX,
+  canChoosePaneViewMode,
   defaultPaneViewMode,
   parsePaneViewMode,
+  resolvePaneViewMode,
   shownTab,
   stackedCellStyle,
 } from "./paneViewMode";
@@ -66,5 +68,28 @@ describe("stackedCellStyle", () => {
 
   it("shows the pane on top of the stack", () => {
     expect(stackedCellStyle(true).visibility).toBe("visible");
+  });
+});
+
+describe("resolvePaneViewMode", () => {
+  const narrow = GRID_MIN_VIEWPORT_PX - 1;
+  const wide = GRID_MIN_VIEWPORT_PX;
+
+  it("좁은_화면은_저장된_선택과_무관하게_탭이다", () => {
+    // A grid there gives each pane too few columns, and a phone holding the
+    // sizing in one would narrow every other screen's panes too.
+    expect(resolvePaneViewMode("grid", narrow)).toBe("tabs");
+    expect(resolvePaneViewMode(null, narrow)).toBe("tabs");
+  });
+
+  it("넓은_화면은_저장된_선택을_따르고_없으면_그리드다", () => {
+    expect(resolvePaneViewMode("tabs", wide)).toBe("tabs");
+    expect(resolvePaneViewMode("grid", wide)).toBe("grid");
+    expect(resolvePaneViewMode(null, wide)).toBe("grid");
+  });
+
+  it("고를_수_있는지는_경계에서_갈린다", () => {
+    expect(canChoosePaneViewMode(narrow)).toBe(false);
+    expect(canChoosePaneViewMode(wide)).toBe(true);
   });
 });

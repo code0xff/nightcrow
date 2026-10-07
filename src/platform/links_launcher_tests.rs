@@ -1,7 +1,8 @@
-use super::{Editor, editor_args, spawn_editor};
+use super::{Editor, editor_args, spawn_editor_within};
 use std::ffi::OsString;
 use std::path::Path;
 use std::process::Command;
+use std::time::Duration;
 
 #[cfg(not(windows))]
 #[test]
@@ -48,7 +49,11 @@ fn immediate_editor_failure_is_reported_without_running_a_shell() {
             "--nocapture",
         ])
         .env("NIGHTCROW_LINK_EDITOR_FIXTURE", "1");
-    let error = spawn_editor(&mut command, Path::new("fixture"))
+    // The fixture is this whole test binary started again, which a loaded
+    // machine can take a while to do. The window is generous so that cannot
+    // read as "still running"; polling returns the moment the child exits, so
+    // it costs nothing when the machine is quick.
+    let error = spawn_editor_within(&mut command, Path::new("fixture"), Duration::from_secs(30))
         .expect_err("the guarded fixture must fail immediately");
     assert!(error.to_string().contains("exited with"));
 }

@@ -118,12 +118,33 @@ export interface ViewerBootstrap {
   viewer_build: string | null;
 }
 
+/** A merge, rebase or similar that stopped and is waiting. `step`/`total`
+ *  only for a rebase whose counters git recorded. */
+export interface RepoOperation {
+  kind: "merge" | "rebase" | "cherry-pick" | "revert" | "bisect" | "am";
+  step?: number;
+  total?: number;
+}
+
 export interface Status {
   branch?: string;
   head?: string;
-  tracking?: { ahead: number; behind: number };
+  /** `upstream` is the shorthand, e.g. `origin/dev`. */
+  tracking?: { ahead: number; behind: number; upstream: string };
   files: ChangedFile[];
   truncated: boolean;
+  operation?: RepoOperation;
+  /** Unmerged files, counted before `files` was capped. Absent when none. */
+  conflicts?: number;
+  /** A digest of every ref name and target, in hex. Opaque: compared, never
+   *  read. It moves when a branch does even if HEAD did not. */
+  refs?: string;
+}
+
+/** A ref pointing at a commit, most orienting first. */
+export interface CommitRef {
+  kind: "head" | "local" | "tag" | "remote";
+  name: string;
 }
 
 export interface Commit {
@@ -132,6 +153,20 @@ export interface Commit {
   summary: string;
   author: string;
   time: number;
+  merge?: boolean;
+}
+
+/** Refs and upstream divergence for the whole repository. Kept apart from the
+ *  log pages: the history a page describes does not change, but these do
+ *  whenever a ref moves, and the client replaces them wholesale. */
+export interface LogDecorations {
+  /** Oid → refs pointing at it, most orienting first. */
+  refs: Record<string, CommitRef[]>;
+  ahead: string[];
+  behind: string[];
+  /** Something here is incomplete: refs cut at the server's ceiling (least
+   *  orienting kinds first), or a divergence walk stopped at its cap. */
+  truncated: boolean;
 }
 
 export interface Log {

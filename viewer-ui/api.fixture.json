@@ -135,6 +135,7 @@
     "commits": [
       {
         "author": "code0xff",
+        "merge": true,
         "oid": "9a3bc2cf0e1d2a3b4c5d6e7f8a9b0c1d2e3f4a5b",
         "short_id": "9a3bc2c",
         "summary": "refactor: name the bootstrap payload",
@@ -143,6 +144,35 @@
     ],
     "head": "9a3bc2cf0e1d2a3b4c5d6e7f8a9b0c1d2e3f4a5b",
     "truncated": true
+  },
+  "logDecorations": {
+    "ahead": [
+      "9a3bc2cf0e1d2a3b4c5d6e7f8a9b0c1d2e3f4a5b"
+    ],
+    "behind": [
+      "7c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d"
+    ],
+    "refs": {
+      "9a3bc2cf0e1d2a3b4c5d6e7f8a9b0c1d2e3f4a5b": [
+        {
+          "kind": "head",
+          "name": "dev"
+        },
+        {
+          "kind": "local",
+          "name": "feat/graph"
+        },
+        {
+          "kind": "tag",
+          "name": "v0.1.15"
+        },
+        {
+          "kind": "remote",
+          "name": "origin/dev"
+        }
+      ]
+    },
+    "truncated": false
   },
   "logEmpty": {
     "commits": [],
@@ -163,6 +193,7 @@
   },
   "status": {
     "branch": "dev",
+    "conflicts": 1,
     "files": [
       {
         "index": "M",
@@ -178,9 +209,16 @@
       }
     ],
     "head": "9a3bc2c",
+    "operation": {
+      "kind": "rebase",
+      "step": 2,
+      "total": 5
+    },
+    "refs": "00c0ffee00c0ffee",
     "tracking": {
       "ahead": 2,
-      "behind": 0
+      "behind": 0,
+      "upstream": "origin/dev"
     },
     "truncated": false
   },
