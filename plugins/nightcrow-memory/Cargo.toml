@@ -1,0 +1,22 @@
+[package]
+name = "nightcrow-memory"
+version.workspace = true
+edition = "2024"
+rust-version = "1.89"
+description = "nightcrow helper: notes that the coding agents in one repository's panes share over MCP"
+license = "Apache-2.0"
+publish = false
+
+[dependencies]
+# The same line-and-JSON footing as the recovery plugin: an MCP stdio server is
+# newline-delimited JSON-RPC, so no SDK and no async runtime.
+anyhow = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# The shared store. `bundled` compiles SQLite in rather than linking the
+# system's, so every platform gets the same build — with FTS5 — instead of
+# whatever the OS ships. Selection notes are in docs/decisions.md.
+rusqlite = { version = "0.40", features = ["bundled"] }
+
+[dev-dependencies]
+tempfile = "3"

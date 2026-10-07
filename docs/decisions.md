@@ -96,6 +96,12 @@ HTTP client는 명령의 동기 실행 모델과 기존 async-runtime 배제 결
 
 Rust에는 안정적인 plugin ABI가 없어 dylib가 compiler/runtime 결합과 주소 공간의 안전성 문제를 만든다. plugin을 child process로 분리하고 versioned NDJSON으로 통신하면 host가 line/payload bound를 적용하고 plugin crash를 pane에 전파하지 않을 수 있다.
 
+### 공유 메모리는 서버 없이 SQLite 파일을 직접 연다
+
+pane의 agent들이 메모를 공유하는 `nightcrow-memory`는 host가 띄우는 plugin 프로세스와 소켓을 두는 구조 대신, 각 agent의 MCP helper가 프로젝트별 SQLite 파일을 직접 여는 구조를 택했다. host는 pane이 지목하거나 `watch_on_signal`을 켠 plugin만 실행하므로 pane을 보지 않는 프로세스를 띄우려면 그 스위치를 본뜻과 다르게 써야 했고, 단일 writer 프로세스가 주는 것은 SQLite가 이미 제공하는 직렬화뿐이었다. 서버가 없으면 Windows용 소켓 전송 계층과 프로세스 수명 관리도 필요 없다. 다른 pane에 입력을 밀어 넣는 기능이 필요해지면 그때 host plugin을 더하되 저장 형식과 도구는 그대로 둔다.
+
+저장소는 `rusqlite`(MIT, `bundled`)다. 여러 프로세스의 동시 쓰기와 전문 검색(FTS5)이 필요한데, 파일(JSONL·Markdown)은 잠금과 색인을 직접 만들어야 하고 `sled`·`redb` 같은 embedded KV는 한 프로세스만 파일을 열 수 있어 프로세스마다 helper가 뜨는 구조에 맞지 않는다. `bundled`는 C compiler를 요구하지만 세 플랫폼에 같은 SQLite와 FTS5를 보장한다. MCP는 SDK 없이 구현했다. 쓰는 표면이 stdio JSON-RPC의 네 method뿐이고, 공식 Rust SDK는 async runtime을 끌어온다.
+
 ### pane opt-in은 token 증명과 guard를 거친다
 
 기본적으로 startup command가 지목한 pane만 plugin에 노출한다. `watch_on_signal`을 켠 경우에도 pane child에만 주입된 난수 `PaneToken`을 제시해야 하며, token만으로 권한을 부여하지 않고 `Guard`가 generation·liveness·launch command·다른 watcher·rate budget을 다시 판정한다. relaunch budget은 새 PaneId가 생겨도 같은 slot을 묶도록 token 기준으로 센다.

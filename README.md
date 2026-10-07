@@ -65,7 +65,7 @@ The daemon socket is a Unix-domain socket on every platform: a filesystem path o
 - Shared session state, recent-activity highlighting, and restart behavior → [Session state](docs/session-state.md).
 - Configurable layout, input, shell, logging, startup commands, plugins, and web access → [Configuration](docs/configuration.md).
 - A browser surface for the same repositories and interactive terminals → [Web viewer](docs/web-viewer.md).
-- Optional external plugins, including bundled recovery that waits out Codex/OpenCode usage limits and reopens exact sessions → [Plugins](docs/plugins.md).
+- Optional external plugins, including bundled recovery that waits out Codex/OpenCode usage limits and reopens exact sessions, and a shared memory the agents in one project's panes read and write over MCP → [Plugins](docs/plugins.md).
 
 ## Security
 

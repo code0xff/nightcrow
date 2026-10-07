@@ -2,6 +2,8 @@
 
 이 문서는 `plugins/` 아래 독립적으로 빌드되는 plugin crate에 적용한다. 저장소 공통 규칙은 [루트 AGENTS.md](../AGENTS.md)를 따르고, plugin 계약의 기준은 [Plugins](../docs/plugins.md)와 [Plugin Host](../docs/architecture/plugin-host.md)다.
 
+`nightcrow-memory`는 예외적으로 host가 실행하는 plugin이 아니라 pane 안의 provider가 띄우는 MCP helper다. 아래 host 경계 중 plugin protocol에 관한 항목은 적용되지 않지만, repository 인스턴스를 섞지 않는 것과 pane token을 인증으로 쓰지 않는 것은 똑같이 지킨다. 계약은 [Plugin Host](../docs/architecture/plugin-host.md#pane-helper-shared-memory)에 있다.
+
 ## Host 경계
 
 - Plugin은 host 주소 공간에 들어가는 library가 아니라 별도 실행 프로세스다. host 내부 모듈이나 Rust ABI에 의존하지 말고, stdin/stdout의 NDJSON과 명시적 protocol version으로만 통신한다. 와이어 형태를 호환되지 않게 바꾸면 양쪽 계약을 함께 갱신하고 version mismatch를 추측으로 복구하지 않는다.

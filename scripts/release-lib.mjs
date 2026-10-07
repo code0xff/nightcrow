@@ -34,16 +34,17 @@ export function validatePolicy(policy) {
   if (JSON.stringify(policy.assets) !== JSON.stringify(expectedAssets)) {
     throw new Error("release policy assets do not match the four-platform contract");
   }
-  // Five, not six: both crates inherit one `[workspace.package]` version, so
-  // the recovery plugin has no version of its own to list. The lockfile still
-  // records each crate separately, which is why it appears twice.
-  if (!Array.isArray(policy.versionFiles) || policy.versionFiles.length !== 5) {
-    throw new Error("release policy must list all five application version entries");
+  // Six, not eight: every crate inherits one `[workspace.package]` version, so
+  // the plugin crates have no version of their own to list. The lockfile still
+  // records each crate separately, which is why it appears once per crate.
+  if (!Array.isArray(policy.versionFiles) || policy.versionFiles.length !== 6) {
+    throw new Error("release policy must list all six application version entries");
   }
   const requiredEntries = [
     "cargo-workspace:Cargo.toml:",
     "cargo-lock:Cargo.lock:nightcrow",
     "cargo-lock:Cargo.lock:nightcrow-recovery",
+    "cargo-lock:Cargo.lock:nightcrow-memory",
     "npm-package:viewer-ui/package.json:",
     "npm-lock:viewer-ui/package-lock.json:",
   ];
