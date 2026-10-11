@@ -81,11 +81,15 @@ export function FolderPicker({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+      // Top-aligned, and no taller than what a soft keyboard leaves visible:
+      // the fields sit at the bottom of the sheet, so a centered one puts them
+      // under the keyboard and the browser pans the page to reach them. The
+      // folder list is the part that gives way.
+      className="fixed inset-0 z-50 flex items-start justify-center bg-black/60 p-4 md:pt-[8vh]"
       onClick={onClose}
     >
       <div
-        className="flex max-h-[80vh] w-[34rem] max-w-full flex-col rounded-md border border-ink-700 bg-ink-900"
+        className="flex max-h-[min(80vh,calc(var(--nc-visual-viewport-height,100vh)-8vh-1rem))] w-[34rem] max-w-full flex-col rounded-md border border-ink-700 bg-ink-900"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex shrink-0 items-center gap-2 border-b border-ink-700 px-3 py-2">

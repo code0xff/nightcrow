@@ -4,7 +4,7 @@ The web viewer is always served by a session. It shows the same repositories, pr
 
 ## Projects and files
 
-The header's project control opens an existing server-side directory, closes a project, or reorders tabs. The same picker can clone a remote repository into the selected directory. Cloning runs `git` on the server and uses that machine's SSH agent or credential helper.
+The header's project control opens an existing server-side directory, closes a project, or reorders tabs. The same picker can clone a remote repository into the selected directory. Cloning runs `git` on the server and uses that machine's SSH agent or credential helper. On touch screens every text field is drawn at 16px or larger, because iOS zooms the page into a smaller one when it takes focus; the picker sits at the top of the screen and shortens its folder list so its fields stay above a soft keyboard.
 
 Only `https://`, `http://`, `ssh://`, `git+ssh://`, and scp-style `user@host:path` remotes are accepted. Local paths, `file://`, `git://`, and `ext::` are refused. One clone runs at a time; it continues on the server if the page is closed or reloaded, and the page can resume polling it. A destination with an existing name is rejected.
 
