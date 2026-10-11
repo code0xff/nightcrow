@@ -14,6 +14,11 @@ export const TAB_TITLE_MAX_CELLS = 20;
 /// Separate a drag from a header click by requiring pointer travel.
 export const PANE_DRAG_THRESHOLD_PX = 4;
 
+/// How long a finger rests on a tab before it picks the tab up. A strip of
+/// tabs scrolls sideways under a touch, so travel cannot mean "reorder" there;
+/// holding still does.
+export const PANE_DRAG_HOLD_MS = 350;
+
 export function gcd(a: number, b: number): number {
   while (b) [a, b] = [b, a % b];
   return a;
