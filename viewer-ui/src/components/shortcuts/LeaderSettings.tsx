@@ -47,7 +47,9 @@ export function LeaderSettings({ settings }: { settings: ShortcutSettings }) {
           <span className="text-ink-200">switched off</span>
         )}
       </p>
-      <div className="mt-1.5 flex items-center gap-2">
+      {/* Stretched so the buttons match the field, whose text is larger on a
+          touch screen. */}
+      <div className="mt-1.5 flex items-stretch gap-2">
         <input
           value={draft}
           onChange={(e) => setDraft(e.target.value)}

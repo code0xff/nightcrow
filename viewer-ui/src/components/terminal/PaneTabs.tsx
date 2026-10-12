@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import { XIcon } from "../icons/actions";
+import type { PaneDragStartOptions } from "../../hooks/terminal/usePaneDrag";
 import { TAB_TITLE_MAX_CELLS, truncateCells } from "../../lib/terminal/terminalLayout";
 
 export interface PaneTabsProps {
@@ -11,7 +12,11 @@ export interface PaneTabsProps {
   draggingPane: number | null;
   dragOverPane: number | null;
   onClose: (pane: number) => void;
-  onPaneDragStart: (e: React.PointerEvent, pane: number) => void;
+  onPaneDragStart: (
+    e: React.PointerEvent,
+    pane: number,
+    options?: PaneDragStartOptions,
+  ) => void;
   onPaneDragMove: (e: React.PointerEvent) => void;
   onPaneDragEnd: () => void;
   onPaneDragCancel: () => void;
@@ -22,6 +27,11 @@ export interface PaneTabsProps {
  *
  * Focus comes through `onPaneDragStart`: a tab press and the start of a reorder
  * are one gesture until the pointer travels, so the drag hook owns both.
+ *
+ * Under a finger the strip scrolls sideways, so a touch reorders only after
+ * resting on a tab (`holdToDrag`). The tabs allow `pan-x` for that scroll, and
+ * a native `touchmove` listener takes it back once a tab is picked up — the
+ * touch action is fixed when the finger lands and cannot be changed after.
  *
  * Carries `data-pane-id` because it is the only drop surface a tabbed panel has:
  * the reorder drag hit-tests that attribute, and the cells it would otherwise
@@ -56,8 +66,27 @@ export function PaneTabs({
       ?.scrollIntoView({ block: "nearest", inline: "nearest" });
   }, [shown, panes.length]);
 
+  const stripRef = useRef<HTMLDivElement>(null);
+  const draggingRef = useRef(false);
+  useEffect(() => {
+    draggingRef.current = draggingPane !== null;
+  }, [draggingPane]);
+  useEffect(() => {
+    const strip = stripRef.current;
+    if (!strip) return;
+    const holdStill = (e: TouchEvent) => {
+      if (draggingRef.current && e.cancelable) e.preventDefault();
+    };
+    // Not passive, and attached up front: React's own touch listeners are
+    // passive, and a browser decides when the finger lands whether anything
+    // here may cancel the scroll.
+    strip.addEventListener("touchmove", holdStill, { passive: false });
+    return () => strip.removeEventListener("touchmove", holdStill);
+  }, []);
+
   return (
     <div
+      ref={stripRef}
       role="tablist"
       aria-label="Terminals"
       className="-my-1 flex min-w-0 flex-1 items-stretch self-stretch overflow-x-auto"
@@ -76,13 +105,13 @@ export function PaneTabs({
             role="tab"
             aria-selected={selected}
             title={label}
-            onPointerDown={(e) => onPaneDragStart(e, pane)}
+            onPointerDown={(e) => onPaneDragStart(e, pane, { holdToDrag: true })}
             onPointerMove={onPaneDragMove}
             onPointerUp={onPaneDragEnd}
             onPointerCancel={onPaneDragCancel}
             onLostPointerCapture={onPaneDragCancel}
-            className={`flex shrink-0 items-center border-r border-ink-700 whitespace-nowrap ${
-              reorderable ? "cursor-grab touch-none" : ""
+            className={`flex shrink-0 touch-pan-x items-center border-r border-ink-700 whitespace-nowrap select-none [-webkit-touch-callout:none] ${
+              reorderable ? "cursor-grab" : ""
             } ${draggingPane === pane ? "opacity-60" : ""} ${
               dragOverPane === pane ? "bg-ink-800 ring-1 ring-inset ring-accent" : ""
             } ${

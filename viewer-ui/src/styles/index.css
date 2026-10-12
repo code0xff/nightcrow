@@ -62,6 +62,18 @@ html {
   font-size: 14px;
 }
 
+/* iOS zooms the page into any focused field whose text is under 16px, and the
+   root above sits below that. On touch screens every field is held at 16px so
+   focusing one leaves the viewport alone. xterm's hidden textarea is left out:
+   it is never seen, and its metrics place the IME's composition box. */
+@media (pointer: coarse) {
+  input:not([type="checkbox"]):not([type="radio"]),
+  select,
+  textarea:not(.xterm-helper-textarea) {
+    font-size: max(16px, 1em);
+  }
+}
+
 body {
   margin: 0;
   background: var(--color-ink-950);
