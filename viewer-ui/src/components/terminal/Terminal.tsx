@@ -277,7 +277,6 @@ export function TerminalPanel({
           ctrl={ctrl}
           alt={alt}
           onArm={focusActive}
-          onCompose={compose.open}
         />
       )}
       <TerminalDialogs
