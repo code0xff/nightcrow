@@ -152,7 +152,19 @@ export function RepoShell({
         region="terminal panel"
         className={mobileView === "terminal" ? "flex" : "hidden md:flex"}
       >
-        <Suspense fallback={null}>
+        {/* The fallback holds the panel's grid row while xterm's chunk loads.
+            With nothing there the rows below move up a track: on a phone the
+            navigation lands in the stretching row and fills the screen, and on
+            a desktop the footer takes the terminal's share of the height. */}
+        <Suspense
+          fallback={
+            <div
+              className={`min-h-0 border-t border-ink-700 ${
+                mobileView === "terminal" ? "block" : "hidden md:block"
+              }`}
+            />
+          }
+        >
           <TerminalPanel
             repo={repo}
             maximized={maximized === "terminal"}
@@ -184,8 +196,12 @@ export function RepoShell({
             after them do not and the bar is only so wide: a name that could not
             shrink would still push them off a narrow enough screen. Half the
             bar is as much as the branch may hold when there is room, so a long
-            one cannot take the path's place entirely. */}
-        <span className="min-w-0 truncate">{current?.display_path}</span>
+            one cannot take the path's place entirely. The path gives way
+            first, though: shrinking the two in proportion to their length
+            leaves a short branch beside a long path with a letter or two. */}
+        <span className="min-w-0 shrink-[1000] truncate">
+          {current?.display_path}
+        </span>
         {status?.branch && (
           <span className="min-w-0 max-w-[50%] truncate text-accent">
             {status.branch}

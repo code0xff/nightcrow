@@ -66,7 +66,14 @@ export function App() {
               </>
             ) : (
               <div className="flex items-center justify-center p-6 text-center text-ink-400">
-                <span>
+                {/* Below `md` there is no tab strip, so no `+ open` on screen:
+                    it is inside the header's project menu. */}
+                <span className="md:hidden">
+                  No repository open. Tap{" "}
+                  <span className="text-ink-200">No project</span> above, then{" "}
+                  <span className="text-ink-200">+ open</span>, to add one.
+                </span>
+                <span className="hidden md:inline">
                   No repository open. Click{" "}
                   <span className="text-ink-200">+ open</span>{" "}
                   {view.tabStrip.side === "left" ? "beside" : "above"} to add
