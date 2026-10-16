@@ -3,7 +3,7 @@ import { TERM_KEY_BAR, type TermKey } from "../../lib/terminal/termKeys";
 import type { ModifierLatch } from "../../hooks/terminal/useModifierLatch";
 
 const KEY_BUTTON =
-  "flex min-h-9 min-w-9 shrink-0 items-center justify-center rounded-sm border px-2 text-xs active:bg-ink-700 active:text-accent";
+  "flex min-h-9 min-w-9 shrink-0 items-center justify-center rounded-xs border px-2 text-xs active:bg-ink-700 active:text-accent";
 const KEY_IDLE = "border-ink-700 bg-ink-850 text-ink-200";
 /** Armed Ctrl. Held down is a state, not a press, so it stays lit until it is
  *  spent — otherwise the only sign of a latch nobody meant to arm is the next
@@ -49,7 +49,7 @@ export function TermKeyBar({
   };
 
   return (
-    <div className="flex shrink-0 items-stretch gap-1 overflow-x-auto border-t border-ink-700 bg-ink-900 px-1 py-1">
+    <div className="flex shrink-0 items-stretch gap-1 overflow-x-auto border-t border-chrome-line bg-ink-900 px-1 py-1">
       {TERM_KEY_BAR.map((item) =>
         item.kind === "latch" ? (
           <LatchButton

@@ -76,7 +76,7 @@ export function ComposeDialog({
         role="dialog"
         aria-modal="true"
         aria-labelledby={TITLE_ID}
-        className="flex w-[56rem] max-w-full flex-col rounded-md border border-ink-700 bg-ink-900"
+        className="flex w-[56rem] max-w-full flex-col rounded-lg border border-ink-700 bg-ink-900"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center gap-2 border-b border-ink-700 px-3 py-2">

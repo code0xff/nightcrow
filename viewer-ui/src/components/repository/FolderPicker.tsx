@@ -92,7 +92,7 @@ export function FolderPicker({
       onClick={onClose}
     >
       <div
-        className="flex max-h-[min(80vh,calc(var(--nc-visual-viewport-height,100vh)-8vh-1rem))] w-[34rem] max-w-full flex-col rounded-md border border-ink-700 bg-ink-900"
+        className="flex max-h-[min(80vh,calc(var(--nc-visual-viewport-height,100vh)-8vh-1rem))] w-[34rem] max-w-full flex-col rounded-lg border border-ink-700 bg-ink-900"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex shrink-0 items-center gap-2 border-b border-ink-700 px-3 py-2">
@@ -191,7 +191,7 @@ export function FolderPicker({
           <button
             onClick={openHere}
             disabled={!dir || busy}
-            className="ml-auto shrink-0 rounded-md bg-ink-50 px-3 py-1 font-semibold text-ink-950 hover:bg-white disabled:opacity-50"
+            className="ml-auto shrink-0 rounded-sm bg-ink-50 px-3 py-1 font-semibold text-ink-950 hover:bg-white disabled:opacity-50"
           >
             {busy ? "Opening…" : "Open"}
           </button>

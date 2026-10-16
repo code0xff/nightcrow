@@ -38,7 +38,7 @@ export function SidebarTabs({
 }) {
   const shortcut = useShortcutHint();
   return (
-    <div className="flex shrink-0 items-stretch border-b border-ink-700 px-2">
+    <div className="flex shrink-0 items-stretch border-b border-chrome-line px-2">
       {TABS.map((t) => {
         const action = tabAction(t);
         return (
@@ -51,10 +51,10 @@ export function SidebarTabs({
             {...(action && t !== tab
               ? shortcut(action, TAB_TITLES[t])
               : { title: TAB_TITLES[t] })}
-            className={`-mb-px border-b-2 px-2 py-1 ${
+            className={`px-2 py-1.5 ${
               t === tab
-                ? "border-accent text-ink-50"
-                : "border-transparent text-ink-400 hover:text-ink-200"
+                ? "text-ink-50 shadow-[inset_0_-1px_0_0_var(--color-accent)]"
+                : "text-ink-400 hover:text-ink-200"
             }`}
           >
             {t}

@@ -80,7 +80,7 @@ export function useTerminalViews({
 
       const term = new Terminal({
         ...font,
-        theme: { background: "#0b0b0d", foreground: "#e6e6ec" },
+        theme: { background: "#111112", foreground: "#f2f2f3" },
         cursorBlink: true,
         // Without this there is no way to select text on a Mac in a pane whose
         // program reads the mouse — which is most of what this panel is opened

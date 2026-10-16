@@ -24,7 +24,7 @@ export function ShortcutHintBar({ state, onClick }: ShortcutHint) {
     <div
       role="toolbar"
       aria-label="Keyboard hints"
-      className="hidden shrink-0 items-center gap-1 overflow-hidden border-t border-ink-700 bg-ink-900 px-2 py-0.5 text-xs text-ink-400 md:flex"
+      className="hidden shrink-0 items-center gap-1 overflow-hidden border-t border-chrome-line bg-ink-900 px-2 py-0.5 text-xs text-ink-400 md:flex"
     >
       {line.chip && (
         <span

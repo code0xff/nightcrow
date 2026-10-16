@@ -159,7 +159,7 @@ export function RepoShell({
         <Suspense
           fallback={
             <div
-              className={`min-h-0 border-t border-ink-700 ${
+              className={`min-h-0 border-t border-chrome-line ${
                 mobileView === "terminal" ? "block" : "hidden md:block"
               }`}
             />
@@ -188,7 +188,7 @@ export function RepoShell({
 
       <RepoMobileNav view={mobileView} onSelect={setMobileView} />
 
-      <footer className="flex shrink-0 items-center gap-3 border-t border-ink-700 bg-ink-900 px-3 py-1 text-ink-400">
+      <footer className="flex shrink-0 items-center gap-3 border-t border-chrome-line bg-ink-900 px-3 py-1 text-ink-400">
         {/* Both names are cut by the bar rather than allowed to set its size.
             A branch name is one unbroken token, so left to itself it wraps the
             footer onto a second line or pushes what follows off the end — on a
@@ -197,13 +197,14 @@ export function RepoShell({
             shrink would still push them off a narrow enough screen. Half the
             bar is as much as the branch may hold when there is room, so a long
             one cannot take the path's place entirely. The path gives way
-            first, though: shrinking the two in proportion to their length
-            leaves a short branch beside a long path with a letter or two. */}
+            first, though, and the branch not at all below that cap: shrunk
+            even a fraction of a pixel, a truncated name draws its ellipsis,
+            and `main` beside a long path came out as `mai…`. */}
         <span className="min-w-0 shrink-[1000] truncate">
           {current?.display_path}
         </span>
         {status?.branch && (
-          <span className="min-w-0 max-w-[50%] truncate text-accent">
+          <span className="max-w-[50%] shrink-0 truncate text-accent">
             {status.branch}
           </span>
         )}
