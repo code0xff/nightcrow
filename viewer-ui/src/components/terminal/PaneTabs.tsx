@@ -116,7 +116,7 @@ export function PaneTabs({
               dragOverPane === pane ? "bg-ink-800 ring-1 ring-inset ring-accent" : ""
             } ${
               selected
-                ? "bg-ink-950 text-ink-50 shadow-[inset_0_2px_0_0_var(--color-accent)]"
+                ? "bg-ink-950 text-ink-50 shadow-[inset_0_-1px_0_0_var(--color-accent)]"
                 : "text-ink-400 hover:bg-ink-850 hover:text-ink-200"
             }`}
           >

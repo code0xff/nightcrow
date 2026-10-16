@@ -103,7 +103,7 @@ export function ShortcutHelp({
         // Escape and the arrow keys land inside it, and Tab then continues into
         // the rows.
         tabIndex={-1}
-        className="flex max-h-[85vh] w-[40rem] max-w-full flex-col rounded-md border border-ink-700 bg-ink-900 focus:outline-none"
+        className="flex max-h-[85vh] w-[40rem] max-w-full flex-col rounded-lg border border-ink-700 bg-ink-900 focus:outline-none"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex shrink-0 items-center gap-2 border-b border-ink-700 px-3 py-2">

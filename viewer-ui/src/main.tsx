@@ -25,6 +25,16 @@ notePageBuild(
     ?.getAttribute("content") || null,
 );
 
+// The terminal measures its cell from the face it is given, once, when it
+// opens — and the startup handshake sends that measurement to the server. A
+// face still loading measures as its fallback, so the first render waits for
+// it, briefly: past the timeout the page draws anyway, in the fallback.
+const FONT_WAIT_MS = 1500;
+await Promise.race([
+  document.fonts?.load('400 12px "JetBrains Mono"').catch(() => undefined),
+  new Promise((resolve) => setTimeout(resolve, FONT_WAIT_MS)),
+]);
+
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     {/*

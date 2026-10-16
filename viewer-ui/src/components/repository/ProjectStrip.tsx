@@ -100,8 +100,8 @@ export function ProjectStrip({
               // page's beneath the header row, the header's beside the page.
               r.id === repo
                 ? left
-                  ? "bg-ink-900 text-ink-50 shadow-[inset_2px_0_0_0_var(--color-accent)]"
-                  : "bg-ink-950 text-ink-50 shadow-[inset_0_2px_0_0_var(--color-accent)]"
+                  ? "bg-ink-900 text-ink-50 shadow-[inset_1px_0_0_0_var(--color-accent)]"
+                  : "bg-ink-950 text-ink-50 shadow-[inset_0_-1px_0_0_var(--color-accent)]"
                 : "text-ink-400 hover:bg-ink-850 hover:text-ink-200"
             }`}
             title={r.display_path}

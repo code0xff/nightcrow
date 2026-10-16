@@ -183,7 +183,7 @@ export function Sidebar(props: SidebarProps) {
       {...focusRegionAttrs("list")}
       className={`relative min-h-0 flex-col overflow-hidden ${
         mobileView === "files" ? "flex" : "hidden md:flex"
-      } ${filesMax ? "md:flex" : "border-ink-700 md:border-r"}`}
+      } ${filesMax ? "md:flex" : "border-chrome-line md:border-r"}`}
     >
       {!filesMax && (
         <div
