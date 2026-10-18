@@ -146,22 +146,15 @@ button:not(:disabled),
   cursor: pointer;
 }
 
-/* Where the keyboard is, for the keyboard — drawn only for keyboard focus
-   (`:focus-visible`), so a click leaves nothing behind. In the text colour,
-   not the accent: a ring has to sit on any control, and an accent ring
-   around a filled button — the red Close of a confirmation — is two colours
-   arguing. Inset, because a focused region (the list, the content pane) is
-   flush against its neighbours and an outset ring would be clipped by them.
-   Fields that draw their own focus border opt out with `outline-none`. */
+/* Where the keyboard is, for the keyboard. The accent already means
+   selection and focus, so the ring is it — drawn only for keyboard focus
+   (`:focus-visible`), so a click leaves nothing behind. Inset, because a
+   focused region (the list, the content pane) is flush against its
+   neighbours and an outset ring would be clipped by them. Fields that draw
+   their own focus border opt out with `outline-none`. */
 :focus-visible {
-  outline: 1px solid var(--color-ink-50);
+  outline: 1px solid var(--color-accent);
   outline-offset: -1px;
-}
-
-/* A button is not flush against anything, so its ring stands 2px clear of
-   it instead: around a filled one the gap keeps the fill's edge readable. */
-button:focus-visible {
-  outline-offset: 2px;
 }
 
 /* Header height, shared by the header and anything placed against it, so
