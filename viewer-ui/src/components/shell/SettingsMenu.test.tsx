@@ -13,7 +13,7 @@ import { shortcutsSuppressed } from "../../lib/shortcuts/shortcutTarget";
 afterEach(() => {
   cleanup();
   localStorage.removeItem("nightcrow.viewer.scale");
-  document.documentElement.style.fontSize = "";
+  document.documentElement.style.removeProperty("--nc-content-zoom");
 });
 
 function mount(over: Partial<ComponentProps<typeof SettingsMenu>> = {}) {
@@ -79,12 +79,12 @@ describe("SettingsMenu", () => {
 
     fireEvent.change(scale, { target: { value: "50" } });
     expect((scale as HTMLSelectElement).value).toBe("50");
-    expect(document.documentElement.style.fontSize).toBe("7px");
+    expect(document.documentElement.style.getPropertyValue("--nc-content-zoom")).toBe("0.5");
     expect(localStorage.getItem("nightcrow.viewer.scale")).toBe("50");
 
     fireEvent.click(screen.getByRole("button", { name: "Reset screen scale to 100%" }));
     expect((scale as HTMLSelectElement).value).toBe("100");
-    expect(document.documentElement.style.fontSize).toBe("14px");
+    expect(document.documentElement.style.getPropertyValue("--nc-content-zoom")).toBe("1");
   });
 
   it("Escape로_닫고_포커스를_기어로_돌린다", () => {

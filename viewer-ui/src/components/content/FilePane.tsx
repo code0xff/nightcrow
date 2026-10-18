@@ -172,7 +172,7 @@ export function FilePane({
       <div
         ref={scroller}
         onScroll={refreshViewport}
-        className="min-h-0 flex-1 overflow-auto"
+        className="nc-content min-h-0 flex-1 overflow-auto"
       >
         {pane.kind === "empty" && (
           <p className="p-4 text-ink-400">
