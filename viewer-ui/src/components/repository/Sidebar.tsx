@@ -221,7 +221,7 @@ export function Sidebar(props: SidebarProps) {
           className="mx-2 mb-1 shrink-0 rounded-sm bg-ink-850 px-2 py-1 outline-none placeholder:text-ink-400 focus:ring-1 focus:ring-accent"
         />
       )}
-      <ul className="min-h-0 flex-1 overflow-auto">
+      <ul className="nc-content min-h-0 flex-1 overflow-auto">
         {tab === "status" && (
           <StatusList
             status={status}

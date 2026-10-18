@@ -8,7 +8,6 @@ import {
 } from "react";
 
 const STORAGE_KEY = "nightcrow.viewer.scale";
-const BASE_FONT_SIZE_PX = 14;
 export const SCREEN_SCALES = [50, 60, 70, 80, 90, 100, 110, 120, 130] as const;
 export type ScreenScale = (typeof SCREEN_SCALES)[number];
 
@@ -59,9 +58,13 @@ export function readScreenScale(): ScreenScale {
   return 100;
 }
 
+/** Publish the scale as `--nc-content-zoom`, which only the content regions
+ *  (`.nc-content`: the repository lists and the file pane body) read. The
+ *  header, tabs, toolbars, menus and dialogs stay at their designed size, so
+ *  shrinking the reading text does not shrink the controls around it. */
 export function applyScreenScale(scale: ScreenScale): void {
   if (typeof document === "undefined") return;
-  document.documentElement.style.fontSize = `${BASE_FONT_SIZE_PX * scale / 100}px`;
+  document.documentElement.style.setProperty("--nc-content-zoom", String(scale / 100));
 }
 
 function normalizeScreenScale(value: number): ScreenScale {

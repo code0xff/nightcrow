@@ -108,6 +108,14 @@ html {
   font-size: 14px;
 }
 
+/* The display scale (settings menu) reaches only these reading regions.
+   `zoom` rather than a font size because the rows are rem-sized; scroll
+   offsets inside a zoomed box stay in its own pixels, so the virtual-row
+   arithmetic is unchanged. */
+.nc-content {
+  zoom: var(--nc-content-zoom, 1);
+}
+
 /* iOS zooms the page into any focused field whose text is under 16px, and the
    root above sits below that. On touch screens every field is held at 16px so
    focusing one leaves the viewport alone. xterm's hidden textarea is left out:
