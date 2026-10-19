@@ -82,7 +82,8 @@ describe("SettingsMenu", () => {
     expect(document.documentElement.style.getPropertyValue("--nc-content-zoom")).toBe("0.5");
     expect(localStorage.getItem("nightcrow.viewer.scale")).toBe("50");
 
-    fireEvent.click(screen.getByRole("button", { name: "Reset screen scale to 100%" }));
+    expect(screen.queryByRole("button", { name: /Reset screen scale/ })).toBeNull();
+    fireEvent.change(scale, { target: { value: "100" } });
     expect((scale as HTMLSelectElement).value).toBe("100");
     expect(document.documentElement.style.getPropertyValue("--nc-content-zoom")).toBe("1");
   });

@@ -1,6 +1,7 @@
 import { useLayoutEffect, useRef, useState } from "react";
 import { RefreshIcon, SettingsIcon } from "../icons/actions";
 import { KeyboardIcon } from "../icons/layout";
+import { ChevronIcon } from "../icons/navigation";
 import { useShortcutHint } from "../../hooks/shortcuts/shortcutLeader";
 import { SCREEN_SCALES, useScreenScale, type ScreenScale } from "../../hooks/ui/screenScale";
 
@@ -140,26 +141,25 @@ export function SettingsMenu({
               <label htmlFor={SCALE_ID} className="min-w-0 flex-1 text-ink-200">
                 Screen scale
               </label>
-              <select
-                id={SCALE_ID}
-                aria-label="Screen scale"
-                value={scale}
-                onChange={(event) => setScale(Number(event.currentTarget.value) as ScreenScale)}
-                className="rounded-sm border border-ink-700 bg-ink-850 px-1.5 py-1 text-ink-50 focus:border-accent focus:outline-none"
-              >
-                {SCREEN_SCALES.map((value) => (
-                  <option key={value} value={value}>{value}%</option>
-                ))}
-              </select>
-              <button
-                type="button"
-                onClick={() => setScale(100)}
-                disabled={scale === 100}
-                aria-label="Reset screen scale to 100%"
-                className="rounded-sm px-2 py-1 text-ink-400 hover:bg-ink-700 hover:text-ink-200 disabled:cursor-default disabled:opacity-50"
-              >
-                Reset
-              </button>
+              {/* Drawn chevron rather than the native arrow, which sits flush
+                  against the value with no room for padding on WebKit. No
+                  reset button: 100% is one pick away in the same list. */}
+              <div className="relative">
+                <select
+                  id={SCALE_ID}
+                  aria-label="Screen scale"
+                  value={scale}
+                  onChange={(event) => setScale(Number(event.currentTarget.value) as ScreenScale)}
+                  className="appearance-none rounded-sm border border-ink-700 bg-ink-850 py-1 pl-2 pr-7 text-ink-50 focus:border-accent focus:outline-none"
+                >
+                  {SCREEN_SCALES.map((value) => (
+                    <option key={value} value={value}>{value}%</option>
+                  ))}
+                </select>
+                <span className="pointer-events-none absolute inset-y-0 right-2 flex items-center text-ink-400">
+                  <ChevronIcon open />
+                </span>
+              </div>
             </div>
           </section>
           <div className="border-t border-ink-800 px-3 py-2">
