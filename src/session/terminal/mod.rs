@@ -131,6 +131,7 @@ impl TerminalHub {
                 panes: Vec::new(),
                 reserved: 0,
                 zoomed: None,
+                recovery: std::collections::BTreeMap::new(),
             }),
             next_client_id: AtomicU64::new(0),
             stop: Arc::new(AtomicBool::new(false)),

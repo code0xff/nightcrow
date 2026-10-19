@@ -1,15 +1,36 @@
 //! Making a plugin's recovery visible to people, and cancellable by them.
 //!
-//! The hub keeps no recovery state of its own: a report is broadcast as it
-//! arrives and forgotten. What the hub *does* own is the hold on an exited
-//! pane's slot — cancelling is the one place here that touches the backend.
+//! The recovery itself belongs to the plugin; what the hub owns is the hold on
+//! an exited pane's slot (cancelling is the one place here that touches the
+//! backend) and a cache of each pane's last report — a report is broadcast
+//! once, so a client attaching later is replayed the cache (`connect`).
 
 use super::TerminalHub;
 use super::frame::{ServerMessage, TerminalFrame};
-use super::hub_helpers::broadcast_locked;
+use super::hub_helpers::{RecoveryReport, broadcast_locked};
 use super::hub_plugins::Plugins;
 use crate::backend::{PaneId, PtyBackend, TerminalBackend};
 use std::time::Instant;
+
+/// End every standing report, for the hub's teardown. An `Exited` cannot stand
+/// in for these — a report is *meant* to survive its pane's removal (that is
+/// the relaunch hold) — so only `cancelled` ends one. Takes the already-held
+/// state because teardown broadcasts everything under one hold.
+pub(super) fn end_all_recoveries_locked(state: &mut super::hub_helpers::Shared) {
+    let reported: Vec<PaneId> = state.recovery.keys().copied().collect();
+    state.recovery.clear();
+    for pane in reported {
+        if let Ok(json) = serde_json::to_string(&ServerMessage::Recovery {
+            pane,
+            state: RECOVERY_CANCELLED.to_string(),
+            detail: None,
+            deadline_epoch: None,
+            attempt: 0,
+        }) {
+            broadcast_locked(&mut state.clients, TerminalFrame::Control(json));
+        }
+    }
+}
 
 /// Whether `pane`'s process could be put back if it ended. A relaunch
 /// reproduces the pane's original invocation, so a pane the host launched no
@@ -48,8 +69,25 @@ impl TerminalHub {
         // Serialized before the lock and broadcast under it, exactly as the pane
         // announcements are: a client either connects before this frame or after,
         // never into the middle of it.
-        let mut state = self.state.lock().expect("terminal state poisoned");
-        broadcast_locked(&mut state.clients, TerminalFrame::Control(json));
+        let mut shared = self.state.lock().expect("terminal state poisoned");
+        // The cache a later client is replayed from (`connect`), kept under the
+        // rule every connected client's map follows: `cancelled` removes.
+        // Updated under the same hold as the broadcast so the two cannot
+        // disagree about which side of this report a connection landed on.
+        if state == RECOVERY_CANCELLED {
+            shared.recovery.remove(&pane);
+        } else {
+            shared.recovery.insert(
+                pane,
+                RecoveryReport {
+                    state: state.to_string(),
+                    detail: detail.map(str::to_string),
+                    deadline_epoch,
+                    attempt,
+                },
+            );
+        }
+        broadcast_locked(&mut shared.clients, TerminalFrame::Control(json));
     }
 
     /// Tell every client a plugin wants a person back at `pane`.
@@ -68,6 +106,24 @@ impl TerminalHub {
         self.broadcast_recovery(pane, RECOVERY_CANCELLED, None, None, 0);
     }
 
+    /// [`end_recovery`](Self::end_recovery), but only when a report is standing
+    /// (`Shared.recovery`). For the paths that merely *might* trail one — a
+    /// pane whose watcher a reload dropped, an unwatched pane closing — where
+    /// an unconditional broadcast would announce the end of a recovery nobody
+    /// was ever shown. Check and broadcast are two lock holds, which is safe
+    /// because the worker thread is the only mutator of the cache.
+    pub(super) fn end_recovery_if_reported(&self, pane: PaneId) {
+        let standing = self
+            .state
+            .lock()
+            .expect("terminal state poisoned")
+            .recovery
+            .contains_key(&pane);
+        if standing {
+            self.end_recovery(pane);
+        }
+    }
+
     /// A pane's process ended. For a pane no plugin watches this is the
     /// long-standing path: destroy it and tell everyone. For a watched one the
     /// slot survives — the process alone is let go and the slot is held until
@@ -80,6 +136,9 @@ impl TerminalHub {
         pane: PaneId,
     ) {
         if plugins.owner(pane).is_none() {
+            // An unwatched pane can still trail a report from a watcher it
+            // lost (a plugin a reload dropped); its exit is where that ends.
+            self.end_recovery_if_reported(pane);
             backend.destroy_pane(pane);
             self.remove_pane_and_announce(pane);
             return;

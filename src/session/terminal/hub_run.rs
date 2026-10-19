@@ -35,6 +35,9 @@ impl TerminalHub {
                     plugins.forget(&backend, pane);
                     backend.retire_slot(pane);
                     self.end_recovery(pane);
+                } else {
+                    // A watcher a reload dropped can leave a report (`pane_exited`).
+                    self.end_recovery_if_reported(pane);
                 }
                 modes.forget(pane);
                 clears.forget(pane);
@@ -288,5 +291,10 @@ impl TerminalHub {
                 broadcast_locked(&mut state.clients, TerminalFrame::Control(json));
             }
         }
+        // The standing reports go the way the panes do, and for the same
+        // reason as the `Exited`s above: the sockets outlive the hub, and a
+        // client left parked on one would keep an orphan chip whose cancel
+        // nothing answers.
+        super::hub_recovery::end_all_recoveries_locked(&mut state);
     }
 }
