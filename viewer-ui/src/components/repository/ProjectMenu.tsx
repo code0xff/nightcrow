@@ -59,7 +59,7 @@ export function ProjectMenu({
           <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
           <div
             role="menu"
-            className="absolute left-0 z-50 mt-1 max-h-[70vh] w-56 max-w-[80vw] overflow-y-auto rounded-md border border-ink-700 bg-ink-900 py-1 shadow-lg"
+            className="nc-pop-in origin-top-left absolute left-0 z-50 mt-1 max-h-[70vh] w-56 max-w-[80vw] overflow-y-auto rounded-md border border-ink-700 bg-ink-900 py-1 shadow-lg"
           >
             {repos.length === 0 && (
               <p className="px-3 py-1.5 text-ink-400">No projects open.</p>

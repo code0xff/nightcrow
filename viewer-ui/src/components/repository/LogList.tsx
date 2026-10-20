@@ -1,3 +1,4 @@
+import { SkeletonBar } from "../feedback/Skeleton";
 import { PathLabel } from "../content/PathLabel";
 import { formatRelativeTime, statusColor } from "../../lib/shared/utils";
 import { refClass, refText } from "../../lib/repository/gitState";
@@ -110,10 +111,12 @@ export function LogList({
       {!commitDrillDown && !logDone && !logStalled && !logPagingPaused && (
         <li
           ref={logSentinelRef}
-          className="px-3 py-1 text-ink-400"
+          className="flex flex-col gap-2 px-3 py-1.5"
           aria-hidden="true"
         >
-          loading…
+          <SkeletonBar className="w-3/5" />
+          <SkeletonBar className="w-2/5" />
+          <SkeletonBar className="w-1/2" />
         </li>
       )}
       {!commitDrillDown && !logDone && !logStalled && logPagingPaused && (

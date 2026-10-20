@@ -11,6 +11,7 @@ import { sourceKey } from "../../lib/content/otherFace";
 import { focusRegionAttrs } from "../../lib/shortcuts/shortcutDom";
 import { FilePaneActions } from "./FilePaneActions";
 import { DiffView } from "./DiffView";
+import { SkeletonRows } from "../feedback/Skeleton";
 import { ErrorBoundary } from "../feedback/ErrorBoundary";
 import { FileLines } from "./FileLines";
 import { VirtualFileLines } from "./VirtualFileLines";
@@ -175,9 +176,13 @@ export function FilePane({
         className="nc-content min-h-0 flex-1 overflow-auto"
       >
         {pane.kind === "empty" && (
-          <p className="p-4 text-ink-400">
-            {status === null ? "Loading…" : "Select a file or commit."}
-          </p>
+          status === null ? (
+            <div aria-busy="true" aria-label="Loading" className="py-2">
+              <SkeletonRows rows={12} />
+            </div>
+          ) : (
+            <p className="nc-fade-in p-4 text-ink-400">Select a file or commit.</p>
+          )
         )}
         {pane.kind === "file" && (
           <>
@@ -186,7 +191,7 @@ export function FilePane({
               // than carrying one file's pending edits onto another.
               <ErrorBoundary key={`edit:${filePath}`} region="preview">
                 <Suspense
-                  fallback={<p className="p-4 text-ink-400">Opening the editor…</p>}
+                  fallback={<div aria-busy="true" aria-label="Opening the editor" className="py-2"><SkeletonRows rows={12} /></div>}
                 >
                   <HtmlEditor repo={repo} path={filePath} />
                 </Suspense>
@@ -196,7 +201,7 @@ export function FilePane({
               // are separate chunks, and losing one says nothing about the other.
               <ErrorBoundary key={pane.value.path} region="preview">
                 <Suspense
-                  fallback={<p className="p-4 text-ink-400">Rendering…</p>}
+                  fallback={<div aria-busy="true" aria-label="Rendering" className="py-2"><SkeletonRows rows={12} /></div>}
                 >
                   {isHtmlPath(pane.value.path) && repo !== null ? (
                     // The frame re-fetches the file by URL rather than taking

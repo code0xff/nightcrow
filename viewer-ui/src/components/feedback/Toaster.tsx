@@ -55,7 +55,7 @@ function ToastItem({ toast }: { toast: Toast }) {
   return (
     <div
       role={toast.kind === "error" ? "alert" : "status"}
-      className="nc-fade pointer-events-auto flex items-start gap-2 rounded-md border border-ink-700 bg-ink-850 px-3 py-2 text-xs shadow-lg"
+      className="nc-slide-in pointer-events-auto flex items-start gap-2 rounded-md border border-ink-700 bg-ink-850 px-3 py-2 text-xs shadow-lg"
       onMouseEnter={() => setPaused(true)}
       onMouseLeave={() => setPaused(false)}
     >

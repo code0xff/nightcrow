@@ -69,14 +69,14 @@ export function ComposeDialog({
     <div
       // Toward the top rather than centred: on a tablet the soft keyboard takes
       // the lower half, and a centred form would sit under it.
-      className="fixed inset-0 z-50 flex items-start justify-center bg-black/60 p-4 pt-[8vh]"
+      className="nc-fade-in fixed inset-0 z-50 flex items-start justify-center bg-black/60 p-4 pt-[8vh]"
       onClick={onClose}
     >
       <div
         role="dialog"
         aria-modal="true"
         aria-labelledby={TITLE_ID}
-        className="flex w-[56rem] max-w-full flex-col rounded-lg border border-ink-700 bg-ink-900"
+        className="nc-rise-in flex w-[56rem] max-w-full flex-col rounded-lg border border-ink-700 bg-ink-900"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center gap-2 border-b border-ink-700 px-3 py-2">

@@ -33,7 +33,7 @@ export function App() {
               chosen, is a column beside the grid: the tabs hang under the title in
               the header's left corner rather than in a panel with a title of its
               own — which would mean a second border, never quite the first. */}
-          <div className="nc-fade flex h-full flex-col">
+          <div className="nc-fade-in flex h-full flex-col">
         <Header {...view.header} onShowShortcuts={view.shortcutHelp.show} />
         <div className="flex min-h-0 flex-1">
           {view.tabStrip.side === "left" && (

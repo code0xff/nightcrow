@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react";
 import { XIcon } from "../icons/actions";
 import type { PaneDragStartOptions } from "../../hooks/terminal/usePaneDrag";
-import { TAB_TITLE_MAX_CELLS, truncateCells } from "../../lib/terminal/terminalLayout";
+import { HoverTitle } from "../shell/HoverTitle";
 
 export interface PaneTabsProps {
   panes: number[];
@@ -110,7 +110,7 @@ export function PaneTabs({
             onPointerUp={onPaneDragEnd}
             onPointerCancel={onPaneDragCancel}
             onLostPointerCapture={onPaneDragCancel}
-            className={`flex shrink-0 touch-pan-x items-center border-r border-ink-700 whitespace-nowrap select-none [-webkit-touch-callout:none] ${
+            className={`nc-title-target flex shrink-0 touch-pan-x items-center border-r border-ink-700 whitespace-nowrap select-none [-webkit-touch-callout:none] ${
               reorderable ? "cursor-grab" : ""
             } ${draggingPane === pane ? "opacity-60" : ""} ${
               dragOverPane === pane ? "bg-ink-800 ring-1 ring-inset ring-accent" : ""
@@ -120,8 +120,8 @@ export function PaneTabs({
                 : "text-ink-400 hover:bg-ink-850 hover:text-ink-200"
             }`}
           >
-            <span className="flex items-center self-stretch pr-1 pl-3">
-              {truncateCells(label, TAB_TITLE_MAX_CELLS)}
+            <span className="flex min-w-0 items-center self-stretch pr-1 pl-3">
+              <HoverTitle title={label} className="max-w-[20ch]" />
             </span>
             <button
               onPointerDown={(e) => e.stopPropagation()}

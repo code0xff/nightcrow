@@ -4,7 +4,7 @@ import { MaximizeIcon } from "../icons/layout";
 import { RecoveryChip } from "./RecoveryChip";
 import { useShortcutHint } from "../../hooks/shortcuts/shortcutLeader";
 import type { PaneRecovery } from "../../lib/terminal/recovery";
-import { TAB_TITLE_MAX_CELLS, truncateCells } from "../../lib/terminal/terminalLayout";
+import { HoverTitle } from "../shell/HoverTitle";
 
 interface TerminalCellProps {
   pane: number;
@@ -99,7 +99,8 @@ export function TerminalCell({
           onPointerMove={onPaneDragMove}
           onPointerUp={onPaneDragEnd}
           onPointerCancel={onPaneDragCancel}
-          className={`flex shrink-0 items-center gap-1 select-none bg-ink-900 px-2 py-0.5 text-xs ${
+          data-active={isActive}
+          className={`nc-title-target flex shrink-0 items-center gap-1 select-none bg-ink-900 px-2 py-0.5 text-xs ${
             reorderable
               ? isDragged
                 ? "cursor-grabbing touch-none"
@@ -107,13 +108,8 @@ export function TerminalCell({
               : ""
           }`}
         >
-          <span
-            title={label}
-            className={`min-w-0 flex-1 truncate ${
-              isActive ? "text-ink-50" : "text-ink-400"
-            }`}
-          >
-            {truncateCells(label, TAB_TITLE_MAX_CELLS)}
+          <span title={label} className={`min-w-0 flex-1 ${isActive ? "text-ink-50" : "text-ink-400"}`}>
+            <HoverTitle title={label} />
           </span>
           {recovery && (
             <RecoveryChip report={recovery} onCancel={onCancelRecovery} />

@@ -16,9 +16,9 @@ use ratatui::{
 use std::time::Duration;
 use window::tab_segments;
 
-/// Per-tab character budget for the project name. The viewer's tab row applies
-/// the same budget by the same rule (`viewer-ui/src/lib/tabLabel.ts`), so a
-/// project is called the same thing on both screens.
+/// Per-tab character budget for the project name. The viewer caps its tabs to
+/// about the same width (`max-w-[14ch]`) but scrolls an overflowing name into
+/// view instead of cutting it, which a terminal cell grid cannot do.
 const TAB_TITLE_MAX_CHARS: usize = 14;
 
 /// The column a left-placed strip takes (`[layout] tabs = "left"`): the widest

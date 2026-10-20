@@ -139,7 +139,9 @@ export function RepoShell({
           filesMax={filesMax}
           setMaximized={setMaximized}
           status={status}
-          className={mobileView === "diff" ? "flex" : "hidden md:flex"}
+          // `nc-fade-in` replays each time a phone switches to the view: the
+          // animation restarts whenever `hidden` is lifted.
+          className={`nc-fade-in ${mobileView === "diff" ? "flex" : "hidden md:flex"}`}
         />
       </main>
 
@@ -171,7 +173,7 @@ export function RepoShell({
             onToggleMaximized={() =>
               setMaximized((m) => (m === "terminal" ? "none" : "terminal"))
             }
-            className={mobileView === "terminal" ? "flex" : "hidden md:flex"}
+            className={`nc-fade-in ${mobileView === "terminal" ? "flex" : "hidden md:flex"}`}
             sectionRef={lowerRef}
             // Only when both panels are on screen at their stored ratio: a
             // maximized panel has literal grid tracks the percentage does not
