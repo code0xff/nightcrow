@@ -170,6 +170,7 @@ export function useRepoWorkspace({ project, view, layout }: UseRepoWorkspaceArgs
           filePane: {
             repo,
             pane: paneActions.pane,
+            loading: paneActions.paneLoading,
             previewRendered: paneActions.previewRendered,
             setPreviewRendered: paneActions.setPreviewRendered,
             showOtherFace,
