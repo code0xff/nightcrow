@@ -39,14 +39,14 @@ export function ConfirmCloseDialog({
 
   return createPortal(
     <div
-      className="fixed inset-0 z-50 flex items-start justify-center bg-black/60 p-4 pt-[20vh]"
+      className="nc-fade-in fixed inset-0 z-50 flex items-start justify-center bg-black/60 p-4 pt-[20vh]"
       onClick={onCancel}
     >
       <div
         role="alertdialog"
         aria-modal="true"
         aria-labelledby={TITLE_ID}
-        className="flex w-[28rem] max-w-full flex-col gap-3 rounded-lg border border-ink-700 bg-ink-900 p-4"
+        className="nc-rise-in flex w-[28rem] max-w-full flex-col gap-3 rounded-lg border border-ink-700 bg-ink-900 p-4"
         onClick={(e) => e.stopPropagation()}
       >
         <span id={TITLE_ID} className="font-medium break-words text-ink-50">

@@ -12,6 +12,7 @@
    that would not reproduce the committed bundle. */
 @source not "../../dist";
 @import "@xterm/xterm/css/xterm.css";
+@import "./motion.css";
 
 /* JetBrains Mono, self-hosted (SIL OFL 1.1, LICENSE beside the files) so every
    device draws the same face — and so the terminal's cells are the same width
@@ -313,20 +314,4 @@ button:not(:disabled),
    avoid. */
 .nc-pane-body > .xterm {
   flex: none;
-}
-
-/* The app fades in once, when it first mounts after the loading screen, so the
-   layout eases onto the page instead of snapping from blank. Runs a single time
-   per element mount — re-renders reuse the node and do not replay it. */
-@keyframes nc-fade-in {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
-}
-
-.nc-fade {
-  animation: nc-fade-in 160ms ease-out;
 }

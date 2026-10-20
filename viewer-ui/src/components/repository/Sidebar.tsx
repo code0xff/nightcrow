@@ -181,7 +181,7 @@ export function Sidebar(props: SidebarProps) {
       // container is not focusable otherwise, and -1 keeps it out of the Tab
       // order: it is a shortcut target, not a stop.
       {...focusRegionAttrs("list")}
-      className={`relative min-h-0 flex-col overflow-hidden ${
+      className={`nc-fade-in relative min-h-0 flex-col overflow-hidden ${
         mobileView === "files" ? "flex" : "hidden md:flex"
       } ${filesMax ? "md:flex" : "border-chrome-line md:border-r"}`}
     >

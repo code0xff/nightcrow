@@ -57,12 +57,13 @@ describe("ProjectStrip", () => {
     }
   });
 
-  it("라벨은_TUI와_같은_규칙으로_줄인다", () => {
+  it("긴_이름은_자르지_않고_흐르는_제목으로_둔다", () => {
     mount();
 
     const tab = screen.getByRole("button", { name: "a-very-long-project-name" });
-    expect(tab.textContent).toBe("a-very-long-p…");
-    expect(tab.textContent?.length).toBe(14);
+    expect(tab.textContent).toBe("a-very-long-project-name");
+    expect(tab.querySelector(".nc-title")).not.toBeNull();
+    expect(tab.closest(".nc-title-target")).not.toBeNull();
   });
 
   it("탭을_누르면_그_프로젝트를_고르고_열기는_대화상자를_연다", () => {
@@ -87,8 +88,8 @@ describe("ProjectStrip", () => {
 
 describe("ProjectStrip 왼쪽 레일의 폭", () => {
   it("라벨은_레일_안에서_잘리고_닫기_버튼을_밀어내지_않는다", () => {
-    // Fourteen Hangul code points pass the label rule untouched and are twice
-    // as wide as Latin; the rail is fixed, so the label yields, not the row.
+    // Hangul is twice as wide as Latin; the rail is fixed, so the label
+    // yields (clipped, then scrolled into view), not the row.
     mount({
       side: "left",
       repos: [{ id: "k", name: "프로젝트이름이아주아주긴저장", display_path: "/k" }],
@@ -96,7 +97,7 @@ describe("ProjectStrip 왼쪽 레일의 폭", () => {
     });
 
     const tab = screen.getByRole("button", { name: "프로젝트이름이아주아주긴저장" });
-    expect(tab.className).toContain("truncate");
+    expect(tab.querySelector(".nc-title")).not.toBeNull();
     expect(tab.className).toContain("min-w-0");
     expect(tab.parentElement?.className).toContain("min-w-0");
   });
