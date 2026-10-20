@@ -38,7 +38,7 @@ export interface RepoShellProps {
   >;
   filePane: Pick<
     FilePaneProps,
-    "pane" | "previewRendered" | "setPreviewRendered" | "showOtherFace" | "repo"
+    "pane" | "loading" | "previewRendered" | "setPreviewRendered" | "showOtherFace" | "repo"
   >;
   layout: ShellLayout & {
     maximized: Maximized;

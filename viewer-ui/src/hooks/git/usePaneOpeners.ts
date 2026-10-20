@@ -27,6 +27,8 @@ export interface UsePaneOpenersArgs {
   /// over: whether a path still has a working copy is a fact about now, and a
   /// file can go while its own pane is on screen.
   statusRef: React.MutableRefObject<Status | null>;
+  /// Marks `request`'s fetch as in flight until it settles (`usePaneLoading`).
+  track: <T>(request: number, fetch: Promise<T>) => Promise<T>;
 }
 
 /**
@@ -62,6 +64,7 @@ export function usePaneOpeners({
   setMobileView,
   setPreviewRendered,
   statusRef,
+  track,
 }: UsePaneOpenersArgs): UsePaneOpenersResult {
   // Whether the working tree still holds `path`, as of now. A deletion has a
   // diff and nothing to read whole, so it gets no source and no toggle.
@@ -77,8 +80,7 @@ export function usePaneOpeners({
       if (!repo) return;
       if (!options?.restoring) setMobileView("diff");
       const request = (paneRequestRef.current += 1);
-      api
-        .diff(repo, path)
+      track(request, api.diff(repo, path))
         .then((v) => {
           if (request === paneRequestRef.current)
             setPane({
@@ -106,7 +108,7 @@ export function usePaneOpeners({
           setPane({ kind: "empty" });
         });
     },
-    [repo, handle, setPane, paneRequestRef, setMobileView, worktreeHas],
+    [repo, handle, setPane, paneRequestRef, setMobileView, worktreeHas, track],
   );
   const openFile = useCallback(
     (path: string, options?: OpenOptions) => {
@@ -114,8 +116,7 @@ export function usePaneOpeners({
       if (!options?.restoring) setMobileView("diff");
       setPreviewRendered(true);
       const request = (paneRequestRef.current += 1);
-      api
-        .file(repo, path)
+      track(request, api.file(repo, path))
         .then((v) => {
           if (request === paneRequestRef.current) setPane({ kind: "file", value: v });
         })
@@ -135,15 +136,14 @@ export function usePaneOpeners({
           setPane({ kind: "empty" });
         });
     },
-    [repo, handle, setPane, paneRequestRef, setMobileView, setPreviewRendered],
+    [repo, handle, setPane, paneRequestRef, setMobileView, setPreviewRendered, track],
   );
   const openCommit = useCallback(
     (oid: string) => {
       if (!repo) return;
       setMobileView("diff");
       const request = (paneRequestRef.current += 1);
-      api
-        .commit(repo, oid)
+      track(request, api.commit(repo, oid))
         .then((v) => {
           if (request === paneRequestRef.current) setPane({ kind: "diff", value: v });
         })
@@ -151,15 +151,14 @@ export function usePaneOpeners({
           if (request === paneRequestRef.current) handle(err);
         });
     },
-    [repo, handle, setPane, paneRequestRef, setMobileView],
+    [repo, handle, setPane, paneRequestRef, setMobileView, track],
   );
   const openCommitFileDiff = useCallback(
     (oid: string, path: string, options?: OpenOptions) => {
       if (!repo) return;
       if (!options?.restoring) setMobileView("diff");
       const request = (paneRequestRef.current += 1);
-      api
-        .commitFileDiff(repo, oid, path)
+      track(request, api.commitFileDiff(repo, oid, path))
         .then((v) => {
           if (request === paneRequestRef.current)
             setPane({
@@ -186,7 +185,7 @@ export function usePaneOpeners({
           setPane({ kind: "empty" });
         });
     },
-    [repo, handle, setPane, paneRequestRef, setMobileView],
+    [repo, handle, setPane, paneRequestRef, setMobileView, track],
   );
   const openCommitFiles = useCallback(
     async (commit: Commit) => {
@@ -194,7 +193,7 @@ export function usePaneOpeners({
       setMobileView("diff");
       const request = (paneRequestRef.current += 1);
       try {
-        const result = await api.commitFiles(repo, commit.oid);
+        const result = await track(request, api.commitFiles(repo, commit.oid));
         if (request !== paneRequestRef.current) return;
         setCommitDrillDown({ commit, ...result });
         if (result.files.length === 0) {
@@ -202,7 +201,7 @@ export function usePaneOpeners({
           return;
         }
         // Keep the full commit diff visible until a file is selected.
-        const diff = await api.commit(repo, commit.oid);
+        const diff = await track(request, api.commit(repo, commit.oid));
         if (request === paneRequestRef.current) {
           setPane({ kind: "diff", value: diff });
         }
@@ -210,7 +209,7 @@ export function usePaneOpeners({
         if (request === paneRequestRef.current) handle(err);
       }
     },
-    [repo, handle, setPane, paneRequestRef, setCommitDrillDown, setMobileView],
+    [repo, handle, setPane, paneRequestRef, setCommitDrillDown, setMobileView, track],
   );
   // Show the other face of what is already open: the whole file from a diff,
   // the diff from a file. Which one to fetch is read off the pane's source, so
@@ -242,7 +241,7 @@ export function usePaneOpeners({
       // answer it. Opening a file from the tree still starts rendered — that
       // is a different question.
       if (wantFile) setPreviewRendered(false);
-      fetched
+      track<Diff | FileView>(request, fetched)
         .then((value) => {
           if (request !== paneRequestRef.current) return;
           setPane(
@@ -274,7 +273,7 @@ export function usePaneOpeners({
           if (request === paneRequestRef.current) handle(err);
         });
     },
-    [repo, handle, setPane, paneRequestRef, setPreviewRendered, worktreeHas],
+    [repo, handle, setPane, paneRequestRef, setPreviewRendered, worktreeHas, track],
   );
   return {
     openDiff,
