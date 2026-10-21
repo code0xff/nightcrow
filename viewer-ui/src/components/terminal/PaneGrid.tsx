@@ -4,6 +4,7 @@ import type { RecoveryByPane } from "../../lib/terminal/recovery";
 import { stackedCellStyle, type PaneViewMode } from "../../lib/terminal/paneViewMode";
 import { TerminalCell } from "./TerminalCell";
 import { StartupSlots } from "./StartupSlots";
+import { useLayoutFade } from "../../hooks/terminal/useLayoutFade";
 
 export interface PaneGridProps {
   /** The element the panel measures to size its panes. */
@@ -18,6 +19,8 @@ export interface PaneGridProps {
   layout: { cols: number; rows: number; cells: CellPlacement[] };
   /** How many startup terminals are waiting to be measured, or null. */
   pending: number | null;
+  /** The panel fills the screen. Part of what a layout fade watches. */
+  maximized?: boolean;
   recovery: RecoveryByPane;
   draggingPane: number | null;
   dragOverPane: number | null;
@@ -52,6 +55,7 @@ export function PaneGrid({
   shown,
   layout,
   pending,
+  maximized = false,
   recovery,
   draggingPane,
   dragOverPane,
@@ -69,6 +73,7 @@ export function PaneGrid({
   onPaneDragCancel,
 }: PaneGridProps) {
   const tabs = mode === "tabs";
+  useLayoutFade(containerRef, `${mode}:${shown}:${layout.cols}x${layout.rows}:${maximized}`);
   const placedStyle = (index: number): CSSProperties => {
     const cell = layout.cells[index];
     return {

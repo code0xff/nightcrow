@@ -1,4 +1,5 @@
 import type { MutableRefObject } from "react";
+import { fadeOutThen } from "../../lib/ui/motion";
 import type { PaneView } from "../../lib/terminal/terminalLayout";
 import {
   sendTerminalMessage,
@@ -70,7 +71,12 @@ export function usePaneCommands({
     if (requestSize()) onForceFit();
   };
 
-  const closePane = (pane: number) => send({ type: "close", pane });
+  // Faded out first, then closed: the cell is gone the moment the server's
+  // echo lands, so the fade has to finish before the request goes out.
+  const closePane = (pane: number) =>
+    fadeOutThen(document.querySelector(`[data-pane-cell][data-pane-id="${pane}"]`), () =>
+      send({ type: "close", pane }),
+    );
 
   const reorder = (order: number[]) => send({ type: "reorder", order });
 
