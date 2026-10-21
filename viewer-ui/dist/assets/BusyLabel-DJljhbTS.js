@@ -1,0 +1,1 @@
+import{t as e}from"./jsx-runtime-Cx0BB4qO.js";var t=e();function n({busy:e,children:n}){return(0,t.jsxs)(`span`,{className:`inline-flex items-center gap-1.5`,children:[n,(0,t.jsx)(`span`,{"aria-hidden":`true`,"data-busy":e,className:`h-1.5 w-1.5 shrink-0 rounded-full bg-current ${e?`nc-busy-dot`:`invisible`}`})]})}export{n as t};

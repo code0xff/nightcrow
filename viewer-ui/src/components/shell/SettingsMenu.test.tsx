@@ -64,9 +64,12 @@ describe("SettingsMenu", () => {
     const props = mount({ reloading: true });
     openSettings();
 
-    expect((screen.getByRole("button", { name: "reload the server config" }) as HTMLButtonElement).disabled).toBe(true);
+    const reload = screen.getByRole("button", { name: "reload the server config" }) as HTMLButtonElement;
+    expect(reload.disabled).toBe(true);
+    expect(reload.getAttribute("aria-busy")).toBe("true");
     expect(props.onReloadConfig).not.toHaveBeenCalled();
-    expect(screen.getByText("Reloading config.toml…")).toBeTruthy();
+    // The label stays put so the row does not change width; the icon spins.
+    expect(screen.getByText("Reload config.toml")).toBeTruthy();
   });
 
   it("화면_배율을_조정하고_100퍼센트로_복원한다", () => {
