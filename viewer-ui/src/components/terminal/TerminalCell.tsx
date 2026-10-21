@@ -79,9 +79,10 @@ export function TerminalCell({
   return (
     <div
       data-pane-id={pane}
+      data-pane-cell
       onMouseDown={onFocus}
       style={cellStyle}
-      className={`relative min-h-0 min-w-0 flex-col overflow-hidden rounded-sm border ${borderClass} ${
+      className={`nc-cell-in relative min-h-0 min-w-0 flex-col overflow-hidden rounded-sm border ${borderClass} ${
         isDragged ? "opacity-60" : ""
       }`}
     >

@@ -248,6 +248,7 @@ export function TerminalPanel({
         <PaneGrid
           containerRef={containerRef}
           mode={mode}
+          maximized={maximized}
           panes={panes}
           titles={titles}
           active={active}
