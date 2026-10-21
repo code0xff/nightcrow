@@ -64,6 +64,7 @@
 @keyframes nc-cell-in {
   from {
     opacity: 0;
+    transform: translateY(12px);
   }
 }
 @keyframes nc-slide-in {
@@ -114,11 +115,11 @@
     animation: nc-rise-in var(--nc-motion-base) var(--nc-motion-ease);
   }
   /* A terminal opening: the cell is already at its size (and fitted); only
-     its opacity moves. No scale either — xterm measures its glyphs with
-     getBoundingClientRect, which a transform would skew into a wrong fit.
+     its paint moves. A translate, never a scale: xterm measures its glyphs
+     with getBoundingClientRect, which a scale would skew into a wrong fit.
      See `lib/ui/motion.ts` for why the box itself never animates. */
   .nc-cell-in {
-    animation: nc-cell-in var(--nc-motion-base) var(--nc-motion-ease);
+    animation: nc-cell-in 260ms var(--nc-motion-ease);
   }
   .nc-slide-in {
     animation: nc-slide-in var(--nc-motion-base) var(--nc-motion-ease);

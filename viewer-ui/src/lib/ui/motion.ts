@@ -8,8 +8,8 @@
  * resize (SIGWINCH and a full repaint, on every attached screen).
  */
 
-export const CLOSE_FADE_MS = 120;
-const LAYOUT_FADE_MS = 140;
+export const CLOSE_FADE_MS = 200;
+const LAYOUT_FADE_MS = 240;
 const EASE = "cubic-bezier(0.2, 0, 0, 1)";
 
 export function motionReduced(): boolean {
@@ -39,8 +39,8 @@ export function fadeOutThen(el: Element | null, done: () => void): void {
   };
   const animation = el.animate(
     [
-      { opacity: 1, transform: "scale(1)" },
-      { opacity: 0, transform: "scale(0.98)" },
+      { opacity: 1, transform: "translateY(0)" },
+      { opacity: 0, transform: "translateY(12px)" },
     ],
     { duration: CLOSE_FADE_MS, easing: EASE, fill: "forwards" },
   );
@@ -51,5 +51,5 @@ export function fadeOutThen(el: Element | null, done: () => void): void {
 /** Ease `el` back in after its layout jumped to a new arrangement. */
 export function fadeInAfterLayout(el: Element | null): void {
   if (!canAnimate(el)) return;
-  el.animate([{ opacity: 0.35 }, { opacity: 1 }], { duration: LAYOUT_FADE_MS, easing: EASE });
+  el.animate([{ opacity: 0 }, { opacity: 1 }], { duration: LAYOUT_FADE_MS, easing: EASE });
 }
