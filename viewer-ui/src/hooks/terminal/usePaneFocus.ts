@@ -97,15 +97,14 @@ export function usePaneFocus({
 
   // Where the keyboard actually is.
   //
-  // Run on the same signals `useTerminalViews` opens panes on, not on `active`
+  // Run on the same layout signals `useTerminalViews` reads, not on `active`
   // alone, because two things other than a change of pane decide whether the
-  // active one holds the keyboard: the xterm may not exist yet (creation is
-  // deferred while the cell has no layout box), and hiding the panel takes
-  // the focus away. Either way `active` is unchanged when the panel comes
-  // back, so an effect keyed on it alone leaves a panel that draws output,
-  // accepts the on-screen key bar, and ignores the keyboard. This hook is
-  // declared after `useTerminalViews`, so a pane opened by the same reveal is
-  // already here.
+  // active one holds the keyboard: its element may have no layout box yet, and
+  // hiding the panel takes the focus away. Either way `active` is unchanged
+  // when the panel comes back, so an effect keyed on it alone leaves a panel
+  // that draws output, accepts the on-screen key bar, and ignores the keyboard.
+  // This hook is declared after `useTerminalViews`, so a pane revealed by the
+  // same layout change is already here.
   //
   // What is asked on each of those signals is an edge — see `focusStep`. The
   // pane the panel holds is remembered rather than re-derived, because the
