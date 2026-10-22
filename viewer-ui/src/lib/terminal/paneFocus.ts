@@ -110,7 +110,7 @@ export interface FocusStep {
  *
  * `canHold` is whether the active pane has an xterm with a layout box. Without
  * one the panel holds nothing, which is the truth of both cases this exists
- * for: the xterm has not been opened yet, and the panel has been hidden — which
+ * for: the pane has no layout box yet, and the panel has been hidden — which
  * blurs its terminal. Recording that as "holds nothing" is what makes the
  * return trip an edge, so the pane is focused again without `active` changing.
  */

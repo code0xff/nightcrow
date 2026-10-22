@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import type { MutableRefObject } from "react";
 import { cursorWindowShift } from "../../lib/terminal/cursorWindow";
 import type { PaneView } from "../../lib/terminal/terminalLayout";
+import type { PaneViewMode } from "../../lib/terminal/paneViewMode";
 
 interface UseCursorInViewArgs {
   panes: number[];
@@ -9,9 +10,10 @@ interface UseCursorInViewArgs {
   bodyRefs: MutableRefObject<Map<number, HTMLDivElement>>;
   /** Re-read as a signal: opening and closing it is what crops the panes. */
   keyboardOpen: boolean;
-  /** The panel's box, the signal `useTerminalViews` opens a deferred pane on —
-   *  without it a pane opened by a later reveal would never be watched. */
+  /** Layout signals to realign a pane when its zero-size body is revealed. */
   size: { w: number; h: number };
+  zoomed: number | null;
+  mode: PaneViewMode;
 }
 
 /**
@@ -29,6 +31,8 @@ export function useCursorInView({
   bodyRefs,
   keyboardOpen,
   size,
+  zoomed,
+  mode,
 }: UseCursorInViewArgs) {
   useEffect(() => {
     const cleanups: (() => void)[] = [];
@@ -66,5 +70,5 @@ export function useCursorInView({
     return () => {
       for (const cleanup of cleanups) cleanup();
     };
-  }, [panes, viewsRef, bodyRefs, keyboardOpen, size]);
+  }, [panes, viewsRef, bodyRefs, keyboardOpen, size, zoomed, mode]);
 }
