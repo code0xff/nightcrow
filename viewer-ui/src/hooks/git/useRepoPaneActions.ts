@@ -4,6 +4,7 @@ import type { Pane } from "../../types";
 import { useMobileView } from "../ui/mobileView";
 import type { CommitDrillDown } from "./useLog";
 import { usePaneOpeners } from "./usePaneOpeners";
+import { usePaneLoading } from "./usePaneLoading";
 
 interface RepoPaneActionsArgs {
   repo: string | null;
@@ -27,6 +28,7 @@ export function useRepoPaneActions({
 }: RepoPaneActionsArgs) {
   const { mobileView, setMobileView } = useMobileView();
   const [previewRendered, setPreviewRendered] = useState(true);
+  const { loading: paneLoading, track } = usePaneLoading();
   const statusRef = useRef(status);
   statusRef.current = status;
   const rawOpeners = usePaneOpeners({
@@ -38,6 +40,7 @@ export function useRepoPaneActions({
     setMobileView,
     setPreviewRendered,
     statusRef,
+    track,
   });
   const openers = useMemo(
     () => rawOpeners,
@@ -56,11 +59,12 @@ export function useRepoPaneActions({
       openers,
       pane,
       setPane,
+      paneLoading,
       previewRendered,
       setPreviewRendered,
       mobileView,
       setMobileView,
     }),
-    [openers, pane, setPane, previewRendered, mobileView],
+    [openers, pane, setPane, paneLoading, previewRendered, mobileView],
   );
 }

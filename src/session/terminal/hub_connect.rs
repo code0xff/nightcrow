@@ -98,6 +98,22 @@ impl TerminalHub {
                     );
                 }
             }
+            // Each pane's standing recovery report, for the reason the screens
+            // are replayed: it was broadcast once, this client was not there,
+            // and the plugin will not repeat it. Without this the chip — and
+            // its cancel — is simply missing from every screen that attaches
+            // mid-recovery.
+            for (pane, report) in &state.recovery {
+                if let Ok(json) = serde_json::to_string(&ServerMessage::Recovery {
+                    pane: *pane,
+                    state: report.state.clone(),
+                    detail: report.detail.clone(),
+                    deadline_epoch: report.deadline_epoch,
+                    attempt: report.attempt,
+                }) {
+                    let _ = tx.try_send(TerminalFrame::Control(json));
+                }
+            }
         }
         let replay_complete = serde_json::to_string(&ServerMessage::ReplayComplete)
             .expect("replay-complete control serializes");

@@ -60,11 +60,9 @@ export function shownTab(active: number | null, panes: number[]): number | null 
  * The cell a pane gets in tabs mode.
  *
  * Every pane is stacked at the panel's full size and the hidden ones are merely
- * invisible, not `display: none`. A pane with no layout box measures zero, and
- * zero is what makes `useTerminalViews` defer opening it and `usePaneSizes` skip
- * it — so laying the tabs out would cost a fit, a SIGWINCH and a full repaint on
- * every switch. Stacked, all tabs already hold the size they will be shown at
- * and switching moves no bytes.
+ * invisible, not `display: none`. Each pane keeps the full panel box, so it can
+ * stay fitted to the shared grid while hidden; switching tabs needs no resize,
+ * SIGWINCH or repaint.
  */
 export function stackedCellStyle(shown: boolean): CSSProperties {
   return {

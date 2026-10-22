@@ -1,10 +1,9 @@
 import { useEffect } from "react";
-import { PencilIcon } from "../icons/actions";
 import { TERM_KEY_BAR, type TermKey } from "../../lib/terminal/termKeys";
 import type { ModifierLatch } from "../../hooks/terminal/useModifierLatch";
 
 const KEY_BUTTON =
-  "flex min-h-9 min-w-9 shrink-0 items-center justify-center rounded-sm border px-2 text-xs active:bg-ink-700 active:text-accent";
+  "flex min-h-9 min-w-9 shrink-0 items-center justify-center rounded-xs border px-2 text-xs active:bg-ink-700 active:text-accent";
 const KEY_IDLE = "border-ink-700 bg-ink-850 text-ink-200";
 /** Armed Ctrl. Held down is a state, not a press, so it stays lit until it is
  *  spent — otherwise the only sign of a latch nobody meant to arm is the next
@@ -26,7 +25,6 @@ export function TermKeyBar({
   ctrl,
   alt,
   onArm,
-  onCompose,
 }: {
   onKey: (key: TermKey) => void;
   ctrl: ModifierLatch;
@@ -35,8 +33,6 @@ export function TermKeyBar({
    *  need no focus, but the latch is spent by the next character *typed*, so
    *  tapping it has to leave somewhere to type. */
   onArm: () => void;
-  /** Write a message outside the pane and send it whole (`ComposeDialog`). */
-  onCompose: () => void;
 }) {
   // The latch outlives this bar — it belongs to the panel — and armed with no
   // button to say so, it would modify a character typed long after, for no
@@ -53,7 +49,7 @@ export function TermKeyBar({
   };
 
   return (
-    <div className="flex shrink-0 items-stretch gap-1 overflow-x-auto border-t border-ink-700 bg-ink-900 px-1 py-1">
+    <div className="flex shrink-0 items-stretch gap-1 overflow-x-auto border-t border-chrome-line bg-ink-900 px-1 py-1">
       {TERM_KEY_BAR.map((item) =>
         item.kind === "latch" ? (
           <LatchButton
@@ -82,16 +78,6 @@ export function TermKeyBar({
           </button>
         ),
       )}
-      <button
-        onClick={() => {
-          clearLatches();
-          onCompose();
-        }}
-        aria-label="Write a message to this terminal"
-        className={`${KEY_BUTTON} ${KEY_IDLE} ml-auto`}
-      >
-        <PencilIcon className="h-3.5 w-3.5" />
-      </button>
     </div>
   );
 }

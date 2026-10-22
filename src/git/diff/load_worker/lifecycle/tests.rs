@@ -8,24 +8,17 @@ use super::{AdmissionLimiter, MAX_IN_FLIGHT, MAX_WORKER_THREADS, WorkerSlots, fi
 #[test]
 fn retiring_a_slow_worker_never_waits_for_its_completion() {
     let slots = Arc::new(WorkerSlots::new());
-    let release = Arc::new(AtomicBool::new(false));
-    let release_later = Arc::clone(&release);
-    let releaser = thread::spawn(move || {
-        thread::sleep(Duration::from_millis(300));
-        release_later.store(true, Ordering::SeqCst);
-    });
-
+    let mut releases = Vec::with_capacity(MAX_WORKER_THREADS);
     let mut capped_retire_elapsed = Duration::ZERO;
     for index in 0..MAX_WORKER_THREADS {
         let slots = Arc::clone(&slots);
-        let release = Arc::clone(&release);
+        let (release_tx, release_rx) = mpsc::channel::<()>();
+        releases.push(release_tx);
         let (ready_tx, ready_rx) = mpsc::channel();
         let handle = thread::spawn(move || {
             let _permit = slots.try_acquire().expect("worker slot available");
             ready_tx.send(()).unwrap();
-            while !release.load(Ordering::SeqCst) {
-                thread::yield_now();
-            }
+            let _ = release_rx.recv();
         });
         ready_rx.recv_timeout(Duration::from_secs(1)).unwrap();
         let started = Instant::now();
@@ -38,7 +31,7 @@ fn retiring_a_slow_worker_never_waits_for_its_completion() {
     assert!(capped_retire_elapsed < Duration::from_millis(50));
     assert!(slots.try_acquire().is_none());
     assert_eq!(slots.state.lock().unwrap().peak, MAX_WORKER_THREADS);
-    releaser.join().unwrap();
+    drop(releases);
     wait_until_worker_slots_are_free(&slots);
 }
 

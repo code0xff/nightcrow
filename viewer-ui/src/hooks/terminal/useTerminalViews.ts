@@ -19,10 +19,8 @@ import type { ScreenScale } from "../ui/screenScale";
 
 interface UseTerminalViewsArgs {
   panes: number[];
-  // Opening xterm inside a hidden (display:none) cell caches a 0x0
-  // character-cell measurement that fit() can never recover, so creation waits
-  // until the cell has size. Re-run on the layout changes that can reveal a
-  // cell (`size`, `zoomed`, `mode`), mirroring the fit effect's dependency set.
+  // A hidden cell can open with invalid character metrics. `usePaneSizes`
+  // remeasures with a same-grid resize before fitting it when the body appears.
   size: { w: number; h: number };
   zoomed: number | null;
   mode: PaneViewMode;
@@ -74,13 +72,10 @@ export function useTerminalViews({
       }
       const body = bodyRefs.current.get(pane);
       if (!body) continue;
-      // Defer creation until the cell is visible; retried on the reveal that
-      // changes `size`. Buffered output is held in pendingRef until then.
-      if (body.clientHeight === 0 || body.clientWidth === 0) continue;
 
       const term = new Terminal({
         ...font,
-        theme: { background: "#0b0b0d", foreground: "#e6e6ec" },
+        theme: { background: "#111112", foreground: "#f2f2f3" },
         cursorBlink: true,
         // Without this there is no way to select text on a Mac in a pane whose
         // program reads the mouse — which is most of what this panel is opened
@@ -154,11 +149,12 @@ export function useTerminalViews({
       });
       term.open(body);
       // Before a byte is written: what follows was drawn against the PTY's
-      // grid, and xterm opens at its own 80×24 default. Parsed at the default,
-      // everything the program put outside that box is gone — and the fit that
-      // runs after this sends nothing when it lands on the size the PTY already
-      // has (the usual outcome of returning to the same screen), so what was
-      // lost stays lost until the program next draws by itself.
+      // grid. An opened xterm starts at 80×24, and a hidden parser also needs
+      // the confirmed grid before it consumes output; parsing at the default
+      // can discard content outside that box. The fit that runs after this
+      // sends nothing when it lands on the size the PTY already has (the usual
+      // outcome of returning to the same screen), so lost content stays gone
+      // until the program next draws by itself.
       //
       // The pane's grid *now*, even for output that has been queueing since an
       // older one — a cell can stay sizeless long enough to be resized under

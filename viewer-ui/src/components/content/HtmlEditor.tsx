@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef } from "react";
+import { BusyLabel } from "../feedback/BusyLabel";
 import { useHtmlEditor } from "../../hooks/git/useHtmlEditor";
 import type { FromPreview, ToPreview } from "../../lib/edit/protocol";
 
@@ -115,9 +116,10 @@ export function HtmlEditor({ repo, path }: { repo: string; path: string }) {
         <button
           onClick={() => void saveFromToolbar()}
           disabled={state.pending === 0 || state.saving}
+          aria-busy={state.saving}
           className="ml-auto rounded-sm px-2 py-0.5 hover:text-accent disabled:opacity-50"
         >
-          {state.saving ? "Saving…" : "Save"}
+          <BusyLabel busy={state.saving}>Save</BusyLabel>
         </button>
       </div>
       {state.conflict && (

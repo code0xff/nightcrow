@@ -206,7 +206,7 @@ export function TerminalPanel({
       // panel from either. A keystroke in here is never typing — xterm keeps its
       // caret in a `<textarea>`, which the text-field rule matches by tag.
       data-terminal-panel=""
-      className={`relative flex min-h-0 min-w-0 flex-col border-t border-ink-700 ${className}`}
+      className={`relative flex min-h-0 min-w-0 flex-col border-t border-chrome-line ${className}`}
     >
       <PanelDivider {...divider} />
       <PanelToolbar
@@ -248,6 +248,7 @@ export function TerminalPanel({
         <PaneGrid
           containerRef={containerRef}
           mode={mode}
+          maximized={maximized}
           panes={panes}
           titles={titles}
           active={active}
@@ -277,7 +278,6 @@ export function TerminalPanel({
           ctrl={ctrl}
           alt={alt}
           onArm={focusActive}
-          onCompose={compose.open}
         />
       )}
       <TerminalDialogs

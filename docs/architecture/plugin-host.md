@@ -38,7 +38,7 @@ token은 여기서도 인증 수단이 아니다. 작성자 label에는 앞 6자
 
 ## Recovery surface
 
-plugin의 `Status`와 `Attention`은 hub가 의미를 해석하지 않고 클라이언트 모두에 broadcast한다. hub가 보관하는 것은 exited pane slot의 relaunch hold뿐이다. 취소·TTL 만료·relaunch 성공·pane close로 hold가 끝날 때는 `Recovery { state: "cancelled" }`를 보내 stale deadline을 지운다. `CancelRecovery`는 hold가 있을 때만 `pane_closed → forget → retire_slot` 순서로 처리한다.
+plugin의 `Status`와 `Attention`은 hub가 의미를 해석하지 않고 클라이언트 모두에 broadcast한다. hub가 소유하는 것은 exited pane slot의 relaunch hold뿐이지만, 보고는 한 번만 broadcast되고 plugin이 반복하지 않으므로 pane마다 마지막 보고를 `Shared.recovery`에 캐시해 나중에 붙는 클라이언트에 replay한다. 캐시는 broadcast와 같은 lock 아래에서 갱신하고 `cancelled`가 엔트리를 지운다. 취소·TTL 만료·relaunch 성공·pane close로 hold가 끝날 때는 `Recovery { state: "cancelled" }`를 보내 stale deadline을 지운다. hold 없이 보고만 남을 수 있는 경로(reload가 watcher를 떨어뜨려 풀려난 pane, 그런 pane의 exit/close)는 캐시에 보고가 있을 때만 `cancelled`를 보내고, hub teardown은 남은 보고를 모두 끝낸다. host가 알리지 않고 죽으면 그 보고는 reload나 close까지 남는다(host 감독이 없는 기존 한계). `CancelRecovery`는 hold가 있을 때만 `pane_closed → forget → retire_slot` 순서로 처리한다.
 
 TUI는 pane tab marker와 notice row chip으로, web은 terminal toolbar/pane metadata로 recovery를 표시한다. 전용 행이나 터미널 화면 overlay는 만들지 않아 PTY geometry를 바꾸지 않는다. deadline이 없으면 시각을 추측해 그리지 않으며, recovery detail은 짧은 host/plugin text만 전달하고 transcript나 원본 payload는 전달하지 않는다.
 

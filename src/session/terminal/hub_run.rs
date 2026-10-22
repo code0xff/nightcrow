@@ -35,6 +35,9 @@ impl TerminalHub {
                     plugins.forget(&backend, pane);
                     backend.retire_slot(pane);
                     self.end_recovery(pane);
+                } else {
+                    // A watcher a reload dropped can leave a report (`pane_exited`).
+                    self.end_recovery_if_reported(pane);
                 }
                 modes.forget(pane);
                 clears.forget(pane);
@@ -83,13 +86,13 @@ impl TerminalHub {
                     // client racing a pane exit is normal, not an attack.
                     Command::Input { pane, data, client } if self.pane_is_live(pane) => {
                         clears.note_input(pane, client, &data, Instant::now());
-                        // A person at the keyboard has taken the pane back, so
-                        // its plugin is told and everything it had planned for
-                        // the pane is dropped — before the bytes land, so the
-                        // cancellation cannot be overtaken by a decision made
-                        // from the output this input produces.
+                        // Human input cancels plugin plans before the bytes land,
+                        // so its cancellation cannot be overtaken by new output.
                         plugins.user_input(&backend, pane);
-                        let _ = backend.send_input(pane, &data);
+                        if let Err(error) = backend.send_input(pane, &data) {
+                            tracing::warn!(pane, client, %error, "viewer: could not queue terminal input");
+                            self.send_error_to(client, "terminal input could not be sent");
+                        }
                     }
                     Command::Reorder { order } => self.reorder_panes(order),
                     // Deliberately not gated on the pane being live: a pane with
@@ -288,5 +291,10 @@ impl TerminalHub {
                 broadcast_locked(&mut state.clients, TerminalFrame::Control(json));
             }
         }
+        // The standing reports go the way the panes do, and for the same
+        // reason as the `Exited`s above: the sockets outlive the hub, and a
+        // client left parked on one would keep an orphan chip whose cancel
+        // nothing answers.
+        super::hub_recovery::end_all_recoveries_locked(&mut state);
     }
 }

@@ -6,12 +6,15 @@ use crate::platform::threading::try_timed_join;
 use anyhow::Result;
 use portable_pty::PtySize;
 use std::collections::BTreeMap;
-use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::Receiver;
+#[cfg(test)]
+use std::sync::{Arc, atomic::AtomicBool};
 use std::thread;
 use std::time::{Duration, Instant};
 
+#[path = "pty_io.rs"]
+mod io;
 #[path = "pty_spawn.rs"]
 mod spawn;
 
@@ -52,20 +55,29 @@ pub(super) enum ExitPhase {
 }
 
 pub(super) struct PtyPane {
-    // Option wrapping so `Drop` releases master/writer before joining the
-    // reader thread, which only unblocks when both PTY sides close.
+    // Option wrapping lets Drop release the master and receiver before joining
+    // workers, so blocked output sends can switch to discard-drain.
     pub(super) master: Option<Box<dyn portable_pty::MasterPty>>,
-    pub(super) writer: Option<Box<dyn Write + Send>>,
+    input: Option<io::InputQueue>,
     pub(super) killer: Box<dyn portable_pty::ChildKiller + Send + Sync>,
     pub(super) process_tree: ProcessTree,
-    pub(super) rx: Receiver<PtyEvent>,
+    pub(super) rx: Option<Receiver<PtyEvent>>,
     pub(super) reader_handle: Option<thread::JoinHandle<()>>,
+    pub(super) writer_handle: Option<thread::JoinHandle<()>>,
     pub(super) wait_handle: Option<thread::JoinHandle<()>>,
+    #[cfg(test)]
+    pub(super) output_backpressured: Arc<AtomicBool>,
     pub(super) exit: ExitPhase,
 }
 
 impl Drop for PtyPane {
     fn drop(&mut self) {
+        // A full synchronous output channel must not hold the reader while the
+        // PTY is being torn down. A disconnected reader keeps draining to EOF.
+        drop(self.rx.take());
+        // Cancel queued input before terminating the process; a blocked
+        // in-flight write is handled by the bounded worker join below.
+        drop(self.input.take());
         // Terminate the pane's process boundary before the PTY handles and
         // waiter are reaped, so child jobs cannot outlive an explicit close.
         if let Err(error) = self.process_tree.terminate() {
@@ -74,13 +86,14 @@ impl Drop for PtyPane {
         // Best-effort direct kill covers a child that exited before its tree
         // termination raced with teardown.
         let _ = self.killer.kill();
-        // Drop writer/master so the reader's blocked `read()` returns EOF;
-        // without this, joining the reader would hang.
-        self.writer.take();
+        // Close the PTY boundary before joining; platform teardown normally
+        // releases blocked system calls, and every join remains bounded.
         self.master.take();
-        // Bounded join: if a daemonized grandchild kept the slave fd open the
-        // reader's `read()` never returns EOF — detach rather than freeze the
-        // close. Inside drop, so a thread panic is logged, not propagated.
+        if let Some(h) = self.writer_handle.take() {
+            try_timed_join(h, PTY_REAP_TIMEOUT);
+        }
+        // Bounded joins: a daemonized grandchild may keep the reader blocked
+        // on Unix, so detach rather than freezing pane teardown.
         if let Some(h) = self.reader_handle.take() {
             try_timed_join(h, PTY_REAP_TIMEOUT);
         }
@@ -180,15 +193,12 @@ impl TerminalBackend for PtyBackend {
         // backend had already discarded it.
         let pane = self
             .panes
-            .get_mut(&id)
+            .get(&id)
             .ok_or_else(|| anyhow::anyhow!("pane {id} not found"))?;
-        let writer = pane
-            .writer
-            .as_mut()
-            .ok_or_else(|| anyhow::anyhow!("pane {id} writer already released"))?;
-        writer.write_all(data)?;
-        writer.flush()?;
-        Ok(())
+        pane.input
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("pane {id} input queue already released"))?
+            .enqueue(data)
     }
 
     fn resize(&mut self, id: PaneId, rows: u16, cols: u16) -> Result<ResizeOutcome> {
@@ -231,7 +241,12 @@ impl TerminalBackend for PtyBackend {
         for (id, pane) in &mut self.panes {
             let mut budget = PER_PANE_DRAIN_BUDGET;
             while budget > 0 {
-                match pane.rx.try_recv() {
+                match pane
+                    .rx
+                    .as_ref()
+                    .expect("live pane has output receiver")
+                    .try_recv()
+                {
                     Ok(PtyEvent::Output(data)) => {
                         // One timestamp for the whole drain: the bytes arrived
                         // between this tick and the last, and a per-event clock

@@ -136,6 +136,16 @@ pub(super) struct PaneState {
     pub(super) modes: PaneModes,
 }
 
+/// A pane's last recovery report, as [`broadcast_recovery`](super::hub_recovery)
+/// sent it. Cached because the reports are broadcast once and the plugin will
+/// not repeat one — a client attaching later has to be told by the hub.
+pub(super) struct RecoveryReport {
+    pub(super) state: String,
+    pub(super) detail: Option<String>,
+    pub(super) deadline_epoch: Option<i64>,
+    pub(super) attempt: u32,
+}
+
 /// Hub state shared between the worker thread and connection threads. Held
 /// under one mutex so a connecting client's replay is atomic with the worker's
 /// append-and-broadcast.
@@ -149,6 +159,11 @@ pub struct Shared {
     /// The pane filling the panel, when one is (see [`hub_zoom`](super::hub_zoom)).
     /// Beside `panes` and under the same lock because the two have to agree.
     pub(super) zoomed: Option<PaneId>,
+    /// Each pane's standing recovery report, mirrored under the rule every
+    /// client's own map follows: a `cancelled` report removes. A `BTreeMap` so
+    /// the replay order is stable. Under this lock for the reason the panes
+    /// are: a connecting client's replay must not interleave with a broadcast.
+    pub(super) recovery: std::collections::BTreeMap<PaneId, RecoveryReport>,
 }
 
 /// Queue a frame for every client, dropping any that has fallen too far behind.

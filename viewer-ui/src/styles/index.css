@@ -12,26 +12,73 @@
    that would not reproduce the committed bundle. */
 @source not "../../dist";
 @import "@xterm/xterm/css/xterm.css";
+@import "./motion.css";
 
-/* Neutral dark, carried over from the TUI. A single accent carries selection
-   and focus — everything else stays greyscale so the diff colours are the
-   loudest thing on screen. `--color-accent` is the default (amber) preset; the
+/* JetBrains Mono, self-hosted (SIL OFL 1.1, LICENSE beside the files) so every
+   device draws the same face — and so the terminal's cells are the same width
+   on all of them. The ranges are the two Latin subsets; Hangul and anything
+   else outside them falls through to the system stack below. */
+@font-face {
+  font-family: "JetBrains Mono";
+  font-style: normal;
+  font-display: block;
+  font-weight: 100 800;
+  src: url("../assets/fonts/jetbrains-mono/jetbrains-mono-latin-wght-normal.woff2")
+    format("woff2-variations");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA,
+    U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193,
+    U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: "JetBrains Mono";
+  font-style: normal;
+  font-display: block;
+  font-weight: 100 800;
+  src: url("../assets/fonts/jetbrains-mono/jetbrains-mono-latin-ext-wght-normal.woff2")
+    format("woff2-variations");
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF,
+    U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020,
+    U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+
+/* Neutral dark on Quartz's dark ladder (~/workspace/design, quartz/design.md):
+   pure greys, one line weight for objects and a quieter one between regions.
+   Two departures from it, both kept from the TUI: the accent, which marks
+   selection and focus and is the reader's to choose, and the diff colours,
+   which are content rather than chrome. Everything else stays greyscale so the
+   diff colours are the loudest thing on screen.
+
+   Every text step clears 4.5:1 on every ground up to `ink-800`; `ink-600` and
+   below are lines, never text. `--color-accent` is the default (amber) preset; the
    header swatch overrides it on the root element at runtime, which recolours
    every accent utility because Tailwind compiles them to `var(--color-accent)`.
    The presets live in `theme.ts`. */
 @theme {
-  --color-ink-950: #0b0b0d;
-  --color-ink-900: #121215;
-  --color-ink-850: #17171b;
-  --color-ink-800: #1d1d22;
-  --color-ink-700: #2a2a31;
-  --color-ink-600: #3a3a43;
-  --color-ink-400: #6f6f7d;
-  --color-ink-200: #a8a8b5;
-  --color-ink-50: #e6e6ec;
+  --color-ink-950: #111112;
+  --color-ink-900: #19191b;
+  --color-ink-850: #202023;
+  --color-ink-800: #232326;
+  --color-ink-700: #343438;
+  --color-ink-600: #48484e;
+  --color-ink-400: #8f8f97;
+  --color-ink-200: #c4c4ca;
+  --color-ink-50: #f2f2f3;
+  /* The edge between two regions of the window — header, panels, bars — drawn
+     at about half the contrast of `ink-700`, which keeps the edge around an
+     object. The regions are learned once; the objects change. */
+  --color-chrome-line: #29292d;
+
+  /* Corners by role: 4px for everything that sits on the page — a button, a
+     field, a key, a tag — 8px for a menu or toast floating over it, 12px for a
+     dialog. Quartz rounds controls to 8px, but its controls are 28–36px; at
+     this panel's 24px a corner that size turns a button into a lozenge. */
+  --radius-xs: 4px;
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
   --color-accent: #d9a441;
   --color-added: #4ba36b;
-  --color-removed: #c85f5f;
+  --color-removed: #d76a6a;
 
   /* The two sizes under `text-xs`, by role rather than by eye: `2xs` for the
      small chips (a key name, a status tag) and `caption` for the spaced,
@@ -42,7 +89,7 @@
   --text-caption--letter-spacing: 0.16em;
 
   --font-mono:
-    ui-monospace, "JetBrains Mono", "SF Mono", Menlo, Consolas, monospace;
+    "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
   /* Only the header tag uses this: a sans label against the mono wordmark.
      Pinned here rather than left to Tailwind's default so every browser
      resolves the same stack. */
@@ -60,6 +107,26 @@ body,
    widths — for a denser, higher-resolution feel. Tune UI density here. */
 html {
   font-size: 14px;
+}
+
+/* The display scale (settings menu) reaches only these reading regions.
+   `zoom` rather than a font size because the rows are rem-sized; scroll
+   offsets inside a zoomed box stay in its own pixels, so the virtual-row
+   arithmetic is unchanged. */
+.nc-content {
+  zoom: var(--nc-content-zoom, 1);
+}
+
+/* iOS zooms the page into any focused field whose text is under 16px, and the
+   root above sits below that. On touch screens every field is held at 16px so
+   focusing one leaves the viewport alone. xterm's hidden textarea is left out:
+   it is never seen, and its metrics place the IME's composition box. */
+@media (pointer: coarse) {
+  input:not([type="checkbox"]):not([type="radio"]),
+  select,
+  textarea:not(.xterm-helper-textarea) {
+    font-size: max(16px, 1em);
+  }
 }
 
 body {
@@ -247,20 +314,4 @@ button:not(:disabled),
    avoid. */
 .nc-pane-body > .xterm {
   flex: none;
-}
-
-/* The app fades in once, when it first mounts after the loading screen, so the
-   layout eases onto the page instead of snapping from blank. Runs a single time
-   per element mount — re-renders reuse the node and do not replay it. */
-@keyframes nc-fade-in {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
-}
-
-.nc-fade {
-  animation: nc-fade-in 160ms ease-out;
 }

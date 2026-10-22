@@ -10,7 +10,7 @@ import { readScreenScale } from "../../hooks/ui/screenScale";
 export function terminalFontOptions(scale = readScreenScale()) {
   return {
     // Touch screens are read at arm's length; a desktop is not. The browser's
-    // scale applies to xterm's canvas separately from the rem-sized interface.
+    // scale applies to xterm's canvas, which CSS zoom does not reach.
     fontSize:
       typeof window !== "undefined" &&
       typeof window.matchMedia === "function" &&

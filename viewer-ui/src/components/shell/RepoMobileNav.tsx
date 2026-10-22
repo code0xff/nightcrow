@@ -27,7 +27,7 @@ export function RepoMobileNav({
   return (
     <nav
       aria-label="Switch view"
-      className="flex shrink-0 items-stretch border-t border-ink-700 bg-ink-900 md:hidden"
+      className="flex shrink-0 items-stretch border-t border-chrome-line bg-ink-900 md:hidden"
     >
       {DESTINATIONS.map(({ key, label, icon: Icon }) => (
         <button
@@ -36,7 +36,7 @@ export function RepoMobileNav({
           aria-current={view === key ? "page" : undefined}
           className={`flex min-h-11 flex-1 flex-col items-center justify-center gap-0.5 py-1 text-xs ${
             view === key
-              ? "text-accent shadow-[inset_0_2px_0_0_var(--color-accent)]"
+              ? "text-accent"
               : "text-ink-400"
           }`}
         >

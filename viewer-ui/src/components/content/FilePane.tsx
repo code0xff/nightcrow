@@ -11,6 +11,7 @@ import { sourceKey } from "../../lib/content/otherFace";
 import { focusRegionAttrs } from "../../lib/shortcuts/shortcutDom";
 import { FilePaneActions } from "./FilePaneActions";
 import { DiffView } from "./DiffView";
+import { SkeletonRows } from "../feedback/Skeleton";
 import { ErrorBoundary } from "../feedback/ErrorBoundary";
 import { FileLines } from "./FileLines";
 import { VirtualFileLines } from "./VirtualFileLines";
@@ -37,6 +38,8 @@ export interface FilePaneProps {
   /// switch between them.
   repo: string | null;
   pane: Pane;
+  /// A newer open is in flight: skeleton rows stand in for the old content.
+  loading?: boolean;
   previewRendered: boolean;
   setPreviewRendered: React.Dispatch<React.SetStateAction<boolean>>;
   filesMax: boolean;
@@ -51,6 +54,7 @@ export interface FilePaneProps {
 export function FilePane({
   repo,
   pane,
+  loading = false,
   previewRendered,
   setPreviewRendered,
   filesMax,
@@ -172,70 +176,82 @@ export function FilePane({
       <div
         ref={scroller}
         onScroll={refreshViewport}
-        className="min-h-0 flex-1 overflow-auto"
+        className="nc-content min-h-0 flex-1 overflow-auto"
       >
-        {pane.kind === "empty" && (
-          <p className="p-4 text-ink-400">
-            {status === null ? "Loading…" : "Select a file or commit."}
-          </p>
-        )}
-        {pane.kind === "file" && (
+        {loading ? (
+          <div aria-busy="true" aria-label="Loading" className="py-2">
+            <SkeletonRows rows={12} />
+          </div>
+        ) : (
           <>
-            {editing && canEdit && repo !== null && filePath !== null ? (
-              // Keyed by the file so switching starts a clean session rather
-              // than carrying one file's pending edits onto another.
-              <ErrorBoundary key={`edit:${filePath}`} region="preview">
-                <Suspense
-                  fallback={<p className="p-4 text-ink-400">Opening the editor…</p>}
-                >
-                  <HtmlEditor repo={repo} path={filePath} />
-                </Suspense>
-              </ErrorBoundary>
-            ) : isPreviewablePath(pane.value.path) && previewRendered ? (
-              // Keyed by the file so the next one starts clean: the renderers
-              // are separate chunks, and losing one says nothing about the other.
-              <ErrorBoundary key={pane.value.path} region="preview">
-                <Suspense
-                  fallback={<p className="p-4 text-ink-400">Rendering…</p>}
-                >
-                  {isHtmlPath(pane.value.path) && repo !== null ? (
-                    // The frame re-fetches the file by URL rather than taking
-                    // the lines already here: only a navigated response can
-                    // carry the policy that lets the document's scripts run.
-                    <HtmlView
-                      src={api.previewUrl(
-                        repo,
-                        pane.value.path,
-                        pane.source?.kind === "commit"
-                          ? pane.source.oid
-                          : undefined,
-                      )}
-                    />
-                  ) : (
-                    <MarkdownView source={fileViewSource(pane.value.lines)} />
-                  )}
-                </Suspense>
-              </ErrorBoundary>
+          {pane.kind === "empty" && (
+            status === null ? (
+              <div aria-busy="true" aria-label="Loading" className="py-2">
+                <SkeletonRows rows={12} />
+              </div>
             ) : (
-              pane.value.lines.length > VIRTUAL_THRESHOLD ? (
-                <VirtualFileLines lines={pane.value.lines} viewport={viewport} />
+              <p className="nc-fade-in p-4 text-ink-400">Select a file or commit.</p>
+            )
+          )}
+          {pane.kind === "file" && (
+            <>
+              {editing && canEdit && repo !== null && filePath !== null ? (
+                // Keyed by the file so switching starts a clean session rather
+                // than carrying one file's pending edits onto another.
+                <ErrorBoundary key={`edit:${filePath}`} region="preview">
+                  <Suspense
+                    fallback={<div aria-busy="true" aria-label="Opening the editor" className="py-2"><SkeletonRows rows={12} /></div>}
+                  >
+                    <HtmlEditor repo={repo} path={filePath} />
+                  </Suspense>
+                </ErrorBoundary>
+              ) : isPreviewablePath(pane.value.path) && previewRendered ? (
+                // Keyed by the file so the next one starts clean: the renderers
+                // are separate chunks, and losing one says nothing about the other.
+                <ErrorBoundary key={pane.value.path} region="preview">
+                  <Suspense
+                    fallback={<div aria-busy="true" aria-label="Rendering" className="py-2"><SkeletonRows rows={12} /></div>}
+                  >
+                    {isHtmlPath(pane.value.path) && repo !== null ? (
+                      // The frame re-fetches the file by URL rather than taking
+                      // the lines already here: only a navigated response can
+                      // carry the policy that lets the document's scripts run.
+                      <HtmlView
+                        src={api.previewUrl(
+                          repo,
+                          pane.value.path,
+                          pane.source?.kind === "commit"
+                            ? pane.source.oid
+                            : undefined,
+                        )}
+                      />
+                    ) : (
+                      <MarkdownView source={fileViewSource(pane.value.lines)} />
+                    )}
+                  </Suspense>
+                </ErrorBoundary>
               ) : (
-                <FileLines lines={pane.value.lines} />
-              )
-            )}
-            {pane.value.truncated && (
-              <p className="p-3 text-accent">
-                File truncated — it exceeded the server's size ceiling.
-              </p>
-            )}
+                pane.value.lines.length > VIRTUAL_THRESHOLD ? (
+                  <VirtualFileLines lines={pane.value.lines} viewport={viewport} />
+                ) : (
+                  <FileLines lines={pane.value.lines} />
+                )
+              )}
+              {pane.value.truncated && (
+                <p className="p-3 text-accent">
+                  File truncated — it exceeded the server's size ceiling.
+                </p>
+              )}
+            </>
+          )}
+          {pane.kind === "diff" && (
+            <DiffView
+              diff={pane.value}
+              split={diffLayout.layout === "split"}
+              viewport={viewport}
+            />
+          )}
           </>
-        )}
-        {pane.kind === "diff" && (
-          <DiffView
-            diff={pane.value}
-            split={diffLayout.layout === "split"}
-            viewport={viewport}
-          />
         )}
       </div>
     </section>

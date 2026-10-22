@@ -1,3 +1,4 @@
+import { SkeletonRows } from "../feedback/Skeleton";
 import { PathLabel } from "../content/PathLabel";
 import { HOT_CLASS } from "../../hooks/ui/useHotClock";
 import { classifyHot } from "../../lib/repository/hot";
@@ -20,7 +21,7 @@ export function StatusList({
   openDiff,
 }: StatusListProps) {
   if (status === null) {
-    return <li className="px-3 py-2 text-ink-400">Loading…</li>;
+    return <SkeletonRows as="li" rows={8} />;
   }
   return (
     <>

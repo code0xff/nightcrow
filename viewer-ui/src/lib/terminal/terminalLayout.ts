@@ -8,11 +8,13 @@ export interface PaneView {
   replayGate: ReplayReplyGate;
 }
 
-/// Measure the title cap in display cells so wide glyphs do not overflow.
-export const TAB_TITLE_MAX_CELLS = 20;
-
 /// Separate a drag from a header click by requiring pointer travel.
 export const PANE_DRAG_THRESHOLD_PX = 4;
+
+/// How long a finger rests on a tab before it picks the tab up. A strip of
+/// tabs scrolls sideways under a touch, so travel cannot mean "reorder" there;
+/// holding still does.
+export const PANE_DRAG_HOLD_MS = 350;
 
 export function gcd(a: number, b: number): number {
   while (b) [a, b] = [b, a % b];
@@ -61,39 +63,4 @@ export function planLayout(
     }
   });
   return { cols, rows: plan.length, cells };
-}
-
-export function isWide(cp: number): boolean {
-  return (
-    (cp >= 0x1100 && cp <= 0x115f) ||
-    (cp >= 0x2e80 && cp <= 0x303e) ||
-    (cp >= 0x3041 && cp <= 0x33ff) ||
-    (cp >= 0x3400 && cp <= 0x4dbf) ||
-    (cp >= 0x4e00 && cp <= 0x9fff) ||
-    (cp >= 0xa000 && cp <= 0xa4cf) ||
-    (cp >= 0xac00 && cp <= 0xd7a3) ||
-    (cp >= 0xf900 && cp <= 0xfaff) ||
-    (cp >= 0xfe30 && cp <= 0xfe4f) ||
-    (cp >= 0xff00 && cp <= 0xff60) ||
-    (cp >= 0xffe0 && cp <= 0xffe6) ||
-    (cp >= 0x1f300 && cp <= 0x1faff) ||
-    (cp >= 0x20000 && cp <= 0x3fffd)
-  );
-}
-
-/// Reserve one display cell for the ellipsis.
-export function truncateCells(text: string, max: number): string {
-  let width = 0;
-  for (const ch of text) width += isWide(ch.codePointAt(0) ?? 0) ? 2 : 1;
-  if (width <= max) return text;
-
-  let used = 0;
-  let out = "";
-  for (const ch of text) {
-    const cw = isWide(ch.codePointAt(0) ?? 0) ? 2 : 1;
-    if (used + cw > max - 1) break;
-    out += ch;
-    used += cw;
-  }
-  return `${out}…`;
 }

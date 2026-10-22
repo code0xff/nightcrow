@@ -1,0 +1,146 @@
+/* Motion. Everything here is decoration over a layout that is already
+   correct without it: nothing waits on an animation, and under
+   `prefers-reduced-motion: reduce` only the static parts below apply. */
+
+:root {
+  --nc-motion-fast: 120ms;
+  --nc-motion-base: 160ms;
+  --nc-motion-ease: cubic-bezier(0.2, 0, 0, 1);
+  --nc-title-fade: 1rem;
+  --nc-title-delay: 500ms;
+}
+
+/* Overflowing tab titles (`HoverTitle`). Static part: clipped, with the last
+   `--nc-title-fade` faded out in place of an ellipsis. */
+.nc-title {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+}
+.nc-title-text {
+  display: inline-block;
+  width: max-content;
+}
+.nc-title[data-overflow="true"] {
+  mask-image: linear-gradient(to right, #000 calc(100% - var(--nc-title-fade)), transparent);
+}
+
+/* Skeleton bars (`Skeleton.tsx`): a flat bar when motion is reduced. */
+.nc-skeleton {
+  background-color: var(--color-ink-800);
+}
+
+@keyframes nc-title-scroll {
+  to {
+    transform: translateX(calc(var(--nc-title-travel) - var(--nc-title-fade)));
+  }
+}
+@keyframes nc-shimmer {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: 0 0;
+  }
+}
+@keyframes nc-fade-in {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes nc-pop-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.98);
+  }
+}
+@keyframes nc-rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.98);
+  }
+}
+@keyframes nc-cell-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+}
+@keyframes nc-busy-dot {
+  50% {
+    opacity: 0.2;
+  }
+}
+@keyframes nc-slide-in {
+  from {
+    opacity: 0;
+    transform: translateX(16px);
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  /* The title scrolls while its tab is pointed at or keyboard-focused. A
+     click leaves plain :focus behind, which must not keep it moving. */
+  .nc-title-target:is(:hover, :focus-visible, :has(:focus-visible))
+    .nc-title[data-overflow="true"]
+    .nc-title-text {
+    animation: nc-title-scroll var(--nc-title-duration) linear var(--nc-title-delay) forwards;
+  }
+  /* A touch screen has no hover: the tab just chosen shows its whole name. */
+  @media (hover: none) {
+    .nc-title-target:is([aria-selected="true"], [data-active="true"])
+      .nc-title[data-overflow="true"]
+      .nc-title-text {
+      animation: nc-title-scroll var(--nc-title-duration) linear var(--nc-title-delay) forwards;
+    }
+  }
+
+  .nc-skeleton {
+    background-image: linear-gradient(
+      90deg,
+      var(--color-ink-800) 40%,
+      var(--color-ink-700) 50%,
+      var(--color-ink-800) 60%
+    );
+    background-size: 300% 100%;
+    animation: nc-shimmer 1.6s linear infinite;
+  }
+
+  /* Entrances: menus drop from their trigger, dialogs rise over a fading
+     backdrop, toasts slide in from the edge they sit on, swapped content
+     fades. Exits are instant — nothing to wait for on the way out. */
+  .nc-fade-in {
+    animation: nc-fade-in var(--nc-motion-base) var(--nc-motion-ease);
+  }
+  .nc-pop-in {
+    animation: nc-pop-in var(--nc-motion-fast) var(--nc-motion-ease);
+  }
+  .nc-rise-in {
+    animation: nc-rise-in var(--nc-motion-base) var(--nc-motion-ease);
+  }
+  /* A terminal opening: the cell is already at its size (and fitted); only
+     its paint moves. A translate, never a scale: xterm measures its glyphs
+     with getBoundingClientRect, which a scale would skew into a wrong fit.
+     See `lib/ui/motion.ts` for why the box itself never animates. */
+  .nc-cell-in {
+    animation: nc-cell-in 260ms var(--nc-motion-ease);
+  }
+  /* The working dot (`BusyLabel`); steady when motion is reduced. */
+  .nc-busy-dot {
+    animation: nc-busy-dot 1s ease-in-out infinite;
+  }
+  .nc-slide-in {
+    animation: nc-slide-in var(--nc-motion-base) var(--nc-motion-ease);
+  }
+
+  /* Tabs and rows change colour and underline smoothly instead of snapping. */
+  [role="tab"],
+  .nc-title-target,
+  .nc-content li > button {
+    transition:
+      background-color var(--nc-motion-fast) ease-out,
+      color var(--nc-motion-fast) ease-out,
+      box-shadow var(--nc-motion-fast) ease-out;
+  }
+}

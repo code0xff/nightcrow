@@ -1,7 +1,7 @@
 import { PlusIcon, XIcon } from "../icons/actions";
 import { useLeaderChord, useShortcutHint } from "../../hooks/shortcuts/shortcutLeader";
 import { ariaKeyShortcuts, shortcutHintText } from "../../lib/shortcuts/shortcutHint";
-import { tabLabel } from "../../lib/repository/tabLabel";
+import { HoverTitle } from "../shell/HoverTitle";
 import type { TabStripSide } from "../../lib/ui/tabStripSide";
 import type { Repo } from "../../api";
 
@@ -85,11 +85,11 @@ export function ProjectStrip({
             onPointerUp={onRepoDragEnd}
             onPointerCancel={onRepoDragEnd}
             onLostPointerCapture={onRepoDragEnd}
-            // `min-w-0` on the left: the rail is a fixed width, and a name of
-            // fourteen wide code points — the label rule counts characters —
-            // would otherwise push the close control out of it. A row across
-            // the header may grow and scroll instead.
-            className={`flex items-center whitespace-nowrap ${
+            // `min-w-0` on the left: the rail is a fixed width, and a long
+            // name would otherwise push the close control out of it. A row
+            // across the header may grow and scroll instead.
+            data-active={r.id === repo}
+            className={`nc-title-target flex items-center whitespace-nowrap ${
               left ? "min-w-0 border-b border-ink-700" : "border-r border-ink-700"
             } ${repos.length > 1 ? "touch-none" : ""} ${
               draggingRepo === r.id ? "opacity-60" : ""
@@ -100,24 +100,24 @@ export function ProjectStrip({
               // page's beneath the header row, the header's beside the page.
               r.id === repo
                 ? left
-                  ? "bg-ink-900 text-ink-50 shadow-[inset_2px_0_0_0_var(--color-accent)]"
-                  : "bg-ink-950 text-ink-50 shadow-[inset_0_2px_0_0_var(--color-accent)]"
+                  ? "bg-ink-900 text-ink-50 shadow-[inset_1px_0_0_0_var(--color-accent)]"
+                  : "bg-ink-950 text-ink-50 shadow-[inset_0_-1px_0_0_var(--color-accent)]"
                 : "text-ink-400 hover:bg-ink-850 hover:text-ink-200"
             }`}
             title={r.display_path}
           >
-            {/* Shortened here, not by the server: `name` is what the project
-                menu and the labels below read out, and those want it whole. */}
+            {/* Never cut: a long name is capped in width and scrolls into
+                view (`HoverTitle`), so the tab row still fits. */}
             <button
               onClick={() => {
                 onSelectRepo(r.id);
               }}
               aria-label={r.name}
               className={`self-stretch pl-3 pr-1 ${
-                left ? "min-w-0 flex-1 truncate py-2 text-left" : ""
+                left ? "min-w-0 flex-1 py-2 text-left" : ""
               }`}
             >
-              {tabLabel(r.name)}
+              <HoverTitle title={r.name} className={left ? "" : "max-w-[14ch]"} />
             </button>
             <button
               onClick={(e) => {

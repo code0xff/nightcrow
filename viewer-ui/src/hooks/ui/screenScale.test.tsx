@@ -11,7 +11,7 @@ import {
 afterEach(() => {
   cleanup();
   localStorage.clear();
-  document.documentElement.style.removeProperty("font-size");
+  document.documentElement.style.removeProperty("--nc-content-zoom");
 });
 
 function ScaleButton() {
@@ -31,7 +31,7 @@ describe("ScreenScaleProvider", () => {
     expect(readScreenScale()).toBe(50);
   });
 
-  it("persists_the_browser_scale_and_applies_it_to_the_root_rem_size", () => {
+  it("persists_the_browser_scale_and_applies_it_only_to_content_zoom", () => {
     render(
       <ScreenScaleProvider>
         <ScaleButton />
@@ -41,6 +41,7 @@ describe("ScreenScaleProvider", () => {
     fireEvent.click(screen.getByRole("button"));
 
     expect(localStorage.getItem("nightcrow.viewer.scale")).toBe("130");
-    expect(document.documentElement.style.fontSize).toBe("18.2px");
+    expect(document.documentElement.style.getPropertyValue("--nc-content-zoom")).toBe("1.3");
+    expect(document.documentElement.style.fontSize).toBe("");
   });
 });

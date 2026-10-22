@@ -14,6 +14,7 @@ mod plugin_watch;
 mod plugins;
 mod reattach;
 mod recovery;
+mod recovery_replay;
 mod replay_complete;
 mod ring;
 mod screen_records;

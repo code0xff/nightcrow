@@ -23,14 +23,14 @@ use std::time::{Duration, Instant};
 /// How long a test watches for a frame it expects *not* to arrive. Long enough
 /// for the 8 ms worker loop to have drained the cancel it was given several
 /// hundred times over, and short enough that proving a negative is cheap.
-const QUIET_WINDOW: Duration = Duration::from_millis(500);
+pub(super) const QUIET_WINDOW: Duration = Duration::from_millis(500);
 
 /// The state and detail the fake plugin reports, so the assertions name the same
 /// strings the script prints.
-const REPORTED_STATE: &str = "waiting_for_reset";
-const REPORTED_DETAIL: &str = "provider window closed";
-const REPORTED_DEADLINE: i64 = 1_700_000_000;
-const REPORTED_ATTEMPT: u32 = 2;
+pub(super) const REPORTED_STATE: &str = "waiting_for_reset";
+pub(super) const REPORTED_DETAIL: &str = "provider window closed";
+pub(super) const REPORTED_DEADLINE: i64 = 1_700_000_000;
+pub(super) const REPORTED_ATTEMPT: u32 = 2;
 
 /// A plugin that answers the pane it is given with one status report.
 ///
@@ -52,11 +52,11 @@ done"#
     )
 }
 
-fn reporter(name: &str, f: &Fixture) -> PluginConfig {
+pub(super) fn reporter(name: &str, f: &Fixture) -> PluginConfig {
     shell_plugin(name, status_script(), &f.log, Path::new("/dev/null"))
 }
 
-fn watched(name: &str, command: &str) -> StartupCommand {
+pub(super) fn watched(name: &str, command: &str) -> StartupCommand {
     StartupCommand {
         name: Some(name.to_string()),
         command: command.to_string(),
@@ -66,16 +66,16 @@ fn watched(name: &str, command: &str) -> StartupCommand {
 
 /// One recovery report as it came off the wire.
 #[derive(Debug, PartialEq, Eq)]
-struct Report {
-    pane: PaneId,
-    state: String,
-    detail: Option<String>,
-    deadline_epoch: Option<i64>,
-    attempt: u32,
+pub(super) struct Report {
+    pub(super) pane: PaneId,
+    pub(super) state: String,
+    pub(super) detail: Option<String>,
+    pub(super) deadline_epoch: Option<i64>,
+    pub(super) attempt: u32,
 }
 
 /// The whole recovery report a frame carries, or `None` for any other frame.
-fn recovery(frame: &TerminalFrame) -> Option<Report> {
+pub(super) fn recovery(frame: &TerminalFrame) -> Option<Report> {
     let TerminalFrame::Control(json) = frame else {
         return None;
     };

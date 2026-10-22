@@ -33,11 +33,11 @@ export function App() {
               chosen, is a column beside the grid: the tabs hang under the title in
               the header's left corner rather than in a panel with a title of its
               own — which would mean a second border, never quite the first. */}
-          <div className="nc-fade flex h-full flex-col">
+          <div className="nc-fade-in flex h-full flex-col">
         <Header {...view.header} onShowShortcuts={view.shortcutHelp.show} />
         <div className="flex min-h-0 flex-1">
           {view.tabStrip.side === "left" && (
-            <aside className="hidden w-48 shrink-0 flex-col border-r border-ink-700 bg-ink-950 md:flex">
+            <aside className="hidden w-48 shrink-0 flex-col border-r border-chrome-line bg-ink-950 md:flex">
               <ProjectStrip side="left" {...view.header} />
             </aside>
           )}
@@ -66,7 +66,14 @@ export function App() {
               </>
             ) : (
               <div className="flex items-center justify-center p-6 text-center text-ink-400">
-                <span>
+                {/* Below `md` there is no tab strip, so no `+ open` on screen:
+                    it is inside the header's project menu. */}
+                <span className="md:hidden">
+                  No repository open. Tap{" "}
+                  <span className="text-ink-200">No project</span> above, then{" "}
+                  <span className="text-ink-200">+ open</span>, to add one.
+                </span>
+                <span className="hidden md:inline">
                   No repository open. Click{" "}
                   <span className="text-ink-200">+ open</span>{" "}
                   {view.tabStrip.side === "left" ? "beside" : "above"} to add
