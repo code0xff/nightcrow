@@ -7,8 +7,10 @@ import { ComposeDialog } from "./ComposeDialog";
 
 afterEach(cleanup);
 
-function mount(initial = "", sendResult = true) {
+function mount(initial = "", sendResult = true, upload: { busy?: boolean; error?: string | null } = {}) {
   const onSend = vi.fn(() => sendResult);
+  const onAttachImage = vi.fn();
+  const onDismissUploadError = vi.fn();
   const onClose = vi.fn();
   function Host() {
     const [draft, setDraft] = useState(initial);
@@ -18,6 +20,10 @@ function mount(initial = "", sendResult = true) {
         draft={draft}
         onChange={setDraft}
         onSend={onSend}
+        onAttachImage={onAttachImage}
+        uploading={upload.busy ?? false}
+        uploadError={upload.error ?? null}
+        onDismissUploadError={onDismissUploadError}
         onClose={onClose}
       />
     );
@@ -29,7 +35,7 @@ function mount(initial = "", sendResult = true) {
     </section>,
   );
   const field = screen.getByRole("textbox", { name: "message" }) as HTMLTextAreaElement;
-  return { field, onSend, onClose };
+  return { field, onSend, onAttachImage, onDismissUploadError, onClose };
 }
 
 describe("ComposeDialog", () => {
@@ -90,5 +96,51 @@ describe("ComposeDialog", () => {
     const { field } = mount();
     expect(field.closest("[data-terminal-panel]")).toBeNull();
     expect(document.activeElement).toBe(field);
+  });
+
+  it("the_attach_button_opens_an_unforced_native_image_picker", () => {
+    mount();
+    const input = screen.getByLabelText("Choose an image") as HTMLInputElement;
+    const clickPicker = vi.spyOn(input, "click");
+    fireEvent.click(screen.getByRole("button", { name: "Attach image" }));
+    expect(clickPicker).toHaveBeenCalled();
+    expect(input.accept).toBe("image/png,image/jpeg,image/gif,image/webp");
+    expect(input.hasAttribute("capture")).toBe(false);
+  });
+
+  it("a_cancelled_picker_keeps_the_draft_and_does_not_upload", () => {
+    const { field, onAttachImage } = mount("keep this text");
+    const input = screen.getByLabelText("Choose an image") as HTMLInputElement;
+    fireEvent.click(screen.getByRole("button", { name: "Attach image" }));
+    expect(field.value).toBe("keep this text");
+    expect(onAttachImage).not.toHaveBeenCalled();
+    expect(input.value).toBe("");
+  });
+
+  it("resets_the_picker_after_selection_so_the_same_file_can_be_chosen_again", () => {
+    const { onAttachImage } = mount();
+    const input = screen.getByLabelText("Choose an image") as HTMLInputElement;
+    const image = new File(["png"], "shot.png", { type: "image/png" });
+    fireEvent.change(input, { target: { files: [image] } });
+    expect(onAttachImage).toHaveBeenCalledWith(image);
+    expect(input.value).toBe("");
+  });
+
+  it("uploading_and_failed_attachments_keep_send_disabled", () => {
+    const pending = mount("typed text", true, { busy: true });
+    expect(screen.getByRole("status").textContent).toBe("Uploading image…");
+    expect((screen.getByRole("button", { name: /send/i }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.keyDown(pending.field, { key: "Enter", ctrlKey: true });
+    fireEvent.keyDown(pending.field, { key: "Enter", metaKey: true });
+    expect(pending.onSend).not.toHaveBeenCalled();
+    cleanup();
+    const failed = mount("typed text", true, { error: "Could not attach image." });
+    expect(screen.getByRole("alert").textContent).toMatch(/Could not attach image/);
+    expect((screen.getByRole("button", { name: /send/i }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.keyDown(failed.field, { key: "Enter", ctrlKey: true });
+    fireEvent.keyDown(failed.field, { key: "Enter", metaKey: true });
+    expect(failed.onSend).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Dismiss" }));
+    expect(failed.onDismissUploadError).toHaveBeenCalled();
   });
 });
