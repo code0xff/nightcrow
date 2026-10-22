@@ -167,6 +167,7 @@ export function SettingsMenu({
               type="button"
               onClick={onReloadConfig}
               disabled={reloading}
+              aria-busy={reloading}
               {...shortcut(
                 "session.reloadConfig",
                 "Reload config.toml on the server (does not reload this page)",
@@ -175,7 +176,7 @@ export function SettingsMenu({
               className="flex w-full items-center gap-2 rounded-sm py-1.5 text-left text-ink-200 hover:bg-ink-700 disabled:cursor-progress disabled:text-ink-400 disabled:hover:bg-transparent"
             >
               <RefreshIcon className={`h-3.5 w-3.5 ${reloading ? "animate-spin" : ""}`} />
-              {reloading ? "Reloading config.toml…" : "Reload config.toml"}
+              Reload config.toml
             </button>
             <button
               type="button"

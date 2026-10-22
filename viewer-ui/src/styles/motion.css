@@ -67,6 +67,11 @@
     transform: translateY(12px);
   }
 }
+@keyframes nc-busy-dot {
+  50% {
+    opacity: 0.2;
+  }
+}
 @keyframes nc-slide-in {
   from {
     opacity: 0;
@@ -120,6 +125,10 @@
      See `lib/ui/motion.ts` for why the box itself never animates. */
   .nc-cell-in {
     animation: nc-cell-in 260ms var(--nc-motion-ease);
+  }
+  /* The working dot (`BusyLabel`); steady when motion is reduced. */
+  .nc-busy-dot {
+    animation: nc-busy-dot 1s ease-in-out infinite;
   }
   .nc-slide-in {
     animation: nc-slide-in var(--nc-motion-base) var(--nc-motion-ease);
