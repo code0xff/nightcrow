@@ -4,6 +4,7 @@ use crate::daemon::one_shot::{connect, send_request};
 use crate::daemon::protocol::{ClientMessage, DaemonStatus, ServerMessage};
 use crate::daemon::socket::DaemonSocket;
 use std::io::Write;
+use std::sync::mpsc;
 use std::thread;
 
 #[test]
@@ -45,20 +46,21 @@ fn a_stalled_daemon_is_the_timeout_failure_with_its_dedicated_exit_code() {
     let path = dir.path().join("stalled.sock");
     let socket = DaemonSocket::bind(&path).unwrap();
     let listener = socket.listener().try_clone().unwrap();
-    // A fake daemon that accepts the connection and reads the request, then
-    // never answers. The held stream keeps the connection open.
+    let (release_tx, release_rx) = mpsc::channel::<()>();
     let server = thread::spawn(move || {
         let (mut stream, _) = listener.accept().unwrap();
         let _ = read_frame(&mut stream).unwrap();
-        thread::sleep(STATUS_TIMEOUT + Duration::from_millis(500));
-        drop(stream);
+        let _ = release_rx.recv();
     });
 
-    let error = query_status(&path).unwrap_err();
+    let result = query_status(&path);
+    drop(release_tx);
+    server.join().unwrap();
+
+    let error = result.unwrap_err();
     assert!(matches!(error, StatusError::Timeout { .. }), "{error}");
     assert!(error.to_string().contains("response timeout"), "{error}");
     assert_eq!(error.exit_code(), exit_code::RESPONSE_TIMEOUT as i32);
-    server.join().unwrap();
 }
 
 #[test]
