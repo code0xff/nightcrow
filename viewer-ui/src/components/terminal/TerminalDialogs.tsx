@@ -33,6 +33,10 @@ export function TerminalDialogs({
           draft={compose.draft}
           onChange={compose.setDraft}
           onSend={compose.send}
+          onAttachImage={compose.attachImage}
+          uploading={compose.uploading}
+          uploadError={compose.uploadError}
+          onDismissUploadError={compose.dismissUploadError}
           onClose={compose.close}
         />
       )}

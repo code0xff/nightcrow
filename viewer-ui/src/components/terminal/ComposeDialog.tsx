@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { XIcon } from "../icons/actions";
 import { isSendable, sendChordLabel } from "../../lib/terminal/composeInput";
+import { IMAGE_MIME_TYPES } from "../../lib/terminal/pasteImage";
 
 const TITLE_ID = "nc-compose-title";
 
@@ -26,6 +27,10 @@ export function ComposeDialog({
   draft,
   onChange,
   onSend,
+  onAttachImage,
+  uploading,
+  uploadError,
+  onDismissUploadError,
   onClose,
 }: {
   /** Which pane this goes to, said in the title. */
@@ -33,11 +38,17 @@ export function ComposeDialog({
   draft: string;
   onChange: (text: string) => void;
   onSend: () => boolean;
+  onAttachImage: (image: File) => void;
+  uploading: boolean;
+  uploadError: string | null;
+  onDismissUploadError: () => void;
   onClose: () => void;
 }) {
   const fieldRef = useRef<HTMLTextAreaElement>(null);
+  const imageRef = useRef<HTMLInputElement>(null);
   const [failed, setFailed] = useState(false);
   const sendable = isSendable(draft);
+  const canSend = sendable && !uploading && uploadError === null;
   const chord = sendChordLabel(platform());
 
   useEffect(() => {
@@ -56,7 +67,7 @@ export function ComposeDialog({
   }, [onClose]);
 
   const send = () => {
-    if (sendable) setFailed(!onSend());
+    if (canSend) setFailed(!onSend());
   };
 
   const clear = () => {
@@ -111,9 +122,48 @@ export function ComposeDialog({
           // 16px, not the page's 14: iOS zooms the page into any field smaller.
           className="m-3 resize-y rounded-sm border border-ink-700 bg-ink-950 p-2 font-mono text-[16px] text-ink-50 focus:border-accent focus:outline-none"
         />
-        <div className="flex items-center gap-2 px-3 pb-3">
+        <input
+          ref={imageRef}
+          type="file"
+          accept={IMAGE_MIME_TYPES.join(",")}
+          aria-label="Choose an image"
+          tabIndex={-1}
+          className="hidden"
+          onChange={(event) => {
+            const image = event.currentTarget.files?.[0];
+            event.currentTarget.value = "";
+            if (image) onAttachImage(image);
+          }}
+        />
+        <div className="flex flex-wrap items-center gap-2 px-3 pb-3">
+          <button
+            type="button"
+            onClick={() => imageRef.current?.click()}
+            disabled={uploading}
+            aria-label="Attach image"
+            className="min-h-11 rounded-sm border border-ink-700 px-3 text-ink-200 hover:text-ink-50 disabled:text-ink-500"
+          >
+            Attach image
+          </button>
+          {uploading && (
+            <span role="status" aria-live="polite" className="text-ink-300">
+              Uploading image…
+            </span>
+          )}
+          {uploadError && (
+            <span role="alert" className="flex basis-full items-center gap-2 text-removed">
+              <span className="min-w-0">{uploadError}</span>
+              <button
+                type="button"
+                onClick={onDismissUploadError}
+                className="min-h-11 shrink-0 rounded-sm px-2 underline"
+              >
+                Dismiss
+              </button>
+            </span>
+          )}
           {failed && (
-            <span role="alert" className="min-w-0 truncate text-removed">
+            <span role="alert" className="min-w-0 basis-full truncate text-removed">
               Not connected — nothing was sent.
             </span>
           )}
@@ -121,17 +171,17 @@ export function ComposeDialog({
             type="button"
             onClick={clear}
             disabled={draft.length === 0}
-            className="ml-auto rounded-sm px-3 py-1.5 text-ink-200 hover:text-ink-50 disabled:text-ink-600"
+            className="ml-auto min-h-11 rounded-sm px-3 text-ink-200 hover:text-ink-50 disabled:text-ink-600"
           >
             Clear
           </button>
           <button
             type="button"
             onClick={send}
-            disabled={!sendable}
+            disabled={!canSend}
             title={`Send and run (${chord})`}
             aria-keyshortcuts="Meta+Enter Control+Enter"
-            className="flex items-center gap-1.5 rounded-sm bg-accent px-3 py-1.5 font-medium text-ink-950 disabled:bg-ink-700 disabled:text-ink-400"
+            className="flex min-h-11 items-center gap-1.5 rounded-sm bg-accent px-3 py-1.5 font-medium text-ink-950 disabled:bg-ink-700 disabled:text-ink-400"
           >
             {/* On the button rather than only in its tooltip, which a touch
                 screen never shows. Hidden from the accessible name, which stays
