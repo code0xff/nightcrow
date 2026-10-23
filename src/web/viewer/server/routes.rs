@@ -6,6 +6,7 @@ use super::handlers::{
 use super::http_util::{json_error, json_response};
 use super::mutations::redact;
 use crate::git::diff;
+use crate::session::runtime::UpdateKind;
 use crate::web::common::http::RequestHead;
 use crate::web::viewer::dto::{
     BrowseDto, BrowseEntryDto, CommitFilesDto, DiffDto, Envelope, FileDto, HotConfigDto,
@@ -67,18 +68,15 @@ pub(super) fn route(head: &RequestHead, state: &ViewerState) -> Vec<u8> {
                 entry.runtime.refresh_now();
             }
             match entry.runtime.latest() {
-                Some(update) => Ok(json_response("200 OK", &update.json, &[])),
-                None => Ok(json_response(
-                    "200 OK",
-                    &encode(&StatusDto::from_snapshot(
-                        &[],
-                        None,
-                        None,
-                        None,
-                        &std::collections::HashMap::new(),
-                    ))?,
-                    &[],
-                )),
+                Some(update) => Ok(match update.kind {
+                    UpdateKind::Status => json_response("200 OK", &update.payload, &[]),
+                    UpdateKind::Unavailable => json_error("409 Conflict", &update.payload),
+                }),
+                None => {
+                    let empty =
+                        StatusDto::from_snapshot(&[], None, None, None, &Default::default());
+                    Ok(json_response("200 OK", &encode(&empty)?, &[]))
+                }
             }
         }),
         "/api/tree" => with_repo(head, state, |entry| {

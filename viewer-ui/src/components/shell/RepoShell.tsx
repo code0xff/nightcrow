@@ -5,7 +5,8 @@ import { Sidebar } from "../repository/Sidebar";
 import type { SidebarProps } from "../repository/Sidebar";
 import { FilePane } from "../content/FilePane";
 import type { FilePaneProps } from "../content/FilePane";
-import type { Repo, Status } from "../../api";
+import type { Repo } from "../../api";
+import type { RepoStatus } from "../../hooks/git/useStatus";
 import type { ShellLayout } from "../../hooks/ui/useShellLayout";
 import type { Maximized, MobileView } from "../../types";
 import { RepoMobileNav } from "./RepoMobileNav";
@@ -21,7 +22,7 @@ export interface RepoShellProps {
   repository: {
     id: string;
     current: Repo | undefined;
-    status: Status | null;
+    status: RepoStatus | null;
   };
   sidebar: Omit<
     SidebarProps,

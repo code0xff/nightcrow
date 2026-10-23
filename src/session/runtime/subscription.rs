@@ -11,9 +11,23 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 /// One published status, already serialized so N subscribers cost one encode.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StatusUpdate {
-    pub json: Arc<String>,
+    pub kind: UpdateKind,
+    /// The encoded status for [`UpdateKind::Status`]; the reason, as text, for
+    /// [`UpdateKind::Unavailable`].
+    pub payload: Arc<String>,
+}
+
+/// What a [`StatusUpdate`] reports.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum UpdateKind {
+    /// The working tree as read.
+    Status,
+    /// The tree could not be read — most often a directory that is not a git
+    /// repository yet. Said rather than left silent, or a client waiting for
+    /// its first status waits forever.
+    Unavailable,
 }
 
 pub(super) struct Subscriber {

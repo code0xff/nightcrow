@@ -1,8 +1,8 @@
 use super::super::{
     BrowseDto, BrowseEntryDto, ChangedFileDto, CommitFilesDto, DiffDto, DiffHunkDto, DiffLineDto,
     FileDto, HotConfigDto, LogDto, OperationDto, PROTOCOL_VERSION, RepoDto, RepoViewDto, SpanDto,
-    StatusDto, TrackingDto, TreeDto, TreeEntryDto, TreeMatchDto, TreeSearchDto, ViewFileDto,
-    ViewerBootstrapDto,
+    StatusDto, StatusUnavailableDto, TrackingDto, TreeDto, TreeEntryDto, TreeMatchDto,
+    TreeSearchDto, ViewFileDto, ViewerBootstrapDto,
 };
 use crate::session::prefs::{MaximizedPanel, ViewFace, ViewTab};
 
@@ -248,6 +248,11 @@ fn wire_fixture() -> serde_json::Value {
                 },
             },
         }),
+        // The `unavailable` event, sent instead of a status for a directory
+        // that holds no repository yet.
+        "statusUnavailable": StatusUnavailableDto {
+            reason: "not a git repository".to_string(),
+        },
         // What `/api/reload` answers. A sentence rather than counts, because it
         // is the whole of what the browser has to show: a reload changes nothing
         // on the page, so this text is the only evidence the button did anything.

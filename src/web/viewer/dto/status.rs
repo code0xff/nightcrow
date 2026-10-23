@@ -112,6 +112,14 @@ pub fn server_now_millis() -> u64 {
     unix_millis(SystemTime::now()).unwrap_or(0)
 }
 
+/// Sent in place of a status when the tree could not be read, most often
+/// because the directory is not a git repository yet. `git init` there is
+/// noticed by the watch, and a status follows.
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct StatusUnavailableDto {
+    pub reason: String,
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct StatusDto {
     #[serde(skip_serializing_if = "Option::is_none")]

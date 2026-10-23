@@ -123,9 +123,12 @@ impl SnapshotChannel {
 
     /// One snapshot read on the calling thread, for a caller that needs an answer
     /// now rather than when the next change arrives.
-    pub fn read_now(repo_path: &str) -> Option<(RepoSnapshot, HashMap<String, SystemTime>)> {
-        let repo = git2::Repository::discover(repo_path).ok()?;
-        read(&repo).ok()
+    pub fn read_now(
+        repo_path: &str,
+    ) -> Result<(RepoSnapshot, HashMap<String, SystemTime>), String> {
+        let repo = git2::Repository::discover(repo_path)
+            .map_err(|err| format!("not a git repository: {err}"))?;
+        read(&repo).map_err(|err| err.to_string())
     }
 
     pub fn try_recv(&self) -> Result<SnapshotMsg, mpsc::TryRecvError> {

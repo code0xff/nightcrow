@@ -20,6 +20,7 @@ import type {
   RunningClone,
   SavedFile,
   Status,
+  StatusUnavailable,
   StoredPrefs,
   Tree,
   TreeSearch,
@@ -269,12 +270,20 @@ export const api = {
 export function subscribeStatus(
   repo: string,
   onStatus: (status: Status) => void,
+  onUnavailable: (unavailable: StatusUnavailable) => void,
 ): () => void {
   const source = new EventSource(`/api/events?${query({ repo })}`);
   source.addEventListener("status", (event) => {
     try {
       const payload = JSON.parse((event as MessageEvent).data);
       if (payload.version === PROTOCOL_VERSION) onStatus(payload as Status);
+    } catch {
+    }
+  });
+  source.addEventListener("unavailable", (event) => {
+    try {
+      const payload = JSON.parse((event as MessageEvent).data);
+      if (payload.version === PROTOCOL_VERSION) onUnavailable(payload as StatusUnavailable);
     } catch {
     }
   });

@@ -8,6 +8,7 @@ web surface는 `src/web/common/`의 인증·HTTP·SSE·connection primitive와 `
 - session token은 opaque random value로 `~/.nightcrow/sessions`에 저장하고 로그아웃 때 server-side revoke한다. configured TTL은 기존 token에도 적용하며 만료 token sweep은 load/write 시 수행한다. Unix 파일은 owner-only(0600)이고 Windows 권한 seam은 no-op이므로 상태 디렉터리 접근을 운영자가 보호한다.
 - 기본 bind는 loopback이고 TLS는 제공하지 않는다. 원격 접근은 SSH tunnel 또는 TLS reverse proxy를 전제로 한다. 연결·header·body·WebSocket message·SSE payload는 bounded하고, connection slot은 handler 종료 시 `Drop`으로 반환한다.
 - SSE는 전용 stream이 head를 직접 쓰고 매 event flush한다. event name에 newline을 허용하지 않으며 쓰기 오류를 명시적으로 전파한다.
+- 저장소 status stream은 읽은 status를 `status` event로, 읽지 못한 이유(git 저장소가 아닌 폴더 등)를 `unavailable` event로 보낸다. 실패를 조용히 삼키면 첫 status를 기다리는 client가 영원히 대기한다. `/api/status`는 같은 실패를 `409`로 답한다.
 
 ## Request and repository gates
 
