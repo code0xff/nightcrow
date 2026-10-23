@@ -173,7 +173,11 @@ export function RepoShell({
             onToggleMaximized={() =>
               setMaximized((m) => (m === "terminal" ? "none" : "terminal"))
             }
-            className={`nc-fade-in ${mobileView === "terminal" ? "flex" : "hidden md:flex"}`}
+            // A maximized file pane leaves this panel a zero-height track; clip
+            // it there, or its toolbar paints over the footer and hint line.
+            className={`nc-fade-in ${mobileView === "terminal" ? "flex" : "hidden md:flex"} ${
+              maximized === "files" ? "overflow-hidden" : ""
+            }`}
             sectionRef={lowerRef}
             // Only when both panels are on screen at their stored ratio: a
             // maximized panel has literal grid tracks the percentage does not
