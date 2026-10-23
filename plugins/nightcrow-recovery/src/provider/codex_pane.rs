@@ -143,14 +143,19 @@ impl PaneState {
     fn consume(&mut self, chunk: &[u8], now_epoch: i64) -> Option<LimitEvent> {
         self.pending.extend_from_slice(chunk);
         let mut event = None;
-        while let Some(nl) = self.pending.iter().position(|b| *b == b'\n') {
-            let record = std::str::from_utf8(&self.pending[..nl])
+        let mut consumed = 0;
+        while let Some(relative_nl) = self.pending[consumed..].iter().position(|b| *b == b'\n') {
+            let nl = consumed + relative_nl;
+            let record = std::str::from_utf8(&self.pending[consumed..nl])
                 .ok()
                 .and_then(|line| classify_line(line, now_epoch));
-            self.pending.drain(..=nl);
+            consumed = nl + 1;
             if let Some(found) = record.and_then(|r| self.apply(r)) {
                 event = event.or(Some(found));
             }
+        }
+        if consumed > 0 {
+            self.pending.drain(..consumed);
         }
         if self.pending.len() > MAX_RECORD_BYTES {
             // A line longer than any real record: drop it rather than buffer a
@@ -224,3 +229,7 @@ impl PaneState {
         self.output_tail.drain(..at);
     }
 }
+
+#[cfg(test)]
+#[path = "codex_pane_tests.rs"]
+mod tests;

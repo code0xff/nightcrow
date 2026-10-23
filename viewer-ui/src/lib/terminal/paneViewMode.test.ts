@@ -58,8 +58,7 @@ describe("shownTab", () => {
 
 describe("stackedCellStyle", () => {
   it("gives a hidden tab the same box as the shown one", () => {
-    // A pane with no layout box measures zero, and zero is what defers opening
-    // it and skips its resize — so switching tabs would cost a full repaint.
+    // Hidden tabs retain the shown pane's box, so switching needs no resize.
     const hidden = stackedCellStyle(false);
     expect(hidden.display).toBe("flex");
     expect(hidden.inset).toBe(0);

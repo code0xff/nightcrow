@@ -86,13 +86,13 @@ impl TerminalHub {
                     // client racing a pane exit is normal, not an attack.
                     Command::Input { pane, data, client } if self.pane_is_live(pane) => {
                         clears.note_input(pane, client, &data, Instant::now());
-                        // A person at the keyboard has taken the pane back, so
-                        // its plugin is told and everything it had planned for
-                        // the pane is dropped — before the bytes land, so the
-                        // cancellation cannot be overtaken by a decision made
-                        // from the output this input produces.
+                        // Human input cancels plugin plans before the bytes land,
+                        // so its cancellation cannot be overtaken by new output.
                         plugins.user_input(&backend, pane);
-                        let _ = backend.send_input(pane, &data);
+                        if let Err(error) = backend.send_input(pane, &data) {
+                            tracing::warn!(pane, client, %error, "viewer: could not queue terminal input");
+                            self.send_error_to(client, "terminal input could not be sent");
+                        }
                     }
                     Command::Reorder { order } => self.reorder_panes(order),
                     // Deliberately not gated on the pane being live: a pane with

@@ -153,9 +153,15 @@ export function usePaneSizes({
         if (pty) {
           view.term.resize(pty.cols, pty.rows);
           desiredSizesRef.current.set(pane, pty);
+        } else {
+          view.term.resize(view.term.cols, view.term.rows);
         }
         continue;
       }
+      // xterm can open while this cell is hidden, before it can measure a
+      // character. Its public same-grid resize retries that measurement without
+      // changing the PTY grid; fit needs valid metrics to propose dimensions.
+      view.term.resize(view.term.cols, view.term.rows);
       view.fit.fit();
       desiredSizesRef.current.set(pane, {
         rows: view.term.rows,

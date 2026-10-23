@@ -179,6 +179,8 @@ export function useTerminalWiring({
     bodyRefs,
     keyboardOpen,
     size,
+    zoomed: zoomShown,
+    mode,
   });
 
   usePaneFocus({

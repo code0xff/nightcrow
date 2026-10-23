@@ -5,10 +5,11 @@ use crate::backend::slot::{PaneLaunch, resume_command_line};
 use crate::platform::process_tree::ProcessTree;
 use anyhow::Result;
 use portable_pty::{CommandBuilder, NativePtySystem, PtySize, PtySystem};
-use std::io::Read;
 #[cfg(windows)]
 use std::path::{Component, Path, Prefix};
 use std::sync::mpsc;
+#[cfg(test)]
+use std::sync::{Arc, atomic::AtomicBool};
 use std::thread;
 use std::time::Instant;
 
@@ -125,7 +126,7 @@ impl PtyBackend {
         let killer = child.clone_killer();
         drop(pair.slave);
 
-        let mut reader = pair.master.try_clone_reader()?;
+        let reader = pair.master.try_clone_reader()?;
         let writer = pair.master.take_writer()?;
 
         let id = self.next_id;
@@ -134,22 +135,16 @@ impl PtyBackend {
             .ok_or_else(|| anyhow::anyhow!("pane id counter overflow"))?;
         self.next_id = next;
 
-        let (tx, rx) = mpsc::channel();
+        let (tx, rx) = mpsc::sync_channel(super::io::OUTPUT_EVENT_CAPACITY);
         let exit_tx = tx.clone();
-        let reader_handle = thread::spawn(move || {
-            let mut buf = [0u8; 4096];
-            loop {
-                match reader.read(&mut buf) {
-                    Ok(0) | Err(_) => break,
-                    Ok(n) => {
-                        if tx.send(PtyEvent::Output(buf[..n].to_vec())).is_err() {
-                            break;
-                        }
-                    }
-                }
-            }
-            let _ = tx.send(PtyEvent::Exited);
-        });
+        #[cfg(test)]
+        let output_backpressured = Arc::new(AtomicBool::new(false));
+        #[cfg(test)]
+        let reader_handle =
+            super::io::spawn_output_reader_observed(reader, tx, Arc::clone(&output_backpressured));
+        #[cfg(not(test))]
+        let reader_handle = super::io::spawn_output_reader(reader, tx);
+        let (input, writer_handle) = super::io::InputQueue::spawn(writer);
 
         // The child's death is reported, not just awaited: on Windows the
         // pseudoconsole holds the pipe open until the master drops, so the
@@ -163,12 +158,15 @@ impl PtyBackend {
             id,
             PtyPane {
                 master: Some(pair.master),
-                writer: Some(writer),
+                input: Some(input),
                 killer,
                 process_tree,
-                rx,
+                rx: Some(rx),
                 reader_handle: Some(reader_handle),
+                writer_handle: Some(writer_handle),
                 wait_handle: Some(wait_handle),
+                #[cfg(test)]
+                output_backpressured,
                 exit: ExitPhase::Running,
             },
         );
