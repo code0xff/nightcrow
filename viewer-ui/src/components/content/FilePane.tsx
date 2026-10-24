@@ -16,7 +16,9 @@ import { ErrorBoundary } from "../feedback/ErrorBoundary";
 import { FileLines } from "./FileLines";
 import { VirtualFileLines } from "./VirtualFileLines";
 import { PathLabel } from "./PathLabel";
-import { api, type Status } from "../../api";
+import { api } from "../../api";
+import { unavailableMessage } from "../../lib/repository/unavailable";
+import type { RepoStatus } from "../../hooks/git/useStatus";
 import type { FileSource, Pane } from "../../types";
 
 // Keep the markdown pipeline out of the initial chunk.
@@ -47,7 +49,7 @@ export interface FilePaneProps {
   /// Swap between the diff and the whole file. Offered only for a pane that
   /// has both faces to show — see `FileSource`.
   showOtherFace: (fromHunk: number) => void;
-  status: Status | null;
+  status: RepoStatus | null;
   className?: string;
 }
 
@@ -189,6 +191,10 @@ export function FilePane({
               <div aria-busy="true" aria-label="Loading" className="py-2">
                 <SkeletonRows rows={12} />
               </div>
+            ) : status.unavailable !== undefined ? (
+              <p className="nc-fade-in p-4 text-ink-400">
+                {unavailableMessage(status.unavailable)}
+              </p>
             ) : (
               <p className="nc-fade-in p-4 text-ink-400">Select a file or commit.</p>
             )

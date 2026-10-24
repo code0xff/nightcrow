@@ -2,11 +2,13 @@ import { SkeletonRows } from "../feedback/Skeleton";
 import { PathLabel } from "../content/PathLabel";
 import { HOT_CLASS } from "../../hooks/ui/useHotClock";
 import { classifyHot } from "../../lib/repository/hot";
+import { unavailableMessage } from "../../lib/repository/unavailable";
 import { statusColor } from "../../lib/shared/utils";
-import type { ChangedFile, Status } from "../../api";
+import type { ChangedFile } from "../../api";
+import type { RepoStatus } from "../../hooks/git/useStatus";
 
 export interface StatusListProps {
-  status: Status | null;
+  status: RepoStatus | null;
   files: ChangedFile[];
   now: number;
   hotWindowMs: number;
@@ -22,6 +24,13 @@ export function StatusList({
 }: StatusListProps) {
   if (status === null) {
     return <SkeletonRows as="li" rows={8} />;
+  }
+  if (status.unavailable !== undefined) {
+    return (
+      <li className="nc-fade-in px-3 py-1 text-ink-400">
+        {unavailableMessage(status.unavailable)}
+      </li>
+    );
   }
   return (
     <>

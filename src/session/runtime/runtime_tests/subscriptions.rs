@@ -30,11 +30,11 @@ fn a_slow_subscriber_gets_the_newest_status_not_a_backlog() {
         .unwrap();
         assert!(wait_for(|| runtime
             .latest()
-            .is_some_and(|u| u.json.contains(&format!("b{i}")))));
+            .is_some_and(|u| u.payload.contains(&format!("b{i}")))));
     }
 
     let update = subscription.next_update(Duration::from_millis(50)).unwrap();
-    assert!(update.json.contains("b4"), "got: {}", update.json);
+    assert!(update.payload.contains("b4"), "got: {}", update.payload);
     assert!(
         subscription
             .next_update(Duration::from_millis(50))
@@ -60,6 +60,10 @@ fn dropping_a_subscription_unregisters_it() {
 fn next_update_times_out_when_nothing_changes() {
     let (runtime, _tx) = test_runtime();
     let subscription = runtime.subscribe();
+    // The seed: the test runtime's path holds no repository, so the reading
+    // taken for the first subscriber says so.
+    let seed = subscription.next_update(Duration::from_millis(30)).unwrap();
+    assert_eq!(seed.kind, UpdateKind::Unavailable);
 
     assert!(
         subscription

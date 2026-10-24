@@ -5,6 +5,11 @@ import { hasWorkingCopy, showsText } from "../../lib/content/otherFace";
 
 export type { Pane, Tab };
 
+/** A status as the page holds it: the wire's, or — when the server said the
+ *  tree cannot be read — an empty one carrying why, so the lists can say so
+ *  instead of waiting on a status that will not come. */
+export type RepoStatus = Status & { unavailable?: string };
+
 export interface UseStatusArgs {
   repo: string | null;
   authed: boolean | null;
@@ -17,7 +22,7 @@ export interface UseStatusArgs {
 }
 
 export interface UseStatusResult {
-  status: Status | null;
+  status: RepoStatus | null;
   paneRef: React.MutableRefObject<Pane>;
   tabRef: React.MutableRefObject<Tab>;
 }
@@ -32,7 +37,7 @@ export function useStatus({
   handle,
   paneRequestRef,
 }: UseStatusArgs): UseStatusResult {
-  const [status, setStatus] = useState<Status | null>(null);
+  const [status, setStatus] = useState<RepoStatus | null>(null);
   // Status refresh reads these without re-running when the selection changes.
   const paneRef = useRef(pane);
   paneRef.current = pane;
@@ -49,7 +54,9 @@ export function useStatus({
 
   useEffect(() => {
     if (!repo || !authed) return;
-    return subscribeStatus(repo, setStatus);
+    return subscribeStatus(repo, setStatus, ({ reason }) =>
+      setStatus({ files: [], truncated: false, unavailable: reason }),
+    );
   }, [repo, authed, resumeTick]);
 
   // Only an open status diff is invalidated by working-tree updates.

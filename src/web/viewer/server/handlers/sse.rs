@@ -1,6 +1,9 @@
+use super::super::http_util::encode;
 use super::super::mutations::lookup_repo;
 use super::super::{SSE_HEARTBEAT, ViewerState};
+use crate::session::runtime::UpdateKind;
 use crate::web::common::sse::SseStream;
+use crate::web::viewer::dto::StatusUnavailableDto;
 use std::io::Write;
 use std::net::TcpStream;
 
@@ -27,7 +30,16 @@ pub(in crate::web::viewer::server) fn serve_events(
     loop {
         match subscription.next_update(SSE_HEARTBEAT) {
             Some(update) => {
-                if sse.send("status", &update.json).is_err() {
+                let sent = match update.kind {
+                    UpdateKind::Status => sse.send("status", &update.payload),
+                    UpdateKind::Unavailable => match encode(&StatusUnavailableDto {
+                        reason: update.payload.to_string(),
+                    }) {
+                        Ok(json) => sse.send("unavailable", &json),
+                        Err(_) => break,
+                    },
+                };
+                if sent.is_err() {
                     break;
                 }
             }

@@ -141,6 +141,12 @@ export interface Status {
   refs?: string;
 }
 
+/** Sent instead of a status when the tree could not be read — most often a
+ *  directory that is not a git repository yet. */
+export interface StatusUnavailable {
+  reason: string;
+}
+
 /** A ref pointing at a commit, most orienting first. */
 export interface CommitRef {
   kind: "head" | "local" | "tag" | "remote";
