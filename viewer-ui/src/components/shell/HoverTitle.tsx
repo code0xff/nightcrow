@@ -18,8 +18,9 @@ const TRAVEL_PX_PER_S = 30;
  *  tabs alike — whatever its length, so a row of tabs reads as a row rather
  *  than as a ragged run. Shorter titles leave the rest blank; longer ones
  *  scroll (see above). In rem, not `ch`: the two rows set different font
- *  sizes, and a `ch` width would differ between them. */
-export const TAB_TITLE_WIDTH = "w-32";
+ *  sizes, and a `ch` width would differ between them. 7.5rem holds about 14
+ *  characters of a project tab, which most project names fit in. */
+export const TAB_TITLE_WIDTH = "w-30";
 
 export function HoverTitle({ title, className = "" }: { title: string; className?: string }) {
   const viewport = useRef<HTMLSpanElement>(null);
