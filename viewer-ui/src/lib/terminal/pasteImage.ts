@@ -13,7 +13,8 @@
  */
 
 /** Formats the server accepts; anything else is not worth a round trip. */
-const ACCEPTED = ["image/png", "image/jpeg", "image/gif", "image/webp"];
+export const IMAGE_MIME_TYPES = ["image/png", "image/jpeg", "image/gif", "image/webp"] as const;
+export const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
 
 /**
  * The image on a clipboard or a drag, or `null` when there is none.
@@ -26,7 +27,7 @@ export function pastedImage(data: DataTransfer | null | undefined): File | null 
   if (!data) return null;
   if (data.getData("text/plain")) return null;
   for (const file of Array.from(data.files)) {
-    if (ACCEPTED.includes(file.type)) return file;
+    if (IMAGE_MIME_TYPES.includes(file.type as (typeof IMAGE_MIME_TYPES)[number])) return file;
   }
   return null;
 }
