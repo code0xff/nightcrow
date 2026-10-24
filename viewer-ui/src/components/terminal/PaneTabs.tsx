@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react";
 import { XIcon } from "../icons/actions";
 import type { PaneDragStartOptions } from "../../hooks/terminal/usePaneDrag";
-import { HoverTitle } from "../shell/HoverTitle";
+import { HoverTitle, TAB_TITLE_WIDTH } from "../shell/HoverTitle";
 
 export interface PaneTabsProps {
   panes: number[];
@@ -121,7 +121,7 @@ export function PaneTabs({
             }`}
           >
             <span className="flex min-w-0 items-center self-stretch pr-1 pl-3">
-              <HoverTitle title={label} className="max-w-[20ch]" />
+              <HoverTitle title={label} className={TAB_TITLE_WIDTH} />
             </span>
             <button
               onPointerDown={(e) => e.stopPropagation()}
