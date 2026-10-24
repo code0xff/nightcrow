@@ -3,6 +3,7 @@
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ProjectStrip, type ProjectStripProps } from "./ProjectStrip";
+import { TAB_TITLE_WIDTH } from "../shell/HoverTitle";
 import { ShortcutLeaderProvider } from "../../hooks/shortcuts/shortcutLeader";
 import { DEFAULT_LEADER } from "../../lib/shortcuts/leaderChord";
 import type { Repo } from "../../api";
@@ -64,6 +65,15 @@ describe("ProjectStrip", () => {
     expect(tab.textContent).toBe("a-very-long-project-name");
     expect(tab.querySelector(".nc-title")).not.toBeNull();
     expect(tab.closest(".nc-title-target")).not.toBeNull();
+  });
+
+  it("상단_탭은_이름_길이와_상관없이_같은_폭이다", () => {
+    mount({ side: "top" });
+
+    const widths = ["one", "a-very-long-project-name"].map(
+      (name) => screen.getByRole("button", { name }).querySelector(".nc-title")!.className,
+    );
+    for (const className of widths) expect(className).toContain(TAB_TITLE_WIDTH);
   });
 
   it("탭을_누르면_그_프로젝트를_고르고_열기는_대화상자를_연다", () => {

@@ -1,7 +1,7 @@
 import { PlusIcon, XIcon } from "../icons/actions";
 import { useLeaderChord, useShortcutHint } from "../../hooks/shortcuts/shortcutLeader";
 import { ariaKeyShortcuts, shortcutHintText } from "../../lib/shortcuts/shortcutHint";
-import { HoverTitle } from "../shell/HoverTitle";
+import { HoverTitle, TAB_TITLE_WIDTH } from "../shell/HoverTitle";
 import type { TabStripSide } from "../../lib/ui/tabStripSide";
 import type { Repo } from "../../api";
 
@@ -106,18 +106,18 @@ export function ProjectStrip({
             }`}
             title={r.display_path}
           >
-            {/* Never cut: a long name is capped in width and scrolls into
-                view (`HoverTitle`), so the tab row still fits. */}
+            {/* One width for every name (`TAB_TITLE_WIDTH`); never cut: a long
+                one scrolls into view (`HoverTitle`). */}
             <button
               onClick={() => {
                 onSelectRepo(r.id);
               }}
               aria-label={r.name}
-              className={`self-stretch pl-3 pr-1 ${
-                left ? "min-w-0 flex-1 py-2 text-left" : ""
+              className={`self-stretch pl-3 pr-1 text-left ${
+                left ? "min-w-0 flex-1 py-2" : ""
               }`}
             >
-              <HoverTitle title={r.name} className={left ? "" : "max-w-[14ch]"} />
+              <HoverTitle title={r.name} className={left ? "" : TAB_TITLE_WIDTH} />
             </button>
             <button
               onClick={(e) => {
