@@ -9,14 +9,16 @@ afterEach(cleanup);
 describe("BusyLabel", () => {
   it("작업중에도_글자는_그대로이고_점만_보인다", () => {
     const { container, rerender } = render(<BusyLabel busy={false}>Clone</BusyLabel>);
-    const dot = () => container.querySelector("[data-busy]") as HTMLElement;
+    const dot = () => container.querySelector("[data-busy]") as HTMLElement | null;
     expect(container.textContent).toBe("Clone");
-    expect(dot().className).toContain("invisible");
+    // Idle there is no dot at all: nothing is reserved beside the text.
+    expect(dot()).toBeNull();
 
     rerender(<BusyLabel busy>Clone</BusyLabel>);
     expect(container.textContent).toBe("Clone");
-    expect(dot().className).toContain("nc-busy-dot");
-    expect(dot().className).not.toContain("invisible");
-    expect(dot().getAttribute("aria-hidden")).toBe("true");
+    expect(dot()!.className).toContain("nc-busy-dot");
+    // Laid over the label's corner, so it adds no width.
+    expect(dot()!.className).toContain("absolute");
+    expect(dot()!.getAttribute("aria-hidden")).toBe("true");
   });
 });
