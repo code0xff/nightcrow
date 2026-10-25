@@ -34,6 +34,7 @@ import {
   type RepoViewByRepo,
   type SavedFile,
   type Status,
+  type StatusUnavailable,
   type StoredPrefs,
   type Tree,
   type TreeSearch,
@@ -161,6 +162,13 @@ describe("wire contract", () => {
     expect(status.operation).toEqual({ kind: "rebase", step: 2, total: 5 });
     expect(status.conflicts).toBe(1);
     expect(gitNamesMatchTheUnions()).toEqual([true, true]);
+  });
+
+  it("unavailable_페이로드가_StatusUnavailable과_맞는다", () => {
+    // git 저장소가 아닌 폴더는 status 대신 이것을 받는다. 없으면 화면은
+    // 오지 않을 status를 기다리며 스켈레톤에 머문다.
+    const unavailable: StatusUnavailable = fixture.statusUnavailable;
+    expect(unavailable.reason).toContain("not a git repository");
   });
 
   it("log와_commit_파일_목록이_각_인터페이스와_맞는다", () => {

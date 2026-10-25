@@ -30,8 +30,8 @@ describe("buildPreviewDocument", () => {
     const blocks = parseBlocks(DOC);
     const html = buildPreviewDocument(DOC, blocks, "tok");
     expect(html).toMatch(/<p data-ne-id="\d+">Hello<\/p>/);
-    expect(html).toContain("function previewAgent");
-    expect(html.indexOf("function previewAgent")).toBeLessThan(html.indexOf("run()"));
+    expect(html).toContain("AgentBundle.previewAgent(token)");
+    expect(html.indexOf("AgentBundle.previewAgent(token)")).toBeLessThan(html.indexOf("run()"));
   });
 
   it("carries the token into the agent invocation", () => {

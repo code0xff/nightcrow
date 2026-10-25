@@ -1,4 +1,5 @@
 import { defineConfig } from "vitest/config";
+import { previewAgentPlugin } from "./scripts/preview-agent-plugin.ts";
 
 // A dedicated config so the test run does not pull in the React/Tailwind
 // plugins from `vite.config.ts`.
@@ -14,6 +15,7 @@ import { defineConfig } from "vitest/config";
 // implements `window.matchMedia`, which the hooks under test read; a test that
 // hits a fidelity gap can bring in jsdom and opt into it the same per-file way.
 export default defineConfig({
+  plugins: [previewAgentPlugin()],
   test: {
     environment: "node",
     include: ["src/**/*.test.ts", "src/**/*.test.tsx"],

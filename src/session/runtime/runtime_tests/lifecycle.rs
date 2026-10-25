@@ -46,7 +46,7 @@ fn a_second_subscriber_does_not_disturb_the_watch() {
 
     let after = runtime.latest().expect("status remains available");
     assert!(
-        Arc::ptr_eq(&after.json, &before.json),
+        Arc::ptr_eq(&after.payload, &before.payload),
         "nothing was republished"
     );
     assert!(runtime.is_watching());

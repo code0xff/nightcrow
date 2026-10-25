@@ -282,3 +282,7 @@ use input::{checked_body, checked_tags, create_private_dir, match_expression};
 #[cfg(test)]
 #[path = "store_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "store_compat_tests.rs"]
+mod compat_tests;

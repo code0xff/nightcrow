@@ -181,5 +181,27 @@ export function useTerminalSocket({
       socketRef.current?.close();
       disposeAll();
     };
-  }, [repo]);
+  }, [
+    repo,
+    socketRef,
+    viewsRef,
+    pendingRef,
+    replayRef,
+    ptySizesRef,
+    askedSizesRef,
+    desiredSizesRef,
+    ownsSizeRef,
+    sizeOwnerGenerationRef,
+    onSizeAcquired,
+    zoomAskedRef,
+    setLink,
+    setPending,
+    setReplayLeft,
+    setPanes,
+    setActive,
+    setZoomed,
+    setTitles,
+    setOwnsSize,
+    setRecovery,
+  ]);
 }

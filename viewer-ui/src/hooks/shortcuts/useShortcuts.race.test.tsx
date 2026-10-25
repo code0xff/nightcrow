@@ -79,9 +79,10 @@ function pollArgs(): UseRepoPollArgs {
  *  and the shortcut goes through the same `selectRepo` a tab click does. */
 function useProjectPage(stable: UseRepoPollArgs) {
   const poll = useRepoPoll(stable);
+  const setRepo = poll.setRepo;
   const selectRepo = useCallback(
-    (id: string) => poll.setRepo(id),
-    [poll.setRepo],
+    (id: string) => setRepo(id),
+    [setRepo],
   );
   useAppShortcuts({
     enabled: true,

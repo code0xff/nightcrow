@@ -70,11 +70,13 @@ export function useRepoData({
     upstream: status?.tracking?.upstream,
   });
 
+  const setCommitDrillDown = log.setCommitDrillDown;
+  const resetLog = log.resetLog;
   useLayoutEffect(() => {
     bumpPaneRequest();
-    log.setCommitDrillDown(null);
-    log.resetLog();
-  }, [repo, bumpPaneRequest, log.setCommitDrillDown, log.resetLog]);
+    setCommitDrillDown(null);
+    resetLog();
+  }, [repo, bumpPaneRequest, setCommitDrillDown, resetLog]);
 
   const normalizedFilter = filter.toLowerCase();
   const files = useMemo(

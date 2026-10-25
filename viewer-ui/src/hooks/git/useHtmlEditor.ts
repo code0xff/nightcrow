@@ -73,7 +73,9 @@ export function useHtmlEditor(repo: string, path: string) {
         credentials: "same-origin",
       });
       if (!response.ok) throw new Error(`could not read the file (${response.status})`);
-      const text = await response.text();
+      // Response.text() strips a UTF-8 BOM, shifting server byte offsets by three.
+      const bytes = await response.arrayBuffer();
+      const text = new TextDecoder("utf-8", { ignoreBOM: true }).decode(bytes);
       const hash = (response.headers.get("ETag") ?? "").replace(/"/g, "");
       const parsed = parseBlocks(text);
       const result = await api.editPreview(

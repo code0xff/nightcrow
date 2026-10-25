@@ -9,7 +9,8 @@ import { SidebarTabs } from "./SidebarTabs";
 import { StatusList } from "./StatusList";
 import { LogList } from "./LogList";
 import { TreeList } from "./TreeList";
-import type { ChangedFile, Commit, Status } from "../../api";
+import type { ChangedFile, Commit } from "../../api";
+import type { RepoStatus } from "../../hooks/git/useStatus";
 import type { CommitDrillDown } from "../../hooks/git/useLog";
 import type { Tab } from "../../types";
 import type { MobileView } from "../../types";
@@ -25,7 +26,7 @@ export interface SidebarProps {
   setFilter: (v: string) => void;
   filterOpen: boolean;
   setFilterOpen: React.Dispatch<React.SetStateAction<boolean>>;
-  status: Status | null;
+  status: RepoStatus | null;
   files: ChangedFile[];
   now: number;
   hotWindowMs: number;

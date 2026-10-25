@@ -155,6 +155,7 @@ else
 			printf '  run: npm --prefix viewer-ui ci\n' >&2
 			exit 1
 		else
+			run npm --prefix viewer-ui run lint
 			run npm --prefix viewer-ui test
 			run npm --prefix viewer-ui run build
 			if ! git diff --quiet -- viewer-ui/dist; then

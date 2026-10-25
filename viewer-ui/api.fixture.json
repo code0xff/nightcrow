@@ -222,6 +222,9 @@
     },
     "truncated": false
   },
+  "statusUnavailable": {
+    "reason": "not a git repository"
+  },
   "storedPrefs": {
     "accent": 2,
     "active_repo": "r1",

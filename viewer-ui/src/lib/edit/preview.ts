@@ -1,4 +1,5 @@
 import { applyEdits, type Edit } from "./edits";
+import agentSource from "virtual:nightcrow-preview-agent";
 import {
   agentScriptTag,
   editorStyleTag,
@@ -6,7 +7,6 @@ import {
   markerEdits,
 } from "./markers";
 import { parseBlocks } from "./parse";
-import { previewAgent } from "./agent";
 import type { Block } from "./types";
 
 /**
@@ -17,9 +17,9 @@ import type { Block } from "./types";
  *
  * These are sent to the server, which splices them into its own copy of the
  * source and serves the result under the preview policy — the large source
- * never crosses the wire, only the small edit list. `previewAgent` is
- * stringified without being called: it runs inside the iframe, so host and
- * preview stay separate contexts with postMessage as their only channel.
+ * never crosses the wire, only the small edit list. The Vite virtual module
+ * supplies the agent as one self-contained function, inserted before artifact
+ * scripts so it can intercept clicks before global handlers see them.
  */
 export function previewEdits(
   source: string,
@@ -28,7 +28,7 @@ export function previewEdits(
   token = "",
 ): Edit[] {
   const at = headAnchorOffset(source);
-  const head = agentScriptTag(previewAgent.toString(), token) + editorStyleTag();
+  const head = agentScriptTag(agentSource, token) + editorStyleTag();
   return [...markerEdits(source, blocks), { start: at, end: at, text: head }];
 }
 

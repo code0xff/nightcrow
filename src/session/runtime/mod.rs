@@ -24,7 +24,7 @@ use std::time::{Duration, SystemTime};
 mod subscription;
 
 use subscription::Subscriber;
-pub use subscription::{StatusUpdate, Subscription};
+pub use subscription::{StatusUpdate, Subscription, UpdateKind};
 
 /// How often the runtime thread checks its snapshot channel. The producer ticks
 /// about once a second, so this only bounds how late an update is noticed.
@@ -77,17 +77,21 @@ impl RepoRuntime {
                 while !stop.load(Ordering::Acquire) {
                     // Drain everything queued, then publish only the last one:
                     // intermediate snapshots have already been superseded.
-                    let mut newest: Option<(RepoSnapshot, HashMap<String, SystemTime>)> = None;
+                    // A failure counts as a reading too: it is what a client
+                    // waiting on a directory that holds no repository is told.
+                    let mut newest: Option<SnapshotMsg> = None;
                     while let Ok(msg) = channel.try_recv() {
-                        match msg {
-                            SnapshotMsg::Ok(snapshot, mtimes) => newest = Some((snapshot, mtimes)),
-                            SnapshotMsg::Err(err) => {
-                                tracing::debug!(repo = %label, %err, "viewer: snapshot error")
-                            }
+                        if let SnapshotMsg::Err(err) = &msg {
+                            tracing::debug!(repo = %label, %err, "viewer: snapshot error");
                         }
+                        newest = Some(msg);
                     }
-                    if let Some((snapshot, mtimes)) = newest {
-                        worker_runtime.publish(&snapshot, &mtimes);
+                    match newest {
+                        Some(SnapshotMsg::Ok(snapshot, mtimes)) => {
+                            worker_runtime.publish(&snapshot, &mtimes)
+                        }
+                        Some(SnapshotMsg::Err(err)) => worker_runtime.publish_unavailable(err),
+                        None => {}
                     }
                     thread::sleep(POLL_INTERVAL);
                 }
@@ -105,19 +109,29 @@ impl RepoRuntime {
         let Some(json) = (self.encoder)(snapshot, mtimes) else {
             return;
         };
+        self.publish_update(StatusUpdate {
+            kind: UpdateKind::Status,
+            payload: Arc::new(json),
+        });
+    }
 
+    /// Tell every subscriber the tree could not be read, and why.
+    fn publish_unavailable(&self, reason: String) {
+        self.publish_update(StatusUpdate {
+            kind: UpdateKind::Unavailable,
+            payload: Arc::new(reason),
+        });
+    }
+
+    fn publish_update(&self, update: StatusUpdate) {
         // Keep duplicate detection, storage, and fan-out under one `latest`
         // hold so the cache and every subscriber move to the same update.
         let mut latest = self.latest.lock().expect("latest slot poisoned");
         // Periodic and on-demand reads often produce the same payload. Only a
         // real change should wake subscribers.
-        if latest.as_ref().is_some_and(|prev| *prev.json == json) {
+        if latest.as_ref().is_some_and(|prev| *prev == update) {
             return;
         }
-
-        let update = StatusUpdate {
-            json: Arc::new(json),
-        };
         *latest = Some(update.clone());
 
         // Held together with `latest`, and taken in that order everywhere:
@@ -219,8 +233,9 @@ impl RepoRuntime {
 
     /// Read the repository on this thread and publish it.
     fn read_and_publish(&self) {
-        if let Some((snapshot, mtimes)) = SnapshotChannel::read_now(&self.path) {
-            self.publish(&snapshot, &mtimes);
+        match SnapshotChannel::read_now(&self.path) {
+            Ok((snapshot, mtimes)) => self.publish(&snapshot, &mtimes),
+            Err(err) => self.publish_unavailable(err),
         }
     }
 

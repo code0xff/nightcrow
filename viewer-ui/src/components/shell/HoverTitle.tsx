@@ -11,9 +11,17 @@ const TRAVEL_PX_PER_S = 30;
  * the part that identifies it — back at once. Overflow is measured, not
  * guessed from a character count, so wide scripts and font loads are right.
  *
- * `className` sets the width cap; the text itself is never shortened, so a
+ * `className` sets the width; the text itself is never shortened, so a
  * screen reader and the `title` attribute read the whole name.
  */
+/** The one width every horizontal tab title takes — project tabs and terminal
+ *  tabs alike — whatever its length, so a row of tabs reads as a row rather
+ *  than as a ragged run. Shorter titles leave the rest blank; longer ones
+ *  scroll (see above). In rem, not `ch`: the two rows set different font
+ *  sizes, and a `ch` width would differ between them. 7.5rem holds about 14
+ *  characters of a project tab, which most project names fit in. */
+export const TAB_TITLE_WIDTH = "w-30";
+
 export function HoverTitle({ title, className = "" }: { title: string; className?: string }) {
   const viewport = useRef<HTMLSpanElement>(null);
   const text = useRef<HTMLSpanElement>(null);
