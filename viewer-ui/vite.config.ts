@@ -1,11 +1,12 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
+import { previewAgentPlugin } from "./scripts/preview-agent-plugin.ts";
 
 // `base: ""` emits relative asset URLs, so the built page works when served
 // from the embedded server without knowing its mount path in advance.
 export default defineConfig({
-  plugins: [react(), tailwindcss()],
+  plugins: [react(), tailwindcss(), previewAgentPlugin()],
   base: "",
   build: { outDir: "dist", emptyOutDir: true },
   server: {

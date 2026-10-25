@@ -1,0 +1,1 @@
+import{t as e}from"./jsx-runtime-EIAPxkjE.js";var t=e();function n({busy:e,children:n}){return(0,t.jsxs)(`span`,{className:`relative inline-block`,children:[n,e&&(0,t.jsx)(`span`,{"aria-hidden":`true`,"data-busy":``,className:`nc-busy-dot absolute -right-2 -top-0.5 h-1.5 w-1.5 rounded-full bg-current`})]})}export{n as t};

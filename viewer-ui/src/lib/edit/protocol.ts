@@ -1,9 +1,9 @@
 /**
  * The message contract between host (editor) and preview (iframe).
  *
- * Type-only module. No values or functions live here — runtime code would make
- * the preview agent and the host share a bundle, and the agent must stay a
- * self-contained stringified function. Types leave nothing after compilation.
+ * Type-only module. The preview agent and host have separate runtime bundles;
+ * Vite emits the agent's imported modules as one self-contained iframe function.
+ * These types leave nothing after compilation.
  */
 
 /** Preview → host. Every message carries the document's token — see below. */

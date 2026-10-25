@@ -12,7 +12,7 @@ import {
   verifyBinaryAssets,
   verifyFinalAssets,
   writeChecksums,
-} from "./publish-release.mjs";
+} from "./publish-release.ts";
 
 const assets = [
   "nightcrow-x86_64-unknown-linux-gnu",
@@ -21,15 +21,22 @@ const assets = [
   "nightcrow-aarch64-apple-darwin",
 ];
 
-function fixture() {
+function fixture(): string {
   const dist = fs.mkdtempSync(path.join(os.tmpdir(), "nightcrow-publish-"));
   for (const [index, asset] of assets.entries()) fs.writeFileSync(path.join(dist, asset), `binary-${index}`);
   return dist;
 }
 
-function releaseAssets(dist, names) {
+function releaseAssets(
+  dist: string,
+  names: readonly string[],
+): Array<{ name: string; size: number; digest: string; download_count: number }> {
   const info = localAssetInfo(dist, names);
-  return names.map((name) => ({ name, ...info.get(name), download_count: 0 }));
+  return names.map((name) => {
+    const asset = info.get(name);
+    if (!asset) throw new Error("asset metadata is missing: " + name);
+    return { name, ...asset, download_count: 0 };
+  });
 }
 
 test("first publish validates binaries before creating SHA256SUMS", () => {
@@ -39,7 +46,7 @@ test("first publish validates binaries before creating SHA256SUMS", () => {
     assert.throws(() => verifyFinalAssets(dist, assets), /SHA256SUMS/);
     writeChecksums(dist, assets);
     const local = verifyFinalAssets(dist, assets);
-    const release = { draft: true, assets: releaseAssets(dist, [...assets, "SHA256SUMS"]) };
+    const release = { assets: releaseAssets(dist, [...assets, "SHA256SUMS"]) };
     assert.deepEqual(compareReleaseAssets(release, local, assets), { missing: [] });
   } finally {
     fs.rmSync(dist, { recursive: true, force: true });
@@ -51,7 +58,7 @@ test("a draft with missing assets reports only files safe to upload", () => {
   try {
     writeChecksums(dist, assets);
     const local = verifyFinalAssets(dist, assets);
-    const release = { draft: true, assets: releaseAssets(dist, assets.slice(0, 2)) };
+    const release = { assets: releaseAssets(dist, assets.slice(0, 2)) };
     assert.deepEqual(compareReleaseAssets(release, local, assets), { missing: ["SHA256SUMS", assets[3], assets[2]] });
   } finally {
     fs.rmSync(dist, { recursive: true, force: true });
@@ -64,10 +71,13 @@ test("an existing asset with a different digest or size is never overwritten", (
     writeChecksums(dist, assets);
     const local = verifyFinalAssets(dist, assets);
     const remote = releaseAssets(dist, [...assets, "SHA256SUMS"]);
-    remote[0] = { ...remote[0], digest: "sha256:" + "0".repeat(64) };
-    assert.throws(() => compareReleaseAssets({ draft: false, assets: remote }, local, assets), /refusing to overwrite/);
-    remote[0] = { ...remote[0], digest: local.get(assets[0]).digest, size: local.get(assets[0]).size + 1 };
-    assert.throws(() => compareReleaseAssets({ draft: false, assets: remote }, local, assets), /refusing to overwrite/);
+    const first = remote[0];
+    const firstLocal = local.get(assets[0]);
+    if (!first || !firstLocal) throw new Error("fixture asset metadata is missing");
+    remote[0] = { ...first, digest: "sha256:" + "0".repeat(64) };
+    assert.throws(() => compareReleaseAssets({ assets: remote }, local, assets), /refusing to overwrite/);
+    remote[0] = { ...first, digest: firstLocal.digest, size: firstLocal.size + 1 };
+    assert.throws(() => compareReleaseAssets({ assets: remote }, local, assets), /refusing to overwrite/);
   } finally {
     fs.rmSync(dist, { recursive: true, force: true });
   }
@@ -86,7 +96,7 @@ test("publish CLI accepts separated values and the entrypoint reaches validation
   });
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "nightcrow-publish-cli-"));
   try {
-    const result = spawnSync(process.execPath, [path.join(process.cwd(), "scripts/publish-release.mjs"), "--version", "0.1.1", "--dist", "dist", "--root", root], { encoding: "utf8" });
+    const result = spawnSync(process.execPath, [path.join(process.cwd(), "scripts/publish-release.ts"), "--version", "0.1.1", "--dist", "dist", "--root", root], { encoding: "utf8" });
     assert.notEqual(result.status, 0);
     assert.doesNotMatch(result.stderr, /unknown argument/);
   } finally {
@@ -95,9 +105,9 @@ test("publish CLI accepts separated values and the entrypoint reaches validation
 });
 
 test("fetchRelease falls back to the releases list because drafts are invisible to the tag endpoint", () => {
-  const calls = [];
+  const calls: string[] = [];
   const draft = { id: 1, tag_name: "v0.1.1", draft: true, assets: [] };
-  const lookup = (args) => {
+  const lookup = (args: string[]): unknown | null => {
     calls.push(args[0]);
     return args[0].endsWith("/releases/tags/v0.1.1") ? null : [draft, { id: 2, tag_name: "v0.1.2", draft: true, assets: [] }];
   };
@@ -106,17 +116,48 @@ test("fetchRelease falls back to the releases list because drafts are invisible 
 });
 
 test("fetchRelease returns null when no release exists anywhere", () => {
-  const lookup = () => null;
+  const lookup = (args: string[]): unknown | null =>
+    args[0].endsWith("/releases/tags/v0.1.1") ? null : [];
   assert.equal(fetchRelease("code0xff/nightcrow", "v0.1.1", lookup), null);
+});
+
+test("fetchRelease rejects falsey direct payloads instead of treating them as missing", () => {
+  for (const payload of [false, 0, "", undefined]) {
+    const lookup = (): unknown => payload;
+    assert.throws(
+      () => fetchRelease("code0xff/nightcrow", "v0.1.1", lookup),
+      /GitHub Release lookup returned an unexpected payload/,
+    );
+  }
+});
+
+test("fetchRelease rejects malformed release list entries, including entries after a match", () => {
+  const matchingDraft = { id: 1, tag_name: "v0.1.1", draft: true, assets: [] };
+  const unrelatedRelease = { id: 2, tag_name: "v0.1.2", draft: true, assets: [] };
+  const listings: unknown[][] = [
+    [null, {}],
+    [matchingDraft, null],
+    [unrelatedRelease, {}],
+  ];
+  for (const listing of listings) {
+    const lookup = (args: string[]): unknown | null =>
+      args[0].endsWith("/releases/tags/v0.1.1") ? null : listing;
+    assert.throws(
+      () => fetchRelease("code0xff/nightcrow", "v0.1.1", lookup),
+      /GitHub Release listing returned an unexpected payload/,
+    );
+  }
 });
 
 test("fetchRelease returns the published release served by the tag endpoint", () => {
   const published = { id: 3, tag_name: "v0.1.1", draft: false, assets: [] };
-  const lookup = (args) => (args[0].endsWith("/releases/tags/v0.1.1") ? published : [published]);
+  const lookup = (args: string[]): unknown | null =>
+    args[0].endsWith("/releases/tags/v0.1.1") ? published : [published];
   assert.equal(fetchRelease("code0xff/nightcrow", "v0.1.1", lookup), published);
 });
 
 test("fetchRelease rejects a non-array listing payload", () => {
-  const lookup = (args) => (args[0].endsWith("/releases/tags/v0.1.1") ? null : { not: "an array" });
+  const lookup = (args: string[]): unknown | null =>
+    args[0].endsWith("/releases/tags/v0.1.1") ? null : { not: "an array" };
   assert.throws(() => fetchRelease("code0xff/nightcrow", "v0.1.1", lookup), /unexpected payload/);
 });

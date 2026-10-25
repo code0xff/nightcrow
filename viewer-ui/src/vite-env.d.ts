@@ -7,3 +7,8 @@ declare module "*.svg?inline" {
   const src: string;
   export default src;
 }
+
+declare module "virtual:nightcrow-preview-agent" {
+  const source: string;
+  export default source;
+}

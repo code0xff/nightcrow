@@ -21,7 +21,7 @@ jobs:
         with:
           node-version: 26
       - name: Test release automation
-        run: node --test scripts/prepare-release.test.mjs scripts/publish-release.test.mjs
+        run: node --test scripts/prepare-release.test.ts scripts/publish-release.test.ts
       - name: Verify application package versions agree
         run: |
           node <<'NODE'
@@ -44,7 +44,7 @@ jobs:
           }
           NODE
       - name: Verify release policy
-        run: node scripts/prepare-release.mjs check
+        run: node scripts/prepare-release.ts check
       - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
       - name: Verify Cargo lockfile
         run: cargo metadata --locked --format-version 1 > /dev/null
@@ -109,3 +109,22 @@ jobs:
             git diff --stat -- viewer-ui/dist
             exit 1
           fi
+      - name: Run visual regressions in the pinned Linux browser runtime
+        run: npm run test:visual
+        working-directory: viewer-ui
+      - name: Verify the visual runtime kept the committed bundle current
+        run: |
+          if ! git diff --quiet -- viewer-ui/dist; then
+            echo "viewer-ui/dist is stale — run the viewer build and commit its output"
+            git diff --stat -- viewer-ui/dist
+            exit 1
+          fi
+      - name: Upload visual failure artifacts
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: visual-test-results
+          path: |
+            viewer-ui/test-results/
+            viewer-ui/playwright-report/
+          if-no-files-found: warn

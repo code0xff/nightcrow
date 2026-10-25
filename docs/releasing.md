@@ -1,5 +1,7 @@
 # Releasing
 
+Node.js 26 is required for the release scripts, which run TypeScript through Node built-in type stripping.
+
 nightcrow uses a fork-to-upstream release flow. `origin` is the fork used for PR heads, `upstream/dev` is the development line, and `upstream/main` is the official release line for `code0xff/nightcrow`.
 
 ## Prepare a patch
@@ -7,14 +9,14 @@ nightcrow uses a fork-to-upstream release flow. `origin` is the fork used for PR
 The release series is deliberately fixed at `0.1.x`. The tool reads [`.github/release-policy.json`](../.github/release-policy.json), checks the root package, recovery plugin, Cargo lock entries, and viewer package/lock versions, and prints a dry-run by default:
 
 ```bash
-node scripts/prepare-release.mjs
-node scripts/prepare-release.mjs --json
+node scripts/prepare-release.ts
+node scripts/prepare-release.ts --json
 ```
 
 On a clean branch, use `--execute` to update all six version entries. The application version is written once, in the root manifest's `[workspace.package]`; every crate inherits it, so the crates under `plugins/` have no version of their own to bump. The lockfile still records each crate separately. The tool reads tags from the authoritative `code0xff/nightcrow` remote (or the official HTTPS URL when that remote is not configured), never from a stale local tag list; tag-network or authentication failures stop the command. The first no-tag release is `0.1.1`; after that, the next version is exactly one patch above the highest official `v0.1.*` tag. An explicit `--version` is accepted only when it matches that calculated value.
 
 ```bash
-node scripts/prepare-release.mjs --execute
+node scripts/prepare-release.ts --execute
 git add Cargo.toml Cargo.lock viewer-ui/package.json viewer-ui/package-lock.json
 git commit -m "chore: prepare release v0.1.2"
 git push origin release/v0.1.2

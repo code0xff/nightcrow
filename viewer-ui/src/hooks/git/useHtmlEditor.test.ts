@@ -25,15 +25,20 @@ const editPreview = api.editPreview as ReturnType<typeof vi.fn>;
 const save = api.save as ReturnType<typeof vi.fn>;
 
 const SOURCE = "<html><head><title>T</title></head><body><p>Hello</p></body></html>";
+const BOM_SOURCE = "\uFEFF<!-- 한글 -->\n<html><head><title>T</title></head><body><p>Hello</p></body></html>";
 
 function serveSource(source = SOURCE, hash = "abc123") {
+  const encoded = new TextEncoder().encode(source);
+  const bytes = new ArrayBuffer(encoded.byteLength);
+  new Uint8Array(bytes).set(encoded);
   vi.stubGlobal(
     "fetch",
     vi.fn(() =>
       Promise.resolve({
         ok: true,
         status: 200,
-        text: () => Promise.resolve(source),
+        arrayBuffer: () => Promise.resolve(bytes),
+        text: () => Promise.resolve(new TextDecoder().decode(bytes)),
         headers: { get: (name: string) => (name === "ETag" ? `"${hash}"` : null) },
       }),
     ),
@@ -60,11 +65,34 @@ describe("useHtmlEditor", () => {
 
     // The blob oid came from the preview response's ETag, unquoted.
     expect(editPreview).toHaveBeenCalledWith("r1", "deck.html", expect.any(Array), "abc123");
-    // One insert per block, plus the head payload carrying the agent.
+    // One insert per block, plus the head payload carrying the generated agent bundle.
     const inserts = editPreview.mock.calls[0]![2] as { at: number; text: string }[];
     expect(inserts.length).toBeGreaterThan(1);
-    expect(inserts.some((i) => i.text.includes("previewAgent"))).toBe(true);
+    expect(inserts.some((i) => i.text.includes("AgentBundle.previewAgent(token)"))).toBe(true);
     expect(result.current.state.frameSrc).toBe("/api/preview/edit?token=tok");
+  });
+
+  it("UTF-8_BOM과_앞선_한글을_보존해_바이트_오프셋과_저장_내용을_맞춘다", async () => {
+    serveSource(BOM_SOURCE);
+    const { result } = await open();
+    const inserts = editPreview.mock.calls[0]![2] as { at: number; text: string }[];
+    const agentInsert = inserts.find((insert) => insert.text.includes("AgentBundle.previewAgent(token)"));
+    const head = /<head[^>]*>/i.exec(BOM_SOURCE)!;
+    const headEnd = head.index + head[0].length;
+    expect(agentInsert?.at).toBe(new TextEncoder().encode(BOM_SOURCE.slice(0, headEnd)).length);
+
+    act(() => {
+      result.current.verify([
+        { id: 0, text: "T" },
+        { id: 1, text: "Hello" },
+      ]);
+      result.current.record(1, "Goodbye", false);
+    });
+    await act(async () => {
+      await result.current.save();
+    });
+
+    expect(save.mock.calls[0]![2]).toBe(BOM_SOURCE.replace(">Hello<", ">Goodbye<"));
   });
 
   it("커밋된_편집만_세고_원래대로_돌아온_블록은_뺀다", async () => {

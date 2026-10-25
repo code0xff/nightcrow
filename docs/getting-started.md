@@ -86,7 +86,7 @@ npm --prefix viewer-ui test
 npm --prefix viewer-ui run build
 ```
 
-`lint`, `test`, and `build` refuse to run when `node_modules` no longer matches `package-lock.json` — after a pull that bumped a dependency, say — and name the packages that differ; `npm --prefix viewer-ui ci` brings it back. A stale install still resolves, so without the check they would pass against versions the project does not use.
+`lint`, `test`, and `build` refuse to run when `node_modules` no longer matches `package-lock.json` ? after a pull that bumped a dependency, say ? and name the packages that differ; `npm --prefix viewer-ui ci` brings it back. A stale install still resolves, so without the check they would pass against versions the project does not use.
 
 The bundle in `viewer-ui/dist/` is committed. A viewer change is complete only when the build succeeds and the generated `dist` diff is included when it changes. On Windows, the local Unix gate is recommended before pushing changes to `cfg(unix)` or platform-specific code such as PTY, signal, and file-permission handling:
 
@@ -95,3 +95,21 @@ docker compose run --rm unix-gate
 ```
 
 This gate runs only Rust format, clippy, build, and test checks in Linux; it does not run the viewer checks or the full platform matrix. It is useful for fast feedback and is not required when hosted CI is available. For pull requests, hosted CI on Ubuntu and macOS is the authoritative Unix verification, alongside the Windows and viewer jobs; a local pass does not replace those required checks. The compose image uses `rust:latest` while CI selects the moving stable channel through `dtolnay/rust-toolchain`; without a `rust-toolchain.toml`, their exact compiler versions can differ. Report applicable checks that were not run. The Docker PTY test can be timing-sensitive under load; rerun the failing test outside the container before treating that failure as a code regression.
+
+### Visual regression tests
+
+Run the browser screenshots in Docker on Windows, macOS, and Linux so every platform uses the same pinned Linux Chromium and fonts:
+
+```bash
+npm --prefix viewer-ui run test:visual
+```
+
+The runner builds the Vite bundle, starts strict-port preview on `4173`, and runs Chromium from the pinned Playwright `1.64.1` image with Node.js `26`. It gives the container a separate Linux `node_modules` volume and does not install another browser. Docker Desktop or Docker Engine must be running.
+
+Linux baselines live in `viewer-ui/visual/snapshots/linux/`. After intentionally changing a screenshot, regenerate them through the same container:
+
+```bash
+npm --prefix viewer-ui run test:visual -- --update-snapshots
+```
+
+Review every PNG diff before committing a baseline. Failed runs write diffs and traces under `viewer-ui/test-results/`; CI uploads these with the Playwright report.

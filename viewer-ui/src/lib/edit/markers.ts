@@ -11,7 +11,13 @@ export const LOCKED_ATTR = "data-ne-locked";
 export const DARK_ATTR = "data-ne-dark";
 
 /** The mark attached to briefly point out a block picked from the change list. */
-const REVEALED_ATTR = "data-ne-revealed";
+export const REVEALED_ATTR = "data-ne-revealed";
+
+/** The transient formatting toolbar marker, used to distinguish its own clicks. */
+export const BAR_ATTR = "data-ne-bar";
+
+/** The formatting toolbar action key, used to refresh localized titles. */
+export const LABEL_ATTR = "data-ne-label";
 
 export class MarkerError extends Error {}
 
@@ -52,7 +58,7 @@ export function headAnchorOffset(html: string): number {
 }
 
 /**
- * The `<script>` that runs the preview agent, with `agentSource` stringified.
+ * The `<script>` that runs the preview agent source supplied by the build plugin.
  *
  * The agent must register its listeners before the artifact scripts do — so it
  * runs first in the bubble phase and can block the artifact's global handlers.
