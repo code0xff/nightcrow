@@ -129,6 +129,17 @@ html {
   }
 }
 
+/* Android browsers reload the page when a pull-down reaches the top of the
+   document, and a scroll region that hits its own top hands the rest of the
+   gesture to the document. Contained there, scrolling a list or the terminal
+   back to its start can no longer reload the viewer; a pull on the header or
+   another fixed bar still reaches the document and refreshes as before. */
+.overflow-auto,
+.overflow-y-auto,
+.xterm-viewport {
+  overscroll-behavior-y: contain;
+}
+
 body {
   margin: 0;
   background: var(--color-ink-950);
