@@ -22,7 +22,7 @@ git commit -m "chore: prepare release v0.1.2"
 git push origin release/v0.1.2
 ```
 
-Open that branch as a PR from the fork to `code0xff/nightcrow:dev`. Do not edit versions by hand, skip a patch, or raise major/minor without an explicit maintainer decision. The policy and release workflow are code-owned by `@code0xff` through [`.github/CODEOWNERS`](../.github/CODEOWNERS).
+Open that branch as a PR from the fork to `code0xff/nightcrow:dev`. Do not edit versions by hand, skip a patch, or raise major/minor without an explicit maintainer decision.
 
 ## Verification before release
 
@@ -70,4 +70,4 @@ Restart the daemon after an update so the running session uses the new binary. R
 
 ## Repository settings
 
-The upstream administrator should protect `dev` and `main`, require the CI checks and code-owner review, disallow force-push and deletion, and protect `v0.1.*` tags from update/deletion. Enable immutable Releases when available. The workflow itself still checks repository identity, branch, version series, exact tag progression, SHA, and asset names, so a copied workflow cannot publish from the fork.
+The upstream administrator should protect `dev` and `main`, require the CI checks, disallow force-push and deletion, and protect `v0.1.*` tags from update/deletion. Enable immutable Releases when available. The workflow itself still checks repository identity, branch, version series, exact tag progression, SHA, and asset names, so a copied workflow cannot publish from the fork.
