@@ -91,6 +91,8 @@ jobs:
           cache-dependency-path: viewer-ui/package-lock.json
       - run: npm ci
         working-directory: viewer-ui
+      - run: npm run lint
+        working-directory: viewer-ui
       # Before the build, so a failing helper is reported as a failing helper
       # rather than as whatever the bundle does with it.
       - run: npm test

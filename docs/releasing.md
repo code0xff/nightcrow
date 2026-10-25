@@ -22,6 +22,17 @@ git push origin release/v0.1.2
 
 Open that branch as a PR from the fork to `code0xff/nightcrow:dev`. Do not edit versions by hand, skip a patch, or raise major/minor without an explicit maintainer decision. The policy and release workflow are code-owned by `@code0xff` through [`.github/CODEOWNERS`](../.github/CODEOWNERS).
 
+## Verification before release
+
+Use the local Unix gate for early feedback when changing Unix-specific behavior, and use hosted checks as the merge and release authority. The local gate is optional and covers only the Rust gates in Linux; it does not validate all release targets or the viewer.
+
+| Stage | Local verification on Windows | Hosted verification required |
+| --- | --- | --- |
+| Pull request to `dev` or `main` | Before pushing Unix-specific changes (`cfg(unix)`, platform seams, PTY, signals, or file permissions), `docker compose run --rm unix-gate` is recommended. It is also available for quick feedback during other Rust work. | The pull request CI must pass. Its Ubuntu and macOS jobs are the authoritative Unix checks; the Windows, Rustfmt, and viewer jobs must pass as well. |
+| Release on official `main` | The local gate may provide early feedback, but it is not a release requirement and cannot replace hosted checks. | Require main CI and the release workflow to pass for the official commit. The release workflow must complete its quality checks and all four platform builds and tests before publishing. |
+
+When reporting verification, name any applicable checks that were not run. The compose gate uses `rust:latest`, while CI selects the moving stable channel; because the repository has no `rust-toolchain.toml`, the local container is not guaranteed to use the exact CI compiler version.
+
 ## Promote and publish
 
 After the preparation PR is merged into `upstream/dev` and its checks are green, open a separate promotion PR from `dev` to `main`. The release workflow runs only when a commit reaches `main` in the official repository; a push to a fork never publishes anything.

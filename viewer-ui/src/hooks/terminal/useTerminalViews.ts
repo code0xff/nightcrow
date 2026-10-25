@@ -204,5 +204,19 @@ export function useTerminalViews({
         viewsRef.current.delete(pane);
       }
     }
-  }, [panes, size, zoomed, mode, screenScale]);
+  }, [
+    panes,
+    size,
+    zoomed,
+    mode,
+    screenScale,
+    socketRef,
+    viewsRef,
+    bodyRefs,
+    pendingRef,
+    replayRef,
+    ptySizesRef,
+    consumeLatches,
+    setTitles,
+  ]);
 }

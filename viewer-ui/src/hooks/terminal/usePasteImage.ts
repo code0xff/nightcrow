@@ -89,5 +89,5 @@ export function usePasteImage({
       container.removeEventListener("drop", onDrop, true);
       container.removeEventListener("dragover", onDragOver, true);
     };
-  }, []);
+  }, [containerRef, socketRef, viewsRef]);
 }

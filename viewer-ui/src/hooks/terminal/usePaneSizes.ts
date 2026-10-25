@@ -190,6 +190,7 @@ export function usePaneSizes({
     bodyRefs,
     ptySizesRef,
     desiredSizesRef,
+    askedSizesRef,
     ownsSize,
     layoutPending,
     keyboardOpen,
