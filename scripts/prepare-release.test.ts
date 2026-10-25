@@ -4,6 +4,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
+import type { ReleasePolicy } from "./release/types.ts";
 import {
   assertVersionsAgree,
   checkRoot,
@@ -14,7 +15,7 @@ import {
   updateVersions,
   validatePolicy,
   versionParts,
-} from "./release-lib.mjs";
+} from "./release-lib.ts";
 
 const policy = {
   repository: "code0xff/nightcrow",
@@ -37,7 +38,7 @@ const policy = {
     { kind: "npm-package", path: "viewer-ui/package.json" },
     { kind: "npm-lock", path: "viewer-ui/package-lock.json" },
   ],
-};
+} satisfies ReleasePolicy;
 
 test("patch version formatting never changes the 0.1 series", () => {
   assert.equal(patchVersion(0), "0.1.0");
@@ -98,7 +99,7 @@ test("execute updates every application version entry without touching dependenc
     assert.equal(assertVersionsAgree(readVersions(root, policy)), next);
     assert.match(fs.readFileSync(path.join(root, "Cargo.lock"), "utf8"), /name = "ratatui"\nversion = "0\.30\./);
     assert.notEqual(fs.readFileSync(path.join(root, "Cargo.lock"), "utf8"), before);
-    const git = (...args) => {
+    const git = (...args: string[]) => {
       const status = spawnSync("git", args, { cwd: root, encoding: "utf8" });
       assert.equal(status.status, 0, status.stderr);
     };

@@ -21,6 +21,10 @@ import { unavailableMessage } from "../../lib/repository/unavailable";
 import type { RepoStatus } from "../../hooks/git/useStatus";
 import type { FileSource, Pane } from "../../types";
 
+function placeKey(repo: string | null, source: FileSource): string {
+  return `${repo ?? ""}\u0000${sourceKey(source)}`;
+}
+
 // Keep the markdown pipeline out of the initial chunk.
 const MarkdownView = lazy(() =>
   import("./Markdown").then((m) => ({ default: m.MarkdownView })),
@@ -86,7 +90,6 @@ export function FilePane({
   } | null>(null);
   // Include the repository and source in the key: the same path can exist in
   // another project, and file/diff offsets must not cross either boundary.
-  const placeKey = (source: FileSource) => `${repo ?? ""}\u0000${sourceKey(source)}`;
   // Which hunk the diff is scrolled to, measured only when the switch is asked
   // for. The offsets come from the DOM; which of them wins is `hunkAtTop`.
   const visibleHunk = () => {
@@ -102,7 +105,7 @@ export function FilePane({
     );
     if (pane.kind === "diff" && pane.source) {
       leftAt.current = {
-        key: placeKey(pane.source),
+        key: placeKey(repo, pane.source),
         top: container.scrollTop,
         // Sideways as far as this container owns it, which is the unified
         // view — its rows are `w-max` inside this scroller. A split column
@@ -126,7 +129,7 @@ export function FilePane({
     // Back on the diff this left: put it where it was.
     if (pane.kind === "diff" && pane.source) {
       const left = leftAt.current;
-      if (left && left.key === placeKey(pane.source)) {
+      if (left && left.key === placeKey(repo, pane.source)) {
         container.scrollTop = left.top;
         container.scrollLeft = left.left;
         leftAt.current = null;
@@ -147,7 +150,7 @@ export function FilePane({
     container.scrollTop +=
       line.getBoundingClientRect().top - container.getBoundingClientRect().top;
     refreshViewport();
-  }, [pane, anchor, refreshViewport]);
+  }, [pane, anchor, repo, refreshViewport]);
   // The editor is bound to one file: showing another (or that file as a commit
   // left it) leaves editing rather than pointing the session at the wrong path.
   useEffect(() => {

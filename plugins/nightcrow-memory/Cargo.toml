@@ -16,7 +16,7 @@ serde_json = "1"
 # The shared store. `bundled` compiles SQLite in rather than linking the
 # system's, so every platform gets the same build — with FTS5 — instead of
 # whatever the OS ships. Selection notes are in docs/decisions.md.
-rusqlite = { version = "0.40", features = ["bundled"] }
+rusqlite = { version = "0.41", features = ["bundled"] }
 
 [dev-dependencies]
 tempfile = "3"

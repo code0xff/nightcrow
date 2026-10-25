@@ -198,6 +198,7 @@ export function useShortcutAvailability(): (id: ShortcutActionId) => boolean {
     (id: ShortcutActionId) => intents?.isAvailable(id) ?? false,
     // `version` is the subscription: the identity has to change with it, or a
     // memoized help sheet would keep showing the availability it first read.
+    // oxlint-disable-next-line react/exhaustive-deps -- `version` intentionally invalidates this identity.
     [intents, version],
   );
 }

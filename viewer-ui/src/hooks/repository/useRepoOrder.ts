@@ -39,7 +39,7 @@ export function useRepoOrder({
         inFlightRef.current = false;
         flush();
       });
-  }, [handle, setRepos]);
+  }, [handle, setRepos, inFlightRef, pendingRef, writesRef]);
 
   const commit = useCallback(
     (order: string[]) => {
@@ -55,7 +55,7 @@ export function useRepoOrder({
       pendingRef.current = order;
       flush();
     },
-    [flush, setRepos],
+    [flush, setRepos, pendingRef, writesRef],
   );
 
   const drag = useRepoDrag({

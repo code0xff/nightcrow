@@ -16,5 +16,5 @@
     "resolveJsonModule": true,
     "verbatimModuleSyntax": true
   },
-  "include": ["src", "api.fixture.json"]
+    "include": ["src", "visual", "playwright.config.ts", "api.fixture.json"]
 }

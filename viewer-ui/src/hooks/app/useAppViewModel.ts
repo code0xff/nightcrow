@@ -77,16 +77,19 @@ export function useAppViewModel() {
     authed === true,
   );
 
+  const activeRepo = tabs.repo;
+  const setRepo = tabs.setRepo;
+  const clearPane = workspace.clearPane;
   const selectRepo = useCallback(
     (id: string) => {
       // Choosing the project already on screen is not a change: clearing its
       // pane would leave the screen saying one thing and its record another,
       // for a tap that asked for nothing.
-      if (id === tabs.repo) return;
-      tabs.setRepo(id);
-      workspace.clearPane();
+      if (id === activeRepo) return;
+      setRepo(id);
+      clearPane();
     },
-    [tabs.repo, tabs.setRepo, workspace.clearPane],
+    [activeRepo, setRepo, clearPane],
   );
   // Only the close buttons ask; the `project.close` key is already a deliberate
   // two-stroke chord, as `terminal.closePane` is for a pane.

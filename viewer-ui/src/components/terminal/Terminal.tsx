@@ -72,10 +72,11 @@ export function TerminalPanel({
   const keyBar = useTermKeyBar();
   const ctrl = useCtrlLatch();
   const alt = useAltLatch();
+  const consumeCtrl = ctrl.consume, consumeAlt = alt.consume;
   // Ctrl first, so both armed send ESC and the control byte (`altLatchStep`).
   const consumeLatches = useCallback(
-    (typed: string) => alt.consume(ctrl.consume(typed)),
-    [alt.consume, ctrl.consume],
+    (typed: string) => consumeAlt(consumeCtrl(typed)),
+    [consumeAlt, consumeCtrl],
   );
   const tabs = mode === "tabs";
   // A tabbed panel renders no zoom — it already shows one pane — so nothing in

@@ -221,7 +221,7 @@ describe("useRepoPoll snapshot identity", () => {
     let profileCommits = 0;
     let latest: ReturnType<typeof useRepoPoll> | undefined;
     const stable = args();
-    const Probe = memo((_: Pick<ReturnType<typeof useRepoPoll>, "repos" | "hot">) => {
+    const Probe = memo((_props: Pick<ReturnType<typeof useRepoPoll>, "repos" | "hot">) => {
       renders += 1;
       return createElement(
         Profiler,

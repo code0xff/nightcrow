@@ -44,6 +44,8 @@
 
 # Frontend: source and build output are tracked, dependencies are not.
 /viewer-ui/node_modules/
+/viewer-ui/test-results/
+/viewer-ui/playwright-report/
 # Vitest run from the repo root drops a cache here
 /node_modules/
 /viewer-ui/tsconfig.tsbuildinfo

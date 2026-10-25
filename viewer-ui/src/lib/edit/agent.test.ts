@@ -80,4 +80,28 @@ describe("previewAgent commit", () => {
     expect(block.textContent).toBe("Hello");
     expect(received.filter((m) => m.type === "edit")).toEqual([]);
   });
+
+  it("IME 커밋과 flush 응답은 compositionend 뒤 같은 순서로 보낸다", async () => {
+    const { block, received } = await openBlock();
+    block.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    document.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true }));
+    block.textContent = "조합 중";
+    window.dispatchEvent(
+      new MessageEvent("message", {
+        data: { type: "flush", seq: 7 },
+        source: window,
+      }),
+    );
+    await settle();
+    expect(received.some((message) => message.type === "edit")).toBe(false);
+    expect(received.some((message) => message.type === "flushed")).toBe(false);
+
+    document.dispatchEvent(new CompositionEvent("compositionend", { bubbles: true }));
+    await settle();
+    const completion = received.filter((message) => message.type === "edit" || message.type === "flushed");
+    expect(completion).toEqual([
+      { type: "edit", id: 0, html: "조합 중", pristine: false },
+      { type: "flushed", seq: 7 },
+    ]);
+  });
 });

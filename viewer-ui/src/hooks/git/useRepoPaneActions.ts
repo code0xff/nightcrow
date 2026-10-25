@@ -42,15 +42,30 @@ export function useRepoPaneActions({
     statusRef,
     track,
   });
+  const {
+    openDiff,
+    openFile,
+    openCommit,
+    openCommitFileDiff,
+    openCommitFiles,
+    showOtherFace,
+  } = rawOpeners;
   const openers = useMemo(
-    () => rawOpeners,
+    () => ({
+      openDiff,
+      openFile,
+      openCommit,
+      openCommitFileDiff,
+      openCommitFiles,
+      showOtherFace,
+    }),
     [
-      rawOpeners.openDiff,
-      rawOpeners.openFile,
-      rawOpeners.openCommit,
-      rawOpeners.openCommitFileDiff,
-      rawOpeners.openCommitFiles,
-      rawOpeners.showOtherFace,
+      openDiff,
+      openFile,
+      openCommit,
+      openCommitFileDiff,
+      openCommitFiles,
+      showOtherFace,
     ],
   );
 
@@ -65,6 +80,6 @@ export function useRepoPaneActions({
       mobileView,
       setMobileView,
     }),
-    [openers, pane, setPane, paneLoading, previewRendered, mobileView],
+    [openers, pane, setPane, paneLoading, previewRendered, mobileView, setMobileView],
   );
 }
