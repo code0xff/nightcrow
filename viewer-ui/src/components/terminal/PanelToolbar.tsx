@@ -85,7 +85,7 @@ export function PanelToolbar({
   }, [panes.length]);
 
   const button =
-    "flex shrink-0 items-center rounded-sm px-1.5 py-0.5 text-ink-400 hover:text-accent";
+    "flex h-6 w-6 shrink-0 items-center justify-center rounded-sm text-ink-400 hover:text-accent";
   return (
     <div className="flex shrink-0 items-center gap-2 bg-ink-900 px-2 py-1 text-xs">
       {/* The chip pulses whole, matching `AttachNotice`: the panel says the same
@@ -159,7 +159,7 @@ export function PanelToolbar({
           aria-label="Write a message to the active terminal"
           className={button}
         >
-          <PencilIcon className="h-3.5 w-3.5" />
+          <PencilIcon />
         </button>
       )}
       {panes.length > 0 && (
