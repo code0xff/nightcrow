@@ -23,8 +23,8 @@ function expectIdle(actions: Record<string, { mock: { calls: unknown[] } }>) {
   expect(actions["terminal.newPane"].mock.calls).toHaveLength(0);
 }
 
-describe("useShortcuts 리더 해제", () => {
-  it("창_포커스를_잃으면_해제된다", () => {
+describe("useShortcuts leader disarming", () => {
+  it("disarms when the window loses focus", () => {
     const { actions } = mount();
 
     leader();
@@ -33,7 +33,7 @@ describe("useShortcuts 리더 해제", () => {
     expectIdle(actions);
   });
 
-  it("텍스트_입력으로_포커스가_옮겨가면_해제된다", () => {
+  it("disarms when focus moves to a text input", () => {
     const field = mounted(el("input", { type: "text" }));
     const { actions } = mount();
 
@@ -43,7 +43,7 @@ describe("useShortcuts 리더 해제", () => {
     expectIdle(actions);
   });
 
-  it("다이얼로그_안으로_포커스가_옮겨가면_해제된다", () => {
+  it("disarms when focus moves into a dialog", () => {
     const button = mounted(el("div", { role: "dialog" })).appendChild(
       el("button"),
     );
@@ -55,7 +55,7 @@ describe("useShortcuts 리더 해제", () => {
     expectIdle(actions);
   });
 
-  it("터미널_패널로_포커스가_옮겨가는_것은_해제가_아니다", () => {
+  it("moving focus to the terminal panel does not disarm", () => {
     // Arming the leader and then clicking the pane it is meant for must not
     // throw the leader away.
     const { xterm } = pane();
@@ -68,7 +68,7 @@ describe("useShortcuts 리더 해제", () => {
     expect(actions["terminal.newPane"]).toHaveBeenCalledTimes(1);
   });
 
-  it("모달이_열리면_해제된다", () => {
+  it("disarms when a modal opens", () => {
     const { actions, update } = mount();
 
     leader();
@@ -78,7 +78,7 @@ describe("useShortcuts 리더 해제", () => {
     expectIdle(actions);
   });
 
-  it("프로젝트를_바꾸면_해제된다", () => {
+  it("disarms when switching projects", () => {
     // The terminal socket is keyed on the repository, so a switch also tears
     // every pane down and hands out ids that mean something else.
     const { actions, update } = mount();
@@ -89,7 +89,7 @@ describe("useShortcuts 리더 해제", () => {
     expectIdle(actions);
   });
 
-  it("소켓_재연결을_보고받으면_해제된다", () => {
+  it("disarms when notified of a socket reconnect", () => {
     const { actions, bus } = mount();
 
     leader();
@@ -98,7 +98,7 @@ describe("useShortcuts 리더 해제", () => {
     expectIdle(actions);
   });
 
-  it("텍스트_입력에서_키를_누르면_해제된다", () => {
+  it("disarms when a key is pressed in a text input", () => {
     // Suppression is also a disarm: the classifier is pure and cannot do it, so
     // the engine feeds the reducer a `suppressed` event of its own.
     const field = mounted(el("input", { type: "text" }));
@@ -110,7 +110,7 @@ describe("useShortcuts 리더 해제", () => {
     expectIdle(actions);
   });
 
-  it("키보드가_꺼지면_해제된다", () => {
+  it("disarms when the keyboard is disabled", () => {
     // The session expiring puts the login screen up and takes the listener away
     // with `enabled`. Coming back has to come back idle: otherwise the first key
     // typed into a pane after signing back in is spent on the leader nobody
@@ -124,7 +124,7 @@ describe("useShortcuts 리더 해제", () => {
     expectIdle(actions);
   });
 
-  it("해제_뒤에도_리더는_다시_무장한다", () => {
+  it("the leader can be armed again after disarming", () => {
     const { actions } = mount();
 
     leader();

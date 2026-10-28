@@ -2,12 +2,12 @@ import { describe, expect, it } from "vitest";
 import { otherSide, parseTabStripSide } from "./tabStripSide";
 
 describe("parseTabStripSide", () => {
-  it("두_자리_이름을_그대로_읽는다", () => {
+  it("reads both side names unchanged", () => {
     expect(parseTabStripSide("top")).toBe("top");
     expect(parseTabStripSide("left")).toBe("left");
   });
 
-  it("모르는_값은_null이다", () => {
+  it("an unknown value is null", () => {
     // A future version's name, a typo, or nothing stored: the caller falls
     // back to the default rather than trusting the string.
     expect(parseTabStripSide(null)).toBeNull();
@@ -18,7 +18,7 @@ describe("parseTabStripSide", () => {
 });
 
 describe("otherSide", () => {
-  it("두_자리를_서로_바꾼다", () => {
+  it("swaps the two sides", () => {
     expect(otherSide("top")).toBe("left");
     expect(otherSide("left")).toBe("top");
   });

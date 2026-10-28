@@ -17,7 +17,7 @@ afterEach(() => {
 
 describe("useMobileView", () => {
   it.each(["files", "diff", "terminal"] as const)(
-    "%s 화면을 새로 마운트해도 복원한다",
+    "restores the %s view after remounting",
     (view) => {
       const first = renderHook(() => useMobileView());
       act(() => first.result.current.setMobileView(view));
@@ -31,7 +31,7 @@ describe("useMobileView", () => {
     },
   );
 
-  it("허용되지_않은_저장값은_files로_대체한다", () => {
+  it("replaces an invalid saved value with files", () => {
     localStorage.setItem(STORAGE_KEY, "content");
 
     const { result } = renderHook(() => useMobileView());
@@ -39,7 +39,7 @@ describe("useMobileView", () => {
     expect(result.current.mobileView).toBe("files");
   });
 
-  it("저장소_접근이_실패해도_현재_페이지의_탐색은_동작한다", () => {
+  it("current-page navigation still works when storage access fails", () => {
     Object.defineProperty(globalThis, "localStorage", {
       configurable: true,
       get() {
@@ -56,7 +56,7 @@ describe("useMobileView", () => {
     expect(result.current.mobileView).toBe("terminal");
   });
 
-  it("저장만_실패해도_화면_선택은_즉시_바뀐다", () => {
+  it("view selection updates immediately even if saving fails", () => {
     Object.defineProperty(globalThis, "localStorage", {
       configurable: true,
       value: {

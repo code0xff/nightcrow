@@ -151,8 +151,8 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
-describe("프로젝트 순환과 폴의 경쟁", () => {
-  it("연속_전환은_마지막_의도로_끝난다", async () => {
+describe("project cycling versus poll races", () => {
+  it("rapid switches settle on the last intent", async () => {
     repos.mockResolvedValue(bootstrap("a"));
     const { result } = mount();
     await flush();
@@ -169,7 +169,7 @@ describe("프로젝트 순환과 폴의 경쟁", () => {
     expect(written()).toEqual(["b", "d"]);
   });
 
-  it("같은_값을_다시_실어오는_폴은_로컬_선택을_밀지_않는다", async () => {
+  it("a poll returning the same value does not override the local selection", async () => {
     repos.mockResolvedValue(bootstrap("a"));
     const { result } = mount();
     await flush();
@@ -182,7 +182,7 @@ describe("프로젝트 순환과 폴의 경쟁", () => {
     expect(result.current.repo).toBe("b");
   });
 
-  it("전송_중이던_옛_값이_한_폴_동안_되돌린다", async () => {
+  it("an older in-flight value can revert the selection for one poll", async () => {
     // The rewind window, stated rather than papered over. `serialWrite` holds
     // `b` open while the person reaches `d`, the server records `b` and serves
     // it back as *changed*, and every client follows a changed served value —
@@ -207,7 +207,7 @@ describe("프로젝트 순환과 폴의 경쟁", () => {
     expect(result.current.repo).toBe("d");
   });
 
-  it("되돌린_뒤에도_다음_전환은_그대로_기록된다", async () => {
+  it("the next switch is still recorded after a revert", async () => {
     repos.mockResolvedValue(bootstrap("a"));
     const { result } = mount();
     await flush();

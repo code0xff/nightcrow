@@ -32,17 +32,9 @@ fn a_successful_install_replaces_the_previous_binary() {
 }
 
 #[test]
-fn successful_update_message_explains_pending_cleanup_without_a_path() {
+fn successful_update_message_is_concise_and_explains_restart() {
     assert_eq!(
-        success_message(true),
-        "nightcrow: update installed successfully.\nnightcrow: the parked old binary is still in use by the running session or updater; cleanup is pending.\nnightcrow: no second update is needed. If a session is running, run `nightcrow stop`, then start nightcrow again to use the new version."
-    );
-}
-
-#[test]
-fn successful_update_message_explains_restart_after_cleanup() {
-    assert_eq!(
-        success_message(false),
-        "nightcrow: update installed successfully.\nnightcrow: no second update is needed. If a session is running, run `nightcrow stop`, then start nightcrow again to use the new version."
+        success_message(),
+        "nightcrow: update complete. If a session is running, restart it with `nightcrow stop`, then `nightcrow`."
     );
 }

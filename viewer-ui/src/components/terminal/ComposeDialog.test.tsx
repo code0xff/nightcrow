@@ -69,7 +69,7 @@ describe("ComposeDialog", () => {
   });
 
   it("return_that_confirms_an_ime_composition_is_left_to_the_ime", () => {
-    const { field, onSend } = mount("한");
+    const { field, onSend } = mount("\uD55C");
     fireEvent.keyDown(field, { key: "Enter", metaKey: true, isComposing: true });
     expect(onSend).not.toHaveBeenCalled();
   });

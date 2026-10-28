@@ -31,7 +31,7 @@ fn an_ipv6_web_endpoint_is_rendered_with_url_brackets() {
 #[cfg(windows)]
 #[test]
 fn a_unicode_endpoint_is_preserved_exactly() {
-    let path = std::path::Path::new(r"C:\nightcrow\한글.sock");
+    let path = std::path::Path::new("C:\\nightcrow\\\u{d55c}\u{ae00}.sock");
     let metadata =
         DaemonMetadata::capture(path, std::net::SocketAddr::from(([127, 0, 0, 1], 4321)));
     assert_eq!(

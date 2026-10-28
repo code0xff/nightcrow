@@ -13,7 +13,7 @@ function ops(): TabChoiceOps & { calls: string[] } {
 }
 
 describe("applyTabChoice", () => {
-  it("이미_보고_있는_목록을_다시_고르면_아무_것도_하지_않는다", () => {
+  it("does nothing when selecting the list already in view", () => {
     const spy = ops();
 
     expect(applyTabChoice("status", "status", spy)).toBe(false);
@@ -21,7 +21,7 @@ describe("applyTabChoice", () => {
     expect(spy.calls).toEqual([]);
   });
 
-  it("목록을_바꾸면_요청을_무효화하고_기록하고_pane을_비운다", () => {
+  it("changing lists invalidates the request, records the choice, and clears the pane", () => {
     const spy = ops();
 
     expect(applyTabChoice("status", "tree", spy)).toBe(true);
@@ -35,7 +35,7 @@ describe("applyTabChoice", () => {
     ]);
   });
 
-  it("로그를_떠날_때만_로그를_버린다", () => {
+  it("clears the log only when leaving it", () => {
     const leaving = ops();
     applyTabChoice("log", "status", leaving);
     expect(leaving.calls).toEqual([

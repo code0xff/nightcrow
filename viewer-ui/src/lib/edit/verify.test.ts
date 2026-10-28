@@ -7,14 +7,14 @@ const live = (entries: [number, string][]) =>
 
 describe("applyLiveLocks", () => {
   it("does not lock when source and live match", () => {
-    const blocks = parseBlocks("<p>안녕</p>");
-    const [b] = applyLiveLocks(blocks, live([[0, "안녕"]]));
+    const blocks = parseBlocks("<p>\uC548\uB155</p>");
+    const [b] = applyLiveLocks(blocks, live([[0, "\uC548\uB155"]]));
     expect(b?.locked).toBeNull();
   });
 
   it("treats whitespace differences as equal", () => {
-    const blocks = parseBlocks("<p>\n  안녕   세상\n</p>");
-    const [b] = applyLiveLocks(blocks, live([[0, "안녕 세상"]]));
+    const blocks = parseBlocks("<p>\n  \uC548\uB155   \uC138\uC0C1\n</p>");
+    const [b] = applyLiveLocks(blocks, live([[0, "\uC548\uB155 \uC138\uC0C1"]]));
     expect(b?.locked).toBeNull();
   });
 
@@ -25,7 +25,7 @@ describe("applyLiveLocks", () => {
   });
 
   it("locks when missing from live — a script removed the node", () => {
-    const blocks = parseBlocks("<p>사라짐</p>");
+    const blocks = parseBlocks("<p>\uC0AC\uB77C\uC9D0</p>");
     const [b] = applyLiveLocks(blocks, live([]));
     expect(b?.locked).toBe("SCRIPT_GENERATED");
   });
@@ -33,7 +33,7 @@ describe("applyLiveLocks", () => {
   it("does not overwrite the reason of an already locked block", () => {
     const blocks = parseBlocks('<div class="code">let x = 1;</div>');
     expect(blocks[0]?.locked).toBe("CODE_BLOCK");
-    const [b] = applyLiveLocks(blocks, live([[0, "전혀 다른 텍스트"]]));
+    const [b] = applyLiveLocks(blocks, live([[0, "\uC804\uD600 \uB2E4\uB978 \uD14D\uC2A4\uD2B8"]]));
     expect(b?.locked).toBe("CODE_BLOCK");
   });
 
@@ -48,24 +48,24 @@ describe("applyLiveLocks", () => {
   it("locks as MARKER_CLASH when two marks share one id", () => {
     // The render alone cannot tell which one is the original block. Fixing by
     // guess ships the fake's content into the save as this block's edit.
-    const blocks = parseBlocks("<p>안녕</p>");
+    const blocks = parseBlocks("<p>\uC548\uB155</p>");
     const [b] = applyLiveLocks(
       blocks,
       live([
-        [0, "안녕"],
-        [0, "안녕"],
+        [0, "\uC548\uB155"],
+        [0, "\uC548\uB155"],
       ]),
     );
     expect(b?.locked).toBe("MARKER_CLASH");
   });
 
   it("keeps MARKER_CLASH even when the imitation text differs — the clash comes first", () => {
-    const blocks = parseBlocks("<p>안녕</p>");
+    const blocks = parseBlocks("<p>\uC548\uB155</p>");
     const [b] = applyLiveLocks(
       blocks,
       live([
-        [0, "안녕"],
-        [0, "전혀 다른 텍스트"],
+        [0, "\uC548\uB155"],
+        [0, "\uC804\uD600 \uB2E4\uB978 \uD14D\uC2A4\uD2B8"],
       ]),
     );
     expect(b?.locked).toBe("MARKER_CLASH");

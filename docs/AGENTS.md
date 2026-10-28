@@ -1,7 +1,7 @@
 # `docs/` scope
 
-설계 근거·계층·모듈 책임·핵심 결정은 [`architecture.md`](architecture.md)와 그 상세 문서에 둔다. 설치·실행의 요약은 루트 [`README.md`](../README.md)에, 기능별 절차는 해당 문서에 둔다. 같은 설명을 여러 문서에 복제하지 말고 기준 문서로 링크한다.
+Keep design rationale, layers, module responsibilities, and key decisions in [`architecture.md`](architecture.md) and its detailed documents. Keep installation and usage summaries in the root [`README.md`](../README.md), and feature-specific procedures in their respective documents. Do not duplicate explanations across documents; link to the source of truth.
 
-공개 인터페이스의 입력·출력·오류·부작용과 비자명한 순서·동시성 제약을 문서화한다. 현재 구현과 실행 가능한 예시를 기준으로 쓰고, 미래 계획은 현재 동작과 구분한다.
+Document public interface inputs, outputs, errors, side effects, and non-obvious ordering and concurrency constraints. Describe the current implementation with runnable examples, and distinguish future plans from current behavior.
 
-Markdown prose는 고정 열 기준으로 hard-wrap하지 않는다. 문단은 논리적으로 한 줄로 유지하고 표·목록·코드처럼 구조상 필요한 개행만 둔다.
+Do not hard-wrap Markdown prose to a fixed column width. Keep each paragraph on one logical line and use line breaks only where Markdown structure requires them, such as tables, lists, and code.

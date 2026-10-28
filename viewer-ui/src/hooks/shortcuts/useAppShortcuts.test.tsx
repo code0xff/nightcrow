@@ -24,8 +24,8 @@ function maximizedFrom(
   return updater(previous);
 }
 
-describe("useAppShortcuts 페이지 명령", () => {
-  it("프로젝트_명령은_기존_컨트롤을_부른다", () => {
+describe("useAppShortcuts page commands", () => {
+  it("project commands call the existing controls", () => {
     const { openPicker, closeRepo } = mount();
 
     command("o");
@@ -35,7 +35,7 @@ describe("useAppShortcuts 페이지 명령", () => {
     expect(closeRepo).toHaveBeenCalledWith("b");
   });
 
-  it("세션_명령은_기존_컨트롤을_부른다", () => {
+  it("session commands call the existing controls", () => {
     const { cycleAccent, reloadConfig } = mount();
 
     command("p");
@@ -45,7 +45,7 @@ describe("useAppShortcuts 페이지 명령", () => {
     expect(reloadConfig).toHaveBeenCalledTimes(1);
   });
 
-  it("l은_상태와_커밋_로그를_왕복한다", () => {
+  it("l toggles between status and commit log", () => {
     const fromStatus = mount({ tab: "status" });
     command("l");
     expect(fromStatus.chooseTab).toHaveBeenCalledWith("log");
@@ -56,7 +56,7 @@ describe("useAppShortcuts 페이지 명령", () => {
     expect(fromLog.chooseTab).toHaveBeenCalledWith("status");
   });
 
-  it("b는_트리_뷰를_왕복한다", () => {
+  it("b toggles the tree view", () => {
     const fromStatus = mount({ tab: "status" });
     command("b");
     expect(fromStatus.chooseTab).toHaveBeenCalledWith("tree");
@@ -67,7 +67,7 @@ describe("useAppShortcuts 페이지 명령", () => {
     expect(fromTree.chooseTab).toHaveBeenCalledWith("status");
   });
 
-  it("f는_키보드가_있는_패널을_최대화한다", () => {
+  it("f maximizes the panel with keyboard focus", () => {
     // The reinterpreted maximize: the panel with the keyboard, plus the zoom on
     // the active pane. Never `requestFullscreen`, never F11.
     const { xterm } = pane();
@@ -81,7 +81,7 @@ describe("useAppShortcuts 페이지 명령", () => {
     expect(zoomActivePane).toHaveBeenCalledTimes(1);
   });
 
-  it("f는_패널_밖에서는_파일_패널을_최대화한다", () => {
+  it("f maximizes the file panel when focus is outside a panel", () => {
     const { setMaximized, zoomActivePane } = mount();
 
     command("f");
@@ -91,7 +91,7 @@ describe("useAppShortcuts 페이지 명령", () => {
     expect(zoomActivePane).not.toHaveBeenCalled();
   });
 
-  it("1과_2는_표시된_영역으로_포커스를_옮긴다", () => {
+  it("1 and 2 focus the corresponding visible regions", () => {
     const list = mounted(
       el("section", { "data-focus-region": "list", tabindex: "-1" }),
     );
@@ -107,7 +107,7 @@ describe("useAppShortcuts 페이지 명령", () => {
     expect(document.activeElement).toBe(content);
   });
 
-  it("포커스_명령은_터미널_패널에서_키보드를_가져온다", () => {
+  it("focus commands take the keyboard from the terminal panel", () => {
     // And is not undone: the panel re-asserts pane focus on layout signals
     // (`usePaneFocus`), and a focus command is not one of them.
     const { xterm } = pane();
@@ -122,7 +122,7 @@ describe("useAppShortcuts 페이지 명령", () => {
     expect(document.activeElement).toBe(list);
   });
 
-  it("물음표는_도움말을_열고_열려_있는_동안_다른_키를_먹지_않는다", () => {
+  it("? opens help and does not consume other keys while it is open", () => {
     const { help, openPicker } = mount();
     expect(help.current?.open).toBe(false);
 
@@ -136,7 +136,7 @@ describe("useAppShortcuts 페이지 명령", () => {
     expect(openPicker).not.toHaveBeenCalled();
   });
 
-  it("도움말은_닫으면_다시_키보드를_돌려준다", () => {
+  it("closing help returns the keyboard", () => {
     const { help, openPicker } = mount();
 
     command("?");
@@ -146,7 +146,7 @@ describe("useAppShortcuts 페이지 명령", () => {
     expect(openPicker).toHaveBeenCalledTimes(1);
   });
 
-  it("프로젝트가_없으면_프로젝트_전용_명령은_가용하지_않다", () => {
+  it("project-only commands are unavailable when there is no project", () => {
     const { bus } = mount({ repo: null, repos: [] });
     const available = bus.current!.isAvailable;
 
@@ -166,7 +166,7 @@ describe("useAppShortcuts 페이지 명령", () => {
     expect(available("help.shortcuts")).toBe(true);
   });
 
-  it("프로젝트가_열려_있으면_화면_명령이_가용하다", () => {
+  it("page commands are available when a project is open", () => {
     const { bus } = mount();
     const available = bus.current!.isAvailable;
 
@@ -182,7 +182,7 @@ describe("useAppShortcuts 페이지 명령", () => {
     }
   });
 
-  it("폴더_고르기가_열려_있으면_키를_다이얼로그에_맡긴다", () => {
+  it("delegates keys to the dialog while the folder picker is open", () => {
     const { openPicker } = mount({ pickerOpen: true });
 
     const armed = hit({ key: "f", ctrlKey: true });

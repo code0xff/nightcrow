@@ -125,14 +125,17 @@ fn attributes_survive_a_snapshot() {
 /// the row by a column.
 #[test]
 fn a_wide_character_keeps_its_columns() {
-    assert_same_screen("한글 텍스트", "wide characters");
+    assert_same_screen(
+        "\u{d55c}\u{ae00} \u{d14d}\u{c2a4}\u{d2b8}",
+        "wide characters",
+    );
 }
 
 #[test]
 fn a_wide_character_wrapping_at_the_last_column_keeps_its_columns() {
     // 19 narrow cells leave one column, which a wide character cannot fit: the
     // grid puts a leading spacer there and wraps the glyph to the next row.
-    let input = format!("{}한", "n".repeat(COLS as usize - 1));
+    let input = format!("{}\u{d55c}", "n".repeat(COLS as usize - 1));
     assert_same_screen(&input, "a wide character that wrapped");
 }
 

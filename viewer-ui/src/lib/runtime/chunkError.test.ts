@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { isChunkLoadError } from "./chunkError";
 
 describe("isChunkLoadError", () => {
-  it("각_엔진의_dynamic_import_실패를_알아본다", () => {
+  it("recognizes dynamic import failures from each engine", () => {
     // The three messages a browser actually produces when the chunk does not
     // arrive — whether it was replaced by a build or the server went away.
     const engines = [
@@ -19,7 +19,7 @@ describe("isChunkLoadError", () => {
     }
   });
 
-  it("vite의_preload_실패도_같은_뜻으로_읽는다", () => {
+  it("interprets Vite preload failures the same way", () => {
     expect(
       isChunkLoadError(
         new Error("Unable to preload CSS for /assets/Markdown-C8LL_u4z.css"),
@@ -27,7 +27,7 @@ describe("isChunkLoadError", () => {
     ).toBe(true);
   });
 
-  it("문구가_어떤_대소문자로_와도_알아본다", () => {
+  it("recognizes the message regardless of capitalization", () => {
     expect(
       isChunkLoadError(
         new TypeError("FAILED TO FETCH DYNAMICALLY IMPORTED MODULE: /a.js"),
@@ -35,7 +35,7 @@ describe("isChunkLoadError", () => {
     ).toBe(true);
   });
 
-  it("관계없는_실패는_거부한다", () => {
+  it("rejects unrelated failures", () => {
     // A reload does not fix any of these, and offering one would only lose the
     // reader's place.
     expect(isChunkLoadError(new TypeError("x is not a function"))).toBe(false);
@@ -50,7 +50,7 @@ describe("isChunkLoadError", () => {
     ).toBe(false);
   });
 
-  it("에러가_아닌_것도_받아넘긴다", () => {
+  it("passes through values that are not errors", () => {
     // A component may throw anything at all, and the boundary asks this first.
     expect(isChunkLoadError(null)).toBe(false);
     expect(isChunkLoadError(undefined)).toBe(false);

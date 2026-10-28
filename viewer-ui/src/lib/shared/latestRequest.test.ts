@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { latestRequest } from "./latestRequest";
 
 describe("latest request", () => {
-  it("받은_티켓은_다음_요청_전까지_유효하다", () => {
+  it("a ticket remains valid until the next request", () => {
     const requests = latestRequest();
 
     const ticket = requests.start("src");
@@ -10,7 +10,7 @@ describe("latest request", () => {
     expect(requests.isCurrent("src", ticket)).toBe(true);
   });
 
-  it("같은_경로를_다시_요청하면_이전_티켓은_만료된다", () => {
+  it("a new request for the same path expires the previous ticket", () => {
     // Expand, collapse, expand again: two listings of `src` are in flight and
     // the first can arrive last. Without this the older one would win and stay,
     // since the tree never refetches a path it already holds.
@@ -23,7 +23,7 @@ describe("latest request", () => {
     expect(requests.isCurrent("src", second)).toBe(true);
   });
 
-  it("경로마다_따로_센다", () => {
+  it("tracks each path independently", () => {
     const requests = latestRequest();
 
     const src = requests.start("src");
@@ -32,7 +32,7 @@ describe("latest request", () => {
     expect(requests.isCurrent("src", src)).toBe(true);
   });
 
-  it("요청한_적_없는_경로의_티켓은_유효하지_않다", () => {
+  it("a ticket for a path that was never requested is invalid", () => {
     const requests = latestRequest();
 
     expect(requests.isCurrent("src", 1)).toBe(false);

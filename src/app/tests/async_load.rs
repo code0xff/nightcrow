@@ -30,7 +30,8 @@ fn diff_text(app: &App) -> String {
 }
 
 #[test]
-fn 십만번_연속_선택은_입력_loop를_block하지_않고_마지막_diff를_적용한다() {
+fn one_hundred_thousand_consecutive_selections_do_not_block_the_input_loop_and_apply_the_last_diff()
+{
     let (_dir, path) = repo_with_two_dirty_files();
     let mut app = status_app(&path);
     let started = Instant::now();
@@ -53,7 +54,7 @@ fn 십만번_연속_선택은_입력_loop를_block하지_않고_마지막_diff�
 }
 
 #[test]
-fn 저장소가_바뀐_뒤_도착한_이전_저장소_결과는_버린다() {
+fn results_from_the_previous_repository_are_discarded_after_a_switch() {
     let (_old_dir, old_path) = repo_with_two_dirty_files();
     let (_new_dir, new_path) = repo_with_two_dirty_files();
     std::fs::write(Path::new(&new_path).join("a.rs"), "new repo only\n").unwrap();
@@ -73,7 +74,7 @@ fn 저장소가_바뀐_뒤_도착한_이전_저장소_결과는_버린다() {
 }
 
 #[test]
-fn 연속_commit_선택은_마지막_oid의_diff와_title만_적용한다() {
+fn consecutive_commit_selections_apply_only_the_last_oid_diff_and_title() {
     let (_dir, path) = make_repo();
     let file = Path::new(&path).join("a.rs");
     std::fs::write(&file, "one\n").unwrap();
@@ -102,7 +103,7 @@ fn 연속_commit_선택은_마지막_oid의_diff와_title만_적용한다() {
 }
 
 #[test]
-fn 비동기_새로고침은_diff_검색과_scroll을_보존한다() {
+fn asynchronous_refresh_preserves_diff_search_and_scroll() {
     let (_dir, path) = make_repo();
     let file = Path::new(&path).join("a.rs");
     std::fs::write(&file, "zero\none\ntwo\nthree\n").unwrap();
@@ -151,7 +152,7 @@ fn 비동기_새로고침은_diff_검색과_scroll을_보존한다() {
 }
 
 #[test]
-fn diff보다_나중에_연_file_view는_diff_reply가_닫지_않는다() {
+fn file_view_opened_after_diff_is_not_closed_by_the_diff_reply() {
     let (_dir, path) = repo_with_two_dirty_files();
     let mut app = status_app(&path);
 
@@ -212,7 +213,7 @@ fn mode_switch_drops_a_stale_commit_files_reply() {
 }
 
 #[test]
-fn 현재_선택의_worker_실패는_diff_notice로_남는다() {
+fn worker_failure_for_the_current_selection_is_shown_as_a_diff_notice() {
     let mut app = app_with_files(vec!["a.rs"]);
     app.git.repo_path = "repository-that-does-not-exist".to_string();
 

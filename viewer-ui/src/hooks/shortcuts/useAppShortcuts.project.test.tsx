@@ -21,8 +21,8 @@ afterEach(() => {
   document.body.innerHTML = "";
 });
 
-describe("useAppShortcuts 프로젝트 순환", () => {
-  it("오른쪽_화살표는_다음_프로젝트로_간다", () => {
+describe("useAppShortcuts project cycling", () => {
+  it("right arrow moves to the next project", () => {
     const { selectRepo } = mount();
 
     hit(CHORD_NEXT);
@@ -30,7 +30,7 @@ describe("useAppShortcuts 프로젝트 순환", () => {
     expect(selectRepo).toHaveBeenCalledWith("c");
   });
 
-  it("왼쪽_화살표는_이전_프로젝트로_간다", () => {
+  it("left arrow moves to the previous project", () => {
     const { selectRepo } = mount();
 
     hit(CHORD_PREVIOUS);
@@ -38,7 +38,7 @@ describe("useAppShortcuts 프로젝트 순환", () => {
     expect(selectRepo).toHaveBeenCalledWith("a");
   });
 
-  it("마지막에서_오른쪽은_처음으로_감싼다", () => {
+  it("right arrow wraps from the last project to the first", () => {
     const { selectRepo } = mount({ repo: "c" });
 
     hit(CHORD_NEXT);
@@ -46,7 +46,7 @@ describe("useAppShortcuts 프로젝트 순환", () => {
     expect(selectRepo).toHaveBeenCalledWith("a");
   });
 
-  it("처음에서_왼쪽은_마지막으로_감싼다", () => {
+  it("left arrow wraps from the first project to the last", () => {
     const { selectRepo } = mount({ repo: "a" });
 
     hit(CHORD_PREVIOUS);
@@ -54,7 +54,7 @@ describe("useAppShortcuts 프로젝트 순환", () => {
     expect(selectRepo).toHaveBeenCalledWith("c");
   });
 
-  it("한_번_눌러_한_번만_전환한다", () => {
+  it("one press switches once", () => {
     const { selectRepo } = mount();
 
     hit(CHORD_NEXT);
@@ -62,7 +62,7 @@ describe("useAppShortcuts 프로젝트 순환", () => {
     expect(selectRepo).toHaveBeenCalledTimes(1);
   });
 
-  it("프로젝트가_없거나_하나면_전환도_없지만_키는_먹는다", () => {
+  it("with zero or one project, does not switch but still consumes the key", () => {
     for (const args of [
       { repos: [], repo: null },
       { repos: [{ id: "a" }], repo: "a" },
@@ -77,7 +77,7 @@ describe("useAppShortcuts 프로젝트 순환", () => {
     }
   });
 
-  it("프로젝트가_하나면_순환은_가용하지_않다고_말한다", () => {
+  it("reports cycling unavailable when there is one project", () => {
     // What the help sheet dims. Consuming the key and advertising the command
     // are separate answers, and this is the second one.
     const single = mount({ repos: [{ id: "a" }], repo: "a" });
@@ -89,7 +89,7 @@ describe("useAppShortcuts 프로젝트 순환", () => {
     expect(many.bus.current!.isAvailable("project.previous")).toBe(true);
   });
 
-  it("목록에_없는_선택이면_전환하지_않는다", () => {
+  it("does not switch when the selection is not in the list", () => {
     // Transient — a poll mid-resolution, or a tab that just closed. Answering
     // here would race `resolveActiveRepo`, which owns where a lost selection
     // lands.
@@ -101,7 +101,7 @@ describe("useAppShortcuts 프로젝트 순환", () => {
     expect(event.defaultPrevented).toBe(true);
   });
 
-  it("enabled가_false면_화살표는_그대로_통과한다", () => {
+  it("passes arrows through when enabled is false", () => {
     const { selectRepo } = mount({ enabled: false });
 
     const event = hit(CHORD_NEXT);

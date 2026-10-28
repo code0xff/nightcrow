@@ -18,7 +18,7 @@ fn request(generation: u64, operation: GitLoadOperation) -> GitLoadRequest {
 }
 
 #[test]
-fn 같은_lane의_대기_요청은_최신_요청_하나로_합쳐진다() {
+fn requests_waiting_in_the_same_lane_coalesce_to_the_latest_request() {
     let mut pending = Pending::default();
     for generation in 1..=100_000 {
         pending.replace(request(
@@ -33,7 +33,7 @@ fn 같은_lane의_대기_요청은_최신_요청_하나로_합쳐진다() {
 }
 
 #[test]
-fn 서로_다른_lane의_요청은_서로를_덮어쓰지_않는다() {
+fn requests_in_different_lanes_do_not_replace_each_other() {
     let mut pending = Pending::default();
     pending.replace(request(1, GitLoadOperation::StatusDiff("a.rs".into())));
     pending.replace(request(2, GitLoadOperation::WorkdirFile("a.rs".into())));

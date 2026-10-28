@@ -79,10 +79,10 @@ fn status_output_escapes_control_characters_and_preserves_unicode() {
     let mut status = status();
     status.web_endpoint = "http://sock\u{1b}]0;evil\u{7}\n\u{9b}/".into();
     status.attach_endpoint = Ok("sock\u{1b}]0;evil\u{7}\n\u{9b}".into());
-    status.repositories[0].id = "repo-한글\u{1b}".into();
+    status.repositories[0].id = "repo-\u{d55c}\u{ae00}\u{1b}".into();
     status.repositories[0].path = "C:\\work\n\u{80}".into();
     let output = render_status(&status);
-    assert!(output.contains("repo-한글"));
+    assert!(output.contains("repo-\u{d55c}\u{ae00}"));
     assert!(output.contains("\\u{001b}"));
     assert!(output.contains("\\u{009b}"));
     assert!(output.contains("\\n"));

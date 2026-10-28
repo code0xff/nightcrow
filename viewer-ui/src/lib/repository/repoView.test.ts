@@ -12,7 +12,7 @@ import {
 import type { RepoView } from "../../api";
 
 describe("what a tap records", () => {
-  it("워킹트리_파일은_경로와_어느_면인지로_남는다", () => {
+  it("a working-tree file is represented by its path and side", () => {
     expect(workdirFile("src/main.rs", "diff")).toEqual({
       path: "src/main.rs",
       commit: null,
@@ -21,7 +21,7 @@ describe("what a tap records", () => {
     expect(workdirFile("src/main.rs", "source").face).toBe("source");
   });
 
-  it("커밋에서_연_파일은_그_커밋도_함께_남는다", () => {
+  it("a file opened from a commit also records that commit", () => {
     expect(commitFile("9a3bc2c", "src/app.rs", "diff")).toEqual({
       path: "src/app.rs",
       commit: "9a3bc2c",
@@ -29,13 +29,13 @@ describe("what a tap records", () => {
     });
   });
 
-  it("아무것도_안_본_프로젝트는_status_빈_화면이다", () => {
+  it("a project with no remembered view opens to an empty status view", () => {
     expect(blankView()).toEqual({ tab: "status", file: null, tree_expanded: [] });
   });
 });
 
 describe("cappedTree", () => {
-  it("정렬해_같은_모양이_같은_쓰기가_되게_한다", () => {
+  it("sorts values so equivalent views produce the same write", () => {
     expect(cappedTree(["src/ui", "src"])).toEqual(["src", "src/ui"]);
     expect(
       sameView(
@@ -45,9 +45,9 @@ describe("cappedTree", () => {
     ).toBe(true);
   });
 
-  it("서버가_자르는_곳에서_같이_자른다", () => {
-    // 안 자르면 서버가 잘라 돌려주고, 클라이언트는 다시 다 보내고, poll마다
-    // 반복된다 — 두 쪽이 영원히 다른 값을 들고 있게 된다.
+  it("truncates at the same boundary as the server", () => {
+    // Without truncating, the server returns a shortened value, the client sends the full value again on every poll,
+    // and the cycle repeats, leaving the two sides with different values forever.
     const many = Array.from(
       { length: MAX_TREE_EXPANDED + 20 },
       (_, i) => `dir${i}`,
@@ -57,7 +57,7 @@ describe("cappedTree", () => {
 });
 
 describe("restoreOpen", () => {
-  it("기억한_면대로_연다", () => {
+  it("opens the remembered side", () => {
     expect(
       restoreOpen({ ...blankView(), file: workdirFile("a.ts", "source") }),
     ).toEqual({ kind: "file", path: "a.ts" });
@@ -66,8 +66,8 @@ describe("restoreOpen", () => {
     ).toEqual({ kind: "diff", path: "a.ts" });
   });
 
-  it("커밋의_파일은_어느_면이었든_diff로_돌아온다", () => {
-    // 소스 면은 pane의 토글 한 번 거리이고, 곧장 여는 opener는 패널에 없다.
+  it("a committed file returns to diff regardless of its remembered side", () => {
+    // The source side is one toggle away in the pane, and there is no direct opener in the panel.
     expect(
       restoreOpen({
         ...blankView(),
@@ -77,7 +77,7 @@ describe("restoreOpen", () => {
     ).toEqual({ kind: "commitDiff", oid: "9a3bc2c", path: "a.ts" });
   });
 
-  it("기억한_것이_없으면_아무것도_열지_않는다", () => {
+  it("opens nothing when no view is remembered", () => {
     expect(restoreOpen(undefined)).toEqual({ kind: "none" });
     expect(restoreOpen(blankView())).toEqual({ kind: "none" });
     expect(restoreOpen({ ...blankView(), file: workdirFile("", "diff") })).toEqual({
@@ -87,15 +87,15 @@ describe("restoreOpen", () => {
 });
 
 describe("restoreTab", () => {
-  it("기억한_탭으로_연다", () => {
+  it("opens the remembered tab", () => {
     for (const tab of ["status", "log", "tree"] as const) {
       expect(restoreTab({ ...blankView(), tab })).toBe(tab);
     }
   });
 
-  it("모르는_탭과_빈_기억은_status로_연다", () => {
-    // 더 새로운 서버가 보낸 이름일 수 있다. 아무것도 못 그리는 탭으로 열면
-    // 사이드바가 빈 채로 남는다.
+  it("opens status for an unknown tab or an empty view", () => {
+    // The name may come from a newer server. Opening an unrenderable tab would
+    // leave the sidebar empty.
     expect(restoreTab(undefined)).toBe("status");
     expect(restoreTab({ ...blankView(), tab: "graph" as RepoView["tab"] })).toBe(
       "status",
@@ -110,11 +110,11 @@ describe("sameView", () => {
     tree_expanded: ["src"],
   };
 
-  it("같은_화면은_다시_쓰지_않는다", () => {
+  it("does not write the same view again", () => {
     expect(sameView(view, { ...view })).toBe(true);
   });
 
-  it("무엇_하나라도_다르면_쓴다", () => {
+  it("writes when any value differs", () => {
     expect(sameView(undefined, view)).toBe(false);
     expect(sameView(view, { ...view, tab: "status" })).toBe(false);
     expect(sameView(view, { ...view, tree_expanded: ["src", "src/ui"] })).toBe(false);

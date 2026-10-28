@@ -20,7 +20,7 @@ fn plain_text_and_complete_sequences_end_at_a_boundary() {
         b"\x1b[2J\x1b[1;1H\x1b[38;5;208mcolour\x1b[m",
         b"\x1b]0;a title\x07after",
         b"\x1b]8;;https://example.com\x1b\\link\x1b]8;;\x1b\\",
-        "한글 텍스트".as_bytes(),
+        "\u{d55c}\u{ae00} \u{d14d}\u{c2a4}\u{d2b8}".as_bytes(),
         b"\x1b(B\x1b=",
         b"\x1bP1$rdata\x1b\\",
     ] {
@@ -41,8 +41,8 @@ fn a_chunk_cut_inside_a_sequence_is_not_a_boundary() {
         b"\x1b]0;a tit",
         b"\x1b]0;ends in st\x1b",
         b"\x1bP1$rdat",
-        &"한".as_bytes()[..1],
-        &"한".as_bytes()[..2],
+        &"\u{d55c}".as_bytes()[..1],
+        &"\u{d55c}".as_bytes()[..2],
     ] {
         assert!(
             !after(&[cut]).at_boundary(),
@@ -57,7 +57,7 @@ fn the_cut_sequence_completes_in_the_next_chunk() {
         (b"\x1b[2".as_slice(), b"J".as_slice()),
         (b"\x1b]0;tit", b"le\x07"),
         (b"\x1b]0;st ends it\x1b", b"\\"),
-        (&"한".as_bytes()[..2], &"한".as_bytes()[2..]),
+        (&"\u{d55c}".as_bytes()[..2], &"\u{d55c}".as_bytes()[2..]),
     ] {
         let cut_only = after(&[cut]);
         assert!(!cut_only.at_boundary());

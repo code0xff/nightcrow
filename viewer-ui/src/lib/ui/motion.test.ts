@@ -12,13 +12,13 @@ function reducedMotion(reduce: boolean) {
 }
 
 describe("fadeOutThen", () => {
-  it("요소가_없으면_바로_실행한다", () => {
+  it("runs immediately when there is no element", () => {
     const done = vi.fn();
     fadeOutThen(null, done);
     expect(done).toHaveBeenCalledTimes(1);
   });
 
-  it("동작_줄이기면_애니메이션_없이_바로_실행한다", () => {
+  it("runs immediately without animation when reduced motion is enabled", () => {
     reducedMotion(true);
     const el = document.createElement("div");
     el.animate = vi.fn();
@@ -28,7 +28,7 @@ describe("fadeOutThen", () => {
     expect(done).toHaveBeenCalledTimes(1);
   });
 
-  it("애니메이션이_끝나야_실행하고_끝과_취소가_겹쳐도_한_번만_실행한다", () => {
+  it("runs after animation ends and only once if end and cancel overlap", () => {
     reducedMotion(false);
     const animation = {} as Animation;
     const el = document.createElement("div");

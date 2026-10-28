@@ -17,22 +17,22 @@ function action(id: ShortcutActionId): LeaderEvent {
   return { kind: "action", action: actionById(id) };
 }
 
-describe("reduceLeader - arm과 disarm", () => {
-  it("idle에서_arm하면_무장한다", () => {
+describe("reduceLeader arm and disarm", () => {
+  it("arming from idle arms the leader", () => {
     expect(reduceLeader(IDLE_LEADER, { kind: "arm" })).toEqual({
       state: ARMED,
       effect: { kind: "none" },
     });
   });
 
-  it("cancel은_무장을_푼다", () => {
+  it("cancel disarms the leader", () => {
     expect(reduceLeader(ARMED, { kind: "cancel" })).toEqual({
       state: IDLE_LEADER,
       effect: { kind: "none" },
     });
   });
 
-  it("바깥에서_생긴_모든_사건은_무장을_푼다", () => {
+  it("every external event disarms the leader", () => {
     // If it stays armed, the next terminal key disappears silently.
     const events: LeaderEvent["kind"][] = [
       "blur",
@@ -52,7 +52,7 @@ describe("reduceLeader - arm과 disarm", () => {
     }
   });
 
-  it("ignore는_상태를_그대로_둔다", () => {
+  it("ignore preserves the state", () => {
     expect(reduceLeader(ARMED, { kind: "ignore" })).toEqual({
       state: ARMED,
       effect: { kind: "none" },
@@ -60,14 +60,14 @@ describe("reduceLeader - arm과 disarm", () => {
     expect(reduceLeader(IDLE_LEADER, { kind: "ignore" }).state).toEqual(IDLE_LEADER);
   });
 
-  it("매핑되지_않은_follow_up은_무장을_풀고_아무_것도_하지_않는다", () => {
+  it("an unmapped follow-up disarms and does nothing", () => {
     expect(reduceLeader(ARMED, { kind: "consumed" })).toEqual({
       state: IDLE_LEADER,
       effect: { kind: "none" },
     });
   });
 
-  it("literal_leader는_바이트를_보내고_무장을_푼다", () => {
+  it("literal_leader sends bytes and disarms", () => {
     expect(reduceLeader(ARMED, { kind: "literalLeader", data: "\x06" })).toEqual({
       state: IDLE_LEADER,
       effect: { kind: "sendLiteralLeader", data: "\x06" },
@@ -76,21 +76,21 @@ describe("reduceLeader - arm과 disarm", () => {
 });
 
 describe("reduceLeader - action", () => {
-  it("보통_명령은_실행하고_무장을_푼다", () => {
+  it("a regular command runs and disarms", () => {
     expect(reduceLeader(ARMED, action("terminal.newPane"))).toEqual({
       state: IDLE_LEADER,
       effect: { kind: "run", action: "terminal.newPane" },
     });
   });
 
-  it("단독_chord는_idle에서_바로_실행한다", () => {
+  it("a standalone chord runs immediately from idle", () => {
     expect(reduceLeader(IDLE_LEADER, action("project.next"))).toEqual({
       state: IDLE_LEADER,
       effect: { kind: "run", action: "project.next" },
     });
   });
 
-  it("swap은_실행_대신_두_번째_단계를_무장한다", () => {
+  it("swap arms the second step instead of running an action", () => {
     expect(reduceLeader(ARMED, action("terminal.swapPanePrompt"))).toEqual({
       state: SWAP,
       effect: { kind: "none" },
@@ -98,8 +98,8 @@ describe("reduceLeader - action", () => {
   });
 });
 
-describe("reduceLeader - swap의 두 번째 단계", () => {
-  it("pane_숫자는_swapWith를_내고_무장을_푼다", () => {
+describe("reduceLeader second step of swap", () => {
+  it("a pane number emits swapWith and disarms", () => {
     for (let pane = 1; pane <= 8; pane += 1) {
       expect(reduceLeader(SWAP, action(`focus.pane${pane}` as ShortcutActionId))).toEqual({
         state: IDLE_LEADER,
@@ -108,14 +108,14 @@ describe("reduceLeader - swap의 두 번째 단계", () => {
     }
   });
 
-  it("Escape와_Ctrl_C는_두_번째_단계를_취소한다", () => {
+  it("Escape and Ctrl+C cancel the second step", () => {
     expect(reduceLeader(SWAP, { kind: "cancel" })).toEqual({
       state: IDLE_LEADER,
       effect: { kind: "none" },
     });
   });
 
-  it("pane_숫자가_아닌_키는_아무_것도_하지_않고_무장을_푼다", () => {
+  it("a non-pane key does nothing and disarms", () => {
     // A swap request must not execute an unrelated command.
     for (const id of ["focus.list", "focus.content", "terminal.newPane"] as const) {
       expect(reduceLeader(SWAP, action(id))).toEqual({
@@ -127,7 +127,7 @@ describe("reduceLeader - swap의 두 번째 단계", () => {
   });
 });
 
-describe("무장 해제 뒤의 다음 키", () => {
+describe("next key after disarming", () => {
   function key(char: string) {
     return {
       type: "keydown",
@@ -139,7 +139,7 @@ describe("무장 해제 뒤의 다음 키", () => {
     };
   }
 
-  it("무장이_풀린_뒤의_터미널_키는_삼켜지지_않는다", () => {
+  it("a terminal key after disarming is not swallowed", () => {
     const disarmers: LeaderEvent[] = [
       { kind: "cancel" },
       { kind: "consumed" },
@@ -164,7 +164,7 @@ describe("무장 해제 뒤의 다음 키", () => {
     }
   });
 
-  it("swap을_끝낸_뒤의_터미널_키도_삼켜지지_않는다", () => {
+  it("a terminal key after completing a swap is not swallowed", () => {
     const { state } = reduceLeader(SWAP, action("focus.pane1"));
     const next = classifyShortcutKey(key("3"), {
       leader: DEFAULT_LEADER,

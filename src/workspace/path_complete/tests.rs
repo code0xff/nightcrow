@@ -200,13 +200,19 @@ fn completing_prefers_an_exact_case_match_over_a_case_insensitive_one() {
 
 #[test]
 fn completing_handles_multi_byte_names_on_a_char_boundary() {
-    let root = tree(&["한국어-프로젝트", "한국어-문서"], &[]);
+    let root = tree(
+        &[
+            "\u{d55c}\u{ad6d}\u{c5b4}-\u{d504}\u{b85c}\u{c81d}\u{d2b8}",
+            "\u{d55c}\u{ad6d}\u{c5b4}-\u{bb38}\u{c11c}",
+        ],
+        &[],
+    );
 
-    let c = complete_dir_path(&buf_in(root.path(), "한"));
+    let c = complete_dir_path(&buf_in(root.path(), "\u{d55c}"));
 
     assert_eq!(
         c.buf,
-        buf_in(root.path(), "한국어-"),
+        buf_in(root.path(), "\u{d55c}\u{ad6d}\u{c5b4}-"),
         "the shared prefix must stop on a char boundary, not a byte one"
     );
 }

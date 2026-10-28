@@ -141,7 +141,7 @@ fn cancelling_discards_the_edit_and_reopening_starts_from_the_repo_path() {
 }
 
 #[test]
-fn 프로젝트가_없으면_다이얼로그가_빈_상태로_열린다() {
+fn dialog_opens_empty_when_there_are_no_projects() {
     let mut ws = Workspace::new(test_leader());
 
     ws.start_repo_input();
@@ -151,7 +151,7 @@ fn 프로젝트가_없으면_다이얼로그가_빈_상태로_열린다() {
 }
 
 #[test]
-fn 프로젝트를_열면_빈_화면_공지가_사라진다() {
+fn opening_a_project_hides_the_empty_screen_notice() {
     // Otherwise a stale rejection would reappear the moment the last tab
     // was closed again, long after it stopped being true.
     let mut ws = Workspace::new(test_leader());
@@ -165,7 +165,7 @@ fn 프로젝트를_열면_빈_화면_공지가_사라진다() {
 }
 
 #[test]
-fn 프로젝트가_없으면_공지가_workspace에_남는다() {
+fn notice_stays_in_the_workspace_when_there_are_no_projects() {
     let mut ws = Workspace::new(test_leader());
 
     ws.raise_notice(NoticeKind::RepoInput, "no such directory");
@@ -179,7 +179,7 @@ fn 프로젝트가_없으면_공지가_workspace에_남는다() {
 }
 
 #[test]
-fn 새_workspace는_프로젝트_하나를_활성으로_갖는다() {
+fn a_new_workspace_has_one_active_project() {
     let ws = workspace_from(app_with_files(vec!["a.rs"]));
 
     assert_eq!(ws.projects().len(), 1);

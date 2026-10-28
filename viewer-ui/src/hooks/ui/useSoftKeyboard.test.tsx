@@ -51,7 +51,7 @@ function Probe({
 }
 
 describe("useSoftKeyboardOpen", () => {
-  it("뷰포트가_키보드_높이만큼_줄면_열림으로_바뀌고_돌아오면_닫힌다", () => {
+  it("opens when the viewport shrinks by the keyboard height and closes when it returns", () => {
     const fake = fakeWindow(800, 800);
     const seen: boolean[] = [];
     render(<Probe viewportWindow={fake.viewportWindow} seen={seen} />);
@@ -64,7 +64,7 @@ describe("useSoftKeyboardOpen", () => {
     expect(seen.at(-1)).toBe(false);
   });
 
-  it("언마운트하면_구독을_거둔다", () => {
+  it("removes the subscription on unmount", () => {
     const fake = fakeWindow(800, 800);
     const view = render(
       <Probe viewportWindow={fake.viewportWindow} seen={[]} />,

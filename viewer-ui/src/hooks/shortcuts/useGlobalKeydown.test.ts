@@ -30,7 +30,7 @@ afterEach(() => {
 });
 
 describe("useGlobalKeydown", () => {
-  it("document의_keydown마다_핸들러가_불린다", () => {
+  it("calls the handler for each document keydown", () => {
     const handler = vi.fn(() => false);
     renderHook(() => useGlobalKeydown(handler));
 
@@ -39,7 +39,7 @@ describe("useGlobalKeydown", () => {
     expect(handler).toHaveBeenCalledTimes(1);
   });
 
-  it("true를_반환하면_자식_리스너까지_막고_기본_동작도_막는다", () => {
+  it("returning true stops child listeners and prevents the default action", () => {
     const { el, seen } = child();
     renderHook(() => useGlobalKeydown(() => true));
 
@@ -49,7 +49,7 @@ describe("useGlobalKeydown", () => {
     expect(event.defaultPrevented).toBe(true);
   });
 
-  it("false를_반환하면_이벤트를_건드리지_않는다", () => {
+  it("returning false leaves the event untouched", () => {
     const { el, seen } = child();
     renderHook(() => useGlobalKeydown(() => false));
 
@@ -59,7 +59,7 @@ describe("useGlobalKeydown", () => {
     expect(event.defaultPrevented).toBe(false);
   });
 
-  it("언마운트하면_리스너가_사라진다", () => {
+  it("removes the listener on unmount", () => {
     const handler = vi.fn(() => false);
     const { unmount } = renderHook(() => useGlobalKeydown(handler));
 
@@ -69,7 +69,7 @@ describe("useGlobalKeydown", () => {
     expect(handler).not.toHaveBeenCalled();
   });
 
-  it("enabled가_false면_아무것도_등록하지_않는다", () => {
+  it("registers nothing when enabled is false", () => {
     const handler = vi.fn(() => true);
     const { el, seen } = child();
     renderHook(() => useGlobalKeydown(handler, false));
@@ -81,7 +81,7 @@ describe("useGlobalKeydown", () => {
     expect(event.defaultPrevented).toBe(false);
   });
 
-  it("enabled가_false로_바뀌면_리스너를_뗀다", () => {
+  it("removes the listener when enabled changes to false", () => {
     const handler = vi.fn(() => false);
     const { rerender } = renderHook(
       ({ on }: { on: boolean }) => useGlobalKeydown(handler, on),
@@ -94,7 +94,7 @@ describe("useGlobalKeydown", () => {
     expect(handler).not.toHaveBeenCalled();
   });
 
-  it("핸들러가_바뀌어도_다시_구독하지_않고_최신_것이_불린다", () => {
+  it("does not resubscribe when the handler changes and calls the latest handler", () => {
     const first = vi.fn(() => false);
     const second = vi.fn(() => false);
     const add = vi.spyOn(document, "addEventListener");

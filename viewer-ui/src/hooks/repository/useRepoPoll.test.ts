@@ -117,7 +117,7 @@ describe("useRepoPoll active-repo writes", () => {
     vi.useRealTimers();
     vi.clearAllMocks();
   });
-  it("첫_폴이_연_프로젝트는_되쓰지_않는다", async () => {
+  it("does not write back the project selected by the initial poll", async () => {
     repos.mockResolvedValue(bootstrap("r2"));
     const { result } = mount();
     await flush();
@@ -125,7 +125,7 @@ describe("useRepoPoll active-repo writes", () => {
     expect(setActiveRepo).not.toHaveBeenCalled();
   });
 
-  it("기억이_없어_첫_탭으로_떨어지면_그_폴백은_기록한다", async () => {
+  it("records the fallback to the first tab when no view is remembered", async () => {
     // The server names nothing, so this page landing on the first tab is its
     // own doing — recorded, so the session describes a project some client is
     // actually in.
@@ -136,7 +136,7 @@ describe("useRepoPoll active-repo writes", () => {
     expect(written()).toEqual(["r1"]);
   });
 
-  it("이_페이지에서_고른_전환은_서버에_쓴다", async () => {
+  it("writes a switch selected on this page to the server", async () => {
     repos.mockResolvedValue(bootstrap("r2"));
     const { result } = mount();
     await flush();
@@ -145,7 +145,7 @@ describe("useRepoPoll active-repo writes", () => {
     expect(written()).toEqual(["r1"]);
   });
 
-  it("다른_클라이언트의_전환은_따라가되_받아쓰지_않는다", async () => {
+  it("follows a switch from another client without writing it back", async () => {
     repos.mockResolvedValue(bootstrap("r2"));
     const { result } = mount();
     await flush();
@@ -157,7 +157,7 @@ describe("useRepoPoll active-repo writes", () => {
     expect(setActiveRepo).not.toHaveBeenCalled();
   });
 
-  it("따라간_직후의_직접_전환은_그대로_쓴다", async () => {
+  it("writes a direct switch made immediately after following another client", async () => {
     repos.mockResolvedValue(bootstrap("r2"));
     const { result } = mount();
     await flush();
@@ -171,7 +171,7 @@ describe("useRepoPoll active-repo writes", () => {
     expect(written()).toEqual(["r2"]);
   });
 
-  it("선택이_비워진_뒤의_폴백은_옛_채택_마크에_먹히지_않는다", async () => {
+  it("a fallback after clearing the selection is not suppressed by an old adoption marker", async () => {
     // Adopt r1, then lose the selection (every tab closed locally). A later
     // reopen with nothing remembered falls back to the first tab — which is
     // r1 again, and must be recorded despite the adoption that once named it.
@@ -187,7 +187,7 @@ describe("useRepoPoll active-repo writes", () => {
     expect(written()).toEqual(["r1"]);
   });
 
-  it("따라갔던_프로젝트로_직접_돌아온_전환도_쓴다", async () => {
+  it("writes a direct switch back to a project previously followed", async () => {
     // The A→B→A shape that sank plain "skip when it matches the server":
     // r1 was once followed, but coming back to it by hand is still a choice
     // and must land on the server.
@@ -215,7 +215,7 @@ describe("useRepoPoll snapshot identity", () => {
     vi.clearAllMocks();
   });
 
-  it("동일한_bootstrap_10회는_repos와_hot_identity와_render를_유지한다", async () => {
+  it("ten identical bootstraps preserve repos, hot identity, and render", async () => {
     repos.mockImplementation(async () => bootstrap("r2"));
     let renders = 0;
     let profileCommits = 0;
@@ -249,7 +249,7 @@ describe("useRepoPoll snapshot identity", () => {
     expect(profileCommits).toBe(settledCommits);
   });
 
-  it("hot이나_membership의_실제_변경은_해당_identity만_교체한다", async () => {
+  it("a real hot or membership change replaces only that identity", async () => {
     repos.mockResolvedValue(bootstrap("r2"));
     const { result } = mount();
     await flush();
@@ -275,7 +275,7 @@ describe("useRepoPoll snapshot identity", () => {
     expect(result.current.hot).toBe(hotAfterChange);
   });
 
-  it("drag_중에는_로컬_순서를_지키면서_membership만_받는다", async () => {
+  it("during a drag, accepts membership updates while preserving local order", async () => {
     const stable = args();
     stable.repoDraggingRef.current = true;
     repos.mockResolvedValue(bootstrap("r2"));
