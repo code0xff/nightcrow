@@ -9,32 +9,32 @@ import { DEFAULT_LEADER, parseChord } from "./leaderChord";
 import { SHORTCUT_ACTIONS } from "./shortcutActions";
 
 describe("shortcutKeys", () => {
-  it("leader_액션은_리더_코드와_후속_키_두_단계다", () => {
+  it("leader actions have a leader code and follow-up key in two steps", () => {
     expect(shortcutKeys("terminal.newPane", DEFAULT_LEADER)).toEqual([
       "Ctrl+F",
       "t",
     ]);
   });
 
-  it("chord_액션은_리더와_무관하게_그_코드_하나다", () => {
+  it("chord actions use one code regardless of the leader", () => {
     expect(shortcutKeys("project.next", null)).toEqual(["Ctrl+Shift+ArrowRight"]);
   });
 
-  it("리더를_끄면_leader_액션에는_키가_없다", () => {
+  it("leader actions have no key when the leader is disabled", () => {
     // Advertising a missing key would document a no-op.
     expect(shortcutKeys("terminal.newPane", null)).toBeNull();
     expect(shortcutHintText("terminal.newPane", null)).toBeNull();
     expect(ariaKeyShortcuts("terminal.newPane", null)).toBeNull();
   });
 
-  it("리더를_바꾸면_모든_leader_액션의_키가_따라온다", () => {
+  it("changing the leader updates keys for every leader action", () => {
     const rebound = parseChord("Alt+Space");
     expect(shortcutKeys("view.toggleLog", rebound)).toEqual(["Alt+Space", "l"]);
   });
 });
 
 describe("ariaKeyShortcuts", () => {
-  it("leader_시퀀스는_속성을_받지_않는다", () => {
+  it("leader sequences have no aria attribute", () => {
     // ARIA spaces mean alternatives, so `Control+F T` falsely claims that bare
     // `T` runs the action.
     expect(ariaKeyShortcuts("terminal.newPane", DEFAULT_LEADER)).toBeNull();
@@ -45,7 +45,7 @@ describe("ariaKeyShortcuts", () => {
     );
   });
 
-  it("chord_액션만_속성을_받고_Ctrl은_W3C_이름인_Control로_나간다", () => {
+  it("only chord actions have the attribute, and Ctrl uses the W3C name Control", () => {
     expect(ariaKeyShortcuts("project.previous", DEFAULT_LEADER)).toBe(
       "Control+Shift+ArrowLeft",
     );
@@ -54,7 +54,7 @@ describe("ariaKeyShortcuts", () => {
     );
   });
 
-  it("값이_있는_액션은_chord로_묶인_액션과_정확히_일치한다", () => {
+  it("actions with a value exactly match actions bound to a chord", () => {
     for (const action of SHORTCUT_ACTIONS) {
       const value = ariaKeyShortcuts(action.id, DEFAULT_LEADER);
       if (!action.chord) {
@@ -68,13 +68,13 @@ describe("ariaKeyShortcuts", () => {
 });
 
 describe("shortcutHintText", () => {
-  it("사람이_읽는_형태는_두_단계를_then으로_잇는다", () => {
+  it("the human-readable form joins two steps with then", () => {
     expect(shortcutHintText("session.reloadConfig", DEFAULT_LEADER)).toBe(
       "Ctrl+F then u",
     );
   });
 
-  it("키가_없으면_title은_그대로다", () => {
+  it("title is unchanged when there is no key", () => {
     expect(titleWithShortcut("Reload", null)).toBe("Reload");
     expect(titleWithShortcut("Reload", "Ctrl+F then u")).toBe(
       "Reload (Ctrl+F then u)",

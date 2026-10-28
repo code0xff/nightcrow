@@ -85,7 +85,10 @@ fn only_carriage_return_newline_and_tab_are_accepted_as_control_characters() {
         ("line\n", true),
         ("line\r\n", true),
         ("col\tcol", true),
-        ("한글도 통과한다\n", true),
+        (
+            "\u{d55c}\u{ae00}\u{b3c4} \u{d1b5}\u{acfc}\u{d55c}\u{b2e4}\n",
+            true,
+        ),
         ("\u{1b}[2J", false),
         ("bell\u{7}", false),
         ("nul\u{0}", false),

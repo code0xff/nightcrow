@@ -51,8 +51,18 @@ fn search_finds_a_note_by_any_word_and_ranks_the_closer_one_first() {
 #[test]
 fn search_matches_a_word_with_an_ending_attached() {
     let (_dir, mut store) = open();
-    store.write_note("메모리를 공유한다", &[], "a", 1).unwrap();
-    assert_eq!(store.search("메모리", 10).unwrap().len(), 1);
+    store
+        .write_note(
+            "\u{ba54}\u{baa8}\u{b9ac}\u{b97c} \u{acf5}\u{c720}\u{d55c}\u{b2e4}",
+            &[],
+            "a",
+            1,
+        )
+        .unwrap();
+    assert_eq!(
+        store.search("\u{ba54}\u{baa8}\u{b9ac}", 10).unwrap().len(),
+        1
+    );
 }
 
 #[test]

@@ -4,7 +4,7 @@ use alacritty_terminal::term::cell::Hyperlink;
 #[test]
 fn snapshot_round_trip_preserves_linked_wide_cells_and_following_link_state() {
     let target = "https://example.test/roundtrip";
-    let input = format!("\x1b]8;;{target}\x1b\\가 \x1b]8;;\x1b\\");
+    let input = format!("\x1b]8;;{target}\x1b\\\u{ac00} \x1b]8;;\x1b\\");
     let mut origin = PaneEmulator::new(3, 30, 0);
     origin.process(input.as_bytes());
     let mut replayed = PaneEmulator::new(3, 30, 0);
@@ -27,7 +27,7 @@ fn snapshot_round_trip_preserves_linked_wide_cells_and_following_link_state() {
 #[test]
 fn snapshot_round_trip_preserves_a_linked_leading_wide_spacer() {
     let target = "https://example.test/wrapped";
-    let input = format!("abc\x1b]8;;{target}\x1b\\한\x1b]8;;\x1b\\");
+    let input = format!("abc\x1b]8;;{target}\x1b\\\u{d55c}\x1b]8;;\x1b\\");
     let mut origin = PaneEmulator::new(3, 4, 0);
     origin.process(input.as_bytes());
     let mut replayed = PaneEmulator::new(3, 4, 0);
@@ -42,7 +42,7 @@ fn snapshot_round_trip_preserves_a_linked_leading_wide_spacer() {
 #[test]
 fn snapshot_restores_the_cursor_hyperlink_for_following_output() {
     let target = "https://example.test/active";
-    let input = format!("\x1b]8;;{target}\x1b\\가 ");
+    let input = format!("\x1b]8;;{target}\x1b\\\u{ac00} ");
     let mut origin = PaneEmulator::new(3, 30, 0);
     origin.process(input.as_bytes());
     let mut replayed = PaneEmulator::new(3, 30, 0);

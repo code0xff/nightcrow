@@ -7,7 +7,7 @@ import { SkeletonRows } from "./Skeleton";
 afterEach(cleanup);
 
 describe("SkeletonRows", () => {
-  it("요청한_수만큼_보조기술에서_숨긴_행을_그린다", () => {
+  it("renders the requested number of rows hidden from assistive technology", () => {
     const { container } = render(
       <ul>
         <SkeletonRows as="li" rows={4} />

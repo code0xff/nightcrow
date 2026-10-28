@@ -189,7 +189,7 @@ mod tests {
 
     #[test]
     fn truncate_title_handles_multibyte_text() {
-        let title = " abc1234 한글 커밋 메시지 제목이 꽤 길어서 잘려야 합니다 ";
+        let title = " abc1234 \u{d55c}\u{ae00} \u{cee4}\u{bc0b} \u{ba54}\u{c2dc}\u{c9c0} \u{c81c}\u{baa9}\u{c774} \u{af64} \u{ae38}\u{c5b4}\u{c11c} \u{c798}\u{b824}\u{c57c} \u{d569}\u{b2c8}\u{b2e4} ";
 
         let truncated = truncate_title(title, 30);
 

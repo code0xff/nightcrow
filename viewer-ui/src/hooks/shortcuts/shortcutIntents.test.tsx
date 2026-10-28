@@ -39,8 +39,8 @@ function register(
   return () => act(() => off());
 }
 
-describe("shortcutIntents 인텐트 버스", () => {
-  it("등록한_핸들러를_id로_실행한다", () => {
+describe("shortcutIntents intent bus", () => {
+  it("runs the registered handler by id", () => {
     const intents = bus();
     const newPane = vi.fn();
     register(intents, { "terminal.newPane": newPane });
@@ -49,14 +49,14 @@ describe("shortcutIntents 인텐트 버스", () => {
     expect(newPane).toHaveBeenCalledTimes(1);
   });
 
-  it("아무도_등록하지_않은_명령은_돌지_않는다고_말한다", () => {
+  it("reports that a command with no handler did not run", () => {
     const intents = bus();
 
     expect(intents.runAction("terminal.newPane")).toBe(false);
     expect(intents.isAvailable("terminal.newPane")).toBe(false);
   });
 
-  it("나중_등록이_같은_id를_가져간다", () => {
+  it("the later registration takes over the same id", () => {
     const intents = bus();
     const first = vi.fn();
     const second = vi.fn();
@@ -69,7 +69,7 @@ describe("shortcutIntents 인텐트 버스", () => {
     expect(second).toHaveBeenCalledTimes(1);
   });
 
-  it("해제는_가려졌던_핸들러를_되살리지_않는다", () => {
+  it("unregistering does not restore a shadowed handler", () => {
     // There is one terminal panel: a shadowed handler is a mistake, not a stack
     // to pop back to.
     const intents = bus();
@@ -83,7 +83,7 @@ describe("shortcutIntents 인텐트 버스", () => {
     expect(first).not.toHaveBeenCalled();
   });
 
-  it("해제는_남이_대체한_핸들러를_지우지_않는다", () => {
+  it("unregistering does not remove a handler that replaced yours", () => {
     const intents = bus();
     const off = register(intents, { "terminal.newPane": vi.fn() });
     const later = vi.fn();
@@ -95,7 +95,7 @@ describe("shortcutIntents 인텐트 버스", () => {
     expect(later).toHaveBeenCalledTimes(1);
   });
 
-  it("터미널이_주는_보조_경로는_등록_여부를_그대로_보고한다", () => {
+  it("the terminal fallback reports whether an intent is registered", () => {
     const intents = bus();
 
     expect(intents.swapPanes(2)).toBe(false);
@@ -117,7 +117,7 @@ describe("shortcutIntents 인텐트 버스", () => {
     expect(zoomActivePane).toHaveBeenCalledTimes(1);
   });
 
-  it("해제를_보고받은_구독자만_불린다", () => {
+  it("only subscribers notified of unregistration are called", () => {
     const intents = bus();
     const listener = vi.fn();
     const off = intents.onDisarm(listener);
@@ -129,7 +129,7 @@ describe("shortcutIntents 인텐트 버스", () => {
     expect(listener).toHaveBeenCalledTimes(1);
   });
 
-  it("가용성을_읽는_컴포넌트는_등록에_맞춰_다시_그려진다", () => {
+  it("components that read availability rerender when registrations change", () => {
     // What the help sheet depends on: the bus keeps one identity so a
     // registration cannot re-trigger the effect that made it, and availability
     // travels on its own so the sheet still sees the change.
@@ -155,7 +155,7 @@ describe("shortcutIntents 인텐트 버스", () => {
     expect(screen.getByText("off")).toBeTruthy();
   });
 
-  it("프로바이더_밖에서는_버스가_없다고_말한다", () => {
+  it("reports no bus outside the provider", () => {
     const held: { current: ShortcutIntents | null } = { current: null };
     function Probe() {
       held.current = useShortcutIntents();

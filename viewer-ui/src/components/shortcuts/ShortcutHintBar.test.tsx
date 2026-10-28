@@ -34,7 +34,7 @@ function mount(state: LeaderState, leader: ChordSpec | null = DEFAULT_LEADER) {
 }
 
 describe("ShortcutHintBar", () => {
-  it("리더_키와_등록된_명령만_한_줄로_적는다", () => {
+  it("shows the leader key and registered commands on one row", () => {
     const { bar } = mount(IDLE_LEADER);
 
     expect(bar.textContent).toContain("Ctrl+F: leader");
@@ -44,7 +44,7 @@ describe("ShortcutHintBar", () => {
     expect(bar.querySelector("[data-hint-chip]")).toBeNull();
   });
 
-  it("리더가_눌린_상태에서는_PREFIX_칩이_켜진다", () => {
+  it("the PREFIX chip is active while the leader is pressed", () => {
     const { bar } = mount({ armed: true, swapPending: false });
 
     expect(bar.querySelector("[data-hint-chip]")?.textContent).toBe("PREFIX");
@@ -52,7 +52,7 @@ describe("ShortcutHintBar", () => {
     expect(bar.textContent).toContain("esc: cancel");
   });
 
-  it("세그먼트를_누르면_클릭을_그대로_보고하고_키보드는_가져가지_않는다", () => {
+  it("clicking a segment reports the click and does not take keyboard focus", () => {
     const { bar, onClick } = mount(IDLE_LEADER);
     const newPane = bar.querySelector<HTMLButtonElement>(
       '[data-hint-action="terminal.newPane"]',
@@ -69,7 +69,7 @@ describe("ShortcutHintBar", () => {
     expect(onClick).toHaveBeenLastCalledWith({ kind: "arm" });
   });
 
-  it("리더가_꺼져_있으면_그렇다고_적고_시트로_보낸다", () => {
+  it("when the leader is disabled, says so and links to the sheet", () => {
     const { bar, onClick } = mount(IDLE_LEADER, null);
 
     expect(bar.textContent).toContain("leader: switched off");

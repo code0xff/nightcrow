@@ -39,7 +39,7 @@ function mount(leader: ChordSpec | null) {
 }
 
 describe("useShortcutHint", () => {
-  it("leader_시퀀스는_title로만_말하고_aria_속성은_두지_않는다", () => {
+  it("leader sequences use title only and set no aria attribute", () => {
     // ARIA has no two-step notation; a space-separated value would falsely
     // claim that the follow-up key runs the action by itself.
     const { button } = mount(DEFAULT_LEADER);
@@ -48,7 +48,7 @@ describe("useShortcutHint", () => {
     expect(button.hasAttribute("aria-keyshortcuts")).toBe(false);
   });
 
-  it("standalone_chord는_W3C_형태로_속성을_받는다", () => {
+  it("standalone chords use the W3C attribute format", () => {
     const { chordButton } = mount(DEFAULT_LEADER);
 
     expect(chordButton.getAttribute("aria-keyshortcuts")).toBe(
@@ -59,7 +59,7 @@ describe("useShortcutHint", () => {
     );
   });
 
-  it("리더를_바꾸면_같은_컨트롤이_새_키를_말한다", () => {
+  it("changing the leader makes the same control expose the new key", () => {
     // Deriving the value avoids stale bindings when the leader is rebound.
     const { button, chordButton, rerender } = mount(DEFAULT_LEADER);
 
@@ -72,14 +72,14 @@ describe("useShortcutHint", () => {
     );
   });
 
-  it("리더가_꺼져_있으면_키를_주장하지_않는다", () => {
+  it("does not claim a key when the leader is disabled", () => {
     const { button } = mount(null);
 
     expect(button.getAttribute("title")).toBe("New terminal");
     expect(button.hasAttribute("aria-keyshortcuts")).toBe(false);
   });
 
-  it("provider_밖에서는_leader_키_없이_렌더된다", () => {
+  it("renders without a leader key outside the provider", () => {
     // Isolated component tests should not require this context.
     render(<Probe />);
 
@@ -88,7 +88,7 @@ describe("useShortcutHint", () => {
     expect(button.getAttribute("title")).toBe("New terminal");
   });
 
-  it("빈_aria_keyshortcuts를_렌더하지_않는다", () => {
+  it("does not render an empty aria-keyshortcuts attribute", () => {
     // An empty `aria-keyshortcuts` value is invalid even when the type allows it.
     mount(DEFAULT_LEADER);
 

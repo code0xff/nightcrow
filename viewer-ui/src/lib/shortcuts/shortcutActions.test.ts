@@ -10,31 +10,31 @@ import {
 import { formatChord, parseChord } from "./leaderChord";
 
 describe("SHORTCUT_ACTIONS", () => {
-  it("모든_액션_id는_유일하다", () => {
+  it("all action ids are unique", () => {
     const ids = SHORTCUT_ACTIONS.map((action) => action.id);
     expect(new Set(ids).size).toBe(ids.length);
   });
 
-  it("leader_키는_한_액션에만_쓰인다", () => {
+  it("each leader key is used by only one action", () => {
     const leaders = SHORTCUT_ACTIONS.flatMap((a) => (a.leader ? [a.leader] : []));
     expect(new Set(leaders).size).toBe(leaders.length);
   });
 
-  it("leader_키는_소문자_한_글자나_숫자나_물음표다", () => {
+  it("a leader key is one lowercase letter, digit, or question mark", () => {
     for (const action of SHORTCUT_ACTIONS) {
       if (!action.leader) continue;
       expect(action.leader).toMatch(/^[a-z0-9?]$/);
     }
   });
 
-  it("모든_액션은_leader나_chord_중_하나만_가진다", () => {
+  it("each action has either a leader or a chord", () => {
     for (const action of SHORTCUT_ACTIONS) {
       const bound = [action.leader, action.chord].filter(Boolean);
       expect(bound).toHaveLength(1);
     }
   });
 
-  it("chord는_정규_표시형과_왕복한다", () => {
+  it("chords round-trip through canonical display form", () => {
     const chords = SHORTCUT_ACTIONS.flatMap((a) => (a.chord ? [a.chord] : []));
     expect(chords).toEqual([
       "Ctrl+Shift+ArrowLeft",
@@ -49,7 +49,7 @@ describe("SHORTCUT_ACTIONS", () => {
     }
   });
 
-  it("keyboardOnly는_두_번째_단계를_무장하는_액션에만_붙는다", () => {
+  it("keyboardOnly is set only on actions that arm a second step", () => {
     // Derived from the registry rather than listed by hand, so a new action
     // cannot be added with the flag — or without it — unnoticed. Arming a second
     // step is the only reason it may be set: see the field's doc comment.
@@ -67,7 +67,7 @@ describe("SHORTCUT_ACTIONS", () => {
     }
   });
 
-  it("fullscreen만_reinterpreted다", () => {
+  it("only fullscreen is reinterpreted", () => {
     // The browser has no TUI fullscreen equivalent, so only the intent carries over.
     const reinterpreted = SHORTCUT_ACTIONS.filter(
       (a) => a.support === "reinterpreted",
@@ -76,7 +76,7 @@ describe("SHORTCUT_ACTIONS", () => {
     expect(actionById("view.toggleMaximize").note).toContain("F11");
   });
 
-  it("TUI_문서의_leader_문자를_그대로_따른다", () => {
+  it("uses the leader characters from the TUI documentation unchanged", () => {
     // `docs/keybindings.md` is the source of truth for both implementations.
     const expected: Record<string, ShortcutActionId> = {
       t: "terminal.newPane",
@@ -100,7 +100,7 @@ describe("SHORTCUT_ACTIONS", () => {
     }
   });
 
-  it("브라우저_전용은_메시지_작성뿐이고_TUI_leader_문자를_쓰지_않는다", () => {
+  it("browser-only actions are limited to composing messages and do not use TUI leader keys", () => {
     const browserOnly = SHORTCUT_ACTIONS.filter((a) => a.support === "browserOnly");
     expect(browserOnly.map((a) => a.id)).toEqual(["terminal.composeMessage"]);
     // Keys the TUI binds (`docs/keybindings.md`), including the ones the web
@@ -111,7 +111,7 @@ describe("SHORTCUT_ACTIONS", () => {
     }
   });
 
-  it("TUI의_Shift_화살표는_같은_키로_포커스를_순환한다", () => {
+  it("TUI Shift+Arrow keys use the same keys for focus cycling", () => {
     // `src/input/routing.rs` binds Shift-only Left/Right to the focus ring; a
     // browser leaves Shift+Arrow to the page, so the web keeps the keys.
     const byChord = new Map(SHORTCUT_ACTIONS.map((a) => [a.chord, a.id]));
@@ -119,7 +119,7 @@ describe("SHORTCUT_ACTIONS", () => {
     expect(byChord.get("Shift+ArrowRight")).toBe("focus.next");
   });
 
-  it("숫자_3부터_9와_0은_pane_1부터_8을_가리킨다", () => {
+  it("digits 3 through 9 and 0 target panes 1 through 8", () => {
     const digits = ["3", "4", "5", "6", "7", "8", "9", "0"];
     digits.forEach((digit, index) => {
       const action = actionByLeader(digit);
@@ -130,21 +130,21 @@ describe("SHORTCUT_ACTIONS", () => {
 });
 
 describe("actionByLeader", () => {
-  it("대문자_follow_up도_같은_액션을_찾는다", () => {
+  it("an uppercase follow-up finds the same action", () => {
     expect(actionByLeader("T")?.id).toBe("terminal.newPane");
   });
 
-  it("매핑되지_않은_키는_null이다", () => {
+  it("an unmapped key is null", () => {
     expect(actionByLeader("j")).toBeNull();
     expect(actionByLeader("")).toBeNull();
     expect(actionByLeader("ArrowLeft")).toBeNull();
   });
 
-  it("기존_z_바인딩도_크기_회수로_유지한다", () => {
+  it("keeps the existing z binding as an escape hatch", () => {
     expect(actionByLeader("z")?.id).toBe("terminal.claimSizing");
   });
 
-  it("web에서_버린_TUI_키는_매핑되지_않는다", () => {
+  it("TUI keys omitted on the web are not mapped", () => {
     for (const unsupported of UNSUPPORTED_TUI_ACTIONS) {
       if (unsupported.leader.length !== 1) continue;
       expect(actionByLeader(unsupported.leader)).toBeNull();
@@ -153,7 +153,7 @@ describe("actionByLeader", () => {
 });
 
 describe("UNSUPPORTED_TUI_ACTIONS", () => {
-  it("redraw_detach_F키를_이유와_함께_기록한다", () => {
+  it("records redraw, detach, and F keys with their reasons", () => {
     const leaders = UNSUPPORTED_TUI_ACTIONS.map((a) => a.leader);
     expect(leaders).toEqual(["q", "F1-F10"]);
     for (const action of UNSUPPORTED_TUI_ACTIONS) {
@@ -163,18 +163,18 @@ describe("UNSUPPORTED_TUI_ACTIONS", () => {
 });
 
 describe("actionById", () => {
-  it("등록된_id는_같은_객체를_돌려준다", () => {
+  it("a registered id returns the same object", () => {
     expect(actionById("terminal.newPane").leader).toBe("t");
   });
 
-  it("표에_없는_id는_던진다", () => {
+  it("throws for an id that is not in the table", () => {
     // A union/table mismatch is a build error, not a case for a silent default.
     expect(() => actionById("nope" as ShortcutActionId)).toThrow(/nope/);
   });
 });
 
 describe("focusPaneNumber", () => {
-  it("pane_액션이_아니면_null이다", () => {
+  it("returns null for a non-pane action", () => {
     expect(focusPaneNumber("focus.list")).toBeNull();
     expect(focusPaneNumber("terminal.newPane")).toBeNull();
   });

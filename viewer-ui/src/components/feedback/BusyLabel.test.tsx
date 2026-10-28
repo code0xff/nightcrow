@@ -7,7 +7,7 @@ import { BusyLabel } from "./BusyLabel";
 afterEach(cleanup);
 
 describe("BusyLabel", () => {
-  it("작업중에도_글자는_그대로이고_점만_보인다", () => {
+  it("keeps the label text unchanged and shows only dots while busy", () => {
     const { container, rerender } = render(<BusyLabel busy={false}>Clone</BusyLabel>);
     const dot = () => container.querySelector("[data-busy]") as HTMLElement | null;
     expect(container.textContent).toBe("Clone");

@@ -151,13 +151,13 @@ describe("softKeyboardInset", () => {
     removeEventListener() {},
   });
 
-  it("키보드가_레이아웃_뷰포트를_가린_만큼을_돌려준다", () => {
+  it("returns how much the keyboard covers the layout viewport", () => {
     expect(
       softKeyboardInset(withViewport(800, { height: 500, offsetTop: 0 })),
     ).toBe(300);
   });
 
-  it("문턱_아래의_차이는_키보드가_아니다", () => {
+  it("a difference below the threshold is not a keyboard", () => {
     // A collapsing URL bar moves both viewports together; any remaining small
     // gap is not treated as a keyboard.
     expect(
@@ -172,13 +172,13 @@ describe("softKeyboardInset", () => {
     ).toBe(SOFT_KEYBOARD_MIN_PX);
   });
 
-  it("패닝된_뷰포트의_offset은_가려진_높이에_들어가지_않는다", () => {
+  it("the offset of a panned viewport is not part of the obscured height", () => {
     expect(
       softKeyboardInset(withViewport(800, { height: 500, offsetTop: 100 })),
     ).toBe(200);
   });
 
-  it("visualViewport가_없으면_0이다", () => {
+  it("returns zero when visualViewport is unavailable", () => {
     expect(softKeyboardInset(withViewport(800, null))).toBe(0);
     expect(
       softKeyboardInset(withViewport(Number.NaN, { height: 500, offsetTop: 0 })),

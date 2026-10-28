@@ -180,7 +180,7 @@ fn notice_row_falls_back_to_repo_identity() {
 /// A notice raised on a project with a repo path shows both the path and the
 /// notice text on the same line.
 #[test]
-fn 공지가_뜨면_저장소_경로도_함께_보인다() {
+fn a_notice_also_shows_the_repository_path() {
     let mut app = app_with_files(vec![]);
     app.git.repo_path = "/tmp/my-project".to_string();
     app.raise_notice(NoticeKind::Git, "not a git repository");
@@ -199,7 +199,7 @@ fn 공지가_뜨면_저장소_경로도_함께_보인다() {
 /// When the terminal is too narrow to fit both path and notice, the path is
 /// kept and the notice is truncated with `…`.
 #[test]
-fn 좁은_너비에서는_경로가_남고_공지가_잘린다() {
+fn a_narrow_width_keeps_the_path_and_truncates_the_notice() {
     let mut app = app_with_files(vec![]);
     app.git.repo_path = "/tmp/p".to_string();
     app.raise_notice(NoticeKind::Git, "not a git repository");
@@ -232,7 +232,7 @@ fn 좁은_너비에서는_경로가_남고_공지가_잘린다() {
 /// Even with only one column left over, the notice is not dropped silently:
 /// the ellipsis alone says something was cut.
 #[test]
-fn 공지_자리가_한_칸뿐이어도_잘렸다는_표시는_남는다() {
+fn the_truncation_marker_remains_when_only_one_notice_cell_is_available() {
     let mut app = app_with_files(vec![]);
     app.git.repo_path = "/tmp/p".to_string();
     app.raise_notice(NoticeKind::Git, "not a git repository");
@@ -266,7 +266,7 @@ fn 공지_자리가_한_칸뿐이어도_잘렸다는_표시는_남는다() {
 /// The open dialog replaces the repo header entirely: the header names the
 /// repo being left, the input names the one being opened.
 #[test]
-fn 다이얼로그가_열리면_입력이_저장소_헤더를_대체한다() {
+fn dialog_input_replaces_the_repository_header() {
     let mut app = app_with_files(vec![]);
     app.git.repo_path = "/tmp/somewhere".to_string();
 
@@ -285,7 +285,7 @@ fn 다이얼로그가_열리면_입력이_저장소_헤더를_대체한다() {
 
 /// No notice and no candidates shows the repo header (no regression).
 #[test]
-fn 공지도_후보도_없으면_저장소_헤더가_보인다() {
+fn the_repository_header_shows_when_there_is_no_notice_or_candidate() {
     let mut app = app_with_files(vec![]);
     app.git.repo_path = "/tmp/somewhere".to_string();
     let text = notice_text(&app);

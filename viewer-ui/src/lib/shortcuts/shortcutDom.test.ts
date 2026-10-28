@@ -29,8 +29,8 @@ function suppressed(target: EventTarget | null): boolean {
   });
 }
 
-describe("describeShortcutTarget 키가 떨어진 곳", () => {
-  it("터미널_패널_안은_타이핑이_아니다", () => {
+describe("describeShortcutTarget key target", () => {
+  it("inside the terminal panel is not typing", () => {
     // xterm's input surface is a `<textarea>`, which the text-field rule matches
     // by tag alone. Inside the panel the page owns the keyboard.
     const panel = el("div", { "data-terminal-panel": "" });
@@ -40,11 +40,11 @@ describe("describeShortcutTarget 키가 떨어진 곳", () => {
     expect(suppressed(xterm)).toBe(false);
   });
 
-  it("패널_밖의_textarea는_타이핑이다", () => {
+  it("a textarea outside the panel is typing", () => {
     expect(suppressed(el("textarea"))).toBe(true);
   });
 
-  it("입력_타입을_그대로_전달한다", () => {
+  it("passes through the input type unchanged", () => {
     expect(describeShortcutTarget(el("input", { type: "CHECKBOX" }))?.type).toBe(
       "checkbox",
     );
@@ -52,7 +52,7 @@ describe("describeShortcutTarget 키가 떨어진 곳", () => {
     expect(suppressed(el("input", { type: "password" }))).toBe(true);
   });
 
-  it("편집_가능한_조상을_읽는다", () => {
+  it("reads the editable ancestor", () => {
     const host = el("div", { contenteditable: "true" });
     const inner = host.appendChild(document.createElement("span"));
 
@@ -60,20 +60,20 @@ describe("describeShortcutTarget 키가 떨어진 곳", () => {
     expect(suppressed(inner)).toBe(true);
   });
 
-  it("contenteditable_false는_편집이_아니다", () => {
+  it("contenteditable=false is not editable", () => {
     const node = el("div", { contenteditable: "false" });
 
     expect(describeShortcutTarget(node)?.isContentEditable).toBe(false);
     expect(suppressed(node)).toBe(false);
   });
 
-  it("역할로_선언한_텍스트_위젯도_타이핑이다", () => {
+  it("a text widget declared by role is also typing", () => {
     for (const role of ["textbox", "searchbox", "combobox"]) {
       expect(suppressed(el("div", { role })), role).toBe(true);
     }
   });
 
-  it("열린_다이얼로그_안은_다이얼로그의_것이다", () => {
+  it("inside an open dialog belongs to the dialog", () => {
     const shells: Record<string, string>[] = [
       { role: "dialog" },
       { "aria-modal": "true" },
@@ -89,7 +89,7 @@ describe("describeShortcutTarget 키가 떨어진 곳", () => {
     }
   });
 
-  it("엘리먼트가_아닌_대상은_아무것도_주장하지_않는다", () => {
+  it("a non-element target claims nothing", () => {
     expect(describeShortcutTarget(null)).toBeNull();
     expect(isTextEntryTarget(describeShortcutTarget(new EventTarget()))).toBe(
       false,
@@ -97,8 +97,8 @@ describe("describeShortcutTarget 키가 떨어진 곳", () => {
   });
 });
 
-describe("focusShortcutRegion 영역으로 키보드 옮기기", () => {
-  it("표시된_영역으로_포커스를_옮긴다", () => {
+describe("focusShortcutRegion moves the keyboard to a region", () => {
+  it("moves focus to the visible region", () => {
     const list = el("section");
     const attrs = focusRegionAttrs("list");
     list.setAttribute("data-focus-region", attrs["data-focus-region"]);
@@ -108,11 +108,11 @@ describe("focusShortcutRegion 영역으로 키보드 옮기기", () => {
     expect(document.activeElement).toBe(list);
   });
 
-  it("영역이_없으면_아무것도_하지_않는다", () => {
+  it("does nothing when the region is missing", () => {
     expect(focusShortcutRegion("content")).toBe(false);
   });
 
-  it("터미널_패널에서는_키보드를_가져올_수_있다", () => {
+  it("can take the keyboard from the terminal panel", () => {
     // The whole point of the two focus commands: leave the pane for the list.
     const panel = el("div", { "data-terminal-panel": "" });
     const xterm = panel.appendChild(document.createElement("textarea"));
@@ -125,7 +125,7 @@ describe("focusShortcutRegion 영역으로 키보드 옮기기", () => {
     expect(terminalPanelHasFocus()).toBe(false);
   });
 
-  it("패널_밖의_캐럿에서는_키보드를_가져오지_않는다", () => {
+  it("does not take the keyboard from a caret outside the panel", () => {
     // A resize or a layout signal must never cost somebody the caret they are
     // typing in — the same rule `usePaneFocus` applies.
     const field = el("input", { type: "text" });
@@ -137,8 +137,8 @@ describe("focusShortcutRegion 영역으로 키보드 옮기기", () => {
   });
 });
 
-describe("keyboardRegion 키보드가 있는 영역", () => {
-  it("포커스_영역_안이면_그_영역이다", () => {
+describe("keyboardRegion containing the keyboard", () => {
+  it("returns the region containing focus", () => {
     const list = el("div", { "data-focus-region": "list", tabindex: "-1" });
     const inner = list.appendChild(document.createElement("button"));
     inner.focus();
@@ -146,7 +146,7 @@ describe("keyboardRegion 키보드가 있는 영역", () => {
     expect(keyboardRegion()).toBe("list");
   });
 
-  it("터미널_패널_안이면_terminal이다", () => {
+  it("returns terminal when focus is inside the terminal panel", () => {
     const panel = el("div", { "data-terminal-panel": "" });
     const xterm = panel.appendChild(document.createElement("textarea"));
     xterm.focus();
@@ -154,12 +154,12 @@ describe("keyboardRegion 키보드가 있는 영역", () => {
     expect(keyboardRegion()).toBe("terminal");
   });
 
-  it("어느_영역에도_없으면_null이다", () => {
+  it("returns null when focus is in no region", () => {
     el("button").focus();
     expect(keyboardRegion()).toBeNull();
   });
 
-  it("알_수_없는_영역_이름은_null이다", () => {
+  it("returns null for an unknown region name", () => {
     // A marker the ring does not know is not a spot on it.
     const odd = el("div", { "data-focus-region": "footer", tabindex: "-1" });
     odd.focus();

@@ -111,7 +111,7 @@ mod tests {
     }
 
     #[test]
-    fn not_found_레포지토리_에러에서_class_code_가_제거된다() {
+    fn not_found_repository_error_removes_class_and_code() {
         let err = git2::Error::new(
             git2::ErrorCode::NotFound,
             git2::ErrorClass::Repository,
@@ -129,7 +129,7 @@ mod tests {
     }
 
     #[test]
-    fn not_found_레포지토리_에러에_경로가_남아_있다() {
+    fn not_found_repository_error_keeps_path() {
         let err = git2::Error::new(
             git2::ErrorCode::NotFound,
             git2::ErrorClass::Repository,
@@ -143,7 +143,7 @@ mod tests {
     }
 
     #[test]
-    fn 다른_에러_클래스는_전체_진단_정보를_유지한다() {
+    fn other_error_class_keeps_full_diagnostics() {
         // Auth + Repository: non-NotFound code, non-NotFound class.
         let err = git2::Error::new(
             git2::ErrorCode::Auth,
@@ -162,7 +162,7 @@ mod tests {
     }
 
     #[test]
-    fn not_found지만_레포지토리가_아닌_클래스는_전체_진단을_유지한다() {
+    fn not_found_with_non_repository_class_keeps_full_diagnostics() {
         // NotFound + non-Repository class should keep the full diagnostic.
         let err = git2::Error::new(
             git2::ErrorCode::NotFound,

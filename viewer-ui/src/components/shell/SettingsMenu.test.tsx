@@ -45,7 +45,7 @@ function openSettings() {
 }
 
 describe("SettingsMenu", () => {
-  it("기존_색상_설정리로드_단축키_동작을_설정_안에_모은다", () => {
+  it("groups existing theme, settings reload, and shortcut behavior in Settings", () => {
     const props = mount();
     const dialog = openSettings();
 
@@ -60,7 +60,7 @@ describe("SettingsMenu", () => {
     expect(document.activeElement).toBe(screen.getByRole("button", { name: "Settings" }));
   });
 
-  it("설정_로드가_진행중이면_재로드를_비활성화한다", () => {
+  it("disables reload while settings are loading", () => {
     const props = mount({ reloading: true });
     openSettings();
 
@@ -72,7 +72,7 @@ describe("SettingsMenu", () => {
     expect(screen.getByText("Reload config.toml")).toBeTruthy();
   });
 
-  it("화면_배율을_조정하고_100퍼센트로_복원한다", () => {
+  it("changes zoom and restores it to 100 percent", () => {
     mount();
     openSettings();
     const scale = screen.getByRole("combobox", { name: "Screen scale" });
@@ -91,7 +91,7 @@ describe("SettingsMenu", () => {
     expect(document.documentElement.style.getPropertyValue("--nc-content-zoom")).toBe("1");
   });
 
-  it("Escape로_닫고_포커스를_기어로_돌린다", () => {
+  it("closes with Escape and returns focus to the gear button", () => {
     mount();
     openSettings();
 
@@ -101,7 +101,7 @@ describe("SettingsMenu", () => {
     expect(document.activeElement).toBe(screen.getByRole("button", { name: "Settings" }));
   });
 
-  it("바깥_포인터로_닫아도_선택한_바깥_컨트롤에_포커스를_둔다", () => {
+  it("keeps focus on the outside control selected by the pointer when closing", () => {
     mount();
     openSettings();
     const outside = screen.getByRole("button", { name: "outside action" });
@@ -113,7 +113,7 @@ describe("SettingsMenu", () => {
     expect(document.activeElement).toBe(outside);
   });
 
-  it("Tab은_설정_안에서_순환하고_전역_단축키를_막는다", () => {
+  it("Tab cycles within Settings and blocks global shortcuts", () => {
     mount();
     const dialog = openSettings();
     const first = screen.getByRole("button", { name: /accent colour/ });

@@ -22,14 +22,14 @@ function press(name: string): void {
 }
 
 describe("ShortcutHelp leader configuration", () => {
-  it("기본_리더가_각_줄의_키로_찍힌다", () => {
+  it("the default leader is shown as the key on each row", () => {
     mount({});
 
     expect(keys("terminal.newPane")).toEqual(["Ctrl+F", "t"]);
     expect(keys("project.next")).toEqual(["Ctrl+Shift+ArrowRight"]);
   });
 
-  it("리더를_바꾸면_찍힌_키와_aria_값이_같이_바뀐다", () => {
+  it("changing the leader updates both the displayed key and aria value", () => {
     const { settings } = mount({});
 
     type("Alt+G");
@@ -46,7 +46,7 @@ describe("ShortcutHelp leader configuration", () => {
     );
   });
 
-  it("코드가_아닌_문자열은_거부를_보여주고_설정을_바꾸지_않는다", () => {
+  it("a non-code string shows a rejection and does not change the setting", () => {
     // A rejected binding must be visible instead of looking successful until
     // the next keystroke.
     const { settings } = mount({});
@@ -59,7 +59,7 @@ describe("ShortcutHelp leader configuration", () => {
     expect(keys("terminal.newPane")).toEqual(["Ctrl+F", "t"]);
   });
 
-  it("리더를_끄면_leader_액션에_키가_없다고_말한다", () => {
+  it("when the leader is disabled, leader actions report that they have no key", () => {
     const { settings } = mount({});
 
     press("Switch off");
@@ -73,7 +73,7 @@ describe("ShortcutHelp leader configuration", () => {
     expect(keys("project.next")).toEqual(["Ctrl+Shift+ArrowRight"]);
   });
 
-  it("Reset은_기본_리더를_되돌린다", () => {
+  it("Reset restores the default leader", () => {
     const { settings } = mount({});
 
     press("Switch off");
@@ -83,7 +83,7 @@ describe("ShortcutHelp leader configuration", () => {
     expect(keys("terminal.newPane")).toEqual(["Ctrl+F", "t"]);
   });
 
-  it("기본_리더의_브라우저_충돌을_눈에_보이게_경고한다", () => {
+  it("visibly warns about browser conflicts with the default leader", () => {
     // Ctrl+F is the browser's Find, so taking it must be reported.
     const { settings } = mount({});
 

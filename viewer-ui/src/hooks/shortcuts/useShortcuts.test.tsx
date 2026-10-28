@@ -13,8 +13,8 @@ afterEach(() => {
   document.body.innerHTML = "";
 });
 
-describe("useShortcuts 리더 시퀀스", () => {
-  it("리더_다음_한_글자는_명령을_한_번_실행한다", () => {
+describe("useShortcuts leader sequences", () => {
+  it("one character after the leader runs one command", () => {
     const { actions } = mount();
 
     leader();
@@ -23,7 +23,7 @@ describe("useShortcuts 리더 시퀀스", () => {
     expect(actions["terminal.newPane"]).toHaveBeenCalledTimes(1);
   });
 
-  it("터미널_패널_안에서_명령은_한_번_돌고_PTY로_한_바이트도_가지_않는다", () => {
+  it("a command runs once inside the terminal panel and sends no bytes to the PTY", () => {
     const { xterm, xtermKeydown } = pane();
     const { actions, extras } = mount();
 
@@ -37,7 +37,7 @@ describe("useShortcuts 리더 시퀀스", () => {
     expect(run.defaultPrevented).toBe(true);
   });
 
-  it("청구하지_않은_키는_xterm까지_손대지_않고_그대로_간다", () => {
+  it("an unclaimed key passes through untouched to xterm", () => {
     const { xterm, xtermKeydown } = pane();
     mount();
 
@@ -47,7 +47,7 @@ describe("useShortcuts 리더 시퀀스", () => {
     expect(event.defaultPrevented).toBe(false);
   });
 
-  it("키를_누르고_있어도_한_번_누를_때_한_번만_실행한다", () => {
+  it("holding a key still runs the command only once per press", () => {
     const { actions } = mount();
 
     leader();
@@ -59,7 +59,7 @@ describe("useShortcuts 리더 시퀀스", () => {
     expect(actions["terminal.newPane"]).toHaveBeenCalledTimes(1);
   });
 
-  it("눌러둔_코드의_자동반복은_명령이_아니다", () => {
+  it("auto-repeat for a held code is not a command", () => {
     const { actions } = mount();
 
     const event = press(document.body, {
@@ -73,7 +73,7 @@ describe("useShortcuts 리더 시퀀스", () => {
     expect(actions["project.next"]).not.toHaveBeenCalled();
   });
 
-  it("모든_수식키가_정확히_맞아야_리더로_인정한다", () => {
+  it("all modifiers must match exactly for the leader to be recognized", () => {
     for (const extra of [
       { shiftKey: true },
       { altKey: true },
@@ -89,7 +89,7 @@ describe("useShortcuts 리더 시퀀스", () => {
     }
   });
 
-  it("리더를_두_번_누르면_리터럴_리더_한_번을_패널로_보낸다", () => {
+  it("pressing the leader twice sends one literal leader to the panel", () => {
     const { extras } = mount();
 
     leader();
@@ -102,7 +102,7 @@ describe("useShortcuts 리더 시퀀스", () => {
     expect(second.defaultPrevented).toBe(true);
   });
 
-  it("매핑되지_않은_따라오는_키는_먹히고_아무_명령도_돌지_않는다", () => {
+  it("an unmapped follow-up key is consumed without running a command", () => {
     const { actions } = mount();
 
     leader();
@@ -112,7 +112,7 @@ describe("useShortcuts 리더 시퀀스", () => {
     for (const spy of Object.values(actions)) expect(spy).not.toHaveBeenCalled();
   });
 
-  it("Escape와_Ctrl_C는_리더를_취소하고_다음_키는_평소처럼_동작한다", () => {
+  it("Escape and Ctrl+C cancel the leader and the next key works normally", () => {
     for (const init of [{ key: "Escape" }, { key: "c", ctrlKey: true }]) {
       const { actions } = mount();
 
@@ -128,7 +128,7 @@ describe("useShortcuts 리더 시퀀스", () => {
     }
   });
 
-  it("스왑은_두_단계로_pane_숫자를_받는다", () => {
+  it("swap accepts pane numbers in two steps", () => {
     const { actions, extras } = mount();
 
     leader();
@@ -141,7 +141,7 @@ describe("useShortcuts 리더 시퀀스", () => {
     expect(digit.defaultPrevented).toBe(true);
   });
 
-  it("스왑_두번째_단계의_pane이_아닌_키는_스왑을_버린다", () => {
+  it("a non-pane key in the second swap step cancels the swap", () => {
     const { actions, extras } = mount();
 
     leader();
@@ -153,7 +153,7 @@ describe("useShortcuts 리더 시퀀스", () => {
     expect(actions["terminal.newPane"]).not.toHaveBeenCalled();
   });
 
-  it("리더_없는_등록된_코드는_바로_실행된다", () => {
+  it("a registered code without a leader runs immediately", () => {
     const { actions } = mount();
 
     const right = press(document.body, {
@@ -168,7 +168,7 @@ describe("useShortcuts 리더 시퀀스", () => {
     expect(right.defaultPrevented).toBe(true);
   });
 
-  it("리더를_끄면_리더_코드는_그대로_통과한다", () => {
+  it("when the leader is disabled, its code passes through", () => {
     const { actions } = mount({ leader: null });
 
     const event = leader();
@@ -178,7 +178,7 @@ describe("useShortcuts 리더 시퀀스", () => {
     expect(actions["terminal.newPane"]).not.toHaveBeenCalled();
   });
 
-  it("리더를_바꾸면_새_코드만_인정한다", () => {
+  it("changing the leader recognizes only the new code", () => {
     const { actions, update } = mount();
 
     update({ leader: { key: "B", ctrl: false, shift: false, alt: true, meta: false } });
@@ -188,7 +188,7 @@ describe("useShortcuts 리더 시퀀스", () => {
     expect(actions["terminal.newPane"]).toHaveBeenCalledTimes(1);
   });
 
-  it("enabled가_false면_아무_키도_가로채지_않는다", () => {
+  it("intercepts no keys when enabled is false", () => {
     const { actions } = mount({ enabled: false });
 
     const event = leader();

@@ -42,7 +42,7 @@ function harness(known: boolean, remembered?: RepoView) {
 }
 
 describe("useRepoViewPersistence grouped contract", () => {
-  it("복원은_opener를_호출하지만_다시_기록하지_않는다", () => {
+  it("restoration calls the opener but does not write again", () => {
     const remembered = {
       ...blankView(),
       tab: "tree" as const,
@@ -57,7 +57,7 @@ describe("useRepoViewPersistence grouped contract", () => {
     expect(h.remember).not.toHaveBeenCalled();
   });
 
-  it("복원_응답_전의_선택은_보존하고_옛_기억_위에_합친다", () => {
+  it("preserves a selection made before the restore response and merges it over the old view", () => {
     const old = {
       ...blankView(),
       tab: "tree" as const,
@@ -78,7 +78,7 @@ describe("useRepoViewPersistence grouped contract", () => {
     });
   });
 
-  it("opener_탭_drilldown_tree_선택을_하나의_기록_경계로_보낸다", async () => {
+  it("sends opener, tab, drilldown, and tree selection through one write boundary", async () => {
     const h = harness(true, blankView());
     act(() => h.result.current.chooseTab("log"));
     act(() => h.result.current.asked.openDiff("a.ts"));

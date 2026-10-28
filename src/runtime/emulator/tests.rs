@@ -60,10 +60,10 @@ fn bracketed_paste_mode_follows_decset() {
 #[test]
 fn wide_char_occupies_two_columns_with_spacer() {
     let mut emu = PaneEmulator::new(3, 10, 0);
-    emu.process("가".as_bytes());
+    emu.process("\u{ac00}".as_bytes());
 
     let view = emu.view();
-    assert_eq!(contents(&view, 0, 0), "가");
+    assert_eq!(contents(&view, 0, 0), "\u{ac00}");
     assert!(!view.cell(0, 0).unwrap().is_wide_spacer());
     assert!(view.cell(0, 1).unwrap().is_wide_spacer());
 }
@@ -75,7 +75,10 @@ fn shrink_through_wide_char_then_erase_does_not_panic() {
     // truncated a wide character at the last column and the program
     // then issued Erase Display. See vt100-rust issue #28.
     let mut emu = PaneEmulator::new(5, 20, 0);
-    emu.process("가나다라마바사아자차".as_bytes());
+    emu.process(
+        "\u{ac00}\u{b098}\u{b2e4}\u{b77c}\u{b9c8}\u{bc14}\u{c0ac}\u{c544}\u{c790}\u{cc28}"
+            .as_bytes(),
+    );
     emu.resize(5, 19);
     emu.process(b"\x1b[1;1H\x1b[J");
 
@@ -87,7 +90,10 @@ fn shrink_through_wide_char_then_erase_does_not_panic() {
 fn every_shrink_width_survives_wide_char_erase() {
     for cols in 1..20u16 {
         let mut emu = PaneEmulator::new(5, 20, 0);
-        emu.process("가나다라마바사아자차".as_bytes());
+        emu.process(
+            "\u{ac00}\u{b098}\u{b2e4}\u{b77c}\u{b9c8}\u{bc14}\u{c0ac}\u{c544}\u{c790}\u{cc28}"
+                .as_bytes(),
+        );
         emu.resize(5, cols);
         emu.process(b"\x1b[1;1H\x1b[J");
     }

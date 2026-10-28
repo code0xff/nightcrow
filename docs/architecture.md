@@ -1,12 +1,12 @@
 # nightcrow Architecture
 
-이 문서는 현재 설계의 색인이다. 전체 그림과 여러 영역에 걸친 불변식만 여기 두고, 영역별 계약은 [`docs/architecture/`](architecture/) 아래 문서에 둔다. 설계의 선택 이유와 채택하지 않은 대안은 [`decisions.md`](decisions.md)에 한 번만 기록한다.
+This document indexes the current design. It keeps the overall picture and cross-cutting invariants; area-specific contracts live in the documents under [`docs/architecture/`](architecture/). Design rationale and rejected alternatives are recorded once in [`decisions.md`](decisions.md).
 
 ## Overview
 
-nightcrow는 하나의 세션 데몬과 여러 프론트엔드로 이루어진 agent-adjacent Rust 애플리케이션이다. 인자 없이 `nightcrow`를 실행하면 데몬과 browser viewer가 함께 시작되고, TUI는 별도 `nightcrow attach`로 같은 세션에 붙는다. 데몬은 저장소 집합·터미널 pane·공유 preference를 소유하고 두 클라이언트는 각자 화면을 렌더한다. 클라이언트가 사라져도 데몬과 pane은 계속 살아 있어 재접속할 수 있다. 두 표면은 같은 세션 capability를 사용하되, 화면 기하·수명·입력 모델이 다른 부분은 각 상세 문서에 명시한다.
+nightcrow is an agent-adjacent Rust application composed of one session daemon and multiple frontends. Running `nightcrow` without arguments starts the daemon and browser viewer together; the TUI attaches to the same session separately with `nightcrow attach`. The daemon owns the repository set, terminal panes, and shared preferences, while each client renders its own screen. The daemon and panes remain alive if a client exits, so clients can reconnect. Both surfaces use the same session capabilities; differences in screen geometry, lifecycle, and input model are described in the relevant detailed documents.
 
-상단은 저장소의 status/diff, commit log, read-only tree를 보여주고 하단은 여러 PTY를 동시에 보여준다. TUI와 브라우저는 같은 저장소·터미널 상태를 읽지만 기하, 커서·스크롤, 검색과 같은 표시 상태는 각자 가진다. 코어는 AI provider를 해석하지 않으며 provider별 동작은 프로세스 경계의 plugin에 둔다.
+The upper area shows repository status/diff, commit log, and a read-only tree; the lower area shows multiple PTYs at once. The TUI and browser read the same repository and terminal state, but each keeps its own display state, such as geometry, cursor, scroll, and search. The core does not interpret AI providers; provider-specific behavior belongs in process-isolated plugins.
 
 ```text
 filesystem/git ──> per-repository runtime ──> session daemon
@@ -16,47 +16,47 @@ filesystem/git ──> per-repository runtime ──> session daemon
 
 ## Ownership and data flow
 
-| 경계 | 소유하는 것 | 외부에 노출하는 방식 |
+| Boundary | Owns | Exposes |
 | --- | --- | --- |
-| `session/` | catalog, repo runtime, terminal hub/PTY, active repo·order·accent, PTY 크기 소유권 | transport-neutral operation과 runtime event |
-| `application/` + `app/` | TUI의 `Workspace`/`App`, 포커스·기하·검색·스크롤·로컬 view state | daemon socket 요청과 ratatui 렌더 |
-| `web/` + `viewer-ui/` | HTTP/WebSocket 인증·wire·브라우저 기하와 viewer preference | JSON/SSE/terminal binary 및 DOM 렌더 |
-| `plugin/` | provider별 감지·복구 프로세스 | 제한된 NDJSON event/command |
+| `session/` | catalog, repo runtime, terminal hub/PTY, active repo/order/accent, PTY size ownership | transport-neutral operations and runtime events |
+| `application/` + `app/` | TUI `Workspace`/`App`, focus/geometry/search/scroll/local view state | daemon socket requests and ratatui rendering |
+| `web/` + `viewer-ui/` | HTTP/WebSocket auth/wire, browser geometry, and viewer preferences | JSON/SSE/terminal binary and DOM rendering |
+| `plugin/` | provider-specific detection/recovery processes | bounded NDJSON events/commands |
 
-TUI의 [`app.rs`](../src/app.rs)는 crate 내부 facade로 현재 항목의 노출 범위를 유지한다. 구현은 `src/app/git/`의 Git view와 `src/app/navigation/`의 focus/input 이동으로 묶고, application wiring과 session I/O는 app 경계의 루트에 둔다. 다른 계층의 구조는 위 소유권 경계를 따르며, 세부 계약은 해당 영역의 상세 문서에 둔다.
+The TUI's [`app.rs`](../src/app.rs) is a crate-internal facade that preserves the visibility of its current items. The implementation groups Git views under `src/app/git/` and focus/input navigation under `src/app/navigation/`; application wiring and session I/O stay at the root of the app boundary. Other layers follow the ownership boundaries above, with detailed contracts in their respective documents.
 
-저장소 catalog는 membership(경로·순서·숨김·opaque id)과 runtime(worker·terminal hub)을 분리한다. 변경은 하나의 catalog transaction에서 membership을 계산하고 runtime을 reconcile한다. 같은 경로의 entry는 유지해 watcher·SSE·hub를 불필요하게 교체하지 않으며, retired worker의 종료는 catalog lock을 놓은 뒤 수행한다.
+The repository catalog separates membership (paths, order, hidden paths, and opaque IDs) from runtime (workers and terminal hubs). A catalog transaction computes membership and reconciles runtime. Entries for unchanged paths are retained to avoid replacing watchers, SSE streams, and hubs unnecessarily; retired workers are stopped after releasing the catalog lock.
 
-status는 저장소별 snapshot worker가 파일시스템 변화에 반응해 읽고, 구독자가 없으면 읽거나 감시하지 않는다. 구독자가 없는 `/api/status`의 on-demand 요청만 한 번 읽을 수 있다. status payload는 최신 상태만 의미하므로 conflate할 수 있지만 terminal byte는 순서가 있는 스트림이라 버릴 수 없다. git diff/file/log 선택 로드는 `git2::Repository`를 소유하는 수명 긴 worker에서 lane별로 합치고 `(repository, generation)`이 현재 의도와 다르면 늦은 결과를 버린다. tree는 필요한 directory만 UI 경계에서 lazy-read한다.
+Per-repository snapshot workers read status in response to filesystem changes and do not read or watch when there are no subscribers. An on-demand `/api/status` request is the only exception and may read once without subscribers. A status payload represents the latest complete state and can be conflated, but terminal bytes form an ordered stream and cannot be dropped. Git diff/file/log selection loads are coalesced by lane in long-lived workers that own `git2::Repository`; results are discarded when `(repository, generation)` no longer matches the current intent. The tree lazily reads only the directories needed at the UI boundary.
 
-터미널 hub는 PTY를 소유하고 raw byte와 lifecycle/control event를 클라이언트에 전달한다. 각 클라이언트는 같은 byte를 자체 emulator에 적용하며, hub emulator는 재접속에 필요한 현재 mode/title/screen과 `screen + since` replay를 만든다. attach와 WebSocket 모두 bounded queue를 가지며 terminal queue overflow는 연결을 끊어 손상된 stream을 계속 그리지 않는다.
+The terminal hub owns PTYs and sends raw bytes plus lifecycle/control events to clients. Each client applies the same bytes to its own emulator, while the hub emulator produces the current mode/title/screen and `screen + since` replay needed for reconnects. Both attach and WebSocket use bounded queues; terminal queue overflow closes the connection rather than continuing to render a damaged stream.
 
 ## Shared state and client state
 
-- 세션 전체에 하나인 값은 열린 저장소와 순서, active repo, pane 집합·내용·순서·확정된 크기, accent다. active repo와 accent는 TUI와 브라우저가 같은 값을 따른다.
-- 브라우저끼리만 공유하는 값은 `viewer.json`의 `upper_pct`, project별 마지막 view와 maximize arrangement다. 화면 크기 의미가 달라 TUI와는 공유하지 않는다. 같은 이유가 브라우저 사이에도 성립하는 값 — 픽셀 단위의 sidebar width, pane view mode, key bar, shortcut leader — 은 어디에도 공유하지 않고 각 브라우저의 `localStorage`에 둔다.
-- 커서·스크롤·포커스·fullscreen·검색 입력과 TUI의 `Workspace` view state는 클라이언트별이다. 숨은 project의 terminal attention/read 상태도 client-local이라 한 표면의 활동이 다른 표면의 읽음 상태를 지우지 않는다. TUI의 workspace 파일과 viewer preference 파일은 서로 덮어쓰지 않는다.
-- PTY 크기는 세션 하나의 owner가 결정한다. 키 입력·붙여넣기·클릭·wheel 같은 직접 조작과 명시적 `claim`이 owner를 바꾸며, 새 연결·화면 크기 변경·재그리기는 기존 owner를 유지한다. 떠난 owner의 2초 grace 뒤에는 남은 viewer 중 최근 조작자를 택하고, 직접 조작한 viewer가 없으면 최근 연결 viewer를 택한다. 비소유자의 resize는 버리고 실제 적용된 `Resized`만 모두에게 반영한다.
+- Session-wide values are open repositories and their order, active repo, pane set/content/order/confirmed size, and accent. The TUI and browser share the active repo and accent.
+- Browser-only shared values are `upper_pct` in `viewer.json`, each project's last view, and maximize arrangement. They are not shared with the TUI because screen dimensions have different meanings. Values that also differ between browsers—pixel sidebar width, pane view mode, key bar, and shortcut leader—are not shared; each browser keeps them in `localStorage`.
+- Cursor, scroll, focus, fullscreen, search input, and the TUI's `Workspace` view state are client-local. Terminal attention/read state for hidden projects is also client-local, so activity on one surface does not clear the read state on another. The TUI workspace file and viewer preference file never overwrite each other.
+- One owner per session determines PTY size. Direct interaction such as key input, paste, click, or wheel, and an explicit `claim`, can change the owner; new connections, screen-size changes, and redraws preserve the current owner. Two seconds after an owner leaves, ownership passes to the most recently active remaining viewer, or to the most recently connected viewer if none has activity history. Non-owner resizes are discarded; only successfully applied `Resized` events are reflected to everyone.
 
 ## Cross-cutting invariants
 
-- **기하의 단일 출처**: 네 chrome 영역(project tabs·body·notice·hint)은 `ui::chrome::chrome_areas`, visible pane cell은 `ui::terminal_tab::visible_pane_cells`만 계산한다. 렌더·resize·hit-test가 별도 산술을 갖지 않는다. 네 영역은 항상 존재해 PTY가 행·열 삽입/삭제로 resize되지 않는다. 프로젝트 tab은 `[layout] tabs`에 따라 상단 한 행 또는 좌측 고정 폭 열이며, 이 값은 TUI attach 시점에만 읽어 실행 중 뒤집히지 않는다.
-- **입력 보호**: 기본 leader(`Ctrl+F`, 설정 가능) 뒤에만 앱 명령을 두고, 그 밖의 일반 키·단독 Ctrl은 active pane으로 그대로 보낸다. 예외는 leader 없이 예약한 소수의 chord뿐이며 — bare F-key, shift-only 방향키/PageUp·PageDown, `Ctrl+Shift`+좌우 — 정확한 modifier 집합으로만 매칭해 다른 조합은 pane으로 흘린다. 앱이 합성하는 scroll/mouse report도 프로그램이 해당 mode를 켠 경우에만 보낸다.
-- **순서와 generation**: pane 생성·종료·resize·reorder는 backend/session event가 확정한다. daemon의 repository set은 watcher 한 곳만 전송하며, terminal output은 repo별 FIFO를 유지한다. 비동기 git 결과는 generation guard를 통과한 것만 적용한다.
-- **경로 경계**: worktree 파일을 열 때는 `git::path::resolve_in_workdir`를, git object/pathspec만 다룰 때는 `validate_commit_path`를 사용한다. traversal·절대 경로·NUL·`.git` 변형을 거부하며 worktree 파일은 중간 component의 symlink도 따르지 않는다. 웹 route가 검증을 중복 구현하지 않고 공통 handler를 통과한다.
-- **자원 상한과 오류**: frame, terminal queue, PTY/pane, 웹 연결·응답·목록·diff·검색에는 명시적 상한이 있다. 잘린 결과는 `truncated` 등으로 표시하고, malformed/truncated input과 외부 호출 실패는 성공처럼 기록하지 않는다.
-- **플랫폼 seam**: 경로·로그·signal·thread helper는 `platform/`, daemon socket type은 `daemon/transport.rs`에 모은다. Unix 전용 API와 Windows ConPTY 차이는 seam 뒤에 두고, 대응물이 없는 차이는 해당 상세 문서에 남긴다.
-- **보안 경계**: attach socket은 파일 권한, web은 Argon2 password와 server-side session cookie를 사용한다. 웹은 Host → Origin → static bundle → authentication → repository lookup → path gate 순서로 처리하며, plugin command는 shape 검사와 별개로 `Guard`의 권한 판정을 거친다.
+- **Single source of geometry**: `ui::chrome::chrome_areas` alone computes the four chrome areas (project tabs, body, notice, and hint), and `ui::terminal_tab::visible_pane_cells` alone computes visible pane cells. Rendering, resize, and hit-testing do not perform separate geometry calculations. All four areas always exist, so inserting or deleting rows/columns never resizes PTYs. Project tabs are one row at the top or a fixed-width column on the left according to `[layout] tabs`; this setting is read only when the TUI attaches and cannot be toggled during a session.
+- **Input protection**: App commands are available only after the default leader (`Ctrl+F`, configurable); other ordinary keys and standalone Ctrl keys pass through to the active pane. The only exceptions are a small set of chords reserved without a leader: bare F-keys, shift-only arrows/PageUp/PageDown, and `Ctrl+Shift` plus left/right. They match only the exact modifier set; other combinations pass through to the pane. Synthetic scroll/mouse reports are sent only when the program has enabled the corresponding mode.
+- **Ordering and generation**: Backend/session events confirm pane creation, exit, resize, and reorder. One watcher sends the daemon's repository set, and terminal output retains per-repository FIFO order. Asynchronous Git results are applied only after passing a generation guard.
+- **Path boundaries**: Use `git::path::resolve_in_workdir` to open worktree files and `validate_commit_path` for Git objects/pathspecs. Reject traversal, absolute paths, NUL, and `.git` variants; worktree file access also refuses symlinks in intermediate components. Web routes pass through shared handlers rather than reimplementing validation.
+- **Resource bounds and errors**: Frames, terminal queues, PTYs/panes, web connections/responses/lists/diffs/searches have explicit limits. Mark partial results with `truncated` or an equivalent indicator; never report malformed/truncated input or external-call failures as success.
+- **Platform seams**: Path, logging, signal, and thread helpers live under `platform/`; daemon socket types live in `daemon/transport.rs`. Unix-only APIs and Windows ConPTY differences stay behind these seams, and details without an equivalent on another platform are documented in the relevant area document.
+- **Security boundaries**: Attach sockets rely on file permissions; web auth uses Argon2 passwords and server-side session cookies. Web requests follow Host → Origin → static bundle → authentication → repository lookup → path gate order, and plugin commands go through `Guard` authorization separately from shape validation.
 
 ## Detailed design
 
-| 문서 | 현재 계약 |
+| Document | Current contract |
 | --- | --- |
-| [session.md](architecture/session.md) | `TerminalBackend`, daemon/client ownership, catalog·watcher, PTY size owner, replay/backpressure, config reload, worker 종료 |
-| [git-views.md](architecture/git-views.md) | diff/file/log/tree pipeline, path gate, line rendering, status cache, HEAD/ref 갱신 |
-| [terminal.md](architecture/terminal.md) | pane grid와 sizing, VT emulator, scroll/mouse routing |
+| [session.md](architecture/session.md) | `TerminalBackend`, daemon/client ownership, catalog/watchers, PTY size owner, replay/backpressure, config reload, worker shutdown |
+| [git-views.md](architecture/git-views.md) | diff/file/log/tree pipeline, path gate, line rendering, status cache, HEAD/ref updates |
+| [terminal.md](architecture/terminal.md) | pane grid and sizing, VT emulator, scroll/mouse routing |
 | [ui.md](architecture/ui.md) | leader routing, `Workspace`/`App`, repo dialog, dirty redraw, chrome/notice |
 | [plugin-host.md](architecture/plugin-host.md) | process/NDJSON boundary, opt-in/token guard, relaunch/recovery surface |
-| [web.md](architecture/web.md) | web auth/HTTP/SSE/WS, route/path gates, wire fixture, browser state, clone |
+| [web.md](architecture/web.md) | web auth/HTTP/SSE/WS, route/path gates, wire fixtures, browser state, clone |
 
 ← [Documentation index](README.md)

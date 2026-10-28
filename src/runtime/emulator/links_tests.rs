@@ -17,7 +17,7 @@ fn link_at(input: &str, needle: &str, target: &str) {
 #[test]
 fn osc8_is_authoritative_for_glyph_and_wide_spacer() {
     let target = "https://example.test/wide";
-    let input = format!("\x1b]8;;{target}\x1b\\가\x1b]8;;\x1b\\");
+    let input = format!("\x1b]8;;{target}\x1b\\\u{ac00}\x1b]8;;\x1b\\");
     let mut emulator = PaneEmulator::new(4, 80, 0);
     emulator.process(input.as_bytes());
     let view = emulator.view();
@@ -74,11 +74,15 @@ fn paths_with_line_locations_are_detected_without_link_metadata() {
 
 #[test]
 fn absolute_home_and_unicode_paths_support_line_locations() {
-    link_at("/repo/한글.rs:12", "/repo/한글.rs:12", "/repo/한글.rs:12");
     link_at(
-        "/repo/한글.rs#L12C3-L14C2",
-        "/repo/한글.rs#L12C3-L14C2",
-        "/repo/한글.rs#L12C3-L14C2",
+        "/repo/\u{d55c}\u{ae00}.rs:12",
+        "/repo/\u{d55c}\u{ae00}.rs:12",
+        "/repo/\u{d55c}\u{ae00}.rs:12",
+    );
+    link_at(
+        "/repo/\u{d55c}\u{ae00}.rs#L12C3-L14C2",
+        "/repo/\u{d55c}\u{ae00}.rs#L12C3-L14C2",
+        "/repo/\u{d55c}\u{ae00}.rs#L12C3-L14C2",
     );
     link_at("~/src/main.rs:4", "~/src/main.rs:4", "~/src/main.rs:4");
 }

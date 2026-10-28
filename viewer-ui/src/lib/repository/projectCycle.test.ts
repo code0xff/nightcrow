@@ -2,52 +2,52 @@ import { describe, expect, it } from "vitest";
 import { neighborRepo } from "./projectCycle";
 
 describe("neighborRepo", () => {
-  it("다음_프로젝트는_순서상_바로_뒤다", () => {
+  it("the next project is the next item in order", () => {
     expect(neighborRepo(["a", "b", "c"], "a", 1)).toBe("b");
     expect(neighborRepo(["a", "b", "c"], "b", 1)).toBe("c");
   });
 
-  it("이전_프로젝트는_순서상_바로_앞이다", () => {
+  it("the previous project is the previous item in order", () => {
     expect(neighborRepo(["a", "b", "c"], "c", -1)).toBe("b");
     expect(neighborRepo(["a", "b", "c"], "b", -1)).toBe("a");
   });
 
-  it("마지막에서_다음은_처음으로_감싼다", () => {
+  it("next wraps from the last project to the first", () => {
     expect(neighborRepo(["a", "b", "c"], "c", 1)).toBe("a");
   });
 
-  it("처음에서_이전은_마지막으로_감싼다", () => {
+  it("previous wraps from the first project to the last", () => {
     expect(neighborRepo(["a", "b", "c"], "a", -1)).toBe("c");
   });
 
-  it("두_개면_양방향_모두_상대편이다", () => {
+  it("with two projects, both directions select the other project", () => {
     expect(neighborRepo(["a", "b"], "a", 1)).toBe("b");
     expect(neighborRepo(["a", "b"], "a", -1)).toBe("b");
     expect(neighborRepo(["a", "b"], "b", 1)).toBe("a");
     expect(neighborRepo(["a", "b"], "b", -1)).toBe("a");
   });
 
-  it("하나뿐이면_옮겨갈_곳이_없다", () => {
+  it("there is nowhere to move when only one project exists", () => {
     expect(neighborRepo(["a"], "a", 1)).toBeNull();
     expect(neighborRepo(["a"], "a", -1)).toBeNull();
   });
 
-  it("빈_목록이면_옮겨갈_곳이_없다", () => {
+  it("there is nowhere to move when the list is empty", () => {
     expect(neighborRepo([], null, 1)).toBeNull();
     expect(neighborRepo([], "a", -1)).toBeNull();
   });
 
-  it("선택이_없으면_아무것도_하지_않는다", () => {
+  it("does nothing when there is no selection", () => {
     expect(neighborRepo(["a", "b"], null, 1)).toBeNull();
   });
 
-  it("목록에_없는_선택이면_아무것도_하지_않는다", () => {
+  it("does nothing when the selection is not in the list", () => {
     // The poll is still resolving; jumping to the first tab would race it.
     expect(neighborRepo(["a", "b"], "gone", 1)).toBeNull();
     expect(neighborRepo(["a", "b"], "gone", -1)).toBeNull();
   });
 
-  it("중복이_있으면_첫_등장을_기준으로_센다", () => {
+  it("uses the first occurrence when there are duplicates", () => {
     // The tab list is unique, but keep this helper's duplicate-id behavior fixed.
     expect(neighborRepo(["a", "b", "a"], "a", 1)).toBe("b");
   });

@@ -2,7 +2,7 @@ use super::common::*;
 use super::*;
 
 #[test]
-fn 빈_workspace는_활성_프로젝트가_없다() {
+fn an_empty_workspace_has_no_active_project() {
     let ws = Workspace::new(test_leader());
 
     assert!(ws.active().is_none());
@@ -10,7 +10,7 @@ fn 빈_workspace는_활성_프로젝트가_없다() {
 }
 
 #[test]
-fn 닫은_프로젝트_기억은_상한을_넘지_않는다() {
+fn remembered_closed_projects_stay_within_the_cap() {
     // A long-lived process that opens and closes many repositories would
     // otherwise hold every session it had ever seen — and rescan that
     // history on every save.
@@ -30,7 +30,7 @@ fn 닫은_프로젝트_기억은_상한을_넘지_않는다() {
 }
 
 #[test]
-fn 마지막_탭을_닫으면_빈_상태가_된다() {
+fn closing_the_last_tab_leaves_the_empty_state() {
     // Quitting is no longer the only way out of the last project: the
     // empty screen is a real state nightcrow also starts in.
     let mut ws = workspace_on(&["/a"]);
@@ -42,7 +42,7 @@ fn 마지막_탭을_닫으면_빈_상태가_된다() {
 }
 
 #[test]
-fn 프로젝트를_추가하면_끝에_붙고_활성이_된다() {
+fn adding_a_project_appends_it_and_makes_it_active() {
     let mut ws = workspace_from(project_at("/a"));
 
     assert!(ws.add(project_at("/b")));
@@ -52,7 +52,7 @@ fn 프로젝트를_추가하면_끝에_붙고_활성이_된다() {
 }
 
 #[test]
-fn 상한에_도달하면_추가를_거부하고_활성을_유지한다() {
+fn reaching_the_cap_rejects_addition_and_preserves_the_active_project() {
     let mut ws = workspace_from(project_at("/p0"));
     for i in 1..MAX_PROJECTS {
         assert!(ws.add(project_at(&format!("/p{i}"))));
@@ -68,7 +68,7 @@ fn 상한에_도달하면_추가를_거부하고_활성을_유지한다() {
 }
 
 #[test]
-fn 가운데_탭을_닫으면_뒤_탭이_활성이_된다() {
+fn closing_the_middle_tab_activates_the_following_tab() {
     let mut ws = workspace_from(project_at("/a"));
     ws.add(project_at("/b"));
     ws.add(project_at("/c"));
@@ -81,7 +81,7 @@ fn 가운데_탭을_닫으면_뒤_탭이_활성이_된다() {
 }
 
 #[test]
-fn 마지막_탭을_닫으면_앞_탭이_활성이_된다() {
+fn closing_the_last_tab_activates_the_previous_tab() {
     let mut ws = workspace_from(project_at("/a"));
     ws.add(project_at("/b"));
 
@@ -92,7 +92,7 @@ fn 마지막_탭을_닫으면_앞_탭이_활성이_된다() {
 }
 
 #[test]
-fn 프로젝트를_추가해도_이전_프로젝트의_press가_버려진다() {
+fn adding_a_project_discards_the_previous_projects_press() {
     // `add` makes the new project active, so the outgoing project's press
     // is released in place — same reasoning as `switch`.
     let mut ws = workspace_on(&["/a"]);
@@ -105,7 +105,7 @@ fn 프로젝트를_추가해도_이전_프로젝트의_press가_버려진다() {
 }
 
 #[test]
-fn 전환하면_이전_프로젝트의_대기중인_마우스_press가_버려진다() {
+fn switching_projects_discards_the_previous_pending_mouse_press() {
     let mut ws = workspace_from(project_at("/a"));
     ws.add(project_at("/b"));
     ws.switch(0);
@@ -120,7 +120,7 @@ fn 전환하면_이전_프로젝트의_대기중인_마우스_press가_버려진
 }
 
 #[test]
-fn 같은_인덱스로_전환하면_대기중인_press를_유지한다() {
+fn switching_to_the_same_index_preserves_a_pending_press() {
     // A no-op switch must not disturb an in-flight press/release pair.
     let mut ws = workspace_from(project_at("/a"));
     let press = Some((1, crossterm::event::MouseButton::Left, 1, 1));
@@ -132,7 +132,7 @@ fn 같은_인덱스로_전환하면_대기중인_press를_유지한다() {
 }
 
 #[test]
-fn 범위를_벗어난_전환은_활성을_바꾸지_않는다() {
+fn an_out_of_range_switch_does_not_change_the_active_project() {
     let mut ws = workspace_from(project_at("/a"));
     ws.add(project_at("/b"));
 
@@ -142,7 +142,7 @@ fn 범위를_벗어난_전환은_활성을_바꾸지_않는다() {
 }
 
 #[test]
-fn 활성_프로젝트_확인은_그_프로젝트의_알림만_지운다() {
+fn confirming_the_active_project_clears_only_its_attention() {
     let mut ws = workspace_from(project_at("/a"));
     ws.add(project_at("/b"));
     for project in ws.projects_mut() {
@@ -156,7 +156,7 @@ fn 활성_프로젝트_확인은_그_프로젝트의_알림만_지운다() {
 }
 
 #[test]
-fn 열린_저장소는_경로로_찾을_수_있고_없으면_none이다() {
+fn an_open_repository_is_found_by_path_or_returns_none() {
     let mut ws = workspace_from(project_at("/a"));
     ws.add(project_at("/b"));
 
@@ -166,7 +166,7 @@ fn 열린_저장소는_경로로_찾을_수_있고_없으면_none이다() {
 }
 
 #[test]
-fn 범위를_벗어난_accent는_순환해서_들어온다() {
+fn an_out_of_range_accent_wraps_around() {
     // The index arrives from the daemon, which takes it from a hand-editable
     // file — an index with no colour behind it must not reach the renderer.
     let mut ws = Workspace::new(test_leader());
@@ -180,7 +180,7 @@ fn 범위를_벗어난_accent는_순환해서_들어온다() {
 }
 
 #[test]
-fn 다음_accent는_한_칸_앞이고_끝에서_처음으로_돌아온다() {
+fn the_next_accent_advances_one_step_and_wraps_at_the_end() {
     let mut ws = Workspace::new(test_leader());
 
     ws.set_accent_index(0);
@@ -191,7 +191,7 @@ fn 다음_accent는_한_칸_앞이고_끝에서_처음으로_돌아온다() {
 }
 
 #[test]
-fn accent는_프로젝트가_없어도_유지된다() {
+fn the_accent_is_preserved_without_projects() {
     // The empty screen is painted in the session's accent too, so it cannot
     // live on a project.
     let mut ws = Workspace::new(test_leader());

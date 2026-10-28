@@ -26,14 +26,14 @@ fn an_over_long_log_message_is_truncated_rather_than_refused() {
         v: PROTOCOL_VERSION,
         level: LogLevel::Warn,
         // Multi-byte so a naive truncation would split a character.
-        message: "가".repeat(MAX_LOG_MESSAGE_BYTES),
+        message: "\u{ac00}".repeat(MAX_LOG_MESSAGE_BYTES),
     };
     let Approved::Log { message, .. } = g.judge(cmd, None, &[], Instant::now()).expect("allowed")
     else {
         panic!("expected a log approval");
     };
     assert!(message.len() <= MAX_LOG_MESSAGE_BYTES);
-    assert!(message.chars().all(|c| c == '가'));
+    assert!(message.chars().all(|c| c == '\u{ac00}'));
 }
 
 #[test]

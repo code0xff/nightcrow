@@ -10,27 +10,27 @@ function target(over: Partial<TargetDescription> = {}): TargetDescription {
 }
 
 describe("isTextEntryTarget", () => {
-  it("타이핑을_받는_요소는_참이다", () => {
+  it("an element that receives typing returns true", () => {
     expect(isTextEntryTarget(target({ tagName: "INPUT" }))).toBe(true);
     expect(isTextEntryTarget(target({ tagName: "TEXTAREA" }))).toBe(true);
     expect(isTextEntryTarget(target({ tagName: "SELECT" }))).toBe(true);
     expect(isTextEntryTarget(target({ isContentEditable: true }))).toBe(true);
   });
 
-  it("텍스트_입력_역할을_가진_요소는_참이다", () => {
+  it("an element with a text-input role returns true", () => {
     for (const role of ["textbox", "searchbox", "combobox"]) {
       expect(isTextEntryTarget(target({ role }))).toBe(true);
     }
     expect(isTextEntryTarget(target({ role: "SearchBox" }))).toBe(true);
   });
 
-  it("type이_있는_텍스트_input은_참이다", () => {
+  it("a text input with a type returns true", () => {
     for (const type of ["text", "password", "search", "email", "url", "number"]) {
       expect(isTextEntryTarget(target({ tagName: "INPUT", type }))).toBe(true);
     }
   });
 
-  it("글자를_받지_않는_input은_거짓이다", () => {
+  it("an input that does not accept text returns false", () => {
     for (const type of [
       "checkbox",
       "radio",
@@ -47,11 +47,11 @@ describe("isTextEntryTarget", () => {
     expect(isTextEntryTarget(target({ tagName: "INPUT", type: "CHECKBOX" }))).toBe(false);
   });
 
-  it("tagName의_대소문자를_가리지_않는다", () => {
+  it("tagName matching is case-insensitive", () => {
     expect(isTextEntryTarget(target({ tagName: "textarea" }))).toBe(true);
   });
 
-  it("보통_요소와_null은_거짓이다", () => {
+  it("ordinary elements and null return false", () => {
     expect(isTextEntryTarget(target())).toBe(false);
     expect(isTextEntryTarget(target({ tagName: "BUTTON", role: "button" }))).toBe(false);
     expect(isTextEntryTarget(target({ isContentEditable: false, role: null, type: null }))).toBe(
@@ -64,27 +64,27 @@ describe("isTextEntryTarget", () => {
 describe("shortcutsSuppressed", () => {
   const idle = { target: target(), dialogOpen: false, composing: false };
 
-  it("아무_것도_걸리지_않으면_거짓이다", () => {
+  it("returns false when nothing matches", () => {
     expect(shortcutsSuppressed(idle)).toBe(false);
     expect(shortcutsSuppressed({ ...idle, target: null })).toBe(false);
   });
 
-  it("dialog가_열려_있으면_참이다", () => {
+  it("returns true when a dialog is open", () => {
     expect(shortcutsSuppressed({ ...idle, dialogOpen: true })).toBe(true);
     expect(shortcutsSuppressed({ ...idle, target: null, dialogOpen: true })).toBe(true);
   });
 
-  it("IME_조합_중이면_참이다", () => {
+  it("returns true during IME composition", () => {
     expect(shortcutsSuppressed({ ...idle, composing: true })).toBe(true);
   });
 
-  it("dialog_안의_요소면_참이다", () => {
+  it("returns true for an element inside a dialog", () => {
     expect(
       shortcutsSuppressed({ ...idle, target: target({ inDialog: true }) }),
     ).toBe(true);
   });
 
-  it("텍스트_입력이면_참이다", () => {
+  it("returns true for text input", () => {
     // Login, search, and folder-picker fields all use this guard.
     expect(
       shortcutsSuppressed({
@@ -94,7 +94,7 @@ describe("shortcutsSuppressed", () => {
     ).toBe(true);
   });
 
-  it("체크박스는_막지_않는다", () => {
+  it("does not block checkboxes", () => {
     expect(
       shortcutsSuppressed({
         ...idle,

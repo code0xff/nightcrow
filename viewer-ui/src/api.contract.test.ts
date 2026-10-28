@@ -123,11 +123,11 @@ function panels(raw: Record<string, string>): MaximizedByRepo {
 }
 
 describe("wire contract", () => {
-  it("서버가_보내는_프로토콜_버전과_클라이언트_상수가_같다", () => {
+  it("server protocol version matches the client constant", () => {
     expect(fixture.version).toBe(PROTOCOL_VERSION);
   });
 
-  it("부트스트랩_페이로드가_ViewerBootstrap과_맞는다", () => {
+  it("bootstrap payload matches ViewerBootstrap", () => {
     const bootstrap: ViewerBootstrap = {
       ...fixture.bootstrap,
       maximized: panels(fixture.bootstrap.maximized),
@@ -138,47 +138,47 @@ describe("wire contract", () => {
     expect(bootstrap.now_ms).toBeGreaterThan(0);
     expect(bootstrap.upper_pct).toBeGreaterThan(0);
     expect(bootstrap.maximized).toEqual({ r1: "terminal" });
-    // 프로젝트를 다시 열었을 때 무엇을 열어야 하는지. 서버는 서빙 중인
-    // 프로젝트만 id로 실어 보낸다.
+    // What to reopen when returning to a project. The server includes only
+    // projects it is currently serving, identified by id.
     expect(bootstrap.last_view.r1?.file?.path).toBe("src/main.rs");
-    // 이 페이지가 어느 빌드에서 왔는지 비교할 값. 없으면 서버가 갱신돼도
-    // 탭은 옛 번들로 계속 돈다.
+    // Compare which build this page came from. Without this, the server can update while
+    // the tab keeps running an old bundle.
     expect(bootstrap.viewer_build).toBeTruthy();
   });
 
-  it("status_페이로드가_Status와_맞는다", () => {
+  it("status payload matches Status", () => {
     const status: Status = {
       ...fixture.status,
       operation: operation(fixture.status.operation),
     };
-    // 이름이 바뀐 파일과 아닌 파일이 함께 있어, optional 필드가 있을 때와
-    // 없을 때를 모두 통과시킨다.
+    // Include renamed and unchanged files to cover the optional field being present
+    // and absent.
     expect(status.files.map((f) => f.old_path)).toEqual([
       undefined,
       "src/app.rs",
     ]);
     expect(status.tracking?.ahead).toBe(2);
-    // 멈춘 리베이스와 충돌 수. 쉬는 저장소는 둘 다 싣지 않는다.
+    // An in-progress rebase and conflict count. Idle repositories include neither.
     expect(status.operation).toEqual({ kind: "rebase", step: 2, total: 5 });
     expect(status.conflicts).toBe(1);
     expect(gitNamesMatchTheUnions()).toEqual([true, true]);
   });
 
-  it("unavailable_페이로드가_StatusUnavailable과_맞는다", () => {
-    // git 저장소가 아닌 폴더는 status 대신 이것을 받는다. 없으면 화면은
-    // 오지 않을 status를 기다리며 스켈레톤에 머문다.
+  it("unavailable payload matches StatusUnavailable", () => {
+    // Non-repository folders receive this instead of status. Without it, the UI would
+    // stay on a skeleton waiting for a status that will never arrive.
     const unavailable: StatusUnavailable = fixture.statusUnavailable;
     expect(unavailable.reason).toContain("not a git repository");
   });
 
-  it("log와_commit_파일_목록이_각_인터페이스와_맞는다", () => {
+  it("log and commit file lists match their interfaces", () => {
     const log: Log = fixture.log;
     const empty: Log = { ...fixture.logEmpty, commits: [] };
     const marks = decorations(fixture.logDecorations);
     const commitFiles: CommitFiles = fixture.commitFiles;
     expect(log.commits[0]?.short_id).toBe("9a3bc2c");
-    // ref는 저장소 전체에 대해 따로 오고, 가장 방향을 잡아주는 것부터
-    // 온다: HEAD, 로컬, 태그, 원격.
+    // Refs arrive separately for the repository, ordered by how useful they are
+    // for orientation: HEAD, local, tags, and remotes.
     expect(marks.refs[log.commits[0]!.oid]?.map((r) => r.kind)).toEqual([
       "head",
       "local",
@@ -188,33 +188,33 @@ describe("wire contract", () => {
     expect(marks.ahead).toContain(log.commits[0]!.oid);
     expect(marks.behind).toHaveLength(1);
     expect(log.commits[0]?.merge).toBe(true);
-    // 이어받을 페이지가 있는 응답은 anchor를 싣고, 커밋이 없는 저장소는
-    // 싣지 않는다 — 클라이언트가 후자를 끝으로 읽는다.
+    // Responses with another page include an anchor; repositories without commits
+    // omit it, which the client interprets as the end.
     expect(log.head).toBeDefined();
     expect(empty.head).toBeUndefined();
     expect(empty.truncated).toBe(false);
-    // 커밋의 파일 목록은 워킹 트리 시각을 싣지 않는다.
+    // Commit file lists do not include working-tree timestamps.
     expect(commitFiles.files[0]?.mtime).toBeUndefined();
     expect(commitFiles.truncated).toBe(true);
   });
 
-  it("tree와_tree_search가_각_인터페이스와_맞는다", () => {
+  it("tree and tree search match their interfaces", () => {
     const tree: Tree = fixture.tree;
     const search: TreeSearch = fixture.treeSearch;
     expect(tree.entries.map((e) => e.is_dir)).toEqual([true, false]);
     expect(search.matches[0]?.path).toContain(search.query);
   });
 
-  it("diff와_file_뷰가_각_인터페이스와_맞는다", () => {
+  it("diff and file views match their interfaces", () => {
     const diff: Diff = fixture.diff;
     const file: FileView = fixture.file;
-    // 커밋 diff의 hunk만 file_path를 갖는다.
+    // Only commit diff hunks have a file_path.
     expect(diff.hunks.map((h) => h.file_path)).toEqual([
       undefined,
       "src/lib.rs",
     ]);
-    // 줄 번호는 그 줄이 존재하는 쪽에만 실린다 — 추가 줄엔 old가, 삭제 줄엔
-    // new가 없어야 gutter가 해당 칼럼을 비운다.
+    // Line numbers appear only on the side where the line exists. Added lines have no old
+    // number and deleted lines have no new number, leaving that gutter blank.
     expect(
       diff.hunks.flatMap((h) =>
         h.lines.map((l) => [l.old_lineno, l.new_lineno]),
@@ -227,15 +227,15 @@ describe("wire contract", () => {
     expect(file.lines[0]?.[0]?.t).toBe("# nightcrow");
   });
 
-  it("browse가_루트와_하위_디렉토리_모두에서_Browse와_맞는다", () => {
+  it("browse matches Browse at the root and in subdirectories", () => {
     const browse: Browse = fixture.browse;
     const root: Browse = fixture.browseRoot;
     expect(browse.parent).toBe("/Users/code0xff");
-    // 루트에는 올라갈 상위가 없다.
+    // The root has no parent to navigate to.
     expect(root.parent).toBeUndefined();
   });
 
-  it("쓰기_응답이_돌려주는_모양과_맞는다", () => {
+  it("write responses match their returned shape", () => {
     const opened: { repo: Repo } = fixture.openedRepo;
     // Bound to the interface itself, like every other payload: an inline shape
     // here would only restate the fields it happened to list, which is how
@@ -251,26 +251,26 @@ describe("wire contract", () => {
     expect(stored.active_repo).toBe("r1");
     // Both variants, so renaming either on the Rust side fails here.
     expect(stored.maximized).toEqual({ r1: "terminal", r2: "files" });
-    // 워킹 트리의 파일과 커밋에서 연 파일이 함께 있어, optional한 `commit`이
-    // 있을 때와 없을 때를 모두 통과시킨다.
+    // Include a working-tree file and a file opened from a commit to cover the optional `commit` field
+    // Cover both cases: the optional `commit` field is present for commit files and absent for working-tree files.
     expect(stored.last_view.r1?.file?.commit).toBeNull();
     expect(stored.last_view.r2?.file?.commit).toBeTruthy();
     expect(stored.last_view.r1?.tree_expanded).toEqual(["src", "src/ui"]);
   });
 
-  it("reload_응답이_Reloaded와_맞는다", () => {
+  it("reload responses match Reloaded", () => {
     const reloaded: Reloaded = fixture.reloaded;
-    // 문구는 서버가 만든다 — 브라우저 토스트와 TUI notice가 같은 말을 하도록.
+    // The server creates the message so the browser toast and TUI notice use the same wording.
     expect(reloaded.summary).toContain("config reloaded");
   });
 
-  it("파일_저장_응답이_SavedFile과_맞는다", () => {
+  it("file save responses match SavedFile", () => {
     const saved: SavedFile = fixture.savedFile;
     // The blob oid the client keeps as the base for its next save.
     expect(saved.hash).toHaveLength(40);
   });
 
-  it("편집_프리뷰_응답이_EditPreviewToken과_맞는다", () => {
+  it("edit preview responses match EditPreviewToken", () => {
     const preview: EditPreviewToken = fixture.editPreview;
     // The one-time token the frame loads the assembled preview by.
     expect(preview.token).toBeTruthy();

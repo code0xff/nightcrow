@@ -36,8 +36,8 @@ function textEntries(): HTMLElement[] {
   ];
 }
 
-describe("useShortcuts 키보드를 넘겨주는 경우", () => {
-  it("텍스트_입력_안에서는_단어_선택_제스처를_건드리지_않는다", () => {
+describe("useShortcuts keyboard handoff cases", () => {
+  it("does not interfere with word-selection gestures inside text inputs", () => {
     for (const node of textEntries()) {
       const { actions } = mount();
 
@@ -50,7 +50,7 @@ describe("useShortcuts 키보드를 넘겨주는 경우", () => {
     }
   });
 
-  it("텍스트_입력_안에서는_리더도_가로채지_않는다", () => {
+  it("does not intercept the leader inside text inputs", () => {
     const field = mounted(el("input", { type: "text" }));
     const { actions } = mount();
 
@@ -62,7 +62,7 @@ describe("useShortcuts 키보드를 넘겨주는 경우", () => {
     expect(actions["terminal.newPane"]).not.toHaveBeenCalled();
   });
 
-  it("텍스트_입력의_자손에서_올라온_키도_입력의_것이다", () => {
+  it("a key bubbling from a text input descendant still belongs to the input", () => {
     // A `contenteditable` reports its keystrokes against whatever node the caret
     // is in, which is why the rule looks at ancestors and not only the target.
     const host = mounted(el("div", { contenteditable: "true" }));
@@ -75,7 +75,7 @@ describe("useShortcuts 키보드를 넘겨주는 경우", () => {
     expect(event.defaultPrevented).toBe(false);
   });
 
-  it("contenteditable_false는_텍스트_입력이_아니다", () => {
+  it("contenteditable=false is not a text input", () => {
     const node = mounted(el("div", { contenteditable: "false" }));
     const { actions } = mount();
 
@@ -84,7 +84,7 @@ describe("useShortcuts 키보드를 넘겨주는 경우", () => {
     expect(actions["project.next"]).toHaveBeenCalledTimes(1);
   });
 
-  it("글자를_받지_않는_입력_타입에서는_명령이_돈다", () => {
+  it("commands run in input types that do not accept text", () => {
     // A space or a letter on a checkbox is the control's own gesture, not
     // typing, so the page may claim the key.
     const node = mounted(el("input", { type: "checkbox" }));
@@ -95,7 +95,7 @@ describe("useShortcuts 키보드를 넘겨주는 경우", () => {
     expect(actions["project.next"]).toHaveBeenCalledTimes(1);
   });
 
-  it("열린_다이얼로그_안에서는_키를_다이얼로그에_맡긴다", () => {
+  it("delegates keys to an open dialog", () => {
     const shells = [
       el("div", { role: "dialog" }),
       el("div", { "aria-modal": "true" }),
@@ -114,7 +114,7 @@ describe("useShortcuts 키보드를 넘겨주는 경우", () => {
     }
   });
 
-  it("모달이_열려_있다고_들으면_아무_키도_가로채지_않는다", () => {
+  it("intercepts no keys when told a modal is open", () => {
     // The folder picker is a plain overlay, so the page says so rather than
     // leaving it to be recognised from the DOM.
     const { actions } = mount({ dialogOpen: true });
@@ -127,7 +127,7 @@ describe("useShortcuts 키보드를 넘겨주는 경우", () => {
     expect(armed.defaultPrevented).toBe(false);
   });
 
-  it("조합_중인_입력은_명령이_아니다", () => {
+  it("an input composition is not a command", () => {
     const cases: Init[] = [
       { ...CHORD, isComposing: true },
       { ...CHORD, keyCode: 229 },
@@ -146,7 +146,7 @@ describe("useShortcuts 키보드를 넘겨주는 경우", () => {
     }
   });
 
-  it("조합_중인_키는_리더의_따라오는_키로도_읽히지_않는다", () => {
+  it("a key in an active composition is not read as a leader follow-up", () => {
     const { actions } = mount();
 
     leader();
@@ -156,7 +156,7 @@ describe("useShortcuts 키보드를 넘겨주는 경우", () => {
     expect(actions["terminal.newPane"]).not.toHaveBeenCalled();
   });
 
-  it("핸들러가_없는_명령의_키도_리더가_먹는다", () => {
+  it("the leader consumes a key for a command with no handler", () => {
     // Nothing is registered here at all. The leader still owns its follow-up,
     // or `<prefix> t` would type a `t` into the shell of a page whose terminal
     // panel has not finished mounting.

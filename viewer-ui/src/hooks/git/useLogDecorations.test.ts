@@ -50,7 +50,7 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe("useLogDecorations", () => {
-  it("ref만_움직여도_모든_행의_표시를_새로_받는다", async () => {
+  it("refreshes every row decoration when only a ref changes", async () => {
     fetchMarks.mockResolvedValueOnce(marks({ ahead: ["a", "z"] }));
     const { result, rerender } = render({
       head: "a",
@@ -71,7 +71,7 @@ describe("useLogDecorations", () => {
     expect(result.current.divergenceOf("z")).toBeUndefined();
   });
 
-  it("같은_커밋에서_브랜치만_바꿔도_다시_묻는다", async () => {
+  it("queries again when only the branch changes at the same commit", async () => {
     // Neither HEAD nor the refs digest moves; only the branch HEAD is on.
     fetchMarks.mockResolvedValueOnce(
       marks({ refs: { a: [{ kind: "head", name: "dev" }] } }),
@@ -92,7 +92,7 @@ describe("useLogDecorations", () => {
     expect(result.current.refsOf("a")?.[0]?.name).toBe("feat");
   });
 
-  it("업스트림만_바꿔도_다시_묻는다", async () => {
+  it("queries again when only the upstream changes", async () => {
     // `git branch --set-upstream-to`: no ref target moves, the arrows do.
     fetchMarks.mockResolvedValueOnce(marks({ ahead: ["a"] }));
     const { result, rerender } = render({
@@ -111,7 +111,7 @@ describe("useLogDecorations", () => {
     expect(result.current.divergenceOf("a")).toBeUndefined();
   });
 
-  it("실패한_변화는_버려지지_않고_다시_묻는다", async () => {
+  it("retries a failed change instead of discarding it", async () => {
     vi.useFakeTimers();
     fetchMarks.mockRejectedValueOnce(new Error("offline"));
     const { result } = render({ head: "a", branch: "dev", refs: "r1" });
@@ -126,7 +126,7 @@ describe("useLogDecorations", () => {
     expect(result.current.divergenceOf("a")).toBe("ahead");
   });
 
-  it("아무것도_움직이지_않으면_다시_묻지_않는다", async () => {
+  it("does not query again when nothing changes", async () => {
     fetchMarks.mockResolvedValue(marks());
     const { rerender } = render({ head: "a", branch: "dev", refs: "r1" });
     await settle();
@@ -137,7 +137,7 @@ describe("useLogDecorations", () => {
     expect(fetchMarks).toHaveBeenCalledTimes(1);
   });
 
-  it("잘린_응답은_잘렸다고_알린다", async () => {
+  it("reports when a response is truncated", async () => {
     fetchMarks.mockResolvedValueOnce(marks({ truncated: true }));
     const { result } = render({ head: "a", branch: "dev", refs: "r1" });
     await settle();
@@ -145,7 +145,7 @@ describe("useLogDecorations", () => {
     expect(result.current.truncated).toBe(true);
   });
 
-  it("상태가_오기_전에는_묻지_않는다", async () => {
+  it("does not query before status arrives", async () => {
     render({ head: undefined, branch: undefined, refs: undefined });
     await settle();
 

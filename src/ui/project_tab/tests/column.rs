@@ -222,14 +222,23 @@ fn a_wide_character_name_is_cut_by_cells_and_never_overflows_the_strip() {
     // Fourteen CJK characters are twenty-eight cells: the label rule, which
     // counts characters, lets them through, so the row has to cut by cells —
     // and land exactly on the strip's width without splitting a glyph.
-    let rows = rendered_column(&paths(&["/w/프로젝트이름이아주아주긴저장소"]), 0, 1);
+    let rows = rendered_column(
+        &paths(&[
+            "/w/\u{d504}\u{b85c}\u{c81d}\u{d2b8}\u{c774}\u{b984}\u{c774}\u{c544}\u{c8fc}\u{c544}\u{c8fc}\u{ae34}\u{c800}\u{c7a5}\u{c18c}",
+        ]),
+        0,
+        1,
+    );
 
     // The buffer yields one symbol per cell, a wide glyph then a blank for its
     // second cell: sixteen cells hold eight glyphs after the legend, so the
     // eighth glyph is the last one drawn and the ninth never is.
     let row = &rows[0];
-    assert!(row.starts_with(" F1 프"), "got: {row:?}");
-    assert!(row.contains('아') && !row.contains('주'), "got: {row:?}");
+    assert!(row.starts_with(" F1 \u{d504}"), "got: {row:?}");
+    assert!(
+        row.contains('\u{c544}') && !row.contains('\u{c8fc}'),
+        "got: {row:?}"
+    );
 }
 
 #[test]

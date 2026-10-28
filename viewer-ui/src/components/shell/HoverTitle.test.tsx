@@ -15,7 +15,7 @@ function widths(scroll: number, client: number) {
 }
 
 describe("HoverTitle", () => {
-  it("넘치지_않으면_정지해_있고_전체_글자를_그대로_둔다", () => {
+  it("stays still and keeps the full text when it does not overflow", () => {
     widths(80, 120);
     const { container } = render(<HoverTitle title="short" />);
     const title = container.querySelector(".nc-title") as HTMLElement;
@@ -23,7 +23,7 @@ describe("HoverTitle", () => {
     expect(title.textContent).toBe("short");
   });
 
-  it("넘치면_넘친_만큼_흐를_거리와_시간을_싣고_말줄임표_없이_전체를_둔다", () => {
+  it("when it overflows, includes scroll distance and duration and keeps the full text without an ellipsis", () => {
     widths(300, 120);
     const name = "a-very-long-project-name-that-overflows";
     const { container } = render(<HoverTitle title={name} />);
