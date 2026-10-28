@@ -124,7 +124,7 @@ mod tests {
     fn cap_text_never_splits_a_multibyte_character() {
         // The sample character is three bytes. Cutting at 2 or 4 lands
         // mid-character; slicing there would panic, so it must be dropped whole.
-        let text = "한글";
+        let text = "\u{d55c}\u{ae00}";
         for limit in [1, 2, 4, 5] {
             let (kept, truncated) = cap_text(text, limit);
             assert!(truncated, "limit {limit} must truncate");
@@ -138,13 +138,13 @@ mod tests {
                 kept.len()
             );
         }
-        assert_eq!(cap_text(text, 3).0, "한");
-        assert_eq!(cap_text(text, 5).0, "한");
+        assert_eq!(cap_text(text, 3).0, "\u{d55c}");
+        assert_eq!(cap_text(text, 5).0, "\u{d55c}");
     }
 
     #[test]
     fn cap_text_can_return_nothing_when_the_first_character_does_not_fit() {
-        let (kept, truncated) = cap_text("한", 2);
+        let (kept, truncated) = cap_text("\u{d55c}", 2);
         assert_eq!(kept, "");
         assert!(truncated);
     }

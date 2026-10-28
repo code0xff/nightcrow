@@ -20,7 +20,7 @@ function pendingSends() {
 const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
 
 describe("createSerialWriter", () => {
-  it("앞선_요청이_끝나기_전에는_다음_값을_보내지_않는다", () => {
+  it("does not send the next value before the previous request finishes", () => {
     const { sent, send } = pendingSends();
     const write = createSerialWriter(send);
 
@@ -32,7 +32,7 @@ describe("createSerialWriter", () => {
     expect(sent).toEqual(["a"]);
   });
 
-  it("대기_중_쌓인_값은_최신_하나로_접힌다", async () => {
+  it("queued values collapse to the latest while waiting", async () => {
     const { sent, resolvers, send } = pendingSends();
     const write = createSerialWriter(send);
 
@@ -46,7 +46,7 @@ describe("createSerialWriter", () => {
     expect(sent).toEqual(["a", "c"]);
   });
 
-  it("마지막에_보낸_값이_마지막에_도착한다", async () => {
+  it("the last value sent arrives last", async () => {
     const { sent, resolvers, send } = pendingSends();
     const write = createSerialWriter(send);
 
@@ -60,7 +60,7 @@ describe("createSerialWriter", () => {
     expect(sent[sent.length - 1]).toBe("b");
   });
 
-  it("요청이_실패해도_큐가_멈추지_않는다", async () => {
+  it("the queue continues after a request fails", async () => {
     const { sent, rejecters, send } = pendingSends();
     const write = createSerialWriter(send);
 
@@ -72,7 +72,7 @@ describe("createSerialWriter", () => {
     expect(sent).toEqual(["a", "b"]);
   });
 
-  it("큐가_빈_뒤에_들어온_값은_곧바로_나간다", async () => {
+  it("a value added after the queue empties is sent immediately", async () => {
     const { sent, resolvers, send } = pendingSends();
     const write = createSerialWriter(send);
 

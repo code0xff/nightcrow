@@ -13,7 +13,7 @@ import {
 const STATE = "waiting_for_reset";
 
 describe("deadlineLabel", () => {
-  it("epoch초를_현지_시각_HH_MM으로_보여준다", () => {
+  it("formats epoch seconds as local time in HH:MM", () => {
     const epoch = 1_700_000_000;
     const expected = new Date(epoch * 1000);
     expect(deadlineLabel(epoch)).toBe(
@@ -23,18 +23,18 @@ describe("deadlineLabel", () => {
     );
   });
 
-  it("시와_분을_두_자리로_채운다", () => {
+  it("pads hours and minutes to two digits", () => {
     // Midnight UTC on the epoch: whatever the viewer's zone, both fields are
     // two characters wide.
     const label = deadlineLabel(0);
     expect(label).toMatch(/^\d{2}:\d{2}$/);
   });
 
-  it("deadline이_없으면_아무것도_보여주지_않는다", () => {
+  it("shows nothing when there is no deadline", () => {
     expect(deadlineLabel(undefined)).toBeUndefined();
   });
 
-  it("시계가_놓을_수_없는_값이면_틀린_시각_대신_아무것도_보여주지_않는다", () => {
+  it("shows nothing instead of an invalid time for values the clock cannot represent", () => {
     expect(deadlineLabel(Number.NaN)).toBeUndefined();
     expect(deadlineLabel(Number.POSITIVE_INFINITY)).toBeUndefined();
     // Past the range a `Date` can represent (±8.64e15 ms).
@@ -43,7 +43,7 @@ describe("deadlineLabel", () => {
 });
 
 describe("recoverySummary", () => {
-  it("state와_deadline과_시도_횟수를_한_줄로_모은다", () => {
+  it("combines state, deadline, and attempt count on one line", () => {
     const summary = recoverySummary({
       state: STATE,
       deadlineEpoch: 1_700_000_000,
@@ -54,18 +54,18 @@ describe("recoverySummary", () => {
     expect(summary).toContain("attempt 3");
   });
 
-  it("deadline이_없으면_state만_남고_시각은_붙지_않는다", () => {
+  it("keeps only the state and no time when there is no deadline", () => {
     expect(recoverySummary({ state: STATE, attempt: 0 })).toBe(STATE);
   });
 
-  it("시도가_없으면_횟수를_붙이지_않는다", () => {
+  it("omits the count when there are no attempts", () => {
     // Zero attempts is "not yet tried", which is not worth a number.
     expect(recoverySummary({ state: "resuming", attempt: 0 })).toBe("resuming");
   });
 });
 
 describe("applyRecovery", () => {
-  it("보고를_pane별로_기록한다", () => {
+  it("records reports by pane", () => {
     const next = applyRecovery(
       {},
       {
@@ -84,7 +84,7 @@ describe("applyRecovery", () => {
     });
   });
 
-  it("새_보고가_이전_보고를_대체한다", () => {
+  it("a new report replaces the previous report", () => {
     const first = applyRecovery({}, { pane: 6, state: STATE, attempt: 1 });
     const second = applyRecovery(first, {
       pane: 6,
@@ -99,7 +99,7 @@ describe("applyRecovery", () => {
     });
   });
 
-  it("cancelled_보고는_저장하지_않고_pane을_지운다", () => {
+  it("a cancelled report is not saved and removes the pane", () => {
     const held = applyRecovery({}, { pane: 6, state: STATE, attempt: 1 });
     const cleared = applyRecovery(held, {
       pane: 6,
@@ -109,7 +109,7 @@ describe("applyRecovery", () => {
     expect(cleared).toEqual({});
   });
 
-  it("없는_pane의_cancelled는_같은_객체를_돌려준다", () => {
+  it("cancelled for a missing pane returns the same object", () => {
     // Object identity is what lets React skip a render for news-free frames.
     const held: RecoveryByPane = { 6: { state: STATE, attempt: 1 } };
     expect(applyRecovery(held, { pane: 9, state: "cancelled", attempt: 0 })).toBe(
@@ -117,7 +117,7 @@ describe("applyRecovery", () => {
     );
   });
 
-  it("다른_pane의_보고는_기존_pane을_건드리지_않는다", () => {
+  it("a report for another pane leaves existing panes untouched", () => {
     const held = applyRecovery({}, { pane: 6, state: STATE, attempt: 1 });
     const both = applyRecovery(held, { pane: 7, state: "backoff", attempt: 0 });
     expect(Object.keys(both).sort()).toEqual(["6", "7"]);
@@ -126,24 +126,24 @@ describe("applyRecovery", () => {
 });
 
 describe("forgetRecovery", () => {
-  it("pane이_닫히면_보고도_사라진다", () => {
+  it("removes the report when the pane closes", () => {
     const held = applyRecovery({}, { pane: 6, state: STATE, attempt: 1 });
     expect(forgetRecovery(held, 6)).toEqual({});
   });
 
-  it("보고가_없던_pane이면_같은_객체를_돌려준다", () => {
+  it("returns the same object for a pane with no report", () => {
     const held: RecoveryByPane = {};
     expect(forgetRecovery(held, 6)).toBe(held);
   });
 });
 
 describe("orphanRecovery", () => {
-  it("페이지에_없는_pane의_보고만_고른다", () => {
+  it("selects only reports for panes not on the page", () => {
     const held = { 3: { state: STATE, attempt: 1 }, 6: { state: STATE, attempt: 1 } };
     expect(orphanRecovery(held, [6])).toEqual([3]);
   });
 
-  it("여러_개면_pane_id_순으로_정렬한다", () => {
+  it("sorts multiple reports by pane id", () => {
     const held = {
       9: { state: STATE, attempt: 0 },
       3: { state: STATE, attempt: 0 },
@@ -151,7 +151,7 @@ describe("orphanRecovery", () => {
     expect(orphanRecovery(held, [])).toEqual([3, 9]);
   });
 
-  it("모든_보고가_살아있는_pane의_것이면_비어_있다", () => {
+  it("is empty when every report belongs to a live pane", () => {
     expect(orphanRecovery({ 6: { state: STATE, attempt: 0 } }, [6])).toEqual([]);
   });
 });

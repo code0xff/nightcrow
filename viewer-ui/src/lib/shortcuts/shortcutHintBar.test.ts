@@ -11,7 +11,7 @@ const ARMED = { armed: true, swapPending: false } as const;
 const SWAP = { armed: true, swapPending: true } as const;
 
 describe("hintLine", () => {
-  it("대기_중에는_리더와_자주_쓰는_명령을_리더_키와_함께_적는다", () => {
+  it("while idle, lists the leader and common commands with their keys", () => {
     const line = hintLine(IDLE_LEADER, DEFAULT_LEADER, all);
 
     expect(line.chip).toBeNull();
@@ -29,13 +29,13 @@ describe("hintLine", () => {
     ]);
   });
 
-  it("실행할_수_없는_명령은_줄에서_빠진다", () => {
+  it("omits unavailable commands from the row", () => {
     const line = hintLine(IDLE_LEADER, DEFAULT_LEADER, only("help.shortcuts"));
 
     expect(line.segments.map((s) => s.label)).toEqual(["leader", "shortcuts"]);
   });
 
-  it("리더가_눌린_뒤에는_PREFIX_칩과_모든_후속_키가_나온다", () => {
+  it("after the leader is pressed, shows the PREFIX chip and every follow-up key", () => {
     const line = hintLine(ARMED, DEFAULT_LEADER, all);
 
     expect(line.chip).toBe("PREFIX");
@@ -56,7 +56,7 @@ describe("hintLine", () => {
     });
   });
 
-  it("pane_숫자_여덟_개는_하나의_안내_세그먼트로_접힌다", () => {
+  it("eight pane numbers collapse into a single hint segment", () => {
     const line = hintLine(ARMED, DEFAULT_LEADER, all);
 
     const digits = line.segments.filter((s) => s.keys === "3-9,0");
@@ -67,13 +67,13 @@ describe("hintLine", () => {
     expect(line.segments[contentAt + 1]?.keys).toBe("3-9,0");
   });
 
-  it("pane이_하나도_없으면_자릿수_세그먼트도_없다", () => {
+  it("omits the number segment when there are no panes", () => {
     const line = hintLine(ARMED, DEFAULT_LEADER, only("terminal.newPane"));
 
     expect(line.segments.map((s) => s.keys)).toEqual(["t", "esc"]);
   });
 
-  it("swap_대기_중에는_SWAP_칩과_대상_안내만_나온다", () => {
+  it("while waiting for swap, shows only the SWAP chip and target hint", () => {
     const line = hintLine(SWAP, DEFAULT_LEADER, all);
 
     expect(line.chip).toBe("SWAP");
@@ -81,7 +81,7 @@ describe("hintLine", () => {
     expect(line.segments.every((s) => s.click === null)).toBe(true);
   });
 
-  it("리더가_꺼져_있으면_시트로_가는_길과_단독_코드만_적는다", () => {
+  it("when the leader is disabled, lists a path to the sheet and standalone codes only", () => {
     const line = hintLine(IDLE_LEADER, null, all);
 
     expect(line.chip).toBeNull();
@@ -98,7 +98,7 @@ describe("hintLine", () => {
     ]);
   });
 
-  it("리더를_바꾸면_적힌_키도_따라간다", () => {
+  it("changing the leader updates the displayed key", () => {
     const line = hintLine(IDLE_LEADER, parseChord("Ctrl+B"), all);
 
     expect(line.segments[0]?.keys).toBe("Ctrl+B");

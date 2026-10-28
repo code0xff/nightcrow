@@ -65,11 +65,11 @@ describe("useCompose", () => {
   it("sending_pastes_the_message_then_presses_return_after_it", () => {
     const { result, sent, onSent } = mount();
     act(() => result.current.open());
-    act(() => result.current.setDraft("안녕\n세상"));
+    act(() => result.current.setDraft("\uC548\uB155\n\uC138\uC0C1"));
     act(() => void result.current.send());
 
     expect(sent).toEqual([
-      { type: "input", pane: 7, data: "\x1b[200~안녕\r세상\x1b[201~" },
+      { type: "input", pane: 7, data: "\x1b[200~\uC548\uB155\r\uC138\uC0C1\x1b[201~" },
     ]);
     act(() => vi.runAllTimers());
     expect(sent[1]).toEqual({ type: "input", pane: 7, data: "\r" });

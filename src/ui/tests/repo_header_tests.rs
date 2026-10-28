@@ -84,7 +84,11 @@ fn a_repo_with_no_branch_gives_the_room_to_the_path() {
 #[test]
 fn a_name_in_hangul_is_cut_between_characters() {
     // The budget counts columns, and each syllable takes two of them.
-    let (path, branch) = fit_names("~/작업/야행성까마귀", Some("기능/한글-브랜치"), 20);
+    let (path, branch) = fit_names(
+        "~/\u{c791}\u{c5c5}/\u{c57c}\u{d589}\u{c131}\u{ae4c}\u{b9c8}\u{adc0}",
+        Some("\u{ae30}\u{b2a5}/\u{d55c}\u{ae00}-\u{be0c}\u{b79c}\u{ce58}"),
+        20,
+    );
     assert!(width(&path) + branch.as_deref().map_or(0, width) <= 20);
     assert!(!path.is_empty());
 }

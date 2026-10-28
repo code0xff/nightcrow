@@ -94,7 +94,7 @@ fn an_agent_in_another_pane_of_the_project_reads_what_the_first_wrote() {
 
     let (saved, failed) = claude.tool(
         "memory_write",
-        json!({ "text": "viewer-ui는 pnpm이 아니라 npm을 쓴다", "tags": ["build"] }),
+        json!({ "text": "viewer-ui\u{b294} pnpm\u{c774} \u{c544}\u{b2c8}\u{b77c} npm\u{c744} \u{c4f4}\u{b2e4}", "tags": ["build"] }),
     );
     assert!(!failed, "{saved}");
     claude.tool("board_post", json!({ "text": "editing the header" }));
@@ -103,7 +103,9 @@ fn an_agent_in_another_pane_of_the_project_reads_what_the_first_wrote() {
     assert!(!failed, "{found}");
     assert!(found.contains("claude-code@aaaaaa"), "{found}");
     assert!(
-        found.contains("viewer-ui는 pnpm이 아니라 npm을 쓴다"),
+        found.contains(
+            "viewer-ui\u{b294} pnpm\u{c774} \u{c544}\u{b2c8}\u{b77c} npm\u{c744} \u{c4f4}\u{b2e4}"
+        ),
         "{found}"
     );
 

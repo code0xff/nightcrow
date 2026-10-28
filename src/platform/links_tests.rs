@@ -17,12 +17,12 @@ fn parses_web_links_without_rewriting_the_target() {
 
 #[test]
 fn parses_relative_paths_with_line_and_column() {
-    assert!(parse_target("한글.txt").is_ok());
+    assert!(parse_target("\u{d55c}\u{ae00}.txt").is_ok());
     assert!(parse_target("docs/readme.md#L9-").is_err());
     assert_eq!(
-        parse_target("src/한 파일.rs:12:7").unwrap(),
+        parse_target("src/\u{d55c} \u{d30c}\u{c77c}.rs:12:7").unwrap(),
         LinkTarget::File {
-            path: PathBuf::from("src/한 파일.rs"),
+            path: PathBuf::from("src/\u{d55c} \u{d30c}\u{c77c}.rs"),
             line: Some(12),
             column: Some(7),
         }
@@ -52,7 +52,7 @@ fn rejects_unsafe_or_ambiguous_targets_before_launching() {
         "file://server/share/readme.md",
         "file:",
         "file:😀",
-        "file:한글",
+        "file:\u{d55c}\u{ae00}",
         "file:aa/C:/temp/a.txt",
         r"\\?\C:\secret.txt",
         "../secret.txt",

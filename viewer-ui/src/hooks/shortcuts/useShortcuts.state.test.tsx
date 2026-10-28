@@ -37,7 +37,7 @@ function mount() {
 const ARMED: LeaderState = { armed: true, swapPending: false };
 
 describe("useShortcuts state", () => {
-  it("리더를_누르면_보이는_상태가_armed로_바뀌고_esc로_돌아온다", () => {
+  it("pressing the leader changes the visible state to armed and Escape returns it", () => {
     const engine = mount();
     expect(engine.state()).toEqual({ armed: false });
 
@@ -48,7 +48,7 @@ describe("useShortcuts state", () => {
     expect(engine.state()).toEqual({ armed: false });
   });
 
-  it("힌트_줄의_클릭은_같은_리듀서를_지나_상태를_바꾼다", () => {
+  it("clicking a hint row changes state through the same reducer", () => {
     const engine = mount();
 
     engine.arm();

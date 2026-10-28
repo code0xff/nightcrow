@@ -11,7 +11,7 @@ import {
 afterEach(cleanup);
 
 describe("ShortcutHelp", () => {
-  it("레지스트리의_모든_액션이_한_줄씩_나온다", () => {
+  it("renders one row for every registered action", () => {
     mount({});
 
     const listed = [...document.querySelectorAll("[data-shortcut-action]")].map(
@@ -24,7 +24,7 @@ describe("ShortcutHelp", () => {
     }
   });
 
-  it("reinterpreted_액션은_그렇다고_표시된다", () => {
+  it("marks reinterpreted actions as such", () => {
     mount({});
 
     const maximize = row("view.toggleMaximize");
@@ -32,7 +32,7 @@ describe("ShortcutHelp", () => {
     expect(maximize.textContent).toContain("never bound to F11");
   });
 
-  it("브라우저에서_묶지_않는_TUI_키는_이유와_함께_나온다", () => {
+  it("shows TUI keys that are not bound in the browser with the reason", () => {
     mount({});
 
     for (const entry of UNSUPPORTED_TUI_ACTIONS) {
@@ -41,7 +41,7 @@ describe("ShortcutHelp", () => {
     }
   });
 
-  it("실행할_수_없는_줄은_표시되고_눌러도_아무_일이_없다", () => {
+  it("shows unavailable rows and makes clicking them a no-op", () => {
     mount({ "focus.list": vi.fn() });
 
     const unavailable = row("terminal.newPane");
@@ -51,7 +51,7 @@ describe("ShortcutHelp", () => {
     expect(sheet()).not.toBeNull();
   });
 
-  it("실행할_수_있는_줄은_그_액션을_돌리고_시트를_닫는다", () => {
+  it("runs an available action and closes the sheet", () => {
     // These focus actions have no other button, so the row is their only
     // non-keyboard path.
     const focusList = vi.fn();
@@ -65,7 +65,7 @@ describe("ShortcutHelp", () => {
     expect(sheet()).toBeNull();
   });
 
-  it("두_번째_단계를_무장하는_줄은_버튼이_아니고_눌러도_아무_일이_없다", () => {
+  it("a row that arms the second step is not a button and does nothing when clicked", () => {
     // `<prefix> s` waits for another key, so a click has no action; render text
     // instead of a button that appears broken.
     const swap = vi.fn();
@@ -82,7 +82,7 @@ describe("ShortcutHelp", () => {
     expect(arming.textContent).toContain("the next pane digit");
   });
 
-  it("그_밖의_모든_줄은_누를_수_있는_버튼이다", () => {
+  it("all other rows are clickable buttons", () => {
     mount({});
 
     for (const action of SHORTCUT_ACTIONS) {
@@ -91,7 +91,7 @@ describe("ShortcutHelp", () => {
     }
   });
 
-  it("무장하는_줄도_핸들러가_없으면_가용하지_않다고_말한다", () => {
+  it("an arming row also reports unavailable when it has no handler", () => {
     // Availability keeps its single source: the row is text either way, but it
     // still dims when there is no panel with a pane to swap.
     mount({});
@@ -101,7 +101,7 @@ describe("ShortcutHelp", () => {
     ).toBe("true");
   });
 
-  it("시트의_어떤_줄도_빈_aria_keyshortcuts를_갖지_않는다", () => {
+  it("no sheet row has an empty aria-keyshortcuts attribute", () => {
     // The registry supplies every row: leader sequences have no ARIA value,
     // while standalone chords do.
     mount({});
@@ -117,7 +117,7 @@ describe("ShortcutHelp", () => {
     }
   });
 
-  it("모달로_열리고_이름을_가진다", () => {
+  it("opens as a named modal", () => {
     mount({});
 
     const dialog = screen.getByRole("dialog");
@@ -129,13 +129,13 @@ describe("ShortcutHelp", () => {
     );
   });
 
-  it("열리면_시트가_키보드를_받는다", () => {
+  it("the sheet receives keyboard focus when opened", () => {
     mount({});
 
     expect(document.activeElement).toBe(screen.getByRole("dialog"));
   });
 
-  it("Escape로_닫히고_키보드는_열었던_버튼으로_돌아간다", () => {
+  it("closes with Escape and returns focus to the opening button", () => {
     const { opener } = mount({});
 
     fireEvent.keyDown(document, { key: "Escape" });
@@ -144,7 +144,7 @@ describe("ShortcutHelp", () => {
     expect(document.activeElement).toBe(opener);
   });
 
-  it("배경을_누르면_닫힌다", () => {
+  it("clicking the backdrop closes it", () => {
     const { opener } = mount({});
 
     // As with `FolderPicker`, clicks inside the sheet must not bubble out.

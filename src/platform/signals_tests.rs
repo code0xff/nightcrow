@@ -3,9 +3,9 @@ use super::Shutdown;
 #[cfg(windows)]
 const SECOND_INTERRUPT_CHILD: &str = "NIGHTCROW_TEST_SECOND_INTERRUPT_CHILD";
 
-// `as_str` / Shutdown 의 Eq 같은 순수 부분은 양쪽에서 돈다.
-// 이벤트 전달 자체는 Unix 에서만 검증한다: Windows 의 콘솔 제어 이벤트는
-// 프로세스 그룹 전체로 가므로 테스트 러너를 함께 죽인다.
+// Pure behavior such as as_str and Shutdown equality is tested on both platforms.
+// Event delivery is tested only on Unix: Windows console control events target
+// the whole process group and would also terminate the test runner.
 
 #[cfg(unix)]
 mod signal_delivery {

@@ -99,8 +99,8 @@ function inputs(send: ReturnType<typeof vi.fn>): unknown[] {
     .filter((message) => message.type === "input");
 }
 
-describe("useTerminalShortcuts 패널 명령", () => {
-  it("리더_명령은_패널이_이미_쓰는_컨트롤을_부른다", () => {
+describe("useTerminalShortcuts panel commands", () => {
+  it("leader commands call controls already used by the panel", () => {
     const { commands, cancelRecovery, openCompose } = mount();
 
     for (const [key, check] of [
@@ -116,7 +116,7 @@ describe("useTerminalShortcuts 패널 명령", () => {
     }
   });
 
-  it("명령_시퀀스는_소켓에_한_바이트도_쓰지_않는다", () => {
+  it("a command sequence sends no bytes over the socket", () => {
     const { xterm, xtermKeydown } = pane();
     const { commands, send } = mount();
 
@@ -129,7 +129,7 @@ describe("useTerminalShortcuts 패널 명령", () => {
     expect(xtermKeydown).not.toHaveBeenCalled();
   });
 
-  it("리더를_두_번_누르면_input_프레임_하나만_나간다", () => {
+  it("pressing the leader twice sends only one input frame", () => {
     const { send } = mount();
 
     leader();
@@ -140,7 +140,7 @@ describe("useTerminalShortcuts 패널 명령", () => {
     ]);
   });
 
-  it("pane_숫자는_id가_아니라_보이는_순서다", () => {
+  it("pane numbers use visible order rather than ids", () => {
     const { focusPane } = mount();
 
     leader();
@@ -150,7 +150,7 @@ describe("useTerminalShortcuts 패널 명령", () => {
     expect(focusPane).toHaveBeenCalledWith(8);
   });
 
-  it("스왑은_기존_reorder로_두_자리를_바꾼다", () => {
+  it("swap exchanges two positions using the existing reorder", () => {
     const { commands } = mount();
 
     leader();
@@ -162,7 +162,7 @@ describe("useTerminalShortcuts 패널 명령", () => {
     expect(commands.reorder).toHaveBeenCalledWith([8, 7, 9]);
   });
 
-  it("없는_pane을_가리키는_스왑은_배치를_건드리지_않는다", () => {
+  it("a swap targeting a missing pane does not change the layout", () => {
     const { commands } = mount();
 
     leader();
@@ -172,7 +172,7 @@ describe("useTerminalShortcuts 패널 명령", () => {
     expect(commands.reorder).not.toHaveBeenCalled();
   });
 
-  it("줌_절반은_활성_pane을_줌한다", () => {
+  it("zoom-half zooms the active pane", () => {
     const { commands, bus } = mount();
 
     expect(bus.current?.zoomActivePane()).toBe(true);
@@ -180,7 +180,7 @@ describe("useTerminalShortcuts 패널 명령", () => {
     expect(commands.toggleZoom).toHaveBeenCalledWith(8);
   });
 
-  it("활성_pane이_없으면_pane에_기대는_명령은_가용하지_않다", () => {
+  it("pane-dependent commands are unavailable when there is no active pane", () => {
     const { bus } = mount({ panes: [], active: null });
     const available = bus.current!.isAvailable;
 
@@ -198,7 +198,7 @@ describe("useTerminalShortcuts 패널 명령", () => {
     expect(available("terminal.newPane")).toBe(true);
   });
 
-  it("가용성은_실제로_있는_pane까지만_말한다", () => {
+  it("availability includes only panes that actually exist", () => {
     const { bus } = mount();
     const available = bus.current!.isAvailable;
 
@@ -207,7 +207,7 @@ describe("useTerminalShortcuts 패널 명령", () => {
     expect(available("terminal.swapPanePrompt")).toBe(true);
   });
 
-  it("패널이_사라지면_명령도_사라진다", () => {
+  it("commands disappear when the panel disappears", () => {
     const { bus } = mount();
     const intents = bus.current!;
     expect(intents.isAvailable("terminal.newPane")).toBe(true);
@@ -218,7 +218,7 @@ describe("useTerminalShortcuts 패널 명령", () => {
     expect(intents.runAction("terminal.newPane")).toBe(false);
   });
 
-  it("소켓이_다시_붙는_동안_리더는_해제된다", () => {
+  it("disarms the leader while the socket reconnects", () => {
     const { commands, update } = mount();
 
     leader();
@@ -230,20 +230,20 @@ describe("useTerminalShortcuts 패널 명령", () => {
   });
 });
 
-describe("useTerminalShortcuts 포커스 링의 패널 쪽", () => {
-  it("커서는_활성_pane의_순서와_pane_수를_말한다", () => {
+describe("useTerminalShortcuts panel side of the focus ring", () => {
+  it("the cursor reports the active pane index and pane count", () => {
     const { bus } = mount();
 
     expect(bus.current?.paneCursor()).toEqual({ index: 1, count: 3 });
   });
 
-  it("활성_pane이_없으면_커서_index는_-1이다", () => {
+  it("the cursor index is -1 when there is no active pane", () => {
     const { bus } = mount({ active: null });
 
     expect(bus.current?.paneCursor()).toEqual({ index: -1, count: 3 });
   });
 
-  it("그리드에서는_순서로_고른_pane에_포커스한다", () => {
+  it("in the grid, focuses the pane selected by position", () => {
     const { bus, focusPane, commands } = mount();
 
     expect(bus.current?.focusPaneAt(2)).toBe(true);
@@ -252,7 +252,7 @@ describe("useTerminalShortcuts 포커스 링의 패널 쪽", () => {
     expect(commands.toggleZoom).not.toHaveBeenCalled();
   });
 
-  it("zoom_중에는_포커스_대신_zoom을_옮긴다", () => {
+  it("moves zoom instead of focus while zoomed", () => {
     // `usePaneFocus` would put the keyboard straight back on the zoomed pane,
     // so what changes is which pane fills the panel; the echo moves the keyboard.
     const { bus, focusPane, commands } = mount({ zoom: 8 });
@@ -263,7 +263,7 @@ describe("useTerminalShortcuts 포커스 링의 패널 쪽", () => {
     expect(focusPane).not.toHaveBeenCalled();
   });
 
-  it("zoom된_pane_자체를_고르면_zoom을_건드리지_않는다", () => {
+  it("does not change zoom when the selected pane is already zoomed", () => {
     const { bus, focusPane, commands } = mount({ zoom: 8 });
 
     bus.current?.focusPaneAt(1);
@@ -272,7 +272,7 @@ describe("useTerminalShortcuts 포커스 링의 패널 쪽", () => {
     expect(commands.toggleZoom).not.toHaveBeenCalled();
   });
 
-  it("범위_밖_순서는_아무것도_하지_않는다", () => {
+  it("does nothing for an out-of-range index", () => {
     const { bus, focusPane } = mount();
 
     bus.current?.focusPaneAt(5);
@@ -280,7 +280,7 @@ describe("useTerminalShortcuts 포커스 링의 패널 쪽", () => {
     expect(focusPane).not.toHaveBeenCalled();
   });
 
-  it("pane이_없으면_focusPaneAt은_가용하지_않다", () => {
+  it("focusPaneAt is unavailable when there are no panes", () => {
     const { bus } = mount({ panes: [], active: null });
 
     expect(bus.current?.focusPaneAt(0)).toBe(false);

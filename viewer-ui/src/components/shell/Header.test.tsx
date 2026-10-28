@@ -45,7 +45,7 @@ function mount(over: Partial<HeaderProps> = {}) {
 }
 
 describe("Header", () => {
-  it("leader_시퀀스에_묶인_컨트롤은_title로만_키를_말한다", () => {
+  it("controls bound to a leader sequence expose keys through title only", () => {
     // ARIA has no two-step notation; the title and shortcut sheet carry it.
     mount();
 
@@ -66,7 +66,7 @@ describe("Header", () => {
     expect(help.getAttribute("title")).toBe("Keyboard shortcuts (Ctrl+F then ?)");
   });
 
-  it("헤더_어디에도_빈_aria_keyshortcuts는_없다", () => {
+  it("no header element has an empty aria-keyshortcuts attribute", () => {
     // Empty or undefined `aria-keyshortcuts` values are invalid.
     mount();
 
@@ -79,7 +79,7 @@ describe("Header", () => {
     }
   });
 
-  it("탭_스트립_전체가_프로젝트_순환_코드_두_개를_알린다", () => {
+  it("the full tab strip announces both project cycling shortcuts", () => {
     // These chords move relative to the active project, so the strip owns them.
     mount();
 
@@ -95,7 +95,7 @@ describe("Header", () => {
     }
   });
 
-  it("닫기_키_안내는_앞에_있는_프로젝트_탭에만_붙는다", () => {
+  it("the close-key hint appears only on the first project tab", () => {
     // Closing targets the active project; another tab would advertise a
     // different command. The leader sequence is carried by the title only.
     mount();
@@ -108,7 +108,7 @@ describe("Header", () => {
     ).toBe("Close project");
   });
 
-  it("도움말_버튼은_시트를_연다", () => {
+  it("the help button opens the sheet", () => {
     const props = mount();
 
     fireEvent.click(screen.getByRole("button", { name: "Settings" }));
@@ -120,8 +120,8 @@ describe("Header", () => {
   });
 });
 
-describe("Header 탭 스트립 위치", () => {
-  it("위에_둘_때는_헤더가_스트립을_그린다", () => {
+describe("Header tab strip position", () => {
+  it("the header renders the strip when it is on top", () => {
     mount();
 
     expect(screen.getByRole("navigation")).toBeTruthy();
@@ -129,7 +129,7 @@ describe("Header 탭 스트립 위치", () => {
     expect(toggle.getAttribute("aria-pressed")).toBe("false");
   });
 
-  it("왼쪽에_둘_때는_헤더에_스트립이_없고_옮기는_버튼만_남는다", () => {
+  it("when it is on the left, the header omits the strip and keeps only the move button", () => {
     // The page draws the left strip beside the whole grid; a second copy in
     // the header would be two strips for one list of projects.
     const toggle = vi.fn();
@@ -143,15 +143,15 @@ describe("Header 탭 스트립 위치", () => {
   });
 });
 
-describe("Header 타이틀", () => {
-  it("이름만_있고_부제는_없다", () => {
+describe("Header title", () => {
+  it("shows the name without a subtitle", () => {
     mount();
 
     expect(screen.getByText("nightcrow")).toBeTruthy();
     expect(screen.queryByText(/web viewer/i)).toBeNull();
   });
 
-  it("설정_버튼은_스트립_이동_버튼_바로_앞에_있다", () => {
+  it("the settings button sits immediately before the strip-move button", () => {
     mount();
 
     const settings = screen.getByRole("button", { name: "Settings" });

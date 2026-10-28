@@ -43,9 +43,9 @@ describe("buildPreviewDocument", () => {
 
 describe("previewInserts", () => {
   it("gives byte offsets, not JS string indices, past non-ASCII text", () => {
-    // "한" is one UTF-16 code unit but three UTF-8 bytes. A marker on the second
+    // "\uD55C" is one UTF-16 code unit but three UTF-8 bytes. A marker on the second
     // paragraph must land at the byte offset, or it cuts mid-character server-side.
-    const source = "<p>한글</p><p>x</p>";
+    const source = "<p>\uD55C\uAE00</p><p>x</p>";
     const blocks = parseBlocks(source);
     const inserts = previewInserts(source, blocks);
     const secondMarker = inserts.find((i) => i.text.includes('data-ne-id="1"'));

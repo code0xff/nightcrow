@@ -24,8 +24,8 @@ function ctx(over: Partial<ShortcutContext> = {}): ShortcutContext {
 
 const LEADER = event({ key: "f", ctrlKey: true });
 
-describe("classifyShortcutKey - 무시하는 입력", () => {
-  it("keydown이_아니면_무시한다", () => {
+describe("classifyShortcutKey ignored input", () => {
+  it("ignores events that are not keydown", () => {
     for (const type of ["keypress", "keyup"]) {
       expect(classifyShortcutKey({ ...LEADER, type }, ctx())).toEqual({
         kind: "ignore",
@@ -33,7 +33,7 @@ describe("classifyShortcutKey - 무시하는 입력", () => {
     }
   });
 
-  it("IME_조합_중이면_무시한다", () => {
+  it("ignores input during IME composition", () => {
     const armed = ctx({ armed: true });
     expect(classifyShortcutKey(event({ key: "t", isComposing: true }), armed)).toEqual({
       kind: "ignore",
@@ -49,7 +49,7 @@ describe("classifyShortcutKey - 무시하는 입력", () => {
     });
   });
 
-  it("키를_누른_채_반복되면_무시한다", () => {
+  it("ignores repeated keydown while the key is held", () => {
     expect(classifyShortcutKey({ ...LEADER, repeat: true }, ctx())).toEqual({
       kind: "ignore",
     });
@@ -58,7 +58,7 @@ describe("classifyShortcutKey - 무시하는 입력", () => {
     ).toEqual({ kind: "ignore" });
   });
 
-  it("suppressed면_leader도_action도_잡지_않는다", () => {
+  it("when suppressed, does not match a leader or action", () => {
     const suppressed = ctx({ suppressed: true });
     expect(classifyShortcutKey(LEADER, suppressed)).toEqual({ kind: "ignore" });
     expect(
@@ -66,13 +66,13 @@ describe("classifyShortcutKey - 무시하는 입력", () => {
     ).toEqual({ kind: "ignore" });
   });
 
-  it("leader가_비활성이면_arm하지_않는다", () => {
+  it("does not arm when the leader is inactive", () => {
     expect(classifyShortcutKey(LEADER, ctx({ leader: null }))).toEqual({
       kind: "ignore",
     });
   });
 
-  it("아무_것도_아닌_키는_무시한다", () => {
+  it("ignores an unrelated key", () => {
     expect(classifyShortcutKey(event({ key: "j" }), ctx())).toEqual({ kind: "ignore" });
     expect(classifyShortcutKey(event({ key: "t", ctrlKey: true }), ctx())).toEqual({
       kind: "ignore",
@@ -84,17 +84,17 @@ describe("classifyShortcutKey - 무시하는 입력", () => {
 });
 
 describe("classifyShortcutKey - idle", () => {
-  it("leader_chord는_arm한다", () => {
+  it("arms on the leader chord", () => {
     expect(classifyShortcutKey(LEADER, ctx())).toEqual({ kind: "arm" });
   });
 
-  it("수정자가_더_눌린_leader는_arm하지_않는다", () => {
+  it("does not arm when extra modifiers are pressed with the leader", () => {
     expect(
       classifyShortcutKey(event({ key: "f", ctrlKey: true, shiftKey: true }), ctx()),
     ).toEqual({ kind: "ignore" });
   });
 
-  it("단독_chord는_바로_action이다", () => {
+  it("a standalone chord is immediately an action", () => {
     expect(
       classifyShortcutKey(
         event({ key: "ArrowLeft", ctrlKey: true, shiftKey: true }),
@@ -109,7 +109,7 @@ describe("classifyShortcutKey - idle", () => {
     ).toEqual({ kind: "action", action: expect.objectContaining({ id: "project.next" }) });
   });
 
-  it("단독_chord도_수정자가_더_눌리면_잡지_않는다", () => {
+  it("does not match a standalone chord with extra modifiers", () => {
     expect(
       classifyShortcutKey(
         event({ key: "ArrowLeft", ctrlKey: true, shiftKey: true, metaKey: true }),
@@ -118,7 +118,7 @@ describe("classifyShortcutKey - idle", () => {
     ).toEqual({ kind: "ignore" });
   });
 
-  it("leader가_없어도_단독_chord는_동작한다", () => {
+  it("a standalone chord works without a leader", () => {
     const decision = classifyShortcutKey(
       event({ key: "ArrowLeft", ctrlKey: true, shiftKey: true }),
       ctx({ leader: null }),
@@ -130,7 +130,7 @@ describe("classifyShortcutKey - idle", () => {
 describe("classifyShortcutKey - armed", () => {
   const armed = ctx({ armed: true });
 
-  it("매핑된_follow_up은_action이다", () => {
+  it("a mapped follow-up is an action", () => {
     const decision = classifyShortcutKey(event({ key: "t" }), armed);
     expect(decision).toEqual({
       kind: "action",
@@ -138,7 +138,7 @@ describe("classifyShortcutKey - armed", () => {
     });
   });
 
-  it("follow_up의_수정자는_무시한다", () => {
+  it("ignores modifiers on a follow-up", () => {
     // The leader's Ctrl is usually still held when the follow-up arrives.
     expect(
       classifyShortcutKey(event({ key: "T", ctrlKey: true, shiftKey: true }), armed),
@@ -148,19 +148,19 @@ describe("classifyShortcutKey - armed", () => {
     });
   });
 
-  it("Escape는_취소다", () => {
+  it("Escape cancels", () => {
     expect(classifyShortcutKey(event({ key: "Escape" }), armed)).toEqual({
       kind: "cancel",
     });
   });
 
-  it("Ctrl_C는_취소다", () => {
+  it("Ctrl+C cancels", () => {
     expect(classifyShortcutKey(event({ key: "c", ctrlKey: true }), armed)).toEqual({
       kind: "cancel",
     });
   });
 
-  it("Ctrl_Shift_C는_취소가_아니라_c_명령이다", () => {
+  it("Ctrl+Shift+C is the c command, not cancellation", () => {
     // Cancellation is exactly Ctrl+C; other modifiers are ignored on follow-up.
     expect(
       classifyShortcutKey(event({ key: "c", ctrlKey: true, shiftKey: true }), armed),
@@ -170,21 +170,21 @@ describe("classifyShortcutKey - armed", () => {
     });
   });
 
-  it("leader를_두_번_누르면_literal_leader를_보낸다", () => {
+  it("pressing the leader twice sends a literal leader", () => {
     expect(classifyShortcutKey(LEADER, armed)).toEqual({
       kind: "literalLeader",
       data: "\x06",
     });
   });
 
-  it("터미널_인코딩이_없는_leader는_보낼_바이트가_없다", () => {
+  it("a leader without terminal encoding has no bytes to send", () => {
     const meta = parseChord("Meta+K")!;
     expect(
       classifyShortcutKey(event({ key: "k", metaKey: true }), ctx({ leader: meta, armed: true })),
     ).toEqual({ kind: "literalLeader", data: "" });
   });
 
-  it("매핑되지_않은_follow_up은_소비된다", () => {
+  it("consumes an unmapped follow-up", () => {
     // docs/keybindings.md: "An unmapped follow-up is consumed."
     expect(classifyShortcutKey(event({ key: "j" }), armed)).toEqual({
       kind: "consumed",
@@ -194,15 +194,15 @@ describe("classifyShortcutKey - armed", () => {
     });
   });
 
-  it("수정자_키_단독은_leader를_쓰지_않는다", () => {
+  it("a modifier key by itself does not use the leader", () => {
     for (const key of ["Shift", "Control", "Alt", "Meta"]) {
       expect(classifyShortcutKey(event({ key }), armed)).toEqual({ kind: "ignore" });
     }
   });
 });
 
-describe("classifyShortcutKey - Shift 화살표 포커스 순환", () => {
-  it("Shift만_눌린_화살표는_포커스_액션이다", () => {
+describe("classifyShortcutKey Shift+Arrow focus cycling", () => {
+  it("an arrow with only Shift pressed is a focus action", () => {
     expect(
       classifyShortcutKey(event({ key: "ArrowLeft", shiftKey: true }), ctx()),
     ).toEqual({ kind: "action", action: expect.objectContaining({ id: "focus.previous" }) });
@@ -211,14 +211,14 @@ describe("classifyShortcutKey - Shift 화살표 포커스 순환", () => {
     ).toEqual({ kind: "action", action: expect.objectContaining({ id: "focus.next" }) });
   });
 
-  it("Shift_없는_화살표는_pane의_것이다", () => {
+  it("an arrow without Shift belongs to the pane", () => {
     // A bare arrow is a cursor key the program in the pane reads.
     expect(classifyShortcutKey(event({ key: "ArrowRight" }), ctx())).toEqual({
       kind: "ignore",
     });
   });
 
-  it("Ctrl이_더_눌리면_프로젝트_순환이고_포커스_순환이_아니다", () => {
+  it("with Ctrl added, it is project cycling rather than focus cycling", () => {
     // Exact modifiers, as `chordMatches` promises: the two chords share the key.
     const decision = classifyShortcutKey(
       event({ key: "ArrowRight", shiftKey: true, ctrlKey: true }),

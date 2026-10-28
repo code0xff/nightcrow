@@ -15,7 +15,7 @@ function deferred<T>() {
 }
 
 describe("usePaneLoading", () => {
-  it("요청이_끝나면_내려간다", async () => {
+  it("clears loading when the request finishes", async () => {
     const { result } = renderHook(() => usePaneLoading());
     const fetch = deferred<string>();
     act(() => void result.current.track(1, fetch.promise));
@@ -24,7 +24,7 @@ describe("usePaneLoading", () => {
     expect(result.current.loading).toBe(false);
   });
 
-  it("실패해도_내려간다", async () => {
+  it("clears loading even when the request fails", async () => {
     const { result } = renderHook(() => usePaneLoading());
     const fetch = deferred<string>();
     act(() => void result.current.track(1, fetch.promise).catch(() => undefined));
@@ -32,7 +32,7 @@ describe("usePaneLoading", () => {
     expect(result.current.loading).toBe(false);
   });
 
-  it("늦게_끝난_이전_요청은_새_요청의_표시를_지우지_않는다", async () => {
+  it("a late previous request does not clear the new request indicator", async () => {
     const { result } = renderHook(() => usePaneLoading());
     const older = deferred<string>();
     const newer = deferred<string>();

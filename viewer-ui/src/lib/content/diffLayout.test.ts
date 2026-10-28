@@ -11,17 +11,17 @@ function line(kind: string): DiffLine {
 const CONTEXT = line(" ");
 
 describe("splitHunkRows", () => {
-  it("빈_라인_목록이면_빈_배열을_반환한다", () => {
+  it("returns an empty array for an empty line list", () => {
     expect(splitHunkRows([])).toEqual([]);
   });
 
-  it("컨텍스트_라인은_양쪽에_미러링한다", () => {
+  it("mirrors context lines to both sides", () => {
     expect(splitHunkRows([CONTEXT])).toEqual([
       { left: CONTEXT, right: CONTEXT },
     ]);
   });
 
-  it("삭제와_추가가_같은_개수면_인덱스별로_짝짓는다", () => {
+  it("pairs deletions and additions by index when their counts match", () => {
     const r0 = line("-");
     const r1 = line("-");
     const a0 = line("+");
@@ -32,7 +32,7 @@ describe("splitHunkRows", () => {
     ]);
   });
 
-  it("삭제가_더_많으면_추가_쪽을_null로_패딩한다", () => {
+  it("pads the addition side with null when there are more deletions", () => {
     const r0 = line("-");
     const r1 = line("-");
     const a0 = line("+");
@@ -42,7 +42,7 @@ describe("splitHunkRows", () => {
     ]);
   });
 
-  it("추가가_더_많으면_삭제_쪽을_null로_패딩한다", () => {
+  it("pads the deletion side with null when there are more additions", () => {
     const r0 = line("-");
     const a0 = line("+");
     const a1 = line("+");
@@ -52,12 +52,12 @@ describe("splitHunkRows", () => {
     ]);
   });
 
-  it("추가만_있으면_삭제_쪽은_전부_null이다", () => {
+  it("when there are only additions, every deletion-side entry is null", () => {
     const a0 = line("+");
     expect(splitHunkRows([a0])).toEqual([{ left: null, right: a0 }]);
   });
 
-  it("컨텍스트가_변경_블록의_경계로_작동한다", () => {
+  it("context acts as a boundary between changed blocks", () => {
     // A removed/added run, a context boundary, then another run: each run pairs
     // independently rather than pooling across the context line.
     const r0 = line("-");
@@ -71,7 +71,7 @@ describe("splitHunkRows", () => {
     ]);
   });
 
-  it("컨텍스트_직전에_불균형_블록을_먼저_flush한다", () => {
+  it("flushes an unbalanced block before the context line", () => {
     const r0 = line("-");
     const r1 = line("-");
     const a0 = line("+");
@@ -82,7 +82,7 @@ describe("splitHunkRows", () => {
     ]);
   });
 
-  it("알_수_없는_kind는_컨텍스트로_취급한다", () => {
+  it("treats an unknown kind as context", () => {
     const unknown = line("?");
     expect(splitHunkRows([unknown])).toEqual([
       { left: unknown, right: unknown },

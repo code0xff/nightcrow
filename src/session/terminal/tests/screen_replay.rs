@@ -34,7 +34,7 @@ const RICH_PAINT: &str = concat!(
     "\\033[1;1H\\033[31;1mRED BOLD\\033[m",
     "\\033[2;1H\\033[38;5;208morange\\033[m \\033[38;2;10;120;200mtruecolour\\033[m",
     "\\033[3;1H\\033[44;97m on blue \\033[m \\033[4munderline\\033[m \\033[7minverse\\033[m",
-    "\\033[5;1H한글 텍스트가 여기 있다",
+    "\\033[5;1H\u{d55c}\u{ae00} \u{d14d}\u{c2a4}\u{d2b8}\u{ac00} \u{c5ec}\u{ae30} \u{c788}\u{b2e4}",
     "\\033[7;3HPAINT%sED",
     "\\033[12;41H'\n"
 );

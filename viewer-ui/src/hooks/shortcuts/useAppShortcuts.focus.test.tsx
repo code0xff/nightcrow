@@ -50,8 +50,8 @@ function panel(count: number, index: number) {
   };
 }
 
-describe("useAppShortcuts 포커스 순환", () => {
-  it("목록에서_오른쪽은_콘텐츠로_간다", () => {
+describe("useAppShortcuts focus cycling", () => {
+  it("right from the list moves to content", () => {
     const { list, content } = regions();
     mount();
     list.focus();
@@ -61,7 +61,7 @@ describe("useAppShortcuts 포커스 순환", () => {
     expect(document.activeElement).toBe(content);
   });
 
-  it("콘텐츠에서_오른쪽은_첫_pane으로_패널을_통해_간다", () => {
+  it("right from content moves through the panel to the first pane", () => {
     const { content } = regions();
     const term = panel(2, -1);
     mount({}, term.handlers);
@@ -72,7 +72,7 @@ describe("useAppShortcuts 포커스 순환", () => {
     expect(term.focusPaneAt).toHaveBeenCalledWith(0);
   });
 
-  it("pane에서_오른쪽은_다음_pane이다", () => {
+  it("right from a pane moves to the next pane", () => {
     regions();
     const term = panel(3, 0);
     mount({}, term.handlers);
@@ -83,7 +83,7 @@ describe("useAppShortcuts 포커스 순환", () => {
     expect(term.focusPaneAt).toHaveBeenCalledWith(1);
   });
 
-  it("마지막_pane에서_오른쪽은_목록으로_돌아온다", () => {
+  it("right from the last pane returns to the list", () => {
     const { list } = regions();
     const term = panel(2, 1);
     mount({}, term.handlers);
@@ -95,7 +95,7 @@ describe("useAppShortcuts 포커스 순환", () => {
     expect(term.focusPaneAt).not.toHaveBeenCalled();
   });
 
-  it("목록에서_왼쪽은_마지막_pane이다", () => {
+  it("left from the list moves to the last pane", () => {
     const { list } = regions();
     const term = panel(3, -1);
     mount({}, term.handlers);
@@ -106,7 +106,7 @@ describe("useAppShortcuts 포커스 순환", () => {
     expect(term.focusPaneAt).toHaveBeenCalledWith(2);
   });
 
-  it("터미널이_최대화되면_pane_사이만_감싸며_돈다", () => {
+  it("when the terminal is maximized, cycles only among panes", () => {
     const { list } = regions();
     const term = panel(2, 1);
     mount({ maximized: "terminal" }, term.handlers);
@@ -118,7 +118,7 @@ describe("useAppShortcuts 포커스 순환", () => {
     expect(document.activeElement).not.toBe(list);
   });
 
-  it("패널이_없어도_목록과_콘텐츠는_오간다", () => {
+  it("list and content still cycle when there is no panel", () => {
     const { list, content } = regions();
     mount();
     content.focus();
@@ -128,7 +128,7 @@ describe("useAppShortcuts 포커스 순환", () => {
     expect(document.activeElement).toBe(list);
   });
 
-  it("갈_곳이_없어도_키는_먹어서_pane에_새지_않는다", () => {
+  it("consumes the key when there is nowhere to move so it does not leak to the pane", () => {
     // One pane, terminal maximized: the ring is a single spot. The chord is
     // still the page's, or `ESC[1;2C` would reach the shell.
     const term = panel(1, 0);
@@ -141,14 +141,14 @@ describe("useAppShortcuts 포커스 순환", () => {
     expect(term.focusPaneAt).not.toHaveBeenCalled();
   });
 
-  it("프로젝트가_없으면_순환은_가용하지_않다", () => {
+  it("focus cycling is unavailable when there is no project", () => {
     const { bus } = mount({ repo: null, repos: [] });
 
     expect(bus.current?.isAvailable("focus.next")).toBe(false);
     expect(bus.current?.isAvailable("focus.previous")).toBe(false);
   });
 
-  it("텍스트_필드에서는_명령이_아니다", () => {
+  it("is not a command in a text field", () => {
     // Shift+Arrow in a field is the browser's word selection; the classifier
     // suppresses everything there, and the field keeps its key.
     regions();
@@ -163,13 +163,13 @@ describe("useAppShortcuts 포커스 순환", () => {
   });
 });
 
-describe("useAppShortcuts 포커스 순환 좁은 화면", () => {
+describe("useAppShortcuts focus cycling on narrow screens", () => {
   const wide = window.innerWidth;
   afterEach(() => {
     Object.defineProperty(window, "innerWidth", { value: wide, configurable: true });
   });
 
-  it("보이는_뷰가_아닌_곳으로는_가지_않는다", () => {
+  it("does not move to a view that is not visible", () => {
     // A phone with a keyboard, showing the content view: the list and the
     // panes are hidden, and the key must not move the keyboard — or the panel's
     // active pane — somewhere unseen.
@@ -187,7 +187,7 @@ describe("useAppShortcuts 포커스 순환 좁은 화면", () => {
     expect(event.defaultPrevented).toBe(true);
   });
 
-  it("터미널_뷰에서는_pane_사이를_돈다", () => {
+  it("cycles between panes in the terminal view", () => {
     Object.defineProperty(window, "innerWidth", { value: 500, configurable: true });
     regions();
     const term = panel(2, 1);

@@ -37,7 +37,7 @@ afterEach(() => {
 
 // The hook guards its matchMedia use, so its tests alone would keep passing in
 // an environment that lost it. This is the assertion the header promises.
-it("환경이_matchMedia를_제공하고_뷰포트를_따라간다", () => {
+it("the environment provides matchMedia and follows the viewport", () => {
   expect(typeof window.matchMedia).toBe("function");
   resizeTo(WIDE);
   expect(window.matchMedia(`(min-width: ${WIDE}px)`).matches).toBe(true);
@@ -46,7 +46,7 @@ it("환경이_matchMedia를_제공하고_뷰포트를_따라간다", () => {
 });
 
 describe("useTermKeyBar", () => {
-  it("넓은_화면은_기본_꺼짐이고_좁아지면_켜진다", () => {
+  it("defaults to off on wide screens and turns on when the viewport narrows", () => {
     resizeTo(WIDE);
     const { result } = renderHook(() => useTermKeyBar());
     expect(result.current.shown).toBe(false);
@@ -55,8 +55,8 @@ describe("useTermKeyBar", () => {
     expect(result.current.shown).toBe(true);
   });
 
-  it("토글은_저장되고_리사이즈에_뒤집히지_않는다", () => {
-    // 회전이 곧 리사이즈다: 사람이 정한 뒤에는 기기 기본값이 다시 이기면 안 된다.
+  it("toggle is saved and is not reversed by resizing", () => {
+    // Rotation is a resize: after the user chooses, the device default must not override it.
     resizeTo(WIDE);
     const { result } = renderHook(() => useTermKeyBar());
 
@@ -69,14 +69,14 @@ describe("useTermKeyBar", () => {
     expect(result.current.shown).toBe(true);
   });
 
-  it("저장된_선택이_다음_마운트의_기본값을_이긴다", () => {
+  it("a saved choice overrides the default on the next mount", () => {
     resizeTo(WIDE);
     localStorage.setItem("nightcrow.termKeyBar", "shown");
     const { result } = renderHook(() => useTermKeyBar());
     expect(result.current.shown).toBe(true);
   });
 
-  it("모르는_저장값은_기기_기본값으로_돌아간다", () => {
+  it("an unknown saved value falls back to the device default", () => {
     resizeTo(WIDE);
     localStorage.setItem("nightcrow.termKeyBar", "definitely-not-a-pref");
     const { result } = renderHook(() => useTermKeyBar());

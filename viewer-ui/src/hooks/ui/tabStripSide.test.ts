@@ -13,12 +13,12 @@ afterEach(() => {
 });
 
 describe("useTabStripSide", () => {
-  it("아무것도_저장되지_않았으면_위다", () => {
+  it("defaults to top when nothing is stored", () => {
     const { result } = renderHook(() => useTabStripSide());
     expect(result.current.side).toBe("top");
   });
 
-  it("토글은_저장되고_다시_열어도_남는다", () => {
+  it("toggle is saved and persists after reopening", () => {
     const first = renderHook(() => useTabStripSide());
     act(() => first.result.current.toggle());
     expect(first.result.current.side).toBe("left");
@@ -29,14 +29,14 @@ describe("useTabStripSide", () => {
     expect(localStorage.getItem("nightcrow.tabStripSide")).toBe("left");
   });
 
-  it("두_번_토글하면_돌아온다", () => {
+  it("two toggles return to the original side", () => {
     const { result } = renderHook(() => useTabStripSide());
     act(() => result.current.toggle());
     act(() => result.current.toggle());
     expect(result.current.side).toBe("top");
   });
 
-  it("알_수_없는_저장값은_기본으로_읽는다", () => {
+  it("an unknown saved value reads as the default", () => {
     localStorage.setItem("nightcrow.tabStripSide", "bottom");
     const { result } = renderHook(() => useTabStripSide());
     expect(result.current.side).toBe("top");

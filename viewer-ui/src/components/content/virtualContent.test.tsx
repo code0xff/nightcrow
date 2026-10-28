@@ -60,7 +60,7 @@ function narrowMatchMedia() {
 }
 
 describe("viewport content", () => {
-  it("20k_diff는_viewport와_overscan_행만_DOM에_둔다", () => {
+  it("a 20k diff mounts only viewport and overscan rows in the DOM", () => {
     const diff = diffWith(20_000);
     const memory = (globalThis as typeof globalThis & {
       process?: { memoryUsage(): { heapUsed: number } };
@@ -113,7 +113,7 @@ describe("viewport content", () => {
     });
   });
 
-  it("멀리_스크롤한_행도_정확한_hunk_anchor를_가진다", () => {
+  it("far-scrolled rows still have the correct hunk anchor", () => {
     const diff: Diff = {
       path: "large.ts",
       hunks: [
@@ -136,7 +136,7 @@ describe("viewport content", () => {
     expect(new Set(hunks)).toEqual(new Set(["1"]));
   });
 
-  it("split은_한_virtual_row에_old와_new를_정렬한다", () => {
+  it("split view aligns old and new lines in one virtual row", () => {
     wideMatchMedia();
     const removed = Array.from({ length: 10_000 }, (_, i) => line(i + 1, "-"));
     const added = Array.from({ length: 10_000 }, (_, i) => line(i + 1, "+"));
@@ -154,7 +154,7 @@ describe("viewport content", () => {
     expect(view.container.querySelectorAll("[data-virtual-row]").length).toBeLessThan(40);
   });
 
-  it("좁은_split은_hunk마다_old_전체_뒤에_new_전체를_둔다", () => {
+  it("narrow split view places all old lines before all new lines in each hunk", () => {
     narrowMatchMedia();
     const diff: Diff = {
       path: "large.ts",
@@ -177,7 +177,7 @@ describe("viewport content", () => {
     expect(rows).toEqual(["@", "-", "-", "+", "+"]);
   });
 
-  it("20k_file도_행_번호_anchor와_DOM_상한을_유지한다", () => {
+  it("a 20k file keeps line-number anchors and the DOM limit", () => {
     const lines: Span[][] = Array.from({ length: 20_000 }, (_, i) => [
       { t: `line ${i + 1}`, c: "#fff" },
     ]);
@@ -188,7 +188,7 @@ describe("viewport content", () => {
     expect(view.container.querySelector("[data-line='10001']")).not.toBeNull();
   });
 
-  it("작은_diff는_전체_DOM과_선택_가능한_기존_경로를_쓴다", () => {
+  it("a small diff uses the full DOM and keeps existing paths selectable", () => {
     const view = render(<DiffView diff={diffWith(3)} split={false} />);
     expect(view.container.querySelector("[data-virtual-count]")).toBeNull();
     expect(view.getByText("line 1").closest(".whitespace-pre")).not.toBeNull();

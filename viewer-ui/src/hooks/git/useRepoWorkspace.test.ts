@@ -72,8 +72,8 @@ function mount(remember = vi.fn(), remembered?: RepoView) {
   );
 }
 
-describe("useRepoWorkspace 목록 선택", () => {
-  it("키보드와_탭_행은_같은_컨트롤을_쓴다", () => {
+describe("useRepoWorkspace list selection", () => {
+  it("keyboard and tab rows use the same control", () => {
     // Identity, not equivalence: two functions that merely look alike are two
     // places for the sequence to drift.
     const { result } = mount();
@@ -84,7 +84,7 @@ describe("useRepoWorkspace 목록 선택", () => {
     );
   });
 
-  it("목록을_바꾸면_열려_있던_pane을_비운다", () => {
+  it("changing the list clears the open pane", () => {
     const remember = vi.fn();
     const { result } = mount(remember);
     act(() => result.current.setPane(OPEN_DIFF));
@@ -102,7 +102,7 @@ describe("useRepoWorkspace 목록 선택", () => {
     ]);
   });
 
-  it("같은_목록을_다시_고르면_pane을_건드리지_않는다", () => {
+  it("selecting the same list again leaves the pane untouched", () => {
     const { result } = mount();
     act(() => result.current.setPane(OPEN_DIFF));
 
@@ -112,7 +112,7 @@ describe("useRepoWorkspace 목록 선택", () => {
   });
 
   it.each(["openDiff", "openFile"] as const)(
-    "%s로_콘텐츠를_열면_모바일_content_화면을_선택한다",
+    "opening content with %s selects the mobile content view",
     (action) => {
       const { result } = mount();
 
@@ -122,7 +122,7 @@ describe("useRepoWorkspace 목록 선택", () => {
     },
   );
 
-  it("터미널_화면은_재마운트와_기억된_파일_복원_뒤에도_유지된다", async () => {
+  it("the terminal view survives remounts and restoring a remembered file", async () => {
     const remembered: RepoView = {
       tab: "status",
       file: { path: "src/main.ts", commit: null, face: "source" },

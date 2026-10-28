@@ -39,7 +39,7 @@ function mount(over: Partial<ProjectStripProps> = {}) {
 }
 
 describe("ProjectStrip", () => {
-  it("어느_쪽이든_같은_탭과_같은_키를_말한다", () => {
+  it("both orientations expose the same tabs and keys", () => {
     // The two placements are one component so this cannot drift: the drag
     // handle, the close control, the cycle chords on the strip itself.
     for (const side of ["top", "left"] as const) {
@@ -58,7 +58,7 @@ describe("ProjectStrip", () => {
     }
   });
 
-  it("긴_이름은_자르지_않고_흐르는_제목으로_둔다", () => {
+  it("long names scroll as titles instead of being truncated", () => {
     mount();
 
     const tab = screen.getByRole("button", { name: "a-very-long-project-name" });
@@ -67,7 +67,7 @@ describe("ProjectStrip", () => {
     expect(tab.closest(".nc-title-target")).not.toBeNull();
   });
 
-  it("상단_탭은_이름_길이와_상관없이_같은_폭이다", () => {
+  it("top tabs have the same width regardless of name length", () => {
     mount({ side: "top" });
 
     const widths = ["one", "a-very-long-project-name"].map(
@@ -76,7 +76,7 @@ describe("ProjectStrip", () => {
     for (const className of widths) expect(className).toContain(TAB_TITLE_WIDTH);
   });
 
-  it("탭을_누르면_그_프로젝트를_고르고_열기는_대화상자를_연다", () => {
+  it("clicking a tab selects that project and opening one shows the dialog", () => {
     const props = mount();
 
     fireEvent.click(screen.getByRole("button", { name: "a-very-long-project-name" }));
@@ -86,7 +86,7 @@ describe("ProjectStrip", () => {
     expect(props.onOpenPicker).toHaveBeenCalledTimes(1);
   });
 
-  it("왼쪽_스트립은_탭을_세로로_쌓는다", () => {
+  it("the left strip stacks tabs vertically", () => {
     mount({ side: "left" });
 
     const strip = screen.getByRole("navigation");
@@ -96,17 +96,17 @@ describe("ProjectStrip", () => {
   });
 });
 
-describe("ProjectStrip 왼쪽 레일의 폭", () => {
-  it("라벨은_레일_안에서_잘리고_닫기_버튼을_밀어내지_않는다", () => {
+describe("ProjectStrip left rail width", () => {
+  it("truncates labels within the rail without pushing the close button", () => {
     // Hangul is twice as wide as Latin; the rail is fixed, so the label
     // yields (clipped, then scrolled into view), not the row.
     mount({
       side: "left",
-      repos: [{ id: "k", name: "프로젝트이름이아주아주긴저장", display_path: "/k" }],
+      repos: [{ id: "k", name: "\uD504\uB85C\uC81D\uD2B8\uC774\uB984\uC774\uC544\uC8FC\uC544\uC8FC\uAE34\uC800\uC7A5", display_path: "/k" }],
       repo: "k",
     });
 
-    const tab = screen.getByRole("button", { name: "프로젝트이름이아주아주긴저장" });
+    const tab = screen.getByRole("button", { name: "\uD504\uB85C\uC81D\uD2B8\uC774\uB984\uC774\uC544\uC8FC\uC544\uC8FC\uAE34\uC800\uC7A5" });
     expect(tab.querySelector(".nc-title")).not.toBeNull();
     expect(tab.className).toContain("min-w-0");
     expect(tab.parentElement?.className).toContain("min-w-0");

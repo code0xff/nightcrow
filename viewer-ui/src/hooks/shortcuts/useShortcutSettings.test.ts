@@ -13,8 +13,8 @@ afterEach(cleanup);
 
 const stored = () => localStorage.getItem(KEY);
 
-describe("useShortcutSettings 리더 설정", () => {
-  it("저장된_값이_없으면_기본_리더를_쓴다", () => {
+describe("useShortcutSettings leader settings", () => {
+  it("uses the default leader when no value is stored", () => {
     const { result } = renderHook(() => useShortcutSettings());
 
     expect(result.current.leader).toEqual(DEFAULT_LEADER);
@@ -23,14 +23,14 @@ describe("useShortcutSettings 리더 설정", () => {
     expect(stored()).toBeNull();
   });
 
-  it("기본_리더는_브라우저_찾기와_충돌한다고_알린다", () => {
+  it("reports that the default leader conflicts with browser search", () => {
     // Intended, and the help sheet says so — `Ctrl+F` is what the TUI ships.
     const { result } = renderHook(() => useShortcutSettings());
 
     expect(result.current.conflict).toContain("Find");
   });
 
-  it("바꾼_리더는_즉시_보이고_브라우저에_남는다", () => {
+  it("shows a changed leader immediately and persists it in the browser", () => {
     const { result } = renderHook(() => useShortcutSettings());
 
     let accepted = false;
@@ -43,7 +43,7 @@ describe("useShortcutSettings 리더 설정", () => {
     expect(stored()).toBe(JSON.stringify({ leader: "Ctrl+Alt+B" }));
   });
 
-  it("저장된_리더를_다음_마운트에서_읽는다", () => {
+  it("reads the saved leader on the next mount", () => {
     localStorage.setItem(KEY, JSON.stringify({ leader: "Alt+Space" }));
 
     const { result } = renderHook(() => useShortcutSettings());
@@ -51,7 +51,7 @@ describe("useShortcutSettings 리더 설정", () => {
     expect(result.current.leaderText).toBe("Alt+Space");
   });
 
-  it("코드가_아닌_글자는_거부하고_리더를_그대로_둔다", () => {
+  it("rejects a non-code character and keeps the current leader", () => {
     const { result } = renderHook(() => useShortcutSettings());
 
     let accepted = true;
@@ -65,7 +65,7 @@ describe("useShortcutSettings 리더 설정", () => {
     expect(stored()).toBeNull();
   });
 
-  it("끄면_리더가_없고_충돌도_없다", () => {
+  it("disabling the leader leaves no leader and no conflict", () => {
     const { result } = renderHook(() => useShortcutSettings());
 
     act(() => result.current.disable());
@@ -76,7 +76,7 @@ describe("useShortcutSettings 리더 설정", () => {
     expect(stored()).toBe(JSON.stringify({ leader: null }));
   });
 
-  it("꺼둔_상태는_기본값으로_되살아나지_않는다", () => {
+  it("a disabled state is not restored to the default", () => {
     // The one thing a sentinel string could not express: "off" is a chord name
     // as far as `parseChord` is concerned.
     localStorage.setItem(KEY, JSON.stringify({ leader: null }));
@@ -86,7 +86,7 @@ describe("useShortcutSettings 리더 설정", () => {
     expect(result.current.leader).toBeNull();
   });
 
-  it("되돌리면_기본_리더로_돌아온다", () => {
+  it("resetting restores the default leader", () => {
     const { result } = renderHook(() => useShortcutSettings());
 
     act(() => result.current.disable());
@@ -98,7 +98,7 @@ describe("useShortcutSettings 리더 설정", () => {
     );
   });
 
-  it("저장소가_망가져_있어도_던지지_않고_기본값을_쓴다", () => {
+  it("uses the default without throwing when storage is broken", () => {
     for (const raw of [
       "not json",
       "[]",
@@ -116,7 +116,7 @@ describe("useShortcutSettings 리더 설정", () => {
     }
   });
 
-  it("저장소를_쓸_수_없어도_리더는_동작한다", () => {
+  it("the leader works even when storage is unavailable", () => {
     Object.defineProperty(globalThis, "localStorage", {
       configurable: true,
       value: {

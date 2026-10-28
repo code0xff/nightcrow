@@ -3,7 +3,7 @@ import { composedInput, isSendable, sendChordLabel } from "./composeInput";
 
 describe("composedInput", () => {
   it("bracketed_mode_wraps_the_message_in_paste_markers", () => {
-    expect(composedInput("안녕하세요", true)).toBe("\x1b[200~안녕하세요\x1b[201~");
+    expect(composedInput("\uC548\uB155\uD558\uC138\uC694", true)).toBe("\x1b[200~\uC548\uB155\uD558\uC138\uC694\x1b[201~");
   });
 
   it("unbracketed_mode_sends_the_text_as_is", () => {
@@ -32,7 +32,7 @@ describe("isSendable", () => {
   });
 
   it("any_visible_character_is_sendable", () => {
-    expect(isSendable(" 가 ")).toBe(true);
+    expect(isSendable(" \uAC00 ")).toBe(true);
   });
 });
 

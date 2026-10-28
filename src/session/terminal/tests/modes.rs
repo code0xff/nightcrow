@@ -62,11 +62,11 @@ fn a_title_longer_than_the_cap_is_cut_to_it() {
 /// at all.
 #[test]
 fn a_multibyte_title_is_cut_on_a_character_boundary() {
-    let long = "가".repeat(MAX_PANE_TITLE_CHARS + 50);
+    let long = "\u{ac00}".repeat(MAX_PANE_TITLE_CHARS + 50);
     let title = observe(&format!("\x1b]2;{long}\x07")).expect("the pane named itself");
 
     assert_eq!(title.chars().count(), MAX_PANE_TITLE_CHARS);
-    assert!(title.chars().all(|c| c == '가'));
+    assert!(title.chars().all(|c| c == '\u{ac00}'));
 }
 
 /// The worker records an alternate-screen pane as a screen and a normal-screen

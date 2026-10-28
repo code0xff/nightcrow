@@ -17,11 +17,11 @@ function keydown(overrides: Partial<KeyboardEvent> = {}): KeyboardEvent {
 }
 
 describe("isClearKey", () => {
-  it("클리어_키를_알아본다", () => {
+  it("recognizes the clear key", () => {
     expect(isClearKey(keydown())).toBe(true);
   });
 
-  it("수정자가_다르면_클리어_키가_아니다", () => {
+  it("is not a clear key when a modifier differs", () => {
     expect(isClearKey(keydown({ ctrlKey: false }))).toBe(false);
     expect(isClearKey(keydown({ metaKey: true }))).toBe(false);
     expect(isClearKey(keydown({ key: "k", code: "KeyK" }))).toBe(false);
@@ -30,13 +30,13 @@ describe("isClearKey", () => {
 });
 
 describe("ClearKeyProbe", () => {
-  it("클리어_바이트가_없으면_보고할_것이_없다", () => {
+  it("has nothing to report when there is no clear byte", () => {
     const probe = new ClearKeyProbe();
     probe.noteKey(keydown(), 0);
     expect(probe.report("ls -la\r", 1)).toBeNull();
   });
 
-  it("직전_키_이벤트의_출처를_바이트에_붙인다", () => {
+  it("attaches the preceding key event source to the byte", () => {
     const probe = new ClearKeyProbe();
     probe.noteKey(keydown({ isTrusted: false }), 100);
 
@@ -45,21 +45,21 @@ describe("ClearKeyProbe", () => {
     });
   });
 
-  it("눌린_채로_반복되는_키를_구분한다", () => {
+  it("distinguishes repeated key events while a key is held", () => {
     const probe = new ClearKeyProbe();
     probe.noteKey(keydown({ repeat: true }), 0);
 
     expect(probe.report("\f", 1)?.key?.repeat).toBe(true);
   });
 
-  it("키_이벤트_없이_온_바이트는_그렇게_보고한다", () => {
+  it("reports a byte received without a key event as such", () => {
     // A paste, an input method, or a script writing into the terminal.
     const probe = new ClearKeyProbe();
 
     expect(probe.report("\f", 0)).toEqual({ key: null });
   });
 
-  it("한_키_이벤트는_한_바이트에만_쓰인다", () => {
+  it("a key event applies to only one byte", () => {
     // Two bytes from one keydown is itself a finding; reusing the event would
     // report the second as if a key had produced it.
     const probe = new ClearKeyProbe();
@@ -69,7 +69,7 @@ describe("ClearKeyProbe", () => {
     expect(probe.report("\f", 2)).toEqual({ key: null });
   });
 
-  it("오래된_키_이벤트는_바이트의_출처로_치지_않는다", () => {
+  it("an old key event is not treated as the byte source", () => {
     const probe = new ClearKeyProbe();
     probe.noteKey(keydown(), 0);
 

@@ -39,7 +39,7 @@ async function openBlock() {
 }
 
 describe("previewAgent commit", () => {
-  it("블록이_편집_가능성을_잃으며_blur되어도_커밋은_한_번이다", async () => {
+  it("commits once when a block loses editability and blurs", async () => {
     const { block, received } = await openBlock();
     // What Chrome does: a focused element that stops being editable is blurred
     // on the spot, and the focusout reaches the document's handlers before
@@ -62,7 +62,7 @@ describe("previewAgent commit", () => {
     expect(edits).toEqual([{ type: "edit", id: 0, html: "Changed", pristine: false }]);
   });
 
-  it("취소는_blur가_되어도_커밋하지_않고_원래_내용을_되돌린다", async () => {
+  it("cancel restores the original content without committing, even on blur", async () => {
     const { block, received } = await openBlock();
     const remove = block.removeAttribute.bind(block);
     block.removeAttribute = (name: string) => {
@@ -81,11 +81,11 @@ describe("previewAgent commit", () => {
     expect(received.filter((m) => m.type === "edit")).toEqual([]);
   });
 
-  it("IME 커밋과 flush 응답은 compositionend 뒤 같은 순서로 보낸다", async () => {
+  it("sends the IME commit and flush response in the same order after compositionend", async () => {
     const { block, received } = await openBlock();
     block.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     document.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true }));
-    block.textContent = "조합 중";
+    block.textContent = "\uC870\uD569 \uC911";
     window.dispatchEvent(
       new MessageEvent("message", {
         data: { type: "flush", seq: 7 },
@@ -100,7 +100,7 @@ describe("previewAgent commit", () => {
     await settle();
     const completion = received.filter((message) => message.type === "edit" || message.type === "flushed");
     expect(completion).toEqual([
-      { type: "edit", id: 0, html: "조합 중", pristine: false },
+      { type: "edit", id: 0, html: "\uC870\uD569 \uC911", pristine: false },
       { type: "flushed", seq: 7 },
     ]);
   });

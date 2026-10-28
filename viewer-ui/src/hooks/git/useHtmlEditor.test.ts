@@ -25,7 +25,7 @@ const editPreview = api.editPreview as ReturnType<typeof vi.fn>;
 const save = api.save as ReturnType<typeof vi.fn>;
 
 const SOURCE = "<html><head><title>T</title></head><body><p>Hello</p></body></html>";
-const BOM_SOURCE = "\uFEFF<!-- 한글 -->\n<html><head><title>T</title></head><body><p>Hello</p></body></html>";
+const BOM_SOURCE = "\uFEFF<!-- \uD55C\uAE00 -->\n<html><head><title>T</title></head><body><p>Hello</p></body></html>";
 
 function serveSource(source = SOURCE, hash = "abc123") {
   const encoded = new TextEncoder().encode(source);
@@ -60,7 +60,7 @@ beforeEach(() => {
 });
 
 describe("useHtmlEditor", () => {
-  it("파싱한_바이트의_해시를_그대로_들고_편집_프리뷰를_요청한다", async () => {
+  it("requests an edit preview with the hash of the parsed bytes", async () => {
     const { result } = await open();
 
     // The blob oid came from the preview response's ETag, unquoted.
@@ -72,7 +72,7 @@ describe("useHtmlEditor", () => {
     expect(result.current.state.frameSrc).toBe("/api/preview/edit?token=tok");
   });
 
-  it("UTF-8_BOM과_앞선_한글을_보존해_바이트_오프셋과_저장_내용을_맞춘다", async () => {
+  it("preserves the UTF-8 BOM and preceding Korean text so byte offsets match saved content", async () => {
     serveSource(BOM_SOURCE);
     const { result } = await open();
     const inserts = editPreview.mock.calls[0]![2] as { at: number; text: string }[];
@@ -95,7 +95,7 @@ describe("useHtmlEditor", () => {
     expect(save.mock.calls[0]![2]).toBe(BOM_SOURCE.replace(">Hello<", ">Goodbye<"));
   });
 
-  it("커밋된_편집만_세고_원래대로_돌아온_블록은_뺀다", async () => {
+  it("counts only committed edits and excludes blocks restored to their original content", async () => {
     const { result } = await open();
     // Verification must land first — it is what decides the ids in play.
     act(() => {
@@ -113,7 +113,7 @@ describe("useHtmlEditor", () => {
     expect(result.current.state.pending).toBe(0);
   });
 
-  it("저장은_편집한_블록만_바꾼_원본을_쓴다", async () => {
+  it("save writes the original document with only edited blocks changed", async () => {
     const { result } = await open();
     act(() => {
       result.current.verify([
@@ -134,7 +134,7 @@ describe("useHtmlEditor", () => {
     expect(result.current.state.pending).toBe(0);
   });
 
-  it("잠긴_블록은_이유를_설명하고_패치로_들어가지_않는다", async () => {
+  it("locked blocks explain why and are excluded from the patch", async () => {
     const { result } = await open();
     // The rendered text differs from the source: a script wrote it.
     act(() => {
@@ -148,7 +148,7 @@ describe("useHtmlEditor", () => {
     expect(result.current.state.notice).toContain("script");
   });
 
-  it("디스크가_바뀌었으면_편집을_들고_있은_채_사용자에게_묻는다", async () => {
+  it("when the file changes on disk, asks the user while preserving the edits", async () => {
     save.mockResolvedValueOnce({ ok: false, currentHash: "moved" });
     const { result } = await open();
     act(() => {
@@ -176,8 +176,8 @@ describe("useHtmlEditor", () => {
   });
 });
 
-describe("useHtmlEditor record의 경계", () => {
-  it("블록을_가리키지_않는_id는_패치로_들어가지_않는다", async () => {
+describe("useHtmlEditor record boundaries", () => {
+  it("an id that does not point to a block is excluded from the patch", async () => {
     // The frame's document runs its own scripts and postMessage is open to
     // them; a message in the agent's shape with no real id must not become a
     // patch that fails the whole save.

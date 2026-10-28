@@ -62,20 +62,20 @@ const memoryOf = (path: string): RepoView => ({
   file: workdirFile(path, "diff"),
 });
 
-describe("복원", () => {
-  it("프로젝트를_열면_기억한_탭과_파일이_한_번_복원된다", () => {
+describe("Restoration", () => {
+  it("opening a project restores its remembered tab and file once", () => {
     const h = harness({ repo: "r1", known: true, remembered: memoryOf("a.ts") });
 
     expect(h.setTab).toHaveBeenCalledWith("tree");
     expect(h.openDiff).toHaveBeenCalledWith("a.ts", { restoring: true });
 
-    // 재렌더는 다시 열 이유가 아니다 — 방금 닫은 파일이 되돌아온다.
+    // A rerender is not a reason to reopen; that would restore the file just closed.
     h.rerender({ repo: "r1", known: true, remembered: memoryOf("a.ts") });
     expect(h.openDiff).toHaveBeenCalledTimes(1);
   });
 
-  it("떠났다_돌아오면_다시_복원된다", () => {
-    // 전환이 pane을 비웠으므로, 복귀는 "프로젝트를 여는 것"과 같다.
+  it("restores again after leaving and returning", () => {
+    // Switching projects cleared the pane, so returning is equivalent to opening the project.
     const h = harness({ repo: "r1", known: true, remembered: memoryOf("a.ts") });
     h.rerender({ repo: "r2", known: true, remembered: undefined });
     h.rerender({ repo: "r1", known: true, remembered: memoryOf("a.ts") });
@@ -83,8 +83,8 @@ describe("복원", () => {
     expect(h.openDiff).toHaveBeenCalledTimes(2);
   });
 
-  it("응답이_오기_전에는_복원하지_않고_오면_한다", () => {
-    // "기억 없음"과 "아직 못 들음"은 맵에서 구분되지 않는다 — known이 가른다.
+  it("waits for the response before restoring, then restores", () => {
+    // The map cannot distinguish “no remembered view” from “not received yet”; known separates them.
     const h = harness({ repo: "r1", known: false, remembered: undefined });
     expect(h.setTab).not.toHaveBeenCalled();
 
@@ -92,15 +92,15 @@ describe("복원", () => {
     expect(h.openDiff).toHaveBeenCalledWith("a.ts", { restoring: true });
   });
 
-  it("기억이_없어도_탭은_status로_되돌린다", () => {
-    // 아니면 자기 뷰가 없는 프로젝트가 직전 프로젝트의 탭을 물려받는다.
+  it("falls back to the status tab when no view is remembered", () => {
+    // Otherwise a project without its own view inherits the previous project’s tab.
     const h = harness({ repo: "r1", known: true, remembered: undefined });
     expect(h.setTab).toHaveBeenCalledWith("status");
     expect(h.openDiff).not.toHaveBeenCalled();
   });
 
-  it("아직_못_들은_프로젝트를_거쳐도_다음_프로젝트는_복원된다", () => {
-    // A → (막 연) B → A: B에서 복원 못 했다는 사실이 A의 복원을 막으면 안 된다.
+  it("restores the next project even after passing through one whose response has not arrived", () => {
+    // A → (just opened) B → A: failing to restore B must not block restoring A.
     const h = harness({ repo: "r1", known: true, remembered: memoryOf("a.ts") });
     h.rerender({ repo: "r2", known: false, remembered: undefined });
     h.rerender({ repo: "r1", known: true, remembered: memoryOf("a.ts") });
@@ -108,9 +108,9 @@ describe("복원", () => {
     expect(h.openDiff).toHaveBeenCalledTimes(2);
   });
 
-  it("기억한_면대로_맞는_opener가_불린다", () => {
-    // 순수 함수 restoreOpen의 분기가 아니라, 훅이 그 답을 어느 opener에
-    // 배선했는지를 고정한다.
+  it("calls the opener for the remembered view", () => {
+    // This pins down which opener the hook wires to the answer, not just a branch of the pure restoreOpen function.
+
     const source = harness({
       repo: "r1",
       known: true,
@@ -132,8 +132,8 @@ describe("복원", () => {
     });
   });
 
-  it("A에서_고르고_B로_가면_B는_제_기억대로_복원된다", () => {
-    // touched는 방문의 속성이다: A에서의 선택이 B의 복원을 막으면 안 된다.
+  it("selecting in A and switching to B restores B from its own memory", () => {
+    // touched belongs to a visit: a selection in A must not block restoring B.
     const h = harness({ repo: "r1", known: true, remembered: undefined });
     act(() => h.result.current.noteFile(workdirFile("mine.ts", "diff")));
 
@@ -143,17 +143,17 @@ describe("복원", () => {
     expect(h.result.current.touched).toBe(false);
   });
 
-  it("복원은_아무것도_기록하지_않는다", () => {
-    // 이미 저장된 것을 되돌리는 일이다. 기록하면 실패가 기억을 지울 길이 생긴다.
+  it("restoration does not write anything", () => {
+    // This restores saved state. Writing here could let a failure erase the remembered view.
     const h = harness({ repo: "r1", known: true, remembered: memoryOf("a.ts") });
     expect(h.remember).not.toHaveBeenCalled();
   });
 });
 
-describe("기록", () => {
-  it("선택은_지금_들고_있는_값에_합쳐져_한_틱의_두_선택이_안_지운다", () => {
-    // 탭 전환은 탭 *그리고* 그 탭이 비우는 pane — 렌더 사본에 각각 합치면
-    // 뒤가 앞을 지운다.
+describe("Recording", () => {
+  it("merges a selection into the current value so two selections in one tick do not erase each other", () => {
+    // A tab switch changes both the tab and the pane it clears; merging each into a render copy
+    // would let the latter erase the former.
     const h = harness({ repo: "r1", known: true, remembered: undefined });
 
     act(() => {
@@ -164,7 +164,7 @@ describe("기록", () => {
     expect(h.store.r1).toEqual({ ...blankView(), tab: "log", file: null });
   });
 
-  it("파일_선택은_다른_항목의_기억을_지우지_않는다", () => {
+  it("selecting a file does not erase other remembered items", () => {
     const h = harness(
       { repo: "r1", known: true, remembered: memoryOf("a.ts") },
       { r1: memoryOf("a.ts") },
@@ -172,14 +172,14 @@ describe("기록", () => {
 
     act(() => h.result.current.noteFile(workdirFile("b.ts", "source")));
 
-    // 트리 모양과 탭은 그대로, 파일만 바뀐다.
+    // The tree and tab stay the same; only the file changes.
     expect(h.store.r1.tab).toBe("tree");
     expect(h.store.r1.file).toEqual(workdirFile("b.ts", "source"));
   });
 });
 
-describe("응답 전의 선택", () => {
-  it("보관됐다가_응답_위에_얹히고_복원은_그_위에_하지_않는다", () => {
+describe("Selection before the response", () => {
+  it("is retained and merged over the response; restoration does not override it", () => {
     const h = harness({ repo: "r1", known: false, remembered: undefined });
 
     act(() => h.result.current.noteFile(workdirFile("mine.ts", "diff")));
@@ -187,16 +187,16 @@ describe("응답 전의 선택", () => {
 
     h.rerender({ repo: "r1", known: true, remembered: memoryOf("old.ts") });
 
-    // 고른 파일이 기억 위에 얹히고, 안 고른 트리 모양은 옛 답을 유지한다.
+    // The selected file overlays the remembered view, while the unselected tree keeps its previous value.
     expect(h.store.r1.file).toEqual(workdirFile("mine.ts", "diff"));
     expect(h.store.r1.tab).toBe("tree");
-    // 이미 쓰고 있는 화면이니 복원으로 덮지 않는다.
+    // The screen is already in use, so restoration must not overwrite it.
     expect(h.openDiff).not.toHaveBeenCalled();
     expect(h.result.current.touched).toBe(true);
   });
 
-  it("답을_기다리다_떠나도_선택은_프로젝트에_남아_복귀_때_반영된다", () => {
-    // 자리를 뜨는 건 마음이 바뀐 게 아니다.
+  it("selection stays with the project while waiting and is applied on return", () => {
+    // Leaving does not mean the user changed their mind.
     const h = harness({ repo: "r1", known: false, remembered: undefined });
     act(() => h.result.current.noteTab("log"));
 
@@ -206,11 +206,11 @@ describe("응답 전의 선택", () => {
     expect(h.store.r1.tab).toBe("log");
   });
 
-  it("한_프로젝트의_보류가_다른_프로젝트에_새지_않는다", () => {
+  it("a pending selection for one project does not leak into another", () => {
     const h = harness({ repo: "r1", known: false, remembered: undefined });
     act(() => h.result.current.noteTab("log"));
 
-    // r2가 먼저 응답을 받는다 — r1의 선택은 r2와 무관해야 한다.
+    // r2 responds first; the selection for r1 must not affect r2.
     h.rerender({ repo: "r2", known: true, remembered: undefined });
     expect(h.store.r2).toBeUndefined();
   });
