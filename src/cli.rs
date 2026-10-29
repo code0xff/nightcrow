@@ -4,6 +4,7 @@ use std::path::PathBuf;
 mod attach;
 mod daemon;
 mod init;
+mod notify;
 pub(crate) mod plugin_cmd;
 pub(crate) mod status;
 mod stop;
@@ -12,6 +13,7 @@ mod update;
 pub(crate) use attach::run_attach_detached;
 pub(crate) use daemon::run_daemon;
 pub(crate) use init::run_init;
+pub(crate) use notify::run_notify;
 pub(crate) use status::run_status;
 pub(crate) use stop::run_stop;
 pub(crate) use update::run_update;
@@ -92,6 +94,18 @@ pub(crate) enum Commands {
         #[arg(long)]
         socket: Option<PathBuf>,
     },
+    /// Tell the session this terminal wants you back.
+    ///
+    /// Run inside a nightcrow terminal pane — from an agent's completion hook,
+    /// or after a long command. The pane is marked in every attached client
+    /// and, where Web Push is enabled, a notification is sent.
+    Notify {
+        /// A short line to show with the notice.
+        message: Vec<String>,
+        /// Path to the daemon socket. Defaults to the standard location.
+        #[arg(long)]
+        socket: Option<PathBuf>,
+    },
     /// Update nightcrow from an official binary release or an explicit source.
     ///
     /// With no source options, downloads the latest stable v0.1.x release.
@@ -145,6 +159,7 @@ fn command_that_starts_no_session(command: &Commands) -> Option<&'static str> {
         Commands::Plugin { .. } => Some("plugin"),
         Commands::Stop { .. } => Some("stop"),
         Commands::Status { .. } => Some("status"),
+        Commands::Notify { .. } => Some("notify"),
         Commands::Update { .. } => Some("update"),
         Commands::Attach => None,
     }

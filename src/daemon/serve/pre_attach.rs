@@ -14,7 +14,7 @@ pub(super) fn read(stream: &mut UnixStream, session: &Session) -> Result<Option<
     if frame.kind != FrameKind::Control {
         reply_and_close(
             stream,
-            error("first frame must be hello, status, or shutdown"),
+            error("first frame must be hello, status, notify, or shutdown"),
         )?;
         return Ok(None);
     }
@@ -32,6 +32,17 @@ pub(super) fn read(stream: &mut UnixStream, session: &Session) -> Result<Option<
             reply_and_close(stream, ServerMessage::Status { status })?;
             Ok(None)
         }
+        ClientMessage::Notify { token, message } => {
+            let reply =
+                match crate::session::notify_pane(&session.state, &token, message.as_deref()) {
+                    Ok(()) => ServerMessage::Notified,
+                    Err(crate::session::NotifyError::UnknownPane) => {
+                        error("no open nightcrow terminal has that pane token")
+                    }
+                };
+            reply_and_close(stream, reply)?;
+            Ok(None)
+        }
         ClientMessage::Shutdown => {
             // Stop is also one-shot: it must keep working with the handshake
             // now required by stateful attach, without registering a client.
@@ -43,7 +54,7 @@ pub(super) fn read(stream: &mut UnixStream, session: &Session) -> Result<Option<
         _ => {
             reply_and_close(
                 stream,
-                error("first request must be hello, status, or shutdown"),
+                error("first request must be hello, status, notify, or shutdown"),
             )?;
             Ok(None)
         }

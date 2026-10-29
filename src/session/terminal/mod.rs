@@ -16,6 +16,7 @@
 //! disconnected when it overflows.
 
 pub mod frame;
+mod hub_attention;
 mod hub_connect;
 mod hub_diag;
 #[cfg(test)]
@@ -102,6 +103,10 @@ pub struct TerminalHub {
     /// Which screen the session's panes are fitted to — shared with every other
     /// hub because the answer is one per session, not one per repository.
     ownership: Arc<SizeOwnership>,
+    /// The repository path this hub serves, which labels its notices.
+    cwd: String,
+    /// The session's listeners for panes asking for attention.
+    notices: Arc<crate::session::notice::Notices>,
     #[cfg(test)]
     concurrency_test_hook: Mutex<Option<ConcurrencyTestHook>>,
 }
@@ -113,6 +118,7 @@ impl TerminalHub {
     /// plugin table those commands may opt into.
     ///
     /// `ownership` is the session's, shared with every other hub.
+    #[cfg(test)]
     pub fn spawn(
         cwd: &str,
         startup: Vec<crate::config::StartupCommand>,
@@ -120,6 +126,20 @@ impl TerminalHub {
         auto_open: bool,
         shell: crate::config::ShellConfig,
         ownership: Arc<SizeOwnership>,
+    ) -> Arc<Self> {
+        let notices = Arc::default();
+        Self::spawn_with_notices(cwd, startup, plugins, auto_open, shell, ownership, notices)
+    }
+
+    /// Start a hub as `spawn` does, announcing attention to the session's `notices`.
+    pub(crate) fn spawn_with_notices(
+        cwd: &str,
+        startup: Vec<crate::config::StartupCommand>,
+        plugins: Vec<crate::config::PluginConfig>,
+        auto_open: bool,
+        shell: crate::config::ShellConfig,
+        ownership: Arc<SizeOwnership>,
+        notices: Arc<crate::session::notice::Notices>,
     ) -> Arc<Self> {
         let (commands, command_rx) = mpsc::sync_channel::<Command>(256);
         let hub = Arc::new(Self {
@@ -142,6 +162,8 @@ impl TerminalHub {
             shell,
             started: AtomicBool::new(false),
             ownership,
+            cwd: cwd.to_string(),
+            notices,
             #[cfg(test)]
             concurrency_test_hook: Mutex::new(None),
         });
@@ -155,6 +177,24 @@ impl TerminalHub {
             .ok();
         *hub.worker.lock().expect("terminal worker slot poisoned") = handle;
         hub
+    }
+
+    /// Raise attention on the live pane `token` names, if this hub holds it.
+    /// `false` when it does not, or when the worker is too busy or gone to
+    /// answer within a second — the caller then asks the next hub.
+    pub(crate) fn notify(&self, token: crate::backend::PaneToken, message: Option<String>) -> bool {
+        let (reply, answer) = mpsc::sync_channel(1);
+        let command = Command::Notify {
+            token,
+            message,
+            reply,
+        };
+        if self.commands.try_send(command).is_err() {
+            return false;
+        }
+        answer
+            .recv_timeout(std::time::Duration::from_secs(1))
+            .unwrap_or(false)
     }
 
     /// The startup panes this hub was spawned with. Fixed for its life: the

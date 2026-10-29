@@ -30,6 +30,14 @@ fn every_client_message_survives_the_round_trip() {
         },
         ClientMessage::SetAccent { accent: 3 },
         ClientMessage::ReloadConfig,
+        ClientMessage::Notify {
+            token: "ab12".into(),
+            message: Some("done".into()),
+        },
+        ClientMessage::Notify {
+            token: "ab12".into(),
+            message: None,
+        },
     ];
     for message in &messages {
         assert_eq!(&round_trip_client(message), message);
@@ -49,6 +57,7 @@ fn a_repository_set_without_an_accent_is_refused_rather_than_read_as_yellow() {
 #[test]
 fn every_server_message_survives_the_round_trip() {
     let messages = vec![
+        ServerMessage::Notified,
         ServerMessage::Hello {
             version: "0.1.0".into(),
             client: 3,

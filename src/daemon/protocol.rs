@@ -59,6 +59,15 @@ pub enum ClientMessage {
         repo: String,
         message: HubClientMessage,
     },
+    /// From a program inside a pane (`nightcrow notify`): that pane wants its
+    /// person back. One-shot, like [`Status`](Self::Status). `token` is the
+    /// pane's `NIGHTCROW_PANE_TOKEN`, the only proof of which pane is asking.
+    /// Answered with [`ServerMessage::Notified`] or an error.
+    Notify {
+        token: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        message: Option<String>,
+    },
     /// Ask the daemon to stop. Runs the same shutdown sequence as SIGINT/SIGTERM
     /// — reaping every child shell — and then closes the connection. No reply
     /// is sent; the connection closing is the acknowledgment.
@@ -80,6 +89,8 @@ pub enum ServerMessage {
     /// One-shot answer to [`ClientMessage::Status`]. The connection closes
     /// after this response and is never registered as an attached client.
     Status { status: DaemonStatus },
+    /// One-shot answer to [`ClientMessage::Notify`]: a pane took the notice.
+    Notified,
     /// The repository set, sent in answer to a list, open, close, or reorder.
     /// The whole set rather than a delta: another client may have changed it in
     /// between, and a delta applied to a stale list silently diverges.

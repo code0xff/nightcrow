@@ -48,6 +48,9 @@ fn handle(message: ClientMessage, id: u64, session: &Session) {
         ClientMessage::Status {} => {
             refuse(id, session, "status is only valid as the first request")
         }
+        ClientMessage::Notify { .. } => {
+            refuse(id, session, "notify is only valid as the first request")
+        }
         // Answered to the asker alone (nothing changed), but not from here —
         // the set is sent from one place, in session-change order. This records
         // that the asker is owed one and wakes the watcher.

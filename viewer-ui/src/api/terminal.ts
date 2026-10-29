@@ -36,6 +36,7 @@ export type TerminalServerMessage =
   | { type: "reordered"; order: number[] }
   | { type: "zoomed"; pane: number | null }
   | { type: "pending"; count: number }
+  | { type: "attention"; pane: number; message?: string }
   | ({ type: "recovery" } & RecoveryFrame);
 
 type JsonObject = Record<string, unknown>;
@@ -109,6 +110,11 @@ export function decodeTerminalControlFrame(
       break;
     case "pending":
       valid = isUnsigned(message.count);
+      break;
+    case "attention":
+      valid =
+        isUnsigned(message.pane) &&
+        (message.message === undefined || typeof message.message === "string");
       break;
     case "recovery":
       valid =

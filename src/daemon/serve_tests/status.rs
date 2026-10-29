@@ -166,3 +166,24 @@ fn diagnostics(daemon: &TestDaemon) -> Diagnostics {
         accent: crate::session::accent(daemon.state()),
     }
 }
+
+#[test]
+fn notify_with_a_token_no_pane_holds_is_refused_without_attaching() {
+    let dir = tempfile::TempDir::new().unwrap();
+    let daemon = daemon(&dir, &[]);
+    let before = diagnostics(&daemon);
+    let request = ClientMessage::Notify {
+        token: "0123456789abcdef0123456789abcdef".into(),
+        message: Some("done".into()),
+    };
+    let (answer, mut stream) = one_shot(
+        daemon.path(),
+        Frame::control(serde_json::to_vec(&request).unwrap()),
+    );
+    let ServerMessage::Error { message } = answer else {
+        panic!("expected a refusal, got {answer:?}");
+    };
+    assert!(message.contains("pane token"), "{message}");
+    assert_eq!(diagnostics(&daemon), before);
+    assert!(read_frame(&mut stream).expect("clean close").is_none());
+}

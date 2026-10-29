@@ -40,6 +40,8 @@ describe("terminal control protocol", () => {
       },
       { type: "recovery", pane: 4, state: "cancelled", attempt: 0 },
       { type: "error", message: "capacity reached" },
+      { type: "attention", pane: 7 },
+      { type: "attention", pane: 7, message: "build done" },
     ];
 
     for (const message of messages) {
@@ -61,6 +63,9 @@ describe("terminal control protocol", () => {
       decodeTerminalControlFrame(
         `{"type":"reordered","order":[1,"2"]}`,
       ),
+    ).toBeNull();
+    expect(
+      decodeTerminalControlFrame(`{"type":"attention","pane":1,"message":3}`),
     ).toBeNull();
     for (const generation of ["-1", "+1", "", 42]) {
       expect(

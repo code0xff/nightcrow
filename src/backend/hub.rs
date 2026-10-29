@@ -146,7 +146,7 @@ impl TerminalBackend for HubBackend {
                 TerminalMessage::Event(HubServerMessage::Reordered { order }) => {
                     events.push(BackendEvent::Reordered { order })
                 }
-                TerminalMessage::Event(HubServerMessage::Attention { pane }) => {
+                TerminalMessage::Event(HubServerMessage::Attention { pane, .. }) => {
                     events.push(BackendEvent::Attention { pane })
                 }
                 TerminalMessage::Event(HubServerMessage::Recovery {

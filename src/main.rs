@@ -24,7 +24,8 @@ use anyhow::Result;
 use clap::Parser;
 
 use crate::cli::{
-    Cli, Commands, run_attach_detached, run_daemon, run_init, run_status, run_stop, run_update,
+    Cli, Commands, run_attach_detached, run_daemon, run_init, run_notify, run_status, run_stop,
+    run_update,
 };
 
 /// Every path here runs to completion and returns; nothing in this process
@@ -48,6 +49,7 @@ fn main() -> Result<()> {
         Some(Commands::Plugin { command }) => cli::plugin_cmd::run_plugin(command),
         Some(Commands::Stop { socket }) => run_stop(socket),
         Some(Commands::Status { socket }) => report_status_exit(run_status(socket)),
+        Some(Commands::Notify { message, socket }) => run_notify(message, socket),
         Some(Commands::Update { version, path, git }) => run_update(version, path, git),
         None => run_daemon(cli.exec, cli.port, cli.bind, cli.daemon),
     }

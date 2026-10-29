@@ -1,4 +1,4 @@
-use super::{Cli, reject_session_options};
+use super::{Cli, Commands, reject_session_options};
 use clap::Parser;
 
 fn parse(args: &[&str]) -> Cli {
@@ -50,4 +50,17 @@ fn a_bare_subcommand_with_no_session_options_is_accepted() {
 fn the_default_command_accepts_every_session_option() {
     reject_session_options(&parse(&["nightcrow", "-d", "--port", "9000"]))
         .expect("this is the invocation the options exist for");
+}
+
+#[test]
+fn notify_takes_its_words_as_one_message_and_starts_no_session() {
+    let cli = parse(&["nightcrow", "notify", "build", "done"]);
+    let Some(Commands::Notify { message, socket }) = &cli.command else {
+        panic!("expected notify");
+    };
+    assert_eq!(message, &["build", "done"]);
+    assert!(socket.is_none());
+    let error = reject_session_options(&parse(&["nightcrow", "--port", "9", "notify"]))
+        .expect_err("a session option is a mistake on notify");
+    assert!(error.to_string().contains("notify"), "{error}");
 }
