@@ -1,6 +1,6 @@
 # Notifications
 
-A terminal pane can ask for its person. The attached TUI marks that project's tab, and an open web viewer shows the message as a toast.
+A terminal pane can ask for its person. The attached TUI marks that project's tab, an open web viewer shows the message as a toast, and browsers that turned on notifications receive a push notification even when closed.
 
 ## `nightcrow notify`
 
@@ -36,6 +36,33 @@ A plugin raises the same notice with its `attention` command. The bundled recove
 
 ## Web Push
 
-When the daemon's web viewer is running, each notice is also sent as a Web Push notification to every browser that turned notifications on in the viewer. The phone's browser can be closed. A notice reads as the project name, then the pane's title and message. Several notices from one pane within 10 seconds produce one notification, and a newer one replaces the older on the device.
+When the daemon's web viewer is running, each notice is also sent as a Web Push notification to every browser that turned notifications on. The browser does not have to be open. A notification shows the project name, then the pane's title and the message. Several notices from one pane within 10 seconds produce one notification, and a newer one replaces the older on the device. Tapping it opens the viewer on that project with that terminal selected.
 
-The daemon keeps its push key and the list of subscribed browsers in `~/.nightcrow/push/`. Deleting that directory turns notifications off for every browser; each has to turn them on again.
+### Turning it on
+
+Open the viewer's settings menu and switch **Notifications** on, then allow notifications when the browser asks. Each browser is switched separately. **Send a test notification** checks the whole path from the daemon through the browser's push service to the device.
+
+Browsers offer Web Push only on a secure page: `https://`, or `http://localhost` on the machine running the daemon. A phone reaching the daemon over a plain `http://` address cannot turn it on; the menu says so. With Tailscale, serve the viewer over HTTPS from the daemon's machine:
+
+```bash
+tailscale serve --bg 8091
+```
+
+Tailscale forwards the browser's host name, which a viewer bound to loopback (the default) refuses unless it is listed in [`allowed_hosts`](configuration.md#web_viewer):
+
+```toml
+[web_viewer]
+allowed_hosts = ["<machine>.<tailnet>.ts.net"]
+```
+
+Restart the daemon after adding it, then open `https://<machine>.<tailnet>.ts.net` on the phone. Tailscale provisions and renews the certificate. Sign in again on the new address, since a login belongs to one address.
+
+On iPhone and iPad, Web Push works only in a page added to the Home Screen (iOS 16.4 or later): open the viewer in Safari, choose **Share → Add to Home Screen**, open it from that icon, and switch notifications on there.
+
+### When notifications do not arrive
+
+- The switch is missing and the menu says notifications are blocked: the permission prompt was declined. Browsers do not ask twice; allow notifications for the site in the browser's site settings.
+- Notifications arrive late on Android: battery optimisation can hold the browser's push connection. Exempt the browser from it.
+- Notifications stop after clearing site data or reinstalling the browser: that ends the subscription. The daemon removes it the next time the push service reports it gone, and the menu shows notifications as off again.
+
+The daemon keeps its push key and the list of subscribed browsers in `~/.nightcrow/push/`. Deleting the directory turns notifications off for every browser.

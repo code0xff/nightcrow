@@ -2,6 +2,7 @@ import { useLayoutEffect, useRef, useState } from "react";
 import { RefreshIcon, SettingsIcon } from "../icons/actions";
 import { KeyboardIcon } from "../icons/layout";
 import { ChevronIcon } from "../icons/navigation";
+import { NotificationSettings } from "../notifications/NotificationSettings";
 import { useShortcutHint } from "../../hooks/shortcuts/shortcutLeader";
 import { SCREEN_SCALES, useScreenScale, type ScreenScale } from "../../hooks/ui/screenScale";
 
@@ -162,6 +163,7 @@ export function SettingsMenu({
               </div>
             </div>
           </section>
+          <NotificationSettings />
           <div className="border-t border-ink-800 px-3 py-2">
             <button
               type="button"

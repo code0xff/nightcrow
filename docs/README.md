@@ -12,7 +12,7 @@ Start with the [top-level README](../README.md) for the five-minute install and 
 | [Session state](session-state.md) | Recent-activity indicator and files written between runs |
 | [Web viewer](web-viewer.md) | Browser access, cloning, mobile layout, and security |
 | [Configuration](configuration.md) | `~/.nightcrow/config.toml`, defaults, validation, and reload scope |
-| [Notifications](notifications.md) | `nightcrow notify`, agent completion hooks, and plugin notices |
+| [Notifications](notifications.md) | `nightcrow notify`, agent completion hooks, plugin notices, and Web Push |
 | [Plugins](plugins.md) | Plugin installation, opt-in, and bundled recovery plugin |
 | [Releasing](releasing.md) | Patch-only versioning, fork promotion, and official binary Releases |
 
