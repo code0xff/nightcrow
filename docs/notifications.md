@@ -33,3 +33,9 @@ Both hooks run inside the pane's process tree, so they inherit its token.
 ## Plugin notices
 
 A plugin raises the same notice with its `attention` command. The bundled recovery plugin does not send that command; instead, when it reports a pane as `needs_attention`, the hub treats entering that state as a notice and uses the report's `detail` line as the message. A repeated `needs_attention` report for the same pane is not announced again until the pane leaves that state.
+
+## Web Push
+
+When the daemon's web viewer is running, each notice is also sent as a Web Push notification to every browser that turned notifications on in the viewer. The phone's browser can be closed. A notice reads as the project name, then the pane's title and message. Several notices from one pane within 10 seconds produce one notification, and a newer one replaces the older on the device.
+
+The daemon keeps its push key and the list of subscribed browsers in `~/.nightcrow/push/`. Deleting that directory turns notifications off for every browser; each has to turn them on again.

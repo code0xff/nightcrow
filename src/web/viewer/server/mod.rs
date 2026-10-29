@@ -11,6 +11,7 @@ mod handlers;
 mod http_util;
 mod mutations;
 mod preview;
+mod push_routes;
 mod routes;
 
 use crate::session::prefs::PrefsStore;
@@ -44,6 +45,8 @@ pub struct ViewerState {
     pub(super) clones: crate::web::viewer::clone_jobs::CloneJobs,
     pub(super) git_available: bool,
     pub(in crate::web::viewer::server) edit_previews: edit_preview::EditPreviewStore,
+    /// Web Push, when its key could be loaded. `None` answers its routes 503.
+    pub(super) push: Option<Arc<crate::web::viewer::push::PushService>>,
 }
 
 pub struct ViewerServer {
@@ -59,6 +62,7 @@ pub struct ViewerOptions {
     pub sessions: SessionStore,
     pub hot: crate::config::AgentIndicatorConfig,
     pub session: SessionOptions,
+    pub push: Option<Arc<crate::web::viewer::push::PushService>>,
 }
 
 /// Named configuration boundary used by the daemon startup path.
@@ -81,6 +85,10 @@ impl ViewerState {
     }
 
     pub fn with_plugins(options: ViewerOptions, plugins: Vec<crate::config::PluginConfig>) -> Self {
+        let session = Arc::new(SessionState::with_plugins(options.session, plugins));
+        if let Some(push) = &options.push {
+            push.follow(&session);
+        }
         Self {
             bound_loopback: options.bind.is_loopback(),
             auth: options.auth,
@@ -91,7 +99,8 @@ impl ViewerState {
             clones: Default::default(),
             git_available: crate::git::clone::git_available(),
             edit_previews: Default::default(),
-            session: Arc::new(SessionState::with_plugins(options.session, plugins)),
+            session,
+            push: options.push,
         }
     }
 }
@@ -137,6 +146,11 @@ impl ViewerServer {
                     prefs: PrefsStore::load_seeded(launch.theme.preset_index()),
                     status_encoder: crate::web::viewer::status_payload::encode,
                 },
+                push: crate::web::viewer::push::PushService::start(Some(
+                    crate::web::viewer::push::PushService::default_dir(),
+                ))
+                .inspect_err(|err| tracing::warn!(%err, "push: unavailable"))
+                .ok(),
             },
             launch.plugins,
         )

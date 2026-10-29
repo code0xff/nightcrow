@@ -36,8 +36,6 @@ pub struct Notices {
 }
 
 impl Notices {
-    // Until Web Push registers the first production listener.
-    #[cfg_attr(not(test), allow(dead_code))]
     pub fn subscribe(&self, listener: impl Fn(&Notice) + Send + Sync + 'static) {
         self.listeners
             .lock()

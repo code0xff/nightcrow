@@ -101,6 +101,10 @@ impl CatalogRuntime {
         Ok(self.entries.clone())
     }
 
+    pub(super) fn notices(&self) -> Arc<crate::session::notice::Notices> {
+        Arc::clone(&self.notices)
+    }
+
     pub(super) fn entries(&self) -> &[Arc<RepoEntry>] {
         &self.entries
     }

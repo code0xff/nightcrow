@@ -44,6 +44,14 @@ impl Catalog {
             .collect()
     }
 
+    /// The session's listeners for panes asking for attention.
+    pub fn notices(&self) -> Arc<crate::session::notice::Notices> {
+        self.runtime
+            .lock()
+            .expect("catalog runtime poisoned")
+            .notices()
+    }
+
     /// Raise attention on the pane `token` names, in whichever repository
     /// holds it. `false` when none does. The hubs are asked outside the
     /// catalog lock, since each answer waits on that hub's worker.

@@ -12,6 +12,7 @@ mod paste_image;
 mod path_gate;
 mod prefs;
 mod preview;
+mod push;
 mod reload;
 mod reorder;
 mod routes;
@@ -63,6 +64,7 @@ pub(super) fn server_with(
             prefs,
             status_encoder: crate::web::viewer::status_payload::encode,
         },
+        push: Some(crate::web::viewer::push::PushService::start(None).unwrap()),
     })
     .unwrap()
 }

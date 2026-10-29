@@ -225,6 +225,12 @@ fn handle_connection(mut stream: TcpStream, state: Arc<ViewerState>) {
         return;
     }
 
+    // Web Push subscriptions and the key a page subscribes with.
+    if head.path.starts_with("/api/push/") {
+        let _ = stream.write_all(&super::push_routes::handle(&head, &body, &state));
+        return;
+    }
+
     // Re-reading config.toml. POST for the same CSRF reasoning as the others,
     // and the body is ignored: what is read is the file on this machine's
     // disk, so this cannot hand the session a configuration of the caller's
