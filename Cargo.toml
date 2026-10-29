@@ -76,6 +76,11 @@ rust-embed = { version = "8.12.0", features = ["interpolate-folder-path", "mime-
 # — the two POSIX calls std does not expose. The single-instance lock used to
 # be here too; it moved to std's `File::try_lock` (see src/daemon/lock.rs).
 libc = "0.2"
+# Web Push: VAPID signing (ES256) and RFC 8291 message encryption.
+p256 = { version = "0.14", default-features = false, features = ["ecdsa", "ecdh", "std"] }
+hkdf = "0.13"
+aes-gcm = "0.11"
+base64 = "0.23"
 
 [target.'cfg(unix)'.dependencies]
 # Stop signals for the headless server: SIGTERM is what a service manager sends,

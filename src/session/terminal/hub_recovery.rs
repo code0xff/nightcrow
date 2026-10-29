@@ -47,6 +47,13 @@ pub(super) fn is_relaunchable(backend: &PtyBackend, pane: PaneId) -> bool {
 /// succeeded — cancelled by a person, or given up on when the hold ran out.
 pub(crate) const RECOVERY_CANCELLED: &str = "cancelled";
 
+/// The `state` a plugin reports when a pane is waiting on a person — the
+/// bundled recovery plugin's label for an agent that finished or stalled. The
+/// one plugin label the hub reads, and only to raise a [`Notice`] on entry.
+///
+/// [`Notice`]: crate::session::notice::Notice
+pub(crate) const RECOVERY_NEEDS_ATTENTION: &str = "needs_attention";
+
 impl TerminalHub {
     /// Tell every client the latest word on a pane's recovery.
     pub(super) fn broadcast_recovery(
@@ -70,6 +77,10 @@ impl TerminalHub {
         // announcements are: a client either connects before this frame or after,
         // never into the middle of it.
         let mut shared = self.state.lock().expect("terminal state poisoned");
+        // Entering the plugin's "needs attention" state is the one report that
+        // reaches past this hub's clients; a repeat of it is not news.
+        let newly_needs_attention = state == RECOVERY_NEEDS_ATTENTION
+            && shared.recovery.get(&pane).map(|r| r.state.as_str()) != Some(state);
         // The cache a later client is replayed from (`connect`), kept under the
         // rule every connected client's map follows: `cancelled` removes.
         // Updated under the same hold as the broadcast so the two cannot
@@ -88,15 +99,10 @@ impl TerminalHub {
             );
         }
         broadcast_locked(&mut shared.clients, TerminalFrame::Control(json));
-    }
-
-    /// Tell every client a plugin wants a person back at `pane`.
-    pub(super) fn broadcast_attention(&self, pane: PaneId) {
-        let Ok(json) = serde_json::to_string(&ServerMessage::Attention { pane }) else {
-            return;
-        };
-        let mut state = self.state.lock().expect("terminal state poisoned");
-        broadcast_locked(&mut state.clients, TerminalFrame::Control(json));
+        drop(shared);
+        if newly_needs_attention {
+            self.publish_notice(pane, detail.map(str::to_string));
+        }
     }
 
     /// Tell every client there is nothing pending for `pane` any more. Sent

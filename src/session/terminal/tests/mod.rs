@@ -1,6 +1,7 @@
 //! The hub's test harness: the shared deadline and the frame accessors every
 //! hub test reads its assertions through. The tests themselves live beside it.
 
+mod attention;
 mod backpressure;
 mod behavior;
 mod identity;

@@ -80,7 +80,7 @@ impl TerminalHub {
                 }
                 Ok(Approved::Attention { pane }) => {
                     tracing::debug!(plugin = %plugin, pane, "viewer: plugin asks for attention");
-                    self.broadcast_attention(pane);
+                    self.broadcast_attention(pane, None);
                 }
                 Ok(Approved::WatchPane { pane }) => {
                     self.watch_pane_for_plugin(backend, plugins, &plugin, pane)

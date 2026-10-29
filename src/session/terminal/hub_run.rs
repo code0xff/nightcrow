@@ -64,10 +64,8 @@ impl TerminalHub {
                             continue;
                         }
                         match backend.open_pane(rows, cols, command.as_deref()) {
-                            // Unnamed: a pane a client asked for is that client's
-                            // to name. No plugin association either — a shell a
-                            // client opened is nobody's to drive but the person
-                            // at it.
+                            // Unnamed and unwatched: a shell a client opened is
+                            // that client's to name and nobody else's to drive.
                             Ok(pane) => self.register_pane(pane, rows, cols, Some(client), None),
                             Err(err) => {
                                 tracing::warn!(%err, "viewer: could not create a terminal");
@@ -95,15 +93,19 @@ impl TerminalHub {
                         }
                     }
                     Command::Reorder { order } => self.reorder_panes(order),
-                    // Deliberately not gated on the pane being live: a pane with
-                    // a recovery pending is one whose process has already ended,
-                    // so it is no longer in the client-visible list.
+                    // Not gated on the pane being live: a pending recovery's
+                    // process has already ended and left the visible list.
                     Command::CancelRecovery { pane } => {
                         self.cancel_recovery(&mut backend, &mut plugins, pane)
                     }
                     Command::ReloadPlugins { plugins: configs } => {
                         self.reload_hub_plugins(&mut backend, &mut plugins, &configs)
                     }
+                    Command::Notify {
+                        token,
+                        message,
+                        reply,
+                    } => self.notify_by_token(&backend, &token, message, &reply),
                     _ => {}
                 }
             }

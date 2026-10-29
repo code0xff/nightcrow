@@ -138,11 +138,13 @@ pub fn origin_allowed(head: &RequestHead) -> bool {
 /// `evil.example` to 127.0.0.1 would otherwise give their page a same-origin
 /// position from which to POST `/login` and read the reply.
 ///
-/// A loopback-bound server can only legitimately be addressed as loopback, so
-/// any other Host is refused. Bound off-loopback, the operator has taken
-/// responsibility for the network path, and the check would reject legitimate
-/// proxied hosts, so it does not apply.
-pub fn host_allowed(head: &RequestHead, bound_loopback: bool) -> bool {
+/// A loopback-bound server can only legitimately be addressed as loopback, or
+/// by a name the operator listed in `allowed` for a local proxy, so any other
+/// Host is refused. Listing a name is safe against rebinding as long as the
+/// operator, not an attacker, controls what it resolves to. Bound off-loopback,
+/// the operator has taken responsibility for the network path, and the check
+/// would reject legitimate proxied hosts, so it does not apply.
+pub fn host_allowed(head: &RequestHead, bound_loopback: bool, allowed: &[String]) -> bool {
     if !bound_loopback {
         return true;
     }
@@ -158,6 +160,7 @@ pub fn host_allowed(head: &RequestHead, bound_loopback: bool) -> bool {
     };
     let name = name.trim_start_matches('[').trim_end_matches(']');
     name.eq_ignore_ascii_case("localhost")
+        || allowed.iter().any(|a| a.eq_ignore_ascii_case(name))
         || name == "127.0.0.1"
         || name == "::1"
         || name

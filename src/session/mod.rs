@@ -6,6 +6,7 @@
 
 pub mod catalog;
 pub mod limits;
+pub mod notice;
 pub mod prefs;
 pub mod reload;
 pub mod runtime;
@@ -16,8 +17,8 @@ mod operations;
 mod state;
 
 pub use operations::{
-    CloseError, OpenError, SessionRepo, accent, active_repo, close_repo, focus_repo, list_repos,
-    list_session_repos, open_repo, reorder_repos, set_accent,
+    CloseError, NotifyError, OpenError, SessionRepo, accent, active_repo, close_repo, focus_repo,
+    list_repos, list_session_repos, notify_pane, open_repo, reorder_repos, set_accent,
 };
 #[cfg(test)]
 pub use state::test_status_encoder;

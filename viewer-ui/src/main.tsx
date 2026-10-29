@@ -7,6 +7,9 @@ import { Toaster } from "./components/feedback/Toaster";
 import { notePageBuild } from "./lib/runtime/viewerBuild";
 import { observeVisualViewport } from "./lib/ui/visualViewport";
 import { applyScreenScale, readScreenScale } from "./hooks/ui/screenScale";
+import { api } from "./api";
+import { openNoticeTarget } from "./lib/notifications/noticeTarget";
+import { browserPushEnvironment, registerServiceWorker } from "./lib/notifications/webPush";
 import "./styles/index.css";
 
 // The layout viewport stays tall when a mobile soft keyboard opens. Keep the
@@ -24,6 +27,11 @@ notePageBuild(
     .querySelector('meta[name="nightcrow-build"]')
     ?.getAttribute("content") || null,
 );
+
+// The service worker delivers Web Push and opens the page on the terminal a
+// tapped notification named; that target is applied before the first poll.
+registerServiceWorker(browserPushEnvironment());
+await openNoticeTarget(window.location, window.history, api.setActiveRepo);
 
 // The terminal measures its cell from the face it is given, once, when it
 // opens — and the startup handshake sends that measurement to the server. A

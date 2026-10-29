@@ -253,3 +253,27 @@ fn persist_workspace(state: &SessionState) {
         .unwrap_or(0);
     crate::workspace::persistence::save_workspace(&ws);
 }
+
+/// Why `nightcrow notify` was refused.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NotifyError {
+    /// The token is malformed, or names no live pane in any open repository.
+    UnknownPane,
+}
+
+/// Raise attention on the pane a program inside it named by its token, so the
+/// pane's clients mark it and the session's notice listeners hear of it.
+pub fn notify_pane(
+    state: &SessionState,
+    token: &str,
+    message: Option<&str>,
+) -> Result<(), NotifyError> {
+    let token: crate::backend::PaneToken =
+        serde_json::from_value(token.into()).map_err(|_| NotifyError::UnknownPane)?;
+    let message = crate::session::notice::clean_message(message);
+    if state.catalog.notify(&token, message) {
+        Ok(())
+    } else {
+        Err(NotifyError::UnknownPane)
+    }
+}
