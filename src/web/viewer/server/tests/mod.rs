@@ -51,6 +51,7 @@ pub(super) fn server_with(
     ViewerServer::start(ViewerOptions {
         bind: "127.0.0.1".parse().unwrap(),
         port: 0,
+        allowed_hosts: Vec::new(),
         auth: Auth::from_plaintext("swordfish").unwrap(),
         sessions: SessionStore::new(crate::config::WebViewerConfig::default().session_ttl()),
         hot,

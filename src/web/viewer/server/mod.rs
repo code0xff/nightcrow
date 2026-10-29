@@ -37,6 +37,8 @@ pub(super) const TERM_POLL_TIMEOUT: Duration = Duration::from_millis(10);
 pub struct ViewerState {
     pub(super) session: Arc<SessionState>,
     pub(super) bound_loopback: bool,
+    /// `[web_viewer] allowed_hosts`: names a loopback bind also answers to.
+    pub(super) allowed_hosts: Vec<String>,
     pub(super) auth: Auth,
     pub(super) sessions: SessionStore,
     pub(super) limiter: RateLimiter,
@@ -58,6 +60,7 @@ pub struct ViewerServer {
 pub struct ViewerOptions {
     pub bind: IpAddr,
     pub port: u16,
+    pub allowed_hosts: Vec<String>,
     pub auth: Auth,
     pub sessions: SessionStore,
     pub hot: crate::config::AgentIndicatorConfig,
@@ -91,6 +94,7 @@ impl ViewerState {
         }
         Self {
             bound_loopback: options.bind.is_loopback(),
+            allowed_hosts: options.allowed_hosts,
             auth: options.auth,
             sessions: options.sessions,
             limiter: RateLimiter::new(),
@@ -133,6 +137,7 @@ impl ViewerServer {
             ViewerOptions {
                 bind,
                 port: viewer.port,
+                allowed_hosts: viewer.allowed_hosts.clone(),
                 auth,
                 sessions: session_store,
                 hot: launch.agent_indicator.clone(),

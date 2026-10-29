@@ -58,7 +58,7 @@ fn handle_connection(mut stream: TcpStream, state: Arc<ViewerState>) {
 
     // (1) Host, then Origin — both before anything reads state. Origin only
     // proves the two agree, which a DNS-rebound attacker controls outright.
-    if !conn::host_allowed(&head, state.bound_loopback) {
+    if !conn::host_allowed(&head, state.bound_loopback, &state.allowed_hosts) {
         let _ = stream.write_all(&text_response("403 Forbidden", "unexpected host"));
         return;
     }

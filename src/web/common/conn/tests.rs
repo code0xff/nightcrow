@@ -30,7 +30,7 @@ fn host_allowed_accepts_loopback_spellings() {
         "127.0.0.2",
     ] {
         assert!(
-            host_allowed(&head_with(&[("Host", host)]), true),
+            host_allowed(&head_with(&[("Host", host)]), true, &[]),
             "{host} must be accepted"
         );
     }
@@ -41,15 +41,18 @@ fn host_allowed_refuses_a_rebound_name_on_a_loopback_bind() {
     let head = head_with(&[("Host", "evil.example"), ("Origin", "http://evil.example")]);
 
     assert!(origin_allowed(&head), "precondition: origin matches host");
-    assert!(!host_allowed(&head, true), "a rebound name must be refused");
+    assert!(
+        !host_allowed(&head, true, &[]),
+        "a rebound name must be refused"
+    );
 }
 
 #[test]
 fn host_allowed_defers_when_bound_off_loopback() {
     let head = head_with(&[("Host", "nightcrow.internal")]);
 
-    assert!(!host_allowed(&head, true));
-    assert!(host_allowed(&head, false));
+    assert!(!host_allowed(&head, true, &[]));
+    assert!(host_allowed(&head, false, &[]));
 }
 
 #[test]
@@ -73,4 +76,17 @@ fn connection_slot_releases_on_drop() {
 
     assert_eq!(counter.load(Ordering::Acquire), 0);
     assert!(ConnectionSlot::acquire(&counter, 1).is_some());
+}
+
+#[test]
+fn host_allowed_accepts_a_listed_proxy_name_on_a_loopback_bind() {
+    let allowed = vec!["box.tail1234.ts.net".to_string()];
+    for host in ["box.tail1234.ts.net", "BOX.tail1234.ts.net:443"] {
+        assert!(
+            host_allowed(&head_with(&[("Host", host)]), true, &allowed),
+            "{host}"
+        );
+    }
+    let other = head_with(&[("Host", "evil.example")]);
+    assert!(!host_allowed(&other, true, &allowed));
 }
