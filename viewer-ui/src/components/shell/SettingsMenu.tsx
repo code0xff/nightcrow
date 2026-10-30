@@ -100,7 +100,7 @@ export function SettingsMenu({
         aria-expanded={open}
         aria-controls={DIALOG_ID}
         title="Settings"
-        className="ml-auto flex h-6 w-6 shrink-0 items-center justify-center rounded-sm text-ink-400 hover:bg-ink-700 hover:text-ink-200"
+        className="ml-auto flex h-6 w-6 shrink-0 items-center justify-center rounded-sm text-ink-400 hover:text-accent"
       >
         <SettingsIcon className="h-3.5 w-3.5" />
       </button>
