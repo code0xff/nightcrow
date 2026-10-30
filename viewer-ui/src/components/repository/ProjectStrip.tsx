@@ -133,7 +133,7 @@ export function ProjectStrip({
               aria-label={`close ${r.name}`}
               className="mr-1 flex h-6 w-6 shrink-0 items-center justify-center rounded-sm text-ink-400 hover:text-removed"
             >
-              <XIcon className="h-3.5 w-3.5" />
+              <XIcon />
             </button>
           </div>
         ))}
